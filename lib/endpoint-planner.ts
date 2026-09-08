@@ -284,7 +284,9 @@ export async function loadPlannableEndpoints(slugs: string[]): Promise<Plannable
   if (slugs.length === 0) return []
   const rows = await prisma.mcpEndpoint.findMany({
     where: {
-      server: { slug: { in: slugs } },
+      // Live rows only — a pending/rejected custom row never reaches the
+      // planner menu even if a caller names its slug (lib/mcp-review.ts).
+      server: { slug: { in: slugs }, reviewStatus: 'approved' },
       method: { in: ['GET', 'POST'] },
       // Either a published param schema, OR a GET we can fetch with no params
       // (a "list all" endpoint like /mlb/players). Param-less GETs are filtered
@@ -450,6 +452,7 @@ export async function autoCallableServerIds(): Promise<Set<string>> {
     where: {
       NOT: { parameters: { equals: Prisma.DbNull } },
       method: { in: ['GET', 'POST'] },
+      server: { reviewStatus: 'approved' },
     },
     select: { serverId: true, priceUsd: true, scheme: true, parameters: true },
   })

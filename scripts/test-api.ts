@@ -8386,10 +8386,101 @@ async function main() {
     const againRow = (await again.json().catch(() => null)) as { id?: string; slug?: string; name?: string; updated?: boolean } | null
     check('add-MCP: re-adding the same base UPDATES the row (no duplicate)', again.ok && againRow?.updated === true && againRow?.id === firstRow?.id)
     check('add-MCP: re-add keeps the original slug, refreshes metadata', againRow?.slug === firstRow?.slug && againRow?.name === 'Test Custom Wallet Renamed')
+    // ── ADMISSION GATE (lib/mcp-review.ts, SECURITY-AUDIT-2026-09-08 §A) ──
+    // The test wallet is never a reviewer, so its request is born PENDING:
+    // visible to it alone, absent from everyone else's directory, 404 on the
+    // public detail route, never planner-callable, and only the requester
+    // (or a reviewer) can touch the row. The burner (an owner wallet) plays
+    // the reviewer: approve → live for a stranger; reject → gone again.
+    check('add-MCP gate: a non-reviewer request is born pending', (firstRow as { reviewStatus?: string; pending?: boolean } | null)?.reviewStatus === 'pending' && (firstRow as { pending?: boolean } | null)?.pending === true)
+    check('add-MCP gate: the response never carries the requester wallet', !('ownerAddress' in ((firstRow ?? {}) as object)) && (firstRow as { mine?: boolean } | null)?.mine === true)
+    if (firstRow?.slug) {
+      const anonDir = (await (await fetch(`${BASE}/api/servers`)).json()) as { slug: string }[]
+      check('add-MCP gate: pending row is ABSENT from the anonymous directory', !anonDir.some((s) => s.slug === firstRow.slug))
+      const mineDir = (await (await fetch(`${BASE}/api/servers`, { headers: C })).json()) as { slug: string; reviewStatus?: string; mine?: boolean; ownerAddress?: string }[]
+      const mineRow = mineDir.find((s) => s.slug === firstRow.slug)
+      check('add-MCP gate: the requester sees their own row as pending + mine', mineRow?.reviewStatus === 'pending' && mineRow?.mine === true && !('ownerAddress' in (mineRow ?? {})))
+      const anonDetail = await fetch(`${BASE}/api/servers/${firstRow.slug}`)
+      check('add-MCP gate: public detail API 404s a pending row', anonDetail.status === 404)
+      const anonPage = await fetch(`${BASE}/servers/${firstRow.slug}`)
+      check('add-MCP gate: public detail PAGE 404s a pending row', anonPage.status === 404)
+      const ownerDetail = await fetch(`${BASE}/api/servers/${firstRow.slug}`, { headers: C })
+      check('add-MCP gate: the requester can read their pending row', ownerDetail.status === 200)
+      // Another signed-in wallet: can't re-add (repoint) it, can't delete it.
+      const stranger = privateKeyToAccount(generatePrivateKey())
+      const strangerC = { cookie: await signIn(stranger) }
+      const repoint = await fetch(`${BASE}/api/servers`, { ...addBody('Hijacked Wallet MCP'), headers: { 'content-type': 'application/json', ...strangerC } })
+      check('add-MCP gate: another wallet re-adding the same base → 409 (no repoint)', repoint.status === 409)
+      const strangerDel = await fetch(`${BASE}/api/servers?id=${firstRow.id}`, { method: 'DELETE', headers: strangerC })
+      check('add-MCP gate: another wallet cannot delete the row → 403', strangerDel.status === 403)
+      // Working set resolved server-side: naming the pending slug as a
+      // callable server in the chat body resolves to NOTHING live.
+      const pendingAsSet = await fetch(`${BASE}/api/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1', 'x-forwarded-for': '203.0.113.9' },
+        body: JSON.stringify({ message: 'what is my portfolio', activeServers: [{ id: firstRow.id, slug: firstRow.slug, name: 'Test Custom Wallet', kind: 'data', callable: true, endpoint: WALLET_BASE, protocol: 'mcp', tool: 'portfolio' }] }),
+      }).then((r) => r.json() as Promise<{ reply?: string; notes?: string[] }>)
+      check('add-MCP gate: a pending row named as callable in the chat body is dropped server-side', typeof pendingAsSet.reply === 'string' && /not in the Pantessa directory/.test(pendingAsSet.reply) && (pendingAsSet.notes ?? []).some((n) => n.includes(firstRow.slug!)))
+      // Reviewer decisions (the burner is on the owner allowlist).
+      const pkRaw2 = await (async () => {
+        try {
+          const fs2 = await import('node:fs')
+          return fs2.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+        } catch {
+          return null
+        }
+      })()
+      const anonQueue = await fetch(`${BASE}/api/admin/mcp-requests`)
+      check('add-MCP gate: review queue without session → 401', anonQueue.status === 401)
+      const nonReviewerQueue = await fetch(`${BASE}/api/admin/mcp-requests`, { headers: C })
+      check('add-MCP gate: review queue as non-reviewer → 403', nonReviewerQueue.status === 403)
+      if (pkRaw2) {
+        const reviewer = privateKeyToAccount((pkRaw2.startsWith('0x') ? pkRaw2 : `0x${pkRaw2}`) as `0x${string}`)
+        const R = { cookie: await signIn(reviewer) }
+        const queue = (await (await fetch(`${BASE}/api/admin/mcp-requests`, { headers: R })).json()) as { pending?: { id: string; tools: string[]; ownerAddress: string | null }[] }
+        const queued = queue.pending?.find((r) => r.id === firstRow.id)
+        check('add-MCP gate: the request sits in the reviewer queue with its discovered tools', !!queued && queued.tools.includes('portfolio') && typeof queued.ownerAddress === 'string')
+        const approve = await fetch(`${BASE}/api/admin/mcp-requests`, { method: 'POST', headers: { 'content-type': 'application/json', ...R }, body: JSON.stringify({ id: firstRow.id, decision: 'approve', note: 'harness approve' }) })
+        check('add-MCP gate: reviewer approve → 200', approve.ok)
+        const liveDir = (await (await fetch(`${BASE}/api/servers`)).json()) as { slug: string; reviewStatus?: string; source?: string }[]
+        const liveRow = liveDir.find((s) => s.slug === firstRow.slug)
+        check('add-MCP gate: approved row is live for a stranger, tagged custom/approved', liveRow?.reviewStatus === 'approved' && liveRow?.source === 'custom')
+        check('add-MCP gate: approved row answers on the public detail API', (await fetch(`${BASE}/api/servers/${firstRow.slug}`)).status === 200)
+        const reject = await fetch(`${BASE}/api/admin/mcp-requests`, { method: 'POST', headers: { 'content-type': 'application/json', ...R }, body: JSON.stringify({ id: firstRow.id, decision: 'reject', note: 'harness reject' }) })
+        check('add-MCP gate: reviewer reject → 200', reject.ok)
+        const goneDir = (await (await fetch(`${BASE}/api/servers`)).json()) as { slug: string }[]
+        check('add-MCP gate: rejected row leaves the anonymous directory again', !goneDir.some((s) => s.slug === firstRow.slug))
+        const rejectedMine = (await (await fetch(`${BASE}/api/servers`, { headers: C })).json()) as { slug: string; reviewStatus?: string }[]
+        check('add-MCP gate: the requester sees the rejection', rejectedMine.find((s) => s.slug === firstRow.slug)?.reviewStatus === 'rejected')
+      } else {
+        console.log('  (skipped reviewer decisions — no PRIVATE_KEY in .env.local)')
+      }
+    }
     if (firstRow?.id) {
       const del = await fetch(`${BASE}/api/servers?id=${firstRow.id}`, { method: 'DELETE', headers: C })
-      check('add-MCP: test row cleaned up', del.ok)
+      check('add-MCP: test row cleaned up (by its requester)', del.ok)
     }
+  }
+
+  // ── Working set resolved server-side (lib/active-servers.ts) ─────────────
+  // Off-directory server objects in the chat body are DROPPED on platform
+  // traffic (a caller could name any URL as a callable inference/data server
+  // and the house key would answer its 402). The direct-traffic exception —
+  // no platform-stamped client IP — keeps local mocks + this harness working.
+  console.log('— working set resolved server-side')
+  {
+    const evil = { slug: 'evil-off-directory', name: 'Evil Off-Directory', kind: 'inference', callable: true, endpoint: 'https://evil-off-directory.example.test/api', protocol: 'http', priceUsd: '0.01' }
+    const platform = await fetch(`${BASE}/api/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1', 'x-forwarded-for': '203.0.113.7' },
+      body: JSON.stringify({ message: 'hello there', activeServers: [evil] }),
+    })
+    const platformBody = (await platform.json()) as { reply?: string; notes?: string[] }
+    check('working set: an off-directory endpoint on platform traffic is DROPPED, never fetched', platform.status === 200 && /not in the Pantessa directory/.test(platformBody.reply ?? '') && (platformBody.notes ?? []).some((n) => n.includes('evil-off-directory')))
+    const mixed = await fetch(`${BASE}/api/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1', 'x-forwarded-for': '203.0.113.7' },
+      body: JSON.stringify({ message: 'hello there', activeServers: [evil, { slug: 'uniswap-free', name: 'spoofed', kind: 'inference', callable: true, endpoint: 'https://evil-off-directory.example.test/api', protocol: 'http' }] }),
+    })
+    const mixedBody = (await mixed.json()) as { reply?: string }
+    check('working set: a directory slug with a spoofed endpoint resolves to the DIRECTORY row (no drop reply, no evil fetch)', mixed.status === 200 && !/not in the Pantessa directory/.test(mixedBody.reply ?? ''))
   }
 
   // ── Launch token (link an on-chain launch to the directory) ───────────────

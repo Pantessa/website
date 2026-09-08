@@ -32,6 +32,10 @@ export interface McpServer {
   /** Auto-callable via the endpoint planner (has ≥1 plannable endpoint), even
    *  without being hand-wired. Derived in /api/servers. */
   autoCallable?: boolean
+  /** Admission state for custom rows: 'pending' | 'approved' | 'rejected'. Absent/approved = live. */
+  reviewStatus?: string
+  /** Lowercased wallet that requested a custom row — only that wallet sees it while pending. */
+  ownerAddress?: string | null
   /** Has ≥1 featured ("ping first") endpoint, so the generic connect-time
    *  quick view can paint for it even without a hand-coded splash source.
    *  Derived in lib/catalog; splashCapable() reads it. */

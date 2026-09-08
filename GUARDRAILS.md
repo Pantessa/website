@@ -52,8 +52,20 @@ authors a `to`, `data`, `value`, deposit address, or typed-data field.
   order that isn't a CoW order verifying against the pinned GPv2 settlement
   contract and paying the signer.
 
+- **Directory admission is gated** (2026-09-08, `lib/mcp-review.ts`). A
+  user-requested MCP lands `pending`: visible only to the wallet that
+  requested it, callable by nobody, absent from the Auto-Router catalog,
+  the planner menu, splash, approvals, sitemap and the detail page, until a
+  reviewer wallet (`MCP_REVIEWER_WALLETS` ∪ admins) approves it from
+  `/dashboard/mcp-requests`. Only the requester or a reviewer can update or
+  delete a custom row. And the chat working set is resolved SERVER-SIDE
+  (`lib/active-servers.ts`): the client names slugs, the directory supplies
+  endpoint/callable/protocol/price — a client-typed endpoint is never called.
+
 **Tested:** 18 planner-guard checks (drain-shape refusals + the legit-call
-pass path), cross-chain deposit pinning, per-venue guard suites.
+pass path), cross-chain deposit pinning, per-venue guard suites, and the
+admission-gate suite (pending invisibility, cross-wallet tamper refusal,
+reviewer approve/reject, off-directory working-set drop).
 
 ### 2. Fail closed, everywhere
 

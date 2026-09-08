@@ -14,6 +14,7 @@ import { CATALOG } from '@/lib/mcp-data'
 import { FREE_FLEET_FALLBACK } from '@/lib/free-fleet'
 import { autoCallableServerIds } from '@/lib/endpoint-planner'
 import type { McpServer } from '@/lib/store'
+import { visibleServerWhere } from '@/lib/mcp-review'
 
 // No-DB fallback: the free first-party fleet leads (it's the default
 // directory view — a paid-only fallback would render it empty), then the
@@ -64,15 +65,22 @@ function withExtraRows(catalog: McpServer[]): McpServer[] {
  * The full MCP directory: callable/auto-callable services first, then by
  * category. Mirrors what GET /api/servers returns (and is now its source).
  */
-export async function loadCatalog(): Promise<McpServer[]> {
-  return withExtraRows(await loadCatalogBase())
+export async function loadCatalog(opts: { viewer?: string | null } = {}): Promise<McpServer[]> {
+  return withExtraRows(await loadCatalogBase(opts.viewer ?? null))
 }
 
-async function loadCatalogBase(): Promise<McpServer[]> {
+/**
+ * `viewer` widens the directory to that wallet's OWN pending/rejected
+ * requests (so the requester can watch the status); everyone else — and
+ * every server-side consumer that passes nothing (Auto-Router, chat
+ * working-set resolution) — sees approved rows only. lib/mcp-review.ts.
+ */
+async function loadCatalogBase(viewer: string | null): Promise<McpServer[]> {
   if (!catalogDbEnabled()) return STATIC_CATALOG
   try {
     const [servers, autoIds, featuredIds] = await Promise.all([
       prisma.mcpServer.findMany({
+        where: visibleServerWhere(viewer),
         orderBy: [{ callable: 'desc' }, { category: 'asc' }, { name: 'asc' }],
         include: { _count: { select: { endpoints: true } } },
       }),

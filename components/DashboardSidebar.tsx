@@ -6,7 +6,7 @@
 
 import Link from 'next/link'
 import { useEffect, useRef } from 'react'
-import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, Building2, LineChart, MessageSquare, BookOpen, AlertTriangle, CreditCard, Globe, Palette, ShieldAlert, ShieldCheck, Users, Landmark } from 'lucide-react'
+import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, Building2, LineChart, MessageSquare, BookOpen, AlertTriangle, CreditCard, Globe, Palette, ShieldAlert, ShieldCheck, Users, Landmark, Inbox } from 'lucide-react'
 import { isAdminAddress } from '@/lib/admin'
 
 // Links-first order (Nate, 2026-07-22): App rides right under Overview,
@@ -46,6 +46,9 @@ const ADMIN_SECTIONS = [
   { href: '/dashboard/admin', label: 'Adoption', icon: LineChart, exact: false },
   { href: '/dashboard/treasury', label: 'Treasury', icon: Landmark, exact: false },
   { href: '/dashboard/failures', label: 'Failures', icon: ShieldAlert, exact: false },
+  // The MCP admission queue (lib/mcp-review.ts). Non-admin reviewer wallets
+  // (MCP_REVIEWER_WALLETS) reach it by URL — the page self-gates server-side.
+  { href: '/dashboard/mcp-requests', label: 'MCP requests', icon: Inbox, exact: false },
   { href: '/incidents', label: 'Incidents', icon: AlertTriangle, exact: false },
 ] as const
 

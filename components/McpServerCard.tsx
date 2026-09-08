@@ -79,9 +79,26 @@ export default function McpServerCard({ server }: McpServerCardProps) {
 
       <div className="card__foot">
         <div className="card__badges">
-          {server.gated === false ? (
-            <span className="badge badge--price mono" style={{ color: ACCENT, borderColor: ACCENT }} title="No payment gate — free MCP by Pantessa, rate-limited">
-              FREE
+          {server.reviewStatus === 'pending' ? (
+            // The requester's own row under review (nobody else sees it).
+            <span className="badge mono" title="Awaiting a Pantessa partner's review — it never routes until approved" data-testid="badge-pending">
+              PENDING REVIEW
+            </span>
+          ) : server.reviewStatus === 'rejected' ? (
+            <span className="badge mono" title="A reviewer declined this MCP — open Details for the note" data-testid="badge-rejected">
+              NOT APPROVED
+            </span>
+          ) : server.gated === false ? (
+            <span
+              className="badge badge--price mono"
+              style={{ color: ACCENT, borderColor: ACCENT }}
+              title={
+                server.source === 'custom'
+                  ? 'Community MCP — reviewed and approved by a Pantessa partner, rate-limited'
+                  : 'No payment gate — free MCP by Pantessa, rate-limited'
+              }
+            >
+              {server.source === 'custom' ? 'REVIEWED' : 'FREE'}
             </span>
           ) : (
             <span className="badge badge--price mono">${server.priceUsd}/call</span>
