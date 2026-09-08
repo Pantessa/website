@@ -8550,8 +8550,20 @@ async function main() {
       })()
       if (pkRaw) {
         const burner = privateKeyToAccount((pkRaw.startsWith('0x') ? pkRaw : `0x${pkRaw}`) as `0x${string}`)
-        const rLive = await post({ from: burner.address, chainId: 8453, token: 'ETH', amount: '0.00001', to: them })
-        const bLive = (await rLive.json()) as { blocked?: boolean; tx?: { to: string; data?: string; value?: string; chainId?: number; action?: string }; summary?: string; guardrails?: { valueUsd: number | null; checks: { id: string; ok: boolean }[] }; buildPath?: string; refusal?: string }
+        type LiveSend = { blocked?: boolean; tx?: { to: string; data?: string; value?: string; chainId?: number; action?: string }; summary?: string; guardrails?: { valueUsd: number | null; checks: { id: string; ok: boolean }[] }; buildPath?: string; refusal?: string }
+        let rLive!: Response
+        let bLive!: LiveSend
+        // The price leg reads Base's quoter; mid-harness the public Base RPC
+        // rate-limits and the builder fails CLOSED ("no priceable leg" — the
+        // designed refusal, never a bypass). Retry with backoff so a quoter
+        // hiccup doesn't read as a regression; if it stays unpriced the red
+        // below says so by name.
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (attempt) await new Promise((r) => setTimeout(r, 3000 * attempt))
+          rLive = await post({ from: burner.address, chainId: 8453, token: 'ETH', amount: '0.00001', to: them })
+          bLive = (await rLive.json()) as LiveSend
+          if (!(bLive.blocked && /no priceable leg/.test(bLive.refusal ?? ''))) break
+        }
         check(
           'POST /api/wallet/send (live, read-only): a funded native send builds the pinned artifact — to as asked, no calldata, value === atoms, priced, guard green',
           rLive.status === 200 &&
@@ -8566,7 +8578,9 @@ async function main() {
             bLive.guardrails.checks.some((c) => c.id === 'transfer-guard' && c.ok) &&
             bLive.guardrails.checks.some((c) => c.id === 'balance' && c.ok) &&
             /Send 0.00001 ETH to 0x9Cc0…892a on Base/.test(bLive.summary ?? ''),
-          JSON.stringify({ status: rLive.status, blocked: bLive.blocked, refusal: bLive.refusal, summary: bLive.summary, tx: bLive.tx }),
+          /no priceable leg/.test(bLive.refusal ?? '')
+            ? 'Base quoter unreachable after 3 tries (public RPC rate limit) — the builder failed closed as designed; rerun'
+            : JSON.stringify({ status: rLive.status, blocked: bLive.blocked, refusal: bLive.refusal, summary: bLive.summary, tx: bLive.tx }),
         )
       } else {
         check('POST /api/wallet/send (live): no burner key in .env.local — skipped', true)
