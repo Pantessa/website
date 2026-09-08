@@ -592,7 +592,7 @@ function RowsBody({ tile, onPick }: { tile: RowsTile; onPick: (p: string, slug?:
               key={id}
               left={
                 <div className="min-w-0 text-left">
-                  <div className="truncate font-medium text-white">{r.label}</div>
+                  <div className="truncate max-lg:whitespace-normal font-medium text-white">{r.label}</div>
                   {r.sub && <div className="text-[10px] text-[color:var(--muted-2)]">{r.sub}</div>}
                 </div>
               }

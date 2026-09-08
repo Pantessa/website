@@ -1291,7 +1291,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                     door ~30px: the joined names ellipsized to "Sn…". On phones
                     it names the COUNT (the spine's MCPS tab lists them). */}
                 <span className="max-sm:hidden">{activeServers.map((s) => cleanServerName(s.name)).join(' · ')}</span>
-                <span className="sm:hidden whitespace-nowrap">{activeServers.length} MCPs</span>
+                <span className="sm:hidden whitespace-nowrap">{activeServers.length} MCP{activeServers.length === 1 ? '' : 's'}</span>
               </button>
             )
           )}

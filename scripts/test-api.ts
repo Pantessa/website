@@ -3092,10 +3092,11 @@ async function main() {
       check('mobile: the request-MCP submit is 40px on touch', /'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors \[@media\(hover:none\)\]:min-h-10'/.test(addMcp))
       check('mobile: the sign-in gate CTAs are ≥40px below lg (all three)', (gate.match(/px-3 py-1\.5 max-lg:min-h-10 max-lg:px-4 rounded-full bg-\[var\(--accent\)\]/g) ?? []).length === 3)
       check('mobile: Share is icon-only below sm with an aria-label and a 40px target', /aria-label=\{isPublic \? 'Shared publicly' : 'Share this chat'\}/.test(shareBtn) && /max-lg:min-h-10 max-lg:px-3 rounded-lg border text-\[11px\]/.test(shareBtn) && /whitespace-nowrap max-sm:hidden">\{isPublic \? 'Shared' : 'Share'\}/.test(shareBtn))
-      check('mobile: briefing tile rows wrap below lg, never ellipsize the amount', /truncate max-lg:whitespace-normal font-medium text-white">\{r\.label\}/.test(appMode))
+      const splashDash = await readFile(new URL('../components/SplashDashboard.tsx', import.meta.url), 'utf8')
+      check('mobile: briefing tile rows wrap below lg, never ellipsize the amount (splash + app mode)', /truncate max-lg:whitespace-normal font-medium text-white">\{r\.label\}/.test(appMode) && /truncate max-lg:whitespace-normal font-medium text-white">\{r\.label\}/.test(splashDash))
       check(
         'mobile: the toolbar working-set door names the MCP count on phones',
-        /<span className="max-sm:hidden">\{activeServers\.map\(\(s\) => cleanServerName\(s\.name\)\)\.join\(' · '\)\}<\/span>\s*<span className="sm:hidden whitespace-nowrap">\{activeServers\.length\} MCPs<\/span>/.test(chatIface),
+        /<span className="max-sm:hidden">\{activeServers\.map\(\(s\) => cleanServerName\(s\.name\)\)\.join\(' · '\)\}<\/span>\s*<span className="sm:hidden whitespace-nowrap">\{activeServers\.length\} MCP\{activeServers\.length === 1 \? '' : 's'\}<\/span>/.test(chatIface),
       )
     }
 
