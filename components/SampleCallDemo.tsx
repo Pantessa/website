@@ -47,7 +47,7 @@ export default function SampleCallDemo() {
         <div className="text-[11px] mono text-[color:var(--muted)]">💸 $0.0050 over 1 x402 call</div>
         <div className="flex items-center gap-2 text-[11px] mono text-[color:var(--muted-2)] min-w-0">
           <span className="text-emerald-400">✓</span>
-          <span className="text-[color:var(--muted)] truncate">Yeetful · Claude</span>
+          <span className="text-[color:var(--muted)] truncate">Pantessa · Claude</span>
           <span className="flex-shrink-0">$0.0050</span>
           <span className="flex-shrink-0 inline-flex items-center gap-0.5 opacity-70" title="A real call links to Basescan here">
             0x8af8…2983 <ExternalLink className="w-2.5 h-2.5" />

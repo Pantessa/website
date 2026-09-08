@@ -1542,6 +1542,28 @@ async function main() {
   )
   const footerHomeHtml = await (await fetch(`${BASE}/`)).text()
   check('rebrand: reachable from the footer on every page', footerHomeHtml.includes('href="/rebrand"'))
+  // The old brand name may appear on a served page ONLY as the footer's
+  // "Formerly Yeetful" + the /rebrand record. Everything else renders through
+  // cleanServerName's display map — except hardcoded PROSE that names the
+  // paid-catalog family ("add a paid engine like Yeetful · Claude"), which
+  // bypassed the map on /pricing, in the chat's credit-wall replies and in
+  // the empty state's sample receipt (squad 2026-09-08 QA Q-2). The data rows
+  // stay frozen (`lib/mcp-data.ts`, the SQL IN-lists) — prose must not.
+  check(
+    'brand: /pricing never prints the old-brand family name outside the footer',
+    !/Yeetful\s+·/.test(pricingHtml) && pricingHtml.includes('Pantessa · Claude'),
+    (pricingHtml.match(/Yeetful\s+·[^<]{0,20}/g) ?? []).slice(0, 2).join(' | '),
+  )
+  {
+    const chatRouteSrc = await readFile(new URL('../app/api/chat/route.ts', import.meta.url), 'utf8')
+    const sampleSrc = await readFile(new URL('../components/SampleCallDemo.tsx', import.meta.url), 'utf8')
+    const prose = [...chatRouteSrc.matchAll(/\*\*Yeetful · [A-Za-z]+\*\*/g), ...sampleSrc.matchAll(/>Yeetful · [A-Za-z]+</g)].map((m) => m[0])
+    check(
+      'brand: chat replies + the sample receipt name the paid engine as Pantessa · Claude, never the frozen data name',
+      prose.length === 0 && sampleSrc.includes('Pantessa · Claude'),
+      prose.slice(0, 3).join(' | '),
+    )
+  }
   // The live host-app example (robinhood.pantessa.com, our own interface on
   // our own domain — rule 7) must be reachable from the landing's host
   // section AND from /docs/embed, server-rendered, with its source a click

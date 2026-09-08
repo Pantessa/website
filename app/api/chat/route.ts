@@ -2076,8 +2076,8 @@ async function handleChatTurn(req: NextRequest) {
         synthesizer = HOUSE_INFERENCE
       } else {
         const hint = picked
-          ? `“${picked.name}” isn't wired for live x402 yet. Try **Yeetful · Claude**, **ChatGPT**, **DeepSeek**, or **Google Gemini** — they're live.`
-          : 'Add an **Inference** agent (e.g. **Yeetful · Claude** or **ChatGPT**) so I can answer.'
+          ? `“${picked.name}” isn't wired for live x402 yet. Try **Pantessa · Claude**, **ChatGPT**, **DeepSeek**, or **Google Gemini** — they're live.`
+          : 'Add an **Inference** agent (e.g. **Pantessa · Claude** or **ChatGPT**) so I can answer.'
         return NextResponse.json({ reply: `⚡ ${hint}` })
       }
     }
@@ -2088,7 +2088,7 @@ async function handleChatTurn(req: NextRequest) {
     // can't be auto-called lands in `notes` so the reply can say WHY.
     const notes: string[] = []
     if (isHouseInference(synthesizer)) {
-      notes.push('No inference agent selected — the answer was written by Pantessa’s house model (free). Add **Yeetful · Claude** or **ChatGPT** for a paid, receipted engine.')
+      notes.push('No inference agent selected — the answer was written by Pantessa’s house model (free). Add **Pantessa · Claude** or **ChatGPT** for a paid, receipted engine.')
     }
     let smart: PlannableEndpoint[] = []
     if (listedOnly.length > 0) {
@@ -2128,12 +2128,12 @@ async function handleChatTurn(req: NextRequest) {
           // cap vs the system-wide daily breaker (lib/billing.ts).
           const reply =
             credit.gate === 'house'
-              ? `🪙 Pantessa’s house inference is at its daily safety cap — back at midnight UTC. Standing jobs, DCA and guardian protections keep running (they don’t use the model). A paid engine like **Yeetful · Claude** works right now, pay-per-call from your wallet.`
+              ? `🪙 Pantessa’s house inference is at its daily safety cap — back at midnight UTC. Standing jobs, DCA and guardian protections keep running (they don’t use the model). A paid engine like **Pantessa · Claude** works right now, pay-per-call from your wallet.`
               : credit.gate === 'daily'
                 ? `🪙 That’s the free plan’s daily chat limit — it resets at midnight UTC (your monthly credits are fine). Upgrade at **pantessa.com/pricing** for no daily cap, or add a paid engine and keep going pay-per-call.`
                 : embedBill
                   ? `🪙 This site’s Pantessa plan is out of included answers for the month. The chat resumes when the plan renews or the site upgrades — or connect a paid engine and pay per call from your own wallet.`
-                  : `🪙 You’ve used all **${credit.allowance.toLocaleString()} YEET credits** on the ${credit.planName} plan this month. Upgrade at **pantessa.com/pricing** for more — or add a paid engine like **Yeetful · Claude** and keep going pay-per-call from your wallet.`
+                  : `🪙 You’ve used all **${credit.allowance.toLocaleString()} YEET credits** on the ${credit.planName} plan this month. Upgrade at **pantessa.com/pricing** for more — or add a paid engine like **Pantessa · Claude** and keep going pay-per-call from your wallet.`
           return NextResponse.json({
             reply,
             planGate: { plan: credit.plan, upgradeUrl: '/pricing', gate: credit.gate ?? 'monthly' },
@@ -5914,7 +5914,7 @@ export function streamAutoRouter(
         if (!inference) {
           send({
             type: 'reply',
-            content: '⚡ No live inference engine is available. Enable an Inference agent (e.g. **Yeetful · Claude**) so I can answer.',
+            content: '⚡ No live inference engine is available. Enable an Inference agent (e.g. **Pantessa · Claude**) so I can answer.',
             receipts: [],
             payer: 'none',
           })
