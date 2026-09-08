@@ -166,7 +166,11 @@ export default function NavAccount() {
                     className="navacct__item navacct__item--danger"
                     onClick={() => {
                       closeNow()
-                      signOut().then(() => router.push('/'))
+                      // Signing out of the app lands back on the chat, signed
+                      // out (the guest lane) — not on the marketing page (QA
+                      // O-6). Account surfaces still go home: they're gated.
+                      const dest = pathname?.startsWith('/chat') ? '/chat' : '/'
+                      signOut().then(() => router.push(dest))
                     }}
                   >
                     <LogOut width={15} height={15} strokeWidth={2.25} />

@@ -75,3 +75,33 @@ export function shouldRerunConnectAsk(input: {
   if (!Number.isFinite(at) || now - at > CONNECT_ASK_RERUN_WINDOW_MS || now < at - 60_000) return null
   return meta.connectAsk
 }
+
+// ── The connect gate's way back ─────────────────────────────────────────
+// "Connect wallet to continue" flips to "Connecting…" the moment it is
+// pressed and used to stay there FOREVER unless an address landed: dismiss
+// the door, pick a wallet that isn't installed, reject the connection — the
+// chip was dead and every later ask read "Connecting…" too (QA O-4, squad gtm
+// 2026-09-08, reproduced live). The gate releases once nothing is still
+// trying: no door up, no wallet list up, no connector mid-handshake, and no
+// address. CONNECT_ASK_RELEASE_GRACE_MS covers the beat between the door
+// closing and the wallet list opening (same tick, different renders).
+export const CONNECT_ASK_RELEASE_GRACE_MS = 700
+
+export function connectAskReleased(input: {
+  /** The gate is armed (a connect ask is pending). */
+  pending: boolean
+  hasAddress: boolean
+  /** The unified door (CreateAccountModal) is on screen. */
+  doorOpen: boolean
+  /** RainbowKit's wallet list is on screen. */
+  listOpen: boolean
+  /** wagmi's account status — 'connecting' / 'reconnecting' = a connector
+   *  is mid-handshake (an extension popup, a deep link, a QR wait). */
+  walletStatus: 'connected' | 'connecting' | 'reconnecting' | 'disconnected'
+}): boolean {
+  const { pending, hasAddress, doorOpen, listOpen, walletStatus } = input
+  if (!pending || hasAddress) return false
+  if (doorOpen || listOpen) return false
+  if (walletStatus === 'connecting' || walletStatus === 'reconnecting') return false
+  return true
+}

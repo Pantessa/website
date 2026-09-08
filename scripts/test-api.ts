@@ -84,7 +84,7 @@ import { decideManagerMove, stackingRefusal, undecidedProposalFor } from '../lib
 import { markPeriodKey, parseMarkAsk, reviewFlipDecision, tryoutReportCard, PAPER_LABEL, TRYOUT_BANNED_PHRASES } from '../lib/roster-tryouts'
 import { houseManagerRow, resolveHouseManager, HOUSE_MANAGER_ID } from '../lib/roster-managers'
 import { walletLineup, walletLaneHint, wcConfigured, WC_APP_METADATA , CDP_INIT_PATIENCE_MS, emailLaneHint } from '../lib/wallet-lineup'
-import { hasStoredWalletConnection, shouldRerunConnectAsk, CONNECT_ASK_RERUN_WINDOW_MS, WAGMI_STORE_KEY, WAGMI_RECENT_CONNECTOR_KEY } from '../lib/wallet-reconnect'
+import { hasStoredWalletConnection, shouldRerunConnectAsk, connectAskReleased, CONNECT_ASK_RELEASE_GRACE_MS, CONNECT_ASK_RERUN_WINDOW_MS, WAGMI_STORE_KEY, WAGMI_RECENT_CONNECTOR_KEY } from '../lib/wallet-reconnect'
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
 import {
@@ -173,7 +173,7 @@ import {
 } from '../lib/onramp'
 import { parseEcbUsdRate } from '../lib/ecb-fx'
 import { clarifyOf } from '../lib/clarify'
-import { fundingPathOf } from '../lib/funding-path'
+import { fundingPathOf, NEVER_MIND_RESUME_RE } from '../lib/funding-path'
 import { decideFundingTurn, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, planFundingChips, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
@@ -4260,6 +4260,106 @@ async function main() {
       )
     })(),
   )
+
+  // ── The stranger's way back + what a guest ask is for (squad gtm 2026-09-08, round 2) ──
+  console.log('— onboarding: connect gate releases; guest asks refund on doors; "Not now" is native; kept threads keep their URL')
+  check(
+    'onboarding: the "Connecting…" gate releases only when nothing is still trying — held while the door or the wallet list is up or a connector is mid-handshake; never released once an address is here or when nothing was pending',
+    (() => {
+      const base = { pending: true, hasAddress: false, doorOpen: false, listOpen: false, walletStatus: 'disconnected' as const }
+      return (
+        connectAskReleased(base) === true &&
+        connectAskReleased({ ...base, doorOpen: true }) === false &&
+        connectAskReleased({ ...base, listOpen: true }) === false &&
+        connectAskReleased({ ...base, walletStatus: 'connecting' }) === false &&
+        connectAskReleased({ ...base, walletStatus: 'reconnecting' }) === false &&
+        connectAskReleased({ ...base, hasAddress: true }) === false &&
+        connectAskReleased({ ...base, pending: false }) === false &&
+        CONNECT_ASK_RELEASE_GRACE_MS >= 300 && CONNECT_ASK_RELEASE_GRACE_MS <= 2000
+      )
+    })(),
+  )
+  {
+    const srcFs = await import('node:fs')
+    const code = (path: string) => srcFs.readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    const chat = code('components/ChatInterface.tsx')
+    const door = code('components/CreateAccountButton.tsx')
+    const store = code('lib/store.ts')
+    const gate = code('components/ChatSignInGate.tsx')
+    const nav = code('components/NavAccount.tsx')
+    const chips = code('components/ClarifyChips.tsx')
+    const runtime = code('components/IntentRuntime.tsx')
+    const workspace = code('components/ChatWorkspace.tsx')
+    check(
+      'onboarding: the chat wires the release — the door reports open/close (onOpenChange), the gate effect consumes connectAskReleased, and a miss says so in words with a way back ("Try connecting again")',
+      /onOpenChange\?\.\(next\)/.test(door) &&
+        /onOpenChange=\{setConnectDoorOpen\}/.test(chat) &&
+        /connectAskReleased\(\{/.test(chat) &&
+        /Nothing connected — nothing happened, nothing was sent\./.test(chat) &&
+        /Try connecting again/.test(chat),
+    )
+    check(
+      'onboarding: a reply that only said "connect your wallet" gives the guest ask back (refundGuestTurn on connectWallet === true), and the refund floors at zero',
+      /if \(guestTrialTurn && data\.connectWallet === true\) refundGuestTurn\(\)/.test(chat) &&
+        /Math\.max\(0, guestTurnsUsed\(\) - 1\)/.test(code('lib/guest-trial.ts')),
+    )
+    check(
+      'onboarding: signing in to KEEP a guest thread moves the address bar to the DB id (a reload lands on the kept thread, not an empty chat)',
+      /window\.location\.pathname === `\/chat\/\$\{chat\.id\}`/.test(store) && /replaceState\(null, '', `\/chat\/\$\{created\.id\}/.test(store),
+    )
+    check(
+      'onboarding: an intent link\'s composed set is the LINK\'s — /i marks it (setLinkServerIds), the bare /chat clears it before seeding, and any hand-picked set un-marks it',
+      /setLinkServerIds\(ids\)/.test(runtime) &&
+        /linkSetActive: true/.test(store) &&
+        /setActiveServerIds: \(ids\) => set\(\{ activeServerIds: ids, linkSetActive: false \}\)/.test(store) &&
+        /linkSetActive: state\.linkSetActive/.test(store) &&
+        /if \(chatId \|\| servers\.length === 0 \|\| !linkSetActive\) return/.test(workspace),
+    )
+    check(
+      'onboarding: the guest banner promises a connect and its button connects (walletConnectOnly door, "Connect wallet" — not "Sign in"); signing out of the app lands on /chat, not the marketing page',
+      /Connect a wallet when you want to sign what it builds\./.test(gate) &&
+        (gate.match(/<span>Connect wallet<\/span>/g) ?? []).length === 1 &&
+        /'Connect wallet'\}<\/span>/.test(gate) &&
+        !/<span>Sign in<\/span>/.test(gate) &&
+        /walletConnectOnly\s+redirectTo=\{hereWithQuery\(\)\}/.test(gate) &&
+        /pathname\?\.startsWith\('\/chat'\) \? '\/chat' : '\/'/.test(nav),
+    )
+    check(
+      'onboarding: after the on-ramp chip the chat says a Stripe tab opened and that it is watching the chain (the handoff moment is named, not implied)',
+      /Stripe opened in a new tab — finish the purchase there, then come back\. Watching \$\{chainName\} for the funds/.test(chips),
+    )
+  }
+  check(
+    'onboarding: the "Not now" resume regex accepts both house phrasings and nothing else',
+    NEVER_MIND_RESUME_RE.test('Never mind — leave my funds where they are.') &&
+      NEVER_MIND_RESUME_RE.test('Never mind — leave my USDC where it is.') &&
+      NEVER_MIND_RESUME_RE.test('never mind - leave my funds where they are') &&
+      !NEVER_MIND_RESUME_RE.test('Never mind, swap $5 of ETH to USDC') &&
+      !NEVER_MIND_RESUME_RE.test('leave my funds where they are'),
+  )
+  {
+    const r = await fetch(`${BASE}/api/chat`, {
+      method: 'POST',
+      headers: CJ,
+      body: JSON.stringify({ message: 'Never mind — leave my funds where they are.', activeServers: [] }),
+    })
+    const j = (await r.json().catch(() => ({}))) as { reply?: string; buildPath?: string; receipts?: unknown[] }
+    check(
+      'onboarding: "Not now" is answered natively — no planner turn, no diagnostics line, no old-brand engine pitch, nothing built',
+      r.status === 200 &&
+        j.buildPath === 'native-decline' &&
+        /nothing was built, nothing was spent/i.test(j.reply ?? '') &&
+        !/Diagnostics|Yeetful · Claude|house model/i.test(j.reply ?? '') &&
+        !(Array.isArray(j.receipts) && j.receipts.length > 0),
+    )
+  }
+  {
+    const html = await (await fetch(`${BASE}/`)).text()
+    check(
+      'onboarding: the landing install band names the shipped SDK line (v1.0), never the pre-rename v0.9',
+      !/v0\.9/.test(html) && /asm__ver[^<]*<\/span>|v1\.0/.test(html) && /v1\.0/.test(html),
+    )
+  }
 
   // ── THE STOREFRONT (lib/roster-managers + /api/roster/managers) ──────────
   console.log('— roster storefront (FIRST HIRE)')

@@ -109,7 +109,7 @@ export default function IntentRuntime({
   const { address, isConnected, status: walletStatus } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { status, needsSignIn, signIn, signingIn } = useSession()
-  const { servers, setServers, setActiveServerIds, setCurrentChatId } = useYeetfulStore()
+  const { servers, setServers, setLinkServerIds, setCurrentChatId } = useYeetfulStore()
 
   const [started, setStarted] = useState(false)
   const [built, setBuilt] = useState(false)
@@ -215,12 +215,14 @@ export default function IntentRuntime({
       .split(',')
       .map((s) => servers.find((srv) => srv.slug === s.trim())?.id)
       .filter((id): id is string => !!id)
-    if (ids.length) setActiveServerIds(ids)
+    // The LINK's set, marked as such — it runs this page and never becomes
+    // the wallet's working set on /chat (store.linkSetActive).
+    if (ids.length) setLinkServerIds(ids)
     // Definitive settle either way ([[chat-id-load-race]]): a stale slug
     // list must release the ask (the refusal copy then says what to add),
     // never hold the link's whole flow hostage.
     setMcpsReady(true)
-  }, [servers, mcps, setActiveServerIds])
+  }, [servers, mcps, setLinkServerIds])
 
   // Connect IS the consent: the moment a wallet is present, start the
   // runtime. The auto path (wagmi reconnect resolving a beat after load)

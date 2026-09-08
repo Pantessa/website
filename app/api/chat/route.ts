@@ -133,6 +133,7 @@ import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { fundChipFor, ONRAMP_NETWORK_LABEL } from '@/lib/onramp'
+import { NEVER_MIND_RESUME_RE } from '@/lib/funding-path'
 import { fundingSourceSymbols, GAS_TOPUP_ETH, minLegNote, offChainStableSource, valueLegUsd, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
 import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-funding'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
@@ -456,6 +457,18 @@ async function handleChatTurn(req: NextRequest) {
       return NextResponse.json({
         reply: `The MCP${resolvedSet.dropped.length > 1 ? 's' : ''} in your set (${resolvedSet.dropped.slice(0, 4).join(', ')}) ${resolvedSet.dropped.length > 1 ? 'are' : 'is'} not in the Pantessa directory — or not approved yet. Pantessa only routes to reviewed MCPs. Pick from the directory, or request yours from the ＋ menu and a reviewer will look at it.`,
         notes: [`Dropped off-directory servers: ${resolvedSet.dropped.join(', ')}`],
+      })
+    }
+    // "Not now" — the decline chip every funding refusal carries. Its resume
+    // is ours ("Never mind — leave my funds where they are."), so answer it
+    // here, deterministically: it used to fall to the planner, which spent a
+    // house-model inference (and a guest ask) to say "Understood" and then
+    // appended an add-a-paid-engine diagnostics line — on a stranger's
+    // first dead end (squad gtm 2026-09-08). Nothing was built or spent.
+    if (NEVER_MIND_RESUME_RE.test(message.trim())) {
+      return NextResponse.json({
+        reply: 'Left as is — nothing was built, nothing was spent. Ask again whenever the funds are there, or try something else.',
+        buildPath: 'native-decline',
       })
     }
     // Client-supplied turn id → the manual path records its reasoning to

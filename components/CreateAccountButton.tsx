@@ -50,6 +50,7 @@ export default function CreateAccountButton({
   label = 'Create an account',
   redirectTo = '/dashboard',
   walletConnectOnly = false,
+  onOpenChange,
 }: {
   className?: string
   /** Inline trigger styling — branded /i splashes repaint the CTA in the
@@ -63,8 +64,16 @@ export default function CreateAccountButton({
    *  Email/Google lanes are unaffected: their CDP auth IS their wallet, and
    *  any signature they later make is silent (no extension popup). */
   walletConnectOnly?: boolean
+  /** Fires when the door opens/closes — a caller that armed something on
+   *  the click (the chat's connect gate) needs to know the door went away
+   *  WITHOUT a connection, or its "Connecting…" state never releases. */
+  onOpenChange?: (open: boolean) => void
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpenState] = useState(false)
+  const setOpen = (next: boolean) => {
+    setOpenState(next)
+    onOpenChange?.(next)
+  }
   return (
     <>
       <button type="button" className={className} style={style} onClick={() => setOpen(true)}>

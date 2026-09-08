@@ -40,11 +40,11 @@ import { useYeetfulStore, type RouterTraceEvent } from '@/lib/store'
 import { useSession } from '@/lib/session'
 import { latestWorkingContext, type WorkingContext } from '@/lib/working-context'
 import { EXAMPLE_PROMPTS, TRY_PROMPTS } from '@/lib/examples'
-import { GUEST_TRIAL_LIMIT, bumpGuestTurns, guestTurnsUsed } from '@/lib/guest-trial'
+import { GUEST_TRIAL_LIMIT, bumpGuestTurns, guestTurnsUsed, refundGuestTurn } from '@/lib/guest-trial'
 import EmptyState from '@/components/chat/EmptyState'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
-import { hasStoredWalletConnection, shouldRerunConnectAsk } from '@/lib/wallet-reconnect'
+import { CONNECT_ASK_RELEASE_GRACE_MS, connectAskReleased, hasStoredWalletConnection, shouldRerunConnectAsk } from '@/lib/wallet-reconnect'
 import { SplashDashboard } from '@/components/SplashDashboard'
 import ChatLoader from '@/components/ChatLoader'
 import { splashCapable } from '@/lib/splash/types'
@@ -859,6 +859,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           content: data.reply || data.error || 'No response.',
           meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio, data.buildPath, data.jobId, data.guardianPolicyId, data.jobToken, data.nfts, data.nftMarket, data.dcaArm, data.spotGuardArm),
         })
+        // A reply that only said "connect your wallet" answered nothing —
+        // the guest allowance is for answers, not for doors (QA O-3).
+        if (guestTrialTurn && data.connectWallet === true) refundGuestTurn()
         // A standing intent was born this turn (job / DCA schedule / guardian
         // policy): the JobCard renders inline, AND the rail flips to Jobs so
         // its badge shows the new running work — the user never has to guess
@@ -1014,10 +1017,31 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // wallet. The button below the reply connects one — the host-page bridge
   // when this is an embed with a bridged provider, else the RainbowKit
   // modal — and the original ask re-runs the moment an address lands.
-  const { openConnectModal } = useConnectModal()
+  const { openConnectModal, connectModalOpen } = useConnectModal()
   const { connectAsync: connectForTx, connectors: txConnectors } = useConnect()
   const hostBridge = useSyncExternalStore(subscribeHostWallet, getHostWalletState, getHostWalletServerState)
   const [pendingConnectAsk, setPendingConnectAsk] = useState<string | null>(null)
+  // The way back: the gate used to read "Connecting…" forever once pressed
+  // unless an address landed (door dismissed, wallet not installed, request
+  // rejected — QA O-4, reproduced live). lib/wallet-reconnect decides when
+  // nothing is still trying; a short grace covers door→list handoff.
+  const [connectDoorOpen, setConnectDoorOpen] = useState(false)
+  const [connectMissed, setConnectMissed] = useState(false)
+  useEffect(() => {
+    const released = connectAskReleased({
+      pending: pendingConnectAsk !== null,
+      hasAddress: !!effectiveAddress,
+      doorOpen: connectDoorOpen,
+      listOpen: !!connectModalOpen,
+      walletStatus,
+    })
+    if (!released) return
+    const t = window.setTimeout(() => {
+      setPendingConnectAsk(null)
+      setConnectMissed(true)
+    }, CONNECT_ASK_RELEASE_GRACE_MS)
+    return () => window.clearTimeout(t)
+  }, [pendingConnectAsk, effectiveAddress, connectDoorOpen, connectModalOpen, walletStatus])
   const connectForAsk = (ask: string) => {
     setPendingConnectAsk(ask)
     const hostConnector = txConnectors.find((c) => c.id === HOST_WALLET_CONNECTOR_ID)
@@ -1897,9 +1921,17 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                           const label = (
                             <>
                               <Zap className="w-3.5 h-3.5" />
-                              {pendingConnectAsk !== null ? 'Connecting…' : 'Connect wallet to continue'}
+                              {pendingConnectAsk !== null ? 'Connecting…' : connectMissed ? 'Try connecting again' : 'Connect wallet to continue'}
                             </>
                           )
+                          // Only the newest connect gate carries the miss line —
+                          // an older one in the thread is history.
+                          const isLastMsg = i === currentChat.messages.length - 1
+                          const missed = connectMissed && isLastMsg && pendingConnectAsk === null ? (
+                            <p className="mt-1.5 text-[12px] text-[color:var(--muted)]">
+                              Nothing connected — nothing happened, nothing was sent. Try again, or use Google or email in the door.
+                            </p>
+                          ) : null
                           // First-party surfaces open the UNIFIED door (wallet /
                           // Google / email — rule 6): a stranger with no extension
                           // used to hit RainbowKit's wallet list here and dead-end.
@@ -1909,26 +1941,41 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                           // The embed keeps the host-bridge / RainbowKit path.
                           if (cdpEnabled && !embedded) {
                             return (
-                              <span
-                                className="inline-flex"
-                                onClickCapture={() => {
-                                  if (loading || pendingConnectAsk !== null) return
-                                  setPendingConnectAsk(connectAsk)
-                                }}
-                              >
-                                <CreateAccountButton
-                                  className={cls}
-                                  label={label}
-                                  walletConnectOnly
-                                  redirectTo={typeof window === 'undefined' ? '/chat' : window.location.pathname + window.location.search}
-                                />
-                              </span>
+                              <div>
+                                <span
+                                  className="inline-flex"
+                                  onClickCapture={() => {
+                                    if (loading || pendingConnectAsk !== null) return
+                                    setConnectMissed(false)
+                                    setPendingConnectAsk(connectAsk)
+                                  }}
+                                >
+                                  <CreateAccountButton
+                                    className={cls}
+                                    label={label}
+                                    walletConnectOnly
+                                    onOpenChange={setConnectDoorOpen}
+                                    redirectTo={typeof window === 'undefined' ? '/chat' : window.location.pathname + window.location.search}
+                                  />
+                                </span>
+                                {missed}
+                              </div>
                             )
                           }
                           return (
-                            <button className={cls} disabled={loading || pendingConnectAsk !== null} onClick={() => connectForAsk(connectAsk)}>
-                              {label}
-                            </button>
+                            <div>
+                              <button
+                                className={cls}
+                                disabled={loading || pendingConnectAsk !== null}
+                                onClick={() => {
+                                  setConnectMissed(false)
+                                  connectForAsk(connectAsk)
+                                }}
+                              >
+                                {label}
+                              </button>
+                              {missed}
+                            </div>
                           )
                         })()
                       )}
