@@ -49,7 +49,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'What happens when I run out?',
-    a: 'House-model answers pause until the month resets or you upgrade. Everything paid keeps working — add a paid engine like Yeetful · Claude and the chat continues pay-per-call.',
+    a: 'House-model answers pause until the month resets or you upgrade. Everything paid keeps working — add a paid engine like Pantessa · Claude and the chat continues pay-per-call.',
   },
 ]
 
