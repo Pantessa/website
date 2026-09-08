@@ -425,6 +425,13 @@ export async function gateSignablePayload<T extends Record<string, unknown>>(
 ): Promise<{ payload: T; verdict: AffordabilityVerdict | null }> {
   if (!wallet || !isAddress(wallet)) return { payload, verdict: null }
   if (!payload.txRequest && !payload.txChain && !payload.orderRequest) return { payload, verdict: null }
+  // The one declared exemption: a resting CoW limit order settles whenever
+  // the funds arrive, and the swap layer SAYS so on the card (the 💤 line).
+  // Only the route composes payloads, so a tool can't declare this for itself.
+  const exempt = (payload.affordability as { exempt?: unknown } | undefined)?.exempt
+  if (exempt === 'resting-limit-order' && payload.orderRequest && !payload.txRequest && !payload.txChain) {
+    return { payload, verdict: { kind: 'no-spend' } }
+  }
   const verdict = await checkAffordability(wallet, payload, opts.reader)
   if (verdict.kind === 'unknown') opts.log?.(`[affordability] unverified signable (${verdict.reason}) — passing the artifact through`)
   if (verdict.kind !== 'short') return { payload, verdict }

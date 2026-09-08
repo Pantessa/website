@@ -5735,8 +5735,8 @@ async function main() {
     check('swap intent: the bare LIMIT_EXAMPLES parse as limit orders without the word "limit" ("for at least" IS the phrase)', LIMIT_EXAMPLES.every((ex) => { const p = parseSwapIntent(ex); return p.isSwap && p.mode === 'limit' && !p.problem }))
     const cowLimitEmpty = await chatJson({ message: `limit order: ${LIMIT_EXAMPLES[0]}`, walletAddress: strangerWallet })
     check(
-      'P-1: a resting limit order on an empty wallet is the one exemption — and SAYS it fills only once funded',
-      !cowLimitEmpty.orderRequest || /fills only once/.test(String(cowLimitEmpty.reply)),
+      'P-1: a resting limit order on an empty wallet is the one exemption — the ORDER is offered (declared exempt, the exit gate honors it) and the card SAYS it fills only once funded',
+      !!cowLimitEmpty.orderRequest && cowLimitEmpty.buildPath === 'native-swap-cow' && /fills only once/.test(String(cowLimitEmpty.reply)) && (cowLimitEmpty.affordability as { exempt?: string } | undefined)?.exempt === 'resting-limit-order',
       JSON.stringify(cowLimitEmpty).slice(0, 300),
     )
     // The stock-list READ: list + Buy chips, every chip a swap the layer builds.
@@ -5854,6 +5854,9 @@ async function main() {
       check('affordability gate: an unreadable balance passes the artifact through (the layer’s own guard stood behind it)', unknownPass.verdict?.kind === 'unknown' && !!unknownPass.payload.txRequest && unknownPass.payload.buildPath === 'native-cross-chain')
       const loneApprove = await gateSignablePayload({ reply: 'x', txRequest: tx(approveData(FIVE_USDC)) }, W, { reader: reader(BigInt(0), BigInt(0)) })
       check('affordability gate: a lone bounded approve is not gated', loneApprove.verdict?.kind === 'no-spend' && !!loneApprove.payload.txRequest)
+      const exemptOrder = await gateSignablePayload({ reply: 'x', orderRequest: orderPayload.orderRequest, buildPath: 'native-swap-cow', affordability: { exempt: 'resting-limit-order' } } as Record<string, unknown>, W, { reader: reader(BigInt(0), BigInt(0)) })
+      const fakeExemptTx = await gateSignablePayload({ reply: 'x', txRequest: tx(transferData), affordability: { exempt: 'resting-limit-order' } } as Record<string, unknown>, W, { reader: reader(BigInt(0), BigInt(0)) })
+      check('affordability gate: the declared resting-limit-order exemption keeps the ORDER; the same flag on a transaction is ignored', exemptOrder.verdict?.kind === 'no-spend' && !!(exemptOrder.payload as { orderRequest?: unknown }).orderRequest && fakeExemptTx.verdict?.kind === 'short' && !(fakeExemptTx.payload as { txRequest?: unknown }).txRequest)
 
       // Source pins: the gate is wired at BOTH /api/chat exits and the jobs offer.
       {
@@ -5925,17 +5928,23 @@ async function main() {
       const jobTurn = await fetch(`${BASE}/api/chat`, { method: 'POST', headers: linkHeaders, body: JSON.stringify({ message: 'swap 1 USDC for ETH on base, then send 0.0001 ETH to 0x1848a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a03c59 on base', walletAddress: W, activeServers: [{ slug: 'uniswap-free' }], history: [] }) }).then((r) => r.json() as Promise<{ jobId?: string; jobToken?: string; buildPath?: string }>)
       if (jobTurn.jobId) {
         const t = encodeURIComponent(jobTurn.jobToken ?? '')
-        let jobRead: { job?: { status?: string; failReason?: string | null; steps?: { status: string; result?: { error?: string } | null }[] } } = {}
+        let jobRead: { job?: { status?: string; failReason?: string | null; steps?: { status: string; result?: { error?: string; withheld?: boolean } | null }[] } } = {}
         for (let i = 0; i < 10; i++) {
           jobRead = (await (await fetch(`${BASE}/api/jobs/${jobTurn.jobId}?t=${t}`)).json()) as typeof jobRead
-          if (jobRead.job?.steps?.[0]?.status === 'failed' || jobRead.job?.steps?.[0]?.status === 'offered') break
+          const s0 = jobRead.job?.steps?.[0]
+          if (s0?.status === 'failed' || s0?.status === 'offered' || (s0?.status === 'pending' && s0.result?.withheld)) break
           await new Promise((r) => setTimeout(r, 500))
         }
+        const s0 = jobRead.job?.steps?.[0]
         check(
-          'affordability gate (jobs): a $0 wallet’s first swap step is never OFFERED — it fails with "would spend 1 USDC on Base and the wallet holds 0 USDC"',
-          jobTurn.buildPath === 'native-job' && jobRead.job?.status === 'failed' && jobRead.job?.steps?.[0]?.status === 'failed' && /spend 1 USDC on Base and the wallet holds 0 USDC/.test(String(jobRead.job?.steps?.[0]?.result?.error ?? jobRead.job?.failReason ?? '')),
+          'affordability gate (jobs): a $0 wallet’s first swap step is never OFFERED — it is WITHHELD (pending, reason on the card: "would spend 1 USDC on Base and the wallet holds 0 USDC"), the job stays live for the top-up',
+          jobTurn.buildPath === 'native-job' && jobRead.job?.status === 'running' && s0?.status === 'pending' && s0.result?.withheld === true && /spend 1 USDC on Base and the wallet holds 0 USDC/.test(String(s0.result?.error ?? '')),
           JSON.stringify(jobRead).slice(0, 300),
         )
+        // The hold-down: a second poll right away does NOT re-quote (the step
+        // row is untouched — same updatedAt), and the job is still live.
+        const again = (await (await fetch(`${BASE}/api/jobs/${jobTurn.jobId}?t=${t}`)).json()) as typeof jobRead
+        check('affordability gate (jobs): a withheld step is not re-quoted on every poll (hold-down), and the job is still cancelable', again.job?.status === 'running' && again.job?.steps?.[0]?.status === 'pending' && again.job?.steps?.[0]?.result?.withheld === true)
         await fetch(`${BASE}/api/jobs/${jobTurn.jobId}?t=${t}`, { method: 'DELETE' }).catch(() => {})
       } else {
         check('affordability gate (jobs): the compound ask compiled as a job', false, JSON.stringify(jobTurn).slice(0, 200))

@@ -4675,6 +4675,10 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
       orderRequest: built.artifact.order,
       buildPath: 'native-swap-cow',
       guardrails: built.guardrails,
+      // The ONE affordability exemption, declared by the layer that knows:
+      // a resting limit order really does settle whenever the funds arrive
+      // (the 💤 line above says so) — the exit gate honors this and only this.
+      ...(intent.mode === 'limit' ? { affordability: { exempt: 'resting-limit-order' as const } } : {}),
       // Invariant #11: the order awaits SignOrderButton — write it as the
       // pending action so amount amendments and cancels resolve against it.
       workingContext: swapWorkingContext(intent, 'cow', ctx, chainId),
