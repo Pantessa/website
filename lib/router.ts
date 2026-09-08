@@ -511,7 +511,7 @@ export async function routeMessage(opts: RouteOptions): Promise<RouterDecision> 
   const inference = selectInferenceProvider(catalog)
   if (!inference) {
     emit({ type: 'status', label: 'No inference engine available.' })
-    addNote('No live inference engine is available — connect or enable one (e.g. Yeetful · Claude).', 'warn')
+    addNote('No live inference engine is available — connect or enable one (e.g. Pantessa · Claude).', 'warn')
     return { inference: null, smartPicks: [], picks: [], trace, notes, context: [], entities: [] }
   }
 
