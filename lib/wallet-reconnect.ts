@@ -95,20 +95,23 @@ export function connectAskReleased(input: {
   doorOpen: boolean
   /** RainbowKit's wallet list is on screen. */
   listOpen: boolean
-  /** wagmi's account status — 'connecting' = a connector is mid-handshake
-   *  (an extension popup, a deep link, a QR wait); 'reconnecting' = the
-   *  mount-time restore probe, which with the WalletConnect lane lit runs
-   *  ~9s after load on a fresh page. */
+  /** wagmi's account status. For ~9s after a fresh load (WalletConnect
+   *  lane lit) it reads 'connecting'/'reconnecting' with NOTHING to restore
+   *  — waiting on it held "Connecting…" ~5s after the door was dismissed
+   *  (measured live; 0.9s once the probe had settled). So the status holds
+   *  the gate only together with `storedConnection`. */
   walletStatus: 'connected' | 'connecting' | 'reconnecting' | 'disconnected'
-  /** hasStoredWalletConnection(): only then can 'reconnecting' land an
-   *  address. A fresh visitor's probe restores nothing — waiting on it held
-   *  "Connecting…" ~4s after the door was dismissed (measured live). */
+  /** hasStoredWalletConnection(): only then can the mount-time probe land
+   *  an address worth waiting for. */
   storedConnection: boolean
+  /** A handshake this surface started itself outside the door and the list
+   *  (the embed's host-bridge connect) — it releases the gate on its own
+   *  when it fails, and holds it while it runs. */
+  handshakeInFlight: boolean
 }): boolean {
-  const { pending, hasAddress, doorOpen, listOpen, walletStatus, storedConnection } = input
+  const { pending, hasAddress, doorOpen, listOpen, walletStatus, storedConnection, handshakeInFlight } = input
   if (!pending || hasAddress) return false
-  if (doorOpen || listOpen) return false
-  if (walletStatus === 'connecting') return false
-  if (walletStatus === 'reconnecting' && storedConnection) return false
+  if (doorOpen || listOpen || handshakeInFlight) return false
+  if ((walletStatus === 'connecting' || walletStatus === 'reconnecting') && storedConnection) return false
   return true
 }

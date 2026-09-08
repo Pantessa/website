@@ -4265,15 +4265,17 @@ async function main() {
   // ── The stranger's way back + what a guest ask is for (squad gtm 2026-09-08, round 2) ──
   console.log('— onboarding: connect gate releases; guest asks refund on doors; "Not now" is native; kept threads keep their URL')
   check(
-    'onboarding: the "Connecting…" gate releases only when nothing is still trying — held while the door or the wallet list is up, a connector is mid-handshake, or a STORED connection is still restoring (a fresh visitor\'s mount probe restores nothing and never holds it); never released once an address is here or when nothing was pending',
+    'onboarding: the "Connecting…" gate releases only when nothing is still trying — held while the door or the wallet list is up, a handshake this surface started is in flight, or a STORED connection is still restoring (a fresh visitor\'s ~9s mount probe restores nothing and never holds it); never released once an address is here or when nothing was pending',
     (() => {
-      const base = { pending: true, hasAddress: false, doorOpen: false, listOpen: false, walletStatus: 'disconnected' as const, storedConnection: false }
+      const base = { pending: true, hasAddress: false, doorOpen: false, listOpen: false, walletStatus: 'disconnected' as const, storedConnection: false, handshakeInFlight: false }
       return (
         connectAskReleased(base) === true &&
         connectAskReleased({ ...base, doorOpen: true }) === false &&
         connectAskReleased({ ...base, listOpen: true }) === false &&
-        connectAskReleased({ ...base, walletStatus: 'connecting' }) === false &&
+        connectAskReleased({ ...base, handshakeInFlight: true }) === false &&
+        connectAskReleased({ ...base, walletStatus: 'connecting', storedConnection: true }) === false &&
         connectAskReleased({ ...base, walletStatus: 'reconnecting', storedConnection: true }) === false &&
+        connectAskReleased({ ...base, walletStatus: 'connecting', storedConnection: false }) === true &&
         connectAskReleased({ ...base, walletStatus: 'reconnecting', storedConnection: false }) === true &&
         connectAskReleased({ ...base, hasAddress: true }) === false &&
         connectAskReleased({ ...base, pending: false }) === false &&

@@ -1041,6 +1041,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // nothing is still trying; a short grace covers door→list handoff.
   const [connectDoorOpen, setConnectDoorOpen] = useState(false)
   const [connectMissed, setConnectMissed] = useState(false)
+  const [handshakeInFlight, setHandshakeInFlight] = useState(false)
   useEffect(() => {
     const released = connectAskReleased({
       pending: pendingConnectAsk !== null,
@@ -1049,6 +1050,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       listOpen: !!connectModalOpen,
       walletStatus,
       storedConnection: hasStoredWalletConnection(typeof window === 'undefined' ? null : window.localStorage),
+      handshakeInFlight,
     })
     if (!released) return
     const t = window.setTimeout(() => {
@@ -1056,12 +1058,18 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       setConnectMissed(true)
     }, CONNECT_ASK_RELEASE_GRACE_MS)
     return () => window.clearTimeout(t)
-  }, [pendingConnectAsk, effectiveAddress, connectDoorOpen, connectModalOpen, walletStatus])
+  }, [pendingConnectAsk, effectiveAddress, connectDoorOpen, connectModalOpen, walletStatus, handshakeInFlight])
   const connectForAsk = (ask: string) => {
     setPendingConnectAsk(ask)
     const hostConnector = txConnectors.find((c) => c.id === HOST_WALLET_CONNECTOR_ID)
     if (embedded && hostBridge.available && hostConnector) {
-      connectForTx({ connector: hostConnector }).catch(() => setPendingConnectAsk(null))
+      setHandshakeInFlight(true)
+      connectForTx({ connector: hostConnector })
+        .catch(() => {
+          setPendingConnectAsk(null)
+          setConnectMissed(true)
+        })
+        .finally(() => setHandshakeInFlight(false))
     } else if (openConnectModal) {
       openConnectModal()
     }
