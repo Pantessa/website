@@ -55,8 +55,33 @@ export default function LinksStudioView({
 
       <MintLinkForm readQueryPrefill={readQueryPrefill} externalError={loadError} onMinted={reload} className="mb-8" />
 
-      {earnings && (earnings.totalEarnedUsd > 0 || earnings.totalSignedUsd > 0) && (
+      {earnings && (earnings.totalEarnedUsd > 0 || earnings.totalSignedUsd > 0) ? (
         <LinkEarningsPanel earnings={earnings} onClaimed={reload} className="mb-6" />
+      ) : (
+        links &&
+        links.length > 0 && (
+          // No earnings yet is a STATE, not an absence — say what fills it.
+          <p className="mb-6 text-[12px] text-[color:var(--muted-2)]">
+            Nothing earned yet — earnings appear here the first time a visitor signs a swap or stock buy
+            from one of your links.
+          </p>
+        )
+      )}
+
+      {/* The list is loading, or it failed: both used to render as an empty
+          studio with no word — indistinguishable from "you have no links". */}
+      {links === null && !loadError && (
+        <p className="text-[13px] text-[color:var(--muted-2)]" aria-live="polite">
+          Loading your links…
+        </p>
+      )}
+      {loadError && (
+        <p className="text-[13px] text-[color:var(--muted)]" role="status">
+          {loadError}{' '}
+          <button type="button" onClick={reload} className="text-[color:var(--accent)] hover:underline">
+            Try again
+          </button>
+        </p>
       )}
 
       {links && links.length > 0 && (

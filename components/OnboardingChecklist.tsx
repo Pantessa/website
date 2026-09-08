@@ -13,6 +13,7 @@ import { LINKS_STUDIO_HREF, linksStudioHref } from '@/lib/links-href'
 import { CheckCircle2, Circle, X } from 'lucide-react'
 import { Card } from '@/lib/dashboard-ui'
 import { dismissOnboarding, onboardingDismissed, useOnboardingStatus } from '@/lib/onboarding'
+import { LINK_FEE_PCT } from '@/lib/fees'
 
 export default function OnboardingChecklist() {
   const { status } = useOnboardingStatus()
@@ -57,7 +58,7 @@ export default function OnboardingChecklist() {
     },
     {
       label: 'Claim your earnings',
-      hint: 'You keep half of Pantessa\'s 0.20% fee on your links\' conversions. Claims open at $10, paid in USDC on Base.',
+      hint: `You keep half of Pantessa's ${LINK_FEE_PCT} link fee on your links' conversions. Claims open at $10, paid in USDC on Base.`,
       done: status.claimed,
       href: LINKS_STUDIO_HREF,
       cta: 'Claim',

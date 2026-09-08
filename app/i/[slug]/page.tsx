@@ -2,12 +2,14 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import prisma from '@/lib/db'
 import { brandFromRow } from '@/lib/brand-denylist'
+import { INTENT_SLUG_RE, linkLifecycle, type LinkLifecycle } from '@/lib/intent-links'
+import LinkRetired from '@/components/LinkRetired'
 import { outboundHoldCopy, outboundToThirdParty } from '@/lib/content-origin'
-import { INTENT_SLUG_RE } from '@/lib/intent-links'
 import { COUNTED_TURN_WHERE } from '@/lib/value-origin'
 import { notifyEligible } from '@/lib/broker-webhook'
 import { MANDATE_KIND_LABELS, type MandateKind } from '@/lib/roster-client'
 import IntentRuntime from '@/components/IntentRuntime'
+import { getSessionAddress } from '@/lib/auth'
 
 // /i/<slug> — an intent link's runtime. The link row carries the ASK (a
 // sentence, sanitized at mint) + the composed MCP set + an optional
@@ -20,22 +22,28 @@ export const dynamic = 'force-dynamic'
 
 type Params = { params: Promise<{ slug: string }> }
 
-async function getLink(slug: string) {
+type LinkRow = NonNullable<Awaited<ReturnType<typeof prisma.intentLink.findUnique>>>
+type LinkLookup = { link: LinkRow; state: 'live' } | { link: null; state: Exclude<LinkLifecycle, 'live'> } | null
+
+/** The row + its lifecycle. null = no such link (a true 404). A retired
+ *  link (revoked / expired / capped — one rule, linkLifecycle, shared with
+ *  the OG card) comes back with its STATE and no row: the page explains
+ *  which way it went instead of a bare framework 404, and never re-shows
+ *  the ask a creator may have retracted on purpose. Sign cap: SERVER-TRUTH
+ *  signs only (guardrail-priced embed_turns) — client-reported funnel
+ *  events can neither burn nor extend the cap. */
+async function getLink(slug: string): Promise<LinkLookup> {
   if (!INTENT_SLUG_RE.test(slug)) return null
   try {
     const l = await prisma.intentLink.findUnique({ where: { id: slug } })
-    if (!l || l.revoked) return null
-    // Expiry: a dead promo behaves exactly like a revoked link.
-    if (l.expiresAt && l.expiresAt.getTime() <= Date.now()) return null
+    if (!l) return null
     // Sign cap: SERVER-TRUTH signs only (guardrail-priced embed_turns) —
     // client-reported funnel events can neither burn nor extend the cap, and
     // (S-2) neither can a signed beacon whose receipt the verifier refused —
     // a stranger could otherwise exhaust a link's cap with spoofed hashes.
-    if (l.maxSigns !== null) {
-      const signs = await prisma.embedTurn.count({ where: { intentLinkSlug: slug, outcome: 'signed', ...COUNTED_TURN_WHERE } })
-      if (signs >= l.maxSigns) return null
-    }
-    return l
+    const signs = l.maxSigns !== null ? await prisma.embedTurn.count({ where: { intentLinkSlug: slug, outcome: 'signed', ...COUNTED_TURN_WHERE } }) : 0
+    const state = linkLifecycle(l, signs)
+    return state === 'live' ? { link: l, state } : { link: null, state }
   } catch {
     return null
   }
@@ -43,15 +51,21 @@ async function getLink(slug: string) {
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params
-  const link = await getLink(slug)
-  if (!link) return { title: 'Intent link · Pantessa', robots: { index: false, follow: false } }
+  const found = await getLink(slug)
+  if (!found) return { title: 'Intent link · Pantessa', robots: { index: false, follow: false } }
+  if (!found.link) return { title: 'This link is no longer live · Pantessa', robots: { index: false, follow: false } }
+  const link = found.link
   const title = `${link.ask} · Pantessa`
   const description =
     'One tap from ask to signed. Pantessa compiles this into guarded transactions — deterministic builders, fail-closed checks, receipts — and your wallet is the only thing that can sign.'
+  // House links (creator-less seeds, the asks the landing sends strangers
+  // to) are first-party product pages and ride the sitemap; a creator's
+  // link is theirs to share and stays out of the index (v1 default kept).
+  const house = link.creator === null
   return {
     title,
     description,
-    robots: { index: false, follow: false },
+    robots: house ? { index: true, follow: true } : { index: false, follow: false },
     openGraph: { title, description, siteName: 'Pantessa', type: 'website' },
     twitter: { card: 'summary_large_image', title, description },
   }
@@ -118,8 +132,10 @@ async function getBrand(creator: string | null): Promise<{ brand: ReturnType<typ
 
 export default async function IntentLinkPage({ params }: Params) {
   const { slug } = await params
-  const link = await getLink(slug)
-  if (!link) notFound()
+  const found = await getLink(slug)
+  if (!found) notFound()
+  if (!found.link) return <LinkRetired state={found.state} />
+  const link = found.link
   const { brand, handle: creatorHandle } = await getBrand(link.creator)
   const notify = await getNotify(link)
   const roster = await getRosterBadge(link.rosterSlotId)
@@ -130,6 +146,11 @@ export default async function IntentLinkPage({ params }: Params) {
   // converts. Metadata above stays on the base ask (stable OG card).
   const phrasings = [link.ask, ...link.variants]
   const variant = Math.floor(Math.random() * phrasings.length)
+  // The creator previewing their own link: a session peek (never a
+  // signature) so the page can say so — their visits don't count in the
+  // funnel (events route) and the copy shouldn't sell them their own call.
+  const viewer = link.creator ? await getSessionAddress().catch(() => null) : null
+  const ownLink = !!viewer && !!link.creator && viewer.toLowerCase() === link.creator.toLowerCase()
   // Content-origin fence (SECURITY-AUDIT §E5), decided SERVER-SIDE: the row's
   // mint-time stamp OR a fresh read of the phrasing actually shown (legacy
   // rows, A/B variants). A held link PREFILLS — the visitor presses send.
@@ -153,6 +174,7 @@ export default async function IntentLinkPage({ params }: Params) {
       notify={notify}
       roster={roster}
       recipient={link.recipient ?? null}
+      ownLink={ownLink}
     />
   )
 }

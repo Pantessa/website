@@ -19,6 +19,7 @@ import { getProtocolMark } from '@/components/protocol-marks'
 import { useSiteTheme } from '@/components/chart-theme'
 import SignInFlowLink from '@/components/SignInFlowLink'
 import { LINKS_STUDIO_HREF } from '@/lib/links-href'
+import { LINK_FEE_PCT } from '@/lib/fees'
 
 export interface LinkHeroStats {
   links: string
@@ -79,7 +80,7 @@ const TRANSMUTATIONS = [
   '🔗 /i/buy-aapl opened · funded cross-chain · signed · receipted',
   '⇄ swap built on Uniswap · signed by their own wallet · receipted',
   '🗳 vote cast on Snapshot · EIP-712 · their signature, their say',
-  '½ of the 0.20% fee → the link’s creator · claimable in USDC',
+  `½ of the ${LINK_FEE_PCT} link fee → the link’s creator · claimable in USDC`,
 ]
 
 interface Particle {
@@ -510,7 +511,7 @@ export default function LinksHeroView({ stats }: { stats: LinkHeroStats | null }
 
         {/* The link economy, live — server-truth numbers, same sources as
             /activity ($ = guardrail-priced signed notional attributed to
-            links; creator earnings = half the 20bps on fee-bearing
+            links; creator earnings = half the stamped tier (50bps link / 20bps chat) on fee-bearing
             conversions). */}
         {stats && (
           <div className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-3 w-full max-w-3xl">

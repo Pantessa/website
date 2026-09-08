@@ -46,7 +46,7 @@ export default function MintLinkModal({
   }
 
   const copyUrl = (m: Minted) => {
-    void navigator.clipboard.writeText(`${window.location.origin}${m.url}`).then(() => {
+    void navigator.clipboard.writeText(absoluteUrl(m.url)).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     })

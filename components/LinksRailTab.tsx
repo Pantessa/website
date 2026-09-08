@@ -8,7 +8,7 @@
 // surface (#553: connect to act, sign in to KEEP), so the tab gates on the
 // SIWE session and offers the sign-in, mirroring the Chats tab's door.
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Check, Copy, ExternalLink, Plus, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -18,8 +18,11 @@ import { useSession } from '@/lib/session'
 import { useIntentLinks, type LinkRow } from '@/lib/intent-links-ui'
 import { dismissOnboarding, onboardingDismissed, useOnboardingStatus, type OnboardingStatus } from '@/lib/onboarding'
 import MintLinkModal from '@/components/MintLinkModal'
+import { useLinksChanged } from '@/lib/links-changed'
+import { linkLifecycle } from '@/lib/intent-links'
 import CreatorPageModal from '@/components/CreatorPageModal'
 import { LivePill } from '@/components/LivePill'
+import { absoluteUrl } from '@/lib/site-url'
 
 // One CTA look for every journey step — accent-based so both themes hold
 // (the done-state emerald sweep is #597 Lane U territory; don't add to it).
@@ -139,19 +142,23 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
   const [copied, setCopied] = useState<string | null>(null)
   const [handle, setHandle] = useState<string | null>(null)
 
-  const fetchHandle = () => {
+  const fetchHandle = useCallback(() => {
     void fetch('/api/intent-links/handle', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { handle: string | null } | null) => setHandle(d?.handle ?? null))
       .catch(() => {})
-  }
+  }, [])
+  // A claim / rename / release on the studio's panel (its own hook copy)
+  // used to leave this seat on "Name your page →" until a reload — the
+  // squad drive caught it right after a claim (2026-09-08).
+  useLinksChanged(fetchHandle)
   useEffect(() => {
     setJourneyDismissed(onboardingDismissed())
     fetchHandle()
   }, [])
 
   const copy = (slug: string) => {
-    void navigator.clipboard.writeText(`${window.location.origin}/i/${slug}`).then(() => {
+    void navigator.clipboard.writeText(absoluteUrl(`/i/${slug}`)).then(() => {
       setCopied(slug)
       setTimeout(() => setCopied(null), 1500)
     })
@@ -214,6 +221,19 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
           >
             <span className="flex items-center gap-1.5">
               <span className="mono text-[12px] text-[color:var(--accent)] truncate">/i/{l.slug}</span>
+              {/* expired / sign-capped: the same pill as the studio table —
+                  the rail listed dead links like live ones (squad gtm 2026-09-08). */}
+              {(() => {
+                const state = linkLifecycle({ revoked: false, expiresAt: l.expiresAt, maxSigns: l.maxSigns }, l.signsCount)
+                return state !== 'live' ? (
+                  <span
+                    className="flex-shrink-0 mono text-[9px] uppercase tracking-widest rounded-full border border-amber-400/40 text-amber-400 px-1.5 py-px"
+                    data-link-row-state={state}
+                  >
+                    {state}
+                  </span>
+                ) : null
+              })()}
               {copied === l.slug ? (
                 <Check className="w-3 h-3 flex-shrink-0 text-[color:var(--accent)]" />
               ) : (
@@ -275,11 +295,14 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
             Name your page → one branded page for every link
           </button>
         )}
-        <div className="flex items-center justify-between gap-2">
+        {/* flex-wrap: the seat is ~230px wide and the live pill ~170px — side
+            by side the sentence wrapped one word per line beside the pill;
+            now the pill drops under it when both can't fit. */}
+        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
           <button
             type="button"
             onClick={() => setMainView('links')}
-            className="flex-1 min-w-0 text-left text-[10px] text-[color:var(--muted-2)] hover:text-[color:var(--muted)] transition-colors"
+            className="flex-1 min-w-[9rem] text-left text-[10px] text-[color:var(--muted-2)] hover:text-[color:var(--muted)] transition-colors"
           >
             Funnels, branding{earnings && earnings.totalEarnedUsd > 0 ? ', earnings' : ''} → your links
           </button>

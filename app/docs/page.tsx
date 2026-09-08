@@ -4,6 +4,7 @@ import { ArrowUpRight } from 'lucide-react'
 import EmbedDemo from '@/components/EmbedDemo'
 import EmbedInstall from '@/components/EmbedInstall'
 import { DOCS_PAGES, DOORS, docsJsonLd, docsUrl, doorPages } from '@/lib/docs'
+import { LINK_FEE_PCT } from '@/lib/fees'
 
 // The /docs landing — told story-first: Pantessa is the non-custodial back
 // office for autonomous money, and the docs open three doors for three
@@ -61,7 +62,7 @@ const DOOR_CARDS = [
       <>
         Mint <code>/i/&lt;slug&gt;</code> links that carry a plain-English ask. Whoever opens
         one connects <strong>their own wallet</strong>, Pantessa builds the guarded path, they
-        sign — and you earn half of the 0.20% fee on every conversion your link produces, with
+        sign — and you earn half of the {LINK_FEE_PCT} link fee on every conversion your link produces, with
         a live funnel to prove it.
       </>
     ),

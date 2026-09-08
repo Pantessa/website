@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
 import { HOUSE_LINKS } from '@/lib/house-links'
-import { FEE_BEARING_BUILD_PATHS, FEES_LIVE_SINCE, CREATOR_FEE_SPLIT, netFeeBpsFor } from '@/lib/fees'
+import { FEE_BEARING_BUILD_PATHS, FEES_LIVE_SINCE, CREATOR_FEE_SPLIT, netFeeBpsForTurn } from '@/lib/fees'
 import { COUNTED_TURN_WHERE, INTERNAL_TRAFFIC_WHERE, REAL_TRAFFIC_SQL } from '@/lib/value-origin'
 
 // The intent-links board data, shared by /links (the full leaderboard) and
@@ -161,14 +161,50 @@ export interface CreatorPageRow {
   movedUsd: number
 }
 
+export interface PublicCreatorHandle {
+  handle: string
+  creator: string
+  createdAt: Date
+  brandUpdatedAt: Date | null
+}
+
+/** The claimed creator pages a PUBLIC surface may list — the /links board's
+ *  "Creator pages" strip and the sitemap. Claiming a handle is the opt-in,
+ *  but the listing is fenced the way the recently-minted tab is (#699):
+ *  a handle rides only while its creator holds at least one LIVE link that
+ *  is not our own harness/drill mint (`is_internal`). Every test:api run
+ *  claims `harness-store` on the shared DB and prod drills claim theirs —
+ *  unfenced, those pages sat on the front door of the links pitch and were
+ *  handed to crawlers as `/l/<handle>` (squad gtm 2026-09-08, SECURITY r2).
+ *  The page itself still renders at `/l/<handle>` for anyone holding the
+ *  URL; only the listings ask this question. */
+export async function publicCreatorHandles(limit = 50): Promise<PublicCreatorHandle[]> {
+  const handles = await prisma.creatorHandle.findMany({
+    select: { handle: true, creator: true, createdAt: true, brandUpdatedAt: true },
+  })
+  if (handles.length === 0) return []
+  const live = await prisma.intentLink.findMany({
+    where: {
+      creator: { in: handles.map((h) => h.creator) },
+      revoked: false,
+      isInternal: false,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+    },
+    select: { creator: true },
+    distinct: ['creator'],
+  })
+  const organic = new Set(live.map((l) => l.creator))
+  return handles.filter((h) => organic.has(h.creator)).slice(0, limit)
+}
+
 export async function creatorPages(limit = 50): Promise<CreatorPageRow[]> {
   try {
-    const handles = await prisma.creatorHandle.findMany({ take: limit })
+    const handles = await publicCreatorHandles(limit)
     if (handles.length === 0) return []
     const creators = handles.map((h) => h.creator)
     const [links, moved] = await Promise.all([
       prisma.intentLink.findMany({
-        where: { creator: { in: creators }, revoked: false },
+        where: { creator: { in: creators }, revoked: false, isInternal: false },
         select: { id: true, creator: true },
       }),
       prisma.embedTurn.groupBy({
@@ -274,18 +310,23 @@ export async function feeSummary(): Promise<FeeSummary | null> {
     // Grouped by path: each venue hands over a different NET rate (NEAR
     // Intents keeps half of its app fee), so one blended multiply would
     // overstate the treasury on every cross-chain dollar.
+    // …and by the STAMPED tier (C2b): a link-origin swap carries 50 bps,
+    // organic chat 20 — grouping by path alone priced every link dollar at
+    // the chat rate, so the public creator figure ran 2.5× under the
+    // creator's own panel (2026-09-08 squad find). netFeeBpsForTurn is the
+    // one reader the owner API already uses.
     const [all, linked] = await Promise.all([
-      prisma.embedTurn.groupBy({ by: ['buildPath'], where: feeWhere, _sum: { valueUsd: true }, _count: { _all: true } }),
+      prisma.embedTurn.groupBy({ by: ['buildPath', 'feeBps'], where: feeWhere, _sum: { valueUsd: true }, _count: { _all: true } }),
       prisma.embedTurn.groupBy({
-        by: ['buildPath'],
+        by: ['buildPath', 'feeBps'],
         where: { ...feeWhere, intentLinkSlug: { not: null } },
         _sum: { valueUsd: true },
       }),
     ])
     const feeBearingUsd = all.reduce((s, r) => s + (r._sum.valueUsd ?? 0), 0)
-    const totalFeeUsd = all.reduce((s, r) => s + (r._sum.valueUsd ?? 0) * (netFeeBpsFor(r.buildPath) / 10_000), 0)
+    const totalFeeUsd = all.reduce((s, r) => s + (r._sum.valueUsd ?? 0) * (netFeeBpsForTurn(r.buildPath, r.feeBps) / 10_000), 0)
     const creatorUsd = linked.reduce(
-      (s, r) => s + (r._sum.valueUsd ?? 0) * (netFeeBpsFor(r.buildPath) / 10_000) * CREATOR_FEE_SPLIT,
+      (s, r) => s + (r._sum.valueUsd ?? 0) * (netFeeBpsForTurn(r.buildPath, r.feeBps) / 10_000) * CREATOR_FEE_SPLIT,
       0,
     )
     return {

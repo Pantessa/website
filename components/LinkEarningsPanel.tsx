@@ -8,6 +8,7 @@
 import { useState } from 'react'
 import { formatEarnedUsd } from '@/lib/fees'
 import type { Earnings } from '@/lib/intent-links-ui'
+import { notifyLinksChanged } from '@/lib/links-changed'
 
 export function LinkEarningsPanel({
   earnings,
@@ -34,11 +35,17 @@ export function LinkEarningsPanel({
         disabled={earnings.claimableUsd < earnings.minClaimUsd}
         onClick={() =>
           void fetch('/api/intent-links/claims', { method: 'POST' })
-            .then((r) => r.json())
-            .then((d: { error?: string; amountUsd?: number; note?: string }) => {
-              setClaimMsg(d.error ?? `Claim filed for $${d.amountUsd?.toFixed(2)} — ${d.note ?? ''}`)
+            .then(async (r) => {
+              const d = (await r.json().catch(() => ({}))) as { error?: string; amountUsd?: number; note?: string }
+              if (d.error) setClaimMsg(d.error)
+              else if (typeof d.amountUsd === 'number') setClaimMsg(`Claim filed for $${d.amountUsd.toFixed(2)}${d.note ? ` — ${d.note}` : ''}`)
+              else setClaimMsg(r.ok ? 'Claim filed.' : 'The claim didn\u2019t go through — try again in a moment.')
+              notifyLinksChanged()
               onClaimed?.()
             })
+            // A network failure used to reject unhandled: no message, a
+            // button that looked ignored. Say so instead.
+            .catch(() => setClaimMsg('Could not reach the claims desk — check your connection and try again.'))
         }
         className="btn btn--solid text-[12px] disabled:opacity-50"
         title={earnings.claimableUsd < earnings.minClaimUsd ? `Claims open at $${earnings.minClaimUsd}` : 'Claim as USDC on Base'}

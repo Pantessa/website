@@ -2,7 +2,8 @@
 
 // Dashboard Overview · the links-first headline card: your link economy at a
 // glance — links live, opens, conversions, dollars moved, and what you've
-// earned (half the 0.20% fee on fee-bearing conversions) — plus the links
+// earned (the creator's half of the link-tier fee on fee-bearing conversions,
+// LINK_FEE_PCT from lib/fees) — plus the links
 // themselves as a paginated copy-paste table (newest first, one tap to put
 // the full /i URL on the clipboard). Reads the same owner API as
 // the links studio, so the numbers can't drift. Fail-soft: any fetch
@@ -15,6 +16,7 @@ import { Check, Copy, Link2, Plus } from 'lucide-react'
 import { Card } from '@/lib/dashboard-ui'
 import { formatEarnedUsd } from '@/lib/fees'
 import { absoluteUrl } from '@/lib/site-url'
+import { LINK_FEE_PCT } from '@/lib/fees'
 
 interface LinksApi {
   links: {
@@ -52,7 +54,7 @@ const usd = (n: number) => (n >= 1000 ? `$${Math.round(n).toLocaleString('en-US'
  *  all. Bridges (NEAR Intents), transfers, stakes and sales are fee-free by
  *  the conversions-not-movements rule, so they earn a creator nothing. */
 const FEE_FREE_NOTE =
-  'You keep half of the 0.20% fee on swaps and stock buys. Bridges, transfers, stakes and sales are fee-free — they move money but earn nothing.'
+  `You keep half of the ${LINK_FEE_PCT} link fee on swaps and stock buys. Bridges, transfers, stakes and sales are fee-free — they move money but earn nothing.`
 
 const PAGE_SIZE = 5
 
@@ -66,7 +68,7 @@ function CopyLinkButton({ url }: { url: string }) {
       aria-label="Copy the link URL"
       title="Copy the link URL"
       onClick={() => {
-        const abs = `${window.location.origin}${url}`
+        const abs = absoluteUrl(url)
         void navigator.clipboard?.writeText(abs).then(() => {
           setCopied(true)
           setTimeout(() => setCopied(false), 1500)
@@ -116,7 +118,7 @@ export default function LinksSummaryCard() {
             <Link2 className="w-4 h-4 text-[color:var(--accent)]" /> Your intent links
           </p>
           <p className="text-xs text-[color:var(--muted-2)] mt-0.5">
-            A sentence anyone can act on — you keep half of Pantessa&apos;s 0.20% fee on the
+            A sentence anyone can act on — you keep half of Pantessa&apos;s {LINK_FEE_PCT} link fee on the
             conversions your links produce.{' '}
             <Link href={LINKS_STUDIO_HREF} className="underline underline-offset-2 decoration-dotted hover:text-white">
               Open your links →

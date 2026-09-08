@@ -28,6 +28,7 @@ import { base } from 'viem/chains'
 import { dryRunTx, isAllowanceLag } from '../lib/dry-run'
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
+import { LINK_FEE_PCT } from '../lib/fees'
 import { ROBINHOOD_DESK } from '../lib/live-examples'
 import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import {
@@ -52,7 +53,7 @@ import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
 import { FIRST_PARTY_MCP_SOURCE, guardPlannerArtifact, isFirstPartyMcp, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { LIMIT_EXAMPLES, parseSwapIntent, swapClarify } from '../lib/swap-intent'
-import { activeLinkCapFor, composeMcps, linkEyebrow, linkLockup, linkLockupWord } from '../lib/intent-links'
+import { activeLinkCapFor, composeMcps, isCrossChainAsk, linkEyebrow, linkLockup, linkLockupWord, runsOnLabel } from '../lib/intent-links'
 import { DEFAULT_TAB, parseTabParam, tabUrl } from '../lib/app-tab-url'
 import { LINKS_STUDIO_HREF } from '../lib/links-href'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
@@ -1282,6 +1283,24 @@ async function main() {
     // STATIC route (baked at build) — no live delta to observe, so pin the
     // reader contract at the source: both counts must go through is_internal.
     const heroSrc = await readFile(new URL('../components/LinksHero.tsx', import.meta.url), 'utf8')
+    // Public creator-earnings figures must price each turn at its STAMPED
+    // tier (netFeeBpsForTurn) — grouping by path alone priced link dollars
+    // at the chat rate, 2.5× under the creator's own studio.
+    const boardSrc = await readFile(new URL('../lib/links-board.ts', import.meta.url), 'utf8')
+    check(
+      'fee tier: the public feeSummary + homepage creator stat group by feeBps and read netFeeBpsForTurn',
+      /by: \['buildPath', 'feeBps'\]/.test(heroSrc) && /netFeeBpsForTurn\(t\.buildPath, t\.feeBps\)/.test(heroSrc) &&
+        /by: \['buildPath', 'feeBps'\]/.test(boardSrc) && /netFeeBpsForTurn\(r\.buildPath, r\.feeBps\)/.test(boardSrc) &&
+        !/netFeeBpsFor\(/.test(heroSrc) && !/netFeeBpsFor\(/.test(boardSrc),
+    )
+    // The host-button snippet is HTML a third party pastes permanently:
+    // it must carry the canonical origin, never window.location (the SSR
+    // pass rendered a RELATIVE href="/i/<slug>" into the preview).
+    const generatorSrc = await readFile(new URL('../app/links/embed/generator.tsx', import.meta.url), 'utf8')
+    check(
+      'embed generator: snippet + copy use the canonical SITE_URL, never window.location.origin',
+      !/window\.location\.origin/.test(generatorSrc) && /buttonSnippet\(SITE_URL/.test(generatorSrc),
+    )
     check(
       'hero strip: "Links live" + "Opens" read through the honest reader (intent_links.is_internal; opens exclude internal links)',
       /intentLink\.count\(\{ where: \{ revoked: false, isInternal: false \} \}\)/.test(heroSrc) &&
@@ -2784,9 +2803,174 @@ async function main() {
     const strangerRevoke = await fetch(`${BASE}/api/intent-links/${slug}`, { method: 'DELETE' })
     check('intent links: revoking without a session → 401', strangerRevoke.status === 401)
 
+    // The retired page (squad gtm 2026-09-08): a stranger sent a dead money
+    // link used to get Next's bare "404 | This page could not be found."
+    // The page now names the reason (from the row, server-side — never the
+    // ask, which a creator may have retracted on purpose), says nothing ran
+    // and nothing was signed, and hands over the onward paths. Unknown
+    // slugs stay a true 404 (pinned above) on the branded site page.
+    const revokedPage = await fetch(`${BASE}/i/${thirdSlug}`)
+    const revokedHtml = await revokedPage.text()
+    check(
+      'retired link: /i/<revoked> explains itself — reason, nothing-signed line, onward paths, never the ask, never framework 404 copy',
+      revokedPage.status === 200 &&
+        revokedHtml.includes('data-link-state="revoked"') &&
+        revokedHtml.includes('retired by its creator') &&
+        revokedHtml.includes('nothing was signed') &&
+        revokedHtml.includes('Browse live links') &&
+        revokedHtml.includes('href="/chat"') &&
+        !revokedHtml.includes('Swap $5 of ETH to USDC') &&
+        !revokedHtml.includes('This page could not be found'),
+    )
+    check('retired link: the retired page is noindex and titled as not live', /noindex/.test(revokedHtml) && revokedHtml.includes('no longer live'))
+    const siteMiss = await fetch(`${BASE}/definitely-not-a-route-${Date.now()}`)
+    const siteMissHtml = await siteMiss.text()
+    check(
+      'site 404: unknown routes render the branded not-found page (home / app / links doors), never the framework default',
+      siteMiss.status === 404 && siteMissHtml.includes('nothing at this address') && siteMissHtml.includes('href="/chat"') && !siteMissHtml.includes('This page could not be found'),
+    )
+
+    // Round 2 (squad gtm 2026-09-08). L-1: the sitemap was the x402-era
+    // site — /, /servers, docs, blog — and nothing links-first was indexed.
+    // It now leads with the links surfaces and carries every LIVE house
+    // link + every claimed creator page; a retired house ask never rides
+    // (sitemap.ts re-renders hourly, so the house rows must be in the DB at
+    // build — they are seeded, the same rows the landing sends strangers to).
+    const siteMapXml = await (await fetch(`${BASE}/sitemap.xml`)).text()
+    const siteLocs = [...siteMapXml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1].replace(/^https?:\/\/[^/]+/, '') || '/')
+    check(
+      'sitemap: the links-first surfaces are indexed (/links, /links/embed, /pricing, /agents, /roster, /mosaic, /rebrand)',
+      ['/links', '/links/embed', '/pricing', '/agents', '/roster', '/mosaic', '/rebrand'].every((p) => siteLocs.includes(p)),
+      JSON.stringify(siteLocs.slice(0, 16)),
+    )
+    const houseStates = await Promise.all(
+      HOUSE_LINKS.map(async (h) => {
+        const html = await (await fetch(`${BASE}/i/${h.slug}`)).text()
+        const retired = html.match(/data-link-state="(\w+)"/)?.[1] ?? null
+        return { slug: h.slug, live: retired === null, indexable: /name="robots" content="index/.test(html) || !/noindex/.test(html) }
+      }),
+    )
+    check(
+      'sitemap: every live house /i/<slug> is listed, and the house pages are indexable (creator links stay noindex)',
+      houseStates.filter((h) => h.live).length > 0 &&
+        houseStates.every((h) => (h.live ? siteLocs.includes(`/i/${h.slug}`) && h.indexable : !siteLocs.includes(`/i/${h.slug}`))),
+      JSON.stringify({ houseStates, listed: siteLocs.filter((l) => l.startsWith('/i/')) }),
+    )
+    // The creator's own link (minted above by the harness) is not the site's
+    // to index — its page carries noindex and the sitemap never lists it.
+    const creatorLinkHtml = await (await fetch(`${BASE}/i/${slug}`)).text()
+    check('sitemap: a creator link is noindex and never listed', /noindex/.test(creatorLinkHtml) && !siteLocs.includes(`/i/${slug}`) && !siteLocs.includes(`/i/${thirdSlug}`))
+
+    // L-3: the mint stage's "runs on" pill for NEAR Intents said "(bridging)"
+    // on a same-chain swap. The label reads the ask: bridging on the from→to
+    // shape, the funding companion otherwise.
+    check(
+      'mint stage: the NEAR pill says bridging only on a cross-chain ask',
+      runsOnLabel('near-intents-mcp-yeetful', 'Swap 5 USDC from Base to Arbitrum') === 'NEAR Intents (bridging)' &&
+        isCrossChainAsk('Swap 5 USDC from Base to Arbitrum') &&
+        !isCrossChainAsk('Swap $1 of ETH for USDC on Base') &&
+        /funding/.test(runsOnLabel('near-intents-mcp-yeetful', 'Swap $1 of ETH for USDC on Base')) &&
+        !/bridging/.test(runsOnLabel('near-intents-mcp-yeetful', 'Swap $1 of ETH for USDC on Base')) &&
+        runsOnLabel('uniswap-free', 'Swap $1 of ETH for USDC on Base') !== 'uniswap-free',
+    )
+
+    // PATHS finding: the landing's NightShift JOBS tile displayed "…then send
+    // it to nate.eth" while its href sent the explicit clause — a reader who
+    // retyped the tile got the jobs refusal. Displayed = sent, pinned on the
+    // rendered page.
+    const homeForTiles = await (await fetch(`${BASE}/`)).text()
+    const nightTasks = [...homeForTiles.matchAll(/night__task[^>]*>“([^”]+)” →/g)].map((m) => m[1].replace(/<!-- -->/g, ''))
+    // Attribute order is the renderer's, not ours (Next has served both
+    // `href … class` and `class … href` for this <Link>): match the tile's
+    // <a> tag as a whole, then read `href` from inside it.
+    const nightHrefs = [...homeForTiles.matchAll(/<a\b[^>]*\bclass="[^"]*\bnight__tile\b[^"]*"[^>]*>/g)]
+      .map((m) => m[0].match(/\bhref="\/chat\?[^"]*prompt=([^"&]+)"/)?.[1] ?? null)
+      .filter((h): h is string => h !== null)
+      .map((h) => decodeURIComponent(h.replace(/&amp;/g, '&')))
+    check(
+      'landing tiles: every NightShift tile displays exactly the ask its href sends',
+      nightTasks.length >= 4 && nightHrefs.length === nightTasks.length && nightTasks.every((t, i) => nightHrefs[i].replace(/−/g, '-') === t.replace(/−/g, '-')),
+      JSON.stringify({ nightTasks, nightHrefs }),
+    )
+
+    // L-4: the rail's journey strip + live list and the studio each hold
+    // their own copy of the links/journey state; a mint on the studio left
+    // the rail's "Mint your first link" strip stale until its next poll.
+    // One signal (lib/links-changed) — every writer notifies, every reader
+    // subscribes. Source-level: the browser drive is in links.md.
+    const linksFs = await import('node:fs')
+    const linksChangedSrc = {
+      hookLinks: linksFs.readFileSync('lib/intent-links-ui.tsx', 'utf8'),
+      hookJourney: linksFs.readFileSync('lib/onboarding.ts', 'utf8'),
+      form: linksFs.readFileSync('components/MintLinkForm.tsx', 'utf8'),
+      table: linksFs.readFileSync('components/LinkFunnelTable.tsx', 'utf8'),
+      earnings: linksFs.readFileSync('components/LinkEarningsPanel.tsx', 'utf8'),
+    }
+    // LINKS C/E (squad gtm 2026-09-08): the Decline verb was splash-only, so
+    // a recipient whose wallet auto-started (or who had already built) had
+    // no way to say no; the studio table listed expired / sign-capped links
+    // like live ones and kept offering "tweet"; the rail's bottom seat kept
+    // "Name your page →" after a claim. Source-level pins — the browser
+    // drives are in links.md.
+    const runtimeSrc = linksFs.readFileSync('components/IntentRuntime.tsx', 'utf8')
+    check(
+      'decline verb: rendered in the started view too (header chip), not only on the splash',
+      (runtimeSrc.match(/recipient && address\?\.toLowerCase\(\) === recipient && !signed && !declined/g) || []).length >= 2 && /data-decline-verb/.test(runtimeSrc),
+    )
+    const tableSrc = linksFs.readFileSync('components/LinkFunnelTable.tsx', 'utf8')
+    check(
+      'studio table: expired / capped rows wear the state pill (linkLifecycle, the /i rule) and hide the tweet CTA',
+      /linkLifecycle\(\{ revoked: false, expiresAt: l\.expiresAt, maxSigns: l\.maxSigns \}, l\.signsCount\)/.test(tableSrc) && /data-link-row-state=\{state\}/.test(tableSrc) && /\{state === 'live' && \(\s*<a/.test(tableSrc),
+    )
+    check(
+      'rail list: expired / capped rows wear the same state pill',
+      /linkLifecycle\(\{ revoked: false, expiresAt: l\.expiresAt, maxSigns: l\.maxSigns \}, l\.signsCount\)/.test(linksFs.readFileSync('components/LinksRailTab.tsx', 'utf8')),
+    )
+    const railSeatSrc = linksFs.readFileSync('components/LinksRailTab.tsx', 'utf8')
+    const creatorPageSrc = linksFs.readFileSync('lib/creator-page.tsx', 'utf8')
+    check(
+      'rail seat: the handle re-reads on links-changed, and useCreatorPage notifies on claim / brand / colors / remove',
+      /useLinksChanged\(fetchHandle\)/.test(railSeatSrc) && (creatorPageSrc.match(/notifyLinksChanged\(\)/g) || []).length >= 4 && /useLinksChanged\(load\)/.test(creatorPageSrc),
+    )
+    check(
+      'journey strip: mint / revoke / claim notify lib/links-changed and both the links hook + the journey hook subscribe',
+      /useLinksChanged\(reload\)/.test(linksChangedSrc.hookLinks) &&
+        /useLinksChanged\(refresh\)/.test(linksChangedSrc.hookJourney) &&
+        [linksChangedSrc.form, linksChangedSrc.table, linksChangedSrc.earnings].every((src) => /notifyLinksChanged\(\)/.test(src)),
+    )
+
     // The public leaderboard: server-truth board, mint CTA, no wallets.
     const board = await fetch(`${BASE}/links`)
     const boardHtml = await board.text()
+    // Share cards (squad gtm 2026-09-08): a page-level openGraph block
+    // REPLACES the root's, and the root file-based card does not ride into
+    // it — /links, /links/embed, /sign, /inbox and /mosaic unfurled with no
+    // image at all. Each carries an explicit card now; the links family
+    // card must itself render.
+    const ogOf = (html: string) => html.match(/property="og:image" content="([^"]+)"/)?.[1] ?? null
+    const twOf = (html: string) => html.match(/name="twitter:image" content="([^"]+)"/)?.[1] ?? null
+    const embedHtml = await (await fetch(`${BASE}/links/embed`)).text()
+    const signHtml = await (await fetch(`${BASE}/sign?ask=Buy%20%245%20of%20AAPL`)).text()
+    const inboxHtml = await (await fetch(`${BASE}/inbox/0x000000000000000000000000000000000000dEaD`)).text()
+    const mosaicHtml = await (await fetch(`${BASE}/mosaic`)).text()
+    check(
+      'share cards: /links, /links/embed, /sign, /inbox carry the links card as og:image AND twitter:image',
+      [boardHtml, embedHtml, signHtml, inboxHtml].every((h) => /\/links\/opengraph-image/.test(ogOf(h) ?? '') && !!twOf(h)),
+      JSON.stringify({ board: ogOf(boardHtml), embed: ogOf(embedHtml), sign: ogOf(signHtml), inbox: ogOf(inboxHtml) }),
+    )
+    check('share cards: /mosaic carries the site card on both og:image and twitter:image', /\/opengraph-image/.test(ogOf(mosaicHtml) ?? '') && !!twOf(mosaicHtml), JSON.stringify({ og: ogOf(mosaicHtml), tw: twOf(mosaicHtml) }))
+    const linksCard = await fetch(`${BASE}/links/opengraph-image`)
+    check('share cards: the links family card renders (200 PNG)', linksCard.status === 200 && /image\/png/.test(linksCard.headers.get('content-type') ?? ''))
+    // Fee copy reads the LINK tier from lib/fees — the board said "0.20%"
+    // (the chat rate) for link conversions, 2.5× under what a creator earns.
+    check(
+      'fee copy: the board states the link tier (lib/fees LINK_FEE_PCT), not the chat rate',
+      // (React SSR separates adjacent text nodes with <!-- -->; strip them
+      //  so the pin reads the sentence a browser shows — and catches the JSX
+      //  glue bite, which rendered "0.50%link fee" on the first pass.)
+      boardHtml.replace(/<!-- -->/g, '').includes(`half of Pantessa&#x27;s ${LINK_FEE_PCT} link fee`),
+      `expected ${LINK_FEE_PCT}`,
+    )
     check('intent links: /links leaderboard renders with the mint CTA', board.status === 200 && /Mint yours/.test(boardHtml) && /dollars moved/i.test(boardHtml))
     // The mint CTA is the composer ITSELF (the mint stage — the share-card
     // replica a stranger types into, pre-sign-in), not a button to a form
@@ -2904,12 +3088,50 @@ async function main() {
       'storefront: a taken handle refuses (409) and points at the live page',
       hSteal.status === 409 && hStealBody.url === '/l/harness-store',
     )
-    // Claimed pages are LISTED — /links shows every /l/<handle> storefront,
-    // so a page stays findable after the claim.
-    const listedHtml = flat(await (await fetch(`${BASE}/links`)).text())
+    // Claimed pages are LISTED — /links shows the /l/<handle> storefronts
+    // under "Creator pages" — but the listing is FENCED like the
+    // recently-minted tab (#699): a handle rides only while its creator
+    // holds a live link that is not an internal (harness/drill) mint. This
+    // suite's every mint is stamped internal by the fetch wrapper, so the
+    // page it just claimed must NOT be on the board (until 2026-09-08 it was,
+    // and so was every drill handle on prod — SECURITY r2). The page itself
+    // still renders at /l/<handle> (the pin below).
+    const fencedHtml = flat(await (await fetch(`${BASE}/links`)).text())
     check(
-      'storefront: /links lists the claimed page under Creator pages',
-      listedHtml.includes('Creator pages') && listedHtml.includes('/l/harness-store') && listedHtml.includes('@harness-store'),
+      'storefront: a handle whose creator holds only internal mints is NOT listed under Creator pages',
+      !fencedHtml.includes('/l/harness-store') && !fencedHtml.includes('@harness-store'),
+    )
+    // …and fenced, not broken: one ORGANIC live link lists it; revoking that
+    // link delists it again. Same fixture discipline as the recent-tab pin —
+    // written straight to the table, deleted (never revoked-and-left).
+    if (process.env.DATABASE_URL) {
+      const storeFixtureId = `fixt-store-${Math.random().toString(36).slice(2, 8)}`
+      await prisma.intentLink.create({
+        data: { id: storeFixtureId, ask: `Swap $3 of ETH to USDC — storefront fixture ${storeFixtureId}`, creator: mallory.address.toLowerCase(), isInternal: false },
+      })
+      const listedHtml = flat(await (await fetch(`${BASE}/links`)).text())
+      const listedApi = (await (await fetch(`${BASE}/api/links/board?fresh=1`)).json()) as { pages?: { handle: string }[] }
+      await prisma.intentLink.update({ where: { id: storeFixtureId }, data: { revoked: true } })
+      const delistedHtml = flat(await (await fetch(`${BASE}/links`)).text())
+      await prisma.intentLink.deleteMany({ where: { id: storeFixtureId } })
+      check(
+        'storefront: one organic live link lists the claimed page under Creator pages (/links + /api/links/board)',
+        listedHtml.includes('Creator pages') && listedHtml.includes('/l/harness-store') && listedHtml.includes('@harness-store') &&
+          (listedApi.pages ?? []).some((p) => p.handle === 'harness-store'),
+      )
+      check('storefront: revoking the only organic link delists the page again', !delistedHtml.includes('/l/harness-store'))
+      check('storefront: listing fixture released', (await prisma.intentLink.count({ where: { id: storeFixtureId } })) === 0)
+    } else {
+      check('storefront: organic listing round-trip skipped — no DATABASE_URL for the harness process', true)
+    }
+    // The sitemap reads the SAME fenced set (source pin — sitemap.ts is ISR,
+    // re-rendered hourly, so an HTTP round-trip can't see a claim land; the
+    // shared helper is what keeps a crawler from ever seeing a drill handle).
+    const sitemapSrc = (await import('node:fs')).readFileSync('app/sitemap.ts', 'utf8')
+    const sitemapXmlNow = await (await fetch(`${BASE}/sitemap.xml`)).text()
+    check(
+      'sitemap: creator pages come from publicCreatorHandles (the fenced set), never a raw creator_handles read; the harness handle is never listed',
+      sitemapSrc.includes('publicCreatorHandles()') && !sitemapSrc.includes('creatorHandle.findMany') && !sitemapXmlNow.includes('/l/harness-store'),
     )
     const storeHtml = flat(await (await fetch(`${BASE}/l/harness-store`)).text())
     check(
@@ -3486,6 +3708,30 @@ async function main() {
       JSON.stringify({ v0, v1 }),
     )
     check('variants: the aggregate funnel still counts every open (junk-variant row included)', !!abRow && abRow.funnel.open === 3)
+    // LINKS G (squad gtm 2026-09-08): the creator previewing their own link
+    // is not an arrival — open/connect/built beacons carrying the creator's
+    // own session are acknowledged and dropped; the funnel stays at 3.
+    const ownOpen = await fetch(`${BASE}/api/intent-links/${abLink.slug}/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: mallorySession },
+      body: JSON.stringify({ kind: 'open' }),
+    })
+    const ownOpenBody = (await ownOpen.json()) as { ok?: boolean; own?: boolean }
+    const abListAfterOwn = (await (await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })).json()) as {
+      links: Array<{ slug: string; funnel: { open: number } }>
+    }
+    check(
+      "creator's own visit: an open beacon carrying the creator's session is acknowledged (ok, own) and never counted",
+      ownOpen.status === 200 && ownOpenBody.ok === true && ownOpenBody.own === true && abListAfterOwn.links.find((l) => l.slug === abLink.slug)?.funnel.open === 3,
+      JSON.stringify(ownOpenBody),
+    )
+    // …and the page tells the creator so (a session peek, never a signature).
+    const ownPage = await (await fetch(`${BASE}/i/${abLink.slug}`, { headers: { cookie: mallorySession } })).text()
+    const strangerPage = await (await fetch(`${BASE}/i/${abLink.slug}`)).text()
+    check(
+      "creator's own visit: /i wears the 'Your link — a preview' cue for the creator only",
+      /data-own-link/.test(ownPage) && /Your link/.test(ownPage) && !/data-own-link/.test(strangerPage),
+    )
     const abPage = await fetch(`${BASE}/i/${abLink.slug}`)
     const abHtml = flat(await abPage.text())
     const phrasings = ['Buy $12 of TSLA', 'Own a slice of Tesla for $12', 'Put $12 into Tesla stock', 'A fourth phrasing that fits']
@@ -3538,10 +3784,19 @@ async function main() {
     const capPageMid = await fetch(`${BASE}/i/${capLink.slug}`)
     await signTurn()
     const capPageAfter = await fetch(`${BASE}/i/${capLink.slug}`)
+    const capPageAfterHtml = await capPageAfter.text()
+    const capMidHtml = await capPageMid.text()
     check(
-      'limits: the sign cap counts SERVER-TRUTH turns — live below the cap, 404 at it',
-      capPageBefore.status === 200 && capPageMid.status === 200 && capPageAfter.status === 404,
+      'limits: the sign cap counts SERVER-TRUTH turns — live below the cap, retired ("reached its signing cap") at it',
+      capPageBefore.status === 200 && capPageMid.status === 200 && capMidHtml.includes('Buy $9 of AAPL for the promo') &&
+        capPageAfter.status === 200 && capPageAfterHtml.includes('data-link-state="capped"') && !capPageAfterHtml.includes('Buy $9 of AAPL for the promo'),
     )
+    // …and the card stops advertising the ask: a capped/expired promo must
+    // not keep unfurling "Buy $9 of AAPL" in the feed while the click lands
+    // on the retired page. (The revoked case already fell back; expiry and
+    // the cap did not until 2026-09-08.)
+    const cappedCard = await fetch(`${BASE}/i/${capLink.slug}/opengraph-image`)
+    check('retired link: the OG card of a capped link still renders (generic card, 200 PNG)', cappedCard.status === 200 && /image\/png/.test(cappedCard.headers.get('content-type') ?? ''))
     await fetch(`${BASE}/api/intent-links/${capLink.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
 
     // Expiry: live until the clock passes, then dead everywhere.
@@ -3559,9 +3814,11 @@ async function main() {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ kind: 'open' }),
     })
+    const expAfterHtml = await expAfter.text()
     check(
-      'limits: an expired link dies everywhere (page 404, events 404)',
-      expMintRes.status === 200 && expBefore.status === 200 && expAfter.status === 404 && expEvent.status === 404,
+      'limits: an expired link dies everywhere (page retired as "expired", ask gone, events 404)',
+      expMintRes.status === 200 && expBefore.status === 200 && expAfter.status === 200 && expAfterHtml.includes('data-link-state="expired"') &&
+        !expAfterHtml.includes('Buy $9 of AAPL for the promo') && expEvent.status === 404,
     )
     await fetch(`${BASE}/api/intent-links/${expLink.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
 
@@ -16132,9 +16389,14 @@ async function main() {
         items?: { slug: string }[]
       }).items ?? []
       const linkAfterFire = await fetch(`${BASE}/i/${slug3}`)
+      // A revoked /i link now renders the RETIRED page (reason, nothing
+      // signed, onward doors — squad gtm 2026-09-08) rather than a bare 404:
+      // the wall is the retired state + the ask gone, not the status code.
+      const linkAfterFireHtml = await linkAfterFire.text()
       check(
         'roster R2: firing CASCADES — the pending proposal leaves the inbox and its /i link revokes (T5 human path)',
-        s3.ok && !prop3.isError && firedOk && !inboxAfterFire.some((i) => i.slug === slug3) && linkAfterFire.status === 404,
+        s3.ok && !prop3.isError && firedOk && !inboxAfterFire.some((i) => i.slug === slug3) &&
+          linkAfterFire.status === 200 && linkAfterFireHtml.includes('data-link-state="revoked"') && !linkAfterFireHtml.includes('Buy $15 of AAPL'),
         `link=${linkAfterFire.status}`,
       )
       const firedTry = await call('broker_open', { ask: 'Buy $15 of AAPL', agent_key: rosterAgentKey, wallet: employer2.address })

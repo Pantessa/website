@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Footer from '@/components/Footer'
 import MosaicStudio from '@/components/MosaicStudio'
+import { SITE_CARD } from '@/lib/og-defaults'
 
 // The Mosaic studio — the public front door for executable portfolio links.
 // Server shell owns the SEO surface only; everything interactive (the
@@ -21,6 +22,14 @@ export const metadata: Metadata = {
     description:
       'The portfolio pie chart is now a button. Mint a shape, share the link; every wallet that opens it gets its own personalized batch.',
     type: 'website',
+    images: SITE_CARD,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Mosaic — executable portfolio links',
+    description:
+      'The portfolio pie chart is now a button. Mint a shape, share the link; every wallet that opens it gets its own personalized batch.',
+    images: SITE_CARD,
   },
 }
 
