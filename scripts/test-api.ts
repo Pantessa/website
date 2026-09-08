@@ -3457,6 +3457,23 @@ async function main() {
       const cssHrefs = [...chatDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
       const servedCss = (await Promise.all(cssHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n')
       check('mobile: the built stylesheet carries overflow-wrap:anywhere for the address lines', cssHrefs.length > 0 && /overflow-wrap:\s*anywhere/.test(servedCss))
+      // The /i runtime: every header chip (DECLINE / OPEN THE APP / MAKE YOUR
+      // OWN LINK) and the held card's two chips share chipClass at 32px — 40px
+      // on touch. An address-bearing ask overflowed the splash h1 at 375 (a
+      // 42-char address has no break opportunity in a serif headline — main
+      // clipped it on both sides). The held card's eyebrow was 10px; at a
+      // keyboard-height viewport the 309px card pushed the composer off-screen
+      // — it scrolls inside itself on phones instead.
+      check('mobile: /i runtime chips (header + held card) are 40px on touch', /min-h-\[32px\] \[@media\(hover:none\)\]:min-h-10 rounded-lg border bg-\[var\(--surf-1\)\]/.test(runtime))
+      check('mobile: the /i splash headline wraps an address-bearing ask instead of clipping it', /\[text-wrap:balance\] \[overflow-wrap:anywhere\]"[\s\S]{0,120}&ldquo;\{ask\}&rdquo;/.test(runtime))
+      check(
+        'mobile: the /i held card keeps the composer on a keyboard-height phone (internal scroll) and its eyebrow is ≥11px',
+        /px-4 py-4 sm:px-5 max-sm:max-h-\[42dvh\] max-sm:overflow-y-auto">\s*<p className="mono text-\[11px\] uppercase tracking-widest text-amber-400 leading-none">Held for you to send/.test(runtime),
+      )
+      // A withheld job step's reason ("Nothing to sign yet: … It's offered the
+      // moment the funds are there.") was cut at 180 chars — the actionable
+      // tail was the part that vanished.
+      check('mobile: a withheld job step prints its whole reason (the 180-char cut is for other notes)', /\(step\.result as \{ withheld\?: boolean \} \| null\)\?\.withheld \? resultNote : resultNote\.slice\(0, 180\)/.test(jobCard))
     }
 
     // House links: the seeded canonical set (deterministic slugs,
