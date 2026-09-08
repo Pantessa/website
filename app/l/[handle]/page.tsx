@@ -191,7 +191,9 @@ export default async function StorefrontPage({ params }: Params) {
                     href={`/i/${l.slug}`}
                     className="flex items-center gap-4 py-3.5 group hover:bg-[color-mix(in_srgb,var(--fg)_4%,transparent)] transition-colors"
                   >
-                    <span className="text-[15px] text-[color:var(--fg)] truncate flex-1 group-hover:text-[color:var(--accent)] transition-colors">
+                    {/* The ask carries the amount — two lines on a phone beats
+                        "Buy $12 of AAPL on Robin…". */}
+                    <span className="text-[15px] text-[color:var(--fg)] line-clamp-2 min-w-0 flex-1 group-hover:text-[color:var(--accent)] transition-colors">
                       &ldquo;{l.ask}&rdquo;
                     </span>
                     <span className="mono text-[12px] text-[color:var(--muted-2)] flex-shrink-0">

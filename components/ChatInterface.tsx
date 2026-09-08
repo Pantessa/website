@@ -1277,7 +1277,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               <button
                 onClick={() => openRail('mcps')}
                 title="Your working set — click to edit"
-                className="text-[11px] text-[color:var(--muted-2)] truncate pl-1 text-left hover:text-white transition-colors"
+                className="text-[11px] text-[color:var(--muted-2)] truncate pl-1 text-left hover:text-white transition-colors max-lg:min-h-10 max-lg:max-w-full"
               >
                 {activeServers.map((s) => cleanServerName(s.name)).join(' · ')}
               </button>
@@ -1970,6 +1970,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           className={cn(
             'text-[11px] text-[color:var(--muted-2)] mt-2 text-center mono',
             !embedded && 'opacity-0 transition-opacity duration-300 group-focus-within/composer:opacity-100',
+            // A keyboard hint: touch devices have no Shift+Enter, and on a phone
+            // it sat between the composer and the spine bar as noise.
+            '[@media(hover:none)]:hidden',
           )}
         >
           Enter to send · Shift+Enter for newline

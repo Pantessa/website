@@ -525,12 +525,15 @@ export default function MosaicStudio({ from }: { from?: string }) {
                 <Wand2 className="w-3.5 h-3.5" /> make it 100
               </button>
             )}
-            <label className="ml-auto inline-flex items-center gap-2 mono text-[12px] text-[color:var(--muted)]">
+            {/* min-w-0 + a max width: a <select> is as wide as its longest
+                option, and "Auto — each wallet’s dominant chain" pushed the
+                studio 38px past a 375px viewport. */}
+            <label className="ml-auto inline-flex items-center gap-2 mono text-[12px] text-[color:var(--muted)] min-w-0 max-w-full">
               chain
               <select
                 value={chain}
                 onChange={(e) => setChain(e.target.value as ChainChoice)}
-                className="rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5 text-[12px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+                className="min-w-0 max-w-[220px] rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5 text-[12px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
               >
                 {CHAIN_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>

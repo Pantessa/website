@@ -110,7 +110,7 @@ function JourneyStrip({
         <button
           onClick={onDismiss}
           aria-label="Dismiss the getting-started journey"
-          className="ml-auto -mr-1 p-0.5 rounded text-[color:var(--muted-2)] hover:text-white transition-colors"
+          className="ml-auto -mr-2.5 -my-2.5 grid h-10 w-10 place-items-center rounded text-[color:var(--muted-2)] hover:text-white transition-colors"
         >
           <X className="w-3 h-3" />
         </button>
@@ -233,7 +233,7 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
                 <ExternalLink className="w-3 h-3" />
               </a>
             </span>
-            <span className="block text-[11px] truncate mt-0.5">{l.ask}</span>
+            <span className="block text-[11px] line-clamp-2 mt-0.5">{l.ask}</span>
             <span className="block mono text-[10px] text-[color:var(--muted-2)] mt-0.5">
               {l.funnel.open} opens · {l.funnel.signed} signed
               {l.signedUsd > 0 ? ` · $${l.signedUsd.toFixed(2)} moved` : ''}

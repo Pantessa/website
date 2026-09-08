@@ -299,7 +299,7 @@ export default function EmbedChat({
               if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
               else void document.documentElement.requestFullscreen().catch(() => {})
             }}
-            className="flex-shrink-0 grid place-items-center w-6 h-6 rounded-md text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors"
+            className="flex-shrink-0 grid place-items-center w-6 h-6 max-lg:w-10 max-lg:h-10 max-lg:-mr-2 rounded-md text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors"
           >
             {isFull ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>

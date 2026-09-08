@@ -138,7 +138,9 @@ export default function ClarifyChips({
               >
                 <span className="flex items-center gap-2">
                   <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--muted-2)]" />
-                  <span className="min-w-0 flex-1 truncate">
+                  {/* Wrap below lg: the option names the money ("Just
+                      enough (~$10 from Base)") and truncated at 375. */}
+                  <span className="min-w-0 flex-1 truncate max-lg:whitespace-normal">
                     <span className="text-[color:var(--fg)] font-medium">{o.label}</span>
                     {i === 0 && <span className="text-[color:var(--muted-2)]"> — best guess</span>}
                   </span>
@@ -156,7 +158,7 @@ export default function ClarifyChips({
               className="group flex items-center gap-2 text-left text-[12px] px-3 py-2 max-lg:min-h-10 rounded-lg border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] disabled:opacity-50 transition-colors"
             >
               <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--muted-2)] group-hover:text-white" />
-              <span className="min-w-0 flex-1 truncate">
+              <span className="min-w-0 flex-1 truncate max-lg:whitespace-normal">
                 <span className="text-[color:var(--fg)] font-medium">{o.label}</span>
                 {i === 0 && <span className="text-[color:var(--muted-2)]"> — best guess</span>}
               </span>

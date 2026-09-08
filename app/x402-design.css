@@ -1489,7 +1489,7 @@
   .docs__prose strong { color: var(--fg); }
   .docs__prose ul, .docs__prose ol { margin: 12px 0; padding-left: 24px; }
   .docs__prose li { margin: 5px 0; }
-  .docs__prose code { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 0.88em; background: var(--surf-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--fg); }
+  .docs__prose code { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 0.88em; background: var(--surf-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--fg); overflow-wrap: anywhere; }
   .docs__prose pre { background: var(--surf-1); border: 1px solid var(--line); border-radius: 12px; padding: 16px; overflow-x: auto; margin: 16px 0; max-width: 96ch; }
   .docs__prose pre code { background: none; border: none; padding: 0; font-size: 12.5px; line-height: 1.6; color: var(--muted); }
   /* EmbedInstall (the shared install card) frames its own <pre> — neutralize
@@ -3675,7 +3675,7 @@
     mask-image: radial-gradient(58% 72% at 50% 50%, #000 28%, transparent 100%);
   }
   .filmband__aura {
-    position: absolute; left: 50%; top: 50%; width: min(1500px, 150%); aspect-ratio: 2 / 1;
+    position: absolute; left: 50%; top: 50%; width: min(1500px, 150%, 100vw); aspect-ratio: 2 / 1;
     z-index: -1; pointer-events: none; transform: translate(-50%, -50%);
     background:
       radial-gradient(40% 55% at 34% 40%, color-mix(in srgb, var(--accent) 17%, transparent), transparent 70%),
@@ -4878,7 +4878,7 @@
     display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
     margin-top: 16px; cursor: default;
   }
-  .mintstage__runslabel { font-size: 9.5px; letter-spacing: 0.22em; color: rgba(242, 251, 247, 0.42); margin-right: 2px; }
+  .mintstage__runslabel { font-size: 10.5px; letter-spacing: 0.22em; color: rgba(242, 251, 247, 0.42); margin-right: 2px; }
   .mintstage__runshint { font-size: 12px; font-style: italic; color: rgba(242, 251, 247, 0.38); }
   .mintstage__pill {
     display: inline-flex; align-items: center; gap: 6px;
@@ -4991,3 +4991,25 @@
   .yenter { animation: yenter .32s ease-out both; }
   @keyframes yenter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   @media (prefers-reduced-motion: reduce) { .yenter { animation: none; } }
+
+/* ── TOUCH HAS NO HOVER (squad gtm mobile, 2026-09-08) ─────────────────────
+   Nine affordances hid behind `opacity-0 group-hover[/name]:opacity-100` —
+   the per-bubble COPY and MINT-A-LINK buttons, the chat row's Delete, the
+   holdings row's chart button, the MCP/link/tile ⓘ links, the splash card
+   head. On a phone a hover-revealed control is an unreachable control (no
+   long-press, no menu). Under (hover: none) every such control is simply
+   visible; equal specificity to `.opacity-0`, this sheet loads after the
+   utilities, so order wins. New named groups must join the list (the
+   harness pins the three that exist). */
+@media (hover: none) {
+  .group-hover\:opacity-100,
+  .group-hover\/bubble\:opacity-100,
+  .group-hover\/head\:opacity-100 { opacity: 1; }
+}
+
+/* `.btn--sm` was never defined — its buttons (the /dashboard/failures filters)
+   rendered 16–27 × 21px on a phone. A touch device gets a 36px floor. */
+.btn--sm { padding: 4px 10px; font-size: 12px; border: 1px solid var(--line); border-radius: 8px; }
+@media (hover: none) {
+  .btn--sm { min-height: 36px; padding-inline: 12px; }
+}

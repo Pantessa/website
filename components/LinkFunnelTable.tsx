@@ -66,7 +66,7 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                     {copied === l.slug ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                     /i/{l.slug}
                   </button>
-                  <span className="text-[13px] text-[color:var(--muted)] truncate min-w-0" title={l.ask}>
+                  <span className="text-[13px] text-[color:var(--muted)] line-clamp-2 min-w-0" title={l.ask}>
                     {l.ask}
                   </span>
                   {l.redirectUrl && (
