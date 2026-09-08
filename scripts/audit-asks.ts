@@ -221,6 +221,52 @@ const CORPUS: Entry[] = [
   // Transfers (Nate's live phrasing, #473)
   { ask: 'send 1 USDC on arbitrum to 0x1111111111111111111111111111111111111111', source: 'live/#473', expect: 'action' },
   { ask: 'send 1 USDC on arbitrum to nate.eth', source: 'live/#473', expect: 'action' },
+
+  // ── GTM squad 2026-09-08 (PATHS): UI strings the sweep found OUTSIDE the
+  //    corpus. Every one is tappable or printed somewhere a stranger lands.
+  { ask: 'Buy $12 of AAPL', source: 'hero typed reel + mint starter chip (typed-asks.ts)', expect: 'action' },
+  { ask: 'Tile my wallet 50% ETH, 30% USDC, 20% wstETH', source: 'hero typed reel + /mosaic', expect: 'action' },
+  { ask: 'tile my wallet 60% ETH, 40% USDC', source: 'house mosaic /i/tile-classic', expect: 'action' },
+  { ask: 'tile my wallet 45% ETH, 45% USDC, 10% CBBTC', source: 'house mosaic /i/tile-barbell', expect: 'action' },
+  { ask: 'tile my wallet 50% USDC, 30% ETH, 20% WSTETH', source: 'house mosaic /i/tile-steady', expect: 'action' },
+  { ask: 'protect my eth long with a 5% stop', source: '/docs/guardian', expect: 'action' },
+  { ask: 'take profit on my eth long at $2100', source: '/docs/guardian (take-profit grammar)', expect: 'action' },
+  { ask: 'buy $25 of ETH every week on base', source: '/docs/dca', expect: 'action' },
+  { ask: 'buy $10 of AAPL every week on robinhood', source: '/docs/dca', expect: 'action' },
+  { ask: 'list my dcas', source: '/docs/dca + splash', expect: 'action' },
+  { ask: 'pause my ETH dca', source: '/docs/dca', expect: 'action' },
+  { ask: 'cancel my ETH dca', source: '/docs/dca', expect: 'action' },
+  { ask: 'make my ETH dca autonomous', source: '/docs/dca (autopilot arm)', expect: 'action' },
+  { ask: 'turn off my dca autopilot', source: '/docs/dca (autopilot disarm)', expect: 'action' },
+  { ask: 'dca $25 into ETH daily on base', source: '/docs/jobs', expect: 'action' },
+  { ask: 'Swap $5 of ETH to USDC on Base', source: '/docs/desk', expect: 'action' },
+  { ask: 'Swap $40 of USDC to ETH on Base', source: 'RosterTranscript', expect: 'action' },
+  { ask: 'Swap 3.5 USDC from Base to USDC on Arbitrum', source: '/docs/_paid-doors', expect: 'action' },
+  { ask: 'buy $25 of ETH weekly', source: 'roster mandate example', expect: 'action' },
+  { ask: 'protect my ETH in my wallet with a 10% stop', source: 'roster mandate example (spot guard)', expect: 'action' },
+  { ask: 'supply 25 USDC to aave', source: 'roster mandate example', expect: 'action' },
+  { ask: 'stake 0.5 ETH on lido', source: 'roster mandate example', expect: 'action' },
+  { ask: 'Stake 0.0132 ETH on Lido as wstETH', source: 'lido chip (as wstETH form)', expect: 'action' },
+  { ask: 'Buy $10 of NVDA on Robinhood Chain', source: 'robinhood splash chip (non-AAPL ticker)', expect: 'action' },
+  { ask: 'Swap 0.5 NVDA for USDG on Robinhood Chain', source: 'robinhood splash chip (stock sell)', expect: 'action' },
+  { ask: 'Swap 0.01 ETH for USDG on Robinhood Chain', source: 'robinhood splash chip (ETH → USDG)', expect: 'action' },
+  { ask: 'send all my USDG on robinhood to nate.eth', source: 'transfer chain chip (USDG lane)', expect: 'action' },
+  { ask: 'Fund robinhood chain with $30 from ethereum using eth including gas, then buy $25 of NVDA', source: 'funding chip (using-eth + gas variant)', expect: 'action' },
+  { ask: 'Fund robinhood chain with $9 from optimism, then buy $12 of SPY', source: 'funding chip (Optimism origin, #707)', expect: 'action' },
+  { ask: 'lend 100 USDC on morpho', source: 'morpho seeded chip', expect: 'action' },
+  { ask: 'lend 100 USDG on Morpho on Robinhood Chain', source: 'robinhood seeded chip', expect: 'action' },
+  { ask: 'Build a Uniswap swap: 50 USDC for cbBTC', source: 'uniswap seeded chip (colon after the verb)', expect: 'action' },
+  { ask: '2x short $25 of BTC on hyperliquid', source: 'HL size chip (short + 2x)', expect: 'action' },
+  { ask: 'Protect my SYRUP short with a 10% stop loss', source: 'briefing chip (short side)', expect: 'action' },
+  { ask: 'Sell $50 of HYPE', source: 'chart overlay chip (HL-only symbol → HL door)', expect: 'any' },
+  // Prod ask_failures 2026-08-31 → 09-07 (the shapes strangers typed):
+  { ask: 'buy $12 orth of AAPL', source: 'prod 2026-09-07 (typo of "worth")', expect: 'action' },
+  { ask: 'buy $12 worth of APPL using vredit cartd', source: 'prod 2026-08-31 (fiat spend clause)', expect: 'action' },
+  { ask: 'buy $12 of AAPL with my credit card', source: 'stranger phrasing of the on-ramp intent', expect: 'action' },
+  { ask: 'Convert $1 USDC from Base to USDG on Robinhood Chain via cross-chain swap', source: 'prod 2026-09-04', expect: 'action' },
+  { ask: 'swap 10 USDG → AAPL on Uniswap', source: 'prod 2026-09-02 (card-title arrow retyped)', expect: 'action' },
+  { ask: 'Swap 12 USDG → TSLA', source: 'card title retyped', expect: 'action' },
+  { ask: 'Send 5 USDC to 0x1111111111111111111111111111111111111111 on Optimism', source: 'squad replay (OP send, #707 gap)', expect: 'action' },
 ]
 
 // ── Mutations — what real users do to our example asks ─────────────────────
@@ -244,6 +290,26 @@ function mutationsOf(ask: string): Mutation[] {
   if (!/[?.!]\s*$/.test(ask)) out.push({ label: 'question-mark', ask: `${ask}?` })
   out.push({ label: 'please', ask: `${ask.replace(/[.?!]\s*$/, '')} please` })
   out.push({ label: 'can-you', ask: `can you ${ask[0].toLowerCase()}${ask.slice(1)}` })
+  // ── GTM squad 2026-09-08 — three more things real users do ───────────────
+  // Every first-class chain, not just the one the example happened to name:
+  // an ask that says "on Base" must land the same way "on Optimism" (#707's
+  // half-added chain reached prod because nothing replayed the other four).
+  const onChain = ask.match(/\bon\s+(base|ethereum|arbitrum|optimism|robinhood(?:\s+chain)?)\b/i)
+  // NFT asks are exempt: OpenSea has no market on Optimism / Robinhood Chain
+  // and the NFT gate refuses those BY NAME (an honest limit, not a dead-end).
+  if (onChain && !/\bnfts?\b/i.test(ask)) {
+    for (const c of ['Base', 'Ethereum', 'Arbitrum', 'Optimism', 'Robinhood Chain']) {
+      if (c.toLowerCase().startsWith(onChain[1].toLowerCase().slice(0, 4))) continue
+      out.push({ label: `chain:${c}`, ask: ask.replace(onChain[0], `on ${c}`) })
+    }
+  }
+  // A one-edit typo of the "worth" we print on every card ("$12 orth of").
+  if (/\$\d+(?:\.\d+)?\s+worth\s+of\b/i.test(ask)) out.push({ label: 'typo:orth', ask: ask.replace(/\bworth\s+of\b/i, 'orth of') })
+  else if (/\$\d+(?:\.\d+)?\s+of\s+[A-Za-z]/i.test(ask)) out.push({ label: 'typo:orth', ask: ask.replace(/(\$\d+(?:\.\d+)?)\s+of\b/i, '$1 orth of') })
+  // The arrow our own cards print ("USDG → AAPL"), retyped by the user.
+  const pair = ask.match(/\b(swap|sell|convert|trade)\s+(\$?\d+(?:\.\d+)?(?:\s+worth)?(?:\s+of)?\s+\$?[A-Za-z]{2,12})\s+(for|to|into)\s+(\$?[A-Za-z]{2,12})\b(?!\s+(?:on|to)\s)/i)
+  // (limit orders keep "for at least/most" — that phrase IS the grammar)
+  if (pair && !/\bfrom\b/i.test(ask) && !/^at$/i.test(pair[4])) out.push({ label: 'arrow', ask: ask.replace(pair[0], `${pair[1]} ${pair[2]} → ${pair[4]}`) })
   return out
 }
 

@@ -5580,6 +5580,55 @@ async function main() {
     check('swap intent: short chain-ish words (eth) stay tokens', ethBuy.isSwap && !ethBuy.problem && ethBuy.buyToken?.toLowerCase() === 'eth')
     const trTypo = parseTransferSegment('send 1 USDC on Aribtrum to 0x1111111111111111111111111111111111111111')
     check('transfer: typo\'d chain word still resolves the chain', !!trTypo && !('problem' in trTypo) && trTypo.chainId === 42161)
+
+    // ── GTM squad 2026-09-08 (PATHS): prod ask_failures replayed on main ──
+    // Five shapes strangers actually typed that still dead-ended on main.
+    // Each pin is the ask as typed → the outcome the USER sees.
+    // (1) "buy $12 orth of AAPL" (prod 2026-09-07): a one-edit typo of the
+    //     "worth" we print on every card became the BUY TOKEN ("I don't know
+    //     the token 'orth'").
+    for (const w of ['orth', 'woth', 'wroth', 'worht']) {
+      const p = parseSwapIntent(`buy $12 ${w} of AAPL`)
+      check(`swap intent: "$12 ${w} of AAPL" reads the typo as "worth", never as a token`, p.isSwap && !p.problem && p.buyToken === 'AAPL' && p.sellAmountUsd === '12' && !p.sellToken)
+    }
+    const sharesStill = parseSwapIntent('buy $12 shares of AAPL')
+    check('swap intent: "$12 shares of AAPL" is untouched by the worth rewrite', sharesStill.isSwap && sharesStill.buyToken === 'AAPL' && sharesStill.sellAmountUsd === '12')
+    // (2) "buy $12 worth of APPL using vredit cartd" (prod 2026-08-31, $11 of
+    //     ETH idle): the fiat clause landed in the sell-token slot. Stripped
+    //     + flagged; a real spend token ("using ETH") is left alone.
+    for (const ask of ['buy $12 worth of AAPL using vredit cartd', 'buy $12 of AAPL with my credit card', 'buy $12 of AAPL by bank transfer', 'buy $12 of AAPL with apple pay on robinhood']) {
+      const p = parseSwapIntent(ask)
+      check(`swap intent: fiat spend clause is stripped + flagged — "${ask}"`, p.isSwap && !p.problem && p.buyToken === 'AAPL' && !p.sellToken && p.viaCard === true)
+    }
+    const spendEth = parseSwapIntent('buy $12 of AAPL using ETH')
+    check('swap intent: a token spend clause ("using ETH") still names the sell token', spendEth.isSwap && spendEth.sellToken === 'ETH' && !spendEth.viaCard)
+    // (3) Arrows — our own card titles print "USDG → TSLA"; retyped, the buy
+    //     side was lost and the ask defaulted to Base ("I don't know the token
+    //     USDG on Base", prod 2026-09-02).
+    for (const ask of ['swap 10 USDG → AAPL on Uniswap', 'swap 10 USDG -> AAPL', 'Swap 12 USDG → TSLA']) {
+      const p = parseSwapIntent(ask)
+      check(`swap intent: arrow keeps the buy side — "${ask}"`, p.isSwap && !p.problem && p.sellToken === 'USDG' && /^(AAPL|TSLA)$/.test(p.buyToken ?? ''))
+    }
+    const arrowXc = parseCrossChainSwap('swap 1 USDC from base → arbitrum')
+    check('xchain: arrow in the destination slot still builds base→arbitrum', !!arrowXc && !('problem' in arrowXc) && arrowXc.destinationChain === 'arbitrum')
+    check('jobs: an arrow inside a lone cross-chain ask never becomes a job clarify', compileJobAsk('swap 1 USDC from base → arbitrum') === null)
+    // (4) "$1 USDC from Base to USDG on Robinhood Chain" (prod 2026-09-04,
+    //     $2.2k wallet → planner): a dollar sign on a stable IS the amount.
+    const dollarXc = parseCrossChainSwap('Convert $1 USDC from Base to USDG on Robinhood Chain via cross-chain swap')
+    check('xchain: "$1 USDC from Base to USDG on Robinhood Chain" parses 1 USDC base→robinhood', !!dollarXc && !('problem' in dollarXc) && dollarXc.amount === '1' && dollarXc.originToken === 'USDC' && dollarXc.destinationToken === 'USDG' && dollarXc.destinationChain === 'robinhood')
+    const dollarXcOf = parseCrossChainSwap('Swap $5 of USDC from Base to Arbitrum')
+    check('xchain: "$5 of USDC from Base to Arbitrum" parses 5 USDC', !!dollarXcOf && !('problem' in dollarXcOf) && dollarXcOf.amount === '5' && dollarXcOf.destinationChain === 'arbitrum')
+    const dollarXcEth = parseCrossChainSwap('Swap $5 of ETH from Base to Arbitrum')
+    check('xchain: a dollar amount of a NON-stable clarifies by name (never the planner)', !!dollarXcEth && 'problem' in dollarXcEth && /amount in ETH/.test(dollarXcEth.problem))
+    // (5) "send 5 USDC to 0x… on Optimism": #707 lit Optimism in the transfer
+    //     grammar but not its chain table — the parse matched, then re-asked
+    //     for the chain the user had just typed.
+    const opSend = parseTransferSegment('Send 5 USDC to 0x1111111111111111111111111111111111111111 on Optimism')
+    check('transfer: "… on Optimism" resolves chain 10 (tail form)', !!opSend && !('problem' in opSend) && opSend.chainId === 10 && opSend.chainName === 'Optimism')
+    const opSendMid = parseTransferSegment('send 5 USDC on optimism to nate.eth')
+    check('transfer: "on optimism to …" resolves chain 10 (mid form)', !!opSendMid && !('problem' in opSendMid) && opSendMid.chainId === 10)
+    const chainless = parseTransferSegment('send 5 USDC to nate.eth', { fallbackChainId: null })
+    check('transfer: the chain-clarify chips offer Optimism and every chip round-trips', !!chainless && 'problem' in chainless && !!chainless.chips && chainless.chips.some((c) => c.label === 'Optimism') && chainless.chips.every((c) => { const r = parseTransferSegment(c.resume); return !!r && !('problem' in r) }))
     const armLink = parseGuardianArm('Set a stop-loss on my Hyperliquid ETH position at -5%')
     check('guardian: legacy /i/stop-loss link phrasing parses (venue word stripped)', !!armLink && armLink.coin === 'ETH' && armLink.triggerValue === 5)
     const fundTypo = parseRobinhoodFunding('Fund Robbinhood chain with $12 from base')

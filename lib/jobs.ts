@@ -29,7 +29,7 @@
 import { parseAaveOp, parseAaveSupply, type AaveOpParams, type AaveSupplyParams } from '@/lib/aave-supply'
 import { parseMorphoLend, parseMorphoOp } from '@/lib/morpho-supply'
 import { parseCrossChainSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
-import { chainAlt, canonicalChainWord, normalizeChainWords } from '@/lib/chain-lexicon'
+import { chainAlt, canonicalChainWord, normalizeArrows, normalizeChainWords, normalizeWorth } from '@/lib/chain-lexicon'
 import { hlUnsizedChips, parseHlIntent, type HlIntent, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm, type GuardianArmAsk } from '@/lib/hl-guardian'
 import { parseLidoStake } from '@/lib/lido-stake'
@@ -639,7 +639,12 @@ const compilableKinds = (): string => {
  * null when the message isn't job-shaped (fewer than 2 parseable segments —
  * single asks belong to the native layers directly).
  */
-export function compileJobAsk(message: string): CompiledJob | { problem: string } | { clarify: ClarifyRequest } | null {
+export function compileJobAsk(rawMessage: string): CompiledJob | { problem: string } | { clarify: ClarifyRequest } | null {
+  // Arrows are how our own cards print a pair ("USDG → AAPL") and "worth" is
+  // what every card says before "of"; the segment grammars read words, so
+  // rewrite both once here (lib/chain-lexicon) — a typo'd "worth" inside a
+  // compound ("…, then buy $10 orth of AAPL") used to refuse the whole job.
+  const message = normalizeArrows(normalizeWorth(rawMessage))
   const segments = expandCompoundSegments(splitJobSegments(message), message)
   // Single asks belong to the native layers — EXCEPT segments that are
   // multi-step on their own: a lone Robinhood funding segment (the MCP-path

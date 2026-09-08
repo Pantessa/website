@@ -22,7 +22,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { decodeFunctionData, erc20Abi, isAddress } from 'viem'
-import { chainAlt } from '@/lib/chain-lexicon'
+import { chainAlt, normalizeWorth } from '@/lib/chain-lexicon'
 import type { TxChainStep } from '@/lib/transaction-layer'
 
 // ── The working set's Aave-capable agent ────────────────────────────────────
@@ -163,7 +163,8 @@ export function resolveSupplyAmount(
  * (→ normal routing). Conservative: questions ("what's the APY on aave?")
  * carry no supply verb + amount and fall through.
  */
-export function parseAaveSupply(message: string): AaveSupplyParams | { problem: string } | null {
+export function parseAaveSupply(rawMessage: string): AaveSupplyParams | { problem: string } | null {
+  const message = normalizeWorth(rawMessage)
   if (OTHER_VENUE_RE.test(message)) return null
   const explicitAave = /\baave\b/i.test(message)
   const poolish = POOLISH_RE.test(message)
@@ -833,7 +834,8 @@ const QUESTION_START_RE = /^\s*(?:should|why|what|when|how|is|are|does|do)\b/i
  * parseAaveSupply: params, `{op, problem}` when clearly the op but
  * under-specified, or null (→ normal routing).
  */
-export function parseAaveOp(message: string): AaveOpParams | { op: AaveOpKind; problem: string } | null {
+export function parseAaveOp(rawMessage: string): AaveOpParams | { op: AaveOpKind; problem: string } | null {
+  const message = normalizeWorth(rawMessage)
   if (OTHER_VENUE_RE.test(message)) return null
   if (QUESTION_START_RE.test(message)) return null
   const explicitAave = /\baave\b/i.test(message)

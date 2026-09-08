@@ -79,6 +79,11 @@ const FUZZY_STOP = new Set([
 ])
 
 // Damerau–Levenshtein capped at 2 — small strings, called on single words.
+// Exported as `wordDistance` so the other ask grammars share ONE typo
+// metric (a "worth" typo, a "credit card" typo) instead of growing their own.
+export function wordDistance(a: string, b: string): number {
+  return editDistance(a.toLowerCase(), b.toLowerCase())
+}
 function editDistance(a: string, b: string): number {
   const m = a.length, n = b.length
   if (Math.abs(m - n) > 2) return 3
@@ -200,4 +205,34 @@ export function unknownDestinationWord(message: string): string | null {
   const m = message.match(/\bto\s+([A-Za-z]{3,14})\s*[?.!]?\s*$/i)
   if (!m) return null
   return canonicalChainWord(m[1]) ? null : m[1]
+}
+
+/**
+ * Rewrite arrow glyphs between two slots to the word "to" ("swap 10 USDG →
+ * AAPL", "12 USDG -> TSLA"). Our OWN card titles and receipts print the
+ * pair with an arrow, so strangers retype it that way — and every grammar
+ * read "USDG → AAPL" as a bare sell of USDG (the buy side silently lost,
+ * the ask defaulting to Base where USDG isn't a token: prod ask_failures
+ * 2026-09-02). Called at parse entry next to normalizeChainWords.
+ */
+export function normalizeArrows(text: string): string {
+  return text.replace(/\s*(?:→|➝|➜|⇒|⟶|->|=>)\s*/g, ' to ')
+}
+
+/**
+ * "buy $12 orth of AAPL" (prod 2026-09-07): a one-edit typo of the "worth"
+ * we print on every card. Every dollar grammar (swap, HL, Aave, the jobs
+ * segments) reads "$N (worth) of TOKEN", so a typo'd "worth" either became
+ * the TOKEN ("I don't know the token 'orth'") or fell out of the grammar
+ * entirely. Only the slot between a dollar amount and "of/in" is examined,
+ * so the rewrite can never touch a real symbol elsewhere in the ask.
+ */
+const WORTH_SLOT_RE = /(\$\s?\d+(?:\.\d+)?|\d+(?:\.\d+)?\s?(?:dollars?|usd|bucks?))\s+([a-zA-Z]{3,7})\s+(?=(?:of|in)\s+\$?[a-zA-Z0-9]{2,})/gi
+export function normalizeWorth(text: string): string {
+  return text.replace(WORTH_SLOT_RE, (full, amt: string, word: string) => {
+    const w = word.toLowerCase()
+    if (w === 'worth') return full
+    if (/^(?:with|using|shares?|units?)$/.test(w)) return full
+    return wordDistance(w, 'worth') <= 2 ? `${amt} worth ` : full
+  })
 }

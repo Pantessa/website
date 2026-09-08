@@ -15,6 +15,8 @@
 import { parseVoteIntent } from '../lib/vote-intent'
 import { parseAaveSupply, parseAaveOp } from '../lib/aave-supply'
 import { parseDcaRun, parseDcaCreate, parseDcaManage } from '../lib/dca'
+import { parseDcaAutoToggle } from '../lib/dca-auto'
+import { parseMorphoLend, parseMorphoOp } from '../lib/morpho-supply'
 import { compileJobAsk } from '../lib/jobs'
 import { parseRebalanceAsk } from '../lib/rebalance'
 import { parseMosaicAsk } from '../lib/mosaic'
@@ -58,12 +60,28 @@ export function simulateLadder(message: string): Outcome {
   if (dc) return 'problem' in dc ? { gate: 'dca', kind: 'clarify', note: dc.problem } : { gate: 'dca', kind: 'action' }
   const dm = parseDcaManage(message)
   if (dm) return { gate: 'dca', kind: 'action', note: dm.op }
+  // DCA autopilot toggles ("make my ETH dca autonomous", "turn off my dca
+  // autopilot") — /docs/dca teaches both; they were invisible to this
+  // replica until the 2026-09-08 squad replay (they read as planner falls).
+  const da = parseDcaAutoToggle(message)
+  if (da) return { gate: 'dca-auto', kind: 'action', note: da.op }
 
   const job = compileJobAsk(message)
   if (job) {
     if ('problem' in job) return { gate: 'jobs', kind: 'clarify', note: job.problem }
     if ('clarify' in job) return { gate: 'jobs', kind: 'clarify', note: String((job as { clarify: unknown }).clarify) }
     return { gate: 'jobs', kind: 'action', note: `${(job as { steps: unknown[] }).steps?.length ?? '?'} steps` }
+  }
+
+  // Morpho sits AFTER jobs and BEFORE mosaic in the route (a single-venue
+  // gate, so below the compound compiler — the #595 invariant). Seeded
+  // splash chips ("lend 100 USDC on morpho") reach it; the replica had no
+  // rung, so the audit could never see a Morpho dead-end.
+  if (/\bmorpho\b/i.test(message)) {
+    const ml = parseMorphoLend(message)
+    if (ml) return 'problem' in ml ? { gate: 'morpho-lend', kind: 'clarify', note: ml.problem } : { gate: 'morpho-lend', kind: 'action' }
+    const mo = parseMorphoOp(message)
+    if (mo) return 'problem' in mo ? { gate: 'morpho-op', kind: 'clarify', note: mo.problem } : { gate: 'morpho-op', kind: 'action', note: mo.op }
   }
 
   // Mosaic sits AFTER jobs (a compound "tile …, then …" keeps its claim)

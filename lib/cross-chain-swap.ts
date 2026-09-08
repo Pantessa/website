@@ -15,7 +15,7 @@
 
 import { decodeFunctionData, erc20Abi, getAddress, isAddress } from 'viem'
 import type { EvmTxRequest } from '@/lib/transaction-layer'
-import { chainAlt, canonicalChainWord, normalizeChainWords, prettyChainWord, unknownDestinationWord } from '@/lib/chain-lexicon'
+import { chainAlt, canonicalChainWord, normalizeArrows, normalizeChainWords, prettyChainWord, unknownDestinationWord } from '@/lib/chain-lexicon'
 
 // Chain words we accept in a swap phrase (kept separate from token matching so
 // a token is never mistaken for a chain). Aliases come from the shared
@@ -69,8 +69,28 @@ const DEST_ONLY_RE = new RegExp(
  * it's clearly a cross-chain swap but under-specified, or null when it isn't
  * one at all (→ falls through to normal routing / quote questions).
  */
+// "$1 USDC" / "$5 worth of USDC" — a dollar sign on a STABLE is the amount
+// itself (1:1, the Aave grammar's rule, website#713). The origin grammar
+// only reads "<amt> <token>", so "Convert $1 USDC from Base to USDG on
+// Robinhood Chain" fell to the planner for a $2k wallet (prod 2026-09-04).
+// Non-stables keep their dollar sign and get a clarify below — a bridge is
+// sized in the token it moves, and this layer never prices one.
+const DOLLAR_STABLE_RE = /\$\s?(\d+(?:\.\d+)?)(?:\s+worth)?(?:\s+(?:of|in))?\s+(usdc\.e|usdc|usdt|usdg|dai|usde)\b/gi
+const DOLLAR_OTHER_RE = new RegExp(
+  `\\b(?:swap|bridge|move|convert|send|trade|transfer)\\s+\\$\\s?(\\d+(?:\\.\\d+)?)(?:\\s+worth)?(?:\\s+(?:of|in))?\\s+([A-Za-z]{2,12})\\s+(?:from|on)\\s+(${CHAIN_ALT})\\b`,
+  'i',
+)
+
 export function parseCrossChainSwap(rawMessage: string): CrossChainSwapParams | { problem: string } | null {
-  const message = normalizeChainWords(rawMessage)
+  const message = normalizeChainWords(normalizeArrows(rawMessage)).replace(DOLLAR_STABLE_RE, '$1 $2')
+  const dollarOther = message.match(DOLLAR_OTHER_RE)
+  if (dollarOther) {
+    const tok = dollarOther[2].toUpperCase()
+    const originWord = prettyChainWord(canonicalChainWord(dollarOther[3]) ?? dollarOther[3])
+    return {
+      problem: `A cross-chain move is sized in the token it moves, and I don't price ${tok} on this path — say the amount in ${tok}, e.g. “swap 0.002 ${tok} from ${originWord} to Arbitrum”.`,
+    }
+  }
   const o = message.match(ORIGIN_RE)
   if (!o) {
     // Wh-questions ("what's the cheapest way to move USDT from …") belong to

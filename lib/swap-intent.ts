@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { WorkingContext } from './working-context'
-import { canonicalChainWord, chainMentions } from './chain-lexicon'
+import { canonicalChainWord, chainMentions, normalizeArrows, normalizeWorth, wordDistance } from './chain-lexicon'
 
 export interface SwapIntent {
   isSwap: boolean
@@ -40,6 +40,14 @@ export interface SwapIntent {
    *  in the guard notes before anything is signed. Never set alongside
    *  sellAmountHuman / sellAmountUsd on a fresh parse. */
   sellAll?: true
+  /** "buy $12 of AAPL with my credit card" — the spend clause named FIAT,
+   *  not a token. The clause is stripped before parsing (it used to land in
+   *  the sell-token slot: prod ask_failures 2026-08-31 answered "I don't
+   *  know the token 'vredit'" to a stranger holding $11 of ETH); the flag
+   *  records the preference for the funding layer. The build itself is
+   *  unchanged — a funded wallet spends its own stable, an empty one reaches
+   *  the on-ramp chip through the ordinary shortfall path. */
+  viaCard?: true
   /** Set when the message is clearly a swap ask but under-specified. */
   problem?: string
   /** A price-triggered sell with no amount ("sell my eth when it hits
@@ -251,7 +259,40 @@ const PRICE_TRIGGER_SELL_RE = new RegExp(
   'i',
 )
 
-export function parseSwapIntent(message: string): SwapIntent {
+// ── Entry normalization — typos of OUR OWN example phrasings ──────────────
+// "buy $12 orth of AAPL" (prod 2026-09-07): the grammar's optional "worth"
+// didn't match, the bare-buy shape claimed "$12 orth" and answered "I don't
+// know the token 'orth'". normalizeWorth (lib/chain-lexicon) is shared with
+// the HL, Aave and jobs grammars, which all read the same "$N worth of" slot.
+//
+// "buy $12 of AAPL with my credit card" / "using vredit cartd" / "by card":
+// a spend clause naming FIAT. Strip it (the grammar would read the first
+// word as the sell token) and remember the preference. Words are matched
+// typo-tolerantly against the fiat vocabulary; a clause whose words are all
+// tokens ("using ETH") is left alone.
+const FIAT_WORDS = ['credit', 'debit', 'card', 'cash', 'fiat', 'bank', 'apple', 'google', 'pay', 'paypal', 'venmo', 'stripe', 'onramp', 'ramp', 'account', 'transfer', 'wire']
+const FIAT_CLAUSE_RE = /\s+(?:with|using|via|by|from|through)\s+((?:(?:my|a|the|an)\s+)?[a-zA-Z-]{2,12}(?:\s+[a-zA-Z-]{2,12}){0,2})(?=\s*(?:[,.!?]|$|\s+(?:on|to|for|then|and)\b))/i
+const fiatish = (w: string) => FIAT_WORDS.some((f) => w === f || (w.length >= 4 && wordDistance(w, f) <= (w.length >= 6 ? 2 : 1)))
+function stripFiatSpend(text: string): { text: string; viaCard: boolean } {
+  const m = text.match(FIAT_CLAUSE_RE)
+  if (!m) return { text, viaCard: false }
+  const words = m[1].toLowerCase().replace(/^(?:my|a|the|an)\s+/, '').split(/\s+/)
+  if (!words.some(fiatish)) return { text, viaCard: false }
+  return { text: text.replace(m[0], ''), viaCard: true }
+}
+
+// "Build a Uniswap swap: 50 USDC for cbBTC" (a seeded splash chip) — the
+// colon after the verb hid a fully-specified pair behind "say the amount and
+// pair", the exact re-ask-for-what-was-typed the lexicon contract forbids.
+const VERB_COLON_RE = /\b(swap|buy|sell|convert|trade)\s*:\s*(?=\$?\d)/gi
+
+export function parseSwapIntent(rawMessage: string): SwapIntent {
+  const fiat = stripFiatSpend(normalizeWorth(normalizeArrows(rawMessage.replace(VERB_COLON_RE, '$1 '))))
+  const parsed = parseSwapIntentInner(fiat.text)
+  return fiat.viaCard && parsed.isSwap ? { ...parsed, viaCard: true } : parsed
+}
+
+function parseSwapIntentInner(message: string): SwapIntent {
   const wantsLimit = /\blimit\b/i.test(message)
 
   if (!wantsLimit && !OTHER_VENUE_RE.test(message)) {
