@@ -69,6 +69,7 @@
 // than a KYC round trip that ends at a wall.
 
 import type { ClarifyOption } from '@/lib/clarify'
+import { fundingOriginWords } from '@/lib/funding-origins'
 
 /** Networks Stripe's onramp can deliver to that our funding scan also reads.
  *
@@ -412,7 +413,7 @@ export function classifyStripeOnrampFailure(status: number, rawBody: string): St
     return {
       kind: 'region',
       message:
-        "Stripe can't offer card funding from where you are right now — you can still send USDC or ETH to this wallet on Base, Ethereum, or Arbitrum.",
+        `Stripe can't offer card funding from where you are right now — you can still send USDC or ETH to this wallet on ${fundingOriginWords()}.`,
     }
   }
   return { kind: 'stripe', message: 'Could not start the funding session.' }

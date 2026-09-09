@@ -79,6 +79,11 @@ const FUZZY_STOP = new Set([
 ])
 
 // Damerau–Levenshtein capped at 2 — small strings, called on single words.
+// Exported as `wordDistance` so the other ask grammars share ONE typo
+// metric (a "worth" typo, a "credit card" typo) instead of growing their own.
+export function wordDistance(a: string, b: string): number {
+  return editDistance(a.toLowerCase(), b.toLowerCase())
+}
 function editDistance(a: string, b: string): number {
   const m = a.length, n = b.length
   if (Math.abs(m - n) > 2) return 3
@@ -200,4 +205,65 @@ export function unknownDestinationWord(message: string): string | null {
   const m = message.match(/\bto\s+([A-Za-z]{3,14})\s*[?.!]?\s*$/i)
   if (!m) return null
   return canonicalChainWord(m[1]) ? null : m[1]
+}
+
+/**
+ * Rewrite arrow glyphs between two slots to the word "to" ("swap 10 USDG →
+ * AAPL", "12 USDG -> TSLA"). Our OWN card titles and receipts print the
+ * pair with an arrow, so strangers retype it that way — and every grammar
+ * read "USDG → AAPL" as a bare sell of USDG (the buy side silently lost,
+ * the ask defaulting to Base where USDG isn't a token: prod ask_failures
+ * 2026-09-02). Called at parse entry next to normalizeChainWords.
+ */
+export function normalizeArrows(text: string): string {
+  return text.replace(/\s*(?:→|➝|➜|⇒|⟶|->|=>)\s*/g, ' to ')
+}
+
+/**
+ * "buy $12 orth of AAPL" (prod 2026-09-07): a one-edit typo of the "worth"
+ * we print on every card. Every dollar grammar (swap, HL, Aave, the jobs
+ * segments) reads "$N (worth) of TOKEN", so a typo'd "worth" either became
+ * the TOKEN ("I don't know the token 'orth'") or fell out of the grammar
+ * entirely. Only the slot between a dollar amount and "of/in" is examined,
+ * so the rewrite can never touch a real symbol elsewhere in the ask.
+ */
+const WORTH_SLOT_RE = /(\$\s?\d+(?:\.\d+)?|\d+(?:\.\d+)?\s?(?:dollars?|usd|bucks?))\s+([a-zA-Z]{3,7})\s+(?=(?:of|in)\s+\$?[a-zA-Z0-9]{2,})/gi
+
+/**
+ * "Convert two dollars of ETH to USDC" (a link's A/B phrasing, squad LINKS
+ * round 2): every dollar grammar reads digits, so a spelled-out amount fell
+ * past the swap layer to the planner — whose tool read "two" as 2 ETH and
+ * built a $5k swap for a $0 wallet. Spelled numbers before a money word
+ * become the canonical dollar form ("two dollars" → "$2", "a hundred
+ * bucks" → "$100", "five dollars' worth" → "$5 worth", and "10 dollars" →
+ * "$10" too); nothing else in the sentence is touched. Shared by every grammar through normalizeWorth.
+ */
+const NUMBER_WORDS: Record<string, number> = {
+  a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+  twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90, hundred: 100, thousand: 1000,
+}
+const DOLLAR_WORDS_RE = /\b(a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[\s-]+(one|two|three|four|five|six|seven|eight|nine))?(?:\s+(hundred|thousand))?\s+(dollars?|bucks?|usd)(?:['’]s?)?(?![a-z])/gi
+/** "10 dollars" / "5 bucks" / "1.50 usd" → "$10" / "$5" / "$1.50": the one
+ *  canonical dollar form every grammar reads (the HL grammar reads ONLY it —
+ *  "long 10 dollars of HYPE" was a planner fall). `usd` never eats USDC/USDG. */
+const DIGIT_DOLLARS_RE = /(?<![\w$.])(\d+(?:\.\d+)?)\s?(?:dollars?|bucks?|usd)(?:['’]s?)?(?![a-z])/gi
+export function normalizeDollarWords(text: string): string {
+  const spelled = text.replace(DOLLAR_WORDS_RE, (_full, lead: string, unit: string | undefined, mult: string | undefined) => {
+    let n = NUMBER_WORDS[lead.toLowerCase()] ?? 0
+    if (unit) n += NUMBER_WORDS[unit.toLowerCase()] ?? 0
+    if (mult) n *= NUMBER_WORDS[mult.toLowerCase()] ?? 1
+    return n > 0 ? `$${n}` : _full
+  })
+  return spelled.replace(DIGIT_DOLLARS_RE, '$$$1')
+}
+
+export function normalizeWorth(rawText: string): string {
+  const text = normalizeDollarWords(rawText)
+  return text.replace(WORTH_SLOT_RE, (full, amt: string, word: string) => {
+    const w = word.toLowerCase()
+    if (w === 'worth') return full
+    if (/^(?:with|using|shares?|units?)$/.test(w)) return full
+    return wordDistance(w, 'worth') <= 2 ? `${amt} worth ` : full
+  })
 }

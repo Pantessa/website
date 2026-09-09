@@ -20,7 +20,7 @@ export default function SnapshotDocsPage() {
       </p>
       <h1 className="docs__h1">Snapshot DAO voting</h1>
       <p className="docs__lead">
-        <Link href="/servers/yeetful-snapshot">Yeetful · Snapshot</Link>{' '}is a paid MCP
+        <Link href="/servers/yeetful-snapshot">Pantessa · Snapshot</Link>{' '}is a paid MCP
         service that puts DAO governance in the chat: <strong>browse</strong> live proposals,
         then <strong>cast a vote your own wallet signs</strong>. The vote is an off-chain
         EIP-712 message — Pantessa builds it, <em>you</em>{' '}sign it, because Snapshot voting
@@ -30,7 +30,7 @@ export default function SnapshotDocsPage() {
       <div className="docs__prose">
         <h2>Browse proposals</h2>
         <p>
-          Add <strong>Yeetful · Snapshot</strong>{' '}to your active agents and ask in plain
+          Add <strong>Pantessa · Snapshot</strong>{' '}to your active agents and ask in plain
           language — &quot;what DAO proposals are live right now?&quot; or &quot;show active
           proposals in aave.eth.&quot; The chat calls the service&apos;s <code>list_proposals</code>{' '}
           tool and answers from the live{' '}

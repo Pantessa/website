@@ -4,6 +4,7 @@ import { PLANS } from '@/lib/plans'
 import PricingPlans from '@/components/PricingPlans'
 import StayUpToDate from '@/components/StayUpToDate'
 import Footer from '@/components/Footer'
+import { LINK_FEE_PCT, SWAP_FEE_PCT } from '@/lib/fees'
 
 /** /pricing — the external plan page. Server component for SEO; the cards +
  * checkout are the PricingPlans client child. The same plan config powers
@@ -37,7 +38,7 @@ const JSON_LD = JSON.stringify({
 const FAQ: { q: string; a: string }[] = [
   {
     q: 'How do creator kickbacks work?',
-    a: "Pantessa takes a 0.20% fee on fee-bearing swap conversions — and when the conversion came through your intent link, half of that fee is yours. Earnings accrue automatically from server-truth signed turns; claims open at $10 and pay out in USDC on Base. Every plan earns the same split; plans differ only in how many links can be active at once.",
+    a: `Pantessa takes a ${LINK_FEE_PCT} fee on swap conversions that come through an intent link (${SWAP_FEE_PCT} in plain chat) — and half of the link fee is yours. Earnings accrue automatically from server-truth signed turns; claims open at $10 and pay out in USDC on Base. Every plan earns the same split; plans differ only in how many links can be active at once.`,
   },
   {
     q: 'What is a YEET credit?',
@@ -49,7 +50,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'What happens when I run out?',
-    a: 'House-model answers pause until the month resets or you upgrade. Everything paid keeps working — add a paid engine like Yeetful · Claude and the chat continues pay-per-call.',
+    a: 'House-model answers pause until the month resets or you upgrade. Everything paid keeps working — add a paid engine like Pantessa · Claude and the chat continues pay-per-call.',
   },
 ]
 
@@ -69,7 +70,7 @@ export default function PricingPage() {
               the embeddable chat. Plans meter <strong>active links</strong> and{' '}
               <strong>YEET credits</strong>; on-chain calls stay pay-per-call from your users&rsquo;
               own wallets. And every plan earns: creators keep{' '}
-              <strong>half of Pantessa&rsquo;s 0.20% fee</strong>{' '}on their links&rsquo; conversions.
+              <strong>half of Pantessa&rsquo;s {LINK_FEE_PCT} link fee</strong>{' '}on their links&rsquo; conversions.
             </p>
           </div>
 

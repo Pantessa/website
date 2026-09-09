@@ -57,6 +57,12 @@ export const FUNDING_MARGIN_BPS = 1_000
 export const FUNDING_FLAT_USD = 1
 /** Below this the solver fee dominates the move — the plan floors here. */
 export const FUNDING_MIN_PLAN_USD = 2
+/** The smallest leg a combined plan will emit. A $0.48 USDC leg from
+ *  Arbitrum to Ethereum is under any solver's fee for the delivery — the
+ *  chip would compile, the job would refuse at that leg's build, and the
+ *  stranger would sit on a dead step after a signature-free click (squad
+ *  LINKS, /i/stake-eth, 2026-09-08). Same number as the smallest plan. */
+export const MIN_LEG_USD = FUNDING_MIN_PLAN_USD
 /** Ignore dust sources below this. */
 const DUST_USD = 0.5
 
@@ -101,9 +107,13 @@ export function promisableCapacityUsd(sources: FundingSource[], gasIncluded: boo
   if (sources.length === 0) return 0
   const byUsd = [...sources].sort((a, b) => b.usd - a.usd)
   const single = Math.max(...byUsd.map((s) => sourceCapUsd(s, gasIncluded)))
-  const combined = byUsd.length >= 2 ? byUsd.reduce((a, s, i) => a + sourceCapUsd(s, gasIncluded && i === 0), 0) : 0
+  // A combined plan only counts legs the combine path would actually emit
+  // (≥ MIN_LEG_USD each) — otherwise "Move what I've got (~$18.50)" promises
+  // a total its own legs can't deliver.
+  const combined = byUsd.length >= 2 ? byUsd.reduce((a, s, i) => { const cap = sourceCapUsd(s, gasIncluded && i === 0); return a + (i === 0 || cap >= MIN_LEG_USD ? cap : 0) }, 0) : 0
   return Number(Math.max(single, combined, 0).toFixed(2))
 }
+
 
 export interface FundingNeed {
   /** Destination chain + token the blocked action needs. */
@@ -291,11 +301,18 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
       const carriesGas = gasCarried === 0 && gasUsd > 0
       const spendable = sourceCapUsd(s, carriesGas) - (carriesGas ? gasUsd : 0)
       if (spendable <= 0) continue
-      const segs = carriesGas ? legsFrom(s, Math.min(spendable, needUsd - covered)) : [legResume(s, sourceAmountFor(s, Math.min(s.usd, needUsd - covered)), need)]
+      // A leg under the minimum is a leg the solver may refuse — skip the
+      // source rather than emit it (mirrors promisableCapacityUsd), and a
+      // LAST leg sized to the remainder ("then Swap 1 USDC from base…")
+      // moves at least the minimum instead: the extra stays the user's on
+      // the destination, the leg fills.
+      if (!carriesGas && spendable < MIN_LEG_USD) continue
+      const want = Math.max(Math.min(spendable, needUsd - covered), Math.min(MIN_LEG_USD, spendable))
+      const segs = carriesGas ? legsFrom(s, want) : [legResume(s, sourceAmountFor(s, want), need)]
       if (!segs) continue
       legs.push(...segs)
       if (carriesGas) gasCarried = gasUsd
-      covered += Math.min(spendable, needUsd - covered)
+      covered += want
       if (covered >= needUsd) break
     }
     if (covered >= needUsd && (gasUsd === 0 || gasCarried > 0)) {

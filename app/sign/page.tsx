@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import SignHandoff from '@/components/SignHandoff'
+import { LINKS_CARD } from '@/lib/og-defaults'
 
 // /sign — the agent → human handoff surface. An external agent (Claude
 // Desktop/Code, OpenClaw, any MCP client) plans an action and hands its human
@@ -17,8 +18,8 @@ export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   robots: { index: false, follow: false },
-  openGraph: { title: TITLE, description: DESCRIPTION, siteName: 'Pantessa', type: 'website' },
-  twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION },
+  openGraph: { title: TITLE, description: DESCRIPTION, siteName: 'Pantessa', type: 'website', images: LINKS_CARD },
+  twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION, images: LINKS_CARD },
 }
 
 export default async function SignPage({

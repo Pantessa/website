@@ -22,7 +22,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { decodeFunctionData, erc20Abi, isAddress } from 'viem'
-import { chainAlt } from '@/lib/chain-lexicon'
+import { chainAlt, normalizeWorth } from '@/lib/chain-lexicon'
 import type { TxChainStep } from '@/lib/transaction-layer'
 
 // ── The working set's Aave-capable agent ────────────────────────────────────
@@ -163,7 +163,30 @@ export function resolveSupplyAmount(
  * (→ normal routing). Conservative: questions ("what's the APY on aave?")
  * carry no supply verb + amount and fall through.
  */
-export function parseAaveSupply(message: string): AaveSupplyParams | { problem: string } | null {
+export function parseAaveSupply(rawMessage: string): AaveSupplyParams | { problem: string } | null {
+  const inner = parseAaveSupplyInner(rawMessage)
+  // Strict tail (squad SECURITY r2): "supply 5 USDC to aave for nate.eth"
+  // half-parsed — the supply claimed the turn and the name was silently
+  // dropped. An Aave supply lands in the wallet that signs it; a sentence
+  // naming ANOTHER wallet (address, ENS, "on behalf of") is refused by name
+  // instead of quietly building for the signer.
+  if (inner && !('problem' in inner)) {
+    const behalf = normalizeWorth(rawMessage).match(ON_BEHALF_RE)
+    if (behalf) {
+      return {
+        problem: `Aave supplies land in the wallet that signs them — I can't supply on behalf of ${behalf[1]}. Drop the name and I'll build it for your own wallet (e.g. “supply ${inner.amount} ${inner.token.toUpperCase()} to Aave”).`,
+      }
+    }
+  }
+  return inner
+}
+
+/** Another wallet named as the beneficiary: a raw address, an ENS name, or
+ *  an explicit "on behalf of …" — none of which the supply can honor. */
+const ON_BEHALF_RE = /\b(?:for|to|on\s+behalf\s+of|into)\s+(?:the\s+|my\s+)?(?:(?:wallet|account|address)\s+)?((?:0x[0-9a-fA-F]{40})|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.eth))\b/i
+
+function parseAaveSupplyInner(rawMessage: string): AaveSupplyParams | { problem: string } | null {
+  const message = normalizeWorth(rawMessage)
   if (OTHER_VENUE_RE.test(message)) return null
   const explicitAave = /\baave\b/i.test(message)
   const poolish = POOLISH_RE.test(message)
@@ -833,7 +856,8 @@ const QUESTION_START_RE = /^\s*(?:should|why|what|when|how|is|are|does|do)\b/i
  * parseAaveSupply: params, `{op, problem}` when clearly the op but
  * under-specified, or null (→ normal routing).
  */
-export function parseAaveOp(message: string): AaveOpParams | { op: AaveOpKind; problem: string } | null {
+export function parseAaveOp(rawMessage: string): AaveOpParams | { op: AaveOpKind; problem: string } | null {
+  const message = normalizeWorth(rawMessage)
   if (OTHER_VENUE_RE.test(message)) return null
   if (QUESTION_START_RE.test(message)) return null
   const explicitAave = /\baave\b/i.test(message)

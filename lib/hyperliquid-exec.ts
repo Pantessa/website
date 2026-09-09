@@ -20,6 +20,7 @@
 //  the venue, so the guard hard-refuses them.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { normalizeWorth } from '@/lib/chain-lexicon'
 import { createL1ActionHash } from '@nktkas/hyperliquid/signing'
 import { encodeFunctionData, erc20Abi, parseUnits } from 'viem'
 import type { Eip712TypedData } from '@/lib/eip712'
@@ -125,7 +126,9 @@ const FILLER = String.raw`(?:\s+(?:please|for me|now|right away))*`
  * execution ask (fall through to normal routing).
  */
 export function parseHlIntent(message: string): HlIntent | null {
-  const m = message.toLowerCase().replace(/\s+/g, ' ').trim()
+  // "$12 orth of HYPE" — a typo of the "worth" our cards print fell out of
+  // this grammar entirely (squad audit 2026-09-08); shared lexicon rewrite.
+  const m = normalizeWorth(message).toLowerCase().replace(/\s+/g, ' ').trim()
   const venueWorded = new RegExp(VENUE).test(m)
   const leverage = leverageIn(m)
   // Venue word OR a leverage phrase — one of the two must be there.

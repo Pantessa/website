@@ -8,7 +8,6 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { erc20Abi } from 'viem'
-import { publicClient } from '@/lib/auth'
 import { chainById, publicClientFor } from '@/lib/chains'
 import {
   buildReport,
@@ -107,10 +106,13 @@ export function pureChecks(quote: CowQuoteResult, from: string, nowSec = Math.fl
 
 /** On-chain reads: does `from` hold the sell amount, and has it approved the
  *  CoW VaultRelayer? Warn-level — orders may be signed before funding; they
- *  just won't settle until both are true. Runs on any registry chain (Base
- *  keeps the dedicated lib/auth client; others use the per-chain factory). */
+ *  just won't settle until both are true. Runs on any registry chain via
+ *  the per-chain factory (pinned RPC + fallback). */
 export async function chainChecks(quote: CowQuoteResult, from: string): Promise<GuardrailCheck[]> {
-  const client = quote.chainId === 8453 ? publicClient : publicClientFor(quote.chainId)
+  // Every chain through the registry factory — Base included. The dedicated
+  // lib/auth client is viem's UNPINNED default (mainnet.base.org), which
+  // 429s in bursts; the registry's Base client is pinned with a fallback.
+  const client = publicClientFor(quote.chainId)
   if (!client) {
     return [{ id: 'chain-reads', level: 'warn', ok: true, note: `Balance/allowance not checked on chain ${quote.chainId}.` }]
   }

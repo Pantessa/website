@@ -58,6 +58,11 @@ const TRANSFER_CHAINS: Record<string, { id: number; name: string }> = {
   base: { id: 8453, name: 'Base' },
   arbitrum: { id: 42161, name: 'Arbitrum' },
   arb: { id: 42161, name: 'Arbitrum' },
+  // #707 lit Optimism in the grammar's chain alternation but never here —
+  // "send 5 USDC to 0x… on Optimism" matched, then re-asked for the chain
+  // the user had just typed (found by the 2026-09-08 squad replay).
+  optimism: { id: 10, name: 'Optimism' },
+  op: { id: 10, name: 'Optimism' },
   ethereum: { id: 1, name: 'Ethereum' },
   mainnet: { id: 1, name: 'Ethereum' },
   robinhood: { id: 4663, name: 'Robinhood Chain' },
@@ -164,7 +169,7 @@ const HANDLE_SEND_RE = new RegExp(String.raw`\b(?:send|transfer)\s+(?:the\s+)?(?
  *  parseTransferSegment (chip = contract). */
 export function transferChainChips(amountWord: string, token: string, to: string): { label: string; resume: string }[] {
   const tok = token.toUpperCase()
-  const chains: [string, string][] = tok === 'USDG' ? [['Robinhood Chain', 'robinhood']] : [['Base', 'base'], ['Ethereum', 'ethereum'], ['Arbitrum', 'arbitrum']]
+  const chains: [string, string][] = tok === 'USDG' ? [['Robinhood Chain', 'robinhood']] : [['Base', 'base'], ['Ethereum', 'ethereum'], ['Arbitrum', 'arbitrum'], ['Optimism', 'optimism']]
   return chains.map(([label, word]) => ({ label: `${label}`, resume: `send ${amountWord === 'all your' ? 'all my' : amountWord} ${tok} on ${word} to ${to}` }))
 }
 

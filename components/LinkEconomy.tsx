@@ -15,6 +15,7 @@ import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import HouseLinkChip from '@/components/HouseLinkChip'
 import ExplainerVideo from '@/components/ExplainerVideo'
 import { HOUSE_LINKS } from '@/lib/house-links'
+import { LINK_FEE_PCT, SWAP_FEE_PCT } from '@/lib/fees'
 
 /** Where a link ends up. The wire to each is drawn from the same origin, so
  *  the fan reads as one link reaching four places at once. */
@@ -44,8 +45,8 @@ export default function LinkEconomy() {
           <p className="spread__sub">
             Mint a short link that carries an ask. Whoever opens it connects their own wallet and
             the path builds itself — guarded, signed only by them, receipted — then they&rsquo;re
-            handed back to wherever the link lives. Creators earn half of Pantessa&rsquo;s 0.20% fee
-            on the conversions their links produce.
+            handed back to wherever the link lives. Creators earn half of Pantessa&rsquo;s {LINK_FEE_PCT} link
+            fee on the conversions their links produce.
           </p>
 
           {/* The house set — real, seeded, tappable. Each chip wears the marks
@@ -113,8 +114,8 @@ export default function LinkEconomy() {
               is cheaper than a creator finding out from their own dashboard. */}
           <dl className="spread__econ">
             <div>
-              <dt className="mono">0.20%</dt>
-              <dd>Pantessa&rsquo;s fee on a fee-bearing conversion</dd>
+              <dt className="mono">{LINK_FEE_PCT}</dt>
+              <dd>Pantessa&rsquo;s fee on a fee-bearing conversion from a link ({SWAP_FEE_PCT} in plain chat)</dd>
             </div>
             <div>
               <dt className="mono">½</dt>

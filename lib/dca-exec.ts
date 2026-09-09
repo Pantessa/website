@@ -14,8 +14,9 @@ import { signJobToken } from '@/lib/job-token'
 import { APP_CHAINS, chainById, DEFAULT_CHAIN_ID, primaryStable } from '@/lib/chains'
 import { ensureTokenList } from '@/lib/token-list'
 import { resolveToken } from '@/lib/cow'
+import { tokenHome } from '@/lib/token-home'
 import { pairStockToken, stockChipLabel } from '@/lib/stock-pairing'
-import { ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
+import { listWords, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
 import type { ClarifyRequest } from '@/lib/clarify'
 import {
   cadenceLabel,
@@ -256,6 +257,19 @@ export async function runDcaTurn(
   if (create) {
     trace({ type: 'status', label: `dca layer claimed the turn: $${create.buyUsd} of ${create.buyToken} ${cadenceLabel(create.cadence)} — planner bypassed` })
     if (!wallet) return { reply: `📆 That's a recurring buy — connect your wallet first and I'll set up $${create.buyUsd} of ${create.buyToken} ${cadenceLabel(create.cadence)}, one signature per buy.` }
+    // ── Non-EVM homes ── "DCA $10 into SOL weekly" (the chart overlay's own
+    // chip) would resolve SOL on Base's permissionless list — a bridged copy
+    // or a squat — and schedule STANDING buys of it. Refuse by name before
+    // any chain resolution (lib/token-home.ts); the chart overlay hides the
+    // DCA chip for these symbols too.
+    const home = tokenHome(create.buyToken)
+    if (home) {
+      trace({ type: 'note', level: 'warn', label: `dca layer: ${create.buyToken.toUpperCase()} lives on ${home} — refusing to schedule buys of the Base look-alike` })
+      return {
+        reply: `📆 ${create.buyToken.toUpperCase()} lives on **${home}** — it isn't a native token on Pantessa's chains, and the "${create.buyToken.toUpperCase()}" on Base's open token list is a bridged copy, so I won't schedule recurring buys of it. Recurring buys run on ETH, tokenized stocks (AAPL, NVDA, TSLA…), and the tokens on ${listWords(APP_CHAINS.filter((c) => c.id !== ROBINHOOD_CHAIN_ID).map((c) => c.name), 'and')} — say “DCA $${create.buyUsd} into ETH ${cadenceLabel(create.cadence)}” or a ticker. No schedule was created.`,
+        buildPath: 'native-dca',
+      }
+    }
     let chainId = await resolveDcaChain(create.buyToken, create.chainId, selectedChainId)
     // ── Stock pairing ── a schedule is the WORST place for a typo'd ticker:
     // it would fail every period's build. An explicitly-Robinhood ask (the

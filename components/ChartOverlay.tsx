@@ -14,6 +14,7 @@ import { motion } from 'framer-motion'
 import { ExternalLink, X } from 'lucide-react'
 import { useYeetfulStore } from '@/lib/store'
 import { chartPairFor } from '@/lib/charts'
+import { tokenHome } from '@/lib/token-home'
 import CandleChart, { fmtPrice, type ChartStats } from '@/components/CandleChart'
 import TokenIcon from '@/components/TokenIcon'
 
@@ -128,12 +129,18 @@ export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => vo
                 >
                   Sell {pair.symbol}
                 </button>
-                <button
-                  onClick={() => act(`DCA $10 into ${pair.symbol} weekly`)}
-                  className="rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-[11px] text-[color:var(--muted)] transition-colors hover:text-white [@media(hover:none)]:min-h-10 [@media(hover:none)]:text-[12px]"
-                >
-                  DCA weekly
-                </button>
+                {/* A recurring buy needs an EVM-native token — SOL/XRP/DOGE
+                    charts keep Buy/Sell (the route answers with the
+                    Hyperliquid door) and drop the chip that could only
+                    schedule buys of a Base look-alike (lib/token-home). */}
+                {!tokenHome(pair.symbol) && (
+                  <button
+                    onClick={() => act(`DCA $10 into ${pair.symbol} weekly`)}
+                    className="rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-[11px] text-[color:var(--muted)] transition-colors hover:text-white [@media(hover:none)]:min-h-10 [@media(hover:none)]:text-[12px]"
+                  >
+                    DCA weekly
+                  </button>
+                )}
                 <span className="mono ml-auto text-[9.5px] uppercase tracking-widest text-[color:var(--muted-2)]">
                   sends the ask · your wallet signs
                 </span>

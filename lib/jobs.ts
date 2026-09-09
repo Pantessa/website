@@ -29,11 +29,11 @@
 import { parseAaveOp, parseAaveSupply, type AaveOpParams, type AaveSupplyParams } from '@/lib/aave-supply'
 import { parseMorphoLend, parseMorphoOp } from '@/lib/morpho-supply'
 import { parseCrossChainSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
-import { chainAlt, canonicalChainWord, normalizeChainWords } from '@/lib/chain-lexicon'
+import { chainAlt, canonicalChainWord, normalizeArrows, normalizeChainWords, normalizeWorth } from '@/lib/chain-lexicon'
 import { hlUnsizedChips, parseHlIntent, type HlIntent, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm, type GuardianArmAsk } from '@/lib/hl-guardian'
 import { parseLidoStake } from '@/lib/lido-stake'
-import { fundingAltUsdcFor, GAS_LEG_USD } from '@/lib/lifi-bridge'
+import { fundingAltUsdcFor, fundingOriginWords, GAS_LEG_USD, MIN_VALUE_LEG_USD } from '@/lib/lifi-bridge'
 import { parseNftAsk } from '@/lib/nft-layer'
 import { parseMultiSendSegments, parseTransferSegment } from '@/lib/transfer-exec'
 import { pairStockToken, stockChipLabel } from '@/lib/stock-pairing'
@@ -114,6 +114,68 @@ const FUND_ORIGINS: Record<string, { id: number; word: string }> = {
   arbitrum: { id: 42161, word: 'Arbitrum' },
   optimism: { id: 10, word: 'Optimism' },
   op: { id: 10, word: 'Optimism' },
+}
+
+/**
+ * A cross-chain segment whose DESTINATION is Robinhood Chain is a FUNDING
+ * move, not a NEAR Intents swap: 1Click can't deliver to 4663 — the LiFi
+ * funding legs are the only path (prod 2026-09-04: "Convert $1 USDC from
+ * Base to USDG on Robinhood Chain" walked to the NEAR door / "Robinhood
+ * Chain not supported by NEAR Intents"). Rewrites the ask into the canonical
+ * funding sentence the funding parser reads, or answers with chips when the
+ * amount is under the parity floor (LiFi's flat fee makes anything smaller
+ * refuse at build) or sized in ETH (the plan is dollar-sized). Null when the
+ * segment isn't this shape; a problem names an origin the plan can't leave.
+ */
+export function robinhoodFundingFromCrossChain(segment: string): { ask: string } | { clarify: ClarifyRequest; reply: string } | { problem: string } | null {
+  const cc = parseCrossChainSwap(segment)
+  if (!cc || 'problem' in cc) return null
+  if (canonicalChainWord(cc.destinationChain) !== 'robinhood') return null
+  const token = cc.originToken.toUpperCase()
+  const destToken = cc.destinationToken.toUpperCase()
+  // "Bridge 0.01 ETH from Ethereum to Robinhood Chain" is the CANONICAL
+  // bridge (lib/robinhood-bridge.ts — a native ETH deposit, the splash's own
+  // chip), not a funding plan: leave it to the bridge layer below the jobs
+  // gate. ETH from an L2 has no canonical bridge and DOES ride LiFi.
+  if (token === 'ETH' && (destToken === 'ETH' || destToken === 'WETH') && canonicalChainWord(cc.originChain) === 'ethereum') return null
+  const origin = FUND_ORIGINS[canonicalChainWord(cc.originChain) ?? cc.originChain.toLowerCase()]
+  if (!origin) {
+    return { problem: `Robinhood Chain is funded from ${fundingOriginWords()} — NEAR Intents can't deliver to it, so move the funds to one of those chains first, then say “fund robinhood chain with $${cc.amount} from base”.` }
+  }
+  const originWord = origin.word.toLowerCase()
+  const chipsFor = (suffix: string, presets: number[]) => presets.map((usd) => ({ label: `$${usd} from ${origin.word}${suffix ? ` (${suffix.replace(/^using /, '')})` : ''}`, resume: `Fund robinhood chain with $${usd} from ${originWord}${suffix ? ` ${suffix}` : ''}` }))
+  const floor = MIN_VALUE_LEG_USD
+  if (token === 'ETH') {
+    // The plan is dollar-sized (LiFi legs are quoted in USD) — ask for the
+    // dollar figure instead of pricing ETH here.
+    return {
+      reply: `The canonical Robinhood Chain bridge only runs from Ethereum — from ${origin.word} the money moves by a LiFi leg sized in dollars, landing as USDG (Robinhood Chain's dollar) with a little ETH for gas when the wallet there needs it. Pick how much of your ${origin.word} ETH to move.`,
+      clarify: { question: `How much to move from ${origin.word}?`, options: [...chipsFor('using eth', [10, 20, 50]), { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }] },
+    }
+  }
+  const alt = fundingAltUsdcFor(origin.id)
+  const suffix = token === 'USDC' ? '' : alt && alt.symbol.toUpperCase() === token ? `using ${alt.symbol.toLowerCase()}` : null
+  if (suffix === null) {
+    return { problem: `Only USDC${alt ? ` (or ${alt.symbol})` : ''} and ETH bridge onto Robinhood Chain from ${origin.word} — swap your ${token} to USDC on ${origin.word} first, then say “fund robinhood chain with $${cc.amount} from ${originWord}”.` }
+  }
+  if (destToken !== 'USDG' && destToken !== token && destToken !== 'USDC') {
+    // "swap 20 USDC from base to AAPL on robinhood" — a funded buy: the
+    // two-segment form compiles as fund → wait → buy. Hand it over as a chip
+    // rather than guessing the buy size.
+    return {
+      reply: `On Robinhood Chain the money lands as USDG first, then buys ${destToken} — that's a two-step job.`,
+      clarify: { question: `Run it as one job?`, options: [{ label: `Fund $${cc.amount} from ${origin.word}, then buy ${destToken}`, resume: `Fund robinhood chain with $${cc.amount} from ${originWord}${suffix ? ` ${suffix}` : ''}, then buy $${cc.amount} of ${destToken}` }, { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }] },
+    }
+  }
+  const fundUsd = Number(cc.amount)
+  if (!Number.isFinite(fundUsd) || fundUsd <= 0) return null
+  if (fundUsd < floor) {
+    return {
+      reply: `The smallest clean move onto Robinhood Chain is $${floor} — LiFi's flat fee is what the parity guard refuses on anything smaller, so a $${cc.amount} leg would be built only to be withheld.`,
+      clarify: { question: `Move a little more instead?`, options: [...chipsFor(suffix, [floor, 20, 50]), { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }] },
+    }
+  }
+  return { ask: `Fund robinhood chain with $${cc.amount} from ${originWord}${suffix ? ` ${suffix}` : ''}` }
 }
 
 export function parseRobinhoodFunding(segment: string): RobinhoodFundingAsk | null {
@@ -287,7 +349,7 @@ export interface JobSegmentParser {
   /** Plural noun phrase for the self-listing refusal copy ("token sends").
    *  Omit to keep an entry out of the copy (context-gated parsers). */
   label?: string
-  parse: (seg: string, ctx: JobSegmentCtx) => JobSegmentCompiled | { problem: string } | { clarify: ClarifyRequest } | null
+  parse: (seg: string, ctx: JobSegmentCtx) => JobSegmentCompiled | { problem: string } | { clarify: ClarifyRequest; reply?: string } | null
 }
 
 // ── Stock pairing at COMPILE time ──────────────────────────────────────────
@@ -336,8 +398,18 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
     id: 'robinhood-funding',
     label: 'Robinhood Chain funding plans',
     parse: (seg) => {
-      const fund = parseRobinhoodFunding(seg)
-      if (!fund) return null
+      let fund = parseRobinhoodFunding(seg)
+      if (!fund) {
+        // "swap 20 USDC from base to USDG on robinhood" IS this segment —
+        // claimed here, ahead of the cross-chain entry, so it never becomes
+        // a NEAR leg to a chain NEAR can't reach.
+        const redirect = robinhoodFundingFromCrossChain(seg)
+        if (!redirect) return null
+        if ('clarify' in redirect) return { clarify: redirect.clarify, reply: redirect.reply }
+        if ('problem' in redirect) return { problem: redirect.problem }
+        fund = parseRobinhoodFunding(redirect.ask)
+        if (!fund) return null
+      }
       // A bridged-variant ask only compiles where the registry knows the
       // token — "using usdc.e" from Base would otherwise become a job whose
       // every build refuses. Native ETH exists on every origin.
@@ -639,7 +711,12 @@ const compilableKinds = (): string => {
  * null when the message isn't job-shaped (fewer than 2 parseable segments —
  * single asks belong to the native layers directly).
  */
-export function compileJobAsk(message: string): CompiledJob | { problem: string } | { clarify: ClarifyRequest } | null {
+export function compileJobAsk(rawMessage: string): CompiledJob | { problem: string } | { clarify: ClarifyRequest; reply?: string } | null {
+  // Arrows are how our own cards print a pair ("USDG → AAPL") and "worth" is
+  // what every card says before "of"; the segment grammars read words, so
+  // rewrite both once here (lib/chain-lexicon) — a typo'd "worth" inside a
+  // compound ("…, then buy $10 orth of AAPL") used to refuse the whole job.
+  const message = normalizeArrows(normalizeWorth(rawMessage))
   const segments = expandCompoundSegments(splitJobSegments(message), message)
   // Single asks belong to the native layers — EXCEPT segments that are
   // multi-step on their own: a lone Robinhood funding segment (the MCP-path
@@ -647,7 +724,7 @@ export function compileJobAsk(message: string): CompiledJob | { problem: string 
   // wait are already a job), and a multi-clause send ("send all my USDC on
   // arbitrum and 5 USDC on base to 0x…" — one sentence, two chains, two
   // signatures = a job even without a "then").
-  const loneMultiStep = (seg: string) => !!parseRobinhoodFunding(seg) || parseMultiSendSegments(seg) !== null
+  const loneMultiStep = (seg: string) => !!parseRobinhoodFunding(seg) || robinhoodFundingFromCrossChain(seg) !== null || parseMultiSendSegments(seg) !== null
   if (segments.length < 2 && !(segments.length === 1 && loneMultiStep(segments[0]))) return null
 
   const steps: CompiledStep[] = []

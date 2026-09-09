@@ -28,6 +28,7 @@ import { base } from 'viem/chains'
 import { dryRunTx, isAllowanceLag } from '../lib/dry-run'
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
+import { LINK_FEE_PCT } from '../lib/fees'
 import { ROBINHOOD_DESK } from '../lib/live-examples'
 import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import {
@@ -52,7 +53,7 @@ import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
 import { FIRST_PARTY_MCP_SOURCE, guardPlannerArtifact, isFirstPartyMcp, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { LIMIT_EXAMPLES, parseSwapIntent, swapClarify } from '../lib/swap-intent'
-import { activeLinkCapFor, composeMcps, linkEyebrow, linkLockup, linkLockupWord } from '../lib/intent-links'
+import { activeLinkCapFor, composeMcps, isCrossChainAsk, linkEyebrow, linkLockup, linkLockupWord, runsOnLabel } from '../lib/intent-links'
 import { DEFAULT_TAB, parseTabParam, tabUrl } from '../lib/app-tab-url'
 import { LINKS_STUDIO_HREF } from '../lib/links-href'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
@@ -158,7 +159,7 @@ import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS }
 import { parseMultiSendSegments, parseTransferSegment } from '../lib/transfer-exec'
 import { buildFundsDetail, classifyTurn, FAILURE_PROBE_TOKENS, moneyShaped } from '../lib/ask-failure'
 import { guardSyncDrift } from './guard-sync-check'
-import { canonicalChainWord, normalizeChainWords } from '../lib/chain-lexicon'
+import { canonicalChainWord, normalizeChainWords, normalizeDollarWords } from '../lib/chain-lexicon'
 import {
   clampFundUsd,
   classifyStripeOnrampFailure,
@@ -190,7 +191,7 @@ import { parseEcbUsdRate } from '../lib/ecb-fx'
 import { clarifyOf } from '../lib/clarify'
 import { fundingPathOf, NEVER_MIND_RESUME_RE } from '../lib/funding-path'
 import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '../lib/turn-status'
-import { decideFundingTurn, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, planFundingChips, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
+import { decideFundingTurn, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, MIN_LEG_USD, planFundingChips, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
@@ -232,7 +233,7 @@ import {
 } from '../lib/share-receipts'
 import { EXAMPLE_PROMPTS } from '../lib/examples'
 import { swapFeeAtoms, SWAP_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS, HL_BUILDER_FEE_TENTH_BPS, HL_BUILDER_MAX_FEE_RATE } from '../lib/fees'
-import { APP_CHAINS, chainById, chainByKey, chainNamedIn, explorerTokenUrl, primaryStable, sanitizeChainId } from '../lib/chains'
+import { APP_CHAINS, chainById, chainByKey, chainNamedIn, explorerTokenUrl, primaryStable, publicClientFor, sanitizeChainId } from '../lib/chains'
 import { WALLET_CHAINS } from '../lib/wallet-chains'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp, crossChainPending, crossChainValueUsd } from '../lib/cross-chain-swap'
 import {
@@ -314,7 +315,11 @@ import {
 import { createL1ActionHash } from '@nktkas/hyperliquid/signing'
 import { isReportableWalletError, walletErrorWords, WALLET_REFUSAL_KIND } from '../lib/wallet-refusal'
 import { encryptAgentKey, signL1ActionWithDelegation } from '../lib/hl-guardian-store'
-import { compileJobAsk as compileJobAskFull, stampSwapFeeTier, type CompiledJob } from '../lib/jobs'
+import { compileJobAsk as compileJobAskFull, robinhoodFundingFromCrossChain, stampSwapFeeTier, type CompiledJob } from '../lib/jobs'
+import { parseStockListAsk } from '../lib/stock-list'
+import { tokenHome } from '../lib/token-home'
+import { fundingOriginWords } from '../lib/funding-origins'
+import { AFFORDABILITY_SHORT_PATH, checkAffordability, gateSignablePayload, requirementsOf, spendsOfOrder, spendsOfTx, type BalanceReader } from '../lib/affordability'
 import { LIVE_JOB_STATUSES, jobStatusWord, statusTone } from '../lib/step-status'
 
 // Harness shim: the pre-pairing checks below narrow on `'problem' in x` only.
@@ -1278,6 +1283,24 @@ async function main() {
     // STATIC route (baked at build) — no live delta to observe, so pin the
     // reader contract at the source: both counts must go through is_internal.
     const heroSrc = await readFile(new URL('../components/LinksHero.tsx', import.meta.url), 'utf8')
+    // Public creator-earnings figures must price each turn at its STAMPED
+    // tier (netFeeBpsForTurn) — grouping by path alone priced link dollars
+    // at the chat rate, 2.5× under the creator's own studio.
+    const boardSrc = await readFile(new URL('../lib/links-board.ts', import.meta.url), 'utf8')
+    check(
+      'fee tier: the public feeSummary + homepage creator stat group by feeBps and read netFeeBpsForTurn',
+      /by: \['buildPath', 'feeBps'\]/.test(heroSrc) && /netFeeBpsForTurn\(t\.buildPath, t\.feeBps\)/.test(heroSrc) &&
+        /by: \['buildPath', 'feeBps'\]/.test(boardSrc) && /netFeeBpsForTurn\(r\.buildPath, r\.feeBps\)/.test(boardSrc) &&
+        !/netFeeBpsFor\(/.test(heroSrc) && !/netFeeBpsFor\(/.test(boardSrc),
+    )
+    // The host-button snippet is HTML a third party pastes permanently:
+    // it must carry the canonical origin, never window.location (the SSR
+    // pass rendered a RELATIVE href="/i/<slug>" into the preview).
+    const generatorSrc = await readFile(new URL('../app/links/embed/generator.tsx', import.meta.url), 'utf8')
+    check(
+      'embed generator: snippet + copy use the canonical SITE_URL, never window.location.origin',
+      !/window\.location\.origin/.test(generatorSrc) && /buttonSnippet\(SITE_URL/.test(generatorSrc),
+    )
     check(
       'hero strip: "Links live" + "Opens" read through the honest reader (intent_links.is_internal; opens exclude internal links)',
       /intentLink\.count\(\{ where: \{ revoked: false, isInternal: false \} \}\)/.test(heroSrc) &&
@@ -1519,6 +1542,53 @@ async function main() {
   )
   const footerHomeHtml = await (await fetch(`${BASE}/`)).text()
   check('rebrand: reachable from the footer on every page', footerHomeHtml.includes('href="/rebrand"'))
+  // The old brand name may appear on a served page ONLY as the footer's
+  // "Formerly Yeetful" + the /rebrand record. Everything else renders through
+  // cleanServerName's display map — except hardcoded PROSE that names the
+  // paid-catalog family ("add a paid engine like Yeetful · Claude"), which
+  // bypassed the map on /pricing, in the chat's credit-wall replies and in
+  // the empty state's sample receipt (squad 2026-09-08 QA Q-2). The data rows
+  // stay frozen (`lib/mcp-data.ts`, the SQL IN-lists) — prose must not.
+  check(
+    'brand: /pricing never prints the old-brand family name outside the footer',
+    !/Yeetful\s+·/.test(pricingHtml) && pricingHtml.includes('Pantessa · Claude'),
+    (pricingHtml.match(/Yeetful\s+·[^<]{0,20}/g) ?? []).slice(0, 2).join(' | '),
+  )
+  {
+    const chatRouteSrc = await readFile(new URL('../app/api/chat/route.ts', import.meta.url), 'utf8')
+    const sampleSrc = await readFile(new URL('../components/SampleCallDemo.tsx', import.meta.url), 'utf8')
+    const prose = [...chatRouteSrc.matchAll(/\*\*Yeetful · [A-Za-z]+\*\*/g), ...sampleSrc.matchAll(/>Yeetful · [A-Za-z]+</g)].map((m) => m[0])
+    check(
+      'brand: chat replies + the sample receipt name the paid engine as Pantessa · Claude, never the frozen data name',
+      prose.length === 0 && sampleSrc.includes('Pantessa · Claude'),
+      prose.slice(0, 3).join(' | '),
+    )
+    // The Q-2 twins (squad 2026-09-08, MOBILE's find on the planner
+    // diagnostics line + QA's sweep): the router's no-engine warn note, the
+    // house-model service's own display name, the two spend-wall replies that
+    // interpolate `inference.name` raw (a frozen catalog row reads
+    // "Yeetful · Claude" — it must pass through cleanServerName), and the
+    // /docs/snapshot prose. Only the data rows and slugs keep the old word.
+    const routerSrc = await readFile(new URL('../lib/router.ts', import.meta.url), 'utf8')
+    const snapshotDocSrc = await readFile(new URL('../app/docs/snapshot/page.tsx', import.meta.url), 'utf8')
+    const twins = [
+      ...routerSrc.matchAll(/Yeetful · [A-Za-z]+/g),
+      ...snapshotDocSrc.matchAll(/Yeetful · [A-Za-z]+/g),
+      ...chatRouteSrc.matchAll(/name: 'Yeetful · [^']+'/g),
+      ...chatRouteSrc.matchAll(/blocked the inference call \(\$\{inference\.name\}/g),
+    ].map((m) => m[0])
+    check(
+      'brand: the router warn note, the house engine name, the spend-wall replies and /docs/snapshot never print the frozen data name',
+      twins.length === 0 && chatRouteSrc.includes("name: 'Pantessa · House (free)'") && /blocked the inference call \(\$\{cleanServerName\(inference\.name\)\}/.test(chatRouteSrc),
+      twins.slice(0, 3).join(' | '),
+    )
+    const snapshotDocHtml = await (await fetch(`${BASE}/docs/snapshot`)).text()
+    check(
+      'brand: /docs/snapshot names the paid MCP as Pantessa · Snapshot, never Yeetful ·',
+      !/Yeetful\s+·/.test(snapshotDocHtml) && snapshotDocHtml.includes('Pantessa · Snapshot'),
+      (snapshotDocHtml.match(/Yeetful\s+·[^<]{0,20}/g) ?? []).slice(0, 2).join(' | '),
+    )
+  }
   // The live host-app example (robinhood.pantessa.com, our own interface on
   // our own domain — rule 7) must be reachable from the landing's host
   // section AND from /docs/embed, server-rendered, with its source a click
@@ -2576,7 +2646,16 @@ async function main() {
         JSON.stringify(devLane),
       )
       const spoofCap = await fetch(`${BASE}/i/${s2Slug}`)
-      check('receipt money: a stamped-internal dev sign still counts toward the cap the way it always did (server-truth signs) — the capped page is now 404', spoofCap.status === 404)
+      const spoofCapHtml = await spoofCap.text()
+      // Capped = retired. Pre-#727 the page 404s; with LINKS' retired page it
+      // renders 200 wearing `data-link-state="capped"` and never re-shows the
+      // ask — both are "the link is closed"; a LIVE page (the ask on screen)
+      // is the only failure.
+      check(
+        'receipt money: a stamped-internal dev sign still counts toward the cap the way it always did (server-truth signs) — the capped page is closed (404, or the retired page marked capped)',
+        spoofCap.status === 404 || (spoofCap.status === 200 && spoofCapHtml.includes('data-link-state="capped"') && !spoofCapHtml.includes('data-link-state="live"') && !spoofCapHtml.includes('Connect &amp; build')),
+        JSON.stringify({ status: spoofCap.status, state: spoofCapHtml.match(/data-link-state="(\w+)"/)?.[1] ?? null }),
+      )
 
       // 4. THE POSITIVE BRANCH: a REAL receipt counts. The foreign tx's own
       // sender is the "signer", and the artifact this server "built" for it
@@ -2780,9 +2859,174 @@ async function main() {
     const strangerRevoke = await fetch(`${BASE}/api/intent-links/${slug}`, { method: 'DELETE' })
     check('intent links: revoking without a session → 401', strangerRevoke.status === 401)
 
+    // The retired page (squad gtm 2026-09-08): a stranger sent a dead money
+    // link used to get Next's bare "404 | This page could not be found."
+    // The page now names the reason (from the row, server-side — never the
+    // ask, which a creator may have retracted on purpose), says nothing ran
+    // and nothing was signed, and hands over the onward paths. Unknown
+    // slugs stay a true 404 (pinned above) on the branded site page.
+    const revokedPage = await fetch(`${BASE}/i/${thirdSlug}`)
+    const revokedHtml = await revokedPage.text()
+    check(
+      'retired link: /i/<revoked> explains itself — reason, nothing-signed line, onward paths, never the ask, never framework 404 copy',
+      revokedPage.status === 200 &&
+        revokedHtml.includes('data-link-state="revoked"') &&
+        revokedHtml.includes('retired by its creator') &&
+        revokedHtml.includes('nothing was signed') &&
+        revokedHtml.includes('Browse live links') &&
+        revokedHtml.includes('href="/chat"') &&
+        !revokedHtml.includes('Swap $5 of ETH to USDC') &&
+        !revokedHtml.includes('This page could not be found'),
+    )
+    check('retired link: the retired page is noindex and titled as not live', /noindex/.test(revokedHtml) && revokedHtml.includes('no longer live'))
+    const siteMiss = await fetch(`${BASE}/definitely-not-a-route-${Date.now()}`)
+    const siteMissHtml = await siteMiss.text()
+    check(
+      'site 404: unknown routes render the branded not-found page (home / app / links doors), never the framework default',
+      siteMiss.status === 404 && siteMissHtml.includes('nothing at this address') && siteMissHtml.includes('href="/chat"') && !siteMissHtml.includes('This page could not be found'),
+    )
+
+    // Round 2 (squad gtm 2026-09-08). L-1: the sitemap was the x402-era
+    // site — /, /servers, docs, blog — and nothing links-first was indexed.
+    // It now leads with the links surfaces and carries every LIVE house
+    // link + every claimed creator page; a retired house ask never rides
+    // (sitemap.ts re-renders hourly, so the house rows must be in the DB at
+    // build — they are seeded, the same rows the landing sends strangers to).
+    const siteMapXml = await (await fetch(`${BASE}/sitemap.xml`)).text()
+    const siteLocs = [...siteMapXml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1].replace(/^https?:\/\/[^/]+/, '') || '/')
+    check(
+      'sitemap: the links-first surfaces are indexed (/links, /links/embed, /pricing, /agents, /roster, /mosaic, /rebrand)',
+      ['/links', '/links/embed', '/pricing', '/agents', '/roster', '/mosaic', '/rebrand'].every((p) => siteLocs.includes(p)),
+      JSON.stringify(siteLocs.slice(0, 16)),
+    )
+    const houseStates = await Promise.all(
+      HOUSE_LINKS.map(async (h) => {
+        const html = await (await fetch(`${BASE}/i/${h.slug}`)).text()
+        const retired = html.match(/data-link-state="(\w+)"/)?.[1] ?? null
+        return { slug: h.slug, live: retired === null, indexable: /name="robots" content="index/.test(html) || !/noindex/.test(html) }
+      }),
+    )
+    check(
+      'sitemap: every live house /i/<slug> is listed, and the house pages are indexable (creator links stay noindex)',
+      houseStates.filter((h) => h.live).length > 0 &&
+        houseStates.every((h) => (h.live ? siteLocs.includes(`/i/${h.slug}`) && h.indexable : !siteLocs.includes(`/i/${h.slug}`))),
+      JSON.stringify({ houseStates, listed: siteLocs.filter((l) => l.startsWith('/i/')) }),
+    )
+    // The creator's own link (minted above by the harness) is not the site's
+    // to index — its page carries noindex and the sitemap never lists it.
+    const creatorLinkHtml = await (await fetch(`${BASE}/i/${slug}`)).text()
+    check('sitemap: a creator link is noindex and never listed', /noindex/.test(creatorLinkHtml) && !siteLocs.includes(`/i/${slug}`) && !siteLocs.includes(`/i/${thirdSlug}`))
+
+    // L-3: the mint stage's "runs on" pill for NEAR Intents said "(bridging)"
+    // on a same-chain swap. The label reads the ask: bridging on the from→to
+    // shape, the funding companion otherwise.
+    check(
+      'mint stage: the NEAR pill says bridging only on a cross-chain ask',
+      runsOnLabel('near-intents-mcp-yeetful', 'Swap 5 USDC from Base to Arbitrum') === 'NEAR Intents (bridging)' &&
+        isCrossChainAsk('Swap 5 USDC from Base to Arbitrum') &&
+        !isCrossChainAsk('Swap $1 of ETH for USDC on Base') &&
+        /funding/.test(runsOnLabel('near-intents-mcp-yeetful', 'Swap $1 of ETH for USDC on Base')) &&
+        !/bridging/.test(runsOnLabel('near-intents-mcp-yeetful', 'Swap $1 of ETH for USDC on Base')) &&
+        runsOnLabel('uniswap-free', 'Swap $1 of ETH for USDC on Base') !== 'uniswap-free',
+    )
+
+    // PATHS finding: the landing's NightShift JOBS tile displayed "…then send
+    // it to nate.eth" while its href sent the explicit clause — a reader who
+    // retyped the tile got the jobs refusal. Displayed = sent, pinned on the
+    // rendered page.
+    const homeForTiles = await (await fetch(`${BASE}/`)).text()
+    const nightTasks = [...homeForTiles.matchAll(/night__task[^>]*>“([^”]+)” →/g)].map((m) => m[1].replace(/<!-- -->/g, ''))
+    // Attribute order is the renderer's, not ours (Next has served both
+    // `href … class` and `class … href` for this <Link>): match the tile's
+    // <a> tag as a whole, then read `href` from inside it.
+    const nightHrefs = [...homeForTiles.matchAll(/<a\b[^>]*\bclass="[^"]*\bnight__tile\b[^"]*"[^>]*>/g)]
+      .map((m) => m[0].match(/\bhref="\/chat\?[^"]*prompt=([^"&]+)"/)?.[1] ?? null)
+      .filter((h): h is string => h !== null)
+      .map((h) => decodeURIComponent(h.replace(/&amp;/g, '&')))
+    check(
+      'landing tiles: every NightShift tile displays exactly the ask its href sends',
+      nightTasks.length >= 4 && nightHrefs.length === nightTasks.length && nightTasks.every((t, i) => nightHrefs[i].replace(/−/g, '-') === t.replace(/−/g, '-')),
+      JSON.stringify({ nightTasks, nightHrefs }),
+    )
+
+    // L-4: the rail's journey strip + live list and the studio each hold
+    // their own copy of the links/journey state; a mint on the studio left
+    // the rail's "Mint your first link" strip stale until its next poll.
+    // One signal (lib/links-changed) — every writer notifies, every reader
+    // subscribes. Source-level: the browser drive is in links.md.
+    const linksFs = await import('node:fs')
+    const linksChangedSrc = {
+      hookLinks: linksFs.readFileSync('lib/intent-links-ui.tsx', 'utf8'),
+      hookJourney: linksFs.readFileSync('lib/onboarding.ts', 'utf8'),
+      form: linksFs.readFileSync('components/MintLinkForm.tsx', 'utf8'),
+      table: linksFs.readFileSync('components/LinkFunnelTable.tsx', 'utf8'),
+      earnings: linksFs.readFileSync('components/LinkEarningsPanel.tsx', 'utf8'),
+    }
+    // LINKS C/E (squad gtm 2026-09-08): the Decline verb was splash-only, so
+    // a recipient whose wallet auto-started (or who had already built) had
+    // no way to say no; the studio table listed expired / sign-capped links
+    // like live ones and kept offering "tweet"; the rail's bottom seat kept
+    // "Name your page →" after a claim. Source-level pins — the browser
+    // drives are in links.md.
+    const runtimeSrc = linksFs.readFileSync('components/IntentRuntime.tsx', 'utf8')
+    check(
+      'decline verb: rendered in the started view too (header chip), not only on the splash',
+      (runtimeSrc.match(/recipient && address\?\.toLowerCase\(\) === recipient && !signed && !declined/g) || []).length >= 2 && /data-decline-verb/.test(runtimeSrc),
+    )
+    const tableSrc = linksFs.readFileSync('components/LinkFunnelTable.tsx', 'utf8')
+    check(
+      'studio table: expired / capped rows wear the state pill (linkLifecycle, the /i rule) and hide the tweet CTA',
+      /linkLifecycle\(\{ revoked: false, expiresAt: l\.expiresAt, maxSigns: l\.maxSigns \}, l\.signsCount\)/.test(tableSrc) && /data-link-row-state=\{state\}/.test(tableSrc) && /\{state === 'live' && \(\s*<a/.test(tableSrc),
+    )
+    check(
+      'rail list: expired / capped rows wear the same state pill',
+      /linkLifecycle\(\{ revoked: false, expiresAt: l\.expiresAt, maxSigns: l\.maxSigns \}, l\.signsCount\)/.test(linksFs.readFileSync('components/LinksRailTab.tsx', 'utf8')),
+    )
+    const railSeatSrc = linksFs.readFileSync('components/LinksRailTab.tsx', 'utf8')
+    const creatorPageSrc = linksFs.readFileSync('lib/creator-page.tsx', 'utf8')
+    check(
+      'rail seat: the handle re-reads on links-changed, and useCreatorPage notifies on claim / brand / colors / remove',
+      /useLinksChanged\(fetchHandle\)/.test(railSeatSrc) && (creatorPageSrc.match(/notifyLinksChanged\(\)/g) || []).length >= 4 && /useLinksChanged\(load\)/.test(creatorPageSrc),
+    )
+    check(
+      'journey strip: mint / revoke / claim notify lib/links-changed and both the links hook + the journey hook subscribe',
+      /useLinksChanged\(reload\)/.test(linksChangedSrc.hookLinks) &&
+        /useLinksChanged\(refresh\)/.test(linksChangedSrc.hookJourney) &&
+        [linksChangedSrc.form, linksChangedSrc.table, linksChangedSrc.earnings].every((src) => /notifyLinksChanged\(\)/.test(src)),
+    )
+
     // The public leaderboard: server-truth board, mint CTA, no wallets.
     const board = await fetch(`${BASE}/links`)
     const boardHtml = await board.text()
+    // Share cards (squad gtm 2026-09-08): a page-level openGraph block
+    // REPLACES the root's, and the root file-based card does not ride into
+    // it — /links, /links/embed, /sign, /inbox and /mosaic unfurled with no
+    // image at all. Each carries an explicit card now; the links family
+    // card must itself render.
+    const ogOf = (html: string) => html.match(/property="og:image" content="([^"]+)"/)?.[1] ?? null
+    const twOf = (html: string) => html.match(/name="twitter:image" content="([^"]+)"/)?.[1] ?? null
+    const embedHtml = await (await fetch(`${BASE}/links/embed`)).text()
+    const signHtml = await (await fetch(`${BASE}/sign?ask=Buy%20%245%20of%20AAPL`)).text()
+    const inboxHtml = await (await fetch(`${BASE}/inbox/0x000000000000000000000000000000000000dEaD`)).text()
+    const mosaicHtml = await (await fetch(`${BASE}/mosaic`)).text()
+    check(
+      'share cards: /links, /links/embed, /sign, /inbox carry the links card as og:image AND twitter:image',
+      [boardHtml, embedHtml, signHtml, inboxHtml].every((h) => /\/links\/opengraph-image/.test(ogOf(h) ?? '') && !!twOf(h)),
+      JSON.stringify({ board: ogOf(boardHtml), embed: ogOf(embedHtml), sign: ogOf(signHtml), inbox: ogOf(inboxHtml) }),
+    )
+    check('share cards: /mosaic carries the site card on both og:image and twitter:image', /\/opengraph-image/.test(ogOf(mosaicHtml) ?? '') && !!twOf(mosaicHtml), JSON.stringify({ og: ogOf(mosaicHtml), tw: twOf(mosaicHtml) }))
+    const linksCard = await fetch(`${BASE}/links/opengraph-image`)
+    check('share cards: the links family card renders (200 PNG)', linksCard.status === 200 && /image\/png/.test(linksCard.headers.get('content-type') ?? ''))
+    // Fee copy reads the LINK tier from lib/fees — the board said "0.20%"
+    // (the chat rate) for link conversions, 2.5× under what a creator earns.
+    check(
+      'fee copy: the board states the link tier (lib/fees LINK_FEE_PCT), not the chat rate',
+      // (React SSR separates adjacent text nodes with <!-- -->; strip them
+      //  so the pin reads the sentence a browser shows — and catches the JSX
+      //  glue bite, which rendered "0.50%link fee" on the first pass.)
+      boardHtml.replace(/<!-- -->/g, '').includes(`half of Pantessa&#x27;s ${LINK_FEE_PCT} link fee`),
+      `expected ${LINK_FEE_PCT}`,
+    )
     check('intent links: /links leaderboard renders with the mint CTA', board.status === 200 && /Mint yours/.test(boardHtml) && /dollars moved/i.test(boardHtml))
     // The mint CTA is the composer ITSELF (the mint stage — the share-card
     // replica a stranger types into, pre-sign-in), not a button to a form
@@ -2900,12 +3144,50 @@ async function main() {
       'storefront: a taken handle refuses (409) and points at the live page',
       hSteal.status === 409 && hStealBody.url === '/l/harness-store',
     )
-    // Claimed pages are LISTED — /links shows every /l/<handle> storefront,
-    // so a page stays findable after the claim.
-    const listedHtml = flat(await (await fetch(`${BASE}/links`)).text())
+    // Claimed pages are LISTED — /links shows the /l/<handle> storefronts
+    // under "Creator pages" — but the listing is FENCED like the
+    // recently-minted tab (#699): a handle rides only while its creator
+    // holds a live link that is not an internal (harness/drill) mint. This
+    // suite's every mint is stamped internal by the fetch wrapper, so the
+    // page it just claimed must NOT be on the board (until 2026-09-08 it was,
+    // and so was every drill handle on prod — SECURITY r2). The page itself
+    // still renders at /l/<handle> (the pin below).
+    const fencedHtml = flat(await (await fetch(`${BASE}/links`)).text())
     check(
-      'storefront: /links lists the claimed page under Creator pages',
-      listedHtml.includes('Creator pages') && listedHtml.includes('/l/harness-store') && listedHtml.includes('@harness-store'),
+      'storefront: a handle whose creator holds only internal mints is NOT listed under Creator pages',
+      !fencedHtml.includes('/l/harness-store') && !fencedHtml.includes('@harness-store'),
+    )
+    // …and fenced, not broken: one ORGANIC live link lists it; revoking that
+    // link delists it again. Same fixture discipline as the recent-tab pin —
+    // written straight to the table, deleted (never revoked-and-left).
+    if (process.env.DATABASE_URL) {
+      const storeFixtureId = `fixt-store-${Math.random().toString(36).slice(2, 8)}`
+      await prisma.intentLink.create({
+        data: { id: storeFixtureId, ask: `Swap $3 of ETH to USDC — storefront fixture ${storeFixtureId}`, creator: mallory.address.toLowerCase(), isInternal: false },
+      })
+      const listedHtml = flat(await (await fetch(`${BASE}/links`)).text())
+      const listedApi = (await (await fetch(`${BASE}/api/links/board?fresh=1`)).json()) as { pages?: { handle: string }[] }
+      await prisma.intentLink.update({ where: { id: storeFixtureId }, data: { revoked: true } })
+      const delistedHtml = flat(await (await fetch(`${BASE}/links`)).text())
+      await prisma.intentLink.deleteMany({ where: { id: storeFixtureId } })
+      check(
+        'storefront: one organic live link lists the claimed page under Creator pages (/links + /api/links/board)',
+        listedHtml.includes('Creator pages') && listedHtml.includes('/l/harness-store') && listedHtml.includes('@harness-store') &&
+          (listedApi.pages ?? []).some((p) => p.handle === 'harness-store'),
+      )
+      check('storefront: revoking the only organic link delists the page again', !delistedHtml.includes('/l/harness-store'))
+      check('storefront: listing fixture released', (await prisma.intentLink.count({ where: { id: storeFixtureId } })) === 0)
+    } else {
+      check('storefront: organic listing round-trip skipped — no DATABASE_URL for the harness process', true)
+    }
+    // The sitemap reads the SAME fenced set (source pin — sitemap.ts is ISR,
+    // re-rendered hourly, so an HTTP round-trip can't see a claim land; the
+    // shared helper is what keeps a crawler from ever seeing a drill handle).
+    const sitemapSrc = (await import('node:fs')).readFileSync('app/sitemap.ts', 'utf8')
+    const sitemapXmlNow = await (await fetch(`${BASE}/sitemap.xml`)).text()
+    check(
+      'sitemap: creator pages come from publicCreatorHandles (the fenced set), never a raw creator_handles read; the harness handle is never listed',
+      sitemapSrc.includes('publicCreatorHandles()') && !sitemapSrc.includes('creatorHandle.findMany') && !sitemapXmlNow.includes('/l/harness-store'),
     )
     const storeHtml = flat(await (await fetch(`${BASE}/l/harness-store`)).text())
     check(
@@ -3676,6 +3958,30 @@ async function main() {
       JSON.stringify({ v0, v1 }),
     )
     check('variants: the aggregate funnel still counts every open (junk-variant row included)', !!abRow && abRow.funnel.open === 3)
+    // LINKS G (squad gtm 2026-09-08): the creator previewing their own link
+    // is not an arrival — open/connect/built beacons carrying the creator's
+    // own session are acknowledged and dropped; the funnel stays at 3.
+    const ownOpen = await fetch(`${BASE}/api/intent-links/${abLink.slug}/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: mallorySession },
+      body: JSON.stringify({ kind: 'open' }),
+    })
+    const ownOpenBody = (await ownOpen.json()) as { ok?: boolean; own?: boolean }
+    const abListAfterOwn = (await (await fetch(`${BASE}/api/intent-links`, { headers: { cookie: mallorySession } })).json()) as {
+      links: Array<{ slug: string; funnel: { open: number } }>
+    }
+    check(
+      "creator's own visit: an open beacon carrying the creator's session is acknowledged (ok, own) and never counted",
+      ownOpen.status === 200 && ownOpenBody.ok === true && ownOpenBody.own === true && abListAfterOwn.links.find((l) => l.slug === abLink.slug)?.funnel.open === 3,
+      JSON.stringify(ownOpenBody),
+    )
+    // …and the page tells the creator so (a session peek, never a signature).
+    const ownPage = await (await fetch(`${BASE}/i/${abLink.slug}`, { headers: { cookie: mallorySession } })).text()
+    const strangerPage = await (await fetch(`${BASE}/i/${abLink.slug}`)).text()
+    check(
+      "creator's own visit: /i wears the 'Your link — a preview' cue for the creator only",
+      /data-own-link/.test(ownPage) && /Your link/.test(ownPage) && !/data-own-link/.test(strangerPage),
+    )
     const abPage = await fetch(`${BASE}/i/${abLink.slug}`)
     const abHtml = flat(await abPage.text())
     const phrasings = ['Buy $12 of TSLA', 'Own a slice of Tesla for $12', 'Put $12 into Tesla stock', 'A fourth phrasing that fits']
@@ -3728,10 +4034,19 @@ async function main() {
     const capPageMid = await fetch(`${BASE}/i/${capLink.slug}`)
     await signTurn()
     const capPageAfter = await fetch(`${BASE}/i/${capLink.slug}`)
+    const capPageAfterHtml = await capPageAfter.text()
+    const capMidHtml = await capPageMid.text()
     check(
-      'limits: the sign cap counts SERVER-TRUTH turns — live below the cap, 404 at it',
-      capPageBefore.status === 200 && capPageMid.status === 200 && capPageAfter.status === 404,
+      'limits: the sign cap counts SERVER-TRUTH turns — live below the cap, retired ("reached its signing cap") at it',
+      capPageBefore.status === 200 && capPageMid.status === 200 && capMidHtml.includes('Buy $9 of AAPL for the promo') &&
+        capPageAfter.status === 200 && capPageAfterHtml.includes('data-link-state="capped"') && !capPageAfterHtml.includes('Buy $9 of AAPL for the promo'),
     )
+    // …and the card stops advertising the ask: a capped/expired promo must
+    // not keep unfurling "Buy $9 of AAPL" in the feed while the click lands
+    // on the retired page. (The revoked case already fell back; expiry and
+    // the cap did not until 2026-09-08.)
+    const cappedCard = await fetch(`${BASE}/i/${capLink.slug}/opengraph-image`)
+    check('retired link: the OG card of a capped link still renders (generic card, 200 PNG)', cappedCard.status === 200 && /image\/png/.test(cappedCard.headers.get('content-type') ?? ''))
     await fetch(`${BASE}/api/intent-links/${capLink.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
 
     // Expiry: live until the clock passes, then dead everywhere.
@@ -3749,9 +4064,11 @@ async function main() {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ kind: 'open' }),
     })
+    const expAfterHtml = await expAfter.text()
     check(
-      'limits: an expired link dies everywhere (page 404, events 404)',
-      expMintRes.status === 200 && expBefore.status === 200 && expAfter.status === 404 && expEvent.status === 404,
+      'limits: an expired link dies everywhere (page retired as "expired", ask gone, events 404)',
+      expMintRes.status === 200 && expBefore.status === 200 && expAfter.status === 200 && expAfterHtml.includes('data-link-state="expired"') &&
+        !expAfterHtml.includes('Buy $9 of AAPL for the promo') && expEvent.status === 404,
     )
     await fetch(`${BASE}/api/intent-links/${expLink.slug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
 
@@ -6374,6 +6691,55 @@ async function main() {
     check('swap intent: short chain-ish words (eth) stay tokens', ethBuy.isSwap && !ethBuy.problem && ethBuy.buyToken?.toLowerCase() === 'eth')
     const trTypo = parseTransferSegment('send 1 USDC on Aribtrum to 0x1111111111111111111111111111111111111111')
     check('transfer: typo\'d chain word still resolves the chain', !!trTypo && !('problem' in trTypo) && trTypo.chainId === 42161)
+
+    // ── GTM squad 2026-09-08 (PATHS): prod ask_failures replayed on main ──
+    // Five shapes strangers actually typed that still dead-ended on main.
+    // Each pin is the ask as typed → the outcome the USER sees.
+    // (1) "buy $12 orth of AAPL" (prod 2026-09-07): a one-edit typo of the
+    //     "worth" we print on every card became the BUY TOKEN ("I don't know
+    //     the token 'orth'").
+    for (const w of ['orth', 'woth', 'wroth', 'worht']) {
+      const p = parseSwapIntent(`buy $12 ${w} of AAPL`)
+      check(`swap intent: "$12 ${w} of AAPL" reads the typo as "worth", never as a token`, p.isSwap && !p.problem && p.buyToken === 'AAPL' && p.sellAmountUsd === '12' && !p.sellToken)
+    }
+    const sharesStill = parseSwapIntent('buy $12 shares of AAPL')
+    check('swap intent: "$12 shares of AAPL" is untouched by the worth rewrite', sharesStill.isSwap && sharesStill.buyToken === 'AAPL' && sharesStill.sellAmountUsd === '12')
+    // (2) "buy $12 worth of APPL using vredit cartd" (prod 2026-08-31, $11 of
+    //     ETH idle): the fiat clause landed in the sell-token slot. Stripped
+    //     + flagged; a real spend token ("using ETH") is left alone.
+    for (const ask of ['buy $12 worth of AAPL using vredit cartd', 'buy $12 of AAPL with my credit card', 'buy $12 of AAPL by bank transfer', 'buy $12 of AAPL with apple pay on robinhood']) {
+      const p = parseSwapIntent(ask)
+      check(`swap intent: fiat spend clause is stripped + flagged — "${ask}"`, p.isSwap && !p.problem && p.buyToken === 'AAPL' && !p.sellToken && p.viaCard === true)
+    }
+    const spendEth = parseSwapIntent('buy $12 of AAPL using ETH')
+    check('swap intent: a token spend clause ("using ETH") still names the sell token', spendEth.isSwap && spendEth.sellToken === 'ETH' && !spendEth.viaCard)
+    // (3) Arrows — our own card titles print "USDG → TSLA"; retyped, the buy
+    //     side was lost and the ask defaulted to Base ("I don't know the token
+    //     USDG on Base", prod 2026-09-02).
+    for (const ask of ['swap 10 USDG → AAPL on Uniswap', 'swap 10 USDG -> AAPL', 'Swap 12 USDG → TSLA']) {
+      const p = parseSwapIntent(ask)
+      check(`swap intent: arrow keeps the buy side — "${ask}"`, p.isSwap && !p.problem && p.sellToken === 'USDG' && /^(AAPL|TSLA)$/.test(p.buyToken ?? ''))
+    }
+    const arrowXc = parseCrossChainSwap('swap 1 USDC from base → arbitrum')
+    check('xchain: arrow in the destination slot still builds base→arbitrum', !!arrowXc && !('problem' in arrowXc) && arrowXc.destinationChain === 'arbitrum')
+    check('jobs: an arrow inside a lone cross-chain ask never becomes a job clarify', compileJobAsk('swap 1 USDC from base → arbitrum') === null)
+    // (4) "$1 USDC from Base to USDG on Robinhood Chain" (prod 2026-09-04,
+    //     $2.2k wallet → planner): a dollar sign on a stable IS the amount.
+    const dollarXc = parseCrossChainSwap('Convert $1 USDC from Base to USDG on Robinhood Chain via cross-chain swap')
+    check('xchain: "$1 USDC from Base to USDG on Robinhood Chain" parses 1 USDC base→robinhood', !!dollarXc && !('problem' in dollarXc) && dollarXc.amount === '1' && dollarXc.originToken === 'USDC' && dollarXc.destinationToken === 'USDG' && dollarXc.destinationChain === 'robinhood')
+    const dollarXcOf = parseCrossChainSwap('Swap $5 of USDC from Base to Arbitrum')
+    check('xchain: "$5 of USDC from Base to Arbitrum" parses 5 USDC', !!dollarXcOf && !('problem' in dollarXcOf) && dollarXcOf.amount === '5' && dollarXcOf.destinationChain === 'arbitrum')
+    const dollarXcEth = parseCrossChainSwap('Swap $5 of ETH from Base to Arbitrum')
+    check('xchain: a dollar amount of a NON-stable clarifies by name (never the planner)', !!dollarXcEth && 'problem' in dollarXcEth && /amount in ETH/.test(dollarXcEth.problem))
+    // (5) "send 5 USDC to 0x… on Optimism": #707 lit Optimism in the transfer
+    //     grammar but not its chain table — the parse matched, then re-asked
+    //     for the chain the user had just typed.
+    const opSend = parseTransferSegment('Send 5 USDC to 0x1111111111111111111111111111111111111111 on Optimism')
+    check('transfer: "… on Optimism" resolves chain 10 (tail form)', !!opSend && !('problem' in opSend) && opSend.chainId === 10 && opSend.chainName === 'Optimism')
+    const opSendMid = parseTransferSegment('send 5 USDC on optimism to nate.eth')
+    check('transfer: "on optimism to …" resolves chain 10 (mid form)', !!opSendMid && !('problem' in opSendMid) && opSendMid.chainId === 10)
+    const chainless = parseTransferSegment('send 5 USDC to nate.eth', { fallbackChainId: null })
+    check('transfer: the chain-clarify chips offer Optimism and every chip round-trips', !!chainless && 'problem' in chainless && !!chainless.chips && chainless.chips.some((c) => c.label === 'Optimism') && chainless.chips.every((c) => { const r = parseTransferSegment(c.resume); return !!r && !('problem' in r) }))
     const armLink = parseGuardianArm('Set a stop-loss on my Hyperliquid ETH position at -5%')
     check('guardian: legacy /i/stop-loss link phrasing parses (venue word stripped)', !!armLink && armLink.coin === 'ETH' && armLink.triggerValue === 5)
     const fundTypo = parseRobinhoodFunding('Fund Robbinhood chain with $12 from base')
@@ -6381,6 +6747,314 @@ async function main() {
     check('lexicon: ENS names in chain slots are never rewritten', normalizeChainWords('send 1 USDC on arbitrum to polygonn.eth').includes('polygonn.eth'))
     check('lexicon: "a ton of USDC" is not a chain', detectCrossChain('swap a ton of USDC for ETH').chains.length === 0)
     check('lexicon: "based" never fuzzy-matches base', canonicalChainWord('based') === null)
+
+    // ── GTM squad 2026-09-08 (PATHS round 2) ─────────────────────────────
+    // P-3: every "top up on …" sentence derives from the origin set.
+    check('funding origins: fundingOriginWords() names the whole scan set', fundingOriginWords() === 'Base, Ethereum, Arbitrum, or Optimism' && fundingOriginWords('and') === 'Base, Ethereum, Arbitrum, and Optimism')
+    {
+      const srcFs = await import('node:fs')
+      const codeOnly = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      const routeSrc = codeOnly(srcFs.readFileSync('app/api/chat/route.ts', 'utf8'))
+      const onrampSrc = codeOnly(srcFs.readFileSync('lib/onramp.ts', 'utf8'))
+      const jobsSrc = codeOnly(srcFs.readFileSync('lib/jobs.ts', 'utf8'))
+      check(
+        'funding origins: no top-up sentence hardcodes "Base, Ethereum, or Arbitrum" (route / onramp / jobs read fundingOriginWords)',
+        !/top up USDC or ETH on Base/.test(routeSrc) && !/on Base, Ethereum, or Arbitrum/.test(onrampSrc) && !/'Base', 'Ethereum', 'Arbitrum'/.test(jobsSrc) &&
+          (routeSrc.match(/fundingOriginWords\(\)/g)?.length ?? 0) >= 3 && /fundingOriginWords\(\)/.test(onrampSrc) && /fundingOriginWords\(\)/.test(jobsSrc),
+      )
+      // P-2: the dollar-sizing probe + the CoW chain reads no longer touch
+      // lib/auth's unpinned Base client.
+      const probeSrc = codeOnly(srcFs.readFileSync('lib/usd-probe.ts', 'utf8'))
+      const cowSrc = codeOnly(srcFs.readFileSync('lib/cow-guardrails.ts', 'utf8'))
+      check('price probe: usd-probe + cow-guardrails read through the registry client only (no lib/auth import)', !/@\/lib\/auth/.test(probeSrc) && !/@\/lib\/auth/.test(cowSrc) && /publicClientFor\(chainId\)/.test(probeSrc) && /publicClientFor\(quote\.chainId\)/.test(cowSrc))
+    }
+    check(
+      'price probe: pinned registry clients carry a fallback transport (pinned RPC → viem default), unpinned chains a single one',
+      publicClientFor(8453)?.transport.type === 'fallback' && publicClientFor(1)?.transport.type === 'fallback' && publicClientFor(42161)?.transport.type === 'fallback' && publicClientFor(10)?.transport.type === 'http',
+      [8453, 1, 42161, 10].map((id) => `${id}:${publicClientFor(id)?.transport.type}`).join(' '),
+    )
+
+    // Robinhood-destination cross-chain asks are FUNDING moves (NEAR can't
+    // reach 4663): the jobs registry claims them, every chip round-trips.
+    const compiles = (m: string) => { const r = compileJobAskFull(m); return !!r && !('problem' in r) && !('clarify' in r) ? r.steps.map((st) => `${st.kind}:${st.builder}`).join(',') : null }
+    const rf20 = robinhoodFundingFromCrossChain('Swap 20 USDC from Base to USDG on Robinhood Chain')
+    check('rh funding redirect: "Swap 20 USDC from Base to USDG on Robinhood Chain" → the LiFi funding sentence, compiled as fund → wait', !!rf20 && 'ask' in rf20 && rf20.ask === 'Fund robinhood chain with $20 from base' && compiles('Swap 20 USDC from Base to USDG on Robinhood Chain') === 'sign:native-lifi-fund,wait:wait')
+    check('rh funding redirect: an Optimism origin compiles the same way (#707)', compiles('move 25 USDC from optimism to robinhood chain') === 'sign:native-lifi-fund,wait:wait')
+    const rf1 = robinhoodFundingFromCrossChain('Convert $1 USDC from Base to USDG on Robinhood Chain via cross-chain swap')
+    check(
+      'rh funding redirect: $1 (under the $9 floor) → the floor chips, every resume compiles, the lead line says why (prod 2026-09-04)',
+      !!rf1 && 'clarify' in rf1 && /smallest clean move .* \$9/.test(rf1.reply) && rf1.clarify.options.some((o) => o.label === '$9 from Base') &&
+        rf1.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => compiles(o.resume) === 'sign:native-lifi-fund,wait:wait'),
+      JSON.stringify(rf1).slice(0, 300),
+    )
+    const rfEth = robinhoodFundingFromCrossChain('swap 0.01 ETH from base to robinhood')
+    check('rh funding redirect: an ETH-sized ask → dollar chips "using eth", every resume compiles, the copy says the canonical bridge is Ethereum-only and what lands', !!rfEth && 'clarify' in rfEth && /only runs from Ethereum/.test(rfEth.reply) && /USDG/.test(rfEth.reply) && rfEth.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => /using eth$/.test(o.resume) && compiles(o.resume) === 'sign:native-lifi-fund,wait:wait'))
+    const rfBuy = robinhoodFundingFromCrossChain('swap 20 USDC from base to AAPL on robinhood')
+    check('rh funding redirect: "… to AAPL on robinhood" hands over ONE fund-then-buy chip that compiles fund → wait → buy', !!rfBuy && 'clarify' in rfBuy && compiles(rfBuy.clarify.options[0].resume) === 'sign:native-lifi-fund,wait:wait,sign:native-lifi-swap')
+    check('rh funding redirect: the canonical ETH-from-Ethereum bridge stays with the bridge layer (no job, no redirect)', robinhoodFundingFromCrossChain('Bridge 0.01 ETH from Ethereum to Robinhood Chain') === null && compileJobAskFull('Bridge 0.01 ETH from Ethereum to Robinhood Chain') === null)
+    const rfPoly = robinhoodFundingFromCrossChain('bridge 20 USDC from polygon to robinhood')
+    check('rh funding redirect: an origin the plan can\'t leave refuses by name with the real origin list', !!rfPoly && 'problem' in rfPoly && rfPoly.problem.includes(fundingOriginWords()))
+    check('rh funding redirect: non-Robinhood destinations are untouched', robinhoodFundingFromCrossChain('Swap 5 USDC from base to ETH on arbitrum') === null)
+
+    // Non-EVM homes (lib/token-home): the chart overlay's own chips.
+    check('token home: SOL/XRP/DOGE live elsewhere; ETH/BTC/AAPL/USDC do not', tokenHome('SOL') === 'Solana' && tokenHome('xrp') === 'the XRP Ledger' && tokenHome('DOGE') === 'Dogecoin' && tokenHome('ETH') === null && tokenHome('BTC') === null && tokenHome('AAPL') === null && tokenHome('USDC') === null && tokenHome(undefined) === null)
+
+    // "what stocks can I buy on robinhood" — a READ, never an order.
+    for (const q of ['what stocks can I buy on robinhood', 'show a list of all the available stocks i can buy on robinhood', 'which tokenized stocks do you support', 'I want to buy some stocks', 'can i buy stocks here', 'what stocks are on Robinhood Chain?']) {
+      check(`stock list: "${q}" is the list question`, parseStockListAsk(q)?.kind === 'stock-list')
+    }
+    for (const q of ['buy $10 of AAPL stock', 'buy 5 shares of TSLA', 'sell all my AAPL stock', 'what is a stock?', 'can i buy apple stock', 'swap 1 USDC for ETH']) {
+      check(`stock list: "${q}" is NOT the list question (order / other)`, parseStockListAsk(q) === null)
+    }
+
+    // SECURITY note: a chain named inside a fiat-ish clause survives.
+    const fromBaseAcct = parseSwapIntent('buy $10 of AAPL from my Base account')
+    check('swap intent: "from my Base account" keeps the chain and never flags a card', fromBaseAcct.isSwap && fromBaseAcct.buyToken === 'AAPL' && fromBaseAcct.sellAmountUsd === '10' && !fromBaseAcct.viaCard && !fromBaseAcct.sellToken)
+    check('swap intent: "with my credit card" still flags the card', parseSwapIntent('buy $10 of AAPL with my credit card').viaCard === true)
+
+    // LINKS finding: a combined funding plan never emits a leg under $2.
+    {
+      const need: FundingNeed = { chainId: 1, token: 'ETH', amountHuman: 0.004, followupResume: 'stake all my ETH on Lido', actionLabel: 'the stake', flexMinAmountHuman: 0 }
+      const src = (chainId: number, chainWord: string, usd: number): FundingSource => ({ chainId, chainWord, token: 'USDC', balance: usd, usd })
+      check('funding plan: MIN_LEG_USD is the smallest plan', MIN_LEG_USD === 2)
+      check('funding plan: a $1.50 source adds nothing to a combined capacity', promisableCapacityUsd([src(42161, 'arbitrum', 10), src(8453, 'base', 1.5)], false) === 10)
+      const shortPlan = planFundingChips(need, 11, [src(42161, 'arbitrum', 10), src(8453, 'base', 1.5)], 0)
+      check('funding plan: $10 + $1.50 vs an $11 need is SHORT (no combine chip with a sub-$2 leg)', shortPlan.kind === 'short')
+      const combo = planFundingChips(need, 11, [src(42161, 'arbitrum', 10), src(8453, 'base', 3)], 0)
+      const legAmts = combo.kind === 'offer' ? [...combo.chips[0].resume.matchAll(/Swap (\d+(?:\.\d+)?) USDC/g)].map((m) => Number(m[1])) : []
+      check('funding plan: the remainder leg moves at least $2, never "Swap 1 USDC"', combo.kind === 'offer' && legAmts.length === 2 && legAmts.every((a) => a >= MIN_LEG_USD), combo.kind === 'offer' ? combo.chips[0].resume : combo.kind)
+    }
+
+    // ── Route-level: what the stranger SEES ──────────────────────────────
+    const strangerWallet = privateKeyToAccount(generatePrivateKey()).address
+    const chatJson = (body: Record<string, unknown>) => fetch(`${BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ activeServers: [], history: [], ...body }) }).then((r) => r.json())
+    const signable = (j: Record<string, unknown>) => !!(j.orderRequest || j.txRequest || j.txChain || j.jobId)
+    // P-1 (prod-verified): the CoW venue (the default with no Uniswap MCP
+    // active) never hands an EMPTY wallet a signable market order.
+    const cowEmpty = await chatJson({ message: 'Swap $1 of ETH to USDC', walletAddress: strangerWallet })
+    check(
+      'P-1: empty wallet + CoW market swap → no signable artifact, the hold/shortfall is named',
+      !signable(cowEmpty) && cowEmpty.buildPath !== 'native-swap-cow' && typeof cowEmpty.reply === 'string' && /holds 0|couldn't read|didn't answer|Top up|top up/i.test(cowEmpty.reply),
+      JSON.stringify(cowEmpty).slice(0, 300),
+    )
+    check('swap intent: the bare LIMIT_EXAMPLES parse as limit orders without the word "limit" ("for at least" IS the phrase)', LIMIT_EXAMPLES.every((ex) => { const p = parseSwapIntent(ex); return p.isSwap && p.mode === 'limit' && !p.problem }))
+    const cowLimitEmpty = await chatJson({ message: `limit order: ${LIMIT_EXAMPLES[0]}`, walletAddress: strangerWallet })
+    check(
+      'P-1: a resting limit order on an empty wallet is the one exemption — the ORDER is offered (declared exempt, the exit gate honors it) and the card SAYS it fills only once funded',
+      !!cowLimitEmpty.orderRequest && cowLimitEmpty.buildPath === 'native-swap-cow' && /fills only once/.test(String(cowLimitEmpty.reply)) && (cowLimitEmpty.affordability as { exempt?: string } | undefined)?.exempt === 'resting-limit-order',
+      JSON.stringify(cowLimitEmpty).slice(0, 300),
+    )
+    // The stock-list READ: list + Buy chips, every chip a swap the layer builds.
+    const stockList = await chatJson({ message: 'what stocks can I buy on robinhood' })
+    check(
+      'stock list: the question answers with the live 4663 list + Buy chips (never brokerage prose)',
+      stockList.buildPath === 'native-stock-list' && /tokenized stocks trade on Robinhood Chain/.test(String(stockList.reply)) && Array.isArray(stockList.clarify?.options) && stockList.clarify.options.length >= 3 &&
+        stockList.clarify.options.every((o: { label: string; resume: string }) => { const p = parseSwapIntent(o.resume); return p.isSwap && !p.problem && p.sellAmountUsd === '10' && o.label === `Buy $10 of ${p.buyToken}` }),
+      JSON.stringify(stockList).slice(0, 300),
+    )
+    // Non-EVM homes: the chart overlay's own chip on a SOL chart.
+    const solBuy = await chatJson({ message: 'Buy $50 of SOL', walletAddress: strangerWallet })
+    check(
+      'home door: "Buy $50 of SOL" refuses the Base look-alike BY NAME and opens the Hyperliquid door (chips round-trip parseHlIntent)',
+      solBuy.buildPath === 'native-swap-home-door' && /lives on \*\*Solana\*\*/.test(String(solBuy.reply)) && !signable(solBuy) && solBuy.clarify?.options?.length === 2 &&
+        solBuy.clarify.options.every((o: { resume: string }) => parseHlIntent(o.resume)?.kind === 'open'),
+      JSON.stringify(solBuy).slice(0, 300),
+    )
+    const solSell = await chatJson({ message: 'Sell $50 of SOL', walletAddress: strangerWallet })
+    check('home door: "Sell $50 of SOL" says the EVM wallet can\'t sell SOL held on Solana', solSell.buildPath === 'native-swap-home-door' && /can't sell SOL held on Solana/.test(String(solSell.reply)) && !signable(solSell))
+    const solDca = await chatJson({ message: 'DCA $10 into SOL weekly', walletAddress: strangerWallet })
+    check('home door: "DCA $10 into SOL weekly" refuses the schedule by name (nothing armed)', solDca.buildPath === 'native-dca' && /lives on \*\*Solana\*\*/.test(String(solDca.reply)) && /No schedule was created/.test(String(solDca.reply)) && !signable(solDca) && !/armed/i.test(String(solDca.reply)), JSON.stringify(solDca).slice(0, 300))
+    // The 09-04 prod shape through the route: the jobs layer, not the NEAR door.
+    const rhDollar = await chatJson({ message: 'Convert $1 USDC from Base to USDG on Robinhood Chain via cross-chain swap' })
+    check(
+      'rh funding redirect (route): the prod 09-04 ask answers the floor chips from the jobs layer — never the add-NEAR door',
+      rhDollar.buildPath === 'native-job' && /smallest clean move/.test(String(rhDollar.reply)) && rhDollar.clarify?.options?.some((o: { label: string }) => o.label === '$9 from Base') && !rhDollar.door,
+      JSON.stringify(rhDollar).slice(0, 300),
+    )
+    const rhTwenty = await chatJson({ message: 'Swap 20 USDC from Base to USDG on Robinhood Chain' })
+    check('rh funding redirect (route): the fundable size is claimed by the jobs layer (asks to connect, no NEAR door)', !rhTwenty.door && /connect your wallet/i.test(String(rhTwenty.reply)), JSON.stringify(rhTwenty).slice(0, 200))
+
+    // ── GTM squad 2026-09-08 (PATHS round 3): THE affordability choke point ──
+    // links.md r2: a $0 wallet opened an /i link ("Convert two dollars of ETH
+    // to USDC on Base", uniswap + near) and got "Sign & send swap". The
+    // phrasing fell past the swap grammar to the planner, whose first-party
+    // tool built a 2 ETH swap; nothing between a tool's build and the card
+    // ever asked the wallet what it holds. lib/affordability.ts is the one
+    // exit gate — every signable, every venue, every origin.
+    console.log('— affordability choke point (PATHS r3)')
+    {
+      const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`
+      const WETH_BASE = '0x4200000000000000000000000000000000000006' as `0x${string}`
+      const ROUTER = '0x2626664c2603336E57B271c5C0b26F421741e481' as `0x${string}`
+      const PERMIT2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3' as `0x${string}`
+      const W = strangerWallet as `0x${string}`
+      const FIVE_USDC = BigInt(5_000_000)
+      const approveData = (amt: bigint) => encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [ROUTER, amt] })
+      const transferData = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [ROUTER, FIVE_USDC] })
+      const routerAbi = parseAbi([
+        'function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96) params) payable returns (uint256)',
+        'function multicall(uint256 deadline, bytes[] data) payable returns (bytes[])',
+      ])
+      const exactIn = encodeFunctionData({ abi: routerAbi, functionName: 'exactInputSingle', args: [{ tokenIn: USDC_BASE, tokenOut: WETH_BASE, fee: 500, recipient: W, amountIn: FIVE_USDC, amountOutMinimum: BigInt(0), sqrtPriceLimitX96: BigInt(0) }] })
+      const multicallData = encodeFunctionData({ abi: routerAbi, functionName: 'multicall', args: [BigInt(Math.floor(Date.now() / 1000) + 600), [exactIn]] })
+      const permit2Data = encodeFunctionData({ abi: parseAbi(['function approve(address token, address spender, uint160 amount, uint48 expiration)']), functionName: 'approve', args: [USDC_BASE, ROUTER, FIVE_USDC, 1] })
+      const tx = (data: string, to: string = USDC_BASE, value = '0') => ({ to, data, value, chainId: 8453 })
+      const usdcLower = USDC_BASE.toLowerCase()
+
+      // Pure decode: what each artifact SPENDS.
+      const sv = spendsOfTx(tx('0x', ROUTER, '1000'))
+      check('affordability: a native value is an ETH spend', sv.length === 1 && sv[0].token === 'ETH' && sv[0].atoms === BigInt(1000) && sv[0].kind === 'value')
+      const sa = spendsOfTx(tx(approveData(FIVE_USDC)))
+      check('affordability: a bounded approve decodes to the token + amount', sa.length === 1 && sa[0].token === usdcLower && sa[0].atoms === FIVE_USDC && sa[0].kind === 'approve')
+      check('affordability: an unlimited approve is not a spend', spendsOfTx(tx(approveData(BigInt('0x' + 'ff'.repeat(32))))).length === 0)
+      const st = spendsOfTx(tx(transferData))
+      check('affordability: an ERC-20 transfer decodes to the token + amount', st.length === 1 && st[0].kind === 'transfer' && st[0].atoms === FIVE_USDC)
+      const sm = spendsOfTx(tx(multicallData, ROUTER))
+      check('affordability: SwapRouter02 multicall → exactInputSingle decodes the token IN + amountIn', sm.length === 1 && sm[0].kind === 'swap-in' && sm[0].token === usdcLower && sm[0].atoms === FIVE_USDC)
+      const smEth = spendsOfTx(tx(multicallData, ROUTER, '777'))
+      check('affordability: an ETH-in router call counts the value once (never the WETH amountIn twice)', smEth.length === 1 && smEth[0].token === 'ETH' && smEth[0].atoms === BigInt(777))
+      const sp = spendsOfTx(tx(permit2Data, PERMIT2))
+      check('affordability: a Permit2 approve decodes the token it approves', sp.length === 1 && sp[0].kind === 'permit2' && sp[0].token === usdcLower && sp[0].atoms === FIVE_USDC)
+      check('affordability: an undecodable tx with no value is no spend (never a false refusal)', spendsOfTx(tx('0xdeadbeef00', ROUTER)).length === 0 && spendsOfTx({ to: ROUTER, data: '0x', value: '0' }).length === 0)
+      // Requirements: a LONE approve is not a spend; approve → next step is.
+      check('affordability: a lone approve (single tx) requires nothing — SECURITY’s bounded-approve card stays untouched', requirementsOf(sa, 1).length === 0)
+      check('affordability: an approve followed by a step requires the approved amount', requirementsOf(sa, 2).length === 1 && requirementsOf(sa, 2)[0].atoms === FIVE_USDC)
+      const reqBoth = requirementsOf([...sa, ...spendsOfTx(tx(multicallData, ROUTER), 1)], 2)
+      check('affordability: approve + swap of the same token collapse to ONE requirement (the larger figure)', reqBoth.length === 1 && reqBoth[0].atoms === FIVE_USDC && reqBoth[0].needsGas)
+      const so = spendsOfOrder({ protocol: 'cow', chainId: 8453, typedData: { message: { sellToken: WETH_BASE, sellAmount: '1000', buyToken: USDC_BASE } } })
+      check('affordability: a CoW order’s sell side is the spend; a Seaport / HL order is not this gate’s', so.length === 1 && so[0].kind === 'order' && so[0].atoms === BigInt(1000) && spendsOfOrder({ protocol: 'opensea', chainId: 8453, typedData: { message: { sellToken: WETH_BASE, sellAmount: '1' } } }).length === 0 && requirementsOf(so)[0].needsGas === false)
+
+      // Verdicts through a fake reader (no RPC): short / gas / ok / unknown.
+      const reader = (native: bigint, erc20: bigint, throwOn?: 'native' | 'erc20'): BalanceReader => ({
+        async native() { if (throwOn === 'native') throw new Error('rpc down'); return native },
+        async erc20() { if (throwOn === 'erc20') throw new Error('rpc down'); return { balance: erc20, decimals: 6, symbol: 'USDC' } },
+      })
+      const transferPayload = { reply: 'x', txRequest: tx(transferData), buildPath: 'planner' }
+      const vShort = await checkAffordability(W, transferPayload, reader(BigInt(0), BigInt(0)))
+      check('affordability: 0 USDC vs a 5 USDC transfer → SHORT, by name', vShort.kind === 'short' && vShort.symbol === 'USDC' && vShort.needs === FIVE_USDC && vShort.held === BigInt(0) && !vShort.gas, JSON.stringify(vShort, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)))
+      const vGas = await checkAffordability(W, transferPayload, reader(BigInt(0), FIVE_USDC * BigInt(10)))
+      check('affordability: the token covers it but ZERO ETH on the chain → short on gas (a tx can’t be sent at all)', vGas.kind === 'short' && vGas.gas && vGas.symbol === 'ETH')
+      const vOk = await checkAffordability(W, transferPayload, reader(BigInt(1), FIVE_USDC))
+      check('affordability: exactly enough token + any gas at all → ok (gas is only enforced at zero, never against a layer’s own sizing)', vOk.kind === 'ok' && vOk.checked === 1)
+      const orderPayload = { reply: 'x', orderRequest: { protocol: 'cow', chainId: 8453, typedData: { message: { sellToken: USDC_BASE, sellAmount: FIVE_USDC.toString() } } } }
+      check('affordability: a funded CoW order with ZERO ETH is ok (orders need no gas)', (await checkAffordability(W, orderPayload, reader(BigInt(0), FIVE_USDC))).kind === 'ok')
+      check('affordability: an unfunded CoW order is short', (await checkAffordability(W, orderPayload, reader(BigInt(0), BigInt(0)))).kind === 'short')
+      check('affordability: a failed balance read is UNKNOWN, never a refusal', (await checkAffordability(W, transferPayload, reader(BigInt(0), BigInt(0), 'erc20'))).kind === 'unknown' && (await checkAffordability(W, { txRequest: tx('0x', ROUTER, '5') }, reader(BigInt(0), BigInt(0), 'native'))).kind === 'unknown')
+      check('affordability: a chain outside the registry is UNKNOWN', (await checkAffordability(W, { txRequest: { ...tx(transferData), chainId: 999 } }, reader(BigInt(0), BigInt(0)))).kind === 'unknown')
+      check('affordability: a payload with no signable is no-spend', (await checkAffordability(W, { reply: 'hi' }, reader(BigInt(0), BigInt(0)))).kind === 'no-spend')
+
+      // The gate itself: what the card receives.
+      const gated = await gateSignablePayload({ reply: '🔏 Swap 5 USDC → ETH', txRequest: tx(transferData), buildPath: 'planner', receipts: [] } as Record<string, unknown>, W, { reader: reader(BigInt(0), BigInt(0)) })
+      const gp = gated.payload as { txRequest?: unknown; buildPath?: unknown; reply?: unknown; affordability?: { short?: { symbol?: string }; withheldBuildPath?: string } }
+      check(
+        'affordability gate: a short signable is REMOVED and the reply names the shortfall + every origin chain',
+        gated.verdict?.kind === 'short' && !gp.txRequest && gp.buildPath === AFFORDABILITY_SHORT_PATH && /Nothing to sign yet: this would spend 5 USDC on Base and the wallet holds 0 USDC there/.test(String(gp.reply)) && String(gp.reply).includes(fundingOriginWords()) && gp.affordability?.short?.symbol === 'USDC' && gp.affordability?.withheldBuildPath === 'planner',
+        JSON.stringify(gated.payload).slice(0, 300),
+      )
+      const gatedSse = await gateSignablePayload({ type: 'reply', content: '🔏 x', txChain: { summary: 's', steps: [{ label: 'approve', tx: tx(approveData(FIVE_USDC)) }, { label: 'swap', tx: tx(multicallData, ROUTER) }] }, buildPath: 'planner' }, W, { reader: reader(BigInt(0), BigInt(0)) })
+      check('affordability gate: the SSE event shape (content + txChain) is gated the same way', gatedSse.verdict?.kind === 'short' && !gatedSse.payload.txChain && /Nothing to sign yet/.test(String(gatedSse.payload.content)))
+      const untouched = await gateSignablePayload({ reply: 'x', txRequest: tx(transferData) }, undefined, { reader: reader(BigInt(0), BigInt(0)) })
+      check('affordability gate: no wallet → untouched (nothing to check against)', untouched.verdict === null && !!untouched.payload.txRequest)
+      const unknownPass = await gateSignablePayload({ reply: 'x', txRequest: tx(transferData), buildPath: 'native-cross-chain' }, W, { reader: reader(BigInt(0), BigInt(0), 'erc20') })
+      check('affordability gate: an unreadable balance passes the artifact through (the layer’s own guard stood behind it)', unknownPass.verdict?.kind === 'unknown' && !!unknownPass.payload.txRequest && unknownPass.payload.buildPath === 'native-cross-chain')
+      const loneApprove = await gateSignablePayload({ reply: 'x', txRequest: tx(approveData(FIVE_USDC)) }, W, { reader: reader(BigInt(0), BigInt(0)) })
+      check('affordability gate: a lone bounded approve is not gated', loneApprove.verdict?.kind === 'no-spend' && !!loneApprove.payload.txRequest)
+      const exemptOrder = await gateSignablePayload({ reply: 'x', orderRequest: orderPayload.orderRequest, buildPath: 'native-swap-cow', affordability: { exempt: 'resting-limit-order' } } as Record<string, unknown>, W, { reader: reader(BigInt(0), BigInt(0)) })
+      const fakeExemptTx = await gateSignablePayload({ reply: 'x', txRequest: tx(transferData), affordability: { exempt: 'resting-limit-order' } } as Record<string, unknown>, W, { reader: reader(BigInt(0), BigInt(0)) })
+      check('affordability gate: the declared resting-limit-order exemption keeps the ORDER; the same flag on a transaction is ignored', exemptOrder.verdict?.kind === 'no-spend' && !!(exemptOrder.payload as { orderRequest?: unknown }).orderRequest && fakeExemptTx.verdict?.kind === 'short' && !(fakeExemptTx.payload as { txRequest?: unknown }).txRequest)
+
+      // Source pins: the gate is wired at BOTH /api/chat exits and the jobs offer.
+      {
+        const srcFs = await import('node:fs')
+        const routeSrc = srcFs.readFileSync('app/api/chat/route.ts', 'utf8')
+        const runnerSrc = srcFs.readFileSync('lib/jobs-runner.ts', 'utf8')
+        check(
+          'affordability gate: wired at the JSON exit (POST wrapper), the SSE artifact sites (sendSignable ×6) and the jobs runner’s offer',
+          /const gated = await gateSignablePayload\(body, reqBody\.walletAddress/.test(routeSrc) && (routeSrc.match(/await sendSignable\(/g)?.length ?? 0) >= 6 && !/\bsend\(\{ type: 'reply'[^\n]*(?:txRequest|txChain|orderRequest): decision\.artifact/.test(routeSrc) &&
+            /const verdict = await checkAffordability\(fresh\.wallet, built\.artifact\)/.test(runnerSrc),
+        )
+      }
+
+      // Spelled-out dollars reach every grammar as the canonical "$N".
+      check('dollar words: "two dollars" / "a hundred bucks" / "twenty-five dollars\'" / "10 dollars" all become $N', normalizeDollarWords('two dollars of ETH') === '$2 of ETH' && normalizeDollarWords('a hundred bucks of AAPL') === '$100 of AAPL' && normalizeDollarWords("twenty-five dollars' worth of TSLA") === '$25 worth of TSLA' && normalizeDollarWords('long 10 dollars of HYPE') === 'long $10 of HYPE' && normalizeDollarWords('swap 5 USDC for USDG') === 'swap 5 USDC for USDG')
+      const twoDollars = parseSwapIntent('Convert two dollars of ETH to USDC on Base')
+      check('dollar words: the links r2 A/B phrasing is a NATIVE $2 swap (never the planner)', twoDollars.isSwap && !twoDollars.problem && twoDollars.sellAmountUsd === '2' && twoDollars.sellToken === 'ETH' && twoDollars.buyToken === 'USDC')
+      check('dollar words: "long ten dollars of HYPE on hyperliquid" reaches the HL grammar', parseHlIntent('long ten dollars of HYPE on hyperliquid')?.kind === 'open')
+      // SECURITY r2: the Aave supply tail.
+      const behalf = parseAaveSupply('supply 5 USDC to aave for nate.eth')
+      check('aave supply: a supply naming ANOTHER wallet refuses by name (never half-parses and builds for the signer)', !!behalf && 'problem' in behalf && /can't supply on behalf of nate\.eth/.test(behalf.problem) && !!parseAaveSupply('supply 5 USDC to aave for me') && !('problem' in parseAaveSupply('supply 5 USDC to aave for me')!) && !!parseAaveSupply('supply 5 USDC into aave for the best rate'))
+
+      // ── Route-level, THROUGH THE LINK ORIGIN: the /i runtime's exact turn
+      // (intentLinkSlug + the link's composed set) from a $0 wallet, for the
+      // Uniswap venue, the CoW venue and the phrasing that fell to the planner.
+      const linkHeaders = { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' }
+      const mintLink = async (ask: string, mcps: string[]) => (await (await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: { ...linkHeaders, cookie: mallorySession }, body: JSON.stringify({ ask, mcps }) })).json()) as { slug?: string; mcps?: string }
+      const linkTurn = (message: string, slug: string, mcps: string[]) =>
+        fetch(`${BASE}/api/chat`, { method: 'POST', headers: linkHeaders, body: JSON.stringify({ message, walletAddress: W, intentLinkSlug: slug, activeServers: mcps.map((s) => ({ slug: s })), history: [] }) }).then((r) => r.json() as Promise<Record<string, unknown>>)
+      const minted: string[] = []
+      try {
+        const uniLink = await mintLink('Swap $2 of ETH to USDC on Base', ['uniswap-free'])
+        if (uniLink.slug) minted.push(uniLink.slug)
+        const uniTurn = await linkTurn('Swap $2 of ETH to USDC on Base', uniLink.slug ?? 'missing', ['uniswap-free'])
+        check(
+          'link origin: a $0 wallet on a Uniswap-set link gets NO signable — the shortfall is named (links.md r2)',
+          !!uniLink.slug && (uniLink.mcps ?? '').includes('uniswap-free') && !signable(uniTurn) && uniTurn.buildPath !== 'native-swap-uniswap' && uniTurn.buildPath !== 'planner' && /holds 0|Nothing to sign yet|couldn't read/i.test(String(uniTurn.reply)),
+          JSON.stringify(uniTurn).slice(0, 300),
+        )
+        const cowLink = await mintLink('Swap $2 of ETH to USDC on Base', ['cow-free'])
+        if (cowLink.slug) minted.push(cowLink.slug)
+        const cowTurn = await linkTurn('Swap $2 of ETH to USDC on Base', cowLink.slug ?? 'missing', ['cow-free'])
+        check(
+          'link origin: a $0 wallet on a CoW-set link gets NO order — the shortfall is named',
+          !!cowLink.slug && !signable(cowTurn) && cowTurn.buildPath !== 'native-swap-cow' && cowTurn.buildPath !== 'planner' && /holds 0|Nothing to sign yet|couldn't read/i.test(String(cowTurn.reply)),
+          JSON.stringify(cowTurn).slice(0, 300),
+        )
+        const abLink = await mintLink('Convert two dollars of ETH to USDC on Base', ['uniswap-free', 'near-intents-mcp-yeetful'])
+        if (abLink.slug) minted.push(abLink.slug)
+        const abTurn = await linkTurn('Convert two dollars of ETH to USDC on Base', abLink.slug ?? 'missing', ['uniswap-free', 'near-intents-mcp-yeetful'])
+        check(
+          'link origin: the exact links.md r2 phrasing ("Convert two dollars …", uniswap + near) never reaches the planner and never hands a $0 wallet a signable',
+          !!abLink.slug && !signable(abTurn) && abTurn.buildPath !== 'planner' && /holds 0|Nothing to sign yet|couldn't read/i.test(String(abTurn.reply)),
+          JSON.stringify(abTurn).slice(0, 300),
+        )
+      } finally {
+        for (const slug of minted) await fetch(`${BASE}/api/intent-links/${slug}`, { method: 'DELETE', headers: { cookie: mallorySession } }).catch(() => {})
+      }
+      // The cross-chain layer builds for any address (1Click quotes anything) —
+      // the EXIT gate is what withholds it.
+      const xc = await fetch(`${BASE}/api/chat`, { method: 'POST', headers: linkHeaders, body: JSON.stringify({ message: 'Swap 5 USDC from base to ETH on arbitrum', walletAddress: W, activeServers: [{ slug: 'near-intents-mcp-yeetful' }], history: [] }) }).then((r) => r.json() as Promise<Record<string, unknown>>)
+      check(
+        'affordability gate (route): a $0 wallet’s cross-chain deposit is withheld at the exit — "would spend 5 USDC on Base and the wallet holds 0 USDC"',
+        !signable(xc) && xc.buildPath === AFFORDABILITY_SHORT_PATH && /spend 5 USDC on Base and the wallet holds 0 USDC/.test(String(xc.reply)) && (xc.affordability as { withheldBuildPath?: string })?.withheldBuildPath === 'native-cross-chain',
+        JSON.stringify(xc).slice(0, 300),
+      )
+      // Jobs: the runner's offer is gated — a $0 wallet's first swap step
+      // fails WITH the shortfall named instead of "Sign & send approve".
+      const jobTurn = await fetch(`${BASE}/api/chat`, { method: 'POST', headers: linkHeaders, body: JSON.stringify({ message: 'swap 1 USDC for ETH on base, then send 0.0001 ETH to 0x1848a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a03c59 on base', walletAddress: W, activeServers: [{ slug: 'uniswap-free' }], history: [] }) }).then((r) => r.json() as Promise<{ jobId?: string; jobToken?: string; buildPath?: string }>)
+      if (jobTurn.jobId) {
+        const t = encodeURIComponent(jobTurn.jobToken ?? '')
+        let jobRead: { job?: { status?: string; failReason?: string | null; steps?: { status: string; result?: { error?: string; withheld?: boolean } | null }[] } } = {}
+        for (let i = 0; i < 10; i++) {
+          jobRead = (await (await fetch(`${BASE}/api/jobs/${jobTurn.jobId}?t=${t}`)).json()) as typeof jobRead
+          const s0 = jobRead.job?.steps?.[0]
+          if (s0?.status === 'failed' || s0?.status === 'offered' || (s0?.status === 'pending' && s0.result?.withheld)) break
+          await new Promise((r) => setTimeout(r, 500))
+        }
+        const s0 = jobRead.job?.steps?.[0]
+        check(
+          'affordability gate (jobs): a $0 wallet’s first swap step is never OFFERED — it is WITHHELD (pending, reason on the card: "would spend 1 USDC on Base and the wallet holds 0 USDC"), the job stays live for the top-up',
+          jobTurn.buildPath === 'native-job' && jobRead.job?.status === 'running' && s0?.status === 'pending' && s0.result?.withheld === true && /spend 1 USDC on Base and the wallet holds 0 USDC/.test(String(s0.result?.error ?? '')),
+          JSON.stringify(jobRead).slice(0, 300),
+        )
+        // The hold-down: a second poll right away does NOT re-quote (the step
+        // row is untouched — same updatedAt), and the job is still live.
+        const again = (await (await fetch(`${BASE}/api/jobs/${jobTurn.jobId}?t=${t}`)).json()) as typeof jobRead
+        check('affordability gate (jobs): a withheld step is not re-quoted on every poll (hold-down), and the job is still cancelable', again.job?.status === 'running' && again.job?.steps?.[0]?.status === 'pending' && again.job?.steps?.[0]?.result?.withheld === true)
+        await fetch(`${BASE}/api/jobs/${jobTurn.jobId}?t=${t}`, { method: 'DELETE' }).catch(() => {})
+      } else {
+        check('affordability gate (jobs): the compound ask compiled as a job', false, JSON.stringify(jobTurn).slice(0, 200))
+      }
+    }
 
     // ── NFT-buy funding resume (the 2026-07-23 unfunded "buy this NFT") ───
     // The funding offer's chips append this exact follow-up; it must compile
@@ -7414,7 +8088,8 @@ async function main() {
       const dollarSendChips = dollarSend && 'problem' in dollarSend ? (dollarSend.chips ?? []) : []
       check(
         'strangers: "send $5 to nate.eth" = 5 USDC, chain asked with chips whose resumes round-trip the parser as complete sends',
-        !!dollarSend && 'problem' in dollarSend && /5 USDC/.test(dollarSend.problem) && dollarSendChips.length === 3 &&
+        // Four chips since the 2026-09-08 squad: Optimism joined the transfer table (#707 left it out).
+        !!dollarSend && 'problem' in dollarSend && /5 USDC/.test(dollarSend.problem) && dollarSendChips.length === 4 &&
           dollarSendChips.every((c) => { const p = parseTransferSegment(c.resume, { fallbackChainId: null }); return !!p && !('problem' in p) && p.token.toUpperCase() === 'USDC' && p.amountHuman === '5' && p.to === 'nate.eth' }) &&
           simulateLadder('send $5 to nate.eth').gate === 'transfer',
         JSON.stringify(dollarSend),
@@ -7455,7 +8130,7 @@ async function main() {
       const sendOpts = ((sendTurn.clarify as { options?: { resume: string }[] } | undefined)?.options ?? [])
       check(
         'strangers (route): "send $5 to nate.eth" answers chain chips from the transfer layer, attributed, answered — not a wall',
-        sendTurn.buildPath === 'native-transfer' && sendOpts.length === 3 && classifyTurn(sendTurn).kind === null,
+        sendTurn.buildPath === 'native-transfer' && sendOpts.length === 4 && classifyTurn(sendTurn).kind === null,
         JSON.stringify(sendTurn).slice(0, 300),
       )
       // The route: the spot guardian refuses an EOA BY NAME before any
@@ -15964,9 +16639,14 @@ async function main() {
         items?: { slug: string }[]
       }).items ?? []
       const linkAfterFire = await fetch(`${BASE}/i/${slug3}`)
+      // A revoked /i link now renders the RETIRED page (reason, nothing
+      // signed, onward doors — squad gtm 2026-09-08) rather than a bare 404:
+      // the wall is the retired state + the ask gone, not the status code.
+      const linkAfterFireHtml = await linkAfterFire.text()
       check(
         'roster R2: firing CASCADES — the pending proposal leaves the inbox and its /i link revokes (T5 human path)',
-        s3.ok && !prop3.isError && firedOk && !inboxAfterFire.some((i) => i.slug === slug3) && linkAfterFire.status === 404,
+        s3.ok && !prop3.isError && firedOk && !inboxAfterFire.some((i) => i.slug === slug3) &&
+          linkAfterFire.status === 200 && linkAfterFireHtml.includes('data-link-state="revoked"') && !linkAfterFireHtml.includes('Buy $15 of AAPL'),
         `link=${linkAfterFire.status}`,
       )
       const firedTry = await call('broker_open', { ask: 'Buy $15 of AAPL', agent_key: rosterAgentKey, wallet: employer2.address })

@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Footer from '@/components/Footer'
 import { YeetfulMark } from '@/components/Logo'
 import ButtonGenerator from './generator'
+import { LINKS_CARD } from '@/lib/og-defaults'
 
 // /links/embed — the host button generator: the OpenSea-style redirect flow
 // productized. A form that mints an intent link (ask + validated https
@@ -15,8 +16,8 @@ const DESCRIPTION =
 export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
-  openGraph: { title: TITLE, description: DESCRIPTION, siteName: 'Pantessa', type: 'website' },
-  twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION },
+  openGraph: { title: TITLE, description: DESCRIPTION, siteName: 'Pantessa', type: 'website', images: LINKS_CARD },
+  twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION, images: LINKS_CARD },
 }
 
 export default function LinksEmbedPage() {

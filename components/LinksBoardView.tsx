@@ -7,6 +7,7 @@ import IntentLinksBoard from '@/components/IntentLinksBoard'
 import { MintLinkForm } from '@/components/MintLinkForm'
 import type { CreatorPageRow, LinksBoard } from '@/lib/links-board'
 import type { HouseLink } from '@/lib/house-links'
+import { LINK_FEE_PCT } from '@/lib/fees'
 
 // The /links page body — ONE markup source for the public route and the
 // chat surface's LINKS view (LinksWorkspace), so the two can never drift.
@@ -44,8 +45,8 @@ export default function LinksBoardView({
       <p className="text-[15px] leading-relaxed text-[color:var(--muted)] max-w-xl mb-8">
         Mint a link that carries an ask — &ldquo;Buy $12 of AAPL&rdquo;, &ldquo;DCA $25 into ETH
         weekly&rdquo;. Whoever opens it connects a wallet and the path builds itself: guarded,
-        signed only by their own wallet, receipted. Creators earn half of Pantessa&apos;s 0.20%
-        fee on the conversions their link produces.
+        signed only by their own wallet, receipted. Creators earn half of Pantessa&apos;s {LINK_FEE_PCT} link fee
+        on the conversions their link produces.
       </p>
 
       {/* The board leads — live proof before the pitch. Every row is a link

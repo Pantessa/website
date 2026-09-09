@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { isAddress } from 'viem'
 import Footer from '@/components/Footer'
 import { inboxFor, type InboxItem } from '@/lib/inbox'
+import { LINKS_CARD } from '@/lib/og-defaults'
 
 // /inbox/<address> — flip the arrow. The intents ADDRESSED to a wallet: an
 // agent (broker_send) or another human sent them here, and one tap opens the
@@ -37,7 +38,12 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       : `Inbox for ${short(address)} — Pantessa`
   const description =
     'Intents addressed to this wallet: one tap opens the guarded build, and only this wallet’s own signature moves anything.'
-  return { title, description, openGraph: { title, description } }
+  return {
+    title,
+    description,
+    openGraph: { title, description, siteName: 'Pantessa', type: 'website', images: LINKS_CARD },
+    twitter: { card: 'summary_large_image', title, description, images: LINKS_CARD },
+  }
 }
 
 function InboxRow({ item }: { item: InboxItem }) {

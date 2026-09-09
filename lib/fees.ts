@@ -71,10 +71,23 @@ export const HL_BUILDER_MAX_FEE_RATE = `${HL_BUILDER_FEE_TENTH_BPS / 1000}%`
  *  it just buys the price anyone gets in chat. Env-clamped [0, 100];
  *  values ≤ SWAP_FEE_BPS collapse the tier to the base rate. */
 export const LINK_SWAP_FEE_BPS: number = (() => {
-  const raw = Number(process.env.YEETFUL_LINK_SWAP_FEE_BPS ?? '50')
+  // NEXT_PUBLIC_ mirror: the tier is also COPY (LINK_FEE_PCT below) in
+  // client components, and a server-only env would split the sentence
+  // between the server render and the hydrated one.
+  const raw = Number(process.env.YEETFUL_LINK_SWAP_FEE_BPS ?? process.env.NEXT_PUBLIC_YEETFUL_LINK_SWAP_FEE_BPS ?? '50')
   if (!Number.isInteger(raw) || raw < 0 || raw > 100) return 50
   return Math.max(raw, SWAP_FEE_BPS)
 })()
+
+/** A bps rate as user copy: 50 → "0.50%". */
+export const feePctLabel = (bps: number): string => `${(bps / 100).toFixed(2)}%`
+
+/** THE fee sentences read these, never a literal. Every link surface once
+ *  said "half of the 0.20% fee" — the chat rate — while link conversions
+ *  have priced at LINK_SWAP_FEE_BPS since #608 (2.5× understated, caught
+ *  by /docs/creator-earnings' table in #709 and swept 2026-09-08). */
+export const LINK_FEE_PCT = feePctLabel(LINK_SWAP_FEE_BPS)
+export const SWAP_FEE_PCT = feePctLabel(SWAP_FEE_BPS)
 
 // ── Creator fee-split (intent links) ────────────────────────────────────────
 // Half of the swap fee on link-attributed conversions accrues to the link's

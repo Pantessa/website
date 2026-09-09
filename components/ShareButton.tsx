@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import { isDbChatId } from '@/lib/chat-ids'
 import { useSession } from '@/lib/session'
+import { absoluteUrl } from '@/lib/site-url'
 
 /**
  * Share control for the chat header. Only shown to the signed-in owner of a
@@ -38,9 +39,7 @@ export default function ShareButton() {
 
   const isPublic = !!chat.isPublic
   const shareUrl =
-    chat.publicSlug && typeof window !== 'undefined'
-      ? `${window.location.origin}/p/${chat.publicSlug}`
-      : null
+    chat.publicSlug ? absoluteUrl(`/p/${chat.publicSlug}`) : null
 
   const toggle = async () => {
     setBusy(true)

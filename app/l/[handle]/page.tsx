@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { LINKS_STUDIO_HREF, linksStudioHref } from '@/lib/links-href'
+import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import { notFound } from 'next/navigation'
 import prisma from '@/lib/db'
 import { brandFromRow } from '@/lib/brand-denylist'
@@ -156,7 +156,7 @@ export default async function StorefrontPage({ params }: Params) {
                 Your page
               </span>
               <Link
-                href={linksStudioHref({ ask: 'Buy $5 of AAPL' })}
+                href={LINKS_STUDIO_HREF}
                 className="text-[12.5px] font-medium text-[color:var(--accent)] hover:underline underline-offset-2"
               >
                 + Mint another link
