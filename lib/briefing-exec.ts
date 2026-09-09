@@ -11,8 +11,8 @@ import { fetchPositions } from './hl-guardian-store'
 import { scanFundingSources } from './funding-plan'
 import { callMcpTool } from './mcp-call'
 import { AAVE_MCP } from './aave-exec'
-import { briefingTile, composeBriefingItems, type BriefingInputs, type FiredEvent } from './briefing'
-import type { RowsTile } from './splash/types'
+import { briefingTile, composeBriefingItems, composeMoneyMap, type BriefingInputs, type FiredEvent } from './briefing'
+import type { MoneyMap, RowsTile } from './splash/types'
 
 const PROVIDER_TIMEOUT_MS = 8_000
 
@@ -101,11 +101,18 @@ export async function readBriefingInputs(address: string): Promise<BriefingInput
 
 /** The whole pipeline as one fail-soft call for /api/splash (and /w). */
 export async function briefingTileFor(address: string): Promise<RowsTile | null> {
+  return (await walletSplashFor(address)).tile
+}
+
+/** ONE read → the briefing tile AND the money map (the splash hero draws
+ *  both from the same inputs; reading twice would double the RPC fan-out).
+ *  Fail-soft: a thrown read yields no tile and a null map — never a crash. */
+export async function walletSplashFor(address: string): Promise<{ tile: RowsTile | null; map: MoneyMap | null }> {
   try {
     const inputs = await readBriefingInputs(address)
-    return briefingTile(composeBriefingItems(inputs))
+    return { tile: briefingTile(composeBriefingItems(inputs)), map: composeMoneyMap(inputs) }
   } catch {
-    return null
+    return { tile: null, map: null }
   }
 }
 

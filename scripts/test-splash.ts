@@ -11,7 +11,11 @@ import { SPLASH_SOURCES, previewTile, finalizeSplashTiles, type SplashServer, ty
 import { parseUsd } from '@/components/AppModeWorkspace'
 import { touchesContracts, UNISWAP_CONTRACTS } from '@/lib/splash/affinity'
 import type { McpServer } from '@/lib/store'
-import type { HoldingsTile, ProposalsTile, RowsTile } from '@/lib/splash/types'
+import type { HoldingsTile, ProposalsTile, RowsTile, SplashTile } from '@/lib/splash/types'
+import { allocationViz, holdingsFacts, usdOfString } from '@/lib/splash/viz'
+import { mergeMoneyMap, summarizeMoneyMap, MONEY_BUCKETS } from '@/lib/splash/money-map'
+import { planLayout, planSpans, wantsWide } from '@/lib/splash/layout'
+import { composeMoneyFacts, composeMoneyMap, type BriefingInputs } from '@/lib/briefing'
 import type { AppChain } from '@/lib/chains'
 // The real Morpho parsers — a chip that doesn't round-trip these is a lie.
 import { parseMorphoLend, parseMorphoOp } from '@/lib/morpho-supply'
@@ -398,7 +402,14 @@ async function run() {
     check('usd field mapped onto valueUsd', tile.holdings[0].valueUsd === 80)
     check('idle USDG → buy-a-stock chip', tile.prompts.some((p) => /Swap 50 USDG for AAPL on Robinhood Chain/.test(p.prompt)))
     check('held stock → sell chip', tile.prompts.some((p) => /Swap 0\.25 AAPL for USDG/.test(p.prompt)))
-    check('bridge chip rides along', tile.prompts.some((p) => /Bridge .* ETH from Ethereum to Robinhood Chain/.test(p.prompt)))
+    // DCA + buy + sell already fill the three chip slots; the bridge-in chip
+    // rides only when there's room (a funded wallet with no stock yet).
+    check('chips cap at 3 — DCA, buy, sell fill them', tile.prompts.length === 3 && !tile.prompts.some((p) => /Bridge/.test(p.prompt)))
+    const noStock = (await rh.build(async () => ({ kind: 'portfolio', totalUsd: 90, holdings: [
+      { symbol: 'USDG', kind: 'stable', balance: '80.00', usd: 80, priceUsd: 1 },
+      { symbol: 'ETH', kind: 'native', balance: '0.003', usd: 10, priceUsd: 3300 },
+    ] }), ADDR, srv('robinhood-free', 'Robinhood Chain (Free)'))) as HoldingsTile
+    check('bridge chip rides along when there is room', noStock.prompts.some((p) => /Bridge .* ETH from Ethereum to Robinhood Chain/.test(p.prompt)))
 
     const empty = async () => ({ kind: 'portfolio', chainId: 4663, totalUsd: 0, holdings: [] })
     check('empty chain wallet contributes no tile', (await rh.build(empty, ADDR, srv('robinhood-free', 'Robinhood Chain (Free)'))) === null)
@@ -496,6 +507,177 @@ async function run() {
     check('non-USD string → null (rendered verbatim)', parseUsd('62% filled') === null)
     check('raw number → null, not a TypeError', parseUsd(511.63 as unknown as string) === null)
     check('null/undefined → null, not a TypeError', parseUsd(undefined as unknown as string) === null)
+  }
+
+  // ── The cockpit (2026-09-09): every number a card charts + the money map ──
+  console.log('splash viz — allocation + holdings facts (pure)')
+  {
+    const rows = [
+      { symbol: 'ETH', valueUsd: 200, chain: 'Base' },
+      { symbol: 'ETH', valueUsd: 100, chain: 'Arbitrum' },
+      { symbol: 'USDC', valueUsd: 150, chain: 'Base' },
+      { symbol: 'DEGEN', valueUsd: 15, chain: 'Base' },
+      { symbol: 'AERO', valueUsd: 12, chain: 'Base' },
+      { symbol: 'cbBTC', valueUsd: 9, chain: 'Base' },
+      { symbol: 'UNI', valueUsd: 4, chain: 'Ethereum' },
+      { symbol: 'LINK', valueUsd: 3, chain: 'Ethereum' },
+      { symbol: 'stETH', valueUsd: 500, chain: 'Ethereum' },
+      { symbol: 'aBasUSDC', valueUsd: 20, chain: 'Base' },
+      { symbol: 'SPAM', valueUsd: null, chain: 'Base' },
+    ]
+    const viz = allocationViz(rows)!
+    check('allocation: same symbol across chains is ONE slice (ETH 300)', viz.slices[0].label === 'stETH' && viz.slices[1].label === 'ETH' && viz.slices[1].usd === 300)
+    check('allocation: top five named + the rest folded as "N more"', viz.slices.length === 6 && viz.slices[5].label === '4 more' && viz.slices[5].usd === 28 && !viz.slices[5].symbol)
+    check('allocation: total is the priced sum only (unpriced never counts)', viz.totalUsd === 1013)
+    check('allocation: nothing priced → null, never an empty bar', allocationViz([{ symbol: 'X', valueUsd: null }]) === null)
+    const facts = holdingsFacts(rows, 'Base')
+    check('facts: ETH + USDC are the scan’s (excluded), receipt tokens are the protocol’s (excluded)', !facts.some((f) => /^(ETH|USDC|stETH|aBasUSDC) /.test(f.label)))
+    check('facts: the long tail lands as spot, labeled with its chain', facts.length === 5 && facts.every((f) => f.bucket === 'spot') && facts.some((f) => f.label === 'DEGEN on Base') && facts.some((f) => f.label === 'UNI on Ethereum'))
+    check('usdOfString: "$1,204.50" → 1204.5, garbage → null', usdOfString('$1,204.50') === 1204.5 && usdOfString('20.13') === 20.13 && usdOfString('n/a') === null && usdOfString(null) === null)
+  }
+
+  console.log('money map — composeMoneyFacts / merge / summarize (pure)')
+  {
+    const inputs: BriefingInputs = {
+      firedRecently: [],
+      positions: [
+        { coin: 'SYRUP', side: 'long', positionValueUsd: 372.65, unrealizedPnl: 138.62, leverage: 3 },
+        { coin: 'ETH', side: 'short', positionValueUsd: 50, unrealizedPnl: -2, leverage: 2 },
+        { coin: 'DUST', side: 'long', positionValueUsd: 0, unrealizedPnl: 0, leverage: 1 },
+      ],
+      protectedCoins: ['syrup'],
+      spotProtectedSymbols: [],
+      funding: {
+        sources: [
+          { chainId: 8453, chainWord: 'Base', token: 'USDC', balance: 64.25, usd: 64.25 },
+          { chainId: 1, chainWord: 'Ethereum', token: 'USDC', balance: 628.22, usd: 628.22 },
+          { chainId: 8453, chainWord: 'Base', token: 'ETH', balance: 0.08, usd: 213.23 },
+          { chainId: 42161, chainWord: 'Arbitrum', token: 'ETH', balance: 0.002, usd: 5 },
+        ],
+        stranded: [{ chainId: 10, chainWord: 'Optimism', token: 'USDC', balance: 185.04, usd: 185.04 }],
+        readChains: ['Base', 'Ethereum', 'Arbitrum', 'Optimism'],
+        failedChains: [],
+      },
+      aave: null,
+      failed: [],
+    }
+    const facts = composeMoneyFacts(inputs)
+    const by = (b: string) => facts.filter((f) => f.bucket === b)
+    check('map: a guarded perp is protected, a naked one is at risk, a zero-value one is nothing', by('protected').length === 1 && by('protected')[0].usd === 372.65 && by('risk').length === 1 && by('risk')[0].usd === 50 && facts.length === 7)
+    check('map: USDC on every scan chain is idle', by('idle').length === 2 && by('idle').reduce((n, f) => n + f.usd, 0) === 692.47)
+    check('map: ETH without a spot guard is spot (Base + Arbitrum)', by('spot').length === 2 && by('spot').some((f) => f.label === 'ETH on Base'))
+    check('map: stranded USDC is stuck, named with its chain', by('stuck').length === 1 && /Optimism \(no gas\)/.test(by('stuck')[0].label))
+    const watched = composeMoneyFacts({ ...inputs, spotProtectedSymbols: ['ETH'] })
+    check('map: an armed spot guard on Base moves Base ETH to protected — Arbitrum ETH stays spot', watched.filter((f) => f.bucket === 'protected').length === 2 && watched.some((f) => f.bucket === 'spot' && f.label === 'ETH on Arbitrum'))
+    const noFunding = composeMoneyMap({ ...inputs, funding: null, failed: ['funding'] })
+    check('map: a failed funding scan still maps the perps and names every chain unread', noFunding.facts.length === 2 && noFunding.readChains.length === 0 && noFunding.failedChains[0] === 'every chain')
+    const map = composeMoneyMap(inputs)
+    const tiles = [
+      { id: 'aave-position', mcpSlug: 'aave-free', mcpName: 'Aave', title: 'x', render: 'rows', rows: [], prompts: [], facts: [{ bucket: 'earning', usd: 21.14, label: 'supplied on Aave' }] },
+      { id: 'robinhood-portfolio', mcpSlug: 'robinhood-free', mcpName: 'RH', title: 'x', render: 'holdings', chain: 'Robinhood Chain', totalUsd: 30, holdings: [], prompts: [], facts: [{ bucket: 'stocks', usd: 11.89, label: 'AAPL on Robinhood Chain' }, { bucket: 'idle', usd: 0, label: 'USDG on Robinhood Chain' }, { bucket: 'spot', usd: -1, label: 'bad' }] },
+    ] as unknown as SplashTile[]
+    const merged = mergeMoneyMap(map, tiles)!
+    check('merge: card facts fold in; zero and negative facts are dropped', merged.facts.length === 9 && !merged.facts.some((f) => f.usd <= 0))
+    check('merge: nothing anywhere → null (an empty wallet paints no bar)', mergeMoneyMap({ facts: [], readChains: [], failedChains: [] }, []) === null && mergeMoneyMap(null, []) === null)
+    const sum = summarizeMoneyMap(merged)
+    check('summary: total is the plain sum of every fact', Math.abs(sum.totalUsd - (372.65 + 50 + 692.47 + 218.23 + 185.04 + 21.14 + 11.89)) < 0.01)
+    check('summary: segments follow the bucket order and skip empty buckets', sum.segments.map((s) => s.bucket).join(',') === 'earning,protected,stocks,spot,idle,risk,stuck')
+    check('summary: shares sum to 100', Math.abs(sum.segments.reduce((n, s) => n + s.pct, 0) - 100) < 0.01)
+    check('summary: workingPct = (earning + protected) / total', sum.workingPct === Math.round(((21.14 + 372.65) / sum.totalUsd) * 100))
+    check('summary: every bucket in the order table has a label + blurb', MONEY_BUCKETS.length === 7 && MONEY_BUCKETS.every((b) => b.label && b.blurb))
+  }
+
+  console.log('splash layout — the bento planner (pure)')
+  {
+    const rowsOf = (spans: number[]) => {
+      const rows: number[][] = []
+      let cur: number[] = []
+      for (const s of spans) {
+        cur.push(s)
+        if (cur.reduce((n, x) => n + x, 0) >= 12) {
+          rows.push(cur)
+          cur = []
+        }
+      }
+      if (cur.length) rows.push(cur)
+      return rows
+    }
+    const full = (spans: number[]) => rowsOf(spans).every((r) => r.reduce((n, x) => n + x, 0) === 12)
+    check('spans: 2 wide + 3 narrow → [6,6,4,4,4]', planSpans(2, 3).join(',') === '6,6,4,4,4')
+    check('spans: the odd wide widens to 8 and takes a narrow', planSpans(1, 1).join(',') === '8,4' && planSpans(3, 4).join(',') === '6,6,8,4,4,4,4')
+    check('spans: a lone card fills the row', planSpans(1, 0).join(',') === '12' && planSpans(0, 1).join(',') === '12')
+    check('spans: two trailing narrows split the row', planSpans(0, 2).join(',') === '6,6' && planSpans(2, 2).join(',') === '6,6,6,6')
+    let everyRowFull = true
+    for (let w = 0; w <= 5; w++) for (let n = 0; n <= 7; n++) if (w + n > 0 && !full(planSpans(w, n))) everyRowFull = false
+    check('spans: no row ever ends short (0–5 wide × 0–7 narrow)', everyRowFull)
+    const t = (id: string, slug: string, extra: Record<string, unknown> = {}) => ({ id, mcpSlug: slug, mcpName: slug, title: id, render: 'rows', rows: [], prompts: [], ...extra }) as unknown as SplashTile
+    const tiles = [
+      t('briefing', 'yeetful'),
+      t('dca-schedules', 'yeetful'),
+      t('aave-position', 'aave-free'),
+      t('portfolio-holdings', 'yeetful-tool-wallet', { render: 'holdings', holdings: [], chain: 'Base', totalUsd: 1 }),
+      t('recent-activity', 'yeetful-tool-wallet', { render: 'activity', rows: [] }),
+      t('lido-position', 'lido-free'),
+    ]
+    const layout = planLayout(tiles)
+    check('layout: the briefing is the hero and leaves the grid', layout.hero?.id === 'briefing' && !layout.cards.some((c) => c.group.some((x) => x.id === 'briefing')))
+    check('layout: one card per MCP, the wallet’s two tiles grouped', layout.cards.length === 4 && layout.cards.some((c) => c.group.length === 2 && c.group[0].mcpSlug === 'yeetful-tool-wallet'))
+    check('layout: wide cards lead, narrows follow, spans planned', layout.cards[0].group[0].render === 'holdings' && layout.cards.map((c) => c.span).join(',') === '8,4,6,6')
+    check('layout: hero off → the briefing is a plain card', planLayout(tiles, { hero: false }).hero === null && planLayout(tiles, { hero: false }).cards.length === 4 && planLayout(tiles, { hero: false }).cards[0].group[0].mcpSlug === 'yeetful-tool-wallet')
+    check('layout: positions/allocation viz and 5+ rows want wide', wantsWide([t('x', 'y', { viz: { kind: 'positions', accountUsd: null, items: [] } })]) && wantsWide([t('x', 'y', { rows: [{}, {}, {}, {}, {}] })]) && !wantsWide([t('x', 'y', { rows: [{}, {}] })]))
+  }
+
+  console.log('splash sources — the numbers every card charts')
+  {
+    const aaveCall = async () => ({
+      positions: [{ netBalanceUsd: '$20.13', netApyPct: 3.07, healthFactor: '1.21' }],
+      supplies: [
+        { token: { symbol: 'USDC' }, balance: '20.13', balanceUsd: '$20.13', earnedInterestUsd: '$0.13', supplyApyPct: 3.07, isCollateral: true },
+        { token: { symbol: 'USDC' }, balance: '1.01', balanceUsd: '$1.01', supplyApyPct: 3.07 },
+      ],
+      borrows: [{ token: { symbol: 'GHO' }, debt: '5', debtUsd: '$5.00', borrowApyPct: 6.1 }],
+    })
+    const aaveTile = (await aave.build(aaveCall, ADDR, srv('aave-free', 'Aave (Free)'))) as RowsTile
+    const lending = aaveTile.viz as Extract<NonNullable<RowsTile['viz']>, { kind: 'lending' }>
+    check('aave: lending viz recovers USD from the payload’s own strings', lending.kind === 'lending' && lending.suppliedUsd === 21.14 && lending.borrowedUsd === 5 && lending.healthFactor === 1.21 && lending.netApyPct === 3.07)
+    check('aave: supplied money is an earning fact', aaveTile.facts?.length === 1 && aaveTile.facts[0].bucket === 'earning' && aaveTile.facts[0].usd === 21.14)
+    const aaveNoDebt = (await aave.build(async () => ({ positions: [{ netBalanceUsd: '$20.13', netApyPct: 3.07, healthFactor: '99' }], supplies: [{ token: { symbol: 'USDC' }, balance: '20.13', balanceUsd: '$20.13' }], borrows: [] }), ADDR, srv('aave-free', 'Aave (Free)'))) as RowsTile
+    check('aave: no debt → no gauge (health factor null), borrowed 0', (aaveNoDebt.viz as { healthFactor: number | null; borrowedUsd: number | null }).healthFactor === null && (aaveNoDebt.viz as { borrowedUsd: number | null }).borrowedUsd === 0)
+
+    const lidoTile = (await lido.build(async () => ({ hasPosition: true, eth: { balance: '0.5', usd: 1200 }, stEth: { balance: '1.2', usd: 2880 }, totalStaked: { stEth: '1.2', usd: 2880 }, currentAprPct: 2.9 }), ADDR, srv('lido-free', 'Lido (Free)'))) as RowsTile
+    check('lido: yield viz = staked USD at the live APR', lidoTile.viz?.kind === 'yield' && lidoTile.viz.principalUsd === 2880 && lidoTile.viz.aprPct === 2.9)
+    check('lido: staked money is an earning fact', lidoTile.facts?.[0]?.bucket === 'earning' && lidoTile.facts[0].usd === 2880)
+
+    const hlTile = (await hl.build(async () => ({ perp: { accountValueUsd: '500', withdrawableUsd: '100', positions: [
+      { coin: 'SYRUP', szi: '1000', entryPx: '0.30', positionValue: '372.65', unrealizedPnl: '138.62', liquidationPx: '0.25', leverage: { value: 3 } },
+      { coin: 'ETH', szi: '-0.02', entryPx: '2500', positionValue: '50', unrealizedPnl: '-2', liquidationPx: null, leverage: { value: 2 } },
+    ] } }), ADDR, srv('hyperliquid-free', 'Hyperliquid (Free)'))) as RowsTile
+    const pos = hlTile.viz as Extract<NonNullable<RowsTile['viz']>, { kind: 'positions' }>
+    check('hyperliquid: positions viz carries side, leverage, PnL, value', pos.kind === 'positions' && pos.accountUsd === 500 && pos.items[0].side === 'long' && pos.items[0].leverage === 3 && pos.items[0].pnlUsd === 138.62 && pos.items[1].side === 'short')
+    check('hyperliquid: liquidation distance from the venue’s own mark (value/size), null without a liq px', pos.items[0].liqDistancePct === 32.9 && pos.items[1].liqDistancePct === null)
+    check('hyperliquid: perps are the briefing’s money, the card claims no facts', !hlTile.facts)
+
+    const rh = SPLASH_SOURCES.find((s) => s.id === 'robinhood')!
+    const rhTile = (await rh.build(async () => ({ totalUsd: 60, holdings: [
+      { symbol: 'USDG', kind: 'stable', balance: '30.00', usd: 30, priceUsd: 1 },
+      { symbol: 'AAPL', kind: 'stock', balance: '0.05', usd: 11.89, priceUsd: 237.8 },
+      { symbol: 'ETH', kind: 'native', balance: '0.005', usd: 18.11, priceUsd: 3622 },
+    ] }), ADDR, srv('robinhood-free', 'Robinhood Chain (Free)'))) as HoldingsTile
+    const rhBy = (b: string) => rhTile.facts!.filter((f) => f.bucket === b)
+    check('robinhood: stocks are stocks, USDG is idle, ETH is spot — all on 4663', rhBy('stocks')[0]?.usd === 11.89 && rhBy('idle')[0]?.usd === 30 && rhBy('spot')[0]?.label === 'ETH on Robinhood Chain')
+    check('robinhood: allocation bar over every holding', rhTile.viz?.kind === 'allocation' && rhTile.viz.totalUsd === 60 && rhTile.viz.slices[0].label === 'USDG')
+
+    const cowTile = (await cow.build(async () => ({ chains: [{ chain: 'base', openOrders: [{ pair: 'WETH → USDC', kind: 'sell', status: 'open', filledPct: 62.4, validTo: 0 }, { pair: 'USDC → WETH', kind: 'buy', status: 'open', filledPct: null, validTo: 0 }], tradeCount: 3, recentFills: [] }] }), ADDR, srv('cow-free', 'CoW (Free)'))) as RowsTile
+    check('cow: an order’s fill rides the row as progressPct (null when unknown)', cowTile.rows[0].progressPct === 62.4 && cowTile.rows[1].progressPct === null)
+
+    const snapTile = (await snap.build(async () => ({ proposals: [{ id: '0x1', title: 'T', choices: ['For', 'Against'], scores: [75, 25], end: 4102444800, space: { id: 's.eth', name: 'S' } }, { id: '0x2', title: 'U', choices: ['A', 'B'], scores: [0, 0], end: 4102444800, space: { id: 's.eth', name: 'S' } }] }), ADDR, srv('snapshot-free', 'Snapshot (Free)'))) as ProposalsTile
+    check('snapshot: the leading choice’s share rides the row, null before any vote', snapTile.proposals[0].leadingPct === 75 && snapTile.proposals[1].leadingPct === null)
+
+    const morphoSrc = SPLASH_SOURCES.find((s) => s.id === 'morpho')!
+    const mkt = '0x' + 'ab'.repeat(32)
+    const morphoLend = (await morphoSrc.build(async () => ({ chain: 'Base', positions: [{ market: 'USDC / cbBTC (lltv 86.0%)', marketId: mkt, supplied: { asset: 'USDC', amount: '2.0', apy: '4.30%' } }] }), ADDR, srv('morpho-free', 'Morpho (Free)'))) as RowsTile
+    const morphoDebt = (await morphoSrc.build(async () => ({ chain: 'Base', positions: [{ market: 'USDC / cbBTC (lltv 86.0%)', marketId: mkt, borrowed: { asset: 'USDC', amount: '2.0', apy: '6%' }, collateral: { asset: 'cbBTC', amount: '0.001' }, healthFactor: 1.21 }] }), ADDR, srv('morpho-free', 'Morpho (Free)'))) as RowsTile
+    check('morpho: no USD in the payload → no bars, no facts; a debt → the gauge only', morphoLend.viz === undefined && !morphoLend.facts && morphoDebt.viz?.kind === 'lending' && morphoDebt.viz.healthFactor === 1.21 && morphoDebt.viz.suppliedUsd === null)
   }
 
   console.log('splash sources — matchers')

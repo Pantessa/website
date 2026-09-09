@@ -13,7 +13,11 @@ import { cleanServerName } from '@/lib/utils'
 import { chainById } from '@/lib/chains'
 import ChatLoader from '@/components/ChatLoader'
 import { splashCapable } from '@/lib/splash/types'
-import type { ActivityTile, ErrorTile, HoldingsTile, NftsTile, ProposalsTile, RowsTile, SplashTile, SuggestedPrompt } from '@/lib/splash/types'
+import type { ActivityTile, ErrorTile, HoldingsTile, MoneyMap, NftsTile, ProposalsTile, RowsTile, SplashTile, SuggestedPrompt } from '@/lib/splash/types'
+import { planLayout, type CardSpan } from '@/lib/splash/layout'
+import { SplashHero } from '@/components/splash/Hero'
+import { Delta24, Sparkline } from '@/components/splash/Sparkline'
+import { RowProgress, TileVizBlock } from '@/components/splash/viz'
 
 /**
  * The connected-wallet splash: when someone jumps into the chat with a wallet
@@ -50,6 +54,10 @@ export function SplashDashboard({
   onResolve?: (count: number) => void
 }) {
   const [tiles, setTiles] = useState<SplashTile[] | null>(null)
+  // The wallet-level money map from the last FULL scan (delta scans leave it;
+  // card facts fold in at render time, so a toggled-off MCP's money leaves
+  // the bar the moment its card does).
+  const [map, setMap] = useState<MoneyMap | null>(null)
   const [loading, setLoading] = useState(false)
   // MCPs toggled onto an ALREADY-painted grid whose scan is still in flight —
   // each renders a branded skeleton card in the slot where its real card will
@@ -122,9 +130,10 @@ export function SplashDashboard({
         body: JSON.stringify({ address, servers: relevant, manualSlugs: relevantManual, ...(chainKey ? { chain: chainKey } : {}) }),
       })
         .then((r) => r.json())
-        .then((data: { tiles?: SplashTile[] }) => {
+        .then((data: { tiles?: SplashTile[]; map?: MoneyMap | null }) => {
           if (!alive) return
           const next = Array.isArray(data.tiles) ? data.tiles : []
+          setMap(data.map && typeof data.map === 'object' ? data.map : null)
           coveredRef.current = {
             base,
             byId: new Map(scanned.map((s) => [s.id, { slug: s.slug, manual: relevantManual.includes(s.slug) }])),
@@ -221,45 +230,63 @@ export function SplashDashboard({
   if (!address || relevant.length === 0) return null
   if (!loading && tiles && tiles.length === 0 && pending.length === 0) return null
 
+  const layout = tiles ? planLayout(tiles, { hero: chrome }) : null
+
   return (
     <div className="w-full">
       <div className={`mx-auto w-full max-w-[1600px] px-1 md:px-4 ${chrome ? 'py-6' : 'py-2'}`}>
-        {chrome && (
-          <div className="mb-4 flex items-center gap-2">
-            <Wallet className="h-4 w-4 text-[color:var(--muted-2)]" />
-            <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">
-              Connected · {shortAddr(address)}
-            </span>
-          </div>
-        )}
-
-        {loading || !tiles ? (
-          <ChatLoader inline />
-        ) : (
-          // A strict grid: every card is the same size (auto-rows-fr equalizes
-          // every row to one shared height), so six cards on a big screen read
-          // as one composed surface instead of a masonry scatter. Cards absorb
-          // any extra height internally — bodies stretch, prompt chips pin to
-          // the bottom edge. Mobile stays natural-height (1 col, nothing to
-          // align with).
-          <div className="grid grid-cols-1 gap-4 md:auto-rows-fr md:grid-cols-2 xl:grid-cols-3">
-            {groupBySlug(tiles).map((group) => (
-              <div key={group[0].mcpSlug} className="min-w-0">
-                <TileCard tiles={group} onPick={onPick} onRetry={() => setReload((n) => n + 1)} />
+        {loading || !tiles || !layout ? (
+          <>
+            {chrome && (
+              <div className="mb-4 flex items-center gap-2">
+                <Wallet className="h-4 w-4 text-[color:var(--muted-2)]" />
+                <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">
+                  Connected · {shortAddr(address)} · reading
+                </span>
               </div>
-            ))}
-            {/* A just-toggled MCP loads IN PLACE: its branded skeleton takes
-                the grid slot its card will fill, and the settled cards around
-                it never flinch. (An MCP re-scanning behind an existing card —
-                the manual-flip case — keeps that card instead of doubling.) */}
-            {pending
-              .filter((s) => !tiles.some((t) => t.mcpSlug === s.slug))
-              .map((s) => (
-                <div key={s.id} className="min-w-0">
-                  <PendingTileCard server={s} />
+            )}
+            <ChatLoader inline />
+          </>
+        ) : (
+          <>
+            {/* The hero: the briefing + the money map, on the boot batch
+                only. A mid-conversation batch (an MCP added later) has no
+                wallet-level story to retell — its briefing, if the scan
+                returned one, rides as a plain card. */}
+            {chrome ? (
+              layout.hero || map ? (
+                <SplashHero address={address} briefing={(layout.hero as RowsTile | null) ?? null} map={map} tiles={tiles} onPick={onPick} />
+              ) : (
+                <div className="mb-4 flex items-center gap-2">
+                  <Wallet className="h-4 w-4 text-[color:var(--muted-2)]" />
+                  <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">
+                    Connected · {shortAddr(address)}
+                  </span>
                 </div>
-              ))}
-          </div>
+              )
+            ) : null}
+            {/* The bento: 12 columns, natural heights, widths planned so no
+                row ends short (lib/splash/layout.ts). Mobile is one column;
+                tablets two, wide cards spanning both. */}
+            {(layout.cards.length > 0 || pending.length > 0) && (
+              <div className={`grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-12 ${chrome && (layout.hero || map) ? 'mt-4' : ''}`} data-splash-grid>
+                {layout.cards.map((c) => (
+                  <div key={c.group[0].mcpSlug} className={`min-w-0 ${spanClass(c.span)}`} data-span={c.span}>
+                    <TileCard tiles={c.group} onPick={onPick} onRetry={() => setReload((n) => n + 1)} />
+                  </div>
+                ))}
+                {/* A just-toggled MCP loads IN PLACE: its branded skeleton takes
+                    a grid slot, and the settled cards around it never flinch. */}
+                {pending
+                  .filter((s) => !tiles.some((t) => t.mcpSlug === s.slug))
+                  .map((s) => (
+                    <div key={s.id} className={`min-w-0 ${spanClass(4)}`}>
+                      <PendingTileCard server={s} />
+                    </div>
+                  ))}
+              </div>
+            )}
+          </>
         )}
 
         {hint && (
@@ -272,16 +299,18 @@ export function SplashDashboard({
   )
 }
 
-/** Group tiles by their MCP, preserving first-seen order — the grid renders
- *  one card per MCP. */
-function groupBySlug(tiles: SplashTile[]): SplashTile[][] {
-  const bySlug = new Map<string, SplashTile[]>()
-  for (const t of tiles) {
-    const arr = bySlug.get(t.mcpSlug) ?? []
-    arr.push(t)
-    bySlug.set(t.mcpSlug, arr)
+/** Literal Tailwind classes per planned span (the JIT can't see a template). */
+function spanClass(span: CardSpan): string {
+  switch (span) {
+    case 12:
+      return 'md:col-span-2 xl:col-span-12'
+    case 8:
+      return 'md:col-span-2 xl:col-span-8'
+    case 6:
+      return 'md:col-span-1 xl:col-span-6'
+    default:
+      return 'md:col-span-1 xl:col-span-4'
   }
-  return [...bySlug.values()]
 }
 
 // ── Tile router ──────────────────────────────────────────────────────────────
@@ -350,7 +379,7 @@ export function TileCard({
   if (!head) return null
   const iconServer = server ?? ({ id: head.mcpSlug, slug: head.mcpSlug, name: head.mcpName } as McpServer)
   return (
-    <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 text-left transition-colors hover:border-[var(--line-2)]">
+    <div className="relative flex flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 text-left transition-colors hover:border-[var(--line-2)]" data-splash-card={head.mcpSlug}>
       {/* Hairline sheen along the top edge — the site's accent language. */}
       <div aria-hidden className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -386,7 +415,7 @@ export function TileCard({
  *  adding an MCP never sends the whole splash back to the loader. */
 function PendingTileCard({ server }: { server: McpServer }) {
   return (
-    <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 text-left">
+    <div className="relative flex flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 text-left">
       <div aria-hidden className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
       <div className="mb-3 flex items-center gap-2">
         <BrandIcon server={server} size={20} />
@@ -570,6 +599,11 @@ function RowsBody({ tile, onPick }: { tile: RowsTile; onPick: (p: string, slug?:
           <span className="ml-2 text-[11px] text-[color:var(--muted-2)]">{tile.headline.caption}</span>
         </div>
       )}
+      {tile.viz && (
+        <div className="mb-3">
+          <TileVizBlock viz={tile.viz} />
+        </div>
+      )}
       <div className="space-y-1">
         {tile.rows.map((r, i) => {
           const id = `${r.label}-${i}`
@@ -591,9 +625,10 @@ function RowsBody({ tile, onPick }: { tile: RowsTile; onPick: (p: string, slug?:
             <LineRow
               key={id}
               left={
-                <div className="min-w-0 text-left">
+                <div className="min-w-0 flex-1 text-left">
                   <div className="truncate max-lg:whitespace-normal font-medium text-white">{r.label}</div>
                   {r.sub && <div className="text-[10px] text-[color:var(--muted-2)]">{r.sub}</div>}
+                  {typeof r.progressPct === 'number' && <RowProgress pct={r.progressPct} />}
                 </div>
               }
               right={value}
@@ -626,6 +661,11 @@ function HoldingsBody({ tile, onPick }: { tile: HoldingsTile; onPick: (p: string
           </span>
         </div>
       )}
+      {tile.viz && (
+        <div className="mb-3">
+          <TileVizBlock viz={tile.viz} chain={tile.chain} />
+        </div>
+      )}
       <div className="space-y-1">
         {tile.holdings.map((h) => {
           const id = (h.chain ?? '') + h.address + h.symbol
@@ -644,9 +684,15 @@ function HoldingsBody({ tile, onPick }: { tile: HoldingsTile; onPick: (p: string
                 </div>
               }
               right={
-                <div className="text-right">
-                  <div className="text-white">{h.valueUsd !== null ? usd(h.valueUsd) : '—'}</div>
-                  <div className="text-[10px] text-[color:var(--muted-2)]">{trimNum(h.balance)}</div>
+                <div className="flex items-center gap-2">
+                  <Sparkline symbol={h.symbol} width={72} height={22} className="hidden sm:block" />
+                  <div className="text-right">
+                    <div className="flex items-baseline justify-end gap-1.5 text-white">
+                      <Delta24 symbol={h.symbol} />
+                      <span>{h.valueUsd !== null ? usd(h.valueUsd) : '—'}</span>
+                    </div>
+                    <div className="text-[10px] text-[color:var(--muted-2)]">{trimNum(h.balance)}</div>
+                  </div>
                 </div>
               }
               actions={h.actions ?? []}
@@ -671,60 +717,76 @@ function HoldingsBody({ tile, onPick }: { tile: HoldingsTile; onPick: (p: string
  *  TokenIcon. Floor lines arrive pre-formatted from the source. */
 function NftsBody({ tile, onPick }: { tile: NftsTile; onPick: (p: string, slug?: string) => void }) {
   const [open, setOpen] = useState<string | null>(null)
+  const idOf = (n: NftsTile['nfts'][number]) => `${n.chain}${n.contract}${n.tokenId}`
+  const selected = tile.nfts.find((n) => idOf(n) === open) ?? null
   return (
-    <div className="flex-1">
-      <div className="space-y-1">
-        {tile.nfts.map((n) => {
-          const id = `${n.chain}${n.contract}${n.tokenId}`
-          const expanded = open === id
+    <div className="flex-1" data-splash-viz="gallery">
+      {/* The gallery IS the chart here: the pictures, not rows about them.
+          Tap one to select it; its Sell / Transfer chips land beneath. */}
+      <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-4 2xl:grid-cols-6">
+        {tile.nfts.slice(0, 12).map((n) => {
+          const id = idOf(n)
+          const active = open === id
           return (
-            <LineRow
+            <button
               key={id}
-              left={
-                <div className="flex min-w-0 items-center gap-2">
-                  <NftThumb url={n.imageUrl} label={n.name} />
-                  <div className="min-w-0 text-left">
-                    <div className="truncate font-medium text-white">{n.name}</div>
-                    <div className="truncate text-[10px] text-[color:var(--muted-2)] capitalize">{n.collectionName}</div>
-                  </div>
-                </div>
-              }
-              right={
-                <div className="text-right">
-                  <div className="text-[10px] text-[color:var(--muted)]">{n.floor ?? '—'}</div>
-                  <div className="text-[9px] text-[color:var(--muted-2)]">
-                    {n.chain}
-                    {n.standard === 'erc1155' ? ' · 1155' : ''}
-                  </div>
-                </div>
-              }
-              actions={n.actions ?? []}
-              info={rowInfo(n)}
-              slug={tile.mcpSlug}
-              onPick={onPick}
-              expanded={expanded}
-              onToggle={() => setOpen(expanded ? null : id)}
-            />
+              type="button"
+              onClick={() => setOpen(active ? null : id)}
+              aria-pressed={active}
+              title={`${n.name} · ${n.collectionName}${n.floor ? ` · ${n.floor}` : ''}`}
+              className="group relative aspect-square overflow-hidden rounded-lg bg-white/5 transition-transform focus-visible:outline-none"
+              style={active ? { boxShadow: '0 0 0 2px var(--accent)' } : undefined}
+            >
+              <NftThumb url={n.imageUrl} label={n.name} fill />
+              <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/70 to-transparent px-1.5 pb-1 pt-4 text-left text-[9px] text-white opacity-0 transition-opacity group-hover:opacity-100">
+                {n.name}
+              </span>
+            </button>
           )
         })}
       </div>
+      {selected ? (
+        <div className="mt-3 rounded-xl border border-[var(--line)] bg-white/[0.02] p-2.5">
+          <div className="flex items-baseline justify-between gap-2 text-xs">
+            <span className="truncate font-medium text-white">{selected.name}</span>
+            <span className="shrink-0 text-[10px] text-[color:var(--muted)]">
+              {selected.floor ?? selected.collectionName} · {selected.chain}
+            </span>
+          </div>
+          <div className="mt-2">
+            <InlineActionChips actions={selected.actions ?? []} info={rowInfo(selected)} slug={tile.mcpSlug} onPick={onPick} />
+          </div>
+        </div>
+      ) : (
+        <p className="mt-2 text-[10px] text-[color:var(--muted-2)]">Tap one to sell or transfer it.</p>
+      )}
     </div>
   )
 }
 
 /** Square NFT thumbnail with a lettermark fallback (the Avatar's gallery twin). */
-function NftThumb({ url, label }: { url: string | null; label: string }) {
+function NftThumb({ url, label, fill = false }: { url: string | null; label: string; fill?: boolean }) {
   const [failed, setFailed] = useState(false)
   if (failed || !url) {
     return (
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-white/10 text-[10px] font-semibold text-[color:var(--muted)]">
+      <span
+        className={`grid shrink-0 place-items-center bg-white/10 font-semibold text-[color:var(--muted)] ${fill ? 'h-full w-full text-lg' : 'h-8 w-8 rounded-md text-[10px]'}`}
+      >
         {label.replace(/^#/, '').slice(0, 1).toUpperCase()}
       </span>
     )
   }
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={url} alt={label} width={32} height={32} onError={() => setFailed(true)} className="h-8 w-8 shrink-0 rounded-md object-cover" loading="lazy" />
+    <img
+      src={url}
+      alt={label}
+      width={fill ? undefined : 32}
+      height={fill ? undefined : 32}
+      onError={() => setFailed(true)}
+      className={fill ? 'h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]' : 'h-8 w-8 shrink-0 rounded-md object-cover'}
+      loading="lazy"
+    />
   )
 }
 
@@ -771,8 +833,13 @@ function ProposalsBody({ tile }: { tile: ProposalsTile }) {
                     <span className="flex items-center gap-1">
                       <Clock className="h-3 w-3" /> {endsIn(p.endsAt)}
                     </span>
-                    {p.leadingChoice && <span className="text-[color:var(--accent)]">{p.leadingChoice} leading</span>}
+                    {p.leadingChoice && (
+                      <span className="text-[color:var(--accent)]">
+                        {p.leadingChoice} leading{typeof p.leadingPct === 'number' ? ` · ${p.leadingPct}%` : ''}
+                      </span>
+                    )}
                   </div>
+                  {typeof p.leadingPct === 'number' && <RowProgress pct={p.leadingPct} />}
                 </div>
                 <ChevronDown
                   className={`mt-1 h-3.5 w-3.5 flex-shrink-0 text-[color:var(--muted-2)] transition-transform ${expanded ? 'rotate-180' : ''}`}

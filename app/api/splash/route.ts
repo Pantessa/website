@@ -3,11 +3,11 @@ import { isAddress } from 'viem'
 import prisma from '@/lib/db'
 import type { McpServer } from '@/lib/store'
 import { buildSplash, type FeaturedEndpoint, type SplashServer } from '@/lib/splash/sources'
-import type { RowsTile, StatRow, SuggestedPrompt } from '@/lib/splash/types'
+import type { RowsTile, StatRow, SuggestedPrompt, TileViz } from '@/lib/splash/types'
 import { chainByKey } from '@/lib/chains'
 import { listDcaSchedules } from '@/lib/dca-exec'
 import { cadenceLabel, dcaRunChip, periodPhrase } from '@/lib/dca'
-import { briefingTileFor } from '@/lib/briefing-exec'
+import { walletSplashFor } from '@/lib/briefing-exec'
 
 /** The wallet's recurring buys as a rows tile — due periods lead with their
  *  one-tap chip (the resume-string contract from lib/dca.ts). Env-fenced in
@@ -61,6 +61,29 @@ async function dcaTileFor(address: string): Promise<RowsTile | null> {
       return { label: chip.label, prompt: chip.prompt }
     })
   const anyArmed = schedules.some((s) => s.mode === 'auto')
+  // The cadence strip: each schedule's state + what the active ones commit
+  // per month (daily ×30, weekly ×4.33, monthly ×1 — the calendar, not a
+  // promise: every buy is still signed or armed).
+  const perMonth: Record<string, number> = { daily: 30, weekly: 4.33, monthly: 1 }
+  const viz: TileViz = {
+    kind: 'cadence',
+    monthlyUsd: Math.round(
+      schedules.filter((s) => s.status === 'active').reduce((n, s) => n + s.buyUsd * (perMonth[s.cadence] ?? 1), 0),
+    ),
+    items: schedules.map((s) => ({
+      token: s.buyToken,
+      buyUsd: s.buyUsd,
+      cadence: s.cadence,
+      state:
+        s.status === 'paused'
+          ? 'paused'
+          : s.mode === 'auto'
+            ? s.autoError
+              ? 'auto-error'
+              : 'auto'
+            : s.period,
+    })),
+  }
   return {
     id: 'dca-schedules',
     mcpSlug: 'yeetful',
@@ -68,6 +91,7 @@ async function dcaTileFor(address: string): Promise<RowsTile | null> {
     title: anyArmed ? 'DCA · autopilot armed' : 'DCA · you sign every buy',
     render: 'rows',
     rows,
+    viz,
     prompts: dueChips.length > 0 ? dueChips.slice(0, 4) : [{ label: 'List my recurring buys', prompt: 'list my dcas' }],
   }
 }
@@ -119,17 +143,21 @@ export async function POST(req: Request) {
   // onto the grid) wants JUST the new servers' tiles — the wallet tiles are
   // already on screen, and the briefing scan is the slow half of the call.
   const serversOnly = body.serversOnly === true
-  const [briefTile, dcaTile] = serversOnly
-    ? [null, null]
+  const [brief, dcaTile] = serversOnly
+    ? [{ tile: null, map: null }, null]
     : await Promise.all([
-        briefingTileFor(address).catch(() => null),
+        walletSplashFor(address).catch(() => ({ tile: null, map: null })),
         dcaTileFor(address),
       ])
+  const briefTile = brief.tile
   const walletTiles = [...(briefTile ? [briefTile] : []), ...(dcaTile ? [dcaTile] : [])]
+  // The money map rides only full scans (a delta refetch already has one on
+  // screen); null = the wallet scan failed, absent = not asked for.
+  const mapField = serversOnly ? {} : { map: brief.map }
   const slugs = [
     ...new Set((Array.isArray(body.servers) ? body.servers : []).map((s) => s?.slug).filter((s): s is string => !!s)),
   ]
-  if (slugs.length === 0) return NextResponse.json({ address, tiles: walletTiles })
+  if (slugs.length === 0) return NextResponse.json({ address, tiles: walletTiles, ...mapField })
   // MCPs the user explicitly toggled on — these always paint a card (a
   // preview when the wallet has no activity). Only honored for slugs that are
   // in the requested set anyway; this flag can't conjure extra servers.
@@ -187,8 +215,8 @@ export async function POST(req: Request) {
       .filter((s): s is SplashServer => s !== null)
 
     const tiles = await buildSplash(address, resolved, chain)
-    return NextResponse.json({ address, tiles: [...walletTiles, ...tiles] })
+    return NextResponse.json({ address, tiles: [...walletTiles, ...tiles], ...mapField })
   } catch (err) {
-    return NextResponse.json({ address, tiles: walletTiles, error: err instanceof Error ? err.message : 'splash failed' })
+    return NextResponse.json({ address, tiles: walletTiles, ...mapField, error: err instanceof Error ? err.message : 'splash failed' })
   }
 }

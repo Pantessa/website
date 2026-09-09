@@ -22,7 +22,7 @@
 //  address-in-body with no auth, same posture as the DCA tile).
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { RowsTile, StatRow } from './splash/types'
+import type { MoneyFact, MoneyMap, RowsTile, StatRow } from './splash/types'
 import type { FundingScan, FundingSource } from './funding-plan'
 
 /** Public-shape read of one HL perp position (lib/hl-guardian-store's
@@ -275,5 +275,57 @@ export function briefingTile(rows: StatRow[]): RowsTile | null {
         : { value: 'all quiet', caption: 'wallet briefing' },
     rows,
     prompts: [],
+  }
+}
+
+// ── The money map (wallet-level facts) ──────────────────────────────────────
+// Where the wallet's ETH, USDC, and perps sit, bucketed by what they're doing
+// — the hero bar's spine. Pure like the composer above; the same inputs, no
+// floors (the map counts every dollar it can see, the rows only NAG above a
+// floor). Ownership: this owns ETH + USDC on the scan chains, every perp,
+// and stranded balances — protocol cards own their own holdings
+// (lib/splash/types.ts MoneyBucket).
+
+export function composeMoneyFacts(inputs: BriefingInputs): MoneyFact[] {
+  const facts: MoneyFact[] = []
+  const protectedSet = new Set(inputs.protectedCoins.map((c) => c.toUpperCase()))
+  const spotProtected = new Set(inputs.spotProtectedSymbols.map((s) => s.toUpperCase()))
+
+  for (const p of inputs.positions) {
+    if (!(p.positionValueUsd > 0)) continue
+    const coin = p.coin.toUpperCase()
+    facts.push({
+      bucket: protectedSet.has(coin) ? 'protected' : 'risk',
+      usd: p.positionValueUsd,
+      label: `${coin} ${p.side} ${p.leverage}x on Hyperliquid`,
+    })
+  }
+  if (inputs.funding) {
+    for (const s of inputs.funding.sources) {
+      if (!(s.usd > 0)) continue
+      if (s.token === 'USDC') {
+        facts.push({ bucket: 'idle', usd: s.usd, label: `USDC on ${s.chainWord}` })
+      } else {
+        // Spot protection is Base-only v1 — an armed policy there is the
+        // only way ETH reads as watched.
+        const watched = s.chainId === 8453 && spotProtected.has('ETH')
+        facts.push({ bucket: watched ? 'protected' : 'spot', usd: s.usd, label: `ETH on ${s.chainWord}` })
+      }
+    }
+    for (const s of inputs.funding.stranded) {
+      if (!(s.usd > 0)) continue
+      facts.push({ bucket: 'stuck', usd: s.usd, label: `${s.token} on ${s.chainWord} (no gas)` })
+    }
+  }
+  return facts
+}
+
+/** The route-level map: facts + the scan's coverage. A failed funding scan
+ *  still maps the perps it saw — coverage says which chains are unknown. */
+export function composeMoneyMap(inputs: BriefingInputs): MoneyMap {
+  return {
+    facts: composeMoneyFacts(inputs),
+    readChains: inputs.funding?.readChains ?? [],
+    failedChains: inputs.funding?.failedChains ?? (inputs.failed.includes('funding') ? ['every chain'] : []),
   }
 }
