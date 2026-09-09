@@ -14,7 +14,7 @@ import { chainById } from '@/lib/chains'
 import ChatLoader from '@/components/ChatLoader'
 import { splashCapable } from '@/lib/splash/types'
 import type { ActivityTile, ErrorTile, HoldingsTile, MoneyMap, NftsTile, ProposalsTile, RowsTile, SplashTile, SuggestedPrompt } from '@/lib/splash/types'
-import { planLayout, type CardSpan } from '@/lib/splash/layout'
+import { planLayout } from '@/lib/splash/layout'
 import { SplashHero } from '@/components/splash/Hero'
 import { Delta24, Sparkline } from '@/components/splash/Sparkline'
 import { RowProgress, TileVizBlock } from '@/components/splash/viz'
@@ -265,17 +265,17 @@ export function SplashDashboard({
                 </div>
               )
             ) : null}
-            {/* The bento: 12 columns, natural heights, widths planned so no
-                row ends short (lib/splash/layout.ts). Mobile is one column;
-                tablets two, wide cards spanning both. */}
+            {/* The board: three equal columns (two on tablets, one on phones),
+                every card at its natural height, packed as masonry so the
+                column edges line up all the way down (lib/splash/layout.ts). */}
             {(layout.cards.length > 0 || pending.length > 0) && (
               <div
-                className={`grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-12 ${chrome && (layout.hero || map) ? 'mt-4' : ''}`}
+                className={`grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 ${chrome && (layout.hero || map) ? 'mt-4' : ''}`}
                 style={{ gridAutoRows: `${MASONRY_UNIT}px`, gridAutoFlow: 'dense' }}
                 data-splash-grid
               >
                 {layout.cards.map((c) => (
-                  <MasonryCell key={c.group[0].mcpSlug} span={c.span}>
+                  <MasonryCell key={c.group[0].mcpSlug}>
                     <TileCard tiles={c.group} onPick={onPick} onRetry={() => setReload((n) => n + 1)} />
                   </MasonryCell>
                 ))}
@@ -284,7 +284,7 @@ export function SplashDashboard({
                 {pending
                   .filter((s) => !tiles.some((t) => t.mcpSlug === s.slug))
                   .map((s) => (
-                    <MasonryCell key={s.id} span={4}>
+                    <MasonryCell key={s.id}>
                       <PendingTileCard server={s} />
                     </MasonryCell>
                   ))}
@@ -305,15 +305,15 @@ export function SplashDashboard({
 
 // ── Masonry ──────────────────────────────────────────────────────────────────
 // The grid's rows are 8px tracks; each cell measures its card and claims
-// exactly that many tracks, and `grid-auto-flow: dense` packs later cards up
-// into whatever a shorter neighbour left open. Widths stay planned (spans);
-// heights stay natural; the board reads as one tiled surface instead of
-// rows with ragged bottoms. Measured in a layout effect (before paint) and
-// re-measured on every resize of the card (a row expanding to act).
+// exactly that many tracks, and `grid-auto-flow: dense` drops each next card
+// into the first open slot — with equal columns that is the shortest column,
+// so the board packs like a pinboard: aligned edges, no voids, natural
+// heights. Measured in a layout effect (before paint) and re-measured on
+// every resize of the card (a row expanding to act).
 const MASONRY_UNIT = 8
 const MASONRY_GAP = 16 // gap-4
 
-function MasonryCell({ span, children }: { span: CardSpan; children: ReactNode }) {
+function MasonryCell({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   const [rows, setRows] = useState<number | null>(null)
   useLayoutEffect(() => {
@@ -332,9 +332,8 @@ function MasonryCell({ span, children }: { span: CardSpan; children: ReactNode }
   return (
     <div
       ref={ref}
-      className={`min-w-0 self-start ${spanClass(span)}`}
+      className="min-w-0 self-start"
       style={rows ? { gridRowEnd: `span ${rows}` } : undefined}
-      data-span={span}
       data-rows={rows ?? undefined}
     >
       {children}
@@ -342,19 +341,6 @@ function MasonryCell({ span, children }: { span: CardSpan; children: ReactNode }
   )
 }
 
-/** Literal Tailwind classes per planned span (the JIT can't see a template). */
-function spanClass(span: CardSpan): string {
-  switch (span) {
-    case 12:
-      return 'md:col-span-2 xl:col-span-12'
-    case 8:
-      return 'md:col-span-2 xl:col-span-8'
-    case 6:
-      return 'md:col-span-1 xl:col-span-6'
-    default:
-      return 'md:col-span-1 xl:col-span-4'
-  }
-}
 
 // ── Tile router ──────────────────────────────────────────────────────────────
 // Exported so other splash surfaces can render the same tiles.

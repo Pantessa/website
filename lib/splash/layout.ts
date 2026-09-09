@@ -1,24 +1,19 @@
-// The splash bento — pure, client-safe. Decides which tile is the hero and
-// how wide each MCP's card is, so the grid packs without holes.
+// The splash board — pure, client-safe. Decides which tile is the hero and
+// the ORDER of the cards; widths are uniform and heights are the client's.
 //
-// Why a planner instead of CSS alone: the old uniform grid equalized every
-// row to its tallest card, so a two-row Aave position sat in a card 80%
-// empty beside the briefing. Natural heights need widths that fill rows:
-// a 12-column grid, "wide" cards at 6, "narrow" at 4, wides first in pairs,
-// narrows in triples, and the leftovers stretched so no row ends short.
-// Heights are the client's job: SplashDashboard's MasonryCell measures each
-// card and claims that many 8px row tracks, and the grid packs DENSE — so a
-// short card beside a tall one leaves no void, the next card slides up into
-// it (Nate, 2026-09-09: "less scattered").
+// History: the first cut equalized every row to its tallest card (a two-row
+// Aave position in a card 80% empty). The second planned mixed widths
+// (6/8/4 of 12) with natural heights — tighter, but column edges never lined
+// up and the board read as scattered (Nate, 2026-09-09). Now: three equal
+// columns, each card measured by SplashDashboard's MasonryCell and given
+// exactly that many 8px row tracks, the grid packing dense — so every edge
+// aligns and a short card leaves no void below it. Richest cards lead.
 
 import type { SplashTile } from './types'
-
-export type CardSpan = 4 | 6 | 8 | 12
 
 export interface PlannedCard {
   /** The MCP's tiles, first-seen order (one card per MCP). */
   group: SplashTile[]
-  span: CardSpan
 }
 
 export interface SplashLayout {
@@ -38,55 +33,9 @@ export function groupBySlug(tiles: SplashTile[]): SplashTile[][] {
   return [...bySlug.values()]
 }
 
-/** Cards that carry a distribution or a list of things (holdings, NFTs,
- *  positions, proposals, transactions) read better wide. */
-export function wantsWide(group: SplashTile[]): boolean {
-  return group.some(
-    (t) =>
-      t.render === 'holdings' ||
-      t.render === 'nfts' ||
-      t.render === 'proposals' ||
-      t.render === 'activity' ||
-      t.viz?.kind === 'positions' ||
-      t.viz?.kind === 'allocation' ||
-      (t.render === 'rows' && t.rows.length >= 5),
-  )
-}
-
-/**
- * Pack widths so every row of the 12-column grid is full: wides (6) in
- * pairs, narrows (4) in triples, the odd wide widened to 8 and paired with a
- * narrow, a trailing pair of narrows split 6/6, a lone trailing narrow
- * stretched to 12.
- */
-export function planSpans(wide: number, narrow: number): CardSpan[] {
-  const spans: CardSpan[] = []
-  let w = wide
-  let n = narrow
-  while (w >= 2) {
-    spans.push(6, 6)
-    w -= 2
-  }
-  if (w === 1) {
-    if (n >= 1) {
-      spans.push(8, 4)
-      n -= 1
-    } else {
-      spans.push(12)
-    }
-  }
-  while (n >= 3) {
-    spans.push(4, 4, 4)
-    n -= 3
-  }
-  if (n === 2) spans.push(6, 6)
-  else if (n === 1) spans.push(12)
-  return spans
-}
-
 /** A rough "how tall will this card be" in row units — ordering only, never
- *  layout: richest cards lead their band so the top of the board is the
- *  fullest and the masonry has fewer holes to fill. */
+ *  layout: the richest cards lead so the top of the board is the fullest and
+ *  the masonry has fewer holes to fill. */
 export function estimateHeight(group: SplashTile[]): number {
   let h = 3 // header + chips
   for (const t of group) {
@@ -99,7 +48,7 @@ export function estimateHeight(group: SplashTile[]): number {
         h += 1.5 + t.holdings.length * 1.4
         break
       case 'nfts':
-        h += 4 + Math.ceil(Math.min(t.nfts.length, 12) / 4) * 2
+        h += 4 + Math.ceil(Math.min(t.nfts.length, 12) / 3) * 2.5
         break
       case 'proposals':
         h += 1.5 + Math.min(t.proposals.length, 4) * 2
@@ -118,14 +67,9 @@ export function planLayout(tiles: SplashTile[], { hero = true }: { hero?: boolea
   const heroTile = hero ? tiles.find((t) => t.id === 'briefing') ?? null : null
   const groups = groupBySlug(tiles.filter((t) => t !== heroTile))
   // Stable sort: richest first, first-seen order among equals.
-  const byRichness = (a: SplashTile[], b: SplashTile[]) => estimateHeight(b) - estimateHeight(a)
-  const wides = groups.filter((g) => wantsWide(g)).sort(byRichness)
-  const narrows = groups.filter((g) => !wantsWide(g)).sort(byRichness)
-  const spans = planSpans(wides.length, narrows.length)
-  // Spans were planned wides-first, then narrows — assign in that order.
-  const ordered = [...wides, ...narrows]
-  return {
-    hero: heroTile,
-    cards: ordered.map((group, i) => ({ group, span: spans[i] ?? 4 })),
-  }
+  const cards = groups
+    .map((group, i) => ({ group, i, h: estimateHeight(group) }))
+    .sort((a, b) => b.h - a.h || a.i - b.i)
+    .map(({ group }) => ({ group }))
+  return { hero: heroTile, cards }
 }
