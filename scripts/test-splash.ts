@@ -14,7 +14,7 @@ import type { McpServer } from '@/lib/store'
 import type { HoldingsTile, ProposalsTile, RowsTile, SplashTile } from '@/lib/splash/types'
 import { allocationViz, holdingsFacts, usdOfString } from '@/lib/splash/viz'
 import { mergeMoneyMap, summarizeMoneyMap, MONEY_BUCKETS } from '@/lib/splash/money-map'
-import { planLayout, planSpans, wantsWide } from '@/lib/splash/layout'
+import { estimateHeight, planLayout, planSpans, wantsWide } from '@/lib/splash/layout'
 import { composeMoneyFacts, composeMoneyMap, type BriefingInputs } from '@/lib/briefing'
 import type { AppChain } from '@/lib/chains'
 // The real Morpho parsers — a chip that doesn't round-trip these is a lie.
@@ -624,6 +624,12 @@ async function run() {
     check('layout: one card per MCP, the wallet’s two tiles grouped', layout.cards.length === 4 && layout.cards.some((c) => c.group.length === 2 && c.group[0].mcpSlug === 'yeetful-tool-wallet'))
     check('layout: wide cards lead, narrows follow, spans planned', layout.cards[0].group[0].render === 'holdings' && layout.cards.map((c) => c.span).join(',') === '8,4,6,6')
     check('layout: hero off → the briefing is a plain card', planLayout(tiles, { hero: false }).hero === null && planLayout(tiles, { hero: false }).cards.length === 4 && planLayout(tiles, { hero: false }).cards[0].group[0].mcpSlug === 'yeetful-tool-wallet')
+    // Richest first within each band: the masonry packs from the top, so the
+    // fullest cards lead and the short ones fill the gaps they leave.
+    const rich = t('aave-position', 'aave-free', { rows: [{}, {}, {}, {}], headline: { value: 'x', caption: 'y' }, viz: { kind: 'lending', suppliedUsd: 1, borrowedUsd: 0, healthFactor: null, netApyPct: null } })
+    const thin = t('morpho-position', 'morpho-free', { rows: [{}] })
+    const sorted = planLayout([thin, rich, t('portfolio-holdings', 'w', { render: 'holdings', holdings: [{}, {}], chain: 'Base', totalUsd: 1 })])
+    check('layout: narrows order richest-first (Aave with a chart + 4 rows before a one-row Morpho)', estimateHeight([rich]) > estimateHeight([thin]) && sorted.cards[1].group[0].mcpSlug === 'aave-free' && sorted.cards[2].group[0].mcpSlug === 'morpho-free')
     check('layout: positions/allocation viz and 5+ rows want wide', wantsWide([t('x', 'y', { viz: { kind: 'positions', accountUsd: null, items: [] } })]) && wantsWide([t('x', 'y', { rows: [{}, {}, {}, {}, {}] })]) && !wantsWide([t('x', 'y', { rows: [{}, {}] })]))
   }
 

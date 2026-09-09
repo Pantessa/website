@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { motion, useReducedMotion } from 'framer-motion'
 import { ArrowDownLeft, ArrowUpRight, ChevronDown, Clock, ExternalLink, Info, RefreshCw, Repeat, Vote, Wallet } from 'lucide-react'
@@ -269,20 +269,24 @@ export function SplashDashboard({
                 row ends short (lib/splash/layout.ts). Mobile is one column;
                 tablets two, wide cards spanning both. */}
             {(layout.cards.length > 0 || pending.length > 0) && (
-              <div className={`grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-12 ${chrome && (layout.hero || map) ? 'mt-4' : ''}`} data-splash-grid>
+              <div
+                className={`grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-12 ${chrome && (layout.hero || map) ? 'mt-4' : ''}`}
+                style={{ gridAutoRows: `${MASONRY_UNIT}px`, gridAutoFlow: 'dense' }}
+                data-splash-grid
+              >
                 {layout.cards.map((c) => (
-                  <div key={c.group[0].mcpSlug} className={`min-w-0 ${spanClass(c.span)}`} data-span={c.span}>
+                  <MasonryCell key={c.group[0].mcpSlug} span={c.span}>
                     <TileCard tiles={c.group} onPick={onPick} onRetry={() => setReload((n) => n + 1)} />
-                  </div>
+                  </MasonryCell>
                 ))}
                 {/* A just-toggled MCP loads IN PLACE: its branded skeleton takes
                     a grid slot, and the settled cards around it never flinch. */}
                 {pending
                   .filter((s) => !tiles.some((t) => t.mcpSlug === s.slug))
                   .map((s) => (
-                    <div key={s.id} className={`min-w-0 ${spanClass(4)}`}>
+                    <MasonryCell key={s.id} span={4}>
                       <PendingTileCard server={s} />
-                    </div>
+                    </MasonryCell>
                   ))}
               </div>
             )}
@@ -295,6 +299,45 @@ export function SplashDashboard({
           </p>
         )}
       </div>
+    </div>
+  )
+}
+
+// ── Masonry ──────────────────────────────────────────────────────────────────
+// The grid's rows are 8px tracks; each cell measures its card and claims
+// exactly that many tracks, and `grid-auto-flow: dense` packs later cards up
+// into whatever a shorter neighbour left open. Widths stay planned (spans);
+// heights stay natural; the board reads as one tiled surface instead of
+// rows with ragged bottoms. Measured in a layout effect (before paint) and
+// re-measured on every resize of the card (a row expanding to act).
+const MASONRY_UNIT = 8
+const MASONRY_GAP = 16 // gap-4
+
+function MasonryCell({ span, children }: { span: CardSpan; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [rows, setRows] = useState<number | null>(null)
+  useLayoutEffect(() => {
+    const el = ref.current?.firstElementChild as HTMLElement | null
+    if (!el) return
+    const measure = () => {
+      const h = el.getBoundingClientRect().height
+      if (!h) return
+      setRows(Math.max(1, Math.ceil((h + MASONRY_GAP) / (MASONRY_UNIT + MASONRY_GAP))))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  return (
+    <div
+      ref={ref}
+      className={`min-w-0 self-start ${spanClass(span)}`}
+      style={rows ? { gridRowEnd: `span ${rows}` } : undefined}
+      data-span={span}
+      data-rows={rows ?? undefined}
+    >
+      {children}
     </div>
   )
 }

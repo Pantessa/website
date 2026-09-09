@@ -6,6 +6,10 @@
 // empty beside the briefing. Natural heights need widths that fill rows:
 // a 12-column grid, "wide" cards at 6, "narrow" at 4, wides first in pairs,
 // narrows in triples, and the leftovers stretched so no row ends short.
+// Heights are the client's job: SplashDashboard's MasonryCell measures each
+// card and claims that many 8px row tracks, and the grid packs DENSE — so a
+// short card beside a tall one leaves no void, the next card slides up into
+// it (Nate, 2026-09-09: "less scattered").
 
 import type { SplashTile } from './types'
 
@@ -80,11 +84,43 @@ export function planSpans(wide: number, narrow: number): CardSpan[] {
   return spans
 }
 
+/** A rough "how tall will this card be" in row units — ordering only, never
+ *  layout: richest cards lead their band so the top of the board is the
+ *  fullest and the masonry has fewer holes to fill. */
+export function estimateHeight(group: SplashTile[]): number {
+  let h = 3 // header + chips
+  for (const t of group) {
+    if (t.viz) h += t.viz.kind === 'allocation' ? 2 : t.viz.kind === 'positions' ? 1 + t.viz.items.length : t.viz.kind === 'cadence' ? 2 + t.viz.items.length : 3
+    switch (t.render) {
+      case 'rows':
+        h += (t.headline ? 1.5 : 0) + t.rows.length * 1.3
+        break
+      case 'holdings':
+        h += 1.5 + t.holdings.length * 1.4
+        break
+      case 'nfts':
+        h += 4 + Math.ceil(Math.min(t.nfts.length, 12) / 4) * 2
+        break
+      case 'proposals':
+        h += 1.5 + Math.min(t.proposals.length, 4) * 2
+        break
+      case 'activity':
+        h += t.rows.length * 1.5
+        break
+      default:
+        h += 2
+    }
+  }
+  return h
+}
+
 export function planLayout(tiles: SplashTile[], { hero = true }: { hero?: boolean } = {}): SplashLayout {
   const heroTile = hero ? tiles.find((t) => t.id === 'briefing') ?? null : null
   const groups = groupBySlug(tiles.filter((t) => t !== heroTile))
-  const wides = groups.filter((g) => wantsWide(g))
-  const narrows = groups.filter((g) => !wantsWide(g))
+  // Stable sort: richest first, first-seen order among equals.
+  const byRichness = (a: SplashTile[], b: SplashTile[]) => estimateHeight(b) - estimateHeight(a)
+  const wides = groups.filter((g) => wantsWide(g)).sort(byRichness)
+  const narrows = groups.filter((g) => !wantsWide(g)).sort(byRichness)
   const spans = planSpans(wides.length, narrows.length)
   // Spans were planned wides-first, then narrows — assign in that order.
   const ordered = [...wides, ...narrows]
