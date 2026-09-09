@@ -62,7 +62,7 @@ import AppModeWorkspace from '@/components/AppModeWorkspace'
 import LinksWorkspace from '@/components/LinksWorkspace'
 import JobDetailOverlay from '@/components/JobDetailOverlay'
 import ChartOverlay from '@/components/ChartOverlay'
-import VoiceButton, { type VoiceState } from '@/components/VoiceButton'
+import VoiceButton, { VOICE_SEND_CONFIDENCE, type VoiceFinal, type VoiceState } from '@/components/VoiceButton'
 import { parseChartAsk } from '@/lib/charts'
 import { normalizeSpokenAsk } from '@/lib/voice-ask'
 import MintLinkModal from '@/components/MintLinkModal'
@@ -654,20 +654,24 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     voiceDraftRef.current = text
     setInput(text)
   }
-  const onVoiceFinal = (text: string) => {
+  const onVoiceFinal = ({ text, source, confidence }: VoiceFinal) => {
     const ask = normalizeSpokenAsk(text)
     voiceDraftRef.current = ''
     if (!ask) {
       analytics.voiceAsk(text, false)
       return
     }
-    analytics.voiceAsk(ask, true)
-    if (loading || pendingPayment) {
-      // Mid-turn: land it in the composer instead of dropping it.
+    // The browser's recognizer, unsure of itself, with no accurate lane to
+    // overrule it: show the words, don't fire them. (The vocabulary lane's
+    // words always go — that lane exists to be trusted.)
+    const unsure = source === 'recognizer' && confidence !== null && confidence < VOICE_SEND_CONFIDENCE
+    if (unsure || loading || pendingPayment) {
+      analytics.voiceAsk(ask, false)
       setInput(ask)
       textareaRef.current?.focus()
       return
     }
+    analytics.voiceAsk(ask, true)
     setInput('')
     void handleSend(ask)
   }
@@ -2197,9 +2201,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         )}
       >
         <div
+          data-voice={voiceState}
           className={cn(
             'flex items-center gap-3 py-2 pl-4 pr-2 rounded-full border border-[var(--line)] bg-[color-mix(in_srgb,var(--surf-1)_85%,transparent)] backdrop-blur-md transition-[border-color,box-shadow] duration-200 focus-within:border-[color:var(--accent)]/45 focus-within:shadow-[0_0_0_4px_rgba(52,227,160,0.07),0_0_24px_rgba(52,227,160,0.06)]',
             !embedded && 'shadow-[0_10px_36px_-14px_rgba(0,0,0,0.55)]',
+            // The live transcript reads as spoken, not typed: accent ink while
+            // the mic is live, and the pill itself glows.
+            (voiceState === 'listening' || voiceState === 'starting') && 'voice-pill-live',
           )}
         >
           <textarea
@@ -2208,7 +2216,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={
-              simple
+              voiceState === 'starting'
+                ? 'Starting the mic…'
+                : voiceState === 'listening'
+                  ? 'Listening — say what should happen…'
+                  : simple
                 ? 'Ask a follow-up, or tweak the ask…'
                 : autoRouter
                 ? 'Ask anything — Pantessa routes it to the best MCP…'
@@ -2254,12 +2266,16 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             // it sat between the composer and the spine bar as noise. The voice
             // states are the opposite — a phone is where the mic matters most.
             voiceState === 'idle' && '[@media(hover:none)]:hidden',
-            voiceState === 'listening' && 'text-[color:var(--accent)]',
+            (voiceState === 'listening' || voiceState === 'starting' || voiceState === 'transcribing') && 'text-[color:var(--accent)]',
           )}
           aria-live="polite"
         >
-          {voiceState === 'listening'
+          {voiceState === 'starting'
+            ? 'Starting the mic… one moment'
+            : voiceState === 'listening'
             ? 'Listening… tap the mic to send · Esc to cancel'
+            : voiceState === 'transcribing'
+              ? 'Getting the words right…'
             : voiceState === 'denied'
               ? embedded
                 ? 'Microphone blocked — the page hosting this chat has to allow it'

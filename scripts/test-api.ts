@@ -52,7 +52,8 @@ import { resolveToken, COW_API_BASE, buildCowOrderTypedData, cowOrderAction, bui
 import { ensureTokenList, primeTokenList } from '../lib/token-list'
 import { pairStockToken, stockChipLabel } from '../lib/stock-pairing'
 import { chartPairFor, changePct24h, aggregateCandles, parseChartAsk, type Candle } from '../lib/charts'
-import { normalizeSpokenAsk } from '../lib/voice-ask'
+import { normalizeSpokenAsk, nearestSlotTerm } from '../lib/voice-ask'
+import { voiceVocabularyPrompt } from '../lib/voice-lexicon'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
 import { FIRST_PARTY_MCP_SOURCE, guardPlannerArtifact, isFirstPartyMcp, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
@@ -15804,6 +15805,46 @@ async function main() {
         normalizeSpokenAsk('   ') === '',
       normalizeSpokenAsk('I want a two x long twelve dollars of HYPE with a five percent stop'),
     )
+    // Domain-word correction (the first real drill: "show me my position on
+    // Morpho" → "addition on Mortal"). The preposition slot only ever holds a
+    // venue or a chain; the noun before it rhymes back when a venue resolved.
+    check(
+      'voice: slot corrector — mis-heard venue/chain words come back, English stays English',
+      normalizeSpokenAsk('addition on Mortal') === 'position on Morpho' &&
+        normalizeSpokenAsk('show me my addition on Moral') === 'show me my position on Morpho' &&
+        normalizeSpokenAsk('supply ten dollars of USDC on Arbitrom') === 'supply $10 of USDC on Arbitrum' &&
+        normalizeSpokenAsk('buy $10 of eth on bass') === 'buy $10 of eth on Base' &&
+        normalizeSpokenAsk('long HYPE on hyper liquid') === 'long HYPE on Hyperliquid' &&
+        normalizeSpokenAsk('put it on the table') === 'put it on the table' &&
+        normalizeSpokenAsk('go to bed') === 'go to bed' &&
+        normalizeSpokenAsk('stake some eth with Lido') === 'stake some eth with Lido' &&
+        nearestSlotTerm('table') === null && nearestSlotTerm('Mortal') === 'Morpho',
+      normalizeSpokenAsk('show me my addition on Moral'),
+    )
+    // The transcriber route: feature probe + fail-closed request shapes. The
+    // real transcription is proven off-harness (a synthesized clip through
+    // the vocabulary prompt) — a paid model call has no place in a gate run.
+    const vProbe = await (await fetch(`${BASE}/api/voice/transcribe`)).json()
+    check('voice route: GET is the feature probe {enabled, maxBytes}', typeof vProbe.enabled === 'boolean' && vProbe.maxBytes === 2 * 1024 * 1024)
+    const vNoBody = await fetch(`${BASE}/api/voice/transcribe`, { method: 'POST', headers: CJ, body: '{}' })
+    const vEmpty = new FormData()
+    vEmpty.append('lang', 'en')
+    const vMissing = await fetch(`${BASE}/api/voice/transcribe`, { method: 'POST', body: vEmpty })
+    const vBig = new FormData()
+    vBig.append('audio', new Blob([new Uint8Array(2 * 1024 * 1024 + 1)], { type: 'audio/webm' }), 'voice.webm')
+    const vTooBig = await fetch(`${BASE}/api/voice/transcribe`, { method: 'POST', body: vBig })
+    const vBad = new FormData()
+    vBad.append('audio', new Blob([new Uint8Array(16)], { type: 'text/plain' }), 'x.txt')
+    const vType = await fetch(`${BASE}/api/voice/transcribe`, { method: 'POST', body: vBad })
+    check(
+      'voice route: fail-closed shapes — non-form 400, missing audio 400, oversize 413, wrong type 415 (503 everywhere when no key)',
+      vProbe.enabled
+        ? vNoBody.status === 400 && vMissing.status === 400 && vTooBig.status === 413 && vType.status === 415
+        : [vNoBody, vMissing, vTooBig, vType].every((r) => r.status === 503),
+      `${vNoBody.status}/${vMissing.status}/${vTooBig.status}/${vType.status} enabled=${vProbe.enabled}`,
+    )
+    check('voice lexicon: the vocabulary prompt names the venues the drill mis-heard', /Morpho/.test(voiceVocabularyPrompt()) && /Hyperliquid/.test(voiceVocabularyPrompt()) && /USDG/.test(voiceVocabularyPrompt()) && voiceVocabularyPrompt().length < 1200)
+
     // The normalized spoken forms must land on the native layers, not the
     // planner — every voice ask ends at a build, a chart, or a named refusal.
     check(

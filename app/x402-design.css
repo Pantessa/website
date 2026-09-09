@@ -5049,3 +5049,12 @@
 @media (prefers-reduced-motion: reduce) {
   .voice-live::before { animation: none; opacity: 0; }
 }
+/* The pill while the mic is live: the live transcript is spoken, not typed —
+   accent ink in the textarea and a soft accent glow on the pill. */
+.voice-pill-live {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent) !important;
+  box-shadow: 0 0 0 4px rgba(52, 227, 160, 0.1), 0 0 28px rgba(52, 227, 160, 0.12) !important;
+}
+.voice-pill-live textarea {
+  color: var(--accent);
+}

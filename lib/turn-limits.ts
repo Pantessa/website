@@ -191,6 +191,30 @@ export const WALLET_SEND_IP_HOURLY_CAP = 60
 
 /** Bump this IP's wallet-send window and report whether it tripped the cap.
  *  Loopback exempt and fail-open, exactly like the on-ramp fence. */
+/** Voice transcriptions per IP per hour — each one is a paid model call
+ *  on the house key, so a script must never get to pump audio through it.
+ *  A human speaking non-stop is ~60/h; 120 is a spree. */
+export const VOICE_TRANSCRIBE_IP_HOURLY_CAP = 120
+
+export async function bumpAndCheckVoiceTranscribe(ip: string | null): Promise<boolean> {
+  if (!ip) return false
+  const key = `v:${hashIp(ip)}`
+  try {
+    const { default: prisma } = await import('@/lib/db')
+    const windowStart = hourStartUTC()
+    const rows = await prisma.$queryRaw<{ count: number }[]>`
+      INSERT INTO unsigned_turn_windows (key, window_start, count)
+      VALUES (${key}, ${windowStart}, 1)
+      ON CONFLICT (key, window_start)
+      DO UPDATE SET count = unsigned_turn_windows.count + 1
+      RETURNING count
+    `
+    return Number(rows[0]?.count ?? 0) > VOICE_TRANSCRIBE_IP_HOURLY_CAP
+  } catch {
+    return false
+  }
+}
+
 export async function bumpAndCheckWalletSend(ip: string | null): Promise<boolean> {
   if (!ip) return false
   const key = `s:${hashIp(ip)}`
