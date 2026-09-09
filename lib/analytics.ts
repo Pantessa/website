@@ -37,6 +37,11 @@ export const analytics = {
   exampleRun: (prompt: string, sent: boolean) =>
     send('example_chip', { prompt: prompt.slice(0, 80), sent }),
 
+  /** A spoken ask (the composer mic). sent=true means the transcript went
+   *  straight to the ladder; false means recognition ended with nothing. */
+  voiceAsk: (prompt: string, sent: boolean) =>
+    send('voice_ask', { prompt: prompt.slice(0, 80), sent }),
+
   /** A chat turn that actually paid: settled receipt totals. */
   chatPaid: (totalUsd: number, calls: number, services: string) =>
     send('chat_paid', { totalUsd, calls, services }),

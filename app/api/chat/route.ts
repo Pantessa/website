@@ -149,7 +149,7 @@ import { fundingSourceSymbols, GAS_TOPUP_ETH, minLegNote, offChainStableSource, 
 import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-funding'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { COW_VAULT_RELAYER } from '@/lib/cow-guardrails'
-import { chartPairFor } from '@/lib/charts'
+import { chartPairFor, parseChartAsk } from '@/lib/charts'
 import { ensureTokenList } from '@/lib/token-list'
 import { pairStockToken, stockChipLabel } from '@/lib/stock-pairing'
 import { resolveProposal } from '@/lib/snapshot-read'
@@ -729,6 +729,38 @@ async function handleChatTurn(req: NextRequest) {
         ...(gov.voteRequest ? { voteRequest: gov.voteRequest } : {}),
         ...(gov.voteProposal ? { voteProposal: gov.voteProposal } : {}),
         ...(gov.workingContext ? { workingContext: gov.workingContext } : {}),
+      })
+    }
+
+    // ── Native chart ask (READ). "Show me the ETH chart" / "pull up bitcoin
+    //    candles" is a read the product already owns (ChartOverlay, /t pages),
+    //    but the phrasing fell past every gate to the planner, which holds no
+    //    candle feed and narrated instead. The voice door made the gap loud:
+    //    a spoken ask must POP the chart. The client intercepts the same
+    //    parser before the network (instant, no turn burned); this gate is
+    //    the honest answer for API + embed consumers and the ask audit. A
+    //    named-but-chartless token is refused BY NAME — never a guessed feed.
+    const chartAsk = parseChartAsk(message)
+    if (chartAsk) {
+      if (!chartAsk.pair) {
+        nativeTrace({ type: 'note', level: 'info', label: `chart ask for ${chartAsk.symbol} — no candle source, refusing by name` })
+        return NextResponse.json({
+          reply: `📈 I don't have a live chart for ${chartAsk.symbol} yet. I chart the majors (ETH, BTC, SOL…), the big DeFi tokens (UNI, AAVE, LINK…) and Hyperliquid perps (HYPE…); stablecoins chart flat by design. Say "show me the ETH chart" and it opens right here.`,
+          buildPath: 'native-chart',
+        })
+      }
+      const pair = chartAsk.pair
+      nativeTrace({
+        type: 'select',
+        service: `${pair.source} (native chart)`,
+        endpoint: `candles · ${pair.label}`,
+        priceUsd: 0,
+        reason: 'native chart read — the overlay opens in-chat instead of the planner narrating a price',
+      })
+      return NextResponse.json({
+        reply: `📈 Here's the live ${pair.label} chart (${pair.source === 'coinbase' ? 'Coinbase spot' : 'Hyperliquid perp'} candles). Tap Buy, Sell, or DCA on it and I'll build the transaction — your wallet signs.`,
+        chart: { symbol: pair.symbol, label: pair.label, source: pair.source, url: `/t/${pair.symbol}` },
+        buildPath: 'native-chart',
       })
     }
 
