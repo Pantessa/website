@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { motion, useReducedMotion } from 'framer-motion'
 import { ArrowDownLeft, ArrowUpRight, ChevronDown, Clock, ExternalLink, Info, RefreshCw, Repeat, Vote, Wallet } from 'lucide-react'
@@ -14,7 +14,7 @@ import { chainById } from '@/lib/chains'
 import ChatLoader from '@/components/ChatLoader'
 import { splashCapable } from '@/lib/splash/types'
 import type { ActivityTile, ErrorTile, HoldingsTile, MoneyMap, NftsTile, ProposalsTile, RowsTile, SplashTile, SuggestedPrompt } from '@/lib/splash/types'
-import { planLayout, type CardSpan } from '@/lib/splash/layout'
+import { planLayout } from '@/lib/splash/layout'
 import { SplashHero } from '@/components/splash/Hero'
 import { Delta24, Sparkline } from '@/components/splash/Sparkline'
 import { RowProgress, TileVizBlock } from '@/components/splash/viz'
@@ -265,24 +265,28 @@ export function SplashDashboard({
                 </div>
               )
             ) : null}
-            {/* The bento: 12 columns, natural heights, widths planned so no
-                row ends short (lib/splash/layout.ts). Mobile is one column;
-                tablets two, wide cards spanning both. */}
+            {/* The board: three equal columns (two on tablets, one on phones),
+                every card at its natural height, packed as masonry so the
+                column edges line up all the way down (lib/splash/layout.ts). */}
             {(layout.cards.length > 0 || pending.length > 0) && (
-              <div className={`grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-12 ${chrome && (layout.hero || map) ? 'mt-4' : ''}`} data-splash-grid>
+              <div
+                className={`grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 ${chrome && (layout.hero || map) ? 'mt-4' : ''}`}
+                style={{ gridAutoRows: `${MASONRY_UNIT}px`, gridAutoFlow: 'dense' }}
+                data-splash-grid
+              >
                 {layout.cards.map((c) => (
-                  <div key={c.group[0].mcpSlug} className={`min-w-0 ${spanClass(c.span)}`} data-span={c.span}>
+                  <MasonryCell key={c.group[0].mcpSlug}>
                     <TileCard tiles={c.group} onPick={onPick} onRetry={() => setReload((n) => n + 1)} />
-                  </div>
+                  </MasonryCell>
                 ))}
                 {/* A just-toggled MCP loads IN PLACE: its branded skeleton takes
                     a grid slot, and the settled cards around it never flinch. */}
                 {pending
                   .filter((s) => !tiles.some((t) => t.mcpSlug === s.slug))
                   .map((s) => (
-                    <div key={s.id} className={`min-w-0 ${spanClass(4)}`}>
+                    <MasonryCell key={s.id}>
                       <PendingTileCard server={s} />
-                    </div>
+                    </MasonryCell>
                   ))}
               </div>
             )}
@@ -299,19 +303,44 @@ export function SplashDashboard({
   )
 }
 
-/** Literal Tailwind classes per planned span (the JIT can't see a template). */
-function spanClass(span: CardSpan): string {
-  switch (span) {
-    case 12:
-      return 'md:col-span-2 xl:col-span-12'
-    case 8:
-      return 'md:col-span-2 xl:col-span-8'
-    case 6:
-      return 'md:col-span-1 xl:col-span-6'
-    default:
-      return 'md:col-span-1 xl:col-span-4'
-  }
+// ── Masonry ──────────────────────────────────────────────────────────────────
+// The grid's rows are 8px tracks; each cell measures its card and claims
+// exactly that many tracks, and `grid-auto-flow: dense` drops each next card
+// into the first open slot — with equal columns that is the shortest column,
+// so the board packs like a pinboard: aligned edges, no voids, natural
+// heights. Measured in a layout effect (before paint) and re-measured on
+// every resize of the card (a row expanding to act).
+const MASONRY_UNIT = 8
+const MASONRY_GAP = 16 // gap-4
+
+function MasonryCell({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [rows, setRows] = useState<number | null>(null)
+  useLayoutEffect(() => {
+    const el = ref.current?.firstElementChild as HTMLElement | null
+    if (!el) return
+    const measure = () => {
+      const h = el.getBoundingClientRect().height
+      if (!h) return
+      setRows(Math.max(1, Math.ceil((h + MASONRY_GAP) / (MASONRY_UNIT + MASONRY_GAP))))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  return (
+    <div
+      ref={ref}
+      className="min-w-0 self-start"
+      style={rows ? { gridRowEnd: `span ${rows}` } : undefined}
+      data-rows={rows ?? undefined}
+    >
+      {children}
+    </div>
+  )
 }
+
 
 // ── Tile router ──────────────────────────────────────────────────────────────
 // Exported so other splash surfaces can render the same tiles.
@@ -674,18 +703,20 @@ function HoldingsBody({ tile, onPick }: { tile: HoldingsTile; onPick: (p: string
             <LineRow
               key={id}
               left={
-                <div className="flex min-w-0 items-center gap-2">
+                <div className="flex min-w-0 flex-1 items-center gap-2">
                   {/* The row's own chain when the tile is multichain, else
                       the tile's — a company mark is only right on 4663. */}
                   <TokenIcon symbol={h.symbol} size={24} chain={h.chain ?? tile.chain} />
                   <span className="font-medium text-white">{h.symbol}</span>
                   {h.native && <span className="mono text-[9px] text-[color:var(--muted-2)]">native</span>}
-                  {h.chain && <span className="rounded bg-white/5 px-1 py-0.5 text-[9px] text-[color:var(--muted-2)]">{h.chain}</span>}
+                  {h.chain && (
+                    <span className="min-w-0 truncate whitespace-nowrap rounded bg-white/5 px-1 py-0.5 text-[9px] text-[color:var(--muted-2)]">{h.chain}</span>
+                  )}
                 </div>
               }
               right={
                 <div className="flex items-center gap-2">
-                  <Sparkline symbol={h.symbol} width={72} height={22} className="hidden sm:block" />
+                  <Sparkline symbol={h.symbol} width={56} height={20} className="hidden sm:block" />
                   <div className="text-right">
                     <div className="flex items-baseline justify-end gap-1.5 text-white">
                       <Delta24 symbol={h.symbol} />

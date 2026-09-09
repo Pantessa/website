@@ -14,7 +14,7 @@ import type { McpServer } from '@/lib/store'
 import type { HoldingsTile, ProposalsTile, RowsTile, SplashTile } from '@/lib/splash/types'
 import { allocationViz, holdingsFacts, usdOfString } from '@/lib/splash/viz'
 import { mergeMoneyMap, summarizeMoneyMap, MONEY_BUCKETS } from '@/lib/splash/money-map'
-import { planLayout, planSpans, wantsWide } from '@/lib/splash/layout'
+import { estimateHeight, planLayout } from '@/lib/splash/layout'
 import { composeMoneyFacts, composeMoneyMap, type BriefingInputs } from '@/lib/briefing'
 import type { AppChain } from '@/lib/chains'
 // The real Morpho parsers — a chip that doesn't round-trip these is a lie.
@@ -587,44 +587,27 @@ async function run() {
     check('summary: every bucket in the order table has a label + blurb', MONEY_BUCKETS.length === 7 && MONEY_BUCKETS.every((b) => b.label && b.blurb))
   }
 
-  console.log('splash layout — the bento planner (pure)')
+  console.log('splash layout — the board planner (pure)')
   {
-    const rowsOf = (spans: number[]) => {
-      const rows: number[][] = []
-      let cur: number[] = []
-      for (const s of spans) {
-        cur.push(s)
-        if (cur.reduce((n, x) => n + x, 0) >= 12) {
-          rows.push(cur)
-          cur = []
-        }
-      }
-      if (cur.length) rows.push(cur)
-      return rows
-    }
-    const full = (spans: number[]) => rowsOf(spans).every((r) => r.reduce((n, x) => n + x, 0) === 12)
-    check('spans: 2 wide + 3 narrow → [6,6,4,4,4]', planSpans(2, 3).join(',') === '6,6,4,4,4')
-    check('spans: the odd wide widens to 8 and takes a narrow', planSpans(1, 1).join(',') === '8,4' && planSpans(3, 4).join(',') === '6,6,8,4,4,4,4')
-    check('spans: a lone card fills the row', planSpans(1, 0).join(',') === '12' && planSpans(0, 1).join(',') === '12')
-    check('spans: two trailing narrows split the row', planSpans(0, 2).join(',') === '6,6' && planSpans(2, 2).join(',') === '6,6,6,6')
-    let everyRowFull = true
-    for (let w = 0; w <= 5; w++) for (let n = 0; n <= 7; n++) if (w + n > 0 && !full(planSpans(w, n))) everyRowFull = false
-    check('spans: no row ever ends short (0–5 wide × 0–7 narrow)', everyRowFull)
     const t = (id: string, slug: string, extra: Record<string, unknown> = {}) => ({ id, mcpSlug: slug, mcpName: slug, title: id, render: 'rows', rows: [], prompts: [], ...extra }) as unknown as SplashTile
     const tiles = [
       t('briefing', 'yeetful'),
       t('dca-schedules', 'yeetful'),
       t('aave-position', 'aave-free'),
-      t('portfolio-holdings', 'yeetful-tool-wallet', { render: 'holdings', holdings: [], chain: 'Base', totalUsd: 1 }),
-      t('recent-activity', 'yeetful-tool-wallet', { render: 'activity', rows: [] }),
+      t('portfolio-holdings', 'yeetful-tool-wallet', { render: 'holdings', holdings: [{}, {}, {}], chain: 'Base', totalUsd: 1, viz: { kind: 'allocation', slices: [], totalUsd: 1 } }),
+      t('recent-activity', 'yeetful-tool-wallet', { render: 'activity', rows: [{}, {}] }),
       t('lido-position', 'lido-free'),
     ]
     const layout = planLayout(tiles)
     check('layout: the briefing is the hero and leaves the grid', layout.hero?.id === 'briefing' && !layout.cards.some((c) => c.group.some((x) => x.id === 'briefing')))
     check('layout: one card per MCP, the wallet’s two tiles grouped', layout.cards.length === 4 && layout.cards.some((c) => c.group.length === 2 && c.group[0].mcpSlug === 'yeetful-tool-wallet'))
-    check('layout: wide cards lead, narrows follow, spans planned', layout.cards[0].group[0].render === 'holdings' && layout.cards.map((c) => c.span).join(',') === '8,4,6,6')
-    check('layout: hero off → the briefing is a plain card', planLayout(tiles, { hero: false }).hero === null && planLayout(tiles, { hero: false }).cards.length === 4 && planLayout(tiles, { hero: false }).cards[0].group[0].mcpSlug === 'yeetful-tool-wallet')
-    check('layout: positions/allocation viz and 5+ rows want wide', wantsWide([t('x', 'y', { viz: { kind: 'positions', accountUsd: null, items: [] } })]) && wantsWide([t('x', 'y', { rows: [{}, {}, {}, {}, {}] })]) && !wantsWide([t('x', 'y', { rows: [{}, {}] })]))
+    check('layout: richest card leads (the two-tile wallet card first)', layout.cards[0].group[0].mcpSlug === 'yeetful-tool-wallet')
+    check('layout: equals keep first-seen order (dca before aave before lido, all empty)', layout.cards.slice(1).map((c) => c.group[0].mcpSlug).join(',') === 'yeetful,aave-free,lido-free')
+    check('layout: hero off → the briefing is a plain card', planLayout(tiles, { hero: false }).hero === null && planLayout(tiles, { hero: false }).cards.length === 4)
+    const rich = t('aave-position', 'aave-free', { rows: [{}, {}, {}, {}], headline: { value: 'x', caption: 'y' }, viz: { kind: 'lending', suppliedUsd: 1, borrowedUsd: 0, healthFactor: null, netApyPct: null } })
+    const thin = t('morpho-position', 'morpho-free', { rows: [{}] })
+    const sorted = planLayout([thin, rich])
+    check('layout: a chart + 4 rows outranks a one-row card', estimateHeight([rich]) > estimateHeight([thin]) && sorted.cards[0].group[0].mcpSlug === 'aave-free')
   }
 
   console.log('splash sources — the numbers every card charts')
