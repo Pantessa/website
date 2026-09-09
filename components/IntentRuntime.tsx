@@ -356,7 +356,7 @@ export default function IntentRuntime({
   // redirectTo, per the sign-in UX contract.
   const mintHref = linksStudioHref({ ask, mcps: mcps || undefined })
   const chipClass =
-    'flex items-center gap-1.5 px-2.5 min-h-[32px] rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors mono text-[11px] font-medium whitespace-nowrap'
+    'flex items-center gap-1.5 px-2.5 min-h-[32px] [@media(hover:none)]:min-h-10 rounded-lg border bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors mono text-[11px] font-medium whitespace-nowrap'
 
   if (!started) {
     const ctaLabel = (
@@ -444,7 +444,7 @@ export default function IntentRuntime({
             </div>
           )}
           <h1
-            className="text-[clamp(1.9rem,4.6vw,3.2rem)] leading-[1.12] font-medium text-[color:var(--fg)] max-w-2xl [text-wrap:balance]"
+            className="text-[clamp(1.9rem,4.6vw,3.2rem)] leading-[1.12] font-medium text-[color:var(--fg)] max-w-2xl [text-wrap:balance] [overflow-wrap:anywhere]"
             style={{ fontFamily: 'var(--font-serif)' }}
           >
             &ldquo;{ask}&rdquo;
@@ -641,7 +641,10 @@ export default function IntentRuntime({
                 <img src={brand.logo} alt={brand.name ?? brand.domain ?? ''} className="w-5 h-5 rounded flex-shrink-0 object-contain" />
               )}
               <div className="min-w-0">
-                <p className="mono text-[10px] uppercase tracking-widest text-[color:var(--muted-2)] leading-none">
+                <p className="mono text-[10px] uppercase tracking-widest text-[color:var(--muted-2)] leading-none truncate">
+                  {/* One line: at 375 beside the account pill the framing
+                      wrapped to three stacked lines above the ask; the visitor
+                      read the whole lockup on the splash a moment ago. */}
                   {/* The framing has to survive the splash: a visitor spends
                       the whole run under this header, and it read "intent
                       link" on posted calls too. */}
@@ -650,7 +653,10 @@ export default function IntentRuntime({
                     : linkEyebrow({ hasCreator, handle: creatorHandle, agent })}
                 </p>
                 <p
-                  className="mt-1 text-[15px] leading-tight text-[color:var(--fg)] truncate"
+                  // The ask IS the link's identity: beside the account pill at
+                  // 375 a one-line truncate left "Swap 1 USDC for ET…". Two
+                  // lines on phones, one line from sm up.
+                  className="mt-1 text-[15px] leading-tight text-[color:var(--fg)] max-sm:line-clamp-2 sm:truncate"
                   style={{ fontFamily: 'var(--font-serif)' }}
                 >
                   &ldquo;{ask}&rdquo;
@@ -702,8 +708,8 @@ export default function IntentRuntime({
           and the reply to opposite edges of big screens. */}
       {transferShaped && !heldTurnSeen && (
         <div className="relative flex-shrink-0 max-w-3xl w-full mx-auto px-4 sm:px-6 pt-4" data-origin-fence="held">
-          <div className="yenter rounded-2xl border border-amber-400/40 bg-[color-mix(in_srgb,var(--surf-1)_88%,transparent)] px-4 py-4 sm:px-5">
-            <p className="mono text-[10px] uppercase tracking-widest text-amber-400 leading-none">Held for you to send</p>
+          <div className="yenter rounded-2xl border border-amber-400/40 bg-[color-mix(in_srgb,var(--surf-1)_88%,transparent)] px-4 py-4 sm:px-5 max-sm:max-h-[42dvh] max-sm:overflow-y-auto">
+            <p className="mono text-[11px] uppercase tracking-widest text-amber-400 leading-none">Held for you to send</p>
             <p className="mt-2 text-[15px] leading-snug text-[color:var(--fg)]" style={{ fontFamily: 'var(--font-serif)' }}>
               This link doesn&apos;t run itself.
             </p>

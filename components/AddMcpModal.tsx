@@ -245,7 +245,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
               <button
                 onClick={onClose}
                 aria-label="Close"
-                className="w-7 h-7 grid place-items-center rounded-lg text-[color:var(--muted)] hover:text-white hover:bg-white/5 transition-colors"
+                className="w-7 h-7 grid place-items-center rounded-lg text-[color:var(--muted)] hover:text-white hover:bg-white/5 transition-colors [@media(hover:none)]:h-10 [@media(hover:none)]:w-10 [@media(hover:none)]:-mr-1.5"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -481,7 +481,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
                 onClick={submit}
                 disabled={!canSubmit}
                 className={cn(
-                  'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors',
+                  'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors [@media(hover:none)]:min-h-10',
                   canSubmit
                     ? 'bg-white text-zinc-950 hover:bg-zinc-200'
                     : 'bg-[var(--surf-2)] text-[color:var(--muted-2)] cursor-not-allowed',

@@ -151,14 +151,19 @@ export default function JobCard({
       {/* header */}
       <button
         onClick={() => setExpanded((e) => !e)}
-        className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left"
+        className="w-full flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-left"
       >
-        <span className="flex items-center gap-2 min-w-0">
+        {/* flex-1: without it the status pill (flex-shrink-0) squeezed this
+            span to its meta line at 375 and the title — "Buy $10 of AAPL…",
+            the money — rendered at zero width. Inside the 343px job-detail
+            panel even flex-1 leaves the title ~31px, so on phones the title
+            takes its OWN row under the meta + pill (the basis-full span). */}
+        <span className="flex flex-1 items-center gap-2 min-w-0">
           <ShieldCheck className="w-4 h-4 flex-shrink-0 text-[color:var(--muted)]" aria-hidden />
           <span className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] flex-shrink-0">
             Job · {doneCount}/{job.steps.length}
           </span>
-          <span className="text-[12.5px] truncate">{job.title}</span>
+          <span className="text-[12.5px] min-w-0 truncate max-sm:hidden">{job.title}</span>
         </span>
         <span className="flex items-center gap-2 flex-shrink-0">
           <span
@@ -180,6 +185,7 @@ export default function JobCard({
           </span>
           {expanded ? <ChevronUp className="w-3.5 h-3.5" aria-hidden /> : <ChevronDown className="w-3.5 h-3.5" aria-hidden />}
         </span>
+        <span className="sm:hidden basis-full pl-6 text-[12.5px] leading-snug line-clamp-2">{job.title}</span>
       </button>
 
       {/* progress — visible even collapsed; the card's heartbeat */}
@@ -230,7 +236,7 @@ export default function JobCard({
                     )}
                   </div>
                   {resultNote && (
-                    <div className={`text-[11.5px] ${step.status === 'failed' ? 'text-[color:var(--fail)]' : 'text-[color:var(--muted-2)]'}`}>{resultNote.slice(0, 180)}</div>
+                    <div className={`text-[11.5px] ${step.status === 'failed' ? 'text-[color:var(--fail)]' : 'text-[color:var(--muted-2)]'}`}>{(step.result as { withheld?: boolean } | null)?.withheld ? resultNote : resultNote.slice(0, 180)}</div>
                   )}
                   {/* A spend-policy refusal is fixable in place: the failed step
                       persisted the structured block, so offer the exact policy
@@ -311,7 +317,7 @@ export default function JobCard({
               </span>
             )}
             {ACTIVE.has(job.status) && (
-              <button onClick={() => void cancel()} className="text-[11px] mono text-[color:var(--muted-2)] hover:text-[color:var(--fail)] transition-colors">
+              <button onClick={() => void cancel()} className="text-[11px] mono text-[color:var(--muted-2)] hover:text-[color:var(--fail)] transition-colors [@media(hover:none)]:min-h-10 [@media(hover:none)]:px-3 [@media(hover:none)]:-mr-3 [@media(hover:none)]:text-[12px]">
                 cancel
               </button>
             )}

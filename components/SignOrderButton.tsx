@@ -205,14 +205,14 @@ export default function SignOrderButton({
                 </span>
                 {s.key === 'open' && explorerUrl && st !== 'pending' && (
                   <a href={explorerUrl} target="_blank" rel="noopener noreferrer" title="Track the order on CoW Explorer"
-                    className="inline-flex items-center text-[color:var(--muted)] hover:text-[color:var(--fg)]">
+                    className="inline-flex items-center text-[color:var(--muted)] hover:text-[color:var(--fg)] [@media(hover:none)]:min-w-10 [@media(hover:none)]:min-h-10 [@media(hover:none)]:justify-center [@media(hover:none)]:-my-3">
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 )}
                 {s.key === 'filled' && fillTx && (
                   <a href={`${TX_EXPLORER[chainId] ?? TX_EXPLORER[8453]}${fillTx}`} target="_blank" rel="noopener noreferrer"
                     title="Settlement transaction on Basescan"
-                    className="inline-flex items-center text-[color:var(--muted)] hover:text-[color:var(--fg)]">
+                    className="inline-flex items-center text-[color:var(--muted)] hover:text-[color:var(--fg)] [@media(hover:none)]:min-w-10 [@media(hover:none)]:min-h-10 [@media(hover:none)]:justify-center [@media(hover:none)]:-my-3">
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 )}
