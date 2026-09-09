@@ -300,7 +300,10 @@ export function YieldViz({ viz }: { viz: Extract<TileViz, { kind: 'yield' }> }) 
           <path d={area} fill={`url(#yg-${gid})`} />
           <path d={line} fill="none" stroke="var(--accent)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
         </svg>
-        <span className="mono absolute right-0 top-0 text-[10px] tabular-nums" style={{ color: 'var(--accent)' }}>
+        <span
+          className="mono absolute right-0 top-0 rounded px-1 text-[10px] tabular-nums"
+          style={{ color: 'var(--accent)', background: 'color-mix(in srgb, var(--surf-1) 85%, transparent)' }}
+        >
           +{fmtUsd(gain)}
         </span>
         <span className="mono absolute bottom-0 left-0 text-[9px] text-[color:var(--muted-2)]">now</span>
