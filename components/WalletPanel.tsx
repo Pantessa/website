@@ -12,9 +12,11 @@
 // This is that window: every app chain, priced, with the gas verdict per
 // chain (tokens with no gas is the wall the funding layer otherwise finds
 // for you later), recent transfers with explorer links, and the two ways in
-// (card via the on-ramp door, receive via address/QR). RainbowKit's modal
-// stays reachable as "Wallet settings" for switch/disconnect — it is still
-// the right place for that, it was just the wrong place for THIS.
+// (card via the on-ramp door, receive via address/QR) and the way OUT — a
+// Send door over the chat's own guarded transfer (components/WalletSendForm,
+// POST /api/wallet/send). RainbowKit's modal stays reachable as "Wallet
+// settings" for switch/disconnect — it is still the right place for that,
+// it was just the wrong place for THIS.
 //
 // Connect-to-act: reads by address, no SIWE. A wallet created a minute ago
 // can see itself.
@@ -38,11 +40,13 @@ import {
   Loader2,
   QrCode,
   RefreshCw,
+  Send,
   Settings2,
   Wallet,
   X,
 } from 'lucide-react'
 import { getChainMark } from '@/components/chain-marks'
+import WalletSendForm from '@/components/WalletSendForm'
 import { startOnrampSession } from '@/lib/onramp-client'
 import { ONRAMP_ASSET, ONRAMP_DEFAULT_NETWORK, ONRAMP_NETWORK_LABEL } from '@/lib/onramp'
 import { loadFundWait, type FundWait } from '@/lib/funding-arrival'
@@ -207,6 +211,8 @@ export default function WalletPanel({
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [receive, setReceive] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [justSent, setJustSent] = useState<string | null>(null)
   const [buying, setBuying] = useState(false)
   const [buyError, setBuyError] = useState<string | null>(null)
   const [wait, setWait] = useState<FundWait | null>(null)
@@ -249,6 +255,9 @@ export default function WalletPanel({
     if (!open || !address) return
     prevTotals.current = new Map()
     setView(null)
+    setSending(false)
+    setReceive(false)
+    setJustSent(null)
     setWait(loadFundWait(address))
     void load(false)
     const t = setInterval(() => void load(false), REFRESH_MS)
@@ -422,8 +431,8 @@ export default function WalletPanel({
                 )}
               </div>
 
-              {/* Ways in */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {/* Ways in — and the way out. */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => void buy()}
@@ -438,7 +447,30 @@ export default function WalletPanel({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setReceive((r) => !r)}
+                  onClick={() => {
+                    setSending((v) => !v)
+                    setReceive(false)
+                    setJustSent(null)
+                  }}
+                  disabled={!view}
+                  data-wallet-send-door
+                  className={cn(
+                    'flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-left transition-colors disabled:opacity-60',
+                    sending ? 'border-[var(--line-2)] bg-[var(--surf-2)]' : 'border-[var(--line)] bg-[var(--surf-1)] hover:border-[var(--line-2)]',
+                  )}
+                >
+                  <Send className="w-4 h-4 text-[color:var(--accent)]" />
+                  <span className="min-w-0">
+                    <span className="block text-[12.5px] font-medium text-[color:var(--fg)]">Send to another wallet</span>
+                    <span className="block text-[11px] text-[color:var(--muted)]">{funded.length ? 'any token you hold · you sign' : 'nothing to send yet'}</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReceive((r) => !r)
+                    setSending(false)
+                  }}
                   className={cn(
                     'flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-left transition-colors',
                     receive ? 'border-[var(--line-2)] bg-[var(--surf-2)]' : 'border-[var(--line)] bg-[var(--surf-1)] hover:border-[var(--line-2)]',
@@ -452,6 +484,26 @@ export default function WalletPanel({
                 </button>
               </div>
               {buyError && <div className="text-[11.5px] text-[color:var(--sell)]">{buyError}</div>}
+              {sending && view && (
+                <WalletSendForm
+                  address={address}
+                  chains={view.chains}
+                  onBack={() => setSending(false)}
+                  onSent={(info) => {
+                    setJustSent(info.summary)
+                    // The index lags a block or two; read again shortly, and
+                    // once more so the Recent list picks the transfer up.
+                    setTimeout(() => void load(true), 4_000)
+                    setTimeout(() => void load(true), 20_000)
+                  }}
+                />
+              )}
+              {justSent && !sending && (
+                <div className="flex items-center gap-2 rounded-xl border border-[color:var(--accent)]/40 bg-[color:var(--accent)]/[0.06] px-3.5 py-2 text-[12px]">
+                  <Check className="w-3.5 h-3.5 text-[color:var(--accent)] flex-shrink-0" />
+                  <span className="text-[color:var(--fg)] truncate">Sent — {justSent}</span>
+                </div>
+              )}
               {receive && (
                 <div className="flex items-center gap-4 rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-3.5 py-3">
                   <div className="rounded-lg bg-white p-2">

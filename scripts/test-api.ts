@@ -133,6 +133,7 @@ import { HOUSE_LINKS, houseLinkMarks } from '../lib/house-links'
 import { EXPLAINER_VIDEO, explainerPosterUrl, explainerWatchUrl, isoDuration } from '../lib/explainer-video'
 import { isDbChatId } from '../lib/chat-ids'
 import { gasStateFor, mergeChains, robinhoodStockTokens, type RpcChainRead, type WalletView } from '../lib/wallet-view'
+import { parseWalletSendBody, WALLET_SEND_CHAIN_IDS } from '../lib/wallet-send'
 import { arrivalPhrase, detectArrival, fundWaitExpired, fundWaitKey, pollDelayMs, FUND_WAIT_TTL_MS, FUND_WATCH_MAX_MS } from '../lib/funding-arrival'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
@@ -8456,6 +8457,136 @@ async function main() {
       check('GET /api/wallet/balances: an unknown chain is 400, never a guess', b3.status === 400)
     } catch (e) {
       check('wallet routes reachable', false, e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  // ── Wallet panel: the Send door (2026-09-08) ──────────────────────────────
+  // A Pantessa (CDP) wallet has no extension and no Send button anywhere but
+  // here. The door is a form over the chat's own guarded transfer: the pure
+  // parser names the field it refuses, the route returns the builder's
+  // verdict (blocked by name, never a dead end), and a funded native send
+  // from the burner builds to the exact pinned artifact — read-only.
+  console.log('— wallet panel: send door')
+  {
+    const me = '0x' + 'ab'.repeat(20)
+    // The treasury in its EIP-55 form; the CLAUDE.md shorthand casing fails
+    // the checksum (found live — viem refused it inside the builder).
+    const them = '0x9Cc09AD0D6832FfbBFb1B70F1D9e5d0a6d00892a'
+    const themBadCase = '0x9Cc09aD0d6832ffBBFB1b70F1d9E5D0a6d00892A'
+    const good = { from: me, chainId: 8453, token: 'USDC', amount: '1', to: them }
+    const p0 = parseWalletSendBody(good)
+    check(
+      'wallet send parse: a good body → the builder segment (ticker upper-cased, chain named from the registry)',
+      !('problem' in p0) && p0.from === me && p0.segment.token === 'USDC' && p0.segment.amountHuman === '1' && p0.segment.chainId === 8453 && p0.segment.chainName === 'Base' && p0.segment.to === them,
+      JSON.stringify(p0),
+    )
+    const pAddr = parseWalletSendBody({ ...good, token: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' })
+    check('wallet send parse: a token ADDRESS passes through lower-cased (identity by contract, the panel’s lane)', !('problem' in pAddr) && pAddr.segment.token === '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913')
+    const field = (b: Record<string, unknown>) => {
+      const r = parseWalletSendBody(b)
+      return 'problem' in r ? r.field : 'ok'
+    }
+    check('wallet send parse: a bad from is refused on `from`', field({ ...good, from: 'nope' }) === 'from' && field({ ...good, from: undefined }) === 'from')
+    check('wallet send parse: an off-registry chain is refused on `chainId` (never a guess)', field({ ...good, chainId: 137 }) === 'chainId' && field({ ...good, chainId: 'base' }) === 'chainId' && field({ ...good, chainId: 1.5 }) === 'chainId')
+    check('wallet send parse: every registry chain is a send chain', APP_CHAINS.every((c) => WALLET_SEND_CHAIN_IDS.has(c.id) && field({ ...good, chainId: c.id }) === 'ok'))
+    check('wallet send parse: a junk token slot is refused on `token`', field({ ...good, token: 'x' }) === 'token' && field({ ...good, token: 'not a token' }) === 'token' && field({ ...good, token: '0x1234' }) === 'token')
+    check(
+      'wallet send parse: the amount is a plain decimal or all/max — never rounded, never negative, never zero, never exponent',
+      field({ ...good, amount: 'abc' }) === 'amount' && field({ ...good, amount: '0' }) === 'amount' && field({ ...good, amount: '-1' }) === 'amount' && field({ ...good, amount: '1e3' }) === 'amount' && field({ ...good, amount: '1,000' }) === 'amount' && field({ ...good, amount: '' }) === 'amount',
+    )
+    const pAll = parseWalletSendBody({ ...good, amount: 'MAX' })
+    const pAll2 = parseWalletSendBody({ ...good, amount: 'all' })
+    const pNum = parseWalletSendBody({ ...good, amount: 0.5 })
+    check(
+      'wallet send parse: max/all → the builder’s all sentinel; a numeric amount is accepted as its string',
+      !('problem' in pAll) && pAll.segment.amountHuman === 'all' && !('problem' in pAll2) && pAll2.segment.amountHuman === 'all' && !('problem' in pNum) && pNum.segment.amountHuman === '0.5',
+    )
+    check(
+      'wallet send parse: the recipient is a 0x address or an ENS name, and never yourself',
+      field({ ...good, to: 'bob' }) === 'to' && field({ ...good, to: '0x12' }) === 'to' && field({ ...good, to: me.toUpperCase().replace('0X', '0x') }) === 'to' && field({ ...good, to: 'nate.eth' }) === 'ok' && field({ ...good, to: 'sub.nate.eth' }) === 'ok',
+    )
+    const pLower = parseWalletSendBody({ ...good, to: them.toLowerCase() })
+    check(
+      'wallet send parse: a mixed-case recipient with a bad EIP-55 checksum is refused on `to` by name; lower-case is accepted and normalized to the checksummed form',
+      field({ ...good, to: themBadCase }) === 'to' && /checksum/.test((parseWalletSendBody({ ...good, to: themBadCase }) as { problem: string }).problem) && !('problem' in pLower) && pLower.segment.to === them,
+    )
+    check('wallet send parse: a non-object body is refused (not thrown)', field(null as unknown as Record<string, unknown>) === 'from' && field('x' as unknown as Record<string, unknown>) === 'from')
+
+    try {
+      const post = (body: unknown, raw = false) =>
+        fetch(`${BASE}/api/wallet/send`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: raw ? (body as string) : JSON.stringify(body) })
+      const r400 = await post('{not json', true)
+      check('POST /api/wallet/send: a non-JSON body is 400', r400.status === 400)
+      const r422 = await post({ ...good, to: 'bob' })
+      const b422 = (await r422.json()) as { problem?: string; field?: string }
+      check('POST /api/wallet/send: a refused field is 422 with the field named', r422.status === 422 && b422.field === 'to' && /0x address or an ENS/.test(b422.problem ?? ''), JSON.stringify(b422))
+      // An EMPTY wallet asking to send 1 USDC: the builder reads the live
+      // balance and refuses BY NAME (blocked: true, the balance check, no tx)
+      // — the panel shows the check, never a signable it can't fund.
+      const rEmpty = await post(good)
+      const bEmpty = (await rEmpty.json()) as { blocked?: boolean; tx?: unknown; refusal?: string; guardrails?: { checks: { id: string; ok: boolean }[] } }
+      check(
+        'POST /api/wallet/send: an unfunded send is 200 + blocked by the balance check, with NO tx',
+        rEmpty.status === 200 && bEmpty.blocked === true && bEmpty.tx === undefined && bEmpty.guardrails?.checks.some((c) => c.id === 'balance' && !c.ok) === true && /holds 0/.test(bEmpty.refusal ?? ''),
+        JSON.stringify({ status: rEmpty.status, refusal: bEmpty.refusal }),
+      )
+      const rAll = await post({ ...good, amount: 'all' })
+      const bAll = (await rAll.json()) as { problem?: string }
+      check('POST /api/wallet/send: "all" of a token you don’t hold is 422, said plainly', rAll.status === 422 && /don't hold any/.test(bAll.problem ?? ''), JSON.stringify(bAll))
+      const rZero = await post({ ...good, to: '0x' + '0'.repeat(40) })
+      const bZero = (await rZero.json()) as { problem?: string }
+      check('POST /api/wallet/send: the zero address is refused (a burn, never a send)', rZero.status === 422 && /zero address/.test(bZero.problem ?? ''))
+      // Live, read-only: the .env.local burner holds Base ETH. A native send
+      // of 0.00001 ETH builds to the exact pinned artifact — recipient as
+      // asked, empty calldata, value === the atoms asked — and the guard
+      // report says so. Nothing is signed.
+      const envFs = await import('node:fs')
+      const pkRaw = (() => {
+        try {
+          return envFs.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+        } catch {
+          return null
+        }
+      })()
+      if (pkRaw) {
+        const burner = privateKeyToAccount((pkRaw.startsWith('0x') ? pkRaw : `0x${pkRaw}`) as `0x${string}`)
+        type LiveSend = { blocked?: boolean; tx?: { to: string; data?: string; value?: string; chainId?: number; action?: string }; summary?: string; guardrails?: { valueUsd: number | null; checks: { id: string; ok: boolean }[] }; buildPath?: string; refusal?: string }
+        let rLive!: Response
+        let bLive!: LiveSend
+        // The price leg reads Base's quoter; mid-harness the public Base RPC
+        // rate-limits and the builder fails CLOSED ("no priceable leg" — the
+        // designed refusal, never a bypass). Retry with backoff so a quoter
+        // hiccup doesn't read as a regression; if it stays unpriced the red
+        // below says so by name.
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (attempt) await new Promise((r) => setTimeout(r, 3000 * attempt))
+          rLive = await post({ from: burner.address, chainId: 8453, token: 'ETH', amount: '0.00001', to: them })
+          bLive = (await rLive.json()) as LiveSend
+          if (!(bLive.blocked && /no priceable leg/.test(bLive.refusal ?? ''))) break
+        }
+        check(
+          'POST /api/wallet/send (live, read-only): a funded native send builds the pinned artifact — to as asked, no calldata, value === atoms, priced, guard green',
+          rLive.status === 200 &&
+            bLive.blocked === false &&
+            bLive.tx?.to?.toLowerCase() === them.toLowerCase() &&
+            bLive.tx?.data === '0x' &&
+            bLive.tx?.value === '10000000000000' &&
+            bLive.tx?.chainId === 8453 &&
+            bLive.tx?.action === 'transfer' &&
+            bLive.buildPath === 'native-transfer' &&
+            typeof bLive.guardrails?.valueUsd === 'number' &&
+            bLive.guardrails.checks.some((c) => c.id === 'transfer-guard' && c.ok) &&
+            bLive.guardrails.checks.some((c) => c.id === 'balance' && c.ok) &&
+            /Send 0.00001 ETH to 0x9Cc0…892a on Base/.test(bLive.summary ?? ''),
+          /no priceable leg/.test(bLive.refusal ?? '')
+            ? 'Base quoter unreachable after 3 tries (public RPC rate limit) — the builder failed closed as designed; rerun'
+            : JSON.stringify({ status: rLive.status, blocked: bLive.blocked, refusal: bLive.refusal, summary: bLive.summary, tx: bLive.tx }),
+        )
+      } else {
+        check('POST /api/wallet/send (live): no burner key in .env.local — skipped', true)
+      }
+    } catch (e) {
+      check('wallet send route reachable', false, e instanceof Error ? e.message : String(e))
     }
   }
 
