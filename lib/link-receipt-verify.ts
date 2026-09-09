@@ -21,9 +21,17 @@
 // than a receipt read.
 
 import prisma from '@/lib/db'
-import { publicClientFor } from '@/lib/chains'
+import { createPublicClient, fallback, http, type PublicClient } from 'viem'
+import { APP_CHAINS, chainById, chainByKey, publicClientFor } from '@/lib/chains'
 import { compileJobAsk } from '@/lib/jobs'
 import { parseCadence } from '@/lib/dca'
+import { COUNTED_TURN_WHERE, COUNTED_TURN_SQL, COUNTED_VERIFICATIONS, isCountedTurn, isDevOrigin } from '@/lib/value-origin'
+
+// The money side (squad security S-2, 2026-09-08): the SAME verdict now
+// stamps `embed_turns.verification` at the telemetry write site, and every
+// reader a stranger can see money on composes COUNTED_TURN_WHERE. Re-exported
+// here so the two tables' consumers import one module.
+export { COUNTED_TURN_WHERE, COUNTED_TURN_SQL, COUNTED_VERIFICATIONS, isCountedTurn }
 
 // ---------------------------------------------------------------------------
 // Classes (pure)
@@ -132,12 +140,20 @@ function expectationOf(slug: string, wallet: string, tx: TxShape): { slug: strin
 export async function recordTurnExpectations(reqBody: Record<string, unknown>, data: Record<string, unknown> | null): Promise<void> {
   try {
     if (!data) return
-    const slug = typeof reqBody.intentLinkSlug === 'string' && /^[a-z0-9]{4,24}$/i.test(reqBody.intentLinkSlug) ? reqBody.intentLinkSlug : null
+    // S-2: a turn with NO link attribution records under CHAT_EXPECTATION_SLUG
+    // so its own signed beacon can verify too (a slug-shaped value that isn't
+    // a slug still refuses — never bind a build to a name we can't read).
+    const slug =
+      typeof reqBody.intentLinkSlug === 'string' && reqBody.intentLinkSlug
+        ? /^[a-z0-9-]{4,24}$/i.test(reqBody.intentLinkSlug)
+          ? reqBody.intentLinkSlug
+          : null
+        : CHAT_EXPECTATION_SLUG
     const wallet =
       typeof reqBody.walletAddress === 'string' && /^0x[0-9a-fA-F]{40}$/.test(reqBody.walletAddress)
         ? reqBody.walletAddress.toLowerCase()
         : null
-    if (!slug || !wallet) return
+    if (slug === null || !wallet) return
     const rows: NonNullable<ReturnType<typeof expectationOf>>[] = []
     const txReq = data.txRequest as TxShape | undefined
     if (txReq && typeof txReq === 'object') {
@@ -203,32 +219,14 @@ export async function verifyEventNow(eventId: string): Promise<ReceiptVerdict | 
   }
 
   if (!ev.txHash || !ev.chainId) return settle(ev.wallet ? 'unverified' : 'mismatch') // hashless: fail closed (T-R1); walletless can never verify
-  const client = publicClientFor(ev.chainId)
-  if (!client) return settle('unverified')
+  if (!receiptClientFor(ev.chainId)) return settle('unverified')
 
   // Single-use hash across COUNTED events (any slug — recycling is the attack).
   const reuse = await prisma.intentLinkEvent
     .findFirst({ where: { id: { not: ev.id }, txHash: ev.txHash, verification: 'verified' }, select: { id: true } })
     .catch(() => null)
 
-  // SEPARATE try/catches: one odd read must not blank the other's facts —
-  // an OP-stack deposit tx's receipt read rejects while the tx itself reads
-  // fine, and the tx's own `from` is already decisive for a foreign spoof.
-  let tx: { from: string; to: string | null; input: string } | null = null
-  let receiptStatus: 'success' | 'reverted' | null = null
-  try {
-    const t = await client.getTransaction({ hash: ev.txHash as `0x${string}` })
-    tx = t ? { from: t.from, to: t.to ?? null, input: t.input } : null
-  } catch {
-    /* unknown hash / RPC down → tx stays null */
-  }
-  try {
-    const r = await client.getTransactionReceipt({ hash: ev.txHash as `0x${string}` })
-    receiptStatus = r ? (r.status === 'success' ? 'success' : 'reverted') : null
-  } catch {
-    /* receipt unreadable → status stays null */
-  }
-
+  const facts = await readReceiptFacts(ev.chainId, ev.txHash)
   const expectations = await prisma.intentLinkExpectation
     .findMany({ where: { slug: ev.slug, wallet: ev.wallet ?? '' }, select: { toAddr: true, selector: true } })
     .catch(() => [])
@@ -236,12 +234,208 @@ export async function verifyEventNow(eventId: string): Promise<ReceiptVerdict | 
   return settle(
     decideReceiptVerdict({
       wallet: ev.wallet,
-      tx,
-      receiptStatus,
+      ...facts,
       expectations,
       hashReused: !!reuse,
     }),
   )
+}
+
+/** The client the receipt reads go through. MEASURED 2026-09-08 (squad
+ *  security round 3): publicnode's free tier answers `eth_getTransactionReceipt`
+ *  on Base with "Archive requests require a personal token" for a tx FIVE
+ *  blocks old — every receipt, every age — while the chain's own default RPC
+ *  answers in ~150ms. The registry pins publicnode for Base / Ethereum /
+ *  Arbitrum (lib/chains.ts, server-side reads at 'latest' are fine there), so
+ *  through that client alone the `verified` verdict was unreachable and every
+ *  honest sign stayed `unverified` forever. Receipt reads therefore run on a
+ *  fallback transport — the pin first, the chain's default RPC when the pin
+ *  refuses (viem's fallback moves on any non-user-rejection error). Read-only,
+ *  cached per chain. */
+const receiptClients = new Map<number, PublicClient>()
+export function receiptClientFor(chainId: number): PublicClient | null {
+  const chain = chainById(chainId)
+  if (!chain) return null
+  if (!chain.rpcUrl) return publicClientFor(chainId)
+  let client = receiptClients.get(chainId)
+  if (!client) {
+    client = createPublicClient({ chain: chain.viem, transport: fallback([http(chain.rpcUrl), http()]) })
+    receiptClients.set(chainId, client)
+  }
+  return client
+}
+
+/** The chain reads behind a verdict. SEPARATE try/catches: one odd read
+ *  must not blank the other's facts — an OP-stack deposit tx's receipt read
+ *  rejects while the tx itself reads fine, and the tx's own `from` is already
+ *  decisive for a foreign spoof. */
+async function readReceiptFacts(chainId: number, txHash: string): Promise<Pick<ReceiptFacts, 'tx' | 'receiptStatus'>> {
+  const client = receiptClientFor(chainId)
+  let tx: ReceiptFacts['tx'] = null
+  let receiptStatus: ReceiptFacts['receiptStatus'] = null
+  if (!client) return { tx, receiptStatus }
+  try {
+    const t = await client.getTransaction({ hash: txHash as `0x${string}` })
+    tx = t ? { from: t.from, to: t.to ?? null, input: t.input } : null
+  } catch {
+    /* unknown hash / RPC down → tx stays null */
+  }
+  try {
+    const r = await client.getTransactionReceipt({ hash: txHash as `0x${string}` })
+    receiptStatus = r ? (r.status === 'success' ? 'success' : 'reverted') : null
+  } catch {
+    /* receipt unreadable → status stays null */
+  }
+  return { tx, receiptStatus }
+}
+
+// ---------------------------------------------------------------------------
+// The MONEY side — embed_turns (squad security S-2, 2026-09-08)
+//
+// The `signed` telemetry beacon (components/ChatInterface reportEmbedSigned,
+// JobCard, the panels) is the row every money reader keys on: creator
+// earnings + claimable USDC (/api/intent-links, /claims), the write-once
+// referral, the public money-moved number (/activity, LinksHero), the /i +
+// /l share cards, the links board, the agent record, the mosaic gallery, the
+// sign cap. It used to count on the browser's word. Now the write site stamps
+// `embed_turns.verification` with the SAME verdict the funnel event gets —
+// same pure matrix, same expectations table, same single-use rule (per table)
+// — and every one of those readers composes COUNTED_TURN_WHERE.
+//
+// Class honesty for a turn: a link-attributed row takes its class from the
+// LINK's ask (server truth, T-R5); a first-party chat / keyed-embed row has no
+// ask on record (first-party beacons carry no prompt by design), so its class
+// comes from the allowlisted `artifact` — an EVM tx / tx-chain verifies
+// against the expectations the chat route recorded for (slug '', wallet); the
+// non-EVM artifacts (order / HL / vote / NFT / job legs) store `attested`,
+// exactly the tranche #685 documented for events. Ledgering those at their
+// relays (/api/cow/submit, /api/hl/submit, the jobs runner) is the next cut.
+
+/** Expectation key for turns with no link attribution (first-party chat, a
+ *  keyed embed): the chat route records every wallet-bound build under it. */
+export const CHAT_EXPECTATION_SLUG = ''
+
+/** The chain a telemetry row's receipt lives on: the beacon's `chainId` when
+ *  it names a registry chain, else the stored label ('base', 'ethereum', a
+ *  decimal or hex id), else the explorer host inside txUrl. Null = unknown →
+ *  the row stays `unverified` (never guess a chain). */
+export function chainIdOfTurn(t: { chain?: string | null; txUrl?: string | null }, bodyChainId?: unknown): number | null {
+  if (typeof bodyChainId === 'number' && Number.isInteger(bodyChainId) && chainById(bodyChainId)) return bodyChainId
+  const label = (t.chain ?? '').trim().toLowerCase()
+  if (label) {
+    const byKey = chainByKey(label)
+    if (byKey) return byKey.id
+    const n = /^0x[0-9a-f]+$/.test(label) ? parseInt(label, 16) : /^\d+$/.test(label) ? Number(label) : NaN
+    if (Number.isInteger(n) && chainById(n)) return n
+  }
+  if (t.txUrl) {
+    try {
+      const host = new URL(t.txUrl).host.toLowerCase()
+      const hit = APP_CHAINS.find((c) => {
+        try {
+          return new URL(c.explorerTx).host.toLowerCase() === host
+        } catch {
+          return false
+        }
+      })
+      if (hit) return hit.id
+    } catch {
+      /* not a URL */
+    }
+  }
+  return null
+}
+
+const EVM_ARTIFACTS = new Set(['tx', 'tx-chain'])
+
+/** The verification class of a telemetry row (see the module note). */
+export async function expectedTurnClass(t: { intentLinkSlug?: string | null; artifact?: string | null }): Promise<ReceiptClass> {
+  if (t.intentLinkSlug) {
+    const link = await prisma.intentLink.findUnique({ where: { id: t.intentLinkSlug }, select: { ask: true, kind: true } }).catch(() => null)
+    if (link) return expectedReceiptClass(link.ask, link.kind)
+  }
+  return EVM_ARTIFACTS.has(t.artifact ?? '') ? 'evm-tx' : 'job'
+}
+
+/** Verify one `signed` telemetry row NOW and stamp it. Returns the stored
+ *  verdict. Terminal verdicts (verified / attested / mismatch / dev) never
+ *  re-run; `unverified` re-checks lazily via {@link reverifyPendingTurns}.
+ *  Fail-soft by contract: a crash leaves the row `unverified` (counts
+ *  nothing) rather than throwing into the beacon. */
+export async function verifyTurnNow(turnId: string, bodyChainId?: unknown): Promise<string> {
+  try {
+    const t = await prisma.embedTurn.findUnique({
+      where: { id: turnId },
+      select: { id: true, outcome: true, origin: true, embedKeyId: true, artifact: true, chain: true, txUrl: true, walletAddress: true, intentLinkSlug: true, verification: true },
+    })
+    if (!t || t.outcome !== 'signed') return 'unverified'
+    if (t.verification && t.verification !== 'unverified') return t.verification
+
+    const settle = async (v: string, chainKey?: string) => {
+      await prisma.embedTurn.update({ where: { id: t.id }, data: { verification: v, ...(chainKey && !t.chain ? { chain: chainKey } : {}) } })
+      return v
+    }
+
+    // `dev`: a FIRST-PARTY beacon from a localhost / fixture-TLD build. The
+    // first-party lane already refuses any origin but the deployment's own
+    // host, so this branch is unreachable on production; on a local build it
+    // keeps the creator-surface convention (a dev's own test sign shows in
+    // their scoped view) and the harness's money-math pins honest without a
+    // real receipt. Keyed-embed beacons (a public yfe_ key is in every host
+    // page's source) never get it.
+    if (!t.embedKeyId && isDevOrigin(t.origin)) return settle('dev')
+
+    const klass = await expectedTurnClass(t)
+    if (klass !== 'evm-tx') return settle('attested')
+
+    const wallet = t.walletAddress ? t.walletAddress.toLowerCase() : null
+    if (!wallet) return settle('mismatch') // a signed claim with no signer can never bind
+    const txHash = extractTxHash(t.txUrl)
+    const chainId = chainIdOfTurn(t, bodyChainId)
+    if (!txHash || !chainId) return settle('unverified') // hashless / chainless: fail closed (T-R1)
+    if (!receiptClientFor(chainId)) return settle('unverified')
+
+    // Single-use hash across COUNTED turns (any slug, any wallet — recycling
+    // one real tx across beacons is the attack). Per table: the funnel event
+    // for the SAME sign legitimately shares the hash.
+    const reuse = await prisma.embedTurn
+      .findFirst({ where: { id: { not: t.id }, verification: 'verified', txUrl: { contains: txHash, mode: 'insensitive' } }, select: { id: true } })
+      .catch(() => null)
+    const facts = await readReceiptFacts(chainId, txHash)
+    const expectations = await prisma.intentLinkExpectation
+      .findMany({ where: { slug: t.intentLinkSlug ?? CHAT_EXPECTATION_SLUG, wallet }, select: { toAddr: true, selector: true } })
+      .catch(() => [])
+    return settle(decideReceiptVerdict({ wallet, ...facts, expectations, hashReused: !!reuse }), chainById(chainId)?.key)
+  } catch {
+    return 'unverified'
+  }
+}
+
+/** Lazy re-check for `unverified` signed turns — the creator's studio poll,
+ *  the claims door and the public scoreboard land here (bounded: ten rows,
+ *  the 7-day window). Never throws into a read path. */
+export async function reverifyPendingTurns(where: { intentLinkSlug?: { in: string[] }; walletAddress?: { in: string[] } } = {}): Promise<number> {
+  try {
+    const pending = await prisma.embedTurn.findMany({
+      where: {
+        ...where,
+        outcome: 'signed',
+        verification: 'unverified',
+        createdAt: { gt: new Date(Date.now() - 7 * 24 * 3600 * 1000) },
+      },
+      select: { id: true },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+    })
+    let promoted = 0
+    for (const p of pending) {
+      const v = await verifyTurnNow(p.id)
+      if ((COUNTED_VERIFICATIONS as readonly string[]).includes(v)) promoted++
+    }
+    return promoted
+  } catch {
+    return 0
+  }
 }
 
 /** Lazy re-check for a slug's pending events (broker_status polls land

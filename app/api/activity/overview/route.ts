@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
 import { chainById, chainByKey, type AppChain } from '@/lib/chains'
-import { INTERNAL_ORIGIN_SQL, REAL_TRAFFIC_WHERE, STANDING_TURN_SQL, STANDING_TURN_WHERE } from '@/lib/value-origin'
+import { REAL_TRAFFIC_SQL, REAL_TRAFFIC_WHERE, STANDING_TURN_SQL, STANDING_TURN_WHERE } from '@/lib/value-origin'
+import { reverifyPendingTurns } from '@/lib/link-receipt-verify'
 // venueOfBuildPath returns null rather than echoing its input, so no raw
 // build_path can reach this public payload: every call site below picks an
 // explicit fall-through instead (lib/build-path.ts owns the mapping).
@@ -129,6 +130,11 @@ export async function GET() {
   const x402Where = { ok: true, amountUsd: { gt: 0 }, NOT: { note: 'dry-run' } }
   const guardianWhere = { action: 'closed', valueUsd: { gt: 0 } }
 
+  // S-2: the public scoreboard is a lazy re-check moment for real-origin
+  // signs the chain could not answer for at beacon time (bounded, timeboxed —
+  // a dead RPC costs this page three seconds, never a wrong number).
+  await Promise.race([reverifyPendingTurns(), new Promise((r) => setTimeout(r, 3000))])
+
   const [
     signedAgg,
     standingTurnAgg,
@@ -174,7 +180,7 @@ export async function GET() {
              COALESCE(SUM(value_usd) FILTER (WHERE outcome = 'signed' AND ${Prisma.raw(STANDING_TURN_SQL)}), 0)::float AS standing_usd,
              COALESCE(SUM(value_usd) FILTER (WHERE outcome = 'tx-built'), 0)::float AS built_usd,
              COUNT(*) FILTER (WHERE outcome = 'signed') AS signed_n
-      FROM embed_turns WHERE created_at >= ${since} AND NOT ${Prisma.raw(INTERNAL_ORIGIN_SQL)}
+      FROM embed_turns WHERE created_at >= ${since} AND ${Prisma.raw(REAL_TRAFFIC_SQL)}
       GROUP BY 1 ORDER BY 1`,
     prisma.$queryRaw<{ day: Date; usd: number; n: bigint }[]>`
       SELECT date_trunc('day', created_at) AS day,
@@ -243,7 +249,7 @@ export async function GET() {
              COALESCE(SUM(value_usd), 0)::float AS usd,
              COUNT(*) AS n
       FROM embed_turns
-      WHERE outcome = 'signed' AND value_usd > 0 AND NOT ${Prisma.raw(INTERNAL_ORIGIN_SQL)}
+      WHERE outcome = 'signed' AND value_usd > 0 AND ${Prisma.raw(REAL_TRAFFIC_SQL)}
       GROUP BY 1, 2`,
     // ── chains built: the SHAPE of multi-step work, never its content.
     // Production-env jobs only (the same rule internal traffic follows — dev

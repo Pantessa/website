@@ -2,7 +2,9 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import prisma from '@/lib/db'
 import { brandFromRow } from '@/lib/brand-denylist'
+import { outboundHoldCopy, outboundToThirdParty } from '@/lib/content-origin'
 import { INTENT_SLUG_RE } from '@/lib/intent-links'
+import { COUNTED_TURN_WHERE } from '@/lib/value-origin'
 import { notifyEligible } from '@/lib/broker-webhook'
 import { MANDATE_KIND_LABELS, type MandateKind } from '@/lib/roster-client'
 import IntentRuntime from '@/components/IntentRuntime'
@@ -26,9 +28,11 @@ async function getLink(slug: string) {
     // Expiry: a dead promo behaves exactly like a revoked link.
     if (l.expiresAt && l.expiresAt.getTime() <= Date.now()) return null
     // Sign cap: SERVER-TRUTH signs only (guardrail-priced embed_turns) —
-    // client-reported funnel events can neither burn nor extend the cap.
+    // client-reported funnel events can neither burn nor extend the cap, and
+    // (S-2) neither can a signed beacon whose receipt the verifier refused —
+    // a stranger could otherwise exhaust a link's cap with spoofed hashes.
     if (l.maxSigns !== null) {
-      const signs = await prisma.embedTurn.count({ where: { intentLinkSlug: slug, outcome: 'signed' } })
+      const signs = await prisma.embedTurn.count({ where: { intentLinkSlug: slug, outcome: 'signed', ...COUNTED_TURN_WHERE } })
       if (signs >= l.maxSigns) return null
     }
     return l
@@ -126,10 +130,18 @@ export default async function IntentLinkPage({ params }: Params) {
   // converts. Metadata above stays on the base ask (stable OG card).
   const phrasings = [link.ask, ...link.variants]
   const variant = Math.floor(Math.random() * phrasings.length)
+  // Content-origin fence (SECURITY-AUDIT §E5), decided SERVER-SIDE: the row's
+  // mint-time stamp OR a fresh read of the phrasing actually shown (legacy
+  // rows, A/B variants). A held link PREFILLS — the visitor presses send.
+  const shownVerdict = outboundToThirdParty(phrasings[variant])
+  const prefillOnly = link.outboundThirdParty || shownVerdict.outbound
+  const holdCopy = prefillOnly ? outboundHoldCopy(shownVerdict.outbound ? shownVerdict : { outbound: true, reasons: ['transfer-target'] }) : ''
   return (
     <IntentRuntime
       slug={link.id}
       ask={phrasings[variant]}
+      prefillOnly={prefillOnly}
+      holdCopy={holdCopy}
       variant={variant}
       mcps={link.mcps ?? ''}
       agent={link.agent ?? ''}

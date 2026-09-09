@@ -818,6 +818,7 @@ model EmbedTurn {
   walletAddress  String?  @map("wallet_address") // the SIGNING wallet (lowercased, self-reported like the rest of the beacon) — lifetime referral earnings key off it; null = legacy row
   feeBps         Int?     @map("fee_bps") // the fee tier the ARTIFACT actually carried (C2b: 20 organic / 50 link) — earnings read this over the per-path default; null = legacy row at the path rate
   isInternal     Boolean  @default(false) @map("is_internal") // our own drill/harness traffic — stamped at the write site (x-yf-internal-run header / internalRun body / harness- sessionId); origin patterns can't catch prod-pointed runs, so every scoreboard read excludes this too (lib/value-origin.ts)
+  verification   String? // receipt verdict for a `signed` row (squad security S-2, 2026-09-08): verified | attested | unverified | mismatch | dev — lib/link-receipt-verify.ts stamps it at the telemetry write site; NULL = legacy row or a non-signed outcome (counts, T-R6). Money follows the receipt: every reader a stranger can see money on composes COUNTED_TURN_WHERE (lib/value-origin.ts)
   createdAt      DateTime @default(now()) @map("created_at")
 
   @@index([ownerAddress, createdAt])
@@ -1195,6 +1196,15 @@ model IntentLink {
   // slot — the /i header + inbox card wear the slot badge, and firing the
   // slot cascades revocation over its unsigned addressed links (T5).
   rosterSlotId String?   @map("roster_slot_id")
+  // Content-origin fence (SECURITY-AUDIT 2026-09-08 §C/E5): stamped at mint /
+  // send / handoff / tile when the ask names an OUTSIDE party — a raw 0x
+  // address or ENS name (a send, or a token typed as an address), or an NFT
+  // sale. Third-party-authored content that moves value to a third party
+  // never auto-runs: the /i runtime prefills it and a human presses send.
+  // Computed by lib/content-origin (server-side, from the sentence), stored
+  // so the mint response and the studio can say so, and re-derived at read
+  // time for legacy rows + per-visit A/B phrasings.
+  outboundThirdParty Boolean @default(false) @map("outbound_third_party")
   // Our own harness/drill mint (lib/internal-run.ts): every test:api run
   // mints links from throwaway wallets, which inflated the GTM arc's
   // "arrived" denominator by hundreds per gate run (2026-08-17 audit). The
