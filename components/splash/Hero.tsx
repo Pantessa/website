@@ -18,6 +18,12 @@ import { MoneyMapPanel } from './viz'
 
 const shortAddr = (a: string) => (a.length > 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a)
 
+/** The row's sparkline symbol — only when the row is ABOUT that token. Idle
+ *  USDC rows carry chartSymbol ETH so their chip can open the ETH chart; a
+ *  price line beside "USDC idle" would read as the price of the USDC. */
+export const sparkSymbolFor = (r: StatRow): string | null =>
+  r.chartSymbol && new RegExp(`(^|[^A-Z])${r.chartSymbol.replace(/[^A-Z0-9]/gi, '')}([^A-Z]|$)`, 'i').test(r.label) ? r.chartSymbol : null
+
 /** The briefing's rows, split the way the hero draws them. */
 export function splitBriefingRows(rows: StatRow[]): { fired: StatRow[]; attention: StatRow[]; calm: StatRow[] } {
   const fired = rows.filter((r) => r.tone === 'pos' && /while you were away/i.test(r.sub ?? ''))
@@ -139,7 +145,7 @@ export function SplashHero({
                           <div className="truncate text-xs font-medium text-white">{r.label}</div>
                           {r.sub && <div className="truncate text-[10px] text-[color:var(--muted-2)]">{r.sub}</div>}
                         </div>
-                        <Sparkline symbol={r.chartSymbol} width={64} height={20} className="hidden sm:block" />
+                        <Sparkline symbol={sparkSymbolFor(r)} width={64} height={20} className="hidden sm:block" />
                         {r.value && (
                           <span className="shrink-0 text-[11px] tabular-nums" style={{ color: r.tone === 'pos' ? 'var(--accent)' : 'var(--gold)' }}>
                             {r.value}
@@ -215,7 +221,7 @@ function AttentionRow({ row, slug, onPick }: { row: StatRow; slug: string; onPic
           </div>
         )}
       </div>
-      <Sparkline symbol={row.chartSymbol} width={96} height={32} className="hidden sm:block" />
+      <Sparkline symbol={sparkSymbolFor(row)} width={96} height={32} className="hidden sm:block" />
     </div>
   )
 }

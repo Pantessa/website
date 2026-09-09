@@ -2032,7 +2032,12 @@ async function main() {
     // refetch already has one on screen, so the serversOnly body carries no
     // `map` key at all; a full scan always carries it (null = the wallet read
     // failed, never absent) — the client draws nothing for null.
-    check('splash: a serversOnly delta body carries no money map key', !('map' in (await noServers.clone().json().catch(() => ({ map: 1 })))))
+    const deltaBody = (await fetch(`${BASE}/api/splash`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' },
+      body: JSON.stringify({ address: '0x000000000000000000000000000000000000dEaD', servers: [], serversOnly: true }),
+    }).then((r) => r.json())) as Record<string, unknown>
+    check('splash: a serversOnly delta body carries no money map key', !('map' in deltaBody))
     const fullScan = await fetch(`${BASE}/api/splash`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' },

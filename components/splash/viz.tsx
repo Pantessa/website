@@ -133,13 +133,13 @@ export function MoneyMapPanel({ map }: { map: MoneyMap }) {
         </span>
       </div>
       <SegmentBar segments={segments} height={14} />
-      <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3" aria-label="money map legend">
+      <ul className="grid grid-cols-1 gap-x-5 gap-y-1.5 min-[420px]:grid-cols-2" aria-label="money map legend">
         {sum.segments.map((s) => (
           <li key={s.bucket} className="flex min-w-0 items-center gap-2 text-[11px]" title={`${s.blurb} — ${s.facts.map((f) => `${fmtUsd(f.usd)} ${f.label}`).join(', ')}`}>
             <Swatch color={BUCKET_COLOR[s.bucket]} hatch={s.bucket === 'stuck'} />
             <span className="truncate text-[color:var(--muted)]">{s.label}</span>
             <span className="ml-auto shrink-0 tabular-nums text-white">{fmtUsd(s.usd)}</span>
-            <span className="mono w-8 shrink-0 text-right text-[10px] tabular-nums text-[color:var(--muted-2)]">{pct(s.pct)}</span>
+            <span className="mono w-7 shrink-0 text-right text-[10px] tabular-nums text-[color:var(--muted-2)]">{pct(s.pct)}</span>
           </li>
         ))}
       </ul>
