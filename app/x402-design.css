@@ -5028,3 +5028,24 @@
 @media (hover: none) {
   .btn--sm { min-height: 36px; padding-inline: 12px; }
 }
+
+/* ── The voice door (components/VoiceButton) ─────────────────────────────
+   A listening mic breathes: a soft ring that grows and fades from the
+   button's own edge. Transform + opacity only (composited), stilled under
+   reduced-motion — the accent fill alone already says "live". */
+.voice-live::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 2px solid var(--accent);
+  animation: voice-ring 1.4s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes voice-ring {
+  0% { transform: scale(1); opacity: 0.7; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-live::before { animation: none; opacity: 0; }
+}

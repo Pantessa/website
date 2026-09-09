@@ -109,6 +109,13 @@ const CORPUS: Entry[] = [
   // Chart-overlay act-on-it chips (SEND on click since 2026-07-28; rendered
   // for every chartable symbol). The HL-perp row parses as a swap and the
   // route answers the Hyperliquid door chips instead of "unknown token".
+  // The voice door (2026-09-09): spoken asks land here after
+  // lib/voice-ask.ts normalizes them ("ten dollars worth of eth" → "$10
+  // worth of eth"); these are the normalized forms the ladder must read.
+  { ask: 'show me the ETH chart', source: 'voice door (chart read → overlay)', expect: 'action' },
+  { ask: 'pull up bitcoin candles', source: 'voice door (chart read, spoken name)', expect: 'action' },
+  { ask: 'show me the USDC chart', source: 'voice door (chartless → refused by name)', expect: 'clarify-ok' },
+  { ask: 'buy $10 worth of eth', source: 'voice door (normalized spoken buy)', expect: 'action' },
   { ask: 'Buy $50 of ETH', source: 'chart overlay buy chip', expect: 'action' },
   { ask: 'Sell $50 of ETH', source: 'chart overlay sell chip (live 2026-07-28 dead-end)', expect: 'action' },
   { ask: 'DCA $10 into ETH weekly', source: 'chart overlay DCA chip', expect: 'action' },

@@ -25,6 +25,7 @@ import { parseSpotGuardArm, parseSpotGuardManage } from '../lib/spot-guard'
 import { isLidoGuidedAsk, parseLidoStake } from '../lib/lido-stake'
 import { parseHlIntent } from '../lib/hyperliquid-exec'
 import { parseRobinhoodBridge } from '../lib/robinhood-bridge'
+import { parseChartAsk } from '../lib/charts'
 import { mentionsNft, parseNftAsk, parseNftListAsk, parseNftMarketAsk } from '../lib/nft-layer'
 import { parseTransferSegment } from '../lib/transfer-exec'
 import { parseSwapIntent, detectCrossChain } from '../lib/swap-intent'
@@ -69,6 +70,12 @@ export function simulateLadder(message: string, opts: LadderOptions = {}): Outco
 function simulateLadderInner(message: string): Outcome {
   const vote = parseVoteIntent(message)
   if (vote.isVote) return { gate: 'vote', kind: 'action' }
+
+  // Chart asks are a READ the product owns (ChartOverlay) — the gate sits
+  // right after governance in the route, ahead of every money layer, and a
+  // money verb makes the parser refuse so those layers keep their asks.
+  const chart = parseChartAsk(message)
+  if (chart) return chart.pair ? { gate: 'chart', kind: 'action', note: `${chart.pair.label} overlay` } : { gate: 'chart', kind: 'clarify', note: `${chart.symbol} chartless — refused by name` }
 
   // Aave gates: with every free MCP active the route's set-hint passes but
   // rival venues exist, so weak verbs fall through — replicate by requiring

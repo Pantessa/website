@@ -51,7 +51,8 @@ import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txC
 import { resolveToken, COW_API_BASE, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, COW_APP_DATA_HASH, COW_CANONICAL_APP_DATA_HASHES, cowAppDataJson, cowAppDataHash, cowAppDataBpsOf, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
 import { ensureTokenList, primeTokenList } from '../lib/token-list'
 import { pairStockToken, stockChipLabel } from '../lib/stock-pairing'
-import { chartPairFor, changePct24h, aggregateCandles, type Candle } from '../lib/charts'
+import { chartPairFor, changePct24h, aggregateCandles, parseChartAsk, type Candle } from '../lib/charts'
+import { normalizeSpokenAsk } from '../lib/voice-ask'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
 import { FIRST_PARTY_MCP_SOURCE, guardPlannerArtifact, isFirstPartyMcp, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
@@ -3625,9 +3626,14 @@ async function main() {
       // Keyboard hints and hover verbs never reach a touch screen.
       const chatIface = await readFile(new URL('../components/ChatInterface.tsx', import.meta.url), 'utf8')
       const emptyState = await readFile(new URL('../components/chat/EmptyState.tsx', import.meta.url), 'utf8')
+      // The voice door re-pinned this (2026-09-09): the hint line doubles as
+      // the mic's status ("Listening…" / "Microphone blocked"), and a phone is
+      // where the mic matters most — so the touch-hide applies ONLY in the
+      // idle state, and the keyboard hint is the idle branch of a ternary.
       check(
-        'mobile: the Shift+Enter composer hint hides on touch devices',
-        /'\[@media\(hover:none\)\]:hidden',[\s\S]{0,400}Enter to send · Shift\+Enter for newline/.test(chatIface),
+        'mobile: the Shift+Enter composer hint hides on touch devices (idle only — the voice states stay visible)',
+        /voiceState === 'idle' && '\[@media\(hover:none\)\]:hidden',[\s\S]{0,900}: 'Enter to send · Shift\+Enter for newline'/.test(chatIface) &&
+          /voiceState === 'listening'[\s\S]{0,200}'Listening… tap the mic to send · Esc to cancel'/.test(chatIface),
       )
       check('mobile: the empty state never tells a phone to hover a message', !/hover a sent/.test(emptyState))
       // The spine bar is the phone's primary nav: 9px mono labels read as
@@ -15733,6 +15739,81 @@ async function main() {
     const chg = changePct24h(fakeCandles, nowSec)
     check('charts: 24h change anchors on the candle nearest 24h back', chg !== null && Math.abs(chg - ((129.5 - 105.5) / 105.5) * 100) < 0.01, `chg=${chg}`)
 
+    // ── Chart asks (the voice door, 2026-09-09): "show me the ETH chart" is
+    //    a READ the product owns. One parser, two consumers — the client
+    //    intercept (overlay pops, no turn burned) and the route's native gate.
+    check(
+      'chart ask: chart word + token → the charted pair (typed, spoken names, $-prefixed, possessive)',
+      parseChartAsk('show me the ETH chart')?.pair?.symbol === 'ETH' &&
+        parseChartAsk('Show me the ETH charts')?.pair?.symbol === 'ETH' &&
+        parseChartAsk('pull up bitcoin candles')?.pair?.symbol === 'BTC' &&
+        parseChartAsk("what's ethereum's price chart doing")?.pair?.symbol === 'ETH' &&
+        parseChartAsk('open the $BTC chart')?.pair?.symbol === 'BTC' &&
+        parseChartAsk('chart HYPE')?.pair?.source === 'hyperliquid' &&
+        parseChartAsk('show me the chart for SOL')?.pair?.symbol === 'SOL',
+    )
+    check(
+      'chart ask: fail-closed — no chart word, a money verb, or no token named → null; chartless token named → pair null',
+      parseChartAsk('Buy $10 worth of ETH') === null &&
+        parseChartAsk('buy $50 of ETH and show the chart') === null &&
+        parseChartAsk('show me the charts') === null &&
+        parseChartAsk('show me my portfolio') === null &&
+        parseChartAsk('graph') === null &&
+        parseChartAsk('show me the USDC chart')?.pair === null &&
+        parseChartAsk('show me the USDC chart')?.symbol === 'USDC' &&
+        parseChartAsk('show me the AAPL chart')?.pair === null,
+    )
+    // Route: the native gate answers with the artifact (no planner, no MCP).
+    const chartTurn = await (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: CJ, body: JSON.stringify({ message: 'show me the ETH chart', activeServers: [] }) })).json()
+    check(
+      'chart ask route: native gate returns chart{symbol,label,source,url} + buildPath native-chart',
+      chartTurn.chart?.symbol === 'ETH' && chartTurn.chart?.source === 'coinbase' && chartTurn.chart?.url === '/t/ETH' &&
+        chartTurn.buildPath === 'native-chart' && /ETH \/ USD/.test(chartTurn.reply ?? ''),
+      JSON.stringify(chartTurn).slice(0, 200),
+    )
+    const chartlessTurn = await (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: CJ, body: JSON.stringify({ message: 'show me the USDC chart', activeServers: [] }) })).json()
+    check(
+      'chart ask route: chartless token refused BY NAME, no chart artifact, never a planner turn',
+      chartlessTurn.chart === undefined && chartlessTurn.buildPath === 'native-chart' && /USDC/.test(chartlessTurn.reply ?? '') && /stablecoins/i.test(chartlessTurn.reply ?? ''),
+      JSON.stringify(chartlessTurn).slice(0, 200),
+    )
+
+    // ── Spoken-ask normalizer (lib/voice-ask.ts): what the recognizer heard
+    //    → the sentence the ladder reads. Idempotent on typed asks.
+    check(
+      'voice: number words + money words + percent → the typed forms',
+      normalizeSpokenAsk('buy ten dollars worth of eth') === 'buy $10 worth of eth' &&
+        normalizeSpokenAsk('buy two hundred and fifty dollars of ethereum') === 'buy $250 of ethereum' &&
+        normalizeSpokenAsk('buy one thousand dollars of btc') === 'buy $1000 of btc' &&
+        normalizeSpokenAsk('swap a hundred bucks of eth to usdc') === 'swap $100 of eth to usdc' &&
+        normalizeSpokenAsk('dca twenty five dollars into eth weekly') === 'dca $25 into eth weekly' &&
+        normalizeSpokenAsk('send five USDC to nate.eth') === 'send 5 USDC to nate.eth' &&
+        normalizeSpokenAsk('protect my ETH with a five percent stop') === 'protect my ETH with a 5% stop' &&
+        normalizeSpokenAsk('buy 1 point 5 eth') === 'buy 1.5 eth' &&
+        normalizeSpokenAsk('buy $ 10 of eth') === 'buy $10 of eth' &&
+        normalizeSpokenAsk('buy 10 USD of eth') === 'buy $10 of eth',
+      normalizeSpokenAsk('buy two hundred and fifty dollars of ethereum'),
+    )
+    check(
+      'voice: articles stay prose, "two x long" joins, typed asks come back byte-identical',
+      normalizeSpokenAsk('I want a two x long twelve dollars of HYPE with a five percent stop') === 'I want a 2x long $12 of HYPE with a 5% stop' &&
+        normalizeSpokenAsk('send a message') === 'send a message' &&
+        normalizeSpokenAsk('show me an ETH chart') === 'show me an ETH chart' &&
+        normalizeSpokenAsk('Buy $10 of ETH') === 'Buy $10 of ETH' &&
+        normalizeSpokenAsk('Swap 1 USDC from Base to Arbitrum.') === 'Swap 1 USDC from Base to Arbitrum.' &&
+        normalizeSpokenAsk('   ') === '',
+      normalizeSpokenAsk('I want a two x long twelve dollars of HYPE with a five percent stop'),
+    )
+    // The normalized spoken forms must land on the native layers, not the
+    // planner — every voice ask ends at a build, a chart, or a named refusal.
+    check(
+      'voice: normalized spoken asks reach the native ladder (swap / guardian / HL / DCA / chart)',
+      simulateLadder(normalizeSpokenAsk('buy ten dollars worth of eth')).gate === 'swap' &&
+        simulateLadder(normalizeSpokenAsk('protect my ETH with a five percent stop')).gate === 'guardian' &&
+        simulateLadder(normalizeSpokenAsk('I want a two x long twelve dollars of HYPE with a five percent stop')).gate === 'hyperliquid' &&
+        simulateLadder(normalizeSpokenAsk('dca twenty five dollars into eth weekly')).gate === 'dca' &&
+        simulateLadder(normalizeSpokenAsk('show me the ethereum chart')).gate === 'chart',
+    )
     // Candles proxy: unknown symbols never reach an upstream.
     const refuse = await fetch(`${BASE}/api/charts/candles?symbol=USDG&tf=1h`)
     const refuseBody = await refuse.json()

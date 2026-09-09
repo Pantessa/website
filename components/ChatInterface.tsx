@@ -62,6 +62,9 @@ import AppModeWorkspace from '@/components/AppModeWorkspace'
 import LinksWorkspace from '@/components/LinksWorkspace'
 import JobDetailOverlay from '@/components/JobDetailOverlay'
 import ChartOverlay from '@/components/ChartOverlay'
+import VoiceButton, { type VoiceState } from '@/components/VoiceButton'
+import { parseChartAsk } from '@/lib/charts'
+import { normalizeSpokenAsk } from '@/lib/voice-ask'
 import MintLinkModal from '@/components/MintLinkModal'
 import ArmSpotGuardButton from '@/components/ArmSpotGuardButton'
 import Link from 'next/link'
@@ -321,6 +324,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     setMainView,
     composerPrefill,
     setComposerPrefill,
+    setChartDetail,
     autoRouter,
     pushRouterTrace,
     setRouterTrace,
@@ -639,6 +643,39 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     runExample(prompt)
   }
 
+  // The voice door (components/VoiceButton). Words mirror into the composer
+  // as they're heard; the finished transcript is normalized to a typed-
+  // looking ask ("ten dollars" → "$10") and SENT — the gesture is the send,
+  // the wallet signature is the gate (same contract as a chip tap). A
+  // recognizer that ends with nothing leaves the composer as it was.
+  const [voiceState, setVoiceState] = useState<VoiceState>('idle')
+  const voiceDraftRef = useRef('')
+  const onVoiceInterim = (text: string) => {
+    voiceDraftRef.current = text
+    setInput(text)
+  }
+  const onVoiceFinal = (text: string) => {
+    const ask = normalizeSpokenAsk(text)
+    voiceDraftRef.current = ''
+    if (!ask) {
+      analytics.voiceAsk(text, false)
+      return
+    }
+    analytics.voiceAsk(ask, true)
+    if (loading || pendingPayment) {
+      // Mid-turn: land it in the composer instead of dropping it.
+      setInput(ask)
+      textareaRef.current?.focus()
+      return
+    }
+    setInput('')
+    void handleSend(ask)
+  }
+  const onVoiceCancel = () => {
+    if (voiceDraftRef.current) setInput('')
+    voiceDraftRef.current = ''
+  }
+
   // Render-time mirror for the scroll observers (see refs above). App Mode's
   // workspace face scrolls panels, not the thread — growing tiles there must
   // not yank the view to the bottom.
@@ -749,7 +786,19 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     // textOverride lets UI affordances (e.g. a vote-candidate chip) submit a
     // composed message without going through the input box.
     const raw = typeof textOverride === 'string' ? textOverride : input
-    if (!raw.trim() || loading || pendingPayment) return
+    if (!raw.trim()) return
+    // Chart asks are a READ the client already owns: "show me the ETH chart"
+    // (typed or spoken) opens ChartOverlay right here — no turn burned, no
+    // round trip, and it works mid-turn. The route carries the same parser
+    // for API/embed consumers; a named-but-chartless token falls through to
+    // it and gets refused by name.
+    const chartAsk = parseChartAsk(raw)
+    if (chartAsk?.pair) {
+      setChartDetail({ symbol: chartAsk.pair.symbol })
+      if (typeof textOverride !== 'string') setInput('')
+      return
+    }
+    if (loading || pendingPayment) return
 
     // Guest trial lane (first-party only — the embed has its own contract):
     // signed-out visitors without a wallet get GUEST_TRIAL_LIMIT free turns
@@ -906,6 +955,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         if (!embedded && (typeof data.jobId === 'string' || typeof data.guardianPolicyId === 'string')) {
           setRailTab('jobs')
         }
+        // The route answered a chart ask (only reachable when the client
+        // intercept above didn't claim it) — open the same overlay.
+        const chartSym = (data as { chart?: { symbol?: unknown } }).chart?.symbol
+        if (typeof chartSym === 'string') setChartDetail({ symbol: chartSym })
         reportEmbedTurn(userMsg, data as Record<string, unknown>)
       }
     } catch (err) {
@@ -2169,6 +2222,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             className="flex-1 self-center bg-transparent text-sm max-lg:text-base text-white placeholder:text-[color:var(--muted-2)] resize-none border-0 focus:outline-none focus-visible:outline-none max-h-40 overflow-y-auto leading-6"
             style={{ minHeight: '24px', outline: 'none', boxShadow: 'none' }}
           />
+          <VoiceButton
+            onInterim={onVoiceInterim}
+            onFinal={onVoiceFinal}
+            onCancel={onVoiceCancel}
+            onStateChange={setVoiceState}
+            disabled={loading || !!pendingPayment}
+          />
           <button
             onClick={() => void handleSend()}
             disabled={!input.trim() || loading || !!pendingPayment}
@@ -2189,13 +2249,22 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         <p
           className={cn(
             'text-[11px] text-[color:var(--muted-2)] mt-2 text-center mono',
-            !embedded && 'opacity-0 transition-opacity duration-300 group-focus-within/composer:opacity-100',
+            !embedded && voiceState === 'idle' && 'opacity-0 transition-opacity duration-300 group-focus-within/composer:opacity-100',
             // A keyboard hint: touch devices have no Shift+Enter, and on a phone
-            // it sat between the composer and the spine bar as noise.
-            '[@media(hover:none)]:hidden',
+            // it sat between the composer and the spine bar as noise. The voice
+            // states are the opposite — a phone is where the mic matters most.
+            voiceState === 'idle' && '[@media(hover:none)]:hidden',
+            voiceState === 'listening' && 'text-[color:var(--accent)]',
           )}
+          aria-live="polite"
         >
-          Enter to send · Shift+Enter for newline
+          {voiceState === 'listening'
+            ? 'Listening… tap the mic to send · Esc to cancel'
+            : voiceState === 'denied'
+              ? embedded
+                ? 'Microphone blocked — the page hosting this chat has to allow it'
+                : "Microphone blocked — allow it in your browser's site settings"
+              : 'Enter to send · Shift+Enter for newline'}
         </p>
       </div>
     </div>
