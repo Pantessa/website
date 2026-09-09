@@ -23,10 +23,28 @@
 // bad RPC — a chain that didn't answer is `failedChains`, never "empty".
 
 import { erc20Abi, formatEther, formatUnits } from 'viem'
-import { APP_CHAINS, primaryStable, publicClientFor, type AppChain } from '@/lib/chains'
+import { APP_CHAINS, chainById, primaryStable, publicClientFor, type AppChain } from '@/lib/chains'
 import { alchemyEnabled, getMultichainPortfolio, getRecentActivity } from '@/lib/alchemy'
 import { usdPerToken } from '@/lib/usd-probe'
+import { dynamicTokensFor, ensureTokenList, type TokenInfo } from '@/lib/token-list'
+import { robinhoodRowActions } from '@/lib/robinhood-row-actions'
 import type { ActivityRow, HoldingRow } from '@/lib/splash/types'
+
+/** Robinhood Chain — the one app chain whose listed tokens are STOCKS the
+ *  index doesn't price. Its curated list (tokens.uniswap.org, chain 4663) =
+ *  stocks + exactly two infra classes (wrapped gas, stables); everything
+ *  else on it is a stock proof (the chat route derives it the same way). */
+export const STOCK_CHAIN_ID = 4663
+const MULTICALL3 = '0xcA11bde05977b3631167028862bE2a173976CA11' as const
+
+/** Every curated STOCK token on Robinhood Chain (list warmed by the caller),
+ *  infra excluded — pure, so the harness primes a list and checks the cut. */
+export function robinhoodStockTokens(): TokenInfo[] {
+  const rh = chainById(STOCK_CHAIN_ID)
+  if (!rh) return []
+  const infra = new Set<string>([...Object.keys(rh.stables), rh.wrappedNative?.toLowerCase() ?? ''].map((a) => a.toLowerCase()))
+  return dynamicTokensFor(STOCK_CHAIN_ID).filter((t) => !infra.has(t.address.toLowerCase()))
+}
 
 /** How much native ETH a chain needs before the wallet can sign a plain
  *  ERC-20 move there. Mirrors lib/funding-plan's MIN_GAS_TO_SEND_ETH — the
@@ -90,6 +108,10 @@ export interface RpcChainRead {
   nativeEth: number
   /** Primary stable balance (USDC, or USDG on Robinhood Chain), whole units. */
   stable: { symbol: string; address: `0x${string}`; balance: number } | null
+  /** Curated ERC-20s read straight from the chain (Robinhood Chain STOCKS —
+   *  the index lists them unpriced, and a buy that settled seconds ago must
+   *  show before any indexer catches up). Nonzero balances only. */
+  tokens?: { symbol: string; address: `0x${string}`; balance: number; stock?: true }[]
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -116,6 +138,24 @@ export function mergeChains(
     const nativeEth = read ? read.nativeEth : alchemyNative ? Number(alchemyNative.balance) : 0
     const nativeUsd = ethUsd !== null ? round2(nativeEth * ethUsd) : alchemyNative?.valueUsd ?? null
     const tokens: HoldingRow[] = fromAlchemy.filter((h) => !h.native)
+    // Chain-read ERC-20s (Robinhood stocks) win over the index by address —
+    // fresher, and the index doesn't price them anyway (priced after the
+    // merge by the venue quoter; see composeWalletView).
+    for (const t of read?.tokens ?? []) {
+      if (!(t.balance > 0)) continue
+      const i = tokens.findIndex((h) => h.address.toLowerCase() === t.address.toLowerCase())
+      const prior = i >= 0 ? tokens[i] : null
+      const row: HoldingRow = {
+        symbol: t.symbol,
+        address: t.address,
+        balance: String(t.balance),
+        priceUsd: prior?.priceUsd ?? null,
+        valueUsd: prior?.priceUsd != null ? round2(t.balance * prior.priceUsd) : null,
+        chain: c.name,
+      }
+      if (i >= 0) tokens[i] = { ...prior, ...row }
+      else tokens.push(row)
+    }
     // The RPC stable read is fresher than the index — swap it in when the
     // token is already listed, add it when Alchemy missed it (or is off).
     if (read?.stable && read.stable.balance > 0) {
@@ -131,6 +171,18 @@ export function mergeChains(
       }
       if (i >= 0) tokens[i] = { ...tokens[i], ...row }
       else tokens.push(row)
+    }
+    // Robinhood Chain rows carry their "act on this" chips (sell / buy more /
+    // DCA a held stock, put idle USDG to work) — the same rulebook as the
+    // splash card, so the drawer is a place to ACT, not just to look.
+    if (c.id === STOCK_CHAIN_ID) {
+      const stockAddrs = new Set(robinhoodStockTokens().map((t) => t.address.toLowerCase()))
+      for (let i = 0; i < tokens.length; i++) {
+        const h = tokens[i]
+        const isStock = stockAddrs.has(h.address.toLowerCase()) || read?.tokens?.some((t) => t.stock && t.address.toLowerCase() === h.address.toLowerCase())
+        const actions = robinhoodRowActions({ symbol: h.symbol, balance: h.balance, priceUsd: h.priceUsd, kind: isStock ? 'stock' : undefined })
+        if (actions.length) tokens[i] = { ...h, actions }
+      }
     }
     tokens.sort((a, b) => (b.valueUsd ?? -1) - (a.valueUsd ?? -1))
     const tokenUsd = tokens.reduce((s, h) => s + (h.valueUsd ?? 0), 0)
@@ -183,19 +235,76 @@ export async function readChainBalances(chainId: number, address: `0x${string}`)
       await sleep(400)
       return read()
     })
+    const tokens = chainId === STOCK_CHAIN_ID ? await readStockBalances(address).catch(() => undefined) : undefined
     return {
       chainId,
       nativeEth: Number(formatEther(wei)),
       stable: stable ? { symbol: stable.symbol, address: stable.address, balance: Number(formatUnits(atoms, stable.decimals)) } : null,
+      ...(tokens ? { tokens } : {}),
     }
   } catch {
     return null
   }
 }
 
+/** Every curated stock the wallet holds on Robinhood Chain, straight from
+ *  the chain: ONE Multicall3 aggregate over the warmed list (~200 tokens,
+ *  batchSize 0 = a single eth_call — this RPC 429s parallel reads and
+ *  rejects JSON-RPC batch envelopes, so never fan out). Fail-soft: a
+ *  failed read means "no stock rows", never a crash of the whole view. */
+export async function readStockBalances(address: `0x${string}`): Promise<NonNullable<RpcChainRead['tokens']>> {
+  const client = publicClientFor(STOCK_CHAIN_ID)
+  if (!client) return []
+  await ensureTokenList(STOCK_CHAIN_ID).catch(() => {})
+  const list = robinhoodStockTokens()
+  if (list.length === 0) return []
+  const results = await client.multicall({
+    contracts: list.map((t) => ({ address: t.address as `0x${string}`, abi: erc20Abi, functionName: 'balanceOf' as const, args: [address] as const })),
+    allowFailure: true,
+    multicallAddress: MULTICALL3,
+    batchSize: 0,
+  })
+  const out: NonNullable<RpcChainRead['tokens']> = []
+  results.forEach((r, i) => {
+    if (r.status !== 'success' || typeof r.result !== 'bigint' || r.result <= BigInt(0)) return
+    const t = list[i]
+    const balance = Number(formatUnits(r.result, t.decimals))
+    if (balance > 0) out.push({ symbol: t.symbol, address: t.address as `0x${string}`, balance, stock: true })
+  })
+  return out
+}
+
+/** Price the rows the index couldn't — Robinhood stocks quote against USDG
+ *  on the venue's own pools (lib/usd-probe). Bounded: only held rows, only
+ *  on the stock chain, only when unpriced. Mutates in place, fail-soft. */
+export async function priceUnpricedStockRows(chains: WalletChainView[]): Promise<void> {
+  const rh = chains.find((c) => c.id === STOCK_CHAIN_ID)
+  if (!rh) return
+  const targets = rh.holdings.filter((h) => !h.native && h.priceUsd == null).slice(0, 12)
+  if (targets.length === 0) return
+  await Promise.all(
+    targets.map(async (h) => {
+      const probe = await usdPerToken(STOCK_CHAIN_ID, h.address).catch(() => null)
+      if (!probe) return
+      h.priceUsd = probe.usd
+      h.valueUsd = round2(Number(h.balance) * probe.usd)
+      // Re-run the chips with the price in hand (ETH → USDG sizing needs it).
+      const actions = robinhoodRowActions({ symbol: h.symbol, balance: h.balance, priceUsd: h.priceUsd, kind: h.actions?.some((a) => /^Sell |^Buy more /.test(a.label)) ? 'stock' : undefined })
+      if (actions.length) h.actions = actions
+    }),
+  )
+  rh.holdings.sort((a, b) => (a.native ? -1 : b.native ? 1 : (b.valueUsd ?? -1) - (a.valueUsd ?? -1)))
+  const tokenUsd = rh.holdings.filter((h) => !h.native).reduce((s, h) => s + (h.valueUsd ?? 0), 0)
+  rh.totalUsd = round2(tokenUsd + (rh.nativeUsd ?? 0))
+  rh.gas = gasStateFor(rh.id, rh.nativeEth, tokenUsd)
+}
+
 /** The whole view. Never throws for a single failed source. */
 export async function composeWalletView(address: `0x${string}`): Promise<WalletView> {
   const withAlchemy = alchemyEnabled()
+  // Warm the stock list first: the Robinhood read AND the index's
+  // unpriced-but-curated keep (lib/alchemy) both consult it.
+  await ensureTokenList(STOCK_CHAIN_ID).catch(() => {})
   const [ethProbe, rpcReads, portfolio, activity] = await Promise.all([
     usdPerToken(8453, 'ETH').catch(() => null),
     Promise.all(APP_CHAINS.map((c) => readChainBalances(c.id, address))),
@@ -211,6 +320,7 @@ export async function composeWalletView(address: `0x${string}`): Promise<WalletV
   })
   const ethUsd = ethProbe?.usd ?? null
   const chains = mergeChains(APP_CHAINS, rpc, portfolio?.holdings ?? [], ethUsd)
+  await priceUnpricedStockRows(chains).catch(() => {})
   const sources: WalletView['sources'] = portfolio ? ['rpc', 'alchemy'] : ['rpc']
   return {
     address,

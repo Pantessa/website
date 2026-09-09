@@ -19,6 +19,7 @@
 // gets a card. No activity → a "preview" card: what this MCP can do for you,
 // with prompt chips — so a hand-picked MCP shows its face instead of nothing.
 
+import { robinhoodRowActions, type RobinhoodHolding } from '@/lib/robinhood-row-actions'
 import type { McpServer } from '@/lib/store'
 import { callMcpTool } from '@/lib/mcp-call'
 import { overrideFreeMcpBase } from '@/lib/endpoint-planner'
@@ -662,13 +663,6 @@ const lidoSource: SplashSource = {
 // onto the shared 'portfolio-holdings' id, where the wallet card's identical
 // id deduped it out of existence.
 
-interface RobinhoodHolding {
-  symbol?: string
-  kind?: string
-  balance?: string
-  usd?: number | null
-  priceUsd?: number | null
-}
 
 /** Robinhood holdings → up to 3 action chips: buy a stock with idle USDG,
  *  sell a held stock, turn loose ETH into USDG (WETH↔USDG v3 is liquid), and
@@ -709,35 +703,6 @@ function robinhoodPrompts(holdings: RobinhoodHolding[]): SuggestedPrompt[] {
   return prompts.slice(0, 3)
 }
 
-/** One Robinhood holding → the "act on THIS" prompts revealed when its row is
- *  tapped: sell/buy-more a held stock, put idle USDG into AAPL, turn loose ETH
- *  into USDG. Mirrors robinhoodPrompts' phrasing so each lands on a native
- *  Robinhood-Chain builder. */
-function robinhoodRowActions(h: RobinhoodHolding): SuggestedPrompt[] {
-  const sym = h.symbol
-  if (!sym) return []
-  const bal = Number(h.balance)
-  if (h.kind === 'stock' || h.kind === 'etf') {
-    const sellAmt = bal >= 1 ? String(Math.floor(bal * 10000) / 10000) : h.balance
-    return [
-      { label: `Buy more ${sym}`, prompt: `Buy $10 of ${sym} on Robinhood Chain` },
-      { label: `DCA $10 weekly`, prompt: `Buy $10 of ${sym} every week on Robinhood Chain` },
-      ...(bal > 0 ? [{ label: `Sell ${sym}`, prompt: `Swap ${sellAmt} ${sym} for USDG on Robinhood Chain` }] : []),
-    ]
-  }
-  // Any whole dollar of USDG is buyable stock — the $5 tile-chip threshold
-  // left small balances (the common case after a first bridge-in) with a
-  // dead row. Floor keeps the amount inside the live balance, never above.
-  if (sym === 'USDG' && Number.isFinite(bal) && bal >= 1) {
-    const amt = Math.min(Math.floor(bal), 50)
-    return [{ label: 'Buy AAPL', prompt: `Swap ${amt} USDG for AAPL on Robinhood Chain` }]
-  }
-  if (sym === 'ETH' && bal > 0 && h.priceUsd) {
-    const amt = Math.min(10 / h.priceUsd, bal * 0.25)
-    if (amt > 0.0001) return [{ label: 'Swap ETH → USDG', prompt: `Swap ${amt.toFixed(4)} ETH for USDG on Robinhood Chain` }]
-  }
-  return []
-}
 
 const robinhoodSource: SplashSource = {
   id: 'robinhood',

@@ -9,6 +9,7 @@
 // is required to keep the splash working, it just makes it multichain.
 
 import type { ActivityRow, HoldingRow } from './splash/types'
+import { dynamicTokenByAddress } from '@/lib/token-list'
 
 /** The chains the splash covers, in display order (richest ecosystems first). */
 interface NetChain {
@@ -20,17 +21,20 @@ interface NetChain {
   native: string
   /** `https://…/tx/` explorer prefix. */
   explorerTx: string
+  chainId: number
 }
 
 const CHAINS: NetChain[] = [
-  { net: 'eth-mainnet', label: 'Ethereum', native: 'ETH', explorerTx: 'https://etherscan.io/tx/' },
-  { net: 'base-mainnet', label: 'Base', native: 'ETH', explorerTx: 'https://basescan.org/tx/' },
-  { net: 'arb-mainnet', label: 'Arbitrum', native: 'ETH', explorerTx: 'https://arbiscan.io/tx/' },
+  { net: 'eth-mainnet', chainId: 1, label: 'Ethereum', native: 'ETH', explorerTx: 'https://etherscan.io/tx/' },
+  { net: 'base-mainnet', chainId: 8453, label: 'Base', native: 'ETH', explorerTx: 'https://basescan.org/tx/' },
+  { net: 'arb-mainnet', chainId: 42161, label: 'Arbitrum', native: 'ETH', explorerTx: 'https://arbiscan.io/tx/' },
   // Data API support (priced holdings + native tokens) probed live 2026-09-04.
-  { net: 'opt-mainnet', label: 'Optimism', native: 'ETH', explorerTx: 'https://optimistic.etherscan.io/tx/' },
+  { net: 'opt-mainnet', chainId: 10, label: 'Optimism', native: 'ETH', explorerTx: 'https://optimistic.etherscan.io/tx/' },
   // Arbitrum Orbit L2 (chain 4663, mainnet 2026-07-01) — Data API + Transfers
   // API support probed live 2026-07-13; tokenized stocks trade here on Uniswap.
-  { net: 'robinhood-mainnet', label: 'Robinhood Chain', native: 'ETH', explorerTx: 'https://robinhoodchain.blockscout.com/tx/' },
+  // The Data API INDEXES the stocks but never PRICES them (AAPL came back
+  // with tokenPrices: [] on 2026-09-08) — see the curated keep below.
+  { net: 'robinhood-mainnet', chainId: 4663, label: 'Robinhood Chain', native: 'ETH', explorerTx: 'https://robinhoodchain.blockscout.com/tx/' },
 ]
 
 const NETWORKS = CHAINS.map((c) => c.net)
@@ -124,8 +128,14 @@ export async function getMultichainPortfolio(address: string, onlyNet?: string):
     const usdStr = (t.tokenPrices ?? []).find((p) => (p.currency ?? 'usd').toLowerCase() === 'usd')?.value
     const priceUsd = usdStr != null && Number.isFinite(Number(usdStr)) ? Number(usdStr) : null
     const valueUsd = priceUsd === null ? null : Math.round(balance * priceUsd * 100) / 100
-    // Drop unpriced non-native dust (spam airdrops) — keep native even if unpriced.
-    if (!isNative && (valueUsd === null || valueUsd < 0.01)) continue
+    // Drop unpriced non-native dust (spam airdrops) — keep native even if
+    // unpriced. A token on the chain's CURATED list is never spam: Robinhood
+    // Chain's stocks arrive here unpriced, and dropping them hid a just-bought
+    // AAPL from the wallet drawer (2026-09-08). The caller prices those rows
+    // itself (lib/wallet-view priceUnpricedStockRows); the list is warmed
+    // there too — an unwarmed list simply keeps nothing extra.
+    const curated = !isNative && !!t.tokenAddress && dynamicTokenByAddress(t.tokenAddress, chain.chainId) !== undefined
+    if (!isNative && !curated && (valueUsd === null || valueUsd < 0.01)) continue
     seenChains.add(chain.label)
     holdings.push({
       symbol,

@@ -46,7 +46,7 @@ import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessag
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txChainOf } from '../lib/transaction-layer'
 import { resolveToken, COW_API_BASE, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, COW_APP_DATA_HASH, COW_CANONICAL_APP_DATA_HASHES, cowAppDataJson, cowAppDataHash, cowAppDataBpsOf, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
-import { primeTokenList } from '../lib/token-list'
+import { ensureTokenList, primeTokenList } from '../lib/token-list'
 import { pairStockToken, stockChipLabel } from '../lib/stock-pairing'
 import { chartPairFor, changePct24h, aggregateCandles, type Candle } from '../lib/charts'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
@@ -132,7 +132,7 @@ import {
 import { HOUSE_LINKS, houseLinkMarks } from '../lib/house-links'
 import { EXPLAINER_VIDEO, explainerPosterUrl, explainerWatchUrl, isoDuration } from '../lib/explainer-video'
 import { isDbChatId } from '../lib/chat-ids'
-import { gasStateFor, mergeChains, type RpcChainRead, type WalletView } from '../lib/wallet-view'
+import { gasStateFor, mergeChains, robinhoodStockTokens, type RpcChainRead, type WalletView } from '../lib/wallet-view'
 import { arrivalPhrase, detectArrival, fundWaitExpired, fundWaitKey, pollDelayMs, FUND_WAIT_TTL_MS, FUND_WATCH_MAX_MS } from '../lib/funding-arrival'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
@@ -8336,6 +8336,68 @@ async function main() {
     check('wallet merge: a chain the RPC did not answer is flagged unread, never rendered as zero', unread.unread === true && unread.holdings.length === 0)
     const indexOnly = mergeChains([eth], new Map(), [{ symbol: 'ETH', address: '0x0', balance: '0.5', priceUsd: null, valueUsd: 1200, native: true, chain: 'Ethereum' }], null)[0]
     check('wallet merge: with no RPC read and no price, Alchemy native + its own valueUsd carry the row', indexOnly.nativeEth === 0.5 && indexOnly.nativeUsd === 1200)
+
+    // Robinhood Chain stocks in the drawer (2026-09-08, Nate's Stripe → AAPL
+    // drill): the index lists 4663's stocks UNPRICED and the merge's spam
+    // filter dropped them, so a just-bought AAPL never showed. Now the
+    // chain read carries every curated stock the wallet holds (Multicall3
+    // over the warmed list, infra excluded), RPC wins over the index by
+    // address, and each stock row wears the splash card's own chips.
+    const rhC = APP_CHAINS.find((c) => c.id === 4663)!
+    const aapl = '0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9'
+    // Against the LIVE warmed list (never primeTokenList here — a prime is
+    // process-wide and would replace the list the funding-compile checks
+    // below depend on; that bit on 2026-09-08 as three "doesn't list GOOGL"
+    // reds). The cut is: every curated row minus the stable + wrapped-gas
+    // infra classes, so AAPL/NVDA are stocks and USDG/WETH are not.
+    await ensureTokenList(4663)
+    const stockSyms = new Set(robinhoodStockTokens().map((t) => t.symbol))
+    check(
+      `wallet stocks: the curated 4663 list minus its two infra classes (stable, wrapped gas) IS the stock list (${stockSyms.size} stocks)`,
+      stockSyms.size >= 100 && stockSyms.has('AAPL') && stockSyms.has('NVDA') && !stockSyms.has('USDG') && !stockSyms.has('WETH') && !stockSyms.has('USDE'),
+      [...stockSyms].slice(0, 8).join(','),
+    )
+    const rhRpc = new Map<number, RpcChainRead>([
+      [4663, { chainId: 4663, nativeEth: 0.00073, stable: { symbol: 'USDG', address: rhC.tokens.USDG.address, balance: 0.323 }, tokens: [{ symbol: 'AAPL', address: aapl, balance: 0.0376, stock: true }] }],
+    ])
+    const rhMerged = mergeChains([rhC], rhRpc, [
+      // the index's stale, unpriced view of the same stock (1 block behind the buy)
+      { symbol: 'AAPL', address: aapl.toLowerCase(), balance: '0.02', priceUsd: null, valueUsd: null, chain: 'Robinhood Chain' },
+    ], 2477)[0]
+    const aaplRow = rhMerged.holdings.find((h) => h.symbol === 'AAPL')
+    check(
+      'wallet stocks: the chain-read AAPL row replaces the stale indexed one (0.0376, not 0.02) and stays unpriced until the venue quoter runs',
+      !!aaplRow && aaplRow.balance === '0.0376' && aaplRow.priceUsd === null && rhMerged.holdings.filter((h) => h.symbol === 'AAPL').length === 1,
+      JSON.stringify(rhMerged.holdings.map((h) => [h.symbol, h.balance, h.valueUsd])),
+    )
+    check(
+      'wallet stocks: a held stock row wears Buy more / DCA / Sell chips whose asks are native Robinhood-Chain builds; a sub-$1 USDG row wears none',
+      JSON.stringify(aaplRow?.actions?.map((a) => a.label)) === JSON.stringify(['Buy more AAPL', 'DCA $10 weekly', 'Sell AAPL']) &&
+        aaplRow?.actions?.[2]?.prompt === 'Sell all my AAPL for USDG on Robinhood Chain' && parseSwapIntent(aaplRow.actions[2].prompt).sellAll === true &&
+        !rhMerged.holdings.find((h) => h.symbol === 'USDG')?.actions,
+      JSON.stringify(aaplRow?.actions),
+    )
+    // The index side of the same fix: a curated-but-unpriced token is never
+    // "spam"; the drawer renders the chips and hands a tap to the composer.
+    const alchemySrc = await readFile(new URL('../lib/alchemy.ts', import.meta.url), 'utf8')
+    const panelSrc = await readFile(new URL('../components/WalletPanel.tsx', import.meta.url), 'utf8')
+    check(
+      'wallet stocks: lib/alchemy keeps curated unpriced tokens (dynamicTokenByAddress) and WalletPanel renders row actions into the composer prefill',
+      /dynamicTokenByAddress\(t\.tokenAddress, chain\.chainId\)/.test(alchemySrc) && /!isNative && !curated &&/.test(alchemySrc) &&
+        /h\.actions\.map\(/.test(panelSrc) && /setComposerPrefill\(prompt\)/.test(panelSrc) && /onAsk=\{askFromRow\}/.test(panelSrc),
+    )
+    // Over HTTP against the real chain: the drill wallet that bought AAPL on
+    // 2026-09-08. Structure is pinned unconditionally; the AAPL row is pinned
+    // while the wallet still holds it (a later sell empties it honestly).
+    const wvRes = await fetch(`${BASE}/api/wallet?address=0xfef4feed2c57a5dbaa5a0c553aa7a0a0fd66d393&fresh=1`)
+    const wv = (await wvRes.json()) as WalletView
+    const wvRh = wv.chains?.find((c) => c.id === 4663)
+    const wvStocks = (wvRh?.holdings ?? []).filter((h) => h.actions?.some((a) => /^Sell /.test(a.label)))
+    check(
+      `wallet stocks: /api/wallet lists Robinhood Chain, and every held stock row is priced and carries its chips (${wvStocks.map((h) => h.symbol).join(',') || 'none held'})`,
+      wvRes.status === 200 && !!wvRh && wvStocks.every((h) => typeof h.priceUsd === 'number' && h.priceUsd > 0 && (h.actions?.length ?? 0) >= 3),
+      JSON.stringify(wvRh?.holdings.map((h) => [h.symbol, h.balance, h.priceUsd, h.actions?.length ?? 0])),
+    )
 
     // Arrival detection — the watcher's one rule.
     check('arrival: dust under the floors is not a delivery', detectArrival({ eth: 0, stable: 0 }, { eth: 0.00005, stable: 0.2 }, 2477) === null)
