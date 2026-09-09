@@ -9,32 +9,17 @@
 import { Wallet } from 'lucide-react'
 import type { PortfolioDisplay, PortfolioHolding } from '@/lib/portfolio-display'
 import { ChartHoverButton } from '@/components/TokenChartButton'
+import TokenIcon from '@/components/TokenIcon'
 
 const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 const shortAddr = (a: string) => (a.length > 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a)
 
-// Stable accent hue per symbol so USDC looks the same in every card.
-function hueOf(symbol: string): number {
-  let h = 0
-  for (let i = 0; i < symbol.length; i++) h = (h * 31 + symbol.charCodeAt(i)) % 360
-  return h
-}
-
+/** One holding's mark. TokenIcon owns the art (company marks for Robinhood
+ *  Chain equities, coin marks elsewhere) and falls back to its own
+ *  deterministic monogram — the card no longer keeps a second one. */
 function TokenDot({ h }: { h: PortfolioHolding }) {
-  const hue = hueOf(h.symbol)
-  return (
-    <span
-      className="grid h-7 w-7 flex-shrink-0 place-items-center rounded-full text-[10px] font-semibold"
-      style={{
-        background: `hsl(${hue} 60% 50% / 0.15)`,
-        color: `hsl(${hue} 70% 70%)`,
-        border: `1px solid hsl(${hue} 60% 50% / 0.25)`,
-      }}
-    >
-      {h.symbol.replace(/[^A-Za-z0-9]/g, '').slice(0, 3) || '?'}
-    </span>
-  )
+  return <TokenIcon symbol={h.symbol} size={28} chain={h.chain} />
 }
 
 export default function PortfolioCard({ data }: { data: PortfolioDisplay }) {

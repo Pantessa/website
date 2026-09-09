@@ -635,7 +635,9 @@ function HoldingsBody({ tile, onPick }: { tile: HoldingsTile; onPick: (p: string
               key={id}
               left={
                 <div className="flex min-w-0 items-center gap-2">
-                  <TokenIcon symbol={h.symbol} size={24} />
+                  {/* The row's own chain when the tile is multichain, else
+                      the tile's — a company mark is only right on 4663. */}
+                  <TokenIcon symbol={h.symbol} size={24} chain={h.chain ?? tile.chain} />
                   <span className="font-medium text-white">{h.symbol}</span>
                   {h.native && <span className="mono text-[9px] text-[color:var(--muted-2)]">native</span>}
                   {h.chain && <span className="rounded bg-white/5 px-1 py-0.5 text-[9px] text-[color:var(--muted-2)]">{h.chain}</span>}
