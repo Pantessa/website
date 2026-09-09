@@ -23,7 +23,73 @@ interface TileBase {
   subtitle?: string
   /** Suggested prompts that carry this tile's context into chat. */
   prompts: SuggestedPrompt[]
+  /** The card's chart, as NUMBERS (the one place a tile ships numbers: the
+   *  display rows stay pre-formatted strings, the viz is a typed chart
+   *  contract the client draws — see TileViz). Absent → rows only. */
+  viz?: TileViz
+  /** What this card knows about where the wallet's money sits, for the
+   *  splash hero's money map. Buckets are disjoint BY CONSTRUCTION (see
+   *  MoneyBucket) so summing every card's facts never double-counts. */
+  facts?: MoneyFact[]
 }
+
+// ── The money map ────────────────────────────────────────────────────────────
+// One bar across the top of the splash: every dollar the cards can see,
+// bucketed by what it's DOING. Ownership rule (never overlap):
+//   · the wallet briefing owns ETH + USDC on the funding-scan chains, every
+//     perp position, and stranded balances;
+//   · protocol cards own what they hold (Aave/Lido → earning; Robinhood →
+//     stocks + its own USDG/ETH, since 4663 is outside the scan);
+//   · the holdings card owns the long tail (everything that is NOT ETH/USDC
+//     and not a protocol receipt token).
+// A bucket a card can't price contributes nothing (Morpho has no USD in its
+// payload) — the map is "what's on this screen", never a net-worth claim.
+export type MoneyBucket = 'earning' | 'protected' | 'stocks' | 'spot' | 'idle' | 'risk' | 'stuck'
+
+export interface MoneyFact {
+  bucket: MoneyBucket
+  usd: number
+  /** Where/what ("USDC on Base", "AAPL on Robinhood Chain", "supplied on Aave"). */
+  label: string
+}
+
+export interface MoneyMap {
+  facts: MoneyFact[]
+  /** Chain words the wallet-level scan actually read — the coverage line. */
+  readChains: string[]
+  /** Chains whose read failed: unknown, never "empty". */
+  failedChains: string[]
+}
+
+// ── Tile visualizations (numbers the client charts) ──────────────────────────
+
+export interface VizSlice {
+  label: string
+  usd: number
+  /** Token symbol behind the slice (drives the mark + sparkline). */
+  symbol?: string
+}
+
+export type TileViz =
+  /** Holdings distribution — a segmented bar + legend (portfolio cards). */
+  | { kind: 'allocation'; slices: VizSlice[]; totalUsd: number }
+  /** Lending book: supplied vs borrowed twin bars + a health-factor gauge
+   *  (Aave, Morpho). Nulls = unknown/unpriced, drawn as absent, never zero. */
+  | { kind: 'lending'; suppliedUsd: number | null; borrowedUsd: number | null; healthFactor: number | null; netApyPct: number | null }
+  /** A single earning principal at a rate → the 12-month projection (Lido). */
+  | { kind: 'yield'; principalUsd: number; aprPct: number; caption: string }
+  /** Perp positions: PnL bars + distance-to-liquidation (Hyperliquid). */
+  | {
+      kind: 'positions'
+      accountUsd: number | null
+      items: { coin: string; side: 'long' | 'short'; valueUsd: number; pnlUsd: number; leverage: number | null; liqDistancePct: number | null }[]
+    }
+  /** Recurring buys: what's committed per period + each schedule's state. */
+  | {
+      kind: 'cadence'
+      monthlyUsd: number
+      items: { token: string; buyUsd: number; cadence: string; state: 'due' | 'live' | 'bought' | 'paused' | 'auto' | 'auto-error' }[]
+    }
 
 export interface HoldingRow {
   symbol: string
@@ -83,6 +149,9 @@ export interface ProposalRow {
    *  inline voting (App Mode's governance panel). Absent on rows cached
    *  before this field existed → treat as single-choice. */
   type?: string
+  /** The leading choice's share of the vote so far (0–100), or null when no
+   *  votes yet — drawn as a thin bar under the row. */
+  leadingPct?: number | null
 }
 
 export interface SpaceRow {
@@ -141,6 +210,9 @@ export interface StatRow {
    *  isn't itself a symbol. Chartability is decided client-side by
    *  lib/charts' resolver; unresolvable symbols show nothing. */
   chartSymbol?: string | null
+  /** 0–100 progress behind the row (an order's fill, a queue's progress) —
+   *  drawn as a thin bar under the row. Null/absent → no bar. */
+  progressPct?: number | null
 }
 
 /** One owned NFT for the gallery tile. Values are PRE-FORMATTED strings
@@ -191,6 +263,9 @@ export type SplashTile = HoldingsTile | ProposalsTile | RowsTile | ActivityTile 
 export interface SplashResponse {
   address: string
   tiles: SplashTile[]
+  /** The wallet-level money map (absent on serversOnly delta scans; null
+   *  when the wallet scan failed). Card facts merge into it client-side. */
+  map?: MoneyMap | null
 }
 
 /** Which servers can paint a splash/action tile — mirror of the source

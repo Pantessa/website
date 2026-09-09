@@ -2028,6 +2028,26 @@ async function main() {
       'splash: serversOnly with an unknown slug settles empty (no wallet tiles, no crash)',
       unknownSlug.status === 200 && Array.isArray(unknownBody.tiles) && unknownBody.tiles.length === 0,
     )
+    // The money map (the splash hero's bar) rides only FULL scans: a delta
+    // refetch already has one on screen, so the serversOnly body carries no
+    // `map` key at all; a full scan always carries it (null = the wallet read
+    // failed, never absent) — the client draws nothing for null.
+    const deltaBody = (await fetch(`${BASE}/api/splash`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' },
+      body: JSON.stringify({ address: '0x000000000000000000000000000000000000dEaD', servers: [], serversOnly: true }),
+    }).then((r) => r.json())) as Record<string, unknown>
+    check('splash: a serversOnly delta body carries no money map key', !('map' in deltaBody))
+    const fullScan = await fetch(`${BASE}/api/splash`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' },
+      body: JSON.stringify({ address: '0x000000000000000000000000000000000000dEaD', servers: [] }),
+    }).then((r) => r.json() as Promise<{ address?: string; tiles?: unknown[]; map?: { facts: unknown[]; readChains: string[]; failedChains: string[] } | null }>)
+    check(
+      'splash: a full scan answers with the money map (facts + coverage) or an explicit null',
+      'map' in fullScan && (fullScan.map === null || (Array.isArray(fullScan.map?.facts) && Array.isArray(fullScan.map?.readChains) && Array.isArray(fullScan.map?.failedChains))),
+      JSON.stringify(fullScan).slice(0, 200),
+    )
   }
 
   // ── Switchboard route preview (public, read-only, no spend) ───────────────

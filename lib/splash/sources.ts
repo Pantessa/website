@@ -30,7 +30,8 @@ import { morphoChainName } from '@/lib/morpho-exec'
 import { hasUniswapHistory } from './affinity'
 import { openseaEnabled } from '@/lib/opensea'
 import { nftGalleryChains, readNftGallery } from '@/lib/nft-gallery'
-import type { EmptyTile, HoldingRow, ProposalRow, SpaceRow, SplashTile, StatRow, SuggestedPrompt } from './types'
+import type { EmptyTile, HoldingRow, MoneyFact, ProposalRow, SpaceRow, SplashTile, StatRow, SuggestedPrompt, TileViz } from './types'
+import { allocationViz, holdingsFacts, usdOfString } from './viz'
 
 /** Snapshot's stamp service resolves a space logo from its id — always
  *  available, no IPFS gateway flakiness. */
@@ -151,9 +152,11 @@ async function buildMultichainTiles(address: string, server: McpServer, chain?: 
         : `${holdings.length} across ${portfolio.chainsWithHoldings} ${portfolio.chainsWithHoldings === 1 ? 'chain' : 'chains'}`,
       chain: scope,
       totalUsd: portfolio.totalUsd,
-      // Keep the card compact — it shares one uniform-height grid with
-      // single-section cards, and the subtitle already carries the full count.
-      holdings: holdings.slice(0, 4).map((h) => ({
+      // The bar + the money map read the WHOLE portfolio; the rows stay the
+      // top five so the card reads at a glance.
+      viz: allocationViz(holdings) ?? undefined,
+      facts: holdingsFacts(holdings, chain?.name ?? 'Base'),
+      holdings: holdings.slice(0, 5).map((h) => ({
         ...h,
         actions: holdingRowActions(h, `on ${h.chain ?? chain?.name ?? 'Base'}`),
         // Explorer token page for real contracts (native pseudo-rows get null).
@@ -198,6 +201,8 @@ async function buildBaseFallbackTile(call: McpCaller, address: string, server: M
     subtitle: `via ${server.name}`,
     chain: label,
     totalUsd: typeof data.totalUsd === 'number' ? data.totalUsd : null,
+    viz: allocationViz(holdings) ?? undefined,
+    facts: holdingsFacts(holdings, label),
     holdings: holdings.slice(0, 5).map((h) => ({
       ...h,
       actions: holdingRowActions(h, `on ${label}`),
@@ -264,6 +269,8 @@ const snapshotSource: SplashSource = {
         ? p.scores.reduce((best, s, i, arr) => (s > arr[best] ? i : best), 0)
         : -1
       const hasVotes = Array.isArray(p.scores) && p.scores.some((s) => s > 0)
+      const total = hasVotes ? p.scores!.reduce((n, x) => n + (x > 0 ? x : 0), 0) : 0
+      const leadingPct = hasVotes && leadIdx >= 0 && total > 0 ? Math.round((p.scores![leadIdx] / total) * 100) : null
       return {
         id: p.id,
         title: p.title,
@@ -272,6 +279,7 @@ const snapshotSource: SplashSource = {
         avatarUrl: spaceLogo(p.space.id),
         choices: p.choices ?? [],
         leadingChoice: hasVotes && leadIdx >= 0 ? p.choices[leadIdx] ?? null : null,
+        leadingPct,
         endsAt: p.end,
         ...(typeof p.type === 'string' ? { type: p.type } : {}),
       }
@@ -365,6 +373,7 @@ const cowSource: SplashSource = {
           label: `${pair} · ${o.kind}`,
           value: o.filledPct != null ? `${Math.round(o.filledPct)}% filled` : o.status,
           sub: `open on ${o.chain}`,
+          progressPct: o.filledPct != null ? Math.max(0, Math.min(100, o.filledPct)) : null,
           actions: [
             { label: 'Check status', prompt: `Is my ${pair} CoW order close to filling?` },
             { label: 'Cancel order', prompt: `Help me cancel my ${pair} CoW order` },
@@ -457,6 +466,28 @@ const hyperliquidSource: SplashSource = {
         if (prompts.length < 3) prompts.push({ label: `Close ${p.coin}`, prompt: `Close my ${p.coin} ${side} on Hyperliquid` })
       }
     }
+    // The chart: PnL per position + distance to liquidation (mark derived
+    // from the venue's own positionValue / size — never a second price feed).
+    const viz: TileViz = {
+      kind: 'positions',
+      accountUsd: accountValue > 0 ? accountValue : null,
+      items: positions.slice(0, 5).flatMap((p) => {
+        const size = Number(p.szi ?? 0)
+        const valueUsd = Math.abs(Number(p.positionValue ?? 0))
+        if (!p.coin || !(valueUsd > 0)) return []
+        const mark = size !== 0 ? valueUsd / Math.abs(size) : NaN
+        const liq = Number(p.liquidationPx)
+        const liqDistancePct = Number.isFinite(mark) && mark > 0 && Number.isFinite(liq) && liq > 0 ? Math.abs(mark - liq) / mark * 100 : null
+        return [{
+          coin: p.coin,
+          side: size >= 0 ? ('long' as const) : ('short' as const),
+          valueUsd,
+          pnlUsd: Number(p.unrealizedPnl ?? 0) || 0,
+          leverage: typeof p.leverage?.value === 'number' ? p.leverage.value : null,
+          liqDistancePct: liqDistancePct != null ? Math.round(liqDistancePct * 10) / 10 : null,
+        }]
+      }),
+    }
     const withdrawable = Number(data.perp?.withdrawableUsd ?? 0)
     if (positions.length === 0 && withdrawable >= 12) {
       prompts.push({ label: 'Long $12 of ETH', prompt: 'Long $12 of ETH on Hyperliquid' })
@@ -471,6 +502,7 @@ const hyperliquidSource: SplashSource = {
         accountValue > 0
           ? { value: `$${accountValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}`, caption: 'account value' }
           : undefined,
+      viz: viz.items.length > 0 ? viz : undefined,
       rows,
       prompts,
     }
@@ -569,6 +601,31 @@ const aaveSource: SplashSource = {
     }
     prompts.push({ label: 'How is my position?', prompt: 'Summarize my Aave position — health factor, borrowing power, anything at risk?' })
 
+    // The chart + the money map: every USD the payload already states,
+    // recovered from its own strings (never re-priced). Supplied money is
+    // EARNING (collateral or not — it accrues the supply APY either way).
+    const sumUsd = (xs: (string | null | undefined)[]) => {
+      let any = false
+      let total = 0
+      for (const x of xs) {
+        const n = usdOfString(x)
+        if (n == null) continue
+        any = true
+        total += n
+      }
+      return any ? Math.round(total * 100) / 100 : null
+    }
+    const suppliedUsd = sumUsd(supplies.map((x) => x.balanceUsd))
+    const borrowedUsd = sumUsd(borrows.map((x) => x.debtUsd))
+    const viz: TileViz = {
+      kind: 'lending',
+      suppliedUsd,
+      borrowedUsd: borrows.length > 0 ? borrowedUsd : 0,
+      healthFactor: Number.isFinite(hf) && borrows.length > 0 ? hf : null,
+      netApyPct: typeof pos?.netApyPct === 'number' ? pos.netApyPct : null,
+    }
+    const facts: MoneyFact[] = suppliedUsd != null && suppliedUsd > 0 ? [{ bucket: 'earning', usd: suppliedUsd, label: 'supplied on Aave' }] : []
+
     return {
       id: 'aave-position',
       mcpSlug: server.slug,
@@ -577,6 +634,8 @@ const aaveSource: SplashSource = {
       title: 'Your Aave position',
       subtitle: `${supplies.length} supplied · ${borrows.length} borrowed${pos?.netApyPct != null ? ` · net ${pos.netApyPct}% APY` : ''}`,
       headline: pos?.netBalanceUsd ? { value: pos.netBalanceUsd, caption: 'net balance on Aave' } : undefined,
+      viz,
+      facts,
       rows,
       prompts,
     }
@@ -754,6 +813,11 @@ const morphoSource: SplashSource = {
 
     const chainNames = [...new Set(positions.map((p) => p.chainName))]
     const marketCount = positions.length
+    // No USD in the payload → no bars; the health factor is the one chartable
+    // number, and only against real debt.
+    const viz: TileViz | undefined = atRisk
+      ? { kind: 'lending', suppliedUsd: null, borrowedUsd: null, healthFactor: atRisk.healthFactor as number, netApyPct: null }
+      : undefined
     // ONE lent position is a real headline number; several have no honest
     // single total (different assets, no USD in the payload) — rows only.
     const only = supplied.length === 1 ? supplied[0] : null
@@ -770,6 +834,7 @@ const morphoSource: SplashSource = {
             caption: `lent on Morpho${only.supplied?.apy ? ` · ${only.supplied.apy} APY` : ''}`,
           }
         : undefined,
+      viz,
       rows: rows.slice(0, 6),
       prompts,
     }
@@ -844,6 +909,15 @@ const lidoSource: SplashSource = {
       headline: lidoUsd(pos.totalStaked?.usd)
         ? { value: lidoUsd(pos.totalStaked?.usd)!, caption: `${pos.totalStaked?.stEth} stETH total staked` }
         : undefined,
+      // The projection: the staked USD at today's APR, drawn forward a year.
+      viz:
+        typeof pos.totalStaked?.usd === 'number' && pos.totalStaked.usd > 0 && typeof pos.currentAprPct === 'number'
+          ? { kind: 'yield', principalUsd: pos.totalStaked.usd, aprPct: pos.currentAprPct, caption: 'stETH rebases daily' }
+          : undefined,
+      facts:
+        typeof pos.totalStaked?.usd === 'number' && pos.totalStaked.usd > 0
+          ? [{ bucket: 'earning', usd: Math.round(pos.totalStaked.usd * 100) / 100, label: 'staked with Lido' }]
+          : [],
       rows,
       prompts,
     }
@@ -927,6 +1001,14 @@ const robinhoodSource: SplashSource = {
       actions: robinhoodRowActions(h),
     }))
     const stocks = holdings.filter((h) => h.kind === 'stock' || h.kind === 'etf').length
+    // 4663 sits outside the briefing's funding scan, so this card owns every
+    // dollar here: stocks are stocks, USDG is idle stable, ETH is spot.
+    const facts: MoneyFact[] = holdings.flatMap((h) => {
+      const usd = typeof h.usd === 'number' && h.usd > 0 ? Math.round(h.usd * 100) / 100 : 0
+      if (!usd) return []
+      const bucket = h.kind === 'stock' || h.kind === 'etf' ? 'stocks' : h.symbol === 'USDG' ? 'idle' : 'spot'
+      return [{ bucket, usd, label: `${h.symbol} on Robinhood Chain` } as MoneyFact]
+    })
     return {
       id: 'robinhood-portfolio',
       mcpSlug: server.slug,
@@ -936,6 +1018,8 @@ const robinhoodSource: SplashSource = {
       subtitle: stocks > 0 ? `${stocks} ${stocks === 1 ? 'stock' : 'stocks'} · ${holdings.length} total` : `${holdings.length} on Robinhood Chain`,
       chain: 'Robinhood Chain',
       totalUsd: typeof data.totalUsd === 'number' ? data.totalUsd : null,
+      viz: allocationViz(holdings.map((h) => ({ symbol: h.symbol, valueUsd: h.usd }))) ?? undefined,
+      facts,
       holdings: rows,
       prompts: robinhoodPrompts(holdings),
     }
@@ -1275,6 +1359,7 @@ function holdingsTileFromPortfolio(data: unknown, server: SplashServer): SplashT
     subtitle: chainLabels.length ? `${holdings.length} across ${chainLabels.length} ${chainLabels.length === 1 ? 'chain' : 'chains'}` : `${holdings.length} holdings`,
     chain: chainLabels.join(' · ') || 'multichain',
     totalUsd: typeof p.totalUsd === 'number' ? p.totalUsd : null,
+    viz: allocationViz(holdings) ?? undefined,
     holdings: holdings.slice(0, 6),
     prompts: prompts.length ? prompts : [{ label: 'Review my holdings', prompt: 'What can I do with the tokens in my wallet?' }],
   }

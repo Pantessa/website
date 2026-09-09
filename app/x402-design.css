@@ -27,6 +27,9 @@
     --done: #34d399;
     --live: var(--accent);
     --fail: #f87171;
+    /* Idle-money amber — the splash money map's "sitting there" segment and
+       any "earning nothing" cue. Light re-inks it below. */
+    --gold: #f0b454;
     /* ── TYPE SYSTEM ──────────────────────────────────
        Single source of truth for the four families so every surface pulls
        from the same place (kills the ad-hoc mono/sans drift on /activity).
@@ -4513,6 +4516,7 @@
        contrast with a --bg ink); the dark stages below keep the bright one. */
     --accent: #0e8f62;
     --sell: #c73e43;
+    --gold: #a3720c;
     --done: #0b7a53;
     --fail: #c73e43;
     --gem-1: #084A33;
