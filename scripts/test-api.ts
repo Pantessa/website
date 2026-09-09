@@ -3626,9 +3626,14 @@ async function main() {
       // Keyboard hints and hover verbs never reach a touch screen.
       const chatIface = await readFile(new URL('../components/ChatInterface.tsx', import.meta.url), 'utf8')
       const emptyState = await readFile(new URL('../components/chat/EmptyState.tsx', import.meta.url), 'utf8')
+      // The voice door re-pinned this (2026-09-09): the hint line doubles as
+      // the mic's status ("Listening…" / "Microphone blocked"), and a phone is
+      // where the mic matters most — so the touch-hide applies ONLY in the
+      // idle state, and the keyboard hint is the idle branch of a ternary.
       check(
-        'mobile: the Shift+Enter composer hint hides on touch devices',
-        /'\[@media\(hover:none\)\]:hidden',[\s\S]{0,400}Enter to send · Shift\+Enter for newline/.test(chatIface),
+        'mobile: the Shift+Enter composer hint hides on touch devices (idle only — the voice states stay visible)',
+        /voiceState === 'idle' && '\[@media\(hover:none\)\]:hidden',[\s\S]{0,900}: 'Enter to send · Shift\+Enter for newline'/.test(chatIface) &&
+          /voiceState === 'listening'[\s\S]{0,200}'Listening… tap the mic to send · Esc to cancel'/.test(chatIface),
       )
       check('mobile: the empty state never tells a phone to hover a message', !/hover a sent/.test(emptyState))
       // The spine bar is the phone's primary nav: 9px mono labels read as
