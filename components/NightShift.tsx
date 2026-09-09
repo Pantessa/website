@@ -28,7 +28,10 @@ const C = 160
 const angleOf = (h: number) => (h / 24) * 360 - 90
 const pointAt = (h: number, r = R) => {
   const a = (angleOf(h) * Math.PI) / 180
-  return { x: C + Math.cos(a) * r, y: C + Math.sin(a) * r }
+  // Rounded: Node's and the browser's Math.sin/cos differ in the last bits,
+  // and the raw floats made every tick's y1/y2 a server/client attribute
+  // mismatch on the landing (a hydration warning on each `/` load).
+  return { x: Math.round((C + Math.cos(a) * r) * 1000) / 1000, y: Math.round((C + Math.sin(a) * r) * 1000) / 1000 }
 }
 const pOf = (h: number) => (h - START_H) / (END_H - START_H)
 

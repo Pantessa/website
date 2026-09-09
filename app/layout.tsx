@@ -31,7 +31,7 @@ export const metadata: Metadata = {
   // Icons are file-based: app/icon.svg, app/icon.png, app/apple-icon.png —
   // Next App Router auto-generates the <link> tags, so no metadata.icons needed.
   // Card images are file-based too: app/opengraph-image.tsx + app/twitter-image.tsx
-  // render the "Mega dapps are here" card — no images entries needed here.
+  // render the "You have an intent. We do the rest." card — no images entries needed here.
   openGraph: {
     title: TITLE,
     description: SOCIAL_DESCRIPTION,
