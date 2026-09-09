@@ -25,6 +25,8 @@ import { callMcpTool } from '@/lib/mcp-call'
 import { overrideFreeMcpBase } from '@/lib/endpoint-planner'
 import { alchemyEnabled, getMultichainPortfolio, getRecentActivity } from '@/lib/alchemy'
 import { explorerTokenUrl, type AppChain } from '@/lib/chains'
+import { MORPHO_MCP_RE, type MorphoChainId, type MorphoPositionRow } from '@/lib/morpho-supply'
+import { morphoChainName } from '@/lib/morpho-exec'
 import { hasUniswapHistory } from './affinity'
 import { openseaEnabled } from '@/lib/opensea'
 import { nftGalleryChains, readNftGallery } from '@/lib/nft-gallery'
@@ -581,6 +583,199 @@ const aaveSource: SplashSource = {
   },
 }
 
+// ── Morpho (Blue) → the markets you're lending into (rows) ───────────────────
+// The generic featured path used to answer this slot with `markets` — venue /
+// chainId / "51 items", i.e. the protocol's catalogue and nothing about the
+// user (Nate, 2026-09-08: "it should display what pools I am earning on").
+// The MCP's `position` tool answers the real question, per chain: supplied
+// (earning), collateral (posted, earning nothing), debt, health factor.
+//
+// Morpho lives on Base (the service default) and Ethereum, so an unfiltered
+// splash scans BOTH in parallel. Amounts arrive as decimal strings in token
+// units and there is no USD anywhere in the payload — the tile shows the
+// token amount verbatim rather than inventing a price.
+
+/** Morpho on Base + Ethereum; the picker's other chains have no Morpho here
+ *  (Morpho-on-Robinhood-Chain is a different deployment, in the robinhood MCP). */
+const MORPHO_CHAIN_BY_KEY: Record<string, MorphoChainId> = { base: 8453, ethereum: 1 }
+const morphoMarketUrl = (chainId: MorphoChainId, marketId: string) =>
+  `https://app.morpho.org/${chainId === 1 ? 'ethereum' : 'base'}/market/${marketId}`
+
+/** One position row plus the chain it was read on (the payload is per-chain). */
+type MorphoScanRow = MorphoPositionRow & { chainId: MorphoChainId; chainName: string }
+
+/** "USDC / cbBTC (lltv 86.0%)" → { pool: 'USDC / cbBTC', lltv: '86.0%' }. */
+function splitMorphoMarket(market: string | undefined): { pool: string; lltv: string | null } {
+  const m = (market ?? '').match(/^(.*?)\s*\(lltv\s*([\d.]+%)\)\s*$/i)
+  return m ? { pool: m[1].trim(), lltv: m[2] } : { pool: (market ?? 'Morpho market').trim(), lltv: null }
+}
+
+/** Amount + symbol as ONE pre-formatted string (the tile-value contract):
+ *  trailing zeros trimmed, ≤6 decimals, never rounded up into money the
+ *  wallet doesn't have. */
+function morphoAmount(amount: string | undefined, asset: string | undefined): string {
+  const raw = (amount ?? '').trim()
+  const sym = (asset ?? '').trim()
+  if (!raw) return sym || '—'
+  const [int, dec = ''] = raw.split('.')
+  const trimmed = dec.slice(0, 6).replace(/0+$/, '')
+  return `${trimmed ? `${int}.${trimmed}` : int}${sym ? ` ${sym}` : ''}`
+}
+
+/** The chip suffix that pins an ask to the market's chain. Base is the Morpho
+ *  layer's parse default, so only Ethereum needs saying — parenthesized so
+ *  "…on Morpho" + the chain never reads as "on Morpho on Ethereum". Both
+ *  forms parse (lib/morpho-supply's chain slot); this one reads like English
+ *  once it lands in the composer. */
+const morphoChainSuffix = (chainId: MorphoChainId) => (chainId === 1 ? ' (Ethereum)' : '')
+
+const morphoSource: SplashSource = {
+  id: 'morpho',
+  // Same matcher as the chat layer's agent lookup (slug/name only — other
+  // MCPs mention Morpho in their descriptions).
+  match: (s) => MORPHO_MCP_RE.test(`${s.slug} ${s.name}`),
+  build: async (call, address, server, chain) => {
+    const chainIds: MorphoChainId[] = chain
+      ? MORPHO_CHAIN_BY_KEY[chain.key]
+        ? [MORPHO_CHAIN_BY_KEY[chain.key]]
+        : []
+      : [8453, 1]
+    if (chainIds.length === 0) return null
+
+    // One scan per chain, in parallel. A chain that fails contributes nothing;
+    // only an ALL-chains failure throws (→ the retryable error card, so "broke"
+    // stays distinguishable from "no position").
+    const scans = await Promise.all(
+      chainIds.map((chainId) =>
+        Promise.resolve()
+          .then(() => call('position', { user: address, chainId }))
+          .then((data) => {
+            const payload = data as { chain?: string; positions?: MorphoPositionRow[] }
+            const rows = Array.isArray(payload?.positions) ? payload.positions : []
+            const chainName = typeof payload?.chain === 'string' ? payload.chain : morphoChainName(chainId)
+            return rows.map((r): MorphoScanRow => ({ ...r, chainId, chainName }))
+          })
+          .catch(() => null),
+      ),
+    )
+    if (scans.every((s) => s === null)) throw new Error('Morpho position read failed on every chain')
+    const positions = scans.flatMap((s) => s ?? [])
+
+    const num = (s?: string | null): number => {
+      const n = Number(s)
+      return Number.isFinite(n) ? n : 0
+    }
+    const supplied = positions.filter((p) => num(p.supplied?.amount) > 0)
+    const borrowed = positions.filter((p) => num(p.borrowed?.amount) > 0)
+    const collateral = positions.filter((p) => num(p.collateral?.amount) > 0)
+    // Nothing anywhere → no card (the affinity contract).
+    if (supplied.length === 0 && borrowed.length === 0 && collateral.length === 0) return null
+
+    // The pool is the point; lltv is a LIQUIDATION number, so it rides the
+    // rows where it can hurt (collateral, debt) and stays off the lend row.
+    const context = (p: MorphoScanRow, note: string, withLltv = false): string => {
+      const { pool, lltv } = splitMorphoMarket(p.market)
+      return [pool, note, withLltv && lltv ? `lltv ${lltv}` : null, p.chainName].filter(Boolean).join(' · ')
+    }
+    const info = (p: MorphoScanRow) =>
+      p.marketId
+        ? { infoUrl: morphoMarketUrl(p.chainId, p.marketId), infoLabel: 'View market on Morpho' }
+        : {}
+
+    // The pools you're EARNING on lead — that's what the card is for.
+    const rows: StatRow[] = [
+      ...supplied.slice(0, 3).map((p) => ({
+        label: `${p.supplied?.asset ?? 'Asset'} lent`,
+        value: morphoAmount(p.supplied?.amount, p.supplied?.asset),
+        sub: context(p, p.supplied?.apy ? `earning ${p.supplied.apy} APY` : 'earning'),
+        tone: 'pos' as const,
+        chartSymbol: p.supplied?.asset ?? null,
+        actions: p.supplied?.asset
+          ? [{ label: `Withdraw all ${p.supplied.asset}`, prompt: `Withdraw all my ${p.supplied.asset} from Morpho${morphoChainSuffix(p.chainId)}` }]
+          : undefined,
+        ...info(p),
+      })),
+      ...borrowed.slice(0, 2).map((p) => ({
+        label: `${p.borrowed?.asset ?? 'Asset'} borrowed`,
+        value: morphoAmount(p.borrowed?.amount, p.borrowed?.asset),
+        sub: context(p, p.borrowed?.apy ? `${p.borrowed.apy} APY accruing` : 'accruing interest', true),
+        tone: 'neg' as const,
+        chartSymbol: p.borrowed?.asset ?? null,
+        actions: p.borrowed?.asset
+          ? [{ label: `Repay all ${p.borrowed.asset}`, prompt: `Repay all my ${p.borrowed.asset} on Morpho${morphoChainSuffix(p.chainId)}` }]
+          : undefined,
+        ...info(p),
+      })),
+      // Collateral is NOT a yield line — say so, so the card never reads as
+      // earning money it isn't.
+      ...collateral.slice(0, 2).map((p) => ({
+        label: `${p.collateral?.asset ?? 'Asset'} collateral`,
+        value: morphoAmount(p.collateral?.amount, p.collateral?.asset),
+        sub: context(p, 'posted · earns nothing, unlocks borrowing', true),
+        chartSymbol: p.collateral?.asset ?? null,
+        actions: p.collateral?.asset
+          ? [{ label: `Withdraw ${p.collateral.asset} collateral`, prompt: `Withdraw all my ${p.collateral.asset} collateral on Morpho${morphoChainSuffix(p.chainId)}` }]
+          : undefined,
+        ...info(p),
+      })),
+    ]
+    // The one number that can end badly — only meaningful against real debt.
+    const atRisk = borrowed
+      .filter((p) => typeof p.healthFactor === 'number' && Number.isFinite(p.healthFactor))
+      .sort((a, b) => (a.healthFactor as number) - (b.healthFactor as number))[0]
+    if (atRisk) {
+      const hf = atRisk.healthFactor as number
+      rows.push({
+        label: 'Health factor',
+        value: hf.toFixed(2),
+        sub: hf < 1.5 ? `${splitMorphoMarket(atRisk.market).pool} · getting close to liquidation` : `${splitMorphoMarket(atRisk.market).pool} · comfortable`,
+        tone: hf < 1.5 ? ('neg' as const) : ('pos' as const),
+      })
+    }
+
+    // Every chip round-trips a real parser (lib/morpho-supply) with LIVE
+    // amounts — repay first when there's debt, else withdraw what's lent.
+    const prompts: SuggestedPrompt[] = []
+    const firstBorrow = borrowed[0]
+    if (firstBorrow?.borrowed?.asset) {
+      prompts.push({
+        label: `Repay my ${firstBorrow.borrowed.asset}`,
+        prompt: `Repay all my ${firstBorrow.borrowed.asset} on Morpho${morphoChainSuffix(firstBorrow.chainId)}`,
+      })
+    }
+    const firstSupply = supplied[0]
+    if (firstSupply?.supplied?.asset && prompts.length < 2) {
+      prompts.push({
+        label: `Withdraw my ${firstSupply.supplied.asset}`,
+        prompt: `Withdraw all my ${firstSupply.supplied.asset} from Morpho${morphoChainSuffix(firstSupply.chainId)}`,
+      })
+    }
+    prompts.push({ label: 'What am I earning?', prompt: 'What am I earning on morpho?' })
+
+    const chainNames = [...new Set(positions.map((p) => p.chainName))]
+    const marketCount = positions.length
+    // ONE lent position is a real headline number; several have no honest
+    // single total (different assets, no USD in the payload) — rows only.
+    const only = supplied.length === 1 ? supplied[0] : null
+    return {
+      id: 'morpho-position',
+      mcpSlug: server.slug,
+      mcpName: server.name,
+      render: 'rows',
+      title: 'Your Morpho position',
+      subtitle: `${supplied.length > 0 ? `lending in ${supplied.length} ${supplied.length === 1 ? 'market' : 'markets'}` : `${marketCount} ${marketCount === 1 ? 'market' : 'markets'}`} · ${chainNames.join(' · ')}`,
+      headline: only
+        ? {
+            value: morphoAmount(only.supplied?.amount, only.supplied?.asset),
+            caption: `lent on Morpho${only.supplied?.apy ? ` · ${only.supplied.apy} APY` : ''}`,
+          }
+        : undefined,
+      rows: rows.slice(0, 6),
+      prompts,
+    }
+  },
+}
+
 // ── Lido slot → staking position + the guided stake-in moment ────────────────
 
 // The lido MCP prices in NUMBERS (`usd: 511.66`) — unlike aave, which hands
@@ -835,7 +1030,7 @@ const financeSource: SplashSource = {
 }
 
 /** All registered splash sources. Exported for tests; a new MCP appends here. */
-export const SPLASH_SOURCES: SplashSource[] = [walletSource, uniswapSource, snapshotSource, cowSource, hyperliquidSource, aaveSource, lidoSource, robinhoodSource, openseaSource, financeSource]
+export const SPLASH_SOURCES: SplashSource[] = [walletSource, uniswapSource, snapshotSource, cowSource, hyperliquidSource, aaveSource, morphoSource, lidoSource, robinhoodSource, openseaSource, financeSource]
 
 // ── Preview cards (the manual-pick exception) ────────────────────────────────
 // What each source's card says when the user hand-picked the MCP but the
@@ -887,6 +1082,14 @@ const SOURCE_PREVIEWS: Record<string, { message: string; prompts: SuggestedPromp
     prompts: [
       { label: 'Supply 10 USDC', prompt: 'Supply 10 USDC to Aave on Ethereum' },
       { label: 'Best supply APYs', prompt: 'What are the best supply APYs on Aave right now?' },
+    ],
+  },
+  morpho: {
+    message: 'Nothing lent on Morpho yet (Base or Ethereum). Lend an asset and the market you\u2019re earning in \u2014 amount, live APY, health factor \u2014 lives here.',
+    prompts: [
+      // Both round-trip the native Morpho layer (lib/morpho-supply).
+      { label: 'Lend 100 USDC', prompt: 'Lend 100 USDC on Morpho' },
+      { label: 'Best lending rates', prompt: 'What are the best supply APYs on Morpho right now?' },
     ],
   },
   lido: {

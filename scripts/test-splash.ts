@@ -12,6 +12,9 @@ import { parseUsd } from '@/components/AppModeWorkspace'
 import { touchesContracts, UNISWAP_CONTRACTS } from '@/lib/splash/affinity'
 import type { McpServer } from '@/lib/store'
 import type { HoldingsTile, ProposalsTile, RowsTile } from '@/lib/splash/types'
+import type { AppChain } from '@/lib/chains'
+// The real Morpho parsers — a chip that doesn't round-trip these is a lie.
+import { parseMorphoLend, parseMorphoOp } from '@/lib/morpho-supply'
 
 let passed = 0
 let failed = 0
@@ -34,6 +37,9 @@ const cow = SPLASH_SOURCES.find((s) => s.id === 'cow')!
 const hl = SPLASH_SOURCES.find((s) => s.id === 'hyperliquid')!
 const aave = SPLASH_SOURCES.find((s) => s.id === 'aave')!
 const lido = SPLASH_SOURCES.find((s) => s.id === 'lido')!
+const morpho = SPLASH_SOURCES.find((s) => s.id === 'morpho')!
+/** The fake MCP caller shape (name + args) — chain-aware sources read args. */
+type McpCall = (name: string, args: Record<string, unknown>) => Promise<unknown>
 
 async function run() {
   console.log('splash sources — uniswap (holdings)')
@@ -173,6 +179,175 @@ async function run() {
 
     const empty = async () => ({ note: 'No Aave v4 positions for this address.', positions: [], supplies: [], borrows: [] })
     check('no position contributes no tile', (await aave.build(empty, ADDR, srv('aave-mcp-yeetful', 'Aave MCP · Pantessa'))) === null)
+  }
+
+  console.log('splash sources — morpho (the pools you lend into)')
+  {
+    const mkt = '0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836'
+    const rowSrv = srv('morpho-free', 'Morpho (Free)')
+    // The live Base payload for Nate's wallet (2026-09-08), trimmed.
+    const lending: McpCall = async (name, args) => {
+      if (name !== 'position') throw new Error(`unexpected tool ${name}`)
+      if (args.chainId === 1) return { chain: 'Ethereum', positions: [] }
+      return {
+        chain: 'Base',
+        positions: [
+          {
+            marketId: mkt,
+            market: 'USDC / cbBTC (lltv 86.0%)',
+            supplied: { amount: '2.000055', asset: 'USDC', apy: '4.30%' },
+            collateral: null,
+            borrowed: null,
+            healthFactor: null,
+          },
+        ],
+      }
+    }
+    const tile = (await morpho.build(lending, ADDR, rowSrv)) as RowsTile
+    check('morpho position → rows render', tile.render === 'rows')
+    check('headline is the lent amount, not a market count', tile.headline?.value === '2.000055 USDC')
+    check('headline names the yield', /4\.30% APY/.test(tile.headline?.caption ?? ''))
+    // lltv is a liquidation number — noise above a lend row, and the row is
+    // already three lines wide in the card's column.
+    check('the lend row leaves lltv off', !/lltv/.test(tile.rows[0].sub ?? ''))
+    // The whole point of the card (Nate, 2026-09-08): WHICH pool, not "51 items".
+    check('row names the pool it is earning in', tile.rows.some((r) => /USDC lent/.test(r.label) && /USDC \/ cbBTC/.test(r.sub ?? '')))
+    check('row carries the live APY and chain', /4\.30% APY/.test(tile.rows[0].sub ?? '') && /Base/.test(tile.rows[0].sub ?? ''))
+    check('lent row is positive-toned', tile.rows[0].tone === 'pos')
+    check('row links to its own Morpho market', tile.rows[0].infoUrl === `https://app.morpho.org/base/market/${mkt}`)
+    check('no borrow → no health-factor row', !tile.rows.some((r) => r.label === 'Health factor'))
+    check('subtitle counts markets lent into', /lending in 1 market · Base/.test(tile.subtitle ?? ''))
+
+    // Nothing anywhere → no card (the affinity contract), on BOTH chains.
+    const empty: McpCall = async () => ({ chain: 'Base', positions: [] })
+    check('no position contributes no tile', (await morpho.build(empty, ADDR, rowSrv)) === null)
+    // A zeroed row is not a position either.
+    const zeroed: McpCall = async () => ({
+      chain: 'Base',
+      positions: [{ marketId: mkt, market: 'USDC / cbBTC (lltv 86.0%)', supplied: { amount: '0', asset: 'USDC' }, collateral: null, borrowed: null }],
+    })
+    check('zero-amount rows contribute no tile', (await morpho.build(zeroed, ADDR, rowSrv)) === null)
+  }
+
+  console.log('splash sources — morpho (debt, collateral, chains, failure)')
+  {
+    const rowSrv = srv('morpho-mcp-yeetful', 'Morpho MCP · Pantessa')
+    const borrowing: McpCall = async (name, args) => ({
+      chain: args.chainId === 1 ? 'Ethereum' : 'Base',
+      positions:
+        args.chainId === 1
+          ? []
+          : [
+              {
+                marketId: '0x' + 'a'.repeat(64),
+                market: 'USDC / cbBTC (lltv 86.0%)',
+                supplied: null,
+                collateral: { amount: '0.05', asset: 'cbBTC' },
+                borrowed: { amount: '1200.5', asset: 'USDC', apy: '5.10%' },
+                healthFactor: 1.21,
+              },
+            ],
+    })
+    const tile = (await morpho.build(borrowing, ADDR, rowSrv)) as RowsTile
+    check('borrow row is negative-toned', tile.rows.some((r) => /USDC borrowed/.test(r.label) && r.tone === 'neg'))
+    // Collateral earns nothing — the card must never imply otherwise.
+    check('collateral row says it earns nothing', tile.rows.some((r) => /cbBTC collateral/.test(r.label) && /earns nothing/.test(r.sub ?? '')))
+    check('rows that can be liquidated carry lltv', tile.rows.filter((r) => /collateral|borrowed/.test(r.label)).every((r) => /lltv 86\.0%/.test(r.sub ?? '')))
+    check('thin health factor flagged', tile.rows.some((r) => r.label === 'Health factor' && r.value === '1.21' && r.tone === 'neg'))
+    check('repay leads the chips when there is debt', /repay/i.test(tile.prompts[0]?.prompt ?? ''))
+
+    // A position on Ethereum: every chip must pin the chain (Base is the
+    // Morpho layer's parse default — an unpinned chip would rebuild on Base).
+    const onMainnet: McpCall = async (name, args) => ({
+      chain: args.chainId === 1 ? 'Ethereum' : 'Base',
+      positions:
+        args.chainId === 1
+          ? [{ marketId: '0x' + 'b'.repeat(64), market: 'WETH / wstETH (lltv 94.5%)', supplied: { amount: '1.5', asset: 'WETH', apy: '2.10%' }, collateral: null, borrowed: null }]
+          : [],
+    })
+    const eth = (await morpho.build(onMainnet, ADDR, rowSrv)) as RowsTile
+    check('mainnet position keeps its chain in the row', /Ethereum/.test(eth.rows[0].sub ?? ''))
+    check('mainnet chips name Ethereum', eth.prompts.every((p) => !/withdraw|repay/i.test(p.prompt) || / \(Ethereum\)$/.test(p.prompt)))
+    check('mainnet chips never double the preposition', eth.prompts.every((p) => !/on Morpho on /i.test(p.prompt)))
+    check('mainnet market link is the ethereum page', (eth.rows[0].infoUrl ?? '').includes('/ethereum/market/'))
+
+    // Lending on BOTH chains: neither scan hides the other, and each row
+    // keeps the chain it was read on.
+    const bothChains: McpCall = async (name, args) => ({
+      chain: args.chainId === 1 ? 'Ethereum' : 'Base',
+      positions: [
+        args.chainId === 1
+          ? { marketId: '0x' + 'e'.repeat(64), market: 'WETH / wstETH (lltv 94.5%)', supplied: { amount: '1.5', asset: 'WETH', apy: '2.10%' }, collateral: null, borrowed: null }
+          : { marketId: '0x' + 'f'.repeat(64), market: 'USDC / cbBTC (lltv 86.0%)', supplied: { amount: '2', asset: 'USDC', apy: '4.30%' }, collateral: null, borrowed: null },
+      ],
+    })
+    const both = (await morpho.build(bothChains, ADDR, rowSrv)) as RowsTile
+    check('both chains land on the card', both.rows.length === 2 && both.rows.some((r) => /USDC lent/.test(r.label)) && both.rows.some((r) => /WETH lent/.test(r.label)))
+    check('each row names its own chain', both.rows.every((r) => /Base|Ethereum/.test(r.sub ?? '')))
+    check('two lent assets → no single-number headline', both.headline === undefined)
+    check('subtitle names both chains', /Base/.test(both.subtitle ?? '') && /Ethereum/.test(both.subtitle ?? ''))
+
+    // Chain picker: Morpho is Base + Ethereum only.
+    const calls: number[] = []
+    const counting: McpCall = async (_n, args) => {
+      calls.push(args.chainId as number)
+      return { chain: 'Base', positions: [] }
+    }
+    await morpho.build(counting, ADDR, rowSrv, { key: 'base', name: 'Base' } as AppChain)
+    check('a base selection scans base alone', calls.length === 1 && calls[0] === 8453)
+    check('an off-Morpho chain contributes no tile', (await morpho.build(counting, ADDR, rowSrv, { key: 'arbitrum', name: 'Arbitrum' } as AppChain)) === null)
+    check('the off-chain skip makes no call', calls.length === 1)
+
+    // One chain down must not hide the other; both down is an error card.
+    const halfDown: McpCall = async (name, args) => {
+      if (args.chainId === 1) throw new Error('rpc down')
+      return { chain: 'Base', positions: [{ marketId: '0x' + 'c'.repeat(64), market: 'USDC / cbBTC (lltv 86.0%)', supplied: { amount: '2', asset: 'USDC', apy: '4.30%' }, collateral: null, borrowed: null }] }
+    }
+    check('one chain failing still paints the other', ((await morpho.build(halfDown, ADDR, rowSrv)) as RowsTile).rows.length === 1)
+    let threw = false
+    try {
+      await morpho.build(async () => { throw new Error('rpc down') }, ADDR, rowSrv)
+    } catch {
+      threw = true
+    }
+    check('every chain failing throws → the retryable error card', threw)
+  }
+
+  console.log('splash sources — morpho chips round-trip the native parsers')
+  {
+    // The standing contract: a chip is a promise the chat layer keeps. Every
+    // action prompt this card emits must parse into a guarded build, not a
+    // planner freelance.
+    const parses = (p: string) => parseMorphoLend(p) !== null || parseMorphoOp(p) !== null
+    const rowSrv = srv('morpho-free', 'Morpho (Free)')
+    const full: McpCall = async (name, args) => ({
+      chain: args.chainId === 1 ? 'Ethereum' : 'Base',
+      positions:
+        args.chainId === 1
+          ? []
+          : [
+              {
+                marketId: '0x' + 'd'.repeat(64),
+                market: 'USDC / cbBTC (lltv 86.0%)',
+                supplied: { amount: '2.000055', asset: 'USDC', apy: '4.30%' },
+                collateral: { amount: '0.05', asset: 'cbBTC' },
+                borrowed: { amount: '10', asset: 'USDC', apy: '5.10%' },
+                healthFactor: 2.4,
+              },
+            ],
+    })
+    const tile = (await morpho.build(full, ADDR, rowSrv)) as RowsTile
+    const actionPrompts = tile.rows.flatMap((r) => (r.actions ?? []).map((a) => a.prompt))
+    check('every row action parses natively', actionPrompts.length === 3 && actionPrompts.every(parses))
+    check('every act-shaped chip parses natively', tile.prompts.filter((p) => /withdraw|repay|lend/i.test(p.prompt)).every((p) => p.prompt && parses(p.prompt)))
+    check('a mainnet chip still parses (and lands on chain 1)', (() => {
+      const r = parseMorphoOp('Withdraw all my USDC from Morpho on Ethereum')
+      return !!r && 'chainId' in r && r.chainId === 1
+    })())
+    // The manual-pick preview card is a door, not decoration.
+    const preview = previewTile(rowSrv, 'morpho')
+    check('morpho preview offers its own lend chip', preview.prompts.some((p) => parseMorphoLend(p.prompt) !== null))
+    check('morpho preview names the venue honestly', /Nothing lent on Morpho/.test((preview as { message: string }).message))
   }
 
   console.log('affinity — uniswap router probe (pure)')
@@ -332,6 +507,12 @@ async function run() {
     check('uniswap does not match snapshot', !uni.match(srv('snapshot-free', 'Snapshot DAO (Free)')))
     check('aave matches the custom add-MCP row', aave.match(srv('aave-mcp-yeetful', 'Aave MCP · Pantessa')))
     check('aave does not match uniswap', !aave.match(srv('uniswap-free', 'Uniswap (Free)')))
+    check('morpho matches the seeded row', morpho.match(srv('morpho-free', 'Morpho (Free)')))
+    check('morpho matches a custom add-MCP row', morpho.match(srv('morpho-mcp-yeetful', 'Morpho MCP · Pantessa')))
+    // Morpho-on-Robinhood-Chain is a different deployment (the robinhood MCP)
+    // — descriptions are never matched, so a passing mention can't claim it.
+    check('morpho does not match robinhood', !morpho.match(srv('robinhood-free', 'Robinhood Chain (Free)')))
+    check('morpho does not match aave', !morpho.match(srv('aave-free', 'Aave (Free)')))
     const rh = SPLASH_SOURCES.find((s) => s.id === 'robinhood')!
     check('robinhood matches the seeded row', rh.match(srv('robinhood-free', 'Robinhood Chain (Free)')))
     check('robinhood does not match uniswap', !rh.match(srv('uniswap-free', 'Uniswap (Free)')))
