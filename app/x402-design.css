@@ -2014,6 +2014,13 @@
   .chat-md tbody tr:last-child td { border-bottom: none; }
   .chat-md img { max-width: 100%; border-radius: 10px; border: 1px solid var(--line); }
 
+  /* Holdings tables lead with a ticker; its company/coin mark rides with it.
+     The generic .chat-md img rule above is meant for content images — a mark
+     brings its own circle, so it opts out of the frame. */
+  .chat-md__sym { display: inline-flex; align-items: center; gap: 7px; }
+  .chat-md__sym img { max-width: none; border: 0; border-radius: 0; }
+  .chat-md__sym-gap { display: inline-block; width: 18px; height: 18px; }
+
   /* Narrow bubbles (phones, skinny embeds): pull the display scale in a step
      so an h1 doesn't eat three lines of a 340px-wide iframe. */
   @media (max-width: 640px) {

@@ -52,6 +52,7 @@ import { ONRAMP_ASSET, ONRAMP_DEFAULT_NETWORK, ONRAMP_NETWORK_LABEL } from '@/li
 import { loadFundWait, type FundWait } from '@/lib/funding-arrival'
 import { timeAgo } from '@/lib/dashboard-ui'
 import type { WalletChainView, WalletView } from '@/lib/wallet-view'
+import TokenIcon from '@/components/TokenIcon'
 import { cn } from '@/lib/utils'
 
 const CDP_CONNECTOR = 'cdp-embedded-wallet'
@@ -145,7 +146,13 @@ function ChainRow({ chain, current, landed, onAsk }: { chain: WalletChainView; c
         <div className="border-t border-[var(--line)] px-3.5 py-2 space-y-1">
           {chain.holdings.map((h) => (
             <div key={`${h.symbol}-${h.address}`} className="flex flex-wrap items-center gap-3 text-[12px]">
-              <span className="w-7" />
+              {/* The mark sits in the chain icon's column, so holdings hang
+                  under their chain instead of floating in an empty gutter.
+                  chainId is what tells AAPL-the-equity from a same-named
+                  token anywhere else. */}
+              <span className="w-7 grid place-items-center">
+                <TokenIcon symbol={h.symbol} size={20} chainId={chain.id} />
+              </span>
               <span className="flex-1 min-w-0 flex items-baseline gap-2">
                 <span className="font-medium text-[color:var(--fg)]">{h.symbol}</span>
                 <span className="mono text-[11.5px] text-[color:var(--muted)] truncate">{fmtBal(h.balance)}</span>

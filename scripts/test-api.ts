@@ -22,6 +22,9 @@
  *   npm run test:api   # in another
  */
 import { readFile } from 'node:fs/promises'
+import { existsSync, readdirSync } from 'node:fs'
+import { join as pathJoin } from 'node:path'
+import { tokenMark } from '../lib/token-icons'
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
 import { createPublicClient, custom, HttpRequestError, RpcRequestError, TimeoutError } from 'viem'
 import { base } from 'viem/chains'
@@ -12048,6 +12051,77 @@ async function main() {
       iCard.includes('Nothing moves until you sign — in your own wallet.') &&
       !iCard.includes('TAP TO RUN') &&
       !iCard.includes("'CALL · TAP TO RUN'"),
+  )
+
+  // ── Token marks ────────────────────────────────────────────────────────
+  //  Two namespaces (coins vs Robinhood Chain equities) and a generated
+  //  manifest the client trusts without probing: these pin that the manifest
+  //  and public/tokens never drift apart, and that a ticker resolves to the
+  //  right company on the right chain.
+  const marksDir = pathJoin(process.cwd(), 'public', 'tokens')
+  const stocksDir = pathJoin(marksDir, 'stocks')
+  const stockFiles = readdirSync(stocksDir).filter((f) => /\.(svg|png)$/.test(f))
+  const coinFiles = readdirSync(marksDir).filter((f) => f.endsWith('.svg'))
+  const missingArt = [...stockFiles, ...coinFiles].filter((f) => {
+    const sym = f.replace(/\.(svg|png)$/, '')
+    const onDisk = stockFiles.includes(f) ? tokenMark(sym, { chainId: 4663 }) : tokenMark(sym)
+    return !onDisk
+  })
+  check(
+    'token marks: every vendored file is claimed by the manifest (no orphans)',
+    missingArt.length === 0,
+    missingArt.join(' '),
+  )
+  const claimedMissing = [...stockFiles.map((f) => f.replace(/\.(svg|png)$/, '')), ...coinFiles.map((f) => f.replace('.svg', ''))]
+    .map((sym) => tokenMark(sym, stockFiles.some((f) => f.startsWith(`${sym}.`)) ? { chainId: 4663 } : undefined))
+    .filter((m): m is NonNullable<typeof m> => !!m)
+    .filter((m) => !existsSync(pathJoin(process.cwd(), 'public', m.src.replace(/^\//, ''))))
+  check(
+    'token marks: every manifest entry points at a file that exists',
+    claimedMissing.length === 0,
+    claimedMissing.map((m) => m.src).join(' '),
+  )
+  // The whole point of the split namespace: on Robinhood Chain a ticker is a
+  // company, everywhere else it is the coin of that name. QNT is both.
+  check(
+    'token marks: chain decides the namespace (COIN = Coinbase the company on 4663)',
+    tokenMark('COIN', { chainId: 4663 })?.src === '/tokens/stocks/COIN.svg' &&
+      tokenMark('COIN', { chain: 'Robinhood Chain' })?.kind === 'stock' &&
+      tokenMark('ETH', { chainId: 4663 })?.kind === 'coin',
+  )
+  // The fence that matters: QNT is Quant the token and Quantinuum the
+  // company, and we have art for neither Quantinuum nor a dozen other small
+  // listings — a 4663 row must fall to the monogram, never to the coin's
+  // logo, which would name the wrong company on a holdings line.
+  check(
+    'token marks: a listed equity we have no art for never borrows the coin mark',
+    tokenMark('QNT', { chainId: 4663 }) === null && tokenMark('QNT')?.kind === 'coin',
+  )
+  check(
+    'token marks: an equity with no coin of that name resolves without a chain (chat tables)',
+    tokenMark('AAPL')?.kind === 'stock' &&
+      tokenMark('AAPL')?.src === '/tokens/stocks/AAPL.svg' &&
+      tokenMark('ETH')?.kind === 'coin' &&
+      tokenMark('eth')?.src === '/tokens/ETH.svg',
+  )
+  // Equities live in their own directory — a stock mark leaking into the flat
+  // coin namespace is what made COIN/ARM/QNT ambiguous in the first place.
+  check(
+    'token marks: no equity art in the coin namespace',
+    !coinFiles.some((f) => stockFiles.includes(f)) && !existsSync(pathJoin(marksDir, 'AAPL.svg')),
+  )
+  check(
+    'token marks: the Robinhood fleet is broadly covered (>150 tickers, Apple included)',
+    stockFiles.length > 150 && stockFiles.includes('AAPL.svg') && tokenMark('nvda', { chainId: 4663 })?.kind === 'stock',
+    `${stockFiles.length} marks`,
+  )
+  // A bare glyph on transparency needs a plate or it vanishes on one theme;
+  // art that brings its own tile must NOT get one (a plate would box it).
+  check(
+    'token marks: plates only where the art is transparent',
+    tokenMark('AAPL', { chainId: 4663 })?.plate === 'none' &&
+      ['dark', 'light'].includes(tokenMark('DJT', { chainId: 4663 })?.plate ?? '') &&
+      ['dark', 'light'].includes(tokenMark('TEM', { chainId: 4663 })?.plate ?? ''),
   )
 
   // Seaport order math: fee splits sum exactly; the independent guard refuses
