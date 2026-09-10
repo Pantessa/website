@@ -8,11 +8,29 @@
 // Sources are keyless public market data:
 //   coinbase    — Coinbase Exchange spot candles (USD products, majors)
 //   hyperliquid — HL perp candleSnapshot (venue already in our allowlist)
-// Robinhood tokenized stocks (AAPL, TSLA, …) are the declared follow-up: the
-// source union grows a 'robinhood' member when a keyless candle feed lands —
-// until then stock symbols resolve to null and stay chartless everywhere.
+//   robinhood   — Robinhood's own market-data historicals for the tokenized
+//                 equities on Robinhood Chain (24/7 bounds — the same
+//                 round-the-clock tape the on-chain stock tokens track; the
+//                 proxy falls back to Yahoo Finance's chart feed when the
+//                 primary is down, and says so in `feed`). Landed 2026-09-10;
+//                 the ticker set is the static lib/robinhood-tickers snapshot
+//                 minus the two listings the feed has no quote for.
 
-export type ChartSource = 'coinbase' | 'hyperliquid'
+export type ChartSource = 'coinbase' | 'hyperliquid' | 'robinhood'
+
+/** Which upstream actually served a series — the honest eyebrow on the chart
+ *  (a stock chart says "Yahoo Finance" while Robinhood's feed is down, never
+ *  "Robinhood"). Coinbase and Hyperliquid have no fallback: feed === source. */
+export type ChartFeed = ChartSource | 'yahoo'
+
+export const CHART_FEED_LABELS: Record<ChartFeed, string> = {
+  coinbase: 'Coinbase',
+  hyperliquid: 'Hyperliquid',
+  robinhood: 'Robinhood',
+  yahoo: 'Yahoo Finance',
+}
+
+import { ROBINHOOD_TICKER_SET } from '@/lib/robinhood-tickers'
 
 export type ChartTf = '15m' | '1h' | '4h' | '1d'
 
@@ -62,6 +80,20 @@ const COINBASE_ALIASES: Record<string, string> = {
 /** HL perp listings we chart when Coinbase has no USD product. */
 const HYPERLIQUID_PERPS = new Set(['HYPE', 'SYRUP', 'FARTCOIN'])
 
+/** Listed on Robinhood Chain but with NO quote on Robinhood's market-data
+ *  feed (probed 2026-09-10 across all 201 listings: a batch historicals call
+ *  returns an empty instrument for exactly these two). They stay chartless
+ *  BY NAME rather than growing a button over an empty chart. */
+const ROBINHOOD_FEEDLESS = new Set(['CASHCAT', 'SATS'])
+
+/** A tokenized equity we hold a candle feed for. Coins are checked FIRST in
+ *  chartPairFor (nothing lists AAPL as a coin, and a ticker that collides
+ *  with a Coinbase product would chart the coin — pinned in the harness). */
+export function isChartedStock(symbolRaw: string): boolean {
+  const sym = normalizeChartSymbol(symbolRaw)
+  return ROBINHOOD_TICKER_SET.has(sym) && !ROBINHOOD_FEEDLESS.has(sym)
+}
+
 /** Stables chart flat by construction — deliberately chartless. */
 const STABLES = new Set(['USDC', 'USDT', 'DAI', 'USDG', 'GHO', 'USDE', 'PYUSD', 'USDS', 'USDBC'])
 
@@ -80,6 +112,9 @@ export function chartPairFor(symbolRaw: string): ChartPair | null {
   }
   if (HYPERLIQUID_PERPS.has(symbol)) {
     return { symbol, source: 'hyperliquid', pair: symbol, label: `${symbol} / USD` }
+  }
+  if (isChartedStock(symbol)) {
+    return { symbol, source: 'robinhood', pair: symbol, label: `${symbol} / USD` }
   }
   return null
 }
@@ -154,6 +189,44 @@ const CHART_NAMES: Record<string, string> = {
   EIGENLAYER: 'EIGEN', HYPERLIQUID: 'HYPE',
 }
 
+/** Company names → the Robinhood Chain ticker (speech says "apple", not
+ *  "AAPL"). Curated household names only; every target must clear
+ *  isChartedStock (harness-pinned) so a name never points at a dead chart. */
+const CHART_STOCK_NAMES: Record<string, string> = {
+  APPLE: 'AAPL', TESLA: 'TSLA', NVIDIA: 'NVDA', MICROSOFT: 'MSFT', AMAZON: 'AMZN',
+  GOOGLE: 'GOOGL', ALPHABET: 'GOOGL', FACEBOOK: 'META', NETFLIX: 'NFLX', COINBASE: 'COIN',
+  PALANTIR: 'PLTR', INTEL: 'INTC', ORACLE: 'ORCL', SALESFORCE: 'CRM', ADOBE: 'ADBE',
+  BROADCOM: 'AVGO', SHOPIFY: 'SHOP', ROBLOX: 'RBLX', REDDIT: 'RDDT', RIVIAN: 'RIVN',
+  SPACEX: 'SPCX', MICROSTRATEGY: 'MSTR', STRATEGY: 'MSTR', CIRCLE: 'CRCL', FIGMA: 'FIG',
+  WEBULL: 'BULL', NASDAQ: 'QQQ', SP500: 'SPY', SPX: 'SPY', BOEING: 'BA', FORD: 'F',
+  PFIZER: 'PFE', MODERNA: 'MRNA', LILLY: 'LLY', SNOWFLAKE: 'SNOW', DATADOG: 'DDOG',
+  CLOUDFLARE: 'NET', CROWDSTRIKE: 'CRWD', SNAPCHAT: 'SNAP', ZOOM: 'ZM', TSMC: 'TSM',
+  QUALCOMM: 'QCOM', MICRON: 'MU', CISCO: 'CSCO', GAMESTOP: 'GME', ALIBABA: 'BABA',
+  ROCKETLAB: 'RKLB', EXXON: 'XOM', GOLD: 'GLD', SILVER: 'SLV', OIL: 'USO', NOKIA: 'NOK',
+  COSTCO: 'COST', LULULEMON: 'LULU', UNITEDHEALTH: 'UNH', WORKDAY: 'WDAY', ATLASSIAN: 'TEAM',
+  SERVICENOW: 'NOW', FORTINET: 'FTNT', ARISTA: 'ANET', MONGODB: 'MDB', CARVANA: 'CVNA',
+  NUBANK: 'NU', RIGETTI: 'RGTI', CEREBRAS: 'CBRS', CARNIVAL: 'CCL', DELL: 'DELL', IBM: 'IBM',
+}
+
+/** Stock tickers that are also ordinary English words. Typed in lowercase
+ *  inside a sentence they are prose ("show me the cost chart" is not a
+ *  Costco ask); they chart only as "$COST", "COST", or by company name.
+ *  Every ticker of three letters or fewer (ON, F, NOW, NET, RUN…) takes the
+ *  same rule by length. */
+const ENGLISH_WORD_TICKERS = new Set([
+  'COST', 'PATH', 'SNAP', 'COIN', 'BULL', 'DRAM', 'LITE', 'NASA', 'POET', 'TEAM', 'HIMS',
+  'LULU', 'ONTO', 'DELL', 'OUST', 'PENG', 'LUNR', 'JOBY', 'WULF',
+])
+
+/** Did the user CLEARLY type this word as a ticker? "$COIN" or "COIN" in an
+ *  otherwise-lowercase sentence, yes; "coin" (a stopword) or "ON" inside a
+ *  caps-lock message, no. */
+function typedAsTicker(word: string, message: string): boolean {
+  if (word.startsWith('$')) return true
+  const bare = word.replace(/^\$/, '')
+  return bare === bare.toUpperCase() && /[a-z]/.test(message)
+}
+
 /** Words that sit around a chart ask and must never be read as a ticker. */
 const CHART_STOPWORDS = new Set([
   'SHOW', 'ME', 'THE', 'A', 'AN', 'MY', 'LIVE', 'PRICE', 'CHART', 'CHARTS', 'CANDLE', 'CANDLES',
@@ -176,13 +249,29 @@ export function parseChartAsk(message: string): ChartAsk | null {
   if (!text || text.length > 200 || !CHART_WORD_RE.test(text)) return null
   if (CHART_ACTION_VERB_RE.test(text)) return null
   // Tokens: "$ETH", "ETH", "eth's", "bitcoin". Possessive + punctuation dropped.
-  const words = text.replace(/['’]s\b/gi, '').split(/[^A-Za-z0-9$]+/).filter(Boolean)
+  // "S&P 500" would split into "S" + "P" (P is a listed ticker) — fold the
+  // index name onto its ETF before the split.
+  const words = text
+    .replace(/\bS\s*&\s*P(?:\s*500)?\b/gi, ' SPY ')
+    .replace(/['’]s\b/gi, '')
+    .split(/[^A-Za-z0-9$]+/)
+    .filter(Boolean)
   let named: string | null = null
   for (const w of words) {
     const raw = w.replace(/^\$/, '').toUpperCase()
-    if (!raw || CHART_STOPWORDS.has(raw)) continue
-    const sym = CHART_NAMES[raw] ?? raw
+    if (!raw) continue
+    // A listed equity beats the stopword list only when it was clearly
+    // typed as a ticker ("$COIN", "COIN") — "chart on base" must never pop
+    // ON Semiconductor, and "show me the coin chart" stays a non-ask.
+    const ticker = typedAsTicker(w, text) && isChartedStock(raw)
+    if (!ticker && CHART_STOPWORDS.has(raw)) continue
+    const byName = CHART_NAMES[raw] ?? CHART_STOCK_NAMES[raw]
+    const sym = byName ?? raw
     const pair = chartPairFor(sym)
+    // A stock reached by a lowercase bare ticker must be unmistakably a
+    // ticker: four+ letters and not an English word ("aapl", "nvda" — yes;
+    // "cost", "on", "now" — no).
+    if (pair?.source === 'robinhood' && !byName && !ticker && (raw.length < 4 || ENGLISH_WORD_TICKERS.has(raw))) continue
     if (pair) return { symbol: pair.symbol, pair }
     // Remember the first ticker-shaped word so a chartless ask can name it.
     if (!named && /^[A-Z][A-Z0-9]{1,11}$/.test(sym) && /[A-Z]/.test(sym)) named = sym

@@ -15,7 +15,7 @@ import Link from 'next/link'
 import { Maximize2, Minimize2 } from 'lucide-react'
 import CandleChart, { fmtPrice, type ChartStats } from '@/components/CandleChart'
 import TokenIcon from '@/components/TokenIcon'
-import { chartPairFor } from '@/lib/charts'
+import { CHART_FEED_LABELS, chartPairFor, type ChartFeed } from '@/lib/charts'
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
 
@@ -32,6 +32,9 @@ export default function TokenPageView({ symbol }: { symbol: string }) {
   const chgClass = chg === null ? 'tok__chg--flat' : chg > 0 ? 'tok__chg--up' : chg < 0 ? 'tok__chg--down' : 'tok__chg--flat'
   const chgLabel = chg === null ? '24h —' : `${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg).toFixed(2)}% 24h`
   const sym = pair?.symbol ?? symbol
+  const markWhere = pair?.source === 'robinhood' ? { chain: 'Robinhood Chain' } : {}
+  const feed = (stats?.feed ?? pair?.source ?? null) as ChartFeed | null
+  const feedLabel = feed ? (CHART_FEED_LABELS[feed] ?? feed) : ''
 
   // The CSS takeover carries the mode on its own; native fullscreen is a
   // best-effort upgrade on top (iOS Safari refuses element fullscreen, and a
@@ -88,10 +91,10 @@ export default function TokenPageView({ symbol }: { symbol: string }) {
       {/* Top bar: identity → quote → act. Never scrolls, survives expand. */}
       <div className="tchart__bar">
         <div className="tchart__id">
-          <TokenIcon symbol={sym} size={26} />
+          <TokenIcon symbol={sym} size={26} {...markWhere} />
           <div className="min-w-0">
             <h1 className="tchart__pair truncate">{pair ? pair.label : sym || 'Token'}</h1>
-            <p className="tchart__src mono">{pair ? `Live chart · ${pair.source}` : 'No live chart yet'}</p>
+            <p className="tchart__src mono">{pair ? `Live chart · ${feedLabel}` : 'No live chart yet'}</p>
           </div>
         </div>
 

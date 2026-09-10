@@ -22,12 +22,16 @@ export interface ChartStats {
   changePct24h: number | null
   label: string | null
   source: string | null
+  /** The upstream that actually served the series (stocks fall back from
+   *  Robinhood to Yahoo Finance) — what the eyebrow should name. */
+  feed: string | null
 }
 
 interface CandlesResponse {
   symbol: string
   label: string | null
   source: string | null
+  feed?: string | null
   tf: ChartTf
   candles: Candle[]
   last?: number | null
@@ -142,6 +146,7 @@ export default function CandleChart({
           changePct24h: d.changePct24h ?? null,
           label: d.label,
           source: d.source,
+          feed: d.feed ?? d.source,
         })
       } else if (d.error) {
         // Keep the last good series on a transient feed error.
