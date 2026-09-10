@@ -51,7 +51,8 @@ import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txC
 import { resolveToken, COW_API_BASE, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, COW_APP_DATA_HASH, COW_CANONICAL_APP_DATA_HASHES, cowAppDataJson, cowAppDataHash, cowAppDataBpsOf, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
 import { ensureTokenList, primeTokenList } from '../lib/token-list'
 import { pairStockToken, stockChipLabel } from '../lib/stock-pairing'
-import { chartPairFor, changePct24h, aggregateCandles, parseChartAsk, type Candle } from '../lib/charts'
+import { chartPairFor, changePct24h, aggregateCandles, parseChartAsk, isChartedStock, type Candle } from '../lib/charts'
+import { ROBINHOOD_TICKER_SET } from '../lib/robinhood-tickers'
 import { normalizeSpokenAsk } from '../lib/voice-ask'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
@@ -8387,6 +8388,15 @@ async function main() {
       stockSyms.size >= 100 && stockSyms.has('AAPL') && stockSyms.has('NVDA') && !stockSyms.has('USDG') && !stockSyms.has('WETH') && !stockSyms.has('USDE'),
       [...stockSyms].slice(0, 8).join(','),
     )
+    // Chart drift (2026-09-10): the chart resolver is client-safe and reads
+    // a STATIC snapshot of this list (lib/robinhood-tickers). A new listing
+    // that never reached the snapshot would stay chartless in silence — so
+    // every live stock must be in the snapshot, and charted unless it is one
+    // of the two the Robinhood feed has no quote for.
+    const offSnapshot = [...stockSyms].filter((sym) => sym !== 'cbBTC' && !ROBINHOOD_TICKER_SET.has(sym))
+    check('charts: every live 4663 stock listing is in the static ticker snapshot (regenerate lib/robinhood-tickers.ts when this reds)', offSnapshot.length === 0, offSnapshot.join(','))
+    const unchartedStocks = [...stockSyms].filter((sym) => sym !== 'cbBTC' && !isChartedStock(sym) && !['CASHCAT', 'SATS'].includes(sym))
+    check('charts: every live 4663 stock listing charts except the two feedless ones', unchartedStocks.length === 0, unchartedStocks.join(','))
     const rhRpc = new Map<number, RpcChainRead>([
       [4663, { chainId: 4663, nativeEth: 0.00073, stable: { symbol: 'USDG', address: rhC.tokens.USDG.address, balance: 0.323 }, tokens: [{ symbol: 'AAPL', address: aapl, balance: 0.0376, stock: true }] }],
     ])
@@ -15711,17 +15721,36 @@ async function main() {
         chartPairFor('ETH')?.label === 'ETH / USD',
     )
     check(
-      'charts: HL perps chart via hyperliquid, stables + stocks + garbage stay chartless',
+      'charts: HL perps chart via hyperliquid, stables + garbage stay chartless',
       chartPairFor('HYPE')?.source === 'hyperliquid' &&
         chartPairFor('SYRUP')?.source === 'hyperliquid' &&
         chartPairFor('USDC') === null &&
         chartPairFor('USDG') === null &&
-        // Tokenized stocks are the declared follow-up — this pin flips
-        // consciously when a robinhood candle source lands.
-        chartPairFor('AAPL') === null &&
         chartPairFor('$$$') === null &&
         chartPairFor('') === null,
     )
+    // Tokenized stocks (2026-09-10): Robinhood Chain's listings chart via
+    // Robinhood's own 24/7 historicals. The static snapshot is the gate; the
+    // two listings the feed has no quote for stay chartless BY NAME.
+    check(
+      'charts: Robinhood Chain stocks chart via robinhood (AAPL / COIN / SPY / spelled lowercase), feedless listings + unlisted tickers stay chartless',
+      chartPairFor('AAPL')?.source === 'robinhood' &&
+        chartPairFor('AAPL')?.label === 'AAPL / USD' &&
+        chartPairFor('aapl')?.pair === 'AAPL' &&
+        chartPairFor('COIN')?.source === 'robinhood' &&
+        chartPairFor('SPY')?.source === 'robinhood' &&
+        chartPairFor('cbBTC')?.pair === 'BTC-USD' &&
+        ROBINHOOD_TICKER_SET.has('CASHCAT') && chartPairFor('CASHCAT') === null &&
+        ROBINHOOD_TICKER_SET.has('SATS') && chartPairFor('SATS') === null &&
+        chartPairFor('HOOD') === null &&
+        ROBINHOOD_TICKER_SET.size === 201,
+      `size=${ROBINHOOD_TICKER_SET.size}`,
+    )
+    // Coins resolve FIRST: a stock ticker that collides with a Coinbase
+    // product or an HL perp would chart the coin. None does today — this pin
+    // makes a future collision a conscious call, never a silent mislabel.
+    const stockCoinCollisions = [...ROBINHOOD_TICKER_SET].filter((t) => isChartedStock(t) && chartPairFor(t)?.source !== 'robinhood')
+    check('charts: no listed stock ticker collides with a coin source', stockCoinCollisions.length === 0, stockCoinCollisions.join(','))
     const fakeCandles: Candle[] = Array.from({ length: 30 }, (_, i) => ({
       t: 1_700_000_000 + i * 3600, o: 100 + i, h: 101 + i, l: 99 + i, c: 100.5 + i, v: 10,
     }))
@@ -15761,8 +15790,42 @@ async function main() {
         parseChartAsk('graph') === null &&
         parseChartAsk('show me the USDC chart')?.pair === null &&
         parseChartAsk('show me the USDC chart')?.symbol === 'USDC' &&
-        parseChartAsk('show me the AAPL chart')?.pair === null,
+        parseChartAsk('show me the SATS chart')?.pair === null &&
+        parseChartAsk('show me the SATS chart')?.symbol === 'SATS',
     )
+    // Stock chart asks: a ticker typed as a ticker, a company name, or an
+    // unmistakable lowercase ticker opens the stock chart; a ticker that is
+    // also an English word ("on", "cost", "coin") reads as prose unless it
+    // wears its caps or a $ — "chart on base" must never pop ON Semi.
+    check(
+      'chart ask: stocks — "$COIN" / "COIN" / "aapl" / company names / "S&P 500" open the robinhood chart',
+      parseChartAsk('show me the AAPL chart')?.pair?.source === 'robinhood' &&
+        parseChartAsk('show me the aapl chart')?.pair?.symbol === 'AAPL' &&
+        parseChartAsk('show me the apple chart')?.pair?.symbol === 'AAPL' &&
+        parseChartAsk("pull up nvidia's candles")?.pair?.symbol === 'NVDA' &&
+        parseChartAsk('show me the $COIN chart')?.pair?.symbol === 'COIN' &&
+        parseChartAsk('show me the COIN chart')?.pair?.symbol === 'COIN' &&
+        parseChartAsk('chart the S&P 500')?.pair?.symbol === 'SPY' &&
+        parseChartAsk('show me the tesla price chart')?.pair?.symbol === 'TSLA' &&
+        parseChartAsk('show me the gold chart')?.pair?.symbol === 'GLD',
+    )
+    check(
+      'chart ask: stocks fail-closed — English-word tickers in lowercase, caps-lock messages, and stopwords never pop a stock',
+      parseChartAsk('show me the coin chart') === null &&
+        parseChartAsk('show me the chart on base')?.pair?.symbol !== 'ON' &&
+        parseChartAsk('show me the cost chart')?.pair == null &&
+        parseChartAsk('show me the price chart now')?.pair?.symbol !== 'NOW' &&
+        parseChartAsk('SHOW ME THE CHART ON BASE')?.pair?.symbol !== 'ON' &&
+        parseChartAsk('show me the f chart')?.pair == null &&
+        parseChartAsk('show me the $F chart')?.pair?.symbol === 'F' &&
+        parseChartAsk('buy $50 of AAPL and show the chart') === null,
+      JSON.stringify([parseChartAsk('show me the chart on base'), parseChartAsk('show me the price chart now')]),
+    )
+    // Every curated company name points at a charted listing — a name that
+    // resolved to a dead chart would pop "no live chart yet" by name.
+    const stockNameMisses = ['apple', 'tesla', 'nvidia', 'microsoft', 'amazon', 'google', 'alphabet', 'facebook', 'netflix', 'coinbase', 'palantir', 'intel', 'oracle', 'salesforce', 'adobe', 'broadcom', 'shopify', 'roblox', 'reddit', 'rivian', 'spacex', 'microstrategy', 'circle', 'figma', 'webull', 'nasdaq', 'boeing', 'ford', 'pfizer', 'moderna', 'lilly', 'snowflake', 'datadog', 'cloudflare', 'crowdstrike', 'snapchat', 'zoom', 'tsmc', 'qualcomm', 'micron', 'cisco', 'gamestop', 'alibaba', 'rocketlab', 'exxon', 'gold', 'silver', 'oil', 'nokia', 'costco', 'lululemon', 'unitedhealth', 'workday', 'atlassian', 'servicenow', 'fortinet', 'arista', 'mongodb', 'carvana', 'nubank', 'rigetti', 'cerebras', 'carnival', 'dell', 'ibm']
+      .filter((n) => parseChartAsk(`show me the ${n} chart`)?.pair?.source !== 'robinhood')
+    check('chart ask: every curated company name resolves to a charted Robinhood Chain listing', stockNameMisses.length === 0, stockNameMisses.join(','))
     // Route: the native gate answers with the artifact (no planner, no MCP).
     const chartTurn = await (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: CJ, body: JSON.stringify({ message: 'show me the ETH chart', activeServers: [] }) })).json()
     check(
@@ -15770,6 +15833,13 @@ async function main() {
       chartTurn.chart?.symbol === 'ETH' && chartTurn.chart?.source === 'coinbase' && chartTurn.chart?.url === '/t/ETH' &&
         chartTurn.buildPath === 'native-chart' && /ETH \/ USD/.test(chartTurn.reply ?? ''),
       JSON.stringify(chartTurn).slice(0, 200),
+    )
+    const stockChartTurn = await (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: CJ, body: JSON.stringify({ message: 'show me the apple chart', activeServers: [] }) })).json()
+    check(
+      'chart ask route: a stock by company name → chart{AAPL, robinhood, /t/AAPL} + the 24/7 stock copy',
+      stockChartTurn.chart?.symbol === 'AAPL' && stockChartTurn.chart?.source === 'robinhood' && stockChartTurn.chart?.url === '/t/AAPL' &&
+        stockChartTurn.buildPath === 'native-chart' && /Robinhood 24\/7 stock/.test(stockChartTurn.reply ?? ''),
+      JSON.stringify(stockChartTurn).slice(0, 200),
     )
     const chartlessTurn = await (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: CJ, body: JSON.stringify({ message: 'show me the USDC chart', activeServers: [] }) })).json()
     check(
@@ -15837,6 +15907,32 @@ async function main() {
       liveCandles.every((c, i) => i === 0 || c.t > liveCandles[i - 1].t)
     const feedDown = live.status === 200 && liveBody.error === 'feed unavailable'
     check('charts api: ETH 1h returns live ascending candles (or the named feed-down)', liveOk || feedDown, feedDown ? 'feed down — refusal shape verified' : `n=${liveCandles.length}`)
+    check('charts api: the response names the feed that served it (coinbase for ETH)', feedDown || liveBody.feed === 'coinbase', `feed=${liveBody.feed}`)
+    // Stocks: Robinhood's 24/7 tape, Yahoo Finance when it is down — the
+    // response says which. Either is a real series; only a double outage is
+    // the named feed-down refusal. Interpolated (no-trade) rows never ship.
+    for (const tf of ['1h', '4h', '15m', '1d'] as const) {
+      const st = await fetch(`${BASE}/api/charts/candles?symbol=AAPL&tf=${tf}`)
+      const stBody = await st.json()
+      const stCandles = (stBody.candles ?? []) as Candle[]
+      const stOk =
+        st.status === 200 &&
+        stBody.source === 'robinhood' &&
+        (stBody.feed === 'robinhood' || stBody.feed === 'yahoo') &&
+        stBody.label === 'AAPL / USD' &&
+        stCandles.length > 20 &&
+        typeof stBody.last === 'number' && stBody.last > 1 &&
+        stCandles.every((c) => c.h >= c.l && c.h >= c.o && c.h >= c.c && c.l <= c.o && c.l <= c.c && Number.isFinite(c.v)) &&
+        stCandles.every((c, i) => i === 0 || c.t > stCandles[i - 1].t) &&
+        stCandles.every((c, i) => i === 0 || c.t - stCandles[i - 1].t >= { '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400 }[tf]) &&
+        // A dead-hour row carried through by the venue is flat with zero
+        // volume; a real series of AAPL is never mostly that.
+        stCandles.filter((c) => c.v === 0 && c.o === c.c && c.h === c.l).length < stCandles.length / 4
+      const stDown = st.status === 200 && stBody.error === 'feed unavailable'
+      check(`charts api: AAPL ${tf} returns a live stock series (feed named, no interpolated flats) or the named feed-down`, stOk || stDown, stDown ? 'both stock feeds down — refusal shape verified' : `n=${stCandles.length} feed=${stBody.feed} last=${stBody.last}`)
+    }
+    const feedless = await (await fetch(`${BASE}/api/charts/candles?symbol=SATS&tf=1h`)).json()
+    check('charts api: a listed-but-feedless stock (SATS) is refused at the gate, never probed upstream', feedless.source === null && feedless.error === 'no chart source')
 
     // /t pages: chartable symbol gets the live pair page, chartless symbols
     // get the honest still-tradable page — both carry prefill CTAs only.

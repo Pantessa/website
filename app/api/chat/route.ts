@@ -745,7 +745,7 @@ async function handleChatTurn(req: NextRequest) {
       if (!chartAsk.pair) {
         nativeTrace({ type: 'note', level: 'info', label: `chart ask for ${chartAsk.symbol} — no candle source, refusing by name` })
         return NextResponse.json({
-          reply: `📈 I don't have a live chart for ${chartAsk.symbol} yet. I chart the majors (ETH, BTC, SOL…), the big DeFi tokens (UNI, AAVE, LINK…) and Hyperliquid perps (HYPE…); stablecoins chart flat by design. Say "show me the ETH chart" and it opens right here.`,
+          reply: `📈 I don't have a live chart for ${chartAsk.symbol} yet. I chart the majors (ETH, BTC, SOL…), the big DeFi tokens (UNI, AAVE, LINK…), Hyperliquid perps (HYPE…) and the tokenized stocks on Robinhood Chain (AAPL, TSLA, NVDA…); stablecoins chart flat by design. Say "show me the ETH chart" and it opens right here.`,
           buildPath: 'native-chart',
         })
       }
@@ -758,7 +758,7 @@ async function handleChatTurn(req: NextRequest) {
         reason: 'native chart read — the overlay opens in-chat instead of the planner narrating a price',
       })
       return NextResponse.json({
-        reply: `📈 Here's the live ${pair.label} chart (${pair.source === 'coinbase' ? 'Coinbase spot' : 'Hyperliquid perp'} candles). Tap Buy, Sell, or DCA on it and I'll build the transaction — your wallet signs.`,
+        reply: `📈 Here's the live ${pair.label} chart (${pair.source === 'coinbase' ? 'Coinbase spot' : pair.source === 'hyperliquid' ? 'Hyperliquid perp' : 'Robinhood 24/7 stock'} candles). Tap Buy, Sell, or DCA on it and I'll build the transaction — your wallet signs.`,
         chart: { symbol: pair.symbol, label: pair.label, source: pair.source, url: `/t/${pair.symbol}` },
         buildPath: 'native-chart',
       })

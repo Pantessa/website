@@ -119,6 +119,15 @@ const CORPUS: Entry[] = [
   { ask: 'Buy $50 of ETH', source: 'chart overlay buy chip', expect: 'action' },
   { ask: 'Sell $50 of ETH', source: 'chart overlay sell chip (live 2026-07-28 dead-end)', expect: 'action' },
   { ask: 'DCA $10 into ETH weekly', source: 'chart overlay DCA chip', expect: 'action' },
+  // Stock charts (2026-09-10): the same overlay chips on an AAPL chart land
+  // on the Robinhood Chain builders (stock → 4663 inference), and the chart
+  // ask itself pops the overlay by ticker or company name.
+  { ask: 'Buy $50 of AAPL', source: 'chart overlay buy chip on a stock chart', expect: 'action' },
+  { ask: 'Sell $50 of AAPL', source: 'chart overlay sell chip on a stock chart', expect: 'action' },
+  { ask: 'DCA $10 into AAPL weekly', source: 'chart overlay DCA chip on a stock chart', expect: 'action' },
+  { ask: 'show me the AAPL chart', source: 'stock chart ask (ticker)', expect: 'action' },
+  { ask: 'show me the apple chart', source: 'stock chart ask (company name, spoken)', expect: 'action' },
+  { ask: 'pull up the nvidia candles', source: 'stock chart ask (company name)', expect: 'action' },
   { ask: 'Sell $50 of HYPE', source: 'chart overlay sell chip on an HL perp', expect: 'action' },
   // Whole-holding sells — sized from the live balance at build (live
   // 2026-09-07: fell to the planner's walkthrough; the numbered twin built).

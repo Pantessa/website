@@ -13,7 +13,7 @@ import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import { ExternalLink, X } from 'lucide-react'
 import { useYeetfulStore } from '@/lib/store'
-import { chartPairFor } from '@/lib/charts'
+import { CHART_FEED_LABELS, chartPairFor, type ChartFeed } from '@/lib/charts'
 import { tokenHome } from '@/lib/token-home'
 import CandleChart, { fmtPrice, type ChartStats } from '@/components/CandleChart'
 import TokenIcon from '@/components/TokenIcon'
@@ -53,6 +53,11 @@ export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => vo
   if (typeof document === 'undefined') return null
 
   const pair = chartDetail ? chartPairFor(chartDetail.symbol) : null
+  // A stock's mark is the company's (the 4663 namespace); the eyebrow names
+  // the feed that actually answered, not the one we hoped for.
+  const markWhere = pair?.source === 'robinhood' ? { chain: 'Robinhood Chain' } : {}
+  const feed = (stats?.feed ?? pair?.source ?? null) as ChartFeed | null
+  const feedLabel = feed ? (CHART_FEED_LABELS[feed] ?? feed) : ''
   const chg = stats?.changePct24h ?? null
   const chgClass = chg === null ? 'tok__chg--flat' : chg > 0 ? 'tok__chg--up' : chg < 0 ? 'tok__chg--down' : 'tok__chg--flat'
   const chgLabel = chg === null ? '24h —' : `${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg).toFixed(2)}% 24h`
@@ -80,11 +85,11 @@ export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => vo
           >
             {/* header */}
             <div className="flex items-center gap-2.5 border-b border-[var(--line)] px-4 pb-2.5 pt-3.5">
-              <TokenIcon symbol={pair.symbol} size={24} />
+              <TokenIcon symbol={pair.symbol} size={24} {...markWhere} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
                   <span className="text-[13px] font-medium">{pair.label}</span>
-                  <span className="mono text-[9.5px] uppercase tracking-wider text-[color:var(--muted-2)]">{pair.source}</span>
+                  <span className="mono text-[9.5px] uppercase tracking-wider text-[color:var(--muted-2)]">{feedLabel}</span>
                 </div>
               </div>
               {stats?.last != null && (
