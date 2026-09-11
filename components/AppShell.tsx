@@ -35,8 +35,11 @@ export function useAppShellMode() {
   const onDocs = pathname.startsWith('/docs')
   const onChat = pathname.startsWith('/chat')
   return {
-    // Top brochure nav is hidden and the app owns the viewport.
-    chrome: authed && (onDashboard || onDocs || onChat),
+    // Top brochure nav is hidden and the app owns the viewport. The chat is
+    // chrome for EVERYONE (2026-09-11 — the nav returns null on /chat
+    // unconditionally, the toolbar carries the sign-in door), so its h-dvh
+    // shell is right from the server render; dashboard + docs stay authed.
+    chrome: (authed && (onDashboard || onDocs)) || onChat,
     // The rail is collapsible via the shared toggle (dashboard + docs only).
     collapsible: authed && (onDashboard || onDocs),
   }

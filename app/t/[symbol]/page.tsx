@@ -4,6 +4,7 @@ import { parseMarketTab } from '@/lib/markets'
 import { symbolPageSeo } from '@/lib/markets-seo'
 import Footer from '@/components/Footer'
 import SymbolPage from '@/components/markets/shell/SymbolPage'
+import MarketsShell from '@/components/markets/shell/MarketsShell'
 
 // /t/<symbol> — THE symbol page (Markets, 2026-09-11): header, the live
 // chart, the tab strip (Overview · News · Community · Technicals · Trade)
@@ -48,18 +49,20 @@ export default async function TokenPage({ params, searchParams }: Params) {
   const initialTab = parseMarketTab(tabRaw ? `?tab=${encodeURIComponent(tabRaw)}` : '')
   const tfRaw = typeof sp.tf === 'string' ? sp.tf : ''
   const initialTf = CHART_TFS.some((t) => t.key === tfRaw) ? (tfRaw as ChartTf) : undefined
-  // The /markets frame (no .x-main): SymbolPage's <main class="sym"> and the
-  // watchlist rail are its two columns, and the footer sits under the page in
-  // the left column, so the rail stays docked through the last footer line.
+  // The /markets frame (no .x-main) inside the markets shell (the app spine
+  // on the left, no brochure nav): SymbolPage's <main class="sym"> and the
+  // side column (ask + account strip over the watchlist rail) are its two
+  // columns, and the footer sits under the page in the left column, so the
+  // rail stays docked through the last footer line.
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: seo.jsonLd }} />
-      <div className="mkt-frame mkt-frame--sym">
+      <MarketsShell sym>
         <SymbolPage symbol={norm} initialTab={initialTab} initialTf={initialTf} />
         <div className="mkt-frame__foot">
           <Footer />
         </div>
-      </div>
+      </MarketsShell>
     </>
   )
 }
