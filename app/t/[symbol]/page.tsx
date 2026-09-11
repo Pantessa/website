@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { chartPairFor, normalizeChartSymbol } from '@/lib/charts'
 import Footer from '@/components/Footer'
 import TokenPageView from '@/components/TokenPageView'
+import MarketsCommTabs from '@/components/markets/MarketsCommTabs'
 
 // /t/<symbol> — the shareable token chart page. The same CandleChart the
 // in-chat overlay uses, standalone: live candles, timeframes, and
@@ -28,12 +29,16 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 export default async function TokenPage({ params }: Params) {
   const { symbol } = await params
   const norm = normalizeChartSymbol(symbol)
+  const pair = chartPairFor(norm)
   // No .x-main here on purpose: the chart page is full-bleed, so the shell
   // owns the viewport and the footer sits just below the fold.
   return (
     <>
       <main>
         <TokenPageView symbol={norm} />
+        {/* MARKETS/COMM standalone mount — SHELL's tab strip replaces this at
+            integration (squad-markets README §Tab slots). */}
+        {pair && <MarketsCommTabs symbol={norm} pair={pair} />}
       </main>
       <Footer />
     </>
