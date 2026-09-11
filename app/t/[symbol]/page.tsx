@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
-import { chartPairFor, normalizeChartSymbol } from '@/lib/charts'
+import { CHART_TFS, chartPairFor, normalizeChartSymbol, type ChartTf } from '@/lib/charts'
+import { parseMarketTab } from '@/lib/markets'
 import Footer from '@/components/Footer'
 import SymbolPage from '@/components/markets/shell/SymbolPage'
 
@@ -13,7 +14,7 @@ import SymbolPage from '@/components/markets/shell/SymbolPage'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-type Params = { params: Promise<{ symbol: string }> }
+type Params = { params: Promise<{ symbol: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { symbol } = await params
@@ -26,15 +27,23 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   return { title, description, openGraph: { title, description } }
 }
 
-export default async function TokenPage({ params }: Params) {
+export default async function TokenPage({ params, searchParams }: Params) {
   const { symbol } = await params
+  const sp = await searchParams
   const norm = normalizeChartSymbol(symbol)
+  // ?tab= and ?tf= are deep links (every gauge is a link target): the server
+  // renders the addressed tab so the HTML matches the URL — the client then
+  // owns the switch (replaceState, the #705 idiom). Unknown values → default.
+  const tabRaw = typeof sp.tab === 'string' ? sp.tab : ''
+  const initialTab = parseMarketTab(tabRaw ? `?tab=${encodeURIComponent(tabRaw)}` : '')
+  const tfRaw = typeof sp.tf === 'string' ? sp.tf : ''
+  const initialTf = CHART_TFS.some((t) => t.key === tfRaw) ? (tfRaw as ChartTf) : undefined
   // No .x-main here on purpose: the symbol page owns its own gutters (the
   // chart wants the width; the tab grid and rail sit inside .sym).
   return (
     <>
       <main>
-        <SymbolPage symbol={norm} />
+        <SymbolPage symbol={norm} initialTab={initialTab} initialTf={initialTf} />
       </main>
       <Footer />
     </>

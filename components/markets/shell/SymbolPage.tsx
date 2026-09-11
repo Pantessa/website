@@ -18,7 +18,7 @@ import { Maximize2, Minimize2 } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
 import ChartMount, { type ChartStats } from '@/components/markets/chart/ChartMount'
 import { fmtPrice } from '@/components/CandleChart'
-import { CHART_FEED_LABELS, chartPairFor, type ChartFeed } from '@/lib/charts'
+import { CHART_FEED_LABELS, chartPairFor, type ChartFeed, type ChartTf } from '@/lib/charts'
 import {
   DEFAULT_MARKET_TAB,
   MARKET_TABS,
@@ -42,7 +42,7 @@ const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt
 type FsDoc = Document & { webkitExitFullscreen?: () => Promise<void>; webkitFullscreenElement?: Element | null }
 type FsEl = HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> }
 
-export default function SymbolPage({ symbol }: { symbol: string }) {
+export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: string; initialTab?: MarketTab; initialTf?: ChartTf }) {
   const pair = useMemo(() => chartPairFor(symbol), [symbol])
   const sym = pair?.symbol ?? symbol
   const name = symbolName(sym)
@@ -51,7 +51,7 @@ export default function SymbolPage({ symbol }: { symbol: string }) {
   const shellRef = useRef<HTMLDivElement | null>(null)
 
   // ── Tabs: URL → state on arrival + back/forward; state → URL on change ──
-  const [tab, setTab] = useState<MarketTab>(DEFAULT_MARKET_TAB)
+  const [tab, setTab] = useState<MarketTab>(initialTab ?? DEFAULT_MARKET_TAB)
   const mirroredRef = useRef(false)
   useEffect(() => {
     setTab(parseMarketTab(window.location.search))
@@ -199,17 +199,22 @@ export default function SymbolPage({ symbol }: { symbol: string }) {
         <div className="sym__main">
           <nav className="sym__tabs" role="tablist" aria-label="Symbol sections">
             {MARKET_TABS.map((t) => (
-              <button
+              <a
                 key={t.tab}
-                type="button"
+                href={t.tab === DEFAULT_MARKET_TAB ? `/t/${sym}` : `/t/${sym}?tab=${t.tab}`}
                 role="tab"
                 aria-selected={tab === t.tab}
                 className={`sym__tab ${tab === t.tab ? 'is-on' : ''}`}
-                onClick={() => setTab(t.tab)}
+                onClick={(e) => {
+                  // A real link (crawlable, middle-clickable); a plain click switches in place.
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+                  e.preventDefault()
+                  setTab(t.tab)
+                }}
                 data-tab={t.tab}
               >
                 {t.label}
-              </button>
+              </a>
             ))}
           </nav>
           <div className="sym__body" data-tab={tab}>
@@ -221,7 +226,7 @@ export default function SymbolPage({ symbol }: { symbol: string }) {
               ) : tab === 'community' ? (
                 <CommunityTab symbol={sym} pair={pair} />
               ) : tab === 'technicals' ? (
-                <TechnicalsTab symbol={sym} pair={pair} />
+                <TechnicalsTab symbol={sym} pair={pair} initialTf={initialTf} />
               ) : (
                 <TradeTab symbol={sym} pair={pair} prompt={prompt} onAsk={onAsk} />
               )
