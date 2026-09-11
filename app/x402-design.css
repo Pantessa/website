@@ -71,7 +71,12 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     line-height: 1.5;
-    overflow-x: hidden;
+    /* clip, NEVER hidden: html clips x too (below), so body's overflow no
+       longer propagates to the viewport — a hidden x axis would make body its
+       own never-scrolling scroll container and every position: sticky on the
+       site (nav, the /markets watchlist rail, the /t rails) would scroll away
+       (it did, 2026-09-03 → 09-11). clip isn't a scroll container. */
+    overflow-x: clip;
   }
   .mono { font-family: var(--font-mono); }
 
@@ -323,7 +328,7 @@
 
   /* ── HERO: PAYMENT WEB ("Agent Expense Accounts") ──
      Full-bleed section under the 64px nav (the container is centered, so
-     50% - 50vw reaches the viewport edge; body's overflow-x:hidden absorbs
+     50% - 50vw reaches the viewport edge; html's overflow-x: clip absorbs
      the scrollbar-width overshoot). Tokens are scoped from the hero design
      package — emerald = approved/settled, red = blocked/over-cap. */
   .heroweb {
@@ -5054,23 +5059,59 @@
    /markets index + the /t/<symbol> frame (header · chart · tabs · rail).
    Tokens only (--fg/--bg/--surf/--line/--accent/--sell), so light mode
    comes free; the few places that need a tint use color-mix on --fg. */
-.mkt { padding: 28px 0 56px; }
-.mkt__hero { padding: 18px 0 26px; border-bottom: 1px solid var(--line); }
-.mkt__eyebrow { font-size: 10px; letter-spacing: 0.16em; color: var(--muted-2); }
-.mkt__title { margin-top: 10px; font-family: var(--font-chat-display); font-weight: 600; font-size: clamp(30px, 4.6vw, 52px); letter-spacing: -0.02em; line-height: 1.02; color: var(--fg); }
-.mkt__sub { margin-top: 10px; max-width: 640px; font-size: 15.5px; line-height: 1.5; color: var(--muted); }
-.mkt__quick { margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.mkt__quicknote { margin-left: auto; font-size: 9.5px; letter-spacing: 0.14em; color: var(--muted-2); white-space: nowrap; }
-.mkt__grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; margin-top: 26px; align-items: start; }
-.mkt__main { min-width: 0; display: flex; flex-direction: column; gap: 30px; }
-.mkt__rail { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 76px; }
+/* The /markets frame — a terminal in full screen (2026-09-11): the market
+   data scrolls in the main column under a sticky tool strip, the watchlist is
+   docked right at full viewport height. Own class names on purpose: the
+   landing's Markets band owns .mkt / .mkt__* (MARKETS/MSG below), and while
+   the index shared them the band's padding + 1220px column leaked in here. */
+.mkt-frame {
+  --mkt-nav-h: 64px;                   /* .nav__inner — every sticky offset below */
+  --mkt-rail-w: clamp(300px, 21vw, 360px);
+  --mkt-pad-l: clamp(24px, 4vw, 64px); /* the nav's edge padding: logo and data share a left edge */
+  --mkt-pad-r: clamp(20px, 2.2vw, 32px);
+  display: grid; grid-template-columns: minmax(0, 1fr) var(--mkt-rail-w);
+  grid-template-areas: "main rail" "foot rail"; align-items: start;
+}
+.mkt-frame__main { grid-area: main; min-width: 0; padding: 0 var(--mkt-pad-r) 8px var(--mkt-pad-l); }
+.mkt-frame__foot { grid-area: foot; min-width: 0; }
+.mkt-frame__bar {
+  position: sticky; top: var(--mkt-nav-h); z-index: 20;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px 20px;
+  margin: 0 calc(-1 * var(--mkt-pad-r)) 0 calc(-1 * var(--mkt-pad-l));
+  padding: 12px var(--mkt-pad-r) 12px var(--mkt-pad-l);
+  background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.mkt-frame__tabs { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+.mkt-frame__tab { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--muted); white-space: nowrap; transition: color .12s ease, background .12s ease; }
+.mkt-frame__tab:hover { color: var(--fg); }
+.mkt-frame__tab.is-on { color: var(--fg); background: var(--surf-1); box-shadow: inset 0 0 0 1px var(--line); }
+.mkt-frame__tabcount { font-size: 10px; letter-spacing: 0.06em; color: var(--muted-2); }
+/* The boards measure THIS box, not the viewport — the rail takes its share. */
+.mkt-frame__data { container-type: inline-size; container-name: mkt-data; display: flex; flex-direction: column; gap: 30px; padding-top: 22px; }
+/* Sticky, not fixed: it spans the data AND the footer rows, so it holds at
+   the nav's edge from the first board to the last footer line with no
+   offset hacks on the footer. z-index above the tool strip (its import/alert
+   scrims render inside the rail), below the nav (40). */
+.mkt-frame__rail {
+  grid-area: rail; position: sticky; top: var(--mkt-nav-h); z-index: 30;
+  height: calc(100vh - var(--mkt-nav-h)); height: calc(100dvh - var(--mkt-nav-h));
+  display: flex; flex-direction: column; min-width: 0;
+  border-left: 1px solid var(--line); background: var(--bg);
+}
+/* The watchlist fills the rail: head, add box and foot pinned; rows scroll. */
+.mkt-frame__rail > [data-slot="watchlist"] { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.mkt-frame__rail .wl { flex: 1 1 auto; height: auto; background: transparent; }
+.mkt-frame__how { padding: 16px 18px; }
+.mkt-frame__steps { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px 24px; counter-reset: mkt-step; }
+.mkt-frame__steps li { counter-increment: mkt-step; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.mkt-frame__steps li::before { content: counter(mkt-step, decimal-leading-zero); display: block; margin-bottom: 4px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; color: var(--accent); }
 
 /* search */
-.mkt-search { position: relative; margin-top: 20px; max-width: 640px; }
-.mkt-search__box { display: flex; align-items: center; gap: 10px; padding: 0 12px 0 14px; height: 48px; border: 1px solid var(--line-2); border-radius: 14px; background: var(--surf-1); transition: border-color .15s ease; }
+.mkt-search { position: relative; flex: 1 1 320px; max-width: 520px; }
+.mkt-search__box { display: flex; align-items: center; gap: 10px; padding: 0 12px 0 14px; height: 40px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surf-1); transition: border-color .15s ease; }
 .mkt-search__box:focus-within { border-color: var(--accent); }
 .mkt-search__icon { width: 16px; height: 16px; color: var(--muted-2); flex-shrink: 0; }
-.mkt-search__box input { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; font-size: 15px; color: var(--fg); }
+.mkt-search__box input { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; font-size: 14px; color: var(--fg); }
 .mkt-search__box input::placeholder { color: var(--muted-2); }
 .mkt-search__kbd { font-size: 10px; color: var(--muted-2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
 .mkt-search__menu { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 30; border: 1px solid var(--line-2); border-radius: 14px; background: var(--surf-1); box-shadow: 0 18px 48px rgba(0,0,0,.28); overflow: hidden; }
@@ -5079,18 +5120,33 @@
 .mkt-search__hint { margin-left: auto; font-size: 12px; color: var(--muted); }
 .mkt-search__none { padding: 12px 14px; font-size: 13px; color: var(--muted); }
 
-/* boards */
+/* boards — a card per board, a grid cell per symbol. The column count
+   follows the data column (1 → 4 via the mkt-data container), so a wide
+   screen fills with data instead of stretching one list across it. */
+.mkt-sec { scroll-margin-top: calc(var(--mkt-nav-h, 64px) + 84px); }
 .mkt-sec__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 10px; }
 .mkt-sec__title { font-family: var(--font-chat-display); font-weight: 600; font-size: 22px; letter-spacing: -0.01em; color: var(--fg); }
 .mkt-sec__blurb { margin-top: 4px; max-width: 560px; font-size: 13px; line-height: 1.5; color: var(--muted); }
 .mkt-sec__count { font-size: 10px; letter-spacing: 0.14em; color: var(--muted-2); white-space: nowrap; }
-.mkt-sec__rows { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--surf-1); }
+.mkt-sec__rows { display: grid; grid-template-columns: minmax(0, 1fr); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--surf-1); }
 .mkt-sec__more { margin-top: 10px; font-size: 10.5px; letter-spacing: 0.14em; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; cursor: pointer; }
 .mkt-sec__more:hover { color: var(--fg); border-color: var(--line-2); }
+@container mkt-data (min-width: 560px) {
+  .mkt-sec__rows, .mkt-frame__steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container mkt-data (min-width: 880px) {
+  .mkt-sec__rows { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mkt-frame__steps { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@container mkt-data (min-width: 1180px) {
+  .mkt-sec__rows { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 
-.mkt-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--line); color: var(--fg); text-decoration: none; transition: background .12s ease; }
-.mkt-row:last-child { border-bottom: 0; }
-.mkt-row:hover { background: var(--surf-2); }
+/* A cell draws its hairlines as outer shadows (right + bottom): any column
+   count reads as a clean grid, and the card's overflow clips the ones on its
+   outer edge. Hover tints rather than fills, so neighbours' lines show through. */
+.mkt-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 14px; box-shadow: 1px 0 0 var(--line), 0 1px 0 var(--line); color: var(--fg); text-decoration: none; transition: background .12s ease; }
+.mkt-row:hover { background: color-mix(in srgb, var(--fg) 5%, transparent); }
 .mkt-row--compact { grid-template-columns: 22px minmax(0, 1fr) auto; padding: 8px 12px; gap: 10px; }
 .mkt-row__id { display: flex; flex-direction: column; min-width: 0; }
 .mkt-row__sym { font-size: 13px; font-weight: 600; letter-spacing: 0.02em; }
@@ -5121,8 +5177,6 @@
 .mkt-kv--grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; }
 .mkt-kv--grid > div { grid-template-columns: 1fr; gap: 2px; }
 .mkt-kv--grid dd { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.mkt-steps { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
-.mkt-steps li::marker { color: var(--accent); font-family: var(--font-mono); }
 
 /* chips (send the ask) */
 .mkt-chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -5194,12 +5248,19 @@
 .mkt-trade__runtime > div { height: 100%; }
 
 @media (max-width: 1023px) {
-  .mkt__grid, .sym__grid { grid-template-columns: minmax(0, 1fr); }
-  .mkt__rail, .sym__rail { position: static; }
+  .sym__grid { grid-template-columns: minmax(0, 1fr); }
+  .sym__rail { position: static; }
+  /* The rail leaves the side: it drops under the boards as a card and the
+     main column's padding goes symmetric. */
+  .mkt-frame { grid-template-columns: minmax(0, 1fr); grid-template-areas: "main" "rail" "foot"; --mkt-pad-r: var(--mkt-pad-l); }
+  .mkt-frame__main { padding-bottom: 28px; }
+  .mkt-frame__rail { position: static; height: auto; margin: 0 var(--mkt-pad-l); border: 1px solid var(--line); border-radius: 14px; }
 }
 @media (max-width: 640px) {
-  .mkt { padding-top: 16px; }
-  .mkt__quicknote { margin-left: 0; width: 100%; }
+  .mkt-frame { --mkt-pad-l: 16px; }
+  .mkt-frame__bar { position: static; }
+  .mkt-frame__tabs { margin-left: 0; }
+  .mkt-frame__data { padding-top: 16px; }
   .mkt-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .sym { padding-left: 12px; padding-right: 12px; }
   .sym__head { padding-top: 14px; }
@@ -5464,6 +5525,8 @@
 .wl__menuWrap { position: relative; }
 .wl__pop { position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; min-width: 200px; max-width: 280px; max-height: 320px; overflow-y: auto; padding: 4px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--bg); box-shadow: 0 16px 40px rgba(0,0,0,.35); list-style: none; margin: 0; }
 .wl__pop--right { left: auto; right: 0; }
+/* A row menu near the bottom of the rows scroller opens upward (rowMenuPlacement). */
+.wl__pop--up { top: auto; bottom: calc(100% + 4px); }
 .wl__popItem { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; padding: 7px 9px; border-radius: 7px; color: var(--fg); font-size: 12.5px; }
 .wl__popItem:hover, .wl__popItem--on { background: var(--surf-1); }
 .wl__popItem--on { font-weight: 600; }
