@@ -18424,8 +18424,9 @@ async function main() {
     )
     check(
       'spine: a DOCS seat under CHATS in both postures, on /chat AND /markets (a page link, never lit — /docs has no spine)',
-      (chatHtml.match(/href="\/docs"[^>]*aria-label="DOCS"/g) ?? []).length === 2 &&
-        (mkHtml.match(/href="\/docs"[^>]*aria-label="DOCS"/g) ?? []).length === 2 &&
+      // (Next renders a Link's href AFTER the other attributes.)
+      (chatHtml.match(/<a [^>]*aria-label="DOCS"[^>]*href="\/docs"/g) ?? []).length === 2 &&
+        (mkHtml.match(/<a [^>]*aria-label="DOCS"[^>]*href="\/docs"/g) ?? []).length === 2 &&
         /aria-label="CHATS"[\s\S]*?aria-label="DOCS"[\s\S]*?aria-label="Settings"/.test(chatHtml) &&
         (spineSrc.match(/aria-label="DOCS"/g) ?? []).length === 2,
     )
