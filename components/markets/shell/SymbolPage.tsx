@@ -32,6 +32,7 @@ import {
 } from '@/lib/markets'
 import WatchlistSlot from '@/components/markets/shell/WatchlistSlot'
 import SymbolCardSlot from '@/components/markets/shell/SymbolCardSlot'
+import MarketsSide from '@/components/markets/shell/MarketsSide'
 import OverviewTab from '@/components/markets/tabs/OverviewTab'
 import NewsTab from '@/components/markets/tabs/NewsTab'
 import CommunityTab from '@/components/markets/tabs/CommunityTab'
@@ -285,10 +286,10 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
       </main>
 
       {/* ── Rail: the /markets watchlist, then the symbol card pinned under it ── */}
-      <aside className="mkt-frame__rail" aria-label="Watchlist and symbol details">
+      <MarketsSide label="Watchlist and symbol details">
         <WatchlistSlot current={sym} onAsk={onChartAsk} />
         <SymbolCardSlot symbol={sym} pair={pair} feed={feed} />
-      </aside>
+      </MarketsSide>
     </>
   )
 }

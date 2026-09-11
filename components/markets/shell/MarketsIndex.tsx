@@ -18,6 +18,7 @@ import { useQuotes } from '@/lib/markets-quotes'
 import MarketRow from '@/components/markets/shell/MarketRow'
 import TickerSearch from '@/components/markets/shell/TickerSearch'
 import WatchlistSlot from '@/components/markets/shell/WatchlistSlot'
+import MarketsSide from '@/components/markets/shell/MarketsSide'
 
 // Rows before "show all". Divides by every column count the board grid takes
 // (1–4, container-queried in x402-design.css), so a folded board always ends
@@ -72,8 +73,9 @@ function useActiveBoard(ids: readonly MarketSectionId[]) {
         const top = ids.find((id) => visible.has(id))
         if (top) setActive(top)
       },
-      // The band just under the nav + tool strip, down to mid-screen.
-      { rootMargin: '-150px 0px -50% 0px' },
+      // The band just under the tool strip (the brochure nav is gone on the
+      // markets surface), down to mid-screen.
+      { rootMargin: '-100px 0px -50% 0px' },
     )
     for (const id of ids) {
       const el = document.getElementById(id)
@@ -90,14 +92,15 @@ export default function MarketsIndex() {
   const allRows = useMemo(() => sections.flatMap((s) => s.rows), [sections])
   const [active, setActive] = useActiveBoard(ids)
 
-  // Two grid items for the page's .mkt-frame: the data column and the rail
+  // Two grid items for the page's .mkt-frame: the data column and the side
+  // column — the ask + account strip, then the docked watchlist rail
   // (app/markets/page.tsx adds the footer slot under the data).
   return (
     <>
       <main className="mkt-frame__main">
         <h1 className="sr-only">Markets</h1>
 
-        {/* ── Tool strip: search + board tabs, sticky under the nav ── */}
+        {/* ── Tool strip: search + board tabs, sticky at the top ── */}
         <div className="mkt-frame__bar">
           <TickerSearch rows={allRows} />
           <nav className="mkt-frame__tabs" aria-label="Boards">
@@ -138,10 +141,11 @@ export default function MarketsIndex() {
         </div>
       </main>
 
-      {/* ── The watchlist, docked right at full height ── */}
-      <aside className="mkt-frame__rail" aria-label="Your watchlist">
+      {/* ── The side column: ask + account on top, the watchlist docked
+          under it at full height ── */}
+      <MarketsSide label="Your watchlist">
         <WatchlistSlot />
-      </aside>
+      </MarketsSide>
     </>
   )
 }

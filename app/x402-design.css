@@ -5064,10 +5064,18 @@
    docked right at full viewport height. Own class names on purpose: the
    landing's Markets band owns .mkt / .mkt__* (MARKETS/MSG below), and while
    the index shared them the band's padding + 1220px column leaked in here. */
+/* The markets SHELL (2026-09-11): the app spine beside the frame, the way
+   .dashshell holds it beside the dashboard — a flex row, the spine sticky +
+   viewport-tall (AppSpine's own classes), the frame taking the rest. There
+   is no brochure nav on this surface (Navigation → isMarketsPath), so every
+   sticky offset below starts at the viewport's top edge. Below lg the spine
+   is the fixed bottom tab bar (48px + safe area): the shell reserves it. */
+.mkt-shell { display: flex; align-items: stretch; min-height: 100dvh; }
+.mkt-shell > .mkt-frame { flex: 1 1 auto; min-width: 0; }
 .mkt-frame {
-  --mkt-nav-h: 64px;                   /* .nav__inner — every sticky offset below */
+  --mkt-top-h: 52px;                   /* .mkt-frame__top — the ask + account strip; the rail docks under it */
   --mkt-rail-w: clamp(300px, 21vw, 360px);
-  --mkt-pad-l: clamp(24px, 4vw, 64px); /* the nav's edge padding: logo and data share a left edge */
+  --mkt-pad-l: clamp(24px, 4vw, 64px); /* the data's left gutter beside the spine */
   --mkt-pad-r: clamp(20px, 2.2vw, 32px);
   display: grid; grid-template-columns: minmax(0, 1fr) var(--mkt-rail-w);
   grid-template-areas: "main rail" "foot rail"; align-items: start;
@@ -5075,7 +5083,7 @@
 .mkt-frame__main { grid-area: main; min-width: 0; padding: 0 var(--mkt-pad-r) 8px var(--mkt-pad-l); }
 .mkt-frame__foot { grid-area: foot; min-width: 0; }
 .mkt-frame__bar {
-  position: sticky; top: var(--mkt-nav-h); z-index: 20;
+  position: sticky; top: 0; z-index: 20;
   display: flex; align-items: center; flex-wrap: wrap; gap: 10px 20px;
   margin: 0 calc(-1 * var(--mkt-pad-r)) 0 calc(-1 * var(--mkt-pad-l));
   padding: 12px var(--mkt-pad-r) 12px var(--mkt-pad-l);
@@ -5088,13 +5096,30 @@
 .mkt-frame__tabcount { font-size: 10px; letter-spacing: 0.06em; color: var(--muted-2); }
 /* The boards measure THIS box, not the viewport — the rail takes its share. */
 .mkt-frame__data { container-type: inline-size; container-name: mkt-data; display: flex; flex-direction: column; gap: 30px; padding-top: 22px; }
-/* Sticky, not fixed: it spans the data AND the footer rows, so it holds at
-   the nav's edge from the first board to the last footer line with no
-   offset hacks on the footer. z-index above the tool strip (its import/alert
-   scrims render inside the rail), below the nav (40). */
+/* The side column is ONE grid item spanning the data AND the footer rows
+   (align-self: stretch, so it is as tall as the page): the strip and the
+   rail ride sticky inside it — strip at the top edge, rail just under —
+   from the first board to the last footer line with no offset hacks on the
+   footer. Sticky, not fixed. */
+.mkt-frame__side { grid-area: rail; align-self: stretch; min-width: 0; }
+/* The strip above the watchlist (MarketsTopStrip): the Ask door's trigger +
+   the account control, the two live controls the brochure nav used to hold.
+   z-index above the rail (the account menu drops over the watchlist). */
+.mkt-frame__top {
+  position: sticky; top: 0; z-index: 32;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  height: var(--mkt-top-h); padding: 0 10px 0 12px;
+  border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--bg);
+}
+.mkt-frame__ask { flex: 0 0 auto; height: 34px; }
+.mkt-frame__acct { display: flex; align-items: center; justify-content: flex-end; min-width: 0; }
+.mkt-frame__acct .navacct__pill { max-width: 100%; }
+.mkt-frame__acct .navacct__addr { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* z-index above the tool strip (its import/alert scrims render inside the
+   rail), below the strip's account menu. */
 .mkt-frame__rail {
-  grid-area: rail; position: sticky; top: var(--mkt-nav-h); z-index: 30;
-  height: calc(100vh - var(--mkt-nav-h)); height: calc(100dvh - var(--mkt-nav-h));
+  position: sticky; top: var(--mkt-top-h); z-index: 30;
+  height: calc(100vh - var(--mkt-top-h)); height: calc(100dvh - var(--mkt-top-h));
   display: flex; flex-direction: column; min-width: 0;
   border-left: 1px solid var(--line); background: var(--bg);
 }
@@ -5141,7 +5166,7 @@
 /* boards — a card per board, a grid cell per symbol. The column count
    follows the data column (1 → 4 via the mkt-data container), so a wide
    screen fills with data instead of stretching one list across it. */
-.mkt-sec { scroll-margin-top: calc(var(--mkt-nav-h, 64px) + 84px); }
+.mkt-sec { scroll-margin-top: 84px; } /* the sticky tool strip */
 .mkt-sec__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 10px; }
 .mkt-sec__title { font-family: var(--font-chat-display); font-weight: 600; font-size: 22px; letter-spacing: -0.01em; color: var(--fg); }
 .mkt-sec__blurb { margin-top: 4px; max-width: 560px; font-size: 13px; line-height: 1.5; color: var(--muted); }
@@ -5264,11 +5289,21 @@
 .mkt-trade__runtime > div { height: 100%; }
 
 @media (max-width: 1023px) {
-  /* The rail leaves the side: it drops under the boards (or the symbol
-     page's tabs) as a card and the main column's padding goes symmetric. */
-  .mkt-frame { grid-template-columns: minmax(0, 1fr); grid-template-areas: "main" "rail" "foot"; --mkt-pad-r: var(--mkt-pad-l); }
+  /* The side column dissolves (display: contents): the strip takes the
+     frame's TOP row — a sticky bar over the page, the phone's nav (Ask +
+     account) — and the rail drops under the boards (or the symbol page's
+     tabs) as a card; the main column's padding goes symmetric. The spine is
+     the fixed bottom tab bar here: the shell reserves its height, and the
+     docked ask pill lifts above it. */
+  .mkt-frame { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "main" "rail" "foot"; --mkt-pad-r: var(--mkt-pad-l); }
+  .mkt-frame__side { display: contents; }
+  .mkt-frame__top { grid-area: top; border-left: 0; }
+  .mkt-frame__top .nav__ask-kbd { display: none; } /* no ⌘K on a phone */
+  .mkt-frame__bar { top: var(--mkt-top-h); }
   .mkt-frame__main { padding-bottom: 28px; }
-  .mkt-frame__rail { position: static; height: auto; margin: 0 var(--mkt-pad-l); border: 1px solid var(--line); border-radius: 14px; }
+  .mkt-frame__rail { grid-area: rail; position: static; height: auto; margin: 0 var(--mkt-pad-l); border: 1px solid var(--line); border-radius: 14px; }
+  .mkt-shell { padding-bottom: calc(48px + env(safe-area-inset-bottom)); }
+  :root[data-spine] .askdoor-pill { bottom: calc(64px + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 640px) {
   .mkt-frame { --mkt-pad-l: 16px; }

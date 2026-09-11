@@ -14,6 +14,38 @@ import NavAccount from '@/components/NavAccount'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { YeetfulMark } from '@/components/Logo'
 import { AskDoorTrigger } from '@/components/AskDoor'
+import { isMarketsPath } from '@/lib/markets'
+
+/**
+ * The site's account control, one piece (2026-09-11): disconnected → the
+ * unified sign-in door (rule 6 — CreateAccountButton when cdpEnabled, the
+ * AuthButton fallback); connected or signed in → the consolidated NavAccount
+ * pill. The nav's desktop cluster and the markets strip both render THIS, so
+ * the two doors can never drift. Renders nothing before mount — wallet
+ * state is client-only, and the SSR nav stays hydration-safe.
+ */
+export function SiteAccount({ redirectTo }: { redirectTo: string }) {
+  const { isConnected } = useAccount()
+  const { address: sessionAddress } = useSession()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  if (!mounted) return null
+  const disconnected = !isConnected && !sessionAddress
+  if (!disconnected) return <NavAccount />
+  return cdpEnabled ? (
+    <CreateAccountButton className={signInPill} label={signInLabel} redirectTo={redirectTo} />
+  ) : (
+    <AuthButton redirectTo={redirectTo} />
+  )
+}
+
+const signInPill =
+  'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/5 border border-white/15 text-zinc-200 text-xs font-semibold hover:bg-white/10 hover:border-white/25 transition-colors'
+const signInLabel = (
+  <>
+    <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} /> Sign in
+  </>
+)
 
 export default function Navigation() {
   const pathname = usePathname()
@@ -68,6 +100,12 @@ export default function Navigation() {
     pathname.startsWith('/dashboard') || pathname.startsWith('/chat') || pathname.startsWith('/docs')
   if (mounted && !!sessionAddress && onAppSurface) return null
 
+  // The markets surface (/markets, /t/<symbol>) is a terminal: the app spine
+  // is its navigation and the Ask door + account control dock in the
+  // watchlist column (MarketsTopStrip), so the brochure nav is gone for
+  // everyone — signed in or not. Pure path test, same on the server.
+  if (isMarketsPath(pathname)) return null
+
   const inDashboard = pathname.startsWith('/dashboard')
   const showDashboardCta = mounted && (isConnected || !!sessionAddress)
 
@@ -76,8 +114,6 @@ export default function Navigation() {
   // logged out, a single "Sign in" opens the modal (wallet / Google / email).
   const onChat = pathname.startsWith('/chat')
   const disconnected = !isConnected && !sessionAddress
-  const signInPill =
-    'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/5 border border-white/15 text-zinc-200 text-xs font-semibold hover:bg-white/10 hover:border-white/25 transition-colors'
 
   // Signing in from an app surface should keep the user WHERE THEY ARE, not
   // yank them to /dashboard. On chat we return them to the same chat URL (query
@@ -91,15 +127,7 @@ export default function Navigation() {
 
   // The disconnected sign-in affordance (one control) — shared everywhere.
   const disconnectedCta = cdpEnabled ? (
-    <CreateAccountButton
-      className={signInPill}
-      label={
-        <>
-          <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} /> Sign in
-        </>
-      }
-      redirectTo={signInRedirect}
-    />
+    <CreateAccountButton className={signInPill} label={signInLabel} redirectTo={signInRedirect} />
   ) : (
     <AuthButton redirectTo={signInRedirect} />
   )
@@ -114,7 +142,7 @@ export default function Navigation() {
   // NavAccount already covers the connect-to-pay case (it offers "Sign in with
   // wallet" + Wallet details while connected-but-not-signed-in), so chat now
   // shows the exact same dropdown as everywhere else.
-  const desktopAccount = disconnected ? disconnectedCta : <NavAccount />
+  const desktopAccount = <SiteAccount redirectTo={signInRedirect} />
 
   // MOBILE drawer account cluster — the drawer has room, so it stays explicit
   // (Dashboard link + auth + wallet) rather than the collapsed desktop pill.

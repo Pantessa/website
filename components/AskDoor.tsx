@@ -41,15 +41,17 @@ const ChatInterface = dynamic(() => import('@/components/ChatInterface'), { ssr:
 
 const isMac = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
-/** The nav / drawer trigger. Renders nothing where the door is hidden. */
-export function AskDoorTrigger({ variant = 'nav' }: { variant?: 'nav' | 'drawer' }) {
+/** The nav / drawer / markets-rail trigger. Renders nothing where the door
+ *  is hidden. `rail` is the nav pill docked in the markets watchlist column
+ *  (the strip above the watchlist — the brochure nav is gone there). */
+export function AskDoorTrigger({ variant = 'nav' }: { variant?: 'nav' | 'drawer' | 'rail' }) {
   const pathname = usePathname()
   const openDoor = useAskDoor((s) => s.openDoor)
   if (askDoorHidden(pathname)) return null
   return (
     <button
       type="button"
-      className={variant === 'nav' ? 'nav__ask' : 'nav__tab drawer__ask'}
+      className={variant === 'drawer' ? 'nav__tab drawer__ask' : variant === 'rail' ? 'nav__ask mkt-frame__ask' : 'nav__ask'}
       onClick={() => openDoor()}
       aria-label="Ask Pantessa"
       title="Ask Pantessa — one sentence, guarded build, your wallet signs (⌘K)"
@@ -59,7 +61,7 @@ export function AskDoorTrigger({ variant = 'nav' }: { variant?: 'nav' | 'drawer'
         <PantessaMark size={16} />
       </span>
       <span>Ask</span>
-      {variant === 'nav' && (
+      {variant !== 'drawer' && (
         <kbd className="nav__ask-kbd mono" aria-hidden="true">
           ⌘K
         </kbd>

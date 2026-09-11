@@ -367,3 +367,15 @@ export function parseMarketsNavAsk(message: string): { symbol: string; href: str
   if (!pair) return null
   return { symbol: pair.symbol, href: `/t/${pair.symbol}` }
 }
+
+/**
+ * The markets surface — /markets and every /t/<symbol> page (2026-09-11,
+ * Nate: "add the sidebar we have in the app on the left in market and asset
+ * view and remove the header nav"). On these paths the app spine is the
+ * navigation, the brochure nav is gone, and the Ask door + account control
+ * dock in the watchlist column. Pure — pinned; shared by Navigation (hide),
+ * NavAccount (stay here after sign-in / sign-out) and the shell.
+ */
+export function isMarketsPath(pathname: string): boolean {
+  return pathname === '/markets' || pathname.startsWith('/markets/') || pathname.startsWith('/t/')
+}

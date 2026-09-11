@@ -10,7 +10,10 @@
 // It replaces the drawer's own tab strip, the toolbar's reopen chips + NEW
 // button, and the rail's pinned Dashboard row on every breakpoint. Mounted
 // by surface shells (ChatWorkspace + the dashboard layout), NEVER by
-// ChatInterface — so /embed and /i can't inherit it.
+// ChatInterface — so /embed and /i can't inherit it. The MARKETS surface
+// (/markets + /t/<symbol>, 2026-09-11) mounts it too: there the brochure
+// nav is gone, the spine IS the navigation, and the MARKETS seat wears the
+// active state.
 //
 // Click grammar: a tab icon opens the drawer on that tab; clicking the tab
 // you're already looking at collapses the drawer. From the dashboard a tab
@@ -46,7 +49,7 @@ const TABS: { tab: RailTab; label: string; title: string; Icon: typeof Boxes }[]
   { tab: 'chats', label: 'CHATS', title: 'Your chat history', Icon: MessageSquare },
 ]
 
-export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'dashboard' }) {
+export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'dashboard' | 'markets' }) {
   const router = useRouter()
   const {
     railTab,
@@ -59,6 +62,10 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
     setMobileMcpRailOpen,
   } = useYeetfulStore()
   const onDashboard = surface === 'dashboard'
+  const onMarkets = surface === 'markets'
+  // Off the chat, a tab icon is a shortcut INTO chat (landing with that
+  // drawer tab open) and the URL mirror stays off — the page owns its URL.
+  const offChat = surface !== 'chat'
 
   // The live connected wallet (NOT the SIWE session — under connect-to-act a
   // visitor runs on connect alone), so the reset below fires at the moment the
@@ -115,7 +122,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
 
   const deepLinkedRef = useRef(false)
   useEffect(() => {
-    if (onDashboard) return
+    if (offChat) return
     // Only a destination we actually APPLIED counts as a deep link — a
     // flag-hidden tab name changed nothing, so it must not eat the
     // wallet-arrival reset below.
@@ -129,11 +136,11 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // replaceState (see syncTabParam), so this only fires for real
   // navigations — a pushed deep link, or leaving and returning to a chat.
   useEffect(() => {
-    if (onDashboard) return
+    if (offChat) return
     const onPop = () => applyTabFromUrl(window.location.search, { resetWhenAbsent: true })
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
-  }, [onDashboard, applyTabFromUrl])
+  }, [offChat, applyTabFromUrl])
 
   // A WALLET ARRIVING IS A FIRST LOOK — lead with the MCP set.
   //
@@ -161,13 +168,14 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
     setMainView('chat')
   }, [walletAddress, setRailTab, setMainView])
 
-  // The dashboard's floating rail-reopen pill and the mobile page paddings
-  // key off the spine's presence — flag it on the document element.
+  // The dashboard's floating rail-reopen pill, the mobile page paddings and
+  // the markets pages' docked ask pill key off the spine's presence — flag
+  // it on the document element.
   useEffect(() => {
-    if (!onDashboard) return
+    if (!offChat) return
     document.documentElement.setAttribute('data-spine', '1')
     return () => document.documentElement.removeAttribute('data-spine')
-  }, [onDashboard])
+  }, [offChat])
 
   // LINKS is a destination, not just a drawer: picking it renders the
   // public /links board in the chat's MAIN screen (LinksWorkspace); picking
@@ -192,17 +200,17 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // not-yet-applied state would wipe the very param we're restoring.
   const mirroredRef = useRef(false)
   useEffect(() => {
-    if (onDashboard) return
+    if (offChat) return
     if (!mirroredRef.current) {
       mirroredRef.current = true
       return
     }
     syncTabParam(urlTab)
-  }, [urlTab, onDashboard])
+  }, [urlTab, offChat])
 
   // Desktop: the drawer is the in-flow panel (persisted open state).
   const pickDesktop = (tab: RailTab) => {
-    if (onDashboard) {
+    if (offChat) {
       setRailTab(tab)
       setMainView(mainViewFor(tab))
       setMcpRailOpen(true)
@@ -228,7 +236,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
 
   // Mobile: the drawer is a transient overlay (never persisted).
   const pickMobile = (tab: RailTab) => {
-    if (onDashboard) {
+    if (offChat) {
       setRailTab(tab)
       setMainView(mainViewFor(tab))
       setMobileMcpRailOpen(true)
@@ -263,8 +271,9 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         className={cn(
           'max-lg:hidden flex-shrink-0 w-14 flex flex-col items-center border-r border-[var(--line)] bg-[var(--surf-1)]',
           // Chat's shell is height-constrained (h-dvh flex), so the spine
-          // just fills it; the dashboard PAGE scrolls, so it rides sticky.
-          onDashboard ? 'sticky top-0 h-dvh self-start' : 'h-full',
+          // just fills it; the dashboard and markets PAGES scroll, so it
+          // rides sticky.
+          offChat ? 'sticky top-0 h-dvh self-start' : 'h-full',
         )}
         aria-label="Workspace"
       >
@@ -301,14 +310,23 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             href="/markets"
             title="Markets — stocks 24/7, spot, perps; the chart that executes"
             aria-label="MARKETS"
-            className="relative w-12 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-2)] transition-colors"
+            aria-current={onMarkets ? 'page' : undefined}
+            className={cn(
+              'relative w-12 flex flex-col items-center gap-0.5 py-1.5 rounded-lg transition-colors',
+              onMarkets
+                ? 'bg-[var(--surf-2)] text-white'
+                : 'text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-2)]',
+            )}
           >
+            {onMarkets && (
+              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
+            )}
             <CandlestickChart className="w-[18px] h-[18px]" />
             <span className="mono text-[9px] font-medium tracking-wide">MARKETS</span>
           </Link>
 
           {TABS.map(({ tab, label, title, Icon }) => {
-            const selected = !onDashboard && railTab === tab && mcpRailOpen
+            const selected = !offChat && railTab === tab && mcpRailOpen
             return (
               <button
                 key={tab}
@@ -384,13 +402,20 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           href="/markets"
           title="Markets — stocks 24/7, spot, perps; the chart that executes"
           aria-label="MARKETS"
-          className="relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 text-[color:var(--muted)] transition-colors"
+          aria-current={onMarkets ? 'page' : undefined}
+          className={cn(
+            'relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 transition-colors',
+            onMarkets ? 'text-white' : 'text-[color:var(--muted)]',
+          )}
         >
+          {onMarkets && (
+            <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
+          )}
           <CandlestickChart className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">MARKETS</span>
         </Link>
         {TABS.map(({ tab, label, title, Icon }) => {
-          const selected = !onDashboard && railTab === tab && mobileMcpRailOpen
+          const selected = !offChat && railTab === tab && mobileMcpRailOpen
           return (
             <button
               key={tab}

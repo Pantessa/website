@@ -63,6 +63,7 @@ import {
   resolveTickerQuery,
   sessionState,
   stats24h,
+  isMarketsPath,
 } from '../lib/markets'
 import { composeAsk as composeTradeAsk, sidesFor as tradeSidesFor, tradeAsks } from '../lib/trade-asks'
 import { ROBINHOOD_TICKER_SET } from '../lib/robinhood-tickers'
@@ -5253,7 +5254,9 @@ async function main() {
         /'Connect wallet'\}<\/span>/.test(gate) &&
         !/<span>Sign in<\/span>/.test(gate) &&
         /walletConnectOnly\s+redirectTo=\{hereWithQuery\(\)\}/.test(gate) &&
-        /pathname\?\.startsWith\('\/chat'\) \? '\/chat' : '\/'/.test(nav),
+        // Re-pinned 2026-09-11 (markets shell): a public markets page stays
+        // put on sign-out — the pill docks in the watchlist column there.
+        /pathname\?\.startsWith\('\/chat'\) \? '\/chat' : isMarketsPath\(pathname \?\? ''\) \? pathname : '\/'/.test(nav),
     )
     check(
       'onboarding: after the on-ramp chip the chat says a Stripe tab opened and that it is watching the chain (the handoff moment is named, not implied)',
@@ -18332,10 +18335,17 @@ async function main() {
         mkHtml.includes('href="/t/AAPL"') && mkHtml.includes('href="/t/BTC"') && mkHtml.includes('href="/t/HYPE"'),
     )
     const shellCss = await readFile(new URL('../app/x402-design.css', import.meta.url), 'utf8')
+    // Re-pinned 2026-09-11 (the markets shell): the rail is no longer the
+    // grid item — the SIDE column is (strip + rail), stretched to the page,
+    // and the rail docks under the strip (top: var(--mkt-top-h)), not under
+    // a nav that is gone on this surface.
     check(
-      '/markets: the watchlist rail is DOCKED (spans the data + footer rows, sticky at the nav edge, viewport-tall, rows scroll inside) and the board grid measures the data column, not the viewport',
+      '/markets: the watchlist rail is DOCKED (the side column spans the data + footer rows; the rail is sticky under the top strip, viewport-tall, rows scroll inside) and the board grid measures the data column, not the viewport',
       /\.mkt-frame \{[^}]*grid-template-areas: "main rail" "foot rail";/.test(shellCss) &&
-        /\.mkt-frame__rail \{[^}]*grid-area: rail;[^}]*position: sticky;[^}]*top: var\(--mkt-nav-h\);[^}]*height: calc\(100dvh - var\(--mkt-nav-h\)\)/.test(shellCss) &&
+        /\.mkt-frame__side \{[^}]*grid-area: rail;[^}]*align-self: stretch;/.test(shellCss) &&
+        /\.mkt-frame__top \{[^}]*position: sticky; top: 0; z-index: 32;/.test(shellCss) &&
+        /\.mkt-frame__rail \{[^}]*position: sticky;[^}]*top: var\(--mkt-top-h\);[^}]*height: calc\(100dvh - var\(--mkt-top-h\)\)/.test(shellCss) &&
+        !/--mkt-nav-h/.test(shellCss) &&
         /\.mkt-frame__rail > \[data-slot="watchlist"\] \{[^}]*min-height: 0;/.test(shellCss) &&
         /\.mkt-frame__data \{[^}]*container-type: inline-size;/.test(shellCss) &&
         /@container mkt-data \(min-width: 1180px\)/.test(shellCss) &&
@@ -18357,6 +18367,40 @@ async function main() {
         /<aside class="mkt-frame__rail"[^>]*>[\s\S]*?data-slot="watchlist"[\s\S]*?data-slot="symbol-card"/.test(tAapl) &&
         /class="mkt-frame__foot"><footer class="footer"/.test(tAapl) &&
         /\.mkt-frame--sym > \.sym \{[^}]*grid-area: main;/.test(shellCss),
+    )
+    // THE MARKETS SHELL (2026-09-11, Nate: "add the sidebar we have in the
+    // app on the left in market and asset view and remove the header nav…
+    // integrate the account connected and ask into the fixed watch list").
+    // The app spine (both postures) ships in the HTML with the MARKETS seat
+    // lit, the brochure nav is gone on /markets AND /t/<sym> (but not on the
+    // brochure — /pricing keeps it, and the nav's own Ask trigger), and the
+    // strip above the watchlist carries the rail Ask trigger; the account
+    // control is client-only (mounted-gated, like the nav's) so it never
+    // appears in the SSR HTML.
+    for (const [route, html] of [['/markets', mkHtml], ['/t/AAPL', tAapl]] as const) {
+      check(
+        `${route}: the markets shell — app spine (column + bar) with the MARKETS seat lit, NO brochure nav, the strip (Ask ⌘K rail trigger) above the watchlist inside the side column`,
+        /<div class="mkt-shell"><aside[^>]*aria-label="Workspace"/.test(html) &&
+          (html.match(/aria-label="Workspace"/g) ?? []).length === 2 &&
+          (html.match(/aria-label="MARKETS" aria-current="page"/g) ?? []).length === 2 &&
+          !/<header class="nav/.test(html) && !html.includes('nav__tabs') && !html.includes('data-ask-door="nav"') &&
+          /<div class="mkt-frame__side"><div class="mkt-frame__top" data-slot="top-strip"><button[^>]*data-ask-door="rail"[^>]*>[\s\S]*?<\/button><div class="mkt-frame__acct"><\/div><\/div><aside class="mkt-frame__rail"/.test(html) &&
+          html.includes('data-ask-door="pill"'),
+        `workspace=${(html.match(/aria-label="Workspace"/g) ?? []).length} nav=${/<header class="nav/.test(html)}`,
+      )
+    }
+    const brochureHtml = flat(await (await fetch(`${BASE}/pricing`)).text())
+    check(
+      'markets shell: /pricing keeps the brochure nav + its Ask trigger (the shell is a markets-surface thing), and isMarketsPath is exactly /markets + /t/*',
+      /<header class="nav/.test(brochureHtml) && brochureHtml.includes('nav__tabs') && brochureHtml.includes('data-ask-door="nav"') &&
+        isMarketsPath('/markets') && isMarketsPath('/markets/') && isMarketsPath('/t/AAPL') && isMarketsPath('/t/ETH?tab=trade') &&
+        !isMarketsPath('/marketsx') && !isMarketsPath('/t') && !isMarketsPath('/tools') && !isMarketsPath('/') && !isMarketsPath('/chat'),
+    )
+    check(
+      'markets shell CSS: ≤1023px the side column dissolves (display: contents), the strip takes a top grid row, the shell reserves the bottom tab bar and lifts the docked ask pill above it; the tool strip is sticky at the top edge on desktop',
+      /\.mkt-shell \{ display: flex; align-items: stretch; min-height: 100dvh; \}/.test(shellCss) &&
+        /\.mkt-frame__bar \{\s*position: sticky; top: 0; z-index: 20;/.test(shellCss) &&
+        /@media \(max-width: 1023px\) \{[^@]*\.mkt-frame \{[^}]*grid-template-areas: "top" "main" "rail" "foot";[^@]*\.mkt-frame__side \{ display: contents; \}[^@]*\.mkt-frame__top \{ grid-area: top;[^@]*\.mkt-frame__bar \{ top: var\(--mkt-top-h\); \}[^@]*\.mkt-shell \{ padding-bottom: calc\(48px \+ env\(safe-area-inset-bottom\)\); \}[^@]*:root\[data-spine\] \.askdoor-pill \{ bottom: calc\(64px \+ env\(safe-area-inset-bottom\)\); \}/.test(shellCss),
     )
     const tabLabels = ['Overview', 'News', 'Community', 'Technicals', 'Trade']
     check(

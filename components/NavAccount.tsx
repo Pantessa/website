@@ -15,6 +15,7 @@ import Caret from '@/components/Caret'
 import WalletPanel from '@/components/WalletPanel'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
+import { isMarketsPath } from '@/lib/markets'
 
 /**
  * Consolidated account control for the brochure (non-chat) surface.
@@ -47,11 +48,12 @@ export default function NavAccount() {
 
   // On the chat surface this pill IS the chat account control, so signing in
   // from it must keep the user on chat (query included), not send them to the
-  // dashboard. Everywhere else the dashboard is the right post-sign-in landing.
+  // dashboard. The markets surface (where the pill docks in the watchlist
+  // column) is the same: sign in beside the chart, stay on the chart.
+  // Everywhere else the dashboard is the right post-sign-in landing.
+  const stayHere = pathname.startsWith('/chat') || isMarketsPath(pathname)
   const signInRedirect =
-    pathname.startsWith('/chat') && typeof window !== 'undefined'
-      ? window.location.pathname + window.location.search
-      : '/dashboard'
+    stayHere && typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/dashboard'
 
   useEffect(() => closeNow(), [pathname, closeNow])
   useEffect(() => {
@@ -168,8 +170,10 @@ export default function NavAccount() {
                       closeNow()
                       // Signing out of the app lands back on the chat, signed
                       // out (the guest lane) — not on the marketing page (QA
-                      // O-6). Account surfaces still go home: they're gated.
-                      const dest = pathname?.startsWith('/chat') ? '/chat' : '/'
+                      // O-6). A public markets page stays put (the guest
+                      // watchlist is the honest signed-out state). Account
+                      // surfaces still go home: they're gated.
+                      const dest = pathname?.startsWith('/chat') ? '/chat' : isMarketsPath(pathname ?? '') ? pathname : '/'
                       signOut().then(() => router.push(dest))
                     }}
                   >
