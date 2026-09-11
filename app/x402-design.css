@@ -5208,3 +5208,106 @@
   .mkt-order__ask { flex-direction: column; align-items: stretch; }
   .mkt-order__send { width: 100%; }
 }
+/* ── MARKETS/CHART — MarketChart (lightweight-charts engine) + drawings ── */
+.mkt-chart { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.mkt-chart__bar { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; min-width: 0; }
+.mkt-chart__right { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mkt-chart__ind { display: flex; gap: 4px; flex-wrap: wrap; }
+.mkt-ind {
+  border: 1px solid var(--line); border-radius: 7px; padding: 3px 7px; font-size: 10px; letter-spacing: 0.04em;
+  color: var(--muted-2); background: transparent; transition: color .15s, border-color .15s, background .15s;
+}
+.mkt-ind:hover { color: var(--fg); border-color: var(--line-2); }
+.mkt-ind.is-active { color: var(--fg); border-color: var(--line-2); background: var(--surf-1); }
+.mkt-chart__tools { display: flex; gap: 2px; border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
+.mkt-tool {
+  display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; color: var(--muted-2);
+  transition: color .15s, background .15s;
+}
+.mkt-tool:hover { color: var(--fg); background: var(--surf-1); }
+.mkt-tool.is-active { color: var(--ink); background: var(--accent); }
+@media (hover: none) { .mkt-tool { width: 36px; height: 36px; } .mkt-ind { min-height: 32px; padding-inline: 10px; } }
+.mkt-chart__hint { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); margin: -2px 0 0; }
+.mkt-chart__canvas { position: relative; width: 100%; min-width: 0; overflow: hidden; border-radius: 10px; }
+.mkt-chart__canvas.is-drawing { cursor: crosshair; }
+.mkt-chart__engine { position: absolute; inset: 0; }
+.mkt-chart__empty { position: absolute; inset: 0; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 10px; pointer-events: none; }
+.mkt-chart__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
+.mkt-attrib { color: var(--muted-2); text-decoration: none; border-bottom: 1px solid transparent; transition: color .15s, border-color .15s; }
+.mkt-attrib:hover { color: var(--fg); border-color: var(--line-2); }
+.mkt-pool { font-size: 10px; letter-spacing: 0.04em; color: var(--muted); border: 1px dotted var(--line-2); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+.mkt-pool__prem--up { color: var(--sell); }
+.mkt-pool__prem--down { color: var(--accent); }
+.mkt-markers { display: flex; gap: 6px 12px; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; font-size: 11px; }
+.mkt-markers li { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.mkt-markers li::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--fg); opacity: .7; flex-shrink: 0; }
+.mkt-markers a, .mkt-markers span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mkt-markers a:hover { color: var(--fg); }
+
+/* the SVG drawing layer sits over the canvas; only handles take the pointer */
+.mkt-draw { position: absolute; inset: 0; pointer-events: none; overflow: visible; z-index: 3; }
+.mkt-draw__hit { pointer-events: auto; stroke: transparent; stroke-width: 12; fill: transparent; cursor: pointer; }
+.mkt-draw__h line { stroke: var(--muted); stroke-width: 1; }
+.mkt-draw__h.has-action line { stroke: var(--accent); }
+.mkt-draw__h.is-selected line { stroke: var(--fg); stroke-width: 1.5; }
+.mkt-draw__pill { pointer-events: auto; cursor: pointer; }
+.mkt-draw__pill rect { fill: var(--surf-1); stroke: var(--line); }
+.mkt-draw__pill text { fill: var(--fg); font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10px; }
+.mkt-draw__h.has-action .mkt-draw__pill rect { stroke: var(--accent); }
+.mkt-draw__zone rect:first-child { fill: var(--muted); opacity: .12; }
+.mkt-draw__zone.has-action rect:first-child { fill: var(--accent); opacity: .12; }
+.mkt-draw__zone.is-selected rect:first-child { opacity: .22; }
+.mkt-draw__trend line { stroke: var(--muted); stroke-width: 1.25; }
+.mkt-draw__trend.is-selected line { stroke: var(--fg); stroke-width: 1.75; }
+.mkt-draw__note circle { fill: var(--accent); }
+.mkt-draw__note.is-selected circle { fill: var(--fg); }
+.mkt-draw__label { fill: var(--muted); font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10px; pointer-events: none; }
+.mkt-draw__label--note { fill: var(--fg); }
+.mkt-draw__preview { stroke: var(--fg); stroke-width: 1; stroke-dasharray: 3 3; fill: var(--fg); fill-opacity: .08; }
+
+/* the level popover — the chips that turn a line into an order */
+.mkt-pop {
+  position: absolute; z-index: 4; width: min(320px, calc(100% - 24px)); display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 11px 9px; border-radius: 12px; background: var(--surf-1); border: 1px solid var(--line-2);
+  box-shadow: 0 12px 32px rgba(0,0,0,.35);
+}
+.mkt-pop__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mkt-pop__kind { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
+.mkt-pop__x { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; color: var(--muted-2); }
+.mkt-pop__x:hover { color: var(--fg); background: var(--surf-2); }
+.mkt-pop__label {
+  width: 100%; font-size: 12px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+}
+.mkt-pop__label:focus { outline: none; border-color: var(--line-2); }
+.mkt-pop__offers { display: flex; flex-direction: column; gap: 5px; }
+.mkt-pop__chip {
+  display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 7px 9px; border-radius: 9px;
+  border: 1px solid var(--line); background: transparent; color: var(--fg); transition: border-color .15s, background .15s;
+}
+.mkt-pop__chip:hover { border-color: var(--line-2); background: var(--surf-2); }
+.mkt-pop__chip--buy { border-color: color-mix(in oklch, var(--accent) 55%, transparent); }
+.mkt-pop__chip--buy .mkt-pop__chiplabel { color: var(--accent); }
+.mkt-pop__chip.is-active { border-color: var(--accent); background: color-mix(in oklch, var(--accent) 12%, transparent); }
+.mkt-pop__chiplabel { font-size: 12px; font-weight: 600; }
+.mkt-pop__hint { font-size: 10.5px; line-height: 1.35; color: var(--muted); }
+.mkt-pop__foot { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
+.mkt-pop__missing { margin: 0; font-size: 10.5px; line-height: 1.4; color: var(--muted-2); }
+.mkt-pop__del { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; font-size: 11px; color: var(--muted-2); }
+.mkt-pop__del:hover { color: var(--sell); }
+.mkt-pop--note { width: min(280px, calc(100% - 24px)); }
+
+/* performance tiles (lib/performance) */
+.mkt-perf { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.mkt-perf__tile {
+  display: flex; flex-direction: column; gap: 1px; min-width: 52px; padding: 5px 8px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surf-1);
+}
+.mkt-perf--compact .mkt-perf__tile { flex-direction: row; gap: 6px; align-items: baseline; padding: 3px 7px; min-width: 0; }
+.mkt-perf__key { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
+.mkt-perf__val { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted); }
+.mkt-perf__tile.is-up .mkt-perf__val { color: var(--accent); }
+.mkt-perf__tile.is-down .mkt-perf__val { color: var(--sell); }
+.mkt-perf__tile.is-na { opacity: .6; }
+.mkt-perf__note { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); }
+.tchart__perf { display: flex; align-items: center; min-width: 0; }
+@media (max-width: 720px) { .tchart__perf { width: 100%; overflow-x: auto; } }

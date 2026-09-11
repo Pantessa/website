@@ -35,7 +35,7 @@ import OverviewTab from '@/components/markets/tabs/OverviewTab'
 import NewsTab from '@/components/markets/tabs/NewsTab'
 import CommunityTab from '@/components/markets/tabs/CommunityTab'
 import TechnicalsTab from '@/components/markets/tabs/TechnicalsTab'
-import TradeTab, { type InjectedPrompt, type TradeAsk } from '@/components/markets/tabs/TradeTab'
+import TradeTab, { sideOf, type InjectedPrompt, type TradeAsk } from '@/components/markets/tabs/TradeTab'
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
 
@@ -74,6 +74,8 @@ export default function SymbolPage({ symbol }: { symbol: string }) {
     setPrompt({ text: a.ask, send: true, at: Date.now() })
     setTab('trade')
   }, [])
+  // A drawn level on the chart carries a bare ask string — same door.
+  const onChartAsk = useCallback((ask: string) => onAsk({ side: sideOf(ask), label: ask, ask }), [onAsk])
 
   // ── Session line ticks (a stock page left open crosses the bell) ──
   const [now, setNow] = useState<Date>(() => new Date())
@@ -169,7 +171,7 @@ export default function SymbolPage({ symbol }: { symbol: string }) {
       <div ref={shellRef} className={expanded ? 'tchart sym__chart tchart--expanded' : 'tchart sym__chart'}>
         <div className="tchart__canvas">
           {pair ? (
-            <ChartMount symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} />
+            <ChartMount symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} onAsk={onChartAsk} />
           ) : (
             <div className="flex flex-1 items-center justify-center">
               <div className="mkt-card max-w-md text-center">

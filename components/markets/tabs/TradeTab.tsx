@@ -251,7 +251,7 @@ export default function TradeTab({
 
 /** Recover the side from a sentence (a chip fired from Overview lands the
  *  panel on the matching tab). */
-function sideOf(text: string): TradeSide {
+export function sideOf(text: string): TradeSide {
   if (/^\s*(?:dca|dollar)/i.test(text)) return 'dca'
   if (/^\s*protect/i.test(text)) return 'protect'
   if (/^\s*(?:sell|short)/i.test(text)) return 'sell'

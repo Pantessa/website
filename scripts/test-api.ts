@@ -58,6 +58,10 @@ import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
 import { FIRST_PARTY_MCP_SOURCE, guardPlannerArtifact, isFirstPartyMcp, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { LIMIT_EXAMPLES, parseSwapIntent, swapClarify } from '../lib/swap-intent'
+import { parseChartState, chartStateToAsks, serializeChartState, chartStatesEqual, type ChartState } from '../lib/chart-state'
+import { composeLineActions, composeZoneActions, fmtAskPrice, fmtAskUnits } from '../lib/chart-actions'
+import { performanceTiles, fmtPct } from '../lib/performance'
+import { sma, ema, bollinger, vwap, hasVolume } from '../lib/chart-indicators'
 import { activeLinkCapFor, composeMcps, isCrossChainAsk, linkEyebrow, linkLockup, linkLockupWord, runsOnLabel } from '../lib/intent-links'
 import { DEFAULT_TAB, parseTabParam, tabUrl } from '../lib/app-tab-url'
 import { LINKS_STUDIO_HREF } from '../lib/links-href'
@@ -17437,6 +17441,161 @@ async function main() {
         `row=${rosterRow ? 'found' : 'missing'} rosterRows=${(afRoster.failures ?? []).filter((f) => f.kind === 'roster').length}`,
       )
     }
+  }
+
+
+  // ── MARKETS/CHART ──
+  // The chart that executes (squad 2026-09-11, CHART lane): lib/chart-state
+  // is the annotation contract COMM stores on posts; lib/chart-actions turns
+  // a drawn level into asks the native parsers already accept; the engine
+  // (components/markets/chart/MarketChart, lightweight-charts) renders the
+  // required Apache-2.0 attribution; /api/charts/pool-price is the 4663
+  // pool-vs-tape honesty line. Every composed ask is replayed through the
+  // ladder replica — a level whose chip lands on the planner is a bug.
+  {
+    const fullState: ChartState = {
+      v: 1,
+      symbol: 'ETH',
+      tf: '1h',
+      lines: [
+        { id: 'h1', kind: 'h', price: 2300, label: 'support', action: { kind: 'limit', ask: 'limit order: buy 0.01087 ETH for at most 25 USDC' } },
+        { id: 'z1', kind: 'zone', p1: 2200, p2: 2300, action: { kind: 'dca', ask: 'DCA $10 into ETH weekly' } },
+        { id: 't1', kind: 'trend', t1: 1_757_000_000, p1: 2100, t2: 1_757_500_000, p2: 2400, label: 'channel' },
+        { id: 'n1', kind: 'note', t: 1_757_200_000, price: 2350, text: 'CPI print' },
+      ],
+    }
+    const rt = parseChartState(JSON.parse(serializeChartState(fullState)))
+    check(
+      'chart-state: serialize → parse round-trips byte-equal (h + zone + trend + note, actions kept) and accepts the JSON string form',
+      rt !== null && chartStatesEqual(rt, fullState) && parseChartState(serializeChartState(fullState)) !== null && serializeChartState(rt!) === serializeChartState(fullState),
+    )
+    const bad: unknown[] = [
+      { ...fullState, v: 2 },
+      { ...fullState, symbol: 'eth' },
+      { ...fullState, tf: '1w' },
+      { ...fullState, lines: [{ id: 'x', kind: 'h', price: Number.NaN }] },
+      { ...fullState, lines: [{ id: 'x', kind: 'h', price: 1 }, { id: 'x', kind: 'h', price: 2 }] },
+      { ...fullState, lines: [{ id: 'x', kind: 'h', price: 1, label: 'a\nb' }] },
+      { ...fullState, lines: [{ id: 'x', kind: 'h', price: 1, action: { kind: 'buy', ask: '/clear' } }] },
+      { ...fullState, lines: [{ id: 'x', kind: 'h', price: 1, action: { kind: 'yolo', ask: 'Buy $5 of ETH' } }] },
+      { ...fullState, lines: [{ id: 'x', kind: 'ray', price: 1 }] },
+      { ...fullState, lines: [{ id: 'x', kind: 'zone', p1: 5, p2: 5 }] },
+      { ...fullState, lines: Array.from({ length: 65 }, (_, i) => ({ id: `l${i}`, kind: 'h', price: 1 + i })) },
+      'not json',
+      null,
+    ]
+    check(
+      'chart-state: fail-closed — v2 / lowercase symbol / unknown tf / NaN price / dup id / control char / slash-led ask / unknown action kind / unknown line kind / flat zone / 65 lines / garbage all reject; the draft "5m" aliases to 15m',
+      bad.every((b) => parseChartState(b) === null) && parseChartState({ v: 1, symbol: 'AAPL', tf: '5m', lines: [] })?.tf === '15m',
+    )
+    check('chart-state: chartStateToAsks lists every action ask in drawing order (trend + note carry none)', JSON.stringify(chartStateToAsks(fullState)) === JSON.stringify(['limit order: buy 0.01087 ETH for at most 25 USDC', 'DCA $10 into ETH weekly']))
+
+    // Drawings → orders: every offer's ask through the ladder replica.
+    const offers = [
+      ...composeLineActions({ symbol: 'ETH', source: 'coinbase', price: 2300, last: 2400 }),
+      ...composeLineActions({ symbol: 'ETH', source: 'coinbase', price: 2500, last: 2400 }),
+      ...composeLineActions({ symbol: 'HYPE', source: 'hyperliquid', price: 30, last: 35 }),
+      ...composeLineActions({ symbol: 'HYPE', source: 'hyperliquid', price: 40, last: 35 }),
+      ...composeLineActions({ symbol: 'AAPL', source: 'robinhood', price: 200, last: 230 }),
+      ...composeLineActions({ symbol: 'SOL', source: 'coinbase', price: 100, last: 150 }),
+      ...composeLineActions({ symbol: 'PEPE', source: 'coinbase', price: 0.000009, last: 0.00001 }),
+      ...composeZoneActions({ symbol: 'ETH', source: 'coinbase', p1: 2200, p2: 2300, last: 2400 }),
+      ...composeZoneActions({ symbol: 'ETH', source: 'coinbase', p1: 2600, p2: 2700, last: 2400 }),
+      ...composeZoneActions({ symbol: 'AAPL', source: 'robinhood', p1: 200, p2: 210, last: 230 }),
+    ]
+    const landed = offers.map((o) => ({ ask: o.action.ask, out: simulateLadder(o.action.ask) }))
+    const fell = landed.filter((l) => l.out.kind !== 'action')
+    const expectedGate: Record<string, string> = { limit: 'swap', stop: 'spot-guard|guardian', protect: 'guardian', dca: 'dca', buy: 'swap|hyperliquid', sell: 'swap|hyperliquid' }
+    const wrongGate = offers.filter((o, i) => !new RegExp(`^(?:${expectedGate[o.action.kind]})$`).test(landed[i].out.gate))
+    check(
+      `chart actions: every composed level/zone ask lands natively in the ladder replica (${offers.length} asks: ETH spot both sides, HYPE perps both sides, AAPL stock, SOL non-EVM → HL perp, PEPE dust, three zones) on its own gate`,
+      offers.length >= 28 && fell.length === 0 && wrongGate.length === 0,
+      fell.length ? `FELL: ${fell.map((f) => `${f.ask} → ${f.out.gate}/${f.out.kind}`).join(' | ')}` : wrongGate.length ? `WRONG GATE: ${wrongGate.map((o) => o.action.ask).join(' | ')}` : '',
+    )
+    const ethBelow = composeLineActions({ symbol: 'ETH', source: 'coinbase', price: 2300, last: 2400 })
+    const ethAbove = composeLineActions({ symbol: 'ETH', source: 'coinbase', price: 2500, last: 2400 })
+    const aapl = composeLineActions({ symbol: 'AAPL', source: 'robinhood', price: 200, last: 230 })
+    const bigPx = composeLineActions({ symbol: 'BTC', source: 'coinbase', price: 61234.56, last: 70000 })
+    check(
+      'chart actions: honesty — stop + limit BUY only below market, limit SELL only above (never a market order in limit clothes), stocks never get a limit or a stop, prices carry no separators/exponents',
+      ethBelow.some((o) => o.action.kind === 'stop') &&
+        ethBelow.some((o) => o.action.kind === 'limit' && /\bbuy\b/.test(o.action.ask)) &&
+        !ethBelow.some((o) => o.action.kind === 'limit' && /\bsell\b/.test(o.action.ask)) &&
+        !ethAbove.some((o) => o.action.kind === 'stop') &&
+        ethAbove.some((o) => o.action.kind === 'limit' && /\bsell\b/.test(o.action.ask)) &&
+        !ethAbove.some((o) => o.action.kind === 'limit' && /\bbuy\b/.test(o.action.ask)) &&
+        !aapl.some((o) => o.action.kind === 'limit' || o.action.kind === 'stop') &&
+        aapl.some((o) => o.action.kind === 'dca') &&
+        bigPx.some((o) => o.action.ask === 'Protect my spot BTC if it drops to $61235') &&
+        offers.every((o) => !/[,e]\d/.test(o.action.ask.replace(/[A-Za-z]+/g, ''))) &&
+        fmtAskPrice(2400) === '2400' && fmtAskPrice(0.000009) === '0.000009' && fmtAskUnits(25, 2300) === '0.01087' && fmtAskUnits(25, 0.000009) === '2777778',
+      `${ethBelow.map((o) => o.action.kind).join(',')} / ${ethAbove.map((o) => o.action.kind).join(',')} / ${aapl.map((o) => o.action.kind).join(',')}`,
+    )
+    const lvl = parseChartState({ v: 1, symbol: 'ETH', tf: '1h', lines: [{ id: 'a', kind: 'h', price: 2300, action: ethBelow[0].action }] })
+    check('chart actions: a composed action survives the chart-state contract (the post → link path)', lvl !== null && chartStateToAsks(lvl)[0] === ethBelow[0].action.ask)
+
+    // Performance tiles on a fixture: 200 daily closes 100..299 ending 2026-09-10.
+    const endDay = Math.floor(Date.UTC(2026, 8, 10) / 1000)
+    const daily: Candle[] = Array.from({ length: 200 }, (_, i) => ({ t: endDay - (199 - i) * 86_400, o: 100 + i, h: 101 + i, l: 99 + i, c: 100 + i, v: 1 }))
+    const perf = performanceTiles(daily)
+    const tile = (k: string) => perf.tiles.find((t) => t.key === k)!
+    const exp = (n: number) => ((299 - (299 - n)) / (299 - n)) * 100
+    check(
+      'performance: 200-day fixture → 1W/1M/3M/6M exact off the base close, YTD + 1Y named unavailable; a 20-bar 1h series answers nothing',
+      Math.abs(tile('1W').pct! - exp(7)) < 1e-9 &&
+        Math.abs(tile('1M').pct! - exp(30)) < 1e-9 &&
+        Math.abs(tile('3M').pct! - exp(90)) < 1e-9 &&
+        Math.abs(tile('6M').pct! - exp(180)) < 1e-9 &&
+        tile('YTD').pct === null &&
+        tile('1Y').pct === null &&
+        perf.unavailable.join(',') === 'YTD,1Y' &&
+        performanceTiles(Array.from({ length: 20 }, (_, i) => ({ t: endDay - (19 - i) * 3600, o: 1, h: 1, l: 1, c: 1 + i, v: 0 }))).unavailable.length === 6 &&
+        fmtPct(2.5) === '+2.5%' && fmtPct(-0.04) === '−0.0%' && fmtPct(null) === '—',
+      perf.tiles.map((t) => `${t.key}=${t.pct?.toFixed(2) ?? '—'}`).join(' '),
+    )
+
+    // Overlays: flat series → flat lines, null until the window fills; no volume → no VWAP.
+    const flatC: Candle[] = Array.from({ length: 30 }, (_, i) => ({ t: i * 3600, o: 50, h: 50, l: 50, c: 50, v: 0 }))
+    const bb = bollinger(flatC, 20, 2)
+    check(
+      'indicators: sma/ema/bollinger sit on a flat series and stay null until the window fills; vwap is null on a volumeless tape',
+      sma(flatC, 20)[18].v === null && sma(flatC, 20)[19].v === 50 && ema(flatC, 20)[18].v === null && Math.abs(ema(flatC, 20)[29].v! - 50) < 1e-9 &&
+        bb.upper[19].v === 50 && bb.lower[29].v === 50 && bb.middle[18].v === null &&
+        vwap(flatC).every((p) => p.v === null) && !hasVolume(flatC),
+    )
+
+    // The engine on /t: the Apache-2.0 attribution notice + tools in the HTML.
+    const tAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
+    check(
+      '/t/AAPL: MarketChart server-renders with the required "Charts by TradingView Lightweight Charts" attribution link, the drawing toolbar and the performance tiles',
+      tAapl.includes('Charts by TradingView Lightweight Charts') && tAapl.includes('https://www.tradingview.com/lightweight-charts/') && tAapl.includes('Horizontal level') && tAapl.includes('mkt-perf') && tAapl.includes('mkt-attrib'),
+    )
+
+    // Pool-price honesty: stocks only; everything else says why.
+    const ppEth = (await (await fetch(`${BASE}/api/charts/pool-price?symbol=ETH`)).json()) as { pool: unknown; reason?: string }
+    const ppUsdg = (await (await fetch(`${BASE}/api/charts/pool-price?symbol=USDG`)).json()) as { pool: unknown; reason?: string }
+    const ppBad = await fetch(`${BASE}/api/charts/pool-price?symbol=%3Cscript%3E`)
+    check(
+      'pool-price api: a coinbase symbol (ETH) has NO pool line (null, "not a Robinhood Chain listing"); chartless → "no chart source"; malformed → 400',
+      ppEth.pool === null && ppEth.reason === 'not a Robinhood Chain listing' && ppUsdg.pool === null && ppUsdg.reason === 'no chart source' && ppBad.status === 400,
+    )
+    const ppAapl = (await (await fetch(`${BASE}/api/charts/pool-price?symbol=AAPL`)).json()) as { symbol: string; pool: { usdPerToken: number; tokenOut: number; quoteUsd: number; via: string; chainId: number } | null; reason?: string }
+    const tapeAapl = (await (await fetch(`${BASE}/api/charts/candles?symbol=AAPL&tf=1h`)).json()) as { last?: number | null }
+    const poolOk =
+      ppAapl.symbol === 'AAPL' &&
+      ppAapl.pool !== null &&
+      ppAapl.pool.chainId === 4663 &&
+      ppAapl.pool.quoteUsd === 100 &&
+      ppAapl.pool.usdPerToken > 0 &&
+      Math.abs(ppAapl.pool.usdPerToken * ppAapl.pool.tokenOut - 100) < 1e-6 &&
+      /Uniswap v[34] USDG\/AAPL/.test(ppAapl.pool.via) &&
+      (typeof tapeAapl.last !== 'number' || Math.abs(ppAapl.pool.usdPerToken / tapeAapl.last - 1) < 0.25)
+    const poolDown = ppAapl.pool === null && ppAapl.reason === 'quote unavailable'
+    check(
+      'pool-price api: AAPL → a live $100 USDG quote on 4663 (usdPerToken × tokenOut = $100, venue named, within 25% of the tape) or the named quote-unavailable — never a 500',
+      poolOk || poolDown,
+      poolDown ? 'RPC/quote down — refusal shape verified' : ppAapl.pool ? `pool=$${ppAapl.pool.usdPerToken.toFixed(2)} tape=$${tapeAapl.last} via=${ppAapl.pool.via}` : JSON.stringify(ppAapl),
+    )
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
