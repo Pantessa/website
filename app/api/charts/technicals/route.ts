@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { CHART_FEED_LABELS, normalizeChartSymbol } from '@/lib/charts'
+import { CHART_FEED_LABELS, normalizeChartSymbol, type ChartTf } from '@/lib/charts'
 import { loadCandleSeries, resolveTf, CANDLE_TFS } from '@/lib/candles-server'
 import { computeTechnicals, verdictChips, type PivotSet, type TechnicalsApi as TechnicalsResponse, type TechnicalsRefusal as Refusal } from '@/lib/technicals'
 
@@ -20,7 +20,9 @@ const cache = new Map<string, { at: number; body: TechnicalsResponse }>()
 
 export async function GET(req: NextRequest) {
   const symbolRaw = req.nextUrl.searchParams.get('symbol') ?? ''
-  const tf = resolveTf(req.nextUrl.searchParams.get('tf') ?? '1d')
+  // Default frame is DAILY here (the chart's is 1h) — an unknown tf falls to it.
+  const tfRaw = req.nextUrl.searchParams.get('tf')
+  const tf = tfRaw && CANDLE_TFS.includes(tfRaw as ChartTf) ? resolveTf(tfRaw) : '1d'
   const noStore = { headers: { 'cache-control': 'no-store' } }
   if (!/^[A-Za-z0-9$._-]{1,16}$/.test(symbolRaw)) {
     return NextResponse.json({ error: 'bad symbol' }, { status: 400, headers: noStore.headers })
@@ -67,7 +69,7 @@ export async function GET(req: NextRequest) {
     pivots: tech.pivots ? (families as Omit<PivotSet, 'period' | 'from'>) : null,
     pivotPeriod: period,
     pivotFrom: from,
-    chips: verdictChips({ symbol: pair.symbol, source: pair.source, rating: tech.summary.rating, support: tech.pivots?.classic.s1 ?? null }),
+    chips: verdictChips({ symbol: pair.symbol, source: pair.source, rating: tech.summary.rating, support: tech.pivots?.classic.s1 ?? null, resistance: tech.pivots?.classic.r1 ?? null }),
   }
   cache.set(key, { at: Date.now(), body })
   return NextResponse.json(body, noStore)

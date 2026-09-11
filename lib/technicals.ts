@@ -530,7 +530,12 @@ function movingAverageRows(x: Ctx): { rows: Row[]; omitted: string[] } {
   const maRow = (name: string, series: number[]) => {
     const v = last(series)
     if (!Number.isFinite(v)) omitted.push(name)
-    else rows.push({ name, value: round(v, 6), signal: v < price ? 'buy' : v > price ? 'sell' : 'neutral' })
+    else {
+      // Equal within float noise is NEUTRAL (a zero-lag Hull MA on a straight
+      // ramp lands on the price to 1e-13 — never a coin-flip vote).
+      const eq = Math.abs(v - price) <= Math.abs(price) * 1e-9
+      rows.push({ name, value: round(v, 6), signal: eq ? 'neutral' : v < price ? 'buy' : 'sell' })
+    }
   }
   for (const n of [10, 20, 30, 50, 100, 200]) {
     maRow(`Exponential Moving Average (${n})`, ema(x.close, n))
@@ -705,12 +710,15 @@ export interface ChipInput {
   rating: Rating
   /** Classic S1 — the level a neutral verdict's stop sits under. */
   support?: number | null
+  /** Classic R1 — where a neutral perp verdict takes profit. */
+  resistance?: number | null
 }
 
 export function verdictChips(input: ChipInput): ChartAction[] {
   const sym = input.symbol.toUpperCase()
   const perp = input.source === 'hyperliquid' || !!tokenHome(sym)
   const s1 = input.support != null && Number.isFinite(input.support) && input.support > 0 ? askPrice(input.support) : null
+  const r1 = input.resistance != null && Number.isFinite(input.resistance) && input.resistance > 0 ? askPrice(input.resistance) : null
   const buy: ChartAction = perp
     ? { kind: 'buy', ask: `Long $25 of ${sym} on Hyperliquid`, label: `Long $25 of ${sym}` }
     : { kind: 'buy', ask: `Buy $25 of ${sym}`, label: `Buy $25 of ${sym}` }
@@ -726,6 +734,9 @@ export function verdictChips(input: ChipInput): ChartAction[] {
       ? { kind: 'stop', ask: `Protect my ${sym} long with a stop at $${s1}`, label: `Stop under S1 · $${s1}` }
       : { kind: 'stop', ask: `Protect my spot ${sym} if it drops to $${s1}`, label: `Stop under S1 · $${s1}` }
     : null
+  // A perp's neutral pair: the stop under S1 and the take-profit at R1 (the
+  // HL guardian's other verb) — both round-trip parseGuardianArm.
+  const takeProfitR1: ChartAction | null = perp && r1 ? { kind: 'limit', ask: `Take profit on my ${sym} long at $${r1}`, label: `Take profit at R1 · $${r1}` } : null
   switch (input.rating) {
     case 'strong_sell':
     case 'sell':
@@ -734,7 +745,7 @@ export function verdictChips(input: ChipInput): ChartAction[] {
     case 'buy':
       return dca ? [buy, dca] : [buy, protectPct]
     default:
-      return [stopAtS1 ?? protectPct, ...(dca ? [dca] : [])]
+      return perp ? [stopAtS1 ?? protectPct, takeProfitR1 ?? buy] : [stopAtS1 ?? protectPct, dca!]
   }
 }
 

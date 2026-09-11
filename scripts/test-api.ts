@@ -17509,13 +17509,16 @@ async function main() {
     check(
       'tech: computeTechnicals on an 80-bar ramp: every MA that computed says BUY (MA < price), the 100/200 MAs are OMITTED not neutral, MACD > signal = buy, momentum rising = buy',
       !!t80 &&
-        t80.rows.movingAverages.every((r) => r.signal === 'buy') &&
+        // Ichimoku is neutral on a pure ramp by its own rule (base < leadA); the
+        // zero-lag Hull MA lands ON the price → neutral, never a float coin-flip.
+        t80.rows.movingAverages.filter((r) => !/Ichimoku|Hull/.test(r.name)).every((r) => r.signal === 'buy') &&
+        t80.rows.movingAverages.find((r) => r.name.startsWith('Hull'))?.signal === 'neutral' &&
         t80.omitted.includes('Exponential Moving Average (200)') &&
         t80.omitted.includes('Simple Moving Average (100)') &&
         t80.rows.oscillators.find((r) => r.name.startsWith('MACD'))?.signal === 'buy' &&
         t80.rows.oscillators.find((r) => r.name.startsWith('Momentum'))?.signal === 'buy' &&
         t80.movingAverages.rating === 'strong_buy' &&
-        t80.movingAverages.neutral === 0,
+        t80.movingAverages.sell === 0,
       t80 ? `omitted=${t80.omitted.length} ma=${JSON.stringify(t80.movingAverages)}` : 'null',
     )
     const dive = ramp(41).map((i) => (i < 40 ? 200 - 2 * i : 200 - 2 * 39 + 1))
@@ -17526,7 +17529,8 @@ async function main() {
       !!tDive &&
         tDive.rows.oscillators.find((r) => r.name.startsWith('RSI'))?.signal === 'buy' &&
         tDive.rows.oscillators.find((r) => r.name.startsWith('Williams'))?.signal === 'buy' &&
-        tDive.rows.movingAverages.filter((r) => !r.name.startsWith('Ichimoku')).every((r) => r.signal === 'sell'),
+        // (Hull's zero lag puts it UNDER the up-tick — buy by the rule; Ichimoku neutral)
+        tDive.rows.movingAverages.filter((r) => !/Ichimoku|Hull/.test(r.name)).every((r) => r.signal === 'sell'),
       tDive ? tDive.rows.oscillators.map((r) => `${r.name.split(' ')[0]}=${r.signal}`).join(' ') : 'null',
     )
     check('tech: fewer than MIN_BARS bars → null (no verdict on a stub tape)', computeTechnicals(rampCandles(TECH_MIN_BARS - 1), '1h') === null && !!computeTechnicals(rampCandles(TECH_MIN_BARS), '1h'))
@@ -17567,6 +17571,8 @@ async function main() {
     check('tech: the neutral chip\'s pivot stop round-trips the spot-guard parser at the exact level', chipStop.kind === 'stop' && techParseSpotGuardArm(chipStop.ask)?.triggerValue === 2410.5 && techParseSpotGuardArm(chipStop.ask)?.token === 'ETH')
     const hlStop = verdictChips({ symbol: 'HYPE', source: 'hyperliquid', rating: 'neutral', support: 61.26 })[0]
     check('tech: a perp\'s neutral chip is the HL guardian at the pivot (coin + price mode)', hlStop.kind === 'stop' && techParseGuardianArm(hlStop.ask)?.coin === 'HYPE' && techParseGuardianArm(hlStop.ask)?.triggerValue === 61.26)
+    const hlTp = verdictChips({ symbol: 'HYPE', source: 'hyperliquid', rating: 'neutral', support: 61.26, resistance: 96.9 })[1]
+    check('tech: a perp\'s second neutral chip is the take-profit at R1 (guardian kind take_profit, price mode)', hlTp.kind === 'limit' && techParseGuardianArm(hlTp.ask)?.kind === 'take_profit' && techParseGuardianArm(hlTp.ask)?.coin === 'HYPE' && techParseGuardianArm(hlTp.ask)?.triggerValue === 96.9)
 
     // Every chip for every (source × rating) lands natively in the ladder replica — never the planner
     const ratings: TechRating[] = ['strong_sell', 'sell', 'neutral', 'buy', 'strong_buy']
@@ -17576,7 +17582,7 @@ async function main() {
     const chipBad: string[] = []
     let chipCount = 0
     for (const c of chipCases) for (const r of ratings) {
-      const chips = verdictChips({ symbol: c.symbol, source: c.source, rating: r, support: 123.45 })
+      const chips = verdictChips({ symbol: c.symbol, source: c.source, rating: r, support: 123.45, resistance: 130.5 })
       if (chips.length < 2) chipBad.push(`${c.symbol}/${r}: ${chips.length} chips`)
       for (const ch of chips) {
         chipCount++
