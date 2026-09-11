@@ -8,7 +8,7 @@
 // from scratch by the native guarded layers on the other side of the click —
 // this page never accepts or forwards calldata, addresses, or artifacts.
 
-import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { ShieldCheck, ArrowRight } from 'lucide-react'
 import { YeetfulMark } from '@/components/Logo'
 
@@ -82,12 +82,12 @@ export default function SignHandoff({ ask, mcps, agent }: { ask: string; mcps: s
             ))}
           </ul>
 
-          <Link
+          <SpineLink
             href={chatHref}
             className="btn btn--solid inline-flex items-center justify-center gap-2 self-start"
           >
             Review &amp; build <ArrowRight className="w-4 h-4" />
-          </Link>
+          </SpineLink>
           <p className="text-[12px] text-[color:var(--muted-2)] mt-3">
             The ask lands prefilled in the chat — nothing sends, builds, or moves until you act.
           </p>
@@ -100,9 +100,9 @@ export default function SignHandoff({ ask, mcps, agent }: { ask: string; mcps: s
             <code className="mono text-[12px]">/sign?ask=Buy%20%2412%20of%20AAPL</code>. If you landed
             here by hand, the chat is the front door.
           </p>
-          <Link href="/chat" className="btn btn--ghost self-start">
+          <SpineLink href="/chat" className="btn btn--ghost self-start">
             Open the chat
-          </Link>
+          </SpineLink>
         </>
       )}
     </main>

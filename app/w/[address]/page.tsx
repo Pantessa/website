@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { isAddress } from 'viem'
 import Footer from '@/components/Footer'
 import { walletSnapshotFor, type WalletSnapshot } from '@/lib/briefing-exec'
@@ -61,9 +61,9 @@ function BriefingRows({ snap }: { snap: WalletSnapshot }) {
             <div className="flex items-baseline gap-2">
               <span className="text-[13.5px] font-medium">
                 {r.chartSymbol && chartPairFor(r.chartSymbol) ? (
-                  <Link href={`/t/${r.chartSymbol}`} className="hover:underline">
+                  <SpineLink href={`/t/${r.chartSymbol}`} className="hover:underline">
                     {r.label}
-                  </Link>
+                  </SpineLink>
                 ) : (
                   r.label
                 )}
@@ -79,14 +79,14 @@ function BriefingRows({ snap }: { snap: WalletSnapshot }) {
             {r.sub && <p className="mt-0.5 text-[11.5px] text-[color:var(--muted)]">{r.sub}</p>}
           </div>
           {(r.actions ?? []).map((a) => (
-            <Link
+            <SpineLink
               key={a.label}
               href={chipHref(a.prompt)}
               className="rounded-lg border border-[var(--line-2)] px-2.5 py-1.5 text-[11px] font-medium text-[color:var(--accent)] transition-colors hover:bg-[var(--surf-1)]"
               title={`Opens chat with “${a.prompt}” ready to send — runs on YOUR connected wallet`}
             >
               {a.label}
-            </Link>
+            </SpineLink>
           ))}
         </div>
       ))}
@@ -158,9 +158,9 @@ export default async function WalletBriefingPage({ params }: Params) {
                 <div key={i} className="flex items-center gap-3 px-4 py-2.5">
                   <span className="text-[13px] font-medium">
                     {chartPairFor(h.symbol) ? (
-                      <Link href={`/t/${h.symbol.toUpperCase()}`} className="hover:underline">
+                      <SpineLink href={`/t/${h.symbol.toUpperCase()}`} className="hover:underline">
                         {h.symbol.toUpperCase()}
-                      </Link>
+                      </SpineLink>
                     ) : (
                       h.symbol.toUpperCase()
                     )}
@@ -181,12 +181,12 @@ export default async function WalletBriefingPage({ params }: Params) {
             Connect yours and get the same briefing live in chat — protection, funding fixes, and
             recurring buys, each one a transaction only you can sign.
           </p>
-          <Link
+          <SpineLink
             href="/chat"
             className="mt-3 inline-block rounded-xl bg-[var(--accent)] px-4 py-2 text-[13px] font-semibold text-[color:var(--accent-ink,#04110b)] transition-opacity hover:opacity-90"
           >
             Get my briefing →
-          </Link>
+          </SpineLink>
         </section>
       </main>
       <Footer />

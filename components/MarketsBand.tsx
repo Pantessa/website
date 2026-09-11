@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
+import SpineLink from '@/components/SpineLink'
 import { candleSvg } from '@/lib/markets-seo'
 import { CHIP_CONTRACT, SIX_LINES, TAPE_FOOTNOTE, UNLIMITED_LINE, sessionLine } from '@/lib/markets-copy'
 import type { Candle } from '@/lib/charts'
@@ -148,12 +149,12 @@ export default function MarketsBand() {
       </ol>
 
       <div className="mkt__ctas">
-        <Link className="btn btn--solid" href="/markets">
+        <SpineLink className="btn btn--solid" href="/markets">
           Open Markets
-        </Link>
-        <Link className="btn btn--ghost" href="/t/AAPL">
+        </SpineLink>
+        <SpineLink className="btn btn--ghost" href="/t/AAPL">
           See the AAPL chart
-        </Link>
+        </SpineLink>
         <Link href="/compare" className="mkt__more">
           Their pricing page vs ours <ArrowRight className="w-3.5 h-3.5" />
         </Link>

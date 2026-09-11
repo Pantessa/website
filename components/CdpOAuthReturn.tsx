@@ -5,8 +5,10 @@
 // signInWithOAuth() sends the browser to the provider, which redirects back to
 // the app (a full page load). On return the CDP SDK finishes auth during init
 // (useIsSignedIn flips true). At that point we still have to hand the embedded
-// wallet to wagmi — exactly like the email flow's connectAsync — then route in.
-// SIWE itself happens at the one-click dashboard gate, same as email.
+// wallet to wagmi — exactly like the email flow's connectAsync — then route in:
+// to the door's redirectTo, else the fresh-login landing (Markets). Like the
+// email lane it connects without a SIWE round-trip; the connected embedded
+// wallet is enough for the app shell (connect to act).
 //
 // Guarded by a sessionStorage intent set right before the redirect, so this only
 // runs when the user actually started a social sign-in (never on a normal load).
@@ -17,6 +19,7 @@ import { useRouter } from 'next/navigation'
 import { useAccount, useConnect } from 'wagmi'
 import { CDP_CONNECTOR_ID } from '@coinbase/cdp-wagmi'
 import { useIsInitialized, useIsSignedIn, useOAuthState } from '@coinbase/cdp-hooks'
+import { SIGN_IN_LANDING } from '@/lib/app-entry'
 
 export const OAUTH_INTENT_KEY = 'yf_oauth_signin'
 
@@ -69,7 +72,7 @@ export default function CdpOAuthReturn() {
         } catch {
           /* ignore */
         }
-        router.push(intent?.redirectTo || '/dashboard')
+        router.push(intent?.redirectTo || SIGN_IN_LANDING)
       }
     })()
   }, [isInitialized, isSignedIn, oauthState, isConnected, connectAsync, connectors, router])

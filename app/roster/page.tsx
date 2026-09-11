@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { notFound } from 'next/navigation'
 import Footer from '@/components/Footer'
 import ManagerRow from '@/components/ManagerRow'
@@ -132,13 +133,13 @@ export default async function RosterPreviewPage() {
                   kinds={m.kinds}
                   cta={
                     m.hireable ? (
-                      <Link
+                      <SpineLink
                         href="/chat?tab=team"
                         className="mono rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--bg)]"
                         style={{ background: 'var(--accent)' }}
                       >
                         Hire it
-                      </Link>
+                      </SpineLink>
                     ) : (
                       <span className="mono text-[10px] uppercase tracking-wide text-[color:var(--muted)]">Coming soon</span>
                     )
@@ -155,9 +156,9 @@ export default async function RosterPreviewPage() {
           </div>
           <p className="mt-3 text-[12.5px] text-[color:var(--muted)]">
             Hiring happens in the{' '}
-            <Link href="/chat?tab=team" className="underline">
+            <SpineLink href="/chat?tab=team" className="underline">
               Team tab
-            </Link>{' '}
+            </SpineLink>{' '}
             — one signature, fire any time.
           </p>
         </section>

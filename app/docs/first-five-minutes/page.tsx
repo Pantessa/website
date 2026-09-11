@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 
 // The user door's welcome mat: a stranger's literal first five minutes,
@@ -39,13 +40,13 @@ export default function FirstFiveMinutesPage() {
         <h2>Minute 1 — ask something free</h2>
         <p>
           Questions cost nothing and need no wallet. Open the chat and ask{' '}
-          <Link href={ask('What is the current price and 24h change for ETH?', 'uniswap-free')}>
+          <SpineLink href={ask('What is the current price and 24h change for ETH?', 'uniswap-free')}>
             &ldquo;What&apos;s the price of ETH?&rdquo;
-          </Link>{' '}
+          </SpineLink>{' '}
           or{' '}
-          <Link href={ask('List the recent active proposals in the aave.eth Snapshot space.', 'snapshot-free')}>
+          <SpineLink href={ask('List the recent active proposals in the aave.eth Snapshot space.', 'snapshot-free')}>
             &ldquo;List the active proposals in aave.eth&rdquo;
-          </Link>
+          </SpineLink>
           . The agent answers from the MCPs in your set — the bar above the chat shows which
           ones are on, and <Link href="/servers">the directory</Link> has the rest.
         </p>
@@ -53,9 +54,9 @@ export default function FirstFiveMinutesPage() {
         <h2>Minute 2 — ask for something that moves money</h2>
         <p>
           Try{' '}
-          <Link href={ask('Swap $1 worth of ETH to USDC on Base', 'uniswap-free')}>
+          <SpineLink href={ask('Swap $1 worth of ETH to USDC on Base', 'uniswap-free')}>
             &ldquo;Swap $1 of ETH to USDC&rdquo;
-          </Link>
+          </SpineLink>
           . What comes back is not an execution — it&apos;s a <strong>transaction artifact</strong>:
           quoted at a real venue, built deterministically (the model never writes calldata or
           addresses), re-checked by an independent guard, priced in dollars, and parked behind a
@@ -75,14 +76,14 @@ export default function FirstFiveMinutesPage() {
         <h2>Minutes 4 and 5 — tell it once</h2>
         <p>
           This is the part that stays working after you close the tab. Say{' '}
-          <Link href={ask('Buy $10 of AAPL every week on Robinhood Chain', 'robinhood-free')}>
+          <SpineLink href={ask('Buy $10 of AAPL every week on Robinhood Chain', 'robinhood-free')}>
             &ldquo;Buy $10 of AAPL every week&rdquo;
-          </Link>{' '}
+          </SpineLink>{' '}
           and you get a recurring buy you confirm each period —{' '}
           <Link href="/docs/jobs">a standing intent</Link>. Say{' '}
-          <Link href={ask('Set a stop-loss on my ETH position at -8%', 'hyperliquid-free')}>
+          <SpineLink href={ask('Set a stop-loss on my ETH position at -8%', 'hyperliquid-free')}>
             &ldquo;Stop-loss my ETH perp at -8%&rdquo;
-          </Link>{' '}
+          </SpineLink>{' '}
           and <Link href="/docs/guardian">Guardian</Link>{' '}watches it every minute with a key that
           can only reduce that position — revocable with one click. The Jobs tab in the chat rail
           shows everything that&apos;s running and flags the moments that need you.

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'router')!
@@ -33,7 +34,7 @@ export default function RouterDocsPage() {
           You never name an endpoint or fill a parameter. Send a request the way you&apos;d say it —{' '}
           <em>&quot;live ETH price&quot;</em>, <em>&quot;scrape this pricing page&quot;</em>,{' '}
           <em>&quot;cheapest flight SFO→JFK&quot;</em> — from the{' '}
-          <Link href="/chat">Pantessa chat</Link> or through the{' '}
+          <SpineLink href="/chat">Pantessa chat</SpineLink> or through the{' '}
           <code>yeetful</code> SDK. Router does the rest.
         </p>
 

@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { Check, Plus, ExternalLink, ArrowUpRight, Star } from 'lucide-react'
 import { McpServer, useYeetfulStore } from '@/lib/store'
 import BrandIcon from '@/components/BrandIcon'
@@ -135,7 +136,7 @@ export default function McpServerCard({ server }: McpServerCardProps) {
             <ArrowUpRight width={11} height={11} />
           </Link>
           {(server.callable || server.autoCallable) && (
-            <Link
+            <SpineLink
               className="card__more mono"
               href={`/chat?try=${server.slug}`}
               onClick={(e) => e.stopPropagation()}
@@ -143,7 +144,7 @@ export default function McpServerCard({ server }: McpServerCardProps) {
             >
               Try in chat
               <ArrowUpRight width={11} height={11} />
-            </Link>
+            </SpineLink>
           )}
           {server.websiteUrl && (
             <a

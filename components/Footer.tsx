@@ -1,8 +1,11 @@
 import Link from 'next/link'
 import { YeetfulMark } from '@/components/Logo'
 import ThemeToggle from '@/components/ThemeToggle'
+import SpineLink from '@/components/SpineLink'
 
-type FooterLink = { label: string; href: string; ext?: boolean }
+/** `app`: the link lands inside the app shell, which sends a signed-out
+ *  visitor home — so it renders as a SpineLink (the sign-in door for them). */
+type FooterLink = { label: string; href: string; ext?: boolean; app?: boolean }
 
 const GROUPS: { title: string; links: FooterLink[] }[] = [
   {
@@ -19,7 +22,7 @@ const GROUPS: { title: string; links: FooterLink[] }[] = [
   {
     title: 'Company',
     links: [
-      { label: 'Markets', href: '/markets' },
+      { label: 'Markets', href: '/markets', app: true },
       { label: 'Intent Links', href: '/links' },
       { label: 'Mosaic', href: '/mosaic' },
       { label: 'Site Buttons', href: '/links/embed' },
@@ -132,6 +135,8 @@ export default function Footer() {
                       <a href={link.href} target="_blank" rel="noopener noreferrer">
                         {link.label}
                       </a>
+                    ) : link.app ? (
+                      <SpineLink href={link.href}>{link.label}</SpineLink>
                     ) : (
                       <Link href={link.href}>{link.label}</Link>
                     )}

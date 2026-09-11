@@ -29,6 +29,7 @@ import { createSiweMessage } from 'viem/siwe'
 import { getAddress } from 'viem'
 import { useYeetfulStore } from '@/lib/store'
 import { cdpEnabled } from '@/lib/cdp-embedded'
+import { isSignedOut, walletRemembered } from '@/lib/app-entry'
 
 type Status = 'loading' | 'authed' | 'guest'
 
@@ -49,6 +50,13 @@ interface SessionValue {
    * without disconnecting.
    */
   switchedAccount: boolean
+  /**
+   * Nobody is here: no wallet connected and no session (lib/app-entry
+   * isSignedOut). False while the session is loading or a stored wallet
+   * connection is being restored — never a mid-hydration guess. The app
+   * shell sends this visitor home.
+   */
+  signedOut: boolean
   error: string | null
   /** Run SIWE on the already-connected wallet; optionally redirect on success. */
   signIn: (redirectTo?: string) => Promise<void>
@@ -269,6 +277,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [effectiveAddress, setAuthedAddress, adoptLocalChat, loadChats, resetChats, loadShortlist])
 
+  // Did this browser connect a wallet before (and not disconnect it)? Read
+  // once from wagmi's storage on mount — it decides whether isSignedOut
+  // waits out wagmi's page-load connector probe (lib/app-entry).
+  const [remembered, setRemembered] = useState(false)
+  useEffect(() => {
+    try {
+      setRemembered(walletRemembered((key) => window.localStorage.getItem(key)))
+    } catch {
+      // storage blocked — nothing is remembered, so nothing is waited for
+    }
+  }, [])
+
   const value: SessionValue = {
     address: sessionMatchesWallet ? address : null,
     status,
@@ -276,6 +296,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     needsSignIn: needsSignIn || (!!address && !sessionMatchesWallet),
     walletAddress: walletAddress ? walletAddress.toLowerCase() : null,
     switchedAccount: !!address && !sessionMatchesWallet,
+    signedOut: isSignedOut({
+      sessionStatus: status,
+      sessionAddress: address,
+      walletStatus,
+      walletAddress: walletAddress ?? null,
+      walletRemembered: remembered,
+    }),
     error,
     signIn,
     connectAndSignIn,

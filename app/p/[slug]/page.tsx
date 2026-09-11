@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { notFound } from 'next/navigation'
 import { Bot, User, Globe } from 'lucide-react'
 import { YeetfulMark } from '@/components/Logo'
@@ -131,14 +131,14 @@ export default async function SharedChatPage({ params }: Params) {
               <XMark />
               <span>Share</span>
             </a>
-            <Link
+            <SpineLink
               href={tryHref}
               className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white text-zinc-950 text-xs font-semibold hover:bg-zinc-200 transition-colors"
               title="Open Pantessa chat with these agents enabled and this chat's opening ask ready to run"
             >
               <YeetfulMark size={13} />
               <span>Try Pantessa</span>
-            </Link>
+            </SpineLink>
           </div>
         </div>
 
@@ -190,13 +190,13 @@ export default async function SharedChatPage({ params }: Params) {
           <p className="text-[11px] text-[color:var(--muted-2)] text-center mono">
             Shared via Pantessa — every dapp, one chat. Your wallet signs, every call receipted.
           </p>
-          <Link
+          <SpineLink
             href={tryHref}
             className="flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--accent)] text-black text-sm font-semibold hover:opacity-90 transition-opacity"
           >
             <YeetfulMark size={13} />
             <span>{display.length > 0 ? 'Run this chat yourself' : 'Try Pantessa'}</span>
-          </Link>
+          </SpineLink>
         </div>
       </div>
       <Footer />

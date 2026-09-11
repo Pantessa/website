@@ -12,13 +12,13 @@
 // and the server-truth stats strip come from the server parent (LinksHero).
 
 import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 import { HERO_ASKS, useTypedAsk } from '@/components/typed-asks'
 import { HERO_LINE, HERO_SUB } from '@/lib/markets-copy'
 import { getProtocolMark } from '@/components/protocol-marks'
 import { useSiteTheme } from '@/components/chart-theme'
 import SignInFlowLink from '@/components/SignInFlowLink'
+import SpineLink from '@/components/SpineLink'
 import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import { LINK_FEE_PCT } from '@/lib/fees'
 
@@ -480,12 +480,12 @@ export default function LinksHeroView({ stats }: { stats: LinkHeroStats | null }
           </span>
         </p>
         <div className="fhero__ctas">
-          <Link className="btn btn--solid" href="/markets">
+          <SpineLink className="btn btn--solid" href="/markets">
             Open Markets
-          </Link>
-          <Link className="btn btn--ghost" href="/t/AAPL">
+          </SpineLink>
+          <SpineLink className="btn btn--ghost" href="/t/AAPL">
             See the AAPL chart
-          </Link>
+          </SpineLink>
           <SignInFlowLink
             href={LINKS_STUDIO_HREF}
             className="inline-flex items-center gap-1.5 text-[13px] text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors"
