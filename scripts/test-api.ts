@@ -17507,7 +17507,7 @@ async function main() {
     // Signal rules (the header table) on shaped tapes
     const t80 = computeTechnicals(rc, '1h')
     check(
-      'tech: computeTechnicals on an 80-bar ramp: every MA that computed says BUY (MA < price), the 100/200 MAs are OMITTED not neutral, MACD > signal = buy, momentum rising = buy',
+      'tech: computeTechnicals on an 80-bar ramp: every MA that computed says BUY (MA < price), the 100/200 MAs are OMITTED not neutral, MACD > signal = buy, momentum FLAT (a ramp\'s MOM is constant) = neutral',
       !!t80 &&
         // Ichimoku is neutral on a pure ramp by its own rule (base < leadA); the
         // zero-lag Hull MA lands ON the price → neutral, never a float coin-flip.
@@ -17516,7 +17516,7 @@ async function main() {
         t80.omitted.includes('Exponential Moving Average (200)') &&
         t80.omitted.includes('Simple Moving Average (100)') &&
         t80.rows.oscillators.find((r) => r.name.startsWith('MACD'))?.signal === 'buy' &&
-        t80.rows.oscillators.find((r) => r.name.startsWith('Momentum'))?.signal === 'buy' &&
+        t80.rows.oscillators.find((r) => r.name.startsWith('Momentum'))?.signal === 'neutral' &&
         t80.movingAverages.rating === 'strong_buy' &&
         t80.movingAverages.sell === 0,
       t80 ? `omitted=${t80.omitted.length} ma=${JSON.stringify(t80.movingAverages)}` : 'null',
