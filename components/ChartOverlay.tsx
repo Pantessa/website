@@ -6,7 +6,8 @@
 // candles, timeframes, and act-on-it chips that SEND their ask and close —
 // the click is the send (2026-07-28: prefill-then-press-send-again read as
 // friction; the wallet signature stays the only real gate). The same
-// CandleChart powers the shareable /t/<symbol> page, linked from the header.
+// MarketChart engine (lightweight-charts — drawings that become orders)
+// powers the shareable /t/<symbol> page, linked from the header.
 
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -15,7 +16,8 @@ import { ExternalLink, X } from 'lucide-react'
 import { useYeetfulStore } from '@/lib/store'
 import { CHART_FEED_LABELS, chartPairFor, type ChartFeed } from '@/lib/charts'
 import { tokenHome } from '@/lib/token-home'
-import CandleChart, { fmtPrice, type ChartStats } from '@/components/CandleChart'
+import { fmtPrice, type ChartStats } from '@/components/CandleChart'
+import MarketChart from '@/components/markets/chart/MarketChart'
 import TokenIcon from '@/components/TokenIcon'
 
 export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => void } = {}) {
@@ -118,7 +120,9 @@ export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => vo
             </div>
 
             <div className="space-y-3 px-4 py-3">
-              <CandleChart symbol={pair.symbol} height={340} onStats={setStats} />
+              {/* The engine: drawings on a level SEND their ask through the same
+                  act() path the chips below use (chip-send contract). */}
+              <MarketChart symbol={pair.symbol} height={340} onStats={setStats} onAsk={act} />
 
               {/* act on it — a chip click sends the ask; the wallet signs */}
               <div className="flex flex-wrap items-center gap-1.5 border-t border-[var(--line)] pt-2.5">

@@ -1,6 +1,10 @@
 'use client'
 
 // The /t/<symbol> page body — a full-bleed chart workspace, not an article.
+// The engine is MarketChart (lightweight-charts): drawings that become
+// orders, overlays, the pool price on 4663 — drawings persist per symbol in
+// localStorage, and a level's chips PREFILL chat here (a URL never fires a
+// turn; the in-chat overlay is where a chip sends).
 // The chart fills the viewport under the nav, and "expand" is the same markup
 // with one class plus the Fullscreen API, so leaving fullscreen lands back on
 // the full-bleed layout with nothing to re-lay-out.
@@ -13,11 +17,35 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Maximize2, Minimize2 } from 'lucide-react'
-import CandleChart, { fmtPrice, type ChartStats } from '@/components/CandleChart'
+import { fmtPrice, type ChartStats } from '@/components/CandleChart'
+import MarketChart from '@/components/markets/chart/MarketChart'
+import PerformanceTiles from '@/components/markets/chart/PerformanceTiles'
 import TokenIcon from '@/components/TokenIcon'
 import { CHART_FEED_LABELS, chartPairFor, type ChartFeed } from '@/lib/charts'
+import { parseChartState, serializeChartState, type ChartState } from '@/lib/chart-state'
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
+
+// Drawings survive a refresh per symbol (a viewer's own levels — never
+// shared; posts carry their own ChartState). localStorage can be absent or
+// throw (private mode, thumbnail capture) — every touch is try/catch.
+const drawKey = (symbol: string) => `yf-chart-state:${symbol}`
+function readDrawings(symbol: string): ChartState | null {
+  try {
+    const raw = window.localStorage.getItem(drawKey(symbol))
+    return raw ? parseChartState(raw) : null
+  } catch {
+    return null
+  }
+}
+function writeDrawings(s: ChartState) {
+  try {
+    if (s.lines.length === 0) window.localStorage.removeItem(drawKey(s.symbol))
+    else window.localStorage.setItem(drawKey(s.symbol), serializeChartState(s))
+  } catch {
+    /* nothing to keep */
+  }
+}
 
 type FsDoc = Document & { webkitExitFullscreen?: () => Promise<void>; webkitFullscreenElement?: Element | null }
 type FsEl = HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> }
@@ -27,6 +55,20 @@ export default function TokenPageView({ symbol }: { symbol: string }) {
   const [stats, setStats] = useState<ChartStats | null>(null)
   const [expanded, setExpanded] = useState(false)
   const shellRef = useRef<HTMLDivElement | null>(null)
+  const [drawings, setDrawings] = useState<ChartState | null>(null)
+  // The engine mounts (and server-renders) with no drawings; the persisted
+  // ones arrive after hydration. Child effects fire before this one, so the
+  // engine's first empty emit must NOT erase the stored state — writes are
+  // ignored until the read has happened.
+  const restoredRef = useRef(false)
+  useEffect(() => {
+    restoredRef.current = false
+    setDrawings(pair ? readDrawings(pair.symbol) : null)
+    restoredRef.current = true
+  }, [pair])
+  const onStateChange = useCallback((s: ChartState) => {
+    if (restoredRef.current) writeDrawings(s)
+  }, [])
 
   const chg = stats?.changePct24h ?? null
   const chgClass = chg === null ? 'tok__chg--flat' : chg > 0 ? 'tok__chg--up' : chg < 0 ? 'tok__chg--down' : 'tok__chg--flat'
@@ -119,12 +161,17 @@ export default function TokenPageView({ symbol }: { symbol: string }) {
             <span className="tchart__hint mono">prefills chat · you send it</span>
           </div>
         )}
+        {pair && (
+          <div className="tchart__perf">
+            <PerformanceTiles symbol={pair.symbol} compact />
+          </div>
+        )}
       </div>
 
       {/* Canvas: the chart takes every pixel that's left. */}
       <div className="tchart__canvas">
         {pair ? (
-          <CandleChart symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} />
+          <MarketChart symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} state={drawings} onStateChange={onStateChange} askHref={promptHref} />
         ) : (
           <div className="flex flex-1 items-center justify-center">
             <div className="max-w-md rounded-2xl border border-[var(--line)] px-5 py-10 text-center">
