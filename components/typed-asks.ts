@@ -26,6 +26,10 @@ export const STARTER_ASKS = [
  *  HYPE flagship in its short form (a sized 2x order; parseHlIntent takes
  *  it venue-less). The mint stage's card runs the full reel. */
 export const HERO_ASKS = [
+  // The Markets moment leads (2026-09-11, "the chart that executes"): a
+  // chart ask is a native gate (parseChartAsk → the overlay, no turn
+  // burned) — replayed in audit:asks so it can never quietly dead-end.
+  'Show me the AAPL chart',
   ...STARTER_ASKS.filter((a) => a.length <= 26 && !/HYPE/.test(a)),
   '2x long $12 of HYPE',
 ]

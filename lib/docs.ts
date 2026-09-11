@@ -143,6 +143,15 @@ export const DOCS_PAGES: DocsPage[] = [
     door: 'user',
   },
   {
+    slug: 'markets',
+    title: 'Markets: the chart that executes',
+    seoTitle: 'Markets — the chart that executes',
+    description:
+      'Live charts for tokenized stocks (24/7 on Robinhood Chain), crypto spot and Hyperliquid perps. Every chip is an ask that builds a guarded transaction your wallet signs; unlimited watchlists and alerts, alerts that act, import from TradingView.',
+    ready: true,
+    door: 'user',
+  },
+  {
     slug: 'spend-policy',
     title: 'Spend policy & caps',
     seoTitle: 'Spend policy — open by default, capped by default',
