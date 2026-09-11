@@ -278,3 +278,24 @@ export function parseChartAsk(message: string): ChartAsk | null {
   }
   return named ? { symbol: named, pair: null } : null
 }
+
+// ── MARKETS/MSG ──────────────────────────────────────────────────────────
+/** Every symbol chartPairFor accepts, in canonical form (aliases collapsed,
+ *  stables + feedless listings excluded): coins, then perps, then the
+ *  charted Robinhood-Chain stocks. The sitemap's /t/<sym> set and the OG
+ *  route's allowlist read THIS, so a symbol is indexed iff it charts. */
+export function chartableSymbols(): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  const push = (s: string) => {
+    const pair = chartPairFor(s)
+    if (pair && pair.symbol === s && !seen.has(s)) {
+      seen.add(s)
+      out.push(s)
+    }
+  }
+  for (const s of COINBASE_USD) push(s)
+  for (const s of HYPERLIQUID_PERPS) push(s)
+  for (const s of [...ROBINHOOD_TICKER_SET].sort()) push(s)
+  return out
+}

@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 import { HERO_ASKS, useTypedAsk } from '@/components/typed-asks'
+import { HERO_LINE, HERO_SUB } from '@/lib/markets-copy'
 import { getProtocolMark } from '@/components/protocol-marks'
 import { useSiteTheme } from '@/components/chart-theme'
 import SignInFlowLink from '@/components/SignInFlowLink'
@@ -459,34 +460,38 @@ export default function LinksHeroView({ stats }: { stats: LinkHeroStats | null }
 
       <div className="fhero__stage">
         <div className="fhero__eyebrow mono">
-          Intent links <span>·</span> non-custodial <span>·</span> <b>your wallet signs</b>
+          Markets <span>·</span> stocks 24/7 <span>·</span> perps <span>·</span> spot <span>·</span> yield{' '}
+          <span>·</span> <b>your wallet signs</b>
         </div>
-        <h1 className="fhero__h1 fhero__h1--links">
-          <span className="fhero__typedline">
+        {/* MARKETS re-message (2026-09-11, lib/markets-copy): the claim is
+            the hero line; the ask reel that used to BE line one now types
+            under the lede — still SSR'd on its first entry (the Markets
+            moment, "Show me the AAPL chart"), so the crawler and the first
+            frame both read a real sentence. */}
+        <h1 className="fhero__h1 fhero__h1--links fhero__h1--mkt">{HERO_LINE}</h1>
+        <p className="fhero__lede">{HERO_SUB}</p>
+        <p className="fhero__ask" aria-label="Example asks">
+          <span className="fhero__asklabel mono">say it</span>
+          <span className="fhero__typedline fhero__typedline--ask">
             <span className="fhero__tq">&ldquo;</span>
             <span className="fhero__em">{typedAsk}</span>
             <i className="fhero__tcaret" aria-hidden="true" />
             <span className="fhero__tq">&rdquo;</span>
           </span>
-          We do the rest.
-        </h1>
-        <p className="fhero__lede">
-          Mint the ask as a link. Whoever opens it connects their own wallet — Pantessa funds,
-          builds, and guard-checks the whole path. They sign. Done.
         </p>
         <div className="fhero__ctas">
-          <Link className="btn btn--solid" href="/i/buy-aapl">
-            Try a live link
+          <Link className="btn btn--solid" href="/markets">
+            Open Markets
           </Link>
-          <SignInFlowLink className="btn btn--ghost" href={LINKS_STUDIO_HREF}>
-            Mint yours
-          </SignInFlowLink>
-          <Link
-            href="/links"
+          <Link className="btn btn--ghost" href="/t/AAPL">
+            See the AAPL chart
+          </Link>
+          <SignInFlowLink
+            href={LINKS_STUDIO_HREF}
             className="inline-flex items-center gap-1.5 text-[13px] text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors"
           >
-            The leaderboard <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
+            Mint an intent link <ArrowRight className="w-3.5 h-3.5" />
+          </SignInFlowLink>
         </div>
         {/* the transmutation readout — written by the burst: each character
             materializes as the writer particles arrive from the core. Chars are

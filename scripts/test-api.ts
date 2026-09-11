@@ -1644,6 +1644,8 @@ async function main() {
       '/docs/first-five-minutes', '/docs/host-buttons', '/docs/embedded-wallet',
       '/docs/creator-earnings', '/docs/spend-policy', '/docs/transactions',
       '/docs/privacy', '/docs/terms', '/docs/dca', '/docs/guardian', '/docs/snapshot',
+      // MARKETS/MSG (2026-09-11)
+      '/compare', '/docs/markets',
     ]
     for (const path of PROSE_PATHS) {
       const body = await (await fetch(`${BASE}${path}`)).text()
@@ -2149,20 +2151,21 @@ async function main() {
     )
   }
   check('router: og:image present (social card)', /<meta[^>]+property="og:image"/.test(homeHtml))
-  // The links-first repositioning (2026-07-22, HANDOFF-links-first.md) leads
-  // with the intent claim: "You have an intent. We do the rest." Retitle and
-  // re-pin TOGETHER — this check is the pin.
+  // The MARKETS re-message (2026-09-11, squad-markets) leads with the hero
+  // line from lib/markets-copy: "The chart that executes." (it was the
+  // links-first "You have an intent. We do the rest." from 2026-07-22).
+  // Retitle and re-pin TOGETHER — this check is the pin.
   check(
-    'home: descriptive <title> (the links-first claim)',
-    /<title>[^<]*(You have an intent|[Ww]e do the rest|intent link)[^<]*<\/title>/.test(homeHtml),
+    'home: descriptive <title> (the Markets claim)',
+    /<title>[^<]*(The chart that executes|chart that executes)[^<]*<\/title>/.test(homeHtml),
   )
   // The hero h1 PERFORMS the claim: line one cycles the ask reel
   // (components/typed-asks.ts) and SSR paints the full first entry, so the
   // first frame and the crawler both read a real sentence — never an empty
   // typed slot. Re-order the reel and this pin re-pins with it.
   check(
-    "home: hero types the reel (first ask SSR'd in the h1)",
-    homeHtml.includes('Buy $12 of AAPL') && /We do the rest\./.test(homeHtml),
+    "home: hero claims the Markets line and types the reel (first ask SSR'd under the lede)",
+    homeHtml.includes('Show me the AAPL chart') && /The chart that executes\./.test(homeHtml),
   )
   const sitemapXml = await (await fetch(`${BASE}/sitemap.xml`)).text()
   check('sitemap: site root is listed', /<loc>https?:\/\/[^</]+\/?<\/loc>/.test(sitemapXml))
@@ -5253,10 +5256,10 @@ async function main() {
         /setTimeout\(\(\) => setSlowTurn\(true\), SLOW_TURN_MS\)/.test(chat),
     )
     check(
-      'onboarding: the root social card tells the links-first story ("You have an intent. We do the rest." + YOUR WALLET SIGNS), never the pre-07-22 "Mega dapps are here" pitch',
-      /alt = 'Pantessa — You have an intent\. We do the rest\.'/.test(og) &&
-        /You have an intent\./.test(og) && /We do the rest\./.test(og) && /YOUR WALLET SIGNS/.test(og) &&
-        !/Mega dapps/.test(og) && !/EVERY DAPP/.test(og),
+      'onboarding: the root social card tells the Markets story ("The chart that executes." via lib/markets-copy + YOUR WALLET SIGNS), never the pre-07-22 "Mega dapps are here" pitch',
+      /alt = `Pantessa — \$\{HERO_LINE\}`/.test(og) &&
+        /The chart<\/span>/.test(og) && /that executes\./.test(og) && /YOUR WALLET SIGNS/.test(og) &&
+        !/Mega dapps/.test(og) && !/EVERY DAPP/.test(og) && !/You have an intent\.<\/span>/.test(og),
     )
     const ogr = await fetch(`${BASE}/opengraph-image`)
     const ogBuf = new Uint8Array(await ogr.arrayBuffer())
@@ -5859,7 +5862,7 @@ async function main() {
     const homeHtml = await homeRes.text()
     const currentHome =
       homeRes.status === 200 &&
-      homeHtml.includes('You have an intent') &&
+      homeHtml.includes('The chart that executes') &&
       !homeHtml.includes('data-roster-home') &&
       !homeHtml.includes('You keep the only pen')
     const rosterHome =
@@ -17437,6 +17440,134 @@ async function main() {
         `row=${rosterRow ? 'found' : 'missing'} rosterRows=${(afRoster.failures ?? []).filter((f) => f.kind === 'roster').length}`,
       )
     }
+  }
+
+  // ── MARKETS/MSG ──────────────────────────────────────────────────────────
+  // The message, /compare, and SEO for every chartable symbol (squad-markets
+  // 2026-09-11, lane MSG). Words live in lib/markets-copy; titles/JSON-LD/OG
+  // in lib/markets-seo; the sitemap and the OG allowlist read ONE gate
+  // (chartableSymbols → chartPairFor).
+  console.log('— markets/msg')
+  {
+    const { chartableSymbols, chartPairFor } = await import('../lib/charts')
+    const { KILLER_LINE, HERO_LINE, TV_PRICING_TABLE } = await import('../lib/markets-copy')
+    const { symbolPageSeo, listPageSeo, candleSvg } = await import('../lib/markets-seo')
+
+    // /compare — their dated table verbatim, our ∞ column, the six lines, the
+    // killer line, and the honest half. TradingView is NAMED in text only:
+    // never inside an <h1>/<h2>, never an <img>/<svg> lockup (rule 7).
+    const cmpRes = await fetch(`${BASE}/compare`)
+    const cmp = await cmpRes.text()
+    check('markets/msg: /compare renders', cmpRes.status === 200)
+    check(
+      'markets/msg: /compare carries the dated pricing table verbatim (every tier + € figure, as-of stamp)',
+      /data-pricing-as-of="2026-09-11"/.test(cmp) &&
+        TV_PRICING_TABLE.every((r) => cmp.includes(r.tier) && (r.eurPerMonth === 0 || cmp.includes(`€${r.eurPerMonth.toFixed(2)}`))) &&
+        /September 11, 2026/.test(cmp),
+    )
+    check(
+      'markets/msg: /compare — our column is ∞ at every meter and €0, and the six lines + the killer line are on the page',
+      (cmp.match(/>∞</g) ?? []).length >= 5 &&
+        /€0</.test(cmp) &&
+        /The alert executes\./.test(cmp) && /The line is the order\./.test(cmp) && /You keep the pen\./.test(cmp) &&
+        cmp.includes('data-killer-line') && cmp.includes(KILLER_LINE.sentence),
+    )
+    check(
+      'markets/msg: /compare says what they have that we don’t + the risks (Pine, screeners, drawing depth, broker links; commission, liquidity, regions, not advice)',
+      cmp.includes('data-honest-section') &&
+        /Pine Script/.test(cmp) && /Screeners/.test(cmp) && /Drawing depth/.test(cmp) && /Broker links/.test(cmp) &&
+        /\$0 commission/.test(cmp) && /liquidity is thin/.test(cmp) && /regional/i.test(cmp) && /Not advice/.test(cmp),
+    )
+    check(
+      'markets/msg: /compare names TradingView in text only — never in a heading, never as an image/lockup (rule 7)',
+      /TradingView/.test(cmp) &&
+        !/<h[1-6][^>]*>[^<]*TradingView/.test(cmp) &&
+        !/<img[^>]+(tradingview|trading-view)/i.test(cmp) &&
+        !/<svg[^>]*(tradingview)/i.test(cmp),
+    )
+    check(
+      'markets/msg: the killer line is DERIVED from lib/fees (0.20% → €1.2M), never typed',
+      KILLER_LINE.volume === '€1.2M' && KILLER_LINE.ultimatePerYear === '€2,399' && KILLER_LINE.smallTraderFee === '€4.80',
+    )
+
+    // The hero + the Markets band — one message source.
+    const home = await (await fetch(`${BASE}/`)).text()
+    check(
+      'markets/msg: the landing carries the Markets band under the hero (chip pressed → sign card, six lines, CTA → /markets)',
+      home.includes('data-markets-band') &&
+        /Buy \$10 of AAPL/.test(home) && /SIGN &amp; SEND/.test(home) &&
+        /href="\/markets"/.test(home) && /href="\/compare"/.test(home) &&
+        home.includes(HERO_LINE),
+    )
+    check(
+      'markets/msg: the landing never names the competitor — TradingView is a /compare word only (rule 7)',
+      !/TradingView/.test(home),
+    )
+
+    // SEO — the sitemap lists exactly the chartable set.
+    const smap = await (await fetch(`${BASE}/sitemap.xml`)).text()
+    const syms = chartableSymbols()
+    check(
+      'markets/msg: sitemap lists /markets, /compare, /docs/markets and /t/AAPL + /t/ETH + /t/HYPE',
+      /\/markets<\/loc>/.test(smap) && /\/compare<\/loc>/.test(smap) && /\/docs\/markets<\/loc>/.test(smap) &&
+        /\/t\/AAPL<\/loc>/.test(smap) && /\/t\/ETH<\/loc>/.test(smap) && /\/t\/HYPE<\/loc>/.test(smap),
+    )
+    check(
+      'markets/msg: sitemap is FENCED to chartPairFor — no feedless listing (CASHCAT, SATS), no stable, no alias (WETH), and every listed /t/ symbol charts',
+      !/\/t\/CASHCAT<\/loc>/.test(smap) && !/\/t\/SATS<\/loc>/.test(smap) && !/\/t\/USDC<\/loc>/.test(smap) && !/\/t\/WETH<\/loc>/.test(smap) &&
+        [...smap.matchAll(/\/t\/([A-Z0-9]+)<\/loc>/g)].every((m) => chartPairFor(m[1])?.symbol === m[1]) &&
+        syms.every((s) => smap.includes(`/t/${s}</loc>`)) &&
+        syms.length > 150,
+      `listed=${[...smap.matchAll(/\/t\/[A-Z0-9]+<\/loc>/g)].length} chartable=${syms.length}`,
+    )
+
+    // /t/<sym> — honest title, canonical (aliases collapse), Dataset JSON-LD.
+    const aapl = await (await fetch(`${BASE}/t/AAPL`)).text()
+    check(
+      'markets/msg: /t/AAPL — <title> says 24/7 + Robinhood Chain + Pantessa Markets, canonical is /t/AAPL, JSON-LD is a Dataset + breadcrumbs (never FinancialProduct)',
+      /<title>AAPL 24\/7 — trade Apple on Robinhood Chain \| Pantessa Markets<\/title>/.test(aapl) &&
+        /rel="canonical" href="[^"]+\/t\/AAPL"/.test(aapl) &&
+        /"@type":"Dataset"/.test(aapl) && /"@type":"BreadcrumbList"/.test(aapl) && !/FinancialProduct/.test(aapl),
+    )
+    const weth = await (await fetch(`${BASE}/t/weth`)).text()
+    check(
+      'markets/msg: /t/weth canonicalizes to /t/ETH (alias collapse) and a chartless symbol is noindex',
+      /rel="canonical" href="[^"]+\/t\/ETH"/.test(weth) &&
+        /noindex/.test(await (await fetch(`${BASE}/t/USDC`)).text()),
+    )
+    check(
+      'markets/msg: symbolPageSeo — perps + coins get their own honest titles; the list pattern splits chartable vs not-yet',
+      /HYPE perps live chart/.test(symbolPageSeo('HYPE').title) &&
+        /ETH live chart — trade Ether/.test(symbolPageSeo('eth').title) &&
+        (() => {
+          const l = listPageSeo({ slug: 'nates-247', name: 'Nate’s 24/7 stocks', symbols: ['AAPL', 'TSLA', 'CASHCAT', 'USDC'] })
+          return l.chartable.join(',') === 'AAPL,TSLA' && l.notYet.join(',') === 'CASHCAT,USDC' && /2 tradable 24\/7/.test(l.description) && /"ItemList"/.test(l.jsonLd)
+        })(),
+    )
+
+    // OG card per symbol: PNG, and the candle drawer is pure + fail-soft.
+    const ogr = await fetch(`${BASE}/t/AAPL/opengraph-image`)
+    const ogBuf = new Uint8Array(await ogr.arrayBuffer())
+    check(
+      'markets/msg: /t/AAPL/opengraph-image is a real PNG (live mini chart + last price, or the honest warming-up card)',
+      ogr.status === 200 && /image\/png/.test(ogr.headers.get('content-type') ?? '') && ogBuf[0] === 0x89 && ogBuf[1] === 0x50 && ogBuf.length > 20_000,
+      `bytes=${ogBuf.length}`,
+    )
+    const ogChartless = await fetch(`${BASE}/t/USDC/opengraph-image`)
+    check('markets/msg: a chartless symbol still gets a PNG card (no 500)', ogChartless.status === 200 && /image\/png/.test(ogChartless.headers.get('content-type') ?? ''))
+    check(
+      'markets/msg: candleSvg draws one wick + one body per candle and an empty grid for a short series',
+      (candleSvg([{ t: 1, o: 1, h: 2, l: 0.5, c: 1.5, v: 1 }, { t: 2, o: 1.5, h: 2, l: 1, c: 1.2, v: 1 }], { width: 100, height: 50, up: '#0f0', down: '#f00', grid: '#333' }).match(/<rect/g) ?? []).length === 2 &&
+        !/<rect/.test(candleSvg([], { width: 100, height: 50, up: '#0f0', down: '#f00', grid: '#333' })),
+    )
+
+    // /docs/markets — registered, ready, in the sidebar + sitemap.
+    const docs = await (await fetch(`${BASE}/docs/markets`)).text()
+    check(
+      'markets/msg: /docs/markets renders — the chip contract, watchlists, alerts that act, the TradingView import, the attribution note',
+      /A chip sends\. A link prefills\./.test(docs) && /Alerts that act/.test(docs) && /Import your TradingView watchlist/.test(docs) &&
+        /Lightweight Charts/.test(docs) && /Computed from our own tape/.test(docs),
+    )
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
