@@ -231,7 +231,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
               ) : tab === 'community' ? (
                 <CommunityTab symbol={sym} pair={pair} chartState={chartState} onAsk={onChartAsk} onLoadChart={setLoadedState} />
               ) : tab === 'technicals' ? (
-                <TechnicalsTab symbol={sym} pair={pair} initialTf={initialTf} />
+                <TechnicalsTab symbol={sym} pair={pair} initialTf={initialTf} onAsk={onChartAsk} />
               ) : (
                 <TradeTab symbol={sym} pair={pair} prompt={prompt} onAsk={onAsk} />
               )
