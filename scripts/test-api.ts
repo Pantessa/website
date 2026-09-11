@@ -18420,9 +18420,15 @@ async function main() {
       `executedBy=${afterSign.post?.executedBy}`,
     )
 
-    // The symbol page mounts the tabs (standalone proof; SHELL's strip replaces it).
-    const tPage = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
-    check('posts: /t/AAPL carries the COMM tab mount (News + Community) and no post text reaches the HTML pre-hydration', tPage.includes('data-markets-comm') && tPage.includes('Community') && !tPage.includes(xssTitle))
+    // Re-pinned at integration (2026-09-11): SHELL's frame owns the tab strip;
+    // ?tab=community server-renders the Community seat, and post text still
+    // never reaches the HTML pre-hydration (the feed is a client read).
+    const tPage = flat(await (await fetch(`${BASE}/t/AAPL?tab=community`)).text())
+    const tPageDefault = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
+    check(
+      'posts: /t/AAPL?tab=community server-renders the Community seat (frame body data-tab), the strip names News + Community, and no post text reaches the HTML pre-hydration',
+      /class="sym__body"[^>]*data-tab="community"/.test(tPage) && tPage.includes('>Community<') && tPage.includes('>News<') && !tPage.includes(xssTitle) && !tPageDefault.includes(xssTitle),
+    )
 
     // Cleanup — drill rows out of the shared TEST DB.
     await prisma.chartPost.deleteMany({ where: { author: { in: [commAuthor.address.toLowerCase(), commReader.address.toLowerCase()] } } }).catch(() => {})
@@ -18566,8 +18572,10 @@ async function main() {
     check('lists: an unknown slug is a true 404; a bad slug shape too', (await fetch(`${BASE}/lists/no-such-list-${Date.now()}`)).status === 404 && (await fetch(`${BASE}/lists/__`)).status === 404)
 
     // The rail is mounted on the symbol page (SSR markup carries the add box).
+    // Re-pinned at integration (2026-09-11): the rail lives in SHELL's
+    // WatchlistSlot (data-slot="watchlist") inside the frame's right rail.
     const tHtml = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
-    check('watch: /t/AAPL mounts the watchlist rail beside the chart (add-ticker box + Import door in the SSR markup)', tHtml.includes('Add a ticker or company') && tHtml.includes('Import from TradingView') && tHtml.includes('tchart__rail'))
+    check('watch: /t/AAPL mounts the watchlist rail in the frame (add-ticker box + Import door inside data-slot="watchlist")', tHtml.includes('Add a ticker or company') && tHtml.includes('Import from TradingView') && tHtml.includes('data-slot="watchlist"') && tHtml.includes('class="sym__rail"'))
 
     // ── Alerts: CRUD, the cron’s per-symbol dedup, a fixture firing ─────────
     check('alerts: GET without a session → 401', (await fetch(`${BASE}/api/alerts`)).status === 401)
