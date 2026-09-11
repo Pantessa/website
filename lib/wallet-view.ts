@@ -347,7 +347,9 @@ export async function composeWalletView(address: `0x${string}`): Promise<WalletV
     usdPerToken(8453, 'ETH').catch(() => null),
     Promise.all(APP_CHAINS.map((c) => readChainBalances(c.id, address))),
     withAlchemy ? getMultichainPortfolio(address).catch(() => null) : Promise.resolve(null),
-    withAlchemy ? getRecentActivity(address, 8).catch(() => [] as ActivityRow[]) : Promise.resolve([] as ActivityRow[]),
+    // Twelve rows: the /wallet page lists the whole feed, the modal shows six.
+    // Same Alchemy calls either way (15 per direction per chain, merged down).
+    withAlchemy ? getRecentActivity(address, 12).catch(() => [] as ActivityRow[]) : Promise.resolve([] as ActivityRow[]),
   ])
   const rpc = new Map<number, RpcChainRead>()
   const failedChains: string[] = []

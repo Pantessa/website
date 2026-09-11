@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAccount } from 'wagmi'
 import { useSession } from '@/lib/session'
+import { isWalletPath } from '@/lib/wallet-page'
 import { Menu, X } from 'lucide-react'
 import ConnectWallet from '@/components/ConnectWallet'
 import AuthButton from '@/components/AuthButton'
@@ -60,6 +61,12 @@ export default function Navigation() {
   // viewport (its own mark + ask header), so no brochure nav either.
   // ('/i/' with the trailing slash: /incidents must keep its nav.)
   if (pathname.startsWith('/i/')) return null
+
+  // The wallet page (/wallet) is an app page: the spine is its navigation
+  // and its own header carries its one account action (switch or
+  // disconnect). No brochure nav for anyone. Pure path test, same on the
+  // server.
+  if (isWalletPath(pathname)) return null
 
   // When a signed-in user is on an app surface (dashboard / docs) the
   // brochure top-nav is removed entirely — the app shell (left rail + its
