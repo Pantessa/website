@@ -298,7 +298,7 @@ function PostCard({
     )
 
   return (
-    <article className={post.chartState ? 'mkp__card' : 'mkp__card mkp__card--nochart'} aria-label={post.title}>
+    <article id={`post-${post.id}`} className={post.chartState ? 'mkp__card' : 'mkp__card mkp__card--nochart'} aria-label={post.title}>
       <div className="min-w-0">
         <div className="mkp__meta">
           <span className="mkp__author">{post.authorLabel}</span>
@@ -359,7 +359,7 @@ function PostCard({
           )}
           {post.forkOf && (
             <span className="mkp__lineage">
-              forked from <a href={`/api/posts/${post.forkOf}`}>{post.forkOf}</a>
+              forked from <a href={`#post-${post.forkOf}`}>{post.forkOf}</a>
             </span>
           )}
         </div>

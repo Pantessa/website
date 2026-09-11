@@ -184,7 +184,7 @@ function PinnedLinks({ symbol }: { symbol: string }) {
                 <div className="mkn__meta">
                   <span className="mkn__src">{p.linkUrl ? hostOf(p.linkUrl) : 'link'}</span>
                   <span aria-hidden>·</span>
-                  <span>pinned by {p.authorLabel}</span>
+                  <span className="mkp__author">pinned by {p.authorLabel}</span>
                   <span aria-hidden>·</span>
                   <time dateTime={new Date(p.createdAt * 1000).toISOString()}>{ageLabel(p.createdAt)}</time>
                 </div>
