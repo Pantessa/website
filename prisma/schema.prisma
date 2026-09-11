@@ -53,21 +53,21 @@ model McpServer {
   // token is launched on the bonding curve. Null = not launched yet. The on-chain
   // YeetfulLaunchFactory is the source of truth; these mirror it for fast reads
   // (fee routing + the per-service token chart). See repo `x402-launch`.
-  tokenAddress   String? @map("token_address")
+  tokenAddress String? @map("token_address")
 
   // Admission gate (2026-09-08): who submitted a source:'custom' row and where
   // it sits in review. Every ingested/seeded row is born 'approved'; a
   // user-requested row is born 'pending' and is invisible + never callable
   // until a reviewer wallet (MCP_REVIEWER_WALLETS ∪ admins) approves it. See
   // lib/mcp-review.ts — the ONE rulebook every directory reader goes through.
-  ownerAddress String?   @map("owner_address")
-  reviewStatus String    @default("approved") @map("review_status") // 'pending' | 'approved' | 'rejected'
-  requestNote  String?   @map("request_note")
-  reviewNote   String?   @map("review_note")
-  reviewedBy   String?   @map("reviewed_by")
-  reviewedAt   DateTime? @map("reviewed_at")
-  requestedAt  DateTime? @map("requested_at")
-  stakingAddress String? @map("staking_address")
+  ownerAddress   String?   @map("owner_address")
+  reviewStatus   String    @default("approved") @map("review_status") // 'pending' | 'approved' | 'rejected'
+  requestNote    String?   @map("request_note")
+  reviewNote     String?   @map("review_note")
+  reviewedBy     String?   @map("reviewed_by")
+  reviewedAt     DateTime? @map("reviewed_at")
+  requestedAt    DateTime? @map("requested_at")
+  stakingAddress String?   @map("staking_address")
 
   // Presentation
   iconSlug   String? @map("icon_slug") // Simple Icons brand slug for the glyph
@@ -108,10 +108,9 @@ model McpServer {
 
   @@index([category])
   @@index([callable])
-  @@map("mcp_servers")
-
   @@index([reviewStatus])
   @@index([ownerAddress])
+  @@map("mcp_servers")
 }
 
 /// One callable x402 endpoint of a service (e.g. Claude's POST /v1/messages via
@@ -527,13 +526,13 @@ model RouteIncident {
 /// when signed in, else null (guest toggles still count). Fire-and-forget write
 /// (POST /api/agents/toggle); a failure never blocks the toggle.
 model AgentToggleEvent {
-  id        String   @id @default(cuid())
-  slug      String // the McpServer.slug toggled (no FK: guests toggle static-catalog slugs too)
-  active    Boolean // true = added to runner, false = removed
-  address   String? // lowercased wallet if signed in, else null
+  id         String   @id @default(cuid())
+  slug       String // the McpServer.slug toggled (no FK: guests toggle static-catalog slugs too)
+  active     Boolean // true = added to runner, false = removed
+  address    String? // lowercased wallet if signed in, else null
   /// Our own harness/drill toggle (lib/internal-run.ts) — arrival hygiene.
-  isInternal Boolean @default(false) @map("is_internal")
-  createdAt DateTime @default(now()) @map("created_at")
+  isInternal Boolean  @default(false) @map("is_internal")
+  createdAt  DateTime @default(now()) @map("created_at")
 
   @@index([slug])
   @@index([createdAt])
@@ -1165,37 +1164,37 @@ model WalletArrival {
 /// MINT time and stored here (never read from the runtime query string), and
 /// renders post-receipt as an explicit "Return to <host>" button.
 model IntentLink {
-  id           String    @id // short slug — /i/<id>
-  ask          String // the sentence (sanitized at mint)
-  variants     String[]  @default([]) // A/B alternate phrasings (≤3); index 0 = ask
-  mcps         String? // comma-separated slugs auto-composed from the intent
-  creator      String? // lowercased wallet (SIWE-verified at mint)
-  agent        String? // optional byline shown on the runtime page
-  redirectUrl  String?   @map("redirect_url")
+  id                 String    @id // short slug — /i/<id>
+  ask                String // the sentence (sanitized at mint)
+  variants           String[]  @default([]) // A/B alternate phrasings (≤3); index 0 = ask
+  mcps               String? // comma-separated slugs auto-composed from the intent
+  creator            String? // lowercased wallet (SIWE-verified at mint)
+  agent              String? // optional byline shown on the runtime page
+  redirectUrl        String?   @map("redirect_url")
   // Partner-promo limits (all optional): a link can expire, cap its total
   // SERVER-TRUTH signs (embed_turns, never client events), and reserve
   // itself for an allowlist of wallets (targeting, not a security boundary
   // — the ask itself is public on the page).
-  expiresAt    DateTime? @map("expires_at")
-  maxSigns     Int?      @map("max_signs")
-  allowWallets String[]  @default([]) @map("allow_wallets")
-  revoked      Boolean   @default(false)
+  expiresAt          DateTime? @map("expires_at")
+  maxSigns           Int?      @map("max_signs")
+  allowWallets       String[]  @default([]) @map("allow_wallets")
+  revoked            Boolean   @default(false)
   // MOSAIC lineage: kind stamps executable-allocation links ('mosaic') so
   // the gallery and the tessera OG card can find them without re-parsing
   // every ask; parentSlug records fork provenance (one tap "fork this
   // shape" → a new link that credits its ancestor on the page).
-  kind         String?
-  parentSlug   String?   @map("parent_slug")
+  kind               String?
+  parentSlug         String?   @map("parent_slug")
   // The wallet inbox (M5): when an intent is ADDRESSED to someone, recipient
   // is their lowercased wallet and senderLabel names who sent it. Addressed
   // links appear in that wallet's /inbox; allowWallets is set to [recipient]
   // so the /i CTA targets them (the signature is still the real gate).
-  recipient    String? // lowercased wallet an intent is addressed TO
-  senderLabel  String?   @map("sender_label")
+  recipient          String? // lowercased wallet an intent is addressed TO
+  senderLabel        String?   @map("sender_label")
   // THE ROSTER (R2): a proposal from a HIRED agent binds to its mandate
   // slot — the /i header + inbox card wear the slot badge, and firing the
   // slot cascades revocation over its unsigned addressed links (T5).
-  rosterSlotId String?   @map("roster_slot_id")
+  rosterSlotId       String?   @map("roster_slot_id")
   // Content-origin fence (SECURITY-AUDIT 2026-09-08 §C/E5): stamped at mint /
   // send / handoff / tile when the ask names an OUTSIDE party — a raw 0x
   // address or ENS name (a send, or a token typed as an address), or an NFT
@@ -1204,13 +1203,13 @@ model IntentLink {
   // Computed by lib/content-origin (server-side, from the sentence), stored
   // so the mint response and the studio can say so, and re-derived at read
   // time for legacy rows + per-visit A/B phrasings.
-  outboundThirdParty Boolean @default(false) @map("outbound_third_party")
+  outboundThirdParty Boolean   @default(false) @map("outbound_third_party")
   // Our own harness/drill mint (lib/internal-run.ts): every test:api run
   // mints links from throwaway wallets, which inflated the GTM arc's
   // "arrived" denominator by hundreds per gate run (2026-08-17 audit). The
   // arc + digest exclude stamped rows; the link itself still works.
-  isInternal   Boolean   @default(false) @map("is_internal")
-  createdAt    DateTime  @default(now()) @map("created_at")
+  isInternal         Boolean   @default(false) @map("is_internal")
+  createdAt          DateTime  @default(now()) @map("created_at")
 
   @@index([creator, createdAt])
   @@index([kind, createdAt])
@@ -1243,12 +1242,12 @@ model CreatorHandle {
 /// The per-link funnel, event-sourced: open → connect → built → signed.
 /// Best-effort client posts; aggregated for the creator dashboard.
 model IntentLinkEvent {
-  id        String   @id @default(cuid())
-  slug      String
-  kind      String // 'open' | 'connect' | 'built' | 'signed'
-  variant   Int? // which phrasing this visit saw (0 = the base ask)
-  wallet    String? // lowercased, when known (connect and later)
-  valueUsd  Float?   @map("value_usd") // guardrail-priced, signed/built turns
+  id           String    @id @default(cuid())
+  slug         String
+  kind         String // 'open' | 'connect' | 'built' | 'signed'
+  variant      Int? // which phrasing this visit saw (0 = the base ask)
+  wallet       String? // lowercased, when known (connect and later)
+  valueUsd     Float?    @map("value_usd") // guardrail-priced, signed/built turns
   /// On-chain receipt verification (security 2026-09-01). NULL = legacy
   /// (pre-feature — keeps counting). New signed/settled rows carry:
   ///   'verified'   — receipt read on-chain, from == wallet, hash single-use,
@@ -1266,7 +1265,7 @@ model IntentLinkEvent {
   /// Our own harness/drill event (lib/internal-run.ts): wallet-bearing
   /// events read as GTM-arc arrivals — a gate run must never count.
   isInternal   Boolean   @default(false) @map("is_internal")
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
 
   @@index([slug, kind])
   @@map("intent_link_events")
@@ -1554,6 +1553,7 @@ model ChartPostComment {
 
   @@index([postId, createdAt])
   @@map("chart_post_comments")
+}
 
 // ── MARKETS/WATCH ──────────────────────────────────────────────────────────
 // Unlimited watchlists, tickers and alerts (BUSINESS-MODEL-chart-first §0:
