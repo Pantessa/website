@@ -4,7 +4,8 @@
 // reads shared, a failed read retried after a minute and never fatal: the
 // fence falls back to its static stock fence when this returns null, and
 // the arm path still validates against live meta before arming anything.
-import type { HlUniverse } from '@/lib/hl-guardian'
+import type { HlUniverse } from '@/lib/hl-guardian-fence'
+
 
 const HL_INFO_URL = 'https://api.hyperliquid.xyz/info'
 const TTL_MS = 10 * 60_000

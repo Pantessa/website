@@ -288,12 +288,12 @@ import {
   splitSignature,
   parseGuardianArm,
   planForExistingPolicy,
-  fenceGuardianCoin,
-  HL_STOCK_TICKER_COLLISIONS,
   type GuardianPolicyParams,
   type GuardianPosition,
 } from '../lib/hl-guardian'
+import { fenceGuardianCoin, HL_STOCK_TICKER_COLLISIONS } from '../lib/hl-guardian-fence'
 import { hlPerpUniverse, universeFromMeta } from '../lib/hl-universe'
+
 
 
 import {
