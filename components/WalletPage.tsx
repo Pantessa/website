@@ -130,15 +130,21 @@ export default function WalletPage() {
           </div>
           {/* Switch or disconnect: RainbowKit's account modal, the right
               place for that (the panel's "Wallet settings", promoted to the
-              page's header). */}
-          {showDetails && openAccountModal && (
+              page's header). RainbowKit only offers the modal once wagmi
+              reports "connected", which on a fresh load trails the known
+              address by several seconds while every connector settles
+              (measured ~9s with the WalletConnect lane lit), so the button
+              is there from the first frame and waits, disabled, rather than
+              popping in late. */}
+          {showDetails && (
             <button
               type="button"
               onClick={openAccountModal}
+              disabled={!openAccountModal}
               title="Switch wallet or disconnect"
               aria-label="Switch wallet or disconnect"
               data-wallet-switch
-              className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-3 py-1.5 text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)] transition-colors"
+              className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-3 py-1.5 text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)] disabled:opacity-50 disabled:pointer-events-none transition-colors"
             >
               <Settings2 className="w-3.5 h-3.5" />
               <span className="max-sm:hidden">Switch or disconnect</span>
