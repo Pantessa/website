@@ -18,7 +18,7 @@ import { WALLET_MARKS } from '@/components/wallet-marks'
 import { PantessaMark } from '@/components/Logo'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
-import { OAUTH_INTENT_KEY } from '@/components/CdpOAuthReturn'
+import { OAUTH_INTENT_KEY, type OAuthIntent } from '@/components/CdpOAuthReturn'
 import { SIGN_IN_LANDING } from '@/lib/app-entry'
 
 // Social providers via CDP Embedded Wallets. Enable each + set its OAuth client
@@ -37,7 +37,12 @@ const OAUTH_PROVIDERS = [
  * point the rest of the app (SIWE sign-in, x402 signing, the dashboard) treats
  * them exactly like a MetaMask user. After the OTP verifies we connect the CDP
  * wagmi connector explicitly (it reuses the just-authenticated CDP session, so
- * there's no second prompt); Navigation's useAccountEffect then routes them in.
+ * there's no second prompt), then sign them in: this is the account door (sign
+ * in to keep, rule 6), the dashboard's gate needs a SIWE session, and the
+ * embedded wallet signs the message without a prompt. Then they land on
+ * `redirectTo`. The Google lane does the same after its redirect
+ * (CdpOAuthReturn). A connect-only door (`walletConnectOnly`) stops at the
+ * connect on every lane.
  *
  * Only mount this when `cdpEnabled` (the CDP hooks require CDPHooksProvider,
  * which Providers.tsx only renders when NEXT_PUBLIC_CDP_PROJECT_ID is set).
@@ -60,10 +65,11 @@ export default function CreateAccountButton({
   label?: ReactNode
   /** Where to land after a successful sign-in (email or wallet). */
   redirectTo?: string
-  /** Connect-to-act surfaces (/i): the wallet lane only CONNECTS — no SIWE
-   *  request fires (the run is the guest lane; SIWE is offered post-receipt).
-   *  Email/Google lanes are unaffected: their CDP auth IS their wallet, and
-   *  any signature they later make is silent (no extension popup). */
+  /** Connect-to-act surfaces (/i, /chat's connect gate): every lane only
+   *  CONNECTS — no SIWE request fires (the run is the guest lane; SIWE is
+   *  offered post-receipt). The wallet lane skips connectAndSignIn, and the
+   *  email and Google lanes skip the sign-in that otherwise follows their
+   *  connect. */
   walletConnectOnly?: boolean
   /** Fires when the door opens/closes — a caller that armed something on
    *  the click (the chat's connect gate) needs to know the door went away
@@ -102,7 +108,7 @@ export function CreateAccountModal({
   walletConnectOnly?: boolean
 }) {
   const router = useRouter()
-  const { connectAndSignIn } = useSession()
+  const { connectAndSignIn, signInOnceConnected } = useSession()
   const { openConnectModal } = useConnectModal()
   const { isInitialized } = useIsInitialized()
   const { signInWithEmail } = useSignInWithEmail()
@@ -111,10 +117,12 @@ export function CreateAccountModal({
   const { connectAsync, connectors } = useConnect()
 
   // Social sign-in is a full-page redirect to the provider. Persist the intent
-  // so CdpOAuthReturn can connect wagmi + route once the browser comes back.
+  // so CdpOAuthReturn can connect wagmi, sign in (unless this door is
+  // connect-only), and route once the browser comes back.
   function startOAuth(provider: 'google') {
+    const intent: OAuthIntent = { redirectTo, signIn: !walletConnectOnly }
     try {
-      sessionStorage.setItem(OAUTH_INTENT_KEY, JSON.stringify({ redirectTo }))
+      sessionStorage.setItem(OAUTH_INTENT_KEY, JSON.stringify(intent))
     } catch {
       /* storage blocked — the return handler falls back to the sign-in landing */
     }
@@ -201,10 +209,21 @@ export function CreateAccountModal({
       const connector = connectors.find((c) => c.id === CDP_CONNECTOR_ID)
       if (!connector) throw new Error('Embedded wallet connector unavailable.')
       await connectAsync({ connector })
-      // Enter the app. (The old Navigation.useAccountEffect that did this on any
-      // connect was removed — post-auth routing now lives with each entry point.)
-      onClose()
-      router.push(redirectTo)
+      if (walletConnectOnly) {
+        // Connect to act: the connection is the whole step on this door.
+        onClose()
+        router.push(redirectTo)
+      } else {
+        // Sign in to keep: mint the SIWE session the account surfaces gate
+        // on (the dashboard sent every account made here home without one).
+        // The embedded wallet signs without a prompt, in the session rather
+        // than this door: the connect can swap the door's host for the
+        // account pill (the nav's does) and take the door with it, and the
+        // sign-in still lands on redirectTo. A slow one shows the silent
+        // "Signing you in…" card.
+        await signInOnceConnected(redirectTo)
+        onClose()
+      }
     } catch (err) {
       setError(messageFrom(err, 'That code did not verify. Try again.'))
       setStep('otp')

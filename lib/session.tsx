@@ -29,7 +29,7 @@ import { createSiweMessage } from 'viem/siwe'
 import { getAddress } from 'viem'
 import { useYeetfulStore } from '@/lib/store'
 import { cdpEnabled } from '@/lib/cdp-embedded'
-import { isSignedOut, walletRemembered } from '@/lib/app-entry'
+import { isSignedOut, pendingSignInStep, walletRemembered } from '@/lib/app-entry'
 
 type Status = 'loading' | 'authed' | 'guest'
 
@@ -68,6 +68,18 @@ interface SessionValue {
    * intent flag). Optionally redirects on success.
    */
   connectAndSignIn: (redirectTo?: string) => void
+  /**
+   * Sign in once a connect the caller just made has landed: the door's email
+   * and Google lanes call it after the embedded wallet connects. It opens no
+   * wallet modal (the connect already happened, and the embedded wallet signs
+   * without a prompt). `signIn` can't be called there, since it holds the
+   * disconnected state its caller rendered with; this hands the signature to
+   * the post-connect effect, which reads the wallet state the connect
+   * produced. Lands on `redirectTo` whether or not the signature goes through
+   * (the account connected either way, and the app shell runs on the
+   * connection), then resolves.
+   */
+  signInOnceConnected: (redirectTo?: string) => Promise<void>
   signOut: () => Promise<void>
   refresh: () => Promise<void>
 }
@@ -89,7 +101,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // Explicit "the user asked to sign in" intent. The post-connect sign-in
   // effect only fires when this is set — so auto-reconnect on a plain refresh
   // can NEVER trigger a signature (the bug that got the old one-click reverted).
-  const pendingSignInRef = useRef<{ redirectTo?: string } | null>(null)
+  // `settle` marks signInOnceConnected's: its caller is waiting on the attempt.
+  const pendingSignInRef = useRef<{ redirectTo?: string; settle?: () => void } | null>(null)
+  // signInOnceConnected bumps this so the effect runs on a fresh render: a ref
+  // write renders nothing, and when the caller's connect left the wallet
+  // state as it was (already connected), nothing else would.
+  const [signInRequests, setSignInRequests] = useState(0)
 
   const refresh = useCallback(async () => {
     try {
@@ -176,24 +193,52 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [isConnected, walletAddress, signIn, openConnectModal],
   )
 
-  // Fires the post-connect signature for connectAndSignIn ONLY. Guards:
+  // Sign in once a connect the caller made has landed (see the interface doc).
+  // One pending sign-in at a time; a waiter this replaces isn't left hanging.
+  const signInOnceConnected = useCallback(
+    (redirectTo?: string) =>
+      new Promise<void>((settle) => {
+        const replaced = pendingSignInRef.current
+        pendingSignInRef.current = { redirectTo, settle }
+        replaced?.settle?.()
+        setSignInRequests((n) => n + 1)
+      }),
+    [],
+  )
+
+  // Fires the pending signature: connectAndSignIn's once the modal's wallet
+  // connects, signInOnceConnected's on the render it asks for. The decision
+  // is lib/app-entry pendingSignInStep. Guards:
   //  • pendingSignInRef set        → never runs on passive auto-reconnect/refresh
   //  • status !== 'loading'        → wait for session hydration before deciding
   //                                   (the race that made the old version pop the
   //                                   signer on every reload)
-  //  • already authed              → just honor the redirect, don't re-sign
+  //  • a session for THIS wallet   → just honor the redirect, don't re-sign
   useEffect(() => {
     const intent = pendingSignInRef.current
     if (!intent) return
-    if (status === 'loading') return
-    if (!isConnected || !walletAddress) return
+    const step = pendingSignInStep({
+      sessionStatus: status,
+      sessionAddress: address,
+      walletAddress: isConnected ? (walletAddress ?? null) : null,
+      signingIn,
+      callerWaits: !!intent.settle,
+    })
+    if (step === 'wait') return
     pendingSignInRef.current = null
-    if (status === 'authed') {
-      if (intent.redirectTo) router.push(intent.redirectTo)
-      return
+    const { redirectTo, settle } = intent
+    if (settle) {
+      // Land whether or not the signature went through, then let the caller go.
+      void (step === 'sign' ? signIn() : Promise.resolve()).then(() => {
+        if (redirectTo) router.push(redirectTo)
+        settle()
+      })
+    } else if (step === 'land') {
+      if (redirectTo) router.push(redirectTo)
+    } else if (step === 'sign') {
+      void signIn(redirectTo)
     }
-    if (!signingIn) void signIn(intent.redirectTo)
-  }, [status, isConnected, walletAddress, signingIn, signIn, router])
+  }, [status, address, isConnected, walletAddress, signingIn, signIn, router, signInRequests])
 
   const signOut = useCallback(async () => {
     try {
@@ -306,6 +351,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     error,
     signIn,
     connectAndSignIn,
+    signInOnceConnected,
     signOut,
     refresh,
   }
