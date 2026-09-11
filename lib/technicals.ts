@@ -492,7 +492,10 @@ function oscillatorRows(x: Ctx): { rows: Row[]; omitted: string[] } {
   push('Momentum (10)', last(m), sig(last(m) > prev(m), last(m) < prev(m)), ok(last(m), prev(m)))
 
   const md = macd(x.close, 12, 26, 9)
-  push('MACD Level (12, 26)', last(md.macd), sig(last(md.macd) > last(md.signal), last(md.macd) < last(md.signal)), ok(last(md.macd), last(md.signal)))
+  // Equal within float noise is neutral (a straight ramp puts MACD ON its
+  // signal to 1e-12 — the vote must not be the rounding direction).
+  const mdEq = Math.abs(last(md.macd) - last(md.signal)) <= Math.max(1e-9, Math.abs(last(md.signal)) * 1e-9)
+  push('MACD Level (12, 26)', last(md.macd), sig(!mdEq && last(md.macd) > last(md.signal), !mdEq && last(md.macd) < last(md.signal)), ok(last(md.macd), last(md.signal)))
 
   const trendEma = ema(x.close, 13)
   const up = last(trendEma) > prev(trendEma)
