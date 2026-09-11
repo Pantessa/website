@@ -21,6 +21,25 @@ import { SITE_URL } from '@/lib/site-url'
 import { readQuotes, type QuoteMap } from '@/lib/quotes'
 import { alertFires, alertLabel, fmtQuotePrice, groupAlertsBySymbol, type AlertCondition } from '@/lib/watchlists'
 
+/** Escape for an HTML mail body — every interpolated field is either
+ *  user-authored (actionAsk) or derived from one; the mail must never carry
+ *  markup a stranger typed (integration review, 2026-09-11). */
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
+/** The alert mail, pure: subject + text + escaped html. Exported for the pin. */
+export function renderAlertEmail(input: { symbol: string; title: string; body: string; actionAsk: string | null }): { subject: string; text: string; html: string } {
+  const symbol = input.symbol.replace(/[^A-Z0-9]/g, '')
+  const href = `${SITE_URL}/t/${encodeURIComponent(symbol)}`
+  const ask = input.actionAsk ? input.actionAsk.replace(/[\r\n]+/g, ' ') : null
+  return {
+    subject: `${symbol} alert: ${input.title.replace(/[\r\n]+/g, ' ')}`,
+    text: `${input.body}\n\nOpen the chart: ${href}${ask ? `\nReady to send: "${ask}"` : ''}`,
+    html: `<div style="font-family:system-ui,sans-serif;max-width:480px"><h2>${escapeHtml(input.title)}</h2><p>${escapeHtml(input.body)}</p>${ask ? `<p>Ready to send: <strong>${escapeHtml(ask)}</strong></p>` : ''}<p><a href="${href}">Open the ${escapeHtml(symbol)} chart</a></p></div>`,
+  }
+}
+
 export interface SweepOptions {
   /** symbol → price, applied to INTERNAL alerts only. */
   fixture?: Record<string, number>
@@ -83,13 +102,7 @@ export async function runAlertSweep(opts: SweepOptions = {}): Promise<SweepSumma
       })
       fired.push({ id: a.id, symbol, price, owner: a.owner })
       if (a.email && !a.isInternal) {
-        const href = `${SITE_URL}/t/${encodeURIComponent(symbol)}`
-        void sendEmail({
-          to: a.email,
-          subject: `${symbol} alert: ${title}`,
-          text: `${body}\n\nOpen the chart: ${href}${a.actionAsk ? `\nReady to send: "${a.actionAsk}"` : ''}`,
-          html: `<div style="font-family:system-ui,sans-serif;max-width:480px"><h2>${title}</h2><p>${body}</p>${a.actionAsk ? `<p>Ready to send: <strong>${a.actionAsk}</strong></p>` : ''}<p><a href="${href}">Open the ${symbol} chart</a></p></div>`,
-        })
+        void sendEmail({ to: a.email, ...renderAlertEmail({ symbol, title, body, actionAsk: a.actionAsk }) })
       }
     }
     if (!(live != null && live > 0) && !alerts.every((a) => a.isInternal && Number(fixture[symbol]) > 0)) unquoted.push(symbol)

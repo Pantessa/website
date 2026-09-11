@@ -338,6 +338,13 @@ export async function createAlert(
   if (typeof body.email === 'string' && body.email.trim()) {
     const e = body.email.trim().toLowerCase()
     if (!EMAIL_RE.test(e)) return { problem: 'That email does not look deliverable.', status: 400 }
+    // The recipient must have confirmed mail from us (the double-opt-in
+    // subscriber row) — otherwise any signed-in wallet could point unlimited
+    // alerts at a stranger's inbox (integration review, 2026-09-11).
+    const sub = await prisma.subscriber.findUnique({ where: { email: e }, select: { status: true } })
+    if (sub?.status !== 'verified') {
+      return { problem: `${e} hasn't confirmed mail from Pantessa yet — subscribe with it (footer form), click the confirm link, then set the alert. In-app notifications still work without it.`, status: 400 }
+    }
     email = e
   }
   const row = await prisma.priceAlert.create({

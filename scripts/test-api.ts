@@ -18624,6 +18624,31 @@ async function main() {
     check('watch: cleanup — DELETE list cascades its items; both throwaway wallets end with zero lists and zero alerts', leftLists.lists.length === 0 && leftAlerts.alerts.length === 0 && leftMallory.lists.length === 0 && (await fetch(`${BASE}/lists/${olShared.slug}`)).status === 404)
   }
 
+  // ── MARKETS/QA ──────────────────────────────────────────────────────────
+  // Integration review findings, pinned (2026-09-11): the alert mail never
+  // carries stranger markup, and a recipient must be a VERIFIED subscriber.
+  console.log('— markets/qa')
+  {
+    const { renderAlertEmail } = await import('../lib/alerts-exec')
+    const qaRand = () => Math.random().toString(36).slice(2, 8)
+    const m = renderAlertEmail({ symbol: 'AAPL', title: 'x', body: 'b', actionAsk: '<script>alert(1)</script> Sell $50 of AAPL' })
+    check('markets/qa: the alert mail HTML escapes a user-authored actionAsk (no raw <script>) while the text part keeps it literal', !m.html.includes('<script>') && m.html.includes('&lt;script&gt;') && m.text.includes('<script>alert(1)</script>'))
+    const qaOwner = privateKeyToAccount(generatePrivateKey())
+    const qaSession = await signIn(qaOwner)
+    const QJ = { 'content-type': 'application/json', cookie: qaSession, 'x-yf-internal-run': '1' }
+    const unverified = `qa-unverified-${qaRand()}@example.com`
+    const rUn = await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: QJ, body: JSON.stringify({ symbol: 'AAPL', condition: 'below', value: 1, email: unverified }) })
+    const bUn = (await rUn.json()) as { error?: string }
+    check("markets/qa: an alert naming an email nobody confirmed is refused by name (400, 'confirm')", rUn.status === 400 && /confirm/i.test(bUn.error ?? ''), `${rUn.status} ${bUn.error ?? ''}`)
+    const verified = `qa-verified-${qaRand()}@example.com`
+    await prisma.subscriber.create({ data: { email: verified, status: 'verified', token: `qa-${qaRand()}${qaRand()}`, verifiedAt: new Date() } })
+    const rOk = await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: QJ, body: JSON.stringify({ symbol: 'AAPL', condition: 'below', value: 1, email: verified }) })
+    const bOk = (await rOk.json()) as { alert?: { id: string; email?: string | null } }
+    check('markets/qa: the same alert with a verified subscriber address is accepted and stores the recipient', rOk.status === 201 && bOk.alert?.email === verified, `${rOk.status}`)
+    await prisma.priceAlert.deleteMany({ where: { owner: qaOwner.address.toLowerCase() } })
+    await prisma.subscriber.deleteMany({ where: { email: { in: [verified, unverified] } } })
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }
