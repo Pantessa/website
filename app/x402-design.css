@@ -5299,6 +5299,7 @@
 .mkt-chart__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
 .mkt-attrib { color: var(--muted-2); text-decoration: none; border-bottom: 1px solid transparent; transition: color .15s, border-color .15s; }
 .mkt-attrib:hover { color: var(--fg); border-color: var(--line-2); }
+.mkt-attrib__notice { white-space: nowrap; } /* the NOTICE line never splits; a narrow footer wraps at the "·" */
 .mkt-pool { font-size: 10px; letter-spacing: 0.04em; color: var(--muted); border: 1px dotted var(--line-2); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
 .mkt-pool__prem--up { color: var(--sell); }
 .mkt-pool__prem--down { color: var(--accent); }

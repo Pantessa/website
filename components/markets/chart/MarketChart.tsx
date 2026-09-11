@@ -323,7 +323,9 @@ export default function MarketChart({
       layout: {
         background: { type: ColorType.Solid, color: tokens.bg },
         textColor: tokens.muted2,
-        attributionLogo: true,
+        // No in-chart TV logo: the footer below carries the license's
+        // attribution (the NOTICE line + a link to tradingview.com) instead.
+        attributionLogo: false,
         fontFamily: "'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
         fontSize: 10,
       },
@@ -823,11 +825,13 @@ export default function MarketChart({
         </ul>
       )}
 
-      {/* Attribution — required by the Apache-2.0 notice of the engine. */}
+      {/* Attribution — the engine's license wants TradingView's NOTICE line and
+          a link to tradingview.com on the page. With attributionLogo off this
+          footer is the ONLY credit: never drop it. */}
       <div className="mkt-chart__foot mono">
         <span>{feedLabel ? `feed · ${String(feedLabel)}` : ''}</span>
-        <a className="mkt-attrib" href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener noreferrer nofollow">
-          Charts by TradingView Lightweight Charts™
+        <a className="mkt-attrib" href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer nofollow">
+          Charts by TradingView Lightweight Charts™ · <span className="mkt-attrib__notice">© 2025 TradingView, Inc.</span>
         </a>
       </div>
     </div>
