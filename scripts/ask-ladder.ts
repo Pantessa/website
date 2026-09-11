@@ -21,6 +21,8 @@ import { compileJobAsk } from '../lib/jobs'
 import { parseRebalanceAsk } from '../lib/rebalance'
 import { parseMosaicAsk } from '../lib/mosaic'
 import { parseGuardianArm } from '../lib/hl-guardian'
+import { fenceGuardianCoin } from '../lib/hl-guardian-fence'
+
 import { parseSpotGuardArm, parseSpotGuardManage } from '../lib/spot-guard'
 import { isLidoGuidedAsk, parseLidoStake } from '../lib/lido-stake'
 import { parseHlIntent } from '../lib/hyperliquid-exec'
@@ -141,7 +143,17 @@ function simulateLadderInner(message: string): Outcome {
 
   // Spot guardian runs BEFORE the HL guardian in the route — same here.
   if (parseSpotGuardArm(message) || parseSpotGuardManage(message)) return { gate: 'spot-guard', kind: 'action' }
-  if (parseGuardianArm(message)) return { gate: 'guardian', kind: 'action' }
+  // The HL guardian's coin fence (lib/hl-guardian fenceGuardianCoin). The
+  // replica has no live universe, so it reads the COLD fence the route falls
+  // back to: a Robinhood Chain stock refuses by name with chips; anything
+  // else passes to the arm path, which validates against live meta.
+  const arm = parseGuardianArm(message)
+  if (arm) {
+    const fence = fenceGuardianCoin(arm, null)
+    if (!fence.ok) return { gate: 'guardian', kind: 'clarify', note: fence.problem, ...(fence.chips.length ? { chips: true as const } : {}) }
+    return { gate: 'guardian', kind: 'action' }
+  }
+
   if (isLidoGuidedAsk(message)) return { gate: 'lido', kind: 'action', note: 'guided' }
   const lido = parseLidoStake(message)
   if (lido) return 'problem' in lido ? { gate: 'lido', kind: 'clarify', note: lido.problem } : { gate: 'lido', kind: 'action' }
