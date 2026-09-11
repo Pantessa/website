@@ -48,15 +48,18 @@ export default async function TokenPage({ params, searchParams }: Params) {
   const initialTab = parseMarketTab(tabRaw ? `?tab=${encodeURIComponent(tabRaw)}` : '')
   const tfRaw = typeof sp.tf === 'string' ? sp.tf : ''
   const initialTf = CHART_TFS.some((t) => t.key === tfRaw) ? (tfRaw as ChartTf) : undefined
-  // No .x-main here on purpose: the symbol page owns its own gutters (the
-  // chart wants the width; the tab grid and rail sit inside .sym).
+  // The /markets frame (no .x-main): SymbolPage's <main class="sym"> and the
+  // watchlist rail are its two columns, and the footer sits under the page in
+  // the left column, so the rail stays docked through the last footer line.
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: seo.jsonLd }} />
-      <main>
+      <div className="mkt-frame mkt-frame--sym">
         <SymbolPage symbol={norm} initialTab={initialTab} initialTf={initialTf} />
-      </main>
-      <Footer />
+        <div className="mkt-frame__foot">
+          <Footer />
+        </div>
+      </div>
     </>
   )
 }

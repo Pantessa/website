@@ -4,9 +4,9 @@
 // chip · last · change · session line) → the chart (always mounted, above
 // the tabs — the chart is the order form, so it never disappears while you
 // trade) → the tab strip Overview · News · Community · Technicals · Trade
-// (`?tab=` mirrored via replaceState, the #705 idiom) → the tab's body,
-// beside a right rail (watchlist slot + symbol card) on ≥1024px, stacked
-// below it at 375px.
+// (`?tab=` mirrored via replaceState, the #705 idiom) → the tab's body. The
+// right rail (watchlist slot + symbol card) is the /markets frame's rail:
+// docked right from the nav down on ≥1024px, stacked below at 375px.
 //
 // The chart engine lives behind components/markets/chart/ChartMount (CHART
 // lane swaps the internals); the expand toggle is the same CSS takeover +
@@ -157,87 +157,89 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
     </button>
   )
 
+  // Two grid items for the page's .mkt-frame (the /markets frame): the symbol
+  // column and the watchlist rail, docked right from the nav down.
   return (
-    <div className="sym" data-symbol={sym}>
-      {/* ── Header ── */}
-      <header className="sym__head">
-        <div className="sym__id">
-          <TokenIcon symbol={sym} size={40} {...markWhere} />
-          <div className="min-w-0">
-            <div className="sym__titlerow">
-              <h1 className="sym__name truncate">{name}</h1>
-              <span className="sym__sym mono">{sym}</span>
-              <span className="sym__venue mono">{venueLabel(pair)}</span>
-            </div>
-            <p className="sym__session mono">{session.line}</p>
-          </div>
-        </div>
-        {acts.length > 0 && (
-          <div className="sym__act" aria-label={`Act on ${name}`} data-acts={acts.length}>
-            <span className="sym__act-eyebrow mono">ACT ON {sym} · SENDS THE ASK · YOUR WALLET SIGNS</span>
-            <div className="sym__act-chips">
-              {acts.map((a) => (
-                <Link
-                  key={a.label}
-                  href={promptHref(a.ask)}
-                  className={`sym__act-chip sym__act-chip--${a.side}`}
-                  title={a.ask}
-                  onClick={(e) => {
-                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
-                    e.preventDefault()
-                    onAsk(a)
-                  }}
-                >
-                  {a.label}
-                </Link>
-              ))}
+    <>
+      <main className="sym" data-symbol={sym}>
+        {/* ── Header ── */}
+        <header className="sym__head">
+          <div className="sym__id">
+            <TokenIcon symbol={sym} size={40} {...markWhere} />
+            <div className="min-w-0">
+              <div className="sym__titlerow">
+                <h1 className="sym__name truncate">{name}</h1>
+                <span className="sym__sym mono">{sym}</span>
+                <span className="sym__venue mono">{venueLabel(pair)}</span>
+              </div>
+              <p className="sym__session mono">{session.line}</p>
             </div>
           </div>
-        )}
-        <div className="sym__quote">
-          {pair && stats?.last != null ? (
-            <>
-              <span className="sym__last mono">${fmtPrice(stats.last)}</span>
-              <span className={`sym__chg mono mkt-chg ${chgClass}`}>{chgLabel}</span>
-              <span className="sym__feed mono">{feedLabel}</span>
-            </>
-          ) : pair ? (
-            <span className="sym__feed mono">loading {feedLabel} candles…</span>
-          ) : (
-            <span className="sym__feed mono">No live chart yet</span>
-          )}
-        </div>
-      </header>
-
-      {/* ── Chart (always mounted; the tabs never unmount it) ── */}
-      <div ref={shellRef} className={expanded ? 'tchart sym__chart tchart--expanded' : 'tchart sym__chart'}>
-        <div className="tchart__canvas">
-          {pair ? (
-            <ChartMount symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} />
-          ) : (
-            <div className="flex flex-1 items-center justify-center">
-              <div className="mkt-card max-w-md text-center">
-                <p className="mkt-card__title">No live chart for {sym || 'this token'} yet.</p>
-                <p className="mkt-card__note">
-                  Stablecoins chart flat by design, and a listing without a candle feed stays honest here. You can still act on it in chat — one
-                  sentence, guarded, signed only by your wallet.
-                </p>
-                <div className="mkt-chips mt-3 justify-center">
-                  <Link href={promptHref(`Buy $50 of ${sym}`)} className="mkt-chip mkt-chip--buy">
-                    Buy {sym}
+          {acts.length > 0 && (
+            <div className="sym__act" aria-label={`Act on ${name}`} data-acts={acts.length}>
+              <span className="sym__act-eyebrow mono">ACT ON {sym} · SENDS THE ASK · YOUR WALLET SIGNS</span>
+              <div className="sym__act-chips">
+                {acts.map((a) => (
+                  <Link
+                    key={a.label}
+                    href={promptHref(a.ask)}
+                    className={`sym__act-chip sym__act-chip--${a.side}`}
+                    title={a.ask}
+                    onClick={(e) => {
+                      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+                      e.preventDefault()
+                      onAsk(a)
+                    }}
+                  >
+                    {a.label}
                   </Link>
-                  <Link href={promptHref(`Sell $50 of ${sym}`)} className="mkt-chip">
-                    Sell {sym}
-                  </Link>
-                </div>
+                ))}
               </div>
             </div>
           )}
-        </div>
-      </div>
+          <div className="sym__quote">
+            {pair && stats?.last != null ? (
+              <>
+                <span className="sym__last mono">${fmtPrice(stats.last)}</span>
+                <span className={`sym__chg mono mkt-chg ${chgClass}`}>{chgLabel}</span>
+                <span className="sym__feed mono">{feedLabel}</span>
+              </>
+            ) : pair ? (
+              <span className="sym__feed mono">loading {feedLabel} candles…</span>
+            ) : (
+              <span className="sym__feed mono">No live chart yet</span>
+            )}
+          </div>
+        </header>
 
-      {/* ── Tabs + rail ── */}
-      <div className="sym__grid">
+        {/* ── Chart (always mounted; the tabs never unmount it) ── */}
+        <div ref={shellRef} className={expanded ? 'tchart sym__chart tchart--expanded' : 'tchart sym__chart'}>
+          <div className="tchart__canvas">
+            {pair ? (
+              <ChartMount symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} />
+            ) : (
+              <div className="flex flex-1 items-center justify-center">
+                <div className="mkt-card max-w-md text-center">
+                  <p className="mkt-card__title">No live chart for {sym || 'this token'} yet.</p>
+                  <p className="mkt-card__note">
+                    Stablecoins chart flat by design, and a listing without a candle feed stays honest here. You can still act on it in chat — one
+                    sentence, guarded, signed only by your wallet.
+                  </p>
+                  <div className="mkt-chips mt-3 justify-center">
+                    <Link href={promptHref(`Buy $50 of ${sym}`)} className="mkt-chip mkt-chip--buy">
+                      Buy {sym}
+                    </Link>
+                    <Link href={promptHref(`Sell $50 of ${sym}`)} className="mkt-chip">
+                      Sell {sym}
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Tabs ── */}
         <div className="sym__main">
           <nav ref={tabsRef} className="sym__tabs" role="tablist" aria-label="Symbol sections">
             {MARKET_TABS.map((t) => (
@@ -280,11 +282,13 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
             )}
           </div>
         </div>
-        <aside className="sym__rail" aria-label="Watchlist and symbol details">
-          <WatchlistSlot current={sym} onAsk={onChartAsk} />
-          <SymbolCardSlot symbol={sym} pair={pair} feed={feed} />
-        </aside>
-      </div>
-    </div>
+      </main>
+
+      {/* ── Rail: the /markets watchlist, then the symbol card pinned under it ── */}
+      <aside className="mkt-frame__rail" aria-label="Watchlist and symbol details">
+        <WatchlistSlot current={sym} onAsk={onChartAsk} />
+        <SymbolCardSlot symbol={sym} pair={pair} feed={feed} />
+      </aside>
+    </>
   )
 }
