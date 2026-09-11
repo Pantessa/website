@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { notFound } from 'next/navigation'
 import { isLiveServer, isReviewerAddress } from '@/lib/mcp-review'
 import { ArrowLeft, ExternalLink, TrendingUp } from 'lucide-react'
@@ -205,10 +206,10 @@ export default async function ServiceDetailPage({ params }: Params) {
             </div>
             <div className="svc__headlinks">
               {(server.callable || server.gated === false) && (
-                <Link className="svc__ext svc__ext--accent" href={`/chat?try=${server.slug}`}>
+                <SpineLink className="svc__ext svc__ext--accent" href={`/chat?try=${server.slug}`}>
                   Try in chat
                   <ExternalLink width={13} height={13} />
-                </Link>
+                </SpineLink>
               )}
               {server.websiteUrl && (
                 <a

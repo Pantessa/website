@@ -14,7 +14,9 @@ import { cdpEnabled } from '@/lib/cdp-embedded'
 import { YeetfulMark } from '@/components/Logo'
 import { AskDoorTrigger } from '@/components/AskDoor'
 import { isMarketsPath } from '@/lib/markets'
+import { SIGN_IN_LANDING } from '@/lib/app-entry'
 import SiteAccount, { signInLabel, signInPill } from '@/components/SiteAccount'
+import SpineLink from '@/components/SpineLink'
 
 export default function Navigation() {
   const pathname = usePathname()
@@ -84,21 +86,16 @@ export default function Navigation() {
   const inDashboard = pathname.startsWith('/dashboard')
   const showDashboardCta = mounted && (isConnected || !!sessionAddress)
 
-  // Chat connects a wallet to PAY a turn, not to sign in — so once a wallet is
-  // connected we keep the plain Connect Wallet / auth controls there. When
-  // logged out, a single "Sign in" opens the modal (wallet / Google / email).
-  const onChat = pathname.startsWith('/chat')
+  // When logged out, a single "Sign in" opens the modal (wallet / Google /
+  // email).
   const disconnected = !isConnected && !sessionAddress
 
-  // Signing in from an app surface should keep the user WHERE THEY ARE, not
-  // yank them to /dashboard. On chat we return them to the same chat URL (query
-  // included, so ?mcps=/?prompt= deep links survive). Only used inside the
-  // mounted-gated account clusters below, so window is available and there's no
-  // SSR/hydration mismatch (the value is read in click handlers, not rendered).
-  const signInRedirect =
-    onChat && typeof window !== 'undefined'
-      ? window.location.pathname + window.location.search
-      : '/dashboard'
+  // A sign-in from the brochure is a fresh login, and a fresh login lands on
+  // Markets (lib/app-entry SIGN_IN_LANDING; 2026-09-11, Nate: "not the
+  // setting / dashboard"). The app surfaces, where a sign-in keeps you on
+  // the same URL, render no brochure nav at all (the returns above); their
+  // own account seat (SiteAccount) carries that redirect.
+  const signInRedirect = SIGN_IN_LANDING
 
   // The disconnected sign-in affordance (one control) — shared everywhere.
   const disconnectedCta = cdpEnabled ? (
@@ -146,15 +143,15 @@ export default function Navigation() {
   const onMarkets = pathname.startsWith('/markets') || pathname.startsWith('/t/')
   const desktopTabs = (
     <>
-      <Link href="/markets" className={`nav__tab ${onMarkets ? 'is-on' : ''}`}>
+      <SpineLink href="/markets" className={`nav__tab ${onMarkets ? 'is-on' : ''}`}>
         Markets
-      </Link>
+      </SpineLink>
       <Link href="/links" className={`nav__tab ${pathname.startsWith('/links') ? 'is-on' : ''}`}>
         Links
       </Link>
-      <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
+      <SpineLink href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
         App
-      </Link>
+      </SpineLink>
       <Link href="/pricing" className={`nav__tab ${pathname.startsWith('/pricing') ? 'is-on' : ''}`}>
         Pricing
       </Link>
@@ -171,15 +168,15 @@ export default function Navigation() {
   const drawerTabs = (
     <>
       <AskDoorTrigger variant="drawer" />
-      <Link href="/markets" className={`nav__tab ${onMarkets ? 'is-on' : ''}`}>
+      <SpineLink href="/markets" className={`nav__tab ${onMarkets ? 'is-on' : ''}`}>
         Markets
-      </Link>
+      </SpineLink>
       <Link href="/links" className={`nav__tab ${pathname.startsWith('/links') ? 'is-on' : ''}`}>
         Links
       </Link>
-      <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
+      <SpineLink href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
         App
-      </Link>
+      </SpineLink>
       <span className="drawer__group mono">More</span>
       <Link href="/pricing" className={`nav__tab drawer__sub ${pathname.startsWith('/pricing') ? 'is-on' : ''}`}>
         Pricing

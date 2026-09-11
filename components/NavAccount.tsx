@@ -16,6 +16,7 @@ import WalletPanel from '@/components/WalletPanel'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
 import { isMarketsPath } from '@/lib/markets'
+import { SIGN_IN_LANDING } from '@/lib/app-entry'
 
 /**
  * Consolidated account control for the brochure (non-chat) surface.
@@ -50,10 +51,11 @@ export default function NavAccount() {
   // from it must keep the user on chat (query included), not send them to the
   // dashboard. The markets surface (where the pill docks in the watchlist
   // column) is the same: sign in beside the chart, stay on the chart.
-  // Everywhere else the dashboard is the right post-sign-in landing.
+  // Everywhere else it's a fresh login, and a fresh login lands on Markets
+  // (lib/app-entry SIGN_IN_LANDING), not the dashboard, which is settings.
   const stayHere = pathname.startsWith('/chat') || isMarketsPath(pathname)
   const signInRedirect =
-    stayHere && typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/dashboard'
+    stayHere && typeof window !== 'undefined' ? window.location.pathname + window.location.search : SIGN_IN_LANDING
 
   useEffect(() => closeNow(), [pathname, closeNow])
   useEffect(() => {
@@ -168,13 +170,11 @@ export default function NavAccount() {
                     className="navacct__item navacct__item--danger"
                     onClick={() => {
                       closeNow()
-                      // Signing out of the app lands back on the chat, signed
-                      // out (the guest lane) — not on the marketing page (QA
-                      // O-6). A public markets page stays put (the guest
-                      // watchlist is the honest signed-out state). Account
-                      // surfaces still go home: they're gated.
-                      const dest = pathname?.startsWith('/chat') ? '/chat' : isMarketsPath(pathname ?? '') ? pathname : '/'
-                      signOut().then(() => router.push(dest))
+                      // Signing out lands on the home page from everywhere
+                      // (2026-09-11): the app surfaces send a signed-out
+                      // visitor home anyway (AppSpine), so going there
+                      // directly skips a bounce through the page they were on.
+                      signOut().then(() => router.push('/'))
                     }}
                   >
                     <LogOut width={15} height={15} strokeWidth={2.25} />

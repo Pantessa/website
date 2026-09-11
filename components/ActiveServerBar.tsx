@@ -1,6 +1,6 @@
 'use client'
 
-import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { useYeetfulStore } from '@/lib/store'
 import BrandIcon from '@/components/BrandIcon'
 
@@ -30,9 +30,9 @@ export default function ActiveServerBar() {
         <button className="activebar__clear" onClick={clearActiveServers}>
           Clear
         </button>
-        <Link href="/chat" className="activebar__go">
+        <SpineLink href="/chat" className="activebar__go">
           Start chat →
-        </Link>
+        </SpineLink>
       </div>
     </div>
   )

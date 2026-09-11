@@ -5248,15 +5248,16 @@ async function main() {
         /if \(chatId \|\| servers\.length === 0 \|\| !linkSetActive\) return/.test(workspace),
     )
     check(
-      'onboarding: the guest banner promises a connect and its button connects (walletConnectOnly door, "Connect wallet" — not "Sign in"); signing out of the app lands on /chat, not the marketing page',
+      'onboarding: the guest banner promises a connect and its button connects (walletConnectOnly door, "Connect wallet" — not "Sign in"); signing out lands on the home page from everywhere',
       /Connect a wallet when you want to sign what it builds\./.test(gate) &&
         (gate.match(/<span>Connect wallet<\/span>/g) ?? []).length === 1 &&
         /'Connect wallet'\}<\/span>/.test(gate) &&
         !/<span>Sign in<\/span>/.test(gate) &&
         /walletConnectOnly\s+redirectTo=\{hereWithQuery\(\)\}/.test(gate) &&
-        // Re-pinned 2026-09-11 (markets shell): a public markets page stays
-        // put on sign-out — the pill docks in the watchlist column there.
-        /pathname\?\.startsWith\('\/chat'\) \? '\/chat' : isMarketsPath\(pathname \?\? ''\) \? pathname : '\/'/.test(nav),
+        // Re-pinned 2026-09-11 (signed out → home): the app surfaces send a
+        // signed-out visitor home (AppSpine), so sign-out goes there directly
+        // instead of landing on /chat or a markets page first and bouncing.
+        /signOut\(\)\.then\(\(\) => router\.push\('\/'\)\)/.test(nav) && !/const dest = /.test(nav),
     )
     check(
       'onboarding: after the on-ramp chip the chat says a Stripe tab opened and that it is watching the chain (the handoff moment is named, not implied)',
@@ -18441,6 +18442,102 @@ async function main() {
         /aria-label="MARKETS"[\s\S]*?aria-label="APPS"[\s\S]*?aria-label="JOBS"/.test(chatHtml) &&
         /railTab === 'mcps'\s*\?\s*'Your apps'/.test(chatRailSrc),
     )
+    // SIGNED OUT → HOME, FRESH LOGIN → MARKETS, NO NEW SEAT (2026-09-11,
+    // Nate: "if the user is inside markets, or App or anytime the left side
+    // bar is there and they are not logged in, let's take them to the root
+    // home page. Also on a fresh login let's take users to the markets page,
+    // not the setting / dashboard. Let's also get rid of the New tab").
+    // lib/app-entry holds the decision (signed out = settled with no wallet
+    // and no session; a connected wallet is in, connect to act) and the
+    // landing; AppSpine runs the redirect on every surface that mounts it;
+    // links into the shell from outside it are SpineLinks, so a signed-out
+    // click opens the sign-in door instead of bouncing off the shell. The
+    // redirect is client-side (the wallet half of identity only exists in
+    // the browser), so these pages still server-render; the browser drive
+    // is in the PR.
+    {
+      const ae = await import('../lib/app-entry')
+      const so = (
+        sessionStatus: 'loading' | 'authed' | 'guest',
+        walletStatus: 'connected' | 'connecting' | 'reconnecting' | 'disconnected',
+        { walletAddress = null, sessionAddress = null, remembered = false }: { walletAddress?: string | null; sessionAddress?: string | null; remembered?: boolean } = {},
+      ) => ae.isSignedOut({ sessionStatus, sessionAddress, walletStatus, walletAddress, walletRemembered: remembered })
+      const store = (m: Record<string, string>) => (k: string) => m[k] ?? null
+      check(
+        "app entry: signed out = the session answered with no one, no wallet on hand, and no wallet coming back — a stranger is decided without waiting out wagmi's connector probe, a browser that connected a wallet before waits for it, a connected wallet is in (connect to act); a fresh login lands on /markets",
+        so('guest', 'disconnected') && so('guest', 'connecting') && so('guest', 'reconnecting') &&
+          // the first beat: wagmi reads 'disconnected' before its mount effect runs
+          !so('loading', 'disconnected') && !so('loading', 'connecting') &&
+          // a remembered wallet: wait for the probe, then take its answer
+          !so('guest', 'connecting', { remembered: true }) && !so('guest', 'reconnecting', { remembered: true }) &&
+          so('guest', 'disconnected', { remembered: true }) &&
+          !so('guest', 'connected', { walletAddress: '0xabc' }) &&
+          // connecting a second wallet while one is connected
+          !so('guest', 'connecting', { walletAddress: '0xabc' }) &&
+          !so('authed', 'connected', { walletAddress: '0xabc', sessionAddress: '0xabc' }) &&
+          // an orphaned session (wallet gone) is session.tsx's to end first
+          !so('authed', 'disconnected', { sessionAddress: '0xabc' }) &&
+          ae.walletRemembered(store({ 'wagmi.recentConnectorId': '"io.metamask"' })) &&
+          ae.walletRemembered(store({ 'wagmi.recentConnectorId': '"cdp-embedded-wallet"' })) &&
+          !ae.walletRemembered(store({ 'wagmi.recentConnectorId': '"io.metamask"', 'wagmi.io.metamask.disconnected': 'true' })) &&
+          !ae.walletRemembered(store({})) && !ae.walletRemembered(store({ 'wagmi.recentConnectorId': 'not json' })) &&
+          ae.SIGN_IN_LANDING === '/markets',
+      )
+      const src = (p: string) => readFile(new URL(`../${p}`, import.meta.url), 'utf8')
+      const [doorS, authS, oauthS, acctS, navS, sessS, mctaS, spineLinkS] = await Promise.all(
+        [
+          'components/CreateAccountButton.tsx', 'components/AuthButton.tsx', 'components/CdpOAuthReturn.tsx', 'components/NavAccount.tsx',
+          'components/Navigation.tsx', 'lib/session.tsx', 'components/MobileCtaBar.tsx', 'components/SpineLink.tsx',
+        ].map(src),
+      )
+      check(
+        'fresh login → Markets: the door, AuthButton, the Google return, the account menu and the brochure nav all fall back to SIGN_IN_LANDING, and none of them to /dashboard',
+        /redirectTo = SIGN_IN_LANDING,/.test(doorS) &&
+          /redirectTo = SIGN_IN_LANDING \}/.test(authS) &&
+          /intent\?\.redirectTo \|\| SIGN_IN_LANDING/.test(oauthS) &&
+          /window\.location\.pathname \+ window\.location\.search : SIGN_IN_LANDING/.test(acctS) &&
+          /const signInRedirect = SIGN_IN_LANDING/.test(navS) &&
+          /<SpineLink href="\/markets"/.test(mctaS) &&
+          ![doorS, authS, oauthS, acctS, navS, mctaS].some((s) => /redirectTo = '\/dashboard'|\|\| '\/dashboard'|: '\/dashboard'|connectAndSignIn\('\/dashboard'\)/.test(s)),
+      )
+      check(
+        'spine: no NEW seat in either posture (the brand seat opens a fresh /chat; CHATS leads with New Chat), and the spine sends a settled signed-out visitor home with replace',
+        !/>NEW</.test(spineSrc) && !/Start a new chat/.test(spineSrc) &&
+          !chatHtml.includes('Start a new chat') && !mkHtml.includes('Start a new chat') &&
+          /const \{ walletAddress, signedOut \} = useSession\(\)/.test(spineSrc) &&
+          /if \(signedOut\) router\.replace\('\/'\)/.test(spineSrc) &&
+          /signedOut: isSignedOut\(\{\s*sessionStatus: status,\s*sessionAddress: address,\s*walletStatus,\s*walletAddress: walletAddress \?\? null,\s*walletRemembered: remembered,\s*\}\)/.test(sessS) &&
+          /setRemembered\(walletRemembered\(\(key\) => window\.localStorage\.getItem\(key\)\)\)/.test(sessS),
+      )
+      check(
+        "SpineLink: a plain click by a settled signed-out visitor opens the sign-in door aimed at the link's own target; modified clicks and everyone else get the plain link",
+        /if \(e\.defaultPrevented \|\| !signedOut\) return/.test(spineLinkS) &&
+          /e\.button !== 0 \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.shiftKey \|\| e\.altKey/.test(spineLinkS) &&
+          /<CreateAccountModal onClose=\{\(\) => setDoorOpen\(false\)\} redirectTo=\{href\} \/>/.test(spineLinkS) &&
+          /else connectAndSignIn\(href\)/.test(spineLinkS),
+      )
+      // Links into the shell from OUTSIDE it: every one a SpineLink. A bare
+      // <Link> there is a dead end for a signed-out visitor (click → the
+      // shell → home). The server HTML keeps real hrefs either way.
+      const fsMod = await import('node:fs')
+      const outside = [
+        'components/Navigation.tsx', 'components/Footer.tsx', 'components/LinksHeroView.tsx', 'components/MarketsBand.tsx',
+        'components/NightShift.tsx', 'components/MobileCtaBar.tsx', 'components/AskDoor.tsx', 'components/LinkRetired.tsx',
+        'components/SignHandoff.tsx', 'components/IntentRuntime.tsx', 'components/McpServerCard.tsx', 'components/ActiveServerBar.tsx',
+        'app/not-found.tsx', 'app/compare/page.tsx', 'app/lists/[slug]/page.tsx', 'app/w/[address]/page.tsx', 'app/p/[slug]/page.tsx',
+        'app/r/[slug]/page.tsx', 'app/servers/[slug]/page.tsx', 'app/servers/add/page.tsx', 'app/roster/page.tsx',
+        ...(fsMod.readdirSync('app/docs', { recursive: true }) as string[]).filter((p) => p.endsWith('page.tsx')).map((p) => `app/docs/${p}`),
+      ]
+      const bareShellLink = /<Link\s(?:[^>]*?\s)?href=(?:"\/(?:chat|markets)[?"/]|"\/t\/|\{`\/(?:chat|markets|t\/)|\{(?:ask|chipHref)\(|\{(?:tryHref|chatHref|appHref)\})/
+      const bare = outside.filter((p) => bareShellLink.test(fsMod.readFileSync(p, 'utf8')))
+      check(
+        'shell doors: no page or component outside the app shell links into it with a bare <Link> — the nav tabs, hero, footer, docs asks, share pages and public lists are SpineLinks (server HTML keeps the real hrefs)',
+        bare.length === 0 &&
+          (navS.match(/<SpineLink href="\/(?:markets|chat)" className=\{`nav__tab/g) ?? []).length === 4 &&
+          /href="\/chat"[^>]*>App</.test(homeHtml) && /href="\/markets"[^>]*>Open Markets</.test(homeHtml),
+        `bare=${bare.join(',')}`,
+      )
+    }
     const tabLabels = ['Overview', 'News', 'Community', 'Technicals', 'Trade']
     check(
       '/t/AAPL: 200 — header (Apple · AAPL · Robinhood Chain · 24/7 venue chip · session line), all five tabs, rail slots, chart mount',

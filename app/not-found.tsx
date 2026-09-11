@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { PantessaMark } from '@/components/Logo'
 
 // The site-wide 404. Without this file Next renders its own unstyled
@@ -33,9 +34,9 @@ export default function NotFound() {
           <Link href="/" className={`${chip} border-[var(--accent)]`}>
             Home
           </Link>
-          <Link href="/chat" className={chip}>
+          <SpineLink href="/chat" className={chip}>
             Open the app
-          </Link>
+          </SpineLink>
           <Link href="/links" className={chip}>
             Intent links
           </Link>

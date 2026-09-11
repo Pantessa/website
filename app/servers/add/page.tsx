@@ -9,6 +9,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { Plus, MessageSquare, LayoutGrid } from 'lucide-react'
 import AddMcpModal from '@/components/AddMcpModal'
 
@@ -33,12 +34,12 @@ export default function AddServerPage() {
         >
           <Plus className="h-4 w-4" /> Add an MCP
         </button>
-        <Link
+        <SpineLink
           href="/chat"
           className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] px-4 py-2 text-sm text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:text-white"
         >
           <MessageSquare className="h-4 w-4" /> Use it in chat
-        </Link>
+        </SpineLink>
         <Link
           href="/servers"
           className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] px-4 py-2 text-sm text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:text-white"

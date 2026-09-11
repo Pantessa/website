@@ -18,6 +18,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { linksStudioHref } from '@/lib/links-href'
 import { useAccount, useSignMessage } from 'wagmi'
 import { declineCard } from '@/lib/decline-client'
@@ -729,9 +730,9 @@ export default function IntentRuntime({
                   <SignInFlowLink href={mintHref} className={`${chipClass} max-sm:hidden`}>
                     <Link2 className="w-4 h-4" /> MAKE A LINK
                   </SignInFlowLink>
-                  <Link href="/chat" className={`${chipClass} max-sm:hidden`}>
+                  <SpineLink href="/chat" className={`${chipClass} max-sm:hidden`}>
                     <MessageSquare className="w-4 h-4" /> OPEN THE APP
-                  </Link>
+                  </SpineLink>
                 </>
               )}
               {/* Dashboard / wallet / sign-out live in the account pill — a
@@ -766,9 +767,9 @@ export default function IntentRuntime({
               <button type="button" onClick={focusComposer} className={`${chipClass} border-amber-400/60 bg-amber-400/10 text-[color:var(--fg)] hover:border-amber-400`}>
                 <ArrowRight className="w-4 h-4" /> READ IT IN THE COMPOSER
               </button>
-              <Link href="/chat" className={chipClass}>
+              <SpineLink href="/chat" className={chipClass}>
                 <MessageSquare className="w-4 h-4" /> NOT MINE — OPEN THE APP
-              </Link>
+              </SpineLink>
             </div>
           </div>
         </div>
@@ -795,9 +796,9 @@ export default function IntentRuntime({
               Don&apos;t stop here — the full app scans any wallet, funds shortfalls, and builds the path.
             </span>
             <div className="flex items-center gap-1.5">
-              <Link href="/chat" className={chipClass}>
+              <SpineLink href="/chat" className={chipClass}>
                 <MessageSquare className="w-4 h-4" /> OPEN THE APP
-              </Link>
+              </SpineLink>
               <SignInFlowLink href={mintHref} className={chipClass}>
                 <Link2 className="w-4 h-4" /> MAKE YOUR OWN LINK
               </SignInFlowLink>
