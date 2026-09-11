@@ -17479,6 +17479,10 @@ async function main() {
         /\$0 commission/.test(cmp) && /liquidity is thin/.test(cmp) && /regional/i.test(cmp) && /Not advice/.test(cmp),
     )
     check(
+      'markets/msg: no glued expression-node text on /compare or /docs/markets ("0.20%per trade" — the entity-space bug after an {expr}, invisible to the closing-tag fence)',
+      !/\d%[A-Za-z]/.test(cmp) && !/\d%[A-Za-z]/.test(await (await fetch(`${BASE}/docs/markets`)).text()),
+    )
+    check(
       'markets/msg: /compare names TradingView in text only — never in a heading, never as an image/lockup (rule 7)',
       /TradingView/.test(cmp) &&
         !/<h[1-6][^>]*>[^<]*TradingView/.test(cmp) &&

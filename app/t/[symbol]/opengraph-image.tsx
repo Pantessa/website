@@ -59,9 +59,12 @@ export default async function Image({ params }: Params) {
   const seo = symbolPageSeo(symbol)
   const pal = brandOgPalette(null)
   const series = seo.pair ? await loadSeries(seo.symbol) : { candles: [], last: null, changePct24h: null, feed: null }
-  const chg = series.changePct24h
+  // Daily candles: the 24h read lands in the same bucket as "now" and says
+  // 0.00% — the honest move on a daily tape is last close vs prior close.
+  const n = series.candles.length
+  const chg = n >= 2 && series.candles[n - 2].c > 0 ? ((series.candles[n - 1].c - series.candles[n - 2].c) / series.candles[n - 2].c) * 100 : null
   const chgColor = chg == null ? pal.muted : chg >= 0 ? UP : DOWN
-  const chgLabel = chg == null ? '' : `${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg).toFixed(2)}% · 24h`
+  const chgLabel = chg == null ? '' : `${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg).toFixed(2)}% · 1D`
   const feedLabel = series.feed ? CHART_FEED_LABELS[series.feed] : seo.pair ? CHART_FEED_LABELS[seo.pair.source] : ''
   const session = seo.pair ? sessionLine(sessionKindFor(seo.pair.source)) : ''
   const chart = candleSvg(series.candles, { width: 1072, height: 236, up: UP, down: DOWN, grid: 'rgba(255,255,255,0.06)', count: 60 })
@@ -118,13 +121,13 @@ export default async function Image({ params }: Params) {
         {/* footer: feed + the footnote / the promise */}
         <div style={{ position: 'absolute', bottom: 40, left: 64, right: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', gap: 12 }}>
-            {[feedLabel ? `Feed · ${feedLabel}` : 'Guarded build', 'Your wallet signs', 'Unlimited watchlists, free'].map((label) => (
+            {[feedLabel ? `Feed · ${feedLabel}` : 'Guarded build', 'Your wallet signs'].map((label) => (
               <div key={label} style={{ display: 'flex', padding: '8px 16px', borderRadius: 999, border: '1.5px solid rgba(255,255,255,0.12)', color: pal.muted, fontSize: 16, letterSpacing: 1.5 }}>
                 <span>{label}</span>
               </div>
             ))}
           </div>
-          <span style={{ color: pal.muted, fontSize: 15, letterSpacing: 2 }}>{TAPE_FOOTNOTE.toUpperCase()}</span>
+          <span style={{ color: pal.muted, fontSize: 15, letterSpacing: 2, whiteSpace: 'nowrap', flexShrink: 0 }}>{TAPE_FOOTNOTE.toUpperCase()}</span>
         </div>
       </div>
     ),

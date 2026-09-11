@@ -130,7 +130,7 @@ export default function ComparePage() {
           <blockquote className="cmp__killer" data-killer-line>
             <p className="cmp__killer-h">{KILLER_LINE.sentence}</p>
             <p className="cmp__killer-sub">
-              Our organic fee is {KILLER_LINE.feePct} per trade, on-chain, zero when you&rsquo;re idle. A trader who
+              Our organic fee is {KILLER_LINE.feePct}{' '}per trade, on-chain, zero when you&rsquo;re idle. A trader who
               does a year of Ultimate&rsquo;s price in volume — {KILLER_LINE.ultimatePerYear} — pays us{' '}
               {KILLER_LINE.smallTraderFee}. Looking is free forever; the second thing you do is one tap.
             </p>

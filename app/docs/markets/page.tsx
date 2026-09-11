@@ -78,7 +78,7 @@ export default function MarketsDocsPage() {
           </li>
           <li>
             <strong>Say it.</strong> The composer has a microphone:{' '}
-            <Link href={ask('Show me the AAPL chart')}>&ldquo;show me the AAPL chart&rdquo;</Link> opens the overlay
+            <Link href={ask('Show me the AAPL chart')}>&ldquo;show me the AAPL chart&rdquo;</Link>{' '}opens the overlay
             without burning a turn; &ldquo;buy ten dollars&rdquo; builds the order.
           </li>
         </ul>
@@ -122,7 +122,7 @@ export default function MarketsDocsPage() {
             <strong>Feeds.</strong> {FEED_NOTE}
           </li>
           <li>
-            <strong>Fees.</strong> Looking is free. A trade from the chart pays Pantessa {SWAP_FEE_PCT} on-chain, visible
+            <strong>Fees.</strong> Looking is free. A trade from the chart pays Pantessa {SWAP_FEE_PCT}{' '}on-chain, visible
             in the sign card; a trade that arrived through someone&rsquo;s shared link pays the link tier and half of
             it goes to the author. {KILLER_LINE.sentence}
           </li>
