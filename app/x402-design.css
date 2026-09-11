@@ -5203,6 +5203,9 @@
   .mkt-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .sym { padding-left: 12px; padding-right: 12px; }
   .sym__head { padding-top: 14px; }
+  /* five tabs fit 351px without a scroll: tighter type + padding */
+  .sym__tab { padding: 9px 8px 11px; font-size: 12.5px; }
+  .sym__tab.is-on::after { left: 6px; right: 6px; }
   .sym .tchart { height: clamp(300px, 46dvh, 420px); }
   .mkt-order__k { width: 100%; }
   .mkt-order__ask { flex-direction: column; align-items: stretch; }
