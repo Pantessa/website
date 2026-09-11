@@ -699,7 +699,7 @@ export function computeTechnicals(candles: Candle[], tf: ChartTf): Technicals | 
 // (lib/token-home) take the Hyperliquid forms — a spot chip for SOL would
 // book a Base squat.
 
-export type ChipKind = 'buy' | 'sell' | 'stop' | 'limit' | 'dca' | 'protect'
+export type ChipKind = 'buy' | 'sell' | 'stop' | 'limit' | 'dca' | 'protect' | 'alert'
 export interface ChartAction {
   kind: ChipKind
   ask: string
@@ -713,13 +713,24 @@ export interface ChipInput {
   rating: Rating
   /** Classic S1 — the level a neutral verdict's stop sits under. */
   support?: number | null
-  /** Classic R1 — where a neutral perp verdict takes profit. */
+  /** Classic R1 — where a neutral perp verdict takes profit / a stock alert sits. */
   resistance?: number | null
+  /** Emit "Alert me when X hits $R1" for a neutral STOCK verdict. OFF until
+   *  the WATCH lane's alert grammar has a rung in the ladder — today that ask
+   *  falls to the planner (pinned), and a chip must never dead-end. */
+  alerts?: boolean
 }
 
+// Stocks (source 'robinhood', chain 4663) get ONLY swap / DCA / alert asks:
+// the Spot Guardian runs on Base and the HL guardian on perps, so a protect
+// or stop chip on AAPL would land on a layer that cannot build it (MSG lane
+// finding, 2026-09-11 — the ladder CLAIMS "protect my AAPL with a 5% stop"
+// as a guardian action and the build refuses). Pinned: a stock verdict never
+// emits a protect/stop ask.
 export function verdictChips(input: ChipInput): ChartAction[] {
   const sym = input.symbol.toUpperCase()
   const perp = input.source === 'hyperliquid' || !!tokenHome(sym)
+  const stock = input.source === 'robinhood' && !perp
   const s1 = input.support != null && Number.isFinite(input.support) && input.support > 0 ? askPrice(input.support) : null
   const r1 = input.resistance != null && Number.isFinite(input.resistance) && input.resistance > 0 ? askPrice(input.resistance) : null
   const buy: ChartAction = perp
@@ -740,14 +751,17 @@ export function verdictChips(input: ChipInput): ChartAction[] {
   // A perp's neutral pair: the stop under S1 and the take-profit at R1 (the
   // HL guardian's other verb) — both round-trip parseGuardianArm.
   const takeProfitR1: ChartAction | null = perp && r1 ? { kind: 'limit', ask: `Take profit on my ${sym} long at $${r1}`, label: `Take profit at R1 · $${r1}` } : null
+  const sellAll: ChartAction = { kind: 'sell', ask: `Sell all my ${sym}`, label: `Sell all my ${sym}` }
+  const alertR1: ChartAction | null = input.alerts && r1 ? { kind: 'alert', ask: `Alert me when ${sym} hits $${r1}`, label: `Alert at R1 · $${r1}` } : null
   switch (input.rating) {
     case 'strong_sell':
     case 'sell':
-      return [sell, protectPct]
+      return stock ? [sell, sellAll] : [sell, protectPct]
     case 'strong_buy':
     case 'buy':
       return dca ? [buy, dca] : [buy, protectPct]
     default:
+      if (stock) return [dca!, alertR1 ?? buy]
       return perp ? [stopAtS1 ?? protectPct, takeProfitR1 ?? buy] : [stopAtS1 ?? protectPct, dca!]
   }
 }

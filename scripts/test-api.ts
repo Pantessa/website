@@ -17807,8 +17807,18 @@ async function main() {
     }
     check(`tech: every verdict chip (${chipCount} asks over 4 symbols × 5 ratings) lands as a native ACTION in the ladder replica`, chipBad.length === 0, chipBad.slice(0, 6).join(' | '))
     check('tech: a coin whose home is another chain (SOL) takes the Hyperliquid forms — never a Base squat swap', verdictChips({ symbol: 'SOL', source: 'coinbase', rating: 'buy' }).every((c) => /hyperliquid|long/i.test(c.ask)))
-    check('tech: sell verdicts carry Sell + Protect; buy verdicts Buy + DCA (spot) / Buy + Protect (perp)',
-      verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'sell' }).map((c) => c.kind).join(',') === 'sell,protect' &&
+    // A STOCK verdict never emits a protect/stop ask (Spot Guardian is Base-only, the HL
+    // guardian is perps-only — the ladder would CLAIM it and the build would refuse; MSG lane).
+    const stockAsks = ratings.flatMap((r) => verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: r, support: 300, resistance: 330 }).map((c) => c.ask))
+    check('tech: a stock (source robinhood) verdict emits ONLY swap / DCA asks across all five ratings — never protect / stop / guardian', stockAsks.length === 10 && stockAsks.every((a) => !/protect|stop|guardian|take profit|alert/i.test(a)) && stockAsks.every((a) => ['swap', 'dca'].includes(simulateLadder(a).gate)), stockAsks.join(' | '))
+    check('tech: a stock SELL verdict pairs "Sell $50" with the live-sized "Sell all my AAPL"', verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'strong_sell' }).map((c) => c.ask).join(' | ') === 'Sell $50 of AAPL | Sell all my AAPL' && simulateLadder('Sell all my AAPL').note?.includes('sized live') === true)
+    // The alert chip stays OFF until WATCH's grammar has a ladder rung: this pin FAILS the
+    // day "Alert me when AAPL hits $330" stops falling to the planner — flip `alerts` then.
+    const alertChip = verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'neutral', resistance: 330, alerts: true })[1]
+    check('tech: with alerts ON a neutral stock carries "Alert me when AAPL hits $R1" — and TODAY that ask falls to the planner (no alert rung yet; flip the default when this pin turns red)', alertChip.kind === 'alert' && alertChip.ask === 'Alert me when AAPL hits $330' && simulateLadder(alertChip.ask).kind === 'planner' && verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'neutral', resistance: 330 }).every((c) => c.kind !== 'alert'))
+    check('tech: sell verdicts carry Sell + Protect (spot coin) / Sell + Sell-all (stock); buy verdicts Buy + DCA (spot) / Buy + Protect (perp)',
+      verdictChips({ symbol: 'ETH', source: 'coinbase', rating: 'sell' }).map((c) => c.kind).join(',') === 'sell,protect' &&
+      verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'sell' }).map((c) => c.kind).join(',') === 'sell,sell' &&
       verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'strong_buy' }).map((c) => c.kind).join(',') === 'buy,dca' &&
       verdictChips({ symbol: 'HYPE', source: 'hyperliquid', rating: 'buy' }).map((c) => c.kind).join(',') === 'buy,protect')
 
