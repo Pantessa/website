@@ -8,16 +8,31 @@
 // The moment the SIWE session hydrates authed with guest lists present, the
 // hook POSTs them to /api/watchlists/adopt and clears the key — the
 // adoptLocalChat idiom, one table over. Nothing here counts or caps.
+//
+// Holdings autofill (2026-09-11): whenever a wallet is behind the rail — the
+// session's wallet in account mode, the connected one in guest mode — the
+// hook reads what it holds (GET /api/watchlists/holdings) and
+// planHeldAutofill adds the symbols the ledger has never seen to the first
+// list: the account's ledger on the server (POST), this browser's in
+// localStorage. A removal joins the ledger, so it stays off until the owner
+// adds it back by hand.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSession } from '@/lib/session'
 import {
+  DEFAULT_LIST_NAME,
   dedupeSymbols,
+  guestHeldAdoption,
+  isGuestListId,
+  mirrorAccountLedger,
   moveToSection as moveToSectionPure,
   newGuestList,
+  planHeldAutofill,
   readGuestLists,
+  readHeldLedger,
   writeGuestLists,
-  isGuestListId,
+  writeHeldLedger,
+  type HeldSymbol,
   type Quote,
   type WatchlistShape,
 } from '@/lib/watchlists'
@@ -32,6 +47,48 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
   return body
 }
 
+// ── Holdings reads ──────────────────────────────────────────────────────────
+// Module-level so they outlive the rail remounting on every client navigation
+// between /markets and /t pages: one read and one reconcile per wallet per
+// mode per minute. A wallet doesn't change that fast, and the server rides
+// the Wallet panel's cache anyway.
+const HELD_EVERY_MS = 60_000
+const heldReads = new Map<string, { at: number; read: Promise<HeldSymbol[] | null> }>()
+const lastReconciled = new Map<string, number>()
+const NO_HELD: ReadonlyMap<string, HeldSymbol> = new Map()
+
+function readHeld(address: string): Promise<HeldSymbol[] | null> {
+  const hit = heldReads.get(address)
+  if (hit && Date.now() - hit.at < HELD_EVERY_MS) return hit.read
+  const read = fetch(`/api/watchlists/holdings?address=${encodeURIComponent(address)}`, { cache: 'no-store' })
+    .then(async (r) => (r.ok ? (((await r.json()) as { held?: HeldSymbol[] }).held ?? []) : null))
+    .catch(() => null)
+  heldReads.set(address, { at: Date.now(), read })
+  // A failed read retries on the next mount instead of waiting out the window.
+  void read.then((v) => {
+    if (v === null && heldReads.get(address)?.read === read) heldReads.delete(address)
+  })
+  return read
+}
+
+// The guest ledger's bookkeeping. Only the owner's own gestures call these;
+// the autofill writes the ledger itself (its adds are never "by hand").
+function ledgerRemoved(symbols: readonly string[]): void {
+  if (!symbols.length) return
+  const l = readHeldLedger()
+  writeHeldLedger({
+    seen: dedupeSymbols([...l.seen, ...symbols]),
+    auto: l.auto.filter((s) => !symbols.includes(s)),
+    pending: dedupeSymbols([...l.pending, ...symbols]),
+  })
+}
+
+function ledgerAddedByHand(symbols: readonly string[]): void {
+  const l = readHeldLedger()
+  if (!l.auto.some((s) => symbols.includes(s)) && !l.pending.some((s) => symbols.includes(s))) return
+  writeHeldLedger({ seen: l.seen, auto: l.auto.filter((s) => !symbols.includes(s)), pending: l.pending.filter((s) => !symbols.includes(s)) })
+}
+
 export interface WatchlistsApi {
   lists: WatchlistShape[]
   active: WatchlistShape | null
@@ -41,6 +98,10 @@ export interface WatchlistsApi {
   ready: boolean
   busy: boolean
   error: string | null
+  /** What the wallet behind the rail holds, by symbol (the row marker). */
+  held: ReadonlyMap<string, HeldSymbol>
+  /** The last holdings autofill that added something (the rail's one note). */
+  autofill: { added: string[]; listName: string; at: number } | null
   createList: (name: string, symbols?: string[], sections?: WatchlistShape['sections']) => Promise<WatchlistShape | null>
   renameList: (id: string, name: string) => Promise<void>
   deleteList: (id: string) => Promise<void>
@@ -54,14 +115,44 @@ export interface WatchlistsApi {
 }
 
 export function useWatchlists(): WatchlistsApi {
-  const { status, address } = useSession()
+  const { status, address, walletAddress } = useSession()
   const authed = status === 'authed' && !!address
-  const [lists, setLists] = useState<WatchlistShape[]>([])
+  /** Whose lists these are — the account's or this browser's (null while the session hydrates). */
+  const modeKey = status === 'loading' ? null : authed ? `a:${address}` : 'g'
+  /** The wallet whose holdings feed the autofill. */
+  const holder = status === 'loading' ? null : authed ? address : walletAddress
+  const [lists, setListsState] = useState<WatchlistShape[]>([])
+  const listsRef = useRef<WatchlistShape[]>([])
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
+  // Ready means loaded FOR THIS MODE: a sign-in doesn't show the guest lists
+  // as the account's while the account's load is still in flight.
+  const ready = !!modeKey && loadedKey === modeKey
   const [activeId, setActiveIdState] = useState<string | null>(null)
-  const [ready, setReady] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [held, setHeld] = useState<ReadonlyMap<string, HeldSymbol>>(NO_HELD)
+  const [autofill, setAutofill] = useState<WatchlistsApi['autofill']>(null)
   const adoptingFor = useRef<string | null>(null)
+
+  // Every write goes through `update`, so an op reads the lists as they are
+  // NOW. The guest branches used to map over the render's closure: a
+  // create-then-add in one gesture mapped over the pre-create list and
+  // persisted [] — signed-out adds never stuck (found 2026-09-11).
+  const update = useCallback((fn: (prev: WatchlistShape[]) => WatchlistShape[]): WatchlistShape[] => {
+    const next = fn(listsRef.current)
+    listsRef.current = next
+    setListsState(next)
+    return next
+  }, [])
+
+  const updateGuest = useCallback(
+    (fn: (prev: WatchlistShape[]) => WatchlistShape[]): WatchlistShape[] => {
+      const next = update(fn)
+      writeGuestLists(next)
+      return next
+    },
+    [update],
+  )
 
   const setActiveId = useCallback((id: string) => {
     setActiveIdState(id)
@@ -72,28 +163,27 @@ export function useWatchlists(): WatchlistsApi {
     }
   }, [])
 
-  const persistGuest = useCallback((next: WatchlistShape[]) => {
-    setLists(next)
-    writeGuestLists(next)
-  }, [])
-
   const load = useCallback(async () => {
-    if (status === 'loading') return
+    if (!modeKey) return
     if (!authed) {
-      setLists(readGuestLists())
-      setReady(true)
+      update(() => readGuestLists())
+      setLoadedKey(modeKey)
       return
     }
-    // Authed: adopt any guest lists first (once per address), then read.
+    // Authed: adopt this browser's guest lists and guest removals first (once
+    // per address), then read.
     const guest = readGuestLists()
-    if (guest.length && adoptingFor.current !== address) {
+    const ledger = readHeldLedger()
+    if ((guest.length || ledger.pending.length) && adoptingFor.current !== address) {
       adoptingFor.current = address
+      const { auto, dismissed } = guestHeldAdoption(ledger, guest)
       try {
         await api('/api/watchlists/adopt', {
           method: 'POST',
-          body: JSON.stringify({ lists: guest.map((l) => ({ name: l.name, symbols: l.symbols, sections: l.sections })) }),
+          body: JSON.stringify({ lists: guest.map((l) => ({ name: l.name, symbols: l.symbols, sections: l.sections })), auto, dismissed }),
         })
         writeGuestLists([])
+        writeHeldLedger({ seen: ledger.seen, auto: [], pending: [] })
       } catch (e) {
         adoptingFor.current = null
         setError((e as Error).message)
@@ -101,13 +191,13 @@ export function useWatchlists(): WatchlistsApi {
     }
     try {
       const { lists: rows } = await api<{ lists: WatchlistShape[] }>('/api/watchlists')
-      setLists(rows)
+      update(() => rows)
       setError(null)
     } catch (e) {
       setError((e as Error).message)
     }
-    setReady(true)
-  }, [authed, address, status])
+    setLoadedKey(modeKey)
+  }, [authed, address, modeKey, update])
 
   useEffect(() => {
     void load()
@@ -127,9 +217,69 @@ export function useWatchlists(): WatchlistsApi {
     setActiveIdState(pick)
   }, [ready, lists, activeId])
 
-  const replace = useCallback((list: WatchlistShape) => {
-    setLists((prev) => prev.map((l) => (l.id === list.id ? list : l)))
-  }, [])
+  // Holdings autofill — every visit with a wallet behind the rail, not only
+  // the first connect.
+  useEffect(() => {
+    if (!ready || !holder) {
+      setHeld(NO_HELD)
+      return
+    }
+    let alive = true
+    const key = `${modeKey}|${holder}`
+    void (async () => {
+      const got = await readHeld(holder)
+      if (!alive || !got) return
+      setHeld(new Map(got.map((h) => [h.symbol, h])))
+      const last = lastReconciled.get(key)
+      if (last !== undefined && Date.now() - last < HELD_EVERY_MS) return
+      lastReconciled.set(key, Date.now())
+      const symbols = got.map((h) => h.symbol)
+      if (authed) {
+        try {
+          const r = await api<{ list: WatchlistShape | null; added: string[]; dismissed: string[] }>('/api/watchlists/holdings', {
+            method: 'POST',
+            body: JSON.stringify({ symbols }),
+          })
+          if (!alive) return
+          const list = r.list
+          if (list) update((prev) => (prev.some((l) => l.id === list.id) ? prev.map((l) => (l.id === list.id ? list : l)) : [...prev, list]))
+          writeHeldLedger(mirrorAccountLedger(readHeldLedger(), listsRef.current.flatMap((l) => l.symbols), r.dismissed))
+          if (list && r.added.length) setAutofill({ added: r.added, listName: list.name, at: Date.now() })
+        } catch {
+          lastReconciled.delete(key)
+        }
+        return
+      }
+      const ledger = readHeldLedger()
+      const plan = planHeldAutofill({ held: symbols, watched: listsRef.current.flatMap((l) => l.symbols), seen: ledger.seen })
+      if (!plan.newlySeen.length) return
+      let listName = DEFAULT_LIST_NAME
+      if (plan.add.length) {
+        updateGuest((prev) => {
+          const first = prev[0] ?? newGuestList(DEFAULT_LIST_NAME)
+          listName = first.name
+          const filled = { ...first, symbols: dedupeSymbols([...first.symbols, ...plan.add]) }
+          return prev.length ? [filled, ...prev.slice(1)] : [filled]
+        })
+      }
+      writeHeldLedger({
+        seen: dedupeSymbols([...ledger.seen, ...plan.newlySeen]),
+        auto: dedupeSymbols([...ledger.auto, ...plan.add]),
+        pending: ledger.pending,
+      })
+      if (plan.add.length) setAutofill({ added: plan.add, listName, at: Date.now() })
+    })()
+    return () => {
+      alive = false
+    }
+  }, [ready, holder, authed, modeKey, update, updateGuest])
+
+  const replace = useCallback(
+    (list: WatchlistShape) => {
+      update((prev) => prev.map((l) => (l.id === list.id ? list : l)))
+    },
+    [update],
+  )
 
   const run = useCallback(async <T,>(fn: () => Promise<T>): Promise<T | null> => {
     setBusy(true)
@@ -149,36 +299,45 @@ export function useWatchlists(): WatchlistsApi {
     async (name, symbols = [], sections) => {
       if (!authed) {
         const list = newGuestList(name, symbols, sections)
-        persistGuest([...lists, list])
+        updateGuest((prev) => [...prev, list])
+        if (list.symbols.length) ledgerAddedByHand(list.symbols)
         setActiveId(list.id)
         return list
       }
       const created = await run(async () => (await api<{ list: WatchlistShape }>('/api/watchlists', { method: 'POST', body: JSON.stringify({ name, symbols, sections }) })).list)
       if (created) {
-        setLists((prev) => [...prev, created])
+        update((prev) => [...prev, created])
         setActiveId(created.id)
       }
       return created
     },
-    [authed, lists, persistGuest, run, setActiveId],
+    [authed, run, setActiveId, update, updateGuest],
   )
 
   const renameList = useCallback<WatchlistsApi['renameList']>(
     async (id, name) => {
-      if (isGuestListId(id)) return persistGuest(lists.map((l) => (l.id === id ? { ...l, name } : l)))
+      if (isGuestListId(id)) {
+        updateGuest((prev) => prev.map((l) => (l.id === id ? { ...l, name } : l)))
+        return
+      }
       const r = await run(async () => (await api<{ list: WatchlistShape }>('/api/watchlists', { method: 'PATCH', body: JSON.stringify({ id, name }) })).list)
       if (r) replace(r)
     },
-    [lists, persistGuest, run, replace],
+    [updateGuest, run, replace],
   )
 
   const deleteList = useCallback<WatchlistsApi['deleteList']>(
     async (id) => {
-      if (isGuestListId(id)) return persistGuest(lists.filter((l) => l.id !== id))
+      if (isGuestListId(id)) {
+        const gone = listsRef.current.find((l) => l.id === id)
+        updateGuest((prev) => prev.filter((l) => l.id !== id))
+        if (gone) ledgerRemoved(gone.symbols)
+        return
+      }
       const ok = await run(async () => api('/api/watchlists', { method: 'DELETE', body: JSON.stringify({ id }) }))
-      if (ok) setLists((prev) => prev.filter((l) => l.id !== id))
+      if (ok) update((prev) => prev.filter((l) => l.id !== id))
     },
-    [lists, persistGuest, run],
+    [updateGuest, run, update],
   )
 
   const addSymbols = useCallback<WatchlistsApi['addSymbols']>(
@@ -186,61 +345,65 @@ export function useWatchlists(): WatchlistsApi {
       const symbols = dedupeSymbols(symbolsRaw)
       if (!symbols.length) return
       if (isGuestListId(id)) {
-        return persistGuest(
-          lists.map((l) => {
+        updateGuest((prev) =>
+          prev.map((l) => {
             if (l.id !== id) return l
             const next = { ...l, symbols: dedupeSymbols([...l.symbols, ...symbols]) }
             return section ? symbols.reduce((acc, s) => moveToSectionPure(acc, s, section), next) : next
           }),
         )
+        ledgerAddedByHand(symbols)
+        return
       }
       const r = await run(async () => (await api<{ list: WatchlistShape }>(`/api/watchlists/${id}/items`, { method: 'POST', body: JSON.stringify({ symbols, section }) })).list)
       if (r) replace(r)
     },
-    [lists, persistGuest, run, replace],
+    [updateGuest, run, replace],
   )
 
   const removeSymbol = useCallback<WatchlistsApi['removeSymbol']>(
     async (id, symbol) => {
       if (isGuestListId(id)) {
-        return persistGuest(
-          lists.map((l) =>
-            l.id === id
-              ? { ...moveToSectionPure(l, symbol, null), symbols: l.symbols.filter((s) => s !== symbol) }
-              : l,
-          ),
+        updateGuest((prev) =>
+          prev.map((l) => (l.id === id ? { ...moveToSectionPure(l, symbol, null), symbols: l.symbols.filter((s) => s !== symbol) } : l)),
         )
+        ledgerRemoved([symbol])
+        return
       }
       const r = await run(async () => (await api<{ list: WatchlistShape }>(`/api/watchlists/${id}/items?symbol=${encodeURIComponent(symbol)}`, { method: 'DELETE' })).list)
       if (r) replace(r)
     },
-    [lists, persistGuest, run, replace],
+    [updateGuest, run, replace],
   )
 
   const moveToSection = useCallback<WatchlistsApi['moveToSection']>(
     async (id, symbol, section) => {
-      if (isGuestListId(id)) return persistGuest(lists.map((l) => (l.id === id ? moveToSectionPure(l, symbol, section) : l)))
+      if (isGuestListId(id)) {
+        updateGuest((prev) => prev.map((l) => (l.id === id ? moveToSectionPure(l, symbol, section) : l)))
+        return
+      }
       const r = await run(async () => (await api<{ list: WatchlistShape }>(`/api/watchlists/${id}/items`, { method: 'PATCH', body: JSON.stringify({ symbol, section }) })).list)
       if (r) replace(r)
     },
-    [lists, persistGuest, run, replace],
+    [updateGuest, run, replace],
   )
 
   const reorder = useCallback<WatchlistsApi['reorder']>(
     async (id, order) => {
       if (isGuestListId(id)) {
-        return persistGuest(
-          lists.map((l) => {
+        updateGuest((prev) =>
+          prev.map((l) => {
             if (l.id !== id) return l
             const wanted = order.filter((s) => l.symbols.includes(s))
             return { ...l, symbols: [...wanted, ...l.symbols.filter((s) => !wanted.includes(s))] }
           }),
         )
+        return
       }
       const r = await run(async () => (await api<{ list: WatchlistShape }>('/api/watchlists', { method: 'PATCH', body: JSON.stringify({ id, order }) })).list)
       if (r) replace(r)
     },
-    [lists, persistGuest, run, replace],
+    [updateGuest, run, replace],
   )
 
   const setPublic = useCallback<WatchlistsApi['setPublic']>(
@@ -263,6 +426,8 @@ export function useWatchlists(): WatchlistsApi {
     ready,
     busy,
     error,
+    held,
+    autofill,
     createList,
     renameList,
     deleteList,

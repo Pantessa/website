@@ -8,12 +8,14 @@
 import prisma from '@/lib/db'
 import { mintSlug } from '@/lib/intent-links'
 import {
+  DEFAULT_LIST_NAME,
   LIST_SLUG_RE,
   alertRuleProblem,
   cleanListName,
   cleanSectionName,
   dedupeSymbols,
   normalizeWatchSymbol,
+  planHeldAutofill,
   slugify,
   type AlertCondition,
   type WatchlistSection,
@@ -183,7 +185,13 @@ async function freeSlug(name: string): Promise<string> {
 }
 
 export async function deleteWatchlist(owner: string, id: string): Promise<boolean> {
-  const r = await prisma.watchlist.deleteMany({ where: { id, owner: owner.toLowerCase() } })
+  const o = owner.toLowerCase()
+  const row = await prisma.watchlist.findFirst({ where: { id, owner: o }, include: { items: { select: { symbol: true } } } })
+  if (!row) return false
+  const r = await prisma.watchlist.deleteMany({ where: { id: row.id, owner: o } })
+  // Deleting a list removes its tickers — remembered like a row removal, so
+  // the holdings autofill never refills them into the next list.
+  if (r.count > 0) await recordSeen(prisma, o, row.items.map((i) => i.symbol))
   return r.count > 0
 }
 
@@ -214,7 +222,10 @@ export async function removeItem(owner: string, id: string, symbolRaw: unknown):
   if (!symbol) return { problem: 'Name the symbol to remove.', status: 400 }
   const row = await prisma.watchlist.findFirst({ where: { id, owner: owner.toLowerCase() } })
   if (!row) return { problem: 'No such list on this wallet.', status: 404 }
-  await prisma.watchlistItem.deleteMany({ where: { watchlistId: row.id, symbol } })
+  const r = await prisma.watchlistItem.deleteMany({ where: { watchlistId: row.id, symbol } })
+  // A removal is remembered: the holdings autofill never puts it back. Only
+  // adding it again by hand does (the add is the owner's word, not ours).
+  if (r.count > 0) await recordSeen(prisma, row.owner, [symbol])
   const after = await prisma.watchlist.findUnique({ where: { id: row.id }, include: { items: true } })
   return { list: toShape(after!, after!.items) }
 }
@@ -258,15 +269,141 @@ export async function forkWatchlist(owner: string, slugRaw: string, isInternal: 
   return { list }
 }
 
-/** Guest lists → server lists, one POST on sign-in. Returns the created rows. */
-export async function adoptGuestLists(owner: string, listsRaw: unknown, isInternal: boolean): Promise<WatchlistShape[]> {
-  if (!Array.isArray(listsRaw)) return []
+const asStrings = (x: unknown): string[] => (Array.isArray(x) ? x.filter((s): s is string => typeof s === 'string') : [])
+
+/** Guest lists → server lists, one POST on sign-in.
+ *   · A guest list named like one of the account's lists merges into it
+ *     (the default "My watchlist" on both sides is one list, not two);
+ *     anything else is created, sections kept.
+ *   · Symbols the guest's holdings AUTOFILL placed (`auto`) come along only
+ *     when the account has never seen them — on none of its lists and not in
+ *     its ledger — so a holding the owner removed on another device is not
+ *     carried back in by a signed-out visit. A list emptied by that filter
+ *     is dropped; a list the guest left empty on purpose is kept.
+ *   · The guest's own removals (`dismissed`) join the account's ledger.
+ *  Returns the lists written (created or merged into). */
+export async function adoptGuestLists(
+  ownerRaw: string,
+  listsRaw: unknown,
+  isInternal: boolean,
+  held: { auto?: unknown; dismissed?: unknown } = {},
+): Promise<WatchlistShape[]> {
+  const owner = ownerRaw.toLowerCase()
+  const auto = new Set(dedupeSymbols(asStrings(held.auto)))
+  const dismissed = dedupeSymbols(asStrings(held.dismissed))
+  const existing = await prisma.watchlist.findMany({ where: { owner }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }], include: { items: true } })
+  const watched = new Set(existing.flatMap((r) => r.items.map((i) => i.symbol)))
+  const seen = auto.size ? new Set((await prisma.watchlistHoldingSeen.findMany({ where: { owner }, select: { symbol: true } })).map((r) => r.symbol)) : new Set<string>()
+  const keep = (s: string) => !auto.has(s) || (!watched.has(s) && !seen.has(s))
+  const byName = new Map<string, string>()
+  for (const r of existing) if (!byName.has(r.name.toLowerCase())) byName.set(r.name.toLowerCase(), r.id)
+
   const out: WatchlistShape[] = []
-  for (const l of listsRaw.slice(0, 200) as { name?: unknown; symbols?: unknown; sections?: unknown }[]) {
+  for (const l of (Array.isArray(listsRaw) ? listsRaw.slice(0, 200) : []) as { name?: unknown; symbols?: unknown; sections?: unknown }[]) {
     if (!l || typeof l !== 'object') continue
-    out.push(await createWatchlist({ owner, name: l.name, symbols: l.symbols, sections: l.sections, isInternal }))
+    const given = dedupeSymbols(asStrings(l.symbols))
+    const sectionsIn = Array.isArray(l.sections) ? (l.sections as { name?: unknown; symbols?: unknown }[]) : []
+    const sections = sectionsIn.map((s) => ({ name: s?.name, symbols: dedupeSymbols(asStrings(s?.symbols)).filter(keep) }))
+    const symbols = given.filter(keep)
+    const hadAny = given.length > 0 || sectionsIn.some((s) => asStrings(s?.symbols).length > 0)
+    if (hadAny && symbols.length === 0 && !sections.some((s) => s.symbols.length)) continue
+    const name = cleanListName(l.name)
+    const targetId = byName.get(name.toLowerCase())
+    if (targetId) {
+      const merged = await mergeIntoList(targetId, symbols, sections)
+      if (merged) out.push(merged)
+    } else {
+      const created = await createWatchlist({ owner, name, symbols, sections, isInternal })
+      byName.set(name.toLowerCase(), created.id)
+      out.push(created)
+    }
   }
+  if (dismissed.length) await recordSeen(prisma, owner, dismissed)
   return out
+}
+
+/** Append the symbols a list doesn't hold yet, at its tail, each with its
+ *  section from `sections`; rows already on the list keep their spot. */
+async function mergeIntoList(listId: string, symbols: string[], sections: unknown): Promise<WatchlistShape | null> {
+  const row = await prisma.watchlist.findUnique({ where: { id: listId }, include: { items: true } })
+  if (!row) return null
+  const sec = sectionOf(sections)
+  const all = [...symbols]
+  for (const s of sec.keys()) if (!all.includes(s)) all.push(s)
+  const held = new Set(row.items.map((i) => i.symbol))
+  let pos = row.items.reduce((m, i) => Math.max(m, i.position), -1) + 1
+  const fresh = all.filter((s) => !held.has(s))
+  if (fresh.length) {
+    await prisma.watchlistItem.createMany({
+      data: fresh.map((symbol) => ({ id: mintSlug(10), watchlistId: row.id, symbol, section: sec.get(symbol) ?? null, position: pos++ })),
+      skipDuplicates: true,
+    })
+    await prisma.watchlist.update({ where: { id: row.id }, data: { updatedAt: new Date() } })
+  }
+  const after = await prisma.watchlist.findUnique({ where: { id: row.id }, include: { items: true } })
+  return after ? toShape(after, after.items) : null
+}
+
+// ── Holdings autofill (the account path) ────────────────────────────────────
+// lib/watchlists planHeldAutofill is the rule; this is its DB half. The
+// ledger (watchlist_holdings_seen) is per owner, so a removal on one device
+// holds on every device the owner signs in from.
+
+type Db = Pick<typeof prisma, 'watchlistHoldingSeen'>
+
+/** Remember symbols in the owner's ledger (idempotent; first write wins). */
+async function recordSeen(db: Db, owner: string, symbols: readonly string[], added: ReadonlySet<string> = new Set()): Promise<void> {
+  const clean = dedupeSymbols([...symbols])
+  if (!clean.length) return
+  await db.watchlistHoldingSeen.createMany({
+    data: clean.map((symbol) => ({ owner: owner.toLowerCase(), symbol, added: added.has(symbol) })),
+    skipDuplicates: true,
+  })
+}
+
+export interface HeldSyncResult {
+  /** The list the autofill wrote to, fresh; the primary list when nothing
+   *  was added; null when the owner has no list and nothing was added. */
+  list: WatchlistShape | null
+  /** Symbols appended this call, in holdings order. */
+  added: string[]
+  /** Ledger symbols on none of the owner's lists — what the owner removed. */
+  dismissed: string[]
+}
+
+/** One account sync: the owner's primary list (first by position) gains the
+ *  held symbols it has never seen; every held symbol lands in the ledger.
+ *  Serialized per owner (a transaction-scoped advisory lock), so two tabs
+ *  restoring at once can't both create "My watchlist" or double-append. */
+export async function syncHeldSymbols(ownerRaw: string, heldRaw: unknown, isInternal: boolean): Promise<HeldSyncResult> {
+  const owner = ownerRaw.toLowerCase()
+  const held = asStrings(heldRaw).slice(0, 500)
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`watchlist-held:${owner}`}::text))`
+      const rows = await tx.watchlist.findMany({ where: { owner }, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }], include: { items: true } })
+      const seen = new Set((await tx.watchlistHoldingSeen.findMany({ where: { owner }, select: { symbol: true } })).map((r) => r.symbol))
+      const watched = new Set(rows.flatMap((r) => r.items.map((i) => i.symbol)))
+      const plan = planHeldAutofill({ held, watched, seen })
+      let list: WatchlistShape | null = rows[0] ? toShape(rows[0], rows[0].items) : null
+      if (plan.add.length) {
+        const primary =
+          rows[0] ?? (await tx.watchlist.create({ data: { id: mintSlug(10), owner, name: DEFAULT_LIST_NAME, position: 0, isInternal }, include: { items: true } }))
+        let pos = primary.items.reduce((m, i) => Math.max(m, i.position), -1) + 1
+        await tx.watchlistItem.createMany({
+          data: plan.add.map((symbol) => ({ id: mintSlug(10), watchlistId: primary.id, symbol, position: pos++ })),
+          skipDuplicates: true,
+        })
+        await tx.watchlist.update({ where: { id: primary.id }, data: { updatedAt: new Date() } })
+        const fresh = await tx.watchlist.findUnique({ where: { id: primary.id }, include: { items: true } })
+        list = fresh ? toShape(fresh, fresh.items) : null
+      }
+      await recordSeen(tx, owner, plan.newlySeen, new Set(plan.add))
+      const nowWatched = new Set([...watched, ...plan.add])
+      return { list, added: plan.add, dismissed: [...seen].filter((s) => !nowWatched.has(s)) }
+    },
+    { timeout: 15_000 },
+  )
 }
 
 // ── Alerts ──────────────────────────────────────────────────────────────────

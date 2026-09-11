@@ -94,7 +94,9 @@ export default function MarketsDocsPage() {
 
         <h2>Watchlists</h2>
         <p>
-          Unlimited lists, unlimited tickers, sections if you like them, public or private. A guest&rsquo;s list lives
+          Unlimited lists, unlimited tickers, sections if you like them, public or private. Connect a wallet and the
+          list fills itself with what the wallet holds — ETH, your Robinhood Chain stocks, the coins we chart — and a
+          holding you remove stays off until you add it back. A guest&rsquo;s list lives
           in the browser and is adopted into the account on sign-in. A public list has a page (
           <span className="mono">/lists/&lt;slug&gt;</span>) and a share card; anyone can fork it. Never a cap — the
           day we meter a watchlist we are a charting subscription with worse charts.
