@@ -244,7 +244,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
           </div>
         </div>
         <aside className="sym__rail" aria-label="Watchlist and symbol details">
-          <WatchlistSlot current={sym} />
+          <WatchlistSlot current={sym} onAsk={onChartAsk} />
           <SymbolCardSlot symbol={sym} pair={pair} feed={feed} />
         </aside>
       </div>
