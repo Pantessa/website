@@ -135,8 +135,14 @@ export default function Navigation() {
   // Desktop primary tabs — links-first: the leaderboard and the money story
   // are top-level; chat is the LINK BUILDER; deep-dive surfaces (Benchmarks,
   // Tools, MCP Directory) live in the footer, out of the main story.
+  // Markets leads (2026-09-11): the chart that executes is the front door;
+  // /t/<symbol> pages light the same tab.
+  const onMarkets = pathname.startsWith('/markets') || pathname.startsWith('/t/')
   const desktopTabs = (
     <>
+      <Link href="/markets" className={`nav__tab ${onMarkets ? 'is-on' : ''}`}>
+        Markets
+      </Link>
       <Link href="/links" className={`nav__tab ${pathname.startsWith('/links') ? 'is-on' : ''}`}>
         Links
       </Link>
@@ -161,6 +167,9 @@ export default function Navigation() {
   // Drawer tabs — same destinations, one tap each.
   const drawerTabs = (
     <>
+      <Link href="/markets" className={`nav__tab ${onMarkets ? 'is-on' : ''}`}>
+        Markets
+      </Link>
       <Link href="/links" className={`nav__tab ${pathname.startsWith('/links') ? 'is-on' : ''}`}>
         Links
       </Link>
