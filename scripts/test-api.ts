@@ -18538,6 +18538,81 @@ async function main() {
         `bare=${bare.join(',')}`,
       )
     }
+    // EMAIL AND GOOGLE ACCOUNTS SIGN IN (2026-09-11). The door's email-OTP and
+    // Google lanes connected the embedded wallet and routed, and never ran
+    // SIWE, so the dashboard's gate (a SIWE session) sent every account they
+    // made home. Each lane now signs in after its connect:
+    // session.signInOnceConnected hands the signature to the post-connect
+    // effect, which reads the wallet state the connect produced (signIn from
+    // the door's closure still held the disconnected one). A connect-only door
+    // (walletConnectOnly: /i, /chat's connect gate) stops at the connect on
+    // every lane (rule 6). The OTP and OAuth flows can't be driven headless;
+    // the owner drill is in the PR.
+    {
+      const ae = await import('../lib/app-entry')
+      const step = (
+        sessionStatus: 'loading' | 'authed' | 'guest',
+        walletAddress: string | null,
+        { sessionAddress = null, signingIn = false, callerWaits = false }: { sessionAddress?: string | null; signingIn?: boolean; callerWaits?: boolean } = {},
+      ) => ae.pendingSignInStep({ sessionStatus, sessionAddress, walletAddress, signingIn, callerWaits })
+      check(
+        'pending sign-in: waits for hydration and a connected wallet, lands without signing on a session for THIS wallet (any case), signs over a stale session for another address, and a waiting caller waits out an in-flight sign-in where connectAndSignIn drops it',
+        step('loading', '0xAbC') === 'wait' && step('guest', null) === 'wait' && step('authed', null, { sessionAddress: '0xabc' }) === 'wait' &&
+          step('guest', '0xAbC') === 'sign' && step('guest', '0xAbC', { callerWaits: true }) === 'sign' &&
+          step('authed', '0xAbC', { sessionAddress: '0xabc' }) === 'land' &&
+          step('authed', '0xAbC', { sessionAddress: '0xabc', signingIn: true, callerWaits: true }) === 'land' &&
+          step('authed', '0xDeF', { sessionAddress: '0xabc' }) === 'sign' &&
+          step('guest', '0xAbC', { signingIn: true, callerWaits: true }) === 'wait' &&
+          step('guest', '0xAbC', { signingIn: true }) === 'drop',
+      )
+      const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      const src = async (p: string) => strip(await readFile(new URL(`../${p}`, import.meta.url), 'utf8'))
+      const [doorS, oauthS, sessS, waitS, runtimeS, gateS, chatS] = await Promise.all(
+        [
+          'components/CreateAccountButton.tsx', 'components/CdpOAuthReturn.tsx', 'lib/session.tsx', 'components/SignatureWaitTakeover.tsx',
+          'components/IntentRuntime.tsx', 'components/ChatSignInGate.tsx', 'components/ChatInterface.tsx',
+        ].map(src),
+      )
+      const onceBody = sessS.match(/const signInOnceConnected = useCallback\(([\s\S]*?)\[\],\s*\)/)?.[1] ?? ''
+      check(
+        'session: signInOnceConnected leaves a waiting intent and re-renders the provider, opening no wallet modal; the post-connect effect decides through pendingSignInStep and re-runs on the request',
+        /pendingSignInRef\.current = \{ redirectTo, settle \}/.test(onceBody) && /setSignInRequests\(\(n\) => n \+ 1\)/.test(onceBody) &&
+          !/openConnectModal/.test(onceBody) &&
+          /const step = pendingSignInStep\(\{/.test(sessS) && /callerWaits: !!intent\.settle,/.test(sessS) &&
+          /\[status, address, isConnected, walletAddress, signingIn, signIn, router, signInRequests\]\)/.test(sessS) &&
+          /signInOnceConnected,\s*signOut,/.test(sessS),
+      )
+      check(
+        'email lane: after the embedded wallet connects, the account door signs in (signInOnceConnected, then closes) and a walletConnectOnly door only routes',
+        /await connectAsync\(\{ connector \}\)\s*if \(walletConnectOnly\) \{\s*onClose\(\)\s*router\.push\(redirectTo\)\s*\} else \{\s*await signInOnceConnected\(redirectTo\)\s*onClose\(\)\s*\}/.test(doorS),
+      )
+      check(
+        "google lane: the door's OAuth intent asks to sign in unless the door is connect-only; the return makes the embedded wallet the ACTIVE connection, signs in only when asked, and otherwise just routes",
+        /const intent: OAuthIntent = \{ redirectTo, signIn: !walletConnectOnly \}/.test(doorS) &&
+          /sessionStorage\.setItem\(OAUTH_INTENT_KEY, JSON\.stringify\(intent\)\)/.test(doorS) &&
+          /let connected = isConnected && activeConnector\?\.id === CDP_CONNECTOR_ID/.test(oauthS) &&
+          /err\.name === 'ConnectorAlreadyConnectedError'/.test(oauthS) &&
+          /if \(connected && intent\?\.signIn\) await signInOnceConnected\(target\)\s*else router\.push\(target\)/.test(oauthS),
+      )
+      check(
+        "connect-only doors: /i, /chat's guest banner and the chat's connect gate pass walletConnectOnly, and on it the wallet lane only opens the wallet list",
+        /redirectTo=\{hereHref\(\)\} walletConnectOnly \/>/.test(runtimeS) &&
+          /walletConnectOnly\s+redirectTo=\{hereWithQuery\(\)\}/.test(gateS) &&
+          /walletConnectOnly\s+onOpenChange=\{setConnectDoorOpen\}/.test(chatS) &&
+          /if \(walletConnectOnly\) openConnectModal\?\.\(\)\s*else connectAndSignIn\(redirectTo\)/.test(doorS),
+      )
+      const grace = Number(waitS.match(/export const SILENT_SIGN_GRACE_MS = (\d+)/)?.[1] ?? NaN)
+      check(
+        'signature card: the embedded wallet\'s silent signature waits a grace beat, then reads "Signing you in…" with no open-the-request button; both mounts (global + /i) use it',
+        grace >= 500 && grace <= 2000 &&
+          /const silent = connector\?\.id === CDP_CONNECTOR_ID/.test(waitS) &&
+          /return \{ shown: signingIn && \(!silent \|\| late\), silent \}/.test(waitS) &&
+          /silent \? 'Signing you in…'/.test(waitS) && /\{!silent && \(/.test(waitS) &&
+          /if \(!wait\.shown \|\| dismissed\) return null/.test(waitS) && /silent=\{wait\.silent\}/.test(waitS) &&
+          /sigWait\.shown && !sigDismissed/.test(runtimeS) && /silent=\{sigWait\.silent\}/.test(runtimeS),
+        `grace=${grace}`,
+      )
+    }
     const tabLabels = ['Overview', 'News', 'Community', 'Technicals', 'Trade']
     check(
       '/t/AAPL: 200 — header (Apple · AAPL · Robinhood Chain · 24/7 venue chip · session line), all five tabs, rail slots, chart mount',
