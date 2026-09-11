@@ -23,19 +23,9 @@ export const STOCK_CHAIN_ID = 4663
 /** The order the quote is sized at — a real small buy, so impact shows. */
 export const POOL_QUOTE_USD = 100
 
-export interface PoolPrice {
-  symbol: string
-  chainId: number
-  /** Dollars quoted in (USDG). */
-  quoteUsd: number
-  /** Token units that many dollars buys right now. */
-  tokenOut: number
-  /** Effective USD per token for that order — the "you'd pay" number. */
-  usdPerToken: number
-  /** Which venue answered (traced like usd-probe). */
-  via: string
-  asOf: number
-}
+export type { PoolPrice } from '@/lib/pool-price-shape'
+export { poolPremiumPct } from '@/lib/pool-price-shape'
+import type { PoolPrice } from '@/lib/pool-price-shape'
 
 const TTL_MS = 30_000
 const cache = new Map<string, { at: number; value: PoolPrice | null }>()
@@ -121,10 +111,4 @@ export async function poolPriceFor(symbolRaw: string): Promise<PoolPrice | null>
     .finally(() => inflight.delete(key))
   inflight.set(key, p)
   return p
-}
-
-/** "+0.4%" — pool vs tape, signed; null when either side is missing. */
-export function poolPremiumPct(pool: PoolPrice | null, tapeLast: number | null): number | null {
-  if (!pool || tapeLast === null || !Number.isFinite(tapeLast) || tapeLast <= 0) return null
-  return ((pool.usdPerToken - tapeLast) / tapeLast) * 100
 }
