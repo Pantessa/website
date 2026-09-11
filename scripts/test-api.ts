@@ -17507,7 +17507,7 @@ async function main() {
     // Signal rules (the header table) on shaped tapes
     const t80 = computeTechnicals(rc, '1h')
     check(
-      'tech: computeTechnicals on an 80-bar ramp: every MA that computed says BUY (MA < price), the 100/200 MAs are OMITTED not neutral, MACD > signal = buy, momentum FLAT (a ramp\'s MOM is constant) = neutral',
+      'tech: computeTechnicals on an 80-bar ramp: every MA that computed says BUY (MA < price), the 100/200 MAs are OMITTED not neutral, MACD ON its signal (7 = 7) = neutral not a float coin-flip, momentum FLAT = neutral',
       !!t80 &&
         // Ichimoku is neutral on a pure ramp by its own rule (base < leadA); the
         // zero-lag Hull MA lands ON the price → neutral, never a float coin-flip.
@@ -17515,7 +17515,7 @@ async function main() {
         t80.rows.movingAverages.find((r) => r.name.startsWith('Hull'))?.signal === 'neutral' &&
         t80.omitted.includes('Exponential Moving Average (200)') &&
         t80.omitted.includes('Simple Moving Average (100)') &&
-        t80.rows.oscillators.find((r) => r.name.startsWith('MACD'))?.signal === 'buy' &&
+        t80.rows.oscillators.find((r) => r.name.startsWith('MACD'))?.signal === 'neutral' &&
         t80.rows.oscillators.find((r) => r.name.startsWith('Momentum'))?.signal === 'neutral' &&
         t80.movingAverages.rating === 'strong_buy' &&
         t80.movingAverages.sell === 0,
@@ -17525,8 +17525,9 @@ async function main() {
     const diveCandles: Candle[] = dive.map((c, i) => ({ t: 1_700_000_000 + i * 3600, o: c, h: c + 0.5, l: c - 0.5, c, v: 1 }))
     const tDive = computeTechnicals(diveCandles, '1h')
     check(
-      'tech: 39 straight losses then one up-tick → RSI < 30 and rising = BUY; Williams %R < −80 and rising = BUY; every MA above price = SELL',
+      'tech: 39 straight losses then one up-tick → RSI < 30 and rising = BUY; Williams %R < −80 and rising = BUY; MACD turning above its signal = BUY; every MA above price = SELL',
       !!tDive &&
+        tDive.rows.oscillators.find((r) => r.name.startsWith('MACD'))?.signal === 'buy' &&
         tDive.rows.oscillators.find((r) => r.name.startsWith('RSI'))?.signal === 'buy' &&
         tDive.rows.oscillators.find((r) => r.name.startsWith('Williams'))?.signal === 'buy' &&
         // (Hull's zero lag puts it UNDER the up-tick — buy by the rule; Ichimoku neutral)
