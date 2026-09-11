@@ -17736,8 +17736,8 @@ async function main() {
     // The engine on /t: the Apache-2.0 attribution notice + tools in the HTML.
     const tAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
     check(
-      '/t/AAPL: MarketChart server-renders with the required "Charts by TradingView Lightweight Charts" attribution link, the drawing toolbar and the performance tiles',
-      tAapl.includes('Charts by TradingView Lightweight Charts') && tAapl.includes('https://www.tradingview.com/lightweight-charts/') && tAapl.includes('Horizontal level') && tAapl.includes('mkt-perf') && tAapl.includes('mkt-attrib'),
+      '/t/AAPL: MarketChart server-renders the license attribution (the NOTICE line + a tradingview.com link, the ONLY credit now that attributionLogo is off), the drawing toolbar and the performance tiles',
+      tAapl.includes('Charts by TradingView Lightweight Charts') && tAapl.includes('2025 TradingView, Inc.') && /class="mkt-attrib" href="https:\/\/www\.tradingview\.com\/"/.test(tAapl) && tAapl.includes('Horizontal level') && tAapl.includes('mkt-perf'),
     )
 
     // Pool-price honesty: stocks only; everything else says why.
