@@ -15,6 +15,7 @@ import type { ChartStats } from '@/components/CandleChart'
 import MarketChart, { type ChartMarker } from '@/components/markets/chart/MarketChart'
 import type { ChartTf } from '@/lib/charts'
 import { parseChartState, serializeChartState, type ChartState } from '@/lib/chart-state'
+import { useChartMarkers } from '@/lib/chart-markers'
 
 export type { ChartStats, ChartMarker }
 
@@ -74,6 +75,10 @@ export default function ChartMount({
   onStateChange,
 }: ChartMountProps) {
   const [drawings, setDrawings] = useState<ChartState | null>(null)
+  // News-on-bars: the News tab toggles markers into COMM's session store;
+  // the engine draws whatever is there plus anything passed in by prop.
+  const newsMarkers = useChartMarkers(symbol)
+  const allMarkers = markers && markers.length ? [...newsMarkers, ...markers] : newsMarkers
   // The engine mounts (and server-renders) with no drawings; the persisted
   // ones arrive after hydration. Child effects fire before this one, so the
   // engine's first empty emit must NOT erase the stored state — writes are
@@ -103,7 +108,7 @@ export default function ChartMount({
       resizeKey={resizeKey}
       state={drawings}
       onStateChange={handleStateChange}
-      markers={markers}
+      markers={allMarkers}
       onAsk={onAsk}
       askHref={promptHref}
     />

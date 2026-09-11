@@ -1512,3 +1512,46 @@ model RosterTryoutMark {
   @@unique([tryoutId, periodKey])
   @@map("roster_tryout_marks")
 }
+
+// ── MARKETS/COMM ─────────────────────────────────────────────────────────────
+// The symbol page's forum (squad-markets 2026-09-11): a post is an annotated
+// chart (chart_state = lib/chart-state ChartState, ≤32KB, validated at write)
+// or a pinned https link; every post can be EXECUTED — link_slug is the
+// intent link minted from the post's primary action (the creator kickback
+// follows the author). Text columns are plain text rendered as text nodes,
+// never markup. is_internal fences harness rows out of every public read.
+model ChartPost {
+  id         String   @id // mintSlug(10)
+  symbol     String // chartPairFor-normalized ticker (fail-closed at write)
+  author     String // lowercased SIWE wallet
+  kind       String   @default("idea") // 'idea' | 'link'
+  title      String
+  body       String   @default("")
+  chartState Json?    @map("chart_state")
+  linkSlug   String?  @map("link_slug") // intent_links.id minted from the post
+  linkUrl    String?  @map("link_url") // kind 'link': the pinned https URL
+  forkOf     String?  @map("fork_of") // parent chart_posts.id
+  isInternal Boolean  @default(false) @map("is_internal")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  comments ChartPostComment[]
+
+  @@index([symbol, isInternal, createdAt])
+  @@index([author, createdAt])
+  @@index([forkOf])
+  @@map("chart_posts")
+}
+
+model ChartPostComment {
+  id         String   @id // mintSlug(10)
+  postId     String   @map("post_id")
+  author     String // lowercased SIWE wallet
+  body       String
+  isInternal Boolean  @default(false) @map("is_internal")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  post ChartPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
+  @@map("chart_post_comments")
+}

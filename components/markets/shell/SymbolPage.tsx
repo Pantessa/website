@@ -17,6 +17,7 @@ import Link from 'next/link'
 import { Maximize2, Minimize2 } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
 import ChartMount, { type ChartStats } from '@/components/markets/chart/ChartMount'
+import type { ChartState } from '@/lib/chart-state'
 import { fmtPrice } from '@/components/CandleChart'
 import { CHART_FEED_LABELS, chartPairFor, type ChartFeed, type ChartTf } from '@/lib/charts'
 import {
@@ -76,6 +77,10 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
   }, [])
   // A drawn level on the chart carries a bare ask string — same door.
   const onChartAsk = useCallback((ask: string) => onAsk({ side: sideOf(ask), label: ask, ask }), [onAsk])
+  // The live drawings (for "attach my current chart" on a post) and a post's
+  // lines loaded back onto the chart ("copy these lines to my chart").
+  const [chartState, setChartState] = useState<ChartState | null>(null)
+  const [loadedState, setLoadedState] = useState<ChartState | null>(null)
 
   // ── Session line ticks (a stock page left open crosses the bell) ──
   const [now, setNow] = useState<Date>(() => new Date())
@@ -171,7 +176,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
       <div ref={shellRef} className={expanded ? 'tchart sym__chart tchart--expanded' : 'tchart sym__chart'}>
         <div className="tchart__canvas">
           {pair ? (
-            <ChartMount symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} onAsk={onChartAsk} />
+            <ChartMount symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} />
           ) : (
             <div className="flex flex-1 items-center justify-center">
               <div className="mkt-card max-w-md text-center">
@@ -224,7 +229,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
               ) : tab === 'news' ? (
                 <NewsTab symbol={sym} pair={pair} />
               ) : tab === 'community' ? (
-                <CommunityTab symbol={sym} pair={pair} />
+                <CommunityTab symbol={sym} pair={pair} chartState={chartState} onAsk={onChartAsk} onLoadChart={setLoadedState} />
               ) : tab === 'technicals' ? (
                 <TechnicalsTab symbol={sym} pair={pair} initialTf={initialTf} />
               ) : (

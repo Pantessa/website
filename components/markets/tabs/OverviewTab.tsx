@@ -10,7 +10,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import type { Candle, ChartPair } from '@/lib/charts'
-import { PERF_SPANS, performanceFromCandles, stats24h, symbolName, type PerfSpan } from '@/lib/markets'
+import { stats24h, symbolName } from '@/lib/markets'
+import PerformanceTiles from '@/components/markets/chart/PerformanceTiles'
 import { chgClass, fmtPct, fmtQuotePrice } from '@/lib/markets-quotes'
 import { tradeAsks, type TradeAsk } from '@/components/markets/tabs/TradeTab'
 
@@ -66,7 +67,6 @@ export default function OverviewTab({
     }
   }, [pair.symbol])
 
-  const perf = daily ? performanceFromCandles(daily) : null
   const last = hourly?.length ? hourly[hourly.length - 1].c : daily?.length ? daily[daily.length - 1].c : null
   const day = hourly ? stats24h(hourly) : null
   const asks = tradeAsks(pair)
@@ -79,17 +79,8 @@ export default function OverviewTab({
           <h2 className="mkt-card__title">Performance</h2>
           <span className="mkt-card__eyebrow mono">CLOSE TO CLOSE · DAILY BARS</span>
         </header>
-        <div className="mkt-tiles">
-          {PERF_SPANS.map((span: PerfSpan) => {
-            const v = perf ? perf[span] : null
-            return (
-              <div key={span} className="mkt-tile" data-span={span}>
-                <span className="mkt-tile__k mono">{span}</span>
-                <span className={`mkt-tile__v mono mkt-chg ${chgClass(v)}`}>{daily === null ? '…' : fmtPct(v)}</span>
-              </div>
-            )
-          })}
-        </div>
+        {/* CHART's lib/performance.ts is the one source for these numbers. */}
+        <PerformanceTiles symbol={symbol} />
       </section>
 
       {/* Key stats */}
