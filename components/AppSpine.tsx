@@ -2,7 +2,7 @@
 
 // The app spine: the product's constant across chat and dashboard. On
 // desktop (≥lg) it's a persistent icon COLUMN — brand seat on top, the
-// workspace destinations (new chat, MCPs, jobs, links, history) as labeled
+// workspace destinations (new chat, apps, jobs, links, history) as labeled
 // icons, the way out to settings (the dashboard) pinned at the bottom. Below lg the
 // SAME destinations render as a fixed bottom TAB BAR — the phone-native
 // shape of the same spine. One component, one badge poll, two postures.
@@ -21,7 +21,7 @@
 //
 // The destination lives in the URL (`?tab=<name>`, lib/app-tab-url): the
 // spine reads it on arrival and mirrors every change back, so a reload keeps
-// you where you were instead of dropping you on MCPs, and any destination is
+// you where you were instead of dropping you on Apps, and any destination is
 // linkable. Mirroring uses replaceState — the back button stays the way OFF
 // the page, not a tab-undo.
 
@@ -38,7 +38,9 @@ import { rosterEnabledClient } from '@/lib/roster-client'
 import { YeetfulMark } from '@/components/Logo'
 
 const TABS: { tab: RailTab; label: string; title: string; Icon: typeof Boxes }[] = [
-  { tab: 'mcps', label: 'MCPS', title: 'Your MCP set', Icon: Boxes },
+  // APPS, not MCPS (2026-09-11, Nate). Only the words changed: the tab id
+  // stays 'mcps', the ?tab= name every deep link and the store carry.
+  { tab: 'mcps', label: 'APPS', title: 'Your apps — pick the MCPs this chat can use', Icon: Boxes },
   { tab: 'jobs', label: 'JOBS', title: 'Jobs and recurring buys running on this wallet', Icon: ListChecks },
   { tab: 'links', label: 'LINKS', title: 'Your intent links — mint and share from here', Icon: Link2 },
   // THE ROSTER (R1) — invisible until the owner flips NEXT_PUBLIC_ROSTER_ENABLED

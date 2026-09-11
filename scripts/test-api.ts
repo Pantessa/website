@@ -18430,6 +18430,17 @@ async function main() {
         /aria-label="CHATS"[\s\S]*?aria-label="DOCS"[\s\S]*?aria-label="Settings"/.test(chatHtml) &&
         (spineSrc.match(/aria-label="DOCS"/g) ?? []).length === 2,
     )
+    // The first drawer seat reads APPS (2026-09-11, Nate: "In the side bar
+    // let's change MCPs to Apps"). Words only: the tab id stays 'mcps', the
+    // ?tab= name the app-tabs pin parses, so old deep links still land.
+    const chatRailSrc = await readFile(new URL('../components/ChatRail.tsx', import.meta.url), 'utf8')
+    check(
+      'spine: the first drawer seat reads APPS in both postures (no MCPS seat left), between MARKETS and JOBS, and its drawer heading says "Your apps"',
+      (chatHtml.match(/aria-label="APPS"/g) ?? []).length === 2 &&
+        !/aria-label="MCPS"/.test(chatHtml) &&
+        /aria-label="MARKETS"[\s\S]*?aria-label="APPS"[\s\S]*?aria-label="JOBS"/.test(chatHtml) &&
+        /railTab === 'mcps'\s*\?\s*'Your apps'/.test(chatRailSrc),
+    )
     const tabLabels = ['Overview', 'News', 'Community', 'Technicals', 'Trade']
     check(
       '/t/AAPL: 200 — header (Apple · AAPL · Robinhood Chain · 24/7 venue chip · session line), all five tabs, rail slots, chart mount',

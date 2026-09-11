@@ -225,7 +225,7 @@ export default function ChatRail() {
             <div className="flex items-center gap-1 px-3 pt-3 pb-2">
               <span className="flex-1 mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] truncate">
                 {railTab === 'mcps'
-                  ? 'Your MCP set'
+                  ? 'Your apps'
                   : railTab === 'jobs'
                     ? 'Running work'
                     : railTab === 'links'
