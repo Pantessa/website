@@ -133,11 +133,13 @@ export default function Navigation() {
     </Link>
   ) : null
 
-  // Desktop primary tabs — links-first: the leaderboard and the money story
-  // are top-level; chat is the LINK BUILDER; deep-dive surfaces (Benchmarks,
-  // Tools, MCP Directory) live in the footer, out of the main story.
+  // Desktop primary tabs — links-first: the leaderboard is top-level; chat is
+  // the LINK BUILDER; deep-dive surfaces (Benchmarks, Tools, MCP Directory)
+  // live in the footer, out of the main story.
   // Markets leads (2026-09-11): the chart that executes is the front door;
   // /t/<symbol> pages light the same tab.
+  // Activity left the tabs (2026-09-11, Nate) pending a rework — the page
+  // stays routable from the footer and the in-content links.
   const onMarkets = pathname.startsWith('/markets') || pathname.startsWith('/t/')
   const desktopTabs = (
     <>
@@ -149,9 +151,6 @@ export default function Navigation() {
       </Link>
       <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
         App
-      </Link>
-      <Link href="/activity" className={`nav__tab ${pathname.startsWith('/activity') ? 'is-on' : ''}`}>
-        Activity
       </Link>
       <Link href="/pricing" className={`nav__tab ${pathname.startsWith('/pricing') ? 'is-on' : ''}`}>
         Pricing
@@ -177,9 +176,6 @@ export default function Navigation() {
       </Link>
       <Link href="/chat" className={`nav__tab ${pathname === '/chat' ? 'is-on' : ''}`}>
         App
-      </Link>
-      <Link href="/activity" className={`nav__tab ${pathname.startsWith('/activity') ? 'is-on' : ''}`}>
-        Activity
       </Link>
       <span className="drawer__group mono">More</span>
       <Link href="/pricing" className={`nav__tab drawer__sub ${pathname.startsWith('/pricing') ? 'is-on' : ''}`}>

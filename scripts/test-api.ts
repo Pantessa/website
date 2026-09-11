@@ -1772,6 +1772,14 @@ async function main() {
     'activity: page renders the consolidated money story (hero + live feed)',
     actPageRes.status === 200 && /moving money\./.test(actPageHtml) && /Live routing/.test(actPageHtml),
   )
+  // Activity left the top nav (2026-09-11, Nate) but stays a page: no nav tab
+  // points here, the footer still does. Re-pin consciously if the tab returns.
+  const actNav = actPageHtml.match(/<header class="nav[\s\S]*?<\/header>/)?.[0] ?? ''
+  check(
+    'activity: off the top nav (no tab, even on its own page) — the footer still links it',
+    actNav.includes('nav__tabs') && !actNav.includes('href="/activity"') &&
+      /<footer class="footer"[\s\S]*href="\/activity"/.test(actPageHtml),
+  )
 
   // ── Attended vs standing (the falsifiable-test split, lib/value-origin) ──
   console.log('— attended vs standing split')
