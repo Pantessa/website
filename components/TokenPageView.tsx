@@ -12,9 +12,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Maximize2, Minimize2 } from 'lucide-react'
+import { ListChecks, Maximize2, Minimize2 } from 'lucide-react'
 import CandleChart, { fmtPrice, type ChartStats } from '@/components/CandleChart'
 import TokenIcon from '@/components/TokenIcon'
+import WatchlistRail from '@/components/markets/watchlist/WatchlistRail'
 import { CHART_FEED_LABELS, chartPairFor, type ChartFeed } from '@/lib/charts'
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
@@ -26,6 +27,8 @@ export default function TokenPageView({ symbol }: { symbol: string }) {
   const pair = useMemo(() => chartPairFor(symbol), [symbol])
   const [stats, setStats] = useState<ChartStats | null>(null)
   const [expanded, setExpanded] = useState(false)
+  // Below 1024px the watchlist rail is a sheet the bar toggles (MARKETS/WATCH).
+  const [railOpen, setRailOpen] = useState(false)
   const shellRef = useRef<HTMLDivElement | null>(null)
 
   const chg = stats?.changePct24h ?? null
@@ -117,11 +120,15 @@ export default function TokenPageView({ symbol }: { symbol: string }) {
               DCA weekly
             </Link>
             <span className="tchart__hint mono">prefills chat · you send it</span>
+            <button type="button" className="tchart__act tchart__railToggle" onClick={() => setRailOpen((o) => !o)} aria-pressed={railOpen} aria-label="Toggle watchlist">
+              <ListChecks className="h-3.5 w-3.5" /> Watchlist
+            </button>
           </div>
         )}
       </div>
 
-      {/* Canvas: the chart takes every pixel that's left. */}
+      {/* Body: the chart takes every pixel the watchlist rail leaves it. */}
+      <div className="tchart__body">
       <div className="tchart__canvas">
         {pair ? (
           <CandleChart symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} />
@@ -136,6 +143,10 @@ export default function TokenPageView({ symbol }: { symbol: string }) {
             </div>
           </div>
         )}
+      </div>
+      <aside className={railOpen ? 'tchart__rail tchart__rail--sheet' : 'tchart__rail'} aria-label="Watchlist">
+        <WatchlistRail symbol={sym} onClose={railOpen ? () => setRailOpen(false) : undefined} />
+      </aside>
       </div>
     </div>
   )
