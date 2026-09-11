@@ -18126,12 +18126,31 @@ async function main() {
 
     // Rendered pages.
     const mkHtml = flat(await (await fetch(`${BASE}/markets`)).text())
+    // The full-screen frame (2026-09-11, Nate: "similar to trading view full
+    // screen mode, no need for a header or tag"). Consciously re-pinned: this
+    // check used to REQUIRE the hero line on /markets; now the hero (eyebrow +
+    // h1 + lede + chip row) must be gone and the page opens on the tool strip.
+    // (The footer still says "The chart that executes." — not a hero.)
     check(
-      '/markets: 200 with the hero line, the three boards, the search and the watchlist slot',
-      mkHtml.includes('The chart that executes.') &&
-        mkHtml.includes('Digital equities, 24/7') && mkHtml.includes('Crypto') && mkHtml.includes('Perps') &&
-        /aria-label="Search markets"/.test(mkHtml) && /data-slot="watchlist"/.test(mkHtml) &&
+      '/markets: 200 full-screen frame — no hero, search + board tabs, the three boards, the watchlist slot docked in the rail, the footer under the data',
+      !/class="mkt__hero"/.test(mkHtml) && !mkHtml.includes('MARKETS · STOCKS 24/7 · SPOT · PERPS') &&
+        /<h1 class="sr-only">Markets<\/h1>/.test(mkHtml) &&
+        /class="mkt-frame__rail"[^>]*>[\s\S]*?data-slot="watchlist"/.test(mkHtml) &&
+        /class="mkt-frame__foot"><footer class="footer"/.test(mkHtml) &&
+        /aria-label="Search markets"/.test(mkHtml) &&
+        mkHtml.includes('href="#equities"') && mkHtml.includes('href="#crypto"') && mkHtml.includes('href="#perps"') &&
+        mkHtml.includes('Digital equities, 24/7') && mkHtml.includes('id="crypto"') && mkHtml.includes('id="perps"') &&
         mkHtml.includes('href="/t/AAPL"') && mkHtml.includes('href="/t/BTC"') && mkHtml.includes('href="/t/HYPE"'),
+    )
+    const shellCss = await readFile(new URL('../app/x402-design.css', import.meta.url), 'utf8')
+    check(
+      '/markets: the watchlist rail is DOCKED (spans the data + footer rows, sticky at the nav edge, viewport-tall, rows scroll inside) and the board grid measures the data column, not the viewport',
+      /\.mkt-frame \{[^}]*grid-template-areas: "main rail" "foot rail";/.test(shellCss) &&
+        /\.mkt-frame__rail \{[^}]*grid-area: rail;[^}]*position: sticky;[^}]*top: var\(--mkt-nav-h\);[^}]*height: calc\(100dvh - var\(--mkt-nav-h\)\)/.test(shellCss) &&
+        /\.mkt-frame__rail > \[data-slot="watchlist"\] \{[^}]*min-height: 0;/.test(shellCss) &&
+        /\.mkt-frame__data \{[^}]*container-type: inline-size;/.test(shellCss) &&
+        /@container mkt-data \(min-width: 1180px\)/.test(shellCss) &&
+        !/\.mkt__hero\b|\.mkt__grid\b/.test(shellCss),
     )
     const homeHtml = flat(await (await fetch(`${BASE}/`)).text())
     const marketsLinks = (homeHtml.match(/href="\/markets"/g) ?? []).length
