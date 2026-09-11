@@ -8519,6 +8519,73 @@ async function main() {
     )
     check('fund chip: persists a FundWait when the on-ramp opens, watches it, and continues by itself', chipSrc.includes('saveFundWait(') && chipSrc.includes('useFundingArrival(') && chipSrc.includes('clearFundWait(') && chipSrc.includes("watch.status !== 'arrived'"))
 
+    // THE WALLET PAGE (2026-09-11, Nate: "I love our wallet model, can we
+    // make this a page in the app and put it on the left side bar as an
+    // option above docs"). /wallet is the app spine (both postures, WALLET
+    // lit) beside the window "Wallet details" opens, given the whole screen:
+    // no brochure nav, never indexed. The seat sits between CHATS and DOCS
+    // on every spine surface; below sm the phone bar folds DOCS / SETTINGS
+    // (and TEAM) behind MORE so its labels keep their room. The modal and the
+    // page are ONE body (WalletDetails in WalletPanel.tsx), and the modal
+    // carries a door to the page.
+    {
+      const { isWalletPath, WALLET_PAGE_HREF } = await import('../lib/wallet-page')
+      const wpRes = await fetch(`${BASE}/wallet`)
+      const wpHtml = flat(await wpRes.text())
+      const wpChat = flat(await (await fetch(`${BASE}/chat`)).text())
+      const wpMarkets = flat(await (await fetch(`${BASE}/markets`)).text())
+      const wpSpine = await readFile(new URL('../components/AppSpine.tsx', import.meta.url), 'utf8')
+      const wpPanel = await readFile(new URL('../components/WalletPanel.tsx', import.meta.url), 'utf8')
+      const wpPage = await readFile(new URL('../components/WalletPage.tsx', import.meta.url), 'utf8')
+      const wpView = await readFile(new URL('../lib/wallet-view.ts', import.meta.url), 'utf8')
+      const lit = (h: string) => (h.match(/aria-label="WALLET" aria-current="page"/g) ?? []).length
+      check(
+        '/wallet: 200 — the app spine (column + bar) with the WALLET seat lit, NO brochure nav, noindex, its own title',
+        wpRes.status === 200 &&
+          /<div data-shell="wallet"[^>]*><aside[^>]*aria-label="Workspace"/.test(wpHtml) &&
+          (wpHtml.match(/aria-label="Workspace"/g) ?? []).length === 2 &&
+          lit(wpHtml) === 2 &&
+          !/aria-label="MARKETS" aria-current="page"/.test(wpHtml) &&
+          !/<header class="nav/.test(wpHtml) && !wpHtml.includes('nav__tabs') &&
+          /<meta name="robots" content="noindex, follow"/.test(wpHtml) &&
+          wpHtml.includes('<title>Wallet — Pantessa</title>'),
+        `status=${wpRes.status} lit=${lit(wpHtml)}`,
+      )
+      check(
+        'spine: a WALLET seat between CHATS and DOCS in both postures on /chat, /markets and /wallet (a page link, lit only on its own page); isWalletPath is exactly /wallet + /wallet/*',
+        [wpChat, wpMarkets, wpHtml].every(
+          (h) =>
+            (h.match(/<a [^>]*aria-label="WALLET"[^>]*href="\/wallet"/g) ?? []).length === 2 &&
+            /aria-label="CHATS"[\s\S]*?aria-label="WALLET"[\s\S]*?aria-label="DOCS"[\s\S]*?aria-label="Settings"/.test(h),
+        ) &&
+          lit(wpChat) === 0 && lit(wpMarkets) === 0 &&
+          (wpSpine.match(/aria-label="WALLET"/g) ?? []).length === 2 &&
+          WALLET_PAGE_HREF === '/wallet' && isWalletPath('/wallet') && isWalletPath('/wallet/') &&
+          !isWalletPath('/wallets') && !isWalletPath('/w/0xabc') && !isWalletPath('/') && !isWalletPath('/chat'),
+      )
+      check(
+        'spine (phone bar): below sm DOCS + SETTINGS (+ TEAM with the roster on) fold behind a MORE seat and WALLET stays on the bar; from sm up MORE hides (its menu mounts on open)',
+        /<a [^>]*aria-label="DOCS" class="relative flex-1[^"]*max-sm:hidden[^"]*" href="\/docs"/.test(wpChat) &&
+          /<a [^>]*aria-label="Settings" class="relative flex-1[^"]*max-sm:hidden[^"]*" href="\/dashboard"/.test(wpChat) &&
+          /<a [^>]*aria-label="WALLET" class="relative flex-1 min-h-\[48px\](?![^"]*max-sm:hidden)[^"]*" href="\/wallet"/.test(wpChat) &&
+          (!wpChat.includes('aria-label="TEAM"') || /<button [^>]*aria-label="TEAM"[^>]*class="relative flex-1[^"]*max-sm:hidden/.test(wpChat)) &&
+          /<div class="relative flex-1 flex sm:hidden"><button [^>]*aria-label="More"[^>]*aria-haspopup="menu"[^>]*aria-expanded="false"/.test(wpChat) &&
+          /href="\/docs" role="menuitem"/.test(wpSpine) && /href="\/dashboard"\s+role="menuitem"/.test(wpSpine),
+      )
+      check(
+        'wallet page: ONE body (WalletDetails) in both frames — the modal renders it in its column with a door to /wallet (hidden on the page); the page renders it keyed by address behind the connect-only door and the boot hold, switch-or-disconnect in its header; the feed carries twelve rows (the modal shows six)',
+        /export function WalletDetails\(/.test(wpPanel) &&
+          /<WalletDetails address=\{address\} layout="modal"/.test(wpPanel) &&
+          /href=\{WALLET_PAGE_HREF\}/.test(wpPanel) && /!isWalletPath\(pathname \?\? ''\)/.test(wpPanel) &&
+          /const RECENT_ROWS = \{ modal: 6, page: 12 \} as const/.test(wpPanel) &&
+          /<WalletDetails key=\{address\} address=\{address\} layout="page" \/>/.test(wpPage) &&
+          /walletConnectOnly\s+redirectTo=\{WALLET_PAGE_HREF\}/.test(wpPage) &&
+          /bootHoldingFor\(\{ hydrated, walletStatus, holdElapsed \}\)/.test(wpPage) &&
+          /onClick=\{openAccountModal\}/.test(wpPage) &&
+          /getRecentActivity\(address, 12\)/.test(wpView),
+      )
+    }
+
     // Over HTTP: public by address, shape, cache, fences.
     try {
       const bad = await fetch(`${BASE}/api/wallet?address=nope`)

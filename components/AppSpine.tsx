@@ -19,7 +19,8 @@
 // ChatInterface — so /embed and /i can't inherit it. The MARKETS surface
 // (/markets + /t/<symbol>, 2026-09-11) mounts it too: there the brochure
 // nav is gone, the spine IS the navigation, and the MARKETS seat wears the
-// active state.
+// active state. The WALLET page (/wallet, 2026-09-11) is the same shape: its
+// seat sits above DOCS in both postures and lights on its own page.
 //
 // Click grammar: a tab icon opens the drawer on that tab; clicking the tab
 // you're already looking at collapses the drawer. From the dashboard a tab
@@ -34,13 +35,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { BookOpen, Boxes, CandlestickChart, Link2, ListChecks, MessageSquare, Settings, Users } from 'lucide-react'
+import { BookOpen, Boxes, CandlestickChart, Ellipsis, Link2, ListChecks, MessageSquare, Settings, Users, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DEFAULT_TAB, parseTabParam, syncTabParam, tabUrl } from '@/lib/app-tab-url'
 import { useYeetfulStore, type RailTab } from '@/lib/store'
 import { useSession } from '@/lib/session'
 import { useRunningWork } from '@/lib/use-running-work'
 import { rosterEnabledClient } from '@/lib/roster-client'
+import { WALLET_PAGE_HREF } from '@/lib/wallet-page'
 import { YeetfulMark } from '@/components/Logo'
 
 const TABS: { tab: RailTab; label: string; title: string; Icon: typeof Boxes }[] = [
@@ -57,7 +59,13 @@ const TABS: { tab: RailTab; label: string; title: string; Icon: typeof Boxes }[]
   { tab: 'chats', label: 'CHATS', title: 'Your chat history', Icon: MessageSquare },
 ]
 
-export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'dashboard' | 'markets' }) {
+// Drawer tabs the PHONE bar folds behind MORE (see the capacity note in the
+// component). The desktop column has room for every seat.
+const PHONE_MORE_TABS: ReadonlySet<RailTab> = new Set<RailTab>(['team'])
+
+const WALLET_TITLE = 'Wallet — balances on every chain, gas, send and receive'
+
+export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'dashboard' | 'markets' | 'wallet' }) {
   const router = useRouter()
   const {
     railTab,
@@ -71,6 +79,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   } = useYeetfulStore()
   const onDashboard = surface === 'dashboard'
   const onMarkets = surface === 'markets'
+  const onWallet = surface === 'wallet'
   // Off the chat, a tab icon is a shortcut INTO chat (landing with that
   // drawer tab open) and the URL mirror stays off — the page owns its URL.
   const offChat = surface !== 'chat'
@@ -112,6 +121,27 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
     mql.addEventListener('change', on)
     return () => mql.removeEventListener('change', on)
   }, [])
+
+  // THE PHONE BAR'S CAPACITY. The full set doesn't fit a phone: ten seats at
+  // 375px are 37.5px apiece, and SETTINGS (50px of 10px mono) runs straight
+  // into DOCS. Below sm the bar keeps its seats through WALLET and folds the
+  // rest (TEAM while the roster is on, DOCS, SETTINGS) behind MORE, the tab
+  // bar's standard answer. From sm up every seat has room and MORE goes away.
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!moreOpen) return
+    const onDown = (e: PointerEvent) => {
+      if (!moreRef.current?.contains(e.target as Node)) setMoreOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMoreOpen(false)
+    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [moreOpen])
 
   // URL → spine. `?tab=<name>` (lib/app-tab-url) opens the drawer on that
   // destination: it's how a reload comes back to where you were, how
@@ -193,8 +223,8 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   }, [walletAddress, setRailTab, setMainView])
 
   // The dashboard's floating rail-reopen pill, the mobile page paddings and
-  // the markets pages' docked ask pill key off the spine's presence — flag
-  // it on the document element.
+  // the markets and wallet pages' docked ask pill key off the spine's
+  // presence — flag it on the document element.
   useEffect(() => {
     if (!offChat) return
     document.documentElement.setAttribute('data-spine', '1')
@@ -288,6 +318,13 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
     </span>
   )
 
+  // What MORE holds on a phone, and whether it wears the "you are here" tick
+  // (the settings page, or the TEAM drawer open over the chat).
+  const moreTab = TABS.find((t) => PHONE_MORE_TABS.has(t.tab))
+  const moreLit = onDashboard || (!offChat && !!moreTab && railTab === moreTab.tab && mobileMcpRailOpen)
+  const moreItem =
+    'flex w-full items-center gap-3 rounded-lg px-3 py-2 min-h-[44px] text-left text-[color:var(--muted)] hover:bg-[var(--surf-2)] hover:text-[color:var(--fg)] transition-colors'
+
   return (
     <>
       {/* ── Desktop: the column ── */}
@@ -295,8 +332,8 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         className={cn(
           'max-lg:hidden flex-shrink-0 w-14 flex flex-col items-center border-r border-[var(--line)] bg-[var(--surf-1)]',
           // Chat's shell is height-constrained (h-dvh flex), so the spine
-          // just fills it; the dashboard and markets PAGES scroll, so it
-          // rides sticky.
+          // just fills it; the dashboard, markets and wallet PAGES scroll,
+          // so it rides sticky.
           offChat ? 'sticky top-0 h-dvh self-start' : 'h-full',
         )}
         aria-label="Workspace"
@@ -360,6 +397,29 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
               </button>
             )
           })}
+
+          {/* WALLET is a destination PAGE (/wallet: the "Wallet details"
+              window given the whole screen), seated above DOCS (2026-09-11,
+              Nate: "put it on the left side bar as an option above docs").
+              It wears the active state on its own page. */}
+          <Link
+            href={WALLET_PAGE_HREF}
+            title={WALLET_TITLE}
+            aria-label="WALLET"
+            aria-current={onWallet ? 'page' : undefined}
+            className={cn(
+              'relative w-12 flex flex-col items-center gap-0.5 py-1.5 rounded-lg transition-colors',
+              onWallet
+                ? 'bg-[var(--surf-2)] text-white'
+                : 'text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-2)]',
+            )}
+          >
+            {onWallet && (
+              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
+            )}
+            <Wallet className="w-[18px] h-[18px]" />
+            <span className="mono text-[9px] font-medium tracking-wide">WALLET</span>
+          </Link>
 
           {/* DOCS is a destination PAGE, seated under CHATS (2026-09-11,
               Nate) — the docs left the brochure nav's reach once the nav
@@ -433,6 +493,8 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
               aria-pressed={selected}
               className={cn(
                 'relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 transition-colors',
+                // Folded behind MORE below sm (the capacity note above).
+                PHONE_MORE_TABS.has(tab) && 'max-sm:hidden',
                 selected ? 'text-white' : 'text-[color:var(--muted)]',
               )}
             >
@@ -448,10 +510,26 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           )
         })}
         <Link
+          href={WALLET_PAGE_HREF}
+          title={WALLET_TITLE}
+          aria-label="WALLET"
+          aria-current={onWallet ? 'page' : undefined}
+          className={cn(
+            'relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 transition-colors',
+            onWallet ? 'text-white' : 'text-[color:var(--muted)]',
+          )}
+        >
+          {onWallet && (
+            <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
+          )}
+          <Wallet className="w-[18px] h-[18px]" />
+          <span className="mono text-[10px] font-medium tracking-wide">WALLET</span>
+        </Link>
+        <Link
           href="/docs"
           title="Docs — how Pantessa builds, guards and signs"
           aria-label="DOCS"
-          className="relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 text-[color:var(--muted)] transition-colors"
+          className="relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 text-[color:var(--muted)] transition-colors max-sm:hidden"
         >
           <BookOpen className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">DOCS</span>
@@ -461,7 +539,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           title="Settings — creator page, keys, billing, account"
           aria-label="Settings"
           className={cn(
-            'relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 transition-colors',
+            'relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 transition-colors max-sm:hidden',
             onDashboard ? 'text-white' : 'text-[color:var(--muted)]',
           )}
         >
@@ -471,6 +549,75 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           <Settings className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">SETTINGS</span>
         </Link>
+        {/* MORE — phones only (below sm). TEAM, DOCS and SETTINGS ride here
+            so the seats before it keep legible labels at 375px. The menu
+            mounts on open, like every menu in the app. */}
+        <div ref={moreRef} className="relative flex-1 flex sm:hidden">
+          <button
+            type="button"
+            onClick={() => setMoreOpen((o) => !o)}
+            title="More — docs and settings"
+            aria-label="More"
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
+            className={cn(
+              'relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 transition-colors',
+              moreLit || moreOpen ? 'text-white' : 'text-[color:var(--muted)]',
+            )}
+          >
+            {moreLit && (
+              <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
+            )}
+            <Ellipsis className="w-[18px] h-[18px]" />
+            <span className="mono text-[10px] font-medium tracking-wide">MORE</span>
+          </button>
+          {moreOpen && (
+            <div
+              role="menu"
+              aria-label="More destinations"
+              data-spine-more
+              className="absolute bottom-full right-1.5 mb-2 w-60 rounded-xl border border-[var(--line-2)] bg-[var(--bg)] p-1 shadow-[0_16px_40px_rgba(0,0,0,0.35)]"
+            >
+              {moreTab && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMoreOpen(false)
+                    pickMobile(moreTab.tab)
+                  }}
+                  className={moreItem}
+                >
+                  <moreTab.Icon className="w-[18px] h-[18px] flex-shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block text-[13px] font-medium text-[color:var(--fg)]">Team</span>
+                    <span className="block text-[11px] truncate">Your wallet&rsquo;s staff</span>
+                  </span>
+                </button>
+              )}
+              <Link href="/docs" role="menuitem" onClick={() => setMoreOpen(false)} className={moreItem}>
+                <BookOpen className="w-[18px] h-[18px] flex-shrink-0" />
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-medium text-[color:var(--fg)]">Docs</span>
+                  <span className="block text-[11px] truncate">How Pantessa builds, guards and signs</span>
+                </span>
+              </Link>
+              <Link
+                href="/dashboard"
+                role="menuitem"
+                aria-current={onDashboard ? 'page' : undefined}
+                onClick={() => setMoreOpen(false)}
+                className={moreItem}
+              >
+                <Settings className="w-[18px] h-[18px] flex-shrink-0" />
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-medium text-[color:var(--fg)]">Settings</span>
+                  <span className="block text-[11px] truncate">Creator page, keys, billing, account</span>
+                </span>
+              </Link>
+            </div>
+          )}
+        </div>
       </nav>
     </>
   )
