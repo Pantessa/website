@@ -216,9 +216,11 @@ export function CreateAccountModal({
       } else {
         // Sign in to keep: mint the SIWE session the account surfaces gate
         // on (the dashboard sent every account made here home without one).
-        // The embedded wallet signs without a prompt, and the door holds on
-        // "Setting up your wallet…" (z-200, over the signature card's z-80)
-        // until the sign-in lands on redirectTo.
+        // The embedded wallet signs without a prompt, in the session rather
+        // than this door: the connect can swap the door's host for the
+        // account pill (the nav's does) and take the door with it, and the
+        // sign-in still lands on redirectTo. A slow one shows the silent
+        // "Signing you in…" card.
         await signInOnceConnected(redirectTo)
         onClose()
       }
