@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Boxes, Link2, ListChecks, MessageSquare, Plus, Settings, Users } from 'lucide-react'
+import { Boxes, CandlestickChart, Link2, ListChecks, MessageSquare, Plus, Settings, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DEFAULT_TAB, parseTabParam, syncTabParam, tabUrl } from '@/lib/app-tab-url'
 import { useYeetfulStore, type RailTab } from '@/lib/store'
@@ -294,6 +294,19 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             <span className="mono text-[9px] font-medium tracking-wide">NEW</span>
           </button>
 
+          {/* MARKETS is a destination PAGE (/markets → /t/<symbol>), not a
+              drawer tab — it sits first among the seats because the chart
+              that executes is the front door (2026-09-11). */}
+          <Link
+            href="/markets"
+            title="Markets — stocks 24/7, spot, perps; the chart that executes"
+            aria-label="MARKETS"
+            className="relative w-12 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-2)] transition-colors"
+          >
+            <CandlestickChart className="w-[18px] h-[18px]" />
+            <span className="mono text-[9px] font-medium tracking-wide">MARKETS</span>
+          </Link>
+
           {TABS.map(({ tab, label, title, Icon }) => {
             const selected = !onDashboard && railTab === tab && mcpRailOpen
             return (
@@ -367,6 +380,15 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           <Plus className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">NEW</span>
         </button>
+        <Link
+          href="/markets"
+          title="Markets — stocks 24/7, spot, perps; the chart that executes"
+          aria-label="MARKETS"
+          className="relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 text-[color:var(--muted)] transition-colors"
+        >
+          <CandlestickChart className="w-[18px] h-[18px]" />
+          <span className="mono text-[10px] font-medium tracking-wide">MARKETS</span>
+        </Link>
         {TABS.map(({ tab, label, title, Icon }) => {
           const selected = !onDashboard && railTab === tab && mobileMcpRailOpen
           return (

@@ -3,6 +3,7 @@ import { SITE } from '@/lib/docs'
 import { EXPLAINER_VIDEO, explainerEmbedUrl, explainerPosterUrl, explainerWatchUrl, isoDuration } from '@/lib/explainer-video'
 import RosterHome from '@/components/RosterHome'
 import LinksHero from '@/components/LinksHero'
+import MarketsBand from '@/components/MarketsBand'
 import LandingMotion from '@/components/LandingMotion'
 import IntentMachine from '@/components/IntentMachine'
 import LinkEconomy from '@/components/LinkEconomy'
@@ -13,6 +14,7 @@ import StayUpToDate from '@/components/StayUpToDate'
 import MobileCtaBar from '@/components/MobileCtaBar'
 import Footer from '@/components/Footer'
 import { LINK_FEE_PCT } from '@/lib/fees'
+import { HOME_DESCRIPTION, HOME_TITLE } from '@/lib/markets-copy'
 
 /** / — the links-first landing (2026-07-22 repositioning): intent links are
  * the product, chat is the link builder. One claim up top — "You have an
@@ -31,9 +33,12 @@ import { LINK_FEE_PCT } from '@/lib/fees'
  * Server component so it can export metadata + JSON-LD; the moving parts are
  * client children. */
 
-const TITLE = 'Pantessa — You have an intent. We do the rest.'
-const DESCRIPTION =
-  'Mint a link that carries an ask — buy a stock, stake ETH, set a recurring buy. Whoever opens it connects their own wallet; Pantessa scans, funds across chains, builds guarded transactions, and receipts every move. Killer onboarding for any dapp; creators earn on the conversions their links produce.'
+/** MARKETS re-message (2026-09-11): the hero line + <title> live in
+ *  lib/markets-copy so the hero, the root social card, and the harness pin
+ *  can never disagree. The links-first story (2026-07-22) stays on the page
+ *  as the distribution channel; the chart is now the front door. */
+const TITLE = HOME_TITLE
+const DESCRIPTION = HOME_DESCRIPTION
 
 /** The Roster homepage tripwire (ROSTER-MEMO: flip when a stranger signs
  *  twice OR one real non-house hire lands) — one env change + redeploy.
@@ -72,11 +77,11 @@ const JSON_LD = JSON.stringify([
   {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
-    name: 'Pantessa intent links',
+    name: 'Pantessa Markets',
     applicationCategory: 'FinanceApplication',
     operatingSystem: 'Web',
     description:
-      `Short links that carry a plain-English ask — buy a tokenized stock, stake ETH, set a recurring buy, protect a position. Opening one connects the visitor’s own wallet; Pantessa compiles the ask into guarded on-chain transactions (deterministic builders, fail-closed checks, cross-chain funding included), the visitor signs, and every move is receipted. Creators earn half of Pantessa’s ${LINK_FEE_PCT} link conversion fee; the chat doubles as the link builder and embeds on any site.`,
+      `Live charts for tokenized stocks (24/7 on Robinhood Chain), crypto spot and Hyperliquid perps where every chart is the order form: a chip builds a guarded on-chain transaction the visitor's own wallet signs. Unlimited watchlists and alerts, free. Short links that carry a plain-English ask — buy a tokenized stock, stake ETH, set a recurring buy, protect a position. Opening one connects the visitor’s own wallet; Pantessa compiles the ask into guarded on-chain transactions (deterministic builders, fail-closed checks, cross-chain funding included), the visitor signs, and every move is receipted. Creators earn half of Pantessa’s ${LINK_FEE_PCT} link conversion fee; the chat doubles as the link builder and embeds on any site.`,
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
     provider: { '@type': 'Organization', name: 'Pantessa', url: SITE },
   },
@@ -109,6 +114,11 @@ export default function HomePage() {
       <main className="x-main x-main--fluid">
         {/* The claim + the live link economy */}
         <LinksHero />
+
+        {/* MARKETS: the hero says "the chart that executes" — the next thing
+            on the page IS that chart, with a chip pressed, and the six
+            things a charting subscription can't sell. CTA → /markets. */}
+        <MarketsBand />
 
         {/* The centerpiece: a runnable model of one turn — four real asks,
             four different endings. Carries what FundAnything and TxPipeline

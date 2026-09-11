@@ -63,6 +63,7 @@
     "fake-indexeddb": "^6.2.5",
     "framer-motion": "^11.13.1",
     "jose": "^6.2.3",
+    "lightweight-charts": "5.2.1",
     "lucide-react": "^0.468.0",
     "mcp-handler": "1.1.0",
     "next": "16.2.7",

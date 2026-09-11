@@ -2,18 +2,20 @@ import { ImageResponse } from 'next/og'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { gemMarkSvg } from '@/lib/og-marks'
+import { HERO_LINE } from '@/lib/markets-copy'
 
 // Social card for the site (og:image + twitter:image via app/twitter-image.tsx).
-// The links-first card ("You have an intent. We do the rest." — the site
-// title since 2026-07-22; it said "Mega dapps are here" until the squad's
-// GTM sweep 2026-09-08), drawn in the fusion hero's language: protocol
+// The Markets card ("The chart that executes." — the site title since the
+// 2026-09-11 MARKETS re-message; it was the links-first "You have an intent.
+// We do the rest." from 2026-07-22, and "Mega dapps are here" before the
+// squad's GTM sweep 2026-09-08), drawn in the fusion hero's language: protocol
 // rivers converging into one emerald core on #050708, a big serif headline
 // with the emerald→gold gradient italic, and a prominent logo lockup + tag.
 // Deliberately NO body copy — share previews render too small to read it.
 // Fonts are embedded from assets/og-fonts (static TTF instances of the same
 // Google-Fonts families the site loads: Newsreader 500 + Geist 500/600).
 
-export const alt = 'Pantessa — You have an intent. We do the rest.'
+export const alt = `Pantessa — ${HERO_LINE}`
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -162,7 +164,9 @@ export default async function Image() {
             <span style={{ color: INK, fontSize: 62, fontWeight: 600, letterSpacing: -2.5 }}>pantessa</span>
           </div>
           <div style={{ display: 'flex', marginTop: 20, fontSize: 25, letterSpacing: 6.5, color: '#8a9186' }}>
-            <span>INTENT LINKS</span>
+            <span>MARKETS</span>
+            <span style={{ color: ACCENT, margin: '0 18px' }}>·</span>
+            <span>STOCKS 24/7</span>
             <span style={{ color: ACCENT, margin: '0 18px' }}>·</span>
             <span>YOUR WALLET SIGNS</span>
           </div>
@@ -176,14 +180,14 @@ export default async function Image() {
               marginTop: 52,
               fontFamily: 'Newsreader',
               fontWeight: 500,
-              // 116px: "You have an intent." spans ~1000px at this size —
-              // the 148px of the two-word headline would overflow the card.
+              // 116px: "The chart" / "that executes." — two lines, the
+              // payoff line in the gradient italic, ~900px wide at this size.
               fontSize: 116,
               lineHeight: 1.02,
               letterSpacing: -3.4,
             }}
           >
-            <span style={{ color: INK }}>You have an intent.</span>
+            <span style={{ color: INK }}>The chart</span>
             <span
               style={{
                 fontStyle: 'italic',
@@ -196,7 +200,7 @@ export default async function Image() {
                 paddingRight: 10,
               }}
             >
-              We do the rest.
+              that executes.
             </span>
           </div>
         </div>

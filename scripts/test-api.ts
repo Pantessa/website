@@ -52,12 +52,28 @@ import { resolveToken, COW_API_BASE, buildCowOrderTypedData, cowOrderAction, bui
 import { ensureTokenList, primeTokenList } from '../lib/token-list'
 import { pairStockToken, stockChipLabel } from '../lib/stock-pairing'
 import { chartPairFor, changePct24h, aggregateCandles, parseChartAsk, isChartedStock, type Candle } from '../lib/charts'
+import {
+  marketSections,
+  marketTabUrl,
+  nyseSession,
+  parseMarketTab,
+  parseMarketsNavAsk,
+  performanceFromCandles,
+  resolveTickerQuery,
+  sessionState,
+  stats24h,
+} from '../lib/markets'
+import { composeAsk as composeTradeAsk, sidesFor as tradeSidesFor, tradeAsks } from '../components/markets/tabs/TradeTab'
 import { ROBINHOOD_TICKER_SET } from '../lib/robinhood-tickers'
 import { normalizeSpokenAsk } from '../lib/voice-ask'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
 import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from '../lib/tx-guardrails'
 import { FIRST_PARTY_MCP_SOURCE, guardPlannerArtifact, isFirstPartyMcp, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { LIMIT_EXAMPLES, parseSwapIntent, swapClarify } from '../lib/swap-intent'
+import { parseChartState, chartStateToAsks, serializeChartState, chartStatesEqual, type ChartState } from '../lib/chart-state'
+import { actionKindsFor, composeLineActions, composeZoneActions, fmtAskPrice, fmtAskUnits } from '../lib/chart-actions'
+import { performanceTiles, fmtPct } from '../lib/performance'
+import { sma, ema, bollinger, vwap, hasVolume } from '../lib/chart-indicators'
 import { activeLinkCapFor, composeMcps, isCrossChainAsk, linkEyebrow, linkLockup, linkLockupWord, runsOnLabel } from '../lib/intent-links'
 import { DEFAULT_TAB, parseTabParam, tabUrl } from '../lib/app-tab-url'
 import { LINKS_STUDIO_HREF } from '../lib/links-href'
@@ -203,6 +219,14 @@ import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingIn
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
 import { fmtUnits, isMosaicAsk, MOSAIC_STABLE, mosaicAskString, mosaicStableFor, parseMosaicAsk, planMosaic, type MosaicHolding } from '../lib/mosaic'
 import { simulateLadder } from './ask-ladder'
+import {
+  adx as techAdx, askPrice, awesome as techAo, bandOf, bullBearPower as techBbp, camarillaPivots, cci as techCci, classicPivots, computeTechnicals, dmPivots,
+  ema as techEma, fibonacciPivots, gaugeOf, hull as techHull, ichimoku as techIchimoku, macd as techMacd, MIN_BARS as TECH_MIN_BARS, momentum as techMom,
+  pivotsFor, rma as techRma, rsi as techRsi, sma as techSma, stochastic as techStoch, ultimateOscillator as techUo, verdictChips, williamsR as techWr, wma as techWma, woodiePivots,
+  type Rating as TechRating,
+} from '../lib/technicals'
+import { parseSpotGuardArm as techParseSpotGuardArm } from '../lib/spot-guard'
+import { parseGuardianArm as techParseGuardianArm } from '../lib/hl-guardian'
 import { HERO_ASKS, STARTER_ASKS } from '../components/typed-asks'
 import {
   buildSpotGuardPermission,
@@ -1644,6 +1668,8 @@ async function main() {
       '/docs/first-five-minutes', '/docs/host-buttons', '/docs/embedded-wallet',
       '/docs/creator-earnings', '/docs/spend-policy', '/docs/transactions',
       '/docs/privacy', '/docs/terms', '/docs/dca', '/docs/guardian', '/docs/snapshot',
+      // MARKETS/MSG (2026-09-11)
+      '/compare', '/docs/markets',
     ]
     for (const path of PROSE_PATHS) {
       const body = await (await fetch(`${BASE}${path}`)).text()
@@ -2149,20 +2175,21 @@ async function main() {
     )
   }
   check('router: og:image present (social card)', /<meta[^>]+property="og:image"/.test(homeHtml))
-  // The links-first repositioning (2026-07-22, HANDOFF-links-first.md) leads
-  // with the intent claim: "You have an intent. We do the rest." Retitle and
-  // re-pin TOGETHER — this check is the pin.
+  // The MARKETS re-message (2026-09-11, squad-markets) leads with the hero
+  // line from lib/markets-copy: "The chart that executes." (it was the
+  // links-first "You have an intent. We do the rest." from 2026-07-22).
+  // Retitle and re-pin TOGETHER — this check is the pin.
   check(
-    'home: descriptive <title> (the links-first claim)',
-    /<title>[^<]*(You have an intent|[Ww]e do the rest|intent link)[^<]*<\/title>/.test(homeHtml),
+    'home: descriptive <title> (the Markets claim)',
+    /<title>[^<]*(The chart that executes|chart that executes)[^<]*<\/title>/.test(homeHtml),
   )
   // The hero h1 PERFORMS the claim: line one cycles the ask reel
   // (components/typed-asks.ts) and SSR paints the full first entry, so the
   // first frame and the crawler both read a real sentence — never an empty
   // typed slot. Re-order the reel and this pin re-pins with it.
   check(
-    "home: hero types the reel (first ask SSR'd in the h1)",
-    homeHtml.includes('Buy $12 of AAPL') && /We do the rest\./.test(homeHtml),
+    "home: hero claims the Markets line and types the reel (first ask SSR'd under the lede)",
+    homeHtml.includes('Show me the AAPL chart') && /The chart that executes\./.test(homeHtml),
   )
   const sitemapXml = await (await fetch(`${BASE}/sitemap.xml`)).text()
   check('sitemap: site root is listed', /<loc>https?:\/\/[^</]+\/?<\/loc>/.test(sitemapXml))
@@ -5253,10 +5280,10 @@ async function main() {
         /setTimeout\(\(\) => setSlowTurn\(true\), SLOW_TURN_MS\)/.test(chat),
     )
     check(
-      'onboarding: the root social card tells the links-first story ("You have an intent. We do the rest." + YOUR WALLET SIGNS), never the pre-07-22 "Mega dapps are here" pitch',
-      /alt = 'Pantessa — You have an intent\. We do the rest\.'/.test(og) &&
-        /You have an intent\./.test(og) && /We do the rest\./.test(og) && /YOUR WALLET SIGNS/.test(og) &&
-        !/Mega dapps/.test(og) && !/EVERY DAPP/.test(og),
+      'onboarding: the root social card tells the Markets story ("The chart that executes." via lib/markets-copy + YOUR WALLET SIGNS), never the pre-07-22 "Mega dapps are here" pitch',
+      /alt = `Pantessa — \$\{HERO_LINE\}`/.test(og) &&
+        /The chart<\/span>/.test(og) && /that executes\./.test(og) && /YOUR WALLET SIGNS/.test(og) &&
+        !/Mega dapps/.test(og) && !/EVERY DAPP/.test(og) && !/You have an intent\.<\/span>/.test(og),
     )
     const ogr = await fetch(`${BASE}/opengraph-image`)
     const ogBuf = new Uint8Array(await ogr.arrayBuffer())
@@ -5859,7 +5886,7 @@ async function main() {
     const homeHtml = await homeRes.text()
     const currentHome =
       homeRes.status === 200 &&
-      homeHtml.includes('You have an intent') &&
+      homeHtml.includes('The chart that executes') &&
       !homeHtml.includes('data-roster-home') &&
       !homeHtml.includes('You keep the only pen')
     const rosterHome =
@@ -15939,20 +15966,30 @@ async function main() {
     const tEth = flat(await (await fetch(`${BASE}/t/ETH`)).text())
     // The hrefs are the contract (they must round-trip as chat prompts); the
     // labels are the pin — reword the bar and re-pin here together.
+    // Re-pinned at MARKETS integration (2026-09-11): /t/<symbol> is now the
+    // symbol page (SHELL frame) — header, the chart, the five-tab strip as
+    // real links, the rail. The Overview chips SEND through the frame's
+    // door on click (chip-send contract); nothing in the HTML fires a turn.
     check(
-      '/t/ETH: pair header + prefill trade CTAs in the top bar (never auto-send)',
+      '/t/ETH: symbol page — pair header, the five tabs as link targets, no auto-send anywhere in the HTML',
       /ETH \/ USD/.test(tEth) &&
+        /class="sym"/.test(tEth) &&
+        ['Overview', 'News', 'Community', 'Technicals', 'Trade'].every((l) => new RegExp(`role="tab"[^>]*>${l}<`).test(tEth)) &&
+        tEth.includes('href="/t/ETH?tab=trade"') &&
+        tEth.includes('href="/t/ETH?tab=technicals"') &&
         tEth.includes(`/chat?prompt=${encodeURIComponent('Buy $50 of ETH')}`) &&
         tEth.includes(`/chat?prompt=${encodeURIComponent('Sell $50 of ETH')}`) &&
         tEth.includes(`/chat?prompt=${encodeURIComponent('DCA $10 into ETH weekly')}`) &&
-        tEth.includes('prefills chat · you send it') &&
+        // The chips SEND now (Markets shell, 2026-09-11); the href stays the
+        // no-JS fallback and the eyebrow says what a click does.
+        tEth.includes('SENDS THE ASK · YOUR WALLET SIGNS') &&
         /Non-custodial/i.test(tEth),
     )
     // Full-bleed shell + the expand control ship in the server HTML: the page
     // is a chart workspace, not a centered article.
     check(
       '/t/ETH: full-bleed shell, no centered column, expand control present',
-      /class="tchart"/.test(tEth) && !/<main className?="x-main"/.test(tEth) && /aria-label="Full screen chart"/.test(tEth),
+      /class="tchart sym__chart"/.test(tEth) && !/<main className?="x-main"/.test(tEth) && /aria-label="Full screen chart"/.test(tEth),
     )
     const tUsdg = flat(await (await fetch(`${BASE}/t/USDG`)).text())
     check(
@@ -17436,6 +17473,1201 @@ async function main() {
           (afRoster.failures ?? []).filter((f) => f.kind === 'roster').every((f) => f.internal === true),
         `row=${rosterRow ? 'found' : 'missing'} rosterRows=${(afRoster.failures ?? []).filter((f) => f.kind === 'roster').length}`,
       )
+    }
+  }
+
+
+  // ── MARKETS/CHART ──
+  // The chart that executes (squad 2026-09-11, CHART lane): lib/chart-state
+  // is the annotation contract COMM stores on posts; lib/chart-actions turns
+  // a drawn level into asks the native parsers already accept; the engine
+  // (components/markets/chart/MarketChart, lightweight-charts) renders the
+  // required Apache-2.0 attribution; /api/charts/pool-price is the 4663
+  // pool-vs-tape honesty line. Every composed ask is replayed through the
+  // ladder replica — a level whose chip lands on the planner is a bug.
+  {
+    const fullState: ChartState = {
+      v: 1,
+      symbol: 'ETH',
+      tf: '1h',
+      lines: [
+        { id: 'h1', kind: 'h', price: 2300, label: 'support', action: { kind: 'limit', ask: 'limit order: buy 0.01087 ETH for at most 25 USDC' } },
+        { id: 'z1', kind: 'zone', p1: 2200, p2: 2300, action: { kind: 'dca', ask: 'DCA $10 into ETH weekly' } },
+        { id: 't1', kind: 'trend', t1: 1_757_000_000, p1: 2100, t2: 1_757_500_000, p2: 2400, label: 'channel' },
+        { id: 'n1', kind: 'note', t: 1_757_200_000, price: 2350, text: 'CPI print' },
+      ],
+    }
+    const rt = parseChartState(JSON.parse(serializeChartState(fullState)))
+    check(
+      'chart-state: serialize → parse round-trips byte-equal (h + zone + trend + note, actions kept) and accepts the JSON string form',
+      rt !== null && chartStatesEqual(rt, fullState) && parseChartState(serializeChartState(fullState)) !== null && serializeChartState(rt!) === serializeChartState(fullState),
+    )
+    const bad: unknown[] = [
+      { ...fullState, v: 2 },
+      { ...fullState, symbol: 'eth' },
+      { ...fullState, tf: '1w' },
+      { ...fullState, lines: [{ id: 'x', kind: 'h', price: Number.NaN }] },
+      { ...fullState, lines: [{ id: 'x', kind: 'h', price: 1 }, { id: 'x', kind: 'h', price: 2 }] },
+      { ...fullState, lines: [{ id: 'x', kind: 'h', price: 1, label: 'a\nb' }] },
+      { ...fullState, lines: [{ id: 'x', kind: 'h', price: 1, action: { kind: 'buy', ask: '/clear' } }] },
+      { ...fullState, lines: [{ id: 'x', kind: 'h', price: 1, action: { kind: 'yolo', ask: 'Buy $5 of ETH' } }] },
+      { ...fullState, lines: [{ id: 'x', kind: 'ray', price: 1 }] },
+      { ...fullState, lines: [{ id: 'x', kind: 'zone', p1: 5, p2: 5 }] },
+      { ...fullState, lines: Array.from({ length: 65 }, (_, i) => ({ id: `l${i}`, kind: 'h', price: 1 + i })) },
+      'not json',
+      null,
+    ]
+    check(
+      'chart-state: fail-closed — v2 / lowercase symbol / unknown tf / NaN price / dup id / control char / slash-led ask / unknown action kind / unknown line kind / flat zone / 65 lines / garbage all reject; the draft "5m" aliases to 15m',
+      bad.every((b) => parseChartState(b) === null) && parseChartState({ v: 1, symbol: 'AAPL', tf: '5m', lines: [] })?.tf === '15m',
+    )
+    check('chart-state: chartStateToAsks lists every action ask in drawing order (trend + note carry none)', JSON.stringify(chartStateToAsks(fullState)) === JSON.stringify(['limit order: buy 0.01087 ETH for at most 25 USDC', 'DCA $10 into ETH weekly']))
+
+    // Drawings → orders: every offer's ask through the ladder replica.
+    const offers = [
+      ...composeLineActions({ symbol: 'ETH', source: 'coinbase', price: 2300, last: 2400 }),
+      ...composeLineActions({ symbol: 'ETH', source: 'coinbase', price: 2500, last: 2400 }),
+      ...composeLineActions({ symbol: 'HYPE', source: 'hyperliquid', price: 30, last: 35 }),
+      ...composeLineActions({ symbol: 'HYPE', source: 'hyperliquid', price: 40, last: 35 }),
+      ...composeLineActions({ symbol: 'AAPL', source: 'robinhood', price: 200, last: 230 }),
+      ...composeLineActions({ symbol: 'SOL', source: 'coinbase', price: 100, last: 150 }),
+      ...composeLineActions({ symbol: 'PEPE', source: 'coinbase', price: 0.000009, last: 0.00001 }),
+      ...composeZoneActions({ symbol: 'ETH', source: 'coinbase', p1: 2200, p2: 2300, last: 2400 }),
+      ...composeZoneActions({ symbol: 'ETH', source: 'coinbase', p1: 2600, p2: 2700, last: 2400 }),
+      ...composeZoneActions({ symbol: 'AAPL', source: 'robinhood', p1: 200, p2: 210, last: 230 }),
+    ]
+    const landed = offers.map((o) => ({ ask: o.action.ask, out: simulateLadder(o.action.ask) }))
+    const fell = landed.filter((l) => l.out.kind !== 'action')
+    const expectedGate: Record<string, string> = { limit: 'swap', stop: 'spot-guard|guardian', protect: 'guardian', dca: 'dca', buy: 'swap|hyperliquid', sell: 'swap|hyperliquid' }
+    const wrongGate = offers.filter((o, i) => !new RegExp(`^(?:${expectedGate[o.action.kind]})$`).test(landed[i].out.gate))
+    check(
+      `chart actions: every composed level/zone ask lands natively in the ladder replica (${offers.length} asks: ETH spot both sides, HYPE perps both sides, AAPL stock, SOL non-EVM → HL perp, PEPE dust, three zones) on its own gate`,
+      offers.length >= 28 && fell.length === 0 && wrongGate.length === 0,
+      fell.length ? `FELL: ${fell.map((f) => `${f.ask} → ${f.out.gate}/${f.out.kind}`).join(' | ')}` : wrongGate.length ? `WRONG GATE: ${wrongGate.map((o) => o.action.ask).join(' | ')}` : '',
+    )
+    const ethBelow = composeLineActions({ symbol: 'ETH', source: 'coinbase', price: 2300, last: 2400 })
+    const ethAbove = composeLineActions({ symbol: 'ETH', source: 'coinbase', price: 2500, last: 2400 })
+    const aapl = composeLineActions({ symbol: 'AAPL', source: 'robinhood', price: 200, last: 230 })
+    const bigPx = composeLineActions({ symbol: 'BTC', source: 'coinbase', price: 61234.56, last: 70000 })
+    check(
+      'chart actions: honesty — stop + limit BUY only below market, limit SELL only above (never a market order in limit clothes), stocks never get a limit or a stop, prices carry no separators/exponents',
+      ethBelow.some((o) => o.action.kind === 'stop') &&
+        ethBelow.some((o) => o.action.kind === 'limit' && /\bbuy\b/.test(o.action.ask)) &&
+        !ethBelow.some((o) => o.action.kind === 'limit' && /\bsell\b/.test(o.action.ask)) &&
+        !ethAbove.some((o) => o.action.kind === 'stop') &&
+        ethAbove.some((o) => o.action.kind === 'limit' && /\bsell\b/.test(o.action.ask)) &&
+        !ethAbove.some((o) => o.action.kind === 'limit' && /\bbuy\b/.test(o.action.ask)) &&
+        !aapl.some((o) => o.action.kind === 'limit' || o.action.kind === 'stop') &&
+        aapl.some((o) => o.action.kind === 'dca') &&
+        bigPx.some((o) => o.action.ask === 'Protect my spot BTC if it drops to $61235') &&
+        offers.every((o) => !/[,e]\d/.test(o.action.ask.replace(/[A-Za-z]+/g, ''))) &&
+        fmtAskPrice(2400) === '2400' && fmtAskPrice(0.000009) === '0.000009' && fmtAskUnits(25, 2300) === '0.01087' && fmtAskUnits(25, 0.000009) === '2777778',
+      `${ethBelow.map((o) => o.action.kind).join(',')} / ${ethAbove.map((o) => o.action.kind).join(',')} / ${aapl.map((o) => o.action.kind).join(',')}`,
+    )
+    // MSG's cross-lane finding: the ladder CLAIMS "protect my AAPL with a 5%
+    // stop" as a guardian action, but AAPL is not an HL perp and the Spot
+    // Guardian is Base-only — so a 4663 stock level must never OFFER a stop
+    // or take-profit, on either side of market, alone or as a zone.
+    const stockOffers = [
+      ...composeLineActions({ symbol: 'AAPL', source: 'robinhood', price: 200, last: 230 }),
+      ...composeLineActions({ symbol: 'AAPL', source: 'robinhood', price: 260, last: 230 }),
+      ...composeZoneActions({ symbol: 'AAPL', source: 'robinhood', p1: 200, p2: 210, last: 230 }),
+      ...composeZoneActions({ symbol: 'TSLA', source: 'robinhood', p1: 400, p2: 420, last: 380 }),
+    ]
+    const stockState = parseChartState({
+      v: 1,
+      symbol: 'AAPL',
+      tf: '1d',
+      lines: stockOffers.map((o, i) => ({ id: `s${i}`, kind: 'h', price: 200 + i, action: o.action })),
+    })
+    check(
+      'chart actions: a Robinhood Chain stock level (either side, line or zone) never offers stop / protect / limit — a 4663 chart-state never emits a protect ask (only buy / sell / dca; no "protect" or "stop" word at all)',
+      stockOffers.length >= 8 &&
+        stockOffers.every((o) => o.action.kind === 'buy' || o.action.kind === 'sell' || o.action.kind === 'dca') &&
+        stockState !== null &&
+        chartStateToAsks(stockState).every((ask) => !/\b(?:protect|stop|take profit|limit)\b/i.test(ask)) &&
+        !actionKindsFor('AAPL', 'robinhood').has('stop') &&
+        !actionKindsFor('AAPL', 'robinhood').has('protect') &&
+        !actionKindsFor('AAPL', 'robinhood').has('limit') &&
+        // and the two sources that CAN build a stop still do
+        actionKindsFor('HYPE', 'hyperliquid').has('stop') &&
+        actionKindsFor('ETH', 'coinbase').has('stop'),
+      stockOffers.map((o) => o.action.kind).join(','),
+    )
+    const lvl = parseChartState({ v: 1, symbol: 'ETH', tf: '1h', lines: [{ id: 'a', kind: 'h', price: 2300, action: ethBelow[0].action }] })
+    check('chart actions: a composed action survives the chart-state contract (the post → link path)', lvl !== null && chartStateToAsks(lvl)[0] === ethBelow[0].action.ask)
+
+    // Performance tiles on a fixture: 200 daily closes 100..299 ending 2026-09-10.
+    const endDay = Math.floor(Date.UTC(2026, 8, 10) / 1000)
+    const daily: Candle[] = Array.from({ length: 200 }, (_, i) => ({ t: endDay - (199 - i) * 86_400, o: 100 + i, h: 101 + i, l: 99 + i, c: 100 + i, v: 1 }))
+    const perf = performanceTiles(daily)
+    const tile = (k: string) => perf.tiles.find((t) => t.key === k)!
+    const exp = (n: number) => ((299 - (299 - n)) / (299 - n)) * 100
+    check(
+      'performance: 200-day fixture → 1W/1M/3M/6M exact off the base close, YTD + 1Y named unavailable; a 20-bar 1h series answers nothing',
+      Math.abs(tile('1W').pct! - exp(7)) < 1e-9 &&
+        Math.abs(tile('1M').pct! - exp(30)) < 1e-9 &&
+        Math.abs(tile('3M').pct! - exp(90)) < 1e-9 &&
+        Math.abs(tile('6M').pct! - exp(180)) < 1e-9 &&
+        tile('YTD').pct === null &&
+        tile('1Y').pct === null &&
+        perf.unavailable.join(',') === 'YTD,1Y' &&
+        performanceTiles(Array.from({ length: 20 }, (_, i) => ({ t: endDay - (19 - i) * 3600, o: 1, h: 1, l: 1, c: 1 + i, v: 0 }))).unavailable.length === 6 &&
+        fmtPct(2.5) === '+2.5%' && fmtPct(-0.04) === '−0.0%' && fmtPct(null) === '—',
+      perf.tiles.map((t) => `${t.key}=${t.pct?.toFixed(2) ?? '—'}`).join(' '),
+    )
+
+    // Overlays: flat series → flat lines, null until the window fills; no volume → no VWAP.
+    const flatC: Candle[] = Array.from({ length: 30 }, (_, i) => ({ t: i * 3600, o: 50, h: 50, l: 50, c: 50, v: 0 }))
+    const bb = bollinger(flatC, 20, 2)
+    check(
+      'indicators: sma/ema/bollinger sit on a flat series and stay null until the window fills; vwap is null on a volumeless tape',
+      sma(flatC, 20)[18].v === null && sma(flatC, 20)[19].v === 50 && ema(flatC, 20)[18].v === null && Math.abs(ema(flatC, 20)[29].v! - 50) < 1e-9 &&
+        bb.upper[19].v === 50 && bb.lower[29].v === 50 && bb.middle[18].v === null &&
+        vwap(flatC).every((p) => p.v === null) && !hasVolume(flatC),
+    )
+
+    // The engine on /t: the Apache-2.0 attribution notice + tools in the HTML.
+    const tAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
+    check(
+      '/t/AAPL: MarketChart server-renders with the required "Charts by TradingView Lightweight Charts" attribution link, the drawing toolbar and the performance tiles',
+      tAapl.includes('Charts by TradingView Lightweight Charts') && tAapl.includes('https://www.tradingview.com/lightweight-charts/') && tAapl.includes('Horizontal level') && tAapl.includes('mkt-perf') && tAapl.includes('mkt-attrib'),
+    )
+
+    // Pool-price honesty: stocks only; everything else says why.
+    const ppEth = (await (await fetch(`${BASE}/api/charts/pool-price?symbol=ETH`)).json()) as { pool: unknown; reason?: string }
+    const ppUsdg = (await (await fetch(`${BASE}/api/charts/pool-price?symbol=USDG`)).json()) as { pool: unknown; reason?: string }
+    const ppBad = await fetch(`${BASE}/api/charts/pool-price?symbol=%3Cscript%3E`)
+    check(
+      'pool-price api: a coinbase symbol (ETH) has NO pool line (null, "not a Robinhood Chain listing"); chartless → "no chart source"; malformed → 400',
+      ppEth.pool === null && ppEth.reason === 'not a Robinhood Chain listing' && ppUsdg.pool === null && ppUsdg.reason === 'no chart source' && ppBad.status === 400,
+    )
+    const ppAapl = (await (await fetch(`${BASE}/api/charts/pool-price?symbol=AAPL`)).json()) as { symbol: string; pool: { usdPerToken: number; tokenOut: number; quoteUsd: number; via: string; chainId: number } | null; reason?: string }
+    const tapeAapl = (await (await fetch(`${BASE}/api/charts/candles?symbol=AAPL&tf=1h`)).json()) as { last?: number | null }
+    const poolOk =
+      ppAapl.symbol === 'AAPL' &&
+      ppAapl.pool !== null &&
+      ppAapl.pool.chainId === 4663 &&
+      ppAapl.pool.quoteUsd === 100 &&
+      ppAapl.pool.usdPerToken > 0 &&
+      Math.abs(ppAapl.pool.usdPerToken * ppAapl.pool.tokenOut - 100) < 1e-6 &&
+      /Uniswap v[34] USDG\/AAPL/.test(ppAapl.pool.via) &&
+      (typeof tapeAapl.last !== 'number' || Math.abs(ppAapl.pool.usdPerToken / tapeAapl.last - 1) < 0.25)
+    const poolDown = ppAapl.pool === null && ppAapl.reason === 'quote unavailable'
+    check(
+      'pool-price api: AAPL → a live $100 USDG quote on 4663 (usdPerToken × tokenOut = $100, venue named, within 25% of the tape) or the named quote-unavailable — never a 500',
+      poolOk || poolDown,
+      poolDown ? 'RPC/quote down — refusal shape verified' : ppAapl.pool ? `pool=$${ppAapl.pool.usdPerToken.toFixed(2)} tape=$${tapeAapl.last} via=${ppAapl.pool.via}` : JSON.stringify(ppAapl),
+    )
+  }
+
+  // ── MARKETS/TECH ──────────────────────────────────────────────────────────
+  // Technical ratings from our own tape (squad markets 2026-09-11): the pure
+  // indicator library against hand-computed fixtures, gauge banding at the
+  // edges, the five pivot families, the API contract on live symbols, the
+  // chartless refusal by name, and every verdict chip landing natively in
+  // the ladder replica (never the planner).
+  console.log('— markets/tech: technical ratings')
+  {
+    const near = (a: number, b: number, eps = 1e-6) => Number.isFinite(a) && Math.abs(a - b) <= eps
+    const lastOf = (a: number[]) => a[a.length - 1]
+    const ramp = (n: number) => Array.from({ length: n }, (_, i) => i)
+    const rampCandles = (n: number, tfSec = 3600, t0 = 1_700_000_000): Candle[] =>
+      ramp(n).map((i) => ({ t: t0 + i * tfSec, o: i - 0.25, h: i + 0.5, l: i - 0.5, c: i, v: 100 }))
+
+    // Series primitives on tiny hand-computed series
+    const s5 = techSma([1, 2, 3, 4, 5], 3)
+    check('tech: SMA(3) of 1..5 = [NaN NaN 2 3 4]', Number.isNaN(s5[0]) && Number.isNaN(s5[1]) && near(s5[2], 2) && near(s5[3], 3) && near(s5[4], 4))
+    const e5 = techEma([1, 2, 3, 4, 5], 3)
+    check('tech: EMA(3) of 1..5 is SMA-seeded (2) then α=½: 3, 4', Number.isNaN(e5[1]) && near(e5[2], 2) && near(e5[3], 3) && near(e5[4], 4))
+    const r4 = techRma([1, 2, 3, 4], 2)
+    check('tech: RMA(2) of 1..4 = 1.5, 2.25, 3.125 (Wilder, SMA-seeded)', near(r4[1], 1.5) && near(r4[2], 2.25) && near(r4[3], 3.125))
+    check('tech: WMA(3) of 1,2,3 = 14/6', near(lastOf(techWma([1, 2, 3], 3)), 14 / 6))
+    const smaNaN = techSma([NaN, NaN, 1, 2, 3, 4], 2)
+    check('tech: SMA is NaN-aware — a warm-up NaN never poisons later bars (the stochastics bug)', Number.isNaN(smaNaN[2]) && near(smaNaN[3], 1.5) && near(smaNaN[5], 3.5))
+
+    // RSI at both edges + the midpoint
+    const up15 = ramp(15).map((i) => 100 + i)
+    check('tech: RSI(14) of 14 straight gains = 100', near(lastOf(techRsi(up15, 14)), 100))
+    const alt15 = ramp(15).map((i) => (i % 2 ? 11 : 10))
+    check('tech: RSI(14) of alternating ±1 = 50 (avg gain = avg loss)', near(lastOf(techRsi(alt15, 14)), 50))
+    const down15 = ramp(15).map((i) => 100 - i)
+    check('tech: RSI(14) of 14 straight losses = 0', near(lastOf(techRsi(down15, 14)), 0))
+
+    // A linear ramp has closed-form indicator values (EMA(n) = price − (n−1)/2)
+    const rp = ramp(80)
+    check('tech: EMA(12)/EMA(26) of a ramp lag exactly (n−1)/2 → MACD = 7, signal = 7', near(lastOf(techMacd(rp).macd), 7, 1e-9) && near(lastOf(techMacd(rp).signal), 7, 1e-9))
+    check('tech: MACD of a flat tape = 0 / 0', near(lastOf(techMacd(new Array(80).fill(100)).macd), 0) && near(lastOf(techMacd(new Array(80).fill(100)).signal), 0))
+    const rc = rampCandles(80)
+    const H = rc.map((k) => k.h)
+    const L = rc.map((k) => k.l)
+    const C = rc.map((k) => k.c)
+    const ax = techAdx(H, L, C, 14, 14)
+    check('tech: ADX(14) on a steady +1 trend (h=c+½, l=c−½): +DI = 100/1.5, −DI = 0, ADX = 100', near(lastOf(ax.plusDi), 100 / 1.5, 1e-6) && near(lastOf(ax.minusDi), 0) && near(lastOf(ax.adx), 100, 1e-6))
+    check('tech: Momentum(10) of a ramp = 10', near(lastOf(techMom(C, 10)), 10))
+    check('tech: Awesome Oscillator of a ramp = SMA5 − SMA34 of hl2 = 14.5', near(lastOf(techAo(H, L)), 14.5, 1e-9))
+    check('tech: Williams %R(14) of a ramp = −(0.5/14)·100', near(lastOf(techWr(H, L, C, 14)), -(0.5 / 14) * 100, 1e-9))
+    const st = techStoch(H, L, C, 14, 3, 3)
+    check('tech: Stochastic %K(14,3,3) of a ramp = 13.5/14·100 (K and D alike)', near(lastOf(st.k), (13.5 / 14) * 100, 1e-9) && near(lastOf(st.d), (13.5 / 14) * 100, 1e-9))
+    check('tech: CCI(20) of a flat tape = 0 (mean deviation 0 → 0, never NaN)', near(lastOf(techCci(new Array(30).fill(10), new Array(30).fill(10), new Array(30).fill(10), 20)), 0))
+    check('tech: Ultimate Oscillator(7,14,28) of a ramp = 100·(4+2+1)/7 · (1/1.5)', near(lastOf(techUo(H, L, C)), (100 * 7) / 7 / 1.5, 1e-9))
+    const bbp = techBbp(H, L, C, 13)
+    check('tech: Bull Bear Power(13) of a ramp: bull 6.5, bear 5.5 (EMA13 lags 6)', near(lastOf(bbp.bull), 6.5, 1e-9) && near(lastOf(bbp.bear), 5.5, 1e-9))
+    check('tech: Hull MA(9) of a ramp has zero lag (= price)', near(lastOf(techHull(C, 9)), 79, 1e-9))
+    const ich = techIchimoku(H, L, 9, 26, 52)
+    check('tech: Ichimoku of a ramp: conversion = p−4, base = p−12.5, leadB = p−25.5, leadA = p−8.25', near(lastOf(ich.conversion), 75) && near(lastOf(ich.base), 66.5) && near(lastOf(ich.leadB), 53.5) && near(lastOf(ich.leadA), 70.75))
+
+    // Signal rules (the header table) on shaped tapes
+    const t80 = computeTechnicals(rc, '1h')
+    check(
+      'tech: computeTechnicals on an 80-bar ramp: every MA that computed says BUY (MA < price), the 100/200 MAs are OMITTED not neutral, MACD ON its signal (7 = 7) = neutral not a float coin-flip, momentum FLAT = neutral',
+      !!t80 &&
+        // Ichimoku is neutral on a pure ramp by its own rule (base < leadA); the
+        // zero-lag Hull MA lands ON the price → neutral, never a float coin-flip.
+        t80.rows.movingAverages.filter((r) => !/Ichimoku|Hull/.test(r.name)).every((r) => r.signal === 'buy') &&
+        t80.rows.movingAverages.find((r) => r.name.startsWith('Hull'))?.signal === 'neutral' &&
+        t80.omitted.includes('Exponential Moving Average (200)') &&
+        t80.omitted.includes('Simple Moving Average (100)') &&
+        t80.rows.oscillators.find((r) => r.name.startsWith('MACD'))?.signal === 'neutral' &&
+        t80.rows.oscillators.find((r) => r.name.startsWith('Momentum'))?.signal === 'neutral' &&
+        t80.movingAverages.rating === 'strong_buy' &&
+        t80.movingAverages.sell === 0,
+      t80 ? `omitted=${t80.omitted.length} ma=${JSON.stringify(t80.movingAverages)}` : 'null',
+    )
+    const dive = ramp(41).map((i) => (i < 40 ? 200 - 2 * i : 200 - 2 * 39 + 1))
+    const diveCandles: Candle[] = dive.map((c, i) => ({ t: 1_700_000_000 + i * 3600, o: c, h: c + 0.5, l: c - 0.5, c, v: 1 }))
+    const tDive = computeTechnicals(diveCandles, '1h')
+    check(
+      'tech: 39 straight losses then one up-tick → RSI < 30 and rising = BUY; Williams %R < −80 and rising = BUY; MACD turning above its signal = BUY; every MA above price = SELL',
+      !!tDive &&
+        tDive.rows.oscillators.find((r) => r.name.startsWith('MACD'))?.signal === 'buy' &&
+        tDive.rows.oscillators.find((r) => r.name.startsWith('RSI'))?.signal === 'buy' &&
+        tDive.rows.oscillators.find((r) => r.name.startsWith('Williams'))?.signal === 'buy' &&
+        // (Hull's zero lag puts it UNDER the up-tick — buy by the rule; Ichimoku neutral)
+        tDive.rows.movingAverages.filter((r) => !/Ichimoku|Hull/.test(r.name)).every((r) => r.signal === 'sell'),
+      tDive ? tDive.rows.oscillators.map((r) => `${r.name.split(' ')[0]}=${r.signal}`).join(' ') : 'null',
+    )
+    check('tech: fewer than MIN_BARS bars → null (no verdict on a stub tape)', computeTechnicals(rampCandles(TECH_MIN_BARS - 1), '1h') === null && !!computeTechnicals(rampCandles(TECH_MIN_BARS), '1h'))
+
+    // Banding at the edges (≤ −0.5 strong sell · ≤ −0.1 sell · < 0.1 neutral · < 0.5 buy · else strong buy)
+    const bands: [number, TechRating][] = [
+      [-1, 'strong_sell'], [-0.5, 'strong_sell'], [-0.499, 'sell'], [-0.1, 'sell'], [-0.0999, 'neutral'], [0, 'neutral'], [0.0999, 'neutral'],
+      [0.1, 'buy'], [0.4999, 'buy'], [0.5, 'strong_buy'], [1, 'strong_buy'],
+    ]
+    check('tech: rating bands at every edge', bands.every(([s, r]) => bandOf(s) === r), bands.map(([s, r]) => `${s}→${bandOf(s)}${bandOf(s) === r ? '' : '≠' + r}`).join(' '))
+    const g = gaugeOf(['buy', 'buy', 'sell', 'neutral', 'neutral'])
+    check('tech: gauge = (buy − sell)/n with counts', near(g.score, 0.2) && g.buy === 2 && g.sell === 1 && g.neutral === 2 && g.rating === 'buy')
+    check('tech: an empty gauge is neutral at 0, never NaN', gaugeOf([]).score === 0 && gaugeOf([]).rating === 'neutral')
+
+    // Pivots — H 110 / L 90 / C 100, current open 104
+    const cp = classicPivots(110, 90, 100)
+    check('tech: classic pivots P100 R1 110 S1 90 R2 120 S2 80 R3 130 S3 70', near(cp.p, 100) && near(cp.r1, 110) && near(cp.s1, 90) && near(cp.r2!, 120) && near(cp.s2!, 80) && near(cp.r3!, 130) && near(cp.s3!, 70))
+    const fp = fibonacciPivots(110, 90, 100)
+    check('tech: fibonacci pivots R1 107.64 S1 92.36 R2 112.36 R3 120', near(fp.r1, 107.64) && near(fp.s1, 92.36) && near(fp.r2!, 112.36) && near(fp.r3!, 120))
+    const cam = camarillaPivots(110, 90, 100)
+    check('tech: camarilla pivots R1 = C + 1.1·range/12, R3 = C + 1.1·range/4', near(cam.r1, 100 + 22 / 12) && near(cam.s1, 100 - 22 / 12) && near(cam.r3!, 105.5) && near(cam.s3!, 94.5))
+    const wo = woodiePivots(110, 90, 104)
+    check('tech: woodie pivots use the CURRENT open: P (110+90+2·104)/4 = 102, R1 114, S1 94', near(wo.p, 102) && near(wo.r1, 114) && near(wo.s1, 94))
+    const dm = dmPivots(110, 90, 100, 104)
+    check('tech: DM pivots (close < open → X = H+2L+C = 390): P 97.5, R1 105, S1 85, no R2/R3', near(dm.p, 97.5) && near(dm.r1, 105) && near(dm.s1, 85) && dm.r2 === undefined)
+    // pivotsFor: three UTC days of hourly bars; the levels come from the LAST COMPLETED day only
+    const day0 = Math.floor(1_700_000_000 / 86400) * 86400
+    const three: Candle[] = []
+    for (let d = 0; d < 3; d++) for (let h = 0; h < 24; h++) three.push({ t: day0 + d * 86400 + h * 3600, o: 100 + d * 10, h: 100 + d * 10 + (h === 5 ? 9 : 2), l: 100 + d * 10 - (h === 7 ? 6 : 1), c: 100 + d * 10 + 1, v: 1 })
+    const pf = pivotsFor(three, '1h')
+    check('tech: intraday pivots = the previous UTC day (H 119, L 104, C 111 → classic P 111.33, R1 118.67)', !!pf && pf.period === 'day' && pf.from === day0 + 86400 && near(pf.classic.p, 111.33, 0.01) && near(pf.classic.r1, 118.67, 0.01))
+    check('tech: daily frame pivots come from the previous MONTH (period named)', pivotsFor(rampCandles(120, 86400), '1d')?.period === 'month')
+
+    // Chip asks: prices with NO thousands separator (the spot-guard grammar reads "$2,410" as $2)
+    check('tech: askPrice never prints a thousands separator and trims to the tick', askPrice(2410.5) === '2410.5' && askPrice(0.0123456) === '0.0123' && askPrice(326.5) === '326.5' && /^\d+(\.\d+)?$/.test(askPrice(123456.789)))
+    check('tech: the trap is real — "$2,410" parses as a $2 trigger (why chips never carry commas)', techParseSpotGuardArm('Protect my spot ETH if it drops to $2,410.5')?.triggerValue === 2)
+    const chipStop = verdictChips({ symbol: 'ETH', source: 'coinbase', rating: 'neutral', support: 2410.5 })[0]
+    check('tech: the neutral chip\'s pivot stop round-trips the spot-guard parser at the exact level', chipStop.kind === 'stop' && techParseSpotGuardArm(chipStop.ask)?.triggerValue === 2410.5 && techParseSpotGuardArm(chipStop.ask)?.token === 'ETH')
+    const hlStop = verdictChips({ symbol: 'HYPE', source: 'hyperliquid', rating: 'neutral', support: 61.26 })[0]
+    check('tech: a perp\'s neutral chip is the HL guardian at the pivot (coin + price mode)', hlStop.kind === 'stop' && techParseGuardianArm(hlStop.ask)?.coin === 'HYPE' && techParseGuardianArm(hlStop.ask)?.triggerValue === 61.26)
+    const hlTp = verdictChips({ symbol: 'HYPE', source: 'hyperliquid', rating: 'neutral', support: 61.26, resistance: 96.9 })[1]
+    check('tech: a perp\'s second neutral chip is the take-profit at R1 (guardian kind take_profit, price mode)', hlTp.kind === 'limit' && techParseGuardianArm(hlTp.ask)?.kind === 'take_profit' && techParseGuardianArm(hlTp.ask)?.coin === 'HYPE' && techParseGuardianArm(hlTp.ask)?.triggerValue === 96.9)
+
+    // Every chip for every (source × rating) lands natively in the ladder replica — never the planner
+    const ratings: TechRating[] = ['strong_sell', 'sell', 'neutral', 'buy', 'strong_buy']
+    const chipCases: { symbol: string; source: 'coinbase' | 'hyperliquid' | 'robinhood' }[] = [
+      { symbol: 'AAPL', source: 'robinhood' }, { symbol: 'ETH', source: 'coinbase' }, { symbol: 'HYPE', source: 'hyperliquid' }, { symbol: 'SOL', source: 'coinbase' },
+    ]
+    const chipBad: string[] = []
+    let chipCount = 0
+    for (const c of chipCases) for (const r of ratings) {
+      const chips = verdictChips({ symbol: c.symbol, source: c.source, rating: r, support: 123.45, resistance: 130.5 })
+      if (chips.length < 2) chipBad.push(`${c.symbol}/${r}: ${chips.length} chips`)
+      for (const ch of chips) {
+        chipCount++
+        const out = simulateLadder(ch.ask)
+        if (out.kind === 'planner') chipBad.push(`${c.symbol}/${r}: "${ch.ask}" → planner`)
+        if (out.kind === 'clarify') chipBad.push(`${c.symbol}/${r}: "${ch.ask}" → clarify (${out.note})`)
+      }
+    }
+    check(`tech: every verdict chip (${chipCount} asks over 4 symbols × 5 ratings) lands as a native ACTION in the ladder replica`, chipBad.length === 0, chipBad.slice(0, 6).join(' | '))
+    check('tech: a coin whose home is another chain (SOL) takes the Hyperliquid forms — never a Base squat swap', verdictChips({ symbol: 'SOL', source: 'coinbase', rating: 'buy' }).every((c) => /hyperliquid|long/i.test(c.ask)))
+    // A STOCK verdict never emits a protect/stop ask (Spot Guardian is Base-only, the HL
+    // guardian is perps-only — the ladder would CLAIM it and the build would refuse; MSG lane).
+    const stockAsks = ratings.flatMap((r) => verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: r, support: 300, resistance: 330 }).map((c) => c.ask))
+    check('tech: a stock (source robinhood) verdict emits ONLY swap / DCA asks across all five ratings — never protect / stop / guardian', stockAsks.length === 10 && stockAsks.every((a) => !/protect|stop|guardian|take profit|alert/i.test(a)) && stockAsks.every((a) => ['swap', 'dca'].includes(simulateLadder(a).gate)), stockAsks.join(' | '))
+    check('tech: a stock SELL verdict pairs "Sell $50" with the live-sized "Sell all my AAPL"', verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'strong_sell' }).map((c) => c.ask).join(' | ') === 'Sell $50 of AAPL | Sell all my AAPL' && simulateLadder('Sell all my AAPL').note?.includes('sized live') === true)
+    // The alert chip stays OFF until WATCH's grammar has a ladder rung: this pin FAILS the
+    // day "Alert me when AAPL hits $330" stops falling to the planner — flip `alerts` then.
+    const alertChip = verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'neutral', resistance: 330, alerts: true })[1]
+    check('tech: with alerts ON a neutral stock carries "Alert me when AAPL hits $R1" — and TODAY that ask falls to the planner (no alert rung yet; flip the default when this pin turns red)', alertChip.kind === 'alert' && alertChip.ask === 'Alert me when AAPL hits $330' && simulateLadder(alertChip.ask).kind === 'planner' && verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'neutral', resistance: 330 }).every((c) => c.kind !== 'alert'))
+    check('tech: sell verdicts carry Sell + Protect (spot coin) / Sell + Sell-all (stock); buy verdicts Buy + DCA (spot) / Buy + Protect (perp)',
+      verdictChips({ symbol: 'ETH', source: 'coinbase', rating: 'sell' }).map((c) => c.kind).join(',') === 'sell,protect' &&
+      verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'sell' }).map((c) => c.kind).join(',') === 'sell,sell' &&
+      verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'strong_buy' }).map((c) => c.kind).join(',') === 'buy,dca' &&
+      verdictChips({ symbol: 'HYPE', source: 'hyperliquid', rating: 'buy' }).map((c) => c.kind).join(',') === 'buy,protect')
+
+    // The API contract on live symbols (feeds are keyless public data)
+    type TechApi = { symbol: string; tf: string; tfs: string[]; asOf: number; feed?: string; bars?: number; summary?: { rating: string; score: number; buy: number; neutral: number; sell: number }; oscillators?: { rating: string }; movingAverages?: { rating: string }; rows?: { oscillators: { name: string; value: number; signal: string }[]; movingAverages: { name: string; value: number; signal: string }[] }; pivots?: Record<string, { p: number; r1: number; s1: number }> | null; chips: { kind: string; ask: string }[]; error?: string; reason?: string; omitted?: string[] }
+    const gaugeOk = (g?: { rating: string; score: number; buy: number; neutral: number; sell: number }) => !!g && ['strong_sell', 'sell', 'neutral', 'buy', 'strong_buy'].includes(g.rating) && g.score >= -1 && g.score <= 1 && g.buy + g.neutral + g.sell > 0
+    for (const [sym, tf] of [['AAPL', '1d'], ['ETH', '1h']] as const) {
+      const r = await fetch(`${BASE}/api/charts/technicals?symbol=${sym}&tf=${tf}`)
+      const b = (await r.json()) as TechApi
+      const live = !b.error
+      check(
+        `tech api: ${sym} ${tf} → contract shape (summary/oscillators/movingAverages gauges, 11 oscillator + 15 MA rows incl. omitted, five pivot families, chips) — or a NAMED feed refusal`,
+        r.status === 200 && b.symbol === sym && b.tf === tf && Array.isArray(b.tfs) && b.tfs.join(',') === '15m,1h,4h,1d' &&
+          (live
+            ? gaugeOk(b.summary) && gaugeOk(b.oscillators as TechApi['summary']) && gaugeOk(b.movingAverages as TechApi['summary']) &&
+              (b.rows!.oscillators.length + b.omitted!.filter((n) => !/Average|Ichimoku/.test(n)).length) === 11 &&
+              (b.rows!.movingAverages.length + b.omitted!.filter((n) => /Average|Ichimoku/.test(n)).length) === 15 &&
+              b.rows!.oscillators.every((x) => Number.isFinite(x.value) && ['buy', 'neutral', 'sell'].includes(x.signal)) &&
+              !!b.pivots && ['classic', 'fibonacci', 'camarilla', 'woodie', 'dm'].every((f) => Number.isFinite(b.pivots![f]?.p) && Number.isFinite(b.pivots![f]?.r1) && Number.isFinite(b.pivots![f]?.s1)) &&
+              b.chips.length >= 2 && b.chips.every((c) => simulateLadder(c.ask).kind === 'action') && (b.bars ?? 0) >= 200
+            : /feed unavailable|tape too short/.test(b.error!) && /AAPL|ETH/.test(b.reason ?? '') && b.chips.length === 0),
+        live ? `${b.feed} bars=${b.bars} ${b.summary!.rating} osc=${b.oscillators!.rating} ma=${b.movingAverages!.rating} omitted=${b.omitted!.length} chips=${b.chips.map((c) => c.ask).join(' / ')}` : `REFUSED: ${b.error}`,
+      )
+      if (live) {
+        const again = (await (await fetch(`${BASE}/api/charts/technicals?symbol=${sym}&tf=${tf}`)).json()) as TechApi
+        check(`tech api: ${sym} ${tf} is cached 30s per symbol+tf (same asOf on the second read)`, again.asOf === b.asOf)
+      }
+    }
+    const usdc = (await (await fetch(`${BASE}/api/charts/technicals?symbol=USDC&tf=1d`)).json()) as TechApi
+    check('tech api: a chartless symbol (USDC) refuses BY NAME with no gauges and no chips — 200, never 500', !usdc.summary && usdc.error === 'no chart source' && /USDC/.test(usdc.reason ?? '') && usdc.chips.length === 0)
+    const nope = await fetch(`${BASE}/api/charts/technicals?symbol=NOPE`)
+    const nopeB = (await nope.json()) as TechApi
+    check('tech api: an unknown ticker refuses by name and defaults tf to 1d', nope.status === 200 && nopeB.error === 'no chart source' && nopeB.tf === '1d' && /NOPE/.test(nopeB.reason ?? ''))
+    check('tech api: a malformed symbol is a 400, not an upstream probe', (await fetch(`${BASE}/api/charts/technicals?symbol=${encodeURIComponent('../etc')}`)).status === 400)
+    check('tech api: an unknown tf falls to 1d (never a 500)', ((await (await fetch(`${BASE}/api/charts/technicals?symbol=ETH&tf=7w`)).json()) as TechApi).tf === '1d')
+
+    // The candles route still serves its old shape through the shared loader
+    const cnd = (await (await fetch(`${BASE}/api/charts/candles?symbol=ETH&tf=1h`)).json()) as { symbol: string; feed?: string; candles: unknown[]; error?: string }
+    check('tech: /api/charts/candles unchanged on the wire (≤180 candles, feed named) after the loader moved to lib/candles-server', cnd.symbol === 'ETH' && (cnd.error ? /feed unavailable/.test(cnd.error) : cnd.candles.length > 0 && cnd.candles.length <= 180 && cnd.feed === 'coinbase'))
+
+    // The page mount: /t/AAPL?tab=technicals renders the tab server-side with the frame from ?tf=
+    const tp = await fetch(`${BASE}/t/AAPL?tab=technicals&tf=4h`)
+    const tpHtml = await tp.text()
+    check('tech page: /t/AAPL?tab=technicals&tf=4h is 200, mounts the technicals section on that frame, and keeps the chart as a link', tp.status === 200 && /data-technicals="AAPL"/.test(tpHtml) && /data-tf="4h"/.test(tpHtml) && /href="\/t\/AAPL"/.test(tpHtml) && /not advice|reading the tape|Timeframe/i.test(tpHtml))
+    const tpChart = await (await fetch(`${BASE}/t/AAPL`)).text()
+    check('tech page: /t/AAPL (chart view) links to ?tab=technicals and does NOT mount the gauges', /href="\/t\/AAPL\?tab=technicals"/.test(tpChart) && !/data-technicals=/.test(tpChart))
+    const tpUsdc = await (await fetch(`${BASE}/t/USDC?tab=technicals`)).text()
+    check('tech page: a chartless symbol on the technicals tab keeps the honest empty state (no gauges)', !/data-technicals="USDC"/.test(tpUsdc) && /No live chart/.test(tpUsdc))
+  }
+
+  // ── MARKETS/MSG ──────────────────────────────────────────────────────────
+  // The message, /compare, and SEO for every chartable symbol (squad-markets
+  // 2026-09-11, lane MSG). Words live in lib/markets-copy; titles/JSON-LD/OG
+  // in lib/markets-seo; the sitemap and the OG allowlist read ONE gate
+  // (chartableSymbols → chartPairFor).
+  console.log('— markets/msg')
+  {
+    const { chartableSymbols, chartPairFor } = await import('../lib/charts')
+    const { KILLER_LINE, HERO_LINE, TV_PRICING_TABLE } = await import('../lib/markets-copy')
+    const { symbolPageSeo, listPageSeo, candleSvg } = await import('../lib/markets-seo')
+
+    // /compare — their dated table verbatim, our ∞ column, the six lines, the
+    // killer line, and the honest half. TradingView is NAMED in text only:
+    // never inside an <h1>/<h2>, never an <img>/<svg> lockup (rule 7).
+    const cmpRes = await fetch(`${BASE}/compare`)
+    const cmp = await cmpRes.text()
+    check('markets/msg: /compare renders', cmpRes.status === 200)
+    check(
+      'markets/msg: /compare carries the dated pricing table verbatim (every tier + € figure, as-of stamp)',
+      /data-pricing-as-of="2026-09-11"/.test(cmp) &&
+        TV_PRICING_TABLE.every((r) => cmp.includes(r.tier) && (r.eurPerMonth === 0 || cmp.includes(`€${r.eurPerMonth.toFixed(2)}`))) &&
+        /September 11, 2026/.test(cmp),
+    )
+    check(
+      'markets/msg: /compare — our column is ∞ at every meter and €0, and the six lines + the killer line are on the page',
+      (cmp.match(/>∞</g) ?? []).length >= 5 &&
+        /€0</.test(cmp) &&
+        /The alert executes\./.test(cmp) && /The line is the order\./.test(cmp) && /You keep the pen\./.test(cmp) &&
+        cmp.includes('data-killer-line') && cmp.includes(KILLER_LINE.sentence),
+    )
+    check(
+      'markets/msg: /compare says what they have that we don’t + the risks (Pine, screeners, drawing depth, broker links; commission, liquidity, regions, not advice)',
+      cmp.includes('data-honest-section') &&
+        /Pine Script/.test(cmp) && /Screeners/.test(cmp) && /Drawing depth/.test(cmp) && /Broker links/.test(cmp) &&
+        /\$0 commission/.test(cmp) && /liquidity is thin/.test(cmp) && /regional/i.test(cmp) && /Not advice/.test(cmp),
+    )
+    check(
+      'markets/msg: no glued expression-node text on /compare or /docs/markets ("0.20%per trade" — the entity-space bug after an {expr}, invisible to the closing-tag fence)',
+      !/\d%[A-Za-z]/.test(cmp) && !/\d%[A-Za-z]/.test(await (await fetch(`${BASE}/docs/markets`)).text()),
+    )
+    check(
+      'markets/msg: /compare names TradingView in text only — never in a heading, never as an image/lockup (rule 7)',
+      /TradingView/.test(cmp) &&
+        !/<h[1-6][^>]*>[^<]*TradingView/.test(cmp) &&
+        !/<img[^>]+(tradingview|trading-view)/i.test(cmp) &&
+        !/<svg[^>]*(tradingview)/i.test(cmp),
+    )
+    check(
+      'markets/msg: the killer line is DERIVED from lib/fees (0.20% → €1.2M), never typed',
+      KILLER_LINE.volume === '€1.2M' && KILLER_LINE.ultimatePerYear === '€2,399' && KILLER_LINE.smallTraderFee === '€4.80',
+    )
+
+    // The hero + the Markets band — one message source.
+    const home = await (await fetch(`${BASE}/`)).text()
+    check(
+      'markets/msg: the landing carries the Markets band under the hero (chip pressed → sign card, six lines, CTA → /markets)',
+      home.includes('data-markets-band') &&
+        /Buy \$10 of AAPL/.test(home) && /SIGN &amp; SEND/.test(home) &&
+        /href="\/markets"/.test(home) && /href="\/compare"/.test(home) &&
+        home.includes(HERO_LINE),
+    )
+    check(
+      'markets/msg: the landing never names the competitor — TradingView is a /compare word only (rule 7)',
+      !/TradingView/.test(home),
+    )
+
+    // SEO — the sitemap lists exactly the chartable set.
+    const smap = await (await fetch(`${BASE}/sitemap.xml`)).text()
+    const syms = chartableSymbols()
+    check(
+      'markets/msg: sitemap lists /markets, /compare, /docs/markets and /t/AAPL + /t/ETH + /t/HYPE',
+      /\/markets<\/loc>/.test(smap) && /\/compare<\/loc>/.test(smap) && /\/docs\/markets<\/loc>/.test(smap) &&
+        /\/t\/AAPL<\/loc>/.test(smap) && /\/t\/ETH<\/loc>/.test(smap) && /\/t\/HYPE<\/loc>/.test(smap),
+    )
+    check(
+      'markets/msg: sitemap is FENCED to chartPairFor — no feedless listing (CASHCAT, SATS), no stable, no alias (WETH), and every listed /t/ symbol charts',
+      !/\/t\/CASHCAT<\/loc>/.test(smap) && !/\/t\/SATS<\/loc>/.test(smap) && !/\/t\/USDC<\/loc>/.test(smap) && !/\/t\/WETH<\/loc>/.test(smap) &&
+        [...smap.matchAll(/\/t\/([A-Z0-9]+)<\/loc>/g)].every((m) => chartPairFor(m[1])?.symbol === m[1]) &&
+        syms.every((s) => smap.includes(`/t/${s}</loc>`)) &&
+        syms.length > 150,
+      `listed=${[...smap.matchAll(/\/t\/[A-Z0-9]+<\/loc>/g)].length} chartable=${syms.length}`,
+    )
+
+    // /t/<sym> — honest title, canonical (aliases collapse), Dataset JSON-LD.
+    const aapl = await (await fetch(`${BASE}/t/AAPL`)).text()
+    check(
+      'markets/msg: /t/AAPL — <title> says 24/7 + Robinhood Chain + Pantessa Markets, canonical is /t/AAPL, JSON-LD is a Dataset + breadcrumbs (never FinancialProduct)',
+      /<title>AAPL 24\/7 — trade Apple on Robinhood Chain \| Pantessa Markets<\/title>/.test(aapl) &&
+        /rel="canonical" href="[^"]+\/t\/AAPL"/.test(aapl) &&
+        /"@type":"Dataset"/.test(aapl) && /"@type":"BreadcrumbList"/.test(aapl) && !/FinancialProduct/.test(aapl),
+    )
+    const weth = await (await fetch(`${BASE}/t/weth`)).text()
+    check(
+      'markets/msg: /t/weth canonicalizes to /t/ETH (alias collapse) and a chartless symbol is noindex',
+      /rel="canonical" href="[^"]+\/t\/ETH"/.test(weth) &&
+        /noindex/.test(await (await fetch(`${BASE}/t/USDC`)).text()),
+    )
+    check(
+      'markets/msg: symbolPageSeo — perps + coins get their own honest titles; the list pattern splits chartable vs not-yet',
+      /HYPE perps live chart/.test(symbolPageSeo('HYPE').title) &&
+        /ETH live chart — trade Ether/.test(symbolPageSeo('eth').title) &&
+        (() => {
+          const l = listPageSeo({ slug: 'nates-247', name: 'Nate’s 24/7 stocks', symbols: ['AAPL', 'TSLA', 'CASHCAT', 'USDC'] })
+          return l.chartable.join(',') === 'AAPL,TSLA' && l.notYet.join(',') === 'CASHCAT,USDC' && /2 tradable 24\/7/.test(l.description) && /"ItemList"/.test(l.jsonLd)
+        })(),
+    )
+
+    // OG card per symbol: PNG, and the candle drawer is pure + fail-soft.
+    const ogr = await fetch(`${BASE}/t/AAPL/opengraph-image`)
+    const ogBuf = new Uint8Array(await ogr.arrayBuffer())
+    check(
+      'markets/msg: /t/AAPL/opengraph-image is a real PNG (live mini chart + last price, or the honest warming-up card)',
+      ogr.status === 200 && /image\/png/.test(ogr.headers.get('content-type') ?? '') && ogBuf[0] === 0x89 && ogBuf[1] === 0x50 && ogBuf.length > 20_000,
+      `bytes=${ogBuf.length}`,
+    )
+    const ogChartless = await fetch(`${BASE}/t/USDC/opengraph-image`)
+    check('markets/msg: a chartless symbol still gets a PNG card (no 500)', ogChartless.status === 200 && /image\/png/.test(ogChartless.headers.get('content-type') ?? ''))
+    check(
+      'markets/msg: candleSvg draws one wick + one body per candle and an empty grid for a short series',
+      (candleSvg([{ t: 1, o: 1, h: 2, l: 0.5, c: 1.5, v: 1 }, { t: 2, o: 1.5, h: 2, l: 1, c: 1.2, v: 1 }], { width: 100, height: 50, up: '#0f0', down: '#f00', grid: '#333' }).match(/<rect/g) ?? []).length === 2 &&
+        !/<rect/.test(candleSvg([], { width: 100, height: 50, up: '#0f0', down: '#f00', grid: '#333' })),
+    )
+
+    // /docs/markets — registered, ready, in the sidebar + sitemap.
+    const docs = await (await fetch(`${BASE}/docs/markets`)).text()
+    check(
+      'markets/msg: /docs/markets renders — the chip contract, watchlists, alerts that act, the TradingView import, the attribution note',
+      /A chip sends\. A link prefills\./.test(docs) && /Alerts that act/.test(docs) && /Import your TradingView watchlist/.test(docs) &&
+        /Lightweight Charts/.test(docs) && /Computed from our own tape/.test(docs),
+    )
+  }
+
+  // ── MARKETS/SHELL ─────────────────────────────────────────────────────────
+  // The Markets nav + /markets index + the /t/<symbol> frame (squad
+  // 2026-09-11, SHELL lane). Pure grammar first, then the rendered pages.
+  console.log('— markets/shell')
+  {
+    // Tab strip URL grammar (the #705 idiom): default drops the param, every
+    // other param survives, unknown names fall to Overview.
+    check(
+      'markets: ?tab= grammar — default omitted, others mirrored, unknown → overview, foreign params kept',
+      parseMarketTab('') === 'overview' &&
+        parseMarketTab('?tab=technicals') === 'technicals' &&
+        parseMarketTab('?tab=nope') === 'overview' &&
+        marketTabUrl('overview', '/t/AAPL', '?tab=trade') === '/t/AAPL' &&
+        marketTabUrl('trade', '/t/AAPL', '?x=1') === '/t/AAPL?x=1&tab=trade',
+    )
+    // NYSE session on fixed instants (ET): Sat noon → reopens Mon; Wed 10:00
+    // → open; Wed 17:00 → reopens Thu; Wed 08:00 → today. September = EDT
+    // (UTC−4). Stocks get the "token trades 24/7 · NYSE …" line; crypto never
+    // mentions the NYSE.
+    const sat = new Date('2026-09-12T16:00:00Z') // Sat 12:00 ET
+    const wedOpen = new Date('2026-09-09T14:00:00Z') // Wed 10:00 ET
+    const wedAfter = new Date('2026-09-09T21:00:00Z') // Wed 17:00 ET
+    const wedPre = new Date('2026-09-09T12:00:00Z') // Wed 08:00 ET
+    check(
+      'markets: NYSE session — weekend → reopens Mon 9:30 ET, weekday 10:00 open, 17:00 → next day, 08:00 → today',
+      !nyseSession(sat).open && nyseSession(sat).reopens === 'Mon 9:30 ET' &&
+        nyseSession(wedOpen).open &&
+        !nyseSession(wedAfter).open && nyseSession(wedAfter).reopens === 'Thu 9:30 ET' &&
+        !nyseSession(wedPre).open && nyseSession(wedPre).reopens === 'today 9:30 ET',
+      `${JSON.stringify(nyseSession(sat))} ${JSON.stringify(nyseSession(wedAfter))} ${JSON.stringify(nyseSession(wedPre))}`,
+    )
+    const aaplPair = chartPairFor('AAPL')!
+    const ethPair = chartPairFor('ETH')!
+    check(
+      'markets: session line — a stock names the token 24/7 AND the closed tape; a coin never mentions the NYSE',
+      sessionState(aaplPair, sat).line === 'Token trades 24/7 on Robinhood Chain · NYSE closed, reopens Mon 9:30 ET' &&
+        sessionState(aaplPair, wedOpen).line.endsWith('NYSE open') &&
+        !/NYSE/.test(sessionState(ethPair, sat).line),
+    )
+    // Boards: every listed row clears the resolver on its own source; the
+    // feedless listings (SATS, CASHCAT) are dropped, never dashed.
+    const secs = marketSections()
+    const eq = secs.find((x) => x.id === 'equities')!
+    const cr = secs.find((x) => x.id === 'crypto')!
+    const pp = secs.find((x) => x.id === 'perps')!
+    check(
+      'markets: boards — every row resolves on its own source; feedless listings dropped; sizes honest',
+      secs.every((sec) => sec.rows.every((r) => chartPairFor(r.symbol)?.source === r.source && chartPairFor(r.symbol)?.symbol === r.symbol)) &&
+        eq.rows.length >= 190 && !eq.rows.some((r) => r.symbol === 'SATS' || r.symbol === 'CASHCAT') &&
+        eq.rows[0].symbol === 'AAPL' && eq.rows[0].name === 'Apple' &&
+        cr.rows.length >= 30 && cr.rows[0].symbol === 'BTC' && cr.rows[0].name === 'Bitcoin' &&
+        pp.rows.length === 3,
+      `eq=${eq.rows.length} cr=${cr.rows.length} pp=${pp.rows.length}`,
+    )
+    // Search + the chat/voice door.
+    check(
+      'markets: search resolves "apple" → AAPL, "$COIN" → COIN, "eth" → ETH, "usdc" → null',
+      resolveTickerQuery('apple')?.symbol === 'AAPL' &&
+        resolveTickerQuery('$COIN')?.symbol === 'COIN' &&
+        resolveTickerQuery('eth')?.symbol === 'ETH' &&
+        resolveTickerQuery('usdc') === null,
+    )
+    check(
+      'markets: "open apple in markets" / "markets aapl" navigate to /t/AAPL; a money verb or a plain chart ask never does',
+      parseMarketsNavAsk('open apple in markets')?.href === '/t/AAPL' &&
+        parseMarketsNavAsk('markets aapl')?.href === '/t/AAPL' &&
+        parseMarketsNavAsk('take me to the ETH markets page')?.href === '/t/ETH' &&
+        parseMarketsNavAsk('buy $10 of aapl in markets') === null &&
+        parseMarketsNavAsk('show me the apple chart') === null &&
+        parseMarketsNavAsk('markets') === null,
+    )
+    // Performance tiles: a synthetic 400-bar daily series; 1W/1M/1Y known,
+    // and a 300-bar series leaves 1Y honestly null.
+    const now = Math.floor(Date.now() / 1000)
+    const mk = (n: number): Candle[] => Array.from({ length: n }, (_, i) => {
+      const t = now - (n - 1 - i) * 86400
+      const c = 100 + i // close climbs 1/day
+      return { t, o: c, h: c + 1, l: c - 1, c, v: 10 }
+    })
+    const p400 = performanceFromCandles(mk(400), now)
+    const p300 = performanceFromCandles(mk(300), now)
+    const lastC = 100 + 399
+    const wkRef = 100 + 392
+    check(
+      'markets: performance tiles — 1W from the bar 7 days back, 1Y present on 400 bars and null on 300',
+      Math.abs((p400['1W'] ?? 0) - ((lastC - wkRef) / wkRef) * 100) < 1e-9 &&
+        p400['1Y'] !== null && p400['1M'] !== null && p400.YTD !== null &&
+        p300['1Y'] === null && p300['6M'] !== null,
+      JSON.stringify(p400),
+    )
+    const hourly: Candle[] = Array.from({ length: 30 }, (_, i) => ({ t: now - (29 - i) * 3600, o: 10, h: 10 + i, l: 10 - (i % 3), c: 10, v: 2 }))
+    const st = stats24h(hourly, now)
+    check('markets: 24h stats — high/low/volume over the trailing 24 hourly bars only', !!st && st.high === 39 && st.low === 8 && st.volume === 50, JSON.stringify(st))
+    // The order panel's sentences round-trip the parsers they target — the
+    // chip IS the contract (memory chip-send-contract).
+    const hypePair = chartPairFor('HYPE')!
+    const solPair = chartPairFor('SOL')!
+    const dcaAsk = composeTradeAsk(ethPair, 'dca', { usd: 25, cadence: 'daily' })
+    const dcaParsed = parseDcaCreate(dcaAsk)
+    const spot = parseSpotGuardArm(composeTradeAsk(ethPair, 'protect', { pct: 10 }))
+    const perp = parseGuardianArm(composeTradeAsk(hypePair, 'protect', { pct: 5 }))
+    const hlLong = parseHlIntent(composeTradeAsk(hypePair, 'buy', { usd: 10 }))
+    const buy = parseSwapIntent(composeTradeAsk(aaplPair, 'buy', { usd: 10 }))
+    const sell = parseSwapIntent(composeTradeAsk(ethPair, 'sell', { usd: 50 }))
+    check(
+      'markets: order-panel sentences round-trip — swap buy/sell, DCA (cadence), spot protect, perp protect, HL long',
+      buy.isSwap && !buy.problem && buy.buyToken === 'AAPL' && buy.sellAmountUsd === '10' &&
+        sell.isSwap && !sell.problem && sell.sellToken === 'ETH' && sell.sellAmountUsd === '50' &&
+        !!dcaParsed && !('problem' in dcaParsed) && dcaParsed.cadence === 'day' && dcaParsed.buyUsd === 25 &&
+        spot?.token === 'ETH' && spot.triggerMode === 'price_move_pct' && spot.triggerValue === 10 &&
+        perp?.coin === 'HYPE' && perp.triggerValue === 5 &&
+        !!hlLong,
+      `buy=${JSON.stringify(buy)} sell=${JSON.stringify(sell)} dca=${JSON.stringify(dcaParsed)} spot=${JSON.stringify(spot)} perp=${JSON.stringify(perp)} hl=${hlLong ? hlLong.kind : null}`,
+    )
+    check(
+      'markets: sides are honest per venue — stocks no Protect (Spot Guardian is Base-only), perps Long/Short/Protect, non-EVM coins Buy/Sell only, ETH all four',
+      tradeSidesFor(aaplPair).join() === 'buy,sell,dca' &&
+        tradeSidesFor(hypePair).join() === 'buy,sell,protect' &&
+        tradeSidesFor(solPair).join() === 'buy,sell' &&
+        tradeSidesFor(ethPair).join() === 'buy,sell,dca,protect' &&
+        tradeAsks(hypePair)[0].ask === 'Long $50 of HYPE on Hyperliquid',
+    )
+
+    // Rendered pages.
+    const mkHtml = flat(await (await fetch(`${BASE}/markets`)).text())
+    check(
+      '/markets: 200 with the hero line, the three boards, the search and the watchlist slot',
+      mkHtml.includes('The chart that executes.') &&
+        mkHtml.includes('Digital equities, 24/7') && mkHtml.includes('Crypto') && mkHtml.includes('Perps') &&
+        /aria-label="Search markets"/.test(mkHtml) && /data-slot="watchlist"/.test(mkHtml) &&
+        mkHtml.includes('href="/t/AAPL"') && mkHtml.includes('href="/t/BTC"') && mkHtml.includes('href="/t/HYPE"'),
+    )
+    const homeHtml = flat(await (await fetch(`${BASE}/`)).text())
+    const marketsLinks = (homeHtml.match(/href="\/markets"/g) ?? []).length
+    check('nav: the landing carries a Markets link in the top nav AND the footer', marketsLinks >= 2 && /href="\/markets"[^>]*>Markets</.test(homeHtml), `links=${marketsLinks}`)
+    const chatHtml = flat(await (await fetch(`${BASE}/chat`)).text())
+    check('spine: /chat carries the MARKETS seat (both postures render the link)', (chatHtml.match(/aria-label="MARKETS"/g) ?? []).length >= 2)
+    const tAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
+    const tabLabels = ['Overview', 'News', 'Community', 'Technicals', 'Trade']
+    check(
+      '/t/AAPL: 200 — header (Apple · AAPL · Robinhood Chain · 24/7 venue chip · session line), all five tabs, rail slots, chart mount',
+      tAapl.includes('Apple') && /data-symbol="AAPL"/.test(tAapl) &&
+        tAapl.includes('Robinhood Chain · 24/7') && tAapl.includes('Token trades 24/7 on Robinhood Chain') &&
+        tabLabels.every((l) => new RegExp(`data-tab="${l.toLowerCase()}"[^>]*>${l}<`).test(tAapl)) &&
+        /data-slot="watchlist"/.test(tAapl) && /data-slot="symbol-card"/.test(tAapl) &&
+        /aria-label="Full screen chart"/.test(tAapl) &&
+        // the Overview chips ship in the server HTML with the /chat prefill fallback
+        tAapl.includes(`/chat?prompt=${encodeURIComponent('Buy $50 of AAPL')}`) &&
+        tAapl.includes(`/chat?prompt=${encodeURIComponent('DCA $10 into AAPL weekly')}`) &&
+        !tAapl.includes(encodeURIComponent('Protect my AAPL')),
+    )
+    const tTech = await fetch(`${BASE}/t/AAPL?tab=technicals`)
+    check('/t/AAPL?tab=technicals: 200 (the strip reads ?tab= client-side; the stub card is a calm coming-soon, never a 404)', tTech.status === 200)
+    const tNope = flat(await (await fetch(`${BASE}/t/NOPE`)).text())
+    check(
+      "/t/NOPE: a chartless symbol keeps today's honest page — 200, 'No live chart for NOPE yet', still tradable in chat, tabs held",
+      tNope.includes('No live chart for NOPE yet') && tNope.includes(`/chat?prompt=${encodeURIComponent('Buy $50 of NOPE')}`) && tNope.includes('Not charted yet.'),
+    )
+  }
+
+  // ── MARKETS/COMM ──────────────────────────────────────────────────────────
+  // News on the chart, posts that execute, comments, forks (squad-markets
+  // 2026-09-11). Dynamic imports keep this block self-contained at the end of
+  // the file so seven lanes merge without touching the import header.
+  {
+    const news = await import('../lib/news')
+    const cp = await import('../lib/chart-posts')
+    const cs = await import('../lib/chart-state')
+
+    // Pure: the hand-rolled RSS parser on the three shapes the ladder serves.
+    const rssFixture = `<?xml version="1.0"?><rss><channel>
+      <item><title>Apple &amp; the iPhone - The Motley Fool</title><link>https://news.google.com/rss/articles/abc?oc=5</link><pubDate>Wed, 09 Sep 2026 17:51:00 GMT</pubDate><description>&lt;a href="x"&gt;Apple &amp; the iPhone&lt;/a&gt;</description><source url="https://www.fool.com">The Motley Fool</source></item>
+      <item><title>Plain http link is dropped</title><link>http://insecure.example.com/a</link><pubDate>Wed, 09 Sep 2026 17:51:00 GMT</pubDate></item>
+      <item><title><![CDATA[CDATA title]]></title><link><![CDATA[https://cointelegraph.com/news/x?utm=rss]]></link><pubDate>Wed, 09 Sep 2026 18:47:32 +0000</pubDate><description><![CDATA[<p><img src="a.png"></p><p>Summary &rsquo;text&rsquo;</p>]]></description><dc:creator>Cointelegraph by Someone</dc:creator><media:content url="https://s3-images.ctmedia.io/x.png" type="image/png"/></item>
+      <item><title>Nasdaq tagged</title><link>https://www.nasdaq.com/articles/y</link><pubDate>Fri, 11 Sep 2026 03:43:46 +0000</pubDate><nasdaq:tickers>AAPL,MSFT</nasdaq:tickers></item>
+      <item><title>No date is dropped</title><link>https://example.com/z</link></item>
+    </channel></rss>`
+    const parsed = news.parseRss(rssFixture)
+    const norm = parsed.map((r) => news.normalizeItem(r))
+    check(
+      'news: parseRss + normalizeItem — entities decoded, publisher suffix trimmed, CDATA/description HTML stripped, http + dateless items dropped, tickers read',
+      parsed.length === 5 &&
+        norm[0]?.title === 'Apple & the iPhone' &&
+        norm[0]?.source === 'The Motley Fool' &&
+        norm[0]?.summary === undefined &&
+        norm[1] === null &&
+        norm[2]?.title === 'CDATA title' &&
+        norm[2]?.summary === 'Summary ’text’' &&
+        norm[2]?.imageUrl === 'https://s3-images.ctmedia.io/x.png' &&
+        parsed[3].tickers === 'AAPL,MSFT' &&
+        norm[4] === null &&
+        norm[0]?.id.length === 12,
+      JSON.stringify(norm.map((n) => n && [n.title, n.source, n.summary]))?.slice(0, 200),
+    )
+    const aaplLadder = news.newsLadderFor({ symbol: 'AAPL', source: 'robinhood', pair: 'AAPL', label: 'AAPL / USD' })
+    const ethLadder = news.newsLadderFor({ symbol: 'ETH', source: 'coinbase', pair: 'ETH-USD', label: 'ETH / USD' })
+    const syrupLadder = news.newsLadderFor({ symbol: 'SYRUP', source: 'hyperliquid', pair: 'SYRUP', label: 'SYRUP / USD' })
+    check(
+      'news: the ladder — stocks Google News (company name in the query) → Nasdaq (tickers-filtered, browser UA); coins Cointelegraph tag → Google News; an untagged coin goes straight to Google News',
+      aaplLadder.map((h) => h.feed).join('>') === 'google-news>nasdaq' &&
+        aaplLadder[0].url.includes('Apple') &&
+        aaplLadder[1].browserUa === true &&
+        !!aaplLadder[1].keep &&
+        ethLadder.map((h) => h.feed).join('>') === 'cointelegraph>google-news' &&
+        ethLadder[0].url === 'https://cointelegraph.com/rss/tag/ethereum' &&
+        syrupLadder.map((h) => h.feed).join('>') === 'google-news' &&
+        aaplLadder.every((h) => h.url.startsWith('https://')),
+    )
+    check(
+      'news: nasdaq hop keeps only items whose own tickers tag names the symbol (the feed pads unknown symbols)',
+      aaplLadder[1].keep!(parsed[3]) === true && aaplLadder[1].keep!(parsed[0]) === false,
+    )
+
+    // Live: /api/news for a stock and a coin — feed named, https items, sorted newest-first.
+    for (const sym of ['AAPL', 'ETH']) {
+      const r = await fetch(`${BASE}/api/news?symbol=${sym}&limit=5`)
+      const d = (await r.json()) as { symbol?: string; feed?: string; items?: { title: string; url: string; source: string; publishedAt: number }[] }
+      if (r.status === 200 && d.items && d.items.length === 0) {
+        console.log(`  ⚠️  news: every feed empty for ${sym} right now (feed=${d.feed}) — live feeds down, not the diff; skipping`)
+        continue
+      }
+      check(
+        `news: GET /api/news?symbol=${sym} serves ≥1 item with the feed named, https links, publisher, newest first, ≤ limit`,
+        r.status === 200 &&
+          d.symbol === sym &&
+          !!d.feed &&
+          d.feed !== 'none' &&
+          !!d.items &&
+          d.items.length >= 1 &&
+          d.items.length <= 5 &&
+          d.items.every((i) => i.url.startsWith('https://') && i.title.length > 0 && i.source.length > 0 && i.publishedAt > 1_700_000_000) &&
+          d.items.every((i, k) => k === 0 || d.items![k - 1].publishedAt >= i.publishedAt),
+        `feed=${d.feed} n=${d.items?.length} first=${d.items?.[0]?.source}: ${d.items?.[0]?.title?.slice(0, 50)}`,
+      )
+    }
+    const newsStable = await fetch(`${BASE}/api/news?symbol=USDC`)
+    const newsNone = await fetch(`${BASE}/api/news`)
+    check('news: a chartless symbol (USDC) is refused by name; no symbol → 400 — never an open feed proxy', newsStable.status === 400 && newsNone.status === 400)
+
+    // Pure: chart-state stub (the README contract) fails closed.
+    const goodState = { v: 1, symbol: 'AAPL', tf: '1d', lines: [{ id: 'a', kind: 'h', price: 180, label: 'support', action: { kind: 'buy', ask: 'Buy $10 of AAPL' } }, { id: 'b', kind: 'zone', p1: 200, p2: 210, action: { kind: 'sell', ask: 'Sell $10 of AAPL' } }, { id: 'c', kind: 'note', t: 1_757_000_000, price: 190, text: 'earnings' }] }
+    check(
+      'chart-state stub: strict parse — a good state round-trips and lists its asks in line order; unknown kind / dup id / NaN price / wrong tf / v2 refuse',
+      !!cs.parseChartState(goodState) &&
+        cs.chartStateToAsks(cs.parseChartState(goodState)!).join('|') === 'Buy $10 of AAPL|Sell $10 of AAPL' &&
+        cs.parseChartState({ ...goodState, lines: [{ id: 'x', kind: 'circle', price: 1 }] }) === null &&
+        cs.parseChartState({ ...goodState, lines: [goodState.lines[0], goodState.lines[0]] }) === null &&
+        cs.parseChartState({ ...goodState, lines: [{ id: 'x', kind: 'h', price: NaN }] }) === null &&
+        cs.parseChartState({ ...goodState, tf: '1w' }) === null &&
+        cs.parseChartState({ ...goodState, v: 2 }) === null,
+    )
+
+    // Pure: post validation + text discipline.
+    const okDraft = cp.validatePostDraft({ symbol: 'aapl', title: 'Long the dip', body: 'a\r\nbc', chartState: goodState })
+    const badSym = cp.validatePostDraft({ symbol: 'USDC', title: 'x y z' })
+    const badLink = cp.validatePostDraft({ symbol: 'ETH', kind: 'link', linkUrl: 'http://example.com/a', title: 'a b c' })
+    const okLink = cp.validatePostDraft({ symbol: 'ETH', kind: 'link', linkUrl: 'https://example.com/a?b=1', title: 'a b c' })
+    const mismatch = cp.validatePostDraft({ symbol: 'ETH', title: 'a b c', chartState: goodState })
+    check(
+      'posts: validatePostDraft — symbol normalized via chartPairFor, control chars stripped + CRLF folded, stables refused, http links refused, https accepted, a chart for another symbol refused',
+      okDraft.ok &&
+        okDraft.draft.symbol === 'AAPL' &&
+        okDraft.draft.body === 'a\nbc' &&
+        !badSym.ok &&
+        !badLink.ok &&
+        /https/.test(badLink.reason) &&
+        okLink.ok &&
+        okLink.draft.linkUrl === 'https://example.com/a?b=1' &&
+        !mismatch.ok &&
+        /AAPL, not ETH/.test(mismatch.reason),
+    )
+    check(
+      'posts: decideWriteLimit trips at cap+1 on the right tier; authorLabel is a short 0x or the claimed @handle, never free text',
+      cp.decideWriteLimit([{ key: 'cp:w:0xabc', count: cp.POST_WALLET_HOURLY_CAP + 1 }], { ip: cp.POST_IP_HOURLY_CAP, wallet: cp.POST_WALLET_HOURLY_CAP }) === 'wallet' &&
+        cp.decideWriteLimit([{ key: 'cp:i:h', count: cp.POST_IP_HOURLY_CAP + 1 }, { key: 'cp:w:0xabc', count: cp.POST_WALLET_HOURLY_CAP + 1 }], { ip: cp.POST_IP_HOURLY_CAP, wallet: cp.POST_WALLET_HOURLY_CAP }) === 'ip' &&
+        cp.decideWriteLimit([{ key: 'cp:w:0xabc', count: cp.POST_WALLET_HOURLY_CAP }], { ip: cp.POST_IP_HOURLY_CAP, wallet: cp.POST_WALLET_HOURLY_CAP }) === null &&
+        cp.authorLabel('0xABCDEF0123456789ABCDEF0123456789ABCDEF01') === '0xabcd…ef01' &&
+        cp.authorLabel('0xABCDEF0123456789ABCDEF0123456789ABCDEF01', 'nate') === '@nate',
+    )
+
+    // Live: the write door is SIWE (a connect-only wallet reads, never writes).
+    const commAuthor = privateKeyToAccount(generatePrivateKey())
+    const commReader = privateKeyToAccount(generatePrivateKey())
+    const noAuthPost = await fetch(`${BASE}/api/posts`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ symbol: 'AAPL', title: 'anon idea' }) })
+    check('posts: unauthenticated POST → 401 (SIWE-gated writes)', noAuthPost.status === 401)
+    const authorSession = await signIn(commAuthor)
+    const readerSession = await signIn(commReader)
+    const CJA = { 'content-type': 'application/json', cookie: authorSession }
+    const CJR = { 'content-type': 'application/json', cookie: readerSession }
+
+    // Create with a script-tag body + chart state + mint in ONE request.
+    const xssTitle = `<script>alert(1)</script> AAPL dip ${Date.now()}`
+    const xssBody = '<img src=x onerror=alert(1)>\n**not markdown** and <b>not html</b>'
+    const created = await fetch(`${BASE}/api/posts`, { method: 'POST', headers: CJA, body: JSON.stringify({ symbol: 'AAPL', title: xssTitle, body: xssBody, chartState: goodState, mint: true }) })
+    const createdBody = (await created.json()) as { post?: { id: string; title: string; body: string; asks: string[]; linkSlug: string | null; author: string; authorLabel: string; isInternal: boolean }; link?: { slug: string; url: string }; mintError?: string; internal?: boolean }
+    const postId = createdBody.post?.id ?? 'missing'
+    check(
+      'posts: create → 201 with the text stored AS TEXT (script tag intact as a string, never stripped into a lie), asks derived, author = the SIWE wallet, internal-stamped under the harness header',
+      created.status === 201 &&
+        createdBody.post?.title === xssTitle &&
+        createdBody.post?.body === xssBody &&
+        createdBody.post?.asks.join('|') === 'Buy $10 of AAPL|Sell $10 of AAPL' &&
+        createdBody.post?.author === commAuthor.address.toLowerCase() &&
+        createdBody.post?.authorLabel === `${commAuthor.address.toLowerCase().slice(0, 6)}…${commAuthor.address.toLowerCase().slice(-4)}` &&
+        createdBody.post?.isInternal === true &&
+        createdBody.internal === true,
+      `status=${created.status} ${JSON.stringify(createdBody).slice(0, 160)}`,
+    )
+    check(
+      'posts: mint:true minted the PRIMARY action through /api/intent-links in the same request — slug on the post, /i/<slug> is live',
+      !!createdBody.link?.slug && createdBody.post?.linkSlug === createdBody.link?.slug && (await fetch(`${BASE}/i/${createdBody.link?.slug}`)).status === 200,
+      createdBody.mintError ?? `slug=${createdBody.link?.slug}`,
+    )
+    const myLinks = (await (await fetch(`${BASE}/api/intent-links`, { headers: { cookie: authorSession } })).json()) as { links?: { slug: string; ask: string }[] }
+    check(
+      'posts: the minted link belongs to the AUTHOR with the post’s primary ask (the creator kickback follows them)',
+      !!myLinks.links?.some((l) => l.slug === createdBody.link?.slug && l.ask === 'Buy $10 of AAPL'),
+    )
+
+    // Public reads: fenced; by-id unfenced; the internal-run reader sees its own rows.
+    const pubList = (await (await fetch(`${BASE}/api/posts?symbol=AAPL&limit=100`, { headers: { [ORGANIC_PROBE]: '1' } })).json()) as { posts?: { id: string }[] }
+    const intList = (await (await fetch(`${BASE}/api/posts?symbol=AAPL&limit=100&internal=1`)).json()) as { posts?: { id: string }[] }
+    const byId = (await (await fetch(`${BASE}/api/posts/${postId}`)).json()) as { post?: { id: string; body: string; commentList: unknown[] } }
+    check(
+      'posts: the PUBLIC feed fences is_internal rows OUT (#699 class); internal=1 under the stamp lists them; by-id reads the row (the /i/<slug> rule)',
+      !!pubList.posts && !pubList.posts.some((p) => p.id === postId) && !!intList.posts?.some((p) => p.id === postId) && byId.post?.id === postId && byId.post?.body === xssBody,
+      `public=${pubList.posts?.length} internal=${intList.posts?.length}`,
+    )
+
+    // Refusals by name.
+    const bigState = { v: 1, symbol: 'AAPL', tf: '1d', lines: Array.from({ length: 64 }, (_, i) => ({ id: `l${i}`, kind: 'h', price: 100 + i, label: 'L'.repeat(200), action: { kind: 'buy', ask: `Buy $1 of AAPL ${'x'.repeat(380)}` } })) }
+    const oversize = await fetch(`${BASE}/api/posts`, { method: 'POST', headers: CJA, body: JSON.stringify({ symbol: 'AAPL', title: 'too big a chart', chartState: bigState }) })
+    const oversizeBody = (await oversize.json()) as { error?: string }
+    const badState = await fetch(`${BASE}/api/posts`, { method: 'POST', headers: CJA, body: JSON.stringify({ symbol: 'AAPL', title: 'bad chart', chartState: { v: 1, symbol: 'AAPL', tf: '1d', lines: [{ id: 'q', kind: 'ray', price: 1 }] } }) })
+    const badStateBody = (await badState.json()) as { error?: string }
+    const longBody = await fetch(`${BASE}/api/posts`, { method: 'POST', headers: CJA, body: JSON.stringify({ symbol: 'AAPL', title: 'long body', body: 'x'.repeat(2001) }) })
+    const httpLink = await fetch(`${BASE}/api/posts`, { method: 'POST', headers: CJA, body: JSON.stringify({ symbol: 'AAPL', kind: 'link', linkUrl: 'http://example.com/', title: 'insecure' }) })
+    const localLink = await fetch(`${BASE}/api/posts`, { method: 'POST', headers: CJA, body: JSON.stringify({ symbol: 'AAPL', kind: 'link', linkUrl: 'https://localhost:3000/', title: 'internal' }) })
+    check(
+      'posts: refused by name — chartState over 32KB, a chartState off the schema, a body over 2,000 chars, an http pinned link, a localhost pinned link',
+      oversize.status === 400 &&
+        /32768/.test(oversizeBody.error ?? '') &&
+        badState.status === 400 &&
+        /schema/.test(badStateBody.error ?? '') &&
+        longBody.status === 400 &&
+        httpLink.status === 400 &&
+        localLink.status === 400,
+      `oversize=${oversize.status}:${oversizeBody.error?.slice(0, 60)} bad=${badState.status} long=${longBody.status} http=${httpLink.status} local=${localLink.status}`,
+    )
+
+    // Fork: copies the parent's lines, records lineage; mint is author-only.
+    const forked = await fetch(`${BASE}/api/posts`, { method: 'POST', headers: CJR, body: JSON.stringify({ symbol: 'AAPL', title: 'my take', forkOf: postId }) })
+    const forkedBody = (await forked.json()) as { post?: { id: string; forkOf: string | null; asks: string[]; author: string; chartState: { lines: unknown[] } | null } }
+    check(
+      'posts: fork → a new post by the reader with fork_of = parent and the parent’s lines copied (asks equal)',
+      forked.status === 201 && forkedBody.post?.forkOf === postId && forkedBody.post?.author === commReader.address.toLowerCase() && forkedBody.post?.asks.join('|') === 'Buy $10 of AAPL|Sell $10 of AAPL' && forkedBody.post?.chartState?.lines.length === 3,
+      `status=${forked.status}`,
+    )
+    const forkMissing = await fetch(`${BASE}/api/posts`, { method: 'POST', headers: CJR, body: JSON.stringify({ symbol: 'AAPL', title: 'ghost', forkOf: 'zzzzzzzzzz' }) })
+    check('posts: forking a post that does not exist → 404', forkMissing.status === 404)
+    const mintByReader = await fetch(`${BASE}/api/posts/${postId}/mint`, { method: 'POST', headers: CJR })
+    const mintAgain = await fetch(`${BASE}/api/posts/${postId}/mint`, { method: 'POST', headers: CJA })
+    const mintAgainBody = (await mintAgain.json()) as { slug?: string; existing?: boolean }
+    const forkMint = await fetch(`${BASE}/api/posts/${forkedBody.post?.id}/mint`, { method: 'POST', headers: CJR })
+    const forkMintBody = (await forkMint.json()) as { slug?: string; ask?: string }
+    check(
+      'posts: /mint — a non-author gets 403; the author re-minting gets the existing slug; the forker mints THEIR OWN link for the same ask (kickback follows each author)',
+      mintByReader.status === 403 &&
+        mintAgain.status === 200 &&
+        mintAgainBody.existing === true &&
+        mintAgainBody.slug === createdBody.link?.slug &&
+        forkMint.status === 200 &&
+        !!forkMintBody.slug &&
+        forkMintBody.slug !== createdBody.link?.slug &&
+        forkMintBody.ask === 'Buy $10 of AAPL',
+      `reader=${mintByReader.status} again=${mintAgain.status} fork=${forkMint.status}`,
+    )
+
+    // Comments: SIWE-gated, text only, listed on the post.
+    const noAuthComment = await fetch(`${BASE}/api/posts/${postId}/comments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ body: 'anon' }) })
+    const commentText = '<b>bold?</b> no — text. ' + Date.now()
+    const comment = await fetch(`${BASE}/api/posts/${postId}/comments`, { method: 'POST', headers: CJR, body: JSON.stringify({ body: commentText }) })
+    const commentBody = (await comment.json()) as { comment?: { body: string; author: string } }
+    const emptyComment = await fetch(`${BASE}/api/posts/${postId}/comments`, { method: 'POST', headers: CJR, body: JSON.stringify({ body: '   ' }) })
+    const afterComment = (await (await fetch(`${BASE}/api/posts/${postId}`)).json()) as { post?: { commentList: { body: string; authorLabel: string }[] } }
+    check(
+      'posts: comments — unauthenticated 401, a signed-in reader 201 with the text intact, an empty body refused, the post lists it with the commenter’s short 0x',
+      noAuthComment.status === 401 &&
+        comment.status === 201 &&
+        commentBody.comment?.body === commentText &&
+        commentBody.comment?.author === commReader.address.toLowerCase() &&
+        emptyComment.status === 400 &&
+        afterComment.post?.commentList.length === 1 &&
+        afterComment.post?.commentList[0].body === commentText &&
+        /^0x[0-9a-f]{4}…[0-9a-f]{4}$/.test(afterComment.post?.commentList[0].authorLabel ?? ''),
+      `c=${comment.status} list=${afterComment.post?.commentList.length}`,
+    )
+
+    // "Executed by N wallets" is receipt-counted and never internal: an
+    // internal-stamped signed event on the post's link moves nothing.
+    const slug = createdBody.link?.slug ?? 'missing'
+    await fetch(`${BASE}/api/intent-links/${slug}/events`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'signed', wallet: commReader.address, valueUsd: 12 }) })
+    const afterSign = (await (await fetch(`${BASE}/api/posts/${postId}`)).json()) as { post?: { executedBy: number; linkSlug: string | null } }
+    const execSort = (await (await fetch(`${BASE}/api/posts?symbol=AAPL&sort=executed&limit=100&internal=1`)).json()) as { sort?: string; posts?: { id: string; linkSlug: string | null; executedBy: number }[] }
+    check(
+      'posts: executedBy counts only receipt-counted, non-internal signed events on the link — the harness sign stays 0; sort=executed ranks linked posts ahead of linkless ones',
+      afterSign.post?.linkSlug === slug &&
+        afterSign.post?.executedBy === 0 &&
+        execSort.sort === 'executed' &&
+        !!execSort.posts &&
+        execSort.posts.findIndex((p) => p.id === postId) >= 0 &&
+        (() => {
+          const firstLinkless = execSort.posts!.findIndex((p) => !p.linkSlug)
+          const lastLinked = execSort.posts!.map((p) => !!p.linkSlug).lastIndexOf(true)
+          return firstLinkless === -1 || lastLinked < firstLinkless
+        })(),
+      `executedBy=${afterSign.post?.executedBy}`,
+    )
+
+    // Re-pinned at integration (2026-09-11): SHELL's frame owns the tab strip;
+    // ?tab=community server-renders the Community seat, and post text still
+    // never reaches the HTML pre-hydration (the feed is a client read).
+    const tPage = flat(await (await fetch(`${BASE}/t/AAPL?tab=community`)).text())
+    const tPageDefault = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
+    check(
+      'posts: /t/AAPL?tab=community server-renders the Community seat (frame body data-tab), the strip names News + Community, and no post text reaches the HTML pre-hydration',
+      /class="sym__body"[^>]*data-tab="community"/.test(tPage) && tPage.includes('>Community<') && tPage.includes('>News<') && !tPage.includes(xssTitle) && !tPageDefault.includes(xssTitle),
+    )
+
+    // Cleanup — drill rows out of the shared TEST DB.
+    await prisma.chartPost.deleteMany({ where: { author: { in: [commAuthor.address.toLowerCase(), commReader.address.toLowerCase()] } } }).catch(() => {})
+    await prisma.intentLink.deleteMany({ where: { creator: { in: [commAuthor.address.toLowerCase(), commReader.address.toLowerCase()] } } }).catch(() => {})
+  }
+
+  // ── MARKETS/WATCH ─────────────────────────────────────────────────────────
+  // Unlimited watchlists, quotes, TradingView import, alerts that act
+  // (squad-markets 2026-09-11). Pure rulebook first, then the HTTP surface
+  // under a throwaway SIWE session (rows deleted at the end), then the
+  // public /lists fence and the alerts cron's per-symbol dedup.
+  {
+    console.log('\n[markets/watch]')
+    const {
+      COIN_NAMES,
+      alertActionChips,
+      alertFires,
+      groupAlertsBySymbol,
+      moveToSection: wlMoveToSection,
+      normalizeWatchSymbol,
+      parseGuestLists,
+      parseTradingViewExport,
+      searchTickers,
+      sectionedRows,
+      usEquitySession,
+    } = await import('../lib/watchlists')
+
+    // Pure: symbols collapse to the chart symbol, junk normalizes to null.
+    check('watch: normalizeWatchSymbol collapses aliases (weth → ETH, cbbtc → BTC), keeps unknown tickers, refuses junk', normalizeWatchSymbol('weth') === 'ETH' && normalizeWatchSymbol('cbBTC') === 'BTC' && normalizeWatchSymbol('zzzzqx') === 'ZZZZQX' && normalizeWatchSymbol('!!!') === null && normalizeWatchSymbol('') === null)
+    check('watch: every COIN_NAMES entry is chartable (a stale name can never render a dead row)', COIN_NAMES.every(([s]) => chartPairFor(s)?.symbol === s), COIN_NAMES.filter(([s]) => chartPairFor(s)?.symbol !== s).map(([s]) => s).join(' '))
+
+    // TradingView export: sections + EXCHANGE:SYMBOL + crypto pair suffixes.
+    const tv = parseTradingViewExport('###Stocks,NASDAQ:AAPL,NASDAQ:TSLA\n###Crypto,COINBASE:ETHUSD,BINANCE:BTCUSDT.P,HYPERLIQUID:HYPEUSD.P,NYSE:ZZZZQX,CME:ES1!,COINBASE:ETHUSD')
+    check('watch: TradingView import — NASDAQ:AAPL,COINBASE:ETHUSD + ###Stocks sections parse; crypto quote suffixes strip; dupes collapse', JSON.stringify(tv.tradable) === JSON.stringify(['AAPL', 'TSLA', 'ETH', 'BTC', 'HYPE']) && JSON.stringify(tv.notYet) === JSON.stringify(['ZZZZQX']) && tv.sections.map((s) => `${s.name}:${s.symbols.join('+')}`).join('|') === 'Stocks:AAPL+TSLA|Crypto:ETH+BTC+HYPE+ZZZZQX' && tv.skipped.includes('CME:ES1!'), `tradable=${tv.tradable} notYet=${tv.notYet} skipped=${tv.skipped}`)
+
+    // Add-ticker resolver: names through the chart-ask parser, tickers by prefix.
+    check('watch: searchTickers resolves company + coin names ("apple" → AAPL, "bitcoin" → BTC) and ticker prefixes ("nvd" → NVDA), every hit chartable', searchTickers('apple')[0]?.symbol === 'AAPL' && searchTickers('bitcoin')[0]?.symbol === 'BTC' && searchTickers('nvd')[0]?.symbol === 'NVDA' && searchTickers('hype')[0]?.symbol === 'HYPE' && searchTickers('zzzzqx').length === 0 && searchTickers('a', 8).every((h) => !!chartPairFor(h.symbol)))
+
+    // Alerts-that-act chips round-trip the parsers they name.
+    const ethBelow = alertActionChips({ symbol: 'ETH', condition: 'below', value: 2000 }, chartPairFor('ETH'))
+    const hypeBelow = alertActionChips({ symbol: 'HYPE', condition: 'below', value: 60 }, chartPairFor('HYPE'))
+    const ethAbove = alertActionChips({ symbol: 'ETH', condition: 'above', value: 3000 }, chartPairFor('ETH'))
+    const aaplBelow = alertActionChips({ symbol: 'AAPL', condition: 'below', value: 300 }, chartPairFor('AAPL'))
+    const spot = ethBelow.find((c) => c.kind === 'protect')
+    const stop = hypeBelow.find((c) => c.kind === 'stop')
+    const limit = ethAbove.find((c) => c.kind === 'limit')
+    const buy = aaplBelow.find((c) => c.kind === 'buy')
+    const spotParsed = spot ? parseSpotGuardArm(spot.ask) : null
+    const stopParsed = stop ? parseGuardianArm(stop.ask) : null
+    const limitParsed = limit ? parseSwapIntent(limit.ask) : null
+    const buyParsed = buy ? parseSwapIntent(buy.ask) : null
+    check('watch: alert chips round-trip — Spot Guardian ask parses (ETH, price 2000), HL Guardian stop parses (HYPE @ 60), CoW limit parses (mode limit), "Buy $50 of AAPL" parses', !!spotParsed && spotParsed.token === 'ETH' && spotParsed.triggerMode === 'price' && spotParsed.triggerValue === 2000 && !!stopParsed && stopParsed.coin === 'HYPE' && stopParsed.kind === 'stop_loss' && stopParsed.triggerValue === 60 && !!limitParsed?.isSwap && limitParsed.mode === 'limit' && limitParsed.sellToken?.toUpperCase() === 'ETH' && !!buyParsed?.isSwap && buyParsed.sellAmountUsd === '50' && buyParsed.buyToken?.toUpperCase() === 'AAPL', `spot=${JSON.stringify(spotParsed)} stop=${JSON.stringify(stopParsed)} limit=${limitParsed?.mode}/${limitParsed?.sellToken} buy=${buyParsed?.sellAmountUsd}/${buyParsed?.buyToken}`)
+    check('watch: a stock alert never offers Spot Guardian / HL Guardian chips (no such venue for 4663 equities); runs-itself chips are labelled as such', aaplBelow.every((c) => !c.runsItself) && spot?.runsItself === true && stop?.runsItself === true && limit?.runsItself === true)
+
+    // Alert rules + the per-symbol grouping the cron's dedup rides on.
+    check('watch: alertFires — below/above/pct_move evaluate; pct_move needs a base', alertFires({ symbol: 'X', condition: 'below', value: 10 }, 9.99) && !alertFires({ symbol: 'X', condition: 'below', value: 10 }, 10.01) && alertFires({ symbol: 'X', condition: 'above', value: 10 }, 10) && alertFires({ symbol: 'X', condition: 'pct_move', value: 5, basePrice: 100 }, 94.9) && !alertFires({ symbol: 'X', condition: 'pct_move', value: 5, basePrice: 100 }, 96) && !alertFires({ symbol: 'X', condition: 'pct_move', value: 5 }, 50))
+    const grouped = groupAlertsBySymbol([{ symbol: 'AAPL' }, { symbol: 'aapl' }, { symbol: 'WETH' }, { symbol: 'ETH' }, { symbol: 'HYPE' }])
+    check('watch: groupAlertsBySymbol — five alerts on three symbols = three reads (aliases collapse)', grouped.size === 3 && grouped.get('AAPL')?.length === 2 && grouped.get('ETH')?.length === 2)
+    check('watch: usEquitySession answers open|closed from the New York clock (Saturday noon UTC = closed; Wednesday 15:00 UTC = open)', usEquitySession(new Date('2026-09-12T12:00:00Z')) === 'closed' && usEquitySession(new Date('2026-09-09T15:00:00Z')) === 'open' && usEquitySession(new Date('2026-09-09T22:00:00Z')) === 'closed')
+
+    // Sections + guest storage are pure and strict.
+    const secList = { id: 'g_x', owner: null, name: 'L', slug: null, symbols: ['AAPL', 'ETH', 'HYPE'], sections: [{ name: 'Stocks', symbols: ['AAPL', 'GHOST'] }], isPublic: false, createdAt: '' }
+    const moved = wlMoveToSection(secList, 'ETH', 'Coins')
+    const rows = sectionedRows(moved)
+    check('watch: sectionedRows — named sections first, unclaimed tail last, a section naming a symbol the list lacks drops it', rows.map((r) => `${r.name ?? '-'}:${r.symbols.join('+')}`).join('|') === 'Stocks:AAPL|Coins:ETH|-:HYPE')
+    check('watch: parseGuestLists is strict — a corrupt key reads as no lists, a server-shaped id is refused, valid rows normalize', parseGuestLists('nope').length === 0 && parseGuestLists(JSON.stringify([{ id: 'srv123', name: 'x', symbols: [] }])).length === 0 && parseGuestLists(JSON.stringify([{ id: 'g_abc', name: '  My  list ', symbols: ['weth', 'eth', '!!!'] }]))[0]?.symbols.join() === 'ETH')
+
+    // ── /api/quotes (the README contract) ──────────────────────────────────
+    const q3 = (await (await fetch(`${BASE}/api/quotes?symbols=AAPL,ETH,HYPE,ZZZZQX,!!!`)).json()) as { quotes: Record<string, { last: number; chg: number; chgPct: number; asOf: number; feed: string; session: string; chartable: boolean }>; missing: string[]; junk: string[] }
+    const qAAPL = q3.quotes.AAPL
+    const qETH = q3.quotes.ETH
+    const qHYPE = q3.quotes.HYPE
+    check('quotes: batched 3 symbols → 3 quotes with last/chg/chgPct/asOf/feed/session/chartable; unknown symbol omitted + listed in missing; junk listed, never 500', !!qAAPL && !!qETH && !!qHYPE && [qAAPL, qETH, qHYPE].every((q) => q.last > 0 && Number.isFinite(q.chgPct) && typeof q.feed === 'string' && q.chartable === true && q.asOf > 0) && q3.missing.includes('ZZZZQX') && !('ZZZZQX' in q3.quotes) && q3.junk.length === 1, `AAPL=${qAAPL?.last}/${qAAPL?.feed}/${qAAPL?.session} ETH=${qETH?.last}/${qETH?.feed} HYPE=${qHYPE?.last}/${qHYPE?.feed} missing=${q3.missing} junk=${q3.junk}`)
+    check('quotes: session state per source — stocks say open|closed (the tape), coins + perps say 24/7; feeds are the ones lib/charts names', (qAAPL?.session === 'open' || qAAPL?.session === 'closed') && qETH?.session === '24/7' && qHYPE?.session === '24/7' && ['robinhood', 'yahoo'].includes(qAAPL?.feed ?? '') && qETH?.feed === 'coinbase' && qHYPE?.feed === 'hyperliquid')
+    const qAgain = (await (await fetch(`${BASE}/api/quotes?symbols=eth,WETH`)).json()) as { quotes: Record<string, { asOf: number }> }
+    check('quotes: per-symbol cache — a repeat read within 15s returns the same asOf (no second upstream read); aliases collapse to one key', qAgain.quotes.ETH?.asOf === qETH?.asOf && Object.keys(qAgain.quotes).join() === 'ETH')
+    const qEmpty = await fetch(`${BASE}/api/quotes`)
+    check('quotes: no symbols → 200 with an empty map (never 400/500)', qEmpty.status === 200 && Object.keys(((await qEmpty.json()) as { quotes: object }).quotes).length === 0)
+
+    // ── /api/watchlists CRUD under a throwaway SIWE session ─────────────────
+    const wlOwner = privateKeyToAccount(generatePrivateKey())
+    const wlMallory = privateKeyToAccount(generatePrivateKey())
+    const wlSession = await signIn(wlOwner)
+    const wlMallorySession = await signIn(wlMallory)
+    const J = { 'content-type': 'application/json' }
+    check('watchlists: GET without a session → 401 (SIWE gates the account surface, connect-to-act stays on localStorage)', (await fetch(`${BASE}/api/watchlists`)).status === 401)
+    const created = await fetch(`${BASE}/api/watchlists`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ name: '  Nate’s 24/7  ', symbols: ['AAPL', 'eth', 'WETH', '!!!', 'aapl', 'toolongtobeaticker'] }) })
+    const cl = ((await created.json()) as { list: { id: string; name: string; symbols: string[]; owner: string; slug: string | null; isPublic: boolean } }).list
+    check('watchlists: POST create → 201, name trimmed, symbols normalized + deduped (AAPL, ETH; junk + over-long dropped), owner = the session wallet', created.status === 201 && cl.name === 'Nate’s 24/7' && cl.symbols.join() === 'AAPL,ETH' && cl.owner === wlOwner.address.toLowerCase() && cl.slug === null && cl.isPublic === false, `${created.status} ${JSON.stringify(cl)}`)
+    const added = await fetch(`${BASE}/api/watchlists/${cl.id}/items`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ symbols: ['HYPE', 'SYRUP'], section: 'Perps' }) })
+    const al = ((await added.json()) as { list: { symbols: string[]; sections?: { name: string; symbols: string[] }[] } }).list
+    check('watchlists: POST items adds tickers into a section; re-adding is idempotent', added.status === 200 && al.symbols.join() === 'AAPL,ETH,HYPE,SYRUP' && al.sections?.[0]?.name === 'Perps' && al.sections[0].symbols.join() === 'HYPE,SYRUP' && ((await (await fetch(`${BASE}/api/watchlists/${cl.id}/items`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ symbols: ['HYPE'] }) })).json()) as { list: { symbols: string[] } }).list.symbols.length === 4)
+    const reordered = ((await (await fetch(`${BASE}/api/watchlists`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ id: cl.id, name: 'Renamed', order: ['HYPE', 'AAPL'] }) })).json()) as { list: { name: string; symbols: string[] } }).list
+    check('watchlists: PATCH renames + reorders (named symbols first, the rest keep their order)', reordered.name === 'Renamed' && reordered.symbols.join() === 'HYPE,AAPL,ETH,SYRUP')
+    const movedSec = ((await (await fetch(`${BASE}/api/watchlists/${cl.id}/items`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ symbol: 'AAPL', section: 'Stocks' }) })).json()) as { list: { sections?: { name: string; symbols: string[] }[] } }).list
+    check('watchlists: PATCH items moves one symbol into a (new) section', movedSec.sections?.map((s) => `${s.name}:${s.symbols.join('+')}`).join('|') === 'Perps:HYPE+SYRUP|Stocks:AAPL')
+    const removed = ((await (await fetch(`${BASE}/api/watchlists/${cl.id}/items?symbol=SYRUP`, { method: 'DELETE', headers: { cookie: wlSession } })).json()) as { list: { symbols: string[] } }).list
+    check('watchlists: DELETE items removes the symbol', removed.symbols.join() === 'HYPE,AAPL,ETH')
+    check('watchlists: another wallet cannot touch the list (PATCH/DELETE/items → 404, never 403 enumeration)', (await fetch(`${BASE}/api/watchlists`, { method: 'PATCH', headers: { ...J, cookie: wlMallorySession }, body: JSON.stringify({ id: cl.id, name: 'pwned' }) })).status === 404 && (await fetch(`${BASE}/api/watchlists/${cl.id}/items`, { method: 'POST', headers: { ...J, cookie: wlMallorySession }, body: JSON.stringify({ symbols: ['BTC'] }) })).status === 404 && (await fetch(`${BASE}/api/watchlists?id=${cl.id}`, { method: 'DELETE', headers: { cookie: wlMallorySession } })).status === 404)
+
+    // Unlimited: a 200-ticker list, then a 250-symbol quote read, no cap anywhere.
+    const twoHundred = [...ROBINHOOD_TICKER_SET].slice(0, 200)
+    const big = ((await (await fetch(`${BASE}/api/watchlists`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ name: 'Everything on 4663', symbols: twoHundred }) })).json()) as { list: { id: string; symbols: string[] } }).list
+    check('watchlists: a 200-ticker list works — no cap on tickers (the value prop)', big.symbols.length === 200, `${big.symbols.length}`)
+    const mine = (await (await fetch(`${BASE}/api/watchlists`, { headers: { cookie: wlSession } })).json()) as { lists: { id: string }[] }
+    check('watchlists: GET mine lists every list in position order — no cap on lists', mine.lists.length === 2 && mine.lists[0].id === cl.id && mine.lists[1].id === big.id)
+    const bigQuotes = (await (await fetch(`${BASE}/api/quotes?symbols=${twoHundred.slice(0, 60).join(',')}`)).json()) as { quotes: Record<string, unknown>; missing: string[] }
+    check('quotes: a 60-stock rail is ONE batched request that quotes (nearly) all of them (Robinhood batch; feedless names omitted, never 500)', Object.keys(bigQuotes.quotes).length >= 50, `${Object.keys(bigQuotes.quotes).length} quoted, missing=${bigQuotes.missing.slice(0, 6)}`)
+
+    // Import route: the README format, no auth needed (guests preview).
+    const imp = (await (await fetch(`${BASE}/api/watchlists/import`, { method: 'POST', headers: J, body: JSON.stringify({ text: '###Stocks,NASDAQ:AAPL,COINBASE:ETHUSD,NYSE:ZZZZQX' }) })).json()) as { tradable: string[]; notYet: string[]; sections: { name: string }[] }
+    check('watchlists: POST /api/watchlists/import parses a TradingView export → { tradable, notYet, sections } without a session', imp.tradable.join() === 'AAPL,ETH' && imp.notYet.join() === 'ZZZZQX' && imp.sections[0]?.name === 'Stocks')
+    check('watchlists: import refuses an empty paste by name (400)', (await fetch(`${BASE}/api/watchlists/import`, { method: 'POST', headers: J, body: JSON.stringify({ text: '   ' }) })).status === 400)
+
+    // Guest → account adoption (the adoptLocalChat idiom, one table over).
+    const adopted = await fetch(`${BASE}/api/watchlists/adopt`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ lists: [{ name: 'Guest A', symbols: ['BTC'] }, { name: 'Guest B', symbols: ['SOL', 'DOGE'], sections: [{ name: 'Memes', symbols: ['DOGE'] }] }] }) })
+    const adoptedLists = ((await adopted.json()) as { lists: { id: string; name: string; symbols: string[]; sections?: { name: string }[] }[] }).lists
+    check('watchlists: POST adopt turns guest (localStorage) lists into account lists in one call, sections kept; a guest (no session) gets 401', adopted.status === 201 && adoptedLists.length === 2 && adoptedLists[1].symbols.join() === 'SOL,DOGE' && adoptedLists[1].sections?.[0]?.name === 'Memes' && (await fetch(`${BASE}/api/watchlists/adopt`, { method: 'POST', headers: J, body: JSON.stringify({ lists: [] }) })).status === 401)
+
+    // ── /lists/<slug>: the public page fences BOTH is_public and NOT is_internal ──
+    const shared = ((await (await fetch(`${BASE}/api/watchlists`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ id: cl.id, isPublic: true }) })).json()) as { list: { slug: string | null; isPublic: boolean } }).list
+    check('watchlists: PATCH isPublic mints a slug from the name', shared.isPublic && typeof shared.slug === 'string' && /^renamed/.test(shared.slug))
+    const internalPage = await fetch(`${BASE}/lists/${shared.slug}`)
+    check('lists: a PUBLIC list minted by the harness (is_internal) is NOT a page — /lists/<slug> 404s (the #699 fence on rows)', internalPage.status === 404, `${internalPage.status}`)
+    // The organic probe: the belt strips the internal stamp for this ONE create, so a real public list renders.
+    const organic = await fetch(`${BASE}/api/watchlists`, { method: 'POST', headers: { ...J, cookie: wlSession, [ORGANIC_PROBE]: '1' }, body: JSON.stringify({ name: 'Organic public list', symbols: ['AAPL', 'ETH'], sections: [{ name: 'Stocks', symbols: ['AAPL'] }] }) })
+    const ol = ((await organic.json()) as { list: { id: string } }).list
+    const olShared = ((await (await fetch(`${BASE}/api/watchlists`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ id: ol.id, isPublic: true, slug: `organic-${Date.now().toString(36)}` }) })).json()) as { list: { slug: string } }).list
+    const pageRes = await fetch(`${BASE}/lists/${olShared.slug}`)
+    const pageHtml = flat(await pageRes.text())
+    check('lists: an organic public list renders — name, section, every symbol row (data-symbol) linking to /t/<sym>, a Buy chip, the Follow door', pageRes.status === 200 && pageHtml.includes('Organic public list') && pageHtml.includes('data-symbol="AAPL"') && pageHtml.includes('href="/t/ETH"') && pageHtml.includes('Buy $10') && /Sign in to follow|Follow/.test(pageHtml) && pageHtml.includes('>Stocks<'), `${pageRes.status}`)
+    const ogRes = await fetch(`${BASE}/lists/${olShared.slug}/opengraph-image`)
+    check('lists: the OG card renders a PNG for a public list', ogRes.status === 200 && (ogRes.headers.get('content-type') ?? '').includes('image/png'))
+    const privateAgain = ((await (await fetch(`${BASE}/api/watchlists`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ id: ol.id, isPublic: false }) })).json()) as { list: { isPublic: boolean } }).list
+    check('lists: made private → the page 404s again (both fences hold)', privateAgain.isPublic === false && (await fetch(`${BASE}/lists/${olShared.slug}`)).status === 404)
+    await fetch(`${BASE}/api/watchlists`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ id: ol.id, isPublic: true }) })
+    // Follow = fork with lineage; your own list refuses; a guest gets the door (401).
+    const forked = await fetch(`${BASE}/api/watchlists/fork`, { method: 'POST', headers: { ...J, cookie: wlMallorySession }, body: JSON.stringify({ slug: olShared.slug }) })
+    const fl = ((await forked.json()) as { list: { id: string; forkOf: string | null; symbols: string[]; owner: string } }).list
+    check('lists: Follow copies the list into the follower’s lists with fork_of = slug; own list → 409; no session → 401', forked.status === 201 && fl.forkOf === olShared.slug && fl.symbols.join() === 'AAPL,ETH' && fl.owner === wlMallory.address.toLowerCase() && (await fetch(`${BASE}/api/watchlists/fork`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ slug: olShared.slug }) })).status === 409 && (await fetch(`${BASE}/api/watchlists/fork`, { method: 'POST', headers: J, body: JSON.stringify({ slug: olShared.slug }) })).status === 401, `${forked.status} ${JSON.stringify(fl)}`)
+    check('lists: an unknown slug is a true 404; a bad slug shape too', (await fetch(`${BASE}/lists/no-such-list-${Date.now()}`)).status === 404 && (await fetch(`${BASE}/lists/__`)).status === 404)
+
+    // The rail is mounted on the symbol page (SSR markup carries the add box).
+    // Re-pinned at integration (2026-09-11): the rail lives in SHELL's
+    // WatchlistSlot (data-slot="watchlist") inside the frame's right rail.
+    const tHtml = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
+    check('watch: /t/AAPL mounts the watchlist rail in the frame (add-ticker box + Import door inside data-slot="watchlist")', tHtml.includes('Add a ticker or company') && tHtml.includes('Import from TradingView') && tHtml.includes('data-slot="watchlist"') && tHtml.includes('class="sym__rail"'))
+
+    // ── Alerts: CRUD, the cron’s per-symbol dedup, a fixture firing ─────────
+    check('alerts: GET without a session → 401', (await fetch(`${BASE}/api/alerts`)).status === 401)
+    const badAlert = await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ symbol: 'AAPL', condition: 'sideways', value: 1 }) })
+    const badPct = await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ symbol: 'AAPL', condition: 'pct_move', value: 5 }) })
+    check('alerts: bad condition → 400 by name; pct_move without the armed price → 400', badAlert.status === 400 && badPct.status === 400)
+    const mk = async (body: object) => ((await (await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify(body) })).json()) as { alert: { id: string; status: string; actionAsk: string | null } }).alert
+    const a1 = await mk({ symbol: 'AAPL', condition: 'below', value: 1, actionAsk: 'Sell $50 of AAPL' })
+    const a2 = await mk({ symbol: 'aapl', condition: 'above', value: 1e9 })
+    const a3 = await mk({ symbol: 'ETH', condition: 'pct_move', value: 50, basePrice: qETH?.last ?? 1000 })
+    check('alerts: POST creates active alerts (symbol normalized, actionAsk kept) — unlimited', a1.status === 'active' && a1.actionAsk === 'Sell $50 of AAPL' && a2.status === 'active' && a3.status === 'active')
+    const paused = ((await (await fetch(`${BASE}/api/alerts`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ id: a2.id, op: 'pause' }) })).json()) as { alert: { status: string } }).alert
+    check('alerts: PATCH pause ⇄ resume; a paused alert refuses pause (409); another wallet → 404', paused.status === 'paused' && (await fetch(`${BASE}/api/alerts`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ id: a2.id, op: 'pause' }) })).status === 409 && (await fetch(`${BASE}/api/alerts`, { method: 'PATCH', headers: { ...J, cookie: wlMallorySession }, body: JSON.stringify({ id: a2.id, op: 'resume' }) })).status === 404 && ((await (await fetch(`${BASE}/api/alerts`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ id: a2.id, op: 'resume' }) })).json()) as { alert: { status: string } }).alert.status === 'active')
+    check('alerts cron: no/wrong CRON_SECRET → 401 (fail closed, guardian pattern)', (await fetch(`${BASE}/api/cron/alerts`)).status === 401 && (await fetch(`${BASE}/api/cron/alerts`, { headers: { authorization: 'Bearer nope' } })).status === 401)
+    const cronSecret = process.env.CRON_SECRET ?? (() => {
+      try {
+        return readdirSync('.').includes('.env.local') ? (require('node:fs') as typeof import('node:fs')).readFileSync('.env.local', 'utf8').match(/^CRON_SECRET=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null : null
+      } catch {
+        return null
+      }
+    })()
+    if (cronSecret) {
+      // Fixture: AAPL at $0.50 — a1 (below $1) fires, a2 (above $1e9) does not.
+      // The fixture applies ONLY to is_internal alerts (these are), so a real
+      // owner's AAPL alert on the shared DB is still judged by the live quote.
+      const sweep = (await (await fetch(`${BASE}/api/cron/alerts`, { method: 'POST', headers: { ...J, authorization: `Bearer ${cronSecret}` }, body: JSON.stringify({ fixture: { AAPL: 0.5 } }) })).json()) as { evaluated: number; reads: number; symbols: string[]; fired: { id: string; symbol: string; price: number }[]; unquoted: string[] }
+      check('alerts cron: per-SYMBOL dedup — three alerts on two symbols cost at most two reads (reads ≤ symbols < evaluated); AAPL served by the fixture needs none', sweep.symbols.includes('AAPL') && sweep.symbols.includes('ETH') && sweep.reads <= sweep.symbols.length && sweep.symbols.length < sweep.evaluated && sweep.reads === sweep.symbols.filter((s) => s !== 'AAPL').length, `evaluated=${sweep.evaluated} symbols=${sweep.symbols.length} reads=${sweep.reads}`)
+      check('alerts cron: the fixture price fires a1 (below $1 at $0.50) and not a2 (above $1e9); ETH ±50% stays armed on the live quote', sweep.fired.some((f) => f.id === a1.id && f.price === 0.5) && !sweep.fired.some((f) => f.id === a2.id) && !sweep.fired.some((f) => f.id === a3.id), JSON.stringify(sweep.fired.filter((f) => [a1.id, a2.id, a3.id].includes(f.id))))
+      const after = (await (await fetch(`${BASE}/api/alerts`, { headers: { cookie: wlSession } })).json()) as { alerts: { id: string; status: string; firedPrice: number | null }[] }
+      const notes = (await (await fetch(`${BASE}/api/alerts/notifications`, { headers: { cookie: wlSession } })).json()) as { notifications: { alertId: string; actionAsk: string | null; title: string }[] }
+      const note = notes.notifications.find((n) => n.alertId === a1.id)
+      check('alerts: a firing flips the row to fired (firedPrice kept) and writes ONE in-app notification carrying the chip — the ask is never sent for you', after.alerts.find((a) => a.id === a1.id)?.status === 'fired' && after.alerts.find((a) => a.id === a1.id)?.firedPrice === 0.5 && !!note && note.actionAsk === 'Sell $50 of AAPL' && /AAPL below \$1/.test(note.title) && notes.notifications.filter((n) => n.alertId === a1.id).length === 1, note?.title)
+      const sweep2 = (await (await fetch(`${BASE}/api/cron/alerts`, { method: 'POST', headers: { ...J, authorization: `Bearer ${cronSecret}` }, body: JSON.stringify({ fixture: { AAPL: 0.5 } }) })).json()) as { fired: { id: string }[] }
+      check('alerts cron: a fired alert never re-fires (status gate, no duplicate notification)', !sweep2.fired.some((f) => f.id === a1.id) && ((await (await fetch(`${BASE}/api/alerts/notifications`, { headers: { cookie: wlSession } })).json()) as { notifications: { alertId: string }[] }).notifications.filter((n) => n.alertId === a1.id).length === 1)
+      const seen = (await (await fetch(`${BASE}/api/alerts/notifications`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ all: true }) })).json()) as { seen: number }
+      check('alerts: PATCH notifications { all:true } dismisses; GET default hides seen rows; ?all=1 keeps the history', seen.seen >= 1 && ((await (await fetch(`${BASE}/api/alerts/notifications`, { headers: { cookie: wlSession } })).json()) as { notifications: unknown[] }).notifications.length === 0 && ((await (await fetch(`${BASE}/api/alerts/notifications?all=1`, { headers: { cookie: wlSession } })).json()) as { notifications: unknown[] }).notifications.length >= 1)
+      const rearmed = ((await (await fetch(`${BASE}/api/alerts`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ id: a1.id, op: 'rearm' }) })).json()) as { alert: { status: string; firedAt: string | null } }).alert
+      check('alerts: PATCH rearm puts a fired alert back to active with the firing cleared', rearmed.status === 'active' && rearmed.firedAt === null)
+      const noFixtureForStrangers = (await (await fetch(`${BASE}/api/cron/alerts`, { method: 'POST', headers: { ...J, authorization: `Bearer ${cronSecret}`, 'x-yf-internal-run': '0' }, body: JSON.stringify({ fixture: { AAPL: 0.5 } }) })).json()) as { fired: { id: string }[] }
+      check('alerts cron: a fixture from a call that is NOT an internal run is ignored (a1 re-armed at below $1 stays armed on the live AAPL quote)', !noFixtureForStrangers.fired.some((f) => f.id === a1.id))
+    } else {
+      console.log('  ⚪ alerts cron: CRON_SECRET not in env/.env.local — live sweep + fixture checks skipped')
+    }
+    const vercelJson = JSON.parse(await readFile('vercel.json', 'utf8')) as { crons: { path: string; schedule: string }[] }
+    check('alerts cron: registered in vercel.json every minute', vercelJson.crons.some((c) => c.path === '/api/cron/alerts' && c.schedule === '* * * * *'))
+
+    // Cleanup — every row this block minted, then prove the wallets are empty.
+    for (const id of [a1.id, a2.id, a3.id]) await fetch(`${BASE}/api/alerts?id=${id}`, { method: 'DELETE', headers: { cookie: wlSession } })
+    for (const id of [cl.id, big.id, ol.id, ...adoptedLists.map((l) => l.id)]) await fetch(`${BASE}/api/watchlists?id=${id}`, { method: 'DELETE', headers: { cookie: wlSession } })
+    await fetch(`${BASE}/api/watchlists?id=${fl.id}`, { method: 'DELETE', headers: { cookie: wlMallorySession } })
+    const leftLists = (await (await fetch(`${BASE}/api/watchlists`, { headers: { cookie: wlSession } })).json()) as { lists: unknown[] }
+    const leftAlerts = (await (await fetch(`${BASE}/api/alerts`, { headers: { cookie: wlSession } })).json()) as { alerts: unknown[] }
+    const leftMallory = (await (await fetch(`${BASE}/api/watchlists`, { headers: { cookie: wlMallorySession } })).json()) as { lists: unknown[] }
+    check('watch: cleanup — DELETE list cascades its items; both throwaway wallets end with zero lists and zero alerts', leftLists.lists.length === 0 && leftAlerts.alerts.length === 0 && leftMallory.lists.length === 0 && (await fetch(`${BASE}/lists/${olShared.slug}`)).status === 404)
+  }
+
+  // ── MARKETS/QA ──────────────────────────────────────────────────────────
+  // Integration review findings, pinned (2026-09-11): the alert mail never
+  // carries stranger markup, and a recipient must be a VERIFIED subscriber.
+  console.log('— markets/qa')
+  {
+    const { renderAlertEmail } = await import('../lib/alerts-exec')
+    const qaRand = () => Math.random().toString(36).slice(2, 8)
+    const m = renderAlertEmail({ symbol: 'AAPL', title: 'x', body: 'b', actionAsk: '<script>alert(1)</script> Sell $50 of AAPL' })
+    check('markets/qa: the alert mail HTML escapes a user-authored actionAsk (no raw <script>) while the text part keeps it literal', !m.html.includes('<script>') && m.html.includes('&lt;script&gt;') && m.text.includes('<script>alert(1)</script>'))
+    const qaOwner = privateKeyToAccount(generatePrivateKey())
+    const qaSession = await signIn(qaOwner)
+    const QJ = { 'content-type': 'application/json', cookie: qaSession, 'x-yf-internal-run': '1' }
+    const unverified = `qa-unverified-${qaRand()}@example.com`
+    const rUn = await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: QJ, body: JSON.stringify({ symbol: 'AAPL', condition: 'below', value: 1, email: unverified }) })
+    const bUn = (await rUn.json()) as { error?: string }
+    check("markets/qa: an alert naming an email nobody confirmed is refused by name (400, 'confirm')", rUn.status === 400 && /confirm/i.test(bUn.error ?? ''), `${rUn.status} ${bUn.error ?? ''}`)
+    // The verify token is only ever emailed, so the verified-path fixture is a
+    // direct row. Harness-side Prisma needs DATABASE_URL exported (Prisma reads
+    // .env, not .env.local — the standing gotcha); without it the fixture
+    // names its skip instead of crashing the run.
+    const verified = `qa-verified-${qaRand()}@example.com`
+    let fixtureOk = false
+    try {
+      await prisma.subscriber.create({ data: { email: verified, status: 'verified', token: `qa-${qaRand()}${qaRand()}`, verifiedAt: new Date() } })
+      fixtureOk = true
+    } catch {
+      /* no DATABASE_URL in the harness env */
+    }
+    if (fixtureOk) {
+      const rOk = await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: QJ, body: JSON.stringify({ symbol: 'AAPL', condition: 'below', value: 1, email: verified }) })
+      const bOk = (await rOk.json()) as { alert?: { id: string; email?: string | null } }
+      check('markets/qa: the same alert with a verified subscriber address is accepted and stores the recipient', rOk.status === 201 && bOk.alert?.email === verified, `${rOk.status}`)
+      await prisma.priceAlert.deleteMany({ where: { owner: qaOwner.address.toLowerCase() } }).catch(() => {})
+      await prisma.subscriber.deleteMany({ where: { email: { in: [verified, unverified] } } }).catch(() => {})
+    } else {
+      console.log('  ⚠️  markets/qa: verified-recipient path SKIPPED — harness has no DATABASE_URL (export .env.local to run it)')
     }
   }
 

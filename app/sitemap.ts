@@ -3,6 +3,7 @@ import prisma from '@/lib/db'
 import { readyPages } from '@/lib/docs'
 import { HOUSE_LINKS } from '@/lib/house-links'
 import { publicCreatorHandles } from '@/lib/links-board'
+import { chartableSymbols } from '@/lib/charts'
 
 import { SITE_URL as SITE } from '@/lib/site-url'
 
@@ -18,6 +19,10 @@ export const revalidate = 3600
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const entries: MetadataRoute.Sitemap = [
     { url: SITE, changeFrequency: 'weekly', priority: 1 },
+    // MARKETS (2026-09-11): the chart is the front door — the index, the
+    // comparison page, and one /t/<sym> per CHARTABLE symbol below.
+    { url: `${SITE}/markets`, changeFrequency: 'hourly', priority: 0.9 },
+    { url: `${SITE}/compare`, changeFrequency: 'monthly', priority: 0.7 },
     { url: `${SITE}/links`, changeFrequency: 'daily', priority: 0.9 },
     { url: `${SITE}/links/embed`, changeFrequency: 'monthly', priority: 0.7 },
     { url: `${SITE}/pricing`, changeFrequency: 'monthly', priority: 0.8 },
@@ -36,6 +41,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: p.slug === '' ? 0.9 : 0.8,
     })),
     { url: `${SITE}/blog`, changeFrequency: 'weekly', priority: 0.8 },
+    // Every symbol chartPairFor accepts and NO other (the same gate the OG
+    // route and the page title read): a feedless listing (CASHCAT, SATS), a
+    // stable, or an alias (WETH) never reaches a crawler as its own page.
+    ...chartableSymbols().map((sym) => ({
+      url: `${SITE}/t/${sym}`,
+      changeFrequency: 'hourly' as const,
+      priority: 0.7,
+    })),
   ]
 
   try {
