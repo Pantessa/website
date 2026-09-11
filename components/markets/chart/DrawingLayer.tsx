@@ -114,12 +114,15 @@ export default function DrawingLayer({ geom, lines, selectedId, onSelect, onChan
     if (y !== null) popY = clamp(y, 8, Math.max(8, height - 8))
   }
   const offers = selected ? offersFor(selected) : []
+  // Below the line when there is room under it, above it otherwise — and
+  // never taller than the space it has (the canvas clips; a popover whose
+  // head is cut off can't be closed or labelled).
   const popStyle: CSSProperties | null =
     popY === null
       ? null
       : popY > height * 0.55
-        ? { left: 12, bottom: Math.max(8, height - popY + 10) }
-        : { left: 12, top: popY + 10 }
+        ? { left: 12, top: 8, maxHeight: Math.max(120, popY - 18) }
+        : { left: 12, top: popY + 10, maxHeight: Math.max(120, height - popY - 18) }
 
   return (
     <>
