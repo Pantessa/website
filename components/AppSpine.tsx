@@ -28,7 +28,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Boxes, CandlestickChart, Link2, ListChecks, MessageSquare, Plus, Settings, Users } from 'lucide-react'
+import { BookOpen, Boxes, CandlestickChart, Link2, ListChecks, MessageSquare, Plus, Settings, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DEFAULT_TAB, parseTabParam, syncTabParam, tabUrl } from '@/lib/app-tab-url'
 import { useYeetfulStore, type RailTab } from '@/lib/store'
@@ -351,6 +351,19 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
               </button>
             )
           })}
+
+          {/* DOCS is a destination PAGE, seated under CHATS (2026-09-11,
+              Nate) — the docs left the brochure nav's reach once the nav
+              left the app. */}
+          <Link
+            href="/docs"
+            title="Docs — how Pantessa builds, guards and signs"
+            aria-label="DOCS"
+            className="relative w-12 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-2)] transition-colors"
+          >
+            <BookOpen className="w-[18px] h-[18px]" />
+            <span className="mono text-[9px] font-medium tracking-wide">DOCS</span>
+          </Link>
         </div>
 
         <div className="flex-1" />
@@ -439,6 +452,15 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             </button>
           )
         })}
+        <Link
+          href="/docs"
+          title="Docs — how Pantessa builds, guards and signs"
+          aria-label="DOCS"
+          className="relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 text-[color:var(--muted)] transition-colors"
+        >
+          <BookOpen className="w-[18px] h-[18px]" />
+          <span className="mono text-[10px] font-medium tracking-wide">DOCS</span>
+        </Link>
         <Link
           href="/dashboard"
           title="Settings — creator page, keys, billing, account"

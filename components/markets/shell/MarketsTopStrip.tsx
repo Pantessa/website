@@ -12,7 +12,7 @@
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { AskDoorTrigger } from '@/components/AskDoor'
-import { SiteAccount } from '@/components/Navigation'
+import SiteAccount from '@/components/SiteAccount'
 
 export default function MarketsTopStrip() {
   const pathname = usePathname()

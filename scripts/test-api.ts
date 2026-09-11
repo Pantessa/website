@@ -18402,6 +18402,33 @@ async function main() {
         /\.mkt-frame__bar \{\s*position: sticky; top: 0; z-index: 20;/.test(shellCss) &&
         /@media \(max-width: 1023px\) \{[^@]*\.mkt-frame \{[^}]*grid-template-areas: "top" "main" "rail" "foot";[^@]*\.mkt-frame__side \{ display: contents; \}[^@]*\.mkt-frame__top \{ grid-area: top;[^@]*\.mkt-frame__bar \{ top: var\(--mkt-top-h\); \}[^@]*\.mkt-shell \{ padding-bottom: calc\(48px \+ env\(safe-area-inset-bottom\)\); \}[^@]*:root\[data-spine\] \.askdoor-pill \{ bottom: calc\(64px \+ env\(safe-area-inset-bottom\)\); \}/.test(shellCss),
     )
+    // The app has no brochure nav for anyone (2026-09-11, Nate: "remove the
+    // header in the App if they are not logged in and move the sign in down
+    // next to Embed. Can we put docs in the left nav side bar below Chat").
+    // The nav returns null on /chat from the server render, the workspace is
+    // h-dvh from the first paint (no guest-only 4rem gap), the toolbar's
+    // account seat is the shared SiteAccount door (client-only, beside
+    // Embed), and the spine carries a DOCS seat under CHATS on every surface
+    // — while /docs itself keeps the brochure nav for a guest.
+    const chatIfaceSrc = await readFile(new URL('../components/ChatInterface.tsx', import.meta.url), 'utf8')
+    const spineSrc = await readFile(new URL('../components/AppSpine.tsx', import.meta.url), 'utf8')
+    const docsGuestHtml = flat(await (await fetch(`${BASE}/docs`)).text())
+    check(
+      'app shell: /chat ships with NO brochure nav (server render), the h-dvh workspace, and the toolbar sign-in seat beside Embed (SiteAccount, not NavAccount); /docs keeps its nav for a guest',
+      !/<header class="nav/.test(chatHtml) && !chatHtml.includes('nav__tabs') &&
+        /class="relative flex max-lg:pb-\[calc\(48px\+env\(safe-area-inset-bottom\)\)\] h-dvh"/.test(chatHtml) &&
+        !chatHtml.includes('h-[calc(100dvh-4rem)]') &&
+        /<SiteAccount redirectTo=\{typeof window !== 'undefined' \? window\.location\.pathname \+ window\.location\.search : '\/chat'\} \/>/.test(chatIfaceSrc) &&
+        !/<NavAccount/.test(chatIfaceSrc) &&
+        /<header class="nav/.test(docsGuestHtml) && docsGuestHtml.includes('nav__tabs'),
+    )
+    check(
+      'spine: a DOCS seat under CHATS in both postures, on /chat AND /markets (a page link, never lit — /docs has no spine)',
+      (chatHtml.match(/href="\/docs"[^>]*aria-label="DOCS"/g) ?? []).length === 2 &&
+        (mkHtml.match(/href="\/docs"[^>]*aria-label="DOCS"/g) ?? []).length === 2 &&
+        /aria-label="CHATS"[\s\S]*?aria-label="DOCS"[\s\S]*?aria-label="Settings"/.test(chatHtml) &&
+        (spineSrc.match(/aria-label="DOCS"/g) ?? []).length === 2,
+    )
     const tabLabels = ['Overview', 'News', 'Community', 'Technicals', 'Trade']
     check(
       '/t/AAPL: 200 — header (Apple · AAPL · Robinhood Chain · 24/7 venue chip · session line), all five tabs, rail slots, chart mount',

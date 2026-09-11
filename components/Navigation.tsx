@@ -6,46 +6,15 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAccount } from 'wagmi'
 import { useSession } from '@/lib/session'
-import { LogIn, Menu, X } from 'lucide-react'
+import { Menu, X } from 'lucide-react'
 import ConnectWallet from '@/components/ConnectWallet'
 import AuthButton from '@/components/AuthButton'
 import CreateAccountButton from '@/components/CreateAccountButton'
-import NavAccount from '@/components/NavAccount'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { YeetfulMark } from '@/components/Logo'
 import { AskDoorTrigger } from '@/components/AskDoor'
 import { isMarketsPath } from '@/lib/markets'
-
-/**
- * The site's account control, one piece (2026-09-11): disconnected → the
- * unified sign-in door (rule 6 — CreateAccountButton when cdpEnabled, the
- * AuthButton fallback); connected or signed in → the consolidated NavAccount
- * pill. The nav's desktop cluster and the markets strip both render THIS, so
- * the two doors can never drift. Renders nothing before mount — wallet
- * state is client-only, and the SSR nav stays hydration-safe.
- */
-export function SiteAccount({ redirectTo }: { redirectTo: string }) {
-  const { isConnected } = useAccount()
-  const { address: sessionAddress } = useSession()
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
-  if (!mounted) return null
-  const disconnected = !isConnected && !sessionAddress
-  if (!disconnected) return <NavAccount />
-  return cdpEnabled ? (
-    <CreateAccountButton className={signInPill} label={signInLabel} redirectTo={redirectTo} />
-  ) : (
-    <AuthButton redirectTo={redirectTo} />
-  )
-}
-
-const signInPill =
-  'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/5 border border-white/15 text-zinc-200 text-xs font-semibold hover:bg-white/10 hover:border-white/25 transition-colors'
-const signInLabel = (
-  <>
-    <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} /> Sign in
-  </>
-)
+import SiteAccount, { signInLabel, signInPill } from '@/components/SiteAccount'
 
 export default function Navigation() {
   const pathname = usePathname()
@@ -92,13 +61,19 @@ export default function Navigation() {
   // ('/i/' with the trailing slash: /incidents must keep its nav.)
   if (pathname.startsWith('/i/')) return null
 
-  // When a signed-in user is on an app surface (dashboard / chat / docs) the
+  // When a signed-in user is on an app surface (dashboard / docs) the
   // brochure top-nav is removed entirely — the app shell (left rail + its
   // collapse/home toggle) owns the viewport. Logged-out visitors still get the
-  // full brochure nav everywhere. mounted-gated so SSR keeps the nav.
-  const onAppSurface =
-    pathname.startsWith('/dashboard') || pathname.startsWith('/chat') || pathname.startsWith('/docs')
+  // full brochure nav there. mounted-gated so SSR keeps the nav.
+  const onAppSurface = pathname.startsWith('/dashboard') || pathname.startsWith('/docs')
   if (mounted && !!sessionAddress && onAppSurface) return null
+
+  // The app (/chat) has no brochure nav for ANYONE (2026-09-11, Nate:
+  // "remove the header in the App if they are not logged in and move the
+  // sign in down next to Embed"): the spine is its navigation and the
+  // toolbar's account slot (SiteAccount, beside Embed) is the sign-in door.
+  // Pure path test, same on the server — no guest-only 64px flash.
+  if (pathname.startsWith('/chat')) return null
 
   // The markets surface (/markets, /t/<symbol>) is a terminal: the app spine
   // is its navigation and the Ask door + account control dock in the

@@ -69,7 +69,7 @@ import { normalizeSpokenAsk } from '@/lib/voice-ask'
 import MintLinkModal from '@/components/MintLinkModal'
 import ArmSpotGuardButton from '@/components/ArmSpotGuardButton'
 import Link from 'next/link'
-import NavAccount from '@/components/NavAccount'
+import SiteAccount from '@/components/SiteAccount'
 import { YeetfulMark } from '@/components/Logo'
 import { useAppShellMode } from '@/components/AppShell'
 import ChatMarkdown from '@/components/ChatMarkdown'
@@ -1506,11 +1506,14 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           <ShareButton />
           {showAppChrome && (
             <div className="flex-shrink-0 pl-1">
-              {/* The consolidated account pill (same dropdown as the brochure
-                  nav: Dashboard / Wallet details / Sign out) — not RainbowKit's
-                  copy-address/disconnect-only modal. Chain switching lives in
-                  the ChainPicker to the left, so the pill needs no chain chip. */}
-              <NavAccount />
+              {/* The site's account door (SiteAccount): "Sign in" for a guest
+                  — the brochure nav is gone on /chat for everyone, so this seat
+                  beside Embed IS the way in — and the consolidated account pill
+                  (Dashboard / Wallet details / Sign out) once connected. Chain
+                  switching lives in the ChainPicker to the left, so the pill
+                  needs no chain chip. Sign-in returns to THIS chat URL (query
+                  included, so ?mcps=/?prompt= deep links survive). */}
+              <SiteAccount redirectTo={typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/chat'} />
             </div>
           )}
         </div>
