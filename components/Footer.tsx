@@ -19,6 +19,7 @@ const GROUPS: { title: string; links: FooterLink[] }[] = [
   {
     title: 'Company',
     links: [
+      { label: 'Markets', href: '/markets' },
       { label: 'Intent Links', href: '/links' },
       { label: 'Mosaic', href: '/mosaic' },
       { label: 'Site Buttons', href: '/links/embed' },

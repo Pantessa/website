@@ -64,6 +64,7 @@ import JobDetailOverlay from '@/components/JobDetailOverlay'
 import ChartOverlay from '@/components/ChartOverlay'
 import VoiceButton, { type VoiceState } from '@/components/VoiceButton'
 import { parseChartAsk } from '@/lib/charts'
+import { parseMarketsNavAsk } from '@/lib/markets'
 import { normalizeSpokenAsk } from '@/lib/voice-ask'
 import MintLinkModal from '@/components/MintLinkModal'
 import ArmSpotGuardButton from '@/components/ArmSpotGuardButton'
@@ -796,6 +797,15 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     if (chartAsk?.pair) {
       setChartDetail({ symbol: chartAsk.pair.symbol })
       if (typeof textOverride !== 'string') setInput('')
+      return
+    }
+    // "open apple in markets" / "markets aapl" is a NAVIGATION, not a turn:
+    // the symbol page (/t/<symbol>) owns the chart + tabs + order panel.
+    // First-party surfaces only — the embed and /i stay on their own page.
+    const marketsNav = !embedded && !simple ? parseMarketsNavAsk(raw) : null
+    if (marketsNav) {
+      if (typeof textOverride !== 'string') setInput('')
+      router.push(marketsNav.href)
       return
     }
     if (loading || pendingPayment) return
