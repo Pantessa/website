@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import Footer from '@/components/Footer'
 import { SITE } from '@/lib/docs'
 import {
@@ -161,15 +162,15 @@ export default function ComparePage() {
 
           {/* ── the doors ── */}
           <div className="cmp__ctas">
-            <Link className="btn btn--solid" href="/markets">
+            <SpineLink className="btn btn--solid" href="/markets">
               Open Markets
-            </Link>
-            <Link className="btn btn--ghost" href="/t/AAPL">
+            </SpineLink>
+            <SpineLink className="btn btn--ghost" href="/t/AAPL">
               See the AAPL chart
-            </Link>
-            <Link className="btn btn--ghost" href="/markets?import=1">
+            </SpineLink>
+            <SpineLink className="btn btn--ghost" href="/markets?import=1">
               {TV_IMPORT.cta}
-            </Link>
+            </SpineLink>
           </div>
           <p className="cmp__foot mono">
             {TAPE_FOOTNOTE} <span>·</span> {REGIONAL_NOTE} <span>·</span>{' '}

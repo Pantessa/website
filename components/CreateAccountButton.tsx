@@ -19,6 +19,7 @@ import { PantessaMark } from '@/components/Logo'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
 import { OAUTH_INTENT_KEY } from '@/components/CdpOAuthReturn'
+import { SIGN_IN_LANDING } from '@/lib/app-entry'
 
 // Social providers via CDP Embedded Wallets. Enable each + set its OAuth client
 // id/secret and redirect URIs in the CDP Portal; the app needs only the project
@@ -48,7 +49,7 @@ export default function CreateAccountButton({
   className,
   style,
   label = 'Create an account',
-  redirectTo = '/dashboard',
+  redirectTo = SIGN_IN_LANDING,
   walletConnectOnly = false,
   onOpenChange,
 }: {
@@ -88,7 +89,10 @@ export default function CreateAccountButton({
 
 type Step = 'email' | 'otp' | 'connecting'
 
-function CreateAccountModal({
+/** The door without its trigger button — for a caller whose trigger is
+ *  something else (SpineLink opens it from a plain link). cdpEnabled only:
+ *  it runs on the CDP hooks. */
+export function CreateAccountModal({
   onClose,
   redirectTo,
   walletConnectOnly,
@@ -112,7 +116,7 @@ function CreateAccountModal({
     try {
       sessionStorage.setItem(OAUTH_INTENT_KEY, JSON.stringify({ redirectTo }))
     } catch {
-      /* storage blocked — the return handler just falls back to /dashboard */
+      /* storage blocked — the return handler falls back to the sign-in landing */
     }
     void signInWithOAuth(provider)
   }

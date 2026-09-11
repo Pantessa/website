@@ -24,7 +24,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import dynamic from 'next/dynamic'
-import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { usePathname, useRouter } from 'next/navigation'
 import { ArrowUp, ArrowUpRight, Mic, X } from 'lucide-react'
 import { PantessaMark } from '@/components/Logo'
@@ -215,9 +215,9 @@ function AskDoorSheet() {
             <span className="askdoor__eyebrow mono">{sym ? `ACT ON ${sym}` : 'ASK FROM ANYWHERE'} · YOUR WALLET SIGNS</span>
           )}
           <span className="askdoor__headright">
-            <Link href={appHref} className="askdoor__app" title="Open the full app">
+            <SpineLink href={appHref} className="askdoor__app" title="Open the full app">
               Open the app <ArrowUpRight className="h-3.5 w-3.5" />
-            </Link>
+            </SpineLink>
             <button type="button" className="askdoor__close" onClick={closeDoor} aria-label="Close">
               <X className="h-4 w-4" />
             </button>

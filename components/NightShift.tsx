@@ -16,7 +16,7 @@
 // real ask prefilled into /chat — ?prompt= never auto-sends.
 
 import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 
 /** The night arc: 21:00 → 06:00, drawn clockwise from upper-left through
  *  midnight at the top. Hours past 24 keep counting (26 = 02:00). */
@@ -300,12 +300,12 @@ export default function NightShift() {
       {/* the four standing surfaces — each lands its ask in /chat, prefilled */}
       <div className="night__tiles">
         {TILES.map((x) => (
-          <Link href={x.href} className="night__tile" key={x.label}>
+          <SpineLink href={x.href} className="night__tile" key={x.label}>
             <span className="night__tlabel mono">{x.label}</span>
             <h3 className="night__tt">{x.t}</h3>
             <p className="night__td">{x.d}</p>
             <span className="night__task mono">&ldquo;{x.ask}&rdquo; →</span>
-          </Link>
+          </SpineLink>
         ))}
       </div>
     </section>

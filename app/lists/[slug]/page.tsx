@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { notFound } from 'next/navigation'
 import Footer from '@/components/Footer'
 import TokenIcon from '@/components/TokenIcon'
@@ -62,7 +62,7 @@ export default async function PublicListPage({ params }: Params) {
                   const pair = chartPairFor(sym)
                   const cls = q ? (q.chgPct > 0 ? ' lists__chg--up' : q.chgPct < 0 ? ' lists__chg--down' : '') : ''
                   return (
-                    <Link key={sym} href={`/t/${sym}`} className="lists__row" data-symbol={sym}>
+                    <SpineLink key={sym} href={`/t/${sym}`} className="lists__row" data-symbol={sym}>
                       <TokenIcon symbol={sym} size={22} {...(pair?.source === 'robinhood' ? { chain: 'Robinhood Chain' } : {})} />
                       <span className="min-w-0">
                         <span className="lists__sym">{sym}</span>
@@ -73,7 +73,7 @@ export default async function PublicListPage({ params }: Params) {
                       <span className="wl__chip wl__chip--accent" title="prefills chat · you send it">
                         Buy $10
                       </span>
-                    </Link>
+                    </SpineLink>
                   )
                 })}
               </div>
@@ -83,9 +83,9 @@ export default async function PublicListPage({ params }: Params) {
           <p className="lists__foot">
             Follow copies these symbols into your own lists — unlimited lists, tickers and alerts, free at every tier.
             Every row opens its live chart; a Buy chip prefills one sentence in chat, and nothing moves until your wallet signs.{' '}
-            <Link href="/markets" className="wl__link">
+            <SpineLink href="/markets" className="wl__link">
               Markets →
-            </Link>
+            </SpineLink>
           </p>
         </div>
       </main>

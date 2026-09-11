@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 
 // Recurring buys — the two-tier story, told honestly by WALLET TYPE. The
@@ -30,7 +31,7 @@ export default function DcaDocsPage() {
       </p>
       <h1 className="docs__h1">Recurring buys: one tap per buy, or none at all</h1>
       <p className="docs__lead">
-        Say <Link href={ask('buy $10 of ETH every week')}>&ldquo;buy $10 of ETH every week&rdquo;</Link>{' '}
+        Say <SpineLink href={ask('buy $10 of ETH every week')}>&ldquo;buy $10 of ETH every week&rdquo;</SpineLink>{' '}
         and Pantessa keeps a schedule. What happens when a buy comes due depends on your wallet:
         every wallet gets <strong>confirm-mode</strong> — the buy is built fresh and waits for
         your signature, one tap. Smart wallets can go further and arm{' '}
@@ -63,18 +64,18 @@ export default function DcaDocsPage() {
           </li>
         </ul>
         <p>
-          Try it: <Link href={ask('buy $25 of ETH every week on base')}>buy $25 of ETH weekly on Base</Link>{' '}
-          · <Link href={ask('buy $10 of AAPL every week on robinhood')}>buy $10 of AAPL weekly on Robinhood Chain</Link>{' '}
-          · then <Link href={ask('list my dcas')}>list my dcas</Link>,{' '}
-          <Link href={ask('pause my ETH dca')}>pause</Link>, or{' '}
-          <Link href={ask('cancel my ETH dca')}>cancel</Link> any time.
+          Try it: <SpineLink href={ask('buy $25 of ETH every week on base')}>buy $25 of ETH weekly on Base</SpineLink>{' '}
+          · <SpineLink href={ask('buy $10 of AAPL every week on robinhood')}>buy $10 of AAPL weekly on Robinhood Chain</SpineLink>{' '}
+          · then <SpineLink href={ask('list my dcas')}>list my dcas</SpineLink>,{' '}
+          <SpineLink href={ask('pause my ETH dca')}>pause</SpineLink>, or{' '}
+          <SpineLink href={ask('cancel my ETH dca')}>cancel</SpineLink> any time.
         </p>
 
         <h2>Autopilot — smart wallets, zero taps</h2>
         <p>
           On Base, a schedule owned by a <strong>smart wallet</strong>{' '}(a wallet that is itself a
           contract — e.g. Coinbase Smart Wallet) can be armed:{' '}
-          <Link href={ask('make my ETH dca autonomous')}>&ldquo;make my ETH dca autonomous&rdquo;</Link>.
+          <SpineLink href={ask('make my ETH dca autonomous')}>&ldquo;make my ETH dca autonomous&rdquo;</SpineLink>.
           Arming is <em>one</em> EIP-712 signature over a{' '}
           <a href="https://github.com/coinbase/spend-permissions" target="_blank" rel="noopener noreferrer">
             Spend Permission
@@ -145,7 +146,7 @@ export default function DcaDocsPage() {
           Pantessa swap. If you buy a period manually, autopilot notices and stands down — no
           double buys across tiers either. The <Link href="/docs/spend-policy">kill switch</Link>{' '}
           pauses pulls instantly, and{' '}
-          <Link href={ask('turn off my dca autopilot')}>&ldquo;turn off autopilot&rdquo;</Link> drops the
+          <SpineLink href={ask('turn off my dca autopilot')}>&ldquo;turn off autopilot&rdquo;</SpineLink> drops the
           schedule back to confirm-mode (the on-chain permission stays yours to revoke).
         </p>
 
@@ -230,9 +231,9 @@ export default function DcaDocsPage() {
         </ul>
         <p>
           Start one now:{' '}
-          <Link href={ask('buy $10 of ETH every week on base')}>buy $10 of ETH every week</Link>{' '}
+          <SpineLink href={ask('buy $10 of ETH every week on base')}>buy $10 of ETH every week</SpineLink>{' '}
           — then, if your wallet qualifies,{' '}
-          <Link href={ask('make my ETH dca autonomous')}>make it autonomous</Link>.
+          <SpineLink href={ask('make my ETH dca autonomous')}>make it autonomous</SpineLink>.
         </p>
       </div>
     </>

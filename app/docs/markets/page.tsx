@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import {
   ALERT_MODES,
@@ -41,8 +42,8 @@ export default function MarketsDocsPage() {
       </p>
       <h1 className="docs__h1">Markets: the chart that executes</h1>
       <p className="docs__lead">
-        <Link href="/markets">Markets</Link> is a chart surface where the chart is the order form. Open{' '}
-        <Link href="/t/AAPL">/t/AAPL</Link> and you get the live tape; press a chip and Pantessa builds the guarded
+        <SpineLink href="/markets">Markets</SpineLink> is a chart surface where the chart is the order form. Open{' '}
+        <SpineLink href="/t/AAPL">/t/AAPL</SpineLink> and you get the live tape; press a chip and Pantessa builds the guarded
         transaction behind it — your own wallet signs, or declines. Tokenized stocks trade 24/7 on Robinhood Chain
         next to crypto spot and Hyperliquid perps, in one wallet. <strong>{UNLIMITED_LINE}.</strong>
       </p>
@@ -56,14 +57,14 @@ export default function MarketsDocsPage() {
         <ul>
           <li>
             <strong>Buy, sell, DCA.</strong>{' '}
-            <Link href={ask('Buy $10 of AAPL', 'robinhood-free')}>Buy $10 of AAPL</Link> ·{' '}
-            <Link href={ask('Sell $50 of ETH')}>Sell $50 of ETH</Link> ·{' '}
-            <Link href={ask('DCA $10 into AAPL weekly', 'robinhood-free')}>DCA $10 into AAPL weekly</Link>. A stock buy
+            <SpineLink href={ask('Buy $10 of AAPL', 'robinhood-free')}>Buy $10 of AAPL</SpineLink> ·{' '}
+            <SpineLink href={ask('Sell $50 of ETH')}>Sell $50 of ETH</SpineLink> ·{' '}
+            <SpineLink href={ask('DCA $10 into AAPL weekly', 'robinhood-free')}>DCA $10 into AAPL weekly</SpineLink>. A stock buy
             on an empty wallet turns into a funding path first (card or bank → ETH → the chain that trades it) and
             picks up where it left off when the money lands.
           </li>
           <li>
-            <strong>Protect.</strong> <Link href={ask('Protect my HYPE long with a 5% stop')}>Protect my HYPE long with a 5% stop</Link>{' '}
+            <strong>Protect.</strong> <SpineLink href={ask('Protect my HYPE long with a 5% stop')}>Protect my HYPE long with a 5% stop</SpineLink>{' '}
             arms a <Link href="/docs/guardian">Guardian</Link>: a delegated key that can only reduce that position,
             checked every minute, receipted when it fires.
           </li>
@@ -78,7 +79,7 @@ export default function MarketsDocsPage() {
           </li>
           <li>
             <strong>Say it.</strong> The composer has a microphone:{' '}
-            <Link href={ask('Show me the AAPL chart')}>&ldquo;show me the AAPL chart&rdquo;</Link>{' '}opens the overlay
+            <SpineLink href={ask('Show me the AAPL chart')}>&ldquo;show me the AAPL chart&rdquo;</SpineLink>{' '}opens the overlay
             without burning a turn; &ldquo;buy ten dollars&rdquo; builds the order.
           </li>
         </ul>

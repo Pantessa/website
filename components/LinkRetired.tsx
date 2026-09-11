@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { Link2, MessageSquare, ShieldCheck } from 'lucide-react'
 import { PantessaMark } from '@/components/Logo'
 import { LINKS_STUDIO_HREF } from '@/lib/links-href'
@@ -40,9 +41,9 @@ export default function LinkRetired({ state }: { state: Exclude<LinkLifecycle, '
         <Link href="/links" className={`${chip} border-[var(--accent)]`}>
           <Link2 className="w-4 h-4" /> Browse live links
         </Link>
-        <Link href="/chat" className={chip}>
+        <SpineLink href="/chat" className={chip}>
           <MessageSquare className="w-4 h-4" /> Open the app
-        </Link>
+        </SpineLink>
         <Link href={LINKS_STUDIO_HREF} className={chip}>
           Make your own link
         </Link>

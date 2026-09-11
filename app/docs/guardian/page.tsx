@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 
 // Guardian — autonomy without custody. The trust story is the whole page:
@@ -31,7 +32,7 @@ export default function GuardianDocsPage() {
       <div className="docs__prose">
         <h2>Arm it in a sentence</h2>
         <p>
-          In <Link href="/chat">chat</Link> (or the <Link href="/docs/embed">embed</Link>), with
+          In <SpineLink href="/chat">chat</SpineLink> (or the <Link href="/docs/embed">embed</Link>), with
           a Hyperliquid position open:
         </p>
         <pre>{`protect my eth long with a 5% stop

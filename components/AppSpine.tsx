@@ -2,10 +2,16 @@
 
 // The app spine: the product's constant across chat and dashboard. On
 // desktop (≥lg) it's a persistent icon COLUMN — brand seat on top, the
-// workspace destinations (new chat, apps, jobs, links, history) as labeled
-// icons, the way out to settings (the dashboard) pinned at the bottom. Below lg the
-// SAME destinations render as a fixed bottom TAB BAR — the phone-native
-// shape of the same spine. One component, one badge poll, two postures.
+// workspace destinations (markets, apps, jobs, links, history, docs) as
+// labeled icons, the way out to settings (the dashboard) pinned at the
+// bottom. Below lg the SAME destinations render as a fixed bottom TAB BAR —
+// the phone-native shape of the same spine. One component, one badge poll,
+// two postures. There is no new-chat seat (2026-09-11, Nate: adding fresh
+// MCPs is not a big thing anymore): the brand seat opens a fresh /chat, and
+// the CHATS drawer leads with New Chat.
+//
+// It is also the app's door: a signed-out visitor on any surface that
+// mounts it is sent home (the gate below, lib/app-entry).
 //
 // It replaces the drawer's own tab strip, the toolbar's reopen chips + NEW
 // button, and the rail's pinned Dashboard row on every breakpoint. Mounted
@@ -28,7 +34,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { BookOpen, Boxes, CandlestickChart, Link2, ListChecks, MessageSquare, Plus, Settings, Users } from 'lucide-react'
+import { BookOpen, Boxes, CandlestickChart, Link2, ListChecks, MessageSquare, Settings, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DEFAULT_TAB, parseTabParam, syncTabParam, tabUrl } from '@/lib/app-tab-url'
 import { useYeetfulStore, type RailTab } from '@/lib/store'
@@ -72,7 +78,23 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // The live connected wallet (NOT the SIWE session — under connect-to-act a
   // visitor runs on connect alone), so the reset below fires at the moment the
   // user actually names themselves.
-  const { walletAddress } = useSession()
+  const { walletAddress, signedOut } = useSession()
+
+  // SIGNED OUT → HOME (2026-09-11, Nate: "if the user is inside markets, or
+  // App or anytime the left side bar is there and they are not logged in,
+  // let's take them to the root home page"). The spine is the signed-in app,
+  // so the gate rides the spine: every surface that mounts it (/markets,
+  // /t/<symbol>, /chat) sends a visitor with no wallet and no session to the
+  // home page, where the pitch and the sign-in door are. `signedOut` waits
+  // for the session, and for wagmi to find a wallet this browser connected
+  // before (lib/app-entry), so a returning user is never bounced
+  // mid-hydration, and a connected wallet without SIWE stays (connect to
+  // act). The dashboard's layout runs its own stricter gate before the
+  // spine ever mounts there.
+  // replace, not push: Back must not land on a page that bounces again.
+  useEffect(() => {
+    if (signedOut) router.replace('/')
+  }, [signedOut, router])
 
   // THE one running-work poll on first-party surfaces: the column and the
   // bar render from this single mount, and the drawer/toolbar instances are
@@ -290,21 +312,6 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         </Link>
 
         <div className="flex flex-col items-center gap-1 pt-2 w-full px-1">
-          <button
-            onClick={() => {
-              // NEW always lands on the conversation, whatever the main
-              // screen was showing.
-              setMainView('chat')
-              router.push('/chat')
-            }}
-            title="Start a new chat"
-            aria-label="Start a new chat"
-            className="w-12 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-2)] transition-colors"
-          >
-            <Plus className="w-[18px] h-[18px]" />
-            <span className="mono text-[9px] font-medium tracking-wide">NEW</span>
-          </button>
-
           {/* MARKETS is a destination PAGE (/markets → /t/<symbol>), not a
               drawer tab — it sits first among the seats because the chart
               that executes is the front door (2026-09-11). */}
@@ -399,20 +406,6 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         className="lg:hidden fixed inset-x-0 bottom-0 z-50 flex items-stretch border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur-md pb-[env(safe-area-inset-bottom)]"
         aria-label="Workspace"
       >
-        <button
-          onClick={() => {
-            // NEW always lands on the conversation, whatever the main
-            // screen was showing.
-            setMainView('chat')
-            router.push('/chat')
-          }}
-          title="Start a new chat"
-          aria-label="Start a new chat"
-          className="flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 text-[color:var(--muted)]"
-        >
-          <Plus className="w-[18px] h-[18px]" />
-          <span className="mono text-[10px] font-medium tracking-wide">NEW</span>
-        </button>
         <Link
           href="/markets"
           title="Markets — stocks 24/7, spot, perps; the chart that executes"

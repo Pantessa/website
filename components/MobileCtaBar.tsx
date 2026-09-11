@@ -4,16 +4,15 @@
 // the user is past the fold a flat, full-width primary button rises from the
 // bottom edge — the "flat full-screen button as you scroll" pattern. Hidden on
 // desktop (CSS) and until armed (scroll past ~60% of the first viewport).
+//
+// It says what the hero's primary CTA says — Open Markets — and goes where a
+// fresh login lands (2026-09-11). A signed-out visitor gets the sign-in door
+// on the way (SpineLink), since the markets shell sends them home otherwise.
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useAccount } from 'wagmi'
-import { useSession } from '@/lib/session'
+import SpineLink from '@/components/SpineLink'
 
 export default function MobileCtaBar() {
-  const router = useRouter()
-  const { isConnected } = useAccount()
-  const { connectAndSignIn } = useSession()
   const [show, setShow] = useState(false)
 
   useEffect(() => {
@@ -27,13 +26,9 @@ export default function MobileCtaBar() {
 
   return (
     <div className={`mcta${show ? ' is-show' : ''}`} aria-hidden={!show}>
-      <button
-        className="btn btn--solid"
-        tabIndex={show ? 0 : -1}
-        onClick={() => (isConnected ? router.push('/dashboard') : connectAndSignIn('/dashboard'))}
-      >
-        {isConnected ? 'Open dashboard' : 'Try the chat'}
-      </button>
+      <SpineLink href="/markets" className="btn btn--solid" tabIndex={show ? 0 : -1}>
+        Open Markets
+      </SpineLink>
     </div>
   )
 }

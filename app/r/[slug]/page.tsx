@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { linksStudioHref } from '@/lib/links-href'
 import { notFound } from 'next/navigation'
 import { ExternalLink, Link2, ShieldCheck } from 'lucide-react'
@@ -152,13 +153,13 @@ export default async function ReceiptPage({ params }: Params) {
 
         {/* handoff — the whole point of the page */}
         <div className="mt-8 flex flex-col items-center gap-3">
-          <Link
+          <SpineLink
             href={tryHref}
             className="flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--accent)] text-black text-sm font-semibold hover:opacity-90 transition-opacity"
           >
             <YeetfulMark size={13} />
             <span>{receipt.ask ? 'Do this yourself' : 'Try Pantessa'}</span>
-          </Link>
+          </SpineLink>
           {receipt.ask && (
             <p className="text-[11px] text-[color:var(--muted-2)] text-center">
               Opens the chat with this exact ask prefilled. Nothing sends, nothing signs, until you say so.

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 
 // Jobs API — the external-agent door to the transaction layer. Every snippet
@@ -226,7 +227,7 @@ dca $25 into ETH daily on base`}</pre>
 
         <h2>Where jobs show up</h2>
         <p>
-          The same compiler answers everywhere: the <Link href="/chat">first-party chat</Link>,
+          The same compiler answers everywhere: the <SpineLink href="/chat">first-party chat</SpineLink>,
           the <Link href="/docs/embed">embed on your site</Link>, and this API. A user typing the
           ask above gets a JobCard with a sign button per step; your agent POSTing it gets the
           same steps as JSON. Signed value lands in your{' '}
