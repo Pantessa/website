@@ -1,8 +1,8 @@
 /* ── MARKETS/COMM — News + Community tabs on the symbol page ─────────────────
-   Theme-aware through the site tokens only (--bg/--surf-*/--line*/--fg/--muted*
-   /--accent/--sell/--ink); no hardcoded colors, so light mode is free.
-   Imported by the COMM components themselves (no edits to x402-design.css —
-   zero cross-lane conflicts). */
+   Theme-aware through the site tokens only (bg, surf, line, fg, muted, accent,
+   sell, ink); no hardcoded colors, so light mode is free. Imported by the COMM
+   components themselves (no edits to x402-design.css — zero cross-lane
+   conflicts). */
 
 .mkc { display: flex; flex-direction: column; gap: 14px; max-width: 1180px; margin: 0 auto; padding: 18px clamp(16px, 3vw, 32px) 40px; }
 .mkc__tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }

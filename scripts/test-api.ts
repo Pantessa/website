@@ -17439,6 +17439,275 @@ async function main() {
     }
   }
 
+
+  // ── MARKETS/COMM ──────────────────────────────────────────────────────────
+  // News on the chart, posts that execute, comments, forks (squad-markets
+  // 2026-09-11). Dynamic imports keep this block self-contained at the end of
+  // the file so seven lanes merge without touching the import header.
+  {
+    const news = await import('../lib/news')
+    const cp = await import('../lib/chart-posts')
+    const cs = await import('../lib/chart-state-stub')
+
+    // Pure: the hand-rolled RSS parser on the three shapes the ladder serves.
+    const rssFixture = `<?xml version="1.0"?><rss><channel>
+      <item><title>Apple &amp; the iPhone - The Motley Fool</title><link>https://news.google.com/rss/articles/abc?oc=5</link><pubDate>Wed, 09 Sep 2026 17:51:00 GMT</pubDate><description>&lt;a href="x"&gt;Apple &amp; the iPhone&lt;/a&gt;</description><source url="https://www.fool.com">The Motley Fool</source></item>
+      <item><title>Plain http link is dropped</title><link>http://insecure.example.com/a</link><pubDate>Wed, 09 Sep 2026 17:51:00 GMT</pubDate></item>
+      <item><title><![CDATA[CDATA title]]></title><link><![CDATA[https://cointelegraph.com/news/x?utm=rss]]></link><pubDate>Wed, 09 Sep 2026 18:47:32 +0000</pubDate><description><![CDATA[<p><img src="a.png"></p><p>Summary &rsquo;text&rsquo;</p>]]></description><dc:creator>Cointelegraph by Someone</dc:creator><media:content url="https://s3-images.ctmedia.io/x.png" type="image/png"/></item>
+      <item><title>Nasdaq tagged</title><link>https://www.nasdaq.com/articles/y</link><pubDate>Fri, 11 Sep 2026 03:43:46 +0000</pubDate><nasdaq:tickers>AAPL,MSFT</nasdaq:tickers></item>
+      <item><title>No date is dropped</title><link>https://example.com/z</link></item>
+    </channel></rss>`
+    const parsed = news.parseRss(rssFixture)
+    const norm = parsed.map((r) => news.normalizeItem(r))
+    check(
+      'news: parseRss + normalizeItem — entities decoded, publisher suffix trimmed, CDATA/description HTML stripped, http + dateless items dropped, tickers read',
+      parsed.length === 5 &&
+        norm[0]?.title === 'Apple & the iPhone' &&
+        norm[0]?.source === 'The Motley Fool' &&
+        norm[0]?.summary === undefined &&
+        norm[1] === null &&
+        norm[2]?.title === 'CDATA title' &&
+        norm[2]?.summary === 'Summary ’text’' &&
+        norm[2]?.imageUrl === 'https://s3-images.ctmedia.io/x.png' &&
+        parsed[3].tickers === 'AAPL,MSFT' &&
+        norm[4] === null &&
+        norm[0]?.id.length === 12,
+      JSON.stringify(norm.map((n) => n && [n.title, n.source, n.summary]))?.slice(0, 200),
+    )
+    const aaplLadder = news.newsLadderFor({ symbol: 'AAPL', source: 'robinhood', pair: 'AAPL', label: 'AAPL / USD' })
+    const ethLadder = news.newsLadderFor({ symbol: 'ETH', source: 'coinbase', pair: 'ETH-USD', label: 'ETH / USD' })
+    const syrupLadder = news.newsLadderFor({ symbol: 'SYRUP', source: 'hyperliquid', pair: 'SYRUP', label: 'SYRUP / USD' })
+    check(
+      'news: the ladder — stocks Google News (company name in the query) → Nasdaq (tickers-filtered, browser UA); coins Cointelegraph tag → Google News; an untagged coin goes straight to Google News',
+      aaplLadder.map((h) => h.feed).join('>') === 'google-news>nasdaq' &&
+        aaplLadder[0].url.includes('Apple') &&
+        aaplLadder[1].browserUa === true &&
+        !!aaplLadder[1].keep &&
+        ethLadder.map((h) => h.feed).join('>') === 'cointelegraph>google-news' &&
+        ethLadder[0].url === 'https://cointelegraph.com/rss/tag/ethereum' &&
+        syrupLadder.map((h) => h.feed).join('>') === 'google-news' &&
+        aaplLadder.every((h) => h.url.startsWith('https://')),
+    )
+    check(
+      'news: nasdaq hop keeps only items whose own tickers tag names the symbol (the feed pads unknown symbols)',
+      aaplLadder[1].keep!(parsed[3]) === true && aaplLadder[1].keep!(parsed[0]) === false,
+    )
+
+    // Live: /api/news for a stock and a coin — feed named, https items, sorted newest-first.
+    for (const sym of ['AAPL', 'ETH']) {
+      const r = await fetch(`${BASE}/api/news?symbol=${sym}&limit=5`)
+      const d = (await r.json()) as { symbol?: string; feed?: string; items?: { title: string; url: string; source: string; publishedAt: number }[] }
+      if (r.status === 200 && d.items && d.items.length === 0) {
+        console.log(`  ⚠️  news: every feed empty for ${sym} right now (feed=${d.feed}) — live feeds down, not the diff; skipping`)
+        continue
+      }
+      check(
+        `news: GET /api/news?symbol=${sym} serves ≥1 item with the feed named, https links, publisher, newest first, ≤ limit`,
+        r.status === 200 &&
+          d.symbol === sym &&
+          !!d.feed &&
+          d.feed !== 'none' &&
+          !!d.items &&
+          d.items.length >= 1 &&
+          d.items.length <= 5 &&
+          d.items.every((i) => i.url.startsWith('https://') && i.title.length > 0 && i.source.length > 0 && i.publishedAt > 1_700_000_000) &&
+          d.items.every((i, k) => k === 0 || d.items![k - 1].publishedAt >= i.publishedAt),
+        `feed=${d.feed} n=${d.items?.length} first=${d.items?.[0]?.source}: ${d.items?.[0]?.title?.slice(0, 50)}`,
+      )
+    }
+    const newsStable = await fetch(`${BASE}/api/news?symbol=USDC`)
+    const newsNone = await fetch(`${BASE}/api/news`)
+    check('news: a chartless symbol (USDC) is refused by name; no symbol → 400 — never an open feed proxy', newsStable.status === 400 && newsNone.status === 400)
+
+    // Pure: chart-state stub (the README contract) fails closed.
+    const goodState = { v: 1, symbol: 'AAPL', tf: '1d', lines: [{ id: 'a', kind: 'h', price: 180, label: 'support', action: { kind: 'buy', ask: 'Buy $10 of AAPL' } }, { id: 'b', kind: 'zone', p1: 200, p2: 210, action: { kind: 'sell', ask: 'Sell $10 of AAPL' } }, { id: 'c', kind: 'note', t: 1_757_000_000, price: 190, text: 'earnings' }] }
+    check(
+      'chart-state stub: strict parse — a good state round-trips and lists its asks in line order; unknown kind / dup id / NaN price / wrong tf / v2 refuse',
+      !!cs.parseChartState(goodState) &&
+        cs.chartStateToAsks(cs.parseChartState(goodState)!).join('|') === 'Buy $10 of AAPL|Sell $10 of AAPL' &&
+        cs.parseChartState({ ...goodState, lines: [{ id: 'x', kind: 'circle', price: 1 }] }) === null &&
+        cs.parseChartState({ ...goodState, lines: [goodState.lines[0], goodState.lines[0]] }) === null &&
+        cs.parseChartState({ ...goodState, lines: [{ id: 'x', kind: 'h', price: NaN }] }) === null &&
+        cs.parseChartState({ ...goodState, tf: '1w' }) === null &&
+        cs.parseChartState({ ...goodState, v: 2 }) === null,
+    )
+
+    // Pure: post validation + text discipline.
+    const okDraft = cp.validatePostDraft({ symbol: 'aapl', title: 'Long the dip', body: 'a\r\nbc', chartState: goodState })
+    const badSym = cp.validatePostDraft({ symbol: 'USDC', title: 'x y z' })
+    const badLink = cp.validatePostDraft({ symbol: 'ETH', kind: 'link', linkUrl: 'http://example.com/a', title: 'a b c' })
+    const okLink = cp.validatePostDraft({ symbol: 'ETH', kind: 'link', linkUrl: 'https://example.com/a?b=1', title: 'a b c' })
+    const mismatch = cp.validatePostDraft({ symbol: 'ETH', title: 'a b c', chartState: goodState })
+    check(
+      'posts: validatePostDraft — symbol normalized via chartPairFor, control chars stripped + CRLF folded, stables refused, http links refused, https accepted, a chart for another symbol refused',
+      okDraft.ok &&
+        okDraft.draft.symbol === 'AAPL' &&
+        okDraft.draft.body === 'a\nbc' &&
+        !badSym.ok &&
+        !badLink.ok &&
+        /https/.test(badLink.reason) &&
+        okLink.ok &&
+        okLink.draft.linkUrl === 'https://example.com/a?b=1' &&
+        !mismatch.ok &&
+        /AAPL, not ETH/.test(mismatch.reason),
+    )
+    check(
+      'posts: decideWriteLimit trips at cap+1 on the right tier; authorLabel is a short 0x or the claimed @handle, never free text',
+      cp.decideWriteLimit([{ key: 'cp:w:0xabc', count: cp.POST_WALLET_HOURLY_CAP + 1 }], { ip: cp.POST_IP_HOURLY_CAP, wallet: cp.POST_WALLET_HOURLY_CAP }) === 'wallet' &&
+        cp.decideWriteLimit([{ key: 'cp:i:h', count: cp.POST_IP_HOURLY_CAP + 1 }, { key: 'cp:w:0xabc', count: cp.POST_WALLET_HOURLY_CAP + 1 }], { ip: cp.POST_IP_HOURLY_CAP, wallet: cp.POST_WALLET_HOURLY_CAP }) === 'ip' &&
+        cp.decideWriteLimit([{ key: 'cp:w:0xabc', count: cp.POST_WALLET_HOURLY_CAP }], { ip: cp.POST_IP_HOURLY_CAP, wallet: cp.POST_WALLET_HOURLY_CAP }) === null &&
+        cp.authorLabel('0xABCDEF0123456789ABCDEF0123456789ABCDEF01') === '0xabcd…ef01' &&
+        cp.authorLabel('0xABCDEF0123456789ABCDEF0123456789ABCDEF01', 'nate') === '@nate',
+    )
+
+    // Live: the write door is SIWE (a connect-only wallet reads, never writes).
+    const commAuthor = privateKeyToAccount(generatePrivateKey())
+    const commReader = privateKeyToAccount(generatePrivateKey())
+    const noAuthPost = await fetch(`${BASE}/api/posts`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ symbol: 'AAPL', title: 'anon idea' }) })
+    check('posts: unauthenticated POST → 401 (SIWE-gated writes)', noAuthPost.status === 401)
+    const authorSession = await signIn(commAuthor)
+    const readerSession = await signIn(commReader)
+    const CJA = { 'content-type': 'application/json', cookie: authorSession }
+    const CJR = { 'content-type': 'application/json', cookie: readerSession }
+
+    // Create with a script-tag body + chart state + mint in ONE request.
+    const xssTitle = `<script>alert(1)</script> AAPL dip ${Date.now()}`
+    const xssBody = '<img src=x onerror=alert(1)>\n**not markdown** and <b>not html</b>'
+    const created = await fetch(`${BASE}/api/posts`, { method: 'POST', headers: CJA, body: JSON.stringify({ symbol: 'AAPL', title: xssTitle, body: xssBody, chartState: goodState, mint: true }) })
+    const createdBody = (await created.json()) as { post?: { id: string; title: string; body: string; asks: string[]; linkSlug: string | null; author: string; authorLabel: string; isInternal: boolean }; link?: { slug: string; url: string }; mintError?: string; internal?: boolean }
+    const postId = createdBody.post?.id ?? 'missing'
+    check(
+      'posts: create → 201 with the text stored AS TEXT (script tag intact as a string, never stripped into a lie), asks derived, author = the SIWE wallet, internal-stamped under the harness header',
+      created.status === 201 &&
+        createdBody.post?.title === xssTitle &&
+        createdBody.post?.body === xssBody &&
+        createdBody.post?.asks.join('|') === 'Buy $10 of AAPL|Sell $10 of AAPL' &&
+        createdBody.post?.author === commAuthor.address.toLowerCase() &&
+        createdBody.post?.authorLabel === `${commAuthor.address.toLowerCase().slice(0, 6)}…${commAuthor.address.toLowerCase().slice(-4)}` &&
+        createdBody.post?.isInternal === true &&
+        createdBody.internal === true,
+      `status=${created.status} ${JSON.stringify(createdBody).slice(0, 160)}`,
+    )
+    check(
+      'posts: mint:true minted the PRIMARY action through /api/intent-links in the same request — slug on the post, /i/<slug> is live',
+      !!createdBody.link?.slug && createdBody.post?.linkSlug === createdBody.link?.slug && (await fetch(`${BASE}/i/${createdBody.link?.slug}`)).status === 200,
+      createdBody.mintError ?? `slug=${createdBody.link?.slug}`,
+    )
+    const myLinks = (await (await fetch(`${BASE}/api/intent-links`, { headers: { cookie: authorSession } })).json()) as { links?: { slug: string; ask: string }[] }
+    check(
+      'posts: the minted link belongs to the AUTHOR with the post’s primary ask (the creator kickback follows them)',
+      !!myLinks.links?.some((l) => l.slug === createdBody.link?.slug && l.ask === 'Buy $10 of AAPL'),
+    )
+
+    // Public reads: fenced; by-id unfenced; the internal-run reader sees its own rows.
+    const pubList = (await (await fetch(`${BASE}/api/posts?symbol=AAPL&limit=100`, { headers: { [ORGANIC_PROBE]: '1' } })).json()) as { posts?: { id: string }[] }
+    const intList = (await (await fetch(`${BASE}/api/posts?symbol=AAPL&limit=100&internal=1`)).json()) as { posts?: { id: string }[] }
+    const byId = (await (await fetch(`${BASE}/api/posts/${postId}`)).json()) as { post?: { id: string; body: string; commentList: unknown[] } }
+    check(
+      'posts: the PUBLIC feed fences is_internal rows OUT (#699 class); internal=1 under the stamp lists them; by-id reads the row (the /i/<slug> rule)',
+      !!pubList.posts && !pubList.posts.some((p) => p.id === postId) && !!intList.posts?.some((p) => p.id === postId) && byId.post?.id === postId && byId.post?.body === xssBody,
+      `public=${pubList.posts?.length} internal=${intList.posts?.length}`,
+    )
+
+    // Refusals by name.
+    const bigState = { v: 1, symbol: 'AAPL', tf: '1d', lines: Array.from({ length: 64 }, (_, i) => ({ id: `l${i}`, kind: 'h', price: 100 + i, label: 'L'.repeat(200), action: { kind: 'buy', ask: `Buy $1 of AAPL ${'x'.repeat(380)}` } })) }
+    const oversize = await fetch(`${BASE}/api/posts`, { method: 'POST', headers: CJA, body: JSON.stringify({ symbol: 'AAPL', title: 'too big a chart', chartState: bigState }) })
+    const oversizeBody = (await oversize.json()) as { error?: string }
+    const badState = await fetch(`${BASE}/api/posts`, { method: 'POST', headers: CJA, body: JSON.stringify({ symbol: 'AAPL', title: 'bad chart', chartState: { v: 1, symbol: 'AAPL', tf: '1d', lines: [{ id: 'q', kind: 'ray', price: 1 }] } }) })
+    const badStateBody = (await badState.json()) as { error?: string }
+    const longBody = await fetch(`${BASE}/api/posts`, { method: 'POST', headers: CJA, body: JSON.stringify({ symbol: 'AAPL', title: 'long body', body: 'x'.repeat(2001) }) })
+    const httpLink = await fetch(`${BASE}/api/posts`, { method: 'POST', headers: CJA, body: JSON.stringify({ symbol: 'AAPL', kind: 'link', linkUrl: 'http://example.com/', title: 'insecure' }) })
+    const localLink = await fetch(`${BASE}/api/posts`, { method: 'POST', headers: CJA, body: JSON.stringify({ symbol: 'AAPL', kind: 'link', linkUrl: 'https://localhost:3000/', title: 'internal' }) })
+    check(
+      'posts: refused by name — chartState over 32KB, a chartState off the schema, a body over 2,000 chars, an http pinned link, a localhost pinned link',
+      oversize.status === 400 &&
+        /32768/.test(oversizeBody.error ?? '') &&
+        badState.status === 400 &&
+        /schema/.test(badStateBody.error ?? '') &&
+        longBody.status === 400 &&
+        httpLink.status === 400 &&
+        localLink.status === 400,
+      `oversize=${oversize.status}:${oversizeBody.error?.slice(0, 60)} bad=${badState.status} long=${longBody.status} http=${httpLink.status} local=${localLink.status}`,
+    )
+
+    // Fork: copies the parent's lines, records lineage; mint is author-only.
+    const forked = await fetch(`${BASE}/api/posts`, { method: 'POST', headers: CJR, body: JSON.stringify({ symbol: 'AAPL', title: 'my take', forkOf: postId }) })
+    const forkedBody = (await forked.json()) as { post?: { id: string; forkOf: string | null; asks: string[]; author: string; chartState: { lines: unknown[] } | null } }
+    check(
+      'posts: fork → a new post by the reader with fork_of = parent and the parent’s lines copied (asks equal)',
+      forked.status === 201 && forkedBody.post?.forkOf === postId && forkedBody.post?.author === commReader.address.toLowerCase() && forkedBody.post?.asks.join('|') === 'Buy $10 of AAPL|Sell $10 of AAPL' && forkedBody.post?.chartState?.lines.length === 3,
+      `status=${forked.status}`,
+    )
+    const forkMissing = await fetch(`${BASE}/api/posts`, { method: 'POST', headers: CJR, body: JSON.stringify({ symbol: 'AAPL', title: 'ghost', forkOf: 'zzzzzzzzzz' }) })
+    check('posts: forking a post that does not exist → 404', forkMissing.status === 404)
+    const mintByReader = await fetch(`${BASE}/api/posts/${postId}/mint`, { method: 'POST', headers: CJR })
+    const mintAgain = await fetch(`${BASE}/api/posts/${postId}/mint`, { method: 'POST', headers: CJA })
+    const mintAgainBody = (await mintAgain.json()) as { slug?: string; existing?: boolean }
+    const forkMint = await fetch(`${BASE}/api/posts/${forkedBody.post?.id}/mint`, { method: 'POST', headers: CJR })
+    const forkMintBody = (await forkMint.json()) as { slug?: string; ask?: string }
+    check(
+      'posts: /mint — a non-author gets 403; the author re-minting gets the existing slug; the forker mints THEIR OWN link for the same ask (kickback follows each author)',
+      mintByReader.status === 403 &&
+        mintAgain.status === 200 &&
+        mintAgainBody.existing === true &&
+        mintAgainBody.slug === createdBody.link?.slug &&
+        forkMint.status === 200 &&
+        !!forkMintBody.slug &&
+        forkMintBody.slug !== createdBody.link?.slug &&
+        forkMintBody.ask === 'Buy $10 of AAPL',
+      `reader=${mintByReader.status} again=${mintAgain.status} fork=${forkMint.status}`,
+    )
+
+    // Comments: SIWE-gated, text only, listed on the post.
+    const noAuthComment = await fetch(`${BASE}/api/posts/${postId}/comments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ body: 'anon' }) })
+    const commentText = '<b>bold?</b> no — text. ' + Date.now()
+    const comment = await fetch(`${BASE}/api/posts/${postId}/comments`, { method: 'POST', headers: CJR, body: JSON.stringify({ body: commentText }) })
+    const commentBody = (await comment.json()) as { comment?: { body: string; author: string } }
+    const emptyComment = await fetch(`${BASE}/api/posts/${postId}/comments`, { method: 'POST', headers: CJR, body: JSON.stringify({ body: '   ' }) })
+    const afterComment = (await (await fetch(`${BASE}/api/posts/${postId}`)).json()) as { post?: { commentList: { body: string; authorLabel: string }[] } }
+    check(
+      'posts: comments — unauthenticated 401, a signed-in reader 201 with the text intact, an empty body refused, the post lists it with the commenter’s short 0x',
+      noAuthComment.status === 401 &&
+        comment.status === 201 &&
+        commentBody.comment?.body === commentText &&
+        commentBody.comment?.author === commReader.address.toLowerCase() &&
+        emptyComment.status === 400 &&
+        afterComment.post?.commentList.length === 1 &&
+        afterComment.post?.commentList[0].body === commentText &&
+        /^0x[0-9a-f]{4}…[0-9a-f]{4}$/.test(afterComment.post?.commentList[0].authorLabel ?? ''),
+      `c=${comment.status} list=${afterComment.post?.commentList.length}`,
+    )
+
+    // "Executed by N wallets" is receipt-counted and never internal: an
+    // internal-stamped signed event on the post's link moves nothing.
+    const slug = createdBody.link?.slug ?? 'missing'
+    await fetch(`${BASE}/api/intent-links/${slug}/events`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'signed', wallet: commReader.address, valueUsd: 12 }) })
+    const afterSign = (await (await fetch(`${BASE}/api/posts/${postId}`)).json()) as { post?: { executedBy: number; linkSlug: string | null } }
+    const execSort = (await (await fetch(`${BASE}/api/posts?symbol=AAPL&sort=executed&limit=100&internal=1`)).json()) as { sort?: string; posts?: { id: string; linkSlug: string | null; executedBy: number }[] }
+    check(
+      'posts: executedBy counts only receipt-counted, non-internal signed events on the link — the harness sign stays 0; sort=executed ranks linked posts ahead of linkless ones',
+      afterSign.post?.linkSlug === slug &&
+        afterSign.post?.executedBy === 0 &&
+        execSort.sort === 'executed' &&
+        !!execSort.posts &&
+        execSort.posts.findIndex((p) => p.id === postId) >= 0 &&
+        (() => {
+          const firstLinkless = execSort.posts!.findIndex((p) => !p.linkSlug)
+          const lastLinked = execSort.posts!.map((p) => !!p.linkSlug).lastIndexOf(true)
+          return firstLinkless === -1 || lastLinked < firstLinkless
+        })(),
+      `executedBy=${afterSign.post?.executedBy}`,
+    )
+
+    // The symbol page mounts the tabs (standalone proof; SHELL's strip replaces it).
+    const tPage = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
+    check('posts: /t/AAPL carries the COMM tab mount (News + Community) and no post text reaches the HTML pre-hydration', tPage.includes('data-markets-comm') && tPage.includes('Community') && !tPage.includes(xssTitle))
+
+    // Cleanup — drill rows out of the shared TEST DB.
+    await prisma.chartPost.deleteMany({ where: { author: { in: [commAuthor.address.toLowerCase(), commReader.address.toLowerCase()] } } }).catch(() => {})
+    await prisma.intentLink.deleteMany({ where: { creator: { in: [commAuthor.address.toLowerCase(), commReader.address.toLowerCase()] } } }).catch(() => {})
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }
