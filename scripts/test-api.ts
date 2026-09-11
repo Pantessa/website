@@ -18890,6 +18890,149 @@ async function main() {
     }
   }
 
+  // ── MARKETS/WATCH — holdings autofill ─────────────────────────────────────
+  // Connect a wallet and the watchlist fills with what it holds; a removed
+  // holding stays off until the owner adds it back (Nate, 2026-09-11). The
+  // pure rule, the guest ledger and the wallet → symbol cut first, then the
+  // account path over HTTP under throwaway SIWE sessions (rows deleted at the
+  // end).
+  console.log('— markets/watch holdings autofill')
+  {
+    const { planHeldAutofill, heldAutofillNote, heldTitle, parseHeldLedger, guestHeldAdoption, mirrorAccountLedger, DEFAULT_LIST_NAME } = await import('../lib/watchlists')
+    const { heldWatchSymbols, curatedSymbolFor } = await import('../lib/watchlist-holdings')
+
+    // 1. The rule.
+    const nate = planHeldAutofill({ held: ['ETH', 'AAPL', 'NVDA', 'USDC'], watched: ['AAPL', 'UNI'], seen: [] })
+    check('holdings autofill: a wallet connected BEFORE this shipped fills too — held symbols on no list and not in the ledger are added; AAPL (already watched) is only remembered; a stable never plans', nate.add.join() === 'ETH,NVDA' && nate.newlySeen.join() === 'ETH,AAPL,NVDA', JSON.stringify(nate))
+    const afterRemove = planHeldAutofill({ held: ['ETH', 'AAPL', 'NVDA'], watched: ['AAPL', 'UNI', 'ETH'], seen: nate.newlySeen })
+    check('holdings autofill: a removed holding (NVDA) stays off on every later visit — it is in the ledger', afterRemove.add.length === 0 && afterRemove.newlySeen.length === 0)
+    const newBuy = planHeldAutofill({ held: ['ETH', 'AAPL', 'NVDA', 'TSLA'], watched: ['AAPL', 'UNI', 'ETH'], seen: nate.newlySeen })
+    check('holdings autofill: a token bought later joins on the next visit; the removed one still does not', newBuy.add.join() === 'TSLA' && newBuy.newlySeen.join() === 'TSLA')
+    check('holdings autofill: aliases collapse (WETH → ETH) and junk / chartless names never plan', planHeldAutofill({ held: ['WETH', 'weth', '!!!', 'ZZZZQX'], watched: [], seen: [] }).add.join() === 'ETH')
+    check('holdings autofill: the note names what was added and how to undo it',
+      heldAutofillNote(['ETH'], 'My watchlist') === 'Added ETH from your wallet to My watchlist. Remove any and it stays off.' &&
+      heldAutofillNote(['ETH', 'AAPL'], 'L').startsWith('Added ETH and AAPL from') &&
+      heldAutofillNote(['ETH', 'AAPL', 'NVDA', 'TSLA', 'SOL'], 'L').startsWith('Added ETH, AAPL, NVDA and 2 more from'))
+    check('holdings autofill: the row marker reads "In your wallet" with value and chains',
+      heldTitle({ symbol: 'AAPL', valueUsd: 11.894, chains: ['Robinhood Chain'] }) === 'In your wallet · $11.89 · Robinhood Chain' &&
+      heldTitle({ symbol: 'ETH', valueUsd: 2500.4, chains: ['Base', 'Ethereum'] }) === 'In your wallet · $2,500 · Base, Ethereum' &&
+      heldTitle({ symbol: 'X', valueUsd: null, chains: [] }) === 'In your wallet')
+
+    // 2. The guest ledger (browser-scoped, like guest lists).
+    const led = parseHeldLedger(JSON.stringify({ seen: ['weth', 'AAPL', 7], auto: ['ETH'], pending: ['NVDA'] }))
+    check('holdings ledger (guest): strict — a corrupt key reads empty, symbols normalize, non-strings drop', parseHeldLedger('nope').seen.length === 0 && parseHeldLedger('[1,2]').seen.length === 0 && led.seen.join() === 'ETH,AAPL' && led.auto.join() === 'ETH' && led.pending.join() === 'NVDA')
+    const handover = guestHeldAdoption({ seen: ['ETH', 'AAPL', 'NVDA'], auto: ['ETH', 'SOL'], pending: ['NVDA'] }, [{ symbols: ['ETH', 'AAPL'] }])
+    check('holdings ledger (guest): sign-in hands over the autofill-placed symbols still listed and the removals made signed-out', handover.auto.join() === 'ETH' && handover.dismissed.join() === 'NVDA')
+    const mirrored = mirrorAccountLedger({ seen: ['ETH', 'AAPL', 'NVDA'], auto: [], pending: [] }, ['ETH'], ['TSLA'])
+    check('holdings ledger (guest): after an account sync the browser forgets what the account watches and learns what it removed', mirrored.seen.join() === 'AAPL,NVDA,TSLA')
+
+    // 3. The wallet → symbol cut (fake curated lookup + stock set).
+    const Z = '0x0000000000000000000000000000000000000000'
+    const addrN = (n: number) => `0x${n.toString(16).padStart(40, '0')}`
+    const listed: Record<string, string> = { [`8453:${addrN(1)}`]: 'cbBTC', [`8453:${addrN(2)}`]: 'USDC', [`1:${addrN(3)}`]: 'UNI', [`1:${addrN(5)}`]: 'PEPE', [`42161:${addrN(4)}`]: 'WETH', [`4663:${addrN(9)}`]: 'AAPL' }
+    const lookup = (chainId: number, a: string) => listed[`${chainId}:${a.toLowerCase()}`] ?? null
+    const hrow = (symbol: string, address: string, valueUsd: number | null, native?: true) => ({ symbol, address, balance: '1', priceUsd: valueUsd, valueUsd, ...(native ? { native } : {}) })
+    const cut = heldWatchSymbols(
+      [
+        { id: 8453, name: 'Base', holdings: [hrow('ETH', Z, 5, true), hrow('cbBTC', addrN(1), 900), hrow('USDC', addrN(2), 400), hrow('AAPL', addrN(7), 50)] },
+        { id: 1, name: 'Ethereum', holdings: [hrow('UNI', addrN(3), 12), hrow('UNI', addrN(8), 999), hrow('PEPE', addrN(5), 0.2)] },
+        { id: 42161, name: 'Arbitrum', holdings: [hrow('WETH', addrN(4), 3)] },
+        { id: 4663, name: 'Robinhood Chain', holdings: [hrow('AAPL', addrN(9), null)] },
+      ],
+      { curatedSymbol: lookup, stockAddresses: new Set([addrN(9)]) },
+    )
+    check('holdings cut: native + WETH merge into one ETH across chains; cbBTC → BTC; a stable, $0.20 of dust, an uncurated "UNI" airdrop and a Base token named AAPL never count; an unpriced 4663 stock does; richest first',
+      cut.map((h) => `${h.symbol}:${h.valueUsd ?? 'null'}:${h.chains.join('+')}`).join('|') === 'BTC:900:Base|UNI:12:Ethereum|ETH:8:Base+Arbitrum|AAPL:null:Robinhood Chain',
+      JSON.stringify(cut))
+    check('holdings cut: curatedSymbolFor reads the chain registry (Base wrapped gas → WETH, USDC by address) and refuses an address nobody lists or an unknown chain',
+      curatedSymbolFor(8453, '0x4200000000000000000000000000000000000006') === 'WETH' && curatedSymbolFor(8453, '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913') === 'USDC' && curatedSymbolFor(8453, '0x' + 'de'.repeat(20)) === null && curatedSymbolFor(999, '0x4200000000000000000000000000000000000006') === null)
+
+    // 4. GET /api/watchlists/holdings — public by address, the panel's cache.
+    check('GET /api/watchlists/holdings: a non-address is 400', (await fetch(`${BASE}/api/watchlists/holdings?address=nope`)).status === 400)
+    const emptyAddr = '0x' + 'ab'.repeat(20)
+    await fetch(`${BASE}/api/wallet?address=${emptyAddr}`)
+    const eRes = await fetch(`${BASE}/api/watchlists/holdings?address=${emptyAddr}`)
+    const eBody = (await eRes.json()) as { address: string; held: unknown[] }
+    check('GET /api/watchlists/holdings: public by address, an empty wallet holds nothing, and it rides the Wallet panel’s cache (hit right after GET /api/wallet)', eRes.status === 200 && eBody.address === emptyAddr && eBody.held.length === 0 && eRes.headers.get('x-wallet-cache') === 'hit', `${eRes.status} ${eRes.headers.get('x-wallet-cache')}`)
+    const liveRes = await fetch(`${BASE}/api/watchlists/holdings?address=0xfef4feed2c57a5dbaa5a0c553aa7a0a0fd66d393`)
+    const liveBody = (await liveRes.json()) as { held?: { symbol: string; chains: string[] }[] }
+    check(`GET /api/watchlists/holdings: a live wallet's holdings are all chartable, never a stable, each on a named chain (${liveBody.held?.map((h) => h.symbol).join(',') || 'none held'})`,
+      liveRes.status === 200 && Array.isArray(liveBody.held) && liveBody.held.every((h) => !!chartPairFor(h.symbol) && h.chains.length > 0))
+
+    // 5. POST /api/watchlists/holdings — the account sync.
+    type Sync = { list: { id: string; name: string; symbols: string[] } | null; added: string[]; dismissed: string[] }
+    const syncHeld = async (cookie: string, symbols: string[]): Promise<Sync> =>
+      (await (await fetch(`${BASE}/api/watchlists/holdings`, { method: 'POST', headers: { 'content-type': 'application/json', cookie, 'x-yf-internal-run': '1' }, body: JSON.stringify({ symbols }) })).json()) as Sync
+    const hoOwner = privateKeyToAccount(generatePrivateKey())
+    const hoNate = privateKeyToAccount(generatePrivateKey())
+    const hoRace = privateKeyToAccount(generatePrivateKey())
+    const hoAdopt = privateKeyToAccount(generatePrivateKey())
+    const hoOwners = [hoOwner, hoNate, hoRace, hoAdopt].map((a) => a.address.toLowerCase())
+    const [hoSession, nateSession, raceSession, adoptSession] = [await signIn(hoOwner), await signIn(hoNate), await signIn(hoRace), await signIn(hoAdopt)]
+    const HJ = { 'content-type': 'application/json', 'x-yf-internal-run': '1' }
+    check('POST /api/watchlists/holdings: no session → 401; a body without symbols → 400',
+      (await fetch(`${BASE}/api/watchlists/holdings`, { method: 'POST', headers: HJ, body: JSON.stringify({ symbols: ['ETH'] }) })).status === 401 &&
+      (await fetch(`${BASE}/api/watchlists/holdings`, { method: 'POST', headers: { ...HJ, cookie: hoSession }, body: '{}' })).status === 400)
+    const s1 = await syncHeld(hoSession, ['ETH', 'AAPL', 'USDC', '!!!'])
+    check(`holdings sync: a wallet with no list gets "${DEFAULT_LIST_NAME}" holding what it holds (stables + junk never)`, s1.list?.name === DEFAULT_LIST_NAME && s1.list.symbols.join() === 'ETH,AAPL' && s1.added.join() === 'ETH,AAPL' && s1.dismissed.length === 0, JSON.stringify(s1))
+    const s2 = await syncHeld(hoSession, ['ETH', 'AAPL'])
+    check('holdings sync: the same holdings again add nothing (idempotent across visits and tabs)', s2.added.length === 0 && s2.list?.symbols.join() === 'ETH,AAPL')
+    const listId = s1.list?.id ?? ''
+    await fetch(`${BASE}/api/watchlists/${listId}/items?symbol=AAPL`, { method: 'DELETE', headers: { cookie: hoSession } })
+    const s3 = await syncHeld(hoSession, ['ETH', 'AAPL', 'NVDA'])
+    check('holdings sync: a removed holding stays off (the removal is remembered) while a new holding joins; the response names the removal', s3.added.join() === 'NVDA' && s3.list?.symbols.join() === 'ETH,NVDA' && s3.dismissed.join() === 'AAPL', JSON.stringify(s3))
+    await fetch(`${BASE}/api/watchlists/${listId}/items`, { method: 'POST', headers: { ...HJ, cookie: hoSession }, body: JSON.stringify({ symbols: ['AAPL'] }) })
+    const s4 = await syncHeld(hoSession, ['ETH', 'AAPL', 'NVDA'])
+    check('holdings sync: adding it back by hand brings it back, and the sync leaves it be', s4.added.length === 0 && s4.list?.symbols.join() === 'ETH,NVDA,AAPL' && s4.dismissed.length === 0)
+    await fetch(`${BASE}/api/watchlists/${listId}/items?symbol=AAPL`, { method: 'DELETE', headers: { cookie: hoSession } })
+    const s4b = await syncHeld(hoSession, ['ETH', 'AAPL', 'NVDA'])
+    check('holdings sync: removed again after the re-add → off again', s4b.added.length === 0 && !s4b.list?.symbols.includes('AAPL'))
+    await fetch(`${BASE}/api/watchlists?id=${listId}`, { method: 'DELETE', headers: { cookie: hoSession } })
+    const s5 = await syncHeld(hoSession, ['ETH', 'AAPL', 'NVDA'])
+    check('holdings sync: deleting the list is a removal too — the next sync creates nothing and adds nothing', s5.list === null && s5.added.length === 0, JSON.stringify(s5))
+
+    // The Nate case: a list that already had AAPL + UNI before the feature.
+    const pre = ((await (await fetch(`${BASE}/api/watchlists`, { method: 'POST', headers: { ...HJ, cookie: nateSession }, body: JSON.stringify({ name: DEFAULT_LIST_NAME, symbols: ['AAPL', 'UNI'] }) })).json()) as { list: { id: string } }).list
+    const sn = await syncHeld(nateSession, ['ETH', 'AAPL', 'NVDA'])
+    check('holdings sync: an existing list (AAPL, UNI) gains only what it lacks, appended in holdings order', sn.list?.id === pre.id && sn.list.symbols.join() === 'AAPL,UNI,ETH,NVDA' && sn.added.join() === 'ETH,NVDA')
+
+    // Two tabs restoring at once: one list, each symbol once.
+    const [ra, rb] = await Promise.all([syncHeld(raceSession, ['ETH', 'BTC']), syncHeld(raceSession, ['ETH', 'BTC'])])
+    const raceLists = (await (await fetch(`${BASE}/api/watchlists`, { headers: { cookie: raceSession } })).json()) as { lists: { symbols: string[] }[] }
+    check('holdings sync: two tabs syncing at once create ONE list (per-owner lock), each symbol once', raceLists.lists.length === 1 && raceLists.lists[0].symbols.join() === 'ETH,BTC' && [ra.added.length, rb.added.length].sort().join() === '0,2', JSON.stringify(raceLists.lists))
+
+    // 6. Adoption: merge by name, autofill-placed symbols re-checked, removals carried.
+    const base = await syncHeld(adoptSession, ['AAPL', 'NVDA'])
+    await fetch(`${BASE}/api/watchlists/${base.list?.id}/items?symbol=NVDA`, { method: 'DELETE', headers: { cookie: adoptSession } })
+    const adoptRes = await fetch(`${BASE}/api/watchlists/adopt`, {
+      method: 'POST',
+      headers: { ...HJ, cookie: adoptSession },
+      body: JSON.stringify({ lists: [{ name: 'my WATCHLIST', symbols: ['NVDA', 'SOL', 'DOGE'] }, { name: 'Guest other', symbols: ['NVDA'] }], auto: ['NVDA', 'SOL'], dismissed: ['LINK'] }),
+    })
+    const adoptBody = (await adoptRes.json()) as { lists: { id: string; symbols: string[] }[] }
+    const afterAdopt = (await (await fetch(`${BASE}/api/watchlists`, { headers: { cookie: adoptSession } })).json()) as { lists: { id: string; symbols: string[] }[] }
+    check('adopt: a guest list named like an account list merges into it (no second "My watchlist"); an autofill-placed symbol the account removed (NVDA) is not carried back; a list emptied by that filter is dropped; manual + never-seen symbols land',
+      adoptRes.status === 201 && afterAdopt.lists.length === 1 && afterAdopt.lists[0].id === base.list?.id && afterAdopt.lists[0].symbols.join() === 'AAPL,SOL,DOGE' && adoptBody.lists.length === 1,
+      JSON.stringify(afterAdopt.lists))
+    const sAdopt = await syncHeld(adoptSession, ['LINK', 'SOL', 'NVDA'])
+    check('adopt: a removal made signed-out (LINK) joins the account ledger — the next sync leaves it off', sAdopt.added.length === 0 && !sAdopt.list?.symbols.includes('LINK'), JSON.stringify(sAdopt))
+
+    // 7. The rail is wired (source pins; the pixel drive is in the PR).
+    const hookSrc = await readFile('components/markets/watchlist/useWatchlists.ts', 'utf8')
+    const railSrc = await readFile('components/markets/watchlist/WatchlistRail.tsx', 'utf8')
+    check('holdings rail: the hook reads /api/watchlists/holdings, plans with planHeldAutofill, hands the guest ledger over on sign-in, and routes every guest write through updateGuest (the stale-closure fix: no persistGuest, no [...lists, …])',
+      hookSrc.includes('/api/watchlists/holdings') && hookSrc.includes('planHeldAutofill(') && hookSrc.includes('guestHeldAdoption(') && hookSrc.includes('updateGuest(') && !hookSrc.includes('persistGuest(') && !/\[\.\.\.lists,/.test(hookSrc))
+    check('holdings rail: rows the wallet holds wear the "In your wallet" marker and the autofill says what it added', railSrc.includes('data-held') && railSrc.includes('heldTitle(') && railSrc.includes('heldAutofillNote('))
+
+    // Cleanup — lists through the API, ledger rows directly (harness Prisma
+    // needs DATABASE_URL exported; without it the rows stay on the TEST DB).
+    for (const [cookie] of [[hoSession], [nateSession], [raceSession], [adoptSession]]) {
+      const mine = (await (await fetch(`${BASE}/api/watchlists`, { headers: { cookie } })).json()) as { lists: { id: string }[] }
+      for (const l of mine.lists) await fetch(`${BASE}/api/watchlists?id=${l.id}`, { method: 'DELETE', headers: { cookie } })
+    }
+    await prisma.watchlistHoldingSeen.deleteMany({ where: { owner: { in: hoOwners } } }).catch(() => {})
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }

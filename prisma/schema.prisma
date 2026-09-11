@@ -1598,6 +1598,21 @@ model WatchlistItem {
   @@map("watchlist_items")
 }
 
+/// The holdings autofill's memory (lib/watchlists planHeldAutofill): every
+/// symbol the owner's wallet was seen holding, or the owner removed from a
+/// list. Autofill only adds held symbols NOT in this ledger, so a removed
+/// holding stays removed until the owner adds it back by hand. `added` =
+/// the autofill placed it (false = it was already watched, or removed).
+model WatchlistHoldingSeen {
+  owner     String // lowercased SIWE wallet
+  symbol    String // normalized chart symbol
+  added     Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([owner, symbol])
+  @@map("watchlist_holdings_seen")
+}
+
 /// A price alert. The cron (/api/cron/alerts) reads ONE quote per symbol
 /// per pass and evaluates every alert on it (the dedup that makes
 /// "unlimited alerts" free). An alert with `actionAsk` never sends the ask

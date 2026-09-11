@@ -299,6 +299,44 @@ export async function priceUnpricedStockRows(chains: WalletChainView[]): Promise
   rh.gas = gasStateFor(rh.id, rh.nativeEth, tokenUsd)
 }
 
+// ── The shared read cache ───────────────────────────────────────────────────
+// One cache for every surface that reads a wallet by address: the Wallet
+// panel (GET /api/wallet) and the watchlist's holdings autofill (GET
+// /api/watchlists/holdings). 45s per address, so a panel left open and a rail
+// on every page cost one Alchemy call a minute between them. `fresh` bypasses
+// it, bounded to one fresh read per address every 8s so no button becomes an
+// Alchemy amplifier. Concurrent misses share one compose. Anchored on
+// globalThis so every route bundle in the process sees the same map.
+export const WALLET_VIEW_TTL_MS = 45_000
+export const WALLET_VIEW_FRESH_GAP_MS = 8_000
+const WALLET_VIEW_CACHE_MAX = 500
+
+const viewStore = globalThis as typeof globalThis & {
+  __walletViewCache?: Map<string, { at: number; view: WalletView }>
+  __walletViewInflight?: Map<string, Promise<WalletView>>
+}
+
+export async function getWalletViewCached(address: `0x${string}`, opts: { fresh?: boolean } = {}): Promise<{ view: WalletView; cached: boolean }> {
+  const cache = (viewStore.__walletViewCache ??= new Map())
+  const inflight = (viewStore.__walletViewInflight ??= new Map())
+  const key = address.toLowerCase()
+  const hit = cache.get(key)
+  const age = hit ? Date.now() - hit.at : Infinity
+  if (hit && (age < WALLET_VIEW_FRESH_GAP_MS || (!opts.fresh && age < WALLET_VIEW_TTL_MS))) return { view: hit.view, cached: true }
+  let pending = inflight.get(key)
+  if (!pending) {
+    pending = composeWalletView(address).finally(() => inflight.delete(key))
+    inflight.set(key, pending)
+  }
+  const view = await pending
+  if (cache.size >= WALLET_VIEW_CACHE_MAX && !cache.has(key)) {
+    const oldest = [...cache.entries()].sort((a, b) => a[1].at - b[1].at)[0]
+    if (oldest) cache.delete(oldest[0])
+  }
+  cache.set(key, { at: Date.now(), view })
+  return { view, cached: false }
+}
+
 /** The whole view. Never throws for a single failed source. */
 export async function composeWalletView(address: `0x${string}`): Promise<WalletView> {
   const withAlchemy = alchemyEnabled()

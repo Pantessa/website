@@ -14,12 +14,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Bell, BellRing, Check, ChevronDown, ChevronRight, ClipboardPaste, Link2, MoreHorizontal, Plus, Trash2, X } from 'lucide-react'
+import { Bell, BellRing, Check, ChevronDown, ChevronRight, ClipboardPaste, Link2, MoreHorizontal, Plus, Trash2, Wallet, X } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { chartPairFor } from '@/lib/charts'
 import { useToast } from '@/lib/toast'
-import { fmtQuotePrice, sectionedRows, symbolName, type Quote, type WatchlistShape } from '@/lib/watchlists'
+import { DEFAULT_LIST_NAME, fmtQuotePrice, heldAutofillNote, heldTitle, sectionedRows, symbolName, type Quote, type WatchlistShape } from '@/lib/watchlists'
 import AddTicker from './AddTicker'
 import AlertForm from './AlertForm'
 import ImportModal from './ImportModal'
@@ -84,6 +84,11 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
   )
   const sendLabel = onAsk ? 'sends in chat' : 'prefills chat · you send it'
 
+  // The holdings autofill says what it added, once, and how to undo it.
+  useEffect(() => {
+    if (wl.autofill) toast(heldAutofillNote(wl.autofill.added, wl.autofill.listName), 'success')
+  }, [wl.autofill, toast])
+
   // Close popovers on outside click / Esc.
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
@@ -110,7 +115,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
 
   const ensureList = useCallback(async (): Promise<WatchlistShape | null> => {
     if (active) return active
-    return wl.createList('My watchlist')
+    return wl.createList(DEFAULT_LIST_NAME)
   }, [active, wl])
 
   const addSymbol = useCallback(
@@ -193,7 +198,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                   onClick={async () => {
                     setPickerOpen(false)
                     const n = wl.lists.length + 1
-                    await wl.createList(n === 1 ? 'My watchlist' : `List ${n}`)
+                    await wl.createList(n === 1 ? DEFAULT_LIST_NAME : `List ${n}`)
                   }}
                 >
                   <Plus className="h-3.5 w-3.5" /> New list
@@ -351,12 +356,20 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                   const up = q ? q.chgPct > 0 : false
                   const down = q ? q.chgPct < 0 : false
                   const cur = pageSym === sym
+                  const inWallet = wl.held.get(sym)
                   return (
                     <div key={sym} className={`wl__row${cur ? ' wl__row--cur' : ''}`} data-symbol={sym}>
                       <Link href={`/t/${sym}`} className="wl__rowMain" onClick={onClose}>
                         <TokenIcon symbol={sym} size={20} {...(pair?.source === 'robinhood' ? { chain: 'Robinhood Chain' } : {})} />
                         <span className="wl__rowId">
-                          <span className="wl__rowSym">{sym}</span>
+                          <span className="wl__rowSym">
+                            {sym}
+                            {inWallet && (
+                              <span className="wl__rowHeld" title={heldTitle(inWallet)} aria-label={heldTitle(inWallet)} data-held="">
+                                <Wallet aria-hidden />
+                              </span>
+                            )}
+                          </span>
                           <span className="wl__rowName">{pair ? symbolName(sym) : 'no chart yet'}</span>
                         </span>
                         <span className="wl__rowQuote mono">

@@ -35,6 +35,9 @@ export interface WatchlistShape {
 }
 
 export const WATCHLIST_NAME_MAX = 60
+/** The first list's name on every side (the rail's first add, the holdings
+ *  autofill, adoption's merge-by-name). */
+export const DEFAULT_LIST_NAME = 'My watchlist'
 export const WATCHLIST_SECTION_MAX = 40
 /** Symbol shape the store accepts — lib/charts' normalized form. */
 export const WATCH_SYMBOL_RE = /^[A-Z0-9]{1,12}$/
@@ -347,6 +350,124 @@ export function writeGuestLists(lists: WatchlistShape[]): void {
   } catch {
     /* private mode / quota — the in-memory copy still renders */
   }
+}
+
+// ── Holdings autofill ───────────────────────────────────────────────────────
+// A connected wallet's watchlist fills itself with what the wallet holds
+// (Nate, 2026-09-11). ONE rule for the account path (lib/watchlists-store
+// syncHeldSymbols) and the guest path (useWatchlists): add the held symbols
+// that are on no list and not in the SEEN ledger, then remember every held
+// symbol. Removing a symbol also lands it in the ledger, so a removed holding
+// stays off until the owner adds it back by hand. It runs on every visit, not
+// only the first connect: a wallet connected before this shipped fills too,
+// and a token bought next week joins the list the next time the rail loads.
+
+/** One watchable symbol a wallet holds (GET /api/watchlists/holdings). */
+export interface HeldSymbol {
+  symbol: string
+  /** Summed USD value across chains; null when no row could be priced. */
+  valueUsd: number | null
+  /** Chain names it sits on ('Base', 'Robinhood Chain', …). */
+  chains: string[]
+}
+
+export interface HeldAutofillPlan {
+  /** Held symbols to append to the primary list, in holdings order. */
+  add: string[]
+  /** Held symbols the ledger doesn't know yet — record every one of them. */
+  newlySeen: string[]
+}
+
+export function planHeldAutofill(input: { held: readonly string[]; watched: Iterable<string>; seen: Iterable<string> }): HeldAutofillPlan {
+  const watched = new Set(input.watched)
+  const seen = new Set(input.seen)
+  // Chartable only: a list row must always quote (the add-ticker contract).
+  const held = dedupeSymbols(input.held).filter((s) => !!chartPairFor(s))
+  const newlySeen = held.filter((s) => !seen.has(s))
+  return { add: newlySeen.filter((s) => !watched.has(s)), newlySeen }
+}
+
+function joinAnd(items: readonly string[]): string {
+  if (items.length <= 1) return items.join('')
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
+}
+
+/** The one line the rail says when the autofill adds something. */
+export function heldAutofillNote(added: readonly string[], listName: string): string {
+  const names = added.length <= 3 ? joinAnd(added) : `${added.slice(0, 3).join(', ')} and ${added.length - 3} more`
+  return `Added ${names} from your wallet to ${listName}. Remove any and it stays off.`
+}
+
+/** The row marker's words: "In your wallet · $11.89 · Robinhood Chain". */
+export function heldTitle(h: HeldSymbol): string {
+  const value = h.valueUsd == null ? null : h.valueUsd >= 1000 ? `$${Math.round(h.valueUsd).toLocaleString('en-US')}` : `$${h.valueUsd.toFixed(2)}`
+  return ['In your wallet', value, h.chains.join(', ')].filter(Boolean).join(' · ')
+}
+
+// The guest half of the ledger lives in the browser, like guest lists.
+//   seen    — held symbols this browser has reconciled, plus anything removed
+//             from a guest list (the guest's "stays off" memory)
+//   auto    — symbols the autofill itself placed on a guest list; sign-in
+//             re-checks those against the ACCOUNT's ledger, so a holding the
+//             owner removed on another device is not carried back in
+//   pending — removals made here that no account has heard about yet;
+//             sign-in hands them to the account's ledger, then clears them
+export const HELD_LEDGER_KEY = 'pantessa.watchlists.held.v1'
+
+export interface HeldLedger {
+  seen: string[]
+  auto: string[]
+  pending: string[]
+}
+
+const emptyLedger = (): HeldLedger => ({ seen: [], auto: [], pending: [] })
+const symbolArray = (x: unknown): string[] => dedupeSymbols(Array.isArray(x) ? x.filter((s): s is string => typeof s === 'string') : [])
+
+/** Strict reader — a corrupt key reads as an empty ledger, never throws. */
+export function parseHeldLedger(raw: unknown): HeldLedger {
+  if (typeof raw !== 'string' || !raw) return emptyLedger()
+  try {
+    const v = JSON.parse(raw) as Partial<Record<keyof HeldLedger, unknown>> | null
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return emptyLedger()
+    return { seen: symbolArray(v.seen), auto: symbolArray(v.auto), pending: symbolArray(v.pending) }
+  } catch {
+    return emptyLedger()
+  }
+}
+
+export function readHeldLedger(): HeldLedger {
+  if (typeof window === 'undefined') return emptyLedger()
+  try {
+    return parseHeldLedger(window.localStorage.getItem(HELD_LEDGER_KEY))
+  } catch {
+    return emptyLedger()
+  }
+}
+
+export function writeHeldLedger(ledger: HeldLedger): void {
+  if (typeof window === 'undefined') return
+  try {
+    if (ledger.seen.length || ledger.auto.length || ledger.pending.length) window.localStorage.setItem(HELD_LEDGER_KEY, JSON.stringify(ledger))
+    else window.localStorage.removeItem(HELD_LEDGER_KEY)
+  } catch {
+    /* private mode / quota — the next visit re-plans from the holdings */
+  }
+}
+
+/** What sign-in hands the account alongside the guest lists: the
+ *  autofill-placed symbols still on a guest list (the server keeps each one
+ *  only if the account has never seen it) and the removals made here. */
+export function guestHeldAdoption(ledger: HeldLedger, lists: readonly Pick<WatchlistShape, 'symbols'>[]): { auto: string[]; dismissed: string[] } {
+  const onLists = new Set(lists.flatMap((l) => l.symbols))
+  return { auto: ledger.auto.filter((s) => onLists.has(s)), dismissed: [...ledger.pending] }
+}
+
+/** After an account sync, the browser ledger forgets what the account now
+ *  watches and learns what the account removed — so a signed-out visit in
+ *  this browser shows the kept holdings and never resurrects a removed one. */
+export function mirrorAccountLedger(ledger: HeldLedger, accountWatched: Iterable<string>, accountDismissed: readonly string[]): HeldLedger {
+  const watched = new Set(accountWatched)
+  return { ...ledger, seen: dedupeSymbols([...ledger.seen.filter((s) => !watched.has(s)), ...accountDismissed]) }
 }
 
 // ── Sections ────────────────────────────────────────────────────────────────
