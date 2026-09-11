@@ -45,7 +45,7 @@ import { CHART_TFS, chartPairFor, type Candle, type ChartTf } from '@/lib/charts
 import { newLineId, serializeChartState, type ChartLine, type ChartState } from '@/lib/chart-state'
 import { composeLineActions, composeZoneActions, missingActionNote, type LineActionOffer } from '@/lib/chart-actions'
 import { bollinger, ema, hasVolume, OVERLAYS, sma, vwap, type LinePoint, type OverlayKey } from '@/lib/chart-indicators'
-import { poolPremiumPct, type PoolPrice } from '@/lib/pool-price'
+import { poolPremiumPct, type PoolPrice } from '@/lib/pool-price-shape'
 import { fmtPrice, type ChartStats } from '@/components/CandleChart'
 import DrawingLayer, { type ChartGeom, type DrawTool } from './DrawingLayer'
 
