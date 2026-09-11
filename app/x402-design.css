@@ -5125,7 +5125,7 @@
 .wl__alerts { border-top: 1px solid var(--line); padding: 2px 0; }
 .wl__alertRow { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 12px; font-size: 12px; }
 .wl__alertLabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wl__foot { padding: 7px 10px; border-top: 1px solid var(--line); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wl__foot { padding: 7px 10px; border-top: 1px solid var(--line); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2); line-height: 1.5; }
 .wl__link { color: var(--accent); background: none; border: 0; padding: 0; font: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; }
 .wl__link:hover { text-decoration: underline; }
 .wl__muted { color: var(--muted-2); }

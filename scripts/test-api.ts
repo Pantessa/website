@@ -17439,6 +17439,201 @@ async function main() {
     }
   }
 
+  // ── MARKETS/WATCH ─────────────────────────────────────────────────────────
+  // Unlimited watchlists, quotes, TradingView import, alerts that act
+  // (squad-markets 2026-09-11). Pure rulebook first, then the HTTP surface
+  // under a throwaway SIWE session (rows deleted at the end), then the
+  // public /lists fence and the alerts cron's per-symbol dedup.
+  {
+    console.log('\n[markets/watch]')
+    const {
+      COIN_NAMES,
+      alertActionChips,
+      alertFires,
+      groupAlertsBySymbol,
+      moveToSection: wlMoveToSection,
+      normalizeWatchSymbol,
+      parseGuestLists,
+      parseTradingViewExport,
+      searchTickers,
+      sectionedRows,
+      usEquitySession,
+    } = await import('../lib/watchlists')
+
+    // Pure: symbols collapse to the chart symbol, junk normalizes to null.
+    check('watch: normalizeWatchSymbol collapses aliases (weth → ETH, cbbtc → BTC), keeps unknown tickers, refuses junk', normalizeWatchSymbol('weth') === 'ETH' && normalizeWatchSymbol('cbBTC') === 'BTC' && normalizeWatchSymbol('zzzzqx') === 'ZZZZQX' && normalizeWatchSymbol('!!!') === null && normalizeWatchSymbol('') === null)
+    check('watch: every COIN_NAMES entry is chartable (a stale name can never render a dead row)', COIN_NAMES.every(([s]) => chartPairFor(s)?.symbol === s), COIN_NAMES.filter(([s]) => chartPairFor(s)?.symbol !== s).map(([s]) => s).join(' '))
+
+    // TradingView export: sections + EXCHANGE:SYMBOL + crypto pair suffixes.
+    const tv = parseTradingViewExport('###Stocks,NASDAQ:AAPL,NASDAQ:TSLA\n###Crypto,COINBASE:ETHUSD,BINANCE:BTCUSDT.P,HYPERLIQUID:HYPEUSD.P,NYSE:ZZZZQX,CME:ES1!,COINBASE:ETHUSD')
+    check('watch: TradingView import — NASDAQ:AAPL,COINBASE:ETHUSD + ###Stocks sections parse; crypto quote suffixes strip; dupes collapse', JSON.stringify(tv.tradable) === JSON.stringify(['AAPL', 'TSLA', 'ETH', 'BTC', 'HYPE']) && JSON.stringify(tv.notYet) === JSON.stringify(['ZZZZQX']) && tv.sections.map((s) => `${s.name}:${s.symbols.join('+')}`).join('|') === 'Stocks:AAPL+TSLA|Crypto:ETH+BTC+HYPE+ZZZZQX' && tv.skipped.includes('CME:ES1!'), `tradable=${tv.tradable} notYet=${tv.notYet} skipped=${tv.skipped}`)
+
+    // Add-ticker resolver: names through the chart-ask parser, tickers by prefix.
+    check('watch: searchTickers resolves company + coin names ("apple" → AAPL, "bitcoin" → BTC) and ticker prefixes ("nvd" → NVDA), every hit chartable', searchTickers('apple')[0]?.symbol === 'AAPL' && searchTickers('bitcoin')[0]?.symbol === 'BTC' && searchTickers('nvd')[0]?.symbol === 'NVDA' && searchTickers('hype')[0]?.symbol === 'HYPE' && searchTickers('zzzzqx').length === 0 && searchTickers('a', 8).every((h) => !!chartPairFor(h.symbol)))
+
+    // Alerts-that-act chips round-trip the parsers they name.
+    const ethBelow = alertActionChips({ symbol: 'ETH', condition: 'below', value: 2000 }, chartPairFor('ETH'))
+    const hypeBelow = alertActionChips({ symbol: 'HYPE', condition: 'below', value: 60 }, chartPairFor('HYPE'))
+    const ethAbove = alertActionChips({ symbol: 'ETH', condition: 'above', value: 3000 }, chartPairFor('ETH'))
+    const aaplBelow = alertActionChips({ symbol: 'AAPL', condition: 'below', value: 300 }, chartPairFor('AAPL'))
+    const spot = ethBelow.find((c) => c.kind === 'protect')
+    const stop = hypeBelow.find((c) => c.kind === 'stop')
+    const limit = ethAbove.find((c) => c.kind === 'limit')
+    const buy = aaplBelow.find((c) => c.kind === 'buy')
+    const spotParsed = spot ? parseSpotGuardArm(spot.ask) : null
+    const stopParsed = stop ? parseGuardianArm(stop.ask) : null
+    const limitParsed = limit ? parseSwapIntent(limit.ask) : null
+    const buyParsed = buy ? parseSwapIntent(buy.ask) : null
+    check('watch: alert chips round-trip — Spot Guardian ask parses (ETH, price 2000), HL Guardian stop parses (HYPE @ 60), CoW limit parses (mode limit), "Buy $50 of AAPL" parses', !!spotParsed && spotParsed.token === 'ETH' && spotParsed.triggerMode === 'price' && spotParsed.triggerValue === 2000 && !!stopParsed && stopParsed.coin === 'HYPE' && stopParsed.kind === 'stop_loss' && stopParsed.triggerValue === 60 && !!limitParsed?.isSwap && limitParsed.mode === 'limit' && limitParsed.sellToken?.toUpperCase() === 'ETH' && !!buyParsed?.isSwap && buyParsed.sellAmountUsd === '50' && buyParsed.buyToken?.toUpperCase() === 'AAPL', `spot=${JSON.stringify(spotParsed)} stop=${JSON.stringify(stopParsed)} limit=${limitParsed?.mode}/${limitParsed?.sellToken} buy=${buyParsed?.sellAmountUsd}/${buyParsed?.buyToken}`)
+    check('watch: a stock alert never offers Spot Guardian / HL Guardian chips (no such venue for 4663 equities); runs-itself chips are labelled as such', aaplBelow.every((c) => !c.runsItself) && spot?.runsItself === true && stop?.runsItself === true && limit?.runsItself === true)
+
+    // Alert rules + the per-symbol grouping the cron's dedup rides on.
+    check('watch: alertFires — below/above/pct_move evaluate; pct_move needs a base', alertFires({ symbol: 'X', condition: 'below', value: 10 }, 9.99) && !alertFires({ symbol: 'X', condition: 'below', value: 10 }, 10.01) && alertFires({ symbol: 'X', condition: 'above', value: 10 }, 10) && alertFires({ symbol: 'X', condition: 'pct_move', value: 5, basePrice: 100 }, 94.9) && !alertFires({ symbol: 'X', condition: 'pct_move', value: 5, basePrice: 100 }, 96) && !alertFires({ symbol: 'X', condition: 'pct_move', value: 5 }, 50))
+    const grouped = groupAlertsBySymbol([{ symbol: 'AAPL' }, { symbol: 'aapl' }, { symbol: 'WETH' }, { symbol: 'ETH' }, { symbol: 'HYPE' }])
+    check('watch: groupAlertsBySymbol — five alerts on three symbols = three reads (aliases collapse)', grouped.size === 3 && grouped.get('AAPL')?.length === 2 && grouped.get('ETH')?.length === 2)
+    check('watch: usEquitySession answers open|closed from the New York clock (Saturday noon UTC = closed; Wednesday 15:00 UTC = open)', usEquitySession(new Date('2026-09-12T12:00:00Z')) === 'closed' && usEquitySession(new Date('2026-09-09T15:00:00Z')) === 'open' && usEquitySession(new Date('2026-09-09T22:00:00Z')) === 'closed')
+
+    // Sections + guest storage are pure and strict.
+    const secList = { id: 'g_x', owner: null, name: 'L', slug: null, symbols: ['AAPL', 'ETH', 'HYPE'], sections: [{ name: 'Stocks', symbols: ['AAPL', 'GHOST'] }], isPublic: false, createdAt: '' }
+    const moved = wlMoveToSection(secList, 'ETH', 'Coins')
+    const rows = sectionedRows(moved)
+    check('watch: sectionedRows — named sections first, unclaimed tail last, a section naming a symbol the list lacks drops it', rows.map((r) => `${r.name ?? '-'}:${r.symbols.join('+')}`).join('|') === 'Stocks:AAPL|Coins:ETH|-:HYPE')
+    check('watch: parseGuestLists is strict — a corrupt key reads as no lists, a server-shaped id is refused, valid rows normalize', parseGuestLists('nope').length === 0 && parseGuestLists(JSON.stringify([{ id: 'srv123', name: 'x', symbols: [] }])).length === 0 && parseGuestLists(JSON.stringify([{ id: 'g_abc', name: '  My  list ', symbols: ['weth', 'eth', '!!!'] }]))[0]?.symbols.join() === 'ETH')
+
+    // ── /api/quotes (the README contract) ──────────────────────────────────
+    const q3 = (await (await fetch(`${BASE}/api/quotes?symbols=AAPL,ETH,HYPE,ZZZZQX,!!!`)).json()) as { quotes: Record<string, { last: number; chg: number; chgPct: number; asOf: number; feed: string; session: string; chartable: boolean }>; missing: string[]; junk: string[] }
+    const qAAPL = q3.quotes.AAPL
+    const qETH = q3.quotes.ETH
+    const qHYPE = q3.quotes.HYPE
+    check('quotes: batched 3 symbols → 3 quotes with last/chg/chgPct/asOf/feed/session/chartable; unknown symbol omitted + listed in missing; junk listed, never 500', !!qAAPL && !!qETH && !!qHYPE && [qAAPL, qETH, qHYPE].every((q) => q.last > 0 && Number.isFinite(q.chgPct) && typeof q.feed === 'string' && q.chartable === true && q.asOf > 0) && q3.missing.includes('ZZZZQX') && !('ZZZZQX' in q3.quotes) && q3.junk.length === 1, `AAPL=${qAAPL?.last}/${qAAPL?.feed}/${qAAPL?.session} ETH=${qETH?.last}/${qETH?.feed} HYPE=${qHYPE?.last}/${qHYPE?.feed} missing=${q3.missing} junk=${q3.junk}`)
+    check('quotes: session state per source — stocks say open|closed (the tape), coins + perps say 24/7; feeds are the ones lib/charts names', (qAAPL?.session === 'open' || qAAPL?.session === 'closed') && qETH?.session === '24/7' && qHYPE?.session === '24/7' && ['robinhood', 'yahoo'].includes(qAAPL?.feed ?? '') && qETH?.feed === 'coinbase' && qHYPE?.feed === 'hyperliquid')
+    const qAgain = (await (await fetch(`${BASE}/api/quotes?symbols=eth,WETH`)).json()) as { quotes: Record<string, { asOf: number }> }
+    check('quotes: per-symbol cache — a repeat read within 15s returns the same asOf (no second upstream read); aliases collapse to one key', qAgain.quotes.ETH?.asOf === qETH?.asOf && Object.keys(qAgain.quotes).join() === 'ETH')
+    const qEmpty = await fetch(`${BASE}/api/quotes`)
+    check('quotes: no symbols → 200 with an empty map (never 400/500)', qEmpty.status === 200 && Object.keys(((await qEmpty.json()) as { quotes: object }).quotes).length === 0)
+
+    // ── /api/watchlists CRUD under a throwaway SIWE session ─────────────────
+    const wlOwner = privateKeyToAccount(generatePrivateKey())
+    const wlMallory = privateKeyToAccount(generatePrivateKey())
+    const wlSession = await signIn(wlOwner)
+    const wlMallorySession = await signIn(wlMallory)
+    const J = { 'content-type': 'application/json' }
+    check('watchlists: GET without a session → 401 (SIWE gates the account surface, connect-to-act stays on localStorage)', (await fetch(`${BASE}/api/watchlists`)).status === 401)
+    const created = await fetch(`${BASE}/api/watchlists`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ name: '  Nate’s 24/7  ', symbols: ['AAPL', 'eth', 'WETH', '!!!', 'aapl', 'toolongtobeaticker'] }) })
+    const cl = ((await created.json()) as { list: { id: string; name: string; symbols: string[]; owner: string; slug: string | null; isPublic: boolean } }).list
+    check('watchlists: POST create → 201, name trimmed, symbols normalized + deduped (AAPL, ETH; junk + over-long dropped), owner = the session wallet', created.status === 201 && cl.name === 'Nate’s 24/7' && cl.symbols.join() === 'AAPL,ETH' && cl.owner === wlOwner.address.toLowerCase() && cl.slug === null && cl.isPublic === false, `${created.status} ${JSON.stringify(cl)}`)
+    const added = await fetch(`${BASE}/api/watchlists/${cl.id}/items`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ symbols: ['HYPE', 'SYRUP'], section: 'Perps' }) })
+    const al = ((await added.json()) as { list: { symbols: string[]; sections?: { name: string; symbols: string[] }[] } }).list
+    check('watchlists: POST items adds tickers into a section; re-adding is idempotent', added.status === 200 && al.symbols.join() === 'AAPL,ETH,HYPE,SYRUP' && al.sections?.[0]?.name === 'Perps' && al.sections[0].symbols.join() === 'HYPE,SYRUP' && ((await (await fetch(`${BASE}/api/watchlists/${cl.id}/items`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ symbols: ['HYPE'] }) })).json()) as { list: { symbols: string[] } }).list.symbols.length === 4)
+    const reordered = ((await (await fetch(`${BASE}/api/watchlists`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ id: cl.id, name: 'Renamed', order: ['HYPE', 'AAPL'] }) })).json()) as { list: { name: string; symbols: string[] } }).list
+    check('watchlists: PATCH renames + reorders (named symbols first, the rest keep their order)', reordered.name === 'Renamed' && reordered.symbols.join() === 'HYPE,AAPL,ETH,SYRUP')
+    const movedSec = ((await (await fetch(`${BASE}/api/watchlists/${cl.id}/items`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ symbol: 'AAPL', section: 'Stocks' }) })).json()) as { list: { sections?: { name: string; symbols: string[] }[] } }).list
+    check('watchlists: PATCH items moves one symbol into a (new) section', movedSec.sections?.map((s) => `${s.name}:${s.symbols.join('+')}`).join('|') === 'Perps:HYPE+SYRUP|Stocks:AAPL')
+    const removed = ((await (await fetch(`${BASE}/api/watchlists/${cl.id}/items?symbol=SYRUP`, { method: 'DELETE', headers: { cookie: wlSession } })).json()) as { list: { symbols: string[] } }).list
+    check('watchlists: DELETE items removes the symbol', removed.symbols.join() === 'HYPE,AAPL,ETH')
+    check('watchlists: another wallet cannot touch the list (PATCH/DELETE/items → 404, never 403 enumeration)', (await fetch(`${BASE}/api/watchlists`, { method: 'PATCH', headers: { ...J, cookie: wlMallorySession }, body: JSON.stringify({ id: cl.id, name: 'pwned' }) })).status === 404 && (await fetch(`${BASE}/api/watchlists/${cl.id}/items`, { method: 'POST', headers: { ...J, cookie: wlMallorySession }, body: JSON.stringify({ symbols: ['BTC'] }) })).status === 404 && (await fetch(`${BASE}/api/watchlists?id=${cl.id}`, { method: 'DELETE', headers: { cookie: wlMallorySession } })).status === 404)
+
+    // Unlimited: a 200-ticker list, then a 250-symbol quote read, no cap anywhere.
+    const twoHundred = [...ROBINHOOD_TICKER_SET].slice(0, 200)
+    const big = ((await (await fetch(`${BASE}/api/watchlists`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ name: 'Everything on 4663', symbols: twoHundred }) })).json()) as { list: { id: string; symbols: string[] } }).list
+    check('watchlists: a 200-ticker list works — no cap on tickers (the value prop)', big.symbols.length === 200, `${big.symbols.length}`)
+    const mine = (await (await fetch(`${BASE}/api/watchlists`, { headers: { cookie: wlSession } })).json()) as { lists: { id: string }[] }
+    check('watchlists: GET mine lists every list in position order — no cap on lists', mine.lists.length === 2 && mine.lists[0].id === cl.id && mine.lists[1].id === big.id)
+    const bigQuotes = (await (await fetch(`${BASE}/api/quotes?symbols=${twoHundred.slice(0, 60).join(',')}`)).json()) as { quotes: Record<string, unknown>; missing: string[] }
+    check('quotes: a 60-stock rail is ONE batched request that quotes (nearly) all of them (Robinhood batch; feedless names omitted, never 500)', Object.keys(bigQuotes.quotes).length >= 50, `${Object.keys(bigQuotes.quotes).length} quoted, missing=${bigQuotes.missing.slice(0, 6)}`)
+
+    // Import route: the README format, no auth needed (guests preview).
+    const imp = (await (await fetch(`${BASE}/api/watchlists/import`, { method: 'POST', headers: J, body: JSON.stringify({ text: '###Stocks,NASDAQ:AAPL,COINBASE:ETHUSD,NYSE:ZZZZQX' }) })).json()) as { tradable: string[]; notYet: string[]; sections: { name: string }[] }
+    check('watchlists: POST /api/watchlists/import parses a TradingView export → { tradable, notYet, sections } without a session', imp.tradable.join() === 'AAPL,ETH' && imp.notYet.join() === 'ZZZZQX' && imp.sections[0]?.name === 'Stocks')
+    check('watchlists: import refuses an empty paste by name (400)', (await fetch(`${BASE}/api/watchlists/import`, { method: 'POST', headers: J, body: JSON.stringify({ text: '   ' }) })).status === 400)
+
+    // Guest → account adoption (the adoptLocalChat idiom, one table over).
+    const adopted = await fetch(`${BASE}/api/watchlists/adopt`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ lists: [{ name: 'Guest A', symbols: ['BTC'] }, { name: 'Guest B', symbols: ['SOL', 'DOGE'], sections: [{ name: 'Memes', symbols: ['DOGE'] }] }] }) })
+    const adoptedLists = ((await adopted.json()) as { lists: { id: string; name: string; symbols: string[]; sections?: { name: string }[] }[] }).lists
+    check('watchlists: POST adopt turns guest (localStorage) lists into account lists in one call, sections kept; a guest (no session) gets 401', adopted.status === 201 && adoptedLists.length === 2 && adoptedLists[1].symbols.join() === 'SOL,DOGE' && adoptedLists[1].sections?.[0]?.name === 'Memes' && (await fetch(`${BASE}/api/watchlists/adopt`, { method: 'POST', headers: J, body: JSON.stringify({ lists: [] }) })).status === 401)
+
+    // ── /lists/<slug>: the public page fences BOTH is_public and NOT is_internal ──
+    const shared = ((await (await fetch(`${BASE}/api/watchlists`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ id: cl.id, isPublic: true }) })).json()) as { list: { slug: string | null; isPublic: boolean } }).list
+    check('watchlists: PATCH isPublic mints a slug from the name', shared.isPublic && typeof shared.slug === 'string' && /^renamed/.test(shared.slug))
+    const internalPage = await fetch(`${BASE}/lists/${shared.slug}`)
+    check('lists: a PUBLIC list minted by the harness (is_internal) is NOT a page — /lists/<slug> 404s (the #699 fence on rows)', internalPage.status === 404, `${internalPage.status}`)
+    // The organic probe: the belt strips the internal stamp for this ONE create, so a real public list renders.
+    const organic = await fetch(`${BASE}/api/watchlists`, { method: 'POST', headers: { ...J, cookie: wlSession, [ORGANIC_PROBE]: '1' }, body: JSON.stringify({ name: 'Organic public list', symbols: ['AAPL', 'ETH'], sections: [{ name: 'Stocks', symbols: ['AAPL'] }] }) })
+    const ol = ((await organic.json()) as { list: { id: string } }).list
+    const olShared = ((await (await fetch(`${BASE}/api/watchlists`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ id: ol.id, isPublic: true, slug: `organic-${Date.now().toString(36)}` }) })).json()) as { list: { slug: string } }).list
+    const pageRes = await fetch(`${BASE}/lists/${olShared.slug}`)
+    const pageHtml = flat(await pageRes.text())
+    check('lists: an organic public list renders — name, section, every symbol row (data-symbol) linking to /t/<sym>, a Buy chip, the Follow door', pageRes.status === 200 && pageHtml.includes('Organic public list') && pageHtml.includes('data-symbol="AAPL"') && pageHtml.includes('href="/t/ETH"') && pageHtml.includes('Buy $10') && /Sign in to follow|Follow/.test(pageHtml) && pageHtml.includes('>Stocks<'), `${pageRes.status}`)
+    const ogRes = await fetch(`${BASE}/lists/${olShared.slug}/opengraph-image`)
+    check('lists: the OG card renders a PNG for a public list', ogRes.status === 200 && (ogRes.headers.get('content-type') ?? '').includes('image/png'))
+    const privateAgain = ((await (await fetch(`${BASE}/api/watchlists`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ id: ol.id, isPublic: false }) })).json()) as { list: { isPublic: boolean } }).list
+    check('lists: made private → the page 404s again (both fences hold)', privateAgain.isPublic === false && (await fetch(`${BASE}/lists/${olShared.slug}`)).status === 404)
+    await fetch(`${BASE}/api/watchlists`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ id: ol.id, isPublic: true }) })
+    // Follow = fork with lineage; your own list refuses; a guest gets the door (401).
+    const forked = await fetch(`${BASE}/api/watchlists/fork`, { method: 'POST', headers: { ...J, cookie: wlMallorySession }, body: JSON.stringify({ slug: olShared.slug }) })
+    const fl = ((await forked.json()) as { list: { id: string; forkOf: string | null; symbols: string[]; owner: string } }).list
+    check('lists: Follow copies the list into the follower’s lists with fork_of = slug; own list → 409; no session → 401', forked.status === 201 && fl.forkOf === olShared.slug && fl.symbols.join() === 'AAPL,ETH' && fl.owner === wlMallory.address.toLowerCase() && (await fetch(`${BASE}/api/watchlists/fork`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ slug: olShared.slug }) })).status === 409 && (await fetch(`${BASE}/api/watchlists/fork`, { method: 'POST', headers: J, body: JSON.stringify({ slug: olShared.slug }) })).status === 401, `${forked.status} ${JSON.stringify(fl)}`)
+    check('lists: an unknown slug is a true 404; a bad slug shape too', (await fetch(`${BASE}/lists/no-such-list-${Date.now()}`)).status === 404 && (await fetch(`${BASE}/lists/__`)).status === 404)
+
+    // The rail is mounted on the symbol page (SSR markup carries the add box).
+    const tHtml = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
+    check('watch: /t/AAPL mounts the watchlist rail beside the chart (add-ticker box + Import door in the SSR markup)', tHtml.includes('Add a ticker or company') && tHtml.includes('Import from TradingView') && tHtml.includes('tchart__rail'))
+
+    // ── Alerts: CRUD, the cron’s per-symbol dedup, a fixture firing ─────────
+    check('alerts: GET without a session → 401', (await fetch(`${BASE}/api/alerts`)).status === 401)
+    const badAlert = await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ symbol: 'AAPL', condition: 'sideways', value: 1 }) })
+    const badPct = await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ symbol: 'AAPL', condition: 'pct_move', value: 5 }) })
+    check('alerts: bad condition → 400 by name; pct_move without the armed price → 400', badAlert.status === 400 && badPct.status === 400)
+    const mk = async (body: object) => ((await (await fetch(`${BASE}/api/alerts`, { method: 'POST', headers: { ...J, cookie: wlSession }, body: JSON.stringify(body) })).json()) as { alert: { id: string; status: string; actionAsk: string | null } }).alert
+    const a1 = await mk({ symbol: 'AAPL', condition: 'below', value: 1, actionAsk: 'Sell $50 of AAPL' })
+    const a2 = await mk({ symbol: 'aapl', condition: 'above', value: 1e9 })
+    const a3 = await mk({ symbol: 'ETH', condition: 'pct_move', value: 50, basePrice: qETH?.last ?? 1000 })
+    check('alerts: POST creates active alerts (symbol normalized, actionAsk kept) — unlimited', a1.status === 'active' && a1.actionAsk === 'Sell $50 of AAPL' && a2.status === 'active' && a3.status === 'active')
+    const paused = ((await (await fetch(`${BASE}/api/alerts`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ id: a2.id, op: 'pause' }) })).json()) as { alert: { status: string } }).alert
+    check('alerts: PATCH pause ⇄ resume; a paused alert refuses pause (409); another wallet → 404', paused.status === 'paused' && (await fetch(`${BASE}/api/alerts`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ id: a2.id, op: 'pause' }) })).status === 409 && (await fetch(`${BASE}/api/alerts`, { method: 'PATCH', headers: { ...J, cookie: wlMallorySession }, body: JSON.stringify({ id: a2.id, op: 'resume' }) })).status === 404 && ((await (await fetch(`${BASE}/api/alerts`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ id: a2.id, op: 'resume' }) })).json()) as { alert: { status: string } }).alert.status === 'active')
+    check('alerts cron: no/wrong CRON_SECRET → 401 (fail closed, guardian pattern)', (await fetch(`${BASE}/api/cron/alerts`)).status === 401 && (await fetch(`${BASE}/api/cron/alerts`, { headers: { authorization: 'Bearer nope' } })).status === 401)
+    const cronSecret = process.env.CRON_SECRET ?? (() => {
+      try {
+        return readdirSync('.').includes('.env.local') ? (require('node:fs') as typeof import('node:fs')).readFileSync('.env.local', 'utf8').match(/^CRON_SECRET=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null : null
+      } catch {
+        return null
+      }
+    })()
+    if (cronSecret) {
+      // Fixture: AAPL at $0.50 — a1 (below $1) fires, a2 (above $1e9) does not.
+      // The fixture applies ONLY to is_internal alerts (these are), so a real
+      // owner's AAPL alert on the shared DB is still judged by the live quote.
+      const sweep = (await (await fetch(`${BASE}/api/cron/alerts`, { method: 'POST', headers: { ...J, authorization: `Bearer ${cronSecret}` }, body: JSON.stringify({ fixture: { AAPL: 0.5 } }) })).json()) as { evaluated: number; reads: number; symbols: string[]; fired: { id: string; symbol: string; price: number }[]; unquoted: string[] }
+      check('alerts cron: per-SYMBOL dedup — three alerts on two symbols cost at most two reads (reads ≤ symbols < evaluated); AAPL served by the fixture needs none', sweep.symbols.includes('AAPL') && sweep.symbols.includes('ETH') && sweep.reads <= sweep.symbols.length && sweep.symbols.length < sweep.evaluated && sweep.reads === sweep.symbols.filter((s) => s !== 'AAPL').length, `evaluated=${sweep.evaluated} symbols=${sweep.symbols.length} reads=${sweep.reads}`)
+      check('alerts cron: the fixture price fires a1 (below $1 at $0.50) and not a2 (above $1e9); ETH ±50% stays armed on the live quote', sweep.fired.some((f) => f.id === a1.id && f.price === 0.5) && !sweep.fired.some((f) => f.id === a2.id) && !sweep.fired.some((f) => f.id === a3.id), JSON.stringify(sweep.fired.filter((f) => [a1.id, a2.id, a3.id].includes(f.id))))
+      const after = (await (await fetch(`${BASE}/api/alerts`, { headers: { cookie: wlSession } })).json()) as { alerts: { id: string; status: string; firedPrice: number | null }[] }
+      const notes = (await (await fetch(`${BASE}/api/alerts/notifications`, { headers: { cookie: wlSession } })).json()) as { notifications: { alertId: string; actionAsk: string | null; title: string }[] }
+      const note = notes.notifications.find((n) => n.alertId === a1.id)
+      check('alerts: a firing flips the row to fired (firedPrice kept) and writes ONE in-app notification carrying the chip — the ask is never sent for you', after.alerts.find((a) => a.id === a1.id)?.status === 'fired' && after.alerts.find((a) => a.id === a1.id)?.firedPrice === 0.5 && !!note && note.actionAsk === 'Sell $50 of AAPL' && /AAPL below \$1/.test(note.title) && notes.notifications.filter((n) => n.alertId === a1.id).length === 1, note?.title)
+      const sweep2 = (await (await fetch(`${BASE}/api/cron/alerts`, { method: 'POST', headers: { ...J, authorization: `Bearer ${cronSecret}` }, body: JSON.stringify({ fixture: { AAPL: 0.5 } }) })).json()) as { fired: { id: string }[] }
+      check('alerts cron: a fired alert never re-fires (status gate, no duplicate notification)', !sweep2.fired.some((f) => f.id === a1.id) && ((await (await fetch(`${BASE}/api/alerts/notifications`, { headers: { cookie: wlSession } })).json()) as { notifications: { alertId: string }[] }).notifications.filter((n) => n.alertId === a1.id).length === 1)
+      const seen = (await (await fetch(`${BASE}/api/alerts/notifications`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ all: true }) })).json()) as { seen: number }
+      check('alerts: PATCH notifications { all:true } dismisses; GET default hides seen rows; ?all=1 keeps the history', seen.seen >= 1 && ((await (await fetch(`${BASE}/api/alerts/notifications`, { headers: { cookie: wlSession } })).json()) as { notifications: unknown[] }).notifications.length === 0 && ((await (await fetch(`${BASE}/api/alerts/notifications?all=1`, { headers: { cookie: wlSession } })).json()) as { notifications: unknown[] }).notifications.length >= 1)
+      const rearmed = ((await (await fetch(`${BASE}/api/alerts`, { method: 'PATCH', headers: { ...J, cookie: wlSession }, body: JSON.stringify({ id: a1.id, op: 'rearm' }) })).json()) as { alert: { status: string; firedAt: string | null } }).alert
+      check('alerts: PATCH rearm puts a fired alert back to active with the firing cleared', rearmed.status === 'active' && rearmed.firedAt === null)
+      const noFixtureForStrangers = (await (await fetch(`${BASE}/api/cron/alerts`, { method: 'POST', headers: { ...J, authorization: `Bearer ${cronSecret}`, 'x-yf-internal-run': '0' }, body: JSON.stringify({ fixture: { AAPL: 0.5 } }) })).json()) as { fired: { id: string }[] }
+      check('alerts cron: a fixture from a call that is NOT an internal run is ignored (a1 re-armed at below $1 stays armed on the live AAPL quote)', !noFixtureForStrangers.fired.some((f) => f.id === a1.id))
+    } else {
+      console.log('  ⚪ alerts cron: CRON_SECRET not in env/.env.local — live sweep + fixture checks skipped')
+    }
+    const vercelJson = JSON.parse(await readFile('vercel.json', 'utf8')) as { crons: { path: string; schedule: string }[] }
+    check('alerts cron: registered in vercel.json every minute', vercelJson.crons.some((c) => c.path === '/api/cron/alerts' && c.schedule === '* * * * *'))
+
+    // Cleanup — every row this block minted, then prove the wallets are empty.
+    for (const id of [a1.id, a2.id, a3.id]) await fetch(`${BASE}/api/alerts?id=${id}`, { method: 'DELETE', headers: { cookie: wlSession } })
+    for (const id of [cl.id, big.id, ol.id, ...adoptedLists.map((l) => l.id)]) await fetch(`${BASE}/api/watchlists?id=${id}`, { method: 'DELETE', headers: { cookie: wlSession } })
+    await fetch(`${BASE}/api/watchlists?id=${fl.id}`, { method: 'DELETE', headers: { cookie: wlMallorySession } })
+    const leftLists = (await (await fetch(`${BASE}/api/watchlists`, { headers: { cookie: wlSession } })).json()) as { lists: unknown[] }
+    const leftAlerts = (await (await fetch(`${BASE}/api/alerts`, { headers: { cookie: wlSession } })).json()) as { alerts: unknown[] }
+    const leftMallory = (await (await fetch(`${BASE}/api/watchlists`, { headers: { cookie: wlMallorySession } })).json()) as { lists: unknown[] }
+    check('watch: cleanup — DELETE list cascades its items; both throwaway wallets end with zero lists and zero alerts', leftLists.lists.length === 0 && leftAlerts.alerts.length === 0 && leftMallory.lists.length === 0 && (await fetch(`${BASE}/lists/${olShared.slug}`)).status === 404)
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }
