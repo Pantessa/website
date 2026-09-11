@@ -4,6 +4,7 @@ import './globals.css'
 import './x402-design.css'
 import { Suspense } from 'react'
 import Navigation from '@/components/Navigation'
+import AskDoor from '@/components/AskDoor'
 import { AppShellMount } from '@/components/AppShell'
 import Providers from '@/components/Providers'
 import ViaTracker from '@/components/ViaTracker'
@@ -104,6 +105,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Navigation />
           <AppShellMount />
           {children}
+          {/* Ask from anywhere: the docked pill + ⌘K sheet on every brochure
+              page (hides itself on /chat, /embed, /i — see lib/ask-door). */}
+          <AskDoor />
         </Providers>
         {/* Vercel Analytics only ships events when deployed on Vercel; mounting
             it in dev just logs "Failed to fetch" against the missing endpoint. */}

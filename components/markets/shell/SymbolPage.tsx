@@ -36,7 +36,8 @@ import OverviewTab from '@/components/markets/tabs/OverviewTab'
 import NewsTab from '@/components/markets/tabs/NewsTab'
 import CommunityTab from '@/components/markets/tabs/CommunityTab'
 import TechnicalsTab from '@/components/markets/tabs/TechnicalsTab'
-import TradeTab, { sideOf, type InjectedPrompt, type TradeAsk } from '@/components/markets/tabs/TradeTab'
+import TradeTab from '@/components/markets/tabs/TradeTab'
+import { sideOf, tradeAsks, type InjectedPrompt, type TradeAsk } from '@/lib/trade-asks'
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
 
@@ -71,10 +72,24 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
 
   // ── The send door: a chip anywhere on the page lands on Trade and fires ──
   const [prompt, setPrompt] = useState<InjectedPrompt | null>(null)
+  const tabsRef = useRef<HTMLElement | null>(null)
   const onAsk = useCallback((a: TradeAsk) => {
     setPrompt({ text: a.ask, send: true, at: Date.now() })
     setTab('trade')
+    // The header chips sit above the chart; the build lands under it. Bring
+    // the tab strip up under the nav so the order panel is on screen (the
+    // chart stays one scroll away — it never unmounts).
+    requestAnimationFrame(() => {
+      const el = tabsRef.current
+      if (!el) return
+      const top = el.getBoundingClientRect().top + window.scrollY - 72
+      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+    })
   }, [])
+  // The header strip: one chip per side the pair can offer (Buy/Long leads,
+  // Sell/Short wears the sell colour). The href is the no-JS fallback (a
+  // /chat prefill — a URL never fires a turn); a click SENDS through onAsk.
+  const acts = useMemo(() => (pair ? tradeAsks(pair) : []), [pair])
   // A drawn level on the chart carries a bare ask string — same door.
   const onChartAsk = useCallback((ask: string) => onAsk({ side: sideOf(ask), label: ask, ask }), [onAsk])
   // The live drawings (for "attach my current chart" on a post) and a post's
@@ -157,6 +172,28 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
             <p className="sym__session mono">{session.line}</p>
           </div>
         </div>
+        {acts.length > 0 && (
+          <div className="sym__act" aria-label={`Act on ${name}`} data-acts={acts.length}>
+            <span className="sym__act-eyebrow mono">ACT ON {sym} · SENDS THE ASK · YOUR WALLET SIGNS</span>
+            <div className="sym__act-chips">
+              {acts.map((a) => (
+                <Link
+                  key={a.label}
+                  href={promptHref(a.ask)}
+                  className={`sym__act-chip sym__act-chip--${a.side}`}
+                  title={a.ask}
+                  onClick={(e) => {
+                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+                    e.preventDefault()
+                    onAsk(a)
+                  }}
+                >
+                  {a.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="sym__quote">
           {pair && stats?.last != null ? (
             <>
@@ -202,7 +239,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
       {/* ── Tabs + rail ── */}
       <div className="sym__grid">
         <div className="sym__main">
-          <nav className="sym__tabs" role="tablist" aria-label="Symbol sections">
+          <nav ref={tabsRef} className="sym__tabs" role="tablist" aria-label="Symbol sections">
             {MARKET_TABS.map((t) => (
               <a
                 key={t.tab}

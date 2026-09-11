@@ -3,19 +3,16 @@
 // Overview — the symbol's numbers and the "what you can do" row. Real
 // (SHELL). Performance tiles + key stats derive client-side from the
 // existing candles proxy (the CHART lane's lib/performance.ts replaces the
-// math behind the same tiles). Every chip carries an ask an existing parser
-// accepts and SENDS through the frame's `onAsk` (chip-send contract) — the
-// href is the no-JS fallback (a /chat prefill; a URL never fires a turn).
+// math behind the same tiles). The "Act on X" chip row lives in the page
+// header now (SymbolPage → sym__act, above the chart) so it reads on every
+// tab; `onAsk` stays on the props for the tiles' future chips.
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import type { Candle, ChartPair } from '@/lib/charts'
-import { stats24h, symbolName } from '@/lib/markets'
+import { stats24h } from '@/lib/markets'
 import PerformanceTiles from '@/components/markets/chart/PerformanceTiles'
-import { chgClass, fmtPct, fmtQuotePrice } from '@/lib/markets-quotes'
-import { tradeAsks, type TradeAsk } from '@/components/markets/tabs/TradeTab'
-
-const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
+import { fmtQuotePrice } from '@/lib/markets-quotes'
+import type { TradeAsk } from '@/lib/trade-asks'
 
 async function readCandles(symbol: string, tf: '1h' | '1d'): Promise<Candle[]> {
   try {
@@ -43,11 +40,10 @@ function fmtVolume(v: number, last: number | null): string {
 export default function OverviewTab({
   symbol,
   pair,
-  onAsk,
 }: {
   symbol: string
   pair: ChartPair
-  /** The frame's send door: lands on the Trade tab and fires the ask. */
+  /** The frame's send door (kept on the contract for the tiles' future chips). */
   onAsk?: (ask: TradeAsk) => void
 }) {
   const [daily, setDaily] = useState<Candle[] | null>(null)
@@ -69,7 +65,6 @@ export default function OverviewTab({
 
   const last = hourly?.length ? hourly[hourly.length - 1].c : daily?.length ? daily[daily.length - 1].c : null
   const day = hourly ? stats24h(hourly) : null
-  const asks = tradeAsks(pair)
 
   return (
     <div className="mkt-overview">
@@ -109,32 +104,8 @@ export default function OverviewTab({
         </dl>
       </section>
 
-      {/* What you can do — chips send, the wallet signs */}
-      <section className="mkt-card" aria-label="What you can do">
-        <header className="mkt-card__head">
-          <h2 className="mkt-card__title">Act on {symbolName(symbol)}</h2>
-          <span className="mkt-card__eyebrow mono">SENDS THE ASK · YOUR WALLET SIGNS</span>
-        </header>
-        <div className="mkt-chips">
-          {asks.map((a) => (
-            <Link
-              key={a.label}
-              href={promptHref(a.ask)}
-              className={`mkt-chip ${a.side === 'buy' ? 'mkt-chip--buy' : ''}`}
-              onClick={(e) => {
-                if (!onAsk) return
-                e.preventDefault()
-                onAsk(a)
-              }}
-            >
-              {a.label}
-            </Link>
-          ))}
-        </div>
-        <p className="mkt-card__note">
-          Each chip is one sentence Pantessa already understands. It builds the guarded transaction here on the Trade tab; nothing moves until you sign.
-        </p>
-      </section>
+      {/* The "Act on X" chips moved up into the page header (SymbolPage
+          → sym__act), above the chart, where they stay visible on every tab. */}
     </div>
   )
 }
