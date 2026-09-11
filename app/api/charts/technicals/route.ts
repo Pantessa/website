@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { CHART_FEED_LABELS, normalizeChartSymbol, type ChartTf } from '@/lib/charts'
+import { CHART_FEED_LABELS, normalizeChartSymbol } from '@/lib/charts'
 import { loadCandleSeries, resolveTf, CANDLE_TFS } from '@/lib/candles-server'
-import { computeTechnicals, verdictChips, type ChartAction, type Gauge, type PivotSet, type Row } from '@/lib/technicals'
+import { computeTechnicals, verdictChips, type PivotSet, type TechnicalsApi as TechnicalsResponse, type TechnicalsRefusal as Refusal } from '@/lib/technicals'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -15,39 +15,6 @@ export const dynamic = 'force-dynamic'
 // refusal too — never a 500.
 
 const TTL_MS = 30_000
-
-export interface TechnicalsResponse {
-  symbol: string
-  label: string | null
-  source: string | null
-  /** The upstream that actually served the tape (stocks fall back to Yahoo). */
-  feed: string | null
-  feedLabel: string | null
-  tf: ChartTf
-  /** Frames the candle proxy serves — the honest timeframe strip. */
-  tfs: ChartTf[]
-  asOf: number
-  bars: number
-  last: number | null
-  summary: Gauge
-  oscillators: Gauge
-  movingAverages: Gauge
-  rows: { oscillators: Row[]; movingAverages: Row[] }
-  omitted: string[]
-  pivots: Omit<PivotSet, 'period' | 'from'> | null
-  pivotPeriod: PivotSet['period'] | null
-  pivotFrom: number | null
-  chips: ChartAction[]
-}
-
-interface Refusal {
-  symbol: string
-  tf: ChartTf
-  tfs: ChartTf[]
-  error: 'no chart source' | 'feed unavailable' | 'tape too short'
-  reason: string
-  chips: []
-}
 
 const cache = new Map<string, { at: number; body: TechnicalsResponse }>()
 

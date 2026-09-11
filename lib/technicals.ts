@@ -126,14 +126,26 @@ export const RATING_LABELS: Record<Rating, string> = {
 
 const NaNs = (n: number): number[] => new Array<number>(n).fill(NaN)
 
+/** NaN-aware: a window that contains a NaN (an upstream indicator's warm-up)
+ *  yields NaN instead of poisoning every later bar. */
 export function sma(src: number[], n: number): number[] {
   const out = NaNs(src.length)
   if (n <= 0) return out
   let sum = 0
+  let run = 0 // consecutive finite values ending at i
   for (let i = 0; i < src.length; i++) {
+    if (!Number.isFinite(src[i])) {
+      sum = 0
+      run = 0
+      continue
+    }
     sum += src[i]
-    if (i >= n) sum -= src[i - n]
-    if (i >= n - 1) out[i] = sum / n
+    run++
+    if (run > n) {
+      sum -= src[i - n]
+      run = n
+    }
+    if (run >= n) out[i] = sum / n
   }
   return out
 }
@@ -724,4 +736,39 @@ export function verdictChips(input: ChipInput): ChartAction[] {
     default:
       return [stopAtS1 ?? protectPct, ...(dca ? [dca] : [])]
   }
+}
+
+// ── The wire shape of GET /api/charts/technicals (README "Technicals") ──
+export interface TechnicalsApi {
+  symbol: string
+  label: string | null
+  source: ChartSource | null
+  /** The upstream that actually served the tape (stocks fall back to Yahoo). */
+  feed: string | null
+  feedLabel: string | null
+  tf: ChartTf
+  /** Frames the candle proxy serves — the honest timeframe strip. */
+  tfs: ChartTf[]
+  asOf: number
+  bars: number
+  last: number | null
+  summary: Gauge
+  oscillators: Gauge
+  movingAverages: Gauge
+  rows: { oscillators: Row[]; movingAverages: Row[] }
+  omitted: string[]
+  pivots: Omit<PivotSet, 'period' | 'from'> | null
+  pivotPeriod: PivotSet['period'] | null
+  pivotFrom: number | null
+  chips: ChartAction[]
+}
+
+/** A named refusal from the same route (chartless / feed down / short tape). */
+export interface TechnicalsRefusal {
+  symbol: string
+  tf: ChartTf
+  tfs: ChartTf[]
+  error: 'no chart source' | 'feed unavailable' | 'tape too short'
+  reason: string
+  chips: []
 }

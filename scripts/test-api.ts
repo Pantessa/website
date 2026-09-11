@@ -203,6 +203,14 @@ import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingIn
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
 import { fmtUnits, isMosaicAsk, MOSAIC_STABLE, mosaicAskString, mosaicStableFor, parseMosaicAsk, planMosaic, type MosaicHolding } from '../lib/mosaic'
 import { simulateLadder } from './ask-ladder'
+import {
+  adx as techAdx, askPrice, awesome as techAo, bandOf, bullBearPower as techBbp, camarillaPivots, cci as techCci, classicPivots, computeTechnicals, dmPivots,
+  ema as techEma, fibonacciPivots, gaugeOf, hull as techHull, ichimoku as techIchimoku, macd as techMacd, MIN_BARS as TECH_MIN_BARS, momentum as techMom,
+  pivotsFor, rma as techRma, rsi as techRsi, sma as techSma, stochastic as techStoch, ultimateOscillator as techUo, verdictChips, williamsR as techWr, wma as techWma, woodiePivots,
+  type Rating as TechRating,
+} from '../lib/technicals'
+import { parseSpotGuardArm as techParseSpotGuardArm } from '../lib/spot-guard'
+import { parseGuardianArm as techParseGuardianArm } from '../lib/hl-guardian'
 import { HERO_ASKS, STARTER_ASKS } from '../components/typed-asks'
 import {
   buildSpotGuardPermission,
@@ -17437,6 +17445,198 @@ async function main() {
         `row=${rosterRow ? 'found' : 'missing'} rosterRows=${(afRoster.failures ?? []).filter((f) => f.kind === 'roster').length}`,
       )
     }
+  }
+
+
+  // ── MARKETS/TECH ──────────────────────────────────────────────────────────
+  // Technical ratings from our own tape (squad markets 2026-09-11): the pure
+  // indicator library against hand-computed fixtures, gauge banding at the
+  // edges, the five pivot families, the API contract on live symbols, the
+  // chartless refusal by name, and every verdict chip landing natively in
+  // the ladder replica (never the planner).
+  console.log('— markets/tech: technical ratings')
+  {
+    const near = (a: number, b: number, eps = 1e-6) => Number.isFinite(a) && Math.abs(a - b) <= eps
+    const lastOf = (a: number[]) => a[a.length - 1]
+    const ramp = (n: number) => Array.from({ length: n }, (_, i) => i)
+    const rampCandles = (n: number, tfSec = 3600, t0 = 1_700_000_000): Candle[] =>
+      ramp(n).map((i) => ({ t: t0 + i * tfSec, o: i - 0.25, h: i + 0.5, l: i - 0.5, c: i, v: 100 }))
+
+    // Series primitives on tiny hand-computed series
+    const s5 = techSma([1, 2, 3, 4, 5], 3)
+    check('tech: SMA(3) of 1..5 = [NaN NaN 2 3 4]', Number.isNaN(s5[0]) && Number.isNaN(s5[1]) && near(s5[2], 2) && near(s5[3], 3) && near(s5[4], 4))
+    const e5 = techEma([1, 2, 3, 4, 5], 3)
+    check('tech: EMA(3) of 1..5 is SMA-seeded (2) then α=½: 3, 4', Number.isNaN(e5[1]) && near(e5[2], 2) && near(e5[3], 3) && near(e5[4], 4))
+    const r4 = techRma([1, 2, 3, 4], 2)
+    check('tech: RMA(2) of 1..4 = 1.5, 2.25, 3.125 (Wilder, SMA-seeded)', near(r4[1], 1.5) && near(r4[2], 2.25) && near(r4[3], 3.125))
+    check('tech: WMA(3) of 1,2,3 = 14/6', near(lastOf(techWma([1, 2, 3], 3)), 14 / 6))
+    const smaNaN = techSma([NaN, NaN, 1, 2, 3, 4], 2)
+    check('tech: SMA is NaN-aware — a warm-up NaN never poisons later bars (the stochastics bug)', Number.isNaN(smaNaN[2]) && near(smaNaN[3], 1.5) && near(smaNaN[5], 3.5))
+
+    // RSI at both edges + the midpoint
+    const up15 = ramp(15).map((i) => 100 + i)
+    check('tech: RSI(14) of 14 straight gains = 100', near(lastOf(techRsi(up15, 14)), 100))
+    const alt15 = ramp(15).map((i) => (i % 2 ? 11 : 10))
+    check('tech: RSI(14) of alternating ±1 = 50 (avg gain = avg loss)', near(lastOf(techRsi(alt15, 14)), 50))
+    const down15 = ramp(15).map((i) => 100 - i)
+    check('tech: RSI(14) of 14 straight losses = 0', near(lastOf(techRsi(down15, 14)), 0))
+
+    // A linear ramp has closed-form indicator values (EMA(n) = price − (n−1)/2)
+    const rp = ramp(80)
+    check('tech: EMA(12)/EMA(26) of a ramp lag exactly (n−1)/2 → MACD = 7, signal = 7', near(lastOf(techMacd(rp).macd), 7, 1e-9) && near(lastOf(techMacd(rp).signal), 7, 1e-9))
+    check('tech: MACD of a flat tape = 0 / 0', near(lastOf(techMacd(new Array(80).fill(100)).macd), 0) && near(lastOf(techMacd(new Array(80).fill(100)).signal), 0))
+    const rc = rampCandles(80)
+    const H = rc.map((k) => k.h)
+    const L = rc.map((k) => k.l)
+    const C = rc.map((k) => k.c)
+    const ax = techAdx(H, L, C, 14, 14)
+    check('tech: ADX(14) on a steady +1 trend (h=c+½, l=c−½): +DI = 100/1.5, −DI = 0, ADX = 100', near(lastOf(ax.plusDi), 100 / 1.5, 1e-6) && near(lastOf(ax.minusDi), 0) && near(lastOf(ax.adx), 100, 1e-6))
+    check('tech: Momentum(10) of a ramp = 10', near(lastOf(techMom(C, 10)), 10))
+    check('tech: Awesome Oscillator of a ramp = SMA5 − SMA34 of hl2 = 14.5', near(lastOf(techAo(H, L)), 14.5, 1e-9))
+    check('tech: Williams %R(14) of a ramp = −(0.5/14)·100', near(lastOf(techWr(H, L, C, 14)), -(0.5 / 14) * 100, 1e-9))
+    const st = techStoch(H, L, C, 14, 3, 3)
+    check('tech: Stochastic %K(14,3,3) of a ramp = 13.5/14·100 (K and D alike)', near(lastOf(st.k), (13.5 / 14) * 100, 1e-9) && near(lastOf(st.d), (13.5 / 14) * 100, 1e-9))
+    check('tech: CCI(20) of a flat tape = 0 (mean deviation 0 → 0, never NaN)', near(lastOf(techCci(new Array(30).fill(10), new Array(30).fill(10), new Array(30).fill(10), 20)), 0))
+    check('tech: Ultimate Oscillator(7,14,28) of a ramp = 100·(4+2+1)/7 · (1/1.5)', near(lastOf(techUo(H, L, C)), (100 * 7) / 7 / 1.5, 1e-9))
+    const bbp = techBbp(H, L, C, 13)
+    check('tech: Bull Bear Power(13) of a ramp: bull 6.5, bear 5.5 (EMA13 lags 6)', near(lastOf(bbp.bull), 6.5, 1e-9) && near(lastOf(bbp.bear), 5.5, 1e-9))
+    check('tech: Hull MA(9) of a ramp has zero lag (= price)', near(lastOf(techHull(C, 9)), 79, 1e-9))
+    const ich = techIchimoku(H, L, 9, 26, 52)
+    check('tech: Ichimoku of a ramp: conversion = p−4, base = p−12.5, leadB = p−25.5, leadA = p−8.25', near(lastOf(ich.conversion), 75) && near(lastOf(ich.base), 66.5) && near(lastOf(ich.leadB), 53.5) && near(lastOf(ich.leadA), 70.75))
+
+    // Signal rules (the header table) on shaped tapes
+    const t80 = computeTechnicals(rc, '1h')
+    check(
+      'tech: computeTechnicals on an 80-bar ramp: every MA that computed says BUY (MA < price), the 100/200 MAs are OMITTED not neutral, MACD > signal = buy, momentum rising = buy',
+      !!t80 &&
+        t80.rows.movingAverages.every((r) => r.signal === 'buy') &&
+        t80.omitted.includes('Exponential Moving Average (200)') &&
+        t80.omitted.includes('Simple Moving Average (100)') &&
+        t80.rows.oscillators.find((r) => r.name.startsWith('MACD'))?.signal === 'buy' &&
+        t80.rows.oscillators.find((r) => r.name.startsWith('Momentum'))?.signal === 'buy' &&
+        t80.movingAverages.rating === 'strong_buy' &&
+        t80.movingAverages.neutral === 0,
+      t80 ? `omitted=${t80.omitted.length} ma=${JSON.stringify(t80.movingAverages)}` : 'null',
+    )
+    const dive = ramp(41).map((i) => (i < 40 ? 200 - 2 * i : 200 - 2 * 39 + 1))
+    const diveCandles: Candle[] = dive.map((c, i) => ({ t: 1_700_000_000 + i * 3600, o: c, h: c + 0.5, l: c - 0.5, c, v: 1 }))
+    const tDive = computeTechnicals(diveCandles, '1h')
+    check(
+      'tech: 39 straight losses then one up-tick → RSI < 30 and rising = BUY; Williams %R < −80 and rising = BUY; every MA above price = SELL',
+      !!tDive &&
+        tDive.rows.oscillators.find((r) => r.name.startsWith('RSI'))?.signal === 'buy' &&
+        tDive.rows.oscillators.find((r) => r.name.startsWith('Williams'))?.signal === 'buy' &&
+        tDive.rows.movingAverages.filter((r) => !r.name.startsWith('Ichimoku')).every((r) => r.signal === 'sell'),
+      tDive ? tDive.rows.oscillators.map((r) => `${r.name.split(' ')[0]}=${r.signal}`).join(' ') : 'null',
+    )
+    check('tech: fewer than MIN_BARS bars → null (no verdict on a stub tape)', computeTechnicals(rampCandles(TECH_MIN_BARS - 1), '1h') === null && !!computeTechnicals(rampCandles(TECH_MIN_BARS), '1h'))
+
+    // Banding at the edges (≤ −0.5 strong sell · ≤ −0.1 sell · < 0.1 neutral · < 0.5 buy · else strong buy)
+    const bands: [number, TechRating][] = [
+      [-1, 'strong_sell'], [-0.5, 'strong_sell'], [-0.499, 'sell'], [-0.1, 'sell'], [-0.0999, 'neutral'], [0, 'neutral'], [0.0999, 'neutral'],
+      [0.1, 'buy'], [0.4999, 'buy'], [0.5, 'strong_buy'], [1, 'strong_buy'],
+    ]
+    check('tech: rating bands at every edge', bands.every(([s, r]) => bandOf(s) === r), bands.map(([s, r]) => `${s}→${bandOf(s)}${bandOf(s) === r ? '' : '≠' + r}`).join(' '))
+    const g = gaugeOf(['buy', 'buy', 'sell', 'neutral', 'neutral'])
+    check('tech: gauge = (buy − sell)/n with counts', near(g.score, 0.2) && g.buy === 2 && g.sell === 1 && g.neutral === 2 && g.rating === 'buy')
+    check('tech: an empty gauge is neutral at 0, never NaN', gaugeOf([]).score === 0 && gaugeOf([]).rating === 'neutral')
+
+    // Pivots — H 110 / L 90 / C 100, current open 104
+    const cp = classicPivots(110, 90, 100)
+    check('tech: classic pivots P100 R1 110 S1 90 R2 120 S2 80 R3 130 S3 70', near(cp.p, 100) && near(cp.r1, 110) && near(cp.s1, 90) && near(cp.r2!, 120) && near(cp.s2!, 80) && near(cp.r3!, 130) && near(cp.s3!, 70))
+    const fp = fibonacciPivots(110, 90, 100)
+    check('tech: fibonacci pivots R1 107.64 S1 92.36 R2 112.36 R3 120', near(fp.r1, 107.64) && near(fp.s1, 92.36) && near(fp.r2!, 112.36) && near(fp.r3!, 120))
+    const cam = camarillaPivots(110, 90, 100)
+    check('tech: camarilla pivots R1 = C + 1.1·range/12, R3 = C + 1.1·range/4', near(cam.r1, 100 + 22 / 12) && near(cam.s1, 100 - 22 / 12) && near(cam.r3!, 105.5) && near(cam.s3!, 94.5))
+    const wo = woodiePivots(110, 90, 104)
+    check('tech: woodie pivots use the CURRENT open: P (110+90+2·104)/4 = 102, R1 114, S1 94', near(wo.p, 102) && near(wo.r1, 114) && near(wo.s1, 94))
+    const dm = dmPivots(110, 90, 100, 104)
+    check('tech: DM pivots (close < open → X = H+2L+C = 390): P 97.5, R1 105, S1 85, no R2/R3', near(dm.p, 97.5) && near(dm.r1, 105) && near(dm.s1, 85) && dm.r2 === undefined)
+    // pivotsFor: three UTC days of hourly bars; the levels come from the LAST COMPLETED day only
+    const day0 = Math.floor(1_700_000_000 / 86400) * 86400
+    const three: Candle[] = []
+    for (let d = 0; d < 3; d++) for (let h = 0; h < 24; h++) three.push({ t: day0 + d * 86400 + h * 3600, o: 100 + d * 10, h: 100 + d * 10 + (h === 5 ? 9 : 2), l: 100 + d * 10 - (h === 7 ? 6 : 1), c: 100 + d * 10 + 1, v: 1 })
+    const pf = pivotsFor(three, '1h')
+    check('tech: intraday pivots = the previous UTC day (H 119, L 104, C 111 → classic P 111.33, R1 118.67)', !!pf && pf.period === 'day' && pf.from === day0 + 86400 && near(pf.classic.p, 111.33, 0.01) && near(pf.classic.r1, 118.67, 0.01))
+    check('tech: daily frame pivots come from the previous MONTH (period named)', pivotsFor(rampCandles(120, 86400), '1d')?.period === 'month')
+
+    // Chip asks: prices with NO thousands separator (the spot-guard grammar reads "$2,410" as $2)
+    check('tech: askPrice never prints a thousands separator and trims to the tick', askPrice(2410.5) === '2410.5' && askPrice(0.0123456) === '0.0123' && askPrice(326.5) === '326.5' && /^\d+(\.\d+)?$/.test(askPrice(123456.789)))
+    check('tech: the trap is real — "$2,410" parses as a $2 trigger (why chips never carry commas)', techParseSpotGuardArm('Protect my spot ETH if it drops to $2,410.5')?.triggerValue === 2)
+    const chipStop = verdictChips({ symbol: 'ETH', source: 'coinbase', rating: 'neutral', support: 2410.5 })[0]
+    check('tech: the neutral chip\'s pivot stop round-trips the spot-guard parser at the exact level', chipStop.kind === 'stop' && techParseSpotGuardArm(chipStop.ask)?.triggerValue === 2410.5 && techParseSpotGuardArm(chipStop.ask)?.token === 'ETH')
+    const hlStop = verdictChips({ symbol: 'HYPE', source: 'hyperliquid', rating: 'neutral', support: 61.26 })[0]
+    check('tech: a perp\'s neutral chip is the HL guardian at the pivot (coin + price mode)', hlStop.kind === 'stop' && techParseGuardianArm(hlStop.ask)?.coin === 'HYPE' && techParseGuardianArm(hlStop.ask)?.triggerValue === 61.26)
+
+    // Every chip for every (source × rating) lands natively in the ladder replica — never the planner
+    const ratings: TechRating[] = ['strong_sell', 'sell', 'neutral', 'buy', 'strong_buy']
+    const chipCases: { symbol: string; source: 'coinbase' | 'hyperliquid' | 'robinhood' }[] = [
+      { symbol: 'AAPL', source: 'robinhood' }, { symbol: 'ETH', source: 'coinbase' }, { symbol: 'HYPE', source: 'hyperliquid' }, { symbol: 'SOL', source: 'coinbase' },
+    ]
+    const chipBad: string[] = []
+    let chipCount = 0
+    for (const c of chipCases) for (const r of ratings) {
+      const chips = verdictChips({ symbol: c.symbol, source: c.source, rating: r, support: 123.45 })
+      if (chips.length < 2) chipBad.push(`${c.symbol}/${r}: ${chips.length} chips`)
+      for (const ch of chips) {
+        chipCount++
+        const out = simulateLadder(ch.ask)
+        if (out.kind === 'planner') chipBad.push(`${c.symbol}/${r}: "${ch.ask}" → planner`)
+        if (out.kind === 'clarify') chipBad.push(`${c.symbol}/${r}: "${ch.ask}" → clarify (${out.note})`)
+      }
+    }
+    check(`tech: every verdict chip (${chipCount} asks over 4 symbols × 5 ratings) lands as a native ACTION in the ladder replica`, chipBad.length === 0, chipBad.slice(0, 6).join(' | '))
+    check('tech: a coin whose home is another chain (SOL) takes the Hyperliquid forms — never a Base squat swap', verdictChips({ symbol: 'SOL', source: 'coinbase', rating: 'buy' }).every((c) => /hyperliquid|long/i.test(c.ask)))
+    check('tech: sell verdicts carry Sell + Protect; buy verdicts Buy + DCA (spot) / Buy + Protect (perp)',
+      verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'sell' }).map((c) => c.kind).join(',') === 'sell,protect' &&
+      verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'strong_buy' }).map((c) => c.kind).join(',') === 'buy,dca' &&
+      verdictChips({ symbol: 'HYPE', source: 'hyperliquid', rating: 'buy' }).map((c) => c.kind).join(',') === 'buy,protect')
+
+    // The API contract on live symbols (feeds are keyless public data)
+    type TechApi = { symbol: string; tf: string; tfs: string[]; asOf: number; feed?: string; bars?: number; summary?: { rating: string; score: number; buy: number; neutral: number; sell: number }; oscillators?: { rating: string }; movingAverages?: { rating: string }; rows?: { oscillators: { name: string; value: number; signal: string }[]; movingAverages: { name: string; value: number; signal: string }[] }; pivots?: Record<string, { p: number; r1: number; s1: number }> | null; chips: { kind: string; ask: string }[]; error?: string; reason?: string; omitted?: string[] }
+    const gaugeOk = (g?: { rating: string; score: number; buy: number; neutral: number; sell: number }) => !!g && ['strong_sell', 'sell', 'neutral', 'buy', 'strong_buy'].includes(g.rating) && g.score >= -1 && g.score <= 1 && g.buy + g.neutral + g.sell > 0
+    for (const [sym, tf] of [['AAPL', '1d'], ['ETH', '1h']] as const) {
+      const r = await fetch(`${BASE}/api/charts/technicals?symbol=${sym}&tf=${tf}`)
+      const b = (await r.json()) as TechApi
+      const live = !b.error
+      check(
+        `tech api: ${sym} ${tf} → contract shape (summary/oscillators/movingAverages gauges, 11 oscillator + 15 MA rows incl. omitted, five pivot families, chips) — or a NAMED feed refusal`,
+        r.status === 200 && b.symbol === sym && b.tf === tf && Array.isArray(b.tfs) && b.tfs.join(',') === '15m,1h,4h,1d' &&
+          (live
+            ? gaugeOk(b.summary) && gaugeOk(b.oscillators as TechApi['summary']) && gaugeOk(b.movingAverages as TechApi['summary']) &&
+              (b.rows!.oscillators.length + b.omitted!.filter((n) => !/Average|Ichimoku/.test(n)).length) === 11 &&
+              (b.rows!.movingAverages.length + b.omitted!.filter((n) => /Average|Ichimoku/.test(n)).length) === 15 &&
+              b.rows!.oscillators.every((x) => Number.isFinite(x.value) && ['buy', 'neutral', 'sell'].includes(x.signal)) &&
+              !!b.pivots && ['classic', 'fibonacci', 'camarilla', 'woodie', 'dm'].every((f) => Number.isFinite(b.pivots![f]?.p) && Number.isFinite(b.pivots![f]?.r1) && Number.isFinite(b.pivots![f]?.s1)) &&
+              b.chips.length >= 2 && b.chips.every((c) => simulateLadder(c.ask).kind === 'action') && (b.bars ?? 0) >= 200
+            : /feed unavailable|tape too short/.test(b.error!) && /AAPL|ETH/.test(b.reason ?? '') && b.chips.length === 0),
+        live ? `${b.feed} bars=${b.bars} ${b.summary!.rating} osc=${b.oscillators!.rating} ma=${b.movingAverages!.rating} omitted=${b.omitted!.length} chips=${b.chips.map((c) => c.ask).join(' / ')}` : `REFUSED: ${b.error}`,
+      )
+      if (live) {
+        const again = (await (await fetch(`${BASE}/api/charts/technicals?symbol=${sym}&tf=${tf}`)).json()) as TechApi
+        check(`tech api: ${sym} ${tf} is cached 30s per symbol+tf (same asOf on the second read)`, again.asOf === b.asOf)
+      }
+    }
+    const usdc = (await (await fetch(`${BASE}/api/charts/technicals?symbol=USDC&tf=1d`)).json()) as TechApi
+    check('tech api: a chartless symbol (USDC) refuses BY NAME with no gauges and no chips — 200, never 500', !usdc.summary && usdc.error === 'no chart source' && /USDC/.test(usdc.reason ?? '') && usdc.chips.length === 0)
+    const nope = await fetch(`${BASE}/api/charts/technicals?symbol=NOPE`)
+    const nopeB = (await nope.json()) as TechApi
+    check('tech api: an unknown ticker refuses by name and defaults tf to 1d', nope.status === 200 && nopeB.error === 'no chart source' && nopeB.tf === '1d' && /NOPE/.test(nopeB.reason ?? ''))
+    check('tech api: a malformed symbol is a 400, not an upstream probe', (await fetch(`${BASE}/api/charts/technicals?symbol=${encodeURIComponent('../etc')}`)).status === 400)
+    check('tech api: an unknown tf falls to 1d (never a 500)', ((await (await fetch(`${BASE}/api/charts/technicals?symbol=ETH&tf=7w`)).json()) as TechApi).tf === '1d')
+
+    // The candles route still serves its old shape through the shared loader
+    const cnd = (await (await fetch(`${BASE}/api/charts/candles?symbol=ETH&tf=1h`)).json()) as { symbol: string; feed?: string; candles: unknown[]; error?: string }
+    check('tech: /api/charts/candles unchanged on the wire (≤180 candles, feed named) after the loader moved to lib/candles-server', cnd.symbol === 'ETH' && (cnd.error ? /feed unavailable/.test(cnd.error) : cnd.candles.length > 0 && cnd.candles.length <= 180 && cnd.feed === 'coinbase'))
+
+    // The page mount: /t/AAPL?tab=technicals renders the tab server-side with the frame from ?tf=
+    const tp = await fetch(`${BASE}/t/AAPL?tab=technicals&tf=4h`)
+    const tpHtml = await tp.text()
+    check('tech page: /t/AAPL?tab=technicals&tf=4h is 200, mounts the technicals section on that frame, and keeps the chart as a link', tp.status === 200 && /data-technicals="AAPL"/.test(tpHtml) && /data-tf="4h"/.test(tpHtml) && /href="\/t\/AAPL"/.test(tpHtml) && /not advice|reading the tape|Timeframe/i.test(tpHtml))
+    const tpChart = await (await fetch(`${BASE}/t/AAPL`)).text()
+    check('tech page: /t/AAPL (chart view) links to ?tab=technicals and does NOT mount the gauges', /href="\/t\/AAPL\?tab=technicals"/.test(tpChart) && !/data-technicals=/.test(tpChart))
+    const tpUsdc = await (await fetch(`${BASE}/t/USDC?tab=technicals`)).text()
+    check('tech page: a chartless symbol on the technicals tab keeps the honest empty state (no gauges)', !/data-technicals="USDC"/.test(tpUsdc) && /No live chart/.test(tpUsdc))
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)

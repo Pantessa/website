@@ -15,15 +15,19 @@ import Link from 'next/link'
 import { Maximize2, Minimize2 } from 'lucide-react'
 import CandleChart, { fmtPrice, type ChartStats } from '@/components/CandleChart'
 import TokenIcon from '@/components/TokenIcon'
-import { CHART_FEED_LABELS, chartPairFor, type ChartFeed } from '@/lib/charts'
+import { CHART_FEED_LABELS, CHART_TFS, chartPairFor, type ChartFeed, type ChartTf } from '@/lib/charts'
+import TechnicalsTab from '@/components/markets/technicals/TechnicalsTab'
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
 
 type FsDoc = Document & { webkitExitFullscreen?: () => Promise<void>; webkitFullscreenElement?: Element | null }
 type FsEl = HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> }
 
-export default function TokenPageView({ symbol }: { symbol: string }) {
+export type TokenPageTab = 'chart' | 'technicals'
+
+export default function TokenPageView({ symbol, tab = 'chart', tf }: { symbol: string; tab?: TokenPageTab; tf?: string }) {
   const pair = useMemo(() => chartPairFor(symbol), [symbol])
+  const initialTf = CHART_TFS.some((t) => t.key === tf) ? (tf as ChartTf) : undefined
   const [stats, setStats] = useState<ChartStats | null>(null)
   const [expanded, setExpanded] = useState(false)
   const shellRef = useRef<HTMLDivElement | null>(null)
@@ -96,6 +100,16 @@ export default function TokenPageView({ symbol }: { symbol: string }) {
             <h1 className="tchart__pair truncate">{pair ? pair.label : sym || 'Token'}</h1>
             <p className="tchart__src mono">{pair ? `Live chart · ${feedLabel}` : 'No live chart yet'}</p>
           </div>
+          {pair && (
+            <nav className="ml-2 flex items-center gap-1" aria-label="View">
+              <Link href={`/t/${pair.symbol}`} className="tchart__act" style={tab === 'chart' ? { color: 'var(--fg)', borderColor: 'var(--line-2)' } : undefined} aria-current={tab === 'chart' ? 'page' : undefined}>
+                Chart
+              </Link>
+              <Link href={`/t/${pair.symbol}?tab=technicals`} className="tchart__act" style={tab === 'technicals' ? { color: 'var(--fg)', borderColor: 'var(--line-2)' } : undefined} aria-current={tab === 'technicals' ? 'page' : undefined}>
+                Technicals
+              </Link>
+            </nav>
+          )}
         </div>
 
         {pair && stats?.last != null && (
@@ -122,8 +136,10 @@ export default function TokenPageView({ symbol }: { symbol: string }) {
       </div>
 
       {/* Canvas: the chart takes every pixel that's left. */}
-      <div className="tchart__canvas">
-        {pair ? (
+      <div className={tab === 'technicals' ? 'tchart__canvas overflow-y-auto' : 'tchart__canvas'}>
+        {pair && tab === 'technicals' ? (
+          <TechnicalsTab symbol={sym} pair={pair} initialTf={initialTf} />
+        ) : pair ? (
           <CandleChart symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} />
         ) : (
           <div className="flex flex-1 items-center justify-center">

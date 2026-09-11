@@ -12,7 +12,7 @@ import TokenPageView from '@/components/TokenPageView'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-type Params = { params: Promise<{ symbol: string }> }
+type Params = { params: Promise<{ symbol: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { symbol } = await params
@@ -25,15 +25,20 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   return { title, description, openGraph: { title, description } }
 }
 
-export default async function TokenPage({ params }: Params) {
+export default async function TokenPage({ params, searchParams }: Params) {
   const { symbol } = await params
+  const sp = await searchParams
   const norm = normalizeChartSymbol(symbol)
+  // ?tab=technicals opens the ratings view (deep-linkable — every gauge is a
+  // link target); ?tf= picks its frame. Anything else is the chart.
+  const tab = sp.tab === 'technicals' ? 'technicals' : 'chart'
+  const tfRaw = typeof sp.tf === 'string' ? sp.tf : undefined
   // No .x-main here on purpose: the chart page is full-bleed, so the shell
   // owns the viewport and the footer sits just below the fold.
   return (
     <>
       <main>
-        <TokenPageView symbol={norm} />
+        <TokenPageView symbol={norm} tab={tab} tf={tfRaw} />
       </main>
       <Footer />
     </>
