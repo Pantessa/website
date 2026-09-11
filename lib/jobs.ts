@@ -31,7 +31,8 @@ import { parseMorphoLend, parseMorphoOp } from '@/lib/morpho-supply'
 import { parseCrossChainSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
 import { chainAlt, canonicalChainWord, normalizeArrows, normalizeChainWords, normalizeWorth } from '@/lib/chain-lexicon'
 import { hlUnsizedChips, parseHlIntent, type HlIntent, type HlOrderIntent } from '@/lib/hyperliquid-exec'
-import { parseGuardianArm, type GuardianArmAsk } from '@/lib/hl-guardian'
+import { fenceGuardianCoin, parseGuardianArm, type GuardianArmAsk } from '@/lib/hl-guardian'
+import { hlPerpUniverseCached } from '@/lib/hl-universe'
 import { parseLidoStake } from '@/lib/lido-stake'
 import { fundingAltUsdcFor, fundingOriginWords, GAS_LEG_USD, MIN_VALUE_LEG_USD } from '@/lib/lifi-bridge'
 import { parseNftAsk } from '@/lib/nft-layer'
@@ -692,9 +693,17 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
     id: 'guardian',
     label: 'guardian protection',
     parse: (seg) => {
-      const arm = parseGuardianArm(seg)
-      if (!arm) return null
-      const title = `Arm ${arm.kind === 'stop_loss' ? 'stop-loss' : 'take-profit'} on ${arm.coin} (${arm.triggerMode === 'price' ? `px ${arm.triggerValue}` : `${arm.triggerValue}%`})`
+      const parsed = parseGuardianArm(seg)
+      if (!parsed) return null
+      // The chat gate's coin fence — a stock segment refuses the job BY NAME
+      // instead of compiling a guardian step no runner can arm. Sync: the
+      // route warms the cached universe before compiling; cold falls back to
+      // the static stock fence.
+      const fence = fenceGuardianCoin(parsed, hlPerpUniverseCached())
+      if (!fence.ok) return { problem: fence.problem }
+      const arm = { ...parsed, coin: fence.coin }
+      const title = `Arm ${arm.kind
+ === 'stop_loss' ? 'stop-loss' : 'take-profit'} on ${arm.coin} (${arm.triggerMode === 'price' ? `px ${arm.triggerValue}` : `${arm.triggerValue}%`})`
       return { steps: [{ kind: 'auto', builder: 'native-hl-guardian', title, params: arm as unknown as Record<string, unknown> }], title }
     },
   },

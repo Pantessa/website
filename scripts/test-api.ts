@@ -288,9 +288,14 @@ import {
   splitSignature,
   parseGuardianArm,
   planForExistingPolicy,
+  fenceGuardianCoin,
+  HL_STOCK_TICKER_COLLISIONS,
   type GuardianPolicyParams,
   type GuardianPosition,
 } from '../lib/hl-guardian'
+import { hlPerpUniverse, universeFromMeta } from '../lib/hl-universe'
+
+
 import {
   parseHlIntent,
   hlUnsizedChips,
@@ -12932,6 +12937,38 @@ async function main() {
       const armOwned = await gateJson('protect my ETH long with a 5% stop', mallory.address, mallorySession)
       check('mutation gate: the SAME arm signed in as the wallet passes the gate and reaches the real rulebook (no delegation → its own refusal)', !armOwned.signInGate && /delegation/i.test(armOwned.reply ?? '') && armOwned.buildPath === 'native-hl-guardian', JSON.stringify(armOwned).slice(0, 240))
 
+      // Guardian coin fence (route): it answers BEFORE the sign-in gate and
+      // the add-the-dapp door — refusing a stock needs no session, and
+      // offering to add Hyperliquid for AAPL would be a lie.
+      const fenceTurn = (await gateJson('protect my AAPL with a 5% stop', mallory.address)) as { reply?: string; signInGate?: unknown; guardianPolicyId?: string; buildPath?: string; clarify?: { options?: { resume: string }[] } }
+      const fenceNoHl = (await (
+        await fetch(`${BASE}/api/chat`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+          body: JSON.stringify({ message: 'protect my AAPL with a 5% stop', activeServers: [] }),
+        })
+      ).json()) as { reply?: string; door?: unknown }
+      check(
+        'guardian fence (route): "protect my AAPL with a 5% stop" refuses by name with working chips — no arm, no sign-in gate, no add-Hyperliquid door',
+        /AAPL isn't a Hyperliquid market/.test(fenceTurn.reply ?? '') && fenceTurn.buildPath === 'native-hl-guardian' && !fenceTurn.guardianPolicyId && !fenceTurn.signInGate &&
+          (fenceTurn.clarify?.options ?? []).some((o) => o.resume === 'DCA $10 into AAPL weekly') &&
+          /AAPL isn't a Hyperliquid market/.test(fenceNoHl.reply ?? '') && !fenceNoHl.door && !(fenceNoHl.reply ?? '').includes('Add Hyperliquid'),
+        JSON.stringify({ fenceTurn, fenceNoHl }).slice(0, 360),
+      )
+      const perpOwned = await gateJson('protect my SYRUP long with a 10% stop', mallory.address, mallorySession)
+      check(
+        'guardian fence (route): a real perp still passes the fence and reaches the arming rulebook (no delegation → its own refusal)',
+        !perpOwned.signInGate && /delegation/i.test(perpOwned.reply ?? '') && !/isn't a Hyperliquid market/.test(perpOwned.reply ?? '') && perpOwned.buildPath === 'native-hl-guardian',
+        JSON.stringify(perpOwned).slice(0, 240),
+      )
+      const stockJobTurn = await gateJson('Swap 10 USDC for ETH on Base, then protect my AAPL with a 5% stop', mallory.address)
+      check(
+        'guardian fence (route): a compound ask with a stock guardian segment refuses the job by name — no job planted',
+        /AAPL isn't a Hyperliquid market/.test(stockJobTurn.reply ?? '') && !stockJobTurn.jobId,
+        JSON.stringify(stockJobTurn).slice(0, 240),
+      )
+
+
       const jobAsk = 'deposit 12 usdc to hyperliquid, then long $12 of eth on hyperliquid, then protect my eth long with a 5% stop'
       const jobUnsigned = await gateJson(jobAsk, mallory.address)
       check('mutation gate: a compound job ending in a guardian arm, unsigned → sign-in invitation, NO job planted', isGate(jobUnsigned, 'guardian-job-step') && !jobUnsigned.jobId && jobUnsigned.buildPath === 'native-job', JSON.stringify(jobUnsigned).slice(0, 240))
@@ -14684,6 +14721,66 @@ async function main() {
         parseGuardianArm('what is a stop loss?') === null &&
         parseGuardianArm('protect my position') === null,
     )
+
+    // ── Guardian coin fence (Markets squad 2026-09-11): the loose coin slot
+    // claimed "protect my AAPL with a 5% stop" — a Robinhood Chain stock no
+    // guardian can build (HL Guardian = perps, Spot Guardian = Base). The
+    // fence refuses it BY NAME with chips that land natively; a real perp
+    // still arms; the live universe decides, the static stock fence covers
+    // a cold cache and the pure replica.
+    {
+      const cold = fenceGuardianCoin(parseGuardianArm('protect my AAPL with a 5% stop')!, null)
+      const coldChips = cold.ok ? [] : cold.chips.map((c) => ({ resume: c.resume, out: simulateLadder(c.resume) }))
+      check(
+        'guardian fence (cold): a Robinhood Chain stock protect ask refuses BY NAME, and every chip it offers lands natively',
+        !cold.ok && cold.reason === 'stock' && /AAPL isn't a Hyperliquid market/.test(cold.reply) && /Robinhood Chain/.test(cold.reply) && /Spot Guardian runs on Base/.test(cold.reply) &&
+          coldChips.length === 3 && coldChips.every((c) => c.out.kind === 'action' && c.out.gate !== 'planner') && coldChips.some((c) => c.out.gate === 'dca'),
+        JSON.stringify(coldChips),
+      )
+      const ladderStock = simulateLadder('protect my AAPL with a 5% stop')
+      const ladderCompound = simulateLadder('Show me the AAPL chart, then protect my AAPL with a 5% stop')
+      const ladderPerp = simulateLadder('protect my SYRUP long with a 10% stop')
+      check(
+        'guardian fence (ladder): the stock ask is a named refusal with chips, never a guardian ACTION; the real-perp arm and a stock-ticker collision (ZETA) are untouched',
+        ladderStock.gate === 'guardian' && ladderStock.kind === 'clarify' && ladderStock.chips === true && /AAPL isn't a Hyperliquid market/.test(ladderStock.note ?? '') &&
+          !(ladderCompound.gate === 'guardian' && ladderCompound.kind === 'action') &&
+          ladderPerp.gate === 'guardian' && ladderPerp.kind === 'action' &&
+          fenceGuardianCoin(parseGuardianArm('protect my ZETA with a 5% stop')!, null).ok,
+        JSON.stringify({ ladderStock, ladderCompound, ladderPerp }).slice(0, 400),
+      )
+      const stockJob = compileJobAsk('Swap 10 USDC for ETH on Base, then protect my AAPL with a 5% stop')
+      check(
+        'guardian fence (jobs): a compound ask whose guardian segment names a stock refuses the job by name, compiles nothing',
+        !!stockJob && 'problem' in stockJob && /AAPL isn't a Hyperliquid market/.test(stockJob.problem),
+        JSON.stringify(stockJob).slice(0, 240),
+      )
+      const live = await hlPerpUniverse()
+      const liveCollisions = [...ROBINHOOD_TICKER_SET].filter((t) => live?.listed.has(t) || live?.delisted.has(t))
+      const fl = (a: string) => fenceGuardianCoin(parseGuardianArm(a)!, live)
+      const syrup = fl('protect my SYRUP long with a 10% stop')
+      const kpepe = fl('protect my kpepe with a 10% stop')
+      const foo = fl('protect my FOOBARQ with a 10% stop')
+      check(
+        'guardian fence (live): the HL universe reads live; a real perp passes in venue casing, AAPL and an unlisted coin refuse by name',
+        !!live && live.listed.has('BTC') && live.listed.has('ETH') && live.listed.has('HYPE') && !live.listed.has('AAPL') &&
+          syrup.ok && syrup.coin === 'SYRUP' && kpepe.ok && kpepe.coin === 'kPEPE' &&
+          !fl('protect my AAPL with a 5% stop').ok &&
+          !foo.ok && foo.reason === 'not-listed' && foo.chips.length === 1 && !!parseSpotGuardArm(foo.chips[0].resume),
+        `listed=${live?.listed.size} syrup=${JSON.stringify(syrup).slice(0, 80)} kpepe=${JSON.stringify(kpepe).slice(0, 80)} foo=${JSON.stringify(foo).slice(0, 160)}`,
+      )
+      check(
+        'guardian fence (drift): every Robinhood Chain ticker that is also a live Hyperliquid perp is in HL_STOCK_TICKER_COLLISIONS (else the cold fence walls a real market)',
+        !!live && liveCollisions.every((t) => HL_STOCK_TICKER_COLLISIONS.has(t)),
+        `live collisions=${liveCollisions.join(',')}`,
+      )
+      check(
+        'guardian fence (universe parse): a malformed or tiny meta builds NO universe instead of fencing every market',
+        universeFromMeta(null) === null &&
+          universeFromMeta({ universe: [{ name: 'BTC' }] }) === null &&
+          universeFromMeta({ universe: Array.from({ length: 25 }, (_, i) => ({ name: `C${i}`, isDelisted: i === 0 })) })?.delisted.has('C0') === true,
+      )
+    }
+
 
     // Submit relay: the signature IS the auth — recover mismatch and guard
     // failures refuse before the venue ever sees anything.

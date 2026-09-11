@@ -54,7 +54,8 @@ import { INTENT_SLUG_RE } from '@/lib/intent-links'
 import prismaDb from '@/lib/db'
 import { prettyChainWord } from '@/lib/chain-lexicon'
 import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, hlOpenCollateralShortfall, hlUnsizedChips, parseHlIntent, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
-import { parseGuardianArm } from '@/lib/hl-guardian'
+import { fenceGuardianCoin, parseGuardianArm } from '@/lib/hl-guardian'
+import { hlPerpUniverse } from '@/lib/hl-universe'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import { compileJobAsk, stampSwapFeeTier } from '@/lib/jobs'
 import { advanceJob, createJob } from '@/lib/jobs-runner'
@@ -996,7 +997,12 @@ async function handleChatTurn(req: NextRequest) {
     // compiler fails open and a typo'd ticker dies at RUN time instead,
     // after earlier steps already moved money (the 2026-07-21 "AAPLE" job).
     if (/robinhood/i.test(message)) await ensureTokenList(ROBINHOOD_CHAIN_ID).catch(() => {})
+    // Guardian-worded asks warm the live perp universe first, so a compound
+    // "…, then protect my X …" meets the same coin fence the lone ask does
+    // (compileJobAsk is sync and reads the cache; cold = the static fence).
+    if (/\b(protect|stop[- ]?loss|take[- ]?profit)\b/i.test(message)) await hlPerpUniverse()
     const jobAsk = compileJobAsk(message)
+
     if (jobAsk && 'clarify' in jobAsk) {
       nativeTrace({ type: 'status', label: `jobs layer: suspected stock-ticker miss in a compound ask — asking before compiling (${jobAsk.clarify.question.slice(0, 120)})` })
       return NextResponse.json({
@@ -1320,8 +1326,28 @@ async function handleChatTurn(req: NextRequest) {
     // server-side through the SAME rulebook as the dashboard; without one,
     // point at the one-signature approval. Requires the Hyperliquid agent in
     // the set so a stray "stop loss" in another context never claims a turn.
-    const armAsk = parseGuardianArm(message)
+    //
+    // The coin fence runs FIRST — before the add-the-dapp door, which would
+    // offer to add Hyperliquid for a stock it can never trade. A coin the
+    // live perp universe doesn't list refuses BY NAME with chips that work
+    // (Markets squad 2026-09-11: "protect my AAPL with a 5% stop" claimed
+    // the guardian for a Robinhood Chain stock). Only guardian-worded asks
+    // pay the (cached) universe read.
+    const parsedArm = parseGuardianArm(message)
+    const armFence = parsedArm ? fenceGuardianCoin(parsedArm, await hlPerpUniverse()) : null
+    if (parsedArm && armFence && !armFence.ok) {
+      nativeTrace({ type: 'note', level: 'warn', label: `guardian layer: ${parsedArm.coin} refused by the coin fence (${armFence.reason}) — answered by name, nothing armed` })
+      return NextResponse.json({
+        reply: armFence.reply,
+        ...(armFence.chips.length ? { clarify: { question: armFence.question, options: armFence.chips } } : {}),
+        buildPath: 'native-hl-guardian',
+      })
+    }
+    // The venue's own casing from here on ("kpepe" → kPEPE) — the arm path
+    // looks the coin up in meta by exact name.
+    const armAsk = parsedArm && armFence?.ok ? { ...parsedArm, coin: armFence.coin } : null
     if (armAsk && !hlAgentOf(activeServers).agent) {
+
       // Full guardian grammar matched but Hyperliquid isn't in the set — the
       // add-the-dapp door, never a silent fall to the planner (#570/#595
       // pattern; the grammar's own specificity is the "stray stop loss" guard).
