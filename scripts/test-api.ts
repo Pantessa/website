@@ -3616,6 +3616,15 @@ async function main() {
       'layout: the viewport clips its x axis so full-bleed bands never mint a horizontal scrollbar',
       /html \{ overflow-x: clip; \}/.test(designCss) && /\.filmband::before, \.filmband::after \{[^}]*left: calc\(50% - 50vw\)/.test(designCss),
     )
+    // …and BODY must never go back to overflow-x: hidden (2026-09-11). Once
+    // html clips, body's overflow stops propagating to the viewport, so a
+    // hidden x axis made body its own never-scrolling scroll container and
+    // every position: sticky on the site (the nav, the /markets watchlist
+    // rail, the /t rails) scrolled away with the page, in prod, 09-03 → 09-11.
+    check(
+      'layout: body clips x with clip, never hidden — a hidden body under a clipped html is a scroll container that kills every sticky',
+      /\n {2}body \{[^}]*overflow-x: clip;/.test(designCss) && !/\n {2}body \{[^}]*overflow-x: hidden/.test(designCss),
+    )
 
     // ── Mobile polish (squad gtm, 2026-09-08) ─────────────────────────────
     // The 375×812 baseline (Playwright + Chrome, both themes) found these;

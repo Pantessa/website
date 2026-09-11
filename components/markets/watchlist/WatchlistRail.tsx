@@ -28,6 +28,18 @@ import { useAlerts, useQuotes, useWatchlists } from './useWatchlists'
 const promptHref = (ask: string) => `/chat?prompt=${encodeURIComponent(ask)}`
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 
+// The rows scroll inside the rail (docked full-height on /markets), and that
+// scroller clips a row's menu: open it toward the side with room and cap it
+// to that room — past the cap the menu scrolls itself.
+function rowMenuPlacement(btn: HTMLElement): { up: boolean; maxH: number } {
+  const box = (btn.closest('.wl__rows') ?? document.documentElement).getBoundingClientRect()
+  const b = btn.getBoundingClientRect()
+  const below = box.bottom - b.bottom - 8
+  const above = b.top - box.top - 8
+  const up = below < 240 && above > below
+  return { up, maxH: Math.max(160, Math.min(320, Math.floor(up ? above : below))) }
+}
+
 export interface WatchlistRailProps {
   /** The page's symbol — offered as a one-tap add when it isn't on the list. */
   symbol?: string
@@ -47,6 +59,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
   const [pickerOpen, setPickerOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [rowMenu, setRowMenu] = useState<string | null>(null)
+  const [rowMenuPlace, setRowMenuPlace] = useState<{ up: boolean; maxH: number }>({ up: false, maxH: 320 })
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [importOpen, setImportOpen] = useState(false)
   const [alertFor, setAlertFor] = useState<string | null>(null)
@@ -367,12 +380,20 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                           aria-label={`${sym} menu`}
                           aria-haspopup="menu"
                           aria-expanded={rowMenu === sym}
-                          onClick={() => setRowMenu((r) => (r === sym ? null : sym))}
+                          onClick={(e) => {
+                            setRowMenuPlace(rowMenuPlacement(e.currentTarget))
+                            setRowMenu((r) => (r === sym ? null : sym))
+                          }}
                         >
                           <MoreHorizontal className="h-4 w-4" />
                         </button>
                         {rowMenu === sym && active && (
-                          <ul className="wl__pop wl__pop--right" role="menu" aria-label={`${sym} actions`}>
+                          <ul
+                            className={`wl__pop wl__pop--right${rowMenuPlace.up ? ' wl__pop--up' : ''}`}
+                            style={{ maxHeight: rowMenuPlace.maxH }}
+                            role="menu"
+                            aria-label={`${sym} actions`}
+                          >
                             <li className="wl__popChips">
                               <button type="button" className="wl__chip wl__chip--accent" onClick={() => send(`Buy $10 of ${sym}`)} title={sendLabel}>
                                 Buy $10
