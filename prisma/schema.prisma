@@ -1512,3 +1512,95 @@ model RosterTryoutMark {
   @@unique([tryoutId, periodKey])
   @@map("roster_tryout_marks")
 }
+
+// ── MARKETS/WATCH ──────────────────────────────────────────────────────────
+// Unlimited watchlists, tickers and alerts (BUSINESS-MODEL-chart-first §0:
+// everything TradingView meters is free here, structurally). No cap column,
+// no count fence anywhere — never add one. `isInternal` is stamped from the
+// harness header (lib/internal-run.ts) so a gate run never becomes a public
+// list on /lists or a fired alert on a stranger's rail.
+model Watchlist {
+  id         String   @id // mintSlug(10)
+  owner      String // lowercased SIWE wallet
+  name       String
+  /// Public handle (/lists/<slug>) — set when the owner shares the list.
+  slug       String?  @unique
+  isPublic   Boolean  @default(false) @map("is_public")
+  /// The slug this list was followed (copied) from — the MOSAIC fork idiom.
+  forkOf     String?  @map("fork_of")
+  position   Int      @default(0)
+  isInternal Boolean  @default(false) @map("is_internal")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  items WatchlistItem[]
+
+  @@index([owner, position])
+  @@index([isPublic, isInternal, updatedAt])
+  @@map("watchlists")
+}
+
+model WatchlistItem {
+  id          String   @id // mintSlug(10)
+  watchlistId String   @map("watchlist_id")
+  symbol      String // normalized chart symbol (lib/watchlists normalizeWatchSymbol)
+  /// TradingView-style section header ("###Stocks"); null = unsectioned.
+  section     String?
+  position    Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  watchlist Watchlist @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+
+  @@unique([watchlistId, symbol])
+  @@index([watchlistId, position])
+  @@map("watchlist_items")
+}
+
+/// A price alert. The cron (/api/cron/alerts) reads ONE quote per symbol
+/// per pass and evaluates every alert on it (the dedup that makes
+/// "unlimited alerts" free). An alert with `actionAsk` never sends the ask
+/// itself — the signature is the gate: when it fires, the chip surfaces on
+/// the rail (alert_notifications) and the user sends it.
+model PriceAlert {
+  id          String    @id // mintSlug(10)
+  owner       String // lowercased SIWE wallet
+  symbol      String
+  condition   String // above | below | pct_move
+  value       Float // price (above/below) or percent (pct_move)
+  /// pct_move: the price the alert was armed at — the move is measured from here.
+  basePrice   Float?    @map("base_price")
+  status      String    @default("active") // active | fired | paused
+  actionAsk   String?   @map("action_ask")
+  /// Optional: also email the firing (lib/email sendEmail, best-effort).
+  email       String?
+  lastChecked DateTime? @map("last_checked")
+  lastPrice   Float?    @map("last_price")
+  firedAt     DateTime? @map("fired_at")
+  firedPrice  Float?    @map("fired_price")
+  isInternal  Boolean   @default(false) @map("is_internal")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([owner, status])
+  @@index([status, symbol])
+  @@map("price_alerts")
+}
+
+/// The in-app notification a fired alert writes — what the rail's
+/// needs-you strip reads. `seenAt` = the owner dismissed it.
+model AlertNotification {
+  id         String    @id // mintSlug(10)
+  owner      String
+  alertId    String    @map("alert_id")
+  symbol     String
+  title      String
+  body       String
+  actionAsk  String?   @map("action_ask")
+  price      Float
+  seenAt     DateTime? @map("seen_at")
+  isInternal Boolean   @default(false) @map("is_internal")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([owner, seenAt, createdAt])
+  @@map("alert_notifications")
+}
