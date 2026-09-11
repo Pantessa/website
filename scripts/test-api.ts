@@ -71,7 +71,7 @@ import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from 
 import { FIRST_PARTY_MCP_SOURCE, guardPlannerArtifact, isFirstPartyMcp, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { LIMIT_EXAMPLES, parseSwapIntent, swapClarify } from '../lib/swap-intent'
 import { parseChartState, chartStateToAsks, serializeChartState, chartStatesEqual, type ChartState } from '../lib/chart-state'
-import { composeLineActions, composeZoneActions, fmtAskPrice, fmtAskUnits } from '../lib/chart-actions'
+import { actionKindsFor, composeLineActions, composeZoneActions, fmtAskPrice, fmtAskUnits } from '../lib/chart-actions'
 import { performanceTiles, fmtPct } from '../lib/performance'
 import { sma, ema, bollinger, vwap, hasVolume } from '../lib/chart-indicators'
 import { activeLinkCapFor, composeMcps, isCrossChainAsk, linkEyebrow, linkLockup, linkLockupWord, runsOnLabel } from '../lib/intent-links'
@@ -17563,6 +17563,36 @@ async function main() {
         offers.every((o) => !/[,e]\d/.test(o.action.ask.replace(/[A-Za-z]+/g, ''))) &&
         fmtAskPrice(2400) === '2400' && fmtAskPrice(0.000009) === '0.000009' && fmtAskUnits(25, 2300) === '0.01087' && fmtAskUnits(25, 0.000009) === '2777778',
       `${ethBelow.map((o) => o.action.kind).join(',')} / ${ethAbove.map((o) => o.action.kind).join(',')} / ${aapl.map((o) => o.action.kind).join(',')}`,
+    )
+    // MSG's cross-lane finding: the ladder CLAIMS "protect my AAPL with a 5%
+    // stop" as a guardian action, but AAPL is not an HL perp and the Spot
+    // Guardian is Base-only — so a 4663 stock level must never OFFER a stop
+    // or take-profit, on either side of market, alone or as a zone.
+    const stockOffers = [
+      ...composeLineActions({ symbol: 'AAPL', source: 'robinhood', price: 200, last: 230 }),
+      ...composeLineActions({ symbol: 'AAPL', source: 'robinhood', price: 260, last: 230 }),
+      ...composeZoneActions({ symbol: 'AAPL', source: 'robinhood', p1: 200, p2: 210, last: 230 }),
+      ...composeZoneActions({ symbol: 'TSLA', source: 'robinhood', p1: 400, p2: 420, last: 380 }),
+    ]
+    const stockState = parseChartState({
+      v: 1,
+      symbol: 'AAPL',
+      tf: '1d',
+      lines: stockOffers.map((o, i) => ({ id: `s${i}`, kind: 'h', price: 200 + i, action: o.action })),
+    })
+    check(
+      'chart actions: a Robinhood Chain stock level (either side, line or zone) never offers stop / protect / limit — a 4663 chart-state never emits a protect ask (only buy / sell / dca; no "protect" or "stop" word at all)',
+      stockOffers.length >= 8 &&
+        stockOffers.every((o) => o.action.kind === 'buy' || o.action.kind === 'sell' || o.action.kind === 'dca') &&
+        stockState !== null &&
+        chartStateToAsks(stockState).every((ask) => !/\b(?:protect|stop|take profit|limit)\b/i.test(ask)) &&
+        !actionKindsFor('AAPL', 'robinhood').has('stop') &&
+        !actionKindsFor('AAPL', 'robinhood').has('protect') &&
+        !actionKindsFor('AAPL', 'robinhood').has('limit') &&
+        // and the two sources that CAN build a stop still do
+        actionKindsFor('HYPE', 'hyperliquid').has('stop') &&
+        actionKindsFor('ETH', 'coinbase').has('stop'),
+      stockOffers.map((o) => o.action.kind).join(','),
     )
     const lvl = parseChartState({ v: 1, symbol: 'ETH', tf: '1h', lines: [{ id: 'a', kind: 'h', price: 2300, action: ethBelow[0].action }] })
     check('chart actions: a composed action survives the chart-state contract (the post → link path)', lvl !== null && chartStateToAsks(lvl)[0] === ethBelow[0].action.ask)

@@ -5272,7 +5272,7 @@
 .mkt-pop {
   position: absolute; z-index: 4; width: min(320px, calc(100% - 24px)); display: flex; flex-direction: column; gap: 8px;
   padding: 10px 11px 9px; border-radius: 12px; background: var(--surf-1); border: 1px solid var(--line-2);
-  box-shadow: 0 12px 32px rgba(0,0,0,.35);
+  box-shadow: 0 12px 32px rgba(0,0,0,.35); overflow-y: auto; overscroll-behavior: contain;
 }
 .mkt-pop__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .mkt-pop__kind { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
