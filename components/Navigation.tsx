@@ -13,6 +13,7 @@ import CreateAccountButton from '@/components/CreateAccountButton'
 import NavAccount from '@/components/NavAccount'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { YeetfulMark } from '@/components/Logo'
+import { AskDoorTrigger } from '@/components/AskDoor'
 
 export default function Navigation() {
   const pathname = usePathname()
@@ -167,6 +168,7 @@ export default function Navigation() {
   // Drawer tabs — same destinations, one tap each.
   const drawerTabs = (
     <>
+      <AskDoorTrigger variant="drawer" />
       <Link href="/markets" className={`nav__tab ${onMarkets ? 'is-on' : ''}`}>
         Markets
       </Link>
@@ -216,6 +218,9 @@ export default function Navigation() {
         {!inDashboard && <nav className="nav__tabs">{desktopTabs}</nav>}
 
         <div className="nav__right">
+          {/* Ask from anywhere — the door's nav trigger (⌘K). Hidden on the
+              surfaces that already are the composer (lib/ask-door). */}
+          {!inDashboard && <AskDoorTrigger />}
           {!inDashboard && mounted && desktopAccount}
           {!inDashboard && (
             <button

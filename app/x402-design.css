@@ -5661,3 +5661,104 @@
   .tchart__railToggle { display: inline-flex; }
 }
 .tchart--expanded .tchart__rail { display: none; }
+
+/* ── THE ACT STRIP (symbol page header, 2026-09-11) ──────────────────
+   The "Act on X" chips left the Overview card for the header row, between
+   the identity and the quote, so they sit ABOVE the chart and read on every
+   tab. Buy/Long is the one filled chip on the page; Sell/Short wears the
+   sell colour; DCA / Protect stay quiet outlines. Wraps to its own row under
+   the identity on narrow screens (the eyebrow folds away; chips speak). */
+.sym__act { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1 1 360px; min-width: 0; }
+.sym__act-eyebrow { font-size: 9.5px; letter-spacing: 0.14em; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.sym__act-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.sym__act-chip { display: inline-flex; align-items: center; min-height: 36px; padding: 0 16px; border: 1px solid var(--line-2); border-radius: 999px; background: color-mix(in srgb, var(--fg) 3%, transparent); color: var(--fg); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; transition: border-color .12s ease, background .12s ease, color .12s ease, box-shadow .15s ease, transform .15s ease; }
+.sym__act-chip:hover { border-color: var(--fg); transform: translateY(-1px); }
+.sym__act-chip--buy { background: var(--accent); border-color: var(--accent); color: var(--ink); box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--accent) 70%, transparent); }
+.sym__act-chip--buy:hover { border-color: var(--accent); filter: brightness(1.06); }
+.sym__act-chip--sell { border-color: color-mix(in srgb, var(--sell) 55%, transparent); color: var(--sell); }
+.sym__act-chip--sell:hover { background: var(--sell); border-color: var(--sell); color: #fff; }
+@media (max-width: 899px) {
+  .sym__act { order: 3; flex-basis: 100%; align-items: flex-start; gap: 0; }
+  .sym__act-eyebrow { display: none; }
+  .sym__act-chips { justify-content: flex-start; }
+  .sym__act-chip { min-height: 34px; padding: 0 14px; font-size: 12.5px; }
+}
+
+/* ── THE ASK DOOR (components/AskDoor, 2026-09-11) ───────────────────
+   Ask Pantessa from anywhere: the nav trigger, the docked pill, ⌘K, and the
+   sheet that runs the ask in place (idle = command palette; live = the
+   simple-mode ChatInterface, the same runtime as an intent link). z-order:
+   nav 40 < pill 35 (under the nav) · sheet 60 (over the drawer at 50, under
+   the sign-in door at 200 and the chart overlay at 70). */
+.nav__ask { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px 0 9px; border: 1px solid var(--line-2); border-radius: 999px; background: color-mix(in srgb, var(--surf-1) 80%, transparent); color: var(--fg); font-size: 13.5px; font-weight: 600; transition: border-color .15s ease, box-shadow .15s ease, background .15s ease; }
+.nav__ask:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent); }
+.nav__ask-mark { display: grid; place-items: center; width: 20px; height: 20px; }
+.nav__ask-kbd { font-size: 10px; line-height: 1.4; color: var(--muted-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+/* the drawer row: a bordered, mark-led first row */
+.drawer__tabs .drawer__ask { display: inline-flex; align-items: center; gap: 10px; border: 1px solid var(--line-2); color: var(--fg); margin-bottom: 8px; background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.drawer__tabs .drawer__ask .nav__ask-mark { width: 22px; height: 22px; }
+
+/* the docked pill: a composer-shaped invitation at the foot of every page */
+.askdoor-pill { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 35; display: inline-flex; align-items: center; gap: 10px; width: min(560px, calc(100vw - 32px)); height: 48px; padding: 0 8px 0 9px; border: 1px solid var(--line-2); border-radius: 999px; background: color-mix(in srgb, var(--surf-1) 88%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 18px 44px -18px rgba(0,0,0,.6), 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent); color: var(--muted); text-align: left; transition: border-color .15s ease, box-shadow .2s ease, transform .2s ease; }
+.askdoor-pill:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line-2)); box-shadow: 0 18px 44px -18px rgba(0,0,0,.6), 0 0 0 4px color-mix(in srgb, var(--accent) 9%, transparent); transform: translateX(-50%) translateY(-1px); }
+.askdoor-pill__mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 12%, transparent); flex-shrink: 0; }
+.askdoor-pill__text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+.askdoor-pill__short { display: none; font-size: 14px; font-weight: 600; color: var(--fg); }
+.askdoor-pill__mic { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 999px; color: var(--muted-2); border: 1px solid var(--line); flex-shrink: 0; }
+.askdoor-pill__kbd { font-size: 10px; line-height: 1.4; color: var(--muted-2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; margin-right: 4px; flex-shrink: 0; }
+/* the pill floats over the page foot — give the last line room to clear it */
+body:has(> .askdoor-pill) { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+/* a page that already has a live runtime composer (the symbol page's Trade
+   panel once armed) keeps ONE composer on screen — the nav Ask + ⌘K remain */
+body:has(.mkt-trade__chat[data-armed="1"]) .askdoor-pill { display: none; }
+@media (max-width: 640px) {
+  .askdoor-pill { left: auto; right: 16px; transform: none; width: auto; height: 46px; padding: 0 16px 0 8px; gap: 8px; }
+  .askdoor-pill:hover { transform: translateY(-1px); }
+  .askdoor-pill__text, .askdoor-pill__kbd, .askdoor-pill__mic { display: none; }
+  .askdoor-pill__short { display: inline; }
+  body:has(> .askdoor-pill) { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+}
+
+/* the sheet */
+.askdoor { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-start; justify-content: center; padding: min(12vh, 120px) 16px 16px; }
+.askdoor--live { padding-top: min(6vh, 56px); }
+.askdoor__backdrop { position: absolute; inset: 0; width: 100%; height: 100%; background: rgba(0,0,0,.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: drawerfade .18s ease; }
+.askdoor__sheet { position: relative; width: min(720px, 100%); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; border: 1px solid var(--line-2); border-radius: 18px; background: var(--surf-1); box-shadow: 0 40px 100px -30px rgba(0,0,0,.7), 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent); overflow: hidden; animation: askdoorin .22s cubic-bezier(.16,1,.3,1); }
+.askdoor--live .askdoor__sheet { width: min(880px, 100%); height: min(780px, calc(100dvh - 32px)); }
+@keyframes askdoorin { from { transform: translateY(10px) scale(.985); opacity: 0; } to { transform: none; opacity: 1; } }
+.askdoor__head { display: flex; align-items: center; gap: 12px; min-height: 50px; padding: 10px 10px 10px 16px; border-bottom: 1px solid var(--line); }
+.askdoor__brand { display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0; }
+.askdoor__word { font-family: var(--font-chat-display); font-weight: 600; font-size: 15px; letter-spacing: -0.015em; color: var(--fg); }
+.askdoor__eyebrow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font-size: 9.5px; letter-spacing: 0.14em; color: var(--muted-2); }
+.askdoor__asktext { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-chat-display); font-size: 14px; color: var(--muted); }
+.askdoor__headright { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; margin-left: auto; }
+.askdoor__app { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border: 1px solid transparent; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--muted); transition: color .12s ease, border-color .12s ease; }
+.askdoor__app:hover { color: var(--fg); border-color: var(--line-2); }
+.askdoor__close { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 999px; color: var(--muted); transition: background .12s ease, color .12s ease; }
+.askdoor__close:hover { background: var(--surf-2); color: var(--fg); }
+.askdoor__composer { display: flex; align-items: flex-end; gap: 8px; padding: 14px 14px 8px 18px; }
+.askdoor__input { flex: 1; min-width: 0; padding: 7px 0; border: 0; outline: 0; background: transparent; resize: none; color: var(--fg); font-size: 17px; line-height: 1.45; max-height: 120px; }
+.askdoor__input::placeholder { color: var(--muted-2); }
+.askdoor__composer.is-listening .askdoor__input::placeholder { color: var(--accent); }
+.askdoor__send { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 999px; background: var(--surf-2); color: var(--muted-2); flex-shrink: 0; cursor: not-allowed; transition: background .15s ease, color .15s ease, box-shadow .15s ease; }
+.askdoor__send.is-ready { background: var(--accent); color: var(--ink); cursor: pointer; box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 35%, transparent); }
+.askdoor__send.is-ready:hover { filter: brightness(1.06); }
+.askdoor__chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 18px 14px; }
+.askdoor__chip { min-height: 32px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: 999px; background: transparent; color: var(--fg); font-size: 12.5px; font-weight: 500; transition: border-color .12s ease, background .12s ease; }
+.askdoor__chip:hover { border-color: var(--accent); }
+.askdoor__chip:first-child { border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2)); color: var(--accent); font-weight: 600; }
+.askdoor__foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 18px 12px; border-top: 1px solid var(--line); font-size: 9.5px; letter-spacing: 0.14em; color: var(--muted-2); }
+.askdoor__foot-kbd { display: inline-flex; align-items: center; gap: 4px; letter-spacing: 0.04em; }
+.askdoor__foot kbd { font-family: inherit; font-size: 10px; line-height: 1.4; border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+.askdoor__runtime { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.askdoor__runtime > div { height: 100%; }
+@media (max-width: 640px) {
+  .askdoor, .askdoor--live { padding: 0; align-items: flex-end; }
+  .askdoor__sheet { width: 100%; max-height: 92dvh; border-radius: 18px 18px 0 0; border-bottom: 0; animation: askdoorup .22s cubic-bezier(.16,1,.3,1); }
+  .askdoor--live .askdoor__sheet { width: 100%; height: 92dvh; }
+  .askdoor__eyebrow, .askdoor__app, .askdoor__foot-kbd { display: none; }
+  .askdoor__input { font-size: 16px; }
+  .askdoor__foot { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+}
+@keyframes askdoorup { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .askdoor__sheet, .askdoor__backdrop { animation: none; } }

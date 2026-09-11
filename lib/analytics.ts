@@ -42,6 +42,12 @@ export const analytics = {
   voiceAsk: (prompt: string, sent: boolean) =>
     send('voice_ask', { prompt: prompt.slice(0, 80), sent }),
 
+  /** The site-wide ask door (components/AskDoor). mode 'run' = the ask ran
+   *  in the sheet; 'nav' = a chart/markets ask navigated to /t/<symbol>
+   *  with no turn burned. `from` is the page the door was opened on. */
+  askDoor: (prompt: string, mode: 'run' | 'nav', from: string) =>
+    send('ask_door', { prompt: prompt.slice(0, 80), mode, from: from.slice(0, 80) }),
+
   /** A chat turn that actually paid: settled receipt totals. */
   chatPaid: (totalUsd: number, calls: number, services: string) =>
     send('chat_paid', { totalUsd, calls, services }),

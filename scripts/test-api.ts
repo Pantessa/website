@@ -52,6 +52,7 @@ import { resolveToken, COW_API_BASE, buildCowOrderTypedData, cowOrderAction, bui
 import { ensureTokenList, primeTokenList } from '../lib/token-list'
 import { pairStockToken, stockChipLabel } from '../lib/stock-pairing'
 import { chartPairFor, changePct24h, aggregateCandles, parseChartAsk, isChartedStock, type Candle } from '../lib/charts'
+import { askDoorChips, askDoorHidden, askDoorNav, askDoorPillHidden, askDoorPlaceholder } from '../lib/ask-door'
 import {
   marketSections,
   marketTabUrl,
@@ -63,7 +64,7 @@ import {
   sessionState,
   stats24h,
 } from '../lib/markets'
-import { composeAsk as composeTradeAsk, sidesFor as tradeSidesFor, tradeAsks } from '../components/markets/tabs/TradeTab'
+import { composeAsk as composeTradeAsk, sidesFor as tradeSidesFor, tradeAsks } from '../lib/trade-asks'
 import { ROBINHOOD_TICKER_SET } from '../lib/robinhood-tickers'
 import { normalizeSpokenAsk } from '../lib/voice-ask'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
@@ -16104,6 +16105,80 @@ async function main() {
     )
     const tWeth = flat(await (await fetch(`${BASE}/t/weth`)).text())
     check('/t/weth: alias collapses to the ETH pair', /ETH \/ USD/.test(tWeth))
+  }
+
+  // ── The act strip + the ask door (2026-09-11) ─────────────────────────────
+  // "Act on X" moved ABOVE the chart into the page header (SymbolPage →
+  // sym__act): the chips ship in the server HTML before the chart mount, the
+  // eyebrow says what a click does, the old Overview card is gone. The ask
+  // door (components/AskDoor) is on every brochure page — nav trigger + the
+  // docked pill in the HTML — and absent where a composer already lives.
+  {
+    const tEth = flat(await (await fetch(`${BASE}/t/ETH`)).text())
+    const actAt = tEth.indexOf('class="sym__act"')
+    const chartAt = tEth.indexOf('class="tchart sym__chart"')
+    check(
+      '/t/ETH: the act strip sits in the header ABOVE the chart — Buy leads (filled), Sell wears the sell colour, DCA + Protect follow; the eyebrow names the contract; no Overview act card',
+      actAt > 0 && chartAt > actAt &&
+        tEth.includes('ACT ON ETH · SENDS THE ASK · YOUR WALLET SIGNS') &&
+        /class="sym__act-chip sym__act-chip--buy"[^>]*>Buy ETH</.test(tEth) &&
+        /class="sym__act-chip sym__act-chip--sell"[^>]*>Sell ETH</.test(tEth) &&
+        /sym__act-chip--dca"[^>]*>DCA weekly</.test(tEth) &&
+        /sym__act-chip--protect"[^>]*>Protect with a stop</.test(tEth) &&
+        !/mkt-card__title">Act on/.test(tEth),
+      `act@${actAt} chart@${chartAt}`,
+    )
+    const tAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
+    check(
+      '/t/AAPL: a stock strip never offers Protect (Spot Guardian is Base-only) — Buy / Sell / DCA only, each href a /chat prefill fallback',
+      /sym__act-chip--buy"[^>]*>Buy AAPL</.test(tAapl) && /sym__act-chip--dca"/.test(tAapl) && !/sym__act-chip--protect/.test(tAapl) &&
+        tAapl.includes(`href="/chat?prompt=${encodeURIComponent('Buy $50 of AAPL')}"`),
+    )
+    const tHype = flat(await (await fetch(`${BASE}/t/HYPE`)).text())
+    check(
+      '/t/HYPE: a perp strip reads Long / Short / Protect (the HL grammar) and the pill names the symbol',
+      /sym__act-chip--buy"[^>]*>Long HYPE</.test(tHype) && /sym__act-chip--sell"[^>]*>Short HYPE</.test(tHype) && /sym__act-chip--protect/.test(tHype) &&
+        tHype.includes('Ask anything about HYPE'),
+    )
+    // The door's HTML presence: pill + nav trigger on a brochure page and on
+    // the symbol page; nothing on /chat or /embed (they ARE the composer).
+    const pricingHtml = flat(await (await fetch(`${BASE}/pricing`)).text())
+    check(
+      '/pricing: the ask door ships in the HTML — nav "Ask ⌘K" trigger + the docked pill with the house placeholder; the sheet itself is client-only (no auto-open)',
+      pricingHtml.includes('data-ask-door="nav"') && pricingHtml.includes('data-ask-door="pill"') &&
+        pricingHtml.includes('Ask Pantessa — swaps, stocks, stop-losses, anything…') && !pricingHtml.includes('data-ask-door="sheet"'),
+    )
+    check('/t/ETH: the pill is symbol-aware', tEth.includes('data-ask-door="pill"') && tEth.includes('Ask anything about ETH'))
+    const chatHtml = flat(await (await fetch(`${BASE}/chat`)).text())
+    const embedHtml = flat(await (await fetch(`${BASE}/embed`)).text())
+    check('/chat + /embed: no ask door anywhere (the chat IS the composer; the embed owns its viewport)', !chatHtml.includes('data-ask-door') && !embedHtml.includes('data-ask-door'))
+    // Pure: where the door lives, where it steps aside, what it navigates.
+    check(
+      'ask door: hidden on /chat, /chat/<id>, /embed, /i/<slug>; the pill also steps aside on /dashboard (DashAskBar) while ⌘K stays',
+      askDoorHidden('/chat') && askDoorHidden('/chat/abc') && askDoorHidden('/embed') && askDoorHidden('/i/xyz') &&
+        !askDoorHidden('/incidents') && !askDoorHidden('/') && !askDoorHidden('/t/ETH') && !askDoorHidden('/dashboard') &&
+        askDoorPillHidden('/dashboard') && askDoorPillHidden('/dashboard/links') && !askDoorPillHidden('/pricing'),
+    )
+    check(
+      'ask door: chart + markets asks navigate to /t/<symbol> (zero turns); a money verb, a chartless token and a plain sentence run in the sheet',
+      askDoorNav('show me the eth chart') === '/t/ETH' &&
+        askDoorNav('pull up bitcoin candles') === '/t/BTC' &&
+        askDoorNav('open apple in markets') === '/t/AAPL' &&
+        askDoorNav('Buy $5 of ETH') === null &&
+        askDoorNav('show me the USDG chart') === null &&
+        askDoorNav("what's in my wallet?") === null,
+    )
+    const aaplPair = chartPairFor('AAPL')!
+    check(
+      'ask door: chips are context-aware — the symbol page offers that symbol\'s real trade asks (+ a why-is-it-moving read), elsewhere the curated examples',
+      askDoorChips('/t/AAPL').slice(0, 3).every((c, i) => c.ask === tradeAsks(aaplPair)[i].ask) &&
+        askDoorChips('/t/AAPL').some((c) => c.label === 'Why is AAPL moving?') &&
+        askDoorChips('/t/hype')[0].ask === 'Long $50 of HYPE on Hyperliquid' &&
+        askDoorChips('/pricing').map((c) => c.ask).join('|') === EXAMPLE_PROMPTS.map((p) => p.prompt).join('|') &&
+        askDoorChips('/t/NOPE').length === EXAMPLE_PROMPTS.length &&
+        askDoorPlaceholder('/t/weth') === 'Ask anything about ETH — buy it, protect it, chart it…' &&
+        askDoorPlaceholder('/').startsWith('Ask Pantessa'),
+    )
   }
 
   // ── Mosaic links (executable allocations) ─────────────────────────────────
