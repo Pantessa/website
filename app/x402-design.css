@@ -5101,6 +5101,24 @@
 /* The watchlist fills the rail: head, add box and foot pinned; rows scroll. */
 .mkt-frame__rail > [data-slot="watchlist"] { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .mkt-frame__rail .wl { flex: 1 1 auto; height: auto; background: transparent; }
+/* /t/<symbol> rides the same frame (2026-09-11, Nate: "keep the watch list
+   and sidebar top right fixed same as in the normal markets page"): .sym is
+   the main column and keeps its own gutters; the rail docks right from the
+   nav down, the watchlist filling it and the symbol card pinned under it.
+   The doubled class outranks the ≤640px pad, so a stacked rail lines up with
+   .sym's edge. */
+.mkt-frame.mkt-frame--sym { --mkt-pad-l: clamp(12px, 2vw, 26px); }
+.mkt-frame--sym > .sym { grid-area: main; min-width: 0; }
+.mkt-frame__rail > [data-slot="symbol-card"] { flex: 0 0 auto; margin: 0 12px 12px; }
+/* With the rail docked, the column is narrower than a one-row header needs
+   (title + act chips + price ≈ 1,390px), so the header goes two rows. Title
+   and price share the first row: the title yields width, so the price keeps
+   the right edge. The act strip takes its own row under them. */
+@media (min-width: 1024px) {
+  .mkt-frame--sym .sym__id { flex: 1 1 0; }
+  .mkt-frame--sym .sym__act { order: 3; flex-basis: 100%; align-items: flex-start; }
+  .mkt-frame--sym .sym__act-chips { justify-content: flex-start; }
+}
 .mkt-frame__how { padding: 16px 18px; }
 .mkt-frame__steps { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px 24px; counter-reset: mkt-step; }
 .mkt-frame__steps li { counter-increment: mkt-step; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
@@ -5210,9 +5228,7 @@
 .sym .tchart .tchart__canvas { padding: 8px 10px 10px; }
 .sym .tchart--expanded, .sym .tchart:fullscreen { height: 100dvh; border: 0; border-radius: 0; }
 
-.sym__grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; margin-top: 18px; align-items: start; }
-.sym__main { min-width: 0; }
-.sym__rail { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 76px; }
+.sym__main { min-width: 0; margin-top: 18px; }
 .sym__tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
 .sym__tabs::-webkit-scrollbar { display: none; }
 .sym__tab { position: relative; flex-shrink: 0; padding: 10px 14px 12px; font-size: 13px; font-weight: 500; color: var(--muted); background: transparent; border: 0; cursor: pointer; transition: color .12s ease; }
@@ -5248,10 +5264,8 @@
 .mkt-trade__runtime > div { height: 100%; }
 
 @media (max-width: 1023px) {
-  .sym__grid { grid-template-columns: minmax(0, 1fr); }
-  .sym__rail { position: static; }
-  /* The rail leaves the side: it drops under the boards as a card and the
-     main column's padding goes symmetric. */
+  /* The rail leaves the side: it drops under the boards (or the symbol
+     page's tabs) as a card and the main column's padding goes symmetric. */
   .mkt-frame { grid-template-columns: minmax(0, 1fr); grid-template-areas: "main" "rail" "foot"; --mkt-pad-r: var(--mkt-pad-l); }
   .mkt-frame__main { padding-bottom: 28px; }
   .mkt-frame__rail { position: static; height: auto; margin: 0 var(--mkt-pad-l); border: 1px solid var(--line); border-radius: 14px; }

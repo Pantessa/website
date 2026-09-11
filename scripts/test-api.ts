@@ -18339,6 +18339,17 @@ async function main() {
     const chatHtml = flat(await (await fetch(`${BASE}/chat`)).text())
     check('spine: /chat carries the MARKETS seat (both postures render the link)', (chatHtml.match(/aria-label="MARKETS"/g) ?? []).length >= 2)
     const tAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
+    // The symbol page rides the /markets frame (2026-09-11, Nate: "keep the
+    // watch list and sidebar top right fixed same as in the normal markets
+    // page"): the same docked rail from the first line, footer under the page.
+    check(
+      '/t/AAPL: the watchlist rail docks right like /markets (main.sym + the frame rail holding the watchlist then the symbol card, the footer under the page)',
+      /class="mkt-frame mkt-frame--sym"/.test(tAapl) &&
+        /<main class="sym" data-symbol="AAPL"/.test(tAapl) &&
+        /<aside class="mkt-frame__rail"[^>]*>[\s\S]*?data-slot="watchlist"[\s\S]*?data-slot="symbol-card"/.test(tAapl) &&
+        /class="mkt-frame__foot"><footer class="footer"/.test(tAapl) &&
+        /\.mkt-frame--sym > \.sym \{[^}]*grid-area: main;/.test(shellCss),
+    )
     const tabLabels = ['Overview', 'News', 'Community', 'Technicals', 'Trade']
     check(
       '/t/AAPL: 200 — header (Apple · AAPL · Robinhood Chain · 24/7 venue chip · session line), all five tabs, rail slots, chart mount',
@@ -18775,7 +18786,7 @@ async function main() {
     // Re-pinned at integration (2026-09-11): the rail lives in SHELL's
     // WatchlistSlot (data-slot="watchlist") inside the frame's right rail.
     const tHtml = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
-    check('watch: /t/AAPL mounts the watchlist rail in the frame (add-ticker box + Import door inside data-slot="watchlist")', tHtml.includes('Add a ticker or company') && tHtml.includes('Import from TradingView') && tHtml.includes('data-slot="watchlist"') && tHtml.includes('class="sym__rail"'))
+    check('watch: /t/AAPL mounts the watchlist rail in the frame (add-ticker box + Import door inside data-slot="watchlist")', tHtml.includes('Add a ticker or company') && tHtml.includes('Import from TradingView') && tHtml.includes('data-slot="watchlist"') && tHtml.includes('class="mkt-frame__rail"'))
 
     // ── Alerts: CRUD, the cron’s per-symbol dedup, a fixture firing ─────────
     check('alerts: GET without a session → 401', (await fetch(`${BASE}/api/alerts`)).status === 401)
