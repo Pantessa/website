@@ -104,8 +104,11 @@ export default function TradeTab({
     const s = prompt ? sideOf(prompt.text) : 'buy'
     return sides.includes(s) ? s : sides[0]
   })
-  const [usd, setUsd] = useState<number>(10)
-  const [custom, setCustom] = useState<string>('')
+  // A chip fired from Overview lands the panel on its own amount ($50 →
+  // the custom slot; a preset value lights its chip).
+  const firedUsd = prompt ? Number(prompt.text.match(/\$(\d+)/)?.[1] ?? NaN) : NaN
+  const [usd, setUsd] = useState<number>(AMOUNTS.includes(firedUsd as (typeof AMOUNTS)[number]) ? firedUsd : 10)
+  const [custom, setCustom] = useState<string>(Number.isFinite(firedUsd) && !AMOUNTS.includes(firedUsd as (typeof AMOUNTS)[number]) ? String(firedUsd) : '')
   const [pct, setPct] = useState<number>(5)
   const [cadence, setCadence] = useState<Cadence>('weekly')
 

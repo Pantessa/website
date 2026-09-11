@@ -52,6 +52,18 @@ import { resolveToken, COW_API_BASE, buildCowOrderTypedData, cowOrderAction, bui
 import { ensureTokenList, primeTokenList } from '../lib/token-list'
 import { pairStockToken, stockChipLabel } from '../lib/stock-pairing'
 import { chartPairFor, changePct24h, aggregateCandles, parseChartAsk, isChartedStock, type Candle } from '../lib/charts'
+import {
+  marketSections,
+  marketTabUrl,
+  nyseSession,
+  parseMarketTab,
+  parseMarketsNavAsk,
+  performanceFromCandles,
+  resolveTickerQuery,
+  sessionState,
+  stats24h,
+} from '../lib/markets'
+import { composeAsk as composeTradeAsk, sidesFor as tradeSidesFor, tradeAsks } from '../components/markets/tabs/TradeTab'
 import { ROBINHOOD_TICKER_SET } from '../lib/robinhood-tickers'
 import { normalizeSpokenAsk } from '../lib/voice-ask'
 import { pureChecks, policyCheck, orderValueUsd, buildReport } from '../lib/cow-guardrails'
@@ -15945,14 +15957,16 @@ async function main() {
         tEth.includes(`/chat?prompt=${encodeURIComponent('Buy $50 of ETH')}`) &&
         tEth.includes(`/chat?prompt=${encodeURIComponent('Sell $50 of ETH')}`) &&
         tEth.includes(`/chat?prompt=${encodeURIComponent('DCA $10 into ETH weekly')}`) &&
-        tEth.includes('prefills chat · you send it') &&
+        // The chips SEND now (Markets shell, 2026-09-11); the href stays the
+        // no-JS fallback and the eyebrow says what a click does.
+        tEth.includes('SENDS THE ASK · YOUR WALLET SIGNS') &&
         /Non-custodial/i.test(tEth),
     )
     // Full-bleed shell + the expand control ship in the server HTML: the page
     // is a chart workspace, not a centered article.
     check(
       '/t/ETH: full-bleed shell, no centered column, expand control present',
-      /class="tchart"/.test(tEth) && !/<main className?="x-main"/.test(tEth) && /aria-label="Full screen chart"/.test(tEth),
+      /class="tchart sym__chart"/.test(tEth) && !/<main className?="x-main"/.test(tEth) && /aria-label="Full screen chart"/.test(tEth),
     )
     const tUsdg = flat(await (await fetch(`${BASE}/t/USDG`)).text())
     check(
@@ -17437,6 +17451,166 @@ async function main() {
         `row=${rosterRow ? 'found' : 'missing'} rosterRows=${(afRoster.failures ?? []).filter((f) => f.kind === 'roster').length}`,
       )
     }
+  }
+
+  // ── MARKETS/SHELL ─────────────────────────────────────────────────────────
+  // The Markets nav + /markets index + the /t/<symbol> frame (squad
+  // 2026-09-11, SHELL lane). Pure grammar first, then the rendered pages.
+  console.log('— markets/shell')
+  {
+    // Tab strip URL grammar (the #705 idiom): default drops the param, every
+    // other param survives, unknown names fall to Overview.
+    check(
+      'markets: ?tab= grammar — default omitted, others mirrored, unknown → overview, foreign params kept',
+      parseMarketTab('') === 'overview' &&
+        parseMarketTab('?tab=technicals') === 'technicals' &&
+        parseMarketTab('?tab=nope') === 'overview' &&
+        marketTabUrl('overview', '/t/AAPL', '?tab=trade') === '/t/AAPL' &&
+        marketTabUrl('trade', '/t/AAPL', '?x=1') === '/t/AAPL?x=1&tab=trade',
+    )
+    // NYSE session on fixed instants (ET): Sat noon → reopens Mon; Wed 10:00
+    // → open; Wed 17:00 → reopens Thu; Wed 08:00 → today. September = EDT
+    // (UTC−4). Stocks get the "token trades 24/7 · NYSE …" line; crypto never
+    // mentions the NYSE.
+    const sat = new Date('2026-09-12T16:00:00Z') // Sat 12:00 ET
+    const wedOpen = new Date('2026-09-09T14:00:00Z') // Wed 10:00 ET
+    const wedAfter = new Date('2026-09-09T21:00:00Z') // Wed 17:00 ET
+    const wedPre = new Date('2026-09-09T12:00:00Z') // Wed 08:00 ET
+    check(
+      'markets: NYSE session — weekend → reopens Mon 9:30 ET, weekday 10:00 open, 17:00 → next day, 08:00 → today',
+      !nyseSession(sat).open && nyseSession(sat).reopens === 'Mon 9:30 ET' &&
+        nyseSession(wedOpen).open &&
+        !nyseSession(wedAfter).open && nyseSession(wedAfter).reopens === 'Thu 9:30 ET' &&
+        !nyseSession(wedPre).open && nyseSession(wedPre).reopens === 'today 9:30 ET',
+      `${JSON.stringify(nyseSession(sat))} ${JSON.stringify(nyseSession(wedAfter))} ${JSON.stringify(nyseSession(wedPre))}`,
+    )
+    const aaplPair = chartPairFor('AAPL')!
+    const ethPair = chartPairFor('ETH')!
+    check(
+      'markets: session line — a stock names the token 24/7 AND the closed tape; a coin never mentions the NYSE',
+      sessionState(aaplPair, sat).line === 'Token trades 24/7 on Robinhood Chain · NYSE closed, reopens Mon 9:30 ET' &&
+        sessionState(aaplPair, wedOpen).line.endsWith('NYSE open') &&
+        !/NYSE/.test(sessionState(ethPair, sat).line),
+    )
+    // Boards: every listed row clears the resolver on its own source; the
+    // feedless listings (SATS, CASHCAT) are dropped, never dashed.
+    const secs = marketSections()
+    const eq = secs.find((x) => x.id === 'equities')!
+    const cr = secs.find((x) => x.id === 'crypto')!
+    const pp = secs.find((x) => x.id === 'perps')!
+    check(
+      'markets: boards — every row resolves on its own source; feedless listings dropped; sizes honest',
+      secs.every((sec) => sec.rows.every((r) => chartPairFor(r.symbol)?.source === r.source && chartPairFor(r.symbol)?.symbol === r.symbol)) &&
+        eq.rows.length >= 190 && !eq.rows.some((r) => r.symbol === 'SATS' || r.symbol === 'CASHCAT') &&
+        eq.rows[0].symbol === 'AAPL' && eq.rows[0].name === 'Apple' &&
+        cr.rows.length >= 30 && cr.rows[0].symbol === 'BTC' && cr.rows[0].name === 'Bitcoin' &&
+        pp.rows.length === 3,
+      `eq=${eq.rows.length} cr=${cr.rows.length} pp=${pp.rows.length}`,
+    )
+    // Search + the chat/voice door.
+    check(
+      'markets: search resolves "apple" → AAPL, "$COIN" → COIN, "eth" → ETH, "usdc" → null',
+      resolveTickerQuery('apple')?.symbol === 'AAPL' &&
+        resolveTickerQuery('$COIN')?.symbol === 'COIN' &&
+        resolveTickerQuery('eth')?.symbol === 'ETH' &&
+        resolveTickerQuery('usdc') === null,
+    )
+    check(
+      'markets: "open apple in markets" / "markets aapl" navigate to /t/AAPL; a money verb or a plain chart ask never does',
+      parseMarketsNavAsk('open apple in markets')?.href === '/t/AAPL' &&
+        parseMarketsNavAsk('markets aapl')?.href === '/t/AAPL' &&
+        parseMarketsNavAsk('take me to the ETH markets page')?.href === '/t/ETH' &&
+        parseMarketsNavAsk('buy $10 of aapl in markets') === null &&
+        parseMarketsNavAsk('show me the apple chart') === null &&
+        parseMarketsNavAsk('markets') === null,
+    )
+    // Performance tiles: a synthetic 400-bar daily series; 1W/1M/1Y known,
+    // and a 300-bar series leaves 1Y honestly null.
+    const now = Math.floor(Date.now() / 1000)
+    const mk = (n: number): Candle[] => Array.from({ length: n }, (_, i) => {
+      const t = now - (n - 1 - i) * 86400
+      const c = 100 + i // close climbs 1/day
+      return { t, o: c, h: c + 1, l: c - 1, c, v: 10 }
+    })
+    const p400 = performanceFromCandles(mk(400), now)
+    const p300 = performanceFromCandles(mk(300), now)
+    const lastC = 100 + 399
+    const wkRef = 100 + 392
+    check(
+      'markets: performance tiles — 1W from the bar 7 days back, 1Y present on 400 bars and null on 300',
+      Math.abs((p400['1W'] ?? 0) - ((lastC - wkRef) / wkRef) * 100) < 1e-9 &&
+        p400['1Y'] !== null && p400['1M'] !== null && p400.YTD !== null &&
+        p300['1Y'] === null && p300['6M'] !== null,
+      JSON.stringify(p400),
+    )
+    const hourly: Candle[] = Array.from({ length: 30 }, (_, i) => ({ t: now - (29 - i) * 3600, o: 10, h: 10 + i, l: 10 - (i % 3), c: 10, v: 2 }))
+    const st = stats24h(hourly, now)
+    check('markets: 24h stats — high/low/volume over the trailing 24 hourly bars only', !!st && st.high === 39 && st.low === 8 && st.volume === 50, JSON.stringify(st))
+    // The order panel's sentences round-trip the parsers they target — the
+    // chip IS the contract (memory chip-send-contract).
+    const hypePair = chartPairFor('HYPE')!
+    const solPair = chartPairFor('SOL')!
+    const dcaAsk = composeTradeAsk(ethPair, 'dca', { usd: 25, cadence: 'daily' })
+    const dcaParsed = parseDcaCreate(dcaAsk)
+    const spot = parseSpotGuardArm(composeTradeAsk(ethPair, 'protect', { pct: 10 }))
+    const perp = parseGuardianArm(composeTradeAsk(hypePair, 'protect', { pct: 5 }))
+    const hlLong = parseHlIntent(composeTradeAsk(hypePair, 'buy', { usd: 10 }))
+    const buy = parseSwapIntent(composeTradeAsk(aaplPair, 'buy', { usd: 10 }))
+    const sell = parseSwapIntent(composeTradeAsk(ethPair, 'sell', { usd: 50 }))
+    check(
+      'markets: order-panel sentences round-trip — swap buy/sell, DCA (cadence), spot protect, perp protect, HL long',
+      buy.isSwap && !buy.problem && buy.buyToken === 'AAPL' && buy.sellAmountUsd === '10' &&
+        sell.isSwap && !sell.problem && sell.sellToken === 'ETH' && sell.sellAmountUsd === '50' &&
+        !!dcaParsed && !('problem' in dcaParsed) && dcaParsed.cadence === 'day' && dcaParsed.buyUsd === 25 &&
+        spot?.token === 'ETH' && spot.triggerMode === 'price_move_pct' && spot.triggerValue === 10 &&
+        perp?.coin === 'HYPE' && perp.triggerValue === 5 &&
+        !!hlLong,
+      `buy=${JSON.stringify(buy)} sell=${JSON.stringify(sell)} dca=${JSON.stringify(dcaParsed)} spot=${JSON.stringify(spot)} perp=${JSON.stringify(perp)} hl=${hlLong ? hlLong.kind : null}`,
+    )
+    check(
+      'markets: sides are honest per venue — stocks no Protect (Spot Guardian is Base-only), perps Long/Short/Protect, non-EVM coins Buy/Sell only, ETH all four',
+      tradeSidesFor(aaplPair).join() === 'buy,sell,dca' &&
+        tradeSidesFor(hypePair).join() === 'buy,sell,protect' &&
+        tradeSidesFor(solPair).join() === 'buy,sell' &&
+        tradeSidesFor(ethPair).join() === 'buy,sell,dca,protect' &&
+        tradeAsks(hypePair)[0].ask === 'Long $50 of HYPE on Hyperliquid',
+    )
+
+    // Rendered pages.
+    const mkHtml = flat(await (await fetch(`${BASE}/markets`)).text())
+    check(
+      '/markets: 200 with the hero line, the three boards, the search and the watchlist slot',
+      mkHtml.includes('The chart that executes.') &&
+        mkHtml.includes('Digital equities, 24/7') && mkHtml.includes('Crypto') && mkHtml.includes('Perps') &&
+        /aria-label="Search markets"/.test(mkHtml) && /data-slot="watchlist"/.test(mkHtml) &&
+        mkHtml.includes('href="/t/AAPL"') && mkHtml.includes('href="/t/BTC"') && mkHtml.includes('href="/t/HYPE"'),
+    )
+    const homeHtml = flat(await (await fetch(`${BASE}/`)).text())
+    const marketsLinks = (homeHtml.match(/href="\/markets"/g) ?? []).length
+    check('nav: the landing carries a Markets link in the top nav AND the footer', marketsLinks >= 2 && /href="\/markets"[^>]*>Markets</.test(homeHtml), `links=${marketsLinks}`)
+    const chatHtml = flat(await (await fetch(`${BASE}/chat`)).text())
+    check('spine: /chat carries the MARKETS seat (both postures render the link)', (chatHtml.match(/aria-label="MARKETS"/g) ?? []).length >= 2)
+    const tAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
+    const tabLabels = ['Overview', 'News', 'Community', 'Technicals', 'Trade']
+    check(
+      '/t/AAPL: 200 — header (Apple · AAPL · Robinhood Chain · 24/7 venue chip · session line), all five tabs, rail slots, chart mount',
+      tAapl.includes('Apple') && /data-symbol="AAPL"/.test(tAapl) &&
+        tAapl.includes('Robinhood Chain · 24/7') && tAapl.includes('Token trades 24/7 on Robinhood Chain') &&
+        tabLabels.every((l) => new RegExp(`data-tab="${l.toLowerCase()}"[^>]*>${l}<`).test(tAapl)) &&
+        /data-slot="watchlist"/.test(tAapl) && /data-slot="symbol-card"/.test(tAapl) &&
+        /aria-label="Full screen chart"/.test(tAapl) &&
+        // the Overview chips ship in the server HTML with the /chat prefill fallback
+        tAapl.includes(`/chat?prompt=${encodeURIComponent('Buy $50 of AAPL')}`) &&
+        tAapl.includes(`/chat?prompt=${encodeURIComponent('DCA $10 into AAPL weekly')}`) &&
+        !tAapl.includes(encodeURIComponent('Protect my AAPL')),
+    )
+    const tTech = await fetch(`${BASE}/t/AAPL?tab=technicals`)
+    check('/t/AAPL?tab=technicals: 200 (the strip reads ?tab= client-side; the stub card is a calm coming-soon, never a 404)', tTech.status === 200)
+    const tNope = flat(await (await fetch(`${BASE}/t/NOPE`)).text())
+    check(
+      "/t/NOPE: a chartless symbol keeps today's honest page — 200, 'No live chart for NOPE yet', still tradable in chat, tabs held",
+      tNope.includes('No live chart for NOPE yet') && tNope.includes(`/chat?prompt=${encodeURIComponent('Buy $50 of NOPE')}`) && tNope.includes('Not charted yet.'),
+    )
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
