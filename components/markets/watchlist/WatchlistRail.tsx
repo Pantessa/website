@@ -173,7 +173,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
           ) : (
             <button type="button" className="wl__pickBtn" onClick={() => setPickerOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={pickerOpen}>
               <span className="wl__pickName">{active?.name ?? 'Watchlist'}</span>
-              {brew !== 'lists' && <span className="wl__pickCount mono">{symbols.length}</span>}
+              {!brew && <span className="wl__pickCount mono">{symbols.length}</span>}
               <ChevronDown className="h-3.5 w-3.5 shrink-0" />
             </button>
           )}
