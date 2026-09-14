@@ -661,6 +661,8 @@ export default function MarketChart({
   // Data → series. The engine draws every held bar; the view opens on the
   // live window, the older bars waiting off-screen left for a zoom-out.
   const fitOnceRef = useRef<string>('')
+  // The symbol:tf whose opening view the engine hasn't painted yet.
+  const fitPendingRef = useRef<string>('')
   useEffect(() => {
     const cs = candleRef.current
     const vs = volRef.current
@@ -675,11 +677,24 @@ export default function MarketChart({
     vs.setData(bars.map((c) => ({ time: c.t as UTCTimestamp, value: c.v, color: alpha(c.c >= c.o ? tokens.accent : tokens.sell, 0.28) })))
     drawnRef.current = bars.length
     const key = `${symbol}:${tf}`
-    if (fitOnceRef.current !== key) {
+    // Both calls are deferred: the engine applies them at its next paint, to
+    // the bars the series holds by then. A warm-up that landed before that
+    // paint (a warm deep cache) grew the window's 180 bars to ~380 under a
+    // queued fitContent, and the chart opened on the whole held history. So
+    // until the paint every data change aims the view again; the later call
+    // replaces the queued one.
+    if (fitOnceRef.current !== key || fitPendingRef.current === key) {
       const older = bars.length - candles.length
       if (older > 0) chart.timeScale().setVisibleLogicalRange({ from: older as Logical, to: (bars.length - 1 + RIGHT_OFFSET) as Logical })
       else chart.timeScale().fitContent()
-      fitOnceRef.current = key
+      if (fitOnceRef.current !== key) {
+        fitOnceRef.current = key
+        fitPendingRef.current = key
+        // The engine's paint is a frame it queued before this one (setData).
+        requestAnimationFrame(() => {
+          if (fitPendingRef.current === key) fitPendingRef.current = ''
+        })
+      }
     }
     setGeomTick((n) => n + 1)
   }, [bars, candles.length, data?.tf, data?.symbol, pair?.symbol, symbol, tf, tokens])

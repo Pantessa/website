@@ -19960,6 +19960,10 @@ async function main() {
         zoomSrc.includes('clampToFirstBar(view, drawn, RIGHT_OFFSET)') && zoomSrc.includes('wantsOlderBars(clamped ?? view, drawn)') && zoomSrc.includes('subscribeVisibleLogicalRangeChange(onRange)') &&
         zoomSrc.includes('cs.setData(bars.map('),
     )
+    check(
+      'chart zoom: the opening view is aimed again at every data change until the engine paints it (fitContent and setVisibleLogicalRange apply at the next frame, so a warm-up landing first stretched a queued fit over the whole held history)',
+      zoomSrc.includes('fitOnceRef.current !== key || fitPendingRef.current === key') && /requestAnimationFrame\(\(\) => \{\s*if \(fitPendingRef\.current === key\) fitPendingRef\.current = ''/.test(zoomSrc),
+    )
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
