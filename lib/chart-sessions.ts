@@ -6,9 +6,10 @@
 //
 //  Why (Nate on /t/META 1H, 2026-09-14: "seems like it's missing data"): the
 //  Robinhood 24/7 tape prints 16 hourly bars a trading day, 04:00–20:00 ET,
-//  and 10 of them are pre- or post-market hours. Those carry a fraction of
-//  the regular session's range (median 20–70 bp against 45–120) and volume
-//  (6k–50k shares against 0.4M–1.5M). Drawn exactly like the regular bars,
+//  and 10 of them sit in the venue's pre- or post-market sessions. Those
+//  carry a fraction of the regular session's range (median 20–70 bp against
+//  45–120) and, but for the 16:00 bar that holds the closing auction, of its
+//  volume (6k–50k shares against 0.4M–1.5M). Drawn exactly like the regular bars,
 //  they read as holes: a quiet hour is a 1px body on a 1px wick, and the 2px
 //  moving average painted over it hides some whole. No bar is missing from
 //  the feed; the chart never said which hours were quiet.
