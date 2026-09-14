@@ -77,6 +77,7 @@ import { actionKindsFor, composeLineActions, composeZoneActions, fmtAskPrice, fm
 import { performanceTiles, fmtPct } from '../lib/performance'
 import { sma, ema, bollinger, vwap, hasVolume, warmupBefore, mergeHistory, onWindow, prependHistory, OVERLAYS, DEFAULT_SYMBOL_OVERLAYS } from '../lib/chart-indicators'
 import { clampToFirstBar, wantsOlderBars, PRELOAD_MIN_BARS } from '../lib/chart-viewport'
+import { equitySession, extendedRuns, FRAME_SEC, sessionsApply, type EquitySession } from '../lib/chart-sessions'
 import { PAGE_BARS } from '../lib/candles-server'
 import { activeLinkCapFor, composeMcps, isCrossChainAsk, linkEyebrow, linkLockup, linkLockupWord, runsOnLabel } from '../lib/intent-links'
 import { DEFAULT_TAB, parseTabParam, tabUrl } from '../lib/app-tab-url'
@@ -19625,6 +19626,125 @@ async function main() {
         zoomSrc.includes('const CAP_WARMUP = 200') && zoomSrc.includes('history.slice(CAP_WARMUP)') &&
         zoomSrc.includes('clampToFirstBar(view, drawn, RIGHT_OFFSET)') && zoomSrc.includes('wantsOlderBars(clamped ?? view, drawn)') && zoomSrc.includes('subscribeVisibleLogicalRangeChange(onRange)') &&
         zoomSrc.includes('cs.setData(bars.map('),
+    )
+  }
+
+  // ── MARKETS/CHART — sessions on a stock's intraday bars (2026-09-14) ─────
+  // Nate on /t/META 1H, with a crop of candles strung out between blank
+  // slots: "why do our charts look so bad? seems like it's missing data".
+  // No bar was missing. Robinhood's 24/7 tape prints 16 hourly bars a
+  // trading day (04:00–20:00 ET), and 10 of them are pre/post-market hours
+  // with a sliver of the regular session's range. The chart drew them like
+  // regular bars, as a 1px body on a 1px wick, and the 2px moving average
+  // painted over some of them. Now a stock's intraday chart knows which hours
+  // are quiet. The clock is pinned here; the pixels are in the PR's drive.
+  console.log('— markets/chart sessions')
+  {
+    const utc = (mo: number, d: number, h: number, m = 0) => Date.UTC(2026, mo - 1, d, h, m) / 1000
+    const H1 = FRAME_SEC['1h']
+    const M15 = FRAME_SEC['15m']
+    const H4 = FRAME_SEC['4h']
+    // Mon 2026-09-14 is EDT (UTC−4); Mon 2026-01-12 is EST (UTC−5).
+    const cases: [number, number, EquitySession, string][] = [
+      [utc(9, 14, 8), H1, 'pre', '04:00 EDT 1H'],
+      [utc(9, 14, 13), H1, 'regular', '09:00 EDT 1H (holds the open)'],
+      [utc(9, 14, 13), M15, 'pre', '09:00 EDT 15m'],
+      [utc(9, 14, 13, 15), M15, 'pre', '09:15 EDT 15m (ends at the open)'],
+      [utc(9, 14, 13, 30), M15, 'regular', '09:30 EDT 15m'],
+      [utc(9, 14, 19, 45), M15, 'regular', '15:45 EDT 15m'],
+      [utc(9, 14, 20), H1, 'post', '16:00 EDT 1H'],
+      [utc(9, 14, 23), H1, 'post', '19:00 EDT 1H'],
+      [utc(9, 15, 0), H1, 'overnight', '20:00 EDT 1H'],
+      [utc(9, 12, 14), H1, 'overnight', 'Saturday 10:00 EDT'],
+      [utc(9, 14, 8), H4, 'pre', '04:00–08:00 EDT 4H'],
+      [utc(9, 14, 12), H4, 'regular', '08:00–12:00 EDT 4H'],
+      [utc(9, 14, 20), H4, 'post', '16:00–20:00 EDT 4H'],
+      [utc(9, 15, 4), H4, 'overnight', '00:00–04:00 EDT 4H'],
+      [utc(1, 12, 13), H1, 'pre', '08:00 EST 1H'],
+      [utc(1, 12, 14), H1, 'regular', '09:00 EST 1H'],
+      [utc(1, 12, 21), H1, 'post', '16:00 EST 1H'],
+      [utc(1, 12, 20), H4, 'regular', '15:00–19:00 EST 4H'],
+      [utc(1, 13, 0), H4, 'post', '19:00–23:00 EST 4H'],
+      [utc(1, 12, 8), H4, 'pre', '03:00–07:00 EST 4H'],
+      // The same UTC wall time on either side of the 2026-03-08 clock change.
+      [utc(3, 6, 13, 30), M15, 'pre', 'Fri 13:30Z = 08:30 EST'],
+      [utc(3, 9, 13, 30), M15, 'regular', 'Mon 13:30Z = 09:30 EDT'],
+    ]
+    const wrong = cases.filter(([t, span, want]) => equitySession(t, span) !== want).map(([t, span, want, label]) => `${label}: ${equitySession(t, span)} ≠ ${want}`)
+    check(
+      'chart sessions: a bar is regular when any part of it overlaps 9:30–16:00 ET on a weekday (the 09:00 hourly bar holds the open), pre from 04:00, post to 20:00, overnight otherwise and on weekends — on 15m/1H/4H, in EDT and EST, and 13:30Z reads pre before the March clock change and regular after it',
+      wrong.length === 0,
+      wrong.join(' · ') || `${cases.length} cases`,
+    )
+
+    const tape = (s: string) => s.split(' ') as EquitySession[]
+    const runs = extendedRuns(tape('pre pre regular regular post overnight pre regular'))
+    check(
+      'chart sessions: extendedRuns gives one run per stretch of non-regular bars (a post-market and the next pre-market are one run), none for an all-regular tape, one for an all-extended tape',
+      JSON.stringify(runs) === JSON.stringify([{ from: 0, to: 1 }, { from: 4, to: 6 }]) &&
+        extendedRuns(tape('regular regular')).length === 0 &&
+        JSON.stringify(extendedRuns(tape('post overnight pre'))) === JSON.stringify([{ from: 0, to: 2 }]) &&
+        extendedRuns([]).length === 0,
+      JSON.stringify(runs),
+    )
+    check(
+      "chart sessions: only a stock's intraday frames carry sessions (a daily bar is a whole session; the Coinbase and Hyperliquid tapes run continuously)",
+      sessionsApply('robinhood', '15m') && sessionsApply('robinhood', '1h') && sessionsApply('robinhood', '4h') && !sessionsApply('robinhood', '1d') &&
+        !sessionsApply('coinbase', '1h') && !sessionsApply('hyperliquid', '15m') && !sessionsApply(null, '1h'),
+    )
+
+    // The live tape: a stock's 1H window is mostly extended hours (the reason
+    // the chart has to tell them apart). Robinhood's regular bars are 09:00–
+    // 15:00 (7 a day); Yahoo's fallback opens a half-hour bar at 09:30 (8).
+    type SessBody = { feed?: string; candles?: Candle[]; error?: string }
+    const aapl = (await (await fetch(`${BASE}/api/charts/candles?symbol=AAPL&tf=1h`)).json()) as SessBody
+    const aaplBars = aapl.candles ?? []
+    const dayOf = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' })
+    const regularPerDay = new Map<string, number>()
+    let extendedBars = 0
+    for (const c of aaplBars) {
+      if (equitySession(c.t, H1) !== 'regular') extendedBars++
+      else {
+        const day = dayOf.format(new Date(c.t * 1000))
+        regularPerDay.set(day, (regularPerDay.get(day) ?? 0) + 1)
+      }
+    }
+    const maxRegular = Math.max(0, ...regularPerDay.values())
+    check(
+      'chart sessions: the live AAPL 1H window carries extended-hours bars beside at most 8 regular bars a day, so the chart has quiet hours to tell apart (or the named feed-down)',
+      aapl.error === 'feed unavailable' || (aaplBars.length > 0 && extendedBars > 0 && maxRegular > 0 && maxRegular <= 8),
+      `feed=${aapl.feed} bars=${aaplBars.length} extended=${extendedBars} maxRegularPerDay=${maxRegular}`,
+    )
+    // The engine wiring (the pixels are in the PR's browser drive).
+    const sessSrc = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
+    const bandsSrc = await readFile('components/markets/chart/session-bands.ts', 'utf8')
+    const themeCss = await readFile('app/x402-design.css', 'utf8')
+    check(
+      'chart sessions: MarketChart computes sessions only where they apply, quiets extended-hours candles and volume, hands the runs to a bottom-layer SessionBands primitive, paints candles above the moving averages, names the shading in the chart foot, and --chart-session is defined for both themes',
+      sessSrc.includes('sessionsApply(pair?.source, tf) ? bars.map((c) => equitySession(c.t, FRAME_SEC[tf]))') &&
+        sessSrc.includes('alpha(c.c >= c.o ? tokens.accent : tokens.sell, QUIET_CANDLE_ALPHA)') &&
+        sessSrc.includes('candleSeries.attachPrimitive(bands)') &&
+        sessSrc.includes('bandsRef.current?.update(sessions ? extendedRuns(sessions) : [], tokens.session)') &&
+        sessSrc.includes('cs.setSeriesOrder(top)') &&
+        sessSrc.includes("' · shaded = pre/post-market'") &&
+        bandsSrc.includes("zOrder: () => 'bottom'") &&
+        themeCss.includes('--chart-session: rgb(255 255 255 / 0.06);') && themeCss.includes('--chart-session: rgb(16 21 18 / 0.045);'),
+    )
+    // lightweight-charts 5.2.1 answers logicalToCoordinate with x = 0 for any
+    // fractional logical: the bands and a drawing's time both map through
+    // whole bar indices and interpolate.
+    check(
+      'chart sessions: nothing asks the engine for a fractional logical coordinate (the bands pad whole-bar centers by half a bar; a drawing time interpolates between its two neighbouring bars)',
+      !/logicalToCoordinate\(\(?run\.(from|to) [-+] 0\.5/.test(bandsSrc) && bandsSrc.includes('const half = this.spacing / 2') &&
+        sessSrc.includes('Number(x0) + (Number(x1) - Number(x0)) * (l - i)') && !sessSrc.includes('logicalToCoordinate(l as Logical)'),
+    )
+    // The light chart used to draw the DARK grid: a canvas's fillStyle getter
+    // hands oklch() back as oklch(), and the getter-only hex check fell back
+    // to the hardcoded dark hexes for every oklch token.
+    check(
+      'chart tokens: MarketChart resolves the theme tokens through a computed-style + pixel readback probe (oklch() neutrals become their own hex), never the fillStyle-getter-only check that fell back to dark hexes on the light theme',
+      sessSrc.includes('function colorProbe()') && sessSrc.includes('ctx.getImageData(0, 0, 1, 1)') && sessSrc.includes('getComputedStyle(span).color') &&
+        !sessSrc.includes('return /^#[0-9a-f]{6}$/i.test(out) ? out : fallback'),
     )
   }
 
