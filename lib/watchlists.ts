@@ -367,6 +367,8 @@ export interface HeldSymbol {
   symbol: string
   /** Summed USD value across chains; null when no row could be priced. */
   valueUsd: number | null
+  /** Summed token units across chains (native ETH and WETH both count as ETH). */
+  amount: number
   /** Chain names it sits on ('Base', 'Robinhood Chain', …). */
   chains: string[]
 }
@@ -398,10 +400,50 @@ export function heldAutofillNote(added: readonly string[], listName: string): st
   return `Added ${names} from your wallet to ${listName}. Remove any and it stays off.`
 }
 
+/** A held value in dollars: cents under $1,000, whole dollars from there. */
+export function fmtHeldUsd(v: number): string {
+  return v >= 1000 ? `$${Math.round(v).toLocaleString('en-US')}` : `$${v.toFixed(2)}`
+}
+
 /** The row marker's words: "In your wallet · $11.89 · Robinhood Chain". */
 export function heldTitle(h: HeldSymbol): string {
-  const value = h.valueUsd == null ? null : h.valueUsd >= 1000 ? `$${Math.round(h.valueUsd).toLocaleString('en-US')}` : `$${h.valueUsd.toFixed(2)}`
+  const value = h.valueUsd == null ? null : fmtHeldUsd(h.valueUsd)
   return ['In your wallet', value, h.chains.join(', ')].filter(Boolean).join(' · ')
+}
+
+/** Token units, short enough for the rail's position column: 3 significant
+ *  digits under 1 (0.0004, 0.0376), 4 up to 10,000 (1.5, 1,234), compact past
+ *  that (12.3K, 2.5M). */
+export function fmtHeldAmount(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0'
+  if (n >= 10_000) return n.toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: 1 })
+  return n.toLocaleString('en-US', { maximumSignificantDigits: n < 1 ? 3 : 4 })
+}
+
+export interface HeldPosition {
+  /** Rounded to cents; null when nothing prices it. */
+  valueUsd: number | null
+  /** "$1.01", or null alongside valueUsd. */
+  value: string | null
+  /** "0.0004 ETH" */
+  amount: string
+  /** "You hold 0.0004 ETH ($1.01) on Base and Ethereum" */
+  title: string
+}
+
+/** A held row's position, shown beside its price (Nate, 2026-09-14: "keep
+ *  price, but add next to it if they own $10 of it say that and how much they
+ *  own 0.0004 ETH"). Valued at the row's own last price once the quote is in,
+ *  so the two numbers agree as it ticks; the holdings read's value until then;
+ *  the amount alone when nothing prices it. Null when the wallet holds none. */
+export function heldPosition(h: HeldSymbol | undefined, quote?: Pick<Quote, 'last'> | null): HeldPosition | null {
+  if (!h || !(h.amount > 0)) return null
+  const last = quote && Number.isFinite(quote.last) && quote.last > 0 ? quote.last : null
+  const valueUsd = last != null ? Math.round(h.amount * last * 100) / 100 : h.valueUsd
+  const value = valueUsd == null ? null : fmtHeldUsd(valueUsd)
+  const amount = `${fmtHeldAmount(h.amount)} ${h.symbol}`
+  const where = h.chains.length ? ` on ${joinAnd(h.chains)}` : ''
+  return { valueUsd, value, amount, title: `You hold ${amount}${value ? ` (${value})` : ''}${where}` }
 }
 
 // The guest half of the ledger lives in the browser, like guest lists.

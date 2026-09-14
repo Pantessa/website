@@ -5,9 +5,11 @@
 // mark · symbol · last · chg%, a ⋯ menu per row (remove, move to section,
 // set alert, Buy/Sell chips), the add-ticker search, "Import from
 // TradingView", and the needs-you strip where fired alerts hand you their
-// chip. Guests build lists in localStorage; signing in adopts them. While the
-// lists load, or a wallet check can still fill an empty list, the rows area
-// brews instead of calling itself empty (lib/watchlists railBrewPhase).
+// chip. A row the wallet holds also shows the position beside its price
+// (lib/watchlists heldPosition). Guests build lists in localStorage; signing
+// in adopts them. While the lists load, or a wallet check can still fill an
+// empty list, the rows area brews instead of calling itself empty
+// (lib/watchlists railBrewPhase).
 //
 // Chips follow the chip-send contract: with an `onAsk` (a chat surface
 // mounted next to the chart) they SEND; without one they PREFILL /chat —
@@ -22,7 +24,7 @@ import CreateAccountButton from '@/components/CreateAccountButton'
 import { PantessaMark } from '@/components/Logo'
 import { chartPairFor } from '@/lib/charts'
 import { useToast } from '@/lib/toast'
-import { DEFAULT_LIST_NAME, RAIL_BREW_COPY, fmtQuotePrice, heldAutofillNote, heldTitle, quoteCellState, railBrewPhase, sectionedRows, symbolName, type Quote, type WatchlistShape } from '@/lib/watchlists'
+import { DEFAULT_LIST_NAME, RAIL_BREW_COPY, fmtQuotePrice, heldAutofillNote, heldPosition, heldTitle, quoteCellState, railBrewPhase, sectionedRows, symbolName, type Quote, type WatchlistShape } from '@/lib/watchlists'
 import AddTicker from './AddTicker'
 import AlertForm from './AlertForm'
 import ImportModal from './ImportModal'
@@ -376,6 +378,10 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                   const down = q ? q.chgPct < 0 : false
                   const cur = pageSym === sym
                   const inWallet = wl.held.get(sym)
+                  // What the wallet holds of it, valued at this row's own price. The
+                  // marker quotes the same value, so the two never disagree.
+                  const pos = heldPosition(inWallet, q)
+                  const heldWords = inWallet ? heldTitle({ ...inWallet, valueUsd: pos?.valueUsd ?? inWallet.valueUsd }) : ''
                   return (
                     <div key={sym} className={`wl__row${cur ? ' wl__row--cur' : ''}`} data-symbol={sym}>
                       <Link href={`/t/${sym}`} className="wl__rowMain" onClick={onClose}>
@@ -384,13 +390,20 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                           <span className="wl__rowSym">
                             {sym}
                             {inWallet && (
-                              <span className="wl__rowHeld" title={heldTitle(inWallet)} aria-label={heldTitle(inWallet)} data-held="">
+                              <span className="wl__rowHeld" title={heldWords} aria-label={heldWords} data-held="">
                                 <Wallet aria-hidden />
                               </span>
                             )}
                           </span>
                           <span className="wl__rowName">{pair ? symbolName(sym) : 'no chart yet'}</span>
                         </span>
+                        {pos && (
+                          <span className="wl__rowPos mono" title={pos.title} data-position="">
+                            <span className="sr-only">You hold </span>
+                            {pos.value && <span className="wl__rowPosValue">{pos.value}</span>}
+                            <span className="wl__rowPosAmt">{pos.amount}</span>
+                          </span>
+                        )}
                         <span className="wl__rowQuote mono">
                           {q ? (
                             <>

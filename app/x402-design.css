@@ -5661,12 +5661,19 @@
 .wl__rowHeld { display: inline-flex; margin-left: 5px; vertical-align: -1px; color: var(--accent); opacity: .8; }
 .wl__rowHeld svg { width: 11px; height: 11px; }
 .wl__rowName { font-size: 10.5px; color: var(--muted-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wl__rowQuote { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.wl__rowQuote { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; min-width: 8ch; line-height: 1.15; font-variant-numeric: tabular-nums; }
 .wl__rowLast { font-size: 12.5px; color: var(--fg); }
 .wl__rowLast--dim { color: var(--muted-2); }
 .wl__rowChg { font-size: 10.5px; color: var(--muted); }
 .wl__rowChg--up { color: var(--accent); }
 .wl__rowChg--down { color: var(--sell); }
+/* Your position beside the price (2026-09-14, Nate: "if they own $10 of it
+   say that and how much they own 0.0004 ETH"; lib/watchlists heldPosition).
+   The price cell holds 8ch so every row's price lines up, and the positions
+   line up with it. A long amount ellipsizes before the ticker gives way. */
+.wl__rowPos { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; max-width: 42%; padding-right: 4px; line-height: 1.15; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wl__rowPosValue { font-size: 12.5px; color: var(--fg); }
+.wl__rowPosAmt { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: 10.5px; color: var(--muted-2); }
 .wl__rowMore { opacity: .55; }
 .wl__row:hover .wl__rowMore, .wl__rowMore[aria-expanded="true"] { opacity: 1; }
 /* The rail while it waits (2026-09-14, Nate: "a loader icon showing that
