@@ -30,6 +30,12 @@
     /* Idle-money amber — the splash money map's "sitting there" segment and
        any "earning nothing" cue. Light re-inks it below. */
     --gold: #f0b454;
+    /* Chart moving averages (MarketChart's canvas + the overlay toggles'
+       swatches): the slow lines wear the colors traders already read them
+       in — the 50 blue, the 200 yellow; the 20 stays on --accent. Light
+       re-inks both so they keep contrast on paper. */
+    --chart-ma-50: #5b9cff;
+    --chart-ma-200: #f5c518;
     /* ── TYPE SYSTEM ──────────────────────────────────
        Single source of truth for the four families so every surface pulls
        from the same place (kills the ad-hoc mono/sans drift on /activity).
@@ -4522,6 +4528,8 @@
     --accent: #0e8f62;
     --sell: #c73e43;
     --gold: #a3720c;
+    --chart-ma-50: #2563eb;
+    --chart-ma-200: #b58900;
     --done: #0b7a53;
     --fail: #c73e43;
     --gem-1: #084A33;
@@ -5132,7 +5140,7 @@
    nav down, the watchlist filling it and the symbol card pinned under it.
    The doubled class outranks the ≤640px pad, so a stacked rail lines up with
    .sym's edge. */
-.mkt-frame.mkt-frame--sym { --mkt-pad-l: clamp(12px, 2vw, 26px); }
+.mkt-frame.mkt-frame--sym { --sym-gutter: clamp(14px, 2.4vw, 32px); --mkt-pad-l: var(--sym-gutter); }
 .mkt-frame--sym > .sym { grid-area: main; min-width: 0; }
 .mkt-frame__rail > [data-slot="symbol-card"] { flex: 0 0 auto; margin: 0 12px 12px; }
 /* With the rail docked, the column is narrower than a one-row header needs
@@ -5235,14 +5243,18 @@
 .mkt-tile__v { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* ── the symbol page frame ── */
-.sym { padding: 0 clamp(12px, 2vw, 26px) 48px; }
-.sym__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 18px 0 12px; }
-.sym__id { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.sym__titlerow { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.sym { padding: 0 var(--sym-gutter, clamp(12px, 2vw, 26px)) 48px; }
+/* Header rhythm (2026-09-14, Nate: "the title and buttons top left feel a
+   bit cramped"): no nav sits above the page any more, so the header carries
+   its own top air, and the identity, the act strip and the chart each get a
+   real gap instead of stacking a few pixels apart. */
+.sym__head { display: flex; align-items: center; justify-content: space-between; gap: 22px 24px; flex-wrap: wrap; padding: 30px 0 22px; }
+.sym__id { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.sym__titlerow { display: flex; align-items: baseline; gap: 6px 12px; flex-wrap: wrap; min-width: 0; }
 .sym__name { font-family: var(--font-chat-display); font-weight: 600; font-size: clamp(22px, 3vw, 30px); letter-spacing: -0.015em; line-height: 1.05; color: var(--fg); max-width: 100%; }
 .sym__sym { font-size: 13px; font-weight: 600; letter-spacing: 0.06em; color: var(--muted); }
 .sym__venue { font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 999px; padding: 3px 8px; white-space: nowrap; }
-.sym__session { margin-top: 5px; font-size: 10.5px; letter-spacing: 0.06em; color: var(--muted-2); }
+.sym__session { margin-top: 8px; font-size: 10.5px; letter-spacing: 0.06em; color: var(--muted-2); }
 .sym__quote { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .sym__last { font-size: clamp(22px, 3vw, 30px); font-weight: 600; letter-spacing: -0.02em; color: var(--fg); font-variant-numeric: tabular-nums; }
 .sym__chg { font-size: 13px; }
@@ -5311,8 +5323,9 @@
   .mkt-frame__tabs { margin-left: 0; }
   .mkt-frame__data { padding-top: 16px; }
   .mkt-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .sym { padding-left: 12px; padding-right: 12px; }
-  .sym__head { padding-top: 14px; }
+  .mkt-frame.mkt-frame--sym { --sym-gutter: 12px; }
+  .sym__head { padding: 20px 0 16px; row-gap: 16px; }
+  .sym__id { gap: 12px; }
   /* five tabs fit 351px without a scroll: tighter type + padding */
   .sym__tab { padding: 9px 8px 11px; font-size: 12.5px; }
   .sym__tab.is-on::after { left: 6px; right: 6px; }
@@ -5327,11 +5340,33 @@
 .mkt-chart__right { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .mkt-chart__ind { display: flex; gap: 4px; flex-wrap: wrap; }
 .mkt-ind {
+  display: inline-flex; align-items: center; gap: 5px;
   border: 1px solid var(--line); border-radius: 7px; padding: 3px 7px; font-size: 10px; letter-spacing: 0.04em;
   color: var(--muted-2); background: transparent; transition: color .15s, border-color .15s, background .15s;
 }
 .mkt-ind:hover { color: var(--fg); border-color: var(--line-2); }
 .mkt-ind.is-active { color: var(--fg); border-color: var(--line-2); background: var(--surf-1); }
+/* The legend: each toggle wears its line's color (OVERLAYS.swatch, the token
+   the canvas paints with), faint while the line is off. */
+.mkt-ind__sw { width: 10px; height: 3px; border-radius: 2px; background: var(--ind-sw, currentColor); opacity: .35; transition: opacity .15s; }
+.mkt-ind.is-active .mkt-ind__sw { opacity: 1; }
+/* On a phone the overlay bar stays ONE row: six toggles with swatches wrapped
+   to two and cost the chart a row of its height. The group scrolls sideways
+   instead, and its right edge fades, so at any width the chip sitting there
+   reads as "more this way" (a hard cut alone was invisible at 390px). */
+@media (max-width: 640px) {
+  .mkt-chart__ind {
+    flex: 1 1 100%; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  }
+  .mkt-chart__ind::-webkit-scrollbar { display: none; }
+  /* The run ends in 20px of nothing: scrolled to the end, the fade sits on
+     empty space and the last chip reads whole. */
+  .mkt-chart__ind::after { content: ''; flex: 0 0 20px; }
+  .mkt-ind { flex-shrink: 0; gap: 4px; padding: 3px 5px; letter-spacing: 0; }
+  .mkt-ind__sw { width: 8px; }
+}
 .mkt-chart__tools { display: flex; gap: 2px; border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
 .mkt-tool {
   display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; color: var(--muted-2);
@@ -5721,9 +5756,9 @@
    tab. Buy/Long is the one filled chip on the page; Sell/Short wears the
    sell colour; DCA / Protect stay quiet outlines. Wraps to its own row under
    the identity on narrow screens (the eyebrow folds away; chips speak). */
-.sym__act { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1 1 360px; min-width: 0; }
+.sym__act { display: flex; flex-direction: column; align-items: center; gap: 10px; flex: 1 1 360px; min-width: 0; }
 .sym__act-eyebrow { font-size: 9.5px; letter-spacing: 0.14em; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.sym__act-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.sym__act-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
 .sym__act-chip { display: inline-flex; align-items: center; min-height: 36px; padding: 0 16px; border: 1px solid var(--line-2); border-radius: 999px; background: color-mix(in srgb, var(--fg) 3%, transparent); color: var(--fg); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; transition: border-color .12s ease, background .12s ease, color .12s ease, box-shadow .15s ease, transform .15s ease; }
 .sym__act-chip:hover { border-color: var(--fg); transform: translateY(-1px); }
 .sym__act-chip--buy { background: var(--accent); border-color: var(--accent); color: var(--ink); box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--accent) 70%, transparent); }
@@ -5733,7 +5768,7 @@
 @media (max-width: 899px) {
   .sym__act { order: 3; flex-basis: 100%; align-items: flex-start; gap: 0; }
   .sym__act-eyebrow { display: none; }
-  .sym__act-chips { justify-content: flex-start; }
+  .sym__act-chips { justify-content: flex-start; gap: 8px; }
   .sym__act-chip { min-height: 34px; padding: 0 14px; font-size: 12.5px; }
 }
 

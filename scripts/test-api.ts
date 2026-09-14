@@ -75,7 +75,7 @@ import { LIMIT_EXAMPLES, parseSwapIntent, swapClarify } from '../lib/swap-intent
 import { parseChartState, chartStateToAsks, serializeChartState, chartStatesEqual, type ChartState } from '../lib/chart-state'
 import { actionKindsFor, composeLineActions, composeZoneActions, fmtAskPrice, fmtAskUnits } from '../lib/chart-actions'
 import { performanceTiles, fmtPct } from '../lib/performance'
-import { sma, ema, bollinger, vwap, hasVolume } from '../lib/chart-indicators'
+import { sma, ema, bollinger, vwap, hasVolume, warmupBefore, mergeHistory, onWindow, OVERLAYS, DEFAULT_SYMBOL_OVERLAYS } from '../lib/chart-indicators'
 import { activeLinkCapFor, composeMcps, isCrossChainAsk, linkEyebrow, linkLockup, linkLockupWord, runsOnLabel } from '../lib/intent-links'
 import { DEFAULT_TAB, parseTabParam, tabUrl } from '../lib/app-tab-url'
 import { LINKS_STUDIO_HREF } from '../lib/links-href'
@@ -19370,6 +19370,128 @@ async function main() {
       for (const l of mine.lists) await fetch(`${BASE}/api/watchlists?id=${l.id}`, { method: 'DELETE', headers: { cookie } })
     }
     await prisma.watchlistHoldingSeen.deleteMany({ where: { owner: { in: hoOwners } } }).catch(() => {})
+  }
+
+  // ── MARKETS/CHART — moving averages (2026-09-14) ─────────────────────────
+  // Nate: "add the 200 day moving average and make it yellow, blue for the 50
+  // day". The chart's window is 180 bars, so over the window alone an SMA 200
+  // never draws: the rolling lines read a warm-up the candle route hands over
+  // once (?warmup=1), polls merge into that history, and every line is cut
+  // back to the window. Pure pins first, then the tokens, the route, the page.
+  console.log('— markets/chart moving averages')
+  {
+    const DAY = 86400
+    const tape: Candle[] = Array.from({ length: 400 }, (_, i) => ({ t: 1_700_006_400 + i * DAY, o: 100 + i, h: 108 + i, l: 99 + i, c: 101 + i + (i % 7), v: 10 }))
+    const win = tape.slice(-180)
+    const warm = warmupBefore(tape, win, 200)
+    const full = sma(tape, 200).slice(-180)
+    const drawn = onWindow(sma([...warm, ...win], 200), win)
+    check(
+      'chart MAs: the warm-up is the 200 bars right before the window, and SMA 200 over warm-up + window has a value at the FIRST visible candle, equal to the full-tape SMA bar for bar',
+      warm.length === 200 && warm[199].t === win[0].t - DAY && warm.every((c) => c.t < win[0].t) &&
+        drawn.length === 180 && drawn[0].t === win[0].t &&
+        drawn.every((p, i) => p.v !== null && p.t === full[i].t && Math.abs(p.v - (full[i].v as number)) < 1e-9),
+    )
+    check(
+      'chart MAs: over the 180-bar window alone an SMA 200 never draws (why the warm-up exists); a short tape warms up with what it has; no window, no warm-up',
+      onWindow(sma(win, 200), win).every((p) => p.v === null) && warmupBefore(tape.slice(150), win, 200).length === 70 && warmupBefore(tape, [], 200).length === 0,
+    )
+    const hist = [...warm, ...win]
+    const slid: Candle[] = [...win.slice(1), { t: win[179].t + DAY, o: 500, h: 510, l: 490, c: 505, v: 10 }]
+    const m1 = mergeHistory(hist, slid, 640)
+    const m2 = mergeHistory(m1.bars, slid.map((c, i) => (i === slid.length - 1 ? { ...c, c: 507 } : c)), 640)
+    const slept = mergeHistory(hist, tape.slice(-5).map((c) => ({ ...c, t: c.t + 400 * DAY })), 640)
+    const capped = mergeHistory(hist, slid, 300)
+    check(
+      'chart MAs: a polled window merges gaplessly (slid one bar → one more bar of history), the window owns the live bar, a tab that slept past the history reports the gap and restarts from the window, a bare warm-up that only TOUCHES the window counts as a gap (so the client concatenates it), and the cap keeps the newest bars',
+      !m1.gap && m1.bars.length === 381 && m1.bars.at(-1)?.c === 505 && m1.bars.every((c, i) => i === 0 || c.t - m1.bars[i - 1].t === DAY) &&
+        !m2.gap && m2.bars.length === 381 && m2.bars.at(-1)?.c === 507 &&
+        slept.gap && slept.bars.length === 5 &&
+        mergeHistory(warm, win, 640).gap &&
+        capped.bars.length === 300 && capped.bars.at(-1)?.t === slid.at(-1)?.t,
+      `m1=${m1.bars.length} m2=${m2.bars.length} slept=${slept.gap}/${slept.bars.length}`,
+    )
+
+    const byKey = new Map(OVERLAYS.map((o) => [o.key, o]))
+    check(
+      'chart MAs: the overlay bar reads SMA 20 · SMA 50 · SMA 200 · EMA 20 · BB · VWAP, every toggle carries a legend swatch, the 50 wears --chart-ma-50 and the 200 --chart-ma-200, and the symbol page opens on the 50 + the 200',
+      OVERLAYS.map((o) => o.label).join(',') === 'SMA 20,SMA 50,SMA 200,EMA 20,BB,VWAP' && OVERLAYS.every((o) => o.swatch.length > 0) &&
+        byKey.get('sma50')?.swatch === 'var(--chart-ma-50)' && byKey.get('sma200')?.swatch === 'var(--chart-ma-200)' &&
+        DEFAULT_SYMBOL_OVERLAYS.join(',') === 'sma50,sma200',
+    )
+
+    // The colors are pinned by what they ARE (a blue, a yellow, legible on
+    // their own background), not by hex, so a re-ink stays free.
+    const maCss = await readFile('app/x402-design.css', 'utf8')
+    const rootAt = maCss.indexOf(':root {')
+    const rootBlock = maCss.slice(rootAt, maCss.indexOf('}', rootAt))
+    const lightAt = maCss.indexOf(":root[data-theme='light'] {")
+    const lightBlock = maCss.slice(lightAt, maCss.indexOf('}', lightAt))
+    const hexOf = (block: string, name: string) => block.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})`))?.[1]?.toLowerCase() ?? null
+    const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    const hue = (hex: string) => {
+      const [r, g, b] = rgb(hex)
+      const mx = Math.max(r, g, b)
+      const d = mx - Math.min(r, g, b)
+      if (d === 0) return -1
+      const h = mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4
+      return h * 60
+    }
+    const lum = (hex: string) => {
+      const [r, g, b] = rgb(hex).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    const contrast = (a: string, b: string) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05)
+    const d50 = hexOf(rootBlock, '--chart-ma-50')
+    const d200 = hexOf(rootBlock, '--chart-ma-200')
+    const l50 = hexOf(lightBlock, '--chart-ma-50')
+    const l200 = hexOf(lightBlock, '--chart-ma-200')
+    const darkBg = hexOf(rootBlock, '--bg') ?? '#000000'
+    const lightBg = hexOf(lightBlock, '--bg') ?? '#ffffff'
+    const chartSrc = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
+    check(
+      'chart MAs: --chart-ma-50 is a BLUE and --chart-ma-200 a YELLOW in both themes, each ≥3:1 against its own chart background, and the canvas paints the 50 and the 200 with exactly those tokens',
+      !!d50 && !!d200 && !!l50 && !!l200 &&
+        hue(d50) >= 200 && hue(d50) <= 250 && hue(l50) >= 200 && hue(l50) <= 250 &&
+        hue(d200) >= 40 && hue(d200) <= 60 && hue(l200) >= 40 && hue(l200) <= 60 &&
+        contrast(d50, darkBg) >= 3 && contrast(d200, darkBg) >= 3 && contrast(l50, lightBg) >= 3 && contrast(l200, lightBg) >= 3 &&
+        chartSrc.includes("get('--chart-ma-50'") && chartSrc.includes("get('--chart-ma-200'") &&
+        /sma\(src, 50\)\), color: tokens\.ma50/.test(chartSrc) && /sma\(src, 200\)\), color: tokens\.ma200/.test(chartSrc),
+      `dark ${d50}/${d200} on ${darkBg} · light ${l50}/${l200} on ${lightBg}`,
+    )
+
+    // The route: ?warmup=1 adds the bars before the window, from the SAME feed
+    // (a deep miss isn't cached, so one retry before calling it); without the
+    // flag the wire is unchanged.
+    type WarmBody = { feed?: string; candles?: Candle[]; warmup?: Candle[]; error?: string }
+    const warmRead = async (sym: string, tf: string): Promise<WarmBody> => {
+      const url = `${BASE}/api/charts/candles?symbol=${sym}&tf=${tf}&warmup=1`
+      const first = (await (await fetch(url)).json()) as WarmBody
+      return first.error || first.warmup ? first : ((await (await fetch(url)).json()) as WarmBody)
+    }
+    for (const [sym, tf] of [['ETH', '1d'], ['AAPL', '1d'], ['HYPE', '1d'], ['ETH', '4h']] as const) {
+      const b = await warmRead(sym, tf)
+      const cs = b.candles ?? []
+      const wu = b.warmup ?? []
+      const down = b.error === 'feed unavailable'
+      const ok = cs.length > 0 && cs.length <= 180 && Array.isArray(b.warmup) && wu.length >= 199 && wu.length <= 200 && wu.every((c, i) => c.t < cs[0].t && (i === 0 || c.t > wu[i - 1].t))
+      check(
+        `chart MAs: /api/charts/candles?warmup=1 → ${sym} ${tf} carries 199–200 strictly-older ascending warm-up bars beside its ≤180-bar window (or the named feed-down)`,
+        ok || down,
+        down ? 'feed down — refusal shape verified' : `feed=${b.feed} window=${cs.length} warmup=${wu.length}`,
+      )
+    }
+    const plainWire = (await (await fetch(`${BASE}/api/charts/candles?symbol=ETH&tf=1d`)).json()) as WarmBody
+    check('chart MAs: without ?warmup=1 the candle wire carries no warmup key (the polls stay the plain window)', !('warmup' in plainWire))
+
+    // The page: the overlay bar server-renders with the 50 and the 200 lit.
+    const tMa = flat(await (await fetch(`${BASE}/t/ETH`)).text())
+    check(
+      '/t/ETH: the overlay bar server-renders SMA 50 and SMA 200 lit (swatch first, painted from the chart tokens) and SMA 20 off',
+      /aria-pressed="true"[^>]*style="--ind-sw:var\(--chart-ma-50\)"><span class="mkt-ind__sw" aria-hidden="true"><\/span>SMA 50</.test(tMa) &&
+        /aria-pressed="true"[^>]*style="--ind-sw:var\(--chart-ma-200\)"><span class="mkt-ind__sw" aria-hidden="true"><\/span>SMA 200</.test(tMa) &&
+        /aria-pressed="false"[^>]*><span class="mkt-ind__sw" aria-hidden="true"><\/span>SMA 20</.test(tMa),
+    )
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
