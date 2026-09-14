@@ -13,8 +13,9 @@
 // "Signed out" is what the account slot means when it shows "Sign in": no
 // wallet connected AND no session. A connected wallet without SIWE is in —
 // connecting is enough to act (rule 6: connect to act, sign in to keep), and
-// the email and Google lanes connect the embedded wallet without a SIWE
-// round-trip, so a SIWE-only gate would bounce every new account holder.
+// a connect-only door (/i, /chat's connect gate) connects the embedded
+// wallet without a SIWE round-trip, so a SIWE-only gate would bounce the
+// account holders it just made.
 //
 // Pure: the harness pins the decision table.
 
@@ -43,9 +44,9 @@ export type WalletStatus = 'connected' | 'connecting' | 'reconnecting' | 'discon
  * browser connected a wallet before and hasn't disconnected it since
  * (walletRemembered) — a returning account, email and Google ones included:
  * the embedded wallet restores only once the CDP SDK loads, and those
- * accounts have no SIWE session to go on. A wallet that still authorizes the
- * site with nothing remembered (storage cleared) lands home and is connected
- * there.
+ * accounts may have no SIWE session to go on. A wallet that still
+ * authorizes the site with nothing remembered (storage cleared) lands home
+ * and is connected there.
  *
  * The session covers the first beat: wagmi reads 'disconnected' until its
  * mount effect starts the probe, and the session fetch — a network
@@ -81,4 +82,37 @@ export function walletRemembered(read: (key: string) => string | null): boolean 
   }
   if (typeof id !== 'string' || !id) return false
   return read(`wagmi.${id}.disconnected`) !== 'true'
+}
+
+/**
+ * What a pending sign-in does on this render: lib/session.tsx's post-connect
+ * effect asks for both kinds.
+ *
+ *  · connectAndSignIn leaves one while RainbowKit's modal connects a wallet.
+ *  · signInOnceConnected leaves one right after the embedded wallet's connect
+ *    (the door's email and Google lanes), and its caller waits for the
+ *    attempt to settle (`callerWaits`).
+ *
+ * 'wait' keeps it: the session hasn't hydrated, no wallet is connected yet,
+ * or a sign-in is already running and the caller is waiting (that sign-in's
+ * answer is the caller's). 'land': a session for THIS wallet exists, so
+ * there's nothing to sign. One for another address doesn't count; it's stale
+ * (the wallet switched), and session.tsx drops it to 'guest' a render later.
+ * 'drop': connectAndSignIn's while a sign-in is already running, which never
+ * starts a second one. 'sign': run SIWE for the connected wallet.
+ */
+export type PendingSignInStep = 'wait' | 'land' | 'sign' | 'drop'
+
+export function pendingSignInStep(s: {
+  sessionStatus: SessionStatus
+  sessionAddress: string | null
+  /** The connected wallet's address; null while none is connected. */
+  walletAddress: string | null
+  signingIn: boolean
+  callerWaits: boolean
+}): PendingSignInStep {
+  if (s.sessionStatus === 'loading' || !s.walletAddress) return 'wait'
+  if (s.sessionStatus === 'authed' && s.sessionAddress?.toLowerCase() === s.walletAddress.toLowerCase()) return 'land'
+  if (s.signingIn) return s.callerWaits ? 'wait' : 'drop'
+  return 'sign'
 }

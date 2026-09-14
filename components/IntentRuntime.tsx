@@ -26,7 +26,7 @@ import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { ArrowRight, BellRing, ExternalLink, Fingerprint, Link2, MessageSquare, ReceiptText, ShieldCheck, Zap } from 'lucide-react'
 import ChatInterface from '@/components/ChatInterface'
 import ChatLoader from '@/components/ChatLoader'
-import { SignatureWaitModal } from '@/components/SignatureWaitTakeover'
+import { SignatureWaitModal, useSignatureWait } from '@/components/SignatureWaitTakeover'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import NavAccount from '@/components/NavAccount'
 import ShareButton from '@/components/ShareButton'
@@ -160,6 +160,9 @@ export default function IntentRuntime({
   // the moment any turn actually builds.
   const [flowNudge, setFlowNudge] = useState(false)
   const [sigDismissed, setSigDismissed] = useState(false)
+  // An email or Google account's save-bar sign-in is silent: its card waits a
+  // beat and says it's signing them in (useSignatureWait).
+  const sigWait = useSignatureWait(signingIn)
   // wagmi sits in 'reconnecting' until every connector settles; a relay that
   // never answers (offline WalletConnect/CDP init) left the splash on
   // "checking for a connected wallet" with NO door forever. After a beat the
@@ -636,9 +639,10 @@ export default function IntentRuntime({
           SIWE round-trip the visitor asked for (the save bar) is in flight —
           a silent stall reads as broken. Arrival never fires a signature;
           the run itself is the guest lane. */}
-      {signingIn && !sigDismissed && (
+      {sigWait.shown && !sigDismissed && (
         <SignatureWaitModal
           signingIn
+          silent={sigWait.silent}
           onOpenRequest={() => void signIn()}
           onDismiss={() => setSigDismissed(true)}
           dismissLabel="Continue without signing in"
