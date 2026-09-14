@@ -21,12 +21,17 @@
 import { aggregateCandles, chartPairFor, type Candle, type ChartFeed, type ChartPair, type ChartSource, type ChartTf } from '@/lib/charts'
 
 const TTL_MS = 5_000
-/** Deep (technicals) series change slowly and cost more upstream — 30s. */
+/** Deep series (the technicals + the chart's warm-up) change slowly and cost
+ *  more upstream — 30s. */
 const DEEP_TTL_MS = 30_000
 export const MAX_CANDLES = 180
-/** Bars a DEEP load aims for — the 200-period MAs need 200 completed bars
- *  plus warm-up, so the gauges never vote on an EMA(200) that isn't there. */
-export const DEEP_BARS = 320
+/** Bars the chart's rolling lines read BEFORE its window (?warmup=1): an SMA
+ *  200 needs 199 older bars to have a value at the window's first candle. */
+export const WARMUP_BARS = 200
+/** Bars a DEEP load aims for — the chart's window plus its warm-up, which
+ *  also covers the technicals' 200-period MAs (200 completed bars plus
+ *  warm-up), so neither draws nor votes on an average that isn't there. */
+export const DEEP_BARS = MAX_CANDLES + WARMUP_BARS
 const UPSTREAM_TIMEOUT_MS = 8_000
 
 const UA = 'Mozilla/5.0 (compatible; Pantessa/1.0; +https://www.pantessa.com)'
@@ -48,6 +53,13 @@ const RH_TFS: Record<ChartTf, { interval: string; span: string; native: number; 
   '1d': { interval: 'day', span: 'year', native: 86400, sec: 86400 },
 }
 
+/** A deep load's Robinhood span per frame, measured 2026-09-14 on ADBE after
+ *  the interpolated rows drop: day/5year 1,254 bars (year: 250), hour/3month
+ *  988 (month: 319), ~0.4–0.8s and ~345KB cold. The venue refuses longer
+ *  spans for 5minute (a week: ~246 15m buckets) and hour (3month: ~248 4h
+ *  buckets), so those two frames warm up as far as the tape reaches. */
+const RH_DEEP_SPAN: Record<ChartTf, string> = { '15m': 'week', '1h': '3month', '4h': '3month', '1d': '5year' }
+
 /** Yahoo Finance chart API — the fallback tape for stocks. */
 const YF_TFS: Record<ChartTf, { interval: string; range: string; native: number; sec: number }> = {
   '15m': { interval: '15m', range: '5d', native: 900, sec: 900 },
@@ -55,6 +67,10 @@ const YF_TFS: Record<ChartTf, { interval: string; range: string; native: number;
   '4h': { interval: '1h', range: '1mo', native: 3600, sec: 14400 },
   '1d': { interval: '1d', range: '1y', native: 86400, sec: 86400 },
 }
+
+/** Yahoo's deep ranges (measured 2026-09-14 on ADBE): 15m/1mo 1,409 bars,
+ *  1h/3mo 1,072, 1h/6mo 508 4h buckets, 1d/2y 501. */
+const YF_DEEP_RANGE: Record<ChartTf, string> = { '15m': '1mo', '1h': '3mo', '4h': '6mo', '1d': '2y' }
 
 export interface Series {
   feed: ChartFeed
@@ -91,9 +107,10 @@ async function fetchCoinbaseWindow(pair: string, granularity: number, window?: {
     .filter((c) => Number.isFinite(c.o) && Number.isFinite(c.c))
 }
 
-/** Coinbase answers 300 candles per call. A native frame covers DEEP_BARS in
- *  one call; a bucketed frame (4h from 1h) pages older windows with
- *  start/end until it does — deep loads only, the chart never pays for it. */
+/** Coinbase pages 300 candles per windowed call. A deep load pages older
+ *  windows with start/end until it covers DEEP_BARS (a native frame: two
+ *  calls; 4h bucketed from 1h: six) — deep loads only: the technicals and
+ *  the chart's once-per-frame warm-up, never its polls. */
 async function fetchCoinbase(pair: string, tf: ChartTf, deep = false): Promise<Candle[]> {
   const { coinbaseGranularity, sec } = TFS[tf]
   const perCall = 300
@@ -150,10 +167,7 @@ interface RobinhoodRow {
 
 async function fetchRobinhood(symbol: string, tf: ChartTf, deep = false): Promise<Candle[]> {
   const { interval, native, sec } = RH_TFS[tf]
-  // A deep 4h load reads three months of hours (probed 2026-09-11: 2,208
-  // rows) so the 200-bar MAs have a tape to stand on; every other frame
-  // already covers DEEP_BARS in its default span.
-  const span = deep && tf === '4h' ? '3month' : RH_TFS[tf].span
+  const span = deep ? RH_DEEP_SPAN[tf] : RH_TFS[tf].span
   const res = await fetchWithTimeout(
     `https://api.robinhood.com/marketdata/historicals/${encodeURIComponent(symbol)}/?interval=${interval}&span=${span}&bounds=24_7`,
     { headers: { 'user-agent': UA, accept: 'application/json' } },
@@ -190,7 +204,7 @@ interface YahooChart {
 
 async function fetchYahoo(symbol: string, tf: ChartTf, deep = false): Promise<Candle[]> {
   const { interval, native, sec } = YF_TFS[tf]
-  const range = deep && tf === '4h' ? '3mo' : YF_TFS[tf].range
+  const range = deep ? YF_DEEP_RANGE[tf] : YF_TFS[tf].range
   const res = await fetchWithTimeout(
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}&includePrePost=true`,
     { headers: { 'user-agent': UA, accept: 'application/json' } },
@@ -267,9 +281,9 @@ export interface LoadedSeries {
  * Load a symbol's candle series — null when the symbol is chartless (the
  * caller refuses by name), throws when every feed is down (the caller
  * answers a retryable refusal, never a 500). `deep` asks for DEEP_BARS of
- * history (technicals) instead of the chart's MAX_CANDLES window; the two
- * share nothing but the code path, so a deep miss never evicts the chart's
- * hot entry.
+ * history (the technicals, and the chart's ?warmup=1) instead of the chart's
+ * MAX_CANDLES window; the two share nothing but the code path, so a deep
+ * miss never evicts the chart's hot entry.
  */
 export async function loadCandleSeries(symbolRaw: string, tf: ChartTf, opts: { deep?: boolean } = {}): Promise<LoadedSeries | null> {
   const pair = chartPairFor(symbolRaw)

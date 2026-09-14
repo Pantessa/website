@@ -20,7 +20,7 @@
 //                            no onAsk the chips become prefill links
 //   onStats                — the header numbers, same shape as CandleChart
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   CandlestickSeries,
   ColorType,
@@ -44,13 +44,18 @@ import { Eraser, Minus, MousePointer2, RectangleHorizontal, StickyNote, Trending
 import { CHART_TFS, chartPairFor, type Candle, type ChartTf } from '@/lib/charts'
 import { newLineId, serializeChartState, type ChartLine, type ChartState } from '@/lib/chart-state'
 import { composeLineActions, composeZoneActions, missingActionNote, type LineActionOffer } from '@/lib/chart-actions'
-import { bollinger, ema, hasVolume, OVERLAYS, sma, vwap, type LinePoint, type OverlayKey } from '@/lib/chart-indicators'
+import { bollinger, ema, hasVolume, mergeHistory, onWindow, OVERLAYS, sma, vwap, type LinePoint, type OverlayKey } from '@/lib/chart-indicators'
 import { poolPremiumPct, type PoolPrice } from '@/lib/pool-price-shape'
 import { fmtPrice, type ChartStats } from '@/components/CandleChart'
 import DrawingLayer, { type ChartGeom, type DrawTool } from './DrawingLayer'
 
 const POLL_MS: Record<ChartTf, number> = { '15m': 8_000, '1h': 15_000, '4h': 20_000, '1d': 30_000 }
 const POOL_POLL_MS = 30_000
+/** Bars the overlay history keeps: the window (180) plus its warm-up (200),
+ *  with room for a page left open to slide forward. */
+const HISTORY_CAP = 640
+/** A missing warm-up (the deep feed missed) is asked for again at most this often. */
+const WARMUP_RETRY_MS = 60_000
 
 export interface ChartMarker {
   /** Unix seconds — pinned to the last bar that opened at or before it. */
@@ -91,6 +96,8 @@ interface CandlesResponse {
   feed?: string | null
   tf: ChartTf
   candles: Candle[]
+  /** ?warmup=1 only: the bars before `candles`, for the rolling lines. */
+  warmup?: Candle[]
   last?: number | null
   changePct24h?: number | null
   error?: string
@@ -105,6 +112,9 @@ interface Tokens {
   muted: string
   muted2: string
   surf: string
+  /** The slow averages keep the colors traders read them in: 50 blue, 200 yellow. */
+  ma50: string
+  ma200: string
 }
 
 /** Resolve a CSS token to a canvas-safe hex — oklch()/color-mix() strings
@@ -136,6 +146,8 @@ function readTokens(): Tokens {
     muted: get('--muted', '#9a9a9a'),
     muted2: get('--muted-2', '#7a7a7a'),
     surf: get('--surf-1', '#161616'),
+    ma50: get('--chart-ma-50', '#5b9cff'),
+    ma200: get('--chart-ma-200', '#f5c518'),
   }
 }
 
@@ -210,6 +222,8 @@ export default function MarketChart({
   const [stale, setStale] = useState(false)
   const [tokens, setTokens] = useState<Tokens | null>(null)
   const [overlays, setOverlays] = useState<Set<OverlayKey>>(() => new Set(defaultOverlays ?? []))
+  // The rolling lines' history: the warm-up plus every polled window merged in.
+  const [history, setHistory] = useState<Candle[]>([])
   const [lines, setLines] = useState<ChartLine[]>(state?.lines ?? [])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [tool, setTool] = useState<DrawTool>('none')
@@ -238,6 +252,9 @@ export default function MarketChart({
   const lastAppliedRef = useRef<string | null>(state ? serializeChartState(state) : null)
   const markersRef = useRef(markers)
   markersRef.current = markers
+  // The symbol:tf on screen — a response for one the chart already left is dropped.
+  const keyRef = useRef('')
+  const warmRef = useRef<{ key: string; warmed: boolean; triedAt: number }>({ key: '', warmed: false, triedAt: 0 })
 
   const candles = data?.candles ?? []
   candlesRef.current = candles
@@ -258,14 +275,54 @@ export default function MarketChart({
   }, [])
 
   // ── Candles ───────────────────────────────────────────────────────────────
+  // Warm-up: the bars before the window, once per symbol + frame (asked again
+  // at most once a minute while the deep feed misses). The rolling lines read
+  // them, so an SMA 200 has its 200 bars and every line starts at the first
+  // candle instead of `period` bars in.
+  const loadWarmup = useCallback(async () => {
+    const key = `${symbol}:${tf}`
+    const w = warmRef.current
+    if (w.key === key && (w.warmed || Date.now() - w.triedAt < WARMUP_RETRY_MS)) return
+    warmRef.current = { key, warmed: false, triedAt: Date.now() }
+    try {
+      const res = await fetch(`/api/charts/candles?symbol=${encodeURIComponent(symbol)}&tf=${tf}&warmup=1`, { cache: 'no-store' })
+      if (!res.ok) return
+      const d = (await res.json()) as CandlesResponse
+      if (keyRef.current !== key || !Array.isArray(d.warmup) || d.candles.length === 0) return
+      warmRef.current = { key, warmed: true, triedAt: Date.now() }
+      const warmed = [...d.warmup, ...d.candles]
+      // Polls that landed first are the newer tape: they win where the two
+      // overlap, and the warm-up only adds what is older.
+      setHistory((cur) => {
+        const m = mergeHistory(warmed, cur, HISTORY_CAP)
+        if (m.gap) warmRef.current = { key, warmed: false, triedAt: Date.now() }
+        return m.bars
+      })
+    } catch {
+      // The lines draw over the window alone until a retry lands.
+    }
+  }, [symbol, tf])
+
   const load = useCallback(async () => {
+    const key = `${symbol}:${tf}`
     try {
       const res = await fetch(`/api/charts/candles?symbol=${encodeURIComponent(symbol)}&tf=${tf}`, { cache: 'no-store' })
       if (!res.ok) throw new Error(String(res.status))
       const d = (await res.json()) as CandlesResponse
+      // A response for the symbol or frame the chart just left never paints
+      // (nor leaks its bars into the new frame's history).
+      if (keyRef.current !== key) return
       if (d.candles.length > 0) {
         setData(d)
         setStale(false)
+        setHistory((cur) => {
+          const m = mergeHistory(cur, d.candles, HISTORY_CAP)
+          // The tab slept through a whole window: bars in between are gone,
+          // so the history restarts from this window and warms up again.
+          if (m.gap) warmRef.current = { key, warmed: false, triedAt: 0 }
+          return m.bars
+        })
+        void loadWarmup()
         onStatsRef.current?.({
           last: d.last ?? d.candles[d.candles.length - 1].c,
           changePct24h: d.changePct24h ?? null,
@@ -278,13 +335,15 @@ export default function MarketChart({
         setData((cur) => cur ?? d)
       }
     } catch {
-      setStale(true)
+      if (keyRef.current === key) setStale(true)
     }
-  }, [symbol, tf])
+  }, [symbol, tf, loadWarmup])
 
   useEffect(() => {
     if (!pair) return
+    keyRef.current = `${symbol}:${tf}`
     setData(null)
+    setHistory([])
     void load()
     const timer = setInterval(() => void load(), POLL_MS[tf])
     return () => clearInterval(timer)
@@ -479,20 +538,27 @@ export default function MarketChart({
     setGeomTick((n) => n + 1)
   }, [candles, symbol, tf, tokens])
 
-  // Overlays → line series.
+  // Overlays → line series. The rolling lines read the history (warm-up +
+  // merged polls) and are cut back to the window, so each starts at the first
+  // candle; until the history covers the window they read the window alone.
+  // VWAP stays a statistic of the bars on screen.
   useEffect(() => {
     const chart = chartRef.current
     if (!chart || !tokens) return
     const want = new Map<string, { data: LinePoint[]; color: string; width: 1 | 2; style?: LineStyle }>()
     if (candles.length) {
-      if (overlays.has('sma20')) want.set('sma20', { data: sma(candles, 20), color: tokens.accent, width: 1 })
-      if (overlays.has('sma50')) want.set('sma50', { data: sma(candles, 50), color: tokens.muted, width: 1 })
-      if (overlays.has('ema20')) want.set('ema20', { data: ema(candles, 20), color: alpha(tokens.fg, 0.7), width: 1 })
+      const covers = history.length > 0 && history[0].t <= candles[0].t && history[history.length - 1].t >= candles[candles.length - 1].t
+      const src = covers ? history : candles
+      const cut = (pts: LinePoint[]) => onWindow(pts, candles)
+      if (overlays.has('sma20')) want.set('sma20', { data: cut(sma(src, 20)), color: tokens.accent, width: 1 })
+      if (overlays.has('sma50')) want.set('sma50', { data: cut(sma(src, 50)), color: tokens.ma50, width: 1 })
+      if (overlays.has('sma200')) want.set('sma200', { data: cut(sma(src, 200)), color: tokens.ma200, width: 1 })
+      if (overlays.has('ema20')) want.set('ema20', { data: cut(ema(src, 20)), color: alpha(tokens.fg, 0.7), width: 1 })
       if (overlays.has('bb')) {
-        const bb = bollinger(candles, 20, 2)
-        want.set('bb:u', { data: bb.upper, color: alpha(tokens.muted2, 0.8), width: 1, style: LineStyle.Dotted })
-        want.set('bb:m', { data: bb.middle, color: alpha(tokens.muted2, 0.5), width: 1, style: LineStyle.Dotted })
-        want.set('bb:l', { data: bb.lower, color: alpha(tokens.muted2, 0.8), width: 1, style: LineStyle.Dotted })
+        const bb = bollinger(src, 20, 2)
+        want.set('bb:u', { data: cut(bb.upper), color: alpha(tokens.muted2, 0.8), width: 1, style: LineStyle.Dotted })
+        want.set('bb:m', { data: cut(bb.middle), color: alpha(tokens.muted2, 0.5), width: 1, style: LineStyle.Dotted })
+        want.set('bb:l', { data: cut(bb.lower), color: alpha(tokens.muted2, 0.8), width: 1, style: LineStyle.Dotted })
       }
       if (overlays.has('vwap') && hasVolume(candles)) want.set('vwap', { data: vwap(candles), color: alpha(tokens.sell, 0.75), width: 1, style: LineStyle.Dashed })
     }
@@ -512,7 +578,7 @@ export default function MarketChart({
       }
       series.setData(toLineData(spec.data))
     }
-  }, [overlays, candles, tokens])
+  }, [overlays, candles, history, tokens])
 
   // News markers → the bars.
   useEffect(() => {
@@ -693,6 +759,7 @@ export default function MarketChart({
               className={`mkt-ind mono${overlays.has(o.key) ? ' is-active' : ''}`}
               aria-pressed={overlays.has(o.key)}
               title={o.title}
+              style={{ '--ind-sw': o.swatch } as CSSProperties}
               onClick={() =>
                 setOverlays((cur) => {
                   const next = new Set(cur)
@@ -702,6 +769,7 @@ export default function MarketChart({
                 })
               }
             >
+              <span className="mkt-ind__sw" aria-hidden="true" />
               {o.label}
             </button>
           ))}

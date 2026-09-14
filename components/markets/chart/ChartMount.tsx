@@ -15,6 +15,7 @@ import type { ChartStats } from '@/components/CandleChart'
 import MarketChart, { type ChartMarker } from '@/components/markets/chart/MarketChart'
 import type { ChartTf } from '@/lib/charts'
 import { parseChartState, serializeChartState, type ChartState } from '@/lib/chart-state'
+import { DEFAULT_SYMBOL_OVERLAYS } from '@/lib/chart-indicators'
 import { useChartMarkers } from '@/lib/chart-markers'
 
 export type { ChartStats, ChartMarker }
@@ -111,6 +112,7 @@ export default function ChartMount({
       markers={allMarkers}
       onAsk={onAsk}
       askHref={promptHref}
+      defaultOverlays={DEFAULT_SYMBOL_OVERLAYS}
     />
   )
 }
