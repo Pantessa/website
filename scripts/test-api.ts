@@ -5255,7 +5255,7 @@ async function main() {
         /if \(chatId \|\| servers\.length === 0 \|\| !linkSetActive\) return/.test(workspace),
     )
     check(
-      'onboarding: the guest banner promises a connect and its button connects (walletConnectOnly door, "Connect wallet" — not "Sign in"); signing out lands on the home page from everywhere',
+      'onboarding: the guest banner promises a connect and its button connects (walletConnectOnly door, "Connect wallet" — not "Sign in"); signing out lands on the home page, except on a public markets page, which keeps you there',
       /Connect a wallet when you want to sign what it builds\./.test(gate) &&
         (gate.match(/<span>Connect wallet<\/span>/g) ?? []).length === 1 &&
         /'Connect wallet'\}<\/span>/.test(gate) &&
@@ -5264,7 +5264,9 @@ async function main() {
         // Re-pinned 2026-09-11 (signed out → home): the app surfaces send a
         // signed-out visitor home (AppSpine), so sign-out goes there directly
         // instead of landing on /chat or a markets page first and bouncing.
-        /signOut\(\)\.then\(\(\) => router\.push\('\/'\)\)/.test(nav) && !/const dest = /.test(nav),
+        // Re-pinned 2026-09-14 (public markets): a markets page is public, so
+        // signing out there stays; everywhere else still lands home.
+        /signOut\(\)\.then\(\(\) => \{\s*if \(!isPublicAppPath\(pathname\)\) router\.push\('\/'\)\s*\}\)/.test(nav) && !/const dest = /.test(nav),
     )
     check(
       'onboarding: after the on-ramp chip the chat says a Stripe tab opened and that it is watching the chain (the handoff moment is named, not implied)',
@@ -18811,18 +18813,22 @@ async function main() {
           /<SpineLink href="\/markets"/.test(mctaS) &&
           ![doorS, authS, oauthS, acctS, navS, mctaS].some((s) => /redirectTo = '\/dashboard'|\|\| '\/dashboard'|: '\/dashboard'|connectAndSignIn\('\/dashboard'\)/.test(s)),
       )
+      // Re-pinned 2026-09-14 (public markets): the spine still sends a settled
+      // signed-out visitor home, except on a public app page (the markets
+      // surface), where looking needs no wallet.
       check(
-        'spine: no NEW seat in either posture (the brand seat opens a fresh /chat; CHATS leads with New Chat), and the spine sends a settled signed-out visitor home with replace',
+        'spine: no NEW seat in either posture (the brand seat opens a fresh /chat; CHATS leads with New Chat), and the spine sends a settled signed-out visitor home with replace, except on a public app page',
         !/>NEW</.test(spineSrc) && !/Start a new chat/.test(spineSrc) &&
           !chatHtml.includes('Start a new chat') && !mkHtml.includes('Start a new chat') &&
-          /const \{ walletAddress, signedOut \} = useSession\(\)/.test(spineSrc) &&
-          /if \(signedOut\) router\.replace\('\/'\)/.test(spineSrc) &&
+          /const \{ walletAddress, signedOut, connectAndSignIn \} = useSession\(\)/.test(spineSrc) &&
+          /const publicPage = isPublicAppPath\(pathname\)/.test(spineSrc) &&
+          /if \(signedOut && !publicPage\) router\.replace\('\/'\)/.test(spineSrc) &&
           /signedOut: isSignedOut\(\{\s*sessionStatus: status,\s*sessionAddress: address,\s*walletStatus,\s*walletAddress: walletAddress \?\? null,\s*walletRemembered: remembered,\s*\}\)/.test(sessS) &&
           /setRemembered\(walletRemembered\(\(key\) => window\.localStorage\.getItem\(key\)\)\)/.test(sessS),
       )
       check(
-        "SpineLink: a plain click by a settled signed-out visitor opens the sign-in door aimed at the link's own target; modified clicks and everyone else get the plain link",
-        /if \(e\.defaultPrevented \|\| !signedOut\) return/.test(spineLinkS) &&
+        "SpineLink: a plain click by a settled signed-out visitor opens the sign-in door aimed at the link's own target; modified clicks, everyone else, and every link to a public app page (the markets surface) get the plain link",
+        /if \(e\.defaultPrevented \|\| !signedOut \|\| isPublicAppPath\(href\)\) return/.test(spineLinkS) &&
           /e\.button !== 0 \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.shiftKey \|\| e\.altKey/.test(spineLinkS) &&
           /<CreateAccountModal onClose=\{\(\) => setDoorOpen\(false\)\} redirectTo=\{href\} \/>/.test(spineLinkS) &&
           /else connectAndSignIn\(href\)/.test(spineLinkS),
@@ -18847,6 +18853,77 @@ async function main() {
           (navS.match(/<SpineLink href="\/(?:markets|chat)" className=\{`nav__tab/g) ?? []).length === 4 &&
           /href="\/chat"[^>]*>App</.test(homeHtml) && /href="\/markets"[^>]*>Open Markets</.test(homeHtml),
         `bare=${bare.join(',')}`,
+      )
+    }
+    // PUBLIC MARKETS, CONNECT TO ACT (2026-09-14, Nate: "I don't think the
+    // user should have to connect wallet to view the charts and market, but
+    // only on an action item 'buy $10 of APPLE'"). /markets and /t/<symbol>
+    // are public app pages (lib/app-entry isPublicAppPath): the spine's gate
+    // leaves a signed-out visitor there, SpineLink links there plainly, and
+    // signing out there stays. An action on them goes through
+    // lib/use-connect-to-act (decisions in lib/act-gate): a connected wallet
+    // runs it, a visitor with none gets the connect-only door and the ask runs
+    // once a wallet lands, and the Google lane's ask rides its OAuth intent
+    // back to the page. The browser drive is in the PR.
+    {
+      const ae = await import('../lib/app-entry')
+      const ag = await import('../lib/act-gate')
+      check(
+        'public app pages: /markets and every /t/<symbol> (query and hash ignored) are open to a signed-out visitor; /chat and its deep links, /wallet, the dashboard and the home page are not',
+        ['/markets', '/markets?q=apple', '/markets#crypto', '/t/AAPL', '/t/ETH?tab=trade'].every((p) => ae.isPublicAppPath(p)) &&
+          !['/chat', `/chat?prompt=${encodeURIComponent('Buy $10 of AAPL')}`, '/chat/abc', '/wallet', '/dashboard', '/', '/marketsx', '/t', '/pricing'].some((p) => ae.isPublicAppPath(p)),
+      )
+      check(
+        'act gate: a connected wallet runs the action (no session needed); nobody here gets the door; a wallet that may still come back waits without one',
+        ag.actStep({ walletAddress: '0xabc', signedOut: false }) === 'run' &&
+          ag.actStep({ walletAddress: null, signedOut: true }) === 'door' &&
+          ag.actStep({ walletAddress: null, signedOut: false }) === 'wait',
+      )
+      const now = 1_760_000_000_000
+      const rec = ag.actResumeRecord('/t/AAPL?tab=trade', 'Buy $10 of AAPL', now)
+      const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+      check(
+        "act resume: the Google lane's record is taken once on its own page while fresh; another page leaves it; stale, future-dated, unreadable or empty records are cleared",
+        (JSON.parse(rec) as { path: string }).path === '/t/AAPL' &&
+          same(ag.takeActResume(rec, '/t/AAPL', now + 5_000), { ask: 'Buy $10 of AAPL', clear: true }) &&
+          same(ag.takeActResume(rec, '/markets', now + 5_000), { ask: null, clear: false }) &&
+          same(ag.takeActResume(rec, '/t/AAPL', now + ag.ACT_RESUME_TTL_MS + 1), { ask: null, clear: true }) &&
+          same(ag.takeActResume(rec, '/t/AAPL', now - 1), { ask: null, clear: true }) &&
+          same(ag.takeActResume(null, '/t/AAPL', now), { ask: null, clear: false }) &&
+          same(ag.takeActResume('not json', '/t/AAPL', now), { ask: null, clear: true }) &&
+          same(ag.takeActResume(JSON.stringify({ path: '/t/AAPL', ask: '  ', at: now }), '/t/AAPL', now), { ask: null, clear: true }),
+      )
+      const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      const src = async (p: string) => strip(await readFile(new URL(`../${p}`, import.meta.url), 'utf8'))
+      const [hookS, symS, railS, spineS, oauthS, doorS] = await Promise.all(
+        [
+          'lib/use-connect-to-act.tsx', 'components/markets/shell/SymbolPage.tsx', 'components/markets/watchlist/WatchlistRail.tsx',
+          'components/AppSpine.tsx', 'components/CdpOAuthReturn.tsx', 'components/CreateAccountButton.tsx',
+        ].map(src),
+      )
+      check(
+        'connect to act: the hook runs a connected wallet at once, holds the ask for anyone else, runs it when a wallet lands, offers the connect-only door once, drops the ask when the door and the wallet list close with nothing connecting, and resumes the Google lane',
+        /const step = actStep\(\{ walletAddress, signedOut \}\)/.test(hookS) &&
+          /if \(walletAddress\) \{\s*setHeld\(null\)\s*setDoor\(null\)\s*runRef\.current\(held\)/.test(hookS) &&
+          /if \(signedOut && !offered\) offerDoor\(held\)/.test(hookS) &&
+          /const released = connectAskReleased\(\{/.test(hookS) && /window\.setTimeout\(\(\) => setHeld\(null\), CONNECT_ASK_RELEASE_GRACE_MS\)/.test(hookS) &&
+          /<CreateAccountModal\s+walletConnectOnly\s+redirectTo=\{door\.redirectTo\}\s+resumeAsk=\{resumable \? door\.ask : undefined\}/.test(hookS) &&
+          /takeActResume\(raw, window\.location\.pathname, Date\.now\(\)\)/.test(hookS) && /window\.addEventListener\(ACT_RESUME_EVENT, take\)/.test(hookS) &&
+          /if \(resumeAsk\) intent\.resumeAsk = resumeAsk/.test(doorS) &&
+          /if \(connected && intent\?\.resumeAsk\) \{[\s\S]*?actResumeRecord\(target, intent\.resumeAsk, Date\.now\(\)\)[\s\S]*?window\.dispatchEvent\(new Event\(ACT_RESUME_EVENT\)\)\s*\}\s*if \(connected && intent\?\.signIn\)/.test(oauthS),
+      )
+      check(
+        "connect to act, wired: every ask on a symbol page (header chips, the no-chart chips, the Trade panel, chart levels, the watchlist) goes through act(), and so do the /markets watchlist's prefill chips; the spine's seats into the signed-in app open the door for a signed-out visitor, and its work poll stops for them",
+        /const \{ act, door \} = useConnectToAct\(\{\s*run: runAsk,/.test(symS) &&
+          /const onAsk = useCallback\(\(a: TradeAsk\) => act\(a\.ask\), \[act\]\)/.test(symS) &&
+          (symS.match(/onClick=\{sendOnClick\(/g) ?? []).length === 3 && /\{door\}/.test(symS) &&
+          /else prefillAct\(ask\)/.test(railS) && /\{prefillDoor\}/.test(railS) && !/else router\.push\(promptHref\(ask\)\)/.test(railS) &&
+          (spineS.match(/if \(openDoorFor\(href\)\) return/g) ?? []).length === 2 &&
+          (spineS.match(/<SpineLink\b/g) ?? []).length === 5 &&
+          // MORE's Settings: the menu unmounts as it closes, so its door is the spine's
+          /if \(plain && openDoorFor\('\/dashboard'\)\) e\.preventDefault\(\)/.test(spineS) &&
+          /<CreateAccountModal onClose=\{\(\) => setDoorTo\(null\)\} redirectTo=\{doorTo\} \/>/.test(spineS) &&
+          /useRunningWork\(!signedOut\)/.test(spineS),
       )
     }
     // EMAIL AND GOOGLE ACCOUNTS SIGN IN (2026-09-11). The door's email-OTP and

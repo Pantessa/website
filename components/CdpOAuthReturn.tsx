@@ -22,6 +22,7 @@ import { useRouter } from 'next/navigation'
 import { useAccount, useConnect } from 'wagmi'
 import { CDP_CONNECTOR_ID } from '@coinbase/cdp-wagmi'
 import { useIsInitialized, useIsSignedIn, useOAuthState } from '@coinbase/cdp-hooks'
+import { ACT_RESUME_EVENT, ACT_RESUME_KEY, actResumeRecord } from '@/lib/act-gate'
 import { SIGN_IN_LANDING } from '@/lib/app-entry'
 import { useSession } from '@/lib/session'
 
@@ -29,8 +30,10 @@ export const OAUTH_INTENT_KEY = 'yf_oauth_signin'
 
 /** What the door leaves for the return trip. An intent written before the
  *  door carried `signIn` (a tab mid-redirect across the deploy) connects
- *  only, as it always did. */
-export type OAuthIntent = { redirectTo?: string; signIn?: boolean }
+ *  only, as it always did. `resumeAsk` is an action held on a public page
+ *  (lib/use-connect-to-act): once the wallet is connected, it is left for
+ *  the page this routes to (lib/act-gate). */
+export type OAuthIntent = { redirectTo?: string; signIn?: boolean; resumeAsk?: string }
 
 export default function CdpOAuthReturn() {
   const router = useRouter()
@@ -93,6 +96,17 @@ export default function CdpOAuthReturn() {
         /* ignore */
       }
       const target = intent?.redirectTo || SIGN_IN_LANDING
+      // An action held on a public page rides the intent: leave it for the
+      // page this routes to, which runs it on the wallet that just connected.
+      // Nothing is left when the connect failed.
+      if (connected && intent?.resumeAsk) {
+        try {
+          sessionStorage.setItem(ACT_RESUME_KEY, actResumeRecord(target, intent.resumeAsk, Date.now()))
+        } catch {
+          /* storage blocked — the ask is lost, never run twice */
+        }
+        window.dispatchEvent(new Event(ACT_RESUME_EVENT))
+      }
       if (connected && intent?.signIn) await signInOnceConnected(target)
       else router.push(target)
     })()

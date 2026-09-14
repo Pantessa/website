@@ -10,8 +10,9 @@
 // MCPs is not a big thing anymore): the brand seat opens a fresh /chat, and
 // the CHATS drawer leads with New Chat.
 //
-// It is also the app's door: a signed-out visitor on any surface that
-// mounts it is sent home (the gate below, lib/app-entry).
+// It is also the app's door: a signed-out visitor on a surface that mounts
+// it is sent home, except on the public markets surface, where looking needs
+// no wallet (the gate below, lib/app-entry).
 //
 // It replaces the drawer's own tab strip, the toolbar's reopen chips + NEW
 // button, and the rail's pinned Dashboard row on every breakpoint. Mounted
@@ -34,9 +35,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { BookOpen, Boxes, CandlestickChart, Ellipsis, Link2, ListChecks, MessageSquare, Settings, Users, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { isPublicAppPath } from '@/lib/app-entry'
+import { cdpEnabled } from '@/lib/cdp-embedded'
 import { DEFAULT_TAB, parseTabParam, syncTabParam, tabUrl } from '@/lib/app-tab-url'
 import { useYeetfulStore, type RailTab } from '@/lib/store'
 import { useSession } from '@/lib/session'
@@ -44,6 +47,8 @@ import { useRunningWork } from '@/lib/use-running-work'
 import { rosterEnabledClient } from '@/lib/roster-client'
 import { WALLET_PAGE_HREF } from '@/lib/wallet-page'
 import { YeetfulMark } from '@/components/Logo'
+import SpineLink from '@/components/SpineLink'
+import { CreateAccountModal } from '@/components/CreateAccountButton'
 
 type SpineTab = { tab: RailTab; label: string; title: string; Icon: typeof Boxes }
 
@@ -94,28 +99,48 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // The live connected wallet (NOT the SIWE session — under connect-to-act a
   // visitor runs on connect alone), so the reset below fires at the moment the
   // user actually names themselves.
-  const { walletAddress, signedOut } = useSession()
+  const { walletAddress, signedOut, connectAndSignIn } = useSession()
 
   // SIGNED OUT → HOME (2026-09-11, Nate: "if the user is inside markets, or
   // App or anytime the left side bar is there and they are not logged in,
   // let's take them to the root home page"). The spine is the signed-in app,
-  // so the gate rides the spine: every surface that mounts it (/markets,
-  // /t/<symbol>, /chat) sends a visitor with no wallet and no session to the
-  // home page, where the pitch and the sign-in door are. `signedOut` waits
-  // for the session, and for wagmi to find a wallet this browser connected
-  // before (lib/app-entry), so a returning user is never bounced
-  // mid-hydration, and a connected wallet without SIWE stays (connect to
-  // act). The dashboard's layout runs its own stricter gate before the
-  // spine ever mounts there.
+  // so the gate rides the spine: a surface that mounts it (/chat, /wallet)
+  // sends a visitor with no wallet and no session to the home page, where the
+  // pitch and the sign-in door are. `signedOut` waits for the session, and
+  // for wagmi to find a wallet this browser connected before (lib/app-entry),
+  // so a returning user is never bounced mid-hydration, and a connected
+  // wallet without SIWE stays (connect to act). The dashboard's layout runs
+  // its own stricter gate before the spine ever mounts there.
+  //
+  // The markets surface is the exception (2026-09-14, Nate: "I don't think
+  // the user should have to connect wallet to view the charts and market,
+  // but only on an action item"): /markets and /t/<symbol> are public
+  // (lib/app-entry isPublicAppPath). A signed-out visitor stays and looks, an
+  // action there asks for a wallet (lib/use-connect-to-act), and the seats
+  // below that lead into the signed-in app open the sign-in door.
   // replace, not push: Back must not land on a page that bounces again.
+  const pathname = usePathname()
+  const publicPage = isPublicAppPath(pathname)
   useEffect(() => {
-    if (signedOut) router.replace('/')
-  }, [signedOut, router])
+    if (signedOut && !publicPage) router.replace('/')
+  }, [signedOut, publicPage, router])
+
+  // A seat that leads into the signed-in app, pressed by a signed-out visitor
+  // on a public page: the sign-in door, aimed at that destination (the seats
+  // that are links do the same through SpineLink). True when it opened.
+  const [doorTo, setDoorTo] = useState<string | null>(null)
+  const openDoorFor = (href: string): boolean => {
+    if (!signedOut) return false
+    if (cdpEnabled) setDoorTo(href)
+    else connectAndSignIn(href)
+    return true
+  }
 
   // THE one running-work poll on first-party surfaces: the column and the
   // bar render from this single mount, and the drawer/toolbar instances are
-  // gone — so this is always enabled while the shell is up.
-  const { badgeCount } = useRunningWork(true)
+  // gone. It runs while someone is here: a signed-out visitor on a public
+  // page has no work to show, and every read would answer 401.
+  const { badgeCount } = useRunningWork(!signedOut)
 
   // Which posture is live — the URL names one destination, but the two
   // drawers are separate flags (desktop persists its open state, the mobile
@@ -272,10 +297,12 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // Desktop: the drawer is the in-flow panel (persisted open state).
   const pickDesktop = (tab: RailTab) => {
     if (offChat) {
+      const href = tabUrl(tab, '/chat', '')
+      if (openDoorFor(href)) return
       setRailTab(tab)
       setMainView(mainViewFor(tab))
       setMcpRailOpen(true)
-      router.push(tabUrl(tab, '/chat', ''))
+      router.push(href)
       return
     }
     if (railTab === tab && mcpRailOpen) {
@@ -298,10 +325,12 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // Mobile: the drawer is a transient overlay (never persisted).
   const pickMobile = (tab: RailTab) => {
     if (offChat) {
+      const href = tabUrl(tab, '/chat', '')
+      if (openDoorFor(href)) return
       setRailTab(tab)
       setMainView(mainViewFor(tab))
       setMobileMcpRailOpen(true)
-      router.push(tabUrl(tab, '/chat', ''))
+      router.push(href)
       return
     }
     if (railTab === tab && mobileMcpRailOpen) {
@@ -404,14 +433,14 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         aria-label="Workspace"
       >
         {/* Brand seat — the product's home is the chat. */}
-        <Link
+        <SpineLink
           href="/chat"
           title="Pantessa — chat"
           aria-label="Pantessa chat"
           className="grid place-items-center w-full h-14 flex-shrink-0 border-b border-[var(--line)] text-white hover:bg-[var(--surf-2)] transition-colors"
         >
           <YeetfulMark size={25} />
-        </Link>
+        </SpineLink>
 
         <div className="flex flex-col items-center gap-1 pt-2 w-full px-1">
           {/* MARKETS is a destination PAGE (/markets → /t/<symbol>), not a
@@ -443,7 +472,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
               (2026-09-11) and moved up under LINKS (2026-09-14, Nate: "make
               wallet higher just below Links"). It wears the active state on
               its own page. */}
-          <Link
+          <SpineLink
             href={WALLET_PAGE_HREF}
             title={WALLET_TITLE}
             aria-label="WALLET"
@@ -460,7 +489,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             )}
             <Wallet className="w-[18px] h-[18px]" />
             <span className="mono text-[9px] font-medium tracking-wide">WALLET</span>
-          </Link>
+          </SpineLink>
 
           {TABS_BELOW_WALLET.map(desktopTab)}
 
@@ -483,7 +512,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         {/* The labeled way out. The dashboard is settings now — the links
             studio moved into the spine's LINKS tab — so the seat says so and
             wears a gear. On the dashboard it wears the active state. */}
-        <Link
+        <SpineLink
           href="/dashboard"
           title="Settings — creator page, keys, billing, account"
           aria-label="Settings"
@@ -499,7 +528,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           )}
           <Settings className="w-[18px] h-[18px]" />
           <span className="mono text-[9px] font-medium tracking-wide">SETTINGS</span>
-        </Link>
+        </SpineLink>
       </aside>
 
       {/* ── Mobile: the bar. Fixed above the overlay drawer (z-40) so tabs
@@ -526,7 +555,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           <span className="mono text-[10px] font-medium tracking-wide">MARKETS</span>
         </Link>
         {TABS_ABOVE_WALLET.map(mobileTab)}
-        <Link
+        <SpineLink
           href={WALLET_PAGE_HREF}
           title={WALLET_TITLE}
           aria-label="WALLET"
@@ -541,7 +570,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           )}
           <Wallet className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">WALLET</span>
-        </Link>
+        </SpineLink>
         {TABS_BELOW_WALLET.map(mobileTab)}
         <Link
           href="/docs"
@@ -552,7 +581,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           <BookOpen className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">DOCS</span>
         </Link>
-        <Link
+        <SpineLink
           href="/dashboard"
           title="Settings — creator page, keys, billing, account"
           aria-label="Settings"
@@ -566,7 +595,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           )}
           <Settings className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">SETTINGS</span>
-        </Link>
+        </SpineLink>
         {/* MORE — phones only (below sm). TEAM, DOCS and SETTINGS ride here
             so the seats before it keep legible labels at 375px. The menu
             mounts on open, like every menu in the app. */}
@@ -624,7 +653,14 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
                 href="/dashboard"
                 role="menuitem"
                 aria-current={onDashboard ? 'page' : undefined}
-                onClick={() => setMoreOpen(false)}
+                onClick={(e) => {
+                  setMoreOpen(false)
+                  // The menu unmounts as it closes, so a door can't live in
+                  // it (a SpineLink's would go with it): a signed-out visitor
+                  // gets the spine's own door.
+                  const plain = e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey
+                  if (plain && openDoorFor('/dashboard')) e.preventDefault()
+                }}
                 className={moreItem}
               >
                 <Settings className="w-[18px] h-[18px] flex-shrink-0" />
@@ -637,6 +673,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           )}
         </div>
       </nav>
+      {doorTo && <CreateAccountModal onClose={() => setDoorTo(null)} redirectTo={doorTo} />}
     </>
   )
 }

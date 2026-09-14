@@ -21,6 +21,7 @@ import { useRouter } from 'next/navigation'
 import { Bell, BellRing, Check, ChevronDown, ChevronRight, ClipboardPaste, Link2, MoreHorizontal, Plus, Trash2, Wallet, X } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
 import CreateAccountButton from '@/components/CreateAccountButton'
+import { useConnectToAct } from '@/lib/use-connect-to-act'
 import { PantessaMark } from '@/components/Logo'
 import { chartPairFor } from '@/lib/charts'
 import { useToast } from '@/lib/toast'
@@ -86,13 +87,20 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
   }, [symbols, quotes])
   const here = redirectTo ?? (typeof window !== 'undefined' ? window.location.pathname : '/markets')
 
-  // Send or prefill — the one door for every chip on the rail.
+  // Send or prefill — the one door for every chip on the rail. With no
+  // `onAsk` (the /markets index) a chip prefills chat, and a visitor with no
+  // wallet connects first (lib/use-connect-to-act): the markets are open to
+  // everyone, and the app a chip leads into asks for a wallet.
+  const { act: prefillAct, door: prefillDoor } = useConnectToAct({
+    run: (ask) => router.push(promptHref(ask)),
+    redirectFor: promptHref,
+  })
   const send = useCallback(
     (ask: string) => {
       if (onAsk) onAsk(ask)
-      else router.push(promptHref(ask))
+      else prefillAct(ask)
     },
-    [onAsk, router],
+    [onAsk, prefillAct],
   )
   const sendLabel = onAsk ? 'sends in chat' : 'prefills chat · you send it'
 
@@ -624,6 +632,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
           sendLabel={sendLabel}
         />
       )}
+      {prefillDoor}
     </div>
   )
 }
