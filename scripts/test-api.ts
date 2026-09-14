@@ -75,7 +75,9 @@ import { LIMIT_EXAMPLES, parseSwapIntent, swapClarify } from '../lib/swap-intent
 import { parseChartState, chartStateToAsks, serializeChartState, chartStatesEqual, type ChartState } from '../lib/chart-state'
 import { actionKindsFor, composeLineActions, composeZoneActions, fmtAskPrice, fmtAskUnits } from '../lib/chart-actions'
 import { performanceTiles, fmtPct } from '../lib/performance'
-import { sma, ema, bollinger, vwap, hasVolume, warmupBefore, mergeHistory, onWindow, OVERLAYS, DEFAULT_SYMBOL_OVERLAYS } from '../lib/chart-indicators'
+import { sma, ema, bollinger, vwap, hasVolume, warmupBefore, mergeHistory, onWindow, prependHistory, OVERLAYS, DEFAULT_SYMBOL_OVERLAYS } from '../lib/chart-indicators'
+import { clampToFirstBar, wantsOlderBars, PRELOAD_MIN_BARS } from '../lib/chart-viewport'
+import { PAGE_BARS } from '../lib/candles-server'
 import { activeLinkCapFor, composeMcps, isCrossChainAsk, linkEyebrow, linkLockup, linkLockupWord, runsOnLabel } from '../lib/intent-links'
 import { DEFAULT_TAB, parseTabParam, tabUrl } from '../lib/app-tab-url'
 import { LINKS_STUDIO_HREF } from '../lib/links-href'
@@ -19511,6 +19513,118 @@ async function main() {
       /aria-pressed="true"[^>]*style="--ind-sw:var\(--chart-ma-50\)"><span class="mkt-ind__sw" aria-hidden="true"><\/span>SMA 50</.test(tMa) &&
         /aria-pressed="true"[^>]*style="--ind-sw:var\(--chart-ma-200\)"><span class="mkt-ind__sw" aria-hidden="true"><\/span>SMA 200</.test(tMa) &&
         /aria-pressed="false"[^>]*><span class="mkt-ind__sw" aria-hidden="true"><\/span>SMA 20</.test(tMa),
+    )
+  }
+
+  // ── MARKETS/CHART — zoom-out history (2026-09-14) ────────────────────────
+  // Nate on /t/DOGE: "when the user shrinks the chart we should expand the
+  // candles to fit the screen so they can see more range". The chart held its
+  // 180-bar window and the engine zoomed around the cursor, so a zoom-out
+  // left the candles in a strip mid-plot. Now it pages older bars in
+  // (?before=), holds the right edge on a zoom, and never shows time before
+  // the first bar it holds. Pure pins first (a canvas is invisible here),
+  // then the route, then the engine wiring.
+  console.log('— markets/chart zoom-out history')
+  {
+    const DAY = 86400
+    const tape: Candle[] = Array.from({ length: 1000 }, (_, i) => ({ t: 1_700_006_400 + i * DAY, o: 100, h: 101, l: 99, c: 100 + (i % 5), v: 1 }))
+    const held = tape.slice(-380)
+    const page = tape.slice(-980, -380)
+    const p1 = prependHistory(page, held, 2000)
+    const overlap = prependHistory(tape.slice(-400, -300).map((c) => ({ ...c, c: -1 })), held, 2000)
+    const capped = prependHistory(page, held, 500)
+    check(
+      'chart zoom: an older page prepends only bars strictly older than the history (the history wins any overlap), the cap trims the OLDEST bars of the page and never the newest, and an empty history takes no page',
+      p1.added === 600 && p1.bars.length === 980 && p1.bars[0].t === page[0].t && p1.bars.at(-1)?.t === held.at(-1)?.t && !p1.full &&
+        p1.bars.every((c, i) => i === 0 || c.t - p1.bars[i - 1].t === DAY) &&
+        overlap.added === 20 && overlap.bars.slice(20).every((c, i) => c === held[i]) &&
+        capped.added === 120 && capped.full && capped.bars.length === 500 && capped.bars[0].t === page[480].t && capped.bars.at(-1)?.t === held.at(-1)?.t &&
+        prependHistory(page, [], 2000).bars.length === 0,
+      `p1=${p1.added} overlap=${overlap.added} capped=${capped.added}/${capped.bars.length}`,
+    )
+
+    // A 380-bar history with the engine's 4-bar right margin; the chart opens
+    // on the newest 180 (from 200, to 383).
+    const n = 380
+    const fit = n - 1 + 4
+    check(
+      'chart zoom: a view showing no time before the first held bar is left alone (the opening view, a view pinned at bar 0, the engine float slack)',
+      clampToFirstBar({ from: 200, to: fit }, n, 4) === null && clampToFirstBar({ from: 0, to: 250 }, n, 4) === null && clampToFirstBar({ from: -1e-9, to: fit }, n, 4) === null,
+    )
+    const zoomOut = clampToFirstBar({ from: -120, to: fit }, n, 4)
+    const pan = clampToFirstBar({ from: -15, to: 168 }, n, 4)
+    const backZoom = clampToFirstBar({ from: -20, to: 200 }, n, 4)
+    const both = clampToFirstBar({ from: -300, to: 700 }, n, 4)
+    check(
+      'chart zoom: a zoom-out past the first bar fits every held bar plus the right margin (the candles span the plot), a pan past it slides back at its width, a zoom-out while scrolled back pins the left edge and opens rightward, and empty time on both sides fits',
+      zoomOut?.from === 0 && zoomOut.to === fit && pan?.from === 0 && pan.to === 183 && backZoom?.from === 0 && backZoom.to === 220 && both?.from === 0 && both.to === fit &&
+        clampToFirstBar({ from: -5, to: 10 }, 0, 4) === null,
+      JSON.stringify({ zoomOut, pan, backZoom, both }),
+    )
+    check(
+      'chart zoom: an older page is wanted while fewer held bars sit left of the view than it is wide (or than the preload floor): not at the opening view, yes one zoom notch out, yes near the edge of a tight zoom-in',
+      !wantsOlderBars({ from: 200, to: fit }, n) && wantsOlderBars({ from: 180, to: fit }, n) &&
+        wantsOlderBars({ from: PRELOAD_MIN_BARS - 1, to: PRELOAD_MIN_BARS + 19 }, n) && !wantsOlderBars({ from: PRELOAD_MIN_BARS + 1, to: PRELOAD_MIN_BARS + 21 }, n) &&
+        !wantsOlderBars({ from: -10, to: 10 }, 0),
+    )
+
+    // The route: ?before= pages older bars from the window's own feed. One
+    // retry per read (a transient upstream 429 isn't cached).
+    type PageBody = { feed?: string; older?: Candle[]; exhausted?: boolean; error?: string }
+    type WinBody = { feed?: string; candles?: Candle[]; error?: string }
+    const readJson = async <T>(url: string): Promise<T> => (await (await fetch(url)).json()) as T
+    const pageRead = async (sym: string, tf: string, before: number): Promise<PageBody> => {
+      const url = `${BASE}/api/charts/candles?symbol=${sym}&tf=${tf}&before=${before}`
+      const first = await readJson<PageBody>(url)
+      return first.error ? readJson<PageBody>(url) : first
+    }
+    const ascBefore = (bars: Candle[], before: number) => bars.every((c, i) => c.t < before && (i === 0 || c.t > bars[i - 1].t))
+    const STEP: Record<string, number> = { '1h': 3600, '4h': 14400, '1d': DAY }
+    for (const [sym, tf, second] of [['ETH', '1d', true], ['HYPE', '1h', true], ['AAPL', '1d', true], ['ETH', '4h', false]] as const) {
+      const win = await readJson<WinBody>(`${BASE}/api/charts/candles?symbol=${sym}&tf=${tf}`)
+      const cs = win.candles ?? []
+      const p1 = cs.length ? await pageRead(sym, tf, cs[0].t) : null
+      const o1 = p1?.older ?? []
+      const p2 = second && p1 && !p1.error && !p1.exhausted && o1.length ? await pageRead(sym, tf, o1[0].t) : null
+      const o2 = p2?.older ?? []
+      const down = win.error === 'feed unavailable' || p1?.error === 'feed unavailable' || p2?.error === 'feed unavailable'
+      // Coinbase and Hyperliquid print every bar around the clock: the page ends on the bar right before the window.
+      const adjacent = win.feed === 'robinhood' || win.feed === 'yahoo' || o1.at(-1)?.t === (cs[0]?.t ?? 0) - STEP[tf]
+      const ok =
+        !!p1 && p1.feed === win.feed && typeof p1.exhausted === 'boolean' && o1.length > 0 && o1.length <= PAGE_BARS && ascBefore(o1, cs[0].t) && adjacent &&
+        (!second || p1.exhausted === true || (!!p2 && p2.feed === win.feed && typeof p2.exhausted === 'boolean' && ascBefore(o2, o1[0].t) && (o2.length > 0 || p2.exhausted)))
+      check(
+        `chart zoom: ?before=<first bar> → ${sym} ${tf} pages 1–${PAGE_BARS} strictly-older ascending bars from the window's own feed${second ? ', and the next page continues below it' : ''} (or the named feed-down)`,
+        ok || down,
+        down ? 'feed down — refusal shape verified' : `feed=${p1?.feed} page1=${o1.length}${p1?.exhausted ? ' exhausted' : ''}${p2 ? ` page2=${o2.length}${p2.exhausted ? ' exhausted' : ''}` : ''}`,
+      )
+    }
+    const preEth = await pageRead('ETH', '1d', 1_400_000_000) // May 2014: Coinbase listed ETH-USD in 2016
+    const preHype = await pageRead('HYPE', '1d', 1_700_000_000) // Nov 2023: HYPE trades from late 2024
+    check(
+      'chart zoom: a page from before the first bar a feed has comes back empty and exhausted (the chart stops asking and fits what it holds)',
+      (preEth.older?.length === 0 && preEth.exhausted === true && preHype.older?.length === 0 && preHype.exhausted === true) ||
+        preEth.error === 'feed unavailable' || preHype.error === 'feed unavailable',
+      `ETH 2014 ${preEth.older?.length}/${String(preEth.exhausted)} · HYPE 2023 ${preHype.older?.length}/${String(preHype.exhausted)}`,
+    )
+    const badStatuses = await Promise.all(
+      ['abc', '12', '99999999999', String(Math.floor(Date.now() / 1000) + 30 * DAY)].map(async (b) => (await fetch(`${BASE}/api/charts/candles?symbol=ETH&tf=1d&before=${b}`)).status),
+    )
+    const plainZoomWire = await readJson<Record<string, unknown>>(`${BASE}/api/charts/candles?symbol=ETH&tf=1d`)
+    check(
+      'chart zoom: a malformed or future ?before= is a 400, and the plain window wire carries no older/exhausted keys',
+      badStatuses.every((s) => s === 400) && !('older' in plainZoomWire) && !('exhausted' in plainZoomWire),
+      `statuses=${badStatuses.join(',')}`,
+    )
+
+    // The engine wiring (the pixels are proven in the PR's browser drive).
+    const zoomSrc = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
+    check(
+      'chart zoom: MarketChart holds the right edge on a zoom (rightBarStaysOnScroll), pages older bars via ?before= through prependHistory under a 2,200-bar cap, runs every visible-range change through clampToFirstBar + wantsOlderBars, draws the held bars, and at the cap keeps the oldest 200 off the canvas as warm-up for the lines',
+      zoomSrc.includes('rightBarStaysOnScroll: true') && zoomSrc.includes('&before=${before}') && zoomSrc.includes('prependHistory(older, cur, HISTORY_CAP)') && zoomSrc.includes('const HISTORY_CAP = 2_200') &&
+        zoomSrc.includes('const CAP_WARMUP = 200') && zoomSrc.includes('history.slice(CAP_WARMUP)') &&
+        zoomSrc.includes('clampToFirstBar(view, drawn, RIGHT_OFFSET)') && zoomSrc.includes('wantsOlderBars(clamped ?? view, drawn)') && zoomSrc.includes('subscribeVisibleLogicalRangeChange(onRange)') &&
+        zoomSrc.includes('cs.setData(bars.map('),
     )
   }
 
