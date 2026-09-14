@@ -18,11 +18,8 @@
 //  never raw RainbowKit. Reading an allocation needs no auth at all: the
 //  read endpoint is the same public exposure class as /w/<address>.
 //
-//  Tile colors are an 8-step color-mix(in oklch, var(--accent) N%, var(--bg))
-//  ramp so both themes come free. Label ink flips between var(--bg) and
-//  var(--fg) at the ramp midpoint: a high-accent tile is ~the accent color,
-//  and bg-on-accent has exactly the contrast the theme already guarantees
-//  for accent-on-bg — no hardcoded hexes, no per-theme branches.
+//  The tile bar (and its accent ramp) lives in components/MosaicTileBar —
+//  the wallet page's "Rebalance for me" door draws the same tiles.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -30,6 +27,7 @@ import Link from 'next/link'
 import { useAccount } from 'wagmi'
 import { Check, Copy, GitFork, Loader2, LogIn, Plus, ScanLine, Wand2, X } from 'lucide-react'
 import { useSession } from '@/lib/session'
+import TileBar from '@/components/MosaicTileBar'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { absoluteUrl } from '@/lib/site-url'
@@ -53,12 +51,6 @@ const CHAIN_OPTIONS: { value: ChainChoice; label: string }[] = [
   { value: 'arbitrum', label: 'Arbitrum' },
   { value: 'robinhood', label: 'Robinhood Chain — stock tiles (USDG rail)' },
 ]
-
-/** Accent share per tile index. Descends so the first (usually biggest)
- *  tile reads loudest; ≥55 gets bg-colored ink (see the header comment). */
-const TILE_RAMP = [92, 76, 62, 50, 38, 28, 20, 14]
-const tileBg = (i: number) => `color-mix(in oklch, var(--accent) ${TILE_RAMP[i % TILE_RAMP.length]}%, var(--bg))`
-const tileInk = (i: number) => (TILE_RAMP[i % TILE_RAMP.length] >= 55 ? 'var(--bg)' : 'var(--fg)')
 
 const fmtUsd = (n: number) =>
   n >= 1000 ? `$${Math.round(n).toLocaleString('en-US')}` : `$${n.toFixed(2)}`
@@ -84,42 +76,6 @@ function hereWithQuery(): string {
 
 /** The tile bar — width IS the percent (flex-grow carries it), small tiles
  *  keep a min-width and truncate so a 2% tile stays a legible sliver. */
-function TileBar({ slices, size = 'lg' }: { slices: MosaicSlice[]; size?: 'lg' | 'sm' }) {
-  if (slices.length === 0) return null
-  const h = size === 'lg' ? 40 : 24
-  return (
-    <div
-      className="flex w-full overflow-hidden rounded-lg border border-[var(--line)]"
-      style={{ height: h }}
-      aria-label={slices.map((s) => `${s.pct}% ${s.token}`).join(', ')}
-    >
-      {slices.map((s, i) => (
-        <div
-          key={`${s.token}-${i}`}
-          className="flex items-center justify-center overflow-hidden px-1"
-          style={{
-            flexGrow: Math.max(s.pct, 0.001),
-            flexBasis: 0,
-            minWidth: size === 'lg' ? 38 : 26,
-            background: tileBg(i),
-            // Seams between tiles come from the bg itself — a border would
-            // shift the widths off the percents.
-            boxShadow: i > 0 ? 'inset 1px 0 0 var(--bg)' : undefined,
-          }}
-          title={`${s.pct}% ${s.token}`}
-        >
-          <span
-            className={`mono truncate ${size === 'lg' ? 'text-[11px]' : 'text-[9.5px]'} font-semibold tabular-nums`}
-            style={{ color: tileInk(i) }}
-          >
-            {s.pct}% {s.token}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // ── Types the API contract hands back ───────────────────────────────────────
 
 interface WallRow {

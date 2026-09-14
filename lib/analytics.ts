@@ -48,6 +48,17 @@ export const analytics = {
   askDoor: (prompt: string, mode: 'run' | 'nav', from: string) =>
     send('ask_door', { prompt: prompt.slice(0, 80), mode, from: from.slice(0, 80) }),
 
+  /** A wallet-window flag acted on (lib/wallet-flags): which flag, which
+   *  action (the label), on which chain. `sent` = the action was an ask
+   *  that ran; false = a door inside the window (receive / card / re-read). */
+  walletFlag: (kind: string, action: string, chainId: number, sent: boolean) =>
+    send('wallet_flag_action', { kind, action: action.slice(0, 60), chainId, sent }),
+
+  /** "Rebalance for me" from the wallet window: the shape sent, how it was
+   *  picked (hand-edited, "choose for me", or a preset), on which chain. */
+  walletRebalance: (chain: string, picked: 'hand' | 'chosen' | 'preset', tiles: number) =>
+    send('wallet_rebalance', { chain, picked, tiles }),
+
   /** A chat turn that actually paid: settled receipt totals. */
   chatPaid: (totalUsd: number, calls: number, services: string) =>
     send('chat_paid', { totalUsd, calls, services }),

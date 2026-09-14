@@ -475,6 +475,197 @@ export function planMosaic(inputs: MosaicPlanInputs): MosaicPlan {
   return { kind: 'plan', legs, rows, movableUsd, totalMoveUsd, notes }
 }
 
+
+// ── Shapes FROM holdings ────────────────────────────────────────────────────
+//
+// Two readers of one wallet: the read route (/api/mosaics/read — the studio's
+// "Read my allocation") and the wallet page's "Rebalance for me" door
+// (components/WalletRebalance), which already holds the priced rows. Same
+// rules in one place so the two can never suggest different shapes for the
+// same wallet.
+
+export interface MosaicValueRow {
+  /** UPPERCASE symbol. */
+  token: string
+  usd: number
+}
+
+export interface MosaicShapeSuggestion {
+  slices: MosaicSlice[]
+  /** Every priced row on the chain, richest first (the read-out line). */
+  holdings: MosaicValueRow[]
+  totalUsd: number
+}
+
+/** Slice-able symbol — mirrors the grammar's token rule so every suggested
+ *  tile is a tile the parser will accept back. */
+const TILE_SYMBOL_RE = /^[A-Za-z]{2,12}$/
+
+/**
+ * Largest-remainder rounding: USD weights in, integer pcts summing to
+ * EXACTLY 100 out. Plain per-slice rounding drifts (99 or 101), and a shape
+ * that doesn't sum to 100 refuses at the grammar — a suggestion must always
+ * be mintable as-is. `step` snaps to a coarser grid (5 = the 5% grid the
+ * "choose for me" shape wears).
+ */
+export function integerPcts(usd: number[], step = 1): number[] {
+  const total = usd.reduce((a, b) => a + b, 0)
+  if (total <= 0) return usd.map(() => 0)
+  const units = 100 / step
+  const raw = usd.map((u) => (u / total) * units)
+  const pcts = raw.map(Math.floor)
+  let left = units - pcts.reduce((a, b) => a + b, 0)
+  const byFrac = raw
+    .map((r, i) => ({ i, frac: r - Math.floor(r) }))
+    .sort((a, b) => b.frac - a.frac)
+  for (const { i } of byFrac) {
+    if (left <= 0) break
+    pcts[i] += 1
+    left -= 1
+  }
+  return pcts.map((p) => p * step)
+}
+
+/** Sum duplicate symbols (a rare index artifact) — a value read must not
+ *  silently drop half a holding. Richest first. */
+export function mosaicValueRows(rows: { symbol: string; valueUsd: number | null }[]): MosaicValueRow[] {
+  const by = new Map<string, number>()
+  for (const r of rows) {
+    if (r.valueUsd == null || r.valueUsd <= 0) continue
+    const sym = r.symbol.toUpperCase()
+    by.set(sym, (by.get(sym) ?? 0) + r.valueUsd)
+  }
+  return [...by.entries()].map(([token, usd]) => ({ token, usd: round2(usd) })).sort((a, b) => b.usd - a.usd)
+}
+
+/**
+ * "Here's the shape you already hold." Tile candidates: ≥3% of the chain
+ * total AND a symbol the grammar takes back, top 7 by value. Everything
+ * else — dust, the 8th token on, exotic symbols the swap grammar can't
+ * carry — folds into the stable rail, so the shape always covers 100% of
+ * what was read. A single-token wallet gets a small rail carved out (the
+ * grammar refuses one-tile shapes; a starting point to edit, not a claim
+ * about what's held); a wallet that IS the stable has nothing to tile.
+ */
+export function suggestMosaicShape(rows: MosaicValueRow[], chainWord: MosaicChainWord): MosaicShapeSuggestion {
+  const stable = mosaicStableFor(chainWord)
+  const holdings = [...rows].sort((a, b) => b.usd - a.usd)
+  const totalUsd = round2(holdings.reduce((a, r) => a + r.usd, 0))
+  if (totalUsd <= 0) return { slices: [], holdings, totalUsd: 0 }
+
+  const candidates = holdings.filter((r) => r.usd >= totalUsd * 0.03 && TILE_SYMBOL_RE.test(r.token)).slice(0, 7)
+  const entries: MosaicValueRow[] = candidates.map((r) => ({ ...r }))
+  const pickedUsd = entries.reduce((a, e) => a + e.usd, 0)
+  const remainderUsd = totalUsd - pickedUsd
+  if (remainderUsd > 0) {
+    const rail = entries.find((e) => e.token === stable)
+    if (rail) rail.usd += remainderUsd
+    else entries.push({ token: stable, usd: remainderUsd })
+  }
+
+  // A 0% tile can only be a dust-sized stable rail (candidates are ≥3% by
+  // construction) — fold it into the largest tile and re-round, because the
+  // grammar refuses sub-1% slices.
+  let pcts = integerPcts(entries.map((e) => e.usd))
+  while (entries.length > 1 && pcts.some((p) => p === 0)) {
+    const drop = pcts.findIndex((p) => p === 0)
+    const [dropped] = entries.splice(drop, 1)
+    entries.reduce((best, e) => (e.usd > best.usd ? e : best), entries[0]).usd += dropped.usd
+    pcts = integerPcts(entries.map((e) => e.usd))
+  }
+
+  let slices = entries.map((e, i) => ({ pct: pcts[i], token: e.token }))
+  if (slices.length === 1) {
+    slices =
+      slices[0].token === stable || slices[0].pct < 6
+        ? []
+        : [{ pct: slices[0].pct - 5, token: slices[0].token }, { pct: 5, token: stable }]
+  }
+  return { slices, holdings, totalUsd }
+}
+
+/** "Choose for me" rulebook, in the order it applies. Deterministic on
+ *  purpose — no model picks a portfolio here; the wallet's own holdings
+ *  do, tidied by rules the page can print. */
+export const CHOOSE_SHAPE_RULES = {
+  maxTiles: 4,
+  stepPct: 5,
+  railFloorPct: 10,
+  tileFloorPct: 5,
+  tileCapPct: 70,
+} as const
+
+/**
+ * "Choose for me": what you hold, tidied. Keep the (up to) four biggest
+ * tile-able tokens, fold the rest into the stable rail, snap to the 5%
+ * grid, keep at least 10% in the rail as dry powder, no single tile above
+ * 70% (the excess flows to the rail), every kept tile at least 5%. Empty
+ * when nothing volatile is worth a tile (all stable, or all dust) — the
+ * caller offers a preset instead. The result always round-trips
+ * composeMosaicAsk (harness-pinned).
+ */
+export function chooseMosaicShape(rows: MosaicValueRow[], chainWord: MosaicChainWord): { slices: MosaicSlice[]; notes: string[] } {
+  const R = CHOOSE_SHAPE_RULES
+  const stable = mosaicStableFor(chainWord)
+  const total = rows.reduce((a, r) => a + r.usd, 0)
+  const notes: string[] = []
+  if (total <= 0) return { slices: [], notes: ['Nothing priced here to shape.'] }
+
+  const volatile = [...rows]
+    .filter((r) => r.token !== stable && r.usd >= total * 0.03 && TILE_SYMBOL_RE.test(r.token))
+    .sort((a, b) => b.usd - a.usd)
+    .slice(0, R.maxTiles)
+  if (volatile.length === 0) return { slices: [], notes: [`Everything here is ${stable} or dust — pick a preset to shape it.`] }
+
+  const folded = rows.filter((r) => !volatile.includes(r) && r.token !== stable && r.usd > 0)
+  if (folded.length > 0) notes.push(`${folded.map((r) => r.token).join(', ')} fold${folded.length > 1 ? '' : 's'} into the ${stable} rail (under 3%, or past the ${R.maxTiles}-tile limit).`)
+
+  // Weights in percent: floors, the concentration cap, then the rail takes
+  // the slack (dry powder) — or, when the floors overflow, tiles scale down.
+  let w = volatile.map((r) => Math.min(Math.max((r.usd / total) * 100, R.tileFloorPct), R.tileCapPct))
+  const capped = volatile.filter((r, i) => (r.usd / total) * 100 > R.tileCapPct && w[i] === R.tileCapPct)
+  if (capped.length > 0) notes.push(`${capped.map((r) => r.token).join(', ')} capped at ${R.tileCapPct}% — the rest is dry powder.`)
+  let rail = 100 - w.reduce((a, b) => a + b, 0)
+  if (rail < R.railFloorPct) {
+    const scale = (100 - R.railFloorPct) / w.reduce((a, b) => a + b, 0)
+    w = w.map((x) => Math.max(R.tileFloorPct, x * scale))
+    rail = Math.max(R.railFloorPct, 100 - w.reduce((a, b) => a + b, 0))
+  }
+  notes.push(`At least ${R.railFloorPct}% stays in ${stable}; tiles snap to ${R.stepPct}% steps.`)
+
+  // Snap to the grid with the rail's floor and every tile's floor held.
+  const pcts = integerPcts([...w, rail], R.stepPct)
+  const railIdx = pcts.length - 1
+  const lift = (i: number, min: number) => {
+    while (pcts[i] < min) {
+      const j = pcts.map((p, k) => ({ p, k })).filter(({ k }) => k !== i && k !== railIdx && pcts[k] > R.tileFloorPct).sort((a, b) => b.p - a.p)[0]
+      const donor = j ? j.k : pcts[railIdx] > R.railFloorPct ? railIdx : -1
+      if (donor < 0) break
+      pcts[donor] -= R.stepPct
+      pcts[i] += R.stepPct
+    }
+  }
+  lift(railIdx, R.railFloorPct)
+  for (let i = 0; i < railIdx; i++) lift(i, R.tileFloorPct)
+
+  const slices: MosaicSlice[] = volatile.map((r, i) => ({ pct: pcts[i], token: r.token }))
+  slices.push({ pct: pcts[railIdx], token: stable })
+  return { slices: slices.filter((s) => s.pct > 0), notes }
+}
+
+/** Hand-picked starting shapes for a wallet with nothing volatile to tidy
+ *  (or a fresh mind). EVM majors only — a Robinhood Chain shape is stocks,
+ *  and we don't pick anyone's stocks. */
+export function mosaicPresets(chainWord: MosaicChainWord): { label: string; slices: MosaicSlice[] }[] {
+  if (chainWord === 'robinhood') return []
+  const stable = mosaicStableFor(chainWord)
+  return [
+    { label: 'Balanced', slices: [{ pct: 60, token: 'ETH' }, { pct: 40, token: stable }] },
+    { label: 'Mostly ETH', slices: [{ pct: 80, token: 'ETH' }, { pct: 20, token: stable }] },
+    { label: 'Dry powder', slices: [{ pct: 30, token: 'ETH' }, { pct: 70, token: stable }] },
+  ]
+}
+
 // ── Formatting (grammar-safe numbers) ───────────────────────────────────────
 
 /** Token amounts for leg sentences: plain decimals only — the swap-segment

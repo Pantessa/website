@@ -403,6 +403,54 @@ export function shortRefusalCopy(params: {
 }
 
 /**
+ * How many dollars of ETH a gas top-up delivers to a chain: 3× that chain's
+ * min-send floor (signature headroom), floored at the smallest leg worth
+ * quoting. Mainnet floors are real money — the sizing must say so, not
+ * hide it. ONE rule, shared by the stranded rescue and the wallet page's
+ * "fix my gas" action (lib/wallet-flags.ts), so the two can never quote a
+ * different top-up for the same chain.
+ */
+export function gasTopupLegUsd(targetChainId: number, ethUsd: number): number {
+  return Math.max(MIN_GAS_LEG_USD, Math.ceil((MIN_GAS_TO_SEND_ETH[targetChainId] ?? 0.001) * 3 * ethUsd * 2) / 2)
+}
+
+/**
+ * A gas top-up on its own — no shortfall, no follow-up: "this chain holds
+ * tokens but can't sign; put a little ETH there." The wallet page's flag
+ * action (2026-09-14, Nate: "Fix my gas issue — swaps and pops in some ETH
+ * on arb"). ONE leg, the exact sentence the stranded rescue's first leg
+ * already uses (`Swap <amt> <token> from <donor> to ETH on <target>`), so
+ * the ask lands on the cross-chain gate and the guard binds the transfer
+ * to the quote like every other bridge.
+ *
+ * Donor ranking is by COST, not by size (the rescue picks the richest
+ * because its donor also has to carry the value leg — a lone $1.50 leg
+ * has no such need): an L2 ETH row first (same token, cheapest gas to
+ * sign the deposit), then L2 USDC, then mainnet ETH, then mainnet USDC —
+ * the first that covers the leg. Null when nothing does, or ETH is
+ * unpriceable (the leg can't be sized), or the target isn't a chain NEAR
+ * Intents delivers to (Robinhood Chain rides the LiFi funding grammar —
+ * the caller says so by name).
+ */
+export function planGasTopup(params: {
+  targetChainId: number
+  sources: FundingSource[]
+  ethUsd: number | null
+}): { ask: string; donor: FundingSource; gasLegUsd: number; donorAmount: string } | null {
+  const { targetChainId, sources, ethUsd } = params
+  const targetWord = FUNDING_CHAIN_WORD[targetChainId]
+  if (!targetWord || ethUsd === null) return null
+  const gasLegUsd = gasTopupLegUsd(targetChainId, ethUsd)
+  const rank = (s: FundingSource) => (s.chainId === 1 ? 2 : 0) + (s.token === 'ETH' ? 0 : 1)
+  const donor = sources
+    .filter((s) => s.chainId !== targetChainId && s.usd >= gasLegUsd)
+    .sort((a, b) => rank(a) - rank(b) || b.usd - a.usd)[0]
+  if (!donor) return null
+  const donorAmount = sourceAmountFor(donor, gasLegUsd)
+  return { ask: `Swap ${donorAmount} ${donor.token} from ${donor.chainWord} to ETH on ${targetWord}`, donor, gasLegUsd, donorAmount }
+}
+
+/**
  * The donor-topup rescue: gas-stranded USDC + a movable source elsewhere →
  * ONE job that unsticks and finishes. Legs: donor → ETH on the stranded
  * chain (the topup), then (when the destination is gas-short) stranded →
@@ -430,10 +478,7 @@ export function planStrandedRescue(params: {
     .filter((s) => s.token === 'USDC' && (s.chainId !== need.chainId || need.token.toUpperCase() !== 'USDC'))
     .sort((a, b) => b.usd - a.usd)[0]
   if (!target || target.usd < needUsd + gasUsd) return null
-  // Deliver 3× the stranded chain's min-send floor (signature headroom),
-  // floored at the smallest leg worth quoting. Mainnet floors are real
-  // money — the sizing must say so, not hide it.
-  const gasLegUsd = Math.max(MIN_GAS_LEG_USD, Math.ceil((MIN_GAS_TO_SEND_ETH[target.chainId] ?? 0.001) * 3 * ethUsd * 2) / 2)
+  const gasLegUsd = gasTopupLegUsd(target.chainId, ethUsd)
   // A chain with stranded USDC has no signable ETH, so every source lives
   // elsewhere — the richest one that can carry the topup donates. No two-leg
   // headroom applies here: the donor signs exactly ONE leg (its full row is
