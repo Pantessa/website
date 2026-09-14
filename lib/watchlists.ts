@@ -551,6 +551,48 @@ export function fmtQuotePrice(n: number): string {
   return n.toPrecision(3)
 }
 
+// ── The rail while it waits ─────────────────────────────────────────────────
+// Nate, 2026-09-14: "when loading the watchlist we should put a loader icon
+// showing that something is brewing in there". Two waits have nothing true
+// to show yet, and the rail used to paint them as answers: a bare "loading…"
+// line, and "Nothing watched yet." while the wallet check was about to fill
+// the list (it said empty, then the rows popped in). Both brew now: the
+// Emerald Cut's bands light up in turn and the rail says what it waits on.
+
+/** What the rows area is waiting on; null when it has something true to say. */
+export type RailBrew = 'lists' | 'wallet' | null
+
+export const RAIL_BREW_COPY: Record<Exclude<RailBrew, null>, { title: string; sub: string | null }> = {
+  lists: { title: 'Loading your watchlist', sub: null },
+  wallet: { title: 'Checking your wallet', sub: 'Your holdings land here on their own.' },
+}
+
+export function railBrewPhase(s: {
+  /** The lists have loaded for this session mode. */
+  ready: boolean
+  /** A wallet is behind the rail (or on its way back) and its holdings check hasn't settled. */
+  checkingWallet: boolean
+  /** Symbols on the active list. */
+  watched: number
+  /** The active list is the one the autofill fills (the first), or there's no list yet. */
+  activeIsPrimary: boolean
+}): RailBrew {
+  if (!s.ready) return 'lists'
+  // Only an empty list waits on the wallet: rows on screen stay put while the
+  // check runs, and the autofill never fills a second list.
+  if (s.checkingWallet && s.watched === 0 && s.activeIsPrimary) return 'wallet'
+  return null
+}
+
+/** A row's price cell: the quote; a pulsing placeholder while one is on its
+ *  way; a dash when none is coming (the symbol doesn't chart, or the feed's
+ *  last answer left it out). A placeholder never outlives the feed's answer. */
+export function quoteCellState(s: { hasQuote: boolean; charted: boolean; missing: boolean }): 'quote' | 'pending' | 'none' {
+  if (s.hasQuote) return 'quote'
+  if (!s.charted || s.missing) return 'none'
+  return 'pending'
+}
+
 // ── Alerts ──────────────────────────────────────────────────────────────────
 // "Unlimited alerts" is free only if dedup per symbol holds (BUSINESS-MODEL
 // §6), so the store is keyed by symbol: groupAlertsBySymbol turns N alerts

@@ -100,6 +100,9 @@ export interface WatchlistsApi {
   error: string | null
   /** What the wallet behind the rail holds, by symbol (the row marker). */
   held: ReadonlyMap<string, HeldSymbol>
+  /** A wallet is behind the rail (or on its way back) and its first holdings
+   *  read + autofill haven't settled; the rail brews on an empty first list. */
+  checkingWallet: boolean
   /** The last holdings autofill that added something (the rail's one note). */
   autofill: { added: string[]; listName: string; at: number } | null
   createList: (name: string, symbols?: string[], sections?: WatchlistShape['sections']) => Promise<WatchlistShape | null>
@@ -115,7 +118,7 @@ export interface WatchlistsApi {
 }
 
 export function useWatchlists(): WatchlistsApi {
-  const { status, address, walletAddress } = useSession()
+  const { status, address, walletAddress, signedOut } = useSession()
   const authed = status === 'authed' && !!address
   /** Whose lists these are — the account's or this browser's (null while the session hydrates). */
   const modeKey = status === 'loading' ? null : authed ? `a:${address}` : 'g'
@@ -132,6 +135,14 @@ export function useWatchlists(): WatchlistsApi {
   const [error, setError] = useState<string | null>(null)
   const [held, setHeld] = useState<ReadonlyMap<string, HeldSymbol>>(NO_HELD)
   const [autofill, setAutofill] = useState<WatchlistsApi['autofill']>(null)
+  // The wallet check (2026-09-14). Settled means this wallet's first holdings
+  // read and reconcile finished, either way; until then an empty list is
+  // waiting on the wallet, not empty. A remembered wallet wagmi is still
+  // restoring (no address yet; lib/app-entry isSignedOut) is waited on too.
+  const heldKey = `${modeKey}|${holder}`
+  const [heldCheckedKey, setHeldCheckedKey] = useState<string | null>(null)
+  const walletComing = status === 'guest' && !walletAddress && !signedOut
+  const checkingWallet = ready && (walletComing || (!!holder && heldCheckedKey !== heldKey))
   const adoptingFor = useRef<string | null>(null)
 
   // Every write goes through `update`, so an op reads the lists as they are
@@ -225,8 +236,8 @@ export function useWatchlists(): WatchlistsApi {
       return
     }
     let alive = true
-    const key = `${modeKey}|${holder}`
-    void (async () => {
+    const key = heldKey
+    const reconcile = async () => {
       const got = await readHeld(holder)
       if (!alive || !got) return
       setHeld(new Map(got.map((h) => [h.symbol, h])))
@@ -268,11 +279,15 @@ export function useWatchlists(): WatchlistsApi {
         pending: ledger.pending,
       })
       if (plan.add.length) setAutofill({ added: plan.add, listName, at: Date.now() })
-    })()
+    }
+    // Settled either way: a failed read or sync ends the wait too.
+    void reconcile().finally(() => {
+      if (alive) setHeldCheckedKey(key)
+    })
     return () => {
       alive = false
     }
-  }, [ready, holder, authed, modeKey, update, updateGuest])
+  }, [ready, holder, heldKey, authed, modeKey, update, updateGuest])
 
   const replace = useCallback(
     (list: WatchlistShape) => {
@@ -427,6 +442,7 @@ export function useWatchlists(): WatchlistsApi {
     busy,
     error,
     held,
+    checkingWallet,
     autofill,
     createList,
     renameList,

@@ -5,7 +5,9 @@
 // mark · symbol · last · chg%, a ⋯ menu per row (remove, move to section,
 // set alert, Buy/Sell chips), the add-ticker search, "Import from
 // TradingView", and the needs-you strip where fired alerts hand you their
-// chip. Guests build lists in localStorage; signing in adopts them.
+// chip. Guests build lists in localStorage; signing in adopts them. While the
+// lists load, or a wallet check can still fill an empty list, the rows area
+// brews instead of calling itself empty (lib/watchlists railBrewPhase).
 //
 // Chips follow the chip-send contract: with an `onAsk` (a chat surface
 // mounted next to the chart) they SEND; without one they PREFILL /chat —
@@ -17,9 +19,10 @@ import { useRouter } from 'next/navigation'
 import { Bell, BellRing, Check, ChevronDown, ChevronRight, ClipboardPaste, Link2, MoreHorizontal, Plus, Trash2, Wallet, X } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
 import CreateAccountButton from '@/components/CreateAccountButton'
+import { PantessaMark } from '@/components/Logo'
 import { chartPairFor } from '@/lib/charts'
 import { useToast } from '@/lib/toast'
-import { DEFAULT_LIST_NAME, fmtQuotePrice, heldAutofillNote, heldTitle, sectionedRows, symbolName, type Quote, type WatchlistShape } from '@/lib/watchlists'
+import { DEFAULT_LIST_NAME, RAIL_BREW_COPY, fmtQuotePrice, heldAutofillNote, heldTitle, quoteCellState, railBrewPhase, sectionedRows, symbolName, type Quote, type WatchlistShape } from '@/lib/watchlists'
 import AddTicker from './AddTicker'
 import AlertForm from './AlertForm'
 import ImportModal from './ImportModal'
@@ -70,7 +73,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
 
   const active = wl.active
   const symbols = useMemo(() => active?.symbols ?? [], [active])
-  const { quotes } = useQuotes(symbols)
+  const { quotes, missing } = useQuotes(symbols)
   const held = useMemo(() => new Set(symbols), [symbols])
   const here = redirectTo ?? (typeof window !== 'undefined' ? window.location.pathname : '/markets')
 
@@ -141,7 +144,12 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
     }
   }, [active, wl, toast])
 
-  const rows = active ? sectionedRows(active) : []
+  // What the rows area waits on (lib/watchlists railBrewPhase): the lists, or
+  // the wallet check that can still fill an empty first list. No rows show
+  // while the lists load: after a sign-in they'd be the guest's, not the account's.
+  const brew = railBrewPhase({ ready: wl.ready, checkingWallet: wl.checkingWallet, watched: symbols.length, activeIsPrimary: !active || active.id === wl.lists[0]?.id })
+  const brewCopy = brew ? RAIL_BREW_COPY[brew] : null
+  const rows = active && wl.ready ? sectionedRows(active) : []
   const sections = (active?.sections ?? []).map((s) => s.name)
   const pageSym = symbol ? chartPairFor(symbol)?.symbol ?? symbol : null
   const activeAlerts = alerts.alerts.filter((a) => a.status !== 'fired')
@@ -165,7 +173,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
           ) : (
             <button type="button" className="wl__pickBtn" onClick={() => setPickerOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={pickerOpen}>
               <span className="wl__pickName">{active?.name ?? 'Watchlist'}</span>
-              <span className="wl__pickCount mono">{symbols.length}</span>
+              {!brew && <span className="wl__pickCount mono">{symbols.length}</span>}
               <ChevronDown className="h-3.5 w-3.5 shrink-0" />
             </button>
           )}
@@ -330,8 +338,18 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
 
       {/* ── Rows ──────────────────────────────────────────────────── */}
       <div className="wl__rows">
-        {!wl.ready && <div className="wl__empty mono">loading…</div>}
-        {wl.ready && symbols.length === 0 && (
+        {brewCopy && (
+          <div className="wl__brew" role="status">
+            <span className="wl__brewMark" aria-hidden>
+              <PantessaMark size={40} weight="mark" bandClassName="wl__brewBand" />
+            </span>
+            <span className="wl__brewText">
+              <span>{brewCopy.title}</span>
+              {brewCopy.sub && <span className="wl__muted">{brewCopy.sub}</span>}
+            </span>
+          </div>
+        )}
+        {!brew && symbols.length === 0 && (
           <div className="wl__empty">
             <p>Nothing watched yet.</p>
             <p className="wl__muted">Type a ticker or a company above, or paste a TradingView export. Unlimited lists, unlimited tickers, free.</p>
@@ -353,6 +371,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                 group.symbols.map((sym) => {
                   const q: Quote | undefined = quotes[sym]
                   const pair = chartPairFor(sym)
+                  const cell = quoteCellState({ hasQuote: !!q, charted: !!pair, missing: missing.includes(sym) })
                   const up = q ? q.chgPct > 0 : false
                   const down = q ? q.chgPct < 0 : false
                   const cur = pageSym === sym
@@ -381,8 +400,14 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                                 {q.chgPct.toFixed(2)}%
                               </span>
                             </>
+                          ) : cell === 'pending' ? (
+                            <span className="wl__quoteWait">
+                              <span className="wl__quoteBar" aria-hidden />
+                              <span className="wl__quoteBar" aria-hidden />
+                              <span className="sr-only">loading price</span>
+                            </span>
                           ) : (
-                            <span className="wl__rowLast wl__rowLast--dim">{pair ? '…' : '—'}</span>
+                            <span className="wl__rowLast wl__rowLast--dim">—</span>
                           )}
                         </span>
                       </Link>
@@ -532,7 +557,8 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
 
       {/* ── Foot ──────────────────────────────────────────────────── */}
       <div className="wl__foot mono">
-        {wl.mode === 'guest' ? (
+        {/* No claim about where the lists live until they've loaded for this session. */}
+        {wl.mode === 'guest' && wl.ready ? (
           <span>
             saved in this browser ·{' '}
             <CreateAccountButton className="wl__link" label="sign in to keep it everywhere" redirectTo={here} />
