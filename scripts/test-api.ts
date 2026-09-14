@@ -19269,7 +19269,7 @@ async function main() {
     const ethHeld = { symbol: 'ETH', valueUsd: 1.05, amount: 0.0004, chains: ['Base', 'Ethereum'] }
     const ethLive = heldPosition(ethHeld, { last: 2520.6 })
     check('watch position: valued at the row’s own last price (0.0004 ETH × 2,520.60 = $1.01), so the price and the position agree as it ticks; the title says how much, what it’s worth and where',
-      ethLive?.value === '$1.01' && ethLive.valueUsd === 1.01 && ethLive.amount === '0.0004 ETH' && ethLive.title === 'You hold 0.0004 ETH ($1.01) on Base and Ethereum',
+      ethLive?.value === '$1.01' && ethLive.valueUsd === 1.01 && ethLive.qty === '0.0004' && ethLive.amount === '0.0004 ETH' && ethLive.title === 'You hold 0.0004 ETH ($1.01) on Base and Ethereum',
       JSON.stringify(ethLive))
     const aaplUnpriced = heldPosition({ symbol: 'AAPL', valueUsd: null, amount: 0.0376, chains: ['Robinhood Chain'] }, undefined)
     check('watch position: before a quote lands it shows the holdings read’s value; with no price anywhere, the amount alone; thousands drop the cents; no holding, or none left, shows nothing',
@@ -19390,8 +19390,9 @@ async function main() {
     check('holdings rail: rows the wallet holds wear the "In your wallet" marker and the autofill says what it added', railSrc.includes('data-held') && railSrc.includes('heldTitle(') && railSrc.includes('heldAutofillNote('))
     const pollAt = hookSrc.indexOf('readHeld(holder, HELD_EVERY_MS / 2)')
     const pollBlock = pollAt < 0 ? '' : hookSrc.slice(hookSrc.lastIndexOf('useEffect(', pollAt), hookSrc.indexOf('}, [ready, holder])', pollAt))
-    check('watch position: a held row renders heldPosition beside its price (before the quote cell), the marker quotes the same value, and the hook re-reads holdings on a visible-tab clock that never reconciles (no POST, no autofill plan)',
+    check('watch position: a held row renders heldPosition beside its price (before the quote cell, the amount’s ticker in its own span to give way on a narrow rail), every price cell is as wide as the list’s widest price, the marker quotes the same value, and the hook re-reads holdings on a visible-tab clock that never reconciles (no POST, no autofill plan)',
       railSrc.includes('heldPosition(inWallet, q)') && railSrc.includes('data-position') && railSrc.indexOf('data-position') < railSrc.indexOf('className="wl__rowQuote mono"') &&
+        railSrc.includes('wl__rowPosUnit') && railSrc.includes("'--wl-last-ch'") && railSrc.includes('style={priceCell}') &&
         railSrc.includes('valueUsd: pos?.valueUsd ?? inWallet.valueUsd') &&
         pollBlock.includes('setInterval(') && pollBlock.includes('visibilitychange') && !pollBlock.includes("'POST'") && !pollBlock.includes('planHeldAutofill('),
       pollBlock ? `poll block ${pollBlock.length} chars` : 'no poll block')

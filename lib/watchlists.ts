@@ -425,6 +425,8 @@ export interface HeldPosition {
   valueUsd: number | null
   /** "$1.01", or null alongside valueUsd. */
   value: string | null
+  /** "0.0004" */
+  qty: string
   /** "0.0004 ETH" */
   amount: string
   /** "You hold 0.0004 ETH ($1.01) on Base and Ethereum" */
@@ -441,9 +443,10 @@ export function heldPosition(h: HeldSymbol | undefined, quote?: Pick<Quote, 'las
   const last = quote && Number.isFinite(quote.last) && quote.last > 0 ? quote.last : null
   const valueUsd = last != null ? Math.round(h.amount * last * 100) / 100 : h.valueUsd
   const value = valueUsd == null ? null : fmtHeldUsd(valueUsd)
-  const amount = `${fmtHeldAmount(h.amount)} ${h.symbol}`
+  const qty = fmtHeldAmount(h.amount)
+  const amount = `${qty} ${h.symbol}`
   const where = h.chains.length ? ` on ${joinAnd(h.chains)}` : ''
-  return { valueUsd, value, amount, title: `You hold ${amount}${value ? ` (${value})` : ''}${where}` }
+  return { valueUsd, value, qty, amount, title: `You hold ${amount}${value ? ` (${value})` : ''}${where}` }
 }
 
 // The guest half of the ledger lives in the browser, like guest lists.

@@ -15,7 +15,7 @@
 // mounted next to the chart) they SEND; without one they PREFILL /chat —
 // a URL never fires a turn. Either way the wallet signs or nothing moves.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Bell, BellRing, Check, ChevronDown, ChevronRight, ClipboardPaste, Link2, MoreHorizontal, Plus, Trash2, Wallet, X } from 'lucide-react'
@@ -77,6 +77,13 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
   const symbols = useMemo(() => active?.symbols ?? [], [active])
   const { quotes, missing } = useQuotes(symbols)
   const held = useMemo(() => new Set(symbols), [symbols])
+  // Every price cell is as wide as the list's widest price (8ch at least, which
+  // also holds any change line), so the prices, and the positions beside them,
+  // line up down the rail.
+  const priceCell = useMemo(() => {
+    const ch = Math.max(8, ...symbols.map((s) => (quotes[s] ? fmtQuotePrice(quotes[s].last).length : 0)))
+    return { '--wl-last-ch': `${ch}ch` } as CSSProperties
+  }, [symbols, quotes])
   const here = redirectTo ?? (typeof window !== 'undefined' ? window.location.pathname : '/markets')
 
   // Send or prefill — the one door for every chip on the rail.
@@ -401,10 +408,13 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                           <span className="wl__rowPos mono" title={pos.title} data-position="">
                             <span className="sr-only">You hold </span>
                             {pos.value && <span className="wl__rowPosValue">{pos.value}</span>}
-                            <span className="wl__rowPosAmt">{pos.amount}</span>
+                            <span className="wl__rowPosAmt">
+                              <span>{pos.qty}</span>{' '}
+                              <span className="wl__rowPosUnit">{sym}</span>
+                            </span>
                           </span>
                         )}
-                        <span className="wl__rowQuote mono">
+                        <span className="wl__rowQuote mono" style={priceCell}>
                           {q ? (
                             <>
                               <span className="wl__rowLast">{fmtQuotePrice(q.last)}</span>
