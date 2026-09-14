@@ -18694,7 +18694,9 @@ async function main() {
           (symS.match(/onClick=\{sendOnClick\(/g) ?? []).length === 3 && /\{door\}/.test(symS) &&
           /else prefillAct\(ask\)/.test(railS) && /\{prefillDoor\}/.test(railS) && !/else router\.push\(promptHref\(ask\)\)/.test(railS) &&
           (spineS.match(/if \(openDoorFor\(href\)\) return/g) ?? []).length === 2 &&
-          (spineS.match(/<SpineLink\b/g) ?? []).length === 6 &&
+          (spineS.match(/<SpineLink\b/g) ?? []).length === 5 &&
+          // MORE's Settings: the menu unmounts as it closes, so its door is the spine's
+          /if \(plain && openDoorFor\('\/dashboard'\)\) e\.preventDefault\(\)/.test(spineS) &&
           /<CreateAccountModal onClose=\{\(\) => setDoorTo\(null\)\} redirectTo=\{doorTo\} \/>/.test(spineS) &&
           /useRunningWork\(!signedOut\)/.test(spineS),
       )

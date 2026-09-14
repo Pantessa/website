@@ -649,11 +649,18 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
                   <span className="block text-[11px] truncate">How Pantessa builds, guards and signs</span>
                 </span>
               </Link>
-              <SpineLink
+              <Link
                 href="/dashboard"
                 role="menuitem"
                 aria-current={onDashboard ? 'page' : undefined}
-                onClick={() => setMoreOpen(false)}
+                onClick={(e) => {
+                  setMoreOpen(false)
+                  // The menu unmounts as it closes, so a door can't live in
+                  // it (a SpineLink's would go with it): a signed-out visitor
+                  // gets the spine's own door.
+                  const plain = e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey
+                  if (plain && openDoorFor('/dashboard')) e.preventDefault()
+                }}
                 className={moreItem}
               >
                 <Settings className="w-[18px] h-[18px] flex-shrink-0" />
@@ -661,7 +668,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
                   <span className="block text-[13px] font-medium text-[color:var(--fg)]">Settings</span>
                   <span className="block text-[11px] truncate">Creator page, keys, billing, account</span>
                 </span>
-              </SpineLink>
+              </Link>
             </div>
           )}
         </div>
