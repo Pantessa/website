@@ -2,8 +2,8 @@
 
 // The app spine: the product's constant across chat and dashboard. On
 // desktop (≥lg) it's a persistent icon COLUMN — brand seat on top, the
-// workspace destinations (markets, apps, jobs, links, history, docs) as
-// labeled icons, the way out to settings (the dashboard) pinned at the
+// workspace destinations (markets, apps, jobs, links, wallet, history, docs)
+// as labeled icons, the way out to settings (the dashboard) pinned at the
 // bottom. Below lg the SAME destinations render as a fixed bottom TAB BAR —
 // the phone-native shape of the same spine. One component, one badge poll,
 // two postures. There is no new-chat seat (2026-09-11, Nate: adding fresh
@@ -20,7 +20,7 @@
 // (/markets + /t/<symbol>, 2026-09-11) mounts it too: there the brochure
 // nav is gone, the spine IS the navigation, and the MARKETS seat wears the
 // active state. The WALLET page (/wallet, 2026-09-11) is the same shape: its
-// seat sits above DOCS in both postures and lights on its own page.
+// seat sits right under LINKS in both postures and lights on its own page.
 //
 // Click grammar: a tab icon opens the drawer on that tab; clicking the tab
 // you're already looking at collapses the drawer. From the dashboard a tab
@@ -45,12 +45,18 @@ import { rosterEnabledClient } from '@/lib/roster-client'
 import { WALLET_PAGE_HREF } from '@/lib/wallet-page'
 import { YeetfulMark } from '@/components/Logo'
 
-const TABS: { tab: RailTab; label: string; title: string; Icon: typeof Boxes }[] = [
+type SpineTab = { tab: RailTab; label: string; title: string; Icon: typeof Boxes }
+
+// The drawer tabs, in two runs around the WALLET page seat, which sits right
+// under LINKS (2026-09-14, Nate: "make wallet higher just below Links").
+const TABS_ABOVE_WALLET: SpineTab[] = [
   // APPS, not MCPS (2026-09-11, Nate). Only the words changed: the tab id
   // stays 'mcps', the ?tab= name every deep link and the store carry.
   { tab: 'mcps', label: 'APPS', title: 'Your apps — pick the MCPs this chat can use', Icon: Boxes },
   { tab: 'jobs', label: 'JOBS', title: 'Jobs and recurring buys running on this wallet', Icon: ListChecks },
   { tab: 'links', label: 'LINKS', title: 'Your intent links — mint and share from here', Icon: Link2 },
+]
+const TABS_BELOW_WALLET: SpineTab[] = [
   // THE ROSTER (R1) — invisible until the owner flips NEXT_PUBLIC_ROSTER_ENABLED
   // (prod ships dark; the API is separately fail-closed behind ROSTER_ENABLED).
   ...(rosterEnabledClient()
@@ -58,6 +64,7 @@ const TABS: { tab: RailTab; label: string; title: string; Icon: typeof Boxes }[]
     : []),
   { tab: 'chats', label: 'CHATS', title: 'Your chat history', Icon: MessageSquare },
 ]
+const TABS = [...TABS_ABOVE_WALLET, ...TABS_BELOW_WALLET]
 
 // Drawer tabs the PHONE bar folds behind MORE (see the capacity note in the
 // component). The desktop column has room for every seat.
@@ -124,9 +131,9 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
 
   // THE PHONE BAR'S CAPACITY. The full set doesn't fit a phone: ten seats at
   // 375px are 37.5px apiece, and SETTINGS (50px of 10px mono) runs straight
-  // into DOCS. Below sm the bar keeps its seats through WALLET and folds the
-  // rest (TEAM while the roster is on, DOCS, SETTINGS) behind MORE, the tab
-  // bar's standard answer. From sm up every seat has room and MORE goes away.
+  // into DOCS. Below sm the bar keeps MARKETS through CHATS and folds TEAM
+  // (while the roster is on), DOCS and SETTINGS behind MORE, the tab bar's
+  // standard answer. From sm up every seat has room and MORE goes away.
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -318,6 +325,64 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
     </span>
   )
 
+  // A drawer tab's seat, one per posture. Both postures render the tabs in
+  // two runs (TABS_ABOVE_WALLET, TABS_BELOW_WALLET) with the WALLET page seat
+  // between them.
+  const desktopTab = ({ tab, label, title, Icon }: SpineTab) => {
+    const selected = !offChat && railTab === tab && mcpRailOpen
+    return (
+      <button
+        key={tab}
+        onClick={() => pickDesktop(tab)}
+        title={title}
+        aria-label={label}
+        aria-pressed={selected}
+        className={cn(
+          'relative w-12 flex flex-col items-center gap-0.5 py-1.5 rounded-lg transition-colors',
+          selected
+            ? 'bg-[var(--surf-2)] text-white'
+            : 'text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-2)]',
+        )}
+      >
+        {/* The notch: the accent tick that says "you are here". */}
+        {selected && (
+          <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
+        )}
+        <Icon className="w-[18px] h-[18px]" />
+        <span className="mono text-[9px] font-medium tracking-wide">{label}</span>
+        {tab === 'jobs' && jobsBadge}
+      </button>
+    )
+  }
+
+  const mobileTab = ({ tab, label, title, Icon }: SpineTab) => {
+    const selected = !offChat && railTab === tab && mobileMcpRailOpen
+    return (
+      <button
+        key={tab}
+        onClick={() => pickMobile(tab)}
+        title={title}
+        aria-label={label}
+        aria-pressed={selected}
+        className={cn(
+          'relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 transition-colors',
+          // Folded behind MORE below sm (the capacity note above).
+          PHONE_MORE_TABS.has(tab) && 'max-sm:hidden',
+          selected ? 'text-white' : 'text-[color:var(--muted)]',
+        )}
+      >
+        {selected && (
+          <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
+        )}
+        <span className="relative">
+          <Icon className="w-[18px] h-[18px]" />
+          {tab === 'jobs' && jobsBadge}
+        </span>
+        <span className="mono text-[10px] font-medium tracking-wide">{label}</span>
+      </button>
+    )
+  }
+
   // What MORE holds on a phone, and whether it wears the "you are here" tick
   // (the settings page, or the TEAM drawer open over the chat).
   const moreTab = TABS.find((t) => PHONE_MORE_TABS.has(t.tab))
@@ -371,37 +436,13 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             <span className="mono text-[9px] font-medium tracking-wide">MARKETS</span>
           </Link>
 
-          {TABS.map(({ tab, label, title, Icon }) => {
-            const selected = !offChat && railTab === tab && mcpRailOpen
-            return (
-              <button
-                key={tab}
-                onClick={() => pickDesktop(tab)}
-                title={title}
-                aria-label={label}
-                aria-pressed={selected}
-                className={cn(
-                  'relative w-12 flex flex-col items-center gap-0.5 py-1.5 rounded-lg transition-colors',
-                  selected
-                    ? 'bg-[var(--surf-2)] text-white'
-                    : 'text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-2)]',
-                )}
-              >
-                {/* The notch: the accent tick that says "you are here". */}
-                {selected && (
-                  <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
-                )}
-                <Icon className="w-[18px] h-[18px]" />
-                <span className="mono text-[9px] font-medium tracking-wide">{label}</span>
-                {tab === 'jobs' && jobsBadge}
-              </button>
-            )
-          })}
+          {TABS_ABOVE_WALLET.map(desktopTab)}
 
           {/* WALLET is a destination PAGE (/wallet: the "Wallet details"
-              window given the whole screen), seated above DOCS (2026-09-11,
-              Nate: "put it on the left side bar as an option above docs").
-              It wears the active state on its own page. */}
+              window given the whole screen). It came in above DOCS
+              (2026-09-11) and moved up under LINKS (2026-09-14, Nate: "make
+              wallet higher just below Links"). It wears the active state on
+              its own page. */}
           <Link
             href={WALLET_PAGE_HREF}
             title={WALLET_TITLE}
@@ -420,6 +461,8 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             <Wallet className="w-[18px] h-[18px]" />
             <span className="mono text-[9px] font-medium tracking-wide">WALLET</span>
           </Link>
+
+          {TABS_BELOW_WALLET.map(desktopTab)}
 
           {/* DOCS is a destination PAGE, seated under CHATS (2026-09-11,
               Nate) — the docs left the brochure nav's reach once the nav
@@ -482,33 +525,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           <CandlestickChart className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">MARKETS</span>
         </Link>
-        {TABS.map(({ tab, label, title, Icon }) => {
-          const selected = !offChat && railTab === tab && mobileMcpRailOpen
-          return (
-            <button
-              key={tab}
-              onClick={() => pickMobile(tab)}
-              title={title}
-              aria-label={label}
-              aria-pressed={selected}
-              className={cn(
-                'relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 transition-colors',
-                // Folded behind MORE below sm (the capacity note above).
-                PHONE_MORE_TABS.has(tab) && 'max-sm:hidden',
-                selected ? 'text-white' : 'text-[color:var(--muted)]',
-              )}
-            >
-              {selected && (
-                <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
-              )}
-              <span className="relative">
-                <Icon className="w-[18px] h-[18px]" />
-                {tab === 'jobs' && jobsBadge}
-              </span>
-              <span className="mono text-[10px] font-medium tracking-wide">{label}</span>
-            </button>
-          )
-        })}
+        {TABS_ABOVE_WALLET.map(mobileTab)}
         <Link
           href={WALLET_PAGE_HREF}
           title={WALLET_TITLE}
@@ -525,6 +542,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           <Wallet className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">WALLET</span>
         </Link>
+        {TABS_BELOW_WALLET.map(mobileTab)}
         <Link
           href="/docs"
           title="Docs — how Pantessa builds, guards and signs"
