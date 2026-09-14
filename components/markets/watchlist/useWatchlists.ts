@@ -51,15 +51,17 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 // Module-level so they outlive the rail remounting on every client navigation
 // between /markets and /t pages: one read and one reconcile per wallet per
 // mode per minute. A wallet doesn't change that fast, and the server rides
-// the Wallet panel's cache anyway.
+// the Wallet panel's cache anyway. Rows show the position (2026-09-14), so a
+// page left open also re-reads once a minute while the tab is visible.
 const HELD_EVERY_MS = 60_000
 const heldReads = new Map<string, { at: number; read: Promise<HeldSymbol[] | null> }>()
 const lastReconciled = new Map<string, number>()
 const NO_HELD: ReadonlyMap<string, HeldSymbol> = new Map()
 
-function readHeld(address: string): Promise<HeldSymbol[] | null> {
+/** A read younger than `maxAgeMs` is shared, not repeated. */
+function readHeld(address: string, maxAgeMs = HELD_EVERY_MS): Promise<HeldSymbol[] | null> {
   const hit = heldReads.get(address)
-  if (hit && Date.now() - hit.at < HELD_EVERY_MS) return hit.read
+  if (hit && Date.now() - hit.at < maxAgeMs) return hit.read
   const read = fetch(`/api/watchlists/holdings?address=${encodeURIComponent(address)}`, { cache: 'no-store' })
     .then(async (r) => (r.ok ? (((await r.json()) as { held?: HeldSymbol[] }).held ?? []) : null))
     .catch(() => null)
@@ -288,6 +290,31 @@ export function useWatchlists(): WatchlistsApi {
       alive = false
     }
   }, [ready, holder, heldKey, authed, modeKey, update, updateGuest])
+
+  // A page left open keeps each row's position current (a buy made from the
+  // rail's own chips lands while you watch): re-read once a minute while the
+  // tab is visible, and when it comes back into view. Numbers only; the
+  // reconcile above still runs once per visit, so this never writes.
+  useEffect(() => {
+    if (!ready || !holder) return
+    let alive = true
+    const refresh = async () => {
+      if (document.hidden) return
+      // Half the window: by the next tick the last read is a minute old.
+      const got = await readHeld(holder, HELD_EVERY_MS / 2)
+      if (alive && got) setHeld(new Map(got.map((h) => [h.symbol, h])))
+    }
+    const t = setInterval(refresh, HELD_EVERY_MS)
+    const onVisible = () => {
+      if (!document.hidden) void refresh()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      alive = false
+      clearInterval(t)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [ready, holder])
 
   const replace = useCallback(
     (list: WatchlistShape) => {

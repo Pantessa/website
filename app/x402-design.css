@@ -5655,18 +5655,30 @@
 .wl__row:hover, .wl__row--cur { background: var(--surf-1); }
 .wl__row--cur { box-shadow: inset 2px 0 0 var(--accent); }
 .wl__rowMain { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; padding: 7px 0; }
-.wl__rowId { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.15; }
-.wl__rowSym { font-weight: 600; font-size: 12.5px; letter-spacing: -0.01em; }
+.wl__rowId { display: flex; flex-direction: column; flex: 1 1 auto; line-height: 1.15; }
+.wl__rowSym { font-weight: 600; font-size: 12.5px; letter-spacing: -0.01em; white-space: nowrap; }
 /* "In your wallet" — the holdings autofill's marker, beside the ticker. */
 .wl__rowHeld { display: inline-flex; margin-left: 5px; vertical-align: -1px; color: var(--accent); opacity: .8; }
 .wl__rowHeld svg { width: 11px; height: 11px; }
-.wl__rowName { font-size: 10.5px; color: var(--muted-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wl__rowQuote { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; font-variant-numeric: tabular-nums; }
+/* contain: the company name never widens its column (the ticker line sets the
+   floor); it ellipsizes in whatever room the row leaves it. */
+.wl__rowName { contain: inline-size; font-size: 10.5px; color: var(--muted-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wl__rowQuote { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; min-width: var(--wl-last-ch, 8ch); line-height: 1.15; font-variant-numeric: tabular-nums; }
 .wl__rowLast { font-size: 12.5px; color: var(--fg); }
 .wl__rowLast--dim { color: var(--muted-2); }
 .wl__rowChg { font-size: 10.5px; color: var(--muted); }
 .wl__rowChg--up { color: var(--accent); }
 .wl__rowChg--down { color: var(--sell); }
+/* Your position beside the price (2026-09-14, Nate: "if they own $10 of it
+   say that and how much they own 0.0004 ETH"; lib/watchlists heldPosition).
+   Every price cell is as wide as the list's widest price (--wl-last-ch, set by
+   the rail), so the prices and the positions line up down the list. On a
+   narrow rail the amount's ticker gives way first; the row's ticker, the value
+   and the number never do. */
+.wl__rowPos { display: flex; flex-direction: column; align-items: flex-end; min-width: 0; padding-right: 4px; line-height: 1.15; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wl__rowPosValue { font-size: 12.5px; color: var(--fg); }
+.wl__rowPosAmt { display: flex; justify-content: flex-end; gap: 1ch; max-width: 100%; font-size: 10.5px; color: var(--muted-2); }
+.wl__rowPosUnit { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .wl__rowMore { opacity: .55; }
 .wl__row:hover .wl__rowMore, .wl__rowMore[aria-expanded="true"] { opacity: 1; }
 /* The rail while it waits (2026-09-14, Nate: "a loader icon showing that

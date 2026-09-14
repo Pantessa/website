@@ -19239,7 +19239,7 @@ async function main() {
   // end).
   console.log('— markets/watch holdings autofill')
   {
-    const { planHeldAutofill, heldAutofillNote, heldTitle, parseHeldLedger, guestHeldAdoption, mirrorAccountLedger, DEFAULT_LIST_NAME } = await import('../lib/watchlists')
+    const { planHeldAutofill, heldAutofillNote, heldTitle, heldPosition, fmtHeldAmount, parseHeldLedger, guestHeldAdoption, mirrorAccountLedger, DEFAULT_LIST_NAME } = await import('../lib/watchlists')
     const { heldWatchSymbols, curatedSymbolFor } = await import('../lib/watchlist-holdings')
 
     // 1. The rule.
@@ -19255,9 +19255,29 @@ async function main() {
       heldAutofillNote(['ETH', 'AAPL'], 'L').startsWith('Added ETH and AAPL from') &&
       heldAutofillNote(['ETH', 'AAPL', 'NVDA', 'TSLA', 'SOL'], 'L').startsWith('Added ETH, AAPL, NVDA and 2 more from'))
     check('holdings autofill: the row marker reads "In your wallet" with value and chains',
-      heldTitle({ symbol: 'AAPL', valueUsd: 11.894, chains: ['Robinhood Chain'] }) === 'In your wallet · $11.89 · Robinhood Chain' &&
-      heldTitle({ symbol: 'ETH', valueUsd: 2500.4, chains: ['Base', 'Ethereum'] }) === 'In your wallet · $2,500 · Base, Ethereum' &&
-      heldTitle({ symbol: 'X', valueUsd: null, chains: [] }) === 'In your wallet')
+      heldTitle({ symbol: 'AAPL', valueUsd: 11.894, amount: 0.0376, chains: ['Robinhood Chain'] }) === 'In your wallet · $11.89 · Robinhood Chain' &&
+      heldTitle({ symbol: 'ETH', valueUsd: 2500.4, amount: 1, chains: ['Base', 'Ethereum'] }) === 'In your wallet · $2,500 · Base, Ethereum' &&
+      heldTitle({ symbol: 'X', valueUsd: null, amount: 1, chains: [] }) === 'In your wallet')
+
+    // 1b. The position beside the price (2026-09-14, Nate: "if they own $10 of
+    // it say that and how much they own 0.0004 ETH").
+    check('watch position: token amounts stay short for the rail — 3 significant digits under 1, 4 up to 10,000, compact past that; nothing or junk reads 0',
+      fmtHeldAmount(0.0004) === '0.0004' && fmtHeldAmount(0.00041234) === '0.000412' && fmtHeldAmount(0.0376) === '0.0376' && fmtHeldAmount(2) === '2' &&
+        fmtHeldAmount(1.5) === '1.5' && fmtHeldAmount(1234.4) === '1,234' && fmtHeldAmount(12_345) === '12.3K' && fmtHeldAmount(2_500_000) === '2.5M' &&
+        fmtHeldAmount(0) === '0' && fmtHeldAmount(Number.NaN) === '0',
+      [0.0004, 0.00041234, 0.0376, 2, 1.5, 1234.4, 12_345, 2_500_000].map(fmtHeldAmount).join(' '))
+    const ethHeld = { symbol: 'ETH', valueUsd: 1.05, amount: 0.0004, chains: ['Base', 'Ethereum'] }
+    const ethLive = heldPosition(ethHeld, { last: 2520.6 })
+    check('watch position: valued at the row’s own last price (0.0004 ETH × 2,520.60 = $1.01), so the price and the position agree as it ticks; the title says how much, what it’s worth and where',
+      ethLive?.value === '$1.01' && ethLive.valueUsd === 1.01 && ethLive.qty === '0.0004' && ethLive.amount === '0.0004 ETH' && ethLive.title === 'You hold 0.0004 ETH ($1.01) on Base and Ethereum',
+      JSON.stringify(ethLive))
+    const aaplUnpriced = heldPosition({ symbol: 'AAPL', valueUsd: null, amount: 0.0376, chains: ['Robinhood Chain'] }, undefined)
+    check('watch position: before a quote lands it shows the holdings read’s value; with no price anywhere, the amount alone; thousands drop the cents; no holding, or none left, shows nothing',
+      heldPosition(ethHeld, null)?.value === '$1.05' &&
+        aaplUnpriced?.value === null && aaplUnpriced.amount === '0.0376 AAPL' && aaplUnpriced.title === 'You hold 0.0376 AAPL on Robinhood Chain' &&
+        heldPosition({ symbol: 'ETH', valueUsd: null, amount: 1.25, chains: ['Base'] }, { last: 2520.6 })?.value === '$3,151' &&
+        heldPosition(undefined, { last: 1 }) === null && heldPosition({ ...ethHeld, amount: 0 }, { last: 2520.6 }) === null,
+      JSON.stringify(aaplUnpriced))
 
     // 2. The guest ledger (browser-scoped, like guest lists).
     const led = parseHeldLedger(JSON.stringify({ seen: ['weth', 'AAPL', 7], auto: ['ETH'], pending: ['NVDA'] }))
@@ -19285,6 +19305,8 @@ async function main() {
     check('holdings cut: native + WETH merge into one ETH across chains; cbBTC → BTC; a stable, $0.20 of dust, an uncurated "UNI" airdrop and a Base token named AAPL never count; an unpriced 4663 stock does; richest first',
       cut.map((h) => `${h.symbol}:${h.valueUsd ?? 'null'}:${h.chains.join('+')}`).join('|') === 'BTC:900:Base|UNI:12:Ethereum|ETH:8:Base+Arbitrum|AAPL:null:Robinhood Chain',
       JSON.stringify(cut))
+    check('holdings cut: each symbol carries its token amount summed across chains (native ETH on Base + WETH on Arbitrum = 2 ETH), the rail’s position',
+      cut.map((h) => `${h.symbol}:${h.amount}`).join('|') === 'BTC:1|UNI:1|ETH:2|AAPL:1', JSON.stringify(cut))
     check('holdings cut: curatedSymbolFor reads the chain registry (Base wrapped gas → WETH, USDC by address) and refuses an address nobody lists or an unknown chain',
       curatedSymbolFor(8453, '0x4200000000000000000000000000000000000006') === 'WETH' && curatedSymbolFor(8453, '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913') === 'USDC' && curatedSymbolFor(8453, '0x' + 'de'.repeat(20)) === null && curatedSymbolFor(999, '0x4200000000000000000000000000000000000006') === null)
 
@@ -19296,9 +19318,11 @@ async function main() {
     const eBody = (await eRes.json()) as { address: string; held: unknown[] }
     check('GET /api/watchlists/holdings: public by address, an empty wallet holds nothing, and it rides the Wallet panel’s cache (hit right after GET /api/wallet)', eRes.status === 200 && eBody.address === emptyAddr && eBody.held.length === 0 && eRes.headers.get('x-wallet-cache') === 'hit', `${eRes.status} ${eRes.headers.get('x-wallet-cache')}`)
     const liveRes = await fetch(`${BASE}/api/watchlists/holdings?address=0xfef4feed2c57a5dbaa5a0c553aa7a0a0fd66d393`)
-    const liveBody = (await liveRes.json()) as { held?: { symbol: string; chains: string[] }[] }
+    const liveBody = (await liveRes.json()) as { held?: { symbol: string; chains: string[]; amount: number }[] }
     check(`GET /api/watchlists/holdings: a live wallet's holdings are all chartable, never a stable, each on a named chain (${liveBody.held?.map((h) => h.symbol).join(',') || 'none held'})`,
       liveRes.status === 200 && Array.isArray(liveBody.held) && liveBody.held.every((h) => !!chartPairFor(h.symbol) && h.chains.length > 0))
+    check(`GET /api/watchlists/holdings: each live holding carries a positive token amount, the rail’s position (${liveBody.held?.map((h) => `${h.amount} ${h.symbol}`).join(', ') || 'none held'})`,
+      liveRes.status === 200 && Array.isArray(liveBody.held) && liveBody.held.every((h) => Number.isFinite(h.amount) && h.amount > 0))
 
     // 5. POST /api/watchlists/holdings — the account sync.
     type Sync = { list: { id: string; name: string; symbols: string[] } | null; added: string[]; dismissed: string[] }
@@ -19364,6 +19388,14 @@ async function main() {
     check('holdings rail: the hook reads /api/watchlists/holdings, plans with planHeldAutofill, hands the guest ledger over on sign-in, and routes every guest write through updateGuest (the stale-closure fix: no persistGuest, no [...lists, …])',
       hookSrc.includes('/api/watchlists/holdings') && hookSrc.includes('planHeldAutofill(') && hookSrc.includes('guestHeldAdoption(') && hookSrc.includes('updateGuest(') && !hookSrc.includes('persistGuest(') && !/\[\.\.\.lists,/.test(hookSrc))
     check('holdings rail: rows the wallet holds wear the "In your wallet" marker and the autofill says what it added', railSrc.includes('data-held') && railSrc.includes('heldTitle(') && railSrc.includes('heldAutofillNote('))
+    const pollAt = hookSrc.indexOf('readHeld(holder, HELD_EVERY_MS / 2)')
+    const pollBlock = pollAt < 0 ? '' : hookSrc.slice(hookSrc.lastIndexOf('useEffect(', pollAt), hookSrc.indexOf('}, [ready, holder])', pollAt))
+    check('watch position: a held row renders heldPosition beside its price (before the quote cell, the amount’s ticker in its own span to give way on a narrow rail), every price cell is as wide as the list’s widest price, the marker quotes the same value, and the hook re-reads holdings on a visible-tab clock that never reconciles (no POST, no autofill plan)',
+      railSrc.includes('heldPosition(inWallet, q)') && railSrc.includes('data-position') && railSrc.indexOf('data-position') < railSrc.indexOf('className="wl__rowQuote mono"') &&
+        railSrc.includes('wl__rowPosUnit') && railSrc.includes("'--wl-last-ch'") && railSrc.includes('style={priceCell}') &&
+        railSrc.includes('valueUsd: pos?.valueUsd ?? inWallet.valueUsd') &&
+        pollBlock.includes('setInterval(') && pollBlock.includes('visibilitychange') && !pollBlock.includes("'POST'") && !pollBlock.includes('planHeldAutofill('),
+      pollBlock ? `poll block ${pollBlock.length} chars` : 'no poll block')
 
     // 8. The rail brews while it waits (2026-09-14, Nate: "a loader icon
     // showing that something is brewing in there"). The rule first, then the
