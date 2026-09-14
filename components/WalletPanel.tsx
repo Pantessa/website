@@ -49,15 +49,21 @@ import {
   Fuel,
   Loader2,
   Maximize2,
+  PieChart,
   QrCode,
   RefreshCw,
   Send,
   Settings2,
   Wallet,
+  WifiOff,
   X,
 } from 'lucide-react'
 import { getChainMark } from '@/components/chain-marks'
 import WalletSendForm from '@/components/WalletSendForm'
+import WalletRebalance from '@/components/WalletRebalance'
+import { useAskDoor } from '@/lib/ask-door'
+import { analytics } from '@/lib/analytics'
+import type { WalletFlag, WalletFlagAction } from '@/lib/wallet-flags'
 import { startOnrampSession } from '@/lib/onramp-client'
 import { ONRAMP_ASSET, ONRAMP_DEFAULT_NETWORK, ONRAMP_NETWORK_LABEL } from '@/lib/onramp'
 import { loadFundWait, type FundWait } from '@/lib/funding-arrival'
@@ -114,6 +120,61 @@ function GasBadge({ gas }: { gas: WalletChainView['gas'] }) {
       <Fuel className="w-3 h-3" />
       {none ? 'no gas' : 'low gas'}
     </span>
+  )
+}
+
+/** One flag from lib/wallet-flags, with its actions. The primary action is
+ *  a complete ask the button SENDS (the chip-send contract — the wallet
+ *  signature is the gate); the wire is printed under it so the user sees
+ *  the sentence before pressing. Door actions open a panel in the window. */
+function FlagCard({ flag, onAsk, onDoor }: { flag: WalletFlag; onAsk: (a: WalletFlagAction) => void; onDoor: (a: WalletFlagAction) => void }) {
+  const warn = flag.tone === 'warn'
+  const Icon = flag.kind === 'unread' ? WifiOff : Fuel
+  const primary = flag.actions.find((a) => a.primary) ?? null
+  return (
+    <div
+      data-wallet-flag={flag.kind}
+      data-flag-chain={flag.chainId}
+      className={cn('rounded-xl border px-3.5 py-2.5 text-[12px]', warn ? 'border-amber-500/30 bg-amber-500/[0.06]' : 'border-[var(--line)] bg-[var(--surf-1)]')}
+    >
+      <div className="flex items-start gap-2">
+        <Icon className={cn('w-3.5 h-3.5 mt-0.5 flex-shrink-0', warn ? 'text-amber-400' : 'text-[color:var(--muted)]')} />
+        <div className="min-w-0 flex-1">
+          <div className="font-medium text-[color:var(--fg)]">{flag.title}</div>
+          <div className="text-[color:var(--muted)]">{flag.detail}</div>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {flag.actions.map((a) => (
+              <button
+                key={a.label}
+                type="button"
+                onClick={() => (a.ask ? onAsk(a) : onDoor(a))}
+                title={a.ask ?? a.note ?? a.label}
+                data-flag-action={a.ask ? 'ask' : a.door}
+                className={cn(
+                  'rounded-full px-3 py-1 text-[11.5px] transition-colors',
+                  a.primary
+                    ? 'bg-[var(--accent)] font-semibold text-black hover:opacity-90'
+                    : 'border border-[var(--line)] bg-black/20 text-[color:var(--fg)] hover:border-[color:var(--accent)] hover:text-[color:var(--accent)]',
+                )}
+              >
+                {a.label}
+              </button>
+            ))}
+          </div>
+          {primary?.note && (
+            <div className="mt-1.5 text-[11px] text-[color:var(--muted-2)]">
+              {primary.note}
+              {primary.ask && (
+                <>
+                  {' · '}
+                  <span className="mono text-[color:var(--muted)]">{primary.ask}</span>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -286,12 +347,28 @@ export function WalletDetails({
     },
     [setComposerPrefill, pathname, router, onLeave],
   )
+  // A flag's fix or a rebalance shape is a COMPLETE ask, and the button is
+  // the send (the chip-send contract; the wallet signature stays the gate).
+  // Off the chat surfaces it runs in the site-wide ask door, right over
+  // this page; on a chat surface (where the door is hidden) the chat's own
+  // send slot takes it. The modal steps aside either way.
+  const setComposerSend = useYeetfulStore((s) => s.setComposerSend)
+  const runAsk = useCallback(
+    (ask: string, mcps?: string[]) => {
+      const onChatSurface = /^\/(chat|i\/|embed|p\/)/.test(pathname ?? '')
+      if (onChatSurface) setComposerSend({ text: ask, mcps })
+      else useAskDoor.getState().openDoor(ask, { send: true, mcps })
+      onLeave?.()
+    },
+    [pathname, setComposerSend, onLeave],
+  )
   const [view, setView] = useState<WalletView | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [receive, setReceive] = useState(false)
   const [sending, setSending] = useState(false)
+  const [rebalancing, setRebalancing] = useState(false)
   const [justSent, setJustSent] = useState<string | null>(null)
   const [buying, setBuying] = useState(false)
   const [buyError, setBuyError] = useState<string | null>(null)
@@ -336,6 +413,7 @@ export function WalletDetails({
     prevTotals.current = new Map()
     setView(null)
     setSending(false)
+    setRebalancing(false)
     setReceive(false)
     setJustSent(null)
     setWait(loadFundWait(address))
@@ -346,7 +424,12 @@ export function WalletDetails({
 
   const funded = useMemo(() => (view ? view.chains.filter((c) => c.holdings.length > 0 || c.unread) : []), [view])
   const emptyChains = useMemo(() => (view ? view.chains.filter((c) => c.holdings.length === 0 && !c.unread) : []), [view])
-  const stalled = useMemo(() => (view ? view.chains.filter((c) => c.gas === 'none') : []), [view])
+  // A Mosaic needs $10 of priced value on ONE of its four chains (lib/mosaic's
+  // planner floor) — the door says so instead of opening onto a refusal.
+  const hasTileable = useMemo(
+    () => !!view && view.chains.some((c) => [8453, 1, 42161, 4663].includes(c.id) && c.holdings.reduce((s, h) => s + (h.valueUsd ?? 0), 0) >= 10),
+    [view],
+  )
 
   const copy = async () => {
     try {
@@ -438,16 +521,37 @@ export function WalletDetails({
     </div>
   )
 
-  // Gas stalls, named before they bite.
-  const stallBanner = stalled.length > 0 && (
-    <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] px-3.5 py-2.5 text-[12px]">
-      <Fuel className="w-3.5 h-3.5 mt-0.5 text-amber-400 flex-shrink-0" />
-      <span className="text-[color:var(--fg)]">
-        {stalled.map((c) => c.name).join(' and ')} {stalled.length > 1 ? 'hold' : 'holds'} tokens but no ETH for gas
-        <span className="text-[color:var(--muted)]"> — nothing there can move until a little ETH lands. Ask the chat to fund it and it plans the gas leg for you.</span>
-      </span>
-    </div>
-  )
+  // What needs doing, with the button that does it (lib/wallet-flags): a
+  // gas stall carries its own top-up leg, a chain that didn't answer its
+  // re-read. Named before they bite, fixable where they're named.
+  const flagDoor = (flag: WalletFlag, a: WalletFlagAction) => {
+    analytics.walletFlag(flag.kind, a.label, flag.chainId, false)
+    if (a.door === 'receive') {
+      setReceive(true)
+      setSending(false)
+      setRebalancing(false)
+    } else if (a.door === 'card') {
+      void buy()
+    } else if (a.door === 'refresh') {
+      void load(true)
+    }
+  }
+  const flagCards =
+    view && view.flags.length > 0 ? (
+      <div className="space-y-1.5" data-wallet-flags>
+        {view.flags.map((f) => (
+          <FlagCard
+            key={f.id}
+            flag={f}
+            onAsk={(a) => {
+              analytics.walletFlag(f.kind, a.label, f.chainId, true)
+              if (a.ask) runAsk(a.ask, a.mcps)
+            }}
+            onDoor={(a) => flagDoor(f, a)}
+          />
+        ))}
+      </div>
+    ) : null
 
   const chainsList = (
     <div className="space-y-1.5">
@@ -475,7 +579,7 @@ export function WalletDetails({
   // Ways in — and the way out. On the page they stack as the right column's
   // head from lg up.
   const doors = (
-    <div className={cn('grid grid-cols-1 sm:grid-cols-3 gap-2', page && 'lg:grid-cols-1')}>
+    <div className={cn('grid grid-cols-1 sm:grid-cols-2 gap-2', page && 'lg:grid-cols-1')}>
       <button
         type="button"
         onClick={() => void buy()}
@@ -493,6 +597,7 @@ export function WalletDetails({
         onClick={() => {
           setSending((v) => !v)
           setReceive(false)
+          setRebalancing(false)
           setJustSent(null)
         }}
         disabled={!view}
@@ -513,6 +618,7 @@ export function WalletDetails({
         onClick={() => {
           setReceive((r) => !r)
           setSending(false)
+          setRebalancing(false)
         }}
         className={cn(
           'flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-left transition-colors',
@@ -525,6 +631,29 @@ export function WalletDetails({
           <span className="block text-[11px] text-[color:var(--muted)]">same address on every chain</span>
         </span>
       </button>
+      {/* The Mosaic editor, inside the window: shape what you hold into
+          what you want, or let the rulebook choose; the batch runs as one
+          job you sign leg by leg. */}
+      <button
+        type="button"
+        onClick={() => {
+          setRebalancing((v) => !v)
+          setSending(false)
+          setReceive(false)
+        }}
+        disabled={!view || !hasTileable}
+        data-wallet-rebalance-door
+        className={cn(
+          'flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-left transition-colors disabled:opacity-60',
+          rebalancing ? 'border-[var(--line-2)] bg-[var(--surf-2)]' : 'border-[var(--line)] bg-[var(--surf-1)] hover:border-[var(--line-2)]',
+        )}
+      >
+        <PieChart className="w-4 h-4 text-[color:var(--accent)]" />
+        <span className="min-w-0">
+          <span className="block text-[12.5px] font-medium text-[color:var(--fg)]">Rebalance for me</span>
+          <span className="block text-[11px] text-[color:var(--muted)]">{hasTileable ? 'shape a Mosaic from what you hold · you sign each leg' : 'needs $10 of priced tokens on one chain'}</span>
+        </span>
+      </button>
     </div>
   )
 
@@ -532,6 +661,16 @@ export function WalletDetails({
   const forms = (
     <>
       {buyError && <div className="text-[11.5px] text-[color:var(--sell)]">{buyError}</div>}
+      {rebalancing && view && (
+        <WalletRebalance
+          view={view}
+          onBack={() => setRebalancing(false)}
+          onRun={(ask, picked, chain) => {
+            analytics.walletRebalance(chain, picked, (ask.match(/%/g) ?? []).length)
+            runAsk(ask)
+          }}
+        />
+      )}
       {sending && view && (
         <WalletSendForm
           address={address}
@@ -632,7 +771,7 @@ export function WalletDetails({
         {addressRow}
         {totalRow}
         {waitBanner}
-        {stallBanner}
+        {flagCards}
         {chainsList}
         {doors}
         {forms}
@@ -653,7 +792,7 @@ export function WalletDetails({
           {view && <SplitBar chains={view.chains} />}
         </div>
         {waitBanner}
-        {stallBanner}
+        {flagCards}
         {chainsList}
       </div>
       <div className="min-w-0 space-y-4">

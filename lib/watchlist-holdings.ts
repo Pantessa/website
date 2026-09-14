@@ -57,8 +57,9 @@ function watchSymbolForRow(chainId: number, h: HoldingRow, curated: CuratedLooku
 }
 
 /** Wallet rows → the watchable symbols they hold, richest first (ties keep
- *  wallet order). Pure given the curated lookup and the stock-address set;
- *  the harness passes both. */
+ *  wallet order), each with its value and token amount summed across chains
+ *  (the rail's position). Pure given the curated lookup and the stock-address
+ *  set; the harness passes both. */
 export function heldWatchSymbols(
   chains: readonly Pick<WalletChainView, 'id' | 'name' | 'holdings'>[],
   opts: { curatedSymbol?: CuratedLookup; stockAddresses?: ReadonlySet<string>; minUsd?: number } = {},
@@ -66,17 +67,19 @@ export function heldWatchSymbols(
   const curated = opts.curatedSymbol ?? curatedSymbolFor
   const stocks = opts.stockAddresses ?? new Set(robinhoodStockTokens().map((t) => t.address.toLowerCase()))
   const minUsd = opts.minUsd ?? HELD_MIN_USD
-  const acc = new Map<string, { value: number; priced: boolean; chains: string[]; order: number }>()
+  const acc = new Map<string, { value: number; priced: boolean; amount: number; chains: string[]; order: number }>()
   for (const c of chains) {
     for (const h of c.holdings) {
-      if (!(Number(h.balance) > 0)) continue
+      const balance = Number(h.balance)
+      if (!(balance > 0)) continue
       const symbol = watchSymbolForRow(c.id, h, curated, stocks)
       if (!symbol) continue
       let e = acc.get(symbol)
       if (!e) {
-        e = { value: 0, priced: false, chains: [], order: acc.size }
+        e = { value: 0, priced: false, amount: 0, chains: [], order: acc.size }
         acc.set(symbol, e)
       }
+      e.amount += balance
       if (h.valueUsd != null && Number.isFinite(h.valueUsd)) {
         e.value += h.valueUsd
         e.priced = true
@@ -85,10 +88,11 @@ export function heldWatchSymbols(
     }
   }
   return [...acc.entries()]
-    .map(([symbol, e]) => ({ symbol, valueUsd: e.priced ? Math.round(e.value * 100) / 100 : null, chains: e.chains, order: e.order }))
+    // toPrecision(12) sheds the sum's float dust (0.1 + 0.2); the rail shows 4 digits at most.
+    .map(([symbol, e]) => ({ symbol, valueUsd: e.priced ? Math.round(e.value * 100) / 100 : null, amount: Number(e.amount.toPrecision(12)), chains: e.chains, order: e.order }))
     .filter((h) => h.valueUsd === null || h.valueUsd >= minUsd)
     .sort((a, b) => (b.valueUsd ?? -1) - (a.valueUsd ?? -1) || a.order - b.order)
-    .map(({ symbol, valueUsd, chains: on }) => ({ symbol, valueUsd, chains: on }))
+    .map(({ symbol, valueUsd, amount, chains: on }) => ({ symbol, valueUsd, amount, chains: on }))
 }
 
 /** The whole read: the cached wallet view plus warmed curated lists → held
