@@ -9,8 +9,10 @@
 //  window alone an SMA 200 never draws and an SMA 50 starts a quarter of the
 //  way in. So the candle route hands the chart the bars before its window
 //  once (?warmup=1 → warmupBefore), every poll merges into that history
-//  (mergeHistory), and each line is computed over all of it and cut back to
-//  the window (onWindow). VWAP stays a statistic of the loaded bars.
+//  (mergeHistory), and a zoom-out prepends older pages (?before= →
+//  prependHistory). The chart draws every held bar and computes each line
+//  over the same bars; onWindow cuts a line back for a caller that draws a
+//  window alone. VWAP stays a statistic of the live window.
 //
 //  TECH owns lib/technicals.ts (the gauges + tables); when its rows are
 //  present the chart still draws lines from candles — a rating and a line
@@ -140,6 +142,20 @@ export function onWindow(points: LinePoint[], window: Candle[]): LinePoint[] {
   const first = window[0].t
   const last = window[window.length - 1].t
   return points.filter((p) => p.t >= first && p.t <= last)
+}
+
+/** Prepend an OLDER page (the candle route's ?before=) to the history. The
+ *  history keeps every bar it already holds; the page adds only bars
+ *  strictly older than its first. The cap never costs the newest bars: a
+ *  page that would overflow gives up its OLDEST instead, and `full` says the
+ *  history takes no more (the chart stops paging and fits what it holds). */
+export function prependHistory(older: Candle[], history: Candle[], cap: number): { bars: Candle[]; added: number; full: boolean } {
+  if (history.length === 0) return { bars: history, added: 0, full: false }
+  const first = history[0].t
+  const room = Math.max(0, cap - history.length)
+  const fresh = older.filter((c) => c.t < first)
+  const add = fresh.length > room ? fresh.slice(fresh.length - room) : fresh
+  return { bars: add.length ? add.concat(history) : history, added: add.length, full: history.length + add.length >= cap }
 }
 
 export type OverlayKey = 'sma20' | 'sma50' | 'sma200' | 'ema20' | 'bb' | 'vwap'

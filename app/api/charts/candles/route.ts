@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { changePct24h, chartPairFor, type Candle } from '@/lib/charts'
-import { MAX_CANDLES, WARMUP_BARS, loadCandleSeries, resolveTf } from '@/lib/candles-server'
+import { changePct24h, chartPairFor, type Candle, type ChartTf } from '@/lib/charts'
+import { MAX_CANDLES, WARMUP_BARS, loadCandleSeries, loadCandlesBefore, resolveTf } from '@/lib/candles-server'
 import { warmupBefore } from '@/lib/chart-indicators'
 
 export const runtime = 'nodejs'
@@ -16,6 +16,17 @@ export const dynamic = 'force-dynamic'
 // chart's rolling lines (an SMA 200 needs 199 of them to draw at the first
 // candle). MarketChart asks once per symbol + frame and polls without it;
 // without the flag the response is exactly what it was.
+//
+// `?before=<unix seconds>` answers one OLDER page instead of the window:
+// `older` holds the bars that opened strictly before it (the newest
+// PAGE_BARS of them) and `exhausted` says the feed holds nothing older.
+// MarketChart asks while a zoom-out or a pan nears the first bar it holds;
+// `feed` rides along so a page from a fallback tape is never spliced onto
+// the primary's.
+
+const NO_STORE = { 'cache-control': 'no-store' }
+/** The earliest `before` worth asking a feed about (2009-01-01). */
+const BEFORE_MIN = 1_230_768_000
 
 export async function GET(req: NextRequest) {
   const symbolRaw = req.nextUrl.searchParams.get('symbol') ?? ''
@@ -23,6 +34,8 @@ export async function GET(req: NextRequest) {
   if (!/^[A-Za-z0-9$._-]{1,16}$/.test(symbolRaw)) {
     return NextResponse.json({ error: 'bad symbol' }, { status: 400 })
   }
+  const beforeRaw = req.nextUrl.searchParams.get('before')
+  if (beforeRaw !== null) return olderPage(symbolRaw, tf, beforeRaw)
   // The deep read (30s cache, shared with the technicals) runs beside the
   // window's; its miss is swallowed here and only leaves `warmup` off.
   const deepLoad = req.nextUrl.searchParams.get('warmup') === '1' ? loadCandleSeries(symbolRaw, tf, { deep: true }).catch(() => null) : null
@@ -34,14 +47,14 @@ export async function GET(req: NextRequest) {
     const resolved = chartPairFor(symbolRaw)
     return NextResponse.json(
       { symbol: resolved?.symbol ?? symbolRaw.toUpperCase(), label: resolved?.label ?? null, source: resolved?.source ?? null, tf, candles: [], error: 'feed unavailable' },
-      { headers: { 'cache-control': 'no-store' } },
+      { headers: NO_STORE },
     )
   }
   if (!loaded) {
     // Shape-compatible refusal: the client renders the honest empty state.
     return NextResponse.json(
       { symbol: symbolRaw.toUpperCase(), label: null, source: null, tf, candles: [], error: 'no chart source' },
-      { headers: { 'cache-control': 'no-store' } },
+      { headers: NO_STORE },
     )
   }
   const { pair, series } = loaded
@@ -64,6 +77,32 @@ export async function GET(req: NextRequest) {
       changePct24h: changePct24h(candles),
       asOf: Date.now(),
     },
-    { headers: { 'cache-control': 'no-store' } },
+    { headers: NO_STORE },
+  )
+}
+
+async function olderPage(symbolRaw: string, tf: ChartTf, beforeRaw: string) {
+  const before = /^\d{9,10}$/.test(beforeRaw) ? Number(beforeRaw) : NaN
+  if (!(before >= BEFORE_MIN && before <= Math.floor(Date.now() / 1000) + 86_400)) {
+    return NextResponse.json({ error: 'bad before' }, { status: 400 })
+  }
+  let loaded: Awaited<ReturnType<typeof loadCandlesBefore>>
+  try {
+    loaded = await loadCandlesBefore(symbolRaw, tf, before)
+  } catch {
+    // Retryable: no `exhausted` key, so the chart asks again later.
+    const resolved = chartPairFor(symbolRaw)
+    return NextResponse.json(
+      { symbol: resolved?.symbol ?? symbolRaw.toUpperCase(), label: resolved?.label ?? null, source: resolved?.source ?? null, tf, before, older: [], error: 'feed unavailable' },
+      { headers: NO_STORE },
+    )
+  }
+  if (!loaded) {
+    return NextResponse.json({ symbol: symbolRaw.toUpperCase(), label: null, source: null, tf, before, older: [], error: 'no chart source' }, { headers: NO_STORE })
+  }
+  const { pair, page } = loaded
+  return NextResponse.json(
+    { symbol: pair.symbol, label: pair.label, source: pair.source, feed: page.feed, tf, before, older: page.older, exhausted: page.exhausted },
+    { headers: NO_STORE },
   )
 }
