@@ -31,17 +31,35 @@ interface AskDoorState {
   open: boolean
   /** Text waiting in the door's composer (a surface opened it with a draft). */
   draft: string
-  openDoor: (draft?: string) => void
+  /** An ask a surface handed over to RUN, not to draft — a wallet flag's
+   *  "Fix gas on Arbitrum", a "Rebalance for me" shape. The sheet sends it
+   *  the moment it opens (the chip-send contract: the click is the send,
+   *  the wallet signature is the gate). `at` makes a repeat of the same
+   *  text a fresh handoff. */
+  fire: { text: string; at: number; mcps?: string[] } | null
+  /** Open the door. With `send: true` the text runs instead of waiting in
+   *  the composer (an empty text still just opens the door); `mcps` names
+   *  the slugs the ask's gate needs on — the sheet turns them on first. */
+  openDoor: (draft?: string, opts?: { send?: boolean; mcps?: string[] }) => void
   closeDoor: () => void
   setDraft: (draft: string) => void
+  /** The sheet took the pending ask. */
+  takeFire: () => void
 }
 
 export const useAskDoor = create<AskDoorState>()((set) => ({
   open: false,
   draft: '',
-  openDoor: (draft) => set((s) => ({ open: true, draft: typeof draft === 'string' ? draft : s.draft })),
+  fire: null,
+  openDoor: (draft, opts) =>
+    set((s) =>
+      opts?.send && typeof draft === 'string' && draft.trim()
+        ? { open: true, draft: '', fire: { text: draft.trim(), at: Date.now(), ...(opts.mcps?.length ? { mcps: opts.mcps } : {}) } }
+        : { open: true, draft: typeof draft === 'string' ? draft : s.draft },
+    ),
   closeDoor: () => set({ open: false }),
   setDraft: (draft) => set({ draft }),
+  takeFire: () => set({ fire: null }),
 }))
 
 /** Routes the door never renders on: the chat IS the composer, the embed and

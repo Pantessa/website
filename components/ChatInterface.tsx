@@ -325,6 +325,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     setMainView,
     composerPrefill,
     setComposerPrefill,
+    composerSend,
+    setComposerSend,
     setChartDetail,
     autoRouter,
     pushRouterTrace,
@@ -643,6 +645,28 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     }
     runExample(prompt)
   }
+
+  // A wallet-window action on a chat surface (a flag's "Fix gas on …", a
+  // rebalance shape): the store hands the complete ask over once and this
+  // sends it — the same path as a chart chip, composer fallback mid-turn.
+  useEffect(() => {
+    if (!composerSend) return
+    // The ask's gate may need MCPs the set lacks (a bridge leg → NEAR
+    // Intents): turn them on and wait for the set to carry them — the
+    // request body reads the LIVE set, so a same-tick send would miss them.
+    const want = composerSend.mcps ?? []
+    if (want.length > 0 && servers.length > 0) {
+      const ids = want.map((slug) => servers.find((s) => s.slug === slug)?.id).filter((id): id is string => !!id)
+      const missing = ids.filter((id) => !activeServerIds.includes(id))
+      if (missing.length > 0) {
+        setActiveServerIds([...activeServerIds, ...missing])
+        return
+      }
+    }
+    setComposerSend(null)
+    sendFromOverlay(composerSend.text)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [composerSend, servers, activeServerIds])
 
   // The voice door (components/VoiceButton). Words mirror into the composer
   // as they're heard; the finished transcript is normalized to a typed-

@@ -295,6 +295,14 @@ interface YeetfulStore {
    *  persisted: it's a one-shot handoff, consumed (and cleared) by the chat. */
   composerPrefill: string | null
   setComposerPrefill: (prompt: string | null) => void
+  /** A complete ask an in-app button wants SENT — a wallet flag's "Fix gas
+   *  on Arbitrum", a "Rebalance for me" shape — on a surface where the chat
+   *  itself is the runtime (/chat, /i, /embed: the ask door is hidden
+   *  there). Consumed once by ChatInterface, which sends it, or lands it in
+   *  the composer mid-turn so it's never dropped (the chip-send contract).
+   *  NOT persisted. */
+  composerSend: { text: string; mcps?: string[] } | null
+  setComposerSend: (send: { text: string; mcps?: string[] } | null) => void
   /** The job/recurring-buy the rail opened a detail card for (position, PnL,
    *  pending signatures). Session state — never persisted. */
   jobDetail: { type: 'job' | 'dca'; id: string } | null
@@ -834,6 +842,8 @@ export const useYeetfulStore = create<YeetfulStore>()(
       setMainView: (view) => set({ mainView: view }),
       composerPrefill: null,
       setComposerPrefill: (prompt) => set({ composerPrefill: prompt }),
+      composerSend: null,
+      setComposerSend: (send) => set({ composerSend: send }),
       jobDetail: null,
       setJobDetail: (detail) => set({ jobDetail: detail }),
       chartDetail: null,

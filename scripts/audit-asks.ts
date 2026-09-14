@@ -249,6 +249,12 @@ const CORPUS: Entry[] = [
   { ask: 'Buy $12 of AAPL', source: 'hero typed reel + mint starter chip (typed-asks.ts)', expect: 'action' },
   { ask: 'Tile my wallet 50% ETH, 30% USDC, 20% wstETH', source: 'hero typed reel + /mosaic', expect: 'action' },
   { ask: 'tile my wallet 60% ETH, 40% USDC', source: 'house mosaic /i/tile-classic', expect: 'action' },
+  // The wallet window's flag fixes (lib/wallet-flags, 2026-09-14): a gas
+  // stall's top-up leg and the Robinhood Chain funding sentence.
+  { ask: 'Swap 0.0006 ETH from Base to ETH on Arbitrum', source: 'wallet flag: Fix gas on Arbitrum', expect: 'action' },
+  { ask: 'Swap 1.5 USDC from Base to ETH on Optimism', source: 'wallet flag: Fix gas on Optimism (USDC donor)', expect: 'action' },
+  { ask: 'Fund robinhood chain with $9 from base including gas', source: 'wallet flag: Fund Robinhood Chain (+ gas)', expect: 'action' },
+  { ask: 'tile my wallet 45% ETH, 35% USDC, 20% CBBTC on base', source: 'wallet window: Rebalance for me (choose-for-me shape)', expect: 'action' },
   { ask: 'tile my wallet 45% ETH, 45% USDC, 10% CBBTC', source: 'house mosaic /i/tile-barbell', expect: 'action' },
   { ask: 'tile my wallet 50% USDC, 30% ETH, 20% WSTETH', source: 'house mosaic /i/tile-steady', expect: 'action' },
   { ask: 'protect my eth long with a 5% stop', source: '/docs/guardian', expect: 'action' },

@@ -26,13 +26,16 @@ import { createPortal } from 'react-dom'
 import dynamic from 'next/dynamic'
 import SpineLink from '@/components/SpineLink'
 import { usePathname, useRouter } from 'next/navigation'
+import { useAccount } from 'wagmi'
 import { ArrowUp, ArrowUpRight, Mic, X } from 'lucide-react'
 import { PantessaMark } from '@/components/Logo'
 import VoiceButton from '@/components/VoiceButton'
 import { analytics } from '@/lib/analytics'
 import { askDoorChips, askDoorHidden, askDoorNav, askDoorPillHidden, askDoorPlaceholder, askDoorSymbol, useAskDoor } from '@/lib/ask-door'
 import { normalizeSpokenAsk } from '@/lib/voice-ask'
-import { useYeetfulStore } from '@/lib/store'
+import { useYeetfulStore, type McpServer } from '@/lib/store'
+import { FREE_FLEET_FALLBACK } from '@/lib/free-fleet'
+import { CATALOG } from '@/lib/mcp-data'
 import type { InjectedPrompt } from '@/lib/trade-asks'
 
 // ChatInterface is heavy (wagmi, the store, every card); it loads only when
@@ -100,6 +103,9 @@ function AskDoorPill() {
   )
 }
 
+/** The directory's fallback when /api/servers is down — the /i runtime's own. */
+const STATIC_SERVERS: McpServer[] = [...FREE_FLEET_FALLBACK, ...CATALOG]
+
 function AskDoorSheet() {
   const pathname = usePathname()
   const router = useRouter()
@@ -108,7 +114,15 @@ function AskDoorSheet() {
   const setDraft = useAskDoor((s) => s.setDraft)
   const closeDoor = useAskDoor((s) => s.closeDoor)
   const openDoor = useAskDoor((s) => s.openDoor)
+  const fire = useAskDoor((s) => s.fire)
+  const takeFire = useAskDoor((s) => s.takeFire)
   const setCurrentChatId = useYeetfulStore((s) => s.setCurrentChatId)
+  const { address: walletAddress, status: walletStatus } = useAccount()
+  const [holdTick, setHoldTick] = useState(0)
+  const servers = useYeetfulStore((s) => s.servers)
+  const setServers = useYeetfulStore((s) => s.setServers)
+  const activeServerIds = useYeetfulStore((s) => s.activeServerIds)
+  const setActiveServerIds = useYeetfulStore((s) => s.setActiveServerIds)
 
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
@@ -192,6 +206,46 @@ function AskDoorSheet() {
     },
     [pathname, router, closeDoor, setDraft, setCurrentChatId],
   )
+
+  // A surface opened the door WITH an ask to run (openDoor(text, { send:
+  // true }) — the wallet window's flag fixes and its rebalance): send it
+  // as the sheet opens. Taken before sending so a re-render can't fire twice.
+  // A fired ask may name the MCPs its gate needs (a bridge leg → NEAR
+  // Intents). Turn them on FIRST — the same slug→id step the /i runtime
+  // does — then send once the set carries them; an unknown slug (a stale
+  // directory) releases the send anyway, and the refusal copy says what to
+  // add ([[chat-id-load-race]]: a definitive settle, never a hostage ask).
+  useEffect(() => {
+    if (!open || !fire?.mcps?.length || servers.length > 0) return
+    fetch('/api/servers')
+      .then((r) => r.json())
+      .then((data: McpServer[]) => setServers(data.length > 0 ? data : STATIC_SERVERS))
+      .catch(() => setServers(STATIC_SERVERS))
+  }, [open, fire, servers.length, setServers])
+  useEffect(() => {
+    if (!open || !fire || hidden) return
+    // A wallet that is KNOWN but still settling (wagmi reads 'connecting'
+    // for seconds after a load while the address is already there) would
+    // send the ask without it — the runtime answers "connect your wallet",
+    // then re-sends on connect. Hold the send for the wallet, up to 10s.
+    const elapsed = Date.now() - fire.at
+    if (walletAddress && walletStatus !== 'connected' && elapsed < 10_000) {
+      const t = setTimeout(() => setHoldTick((n) => n + 1), 10_000 - elapsed)
+      return () => clearTimeout(t)
+    }
+    const want = fire.mcps ?? []
+    if (want.length > 0) {
+      if (servers.length === 0) return
+      const ids = want.map((slug) => servers.find((s) => s.slug === slug)?.id).filter((id): id is string => !!id)
+      const missing = ids.filter((id) => !activeServerIds.includes(id))
+      if (missing.length > 0) {
+        setActiveServerIds([...activeServerIds, ...missing])
+        return
+      }
+    }
+    takeFire()
+    send(fire.text)
+  }, [open, fire, hidden, takeFire, send, servers, activeServerIds, setActiveServerIds, walletAddress, walletStatus, holdTick])
 
   if (!mounted || hidden || !open) return null
 

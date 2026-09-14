@@ -155,7 +155,9 @@ import {
 import { HOUSE_LINKS, houseLinkMarks } from '../lib/house-links'
 import { EXPLAINER_VIDEO, explainerPosterUrl, explainerWatchUrl, isoDuration } from '../lib/explainer-video'
 import { isDbChatId } from '../lib/chat-ids'
-import { gasStateFor, mergeChains, robinhoodStockTokens, type RpcChainRead, type WalletView } from '../lib/wallet-view'
+import { gasStateFor, mergeChains, robinhoodStockTokens, type RpcChainRead, type WalletChainView, type WalletView } from '../lib/wallet-view'
+import { fundingSourcesFromChains, NEAR_INTENTS_SLUG, walletFlags } from '../lib/wallet-flags'
+import { useAskDoor } from '../lib/ask-door'
 import { parseWalletSendBody, WALLET_SEND_CHAIN_IDS } from '../lib/wallet-send'
 import { arrivalPhrase, detectArrival, fundWaitExpired, fundWaitKey, pollDelayMs, FUND_WAIT_TTL_MS, FUND_WATCH_MAX_MS } from '../lib/funding-arrival'
 import { usdToTokenAmount } from '../lib/usd-probe'
@@ -215,11 +217,11 @@ import { parseEcbUsdRate } from '../lib/ecb-fx'
 import { clarifyOf } from '../lib/clarify'
 import { fundingPathOf, NEVER_MIND_RESUME_RE } from '../lib/funding-path'
 import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '../lib/turn-status'
-import { decideFundingTurn, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, MIN_LEG_USD, planFundingChips, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
+import { decideFundingTurn, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, gasTopupLegUsd, MIN_LEG_USD, planFundingChips, planGasTopup, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
-import { fmtUnits, isMosaicAsk, MOSAIC_STABLE, mosaicAskString, mosaicStableFor, parseMosaicAsk, planMosaic, type MosaicHolding } from '../lib/mosaic'
+import { CHOOSE_SHAPE_RULES, chooseMosaicShape, composeMosaicAsk, fmtUnits, integerPcts, isMosaicAsk, MOSAIC_STABLE, mosaicAskString, mosaicPresets, mosaicStableFor, mosaicValueRows, parseMosaicAsk, planMosaic, suggestMosaicShape, type MosaicHolding } from '../lib/mosaic'
 import { simulateLadder } from './ask-ladder'
 import {
   adx as techAdx, askPrice, awesome as techAo, bandOf, bullBearPower as techBbp, camarillaPivots, cci as techCci, classicPivots, computeTechnicals, dmPivots,
@@ -8635,6 +8637,229 @@ async function main() {
     } catch (e) {
       check('wallet routes reachable', false, e instanceof Error ? e.message : String(e))
     }
+  }
+
+  // ── Wallet flags: actions on what the window names (2026-09-14) ───────────
+  // Nate: "options and actions for flags like this … 'Fix my gas issue' that
+  // swaps and pops in some ETH on arb, or solves whatever issue we flagged."
+  // Every flag carries its fix; the fix is a COMPLETE ask the funding layer
+  // already speaks (the stranded rescue's own top-up leg), sized by ONE
+  // shared rule, and it lands on a native gate — never the planner.
+  console.log('— wallet flags: actions on what the window names')
+  {
+    const chainOf = (id: number) => APP_CHAINS.find((c) => c.id === id)!
+    const mkChain = (id: number, nativeEth: number, rows: [string, number, number | null][], extra: Partial<WalletChainView> = {}): WalletChainView => {
+      const c = chainOf(id)
+      const holdings = [
+        ...(nativeEth > 0 ? [{ symbol: 'ETH', address: 'native', balance: String(nativeEth), priceUsd: 2500, valueUsd: nativeEth * 2500, native: true as const, chain: c.name }] : []),
+        ...rows.map(([symbol, balance, valueUsd]) => ({ symbol, address: `0x${symbol.toLowerCase().padEnd(40, '0')}`, balance: String(balance), priceUsd: valueUsd == null ? null : valueUsd / balance, valueUsd, chain: c.name })),
+      ]
+      const tokenUsd = rows.reduce((a, [, , usd]) => a + (usd ?? 0), 0)
+      return { id, key: c.key, name: c.name, short: c.short, color: c.color, totalUsd: tokenUsd + nativeEth * 2500, nativeEth, nativeUsd: nativeEth * 2500, gas: gasStateFor(id, nativeEth, tokenUsd), holdings, ...extra }
+    }
+    const ethUsd = 2500
+    // The 2026-09-14 screenshot wallet: ETH on Ethereum + Base, USDC + DAI on
+    // Base, $1.99 USDC stranded on Arbitrum with no gas, AAPL on 4663.
+    const screenshot = [
+      mkChain(8453, 0.00749, [['USDC', 13.4673, 13.47], ['DAI', 2.9898, 2.99]]),
+      mkChain(1, 0.074, []),
+      mkChain(42161, 0, [['USDC', 1.9947, 1.99]]),
+      mkChain(10, 0, []),
+      mkChain(4663, 0.000773, [['AAPL', 0.0352, 11.7], ['USDG', 0.458, 0.46]]),
+    ]
+    const flags = walletFlags(screenshot, ethUsd)
+    const stall = flags.find((f) => f.kind === 'no-gas')
+    const fix = stall?.actions[0]
+    check(
+      'wallet flags: the Arbitrum stall is ONE warn flag, named with the money it holds, leading with "Fix gas on Arbitrum"',
+      flags.length === 1 && stall?.chainId === 42161 && stall.tone === 'warn' && /1\.99 USDC/.test(stall.detail) && fix?.label === 'Fix gas on Arbitrum' && fix.primary === true,
+      JSON.stringify(flags),
+    )
+    const cc = fix?.ask ? parseCrossChainSwap(fix.ask) : null
+    check(
+      'wallet flags: the fix IS the funding layer’s top-up leg — parses on the cross-chain gate as Base ETH → ETH on Arbitrum, sized to the $1.50 gas leg',
+      !!cc && !('problem' in cc) && /base/i.test(cc.originChain) && /arb/i.test(cc.destinationChain) && cc.originToken === 'ETH' && cc.destinationToken === 'ETH' &&
+        Math.abs(Number(cc.amount) * ethUsd - 1.5) < 0.05 && gasTopupLegUsd(42161, ethUsd) === 1.5,
+      `${fix?.ask} → ${JSON.stringify(cc)}`,
+    )
+    check(
+      'wallet flags: the ladder replica lands the fix on the cross-chain gate as an action (never the planner)',
+      !!fix?.ask && simulateLadder(fix.ask).gate === 'cross-chain' && simulateLadder(fix.ask).kind === 'action',
+      fix?.ask ? JSON.stringify(simulateLadder(fix.ask)) : 'no ask',
+    )
+    check(
+      'wallet flags: the donor is the CHEAPEST cover, not the richest — Base ETH ($18) over mainnet ETH ($185); the note prints the leg and the wire rides beside it',
+      /Base ETH/.test(fix?.note ?? '') && /you sign once/.test(fix?.note ?? ''),
+      fix?.note,
+    )
+    // The cross-chain gate needs NEAR Intents in the working set (a bare
+    // bridge sentence otherwise answers the add-the-dapp door, #570 — caught
+    // live on the first drive): the action carries the slug the route's own
+    // door names, and both send paths turn it on before sending.
+    const routeSrc = await readFile(new URL('../app/api/chat/route.ts', import.meta.url), 'utf8')
+    check(
+      'wallet flags: the fix carries the NEAR Intents slug (the one the route’s add-the-dapp door names); the Robinhood funding sentence and tile asks carry none (native gates)',
+      JSON.stringify(fix?.mcps) === JSON.stringify([NEAR_INTENTS_SLUG]) && routeSrc.includes(`door: { mcps: '${NEAR_INTENTS_SLUG}' }`),
+      JSON.stringify(fix?.mcps),
+    )
+    check(
+      'wallet flags: the outside doors ride behind the fix — receive on Arbitrum, then the card',
+      stall?.actions[1]?.door === 'receive' && /Arbitrum/.test(stall.actions[1].label) && stall.actions[2]?.door === 'card',
+      JSON.stringify(stall?.actions.map((a) => [a.label, a.door ?? 'ask'])),
+    )
+    // Donor ranking end to end through the shared classifier: L2 USDC beats mainnet ETH.
+    // Base: gas to sign but ETH under the leg (0.0007 − 0.0002 reserve = $1.25),
+    // $20 USDC; Ethereum: $185 of ETH. A USDC row with NO gas would be
+    // stranded, never a donor (classifyFundingBalances) — as on Arbitrum here.
+    const sources = fundingSourcesFromChains([mkChain(1, 0.074, []), mkChain(8453, 0.0007, [['USDC', 20, 20]]), mkChain(42161, 0, [['USDC', 5, 5]])], ethUsd)
+    const topup = planGasTopup({ targetChainId: 42161, sources, ethUsd })
+    check(
+      'wallet flags: with no L2 ETH worth the leg, L2 USDC (with gas) donates before mainnet ETH; gasless USDC is never a donor; the mainnet-only wallet still gets a (mainnet) fix',
+      topup?.donor.chainId === 8453 && topup.donor.token === 'USDC' && /^Swap 1\.5 USDC from Base to ETH on Arbitrum$/.test(topup.ask) &&
+        !sources.some((s) => s.chainId === 42161) &&
+        planGasTopup({ targetChainId: 42161, sources: sources.filter((s) => s.chainId === 1), ethUsd })?.donor.chainId === 1,
+      JSON.stringify(topup),
+    )
+    check(
+      'wallet flags: ONE sizing rule — the stranded rescue’s gas leg equals gasTopupLegUsd for the same chain (mainnet $7.50, Base/Arbitrum/Optimism $1.50 at $2,500)',
+      gasTopupLegUsd(1, ethUsd) === 7.5 && gasTopupLegUsd(8453, ethUsd) === 1.5 && gasTopupLegUsd(10, ethUsd) === 1.5 &&
+        planStrandedRescue({
+          need: { chainId: 8453, token: 'ETH', amountHuman: 0.001, followupResume: '', actionLabel: 'the stake' },
+          needUsd: 2.5,
+          gasUsd: 0,
+          sources: [{ chainId: 1, chainWord: 'Ethereum', token: 'ETH', balance: 0.05, usd: 125 }],
+          stranded: [{ chainId: 42161, chainWord: 'Arbitrum', token: 'USDC', balance: 12, usd: 12 }],
+          ethUsd,
+        })?.gasLegUsd === gasTopupLegUsd(42161, ethUsd),
+    )
+    const lone = walletFlags([mkChain(42161, 0, [['USDC', 1.9947, 1.99]])], ethUsd)
+    check(
+      'wallet flags: nothing elsewhere to carry a top-up → the flag keeps only the outside doors and says the ETH has to come from outside',
+      lone.length === 1 && !lone[0].actions.some((a) => a.ask) && lone[0].actions[0].door === 'receive' && /from outside/.test(lone[0].detail),
+      JSON.stringify(lone),
+    )
+    check(
+      'wallet flags: ETH unpriceable → the leg can’t be sized, so no ask is invented (doors only)',
+      !walletFlags(screenshot, null).find((f) => f.kind === 'no-gas')?.actions.some((a) => a.ask),
+    )
+    const rh = walletFlags([mkChain(8453, 0.005, [['USDC', 20, 20]]), mkChain(4663, 0, [['USDG', 12.51, 12.51]])], ethUsd)
+    const rhFix = rh.find((f) => f.kind === 'no-gas')?.actions[0]
+    check(
+      'wallet flags: a Robinhood Chain stall can’t ride NEAR — its fix is the LiFi funding sentence at the $9 floor with the gas leg, from Base USDC, and it compiles as a job',
+      rhFix?.ask === 'Fund robinhood chain with $9 from base including gas' && simulateLadder(rhFix.ask).gate === 'jobs' && simulateLadder(rhFix.ask).kind === 'action' && /Fund Robinhood Chain/.test(rhFix.label) && !rhFix.mcps,
+      `${rhFix?.ask} → ${rhFix?.ask ? JSON.stringify(simulateLadder(rhFix.ask)) : ''}`,
+    )
+    const low = walletFlags([mkChain(1, 0.0015, [['USDC', 50, 50]]), mkChain(8453, 0.01, [])], ethUsd)
+    check(
+      'wallet flags: low gas is an info flag with a "Top up gas" leg from the L2 ETH (mainnet leg = $7.50, said in the note); a chain that didn’t answer gets a re-read door',
+      low.length === 1 && low[0].kind === 'low-gas' && low[0].tone === 'info' && low[0].actions[0].label === 'Top up gas on Ethereum' && /\$7\.50/.test(low[0].actions[0].note ?? '') &&
+        walletFlags([mkChain(8453, 0, [], { unread: true })], ethUsd)[0]?.actions[0].door === 'refresh',
+      JSON.stringify(low),
+    )
+    // The ask door's send handoff: a surface opens it WITH an ask to run.
+    useAskDoor.getState().openDoor('Swap 0.0006 ETH from Base to ETH on Arbitrum', { send: true, mcps: [NEAR_INTENTS_SLUG] })
+    const doorState = useAskDoor.getState()
+    check(
+      'wallet flags: openDoor(text, { send: true, mcps }) opens the door with the ask + its MCPs queued to run and an empty composer; takeFire clears it; a plain openDoor still drafts',
+      doorState.open && doorState.draft === '' && doorState.fire?.text === 'Swap 0.0006 ETH from Base to ETH on Arbitrum' && JSON.stringify(doorState.fire.mcps) === JSON.stringify([NEAR_INTENTS_SLUG]) &&
+        (doorState.takeFire(), useAskDoor.getState().fire === null) && (useAskDoor.getState().openDoor('draft only'), useAskDoor.getState().draft === 'draft only' && useAskDoor.getState().fire === null),
+    )
+    useAskDoor.getState().closeDoor()
+    useAskDoor.getState().setDraft('')
+    const wfPanel = await readFile(new URL('../components/WalletPanel.tsx', import.meta.url), 'utf8')
+    const wfDoor = await readFile(new URL('../components/AskDoor.tsx', import.meta.url), 'utf8')
+    const wfChat = await readFile(new URL('../components/ChatInterface.tsx', import.meta.url), 'utf8')
+    const wfView = await readFile(new URL('../lib/wallet-view.ts', import.meta.url), 'utf8')
+    check(
+      'wallet flags: the window renders each flag as a card with its actions; an ask action SENDS through the ask door (or the chat’s send slot on a chat surface), a door action opens the panel; the view composes flags server-side',
+      /data-wallet-flag=\{flag\.kind\}/.test(wfPanel) && /openDoor\(ask, \{ send: true, mcps \}\)/.test(wfPanel) && /setComposerSend\(\{ text: ask, mcps \}\)/.test(wfPanel) && /a\.ask \? onAsk\(a\) : onDoor\(a\)/.test(wfPanel) &&
+        !/Ask the chat to fund it/.test(wfPanel) &&
+        /takeFire\(\)\n\s+send\(fire\.text\)/.test(wfDoor) && /setActiveServerIds\(\[\.\.\.activeServerIds, \.\.\.missing\]\)/.test(wfDoor) && /fetch\('\/api\/servers'\)/.test(wfDoor) &&
+        /walletAddress && walletStatus !== 'connected' && elapsed < 10_000/.test(wfDoor) &&
+        /sendFromOverlay\(composerSend\.text\)/.test(wfChat) && /setActiveServerIds\(\[\.\.\.activeServerIds, \.\.\.missing\]\)/.test(wfChat) && /flags: walletFlags\(chains, ethUsd\)/.test(wfView),
+    )
+    // Over HTTP: the drill wallet's view carries the flags array, and every
+    // ask on it is a native action in the ladder replica.
+    const wfRes = await fetch(`${BASE}/api/wallet?address=0xfef4feed2c57a5dbaa5a0c553aa7a0a0fd66d393`)
+    const wf = (await wfRes.json()) as WalletView
+    const wfAsks = (wf.flags ?? []).flatMap((f) => f.actions).filter((a) => a.ask).map((a) => a.ask!)
+    check(
+      `wallet flags: /api/wallet carries flags (${wf.flags?.length ?? '?'} on the drill wallet: ${(wf.flags ?? []).map((f) => f.id).join(',') || 'none'}) and every ask on them is a native action`,
+      wfRes.status === 200 && Array.isArray(wf.flags) && wfAsks.every((a) => simulateLadder(a).kind === 'action'),
+      JSON.stringify(wf.flags),
+    )
+  }
+
+  // ── Wallet rebalance: shapes from holdings (2026-09-14) ──────────────────
+  // "Rebalance for me … shows the mosaic interface, maybe a choose for me."
+  // The window's own priced rows become the starting shape (the read
+  // route's rules, moved into lib/mosaic so both read the same wallet into
+  // the same tiles); "Choose for me" is a printed rulebook, never a model.
+  console.log('— wallet rebalance: shapes from holdings')
+  {
+    const rows = mosaicValueRows([
+      { symbol: 'eth', valueUsd: 18.6 },
+      { symbol: 'USDC', valueUsd: 13.47 },
+      { symbol: 'DAI', valueUsd: 2.99 },
+      { symbol: 'weird-9', valueUsd: 4 },
+      { symbol: 'DUST', valueUsd: 0.2 },
+      { symbol: 'ETH', valueUsd: 0.4 },
+    ])
+    check('mosaic shape: value rows UPPERCASE and SUM duplicate symbols, richest first', rows[0].token === 'ETH' && rows[0].usd === 19 && rows.length === 5, JSON.stringify(rows))
+    const s = suggestMosaicShape(rows, 'base')
+    const sAsk = composeMosaicAsk(s.slices, 'base')
+    check(
+      'mosaic shape: suggest = what you hold — ≥3% tiles, dust + grammar-unsafe symbols fold into USDC, integer pcts sum to 100, round-trips composeMosaicAsk',
+      s.totalUsd === 39.66 && s.slices.reduce((a, x) => a + x.pct, 0) === 100 && s.slices.every((x) => Number.isInteger(x.pct)) &&
+        !s.slices.some((x) => x.token === 'WEIRD-9' || x.token === 'DUST') && (s.slices.find((x) => x.token === 'USDC')?.pct ?? 0) > Math.round((13.47 / 39.66) * 100) &&
+        'ask' in sAsk,
+      JSON.stringify(s),
+    )
+    check(
+      'mosaic shape: a single-token wallet gets a 5% rail carved out; an all-stable wallet suggests nothing (nothing to tile)',
+      JSON.stringify(suggestMosaicShape([{ token: 'ETH', usd: 50 }], 'base').slices) === JSON.stringify([{ pct: 95, token: 'ETH' }, { pct: 5, token: 'USDC' }]) &&
+        suggestMosaicShape([{ token: 'USDC', usd: 50 }], 'base').slices.length === 0 && suggestMosaicShape([], 'arbitrum').totalUsd === 0,
+    )
+    const c = chooseMosaicShape(rows, 'base')
+    const R = CHOOSE_SHAPE_RULES
+    const rail = c.slices.find((x) => x.token === 'USDC')
+    check(
+      'mosaic shape: choose-for-me tidies — 5% grid, USDC ≥10%, every tile ≥5%, ≤4 volatile tiles, sums to 100, round-trips, and prints its rules',
+      c.slices.reduce((a, x) => a + x.pct, 0) === 100 && c.slices.every((x) => x.pct % R.stepPct === 0 && x.pct >= R.tileFloorPct) && (rail?.pct ?? 0) >= R.railFloorPct &&
+        c.slices.filter((x) => x.token !== 'USDC').length <= R.maxTiles && 'ask' in composeMosaicAsk(c.slices, 'base') && c.notes.some((n) => /5% steps/.test(n)),
+      JSON.stringify(c),
+    )
+    const capped = chooseMosaicShape([{ token: 'ETH', usd: 95 }, { token: 'USDC', usd: 5 }], 'base')
+    check(
+      'mosaic shape: the concentration cap — 95% ETH becomes 70% ETH / 30% USDC, and the note says so',
+      JSON.stringify(capped.slices) === JSON.stringify([{ pct: 70, token: 'ETH' }, { pct: 30, token: 'USDC' }]) && capped.notes.some((n) => /capped at 70%/.test(n)),
+      JSON.stringify(capped),
+    )
+    const five = chooseMosaicShape([{ token: 'ETH', usd: 40 }, { token: 'CBBTC', usd: 30 }, { token: 'WSTETH', usd: 20 }, { token: 'DAI', usd: 6 }, { token: 'AERO', usd: 4 }], 'base')
+    check(
+      'mosaic shape: the fifth volatile token folds into the rail by name and the four kept tiles hold their floors',
+      five.slices.filter((x) => x.token !== 'USDC').length === 4 && !five.slices.some((x) => x.token === 'AERO') && five.notes.some((n) => /AERO fold/.test(n)) && five.slices.reduce((a, x) => a + x.pct, 0) === 100,
+      JSON.stringify(five),
+    )
+    check(
+      'mosaic shape: all-stable → choose-for-me offers nothing but a note; presets exist for the EVM majors (each round-trips), none for Robinhood Chain (we don’t pick stocks)',
+      chooseMosaicShape([{ token: 'USDC', usd: 50 }], 'base').slices.length === 0 && mosaicPresets('base').length === 3 && mosaicPresets('robinhood').length === 0 &&
+        mosaicPresets('arbitrum').every((p) => 'ask' in composeMosaicAsk(p.slices, 'arbitrum')) && mosaicPresets('robinhood').length === 0 && chooseMosaicShape([{ token: 'AAPL', usd: 30 }, { token: 'USDG', usd: 5 }], 'robinhood').slices.some((x) => x.token === 'USDG'),
+    )
+    check(
+      'mosaic shape: integerPcts sums to exactly 100 on the 1-grid and the 5-grid (largest remainder)',
+      integerPcts([33.3, 33.3, 33.4]).reduce((a, b) => a + b, 0) === 100 && integerPcts([1, 1, 1], 5).reduce((a, b) => a + b, 0) === 100 && integerPcts([1, 1, 1], 5).every((p) => p % 5 === 0),
+    )
+    const wrPanel = await readFile(new URL('../components/WalletPanel.tsx', import.meta.url), 'utf8')
+    const wrReb = await readFile(new URL('../components/WalletRebalance.tsx', import.meta.url), 'utf8')
+    const wrStudio = await readFile(new URL('../components/MosaicStudio.tsx', import.meta.url), 'utf8')
+    const wrRoute = await readFile(new URL('../app/api/mosaics/read/route.ts', import.meta.url), 'utf8')
+    check(
+      'mosaic shape: the wallet window’s fourth door opens WalletRebalance (choose-for-me + presets + the live plan preview, Rebalance SENDS the wire); the studio and the door share MosaicTileBar; the read route uses suggestMosaicShape',
+      /data-wallet-rebalance-door/.test(wrPanel) && /<WalletRebalance/.test(wrPanel) && /data-choose-for-me/.test(wrReb) && /planMosaic\(\{ slices, chainWord: word, holdings: holdingsOf\(picked\.chain\) \}\)/.test(wrReb) &&
+        /onRun\(ask, how, word\)/.test(wrReb) && /from '@\/components\/MosaicTileBar'/.test(wrReb) && /from '@\/components\/MosaicTileBar'/.test(wrStudio) && !/function TileBar/.test(wrStudio) &&
+        /suggestMosaicShape\(rowsByChain\.get\(chain\)!, chain\)/.test(wrRoute) && !/function integerPcts/.test(wrRoute),
+    )
   }
 
   // ── Wallet panel: the Send door (2026-09-08) ──────────────────────────────

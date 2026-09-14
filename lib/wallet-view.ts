@@ -28,6 +28,7 @@ import { alchemyEnabled, getMultichainPortfolio, getRecentActivity } from '@/lib
 import { usdPerToken } from '@/lib/usd-probe'
 import { dynamicTokensFor, ensureTokenList, type TokenInfo } from '@/lib/token-list'
 import { robinhoodRowActions } from '@/lib/robinhood-row-actions'
+import { walletFlags, type WalletFlag } from '@/lib/wallet-flags'
 import type { ActivityRow, HoldingRow } from '@/lib/splash/types'
 
 /** Robinhood Chain — the one app chain whose listed tokens are STOCKS the
@@ -96,6 +97,10 @@ export interface WalletView {
   chains: WalletChainView[]
   activity: ActivityRow[]
   ethUsd: number | null
+  /** What needs doing, with the action that does it (lib/wallet-flags):
+   *  a gas stall carries its top-up ask, a chain that didn't answer its
+   *  re-read. Worst first. */
+  flags: WalletFlag[]
   /** Which reads composed this: rpc always; alchemy when keyed. */
   sources: ('rpc' | 'alchemy')[]
   failedChains: string[]
@@ -368,6 +373,7 @@ export async function composeWalletView(address: `0x${string}`): Promise<WalletV
     chains,
     activity,
     ethUsd,
+    flags: walletFlags(chains, ethUsd),
     sources,
     failedChains,
     updatedAt: new Date().toISOString(),
