@@ -3691,8 +3691,11 @@ async function main() {
       // The spine bar is the phone's primary nav: 9px mono labels read as
       // 7pt. iOS tab bars sit at 10pt; the mobile block carries no 9px text.
       const spine = await readFile(new URL('../components/AppSpine.tsx', import.meta.url), 'utf8')
-      const mobileBar = spine.slice(spine.indexOf('lg:hidden fixed inset-x-0 bottom-0'))
-      check('mobile: spine bar labels are ≥10px', mobileBar.length > 200 && !/text-\[9px\]/.test(mobileBar) && /text-\[10px\]/.test(mobileBar))
+      // The bar's drawer-tab seats render from the mobileTab helper above the
+      // return, so the helper is read along with the bar.
+      const mobileBar =
+        spine.slice(spine.indexOf('lg:hidden fixed inset-x-0 bottom-0')) + (spine.match(/const mobileTab = [\s\S]*?\n  \}\n/)?.[0] ?? '')
+      check('mobile: spine bar labels are ≥10px', mobileBar.length > 200 && mobileBar.includes('const mobileTab = ') && !/text-\[9px\]/.test(mobileBar) && /text-\[10px\]/.test(mobileBar))
       // Horizontal overflow at 375: the filmband aura (−77→433px), a docs
       // inline <code> that couldn't break, the mosaic chain <select> sized
       // to its longest option. Each stays bounded.
@@ -8523,9 +8526,10 @@ async function main() {
     // make this a page in the app and put it on the left side bar as an
     // option above docs"). /wallet is the app spine (both postures, WALLET
     // lit) beside the window "Wallet details" opens, given the whole screen:
-    // no brochure nav, never indexed. The seat sits between CHATS and DOCS
-    // on every spine surface; below sm the phone bar folds DOCS / SETTINGS
-    // (and TEAM) behind MORE so its labels keep their room. The modal and the
+    // no brochure nav, never indexed. The seat sits right under LINKS on every
+    // spine surface (2026-09-14, Nate: "make wallet higher just below
+    // Links"); below sm the phone bar folds DOCS / SETTINGS (and TEAM) behind
+    // MORE so its labels keep their room. The modal and the
     // page are ONE body (WalletDetails in WalletPanel.tsx), and the modal
     // carries a door to the page.
     {
@@ -8551,17 +8555,30 @@ async function main() {
           wpHtml.includes('<title>Wallet — Pantessa</title>'),
         `status=${wpRes.status} lit=${lit(wpHtml)}`,
       )
+      // Each posture's seats in render order: the column is the <aside>, the
+      // bar the <nav>. The order is read per posture, because one regex over
+      // the whole page can pair a seat in the column with one in the bar.
+      const seatOrder = (h: string, tag: 'aside' | 'nav') =>
+        Array.from(
+          (h.match(new RegExp(`<${tag} [^>]*aria-label="Workspace"[\\s\\S]*?</${tag}>`))?.[0] ?? '').matchAll(
+            /aria-label="(MARKETS|APPS|JOBS|LINKS|WALLET|TEAM|CHATS|DOCS|Settings)"/g,
+          ),
+          (m) => m[1],
+        ).join(' ')
+      const SPINE_SEATS = /^MARKETS APPS JOBS LINKS WALLET (TEAM )?CHATS DOCS Settings$/
       check(
-        'spine: a WALLET seat between CHATS and DOCS in both postures on /chat, /markets and /wallet (a page link, lit only on its own page); isWalletPath is exactly /wallet + /wallet/*',
+        'spine: the WALLET seat sits right under LINKS in both postures on /chat, /markets and /wallet (MARKETS · APPS · JOBS · LINKS · WALLET · TEAM · CHATS · DOCS · Settings; a page link, lit only on its own page); isWalletPath is exactly /wallet + /wallet/*',
         [wpChat, wpMarkets, wpHtml].every(
           (h) =>
             (h.match(/<a [^>]*aria-label="WALLET"[^>]*href="\/wallet"/g) ?? []).length === 2 &&
-            /aria-label="CHATS"[\s\S]*?aria-label="WALLET"[\s\S]*?aria-label="DOCS"[\s\S]*?aria-label="Settings"/.test(h),
+            SPINE_SEATS.test(seatOrder(h, 'aside')) &&
+            SPINE_SEATS.test(seatOrder(h, 'nav')),
         ) &&
           lit(wpChat) === 0 && lit(wpMarkets) === 0 &&
           (wpSpine.match(/aria-label="WALLET"/g) ?? []).length === 2 &&
           WALLET_PAGE_HREF === '/wallet' && isWalletPath('/wallet') && isWalletPath('/wallet/') &&
           !isWalletPath('/wallets') && !isWalletPath('/w/0xabc') && !isWalletPath('/') && !isWalletPath('/chat'),
+        `column: ${seatOrder(wpChat, 'aside')} | bar: ${seatOrder(wpChat, 'nav')}`,
       )
       check(
         'spine (phone bar): below sm DOCS + SETTINGS (+ TEAM with the roster on) fold behind a MORE seat and WALLET stays on the bar; from sm up MORE hides (its menu mounts on open)',
