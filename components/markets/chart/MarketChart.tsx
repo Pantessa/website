@@ -44,7 +44,7 @@ import { Eraser, Minus, MousePointer2, RectangleHorizontal, StickyNote, Trending
 import { CHART_TFS, chartPairFor, type Candle, type ChartTf } from '@/lib/charts'
 import { newLineId, serializeChartState, type ChartLine, type ChartState } from '@/lib/chart-state'
 import { composeLineActions, composeZoneActions, missingActionNote, type LineActionOffer } from '@/lib/chart-actions'
-import { bollinger, ema, hasVolume, mergeHistory, OVERLAYS, prependHistory, sma, vwap, type LinePoint, type OverlayKey } from '@/lib/chart-indicators'
+import { bollinger, ema, hasVolume, mergeHistory, onWindow, OVERLAYS, prependHistory, sma, vwap, type LinePoint, type OverlayKey } from '@/lib/chart-indicators'
 import { clampToFirstBar, wantsOlderBars } from '@/lib/chart-viewport'
 import { poolPremiumPct, type PoolPrice } from '@/lib/pool-price-shape'
 import { fmtPrice, type ChartStats } from '@/components/CandleChart'
@@ -54,8 +54,12 @@ const POLL_MS: Record<ChartTf, number> = { '15m': 8_000, '1h': 15_000, '4h': 20_
 const POOL_POLL_MS = 30_000
 /** Bars the chart holds for one symbol + frame: the live window (180), its
  *  warm-up (200), and the older pages a zoom-out pulls in. Past it the chart
- *  stops paging, and a zoom-out stops where every held bar fits the plot. */
-const HISTORY_CAP = 2_000
+ *  stops paging, and a zoom-out stops where every drawn bar fits the plot. */
+const HISTORY_CAP = 2_200
+/** At the cap the oldest bars stay off the canvas as the rolling lines'
+ *  warm-up, so an SMA 200 still starts at the first candle on screen. Only a
+ *  feed with nothing older shows a line starting partway in. */
+const CAP_WARMUP = 200
 /** A missing warm-up (the deep feed missed) is asked for again at most this often. */
 const WARMUP_RETRY_MS = 60_000
 /** A failed older page is asked for again after this long. */
@@ -280,12 +284,14 @@ export default function MarketChart({
   const feedRef = useRef<string | null>(null)
 
   const candles = data?.candles ?? []
-  // What the engine draws: every held bar (older pages, the warm-up, the
-  // merged polls) once the history spans the live window, the window alone
-  // until then.
-  const bars = useMemo(() => {
+  // What the engine draws (`bars`) and what the rolling lines read
+  // (`lineSrc`): every held bar (older pages, the warm-up, the merged polls)
+  // once the history spans the live window, the window alone until then. At
+  // the cap the oldest CAP_WARMUP stay off the canvas but in the lines.
+  const { bars, lineSrc } = useMemo(() => {
     const covers = history.length > 0 && candles.length > 0 && history[0].t <= candles[0].t && history[history.length - 1].t >= candles[candles.length - 1].t
-    return covers ? history : candles
+    if (!covers) return { bars: candles, lineSrc: candles }
+    return { bars: history.length >= HISTORY_CAP ? history.slice(CAP_WARMUP) : history, lineSrc: history }
   }, [history, candles])
   barsRef.current = bars
   const last = candles.length ? candles[candles.length - 1].c : null
@@ -679,26 +685,27 @@ export default function MarketChart({
   }, [bars, candles.length, data?.tf, data?.symbol, pair?.symbol, symbol, tf, tokens])
 
   // Overlays → line series. The rolling lines read every held bar (older
-  // pages, the warm-up, merged polls), the same bars the engine draws, so each
-  // starts at the first candle on screen unless the view sits at the very
-  // start of the tape. VWAP stays a statistic of the live window.
+  // pages, the warm-up, merged polls) and are cut back to the bars on the
+  // canvas, so each starts at the first candle on screen unless the feed has
+  // nothing older. VWAP stays a statistic of the live window.
   useEffect(() => {
     const chart = chartRef.current
     if (!chart || !tokens) return
     const want = new Map<string, { data: LinePoint[]; color: string; width: 1 | 2; style?: LineStyle }>()
     if (bars.length) {
-      const src = bars
-      if (overlays.has('sma20')) want.set('sma20', { data: sma(src, 20), color: tokens.accent, width: 1 })
+      const src = lineSrc
+      const cut = (pts: LinePoint[]) => (src === bars ? pts : onWindow(pts, bars))
+      if (overlays.has('sma20')) want.set('sma20', { data: cut(sma(src, 20)), color: tokens.accent, width: 1 })
       // The slow pair draws 2px: at 1px the yellow antialiases into a muddy
       // gold on a dark canvas, and these are the trend lines the page opens on.
-      if (overlays.has('sma50')) want.set('sma50', { data: sma(src, 50), color: tokens.ma50, width: 2 })
-      if (overlays.has('sma200')) want.set('sma200', { data: sma(src, 200), color: tokens.ma200, width: 2 })
-      if (overlays.has('ema20')) want.set('ema20', { data: ema(src, 20), color: alpha(tokens.fg, 0.7), width: 1 })
+      if (overlays.has('sma50')) want.set('sma50', { data: cut(sma(src, 50)), color: tokens.ma50, width: 2 })
+      if (overlays.has('sma200')) want.set('sma200', { data: cut(sma(src, 200)), color: tokens.ma200, width: 2 })
+      if (overlays.has('ema20')) want.set('ema20', { data: cut(ema(src, 20)), color: alpha(tokens.fg, 0.7), width: 1 })
       if (overlays.has('bb')) {
         const bb = bollinger(src, 20, 2)
-        want.set('bb:u', { data: bb.upper, color: alpha(tokens.muted2, 0.8), width: 1, style: LineStyle.Dotted })
-        want.set('bb:m', { data: bb.middle, color: alpha(tokens.muted2, 0.5), width: 1, style: LineStyle.Dotted })
-        want.set('bb:l', { data: bb.lower, color: alpha(tokens.muted2, 0.8), width: 1, style: LineStyle.Dotted })
+        want.set('bb:u', { data: cut(bb.upper), color: alpha(tokens.muted2, 0.8), width: 1, style: LineStyle.Dotted })
+        want.set('bb:m', { data: cut(bb.middle), color: alpha(tokens.muted2, 0.5), width: 1, style: LineStyle.Dotted })
+        want.set('bb:l', { data: cut(bb.lower), color: alpha(tokens.muted2, 0.8), width: 1, style: LineStyle.Dotted })
       }
       if (overlays.has('vwap') && hasVolume(candles)) want.set('vwap', { data: vwap(candles), color: alpha(tokens.sell, 0.75), width: 1, style: LineStyle.Dashed })
     }
@@ -718,7 +725,7 @@ export default function MarketChart({
       }
       series.setData(toLineData(spec.data))
     }
-  }, [overlays, bars, candles, tokens])
+  }, [overlays, bars, lineSrc, candles, tokens])
 
   // News markers → the bars.
   useEffect(() => {
