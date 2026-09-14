@@ -5351,12 +5351,21 @@
 .mkt-ind__sw { width: 10px; height: 3px; border-radius: 2px; background: var(--ind-sw, currentColor); opacity: .35; transition: opacity .15s; }
 .mkt-ind.is-active .mkt-ind__sw { opacity: 1; }
 /* On a phone the overlay bar stays ONE row: six toggles with swatches wrapped
-   to two and cost the chart a row of its height. Tighter chips fit a 375px
-   screen; narrower ones scroll the group sideways (the cut chip says more). */
+   to two and cost the chart a row of its height. The group scrolls sideways
+   instead, and its right edge fades, so at any width the chip sitting there
+   reads as "more this way" (a hard cut alone was invisible at 390px). */
 @media (max-width: 640px) {
-  .mkt-chart__ind { flex: 1 1 100%; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .mkt-chart__ind {
+    flex: 1 1 100%; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  }
   .mkt-chart__ind::-webkit-scrollbar { display: none; }
-  .mkt-ind { flex-shrink: 0; gap: 4px; padding: 3px 5px; }
+  /* The run ends in 20px of nothing: scrolled to the end, the fade sits on
+     empty space and the last chip reads whole. */
+  .mkt-chart__ind::after { content: ''; flex: 0 0 20px; }
+  .mkt-ind { flex-shrink: 0; gap: 4px; padding: 3px 5px; letter-spacing: 0; }
+  .mkt-ind__sw { width: 8px; }
 }
 .mkt-chart__tools { display: flex; gap: 2px; border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
 .mkt-tool {
