@@ -551,8 +551,10 @@ export default function MarketChart({
       const src = covers ? history : candles
       const cut = (pts: LinePoint[]) => onWindow(pts, candles)
       if (overlays.has('sma20')) want.set('sma20', { data: cut(sma(src, 20)), color: tokens.accent, width: 1 })
-      if (overlays.has('sma50')) want.set('sma50', { data: cut(sma(src, 50)), color: tokens.ma50, width: 1 })
-      if (overlays.has('sma200')) want.set('sma200', { data: cut(sma(src, 200)), color: tokens.ma200, width: 1 })
+      // The slow pair draws 2px: at 1px the yellow antialiases into a muddy
+      // gold on a dark canvas, and these are the trend lines the page opens on.
+      if (overlays.has('sma50')) want.set('sma50', { data: cut(sma(src, 50)), color: tokens.ma50, width: 2 })
+      if (overlays.has('sma200')) want.set('sma200', { data: cut(sma(src, 200)), color: tokens.ma200, width: 2 })
       if (overlays.has('ema20')) want.set('ema20', { data: cut(ema(src, 20)), color: alpha(tokens.fg, 0.7), width: 1 })
       if (overlays.has('bb')) {
         const bb = bollinger(src, 20, 2)

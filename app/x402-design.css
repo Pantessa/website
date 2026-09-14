@@ -5350,6 +5350,14 @@
    the canvas paints with), faint while the line is off. */
 .mkt-ind__sw { width: 10px; height: 3px; border-radius: 2px; background: var(--ind-sw, currentColor); opacity: .35; transition: opacity .15s; }
 .mkt-ind.is-active .mkt-ind__sw { opacity: 1; }
+/* On a phone the overlay bar stays ONE row: six toggles with swatches wrapped
+   to two and cost the chart a row of its height. Tighter chips fit a 375px
+   screen; narrower ones scroll the group sideways (the cut chip says more). */
+@media (max-width: 640px) {
+  .mkt-chart__ind { flex: 1 1 100%; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .mkt-chart__ind::-webkit-scrollbar { display: none; }
+  .mkt-ind { flex-shrink: 0; gap: 4px; padding: 3px 5px; }
+}
 .mkt-chart__tools { display: flex; gap: 2px; border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
 .mkt-tool {
   display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; color: var(--muted-2);
