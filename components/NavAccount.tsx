@@ -16,7 +16,7 @@ import WalletPanel from '@/components/WalletPanel'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
 import { isMarketsPath } from '@/lib/markets'
-import { SIGN_IN_LANDING } from '@/lib/app-entry'
+import { SIGN_IN_LANDING, isPublicAppPath } from '@/lib/app-entry'
 
 /**
  * Consolidated account control for the brochure (non-chat) surface.
@@ -170,11 +170,14 @@ export default function NavAccount() {
                     className="navacct__item navacct__item--danger"
                     onClick={() => {
                       closeNow()
-                      // Signing out lands on the home page from everywhere
-                      // (2026-09-11): the app surfaces send a signed-out
-                      // visitor home anyway (AppSpine), so going there
-                      // directly skips a bounce through the page they were on.
-                      signOut().then(() => router.push('/'))
+                      // Signing out on a public page (the markets surface,
+                      // 2026-09-14) stays on it: looking needs no wallet.
+                      // Everywhere else it lands on the home page, since the
+                      // signed-in app would send a signed-out visitor there
+                      // anyway (AppSpine).
+                      signOut().then(() => {
+                        if (!isPublicAppPath(pathname)) router.push('/')
+                      })
                     }}
                   >
                     <LogOut width={15} height={15} strokeWidth={2.25} />

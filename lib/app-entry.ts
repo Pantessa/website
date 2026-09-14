@@ -4,11 +4,13 @@
 // page. Also on a fresh login let's take users to the markets page, not the
 // setting / dashboard").
 //
-// The spine surfaces — /markets, /t/<symbol>, /chat, the dashboard — are the
-// signed-in app. AppSpine sends a signed-out visitor home; the dashboard
-// keeps its own stricter gate (a SIWE session, app/dashboard/layout.tsx).
-// Links INTO the shell from outside it open the sign-in door instead of
-// bouncing (components/SpineLink).
+// The spine surfaces /chat, /wallet and the dashboard are the signed-in app.
+// AppSpine sends a signed-out visitor home; the dashboard keeps its own
+// stricter gate (a SIWE session, app/dashboard/layout.tsx). The markets
+// surface (/markets, /t/<symbol>) mounts the spine too, but it is public
+// (isPublicAppPath, 2026-09-14): looking needs no wallet, and an action there
+// asks for one (lib/use-connect-to-act). Links INTO the signed-in app from
+// outside it open the sign-in door instead of bouncing (components/SpineLink).
 //
 // "Signed out" is what the account slot means when it shows "Sign in": no
 // wallet connected AND no session. A connected wallet without SIWE is in —
@@ -19,10 +21,24 @@
 //
 // Pure: the harness pins the decision table.
 
+import { isMarketsPath } from '@/lib/markets'
+
 /** Where a sign-in with no flow of its own lands — the brochure nav's door,
  *  the account menu, the landing's CTAs, the Google return. Flow doors (a
  *  chat deep link, a plan checkout, a markets page) keep their own target. */
 export const SIGN_IN_LANDING = '/markets'
+
+/**
+ * The app surfaces open to a signed-out visitor (2026-09-14, Nate: "I don't
+ * think the user should have to connect wallet to view the charts and market,
+ * but only on an action item 'buy $10 of APPLE'"): the markets index and every
+ * symbol page. AppSpine leaves a visitor there, SpineLink links there plainly,
+ * and signing out there stays put. Takes a path or an in-app href; the query
+ * and hash don't count.
+ */
+export function isPublicAppPath(href: string): boolean {
+  return isMarketsPath(href.split(/[?#]/)[0])
+}
 
 export type SessionStatus = 'loading' | 'authed' | 'guest'
 /** wagmi's account status. */

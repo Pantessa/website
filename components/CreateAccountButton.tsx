@@ -102,10 +102,15 @@ export function CreateAccountModal({
   onClose,
   redirectTo,
   walletConnectOnly,
+  resumeAsk,
 }: {
   onClose: () => void
   redirectTo: string
   walletConnectOnly?: boolean
+  /** An action held on a public page (lib/use-connect-to-act). The Google
+   *  lane leaves the page, so the ask rides the OAuth intent and the page
+   *  runs it once the wallet is back. */
+  resumeAsk?: string
 }) {
   const router = useRouter()
   const { connectAndSignIn, signInOnceConnected } = useSession()
@@ -118,9 +123,11 @@ export function CreateAccountModal({
 
   // Social sign-in is a full-page redirect to the provider. Persist the intent
   // so CdpOAuthReturn can connect wagmi, sign in (unless this door is
-  // connect-only), and route once the browser comes back.
+  // connect-only), hand a held action back to its page, and route once the
+  // browser comes back.
   function startOAuth(provider: 'google') {
     const intent: OAuthIntent = { redirectTo, signIn: !walletConnectOnly }
+    if (resumeAsk) intent.resumeAsk = resumeAsk
     try {
       sessionStorage.setItem(OAUTH_INTENT_KEY, JSON.stringify(intent))
     } catch {

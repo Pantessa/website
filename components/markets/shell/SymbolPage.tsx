@@ -12,8 +12,9 @@
 // lane swaps the internals); the expand toggle is the same CSS takeover +
 // Fullscreen API the old full-bleed page had.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Maximize2, Minimize2 } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
 import ChartMount, { type ChartStats } from '@/components/markets/chart/ChartMount'
@@ -23,6 +24,7 @@ import { CHART_FEED_LABELS, chartPairFor, type ChartFeed, type ChartTf } from '@
 import {
   DEFAULT_MARKET_TAB,
   MARKET_TABS,
+  marketTabUrl,
   parseMarketTab,
   sessionState,
   symbolName,
@@ -39,6 +41,7 @@ import CommunityTab from '@/components/markets/tabs/CommunityTab'
 import TechnicalsTab from '@/components/markets/tabs/TechnicalsTab'
 import TradeTab from '@/components/markets/tabs/TradeTab'
 import { sideOf, tradeAsks, type InjectedPrompt, type TradeAsk } from '@/lib/trade-asks'
+import { useConnectToAct } from '@/lib/use-connect-to-act'
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
 
@@ -72,21 +75,49 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
   }, [tab])
 
   // ── The send door: a chip anywhere on the page lands on Trade and fires ──
+  const router = useRouter()
   const [prompt, setPrompt] = useState<InjectedPrompt | null>(null)
   const tabsRef = useRef<HTMLElement | null>(null)
-  const onAsk = useCallback((a: TradeAsk) => {
-    setPrompt({ text: a.ask, send: true, at: Date.now() })
-    setTab('trade')
-    // The header chips sit above the chart; the build lands under it. Bring
-    // the tab strip up under the nav so the order panel is on screen (the
-    // chart stays one scroll away — it never unmounts).
-    requestAnimationFrame(() => {
-      const el = tabsRef.current
-      if (!el) return
-      const top = el.getBoundingClientRect().top + window.scrollY - 72
-      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-    })
-  }, [])
+  const runAsk = useCallback(
+    (ask: string) => {
+      // A symbol with no candle feed has no Trade panel: its asks go to chat.
+      if (!pair) {
+        router.push(promptHref(ask))
+        return
+      }
+      setPrompt({ text: ask, send: true, at: Date.now() })
+      setTab('trade')
+      // The header chips sit above the chart; the build lands under it. Bring
+      // the tab strip up under the nav so the order panel is on screen (the
+      // chart stays one scroll away — it never unmounts).
+      requestAnimationFrame(() => {
+        const el = tabsRef.current
+        if (!el) return
+        const top = el.getBoundingClientRect().top + window.scrollY - 72
+        window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+      })
+    },
+    [pair, router],
+  )
+  // Looking needs no wallet; acting does (2026-09-14, Nate: "only on an
+  // action item 'buy $10 of APPLE'"). Every ask on the page comes through
+  // here: the header chips, the Trade panel's Send, a chart level, a verdict
+  // chip, a post, the watchlist. A connected wallet runs it now; a visitor
+  // with none gets the connect door, and the ask runs once a wallet lands
+  // (lib/use-connect-to-act).
+  const { act, door } = useConnectToAct({
+    run: runAsk,
+    redirectFor: (ask) => (pair ? marketTabUrl('trade', window.location.pathname, window.location.search) : promptHref(ask)),
+    resumable: !!pair,
+  })
+  const onAsk = useCallback((a: TradeAsk) => act(a.ask), [act])
+  // A chip is a real link (the /chat prefill: no-JS, a new tab); a plain
+  // click sends through the act door instead.
+  const sendOnClick = (ask: string) => (e: ReactMouseEvent<HTMLAnchorElement>) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+    e.preventDefault()
+    act(ask)
+  }
   // The header strip: one chip per side the pair can offer (Buy/Long leads,
   // Sell/Short wears the sell colour). The href is the no-JS fallback (a
   // /chat prefill — a URL never fires a turn); a click SENDS through onAsk.
@@ -186,11 +217,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
                     href={promptHref(a.ask)}
                     className={`sym__act-chip sym__act-chip--${a.side}`}
                     title={a.ask}
-                    onClick={(e) => {
-                      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
-                      e.preventDefault()
-                      onAsk(a)
-                    }}
+                    onClick={sendOnClick(a.ask)}
                   >
                     {a.label}
                   </Link>
@@ -227,10 +254,10 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
                     sentence, guarded, signed only by your wallet.
                   </p>
                   <div className="mkt-chips mt-3 justify-center">
-                    <Link href={promptHref(`Buy $50 of ${sym}`)} className="mkt-chip mkt-chip--buy">
+                    <Link href={promptHref(`Buy $50 of ${sym}`)} className="mkt-chip mkt-chip--buy" onClick={sendOnClick(`Buy $50 of ${sym}`)}>
                       Buy {sym}
                     </Link>
-                    <Link href={promptHref(`Sell $50 of ${sym}`)} className="mkt-chip">
+                    <Link href={promptHref(`Sell $50 of ${sym}`)} className="mkt-chip" onClick={sendOnClick(`Sell $50 of ${sym}`)}>
                       Sell {sym}
                     </Link>
                   </div>
@@ -290,6 +317,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
         <WatchlistSlot current={sym} onAsk={onChartAsk} />
         <SymbolCardSlot symbol={sym} pair={pair} feed={feed} />
       </MarketsSide>
+      {door}
     </>
   )
 }
