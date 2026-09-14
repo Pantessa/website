@@ -19365,6 +19365,26 @@ async function main() {
       hookSrc.includes('/api/watchlists/holdings') && hookSrc.includes('planHeldAutofill(') && hookSrc.includes('guestHeldAdoption(') && hookSrc.includes('updateGuest(') && !hookSrc.includes('persistGuest(') && !/\[\.\.\.lists,/.test(hookSrc))
     check('holdings rail: rows the wallet holds wear the "In your wallet" marker and the autofill says what it added', railSrc.includes('data-held') && railSrc.includes('heldTitle(') && railSrc.includes('heldAutofillNote('))
 
+    // 8. The rail brews while it waits (2026-09-14, Nate: "a loader icon
+    // showing that something is brewing in there"). The rule first, then the
+    // wiring, then the server render: the loader paints before hydration.
+    const { railBrewPhase, quoteCellState, RAIL_BREW_COPY } = await import('../lib/watchlists')
+    const brewAt = (s: Partial<Parameters<typeof railBrewPhase>[0]>) => railBrewPhase({ ready: true, checkingWallet: false, watched: 0, activeIsPrimary: true, ...s })
+    check('watch brew: loading lists brew (whatever the list held); a wallet check brews only on an EMPTY FIRST list; rows on screen never brew; an empty list with nothing pending is the empty state (null)',
+      brewAt({ ready: false }) === 'lists' && brewAt({ ready: false, watched: 3 }) === 'lists' && brewAt({ checkingWallet: true }) === 'wallet' &&
+        brewAt({ checkingWallet: true, watched: 2 }) === null && brewAt({ checkingWallet: true, activeIsPrimary: false }) === null && brewAt({}) === null)
+    check('watch brew: a row price pulses only while its quote is on the way; a symbol the feed left out, or one with no chart, shows a dash instead of pulsing forever',
+      quoteCellState({ hasQuote: true, charted: true, missing: true }) === 'quote' && quoteCellState({ hasQuote: false, charted: true, missing: false }) === 'pending' &&
+        quoteCellState({ hasQuote: false, charted: true, missing: true }) === 'none' && quoteCellState({ hasQuote: false, charted: false, missing: false }) === 'none')
+    check('watch brew: the hook settles the wallet check per wallet (set when the read + reconcile finish, either way) and waits on a remembered wallet still restoring; the rail renders railBrewPhase with the brewing mark and the price placeholder, and the bare "loading…" line is gone',
+      hookSrc.includes('checkingWallet') && hookSrc.includes('setHeldCheckedKey(') && hookSrc.includes('!signedOut') &&
+        railSrc.includes('railBrewPhase(') && railSrc.includes('bandClassName="wl__brewBand"') && railSrc.includes('quoteCellState(') && !railSrc.includes('loading…'))
+    const brewHtml = flat(await (await fetch(`${BASE}/markets`)).text())
+    const brewBlock = brewHtml.match(/<div class="wl__brew" role="status">.*?<\/div>/)?.[0] ?? ''
+    check('watch brew: /markets server-renders the brewing state (role=status, the Emerald Cut with its three bands on the brew class, "Loading your watchlist"), and the rail foot does not claim "saved in this browser" before the session is known',
+      brewBlock.includes(RAIL_BREW_COPY.lists.title) && (brewBlock.match(/class="wl__brewBand"/g) ?? []).length === 3 && !brewHtml.includes('saved in this browser'),
+      brewBlock.slice(0, 300) || 'no brew block')
+
     // Cleanup — lists through the API, ledger rows directly (harness Prisma
     // needs DATABASE_URL exported; without it the rows stay on the TEST DB).
     for (const [cookie] of [[hoSession], [nateSession], [raceSession], [adoptSession]]) {

@@ -38,6 +38,9 @@ type MarkProps = {
   accent?: string | null;
   /** Override the size-picked cut (e.g. force `icon` in a dense strip). */
   weight?: GemWeight;
+  /** A class on every band, outer → inner in DOM order, for motion (the
+   *  watchlist rail's brewing loader lights them in turn). */
+  bandClassName?: string;
 };
 
 export function PantessaMark({
@@ -46,6 +49,7 @@ export function PantessaMark({
   title = "Pantessa",
   accent = GEM_ACCENT,
   weight,
+  bandClassName,
 }: MarkProps) {
   const cut = weight ?? gemWeightFor(size);
   const { bands, miters, miterWidth } = gemGeometry(cut);
@@ -77,6 +81,7 @@ export function PantessaMark({
         {bands.map((b, i) => (
           <path
             key={i}
+            className={bandClassName}
             d={`${b.outer} ${b.inner}`}
             fillRule="evenodd"
             fill={fills[i]}
