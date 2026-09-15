@@ -20316,6 +20316,9 @@ async function main() {
         shellSrc.indexOf("look.css'") < shellSrc.indexOf("markets.css'") &&
         /\.mk-slot \{/.test(mkCss) &&
         (mkCss.match(/var\(--mk-[a-z-]+\)/g) ?? []).length === 0,
+    )
+  }
+
   // ── MK2/VIZ ─────────────────────────────────────────────────────────────
   // The look tokens, the pure viz shaping, the flow route's fail-soft frame,
   // and the chart engine's wiring (squad-mk2-2026-09-15, VIZ lane).
