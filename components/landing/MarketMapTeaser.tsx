@@ -8,7 +8,7 @@ import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowRight } from 'lucide-react'
 import SpineLink from '@/components/SpineLink'
-import MarketMap from '@/components/markets/slots/MarketMap'
+import MarketMap from '@/components/markets/viz/MarketMap'
 import { marketSections } from '@/lib/markets'
 import { MAP_TEASER, TAPE_FOOTNOTE, UNLIMITED_LINE } from '@/lib/markets-copy'
 

@@ -3017,17 +3017,15 @@ async function main() {
     // it to nate.eth" while its href sent the explicit clause — a reader who
     // retyped the tile got the jobs refusal. Displayed = sent, pinned on the
     // rendered page.
-    const homeForTiles = await (await fetch(`${BASE}/`)).text()
-    const nightTasks = [...homeForTiles.matchAll(/night__task[^>]*>“([^”]+)” →/g)].map((m) => m[1].replace(/<!-- -->/g, ''))
-    // Attribute order is the renderer's, not ours (Next has served both
-    // `href … class` and `class … href` for this <Link>): match the tile's
-    // <a> tag as a whole, then read `href` from inside it.
-    const nightHrefs = [...homeForTiles.matchAll(/<a\b[^>]*\bclass="[^"]*\bnight__tile\b[^"]*"[^>]*>/g)]
-      .map((m) => m[0].match(/\bhref="\/chat\?[^"]*prompt=([^"&]+)"/)?.[1] ?? null)
-      .filter((h): h is string => h !== null)
-      .map((h) => decodeURIComponent(h.replace(/&amp;/g, '&')))
+    // Re-pinned 2026-09-15 (mk2 LANDING): NightShift is OFF the landing
+    // (trimmed, the file stays), so displayed == sent is pinned on the
+    // component's own TILES source — every `ask:` is the sentence its
+    // `href:` encodes (the ASCII/Unicode minus difference is normalized).
+    const nightSrc = (await import('node:fs')).readFileSync('components/NightShift.tsx', 'utf8')
+    const nightTasks = [...nightSrc.matchAll(/^\s*ask: '([^']+)',/gm)].map((m) => m[1])
+    const nightHrefs = [...nightSrc.matchAll(/^\s*href: `\/chat\?[^`]*prompt=\$\{encodeURIComponent\('([^']+)'\)\}`/gm)].map((m) => m[1])
     check(
-      'landing tiles: every NightShift tile displays exactly the ask its href sends',
+      'landing tiles: every NightShift tile displays exactly the ask its href sends (pinned on the TILES source — the section is off the landing)',
       nightTasks.length >= 4 && nightHrefs.length === nightTasks.length && nightTasks.every((t, i) => nightHrefs[i].replace(/−/g, '-') === t.replace(/−/g, '-')),
       JSON.stringify({ nightTasks, nightHrefs }),
     )
@@ -5382,11 +5380,12 @@ async function main() {
         /bootHoldingFor\(\{ hydrated, walletStatus, holdElapsed: walletWaitOver \}\)/.test(link) &&
         /useState\(\(\) => initialHoldElapsed\(/.test(link),
     )
-    const html = await (await fetch(`${BASE}/`)).text()
-    const ticks = [...html.matchAll(/class="night__tick[^"]*"[^>]*?\sy1="([^"]+)"[^>]*?\sy2="([^"]+)"/g)].flatMap((m) => [m[1], m[2]])
+    // Re-pinned 2026-09-15 (mk2 LANDING): the dial is off the landing, so
+    // the rounding rule is pinned on NightShift's own polar helper.
+    const nightDial = code('components/NightShift.tsx')
     check(
-      'onboarding: the landing dial\'s tick coordinates are rounded (≤3 decimals) — Node and the browser disagree on Math.sin/cos in the last bits, and raw floats made every tick a server/client attribute mismatch',
-      ticks.length >= 20 && ticks.every((v) => /^-?\d+(\.\d{1,3})?$/.test(v)),
+      'onboarding: the NightShift dial\'s tick coordinates are rounded (≤3 decimals) — Node and the browser disagree on Math.sin/cos in the last bits, and raw floats made every tick a server/client attribute mismatch',
+      /Math\.round\(\(C \+ Math\.cos\(a\) \* r\) \* 1000\) \/ 1000/.test(nightDial) && /Math\.round\(\(C \+ Math\.sin\(a\) \* r\) \* 1000\) \/ 1000/.test(nightDial),
     )
   }
 
@@ -20278,6 +20277,9 @@ async function main() {
       'mk2/landing: the root social card is the hero — a live tape + the rehearsal HUD + the stamp; 200 image/png, real PNG',
       ogr.status === 200 && /image\/png/.test(ogr.headers.get('content-type') ?? '') && ogBuf[0] === 0x89 && ogBuf[1] === 0x50 && ogBuf.length > 20_000 &&
         /REEL_STAMP/.test(ogSrc) && /candleSvg\(/.test(ogSrc) && /gemMarkSvg\(/.test(ogSrc),
+    )
+  }
+
   // ── MK2/MARKETS ──────────────────────────────────────────────────────────
   // The squad-mk2 MARKETS lane (2026-09-15): the nine slot seats mounted in
   // the server HTML of both routes, the symbol header's order, the ?vs=
