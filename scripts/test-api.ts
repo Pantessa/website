@@ -75,6 +75,7 @@ import { LIMIT_EXAMPLES, parseSwapIntent, swapClarify } from '../lib/swap-intent
 import { parseChartState, chartStateToAsks, serializeChartState, chartStatesEqual, type ChartState } from '../lib/chart-state'
 import { briefCacheKey as aiBriefCacheKey, buildChartMutation as aiBuildChartMutation, fenceAsk as aiFenceAsk, parseAlertAsk as aiParseAlertAsk, parseDrawAsk as aiParseDrawAsk, renderNewsBlock as aiRenderNewsBlock, splitChipsLine as aiSplitChipsLine } from '../lib/markets-ai'
 import { ladderVerdict as aiLadderVerdict } from '../lib/markets-ai-ladder'
+import { askDoorChips as aiAskDoorChips } from '../lib/ask-door'
 import { actionKindsFor, composeLineActions, composeZoneActions, fmtAskPrice, fmtAskUnits } from '../lib/chart-actions'
 import { performanceTiles, fmtPct } from '../lib/performance'
 import { sma, ema, bollinger, vwap, hasVolume, warmupBefore, mergeHistory, onWindow, prependHistory, OVERLAYS, DEFAULT_SYMBOL_OVERLAYS } from '../lib/chart-indicators'
@@ -20291,6 +20292,13 @@ async function main() {
       const posJ = (await pos.json().catch(() => ({}))) as { text?: string; held?: boolean }
       check('ai brief position: the address-keyed paragraph is its own uncached JSON call (an unfunded address reads as not held, no address in the text)', pos.status === 200 && typeof posJ.text === 'string' && !/0x[0-9a-fA-F]{6,}/.test(posJ.text) && pos.headers.get('cache-control') === 'no-store', `held=${posJ.held} text=${posJ.text?.slice(0, 60)}`)
     }
+    // The ⌘K door on /t/<sym> merges the brief's chips after the trade asks
+    // (dedup by sentence), never on another symbol's page, and is
+    // byte-identical without a brief (the SSR pins above stay true).
+    const doorPlain = aiAskDoorChips('/t/ETH')
+    const doorBrief = aiAskDoorChips('/t/ETH', { symbol: 'ETH', chips: [{ label: 'Buy ETH', ask: 'Buy $50 of ETH' }, { label: 'Stop under S1', ask: 'Protect my spot ETH if it drops to $2447' }] })
+    const doorOther = aiAskDoorChips('/t/ETH', { symbol: 'AAPL', chips: [{ label: 'x', ask: 'Buy $50 of AAPL' }] })
+    check('ai door: the brief\'s chips ride the ⌘K door on their own symbol page only, deduped against the trade asks, before "Why is ETH moving?"', doorBrief.length === doorPlain.length + 1 && doorBrief.some((c) => c.ask === 'Protect my spot ETH if it drops to $2447') && doorBrief.at(-1)?.label === 'Why is ETH moving?' && JSON.stringify(doorOther) === JSON.stringify(doorPlain) && JSON.stringify(aiAskDoorChips('/t/ETH', null)) === JSON.stringify(doorPlain))
     // The wire the components speak, pinned at the source: a chip click SENDS
     // through onAsk (never auto), a chart answer goes through onChartState,
     // the alert card posts the /api/alerts shape, and the byline is honest.
