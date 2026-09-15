@@ -82,6 +82,11 @@
 
 /* ── Symbol header (MK2) ───────────────────────────────────────────────── */
 .sym__head--mk2 { align-items: flex-start; }
+/* The act seat takes its own full row under identity + quote (the stub's
+   .sym__act had this from x402-design.css; the seat owns it now). */
+.sym__exec { order: 3; flex-basis: 100%; min-width: 0; }
+.sym__exec > .sym__act { align-items: flex-start; }
+.sym__exec > .sym__act .sym__act-chips { justify-content: flex-start; }
 .sym__meta { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; margin-top: 8px; min-width: 0; }
 .sym__head--mk2 .sym__session { margin-top: 0; display: inline-flex; align-items: center; gap: 6px; }
 .mk-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--muted-2); flex: 0 0 auto; }
