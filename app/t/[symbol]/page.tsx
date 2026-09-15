@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { CHART_TFS, normalizeChartSymbol, type ChartTf } from '@/lib/charts'
-import { parseMarketTab } from '@/lib/markets'
+import { parseMarketTab, parseVsParam } from '@/lib/markets'
 import { symbolPageSeo } from '@/lib/markets-seo'
 import Footer from '@/components/Footer'
 import SymbolPage from '@/components/markets/shell/SymbolPage'
@@ -49,6 +49,10 @@ export default async function TokenPage({ params, searchParams }: Params) {
   const initialTab = parseMarketTab(tabRaw ? `?tab=${encodeURIComponent(tabRaw)}` : '')
   const tfRaw = typeof sp.tf === 'string' ? sp.tf : ''
   const initialTf = CHART_TFS.some((t) => t.key === tfRaw) ? (tfRaw as ChartTf) : undefined
+  // ?vs=<symbol> — compare mode (MK2): the server renders the pill so the
+  // HTML matches the URL; the client mirrors changes back (replaceState).
+  const vsRaw = typeof sp.vs === 'string' ? sp.vs : ''
+  const initialVs = vsRaw ? parseVsParam(`?vs=${encodeURIComponent(vsRaw)}`, norm) : null
   // The /markets frame (no .x-main) inside the markets shell (the app spine
   // on the left, no brochure nav): SymbolPage's <main class="sym"> and the
   // side column (ask + account strip over the watchlist rail) are its two
@@ -58,7 +62,7 @@ export default async function TokenPage({ params, searchParams }: Params) {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: seo.jsonLd }} />
       <MarketsShell sym>
-        <SymbolPage symbol={norm} initialTab={initialTab} initialTf={initialTf} />
+        <SymbolPage symbol={norm} initialTab={initialTab} initialTf={initialTf} initialVs={initialVs} />
         <div className="mkt-frame__foot">
           <Footer />
         </div>

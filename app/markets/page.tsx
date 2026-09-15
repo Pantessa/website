@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Footer from '@/components/Footer'
 import MarketsIndex from '@/components/markets/shell/MarketsIndex'
 import MarketsShell from '@/components/markets/shell/MarketsShell'
+import { readTrending } from './trending'
 
 // /markets — the front door to the symbol pages, laid out as a full-screen
 // terminal. The frame is a grid: the market data (MarketsIndex's <main>) and
@@ -23,10 +24,15 @@ export const metadata: Metadata = {
   twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION },
 }
 
-export default function MarketsPage() {
+// The "Trending on Pantessa" strip reads embed_turns (fenced, fail-soft),
+// so the page renders per request; everything else on it is static data.
+export const dynamic = 'force-dynamic'
+
+export default async function MarketsPage() {
+  const trending = await readTrending()
   return (
     <MarketsShell>
-      <MarketsIndex />
+      <MarketsIndex trending={trending} />
       <div className="mkt-frame__foot">
         <Footer />
       </div>

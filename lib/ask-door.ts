@@ -45,6 +45,11 @@ interface AskDoorState {
   setDraft: (draft: string) => void
   /** The sheet took the pending ask. */
   takeFire: () => void
+  /** MK2/AI: the symbol brief's chips (the model's picks from OUR menu,
+   *  ladder-approved server-side) for the symbol page they were written
+   *  on. The door's suggestion row merges them in on /t/<sym>. */
+  briefChips: { symbol: string; chips: AskDoorChip[] } | null
+  setBriefChips: (v: { symbol: string; chips: AskDoorChip[] } | null) => void
 }
 
 export const useAskDoor = create<AskDoorState>()((set) => ({
@@ -60,6 +65,8 @@ export const useAskDoor = create<AskDoorState>()((set) => ({
   closeDoor: () => set({ open: false }),
   setDraft: (draft) => set({ draft }),
   takeFire: () => set({ fire: null }),
+  briefChips: null,
+  setBriefChips: (briefChips) => set({ briefChips }),
 }))
 
 /** Routes the door never renders on: the chat IS the composer, the embed and
@@ -98,16 +105,21 @@ export function askDoorSymbol(pathname: string): string | null {
   return pair?.symbol ?? null
 }
 
-/** Context-aware suggestion chips for the door. */
-export function askDoorChips(pathname: string): AskDoorChip[] {
+/** Context-aware suggestion chips for the door. `brief` (MK2/AI) adds the
+ *  symbol brief's chips on that symbol's page — after the trade asks,
+ *  deduped by sentence, never on another symbol's page. Without it the
+ *  row is byte-identical to before (the SSR pins). */
+export function askDoorChips(pathname: string, brief?: { symbol: string; chips: AskDoorChip[] } | null): AskDoorChip[] {
   const sym = askDoorSymbol(pathname)
   if (sym) {
     const pair = chartPairFor(sym)
     if (pair) {
       const asks = tradeAsks(pair).map((a) => ({ label: a.label, ask: a.ask }))
+      const seen = new Set(asks.map((a) => a.ask))
+      const extra = brief && brief.symbol === sym ? brief.chips.filter((c) => !seen.has(c.ask)).slice(0, 4) : []
       // "What's going on with X" is the read every trader asks first — a
       // planner turn with the venue's own data behind it.
-      return [...asks, { label: `Why is ${sym} moving?`, ask: `What is moving ${sym} right now — price, 24h change, and the news behind it?` }]
+      return [...asks, ...extra, { label: `Why is ${sym} moving?`, ask: `What is moving ${sym} right now — price, 24h change, and the news behind it?` }]
     }
   }
   return EXAMPLE_PROMPTS.map((p) => ({ label: p.label, ask: p.prompt }))

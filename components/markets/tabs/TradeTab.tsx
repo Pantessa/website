@@ -16,6 +16,10 @@ import dynamic from 'next/dynamic'
 import type { ChartPair } from '@/lib/charts'
 import { symbolName } from '@/lib/markets'
 import { useYeetfulStore } from '@/lib/store'
+import RouteTable from '@/components/markets/slots/RouteTable'
+import CompoundComposer from '@/components/markets/slots/CompoundComposer'
+import PositionPanel from '@/components/markets/slots/PositionPanel'
+import { useSession } from '@/lib/session'
 import { AMOUNTS, CADENCES, SIDE_LABEL, STOPS, composeAsk, sideOf, sidesFor, type Cadence, type InjectedPrompt, type TradeAsk, type TradeSide } from '@/lib/trade-asks'
 
 // The grammar (sides a pair can offer, the sentence per side, the default
@@ -33,13 +37,18 @@ export default function TradeTab({
   pair,
   prompt,
   onAsk,
+  onAskText,
 }: {
   symbol: string
   pair: ChartPair
   /** The ask in flight (set by the frame when a chip or this panel fires). */
   prompt?: InjectedPrompt | null
   onAsk?: (ask: TradeAsk) => void
+  /** The act door for a bare ask string (the slots' onAsk). */
+  onAskText?: (ask: string) => void
 }) {
+  const askText = onAskText ?? ((a: string) => onAsk?.({ side: sideOf(a), label: a, ask: a }))
+  const { walletAddress } = useSession()
   const sides = useMemo(() => sidesFor(pair), [pair])
   const [side, setSide] = useState<TradeSide>(() => {
     const s = prompt ? sideOf(prompt.text) : 'buy'
@@ -75,7 +84,11 @@ export default function TradeTab({
   const isPerp = pair.source === 'hyperliquid'
 
   return (
-    <div className="mkt-trade">
+    <div className="mkt-trade mk-trade">
+      {/* Every venue a wallet can act on this symbol (EXEC) */}
+      <div className="mk-trade__routes">
+        <RouteTable symbol={symbol} pair={pair} onAsk={askText} />
+      </div>
       <section className="mkt-card mkt-order" aria-label={`Trade ${symbol}`}>
         <header className="mkt-card__head">
           <h2 className="mkt-card__title">Trade {name}</h2>
@@ -175,6 +188,15 @@ export default function TradeTab({
                 : 'Quote → deterministic build → guardrails → your signature → receipt. The sentence is the whole order form.'}
         </p>
       </section>
+
+      {/* Buy → stake → protect as ONE signed job (EXEC) */}
+      <div className="mk-trade__compound">
+        <CompoundComposer symbol={symbol} pair={pair} onAsk={askText} />
+      </div>
+      {/* What THIS wallet holds in the symbol across venues (EXEC) */}
+      <div className="mk-trade__position">
+        <PositionPanel symbol={symbol} pair={pair} address={walletAddress ?? undefined} onAsk={askText} />
+      </div>
 
       {/* The build lands here — the same runtime as an intent link */}
       <section className="mkt-card mkt-trade__chat" aria-label="Your order" data-armed={armed ? '1' : '0'}>
