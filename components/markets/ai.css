@@ -1,0 +1,109 @@
+/* ── MK2/AI — the brief + the ask box on the symbol page ─────────────────────
+   Theme-aware through the site tokens only (bg, surf-1/2, line, line-2, fg,
+   muted, muted-2, accent, sell, ink, gold) — light mode is free. Imported by
+   the AI components themselves (no edits to the frozen globals). Class
+   prefix `mk-ai`. */
+
+.mk-ai {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 16px 18px 14px; border: 1px solid var(--line); border-radius: 16px;
+  background: color-mix(in oklab, var(--surf-1) 88%, var(--bg));
+  position: relative; overflow: hidden;
+}
+.mk-ai::before {
+  /* a faint emerald wash top-left: the model is present, not loud */
+  content: ''; position: absolute; inset: -40% auto auto -20%; width: 60%; height: 120%;
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 12%, transparent), transparent 70%);
+  pointer-events: none; opacity: 0; transition: opacity .6s;
+}
+.mk-ai[data-phase='streaming']::before, .mk-ai[data-busy='1']::before { opacity: 1; }
+
+.mk-ai__head { display: flex; align-items: center; gap: 10px 12px; flex-wrap: wrap; position: relative; }
+.mk-ai__title { display: inline-flex; align-items: center; gap: 7px; font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 16.5px; letter-spacing: -0.01em; color: var(--fg); }
+.mk-ai__eyebrow { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-2); }
+.mk-ai__head .mk-ai__eyebrow { margin-left: auto; }
+.mk-ai__ico { width: 15px; height: 15px; stroke-width: 2; flex: none; }
+.mk-ai__ico--inline { display: inline-block; vertical-align: -2px; margin-right: 6px; color: var(--accent); }
+.mk-ai__ico--spin { animation: mk-ai-spin 1s linear infinite; }
+@keyframes mk-ai-spin { to { transform: rotate(360deg); } }
+.mk-ai__ghost {
+  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+  border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: transparent; transition: color .15s, border-color .15s;
+}
+.mk-ai__ghost:hover:not(:disabled) { color: var(--fg); border-color: var(--line-2); }
+.mk-ai__ghost:disabled { opacity: .5; cursor: default; }
+
+.mk-ai__body { display: flex; flex-direction: column; gap: 10px; position: relative; }
+.mk-ai__p { margin: 0; font-size: 14.5px; line-height: 1.6; color: var(--fg); text-wrap: pretty; }
+.mk-ai__p--wait { color: var(--muted); }
+.mk-ai__caret {
+  display: inline-block; width: 7px; height: 1.05em; margin-left: 3px; vertical-align: -0.18em; border-radius: 2px;
+  background: var(--accent); animation: mk-ai-blink 1s steps(2, start) infinite;
+}
+@keyframes mk-ai-blink { to { visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { .mk-ai__caret { animation: none; } .mk-ai__ico--spin { animation: none; } }
+.mk-ai__err { margin: 0; font-size: 12.5px; color: var(--sell); }
+
+.mk-ai__chips { display: flex; flex-wrap: wrap; gap: 8px; position: relative; }
+.mk-ai__chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+  border: 1px solid var(--line-2); color: var(--fg); background: var(--surf-2); transition: background .15s, color .15s, border-color .15s, transform .12s;
+  white-space: nowrap; max-width: 100%;
+}
+.mk-ai__chip:hover { border-color: var(--accent); transform: translateY(-1px); }
+.mk-ai__chip--buy, .mk-ai__chip--trade { background: var(--accent); color: var(--ink); border-color: var(--accent); }
+.mk-ai__chip--buy:hover, .mk-ai__chip--trade:hover { filter: brightness(1.06); }
+.mk-ai__chip--sell { border-color: color-mix(in oklab, var(--sell) 60%, var(--line-2)); color: var(--sell); background: transparent; }
+.mk-ai__chip--sell:hover { background: color-mix(in oklab, var(--sell) 14%, transparent); }
+.mk-ai__chip--protect, .mk-ai__chip--stop { border-color: color-mix(in oklab, var(--gold) 55%, var(--line-2)); }
+.mk-ai__chip--dca, .mk-ai__chip--limit { border-color: var(--line-2); }
+
+.mk-ai__pos { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px; border: 1px dashed var(--line); background: color-mix(in oklab, var(--surf-2) 60%, transparent); position: relative; }
+.mk-ai__pos--held { border-style: solid; border-color: color-mix(in oklab, var(--accent) 45%, var(--line)); }
+
+.mk-ai__foot { display: flex; flex-wrap: wrap; gap: 6px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.04em; color: var(--muted-2); position: relative; }
+
+/* ── the ask box ── */
+.mk-ai__form { display: flex; align-items: center; gap: 8px; position: relative; }
+.mk-ai__input {
+  flex: 1; min-width: 0; padding: 10px 13px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg);
+  color: var(--fg); font-size: 14px; line-height: 1.3; outline: none; transition: border-color .15s, box-shadow .15s;
+}
+.mk-ai__input::placeholder { color: var(--muted-2); }
+.mk-ai__input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent); }
+.mk-ai__input:disabled { opacity: .6; }
+.mk-ai__send {
+  display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; flex: none; border-radius: 999px;
+  background: var(--accent); color: var(--ink); border: 1px solid var(--accent); transition: filter .15s, opacity .15s;
+}
+.mk-ai__send:hover:not(:disabled) { filter: brightness(1.06); }
+.mk-ai__send:disabled { opacity: .45; cursor: default; }
+.mk-ai__mic { flex: none; }
+
+.mk-ai__sugg { display: flex; flex-wrap: wrap; gap: 6px; position: relative; }
+.mk-ai__sugg-chip { padding: 5px 11px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); color: var(--muted); background: transparent; transition: color .15s, border-color .15s; white-space: nowrap; }
+.mk-ai__sugg-chip:hover { color: var(--fg); border-color: var(--line-2); }
+
+.mk-ai__asked { display: block; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11.5px; color: var(--muted); margin-bottom: 6px; }
+.mk-ai__asked::before { content: '› '; color: var(--accent); }
+.mk-ai__reply { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: color-mix(in oklab, var(--surf-2) 70%, transparent); position: relative; animation: mk-ai-in .25s ease-out; }
+@keyframes mk-ai-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .mk-ai__reply { animation: none; } }
+.mk-ai__reply--chart { border-color: color-mix(in oklab, var(--accent) 45%, var(--line)); }
+.mk-ai__reply--alert { border-color: color-mix(in oklab, var(--gold) 50%, var(--line)); }
+.mk-ai__alert { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 9px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); }
+.mk-ai__alert-label { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12.5px; color: var(--fg); }
+.mk-ai__cta {
+  display: inline-flex; align-items: center; border: 1px solid var(--accent); border-radius: 999px; padding: 6px 13px; font-size: 12px; font-weight: 600;
+  color: var(--accent); background: transparent; transition: background .15s, color .15s; white-space: nowrap;
+}
+.mk-ai__cta:hover:not(:disabled) { background: var(--accent); color: var(--ink); }
+.mk-ai__cta:disabled { opacity: .5; cursor: default; }
+
+@media (max-width: 640px) {
+  .mk-ai { padding: 14px 14px 12px; border-radius: 14px; }
+  .mk-ai__p { font-size: 14px; }
+  .mk-ai__head .mk-ai__eyebrow { order: 3; flex-basis: 100%; margin-left: 0; }
+  .mk-ai__chips { gap: 6px; }
+  .mk-ai__chip { font-size: 12px; padding: 6px 11px; }
+}
