@@ -20556,11 +20556,11 @@ async function main() {
         mk.fmtCountdown(0) === '1m' && mk.fmtCountdown(360) === '6h' && mk.fmtCountdown(2850) === '1d 23h' && mk.fmtCountdown(95) === '1h 35m',
     )
     check(
-      'mk2/markets: /markets server-renders the session strip (NYSE open|closed · TOKENS 24/7 · HL FUNDING) above the movers seat, and the index mounts the LIST as the map\'s fallback under 640px',
+      'mk2/markets: /markets server-renders the session strip (NYSE open|closed · TOKENS 24/7 · HL FUNDING) above the movers seat, and under 640px the map view keeps the map AND renders the ledger under it',
       /<div class="mk-session" role="status" aria-label="Market sessions" data-nyse="(open|closed)">/.test(mkHtml) &&
         mkHtml.indexOf('class="mk-session"') < mkHtml.indexOf('class="mk-tape-seat"') &&
         /NYSE (OPEN|CLOSED)/.test(mkHtml) && mkHtml.includes('TOKENS 24/7') && mkHtml.includes('HL FUNDING') &&
-        (await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')).includes("const showMap = view === 'map' && !phone"),
+        (await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')).includes("const showList = view === 'list' || phone"),
     )
     const tableSrc = await readFile('components/markets/shell/MarketTable.tsx', 'utf8')
     const sparksSrc = await readFile('components/markets/shell/useSparks.ts', 'utf8')

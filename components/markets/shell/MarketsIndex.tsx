@@ -160,8 +160,9 @@ function useMarketsView(): [MarketsView, (v: MarketsView) => void] {
   return [view, setView]
 }
 
-/** Under 640px the map has no room: the LIST is the map's fallback (the
- *  toggle keeps saying Map, the boards render). SSR = not a phone. */
+/** Under 640px the map view keeps the map AND renders the ledger under it
+ *  (the phone's fallback: the map is the summary, the rows are the data).
+ *  SSR = not a phone. */
 function usePhone(): boolean {
   const [phone, setPhone] = useState(false)
   useEffect(() => {
@@ -207,7 +208,8 @@ export default function MarketsIndex({ trending = [] }: { trending?: TrendingRow
   const [active, setActive] = useActiveBoard(ids)
   const [view, setView] = useMarketsView()
   const phone = usePhone()
-  const showMap = view === 'map' && !phone
+  const showMap = view === 'map'
+  const showList = view === 'list' || phone
   const open = useCallback((symbol: string) => router.push(`/t/${symbol}`), [router])
   useRowKeys()
 
@@ -259,16 +261,15 @@ export default function MarketsIndex({ trending = [] }: { trending?: TrendingRow
         {/* ── The market data ── */}
         <div className="mkt-frame__data">
           <Trending rows={trending} />
-          {showMap ? (
+          {showMap && (
             <section className="mk-map-seat" data-seat="MarketMap" aria-label="Market map">
               <MarketMap section="all" onOpen={open} />
               <p className="mk-map-seat__hint mono">
                 MAP · size by liquidity, colour by move · <button type="button" className="mk-map-seat__flip" onClick={() => setView('list')}>show the list</button>
               </p>
             </section>
-          ) : (
-            sections.map((s) => <Board key={s.id} section={s} />)
           )}
+          {showList && sections.map((s) => <Board key={s.id} section={s} />)}
           <section className="mkt-card mkt-frame__how" aria-labelledby="mkt-how">
             <h2 id="mkt-how" className="mkt-card__title">
               How a chart executes
