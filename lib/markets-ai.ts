@@ -296,7 +296,7 @@ export function alertPreview(rule: AlertRule): string {
 
 export type ProposedLine = { kind: 'h'; price: number; label?: string } | { kind: 'zone'; p1: number; p2: number; label?: string } | { kind: 'note'; price: number; text: string }
 
-const DRAW_CUE_RE = /\b(draw|mark|put|add|place|drop|plot|set|show)\b/i
+const DRAW_CUE_RE = /\b(draw|mark|put|add|place|drop|plot|set|show|shade|highlight|zone|box)\b/i
 const LINE_WORD_RE = /\b(line|level|support|resistance|target|stop|entry|exit|note|marker|horizontal)\b/i
 const ZONE_RE = new RegExp(`\\b(zone|box|band|range|shade|area|between)\\b[^\\d$]*${NUM_SRC}\\s*(?:to|-|–|—|and|through)\\s*${NUM_SRC}`, 'i')
 const AT_RE = new RegExp(`\\b(?:at|@|on|of)\\s*${NUM_SRC}`, 'i')
