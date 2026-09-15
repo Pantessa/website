@@ -120,7 +120,7 @@ export default function AskChart({ symbol, pair, chartState, visible, onAsk, onC
       const res = await fetch('/api/alerts', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ symbol: reply.rule.symbol, condition: reply.rule.condition, value: reply.rule.value, basePrice: reply.rule.basePrice ?? null }),
+        body: JSON.stringify({ symbol: reply.rule.symbol, condition: reply.rule.condition, value: reply.rule.value, basePrice: reply.rule.basePrice ?? null, actionAsk: reply.actionAsk ?? null }),
       })
       const j = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) throw new Error(j.error ?? `HTTP ${res.status}`)
@@ -217,7 +217,10 @@ export default function AskChart({ symbol, pair, chartState, visible, onAsk, onC
                 {reply.say}
               </p>
               <div className="mk-ai__alert" data-condition={reply.rule.condition} data-value={reply.rule.value}>
-                <span className="mk-ai__alert-label">{reply.label}</span>
+                <span className="mk-ai__alert-label">
+                  {reply.label}
+                  {reply.actionAsk ? <span className="mk-ai__alert-then"> · then a chip: {reply.actionAsk}</span> : null}
+                </span>
                 {alertState === 'saved' ? (
                   <span className="mk-ai__eyebrow mono">SAVED · WATCHING</span>
                 ) : signedIn ? (

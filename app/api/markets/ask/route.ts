@@ -188,7 +188,9 @@ export async function POST(req: NextRequest) {
     case 'alert': {
       const rule: AlertRule = { symbol, condition: m.condition, value: m.value, ...(m.condition === 'pct_move' ? { basePrice: last } : {}) }
       if (alertRuleProblem(rule)) return answer({ kind: 'answer', text: `${cleanProse(m.say, 300) || 'That alert is malformed.'} Name a price ("tell me when it crosses 4k") or a move ("when it moves 5%").` }, { deterministic: false, model })
-      return answer({ ...alertAnswer(rule), say: cleanProse(m.say || alertAnswer(rule).say, 300) }, { deterministic: false, model })
+      const carried = m.ask ? validateProposedAsk(m.ask, symbol) : null
+      if (carried && !carried.ok) console.warn('[markets/ask] alert action dropped by the fence', { why: carried.why })
+      return answer({ ...alertAnswer(rule), say: cleanProse(m.say || alertAnswer(rule).say, 300), ...(carried?.ok ? { actionAsk: carried.ask } : {}) }, { deterministic: false, model })
     }
     default:
       return answer({ kind: 'answer', text: m.text }, { deterministic: false, model })

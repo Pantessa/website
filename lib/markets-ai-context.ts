@@ -7,7 +7,7 @@
 
 import { changePct24h, chartPairFor, type ChartPair, type ChartTf } from './charts'
 import { loadCandleSeries, resolveTf, type LoadedSeries } from './candles-server'
-import { computeTechnicals, type Technicals } from './technicals'
+import { computeTechnicals, RATING_LABELS, type Technicals } from './technicals'
 import { getNews } from './news'
 import { performanceFromCandles, sessionState, stats24h, symbolName } from './markets'
 import { chipMenu, venueWordsFor, type AiChip, type BriefContext, type PositionContext } from './markets-ai'
@@ -45,9 +45,10 @@ function rowValue(t: Technicals | null, re: RegExp): number | null {
 export function techSummary(t: Technicals | null): BriefContext['tech'] {
   if (!t) return null
   return {
-    summary: t.summary.rating,
-    oscillators: t.oscillators.rating,
-    movingAverages: t.movingAverages.rating,
+    // Words, not ids: the live proof read "signaling a strong_sell".
+    summary: RATING_LABELS[t.summary.rating],
+    oscillators: RATING_LABELS[t.oscillators.rating],
+    movingAverages: RATING_LABELS[t.movingAverages.rating],
     score: t.summary.score,
     rsi: rowValue(t, /^Relative Strength Index|^RSI/i),
     macd: rowValue(t, /^MACD/i),

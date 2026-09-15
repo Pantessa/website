@@ -93,6 +93,7 @@
 .mk-ai__reply--alert { border-color: color-mix(in oklab, var(--gold) 50%, var(--line)); }
 .mk-ai__alert { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 9px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); }
 .mk-ai__alert-label { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12.5px; color: var(--fg); }
+.mk-ai__alert-then { color: var(--muted); }
 .mk-ai__cta {
   display: inline-flex; align-items: center; border: 1px solid var(--accent); border-radius: 999px; padding: 6px 13px; font-size: 12px; font-weight: 600;
   color: var(--accent); background: transparent; transition: background .15s, color .15s; white-space: nowrap;
