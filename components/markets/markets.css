@@ -1,0 +1,181 @@
+/* ── MK2 / MARKETS — the index + symbol page skin (2026-09-15) ────────────
+   Imported once by MarketsShell. Everything here rides the site's own theme
+   tokens (--fg / --muted / --line / --surf-1 / --accent / --sell, flipped by
+   the data-theme idiom in app/globals.css), so light and dark come free;
+   VIZ's look.css defines --mk-up / --mk-down / --mk-glass and friends — every
+   use here carries a site-token fallback so the page is whole before VIZ's
+   sheet lands and identical after. No colour is defined only in a theme
+   block. The frame grid, the rail and the sticky strips stay in
+   x402-design.css (frozen this round, pinned by the harness); this sheet
+   adds the terminal table, the tape/map/trending seats, the header's range
+   bar + held pill + compare pill, the ask dock, the slot cards and the
+   Overview / Trade layouts. */
+
+/* ── Slot cards (the stubs; the real components replace them) ──────────── */
+.mk-slot { border: 1px dashed color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: 14px; background: color-mix(in srgb, var(--surf-1) 70%, transparent); padding: 12px 14px; }
+.mk-slot__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.mk-slot__title { font-size: 13.5px; font-weight: 600; color: var(--fg); }
+.mk-slot__eyebrow { font-size: 9px; letter-spacing: 0.14em; color: var(--accent); white-space: nowrap; }
+.mk-slot__body { margin-top: 6px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+
+/* ── The terminal table (index boards) ─────────────────────────────────── */
+.mk-board { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--surf-1); }
+.mk-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.mk-table__sortbar { display: flex; align-items: center; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--fg) 3%, transparent); }
+.mk-table__sort { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border-radius: 6px; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-2); background: transparent; border: 0; cursor: pointer; transition: color .12s ease, background .12s ease; }
+.mk-table__sort:hover, .mk-table__sort.is-on { color: var(--fg); }
+.mk-table__sort.is-on { background: var(--surf-1); box-shadow: inset 0 0 0 1px var(--line); }
+.mk-table__arrow { width: 11px; height: 11px; }
+.mk-table__arrow--idle { opacity: .45; }
+.mk-table__row { box-shadow: 0 1px 0 var(--line); transition: background .12s ease; }
+.mk-table__row:last-child { box-shadow: none; }
+.mk-table__row:hover { background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.mk-table__row:has(.mk-table__link:focus-visible) { background: color-mix(in srgb, var(--accent) 12%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+.mk-table__id { padding: 0; }
+.mk-table__link { display: grid; grid-template-columns: 24px auto minmax(0, 1fr); align-items: center; gap: 10px; padding: 9px 14px; color: var(--fg); text-decoration: none; outline: none; min-width: 0; }
+.mk-table__sym { font-size: 13px; font-weight: 600; letter-spacing: 0.02em; }
+.mk-table__name { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mk-table__num { padding: 9px 14px; text-align: right; font-size: 13px; font-weight: 600; white-space: nowrap; color: var(--fg); }
+.mk-table__dash { color: var(--muted-2); font-weight: 400; }
+.mkt-chg--up { color: var(--mk-up, var(--accent)); }
+.mkt-chg--down { color: var(--mk-down, var(--sell)); }
+/* Wide data column: the ledger splits into two columns (the terminal look);
+   the sort bar above it stays one row, so sorting is always reachable. */
+@container mkt-data (min-width: 880px) {
+  .mk-board .mk-table { display: block; columns: 2; column-gap: 0; column-rule: 1px solid var(--line); }
+  .mk-board .mk-table tbody { display: block; }
+  .mk-board .mk-table__row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; break-inside: avoid; }
+}
+
+/* ── Tool strip additions: Map · List ──────────────────────────────────── */
+.mk-view { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--surf-1); }
+.mk-view__btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: color .12s ease, background .12s ease; }
+.mk-view__btn:hover { color: var(--fg); }
+.mk-view__btn.is-on { color: var(--ink); background: var(--accent); }
+.mk-view__icon { width: 13px; height: 13px; }
+
+/* ── The movers tape seat (VIZ fills it) ───────────────────────────────── */
+.mk-tape { margin: 12px 0 0; }
+.mk-tape:empty { display: none; }
+
+/* ── Trending on Pantessa ──────────────────────────────────────────────── */
+.mk-trend__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.mk-trend__title { font-family: var(--font-chat-display); font-weight: 600; font-size: 20px; letter-spacing: -0.01em; color: var(--fg); }
+.mk-trend__eyebrow { font-size: 9.5px; letter-spacing: 0.14em; color: var(--muted-2); }
+.mk-trend__list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 14px; overflow: hidden; background: color-mix(in srgb, var(--accent) 5%, var(--surf-1)); }
+.mk-trend__row { display: grid; grid-template-columns: 22px 22px minmax(0, 1fr) auto auto auto; align-items: center; gap: 10px; padding: 9px 14px; box-shadow: 0 1px 0 var(--line); color: var(--fg); text-decoration: none; outline: none; transition: background .12s ease; }
+.mk-trend__row:hover, .mk-trend__row:focus-visible { background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.mk-trend__rank { font-size: 10px; letter-spacing: 0.1em; color: var(--accent); }
+.mk-trend__id { display: flex; flex-direction: column; min-width: 0; }
+.mk-trend__sym { font-size: 13px; font-weight: 600; }
+.mk-trend__name { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mk-trend__chg, .mk-trend__last { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.mk-trend__asks { font-size: 9.5px; letter-spacing: 0.12em; color: var(--muted-2); white-space: nowrap; min-width: 6ch; text-align: right; }
+@container mkt-data (min-width: 880px) { .mk-trend__list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container mkt-data (min-width: 1180px) { .mk-trend__list { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* ── The map seat + keys legend ────────────────────────────────────────── */
+.mk-map__hint { margin-top: 8px; font-size: 9.5px; letter-spacing: 0.12em; color: var(--muted-2); }
+.mk-map__flip { border: 0; background: transparent; color: var(--accent); font: inherit; letter-spacing: inherit; cursor: pointer; padding: 0; text-transform: uppercase; }
+.mk-keys { margin-top: 12px; display: flex; align-items: center; gap: 6px; font-size: 9.5px; letter-spacing: 0.12em; color: var(--muted-2); text-transform: uppercase; }
+.mk-keys kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 5px; font: inherit; color: var(--muted); text-transform: none; }
+
+/* ── Symbol header (MK2) ───────────────────────────────────────────────── */
+.sym__head--mk2 { align-items: flex-start; }
+/* The act seat takes its own full row under identity + quote (the stub's
+   .sym__act had this from x402-design.css; the seat owns it now). */
+.sym__exec { order: 3; flex-basis: 100%; min-width: 0; }
+.sym__exec > .sym__act { align-items: flex-start; }
+.sym__exec > .sym__act .sym__act-chips { justify-content: flex-start; }
+.sym__meta { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; margin-top: 8px; min-width: 0; }
+.sym__head--mk2 .sym__session { margin-top: 0; display: inline-flex; align-items: center; gap: 6px; }
+.mk-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--muted-2); flex: 0 0 auto; }
+.mk-dot--open { background: var(--mk-up, var(--accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--mk-up, var(--accent)) 22%, transparent); }
+.mk-dot--closed { background: var(--muted-2); }
+.mk-dot--always { background: var(--accent); }
+.sym__head--mk2 .sym__quote { flex-direction: column; align-items: flex-end; gap: 6px; }
+.sym__head--mk2 .sym__quote > .sym__last, .sym__head--mk2 .sym__quote > .sym__chg, .sym__head--mk2 .sym__quote > .sym__feed { display: inline; }
+/* The first row of the quote block: last · change · feed on one line. */
+.sym__head--mk2 .sym__quote { display: grid; grid-template-columns: auto auto auto; grid-template-areas: "last chg feed" "range range range"; align-items: baseline; column-gap: 10px; justify-content: end; }
+.sym__head--mk2 .sym__last { grid-area: last; }
+.sym__head--mk2 .sym__chg { grid-area: chg; }
+.sym__head--mk2 .sym__feed { grid-area: feed; }
+.mk-range { grid-area: range; display: grid; grid-template-columns: auto minmax(120px, 220px) auto; grid-template-areas: "lo bar hi" "k k k"; align-items: center; gap: 2px 8px; margin-top: 6px; }
+.mk-range__lo { grid-area: lo; font-size: 10.5px; color: var(--muted); }
+.mk-range__hi { grid-area: hi; font-size: 10.5px; color: var(--muted); }
+.mk-range__bar { grid-area: bar; position: relative; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--fg) 12%, transparent); overflow: visible; }
+.mk-range__fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: linear-gradient(90deg, color-mix(in srgb, var(--mk-down, var(--sell)) 70%, transparent), var(--mk-up, var(--accent))); }
+.mk-range__tick { position: absolute; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--fg); box-shadow: 0 0 0 2px var(--bg); }
+.mk-range__k { grid-area: k; justify-self: center; font-size: 8.5px; letter-spacing: 0.16em; color: var(--muted-2); }
+/* What you hold — one pill. */
+.mk-held { display: inline-flex; align-items: baseline; gap: 7px; height: 26px; padding: 0 10px; border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line)); border-radius: 999px; background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--fg); font: inherit; cursor: default; }
+button.mk-held { cursor: pointer; }
+button.mk-held:hover { border-color: var(--accent); }
+.mk-held__k { font-size: 8.5px; letter-spacing: 0.14em; color: var(--accent); }
+.mk-held__v { font-size: 12px; font-weight: 600; }
+.mk-held__amt { font-size: 10.5px; color: var(--muted); }
+/* Compare pill. */
+.mk-vs { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 6px 0 10px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--surf-1); }
+.mk-vs__k { font-size: 8.5px; letter-spacing: 0.14em; color: var(--muted-2); }
+.mk-vs__sym { font-size: 12px; font-weight: 600; color: var(--fg); }
+.mk-vs__delta { display: inline-flex; align-items: baseline; gap: 5px; font-size: 11px; font-weight: 600; }
+.mk-vs__sep { color: var(--muted-2); }
+.mk-vs__note { font-size: 8.5px; letter-spacing: 0.1em; color: var(--muted-2); font-weight: 400; }
+.mk-vs__x, .mk-vs__open { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 0 4px; height: 24px; border-radius: 999px; }
+.mk-vs__open { height: 26px; padding: 0 10px; border: 1px dashed var(--line-2); font-size: 9.5px; letter-spacing: 0.14em; }
+.mk-vs__open:hover, .mk-vs__x:hover { color: var(--fg); border-color: var(--fg); }
+.mk-vs__icon { width: 13px; height: 13px; }
+.mk-vs__input { width: 150px; height: 22px; border: 0; background: transparent; color: var(--fg); font-size: 12px; outline: none; }
+.mk-vs__go { height: 22px; padding: 0 9px; border: 1px solid var(--accent); border-radius: 999px; background: var(--accent); color: var(--ink); font-size: 9px; letter-spacing: 0.12em; cursor: pointer; }
+.mk-vs__go:disabled { opacity: .45; cursor: default; }
+
+/* ── Ask the chart — docked under the chart, collapsible ──────────────── */
+.mk-askdock { margin-top: 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); overflow: hidden; }
+.mk-askdock__bar { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 14px; border: 0; background: transparent; color: var(--fg); text-align: left; cursor: pointer; }
+.mk-askdock__bar:hover { background: color-mix(in srgb, var(--fg) 3%, transparent); }
+.mk-askdock__k { font-size: 9.5px; letter-spacing: 0.14em; color: var(--accent); white-space: nowrap; }
+.mk-askdock__hint { flex: 1 1 auto; min-width: 0; font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mk-askdock__icon { width: 14px; height: 14px; color: var(--muted-2); flex: 0 0 auto; }
+.mk-askdock__body { padding: 0 12px 12px; }
+
+/* ── Overview + Trade layouts ──────────────────────────────────────────── */
+.mk-overview { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.mk-overview > .mkt-card, .mk-overview > div { min-width: 0; }
+.mk-trade { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+@media (min-width: 900px) {
+  .mk-overview { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); grid-template-areas: "lead flow" "perf perf" "stats routes" "routes routes"; }
+  .mk-overview__lead { grid-area: lead; }
+  .mk-overview__flow { grid-area: flow; }
+  .mk-overview__routes { grid-area: routes; }
+  .mk-overview > .mkt-card[aria-label="Performance"] { grid-area: perf; }
+  .mk-overview > .mkt-card[aria-label="Key stats"] { grid-area: stats; }
+  .mk-overview { grid-template-areas: "lead flow" "perf stats" "routes routes"; }
+  .mk-trade { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "routes routes" "order compound" "position position" "chat chat"; }
+  .mk-trade__routes { grid-area: routes; }
+  .mk-trade > .mkt-order { grid-area: order; }
+  .mk-trade__compound { grid-area: compound; }
+  .mk-trade__position { grid-area: position; }
+  .mk-trade > .mkt-trade__chat { grid-area: chat; }
+}
+
+/* ── Watchlist rail density (MK2) — compact hides the company name and
+   tightens the row; the position column and the price keep their seats. */
+.wl[data-density="compact"] .wl__rowMain { padding: 3px 0; gap: 7px; }
+.wl[data-density="compact"] .wl__rowName { display: none; }
+.wl[data-density="compact"] .wl__rowSym, .wl[data-density="compact"] .wl__rowLast { font-size: 12px; }
+
+/* ── Phones ────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .mk-view__btn span { display: none; }
+  .mk-view__btn { padding: 0 9px; }
+  .mk-table__link { grid-template-columns: 22px auto minmax(0, 1fr); gap: 8px; padding: 9px 10px; }
+  .mk-table__num { padding: 9px 10px; font-size: 12.5px; }
+  .mk-table__name { display: none; }
+  .mk-trend__row { grid-template-columns: 18px 20px minmax(0, 1fr) auto auto; gap: 8px; padding: 9px 10px; }
+  .mk-trend__last { display: none; }
+  .sym__head--mk2 .sym__quote { justify-content: start; grid-template-areas: "last chg feed" "range range range"; }
+  .mk-range { grid-template-columns: auto minmax(90px, 1fr) auto; }
+  .mk-vs__note { display: none; }
+  /* The map has no room on a phone: the list is the map's fallback. */
+  .mkt-frame__main[data-view="map"] .mk-map { display: none; }
+}
