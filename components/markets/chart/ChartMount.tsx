@@ -61,6 +61,10 @@ export interface ChartMountProps {
   state?: ChartState | null
   /** Mirror of the live drawings (the composer's "attach my current chart"). */
   onStateChange?: (s: ChartState) => void
+  /** The visible window (bar open times + frame) — AI's "what's on screen". */
+  onViewport?: (v: { from: number; to: number; tf: ChartTf }) => void
+  /** A second symbol as a % line on the left scale (the page's ?vs=). */
+  compare?: string | null
 }
 
 export default function ChartMount({
@@ -74,6 +78,8 @@ export default function ChartMount({
   markers,
   state: stateProp,
   onStateChange,
+  onViewport,
+  compare,
 }: ChartMountProps) {
   const [drawings, setDrawings] = useState<ChartState | null>(null)
   // News-on-bars: the News tab toggles markers into COMM's session store;
@@ -113,6 +119,8 @@ export default function ChartMount({
       onAsk={onAsk}
       askHref={promptHref}
       defaultOverlays={DEFAULT_SYMBOL_OVERLAYS}
+      onViewport={onViewport}
+      compare={compare}
     />
   )
 }
