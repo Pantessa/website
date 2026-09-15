@@ -464,6 +464,9 @@ export function sortMarketRows<R extends { symbol: string }>(
  *  some apple" lands on AAPL. Only symbols in `known` count (a stray
  *  uppercase word like "USD" never becomes a trend). Pure; the DB read that
  *  feeds it (app/markets/trending.ts) carries the internal fence. */
+const TREND_STRIP_RE =
+  /\b(?:buy|sell|swap|send|transfer|stake|unstake|supply|withdraw|borrow|repay|bridge|deposit|dca|long|short|protect|tile|rebalance|mint|list|convert|fund|some|my|the|a|an|of|to|for|on|with|into|in|then|and|please|me|i|want|need|show|chart|worth|usd|usdc|usdg|dollars?|bucks|weekly|daily|monthly|every|week|day|month|at|stop|loss|now|from|chain|base|ethereum|arbitrum|optimism|robinhood|\d+(?:\.\d+)?%?x?|\$\d[\d.,]*[km]?)\b/gi
+
 export function trendingFromPrompts(prompts: readonly string[], known: readonly string[], limit = 8): { symbol: string; asks: number }[] {
   const knownSet = new Set(known)
   const counts = new Map<string, number>()
@@ -475,9 +478,15 @@ export function trendingFromPrompts(prompts: readonly string[], known: readonly 
       if (knownSet.has(s)) hit.add(s)
     }
     if (hit.size === 0) {
-      // No ticker word — try the company-name route once ("buy some apple").
-      const ask = parseChartAsk(`show me the ${p.slice(0, 80)} chart`)
-      if (ask?.pair && knownSet.has(ask.pair.symbol)) hit.add(ask.pair.symbol)
+      // No ticker word — try the company-name route ("buy some apple" →
+      // "apple" → AAPL): strip verbs, amounts and fillers, then resolve what
+      // is left (one to three words) the way the search box does.
+      const rest = p.replace(TREND_STRIP_RE, ' ').replace(/[^\p{L}\p{N} .&'-]/gu, ' ').replace(/\s+/g, ' ').trim()
+      const words = rest.split(' ').filter(Boolean)
+      if (words.length >= 1 && words.length <= 3) {
+        const pair = resolveTickerQuery(rest)
+        if (pair && knownSet.has(pair.symbol)) hit.add(pair.symbol)
+      }
     }
     for (const s of hit) counts.set(s, (counts.get(s) ?? 0) + 1)
   }
