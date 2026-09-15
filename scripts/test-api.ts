@@ -272,7 +272,7 @@ import { EXAMPLE_PROMPTS } from '../lib/examples'
 import { swapFeeAtoms, SWAP_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS, HL_BUILDER_FEE_TENTH_BPS, HL_BUILDER_MAX_FEE_RATE } from '../lib/fees'
 import { APP_CHAINS, chainById, chainByKey, chainNamedIn, explorerTokenUrl, primaryStable, publicClientFor, robinhoodChain, sanitizeChainId, serverRpcEndpoints } from '../lib/chains'
 import { WALLET_CHAINS } from '../lib/wallet-chains'
-import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp, crossChainPending, crossChainValueUsd } from '../lib/cross-chain-swap'
+import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp, crossChainPending, crossChainValueUsd , VENUE_SHARE_MAX_BPS } from '../lib/cross-chain-swap'
 import {
   parseAaveSupply,
   competingVenueOf,
@@ -8351,6 +8351,23 @@ async function main() {
       'xchain fee: an UNREQUESTED app fee is REFUSED (job/funding legs stay fee-free)',
       !guardCrossChainBuild({ ...goodBuild, appFee: { applied: feeSplit } }, { chainId: 8453, fee: null }).ok &&
         guardCrossChainBuild(goodBuild, { chainId: 8453, fee: null }).ok,
+    )
+    // 2026-09-15 — 1Click's live shape changed: the venue's own share rides
+    // EVERY quote (20 bps, no appFees asked) and our 20 bps request comes
+    // back as treasury 10 + protocol 20. The guard polices 0x recipients
+    // only (its own contract); the venue share is a note, fenced at 1%.
+    const liveShape = [{ recipient: TREASURY_ADDRESS, fee: CROSS_CHAIN_NET_FEE_BPS }, { recipient: ONECLICK_SHARE, fee: 20 }]
+    const liveGuard = guardCrossChainBuild({ ...goodBuild, appFee: { requested: [{ recipient: TREASURY_ADDRESS, fee: CROSS_CHAIN_FEE_BPS }], applied: liveShape } }, { chainId: 8453, fee: feeExpect })
+    check(
+      "xchain fee: 1Click's live split (treasury 10 + its own 20) PASSES — the venue's share is priced into the fill, not summed against our request",
+      liveGuard.ok && liveGuard.feeBps === CROSS_CHAIN_FEE_BPS && (liveGuard.feeNotes ?? []).some((n) => /1Click's own share/.test(n)) && liveGuard.warnings.length === 0,
+      JSON.stringify({ ok: liveGuard.ok, notes: liveGuard.feeNotes, reasons: liveGuard.reasons }),
+    )
+    const protocolOnly = guardCrossChainBuild({ ...goodBuild, appFee: { applied: [{ recipient: ONECLICK_SHARE, fee: 20 }] } }, { chainId: 8453, fee: null })
+    check("xchain fee: an UNREQUESTED quote that carries only the venue's own share still SIGNS (fee-free legs are not walled by 1Click's pricing)", protocolOnly.ok && (protocolOnly.feeNotes ?? []).length === 1)
+    check(
+      "xchain fee: a venue share past VENUE_SHARE_MAX_BPS is refused as an unusual fill",
+      !guardCrossChainBuild({ ...goodBuild, appFee: { applied: [{ recipient: ONECLICK_SHARE, fee: VENUE_SHARE_MAX_BPS + 1 }] } }, { chainId: 8453, fee: null }).ok && VENUE_SHARE_MAX_BPS === 100,
     )
     const notApplied = guardCrossChainBuild(goodBuild, { chainId: 8453, fee: feeExpect })
     check(
