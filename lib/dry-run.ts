@@ -17,8 +17,14 @@ import {
   BaseError,
   ContractFunctionRevertedError,
   ExecutionRevertedError,
+  HttpRequestError,
   InsufficientFundsError,
+  InternalRpcError,
   IntrinsicGasTooHighError,
+  LimitExceededRpcError,
+  ResourceUnavailableRpcError,
+  RpcRequestError,
+  TimeoutError,
 } from 'viem'
 
 /** The one call a dry-run needs. Structural on purpose: viem's PublicClient
@@ -142,4 +148,47 @@ export async function dryRunTx(
     }
   }
   return last ?? { kind: 'unavailable', detail: 'no attempt ran' }
+}
+
+/** Words that mean "the RPC didn't answer" when the error is NOT a viem
+ *  error (a plain `fetch failed`, a quote service's timeout). Deliberately
+ *  narrow: a plain Error is a builder's own refusal by default. */
+const TRANSIENT_WORDS = /rate limit|too many requests|\b429\b|\b50[234]\b|timed? ?out|ETIMEDOUT|ECONNRESET|ECONNREFUSED|socket hang up|fetch failed|header not found|temporarily unavailable/i
+
+/** Is this failure the TRANSPORT (an RPC that rate-limited, timed out, 5xx'd,
+ *  lagged) rather than the chain or the builder? Returns the node's own
+ *  words when it is, null when it isn't. Chain evidence (revert, no gas) and
+ *  a builder's own refusal ("Couldn't read the funding amount", a bad
+ *  address) are never transient — a job must fail on those, not spin.
+ *
+ *  2026-09-15: a funded "Move $34 of Optimism USDC → USDG on Robinhood
+ *  Chain" step threw out of ONE balanceOf read ("RPC Request failed." —
+ *  Details: "Rate Limit Hit, limit will reset in 60 seconds") and the runner
+ *  booked the whole job `failed`. Same class as the #721 withhold, one
+ *  stage earlier: the build, not the dry-run. */
+export function transientRpcWords(err: unknown): string | null {
+  if (err instanceof BaseError) {
+    if (classifyDryRunError(err).kind !== 'unavailable') return null
+    const transport = err.walk(
+      (e) =>
+        e instanceof HttpRequestError ||
+        e instanceof TimeoutError ||
+        e instanceof RpcRequestError ||
+        e instanceof LimitExceededRpcError ||
+        e instanceof InternalRpcError ||
+        e instanceof ResourceUnavailableRpcError,
+    )
+    if (!transport && !TRANSIENT_WORDS.test(wordsOf(err))) return null
+    return wordsOf(err)
+  }
+  const msg = err instanceof Error ? err.message : typeof err === 'string' ? err : ''
+  return TRANSIENT_WORDS.test(msg) ? firstLine(msg) : null
+}
+
+/** The host a viem error names ("URL: https://rpc.mainnet.chain.robinhood.com")
+ *  — so a withheld step can say WHICH RPC didn't answer. */
+export function rpcHostOf(err: unknown): string | null {
+  const msg = err instanceof Error ? err.message : ''
+  const m = msg.match(/URL:\s+https?:\/\/([^\s/]+)/)
+  return m ? m[1] : null
 }

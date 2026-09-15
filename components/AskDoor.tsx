@@ -29,6 +29,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import { ArrowUp, ArrowUpRight, Mic, X } from 'lucide-react'
 import { PantessaMark } from '@/components/Logo'
+import ShareButton from '@/components/ShareButton'
 import VoiceButton from '@/components/VoiceButton'
 import { analytics } from '@/lib/analytics'
 import { askDoorChips, askDoorHidden, askDoorNav, askDoorPillHidden, askDoorPlaceholder, askDoorSymbol, useAskDoor } from '@/lib/ask-door'
@@ -269,6 +270,11 @@ function AskDoorSheet() {
             <span className="askdoor__eyebrow mono">{sym ? `ACT ON ${sym}` : 'ASK FROM ANYWHERE'} · YOUR WALLET SIGNS</span>
           )}
           <span className="askdoor__headright">
+            {/* Share, just like the app's header: a signed-in owner flips the
+                thread public + copies /p/<slug>; a connect-only wallet gets
+                the sign-in lane (the SIWE prompt runs in place, the door
+                stays open). Only once there's a thread to share. */}
+            {live && <ShareButton signInLane />}
             <SpineLink href={appHref} className="askdoor__app" title="Open the full app">
               Open the app <ArrowUpRight className="h-3.5 w-3.5" />
             </SpineLink>

@@ -246,6 +246,12 @@ const eqAddr = (a?: string, b?: string): boolean => {
  * the quoted amount to the API's one-time deposit address, on the origin
  * chain — nothing the model wrote, only what the tool built and we decoded.
  */
+/** The most of a quote 1Click's OWN share may take before we call the fill
+ *  unusual and refuse. The venue's share is priced into the delivered
+ *  amount (the parity and price guards see it); this is only a fence
+ *  against a runaway number. Live 2026-09-15: 20 bps. */
+export const VENUE_SHARE_MAX_BPS = 100
+
 /**
  * Verify the venue fee on a build we asked to carry one. The user's funds are
  * never at risk from the fee itself — it comes out of the OUTPUT, so a
@@ -263,18 +269,31 @@ export function checkCrossChainFee(
 ): { reasons: string[]; notes: string[] } {
   const reasons: string[] = []
   const notes: string[] = []
-  const applied = built.appFee?.applied
+  const applied = built.appFee?.applied ?? []
+  const isEvm = (f: { recipient?: string }) => typeof f.recipient === 'string' && /^0x[0-9a-fA-F]{40}$/.test(f.recipient)
+  const bpsOf = (fs: Array<{ fee?: number }>) => fs.reduce((s, f) => s + (typeof f.fee === 'number' ? f.fee : 0), 0)
+  const evmEntries = applied.filter(isEvm)
+  // 1Click's own share: a non-EVM implicit account. 2026-09-15 the venue
+  // started echoing it on EVERY quote (20 bps, even with no appFees asked)
+  // and stopped netting it out of ours (our 20 → treasury 10 + protocol
+  // 20). It is priced into the delivered amount the parity and price
+  // guards already check, so it is neither a reason nor a note (a note
+  // means "our fee didn't apply" to the caller, which zeroes the claimed
+  // feeBps) — only a sanity fence against a runaway number.
+  const protocolBps = bpsOf(applied.filter((f) => !isEvm(f)))
+  if (protocolBps > VENUE_SHARE_MAX_BPS) {
+    reasons.push(`The venue's own share of this quote is ${protocolBps} bps — more than the ${VENUE_SHARE_MAX_BPS} bps we accept, refusing an unusual fill.`)
+  }
   if (!expected) {
-    // We asked for no fee — any app fee at all is unexpected value leaving
-    // the swap, and we refuse rather than pass it on.
-    if (applied?.length) reasons.push('The quote carries an app fee we did not request — refusing.')
+    // We asked for no fee — an app fee to ANY EVM recipient is value leaving
+    // the swap that nobody pinned, and we refuse rather than pass it on.
+    if (evmEntries.length) reasons.push('The quote carries an app fee we did not request — refusing.')
     return { reasons, notes }
   }
-  if (!applied?.length) {
+  if (!applied.length) {
     notes.push('fee not applied by the venue (older MCP build) — the swap is unaffected')
     return { reasons, notes }
   }
-  const evmEntries = applied.filter((f) => typeof f.recipient === 'string' && /^0x[0-9a-fA-F]{40}$/.test(f.recipient))
   const ours = evmEntries.filter((f) => eqAddr(f.recipient, expected.recipient))
   const foreign = evmEntries.filter((f) => !eqAddr(f.recipient, expected.recipient))
   if (foreign.length > 0) {
@@ -283,9 +302,9 @@ export function checkCrossChainFee(
   if (ours.length === 0) {
     notes.push('fee not applied by the venue — the swap is unaffected')
   }
-  const totalBps = applied.reduce((s, f) => s + (typeof f.fee === 'number' ? f.fee : 0), 0)
-  if (totalBps > expected.bps) {
-    reasons.push(`The quote's app fee (${totalBps} bps) exceeds the ${expected.bps} bps we requested — refusing.`)
+  const oursBps = bpsOf(ours)
+  if (oursBps > expected.bps) {
+    reasons.push(`The quote's app fee (${oursBps} bps to our treasury) exceeds the ${expected.bps} bps we requested — refusing.`)
   }
   return { reasons, notes }
 }

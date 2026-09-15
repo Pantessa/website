@@ -7,11 +7,15 @@
 //  the shared Neon DB.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { rpcHostOf, transientRpcWords } from '@/lib/dry-run'
 import { HttpTransport, InfoClient } from '@nktkas/hyperliquid'
 import { affordabilityRefusal, checkAffordability } from '@/lib/affordability'
 
 /** How long a withheld (unaffordable) step waits before the runner re-quotes it. */
 const WITHHELD_HOLD_MS = 90_000
+/** Builds withheld on an RPC that didn't answer: this many tries (one per
+ *  hold-down, so ~9 minutes) before the step fails by name. */
+const RPC_WITHHOLD_MAX = 6
 import prisma from '@/lib/db'
 import { callMcpTool } from '@/lib/mcp-call'
 import { crossChainValueUsd, expectedOriginChainId, guardCrossChainBuild, type BuiltSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
@@ -238,6 +242,37 @@ export async function advanceJob(job: JobWithSteps): Promise<void> {
         })
         await prisma.job.update({ where: { id: fresh.id }, data: { status: 'waiting_signature' } })
       } catch (e) {
+        // An RPC that didn't answer mid-build (rate limit, timeout, 5xx) is
+        // not a refusal: WITHHOLD the step like an affordability short —
+        // back to `pending` with the node's words, the job stays live, and
+        // the next advance after the hold-down rebuilds. Capped so a dead
+        // RPC still fails by name instead of spinning. 2026-09-15: one
+        // rate-limited balanceOf on Robinhood Chain failed a funded $34
+        // funding job outright.
+        const transient = transientRpcWords(e)
+        if (transient) {
+          const prior = (step.result as { rpcTries?: unknown } | null)?.rpcTries
+          const tries = (typeof prior === 'number' ? prior : 0) + 1
+          const host = rpcHostOf(e)
+          const who = host ? `${host} didn't answer` : "An RPC didn't answer"
+          console.warn(`[jobs] rpc withheld step ${step.seq + 1} of ${fresh.id} (${step.builder}) try ${tries}/${RPC_WITHHOLD_MAX}: ${transient}`)
+          if (tries < RPC_WITHHOLD_MAX) {
+            await prisma.jobStep.update({
+              where: { id: step.id },
+              data: {
+                status: 'pending',
+                artifact: undefined,
+                result: { error: `${who} (${transient}) — retrying in about a minute; nothing was signed.`, withheld: true, withheldKind: 'rpc', rpcTries: tries } as object,
+              },
+            })
+            if (fresh.status !== 'running') await prisma.job.update({ where: { id: fresh.id }, data: { status: 'running' } })
+            return
+          }
+          const gaveUp = `${who} ${RPC_WITHHOLD_MAX} times in a row (${transient}). Nothing was signed — try again in a few minutes.`
+          await prisma.jobStep.update({ where: { id: step.id }, data: { status: 'failed', result: { error: gaveUp, rpcTries: tries } as object } })
+          await failJob(fresh.id, `"${step.title}" withheld: ${gaveUp}`)
+          return
+        }
         // A spend-policy refusal persists its structured block so the JobCard
         // can offer the exact fix + retry instead of a dead-end message.
         const policyBlock = e instanceof PolicyRefusedError ? e.policyBlock : undefined
