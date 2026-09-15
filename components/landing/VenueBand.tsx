@@ -15,7 +15,8 @@ import { getProtocolMark } from '@/components/protocol-marks'
 import { fmtPrice } from '@/components/CandleChart'
 import { LANDING_SYMBOL, LANDING_VENUES, TAPE_FOOTNOTE, VENUE_BAND } from '@/lib/markets-copy'
 
-interface RouteLive { id?: string; venue?: string; kind?: string; quote?: string; stat?: string }
+/** EXEC's RouteQuote (lib/symbol-venues): the fields the band reads. */
+interface RouteLive { venue?: string; kind?: string; side?: string; quote?: { label?: string; sub?: string; value?: number | null } | null }
 
 const chatPrefill = (ask: string) => `/chat?prompt=${encodeURIComponent(ask)}`
 
@@ -39,11 +40,16 @@ export default function VenueBand() {
         if (!r.ok) return
         const j = await r.json()
         const rows: RouteLive[] = Array.isArray(j?.routes) ? j.routes : []
+        // One number per band card: the venue's BUY-side row (or its only
+        // row); the DCA card is the house 'pantessa' row of kind 'dca'.
         const next: Record<string, string> = {}
         for (const row of rows) {
-          const key = String(row.venue ?? row.id ?? '').toLowerCase()
-          const v = row.quote ?? row.stat
-          if (key && typeof v === 'string' && v) next[key] = v
+          const label = row.quote && typeof row.quote === 'object' && typeof row.quote.label === 'string' ? row.quote.label : null
+          if (!label) continue
+          const key = row.kind === 'dca' ? 'dca' : String(row.venue ?? '').toLowerCase()
+          if (!key) continue
+          if (next[key] && row.side === 'sell') continue
+          next[key] = row.quote?.sub ? `${label} · ${row.quote.sub}` : label
         }
         if (!dead && Object.keys(next).length) setLive(next)
       } catch { /* EXEC's route isn't here yet — the words stay */ }
@@ -54,10 +60,7 @@ export default function VenueBand() {
     return () => { dead = true; clearInterval(t) }
   }, [])
 
-  const liveFor = (key: string) => {
-    for (const k of Object.keys(live)) if (k.includes(key)) return live[k]
-    return null
-  }
+  const liveFor = (key: string) => live[key] ?? null
 
   return (
     <section className="lvb" id="every-dapp" data-venue-band>
