@@ -264,8 +264,8 @@ export function venuesFor(symbol: string, pair: ChartPair, opts: VenuesOptions =
     })
     out.push({
       id: `lend:aave:${AAVE_CHAIN_ID}:borrow`, kind: 'lend', venue: 'aave', chainId: AAVE_CHAIN_ID, side: 'sell', fee: 'none',
-      label: 'Borrow on Aave', ask: `Borrow ${usdWord(usd)} of ${sym} from Aave`, mcp: 'aave-free', needs: 'position',
-      note: 'Needs supplied collateral; the build previews your health factor before you sign.',
+      label: 'Borrow USDC against it', ask: `Borrow ${Math.max(1, Math.round(usd))} USDC from Aave`, mcp: 'aave-free', needs: 'position',
+      note: `Borrows USDC against your supplied ${sym} (collateral first); the build previews your health factor before you sign.`,
     })
   }
 
@@ -356,4 +356,185 @@ export const VENUE_NAME: Record<string, string> = {
   lifi: 'LiFi',
   robinhood: 'Robinhood Chain',
   pantessa: 'Pantessa',
+}
+
+// ── The wire shape of GET /api/markets/routes (client-safe types) ──────────
+export interface RouteQuote extends VenueRoute {
+  /** Real bps lib/fees prices this row at (0 = fee-free). */
+  feeBps: number
+  /** The live number, or null when the provider didn't answer (the row
+   *  still sends — the build is the honest gate). */
+  quote: { kind: 'price' | 'apy' | 'funding' | 'none'; value: number | null; label: string; sub?: string } | null
+  /** Best WITHIN its kind (spot: most token for the same dollars). */
+  best?: true
+}
+
+export interface RoutesResponse {
+  symbol: string
+  source: ChartPair['source']
+  amountUsd: number
+  last: number | null
+  leverage: number | null
+  routes: RouteQuote[]
+  notes: string[]
+  /** Providers that didn't answer this composition. */
+  failed: string[]
+  updatedAt: string
+  cached?: boolean
+}
+
+// ── Compound asks: legs the jobs compiler chains into ONE signed job ────────
+// Only segments lib/jobs' JOB_SEGMENT_PARSERS registry compiles (memory
+// job-segment-registry): cross-chain funding (NEAR / LiFi), same-chain swap
+// (units of the chain stable = dollars), Hyperliquid deposit + open, the HL
+// Guardian, Lido stake, Aave supply, the stock buy that follows a Robinhood
+// funding leg. DCA and the Spot Guardian are deliberately NOT legs: a
+// "…, then DCA…" compound is claimed whole by the DCA gate (it runs before
+// jobs on purpose), and the jobs guardian segment reads a spot-protect
+// sentence as an HL policy (FOUND 2026-09-15, logged in EXEC.md). The
+// harness pins that every composed compound compiles to exactly its legs
+// (+ the settlement waits the compiler inserts) and every step is native.
+
+export type CompoundLegKind = 'fund' | 'buy' | 'stake' | 'supply' | 'deposit' | 'long' | 'short' | 'protect'
+
+export interface CompoundLeg {
+  kind: CompoundLegKind
+  label: string
+  /** The segment sentence (joined with ", then "). */
+  segment: string
+  /** The builder(s) the compiler emits — `wait` counted separately. */
+  builders: string[]
+  /** Compiler inserts a settlement wait after this leg. */
+  wait?: true
+  /** One line of honesty. */
+  hint: string
+}
+
+export interface CompoundOptions {
+  usd?: number
+  /** Origin chain for the funding leg (default Arbitrum for coins, Base for stocks). */
+  originChainId?: number
+  /** The chain the buy settles on (default: the symbol's first spot chain). */
+  chainId?: number
+  leverage?: number
+  stopPct?: number
+}
+
+export interface CompoundPlan {
+  legs: CompoundLeg[]
+  ask: string
+  /** Steps the compiler is expected to emit (legs + waits). */
+  expectedSteps: number
+}
+
+const SPOT_CHAIN_OF = (sym: string): number => (SPOT_CHAIN_HINTS[sym] ?? DEFAULT_SPOT_CHAINS)[0]
+
+/** Which leg kinds a pair can chain, in the order they may appear. */
+export function compoundLegKindsFor(symbol: string, pair: ChartPair): CompoundLegKind[] {
+  const sym = (pair?.symbol ?? symbol).toUpperCase()
+  if (pair.source === 'robinhood') return ['fund', 'buy']
+  const home = tokenHome(sym)
+  const perp = pair.source === 'hyperliquid' || hasPerpCold(sym)
+  if (home || pair.source === 'hyperliquid') return perp ? ['deposit', 'long', 'short', 'protect'] : []
+  const out: CompoundLegKind[] = ['fund', 'buy']
+  if (sym === 'ETH') out.push('stake')
+  if (hasAaveReserveCold(sym)) out.push('supply')
+  if (perp) out.push('deposit', 'long', 'short', 'protect')
+  return out
+}
+
+/**
+ * Compose the legs for a chosen set of kinds. Order is canonical (fund →
+ * buy → stake/supply · deposit → long/short → protect); an incoherent set
+ * (protect without a long, stake without a buy, buy without a chain the
+ * symbol trades on) drops the leg that can't follow, never guesses.
+ */
+export function composeCompound(symbol: string, pair: ChartPair, kinds: CompoundLegKind[], opts: CompoundOptions = {}): CompoundPlan {
+  const sym = (pair?.symbol ?? symbol).toUpperCase()
+  const usd = Math.max(1, Math.round(opts.usd ?? DEFAULT_ROUTE_USD))
+  const stopPct = opts.stopPct ?? DEFAULT_ROUTE_STOP_PCT
+  const lev = opts.leverage && opts.leverage > 1 ? `${opts.leverage}x ` : ''
+  const want = new Set(kinds)
+  const legs: CompoundLeg[] = []
+
+  if (pair.source === 'robinhood') {
+    const origin = SPOT_CHAINS.find((c) => c.id === (opts.originChainId ?? 8453)) ?? SPOT_CHAINS[0]
+    if (want.has('fund') || want.has('buy')) {
+      // A stock buy is a job step ONLY after a funding leg (the registry's
+      // robinhood-fund-buy); a lone "Buy $X of AAPL" is the swap layer.
+      const buyUsd = Math.max(1, Math.round(usd * 0.8))
+      legs.push({
+        kind: 'fund', label: `Fund from ${origin.name}`, segment: `Fund Robinhood Chain with $${usd} from ${origin.word} including gas`,
+        builders: ['native-lifi-fund', 'native-lifi-fund'], wait: true, hint: `USDC on ${origin.name} → gas ETH + USDG on Robinhood Chain (two legs, one signature each).`,
+      })
+      legs.push({ kind: 'buy', label: `Buy $${buyUsd} of ${sym}`, segment: `buy $${buyUsd} of ${sym}`, builders: ['native-lifi-swap'], hint: 'Fills in the Robinhood Chain pool once the USDG lands (≈80% of the funding, the rest covers gas + fees).' })
+    }
+    return finish(legs)
+  }
+
+  const home = tokenHome(sym)
+  const perpOnly = !!home || pair.source === 'hyperliquid'
+  const chain = SPOT_CHAINS.find((c) => c.id === (opts.chainId ?? (want.has('supply') || want.has('stake') ? 1 : SPOT_CHAIN_OF(sym)))) ?? SPOT_CHAINS[0]
+  const origin = SPOT_CHAINS.find((c) => c.id === opts.originChainId && c.id !== chain.id) ?? SPOT_CHAINS.find((c) => c.id !== chain.id)!
+
+  if (!perpOnly) {
+    if (want.has('fund')) {
+      legs.push({
+        kind: 'fund', label: `Bring USDC from ${origin.name}`, segment: `Swap ${usd} USDC from ${origin.word} to USDC on ${chain.word}`,
+        builders: ['native-cross-chain'], wait: true, hint: `${usd} USDC ${origin.name} → ${chain.name} through NEAR Intents; the job waits for settlement before the next leg.`,
+      })
+    }
+    if (want.has('buy')) {
+      legs.push({ kind: 'buy', label: `Buy ${sym} on ${chain.name}`, segment: `swap ${usd} USDC for ${sym} on ${chain.word}`, builders: ['native-swap'], hint: `Uniswap v3 on ${chain.name}, guarded, re-quoted at signature.` })
+    }
+    const bought = want.has('buy')
+    if (want.has('stake') && sym === 'ETH') {
+      legs.push(
+        bought
+          ? { kind: 'stake', label: 'Stake it on Lido', segment: 'stake all the swapped ETH on Lido', builders: ['native-lido'], hint: 'Stakes exactly what the buy delivered (minus a gas buffer) — Ethereum mainnet.' }
+          : { kind: 'stake', label: 'Stake my ETH on Lido', segment: 'stake all my ETH on Lido', builders: ['native-lido'], hint: 'Stakes the wallet’s mainnet ETH balance minus a gas buffer.' },
+      )
+    }
+    if (want.has('supply') && hasAaveReserveCold(sym)) {
+      legs.push({ kind: 'supply', label: 'Supply it on Aave', segment: `supply $${usd} of ${sym} to Aave`, builders: ['native-aave-supply'], hint: 'Aave v4 on Ethereum — priced at build from the reserve; refuses by name if the balance is short.' })
+    }
+  }
+
+  const wantsPerp = want.has('long') || want.has('short')
+  if (want.has('deposit') && (wantsPerp || perpOnly)) {
+    const dep = Math.max(5, Math.ceil(usd / (opts.leverage && opts.leverage > 1 ? opts.leverage : 3)))
+    legs.push({ kind: 'deposit', label: `Deposit $${dep} to Hyperliquid`, segment: `Deposit ${dep} USDC to Hyperliquid`, builders: ['native-hl-exec'], wait: true, hint: 'Arbitrum USDC → the HL bridge; the job waits for the credit (≥ $5 venue minimum).' })
+  }
+  if (wantsPerp) {
+    const side = want.has('short') && !want.has('long') ? 'short' : 'long'
+    legs.push({
+      kind: side, label: `${lev ? `${lev}` : ''}${side === 'long' ? 'Long' : 'Short'} $${usd} of ${sym}`, segment: `${lev}${side} $${usd} of ${sym} on Hyperliquid`,
+      builders: ['native-hl-exec'], hint: lev ? `Sets ${lev.trim()} cross leverage venue-side first, then the order (IOC at market).` : 'IOC at market at the account’s current leverage.',
+    })
+    if (want.has('protect')) {
+      legs.push({ kind: 'protect', label: `Guardian ${stopPct}% stop`, segment: `protect my ${sym} ${side} with a ${stopPct}% stop`, builders: ['native-hl-guardian'], hint: 'The HL Guardian watches every minute and closes the position at the stop — delegated, never custodial.' })
+    }
+  }
+  return finish(legs)
+}
+
+function finish(legs: CompoundLeg[]): CompoundPlan {
+  const ask = legs.map((l, i) => (i === 0 ? l.segment.charAt(0).toUpperCase() + l.segment.slice(1) : l.segment)).join(', then ')
+  const expectedSteps = legs.reduce((n, l) => n + l.builders.length + (l.wait ? 1 : 0), 0)
+  return { legs, ask, expectedSteps }
+}
+
+/** Ready-made shapes for the composer's preset row — the moat in one tap. */
+export function compoundPresets(symbol: string, pair: ChartPair): { label: string; kinds: CompoundLegKind[] }[] {
+  const kinds = new Set(compoundLegKindsFor(symbol, pair))
+  const out: { label: string; kinds: CompoundLegKind[] }[] = []
+  const has = (...k: CompoundLegKind[]) => k.every((x) => kinds.has(x))
+  if (pair.source === 'robinhood') return [{ label: 'Fund → Buy', kinds: ['fund', 'buy'] }]
+  if (has('buy', 'stake')) out.push({ label: 'Buy → Stake', kinds: ['buy', 'stake'] })
+  if (has('fund', 'buy', 'stake')) out.push({ label: 'Bridge → Buy → Stake', kinds: ['fund', 'buy', 'stake'] })
+  if (has('buy', 'supply')) out.push({ label: 'Buy → Supply on Aave', kinds: ['buy', 'supply'] })
+  if (has('deposit', 'long', 'protect')) out.push({ label: 'Deposit → Long → Stop', kinds: ['deposit', 'long', 'protect'] })
+  if (has('long', 'protect')) out.push({ label: 'Long → Guardian stop', kinds: ['long', 'protect'] })
+  if (has('fund', 'buy') && !has('stake')) out.push({ label: 'Bridge → Buy', kinds: ['fund', 'buy'] })
+  return out
 }
