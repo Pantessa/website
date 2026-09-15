@@ -42,27 +42,21 @@
 .lh__live { font-size: 9.5px; letter-spacing: .14em; color: var(--accent); }
 .lh__chart { position: relative; }
 .lh__chart .mkt-chart { padding: 8px 8px 0; }
-.lh__hud { position: absolute; left: 14px; bottom: 58px; z-index: 5; width: min(360px, calc(100% - 28px)); pointer-events: none; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 14px; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(10px); padding: 12px 14px; box-shadow: 0 14px 40px -20px rgba(0,0,0,.6); }
-.lh__hudask { font-family: var(--font-serif); font-size: 16px; line-height: 1.3; color: var(--fg); min-height: 1.3em; letter-spacing: -.01em; }
-.lh__hudask .lh__caret { height: .9em; }
-.lh__legs { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.lh__leg { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: center; font-size: 11.5px; color: var(--muted); opacity: 0; transform: translateX(-6px); transition: opacity .35s ease, transform .35s ease; }
-.lh__leg.is-in { opacity: 1; transform: none; }
-.lh__legmark { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 7px; color: var(--fg); background: color-mix(in srgb, var(--fg) 8%, transparent); }
-.lh__legmark svg { width: 14px; height: 14px; }
-.lh__legname { color: var(--fg); font-weight: 600; }
-.lh__legchain { color: var(--muted-2); letter-spacing: .06em; font-size: 9.5px; text-transform: uppercase; margin-left: 6px; }
-.lh__legwhat { display: block; font-variant-numeric: tabular-nums; }
-.lh__guard { margin: 10px 0 0; padding: 8px 0 0; border-top: 1px dashed var(--line); list-style: none; display: flex; flex-direction: column; gap: 3px; font-size: 10.5px; color: var(--muted-2); }
-.lh__guard li { opacity: 0; transition: opacity .3s ease; }
-.lh__guard li.is-in { opacity: 1; }
-.lh__guard li::before { content: '✓ '; color: var(--accent); }
-.lh__end { margin-top: 10px; display: flex; align-items: center; gap: 8px; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); opacity: 0; transition: opacity .35s ease; }
-.lh__end.is-in { opacity: 1; }
-.lh__end i { width: 7px; height: 7px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); }
-.lh__end--armed { color: #d9a94a; }
-.lh__end--armed i { background: #d9a94a; box-shadow: 0 0 0 4px rgba(217,169,74,.25); }
-.lh__stamp { margin-top: 8px; font-size: 9px; letter-spacing: .12em; color: var(--muted-2); }
+/* the receipt strip — bottom-left, over the volume pane, never the candles */
+.lh__rcpt { position: absolute; left: 12px; bottom: 34px; z-index: 5; max-width: min(440px, calc(100% - 24px)); pointer-events: none; display: flex; flex-direction: column; gap: 3px; padding: 8px 11px 7px; border-radius: 10px; border: 1px solid var(--mk-glass-line, var(--line)); background: var(--mk-glass, color-mix(in srgb, var(--bg) 80%, transparent)); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 10px 30px -18px rgba(0,0,0,.7); font-size: 11px; line-height: 1.35; color: var(--muted); transition: opacity .35s ease; }
+.lh__rcpt.is-wiping { opacity: 0; }
+.lh__rcptask { color: var(--fg); font-size: 12px; font-weight: 500; letter-spacing: -.005em; min-height: 1.35em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lh__rcptq { color: var(--accent); margin-right: 2px; }
+.lh__rcptask .lh__caret { height: .85em; }
+.lh__rcptleg { display: none; align-items: center; gap: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transform: translateX(-4px); transition: opacity .3s ease, transform .3s ease; }
+.lh__rcptleg.is-in { display: flex; opacity: 1; transform: none; }
+.lh__rcptleg .lh__legmark { width: 16px; height: 16px; border-radius: 5px; }
+.lh__rcptleg .lh__legmark svg { width: 11px; height: 11px; }
+.lh__rcptleg .lh__legmark b { font-size: 9px; }
+.lh__rcptend { display: none; color: var(--accent); letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity .3s ease; }
+.lh__rcptend.is-in { display: block; opacity: 1; }
+.lh__rcptend--armed { color: #d9a94a; }
+.lh__rcptstamp { font-size: 8.5px; letter-spacing: .1em; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lh__strip { padding: 10px 12px 12px; border-top: 1px solid var(--line); }
 .lh__strip .mk-slot { border: 0; padding: 4px 0; }
 .lh__doit { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
@@ -74,9 +68,8 @@
 }
 @media (max-width: 640px) {
   .lh { padding-top: 28px; }
-  .lh__hud { left: 10px; bottom: 52px; width: calc(100% - 20px); padding: 10px 12px; }
-  .lh__hudask { font-size: 14px; }
-  .lh__guard { display: none; }
+  .lh__rcpt { left: 8px; bottom: 30px; max-width: calc(100% - 16px); padding: 6px 9px 5px; font-size: 10px; }
+  .lh__rcptstamp { display: none; }
 }
 
 /* ── Every dapp, one chart ─────────────────────────────────────────────── */
@@ -153,7 +146,7 @@
 
 /* Reduced motion: every rehearsal is a still; nothing hides */
 @media (prefers-reduced-motion: reduce) {
-  .lh__leg, .lh__guard li, .lh__end { opacity: 1; transform: none; transition: none; }
+  .lh__rcptleg, .lh__rcptend { opacity: 1; transform: none; transition: none; }
   .lh__caret { animation: none; }
   .lvb__v { transition: none; }
 }

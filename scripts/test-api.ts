@@ -31,7 +31,7 @@ import { base } from 'viem/chains'
 import { dryRunTx, isAllowanceLag, rpcHostOf, transientRpcWords } from '../lib/dry-run'
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
-import { LINK_FEE_PCT } from '../lib/fees'
+import { LINK_FEE_PCT, SWAP_FEE_PCT } from '../lib/fees'
 import { ROBINHOOD_DESK } from '../lib/live-examples'
 import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import {
@@ -20761,6 +20761,14 @@ async function main() {
       'mk2/landing: the hero carries the claim (h1 = HERO_LINE, payoff in the gradient italic) and a rehearsal STAMPED as one — illustrative fills, never a receipt impersonated',
       /<h1[^>]*>[^<]*<br\/?><em>[^<]*<\/em><\/h1>/.test(home) && home.replace(/<[^>]+>/g, '').includes(mc.HERO_LINE) &&
         home.includes(mc.REEL_STAMP) && /REHEARSAL/.test(home),
+    )
+    // R2: the rehearsal is a receipt STRIP over the volume pane — SSR paints
+    // beat 0 complete (ask › route line with the fee from lib/fees › ending),
+    // and the typed sentence is not repeated under the CTAs.
+    check(
+      'mk2/landing: the receipt strip SSRs beat 0 complete — the ask, one route line per leg carrying the fee from lib/fees, the ending — and the sentence is not duplicated under the CTAs',
+      /data-reel-beat="0"/.test(home) && mc.HERO_REEL[0].legs.every((l) => home.includes(l.line)) && home.includes(mc.HERO_REEL[0].ending.line) &&
+        home.includes(`fee ${SWAP_FEE_PCT}`) && !/class="lh__ask\b/.test(home) && !/class="lh__hud\b/.test(home),
     )
     check(
       'mk2/landing: the venue band names every venue (≥6) with one prefill chip each (/chat?prompt=, never a fired turn) and the compound ask as one job',
