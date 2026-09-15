@@ -20268,7 +20268,7 @@ async function main() {
     check(
       'mk2/landing: the root social card is the hero — a live tape + the rehearsal HUD + the stamp; 200 image/png, real PNG',
       ogr.status === 200 && /image\/png/.test(ogr.headers.get('content-type') ?? '') && ogBuf[0] === 0x89 && ogBuf[1] === 0x50 && ogBuf.length > 20_000 &&
-        /REHEARSAL/.test(ogSrc) && /candleSvg\(/.test(ogSrc) && /gemMarkSvg\(/.test(ogSrc),
+        /REEL_STAMP/.test(ogSrc) && /candleSvg\(/.test(ogSrc) && /gemMarkSvg\(/.test(ogSrc),
     )
   }
 
