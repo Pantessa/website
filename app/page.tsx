@@ -5,9 +5,12 @@ import RosterHome from '@/components/RosterHome'
 import LinksHero from '@/components/LinksHero'
 import MarketsBand from '@/components/MarketsBand'
 import LandingMotion from '@/components/LandingMotion'
-import IntentMachine from '@/components/IntentMachine'
+import MoversStrip from '@/components/landing/MoversStrip'
+import VenueBand from '@/components/landing/VenueBand'
+import MarketMapTeaser from '@/components/landing/MarketMapTeaser'
+import HonestyStrip from '@/components/landing/HonestyStrip'
+import ShareBand from '@/components/landing/ShareBand'
 import LinkEconomy from '@/components/LinkEconomy'
-import NightShift from '@/components/NightShift'
 import EmbedAnywhere from '@/components/EmbedAnywhere'
 import TrustStrip from '@/components/TrustStrip'
 import StayUpToDate from '@/components/StayUpToDate'
@@ -112,32 +115,34 @@ export default function HomePage() {
           decorative parallax, and the one-time section reveals */}
       <LandingMotion />
       <main className="x-main x-main--fluid">
-        {/* The claim + the live link economy */}
+        {/* mk2 LANDING (2026-09-15) — the chart-first front door, in order:
+            the movers tape · the executing chart (hero) · every dapp, one
+            chart · the whole index · receipt-grade numbers · their meters
+            vs ours · then the distribution story (links + embed) trimmed. */}
+        <MoversStrip />
+
+        {/* The claim, and the chart that performs it */}
         <LinksHero />
 
-        {/* MARKETS: the hero says "the chart that executes" — the next thing
-            on the page IS that chart, with a chip pressed, and the six
-            things a charting subscription can't sell. CTA → /markets. */}
+        {/* The section a charting subscription cannot ship */}
+        <VenueBand />
+
+        {/* The whole index as a map, click → the symbol page */}
+        <MarketMapTeaser />
+
+        {/* Every number here is a signed on-chain fact, fenced */}
+        <HonestyStrip />
+
+        {/* Their meters vs ours + the six lines they cannot sell */}
         <MarketsBand />
 
-        {/* The centerpiece: a runnable model of one turn — four real asks,
-            four different endings. Carries what FundAnything and TxPipeline
-            used to argue separately (funding, and quote → build → guardrails
-            → sign → receipt): they were always stages of the same turn. */}
-        <IntentMachine />
-
-        {/* Distribution: one link, four surfaces, receipts coming back —
-            with the house set tappable */}
+        {/* BELOW THE FOLD — distribution: share a trade (links), embed the
+            chart (hosts). Trimmed, not deleted: the explainer band rides in
+            the spread. */}
+        <ShareBand />
         <LinkEconomy />
-
-        {/* The underlying value: standing intent as a clock that keeps
-            running — jobs, DCA, Guardian, money moving between your turns */}
-        <NightShift />
-
-        {/* Hosts: the 5-line embed + the loop that sharpens their set */}
         <EmbedAnywhere />
 
-        {/* Why hosts embed it / why users sign */}
         <TrustStrip />
 
         <StayUpToDate />

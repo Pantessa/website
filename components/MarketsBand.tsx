@@ -2,20 +2,30 @@ import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 import SpineLink from '@/components/SpineLink'
 import { candleSvg } from '@/lib/markets-seo'
-import { CHIP_CONTRACT, SIX_LINES, TAPE_FOOTNOTE, UNLIMITED_LINE, sessionLine } from '@/lib/markets-copy'
+import {
+  CHIP_CONTRACT,
+  COMPARE_BAND,
+  KILLER_LINE,
+  PANTESSA_PRICING_ROW,
+  SIX_LINES,
+  TAPE_FOOTNOTE,
+  TV_PRICING_AS_OF_LABEL,
+  TV_PRICING_TABLE,
+  UNLIMITED_LINE,
+  sessionLine,
+} from '@/lib/markets-copy'
 import type { Candle } from '@/lib/charts'
 
-// THE MARKETS BAND — right under the hero, because the hero now says "the
-// chart that executes" and the next thing on the page has to BE that chart.
-// A still of the symbol page (header · tab strip · sixty candles · the
-// watchlist rail) with one chip pressed and the sign card it produced, then
-// the six things a charting subscription cannot sell. Server component, zero
-// JS: the still is markup + one inline SVG from the same candleSvg the OG
-// cards draw, colored by the site tokens so both themes come free.
+// THE COMPARE BAND (mk2 LANDING, 2026-09-15 — was the Markets band). Their
+// meters, our answer: every line a charting subscription caps, shown as
+// their top-tier cap struck through under our ∞; the still of the symbol
+// page with a chip pressed and the sign card it produced (the thing no
+// meter buys); the six things they cannot sell; the killer line derived
+// from lib/fees. Server component, zero JS.
 //
-// The competitor is NOT named here (rule 7 + the README: TradingView is
-// named on /compare only). "A charting subscription's pricing page" is the
-// phrase; the CTA under it goes to the comparison where they are named.
+// The competitor is NAMED in body copy only (README §8: "TradingView may
+// be NAMED on /compare and in copy, never in a lockup") — never in a
+// heading, never as a mark (rule 7). The dated table lives on /compare.
 
 /** Sixty deterministic daily candles — a seeded walk, so SSR and the client
  *  paint the same bars (Math.random here would hydrate-mismatch). */
@@ -52,24 +62,45 @@ const WATCH = [
   { s: 'HYPE', p: '46.02', c: 4.91 },
 ]
 
+/** Their top tier's cap per meter (the dated table on /compare) vs ours. */
+const TOP = TV_PRICING_TABLE[TV_PRICING_TABLE.length - 1]
+const METERS: { k: string; theirs: string; ours: string }[] = [
+  { k: 'Charts per tab', theirs: TOP.chartsPerTab, ours: PANTESSA_PRICING_ROW.chartsPerTab },
+  { k: 'Indicators', theirs: TOP.indicators, ours: PANTESSA_PRICING_ROW.indicators },
+  { k: 'Historical bars', theirs: TOP.bars, ours: PANTESSA_PRICING_ROW.bars },
+  { k: 'Price alerts', theirs: TOP.priceAlerts, ours: PANTESSA_PRICING_ROW.priceAlerts },
+  { k: 'Watchlist alerts', theirs: TOP.watchlistAlerts, ours: PANTESSA_PRICING_ROW.watchlistAlerts },
+  { k: 'Per month', theirs: `€${TOP.eurPerMonth}`, ours: '€0' },
+]
+
 export default function MarketsBand() {
   const chart = candleSvg(SERIES, { width: 720, height: 220, up: 'var(--accent)', down: 'var(--sell)', grid: 'var(--line)', count: 60 })
   const session = sessionLine('stock', { exchangeOpen: false })
   return (
-    <section className="mkt" id="markets" data-markets-band>
+    <section className="mkt" id="markets" data-markets-band data-compare-band>
       <div className="mkt__head">
-        <span className="mkt__eyebrow mono">MARKETS</span>
-        <h2 className="mkt__h2">
-          Every line on a charting subscription&rsquo;s pricing page. <span className="x-grad">Free.</span>
-        </h2>
-        <p className="mkt__sub">
-          {UNLIMITED_LINE}. We don&rsquo;t sell the view — the chart is the order form, and we earn only when
-          it becomes a trade you signed. Tokenized stocks 24/7 on Robinhood Chain, crypto spot and Hyperliquid perps,
-          one wallet.
-        </p>
+        <span className="lcmp__eyebrow mono">{COMPARE_BAND.eyebrow}</span>
+        <h2 className="lcmp__h2">{COMPARE_BAND.h2}</h2>
+        <p className="lcmp__sub">{COMPARE_BAND.sub}</p>
       </div>
 
-      {/* the still: /t/AAPL with the Buy chip pressed */}
+      {/* their top-tier cap, struck, under our ∞ — every meter */}
+      <div className="lcmp__meters" data-compare-meters>
+        {METERS.map((m) => (
+          <div key={m.k} className="lcmp__m">
+            <span className="lcmp__mk mono">{m.k}</span>
+            <span className="lcmp__mtheirs mono">
+              their top tier: <s>{m.theirs}</s>
+            </span>
+            <span className="lcmp__mours">{m.ours}</span>
+          </div>
+        ))}
+      </div>
+      <p className="lcmp__asof mono">
+        {UNLIMITED_LINE} · their figures as of {TV_PRICING_AS_OF_LABEL} · {KILLER_LINE.sentence}
+      </p>
+
+      {/* the still: /t/AAPL with the Buy chip pressed — the thing no meter buys */}
       <div className="mkt__still" aria-label="The AAPL symbol page with a Buy chip pressed and the sign card it produced">
         <div className="mkt__page">
           <div className="mkt__bar">
@@ -156,7 +187,7 @@ export default function MarketsBand() {
           See the AAPL chart
         </SpineLink>
         <Link href="/compare" className="mkt__more">
-          Their pricing page vs ours <ArrowRight className="w-3.5 h-3.5" />
+          {COMPARE_BAND.cta} <ArrowRight className="w-3.5 h-3.5" />
         </Link>
       </div>
     </section>

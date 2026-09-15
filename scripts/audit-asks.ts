@@ -329,6 +329,19 @@ const CORPUS: Entry[] = [
   // half-parse and build for the signer.
   { ask: 'supply 5 USDC to aave for nate.eth', source: 'security r2 (Aave tail)', expect: 'clarify-ok' },
 
+  // ── MK2/LANDING (2026-09-15): every sentence the front door types or
+  // prefills. The hero REHEARSES these (HERO_REEL), the venue orbit prefills
+  // them (LANDING_VENUES), and the compound is the moat in one line — a typed
+  // example must never dead-end when pasted.
+  { ask: 'Buy $50 of ETH', source: 'mk2 landing hero reel', expect: 'action' },
+  { ask: 'Stake 0.05 ETH with Lido', source: 'mk2 landing hero reel', expect: 'action' },
+  { ask: 'Sell $50 of ETH', source: 'mk2 landing venue orbit (CoW)', expect: 'action' },
+  { ask: '2x long $12 of ETH', source: 'mk2 landing venue orbit (Hyperliquid)', expect: 'action' },
+  { ask: 'Supply $50 of USDC to Aave', source: 'mk2 landing venue orbit (Aave)', expect: 'action' },
+  { ask: 'Swap 20 USDC from base to arbitrum', source: 'mk2 landing venue orbit (NEAR Intents)', expect: 'action' },
+  { ask: 'Buy $10 of AAPL', source: 'mk2 landing venue orbit (Robinhood Chain)', expect: 'action' },
+  { ask: 'DCA $10 into ETH weekly', source: 'mk2 landing venue orbit (DCA)', expect: 'action' },
+  { ask: 'Buy $50 of ETH, then stake 0.05 ETH with Lido', source: 'mk2 landing compound (one job)', expect: 'action' },
 ]
 
 // ── Mutations — what real users do to our example asks ─────────────────────
