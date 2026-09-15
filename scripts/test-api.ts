@@ -26,9 +26,9 @@ import { existsSync, readdirSync } from 'node:fs'
 import { join as pathJoin } from 'node:path'
 import { tokenMark } from '../lib/token-icons'
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
-import { createPublicClient, custom, HttpRequestError, RpcRequestError, TimeoutError } from 'viem'
+import { createPublicClient, custom, http, HttpRequestError, InvalidAddressError, RpcRequestError, TimeoutError } from 'viem'
 import { base } from 'viem/chains'
-import { dryRunTx, isAllowanceLag } from '../lib/dry-run'
+import { dryRunTx, isAllowanceLag, rpcHostOf, transientRpcWords } from '../lib/dry-run'
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
 import { LINK_FEE_PCT } from '../lib/fees'
@@ -270,7 +270,7 @@ import {
 } from '../lib/share-receipts'
 import { EXAMPLE_PROMPTS } from '../lib/examples'
 import { swapFeeAtoms, SWAP_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS, HL_BUILDER_FEE_TENTH_BPS, HL_BUILDER_MAX_FEE_RATE } from '../lib/fees'
-import { APP_CHAINS, chainById, chainByKey, chainNamedIn, explorerTokenUrl, primaryStable, publicClientFor, sanitizeChainId } from '../lib/chains'
+import { APP_CHAINS, chainById, chainByKey, chainNamedIn, explorerTokenUrl, primaryStable, publicClientFor, robinhoodChain, sanitizeChainId, serverRpcEndpoints } from '../lib/chains'
 import { WALLET_CHAINS } from '../lib/wallet-chains'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp, crossChainPending, crossChainValueUsd } from '../lib/cross-chain-swap'
 import {
@@ -3846,6 +3846,7 @@ async function main() {
       // moment the funds are there.") was cut at 180 chars — the actionable
       // tail was the part that vanished.
       check('mobile: a withheld job step prints its whole reason (the 180-char cut is for other notes)', /\(step\.result as \{ withheld\?: boolean \} \| null\)\?\.withheld \? resultNote : resultNote\.slice\(0, 180\)/.test(jobCard))
+      check('job card: an RPC withhold says it retries on its own; an affordability withhold still waits on the money', /withheldKind === 'rpc' \? 'It retries on its own\.' : "It's offered the moment the funds are there\."/.test(jobCard))
     }
 
     // House links: the seeded canonical set (deterministic slugs,
@@ -8775,6 +8776,18 @@ async function main() {
     const wfDoor = await readFile(new URL('../components/AskDoor.tsx', import.meta.url), 'utf8')
     const wfChat = await readFile(new URL('../components/ChatInterface.tsx', import.meta.url), 'utf8')
     const wfView = await readFile(new URL('../lib/wallet-view.ts', import.meta.url), 'utf8')
+    // Share on the asset page (2026-09-15): the door's live header renders
+    // the app's ShareButton; a connect-only wallet (rule 6 — /markets and
+    // /t/* act on connect alone) gets the sign-in lane, which runs SIWE IN
+    // PLACE (no redirect — the door must stay open) and opens the popover
+    // once the session's adoption effect has promoted the thread.
+    const shareSrc = await readFile(new URL('../components/ShareButton.tsx', import.meta.url), 'utf8')
+    check(
+      'ask door share: the live door header mounts <ShareButton signInLane />; the sign-in lane calls signIn() with no redirect, only for a connected wallet with a thread, and opens the popover once shareable',
+      /\{live && <ShareButton signInLane \/>\}/.test(wfDoor) && /import ShareButton from '@\/components\/ShareButton'/.test(wfDoor) &&
+        /void signIn\(\)\n/.test(shareSrc) && /if \(!signInLane \|\| address \|\| !walletAddress \|\| !hasThread\) return null/.test(shareSrc) &&
+        /data-share-lane="sign-in"/.test(shareSrc) && /if \(openOnceShareable && shareable\)/.test(shareSrc) && /if \(!shareable\) \{/.test(shareSrc),
+    )
     check(
       'wallet flags: the window renders each flag as a card with its actions; an ask action SENDS through the ask door (or the chat’s send slot on a chat surface), a door action opens the panel; the view composes flags server-side',
       /data-wallet-flag=\{flag\.kind\}/.test(wfPanel) && /openDoor\(ask, \{ send: true, mcps \}\)/.test(wfPanel) && /setComposerSend\(\{ text: ask, mcps \}\)/.test(wfPanel) && /a\.ask \? onAsk\(a\) : onDoor\(a\)/.test(wfPanel) &&
@@ -12740,6 +12753,70 @@ async function main() {
   check('dry-run: a node that says "execution reverted" under an odd code is still a revert', vOddRevert.kind === 'revert' && /deadline/.test(vOddRevert.reason), JSON.stringify(vOddRevert))
   const vClean = await dryRunTx(createPublicClient({ chain: base, transport: custom({ request: async () => '0x5208' }, { retryCount: 0 }) }), DRY_TX, { attempts: 1 })
   check('dry-run: a clean estimate is clean', vClean.kind === 'clean')
+  // Transient-or-not, one stage EARLIER than the dry-run: a build that throws
+  // out of a balance read. 2026-09-15: "Rate Limit Hit, limit will reset in
+  // 60 seconds" from rpc.mainnet.chain.robinhood.com booked a funded $34
+  // OP→USDG funding job `failed` (and the 09-08 SPY buy the same way). The
+  // runner now WITHHOLDS on transport words and fails on everything else.
+  const readThrowing = async (mk: () => Error) => {
+    const client = createPublicClient({ chain: base, transport: custom({ request: async () => { throw mk() } }, { retryCount: 0 }) })
+    try {
+      await client.readContract({ address: owner.address, abi: erc20Abi, functionName: 'balanceOf', args: [owner.address] })
+      return null
+    } catch (e) {
+      return e
+    }
+  }
+  const rlErr = await readThrowing(() => new RpcRequestError({ body: {}, url: 'https://rpc.mainnet.chain.robinhood.com', error: { code: -32005, message: 'Rate Limit Hit, limit will reset in 60 seconds' } }))
+  const rlWords = transientRpcWords(rlErr)
+  check(
+    'transient rpc: a rate-limited balanceOf through viem\'s real wrapping is transient, carries the node\'s words, and names the host',
+    !!rlWords && /Rate Limit Hit/.test(rlWords) && rpcHostOf(rlErr) === 'rpc.mainnet.chain.robinhood.com',
+    `${rlWords} / ${rpcHostOf(rlErr)}`,
+  )
+  check('transient rpc: an unknown-code JSON-RPC error ("RPC Request failed.") is transient', !!transientRpcWords(await readThrowing(() => new RpcRequestError({ body: {}, url: 'https://rpc.test', error: { code: 429, message: 'rate limited' } }))))
+  check('transient rpc: a timeout is transient', !!transientRpcWords(await readThrowing(() => new TimeoutError({ body: {}, url: 'https://rpc.test' }))))
+  check('transient rpc: an HTTP 502 is transient', !!transientRpcWords(await readThrowing(() => new HttpRequestError({ url: 'https://rpc.test', status: 502, body: {} }))))
+  check('transient rpc: a revert is chain evidence, never transient', transientRpcWords(await readThrowing(() => new RpcRequestError({ body: {}, url: 'https://rpc.test', error: { code: 3, message: 'execution reverted: STF' } }))) === null)
+  check('transient rpc: a viem input error (bad address) is the builder\'s own fault, never transient', transientRpcWords(new InvalidAddressError({ address: '0x1234' })) === null)
+  check('transient rpc: a plain "fetch failed" is transient; a builder\'s own plain refusal is not', !!transientRpcWords(new Error('fetch failed')) && transientRpcWords(new Error("Couldn't read the funding amount \"abc\".")) === null && transientRpcWords('nope') === null)
+  const runnerSrc = await readFile(new URL('../lib/jobs-runner.ts', import.meta.url), 'utf8')
+  check(
+    'transient rpc: the runner WITHHOLDS a build that threw on an RPC that didn\'t answer (pending + withheldKind rpc + a try count), capped at RPC_WITHHOLD_MAX before failing by name',
+    /const transient = transientRpcWords\(e\)/.test(runnerSrc) && /withheld: true, withheldKind: 'rpc', rpcTries: tries/.test(runnerSrc) && /if \(tries < RPC_WITHHOLD_MAX\)/.test(runnerSrc) && /const RPC_WITHHOLD_MAX = 6/.test(runnerSrc) && runnerSrc.indexOf('const transient = transientRpcWords(e)') < runnerSrc.indexOf('e instanceof PolicyRefusedError ? e.policyBlock'),
+  )
+  // Robinhood Chain's server reads lead with Alchemy (the public RPC
+  // rate-limits per IP and Vercel's egress is shared); the key rides in a
+  // bearer header so viem's "URL: …" error line never carries it, and the
+  // browser configs never see the endpoint at all.
+  // The harness process doesn't load .env.local — read the key the way the
+  // burner/DATABASE_URL pins do, so the endpoint shape AND a live read
+  // through the bearer-header endpoint are proven, not just the fallback.
+  if (!process.env.ALCHEMY_API_KEY) {
+    const fromEnv = (await import('node:fs')).readFileSync('.env.local', 'utf8').match(/^ALCHEMY_API_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '')
+    if (fromEnv) process.env.ALCHEMY_API_KEY = fromEnv
+  }
+  const rhEndpoints = serverRpcEndpoints(chainById(4663)!)
+  const keySet = !!process.env.ALCHEMY_API_KEY
+  check(
+    `rpc endpoints: Robinhood Chain on the server leads with Alchemy's bare /v2/ URL + a bearer header${keySet ? '' : ' (ALCHEMY_API_KEY unset here — shape pinned only)'}, key never in the URL`,
+    (!keySet || (rhEndpoints[0]?.url === 'https://robinhood-mainnet.g.alchemy.com/v2/' && /^Bearer \S+$/.test(rhEndpoints[0]?.headers?.Authorization ?? ''))) &&
+      rhEndpoints.every((e) => !process.env.ALCHEMY_API_KEY || !e.url.includes(process.env.ALCHEMY_API_KEY)) &&
+      serverRpcEndpoints(chainById(8453)!)[0]?.url === 'https://base-rpc.publicnode.com' && !serverRpcEndpoints(chainById(8453)!)[0]?.headers,
+    JSON.stringify(rhEndpoints.map((e) => e.url)),
+  )
+  const walletChainsSrc = await readFile(new URL('../lib/wallet-chains.ts', import.meta.url), 'utf8')
+  const wagmiSrc = await readFile(new URL('../lib/wagmi.ts', import.meta.url), 'utf8')
+  check('rpc endpoints: no browser wallet config carries an Alchemy RPC (the key is server-only)', !/g\.alchemy\.com/.test(walletChainsSrc) && !/g\.alchemy\.com/.test(wagmiSrc))
+  // A fresh client over the FIRST endpoint alone (publicClientFor's cache
+  // may predate the key in this process): with the key, that is Alchemy
+  // through the bearer header; without, the public RPC.
+  const rhFirst = rhEndpoints[0]
+  const rhLive = await createPublicClient({ chain: robinhoodChain, transport: http(rhFirst.url, rhFirst.headers ? { fetchOptions: { headers: rhFirst.headers }, retryCount: 0 } : { retryCount: 0 }) })
+    .readContract({ address: primaryStable(4663)!.address, abi: erc20Abi, functionName: 'balanceOf', args: ['0x66268791b55e1f5fa585d990326519f101407257'] })
+    .then((v) => ({ ok: true as const, v }))
+    .catch((e) => ({ ok: false as const, e: (e as Error).message }))
+  check(`rpc endpoints: a live USDG balanceOf on Robinhood Chain answers through the first server endpoint (${rhFirst.url})`, rhLive.ok && typeof rhLive.v === 'bigint', rhLive.ok ? String(rhLive.v) : rhLive.e)
   // Spot guardian gate: claims BEFORE the HL guardian (whose loose coin slot
   // would read "spot" as a coin) and asks to connect — never a planner fall.
   const spotGate = await fetch(`${BASE}/api/chat`, {

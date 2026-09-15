@@ -232,7 +232,11 @@ export default function JobCard({
                 : step.status === 'failed' && step.result
                   ? String((step.result as { error?: string }).error ?? '')
                   : step.status === 'pending' && (step.result as { withheld?: boolean } | null)?.withheld
-                    ? `⏸ ${String((step.result as { error?: string }).error ?? '')} It's offered the moment the funds are there.`
+                    ? `⏸ ${String((step.result as { error?: string }).error ?? '')} ${
+                        // An RPC withhold retries on its own (the runner's
+                        // hold-down); an affordability withhold waits on money.
+                        (step.result as { withheldKind?: string }).withheldKind === 'rpc' ? 'It retries on its own.' : "It's offered the moment the funds are there."
+                      }`
                     : ''
             // Timeline rail: each row draws its own connector segments so
             // progress reads as a line filling in, not floating icons — the

@@ -12,16 +12,34 @@ import { absoluteUrl } from '@/lib/site-url'
  * Share control for the chat header. Only shown to the signed-in owner of a
  * persisted chat. Toggles the chat's public flag (PATCH /api/chats/[id]) and
  * surfaces the unguessable /p/<slug> share link to copy.
+ *
+ * `signInLane` (the ask door on /markets + /t/<sym>, 2026-09-15): those
+ * surfaces run on wallet connect alone (rule 6), so the thread is a LOCAL
+ * chat with no row to share. A connected-but-not-signed-in wallet with a
+ * thread gets the same Share pill; pressing it runs the SIWE round-trip in
+ * place (no redirect — the door must stay open), the session's adoption
+ * effect promotes the thread into the DB, and the popover opens itself
+ * with the link. "Connect to act, sign in to KEEP" — sharing is keeping.
  */
-export default function ShareButton() {
-  const { address } = useSession()
+export default function ShareButton({ signInLane = false }: { signInLane?: boolean } = {}) {
+  const { address, walletAddress, signIn, signingIn } = useSession()
   const { chats, currentChatId, setChatPublic } = useYeetfulStore()
   const chat = chats.find((c) => c.id === currentChatId)
 
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Set by the sign-in lane: once the thread is a DB chat under a session,
+  // open the popover the person asked for.
+  const [openOnceShareable, setOpenOnceShareable] = useState(false)
   const popRef = useRef<HTMLDivElement>(null)
+  const shareable = !!address && !!chat && isDbChatId(chat.id)
+  useEffect(() => {
+    if (openOnceShareable && shareable) {
+      setOpenOnceShareable(false)
+      setOpen(true)
+    }
+  }, [openOnceShareable, shareable])
 
   // Close the popover on outside click.
   useEffect(() => {
@@ -35,7 +53,34 @@ export default function ShareButton() {
 
   // Only the signed-in owner of a real (persisted) chat can share it — a
   // local ephemeral chat has no row to flip public (its PATCH would 404).
-  if (!address || !chat || !isDbChatId(chat.id)) return null
+  if (!shareable) {
+    // The sign-in lane: a connected wallet with a thread it hasn't kept yet.
+    // No wallet / no thread → nothing (the runtime's own gate leads there).
+    const hasThread = !!chat && chat.messages.some((m) => m.role === 'user')
+    if (!signInLane || address || !walletAddress || !hasThread) return null
+    return (
+      <div className="relative flex-shrink-0">
+        <button
+          type="button"
+          onClick={() => {
+            setOpenOnceShareable(true)
+            void signIn()
+          }}
+          disabled={signingIn}
+          title="Sign in to share this chat"
+          aria-label="Sign in to share this chat"
+          data-share-lane="sign-in"
+          className={cn(
+            'flex items-center gap-1.5 px-2.5 py-1 max-lg:min-h-10 max-lg:px-3 rounded-lg border text-[11px] transition-colors disabled:opacity-60',
+            'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)]',
+          )}
+        >
+          {signingIn ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />}
+          <span className="whitespace-nowrap max-sm:hidden">{signingIn ? 'Signing in…' : 'Share'}</span>
+        </button>
+      </div>
+    )
+  }
 
   const isPublic = !!chat.isPublic
   const shareUrl =

@@ -51,6 +51,12 @@ export interface AppChain {
    *  default eth.merkle.io Cloudflare-blocks many networks — same reason
    *  lib/wagmi.ts pins publicnode for the browser). */
   rpcUrl?: string
+  /** Server-side: front the chain's reads with Alchemy's JSON-RPC for
+   *  `alchemyNet` when ALCHEMY_API_KEY is set (the public RPC stays as the
+   *  fallback). Opt-in per chain, and only after MEASURING the endpoint —
+   *  the publicnode lesson (#710). Never reaches the browser bundle: the key
+   *  is server-only and `serverRpcEndpoints` is window-guarded. */
+  alchemyRpc?: boolean
   /** Words that name this chain in a message ("on arbitrum", "on robinhood"). */
   words: RegExp
   /** Uniswap v3 build support — null means no native venue on this chain. */
@@ -232,6 +238,14 @@ export const APP_CHAINS: AppChain[] = [
     color: '#ccff00',
     viem: robinhoodChain,
     alchemyNet: 'robinhood-mainnet',
+    // rpc.mainnet.chain.robinhood.com rate-limits per IP ("Rate Limit Hit,
+    // limit will reset in 60 seconds") and Vercel's egress IPs are shared —
+    // 2026-09-15 a funded OP→USDG funding leg and (09-08) a USDG→SPY buy
+    // both died on ONE balanceOf read there. Alchemy's robinhood-mainnet
+    // JSON-RPC measured 2026-09-15: chainId 4663, eth_call at latest AND
+    // 5,000 blocks back, eth_estimateGas, eth_getCode, 20 parallel calls
+    // all 200. It leads on the server; the public RPC is the fallback.
+    alchemyRpc: true,
     words: /\brobinhood(?:\s+chain)?\b/i,
     // v2/v3/v4 live day one (blog.uniswap.org/robinhood-chain-is-live);
     // addresses from deployments/4663.md, bytecode verified via eth_getCode.
@@ -321,6 +335,26 @@ export function sanitizeChainId(v: unknown): number | null {
 // depends on it); this factory serves the multi-chain swap path.
 const clients = new Map<number, PublicClient>()
 
+/** One server-side RPC endpoint: the URL viem prints in its errors, plus any
+ *  auth header. The Alchemy key rides in `Authorization: Bearer` with a bare
+ *  `/v2/` path (probed 2026-09-15: 200 with the header, 401 "Must be
+ *  authenticated!" without), so a viem error's "URL: …" line — which the
+ *  runner persists on the job step and the chat prints — never carries it. */
+export type ServerRpcEndpoint = { url: string; headers?: Record<string, string> }
+
+/** The RPC endpoints a SERVER client tries, in order, before viem's chain
+ *  default: Alchemy's JSON-RPC for chains that opted in (`alchemyRpc`) when
+ *  the key is present, then the chain's pinned `rpcUrl`. Empty in the
+ *  browser and for chains with neither — those keep the single default
+ *  transport. Exported for the harness. */
+export function serverRpcEndpoints(chain: Pick<AppChain, 'alchemyNet' | 'alchemyRpc' | 'rpcUrl'>): ServerRpcEndpoint[] {
+  const out: ServerRpcEndpoint[] = []
+  const key = typeof window === 'undefined' ? process.env.ALCHEMY_API_KEY : undefined
+  if (chain.alchemyRpc && key) out.push({ url: `https://${chain.alchemyNet}.g.alchemy.com/v2/`, headers: { Authorization: `Bearer ${key}` } })
+  if (chain.rpcUrl) out.push({ url: chain.rpcUrl })
+  return out
+}
+
 export function publicClientFor(chainId: number): PublicClient | null {
   const chain = BY_ID.get(chainId)
   if (!chain) return null
@@ -333,7 +367,11 @@ export function publicClientFor(chainId: number): PublicClient | null {
     // publicnode no longer turns the stranger's first "$1 of ETH" chip into
     // "I couldn't price ETH on Base" (squad QA P-2, 2026-09-08). Chains
     // without a pin keep the single default transport.
-    const transport = chain.rpcUrl ? fallback([http(chain.rpcUrl), http()]) : http()
+    const endpoints = serverRpcEndpoints(chain)
+    const transport =
+      endpoints.length > 0
+        ? fallback([...endpoints.map((e) => http(e.url, e.headers ? { fetchOptions: { headers: e.headers } } : undefined)), http()])
+        : http()
     client = createPublicClient({ chain: chain.viem, transport })
     clients.set(chainId, client)
   }
