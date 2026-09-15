@@ -45,6 +45,12 @@ import {
 } from '../lib/x402'
 import { fitsHouseCeiling, houseCeilingReply, houseDailyCeilingUsd } from '../lib/house-spend'
 import { hasGuardianStep, sessionOwnsWallet } from '../lib/chat-mutation-gate'
+import { MK_TOKEN_NAMES, deltaTone, fmtCompact, fmtPct as mkFmtPct, seriesVar } from '../lib/markets-look'
+import { cellFill, mapItems, polarity, squarify, marketMapLayout, labelTier } from '../lib/viz/market-map'
+import { readFlow as vizReadFlow, FLOW_TTL_MS } from '../lib/viz/flow'
+import { usdOf } from '../lib/viz/flow-readers'
+import { rankMovers } from '../lib/viz/movers'
+import { marketSections as vizMarketSections } from '../lib/markets'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txChainOf } from '../lib/transaction-layer'
@@ -20150,7 +20156,7 @@ async function main() {
     check(
       'chart sessions: MarketChart computes sessions only where they apply, quiets extended-hours candles and volume, hands the runs to a bottom-layer SessionBands primitive, paints candles above the moving averages, names the shading in the chart foot, and --chart-session is defined for both themes',
       sessSrc.includes('sessionsApply(pair?.source, tf) ? bars.map((c) => equitySession(c.t, FRAME_SEC[tf]))') &&
-        sessSrc.includes('alpha(c.c >= c.o ? tokens.accent : tokens.sell, QUIET_CANDLE_ALPHA)') &&
+        sessSrc.includes('alpha(c.c >= c.o ? tokens.up : tokens.down, QUIET_CANDLE_ALPHA)') &&
         sessSrc.includes('candleSeries.attachPrimitive(bands)') &&
         sessSrc.includes('bandsRef.current?.update(sessions ? extendedRuns(sessions) : [], tokens.session)') &&
         sessSrc.includes('cs.setSeriesOrder(top)') &&
@@ -20320,6 +20326,187 @@ async function main() {
         shellSrc.indexOf("look.css'") < shellSrc.indexOf("markets.css'") &&
         /\.mk-slot \{/.test(mkCss) &&
         (mkCss.match(/var\(--mk-[a-z-]+\)/g) ?? []).length === 0,
+    )
+  }
+
+  // ── MK2/VIZ ─────────────────────────────────────────────────────────────
+  // The look tokens, the pure viz shaping, the flow route's fail-soft frame,
+  // and the chart engine's wiring (squad-mk2-2026-09-15, VIZ lane).
+  {
+    const lookCss = await readFile('components/markets/look.css', 'utf8')
+    const lightAt = lookCss.indexOf(":root[data-theme='light'] {")
+    const darkBlock = lookCss.slice(lookCss.indexOf(':root {'), lightAt)
+    const lightBlock = lookCss.slice(lightAt, lookCss.indexOf('}', lightAt) + 1)
+    const defined = (block: string, name: string) => new RegExp(`\\s${name.replace(/[-]/g, '\\-')}:\\s*[^;]+;`).test(block)
+    const missingDark = MK_TOKEN_NAMES.filter((n) => !defined(darkBlock, n))
+    const missingLight = MK_TOKEN_NAMES.filter((n) => !defined(lightBlock, n))
+    check(
+      `viz tokens: every MK token name (${MK_TOKEN_NAMES.length}) is defined on :root (dark) AND under :root[data-theme='light'] — never a color whose only definition sits in one theme`,
+      lightAt > 0 && missingDark.length === 0 && missingLight.length === 0,
+      `missing dark=${missingDark.join(',') || '-'} light=${missingLight.join(',') || '-'}`,
+    )
+    // WCAG contrast of the up/down inks vs each ground (the harness can't see
+    // a canvas, so the numbers are computed from the stylesheet's own hexes).
+    const hexOf = (block: string, name: string) => block.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})`))?.[1] ?? null
+    const lum = (hex: string) => {
+      const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    }
+    const ratio = (a: string, b: string) => {
+      const [l1, l2] = [lum(a), lum(b)].sort((x, y) => y - x)
+      return (l1 + 0.05) / (l2 + 0.05)
+    }
+    const contrasts = {
+      darkUp: ratio(hexOf(darkBlock, '--mk-up') ?? '#000000', '#000000'),
+      darkDown: ratio(hexOf(darkBlock, '--mk-down') ?? '#000000', '#000000'),
+      lightUp: ratio(hexOf(lightBlock, '--mk-up') ?? '#fdfdfc', '#fdfdfc'),
+      lightDown: ratio(hexOf(lightBlock, '--mk-down') ?? '#fdfdfc', '#fdfdfc'),
+    }
+    check(
+      'viz tokens: --mk-up and --mk-down clear 3:1 against the dark ground (#000) and the light ground (#fdfdfc)',
+      Object.values(contrasts).every((r) => r >= 3),
+      Object.entries(contrasts)
+        .map(([k, v]) => `${k}=${v.toFixed(2)}`)
+        .join(' '),
+    )
+    const seriesHexDark = Array.from({ length: 8 }, (_, i) => hexOf(darkBlock, `--mk-series-${i + 1}`))
+    const seriesHexLight = Array.from({ length: 8 }, (_, i) => hexOf(lightBlock, `--mk-series-${i + 1}`))
+    check(
+      'viz tokens: the 8 series slots are distinct hexes in both themes and every slot clears 3:1 on its ground',
+      new Set(seriesHexDark).size === 8 && new Set(seriesHexLight).size === 8 && seriesHexDark.every((h) => h && ratio(h, '#000000') >= 3) && seriesHexLight.every((h) => h && ratio(h, '#fdfdfc') >= 3),
+    )
+    check(
+      'viz helpers: deltaTone / fmtCompact / fmtPct / seriesVar are pure and stable (entity → the same slot everywhere; 0/NaN/null → flat)',
+      deltaTone(1.2) === 'up' && deltaTone(-0.1) === 'down' && deltaTone(0) === 'flat' && deltaTone(null) === 'flat' && deltaTone(NaN) === 'flat' &&
+        fmtCompact(1234) === '1.23K' && fmtCompact(1_234_567, { usd: true }) === '$1.23M' && fmtCompact(2.5e9, { usd: true }) === '$2.50B' && fmtCompact(0.00123) === '0.00123' && fmtCompact(null) === '—' && fmtCompact(-1500, { usd: true }) === '-$1.50K' &&
+        mkFmtPct(1.234) === '+1.23%' && mkFmtPct(-0.4) === '-0.40%' && mkFmtPct(0) === '0.00%' && mkFmtPct(null) === '—' &&
+        seriesVar('uniswap') === 'var(--mk-series-1)' && seriesVar('Uniswap') === seriesVar('uniswap') && seriesVar('hyperliquid') === 'var(--mk-series-5)' && seriesVar(9) === 'var(--mk-series-2)' && seriesVar('some-new-venue') === seriesVar('some-new-venue'),
+    )
+
+    // Market map shaping — the pure treemap.
+    const sections = vizMarketSections()
+    const allSyms = sections.flatMap((s) => s.rows.map((r) => r.symbol))
+    const noVolQuotes = Object.fromEntries(allSyms.map((s, i) => [s, { last: 10 + i, chgPct: ((i % 11) - 5) * 1.3 }]))
+    const equal = mapItems(sections, noVolQuotes, 'all')
+    const withVol = mapItems(sections, Object.fromEntries(allSyms.map((s, i) => [s, { last: 10, chgPct: 0, volumeUsd: 1000 + i * 10 }])), 'crypto')
+    const partial = mapItems(sections, Object.fromEntries(allSyms.map((s, i) => [s, { last: 10, chgPct: 0, volumeUsd: i % 2 ? 1000 : null }])), 'crypto')
+    check(
+      'market map: sizing is honest — equal cells unless EVERY quoted item carries a positive volume; unquoted symbols keep the median weight and are listed, never dropped',
+      equal.sizing === 'equal' && equal.items.length === allSyms.length && equal.items.every((i) => i.weight === 1) &&
+        withVol.sizing === 'volume' && withVol.items.every((i) => i.weight >= 1000) && partial.sizing === 'equal' &&
+        mapItems(sections, {}, 'perps').unquoted.length === sections.find((s) => s.id === 'perps')!.rows.length &&
+        mapItems(sections, noVolQuotes, 'stocks').items.every((i) => i.section === 'equities'),
+      `equal=${equal.items.length} vol=${withVol.sizing} partial=${partial.sizing}`,
+    )
+    const W = 1000
+    const H = 450
+    const cells = squarify(equal.items, W, H, 2)
+    const area = cells.reduce((a, c) => a + c.w * c.h, 0)
+    const inBounds = cells.every((c) => c.x >= 0 && c.y >= 0 && c.x + c.w <= W + 1e-6 && c.y + c.h <= H + 1e-6 && c.w >= 0 && c.h >= 0)
+    let overlaps = 0
+    for (let i = 0; i < cells.length; i++)
+      for (let j = i + 1; j < cells.length; j++) {
+        const a = cells[i]
+        const b = cells[j]
+        if (a.x < b.x + b.w - 1e-6 && b.x < a.x + a.w - 1e-6 && a.y < b.y + b.h - 1e-6 && b.y < a.y + a.h - 1e-6) overlaps++
+      }
+    const layout = marketMapLayout(sections, noVolQuotes, 'all', W, H)
+    check(
+      'market map: the squarified layout places every item inside the frame with no overlaps and covers the frame (minus the 2px gaps); the layout is deterministic',
+      cells.length === equal.items.length && inBounds && overlaps === 0 && area > W * H * 0.9 && area <= W * H + 1e-6 &&
+        JSON.stringify(layout.cells) === JSON.stringify(marketMapLayout(sections, noVolQuotes, 'all', W, H).cells),
+      `cells=${cells.length} overlaps=${overlaps} coverage=${((area / (W * H)) * 100).toFixed(1)}%`,
+    )
+    check(
+      'market map: color is a diverging up/down mix toward the surface at zero (never a hue at the midpoint), clamped at ±5%; labels drop below a legible cell',
+      polarity(0) === 0 && polarity(null) === 0 && polarity(50) === 1 && polarity(-50) === -1 && polarity(2.5) === 0.5 &&
+        cellFill(0) === 'var(--mk-surface-2)' && cellFill(null) === 'var(--mk-surface-2)' && cellFill(5).includes('--mk-up') && cellFill(-5).includes('--mk-down') && cellFill(5).includes('90%') && cellFill(0.5).includes('--mk-up') &&
+        labelTier(20, 20) === 0 && labelTier(40, 20) === 1 && labelTier(80, 40) === 2,
+    )
+    check(
+      'movers: gainers rank descending, losers ascending (worst first); unquoted rows never rank',
+      (() => {
+        const rows = [
+          { symbol: 'A', chgPct: 3 },
+          { symbol: 'B', chgPct: -1 },
+          { symbol: 'C', chgPct: 7 },
+          { symbol: 'D', chgPct: null },
+          { symbol: 'E', chgPct: -4 },
+          { symbol: 'F', chgPct: 0 },
+        ]
+        const { gainers, losers } = rankMovers(rows, 5)
+        return gainers.map((r) => r.symbol).join('') === 'CA' && losers.map((r) => r.symbol).join('') === 'EB'
+      })(),
+    )
+
+    // The flow route: fail-soft frame, cache, gaps never zeros.
+    const flowSym = `ZZ${Date.now() % 1000}`
+    const failing = [
+      { id: 'boom', venue: 'Boom', measure: 'x', read: async () => { throw new Error('rpc down') } },
+      { id: 'slow', venue: 'Slow', measure: 'y', read: () => new Promise<null>(() => {}) },
+      { id: 'quiet', venue: 'Quiet', measure: 'z', read: async () => null },
+      { id: 'reads', venue: 'Reads', measure: 'w', read: async () => ({ id: 'reads', venue: 'Reads', measure: 'w', usd: 12.5 }) },
+    ]
+    const t0 = Date.now()
+    const flow1 = await vizReadFlow(flowSym, failing)
+    const flowMs = Date.now() - t0
+    const flow2 = await vizReadFlow(flowSym, failing)
+    check(
+      'viz flow: a thrown reader becomes a labelled gap (usd null + gap words), a hanging reader times out into a gap within its deadline, a venue that does not list the symbol is omitted, a reading venue keeps its number; the second read is served from the 60s cache',
+      flow1.sources.length === 3 && flow1.sources.find((s) => s.id === 'boom')?.usd === null && /rpc down/.test(flow1.sources.find((s) => s.id === 'boom')?.gap ?? '') &&
+        flow1.sources.find((s) => s.id === 'slow')?.usd === null && /timed out/.test(flow1.sources.find((s) => s.id === 'slow')?.gap ?? '') &&
+        !flow1.sources.some((s) => s.id === 'quiet') && flow1.sources.find((s) => s.id === 'reads')?.usd === 12.5 && flowMs < 8_000 && flowMs >= 5_500 &&
+        flow2.cached === true && FLOW_TTL_MS === 60_000 && !flow1.sources.some((s) => s.usd === 0),
+      `sources=${flow1.sources.map((s) => `${s.id}:${s.usd ?? 'gap'}`).join(',')} ms=${flowMs} cached=${flow2.cached}`,
+    )
+    check(
+      'viz flow: usdOf reads the Aave MCP\'s formatted dollar strings ("$91,106,249.55") and refuses junk (a missing field is null, never 0)',
+      usdOf('$91,106,249.55') === 91106249.55 && usdOf('1,234.5') === 1234.5 && usdOf(42) === 42 && usdOf(undefined) === null && usdOf('') === null && usdOf('n/a') === null,
+    )
+    const noSym = await fetch(`${BASE}/api/markets/viz/flow`)
+    const badSym = await fetch(`${BASE}/api/markets/viz/flow?symbol=${encodeURIComponent('../etc')}`)
+    type FlowBody = { symbol?: string; sources?: { id: string; usd: number | null; gap?: string; venue: string; measure: string }[]; cached?: boolean; error?: string }
+    const ethFlow = (await (await fetch(`${BASE}/api/markets/viz/flow?symbol=eth`)).json()) as FlowBody
+    const ethFlow2 = (await (await fetch(`${BASE}/api/markets/viz/flow?symbol=ETH`)).json()) as FlowBody
+    const ethSources = ethFlow.sources ?? []
+    check(
+      'viz flow route: 400 without a symbol (and for junk), 200 for ETH with every source carrying either a number or a gap (never a bare null, never a zero from a failed read), the symbol upper-cased, and the second read cached',
+      noSym.status === 400 && badSym.status === 400 && ethFlow.symbol === 'ETH' && Array.isArray(ethFlow.sources) &&
+        ethSources.every((s) => (typeof s.usd === 'number' && Number.isFinite(s.usd)) || (s.usd === null && typeof s.gap === 'string' && s.gap.length > 0)) &&
+        ethSources.every((s) => s.venue && s.measure) && ethFlow2.cached === true,
+      `sources=${ethSources.map((s) => `${s.id}${s.usd == null ? '(gap)' : ''}`).join(',') || '-'} error=${ethFlow.error ?? '-'}`,
+    )
+    check(
+      'viz flow route: ETH names the dapps a wallet can act on — Uniswap v3 (a pool read or a labelled gap), Hyperliquid open interest, Aave, Lido — each a separate row, or the route\'s own reader-down error',
+      ethFlow.error === 'reader unavailable' || (['uniswap', 'hyperliquid', 'aave', 'lido'].every((id) => ethSources.some((s) => s.id === id))),
+      `ids=${[...new Set(ethSources.map((s) => s.id))].join(',')}`,
+    )
+
+    // The chart engine wiring (the pixels are in the PR's browser drive).
+    const mcSrc = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
+    const mountSrc = await readFile('components/markets/chart/ChartMount.tsx', 'utf8')
+    check(
+      'viz chart: MarketChart imports look.css, reads --mk-up/--mk-down (falling back to --accent/--sell), --mk-grid and --mk-crosshair through the probe, paints candle bodies in the up/down inks with quiet wicks (WICK_ALPHA), and no paint site still reads tokens.accent/tokens.sell',
+      mcSrc.includes("import '@/components/markets/look.css'") && mcSrc.includes("up: get('--mk-up', get('--accent', '#3ecf8e'))") && mcSrc.includes("down: get('--mk-down', get('--sell', '#e5484d'))") &&
+        mcSrc.includes("cs.getPropertyValue('--mk-grid')") && mcSrc.includes("cs.getPropertyValue('--mk-crosshair')") && mcSrc.includes('wickUpColor: alpha(tokens.up, WICK_ALPHA)') &&
+        mcSrc.includes('grid: { vertLines: { color: tokens.grid }, horzLines: { color: tokens.grid } }') &&
+        !mcSrc.slice(mcSrc.indexOf('const alpha = (hex: string, a: number)')).includes('tokens.accent') && !mcSrc.slice(mcSrc.indexOf('const alpha = (hex: string, a: number)')).includes('tokens.sell'),
+    )
+    check(
+      'viz chart: onViewport rides ChartMount → MarketChart and fires from the viewport guard with bar OPEN times at most once per animation frame (the AI lane\'s "what is on screen")',
+      mountSrc.includes('onViewport?: (v: { from: number; to: number; tf: ChartTf }) => void') && mountSrc.includes('onViewport={onViewport}') &&
+        mcSrc.includes('onViewport?: (v: { from: number; to: number; tf: ChartTf }) => void') && mcSrc.includes('emitViewport(clamped ?? view)') && mcSrc.includes('requestAnimationFrame(() => {') &&
+        mcSrc.includes('onViewportRef.current({ from: bars[lo].t, to: bars[hi].t, tf: tfRef.current })'),
+    )
+    const primitives = ['Sparkline', 'Delta', 'StatTile', 'MiniGauge', 'Bars', 'Ribbon', 'MarketMap', 'FlowPanel', 'MoversTape']
+    const barrel = await readFile('components/markets/viz/index.ts', 'utf8')
+    const present = await Promise.all(primitives.map((n) => readFile(`components/markets/viz/${n}.tsx`, 'utf8').then(() => true, () => false)))
+    check(
+      'viz primitives: the nine contract components exist at components/markets/viz/<Name>.tsx and the barrel exports each; the slot props match the README contract',
+      present.every(Boolean) && primitives.every((n) => barrel.includes(`export { default as ${n} } from './${n}'`)) &&
+        (await readFile('components/markets/viz/MarketMap.tsx', 'utf8')).includes("section?: MapSection") && (await readFile('components/markets/viz/FlowPanel.tsx', 'utf8')).includes('pair: ChartPair | null') &&
+        (await readFile('components/markets/viz/MoversTape.tsx', 'utf8')).includes('onOpen: (symbol: string) => void'),
+      `missing=${primitives.filter((_, i) => !present[i]).join(',') || '-'}`,
     )
   }
 

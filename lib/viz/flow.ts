@@ -1,10 +1,9 @@
 // FLOW — "where this symbol's money lives across dapps" (VIZ lane). Server
 // only. Each source is its own read with its own timeout; a failed read is a
 // labelled gap (usd: null + gap), never a zero. Cached 60s per symbol.
-// First push = the shape + cache + the fail-soft frame; the venue reads land
-// in R1 (see VIZ.md STATUS).
 
 import type { FlowResponse, FlowSource } from '@/components/markets/viz/FlowPanel'
+import { FLOW_READERS_LIVE } from '@/lib/viz/flow-readers'
 
 export type { FlowResponse, FlowSource }
 
@@ -54,5 +53,5 @@ export async function readFlow(symbol: string, readers: readonly { id: string; v
   }
 }
 
-/** The venue readers — appended as they land. Order = display order. */
-export const FLOW_READERS: { id: string; venue: string; measure: string; read: FlowReader }[] = []
+/** The venue readers (lib/viz/flow-readers). Order = display order. */
+export const FLOW_READERS: { id: string; venue: string; measure: string; read: FlowReader }[] = FLOW_READERS_LIVE
