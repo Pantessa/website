@@ -20380,10 +20380,12 @@ async function main() {
     const equal = mapItems(sections, noVolQuotes, 'all')
     const withVol = mapItems(sections, Object.fromEntries(allSyms.map((s, i) => [s, { last: 10, chgPct: 0, volumeUsd: 1000 + i * 10 }])), 'crypto')
     const partial = mapItems(sections, Object.fromEntries(allSyms.map((s, i) => [s, { last: 10, chgPct: 0, volumeUsd: i % 2 ? 1000 : null }])), 'crypto')
+    const mostly = mapItems(sections, Object.fromEntries(allSyms.map((s, i) => [s, { last: 10, chgPct: 0, volumeUsd: i % 20 === 0 ? null : 1000 + i }])), 'crypto')
     check(
-      'market map: sizing is honest — equal cells unless EVERY quoted item carries a positive volume; unquoted symbols keep the median weight and are listed, never dropped',
+      'market map: sizing is honest — equal cells unless ≥90% of the quoted items carry a positive volume (then the few without one take the median and are NAMED); unquoted symbols keep the median weight and are listed, never dropped',
       equal.sizing === 'equal' && equal.items.length === allSyms.length && equal.items.every((i) => i.weight === 1) &&
-        withVol.sizing === 'volume' && withVol.items.every((i) => i.weight >= 1000) && partial.sizing === 'equal' &&
+        withVol.sizing === 'volume' && withVol.items.every((i) => i.weight >= 1000) && withVol.medianSized.length === 0 && partial.sizing === 'equal' && partial.medianSized.length === 0 &&
+        mostly.sizing === 'volume' && mostly.medianSized.length > 0 && mostly.medianSized.every((s) => mostly.items.find((i) => i.symbol === s)!.weight > 1000) &&
         mapItems(sections, {}, 'perps').unquoted.length === sections.find((s) => s.id === 'perps')!.rows.length &&
         mapItems(sections, noVolQuotes, 'stocks').items.every((i) => i.section === 'equities'),
       `equal=${equal.items.length} vol=${withVol.sizing} partial=${partial.sizing}`,
@@ -20448,6 +20450,18 @@ async function main() {
         !flow1.sources.some((s) => s.id === 'quiet') && flow1.sources.find((s) => s.id === 'reads')?.usd === 12.5 && flowMs < 8_000 && flowMs >= 5_500 &&
         flow2.cached === true && FLOW_TTL_MS === 60_000 && !flow1.sources.some((s) => s.usd === 0),
       `sources=${flow1.sources.map((s) => `${s.id}:${s.usd ?? 'gap'}`).join(',')} ms=${flowMs} cached=${flow2.cached}`,
+    )
+    type VolBody = { volumes?: Record<string, number>; feeds?: Record<string, string>; cached?: boolean; error?: string }
+    const vol1 = (await (await fetch(`${BASE}/api/markets/viz/volume`)).json()) as VolBody
+    const vol2 = (await (await fetch(`${BASE}/api/markets/viz/volume`)).json()) as VolBody
+    const volN = Object.keys(vol1.volumes ?? {}).length
+    check(
+      'viz volume route: dollar volume per charted symbol from three feeds (coinbase × last, hyperliquid dayNtlVlm, robinhood last real session × close) — every value positive and finite, feed named per symbol, absent (never 0) when a feed misses, second read cached; ≥60% of the index answered or the route\'s own reader-down error',
+      (vol1.error === 'reader unavailable') ||
+        (Object.values(vol1.volumes ?? {}).every((v) => typeof v === 'number' && Number.isFinite(v) && v > 0) &&
+          Object.keys(vol1.volumes ?? {}).every((s) => ['coinbase', 'hyperliquid', 'robinhood'].includes(vol1.feeds?.[s] ?? '')) &&
+          volN >= Math.floor(allSyms.length * 0.6) && vol2.cached === true),
+      `answered=${volN}/${allSyms.length} feeds=${JSON.stringify(Object.values(vol1.feeds ?? {}).reduce<Record<string, number>>((a, f) => ((a[f] = (a[f] ?? 0) + 1), a), {}))} cached=${vol2.cached}`,
     )
     check(
       'viz flow: usdOf reads the Aave MCP\'s formatted dollar strings ("$91,106,249.55") and refuses junk (a missing field is null, never 0)',

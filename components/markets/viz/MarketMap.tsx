@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { marketSections } from '@/lib/markets'
 import { useQuotes } from '@/lib/markets-quotes'
-import { cellFill, labelTier, marketMapLayout, type MapCell, type MapSection, CLAMP_PCT } from '@/lib/viz/market-map'
+import { cellFill, labelTier, marketMapLayout, type MapCell, type MapQuote, type MapSection, CLAMP_PCT } from '@/lib/viz/market-map'
 import { fmtPct, fmtPrice } from '@/lib/markets-look'
 import Delta from './Delta'
 
@@ -35,7 +35,37 @@ export default function MarketMap({ section = 'all', onOpen, tabs = true, aspect
   useEffect(() => setFilter(section), [section])
   const sections = useMemo(() => marketSections(), [])
   const symbols = useMemo(() => sections.flatMap((s) => s.rows.map((r) => r.symbol)), [sections])
-  const { quotes, live } = useQuotes(symbols)
+  const { quotes: rawQuotes, live } = useQuotes(symbols)
+  // 24h dollar volume from the VIZ route (120s server cache) — the honest
+  // cell size. Absent → the map says "equal" and why.
+  const [volumes, setVolumes] = useState<Record<string, number>>({})
+  useEffect(() => {
+    let alive = true
+    const tick = async () => {
+      try {
+        const res = await fetch('/api/markets/viz/volume', { cache: 'no-store' })
+        if (!res.ok) return
+        const body = (await res.json()) as { volumes?: Record<string, number> }
+        if (alive && body.volumes) setVolumes(body.volumes)
+      } catch {
+        /* cells stay equal */
+      }
+    }
+    void tick()
+    const id = setInterval(() => void tick(), 120_000)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [])
+  const quotes = useMemo(() => {
+    const out: Record<string, MapQuote | undefined> = {}
+    for (const s of symbols) {
+      const q = rawQuotes[s]
+      if (q) out[s] = { last: q.last, chgPct: q.chgPct, volumeUsd: volumes[s] ?? null }
+    }
+    return out
+  }, [rawQuotes, volumes, symbols])
   const [narrow, setNarrow] = useState(false)
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 640px)')
@@ -149,9 +179,10 @@ export default function MarketMap({ section = 'all', onOpen, tabs = true, aspect
         </div>
       ) : null}
       <div className="mk-map__foot">
-        Cell size: {layout.sizing === 'volume' ? '24h dollar volume' : 'equal (the feeds carry no volume for this set)'} · color: 24h change, clamped at ±{CLAMP_PCT}% ·{' '}
+        Cell size: {layout.sizing === 'volume' ? 'dollar volume (24h; stocks = last session on the NYSE tape)' : 'equal (volume unread for this set)'} · color: 24h change, clamped at ±{CLAMP_PCT}% ·{' '}
         {live ? `${symbols.length - layout.unquoted.length}/${symbols.length} quoted` : 'quotes loading'}
         {layout.unquoted.length ? ` · unquoted: ${layout.unquoted.slice(0, 6).join(', ')}${layout.unquoted.length > 6 ? '…' : ''}` : ''}
+        {layout.medianSized.length ? ` · sized at the median (no volume read): ${layout.medianSized.slice(0, 6).join(', ')}${layout.medianSized.length > 6 ? '…' : ''}` : ''}
       </div>
     </div>
   )
