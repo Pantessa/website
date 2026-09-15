@@ -45,6 +45,7 @@ export default function OverviewTab({
   symbol,
   pair,
   onAskText,
+  last: lastProp,
 }: {
   symbol: string
   pair: ChartPair
@@ -52,6 +53,8 @@ export default function OverviewTab({
   onAsk?: (ask: TradeAsk) => void
   /** The act door for a bare ask string (the slots' onAsk). */
   onAskText?: (ask: string) => void
+  /** The chart's last close (the header's stats) — EXEC sizes unit rows from it. */
+  last?: number | null
 }) {
   const ask = onAskText ?? (() => {})
   const [daily, setDaily] = useState<Candle[] | null>(null)
@@ -122,7 +125,7 @@ export default function OverviewTab({
 
       {/* Every venue, one chip each (EXEC) */}
       <div className="mk-overview__routes">
-        <RouteTable symbol={symbol} pair={pair} onAsk={ask} />
+        <RouteTable symbol={symbol} pair={pair} onAsk={ask} last={lastProp ?? last ?? null} />
       </div>
     </div>
   )

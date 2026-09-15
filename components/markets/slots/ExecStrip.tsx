@@ -17,7 +17,7 @@ import Link from 'next/link'
 import type { ChartPair } from '@/lib/charts'
 import { tradeAsks } from '@/lib/trade-asks'
 
-export type ExecStripProps = { symbol: string; pair: ChartPair; onAsk: (ask: string) => void }
+export type ExecStripProps = { symbol: string; pair: ChartPair; onAsk: (ask: string) => void; /** The chart's last close (EXEC sizes unit chips from it; the stub ignores it). */ last?: number | null }
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
 

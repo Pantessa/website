@@ -19020,7 +19020,7 @@ async function main() {
           // MK2 (2026-09-15): the header chips live in the ExecStrip slot now — SymbolPage keeps
           // the two no-chart chips and hands the strip `act` itself; the stub's chips call onAsk.
           (symS.match(/onClick=\{sendOnClick\(/g) ?? []).length === 2 && /\{door\}/.test(symS) &&
-          /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} \/>/.test(symS) &&
+          /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} last=\{stats\?\.last \?\? null\} \/>/.test(symS) &&
           /else prefillAct\(ask\)/.test(railS) && /\{prefillDoor\}/.test(railS) && !/else router\.push\(promptHref\(ask\)\)/.test(railS) &&
           (spineS.match(/if \(openDoorFor\(href\)\) return/g) ?? []).length === 2 &&
           (spineS.match(/<SpineLink\b/g) ?? []).length === 5 &&
@@ -20317,6 +20317,16 @@ async function main() {
       /class="wl[^"]*" data-mode="[a-z]+" data-density="comfortable"/.test(mkHtml) &&
         railSrc.includes('role="menuitemcheckbox"') && railSrc.includes("DENSITY_KEY = 'pantessa.watchlists.density'") &&
         /\.wl\[data-density="compact"\] \.wl__rowName \{ display: none; \}/.test(await readFile('components/markets/markets.css', 'utf8')),
+    )
+    // EXEC's request: the chart's last close reaches ExecStrip + RouteTable at every mount.
+    const symS = await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')
+    const ovS = await readFile('components/markets/tabs/OverviewTab.tsx', 'utf8')
+    const trS = await readFile('components/markets/tabs/TradeTab.tsx', 'utf8')
+    check(
+      'mk2/markets: `last` (the header stats) rides to ExecStrip and to RouteTable on Overview AND Trade, so EXEC can size unit rows (Lido stake, CoW limit) honestly',
+      /<ExecStrip [^>]*last=\{stats\?\.last \?\? null\}/.test(symS) &&
+        /<OverviewTab [^>]*last=\{stats\?\.last \?\? null\}/.test(symS) && /<TradeTab [^>]*last=\{stats\?\.last \?\? null\}/.test(symS) &&
+        /<RouteTable [^>]*last=\{lastProp \?\? last \?\? null\}/.test(ovS) && /<RouteTable [^>]*last=\{last \?\? null\}/.test(trS),
     )
     // The one stylesheet import + the slot card rule (QA's request: whoever
     // owns a class ships its rule).
