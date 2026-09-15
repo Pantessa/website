@@ -35,6 +35,7 @@ import MarketTable from '@/components/markets/shell/MarketTable'
 import TickerSearch from '@/components/markets/shell/TickerSearch'
 import WatchlistSlot from '@/components/markets/shell/WatchlistSlot'
 import MarketsSide from '@/components/markets/shell/MarketsSide'
+import SessionStrip from '@/components/markets/shell/SessionStrip'
 import MoversTape from '@/components/markets/slots/MoversTape'
 import MarketMap from '@/components/markets/slots/MarketMap'
 import type { TrendingRow } from '@/app/markets/trending'
@@ -159,6 +160,20 @@ function useMarketsView(): [MarketsView, (v: MarketsView) => void] {
   return [view, setView]
 }
 
+/** Under 640px the map has no room: the LIST is the map's fallback (the
+ *  toggle keeps saying Map, the boards render). SSR = not a phone. */
+function usePhone(): boolean {
+  const [phone, setPhone] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)')
+    const on = () => setPhone(mq.matches)
+    on()
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  return phone
+}
+
 /** j/k (↓/↑) walk every row link on the page; Enter follows the focused one
  *  (it IS a link, so Enter is the browser's own). Typing in a field never
  *  triggers the keys. */
@@ -191,6 +206,8 @@ export default function MarketsIndex({ trending = [] }: { trending?: TrendingRow
   const allRows = useMemo(() => sections.flatMap((s) => s.rows), [sections])
   const [active, setActive] = useActiveBoard(ids)
   const [view, setView] = useMarketsView()
+  const phone = usePhone()
+  const showMap = view === 'map' && !phone
   const open = useCallback((symbol: string) => router.push(`/t/${symbol}`), [router])
   useRowKeys()
 
@@ -199,7 +216,7 @@ export default function MarketsIndex({ trending = [] }: { trending?: TrendingRow
   // (app/markets/page.tsx adds the footer slot under the data).
   return (
     <>
-      <main className="mkt-frame__main" data-view={view}>
+      <main className="mkt-frame__main" data-view={view} data-map-fallback={view === 'map' && phone ? 'list' : undefined}>
         <h1 className="sr-only">Markets</h1>
 
         {/* ── Tool strip: search + view toggle + board tabs, sticky at the top ── */}
@@ -231,19 +248,22 @@ export default function MarketsIndex({ trending = [] }: { trending?: TrendingRow
           </nav>
         </div>
 
-        {/* ── The movers tape (VIZ) ── */}
-        <div className="mk-tape">
+        {/* ── The clocks: NYSE bell countdown · tokens 24/7 · HL funding tick ── */}
+        <SessionStrip />
+
+        {/* ── The movers tape (VIZ) in a MARKETS seat ── */}
+        <div className="mk-tape-seat" data-seat="MoversTape">
           <MoversTape onOpen={open} />
         </div>
 
         {/* ── The market data ── */}
         <div className="mkt-frame__data">
           <Trending rows={trending} />
-          {view === 'map' ? (
-            <section className="mk-map" aria-label="Market map">
+          {showMap ? (
+            <section className="mk-map-seat" data-seat="MarketMap" aria-label="Market map">
               <MarketMap section="all" onOpen={open} />
-              <p className="mk-map__hint mono">
-                MAP · size by liquidity, colour by move · <button type="button" className="mk-map__flip" onClick={() => setView('list')}>show the list</button>
+              <p className="mk-map-seat__hint mono">
+                MAP · size by liquidity, colour by move · <button type="button" className="mk-map-seat__flip" onClick={() => setView('list')}>show the list</button>
               </p>
             </section>
           ) : (

@@ -36,6 +36,8 @@
 .mk-table__sym { font-size: 13px; font-weight: 600; letter-spacing: 0.02em; }
 .mk-table__name { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mk-table__num { padding: 9px 14px; text-align: right; font-size: 13px; font-weight: 600; white-space: nowrap; color: var(--fg); }
+.mk-table__spark { padding: 0 6px; width: 64px; line-height: 0; vertical-align: middle; }
+.mk-table__spark svg { display: block; }
 .mk-table__dash { color: var(--muted-2); font-weight: 400; }
 .mkt-chg--up { color: var(--mk-up, var(--accent)); }
 .mkt-chg--down { color: var(--mk-down, var(--sell)); }
@@ -44,7 +46,7 @@
 @container mkt-data (min-width: 880px) {
   .mk-board .mk-table { display: block; columns: 2; column-gap: 0; column-rule: 1px solid var(--line); }
   .mk-board .mk-table tbody { display: block; }
-  .mk-board .mk-table__row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; break-inside: avoid; }
+  .mk-board .mk-table__row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; break-inside: avoid; }
 }
 
 /* ── Tool strip additions: Map · List ──────────────────────────────────── */
@@ -54,9 +56,18 @@
 .mk-view__btn.is-on { color: var(--ink); background: var(--accent); }
 .mk-view__icon { width: 13px; height: 13px; }
 
-/* ── The movers tape seat (VIZ fills it) ───────────────────────────────── */
-.mk-tape { margin: 12px 0 0; }
-.mk-tape:empty { display: none; }
+/* ── The movers tape seat (VIZ's .mk-tape fills it) ────────────────────── */
+.mk-tape-seat { margin: 10px 0 0; min-width: 0; }
+.mk-tape-seat:empty { display: none; }
+
+/* ── The session strip: three clocks under the tool strip ──────────────── */
+.mk-session { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; margin: 12px 0 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--surf-1) 70%, transparent); }
+.mk-session__item { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.mk-session__k { font-size: 9.5px; letter-spacing: 0.14em; color: var(--fg); white-space: nowrap; }
+.mk-session__v { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mk-session__sep { width: 1px; height: 14px; background: var(--line); }
+.mk-dot--tick { background: var(--mk-series-3, var(--accent)); }
+.mk-session[data-nyse="open"] .mk-session__k:first-of-type { color: var(--mk-up, var(--accent)); }
 
 /* ── Trending on Pantessa ──────────────────────────────────────────────── */
 .mk-trend__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
@@ -74,9 +85,10 @@
 @container mkt-data (min-width: 880px) { .mk-trend__list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @container mkt-data (min-width: 1180px) { .mk-trend__list { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
-/* ── The map seat + keys legend ────────────────────────────────────────── */
-.mk-map__hint { margin-top: 8px; font-size: 9.5px; letter-spacing: 0.12em; color: var(--muted-2); }
-.mk-map__flip { border: 0; background: transparent; color: var(--accent); font: inherit; letter-spacing: inherit; cursor: pointer; padding: 0; text-transform: uppercase; }
+/* ── The map seat (VIZ's .mk-map fills it) + keys legend ───────────────── */
+.mk-map-seat { min-width: 0; }
+.mk-map-seat__hint { margin-top: 8px; font-size: 9.5px; letter-spacing: 0.12em; color: var(--muted-2); }
+.mk-map-seat__flip { border: 0; background: transparent; color: var(--accent); font: inherit; letter-spacing: inherit; cursor: pointer; padding: 0; text-transform: uppercase; }
 .mk-keys { margin-top: 12px; display: flex; align-items: center; gap: 6px; font-size: 9.5px; letter-spacing: 0.12em; color: var(--muted-2); text-transform: uppercase; }
 .mk-keys kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 5px; font: inherit; color: var(--muted); text-transform: none; }
 
@@ -177,6 +189,8 @@ button.mk-held:hover { border-color: var(--accent); }
   .sym__head--mk2 .sym__quote { justify-content: start; grid-template-areas: "last chg feed" "range range range"; }
   .mk-range { grid-template-columns: auto minmax(90px, 1fr) auto; }
   .mk-vs__note { display: none; }
-  /* The map has no room on a phone: the list is the map's fallback. */
-  .mkt-frame__main[data-view="map"] .mk-map { display: none; }
+  .mk-table__spark { display: none; }
+  .mk-session { gap: 6px 12px; padding: 7px 10px; }
+  .mk-session__sep { display: none; }
+  .mk-session__v { font-size: 10px; }
 }

@@ -15,6 +15,8 @@ import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
 import { chgClass, fmtPct, fmtQuotePrice, type QuoteMap } from '@/lib/markets-quotes'
 import { sortMarketRows, type MarketRow, type MarketSortDir, type MarketSortKey } from '@/lib/markets'
+import Sparkline from '@/components/markets/viz/Sparkline'
+import { useSparks } from '@/components/markets/shell/useSparks'
 
 const HEADS: { key: MarketSortKey; label: string }[] = [
   { key: 'symbol', label: 'Symbol' },
@@ -25,6 +27,8 @@ const HEADS: { key: MarketSortKey; label: string }[] = [
 export default function MarketTable({ rows, quotes, section }: { rows: readonly MarketRow[]; quotes: QuoteMap; section: string }) {
   const [sort, setSort] = useState<{ key: MarketSortKey; dir: MarketSortDir } | null>(null)
   const sorted = useMemo(() => (sort ? sortMarketRows(rows, quotes, sort.key, sort.dir) : [...rows]), [rows, quotes, sort])
+  // 7d sparkline closes (VIZ's sparks route); empty until the read lands.
+  const sparks = useSparks(rows.map((r) => r.symbol))
 
   const toggle = (key: MarketSortKey) => {
     setSort((cur) => {
@@ -72,6 +76,9 @@ export default function MarketTable({ rows, quotes, section }: { rows: readonly 
                   <span className="mk-table__sym mono">{r.symbol}</span>
                   <span className="mk-table__name">{r.name}</span>
                 </Link>
+              </td>
+              <td className="mk-table__spark" data-spark={sparks[r.symbol]?.length ?? 0}>
+                {sparks[r.symbol] && sparks[r.symbol]!.length >= 2 ? <Sparkline values={sparks[r.symbol]!} width={64} height={20} title={`${r.symbol} · 7 days`} /> : null}
               </td>
               <td className="mk-table__num mono">{q ? `$${fmtQuotePrice(q.last)}` : <span className="mk-table__dash">—</span>}</td>
               <td className={`mk-table__num mono mkt-chg ${chgClass(q?.chgPct)}`}>{q ? fmtPct(q.chgPct) : <span className="mk-table__dash">—</span>}</td>
