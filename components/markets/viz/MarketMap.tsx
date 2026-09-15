@@ -29,7 +29,6 @@ const TABS: { id: MapSection; label: string }[] = [
   { id: 'perps', label: 'Perps' },
 ]
 
-const W = 1000
 
 export default function MarketMap({ section = 'all', onOpen, tabs = true, aspect, className = '' }: MarketMapProps) {
   const [filter, setFilter] = useState<MapSection>(section)
@@ -45,10 +44,22 @@ export default function MarketMap({ section = 'all', onOpen, tabs = true, aspect
     mq.addEventListener('change', on)
     return () => mq.removeEventListener('change', on)
   }, [])
-  const H = Math.round(W / (aspect ?? (narrow ? 1.1 : 2.2)))
-  const layout = useMemo(() => marketMapLayout(sections, quotes, filter, W, H), [sections, quotes, filter, H])
-  const [hover, setHover] = useState<{ cell: MapCell; px: number; py: number } | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
+  // The frame is measured, so the viewBox IS pixels: text keeps its shape and
+  // labelTier decides in real px. SSR draws at a 1000px guess, corrected on mount.
+  const [width, setWidth] = useState(1000)
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setWidth(Math.max(240, Math.round(el.clientWidth))))
+    ro.observe(el)
+    setWidth(Math.max(240, Math.round(el.clientWidth)))
+    return () => ro.disconnect()
+  }, [])
+  const W = width
+  const H = Math.round(W / (aspect ?? (narrow ? 1.1 : 2.2)))
+  const layout = useMemo(() => marketMapLayout(sections, quotes, filter, W, H), [sections, quotes, filter, W, H])
+  const [hover, setHover] = useState<{ cell: MapCell; px: number; py: number } | null>(null)
 
   return (
     <div className={`mk-map ${className}`.trim()} ref={wrapRef}>
@@ -80,14 +91,15 @@ export default function MarketMap({ section = 'all', onOpen, tabs = true, aspect
         <svg
           className="mk-map__svg"
           viewBox={`0 0 ${W} ${H}`}
-          preserveAspectRatio="none"
+          width={W}
+          height={H}
           role="group"
           aria-label="Market map"
           onMouseLeave={() => setHover(null)}
         >
           {layout.cells.map((c) => {
             const tier = labelTier(c.w, c.h)
-            const fs1 = Math.max(9, Math.min(18, Math.min(c.w / 4.2, c.h / 2.6)))
+            const fs1 = Math.max(9, Math.min(14, Math.min(c.w / 4.6, c.h / 3)))
             return (
               <g
                 key={c.symbol}
