@@ -19891,10 +19891,10 @@ async function main() {
 
     const byKey = new Map(OVERLAYS.map((o) => [o.key, o]))
     check(
-      'chart MAs: the overlay bar reads SMA 20 · SMA 50 · SMA 200 · EMA 20 · BB · VWAP, every toggle carries a legend swatch, the 50 wears --chart-ma-50 and the 200 --chart-ma-200, and the symbol page opens on the 50 + the 200',
-      OVERLAYS.map((o) => o.label).join(',') === 'SMA 20,SMA 50,SMA 200,EMA 20,BB,VWAP' && OVERLAYS.every((o) => o.swatch.length > 0) &&
+      'chart MAs: the overlay bar reads SMA 20 · SMA 50 · SMA 200 · EMA 20 · BB · VWAP · VP, every toggle carries a legend swatch, the 50 wears --chart-ma-50 and the 200 --chart-ma-200, and the symbol page opens on the 50 + the 200 + the volume profile',
+      OVERLAYS.map((o) => o.label).join(',') === 'SMA 20,SMA 50,SMA 200,EMA 20,BB,VWAP,VP' && OVERLAYS.every((o) => o.swatch.length > 0) &&
         byKey.get('sma50')?.swatch === 'var(--chart-ma-50)' && byKey.get('sma200')?.swatch === 'var(--chart-ma-200)' &&
-        DEFAULT_SYMBOL_OVERLAYS.join(',') === 'sma50,sma200',
+        DEFAULT_SYMBOL_OVERLAYS.join(',') === 'sma50,sma200,vp', // re-pinned 2026-09-15 (MK2/VIZ): the volume profile joins the bar and opens lit
     )
 
     // The colors are pinned by what they ARE (a blue, a yellow, legible on
