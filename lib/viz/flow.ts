@@ -4,12 +4,24 @@
 
 import type { FlowResponse, FlowSource } from '@/components/markets/viz/FlowPanel'
 import { FLOW_READERS_LIVE } from '@/lib/viz/flow-readers'
+import { chartPairFor } from '@/lib/charts'
+import { marketSections } from '@/lib/markets'
 
 export type { FlowResponse, FlowSource }
 
 export const FLOW_TTL_MS = 60_000
+/** The cache never grows past this: oldest entry evicted (the index is ~240 symbols). */
+export const FLOW_CACHE_MAX = 512
 
 const cache = new Map<string, { at: number; body: FlowResponse }>()
+
+let indexSet: Set<string> | null = null
+/** True for a symbol the Markets index lists (resolved through the chart resolver). */
+export function isIndexSymbol(symbol: string): boolean {
+  indexSet ??= new Set(marketSections().flatMap((s) => s.rows.map((r) => r.symbol)))
+  const pair = chartPairFor(symbol)
+  return !!pair && indexSet.has(pair.symbol)
+}
 const inflight = new Map<string, Promise<FlowResponse>>()
 
 export type FlowReader = (symbol: string) => Promise<FlowSource | FlowSource[] | null>
@@ -43,6 +55,7 @@ export async function readFlow(symbol: string, readers: readonly { id: string; v
     )
     const body: FlowResponse = { symbol, sources: sources.flat(), asOf: Date.now() }
     cache.set(symbol, { at: Date.now(), body })
+    while (cache.size > FLOW_CACHE_MAX) cache.delete(cache.keys().next().value as string)
     return body
   })()
   inflight.set(symbol, p)

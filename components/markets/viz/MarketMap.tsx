@@ -179,7 +179,7 @@ export default function MarketMap({ section = 'all', onOpen, tabs = true, aspect
         </div>
       ) : null}
       <div className="mk-map__foot">
-        Cell size: {layout.sizing === 'volume' ? 'dollar volume (24h; stocks = last session on the NYSE tape)' : 'equal (volume unread for this set)'} · color: 24h change, clamped at ±{CLAMP_PCT}% ·{' '}
+        Cell size: {layout.sizing === 'volume' ? `dollar volume (24h; stocks = last session on the NYSE tape)${filter === 'all' ? ', normalised per section (each board gets its share of the map; within a board, size follows volume)' : ''}` : 'equal (volume unread for this set)'} · color: 24h change, clamped at ±{CLAMP_PCT}% ·{' '}
         {live ? `${symbols.length - layout.unquoted.length}/${symbols.length} quoted` : 'quotes loading'}
         {layout.unquoted.length ? ` · unquoted: ${layout.unquoted.slice(0, 6).join(', ')}${layout.unquoted.length > 6 ? '…' : ''}` : ''}
         {layout.medianSized.length ? ` · sized at the median (no volume read): ${layout.medianSized.slice(0, 6).join(', ')}${layout.medianSized.length > 6 ? '…' : ''}` : ''}
