@@ -20190,13 +20190,14 @@ async function main() {
       return !!m && m[1].trim().length > 0
     }
     check(
-      'mk2/markets: /markets server-renders the movers tape seat, the Map · List toggle (SSR = list, every row present), the terminal tables with sortable heads and j/k row links',
+      'mk2/markets: /markets server-renders the movers tape seat, the Map · List toggle (SSR = list, every row present), the terminal tables with a sort bar (symbol · last · 24h) and j/k row links',
       seat(mkHtml, 'mk-tape') &&
         /<main class="mkt-frame__main" data-view="list">/.test(mkHtml) &&
         /class="mk-view__btn is-on" aria-pressed="true"[^>]*title="Terminal list"/.test(mkHtml) &&
         /<table class="mk-table" data-section="equities" data-sort="none">/.test(mkHtml) &&
         /<table class="mk-table" data-section="crypto"/.test(mkHtml) && /<table class="mk-table" data-section="perps"/.test(mkHtml) &&
-        /<th scope="col" aria-sort="none" class="mk-table__th mk-table__th--right"><button[^>]*title="Sort by last"/.test(mkHtml) &&
+        /<div class="mk-table__sortbar" role="group" aria-label="Sort"><button type="button" class="mk-table__sort mono" aria-pressed="false" data-sort-key="symbol"/.test(mkHtml) &&
+        /data-sort-key="last"[^>]*title="Sort by last"/.test(mkHtml) && /data-sort-key="chg"[^>]*title="Sort by 24h"/.test(mkHtml) &&
         /<a class="mk-table__link" data-mk-row="true" href="\/t\/AAPL">/.test(mkHtml) &&
         /<a class="mk-table__link" data-mk-row="true" href="\/t\/HYPE">/.test(mkHtml) &&
         /<kbd>j<\/kbd>/.test(mkHtml),
