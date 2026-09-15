@@ -36,6 +36,10 @@
        re-inks both so they keep contrast on paper. */
     --chart-ma-50: #5b9cff;
     --chart-ma-200: #f5c518;
+    /* The tint behind a stock's pre- and post-market candles (MarketChart's
+       session bands): translucent, laid over the chart ground under the grid,
+       so the quiet hours read as a session rather than a gap. Light re-inks. */
+    --chart-session: rgb(255 255 255 / 0.06);
     /* ── TYPE SYSTEM ──────────────────────────────────
        Single source of truth for the four families so every surface pulls
        from the same place (kills the ad-hoc mono/sans drift on /activity).
@@ -4530,6 +4534,7 @@
     --gold: #a3720c;
     --chart-ma-50: #2563eb;
     --chart-ma-200: #b58900;
+    --chart-session: rgb(16 21 18 / 0.045);
     --done: #0b7a53;
     --fail: #c73e43;
     --gem-1: #084A33;

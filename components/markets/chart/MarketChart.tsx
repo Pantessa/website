@@ -46,9 +46,11 @@ import { newLineId, serializeChartState, type ChartLine, type ChartState } from 
 import { composeLineActions, composeZoneActions, missingActionNote, type LineActionOffer } from '@/lib/chart-actions'
 import { bollinger, ema, hasVolume, mergeHistory, onWindow, OVERLAYS, prependHistory, sma, vwap, type LinePoint, type OverlayKey } from '@/lib/chart-indicators'
 import { clampToFirstBar, wantsOlderBars } from '@/lib/chart-viewport'
+import { equitySession, extendedRuns, FRAME_SEC, sessionsApply, type EquitySession } from '@/lib/chart-sessions'
 import { poolPremiumPct, type PoolPrice } from '@/lib/pool-price-shape'
 import { fmtPrice, type ChartStats } from '@/components/CandleChart'
 import DrawingLayer, { type ChartGeom, type DrawTool } from './DrawingLayer'
+import { SessionBands } from './session-bands'
 
 const POLL_MS: Record<ChartTf, number> = { '15m': 8_000, '1h': 15_000, '4h': 20_000, '1d': 30_000 }
 const POOL_POLL_MS = 30_000
@@ -66,6 +68,9 @@ const WARMUP_RETRY_MS = 60_000
 const PAGE_RETRY_MS = 5_000
 /** The right margin, in bars, between the latest candle and the price scale. */
 const RIGHT_OFFSET = 4
+/** A stock's extended-hours candles draw at this share of the up/down color:
+ *  present and readable, a step behind the regular session's. */
+const QUIET_CANDLE_ALPHA = 0.5
 
 export interface ChartMarker {
   /** Unix seconds — pinned to the last bar that opened at or before it. */
@@ -134,39 +139,87 @@ interface Tokens {
   /** The slow averages keep the colors traders read them in: 50 blue, 200 yellow. */
   ma50: string
   ma200: string
+  /** The extended-hours tint behind a stock's quiet bars (translucent, used as-is). */
+  session: string
 }
 
-/** Resolve a CSS token to a canvas-safe hex — oklch()/color-mix() strings
- *  are fine for CSS but the engine paints on a 2D canvas whose alpha
- *  variants we compose by hand, so normalize through a scratch canvas. */
-function resolveColor(value: string, fallback: string): string {
-  try {
-    const c = document.createElement('canvas')
-    const ctx = c.getContext('2d')
-    if (!ctx) return fallback
-    ctx.fillStyle = '#000'
-    ctx.fillStyle = value
-    const out = String(ctx.fillStyle)
-    return /^#[0-9a-f]{6}$/i.test(out) ? out : fallback
-  } catch {
-    return fallback
+/** Token → canvas colors. The engine paints on a 2D canvas whose alpha
+ *  variants we compose by hand (`alpha(hex, a)`), so an opaque token has to
+ *  come out as a plain #rrggbb. The theme's neutrals (--line, --surf-1,
+ *  --muted, --muted-2) are oklch(), and a canvas's fillStyle getter hands
+ *  oklch() back as oklch(), not hex: the old getter-only check fell back to
+ *  the hardcoded DARK hexes on every theme, so the light chart drew a dark
+ *  grid, dark borders and a dark crosshair label. Now the browser resolves the
+ *  value (a span's computed color, so var() and color-mix() work too), the
+ *  getter's hex is taken when it gives one, and anything else is painted onto
+ *  a 1×1 canvas and read back. */
+function colorProbe() {
+  const span = document.createElement('span')
+  span.style.display = 'none'
+  document.body.appendChild(span)
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = 1
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  const computed = (value: string): string | null => {
+    if (!value) return null
+    span.style.color = ''
+    span.style.color = value
+    return span.style.color ? getComputedStyle(span).color : null
+  }
+  const SENTINEL = '#010203'
+  return {
+    /** An opaque token as #rrggbb; a translucent one has no single hex. */
+    hex(value: string, fallback: string): string {
+      try {
+        const color = computed(value)
+        if (!color || !ctx) return fallback
+        ctx.fillStyle = SENTINEL
+        ctx.fillStyle = color
+        const got = String(ctx.fillStyle)
+        if (got === SENTINEL) return fallback // the canvas refused the syntax
+        if (/^#[0-9a-f]{6}$/i.test(got)) return got
+        ctx.clearRect(0, 0, 1, 1)
+        ctx.fillRect(0, 0, 1, 1)
+        const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data
+        return a < 250 ? fallback : `#${[r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('')}`
+      } catch {
+        return fallback
+      }
+    },
+    /** Any token as a color string the canvas takes as-is (the translucent tints). */
+    css(value: string, fallback: string): string {
+      try {
+        return computed(value) ?? fallback
+      } catch {
+        return fallback
+      }
+    },
+    dispose() {
+      span.remove()
+    },
   }
 }
 
 function readTokens(): Tokens {
   const cs = getComputedStyle(document.documentElement)
-  const get = (name: string, fb: string) => resolveColor(cs.getPropertyValue(name).trim() || fb, fb)
-  return {
-    accent: get('--accent', '#3ecf8e'),
-    sell: get('--sell', '#e5484d'),
-    fg: get('--fg', '#ffffff'),
-    bg: get('--bg', '#000000'),
-    line: get('--line', '#3a3a3a'),
-    muted: get('--muted', '#9a9a9a'),
-    muted2: get('--muted-2', '#7a7a7a'),
-    surf: get('--surf-1', '#161616'),
-    ma50: get('--chart-ma-50', '#5b9cff'),
-    ma200: get('--chart-ma-200', '#f5c518'),
+  const probe = colorProbe()
+  const get = (name: string, fb: string) => probe.hex(cs.getPropertyValue(name).trim(), fb)
+  try {
+    return {
+      accent: get('--accent', '#3ecf8e'),
+      sell: get('--sell', '#e5484d'),
+      fg: get('--fg', '#ffffff'),
+      bg: get('--bg', '#000000'),
+      line: get('--line', '#3a3a3a'),
+      muted: get('--muted', '#9a9a9a'),
+      muted2: get('--muted-2', '#7a7a7a'),
+      surf: get('--surf-1', '#161616'),
+      ma50: get('--chart-ma-50', '#5b9cff'),
+      ma200: get('--chart-ma-200', '#f5c518'),
+      session: probe.css(cs.getPropertyValue('--chart-session').trim(), 'rgba(255, 255, 255, 0.045)'),
+    }
+  } finally {
+    probe.dispose()
   }
 }
 
@@ -258,6 +311,8 @@ export default function MarketChart({
   const volRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const overlayRefs = useRef<Map<string, ISeriesApi<'Line'>>>(new Map())
   const markerApiRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
+  // The extended-hours shading on a stock's intraday frames (lib/chart-sessions).
+  const bandsRef = useRef<SessionBands | null>(null)
   const poolLineRef = useRef<IPriceLine | null>(null)
   const hLineRefs = useRef<Map<string, IPriceLine>>(new Map())
   // Every bar the chart holds, for the engine callbacks (hover/click time, the viewport guard).
@@ -544,6 +599,11 @@ export default function MarketChart({
     candleRef.current = candleSeries
     volRef.current = volSeries
     markerApiRef.current = createSeriesMarkers(candleSeries, [])
+    // The session tint rides the candle series on the engine's bottom layer:
+    // under the grid and every candle. The data effect hands it the runs.
+    const bands = new SessionBands()
+    candleSeries.attachPrimitive(bands)
+    bandsRef.current = bands
 
     const bump = () => setGeomTick((n) => n + 1)
     // Every range change repaints the drawings and runs the viewport guard.
@@ -626,6 +686,7 @@ export default function MarketChart({
       candleRef.current = null
       volRef.current = null
       markerApiRef.current = null
+      bandsRef.current = null
       poolLineRef.current = null
       overlayRefs.current.clear()
       hLineRefs.current.clear()
@@ -658,6 +719,10 @@ export default function MarketChart({
     setGeomTick((n) => n + 1)
   }, [resizeKey])
 
+  // Sessions: which of a stock's intraday bars are quiet hours
+  // (lib/chart-sessions). Null for crypto, perps and daily bars.
+  const sessions = useMemo<EquitySession[] | null>(() => (sessionsApply(pair?.source, tf) ? bars.map((c) => equitySession(c.t, FRAME_SEC[tf])) : null), [bars, pair?.source, tf])
+
   // Data → series. The engine draws every held bar; the view opens on the
   // live window, the older bars waiting off-screen left for a zoom-out.
   const fitOnceRef = useRef<string>('')
@@ -671,8 +736,18 @@ export default function MarketChart({
     // frame fitted with the old bars, and the new frame would open at the old
     // one's zoom: AAPL on 4H opened with the left half of the plot empty.
     if (!bars.length || data?.tf !== tf || data.symbol !== pair?.symbol) return
-    cs.setData(bars.map((c) => ({ time: c.t as UTCTimestamp, open: c.o, high: c.h, low: c.l, close: c.c })))
-    vs.setData(bars.map((c) => ({ time: c.t as UTCTimestamp, value: c.v, color: alpha(c.c >= c.o ? tokens.accent : tokens.sell, 0.28) })))
+    // A stock's extended hours: the candles and their volume go quiet and the
+    // bands shade the stretch behind them, so an hour of pre-market dust reads
+    // as a quiet session instead of a hole in the tape.
+    const quiet = (i: number) => sessions !== null && sessions[i] !== 'regular'
+    cs.setData(bars.map((c, i) => {
+      const bar = { time: c.t as UTCTimestamp, open: c.o, high: c.h, low: c.l, close: c.c }
+      if (!quiet(i)) return bar
+      const color = alpha(c.c >= c.o ? tokens.accent : tokens.sell, QUIET_CANDLE_ALPHA)
+      return { ...bar, color, wickColor: color, borderColor: color }
+    }))
+    vs.setData(bars.map((c, i) => ({ time: c.t as UTCTimestamp, value: c.v, color: alpha(c.c >= c.o ? tokens.accent : tokens.sell, quiet(i) ? 0.14 : 0.28) })))
+    bandsRef.current?.update(sessions ? extendedRuns(sessions) : [], tokens.session)
     drawnRef.current = bars.length
     const key = `${symbol}:${tf}`
     if (fitOnceRef.current !== key) {
@@ -682,7 +757,7 @@ export default function MarketChart({
       fitOnceRef.current = key
     }
     setGeomTick((n) => n + 1)
-  }, [bars, candles.length, data?.tf, data?.symbol, pair?.symbol, symbol, tf, tokens])
+  }, [bars, sessions, candles.length, data?.tf, data?.symbol, pair?.symbol, symbol, tf, tokens])
 
   // Overlays → line series. The rolling lines read every held bar (older
   // pages, the warm-up, merged polls) and are cut back to the bars on the
@@ -725,6 +800,12 @@ export default function MarketChart({
       }
       series.setData(toLineData(spec.data))
     }
+    // Candles paint above every line (the engine draws a pane's series in
+    // order): a 2px average laid over a quiet bar hid it whole, and the gap
+    // read as a missing candle. The price scale keeps localization's formatter.
+    const cs = candleRef.current
+    const top = overlayRefs.current.size + 1
+    if (cs && cs.seriesOrder() < top) cs.setSeriesOrder(top)
   }, [overlays, bars, lineSrc, candles, tokens])
 
   // News markers → the bars.
@@ -842,8 +923,15 @@ export default function MarketChart({
       timeToX: (t) => {
         const l = timeToLogical(bars, t)
         if (l === null) return null
-        const x = chart.timeScale().logicalToCoordinate(l as Logical)
-        return x === null ? null : Number(x)
+        // The engine converts whole bar indices only (5.2.1 answers a
+        // fractional logical with x = 0), and a drawing's time lands between
+        // bars once the frame changes: a trend line drawn on 15m and viewed
+        // on 1H pinned its end to the left edge. Interpolate between neighbours.
+        const ts = chart.timeScale()
+        const i = Math.floor(l)
+        const x0 = ts.logicalToCoordinate(i as Logical)
+        const x1 = ts.logicalToCoordinate((i + 1) as Logical)
+        return x0 === null || x1 === null ? null : Number(x0) + (Number(x1) - Number(x0)) * (l - i)
       },
     }
   }, [geomTick, bars])
@@ -1044,7 +1132,10 @@ export default function MarketChart({
           a link to tradingview.com on the page. With attributionLogo off this
           footer is the ONLY credit: never drop it. */}
       <div className="mkt-chart__foot mono">
-        <span>{feedLabel ? `feed · ${String(feedLabel)}` : ''}</span>
+        <span>
+          {feedLabel ? `feed · ${String(feedLabel)}` : ''}
+          {sessions && feedLabel ? ' · shaded = pre/post-market' : ''}
+        </span>
         <a className="mkt-attrib" href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer nofollow">
           Charts by TradingView Lightweight Charts™ · <span className="mkt-attrib__notice">© 2025 TradingView, Inc.</span>
         </a>
