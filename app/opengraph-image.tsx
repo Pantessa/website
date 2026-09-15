@@ -137,8 +137,9 @@ export default async function Image() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', marginTop: 10, paddingTop: 10, borderTop: '1px dashed rgba(255,255,255,0.14)', fontSize: 12, color: MUTED }}>
               {beat.guard.map((g) => (
-                <span key={g} style={{ display: 'flex' }}>
-                  <span style={{ color: ACCENT, marginRight: 6 }}>✓</span>
+                <span key={g} style={{ display: 'flex', alignItems: 'center' }}>
+                  {/* a drawn tick — the embedded fonts carry no ✓ glyph */}
+                  <div style={{ display: 'flex', width: 6, height: 6, borderRadius: 3, background: ACCENT, marginRight: 8 }} />
                   <span>{g}</span>
                 </span>
               ))}
