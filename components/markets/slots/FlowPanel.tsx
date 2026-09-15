@@ -1,13 +1,6 @@
-// MK2 SLOT STUB — squad README "Slots" contract (2026-09-15).
-// MARKETS owns this file; VIZ builds the real component at
-// components/markets/viz/FlowPanel.tsx. At integration QA replaces this body with a
-// one-line re-export. Props are the contract; keep them exact.
-
-import type { ChartPair } from '@/lib/charts'
-import SlotCard from './SlotCard'
-
-export type FlowPanelProps = { symbol: string; pair: ChartPair }
-
-export default function FlowPanel(props: FlowPanelProps) {
-  return <SlotCard slot="FlowPanel" lane="VIZ" title="Where the money lives" body={`${props.symbol} across dapps: pool liquidity, Aave reserves, HL open interest, holders.`} />
-}
+// MK2 SLOT — swapped by QA at integration (squad-mk2-2026-09-15): the real
+// VIZ component. MARKETS keeps the stub on its own branch; this file is
+// the one-line re-export the README "Slots" contract promises.
+export { default } from '@/components/markets/viz/FlowPanel'
+import type Real from '@/components/markets/viz/FlowPanel'
+export type FlowPanelProps = Parameters<typeof Real>[0]

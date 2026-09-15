@@ -20,10 +20,11 @@ import { useEffect, useState } from 'react'
 /** The stations, top to bottom. Selector-based so server components don't
  *  need to grow props for this. */
 const STATIONS: { sel: string; label: string }[] = [
-  { sel: '.fhero', label: 'The intent' },
-  { sel: '.mach', label: 'The machine' },
+  { sel: '.lh', label: 'The chart' },
+  { sel: '.lvb', label: 'Every dapp' },
+  { sel: '.lmap', label: 'The index' },
+  { sel: '.mkt', label: 'Their meters' },
   { sel: '.spread', label: 'The link' },
-  { sel: '.night', label: 'The night shift' },
   { sel: '.embeda', label: 'Your site' },
   { sel: '.trust', label: 'The proof' },
 ]
@@ -62,7 +63,7 @@ export default function LandingMotion() {
     // can't get wedged, not the fancier one.
     const pending = [
       ...document.querySelectorAll<HTMLElement>(
-        '.mach__head, .spread__copy, .filmband__in, .night__copy, .embeda__head, .trust__head',
+        '.lvb__head, .lmap__head, .mkt__head, .spread__copy, .filmband__in, .embeda__head, .trust__head',
       ),
     ].filter((el) => {
       if (el.getBoundingClientRect().top < window.innerHeight) return false

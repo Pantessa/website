@@ -153,7 +153,7 @@
 .mk-map__tab[aria-pressed='true'] { color: var(--fg); border-color: var(--fg); }
 .mk-map__scale { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mk-font-mono); font-size: 10px; color: var(--muted-2); }
 .mk-map__scale i { display: block; width: 14px; height: 8px; border-radius: 2px; }
-.mk-map__svg { display: block; width: 100%; height: auto; }
+.mk-map__svg { display: block; width: 100%; height: auto; max-width: 100%; }
 .mk-map__cell { cursor: pointer; }
 .mk-map__cell rect { transition: opacity var(--mk-dur-fast) var(--mk-ease); }
 .mk-map__cell:hover rect, .mk-map__cell:focus-visible rect { opacity: 0.85; }
