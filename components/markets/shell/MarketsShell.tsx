@@ -1,4 +1,5 @@
 import AppSpine from '@/components/AppSpine'
+import '@/components/markets/look.css'
 import '@/components/markets/markets.css'
 
 // The markets shell (2026-09-11, Nate: "add the sidebar we have in the app
