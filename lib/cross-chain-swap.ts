@@ -277,12 +277,12 @@ export function checkCrossChainFee(
   // started echoing it on EVERY quote (20 bps, even with no appFees asked)
   // and stopped netting it out of ours (our 20 → treasury 10 + protocol
   // 20). It is priced into the delivered amount the parity and price
-  // guards already check — informational here, with one sanity fence.
+  // guards already check, so it is neither a reason nor a note (a note
+  // means "our fee didn't apply" to the caller, which zeroes the claimed
+  // feeBps) — only a sanity fence against a runaway number.
   const protocolBps = bpsOf(applied.filter((f) => !isEvm(f)))
   if (protocolBps > VENUE_SHARE_MAX_BPS) {
     reasons.push(`The venue's own share of this quote is ${protocolBps} bps — more than the ${VENUE_SHARE_MAX_BPS} bps we accept, refusing an unusual fill.`)
-  } else if (protocolBps > 0) {
-    notes.push(`1Click's own share rides the quote (${protocolBps} bps, priced into the delivered amount)`)
   }
   if (!expected) {
     // We asked for no fee — an app fee to ANY EVM recipient is value leaving
