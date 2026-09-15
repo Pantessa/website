@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { chartPairFor } from '@/lib/charts'
+import { tokenHome } from '@/lib/token-home'
 import { chainById, primaryStable, publicClientFor } from '@/lib/chains'
 import { dynamicTokenBySymbol, ensureTokenList } from '@/lib/token-list'
 import { FEE_TIERS, QUOTER_V2_ABI } from '@/lib/uniswap-venue'
@@ -159,22 +160,26 @@ const feeBpsOf = (fee: VenueRoute['fee']): number => {
 const fmtUsd = (n: number): string =>
   n >= 1000 ? `$${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : n >= 1 ? `$${n.toFixed(2)}` : `$${n.toPrecision(3)}`
 
-async function compose(sym: string, amount: number, last: number | null, leverage: number | undefined): Promise<RoutesResponse> {
+async function compose(sym: string, amount: number, lastIn: number | null, leverage: number | undefined): Promise<RoutesResponse> {
   const pair = chartPairFor(sym)!
-  const routes = venuesFor(sym, pair, { usd: amount, last: last ?? undefined, leverage })
+  let last = lastIn
+  let routes = venuesFor(sym, pair, { usd: amount, last: last ?? undefined, leverage })
   const failed: string[] = []
   const wantSpot = [...new Set(routes.filter((r) => r.kind === 'spot').map((r) => r.chainId))]
   const wantPerp = routes.some((r) => r.kind === 'perp')
   const wantAave = routes.some((r) => r.kind === 'lend')
-  const wantLido = routes.some((r) => r.kind === 'stake')
   const wantStock = routes.some((r) => r.kind === 'stock')
+  // The limit + stake rows size in token units, so they need a price. When
+  // the caller has none, the venue quotes themselves supply it (best spot
+  // quote → HL mark → the 4663 pool), and the map is composed again with it.
+  const wantLidoFirst = routes.some((r) => r.kind === 'stake') || (last === null && sym === 'ETH' && !tokenHome(sym))
 
   const [spotR, hlR, aaveR, aaveUsdcR, lidoR, stockR] = await Promise.allSettled([
     Promise.allSettled(wantSpot.map((id) => withTimeout(uniswapQuote(sym, id, amount)).then((q) => [id, q] as const))),
     wantPerp ? withTimeout(hlContext(sym)) : Promise.resolve(null),
     wantAave ? withTimeout(aaveApy(sym)) : Promise.resolve(null),
     wantAave ? withTimeout(aaveApy('USDC')) : Promise.resolve(null),
-    wantLido ? withTimeout(lidoApr()) : Promise.resolve(null),
+    wantLidoFirst ? withTimeout(lidoApr()) : Promise.resolve(null),
     wantStock ? withTimeout(poolPriceFor(sym)) : Promise.resolve(null),
   ])
 
@@ -194,6 +199,14 @@ async function compose(sym: string, amount: number, last: number | null, leverag
   // Best spot = the most token for the same dollars (lowest effective price).
   let bestSpotChain: number | null = null
   for (const [id, q] of spot) if (bestSpotChain === null || q.usdPerToken < spot.get(bestSpotChain)!.usdPerToken) bestSpotChain = id
+
+  if (last === null) {
+    const derived = (bestSpotChain !== null ? spot.get(bestSpotChain)!.usdPerToken : null) ?? hl?.markPx ?? stock?.usdPerToken ?? null
+    if (derived && Number.isFinite(derived) && derived > 0) {
+      last = derived
+      routes = venuesFor(sym, pair, { usd: amount, last, leverage })
+    }
+  }
 
   const quoted: RouteQuote[] = routes.map((r) => {
     const feeBps = feeBpsOf(r.fee)
@@ -254,6 +267,7 @@ async function compose(sym: string, amount: number, last: number | null, leverag
     source: pair.source,
     amountUsd: amount,
     last,
+    lastDerived: lastIn === null && last !== null ? true : undefined,
     leverage: leverage ?? null,
     routes: quoted,
     notes: missingVenueNotes(sym, pair),
