@@ -16,10 +16,10 @@ import TokenIcon from '@/components/TokenIcon'
 import { chgClass, fmtPct, fmtQuotePrice, type QuoteMap } from '@/lib/markets-quotes'
 import { sortMarketRows, type MarketRow, type MarketSortDir, type MarketSortKey } from '@/lib/markets'
 
-const HEADS: { key: MarketSortKey; label: string; align: 'left' | 'right' }[] = [
-  { key: 'symbol', label: 'Symbol', align: 'left' },
-  { key: 'last', label: 'Last', align: 'right' },
-  { key: 'chg', label: '24h', align: 'right' },
+const HEADS: { key: MarketSortKey; label: string }[] = [
+  { key: 'symbol', label: 'Symbol' },
+  { key: 'last', label: 'Last' },
+  { key: 'chg', label: '24h' },
 ]
 
 export default function MarketTable({ rows, quotes, section }: { rows: readonly MarketRow[]; quotes: QuoteMap; section: string }) {
@@ -37,23 +37,29 @@ export default function MarketTable({ rows, quotes, section }: { rows: readonly 
   }
 
   return (
-    <table className="mk-table" data-section={section} data-sort={sort ? `${sort.key}:${sort.dir}` : 'none'}>
-      <thead>
-        <tr>
-          {HEADS.map((h) => {
-            const on = sort?.key === h.key
-            const aria = on ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : 'none'
-            return (
-              <th key={h.key} scope="col" aria-sort={aria} className={`mk-table__th mk-table__th--${h.align}${on ? ' is-on' : ''}`}>
-                <button type="button" className="mk-table__sort mono" onClick={() => toggle(h.key)} title={`Sort by ${h.label.toLowerCase()}`}>
-                  {h.label}
-                  {on ? sort!.dir === 'asc' ? <ArrowUp className="mk-table__arrow" aria-hidden /> : <ArrowDown className="mk-table__arrow" aria-hidden /> : <ArrowUpDown className="mk-table__arrow mk-table__arrow--idle" aria-hidden />}
-                </button>
-              </th>
-            )
-          })}
-        </tr>
-      </thead>
+    <div className="mk-board__inner" data-sort={sort ? `${sort.key}:${sort.dir}` : 'none'}>
+      {/* The sort bar stands above the ledger (a thead can't span the
+          two-column split the wide layout draws). */}
+      <div className="mk-table__sortbar" role="group" aria-label="Sort">
+        {HEADS.map((h) => {
+          const on = sort?.key === h.key
+          return (
+            <button
+              key={h.key}
+              type="button"
+              className={`mk-table__sort mono${on ? ' is-on' : ''}`}
+              aria-pressed={on}
+              data-sort-key={h.key}
+              onClick={() => toggle(h.key)}
+              title={`Sort by ${h.label.toLowerCase()}`}
+            >
+              {h.label}
+              {on ? sort!.dir === 'asc' ? <ArrowUp className="mk-table__arrow" aria-hidden /> : <ArrowDown className="mk-table__arrow" aria-hidden /> : <ArrowUpDown className="mk-table__arrow mk-table__arrow--idle" aria-hidden />}
+            </button>
+          )
+        })}
+      </div>
+      <table className="mk-table" data-section={section} data-sort={sort ? `${sort.key}:${sort.dir}` : 'none'}>
       <tbody>
         {sorted.map((r) => {
           const q = quotes[r.symbol]
@@ -73,6 +79,7 @@ export default function MarketTable({ rows, quotes, section }: { rows: readonly 
           )
         })}
       </tbody>
-    </table>
+      </table>
+    </div>
   )
 }

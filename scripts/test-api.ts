@@ -19026,7 +19026,10 @@ async function main() {
         "connect to act, wired: every ask on a symbol page (header chips, the no-chart chips, the Trade panel, chart levels, the watchlist) goes through act(), and so do the /markets watchlist's prefill chips; the spine's seats into the signed-in app open the door for a signed-out visitor, and its work poll stops for them",
         /const \{ act, door \} = useConnectToAct\(\{\s*run: runAsk,/.test(symS) &&
           /const onAsk = useCallback\(\(a: TradeAsk\) => act\(a\.ask\), \[act\]\)/.test(symS) &&
-          (symS.match(/onClick=\{sendOnClick\(/g) ?? []).length === 3 && /\{door\}/.test(symS) &&
+          // MK2 (2026-09-15): the header chips live in the ExecStrip slot now — SymbolPage keeps
+          // the two no-chart chips and hands the strip `act` itself; the stub's chips call onAsk.
+          (symS.match(/onClick=\{sendOnClick\(/g) ?? []).length === 2 && /\{door\}/.test(symS) &&
+          /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} \/>/.test(symS) &&
           /else prefillAct\(ask\)/.test(railS) && /\{prefillDoor\}/.test(railS) && !/else router\.push\(promptHref\(ask\)\)/.test(railS) &&
           (spineS.match(/if \(openDoorFor\(href\)\) return/g) ?? []).length === 2 &&
           (spineS.match(/<SpineLink\b/g) ?? []).length === 5 &&
@@ -20288,13 +20291,14 @@ async function main() {
       return !!m && m[1].trim().length > 0
     }
     check(
-      'mk2/markets: /markets server-renders the movers tape seat, the Map · List toggle (SSR = list, every row present), the terminal tables with sortable heads and j/k row links',
+      'mk2/markets: /markets server-renders the movers tape seat, the Map · List toggle (SSR = list, every row present), the terminal tables with a sort bar (symbol · last · 24h) and j/k row links',
       seat(mkHtml, 'mk-tape') &&
         /<main class="mkt-frame__main" data-view="list">/.test(mkHtml) &&
         /class="mk-view__btn is-on" aria-pressed="true"[^>]*title="Terminal list"/.test(mkHtml) &&
         /<table class="mk-table" data-section="equities" data-sort="none">/.test(mkHtml) &&
         /<table class="mk-table" data-section="crypto"/.test(mkHtml) && /<table class="mk-table" data-section="perps"/.test(mkHtml) &&
-        /<th scope="col" aria-sort="none" class="mk-table__th mk-table__th--right"><button[^>]*title="Sort by last"/.test(mkHtml) &&
+        /<div class="mk-table__sortbar" role="group" aria-label="Sort"><button type="button" class="mk-table__sort mono" aria-pressed="false" data-sort-key="symbol"/.test(mkHtml) &&
+        /data-sort-key="last"[^>]*title="Sort by last"/.test(mkHtml) && /data-sort-key="chg"[^>]*title="Sort by 24h"/.test(mkHtml) &&
         /<a class="mk-table__link" data-mk-row="true" href="\/t\/AAPL">/.test(mkHtml) &&
         /<a class="mk-table__link" data-mk-row="true" href="\/t\/HYPE">/.test(mkHtml) &&
         /<kbd>j<\/kbd>/.test(mkHtml),
@@ -20355,15 +20359,15 @@ async function main() {
     const iId = at(/<div class="sym__id">/)
     const iMeta = at(/<div class="sym__meta">/)
     const iQuote = at(/<div class="sym__quote">/)
-    const iAct = at(/class="sym__act"[^>]*data-slot="ExecStrip"/)
+    const iAct = at(/<div class="sym__exec" data-seat="ExecStrip">/)
     const iChart = at(/class="tchart sym__chart"/)
     const iDock = at(/<section class="mk-askdock is-open" data-askchart="open"/)
     const iTabs = at(/<nav class="sym__tabs"/)
     check(
-      'mk2/markets: /t/AAPL header order — sym__head → sym__id → sym__meta (session dot + compare) → sym__quote → ExecStrip seat (the pinned act chips) → chart → ask dock → tabs',
+      'mk2/markets: /t/AAPL header order — sym__head → sym__id → sym__meta (session dot + compare) → sym__quote → the ExecStrip seat (non-empty) → chart → ask dock → tabs',
       iHead >= 0 && iHead < iId && iId < iMeta && iMeta < iQuote && iQuote < iAct && iAct < iChart && iChart < iDock && iDock < iTabs &&
         /<p class="sym__session mono" data-tape="(open|closed)"><span class="mk-dot mk-dot--(open|closed)"/.test(tAapl) &&
-        /class="sym__act-chip sym__act-chip--buy"[^>]*>Buy AAPL</.test(tAapl),
+        seat(tAapl, 'sym__exec" data-seat="ExecStrip'),
       `head=${iHead} id=${iId} meta=${iMeta} quote=${iQuote} act=${iAct} chart=${iChart} dock=${iDock} tabs=${iTabs}`,
     )
     check(
@@ -20396,6 +20400,15 @@ async function main() {
           const sym = mk.sortMarketRows(rows, q, 'symbol', 'desc').map((r) => r.symbol).join('')
           return desc === 'CADB' && asc === 'ADCB' && chg === 'DACB' && sym === 'DCBA' && rows.map((r) => r.symbol).join('') === 'ABCD'
         })(),
+    )
+    // The rail's density toggle (MK2): SSR is comfortable; the list menu
+    // carries a checkbox item; compact rows drop the company name in CSS.
+    const railSrc = await readFile('components/markets/watchlist/WatchlistRail.tsx', 'utf8')
+    check(
+      'mk2/markets: the watchlist rail server-renders data-density="comfortable", its list menu carries the Compact/Comfortable rows checkbox (remembered per browser), and markets.css hides the company name on compact rows',
+      /class="wl[^"]*" data-mode="[a-z]+" data-density="comfortable"/.test(mkHtml) &&
+        railSrc.includes('role="menuitemcheckbox"') && railSrc.includes("DENSITY_KEY = 'pantessa.watchlists.density'") &&
+        /\.wl\[data-density="compact"\] \.wl__rowName \{ display: none; \}/.test(await readFile('components/markets/markets.css', 'utf8')),
     )
     // The one stylesheet import + the slot card rule (QA's request: whoever
     // owns a class ships its rule).

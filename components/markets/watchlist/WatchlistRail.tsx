@@ -57,6 +57,8 @@ export interface WatchlistRailProps {
   onClose?: () => void
 }
 
+const DENSITY_KEY = 'pantessa.watchlists.density'
+
 export default function WatchlistRail({ symbol, onAsk, redirectTo, className, onClose }: WatchlistRailProps) {
   const router = useRouter()
   const { toast } = useToast()
@@ -72,6 +74,26 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
   const [renaming, setRenaming] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
   const [alertsOpen, setAlertsOpen] = useState(false)
+  // Density (MK2): compact rows hide the company name and tighten the row;
+  // remembered per browser. SSR + first paint = comfortable.
+  const [dense, setDense] = useState(false)
+  useEffect(() => {
+    try {
+      setDense(window.localStorage.getItem(DENSITY_KEY) === 'compact')
+    } catch {
+      /* comfortable */
+    }
+  }, [])
+  const toggleDense = () => {
+    setDense((d) => {
+      try {
+        window.localStorage.setItem(DENSITY_KEY, d ? 'comfortable' : 'compact')
+      } catch {
+        /* not remembered */
+      }
+      return !d
+    })
+  }
   const rootRef = useRef<HTMLDivElement | null>(null)
 
   const active = wl.active
@@ -172,7 +194,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
   const activeAlerts = alerts.alerts.filter((a) => a.status !== 'fired')
 
   return (
-    <div ref={rootRef} className={`wl${className ? ` ${className}` : ''}`} data-mode={wl.mode}>
+    <div ref={rootRef} className={`wl${className ? ` ${className}` : ''}`} data-mode={wl.mode} data-density={dense ? 'compact' : 'comfortable'}>
       {/* ── Head: list picker + list menu ─────────────────────────── */}
       <div className="wl__head">
         <div className="wl__picker">
@@ -243,6 +265,21 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
             </button>
             {menuOpen && active && (
               <ul className="wl__pop wl__pop--right" role="menu">
+                <li>
+                  <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={dense}
+                    className="wl__popItem"
+                    data-density-toggle
+                    onClick={() => {
+                      toggleDense()
+                      setMenuOpen(false)
+                    }}
+                  >
+                    {dense ? 'Comfortable rows' : 'Compact rows'}
+                  </button>
+                </li>
                 <li>
                   <button
                     type="button"

@@ -17,9 +17,19 @@ export interface TrendingRow {
 }
 
 export const TRENDING_WINDOW_DAYS = 7
-const TRENDING_SAMPLE = 2_000
+const TRENDING_SAMPLE = 800
+/** One read per minute per server — the page is dynamic, the strip is not. */
+const TRENDING_TTL_MS = 60_000
+let cache: { at: number; limit: number; rows: TrendingRow[] } | null = null
 
 export async function readTrending(limit = 8): Promise<TrendingRow[]> {
+  if (cache && cache.limit === limit && Date.now() - cache.at < TRENDING_TTL_MS) return cache.rows
+  const rows = await readTrendingUncached(limit)
+  cache = { at: Date.now(), limit, rows }
+  return rows
+}
+
+async function readTrendingUncached(limit: number): Promise<TrendingRow[]> {
   const known = marketSections().flatMap((s) => s.rows.map((r) => r.symbol))
   try {
     const since = new Date(Date.now() - TRENDING_WINDOW_DAYS * 86_400_000)
