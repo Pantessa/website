@@ -90,6 +90,10 @@ export interface SymbolPosition {
   /** Spot + perp value + supplied + staked (borrows not netted — the panel
    *  shows them as their own line). */
   totalUsd: number
+  /** Pantessa's own standing rows (dca · guardian · spotGuard) are returned
+   *  only to the wallet's own SIWE session; otherwise they are omitted and
+   *  named here (rule 6 — trigger levels are not public chain state). */
+  private: string[]
   /** Readers that didn't answer — never rendered as zero. */
   failed: string[]
   updatedAt: string

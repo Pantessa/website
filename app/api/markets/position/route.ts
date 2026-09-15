@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
+import { getSessionAddress } from '@/lib/auth'
 import { chartPairFor } from '@/lib/charts'
 import { getWalletViewCached } from '@/lib/wallet-view'
 import { fetchPositions } from '@/lib/hl-guardian-store'
@@ -19,11 +20,15 @@ export const dynamic = 'force-dynamic'
 // Lido stETH (ETH only), DCA schedules buying it, guardian + spot-guard
 // policies — and the exits, each a sentence a native parser reads.
 //
-// Public BY ADDRESS, read-only (connect-to-act: balances of an address are
-// on-chain public data — the same rule as /api/wallet and /w/<address>;
-// nothing here mutates, and no session is read, so a client-asserted
-// address can only ever LOOK). Every reader is fail-soft and NAMED in
-// `failed` — a reader that didn't answer is never rendered as zero.
+// Public BY ADDRESS for what is public anyway (on-chain balances, the HL
+// clearinghouse, Aave, Lido — the same rule as /api/wallet and /w/<address>;
+// nothing here mutates). The wallet's OWN standing rows — DCA schedules, HL
+// Guardian and Spot Guardian policies (trigger levels) — are Pantessa
+// records, not chain state: they are returned only when the SIWE session IS
+// this address (rule 6, QA-3); otherwise they are omitted and NAMED in
+// `private`, so a client-asserted address can only ever look at the chain.
+// Every reader is fail-soft and NAMED in `failed` — a reader that didn't
+// answer is never rendered as zero.
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/
 const PROVIDER_TIMEOUT_MS = 8_000
@@ -58,20 +63,23 @@ export async function GET(req: NextRequest) {
   const isPerpCandidate = true // the venue decides; a flat coin is just null
   const wantLend = pair.source !== 'robinhood'
   const wantStake = sym === 'ETH'
+  const session = (await getSessionAddress())?.toLowerCase() ?? null
+  const own = session === wallet
+  const privateRows = own ? [] : ['dca', 'guardian', 'spotGuard']
 
   const [viewR, perpR, aaveR, lidoR, dcaR, guardR, spotGuardR] = await Promise.allSettled([
     withTimeout(getWalletViewCached(address as `0x${string}`)),
     isPerpCandidate ? withTimeout(fetchPositions(address)) : Promise.resolve([]),
     wantLend ? withTimeout(callMcpTool(AAVE_MCP, 'portfolio', { user: address }, { timeoutMs: PROVIDER_TIMEOUT_MS })) : Promise.resolve(null),
     wantStake ? withTimeout(callMcpTool(LIDO_MCP, 'position', { user: address }, { timeoutMs: PROVIDER_TIMEOUT_MS })) : Promise.resolve(null),
-    withTimeout(listDcaSchedules(wallet)),
-    prisma.hlGuardianPolicy.findMany({
+    own ? withTimeout(listDcaSchedules(wallet)) : Promise.resolve([]),
+    !own ? Promise.resolve([]) : prisma.hlGuardianPolicy.findMany({
       where: { wallet, coin: sym, status: { not: 'done' } },
       orderBy: { createdAt: 'desc' },
       take: 5,
       select: { id: true, kind: true, side: true, triggerMode: true, triggerValue: true, status: true },
     }),
-    prisma.spotGuardPolicy.findMany({
+    !own ? Promise.resolve([]) : prisma.spotGuardPolicy.findMany({
       where: { wallet, tokenSymbol: { in: [...aliases] }, status: { in: ['active', 'paused', 'triggered', 'error'] } },
       orderBy: { createdAt: 'desc' },
       take: 5,
@@ -171,6 +179,7 @@ export async function GET(req: NextRequest) {
     spotGuard,
     exits: exitChipsFor({ symbol: sym, spot, perp, lend, dca, spotGuard }, pair.source),
     totalUsd: Math.round(totalUsd * 100) / 100,
+    private: privateRows,
     failed,
     updatedAt: new Date().toISOString(),
   }

@@ -4,14 +4,34 @@
 // for the pair (Buy · Sell · Long · Short · Stake · Supply · DCA · Protect,
 // where each is honest — lib/trade-asks execSidesFor). One chip per side;
 // each chip's label is a complete ask that SENDS on click (the chip IS the
-// contract). Replaces the Overview-era Buy/Sell/DCA/Protect strip; the
+// contract). Replaces the Overview-era Buy/Sell/DCA/Protect strip and KEEPS
+// its wire: the `sym__act` wrapper, the eyebrow sentence, the legacy
+// `sym__act-chip sym__act-chip--buy|sell|dca|protect` class names on the
+// equivalent sides (long/short wear buy/sell), and the `/chat?prompt=` href
+// as the no-JS fallback (a URL never fires a turn — memory chip-send-
+// contract), so main's act-strip pins stay green on the merged tree. The
 // grammar lives in lib/trade-asks (pure) so the harness pins it without
 // rendering.
 
-import { useMemo } from 'react'
+import { useMemo, type MouseEvent as ReactMouseEvent } from 'react'
+import Link from 'next/link'
 import type { ChartPair } from '@/lib/charts'
-import { execAsks } from '@/lib/trade-asks'
+import { execAsks, type ExecSide } from '@/lib/trade-asks'
 import './trade.css'
+
+const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
+
+/** The legacy class the side wears (long/short = the perp's buy/sell). */
+const LEGACY: Record<ExecSide, string> = {
+  buy: 'buy',
+  long: 'buy',
+  sell: 'sell',
+  short: 'sell',
+  dca: 'dca',
+  protect: 'protect',
+  stake: 'stake',
+  supply: 'supply',
+}
 
 export default function ExecStrip({
   symbol,
@@ -30,22 +50,31 @@ export default function ExecStrip({
 }) {
   const asks = useMemo(() => execAsks(pair, { usd, last: last ?? undefined }), [pair, usd, last])
   if (asks.length === 0) return null
+  // A chip is a real link (the /chat prefill: no-JS, a new tab); a plain
+  // click sends through the page's act door instead.
+  const sendOnClick = (ask: string) => (e: ReactMouseEvent<HTMLAnchorElement>) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+    e.preventDefault()
+    onAsk(ask)
+  }
   return (
-    <div className="mkt-exec" aria-label={`Act on ${symbol}`} data-acts={asks.length}>
-      <span className="mkt-exec__eyebrow mono">ACT ON {pair.symbol} · ACROSS EVERY DAPP · YOUR WALLET SIGNS</span>
-      <div className="mkt-exec__chips">
+    <div className="sym__act" aria-label={`Act on ${symbol}`} data-acts={asks.length}>
+      <span className="sym__act-eyebrow mono">ACT ON {pair.symbol} · SENDS THE ASK · YOUR WALLET SIGNS</span>
+      <div className="sym__act-chips">
         {asks.map((a) => (
-          <button
+          <Link
             key={a.side}
-            type="button"
-            className={`mkt-exec__chip mkt-exec__chip--${a.tone} mkt-exec__chip--${a.kind}`}
+            href={promptHref(a.ask)}
+            className={`sym__act-chip sym__act-chip--${LEGACY[a.side]}`}
             title={a.ask}
             data-ask={a.ask}
             data-side={a.side}
-            onClick={() => onAsk(a.ask)}
+            data-kind={a.kind}
+            data-tone={a.tone}
+            onClick={sendOnClick(a.ask)}
           >
             {a.label}
-          </button>
+          </Link>
         ))}
       </div>
     </div>

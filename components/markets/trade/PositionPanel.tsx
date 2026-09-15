@@ -208,6 +208,7 @@ export default function PositionPanel({
           </div>
         </div>
       )}
+      {pos && pos.private.length > 0 && <p className="mkt-routes__foot mono">your DCA schedules and Guardian stops show once you sign in as this wallet (Pantessa records, not chain state)</p>}
       {pos && pos.failed.length > 0 && !empty && <p className="mkt-routes__foot mono">didn’t answer: {pos.failed.join(' · ')} — shown as unread, not zero</p>}
     </section>
   )
