@@ -540,3 +540,48 @@ export function compoundPresets(symbol: string, pair: ChartPair): { label: strin
   if (has('fund', 'buy') && !has('stake')) out.push({ label: 'Bridge → Buy', kinds: ['fund', 'buy'] })
   return out
 }
+
+// ── The limit-price picker: a drawn level becomes a resting CoW order ──────
+// The chart's last drawn horizontal line (ChartMount persists drawings under
+// `yf-chart-state:<SYM>`) is the trader's own price. Below market it is a
+// limit BUY, above it a limit SELL — CoW fills at-or-better, so the other
+// way round would be a market order wearing a limit's clothes (the same
+// honesty rule as lib/chart-actions). Prices carry no thousands separators
+// (the limit grammar reads `[\d.]+`).
+export const CHART_DRAW_KEY_PREFIX = 'yf-chart-state:'
+
+export interface LimitAtLevel {
+  side: 'buy' | 'sell'
+  price: number
+  units: string
+  ask: string
+  label: string
+  hint: string
+}
+
+export function limitAtLevel(symbol: string, chainWord: string, usd: number, price: number, last: number): LimitAtLevel | null {
+  const sym = symbol.toUpperCase()
+  if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(last) || last <= 0 || price === last) return null
+  const units = fmtAskUnits(usd, price)
+  if (!units) return null
+  const usdc = fmtAskPrice(Number(units) * price)
+  const px = fmtAskPrice(price)
+  if (price < last) {
+    return {
+      side: 'buy', price, units,
+      ask: `limit order: buy ${units} ${sym} for at most ${usdc} USDC on ${chainWord}`,
+      label: `Buy at your line $${px}`,
+      hint: `Rests ${(((last - price) / last) * 100).toFixed(1)}% under market on CoW — fills at-or-better, gasless, cancel any time.`,
+    }
+  }
+  return {
+    side: 'sell', price, units,
+    ask: `limit order: sell ${units} ${sym} for at least ${usdc} USDC on ${chainWord}`,
+    label: `Sell at your line $${px}`,
+    hint: `Rests ${(((price - last) / last) * 100).toFixed(1)}% over market on CoW.`,
+  }
+}
+
+/** The plain-words rule behind the BEST OUT tag — one sentence, quoted in
+ *  the table's tooltip and pinned in the harness. */
+export const BEST_OUT_RULE = 'BEST OUT = the most token for the same dollars across the spot chains quoted right now (fee tier scanned, impact included). Only spot rows compete: a perp, a loan, a stake or a schedule is a different thing, so nothing is called best across kinds.'

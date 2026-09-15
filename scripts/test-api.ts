@@ -236,7 +236,7 @@ import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingIn
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
 import { CHOOSE_SHAPE_RULES, chooseMosaicShape, composeMosaicAsk, fmtUnits, integerPcts, isMosaicAsk, MOSAIC_STABLE, mosaicAskString, mosaicPresets, mosaicStableFor, mosaicValueRows, parseMosaicAsk, planMosaic, suggestMosaicShape, type MosaicHolding } from '../lib/mosaic'
 import { simulateLadder } from './ask-ladder'
-import { venuesFor as mk2VenuesFor, missingVenueNotes as mk2MissingNotes, composeCompound as mk2ComposeCompound, compoundLegKindsFor as mk2LegKinds, compoundPresets as mk2Presets, type CompoundLegKind as Mk2LegKind, type RoutesResponse as Mk2RoutesResponse } from '../lib/symbol-venues'
+import { limitAtLevel as mk2LimitAtLevel, BEST_OUT_RULE as MK2_BEST_OUT_RULE, venuesFor as mk2VenuesFor, missingVenueNotes as mk2MissingNotes, composeCompound as mk2ComposeCompound, compoundLegKindsFor as mk2LegKinds, compoundPresets as mk2Presets, type CompoundLegKind as Mk2LegKind, type RoutesResponse as Mk2RoutesResponse } from '../lib/symbol-venues'
 import { execAsks as mk2ExecAsks, execSidesFor as mk2ExecSidesFor, sideOf as mk2SideOf, AMOUNTS as MK2_AMOUNTS, STOPS as MK2_STOPS, CADENCES as MK2_CADENCES } from '../lib/trade-asks'
 import { exitChipsFor as mk2ExitChipsFor, positionSummary as mk2PositionSummary, positionIsEmpty as mk2PositionIsEmpty, type SymbolPosition as Mk2SymbolPosition } from '../lib/symbol-position'
 import {
@@ -20389,6 +20389,19 @@ async function main() {
     const esSrc = await readFile('components/markets/trade/ExecStrip.tsx', 'utf8')
     const ppSrc = await readFile('components/markets/trade/PositionPanel.tsx', 'utf8')
     const ccSrc = await readFile('components/markets/trade/CompoundComposer.tsx', 'utf8')
+    // R2: the drawn-line limit picker (a level below market = limit BUY, above
+    // = limit SELL, at market = nothing), the leverage slider, the why-best rule.
+    const lvlBuy = mk2LimitAtLevel('ETH', 'Base', 50, 2400, 2500)
+    const lvlSell = mk2LimitAtLevel('ETH', 'Arbitrum', 50, 2600, 2500)
+    check(
+      'MK2/EXEC limit picker: a drawn level under market composes a CoW limit BUY, over market a limit SELL, at market nothing — both sentences land native; RouteTable reads the chart\'s own yf-chart-state key, carries a 1–10x leverage slider on perp rows, and quotes the BEST OUT rule (spot only, never across kinds) in the tag tooltip',
+      lvlBuy?.side === 'buy' && lvlBuy.ask === 'limit order: buy 0.02083 ETH for at most 49.99 USDC on Base' && simulateLadder(lvlBuy.ask).gate === 'swap' && simulateLadder(lvlBuy.ask).kind === 'action' &&
+        lvlSell?.side === 'sell' && /^limit order: sell 0\.01923 ETH for at least [\d.]+ USDC on Arbitrum$/.test(lvlSell.ask) && simulateLadder(lvlSell.ask).kind === 'action' &&
+        mk2LimitAtLevel('ETH', 'Base', 50, 2500, 2500) === null &&
+        rtSrc.includes("`${CHART_DRAW_KEY_PREFIX}${symbol}`") && rtSrc.includes("type=\"range\" min={1} max={LEVERAGE_MAX}") && rtSrc.includes('title={BEST_OUT_RULE}') &&
+        /only spot rows compete/i.test(MK2_BEST_OUT_RULE) && /never|nothing is called best across kinds/i.test(MK2_BEST_OUT_RULE),
+      `${lvlBuy?.ask} | ${lvlSell?.ask}`,
+    )
     check(
       'MK2/EXEC surfaces: RouteTable/ExecStrip/PositionPanel/CompoundComposer each take { symbol, pair, onAsk } (PositionPanel + address?), every chip carries data-ask and SENDS through onAsk on click (never a /chat prefill link), PositionPanel re-exports positionSummary',
       [rtSrc, esSrc, ppSrc, ccSrc].every((src) => src.includes('onAsk: (ask: string) => void') && src.includes('data-ask=')) &&
