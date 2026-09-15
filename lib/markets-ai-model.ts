@@ -160,7 +160,7 @@ function mockAskText(call: ModelCall): string {
 }
 
 function mockText(call: ModelCall): string {
-  if (call.system.startsWith('You write the market brief')) return mockBriefText(call)
+  if (call.system.startsWith('You write the market brief') || call.system.startsWith('You write the morning tape')) return mockBriefText(call)
   if (call.system.startsWith('You write one or two plain sentences')) return 'You hold a mock amount; the numbers are the ones in the prompt.'
   if (call.system.startsWith('You explain one candle')) return 'This bar closed where the context says it closed, a mock sentence.'
   return mockAskText(call)

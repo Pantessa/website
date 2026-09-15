@@ -80,7 +80,7 @@ import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from 
 import { FIRST_PARTY_MCP_SOURCE, guardPlannerArtifact, isFirstPartyMcp, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { LIMIT_EXAMPLES, parseSwapIntent, swapClarify } from '../lib/swap-intent'
 import { parseChartState, chartStateToAsks, serializeChartState, chartStatesEqual, type ChartState } from '../lib/chart-state'
-import { briefCacheKey as aiBriefCacheKey, buildChartMutation as aiBuildChartMutation, fenceAsk as aiFenceAsk, parseAlertAsk as aiParseAlertAsk, parseDrawAsk as aiParseDrawAsk, renderNewsBlock as aiRenderNewsBlock, splitChipsLine as aiSplitChipsLine } from '../lib/markets-ai'
+import { briefCacheKey as aiBriefCacheKey, buildChartMutation as aiBuildChartMutation, chipMenu as aiChipMenu, fenceAsk as aiFenceAsk, parseAlertAsk as aiParseAlertAsk, parseDrawAsk as aiParseDrawAsk, positionFallback as aiPositionFallback, renderNewsBlock as aiRenderNewsBlock, splitChipsLine as aiSplitChipsLine, tapeCacheKey as aiTapeCacheKey, tapeSymbols as aiTapeSymbols, venueWordsFor as aiVenueWordsFor } from '../lib/markets-ai'
 import { ladderVerdict as aiLadderVerdict } from '../lib/markets-ai-ladder'
 import { askDoorChips as aiAskDoorChips } from '../lib/ask-door'
 import { actionKindsFor, composeLineActions, composeZoneActions, fmtAskPrice, fmtAskUnits } from '../lib/chart-actions'
@@ -20953,6 +20953,32 @@ async function main() {
     const doorBrief = aiAskDoorChips('/t/ETH', { symbol: 'ETH', chips: [{ label: 'Buy ETH', ask: 'Buy $50 of ETH' }, { label: 'Stop under S1', ask: 'Protect my spot ETH if it drops to $2447' }] })
     const doorOther = aiAskDoorChips('/t/ETH', { symbol: 'AAPL', chips: [{ label: 'x', ask: 'Buy $50 of AAPL' }] })
     check('ai door: the brief\'s chips ride the ⌘K door on their own symbol page only, deduped against the trade asks, before "Why is ETH moving?"', doorBrief.length === doorPlain.length + 1 && doorBrief.some((c) => c.ask === 'Protect my spot ETH if it drops to $2447') && doorBrief.at(-1)?.label === 'Why is ETH moving?' && JSON.stringify(doorOther) === JSON.stringify(doorPlain) && JSON.stringify(aiAskDoorChips('/t/ETH', null)) === JSON.stringify(doorPlain))
+    // R2: EXEC's venue map feeds the prompts' venue words and the chip menu;
+    // the morning tape rides the same route on a symbol-set-only key; the
+    // position paragraph hops EXEC's /api/markets/position with the caller's
+    // own cookie; "explain this" reads the chart-hover store.
+    const ethPair = chartPairFor('ETH')!
+    const aaplPair = chartPairFor('AAPL')!
+    const ethWords = aiVenueWordsFor(ethPair, 2500)
+    const aaplWords = aiVenueWordsFor(aaplPair, 300)
+    check('ai venues: the prompts\' "ways this wallet can act" come from EXEC\'s venuesFor (spot chains, CoW limits, Aave, Lido, the perp) plus missingVenueNotes as "not here:" lines', ethWords.some((w) => /^spot on Uniswap \(Base/.test(w)) && ethWords.some((w) => /CoW limit/.test(w)) && ethWords.some((w) => /Aave/.test(w)) && ethWords.some((w) => /Lido/.test(w)) && ethWords.some((w) => /Hyperliquid perp/.test(w)) && aaplWords.some((w) => /Robinhood Chain/.test(w)) && aaplWords.some((w) => w.startsWith('not here:')), `${ethWords.length}/${aaplWords.length} words`)
+    const ethMenu = aiChipMenu({ pair: ethPair, last: 2500, tech: null })
+    check('ai menu: EXEC\'s venue rows join the brief\'s chip menu (one per kind+side, ladder-filtered downstream) and funding legs never do', ethMenu.some((c) => c.ask === 'Supply $50 of ETH to Aave') && ethMenu.some((c) => c.ask === 'Stake 0.5 ETH on Lido') && ethMenu.some((c) => /^Long \$50 of ETH on Hyperliquid$/.test(c.ask)) && !ethMenu.some((c) => /^(Swap|Fund) /.test(c.ask)) && new Set(ethMenu.map((c) => c.ask)).size === ethMenu.length, `${ethMenu.length} chips`)
+    check('ai tape: the morning tape\'s cache key is the sorted, deduped symbol set only — never a list id, a name, or a wallet', aiTapeCacheKey(['eth', 'AAPL', 'ETH', 'btc']) === 'tape:AAPL,BTC,ETH' && aiTapeSymbols(['0x1111111111111111111111111111111111111111', 'ETH']).join(',') === 'ETH')
+    if (ethLast != null) {
+      const t1 = await readBrief({ part: 'tape', symbols: ['eth', 'AAPL', 'ETH'] })
+      const tapeSyms = new Set(['ETH', 'AAPL'])
+      check('ai tape: {part:tape, symbols} streams one paragraph across the list (mocked model) with chips that name a listed symbol and pass fence + ladder', t1.res.status === 200 && t1.meta?.type === 'meta' && t1.text.length > 40 && t1.chips.length >= 2 && t1.chips.every((c) => [...tapeSyms].some((s) => chipOk(c.ask, s))) && t1.events.at(-1)?.type === 'done', `symbol=${(t1.meta as { symbol?: string } | undefined)?.symbol} chips=${t1.chips.map((c) => c.ask).join(' | ')}`)
+      const t2 = await readBrief({ part: 'tape', symbols: ['AAPL', 'eth'] })
+      check('ai tape: the same set in another order and case replays the shared cache', t2.meta?.cached === true && t2.text === t1.text)
+      const t3 = await fetch(`${BASE}/api/markets/brief`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ part: 'tape', symbols: [] }) })
+      check('ai tape: an empty list is a 400 by name, never a model call', t3.status === 400)
+    }
+    const briefRoute = await readFile('app/api/markets/brief/route.ts', 'utf8')
+    const ctxSrc = await readFile('lib/markets-ai-context.ts', 'utf8')
+    check('ai position: the paragraph hops EXEC\'s /api/markets/position with the CALLER\'s own cookie (own-session rows come back; a stranger\'s are named private, never guessed), and falls back to the chain-only reader', briefRoute.includes("readSymbolPosition(req.nextUrl.origin, req.headers.get('cookie')") && ctxSrc.includes('privateRows: p.private ?? []') && ctxSrc.includes('return readPosition(address, pair, last, change24hPct)') && aiPositionFallback({ symbol: 'ETH', last: 2500, change24hPct: 1, rows: [], perp: null, privateRows: ['dca', 'guardian'] }).includes('private'))
+    const askSrc2 = await readFile('components/markets/ai/AskChart.tsx', 'utf8')
+    check('ai explain: AskChart offers "Explain the <time> bar" for the chart-hover store\'s bar (lib/markets-ai-hover, VIZ reports it) and the window\'s last bar until then, through kind:explain', askSrc2.includes("useChartHover((st) => (st.symbol === pair.symbol ? st.bar : null))") && askSrc2.includes("kind: 'explain', bar: explainBar") && askSrc2.includes("data-explain={hover ? 'hover' : 'last'}"))
     // The wire the components speak, pinned at the source: a chip click SENDS
     // through onAsk (never auto), a chart answer goes through onChartState,
     // the alert card posts the /api/alerts shape, and the byline is honest.

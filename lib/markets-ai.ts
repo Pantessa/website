@@ -30,6 +30,7 @@ import { composeLineActions } from './chart-actions'
 import { alertLabel, alertRuleProblem, type AlertCondition, type AlertRule } from './watchlists'
 import type { NewsItem } from './news-shared'
 import { tokenHome } from './token-home'
+import { missingVenueNotes, venuesFor, type VenueRoute } from './symbol-venues'
 
 // ── Wire ────────────────────────────────────────────────────────────────────
 
@@ -81,6 +82,23 @@ export type AskAnswer =
 /** The shared brief cache is keyed by symbol + tf ONLY — never a wallet. */
 export function briefCacheKey(symbol: string, tf: ChartTf): string {
   return `brief:${symbol.toUpperCase()}:${tf}`
+}
+
+/** The morning tape's shared cache: the SORTED symbol set only — never a
+ *  list id, name, or wallet. Two visitors with the same symbols share it. */
+export const TAPE_MAX_SYMBOLS = 12
+export const TAPE_MAX_TOKENS = 600
+export function tapeSymbols(raw: readonly string[]): string[] {
+  const out = new Set<string>()
+  for (const s of raw) {
+    const sym = String(s ?? '').trim().toUpperCase()
+    if (/^[A-Z0-9]{1,12}$/.test(sym)) out.add(sym)
+    if (out.size >= TAPE_MAX_SYMBOLS) break
+  }
+  return [...out].sort()
+}
+export function tapeCacheKey(symbols: readonly string[]): string {
+  return `tape:${tapeSymbols(symbols).join(',')}`
 }
 
 export function explainCacheKey(symbol: string, tf: ChartTf, barTime: number): string {
@@ -175,6 +193,18 @@ export function chipMenu(input: MenuInput): AiChip[] {
     out.push({ id: `m${out.length}`, kind, label, ask })
   }
   for (const t of tradeAsks(pair)) push(t.side, t.label, t.ask)
+  // EXEC's venue map (lib/symbol-venues): one row per venue KIND the wallet
+  // can act on here — the first chain of a multi-chain kind, buy and sell —
+  // every ask ladder-pinned native by EXEC. Funding legs stay out (a brief
+  // chip never moves money across chains on its own).
+  const seenKind = new Set<string>()
+  for (const r of venuesFor(pair.symbol, pair, { last: last ?? undefined })) {
+    if (r.kind === 'fund') continue
+    const k = `${r.kind}:${r.side ?? ''}`
+    if (seenKind.has(k)) continue
+    seenKind.add(k)
+    push(venueChipKind(r), r.label, r.ask)
+  }
   if (tech) {
     for (const c of verdictChips({ symbol: pair.symbol, source: pair.source, rating: tech.summary.rating, support: tech.pivots?.classic.s1 ?? null, resistance: tech.pivots?.classic.r1 ?? null })) {
       if (c.kind === 'alert') continue
@@ -192,6 +222,23 @@ export function chipMenu(input: MenuInput): AiChip[] {
     }
   }
   return out
+}
+
+function venueChipKind(r: VenueRoute): AiChip['kind'] {
+  switch (r.kind) {
+    case 'spot':
+    case 'stock':
+    case 'perp':
+      return r.side === 'sell' ? 'sell' : 'buy'
+    case 'limit':
+      return 'limit'
+    case 'dca':
+      return 'dca'
+    case 'protect':
+      return 'protect'
+    default:
+      return 'trade'
+  }
 }
 
 /** The trailing `CHIPS: m0, m2` line the brief ends with — split off the
@@ -486,7 +533,7 @@ export function briefUserPrompt(ctx: BriefContext): string {
 
 export const POSITION_SYSTEM = [
   'You write one or two plain sentences about what a wallet holds in one symbol, for the symbol page at Pantessa.',
-  'Use only the numbers in <position>. Say the amount, the value, where it sits, and how the day has treated it (the 24h change). If nothing is held, say so in one short sentence and stop. No advice, no markdown, no addresses.',
+  'Use only the numbers in <position>. Say the amount, the value, where it sits (chains, a perp, Aave, Lido), and how the day has treated it (the 24h change). A "private" line means those rows exist only behind the wallet\'s own sign-in — say so plainly, never guess them. If nothing is held, say so in one short sentence and stop. No advice, no markdown, no addresses.',
 ].join('\n')
 
 export interface PositionContext {
@@ -494,29 +541,81 @@ export interface PositionContext {
   last: number | null
   change24hPct: number | null
   rows: { chain: string; amount: number; valueUsd: number | null }[]
-  perp: { side: 'long' | 'short'; size: number; markPx: number } | null
+  perp: { side: 'long' | 'short'; size: number; markPx: number; pnlUsd?: number | null; leverage?: number | null } | null
+  /** Aave (EXEC's /api/markets/position). */
+  lend?: { suppliedUsd: number | null; borrowedUsd: number | null; healthFactor: number | null } | null
+  /** Lido (ETH only). */
+  stake?: { stEth: number | null; usd: number | null; aprPct: number | null } | null
+  /** Pantessa's own standing rows (DCA · guardian · spot guard) the route
+   *  withheld because the request carried no session for this address —
+   *  named honestly, never guessed. */
+  privateRows?: string[]
+  /** Readers that didn't answer — never rendered as zero. */
+  failed?: string[]
 }
 
 export function positionUserPrompt(ctx: PositionContext): string {
   const rows = ctx.rows.map((r) => `- ${r.amount} ${ctx.symbol} on ${r.chain}${r.valueUsd != null ? ` ($${r.valueUsd.toFixed(2)})` : ''}`)
-  if (ctx.perp) rows.push(`- Hyperliquid perp: ${ctx.perp.side} ${ctx.perp.size} ${ctx.symbol} at mark ${ctx.perp.markPx}`)
+  if (ctx.perp) rows.push(`- Hyperliquid perp: ${ctx.perp.side} ${ctx.perp.size} ${ctx.symbol} at mark ${ctx.perp.markPx}${ctx.perp.pnlUsd != null ? ` (PnL $${ctx.perp.pnlUsd.toFixed(2)})` : ''}${ctx.perp.leverage ? `, ${ctx.perp.leverage}x` : ''}`)
+  if (ctx.lend?.suppliedUsd != null) rows.push(`- Aave: supplied $${ctx.lend.suppliedUsd.toFixed(2)}${ctx.lend.borrowedUsd != null ? `, borrowed $${ctx.lend.borrowedUsd.toFixed(2)}` : ''}${ctx.lend.healthFactor != null ? `, health factor ${ctx.lend.healthFactor.toFixed(2)}` : ''}`)
+  if (ctx.stake?.stEth != null) rows.push(`- Lido: ${ctx.stake.stEth} stETH${ctx.stake.usd != null ? ` ($${ctx.stake.usd.toFixed(2)})` : ''}${ctx.stake.aprPct != null ? ` at ${ctx.stake.aprPct.toFixed(2)}% APR` : ''}`)
+  if (ctx.privateRows?.length) rows.push(`- private (not shown without the wallet's own sign-in): ${ctx.privateRows.join(', ')}`)
+  if (ctx.failed?.length) rows.push(`- unread (the reader did not answer): ${ctx.failed.join(', ')}`)
   return ['<position>', `symbol: ${ctx.symbol}; last ${ctx.last ?? 'n/a'}; 24h change ${ctx.change24hPct == null ? 'n/a' : `${ctx.change24hPct.toFixed(2)}%`}`, rows.length ? rows.join('\n') : '- nothing held', '</position>'].join('\n')
 }
 
 /** Deterministic fallback when the model is unavailable — the numbers are
  *  ours either way. */
+export function positionHeld(ctx: PositionContext): boolean {
+  return ctx.rows.length > 0 || !!ctx.perp || ctx.lend?.suppliedUsd != null || ctx.stake?.stEth != null
+}
+
 export function positionFallback(ctx: PositionContext): string {
-  if (!ctx.rows.length && !ctx.perp) return `This wallet holds no ${ctx.symbol} yet.`
+  const priv = ctx.privateRows?.length ? ` Your ${ctx.privateRows.join(' / ')} rows are private — sign in with this wallet to see them here.` : ''
+  if (!positionHeld(ctx)) return `This wallet holds no ${ctx.symbol} yet.${priv}`
   const parts = ctx.rows.map((r) => `${fmtAmount(r.amount)} ${ctx.symbol} on ${r.chain}${r.valueUsd != null ? ` (~$${r.valueUsd.toFixed(2)})` : ''}`)
   if (ctx.perp) parts.push(`a ${ctx.perp.side} of ${fmtAmount(ctx.perp.size)} ${ctx.symbol} on Hyperliquid`)
+  if (ctx.lend?.suppliedUsd != null) parts.push(`$${ctx.lend.suppliedUsd.toFixed(2)} supplied on Aave`)
+  if (ctx.stake?.stEth != null) parts.push(`${fmtAmount(ctx.stake.stEth)} stETH on Lido`)
   const day = ctx.change24hPct == null ? '' : ` ${ctx.symbol} is ${ctx.change24hPct >= 0 ? 'up' : 'down'} ${Math.abs(ctx.change24hPct).toFixed(2)}% on the day.`
-  return `You hold ${parts.join(', ')}.${day}`
+  return `You hold ${parts.join(', ')}.${day}${priv}`
 }
 
 function fmtAmount(n: number): string {
   if (n >= 10_000) return n.toLocaleString('en-US', { maximumFractionDigits: 0 })
   if (n >= 1) return String(Number(n.toPrecision(4)))
   return String(Number(n.toPrecision(3)))
+}
+
+export interface TapeRow {
+  symbol: string
+  name: string
+  last: number | null
+  change24hPct: number | null
+  verdict: string | null
+  s1: number | null
+  r1: number | null
+  sessionLine: string
+}
+
+export const TAPE_SYSTEM = [
+  'You write the morning tape for a watchlist at Pantessa, a chart you can trade on: one paragraph across every symbol in <tape>.',
+  'Rules: three to five plain sentences. Lead with the biggest movers by 24h change (name them with their numbers), then how the technical verdicts split across the list, then the one or two symbols sitting nearest a support or resistance level. Every number must appear in <tape>. Describe; never advise. No markdown, no bullets, no headings, no emoji. Tickers as tickers.',
+  'End with exactly one final line `CHIPS: id, id` naming two to four ids from <chips>, most relevant first. Nothing after that line.',
+].join('\n')
+
+export function tapeUserPrompt(rows: TapeRow[], menu: AiChip[]): string {
+  const fmt = (n: number | null | undefined, d = 2) => (n == null || !Number.isFinite(n) ? 'n/a' : String(Number(n.toFixed(d))))
+  const pct = (n: number | null | undefined) => (n == null || !Number.isFinite(n) ? 'n/a' : `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`)
+  return [
+    '<tape>',
+    ...rows.map((r) => `${r.symbol} (${r.name}): last ${fmt(r.last)}; 24h ${pct(r.change24hPct)}; verdict ${r.verdict ?? 'n/a'}; S1 ${fmt(r.s1)}; R1 ${fmt(r.r1)}; ${r.sessionLine}`),
+    '</tape>',
+    '<chips>',
+    menu.map((c) => `${c.id}: ${c.label} — "${c.ask}"`).join('\n'),
+    '</chips>',
+    'Write the morning tape now.',
+  ].join('\n')
 }
 
 export const ASK_SYSTEM = [
@@ -680,12 +779,54 @@ export function parseModelAnswer(raw: string): ModelAnswer | null {
   }
 }
 
-/** The venue words the prompts list for a pair — derived from the same
- *  side rules the act strip uses (EXEC's venue map replaces this at
- *  integration; until then the sentence is honest and short). */
-export function venueWordsFor(pair: ChartPair): string[] {
-  if (pair.source === 'robinhood') return ['spot on Robinhood Chain (Uniswap v3, 24/7)', 'DCA schedule', 'price alerts']
-  if (pair.source === 'hyperliquid') return ['Hyperliquid perp (long/short, leverage)', 'HL Guardian stop / take-profit', 'price alerts']
-  if (tokenHome(pair.symbol)) return ['Hyperliquid perp (long/short)', 'price alerts']
-  return ['spot on Uniswap / CoW (Base, Ethereum, Arbitrum, Optimism)', 'CoW limit orders', 'Spot Guardian stop', 'DCA schedule', 'price alerts', ...(pair.symbol === 'ETH' ? ['Lido staking', 'Aave supply'] : [])]
+/** The venue words the prompts list for a pair — derived from EXEC's venue
+ *  map (lib/symbol-venues venuesFor + missingVenueNotes): one phrase per
+ *  venue kind with its chains, then the honest "why not" lines. */
+export function venueWordsFor(pair: ChartPair, last: number | null = null): string[] {
+  const rows = venuesFor(pair.symbol, pair, { last: last ?? undefined })
+  const byKind = new Map<string, { venue: string; chains: Set<number> }>()
+  for (const r of rows) {
+    if (r.kind === 'fund') continue
+    const e = byKind.get(r.kind) ?? { venue: r.venue, chains: new Set<number>() }
+    e.chains.add(r.chainId)
+    byKind.set(r.kind, e)
+  }
+  const words: string[] = []
+  const chainWords = (ids: Set<number>) => {
+    const names = [...ids].filter((id) => id !== 1337).map((id) => ({ 1: 'Ethereum', 8453: 'Base', 42161: 'Arbitrum', 10: 'Optimism', 4663: 'Robinhood Chain' })[id] ?? `chain ${id}`)
+    return names.length ? ` (${names.join(', ')})` : ''
+  }
+  for (const [kind, e] of byKind) {
+    switch (kind) {
+      case 'spot':
+        words.push(`spot on Uniswap${chainWords(e.chains)}`)
+        break
+      case 'stock':
+        words.push('spot on Robinhood Chain (Uniswap v3, 24/7)')
+        break
+      case 'limit':
+        words.push(`CoW limit orders${chainWords(e.chains)}`)
+        break
+      case 'perp':
+        words.push('Hyperliquid perp (long/short, leverage)')
+        break
+      case 'protect':
+        words.push(e.venue === 'hyperliquid' ? 'HL Guardian stop / take-profit' : 'Spot Guardian stop on Base')
+        break
+      case 'lend':
+        words.push('Aave supply / borrow')
+        break
+      case 'stake':
+        words.push('Lido staking')
+        break
+      case 'dca':
+        words.push('DCA schedule')
+        break
+    }
+  }
+  const fundFrom = rows.filter((r) => r.kind === 'fund').length
+  if (fundFrom) words.push(`funding from ${fundFrom} other chain${fundFrom === 1 ? '' : 's'} (NEAR Intents / LiFi)`)
+  words.push('price alerts')
+  for (const n of missingVenueNotes(pair.symbol, pair)) words.push(`not here: ${n}`)
+  return words
 }

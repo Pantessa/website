@@ -1,0 +1,137 @@
+'use client'
+
+// MK2/AI — the morning tape: one brief across the watchlist, for the top of
+// the /markets rail. `POST /api/markets/brief { part: 'tape', symbols }` —
+// the model narrates OUR rows (last, 24h, verdict, S1/R1 per symbol) and
+// ends with chips from the biggest movers' own menus. Shared cache keyed on
+// the sorted symbol set only. With no `symbols` prop it reads the rail's
+// active list (useWatchlists) so the rail mounts it with just `onAsk`.
+
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Newspaper, RefreshCw } from 'lucide-react'
+import { useWatchlists } from '@/components/markets/watchlist/useWatchlists'
+import { TAPE_FOOTNOTE } from '@/lib/markets-copy'
+import { tapeSymbols, type AiChip, type BriefEvent } from '@/lib/markets-ai'
+import '../ai.css'
+
+export type MorningTapeProps = { symbols?: readonly string[]; onAsk: (ask: string) => void; title?: string }
+
+export default function MorningTape({ symbols: symbolsProp, onAsk, title = 'Morning tape' }: MorningTapeProps) {
+  const wl = useWatchlists()
+  const symbols = useMemo(() => tapeSymbols(symbolsProp ?? wl.active?.symbols ?? []), [symbolsProp, wl.active?.symbols])
+  const key = symbols.join(',')
+  const [phase, setPhase] = useState<'idle' | 'streaming' | 'done' | 'error'>('idle')
+  const [text, setText] = useState('')
+  const [chips, setChips] = useState<AiChip[]>([])
+  const [meta, setMeta] = useState<{ cached: boolean; model: string; feed: string | null } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [nonce, setNonce] = useState(0)
+  const abortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    if (!key) {
+      setPhase('idle')
+      setText('')
+      setChips([])
+      return
+    }
+    abortRef.current?.abort()
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    setPhase('streaming')
+    setText('')
+    setChips([])
+    setMeta(null)
+    setError(null)
+    void (async () => {
+      try {
+        const res = await fetch('/api/markets/brief', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ part: 'tape', symbols: key.split(',') }), signal: ctrl.signal })
+        if (!res.ok || !res.body) {
+          const j = (await res.json().catch(() => ({}))) as { error?: string }
+          throw new Error(j.error ?? `HTTP ${res.status}`)
+        }
+        const reader = res.body.getReader()
+        const dec = new TextDecoder()
+        let buf = ''
+        for (;;) {
+          const { value, done } = await reader.read()
+          if (done) break
+          buf += dec.decode(value, { stream: true })
+          let nl: number
+          while ((nl = buf.indexOf('\n')) >= 0) {
+            const raw = buf.slice(0, nl)
+            buf = buf.slice(nl + 1)
+            if (!raw.trim()) continue
+            let ev: BriefEvent
+            try {
+              ev = JSON.parse(raw) as BriefEvent
+            } catch {
+              continue
+            }
+            if (ev.type === 'meta') setMeta({ cached: ev.cached, model: ev.model, feed: ev.feed })
+            else if (ev.type === 'text') setText((t) => t + ev.text)
+            else if (ev.type === 'chips') setChips(ev.chips)
+            else if (ev.type === 'error') setError(ev.reason)
+          }
+        }
+        setPhase('done')
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') return
+        setError((e as Error).message)
+        setPhase('error')
+      }
+    })()
+    return () => ctrl.abort()
+  }, [key, nonce])
+
+  if (!key) return null
+  const streaming = phase === 'streaming'
+  return (
+    <section className="mk-ai mk-ai--tape" data-slot="MorningTape" data-lane="AI" data-phase={phase} aria-busy={streaming}>
+      <header className="mk-ai__head">
+        <span className="mk-ai__title">
+          <Newspaper className="mk-ai__ico" aria-hidden />
+          {title}
+        </span>
+        <span className="mk-ai__eyebrow mono">{streaming ? 'WRITING' : meta?.cached ? 'SHARED' : phase === 'done' ? 'JUST WRITTEN' : phase === 'error' ? 'UNAVAILABLE' : ''}</span>
+        <button type="button" className="mk-ai__ghost" onClick={() => setNonce((n) => n + 1)} disabled={streaming} aria-label="Reread the tape" title="Reread">
+          <RefreshCw className={`mk-ai__ico${streaming ? ' mk-ai__ico--spin' : ''}`} aria-hidden />
+        </button>
+      </header>
+      <div className="mk-ai__tape-syms">
+        {symbols.map((s) => (
+          <b key={s}>{s}</b>
+        ))}
+        {meta?.feed?.startsWith('missing') ? <span>· no chart for {meta.feed.slice(9)}</span> : null}
+      </div>
+      <div className="mk-ai__body">
+        {text ? (
+          <p className="mk-ai__p">
+            {text}
+            {streaming ? <span className="mk-ai__caret" aria-hidden /> : null}
+          </p>
+        ) : streaming ? (
+          <p className="mk-ai__p mk-ai__p--wait">
+            Reading {symbols.length} tapes
+            <span className="mk-ai__caret" aria-hidden />
+          </p>
+        ) : null}
+        {error ? <p className="mk-ai__err">{error}</p> : null}
+      </div>
+      {chips.length ? (
+        <div className="mk-ai__chips" role="group" aria-label="Act on the tape">
+          {chips.map((c) => (
+            <button key={c.id} type="button" className={`mk-ai__chip mk-ai__chip--${c.kind}`} onClick={() => onAsk(c.ask)} title={c.ask} data-ask={c.ask}>
+              {c.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <footer className="mk-ai__foot mono">
+        <span>{TAPE_FOOTNOTE}</span>
+        <span>·</span>
+        <span>Written by a model from our own tape</span>
+      </footer>
+    </section>
+  )
+}
