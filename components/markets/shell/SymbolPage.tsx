@@ -290,7 +290,13 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
               </div>
             )}
           </div>
-          {pair && <ExecStrip symbol={sym} pair={pair} onAsk={act} />}
+          {/* The act row: EXEC's ExecStrip in a MARKETS-owned seat (the seat is
+              what the harness pins; the slot's body is theirs). */}
+          {pair && (
+            <div className="sym__exec" data-seat="ExecStrip">
+              <ExecStrip symbol={sym} pair={pair} onAsk={act} />
+            </div>
+          )}
         </header>
 
         {/* ── Chart (always mounted; the tabs never unmount it) ── */}

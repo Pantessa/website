@@ -19035,7 +19035,6 @@ async function main() {
           // the two no-chart chips and hands the strip `act` itself; the stub's chips call onAsk.
           (symS.match(/onClick=\{sendOnClick\(/g) ?? []).length === 2 && /\{door\}/.test(symS) &&
           /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} \/>/.test(symS) &&
-          /onAsk\(ask\)/.test(await readFile('components/markets/slots/ExecStrip.tsx', 'utf8')) &&
           /else prefillAct\(ask\)/.test(railS) && /\{prefillDoor\}/.test(railS) && !/else router\.push\(promptHref\(ask\)\)/.test(railS) &&
           (spineS.match(/if \(openDoorFor\(href\)\) return/g) ?? []).length === 2 &&
           (spineS.match(/<SpineLink\b/g) ?? []).length === 5 &&
@@ -20282,15 +20281,15 @@ async function main() {
     const iId = at(/<div class="sym__id">/)
     const iMeta = at(/<div class="sym__meta">/)
     const iQuote = at(/<div class="sym__quote">/)
-    const iAct = at(/class="sym__act"[^>]*data-slot="ExecStrip"/)
+    const iAct = at(/<div class="sym__exec" data-seat="ExecStrip">/)
     const iChart = at(/class="tchart sym__chart"/)
     const iDock = at(/<section class="mk-askdock is-open" data-askchart="open"/)
     const iTabs = at(/<nav class="sym__tabs"/)
     check(
-      'mk2/markets: /t/AAPL header order — sym__head → sym__id → sym__meta (session dot + compare) → sym__quote → ExecStrip seat (the pinned act chips) → chart → ask dock → tabs',
+      'mk2/markets: /t/AAPL header order — sym__head → sym__id → sym__meta (session dot + compare) → sym__quote → the ExecStrip seat (non-empty) → chart → ask dock → tabs',
       iHead >= 0 && iHead < iId && iId < iMeta && iMeta < iQuote && iQuote < iAct && iAct < iChart && iChart < iDock && iDock < iTabs &&
         /<p class="sym__session mono" data-tape="(open|closed)"><span class="mk-dot mk-dot--(open|closed)"/.test(tAapl) &&
-        /class="sym__act-chip sym__act-chip--buy"[^>]*>Buy AAPL</.test(tAapl),
+        seat(tAapl, 'sym__exec" data-seat="ExecStrip'),
       `head=${iHead} id=${iId} meta=${iMeta} quote=${iQuote} act=${iAct} chart=${iChart} dock=${iDock} tabs=${iTabs}`,
     )
     check(
