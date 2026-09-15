@@ -12,15 +12,17 @@
   --mk-flat: oklch(0.68 0 0);
   --mk-up-soft: rgb(62 207 142 / 0.14);
   --mk-down-soft: rgb(255 93 100 / 0.14);
-  /* categorical series — 8 fixed slots, validated on the dark ground */
-  --mk-series-1: #5b9cff;
-  --mk-series-2: #ff8a4c;
-  --mk-series-3: #3ecf8e;
-  --mk-series-4: #f5c518;
-  --mk-series-5: #ff7ab8;
-  --mk-series-6: #a793ff;
-  --mk-series-7: #3fd0e0;
-  --mk-series-8: #c9b18c;
+  /* categorical series — 8 fixed slots; dataviz validate_palette.js ALL PASS on
+     #000 (dark) and #fdfdfc (light): L band, chroma ≥0.10, normal ΔE ≥16, contrast ≥3:1;
+     CVD worst pair gold↔emerald ΔE 7.4 (legal: every consumer direct-labels) */
+  --mk-series-1: #3987e5;
+  --mk-series-2: #e0642c;
+  --mk-series-3: #159b68;
+  --mk-series-4: #c98500;
+  --mk-series-5: #e0609a;
+  --mk-series-6: #9085e9;
+  --mk-series-7: #1a9db0;
+  --mk-series-8: #7f9c22;
   /* sequential (one hue, light → dark, for magnitude) */
   --mk-seq-1: #0b2a1f;
   --mk-seq-2: #0f5a3d;
@@ -65,8 +67,8 @@
   --mk-series-4: #a97e00;
   --mk-series-5: #c2407c;
   --mk-series-6: #6b58cf;
-  --mk-series-7: #0e8797;
-  --mk-series-8: #7a6a55;
+  --mk-series-7: #0f8fb3;
+  --mk-series-8: #6f8a00;
   --mk-seq-1: #e6f5ee;
   --mk-seq-2: #a6e3c8;
   --mk-seq-3: #4fbf94;

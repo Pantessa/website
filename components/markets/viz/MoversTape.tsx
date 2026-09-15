@@ -9,18 +9,15 @@ import { marketSections } from '@/lib/markets'
 import { useQuotes } from '@/lib/markets-quotes'
 import { fmtPrice } from '@/lib/markets-look'
 import Delta from './Delta'
+import { rankMovers } from '@/lib/viz/movers'
+
+export { rankMovers }
 
 export interface MoversTapeProps {
   onOpen: (symbol: string) => void
   /** How many gainers and losers each (default 8). */
   count?: number
   className?: string
-}
-
-export function rankMovers<T extends { symbol: string; chgPct: number | null | undefined }>(rows: readonly T[], count: number): { gainers: T[]; losers: T[] } {
-  const quoted = rows.filter((r) => r.chgPct != null && Number.isFinite(r.chgPct))
-  const sorted = [...quoted].sort((a, b) => (b.chgPct as number) - (a.chgPct as number))
-  return { gainers: sorted.filter((r) => (r.chgPct as number) > 0).slice(0, count), losers: sorted.filter((r) => (r.chgPct as number) < 0).slice(-count).reverse() }
 }
 
 export default function MoversTape({ onOpen, count = 8, className = '' }: MoversTapeProps) {
