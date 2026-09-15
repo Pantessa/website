@@ -20292,7 +20292,7 @@ async function main() {
     const exits = mk2ExitChipsFor(sample, 'coinbase')
     check(
       'MK2/EXEC positionSummary reads like a receipt (units · dollars · chains · perp PnL · Aave · stETH · DCA · guarded), is EMPTY for an empty position, and the exits it composes all land native (sell-all per chain, close, withdraw, repay, pause DCA)',
-      summary === '0.6940 ETH · $1,735 on 2 chains · long 2x +$12.40 · Aave $200 supplied · $50.00 borrowed · 0.2000 stETH · DCA weekly · guarded' &&
+      summary === '0.694 ETH · $1,735 on 2 chains · long 2x +$12.40 · Aave $200 supplied · $50.00 borrowed · 0.200 stETH · DCA weekly · guarded' &&
         mk2PositionSummary(null) === '' && mk2PositionIsEmpty({ ...sample, spot: [], perp: null, lend: null, stake: null, dca: [], guardian: [], spotGuard: [] }) &&
         exits.length === 6 && exits.every((e) => simulateLadder(e.ask).kind === 'action') && exits.some((e) => e.ask === 'Sell all my ETH on Base') && exits.some((e) => e.ask === 'Close my ETH long on Hyperliquid'),
       `${summary} | ${exits.map((e) => e.ask).join(' | ')}`,
