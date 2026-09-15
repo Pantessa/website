@@ -1,17 +1,24 @@
 import prisma from '@/lib/db'
 import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd, formatEarnedUsd, netFeeBpsForTurn } from '@/lib/fees'
 import { REAL_TRAFFIC_WHERE } from '@/lib/value-origin'
-import LinksHeroView from '@/components/LinksHeroView'
+import LandingHero from '@/components/landing/LandingHero'
 
-// The links-first hero, server half. One claim — "You have an intent. We do
-// the rest." — two doors (try a live house link / mint your own), the link
-// economy's real numbers, and the fusion art: dapp energies streaming into
-// one core, minting links (LinksHeroView owns the canvas + copy). Stats are
-// server-truth (guardrail-priced embed_turns for money; intent_link
-// rows/events for counts), fail-soft: a cold DB renders the claim without
-// the strip rather than erroring the homepage.
+// The hero, server half (mk2 LANDING, 2026-09-15): the front door is now the
+// executing chart (components/landing/LandingHero). This file keeps the
+// links economy's honest reader — `linkStats` — for the share band below the
+// fold (LinkEconomy's numbers), so the public claim's fence (is_internal on
+// rows, REAL_TRAFFIC_WHERE on money, the stamped fee tier) lives in ONE
+// place the harness pins. Fail-soft: a cold DB renders the page without the
+// strip rather than erroring the homepage.
 
-async function linkStats() {
+export interface LinkHeroStats {
+  links: string
+  opens: string
+  movedUsd: string
+  creatorUsd: string
+}
+
+export async function linkStats(): Promise<LinkHeroStats | null> {
   try {
     const [links, opens, turns] = await Promise.all([
       // Honest reader (2026-08-18): a public claim never counts our own
@@ -58,7 +65,6 @@ async function linkStats() {
   }
 }
 
-export default async function LinksHero() {
-  const stats = await linkStats()
-  return <LinksHeroView stats={stats} />
+export default function LinksHero() {
+  return <LandingHero />
 }

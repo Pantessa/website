@@ -133,7 +133,8 @@ function AskDoorSheet() {
   const [voiceLive, setVoiceLive] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const hidden = askDoorHidden(pathname)
-  const chips = useMemo(() => askDoorChips(pathname), [pathname])
+  const briefChips = useAskDoor((s) => s.briefChips)
+  const chips = useMemo(() => askDoorChips(pathname, briefChips), [pathname, briefChips])
   const sym = askDoorSymbol(pathname)
   const placeholder = askDoorPlaceholder(pathname)
 

@@ -49,6 +49,7 @@ import { clampToFirstBar, wantsOlderBars } from '@/lib/chart-viewport'
 import { equitySession, extendedRuns, FRAME_SEC, sessionsApply, type EquitySession } from '@/lib/chart-sessions'
 import { poolPremiumPct, type PoolPrice } from '@/lib/pool-price-shape'
 import { fmtPrice, type ChartStats } from '@/components/CandleChart'
+import '@/components/markets/look.css'
 import DrawingLayer, { type ChartGeom, type DrawTool } from './DrawingLayer'
 import { SessionBands } from './session-bands'
 
@@ -102,6 +103,9 @@ export interface MarketChartProps {
   actionUsd?: number
   /** Overlays lit at mount. */
   defaultOverlays?: OverlayKey[]
+  /** The visible window (bar open times + frame) after every range change —
+   *  the AI lane reads "what's on screen" off it. Throttled to one per frame. */
+  onViewport?: (v: { from: number; to: number; tf: ChartTf }) => void
 }
 
 interface CandlesResponse {
@@ -130,6 +134,12 @@ interface OlderPageResponse {
 interface Tokens {
   accent: string
   sell: string
+  /** Candle inks: --mk-up / --mk-down (look.css), falling back to accent / sell. */
+  up: string
+  down: string
+  /** Translucent tints used as-is: the grid and the crosshair. */
+  grid: string
+  crosshair: string
   fg: string
   bg: string
   line: string
@@ -208,6 +218,10 @@ function readTokens(): Tokens {
     return {
       accent: get('--accent', '#3ecf8e'),
       sell: get('--sell', '#e5484d'),
+      up: get('--mk-up', get('--accent', '#3ecf8e')),
+      down: get('--mk-down', get('--sell', '#e5484d')),
+      grid: probe.css(cs.getPropertyValue('--mk-grid').trim(), 'rgba(255, 255, 255, 0.07)'),
+      crosshair: probe.css(cs.getPropertyValue('--mk-crosshair').trim(), 'rgba(255, 255, 255, 0.35)'),
       fg: get('--fg', '#ffffff'),
       bg: get('--bg', '#000000'),
       line: get('--line', '#3a3a3a'),
@@ -222,6 +236,9 @@ function readTokens(): Tokens {
     probe.dispose()
   }
 }
+
+/** Wick ink relative to the body ("luminous cores, quiet wicks"). */
+const WICK_ALPHA = 0.62
 
 const alpha = (hex: string, a: number) => `${hex}${Math.round(a * 255).toString(16).padStart(2, '0')}`
 
@@ -286,6 +303,7 @@ export default function MarketChart({
   tools = true,
   actionUsd,
   defaultOverlays,
+  onViewport,
 }: MarketChartProps) {
   const fill = heightProp === 'fill'
   const pair = useMemo(() => chartPairFor(symbol), [symbol])
@@ -375,6 +393,26 @@ export default function MarketChart({
   const drawnRef = useRef(0) // bars in the engine's series right now
   const loadOlderRef = useRef<() => Promise<void>>(async () => {})
   const guardQueuedRef = useRef(false)
+  // The visible window as bar open times, once per animation frame at most.
+  const tfRef = useRef(tf)
+  tfRef.current = tf
+  const viewportRafRef = useRef<number | null>(null)
+  const onViewportRef = useRef(onViewport)
+  onViewportRef.current = onViewport
+  const emitViewport = useCallback(
+    (view: { from: number; to: number }) => {
+      if (!onViewportRef.current || viewportRafRef.current != null) return
+      viewportRafRef.current = requestAnimationFrame(() => {
+        viewportRafRef.current = null
+        const bars = barsRef.current
+        if (!bars.length || !onViewportRef.current) return
+        const lo = Math.max(0, Math.min(bars.length - 1, Math.floor(view.from)))
+        const hi = Math.max(0, Math.min(bars.length - 1, Math.ceil(view.to)))
+        onViewportRef.current({ from: bars[lo].t, to: bars[hi].t, tf: tfRef.current })
+      })
+    },
+    [],
+  )
   const requestGuard = useCallback(() => {
     if (guardQueuedRef.current) return
     guardQueuedRef.current = true
@@ -389,8 +427,9 @@ export default function MarketChart({
       const clamped = clampToFirstBar(view, drawn, RIGHT_OFFSET)
       if (clamped) ts.setVisibleLogicalRange({ from: clamped.from as Logical, to: clamped.to as Logical })
       if (wantsOlderBars(clamped ?? view, drawn)) void loadOlderRef.current()
+      emitViewport(clamped ?? view)
     })
-  }, [])
+  }, [emitViewport])
 
   // Warm-up: the bars before the window, once per symbol + frame (asked again
   // at most once a minute while the deep feed misses). The rolling lines read
@@ -573,8 +612,8 @@ export default function MarketChart({
         fontFamily: "'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
         fontSize: 10,
       },
-      grid: { vertLines: { color: alpha(tokens.line, 0.35) }, horzLines: { color: alpha(tokens.line, 0.35) } },
-      crosshair: { mode: CrosshairMode.Normal, vertLine: { color: alpha(tokens.fg, 0.35), labelBackgroundColor: tokens.surf }, horzLine: { color: alpha(tokens.fg, 0.35), labelBackgroundColor: tokens.surf } },
+      grid: { vertLines: { color: tokens.grid }, horzLines: { color: tokens.grid } },
+      crosshair: { mode: CrosshairMode.Normal, vertLine: { color: tokens.crosshair, labelBackgroundColor: tokens.surf }, horzLine: { color: tokens.crosshair, labelBackgroundColor: tokens.surf } },
       rightPriceScale: { borderColor: alpha(tokens.line, 0.6), scaleMargins: { top: 0.08, bottom: 0.22 } },
       // A zoom holds the right edge (the latest bar stays put) instead of the
       // bar under the cursor: a zoom-out from mid-plot used to push the latest
@@ -584,11 +623,12 @@ export default function MarketChart({
       handleScale: { axisPressedMouseMove: true },
     })
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: tokens.accent,
-      downColor: tokens.sell,
+      upColor: tokens.up,
+      downColor: tokens.down,
       borderVisible: false,
-      wickUpColor: tokens.accent,
-      wickDownColor: tokens.sell,
+      // Luminous cores, quiet wicks: the body carries the ink, the wick sits back.
+      wickUpColor: alpha(tokens.up, WICK_ALPHA),
+      wickDownColor: alpha(tokens.down, WICK_ALPHA),
       priceLineVisible: true,
       priceLineStyle: LineStyle.Dashed,
       lastValueVisible: true,
@@ -701,12 +741,12 @@ export default function MarketChart({
     if (!chart || !tokens) return
     chart.applyOptions({
       layout: { background: { type: ColorType.Solid, color: tokens.bg }, textColor: tokens.muted2 },
-      grid: { vertLines: { color: alpha(tokens.line, 0.35) }, horzLines: { color: alpha(tokens.line, 0.35) } },
-      crosshair: { vertLine: { color: alpha(tokens.fg, 0.35), labelBackgroundColor: tokens.surf }, horzLine: { color: alpha(tokens.fg, 0.35), labelBackgroundColor: tokens.surf } },
+      grid: { vertLines: { color: tokens.grid }, horzLines: { color: tokens.grid } },
+      crosshair: { vertLine: { color: tokens.crosshair, labelBackgroundColor: tokens.surf }, horzLine: { color: tokens.crosshair, labelBackgroundColor: tokens.surf } },
       rightPriceScale: { borderColor: alpha(tokens.line, 0.6) },
       timeScale: { borderColor: alpha(tokens.line, 0.6) },
     })
-    candleRef.current?.applyOptions({ upColor: tokens.accent, downColor: tokens.sell, wickUpColor: tokens.accent, wickDownColor: tokens.sell })
+    candleRef.current?.applyOptions({ upColor: tokens.up, downColor: tokens.down, wickUpColor: alpha(tokens.up, WICK_ALPHA), wickDownColor: alpha(tokens.down, WICK_ALPHA) })
     setGeomTick((n) => n + 1)
   }, [tokens])
 
@@ -743,10 +783,10 @@ export default function MarketChart({
     cs.setData(bars.map((c, i) => {
       const bar = { time: c.t as UTCTimestamp, open: c.o, high: c.h, low: c.l, close: c.c }
       if (!quiet(i)) return bar
-      const color = alpha(c.c >= c.o ? tokens.accent : tokens.sell, QUIET_CANDLE_ALPHA)
+      const color = alpha(c.c >= c.o ? tokens.up : tokens.down, QUIET_CANDLE_ALPHA)
       return { ...bar, color, wickColor: color, borderColor: color }
     }))
-    vs.setData(bars.map((c, i) => ({ time: c.t as UTCTimestamp, value: c.v, color: alpha(c.c >= c.o ? tokens.accent : tokens.sell, quiet(i) ? 0.14 : 0.28) })))
+    vs.setData(bars.map((c, i) => ({ time: c.t as UTCTimestamp, value: c.v, color: alpha(c.c >= c.o ? tokens.up : tokens.down, quiet(i) ? 0.14 : 0.28) })))
     bandsRef.current?.update(sessions ? extendedRuns(sessions) : [], tokens.session)
     drawnRef.current = bars.length
     const key = `${symbol}:${tf}`
@@ -770,7 +810,7 @@ export default function MarketChart({
     if (bars.length) {
       const src = lineSrc
       const cut = (pts: LinePoint[]) => (src === bars ? pts : onWindow(pts, bars))
-      if (overlays.has('sma20')) want.set('sma20', { data: cut(sma(src, 20)), color: tokens.accent, width: 1 })
+      if (overlays.has('sma20')) want.set('sma20', { data: cut(sma(src, 20)), color: tokens.up, width: 1 })
       // The slow pair draws 2px: at 1px the yellow antialiases into a muddy
       // gold on a dark canvas, and these are the trend lines the page opens on.
       if (overlays.has('sma50')) want.set('sma50', { data: cut(sma(src, 50)), color: tokens.ma50, width: 2 })
@@ -782,7 +822,7 @@ export default function MarketChart({
         want.set('bb:m', { data: cut(bb.middle), color: alpha(tokens.muted2, 0.5), width: 1, style: LineStyle.Dotted })
         want.set('bb:l', { data: cut(bb.lower), color: alpha(tokens.muted2, 0.8), width: 1, style: LineStyle.Dotted })
       }
-      if (overlays.has('vwap') && hasVolume(candles)) want.set('vwap', { data: vwap(candles), color: alpha(tokens.sell, 0.75), width: 1, style: LineStyle.Dashed })
+      if (overlays.has('vwap') && hasVolume(candles)) want.set('vwap', { data: vwap(candles), color: alpha(tokens.down, 0.75), width: 1, style: LineStyle.Dashed })
     }
     for (const [key, series] of overlayRefs.current) {
       if (!want.has(key)) {
@@ -852,7 +892,7 @@ export default function MarketChart({
       }
     }
     for (const [id, l] of wanted) {
-      const color = l.action ? (l.action.kind === 'sell' || (l.action.kind === 'limit' && /sell/.test(l.action.ask)) || l.action.kind === 'stop' ? tokens.sell : tokens.accent) : tokens.muted
+      const color = l.action ? (l.action.kind === 'sell' || (l.action.kind === 'limit' && /sell/.test(l.action.ask)) || l.action.kind === 'stop' ? tokens.down : tokens.up) : tokens.muted
       const existing = hLineRefs.current.get(id)
       if (existing) existing.applyOptions({ price: l.price, color, title: l.action ? l.action.kind : '' })
       else hLineRefs.current.set(id, cs.createPriceLine({ price: l.price, color, lineWidth: 1, lineStyle: LineStyle.Solid, lineVisible: false, axisLabelVisible: true, title: l.action ? l.action.kind : '' }))

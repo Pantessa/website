@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Maximize2, Minimize2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Maximize2, Minimize2 } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
 import ChartMount, { type ChartStats } from '@/components/markets/chart/ChartMount'
 import type { ChartState } from '@/lib/chart-state'
@@ -26,12 +26,21 @@ import {
   MARKET_TABS,
   marketTabUrl,
   parseMarketTab,
+  parseVsParam,
+  rangePosition,
   sessionState,
   symbolName,
   syncMarketTab,
+  syncVsParam,
   venueLabel,
   type MarketTab,
 } from '@/lib/markets'
+import { fmtQuotePrice } from '@/lib/markets-quotes'
+import { useDayStats } from '@/components/markets/shell/useDayStats'
+import HeldPill from '@/components/markets/shell/HeldPill'
+import CompareControl from '@/components/markets/shell/CompareControl'
+import ExecStrip from '@/components/markets/slots/ExecStrip'
+import AskChart from '@/components/markets/slots/AskChart'
 import WatchlistSlot from '@/components/markets/shell/WatchlistSlot'
 import SymbolCardSlot from '@/components/markets/shell/SymbolCardSlot'
 import MarketsSide from '@/components/markets/shell/MarketsSide'
@@ -40,7 +49,7 @@ import NewsTab from '@/components/markets/tabs/NewsTab'
 import CommunityTab from '@/components/markets/tabs/CommunityTab'
 import TechnicalsTab from '@/components/markets/tabs/TechnicalsTab'
 import TradeTab from '@/components/markets/tabs/TradeTab'
-import { sideOf, tradeAsks, type InjectedPrompt, type TradeAsk } from '@/lib/trade-asks'
+import { sideOf, type InjectedPrompt, type TradeAsk } from '@/lib/trade-asks'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
@@ -48,7 +57,7 @@ const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt
 type FsDoc = Document & { webkitExitFullscreen?: () => Promise<void>; webkitFullscreenElement?: Element | null }
 type FsEl = HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> }
 
-export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: string; initialTab?: MarketTab; initialTf?: ChartTf }) {
+export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = null }: { symbol: string; initialTab?: MarketTab; initialTf?: ChartTf; initialVs?: string | null }) {
   const pair = useMemo(() => chartPairFor(symbol), [symbol])
   const sym = pair?.symbol ?? symbol
   const name = symbolName(sym)
@@ -73,6 +82,45 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
     }
     syncMarketTab(tab)
   }, [tab])
+
+  // ── Compare: ?vs=<symbol> (MK2) — same URL discipline as ?tab= ──
+  const [vs, setVs] = useState<string | null>(initialVs)
+  useEffect(() => {
+    setVs(parseVsParam(window.location.search, symbol))
+    const onPop = () => setVs(parseVsParam(window.location.search, symbol))
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [symbol])
+  const vsMirroredRef = useRef(false)
+  useEffect(() => {
+    if (!vsMirroredRef.current) {
+      vsMirroredRef.current = true
+      return
+    }
+    syncVsParam(vs)
+  }, [vs])
+  // The chart-aware ask box docked under the chart (AI's AskChart slot):
+  // open by default on desktop, folded on a phone (remembered per browser).
+  const [askOpen, setAskOpen] = useState(true)
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('pantessa.markets.askchart')
+      if (raw === '0' || raw === '1') setAskOpen(raw === '1')
+      else if (window.innerWidth < 640) setAskOpen(false)
+    } catch {
+      /* default open */
+    }
+  }, [])
+  const toggleAsk = useCallback(() => {
+    setAskOpen((o) => {
+      try {
+        window.localStorage.setItem('pantessa.markets.askchart', o ? '0' : '1')
+      } catch {
+        /* not remembered */
+      }
+      return !o
+    })
+  }, [])
 
   // ── The send door: a chip anywhere on the page lands on Trade and fires ──
   const router = useRouter()
@@ -118,16 +166,17 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
     e.preventDefault()
     act(ask)
   }
-  // The header strip: one chip per side the pair can offer (Buy/Long leads,
-  // Sell/Short wears the sell colour). The href is the no-JS fallback (a
-  // /chat prefill — a URL never fires a turn); a click SENDS through onAsk.
-  const acts = useMemo(() => (pair ? tradeAsks(pair) : []), [pair])
+  // The header's act row is EXEC's ExecStrip slot (the stub renders the
+  // lib/trade-asks chips the header shipped with); every chip SENDS a bare
+  // ask string through the act door.
   // A drawn level on the chart carries a bare ask string — same door.
   const onChartAsk = useCallback((ask: string) => onAsk({ side: sideOf(ask), label: ask, ask }), [onAsk])
   // The live drawings (for "attach my current chart" on a post) and a post's
   // lines loaded back onto the chart ("copy these lines to my chart").
   const [chartState, setChartState] = useState<ChartState | null>(null)
   const [loadedState, setLoadedState] = useState<ChartState | null>(null)
+  // What's on screen (VIZ's onViewport, bar open times) — AskChart's context.
+  const [viewport, setViewport] = useState<{ from: number; to: number; tf: ChartTf } | null>(null)
 
   // ── Session line ticks (a stock page left open crosses the bell) ──
   const [now, setNow] = useState<Date>(() => new Date())
@@ -136,6 +185,9 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
     return () => clearInterval(id)
   }, [])
   const session = sessionState(pair, now)
+  // 24h range (hourly series) for the header's range bar.
+  const day = useDayStats(pair ? pair.symbol : null)
+  const rangeAt = rangePosition(day?.low, day?.high, stats?.last)
 
   // ── Expand: CSS takeover + best-effort native fullscreen (iOS refuses) ──
   const toggleExpand = useCallback(() => {
@@ -193,9 +245,9 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
   // column and the watchlist rail, docked right from the nav down.
   return (
     <>
-      <main className="sym" data-symbol={sym}>
+      <main className="sym" data-symbol={sym} data-vs={vs ?? undefined}>
         {/* ── Header ── */}
-        <header className="sym__head">
+        <header className="sym__head sym__head--mk2">
           <div className="sym__id">
             <TokenIcon symbol={sym} size={40} {...markWhere} />
             <div className="min-w-0">
@@ -204,27 +256,16 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
                 <span className="sym__sym mono">{sym}</span>
                 <span className="sym__venue mono">{venueLabel(pair)}</span>
               </div>
-              <p className="sym__session mono">{session.line}</p>
-            </div>
-          </div>
-          {acts.length > 0 && (
-            <div className="sym__act" aria-label={`Act on ${name}`} data-acts={acts.length}>
-              <span className="sym__act-eyebrow mono">ACT ON {sym} · SENDS THE ASK · YOUR WALLET SIGNS</span>
-              <div className="sym__act-chips">
-                {acts.map((a) => (
-                  <Link
-                    key={a.label}
-                    href={promptHref(a.ask)}
-                    className={`sym__act-chip sym__act-chip--${a.side}`}
-                    title={a.ask}
-                    onClick={sendOnClick(a.ask)}
-                  >
-                    {a.label}
-                  </Link>
-                ))}
+              <div className="sym__meta">
+                <p className="sym__session mono" data-tape={session.tape ? (session.tape.open ? 'open' : 'closed') : 'none'}>
+                  <span className={`mk-dot${session.tape ? (session.tape.open ? ' mk-dot--open' : ' mk-dot--closed') : ' mk-dot--always'}`} aria-hidden />
+                  {session.line}
+                </p>
+                {pair && <HeldPill symbol={sym} last={stats?.last ?? null} onClick={() => setTab('trade')} />}
+                {pair && <CompareControl symbol={sym} vs={vs} onChange={setVs} />}
               </div>
             </div>
-          )}
+          </div>
           <div className="sym__quote">
             {pair && stats?.last != null ? (
               <>
@@ -237,14 +278,32 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
             ) : (
               <span className="sym__feed mono">No live chart yet</span>
             )}
+            {pair && day && rangeAt !== null && (
+              <div className="mk-range" data-range-at={rangeAt.toFixed(3)} title={`24h range: $${fmtQuotePrice(day.low)} – $${fmtQuotePrice(day.high)}`}>
+                <span className="mk-range__lo mono">${fmtQuotePrice(day.low)}</span>
+                <span className="mk-range__bar" aria-hidden>
+                  <span className="mk-range__fill" style={{ width: `${(rangeAt * 100).toFixed(1)}%` }} />
+                  <span className="mk-range__tick" style={{ left: `${(rangeAt * 100).toFixed(1)}%` }} />
+                </span>
+                <span className="mk-range__hi mono">${fmtQuotePrice(day.high)}</span>
+                <span className="mk-range__k mono">24H RANGE</span>
+              </div>
+            )}
           </div>
+          {/* The act row: EXEC's ExecStrip in a MARKETS-owned seat (the seat is
+              what the harness pins; the slot's body is theirs). */}
+          {pair && (
+            <div className="sym__exec" data-seat="ExecStrip">
+              <ExecStrip symbol={sym} pair={pair} onAsk={act} />
+            </div>
+          )}
         </header>
 
         {/* ── Chart (always mounted; the tabs never unmount it) ── */}
         <div ref={shellRef} className={expanded ? 'tchart sym__chart tchart--expanded' : 'tchart sym__chart'}>
           <div className="tchart__canvas">
             {pair ? (
-              <ChartMount symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} />
+              <ChartMount symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} onViewport={setViewport} />
             ) : (
               <div className="flex flex-1 items-center justify-center">
                 <div className="mkt-card max-w-md text-center">
@@ -266,6 +325,22 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
             )}
           </div>
         </div>
+
+        {/* ── Ask the chart (AI's AskChart slot), docked under the chart ── */}
+        {pair && (
+          <section className={`mk-askdock${askOpen ? ' is-open' : ''}`} data-askchart={askOpen ? 'open' : 'closed'} aria-label="Ask about this chart">
+            <button type="button" className="mk-askdock__bar" onClick={toggleAsk} aria-expanded={askOpen}>
+              <span className="mk-askdock__k mono">ASK THE CHART</span>
+              <span className="mk-askdock__hint">{askOpen ? 'What is on screen is the context.' : `Ask about ${sym} — the visible bars, your lines, the venues.`}</span>
+              {askOpen ? <ChevronUp className="mk-askdock__icon" aria-hidden /> : <ChevronDown className="mk-askdock__icon" aria-hidden />}
+            </button>
+            {askOpen && (
+              <div className="mk-askdock__body">
+                <AskChart symbol={sym} pair={pair} chartState={chartState ?? undefined} visible={viewport ? { from: viewport.from, to: viewport.to } : undefined} onAsk={act} onChartState={setLoadedState} />
+              </div>
+            )}
+          </section>
+        )}
 
         {/* ── Tabs ── */}
         <div className="sym__main">
@@ -292,7 +367,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
           <div className="sym__body" data-tab={tab}>
             {pair ? (
               tab === 'overview' ? (
-                <OverviewTab symbol={sym} pair={pair} onAsk={onAsk} />
+                <OverviewTab symbol={sym} pair={pair} onAsk={onAsk} onAskText={act} />
               ) : tab === 'news' ? (
                 <NewsTab symbol={sym} pair={pair} />
               ) : tab === 'community' ? (
@@ -300,7 +375,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf }: { symbol: 
               ) : tab === 'technicals' ? (
                 <TechnicalsTab symbol={sym} pair={pair} initialTf={initialTf} onAsk={onChartAsk} />
               ) : (
-                <TradeTab symbol={sym} pair={pair} prompt={prompt} onAsk={onAsk} />
+                <TradeTab symbol={sym} pair={pair} prompt={prompt} onAsk={onAsk} onAskText={act} />
               )
             ) : (
               <section className="mkt-card">
