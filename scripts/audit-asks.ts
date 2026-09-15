@@ -342,6 +342,35 @@ const CORPUS: Entry[] = [
   { ask: 'Buy $10 of AAPL', source: 'mk2 landing venue orbit (Robinhood Chain)', expect: 'action' },
   { ask: 'DCA $10 into ETH weekly', source: 'mk2 landing venue orbit (DCA)', expect: 'action' },
   { ask: 'Buy $50 of ETH, then stake 0.05 ETH with Lido', source: 'mk2 landing compound (one job)', expect: 'action' },
+
+  // MK2/EXEC (2026-09-15) — the symbol page's venue map, header strip,
+  // position exits and compound composer. Every chip on /t/<sym> is one of
+  // these shapes (lib/symbol-venues, lib/trade-asks execAsks,
+  // lib/symbol-position exitChipsFor, composeCompound); a dead-end here is
+  // a dead chip on the chart.
+  { ask: 'Buy $50 of ETH on Optimism', source: 'MK2/EXEC RouteTable spot row', expect: 'action' },
+  { ask: 'Sell $50 of LINK on Arbitrum', source: 'MK2/EXEC RouteTable spot row', expect: 'action' },
+  { ask: 'limit order: buy 0.02 ETH for at most 49.5 USDC on Base', source: 'MK2/EXEC RouteTable limit row', expect: 'action' },
+  { ask: 'limit order: sell 2.5 LINK for at least 50.5 USDC on Ethereum', source: 'MK2/EXEC RouteTable limit row', expect: 'action' },
+  { ask: '2x Long $50 of ETH on Hyperliquid', source: 'MK2/EXEC RouteTable perp row (leverage)', expect: 'action' },
+  { ask: '3x Short $50 of SOL on Hyperliquid', source: 'MK2/EXEC RouteTable perp row (non-EVM home)', expect: 'action' },
+  { ask: 'Supply $50 of LINK to Aave', source: 'MK2/EXEC RouteTable lend row', expect: 'action' },
+  { ask: 'Borrow 50 USDC from Aave', source: 'MK2/EXEC RouteTable borrow row', expect: 'action' },
+  { ask: 'Stake 0.02 ETH on Lido', source: 'MK2/EXEC RouteTable stake row', expect: 'action' },
+  { ask: 'Swap 50 USDC from Optimism to ETH on Base', source: 'MK2/EXEC RouteTable fund row (NEAR)', expect: 'action' },
+  { ask: 'Fund Robinhood Chain with $50 from Ethereum including gas, then buy $40 of AAPL', source: 'MK2/EXEC RouteTable stock fund row', expect: 'action' },
+  { ask: 'Sell all my ETH on Arbitrum', source: 'MK2/EXEC PositionPanel exit', expect: 'action' },
+  { ask: 'Close my ETH short on Hyperliquid', source: 'MK2/EXEC PositionPanel exit', expect: 'action' },
+  { ask: 'Withdraw all my LINK from Aave', source: 'MK2/EXEC PositionPanel exit', expect: 'action' },
+  { ask: 'Repay all my USDC debt on Aave', source: 'MK2/EXEC PositionPanel exit', expect: 'action' },
+  { ask: 'resume my ETH dca', source: 'MK2/EXEC PositionPanel exit', expect: 'action' },
+  { ask: 'cancel my ETH spot protection', source: 'MK2/EXEC PositionPanel exit', expect: 'action' },
+  { ask: 'Swap 50 USDC from Base to USDC on Ethereum, then swap 50 USDC for ETH on Ethereum, then stake all the swapped ETH on Lido', source: 'MK2/EXEC CompoundComposer Bridge → Buy → Stake', expect: 'action' },
+  { ask: 'Swap 50 USDC for LINK on Ethereum, then supply $50 of LINK to Aave', source: 'MK2/EXEC CompoundComposer Buy → Supply', expect: 'action' },
+  { ask: 'Deposit 25 USDC to Hyperliquid, then 2x long $50 of ETH on Hyperliquid, then protect my ETH long with a 5% stop', source: 'MK2/EXEC CompoundComposer Deposit → Long → Stop', expect: 'action' },
+  { ask: 'Fund Robinhood Chain with $100 from Arbitrum including gas, then buy $80 of AAPL', source: 'MK2/EXEC CompoundComposer Fund → Buy (stock)', expect: 'action' },
+  { ask: 'Buy $50 of ETH on Base, then stake all the swapped ETH on Lido', source: 'MK2/EXEC dollar-buy job segment (was partial-claimed by the Lido gate)', expect: 'action' },
+  { ask: 'Buy $50 of AAPL on Robinhood Chain, then buy $25 of TSLA on Robinhood Chain', source: 'MK2/EXEC dollar-buy job segment (4663, USDG)', expect: 'action' },
 ]
 
 // ── Mutations — what real users do to our example asks ─────────────────────

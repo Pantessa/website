@@ -1,13 +1,6 @@
-// MK2 SLOT STUB — squad README "Slots" contract (2026-09-15).
-// MARKETS owns this file; EXEC builds the real component at
-// components/markets/trade/RouteTable.tsx. At integration QA replaces this body with a
-// one-line re-export. Props are the contract; keep them exact.
-
-import type { ChartPair } from '@/lib/charts'
-import SlotCard from './SlotCard'
-
-export type RouteTableProps = { symbol: string; pair: ChartPair; onAsk: (ask: string) => void }
-
-export default function RouteTable(props: RouteTableProps) {
-  return <SlotCard slot="RouteTable" lane="EXEC" title="Every venue" body={`Every way a wallet can act on ${props.symbol}: spot, perp, lend, stake, DCA, protect — live quotes, one chip per row.`} />
-}
+// MK2 SLOT — swapped by QA at integration (squad-mk2-2026-09-15): the real
+// EXEC component. MARKETS keeps the stub on its own branch; this file is
+// the one-line re-export the README "Slots" contract promises.
+export { default } from '@/components/markets/trade/RouteTable'
+import type Real from '@/components/markets/trade/RouteTable'
+export type RouteTableProps = Parameters<typeof Real>[0]
