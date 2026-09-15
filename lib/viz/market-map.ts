@@ -34,10 +34,12 @@ export interface MapCell extends MapItem {
 
 export interface MapLayout {
   cells: MapCell[]
-  /** 'volume' when every sized cell had volume; 'equal' otherwise. */
+  /** 'volume' when ≥VOLUME_COVERAGE of the quoted cells had volume; 'equal' otherwise. */
   sizing: 'volume' | 'equal'
   /** Symbols listed but with no quote — drawn as flat cells, never dropped. */
   unquoted: string[]
+  /** Quoted symbols no feed gave a volume for — sized at the median, named. */
+  medianSized: string[]
 }
 
 export const CLAMP_PCT = 5
@@ -49,25 +51,39 @@ const SECTION_OF: Record<MapSection, MarketSectionId[]> = {
   all: ['equities', 'crypto', 'perps'],
 }
 
-/** Items for a section filter, joined with quotes. Weight = volume when EVERY
- *  quoted item has a positive volume (an honest basis), else 1 (equal cells).
- *  Unquoted symbols keep weight = the median so they neither vanish nor dominate. */
-export function mapItems(sections: readonly MarketSection[], quotes: Readonly<Record<string, MapQuote | undefined>>, filter: MapSection): { items: MapItem[]; sizing: 'volume' | 'equal'; unquoted: string[] } {
+/** The share of quoted items that must carry a volume before cells size by it. */
+export const VOLUME_COVERAGE = 0.9
+
+/** Items for a section filter, joined with quotes. Weight = volume when at
+ *  least VOLUME_COVERAGE of the quoted items carry a positive volume (an
+ *  honest basis — the few without one take the MEDIAN and are named in
+ *  `medianSized`), else 1 (equal cells). Unquoted symbols keep the median
+ *  weight too, so they neither vanish nor dominate. */
+export function mapItems(sections: readonly MarketSection[], quotes: Readonly<Record<string, MapQuote | undefined>>, filter: MapSection): { items: MapItem[]; sizing: 'volume' | 'equal'; unquoted: string[]; medianSized: string[] } {
   const ids = SECTION_OF[filter] ?? SECTION_OF.all
   const rows = sections.filter((s) => ids.includes(s.id)).flatMap((s) => s.rows.map((r) => ({ ...r, section: s.id })))
   const quoted = rows.filter((r) => quotes[r.symbol])
-  const allHaveVolume = quoted.length > 0 && quoted.every((r) => (quotes[r.symbol]?.volumeUsd ?? 0) > 0)
-  const sizing: 'volume' | 'equal' = allHaveVolume ? 'volume' : 'equal'
-  const vols = quoted.map((r) => quotes[r.symbol]!.volumeUsd ?? 0).filter((v) => v > 0).sort((a, b) => a - b)
+  const withVol = quoted.filter((r) => (quotes[r.symbol]?.volumeUsd ?? 0) > 0)
+  const sizing: 'volume' | 'equal' = quoted.length > 0 && withVol.length >= Math.ceil(quoted.length * VOLUME_COVERAGE) ? 'volume' : 'equal'
+  const vols = withVol.map((r) => quotes[r.symbol]!.volumeUsd as number).sort((a, b) => a - b)
   const median = vols.length ? vols[Math.floor(vols.length / 2)] : 1
   const unquoted: string[] = []
+  const medianSized: string[] = []
   const items: MapItem[] = rows.map((r) => {
     const q = quotes[r.symbol]
     if (!q) unquoted.push(r.symbol)
-    const weight = sizing === 'volume' ? (q ? q.volumeUsd! : median) : 1
+    let weight = 1
+    if (sizing === 'volume') {
+      const v = q?.volumeUsd ?? 0
+      if (v > 0) weight = v
+      else {
+        weight = median
+        if (q) medianSized.push(r.symbol)
+      }
+    }
     return { symbol: r.symbol, name: r.name, section: r.section, last: q?.last ?? null, chgPct: q?.chgPct ?? null, weight: Math.max(weight, 1e-9) }
   })
-  return { items, sizing, unquoted }
+  return { items, sizing, unquoted, medianSized }
 }
 
 /** Squarified treemap (Bruls et al.) — rows of near-square cells, largest
@@ -139,8 +155,8 @@ function cellOf(item: MapItem, x: number, y: number, w: number, h: number, gap: 
 }
 
 export function marketMapLayout(sections: readonly MarketSection[], quotes: Readonly<Record<string, MapQuote | undefined>>, filter: MapSection, width: number, height: number): MapLayout {
-  const { items, sizing, unquoted } = mapItems(sections, quotes, filter)
-  return { cells: squarify(items, width, height), sizing, unquoted }
+  const { items, sizing, unquoted, medianSized } = mapItems(sections, quotes, filter)
+  return { cells: squarify(items, width, height), sizing, unquoted, medianSized }
 }
 
 /** -1..1 polarity for the diverging fill: chgPct clamped to ±CLAMP_PCT. */
