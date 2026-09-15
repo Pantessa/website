@@ -45,6 +45,12 @@ import {
 } from '../lib/x402'
 import { fitsHouseCeiling, houseCeilingReply, houseDailyCeilingUsd } from '../lib/house-spend'
 import { hasGuardianStep, sessionOwnsWallet } from '../lib/chat-mutation-gate'
+import { MK_TOKEN_NAMES, deltaTone, fmtCompact, fmtPct as mkFmtPct, seriesVar } from '../lib/markets-look'
+import { cellFill, mapItems, polarity, squarify, marketMapLayout, labelTier } from '../lib/viz/market-map'
+import { readFlow as vizReadFlow, FLOW_TTL_MS } from '../lib/viz/flow'
+import { usdOf } from '../lib/viz/flow-readers'
+import { rankMovers } from '../lib/viz/movers'
+import { marketSections as vizMarketSections } from '../lib/markets'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txChainOf } from '../lib/transaction-layer'
@@ -20159,7 +20165,7 @@ async function main() {
     check(
       'chart sessions: MarketChart computes sessions only where they apply, quiets extended-hours candles and volume, hands the runs to a bottom-layer SessionBands primitive, paints candles above the moving averages, names the shading in the chart foot, and --chart-session is defined for both themes',
       sessSrc.includes('sessionsApply(pair?.source, tf) ? bars.map((c) => equitySession(c.t, FRAME_SEC[tf]))') &&
-        sessSrc.includes('alpha(c.c >= c.o ? tokens.accent : tokens.sell, QUIET_CANDLE_ALPHA)') &&
+        sessSrc.includes('alpha(c.c >= c.o ? tokens.up : tokens.down, QUIET_CANDLE_ALPHA)') &&
         sessSrc.includes('candleSeries.attachPrimitive(bands)') &&
         sessSrc.includes('bandsRef.current?.update(sessions ? extendedRuns(sessions) : [], tokens.session)') &&
         sessSrc.includes('cs.setSeriesOrder(top)') &&
@@ -20269,6 +20275,334 @@ async function main() {
       'mk2/landing: the root social card is the hero — a live tape + the rehearsal HUD + the stamp; 200 image/png, real PNG',
       ogr.status === 200 && /image\/png/.test(ogr.headers.get('content-type') ?? '') && ogBuf[0] === 0x89 && ogBuf[1] === 0x50 && ogBuf.length > 20_000 &&
         /REEL_STAMP/.test(ogSrc) && /candleSvg\(/.test(ogSrc) && /gemMarkSvg\(/.test(ogSrc),
+  // ── MK2/MARKETS ──────────────────────────────────────────────────────────
+  // The squad-mk2 MARKETS lane (2026-09-15): the nine slot seats mounted in
+  // the server HTML of both routes, the symbol header's order, the ?vs=
+  // compare grammar, the terminal table's sort, the trending fence.
+  console.log('— mk2/markets')
+  {
+    const mk = await import('../lib/markets')
+    const mkHtml = flat(await (await fetch(`${BASE}/markets`)).text())
+    const seat = (html: string, cls: string) => {
+      const m = html.match(new RegExp(`<[a-z]+ class="${cls}"[^>]*>([\\s\\S]*?)</`))
+      return !!m && m[1].trim().length > 0
+    }
+    check(
+      'mk2/markets: /markets server-renders the movers tape seat, the Map · List toggle (SSR = list, every row present), the terminal tables with sortable heads and j/k row links',
+      seat(mkHtml, 'mk-tape') &&
+        /<main class="mkt-frame__main" data-view="list">/.test(mkHtml) &&
+        /class="mk-view__btn is-on" aria-pressed="true"[^>]*title="Terminal list"/.test(mkHtml) &&
+        /<table class="mk-table" data-section="equities" data-sort="none">/.test(mkHtml) &&
+        /<table class="mk-table" data-section="crypto"/.test(mkHtml) && /<table class="mk-table" data-section="perps"/.test(mkHtml) &&
+        /<th scope="col" aria-sort="none" class="mk-table__th mk-table__th--right"><button[^>]*title="Sort by last"/.test(mkHtml) &&
+        /<a class="mk-table__link" data-mk-row="true" href="\/t\/AAPL">/.test(mkHtml) &&
+        /<a class="mk-table__link" data-mk-row="true" href="\/t\/HYPE">/.test(mkHtml) &&
+        /<kbd>j<\/kbd>/.test(mkHtml),
+    )
+    // Trending: the strip is fenced upstream (a harness run must never trend
+    // its own asks) and fails soft — so the SSR pin is "either absent or
+    // well-formed", and the FENCE is pinned in the source.
+    const trendSrc = await readFile('app/markets/trending.ts', 'utf8')
+    const trendRows = (mkHtml.match(/<a class="mk-trend__row"/g) ?? []).length
+    const trendN = Number(mkHtml.match(/data-trending="(\d+)"/)?.[1] ?? 0)
+    check(
+      'mk2/markets: "Trending on Pantessa" reads embed_turns under NOT INTERNAL_TRAFFIC_WHERE (is_internal + localhost/preview origins), 7 days, fail-soft to an empty strip; the SSR strip is absent or carries exactly its rows, each a symbol link',
+      trendSrc.includes("import { INTERNAL_TRAFFIC_WHERE } from '@/lib/value-origin'") &&
+        trendSrc.includes('where: { AND: [{ NOT: INTERNAL_TRAFFIC_WHERE }, { createdAt: { gte: since } }] }') &&
+        trendSrc.includes('TRENDING_WINDOW_DAYS = 7') && /catch \{\s*return \[\]/.test(trendSrc) &&
+        trendRows === trendN && (trendN === 0 || /class="mk-trend__row" data-symbol="[A-Z]+" data-mk-row="true" href="\/t\/[A-Z]+"/.test(mkHtml)),
+      `rows=${trendRows} n=${trendN}`,
+    )
+    const known = ['AAPL', 'ETH', 'BTC', 'HYPE', 'NVDA']
+    check(
+      'mk2/markets: trendingFromPrompts counts a prompt once per index symbol it names (whole-word ticker, $TICKER, or a company name through the resolver); stray uppercase words never trend; ranked by asks then A→Z',
+      JSON.stringify(mk.trendingFromPrompts(['buy $10 of AAPL then stake ETH', 'Swap 5 USD of $ETH', 'buy some apple', 'protect my SOL', 'AAPL AAPL AAPL'], known)) ===
+        JSON.stringify([
+          { symbol: 'AAPL', asks: 3 },
+          { symbol: 'ETH', asks: 2 },
+        ]) && mk.trendingFromPrompts(['USD IS NOT A TICKER', ''], known).length === 0,
+    )
+    // ?vs= — the compare idiom.
+    check(
+      'mk2/markets: parseVsParam accepts only a charted symbol other than the page\'s own (aliases collapse: weth → ETH); vsUrl sets/clears the param and keeps the rest',
+      mk.parseVsParam('?vs=BTC', 'AAPL') === 'BTC' &&
+        mk.parseVsParam('?vs=weth', 'BTC') === 'ETH' &&
+        mk.parseVsParam('?vs=AAPL', 'AAPL') === null &&
+        mk.parseVsParam('?vs=weth', 'ETH') === null &&
+        mk.parseVsParam('?vs=ZZZZQ', 'AAPL') === null &&
+        mk.parseVsParam('?tab=trade', 'AAPL') === null &&
+        mk.vsUrl('BTC', '/t/AAPL', '?tab=trade') === '/t/AAPL?tab=trade&vs=BTC' &&
+        mk.vsUrl(null, '/t/AAPL', '?tab=trade&vs=BTC') === '/t/AAPL?tab=trade' &&
+        mk.vsUrl(null, '/t/AAPL', '') === '/t/AAPL',
+    )
+    const tVs = flat(await (await fetch(`${BASE}/t/AAPL?vs=BTC`)).text())
+    const tSelf = flat(await (await fetch(`${BASE}/t/AAPL?vs=aapl`)).text())
+    check(
+      'mk2/markets: /t/AAPL?vs=BTC server-renders the compare pill (data-vs on main + the VS pill naming BTC); ?vs=<self> renders no compare',
+      /<main class="sym" data-symbol="AAPL" data-vs="BTC">/.test(tVs) && /class="mk-vs" data-vs="BTC"/.test(tVs) &&
+        !/data-vs=/.test(tSelf) && /class="mk-vs__open mono"/.test(tSelf),
+    )
+    // The symbol header, in order: identity (mark · title · venue · the
+    // session line with its dot · compare) → quote (last · change · feed ·
+    // the range bar's seat) → the ExecStrip seat (the act chips) — then the
+    // chart, then the ask dock, then the tab strip.
+    const tAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
+    const at = (re: RegExp) => {
+      const m = re.exec(tAapl)
+      return m ? m.index : -1
+    }
+    const iHead = at(/<header class="sym__head sym__head--mk2">/)
+    const iId = at(/<div class="sym__id">/)
+    const iMeta = at(/<div class="sym__meta">/)
+    const iQuote = at(/<div class="sym__quote">/)
+    const iAct = at(/class="sym__act"[^>]*data-slot="ExecStrip"/)
+    const iChart = at(/class="tchart sym__chart"/)
+    const iDock = at(/<section class="mk-askdock is-open" data-askchart="open"/)
+    const iTabs = at(/<nav class="sym__tabs"/)
+    check(
+      'mk2/markets: /t/AAPL header order — sym__head → sym__id → sym__meta (session dot + compare) → sym__quote → ExecStrip seat (the pinned act chips) → chart → ask dock → tabs',
+      iHead >= 0 && iHead < iId && iId < iMeta && iMeta < iQuote && iQuote < iAct && iAct < iChart && iChart < iDock && iDock < iTabs &&
+        /<p class="sym__session mono" data-tape="(open|closed)"><span class="mk-dot mk-dot--(open|closed)"/.test(tAapl) &&
+        /class="sym__act-chip sym__act-chip--buy"[^>]*>Buy AAPL</.test(tAapl),
+      `head=${iHead} id=${iId} meta=${iMeta} quote=${iQuote} act=${iAct} chart=${iChart} dock=${iDock} tabs=${iTabs}`,
+    )
+    check(
+      'mk2/markets: Overview mounts the AiBrief (lead) → FlowPanel → Performance → Key stats → RouteTable seats, each non-empty in the server HTML',
+      seat(tAapl, 'mk-overview__lead') && seat(tAapl, 'mk-overview__flow') && seat(tAapl, 'mk-overview__routes') &&
+        at(/class="mk-overview__lead"/) < at(/class="mk-overview__flow"/) &&
+        at(/class="mk-overview__flow"/) < at(/aria-label="Performance"/) &&
+        at(/aria-label="Key stats"/) < at(/class="mk-overview__routes"/),
+    )
+    const tTrade = flat(await (await fetch(`${BASE}/t/AAPL?tab=trade`)).text())
+    check(
+      'mk2/markets: Trade mounts RouteTable → the order panel → CompoundComposer → PositionPanel → the runtime seat, each non-empty in the server HTML',
+      seat(tTrade, 'mk-trade__routes') && seat(tTrade, 'mk-trade__compound') && seat(tTrade, 'mk-trade__position') &&
+        tTrade.indexOf('class="mk-trade__routes"') < tTrade.indexOf('class="mkt-card mkt-order"') &&
+        tTrade.indexOf('class="mkt-card mkt-order"') < tTrade.indexOf('class="mk-trade__compound"') &&
+        tTrade.indexOf('class="mk-trade__compound"') < tTrade.indexOf('class="mk-trade__position"') &&
+        tTrade.indexOf('class="mk-trade__position"') < tTrade.indexOf('class="mkt-card mkt-trade__chat"'),
+    )
+    // The pure pieces under the header + the table.
+    check(
+      'mk2/markets: rangePosition is 0 at the low, 1 at the high, clamped, null on a flat or unknown range; sortMarketRows sinks unquoted rows in BOTH directions and keeps the section order on ties',
+      mk.rangePosition(10, 20, 10) === 0 && mk.rangePosition(10, 20, 20) === 1 && mk.rangePosition(10, 20, 15) === 0.5 &&
+        mk.rangePosition(10, 20, 25) === 1 && mk.rangePosition(10, 10, 10) === null && mk.rangePosition(null, 20, 15) === null &&
+        (() => {
+          const rows = [{ symbol: 'A' }, { symbol: 'B' }, { symbol: 'C' }, { symbol: 'D' }]
+          const q = { A: { last: 5, chgPct: 1 }, B: undefined, C: { last: 7, chgPct: -2 }, D: { last: 5, chgPct: 3 } }
+          const desc = mk.sortMarketRows(rows, q, 'last', 'desc').map((r) => r.symbol).join('')
+          const asc = mk.sortMarketRows(rows, q, 'last', 'asc').map((r) => r.symbol).join('')
+          const chg = mk.sortMarketRows(rows, q, 'chg', 'desc').map((r) => r.symbol).join('')
+          const sym = mk.sortMarketRows(rows, q, 'symbol', 'desc').map((r) => r.symbol).join('')
+          return desc === 'CADB' && asc === 'ADCB' && chg === 'DACB' && sym === 'DCBA' && rows.map((r) => r.symbol).join('') === 'ABCD'
+        })(),
+    )
+    // The one stylesheet import + the slot card rule (QA's request: whoever
+    // owns a class ships its rule).
+    const shellSrc = await readFile('components/markets/shell/MarketsShell.tsx', 'utf8')
+    const mkCss = await readFile('components/markets/markets.css', 'utf8')
+    check(
+      'mk2/markets: MarketsShell imports VIZ\'s look.css then markets.css exactly once; markets.css styles .mk-slot, and every --mk-* use carries a site-token fallback',
+      (shellSrc.match(/import '@\/components\/markets\/look\.css'/g) ?? []).length === 1 &&
+        (shellSrc.match(/import '@\/components\/markets\/markets\.css'/g) ?? []).length === 1 &&
+        shellSrc.indexOf("look.css'") < shellSrc.indexOf("markets.css'") &&
+        /\.mk-slot \{/.test(mkCss) &&
+        (mkCss.match(/var\(--mk-[a-z-]+\)/g) ?? []).length === 0,
+    )
+  }
+
+  // ── MK2/VIZ ─────────────────────────────────────────────────────────────
+  // The look tokens, the pure viz shaping, the flow route's fail-soft frame,
+  // and the chart engine's wiring (squad-mk2-2026-09-15, VIZ lane).
+  {
+    const lookCss = await readFile('components/markets/look.css', 'utf8')
+    const lightAt = lookCss.indexOf(":root[data-theme='light'] {")
+    const darkBlock = lookCss.slice(lookCss.indexOf(':root {'), lightAt)
+    const lightBlock = lookCss.slice(lightAt, lookCss.indexOf('}', lightAt) + 1)
+    const defined = (block: string, name: string) => new RegExp(`\\s${name.replace(/[-]/g, '\\-')}:\\s*[^;]+;`).test(block)
+    const missingDark = MK_TOKEN_NAMES.filter((n) => !defined(darkBlock, n))
+    const missingLight = MK_TOKEN_NAMES.filter((n) => !defined(lightBlock, n))
+    check(
+      `viz tokens: every MK token name (${MK_TOKEN_NAMES.length}) is defined on :root (dark) AND under :root[data-theme='light'] — never a color whose only definition sits in one theme`,
+      lightAt > 0 && missingDark.length === 0 && missingLight.length === 0,
+      `missing dark=${missingDark.join(',') || '-'} light=${missingLight.join(',') || '-'}`,
+    )
+    // WCAG contrast of the up/down inks vs each ground (the harness can't see
+    // a canvas, so the numbers are computed from the stylesheet's own hexes).
+    const hexOf = (block: string, name: string) => block.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})`))?.[1] ?? null
+    const lum = (hex: string) => {
+      const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    }
+    const ratio = (a: string, b: string) => {
+      const [l1, l2] = [lum(a), lum(b)].sort((x, y) => y - x)
+      return (l1 + 0.05) / (l2 + 0.05)
+    }
+    const contrasts = {
+      darkUp: ratio(hexOf(darkBlock, '--mk-up') ?? '#000000', '#000000'),
+      darkDown: ratio(hexOf(darkBlock, '--mk-down') ?? '#000000', '#000000'),
+      lightUp: ratio(hexOf(lightBlock, '--mk-up') ?? '#fdfdfc', '#fdfdfc'),
+      lightDown: ratio(hexOf(lightBlock, '--mk-down') ?? '#fdfdfc', '#fdfdfc'),
+    }
+    check(
+      'viz tokens: --mk-up and --mk-down clear 3:1 against the dark ground (#000) and the light ground (#fdfdfc)',
+      Object.values(contrasts).every((r) => r >= 3),
+      Object.entries(contrasts)
+        .map(([k, v]) => `${k}=${v.toFixed(2)}`)
+        .join(' '),
+    )
+    const seriesHexDark = Array.from({ length: 8 }, (_, i) => hexOf(darkBlock, `--mk-series-${i + 1}`))
+    const seriesHexLight = Array.from({ length: 8 }, (_, i) => hexOf(lightBlock, `--mk-series-${i + 1}`))
+    check(
+      'viz tokens: the 8 series slots are distinct hexes in both themes and every slot clears 3:1 on its ground',
+      new Set(seriesHexDark).size === 8 && new Set(seriesHexLight).size === 8 && seriesHexDark.every((h) => h && ratio(h, '#000000') >= 3) && seriesHexLight.every((h) => h && ratio(h, '#fdfdfc') >= 3),
+    )
+    check(
+      'viz helpers: deltaTone / fmtCompact / fmtPct / seriesVar are pure and stable (entity → the same slot everywhere; 0/NaN/null → flat)',
+      deltaTone(1.2) === 'up' && deltaTone(-0.1) === 'down' && deltaTone(0) === 'flat' && deltaTone(null) === 'flat' && deltaTone(NaN) === 'flat' &&
+        fmtCompact(1234) === '1.23K' && fmtCompact(1_234_567, { usd: true }) === '$1.23M' && fmtCompact(2.5e9, { usd: true }) === '$2.50B' && fmtCompact(0.00123) === '0.00123' && fmtCompact(null) === '—' && fmtCompact(-1500, { usd: true }) === '-$1.50K' &&
+        mkFmtPct(1.234) === '+1.23%' && mkFmtPct(-0.4) === '-0.40%' && mkFmtPct(0) === '0.00%' && mkFmtPct(null) === '—' &&
+        seriesVar('uniswap') === 'var(--mk-series-1)' && seriesVar('Uniswap') === seriesVar('uniswap') && seriesVar('hyperliquid') === 'var(--mk-series-5)' && seriesVar(9) === 'var(--mk-series-2)' && seriesVar('some-new-venue') === seriesVar('some-new-venue'),
+    )
+
+    // Market map shaping — the pure treemap.
+    const sections = vizMarketSections()
+    const allSyms = sections.flatMap((s) => s.rows.map((r) => r.symbol))
+    const noVolQuotes = Object.fromEntries(allSyms.map((s, i) => [s, { last: 10 + i, chgPct: ((i % 11) - 5) * 1.3 }]))
+    const equal = mapItems(sections, noVolQuotes, 'all')
+    const withVol = mapItems(sections, Object.fromEntries(allSyms.map((s, i) => [s, { last: 10, chgPct: 0, volumeUsd: 1000 + i * 10 }])), 'crypto')
+    const partial = mapItems(sections, Object.fromEntries(allSyms.map((s, i) => [s, { last: 10, chgPct: 0, volumeUsd: i % 2 ? 1000 : null }])), 'crypto')
+    const mostly = mapItems(sections, Object.fromEntries(allSyms.map((s, i) => [s, { last: 10, chgPct: 0, volumeUsd: i % 20 === 0 ? null : 1000 + i }])), 'crypto')
+    check(
+      'market map: sizing is honest — equal cells unless ≥90% of the quoted items carry a positive volume (then the few without one take the median and are NAMED); unquoted symbols keep the median weight and are listed, never dropped',
+      equal.sizing === 'equal' && equal.items.length === allSyms.length && equal.items.every((i) => i.weight === 1) &&
+        withVol.sizing === 'volume' && withVol.items.every((i) => i.weight >= 1000) && withVol.medianSized.length === 0 && partial.sizing === 'equal' && partial.medianSized.length === 0 &&
+        mostly.sizing === 'volume' && mostly.medianSized.length > 0 && mostly.medianSized.every((s) => mostly.items.find((i) => i.symbol === s)!.weight > 1000) &&
+        mapItems(sections, {}, 'perps').unquoted.length === sections.find((s) => s.id === 'perps')!.rows.length &&
+        mapItems(sections, noVolQuotes, 'stocks').items.every((i) => i.section === 'equities'),
+      `equal=${equal.items.length} vol=${withVol.sizing} partial=${partial.sizing}`,
+    )
+    const W = 1000
+    const H = 450
+    const cells = squarify(equal.items, W, H, 2)
+    const area = cells.reduce((a, c) => a + c.w * c.h, 0)
+    const inBounds = cells.every((c) => c.x >= 0 && c.y >= 0 && c.x + c.w <= W + 1e-6 && c.y + c.h <= H + 1e-6 && c.w >= 0 && c.h >= 0)
+    let overlaps = 0
+    for (let i = 0; i < cells.length; i++)
+      for (let j = i + 1; j < cells.length; j++) {
+        const a = cells[i]
+        const b = cells[j]
+        if (a.x < b.x + b.w - 1e-6 && b.x < a.x + a.w - 1e-6 && a.y < b.y + b.h - 1e-6 && b.y < a.y + a.h - 1e-6) overlaps++
+      }
+    const layout = marketMapLayout(sections, noVolQuotes, 'all', W, H)
+    check(
+      'market map: the squarified layout places every item inside the frame with no overlaps and covers the frame (minus the 2px gaps); the layout is deterministic',
+      cells.length === equal.items.length && inBounds && overlaps === 0 && area > W * H * 0.9 && area <= W * H + 1e-6 &&
+        JSON.stringify(layout.cells) === JSON.stringify(marketMapLayout(sections, noVolQuotes, 'all', W, H).cells),
+      `cells=${cells.length} overlaps=${overlaps} coverage=${((area / (W * H)) * 100).toFixed(1)}%`,
+    )
+    check(
+      'market map: color is a diverging up/down mix toward the surface at zero (never a hue at the midpoint), clamped at ±5%; labels drop below a legible cell',
+      polarity(0) === 0 && polarity(null) === 0 && polarity(50) === 1 && polarity(-50) === -1 && polarity(2.5) === 0.5 &&
+        cellFill(0) === 'var(--mk-surface-2)' && cellFill(null) === 'var(--mk-surface-2)' && cellFill(5).includes('--mk-up') && cellFill(-5).includes('--mk-down') && cellFill(5).includes('90%') && cellFill(0.5).includes('--mk-up') &&
+        labelTier(20, 20) === 0 && labelTier(40, 20) === 1 && labelTier(80, 40) === 2,
+    )
+    check(
+      'movers: gainers rank descending, losers ascending (worst first); unquoted rows never rank',
+      (() => {
+        const rows = [
+          { symbol: 'A', chgPct: 3 },
+          { symbol: 'B', chgPct: -1 },
+          { symbol: 'C', chgPct: 7 },
+          { symbol: 'D', chgPct: null },
+          { symbol: 'E', chgPct: -4 },
+          { symbol: 'F', chgPct: 0 },
+        ]
+        const { gainers, losers } = rankMovers(rows, 5)
+        return gainers.map((r) => r.symbol).join('') === 'CA' && losers.map((r) => r.symbol).join('') === 'EB'
+      })(),
+    )
+
+    // The flow route: fail-soft frame, cache, gaps never zeros.
+    const flowSym = `ZZ${Date.now() % 1000}`
+    const failing = [
+      { id: 'boom', venue: 'Boom', measure: 'x', read: async () => { throw new Error('rpc down') } },
+      { id: 'slow', venue: 'Slow', measure: 'y', read: () => new Promise<null>(() => {}) },
+      { id: 'quiet', venue: 'Quiet', measure: 'z', read: async () => null },
+      { id: 'reads', venue: 'Reads', measure: 'w', read: async () => ({ id: 'reads', venue: 'Reads', measure: 'w', usd: 12.5 }) },
+    ]
+    const t0 = Date.now()
+    const flow1 = await vizReadFlow(flowSym, failing)
+    const flowMs = Date.now() - t0
+    const flow2 = await vizReadFlow(flowSym, failing)
+    check(
+      'viz flow: a thrown reader becomes a labelled gap (usd null + gap words), a hanging reader times out into a gap within its deadline, a venue that does not list the symbol is omitted, a reading venue keeps its number; the second read is served from the 60s cache',
+      flow1.sources.length === 3 && flow1.sources.find((s) => s.id === 'boom')?.usd === null && /rpc down/.test(flow1.sources.find((s) => s.id === 'boom')?.gap ?? '') &&
+        flow1.sources.find((s) => s.id === 'slow')?.usd === null && /timed out/.test(flow1.sources.find((s) => s.id === 'slow')?.gap ?? '') &&
+        !flow1.sources.some((s) => s.id === 'quiet') && flow1.sources.find((s) => s.id === 'reads')?.usd === 12.5 && flowMs < 8_000 && flowMs >= 5_500 &&
+        flow2.cached === true && FLOW_TTL_MS === 60_000 && !flow1.sources.some((s) => s.usd === 0),
+      `sources=${flow1.sources.map((s) => `${s.id}:${s.usd ?? 'gap'}`).join(',')} ms=${flowMs} cached=${flow2.cached}`,
+    )
+    type VolBody = { volumes?: Record<string, number>; feeds?: Record<string, string>; cached?: boolean; error?: string }
+    const vol1 = (await (await fetch(`${BASE}/api/markets/viz/volume`)).json()) as VolBody
+    const vol2 = (await (await fetch(`${BASE}/api/markets/viz/volume`)).json()) as VolBody
+    const volN = Object.keys(vol1.volumes ?? {}).length
+    check(
+      'viz volume route: dollar volume per charted symbol from three feeds (coinbase × last, hyperliquid dayNtlVlm, robinhood last real session × close) — every value positive and finite, feed named per symbol, absent (never 0) when a feed misses, second read cached; ≥60% of the index answered or the route\'s own reader-down error',
+      (vol1.error === 'reader unavailable') ||
+        (Object.values(vol1.volumes ?? {}).every((v) => typeof v === 'number' && Number.isFinite(v) && v > 0) &&
+          Object.keys(vol1.volumes ?? {}).every((s) => ['coinbase', 'hyperliquid', 'robinhood'].includes(vol1.feeds?.[s] ?? '')) &&
+          volN >= Math.floor(allSyms.length * 0.6) && vol2.cached === true),
+      `answered=${volN}/${allSyms.length} feeds=${JSON.stringify(Object.values(vol1.feeds ?? {}).reduce<Record<string, number>>((a, f) => ((a[f] = (a[f] ?? 0) + 1), a), {}))} cached=${vol2.cached}`,
+    )
+    check(
+      'viz flow: usdOf reads the Aave MCP\'s formatted dollar strings ("$91,106,249.55") and refuses junk (a missing field is null, never 0)',
+      usdOf('$91,106,249.55') === 91106249.55 && usdOf('1,234.5') === 1234.5 && usdOf(42) === 42 && usdOf(undefined) === null && usdOf('') === null && usdOf('n/a') === null,
+    )
+    const noSym = await fetch(`${BASE}/api/markets/viz/flow`)
+    const badSym = await fetch(`${BASE}/api/markets/viz/flow?symbol=${encodeURIComponent('../etc')}`)
+    type FlowBody = { symbol?: string; sources?: { id: string; usd: number | null; gap?: string; venue: string; measure: string }[]; cached?: boolean; error?: string }
+    const ethFlow = (await (await fetch(`${BASE}/api/markets/viz/flow?symbol=eth`)).json()) as FlowBody
+    const ethFlow2 = (await (await fetch(`${BASE}/api/markets/viz/flow?symbol=ETH`)).json()) as FlowBody
+    const ethSources = ethFlow.sources ?? []
+    check(
+      'viz flow route: 400 without a symbol (and for junk), 200 for ETH with every source carrying either a number or a gap (never a bare null, never a zero from a failed read), the symbol upper-cased, and the second read cached',
+      noSym.status === 400 && badSym.status === 400 && ethFlow.symbol === 'ETH' && Array.isArray(ethFlow.sources) &&
+        ethSources.every((s) => (typeof s.usd === 'number' && Number.isFinite(s.usd)) || (s.usd === null && typeof s.gap === 'string' && s.gap.length > 0)) &&
+        ethSources.every((s) => s.venue && s.measure) && ethFlow2.cached === true,
+      `sources=${ethSources.map((s) => `${s.id}${s.usd == null ? '(gap)' : ''}`).join(',') || '-'} error=${ethFlow.error ?? '-'}`,
+    )
+    check(
+      'viz flow route: ETH names the dapps a wallet can act on — Uniswap v3 (a pool read or a labelled gap), Hyperliquid open interest, Aave, Lido — each a separate row, or the route\'s own reader-down error',
+      ethFlow.error === 'reader unavailable' || (['uniswap', 'hyperliquid', 'aave', 'lido'].every((id) => ethSources.some((s) => s.id === id))),
+      `ids=${[...new Set(ethSources.map((s) => s.id))].join(',')}`,
+    )
+
+    // The chart engine wiring (the pixels are in the PR's browser drive).
+    const mcSrc = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
+    const mountSrc = await readFile('components/markets/chart/ChartMount.tsx', 'utf8')
+    check(
+      'viz chart: MarketChart imports look.css, reads --mk-up/--mk-down (falling back to --accent/--sell), --mk-grid and --mk-crosshair through the probe, paints candle bodies in the up/down inks with quiet wicks (WICK_ALPHA), and no paint site still reads tokens.accent/tokens.sell',
+      mcSrc.includes("import '@/components/markets/look.css'") && mcSrc.includes("up: get('--mk-up', get('--accent', '#3ecf8e'))") && mcSrc.includes("down: get('--mk-down', get('--sell', '#e5484d'))") &&
+        mcSrc.includes("cs.getPropertyValue('--mk-grid')") && mcSrc.includes("cs.getPropertyValue('--mk-crosshair')") && mcSrc.includes('wickUpColor: alpha(tokens.up, WICK_ALPHA)') &&
+        mcSrc.includes('grid: { vertLines: { color: tokens.grid }, horzLines: { color: tokens.grid } }') &&
+        !mcSrc.slice(mcSrc.indexOf('const alpha = (hex: string, a: number)')).includes('tokens.accent') && !mcSrc.slice(mcSrc.indexOf('const alpha = (hex: string, a: number)')).includes('tokens.sell'),
+    )
+    check(
+      'viz chart: onViewport rides ChartMount → MarketChart and fires from the viewport guard with bar OPEN times at most once per animation frame (the AI lane\'s "what is on screen")',
+      mountSrc.includes('onViewport?: (v: { from: number; to: number; tf: ChartTf }) => void') && mountSrc.includes('onViewport={onViewport}') &&
+        mcSrc.includes('onViewport?: (v: { from: number; to: number; tf: ChartTf }) => void') && mcSrc.includes('emitViewport(clamped ?? view)') && mcSrc.includes('requestAnimationFrame(() => {') &&
+        mcSrc.includes('onViewportRef.current({ from: bars[lo].t, to: bars[hi].t, tf: tfRef.current })'),
+    )
+    const primitives = ['Sparkline', 'Delta', 'StatTile', 'MiniGauge', 'Bars', 'Ribbon', 'MarketMap', 'FlowPanel', 'MoversTape']
+    const barrel = await readFile('components/markets/viz/index.ts', 'utf8')
+    const present = await Promise.all(primitives.map((n) => readFile(`components/markets/viz/${n}.tsx`, 'utf8').then(() => true, () => false)))
+    check(
+      'viz primitives: the nine contract components exist at components/markets/viz/<Name>.tsx and the barrel exports each; the slot props match the README contract',
+      present.every(Boolean) && primitives.every((n) => barrel.includes(`export { default as ${n} } from './${n}'`)) &&
+        (await readFile('components/markets/viz/MarketMap.tsx', 'utf8')).includes("section?: MapSection") && (await readFile('components/markets/viz/FlowPanel.tsx', 'utf8')).includes('pair: ChartPair | null') &&
+        (await readFile('components/markets/viz/MoversTape.tsx', 'utf8')).includes('onOpen: (symbol: string) => void'),
+      `missing=${primitives.filter((_, i) => !present[i]).join(',') || '-'}`,
     )
   }
 
