@@ -166,8 +166,9 @@ button.mk-held:hover { border-color: var(--accent); }
 
 /* ── Phones ────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
-  .mk-view__btn span { display: none; }
-  .mk-view__btn { padding: 0 9px; }
+  /* The phone keeps the WORDS on Map · List (an icon-only toggle can't be
+     found by a screen reader or a screenshot drive). */
+  .mk-view__btn { padding: 0 10px; font-size: 11.5px; }
   .mk-table__link { grid-template-columns: 22px auto minmax(0, 1fr); gap: 8px; padding: 9px 10px; }
   .mk-table__num { padding: 9px 10px; font-size: 12.5px; }
   .mk-table__name { display: none; }
