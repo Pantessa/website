@@ -175,6 +175,8 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
   // lines loaded back onto the chart ("copy these lines to my chart").
   const [chartState, setChartState] = useState<ChartState | null>(null)
   const [loadedState, setLoadedState] = useState<ChartState | null>(null)
+  // What's on screen (VIZ's onViewport, bar open times) — AskChart's context.
+  const [viewport, setViewport] = useState<{ from: number; to: number; tf: ChartTf } | null>(null)
 
   // ── Session line ticks (a stock page left open crosses the bell) ──
   const [now, setNow] = useState<Date>(() => new Date())
@@ -295,7 +297,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
         <div ref={shellRef} className={expanded ? 'tchart sym__chart tchart--expanded' : 'tchart sym__chart'}>
           <div className="tchart__canvas">
             {pair ? (
-              <ChartMount symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} />
+              <ChartMount symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} onViewport={setViewport} />
             ) : (
               <div className="flex flex-1 items-center justify-center">
                 <div className="mkt-card max-w-md text-center">
@@ -328,7 +330,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
             </button>
             {askOpen && (
               <div className="mk-askdock__body">
-                <AskChart symbol={sym} pair={pair} chartState={chartState ?? undefined} onAsk={act} onChartState={setLoadedState} />
+                <AskChart symbol={sym} pair={pair} chartState={chartState ?? undefined} visible={viewport ? { from: viewport.from, to: viewport.to } : undefined} onAsk={act} onChartState={setLoadedState} />
               </div>
             )}
           </section>
