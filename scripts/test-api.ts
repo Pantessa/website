@@ -20291,11 +20291,42 @@ async function main() {
     const p1 = await fetch(`${BASE}/api/markets/position?symbol=ETH&address=${burner}`)
     const pj = (await p1.json()) as Mk2SymbolPosition
     check(
-      'MK2/EXEC position API: GET /api/markets/position?symbol=ETH&address= answers 200 with no session — spot per chain, perp|null, lend|null, stake|null, dca/guardian/spotGuard arrays, NAMED failed readers, and every exit chip is a native sentence; no address → 400',
+      'MK2/EXEC position API: GET /api/markets/position?symbol=ETH&address= answers 200 with no session — spot per chain, perp|null, lend|null, stake|null, NAMED failed readers, every exit chip a native sentence; the wallet\'s own DCA/guardian/spot-guard rows are WITHHELD without its session and named `private` (rule 6); no address → 400',
       p1.status === 200 && Array.isArray(pj.spot) && Array.isArray(pj.dca) && Array.isArray(pj.guardian) && Array.isArray(pj.spotGuard) && Array.isArray(pj.failed) &&
+        pj.dca.length === 0 && pj.guardian.length === 0 && pj.spotGuard.length === 0 && pj.private.join() === 'dca,guardian,spotGuard' &&
         typeof pj.totalUsd === 'number' && Array.isArray(pj.exits) && pj.exits.every((e) => simulateLadder(e.ask).kind === 'action') &&
         !p1.headers.get('set-cookie') && (await fetch(`${BASE}/api/markets/position?symbol=ETH`)).status === 400,
       `status=${p1.status} spot=${pj.spot?.length} exits=${pj.exits?.map((e) => e.ask).join(' | ')} failed=${JSON.stringify(pj.failed)}`,
+    )
+    {
+      const ownAcct = privateKeyToAccount(generatePrivateKey())
+      const ownCookie = await signIn(ownAcct)
+      const own = await fetch(`${BASE}/api/markets/position?symbol=ETH&address=${ownAcct.address}`, { headers: { cookie: ownCookie } })
+      const ownJ = (await own.json()) as Mk2SymbolPosition
+      const other = await fetch(`${BASE}/api/markets/position?symbol=ETH&address=${burner}`, { headers: { cookie: ownCookie } })
+      const otherJ = (await other.json()) as Mk2SymbolPosition
+      check(
+        'MK2/EXEC position API: the wallet\'s OWN session gets its standing rows (private = []); the same session asking about ANOTHER address still gets them withheld',
+        own.status === 200 && Array.isArray(ownJ.private) && ownJ.private.length === 0 && other.status === 200 && otherJ.private.join() === 'dca,guardian,spotGuard',
+        `own=${JSON.stringify(ownJ.private)} other=${JSON.stringify(otherJ.private)}`,
+      )
+    }
+    // The dollar-buy job segment (lib/jobs.ts, additive): the chat's own
+    // "Buy $50 of ETH on Base" now chains, so a compound that starts with it
+    // is a JOB instead of the last clause's gate claiming it whole.
+    const dbuy = compileJobAskFull('Buy $50 of ETH on Base, then stake all the swapped ETH on Lido')
+    const dbuySteps = dbuy && 'steps' in dbuy ? dbuy.steps : null
+    const dbuyStock = compileJobAskFull('Buy $50 of AAPL on Robinhood Chain, then buy $25 of TSLA on Robinhood Chain')
+    const dbuyStockSteps = dbuyStock && 'steps' in dbuyStock ? dbuyStock.steps : null
+    const spotProtect = compileJobAskFull('Swap 50 USDC for ETH on Base, then protect my ETH in my wallet with a 5% stop')
+    check(
+      'MK2/EXEC jobs (additive): "Buy $50 of ETH on Base, then stake all the swapped ETH on Lido" compiles native-swap (50 USDC → ETH) → native-lido; a 4663 dollar buy sells USDG; a lone dollar buy is still the swap layer (compileJobAsk null); a SPOT protect sentence in a job refuses BY NAME instead of arming an HL policy',
+      !!dbuySteps && dbuySteps.map((st) => st.builder).join('→') === 'native-swap→native-lido' && (dbuySteps[0].params as { sellToken?: string; amountHuman?: string }).sellToken === 'USDC' && (dbuySteps[0].params as { amountHuman?: string }).amountHuman === '50' &&
+        simulateLadder('Buy $50 of ETH on Base, then stake all the swapped ETH on Lido').gate === 'jobs' &&
+        !!dbuyStockSteps && dbuyStockSteps.length === 2 && dbuyStockSteps.every((st) => (st.params as { sellToken?: string }).sellToken === 'USDG') &&
+        compileJobAskFull('Buy $50 of ETH on Base') === null && simulateLadder('Buy $50 of ETH on Base').gate === 'swap' &&
+        !!spotProtect && 'problem' in spotProtect && /spot stop/.test(spotProtect.problem),
+      `${dbuySteps?.map((st) => st.builder).join('→')} | stock=${dbuyStockSteps?.length} | spot=${spotProtect && 'problem' in spotProtect ? spotProtect.problem.slice(0, 60) : JSON.stringify(spotProtect)}`,
     )
     check(
       'MK2/EXEC position API is read-only: POST is not a method',
@@ -20307,7 +20338,7 @@ async function main() {
       perp: { side: 'long', sizeUnits: 0.02, entryPx: 2400, markPx: 2500, valueUsd: 50, pnlUsd: 12.4, leverage: 2, liquidationPx: 1300 },
       lend: { suppliedUsd: 200, suppliedLabel: '0.08 WETH', borrowedUsd: 50, borrowedLabel: 'USDC 50', healthFactor: 3.1 },
       stake: { stEth: 0.2, usd: 500, aprPct: 2.3 }, dca: [{ id: 'd', cadence: 'weekly', buyUsd: 10, status: 'active', mode: 'confirm', chainName: 'Base' }],
-      guardian: [{ id: 'g', kind: 'stop_loss', side: 'long', triggerMode: 'price_move_pct', triggerValue: 5, status: 'active' }], spotGuard: [], exits: [], totalUsd: 0, failed: [], updatedAt: '',
+      guardian: [{ id: 'g', kind: 'stop_loss', side: 'long', triggerMode: 'price_move_pct', triggerValue: 5, status: 'active' }], spotGuard: [], exits: [], totalUsd: 0, private: [], failed: [], updatedAt: '',
     }
     const summary = mk2PositionSummary(sample)
     const exits = mk2ExitChipsFor(sample, 'coinbase')
@@ -20360,7 +20391,10 @@ async function main() {
     const ccSrc = await readFile('components/markets/trade/CompoundComposer.tsx', 'utf8')
     check(
       'MK2/EXEC surfaces: RouteTable/ExecStrip/PositionPanel/CompoundComposer each take { symbol, pair, onAsk } (PositionPanel + address?), every chip carries data-ask and SENDS through onAsk on click (never a /chat prefill link), PositionPanel re-exports positionSummary',
-      [rtSrc, esSrc, ppSrc, ccSrc].every((src) => src.includes('onAsk: (ask: string) => void') && src.includes('data-ask=') && !src.includes('/chat?prompt=')) &&
+      [rtSrc, esSrc, ppSrc, ccSrc].every((src) => src.includes('onAsk: (ask: string) => void') && src.includes('data-ask=')) &&
+        [rtSrc, ppSrc, ccSrc].every((src) => !src.includes('/chat?prompt=')) &&
+        // The strip keeps the act-strip wire: legacy classes + the /chat prefill href as the no-JS fallback, a click SENDS.
+        esSrc.includes('className={`sym__act-chip sym__act-chip--${LEGACY[a.side]}`}') && esSrc.includes('href={promptHref(a.ask)}') && esSrc.includes('e.preventDefault()') &&
         ppSrc.includes('address?: string') && ppSrc.includes("export { positionSummary, positionIsEmpty } from '@/lib/symbol-position'") &&
         rtSrc.includes("fetch(`/api/markets/routes?") && ppSrc.includes('/api/markets/position?symbol='),
     )
