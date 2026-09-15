@@ -153,6 +153,12 @@ button.mk-held:hover { border-color: var(--accent); }
   .mk-trade > .mkt-trade__chat { grid-area: chat; }
 }
 
+/* ── Watchlist rail density (MK2) — compact hides the company name and
+   tightens the row; the position column and the price keep their seats. */
+.wl[data-density="compact"] .wl__rowMain { padding: 3px 0; gap: 7px; }
+.wl[data-density="compact"] .wl__rowName { display: none; }
+.wl[data-density="compact"] .wl__rowSym, .wl[data-density="compact"] .wl__rowLast { font-size: 12px; }
+
 /* ── Phones ────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .mk-view__btn span { display: none; }

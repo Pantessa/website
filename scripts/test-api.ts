@@ -20300,6 +20300,15 @@ async function main() {
           return desc === 'CADB' && asc === 'ADCB' && chg === 'DACB' && sym === 'DCBA' && rows.map((r) => r.symbol).join('') === 'ABCD'
         })(),
     )
+    // The rail's density toggle (MK2): SSR is comfortable; the list menu
+    // carries a checkbox item; compact rows drop the company name in CSS.
+    const railSrc = await readFile('components/markets/watchlist/WatchlistRail.tsx', 'utf8')
+    check(
+      'mk2/markets: the watchlist rail server-renders data-density="comfortable", its list menu carries the Compact/Comfortable rows checkbox (remembered per browser), and markets.css hides the company name on compact rows',
+      /class="wl[^"]*" data-mode="[a-z]+" data-density="comfortable"/.test(mkHtml) &&
+        railSrc.includes('role="menuitemcheckbox"') && railSrc.includes("DENSITY_KEY = 'pantessa.watchlists.density'") &&
+        /\.wl\[data-density="compact"\] \.wl__rowName \{ display: none; \}/.test(await readFile('components/markets/markets.css', 'utf8')),
+    )
     // The one stylesheet import + the slot card rule (QA's request: whoever
     // owns a class ships its rule).
     const shellSrc = await readFile('components/markets/shell/MarketsShell.tsx', 'utf8')
