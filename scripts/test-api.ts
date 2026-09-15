@@ -20182,6 +20182,140 @@ async function main() {
     )
   }
 
+
+  // ── MK2/MARKETS ──────────────────────────────────────────────────────────
+  // The squad-mk2 MARKETS lane (2026-09-15): the nine slot seats mounted in
+  // the server HTML of both routes, the symbol header's order, the ?vs=
+  // compare grammar, the terminal table's sort, the trending fence.
+  console.log('— mk2/markets')
+  {
+    const mk = await import('../lib/markets')
+    const mkHtml = flat(await (await fetch(`${BASE}/markets`)).text())
+    const seat = (html: string, cls: string) => {
+      const m = html.match(new RegExp(`<[a-z]+ class="${cls}"[^>]*>([\\s\\S]*?)</`))
+      return !!m && m[1].trim().length > 0
+    }
+    check(
+      'mk2/markets: /markets server-renders the movers tape seat, the Map · List toggle (SSR = list, every row present), the terminal tables with sortable heads and j/k row links',
+      seat(mkHtml, 'mk-tape') &&
+        /<main class="mkt-frame__main" data-view="list">/.test(mkHtml) &&
+        /class="mk-view__btn is-on" aria-pressed="true"[^>]*title="Terminal list"/.test(mkHtml) &&
+        /<table class="mk-table" data-section="equities" data-sort="none">/.test(mkHtml) &&
+        /<table class="mk-table" data-section="crypto"/.test(mkHtml) && /<table class="mk-table" data-section="perps"/.test(mkHtml) &&
+        /<th scope="col" aria-sort="none" class="mk-table__th mk-table__th--right"><button[^>]*title="Sort by last"/.test(mkHtml) &&
+        /<a class="mk-table__link" data-mk-row="true" href="\/t\/AAPL">/.test(mkHtml) &&
+        /<a class="mk-table__link" data-mk-row="true" href="\/t\/HYPE">/.test(mkHtml) &&
+        /<kbd>j<\/kbd>/.test(mkHtml),
+    )
+    // Trending: the strip is fenced upstream (a harness run must never trend
+    // its own asks) and fails soft — so the SSR pin is "either absent or
+    // well-formed", and the FENCE is pinned in the source.
+    const trendSrc = await readFile('app/markets/trending.ts', 'utf8')
+    const trendRows = (mkHtml.match(/<a class="mk-trend__row"/g) ?? []).length
+    const trendN = Number(mkHtml.match(/data-trending="(\d+)"/)?.[1] ?? 0)
+    check(
+      'mk2/markets: "Trending on Pantessa" reads embed_turns under NOT INTERNAL_TRAFFIC_WHERE (is_internal + localhost/preview origins), 7 days, fail-soft to an empty strip; the SSR strip is absent or carries exactly its rows, each a symbol link',
+      trendSrc.includes("import { INTERNAL_TRAFFIC_WHERE } from '@/lib/value-origin'") &&
+        trendSrc.includes('where: { AND: [{ NOT: INTERNAL_TRAFFIC_WHERE }, { createdAt: { gte: since } }] }') &&
+        trendSrc.includes('TRENDING_WINDOW_DAYS = 7') && /catch \{\s*return \[\]/.test(trendSrc) &&
+        trendRows === trendN && (trendN === 0 || /class="mk-trend__row" data-symbol="[A-Z]+" data-mk-row="true" href="\/t\/[A-Z]+"/.test(mkHtml)),
+      `rows=${trendRows} n=${trendN}`,
+    )
+    const known = ['AAPL', 'ETH', 'BTC', 'HYPE', 'NVDA']
+    check(
+      'mk2/markets: trendingFromPrompts counts a prompt once per index symbol it names (whole-word ticker, $TICKER, or a company name through the resolver); stray uppercase words never trend; ranked by asks then A→Z',
+      JSON.stringify(mk.trendingFromPrompts(['buy $10 of AAPL then stake ETH', 'Swap 5 USD of $ETH', 'buy some apple', 'protect my SOL', 'AAPL AAPL AAPL'], known)) ===
+        JSON.stringify([
+          { symbol: 'AAPL', asks: 3 },
+          { symbol: 'ETH', asks: 2 },
+        ]) && mk.trendingFromPrompts(['USD IS NOT A TICKER', ''], known).length === 0,
+    )
+    // ?vs= — the compare idiom.
+    check(
+      'mk2/markets: parseVsParam accepts only a charted symbol other than the page\'s own (aliases collapse: weth → ETH); vsUrl sets/clears the param and keeps the rest',
+      mk.parseVsParam('?vs=BTC', 'AAPL') === 'BTC' &&
+        mk.parseVsParam('?vs=weth', 'BTC') === 'ETH' &&
+        mk.parseVsParam('?vs=AAPL', 'AAPL') === null &&
+        mk.parseVsParam('?vs=weth', 'ETH') === null &&
+        mk.parseVsParam('?vs=ZZZZQ', 'AAPL') === null &&
+        mk.parseVsParam('?tab=trade', 'AAPL') === null &&
+        mk.vsUrl('BTC', '/t/AAPL', '?tab=trade') === '/t/AAPL?tab=trade&vs=BTC' &&
+        mk.vsUrl(null, '/t/AAPL', '?tab=trade&vs=BTC') === '/t/AAPL?tab=trade' &&
+        mk.vsUrl(null, '/t/AAPL', '') === '/t/AAPL',
+    )
+    const tVs = flat(await (await fetch(`${BASE}/t/AAPL?vs=BTC`)).text())
+    const tSelf = flat(await (await fetch(`${BASE}/t/AAPL?vs=aapl`)).text())
+    check(
+      'mk2/markets: /t/AAPL?vs=BTC server-renders the compare pill (data-vs on main + the VS pill naming BTC); ?vs=<self> renders no compare',
+      /<main class="sym" data-symbol="AAPL" data-vs="BTC">/.test(tVs) && /class="mk-vs" data-vs="BTC"/.test(tVs) &&
+        !/data-vs=/.test(tSelf) && /class="mk-vs__open mono"/.test(tSelf),
+    )
+    // The symbol header, in order: identity (mark · title · venue · the
+    // session line with its dot · compare) → quote (last · change · feed ·
+    // the range bar's seat) → the ExecStrip seat (the act chips) — then the
+    // chart, then the ask dock, then the tab strip.
+    const tAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
+    const at = (re: RegExp) => {
+      const m = re.exec(tAapl)
+      return m ? m.index : -1
+    }
+    const iHead = at(/<header class="sym__head sym__head--mk2">/)
+    const iId = at(/<div class="sym__id">/)
+    const iMeta = at(/<div class="sym__meta">/)
+    const iQuote = at(/<div class="sym__quote">/)
+    const iAct = at(/class="sym__act"[^>]*data-slot="ExecStrip"/)
+    const iChart = at(/class="tchart sym__chart"/)
+    const iDock = at(/<section class="mk-askdock is-open" data-askchart="open"/)
+    const iTabs = at(/<nav class="sym__tabs"/)
+    check(
+      'mk2/markets: /t/AAPL header order — sym__head → sym__id → sym__meta (session dot + compare) → sym__quote → ExecStrip seat (the pinned act chips) → chart → ask dock → tabs',
+      iHead >= 0 && iHead < iId && iId < iMeta && iMeta < iQuote && iQuote < iAct && iAct < iChart && iChart < iDock && iDock < iTabs &&
+        /<p class="sym__session mono" data-tape="(open|closed)"><span class="mk-dot mk-dot--(open|closed)"/.test(tAapl) &&
+        /class="sym__act-chip sym__act-chip--buy"[^>]*>Buy AAPL</.test(tAapl),
+      `head=${iHead} id=${iId} meta=${iMeta} quote=${iQuote} act=${iAct} chart=${iChart} dock=${iDock} tabs=${iTabs}`,
+    )
+    check(
+      'mk2/markets: Overview mounts the AiBrief (lead) → FlowPanel → Performance → Key stats → RouteTable seats, each non-empty in the server HTML',
+      seat(tAapl, 'mk-overview__lead') && seat(tAapl, 'mk-overview__flow') && seat(tAapl, 'mk-overview__routes') &&
+        at(/class="mk-overview__lead"/) < at(/class="mk-overview__flow"/) &&
+        at(/class="mk-overview__flow"/) < at(/aria-label="Performance"/) &&
+        at(/aria-label="Key stats"/) < at(/class="mk-overview__routes"/),
+    )
+    const tTrade = flat(await (await fetch(`${BASE}/t/AAPL?tab=trade`)).text())
+    check(
+      'mk2/markets: Trade mounts RouteTable → the order panel → CompoundComposer → PositionPanel → the runtime seat, each non-empty in the server HTML',
+      seat(tTrade, 'mk-trade__routes') && seat(tTrade, 'mk-trade__compound') && seat(tTrade, 'mk-trade__position') &&
+        tTrade.indexOf('class="mk-trade__routes"') < tTrade.indexOf('class="mkt-card mkt-order"') &&
+        tTrade.indexOf('class="mkt-card mkt-order"') < tTrade.indexOf('class="mk-trade__compound"') &&
+        tTrade.indexOf('class="mk-trade__compound"') < tTrade.indexOf('class="mk-trade__position"') &&
+        tTrade.indexOf('class="mk-trade__position"') < tTrade.indexOf('class="mkt-card mkt-trade__chat"'),
+    )
+    // The pure pieces under the header + the table.
+    check(
+      'mk2/markets: rangePosition is 0 at the low, 1 at the high, clamped, null on a flat or unknown range; sortMarketRows sinks unquoted rows in BOTH directions and keeps the section order on ties',
+      mk.rangePosition(10, 20, 10) === 0 && mk.rangePosition(10, 20, 20) === 1 && mk.rangePosition(10, 20, 15) === 0.5 &&
+        mk.rangePosition(10, 20, 25) === 1 && mk.rangePosition(10, 10, 10) === null && mk.rangePosition(null, 20, 15) === null &&
+        (() => {
+          const rows = [{ symbol: 'A' }, { symbol: 'B' }, { symbol: 'C' }, { symbol: 'D' }]
+          const q = { A: { last: 5, chgPct: 1 }, B: undefined, C: { last: 7, chgPct: -2 }, D: { last: 5, chgPct: 3 } }
+          const desc = mk.sortMarketRows(rows, q, 'last', 'desc').map((r) => r.symbol).join('')
+          const asc = mk.sortMarketRows(rows, q, 'last', 'asc').map((r) => r.symbol).join('')
+          const chg = mk.sortMarketRows(rows, q, 'chg', 'desc').map((r) => r.symbol).join('')
+          const sym = mk.sortMarketRows(rows, q, 'symbol', 'desc').map((r) => r.symbol).join('')
+          return desc === 'CADB' && asc === 'ADCB' && chg === 'DACB' && sym === 'DCBA' && rows.map((r) => r.symbol).join('') === 'ABCD'
+        })(),
+    )
+    // The one stylesheet import + the slot card rule (QA's request: whoever
+    // owns a class ships its rule).
+    const shellSrc = await readFile('components/markets/shell/MarketsShell.tsx', 'utf8')
+    const mkCss = await readFile('components/markets/markets.css', 'utf8')
+    check(
+      'mk2/markets: MarketsShell imports VIZ\'s look.css then markets.css exactly once; markets.css styles .mk-slot, and every --mk-* use carries a site-token fallback',
+      (shellSrc.match(/import '@\/components\/markets\/look\.css'/g) ?? []).length === 1 &&
+        (shellSrc.match(/import '@\/components\/markets\/markets\.css'/g) ?? []).length === 1 &&
+        shellSrc.indexOf("look.css'") < shellSrc.indexOf("markets.css'") &&
+        /\.mk-slot \{/.test(mkCss) &&
+        (mkCss.match(/var\(--mk-[a-z-]+\)/g) ?? []).length === 0,
   // ── MK2/VIZ ─────────────────────────────────────────────────────────────
   // The look tokens, the pure viz shaping, the flow route's fail-soft frame,
   // and the chart engine's wiring (squad-mk2-2026-09-15, VIZ lane).
