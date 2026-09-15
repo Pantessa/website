@@ -171,8 +171,10 @@ export async function readRobinhood(symbol: string): Promise<FlowSource | null> 
 export function usdOf(v: unknown): number | null {
   if (typeof v === 'number') return Number.isFinite(v) ? v : null
   if (typeof v !== 'string') return null
-  const n = Number(v.replace(/[^0-9.eE+-]/g, ''))
-  return Number.isFinite(n) && v.trim() !== '' ? n : null
+  const digits = v.replace(/[^0-9.eE+-]/g, '')
+  if (!/[0-9]/.test(digits)) return null // "n/a", "—", "" → unread, never 0
+  const n = Number(digits)
+  return Number.isFinite(n) ? n : null
 }
 
 function fmtUsdShort(n: number): string {
