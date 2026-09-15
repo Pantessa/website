@@ -379,3 +379,190 @@ export function parseMarketsNavAsk(message: string): { symbol: string; href: str
 export function isMarketsPath(pathname: string): boolean {
   return pathname === '/markets' || pathname.startsWith('/markets/') || pathname.startsWith('/t/')
 }
+
+// ── MK2 (2026-09-15): compare mode, the range bar, the terminal table, trending ──
+
+/** `?vs=<symbol>` — the second symbol overlaid on the chart (MARKETS URL
+ *  idiom; the engine hook is VIZ's). Only a charted symbol other than the
+ *  page's own counts; anything else reads as "no compare". Pure — pinned. */
+export function parseVsParam(search: string, self: string): string | null {
+  const raw = new URLSearchParams(search).get('vs')
+  if (!raw) return null
+  const pair = chartPairFor(raw)
+  if (!pair) return null
+  const selfPair = chartPairFor(self)
+  if (pair.symbol === (selfPair?.symbol ?? self.toUpperCase())) return null
+  return pair.symbol
+}
+
+/** The URL with `?vs=` set or cleared, every other param preserved. */
+export function vsUrl(vs: string | null, pathname: string, search: string): string {
+  const params = new URLSearchParams(search)
+  if (vs) params.set('vs', vs)
+  else params.delete('vs')
+  const q = params.toString()
+  return q ? `${pathname}?${q}` : pathname
+}
+
+/** replaceState mirror of the compare symbol (the ?tab= idiom). */
+export function syncVsParam(vs: string | null): void {
+  if (typeof window === 'undefined') return
+  const { pathname, search } = window.location
+  const next = vsUrl(vs, pathname, search)
+  if (next === `${pathname}${search}`) return
+  window.history.replaceState(null, '', next)
+}
+
+/** Where the last price sits in the 24h range, 0 (at the low) … 1 (at the
+ *  high); null when the range is degenerate or unknown. The header's range
+ *  bar reads this — a number, never a colour, so the bar is honest at both
+ *  ends and a flat day (high === low) draws nothing rather than "full". */
+export function rangePosition(low: number | null | undefined, high: number | null | undefined, last: number | null | undefined): number | null {
+  if (low == null || high == null || last == null) return null
+  if (!Number.isFinite(low) || !Number.isFinite(high) || !Number.isFinite(last)) return null
+  if (!(high > low)) return null
+  return Math.min(1, Math.max(0, (last - low) / (high - low)))
+}
+
+export type MarketSortKey = 'symbol' | 'last' | 'chg'
+export type MarketSortDir = 'asc' | 'desc'
+
+/** The terminal table's sort. Rows without a quote sink to the bottom on a
+ *  numeric sort in either direction (a dash is never "the cheapest"); ties
+ *  and the symbol sort keep the section's own order, which leads with the
+ *  household names. Pure — never mutates. */
+export function sortMarketRows<R extends { symbol: string }>(
+  rows: readonly R[],
+  quotes: Readonly<Record<string, { last: number; chgPct: number } | undefined>>,
+  key: MarketSortKey,
+  dir: MarketSortDir,
+): R[] {
+  const sign = dir === 'asc' ? 1 : -1
+  const indexed = rows.map((r, i) => ({ r, i }))
+  indexed.sort((a, b) => {
+    if (key === 'symbol') {
+      const c = a.r.symbol.localeCompare(b.r.symbol)
+      return c !== 0 ? c * sign : a.i - b.i
+    }
+    const qa = quotes[a.r.symbol]
+    const qb = quotes[b.r.symbol]
+    const va = qa ? (key === 'last' ? qa.last : qa.chgPct) : null
+    const vb = qb ? (key === 'last' ? qb.last : qb.chgPct) : null
+    if (va == null && vb == null) return a.i - b.i
+    if (va == null) return 1
+    if (vb == null) return -1
+    if (va === vb) return a.i - b.i
+    return (va - vb) * sign
+  })
+  return indexed.map((x) => x.r)
+}
+
+/** Which symbols strangers ask about — counted from ask text. A prompt
+ *  counts once per symbol it names ("buy $10 of AAPL then stake ETH" = one
+ *  for AAPL, one for ETH); tickers are matched as whole uppercase words or
+ *  `$AAPL`, company names through the resolver's own company map, so "buy
+ *  some apple" lands on AAPL. Only symbols in `known` count (a stray
+ *  uppercase word like "USD" never becomes a trend). Pure; the DB read that
+ *  feeds it (app/markets/trending.ts) carries the internal fence. */
+const TREND_STRIP_RE =
+  /\b(?:buy|sell|swap|send|transfer|stake|unstake|supply|withdraw|borrow|repay|bridge|deposit|dca|long|short|protect|tile|rebalance|mint|list|convert|fund|some|my|the|a|an|of|to|for|on|with|into|in|then|and|please|me|i|want|need|show|chart|worth|usd|usdc|usdg|dollars?|bucks|weekly|daily|monthly|every|week|day|month|at|stop|loss|now|from|chain|base|ethereum|arbitrum|optimism|robinhood|\d+(?:\.\d+)?%?x?|\$\d[\d.,]*[km]?)\b/gi
+
+export function trendingFromPrompts(prompts: readonly string[], known: readonly string[], limit = 8): { symbol: string; asks: number }[] {
+  const knownSet = new Set(known)
+  const counts = new Map<string, number>()
+  for (const p of prompts) {
+    if (!p) continue
+    const hit = new Set<string>()
+    for (const m of p.matchAll(/\$?\b([A-Z]{2,10})\b/g)) {
+      const s = m[1]
+      if (knownSet.has(s)) hit.add(s)
+    }
+    if (hit.size === 0) {
+      // No ticker word — try the company-name route ("buy some apple" →
+      // "apple" → AAPL): strip verbs, amounts and fillers, then resolve what
+      // is left (one to three words) the way the search box does.
+      const rest = p.replace(TREND_STRIP_RE, ' ').replace(/[^\p{L}\p{N} .&'-]/gu, ' ').replace(/\s+/g, ' ').trim()
+      const words = rest.split(' ').filter(Boolean)
+      if (words.length >= 1 && words.length <= 3) {
+        const pair = resolveTickerQuery(rest)
+        if (pair && knownSet.has(pair.symbol)) hit.add(pair.symbol)
+      }
+    }
+    for (const s of hit) counts.set(s, (counts.get(s) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([symbol, asks]) => ({ symbol, asks }))
+}
+
+/** The /markets boards' view — the heat map or the terminal list —
+ *  remembered per browser. */
+export type MarketsView = 'map' | 'list'
+export const MARKETS_VIEW_KEY = 'pantessa.markets.view'
+export const DEFAULT_MARKETS_VIEW: MarketsView = 'list'
+export function parseMarketsView(raw: string | null | undefined): MarketsView {
+  return raw === 'map' || raw === 'list' ? raw : DEFAULT_MARKETS_VIEW
+}
+
+// ── MK2 R2: the session strip (the clocks TradingView doesn't show) ─────────
+
+export interface SessionStrip {
+  /** NYSE regular session right now. */
+  nyse: { open: boolean; label: 'NYSE OPEN' | 'NYSE CLOSED'; /** minutes until the next bell (close if open, open if closed) */ minsToBell: number; bell: 'closes' | 'opens'; reopens: string | null }
+  /** Hyperliquid funding settles on the hour, every hour — minutes to the next tick. */
+  hlFundingMins: number
+  /** The one truth on the token side. */
+  tokens: 'Tokens trade 24/7'
+}
+
+/** Minutes from `now` (ET wall clock) to the next NYSE bell: the 16:00 close
+ *  while the session is open, else the next weekday's 09:30 open. Holidays
+ *  are NOT modelled (same honesty as nyseSession). Pure. */
+export function nyseMinutesToBell(now: Date = new Date()): { mins: number; bell: 'closes' | 'opens' } {
+  const { dow, h, m } = etParts(now)
+  const mins = h * 60 + m
+  const weekday = dow >= 1 && dow <= 5
+  const OPEN = 9 * 60 + 30
+  const CLOSE = 16 * 60
+  if (weekday && mins >= OPEN && mins < CLOSE) return { mins: CLOSE - mins, bell: 'closes' }
+  // Days until the next weekday open (0 = later today).
+  let days = 0
+  let d = dow
+  if (!(weekday && mins < OPEN)) {
+    do {
+      days++
+      d = (d + 1) % 7
+    } while (d === 0 || d === 6)
+  }
+  const toOpen = days === 0 ? OPEN - mins : days * 24 * 60 - mins + OPEN
+  return { mins: toOpen, bell: 'opens' }
+}
+
+/** Minutes to the top of the next UTC hour (Hyperliquid funding tick). */
+export function minutesToNextHour(now: Date = new Date()): number {
+  const m = now.getUTCMinutes()
+  return m === 0 ? 60 : 60 - m
+}
+
+export function sessionStripFor(now: Date = new Date()): SessionStrip {
+  const tape = nyseSession(now)
+  const bell = nyseMinutesToBell(now)
+  return {
+    nyse: { open: tape.open, label: tape.open ? 'NYSE OPEN' : 'NYSE CLOSED', minsToBell: bell.mins, bell: bell.bell, reopens: tape.reopens },
+    hlFundingMins: minutesToNextHour(now),
+    tokens: 'Tokens trade 24/7',
+  }
+}
+
+/** "4h 12m" / "37m" / "2d 3h" — a countdown that never says "0m" for a live bell. */
+export function fmtCountdown(mins: number): string {
+  const m = Math.max(1, Math.round(mins))
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  const rem = m % 60
+  if (h < 24) return rem ? `${h}h ${rem}m` : `${h}h`
+  const d = Math.floor(h / 24)
+  const rh = h % 24
+  return rh ? `${d}d ${rh}h` : `${d}d`
+}

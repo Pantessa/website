@@ -230,3 +230,119 @@ export const HONEST_RISKS: { title: string; body: string }[] = [
 /** The regional note, alone, for surfaces that show stocks to a stranger. */
 export const REGIONAL_NOTE =
   'Tokenized stock access is regionally gated by the issuer; the on-chain pools are permissionless. Check your eligibility before buying.'
+
+// ─────────────────────────────────────────────────────────────────────────
+//  LANDING (mk2, 2026-09-15) — the front door's words. The hero performs a
+//  rehearsal of the product; every ask below is a sentence a native layer
+//  parses (the same family the house links carry — a typed example must
+//  never dead-end when pasted).
+// ─────────────────────────────────────────────────────────────────────────
+
+/** The eyebrow over the hero claim. */
+export const LANDING_EYEBROW = 'Stocks 24/7 · perps · spot · yield · one wallet'
+
+/** The lede under the hero claim — what a TradingView user is missing. */
+export const LANDING_LEDE =
+  'A chart is a window. This one is a door: every dapp your wallet can act on a symbol through, side by side, live — and the ask compiles into one signed job. You keep the pen.'
+
+/** A rehearsal beat: the ask the hero types, the route it draws across
+ *  dapps, and how it ends. Fills are ILLUSTRATIVE and the HUD says so —
+ *  a rehearsal never impersonates a receipt. */
+export interface ReelBeat {
+  /** The symbol the chart follows for this beat (must chart). */
+  symbol: string
+  ask: string
+  legs: { venue: string; chain: string; what: string }[]
+  guard: string[]
+  ending: { kind: 'receipt' | 'armed'; line: string }
+}
+
+export const HERO_REEL: ReelBeat[] = [
+  {
+    symbol: 'ETH',
+    ask: 'Buy $50 of ETH',
+    legs: [{ venue: 'Uniswap v3', chain: 'Base', what: '50 USDC → ETH · pool-quoted' }],
+    guard: ['calldata re-decoded · target pinned', 'slippage bound · your wallet is the recipient'],
+    ending: { kind: 'receipt', line: 'signed by your wallet · receipted on-chain' },
+  },
+  {
+    symbol: 'ETH',
+    ask: 'Stake 0.05 ETH with Lido',
+    legs: [{ venue: 'Lido', chain: 'Ethereum', what: '0.05 ETH → stETH · earning' }],
+    guard: ['contract pinned · selector checked', 'gas reserve kept back'],
+    ending: { kind: 'receipt', line: 'signed by your wallet · stETH in your wallet' },
+  },
+  {
+    symbol: 'HYPE',
+    ask: '2X long $12 of HYPE, then protect my HYPE long with a 5% stop',
+    legs: [
+      { venue: 'Hyperliquid', chain: 'perps', what: '2x long · $12 · leverage set first' },
+      { venue: 'Guardian', chain: 'standing', what: 'stop 5% under entry · watched every minute' },
+    ],
+    guard: ['one job, two steps · each re-quoted at its turn', 'agent can only close · never withdraw'],
+    ending: { kind: 'armed', line: 'ARMED · runs while you sleep · non-custodial' },
+  },
+]
+
+/** The HUD's honesty stamp — a rehearsal is not a receipt. */
+export const REEL_STAMP = 'REHEARSAL · illustrative fills · the real card quotes the pool'
+
+/** "Every dapp, one chart": a venue around the symbol, its live number
+ *  (from /api/markets/routes when EXEC's route lands; the `stat` here is the
+ *  honest fallback WORD, never a fabricated figure), and the ask its chip
+ *  prefills. Chain words + asks round-trip the parsers. */
+export interface LandingVenue {
+  key: string
+  name: string
+  kind: string
+  chain: string
+  ask: string
+  /** What the live number IS, said honestly when we can't read it. */
+  stat: string
+}
+
+export const LANDING_SYMBOL = 'ETH'
+
+export const LANDING_VENUES: LandingVenue[] = [
+  { key: 'uniswap', name: 'Uniswap', kind: 'spot', chain: 'Base', ask: 'Buy $50 of ETH', stat: 'pool quote' },
+  { key: 'cow', name: 'CoW Swap', kind: 'limit', chain: 'Ethereum', ask: 'Sell $50 of ETH', stat: 'MEV-protected fill' },
+  { key: 'hyperliquid', name: 'Hyperliquid', kind: 'perp', chain: 'perps', ask: '2x long $12 of ETH', stat: 'mark · funding' },
+  { key: 'aave', name: 'Aave', kind: 'lend', chain: 'Ethereum', ask: 'Supply $50 of USDC to Aave', stat: 'supply APY' },
+  { key: 'lido', name: 'Lido', kind: 'stake', chain: 'Ethereum', ask: 'Stake 0.05 ETH with Lido', stat: 'staking APR' },
+  { key: 'near', name: 'NEAR Intents', kind: 'fund', chain: 'cross-chain', ask: 'Swap 20 USDC from base to arbitrum', stat: 'route · ETA' },
+  { key: 'robinhood', name: 'Robinhood Chain', kind: 'stock', chain: '24/7 stocks', ask: 'Buy $10 of AAPL', stat: 'AAPL · on-chain' },
+  { key: 'dca', name: 'DCA', kind: 'schedule', chain: 'standing', ask: 'DCA $10 into ETH weekly', stat: 'every UTC week' },
+]
+
+export const VENUE_BAND = {
+  eyebrow: 'EVERY DAPP, ONE CHART',
+  h2: 'One symbol. Every way your wallet can act on it.',
+  sub: 'Spot, limit, perp, lend, stake, fund, 24/7 stock, schedule — each venue live around the chart, one chip each, and a compound ask compiles into one signed job. A charting subscription shows you the window. This is the door.',
+  compound: 'Buy $50 of ETH, then stake 0.05 ETH with Lido',
+} as const
+
+export const MAP_TEASER = {
+  eyebrow: 'THE WHOLE INDEX',
+  h2: 'Every market we can trade, on one screen.',
+  cta: 'Open Markets',
+} as const
+
+export const HONESTY = {
+  eyebrow: 'RECEIPT-GRADE',
+  lead: 'Every number on this page is a signed on-chain fact or it is not on this page.',
+  labels: { moved: 'Moved, real wallets', signed: 'Signed transactions', venues: 'Venues', chains: 'Chains' },
+  note: 'Our own harness and drills are stamped internal and excluded. Unverified receipts count nothing.',
+} as const
+
+export const COMPARE_BAND = {
+  eyebrow: 'THEIR METERS · OUR ANSWER',
+  h2: 'Everything a charting subscription meters. Unlimited, free.',
+  sub: 'TradingView sells the view, one cap at a time. We earn only when a chart becomes a trade you signed — so looking is free at every tier, forever.',
+  cta: 'Their pricing page vs ours',
+} as const
+
+/** The below-fold hand-off: links + embed are the distribution story. */
+export const SHARE_BAND = {
+  eyebrow: 'SHARE A TRADE · EMBED THE CHART',
+  h2: 'A chart you post is a trade your reader signs.',
+} as const

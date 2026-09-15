@@ -1,0 +1,125 @@
+/* MK2/EXEC — multi-dapp execution surfaces: RouteTable · ExecStrip ·
+   PositionPanel · CompoundComposer. Rides the site tokens (--fg, --muted,
+   --line, --surf-1, --accent, --sell) so light and dark both come free; no
+   colour is defined only inside a theme block. Layout stays inside the
+   card's own box (no bleeds, no fixed widths) so the 375px column holds. */
+
+/* ── ExecStrip (header act row) ─────────────────────────────────────────
+   The strip keeps the page's own `sym__act*` classes (the act-strip wire);
+   the extended sides are styled by data-kind on top. `.mkt-exec__chip` is
+   the PositionPanel's exit chip. */
+.sym__act-chip[data-kind='stake'], .sym__act-chip[data-kind='lend'] { border-style: dashed; }
+.sym__act-chip[data-side='long'], .sym__act-chip[data-side='short'] { letter-spacing: 0.01em; }
+.mkt-exec__chip {
+  min-height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-2, var(--line));
+  background: transparent; color: var(--fg); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+.mkt-exec__chip:hover { border-color: var(--accent); transform: translateY(-1px); }
+.mkt-exec__chip--sell { color: var(--sell); border-color: color-mix(in oklab, var(--sell) 55%, transparent); }
+.mkt-exec__chip--sell:hover { background: color-mix(in oklab, var(--sell) 12%, transparent); border-color: var(--sell); }
+.mkt-exec__chip--neutral { color: var(--fg); }
+
+/* ── RouteTable ─────────────────────────────────────────────────────────── */
+.mkt-routes { display: flex; flex-direction: column; gap: 12px; }
+.mkt-routes__head { align-items: flex-start; }
+.mkt-routes__controls { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.mkt-routes__presets { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+.mkt-routes__filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.mkt-routes__filter {
+  min-height: 28px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--line); background: transparent;
+  color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer;
+}
+.mkt-routes__filter.is-on { color: var(--fg); border-color: var(--fg); }
+.mkt-routes__groups { display: flex; flex-direction: column; gap: 14px; }
+.mkt-routes__group { display: flex; flex-direction: column; gap: 4px; }
+.mkt-routes__kind { display: flex; align-items: baseline; gap: 10px; font-size: 10px; letter-spacing: 0.14em; color: var(--muted-2); padding: 2px 0; }
+.mkt-routes__kind-sub { letter-spacing: 0.02em; text-transform: none; color: var(--muted-2); opacity: 0.8; }
+.mkt-routes__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.mkt-route {
+  display: grid; grid-template-columns: 26px minmax(96px, 1.1fr) minmax(120px, 1.4fr) 56px auto auto; align-items: center; gap: 10px;
+  padding: 9px 0; border-bottom: 1px solid var(--line); min-width: 0;
+}
+.mkt-route.is-best { background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 10%, transparent), transparent 60%); }
+.mkt-route__mark { width: 26px; height: 26px; display: inline-grid; place-items: center; border-radius: 8px; background: var(--surf-2, var(--surf-1)); color: var(--fg); overflow: hidden; }
+.mkt-route__lettermark { font-size: 9px; letter-spacing: 0.06em; color: var(--muted); }
+.mkt-route__venue { display: flex; flex-direction: column; min-width: 0; }
+.mkt-route__name { font-size: 13px; font-weight: 600; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mkt-route__chain { font-size: 10px; letter-spacing: 0.06em; color: var(--muted-2); white-space: nowrap; }
+.mkt-route__num { display: flex; flex-direction: column; min-width: 0; }
+.mkt-route__val { font-size: 14px; font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mkt-route__val--soft { font-weight: 500; color: var(--muted); }
+.mkt-route__sub { font-size: 10.5px; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mkt-route__fee { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mkt-route__tags { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.mkt-route__tag { font-size: 9px; letter-spacing: 0.1em; padding: 2px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted-2); white-space: nowrap; }
+.mkt-route__tag--best { border-color: var(--accent); color: var(--accent); }
+.mkt-route__chip {
+  min-height: 32px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--accent); background: var(--accent); color: var(--ink, #0b1210);
+  font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; justify-self: end;
+}
+.mkt-route__chip:hover { filter: brightness(1.05); }
+.mkt-route__chip--sell { background: transparent; color: var(--sell); border-color: color-mix(in oklab, var(--sell) 55%, transparent); }
+.mkt-route__chip--sell:hover { background: color-mix(in oklab, var(--sell) 12%, transparent); border-color: var(--sell); filter: none; }
+.mkt-route--ghost > span { display: block; height: 14px; border-radius: 6px; background: var(--line); opacity: 0.6; animation: mkt-ghost 1.2s ease-in-out infinite; }
+.mkt-route--ghost .mkt-route__mark { width: 26px; height: 26px; }
+.mkt-route--ghost .mkt-route__chip { height: 32px; width: 90px; border: 0; }
+@keyframes mkt-ghost { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.7; } }
+.mkt-routes__notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.mkt-routes__notes .mkt-card__note { margin-top: 4px; }
+.mkt-routes__foot { font-size: 10.5px; color: var(--muted-2); letter-spacing: 0.02em; line-height: 1.5; }
+
+@media (max-width: 720px) {
+  .mkt-routes__head { flex-direction: column; }
+  .mkt-routes__controls { align-items: flex-start; }
+  .mkt-routes__presets { justify-content: flex-start; }
+  .mkt-route { grid-template-columns: 26px minmax(0, 1fr) auto; grid-template-areas: 'mark venue chip' 'mark num chip' 'mark meta chip'; row-gap: 3px; }
+  .mkt-route__mark { grid-area: mark; align-self: start; }
+  .mkt-route__venue { grid-area: venue; }
+  .mkt-route__num { grid-area: num; }
+  .mkt-route__fee { grid-area: meta; }
+  .mkt-route__tags { display: none; }
+  .mkt-route.is-best .mkt-route__fee::after { content: ' · best out'; color: var(--accent); }
+  .mkt-route__chip { grid-area: chip; align-self: center; }
+}
+
+/* ── PositionPanel ──────────────────────────────────────────────────────── */
+.mkt-pos { display: flex; flex-direction: column; gap: 10px; }
+.mkt-pos__pill { font-size: 11px; letter-spacing: 0.02em; color: var(--fg); padding: 5px 10px; border: 1px solid var(--line-2, var(--line)); border-radius: 999px; background: var(--surf-2, var(--surf-1)); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mkt-pos__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 20px; }
+.mkt-pos__block { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.mkt-pos__k { font-size: 10px; letter-spacing: 0.14em; color: var(--muted-2); padding-bottom: 2px; border-bottom: 1px solid var(--line); }
+.mkt-pos__row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+.mkt-pos__label { color: var(--fg); min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.mkt-pos__sub { font-size: 10.5px; color: var(--muted-2); }
+.mkt-pos__val { font-variant-numeric: tabular-nums; color: var(--fg); white-space: nowrap; font-weight: 600; }
+.mkt-pos__val.is-pos { color: var(--accent); }
+.mkt-pos__val.is-neg { color: var(--sell); }
+.mkt-pos__exits { display: flex; flex-direction: column; gap: 8px; padding-top: 6px; }
+.mkt-pos__chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ── CompoundComposer ───────────────────────────────────────────────────── */
+.mkt-compound { display: flex; flex-direction: column; gap: 12px; }
+.mkt-compound__presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.mkt-compound__legs { display: flex; flex-wrap: wrap; gap: 6px; }
+.mkt-compound__leg {
+  min-height: 32px; padding: 0 12px; border-radius: 10px; border: 1px dashed var(--line-2, var(--line)); background: transparent;
+  color: var(--muted); font-size: 12.5px; font-weight: 500; cursor: pointer;
+}
+.mkt-compound__leg.is-on { border-style: solid; border-color: var(--accent); color: var(--fg); background: color-mix(in oklab, var(--accent) 10%, transparent); }
+.mkt-compound__opts { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+.mkt-compound__opt { display: flex; align-items: center; gap: 6px; }
+.mkt-compound__plan { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.mkt-compound__step { display: grid; grid-template-columns: 26px 1fr; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); align-items: start; }
+.mkt-compound__n { width: 26px; height: 26px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); display: inline-grid; place-items: center; font-size: 11px; }
+.mkt-compound__step-label { font-size: 13px; font-weight: 600; color: var(--fg); }
+.mkt-compound__step-seg { font-size: 12px; color: var(--muted); }
+.mkt-compound__step-hint { font-size: 11px; color: var(--muted-2); line-height: 1.45; }
+.mkt-compound__step--wait .mkt-compound__n { border-style: dashed; color: var(--muted-2); }
+.mkt-compound__ask { display: flex; flex-direction: column; gap: 8px; }
+.mkt-compound__sentence { font-size: 13px; color: var(--fg); line-height: 1.5; margin: 0; }
+.mkt-compound__send {
+  align-self: flex-start; min-height: 38px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--accent);
+  background: var(--accent); color: var(--ink, #0b1210); font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.mkt-compound__send:disabled { opacity: 0.5; cursor: not-allowed; }

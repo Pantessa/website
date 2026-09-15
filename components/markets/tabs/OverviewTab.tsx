@@ -1,11 +1,12 @@
 'use client'
 
 // Overview — the symbol's numbers and the "what you can do" row. Real
-// (SHELL). Performance tiles + key stats derive client-side from the
-// existing candles proxy (the CHART lane's lib/performance.ts replaces the
-// math behind the same tiles). The "Act on X" chip row lives in the page
-// header now (SymbolPage → sym__act, above the chart) so it reads on every
-// tab; `onAsk` stays on the props for the tiles' future chips.
+// (SHELL). MK2 (2026-09-15): AI's brief LEADS (AiBrief slot), then VIZ's
+// FlowPanel (where the money lives across dapps), the performance tiles +
+// key stats, and EXEC's RouteTable (every venue a wallet can act on the
+// symbol, one chip each). Slots come from components/markets/slots/*; the
+// real components replace the stubs at integration. Every chip's ask goes
+// through the page's act door (`onAskText`).
 
 import { useEffect, useState } from 'react'
 import type { Candle, ChartPair } from '@/lib/charts'
@@ -13,6 +14,9 @@ import { stats24h } from '@/lib/markets'
 import PerformanceTiles from '@/components/markets/chart/PerformanceTiles'
 import { fmtQuotePrice } from '@/lib/markets-quotes'
 import type { TradeAsk } from '@/lib/trade-asks'
+import AiBrief from '@/components/markets/slots/AiBrief'
+import FlowPanel from '@/components/markets/slots/FlowPanel'
+import RouteTable from '@/components/markets/slots/RouteTable'
 
 async function readCandles(symbol: string, tf: '1h' | '1d'): Promise<Candle[]> {
   try {
@@ -40,12 +44,19 @@ function fmtVolume(v: number, last: number | null): string {
 export default function OverviewTab({
   symbol,
   pair,
+  onAskText,
+  last: lastProp,
 }: {
   symbol: string
   pair: ChartPair
   /** The frame's send door (kept on the contract for the tiles' future chips). */
   onAsk?: (ask: TradeAsk) => void
+  /** The act door for a bare ask string (the slots' onAsk). */
+  onAskText?: (ask: string) => void
+  /** The chart's last close (the header's stats) — EXEC sizes unit rows from it. */
+  last?: number | null
 }) {
+  const ask = onAskText ?? (() => {})
   const [daily, setDaily] = useState<Candle[] | null>(null)
   const [hourly, setHourly] = useState<Candle[] | null>(null)
 
@@ -67,7 +78,15 @@ export default function OverviewTab({
   const day = hourly ? stats24h(hourly) : null
 
   return (
-    <div className="mkt-overview">
+    <div className="mkt-overview mk-overview">
+      {/* The brief leads (AI) */}
+      <div className="mk-overview__lead">
+        <AiBrief symbol={symbol} pair={pair} onAsk={ask} />
+      </div>
+      {/* Where the money lives (VIZ) */}
+      <div className="mk-overview__flow">
+        <FlowPanel symbol={symbol} pair={pair} />
+      </div>
       {/* Performance tiles */}
       <section className="mkt-card" aria-label="Performance">
         <header className="mkt-card__head">
@@ -104,8 +123,10 @@ export default function OverviewTab({
         </dl>
       </section>
 
-      {/* The "Act on X" chips moved up into the page header (SymbolPage
-          → sym__act), above the chart, where they stay visible on every tab. */}
+      {/* Every venue, one chip each (EXEC) */}
+      <div className="mk-overview__routes">
+        <RouteTable symbol={symbol} pair={pair} onAsk={ask} last={lastProp ?? last ?? null} />
+      </div>
     </div>
   )
 }

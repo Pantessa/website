@@ -9,6 +9,24 @@ import { tokenHome } from '@/lib/token-home'
 
 export type TradeSide = 'buy' | 'sell' | 'dca' | 'protect'
 
+// ── MK2/EXEC: the honest EXTENDED side set for the header ExecStrip ────────
+// The four TradeSides above are byte-compatible (MARKETS + the ask door
+// import tradeAsks / sideOf / AMOUNTS / STOPS / CADENCES). The strip adds
+// perp long/short beside spot buy/sell for coins the venue lists, Lido stake
+// for ETH, Aave supply for listed reserves — each a parser's own phrasing,
+// each pinned through the ladder. Nothing here reaches the planner.
+export type ExecSide = TradeSide | 'long' | 'short' | 'stake' | 'supply'
+
+export interface ExecAsk {
+  side: ExecSide
+  label: string
+  ask: string
+  /** Chip colouring: sell-side chips wear the sell colour. */
+  tone: 'buy' | 'sell' | 'neutral'
+  /** The row kind the RouteTable groups it under (VenueKind). */
+  kind: 'spot' | 'perp' | 'stake' | 'lend' | 'dca' | 'protect' | 'stock'
+}
+
 export interface TradeAsk {
   side: TradeSide
   label: string
@@ -80,4 +98,91 @@ export function sideOf(text: string): TradeSide {
   if (/^\s*protect/i.test(text)) return 'protect'
   if (/^\s*(?:sell|short)/i.test(text)) return 'sell'
   return 'buy'
+}
+
+
+// ── MK2/EXEC: the header strip's honest side set ────────────────────────────
+import { fmtAskUnits } from '@/lib/chart-actions'
+import { hasAaveReserveCold, hasPerpCold } from '@/lib/symbol-venues'
+
+/** Which extended sides a pair can honestly offer, in strip order. Stocks:
+ *  Buy · Sell · DCA (4663 only). Perp charts: Long · Short · Protect.
+ *  Non-EVM homes: Long · Short (perps are the honest whole). Coins: Buy ·
+ *  Sell · Long · Short (if the venue lists a perp) · Stake (ETH) · Supply
+ *  (Aave reserve) · DCA · Protect. */
+export function execSidesFor(pair: ChartPair): ExecSide[] {
+  if (pair.source === 'robinhood') return ['buy', 'sell', 'dca']
+  if (pair.source === 'hyperliquid') return ['long', 'short', 'protect']
+  if (tokenHome(pair.symbol)) return ['long', 'short']
+  const out: ExecSide[] = ['buy', 'sell']
+  if (hasPerpCold(pair.symbol)) out.push('long', 'short')
+  if (pair.symbol === 'ETH') out.push('stake')
+  if (hasAaveReserveCold(pair.symbol)) out.push('supply')
+  out.push('dca', 'protect')
+  return out
+}
+
+/** Compose the sentence for an extended side. `last` sizes the Lido stake
+ *  in ETH units (the stake grammar reads units) — without it the stake
+ *  side is skipped by execAsks. */
+export function composeExecAsk(pair: ChartPair, side: ExecSide, opts: { usd?: number; pct?: number; cadence?: Cadence; leverage?: number; last?: number } = {}): string | null {
+  const sym = pair.symbol
+  const usd = opts.usd ?? 10
+  const lev = opts.leverage && opts.leverage > 1 ? `${opts.leverage}x ` : ''
+  switch (side) {
+    case 'long':
+      return `${lev}Long $${usd} of ${sym} on Hyperliquid`
+    case 'short':
+      return `${lev}Short $${usd} of ${sym} on Hyperliquid`
+    case 'stake': {
+      if (sym !== 'ETH' || !opts.last) return null
+      const units = fmtAskUnits(usd, opts.last)
+      return units ? `Stake ${units} ETH on Lido` : null
+    }
+    case 'supply':
+      return `Supply $${usd} of ${sym} to Aave`
+    default:
+      return composeAsk(pair, side, opts)
+  }
+}
+
+export const EXEC_SIDE_LABEL: Record<ExecSide, (pair: ChartPair) => string> = {
+  buy: (p) => `Buy ${p.symbol}`,
+  sell: (p) => `Sell ${p.symbol}`,
+  long: (p) => `Long ${p.symbol}`,
+  short: (p) => `Short ${p.symbol}`,
+  stake: () => 'Stake on Lido',
+  supply: () => 'Supply on Aave',
+  dca: () => 'DCA weekly',
+  protect: () => 'Protect with a stop',
+}
+
+const EXEC_KIND: Record<ExecSide, ExecAsk['kind']> = {
+  buy: 'spot', sell: 'spot', long: 'perp', short: 'perp', stake: 'stake', supply: 'lend', dca: 'dca', protect: 'protect',
+}
+
+/** The header strip: one default ask per extended side. A perp chart's
+ *  buy/sell ARE long/short (composeAsk already says so) — the strip lists
+ *  them once, as long/short. */
+export function execAsks(pair: ChartPair, opts: { usd?: number; last?: number; leverage?: number } = {}): ExecAsk[] {
+  const usd = opts.usd ?? 50
+  const out: ExecAsk[] = []
+  for (const side of execSidesFor(pair)) {
+    const isPerpBuy = pair.source === 'hyperliquid' && (side === 'buy' || side === 'sell')
+    const ask = composeExecAsk(pair, side, { usd: side === 'dca' ? 10 : usd, last: opts.last, leverage: side === 'long' || side === 'short' ? opts.leverage : undefined })
+    if (!ask || isPerpBuy) continue
+    const tone: ExecAsk['tone'] = side === 'sell' || side === 'short' ? 'sell' : side === 'buy' || side === 'long' ? 'buy' : 'neutral'
+    const kind = pair.source === 'robinhood' && EXEC_KIND[side] === 'spot' ? 'stock' : EXEC_KIND[side]
+    out.push({ side, label: EXEC_SIDE_LABEL[side](pair), ask, tone, kind })
+  }
+  return out
+}
+
+/** Recover the extended side from a sentence. */
+export function execSideOf(text: string): ExecSide {
+  if (/^\s*(?:\d+(?:\.\d+)?x\s+)?long\b/i.test(text)) return 'long'
+  if (/^\s*(?:\d+(?:\.\d+)?x\s+)?short\b/i.test(text)) return 'short'
+  if (/^\s*stake\b/i.test(text)) return 'stake'
+  if (/^\s*supply\b/i.test(text)) return 'supply'
+  return sideOf(text)
 }
