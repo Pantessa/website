@@ -2,7 +2,7 @@
  * The PURE replica of the chat route's native-gate ladder, shared by the
  * costless audits (audit-asks.ts replays surfaced example asks through it;
  * audit-funding.ts replays funding-chip resume strings). Mirrors
- * app/api/chat/route.ts gate ORDER (vote → aave → dca → jobs → rebalance →
+ * app/api/chat/route.ts gate ORDER (vote → chart → dca → jobs → aave → morpho → mosaic → rebalance →
  * guardian →
  * lido → hyperliquid → robinhood bridge → nft (gallery → market → build) →
  * transfer →
@@ -79,17 +79,6 @@ function simulateLadderInner(message: string): Outcome {
   const chart = parseChartAsk(message)
   if (chart) return chart.pair ? { gate: 'chart', kind: 'action', note: `${chart.pair.label} overlay` } : { gate: 'chart', kind: 'clarify', note: `${chart.symbol} chartless — refused by name` }
 
-  // Aave gates: with every free MCP active the route's set-hint passes but
-  // rival venues exist, so weak verbs fall through — replicate by requiring
-  // the explicit venue word (parseAaveSupply itself rejects rival-venue
-  // messages via its OTHER_VENUE_RE).
-  if (/\baave\b/i.test(message)) {
-    const as = parseAaveSupply(message)
-    if (as) return 'problem' in as ? { gate: 'aave-supply', kind: 'clarify', note: as.problem } : { gate: 'aave-supply', kind: 'action' }
-    const ao = parseAaveOp(message)
-    if (ao) return 'problem' in ao ? { gate: 'aave-op', kind: 'clarify', note: ao.problem } : { gate: 'aave-op', kind: 'action' }
-  }
-
   if (parseDcaRun(message)) return { gate: 'dca', kind: 'action', note: 'run chip' }
   const dc = parseDcaCreate(message)
   // A non-EVM coin (SOL/XRP/DOGE…) refuses by name in the DCA layer — no
@@ -112,6 +101,21 @@ function simulateLadderInner(message: string): Outcome {
       return { gate: 'jobs', kind: 'clarify', note: `${c.reply ?? c.clarify.question} [${c.clarify.options.map((o) => o.label).join(' | ')}]`, ...(c.clarify.options.length ? { chips: true as const } : {}) }
     }
     return { gate: 'jobs', kind: 'action', note: `${(job as { steps: unknown[] }).steps?.length ?? '?'} steps` }
+  }
+
+  // Aave gates sit BELOW the jobs compiler in the route (#595: a compound
+  // "swap …, then supply … to Aave" is a JOB; the lone-clause parsers
+  // returned aave-supply here until 2026-09-15 while the route compiled a
+  // 2-step job — MK2/EXEC found the drift pinning the compound composer).
+  // With every free MCP active the route's set-hint passes but rival venues
+  // exist, so weak verbs fall through — replicate by requiring the explicit
+  // venue word (parseAaveSupply itself rejects rival-venue messages via its
+  // OTHER_VENUE_RE).
+  if (/\baave\b/i.test(message)) {
+    const as = parseAaveSupply(message)
+    if (as) return 'problem' in as ? { gate: 'aave-supply', kind: 'clarify', note: as.problem } : { gate: 'aave-supply', kind: 'action' }
+    const ao = parseAaveOp(message)
+    if (ao) return 'problem' in ao ? { gate: 'aave-op', kind: 'clarify', note: ao.problem } : { gate: 'aave-op', kind: 'action' }
   }
 
   // Morpho sits AFTER jobs and BEFORE mosaic in the route (a single-venue
