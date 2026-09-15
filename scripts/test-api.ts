@@ -19026,7 +19026,11 @@ async function main() {
         "connect to act, wired: every ask on a symbol page (header chips, the no-chart chips, the Trade panel, chart levels, the watchlist) goes through act(), and so do the /markets watchlist's prefill chips; the spine's seats into the signed-in app open the door for a signed-out visitor, and its work poll stops for them",
         /const \{ act, door \} = useConnectToAct\(\{\s*run: runAsk,/.test(symS) &&
           /const onAsk = useCallback\(\(a: TradeAsk\) => act\(a\.ask\), \[act\]\)/.test(symS) &&
-          (symS.match(/onClick=\{sendOnClick\(/g) ?? []).length === 3 && /\{door\}/.test(symS) &&
+          // MK2 (2026-09-15): the header chips live in the ExecStrip slot now — SymbolPage keeps
+          // the two no-chart chips and hands the strip `act` itself; the stub's chips call onAsk.
+          (symS.match(/onClick=\{sendOnClick\(/g) ?? []).length === 2 && /\{door\}/.test(symS) &&
+          /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} \/>/.test(symS) &&
+          /onAsk\(ask\)/.test(await readFile('components/markets/slots/ExecStrip.tsx', 'utf8')) &&
           /else prefillAct\(ask\)/.test(railS) && /\{prefillDoor\}/.test(railS) && !/else router\.push\(promptHref\(ask\)\)/.test(railS) &&
           (spineS.match(/if \(openDoorFor\(href\)\) return/g) ?? []).length === 2 &&
           (spineS.match(/<SpineLink\b/g) ?? []).length === 5 &&
