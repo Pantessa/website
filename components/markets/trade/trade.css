@@ -4,21 +4,21 @@
    colour is defined only inside a theme block. Layout stays inside the
    card's own box (no bleeds, no fixed widths) so the 375px column holds. */
 
-/* ── ExecStrip (header act row) ─────────────────────────────────────────── */
-.mkt-exec { display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; }
-.mkt-exec__eyebrow { font-size: 9.5px; letter-spacing: 0.14em; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.mkt-exec__chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+/* ── ExecStrip (header act row) ─────────────────────────────────────────
+   The strip keeps the page's own `sym__act*` classes (the act-strip wire);
+   the extended sides are styled by data-kind on top. `.mkt-exec__chip` is
+   the PositionPanel's exit chip. */
+.sym__act-chip[data-kind='stake'], .sym__act-chip[data-kind='lend'] { border-style: dashed; }
+.sym__act-chip[data-side='long'], .sym__act-chip[data-side='short'] { letter-spacing: 0.01em; }
 .mkt-exec__chip {
   min-height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-2, var(--line));
   background: transparent; color: var(--fg); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
   transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
 }
 .mkt-exec__chip:hover { border-color: var(--accent); transform: translateY(-1px); }
-.mkt-exec__chip--buy { background: var(--accent); color: var(--ink, #0b1210); border-color: var(--accent); }
 .mkt-exec__chip--sell { color: var(--sell); border-color: color-mix(in oklab, var(--sell) 55%, transparent); }
 .mkt-exec__chip--sell:hover { background: color-mix(in oklab, var(--sell) 12%, transparent); border-color: var(--sell); }
 .mkt-exec__chip--neutral { color: var(--fg); }
-.mkt-exec__chip--stake, .mkt-exec__chip--lend { border-style: dashed; }
 
 /* ── RouteTable ─────────────────────────────────────────────────────────── */
 .mkt-routes { display: flex; flex-direction: column; gap: 12px; }
