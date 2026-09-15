@@ -20200,6 +20200,171 @@ async function main() {
   }
 
 
+  // ── MK2/EXEC ──────────────────────────────────────────────────────────────
+  // Multi-dapp execution from the chart (squad MK2, 2026-09-15): the venue
+  // map, the live routes + position APIs, the header strip, the compound
+  // composer. Every chip is a sentence that lands on a NATIVE layer through
+  // the ladder replica — a planner fall-through here is a dead chip.
+  {
+    const ethPair = chartPairFor('ETH')!
+    const aaplPair = chartPairFor('AAPL')!
+    const solPair = chartPairFor('SOL')!
+    const hypePair = chartPairFor('HYPE')!
+    const linkPair = chartPairFor('LINK')!
+    const eth = mk2VenuesFor('ETH', ethPair, { last: 2500, leverage: 2 })
+    const aapl = mk2VenuesFor('AAPL', aaplPair, { last: 230 })
+    const sol = mk2VenuesFor('SOL', solPair, { last: 100 })
+    const hype = mk2VenuesFor('HYPE', hypePair, { last: 20 })
+    const link = mk2VenuesFor('LINK', linkPair, { last: 20 })
+    const kinds = (rows: ReturnType<typeof mk2VenuesFor>) => new Set(rows.map((r) => r.kind))
+    check(
+      'MK2/EXEC venue map: ETH lists spot on Base/Ethereum/Arbitrum/Optimism, CoW limits only where a book exists (never Optimism or 4663), a leveraged perp + Guardian stop, Aave supply + a USDC borrow, Lido stake, DCA, the Spot Guardian on Base, and NEAR funding from every other chain',
+      new Set(eth.filter((r) => r.kind === 'spot').map((r) => r.chainId)).size === 4 &&
+        eth.filter((r) => r.kind === 'limit').every((r) => [8453, 1, 42161].includes(r.chainId)) && eth.some((r) => r.kind === 'limit') &&
+        eth.some((r) => r.kind === 'perp' && r.ask.startsWith('2x Long')) && eth.some((r) => r.kind === 'protect' && r.venue === 'hyperliquid' && r.needs === 'position') &&
+        eth.some((r) => r.kind === 'lend' && r.ask === 'Supply $50 of ETH to Aave') && eth.some((r) => r.kind === 'lend' && r.ask === 'Borrow 50 USDC from Aave') &&
+        eth.some((r) => r.kind === 'stake' && r.ask === 'Stake 0.02 ETH on Lido' && r.chainId === 1) && eth.some((r) => r.kind === 'dca') &&
+        eth.some((r) => r.kind === 'protect' && r.venue === 'pantessa' && r.chainId === 8453) && eth.filter((r) => r.kind === 'fund').length === 3,
+      `${eth.length} rows: ${[...kinds(eth)].join(',')}`,
+    )
+    check(
+      'MK2/EXEC venue map: a Robinhood Chain stock is stock buy/sell + DCA on 4663 + a LiFi funding job from each origin — no perp, lend, stake or limit row, and the missing kinds are NAMED',
+      [...kinds(aapl)].sort().join() === ['dca', 'fund', 'stock'].join() && aapl.every((r) => r.kind === 'fund' || r.chainId === 4663) && mk2MissingNotes('AAPL', aaplPair).length === 1,
+      [...kinds(aapl)].join(','),
+    )
+    check(
+      'MK2/EXEC venue map: a coin whose home is not an EVM chain (SOL) gets Hyperliquid perps + the Guardian only — never a spot row that could buy a Base squat; an HL chart (HYPE) the same',
+      [...kinds(sol)].sort().join() === ['perp', 'protect'].join() && [...kinds(hype)].sort().join() === ['perp', 'protect'].join() && sol.every((r) => r.venue === 'hyperliquid'),
+    )
+    const allRows = [...eth, ...aapl, ...sol, ...hype, ...link, ...mk2VenuesFor('BTC', chartPairFor('BTC')!, { last: 60000 })]
+    const dead = allRows.map((r) => ({ ask: r.ask, out: simulateLadder(r.ask) })).filter((x) => x.out.kind !== 'action')
+    check(
+      'MK2/EXEC venue map: EVERY row across ETH/AAPL/SOL/HYPE/LINK/BTC lands on a native layer through the ladder replica (never the planner, never a clarify)',
+      allRows.length >= 40 && dead.length === 0,
+      dead.length ? dead.map((d) => `${d.ask} → ${d.out.gate}/${d.out.kind}`).join(' | ') : `${allRows.length} rows native`,
+    )
+    check(
+      'MK2/EXEC venue map: without a last price the limit + stake rows are OMITTED rather than sized by a guess',
+      !mk2VenuesFor('ETH', ethPair).some((r) => r.kind === 'limit' || r.kind === 'stake'),
+    )
+
+    // The header strip (lib/trade-asks execAsks) — byte-compatible with the
+    // exports MARKETS + the ask door import.
+    const ethExec = mk2ExecAsks(ethPair, { usd: 50, last: 2500 })
+    check(
+      'MK2/EXEC ExecStrip: ETH offers Buy · Sell · Long · Short · Stake · Supply · DCA · Protect, a stock Buy · Sell · DCA, an HL chart Long · Short · Protect, SOL Long · Short — and every chip lands native',
+      mk2ExecSidesFor(ethPair).join() === ['buy', 'sell', 'long', 'short', 'stake', 'supply', 'dca', 'protect'].join() &&
+        mk2ExecSidesFor(aaplPair).join() === ['buy', 'sell', 'dca'].join() && mk2ExecSidesFor(hypePair).join() === ['long', 'short', 'protect'].join() &&
+        mk2ExecSidesFor(solPair).join() === ['long', 'short'].join() &&
+        [...ethExec, ...mk2ExecAsks(aaplPair), ...mk2ExecAsks(hypePair), ...mk2ExecAsks(solPair)].every((a) => simulateLadder(a.ask).kind === 'action'),
+      ethExec.map((a) => a.ask).join(' | '),
+    )
+    check(
+      'MK2/EXEC trade-asks stays byte-compatible: tradeAsks(ETH) still yields buy/sell/dca/protect, sideOf/AMOUNTS/STOPS/CADENCES unchanged',
+      tradeAsks(ethPair).map((a) => a.side).join() === 'buy,sell,dca,protect' && mk2SideOf('Sell $50 of ETH') === 'sell' && MK2_AMOUNTS.join() === '10,25,100' && MK2_STOPS.join() === '5,10,15' && MK2_CADENCES.join() === 'daily,weekly,monthly',
+    )
+
+    // The routes API — public, cached, fail-soft, never a 500.
+    const r1 = await fetch(`${BASE}/api/markets/routes?symbol=ETH&amount=50&last=2500&leverage=2`)
+    const j1 = (await r1.json()) as Mk2RoutesResponse & { cached?: boolean }
+    const r2 = await fetch(`${BASE}/api/markets/routes?symbol=ETH&amount=50&last=2500&leverage=2`)
+    const j2 = (await r2.json()) as Mk2RoutesResponse & { cached?: boolean }
+    check(
+      'MK2/EXEC routes API: GET /api/markets/routes?symbol=ETH answers 200 with no wallet — every row carries real feeBps (spot 20 / perp 10 / NEAR 20 / Aave+Lido 0) and a quote or null, at most one BEST OUT among spot buys, and the second read within 30s is the cache',
+      r1.status === 200 && Array.isArray(j1.routes) && j1.routes.length >= 15 &&
+        j1.routes.every((r) => typeof r.feeBps === 'number' && (r.quote === null || typeof r.quote.label === 'string')) &&
+        j1.routes.filter((r) => r.best).length <= 1 && j1.routes.filter((r) => r.best).every((r) => r.kind === 'spot' && r.side === 'buy') &&
+        j1.routes.find((r) => r.kind === 'spot')?.feeBps === 20 && j1.routes.find((r) => r.kind === 'perp')?.feeBps === 10 &&
+        j1.routes.find((r) => r.kind === 'lend')?.feeBps === 0 && j1.routes.find((r) => r.kind === 'stake')?.feeBps === 0 &&
+        r2.status === 200 && j2.cached === true,
+      `status=${r1.status} rows=${j1.routes?.length} quoted=${j1.routes?.filter((r) => r.quote).length} failed=${JSON.stringify(j1.failed)} cached2=${j2.cached}`,
+    )
+    check(
+      'MK2/EXEC routes API: a stable (USDC) is 404 by name, a malformed symbol 400, a stock answers only 4663 stock/dca/fund rows',
+      (await fetch(`${BASE}/api/markets/routes?symbol=USDC`)).status === 404 && (await fetch(`${BASE}/api/markets/routes?symbol=%3Cscript%3E`)).status === 400 &&
+        (await (await fetch(`${BASE}/api/markets/routes?symbol=AAPL&amount=25`)).json().then((b: Mk2RoutesResponse) => b.routes.every((r) => ['stock', 'dca', 'fund'].includes(r.kind)))),
+    )
+
+    // The position API — public by address, read-only, exits are sentences.
+    const burner = '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0'
+    const p1 = await fetch(`${BASE}/api/markets/position?symbol=ETH&address=${burner}`)
+    const pj = (await p1.json()) as Mk2SymbolPosition
+    check(
+      'MK2/EXEC position API: GET /api/markets/position?symbol=ETH&address= answers 200 with no session — spot per chain, perp|null, lend|null, stake|null, dca/guardian/spotGuard arrays, NAMED failed readers, and every exit chip is a native sentence; no address → 400',
+      p1.status === 200 && Array.isArray(pj.spot) && Array.isArray(pj.dca) && Array.isArray(pj.guardian) && Array.isArray(pj.spotGuard) && Array.isArray(pj.failed) &&
+        typeof pj.totalUsd === 'number' && Array.isArray(pj.exits) && pj.exits.every((e) => simulateLadder(e.ask).kind === 'action') &&
+        !p1.headers.get('set-cookie') && (await fetch(`${BASE}/api/markets/position?symbol=ETH`)).status === 400,
+      `status=${p1.status} spot=${pj.spot?.length} exits=${pj.exits?.map((e) => e.ask).join(' | ')} failed=${JSON.stringify(pj.failed)}`,
+    )
+    check(
+      'MK2/EXEC position API is read-only: POST is not a method',
+      (await fetch(`${BASE}/api/markets/position?symbol=ETH&address=${burner}`, { method: 'POST' })).status === 405,
+    )
+    const sample: Mk2SymbolPosition = {
+      symbol: 'ETH', address: burner,
+      spot: [{ chainId: 8453, chainName: 'Base', symbol: 'ETH', balance: 0.594, valueUsd: 1485 }, { chainId: 1, chainName: 'Ethereum', symbol: 'WETH', balance: 0.1, valueUsd: 250 }],
+      perp: { side: 'long', sizeUnits: 0.02, entryPx: 2400, markPx: 2500, valueUsd: 50, pnlUsd: 12.4, leverage: 2, liquidationPx: 1300 },
+      lend: { suppliedUsd: 200, suppliedLabel: '0.08 WETH', borrowedUsd: 50, borrowedLabel: 'USDC 50', healthFactor: 3.1 },
+      stake: { stEth: 0.2, usd: 500, aprPct: 2.3 }, dca: [{ id: 'd', cadence: 'weekly', buyUsd: 10, status: 'active', mode: 'confirm', chainName: 'Base' }],
+      guardian: [{ id: 'g', kind: 'stop_loss', side: 'long', triggerMode: 'price_move_pct', triggerValue: 5, status: 'active' }], spotGuard: [], exits: [], totalUsd: 0, failed: [], updatedAt: '',
+    }
+    const summary = mk2PositionSummary(sample)
+    const exits = mk2ExitChipsFor(sample, 'coinbase')
+    check(
+      'MK2/EXEC positionSummary reads like a receipt (units · dollars · chains · perp PnL · Aave · stETH · DCA · guarded), is EMPTY for an empty position, and the exits it composes all land native (sell-all per chain, close, withdraw, repay, pause DCA)',
+      summary === '0.694 ETH · $1,735 on 2 chains · long 2x +$12.40 · Aave $200 supplied · $50.00 borrowed · 0.200 stETH · DCA weekly · guarded' &&
+        mk2PositionSummary(null) === '' && mk2PositionIsEmpty({ ...sample, spot: [], perp: null, lend: null, stake: null, dca: [], guardian: [], spotGuard: [] }) &&
+        exits.length === 6 && exits.every((e) => simulateLadder(e.ask).kind === 'action') && exits.some((e) => e.ask === 'Sell all my ETH on Base') && exits.some((e) => e.ask === 'Close my ETH long on Hyperliquid'),
+      `${summary} | ${exits.map((e) => e.ask).join(' | ')}`,
+    )
+
+    // The compound composer — every emitted compound compiles to exactly its
+    // legs plus the settlement waits, every step native, and the route's
+    // ladder claims it as a job (or the lone-clause gate for a single leg).
+    const cases: [string, Mk2LegKind[], Record<string, number>][] = [
+      ['ETH', ['buy', 'stake'], {}], ['ETH', ['fund', 'buy', 'stake'], { originChainId: 1, chainId: 8453 }], ['ETH', ['buy', 'supply'], {}],
+      ['ETH', ['deposit', 'long', 'protect'], { leverage: 2 }], ['ETH', ['short', 'protect'], { leverage: 3 }], ['ETH', ['fund', 'buy', 'supply'], { usd: 100 }],
+      ['LINK', ['buy', 'supply'], {}], ['LINK', ['fund', 'buy'], { chainId: 8453 }], ['BTC', ['deposit', 'short'], {}],
+      ['SOL', ['deposit', 'long', 'protect'], { leverage: 5 }], ['HYPE', ['long', 'protect'], {}], ['AAPL', ['fund', 'buy'], {}], ['AAPL', ['fund', 'buy'], { originChainId: 42161, usd: 100 }],
+    ]
+    const compoundBad: string[] = []
+    for (const [sym, legKinds, opts] of cases) {
+      const plan = mk2ComposeCompound(sym, chartPairFor(sym)!, legKinds, opts)
+      const compiled = compileJobAskFull(plan.ask)
+      const steps = compiled && 'steps' in compiled ? compiled.steps : null
+      const lad = simulateLadder(plan.ask)
+      const ok = plan.legs.length === legKinds.length && !!steps && steps.length === plan.expectedSteps && steps.every((st) => /^native-|^wait$/.test(st.builder)) && lad.gate === 'jobs' && lad.kind === 'action'
+      if (!ok) compoundBad.push(`${sym} ${legKinds.join('→')}: "${plan.ask}" expected ${plan.expectedSteps} got ${steps ? steps.map((st) => st.builder).join('→') : JSON.stringify(compiled)} ladder ${lad.gate}/${lad.kind}`)
+    }
+    check(
+      `MK2/EXEC CompoundComposer: ${cases.length} composed compounds (bridge → buy → stake · buy → supply · deposit → 2x long → Guardian stop · fund → buy a stock …) each compile to EXACTLY legs + waits, every step native, the ladder claims them as jobs`,
+      compoundBad.length === 0,
+      compoundBad.join(' || ') || 'all compile',
+    )
+    check(
+      'MK2/EXEC CompoundComposer never offers a leg the jobs registry cannot chain: DCA and the Spot Guardian are not leg kinds; a stock chains fund → buy only; a non-EVM coin chains perp legs only; presets exist for every class',
+      !mk2LegKinds('ETH', ethPair).some((k) => (k as string) === 'dca' || (k as string) === 'spot-protect') && mk2LegKinds('AAPL', aaplPair).join() === 'fund,buy' &&
+        mk2LegKinds('SOL', solPair).join() === 'deposit,long,short,protect' && mk2Presets('ETH', ethPair).length >= 4 && mk2Presets('AAPL', aaplPair).length === 1,
+    )
+    check(
+      'MK2/EXEC CompoundComposer: an incoherent set drops the leg that cannot follow (a Guardian stop with no long, a stake for a non-ETH coin) instead of guessing',
+      mk2ComposeCompound('ETH', ethPair, ['protect']).legs.length === 0 && mk2ComposeCompound('LINK', linkPair, ['buy', 'stake']).legs.map((l) => l.kind).join() === 'buy',
+    )
+
+    // The surfaces send complete asks (data-ask on every chip) and the slot
+    // props match the README contract.
+    const rtSrc = await readFile('components/markets/trade/RouteTable.tsx', 'utf8')
+    const esSrc = await readFile('components/markets/trade/ExecStrip.tsx', 'utf8')
+    const ppSrc = await readFile('components/markets/trade/PositionPanel.tsx', 'utf8')
+    const ccSrc = await readFile('components/markets/trade/CompoundComposer.tsx', 'utf8')
+    check(
+      'MK2/EXEC surfaces: RouteTable/ExecStrip/PositionPanel/CompoundComposer each take { symbol, pair, onAsk } (PositionPanel + address?), every chip carries data-ask and SENDS through onAsk on click (never a /chat prefill link), PositionPanel re-exports positionSummary',
+      [rtSrc, esSrc, ppSrc, ccSrc].every((src) => src.includes('onAsk: (ask: string) => void') && src.includes('data-ask=') && !src.includes('/chat?prompt=')) &&
+        ppSrc.includes('address?: string') && ppSrc.includes("export { positionSummary, positionIsEmpty } from '@/lib/symbol-position'") &&
+        rtSrc.includes("fetch(`/api/markets/routes?") && ppSrc.includes('/api/markets/position?symbol='),
+    )
+  }
+
   // ── MK2/MARKETS ──────────────────────────────────────────────────────────
   // The squad-mk2 MARKETS lane (2026-09-15): the nine slot seats mounted in
   // the server HTML of both routes, the symbol header's order, the ?vs=
@@ -20624,171 +20789,6 @@ async function main() {
       'mk2/landing: the root social card is the hero — a live tape + the rehearsal HUD + the stamp; 200 image/png, real PNG',
       ogr.status === 200 && /image\/png/.test(ogr.headers.get('content-type') ?? '') && ogBuf[0] === 0x89 && ogBuf[1] === 0x50 && ogBuf.length > 20_000 &&
         /REHEARSAL/.test(ogSrc) && /candleSvg\(/.test(ogSrc) && /gemMarkSvg\(/.test(ogSrc),
-    )
-  }
-
-  // ── MK2/EXEC ──────────────────────────────────────────────────────────────
-  // Multi-dapp execution from the chart (squad MK2, 2026-09-15): the venue
-  // map, the live routes + position APIs, the header strip, the compound
-  // composer. Every chip is a sentence that lands on a NATIVE layer through
-  // the ladder replica — a planner fall-through here is a dead chip.
-  {
-    const ethPair = chartPairFor('ETH')!
-    const aaplPair = chartPairFor('AAPL')!
-    const solPair = chartPairFor('SOL')!
-    const hypePair = chartPairFor('HYPE')!
-    const linkPair = chartPairFor('LINK')!
-    const eth = mk2VenuesFor('ETH', ethPair, { last: 2500, leverage: 2 })
-    const aapl = mk2VenuesFor('AAPL', aaplPair, { last: 230 })
-    const sol = mk2VenuesFor('SOL', solPair, { last: 100 })
-    const hype = mk2VenuesFor('HYPE', hypePair, { last: 20 })
-    const link = mk2VenuesFor('LINK', linkPair, { last: 20 })
-    const kinds = (rows: ReturnType<typeof mk2VenuesFor>) => new Set(rows.map((r) => r.kind))
-    check(
-      'MK2/EXEC venue map: ETH lists spot on Base/Ethereum/Arbitrum/Optimism, CoW limits only where a book exists (never Optimism or 4663), a leveraged perp + Guardian stop, Aave supply + a USDC borrow, Lido stake, DCA, the Spot Guardian on Base, and NEAR funding from every other chain',
-      new Set(eth.filter((r) => r.kind === 'spot').map((r) => r.chainId)).size === 4 &&
-        eth.filter((r) => r.kind === 'limit').every((r) => [8453, 1, 42161].includes(r.chainId)) && eth.some((r) => r.kind === 'limit') &&
-        eth.some((r) => r.kind === 'perp' && r.ask.startsWith('2x Long')) && eth.some((r) => r.kind === 'protect' && r.venue === 'hyperliquid' && r.needs === 'position') &&
-        eth.some((r) => r.kind === 'lend' && r.ask === 'Supply $50 of ETH to Aave') && eth.some((r) => r.kind === 'lend' && r.ask === 'Borrow 50 USDC from Aave') &&
-        eth.some((r) => r.kind === 'stake' && r.ask === 'Stake 0.02 ETH on Lido' && r.chainId === 1) && eth.some((r) => r.kind === 'dca') &&
-        eth.some((r) => r.kind === 'protect' && r.venue === 'pantessa' && r.chainId === 8453) && eth.filter((r) => r.kind === 'fund').length === 3,
-      `${eth.length} rows: ${[...kinds(eth)].join(',')}`,
-    )
-    check(
-      'MK2/EXEC venue map: a Robinhood Chain stock is stock buy/sell + DCA on 4663 + a LiFi funding job from each origin — no perp, lend, stake or limit row, and the missing kinds are NAMED',
-      [...kinds(aapl)].sort().join() === ['dca', 'fund', 'stock'].join() && aapl.every((r) => r.kind === 'fund' || r.chainId === 4663) && mk2MissingNotes('AAPL', aaplPair).length === 1,
-      [...kinds(aapl)].join(','),
-    )
-    check(
-      'MK2/EXEC venue map: a coin whose home is not an EVM chain (SOL) gets Hyperliquid perps + the Guardian only — never a spot row that could buy a Base squat; an HL chart (HYPE) the same',
-      [...kinds(sol)].sort().join() === ['perp', 'protect'].join() && [...kinds(hype)].sort().join() === ['perp', 'protect'].join() && sol.every((r) => r.venue === 'hyperliquid'),
-    )
-    const allRows = [...eth, ...aapl, ...sol, ...hype, ...link, ...mk2VenuesFor('BTC', chartPairFor('BTC')!, { last: 60000 })]
-    const dead = allRows.map((r) => ({ ask: r.ask, out: simulateLadder(r.ask) })).filter((x) => x.out.kind !== 'action')
-    check(
-      'MK2/EXEC venue map: EVERY row across ETH/AAPL/SOL/HYPE/LINK/BTC lands on a native layer through the ladder replica (never the planner, never a clarify)',
-      allRows.length >= 40 && dead.length === 0,
-      dead.length ? dead.map((d) => `${d.ask} → ${d.out.gate}/${d.out.kind}`).join(' | ') : `${allRows.length} rows native`,
-    )
-    check(
-      'MK2/EXEC venue map: without a last price the limit + stake rows are OMITTED rather than sized by a guess',
-      !mk2VenuesFor('ETH', ethPair).some((r) => r.kind === 'limit' || r.kind === 'stake'),
-    )
-
-    // The header strip (lib/trade-asks execAsks) — byte-compatible with the
-    // exports MARKETS + the ask door import.
-    const ethExec = mk2ExecAsks(ethPair, { usd: 50, last: 2500 })
-    check(
-      'MK2/EXEC ExecStrip: ETH offers Buy · Sell · Long · Short · Stake · Supply · DCA · Protect, a stock Buy · Sell · DCA, an HL chart Long · Short · Protect, SOL Long · Short — and every chip lands native',
-      mk2ExecSidesFor(ethPair).join() === ['buy', 'sell', 'long', 'short', 'stake', 'supply', 'dca', 'protect'].join() &&
-        mk2ExecSidesFor(aaplPair).join() === ['buy', 'sell', 'dca'].join() && mk2ExecSidesFor(hypePair).join() === ['long', 'short', 'protect'].join() &&
-        mk2ExecSidesFor(solPair).join() === ['long', 'short'].join() &&
-        [...ethExec, ...mk2ExecAsks(aaplPair), ...mk2ExecAsks(hypePair), ...mk2ExecAsks(solPair)].every((a) => simulateLadder(a.ask).kind === 'action'),
-      ethExec.map((a) => a.ask).join(' | '),
-    )
-    check(
-      'MK2/EXEC trade-asks stays byte-compatible: tradeAsks(ETH) still yields buy/sell/dca/protect, sideOf/AMOUNTS/STOPS/CADENCES unchanged',
-      tradeAsks(ethPair).map((a) => a.side).join() === 'buy,sell,dca,protect' && mk2SideOf('Sell $50 of ETH') === 'sell' && MK2_AMOUNTS.join() === '10,25,100' && MK2_STOPS.join() === '5,10,15' && MK2_CADENCES.join() === 'daily,weekly,monthly',
-    )
-
-    // The routes API — public, cached, fail-soft, never a 500.
-    const r1 = await fetch(`${BASE}/api/markets/routes?symbol=ETH&amount=50&last=2500&leverage=2`)
-    const j1 = (await r1.json()) as Mk2RoutesResponse & { cached?: boolean }
-    const r2 = await fetch(`${BASE}/api/markets/routes?symbol=ETH&amount=50&last=2500&leverage=2`)
-    const j2 = (await r2.json()) as Mk2RoutesResponse & { cached?: boolean }
-    check(
-      'MK2/EXEC routes API: GET /api/markets/routes?symbol=ETH answers 200 with no wallet — every row carries real feeBps (spot 20 / perp 10 / NEAR 20 / Aave+Lido 0) and a quote or null, at most one BEST OUT among spot buys, and the second read within 30s is the cache',
-      r1.status === 200 && Array.isArray(j1.routes) && j1.routes.length >= 15 &&
-        j1.routes.every((r) => typeof r.feeBps === 'number' && (r.quote === null || typeof r.quote.label === 'string')) &&
-        j1.routes.filter((r) => r.best).length <= 1 && j1.routes.filter((r) => r.best).every((r) => r.kind === 'spot' && r.side === 'buy') &&
-        j1.routes.find((r) => r.kind === 'spot')?.feeBps === 20 && j1.routes.find((r) => r.kind === 'perp')?.feeBps === 10 &&
-        j1.routes.find((r) => r.kind === 'lend')?.feeBps === 0 && j1.routes.find((r) => r.kind === 'stake')?.feeBps === 0 &&
-        r2.status === 200 && j2.cached === true,
-      `status=${r1.status} rows=${j1.routes?.length} quoted=${j1.routes?.filter((r) => r.quote).length} failed=${JSON.stringify(j1.failed)} cached2=${j2.cached}`,
-    )
-    check(
-      'MK2/EXEC routes API: a stable (USDC) is 404 by name, a malformed symbol 400, a stock answers only 4663 stock/dca/fund rows',
-      (await fetch(`${BASE}/api/markets/routes?symbol=USDC`)).status === 404 && (await fetch(`${BASE}/api/markets/routes?symbol=%3Cscript%3E`)).status === 400 &&
-        (await (await fetch(`${BASE}/api/markets/routes?symbol=AAPL&amount=25`)).json().then((b: Mk2RoutesResponse) => b.routes.every((r) => ['stock', 'dca', 'fund'].includes(r.kind)))),
-    )
-
-    // The position API — public by address, read-only, exits are sentences.
-    const burner = '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0'
-    const p1 = await fetch(`${BASE}/api/markets/position?symbol=ETH&address=${burner}`)
-    const pj = (await p1.json()) as Mk2SymbolPosition
-    check(
-      'MK2/EXEC position API: GET /api/markets/position?symbol=ETH&address= answers 200 with no session — spot per chain, perp|null, lend|null, stake|null, dca/guardian/spotGuard arrays, NAMED failed readers, and every exit chip is a native sentence; no address → 400',
-      p1.status === 200 && Array.isArray(pj.spot) && Array.isArray(pj.dca) && Array.isArray(pj.guardian) && Array.isArray(pj.spotGuard) && Array.isArray(pj.failed) &&
-        typeof pj.totalUsd === 'number' && Array.isArray(pj.exits) && pj.exits.every((e) => simulateLadder(e.ask).kind === 'action') &&
-        !p1.headers.get('set-cookie') && (await fetch(`${BASE}/api/markets/position?symbol=ETH`)).status === 400,
-      `status=${p1.status} spot=${pj.spot?.length} exits=${pj.exits?.map((e) => e.ask).join(' | ')} failed=${JSON.stringify(pj.failed)}`,
-    )
-    check(
-      'MK2/EXEC position API is read-only: POST is not a method',
-      (await fetch(`${BASE}/api/markets/position?symbol=ETH&address=${burner}`, { method: 'POST' })).status === 405,
-    )
-    const sample: Mk2SymbolPosition = {
-      symbol: 'ETH', address: burner,
-      spot: [{ chainId: 8453, chainName: 'Base', symbol: 'ETH', balance: 0.594, valueUsd: 1485 }, { chainId: 1, chainName: 'Ethereum', symbol: 'WETH', balance: 0.1, valueUsd: 250 }],
-      perp: { side: 'long', sizeUnits: 0.02, entryPx: 2400, markPx: 2500, valueUsd: 50, pnlUsd: 12.4, leverage: 2, liquidationPx: 1300 },
-      lend: { suppliedUsd: 200, suppliedLabel: '0.08 WETH', borrowedUsd: 50, borrowedLabel: 'USDC 50', healthFactor: 3.1 },
-      stake: { stEth: 0.2, usd: 500, aprPct: 2.3 }, dca: [{ id: 'd', cadence: 'weekly', buyUsd: 10, status: 'active', mode: 'confirm', chainName: 'Base' }],
-      guardian: [{ id: 'g', kind: 'stop_loss', side: 'long', triggerMode: 'price_move_pct', triggerValue: 5, status: 'active' }], spotGuard: [], exits: [], totalUsd: 0, failed: [], updatedAt: '',
-    }
-    const summary = mk2PositionSummary(sample)
-    const exits = mk2ExitChipsFor(sample, 'coinbase')
-    check(
-      'MK2/EXEC positionSummary reads like a receipt (units · dollars · chains · perp PnL · Aave · stETH · DCA · guarded), is EMPTY for an empty position, and the exits it composes all land native (sell-all per chain, close, withdraw, repay, pause DCA)',
-      summary === '0.6940 ETH · $1,735 on 2 chains · long 2x +$12.40 · Aave $200 supplied · $50.00 borrowed · 0.2000 stETH · DCA weekly · guarded' &&
-        mk2PositionSummary(null) === '' && mk2PositionIsEmpty({ ...sample, spot: [], perp: null, lend: null, stake: null, dca: [], guardian: [], spotGuard: [] }) &&
-        exits.length === 6 && exits.every((e) => simulateLadder(e.ask).kind === 'action') && exits.some((e) => e.ask === 'Sell all my ETH on Base') && exits.some((e) => e.ask === 'Close my ETH long on Hyperliquid'),
-      `${summary} | ${exits.map((e) => e.ask).join(' | ')}`,
-    )
-
-    // The compound composer — every emitted compound compiles to exactly its
-    // legs plus the settlement waits, every step native, and the route's
-    // ladder claims it as a job (or the lone-clause gate for a single leg).
-    const cases: [string, Mk2LegKind[], Record<string, number>][] = [
-      ['ETH', ['buy', 'stake'], {}], ['ETH', ['fund', 'buy', 'stake'], { originChainId: 1, chainId: 8453 }], ['ETH', ['buy', 'supply'], {}],
-      ['ETH', ['deposit', 'long', 'protect'], { leverage: 2 }], ['ETH', ['short', 'protect'], { leverage: 3 }], ['ETH', ['fund', 'buy', 'supply'], { usd: 100 }],
-      ['LINK', ['buy', 'supply'], {}], ['LINK', ['fund', 'buy'], { chainId: 8453 }], ['BTC', ['deposit', 'short'], {}],
-      ['SOL', ['deposit', 'long', 'protect'], { leverage: 5 }], ['HYPE', ['long', 'protect'], {}], ['AAPL', ['fund', 'buy'], {}], ['AAPL', ['fund', 'buy'], { originChainId: 42161, usd: 100 }],
-    ]
-    const compoundBad: string[] = []
-    for (const [sym, legKinds, opts] of cases) {
-      const plan = mk2ComposeCompound(sym, chartPairFor(sym)!, legKinds, opts)
-      const compiled = compileJobAskFull(plan.ask)
-      const steps = compiled && 'steps' in compiled ? compiled.steps : null
-      const lad = simulateLadder(plan.ask)
-      const ok = plan.legs.length === legKinds.length && !!steps && steps.length === plan.expectedSteps && steps.every((st) => /^native-|^wait$/.test(st.builder)) && lad.gate === 'jobs' && lad.kind === 'action'
-      if (!ok) compoundBad.push(`${sym} ${legKinds.join('→')}: "${plan.ask}" expected ${plan.expectedSteps} got ${steps ? steps.map((st) => st.builder).join('→') : JSON.stringify(compiled)} ladder ${lad.gate}/${lad.kind}`)
-    }
-    check(
-      `MK2/EXEC CompoundComposer: ${cases.length} composed compounds (bridge → buy → stake · buy → supply · deposit → 2x long → Guardian stop · fund → buy a stock …) each compile to EXACTLY legs + waits, every step native, the ladder claims them as jobs`,
-      compoundBad.length === 0,
-      compoundBad.join(' || ') || 'all compile',
-    )
-    check(
-      'MK2/EXEC CompoundComposer never offers a leg the jobs registry cannot chain: DCA and the Spot Guardian are not leg kinds; a stock chains fund → buy only; a non-EVM coin chains perp legs only; presets exist for every class',
-      !mk2LegKinds('ETH', ethPair).some((k) => (k as string) === 'dca' || (k as string) === 'spot-protect') && mk2LegKinds('AAPL', aaplPair).join() === 'fund,buy' &&
-        mk2LegKinds('SOL', solPair).join() === 'deposit,long,short,protect' && mk2Presets('ETH', ethPair).length >= 4 && mk2Presets('AAPL', aaplPair).length === 1,
-    )
-    check(
-      'MK2/EXEC CompoundComposer: an incoherent set drops the leg that cannot follow (a Guardian stop with no long, a stake for a non-ETH coin) instead of guessing',
-      mk2ComposeCompound('ETH', ethPair, ['protect']).legs.length === 0 && mk2ComposeCompound('LINK', linkPair, ['buy', 'stake']).legs.map((l) => l.kind).join() === 'buy',
-    )
-
-    // The surfaces send complete asks (data-ask on every chip) and the slot
-    // props match the README contract.
-    const rtSrc = await readFile('components/markets/trade/RouteTable.tsx', 'utf8')
-    const esSrc = await readFile('components/markets/trade/ExecStrip.tsx', 'utf8')
-    const ppSrc = await readFile('components/markets/trade/PositionPanel.tsx', 'utf8')
-    const ccSrc = await readFile('components/markets/trade/CompoundComposer.tsx', 'utf8')
-    check(
-      'MK2/EXEC surfaces: RouteTable/ExecStrip/PositionPanel/CompoundComposer each take { symbol, pair, onAsk } (PositionPanel + address?), every chip carries data-ask and SENDS through onAsk on click (never a /chat prefill link), PositionPanel re-exports positionSummary',
-      [rtSrc, esSrc, ppSrc, ccSrc].every((src) => src.includes('onAsk: (ask: string) => void') && src.includes('data-ask=') && !src.includes('/chat?prompt=')) &&
-        ppSrc.includes('address?: string') && ppSrc.includes("export { positionSummary, positionIsEmpty } from '@/lib/symbol-position'") &&
-        rtSrc.includes("fetch(`/api/markets/routes?") && ppSrc.includes('/api/markets/position?symbol='),
     )
   }
 

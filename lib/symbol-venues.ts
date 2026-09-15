@@ -374,6 +374,8 @@ export interface RoutesResponse {
   source: ChartPair['source']
   amountUsd: number
   last: number | null
+  /** The caller passed no price; `last` came from the venue quotes. */
+  lastDerived?: true
   leverage: number | null
   routes: RouteQuote[]
   notes: string[]
