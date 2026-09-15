@@ -52,6 +52,7 @@ import { resolveToken, COW_API_BASE, buildCowOrderTypedData, cowOrderAction, bui
 import { ensureTokenList, primeTokenList } from '../lib/token-list'
 import { pairStockToken, stockChipLabel } from '../lib/stock-pairing'
 import { chartPairFor, changePct24h, aggregateCandles, parseChartAsk, isChartedStock, type Candle } from '../lib/charts'
+import { HERO_REEL } from '../lib/markets-copy'
 import { askDoorChips, askDoorHidden, askDoorNav, askDoorPillHidden, askDoorPlaceholder } from '../lib/ask-door'
 import {
   marketSections,
@@ -2207,9 +2208,12 @@ async function main() {
   // (components/typed-asks.ts) and SSR paints the full first entry, so the
   // first frame and the crawler both read a real sentence — never an empty
   // typed slot. Re-order the reel and this pin re-pins with it.
+  // Re-pinned 2026-09-15 (mk2 LANDING): the hero's reel is HERO_REEL
+  // (lib/markets-copy) — the rehearsal types its first beat's ask, SSR'd in
+  // full, so the crawler and the first frame both read a real sentence.
   check(
-    "home: hero claims the Markets line and types the reel (first ask SSR'd under the lede)",
-    homeHtml.includes('Show me the AAPL chart') && /The chart that executes\./.test(homeHtml),
+    "home: hero claims the Markets line and types the reel (first beat's ask SSR'd under the lede)",
+    homeHtml.includes(HERO_REEL[0].ask) && /The chart that executes\./.test(homeHtml),
   )
   const sitemapXml = await (await fetch(`${BASE}/sitemap.xml`)).text()
   check('sitemap: site root is listed', /<loc>https?:\/\/[^</]+\/?<\/loc>/.test(sitemapXml))
@@ -18531,9 +18535,14 @@ async function main() {
         /href="\/markets"/.test(home) && /href="\/compare"/.test(home) &&
         home.includes(HERO_LINE),
     )
+    // Re-pinned 2026-09-15 (mk2 LANDING): the compare band names the
+    // competitor in BODY copy (README §8: named on /compare and in copy,
+    // never in a lockup), and the chart engine's required license notice is
+    // on the page now that the hero mounts it. The fence is the rule-7 shape:
+    // never a heading, never an image, never an alt.
     check(
-      'markets/msg: the landing never names the competitor — TradingView is a /compare word only (rule 7)',
-      !/TradingView/.test(home),
+      'markets/msg: the landing names the competitor in body text only — never a heading, an image or an alt (rule 7)',
+      !/<h[1-6][^>]*>[^<]*TradingView/.test(home) && !/<img[^>]*TradingView/.test(home) && !/alt="[^"]*TradingView/.test(home),
     )
 
     // SEO — the sitemap lists exactly the chartable set.
@@ -20173,6 +20182,93 @@ async function main() {
       'chart tokens: MarketChart resolves the theme tokens through a computed-style + pixel readback probe (oklch() neutrals become their own hex), never the fillStyle-getter-only check that fell back to dark hexes on the light theme',
       sessSrc.includes('function colorProbe()') && sessSrc.includes('ctx.getImageData(0, 0, 1, 1)') && sessSrc.includes('getComputedStyle(span).color') &&
         !sessSrc.includes('return /^#[0-9a-f]{6}$/i.test(out) ? out : fallback'),
+    )
+  }
+
+
+  // ── MK2/LANDING ──
+  // The chart-first front door (squad mk2, 2026-09-15): a live chart that
+  // rehearses the product, every dapp around one symbol, the index map, a
+  // fenced honesty strip, their meters vs ours, then the distribution story.
+  console.log('— mk2/landing')
+  {
+    const fsMod = await import('node:fs')
+    const mc = await import('../lib/markets-copy')
+    const home = flat(await (await fetch(`${BASE}/`)).text())
+    check(
+      'mk2/landing: the page is the chart-first door in order — movers strip, hero stage, venue band, map teaser, honesty strip, compare band, share band, and the links spread + embed still below the fold',
+      ['data-movers-strip', 'data-landing-hero', 'data-landing-stage', 'data-venue-band', 'data-map-teaser', 'data-honesty-strip', 'data-compare-band', 'data-share-band', 'A link that moves money.'].every((k) => home.includes(k)) &&
+        home.indexOf('data-landing-hero') < home.indexOf('data-venue-band') &&
+        home.indexOf('data-venue-band') < home.indexOf('data-honesty-strip') &&
+        home.indexOf('data-honesty-strip') < home.indexOf('data-compare-band') &&
+        home.indexOf('data-compare-band') < home.indexOf('data-share-band'),
+    )
+    check(
+      'mk2/landing: the hero carries the claim (h1 = HERO_LINE, payoff in the gradient italic) and a rehearsal STAMPED as one — illustrative fills, never a receipt impersonated',
+      /<h1[^>]*>[^<]*<br\/?><em>[^<]*<\/em><\/h1>/.test(home) && home.replace(/<[^>]+>/g, '').includes(mc.HERO_LINE) &&
+        home.includes(mc.REEL_STAMP) && /REHEARSAL/.test(home),
+    )
+    check(
+      'mk2/landing: the venue band names every venue (≥6) with one prefill chip each (/chat?prompt=, never a fired turn) and the compound ask as one job',
+      mc.LANDING_VENUES.length >= 6 &&
+        (home.match(/data-venue="/g) ?? []).length === mc.LANDING_VENUES.length &&
+        mc.LANDING_VENUES.every((v) => home.includes(v.name) && home.includes(`/chat?prompt=${encodeURIComponent(v.ask).replace(/%20/g, '%20')}`)) &&
+        home.includes(mc.VENUE_BAND.compound),
+    )
+    check(
+      'mk2/landing: every sentence the front door types or prefills lands on a native gate (ask-ladder replica) — a rehearsal must never rehearse a dead end',
+      [...mc.HERO_REEL.map((b) => b.ask), ...mc.LANDING_VENUES.map((v) => v.ask), mc.VENUE_BAND.compound].every((a) => simulateLadder(a).kind === 'action'),
+    )
+    check(
+      'mk2/landing: every reel beat charts (chartPairFor) and every venue chain word is honest prose (no chainId literals in copy)',
+      mc.HERO_REEL.every((b) => chartPairFor(b.symbol) !== null) && mc.LANDING_VENUES.every((v) => !/^\d+$/.test(v.chain)),
+    )
+    const honSrc = fsMod.readFileSync('components/landing/HonestyStrip.tsx', 'utf8')
+    check(
+      'mk2/landing: the honesty strip reads signed money under REAL_TRAFFIC_WHERE (never the harness, never an unverified receipt) and every read composes it — no raw sum',
+      /\.\.\.REAL_TRAFFIC_WHERE/.test(honSrc) && /outcome: 'signed'/.test(honSrc) && /valueUsd: \{ gt: 0 \}/.test(honSrc) &&
+        (honSrc.match(/prisma\.embedTurn\.(aggregate|groupBy)\(/g) ?? []).length === 3 && (honSrc.match(/\bwhere\b/g) ?? []).length >= 3 &&
+        home.includes(mc.HONESTY.lead),
+    )
+    check(
+      'mk2/landing: the compare band — their top-tier cap struck under ∞ at every meter, €0, dated, CTA → /compare; named in body text only (no heading, image or alt)',
+      home.includes('data-compare-meters') && (home.match(/<s>[^<]+<\/s>/g) ?? []).length >= 5 && (home.match(/lcmp__mours">∞</g) ?? []).length === 5 &&
+        home.includes('lcmp__mours">€0<') && home.includes(mc.TV_PRICING_AS_OF_LABEL) && /href="\/compare"/.test(home) &&
+        !/<h[1-6][^>]*>[^<]*TradingView/.test(home) && !/<img[^>]*TradingView/.test(home),
+    )
+    const landingFiles = fsMod.readdirSync('components/landing').filter((f) => f.endsWith('.tsx')).map((f) => `components/landing/${f}`)
+    const bareShell = /<Link\s(?:[^>]*?\s)?href=(?:"\/(?:chat|markets)[?"/]|"\/t\/|\{`\/(?:chat|markets|t\/)|\{(?:chatPrefill|promptHref)\()/
+    check(
+      'mk2/landing: no bare <Link> into the shell from components/landing/* — every door is a SpineLink or the connect-to-act door (the ask door with send:true, never a push to /chat)',
+      landingFiles.length >= 6 && landingFiles.every((p) => !bareShell.test(fsMod.readFileSync(p, 'utf8'))) &&
+        /useConnectToAct\(\{/.test(fsMod.readFileSync('components/landing/LandingHero.tsx', 'utf8')) &&
+        /openDoor\(ask, \{ send: true \}\)/.test(fsMod.readFileSync('components/landing/LandingHero.tsx', 'utf8')),
+    )
+    const ld = [...home.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map((m) => m[1])
+    let ldOk = false
+    try {
+      const parsed = ld.flatMap((j) => JSON.parse(j) as { '@type': string }[])
+      const types = new Set(parsed.map((x) => x['@type']))
+      ldOk = types.has('WebSite') && types.has('SoftwareApplication') && types.has('VideoObject')
+    } catch { ldOk = false }
+    check('mk2/landing: the JSON-LD still parses — WebSite + SoftwareApplication + VideoObject', ldOk)
+    const counts = (home.match(/data-index-counts="true">([\s\S]*?)<\/div>/) ?? [])[1] ?? ''
+    const nums = [...counts.matchAll(/<b>(\d+)<\/b>/g)].map((m) => Number(m[1]))
+    check(
+      'mk2/landing: the index counts are computed from marketSections (≥150 stocks, ≥20 coins, ≥3 perps), never typed',
+      nums.length === 3 && nums[0] >= 150 && nums[1] >= 20 && nums[2] >= 3 && !/<\/b>[a-z]/.test(counts),
+    )
+    check(
+      'mk2/landing: IntentMachine + NightShift are off the page (trimmed, not deleted — the files stay for later)',
+      !/class="mach\b/.test(home) && !/class="night\b/.test(home) && fsMod.existsSync('components/IntentMachine.tsx') && fsMod.existsSync('components/NightShift.tsx'),
+    )
+    const ogr = await fetch(`${BASE}/opengraph-image`)
+    const ogBuf = new Uint8Array(await ogr.arrayBuffer())
+    const ogSrc = fsMod.readFileSync('app/opengraph-image.tsx', 'utf8')
+    check(
+      'mk2/landing: the root social card is the hero — a live tape + the rehearsal HUD + the stamp; 200 image/png, real PNG',
+      ogr.status === 200 && /image\/png/.test(ogr.headers.get('content-type') ?? '') && ogBuf[0] === 0x89 && ogBuf[1] === 0x50 && ogBuf.length > 20_000 &&
+        /REHEARSAL/.test(ogSrc) && /candleSvg\(/.test(ogSrc) && /gemMarkSvg\(/.test(ogSrc),
     )
   }
 

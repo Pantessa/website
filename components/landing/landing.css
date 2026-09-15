@@ -42,7 +42,7 @@
 .lh__live { font-size: 9.5px; letter-spacing: .14em; color: var(--accent); }
 .lh__chart { position: relative; }
 .lh__chart .mkt-chart { padding: 8px 8px 0; }
-.lh__hud { position: absolute; left: 14px; top: 14px; z-index: 5; width: min(360px, calc(100% - 28px)); pointer-events: none; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 14px; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(10px); padding: 12px 14px; box-shadow: 0 14px 40px -20px rgba(0,0,0,.6); }
+.lh__hud { position: absolute; left: 14px; bottom: 58px; z-index: 5; width: min(360px, calc(100% - 28px)); pointer-events: none; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 14px; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(10px); padding: 12px 14px; box-shadow: 0 14px 40px -20px rgba(0,0,0,.6); }
 .lh__hudask { font-family: var(--font-serif); font-size: 16px; line-height: 1.3; color: var(--fg); min-height: 1.3em; letter-spacing: -.01em; }
 .lh__hudask .lh__caret { height: .9em; }
 .lh__legs { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -74,7 +74,7 @@
 }
 @media (max-width: 640px) {
   .lh { padding-top: 28px; }
-  .lh__hud { left: 10px; top: 10px; width: calc(100% - 20px); padding: 10px 12px; }
+  .lh__hud { left: 10px; bottom: 52px; width: calc(100% - 20px); padding: 10px 12px; }
   .lh__hudask { font-size: 14px; }
   .lh__guard { display: none; }
 }

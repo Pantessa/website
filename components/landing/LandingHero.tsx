@@ -47,6 +47,11 @@ function useReel(reduce: boolean): ReelState {
       ? { beat: last, phase: 'end', typed: HERO_REEL[last].ask.length, legs: HERO_REEL[last].legs.length, guards: HERO_REEL[last].guard.length }
       : { beat: 0, phase: 'typing', typed: 0, legs: 0, guards: 0 },
   )
+  // The preference is read after mount (SSR can't know it): when it flips
+  // on, park on the last beat, complete and still — never mid-typing.
+  useEffect(() => {
+    if (reduce) setS({ beat: last, phase: 'end', typed: HERO_REEL[last].ask.length, legs: HERO_REEL[last].legs.length, guards: HERO_REEL[last].guard.length })
+  }, [reduce, last])
   useEffect(() => {
     if (reduce) return
     const b = HERO_REEL[s.beat]
@@ -111,6 +116,13 @@ function Hud({ beat, state }: { beat: ReelBeat; state: ReelState }) {
   )
 }
 
+// The payoff word wears the site's gradient italic: "The chart" / "that
+// executes." — split on the first " that ", the string itself untouched
+// (HOME_TITLE pins it; the SSR h1 text is still the full line).
+const HERO_SPLIT = HERO_LINE.match(/^(.+?) (that .+)$/)
+const heroLead = HERO_SPLIT ? HERO_SPLIT[1] : ''
+const heroTail = HERO_SPLIT ? HERO_SPLIT[2] : HERO_LINE
+
 export default function LandingHero() {
   const [reduce, setReduce] = useState(false)
   useEffect(() => setReduce(matchMedia('(prefers-reduced-motion: reduce)').matches), [])
@@ -135,7 +147,7 @@ export default function LandingHero() {
       <div className="lh__in">
         <div className="lh__copy">
           <div className="lh__eyebrow mono">{LANDING_EYEBROW}</div>
-          <h1 className="lh__h1">{HERO_LINE}</h1>
+          <h1 className="lh__h1">{heroLead ? `${heroLead} ` : ''}{heroLead && <br />}<em>{heroTail}</em></h1>
           <p className="lh__lede">{LANDING_LEDE}</p>
           <div className="lh__ctas">
             <SpineLink className="btn btn--solid" href="/markets">

@@ -30,7 +30,7 @@ export default function VenueBand() {
         const r = await fetch(`/api/quotes?symbols=${LANDING_SYMBOL}`)
         const j = await r.json()
         const q = j?.quotes?.[LANDING_SYMBOL]
-        if (!dead && q && typeof q.last === 'number') setPx({ last: q.last, chg: typeof q.chg24h === 'number' ? q.chg24h : typeof q.changePct === 'number' ? q.changePct : null })
+        if (!dead && q && typeof q.last === 'number') setPx({ last: q.last, chg: typeof q.chgPct === 'number' ? q.chgPct : null })
       } catch { /* the word stays */ }
     }
     const readRoutes = async () => {

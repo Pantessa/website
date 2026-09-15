@@ -27,9 +27,9 @@ export default function MarketMapTeaser() {
           <h2 className="lmap__h2">{MAP_TEASER.h2}</h2>
         </div>
         <div className="lmap__counts mono" data-index-counts>
-          <span><b>{counts.stocks}</b>stocks · 24/7</span>
-          <span><b>{counts.coins}</b>coins</span>
-          <span><b>{counts.perps}</b>perps</span>
+          <span><b>{counts.stocks}</b>{' '}stocks · 24/7</span>
+          <span><b>{counts.coins}</b>{' '}coins</span>
+          <span><b>{counts.perps}</b>{' '}perps</span>
         </div>
       </div>
       <div className="lmap__map">
