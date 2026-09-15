@@ -83,7 +83,29 @@ export function mapItems(sections: readonly MarketSection[], quotes: Readonly<Re
     }
     return { symbol: r.symbol, name: r.name, section: r.section, last: q?.last ?? null, chgPct: q?.chgPct ?? null, weight: Math.max(weight, 1e-9) }
   })
+  // The All map mixes volume bases (a stock's last NYSE session vs a coin's
+  // 24h on Coinbase vs a perp's on Hyperliquid), so on 'all' each section is
+  // normalised to the same average cell: within a section, size still follows
+  // volume; across sections, a section's area is its share of the listing.
+  // The foot says so. (The un-normalised cross-basis map is the alternative.)
+  if (filter === 'all' && sizing === 'volume') normalizeBySection(items)
   return { items, sizing, unquoted, medianSized }
+}
+
+/** Scale each section's weights so its mean weight is 1 (mutates in place). */
+export function normalizeBySection(items: MapItem[]): void {
+  const sum = new Map<MarketSectionId, { total: number; n: number }>()
+  for (const i of items) {
+    const s = sum.get(i.section) ?? { total: 0, n: 0 }
+    s.total += i.weight
+    s.n += 1
+    sum.set(i.section, s)
+  }
+  for (const i of items) {
+    const s = sum.get(i.section)!
+    const mean = s.total / s.n
+    i.weight = mean > 0 ? i.weight / mean : 1
+  }
 }
 
 /** Squarified treemap (Bruls et al.) — rows of near-square cells, largest

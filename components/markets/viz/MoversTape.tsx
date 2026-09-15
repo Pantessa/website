@@ -4,11 +4,12 @@
 // section, a marquee that pauses on hover/focus, click opens the symbol.
 // Reduced-motion viewers get a scrollable row instead of a marquee.
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { marketSections } from '@/lib/markets'
 import { useQuotes } from '@/lib/markets-quotes'
 import { fmtPrice } from '@/lib/markets-look'
 import Delta from './Delta'
+import Sparkline from './Sparkline'
 import { rankMovers } from '@/lib/viz/movers'
 
 export { rankMovers }
@@ -26,7 +27,25 @@ export default function MoversTape({ onOpen, count = 8, className = '' }: Movers
   const { quotes, live } = useQuotes(symbols)
   const rows = useMemo(() => symbols.map((s) => ({ symbol: s, last: quotes[s]?.last ?? null, chgPct: quotes[s]?.chgPct ?? null })), [symbols, quotes])
   const { gainers, losers } = useMemo(() => rankMovers(rows, count), [rows, count])
-  const items = [...gainers, ...losers]
+  const items = useMemo(() => [...gainers, ...losers], [gainers, losers])
+  // 7-day sparklines for the movers on the tape (one batched read, 10-min server cache).
+  const [sparks, setSparks] = useState<Record<string, number[]>>({})
+  const sparkKey = items.map((r) => r.symbol).join(',')
+  useEffect(() => {
+    if (!sparkKey) return
+    let alive = true
+    fetch(`/api/markets/viz/sparks?symbols=${encodeURIComponent(sparkKey)}`, { cache: 'no-store' })
+      .then(async (r) => (r.ok ? ((await r.json()) as { sparks?: Record<string, number[]> }) : null))
+      .then((body) => {
+        if (alive && body?.sparks) setSparks((prev) => ({ ...prev, ...body.sparks }))
+      })
+      .catch(() => {
+        /* the tape reads fine without a sparkline */
+      })
+    return () => {
+      alive = false
+    }
+  }, [sparkKey])
   if (!items.length) {
     return (
       <div className={`mk-tape ${className}`.trim()}>
@@ -46,6 +65,7 @@ export default function MoversTape({ onOpen, count = 8, className = '' }: Movers
               <span className="mk-tape__sym">{r.symbol}</span>
               <span className="mk-tape__px">{r.last != null ? fmtPrice(r.last) : '—'}</span>
               <Delta pct={r.chgPct} />
+              {sparks[r.symbol] ? <Sparkline values={sparks[r.symbol]} width={44} height={14} strokeWidth={1.25} title={`${r.symbol} 7 days`} /> : null}
             </button>
             <span className="mk-tape__sep" aria-hidden="true" />
           </span>

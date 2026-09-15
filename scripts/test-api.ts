@@ -50,6 +50,8 @@ import { cellFill, mapItems, polarity, squarify, marketMapLayout, labelTier } fr
 import { readFlow as vizReadFlow, FLOW_TTL_MS } from '../lib/viz/flow'
 import { usdOf } from '../lib/viz/flow-readers'
 import { rankMovers } from '../lib/viz/movers'
+import { profileBins } from '../components/markets/chart/volume-profile'
+import { cleanSparkSymbols, SPARKS_MAX_SYMBOLS } from '../lib/viz/sparks'
 import { marketSections as vizMarketSections } from '../lib/markets'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
@@ -20436,6 +20438,21 @@ async function main() {
         JSON.stringify(layout.cells) === JSON.stringify(marketMapLayout(sections, noVolQuotes, 'all', W, H).cells),
       `cells=${cells.length} overlaps=${overlaps} coverage=${((area / (W * H)) * 100).toFixed(1)}%`,
     )
+    const allVol = mapItems(sections, Object.fromEntries(allSyms.map((s, i) => [s, { last: 10, chgPct: 0, volumeUsd: 1000 + i * 1000 }])), 'all')
+    const meanOf = (sec: string) => {
+      const xs = allVol.items.filter((i) => i.section === sec).map((i) => i.weight)
+      return xs.reduce((a, b) => a + b, 0) / xs.length
+    }
+    const cryptoOnly = mapItems(sections, Object.fromEntries(allSyms.map((s, i) => [s, { last: 10, chgPct: 0, volumeUsd: 1000 + i * 1000 }])), 'crypto')
+    check(
+      'market map: the All map normalises per section (each board\'s MEAN cell weight is 1, so a board\'s area is its share of the listing; within a board size still follows volume) while a single-section map keeps raw volume',
+      allVol.sizing === 'volume' && ['equities', 'crypto', 'perps'].every((sec) => Math.abs(meanOf(sec) - 1) < 1e-9) &&
+        (() => {
+          const eq = allVol.items.filter((i) => i.section === 'equities')
+          return eq.length > 1 && eq[eq.length - 1].weight > eq[0].weight
+        })() &&
+        cryptoOnly.items.every((i) => i.weight >= 1000),
+    )
     check(
       'market map: color is a diverging up/down mix toward the surface at zero (never a hue at the midpoint), clamped at ±5%; labels drop below a legible cell',
       polarity(0) === 0 && polarity(null) === 0 && polarity(50) === 1 && polarity(-50) === -1 && polarity(2.5) === 0.5 &&
@@ -20496,13 +20513,14 @@ async function main() {
     )
     const noSym = await fetch(`${BASE}/api/markets/viz/flow`)
     const badSym = await fetch(`${BASE}/api/markets/viz/flow?symbol=${encodeURIComponent('../etc')}`)
+    const strangerSym = await fetch(`${BASE}/api/markets/viz/flow?symbol=ZZZZQ`)
     type FlowBody = { symbol?: string; sources?: { id: string; usd: number | null; gap?: string; venue: string; measure: string }[]; cached?: boolean; error?: string }
     const ethFlow = (await (await fetch(`${BASE}/api/markets/viz/flow?symbol=eth`)).json()) as FlowBody
     const ethFlow2 = (await (await fetch(`${BASE}/api/markets/viz/flow?symbol=ETH`)).json()) as FlowBody
     const ethSources = ethFlow.sources ?? []
     check(
-      'viz flow route: 400 without a symbol (and for junk), 200 for ETH with every source carrying either a number or a gap (never a bare null, never a zero from a failed read), the symbol upper-cased, and the second read cached',
-      noSym.status === 400 && badSym.status === 400 && ethFlow.symbol === 'ETH' && Array.isArray(ethFlow.sources) &&
+      'viz flow route: 400 without a symbol (and for junk), 404 for a ticker the index does not list (no reader fan-out for strangers), 200 for ETH with every source carrying either a number or a gap (never a bare null, never a zero from a failed read), the symbol upper-cased, and the second read cached',
+      noSym.status === 400 && badSym.status === 400 && strangerSym.status === 404 && ethFlow.symbol === 'ETH' && Array.isArray(ethFlow.sources) &&
         ethSources.every((s) => (typeof s.usd === 'number' && Number.isFinite(s.usd)) || (s.usd === null && typeof s.gap === 'string' && s.gap.length > 0)) &&
         ethSources.every((s) => s.venue && s.measure) && ethFlow2.cached === true,
       `sources=${ethSources.map((s) => `${s.id}${s.usd == null ? '(gap)' : ''}`).join(',') || '-'} error=${ethFlow.error ?? '-'}`,
@@ -20516,6 +20534,11 @@ async function main() {
     // The chart engine wiring (the pixels are in the PR's browser drive).
     const mcSrc = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
     const mountSrc = await readFile('components/markets/chart/ChartMount.tsx', 'utf8')
+    const perfSrc = await readFile('components/markets/chart/PerformanceTiles.tsx', 'utf8')
+    check(
+      'viz chart: PerformanceTiles keys its candles effect on the resolved SYMBOL, never on the fresh chartPairFor() object (the ~500 req/s loop on /t/ Overview)',
+      perfSrc.includes('}, [pairSymbol])') && !perfSrc.includes('}, [pair])'),
+    )
     check(
       'viz chart: MarketChart imports look.css, reads --mk-up/--mk-down (falling back to --accent/--sell), --mk-grid and --mk-crosshair through the probe, paints candle bodies in the up/down inks with quiet wicks (WICK_ALPHA), and no paint site still reads tokens.accent/tokens.sell',
       mcSrc.includes("import '@/components/markets/look.css'") && mcSrc.includes("up: get('--mk-up', get('--accent', '#3ecf8e'))") && mcSrc.includes("down: get('--mk-down', get('--sell', '#e5484d'))") &&
@@ -20528,6 +20551,38 @@ async function main() {
       mountSrc.includes('onViewport?: (v: { from: number; to: number; tf: ChartTf }) => void') && mountSrc.includes('onViewport={onViewport}') &&
         mcSrc.includes('onViewport?: (v: { from: number; to: number; tf: ChartTf }) => void') && mcSrc.includes('emitViewport(clamped ?? view)') && mcSrc.includes('requestAnimationFrame(() => {') &&
         mcSrc.includes('onViewportRef.current({ from: bars[lo].t, to: bars[hi].t, tf: tfRef.current })'),
+    )
+    // Volume profile: pure binning of the visible bars by price.
+    const vpBars = Array.from({ length: 40 }, (_, i) => ({ t: 1_700_000_000 + i * 3600, o: 100 + (i % 5), h: 102 + (i % 5), l: 99 + (i % 5), c: 101 + (i % 5), v: i === 7 ? 1000 : 10 }))
+    const vp = profileBins(vpBars, 0, 39, 12)
+    const vpVol = vp.bins.reduce((a, b) => a + b.vol, 0)
+    check(
+      'viz chart: the volume profile bins the VISIBLE bars\' volume by price (a bar spreads over the bins its range covers), conserves total volume, names the point of control, and is empty off-range',
+      vp.bins.length === 12 && Math.abs(vpVol - vpBars.reduce((a, b) => a + b.v, 0)) < 1e-6 && vp.poc >= 0 && vp.bins[vp.poc].vol === vp.max &&
+        vp.bins.every((b) => b.up >= 0 && b.up <= 1) && profileBins(vpBars, 50, 60).bins.length === 0 && profileBins([], 0, 1).bins.length === 0,
+      `bins=${vp.bins.length} poc=${vp.poc} total=${vpVol}`,
+    )
+    check(
+      'viz chart: MarketChart attaches the VolumeProfile primitive on the candle series, feeds it the held bars only while the VP overlay is lit (off when the feed carries no volume), and the symbol page opens with it; the compare line rides the LEFT scale in percentage mode with the series-2 ink and is named in the foot',
+      mcSrc.includes('candleSeries.attachPrimitive(vp)') && mcSrc.includes("vpRef.current?.update(overlays.has('vp') && hasVolume(bars) ? bars : []") &&
+        (await readFile('lib/chart-indicators.ts', 'utf8')).includes("['sma50', 'sma200', 'vp']") &&
+        mcSrc.includes("priceScaleId: 'left'") && mcSrc.includes('mode: PriceScaleMode.Percentage') && mcSrc.includes("compare: get('--mk-series-2'") && mcSrc.includes('% since the first bar on screen (left scale)') &&
+        mountSrc.includes('compare={compare}'),
+    )
+    // Sparks: the batched 7d read.
+    const sp = cleanSparkSymbols(['aapl', 'ETH', 'weth', 'ZZZZQ', 'AAPL'])
+    check(
+      'viz sparks: symbols are resolver-cleared, aliases collapse (weth → ETH), duplicates drop, junk is listed, the batch is capped',
+      sp.symbols.join(',') === 'AAPL,ETH' && sp.junk.join(',') === 'ZZZZQ' && SPARKS_MAX_SYMBOLS === 60 && cleanSparkSymbols(Array.from({ length: 80 }, () => 'ETH')).symbols.length === 1,
+    )
+    type SparksBody = { sparks?: Record<string, number[]>; missing?: string[]; junk?: string[]; error?: string }
+    const sparks = (await (await fetch(`${BASE}/api/markets/viz/sparks?symbols=AAPL,ETH,HYPE,zzzq`)).json()) as SparksBody
+    const sparkVals = Object.values(sparks.sparks ?? {})
+    check(
+      'viz sparks route: AAPL + ETH + HYPE each answer 2–8 finite daily closes (or are named in missing when a feed is down), junk is named, nothing 500s',
+      sparks.junk?.join(',') === 'zzzq' && Array.isArray(sparks.missing) && sparkVals.every((v) => v.length >= 2 && v.length <= 8 && v.every((n) => Number.isFinite(n) && n > 0)) &&
+        (sparks.error === 'reader unavailable' || ['AAPL', 'ETH', 'HYPE'].every((s) => sparks.sparks?.[s] || sparks.missing?.includes(s))),
+      `got=${Object.keys(sparks.sparks ?? {}).join(',')} missing=${sparks.missing?.join(',') || '-'}`,
     )
     const primitives = ['Sparkline', 'Delta', 'StatTile', 'MiniGauge', 'Bars', 'Ribbon', 'MarketMap', 'FlowPanel', 'MoversTape']
     const barrel = await readFile('components/markets/viz/index.ts', 'utf8')
