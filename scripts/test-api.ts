@@ -20150,7 +20150,7 @@ async function main() {
     check(
       'chart sessions: MarketChart computes sessions only where they apply, quiets extended-hours candles and volume, hands the runs to a bottom-layer SessionBands primitive, paints candles above the moving averages, names the shading in the chart foot, and --chart-session is defined for both themes',
       sessSrc.includes('sessionsApply(pair?.source, tf) ? bars.map((c) => equitySession(c.t, FRAME_SEC[tf]))') &&
-        sessSrc.includes('alpha(c.c >= c.o ? tokens.accent : tokens.sell, QUIET_CANDLE_ALPHA)') &&
+        sessSrc.includes('alpha(c.c >= c.o ? tokens.up : tokens.down, QUIET_CANDLE_ALPHA)') &&
         sessSrc.includes('candleSeries.attachPrimitive(bands)') &&
         sessSrc.includes('bandsRef.current?.update(sessions ? extendedRuns(sessions) : [], tokens.session)') &&
         sessSrc.includes('cs.setSeriesOrder(top)') &&
