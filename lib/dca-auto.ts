@@ -255,6 +255,10 @@ export interface AutoBuyGuardInput {
   chain: { chainId: number; swapRouter02: string; usdcAddress: string }
   /** The buy token's resolved address on this chain (from the official list). */
   expectedBuyAddr: string
+  /** The schedule buys native ETH (lib/chains buysNativeEth on the
+   *  schedule's own token): the output must be UNWRAPPED to the owner. False
+   *  = an ERC-20 schedule, where an unwrap delivers the wrong asset. */
+  nativeOut: boolean
   /** The txChain steps the venue builder produced ({to, data, value}). */
   steps: Array<{ to: string; data: string; value: string }>
   /** The exact atomic USDC the sweep pulled (== permission.allowance). */
@@ -265,7 +269,7 @@ export interface AutoBuyGuardInput {
 const check = (id: string, ok: boolean, note: string): GuardrailCheck => ({ id, level: 'block', ok, note })
 
 export function guardAutoBuy(input: AutoBuyGuardInput): { ok: boolean; checks: GuardrailCheck[] } {
-  const { schedule, permission, ownerWallet, spender, chain, expectedBuyAddr, steps, pulledAtomic, nowSec } = input
+  const { schedule, permission, ownerWallet, spender, chain, expectedBuyAddr, nativeOut, steps, pulledAtomic, nowSec } = input
   const checks: GuardrailCheck[] = []
   const owner = ownerWallet.toLowerCase()
 
@@ -340,16 +344,28 @@ export function guardAutoBuy(input: AutoBuyGuardInput): { ok: boolean; checks: G
             let recipientOk = false
             let recipientNote = ''
             if (calls.length === 2) {
-              // Fee build: output parks on the router, sweepTokenWithFee pays
-              // the OWNER minus the visible treasury bps.
-              const sweep = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[1] })
-              if (sweep.functionName === 'sweepTokenWithFee') {
-                const [sweepToken, , sweepRecipient] = sweep.args as [string, bigint, string, bigint, string]
-                recipientOk = p.recipient.toLowerCase() === ADDRESS_THIS.toLowerCase() && sweepRecipient.toLowerCase() === owner && sweepToken.toLowerCase() === expectedBuyAddr.toLowerCase()
+              // Output parks on the router. An ERC-20 schedule: sweepTokenWithFee
+              // pays the OWNER minus the visible treasury bps. A native-ETH
+              // schedule: unwrapWETH9WithFee (or unwrapWETH9, fee off) pays the
+              // owner in ETH. Either shape on the wrong schedule delivers the
+              // wrong asset and refuses.
+              const payout = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[1] })
+              const parked = p.recipient.toLowerCase() === ADDRESS_THIS.toLowerCase()
+              if (nativeOut && (payout.functionName === 'unwrapWETH9WithFee' || payout.functionName === 'unwrapWETH9')) {
+                const [, unwrapRecipient] = payout.args as readonly [bigint, string, ...unknown[]]
+                recipientOk = parked && unwrapRecipient.toLowerCase() === owner
+                recipientNote = recipientOk ? '' : ` Unwrap pays ${unwrapRecipient} — not the schedule owner.`
+              } else if (!nativeOut && payout.functionName === 'sweepTokenWithFee') {
+                const [sweepToken, , sweepRecipient] = payout.args as [string, bigint, string, bigint, string]
+                recipientOk = parked && sweepRecipient.toLowerCase() === owner && sweepToken.toLowerCase() === expectedBuyAddr.toLowerCase()
                 recipientNote = recipientOk ? '' : ` Sweep pays ${sweepRecipient} — not the schedule owner.`
               } else {
-                recipientNote = ` Second call is ${sweep.functionName}, not sweepTokenWithFee.`
+                recipientNote = nativeOut
+                  ? ` Second call is ${payout.functionName}, not an unwrap to native ETH — the schedule buys ETH.`
+                  : ` Second call is ${payout.functionName}, not sweepTokenWithFee.`
               }
+            } else if (nativeOut) {
+              recipientNote = ' A direct payout delivers WETH — the schedule buys native ETH.'
             } else {
               recipientOk = p.recipient.toLowerCase() === owner
               recipientNote = recipientOk ? '' : ` Swap pays ${p.recipient} — not the schedule owner.`

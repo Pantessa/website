@@ -10,6 +10,10 @@
 // a panel at the foot of this tab, where nobody saw it). Connect to act,
 // sign in to keep (rule 6). The wallet signature is the only gate; the panel
 // itself never touches funds.
+//
+// The Sell side shows only while the connected wallet holds the symbol
+// (lib/sell-gate, 2026-09-16): nothing to sell, no Sell. A perp's Short is
+// not a sell of a held token and stays.
 
 import { useMemo, useState } from 'react'
 import type { ChartPair } from '@/lib/charts'
@@ -19,6 +23,8 @@ import CompoundComposer from '@/components/markets/slots/CompoundComposer'
 import PositionPanel from '@/components/markets/slots/PositionPanel'
 import { useSession } from '@/lib/session'
 import { AMOUNTS, SIDE_LABEL, STOPS, composeAsk, sideOf, sidesFor, type TradeAsk, type TradeSide } from '@/lib/trade-asks'
+import { canSellAsk } from '@/lib/sell-gate'
+import { useHeld } from '@/lib/use-held'
 
 // The grammar (sides a pair can offer, the sentence per side, the default
 // chip row) lives in lib/trade-asks — pure, shared with the header strip,
@@ -43,8 +49,14 @@ export default function TradeTab({
 }) {
   const askText = onAskText ?? ((a: string) => onAsk?.({ side: sideOf(a), label: a, ask: a }))
   const { walletAddress } = useSession()
-  const sides = useMemo(() => sidesFor(pair), [pair])
-  const [side, setSide] = useState<TradeSide>(sides[0])
+  const allSides = useMemo(() => sidesFor(pair), [pair])
+  const held = useHeld()
+  const sides = useMemo(() => allSides.filter((s) => canSellAsk(composeAsk(pair, s), held)), [allSides, pair, held])
+  // The picked side is kept while Sell is hidden: the panel shows (and sends)
+  // the first side the moment the wallet stops holding the token, and Sell
+  // comes back picked if a wallet that holds it returns.
+  const [pickedSide, setSide] = useState<TradeSide>(allSides[0])
+  const side = sides.includes(pickedSide) ? pickedSide : sides[0]
   const [usd, setUsd] = useState<number>(10)
   const [custom, setCustom] = useState<string>('')
   const [pct, setPct] = useState<number>(5)

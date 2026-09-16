@@ -18,6 +18,8 @@ import { CHART_FEED_LABELS, chartPairFor, type ChartFeed } from '@/lib/charts'
 import { fmtPrice, type ChartStats } from '@/components/CandleChart'
 import MarketChart from '@/components/markets/chart/MarketChart'
 import TokenIcon from '@/components/TokenIcon'
+import { canSellAsk } from '@/lib/sell-gate'
+import { useHeld } from '@/lib/use-held'
 
 export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => void } = {}) {
   const { chartDetail, setChartDetail, setComposerPrefill } = useYeetfulStore()
@@ -50,6 +52,8 @@ export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => vo
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [chartDetail, close])
+
+  const held = useHeld()
 
   if (typeof document === 'undefined') return null
 
@@ -131,12 +135,15 @@ export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => vo
                 >
                   Buy {pair.symbol}
                 </button>
-                <button
-                  onClick={() => act(`Sell $50 of ${pair.symbol}`)}
-                  className="rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-[11px] text-[color:var(--muted)] transition-colors hover:text-white [@media(hover:none)]:min-h-10 [@media(hover:none)]:text-[12px]"
-                >
-                  Sell {pair.symbol}
-                </button>
+                {/* Nothing to sell, no Sell: only a wallet that holds it (lib/sell-gate). */}
+                {canSellAsk(`Sell $50 of ${pair.symbol}`, held) && (
+                  <button
+                    onClick={() => act(`Sell $50 of ${pair.symbol}`)}
+                    className="rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-[11px] text-[color:var(--muted)] transition-colors hover:text-white [@media(hover:none)]:min-h-10 [@media(hover:none)]:text-[12px]"
+                  >
+                    Sell {pair.symbol}
+                  </button>
+                )}
                 <span className="mono ml-auto text-[9.5px] uppercase tracking-widest text-[color:var(--muted-2)]">
                   sends the ask · your wallet signs
                 </span>

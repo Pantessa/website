@@ -41,10 +41,19 @@
  *        resume builds the action itself.
  *      - 'none'.
  *      The reply still names every holding, and an empty wallet reads plainly.
+ *   6. round trip ⇒ when the need names the token its follow-up BUYS
+ *      (FundingNeed.buyToken), no chip converts that token into anything
+ *      else. "Buy $50 of ETH" once planned ETH → USDC → ETH (2026-09-16).
+ *      Moving the token to itself on another chain is not a round trip.
+ *   7. apps ⇒ a chip that lands on the cross-chain gate on its own (not a
+ *      job) composes NEAR Intents into its apps (lib/ask-apps). The ladder
+ *      above assumes every free dapp is on, but the default chat set has no
+ *      NEAR Intents; the chip send is what turns it on.
  *
  *   npm run audit:funding           # report + nonzero exit on findings
  *   npm run audit:funding -- -v     # also print every outcome row
  */
+import { askAppSlugs } from '../lib/ask-apps'
 import {
   classifyFundingBalances,
   decideFundingTurn,
@@ -107,6 +116,28 @@ const LIDO_NEED: FundingNeed = { chainId: 1, token: 'ETH', amountHuman: 0.002, f
 // stranger failure): the sell token is covered on the swap chain, ETH for
 // the approve+swap is not. amountHuman 0 = "token covered, check gas".
 const SWAP_GAS_NEED: FundingNeed = { chainId: 8453, token: 'USDC', amountHuman: 0, followupResume: 'swap 20 USDC for ETH on base', actionLabel: 'the swap' }
+// The swap gate's pre-read on a short swap: "Buy $50 of ETH" spends the chain
+// stable, and buyToken names what the swap gets you — a holding of it never
+// funds the swap (invariant 6). A sell spends the token and buys the stable.
+const swapNeed = (sell: string, amount: number, buy: string, chainId = 8453): FundingNeed => ({
+  chainId,
+  token: sell,
+  amountHuman: amount,
+  followupResume: `swap ${amount} ${sell} for ${buy} on ${FUNDING_CHAIN_WORD[chainId]}`,
+  actionLabel: sell.toUpperCase() === 'USDC' ? 'the buy' : 'the swap',
+  buyToken: buy,
+})
+/** Legs of a chip resume that convert the token the follow-up BUYS into
+ *  something else (invariant 6). Symbols match exactly, as they do in
+ *  lib/funding-plan (a WETH buy may still spend ETH). */
+function roundTripLegs(need: FundingNeed, resume: string): string[] {
+  if (!need.buyToken) return []
+  const buy = need.buyToken.toUpperCase()
+  return resume.split(', then ').filter((leg) => {
+    const m = leg.match(/^swap\s+[\d.]+\s+([a-z]+)\b.*?\b(?:for|to)\s+([a-z]+)\s+on\b/i)
+    return !!m && m[1].toUpperCase() === buy && m[2].toUpperCase() !== buy
+  })
+}
 const NFT_NEED: FundingNeed = {
   chainId: 8453,
   token: 'ETH',
@@ -124,6 +155,7 @@ const buyNeed = (chainId: number, usdc: number, buy: string): FundingNeed => ({
   amountHuman: usdc,
   followupResume: `swap ${usdc} USDC for ${buy.toUpperCase()} on ${FUNDING_CHAIN_WORD[chainId]}`,
   actionLabel: 'the buy',
+  buyToken: buy.toUpperCase(),
 })
 /** The ask as the swap layer resolved it. `dollarAsk` false = a token-amount
  *  spend ("Swap 50 USDC for UNI on Ethereum"). */
@@ -420,6 +452,100 @@ const SCENARIOS: Scenario[] = [
     need: NFT_NEED,
     reads: [R(8453, 0, 0), R(42161, 0, 0), R(1, 0, 0)],
     expect: 'refusal',
+  },
+  // ── The round trip (2026-09-16). "Buy $50 of ETH" from a wallet whose only
+  // money was ETH planned "Swap 0.02825 ETH for USDC on Base, then swap 50
+  // USDC for ETH on Base": two conversions, two fees, the same ETH at the end.
+  // A holding of the token a swap BUYS never funds it (invariant 6).
+  {
+    name: 'THE ROUND TRIP — 0.05 ETH on Base only → "Buy $50 of ETH" on Base: nothing else to spend, so the refusal names the ETH as what the buy gets you, and the card door that completes rides along',
+    need: swapNeed('USDC', 50, 'ETH'),
+    reads: [R(8453, 0.05, 0), R(42161, 0, 0), R(10, 0, 0), R(1, 0, 0)],
+    expect: 'refusal',
+    card: { ask: buyAsk(8453, 50, 'ETH'), expect: 'completes' },
+  },
+  {
+    name: 'THE ROUND TRIP, one chain over — 0.05 ETH on Arbitrum only → "Buy $50 of ETH" on Base: ONE move of that ETH to Base, no USDC leg, no follow-up swap',
+    need: swapNeed('USDC', 50, 'ETH'),
+    reads: [R(8453, 0, 0), R(42161, 0.05, 0), R(10, 0, 0), R(1, 0, 0)],
+    expect: 'offer',
+  },
+  {
+    name: 'ETH on Base AND Arbitrum, nothing else → "Buy $50 of ETH" on Base: the Arbitrum ETH moves, the Base ETH is named',
+    need: swapNeed('USDC', 50, 'ETH'),
+    reads: [R(8453, 0.01, 0), R(42161, 0.05, 0), R(10, 0, 0), R(1, 0, 0)],
+    expect: 'offer',
+  },
+  {
+    name: '$20 of ETH on Optimism + $30 on Ethereum, neither covers alone → "Buy $50 of ETH" on Base: the move combines into a job',
+    need: swapNeed('USDC', 50, 'ETH'),
+    reads: [R(8453, 0, 0), R(42161, 0, 0), R(10, 0.0102, 0), R(1, 0.017, 0)],
+    expect: 'offer',
+  },
+  {
+    name: '$10 of ETH on Arbitrum only → "Buy $50 of ETH" on Base: too little to carry the buy — the refusal names it, no round trip',
+    need: swapNeed('USDC', 50, 'ETH'),
+    reads: [R(8453, 0, 0), R(42161, 0.0052, 0), R(10, 0, 0), R(1, 0, 0)],
+    expect: 'refusal',
+  },
+  {
+    name: 'ETH on Base + $60 USDC with gas on Arbitrum → "Buy $50 of ETH" on Base: the plan spends the USDC, never the ETH',
+    need: swapNeed('USDC', 50, 'ETH'),
+    reads: [R(8453, 0.05, 0), R(42161, 0.001, 60), R(10, 0, 0), R(1, 0, 0)],
+    expect: 'offer',
+  },
+  {
+    name: 'ETH on Base + $20 USDC with gas on Arbitrum → "Buy $50 of ETH" on Base: short on USDC, the ETH named as not counted, the card still offered',
+    need: swapNeed('USDC', 50, 'ETH'),
+    reads: [R(8453, 0.05, 0), R(42161, 0.001, 20), R(10, 0, 0), R(1, 0, 0)],
+    expect: 'refusal',
+    card: { ask: buyAsk(8453, 50, 'ETH'), expect: 'completes' },
+  },
+  {
+    // Other money exists, so "the only money is ETH" is false and no move is
+    // offered; the gasless USDC can't cover the buy, so no rescue either.
+    name: 'ETH on Arbitrum + $20 gasless USDC on Optimism → "Buy $50 of ETH" on Base: no move, no round trip, both holdings named',
+    need: swapNeed('USDC', 50, 'ETH'),
+    reads: [R(8453, 0, 0), R(42161, 0.05, 0), R(10, 0, 20), R(1, 0, 0)],
+    expect: 'refusal',
+  },
+  {
+    // Symbols match exactly: the scan's ETH is native, and with no wrap builder
+    // converting through USDC is the only way to deliver the WETH asked for.
+    name: 'ETH on Arbitrum only → "Buy $50 of WETH" on Base: the ETH still funds it (a WETH buy is not an ETH buy)',
+    need: swapNeed('USDC', 50, 'WETH'),
+    reads: [R(8453, 0, 0), R(42161, 0.05, 0), R(10, 0, 0), R(1, 0, 0)],
+    expect: 'offer',
+  },
+  {
+    // Why the match is exact: #791's card chip for a WETH buy lands ETH on
+    // the on-ramp lane and fires "Buy $50 of WETH" again. Treating that ETH as
+    // WETH would refuse the landed money and offer the card a second time.
+    name: 'empty → "Buy $50 of WETH" on Base: a card cascade chip whose landed ETH re-plans into chips that compile',
+    need: buyNeed(8453, 50, 'WETH'),
+    reads: EMPTY,
+    expect: 'refusal',
+    card: { ask: buyAsk(8453, 50, 'WETH'), expect: 'cascade' },
+  },
+  {
+    name: 'the SELL direction — $60 USDC with gas on Arbitrum → "Sell $50 of ETH" on Base: no USDC → ETH → USDC plan',
+    need: swapNeed('ETH', 0.0252, 'USDC'),
+    reads: [R(8453, 0, 0), R(42161, 0.001, 60), R(10, 0, 0), R(1, 0, 0)],
+    expect: 'refusal',
+  },
+  {
+    name: 'the SELL direction — $60 gasless USDC on Arbitrum + a $3 ETH donor on Optimism → "Sell $50 of ETH" on Base: no rescue that unsticks the USDC to buy it back',
+    need: swapNeed('ETH', 0.0252, 'USDC'),
+    reads: [R(8453, 0, 0), R(42161, 0, 60), R(10, 0.0015, 0), R(1, 0, 0)],
+    expect: 'refusal',
+  },
+  {
+    // The rule is about the token being BOUGHT, nothing wider: ETH still
+    // funds a buy of anything else.
+    name: 'ETH on Arbitrum only → "Buy $50 of UNI" on Base: ETH still funds a buy of another token',
+    need: swapNeed('USDC', 50, 'UNI'),
+    reads: [R(8453, 0, 0), R(42161, 0.05, 0), R(10, 0, 0), R(1, 0, 0)],
+    expect: 'offer',
   },
   {
     // THE #590 PATTERN ON THE GENERIC PATH: a gas-included plan runs TWO
@@ -836,6 +962,14 @@ for (const s of SCENARIOS) {
       if (outcome.kind !== 'action') {
         console.log(header)
         flag(`chip resume dead-ends at ${outcome.gate}/${outcome.kind}${outcome.note ? ` — "${outcome.note}"` : ''}: "${chip.resume}"`)
+      }
+      for (const leg of roundTripLegs(s.need, chip.resume)) {
+        console.log(header)
+        flag(`chip sells the ${s.need.buyToken} its follow-up buys back — "${leg}" in "${chip.resume}"`)
+      }
+      if (outcome.gate === 'cross-chain' && !askAppSlugs(chip.resume).includes('near-intents-mcp-yeetful')) {
+        console.log(header)
+        flag(`a lone cross-chain chip doesn't compose NEAR Intents, so a default chat set answers the add-the-dapp door: "${chip.resume}"`)
       }
     }
   }
