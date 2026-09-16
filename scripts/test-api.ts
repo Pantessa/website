@@ -20898,8 +20898,10 @@ async function main() {
         fillLabel({ id: 'y', t: Date.UTC(2026, 8, 8, 14, 2) / 1000, side: 'sell', usd: 1500, venue: 'CoW', venueId: 'cow', chainId: 8453, chain: null, txUrl: null, source: 'job-step' }, 'ETH') === 'Sold $1,500 of ETH · CoW · 09-08 14:02',
     )
     // The route + a fixture: a throwaway wallet signs one embed turn naming ETH
-    // through the telemetry route (the way the harness's other signed rows
-    // land) under a key minted HERE (the run's earlier key is purged by now),
+    // through the telemetry route under a key minted HERE (the run's earlier
+    // key is purged by now). The sessionId must NOT start with `harness-`: that
+    // belt stamps is_internal, and the fills fence would (correctly) hide it —
+    // the fixture simulates an ORGANIC stranger, like fixture-ilink-.
     // its fills carry exactly that receipt, an INTERNAL twin never shows, and
     // the key is purged after — which removes the fixture rows with it.
     const fkMint = await fetch(`${BASE}/api/embed-keys`, { method: 'POST', headers: CJ, body: JSON.stringify({ label: 'harness viz fills' }) })
@@ -20909,12 +20911,12 @@ async function main() {
     const fillsPost = await fetch(`${BASE}/api/embed/telemetry`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ key: fk.key, sessionId: 'harness-viz-fills', page: 'https://harness-embed.test/eth', prompt: 'buy $12 of ETH on base', outcome: 'signed', artifact: 'tx', chain: 'base', valueUsd: 12, txUrl: fillsTx, buildPath: 'native-swap-uniswap', walletAddress: fillsWallet }),
+      body: JSON.stringify({ key: fk.key, sessionId: 'fixture-viz-fills', page: 'https://harness-embed.test/eth', prompt: 'buy $12 of ETH on base', outcome: 'signed', artifact: 'tx', chain: 'base', valueUsd: 12, txUrl: fillsTx, buildPath: 'native-swap-uniswap', walletAddress: fillsWallet }),
     })
     const fillsTwin = await fetch(`${BASE}/api/embed/telemetry`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' },
-      body: JSON.stringify({ key: fk.key, sessionId: 'harness-viz-fills-int', page: 'https://harness-embed.test/eth', prompt: 'sell $99 of ETH on base', outcome: 'signed', artifact: 'tx', chain: 'base', valueUsd: 99, txUrl: fillsTx, buildPath: 'native-swap-uniswap', walletAddress: fillsWallet }),
+      body: JSON.stringify({ key: fk.key, sessionId: 'fixture-viz-fills-int', page: 'https://harness-embed.test/eth', prompt: 'sell $99 of ETH on base', outcome: 'signed', artifact: 'tx', chain: 'base', valueUsd: 99, txUrl: fillsTx, buildPath: 'native-swap-uniswap', walletAddress: fillsWallet }),
     })
     type FillsBody = { symbol?: string; address?: string; fills?: { id: string; t: number; side: string; usd: number | null; venue: string; venueId: string; chainId: number | null; chain: string | null; txUrl: string | null; source: string }[]; cached?: boolean; error?: string }
     const fills1 = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=eth&address=${fillsWallet}`)).json()) as FillsBody
@@ -20925,7 +20927,7 @@ async function main() {
     const f0 = fills1.fills?.[0]
     check(
       'viz fills route: the throwaway wallet\'s signed ETH turn comes back as ONE buy fill ($12 · Uniswap v3 · Base · the explorer link, source turn), the internal twin is fenced out, AAPL shows none, the symbol upper-cases, the second read is cached, a bad address is 400 and a stranger symbol 404',
-      fkMint.status === 200 && fillsPost.status === 200 && fillsTwin.status === 200 && fills1.symbol === 'ETH' && fills1.address === fillsWallet.toLowerCase() && fills1.fills?.length === 1 &&
+      (fkMint.status === 200 || fkMint.status === 201) && fillsPost.status === 200 && fillsTwin.status === 200 && fills1.symbol === 'ETH' && fills1.address === fillsWallet.toLowerCase() && fills1.fills?.length === 1 &&
         f0?.side === 'buy' && f0.usd === 12 && f0.venue === 'Uniswap v3' && f0.venueId === 'uniswap' && f0.chainId === 8453 && f0.chain === 'Base' && f0.txUrl === fillsTx && f0.source === 'turn' && Math.abs(f0.t * 1000 - Date.now()) < 120_000 &&
         fills2.cached === true && fillsOther.fills?.length === 0 && fillsBad.status === 400 && fills404.status === 404 && FILLS_TTL_MS === 60_000,
       `mint=${fkMint.status} post=${fillsPost.status}/${fillsTwin.status} fills=${JSON.stringify(fills1.fills ?? fills1.error).slice(0, 200)} other=${fillsOther.fills?.length}`,
