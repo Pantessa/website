@@ -13,11 +13,19 @@
 //  user/treasury in the same multicall; fee off, recipient is ALWAYS the
 //  payer directly. ERC-20 sells need an approval to SwapRouter02 (NOT CoW's
 //  VaultRelayer); native-ETH sells ride msg.value.
+//
+//  Native-ETH BUYS: "ETH" resolves to the chain's wrapped native (every v3
+//  pool quotes WETH), so the pool pays WETH. The router holds it and
+//  unwrapWETH9WithFee (fee on) or unwrapWETH9 (fee off) sends native ETH to
+//  the recipient in the same multicall. Before 2026-09-16 the sweep handed
+//  the WETH ERC-20 over under an "ETH" label, which can't pay gas (proven
+//  on a Base fork). An explicit "WETH" buy still gets the ERC-20.
+//  guardUniswapV3Build decodes every build before it is offered.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { encodeFunctionData, erc20Abi } from 'viem'
+import { decodeFunctionData, encodeFunctionData, erc20Abi } from 'viem'
 import { publicClient } from '@/lib/auth'
-import { chainById, publicClientFor } from '@/lib/chains'
+import { buysNativeEth, chainById, publicClientFor } from '@/lib/chains'
 import { resolveToken, tokenDecimals, tokenLabel, humanToAtoms, formatAtoms } from '@/lib/cow' // cross-app token utils (per-chain maps + atoms math)
 import {
   buildReport,
@@ -28,7 +36,7 @@ import {
   type GuardrailReport,
 } from '@/lib/tx-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
-import { SWAP_FEE_BPS, TREASURY_ADDRESS, swapFeeAtoms } from '@/lib/fees'
+import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, TREASURY_ADDRESS, swapFeeAtoms } from '@/lib/fees'
 import { checkFillAgainstTape, startSwapTape } from '@/lib/stock-tape'
 
 /** Uniswap v3 on Base (developers.uniswap.org, verified live by the MCP's
@@ -120,10 +128,215 @@ export const SWAP_ROUTER_02_ABI = [
     ],
     outputs: [],
   },
+  // The native-ETH twin (PeripheryPaymentsWithFee): withdraws the router's
+  // WHOLE WETH9 balance (amountMinimum is checked against that pre-fee
+  // balance), pays feeBips (≤100 on-chain) of it to the fee recipient as ETH
+  // and the rest to the recipient. The router's WETH9() is the registry's
+  // wrappedNative on every chain we route; the harness pins that live.
+  {
+    name: 'unwrapWETH9WithFee',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [
+      { name: 'amountMinimum', type: 'uint256' },
+      { name: 'recipient', type: 'address' },
+      { name: 'feeBips', type: 'uint256' },
+      { name: 'feeRecipient', type: 'address' },
+    ],
+    outputs: [],
+  },
+  // Fee off: the same unwrap, no split.
+  {
+    name: 'unwrapWETH9',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [
+      { name: 'amountMinimum', type: 'uint256' },
+      { name: 'recipient', type: 'address' },
+    ],
+    outputs: [],
+  },
 ] as const
 
 /** SwapRouter02's "pay the router itself" recipient sentinel. */
 export const ADDRESS_THIS = '0x0000000000000000000000000000000000000002' as const
+
+// ── The guard (pure, fail-closed) ───────────────────────────────────────────
+
+type V3Tx = { to: string; data: string; value: string; chainId: number }
+
+export interface V3GuardExpectations {
+  chainId: number
+  /** The registry-pinned SwapRouter02 for the chain. */
+  swapRouter02: string
+  /** Resolved addresses: the wrapped native for an ETH leg. */
+  sellToken: string
+  buyToken: string
+  /** Native ETH in: the swap carries value = amountIn, no approval step. */
+  sellIsEth: boolean
+  /** Native ETH out: the router unwraps its WETH to the recipient. */
+  nativeOut: boolean
+  amountIn: bigint
+  /** The pool-level slippage bound (pre-fee). */
+  minOut: bigint
+  /** The quoted v3 fee tier. */
+  poolFee: number
+  /** Where the output must land (the payer, or a caller-verified override). */
+  recipient: string
+  /** The multicall deadline the builder stamped (unix sec). */
+  deadline: number
+  /** Pantessa fee in bps. 0 = no split, and the fee-free shape is the only
+   *  one accepted. Positive = the split is REQUIRED, paid to the pinned
+   *  treasury, at a canonical tier. */
+  feeBps: number
+}
+
+export interface V3GuardResult {
+  ok: boolean
+  reasons: string[]
+}
+
+const eqAddr = (a: string | undefined, b: string | undefined) => !!a && !!b && a.toLowerCase() === b.toLowerCase()
+
+/**
+ * Verify a built v3 swap before it can be offered for signing. Decodes the
+ * approval and the SwapRouter02 multicall independently of the code that
+ * built them: pinned router, exact atoms, the quoted pool, and the output
+ * shape. That shape has exactly one right form per ask:
+ *   native out            → [swap → router, unwrapWETH9WithFee | unwrapWETH9 → recipient]
+ *   ERC-20 out, fee on    → [swap → router, sweepTokenWithFee → recipient]
+ *   ERC-20 out, fee off   → [swap → recipient]
+ * A sweep on an ETH buy delivers WETH; an unwrap on a WETH buy delivers the
+ * wrong asset (or strands a non-WETH output on the router). Both refuse, as
+ * does anything that fails to decode.
+ */
+export function guardUniswapV3Build(
+  build: { swapTx: V3Tx; approveTx: V3Tx | null },
+  exp: V3GuardExpectations,
+  nowSec: number = Math.floor(Date.now() / 1000),
+): V3GuardResult {
+  const reasons: string[] = []
+  const zero = BigInt(0)
+  const feeOn = exp.feeBps > 0
+  if (feeOn && ![SWAP_FEE_BPS, LINK_SWAP_FEE_BPS].includes(exp.feeBps)) {
+    reasons.push(`Fee rate ${exp.feeBps}bps is outside the canonical tiers — refusing.`)
+  }
+  const chain = chainById(exp.chainId)
+  if (exp.nativeOut && !eqAddr(exp.buyToken, chain?.wrappedNative)) {
+    reasons.push("A native-ETH delivery must swap into the chain's wrapped native — refusing.")
+  }
+
+  // Approval: ERC-20 sells only, exactly amountIn to the pinned router.
+  const approve = build.approveTx
+  if (approve) {
+    if (exp.sellIsEth) reasons.push('A native-ETH sell needs no approval — refusing the extra step.')
+    if (approve.chainId !== exp.chainId) reasons.push(`The approval targets chain ${approve.chainId}, not ${exp.chainId}.`)
+    if (!eqAddr(approve.to, exp.sellToken)) reasons.push('The approval does not target the sell token.')
+    if (BigInt(approve.value || '0') !== zero) reasons.push('The approval must carry zero native value.')
+    try {
+      const dec = decodeFunctionData({ abi: erc20Abi, data: approve.data as `0x${string}` })
+      if (dec.functionName !== 'approve') {
+        reasons.push(`The approval step calls "${dec.functionName}", not approve — refusing.`)
+      } else {
+        const [spender, amount] = dec.args as [string, bigint]
+        if (!eqAddr(spender, exp.swapRouter02)) reasons.push('The approval spender is not the pinned SwapRouter02.')
+        if (amount !== exp.amountIn) reasons.push('The approval is not exactly the swap amount.')
+      }
+    } catch {
+      reasons.push('Could not decode the approval calldata — refusing.')
+    }
+  }
+
+  const tx = build.swapTx
+  if (!eqAddr(tx.to, exp.swapRouter02)) reasons.push('The swap is not addressed to the pinned SwapRouter02.')
+  if (tx.chainId !== exp.chainId) reasons.push(`The swap targets chain ${tx.chainId}, not ${exp.chainId}.`)
+  let value = zero
+  try {
+    value = BigInt(tx.value || '0')
+  } catch {
+    reasons.push('The swap carries an unreadable native value — refusing.')
+  }
+  if (value !== (exp.sellIsEth ? exp.amountIn : zero)) {
+    reasons.push(exp.sellIsEth ? 'The swap value is not exactly the ETH being sold.' : 'An ERC-20 sell must carry zero native value.')
+  }
+
+  try {
+    const outer = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: tx.data as `0x${string}` })
+    if (outer.functionName !== 'multicall') {
+      reasons.push(`The swap calls "${outer.functionName}", not multicall(deadline, …) — refusing.`)
+      return { ok: false, reasons }
+    }
+    const [deadline, calls] = outer.args as [bigint, readonly `0x${string}`[]]
+    if (deadline !== BigInt(exp.deadline)) reasons.push('The multicall deadline is not the one we stamped.')
+    if (deadline <= BigInt(nowSec)) reasons.push('The swap deadline is already in the past.')
+    const routerHolds = exp.nativeOut || feeOn
+    const wantCalls = routerHolds ? 2 : 1
+    if (calls.length !== wantCalls) {
+      reasons.push(`Expected ${wantCalls} router call(s) (${routerHolds ? 'swap → router, then the payout' : 'the swap alone'}), got ${calls.length}.`)
+    }
+
+    const swap = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[0] })
+    if (swap.functionName !== 'exactInputSingle') {
+      reasons.push(`The first router call is "${swap.functionName}", not exactInputSingle — refusing.`)
+    } else {
+      const p = (swap.args as readonly unknown[])[0] as {
+        tokenIn: string
+        tokenOut: string
+        fee: number
+        recipient: string
+        amountIn: bigint
+        amountOutMinimum: bigint
+        sqrtPriceLimitX96: bigint
+      }
+      if (!eqAddr(p.tokenIn, exp.sellToken)) reasons.push('The swap does not sell the asked token.')
+      if (!eqAddr(p.tokenOut, exp.buyToken)) reasons.push('The swap does not buy the asked token.')
+      if (Number(p.fee) !== exp.poolFee || !(FEE_TIERS as readonly number[]).includes(Number(p.fee))) reasons.push('The pool fee tier is not the quoted one.')
+      if (p.amountIn !== exp.amountIn) reasons.push('The swap amountIn is not exactly the asked amount.')
+      if (p.amountOutMinimum !== exp.minOut) reasons.push('The swap minimum-out is not the quoted bound.')
+      if (p.sqrtPriceLimitX96 !== zero) reasons.push('Unexpected price limit on the swap — refusing.')
+      if (routerHolds) {
+        if (!eqAddr(p.recipient, ADDRESS_THIS)) reasons.push('The swap output does not land on the router for the payout call — refusing.')
+      } else if (!eqAddr(p.recipient, exp.recipient)) {
+        reasons.push('The swap output does not go to the intended recipient — refusing.')
+      }
+    }
+
+    const payout = calls[1] ? decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[1] }) : null
+    if (payout && routerHolds) {
+      const name = payout.functionName
+      if (exp.nativeOut) {
+        if (name === 'sweepTokenWithFee') {
+          reasons.push('The payout sweeps WETH, but the ask was native ETH — refusing a WETH delivery.')
+        } else if (name !== (feeOn ? 'unwrapWETH9WithFee' : 'unwrapWETH9')) {
+          reasons.push(`The payout calls "${name}", not ${feeOn ? 'unwrapWETH9WithFee' : 'unwrapWETH9'} — refusing.`)
+        } else {
+          const [min, to, bips, feeTo] = payout.args as readonly [bigint, string, bigint?, string?]
+          if (min !== exp.minOut) reasons.push('The unwrap minimum is not the quoted bound.')
+          if (!eqAddr(to, exp.recipient)) reasons.push('The unwrap does not pay the intended recipient — refusing.')
+          if (feeOn) {
+            if (bips !== BigInt(exp.feeBps)) reasons.push(`The unwrap fee (${bips}bps) is not the priced fee (${exp.feeBps}).`)
+            if (!eqAddr(feeTo, TREASURY_ADDRESS)) reasons.push('The fee recipient is not the Pantessa treasury — refusing.')
+          }
+        }
+      } else if (name === 'unwrapWETH9WithFee' || name === 'unwrapWETH9') {
+        reasons.push('The payout unwraps to native ETH, but the ask was the ERC-20 — refusing.')
+      } else if (name !== 'sweepTokenWithFee') {
+        reasons.push(`The payout calls "${name}", not sweepTokenWithFee — refusing.`)
+      } else {
+        const [token, min, to, bips, feeTo] = payout.args as readonly [string, bigint, string, bigint, string]
+        if (!eqAddr(token, exp.buyToken)) reasons.push('The sweep is for a different token than the buy token.')
+        if (min !== exp.minOut) reasons.push('The sweep minimum is not the quoted bound.')
+        if (!eqAddr(to, exp.recipient)) reasons.push('The sweep does not pay the intended recipient — refusing.')
+        if (bips !== BigInt(exp.feeBps)) reasons.push(`The sweep fee (${bips}bps) is not the priced fee (${exp.feeBps}).`)
+        if (!eqAddr(feeTo, TREASURY_ADDRESS)) reasons.push('The fee recipient is not the Pantessa treasury — refusing.')
+      }
+    }
+  } catch {
+    reasons.push('Could not decode the SwapRouter02 calldata — refusing to offer an opaque transaction.')
+  }
+
+  return { ok: reasons.length === 0, reasons }
+}
 
 /** No v3 pool can fill the pair — a TYPED miss so the route can fall through
  *  to the v4 layer (Robinhood's tokenized stocks are v4-only) instead of
@@ -205,6 +418,9 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   if (!/^0x[0-9a-fA-F]{40}$/.test(recipient)) throw new Error('A valid recipient address is required.')
 
   const sellIsEth = params.sellToken.trim().toUpperCase() === 'ETH'
+  // "ETH" out means native ETH: the pool pays WETH to the router and the
+  // router unwraps it in the same multicall. "WETH" stays the ERC-20.
+  const buyIsEth = buysNativeEth(params.buyToken, chainId)
   const sellAddr = resolveToken(params.sellToken, chainId)
   const buyAddr = resolveToken(params.buyToken, chainId)
   if (!sellAddr) throw new Error(`Unknown sell token on ${chain.name}: ${params.sellToken}`)
@@ -251,12 +467,15 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   const deadline = Math.floor(Date.now() / 1000) + deadlineSec
 
   // Pantessa fee (lib/fees.ts) via the router's NATIVE fee path: output lands
-  // on the router, sweepTokenWithFee splits it user/treasury in the SAME
-  // multicall. Fee off (bps 0) → the classic direct-to-payer build.
+  // on the router, sweepTokenWithFee (ERC-20) or unwrapWETH9WithFee (native
+  // ETH) splits it user/treasury in the SAME multicall. Fee off (bps 0) → the
+  // classic direct-to-payer build, except native ETH, which the router must
+  // still hold to unwrap.
   const feeBps = params.feeBps ?? SWAP_FEE_BPS
   const feeOn = feeBps > 0
   const feeAtomsOnMin = feeOn ? swapFeeAtoms(minOut, feeBps) : BigInt(0)
   const minOutAfterFee = minOut - feeAtomsOnMin
+  const routerHolds = feeOn || buyIsEth
 
   const swapCall = encodeFunctionData({
     abi: SWAP_ROUTER_02_ABI,
@@ -266,9 +485,10 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
         tokenIn: sellAddr as `0x${string}`,
         tokenOut: buyAddr as `0x${string}`,
         fee: best.fee,
-        // Fee on: the router holds the output for the sweep split. Fee off:
-        // straight to the intended receiver (the payer unless overridden).
-        recipient: feeOn ? ADDRESS_THIS : recipient,
+        // Router holds the output for the payout call (fee split and/or the
+        // unwrap). Otherwise straight to the intended receiver (the payer
+        // unless overridden).
+        recipient: routerHolds ? ADDRESS_THIS : recipient,
         amountIn,
         amountOutMinimum: minOut,
         sqrtPriceLimitX96: BigInt(0),
@@ -276,7 +496,15 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
     ],
   })
   const calls: `0x${string}`[] = [swapCall]
-  if (feeOn) {
+  if (buyIsEth) {
+    // amountMinimum is checked against the router's pre-fee WETH balance —
+    // the same bound the sweep takes.
+    calls.push(
+      feeOn
+        ? encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'unwrapWETH9WithFee', args: [minOut, recipient, BigInt(feeBps), TREASURY_ADDRESS] })
+        : encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'unwrapWETH9', args: [minOut, recipient] }),
+    )
+  } else if (feeOn) {
     calls.push(
       encodeFunctionData({
         abi: SWAP_ROUTER_02_ABI,
@@ -325,13 +553,41 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
     }
   }
 
+  // ── The guard: decode what we just built; refuse the turn on any mismatch.
+  const buyLabel = tokenLabel(params.buyToken, chainId)
+  const guard = guardUniswapV3Build(
+    { swapTx, approveTx },
+    {
+      chainId,
+      swapRouter02,
+      sellToken: sellAddr,
+      buyToken: buyAddr,
+      sellIsEth,
+      nativeOut: buyIsEth,
+      amountIn,
+      minOut,
+      poolFee: best.fee,
+      recipient,
+      deadline,
+      feeBps: feeOn ? feeBps : 0,
+    },
+  )
+  const calldataCheck: GuardrailCheck = {
+    id: 'calldata',
+    level: 'block',
+    ok: guard.ok,
+    note: guard.ok
+      ? `Calldata verified: SwapRouter02 ${swapRouter02.slice(0, 8)}…, exactly ${formatAtoms(amountIn.toString(), sellDec)} ${tokenLabel(params.sellToken, chainId)} in, ${buyIsEth ? 'native ETH (unwrapped by the router)' : buyLabel} out to ${recipient.toLowerCase() === from.toLowerCase() ? 'the payer' : 'the pinned recipient'}${feeOn ? ' minus the treasury split' : ''}.`
+      : `Build failed verification: ${guard.reasons.join(' ')}`,
+  }
+
   // ── Cross-app guardrails: identical gate to CoW, host = Uniswap's. ────────
   const feeCheck: GuardrailCheck = {
     id: 'fee',
     level: 'warn',
     ok: true,
     note: feeOn
-      ? `Pantessa fee: ${feeBps / 100}% of the output, split by the router's own sweepTokenWithFee to the Pantessa treasury — visible in the multicall, minimum received shown post-fee.`
+      ? `Pantessa fee: ${feeBps / 100}% of the output, split by the router's own ${buyIsEth ? 'unwrapWETH9WithFee' : 'sweepTokenWithFee'} to the Pantessa treasury — visible in the multicall, minimum received shown post-fee.`
       : 'No Pantessa fee on this swap.',
   }
   // Recipient pin: the classic build pays the payer (self-check). An override
@@ -341,7 +597,7 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
     recipient.toLowerCase() === from.toLowerCase()
       ? recipientCheck(from, from)
       : { id: 'recipient', level: 'block', ok: true, note: `Proceeds pinned to ${recipient} (recipient override — re-verified by the caller's independent guard).` }
-  const checks: GuardrailCheck[] = [recipCheck, validityCheck(deadline), allowanceCheck, feeCheck, ...(tapeCheck ? [tapeCheck] : [])]
+  const checks: GuardrailCheck[] = [recipCheck, validityCheck(deadline), allowanceCheck, calldataCheck, feeCheck, ...(tapeCheck ? [tapeCheck] : [])]
   const valueUsd = stableUsd(chainId, sellAddr, amountIn) ?? stableUsd(chainId, buyAddr, best.amountOut)
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
@@ -367,7 +623,7 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   // pool-level bound.
   const minHuman = formatAtoms(minOutAfterFee.toString(), buyDec)
   const feeNote = feeOn ? `, incl. ${feeBps / 100}% Pantessa fee on the output` : ''
-  const summary = `Swap ${inHuman} ${tokenLabel(params.sellToken, chainId)} → ~${outHuman} ${tokenLabel(params.buyToken, chainId)} via Uniswap v3 on ${chain.name} (${best.fee / 100}bps pool), min received ${minHuman} (${slippageBps}bps slippage${feeNote})`
+  const summary = `Swap ${inHuman} ${tokenLabel(params.sellToken, chainId)} → ~${outHuman} ${buyLabel} via Uniswap v3 on ${chain.name} (${best.fee / 100}bps pool), min received ${minHuman} (${slippageBps}bps slippage${feeNote})`
 
   return { summary, guardrails, blocked: !guardrails.ok, swapTx, approveTx, minimumOut: minHuman, validUntil: deadline }
 }

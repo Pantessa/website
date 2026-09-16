@@ -9,6 +9,9 @@
 // page the page's own connect-to-act door opens for a stranger). The rows
 // come from lib/symbol-venues (pure); the numbers from
 // GET /api/markets/routes (30s cache, fail-soft per row — "—" still sends).
+// A sell row (Sell, Limit sell, your line above market) renders only while
+// the connected wallet holds the symbol on that row's chain (lib/sell-gate,
+// 2026-09-16): nothing to sell, no row.
 //
 // The Fund group is per wallet (2026-09-16, Nate: "it shows 'Fund from Base'
 // but the user does not have any tokens on base"): the connected wallet's
@@ -40,6 +43,8 @@ import {
   type RoutesResponse,
   type VenueKind,
 } from '@/lib/symbol-venues'
+import { canSellAsk, isSellAsk } from '@/lib/sell-gate'
+import { useHeld } from '@/lib/use-held'
 import './trade.css'
 
 export const ROUTE_AMOUNTS = [10, 25, 50, 100, 250] as const
@@ -177,6 +182,10 @@ export default function RouteTable({
     }
   }, [load, custom])
 
+  // The rows this wallet can act on: a sell only where it holds the symbol.
+  const held = useHeld()
+  const routes = useMemo(() => (data?.routes ?? []).filter((r) => canSellAsk(r.ask, held)), [data, held])
+
   // Does this page fund a buy at all? (A perp chart or a non-EVM home has no
   // spot buy for money to land on — the map lists no funding there.)
   const fundApplies = !!data && (data.source === 'robinhood' || data.routes.some((r) => r.kind === 'spot'))
@@ -193,7 +202,6 @@ export default function RouteTable({
   const rows = useMemo(() => {
     // The wallet's own funding rows first, then the card (the public map's
     // only funding row).
-    const routes = data?.routes ?? []
     const list = [...routes.filter((r) => r.venue !== 'card'), ...(walletFunding?.routes ?? []), ...routes.filter((r) => r.venue === 'card')]
     const filtered = filter === 'all' ? list : list.filter((r) => r.kind === filter)
     const groups = new Map<VenueKind, RouteQuote[]>()
@@ -204,21 +212,21 @@ export default function RouteTable({
     // The Fund group stands even with no row in it, to say why.
     if ((filter === 'all' || filter === 'fund') && !groups.has('fund') && fundNotes.length > 0) groups.set('fund', [])
     return groups
-  }, [data, filter, walletFunding, fundNotes])
+  }, [routes, filter, walletFunding, fundNotes])
 
   const kindsPresent = useMemo(
-    () => VENUE_KIND_ORDER.filter((k) => data?.routes.some((r) => r.kind === k) || (k === 'fund' && ((walletFunding?.routes.length ?? 0) > 0 || fundNotes.length > 0))),
-    [data, walletFunding, fundNotes],
+    () => VENUE_KIND_ORDER.filter((k) => routes.some((r) => r.kind === k) || (k === 'fund' && ((walletFunding?.routes.length ?? 0) > 0 || fundNotes.length > 0))),
+    [routes, walletFunding, fundNotes],
   )
-  const hasPerp = data?.routes.some((r) => r.kind === 'perp') ?? false
+  const hasPerp = routes.some((r) => r.kind === 'perp')
   // A card checkout isn't a dapp; the wallet's funding venues are.
   const venues = useMemo(
-    () => new Set([...(data?.routes ?? []), ...(walletFunding?.routes ?? [])].filter((r) => r.venue !== 'card').map((r) => r.venue)).size,
-    [data, walletFunding],
+    () => new Set([...routes, ...(walletFunding?.routes ?? [])].filter((r) => r.venue !== 'card').map((r) => r.venue)).size,
+    [routes, walletFunding],
   )
 
   return (
-    <section className="mkt-card mkt-routes" aria-label={`Every way to act on ${symbol}`} data-state={state} data-rows={data?.routes.length ?? 0}>
+    <section className="mkt-card mkt-routes" aria-label={`Every way to act on ${symbol}`} data-state={state} data-rows={routes.length}>
       <header className="mkt-card__head mkt-routes__head">
         <div>
           <h2 className="mkt-card__title">Every way to act on {pair.symbol}</h2>
@@ -315,7 +323,7 @@ export default function RouteTable({
                 <ul className="mkt-routes__list mkt-routes__list--level" aria-label="At your drawn line">
                   {SPOT_CHAINS.filter((c) => c.cow && list.some((r) => r.chainId === c.id))
                     .map((c) => ({ c, lvl: limitAtLevel(pair.symbol, c.word, usd, drawn, data.last!) }))
-                    .filter((x): x is { c: (typeof SPOT_CHAINS)[number]; lvl: NonNullable<ReturnType<typeof limitAtLevel>> } => !!x.lvl)
+                    .filter((x): x is { c: (typeof SPOT_CHAINS)[number]; lvl: NonNullable<ReturnType<typeof limitAtLevel>> } => !!x.lvl && canSellAsk(x.lvl.ask, held))
                     .map(({ c, lvl }) => (
                       <li key={`level:${c.id}`} className={`mkt-route mkt-route--level ${lvl.side === 'sell' ? 'mkt-route--sell' : ''}`} data-route={`limit:cow:${c.id}:level`}>
                         <span className="mkt-route__mark" aria-hidden="true"><VenueMark venue="cow" /></span>
@@ -376,7 +384,8 @@ export default function RouteTable({
                       </span>
                       <span className="mkt-route__tags">
                         {r.best && <span className="mkt-route__tag mkt-route__tag--best mono" title={BEST_OUT_RULE}>BEST OUT</span>}
-                        {r.needs === 'position' && <span className="mkt-route__tag mono">NEEDS A POSITION</span>}
+                        {/* A sell row only renders for a holder, so it never needs the tag. */}
+                        {r.needs === 'position' && !isSellAsk(r.ask) && <span className="mkt-route__tag mono">NEEDS A POSITION</span>}
                       </span>
                     </span>
                     <button type="button" className={`mkt-route__chip ${r.side === 'sell' ? 'mkt-route__chip--sell' : ''}`} title={r.ask} data-ask={r.ask} onClick={() => onAsk(r.ask)}>

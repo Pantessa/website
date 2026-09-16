@@ -10,9 +10,11 @@
 // address-keyed call adds "your position" underneath. Footer: the tape
 // footnote + who wrote it.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw, Sparkles } from 'lucide-react'
 import { useSession } from '@/lib/session'
+import { canSellAsk } from '@/lib/sell-gate'
+import { useHeld } from '@/lib/use-held'
 import { useAskDoor } from '@/lib/ask-door'
 import { TAPE_FOOTNOTE } from '@/lib/markets-copy'
 import type { ChartPair, ChartTf } from '@/lib/charts'
@@ -122,13 +124,18 @@ export default function AiBrief({ symbol, pair, tf = '1h', onAsk }: AiBriefProps
     return () => ctrl.abort()
   }, [walletAddress, phase, pair.symbol, tf])
 
+  // The brief is shared across viewers, so its Sell chips are this viewer's
+  // call: shown only while the connected wallet holds the token (lib/sell-gate).
+  const held = useHeld()
+  const shown = useMemo(() => chips.filter((c) => canSellAsk(c.ask, held)), [chips, held])
+
   // The ⌘K door's suggestion row shows this brief's chips while the page is
   // up (lib/ask-door askDoorChips merges them on /t/<sym>).
   const setBriefChips = useAskDoor((s) => s.setBriefChips)
   useEffect(() => {
-    setBriefChips(chips.length ? { symbol: pair.symbol, chips: chips.map((c) => ({ label: c.label, ask: c.ask })) } : null)
+    setBriefChips(shown.length ? { symbol: pair.symbol, chips: shown.map((c) => ({ label: c.label, ask: c.ask })) } : null)
     return () => setBriefChips(null)
-  }, [chips, pair.symbol, setBriefChips])
+  }, [shown, pair.symbol, setBriefChips])
 
   const paragraphs = text.split(/\n\n+/).filter((p) => p.trim())
   const streaming = phase === 'streaming'
@@ -168,9 +175,9 @@ export default function AiBrief({ symbol, pair, tf = '1h', onAsk }: AiBriefProps
         {error ? <p className="mk-ai__err">{error}</p> : null}
       </div>
 
-      {chips.length ? (
+      {shown.length ? (
         <div className="mk-ai__chips" role="group" aria-label={`Act on ${symbol}`}>
-          {chips.map((c) => (
+          {shown.map((c) => (
             <button key={c.id} type="button" className={`mk-ai__chip mk-ai__chip--${c.kind}`} onClick={() => onAsk(c.ask)} title={c.ask} data-ask={c.ask}>
               {c.label}
             </button>

@@ -11,12 +11,16 @@
 // as the no-JS fallback (a URL never fires a turn — memory chip-send-
 // contract), so main's act-strip pins stay green on the merged tree. The
 // grammar lives in lib/trade-asks (pure) so the harness pins it without
-// rendering.
+// rendering. Sell renders only while the connected wallet holds the symbol
+// (lib/sell-gate, 2026-09-16): there is nothing to sell otherwise, so the
+// server render and a stranger's page carry Buy without Sell.
 
 import { useMemo, type MouseEvent as ReactMouseEvent } from 'react'
 import Link from 'next/link'
 import type { ChartPair } from '@/lib/charts'
 import { execAsks, type ExecSide } from '@/lib/trade-asks'
+import { canSellAsk } from '@/lib/sell-gate'
+import { useHeld } from '@/lib/use-held'
 import './trade.css'
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
@@ -48,7 +52,8 @@ export default function ExecStrip({
   last?: number | null
   usd?: number
 }) {
-  const asks = useMemo(() => execAsks(pair, { usd, last: last ?? undefined }), [pair, usd, last])
+  const held = useHeld()
+  const asks = useMemo(() => execAsks(pair, { usd, last: last ?? undefined }).filter((a) => canSellAsk(a.ask, held)), [pair, usd, last, held])
   if (asks.length === 0) return null
   // A chip is a real link (the /chat prefill: no-JS, a new tab); a plain
   // click sends through the page's act door instead.
