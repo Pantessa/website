@@ -80,7 +80,7 @@ export function earnClassOf(asset: string): EarnClass {
   return 'other'
 }
 
-export const CHAIN_LABEL: Readonly<Record<number, string>> = { 1: 'Ethereum', 8453: 'Base', 42161: 'Arbitrum', 10: 'Optimism', 4663: 'Robinhood Chain' }
+export const CHAIN_LABEL: Readonly<Record<number, string>> = { 1: 'Ethereum', 8453: 'Base', 42161: 'Arbitrum', 10: 'Optimism', 4663: 'Robinhood Chain', 5042: 'Arc' }
 
 /** "4.40%" → 4.4; 4.4 → 4.4; junk → null. */
 export function pctOf(v: unknown): number | null {

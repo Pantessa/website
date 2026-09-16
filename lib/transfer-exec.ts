@@ -67,12 +67,15 @@ const TRANSFER_CHAINS: Record<string, { id: number; name: string }> = {
   mainnet: { id: 1, name: 'Ethereum' },
   robinhood: { id: 4663, name: 'Robinhood Chain' },
   'robinhood chain': { id: 4663, name: 'Robinhood Chain' },
+  arc: { id: 5042, name: 'Arc' },
+  'arc chain': { id: 5042, name: 'Arc' },
+  'arc network': { id: 5042, name: 'Arc' },
 }
 
 // Typo-tolerant native-chain words from the shared lexicon ("Etheruem",
 // "arbitum" are real users, live 2026-07-22); captures canonicalize before
 // the TRANSFER_CHAINS lookup.
-const CHAIN_WORDS = chainAlt(['base', 'ethereum', 'arbitrum', 'optimism', 'robinhood'])
+const CHAIN_WORDS = chainAlt(['base', 'ethereum', 'arbitrum', 'optimism', 'robinhood', 'arc'])
 const RECIPIENT = String.raw`(0x[0-9a-fA-F]{40}|[a-zA-Z0-9][a-zA-Z0-9-]*\.eth)`
 // A send's amount slot: an explicit number, or an all-flavored phrase
 // ("all my", "all of the", "my entire") that resolves to the live balance

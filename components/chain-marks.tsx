@@ -99,12 +99,28 @@ export function OptimismChainMark({ size = 20 }: { size?: number }) {
   )
 }
 
+export function ArcChainMark({ size = 20 }: { size?: number }) {
+  // Circle's Arc: a white arch on the brand navy (the official favicon is a
+  // rounded navy square with this arch; hand-traced here as a compact path
+  // on the same disc chrome as the other badges — sampled 2026-09-16).
+  return (
+    <svg viewBox="0 0 60 60" width={size} height={size} fill="none" aria-hidden style={{ display: 'block' }}>
+      <circle cx="30" cy="30" r="30" fill="#1b3059" />
+      <path
+        d="M16 44c1.2-15.6 6.8-27 14-27s12.8 11.4 14 27c-2.6-1.9-6.1-3-9.9-3.1l-.3-2.2c1.6.1 3.1.4 4.5.8-1.3-9.1-4.5-15.5-8.3-15.5-4.1 0-7.6 7.8-8.6 20z"
+        fill="#ffffff"
+      />
+    </svg>
+  )
+}
+
 export const CHAIN_MARKS: Record<string, ChainMark> = {
   ethereum: EthereumChainMark,
   base: BaseChainMark,
   arbitrum: ArbitrumChainMark,
   optimism: OptimismChainMark,
   robinhood: RobinhoodChainMark,
+  arc: ArcChainMark,
 }
 
 export function getChainMark(key: string | null | undefined): ChainMark | null {

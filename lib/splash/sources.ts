@@ -66,7 +66,7 @@ interface PortfolioPayload {
 /** chainId → display label for the keyless fallback (the MCP is Base-only, but
  *  read the real chainId rather than hardcoding the label). */
 function chainLabel(chainId: number): string {
-  const map: Record<number, string> = { 1: 'Ethereum', 8453: 'Base', 42161: 'Arbitrum', 10: 'Optimism', 137: 'Polygon' }
+  const map: Record<number, string> = { 1: 'Ethereum', 8453: 'Base', 42161: 'Arbitrum', 10: 'Optimism', 5042: 'Arc', 137: 'Polygon' }
   return map[chainId] ?? `chain ${chainId}`
 }
 
@@ -1124,7 +1124,7 @@ export const SPLASH_SOURCES: SplashSource[] = [walletSource, uniswapSource, snap
 
 const SOURCE_PREVIEWS: Record<string, { message: string; prompts: SuggestedPrompt[] }> = {
   wallet: {
-    message: 'No holdings found for this wallet yet — once anything lands on Ethereum, Base, Arbitrum, or Optimism it shows up here.',
+    message: 'No holdings found for this wallet yet — once anything lands on Ethereum, Base, Arbitrum, Optimism, or Arc it shows up here.',
     prompts: [
       { label: 'What can you show me?', prompt: 'What can the wallet agent show me about any address?' },
       { label: 'Check gas balances', prompt: 'What are my gas balances across chains?' },

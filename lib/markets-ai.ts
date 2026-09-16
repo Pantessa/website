@@ -806,7 +806,7 @@ export function venueWordsFor(pair: ChartPair, last: number | null = null): stri
   }
   const words: string[] = []
   const chainWords = (ids: Set<number>) => {
-    const names = [...ids].filter((id) => id !== 1337).map((id) => ({ 1: 'Ethereum', 8453: 'Base', 42161: 'Arbitrum', 10: 'Optimism', 4663: 'Robinhood Chain' })[id] ?? `chain ${id}`)
+    const names = [...ids].filter((id) => id !== 1337).map((id) => ({ 1: 'Ethereum', 8453: 'Base', 42161: 'Arbitrum', 10: 'Optimism', 4663: 'Robinhood Chain', 5042: 'Arc' })[id] ?? `chain ${id}`)
     return names.length ? ` (${names.join(', ')})` : ''
   }
   for (const [kind, e] of byKind) {

@@ -67,7 +67,7 @@ function chainOf(raw: unknown): { chainId: number | null; chain: string | null }
 
 function explorerTx(chainId: number | null, hash: string | null): string | null {
   if (!hash || !/^0x[0-9a-fA-F]{64}$/.test(hash)) return null
-  const base: Record<number, string> = { 1: 'https://etherscan.io/tx/', 8453: 'https://basescan.org/tx/', 42161: 'https://arbiscan.io/tx/', 10: 'https://optimistic.etherscan.io/tx/', 4663: 'https://explorer.robinhood.com/tx/' }
+  const base: Record<number, string> = { 1: 'https://etherscan.io/tx/', 8453: 'https://basescan.org/tx/', 42161: 'https://arbiscan.io/tx/', 10: 'https://optimistic.etherscan.io/tx/', 4663: 'https://explorer.robinhood.com/tx/', 5042: 'https://explorer.arc.io/tx/' }
   const b = chainId != null ? base[chainId] : undefined
   return b ? `${b}${hash}` : null
 }
