@@ -3912,7 +3912,8 @@ async function main() {
       // on touch; the chart's act chips are 12px and 40px tall.
       const touch10 = /\[@media\(hover:none\)\]:h-10 \[@media\(hover:none\)\]:w-10/
       check('mobile: overlay close buttons (chart / job detail / request-MCP) are 40px on touch', touch10.test(chartOverlay) && touch10.test(jobOverlay) && touch10.test(addMcp))
-      check('mobile: chart overlay act chips are ≥40px and 12px on touch', (chartOverlay.match(/\[@media\(hover:none\)\]:min-h-10 \[@media\(hover:none\)\]:text-\[12px\]/g) ?? []).length === 3)
+      // Buy + Sell (the DCA chip left 2026-09-16)
+      check('mobile: chart overlay act chips are ≥40px and 12px on touch', (chartOverlay.match(/\[@media\(hover:none\)\]:min-h-10 \[@media\(hover:none\)\]:text-\[12px\]/g) ?? []).length === 2)
       check('mobile: the sign-in door dismiss is a 40px touch target', /@media \(hover: none\) \{ \.ca__close \{ width: 40px; height: 40px;/.test(designCss))
       // The toolbar working-set door beside chain picker + Share + pill was
       // ~30px wide at 375 and ellipsized to "Sn…" — phones show the count.
@@ -9215,8 +9216,8 @@ async function main() {
     const wvRh = wv.chains?.find((c) => c.id === 4663)
     const wvStocks = (wvRh?.holdings ?? []).filter((h) => h.actions?.some((a) => /^Sell /.test(a.label)))
     check(
-      `wallet stocks: /api/wallet lists Robinhood Chain, and every held stock row is priced and carries its chips (${wvStocks.map((h) => h.symbol).join(',') || 'none held'})`,
-      wvRes.status === 200 && !!wvRh && wvStocks.every((h) => typeof h.priceUsd === 'number' && h.priceUsd > 0 && (h.actions?.length ?? 0) >= 3),
+      `wallet stocks: /api/wallet lists Robinhood Chain, and every held stock row is priced and carries its Buy more / Sell chips, no DCA (${wvStocks.map((h) => h.symbol).join(',') || 'none held'})`,
+      wvRes.status === 200 && !!wvRh && wvStocks.every((h) => typeof h.priceUsd === 'number' && h.priceUsd > 0 && (h.actions?.length ?? 0) >= 2 && !(h.actions ?? []).some((a) => /\bdca\b|every week/i.test(`${a.label} ${a.prompt}`))),
       JSON.stringify(wvRh?.holdings.map((h) => [h.symbol, h.balance, h.priceUsd, h.actions?.length ?? 0])),
     )
 
@@ -17352,7 +17353,8 @@ async function main() {
     const aaplPair = chartPairFor('AAPL')!
     check(
       'ask door: chips are context-aware — the symbol page offers that symbol\'s real trade asks (+ a why-is-it-moving read), elsewhere the curated examples',
-      askDoorChips('/t/AAPL').slice(0, 3).every((c, i) => c.ask === tradeAsks(aaplPair)[i].ask) &&
+      tradeAsks(aaplPair).length > 0 &&
+        askDoorChips('/t/AAPL').slice(0, tradeAsks(aaplPair).length).every((c, i) => c.ask === tradeAsks(aaplPair)[i].ask) &&
         askDoorChips('/t/AAPL').some((c) => c.label === 'Why is AAPL moving?') &&
         askDoorChips('/t/hype')[0].ask === 'Long $50 of HYPE on Hyperliquid' &&
         askDoorChips('/pricing').map((c) => c.ask).join('|') === EXAMPLE_PROMPTS.map((p) => p.prompt).join('|') &&
