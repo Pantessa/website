@@ -14,12 +14,15 @@
 //  fundSegment + advice donor leg, lib/funding-plan's legResume /
 //  gasLegResume / planStrandedRescue):
 //    "Fund robinhood chain with $14 from base[ using usdc.e][ including gas]"
+//    "Fund arc with $12 from base[ using eth]"       (every LiFi destination)
 //    "Swap 12.5 USDC from Base to ETH on Arbitrum"   (cross-chain leg)
 //    "swap 0.001 ETH from ethereum to base"          (plain move / gas topup)
 //    "Swap 12 USDC for ETH on Base"                  (same-chain venue swap)
 //  Anything else ends the funding legs: the remainder (joined back with
 //  ", then ") is the ACTION node — "buy $12 of AAPL", "stake …", etc.
 // ─────────────────────────────────────────────────────────────────────────
+
+import { LIFI_DESTINATIONS, LIFI_DESTINATION_CHAINS, type LifiDestination } from '@/lib/lifi-destinations'
 
 export interface FundingPathNode {
   /** 'chain' = a wallet location the money passes through; 'action' = the
@@ -38,8 +41,8 @@ export interface FundingPath {
 }
 
 /** Chain words as the resumes spell them → display titles. Kept local so
- *  the module stays client-safe (no server-lib imports); the harness pins
- *  every planner chain word to resolve here. */
+ *  the module stays client-safe (no server-lib imports — lib/lifi-destinations
+ *  is pure); the harness pins every planner chain word to resolve here. */
 const CHAIN_DISPLAY: Record<string, string> = {
   base: 'Base',
   ethereum: 'Ethereum',
@@ -68,19 +71,36 @@ interface PathEdge {
 
 const chainNode = (title: string, detail?: string): FundingPathNode => ({ kind: 'chain', title, detail })
 
+/** Every LiFi funding destination, keyed by the word its fund sentence reads
+ *  (lib/lifi-destinations fundSegment: "robinhood chain", "arc"). A new
+ *  destination draws the moment it joins that table. */
+const FUND_DESTINATIONS = new Map<string, LifiDestination>(
+  LIFI_DESTINATION_CHAINS.map((id) => [LIFI_DESTINATIONS[id].word, LIFI_DESTINATIONS[id]]),
+)
+
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+// "Fund <destination word> with $14 from base[ using usdc.e][ including gas]"
+const FUND_SEGMENT_RE = new RegExp(
+  `^fund (${[...FUND_DESTINATIONS.keys()].map(escapeRe).join('|')}) with \\$([\\d.,]+) from ([a-z][a-z ]*?)(?: using ([a-z0-9.]+))?( including gas)?$`,
+  'i',
+)
+
 /** Parse ONE funding segment into an edge, or null when the segment isn't a
  *  funding leg (which ends the leg run — see fundingPathOf). */
 function parseSegment(seg: string): PathEdge | null {
-  // "Fund robinhood chain with $14 from base[ using usdc.e][ including gas]"
-  const fund = seg.match(/^fund robinhood chain with \$([\d.,]+) from ([a-z][a-z ]*?)(?: using ([a-z0-9.]+))?( including gas)?$/i)
+  const fund = seg.match(FUND_SEGMENT_RE)
   if (fund) {
-    const from = chainDisplay(fund[2])
-    if (!from) return null
-    const token = tokenDisplay(fund[3] ?? 'USDC')
+    const dest = FUND_DESTINATIONS.get(fund[1].toLowerCase())
+    const from = chainDisplay(fund[3])
+    if (!dest || !from) return null
+    const token = tokenDisplay(fund[4] ?? 'USDC')
     return {
-      from: chainNode(from, `$${fund[1]} ${token}`),
+      from: chainNode(from, `$${fund[2]} ${token}`),
       label: 'bridge',
-      to: chainNode('Robinhood Chain', fund[4] ? 'USDG + gas' : 'USDG'),
+      // Gas lands only where a separate gas leg exists: the jobs compiler
+      // ignores "including gas" on a stable-gas chain (Arc's USDC IS the gas).
+      to: chainNode(dest.name, fund[5] && dest.gasLeg ? `${dest.stable} + gas` : dest.stable),
     }
   }
   // "Swap 12.5 USDC from Base to ETH on Arbitrum" — the amount leaves the

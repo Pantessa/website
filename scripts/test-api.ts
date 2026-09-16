@@ -258,6 +258,7 @@ import {
 import { parseEcbUsdRate } from '../lib/ecb-fx'
 import { clarifyOf } from '../lib/clarify'
 import { fundingPathOf, NEVER_MIND_RESUME_RE } from '../lib/funding-path'
+import { fundSegment as destinationFundSegment, LIFI_DESTINATIONS, LIFI_DESTINATION_CHAINS } from '../lib/lifi-destinations'
 import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '../lib/turn-status'
 import { classifyFundingBalances, decideFundingTurn, destGasLegUsd, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, gasTopupLegUsd, MIN_LEG_USD, planFundingChips, planGasTopup, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, strandedCoversPlan, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { buyDollarsOf, swapBuyFundChip, swapBuyResume, swapShortfallTurn, type SwapShortfallAsk } from '../lib/swap-shortfall'
@@ -10596,15 +10597,44 @@ async function main() {
     // SYNC GUARD: every planner-emitted chip above must parse, so a grammar
     // change that breaks the visualization fails here, loudly, not as a
     // silent fallback to plain text chips in production.
+    // Arc's chips (website#793) come from the same planners with dest 5042,
+    // and none of them drew: the fund parse read only "robinhood chain", so
+    // every Arc chip fell back to plain text, and the gas-stranded rescue
+    // drew Base → Arbitrum → "Fund arc with $11 from arbitrum, then …" as
+    // its goal. One fixture per planner shape, each required non-empty.
+    const arcPathDest = LIFI_DESTINATIONS[5042]
+    const arcRescue = planRobinhoodFundingAdvice({ scan: donorScan, needUsd: 11, gasIncluded: false, followup: 'buy $10 of EURC', dest: arcPathDest })
+    const arcPathSets = {
+      chips: planRobinhoodFundingChips({ origins: [O(8453, 'Base', 40), O(1, 'Ethereum', 20)], needUsd: 12, gasIncluded: false, followup: 'buy $10 of BTC', dest: arcPathDest }) ?? [],
+      combined: planRobinhoodFundingChips({ origins: [O(1, 'Ethereum', 12), O(8453, 'Base', 12)], needUsd: 22, gasIncluded: false, followup: 'buy $15 of BTC', dest: arcPathDest }) ?? [],
+      eth: planRobinhoodFundingChips({ origins: [O(8453, 'Base', 30, 0.012, 'ETH')], needUsd: 10.5, gasIncluded: false, followup: 'buy $10 of EURC', dest: arcPathDest }) ?? [],
+      usdce: planRobinhoodFundingChips({ origins: [O(42161, 'Arbitrum', 20, 0.01, 'USDC.e')], needUsd: 12, gasIncluded: false, followup: '', dest: arcPathDest }) ?? [],
+      rescue: arcRescue.kind === 'gas-stranded' && arcRescue.chips ? arcRescue.chips : [],
+      // The jobs redirect's chips ("move 5 USDC from base to arc" etc.).
+      redirect: ['move 5 USDC from base to arc', 'swap 20 USDC from base to BTC on arc', 'bridge 0.01 ETH from ethereum to arc'].flatMap((ask) => {
+        const r = robinhoodFundingFromCrossChain(ask)
+        return r && 'clarify' in r ? r.clarify.options : []
+      }),
+    }
     const pathChips = [
       ...(chips ?? []), ...(altChips ?? []), ...(comboChips ?? []), ...(bridgeOnlyChips ?? []), ...(usdceChips ?? []),
       ...(covered.kind === 'chips' ? covered.chips : []),
-      ...(rescue.kind === 'gas-stranded' && rescue.chips ? rescue.chips.filter((c) => !/never mind/i.test(c.resume)) : []),
-    ]
+      ...(rescue.kind === 'gas-stranded' && rescue.chips ? rescue.chips : []),
+      ...Object.values(arcPathSets).flat(),
+    ].filter((c) => !NEVER_MIND_RESUME_RE.test(c.resume))
+    // Parsing isn't drawing: a route must show every funding leg as a hop.
+    // A non-null path whose action node still reads as a funding sentence
+    // is the half-parse the Arc rescue shipped with.
+    const drawsEveryLeg = (resume: string) => {
+      const path = fundingPathOf(resume)
+      const action = path?.nodes.find((n) => n.kind === 'action')
+      return !!path && (!action || parseRobinhoodFunding(action.title) === null)
+    }
     check(
-      'funding path: every planner-emitted chip resume parses into a drawable route',
-      pathChips.length >= 10 && pathChips.every((c) => fundingPathOf(c.resume) !== null),
-      JSON.stringify(pathChips.filter((c) => fundingPathOf(c.resume) === null).map((c) => c.resume)),
+      'funding path: every planner-emitted chip resume parses into a drawable route (Robinhood Chain and Arc), every funding leg drawn as a hop, never folded into the action',
+      pathChips.length >= 28 && Object.values(arcPathSets).every((set) => set.some((c) => !NEVER_MIND_RESUME_RE.test(c.resume))) &&
+        pathChips.every((c) => drawsEveryLeg(c.resume)),
+      JSON.stringify({ sizes: Object.fromEntries(Object.entries(arcPathSets).map(([k, v]) => [k, v.length])), undrawn: pathChips.filter((c) => !drawsEveryLeg(c.resume)).map((c) => c.resume) }),
     )
     const leadPath = chips ? fundingPathOf(chips[0].resume) : null
     check(
@@ -10621,6 +10651,42 @@ async function main() {
         rescuePath.nodes[0].detail === `${GAS_TOPUP_ETH} ETH` &&
         rescuePath.nodes[1].detail === '$11 USDC' && rescuePath.arrows.join(' | ') === 'bridge | bridge | then',
       JSON.stringify(rescuePath),
+    )
+    // Arc lands USDC and never "+ gas": the landed USDC is the gas.
+    const arcLeadPath = arcPathSets.chips[0] ? fundingPathOf(arcPathSets.chips[0].resume) : null
+    check(
+      'funding path (arc): the lead chip draws Base → Arc (USDC, no "+ gas") → the buy',
+      !!arcLeadPath && arcLeadPath.nodes.map((n) => n.title).join(' | ') === 'Base | Arc | Buy $10 of BTC' &&
+        arcLeadPath.nodes[0].detail === '$12 USDC' && arcLeadPath.nodes[1].detail === 'USDC' &&
+        arcLeadPath.nodes[2].kind === 'action' && arcLeadPath.arrows.join(' | ') === 'bridge | then',
+      JSON.stringify(arcLeadPath),
+    )
+    const arcEthChip = arcPathSets.eth[0]
+    const arcEthPath = arcEthChip ? fundingPathOf(arcEthChip.resume) : null
+    const arcRescuePath = arcPathSets.rescue[0] ? fundingPathOf(arcPathSets.rescue[0].resume) : null
+    const nodeLine = (path: ReturnType<typeof fundingPathOf>) => path?.nodes.map((n) => `${n.title}${n.detail ? ` [${n.detail}]` : ''}`).join(' → ')
+    check(
+      'funding path (arc): the ETH-origin chip "Fund arc with $10.5 from base using eth" draws Base ($10.5 ETH) → Arc (USDC); the gas-stranded rescue folds Base → Arbitrum → Arc → the buy; a typed "including gas" still lands plain USDC (the jobs compiler drops it on Arc)',
+      arcEthChip?.resume === 'Fund arc with $10.5 from base using eth, then buy $10 of EURC' &&
+        nodeLine(arcEthPath) === 'Base [$10.5 ETH] → Arc [USDC] → Buy $10 of EURC' &&
+        nodeLine(arcRescuePath) === `Base [${GAS_TOPUP_ETH} ETH] → Arbitrum [$11 USDC] → Arc [USDC] → Buy $10 of EURC` &&
+        arcRescuePath?.arrows.join(' | ') === 'bridge | bridge | then' &&
+        nodeLine(fundingPathOf('Fund arc with $12 from base including gas')) === 'Base [$12 USDC] → Arc [USDC]',
+      JSON.stringify({ eth: arcEthChip?.resume, ethPath: nodeLine(arcEthPath), rescue: nodeLine(arcRescuePath) }),
+    )
+    // The destination table drives the parse: each destination's fund
+    // sentence lands on it by name, with the stable the registry says the
+    // legs deliver ("+ gas" only where a separate gas leg exists). A new
+    // destination draws, or fails here, the day it joins the table.
+    check(
+      'funding path: every LiFi destination draws its fund sentence, landing by name on the registry\'s primary stable, "+ gas" only where a gas leg exists',
+      LIFI_DESTINATION_CHAINS.length >= 2 &&
+        LIFI_DESTINATION_CHAINS.every((id) => {
+          const dest = LIFI_DESTINATIONS[id]
+          const landing = fundingPathOf(`${destinationFundSegment(12, 'Base', true, 'USDC', dest)}, then buy $10 of BTC`)?.nodes[1]
+          return primaryStable(id)?.symbol.toUpperCase() === dest.stable && landing?.title === dest.name && landing.detail === (dest.gasLeg ? `${dest.stable} + gas` : dest.stable)
+        }),
+      JSON.stringify(LIFI_DESTINATION_CHAINS.map((id) => ({ id, stable: LIFI_DESTINATIONS[id].stable, registry: primaryStable(id)?.symbol, path: nodeLine(fundingPathOf(destinationFundSegment(12, 'Base', true, 'USDC', LIFI_DESTINATIONS[id]))) }))),
     )
     // The universal planner's two leg shapes: a destination-chain conversion
     // draws a same-chain swap; a cross-chain leg draws bridge + swap.
@@ -15669,6 +15735,145 @@ async function main() {
           JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-hl-exec', 'wait:wait']),
       hlOffer.kind === 'offer' ? hlOffer.chips[0].resume : hlOffer.kind,
     )
+
+    // ── The round trip (2026-09-16). "Buy $50 of ETH" from a wallet whose only
+    // money was ETH planned "Swap 0.02825 ETH for USDC on Base, then swap 50
+    // USDC for ETH on Base": two conversions and two fees, ending on the same
+    // ETH. The swap gate now names what the swap BUYS (FundingNeed.buyToken),
+    // and a holding of that token never funds it.
+    {
+      const buyEth: FundingNeed = { chainId: 8453, token: 'USDC', amountHuman: 50, followupResume: 'swap 50 USDC for ETH on Base', actionLabel: 'the swap', buyToken: 'ETH' }
+      const scanOf = (sources: FundingSource[], stranded: FundingSource[] = []) => ({ sources, stranded, ethUsd: 3500, readChains: ['Base', 'Arbitrum', 'Optimism', 'Ethereum'], failedChains: [] })
+      const decide = (need: FundingNeed, sources: FundingSource[], stranded: FundingSource[] = [], gasUsd = 0) =>
+        decideFundingTurn({ need, needUsd: fundingPlanUsd(need.amountHuman, need.token === 'ETH' ? 3500 : 1), gasUsd, scan: scanOf(sources, stranded), destChainName: 'Base' })
+      const optionsOf = (d: ReturnType<typeof decideFundingTurn>) => (d.kind === 'offer' ? d.turn.clarify.options.filter((o) => o.label !== 'Not now') : [])
+      // A leg that converts the bought token into something else:
+      // "Swap 0.02 ETH for USDC", "Swap 0.02 ETH from Arbitrum to USDC".
+      const roundTrip = (resume: string, buy: string) =>
+        resume.split(', then ').some((leg) => {
+          const m = leg.match(/^swap\s+[\d.]+\s+([a-z]+)\b.*?\b(?:for|to)\s+([a-z]+)\s+on\b/i)
+          return !!m && m[1].toUpperCase() === buy.toUpperCase() && m[2].toUpperCase() !== buy.toUpperCase()
+        })
+
+      const sameChain = decide(buyEth, [src(8453, 'Base', 'ETH', 99.6)])
+      check(
+        'funding round trip: ETH on the swap chain is all the wallet holds → no plan sells it to buy it back; the refusal names the ETH as what the swap gets you and asks for USDC',
+        sameChain.kind === 'refusal' && sameChain.insufficient.includes('the only money I can see is ~$99.60 of ETH on Base') &&
+          /ETH is what the swap gets you/.test(sameChain.insufficient) && /Send USDC to this wallet/.test(sameChain.insufficient) &&
+          !/found no movable/.test(sameChain.insufficient),
+        sameChain.kind === 'refusal' ? sameChain.insufficient : JSON.stringify(optionsOf(sameChain)),
+      )
+      const plain = planFundingChips({ ...buyEth, buyToken: undefined }, 56.5, [src(8453, 'Base', 'ETH', 99.6)])
+      check(
+        'funding round trip: the old plan was the round trip (a need that names no buy still converts the ETH), so the rule is buyToken and nothing wider',
+        plain.kind === 'offer' && roundTrip(plain.chips[0].resume, 'ETH'),
+        plain.kind === 'offer' ? plain.chips[0].resume : plain.kind,
+      )
+
+      const otherChain = decide(buyEth, [src(42161, 'Arbitrum', 'ETH', 99.6)], [], 1.5)
+      const move = optionsOf(otherChain)
+      const moveCc = move.length === 1 ? parseCrossChainSwap(move[0].resume) : null
+      check(
+        'funding round trip: ETH only on another chain → ONE chip, a move of that ETH to the swap chain sized to the buy ($50, no fee margin, no USDC leg, no follow-up swap)',
+        otherChain.kind === 'offer' && move.length === 1 && move[0].resume === 'Swap 0.014286 ETH from Arbitrum to ETH on Base' &&
+          move[0].label === 'Move ~$50 of my ETH from Arbitrum to Base' &&
+          !!moveCc && !('problem' in moveCc) && moveCc.originToken.toUpperCase() === 'ETH' && moveCc.destinationToken.toUpperCase() === 'ETH' &&
+          /arbitrum/i.test(moveCc.originChain) && /base/i.test(moveCc.destinationChain) &&
+          /doesn't buy more/.test(otherChain.turn.reply) && otherChain.turn.reply.includes('~$99.60 of ETH on Arbitrum'),
+        JSON.stringify(otherChain.kind === 'offer' ? { reply: otherChain.turn.reply, move } : otherChain),
+      )
+      const { askAppSlugs: moveApps } = await import('../lib/ask-apps')
+      check(
+        'funding round trip: the lone move is the cross-chain gate\'s ask (not a job), and the chip composes NEAR Intents — the default chat set has none, and a chip send turns it on (lib/ask-apps)',
+        move.length === 1 && compileJobAsk(move[0].resume) === null && simulateLadder(move[0].resume).gate === 'cross-chain' &&
+          moveApps(move[0].resume).includes('near-intents-mcp-yeetful'),
+        move[0]?.resume,
+      )
+      const split = decide(buyEth, [src(10, 'Optimism', 'ETH', 20), src(1, 'Ethereum', 'ETH', 30)], [], 1.5)
+      const splitJob = optionsOf(split).length === 1 ? compileJobAsk(optionsOf(split)[0].resume) : null
+      check(
+        'funding round trip: ETH split across chains that no one chain covers → one chip whose moves compile as a job (no NEAR Intents needed in the set)',
+        !!splitJob && !('problem' in splitJob) &&
+          JSON.stringify(splitJob.steps.map((s) => `${s.kind}:${s.builder}`)) ===
+            JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-cross-chain', 'wait:wait']) &&
+          !roundTrip(optionsOf(split)[0].resume, 'ETH'),
+        JSON.stringify(optionsOf(split)),
+      )
+
+      const mixed = planFundingChips(buyEth, 56.5, [src(8453, 'Base', 'ETH', 99.6), src(42161, 'Arbitrum', 'USDC', 60)])
+      check(
+        'funding round trip: ETH on the swap chain + USDC elsewhere → the plan spends the USDC (the destination-chain ETH used to rank FIRST and sell itself)',
+        mixed.kind === 'offer' && mixed.chips[0].resume === 'Swap 56.5 USDC from Arbitrum to USDC on Base, then swap 50 USDC for ETH on Base' &&
+          mixed.chips.every((c) => !roundTrip(c.resume, 'ETH')),
+        mixed.kind === 'offer' ? mixed.chips.map((c) => c.resume).join(' | ') : mixed.kind,
+      )
+      const mixedShort = decide(buyEth, [src(8453, 'Base', 'ETH', 99.6), src(42161, 'Arbitrum', 'USDC', 20)])
+      check(
+        'funding round trip: USDC short + ETH held → an honest refusal that still names the ETH, as not counted',
+        mixedShort.kind === 'refusal' && mixedShort.insufficient.includes('~$20 of USDC on Arbitrum') &&
+          mixedShort.insufficient.includes('(Not counted: ~$99.60 of ETH on Base — ETH is what the swap gets you.)'),
+        mixedShort.kind === 'refusal' ? mixedShort.insufficient : mixedShort.kind,
+      )
+      // WETH is matched by symbol, not by lib/chains' shared address: the scan's
+      // ETH is native, there's no wrap builder, and #791's card chip for a WETH
+      // buy lands ETH and fires the buy again. Excluding ETH there would refuse
+      // the landed money and offer the card a second time.
+      const weth = decide({ ...buyEth, followupResume: 'swap 50 USDC for WETH on Base', buyToken: 'WETH' }, [src(42161, 'Arbitrum', 'ETH', 99.6)], [], 1.5)
+      const wrap = planFundingChips({ chainId: 8453, token: 'ETH', amountHuman: 0.0105, followupResume: 'swap 0.01 ETH for WETH on Base', actionLabel: 'the swap', buyToken: 'WETH' }, 38, [src(42161, 'Arbitrum', 'ETH', 99.6)])
+      check(
+        'funding round trip: a WETH buy keeps its ETH plan (exact symbols — the scan\'s ETH is native, no wrap builder, and the card door\'s WETH chip lands ETH), and an ETH-for-WETH need still moves the ETH',
+        optionsOf(weth).length > 0 && /ETH from Arbitrum to USDC on Base, then swap 50 USDC for WETH on Base$/.test(optionsOf(weth)[0].resume) &&
+          wrap.kind === 'offer' && /^Swap [\d.]+ ETH from Arbitrum to ETH on Base, then swap 0\.01 ETH for WETH on Base$/.test(wrap.chips[0].resume),
+        JSON.stringify({ weth: optionsOf(weth).map((o) => o.resume), wrap: wrap.kind === 'offer' ? wrap.chips[0].resume : wrap.kind }),
+      )
+      const uni = decide({ ...buyEth, followupResume: 'swap 50 USDC for UNI on Base', buyToken: 'UNI' }, [src(42161, 'Arbitrum', 'ETH', 99.6)], [], 1.5)
+      check(
+        'funding round trip: ETH still funds a buy of anything else ("Buy $50 of UNI" keeps its ETH plan)',
+        optionsOf(uni).length > 0 && /ETH from Arbitrum to USDC on Base, then swap 50 USDC for UNI on Base$/.test(optionsOf(uni)[0].resume),
+        JSON.stringify(optionsOf(uni)),
+      )
+
+      // The sell direction: "Sell $50 of ETH" buys USDC. USDC must not buy the
+      // ETH it sells back — not as a plan, not as a stranded-USDC rescue.
+      const sellEth: FundingNeed = { chainId: 8453, token: 'ETH', amountHuman: 0.0145, followupResume: 'swap 0.0143 ETH for USDC on Base', actionLabel: 'the swap', buyToken: 'USDC' }
+      const sellShort = decide(sellEth, [src(42161, 'Arbitrum', 'USDC', 60)])
+      const strandedUsdc: FundingSource = { chainId: 42161, chainWord: 'Arbitrum', token: 'USDC', balance: 60, usd: 60 }
+      check(
+        'funding round trip: a sell never buys the ETH it sells with the USDC it buys (no plan, no stranded-USDC rescue), and the refusal names the USDC',
+        sellShort.kind === 'refusal' && /USDC is what the swap gets you/.test(sellShort.insufficient) && /Send ETH to this wallet/.test(sellShort.insufficient) &&
+          planStrandedRescue({ need: sellEth, needUsd: 51.5, gasUsd: 0, sources: [src(10, 'Optimism', 'ETH', 5)], stranded: [strandedUsdc], ethUsd: 3500 }) === null &&
+          planStrandedRescue({ need: { ...sellEth, buyToken: undefined }, needUsd: 51.5, gasUsd: 0, sources: [src(10, 'Optimism', 'ETH', 5)], stranded: [strandedUsdc], ethUsd: 3500 }) !== null,
+        sellShort.kind === 'refusal' ? sellShort.insufficient : JSON.stringify(optionsOf(sellShort)),
+      )
+
+      // The wiring: the swap gate names the buy on its shortfall need, and the
+      // gas-only probe does not (ETH spent on gas is never bought back).
+      const swapGateSrc = (await readFile('app/api/chat/route.ts', 'utf8')).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      check(
+        'funding round trip (source): the swap gate\'s shortfall need carries buyToken: buySym; its gas-only probe (amountHuman 0) carries none',
+        /amountHuman: Number\(\(needTotal - held\)\.toFixed\(6\)\),\s*\n\s*followupResume: `swap \$\{intent\.sellAmountHuman\} \$\{sellSym\} for \$\{buySym\} on \$\{FUNDING_CHAIN_WORD\[chainId\]\}`,\s*\n\s*actionLabel: [^\n]+\n\s*buyToken: buySym,/.test(swapGateSrc) &&
+          /amountHuman: 0,\s*\n\s*followupResume: `swap \$\{intent\.sellAmountHuman\} \$\{sellSym\} for \$\{buySym\} on \$\{FUNDING_CHAIN_WORD\[chainId\]\}`,\s*\n\s*actionLabel: [^\n]+\n\s*\},/.test(swapGateSrc),
+      )
+
+      // The live route in the default chat set: the move answers the
+      // add-the-dapp door without NEAR Intents, and the cross-chain lane
+      // claims it with the apps the chip send turns on.
+      const { DEFAULT_CHAT_FLEET_SLUGS: defaultSet } = await import('../lib/free-fleet')
+      const moveTurn = async (slugs: readonly string[]) =>
+        (await (await fetch(`${BASE}/api/chat`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+          body: JSON.stringify({ message: 'Swap 0.014286 ETH from Arbitrum to ETH on Base', activeServers: slugs.map((slug) => ({ slug })), history: [] }),
+        })).json()) as { reply?: string; door?: { mcps?: string } }
+      const moveBare = await moveTurn(defaultSet)
+      const moveLit = await moveTurn([...new Set([...defaultSet, ...moveApps('Swap 0.014286 ETH from Arbitrum to ETH on Base')])])
+      check(
+        'funding round trip (route): the move chip in the default chat set answers the NEAR Intents door, and the cross-chain lane claims it once the chip\'s apps are on',
+        /Add NEAR Intents with this ask ready/.test(String(moveBare.reply)) && moveBare.door?.mcps === 'near-intents-mcp-yeetful' &&
+          !moveLit.door && /^🔗/.test(String(moveLit.reply)) && !/with this ask ready/.test(String(moveLit.reply)),
+        `bare=${String(moveBare.reply).slice(0, 80)} lit=${String(moveLit.reply).slice(0, 120)}`,
+      )
+    }
   }
 
   // ── DCA — recurring buys (grammar + period math + the chip contract) ─────
