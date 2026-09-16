@@ -461,7 +461,10 @@ Hard-won, and cheap to re-learn the expensive way:
 - **Coinbase Wallet stays pinned to `eoaOnly`** in `lib/wagmi.ts`; a popup
   opened after an `await` breaks second signatures.
 - **Tailwind cannot opacity-modify CSS-variable colors** —
-  `bg-[color:var(--x)]/90` paints transparent. Use plain CSS.
+  `bg-[color:var(--x)]/90` (or `bg-[var(--x)]/90`) paints transparent. Use a
+  `tint-*` utility from `app/globals.css` (`tint-bg-accent-10`,
+  `hover:tint-border-accent-45`) and add a rule there for a new token or
+  percent; `test:api` fails the dead form.
 - **Kill ports, not process names.** `lsof -ti :3400 | xargs kill -9`. Killing
   by name leaves a stale `next-server` child serving an old build.
 - **Never host or brand a fork of someone else's interface** on a Pantessa
