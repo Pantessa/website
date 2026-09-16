@@ -20939,6 +20939,11 @@ async function main() {
       mountSrc.includes('fills?: FillMarker[]') && mountSrc.includes('fills={fills}') && mcSrc.includes("shape: f.side === 'buy' ? 'arrowUp' : 'arrowDown'") && mcSrc.includes('if (f.t < bars[0].t) return') &&
         mcSrc.includes('const ink = tokens.series[slot] ?? tokens.fg') && mcSrc.includes('aria-label="Your fills on this chart"') && mcSrc.includes('&warmup=1`, { cache: \'no-store\' })') && mcSrc.includes('candles: [...(body.warmup ?? []), ...body.candles]'),
     )
+    check(
+      'viz chart: the crosshair handler reports the bar under the cursor to the AI lane\'s hover store (useChartHover.setHoverBar, one write per bar change, null on leave and on unmount) so "Explain this bar" follows the crosshair',
+      mcSrc.includes("import { useChartHover } from '@/lib/markets-ai-hover'") && mcSrc.includes('useChartHover.getState().setHoverBar(symbol, bar ? { t: bar.t, o: bar.o, h: bar.h, l: bar.l, c: bar.c, v: bar.v } : null)') &&
+        mcSrc.includes('if (t === hoverBarT) return') && mcSrc.includes('chart.unsubscribeCrosshairMove(onMove)\n      reportHoverBar(null)'),
+    )
     const primitives = ['Sparkline', 'Delta', 'StatTile', 'MiniGauge', 'Bars', 'Ribbon', 'MarketMap', 'FlowPanel', 'MoversTape']
     const barrel = await readFile('components/markets/viz/index.ts', 'utf8')
     const present = await Promise.all(primitives.map((n) => readFile(`components/markets/viz/${n}.tsx`, 'utf8').then(() => true, () => false)))

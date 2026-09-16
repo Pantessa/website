@@ -54,6 +54,7 @@ import '@/components/markets/look.css'
 import DrawingLayer, { type ChartGeom, type DrawTool } from './DrawingLayer'
 import { SessionBands } from './session-bands'
 import { fillLabel, type FillMarker } from '@/lib/chart-fills'
+import { useChartHover } from '@/lib/markets-ai-hover'
 import { seriesVar } from '@/lib/markets-look'
 import { VolumeProfile } from './volume-profile'
 
@@ -680,15 +681,30 @@ export default function MarketChart({
     const ro = new ResizeObserver(bump)
     ro.observe(el)
 
+    // The bar under the crosshair is shared with the AI lane's ask box
+    // ("Explain the 14:00 bar" follows the cursor): one store write per bar
+    // change, null when the cursor leaves the plot.
+    let hoverBarT: number | null = null
+    const reportHoverBar = (logical: number | null) => {
+      const held = barsRef.current
+      const i = logical === null ? -1 : Math.round(logical)
+      const bar = i >= 0 && i < held.length ? held[i] : null
+      const t = bar?.t ?? null
+      if (t === hoverBarT) return
+      hoverBarT = t
+      useChartHover.getState().setHoverBar(symbol, bar ? { t: bar.t, o: bar.o, h: bar.h, l: bar.l, c: bar.c, v: bar.v } : null)
+    }
     const onMove = (p: MouseEventParams<Time>) => {
       if (!p.point) {
         setHover(null)
+        reportHoverBar(null)
         return
       }
       const price = candleSeries.coordinateToPrice(p.point.y)
       const logical = chart.timeScale().coordinateToLogical(p.point.x)
       const t = logical === null ? null : logicalToTime(barsRef.current, logical as number)
       setHover({ x: p.point.x, y: p.point.y, price: price === null ? null : Number(price), t })
+      reportHoverBar(logical === null ? null : (logical as number))
     }
     chart.subscribeCrosshairMove(onMove)
 
@@ -745,6 +761,7 @@ export default function MarketChart({
     return () => {
       ro.disconnect()
       chart.unsubscribeCrosshairMove(onMove)
+      reportHoverBar(null)
       chart.unsubscribeClick(onClick)
       chart.remove()
       chartRef.current = null
