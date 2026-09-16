@@ -20015,6 +20015,88 @@ async function main() {
     await prisma.watchlistHoldingSeen.deleteMany({ where: { owner: { in: hoOwners } } }).catch(() => {})
   }
 
+  // ── MARKETS/WATCH — the card door (2026-09-16) ───────────────────────────
+  // Nate, on an empty rail signed in with an account that holds nothing: "can
+  // we add a buy ETH or USDC using stripe call out and linkage here". The
+  // holdings read says whether the wallet holds nothing and whether card
+  // funding is on; the rail offers the signed Stripe door and watches for the
+  // money. The rules first, then the read, then the wiring (the pixel drive
+  // is in the PR).
+  console.log('— markets/watch card door')
+  {
+    const { walletLooksEmpty } = await import('../lib/watchlist-holdings')
+    const { railFundPhase, RAIL_FUND_OPTIONS, RAIL_FUND_PRESET_USD } = await import('../lib/watchlists')
+    const { ONRAMP_DEFAULT_NETWORK, ONRAMP_MAX_USD, ONRAMP_MIN_USD, onrampAssetOf, onrampConsentMessage } = await import('../lib/onramp')
+
+    // 1. What "holds nothing" means.
+    const Z0 = '0x0000000000000000000000000000000000000000'
+    const frow = (symbol: string, balance: string, valueUsd: number | null, native?: true) => ({ symbol, address: Z0, balance, priceUsd: null, valueUsd, ...(native ? { native } : {}) })
+    const fview = (chains: ReturnType<typeof frow>[][], failedChains: string[] = []) => ({ chains: chains.map((holdings) => ({ holdings })), failedChains })
+    check('card door: a wallet holds nothing when every chain answered and everything on it together is dust (a fresh account, or $0.70 of scraps); a zero-balance row is not a holding',
+      walletLooksEmpty(fview([[], [], []])) && walletLooksEmpty(fview([[frow('ETH', '0.0002', 0.4, true)], [frow('USDC', '0.3', 0.3)]])) && walletLooksEmpty(fview([[frow('ETH', '0', null, true)]])))
+    check('card door: $1 of anything is something, and so is a holding nobody could price (a stock bought a minute ago); a chain that didn’t answer is unread, never empty',
+      !walletLooksEmpty(fview([[frow('USDC', '1', 1)]])) && !walletLooksEmpty(fview([[frow('AAPL', '0.01', null)]])) &&
+        !walletLooksEmpty(fview([[], []], ['Base'])) && !walletLooksEmpty({ chains: [{ holdings: [], unread: true }], failedChains: [] }))
+
+    // 2. What the door shows.
+    const phaseAt = (s: Partial<Parameters<typeof railFundPhase>[0]>) => railFundPhase({ wallet: true, empty: true, cardFunding: true, waiting: false, landed: false, ...s })
+    check('card door: an empty wallet gets the offer when this deployment sells by card; no wallet, a wallet with something in it, or no on-ramp gets nothing (fail closed: never a button that 503s)',
+      phaseAt({}) === 'offer' && phaseAt({ wallet: false }) === null && phaseAt({ empty: false }) === null && phaseAt({ cardFunding: false }) === null)
+    check('card door: a purchase on its way to a still-empty wallet watches instead of offering the button again (a second tap is a second charge); a landing shows until dismissed, whatever the wallet reads; a wait on a wallet that now holds something stays quiet',
+      phaseAt({ waiting: true }) === 'watching' && phaseAt({ waiting: true, cardFunding: false }) === 'watching' && phaseAt({ waiting: true, empty: false }) === null &&
+        phaseAt({ landed: true, empty: false }) === 'landed' && phaseAt({ landed: true, wallet: false }) === null)
+    check('card door: ETH leads (it pays its own gas), USDC second; both on the default lane and both assets the session route delivers; the opening amount sits inside the on-ramp’s bounds, and a USDC buy’s consent names the asset and the chain',
+      RAIL_FUND_OPTIONS.map((o) => o.asset).join() === 'ETH,USDC' && RAIL_FUND_OPTIONS.every((o) => o.network === ONRAMP_DEFAULT_NETWORK && onrampAssetOf(o.asset) === o.asset) &&
+        RAIL_FUND_PRESET_USD >= ONRAMP_MIN_USD && RAIL_FUND_PRESET_USD <= ONRAMP_MAX_USD &&
+        onrampConsentMessage({ address: '0x' + 'ab'.repeat(20), presetFiatUsd: RAIL_FUND_PRESET_USD, asset: 'USDC', network: ONRAMP_DEFAULT_NETWORK, issuedAt: 0 }).includes(`Asset: USDC on ${ONRAMP_DEFAULT_NETWORK}`))
+
+    // 3. The read.
+    const fundAddr = '0x' + 'cd'.repeat(20)
+    const fRes = await fetch(`${BASE}/api/watchlists/holdings?address=${fundAddr}`)
+    const fBody = (await fRes.json()) as { held: unknown[]; empty?: unknown; cardFunding?: unknown; failedChains: string[] }
+    check('GET /api/watchlists/holdings: says whether the wallet holds nothing (an address nobody funded reads empty unless a chain didn’t answer) and whether this deployment sells funds by card',
+      fRes.status === 200 && (fBody.failedChains.length ? fBody.empty === false : fBody.empty === true) && typeof fBody.cardFunding === 'boolean',
+      JSON.stringify({ empty: fBody.empty, cardFunding: fBody.cardFunding, failed: fBody.failedChains }))
+    const fFresh = await fetch(`${BASE}/api/watchlists/holdings?address=${fundAddr}&fresh=1`)
+    check('GET /api/watchlists/holdings: fresh=1 rides the Wallet panel’s bounded bypass: asked again right away it is still the cached view (one fresh read per address every 8s, no amplifier)',
+      fFresh.status === 200 && fFresh.headers.get('x-wallet-cache') === 'hit', `${fFresh.status} ${fFresh.headers.get('x-wallet-cache')}`)
+    const fLive = (await (await fetch(`${BASE}/api/watchlists/holdings?address=0xfef4feed2c57a5dbaa5a0c553aa7a0a0fd66d393`)).json()) as { held?: unknown[]; empty?: unknown }
+    check(`GET /api/watchlists/holdings: a wallet with holdings never reads empty (${fLive.held?.length ?? 0} held)`, !fLive.held?.length || fLive.empty === false)
+
+    // 3b. The watcher keeps the baseline it wrote. Found on this drive: the
+    // hook took its caller's wait object on every render, the caller's copy
+    // never has a baseline, so each poll re-baselined and a purchase was only
+    // noticed after a reload (the stored copy has one). The chat's fund chip
+    // shares the hook.
+    const { keepWatchedWait } = await import('../lib/funding-arrival')
+    const opened = { address: '0x' + 'cd'.repeat(20), network: 'ethereum' as const, resume: '', label: 'Buy ETH with a card', baselineEth: null, baselineStable: null, openedAt: 1_789_000_000_000 }
+    const baselined = { ...opened, baselineEth: 0, baselineStable: 0 }
+    const arrivalSrc = await readFile('lib/use-funding-arrival.ts', 'utf8')
+    check('arrival: a render for the SAME purchase keeps the watcher’s baselined copy (so the next read can be an arrival); a new purchase, or none, replaces it; the hook routes every render through it',
+      keepWatchedWait(baselined, opened) === baselined && keepWatchedWait(baselined, { ...opened, openedAt: opened.openedAt + 1 })?.openedAt === opened.openedAt + 1 &&
+        keepWatchedWait(baselined, null) === null && keepWatchedWait(null, opened) === opened &&
+        arrivalSrc.includes('waitRef.current = keepWatchedWait(waitRef.current, wait)') && !/waitRef\.current = wait\s*$/m.test(arrivalSrc))
+
+    // 4. The wiring.
+    const fundSrc = await readFile('components/markets/watchlist/FundWallet.tsx', 'utf8')
+    const railFundSrc = await readFile('components/markets/watchlist/WatchlistRail.tsx', 'utf8')
+    const hookFundSrc = await readFile('components/markets/watchlist/useWatchlists.ts', 'utf8')
+    const panelFundSrc = await readFile('components/WalletPanel.tsx', 'utf8')
+    const chipFundSrc = await readFile('components/ClarifyChips.tsx', 'utf8')
+    const buyAt = fundSrc.indexOf('const buy = async')
+    const beforeTab = buyAt < 0 ? 'await' : fundSrc.slice(buyAt, fundSrc.indexOf('await startOnrampSession(', buyAt))
+    check('card door: a buy goes through the one on-ramp door (startOnrampSession, nothing awaited before it opens the tab), writes a wait with an EMPTY resume and the asset, watches it with useFundingArrival, and clears only its own waits',
+      buyAt >= 0 && !beforeTab.includes('await') && fundSrc.includes("resume: ''") && fundSrc.includes('asset: o.asset') && fundSrc.includes('saveFundWait(w)') &&
+        fundSrc.includes('useFundingArrival(wait,') && (fundSrc.match(/clearFundWait\(/g) ?? []).length === 2 && (fundSrc.match(/resume === ''\) clearFundWait\(/g) ?? []).length === 2)
+    check('card door: a chat chip adopts a stored wait only when its own resume matches, so the door’s empty-resume wait never fires a chat turn; the Wallet panel quotes a resume only when there is one',
+      chipFundSrc.includes('o.fund && o.resume === w.resume') && panelFundSrc.includes('wait.resume ?') && panelFundSrc.includes("wait.asset ?? 'card purchase'"))
+    check('card door: the rail mounts the door at the end of its rows with the holdings read’s verdict (never while it brews), and a landing re-reads the wallet past both caches (fresh=1, reconcile inside the minute) so the purchase fills the list',
+      railFundSrc.includes('<FundWallet') && railFundSrc.includes('empty={wl.walletEmpty && !brew}') && railFundSrc.includes('onLanded={wl.recheckWallet}') &&
+        hookFundSrc.includes("'&fresh=1'") && hookFundSrc.includes('lastReconciled.delete(key)') && hookFundSrc.includes('setWalletRead('))
+    const fundHtml = flat(await (await fetch(`${BASE}/markets`)).text())
+    check('card door: /markets never server-renders the door (no wallet is known before hydration)', fundHtml.includes('class="wl__rows"') && !fundHtml.includes('data-rail-fund'))
+  }
+
   // ── MARKETS/CHART — moving averages (2026-09-14) ─────────────────────────
   // Nate: "add the 200 day moving average and make it yellow, blue for the 50
   // day". The chart's window is 180 bars, so over the window alone an SMA 200
