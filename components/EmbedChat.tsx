@@ -267,7 +267,7 @@ export default function EmbedChat({
   return (
     <div className="embed-root flex flex-col h-dvh" data-theme={theme} style={{ background: 'var(--bg)', color: 'var(--fg)' }}>
       {/* Slim header: wordmark + the resolved MCP scope + the address context */}
-      <header className="flex-shrink-0 flex items-center gap-2 px-3 py-2 border-b border-white/[0.07] bg-[var(--surf-1)]/70 backdrop-blur-md overflow-x-auto scrollbar-none">
+      <header className="flex-shrink-0 flex items-center gap-2 px-3 py-2 border-b border-white/[0.07] tint-bg-surf-1-70 backdrop-blur-md overflow-x-auto scrollbar-none">
         <a
           href="/chat"
           target="_blank"

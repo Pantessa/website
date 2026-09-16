@@ -131,7 +131,7 @@ function CopyTurn({ text, dark }: { text: string; dark?: boolean }) {
         '[@media(hover:none)]:w-9 [@media(hover:none)]:h-9 [@media(hover:none)]:-top-5 [@media(hover:none)]:right-2',
         dark
           ? 'bg-black/70 border-black/30 text-white'
-          : 'bg-[var(--surf-2)]/90 border-[var(--line)] text-[color:var(--muted)] hover:text-white',
+          : 'tint-bg-surf-2-90 border-[var(--line)] text-[color:var(--muted)] hover:text-white',
       )}
     >
       {done ? <Check className="w-3.5 h-3.5 text-[color:var(--accent)]" /> : <Copy className="w-3.5 h-3.5" />}
@@ -1831,7 +1831,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                       msg.role === 'assistant' && 'max-sm:max-w-full',
                       msg.role === 'user'
                         ? 'chat-bubble--user rounded-br-sm'
-                        : 'bg-[var(--surf-1)]/70 text-[color:var(--fg)] border border-white/[0.06] rounded-tl-sm'
+                        : 'tint-bg-surf-1-70 text-[color:var(--fg)] border border-white/[0.06] rounded-tl-sm'
                     )}
                   >
                     <CopyTurn text={msg.content} dark={msg.role === 'user'} />
