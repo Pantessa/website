@@ -215,10 +215,10 @@ import {
 } from '../lib/stock-tape'
 import { buildGuardedSwap } from '../lib/swap-exec'
 import { ROBINHOOD_BATCH_MAX } from '../lib/quotes'
-import { clampNativeSellAtoms, fillableLeg, FUNDING_ALT_USDC, FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, fundingAltUsdcFor, fundingNeedUsd, listWords, fundingSourceSymbols, LIFI_LEG_FLAT_USD, MIN_VALUE_LEG_USD, minLegNote, offChainStableSource, ROBINHOOD_CHAIN_ID, STABLE_LEG_MIN_OUT_BPS, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
+import { buildLifiBridgeLeg, clampNativeSellAtoms, ETH_MOVE_MIN_OUT_BPS, ETH_MOVE_MIN_USD, fillableLeg, FUNDING_ALT_USDC, FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, fundingAltUsdcFor, fundingNeedUsd, listWords, fundingSourceSymbols, LIFI_LEG_FLAT_USD, MIN_VALUE_LEG_USD, minLegNote, offChainStableSource, ROBINHOOD_CHAIN_ID, STABLE_LEG_MIN_OUT_BPS, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodEthMove, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData, inflightSettlingNote } from '../lib/inflight-funding'
 import { sanitizeWorkingContext } from '../lib/working-context'
-import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
+import { parseRobinhoodEthMove, parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
 import { parseMultiSendSegments, parseTransferSegment } from '../lib/transfer-exec'
 import { buildFundsDetail, classifyTurn, FAILURE_PROBE_TOKENS, moneyShaped } from '../lib/ask-failure'
 import { guardSyncDrift } from './guard-sync-check'
@@ -7067,8 +7067,19 @@ async function main() {
         rf1.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => compiles(o.resume) === 'sign:native-lifi-fund,wait:wait'),
       JSON.stringify(rf1).slice(0, 300),
     )
+    // ETH asked to land as ETH moves as ETH (2026-09-16): the chips used to
+    // land USDG ("using eth") because no native ETH value leg existed; LiFi
+    // routes ETH → native ETH on 4663 from every origin, so the answer to
+    // "bridge ETH" is ETH. An explicit USDG landing keeps the funding legs.
     const rfEth = robinhoodFundingFromCrossChain('swap 0.01 ETH from base to robinhood')
-    check('rh funding redirect: an ETH-sized ask → dollar chips "using eth", every resume compiles, the copy says the canonical bridge is Ethereum-only and what lands', !!rfEth && 'clarify' in rfEth && /only runs from Ethereum/.test(rfEth.reply) && /USDG/.test(rfEth.reply) && rfEth.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => /using eth$/.test(o.resume) && compiles(o.resume) === 'sign:native-lifi-fund,wait:wait'))
+    check(
+      'rh funding redirect: an ETH-sized ETH → ETH ask → move chips ("Move $N of ETH from base to robinhood chain"), each one native ETH leg + wait, and the copy says the canonical bridge is Ethereum-only and that ETH lands as ETH',
+      !!rfEth && 'clarify' in rfEth && /only runs from Ethereum/.test(rfEth.reply) && /ETH moves as ETH/.test(rfEth.reply) && !/USDG/.test(rfEth.reply) &&
+        rfEth.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => /^Move \$\d+ of ETH from base to robinhood chain$/.test(o.resume) && compiles(o.resume) === 'sign:native-lifi-fund,wait:wait' && (compileJobAskFull(o.resume) as CompiledJob).steps[0].params.leg === 'eth'),
+      JSON.stringify(rfEth).slice(0, 400),
+    )
+    const rfEthUsdg = robinhoodFundingFromCrossChain('swap 0.01 ETH from base to USDG on robinhood')
+    check('rh funding redirect: ETH → USDG keeps the dollar chips "using eth" (the funding legs), every resume compiles', !!rfEthUsdg && 'clarify' in rfEthUsdg && /USDG/.test(rfEthUsdg.reply) && rfEthUsdg.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => /using eth$/.test(o.resume) && compiles(o.resume) === 'sign:native-lifi-fund,wait:wait'))
     const rfBuy = robinhoodFundingFromCrossChain('swap 20 USDC from base to AAPL on robinhood')
     check('rh funding redirect: "… to AAPL on robinhood" hands over ONE fund-then-buy chip that compiles fund → wait → buy', !!rfBuy && 'clarify' in rfBuy && compiles(rfBuy.clarify.options[0].resume) === 'sign:native-lifi-fund,wait:wait,sign:native-lifi-swap')
     check('rh funding redirect: the canonical ETH-from-Ethereum bridge stays with the bridge layer (no job, no redirect)', robinhoodFundingFromCrossChain('Bridge 0.01 ETH from Ethereum to Robinhood Chain') === null && compileJobAskFull('Bridge 0.01 ETH from Ethereum to Robinhood Chain') === null)
@@ -10968,6 +10979,198 @@ async function main() {
       clampNativeSellAtoms(wei('3463000000000000'), wei('3000000000000000'), wei('2000000000000000')) === null,
     )
 
+    // ── The round trip on Robinhood Chain (2026-09-16). "Buy $10 of ETH on
+    // robinhood chain" from a wallet holding ETH on Base planned "Fund
+    // robinhood chain with $12.5 from base using eth including gas, then buy
+    // $10 of ETH": ETH → USDG → ETH, two conversions and two fees to land the
+    // asset it started from. The token a buy is for never funds its VALUE leg
+    // (lib/lifi-bridge buysOrigin); it may still pay the gas leg, and an
+    // ETH-only wallet gets its ETH carried over as ETH (planRobinhoodEthMove).
+    {
+      const rtO = (chainId: number, word: string, token: string, usd: number, gasEth = 0.01): FundingOrigin => ({ chainId, word, token, usd, gasEth, ...(token === 'ETH' ? { spendable: true } : {}) })
+      const rtScan = (origins: FundingOrigin[], gasless: FundingOrigin[] = []) => ({ origins, gaslessOrigins: gasless, allScanned: [...origins, ...gasless], failedOrigins: [] as string[] })
+      const rtBuy = (usd: number, held = 0, gas = true, sym = 'ETH') => ({
+        needUsd: robinhoodBuyNeedUsd(usd, held, gas), gasIncluded: gas, followup: `buy $${usd} of ${sym}`, buyToken: sym, buyShortUsd: Number((usd - held).toFixed(2)),
+      })
+      const rtSteps = (resume: string) => {
+        const j = compileJobAskFull(resume)
+        return !j || 'problem' in j || 'clarify' in j ? JSON.stringify(j) : j.steps.map((s) => `${s.kind}:${s.builder}${s.params.leg ? `(${s.params.leg} $${s.params.usd} ${s.params.token} @${s.params.origin})` : ''}`).join(' | ')
+      }
+      // A value leg that sells the bought token: "Fund robinhood chain with $X from base using eth[ including gas]"
+      // in a resume whose follow-up buys ETH. A gas-only segment is not one.
+      const sellsEthForEth = (resume: string) => /\bbuy \$[\d.]+ of eth\b/i.test(resume) && /fund robinhood chain with \$[\d.]+ from [a-z]+ using eth\b/i.test(resume)
+      const ethBase = rtO(8453, 'Base', 'ETH', 60)
+
+      const unruled = planRobinhoodFundingChips({ origins: [ethBase], needUsd: robinhoodBuyNeedUsd(10, 0, true), gasIncluded: true, followup: 'buy $10 of ETH' })
+      check(
+        'rh round trip: the old plan WAS the round trip (no buy token → "…from base using eth including gas, then buy $10 of ETH"), so the rule is buyToken and nothing wider',
+        !!unruled && unruled[0].resume === 'Fund robinhood chain with $12.5 from base using eth including gas, then buy $10 of ETH' &&
+          planRobinhoodFundingChips({ origins: [ethBase], needUsd: robinhoodBuyNeedUsd(10, 0, true), gasIncluded: true, followup: 'buy $10 of ETH', buyToken: 'ETH' }) === null,
+        JSON.stringify(unruled),
+      )
+      const aapl = planRobinhoodFundingAdvice({ scan: rtScan([ethBase]), ...rtBuy(10, 0, true, 'AAPL') })
+      check(
+        'rh round trip: ETH still funds a buy of anything else (AAPL keeps its "using eth" chips)',
+        aapl.kind === 'chips' && aapl.chips[0].resume === 'Fund robinhood chain with $12.5 from base using eth including gas, then buy $10 of AAPL',
+        JSON.stringify(aapl),
+      )
+
+      const move = planRobinhoodFundingAdvice({ scan: rtScan([ethBase]), ...rtBuy(10) })
+      const moveChip = move.kind === 'move' ? move.chips[0] : null
+      const moveJob = moveChip ? compileJobAskFull(moveChip.resume) : null
+      const movePath = moveChip ? fundingPathOf(moveChip.resume) : null
+      check(
+        'rh round trip: an ETH-only wallet buying ETH → ONE move chip, sized to the buy with no margin, compiling to one native-ETH LiFi leg + arrival wait (no gas leg: the ETH is the gas)',
+        move.kind === 'move' && move.chips.length === 2 && move.chips[1].label === 'Not now' &&
+          moveChip?.label === 'Move ~$10 of my ETH from Base to Robinhood Chain' && moveChip.resume === 'Move $10 of ETH from base to robinhood chain' &&
+          !!moveJob && !('problem' in moveJob) && !('clarify' in moveJob) && moveJob.steps.length === 2 &&
+          moveJob.steps[0].builder === 'native-lifi-fund' &&
+          JSON.stringify(moveJob.steps[0].params) === JSON.stringify({ leg: 'eth', usd: 10, origin: 8453, token: 'ETH' }) &&
+          JSON.stringify(moveJob.steps[1].waitPredicate) === JSON.stringify({ kind: 'chain-arrival', fromSteps: [0] }) &&
+          simulateLadder(moveChip.resume).gate === 'jobs' && simulateLadder(moveChip.resume).kind === 'action' &&
+          !!movePath && movePath.nodes.map((n) => `${n.title}[${n.detail}]`).join(' → ') === 'Base[$10 ETH] → Robinhood Chain[ETH]',
+        JSON.stringify({ move, steps: moveChip ? rtSteps(moveChip.resume) : null, movePath }),
+      )
+      check(
+        'rh round trip: the move copy names the ETH, refuses the round trip in words, and says a move is not a buy',
+        move.kind === 'move' && move.copy.includes('~$60 of ETH on Base') && /won't sell it for USDG just to buy it back/.test(move.copy) &&
+          /Robinhood Chain's gas/.test(move.copy) && /it doesn't buy more/.test(move.copy),
+        move.kind === 'move' ? move.copy : move.kind,
+      )
+      const split = planRobinhoodFundingAdvice({ scan: rtScan([rtO(10, 'Optimism', 'ETH', 6), rtO(42161, 'Arbitrum', 'ETH', 6)]), ...rtBuy(10) })
+      check(
+        'rh round trip: ETH split across origins, none covering alone → one chip whose moves compile as a job (richest first, the last leg the remainder)',
+        split.kind === 'move' && split.chips[0].resume === 'Move $6 of ETH from optimism to robinhood chain, then Move $4 of ETH from arbitrum to robinhood chain' &&
+          rtSteps(split.chips[0].resume) === 'sign:native-lifi-fund(eth $6 ETH @10) | wait:wait | sign:native-lifi-fund(eth $4 ETH @42161) | wait:wait',
+        JSON.stringify(split),
+      )
+      const l2First = planRobinhoodFundingAdvice({ scan: rtScan([rtO(1, 'Ethereum', 'ETH', 60), rtO(8453, 'Base', 'ETH', 30)]), ...rtBuy(20) })
+      check(
+        'rh round trip: an L2 row that covers leads a richer mainnet row (its signature costs cents, not L1 gas)',
+        l2First.kind === 'move' && l2First.chips[0].resume === 'Move $20 of ETH from base to robinhood chain',
+        JSON.stringify(l2First),
+      )
+      const heldUsdg = planRobinhoodFundingAdvice({ scan: rtScan([ethBase]), ...rtBuy(10, 8) })
+      check(
+        'rh round trip: USDG already held on Robinhood Chain shrinks the move to the shortfall (floored at the $2 move minimum)',
+        heldUsdg.kind === 'move' && heldUsdg.moveUsd === 2 && heldUsdg.chips[0].resume === 'Move $2 of ETH from base to robinhood chain',
+        JSON.stringify(heldUsdg),
+      )
+      const dustUsdc = planRobinhoodFundingAdvice({ scan: rtScan([rtO(42161, 'Arbitrum', 'USDC', 5, 0.001), ethBase]), ...rtBuy(10) })
+      check(
+        'rh round trip: USDC too small for any value leg doesn\'t block the move, and the copy names it',
+        dustUsdc.kind === 'move' && dustUsdc.copy.includes('~$5 of USDC on Arbitrum (too little to bridge on its own)'),
+        JSON.stringify(dustUsdc),
+      )
+
+      const mixed = planRobinhoodFundingAdvice({ scan: rtScan([rtO(42161, 'Arbitrum', 'USDC', 60, 0.001), ethBase]), ...rtBuy(10) })
+      check(
+        'rh round trip: USDC that covers → chips spend the USDC; no chip sells the ETH, and no "Use Base ETH instead" (the alt chip was the round trip)',
+        mixed.kind === 'chips' && mixed.chips[0].resume === 'Fund robinhood chain with $12.5 from arbitrum including gas, then buy $10 of ETH' &&
+          mixed.chips.every((c) => !sellsEthForEth(c.resume) && !/ETH instead/.test(c.label)),
+        JSON.stringify(mixed),
+      )
+      const gasPayer = planRobinhoodFundingAdvice({ scan: rtScan([rtO(42161, 'Arbitrum', 'USDC', 11, 0.001), ethBase]), ...rtBuy(10) })
+      const gasPayerChip = gasPayer.kind === 'chips' ? gasPayer.chips[0] : null
+      const gasPayerPath = gasPayerChip ? fundingPathOf(gasPayerChip.resume) : null
+      check(
+        'rh round trip: ETH still pays the GAS leg — $11 of USDC covers the value but not value + gas, and a gas-only ETH segment closes it (gas → wait → USDG → wait → buy)',
+        !!gasPayerChip && gasPayerChip.label === 'Just enough (~$10.5 from Arbitrum, gas from Base ETH)' &&
+          gasPayerChip.resume === 'Fund robinhood chain gas from base using eth, then Fund robinhood chain with $10.5 from arbitrum, then buy $10 of ETH' &&
+          rtSteps(gasPayerChip.resume) === 'sign:native-lifi-fund(gas $2 ETH @8453) | wait:wait | sign:native-lifi-fund(usdg $10.5 USDC @42161) | wait:wait | sign:native-lifi-swap' &&
+          !sellsEthForEth(gasPayerChip.resume) &&
+          !!gasPayerPath && gasPayerPath.nodes.map((n) => `${n.title}[${n.detail ?? ''}]`).join(' → ') === 'Base[ETH] → Robinhood Chain[gas] → Arbitrum[$10.5 USDC] → Robinhood Chain[USDG] → Buy $10 of ETH[]',
+        JSON.stringify({ gasPayer, steps: gasPayerChip ? rtSteps(gasPayerChip.resume) : null, gasPayerPath }),
+      )
+      const shortUsdc = planRobinhoodFundingAdvice({ scan: rtScan([rtO(42161, 'Arbitrum', 'USDC', 10, 0.001), ethBase]), ...rtBuy(10) })
+      check(
+        'rh round trip: USDC short even with ETH paying gas → the refusal names the ETH as not counted (and no move: the USDC could fund a value leg)',
+        shortUsdc.kind === 'none' && shortUsdc.copy.includes('~$60 of ETH on Base (not counted: ETH is what this buy gets you)') && shortUsdc.copy.includes('~$10 of USDC on Arbitrum'),
+        JSON.stringify(shortUsdc),
+      )
+      const downsizeGas = planDownsizedRobinhoodBuy({ scan: { origins: [rtO(42161, 'Arbitrum', 'USDC', 10, 0.001), ethBase] }, buyUsd: 12, holdingUsd: 0, includeGas: true, buySym: 'ETH', acquiring: false })
+      check(
+        'rh round trip: the downsize sizes off the USDC with the ETH paying gas — "$9.5 of ETH instead", no ETH in the value leg',
+        !!downsizeGas && downsizeGas.buyUsd === 9.5 &&
+          downsizeGas.chips[0].resume === 'Fund robinhood chain gas from base using eth, then Fund robinhood chain with $10 from arbitrum, then buy $9.5 of ETH' &&
+          !/not counted|round trip/i.test(downsizeGas.chips[0].label) && /gas from Base ETH/.test(downsizeGas.chips[0].label),
+        JSON.stringify(downsizeGas),
+      )
+      check(
+        'rh round trip: an ETH-only wallet gets no downsized ETH buy (a smaller buy of ETH is still a buy of ETH); AAPL keeps its ETH-funded downsize',
+        planDownsizedRobinhoodBuy({ scan: { origins: [rtO(8453, 'Base', 'ETH', 10)] }, buyUsd: 12, holdingUsd: 0, includeGas: false, buySym: 'ETH', acquiring: false }) === null &&
+          /using eth, then buy \$9\.5 of AAPL$/.test(planDownsizedRobinhoodBuy({ scan: { origins: [rtO(8453, 'Base', 'ETH', 10)] }, buyUsd: 12, holdingUsd: 0, includeGas: false, buySym: 'AAPL', acquiring: false })?.chips[0].resume ?? ''),
+      )
+      const tiny = planRobinhoodFundingAdvice({ scan: rtScan([rtO(8453, 'Base', 'ETH', 1)]), ...rtBuy(10) })
+      const subKeepback = planRobinhoodFundingAdvice({ scan: rtScan([], [{ ...rtO(1, 'Ethereum', 'ETH', 3, 0.0013), spendable: false }]), ...rtBuy(10) })
+      check(
+        'rh round trip: ETH too small to move is named as not counted; sub-keep-back ETH keeps "under what a move from there costs" — neither becomes a move',
+        tiny.kind === 'none' && tiny.copy === '~$1 of ETH on Base (not counted: ETH is what this buy gets you)' &&
+          subKeepback.kind === 'none' && subKeepback.copy === '~$3 of ETH on Ethereum (under what a move from there costs)',
+        JSON.stringify({ tiny, subKeepback }),
+      )
+      const weth = planRobinhoodFundingAdvice({ scan: rtScan([ethBase]), ...rtBuy(10, 0, true, 'WETH') })
+      check(
+        'rh round trip: exact symbols, like the generic planner — a WETH buy may spend ETH (no wrap builder: the stable is the only way ETH becomes WETH), and no move (it lands native ETH)',
+        weth.kind === 'chips' && weth.chips[0].resume === 'Fund robinhood chain with $12.5 from base using eth including gas, then buy $10 of WETH' &&
+          planRobinhoodEthMove({ scan: rtScan([ethBase]), buyToken: 'WETH', shortUsd: 10 }) === null,
+        JSON.stringify(weth),
+      )
+      const rescue = planRobinhoodFundingAdvice({
+        scan: { origins: [rtO(8453, 'Base', 'ETH', 30)], gaslessOrigins: [rtO(42161, 'Arbitrum', 'USDC', 60, 0)], allScanned: [rtO(8453, 'Base', 'ETH', 30), rtO(42161, 'Arbitrum', 'USDC', 60, 0)], failedOrigins: [] },
+        ...rtBuy(10),
+      })
+      check(
+        'rh round trip: gas-stranded USDC is still rescued with gas from an ETH-only chain (the topup is gas), and the plan spends the USDC',
+        rescue.kind === 'gas-stranded' && rescue.donor?.word === 'Base' && !!rescue.chips &&
+          rescue.chips[0].resume === `swap ${GAS_TOPUP_ETH} ETH from base to arbitrum, then Fund robinhood chain with $12.5 from arbitrum including gas, then buy $10 of ETH` &&
+          !sellsEthForEth(rescue.chips[0].resume),
+        JSON.stringify(rescue),
+      )
+
+      // The grammars the chips compile through.
+      // The move reads exactly the origin words the funding sentence reads
+      // (typos included, and not "op", a perp ticker — #712).
+      const originWords = ['base', 'ethereum', 'mainnet', 'Etherium', 'arbitrum', 'arb', 'optimism', 'op']
+      const moves = originWords.map((w) => parseRobinhoodEthMove(`Move $10 of ETH from ${w} to robinhood chain`)?.originChainId ?? null)
+      const funds = originWords.map((w) => parseRobinhoodFunding(`Fund robinhood chain with $10 from ${w}`)?.originChainId ?? null)
+      const smallMove = compileJobAskFull('Move $1 of ETH from base to robinhood chain')
+      check(
+        'rh round trip (grammar): "Move $X of ETH from <origin> to robinhood chain" reads the same origin words as the funding sentence, and "move $10 worth of my eth from arb to robinhood"; $1 refuses by name; the canonical ETH-sized bridge stays the bridge layer\'s',
+        JSON.stringify(moves) === JSON.stringify(funds) && JSON.stringify(moves) === JSON.stringify([8453, 1, 1, 1, 42161, 42161, 10, null]) &&
+          parseRobinhoodEthMove('move $10 worth of my eth from arb to robinhood')?.moveUsd === 10 &&
+          parseRobinhoodEthMove('Move $10 of USDC from base to robinhood chain') === null &&
+          !!smallMove && 'problem' in smallMove && /smallest ETH move onto Robinhood Chain is \$2/.test(smallMove.problem) &&
+          simulateLadder('Bridge 0.01 ETH from Ethereum to Robinhood Chain').gate === 'rh-bridge',
+        JSON.stringify({ moves, funds, smallMove }),
+      )
+      const gasOnly = compileJobAskFull('Fund robinhood chain gas from base using eth')
+      check(
+        'rh round trip (grammar): a lone "Fund robinhood chain gas from base using eth" is a job — one $2 gas leg selling ETH, then its arrival wait; "using usdc.e" off Arbitrum refuses',
+        !!gasOnly && !('problem' in gasOnly) && !('clarify' in gasOnly) && gasOnly.steps.length === 2 &&
+          JSON.stringify(gasOnly.steps[0].params) === JSON.stringify({ leg: 'gas', usd: GAS_LEG_USD, origin: 8453, token: 'ETH' }) &&
+          JSON.stringify(gasOnly.steps[1].waitPredicate) === JSON.stringify({ kind: 'chain-arrival', fromSteps: [0] }) &&
+          ((r) => !!r && 'problem' in r)(compileJobAskFull('Fund robinhood chain gas from base using usdc.e')),
+        JSON.stringify(gasOnly),
+      )
+      let wrongSell = ''
+      await buildLifiBridgeLeg({ leg: 'eth', usd: 10, from: '0x1111111111111111111111111111111111111111', origin: 8453, token: 'USDC' }).catch((e: unknown) => { wrongSell = e instanceof Error ? e.message : String(e) })
+      check('rh round trip (builder): an ETH move with a non-ETH sell side refuses before it quotes (USDC → ETH is a buy, not a move)', /sells native ETH/.test(wrongSell), wrongSell)
+      check('rh round trip (builder): the move\'s parity floor is the stable leg\'s, in ETH atoms', ETH_MOVE_MIN_OUT_BPS === STABLE_LEG_MIN_OUT_BPS && ETH_MOVE_MIN_USD === GAS_LEG_USD)
+
+      // The wiring: the swap gate names the buy (never on an acquisition) and
+      // sizes the move off the shortfall; the refresh route rebuilds 'eth' legs.
+      const rtRouteSrc = (await readFile('app/api/chat/route.ts', 'utf8')).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      const rtRefreshSrc = await readFile('app/api/tx/refresh/route.ts', 'utf8')
+      check(
+        'rh round trip (source): the Robinhood funding block passes buyToken (undefined for an acquisition) + buyShortUsd to the advice, answers kind "move", and the refresh route accepts leg "eth"',
+        /const buyToken = acquiring \? undefined : buySym/.test(rtRouteSrc) &&
+          /followup: acquiring \? '' : `buy \$\$\{buyUsd\} of \$\{buySym\}`,\s*\n\s*dest: lifiDest,\s*\n\s*buyToken,\s*\n\s*buyShortUsd: Math\.max\(0, Number\(\(buyUsd - creditUsd\)\.toFixed\(2\)\)\),/.test(rtRouteSrc) &&
+          /if \(advice\.kind === 'move'\)/.test(rtRouteSrc) &&
+          /body\.leg === 'eth'/.test(rtRefreshSrc),
+      )
+    }
+
     // ── The rh-funding follow-up parser: the typed continuations that must
     // re-enter the funding layer instead of falling to the planner.
     check('rh-funding follow-up: "I have $10 USDC on arbitrum" → recheck', parseRhFundingFollowUp('I have $10 USDC on arbitrum')?.kind === 'recheck')
@@ -13748,6 +13951,45 @@ async function main() {
     'tx refresh: non-canonical fee tier refused (400) — re-quotes keep the tier they signed',
     refreshBadTier.status === 400 && /unknown fee tier/i.test(refreshBadTierBody.error ?? ''),
     JSON.stringify(refreshBadTierBody),
+  )
+  // The ETH move's refresh recipe ({leg:'eth'}) rebuilds instead of bouncing
+  // as an unknown leg; a leg nobody mints still does. (The empty wallet can't
+  // fund it, so whatever comes back — blocked by balance, or the venue's own
+  // answer — is past the recipe check.)
+  const refreshLeg = async (leg: string) => {
+    const r = await fetch(`${BASE}/api/tx/refresh`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'lifi-bridge', from: owner.address, leg, usd: '10', origin: '8453', token: 'ETH' }),
+    })
+    return { status: r.status, body: (await r.json().catch(() => ({}))) as { error?: string; blocked?: boolean; reasons?: string } }
+  }
+  const refreshEthLeg = await refreshLeg('eth')
+  const refreshBadLeg = await refreshLeg('stake')
+  check(
+    'tx refresh: an ETH move recipe (leg "eth") passes the recipe check; an unknown leg is still a 400',
+    !/missing\/invalid from, leg or usd/.test(refreshEthLeg.body.error ?? '') && refreshEthLeg.status !== 400 &&
+      refreshBadLeg.status === 400 && /missing\/invalid from, leg or usd/.test(refreshBadLeg.body.error ?? ''),
+    JSON.stringify({ refreshEthLeg, refreshBadLeg }).slice(0, 400),
+  )
+  // The round trip, over HTTP (2026-09-16): the swap gate's Robinhood funding
+  // block for an empty wallet. A buy of ETH is unlocked by money that isn't
+  // ETH — topping up ETH would only earn a move of it — and a card delivery
+  // of ETH IS the ETH the buy is for; a stock buy keeps both.
+  const rtAsk = async (message: string) =>
+    (await (await fetch(`${BASE}/api/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+      body: JSON.stringify({ message, activeServers: [], walletAddress: owner.address }),
+    })).json()) as { reply?: string; clarify?: { options?: { label: string; resume: string }[] } }
+  const rtEmptyEth = await rtAsk('Buy $20 of ETH on robinhood chain')
+  const rtEmptyAapl = await rtAsk('Buy $20 of AAPL on robinhood chain')
+  const rtEthReply = String(rtEmptyEth.reply ?? '')
+  const rtAaplReply = String(rtEmptyAapl.reply ?? '')
+  check(
+    'rh round trip (route): an empty wallet buying ETH on Robinhood Chain is pointed at USDC, never "USDC or ETH" (or the card door names the ETH as what the buy is for); AAPL keeps "USDC or ETH"',
+    /Robinhood Chain/.test(rtEthReply) && !/top up USDC or ETH/.test(rtEthReply) && (/top up USDC on /.test(rtEthReply) || /the ETH this buy is for/.test(rtEthReply)) &&
+      (/top up USDC or ETH on /.test(rtAaplReply) || /swap and bridge it the rest of the way/.test(rtAaplReply)) &&
+      (rtEmptyEth.clarify?.options ?? []).every((o) => !/using eth/i.test(o.resume)),
+    JSON.stringify({ eth: rtEthReply.slice(0, 260), aapl: rtAaplReply.slice(0, 200) }),
   )
   // Dry-run classifier (the 2026-09-08 SPY withhold): an RPC that didn't
   // answer is NOT revert evidence. viem's first lines for transport failures

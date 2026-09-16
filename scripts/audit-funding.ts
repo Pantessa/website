@@ -66,7 +66,8 @@ import {
 import { deliveryFundUsd, ONRAMP_DEFAULT_NETWORK, ONRAMP_ETH_PRICE_CEILING_USD, ONRAMP_MAX_USD, ONRAMP_SETTLE_SLACK_USD, planFundUsd } from '../lib/onramp'
 import { buyDollarsOf, swapShortfallTurn, type SwapShortfallAsk } from '../lib/swap-shortfall'
 import { laneGasFloorPresetUsd, layerCardKind, layerPlanUsd, layerShortfallTurn, LAYER_SHORTFALL, ONRAMP_LANE_CHAIN_ID, type LayerShortfallAsk } from '../lib/layer-shortfall'
-import { compileJobAsk } from '../lib/jobs'
+import { compileJobAsk, parseRobinhoodFunding } from '../lib/jobs'
+import { planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, robinhoodBuyNeedUsd, type FundingOrigin } from '../lib/lifi-bridge'
 import { simulateLadder } from './ask-ladder'
 
 // The card door reads the environment (lib/onramp fails closed without both).
@@ -1101,7 +1102,109 @@ for (const s of SCENARIOS) {
   }
 }
 
-console.log(`\naudit:funding — ${SCENARIOS.length} wallet-state scenarios through the real funding pipeline (no RPC, no signing).`)
+// ── The Robinhood Chain planner (lib/lifi-bridge) ───────────────────────────
+// A separate planner with its own scan (FundingShortfall) and chip grammar
+// ("Fund robinhood chain with …"), and until 2026-09-16 no replica here. Rows
+// replay a fabricated scan through the same pure calls the swap gate makes:
+// planRobinhoodFundingAdvice, then planDownsizedRobinhoodBuy when the advice is
+// 'none' over a complete scan. Invariants per row:
+//   1. The outcome class matches the row.
+//   2. Every action chip replays through the shared ladder as an ACTION.
+//   3. round trip ⇒ no chip's VALUE leg sells the token the buy is for
+//      ("…from base using eth, then buy $10 of ETH" was ETH → USDG → ETH).
+//      A gas-only segment, or an ETH move landing as ETH, is not a round trip.
+//   4. refusal ⇒ every scanned row is NAMED in the copy, the bought token too.
+interface RhScenario {
+  name: string
+  buyUsd: number
+  buySym: string
+  /** USDG already on Robinhood Chain. */
+  heldUsdg?: number
+  /** The wallet can already pay Robinhood Chain gas. */
+  hasGas?: boolean
+  origins: FundingOrigin[]
+  gasless?: FundingOrigin[]
+  expect: 'chips' | 'gas-stranded' | 'move' | 'downsized' | 'none'
+}
+
+const RO = (chainId: number, token: string, usd: number, gasEth = 0.01, spendable?: boolean): FundingOrigin => ({
+  chainId,
+  word: FUNDING_CHAIN_WORD[chainId],
+  token,
+  usd,
+  gasEth,
+  ...(token === 'ETH' ? { spendable: spendable ?? true } : {}),
+})
+
+const RH_SCENARIOS: RhScenario[] = [
+  { name: 'THE ROUND TRIP — $60 of ETH on Base only → "Buy $10 of ETH on robinhood chain": the ETH moves as ETH, no USDG leg', buyUsd: 10, buySym: 'ETH', origins: [RO(8453, 'ETH', 60)], expect: 'move' },
+  { name: '$6 of ETH on Optimism + $6 on Arbitrum → buy $10 of ETH: a two-leg move job', buyUsd: 10, buySym: 'ETH', origins: [RO(10, 'ETH', 6), RO(42161, 'ETH', 6)], expect: 'move' },
+  { name: 'Robinhood Chain already has gas, $60 of ETH on Base → buy $10 of ETH: still the move', buyUsd: 10, buySym: 'ETH', hasGas: true, origins: [RO(8453, 'ETH', 60)], expect: 'move' },
+  { name: '$8 of USDG held + $60 of ETH on Base → buy $10 of ETH: the move shrinks to the $2 shortfall', buyUsd: 10, buySym: 'ETH', heldUsdg: 8, origins: [RO(8453, 'ETH', 60)], expect: 'move' },
+  { name: '$10 of ETH on Arbitrum only → buy $50 of ETH: too little to carry the buy — the refusal names it', buyUsd: 50, buySym: 'ETH', origins: [RO(42161, 'ETH', 10)], expect: 'none' },
+  { name: '$60 USDC + gas on Arbitrum, ETH on Base → buy $10 of ETH: chips spend the USDC, never the ETH', buyUsd: 10, buySym: 'ETH', origins: [RO(42161, 'USDC', 60, 0.001), RO(8453, 'ETH', 60)], expect: 'chips' },
+  { name: '$11 USDC + gas on Arbitrum, ETH on Base → buy $10 of ETH: ETH pays only the gas leg, USDC the value', buyUsd: 10, buySym: 'ETH', origins: [RO(42161, 'USDC', 11, 0.001), RO(8453, 'ETH', 60)], expect: 'chips' },
+  { name: '$10 USDC + gas on Arbitrum, ETH on Base → buy $12 of ETH: downsized to $9.5, ETH paying the gas', buyUsd: 12, buySym: 'ETH', origins: [RO(42161, 'USDC', 10, 0.001), RO(8453, 'ETH', 60)], expect: 'downsized' },
+  { name: '$5 USDC on Arbitrum (under any value leg) + $60 of ETH on Base → buy $10 of ETH: the move, the USDC named', buyUsd: 10, buySym: 'ETH', origins: [RO(42161, 'USDC', 5, 0.001), RO(8453, 'ETH', 60)], expect: 'move' },
+  { name: 'gasless $60 USDC on Arbitrum + an ETH-only Base donor → buy $10 of ETH: the rescue (the topup is gas), USDC pays', buyUsd: 10, buySym: 'ETH', origins: [RO(8453, 'ETH', 30)], gasless: [RO(42161, 'USDC', 60, 0)], expect: 'gas-stranded' },
+  { name: '$60 of ETH on Base only → buy $10 of WETH: exact symbols (no wrap builder) — the ETH plan stands, no move', buyUsd: 10, buySym: 'WETH', origins: [RO(8453, 'ETH', 60)], expect: 'chips' },
+  { name: 'sub-keep-back ETH on Ethereum only → buy $10 of ETH: named, never moved', buyUsd: 10, buySym: 'ETH', origins: [], gasless: [RO(1, 'ETH', 3, 0.0013, false)], expect: 'none' },
+  { name: 'empty wallet → buy $10 of ETH on Robinhood Chain', buyUsd: 10, buySym: 'ETH', origins: [], expect: 'none' },
+  { name: '$60 of ETH on Base only → buy $10 of AAPL: ETH still funds a buy of anything else', buyUsd: 10, buySym: 'AAPL', origins: [RO(8453, 'ETH', 60)], expect: 'chips' },
+]
+
+
+for (const s of RH_SCENARIOS) {
+  const header = `— [robinhood] ${s.name}`
+  const held = s.heldUsdg ?? 0
+  const includeGas = !s.hasGas
+  const gasless = s.gasless ?? []
+  const scan = { origins: s.origins, gaslessOrigins: gasless, allScanned: [...s.origins, ...gasless], failedOrigins: [] as string[] }
+  const needUsd = robinhoodBuyNeedUsd(s.buyUsd, held, includeGas)
+  const advice = planRobinhoodFundingAdvice({
+    scan,
+    needUsd,
+    gasIncluded: includeGas,
+    followup: `buy $${s.buyUsd} of ${s.buySym}`,
+    buyToken: s.buySym,
+    buyShortUsd: Math.max(0, Number((s.buyUsd - held).toFixed(2))),
+  })
+  const downsized = advice.kind === 'none' ? planDownsizedRobinhoodBuy({ scan, buyUsd: s.buyUsd, holdingUsd: held, includeGas, buySym: s.buySym, acquiring: false }) : null
+  const got = downsized ? 'downsized' : advice.kind
+  const chips = (downsized ? downsized.chips : 'chips' in advice && advice.chips ? advice.chips : []).filter((c) => c.label !== 'Not now')
+  if (verbose) console.log(`${header}\n    → ${got}: ${chips.length ? chips.map((c) => c.resume).join(' | ') : 'copy' in advice ? advice.copy : ''}`)
+
+  if (got !== s.expect) {
+    console.log(header)
+    flag(`expected ${s.expect}, got ${got}${'copy' in advice ? ` — "${advice.copy}"` : ''}`)
+    continue
+  }
+  for (const chip of chips) {
+    const outcome = simulateLadder(chip.resume)
+    if (outcome.kind !== 'action') {
+      console.log(header)
+      flag(`chip resume dead-ends at ${outcome.gate}/${outcome.kind}${outcome.note ? ` — "${outcome.note}"` : ''}: "${chip.resume}"`)
+    }
+    for (const seg of chip.resume.split(', then ')) {
+      const fund = parseRobinhoodFunding(seg)
+      if (fund && fund.token.toUpperCase() === s.buySym.toUpperCase()) {
+        console.log(header)
+        flag(`chip sells the ${s.buySym} its follow-up buys back — "${seg}" in "${chip.resume}"`)
+      }
+    }
+  }
+  if (got === 'none' && 'copy' in advice) {
+    for (const o of [...s.origins, ...gasless].filter((r) => r.usd >= 1)) {
+      const mention = `~$${o.usd} of ${o.token} on ${o.word}`
+      if (!advice.copy.includes(mention)) {
+        console.log(header)
+        flag(`refusal copy never names "${mention}" — money the user owns is invisible: "${advice.copy}"`)
+      }
+    }
+  }
+}
+
+console.log(`\naudit:funding — ${SCENARIOS.length} wallet-state scenarios through the real funding pipeline, plus ${RH_SCENARIOS.length} through the Robinhood Chain planner (no RPC, no signing).`)
 if (findings) {
   console.log(`${findings} finding(s). A wallet in one of these states gets chips that dead-end or a refusal that hides their money.`)
   process.exit(1)
