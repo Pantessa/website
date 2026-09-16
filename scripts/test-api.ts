@@ -19690,19 +19690,21 @@ async function main() {
     check('quotes: Yahoo — a session bar with no close yet doesn’t shift the pick (Toyota after Tokyo’s close: 3021 from Sep 15 on the exchange’s calendar, not 3025 from the bar before it, not chartPreviousClose 2994)',
       yNear(yPrev(yToyotaQ), 3021) && yToyotaQ?.chg === -5, `prev=${yPrev(yToyotaQ)} chg=${yToyotaQ?.chg}`)
     // The window can carry a later day's bar (a pre-market read the next morning).
-    const yNextDay = yahooQuoteOf({
-      meta: { regularMarketPrice: 333.1, regularMarketTime: yAt('2026-09-16T20:00:00Z'), exchangeTimezoneName: 'America/New_York' },
+    const yNextDayChart = {
+      meta: { regularMarketPrice: 333.1, regularMarketTime: yAt('2026-09-16T20:00:00Z'), exchangeTimezoneName: 'America/New_York', chartPreviousClose: 326.57 },
       timestamp: ['2026-09-11T13:30:00Z', '2026-09-14T13:30:00Z', '2026-09-15T13:30:00Z', '2026-09-16T13:30:00Z', '2026-09-17T08:00:00Z'].map(yAt),
       indicators: { quote: [{ close: [332.27, 333.08, 331.34, 333.1, 334] }] },
-    }, chartPairFor('AAPL')!)
+    }
+    const yNextDayQ = yahooQuoteOf(yNextDayChart, chartPairFor('AAPL')!)
     check('quotes: Yahoo — a bar dated after the day the price printed never counts: with Sep 17 in the window, the Sep 16 close still measures against Sep 15’s 331.34',
-      yNear(yPrev(yNextDay), 331.34), `prev=${yPrev(yNextDay)}`)
-    const yOneSession = yahooQuoteOf({
-      meta: { regularMarketPrice: 20, regularMarketTime: yAt('2026-09-16T15:00:00Z'), exchangeTimezoneName: 'America/New_York' },
+      yNear(yPrev(yNextDayQ), 331.34), `prev=${yPrev(yNextDayQ)}`)
+    const yOneSessionChart = {
+      meta: { regularMarketPrice: 20, regularMarketTime: yAt('2026-09-16T15:00:00Z'), exchangeTimezoneName: 'America/New_York', chartPreviousClose: 19.5 },
       timestamp: [yAt('2026-09-16T13:30:00Z')],
       indicators: { quote: [{ close: [20] }] },
-    }, chartPairFor('AAPL')!)
-    check('quotes: Yahoo — no earlier session in the bars → no quote (the symbol goes missing), never a flat or guessed change', yOneSession === null, JSON.stringify(yOneSession))
+    }
+    const yOneSessionQ = yahooQuoteOf(yOneSessionChart, chartPairFor('AAPL')!)
+    check('quotes: Yahoo — no earlier session in the bars → no quote (the symbol goes missing), never a flat or guessed change', yOneSessionQ === null, JSON.stringify(yOneSessionQ))
 
     // Live: Yahoo's own quote for four names against the prior session's close
     // on Robinhood's daily bars (bounds=regular). Exact on all 199 listings the
