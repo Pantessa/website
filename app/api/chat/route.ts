@@ -4488,7 +4488,7 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
               ? `🌉 **We can make this happen.** You asked for $${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there — but you're holding **${holdingsSummary}**, so I'll convert enough to close the gap${includeGas ? ' (a little ETH for gas included)' : ''}, ` +
                 `landing on ${chain.name} in seconds. One job, you sign each step.${floorSuffix}${inflightSuffix}`
               : `🌉 **We can make this happen.** You're holding **${holdingsSummary}** — ` +
-                `this buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there, so I'll convert some of it${includeGas ? ', drop in a little ETH for gas,' : ''} ` +
+                `this buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there, so I'll convert some of it${includeGas ? ', drop in a little ETH for gas,' : lifiDest.gasLeg ? '' : ` (${rhStable.symbol} pays for gas on ${chain.name}, so nothing extra moves)`} ` +
                 `and buy the ${buySym} — all in one job you sign step by step, funds arriving on ${chain.name} in seconds.${floorSuffix}${inflightSuffix}`,
             clarify: { question: 'Fund it from another chain?', options: options.slice(0, 4) },
             buildPath: 'native-lifi-fund-offer',

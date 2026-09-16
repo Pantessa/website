@@ -107,7 +107,7 @@ export function ArcChainMark({ size = 20 }: { size?: number }) {
     <svg viewBox="0 0 60 60" width={size} height={size} fill="none" aria-hidden style={{ display: 'block' }}>
       <circle cx="30" cy="30" r="30" fill="#1b3059" />
       <path
-        d="M16 44c1.2-15.6 6.8-27 14-27s12.8 11.4 14 27c-2.6-1.9-6.1-3-9.9-3.1l-.3-2.2c1.6.1 3.1.4 4.5.8-1.3-9.1-4.5-15.5-8.3-15.5-4.1 0-7.6 7.8-8.6 20z"
+        d="M14 45C15.4 26.5 22 13.5 30 13.5S44.6 26.5 46 45c-2.6-2.4-6.3-3.8-10.3-4l-.4-2.6c1.8.1 3.5.5 5.1 1.1C38.9 29.5 35 21 30 21c-5 0-8.9 8.5-9.8 24z"
         fill="#ffffff"
       />
     </svg>
