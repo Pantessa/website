@@ -48,6 +48,7 @@ const CHAIN_DISPLAY: Record<string, string> = {
   arb: 'Arbitrum',
   optimism: 'Optimism',
   op: 'Optimism',
+  arc: 'Arc',
   robinhood: 'Robinhood Chain',
   'robinhood chain': 'Robinhood Chain',
 }

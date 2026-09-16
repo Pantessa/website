@@ -173,6 +173,11 @@ const ORIGIN_CHAIN_IDS: Record<string, number> = {
   scroll: 534352,
   robinhood: 4663,
   'robinhood chain': 4663,
+  // Arc (5042): NEAR Intents lists no Arc asset (1Click tokens probed
+  // 2026-09-16), so a cross-chain ask INTO Arc is redirected onto the LiFi
+  // funding plan by lib/jobs (like Robinhood Chain); the id here only
+  // sanity-checks a built tx's chainId.
+  arc: 5042,
 }
 
 export function expectedOriginChainId(chain: string): number | null {

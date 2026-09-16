@@ -13,7 +13,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { buildUniswapSwap } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
-import { buildLifiBridgeLeg, type FundingLeg } from '@/lib/lifi-bridge'
+import { buildLifiBridgeLeg, isLifiFundedChain, type FundingLeg } from '@/lib/lifi-bridge'
 import { OffTapeError, TapeUnavailableError } from '@/lib/stock-tape'
 import { ensureTokenList } from '@/lib/token-list'
 import { sanitizeChainId, publicClientFor, chainById, DEFAULT_CHAIN_ID } from '@/lib/chains'
@@ -41,7 +41,7 @@ async function dryRunGate(
   const client = publicClientFor(chainId)
   if (!client) return null
   const chainName = chainById(chainId)?.name ?? `chain ${chainId}`
-  const verdict = await dryRunTx(client, { from, ...tx }, { chainName })
+  const verdict = await dryRunTx(client, { from, ...tx }, { chainName, gasSymbol: chainById(chainId)?.nativeSymbol })
   if (verdict.kind === 'clean') return null
   if (verdict.kind === 'unavailable') {
     console.warn('[tx/refresh] dry-run unavailable — offering the slippage-bounded tx', JSON.stringify({ kind, chainId, detail: verdict.detail.slice(0, 300) }))
@@ -103,11 +103,17 @@ export async function POST(req: NextRequest) {
     if (token !== undefined && !/^(usdc(\.?e)?|eth)$/i.test(token)) {
       return NextResponse.json({ error: `unknown funding token "${token.slice(0, 20)}"` }, { status: 400 })
     }
+    // Destination chain — pre-Arc recipes omit it (Robinhood Chain). An
+    // unknown id must not silently rebuild for the default chain.
+    const dest = typeof body.dest === 'string' && /^[0-9]+$/.test(body.dest) ? Number(body.dest) : undefined
+    if (dest !== undefined && !isLifiFundedChain(dest)) {
+      return NextResponse.json({ error: `unknown funding destination "${body.dest}"` }, { status: 400 })
+    }
     if (!from || !leg || !usd) {
       return NextResponse.json({ error: 'missing/invalid from, leg or usd' }, { status: 400 })
     }
     try {
-      const built = await buildLifiBridgeLeg({ leg, usd, from, origin, token })
+      const built = await buildLifiBridgeLeg({ leg, usd, from, origin, token, dest })
       if (built.blocked) {
         const reasons = built.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
         const execFail = built.guardrails.checks.some((c) => !c.ok && (c.id === 'price' || c.id === 'venue'))

@@ -42,7 +42,7 @@ export default function DcaDocsPage() {
       <div className="docs__prose">
         <h2>Confirm-mode — every wallet, you sign each buy</h2>
         <p>
-          This is the default, and it works with <em>any</em> wallet: MetaMask, Coinbase Wallet,
+          This is the default, and it works with <em>any</em> wallet: MetaMask, Coinbase Wallet, Phantom,
           an embedded email wallet, hardware — anything that can sign. The schedule is a
           standing reminder with a transaction attached:
         </p>
@@ -218,7 +218,7 @@ export default function DcaDocsPage() {
             the period and autopilot defers.
           </li>
           <li>
-            <strong>Which chains?</strong>{' '}Confirm-mode: Base, Ethereum, Arbitrum, Optimism, Robinhood
+            <strong>Which chains?</strong>{' '}Confirm-mode: Base, Ethereum, Arbitrum, Optimism, Arc, Robinhood
             Chain. Autopilot: Base first (it&rsquo;s where the Spend Permission contract and deep
             USDC liquidity live); tokenized-stock autopilot on Robinhood Chain is on the
             roadmap.

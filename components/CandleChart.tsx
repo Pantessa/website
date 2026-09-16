@@ -358,7 +358,7 @@ export default function CandleChart({
 
         {/* OHLCV legend for the hovered candle */}
         {hovered && (
-          <div className="mono pointer-events-none absolute left-1 top-1 rounded-md border border-[var(--line)] bg-[var(--surf-1)]/90 px-2 py-1 text-[10px] text-[color:var(--muted)]">
+          <div className="mono pointer-events-none absolute left-1 top-1 rounded-md border border-[var(--line)] tint-bg-surf-1-90 px-2 py-1 text-[10px] text-[color:var(--muted)]">
             <span className="text-[color:var(--muted-2)]">{fmtHoverTime(hovered.t, tf)}</span>
             {'  O '}
             {fmtPrice(hovered.o)}

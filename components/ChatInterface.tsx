@@ -141,7 +141,7 @@ function CopyTurn({ text, dark }: { text: string; dark?: boolean }) {
         '[@media(hover:none)]:w-9 [@media(hover:none)]:h-9 [@media(hover:none)]:-top-5 [@media(hover:none)]:right-2',
         dark
           ? 'bg-black/70 border-black/30 text-white'
-          : 'bg-[var(--surf-2)]/90 border-[var(--line)] text-[color:var(--muted)] hover:text-white',
+          : 'tint-bg-surf-2-90 border-[var(--line)] text-[color:var(--muted)] hover:text-white',
       )}
     >
       {done ? <Check className="w-3.5 h-3.5 text-[color:var(--accent)]" /> : <Copy className="w-3.5 h-3.5" />}
@@ -1152,7 +1152,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const chainLabel = (id: unknown): string | undefined => {
     const n = typeof id === 'string' ? parseInt(id, 16) || Number(id) : typeof id === 'number' ? id : NaN
     if (Number.isNaN(n)) return undefined
-    return { 1: 'ethereum', 10: 'optimism', 100: 'gnosis', 8453: 'base', 42161: 'arbitrum' }[n] ?? String(n)
+    return { 1: 'ethereum', 10: 'optimism', 100: 'gnosis', 5042: 'arc', 8453: 'base', 42161: 'arbitrum' }[n] ?? String(n)
   }
   // The guardrail layer prices every transaction it builds (policy caps are
   // USD) — that notional rides the beacon as valueUsd.
@@ -1933,7 +1933,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                       msg.role === 'assistant' && 'max-sm:max-w-full',
                       msg.role === 'user'
                         ? 'chat-bubble--user rounded-br-sm'
-                        : 'bg-[var(--surf-1)]/70 text-[color:var(--fg)] border border-white/[0.06] rounded-tl-sm'
+                        : 'tint-bg-surf-1-70 text-[color:var(--fg)] border border-white/[0.06] rounded-tl-sm'
                     )}
                   >
                     <CopyTurn text={msg.content} dark={msg.role === 'user'} />
@@ -2406,7 +2406,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       >
         <div
           className={cn(
-            'flex items-center gap-3 py-2 pl-4 pr-2 rounded-full border border-[var(--line)] bg-[color-mix(in_srgb,var(--surf-1)_85%,transparent)] backdrop-blur-md transition-[border-color,box-shadow] duration-200 focus-within:border-[color:var(--accent)]/45 focus-within:shadow-[0_0_0_4px_rgba(52,227,160,0.07),0_0_24px_rgba(52,227,160,0.06)]',
+            'flex items-center gap-3 py-2 pl-4 pr-2 rounded-full border border-[var(--line)] bg-[color-mix(in_srgb,var(--surf-1)_85%,transparent)] backdrop-blur-md transition-[border-color,box-shadow] duration-200 focus-within:tint-border-accent-45 focus-within:shadow-[0_0_0_4px_rgba(52,227,160,0.07),0_0_24px_rgba(52,227,160,0.06)]',
             !embedded && 'shadow-[0_10px_36px_-14px_rgba(0,0,0,0.55)]',
           )}
         >

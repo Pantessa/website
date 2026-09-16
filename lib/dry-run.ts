@@ -80,7 +80,7 @@ function wordsOf(e: BaseError): string {
   return e.details || e.shortMessage || firstLine(e.message)
 }
 
-export function classifyDryRunError(err: unknown, opts: { chainName?: string } = {}): DryRunFailure {
+export function classifyDryRunError(err: unknown, opts: { chainName?: string; gasSymbol?: string } = {}): DryRunFailure {
   if (!(err instanceof BaseError)) {
     const msg = err instanceof Error ? firstLine(err.message) : String(err)
     return { kind: 'unavailable', detail: msg || 'unknown error' }
@@ -104,7 +104,7 @@ export function classifyDryRunError(err: unknown, opts: { chainName?: string } =
   if (err.walk((e) => e instanceof InsufficientFundsError) || /insufficient funds/i.test(words)) {
     return {
       kind: 'no-gas',
-      reason: `your wallet has no ETH for gas${opts.chainName ? ` on ${opts.chainName}` : ''}`,
+      reason: `your wallet has no ${opts.gasSymbol ?? 'ETH'} for gas${opts.chainName ? ` on ${opts.chainName}` : ''}`,
       raw: words,
     }
   }
@@ -127,7 +127,7 @@ export function classifyDryRunError(err: unknown, opts: { chainName?: string } =
 export async function dryRunTx(
   client: DryRunClient,
   tx: { from: string; to: string; data: string; value?: string | bigint },
-  opts: { attempts?: number; backoffMs?: number; chainName?: string } = {},
+  opts: { attempts?: number; backoffMs?: number; chainName?: string; gasSymbol?: string } = {},
 ): Promise<DryRunVerdict> {
   const attempts = Math.max(1, opts.attempts ?? 3)
   const backoffMs = opts.backoffMs ?? 400
@@ -142,7 +142,7 @@ export async function dryRunTx(
       })
       return { kind: 'clean' }
     } catch (err) {
-      last = classifyDryRunError(err, { chainName: opts.chainName })
+      last = classifyDryRunError(err, { chainName: opts.chainName, gasSymbol: opts.gasSymbol })
       if (last.kind !== 'unavailable') return last
       if (i < attempts - 1) await new Promise((r) => setTimeout(r, backoffMs * (i + 1)))
     }

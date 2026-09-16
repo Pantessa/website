@@ -23,7 +23,7 @@
 // bad RPC — a chain that didn't answer is `failedChains`, never "empty".
 
 import { erc20Abi, formatEther, formatUnits } from 'viem'
-import { APP_CHAINS, chainById, primaryStable, publicClientFor, type AppChain } from '@/lib/chains'
+import { APP_CHAINS, chainById, gasIsStable, primaryStable, publicClientFor, STABLE_GAS_FLOOR, STABLE_GAS_RESERVE, type AppChain } from '@/lib/chains'
 import { alchemyEnabled, getMultichainPortfolio, getRecentActivity } from '@/lib/alchemy'
 import { readQuotes } from '@/lib/quotes'
 import { usdPerToken } from '@/lib/usd-probe'
@@ -52,10 +52,12 @@ export function robinhoodStockTokens(): TokenInfo[] {
  *  ERC-20 move there. Mirrors lib/funding-plan's MIN_GAS_TO_SEND_ETH — the
  *  floor the funding scan uses to call a USDC balance "stranded". Robinhood
  *  Chain (Orbit, ETH gas, cheap) takes the L2 floor. */
-export const GAS_FLOOR_ETH: Record<number, number> = { 1: 0.001, 8453: 0.00003, 42161: 0.00003, 10: 0.00003, 4663: 0.00003 }
+export const GAS_FLOOR_ETH: Record<number, number> = { 1: 0.001, 8453: 0.00003, 42161: 0.00003, 10: 0.00003, 4663: 0.00003, 5042: STABLE_GAS_FLOOR }
 /** Comfortable headroom — below this the row says "low", not "none". Mirrors
- *  lib/funding-plan's GAS_RESERVE_ETH (what a plan keeps back). */
-export const GAS_RESERVE_ETH: Record<number, number> = { 1: 0.002, 8453: 0.0002, 42161: 0.0002, 10: 0.0002, 4663: 0.0002 }
+ *  lib/funding-plan's GAS_RESERVE_ETH (what a plan keeps back). Both maps
+ *  are in the chain's GAS-TOKEN units: ETH everywhere but Arc, where the
+ *  5042 rows are whole USDC (lib/chains STABLE_GAS_*). */
+export const GAS_RESERVE_ETH: Record<number, number> = { 1: 0.002, 8453: 0.0002, 42161: 0.0002, 10: 0.0002, 4663: 0.0002, 5042: STABLE_GAS_RESERVE }
 
 export type GasState = 'ok' | 'low' | 'none' | 'empty'
 
@@ -64,11 +66,11 @@ export type GasState = 'ok' | 'low' | 'none' | 'empty'
  *    none  — tokens are here but the wallet can't pay to move them
  *    low   — can sign, but a plan would keep more back
  *    ok    — fine */
-export function gasStateFor(chainId: number, nativeEth: number, tokenUsd: number): GasState {
+export function gasStateFor(chainId: number, gasUnits: number, tokenUsd: number): GasState {
   const floor = GAS_FLOOR_ETH[chainId] ?? 0.0002
   const reserve = GAS_RESERVE_ETH[chainId] ?? 0.002
-  if (nativeEth >= reserve) return 'ok'
-  if (nativeEth >= floor) return 'low'
+  if (gasUnits >= reserve) return 'ok'
+  if (gasUnits >= floor) return 'low'
   return tokenUsd >= 0.5 ? 'none' : 'empty'
 }
 
@@ -80,9 +82,16 @@ export interface WalletChainView {
   color: string
   /** Everything on the chain, priced (native included). */
   totalUsd: number
+  /** Native ETH held. Always 0 on a stable-gas chain (Arc) — its native
+   *  balance IS the stable row, never a second "ETH" holding. */
   nativeEth: number
   nativeUsd: number | null
   gas: GasState
+  /** What pays for gas here ('ETH', or 'USDC' on Arc) and how much of it the
+   *  wallet holds, in that token's whole units — the numbers every gas
+   *  verdict and every "top up X" sentence is made of. */
+  gasSymbol: 'ETH' | 'USDC'
+  gasUnits: number
   /** Priced holdings, richest first, native first when present. */
   holdings: HoldingRow[]
   /** The RPC read didn't answer — balances shown are Alchemy's (or absent).
@@ -140,9 +149,13 @@ export function mergeChains(
   return chains.map((c) => {
     const read = rpc.get(c.id)
     const fromAlchemy = byLabel.get(c.name) ?? []
-    const alchemyNative = fromAlchemy.find((h) => h.native)
-    const nativeEth = read ? read.nativeEth : alchemyNative ? Number(alchemyNative.balance) : 0
-    const nativeUsd = ethUsd !== null ? round2(nativeEth * ethUsd) : alchemyNative?.valueUsd ?? null
+    // A stable-gas chain's "native" row from the index is the 18-dec view of
+    // the same USDC its ERC-20 row (or the RPC stable read) already carries —
+    // counting it would double the money. Dropped; the stable row is the gas.
+    const stableGas = gasIsStable(c)
+    const alchemyNative = stableGas ? undefined : fromAlchemy.find((h) => h.native)
+    const nativeEth = stableGas ? 0 : read ? read.nativeEth : alchemyNative ? Number(alchemyNative.balance) : 0
+    const nativeUsd = stableGas ? 0 : ethUsd !== null ? round2(nativeEth * ethUsd) : alchemyNative?.valueUsd ?? null
     const tokens: HoldingRow[] = fromAlchemy.filter((h) => !h.native)
     // Chain-read ERC-20s (Robinhood stocks) win over the index by address —
     // fresher, and the index doesn't price them anyway (priced after the
@@ -192,8 +205,13 @@ export function mergeChains(
     }
     tokens.sort((a, b) => (b.valueUsd ?? -1) - (a.valueUsd ?? -1))
     const tokenUsd = tokens.reduce((s, h) => s + (h.valueUsd ?? 0), 0)
+    // Gas is the native ETH — or, on a stable-gas chain, the stable itself
+    // (the RPC read first, the index's row when the chain didn't answer).
+    const gasUnits = stableGas
+      ? read?.stable?.balance ?? Number(tokens.find((h) => h.symbol.toUpperCase() === c.nativeSymbol)?.balance ?? 0) ?? 0
+      : nativeEth
     const holdings: HoldingRow[] =
-      nativeEth > 0
+      nativeEth > 0 && !stableGas
         ? [
             {
               symbol: 'ETH',
@@ -216,7 +234,9 @@ export function mergeChains(
       totalUsd: round2(tokenUsd + (nativeUsd ?? 0)),
       nativeEth,
       nativeUsd,
-      gas: gasStateFor(c.id, nativeEth, tokenUsd),
+      gas: gasStateFor(c.id, gasUnits, tokenUsd),
+      gasSymbol: c.nativeSymbol,
+      gasUnits,
       holdings,
       ...(read ? {} : { unread: true as const }),
     }
@@ -229,7 +249,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
  *  rate-limit in bursts). Null when the chain didn't answer. */
 export async function readChainBalances(chainId: number, address: `0x${string}`): Promise<RpcChainRead | null> {
   const client = publicClientFor(chainId)
-  if (!client) return null
+  const chain = chainById(chainId)
+  if (!client || !chain) return null
   const stable = primaryStable(chainId)
   const read = () =>
     Promise.all([
@@ -244,7 +265,10 @@ export async function readChainBalances(chainId: number, address: `0x${string}`)
     const tokens = chainId === STOCK_CHAIN_ID ? await readStockBalances(address).catch(() => undefined) : undefined
     return {
       chainId,
-      nativeEth: Number(formatEther(wei)),
+      // On a stable-gas chain the native read is the 18-dec view of the
+      // stable read just taken — the SAME money. It is reported once, as
+      // the stable; nativeEth stays 0 so no "ETH" ever appears on Arc.
+      nativeEth: gasIsStable(chain) ? 0 : Number(formatEther(wei)),
       stable: stable ? { symbol: stable.symbol, address: stable.address, balance: Number(formatUnits(atoms, stable.decimals)) } : null,
       ...(tokens ? { tokens } : {}),
     }
@@ -305,7 +329,7 @@ export async function priceUnpricedStockRows(chains: WalletChainView[]): Promise
   rh.holdings.sort((a, b) => (a.native ? -1 : b.native ? 1 : (b.valueUsd ?? -1) - (a.valueUsd ?? -1)))
   const tokenUsd = rh.holdings.filter((h) => !h.native).reduce((s, h) => s + (h.valueUsd ?? 0), 0)
   rh.totalUsd = round2(tokenUsd + (rh.nativeUsd ?? 0))
-  rh.gas = gasStateFor(rh.id, rh.nativeEth, tokenUsd)
+  rh.gas = gasStateFor(rh.id, rh.gasUnits, tokenUsd)
 }
 
 // ── The shared read cache ───────────────────────────────────────────────────
