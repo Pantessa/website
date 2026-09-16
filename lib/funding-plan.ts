@@ -187,8 +187,10 @@ export function fundingPlanUsd(amountHuman: number, tokenUsd: number): number {
 }
 
 /** Token units of `source` worth `usd` dollars, rounded up so the leg never
- *  arrives short (and never above the movable balance). */
-function sourceAmountFor(source: FundingSource, usd: number): string {
+ *  arrives short (and never above the movable balance). Exported for the
+ *  per-wallet funding rows and the compound composer's legs (lib/fund-routes),
+ *  so every "Swap 0.016667 ETH from …" amount is sized by this one rule. */
+export function sourceAmountFor(source: FundingSource, usd: number): string {
   const perUsd = source.balance / source.usd
   const dp = source.token === 'USDC' ? 2 : 6
   const amt = Math.min(usd * perUsd, source.balance)
@@ -200,7 +202,9 @@ function sourceAmountFor(source: FundingSource, usd: number): string {
 // instead ("swap A for B on Z" — the jobs same-chain segment, #450): no
 // bridge, no solver fee, and it was the missing offer in the live 2026-07-23
 // NFT buy (0.007 ETH short on Base while $12 of USDC sat ON Base).
-const legResume = (s: FundingSource, amount: string, need: FundingNeed): string =>
+// Exported (lib/fund-routes): the route table's NEAR rows and the compound
+// composer's funding leg write this same sentence.
+export const fundingLegResume = (s: FundingSource, amount: string, need: FundingNeed): string =>
   s.chainId === need.chainId
     ? `Swap ${amount} ${s.token} for ${need.token.toUpperCase()} on ${FUNDING_CHAIN_WORD[need.chainId]}`
     : `Swap ${amount} ${s.token} from ${s.chainWord} to ${need.token.toUpperCase()} on ${FUNDING_CHAIN_WORD[need.chainId]}`
@@ -220,6 +224,29 @@ const gasLegResume = (s: FundingSource, amount: string, need: FundingNeed): stri
   s.chainId === need.chainId
     ? `Swap ${amount} ${s.token} for ETH on ${FUNDING_CHAIN_WORD[need.chainId]}`
     : `Swap ${amount} ${s.token} from ${s.chainWord} to ETH on ${FUNDING_CHAIN_WORD[need.chainId]}`
+
+/** [gas leg?, token leg] from ONE source, spending `tokenUsd` on the token
+ *  leg — the source must be able to PROMISE tokenUsd + gasUsd (sourceCapUsd,
+ *  so a two-leg ETH plan keeps its own fee back) or this returns null.
+ *  tokenUsd 0 = a GAS-ONLY plan (the token need is already covered on the
+ *  destination; only the follow-up's gas is missing). The chips below and the
+ *  compound composer's funding leg (lib/fund-routes coinFundLegs) both build
+ *  their segments here, so a leg the composer offers IS the chat's chip. */
+export function fundingLegsFrom(need: FundingNeed, s: FundingSource, tokenUsd: number, gasUsd = 0): string[] | null {
+  if (sourceCapUsd(s, gasUsd > 0) < tokenUsd + gasUsd) return null
+  const segs: string[] = []
+  let spent = 0
+  if (gasUsd > 0) {
+    segs.push(gasLegResume(s, sourceAmountFor(s, gasUsd), need))
+    spent = gasUsd
+  }
+  if (tokenUsd > 0) {
+    // The token leg's amount comes out of what's left of the source.
+    const remaining: FundingSource = { ...s, balance: s.balance * (1 - spent / s.usd), usd: s.usd - spent }
+    segs.push(fundingLegResume(remaining, sourceAmountFor(remaining, tokenUsd), need))
+  }
+  return segs.length > 0 ? segs : null
+}
 
 /**
  * The pure planner: rank the sources and turn a shortfall into chips (or an
@@ -253,26 +280,7 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
   const totalUsd = Number(ranked.reduce((a, s) => a + s.usd, 0).toFixed(2))
   const totalNeedUsd = Number((needUsd + gasUsd).toFixed(2))
 
-  /** [gas leg?, token leg] from ONE source, spending `tokenUsd` on the token
-   *  leg — the source must be able to PROMISE tokenUsd + gasUsd (sourceCapUsd,
-   *  so a two-leg ETH plan keeps its own fee back) or this returns null.
-   *  tokenUsd 0 = a GAS-ONLY plan (the token need is already covered on the
-   *  destination; only the follow-up's gas is missing). */
-  const legsFrom = (s: FundingSource, tokenUsd: number): string[] | null => {
-    if (sourceCapUsd(s, gasUsd > 0) < tokenUsd + gasUsd) return null
-    const segs: string[] = []
-    let spent = 0
-    if (gasUsd > 0) {
-      segs.push(gasLegResume(s, sourceAmountFor(s, gasUsd), need))
-      spent = gasUsd
-    }
-    if (tokenUsd > 0) {
-      // The token leg's amount comes out of what's left of the source.
-      const remaining: FundingSource = { ...s, balance: s.balance * (1 - spent / s.usd), usd: s.usd - spent }
-      segs.push(legResume(remaining, sourceAmountFor(remaining, tokenUsd), need))
-    }
-    return segs.length > 0 ? segs : null
-  }
+  const legsFrom = (s: FundingSource, tokenUsd: number): string[] | null => fundingLegsFrom(need, s, tokenUsd, gasUsd)
 
   // Empty followup = bridge-only chips (the generic custom-MCP fallback).
   const withFollowup = (legs: string[]) => (need.followupResume ? `${legs.join(', then ')}, then ${need.followupResume}` : legs.join(', then '))
@@ -322,7 +330,7 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
       // the destination, the leg fills.
       if (!carriesGas && spendable < MIN_LEG_USD) continue
       const want = Math.max(Math.min(spendable, needUsd - covered), Math.min(MIN_LEG_USD, spendable))
-      const segs = carriesGas ? legsFrom(s, want) : [legResume(s, sourceAmountFor(s, want), need)]
+      const segs = carriesGas ? legsFrom(s, want) : [fundingLegResume(s, sourceAmountFor(s, want), need)]
       if (!segs) continue
       legs.push(...segs)
       if (carriesGas) gasCarried = gasUsd
@@ -522,7 +530,7 @@ export function planStrandedRescue(params: {
     legs.push(gasLegResume(src, sourceAmountFor(src, gasUsd), need))
     src = { ...target, balance: target.balance * (1 - gasUsd / target.usd), usd: target.usd - gasUsd }
   }
-  legs.push(legResume(src, sourceAmountFor(src, needUsd), need))
+  legs.push(fundingLegResume(src, sourceAmountFor(src, needUsd), need))
   const resume = need.followupResume ? `${legs.join(', then ')}, then ${need.followupResume}` : legs.join(', then ')
   return {
     chips: [
@@ -556,6 +564,11 @@ export interface FundingScan {
    *  confident "you have nothing" (live 2026-07-16: a rate-limited Base RPC
    *  hid $15k of USDC). */
   failedChains: string[]
+  /** Native ETH read on each chain that scanned, by chain id — what a plan
+   *  that ACTS on a chain after funding it checks against DEST_GAS_FLOOR_ETH
+   *  (lib/fund-routes coinFundLegs). Absent on a chain that didn't read, and
+   *  on fixtures that predate it. */
+  nativeEth?: Partial<Record<number, number>>
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -629,7 +642,8 @@ export async function scanFundingSources(user: string): Promise<FundingScan> {
   )
   if (readChains.length === 0) throw new Error('no funding-scan chain was readable')
   const ethUsd = ethProbe?.usd ?? null
-  return { ...classifyFundingBalances(reads, ethUsd), ethUsd, readChains, failedChains }
+  const nativeEth: Partial<Record<number, number>> = Object.fromEntries(reads.map((r) => [r.chainId, r.nativeEth]))
+  return { ...classifyFundingBalances(reads, ethUsd), ethUsd, readChains, failedChains, nativeEth }
 }
 
 export interface FundingOfferTurn {
