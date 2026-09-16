@@ -505,9 +505,15 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
         buyToken = paired.token
       } else {
         const sym = buy[2].toUpperCase()
-        const known = chainById(destChainId)?.tokens[sym]
+        const destChain = chainById(destChainId)
+        const known = destChain?.tokens[sym]
         if (!known || sym === destStable) {
-          return { problem: `${chainById(destChainId)?.name ?? 'That chain'} doesn't trade "${buy[2]}" here — the tokens it lists are ${Object.keys(chainById(destChainId)?.tokens ?? {}).filter((k) => k !== destStable).join(', ')}. Nothing was built.` }
+          // One name per contract (EUR/BTC are ask-side aliases of EURC/cirBTC).
+          const seen = new Set<string>()
+          const listed = Object.entries(destChain?.tokens ?? {})
+            .filter(([k, t]) => k !== destStable && !seen.has(t.address.toLowerCase()) && seen.add(t.address.toLowerCase()))
+            .map(([k]) => k)
+          return { problem: `${destChain?.name ?? 'That chain'} doesn't trade "${buy[2]}" here — the tokens it lists are ${listed.join(', ')}. Nothing was built.` }
         }
         buyToken = sym
       }

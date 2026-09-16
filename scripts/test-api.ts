@@ -296,6 +296,16 @@ import { EXAMPLE_PROMPTS } from '../lib/examples'
 import { swapFeeAtoms, SWAP_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS, HL_BUILDER_FEE_TENTH_BPS, HL_BUILDER_MAX_FEE_RATE } from '../lib/fees'
 import { APP_CHAINS, chainById, chainByKey, chainNamedIn, explorerTokenUrl, primaryStable, publicClientFor, robinhoodChain, sanitizeChainId, serverRpcEndpoints } from '../lib/chains'
 import { WALLET_CHAINS } from '../lib/wallet-chains'
+import { gasIsStable as arcGasIsStable, nativeSymbolFor as arcNativeSymbolFor, STABLE_GAS_RESERVE as ARC_STABLE_GAS_RESERVE } from '../lib/chains'
+import { chainMentions as arcChainMentions } from '../lib/chain-lexicon'
+import { buildTransferArtifact as arcBuildTransferArtifact } from '../lib/transfer-exec'
+import { ARC_BRIDGE_TOOLS, buildLifiBridgeLeg as arcBuildLifiBridgeLeg } from '../lib/lifi-bridge'
+import { fundSegment as arcFundSegment, LIFI_DESTINATIONS as ARC_LIFI_DESTINATIONS, lifiDestination as arcLifiDestination, isLifiFundedChain as arcIsLifiFundedChain } from '../lib/lifi-destinations'
+import { usdPerToken as arcUsdPerToken } from '../lib/usd-probe'
+import { classifyDryRunError as arcClassifyDryRunError } from '../lib/dry-run'
+import { alchemyNetworkEnabled as arcAlchemyNetworkEnabled } from '../lib/alchemy'
+import { buildUniswapSwap as arcBuildUniswapSwap } from '../lib/uniswap-venue'
+import { BaseError as ArcBaseError, InsufficientFundsError as ArcInsufficientFundsError } from 'viem'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp, crossChainPending, crossChainValueUsd , VENUE_SHARE_MAX_BPS } from '../lib/cross-chain-swap'
 import {
   parseAaveSupply,
@@ -13134,7 +13144,7 @@ async function main() {
   // ── Chain registry + picker (lib/chains) ──────────────────────────────────
   // The registry is the single source of truth for the picker, splash scoping,
   // and per-chain swap builds — every entry must be complete enough to build.
-  check('chains: registry carries base/ethereum/arbitrum/optimism/robinhood', JSON.stringify(APP_CHAINS.map((c) => c.key).sort()) === '["arbitrum","base","ethereum","optimism","robinhood"]')
+  check('chains: registry carries base/ethereum/arbitrum/optimism/robinhood/arc', JSON.stringify(APP_CHAINS.map((c) => c.key).sort()) === '["arbitrum","arc","base","ethereum","optimism","robinhood"]')
   check('chains: every entry is build-complete (router+quoter, wrapped native, explorer, alchemy net)', APP_CHAINS.every((c) => !!c.uniswap?.swapRouter02 && !!c.uniswap?.quoterV2 && /^0x[0-9a-fA-F]{40}$/.test(c.wrappedNative) && c.explorerTx.startsWith('https://') && !!c.alchemyNet && c.viem.id === c.id))
   check('chains: base keeps the original router constants', chainById(8453)?.uniswap?.swapRouter02 === '0x2626664c2603336E57B271c5C0b26F421741e481' && chainById(8453)?.uniswap?.quoterV2 === '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a')
   check('chains: v4 fallback pinned ONLY on Robinhood (quoter + Universal Router + Permit2)', chainById(4663)?.uniswapV4?.quoter === '0x8dc178efb8111bb0973dd9d722ebeff267c98f94' && chainById(4663)?.uniswapV4?.universalRouter === '0x8876789976decbfcbbbe364623c63652db8c0904' && chainById(4663)?.uniswapV4?.permit2 === '0x000000000022d473030f116ddee9f6b43ac78ba3' && APP_CHAINS.every((c) => c.id === 4663 || c.uniswapV4 === null))
@@ -22173,6 +22183,208 @@ async function main() {
       'earn (view): a remembered Map·List choice wins; with nothing remembered a ≥1280px viewport opens on the MAP and a narrower one on the list; junk stored falls back to the width rule',
       earnDefaultView('list', 1600) === 'list' && earnDefaultView('map', 375) === 'map' && earnDefaultView(null, 1440) === 'map' && earnDefaultView(null, 1279) === 'list' && earnDefaultView('grid', 1440) === 'map',
     )
+  }
+
+  // ── Arc — Circle's L1 (chain 5042, mainnet 2026-09-16) as a first-class
+  // chain AND a LiFi funding destination. Everything Optimism needed (#707)
+  // plus the one fact Optimism didn't have: USDC IS the gas token. Each pin
+  // below is one of the ways a half-added chain lies (scanned but not
+  // parseable, parseable but unsignable, "no ETH for gas" on a chain that
+  // has no ETH), checked against the registry, the grammars, the planners,
+  // the live chain and the running route.
+  console.log('— arc: Circle\'s Arc as a first-class chain + LiFi funding destination')
+  {
+    const arc = chainByKey('arc')
+    const USDC_ARC = '0x3600000000000000000000000000000000000000'
+    check(
+      'arc: registry entry is complete and honest — v3 yes, v4 none, CoW has no Arc book, USDC is the native gas (18-dec view) AND the only USD stable, wrappedNative is that same USDC, BTC/EUR are aliases of cirBTC/EURC, and there is NO ETH key',
+      !!arc && arc.id === 5042 && arc.alchemyNet === 'arc-mainnet' && !!arc.uniswap && arc.uniswapV4 === null && arc.cow === false && !COW_API_BASE[5042] &&
+        arc.nativeSymbol === 'USDC' && arcGasIsStable(arc) && arcNativeSymbolFor(5042) === 'USDC' && arcNativeSymbolFor(8453) === 'ETH' &&
+        arc.viem.nativeCurrency.symbol === 'USDC' && arc.viem.nativeCurrency.decimals === 18 &&
+        Object.keys(arc.stables).length === 1 && arc.stables[USDC_ARC] === 6 && primaryStable(5042)?.symbol === 'USDC' &&
+        arc.wrappedNative.toLowerCase() === USDC_ARC &&
+        arc.tokens.BTC?.address === arc.tokens.CIRBTC?.address && arc.tokens.BTC?.decimals === 8 &&
+        arc.tokens.EUR?.address === arc.tokens.EURC?.address && !('ETH' in arc.tokens) &&
+        resolveToken('BTC', 5042) === arc.tokens.CIRBTC.address.toLowerCase() && tokenDecimals('BTC', 5042) === 8 && resolveToken('ETH', 5042) === null &&
+        // Every existing chain still says ETH — the field landed everywhere.
+        APP_CHAINS.filter((c) => c.id !== 5042).every((c) => c.nativeSymbol === 'ETH'),
+      JSON.stringify({ tokens: Object.keys(arc?.tokens ?? {}), stables: arc?.stables }),
+    )
+    check(
+      'arc: "arc" is an English noun — only a chain slot names the chain (on/from/to arc, "arc chain", "Circle\'s Arc"); the noun never routes',
+      chainNamedIn('buy $10 of BTC on arc')?.id === 5042 && chainNamedIn('swap 12 USDC from base to arc')?.id === 5042 && chainNamedIn('use the arc chain')?.id === 5042 &&
+        chainNamedIn("swap 10 USDC to EURC on Circle's Arc")?.id === 5042 && chainNamedIn('bridge it to arc network')?.id === 5042 &&
+        chainNamedIn('the arc of ETH this week, swap 10 USDC for ETH') === null && chainNamedIn('buy an arc lamp') === null && chainNamedIn('arc reactor tokens are dumb') === null &&
+        canonicalChainWord('arc') === 'arc' && canonicalChainWord('arc network') === 'arc' && canonicalChainWord('circle arc') === 'arc' &&
+        arcChainMentions('swap 12 USDC from base to arc').map((m) => m.chain).join(',') === 'base,arc',
+    )
+    // The signature-time blocker: a chain the scanner sees but the wallet
+    // can't switch to is a chip that walls at the popup (#707's lesson).
+    const wcSrcArc = await readFile(new URL('../lib/wallet-chains.ts', import.meta.url), 'utf8')
+    check(
+      'arc: the wallet can switch to it — lib/wallet-chains carries arcChain with its own transport (never publicnode), so wagmi + the CDP connector both know chain 5042',
+      WALLET_CHAINS.some((c) => c.id === 5042) && /arcChain\]/.test(wcSrcArc) && /\[arcChain\.id\]: http\(\)/.test(wcSrcArc) && !/publicnode[^\n]*arc|arc[^\n]*publicnode/i.test(wcSrcArc),
+    )
+    // Token list: the CoinGecko Arc list carries an 18-dec "USDC" squat at
+    // 0x8e98… beside the real 6-dec native one — the registry map must win.
+    await ensureTokenList(5042).catch(() => {})
+    check(
+      'arc: after the CoinGecko warm the registry still wins every USDC lookup (6 decimals at 0x3600…) — the 18-dec "USDC" squat on that list never resolves',
+      resolveToken('USDC', 5042) === USDC_ARC && tokenDecimals('USDC', 5042) === 6 && resolveToken('CIRBTC', 5042) === arc?.tokens.CIRBTC.address.toLowerCase(),
+      `USDC → ${resolveToken('USDC', 5042)} (${tokenDecimals('USDC', 5042)} dec)`,
+    )
+    // ── Funding grammar + jobs ──
+    const fArc = parseRobinhoodFunding('fund arc with $12 from base')
+    const fArcGas = parseRobinhoodFunding('Fund arc with $12 from ethereum including gas')
+    const fRh = parseRobinhoodFunding('Fund robinhood chain with $14 from base including gas')
+    check(
+      'arc funding grammar: "fund arc with $12 from base" → destination 5042 with NO gas leg (even when "including gas" is typed — USDC is the gas); "arc network" reads the same; the Robinhood sentence is unchanged (4663, gas honoured)',
+      !!fArc && fArc.destChainId === 5042 && fArc.destName === 'Arc' && fArc.gasIncluded === false && fArc.originChainId === 8453 && fArc.token === 'USDC' &&
+        !!fArcGas && fArcGas.destChainId === 5042 && fArcGas.gasIncluded === false && fArcGas.originChainId === 1 &&
+        parseRobinhoodFunding('fund arc network with $12 from optimism')?.destChainId === 5042 &&
+        !!fRh && fRh.destChainId === 4663 && fRh.gasIncluded === true && fRh.destName === 'Robinhood Chain',
+      JSON.stringify({ fArc, fArcGas }),
+    )
+    const rdArc = robinhoodFundingFromCrossChain('swap 12 USDC from base to arc')
+    const rdFloor = robinhoodFundingFromCrossChain('move 5 USDC from base to arc')
+    const rdBuy = robinhoodFundingFromCrossChain('swap 20 USDC from base to BTC on arc')
+    const rdEth = robinhoodFundingFromCrossChain('bridge 0.01 ETH from ethereum to arc')
+    const compileShape = (ask: string) => { const j = compileJobAsk(ask); return j && 'steps' in j && j.steps ? j.steps.map((st) => `${st.kind}:${st.builder}`).join(',') : JSON.stringify(j) }
+    check(
+      'arc funding redirect: "swap 12 USDC from base to arc" → "Fund arc with $12 from base" (NEAR can\'t reach Arc); under the $9 floor → $9/$20/$50 chips that compile; "… to BTC on arc" → one fund-then-buy chip; an Ethereum-ETH ask gets the dollar chips (Arc has no canonical bridge, and the copy says USDC pays gas)',
+      !!rdArc && 'ask' in rdArc && rdArc.ask === 'Fund arc with $12 from base' && compileShape('swap 12 USDC from base to arc') === 'sign:native-lifi-fund,wait:wait' &&
+        !!rdFloor && 'clarify' in rdFloor && /smallest clean move onto Arc is \$9/.test(rdFloor.reply) && rdFloor.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => /^Fund arc with \$\d+ from base$/.test(o.resume) && compileShape(o.resume) === 'sign:native-lifi-fund,wait:wait') &&
+        !!rdBuy && 'clarify' in rdBuy && /lands as USDC first, then buys BTC/.test(rdBuy.reply) && compileShape(rdBuy.clarify.options[0].resume) === 'sign:native-lifi-fund,wait:wait,sign:native-lifi-swap' &&
+        !!rdEth && 'clarify' in rdEth && /Arc has no ETH/.test(rdEth.reply) && /pays for gas there/.test(rdEth.reply) && rdEth.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => /using eth$/.test(o.resume) && compileShape(o.resume) === 'sign:native-lifi-fund,wait:wait'),
+      JSON.stringify({ rdArc, floor: rdFloor && 'clarify' in rdFloor ? rdFloor.clarify.options.map((o) => o.resume) : rdFloor }),
+    )
+    const jArc = compileJobAsk('Fund arc with $20 from base, then buy $15 of BTC')
+    const jStock = compileJobAsk('Fund arc with $20 from base, then buy $15 of AAPL')
+    const jRh = compileJobAsk('Fund robinhood chain with $14 from base including gas, then buy $10 of AAPL')
+    const stepsOf = (j: ReturnType<typeof compileJobAsk>) => (j && 'steps' in j && j.steps ? j.steps : [])
+    check(
+      'arc jobs: fund → wait → buy compiles as ONE value leg carrying dest:5042 (no gas leg), the wait names Arc, and the buy runs on chain 5042 selling USDC for BTC; a stock ticker after an Arc funding refuses BY NAME; every Robinhood recipe carries NO dest key (pre-Arc jobs stay byte-identical)',
+      stepsOf(jArc).length === 3 && stepsOf(jArc)[0].builder === 'native-lifi-fund' && (stepsOf(jArc)[0].params as { dest?: number; leg?: string }).dest === 5042 && (stepsOf(jArc)[0].params as { leg?: string }).leg === 'usdg' &&
+        stepsOf(jArc)[1].kind === 'wait' && /Arc/.test(stepsOf(jArc)[1].title) && stepsOf(jArc)[2].builder === 'native-lifi-swap' &&
+        JSON.stringify(stepsOf(jArc)[2].params) === JSON.stringify({ buyUsd: 15, buyToken: 'BTC', sellToken: 'USDC', chainId: 5042 }) &&
+        !!jStock && 'problem' in jStock && /Arc doesn't trade "AAPL"/.test(String(jStock.problem)) && /EURC, CIRBTC, WETH/.test(String(jStock.problem)) &&
+        stepsOf(jRh).length === 4 && stepsOf(jRh).every((st) => !('dest' in (st.params as object))) && stepsOf(jRh)[0].params.leg === 'gas' && stepsOf(jRh)[3].params.chainId === 4663 && stepsOf(jRh)[3].params.sellToken === 'USDG' &&
+        parseSameChainSwapSegment('swap 20 USDC for BTC on arc')?.chainId === 5042 && (() => { const t = parseTransferSegment('send 5 USDC to 0x1111111111111111111111111111111111111111 on arc'); return !!t && 'chainId' in t && t.chainId === 5042 })(),
+      JSON.stringify({ arc: stepsOf(jArc).map((st) => [st.builder, st.params]), stock: jStock }),
+    )
+    const arcDest = ARC_LIFI_DESTINATIONS[5042]
+    const arcChips = planRobinhoodFundingChips({ origins: [{ chainId: 8453, word: 'Base', token: 'USDC', usd: 40, gasEth: 0.01 }], needUsd: 12, gasIncluded: false, followup: 'buy $10 of BTC', dest: arcDest })
+    const arcEmpty = planRobinhoodFundingAdvice({ scan: { origins: [], gaslessOrigins: [], allScanned: [], failedOrigins: [] }, needUsd: 12, gasIncluded: false, followup: '', dest: arcDest })
+    const arcPending = rhFundingPending(10, 'BTC', undefined, arcDest)
+    const rhPending = rhFundingPending(10, 'AAPL')
+    check(
+      'arc chips/advice/pending: fundSegment never emits "including gas" for Arc (and still does for Robinhood Chain); the chips read "Fund arc with …" and every resume compiles; the empty-wallet refusal derives its origin list; the pending carries dest ONLY for Arc; lifiDestination/isLifiFundedChain know both chains and nothing else',
+      arcFundSegment(9, 'Base', true, 'USDC', arcDest) === 'Fund arc with $9 from base' && arcFundSegment(9, 'Base', true, 'ETH', arcDest) === 'Fund arc with $9 from base using eth' && arcFundSegment(9, 'Base', true) === 'Fund robinhood chain with $9 from base including gas' &&
+        !!arcChips && arcChips.length >= 1 && arcChips.every((c) => /^Fund arc with \$\d+ from base, then buy \$10 of BTC$/.test(c.resume) && compileShape(c.resume) === 'sign:native-lifi-fund,wait:wait,sign:native-lifi-swap') &&
+        arcEmpty.kind === 'none' && arcEmpty.copy.includes(fundingOriginWords()) &&
+        arcPending.data.dest === '5042' && /Unfunded buy on Arc/.test(arcPending.summary) && !/or gas/.test(arcPending.summary) && !('dest' in rhPending.data) && /or gas/.test(rhPending.summary) &&
+        arcLifiDestination(5042)?.gasLeg === false && arcLifiDestination(4663)?.gasLeg === true && arcLifiDestination(8453) === null && arcIsLifiFundedChain(5042) && !arcIsLifiFundedChain(10),
+      JSON.stringify({ chips: arcChips?.map((c) => c.resume), pending: arcPending }),
+    )
+    // ── The USDC-gas model ──
+    const arcRead = new Map([[5042, { chainId: 5042, nativeEth: 0, stable: { symbol: 'USDC', address: USDC_ARC as `0x${string}`, balance: 0 } }]])
+    const arcRows = mergeChains([arc!], arcRead, [{ symbol: 'cirBTC', address: arc!.tokens.CIRBTC.address, balance: '0.001', priceUsd: 75000, valueUsd: 75, chain: 'Arc' }], 2500)
+    const arcRowFunded = mergeChains([arc!], new Map([[5042, { chainId: 5042, nativeEth: 0, stable: { symbol: 'USDC', address: USDC_ARC as `0x${string}`, balance: 25 } }]]), [], 2500)[0]
+    const baseRowsForFlags = mergeChains([chainById(8453)!], new Map([[8453, { chainId: 8453, nativeEth: 0.01, stable: { symbol: 'USDC', address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`, balance: 40 } }]]), [], 2500)
+    const arcFlags = walletFlags([...arcRows, ...baseRowsForFlags], 2500)
+    check(
+      'arc gas model: verdicts read the STABLE in USDC units (0 → none with tokens, 0.05 → low, 0.5 → ok, empty chain → empty); the wallet row carries no ETH holding, gasSymbol USDC and gasUnits = the USDC balance; the flag says "no USDC for gas" and its primary fix is the $9 LiFi leg with NO gas clause, its receive door names USDC',
+      gasStateFor(5042, 0, 5) === 'none' && gasStateFor(5042, 0.05, 5) === 'low' && gasStateFor(5042, 0.5, 5) === 'ok' && gasStateFor(5042, 0, 0) === 'empty' &&
+        arcRows[0].gas === 'none' && arcRows[0].gasSymbol === 'USDC' && arcRows[0].gasUnits === 0 && arcRows[0].nativeEth === 0 && !arcRows[0].holdings.some((h) => h.native) && arcRows[0].holdings.map((h) => h.symbol).join() === 'cirBTC' &&
+        arcRowFunded.gas === 'ok' && arcRowFunded.gasUnits === 25 && arcRowFunded.holdings.length === 1 && arcRowFunded.holdings[0].symbol === 'USDC' && arcRowFunded.totalUsd === 25 &&
+        arcFlags.length === 1 && arcFlags[0].kind === 'no-gas' && arcFlags[0].title === 'Arc holds tokens but no USDC for gas' && arcFlags[0].actions[0].ask === `Fund arc with $${MIN_VALUE_LEG_USD} from base` && !arcFlags[0].actions[0].mcps &&
+        arcFlags[0].actions.some((a) => a.door === 'receive' && a.label === 'Receive USDC on Arc'),
+      JSON.stringify({ row: { gas: arcRows[0].gas, holdings: arcRows[0].holdings.map((h) => h.symbol) }, flags: arcFlags.map((f) => [f.title, f.actions.map((a) => a.ask ?? a.label)]) }),
+    )
+    const ethOnArc = await arcBuildTransferArtifact({ amountHuman: '1', token: 'ETH', to: '0x1111111111111111111111111111111111111111', chainId: 5042, chainName: 'Arc' }, '0x2222222222222222222222222222222222222222')
+    const noGasArc = arcClassifyDryRunError(new ArcInsufficientFundsError({ cause: new ArcBaseError('insufficient funds for gas * price + value') }), { chainName: 'Arc', gasSymbol: 'USDC' })
+    const noGasBase = arcClassifyDryRunError(new ArcInsufficientFundsError({ cause: new ArcBaseError('insufficient funds for gas * price + value') }), { chainName: 'Base' })
+    check(
+      'arc gas model: "send 1 ETH on arc" refuses by name (no ETH there — USDC is the gas token) and never moves native USDC under the wrong name; a no-gas dry-run verdict names USDC on Arc and ETH elsewhere; the all-sell/all-send reserve is one shared constant',
+      'problem' in ethOnArc && /has no ETH/.test(ethOnArc.problem) && /gas token is USDC/.test(ethOnArc.problem) &&
+        noGasArc.kind === 'no-gas' && /no USDC for gas on Arc/.test(noGasArc.reason) && noGasBase.kind === 'no-gas' && /no ETH for gas on Base/.test(noGasBase.reason) &&
+        ARC_STABLE_GAS_RESERVE > 0 && ARC_STABLE_GAS_RESERVE < 1,
+      JSON.stringify({ ethOnArc, noGasArc: noGasArc.kind === 'no-gas' ? noGasArc.reason : noGasArc }),
+    )
+    check(
+      'arc alchemy: arc-mainnet is GATED on a live eth_chainId probe (a boolean, never a throw — the Data API call is all-or-nothing, so an unenabled member would blank every other chain); an ungated network answers true without a key',
+      typeof (await arcAlchemyNetworkEnabled('arc-mainnet')) === 'boolean' && (await arcAlchemyNetworkEnabled('base-mainnet')) === true && (await arcAlchemyNetworkEnabled('nope-mainnet')) === false,
+      `arc-mainnet enabled: ${await arcAlchemyNetworkEnabled('arc-mainnet')}`,
+    )
+    // ── Live, read-only, against the real chain + LiFi (the burner signs nothing) ──
+    const arcPk = await readFile('.env.local', 'utf8').then((t) => t.match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null).catch(() => null)
+    const btcProbe = await arcUsdPerToken(5042, 'BTC').catch(() => null)
+    const eurProbe = await arcUsdPerToken(5042, 'EURC').catch(() => null)
+    const wethProbe = await arcUsdPerToken(5042, 'WETH').catch(() => null)
+    check(
+      'arc (live): usdPerToken prices BTC (cirBTC, five figures) and EURC (≈ €1 in USD) on Arc\'s own Uniswap v3 pools; WETH is honestly unpriceable (its pool was empty at launch)',
+      !!btcProbe && btcProbe.usd > 10_000 && btcProbe.usd < 1_000_000 && /v3/.test(btcProbe.via) && !!eurProbe && eurProbe.usd > 0.8 && eurProbe.usd < 1.6 && wethProbe === null,
+      JSON.stringify({ btcProbe, eurProbe, wethProbe }),
+    )
+    if (arcPk) {
+      const arcBurner = privateKeyToAccount((arcPk.startsWith('0x') ? arcPk : `0x${arcPk}`) as `0x${string}`)
+      let legNote = ''
+      let legOk = false
+      try {
+        const leg = await arcBuildLifiBridgeLeg({ leg: 'usdg', usd: 9, from: arcBurner.address, origin: 8453, dest: 5042 })
+        const bridge = leg.steps[leg.bridgeStepIndex]
+        const toolOk = (ARC_BRIDGE_TOOLS as readonly string[]).some((t) => leg.summary.includes(`tool: ${t}`))
+        legOk = !leg.blocked && leg.steps.every((st) => st.tx.chainId === 8453 && st.tx.value === '0') && bridge.tx.to.toLowerCase() === '0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae' &&
+          leg.arrival.chainId === 5042 && leg.arrival.token.toLowerCase() === USDC_ARC && leg.arrival.symbol === 'USDC' && leg.arrival.decimals === 6 && toolOk &&
+          leg.guardrails.checks.every((c) => c.ok) && /USDC on Arc/.test(leg.summary)
+        legNote = `${leg.summary} · checks ${leg.guardrails.checks.map((c) => `${c.ok ? '✓' : '✗'}${c.id}`).join(' ')}`
+      } catch (e) {
+        legNote = `threw: ${e instanceof Error ? e.message : String(e)}`
+      }
+      let gasLegRefused = false
+      try { await arcBuildLifiBridgeLeg({ leg: 'gas', usd: 2, from: arcBurner.address, origin: 8453, dest: 5042 }) } catch (e) { gasLegRefused = /pays gas in USDC/.test(e instanceof Error ? e.message : '') }
+      check(
+        'arc (live): buildLifiBridgeLeg Base → Arc $9 for the burner builds an approve→bridge chain on Base to the pinned LiFi diamond via an ARC_BRIDGE_TOOLS tool (Across/Relay, never Polymer), the arrival waits for USDC on 5042, every guard is green; a GAS leg to Arc throws by name',
+        legOk && gasLegRefused,
+        legNote,
+      )
+      let swapNote = ''
+      let swapOk = false
+      try {
+        const sw = await arcBuildUniswapSwap({ sellToken: 'USDC', buyToken: 'BTC', amountHuman: '5', from: arcBurner.address, chainId: 5042 })
+        swapOk = sw.swapTx.chainId === 5042 && sw.swapTx.to.toLowerCase() === arc!.uniswap!.swapRouter02.toLowerCase() && sw.swapTx.value === '0' && /USDC → ~0\.0000\d+ BTC via Uniswap v3 on Arc/.test(sw.summary) && sw.guardrails.checks.some((c) => c.id === 'fee' && c.ok)
+        swapNote = sw.summary
+      } catch (e) {
+        swapNote = `threw: ${e instanceof Error ? e.message : String(e)}`
+      }
+      check('arc (live): buildUniswapSwap USDC → BTC on Arc builds against Arc\'s SwapRouter02 with the fee sweep, priced by the chain\'s own quoter', swapOk, swapNote)
+      // The running route: an Arc buy from a wallet with no USDC on Arc but
+      // USDC on Base gets the funding offer — the same door Robinhood buys
+      // get, minus any gas leg. (The burner holds Base USDC; it holds nothing
+      // on Arc.)
+      const arcTurn = await fetch(`${BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message: 'buy $5 of BTC on arc', walletAddress: arcBurner.address, activeServers: [{ slug: 'uniswap' }], history: [] }),
+      }).then((r) => r.json() as Promise<{ reply?: string; buildPath?: string; clarify?: { options: { label: string; resume: string }[] }; workingContext?: { pending?: { kind: string; data: Record<string, string> } } }>)
+      const arcOptions = arcTurn.clarify?.options.filter((o) => !/never mind/i.test(o.resume)) ?? []
+      check(
+        'arc (route): "buy $5 of BTC on arc" for a wallet with no USDC on Arc but USDC on Base → the LiFi funding OFFER (buildPath native-lifi-fund-offer): chips "Fund arc with $N from base, then buy $5 of BTC" that compile fund → wait → buy, the reply never promises an ETH gas leg, and the pending is an rh-funding record aimed at 5042',
+        arcTurn.buildPath === 'native-lifi-fund-offer' && arcOptions.length >= 1 && arcOptions.every((o) => /^Fund arc with \$[\d.]+ from \w+(?: using [a-z.]+)?, then buy \$5 of BTC$/.test(o.resume) && compileShape(o.resume) === 'sign:native-lifi-fund,wait:wait,sign:native-lifi-swap') &&
+          !/ETH for gas/.test(arcTurn.reply ?? '') && /pays for gas on Arc/.test(arcTurn.reply ?? '') && arcTurn.workingContext?.pending?.kind === 'rh-funding' && arcTurn.workingContext.pending.data.dest === '5042',
+        JSON.stringify({ buildPath: arcTurn.buildPath, options: arcOptions.map((o) => o.resume), reply: (arcTurn.reply ?? '').slice(0, 240) }),
+      )
+      const refreshArc = await fetch(`${BASE}/api/tx/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'lifi-bridge', leg: 'usdg', usd: '9', origin: '8453', dest: '5042', from: arcBurner.address }) })
+      const refreshArcBody = (await refreshArc.json()) as { tx?: { chainId: number; to: string }; pending?: boolean; error?: string }
+      const refreshBad = await fetch(`${BASE}/api/tx/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'lifi-bridge', leg: 'usdg', usd: '9', origin: '8453', dest: '999', from: arcBurner.address }) })
+      check(
+        'arc (route): POST /api/tx/refresh rebuilds an Arc leg from its recipe (dest=5042 → a Base tx to the diamond, or `pending` while the approval is unseen) and refuses an unknown destination with 400 instead of silently rebuilding for Robinhood Chain',
+        refreshArc.status === 200 && (refreshArcBody.pending === true || (refreshArcBody.tx?.chainId === 8453 && refreshArcBody.tx.to.toLowerCase() === '0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae')) && refreshBad.status === 400,
+        JSON.stringify({ status: refreshArc.status, body: refreshArcBody.pending ? 'pending' : refreshArcBody.tx ? 'tx' : refreshArcBody.error, bad: refreshBad.status }),
+      )
+    } else {
+      check('arc (live): skipped — no burner key in .env.local', true)
+    }
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
