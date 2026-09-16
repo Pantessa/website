@@ -19,6 +19,7 @@ import {
   guardMorphoOpBuild,
   pickDebtPosition,
   pickLendMarket,
+  resolveMorphoLendAmount,
   type MorphoAmountRule,
   type MorphoBuiltPlan,
   type MorphoChainId,
@@ -226,7 +227,7 @@ export function impliedLoanPriceUsd(row: MorphoMarketRow | null, info: MorphoMar
  *  → guard. Throws honestly. */
 export async function buildMorphoLendArtifact(
   wallet: string,
-  params: { token: string; amount: string; chainId: MorphoChainId },
+  params: { token: string; amount: string; chainId: MorphoChainId; amountIsUsd?: boolean },
 ): Promise<MorphoArtifactBuilt> {
   const token = params.token.toUpperCase()
   const chainName = morphoChainName(params.chainId)
@@ -243,6 +244,15 @@ export async function buildMorphoLendArtifact(
   if (typeof decimals !== 'number') throw new Error(`Couldn't read ${token}'s decimals from the Morpho service — refusing to build.`)
   // The chain decides what that market's loan asset IS — never the agent.
   await assertTokenIdentity(params.chainId, tuple.loanToken, token, decimals)
+  // A dollar-sized step ("$50 of WETH on morpho" in a job) is priced from the
+  // market's own totals at offer time — the chat turn's exact rule.
+  const sized = resolveMorphoLendAmount(
+    { amount: params.amount, token, ...(params.amountIsUsd ? { amountIsUsd: true as const } : {}) },
+    impliedLoanPriceUsd(row, info),
+    decimals,
+  )
+  if ('problem' in sized) throw new Error(sized.problem)
+  params = { ...params, amount: sized.amount, amountIsUsd: undefined }
   const atoms = humanToAtoms(params.amount, decimals)
   if (!atoms) throw new Error(`“${params.amount}” has more decimal places than ${token} supports (${decimals}).`)
 

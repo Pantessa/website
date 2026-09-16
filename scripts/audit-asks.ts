@@ -282,6 +282,13 @@ const CORPUS: Entry[] = [
   { ask: 'Fund robinhood chain with $30 from ethereum using eth including gas, then buy $25 of NVDA', source: 'funding chip (using-eth + gas variant)', expect: 'action' },
   { ask: 'Fund robinhood chain with $9 from optimism, then buy $12 of SPY', source: 'funding chip (Optimism origin, #707)', expect: 'action' },
   { ask: 'lend 100 USDC on morpho', source: 'morpho seeded chip', expect: 'action' },
+  // Live 2026-09-16 (prod /p/GGjH8ApOjh1D): the exact ask fell to the planner
+  // with $13 of ETH on Ethereum idle — three quiz turns, an invented market id.
+  { ask: 'I want to earn on morpho $2 worth of USDC on base', source: 'live prod ask 2026-09-16', expect: 'action' },
+  { ask: 'supply $100 of USDC on morpho', source: 'morpho dollar form', expect: 'action' },
+  { ask: 'invest $50 of WETH on morpho on ethereum', source: 'morpho dollar form, priced at build', expect: 'action' },
+  { ask: 'can I do $2 of USDC on morpho', source: 'morpho verbless form', expect: 'action' },
+  { ask: 'I want to earn on morpho', source: 'morpho unsized earn ask', expect: 'clarify-ok' },
   { ask: 'lend 100 USDG on Morpho on Robinhood Chain', source: 'robinhood seeded chip', expect: 'action' },
   { ask: 'Build a Uniswap swap: 50 USDC for cbBTC', source: 'uniswap seeded chip (colon after the verb)', expect: 'action' },
   { ask: '2x short $25 of BTC on hyperliquid', source: 'HL size chip (short + 2x)', expect: 'action' },

@@ -452,11 +452,11 @@ export async function buildSignArtifact(
     // (lib/morpho-exec): market from the agent's own tools, the FULL
     // MarketParams tuple resolved on-chain by us, every step re-verified by
     // the tuple-bound guard. Built fresh at offer time.
-    const p = params as { token: string; amount: string | null; max?: boolean; chainId?: number }
+    const p = params as { token: string; amount: string | null; max?: boolean; chainId?: number; amountIsUsd?: boolean }
     const chainId: MorphoChainId = Number(p.chainId) === 1 ? 1 : 8453
     const built =
       builder === 'native-morpho-lend'
-        ? await buildMorphoLendArtifact(wallet, { token: p.token, amount: p.amount ?? '', chainId })
+        ? await buildMorphoLendArtifact(wallet, { token: p.token, amount: p.amount ?? '', chainId, amountIsUsd: p.amountIsUsd === true })
         : await buildMorphoRepayArtifact(wallet, { token: p.token, amount: p.amount, max: p.max, chainId })
     return {
       artifact: { txChain: built.txChain, summary: built.summary },

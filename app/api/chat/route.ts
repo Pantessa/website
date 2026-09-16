@@ -105,6 +105,7 @@ import {
   morphoCompetingVenueOf,
   parseMorphoLend,
   parseMorphoLendFollowUp,
+  resolveMorphoLendAmount,
   morphoLendPending,
   parseMorphoOp,
   parseMorphoOpFollowUp,
@@ -1209,10 +1210,10 @@ async function handleChatTurn(req: NextRequest) {
         if (morphoAsk.otherChain) {
           nativeTrace({ type: 'note', level: 'info', label: `native morpho layer: unsupported chain (${morphoAsk.otherChain}) — Morpho builds run on Base or Ethereum, no build` })
           return NextResponse.json({
-            reply: `🏦 Morpho runs on **Base and Ethereum** here — I can't build a lend on ${morphoAsk.otherChain}. Say “lend ${morphoAsk.amount} ${morphoAsk.token.toUpperCase()} on Morpho on Base” and I'll prepare it.`,
+            reply: `🏦 Morpho runs on **Base and Ethereum** here — I can't build a lend on ${morphoAsk.otherChain}. Say “lend ${morphoAsk.amountIsUsd ? `$${morphoAsk.amount} of ` : `${morphoAsk.amount} `}${morphoAsk.token.toUpperCase()} on Morpho on Base” and I'll prepare it.`,
           })
         }
-        nativeTrace({ type: 'status', label: `native morpho layer claimed the turn: lend ${morphoAsk.amount} ${morphoAsk.token.toUpperCase()} on ${morphoChainName(morphoAsk.chainId)}${morphoAsk.explicitMorpho ? '' : ' (set-hint: Morpho selected)'} — planner bypassed` })
+        nativeTrace({ type: 'status', label: `native morpho layer claimed the turn: lend ${morphoAsk.amountIsUsd ? `$${morphoAsk.amount} of ` : `${morphoAsk.amount} `}${morphoAsk.token.toUpperCase()} on ${morphoChainName(morphoAsk.chainId)}${morphoAsk.explicitMorpho ? '' : ' (set-hint: Morpho selected)'} — planner bypassed` })
         return await buildMorphoLendTurn(morphoRead.agent, morphoAsk, walletAddress, workingContext, message, nativeTrace)
       } else {
         nativeTrace({ type: 'note', level: 'info', label: 'native morpho layer passed: lend-shaped ask but no Morpho agent in the set — normal routing' })
@@ -3510,6 +3511,19 @@ async function buildMorphoLendTurn(
   if (typeof decimals !== 'number') {
     return NextResponse.json({ reply: `🏦 Couldn't read ${token}'s decimals from the Morpho service — nothing was built.` })
   }
+  // A dollar ask on a non-stable loan asset ("$50 of WETH") is sized here,
+  // from the market's own implied price — the reply, the funding resume,
+  // the build, the guard, and the pending amend all carry TOKEN units.
+  const price = impliedLoanPriceUsd(row, info)
+  const sized = resolveMorphoLendAmount(params, price, decimals)
+  if ('problem' in sized) {
+    trace({ type: 'note', level: 'warn', label: `dollar ask could not be sized: ${sized.problem.slice(0, 160)}` })
+    return NextResponse.json({ reply: `🏦 ${sized.problem}` })
+  }
+  if (params.amountIsUsd) {
+    trace({ type: 'status', label: `sized $${params.amount} of ${token} → ${sized.amount} ${token} at the market's implied price` })
+    params = { ...params, amount: sized.amount, amountIsUsd: undefined }
+  }
   const atoms = humanToAtoms(params.amount, decimals)
   if (!atoms) {
     return NextResponse.json({ reply: `🏦 “${params.amount}” has more decimal places than ${token} supports (${decimals}).` })
@@ -3566,7 +3580,6 @@ async function buildMorphoLendTurn(
   trace({ type: 'status', label: `guard verified every step — ${guard.steps.length === 2 ? 'approve → lend' : 'lend'} card built, awaiting signature` })
 
   // 5) Money-moved value + the spend-policy gate at the point of signing.
-  const price = impliedLoanPriceUsd(row, info)
   const valueUsd = price !== null ? Number(params.amount) * price : morphoStableUsd(token, Number(params.amount))
   const { guardrails, blocked } = await aavePolicyGate(
     valueUsd,
