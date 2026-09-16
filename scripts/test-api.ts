@@ -21296,7 +21296,10 @@ async function main() {
     // read client-side into the composer, so the server must not bake it into
     // the page (a prefill that arrives in the HTML is one refactor away from
     // being a send).
-    const promptAsk = 'Buy $10 of AAPL'
+    // A distinctive sentence on purpose: the page's own example chips carry
+    // ordinary asks ("Buy $10 of AAPL every week on Robinhood Chain"), so a
+    // plain one would match the markup rather than a reflection.
+    const promptAsk = 'Buy $10 of AAPL (qa-arrival-probe)'
     const chatHtml = await (await fetch(`${BASE}/chat?prompt=${encodeURIComponent(promptAsk)}`)).text()
     check(
       'arrival/qa: /chat?prompt=… renders with the ask NOWHERE in the served HTML (the prefill is a client read; a URL never fires a turn)',
