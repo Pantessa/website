@@ -33,6 +33,7 @@
  *   npm run audit:funding           # report + nonzero exit on findings
  *   npm run audit:funding -- -v     # also print every outcome row
  */
+import { askAppSlugs } from '../lib/ask-apps'
 import {
   classifyFundingBalances,
   decideFundingTurn,
@@ -42,7 +43,6 @@ import {
   type FundingBalanceRead,
   type FundingNeed,
 } from '../lib/funding-plan'
-import { askAppSlugs } from '../lib/ask-apps'
 import { simulateLadder } from './ask-ladder'
 
 const verbose = process.argv.includes('-v')
@@ -97,6 +97,19 @@ const swapNeed = (sell: string, amount: number, buy: string, chainId = 8453): Fu
   actionLabel: 'the swap',
   buyToken: buy,
 })
+/** Legs of a chip resume that convert the token the follow-up BUYS into
+ *  something else (invariant 4). ETH and WETH are one asset, as they are in
+ *  lib/funding-plan. */
+function roundTripLegs(need: FundingNeed, resume: string): string[] {
+  if (!need.buyToken) return []
+  const asset = (t: string) => (t.toUpperCase() === 'WETH' ? 'ETH' : t.toUpperCase())
+  const buy = asset(need.buyToken)
+  if (asset(need.token) === buy) return [] // "swap ETH for WETH" converts nothing
+  return resume.split(', then ').filter((leg) => {
+    const m = leg.match(/^swap\s+[\d.]+\s+([a-z]+)\b.*?\b(?:for|to)\s+([a-z]+)\s+on\b/i)
+    return !!m && asset(m[1]) === buy && asset(m[2]) !== buy
+  })
+}
 const NFT_NEED: FundingNeed = {
   chainId: 8453,
   token: 'ETH',
@@ -387,19 +400,6 @@ const SCENARIOS: Scenario[] = [
     expect: 'refusal',
   },
 ]
-
-/** Legs of a chip resume that convert the token the follow-up BUYS into
- *  something else (invariant 4). ETH and WETH are one asset, as they are in
- *  lib/funding-plan. */
-function roundTripLegs(need: FundingNeed, resume: string): string[] {
-  if (!need.buyToken) return []
-  const asset = (t: string) => (t.toUpperCase() === 'WETH' ? 'ETH' : t.toUpperCase())
-  const buy = asset(need.buyToken)
-  return resume.split(', then ').filter((leg) => {
-    const m = leg.match(/^swap\s+[\d.]+\s+([a-z]+)\b.*?\b(?:for|to)\s+([a-z]+)\s+on\b/i)
-    return !!m && asset(m[1]) === buy && asset(m[2]) !== buy
-  })
-}
 
 /** Copy mentions the refusal owes the user: every holding ≥ $0.50. */
 function expectedMentions(reads: FundingBalanceRead[]): string[] {
