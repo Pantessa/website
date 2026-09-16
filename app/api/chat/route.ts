@@ -144,6 +144,7 @@ import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { fundChipFor, ONRAMP_NETWORK_LABEL } from '@/lib/onramp'
+import { swapShortfallTurn } from '@/lib/swap-shortfall'
 import { fundingOriginWords } from '@/lib/funding-origins'
 import { FEATURED_STOCKS, parseStockListAsk, robinhoodStocks } from '@/lib/stock-list'
 import { tokenHome } from '@/lib/token-home'
@@ -4615,6 +4616,9 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
           trace({ type: 'note', level: 'info', label: `native swap layer: limit order on ${heldWord} ${sellSym} held (< ${needTotal}) — CoW settles when funded, saying so` })
         } else if (!intent.sellAll && held < needTotal) {
           const buySym = intent.buyToken.toUpperCase()
+          // Spending a stable is a BUY ("Buy $50 of ETH" spends USDC): every
+          // line of the funding answer names it that way, not "the swap".
+          const sellIsStable = !!sellAddr && chain.stables[sellAddr.toLowerCase()] !== undefined
           const offer = await offerFundingPlan({
             user: walletAddress,
             need: {
@@ -4622,14 +4626,35 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
               token: sellSym,
               amountHuman: Number((needTotal - held).toFixed(6)),
               followupResume: `swap ${intent.sellAmountHuman} ${sellSym} for ${buySym} on ${FUNDING_CHAIN_WORD[chainId]}`,
-              actionLabel: 'the swap',
+              actionLabel: sellIsStable ? 'the buy' : 'the swap',
             },
             trace,
           })
           if (offer && 'insufficient' in offer) {
-            return NextResponse.json({
-              reply: `🔄 The swap sells ${intent.sellAmountHuman} ${sellSym} on ${chain.name} and the wallet holds ${heldWord}. ${offer.insufficient}`,
+            // The honest refusal, plus the card door when this is a BUY the
+            // wallet can't fund (lib/swap-shortfall): an empty wallet reading
+            // "top up any of those chains" had no way forward at all (live
+            // 2026-09-15, a stranger from a tweet, "Buy $50 of ETH" twice).
+            const turn = swapShortfallTurn({
+              ask: {
+                chainName: chain.name,
+                chainWord: FUNDING_CHAIN_WORD[chainId],
+                sellToken: sellSym,
+                buyToken: buySym,
+                sellAmountHuman: intent.sellAmountHuman,
+                ...(intent.sellAmountUsd ? { sellAmountUsd: intent.sellAmountUsd } : {}),
+                sellIsStable,
+                heldHuman: heldWord,
+              },
+              refusal: offer,
             })
+            const door = turn.clarify?.options[0]?.fund
+            trace({
+              type: 'note',
+              level: 'warn',
+              label: `native swap layer: ${sellSym} short on ${chain.name} (holds ${heldWord}) and the funding scan can't cover the ~$${offer.needUsd} plan${offer.empty ? ' — the wallet is empty on every scanned chain' : ''} — ${door ? `honest refusal + a card chip (${door.completes ? `the $${door.presetFiatUsd} of ETH delivery IS the buy` : `$${door.presetFiatUsd} preset, the cascade spends it on return`})` : 'honest refusal, no card door'}`,
+            })
+            return NextResponse.json(turn)
           }
           if (offer) return NextResponse.json({ ...offer, reply: `🌉 ${offer.reply}` })
           // null → the plan couldn't be drawn (scan or price unavailable).

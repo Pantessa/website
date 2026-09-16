@@ -22,6 +22,9 @@
 // pays no gas but can still prove it is the wallet, which is what the on-ramp
 // route requires), opens the Stripe-hosted on-ramp, and then offers the very
 // same resume: the ask survives the trip off-site, which is the whole point.
+// One exception (fund.completes, lib/swap-shortfall): when the ask was to buy
+// the very asset the on-ramp delivers ("Buy $50 of ETH"), the landing IS the
+// buy, so the chip confirms it and fires nothing.
 // We deliberately do NOT try to detect completion — Stripe settles in another
 // tab on its own clock, so guessing fires the resume too early and walls the
 // user a second time. The user tells us, we re-scan, the funding layer
@@ -116,7 +119,17 @@ export default function ClarifyChips({
   // they are still on the Stripe tab is a surprise; one that waits for them
   // is the point.
   useEffect(() => {
-    if (watch.status !== 'arrived' || !wait || firedRef.current || disabled) return
+    if (watch.status !== 'arrived' || !wait || firedRef.current) return
+    // The delivery WAS the ask ("Buy $50 of ETH" and ETH landed): say so and
+    // continue nothing. Firing the resume here would re-buy what just arrived,
+    // planned as ETH → USDC → ETH off the new balance.
+    if (wait.completes) {
+      firedRef.current = true
+      setFired(true)
+      clearFundWait(wait.address)
+      return
+    }
+    if (disabled) return
     const fire = () => {
       if (firedRef.current) return
       firedRef.current = true
@@ -155,6 +168,7 @@ export default function ClarifyChips({
         network: o.fund.network,
         resume: o.resume,
         label: o.label,
+        ...(o.fund.completes ? { completes: true } : {}),
         baselineEth: null,
         baselineStable: null,
         openedAt: Date.now(),
@@ -188,26 +202,38 @@ export default function ClarifyChips({
             const waiting = opened === i
             const arrived = waiting && !!landed
             const chainName = ONRAMP_NETWORK_LABEL[o.fund.network] ?? o.fund.network
+            // The delivery IS the buy (lib/swap-shortfall): nothing to pick up
+            // afterwards, so there is no "pick up where I left off" button to
+            // press while waiting — the watcher confirms the landing on its own.
+            const completes = o.fund.completes === true
             return (
               <div key={`${o.label}-${i}`} className="space-y-1">
                 {/* The alert: money landed. The resume fires the moment this
-                    tab is in front — say both, and keep saying it after. */}
+                    tab is in front — say both, and keep saying it after. A
+                    completing chip has no resume to fire: the landing is the
+                    receipt. */}
                 {arrived && landed && (
                   <div className="flex items-start gap-2 rounded-lg border border-[color:var(--accent)]/50 bg-[color:var(--accent)]/[0.08] px-3 py-2 text-[12px]">
                     <Check className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-[color:var(--accent)]" strokeWidth={3} />
                     <span className="text-[color:var(--fg)]">
                       <span className="font-semibold">{arrivalPhrase(landed, watch.stableSymbol)} landed on {chainName}.</span>{' '}
                       <span className="text-[color:var(--muted)]">
-                        {fired ? <>Ready to keep going — picked up &ldquo;{o.resume}&rdquo; below.</> : <>Ready to keep going — picking up &ldquo;{o.resume}&rdquo;.</>}
+                        {completes ? (
+                          <>That&rsquo;s your buy — it&rsquo;s in this wallet now, nothing left to sign.</>
+                        ) : fired ? (
+                          <>Ready to keep going — picked up &ldquo;{o.resume}&rdquo; below.</>
+                        ) : (
+                          <>Ready to keep going — picking up &ldquo;{o.resume}&rdquo;.</>
+                        )}
                       </span>
                     </span>
                   </div>
                 )}
-                {!(waiting && fired) && (
+                {!(waiting && (fired || completes)) && (
                 <button
                   onClick={() => (waiting ? continueNow(o) : void startFunding(o, i))}
                   disabled={disabled || busy}
-                  title={waiting ? o.resume : `Add funds, then: ${o.resume}`}
+                  title={completes ? `Buy ${o.fund.asset} with a card or bank — it lands in this wallet on ${chainName}` : waiting ? o.resume : `Add funds, then: ${o.resume}`}
                   className="group flex items-center gap-2 w-full text-left text-[12px] px-3 py-2 max-lg:min-h-10 rounded-lg border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] disabled:opacity-50 transition-colors"
                 >
                   {busy || (waiting && watch.status === 'watching') ? (
@@ -227,11 +253,17 @@ export default function ClarifyChips({
                 )}
                 {waiting && !arrived && !fired && (
                   <div className="px-1 text-[11px] text-[color:var(--muted-2)]">
-                    {watch.status === 'timeout'
-                      ? `Stopped watching ${chainName} after a while — when the purchase lands, press the button above.`
-                      : watch.failures >= 3
-                        ? `${chainName} isn’t answering right now — still trying. Press the button above once it’s there.`
-                        : `Stripe opened in a new tab — finish the purchase there, then come back. Watching ${chainName} for the funds — this continues on its own when they land${watch.lastReadAt ? ` · checked ${Math.max(1, Math.round((Date.now() - new Date(watch.lastReadAt).getTime()) / 1000))}s ago` : ''}.`}
+                    {completes
+                      ? watch.status === 'timeout'
+                        ? `Stopped watching ${chainName} after a while — Wallet details shows the ${o.fund.asset} as soon as Stripe delivers it.`
+                        : watch.failures >= 3
+                          ? `${chainName} isn’t answering right now — still trying.`
+                          : `Stripe opened in a new tab — finish the purchase there. Watching ${chainName} for the ${o.fund.asset} — this confirms on its own when it lands${watch.lastReadAt ? ` · checked ${Math.max(1, Math.round((Date.now() - new Date(watch.lastReadAt).getTime()) / 1000))}s ago` : ''}.`
+                      : watch.status === 'timeout'
+                        ? `Stopped watching ${chainName} after a while — when the purchase lands, press the button above.`
+                        : watch.failures >= 3
+                          ? `${chainName} isn’t answering right now — still trying. Press the button above once it’s there.`
+                          : `Stripe opened in a new tab — finish the purchase there, then come back. Watching ${chainName} for the funds — this continues on its own when they land${watch.lastReadAt ? ` · checked ${Math.max(1, Math.round((Date.now() - new Date(watch.lastReadAt).getTime()) / 1000))}s ago` : ''}.`}
                   </div>
                 )}
               </div>

@@ -29,6 +29,11 @@ export interface ClarifyFundAction {
    *  (kept as a literal here so clarify stays free of a runtime import; the
    *  harness pins the two together). */
   network: 'base' | 'ethereum'
+  /** The delivery IS the ask ("Buy $50 of ETH" and the on-ramp delivers ETH):
+   *  on arrival the surface confirms the landing and fires nothing. Firing
+   *  the resume would re-buy what just landed. Absent on every chip whose
+   *  ask still has steps left after the money arrives. */
+  completes?: true
 }
 
 export interface ClarifyOption {
@@ -65,7 +70,9 @@ function fundActionOf(raw: unknown): ClarifyFundAction | undefined {
   if (!network) return undefined
   const asset = typeof f.asset === 'string' ? f.asset.trim().slice(0, 12) : ''
   if (!asset) return undefined
-  return { presetFiatUsd: Math.round(usd), asset, network }
+  // Only a literal true: anything else keeps the resume firing on arrival,
+  // which is what every chip did before the flag existed.
+  return { presetFiatUsd: Math.round(usd), asset, network, ...(f.completes === true ? { completes: true as const } : {}) }
 }
 
 export interface ClarifyRequest {

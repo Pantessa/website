@@ -209,6 +209,7 @@ import { canonicalChainWord, normalizeChainWords, normalizeDollarWords } from '.
 import {
   clampFundUsd,
   classifyStripeOnrampFailure,
+  deliveryFundUsd,
   fundChipFor,
   onrampAssetOf,
   onrampConsentMessage,
@@ -237,7 +238,8 @@ import { parseEcbUsdRate } from '../lib/ecb-fx'
 import { clarifyOf } from '../lib/clarify'
 import { fundingPathOf, NEVER_MIND_RESUME_RE } from '../lib/funding-path'
 import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '../lib/turn-status'
-import { decideFundingTurn, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, gasTopupLegUsd, MIN_LEG_USD, planFundingChips, planGasTopup, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
+import { classifyFundingBalances, decideFundingTurn, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, gasTopupLegUsd, MIN_LEG_USD, planFundingChips, planGasTopup, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, strandedCoversPlan, type FundingNeed, type FundingSource } from '../lib/funding-plan'
+import { buyDollarsOf, swapBuyFundChip, swapBuyResume, swapShortfallTurn, type SwapShortfallAsk } from '../lib/swap-shortfall'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
@@ -7587,6 +7589,170 @@ async function main() {
         JSON.stringify(staleArb),
       )
 
+      // ── The card door on a coin BUY the wallet can't fund (lib/swap-
+      // shortfall, 2026-09-16). Prod ask_failures 2026-09-15: a stranger from
+      // a tweet (fresh Google wallet, empty everywhere) tapped /t/ETH's "Buy
+      // $50 of ETH", then typed "Buy $10 of ETH", and both times read "The
+      // swap sells 50 USDC on Base and the wallet holds 0 … Top up any of
+      // those chains and ask again." — no chip, and they left. The stock buy
+      // had offered the card chip in that state since #668.
+      {
+        // A completing chip: the delivery IS the buy, so the preset is the
+        // asked dollars (no headroom, no keep-back), floored at the session
+        // floor the route clamps to and capped like every preset.
+        check(
+          'coin buy card: a delivery preset is the asked dollars — floored at the $15 session floor, capped, never fractional',
+          deliveryFundUsd(50) === 50 && deliveryFundUsd(10) === ONRAMP_MIN_USD && deliveryFundUsd(15.2) === 16 &&
+            deliveryFundUsd(9_999) === ONRAMP_MAX_USD && deliveryFundUsd(0) === ONRAMP_MIN_USD && deliveryFundUsd(Number.NaN) === ONRAMP_MIN_USD &&
+            clampFundUsd(deliveryFundUsd(37.01)) === deliveryFundUsd(37.01),
+          `${deliveryFundUsd(50)}/${deliveryFundUsd(10)}/${deliveryFundUsd(15.2)}`,
+        )
+        const ethChip = fundChipFor({ needUsd: 50, actionLabel: 'buy $50 of ETH', resume: 'Buy $50 of ETH on Base', completes: true })
+        check(
+          'coin buy card: a completing chip says what lands ("Buy $50 of ETH with card or bank"), flags completes, and keeps the default lane',
+          ethChip?.label === 'Buy $50 of ETH with card or bank' && ethChip.fund?.completes === true && ethChip.fund.presetFiatUsd === 50 &&
+            ethChip.fund.network === ONRAMP_DEFAULT_NETWORK && ethChip.resume === 'Buy $50 of ETH on Base',
+          JSON.stringify(ethChip),
+        )
+        check(
+          'coin buy card: a plan chip never carries completes (its resume must fire on arrival)',
+          fundChipFor({ needUsd: 12, actionLabel: 'buy $10 of AAPL', resume: 'Buy $10 of AAPL' })?.fund?.completes === undefined,
+        )
+        const narrowed = clarifyOf({
+          question: 'Buy it?',
+          options: [
+            { label: 'Buy $50 of ETH with card or bank', resume: 'Buy $50 of ETH on Base', fund: { presetFiatUsd: 50, asset: 'ETH', network: 'ethereum', completes: true } },
+            { label: 'Truthy, not true', resume: 'Buy $50 of ETH on Base', fund: { presetFiatUsd: 50, asset: 'ETH', network: 'ethereum', completes: 'yes' } },
+          ],
+        })
+        check(
+          'coin buy card: clarifyOf keeps completes only as a literal true (anything else fires the resume, as every chip did before)',
+          narrowed?.options[0].fund?.completes === true && !!narrowed.options[1].fund && narrowed.options[1].fund.completes === undefined,
+          JSON.stringify(narrowed),
+        )
+
+        // The refusal FACTS the door is decided on — the same numbers the copy
+        // was written from.
+        const R4 = (reads: [number, number, number][]) =>
+          reads.map(([chainId, nativeEth, usdcBal]) => ({ chainId, chainWord: FUNDING_CHAIN_WORD[chainId], nativeEth, usdcBal }))
+        const buyNeed50: FundingNeed = { chainId: 8453, token: 'USDC', amountHuman: 50, followupResume: 'swap 50 USDC for ETH on Base', actionLabel: 'the buy' }
+        const scanOf = (reads: ReturnType<typeof R4>) => ({ ...classifyFundingBalances(reads, 2000), ethUsd: 2000, readChains: reads.map((r) => r.chainWord), failedChains: [] })
+        const emptyReads = R4([[8453, 0, 0], [42161, 0, 0], [1, 0, 0], [10, 0, 0]])
+        const emptyDecision = decideFundingTurn({ need: buyNeed50, needUsd: fundingPlanUsd(50, 1), gasUsd: 1.5, scan: scanOf(emptyReads), destChainName: 'Base' })
+        const strandedDecision = decideFundingTurn({ need: buyNeed50, needUsd: fundingPlanUsd(50, 1), gasUsd: 1.5, scan: scanOf(R4([[8453, 0, 0], [42161, 0, 60], [1, 0, 0], [10, 0, 0]])), destChainName: 'Base' })
+        const partialDecision = decideFundingTurn({ need: buyNeed50, needUsd: fundingPlanUsd(50, 1), gasUsd: 1.5, scan: scanOf(R4([[8453, 0, 0], [42161, 0.001, 12], [1, 0, 0], [10, 0, 0]])), destChainName: 'Base' })
+        check(
+          'coin buy card: refusal facts — an empty scan is EMPTY with the plan\'s full need; stranded USDC that covers is strandedCovers; money that falls short is neither',
+          emptyDecision.kind === 'refusal' && emptyDecision.facts.empty && !emptyDecision.facts.strandedCovers && emptyDecision.facts.needUsd === fundingPlanUsd(50, 1) + 1.5 &&
+            emptyDecision.facts.chainsRead === 'Base, Arbitrum, Ethereum and Optimism' &&
+            strandedDecision.kind === 'refusal' && strandedDecision.facts.strandedCovers && !strandedDecision.facts.empty &&
+            partialDecision.kind === 'refusal' && !partialDecision.facts.empty && !partialDecision.facts.strandedCovers,
+          JSON.stringify({ emptyDecision, strandedDecision, partialDecision }).slice(0, 600),
+        )
+        check(
+          'coin buy card: strandedCoversPlan is the one rule behind "Your money\'s already there" — the copy and the facts agree',
+          strandedDecision.kind === 'refusal' && /already there/.test(strandedDecision.insufficient) &&
+            partialDecision.kind === 'refusal' && !/already there/.test(partialDecision.insufficient) &&
+            strandedCoversPlan(buyNeed50, 58, [{ chainId: 42161, chainWord: 'Arbitrum', token: 'USDC', balance: 60, usd: 60 }], 0) &&
+            // the needed token already on the destination never counts toward "enough"
+            !strandedCoversPlan(buyNeed50, 58, [{ chainId: 8453, chainWord: 'Base', token: 'USDC', balance: 60, usd: 60 }], 0),
+        )
+
+        const askOf = (buy: string, usd: number, chain = 'Base', dollarAsk = true): SwapShortfallAsk => ({
+          chainName: chain,
+          chainWord: chain,
+          sellToken: 'USDC',
+          buyToken: buy,
+          sellAmountHuman: String(usd),
+          ...(dollarAsk ? { sellAmountUsd: String(usd) } : {}),
+          sellIsStable: true,
+          heldHuman: '0',
+        })
+        const refusalOf = (d: typeof emptyDecision) => (d.kind === 'refusal' ? { insufficient: d.insufficient, ...d.facts } : null)
+        const emptyRefusal = refusalOf(emptyDecision)!
+
+        // THE TWEET STRANGER's exact turn.
+        const stranger = swapShortfallTurn({ ask: askOf('ETH', 50), refusal: emptyRefusal })
+        const strangerChip = stranger.clarify?.options[0]
+        check(
+          'coin buy card: THE TWEET STRANGER — an empty wallet\'s "Buy $50 of ETH" reads plainly (no "The swap sells", no "Top up any of those chains") and names Ethereum as where the ETH lands',
+          stranger.buildPath === 'native-swap-short' &&
+            /^🔄 To buy \$50 of ETH, this wallet needs money in it first — I checked Base, Arbitrum, Ethereum and Optimism and there's no ETH or USDC here yet\./.test(stranger.reply) &&
+            !/The swap sells|Top up any of those chains|found no movable/.test(stranger.reply) &&
+            /lands in this wallet as ETH on Ethereum \(card funding can't deliver ETH to Base for every address\), and that's the whole buy/.test(stranger.reply),
+          stranger.reply,
+        )
+        check(
+          'coin buy card: THE TWEET STRANGER gets a $50 completing card chip + Not now; the resume round-trips the ladder as the swap it restates',
+          strangerChip?.label === 'Buy $50 of ETH with card or bank' && strangerChip.fund?.completes === true && strangerChip.fund.presetFiatUsd === 50 &&
+            strangerChip.resume === 'Buy $50 of ETH on Base' && simulateLadder(strangerChip.resume).gate === 'swap' && simulateLadder(strangerChip.resume).kind === 'action' &&
+            stranger.clarify?.options.length === 2 && NEVER_MIND_RESUME_RE.test(stranger.clarify.options[1].resume),
+          JSON.stringify(stranger.clarify),
+        )
+        const tenDollars = swapShortfallTurn({ ask: askOf('ETH', 10), refusal: emptyRefusal })
+        check(
+          'coin buy card: the stranger\'s "Buy $10 of ETH" opens at the $15 floor and SAYS so before anyone pays',
+          tenDollars.clarify?.options[0].label === 'Buy $15 of ETH with card or bank' && tenDollars.clarify.options[0].fund?.presetFiatUsd === 15 &&
+            /Card checkouts here start at \$15, so it opens there/.test(tenDollars.reply),
+          tenDollars.reply,
+        )
+        const onEthereum = swapShortfallTurn({ ask: askOf('ETH', 50, 'Ethereum'), refusal: emptyRefusal })
+        check(
+          'coin buy card: an ETH buy ON Ethereum carries no lane caveat — the lane is the ask\'s own chain',
+          onEthereum.clarify?.options[0].fund?.completes === true && !/card funding can't deliver/.test(onEthereum.reply),
+          onEthereum.reply,
+        )
+        // Any other coin: the chip carries the ask, and the cascade spends the
+        // landed ETH when the resume fires (audit:funding pins the landing).
+        const uni = swapShortfallTurn({ ask: askOf('UNI', 50), refusal: emptyRefusal })
+        const uniChip = uni.clarify?.options[0]
+        check(
+          'coin buy card: a non-ETH buy gets a PLAN chip — preset sized off the refusal\'s need (headroom + L1 keep-back), label names the buy and chain, resume restates it',
+          !!uniChip?.fund && uniChip.fund.completes === undefined && uniChip.fund.presetFiatUsd === planFundUsd(emptyRefusal.needUsd) &&
+            uniChip.label === `Add $${planFundUsd(emptyRefusal.needUsd)} with card or bank → buy $50 of UNI on Base` && uniChip.resume === 'Buy $50 of UNI on Base' &&
+            simulateLadder(uniChip.resume).kind === 'action' && /lay out the move to Base and the UNI buy for you to sign/.test(uni.reply),
+          JSON.stringify(uni).slice(0, 500),
+        )
+        check(
+          'coin buy card: a token-amount buy restates its amount ("Swap 50 USDC for UNI on Ethereum"), and cents survive a dollar restatement',
+          swapBuyResume(askOf('UNI', 50, 'Ethereum', false)) === 'Swap 50 USDC for UNI on Ethereum' && swapBuyResume({ ...askOf('UNI', 12.5, 'Arbitrum'), sellAmountUsd: '12.5' }) === 'Buy $12.50 of UNI on Arbitrum' &&
+            simulateLadder('Swap 50 USDC for UNI on Ethereum').kind === 'action' && simulateLadder('Buy $12.50 of UNI on Arbitrum').kind === 'action',
+        )
+        // Where money exists, the funding layer's refusal stays the answer and
+        // the card is an addition to it.
+        const partial = swapShortfallTurn({ ask: askOf('ETH', 50), refusal: refusalOf(partialDecision)! })
+        check(
+          'coin buy card: a wallet holding SOME money keeps the refusal that names it, and the card rides along ("Or buy the ETH …")',
+          /^🔄 This buy spends 50 USDC on Base and the wallet holds 0 there\./.test(partial.reply) && partial.reply.includes('~$12 of USDC on Arbitrum') &&
+            /Or buy the ETH with a card or bank below/.test(partial.reply) && partial.clarify?.options[0].fund?.completes === true,
+          partial.reply,
+        )
+        const stranded = swapShortfallTurn({ ask: askOf('ETH', 50), refusal: refusalOf(strandedDecision)! })
+        check(
+          'coin buy card: stranded USDC that covers the buy gets NO card chip — the fix is a dollar of gas, not a $50 purchase',
+          !stranded.clarify && /already there/.test(stranded.reply) && !/card or bank/.test(stranded.reply),
+          stranded.reply,
+        )
+        const sell = swapShortfallTurn({
+          ask: { chainName: 'Base', chainWord: 'Base', sellToken: 'ETH', buyToken: 'USDC', sellAmountHuman: '0.0025', sellAmountUsd: '5', sellIsStable: false, heldHuman: '0' },
+          refusal: emptyRefusal,
+        })
+        check(
+          'coin buy card: a SELL keeps its old answer and gets no card chip (buying ETH to sell it is not the ask)',
+          !sell.clarify && sell.reply.startsWith('🔄 The swap sells 0.0025 ETH on Base and the wallet holds 0. ') && buyDollarsOf({ sellIsStable: false, sellAmountUsd: '5', sellAmountHuman: '0.0025' }) === null,
+          sell.reply,
+        )
+        process.env.ONRAMP_ENABLED = 'false'
+        const closed = swapShortfallTurn({ ask: askOf('ETH', 50), refusal: emptyRefusal })
+        check(
+          'coin buy card: with the door CLOSED the empty wallet still reads plainly — no chip, and the one honest next step',
+          !closed.clarify && /this wallet needs money in it first/.test(closed.reply) && /Send ETH or USDC to this wallet on any of those chains, then ask again — nothing was built\./.test(closed.reply) &&
+            !/card or bank/.test(closed.reply) && swapBuyFundChip(askOf('UNI', 50), emptyRefusal) === null,
+          closed.reply,
+        )
+        process.env.ONRAMP_ENABLED = 'true'
+      }
+
       // ── Wallet proof (raised by Coinbase's integration review, case
       // 500PC00000kDVUv; the finding was about US, so it outlived the switch
       // to Stripe). The route mints a real payment session, so "who asked"
@@ -7728,6 +7894,18 @@ async function main() {
           'onramp wiring: the dashboard fund card uses the signed door, not a bare provider link',
           fundCardSrc.includes('startOnrampSession') && !/pay\.coinbase\.com/.test(fundCardSrc),
         )
+        // A completing chip (lib/swap-shortfall: "Buy $50 of ETH", the landing
+        // IS the buy) must never fire its resume on arrival — that re-buys
+        // the ETH that just landed as ETH → USDC → ETH. The arrival effect
+        // returns on `wait.completes` BEFORE the line that calls onPick, and
+        // the wait persists the flag so a reload can't lose it.
+        const completesAt = chipSrc.indexOf('if (wait.completes)')
+        const firesAt = chipSrc.indexOf('onPick(wait.resume)')
+        check(
+          'coin buy card (wiring): a completing chip confirms the landing and returns before the arrival effect fires the resume; the wait persists the flag',
+          completesAt > 0 && firesAt > completesAt && /o\.fund\.completes \? \{ completes: true \}/.test(chipSrc),
+          `completes@${completesAt} fires@${firesAt}`,
+        )
       }
 
       process.env.ONRAMP_ENABLED = wasEnabled
@@ -7806,6 +7984,43 @@ async function main() {
           (outdated.status === 503 ||
             (outdated.status === 409 && (outdated.data as { stage?: string }).stage === 'stale' && /out of date/.test(String((outdated.data as { error?: string }).error)))),
         `${outdated.status} ${JSON.stringify(outdated.data)}`,
+      )
+    }
+
+    // ── Route-level: the tweet stranger's exact turn, THROUGH the swap gate
+    // (lib/swap-shortfall). A fresh wallet is empty on every chain the live
+    // scan reads. Whether this server's card door is open decides the chip,
+    // never the plain copy: the route answers 503 before auth when it's closed.
+    {
+      const emptyBuyer = privateKeyToAccount(generatePrivateKey()).address
+      const doorOpen = (await fetch(`${BASE}/api/onramp/session`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' }, body: '{}' })).status !== 503
+      const buyTurn = (message: string) =>
+        fetch(`${BASE}/api/chat`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+          body: JSON.stringify({ message, walletAddress: emptyBuyer, activeServers: [], history: [] }),
+        }).then((r) => r.json() as Promise<Record<string, unknown> & { clarify?: { options?: { label: string; resume: string; fund?: { presetFiatUsd: number; network: string; completes?: true } }[] } }>)
+      const scanNote = (j: Record<string, unknown>) => (/couldn't draw a top-up plan|couldn't read your/i.test(String(j.reply)) ? ' [the live funding scan did not complete — an RPC answer, not this diff; rerun]' : '')
+      const eth = await buyTurn('Buy $50 of ETH')
+      const ethChip = eth.clarify?.options?.[0]
+      check(
+        `coin buy card (route): an EMPTY wallet's "Buy $50 of ETH" is no signable, reads plainly, and ${doorOpen ? 'carries the $50 completing card chip' : 'names the one next step (the card door is closed on this server)'}`,
+        !(eth.orderRequest || eth.txRequest || eth.txChain || eth.jobId) && eth.buildPath === 'native-swap-short' &&
+          /this wallet needs money in it first/.test(String(eth.reply)) && !/The swap sells/.test(String(eth.reply)) &&
+          (doorOpen
+            ? ethChip?.fund?.completes === true && ethChip.fund.presetFiatUsd === 50 && ethChip.fund.network === ONRAMP_DEFAULT_NETWORK && ethChip.resume === 'Buy $50 of ETH on Base'
+            : !eth.clarify && /Send ETH or USDC to this wallet/.test(String(eth.reply))),
+        `door=${doorOpen}${scanNote(eth)} ${JSON.stringify(eth).slice(0, 400)}`,
+      )
+      const cb = await buyTurn('Buy $20 of cbETH')
+      const cbChip = cb.clarify?.options?.[0]
+      check(
+        `coin buy card (route): an EMPTY wallet's "Buy $20 of cbETH" ${doorOpen ? 'carries a PLAN card chip whose resume restates the buy on Base (the cascade spends the landed ETH)' : 'reads plainly with no chip'}`,
+        !(cb.orderRequest || cb.txRequest || cb.txChain || cb.jobId) && cb.buildPath === 'native-swap-short' && /this wallet needs money in it first/.test(String(cb.reply)) &&
+          (doorOpen
+            ? !!cbChip?.fund && cbChip.fund.completes === undefined && cbChip.resume === 'Buy $20 of CBETH on Base' && /→ buy \$20 of CBETH on Base$/.test(cbChip.label) && simulateLadder(cbChip.resume).kind === 'action'
+            : !cb.clarify),
+        `door=${doorOpen}${scanNote(cb)} ${JSON.stringify(cb).slice(0, 400)}`,
       )
     }
 

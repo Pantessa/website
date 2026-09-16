@@ -298,6 +298,17 @@ const CORPUS: Entry[] = [
   { ask: 'buy $12 orth of AAPL', source: 'prod 2026-09-07 (typo of "worth")', expect: 'action' },
   { ask: 'buy $12 worth of APPL using vredit cartd', source: 'prod 2026-08-31 (fiat spend clause)', expect: 'action' },
   { ask: 'buy $12 of AAPL with my credit card', source: 'stranger phrasing of the on-ramp intent', expect: 'action' },
+  // Prod ask_failures 2026-09-15/16: an empty wallet's coin buy walled with no
+  // way forward (a stranger from a tweet, twice). The asks themselves, then
+  // the card chip resumes lib/swap-shortfall restates them as (swapBuyResume
+  // pins the chain; a token-amount buy keeps its amount).
+  { ask: 'Buy $50 of ETH', source: 'prod 2026-09-15 (/t/ETH chip, empty Google wallet)', expect: 'action' },
+  { ask: 'Buy $10 of ETH', source: 'prod 2026-09-15 (typed, same stranger)', expect: 'action' },
+  { ask: 'Buy $25 of ETH on Base', source: 'prod 2026-09-16 (Nate, empty CDP account)', expect: 'action' },
+  { ask: 'Buy $50 of ETH on Base', source: 'card chip resume (completing ETH buy)', expect: 'action' },
+  { ask: 'Buy $50 of UNI on Base', source: 'card chip resume (cascade: ETH lands on Ethereum, the ask re-runs)', expect: 'action' },
+  { ask: 'Buy $12.50 of UNI on Arbitrum', source: 'card chip resume (cents survive the restatement)', expect: 'action' },
+  { ask: 'Swap 50 USDC for UNI on Ethereum', source: 'card chip resume (token-amount buy)', expect: 'action' },
   // Robinhood-destination cross-chain asks are FUNDING moves (NEAR can't reach
   // 4663): the jobs layer claims them ahead of the NEAR door. $1 is under the
   // $9 parity floor → chips for the smallest clean move (never a leg built to

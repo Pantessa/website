@@ -329,6 +329,24 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
 }
 
 /**
+ * Does gas-stranded USDC cover the plan on its own terms? The movable total
+ * plus every stranded USDC row except the needed token already sitting on
+ * the destination (the caller subtracted that from the shortfall). True
+ * means the money EXISTS and only origin gas is missing: the answer is a
+ * dollar of ETH, never a card purchase. ONE rule, shared by the refusal copy
+ * ("Your money's already there") and the refusal facts that decide whether a
+ * card door rides along, so the copy and the door can't disagree.
+ */
+export function strandedCoversPlan(need: FundingNeed, needUsd: number, stranded: FundingSource[], movableTotalUsd: number): boolean {
+  const usdcStranded = stranded.filter((s) => s.token === 'USDC')
+  if (usdcStranded.length === 0) return false
+  const coverableUsd = usdcStranded
+    .filter((s) => s.chainId !== need.chainId || s.token.toUpperCase() !== need.token.toUpperCase())
+    .reduce((a, s) => a + s.usd, 0)
+  return movableTotalUsd + coverableUsd >= needUsd
+}
+
+/**
  * The honest-refusal copy when the movable sources can't cover the plan.
  * Pure so the harness pins every variant. Stranded USDC (exists, but its
  * chain holds no gas ETH to sign a move) must be NAMED with its rescue —
@@ -381,15 +399,12 @@ export function shortRefusalCopy(params: {
     )
   }
   const strandedSummary = usdcStranded.map((s) => `~$${usd2(Number(s.usd.toFixed(2)))} of ${s.token} on ${s.chainWord}`).join(', ')
-  // The needed token already ON the destination chain was subtracted from the
-  // shortfall by the caller — name it, but never count it toward "enough".
-  const coverableUsd = usdcStranded
-    .filter((s) => s.chainId !== need.chainId || s.token.toUpperCase() !== need.token.toUpperCase())
-    .reduce((a, s) => a + s.usd, 0)
   const gasWords = [...new Set(usdcStranded.map((s) => s.chainWord))].join(' and ')
   const rescue = `Send a little ETH (about a dollar's worth is plenty) to your own address on ${gasWords} and ask again — ${planLine}`
   const alsoEth = ethNote ? ` (Also seen: ${ethNote}.)` : ''
-  if (movableTotalUsd + coverableUsd >= needUsd) {
+  // The needed token already ON the destination chain was subtracted from the
+  // shortfall by the caller — named above, never counted toward "enough".
+  if (strandedCoversPlan(need, needUsd, stranded, movableTotalUsd)) {
     // The money EXISTS — only origin gas is missing. Lead with that.
     return (
       `Your money's already there: across ${chainsRead} I can see ${sourceSummary ? `${sourceSummary}, plus ` : ''}${strandedSummary} — enough for ${actionLabel} — ` +
@@ -609,17 +624,36 @@ export interface FundingOfferTurn {
   buildPath: string
 }
 
+/** What an honest refusal SAW, for a caller that adds a door to it (the card
+ *  on-ramp, lib/swap-shortfall). The refusal text stays the answer; these are
+ *  the facts behind it, so the door is decided on the same numbers the copy
+ *  was written from. Only ever produced over a COMPLETE scan: a partial one
+ *  falls through before any refusal exists. */
+export interface FundingRefusalFacts {
+  /** Dollars the smallest plan moves, gas leg included — what a door must fund. */
+  needUsd: number
+  /** The chains that were read, joined for copy ("Base, Arbitrum and Ethereum"). */
+  chainsRead: string
+  /** Nothing worth naming on any scanned chain — movable and stranded together
+   *  under a dust line. The one state where "no ETH or USDC here" is true. */
+  empty: boolean
+  /** Gas-stranded USDC covers the plan by itself (strandedCoversPlan): the fix
+   *  is a dollar of ETH on the stuck chain, never a card purchase. */
+  strandedCovers: boolean
+}
+
 /**
  * The whole move: price the shortfall, scan the wallet, plan the chips.
- * Returns the offer turn, `{ insufficient }` honest-refusal text when the
- * wallet genuinely can't cover it, or null when the scan/price is
- * unavailable — the caller falls through to its existing (fail-closed) path.
+ * Returns the offer turn, `{ insufficient, ...facts }` when the wallet
+ * genuinely can't cover it (the honest-refusal text plus what it saw), or
+ * null when the scan/price is unavailable — the caller falls through to its
+ * existing (fail-closed) path.
  */
 export async function offerFundingPlan(params: {
   user: string
   need: FundingNeed
   trace?: (event: unknown) => void
-}): Promise<FundingOfferTurn | { insufficient: string } | null> {
+}): Promise<FundingOfferTurn | ({ insufficient: string } & FundingRefusalFacts) | null> {
   const { user, need } = params
   const trace = params.trace ?? (() => {})
   const destChain = chainById(need.chainId)
@@ -688,14 +722,14 @@ export async function offerFundingPlan(params: {
       : undefined
   const decision = decideFundingTurn({ need, needUsd, gasUsd, scan, destChainName: destChain.name, flexMinUsd, trace })
   if (decision.kind === 'fallthrough') return null
-  if (decision.kind === 'refusal') return { insufficient: decision.insufficient }
+  if (decision.kind === 'refusal') return { insufficient: decision.insufficient, ...decision.facts }
   return decision.turn
 }
 
 /** What the funding layer decided to do with a priced shortfall. */
 export type FundingDecision =
   | { kind: 'offer'; turn: FundingOfferTurn }
-  | { kind: 'refusal'; insufficient: string }
+  | { kind: 'refusal'; insufficient: string; facts: FundingRefusalFacts }
   | { kind: 'fallthrough'; reason: string }
 
 /**
@@ -820,6 +854,15 @@ export function decideFundingTurn(params: {
         movableTotalUsd: plan.totalUsd,
         ...(headroomShort ? { promisableUsd: promisable } : {}),
       }),
+      facts: {
+        needUsd: plan.needUsd,
+        chainsRead,
+        // Every row the scan kept, movable or stranded — including the needed
+        // token already on the destination, which the plan excludes but the
+        // wallet still holds. Dust under DUST_USD is nothing to name.
+        empty: [...scan.sources, ...scan.stranded].reduce((a, s) => a + s.usd, 0) < DUST_USD,
+        strandedCovers: strandedCoversPlan(need, plan.needUsd, scan.stranded, plan.totalUsd),
+      },
     }
   }
 

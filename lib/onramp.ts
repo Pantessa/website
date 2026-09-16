@@ -310,6 +310,22 @@ export function planFundUsd(needUsd: number, network: OnrampNetwork = ONRAMP_DEF
   return Math.min(ONRAMP_MAX_USD, Math.max(ONRAMP_MIN_USD, Math.ceil(withHeadroom)))
 }
 
+/** What to preset when the delivery ITSELF is the ask: "Buy $50 of ETH" from
+ *  an empty wallet, where the on-ramp delivers exactly the asset the user
+ *  asked for and nothing moves afterwards. No headroom and no keep-back,
+ *  because there is no plan downstream for them to protect: every dollar of
+ *  the preset IS the buy, and Stripe's fee rides on top of it.
+ *
+ *  Still at or above ONRAMP_MIN_USD. That floor was derived for plans, not
+ *  deliveries, but the session route clamps every preset to it and refuses a
+ *  consent signed at any other figure — so a $10 chip would open a checkout
+ *  that answers "out of date". A $10 ETH buy opens at $15, and the reply says
+ *  so. */
+export function deliveryFundUsd(askUsd: number): number {
+  if (!Number.isFinite(askUsd) || askUsd <= 0) return ONRAMP_MIN_USD
+  return Math.min(ONRAMP_MAX_USD, Math.max(ONRAMP_MIN_USD, Math.ceil(Number(askUsd.toFixed(2)))))
+}
+
 /** Clamp a preset the CLIENT sends back. Distinct from planFundUsd on
  *  purpose: the chip's amount ALREADY carries the headroom and the keep-back,
  *  so re-planning it server-side compounds — live drive 2026-08-27 rendered
@@ -432,6 +448,14 @@ export interface FundChipParams {
    *  unless the caller knows better — Base is cheaper but Stripe refuses it
    *  for some home addresses, after KYC. */
   network?: OnrampNetwork
+  /** The delivery IS the ask — a buy of the very asset the on-ramp delivers
+   *  ("Buy $50 of ETH"). `needUsd` is then the dollars to deliver, not a plan
+   *  to fund: the preset is deliveryFundUsd, the label says what lands, and
+   *  the surface confirms the arrival instead of firing the resume. Firing it
+   *  would be circular — re-asking "Buy $50 of ETH" from a wallet holding
+   *  only the ETH that just landed plans ETH → USDC → ETH and charges both
+   *  swaps for the round trip. */
+  completes?: boolean
 }
 
 /** The fund chip, or null when the door is closed. Callers append it to their
@@ -439,8 +463,16 @@ export interface FundChipParams {
  *  an addition to an honest answer, never a replacement for one. */
 export function fundChipFor(params: FundChipParams): ClarifyOption | null {
   if (!onrampEnabled()) return null
-  const { needUsd, actionLabel, resume, network = ONRAMP_DEFAULT_NETWORK } = params
+  const { needUsd, actionLabel, resume, network = ONRAMP_DEFAULT_NETWORK, completes = false } = params
   if (!resume.trim() || !actionLabel.trim()) return null
+  if (completes) {
+    const presetFiatUsd = deliveryFundUsd(needUsd)
+    return {
+      label: `Buy $${presetFiatUsd} of ${ONRAMP_ASSET} with card or bank`,
+      resume,
+      fund: { presetFiatUsd, asset: ONRAMP_ASSET, network, completes: true },
+    }
+  }
   const presetFiatUsd = planFundUsd(needUsd, network)
   return {
     label: `Add $${presetFiatUsd} with card or bank → ${actionLabel}`,
