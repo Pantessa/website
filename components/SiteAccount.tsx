@@ -26,7 +26,10 @@ export const signInLabel = (
   </>
 )
 
-export default function SiteAccount({ redirectTo }: { redirectTo: string }) {
+/** `redirectTo`: a flow target of the caller's own. Without one, a sign-in
+ *  keeps the visitor on the page they're on, or goes to Markets from the
+ *  landing page (lib/app-entry signInLandingFor). */
+export default function SiteAccount({ redirectTo }: { redirectTo?: string } = {}) {
   const { isConnected } = useAccount()
   const { address: sessionAddress } = useSession()
   const [mounted, setMounted] = useState(false)

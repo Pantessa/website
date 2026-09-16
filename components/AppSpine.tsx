@@ -42,7 +42,7 @@ import { isPublicAppPath } from '@/lib/app-entry'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { DEFAULT_TAB, parseTabParam, syncTabParam, tabUrl } from '@/lib/app-tab-url'
 import { useYeetfulStore, type RailTab } from '@/lib/store'
-import { useSession } from '@/lib/session'
+import { rememberSignInReturn, signedOutJustNow, useSession } from '@/lib/session'
 import { useRunningWork } from '@/lib/use-running-work'
 import { rosterEnabledClient } from '@/lib/roster-client'
 import { WALLET_PAGE_HREF } from '@/lib/wallet-page'
@@ -119,11 +119,19 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // action there asks for a wallet (lib/use-connect-to-act), and the seats
   // below that lead into the signed-in app open the sign-in door.
   // replace, not push: Back must not land on a page that bounces again.
+  //
+  // A visitor who ARRIVED signed out was trying to open this page, so it is
+  // remembered on the way home (lib/session rememberSignInReturn): a sign-in
+  // on the landing lands back here instead of on Markets (2026-09-16, Nate:
+  // "keep them running on their task"). Somebody who just signed out here
+  // leaves nothing to come back to (lib/session signedOutJustNow).
   const pathname = usePathname()
   const publicPage = isPublicAppPath(pathname)
   useEffect(() => {
-    if (signedOut && !publicPage) router.replace('/')
-  }, [signedOut, publicPage, router])
+    if (!signedOut || publicPage) return
+    if (!signedOutJustNow()) rememberSignInReturn(pathname + window.location.search)
+    router.replace('/')
+  }, [signedOut, publicPage, pathname, router])
 
   // A seat that leads into the signed-in app, pressed by a signed-out visitor
   // on a public page: the sign-in door, aimed at that destination (the seats

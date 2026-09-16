@@ -152,7 +152,7 @@ export default function MarketMap({ section = 'all', onOpen, tabs = true, aspect
                 onFocus={() => setHover({ cell: c, px: 0, py: 0 })}
                 onBlur={() => setHover(null)}
               >
-                <rect x={c.x} y={c.y} width={c.w} height={c.h} rx={3} fill={cellFill(c.chgPct)} />
+                <rect x={c.x} y={c.y} width={c.w} height={c.h} rx={3} fill={cellFill(c.chgPct)} data-unquoted={c.last == null ? '' : undefined} className={c.last == null ? 'mk-map__rect--unquoted' : undefined} />
                 {tier >= 1 ? (
                   <text className="mk-map__sym" x={c.x + 6} y={c.y + 6 + fs1 * 0.9} fontSize={fs1} fill="var(--fg)">
                     {c.symbol}

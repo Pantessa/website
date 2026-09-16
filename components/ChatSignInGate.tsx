@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from 'react'
 import { LogIn, Loader2, Sparkles } from 'lucide-react'
-import { useSession } from '@/lib/session'
+import { signInLandingHere, useSession } from '@/lib/session'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { GUEST_TRIAL_LIMIT, guestTurnsUsed, subscribeGuestTrial } from '@/lib/guest-trial'
@@ -23,16 +23,10 @@ import { GUEST_TRIAL_LIMIT, guestTurnsUsed, subscribeGuestTrial } from '@/lib/gu
  *    proof that matters). The banner offers SIWE only for what it actually
  *    buys: keeping chats + receipts on the dashboard ("connect to act, sign
  *    in to keep"). Nothing auto-fires a signature request on arrival.
+ *  · Every door here keeps the visitor in this chat, query included (?mcps=,
+ *    ?prompt=): none names a destination, and the page it lands on is read
+ *    when they press it (lib/app-entry signInLandingFor), not at render.
  */
-/** Where to land after sign-in: the page the visitor is already on, query
- *  string included — a hardcoded '/chat' used to drop ?mcps=/?prompt= deep
- *  links (the share-page handoff) on the post-sign-in redirect. Client-only
- *  component, so window is available; '/chat' is the SSR-safe fallback. */
-function hereWithQuery(): string {
-  if (typeof window === 'undefined') return '/chat'
-  return window.location.pathname + window.location.search
-}
-
 export default function ChatSignInGate() {
   const { status, signingIn, needsSignIn, signIn, connectAndSignIn } = useSession()
   const turnsUsed = useSyncExternalStore(subscribeGuestTrial, guestTurnsUsed, () => 0)
@@ -61,12 +55,11 @@ export default function ChatSignInGate() {
             <span>{label}</span>
           </>
         }
-        redirectTo={hereWithQuery()}
       />
     ) : (
       // No embedded-wallet SDK configured — direct wallet SIWE.
       <button
-        onClick={() => connectAndSignIn(hereWithQuery())}
+        onClick={() => connectAndSignIn(signInLandingHere())}
         disabled={signingIn}
         type="button"
         title="Connect a wallet and sign in — one step"
@@ -125,7 +118,7 @@ export default function ChatSignInGate() {
         </p>
         {awaitingSignature ? (
           <button
-            onClick={() => signIn(hereWithQuery())}
+            onClick={() => signIn(signInLandingHere())}
             disabled={signingIn}
             type="button"
             title="Sign one message to keep your chats — proves ownership, nothing moves"
@@ -148,11 +141,10 @@ export default function ChatSignInGate() {
             // way in — it is offered once there is something to keep).
             // Google/email lanes are unchanged (QA O-6).
             walletConnectOnly
-            redirectTo={hereWithQuery()}
           />
         ) : (
           <button
-            onClick={() => connectAndSignIn(hereWithQuery())}
+            onClick={() => connectAndSignIn(signInLandingHere())}
             disabled={signingIn}
             type="button"
             title="Connect a wallet and sign in — one step"

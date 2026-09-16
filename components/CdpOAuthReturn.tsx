@@ -6,8 +6,10 @@
 // the app (a full page load). On return the CDP SDK finishes auth during init
 // (useIsSignedIn flips true). At that point we still have to hand the embedded
 // wallet to wagmi — exactly like the email flow's connectAsync — then, like the
-// email lane, sign in and route in: to the door's redirectTo, else the
-// fresh-login landing (Markets). The sign-in is the account door's (sign in to
+// email lane, sign in and land where the door said: the provider returns to
+// the page the door was opened on, so that is usually a refresh in place, and
+// a door on the landing page goes on to Markets (lib/app-entry
+// signInLandingFor). The sign-in is the account door's (sign in to
 // keep, rule 6): the dashboard's gate needs a SIWE session, and the embedded
 // wallet signs without a prompt. A connect-only door's intent
 // (walletConnectOnly: /i, /chat's connect gate) stops at the connect; the
@@ -23,8 +25,8 @@ import { useAccount, useConnect } from 'wagmi'
 import { CDP_CONNECTOR_ID } from '@coinbase/cdp-wagmi'
 import { useIsInitialized, useIsSignedIn, useOAuthState } from '@coinbase/cdp-hooks'
 import { ACT_RESUME_EVENT, ACT_RESUME_KEY, actResumeRecord } from '@/lib/act-gate'
-import { SIGN_IN_LANDING } from '@/lib/app-entry'
-import { useSession } from '@/lib/session'
+import { sameAppHref } from '@/lib/app-entry'
+import { currentAppHref, signInLandingHere, useSession } from '@/lib/session'
 
 export const OAUTH_INTENT_KEY = 'yf_oauth_signin'
 
@@ -95,7 +97,9 @@ export default function CdpOAuthReturn() {
       } catch {
         /* ignore */
       }
-      const target = intent?.redirectTo || SIGN_IN_LANDING
+      // The door always names where it lands (read when the visitor pressed
+      // Google); an intent without one gets the same rule, read now.
+      const target = intent?.redirectTo || signInLandingHere()
       // An action held on a public page rides the intent: leave it for the
       // page this routes to, which runs it on the wallet that just connected.
       // Nothing is left when the connect failed.
@@ -108,7 +112,7 @@ export default function CdpOAuthReturn() {
         window.dispatchEvent(new Event(ACT_RESUME_EVENT))
       }
       if (connected && intent?.signIn) await signInOnceConnected(target)
-      else router.push(target)
+      else if (!sameAppHref(target, currentAppHref())) router.push(target)
     })()
   }, [isInitialized, isSignedIn, oauthState, isConnected, activeConnector, connectAsync, connectors, signInOnceConnected, router])
 
