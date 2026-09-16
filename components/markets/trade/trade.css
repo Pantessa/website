@@ -156,6 +156,10 @@
 .mkt-compound__step-seg { font-size: 12px; color: var(--muted); }
 .mkt-compound__step-hint { font-size: 11px; color: var(--muted-2); line-height: 1.45; }
 .mkt-compound__step--wait .mkt-compound__n { border-style: dashed; color: var(--muted-2); }
+/* A fund leg the wallet can't (or needn't) run: its row stays, unnumbered, and says why. */
+.mkt-compound__step--off .mkt-compound__n { border-style: dashed; border-color: var(--line-2, var(--line)); color: var(--muted-2); }
+.mkt-compound__step--off .mkt-compound__step-label { color: var(--muted); font-weight: 500; }
+.mkt-compound__fundnotes { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-width: 72ch; }
 .mkt-compound__ask { display: flex; flex-direction: column; gap: 8px; }
 .mkt-compound__sentence { font-size: 13px; color: var(--fg); line-height: 1.5; margin: 0; }
 .mkt-compound__send {

@@ -416,6 +416,16 @@ const CORPUS: Entry[] = [
   { ask: 'Buy $50 of UNI on Ethereum with a card', source: 'RouteTable card row (coin)', expect: 'action' },
   { ask: 'Buy $12.50 of AERO on Base with a card', source: 'RouteTable card row (custom size, cents)', expect: 'action' },
   { ask: 'Buy $400 of AAPL with a card', source: 'card buy: the smaller size one checkout fits', expect: 'action' },
+  // 2026-09-16: the Trade tab's compound composer takes its funding leg from
+  // the same per-wallet read (lib/fund-routes stockFundLegs / coinFundLegs). A
+  // stock's job is the fund row's own ask; a coin's leg is the chat's funding
+  // plan from one chain (gas leg first when the buy's chain has none), and with
+  // no wallet the job starts at the buy.
+  { ask: 'Fund robinhood chain with $54 from arbitrum using eth including gas, then buy $50 of AAPL', source: 'CompoundComposer wallet fund leg (stock, ETH origin)', expect: 'action' },
+  { ask: 'Swap 10.5 USDC from Base to ETH on Ethereum, then Swap 34 USDC from Base to USDC on Ethereum, then swap 50 USDC for LINK on Ethereum', source: 'CompoundComposer wallet fund leg (coin, destination gas leg)', expect: 'action' },
+  { ask: 'Swap 0.0035 ETH from Arbitrum to ETH on Ethereum, then Swap 0.011334 ETH from Arbitrum to USDC on Ethereum, then swap 50 USDC for LINK on Ethereum, then supply $50 of LINK to Aave', source: 'CompoundComposer wallet fund leg (coin, ETH origin → buy → supply)', expect: 'action' },
+  { ask: 'Swap 56.5 USDC from Base to USDC on Arbitrum, then swap 50 USDC for LINK on Arbitrum', source: 'CompoundComposer wallet fund leg (coin, gas already there)', expect: 'action' },
+  { ask: 'Swap 50 USDC for LINK on Ethereum', source: 'CompoundComposer with no wallet leg (starts at the buy)', expect: 'action' },
   { ask: 'Sell all my ETH on Arbitrum', source: 'MK2/EXEC PositionPanel exit', expect: 'action' },
   { ask: 'Close my ETH short on Hyperliquid', source: 'MK2/EXEC PositionPanel exit', expect: 'action' },
   { ask: 'Withdraw all my LINK from Aave', source: 'MK2/EXEC PositionPanel exit', expect: 'action' },
