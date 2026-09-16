@@ -12,16 +12,19 @@
 // (lib/watchlists railBrewPhase).
 //
 // Chips follow the chip-send contract: with an `onAsk` (a chat surface
-// mounted next to the chart) they SEND; without one they PREFILL /chat —
-// a URL never fires a turn. Either way the wallet signs or nothing moves.
+// mounted next to the chart) they SEND; without one the tap is still the
+// send — the ask is handed to the app out of band (lib/arrival-intent) and
+// /chat runs it on arrival. A URL never fires a turn either way, and the
+// wallet signs or nothing moves.
 
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { Bell, BellRing, Check, ChevronDown, ChevronRight, ClipboardPaste, Link2, MoreHorizontal, Plus, Trash2, Wallet, X } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
+import { ARRIVAL_APP_HREF, writeArrivalIntent } from '@/lib/arrival-intent'
 import { PantessaMark } from '@/components/Logo'
 import { chartPairFor } from '@/lib/charts'
 import { useToast } from '@/lib/toast'
@@ -61,6 +64,7 @@ const DENSITY_KEY = 'pantessa.watchlists.density'
 
 export default function WatchlistRail({ symbol, onAsk, redirectTo, className, onClose }: WatchlistRailProps) {
   const router = useRouter()
+  const pathname = usePathname()
   const { toast } = useToast()
   const wl = useWatchlists()
   const alerts = useAlerts(wl.mode === 'authed')
@@ -109,12 +113,22 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
   }, [symbols, quotes])
   const here = redirectTo ?? (typeof window !== 'undefined' ? window.location.pathname : '/markets')
 
-  // Send or prefill — the one door for every chip on the rail. With no
-  // `onAsk` (the /markets index) a chip prefills chat, and a visitor with no
-  // wallet connects first (lib/use-connect-to-act): the markets are open to
-  // everyone, and the app a chip leads into asks for a wallet.
+  // Send here or send there — the one door for every chip on the rail. With
+  // no `onAsk` (the /markets index) the tap hands the ask to the app and
+  // /chat runs it on arrival, and a visitor with no wallet connects first
+  // (lib/use-connect-to-act): the markets are open to everyone, and the app
+  // a chip leads into asks for a wallet. No storage (or a fenced ask) falls
+  // back to the `?prompt=` prefill, which is also where the door's email +
+  // Google lanes land.
+  const handOff = useCallback(
+    (ask: string) => {
+      const handed = writeArrivalIntent({ text: ask, from: pathname || '/markets' })
+      router.push(handed ? ARRIVAL_APP_HREF : promptHref(ask))
+    },
+    [pathname, router],
+  )
   const { act: prefillAct, door: prefillDoor } = useConnectToAct({
-    run: (ask) => router.push(promptHref(ask)),
+    run: handOff,
     redirectFor: promptHref,
   })
   const send = useCallback(
@@ -124,7 +138,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
     },
     [onAsk, prefillAct],
   )
-  const sendLabel = onAsk ? 'sends in chat' : 'prefills chat · you send it'
+  const sendLabel = onAsk ? 'sends in chat' : 'runs in the app'
 
   // The holdings autofill says what it added, once, and how to undo it.
   useEffect(() => {
