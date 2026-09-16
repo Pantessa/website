@@ -20752,7 +20752,7 @@ async function main() {
     const partial = mapItems(sections, Object.fromEntries(allSyms.map((s, i) => [s, { last: 10, chgPct: 0, volumeUsd: i % 2 ? 1000 : null }])), 'crypto')
     const mostly = mapItems(sections, Object.fromEntries(allSyms.map((s, i) => [s, { last: 10, chgPct: 0, volumeUsd: i % 20 === 0 ? null : 1000 + i }])), 'crypto')
     check(
-      'market map: sizing is honest — equal cells unless ≥90% of the quoted items carry a positive volume (then the few without one take the median and are NAMED); unquoted symbols keep the median weight and are listed, never dropped',
+      'market map: sizing is honest — equal cells unless ≥90% of the quoted items carry a positive volume (then the few without one take the median and are NAMED); unquoted symbols draw SMALL (UNQUOTED_SCALE of the smallest quoted cell) and are listed, never dropped',
       equal.sizing === 'equal' && equal.items.length === allSyms.length && equal.items.every((i) => i.weight === 1) &&
         withVol.sizing === 'volume' && withVol.items.every((i) => i.weight >= 1000) && withVol.medianSized.length === 0 && partial.sizing === 'equal' && partial.medianSized.length === 0 &&
         mostly.sizing === 'volume' && mostly.medianSized.length > 0 && mostly.medianSized.every((s) => mostly.items.find((i) => i.symbol === s)!.weight > 1000) &&
@@ -21262,6 +21262,110 @@ async function main() {
     const askSrc = await readFile('components/markets/ai/AskChart.tsx', 'utf8')
     check('ai components: AiBrief streams /api/markets/brief, chips call onAsk on click, the position call is address-keyed and separate, and the footer wears the tape footnote + byline', briefSrc.includes("fetch('/api/markets/brief'") && briefSrc.includes('onClick={() => onAsk(c.ask)}') && briefSrc.includes("part: 'position', address: walletAddress") && briefSrc.includes('TAPE_FOOTNOTE') && briefSrc.includes('Written by a model from our own tape'))
     check('ai components: AskChart never auto-sends an act (the chip is a button → onAsk), applies chart answers through onChartState, posts the alert rule to /api/alerts, and signed-out alerts open the unified door', askSrc.includes('onClick={() => onAsk(reply.chip.ask)}') && !askSrc.includes('onAsk(j.chip') && askSrc.includes("if (j.kind === 'chart') onChartState?.(j.state)") && askSrc.includes("fetch('/api/alerts'") && askSrc.includes('<CreateAccountButton className="mk-ai__cta" label="Sign in to set alerts"'))
+  }
+
+  // ── EARN ── the yield board on /markets (2026-09-16): Lido · Aave · Morpho
+  // rows from the venues' own readers, one chip per row whose sentence lands
+  // on the venue's native gate. The server under test needs no extra env.
+  {
+    const { aaveRows: earnAaveRows, lidoRow: earnLidoRow, morphoRows: earnMorphoRows, rankEarnRows: earnRank, rowsToWire: earnToWire, rowsFromWire: earnFromWire, yieldLadder: earnLadder, filterEarnRows: earnFilter } = await import('../lib/earn')
+    const { mapItems: earnMapItems, UNQUOTED_SCALE: earnUnqScale } = await import('../lib/viz/market-map')
+    const { marketSections: earnSections, defaultMarketsView: earnDefaultView } = await import('../lib/markets')
+    const aaveFixture = [
+      { spoke: 'Main', asset: { symbol: 'USDC' }, canSupply: true, active: true, supplyApyPct: 3.1, suppliedUsd: '$1,000,000.00' },
+      { spoke: 'Ethena', asset: { symbol: 'USDC' }, canSupply: true, active: true, supplyApyPct: 11.38, suppliedUsd: '$500,000.50' },
+      { spoke: 'Main', asset: { symbol: 'WETH' }, canSupply: true, active: true, supplyApyPct: 2.13, suppliedUsd: '$89,106,473.29' },
+      { spoke: 'Main', asset: { symbol: 'GHO' }, canSupply: false, active: true, supplyApyPct: 9 },
+      { spoke: 'Frozen', asset: { symbol: 'LUSD' }, canSupply: true, active: false, supplyApyPct: 9 },
+    ]
+    const aave = earnAaveRows(aaveFixture as never)
+    const usdc = aave.find((r) => r.asset === 'USDC')!
+    const eth = aave.find((r) => r.asset === 'ETH')!
+    check(
+      'earn: Aave rows group spokes per asset — USDC shows the best spoke rate (11.38, Ethena) with the summed supplied USD parsed from dollar strings, its ask says "at the best rate" only when >1 spoke lists it, WETH is shown and asked as ETH, and unsupplyable/inactive reserves never become rows',
+      aave.length === 2 && usdc.apyPct === 11.38 && usdc.tvlUsd === 1_500_000.5 && usdc.askFor(25) === 'Supply $25 of USDC to Aave at the best rate' && /Ethena/.test(usdc.detail) &&
+        eth.apyPct === 2.13 && eth.askFor(100) === 'Supply $100 of ETH to Aave' && eth.tvlUsd === 89_106_473.29,
+      JSON.stringify(aave.map((r) => [r.asset, r.apyPct, r.tvlUsd, r.askFor(25)])),
+    )
+    const lidoPriced = earnLidoRow(2.27, 2.6e10, 2500)
+    const lidoBlind = earnLidoRow(2.27, null, null)
+    check(
+      'earn: the Lido row sizes its chip in ETH from a live price (the parser wants units) — $25 at $2,500 → "Stake 0.01 ETH on Lido", $10 → 0.004, floor 0.001 — and with NO price the chip is omitted, never guessed',
+      lidoPriced.askFor(25) === 'Stake 0.01 ETH on Lido' && lidoPriced.askFor(10) === 'Stake 0.004 ETH on Lido' && earnLidoRow(2, null, 1e9).askFor(10) === 'Stake 0.001 ETH on Lido' && lidoBlind.askFor(25) === null && lidoBlind.apyPct === 2.27,
+    )
+    const morphoFixture = [
+      { marketId: '0x' + 'a'.repeat(64), curated: true, loan: 'USDC', collateral: 'cbBTC', supplyApy: '4.40%', totalSupplyUsd: 1_569_283_232.9 },
+      { marketId: '0x' + 'b'.repeat(64), curated: true, loan: 'USDC', collateral: 'WETH', supplyApy: '9.99%', totalSupplyUsd: 92_162_745.77 },
+      { marketId: '0x' + 'c'.repeat(64), curated: false, loan: 'DAI', collateral: 'WETH', supplyApy: '20%', totalSupplyUsd: 1 },
+      { marketId: 'nope', curated: true, loan: 'WETH', collateral: 'wstETH', supplyApy: '1%', totalSupplyUsd: 1 },
+    ]
+    const morpho = earnMorphoRows(morphoFixture as never, 8453)
+    check(
+      'earn: Morpho rows show the DEEPEST curated market per loan asset (the one the lend ask lands on — 4.40% vs cbBTC, not the 9.99% shallower market), sum the supplied USD across its markets, name the chain in the ask, and skip uncurated or malformed markets',
+      morpho.length === 1 && morpho[0].apyPct === 4.4 && /cbBTC/.test(morpho[0].detail) && /2 curated markets/.test(morpho[0].detail) && Math.round(morpho[0].tvlUsd!) === Math.round(1_569_283_232.9 + 92_162_745.77) &&
+        morpho[0].askFor(25) === 'Lend $25 of USDC on Morpho on Base' && earnMorphoRows(morphoFixture as never, 1)[0].askFor(10) === 'Lend $10 of USDC on Morpho on Ethereum',
+      JSON.stringify(morpho.map((r) => [r.asset, r.apyPct, r.detail, r.askFor(25)])),
+    )
+    const ranked = earnRank([...aave, lidoPriced, ...morpho])
+    check(
+      'earn: ranking marks ONE best row per asset (USDC → Aave 11.38 over Morpho 4.40; ETH → Lido 2.27 over Aave 2.13) and orders by rate desc; the yield ladder is the best rows only',
+      ranked[0].asset === 'USDC' && ranked[0].venue === 'aave' && ranked[0].best === true && ranked.find((r) => r.venue === 'morpho')!.best === false &&
+        ranked.find((r) => r.venue === 'lido')!.best === true && ranked.find((r) => r.asset === 'ETH' && r.venue === 'aave')!.best === false &&
+        earnLadder(ranked).every((r) => r.best) && earnLadder(ranked).length === 2 && earnFilter(ranked, 'stable', 'all').every((r) => r.asset === 'USDC') && earnFilter(ranked, 'all', 'lido').length === 1,
+      ranked.map((r) => `${r.asset}/${r.venue}:${r.apyPct}${r.best ? '*' : ''}`).join(' '),
+    )
+    const wire = earnToWire(ranked, 2500)
+    const back = earnFromWire(wire)
+    check(
+      'earn: the wire round-trips — every row re-attached from its askTemplate composes the same sentence as the server row for $10/$25/$100, including the ETH-sized Lido chip, and the wire carries no function',
+      wire.every((w) => !('askFor' in w)) && ranked.every((r, i) => [10, 25, 100].every((usd) => r.askFor(usd) === back[i].askFor(usd))),
+    )
+    const earnAsks = ranked.flatMap((r) => [10, 25, 100].map((usd) => r.askFor(usd))).filter((a): a is string => !!a)
+    const earnOutcomes = earnAsks.map((a) => ({ a, o: simulateLadder(a) }))
+    check(
+      'earn: EVERY chip sentence the board can send lands on its venue\'s native gate through the ladder replica (aave-supply · lido · morpho-lend) — never the planner, never a clarify',
+      earnOutcomes.length === 12 && earnOutcomes.every(({ o }) => o.kind === 'action' && ['aave-supply', 'lido', 'morpho-lend'].includes(String(o.gate))),
+      earnOutcomes.filter(({ o }) => o.kind !== 'action').map(({ a, o }) => `${a} → ${o.kind}/${o.gate}`).join('; ') || 'all native',
+    )
+    // The live route: rows from the real venues, fail-soft, cached, no address anywhere.
+    const earnRes = await fetch(`${BASE}/api/markets/earn`)
+    const earnBody = (await earnRes.json()) as { rows: { venue: string; asset: string; apyPct: number | null; askTemplate: string | null; askUnitsPerUsd?: number | null }[]; failed: string[]; ethUsd: number | null; asOf: string; cached?: boolean }
+    const earnText = JSON.stringify(earnBody)
+    const liveAsks = earnFromWire(earnBody.rows as never).map((r) => r.askFor(25)).filter((a): a is string => !!a)
+    const liveOutcomes = liveAsks.map((a) => simulateLadder(a))
+    check(
+      'earn (route): GET /api/markets/earn answers 200 with rows from Lido + Aave + Morpho (each venue either present or NAMED in failed), an ISO asOf, no 0x address in the payload, and every live askTemplate rendered at $25 lands native',
+      earnRes.status === 200 && Array.isArray(earnBody.rows) && typeof earnBody.asOf === 'string' && !/0x[0-9a-fA-F]{8}/.test(earnText) &&
+        (['lido', 'aave', 'morpho'] as const).every((v) => earnBody.rows.some((r) => r.venue === v) || earnBody.failed.includes(v)) &&
+        liveOutcomes.every((o) => o.kind === 'action'),
+      `${earnBody.rows.length} rows · failed=${earnBody.failed.join(',') || 'none'} · ethUsd=${earnBody.ethUsd} · ${liveAsks.length} asks`,
+    )
+    const earnRes2 = (await (await fetch(`${BASE}/api/markets/earn`)).json()) as { cached?: boolean; rows: unknown[] }
+    check('earn (route): the second read within 60s is served from the shared cache (cached: true) with the same rows', earnRes2.cached === true && earnRes2.rows.length === earnBody.rows.length)
+    // SSR: the Earn tab + the board's seat are in the server HTML of /markets.
+    const earnHtml = await (await fetch(`${BASE}/markets`)).text()
+    check(
+      'earn (SSR): /markets carries the Earn tab in the board strip and the EarnBoard seat (section#earn) in the server render, after the three market boards',
+      /data-tab="earn"/.test(earnHtml) && /data-seat="EarnBoard"/.test(earnHtml) && /id="earn"/.test(earnHtml) && earnHtml.indexOf('id="perps"') < earnHtml.indexOf('id="earn"'),
+    )
+    // Map: unquoted cells draw small, still listed; wide screens open on the map.
+    const secs = earnSections()
+    const quotesAll: Record<string, { last: number; chgPct: number; volumeUsd: number }> = {}
+    for (const s of secs) for (const r of s.rows) quotesAll[r.symbol] = { last: 10, chgPct: 1, volumeUsd: 1_000_000 }
+    const perps = secs.find((s) => s.id === 'perps')!
+    delete quotesAll[perps.rows[0].symbol]
+    const withUnq = earnMapItems(secs, quotesAll, 'perps')
+    const unqItem = withUnq.items.find((i) => i.symbol === perps.rows[0].symbol)!
+    const minQuoted = Math.min(...withUnq.items.filter((i) => i.last != null).map((i) => i.weight))
+    check(
+      'earn (map): an unquoted symbol stays on the map and in the foot list but draws at UNQUOTED_SCALE of the smallest quoted cell — never a full-size blank tile',
+      withUnq.unquoted.length === 1 && unqItem.last === null && unqItem.weight <= minQuoted * earnUnqScale + 1e-9 && unqItem.weight > 0,
+      `unquoted weight ${unqItem.weight} vs min quoted ${minQuoted}`,
+    )
+    check(
+      'earn (view): a remembered Map·List choice wins; with nothing remembered a ≥1280px viewport opens on the MAP and a narrower one on the list; junk stored falls back to the width rule',
+      earnDefaultView('list', 1600) === 'list' && earnDefaultView('map', 375) === 'map' && earnDefaultView(null, 1440) === 'map' && earnDefaultView(null, 1279) === 'list' && earnDefaultView('grid', 1440) === 'map',
+    )
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)

@@ -199,3 +199,7 @@
 .mk-fills__glyph { width: 8px; height: 8px; border-radius: 2px; display: inline-block; flex: none; }
 .mk-fills__row--sell .mk-fills__glyph { border-radius: 50%; }
 .mk-fills__more { color: var(--muted-2); }
+
+/* An unquoted map cell (no feed answer): drawn small by lib/viz/market-map and
+   hatched here so a blank tile never reads as a broken chart. */
+.mk-map__rect--unquoted { fill: color-mix(in srgb, var(--fg) 6%, transparent); stroke: var(--line); stroke-dasharray: 3 3; }

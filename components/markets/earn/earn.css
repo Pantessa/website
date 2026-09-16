@@ -1,0 +1,35 @@
+/* EARN — the yield board (components/markets/earn). Tokens from look.css. */
+.mk-earn__ladder { margin: 0 0 12px; padding: 12px 14px 8px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); }
+.mk-earn__ladderhead { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 9.5px; letter-spacing: .14em; color: var(--muted-2); margin-bottom: 8px; }
+.mk-earn__legend { display: inline-flex; gap: 12px; }
+.mk-earn__legenditem { display: inline-flex; align-items: center; gap: 5px; }
+.mk-earn__legenditem i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.mk-earn__bar { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.mk-earn__chips { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.mk-earn__amounts { margin-left: auto; }
+.mk-earn__amounts > .mono { font-size: 9.5px; letter-spacing: .14em; color: var(--muted-2); margin-right: 4px; }
+.mk-earn__chip { font: inherit; font-size: 11px; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; transition: color .12s ease, border-color .12s ease, background .12s ease; }
+.mk-earn__chip:hover { color: var(--fg); border-color: var(--line-2, var(--line)); }
+.mk-earn__chip.is-on { color: var(--fg); background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.mk-earn__table td { vertical-align: middle; }
+.mk-earn__asset { padding: 9px 14px; white-space: nowrap; }
+.mk-earn__cls { font-size: 9px; letter-spacing: .12em; color: var(--muted-2); margin-left: 8px; }
+.mk-earn__recv { display: block; font-size: 10px; color: var(--muted); margin-top: 2px; }
+.mk-earn__venue { padding: 9px 10px; min-width: 0; }
+.mk-earn__venue > span { display: inline-grid; vertical-align: middle; }
+.mk-earn__venue b { font-weight: 600; font-size: 12.5px; }
+.mk-earn__venue small { display: block; font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 34ch; }
+.mk-earn__chain { font-size: 9.5px; letter-spacing: .1em; color: var(--muted-2); margin-left: 4px; }
+.mk-earn__ink { display: inline-block; width: 8px; height: 22px; border-radius: 2px; margin-right: 10px; vertical-align: middle; }
+.mk-earn__apy { position: relative; color: var(--mk-up, var(--accent)); }
+.mk-earn__best { display: inline-block; margin-left: 8px; font-size: 8.5px; letter-spacing: .14em; padding: 2px 5px; border-radius: 4px; color: var(--fg); background: color-mix(in srgb, var(--accent) 22%, transparent); vertical-align: middle; }
+.mk-earn__tvl { color: var(--muted); font-weight: 500; }
+.mk-earn__act { padding: 6px 12px; text-align: right; white-space: nowrap; }
+.mk-earn__go { white-space: nowrap; }
+.mk-earn__empty { padding: 18px 14px; color: var(--muted); font-size: 12.5px; }
+.mk-earn__foot { padding: 8px 14px 10px; font-size: 9.5px; letter-spacing: .06em; color: var(--muted-2); border-top: 1px solid var(--line); }
+@media (max-width: 720px) {
+  .mk-earn__tvl, .mk-earn__cls { display: none; }
+  .mk-earn__venue small { max-width: 18ch; }
+  .mk-earn__amounts { margin-left: 0; }
+}

@@ -501,6 +501,15 @@ export function trendingFromPrompts(prompts: readonly string[], known: readonly 
 export type MarketsView = 'map' | 'list'
 export const MARKETS_VIEW_KEY = 'pantessa.markets.view'
 export const DEFAULT_MARKETS_VIEW: MarketsView = 'list'
+/** Below this width the map has no room to label cells; the list is the first view. */
+export const MAP_DEFAULT_MIN_WIDTH = 1280
+/** First-visit view: a remembered choice wins; with nothing remembered, wide
+ *  screens open on the MAP (the visual TradingView doesn't have), narrow ones
+ *  on the list. SSR always renders the list (`DEFAULT_MARKETS_VIEW`). */
+export function defaultMarketsView(stored: string | null | undefined, viewportWidth: number): MarketsView {
+  if (stored === 'map' || stored === 'list') return stored
+  return viewportWidth >= MAP_DEFAULT_MIN_WIDTH ? 'map' : 'list'
+}
 export function parseMarketsView(raw: string | null | undefined): MarketsView {
   return raw === 'map' || raw === 'list' ? raw : DEFAULT_MARKETS_VIEW
 }
