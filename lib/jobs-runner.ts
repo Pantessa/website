@@ -255,7 +255,7 @@ export async function advanceJob(job: JobWithSteps): Promise<void> {
         // and retry. A stock no feed lists at all never gets here — the
         // cascade refuses that by name.
         const tapeDown = e instanceof TapeUnavailableError && !e.permanent ? e : null
-        const transient = tapeDown ? tapeDown.detail : transientRpcWords(e)
+        const transient = transientRpcWords(e) ?? tapeDown?.detail ?? null
         if (transient) {
           const prior = (step.result as { rpcTries?: unknown } | null)?.rpcTries
           const tries = (typeof prior === 'number' ? prior : 0) + 1
