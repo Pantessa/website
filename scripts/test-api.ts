@@ -21315,7 +21315,12 @@ async function main() {
       ARRIVAL_KEY === 'pantessa.arrival.v1' &&
         ARRIVAL_TTL_MS === 60_000 &&
         ARRIVAL_APP_HREF === '/chat' &&
-        !/localStorage|document\.cookie|searchParams|location\.search/.test(await readFile('lib/arrival-intent.ts', 'utf8')),
+        // The CODE, not the prose that explains it: strip comments, then look
+        // for any other store or a URL read. The handoff lives in exactly one
+        // place, and a later edit that reaches for another one fails here.
+        !/localStorage|document\.cookie|searchParams|location\.search/.test(
+          (await readFile('lib/arrival-intent.ts', 'utf8')).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, ''),
+        ),
       `${ARRIVAL_KEY} · ${ARRIVAL_TTL_MS}ms → ${ARRIVAL_APP_HREF}`,
     )
 
