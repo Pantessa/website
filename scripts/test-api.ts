@@ -181,7 +181,7 @@ import { fundingSourcesFromChains, NEAR_INTENTS_SLUG, walletFlags } from '../lib
 import { useAskDoor } from '../lib/ask-door'
 import { parseWalletSendBody, WALLET_SEND_CHAIN_IDS } from '../lib/wallet-send'
 import { arrivalPhrase, detectArrival, fundWaitExpired, fundWaitKey, pollDelayMs, FUND_WAIT_TTL_MS, FUND_WATCH_MAX_MS } from '../lib/funding-arrival'
-import { usdPerToken, usdToTokenAmount } from '../lib/usd-probe'
+import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
 import { parseNftAsk, parseOpenSeaItemUrl, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
 import { parseNftListAsk, parseNftMarketAsk, parseNftTransferFollowUp, nftTransferPending, nftAskFromPending } from '../lib/nft-layer'
@@ -22574,13 +22574,18 @@ async function main() {
     }
 
     // ── Sizing: a dollar amount of a stock converts at the tape, never a pool.
-    await ensureTokenList(4663)
-    const amatUsd = resolveToken('AMAT', 4663) ? await usdPerToken(4663, 'AMAT') : null
+    // Main sized "Sell $5 of AMAT" as 41.285123 AMAT (~$17,500 at the tape)
+    // off the broken pool's one-share sell quote; the reply names the shares
+    // whether the wallet holds them (a card) or not (the affordability line).
+    const sellTurn = (await (
+      await fetch(`${BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: 'Sell $5 of AMAT on robinhood chain', walletAddress: quoteWallets[0], activeServers: [], history: [] }) })
+    ).json()) as TapeTurn
+    const soldShares = Number((sellTurn.reply ?? '').match(/(?:spend|[Ss]wap|sells) ([\d.]+) AMAT/)?.[1] ?? Number.NaN)
     const amatTape = ((await (await fetch(`${BASE}/api/quotes?symbols=AMAT`)).json()) as { quotes: Record<string, { last: number }> }).quotes.AMAT
     check(
-      'tape parity (sizing): usdPerToken prices a Robinhood Chain stock at its tape ("Sell $50 of AMAT" sized off a pool paying $1.02 a share would sell ~100× the shares, and a transfer valued that way slips under a spend cap)',
-      !!amatUsd && /tape for AMAT$/.test(amatUsd.via) && !!amatTape && Math.abs(amatUsd.usd / amatTape.last - 1) < 0.02,
-      `${JSON.stringify(amatUsd)} vs tape ${amatTape?.last}`,
+      'tape parity (sizing): "Sell $5 of AMAT" sizes its shares at the tape (~0.012 AMAT), never at the pool — main sized 41.29 AMAT (~$17,500) off the pool\'s $0.12 sell quote; usdPerToken prices every 4663 stock this way (transfers against a spend cap too)',
+      Number.isFinite(soldShares) && !!amatTape && Math.abs((soldShares * amatTape.last) / 5 - 1) < 0.03,
+      `shares=${soldShares} tape=${amatTape?.last} reply=${(sellTurn.reply ?? '').slice(0, 200)}`,
     )
   }
 
