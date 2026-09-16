@@ -20584,6 +20584,15 @@ async function main() {
         sparksSrc.includes('/api/markets/viz/sparks?symbols=') && sparksSrc.includes('const BATCH = 60') &&
         /<ChartMount [^>]*compare=\{vs\}/.test(await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')),
     )
+    // AI's request: the Morning tape at the top of the /markets rail, its
+    // chips through the rail's own connect-to-act prefill door.
+    const idxSrc = await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')
+    check(
+      'mk2/markets: the /markets rail seats AI\'s MorningTape above the watchlist rows (a seat in the aside before data-slot="watchlist"; empty seats collapse), and its chips prefill chat through useConnectToAct like the rail\'s own',
+      /<aside class="mkt-frame__rail"[^>]*><div class="mk-rail-seat" data-seat="MorningTape">[\s\S]*?<\/div><div data-slot="watchlist"/.test(mkHtml) &&
+        idxSrc.includes('<MorningTape onAsk={tapeAct} />') && idxSrc.includes('useConnectToAct({ run: (ask) => router.push(promptHref(ask)), redirectFor: promptHref })') &&
+        idxSrc.includes('{tapeDoor}') && /\.mk-rail-seat:empty \{ display: none; \}/.test(await readFile('components/markets/markets.css', 'utf8')),
+    )
     // The one stylesheet import + the slot card rule (QA's request: whoever
     // owns a class ships its rule).
     const shellSrc = await readFile('components/markets/shell/MarketsShell.tsx', 'utf8')
