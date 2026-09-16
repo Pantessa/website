@@ -24,6 +24,7 @@ import {
   DEFAULT_MARKETS_VIEW,
   MARKETS_VIEW_KEY,
   marketSections,
+  defaultMarketsView,
   parseMarketsView,
   symbolName,
   type MarketSection,
@@ -38,6 +39,7 @@ import MarketsSide from '@/components/markets/shell/MarketsSide'
 import SessionStrip from '@/components/markets/shell/SessionStrip'
 import MoversTape from '@/components/markets/slots/MoversTape'
 import MarketMap from '@/components/markets/slots/MarketMap'
+import EarnBoard from '@/components/markets/earn/EarnBoard'
 import MorningTape from '@/components/markets/ai/MorningTape'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
 import type { TrendingRow } from '@/app/markets/trending'
@@ -113,8 +115,11 @@ function Trending({ rows }: { rows: TrendingRow[] }) {
 }
 
 /** The board under the tool strip — its tab lights as the data scrolls. */
-function useActiveBoard(ids: readonly MarketSectionId[]) {
-  const [active, setActive] = useState<MarketSectionId | null>(ids[0] ?? null)
+/** A board the tab strip can light: the three market sections + the Earn board. */
+type BoardId = MarketSectionId | 'earn'
+
+function useActiveBoard(ids: readonly BoardId[]) {
+  const [active, setActive] = useState<BoardId | null>(ids[0] ?? null)
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') return
     const visible = new Set<string>()
@@ -146,7 +151,7 @@ function useMarketsView(): [MarketsView, (v: MarketsView) => void] {
   const [view, setViewState] = useState<MarketsView>(DEFAULT_MARKETS_VIEW)
   useEffect(() => {
     try {
-      setViewState(parseMarketsView(window.localStorage.getItem(MARKETS_VIEW_KEY)))
+      setViewState(defaultMarketsView(window.localStorage.getItem(MARKETS_VIEW_KEY), window.innerWidth))
     } catch {
       /* the default view */
     }
@@ -207,7 +212,8 @@ export default function MarketsIndex({ trending = [] }: { trending?: TrendingRow
   const sections = useMemo(() => marketSections(), [])
   const ids = useMemo(() => sections.map((s) => s.id), [sections])
   const allRows = useMemo(() => sections.flatMap((s) => s.rows), [sections])
-  const [active, setActive] = useActiveBoard(ids)
+  const boardIds = useMemo<readonly BoardId[]>(() => [...ids, 'earn'], [ids])
+  const [active, setActive] = useActiveBoard(boardIds)
   const [view, setView] = useMarketsView()
   const phone = usePhone()
   const showMap = view === 'map'
@@ -255,6 +261,10 @@ export default function MarketsIndex({ trending = [] }: { trending?: TrendingRow
                 <span className="mkt-frame__tabcount mono">{s.rows.length}</span>
               </a>
             ))}
+            <a href="#earn" className={`mkt-frame__tab${active === 'earn' ? ' is-on' : ''}`} aria-current={active === 'earn' ? 'location' : undefined} onClick={() => setActive('earn')} data-tab="earn">
+              Earn
+              <span className="mkt-frame__tabcount mono">3</span>
+            </a>
           </nav>
         </div>
 
@@ -278,6 +288,10 @@ export default function MarketsIndex({ trending = [] }: { trending?: TrendingRow
             </section>
           )}
           {showList && sections.map((s) => <Board key={s.id} section={s} onAsk={indexAct} />)}
+          {/* EARN — the yield board: where an asset earns across dapps, one chip per
+              row through the same connect-to-act door as the ledgers. Renders in
+              both views (the map has no rates). */}
+          <EarnBoard onAsk={indexAct} />
           <section className="mkt-card mkt-frame__how" aria-labelledby="mkt-how">
             <h2 id="mkt-how" className="mkt-card__title">
               How a chart executes

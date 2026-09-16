@@ -51,6 +51,9 @@ const SECTION_OF: Record<MapSection, MarketSectionId[]> = {
   all: ['equities', 'crypto', 'perps'],
 }
 
+/** Unquoted cells draw at this fraction of the smallest quoted cell — visible, never dominant. */
+export const UNQUOTED_SCALE = 0.2
+
 /** The share of quoted items that must carry a volume before cells size by it. */
 export const VOLUME_COVERAGE = 0.9
 
@@ -76,11 +79,16 @@ export function mapItems(sections: readonly MarketSection[], quotes: Readonly<Re
     if (sizing === 'volume') {
       const v = q?.volumeUsd ?? 0
       if (v > 0) weight = v
-      else {
+      else if (q) {
         weight = median
-        if (q) medianSized.push(r.symbol)
+        medianSized.push(r.symbol)
       }
     }
+    // An UNQUOTED symbol (no feed answer) stays on the map — listed in the
+    // foot, never dropped — but draws SMALL: a blank tile the size of a real
+    // one reads as a broken chart (MKR/JUP on the 09-16 shot). One fifth of
+    // the smallest quoted weight keeps it findable without stealing area.
+    if (!q) weight = Math.max(1e-9, (sizing === 'volume' ? Math.min(...vols, median) : 1) * UNQUOTED_SCALE)
     return { symbol: r.symbol, name: r.name, section: r.section, last: q?.last ?? null, chgPct: q?.chgPct ?? null, weight: Math.max(weight, 1e-9) }
   })
   // The All map mixes volume bases (a stock's last NYSE session vs a coin's
