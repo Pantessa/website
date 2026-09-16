@@ -515,8 +515,9 @@ export function WalletDetails({
     <div className="flex items-start gap-2 rounded-xl border tint-border-accent-40 tint-bg-accent-6 px-3.5 py-2.5 text-[12px]">
       <Loader2 className="w-3.5 h-3.5 mt-0.5 animate-spin text-[color:var(--accent)] flex-shrink-0" />
       <span className="text-[color:var(--fg)]">
-        Watching {ONRAMP_NETWORK_LABEL[wait.network] ?? wait.network} for your card purchase
-        <span className="text-[color:var(--muted)]"> · opened {timeAgo(new Date(wait.openedAt).toISOString())}. The moment it lands, the chat picks up &ldquo;{wait.resume}&rdquo;.</span>
+        Watching {ONRAMP_NETWORK_LABEL[wait.network] ?? wait.network} for your {wait.asset ?? 'card purchase'}
+        {/* A plain top-up (the watchlist rail's card door) has no ask to pick up. */}
+        <span className="text-[color:var(--muted)]"> · opened {timeAgo(new Date(wait.openedAt).toISOString())}. {wait.resume ? <>The moment it lands, the chat picks up &ldquo;{wait.resume}&rdquo;.</> : 'It shows up here the moment it lands.'}</span>
       </span>
     </div>
   )

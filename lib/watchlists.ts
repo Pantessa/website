@@ -9,6 +9,7 @@
 // constant in this file on purpose. Never add one.
 
 import { chartPairFor, normalizeChartSymbol, parseChartAsk, type ChartPair, type ChartSource } from '@/lib/charts'
+import { ONRAMP_DEFAULT_NETWORK, type OnrampAsset, type OnrampNetwork } from '@/lib/onramp'
 import { ROBINHOOD_TICKERS } from '@/lib/robinhood-tickers'
 
 // ── Shapes (README "Watchlists" contract) ───────────────────────────────────
@@ -636,6 +637,60 @@ export function quoteCellState(s: { hasQuote: boolean; charted: boolean; missing
   if (s.hasQuote) return 'quote'
   if (!s.charted || s.missing) return 'none'
   return 'pending'
+}
+
+// ── The rail's card door ────────────────────────────────────────────────────
+// Nate, 2026-09-16, on an empty rail signed in with an account that holds
+// nothing: "can we add a buy ETH or USDC using stripe call out and linkage
+// here". The holdings read already knows the wallet is empty, so the rail
+// offers the on-ramp right there (components/markets/watchlist/FundWallet):
+// the same signed Stripe door as the chat's fund chip and the Wallet panel,
+// then a watch on the chain, so a buyer back from the Stripe tab sees the
+// wait instead of the button again. A second tap is a second charge.
+
+/** The opening amount. A starting number, not a plan: the consent says "to
+ *  start" and Stripe's checkout lets the buyer change it. Same as the Wallet
+ *  panel's card door. */
+export const RAIL_FUND_PRESET_USD = 25
+
+export interface RailFundOption {
+  asset: OnrampAsset
+  network: OnrampNetwork
+  label: string
+}
+
+/** ETH leads because it pays its own gas: it can trade the moment it lands.
+ *  USDC lands with no gas beside it (the state the funding layer calls "no
+ *  gas"), and the door says so before anyone pays. Both on the default lane,
+ *  because Stripe refuses the Base lanes for some home addresses after KYC
+ *  (lib/onramp, THE DEFAULT LANE). */
+export const RAIL_FUND_OPTIONS: readonly RailFundOption[] = [
+  { asset: 'ETH', network: ONRAMP_DEFAULT_NETWORK, label: 'Buy ETH' },
+  { asset: 'USDC', network: ONRAMP_DEFAULT_NETWORK, label: 'Buy USDC' },
+]
+
+/** What the card door shows; null when it has nothing to say. */
+export type RailFund = 'offer' | 'watching' | 'landed' | null
+
+export function railFundPhase(s: {
+  /** A wallet is connected, and it's the one the rail's holdings read. */
+  wallet: boolean
+  /** That read settled and found nothing in the wallet (lib/watchlist-holdings walletLooksEmpty). */
+  empty: boolean
+  /** This deployment can mint a Stripe session (lib/onramp onrampEnabled). */
+  cardFunding: boolean
+  /** A card purchase for this wallet is in flight (lib/funding-arrival FundWait). */
+  waiting: boolean
+  /** A purchase the door watched has landed; shown until dismissed. */
+  landed: boolean
+}): RailFund {
+  if (!s.wallet) return null
+  if (s.landed) return 'landed'
+  // A wallet that holds something now has no use for the door; the wait
+  // still runs quietly and reports the landing if it comes.
+  if (!s.empty) return null
+  if (s.waiting) return 'watching'
+  return s.cardFunding ? 'offer' : null
 }
 
 // ── Alerts ──────────────────────────────────────────────────────────────────

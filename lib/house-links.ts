@@ -51,6 +51,7 @@ const MARK_NAMES: Record<string, string> = {
   'opensea-free': 'OpenSea',
   'lido-free': 'Lido',
   aave: 'Aave',
+  'morpho-free': 'Morpho',
   'snapshot-free': 'Snapshot',
   'cow-free': 'CoW',
   'near-intents-mcp-yeetful': 'NEAR Intents',
