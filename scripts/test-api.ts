@@ -45,6 +45,8 @@ import {
 } from '../lib/x402'
 import { fitsHouseCeiling, houseCeilingReply, houseDailyCeilingUsd } from '../lib/house-spend'
 import { hasGuardianStep, sessionOwnsWallet } from '../lib/chat-mutation-gate'
+import { ARRIVAL_DISMISS_LABEL, ARRIVAL_EYEBROW, ARRIVAL_FADE_MS, ARRIVAL_HOLD_TIMEOUT_MS, ARRIVAL_SENT_LINGER_MS, ARRIVAL_STATE_WORD, ARRIVAL_SUB, arrivalAskLine, arrivalSourceLabel, arrivalStatusText, arrivalView } from '../lib/arrival-copy'
+import { ARRIVAL_TTL_MS as UX_ARRIVAL_TTL_MS } from '../lib/arrival-intent'
 import { MK_TOKEN_NAMES, deltaTone, fmtCompact, fmtPct as mkFmtPct, seriesVar } from '../lib/markets-look'
 import { cellFill, mapItems, polarity, squarify, marketMapLayout, labelTier } from '../lib/viz/market-map'
 import { readFlow as vizReadFlow, FLOW_TTL_MS } from '../lib/viz/flow'
@@ -21354,6 +21356,35 @@ async function main() {
       !senderWired || (/redirectFor:\s*promptHref/.test(mktIndexSrc) && /writeArrivalIntent\(/.test(mktIndexSrc) && /ARRIVAL_APP_HREF/.test(mktIndexSrc)),
       `wired=${senderWired}`,
     )
+  }
+
+  // ── ARRIVAL/UX ────────────────────────────────────────────────────────────
+  // The arrival row — components/arrival/ArrivalBanner.tsx + lib/arrival-copy
+  // (the words, pure). The row is what a visitor sees on /chat after a chip
+  // on /markets handed its ask over; it must never claim a run before the
+  // turn fires, and a URL must never mount it.
+  {
+    check('arrival/ux copy: the view follows CORE\'s phase — holding; holding past the timeout → waiting (the quiet edge); sent is always sent', arrivalView('holding', false) === 'holding' && arrivalView('holding', true) === 'waiting' && arrivalView('sent', false) === 'sent' && arrivalView('sent', true) === 'sent')
+    check('arrival/ux copy: the source is said as a place and never echoes a pathname (/markets → Markets, /t/AAPL → the AAPL chart, anything else → Markets)', arrivalSourceLabel('/markets') === 'Markets' && arrivalSourceLabel('/markets?tab=earn') === 'Markets' && arrivalSourceLabel('/t/aapl') === 'the AAPL chart' && arrivalSourceLabel('/i/abc123') === 'Markets' && arrivalSourceLabel('') === 'Markets')
+    const holdingLine = arrivalStatusText('holding', '/markets', ' Buy  $50\nof ETH ')
+    const waitingLine = arrivalStatusText('waiting', '/markets', 'Buy $50 of ETH')
+    const sentLine = arrivalStatusText('sent', '/markets', 'Buy $50 of ETH')
+    const noRunClaim = (s: string) => !/\b(sent|ran|running|runs)\b/i.test(s)
+    check('arrival/ux honesty: holding and waiting never claim a run (no "sent" / "ran" / "running" in the status line, the sub or the state word); sent says Sent; every view carries the ask verbatim at the end', noRunClaim(holdingLine) && noRunClaim(waitingLine) && noRunClaim(ARRIVAL_SUB.holding) && noRunClaim(ARRIVAL_SUB.waiting) && noRunClaim(ARRIVAL_STATE_WORD.holding) && noRunClaim(ARRIVAL_STATE_WORD.waiting) && /\bSent\b/.test(sentLine) && ARRIVAL_STATE_WORD.sent === 'Sent' && holdingLine.endsWith(': Buy $50 of ETH') && waitingLine.endsWith(': Buy $50 of ETH') && sentLine.endsWith(': Buy $50 of ETH'), `${holdingLine} | ${waitingLine} | ${sentLine}`)
+    check('arrival/ux copy: the ask line is the chip\'s sentence with whitespace collapsed, never rewritten; the waiting sub says "Ready when you are"; the dismiss before the fire says "Don\'t run it" and after it says "Dismiss"; the eyebrow is the nav word', arrivalAskLine(' Buy  $50\nof ETH ') === 'Buy $50 of ETH' && arrivalAskLine('Buy $50 of ETH') === 'Buy $50 of ETH' && ARRIVAL_SUB.waiting.includes('Ready when you are') && ARRIVAL_DISMISS_LABEL.holding === ARRIVAL_DISMISS_LABEL.waiting && /run it/i.test(ARRIVAL_DISMISS_LABEL.holding) && ARRIVAL_DISMISS_LABEL.sent === 'Dismiss' && ARRIVAL_EYEBROW === 'From Markets')
+    check('arrival/ux timing: the quiet edge lands between 5s and the record\'s own TTL; the sent linger is shorter than the hold timeout; the fade is under a second', ARRIVAL_HOLD_TIMEOUT_MS >= 5_000 && ARRIVAL_HOLD_TIMEOUT_MS < UX_ARRIVAL_TTL_MS && ARRIVAL_SENT_LINGER_MS < ARRIVAL_HOLD_TIMEOUT_MS && ARRIVAL_FADE_MS > 0 && ARRIVAL_FADE_MS < 1_000)
+    // The row is a client-side moment on the first-party /chat surface only:
+    // a plain /chat render (a pasted URL, a ?prompt= link) carries none of it.
+    const chatSsr = await (await fetch(`${BASE}/chat`)).text()
+    const chatPromptSsr = await (await fetch(`${BASE}/chat?prompt=${encodeURIComponent('Buy $50 of ETH')}`)).text()
+    check('arrival/ux ssr: a plain /chat load and a ?prompt= link render no arrival row — a URL never mounts the moment, let alone fires the turn', chatSsr.includes('<') && !chatSsr.includes('class="arrival') && !chatSsr.includes('data-arrival') && !chatPromptSsr.includes('class="arrival') && !chatPromptSsr.includes('data-arrival'))
+    const bannerSrc = await readFile('components/arrival/ArrivalBanner.tsx', 'utf8')
+    const arrivalCss = await readFile('components/arrival/arrival.css', 'utf8')
+    check('arrival/ux banner: props are the contract ({ intent, phase: holding|sent, onDismiss? }); the stone is PantessaMark with a band class for the cascade; the dismiss control renders only when CORE passes onDismiss; the fade hands control back through onDismiss; the reply signal counts from a baseline taken at the sent flip; the row is a polite status region', bannerSrc.includes("export type ArrivalPhase = 'holding' | 'sent'") && bannerSrc.includes('onDismiss?: () => void') && bannerSrc.includes('bandClassName="arrival__band"') && bannerSrc.includes('{onDismiss && (') && bannerSrc.includes('onDismissRef.current?.()') && bannerSrc.includes('baselineRef.current = turns') && bannerSrc.includes('role="status"') && bannerSrc.includes('aria-live="polite"'))
+    const cssVars = [...arrivalCss.matchAll(/var\(--([a-z0-9-]+)/g)].map((m) => m[1])
+    const siteTokens = new Set(['bg', 'surf-1', 'surf-2', 'line', 'line-2', 'fg', 'muted', 'muted-2', 'accent', 'ink', 'font-chat-display', 'font-chat-body', 'font-mono', 'arrival-band-floor', 'arrival-fade'])
+    const reduced = arrivalCss.slice(arrivalCss.indexOf('@media (prefers-reduced-motion: reduce)'))
+    check('arrival/ux css: every colour is a site token (no hex, no rgb literal — only --bg/--surf/--line/--fg/--muted/--accent/--ink + the chat faces); the light theme only re-floors the cascade under :root[data-theme=\'light\']; reduced motion stills the cascade, glow, pulse and rise; ≤480px shrinks the stone', cssVars.every((v) => siteTokens.has(v)) && !/#[0-9a-fA-F]{3,8}\b/.test(arrivalCss) && !/rgba?\(/.test(arrivalCss) && arrivalCss.includes(":root[data-theme='light'] .arrival {") && reduced.includes('.arrival__band') && reduced.includes('animation: none') && reduced.includes('.arrival--leaving { transform: none; }') && arrivalCss.includes('@media (max-width: 480px)'), `vars=${[...new Set(cssVars)].join(',')}`)
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
