@@ -18,6 +18,7 @@ import VoiceButton from '@/components/VoiceButton'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { useSession } from '@/lib/session'
 import { normalizeSpokenAsk } from '@/lib/voice-ask'
+import { hoverBarLabel, useChartHover, type HoverBar } from '@/lib/markets-ai-hover'
 import type { ChartPair } from '@/lib/charts'
 import type { ChartState } from '@/lib/chart-state'
 import type { AskAnswer } from '@/lib/markets-ai'
@@ -59,6 +60,41 @@ export default function AskChart({ symbol, pair, chartState, visible, onAsk, onC
   const here = typeof window === 'undefined' ? '/' : `${window.location.pathname}${window.location.search}`
 
   const suggestions = useMemo(() => askChartSuggestions(symbol, pair), [symbol, pair])
+  // "Explain this": the bar under the chart's crosshair (lib/markets-ai-hover,
+  // reported by the chart) or, until the chart reports, the window's last bar.
+  const hover = useChartHover((st) => (st.symbol === pair.symbol ? st.bar : null))
+  const [lastBar, setLastBar] = useState<HoverBar | null>(null)
+  useEffect(() => {
+    if (hover) return
+    const ctrl = new AbortController()
+    void (async () => {
+      try {
+        const res = await fetch(`/api/charts/candles?symbol=${encodeURIComponent(pair.symbol)}&tf=${chartState?.tf ?? '1h'}`, { signal: ctrl.signal })
+        const j = (await res.json()) as { candles?: HoverBar[] }
+        const last = j.candles?.[j.candles.length - 1]
+        if (last) setLastBar(last)
+      } catch {
+        /* no chip */
+      }
+    })()
+    return () => ctrl.abort()
+  }, [pair.symbol, chartState?.tf, hover])
+  const explainBar = hover ?? lastBar
+  const explain = useCallback(async () => {
+    if (!explainBar || busy) return
+    setBusy(true)
+    setAsked(hover ? hoverBarLabel(explainBar, chartState?.tf) : 'Explain the last bar')
+    setReply(null)
+    try {
+      const res = await fetch('/api/markets/ask', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ symbol: pair.symbol, tf: chartState?.tf, kind: 'explain', bar: explainBar }) })
+      const j = (await res.json().catch(() => ({}))) as (AskAnswer & { deterministic: boolean; model: string }) | { error?: string }
+      setReply('kind' in j ? j : { kind: 'answer', text: (j as { error?: string }).error ?? `HTTP ${res.status}`, deterministic: true, model: 'none' })
+    } catch (e) {
+      setReply({ kind: 'answer', text: (e as Error).message, deterministic: true, model: 'none' })
+    } finally {
+      setBusy(false)
+    }
+  }, [explainBar, busy, hover, pair.symbol, chartState?.tf])
 
   const submit = useCallback(
     async (question: string) => {
@@ -174,6 +210,11 @@ export default function AskChart({ symbol, pair, chartState, visible, onAsk, onC
               {s.label}
             </button>
           ))}
+          {explainBar ? (
+            <button type="button" className={`mk-ai__sugg-chip${hover ? ' mk-ai__sugg-chip--hover' : ''}`} onClick={() => void explain()} data-explain={hover ? 'hover' : 'last'} title={`${explainBar.o} → ${explainBar.c}`}>
+              {hover ? hoverBarLabel(explainBar, chartState?.tf) : 'Explain the last bar'}
+            </button>
+          ) : null}
         </div>
       ) : null}
 
