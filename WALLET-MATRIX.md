@@ -93,6 +93,7 @@ Wallet-side behaviors we know (add rows as strangers teach us):
 | Coinbase Wallet (EOA ext) | unverified | no | **breaks** — each signature needs its own gesture (the SignHlActionButton stepper exists for this) | keep `coinbaseWallet` eoaOnly |
 | Coinbase Smart Wallet | n/a | **yes** — HL, CoW-presign paths that need EOA recovery will not verify | | Out of scope for HL by design |
 | WalletConnect (Rainbow, Trust, …) | wallet-dependent | usually no | mobile round-trip | The delegated door covers the strict ones automatically |
+| Phantom (EVM side, extension + mobile) — lane added 2026-09-16 | unverified | no | unverified | Injected lane (`window.phantom.ethereum`, EIP-6963 rdns `app.phantom`); signs the MetaMask way. Phantom does NOT add custom networks on request, so a Robinhood Chain (4663) build ends at the wallet's own refusal (a `wallet-refused` row). Owner drill: MetaMask matrix §4 on Base + Ethereum, then one 4663 ask to see the refusal land in `/dashboard/failures`. |
 | Our headless mock (`personal_sign` proxied to a local signer) | **configurable** — see §3 | no | ok | Run it STRICT: reject typed data whose domain chain ≠ active chain |
 
 ## 3. Instruments — how this class is caught without a human

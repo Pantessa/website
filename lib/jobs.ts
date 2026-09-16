@@ -29,6 +29,7 @@
 import { parseAaveOp, parseAaveSupply, type AaveOpParams, type AaveSupplyParams } from '@/lib/aave-supply'
 import { parseMorphoLend, parseMorphoOp } from '@/lib/morpho-supply'
 import { parseCrossChainSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
+import { LIFI_DESTINATIONS, type LifiDestination } from '@/lib/lifi-destinations'
 import { chainAlt, canonicalChainWord, normalizeArrows, normalizeChainWords, normalizeWorth } from '@/lib/chain-lexicon'
 import { hlUnsizedChips, parseHlIntent, type HlIntent, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm, type GuardianArmAsk } from '@/lib/hl-guardian'
@@ -37,7 +38,7 @@ import { fenceGuardianCoin } from '@/lib/hl-guardian-fence'
 import { hlPerpUniverseCached } from '@/lib/hl-universe'
 import { parseLidoStake } from '@/lib/lido-stake'
 import { parseSpotGuardArm } from '@/lib/spot-guard'
-import { primaryStable } from '@/lib/chains'
+import { primaryStable, chainById } from '@/lib/chains'
 import { fundingAltUsdcFor, fundingOriginWords, GAS_LEG_USD, MIN_VALUE_LEG_USD } from '@/lib/lifi-bridge'
 import { parseNftAsk } from '@/lib/nft-layer'
 import { parseMultiSendSegments, parseTransferSegment } from '@/lib/transfer-exec'
@@ -93,8 +94,12 @@ export function stampSwapFeeTier(compiled: CompiledJob, feeBps: number | undefin
 export interface RobinhoodFundingAsk {
   /** Total dollars of origin funds to convert (gas leg included when flagged). */
   fundUsd: number
-  /** True when a gas leg (origin funds → native ETH on 4663) must come first. */
+  /** True when a gas leg (origin funds → native ETH on 4663) must come first.
+   *  Never true for a stable-gas destination (Arc) — the landed USDC is the gas. */
   gasIncluded: boolean
+  /** Where the legs land: Robinhood Chain (4663) or Arc (5042). */
+  destChainId: number
+  destName: string
   /** The origin chain the funds leave from. */
   originChainId: number
   originWord: string
@@ -106,10 +111,13 @@ export interface RobinhoodFundingAsk {
 
 // Typo-tolerant chain words (shared lexicon) — captures canonicalize
 // before the keyed lookups below.
+// Destinations: "robinhood chain" (4663) and "arc" (5042, Circle's chain —
+// USDC gas, so its sentence never carries "including gas").
 const FUND_RE = new RegExp(
-  String.raw`\bfund\s+robin\s?hoo?d(?:\s?chain)?\s+with\s+\$?(\d+(?:\.\d+)?)\s+from\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'optimism'])})\b`,
+  String.raw`\bfund\s+(robin\s?hoo?d(?:\s?chain)?|arc(?:\s?(?:chain|network|mainnet))?)\s+with\s+\$?(\d+(?:\.\d+)?)\s+from\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'optimism'])})\b`,
   'i',
 )
+const fundDestOf = (word: string): LifiDestination => (/robin/i.test(word) ? LIFI_DESTINATIONS[4663] : LIFI_DESTINATIONS[5042])
 
 const FUND_ORIGINS: Record<string, { id: number; word: string }> = {
   base: { id: 8453, word: 'Base' },
@@ -135,68 +143,80 @@ const FUND_ORIGINS: Record<string, { id: number; word: string }> = {
 export function robinhoodFundingFromCrossChain(segment: string): { ask: string } | { clarify: ClarifyRequest; reply: string } | { problem: string } | null {
   const cc = parseCrossChainSwap(segment)
   if (!cc || 'problem' in cc) return null
-  if (canonicalChainWord(cc.destinationChain) !== 'robinhood') return null
+  const destWord = canonicalChainWord(cc.destinationChain)
+  const dest = destWord === 'robinhood' ? LIFI_DESTINATIONS[4663] : destWord === 'arc' ? LIFI_DESTINATIONS[5042] : null
+  if (!dest) return null
+  const stableSym = primaryStable(dest.chainId)!.symbol.toUpperCase()
   const token = cc.originToken.toUpperCase()
   const destToken = cc.destinationToken.toUpperCase()
   // "Bridge 0.01 ETH from Ethereum to Robinhood Chain" is the CANONICAL
   // bridge (lib/robinhood-bridge.ts — a native ETH deposit, the splash's own
   // chip), not a funding plan: leave it to the bridge layer below the jobs
-  // gate. ETH from an L2 has no canonical bridge and DOES ride LiFi.
-  if (token === 'ETH' && (destToken === 'ETH' || destToken === 'WETH') && canonicalChainWord(cc.originChain) === 'ethereum') return null
+  // gate. ETH from an L2 has no canonical bridge and DOES ride LiFi. Arc
+  // has no canonical ETH bridge at all (and no ETH gas) — every Arc move
+  // is a LiFi leg landing as USDC.
+  if (dest.gasLeg && token === 'ETH' && (destToken === 'ETH' || destToken === 'WETH') && canonicalChainWord(cc.originChain) === 'ethereum') return null
   const origin = FUND_ORIGINS[canonicalChainWord(cc.originChain) ?? cc.originChain.toLowerCase()]
   if (!origin) {
-    return { problem: `Robinhood Chain is funded from ${fundingOriginWords()} — NEAR Intents can't deliver to it, so move the funds to one of those chains first, then say “fund robinhood chain with $${cc.amount} from base”.` }
+    return { problem: `${dest.name} is funded from ${fundingOriginWords()} — NEAR Intents can't deliver to it, so move the funds to one of those chains first, then say “fund ${dest.word} with $${cc.amount} from base”.` }
   }
   const originWord = origin.word.toLowerCase()
-  const chipsFor = (suffix: string, presets: number[]) => presets.map((usd) => ({ label: `$${usd} from ${origin.word}${suffix ? ` (${suffix.replace(/^using /, '')})` : ''}`, resume: `Fund robinhood chain with $${usd} from ${originWord}${suffix ? ` ${suffix}` : ''}` }))
+  const chipsFor = (suffix: string, presets: number[]) => presets.map((usd) => ({ label: `$${usd} from ${origin.word}${suffix ? ` (${suffix.replace(/^using /, '')})` : ''}`, resume: `Fund ${dest.word} with $${usd} from ${originWord}${suffix ? ` ${suffix}` : ''}` }))
   const floor = MIN_VALUE_LEG_USD
   if (token === 'ETH') {
     // The plan is dollar-sized (LiFi legs are quoted in USD) — ask for the
     // dollar figure instead of pricing ETH here.
     return {
-      reply: `The canonical Robinhood Chain bridge only runs from Ethereum — from ${origin.word} the money moves by a LiFi leg sized in dollars, landing as USDG (Robinhood Chain's dollar) with a little ETH for gas when the wallet there needs it. Pick how much of your ${origin.word} ETH to move.`,
+      reply: dest.gasLeg
+        ? `The canonical Robinhood Chain bridge only runs from Ethereum — from ${origin.word} the money moves by a LiFi leg sized in dollars, landing as USDG (Robinhood Chain's dollar) with a little ETH for gas when the wallet there needs it. Pick how much of your ${origin.word} ETH to move.`
+        : `${dest.name} has no ETH — the money moves by a LiFi leg sized in dollars and lands as ${stableSym}, which also pays for gas there. Pick how much of your ${origin.word} ETH to move.`,
       clarify: { question: `How much to move from ${origin.word}?`, options: [...chipsFor('using eth', [10, 20, 50]), { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }] },
     }
   }
   const alt = fundingAltUsdcFor(origin.id)
   const suffix = token === 'USDC' ? '' : alt && alt.symbol.toUpperCase() === token ? `using ${alt.symbol.toLowerCase()}` : null
   if (suffix === null) {
-    return { problem: `Only USDC${alt ? ` (or ${alt.symbol})` : ''} and ETH bridge onto Robinhood Chain from ${origin.word} — swap your ${token} to USDC on ${origin.word} first, then say “fund robinhood chain with $${cc.amount} from ${originWord}”.` }
+    return { problem: `Only USDC${alt ? ` (or ${alt.symbol})` : ''} and ETH bridge onto ${dest.name} from ${origin.word} — swap your ${token} to USDC on ${origin.word} first, then say “fund ${dest.word} with $${cc.amount} from ${originWord}”.` }
   }
-  if (destToken !== 'USDG' && destToken !== token && destToken !== 'USDC') {
+  if (destToken !== stableSym && destToken !== token && destToken !== 'USDC') {
     // "swap 20 USDC from base to AAPL on robinhood" — a funded buy: the
     // two-segment form compiles as fund → wait → buy. Hand it over as a chip
     // rather than guessing the buy size.
     return {
-      reply: `On Robinhood Chain the money lands as USDG first, then buys ${destToken} — that's a two-step job.`,
-      clarify: { question: `Run it as one job?`, options: [{ label: `Fund $${cc.amount} from ${origin.word}, then buy ${destToken}`, resume: `Fund robinhood chain with $${cc.amount} from ${originWord}${suffix ? ` ${suffix}` : ''}, then buy $${cc.amount} of ${destToken}` }, { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }] },
+      reply: `On ${dest.name} the money lands as ${stableSym} first, then buys ${destToken} — that's a two-step job.`,
+      clarify: { question: `Run it as one job?`, options: [{ label: `Fund $${cc.amount} from ${origin.word}, then buy ${destToken}`, resume: `Fund ${dest.word} with $${cc.amount} from ${originWord}${suffix ? ` ${suffix}` : ''}, then buy $${cc.amount} of ${destToken}` }, { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }] },
     }
   }
   const fundUsd = Number(cc.amount)
   if (!Number.isFinite(fundUsd) || fundUsd <= 0) return null
   if (fundUsd < floor) {
     return {
-      reply: `The smallest clean move onto Robinhood Chain is $${floor} — LiFi's flat fee is what the parity guard refuses on anything smaller, so a $${cc.amount} leg would be built only to be withheld.`,
+      reply: `The smallest clean move onto ${dest.name} is $${floor} — LiFi's flat fee is what the parity guard refuses on anything smaller, so a $${cc.amount} leg would be built only to be withheld.`,
       clarify: { question: `Move a little more instead?`, options: [...chipsFor(suffix, [floor, 20, 50]), { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }] },
     }
   }
-  return { ask: `Fund robinhood chain with $${cc.amount} from ${originWord}${suffix ? ` ${suffix}` : ''}` }
+  return { ask: `Fund ${dest.word} with $${cc.amount} from ${originWord}${suffix ? ` ${suffix}` : ''}` }
 }
 
 export function parseRobinhoodFunding(segment: string): RobinhoodFundingAsk | null {
   const m = normalizeChainWords(segment).match(FUND_RE)
   if (!m) return null
-  const fundUsd = Number(m[1])
+  const dest = fundDestOf(m[1])
+  const fundUsd = Number(m[2])
   if (!Number.isFinite(fundUsd) || fundUsd <= 0) return null
-  const originWord = m[2].toLowerCase().replace(/\s+/g, ' ')
+  const originWord = m[3].toLowerCase().replace(/\s+/g, ' ')
   const origin = FUND_ORIGINS[canonicalChainWord(originWord) ?? originWord]
   if (!origin) return null
   return {
     fundUsd,
-    gasIncluded: /\bincluding\s+gas\b/i.test(segment),
+    // A stable-gas destination has no gas leg to include — "including gas"
+    // there is a no-op, never a leg.
+    gasIncluded: dest.gasLeg && /\bincluding\s+gas\b/i.test(segment),
     originChainId: origin.id,
     originWord: origin.word,
     token: /\busing\s+usdc\.?e\b/i.test(segment) ? 'USDC.e' : /\busing\s+eth\b/i.test(segment) ? 'ETH' : 'USDC',
+    destChainId: dest.chainId,
+    destName: dest.name,
   }
 }
 
@@ -230,10 +250,13 @@ const SWAP_SEG_CHAINS: Record<string, { id: number; name: string }> = {
   mainnet: { id: 1, name: 'Ethereum' },
   robinhood: { id: 4663, name: 'Robinhood Chain' },
   'robinhood chain': { id: 4663, name: 'Robinhood Chain' },
+  arc: { id: 5042, name: 'Arc' },
+  'arc chain': { id: 5042, name: 'Arc' },
+  'arc network': { id: 5042, name: 'Arc' },
 }
 
 const SWAP_SEG_RE = new RegExp(
-  `\\bswap\\s+(\\d+(?:\\.\\d+)?)\\s+\\$?([A-Za-z]{2,12})\\s+(?:for|into|to)\\s+\\$?([A-Za-z]{2,12})\\s+on\\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'optimism', 'robinhood'])})\\b`,
+  `\\bswap\\s+(\\d+(?:\\.\\d+)?)\\s+\\$?([A-Za-z]{2,12})\\s+(?:for|into|to)\\s+\\$?([A-Za-z]{2,12})\\s+on\\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'optimism', 'robinhood', 'arc'])})\\b`,
   'i',
 )
 
@@ -341,6 +364,8 @@ export interface JobSegmentCtx {
   index: number
   /** True once a Robinhood funding segment compiled earlier in the ask. */
   fundingSeen: boolean
+  /** The destination chain of the funding segment seen (4663 | 5042). */
+  fundingDest?: number
   /** The last NFT an earlier segment named, or null. */
   nft: JobNftContext | null
   /** The FULL compound ask — clarify resume strings restate it with the
@@ -353,6 +378,7 @@ export interface JobSegmentCompiled {
   title: string
   /** Set to flag later segments (the funding parser gates the buy parser). */
   fundingSeen?: boolean
+  fundingDest?: number
   /** Set when the segment named an NFT (threads pronoun follow-ups). */
   nft?: JobNftContext
 }
@@ -431,24 +457,28 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
       }
       const usdgUsd = Math.max(0, Number((fund.fundUsd - (fund.gasIncluded ? GAS_LEG_USD : 0)).toFixed(2)))
       if (usdgUsd <= 0) {
-        return { problem: `$${fund.fundUsd} isn't enough to fund Robinhood Chain${fund.gasIncluded ? ` — the gas leg alone is ~$${GAS_LEG_USD}` : ''}.` }
+        return { problem: `$${fund.fundUsd} isn't enough to fund ${fund.destName}${fund.gasIncluded ? ` — the gas leg alone is ~$${GAS_LEG_USD}` : ''}.` }
       }
+      const destStable = primaryStable(fund.destChainId)?.symbol ?? 'USDC'
+      // `dest` rides in the step params only for a non-default destination,
+      // so every Robinhood job compiled before Arc stays byte-identical.
+      const destParam = fund.destChainId === 4663 ? {} : { dest: fund.destChainId }
       const steps: CompiledStep[] = []
       const arrivalFrom: number[] = []
       if (fund.gasIncluded) {
-        steps.push({ kind: 'sign', builder: 'native-lifi-fund', title: `Bridge ~$${GAS_LEG_USD} of gas ETH → Robinhood Chain (from ${fund.originWord})`, params: { leg: 'gas', usd: GAS_LEG_USD, origin: fund.originChainId, token: fund.token } })
+        steps.push({ kind: 'sign', builder: 'native-lifi-fund', title: `Bridge ~$${GAS_LEG_USD} of gas ETH → ${fund.destName} (from ${fund.originWord})`, params: { leg: 'gas', usd: GAS_LEG_USD, origin: fund.originChainId, token: fund.token, ...destParam } })
         arrivalFrom.push(steps.length - 1)
       }
-      steps.push({ kind: 'sign', builder: 'native-lifi-fund', title: `Move $${usdgUsd} of ${fund.originWord} ${fund.token} → USDG on Robinhood Chain`, params: { leg: 'usdg', usd: usdgUsd, origin: fund.originChainId, token: fund.token } })
+      steps.push({ kind: 'sign', builder: 'native-lifi-fund', title: `Move $${usdgUsd} of ${fund.originWord} ${fund.token} → ${destStable} on ${fund.destName}`, params: { leg: 'usdg', usd: usdgUsd, origin: fund.originChainId, token: fund.token, ...destParam } })
       arrivalFrom.push(steps.length - 1)
       steps.push({
         kind: 'wait',
         builder: 'wait',
-        title: 'Funds arrive on Robinhood Chain',
+        title: `Funds arrive on ${fund.destName}`,
         params: {},
         waitPredicate: { kind: 'chain-arrival', fromSteps: arrivalFrom },
       })
-      return { steps, title: `Fund Robinhood Chain with $${fund.fundUsd} from ${fund.originWord}`, fundingSeen: true }
+      return { steps, title: `Fund ${fund.destName} with $${fund.fundUsd} from ${fund.originWord}`, fundingSeen: true, fundingDest: fund.destChainId }
     },
   },
   {
@@ -461,13 +491,34 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
       const buy = seg.match(FUND_BUY_RE)
       if (!buy) return null
       const buyUsd = Number(buy[1])
+      const destChainId = ctx.fundingDest ?? 4663
+      const destStable = primaryStable(destChainId)?.symbol ?? 'USDG'
       // Pair the ticker BEFORE the job exists — "AAPLE" must ask here, not
-      // fail at step 3 after the funding legs already moved money.
-      const paired = pairJobStockToken(buy[2], ctx)
-      if (!('token' in paired)) return paired
-      const buyToken = paired.token
-      const title = `Buy ~$${buyUsd} of ${buyToken} with the arrived USDG`
-      return { steps: [{ kind: 'sign', builder: 'native-lifi-swap', title, params: { buyUsd, buyToken, sellToken: 'USDG', chainId: 4663 } }], title: `Buy $${buyUsd} of ${buyToken}` }
+      // fail at step 3 after the funding legs already moved money. Only
+      // Robinhood Chain carries the stock list; on Arc the buy token is one
+      // of the chain's own pinned tokens (BTC → cirBTC, EURC), checked by
+      // the registry, and anything else refuses by name.
+      let buyToken: string
+      if (destChainId === 4663) {
+        const paired = pairJobStockToken(buy[2], ctx)
+        if (!('token' in paired)) return paired
+        buyToken = paired.token
+      } else {
+        const sym = buy[2].toUpperCase()
+        const destChain = chainById(destChainId)
+        const known = destChain?.tokens[sym]
+        if (!known || sym === destStable) {
+          // One name per contract (EUR/BTC are ask-side aliases of EURC/cirBTC).
+          const seen = new Set<string>()
+          const listed = Object.entries(destChain?.tokens ?? {})
+            .filter(([k, t]) => k !== destStable && !seen.has(t.address.toLowerCase()) && seen.add(t.address.toLowerCase()))
+            .map(([k]) => k)
+          return { problem: `${destChain?.name ?? 'That chain'} doesn't trade "${buy[2]}" here — the tokens it lists are ${listed.join(', ')}. Nothing was built.` }
+        }
+        buyToken = sym
+      }
+      const title = `Buy ~$${buyUsd} of ${buyToken} with the arrived ${destStable}`
+      return { steps: [{ kind: 'sign', builder: 'native-lifi-swap', title, params: { buyUsd, buyToken, sellToken: destStable, chainId: destChainId } }], title: `Buy $${buyUsd} of ${buyToken}` }
     },
   },
   {
@@ -795,12 +846,13 @@ export function compileJobAsk(rawMessage: string): CompiledJob | { problem: stri
   const steps: CompiledStep[] = []
   const titles: string[] = []
   let fundingSeen = false
+  let fundingDest: number | undefined
   let nftSeen: JobNftContext | null = null
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i]
     let matched = false
     for (const parser of JOB_SEGMENT_PARSERS) {
-      const res = parser.parse(seg, { index: i, fundingSeen, nft: nftSeen, message })
+      const res = parser.parse(seg, { index: i, fundingSeen, fundingDest, nft: nftSeen, message })
       if (!res) continue
       if ('clarify' in res) return res // ask BEFORE the job exists — a chip click re-enters here resolved
       if ('problem' in res) return { problem: `Step ${i + 1}: ${res.problem}` }
@@ -823,6 +875,7 @@ export function compileJobAsk(rawMessage: string): CompiledJob | { problem: stri
       }
       titles.push(res.title)
       if (res.fundingSeen) fundingSeen = true
+      if (res.fundingDest) fundingDest = res.fundingDest
       if (res.nft) nftSeen = res.nft
       matched = true
       break

@@ -27,6 +27,7 @@ const SUGGESTED: Record<number, string[]> = {
   1: ['ETH', 'USDC', 'WETH', 'USDT'],
   42161: ['ETH', 'USDC', 'ARB', 'WETH'],
   10: ['ETH', 'USDC', 'OP', 'WETH'],
+  5042: ['USDC', 'EURC', 'BTC', 'WETH'],
   4663: ['ETH', 'USDG', 'AAPL', 'NVDA', 'TSLA', 'HOOD'],
 }
 
@@ -210,7 +211,7 @@ export default function SwapPanel({
                       symbols: fillSymbolsForPair(sellToken, buyToken),
                     })
                   }}
-                  className="mt-3 w-full rounded-lg border border-[color:var(--accent)]/50 bg-[color:var(--accent)]/10 px-3 py-2 text-xs font-semibold text-[color:var(--accent)] transition-colors hover:bg-[color:var(--accent)]/20"
+                  className="mt-3 w-full rounded-lg border tint-border-accent-50 tint-bg-accent-10 px-3 py-2 text-xs font-semibold text-[color:var(--accent)] transition-colors hover:tint-bg-accent-20"
                 >
                   Review &amp; sign
                 </button>

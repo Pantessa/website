@@ -30,6 +30,25 @@ export const robinhoodChain = defineChain({
   },
 })
 
+// Circle's Arc (L1, mainnet 2026-09-16; viem 2.56 ships `arc`, our 2.48 has
+// only the testnet). USDC IS the gas token: the native view is 18 decimals
+// (eth_getBalance / msg.value / gas) and the ERC-20 view at 0x3600…0000 is
+// 6 decimals — the SAME asset, never summed (see nativeSymbol below). The
+// chain default RPC is dRPC's public Arc endpoint, measured 2026-09-16:
+// full archive depth (reads at −100,000 blocks ok), CORS `*`, 25 parallel
+// reads in 0.5s, receipts served. Circle's rpc.mainnet.arc.io rate-limits
+// receipt polling and eth_getLogs, so it is not the browser transport.
+export const arcChain = defineChain({
+  id: 5042,
+  name: 'Arc',
+  nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
+  rpcUrls: { default: { http: ['https://rpc.drpc.mainnet.arc.io'] } },
+  blockExplorers: {
+    default: { name: 'Arc Explorer', url: 'https://explorer.arc.io', apiUrl: 'https://explorer.arc.io/api/v2' },
+  },
+  contracts: { multicall3: { address: '0xcA11bde05977b3631167028862bE2a173976CA11', blockCreated: 0 } },
+})
+
 export interface AppChainToken {
   address: `0x${string}`
   decimals: number
@@ -57,6 +76,11 @@ export interface AppChain {
    *  the publicnode lesson (#710). Never reaches the browser bundle: the key
    *  is server-only and `serverRpcEndpoints` is window-guarded. */
   alchemyRpc?: boolean
+  /** What pays for gas here. 'ETH' on every EVM chain we knew before Arc;
+   *  'USDC' on Arc, where the native token IS the primary stable (18-dec
+   *  native view, 6-dec ERC-20 view at `tokens.USDC`). Every "no ETH for
+   *  gas" rule keys off this — see gasIsStable(). */
+  nativeSymbol: 'ETH' | 'USDC'
   /** Words that name this chain in a message ("on arbitrum", "on robinhood"). */
   words: RegExp
   /** Uniswap v3 build support — null means no native venue on this chain. */
@@ -84,6 +108,7 @@ export const APP_CHAINS: AppChain[] = [
     color: '#0052ff',
     viem: base,
     alchemyNet: 'base-mainnet',
+    nativeSymbol: 'ETH',
     // viem's default (mainnet.base.org) rate-limits in bursts — the same
     // 429 pattern that hit mainnet (see the Ethereum entry) and once made a
     // funding scan miss a $15k balance. publicnode holds up.
@@ -119,6 +144,7 @@ export const APP_CHAINS: AppChain[] = [
     color: '#627eea',
     viem: mainnet,
     alchemyNet: 'eth-mainnet',
+    nativeSymbol: 'ETH',
     rpcUrl: 'https://ethereum-rpc.publicnode.com',
     words: /\b(?:ethereum|eth\s?mainnet|mainnet)\b/i,
     uniswap: {
@@ -151,6 +177,7 @@ export const APP_CHAINS: AppChain[] = [
     color: '#1b4add',
     viem: arbitrum,
     alchemyNet: 'arb-mainnet',
+    nativeSymbol: 'ETH',
     rpcUrl: 'https://arbitrum-one-rpc.publicnode.com',
     words: /\barb(?:itrum|itum)?\b/i, // "arbitum" = live typo, matched deliberately
     uniswap: {
@@ -184,6 +211,7 @@ export const APP_CHAINS: AppChain[] = [
     color: '#ff0420',
     viem: optimism,
     alchemyNet: 'opt-mainnet',
+    nativeSymbol: 'ETH',
     // NO rpcUrl override: viem's default (mainnet.optimism.io) measured
     // clean 2026-09-04 — full archive depth, 25 concurrent reads in 0.8s.
     // The publicnode override that was here first is what broke the initial
@@ -238,6 +266,7 @@ export const APP_CHAINS: AppChain[] = [
     color: '#ccff00',
     viem: robinhoodChain,
     alchemyNet: 'robinhood-mainnet',
+    nativeSymbol: 'ETH',
     // rpc.mainnet.chain.robinhood.com rate-limits per IP ("Rate Limit Hit,
     // limit will reset in 60 seconds") and Vercel's egress IPs are shared —
     // 2026-09-15 a funded OP→USDG funding leg and (09-08) a USDG→SPY buy
@@ -277,7 +306,82 @@ export const APP_CHAINS: AppChain[] = [
     },
     explorerTx: 'https://robinhoodchain.blockscout.com/tx/',
   },
+  {
+    id: 5042,
+    key: 'arc',
+    name: 'Arc',
+    short: 'Arc',
+    color: '#1b3059',
+    viem: arcChain,
+    alchemyNet: 'arc-mainnet',
+    // Alchemy carries ARC_MAINNET but it is not enabled on our app yet
+    // (lib/alchemy gates the Data API on a live probe); the server client
+    // fronts with QuickNode's public Arc endpoint, measured 2026-09-16:
+    // full archive, 25 parallel reads in 0.7s, receipts served.
+    rpcUrl: 'https://rpc.quicknode.mainnet.arc.io',
+    // USDC is the gas token (see arcChain above).
+    nativeSymbol: 'USDC',
+    // "arc" is an English noun (the arc of a trade, an arc lamp), so only a
+    // CHAIN SLOT names the chain — after a preposition, before "chain /
+    // network / mainnet", or as "Circle's Arc". Same rule as "optimism".
+    words: /(?:\b(?:on|from|to|into|onto)\s+(?:circle'?s?\s+)?arc\b|\barc\s+(?:chain|network|mainnet)\b|\bcircle'?s?\s+arc\b)/i,
+    // Uniswap v3 + v4 both deployed day one (github.com/Uniswap/contracts
+    // deployments/5042.md); every address bytecode-verified via eth_getCode
+    // 2026-09-16 and a live quoteExactInputSingle ($10 USDC → 8.656 EURC on
+    // the 0.05% pool; $10 USDC → 0.00013213 cirBTC on the 0.3% pool). The
+    // USDC/WETH 0.05% pool exists but had no liquidity at launch.
+    uniswap: {
+      swapRouter02: '0x53BF6B0684Ec7eF91e1387Da3D1a1769bC5A6F77',
+      quoterV2: '0x7DfD4F31be6814D2906BDE155c3e1B146EAc1468',
+    },
+    // No v4 fallback pinned yet: the pairs that trade (USDC/EURC, USDC/
+    // cirBTC) are v3; the v4 PoolManager (0x8366…0951) waits on a live pool
+    // scan before it earns a slot here.
+    uniswapV4: null,
+    // CoW has no Arc order book (api.cow.fi has no arc route) — swaps ride v3.
+    cow: false,
+    // The "wrapped native" IS the ERC-20 view of USDC — no WETH-style wrap
+    // exists for a stable-gas chain. Consumers that treat wrappedNative as
+    // WETH (watchlist symbol mapping, wrap-then-sell) check nativeSymbol.
+    wrappedNative: '0x3600000000000000000000000000000000000000',
+    // EURC is NOT a USD stable (≈ $1.15) — only USDC prices as $1 here.
+    stables: {
+      '0x3600000000000000000000000000000000000000': 6, // USDC (native + ERC-20 view)
+    },
+    // symbol()/decimals() read on-chain 2026-09-16 for every row. BTC and
+    // EUR are ask-side aliases: "buy $10 of BTC on arc" is cirBTC (Circle's
+    // native bitcoin on Arc), "swap $10 to EUR" is EURC. No ETH key on
+    // purpose — ETH is not native here and the WETH pool was empty at
+    // launch, so an "ETH" ask refuses by name instead of wrapping USDC.
+    tokens: {
+      USDC: { address: '0x3600000000000000000000000000000000000000', decimals: 6 },
+      EURC: { address: '0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1', decimals: 6 },
+      EUR: { address: '0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1', decimals: 6 },
+      CIRBTC: { address: '0x171A4217b86A807A64eB94757Db6849fb4bDbAA0', decimals: 8 },
+      BTC: { address: '0x171A4217b86A807A64eB94757Db6849fb4bDbAA0', decimals: 8 },
+      WETH: { address: '0x128cC466B61f542da60c70e3aA11c10e19B84EDB', decimals: 18 },
+    },
+    explorerTx: 'https://explorer.arc.io/tx/',
+  },
 ]
+
+/** True when the chain's gas token is its primary stable (Arc): there is no
+ *  ETH to run out of, an all-stable sell/send must keep a sliver back for
+ *  gas, and "no ETH for gas" copy must say the real token. */
+export const gasIsStable = (chain: Pick<AppChain, 'nativeSymbol'>): boolean => chain.nativeSymbol !== 'ETH'
+
+/** Gas kept back on a stable-gas chain when the STABLE itself is sold or
+ *  sent in full — whole units of that stable. Arc measured 2026-09-16:
+ *  gasPrice ≈ 92.5 gwei-equivalent in the 18-dec native view, so a 200k-gas
+ *  swap costs ≈ $0.0185; 0.10 USDC covers several transactions. */
+export const STABLE_GAS_RESERVE = 0.1
+/** Below this much of its stable a stable-gas chain can't sign a plain move. */
+export const STABLE_GAS_FLOOR = 0.02
+
+/** The gas token's symbol for a chain id ('ETH' for unknown ids). */
+export function nativeSymbolFor(chainId: number): 'ETH' | 'USDC' {
+  return chainById(chainId)?.nativeSymbol ?? 'ETH'
+}
 
 export const DEFAULT_CHAIN_ID = 8453
 

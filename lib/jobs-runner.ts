@@ -38,6 +38,7 @@ import { buildAaveRepayArtifact, buildAaveSupplyArtifact } from '@/lib/aave-exec
 import { buildMorphoLendArtifact, buildMorphoRepayArtifact } from '@/lib/morpho-exec'
 import type { MorphoChainId } from '@/lib/morpho-supply'
 import { buildGuardedSwap } from '@/lib/swap-exec'
+import { TapeUnavailableError } from '@/lib/stock-tape'
 import type { PolicyBlock } from '@/lib/tx-guardrails'
 import { buildLifiBridgeLeg, checkChainArrival, ROBINHOOD_CHAIN_ID, type ChainArrival, type FundingLeg } from '@/lib/lifi-bridge'
 import { ensureTokenList } from '@/lib/token-list'
@@ -249,12 +250,17 @@ export async function advanceJob(job: JobWithSteps): Promise<void> {
         // RPC still fails by name instead of spinning. 2026-09-15: one
         // rate-limited balanceOf on Robinhood Chain failed a funded $34
         // funding job outright.
-        const transient = transientRpcWords(e)
+        // A stock tape that didn't answer is the same kind of miss: the build
+        // is refused until the fill can be checked (lib/stock-tape), so hold
+        // and retry. A stock no feed lists at all never gets here — the
+        // cascade refuses that by name.
+        const tapeDown = e instanceof TapeUnavailableError && !e.permanent ? e : null
+        const transient = transientRpcWords(e) ?? tapeDown?.detail ?? null
         if (transient) {
           const prior = (step.result as { rpcTries?: unknown } | null)?.rpcTries
           const tries = (typeof prior === 'number' ? prior : 0) + 1
           const host = rpcHostOf(e)
-          const who = host ? `${host} didn't answer` : "An RPC didn't answer"
+          const who = tapeDown ? `The ${tapeDown.symbol} price feed didn't answer` : host ? `${host} didn't answer` : "An RPC didn't answer"
           console.warn(`[jobs] rpc withheld step ${step.seq + 1} of ${fresh.id} (${step.builder}) try ${tries}/${RPC_WITHHOLD_MAX}: ${transient}`)
           if (tries < RPC_WITHHOLD_MAX) {
             await prisma.jobStep.update({
@@ -470,9 +476,11 @@ export async function buildSignArtifact(
     // baseline) at offer time. The artifact carries a txChain so the JobCard
     // embeds the same self-advancing SendTxChain chat uses, refresh recipe
     // included (LiFi quotes go stale in ~90s — the deadline watch re-quotes).
-    const p = params as { leg: FundingLeg; usd: number; origin?: number; token?: string }
+    const p = params as { leg: FundingLeg; usd: number; origin?: number; token?: string; dest?: number }
     const origin = Number(p.origin ?? 8453)
-    const built = await buildLifiBridgeLeg({ leg: p.leg, usd: Number(p.usd), from: wallet, origin, token: p.token })
+    // Destination: pre-Arc recipes omit it (Robinhood Chain).
+    const dest = p.dest !== undefined ? Number(p.dest) : undefined
+    const built = await buildLifiBridgeLeg({ leg: p.leg, usd: Number(p.usd), from: wallet, origin, token: p.token, dest })
     if (built.blocked) {
       const reasons = built.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
       throwRefusal(reasons || 'a safety check refused the funding leg', built.guardrails)
@@ -482,7 +490,7 @@ export async function buildSignArtifact(
         txChain: {
           summary: built.summary,
           steps: built.steps,
-          refresh: { kind: 'lifi-bridge', stepIndex: built.bridgeStepIndex, params: { leg: p.leg, usd: String(p.usd), origin: String(origin), ...(p.token ? { token: p.token } : {}) } },
+          refresh: { kind: 'lifi-bridge', stepIndex: built.bridgeStepIndex, params: { leg: p.leg, usd: String(p.usd), origin: String(origin), ...(p.token ? { token: p.token } : {}), ...(dest !== undefined ? { dest: String(dest) } : {}) } },
         },
         summary: built.summary,
         arrival: built.arrival as unknown as Record<string, unknown>,

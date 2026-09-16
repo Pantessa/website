@@ -209,6 +209,14 @@ const CORPUS: Entry[] = [
   // Chip resume strings (funding / DCA — the chip IS the contract)
   { ask: 'Fund robinhood chain with $12 from base', source: 'lifi funding chip', expect: 'action' },
   { ask: 'Fund robinhood chain with $12 from base, then buy $10 of AAPL', source: 'lifi funding chip', expect: 'action' },
+  // Arc (Circle's L1, 5042 — USDC gas, LiFi-funded like Robinhood Chain; 2026-09-16).
+  { ask: 'Fund arc with $12 from base', source: 'arc funding chip', expect: 'action' },
+  { ask: 'Fund arc with $20 from base, then buy $15 of BTC', source: 'arc funding chip (fund → wait → buy cirBTC)', expect: 'action' },
+  { ask: 'swap 12 USDC from base to arc', source: 'arc cross-chain → funding redirect', expect: 'action' },
+  { ask: 'buy $10 of BTC on arc', source: 'arc swap (BTC = cirBTC)', expect: 'action' },
+  { ask: 'swap $10 of USDC to EUR on arc', source: 'arc swap (EUR = EURC)', expect: 'action' },
+  { ask: 'send 5 USDC to 0x1111111111111111111111111111111111111111 on arc', source: 'arc send', expect: 'action' },
+  { ask: 'move 5 USDC from base to arc', source: 'arc funding under the $9 floor → floor chips', expect: 'clarify-ok' },
   // A Robinhood-destination leg is a LiFi FUNDING move (NEAR can't reach
   // 4663) and $5 is under the $9 parity floor — the honest answer is the
   // floor chips, never a leg built to be withheld (#694). $20 compiles.
@@ -298,6 +306,31 @@ const CORPUS: Entry[] = [
   { ask: 'buy $12 orth of AAPL', source: 'prod 2026-09-07 (typo of "worth")', expect: 'action' },
   { ask: 'buy $12 worth of APPL using vredit cartd', source: 'prod 2026-08-31 (fiat spend clause)', expect: 'action' },
   { ask: 'buy $12 of AAPL with my credit card', source: 'stranger phrasing of the on-ramp intent', expect: 'action' },
+  // Prod ask_failures 2026-09-15/16: an empty wallet's coin buy walled with no
+  // way forward (a stranger from a tweet, twice). The asks themselves, then
+  // the card chip resumes lib/swap-shortfall restates them as (swapBuyResume
+  // pins the chain; a token-amount buy keeps its amount).
+  { ask: 'Buy $50 of ETH', source: 'prod 2026-09-15 (/t/ETH chip, empty Google wallet)', expect: 'action' },
+  { ask: 'Buy $10 of ETH', source: 'prod 2026-09-15 (typed, same stranger)', expect: 'action' },
+  { ask: 'Buy $25 of ETH on Base', source: 'prod 2026-09-16 (Nate, empty CDP account)', expect: 'action' },
+  { ask: 'Buy $50 of ETH on Base', source: 'card chip resume (completing ETH buy)', expect: 'action' },
+  { ask: 'Buy $50 of UNI on Base', source: 'card chip resume (cascade: ETH lands on Ethereum, the ask re-runs)', expect: 'action' },
+  { ask: 'Buy $12.50 of UNI on Arbitrum', source: 'card chip resume (cents survive the restatement)', expect: 'action' },
+  { ask: 'Swap 50 USDC for UNI on Ethereum', source: 'card chip resume (token-amount buy)', expect: 'action' },
+  // Prod ask_failures 2026-08-04 → 09-16: the native layers' funding refusals
+  // walled empty wallets with no way forward. The asks, then the card chip
+  // resumes lib/layer-shortfall restates them as.
+  { ask: 'I want a 2X Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop', source: 'prod 2026-08-27 ×2 + 09-04 (empty wallets; also the card resume, verbatim)', expect: 'action' },
+  { ask: 'Supply $25 of USDT to Aave at the best rate', source: 'prod 2026-09-16 (empty CDP account)', expect: 'action' },
+  { ask: 'Supply 25 USDT to Aave at the best rate', source: 'layer card resume (Aave supply, stable restated in tokens)', expect: 'action' },
+  { ask: 'Supply $50 of WBTC to Aave', source: 'layer card resume (a dollar ask stays a dollar ask)', expect: 'action' },
+  { ask: 'Deposit 20 USDC to Hyperliquid', source: 'layer card resume (HL deposit)', expect: 'action' },
+  { ask: 'Repay 20 USDC on Aave', source: 'layer card resume (Aave repay)', expect: 'action' },
+  { ask: 'Lend 2 USDC on Morpho on Base', source: 'layer card resume (Morpho lend, chain pinned)', expect: 'action' },
+  { ask: 'Lend $50 of WETH on Morpho on Ethereum', source: 'layer card resume (Morpho dollar ask)', expect: 'action' },
+  { ask: 'Stake 0.05 ETH on Lido', source: 'layer card resume (Lido direct chip)', expect: 'action' },
+  { ask: 'Stake all my ETH on Lido as wstETH', source: 'layer card resume (Lido, no amount asked)', expect: 'action' },
+  { ask: 'buy the nft https://opensea.io/item/ethereum/0x6cf64997bcfcec770e231aba2ba9ea38ff9511a0/198', source: 'layer card resume (NFT direct chip)', expect: 'action' },
   // Robinhood-destination cross-chain asks are FUNDING moves (NEAR can't reach
   // 4663): the jobs layer claims them ahead of the NEAR door. $1 is under the
   // $9 parity floor → chips for the smallest clean move (never a leg built to
@@ -398,11 +431,25 @@ const CHAIN_TYPOS: Record<string, string[]> = {
 
 interface Mutation { label: string; ask: string }
 
+/** Replace the first match OUTSIDE a URL, or null when there is none. A chain
+ *  word inside a link ("opensea.io/item/ethereum/…") is part of an address the
+ *  user pasted, not prose they retype. */
+function replaceInProse(ask: string, re: RegExp, to: string): string | null {
+  const parts = ask.split(/(https?:\/\/\S+)/)
+  const i = parts.findIndex((p, idx) => idx % 2 === 0 && re.test(p))
+  if (i < 0) return null
+  parts[i] = parts[i].replace(re, to)
+  return parts.join('')
+}
+
 function mutationsOf(ask: string): Mutation[] {
   const out: Mutation[] = []
   for (const [chain, typos] of Object.entries(CHAIN_TYPOS)) {
     const re = new RegExp(`\\b${chain}\\b`, 'i')
-    if (re.test(ask)) for (const t of typos) out.push({ label: `typo:${t}`, ask: ask.replace(re, t) })
+    for (const t of typos) {
+      const mutated = replaceInProse(ask, re, t)
+      if (mutated) out.push({ label: `typo:${t}`, ask: mutated })
+    }
   }
   out.push({ label: 'lowercase', ask: ask.toLowerCase() })
   if (!/[?.!]\s*$/.test(ask)) out.push({ label: 'question-mark', ask: `${ask}?` })

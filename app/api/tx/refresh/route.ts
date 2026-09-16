@@ -13,7 +13,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { buildUniswapSwap } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
-import { buildLifiBridgeLeg, type FundingLeg } from '@/lib/lifi-bridge'
+import { buildLifiBridgeLeg, isLifiFundedChain, type FundingLeg } from '@/lib/lifi-bridge'
+import { OffTapeError, TapeUnavailableError } from '@/lib/stock-tape'
 import { ensureTokenList } from '@/lib/token-list'
 import { sanitizeChainId, publicClientFor, chainById, DEFAULT_CHAIN_ID } from '@/lib/chains'
 import { dryRunTx, isAllowanceLag } from '@/lib/dry-run'
@@ -40,7 +41,7 @@ async function dryRunGate(
   const client = publicClientFor(chainId)
   if (!client) return null
   const chainName = chainById(chainId)?.name ?? `chain ${chainId}`
-  const verdict = await dryRunTx(client, { from, ...tx }, { chainName })
+  const verdict = await dryRunTx(client, { from, ...tx }, { chainName, gasSymbol: chainById(chainId)?.nativeSymbol })
   if (verdict.kind === 'clean') return null
   if (verdict.kind === 'unavailable') {
     console.warn('[tx/refresh] dry-run unavailable — offering the slippage-bounded tx', JSON.stringify({ kind, chainId, detail: verdict.detail.slice(0, 300) }))
@@ -102,11 +103,17 @@ export async function POST(req: NextRequest) {
     if (token !== undefined && !/^(usdc(\.?e)?|eth)$/i.test(token)) {
       return NextResponse.json({ error: `unknown funding token "${token.slice(0, 20)}"` }, { status: 400 })
     }
+    // Destination chain — pre-Arc recipes omit it (Robinhood Chain). An
+    // unknown id must not silently rebuild for the default chain.
+    const dest = typeof body.dest === 'string' && /^[0-9]+$/.test(body.dest) ? Number(body.dest) : undefined
+    if (dest !== undefined && !isLifiFundedChain(dest)) {
+      return NextResponse.json({ error: `unknown funding destination "${body.dest}"` }, { status: 400 })
+    }
     if (!from || !leg || !usd) {
       return NextResponse.json({ error: 'missing/invalid from, leg or usd' }, { status: 400 })
     }
     try {
-      const built = await buildLifiBridgeLeg({ leg, usd, from, origin, token })
+      const built = await buildLifiBridgeLeg({ leg, usd, from, origin, token, dest })
       if (built.blocked) {
         const reasons = built.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
         const execFail = built.guardrails.checks.some((c) => !c.ok && (c.id === 'price' || c.id === 'venue'))
@@ -193,6 +200,22 @@ export async function POST(req: NextRequest) {
     if (gate) return gate
     return NextResponse.json({ tx: uni.swapTx, summary: uni.summary, guardrails: uni.guardrails, validUntil: uni.validUntil })
   } catch (err) {
+    if (err instanceof OffTapeError) {
+      // The pool (or the chain's own venue) moved off the stock's tape since
+      // the card was built (lib/stock-tape). WITHHOLD — an `error` here would
+      // send the card back to its prebuilt calldata, and a fresh ask routes
+      // around the pool.
+      return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: `${err.message} Ask for the swap again for a fresh route.` })
+    }
+    if (err instanceof TapeUnavailableError) {
+      // No feed lists the stock → nothing can ever pass the check: withhold.
+      // The feed didn't answer → a plain error: the card falls back to its
+      // own still-live calldata, whose minimum was set from a quote checked
+      // against the tape when the card was built, and its deadline still
+      // stands.
+      if (err.permanent) return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: err.message })
+      return NextResponse.json({ error: `tape unavailable: ${err.detail}` }, { status: 502 })
+    }
     if (err instanceof GatedV4PoolError) {
       // Quotes-but-can't-execute (Robinhood stock pools): the prebuilt tx is
       // dead by design — the card must WITHHOLD, never fall back to it. (A
