@@ -9215,7 +9215,7 @@ async function main() {
     check(
       'venue pick: CoW stays for a WETH buy, any other token, a limit buy of ETH, an ask that names CoW, and a set that marks CoW active',
       pv('Buy $50 of WETH', { buyToken: 'WETH' }).venue === 'cow' &&
-        pv('Buy $50 of UNI', { buyToken: 'UNI' }).venue === 'cow' &&
+        pv('Buy $50 of DAI', { buyToken: 'DAI' }).venue === 'cow' &&
         pv('limit order: buy 0.02 ETH for at most 40 USDC', { mode: 'limit' }).venue === 'cow' &&
         pv('Buy $50 of ETH on cow swap').venue === 'cow' &&
         pv('Buy $50 of ETH via CoW').venue === 'cow' &&
