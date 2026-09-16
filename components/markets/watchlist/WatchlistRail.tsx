@@ -12,18 +12,22 @@
 // (lib/watchlists railBrewPhase).
 //
 // Chips follow the chip-send contract: with an `onAsk` (a chat surface
-// mounted next to the chart) they SEND; without one they PREFILL /chat —
-// a URL never fires a turn. Either way the wallet signs or nothing moves.
+// mounted next to the chart) they SEND; without one the tap is still the
+// send — the ask is handed to the app out of band (lib/arrival-intent) and
+// /chat runs it on arrival. A URL never fires a turn either way, and the
+// wallet signs or nothing moves.
 
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { Bell, BellRing, Check, ChevronDown, ChevronRight, ClipboardPaste, Link2, MoreHorizontal, Plus, Trash2, Wallet, X } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
+import { ARRIVAL_APP_HREF, writeArrivalIntent } from '@/lib/arrival-intent'
 import { PantessaMark } from '@/components/Logo'
 import { chartPairFor } from '@/lib/charts'
+import { venuesFor } from '@/lib/symbol-venues'
 import { useToast } from '@/lib/toast'
 import { DEFAULT_LIST_NAME, RAIL_BREW_COPY, fmtQuotePrice, heldAutofillNote, heldPosition, heldTitle, quoteCellState, railBrewPhase, sectionedRows, symbolName, type Quote, type WatchlistShape } from '@/lib/watchlists'
 import AddTicker from './AddTicker'
@@ -61,6 +65,7 @@ const DENSITY_KEY = 'pantessa.watchlists.density'
 
 export default function WatchlistRail({ symbol, onAsk, redirectTo, className, onClose }: WatchlistRailProps) {
   const router = useRouter()
+  const pathname = usePathname()
   const { toast } = useToast()
   const wl = useWatchlists()
   const alerts = useAlerts(wl.mode === 'authed')
@@ -109,22 +114,53 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
   }, [symbols, quotes])
   const here = redirectTo ?? (typeof window !== 'undefined' ? window.location.pathname : '/markets')
 
-  // Send or prefill — the one door for every chip on the rail. With no
-  // `onAsk` (the /markets index) a chip prefills chat, and a visitor with no
-  // wallet connects first (lib/use-connect-to-act): the markets are open to
-  // everyone, and the app a chip leads into asks for a wallet.
+  // Send here or send there — the one door for every chip on the rail. With
+  // no `onAsk` (the /markets index) the tap hands the ask to the app and
+  // /chat runs it on arrival, and a visitor with no wallet connects first
+  // (lib/use-connect-to-act): the markets are open to everyone, and the app
+  // a chip leads into asks for a wallet. No storage (or a fenced ask) falls
+  // back to the `?prompt=` prefill, which is also where the door's email +
+  // Google lanes land. `from` is this page's real pathname or nothing: the
+  // fence's `source` byte exists to catch a record that lies about where it
+  // came from, so we never forge one.
+  const handOff = useCallback(
+    (ask: string) => {
+      const handed = writeArrivalIntent({ text: ask, from: pathname ?? '' })
+      router.push(handed ? ARRIVAL_APP_HREF : promptHref(ask))
+    },
+    [pathname, router],
+  )
+  const { act: handOffAct, door: handOffDoor } = useConnectToAct({ run: handOff, redirectFor: promptHref })
   const { act: prefillAct, door: prefillDoor } = useConnectToAct({
     run: (ask) => router.push(promptHref(ask)),
     redirectFor: promptHref,
   })
+
+  // WHICH chips may run on arrival. Two rules, both about not opening the app
+  // with a refusal:
+  //  · the ask must be one the PAGE composed from its own templates — a fired
+  //    alert carries whatever string `createAlert` stored, which nothing pins;
+  //  · the symbol must have an EVM home. The rail's blind "Buy $10 of <sym>"
+  //    is honest for ETH or AAPL and lands a clarify for SOL, XRP or DOGE
+  //    ("SOL lives on Solana"), and the first thing after tapping BUY should
+  //    not be a refusal.
+  // Everything else keeps today's behaviour exactly: the ask lands in the
+  // composer and the visitor reads it before pressing send.
+  const handoffable = useCallback((sym: string) => {
+    const pair = chartPairFor(sym)
+    if (!pair) return false
+    return venuesFor(sym, pair, { usd: 10 }).some((r) => (r.kind === 'spot' || r.kind === 'stock') && r.side === 'buy')
+  }, [])
   const send = useCallback(
-    (ask: string) => {
+    (ask: string, handoff = true) => {
       if (onAsk) onAsk(ask)
+      else if (handoff) handOffAct(ask)
       else prefillAct(ask)
     },
-    [onAsk, prefillAct],
+    [onAsk, handOffAct, prefillAct],
   )
-  const sendLabel = onAsk ? 'sends in chat' : 'prefills chat · you send it'
+  const sendLabelFor = (handoff: boolean) => (onAsk ? 'sends in chat' : handoff ? 'runs in the app' : 'prefills chat · you send it')
+  const sendLabel = sendLabelFor(true)
 
   // The holdings autofill says what it added, once, and how to undo it.
   useEffect(() => {
@@ -362,7 +398,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
               <div className="min-w-0 flex-1">
                 <div className="wl__firedTitle">{n.title}</div>
                 {n.actionAsk && (
-                  <button type="button" className="wl__chip wl__chip--accent" onClick={() => send(n.actionAsk!)} title={sendLabel}>
+                  <button type="button" className="wl__chip wl__chip--accent" onClick={() => send(n.actionAsk!, false)} title={sendLabelFor(false)}>
                     {n.actionAsk}
                   </button>
                 )}
@@ -501,13 +537,13 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                             aria-label={`${sym} actions`}
                           >
                             <li className="wl__popChips">
-                              <button type="button" className="wl__chip wl__chip--accent" onClick={() => send(`Buy $10 of ${sym}`)} title={sendLabel}>
+                              <button type="button" className="wl__chip wl__chip--accent" onClick={() => send(`Buy $10 of ${sym}`, handoffable(sym))} title={sendLabelFor(handoffable(sym))}>
                                 Buy $10
                               </button>
-                              <button type="button" className="wl__chip" onClick={() => send(`Sell $10 of ${sym}`)} title={sendLabel}>
+                              <button type="button" className="wl__chip" onClick={() => send(`Sell $10 of ${sym}`, handoffable(sym))} title={sendLabelFor(handoffable(sym))}>
                                 Sell $10
                               </button>
-                              <button type="button" className="wl__chip" onClick={() => send(`DCA $10 into ${sym} weekly`)} title={sendLabel}>
+                              <button type="button" className="wl__chip" onClick={() => send(`DCA $10 into ${sym} weekly`, handoffable(sym))} title={sendLabelFor(handoffable(sym))}>
                                 DCA weekly
                               </button>
                             </li>
@@ -664,11 +700,12 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
           }}
           onSend={(ask) => {
             setAlertFor(null)
-            send(ask)
+            send(ask, handoffable(alertFor))
           }}
-          sendLabel={sendLabel}
+          sendLabel={sendLabelFor(handoffable(alertFor))}
         />
       )}
+      {handOffDoor}
       {prefillDoor}
     </div>
   )

@@ -7,7 +7,7 @@ import { feeBpsOfArtifact } from '@/lib/fees'
 import { Fragment, useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Zap, Check, Loader2, Bot, User, PanelRight, Copy, Link2 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useAccount, useSignTypedData, useConnect, useSwitchChain } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { getHostWalletServerState, getHostWalletState, HOST_WALLET_CONNECTOR_ID, subscribeHostWallet } from '@/lib/host-wallet'
@@ -26,6 +26,8 @@ import SendTxButton from '@/components/SendTxButton'
 import SendTxChain from '@/components/SendTxChain'
 import SimpleArtifactReply from '@/components/chat/SimpleArtifactReply'
 import { splitSimpleReply } from '@/lib/simple-reply'
+import ArrivalBanner, { type ArrivalPhase } from '@/components/arrival/ArrivalBanner'
+import { takeArrivalIntent, type ArrivalIntent } from '@/lib/arrival-intent'
 import { orderRequestOf, txRequestOf, txChainOf } from '@/lib/transaction-layer'
 import { portfolioOf } from '@/lib/portfolio-display'
 import { nftGalleryOf, nftMarketOf } from '@/lib/nft-display'
@@ -667,6 +669,64 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     sendFromOverlay(composerSend.text)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [composerSend, servers, activeServerIds])
+
+  // ── Arrival: a chip tapped on /markets RUNS here ──────────────────────────
+  // The tap on the public page was the send; this surface is only where it
+  // renders (lib/arrival-intent). Taken ONCE per mount, and taken EARLY —
+  // the record is one-shot, so a reload, a back button or a second surface
+  // in the same tab can never fire it twice. Only the first-party /chat
+  // surface receives: /i (simple) and the embed run their own asks and must
+  // never inherit one from another page in the tab.
+  const pathname = usePathname()
+  const [arrival, setArrival] = useState<ArrivalIntent | null>(null)
+  const [arrivalPhase, setArrivalPhase] = useState<ArrivalPhase>('holding')
+  const arrivalTakenRef = useRef(false)
+  useEffect(() => {
+    if (arrivalTakenRef.current) return
+    if (embedded || simple) return
+    if (!pathname?.startsWith('/chat')) return
+    arrivalTakenRef.current = true
+    const taken = takeArrivalIntent()
+    if (taken) setArrival(taken)
+  }, [embedded, simple, pathname])
+
+  // Hold the fire until the surface can actually run it: a wallet is HERE
+  // (an address, not merely a settled status), and the MCP directory has
+  // landed (the ask's gate may need a slug turned on, and the request body
+  // reads the LIVE set). Sending while wagmi still reads 'connecting'
+  // answers "connect your wallet" and then auto-resends (website#763).
+  // Then the existing composerSend consumer above activates the MCPs and
+  // sends.
+  useEffect(() => {
+    if (!arrival || arrivalPhase === 'sent') return
+    if (walletStatus === 'connecting' || walletStatus === 'reconnecting') return
+    // Settled with NOBODY here. Every real sender runs post-connect, so this
+    // is a record that outlived its wallet (or one no page of ours wrote) —
+    // and a guest turn fired here would race AppSpine's signed-out bounce.
+    // The ask parks in the composer instead; nothing runs unasked.
+    if (walletStatus === 'disconnected' || !effectiveAddress) {
+      setInput(arrival.text)
+      setArrival(null)
+      return
+    }
+    if (servers.length === 0) return
+    setArrivalPhase('sent')
+    setComposerSend({ text: arrival.text, mcps: arrival.mcps })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrival, arrivalPhase, servers.length, walletStatus, effectiveAddress, setComposerSend])
+
+  // "Don't run it", pressed while the row still holds: the pending fire is
+  // dropped (the effect above bails once the intent is gone) and the ask
+  // PARKS IN THE COMPOSER — the visitor asked not to run it yet, not to lose
+  // it. Offered only while we can honour it: once the turn has fired there is
+  // nothing to call off, and the row retires itself after the reply lands.
+  const dropArrival = () => {
+    if (arrival) {
+      setInput(arrival.text)
+      textareaRef.current?.focus()
+    }
+    setArrival(null)
+  }
 
   // The voice door (components/VoiceButton). Words mirror into the composer
   // as they're heard; the finished transcript is normalized to a typed-
@@ -1585,6 +1645,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             report. min-h-full + flex-col so centered empty states (flex-1 /
             h-full children) still fill the viewport. */}
         <div ref={threadRef} className="min-h-full flex flex-col space-y-4">
+        {/* The arrival moment: the ask tapped on /markets, shown while it
+            waits for the wallet + directory to settle and once it has been
+            sent, so the composer firing by itself reads as the handoff it
+            is. Mounted only when an intent was TAKEN on this mount, which
+            can only happen on the first-party /chat surface. */}
+        {arrival && <ArrivalBanner intent={arrival} phase={arrivalPhase} onDismiss={arrivalPhase === 'holding' ? dropArrival : undefined} />}
         {/* The LINKS destination: the public /links page rendered as the
             main screen (board on top, mint composer in place) — the spine's
             LINKS tab is a real place, not just a drawer. Branch INSIDE the
