@@ -19659,6 +19659,100 @@ async function main() {
     const qEmpty = await fetch(`${BASE}/api/quotes`)
     check('quotes: no symbols → 200 with an empty map (never 400/500)', qEmpty.status === 200 && Object.keys(((await qEmpty.json()) as { quotes: object }).quotes).length === 0)
 
+    // ── The Yahoo fallback's previous close (2026-09-16) ────────────────────
+    // The fallback read the chart meta's chartPreviousClose, which is the close
+    // before the requested range: at range=5d every Yahoo-served stock showed a
+    // five-day move as the day's (AAPL +5.8% against Robinhood's +0.4%). The
+    // quote now takes the prior session's close off the daily bars. Pure pins on
+    // payloads measured that day, then the live feed against Robinhood's daily
+    // closes (a second feed).
+    const { fetchYahooQuote, yahooQuoteOf } = await import('../lib/quotes')
+    const yAt = (iso: string) => Date.parse(iso) / 1000
+    const yPrev = (q: { last: number; chg: number } | null) => (q ? q.last - q.chg : null)
+    const yNear = (a: number | null, b: number) => a !== null && Math.abs(a - b) < 1e-6
+    const yAaplChart = {
+      meta: { regularMarketPrice: 332.855, regularMarketTime: yAt('2026-09-16T16:04:00Z'), exchangeTimezoneName: 'America/New_York', chartPreviousClose: 315.34 },
+      timestamp: ['2026-09-10', '2026-09-11', '2026-09-14', '2026-09-15', '2026-09-16'].map((d) => yAt(`${d}T13:30:00Z`)),
+      indicators: { quote: [{ close: [326.57000732421875, 332.2699890136719, 333.0799865722656, 331.3399963378906, 332.8550109863281] }] },
+    }
+    const yAaplQ = yahooQuoteOf(yAaplChart, chartPairFor('AAPL')!)
+    const yAaplOddZone = yahooQuoteOf({ ...yAaplChart, meta: { ...yAaplChart.meta, exchangeTimezoneName: 'Not/AZone' } }, chartPairFor('AAPL')!)
+    check('quotes: the Yahoo fallback reads the prior session’s close off the daily bars — AAPL mid-session 2026-09-16 = 331.34 (Sep 15) → +0.46%, never chartPreviousClose 315.34 (before range=5d, +5.55%); a zone Intl doesn’t know reads as New York',
+      yNear(yPrev(yAaplQ), 331.3399963378906) && yAaplQ?.feed === 'yahoo' && Math.abs((yAaplQ?.chgPct ?? 0) - 0.4572) < 0.001 && yAaplQ?.asOf === yAt('2026-09-16T16:04:00Z') * 1000 && yNear(yPrev(yAaplOddZone), 331.3399963378906),
+      `prev=${yPrev(yAaplQ)} chgPct=${yAaplQ?.chgPct} oddZone=${yPrev(yAaplOddZone)}`)
+    // Toyota on Tokyo after its close: the session's own bar has no close yet.
+    const yToyotaChart = {
+      meta: { regularMarketPrice: 3016, regularMarketTime: yAt('2026-09-16T06:30:00Z'), exchangeTimezoneName: 'Asia/Tokyo', chartPreviousClose: 2994 },
+      timestamp: ['2026-09-10', '2026-09-11', '2026-09-14', '2026-09-15', '2026-09-16'].map((d) => yAt(`${d}T00:00:00Z`)),
+      indicators: { quote: [{ close: [2994, 3031, 3025, 3021, null] }] },
+    }
+    const yToyotaQ = yahooQuoteOf(yToyotaChart, chartPairFor('AAPL')!)
+    check('quotes: Yahoo — a session bar with no close yet doesn’t shift the pick (Toyota after Tokyo’s close: 3021 from Sep 15 on the exchange’s calendar, not 3025 from the bar before it, not chartPreviousClose 2994)',
+      yNear(yPrev(yToyotaQ), 3021) && yToyotaQ?.chg === -5, `prev=${yPrev(yToyotaQ)} chg=${yToyotaQ?.chg}`)
+    // The window can carry a later day's bar (a pre-market read the next morning).
+    const yNextDay = yahooQuoteOf({
+      meta: { regularMarketPrice: 333.1, regularMarketTime: yAt('2026-09-16T20:00:00Z'), exchangeTimezoneName: 'America/New_York' },
+      timestamp: ['2026-09-11T13:30:00Z', '2026-09-14T13:30:00Z', '2026-09-15T13:30:00Z', '2026-09-16T13:30:00Z', '2026-09-17T08:00:00Z'].map(yAt),
+      indicators: { quote: [{ close: [332.27, 333.08, 331.34, 333.1, 334] }] },
+    }, chartPairFor('AAPL')!)
+    check('quotes: Yahoo — a bar dated after the day the price printed never counts: with Sep 17 in the window, the Sep 16 close still measures against Sep 15’s 331.34',
+      yNear(yPrev(yNextDay), 331.34), `prev=${yPrev(yNextDay)}`)
+    const yOneSession = yahooQuoteOf({
+      meta: { regularMarketPrice: 20, regularMarketTime: yAt('2026-09-16T15:00:00Z'), exchangeTimezoneName: 'America/New_York' },
+      timestamp: [yAt('2026-09-16T13:30:00Z')],
+      indicators: { quote: [{ close: [20] }] },
+    }, chartPairFor('AAPL')!)
+    check('quotes: Yahoo — no earlier session in the bars → no quote (the symbol goes missing), never a flat or guessed change', yOneSession === null, JSON.stringify(yOneSession))
+
+    // Live: Yahoo's own quote for four names against the prior session's close
+    // on Robinhood's daily bars (bounds=regular). Exact on all 199 listings the
+    // day this was written; Robinhood's previous_close_price isn't the
+    // reference because it takes an ex-dividend day's dividend off.
+    const YAHOO_LIVE = ['AAPL', 'AMZN', 'NVDA', 'TSLA']
+    const yLive = await Promise.all(
+      YAHOO_LIVE.map((s) =>
+        fetchYahooQuote(chartPairFor(s)!).then(
+          (q) => ({ s, q, err: q ? '' : 'no quote' }),
+          (err: unknown) => ({ s, q: null, err: err instanceof Error ? err.message : String(err) }),
+        ),
+      ),
+    )
+    let rhDaily: Map<string, { day: string; close: number }[]> | null = null
+    let rhDown = ''
+    try {
+      const res = await fetch(`https://api.robinhood.com/marketdata/historicals/?symbols=${YAHOO_LIVE.join(',')}&interval=day&span=week&bounds=regular`, {
+        headers: { 'user-agent': 'Mozilla/5.0 (compatible; Pantessa/1.0; +https://www.pantessa.com)', accept: 'application/json' },
+      })
+      if (!res.ok) throw new Error(`robinhood ${res.status}`)
+      const body = (await res.json()) as { results?: ({ symbol?: string; historicals?: { begins_at?: string; close_price?: string; interpolated?: boolean }[] } | null)[] }
+      rhDaily = new Map()
+      for (const r of body.results ?? []) {
+        if (!r?.symbol) continue
+        rhDaily.set(r.symbol.toUpperCase(), (r.historicals ?? []).filter((h) => !h.interpolated && Number(h.close_price) > 0 && !!h.begins_at).map((h) => ({ day: String(h.begins_at).slice(0, 10), close: Number(h.close_price) })))
+      }
+    } catch (err) {
+      rhDown = err instanceof Error ? err.message : String(err)
+    }
+    const nyDay = (ms: number) => {
+      const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(ms)
+      const part = (type: string) => parts.find((p) => p.type === type)?.value
+      return `${part('year')}-${part('month')}-${part('day')}`
+    }
+    const yLiveRows = yLive.map(({ s, q, err }) => {
+      if (!q) return { s, down: `yahoo ${err}` }
+      const bars = rhDaily?.get(s)
+      if (!bars?.length) return { s, down: `robinhood ${rhDown || 'returned no daily bars'}` }
+      const session = nyDay(q.asOf)
+      const ref = bars.filter((b) => b.day < session).pop()
+      const served = q.last - q.chg
+      const ok = q.feed === 'yahoo' && !!ref && Math.abs(served / ref.close - 1) <= 0.001
+      return { s, ok, detail: `${s} ${served.toFixed(2)} vs ${ref ? `${ref.close} (${ref.day})` : `no Robinhood close before ${session}`}` }
+    })
+    const yLiveDown = yLiveRows.filter((r) => 'down' in r)
+    check('quotes: live — Yahoo-served AAPL/AMZN/NVDA/TSLA previous close = the prior session’s close on Robinhood’s daily bars, within 0.1% (or the named feed-down)',
+      yLiveRows.every((r) => 'down' in r || r.ok),
+      yLiveRows.map((r) => ('down' in r ? `${r.s} feed down (${r.down})` : r.detail)).join('; ') + (yLiveDown.length === YAHOO_LIVE.length ? ' — feed down, nothing compared' : ''))
+
     // ── /api/watchlists CRUD under a throwaway SIWE session ─────────────────
     const wlOwner = privateKeyToAccount(generatePrivateKey())
     const wlMallory = privateKeyToAccount(generatePrivateKey())
