@@ -2,17 +2,26 @@
 // (doors run, 2026-09-01). Pure + dependency-free so the harness pins the
 // exact lineup for both env states without importing RainbowKit:
 //
-//   · NEXT_PUBLIC_WC_PROJECT_ID absent  → EXACTLY today's connectors
-//     (injected, MetaMask, Coinbase-EOA) — byte-identical behavior, pinned.
+//   · NEXT_PUBLIC_WC_PROJECT_ID absent  → EXACTLY the injected lanes
+//     (injected, MetaMask, Coinbase-EOA, Phantom) — pinned.
 //   · present → the WalletConnect v2 lanes join (WalletConnect QR + Rainbow),
 //     with the site's own metadata on the pairing screen.
+//
+// Phantom (2026-09-16, Nate: "add phantom wallet to our onboarding") rides
+// RainbowKit's phantomWallet: an INJECTED lane (`window.phantom.ethereum`,
+// EIP-6963 rdns `app.phantom`) with no WalletConnect dependency, so it sits
+// in the base lineup and shows in both env states. Phantom's EVM side signs
+// the same way MetaMask does (eth_sendTransaction / signTypedData_v4 /
+// personal_sign); what it does NOT do is add a custom network on request, so
+// a Robinhood Chain (4663) build on Phantom ends at the wallet's own refusal
+// (surfaced as a wallet-refused beacon) — see WALLET-MATRIX.md.
 //
 // Why gated: WC wallets init the WC SignClient, which touches browser-only
 // indexedDB during SSR (fatal under Next 16) and needs a real project id.
 // The Coinbase gotchas (CLAUDE.md) are untouched: eoaOnly stays pinned in
 // lib/wagmi.ts (popup-after-await breaks Smart-Wallet second signatures).
 
-export type WalletLaneId = 'injected' | 'metaMask' | 'coinbase' | 'rainbow' | 'walletConnect'
+export type WalletLaneId = 'injected' | 'metaMask' | 'coinbase' | 'phantom' | 'rainbow' | 'walletConnect'
 
 /** A real WC Cloud project id — set AND not the placeholder. */
 export function wcConfigured(projectId: string | null | undefined): boolean {
@@ -21,7 +30,7 @@ export function wcConfigured(projectId: string | null | undefined): boolean {
 
 /** The wallet lineup for the RainbowKit modal, in display order. */
 export function walletLineup(projectId: string | null | undefined): WalletLaneId[] {
-  const base: WalletLaneId[] = ['injected', 'metaMask', 'coinbase']
+  const base: WalletLaneId[] = ['injected', 'metaMask', 'coinbase', 'phantom']
   return wcConfigured(projectId) ? [...base, 'rainbow', 'walletConnect'] : base
 }
 
@@ -30,8 +39,8 @@ export function walletLineup(projectId: string | null | undefined): WalletLaneId
  *  WC arrives, so env-absent stays byte-identical). */
 export function walletLaneHint(projectId: string | null | undefined): string {
   return wcConfigured(projectId)
-    ? 'MetaMask, Coinbase, Rainbow — or scan the QR with any mobile wallet (WalletConnect).'
-    : 'MetaMask, Coinbase, or any installed browser wallet.'
+    ? 'MetaMask, Coinbase, Phantom, Rainbow — or scan the QR with any mobile wallet (WalletConnect).'
+    : 'MetaMask, Coinbase, Phantom, or any installed browser wallet.'
 }
 
 /** Human names for the lanes. The sign-in door shows each lane as its brand
@@ -40,6 +49,7 @@ export function walletLaneHint(projectId: string | null | undefined): string {
 export const WALLET_LANE_NAMES: Record<WalletLaneId, string> = {
   metaMask: 'MetaMask',
   coinbase: 'Coinbase Wallet',
+  phantom: 'Phantom',
   rainbow: 'Rainbow',
   walletConnect: 'WalletConnect',
   injected: 'Any browser wallet',

@@ -32,6 +32,11 @@ const LEXICON: Record<string, string[]> = {
   gnosis: ['gnosis', 'xdai'],
   scroll: ['scroll'],
   robinhood: ['robin\\s?hoo?d(?:\\s?chain)?'],
+  // Circle's Arc (chain 5042, mainnet 2026-09-16). "arc" is an English
+  // noun, so the bare word only counts in a chain slot — every grammar that
+  // embeds chainAlt(['arc']) already sits one behind from/to/on/into, and
+  // lib/chains' `words` regex is prep-gated the same way "optimism" is.
+  arc: ['arc(?:\\s?(?:chain|network|mainnet))?', 'circle\\s?arc'],
   solana: ['sol(?:ana|ona|ena)'],
   bitcoin: ['bitco(?:in|n|im)'],
 }

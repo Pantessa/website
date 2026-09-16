@@ -18,6 +18,9 @@
 //       own V4 Quoter quote for the same pair/amount (the quoter prices
 //       gated pools fine — only execution is gated). More than ~2% below
 //       our quote → refuse; a bad or self-dealing route can't underpay.
+//       A stock's fill is also checked against Robinhood's tape
+//       (lib/stock-tape): more than 10% away is refused by name, and a v4
+//       quote that is itself off the tape stops being the referee.
 //    3. SIMULATION — the swap tx is estimateGas-simulated before it is
 //       offered. A real revert refuses; transport trouble fails open to the
 //       /api/tx/refresh estimateGas gate that re-fires at sign time.
@@ -33,12 +36,13 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { decodeFunctionData, encodeFunctionData, erc20Abi } from 'viem'
-import { chainById, publicClientFor } from '@/lib/chains'
+import { buysNativeEth, chainById, publicClientFor } from '@/lib/chains'
 import { dryRunTx, isAllowanceLag } from '@/lib/dry-run'
 import { resolveToken, tokenDecimals, tokenLabel, humanToAtoms, formatAtoms } from '@/lib/cow'
 import { stableUsd } from '@/lib/uniswap-venue'
 import { quoteV4BestOut } from '@/lib/uniswap-v4'
 import { SWAP_FEE_BPS, TREASURY_ADDRESS, swapFeeAtoms } from '@/lib/fees'
+import { checkFillAgainstTape, fillDeviationPct, startSwapTape, STOCK_TAPE_BOUND_PCT } from '@/lib/stock-tape'
 import {
   buildReport,
   policyCheck,
@@ -343,6 +347,11 @@ export async function fetchLifiQuote(params: {
   swapAtoms: bigint
   from: string
   slippageBps: number
+  /** LiFi bridge tool keys the route may use (comma-joined into
+   *  `allowBridges`). Omitted = LiFi's own pick. The Arc funding legs pin
+   *  the fast tools: LiFi's default for Base → Arc was Polymer at ~18 min
+   *  while Across/Relay settle in 1–4s (probed 2026-09-16). */
+  allowBridges?: readonly string[]
 }): Promise<LifiQuote> {
   const url = new URL(LIFI_API)
   url.searchParams.set('fromChain', String(params.chainId))
@@ -352,6 +361,7 @@ export async function fetchLifiQuote(params: {
   url.searchParams.set('fromAmount', params.swapAtoms.toString())
   url.searchParams.set('fromAddress', params.from)
   url.searchParams.set('slippage', (params.slippageBps / 10_000).toString())
+  if (params.allowBridges && params.allowBridges.length > 0) url.searchParams.set('allowBridges', params.allowBridges.join(','))
   const headers: Record<string, string> = { accept: 'application/json' }
   if (process.env.LIFI_API_KEY) headers['x-lifi-api-key'] = process.env.LIFI_API_KEY
   let res: Response
@@ -392,6 +402,14 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
   if (!client) throw new Error(`No RPC client configured for ${chain.name}.`)
   const from = params.from as `0x${string}`
   if (!ADDR_RE.test(from)) throw new Error('A valid wallet address is required.')
+  // A buy of native ETH is refused: LiFi would be asked for the wrapped
+  // native ("ETH" resolves to it) and pay WETH under an ETH label. Only
+  // Uniswap v3 unwraps to ETH (lib/uniswap-venue.ts). Since the stock tape
+  // guard, an off-tape stock → WETH pool on Robinhood Chain falls through to
+  // here. The cascade reads NoLifiRouteError as nothing built.
+  if (buysNativeEth(params.buyToken, chainId)) {
+    throw new NoLifiRouteError(`${chain.name}'s own settlement venue (via LiFi) can't deliver native ETH; this build would pay WETH instead.`)
+  }
 
   const sellAddr = resolveToken(params.sellToken, chainId) as `0x${string}` | null
   const buyAddr = resolveToken(params.buyToken, chainId) as `0x${string}` | null
@@ -413,6 +431,9 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
   const sellLabel = tokenLabel(params.sellToken, chainId)
   const buyLabel = tokenLabel(params.buyToken, chainId)
 
+  // Robinhood Chain stock swaps are checked against the tape (lib/stock-tape);
+  // the read rides alongside the LiFi quote.
+  const tapeRead = startSwapTape({ chainId, sellToken: params.sellToken, buyToken: params.buyToken })
   const quote = await fetchLifiQuote({ chainId, sellAddr, buyAddr, swapAtoms, from, slippageBps })
 
   // ── Gate 0: the quote must echo the parsed intent exactly. ────────────────
@@ -421,6 +442,13 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
   const toAmount = BigInt(quote.estimate.toAmount)
   const toAmountMin = BigInt(quote.estimate.toAmountMin)
   const validUntil = Math.floor(Date.now() / 1000) + LIFI_QUOTE_TTL_SEC
+
+  // ── The tape: this is the last venue the cascade reaches for a stock whose
+  //   pool is off tape, so its fill must sit inside the bound too, or the
+  //   swap is refused by name (OffTapeError). Only meaningful once the quote
+  //   echoes our tokens and amount — a mismatched echo is refused below.
+  const tape = await tapeRead
+  const tapeCheck = echoReasons.length === 0 ? checkFillAgainstTape(tape, "Robinhood Chain's own settlement venue (via LiFi)", swapAtoms, toAmount) : null
 
   // ── Gate 2: independent price check — our own V4 Quoter quote for the same
   //   pair/amount (the quoter prices venue-gated pools; only execution is
@@ -433,6 +461,10 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
   } catch {
     ourQuote = null
   }
+  // A v4 quote that is itself off the tape (a broken pool) can't referee
+  // LiFi's fill — the tape check above already did.
+  const refDev = ourQuote === null ? null : fillDeviationPct(tape, swapAtoms, ourQuote)
+  if (refDev !== null && !(Math.abs(refDev) <= STOCK_TAPE_BOUND_PCT)) ourQuote = null
   const priceOk = ourQuote === null || lifiPriceAcceptable(toAmount, ourQuote)
   const priceCheck: GuardrailCheck = {
     id: 'price',
@@ -440,7 +472,11 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
     ok: priceOk,
     note:
       ourQuote === null
-        ? 'No independent on-chain quote available to cross-check LiFi’s price (RPC unavailable) — relying on simulation + the sign-time re-quote.'
+        ? tapeCheck
+          ? refDev !== null
+            ? `Pantessa's own Uniswap v4 quote for this pair is ${Math.round(Math.abs(refDev))}% off the tape, so it can't cross-check LiFi's price — the tape check is the independent reference.`
+            : 'No Uniswap v4 quote for this pair (no v4 pool, or the RPC didn’t answer) — the tape check is the independent price reference.'
+          : 'No independent Uniswap v4 quote for this pair (no v4 pool, or the RPC didn’t answer) — relying on simulation + the sign-time re-quote.'
         : priceOk
           ? `LiFi's fill (${formatAtoms(toAmount.toString(), buyDec)} ${buyLabel}) verified against Pantessa's own on-chain quote (${formatAtoms(ourQuote.toString(), buyDec)} ${buyLabel}) — within ${LIFI_MAX_QUOTE_SHORTFALL_BPS / 100}%.`
           : `LiFi's fill (${formatAtoms(toAmount.toString(), buyDec)} ${buyLabel}) pays more than ${LIFI_MAX_QUOTE_SHORTFALL_BPS / 100}% below Pantessa's own on-chain quote (${formatAtoms(ourQuote.toString(), buyDec)} ${buyLabel}) — refusing a bad fill.`,
@@ -539,7 +575,7 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
     const verdict = await dryRunTx(
       client,
       { from, to: quote.transactionRequest.to, data: quote.transactionRequest.data, value: '0' },
-      { chainName: chainById(chainId)?.name },
+      { chainName: chainById(chainId)?.name, gasSymbol: chainById(chainId)?.nativeSymbol },
     )
     if (verdict.kind === 'clean') {
       simCheck = { id: 'simulation', level: 'block', ok: true, note: 'Swap simulated clean (estimateGas) against the live chain.' }
@@ -583,7 +619,7 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
   }
 
   // ── Cross-app guardrails: same policy gate as every native venue. ─────────
-  const checks: GuardrailCheck[] = [recipientCheck(quote.action.toAddress ?? '', from), validityCheck(validUntil), allowanceCheck, feeCheck, priceCheck, venueCheck, simCheck]
+  const checks: GuardrailCheck[] = [recipientCheck(quote.action.toAddress ?? '', from), validityCheck(validUntil), allowanceCheck, feeCheck, priceCheck, ...(tapeCheck ? [tapeCheck] : []), venueCheck, simCheck]
   const valueUsd = stableUsd(chainId, sellAddr, totalAtoms) ?? stableUsd(chainId, buyAddr, toAmount)
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null

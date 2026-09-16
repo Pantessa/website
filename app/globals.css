@@ -84,4 +84,53 @@ body {
   .text-balance {
     text-wrap: balance;
   }
+
+  /* Token tints. Tailwind 3 can't put an opacity modifier on a CSS-variable
+     color: `border-[color:var(--accent)]/40`, `bg-[var(--surf-1)]/70` and
+     their hover:/focus-within: forms are never generated, so the element fell
+     back to the default border (a white line in dark mode) with no fill.
+     These mix at the element, so a token re-pinned below :root (the embed's
+     light --surf-*, a brand page's --accent) carries. Being layer utilities
+     they take variants (`hover:tint-bg-accent-20`) and ship only when used.
+     Name = token + percent; test:api holds the two together and fails the
+     dead Tailwind form. */
+  .tint-border-accent-40 {
+    border-color: color-mix(in oklch, var(--accent) 40%, transparent);
+  }
+  .tint-border-accent-45 {
+    border-color: color-mix(in oklch, var(--accent) 45%, transparent);
+  }
+  .tint-border-accent-50 {
+    border-color: color-mix(in oklch, var(--accent) 50%, transparent);
+  }
+  .tint-border-accent-60 {
+    border-color: color-mix(in oklch, var(--accent) 60%, transparent);
+  }
+  .tint-bg-accent-6 {
+    background-color: color-mix(in oklch, var(--accent) 6%, transparent);
+  }
+  .tint-bg-accent-8 {
+    background-color: color-mix(in oklch, var(--accent) 8%, transparent);
+  }
+  .tint-bg-accent-10 {
+    background-color: color-mix(in oklch, var(--accent) 10%, transparent);
+  }
+  .tint-bg-accent-15 {
+    background-color: color-mix(in oklch, var(--accent) 15%, transparent);
+  }
+  .tint-bg-accent-20 {
+    background-color: color-mix(in oklch, var(--accent) 20%, transparent);
+  }
+  .tint-bg-accent-70 {
+    background-color: color-mix(in oklch, var(--accent) 70%, transparent);
+  }
+  .tint-bg-surf-1-70 {
+    background-color: color-mix(in oklch, var(--surf-1) 70%, transparent);
+  }
+  .tint-bg-surf-1-90 {
+    background-color: color-mix(in oklch, var(--surf-1) 90%, transparent);
+  }
+  .tint-bg-surf-2-90 {
+    background-color: color-mix(in oklch, var(--surf-2) 90%, transparent);
+  }
 }

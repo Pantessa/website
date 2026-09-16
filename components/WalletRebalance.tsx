@@ -244,7 +244,7 @@ export default function WalletRebalance({
               onClick={chooseForMe}
               disabled={rows.length === 0}
               data-choose-for-me
-              className="inline-flex items-center gap-1 rounded-full border border-[color:var(--accent)]/50 px-2.5 py-0.5 text-[11px] text-[color:var(--accent)] hover:bg-[color:var(--accent)]/[0.08] disabled:opacity-40 transition-colors"
+              className="inline-flex items-center gap-1 rounded-full border tint-border-accent-50 px-2.5 py-0.5 text-[11px] text-[color:var(--accent)] hover:tint-bg-accent-8 disabled:opacity-40 transition-colors"
             >
               <Wand2 className="w-3 h-3" /> Choose for me
             </button>

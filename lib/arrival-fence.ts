@@ -16,8 +16,8 @@
 //   • `at` (ms) no older than ARRIVAL_TTL_MS and no further in the future
 //     than ARRIVAL_FUTURE_SKEW_MS (a forged `at` far ahead would otherwise be
 //     "fresh" forever);
-//   • `from` = a public front door's PATHNAME ('/markets', or a path under
-//     it) — never a query, hash, or another surface (/i, /embed, /chat…);
+//   • `from` = a public front door's PATHNAME ('/markets' or a symbol page
+//     '/t/<SYM>', or a path under either) — never a query, hash, or another surface (/i, /embed, /chat…);
 //   • `text` = one line, 1..ARRIVAL_MAX_TEXT chars, no control characters,
 //     NOT transfer-shaped (lib/intent-links isTransferShaped — the /i door's
 //     own phishing fence), carrying no 0x address, no .eth name, no URL (the
@@ -39,7 +39,7 @@ export type ArrivalRefusal = 'malformed' | 'version' | 'stale' | 'future' | 'sou
 export type ArrivalVerdict = { ok: true } | { ok: false; reason: ArrivalRefusal }
 
 /** Public front doors allowed to hand an intent to the app (pathname prefixes). */
-export const ARRIVAL_SOURCES: readonly string[] = ['/markets']
+export const ARRIVAL_SOURCES: readonly string[] = ['/markets', '/t']
 
 /** Longest ask a handoff may carry. */
 export const ARRIVAL_MAX_TEXT = 280
@@ -71,8 +71,8 @@ const CONTROL_RE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/
 /** MCP slugs are lower-case kebab: `uniswap-free`, `yeetful-tool-wallet`. */
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
 
-/** `/markets` and paths UNDER it (`/markets/…`) count; `/marketsX`, a query
- *  or a hash do not — `from` is a pathname, and a pathname carries neither. */
+/** A source and paths UNDER it (`/markets/…`, `/t/AMAT`) count; `/marketsX`,
+ *  `/tx`, a query or a hash do not — `from` is a pathname, and a pathname carries neither. */
 export function arrivalSourceAllowed(from: string): boolean {
   return ARRIVAL_SOURCES.some((src) => from === src || from.startsWith(`${src}/`))
 }

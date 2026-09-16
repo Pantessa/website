@@ -49,7 +49,14 @@ import { buildReport, policyCheck, recipientCheck, validityCheck, type Guardrail
 import { getActiveGrant, recordLedger, spentTodayUsd, spentTotalUsd, toPolicy } from '@/lib/grant-store'
 
 export const BASE_CHAIN_ID = 8453
-export const ROBINHOOD_CHAIN_ID = 4663
+// The destination set (Robinhood Chain + Arc) lives in lib/lifi-destinations
+// (pure, client-safe) and is re-exported here so every importer keeps working.
+export { ROBINHOOD_CHAIN_ID, ARC_CHAIN_ID, LIFI_DESTINATIONS, LIFI_DESTINATION_CHAINS, lifiDestination, isLifiFundedChain, type LifiDestination } from '@/lib/lifi-destinations'
+import { ROBINHOOD_CHAIN_ID, LIFI_DESTINATIONS, lifiDestination, isLifiFundedChain, fundSegment as destFundSegment, type LifiDestination } from '@/lib/lifi-destinations'
+/** Bridge tools an ARC leg may use — the 1–4s ones. LiFi's unconstrained
+ *  pick for Base → Arc was Polymer at ~18 minutes (probed 2026-09-16);
+ *  Across (4s) and Relay (1s) both land ≥99.4% of a $12 leg. */
+export const ARC_BRIDGE_TOOLS = ['across', 'relaydepository'] as const
 /** LiFi treats the zero address as the chain's native asset. */
 export const NATIVE_TOKEN = '0x0000000000000000000000000000000000000000' as const
 
@@ -239,11 +246,11 @@ export const MIN_UNFLOORED_BUY_USD = MIN_VALUE_LEG_USD / (1 + FUNDING_MARGIN_BPS
 
 /** One voice for "your ask is under the bridge's flat cost". Null when the
  *  ask clears on its own — the common case says nothing extra. */
-export function minLegNote(buyUsd: number): string | null {
+export function minLegNote(buyUsd: number, dest: LifiDestination = LIFI_DESTINATIONS[ROBINHOOD_CHAIN_ID]): string | null {
   if (buyUsd >= MIN_UNFLOORED_BUY_USD) return null
   return (
     `Moving money between chains costs about $${LIFI_LEG_FLAT_USD.toFixed(2)} flat no matter the size, so $${buyUsd} would arrive more than ` +
-    `${(10_000 - STABLE_LEG_MIN_OUT_BPS) / 100}% light and I'd refuse the fill. The smallest move that lands clean is ~$${MIN_VALUE_LEG_USD} — the rest stays yours as ${primaryStable(ROBINHOOD_CHAIN_ID)?.symbol ?? 'the chain stable'} on Robinhood Chain.`
+    `${(10_000 - STABLE_LEG_MIN_OUT_BPS) / 100}% light and I'd refuse the fill. The smallest move that lands clean is ~$${MIN_VALUE_LEG_USD} — the rest stays yours as ${primaryStable(dest.chainId)?.symbol ?? 'the chain stable'} on ${dest.name}.`
   )
 }
 
@@ -434,18 +441,26 @@ export interface LifiBridgeBuilt {
  *  anywhere else throws). Throws on transport / no-route (the jobs runner
  *  surfaces the message); a guard or price failure comes back as blocked
  *  with the reasons in the report. */
-export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number; from: string; origin?: number; token?: string }): Promise<LifiBridgeBuilt> {
+export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number; from: string; origin?: number; token?: string; dest?: number }): Promise<LifiBridgeBuilt> {
   const from = params.from as `0x${string}`
   if (!ADDR_RE.test(from)) throw new Error('A valid wallet address is required.')
   if (!Number.isFinite(params.usd) || params.usd <= 0) throw new Error(`Couldn't read the funding amount "${params.usd}".`)
   const originId = params.origin ?? BASE_CHAIN_ID
   if (!FUNDING_ORIGIN_WORD[originId]) throw new Error(`Chain ${originId} isn't a supported funding origin.`)
   const origin = chainById(originId)!
-  const destination = chainById(ROBINHOOD_CHAIN_ID)!
+  // The destination defaults to Robinhood Chain (every pre-existing job /
+  // refresh recipe omits it) and must be a LIFI_DESTINATIONS member.
+  const destId = params.dest ?? ROBINHOOD_CHAIN_ID
+  const destRec = lifiDestination(destId)
+  if (!destRec) throw new Error(`Chain ${destId} isn't a LiFi funding destination.`)
+  const destination = chainById(destId)!
+  if (params.leg === 'gas' && !destRec.gasLeg) {
+    throw new Error(`${destination.name} pays gas in ${destination.nativeSymbol} — a funding leg there needs no separate gas leg.`)
+  }
   const routers = lifiBridgeRoutersFor(originId)
   if (routers.length === 0) throw new Error(`LiFi bridging isn’t allowlisted on ${origin.name}.`)
   const originClient = publicClientFor(originId)
-  const destClient = publicClientFor(ROBINHOOD_CHAIN_ID)
+  const destClient = publicClientFor(destId)
   if (!originClient || !destClient) throw new Error('No RPC client configured for the funding route.')
 
   // The origin-side sell asset: native USDC unless the recipe pinned a
@@ -468,7 +483,7 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
   } else {
     throw new Error(`"${params.token}" isn't a supported funding token — USDC, USDC.e, or ETH only.`)
   }
-  const usdg = primaryStable(ROBINHOOD_CHAIN_ID)!
+  const usdg = primaryStable(destId)!
   // Stables are the $1 unit; an ETH sell sizes at build time off Pantessa's
   // own venue-quoter read, so a chip minted yesterday still moves today's
   // right amount of ETH.
@@ -531,12 +546,13 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
     try {
       quote = await fetchLifiQuote({
         chainId: originId,
-        toChainId: ROBINHOOD_CHAIN_ID,
+        toChainId: destId,
         sellAddr: sell.address,
         buyAddr: destinationToken,
         swapAtoms: atoms,
         from,
         slippageBps: 50,
+        ...(destRec.key === 'arc' ? { allowBridges: ARC_BRIDGE_TOOLS } : {}),
       })
       if (usd !== params.usd) {
         escalatedFromUsd = params.usd
@@ -569,7 +585,7 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
 
   const exp: LifiBridgeExpectations = {
     originChainId: originId,
-    destinationChainId: ROBINHOOD_CHAIN_ID,
+    destinationChainId: destId,
     routers,
     approvalAddress: quote.estimate.approvalAddress,
     sellToken: sell.address,
@@ -613,7 +629,7 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
         : `The route guarantees only ~$${minOutUsd.toFixed(2)} of ${destSymbol} for $${params.usd} of ETH — more than ${(10_000 - GAS_LEG_MIN_OUT_BPS) / 100}% short of Pantessa's own on-chain read, refusing.`,
     }
   } else {
-    const probe = await usdPerToken(ROBINHOOD_CHAIN_ID, 'ETH').catch(() => null)
+    const probe = await usdPerToken(destId, 'ETH').catch(() => null)
     if (!probe) {
       priceCheck = { id: 'price', level: 'warn', ok: true, note: 'No independent ETH/USD read available to cross-check the gas leg — relying on the pinned route + sign-time estimate.' }
     } else {
@@ -691,7 +707,7 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
     ? await destClient.getBalance({ address: from })
     : await destClient.readContract({ address: usdg.address, abi: erc20Abi, functionName: 'balanceOf', args: [from] })
   const arrival: ChainArrival = {
-    chainId: ROBINHOOD_CHAIN_ID,
+    chainId: destId,
     token: gasLeg ? 'native' : usdg.address,
     decimals: destDecimals,
     symbol: destSymbol,
@@ -773,9 +789,11 @@ const originCapUsd = (o: FundingOrigin, gasIncluded: boolean) =>
   o.token === 'ETH' && gasIncluded ? Math.max(0, o.usd - (ETH_TWO_LEG_HEADROOM_USD[o.chainId] ?? 1)) : o.usd
 
 export interface FundingShortfall {
-  /** USDG atoms the wallet holds on Robinhood Chain. */
+  /** Atoms of the DESTINATION's primary stable the wallet holds there (USDG
+   *  on Robinhood Chain, USDC on Arc). The field name is historical. */
   usdgAtoms: bigint
-  /** True when the wallet can already pay Orbit gas. */
+  /** True when the wallet can already pay gas there (always true on a
+   *  stable-gas destination — the stable is the gas). */
   hasGas: boolean
   /** Origins the plan may spend — stables first (dollar-parity legs), then
    *  movable ETH; richest first within each group. */
@@ -803,11 +821,13 @@ export interface FundingShortfall {
  *  most common stranger state — were refused with "no USDC anywhere").
  *  Throws only when the ROBINHOOD reads fail — those decide the whole
  *  plan; a failed origin lands in failedOrigins instead. */
-export async function readFundingShortfall(user: string): Promise<FundingShortfall> {
+export async function readFundingShortfall(user: string, destChainId: number = ROBINHOOD_CHAIN_ID): Promise<FundingShortfall> {
   const from = user as `0x${string}`
-  const rh = publicClientFor(ROBINHOOD_CHAIN_ID)
+  const destRec = lifiDestination(destChainId)
+  if (!destRec) throw new Error(`chain ${destChainId} is not a LiFi funding destination`)
+  const rh = publicClientFor(destChainId)
   if (!rh) throw new Error('missing RPC client')
-  const usdg = primaryStable(ROBINHOOD_CHAIN_ID)!
+  const usdg = primaryStable(destChainId)!
   // ETH price for the ETH rows — fail-soft: unpriceable ETH just means no
   // ETH rows this scan (the USDC rows are untouched), never a thrown plan.
   const [usdgAtoms, nativeWei, ethUsd] = await Promise.all([
@@ -861,7 +881,9 @@ export async function readFundingShortfall(user: string): Promise<FundingShortfa
   const movable = (o: FundingOrigin) => (o.token === 'ETH' ? o.spendable === true : signable(o))
   return {
     usdgAtoms,
-    hasGas: nativeWei >= RH_GAS_FLOOR_WEI,
+    // A stable-gas destination (Arc) never needs a gas leg: the landed
+    // stable IS the gas. Its native read is the same money as usdgAtoms.
+    hasGas: destRec.gasLeg ? nativeWei >= RH_GAS_FLOOR_WEI : true,
     origins: allScanned.filter((o) => o.usd > 0 && movable(o)),
     gaslessOrigins: allScanned.filter((o) => o.usd > 0 && !movable(o)),
     allScanned,
@@ -878,8 +900,7 @@ export interface RobinhoodFundingChip {
 
 /** One funding-ask segment: lib/jobs.ts parseRobinhoodFunding's grammar.
  *  A non-USDC token rides the "using usdc.e" clause (before "including gas"). */
-const fundSegment = (usd: number, word: string, gas: boolean, token = 'USDC') =>
-  `Fund robinhood chain with $${usd} from ${word.toLowerCase()}${token === 'USDC' ? '' : ` using ${token.toLowerCase()}`}${gas ? ' including gas' : ''}`
+const fundSegment = (usd: number, word: string, gas: boolean, token = 'USDC', dest?: LifiDestination) => destFundSegment(usd, word, gas, token, dest)
 
 /**
  * Turn a multi-origin scan into chips. `followup` is appended to every
@@ -895,8 +916,11 @@ export function planRobinhoodFundingChips(params: {
   needUsd: number
   gasIncluded: boolean
   followup: string
+  /** The chain the legs land on — Robinhood Chain when omitted (every
+   *  pre-existing caller); Arc's chips read "Fund arc with …". */
+  dest?: LifiDestination
 }): RobinhoodFundingChip[] | null {
-  const { origins, needUsd, gasIncluded, followup } = params
+  const { origins, needUsd, gasIncluded, followup, dest } = params
   const withFollowup = (segs: string[]) => (followup ? `${segs.join(', then ')}, then ${followup}` : segs.join(', then '))
   const chips: RobinhoodFundingChip[] = []
   // The FIRST covering origin leads — origins arrive stables-first, so a
@@ -915,7 +939,7 @@ export function planRobinhoodFundingChips(params: {
     const atFloor = valueLegUsd(needUsd, gasIncluded) <= MIN_VALUE_LEG_USD
     chips.push({
       label: `${atFloor ? 'Smallest clean move' : 'Just enough'} (~$${needUsd} from ${originLabel(best)})`,
-      resume: withFollowup([fundSegment(needUsd, best.word, gasIncluded, best.token)]),
+      resume: withFollowup([fundSegment(needUsd, best.word, gasIncluded, best.token, dest)]),
     })
     // Half/all only when they're sensible whole-balance moves — a $15k
     // balance covering a $7 need doesn't get a $7.5k chip (same 10× rule
@@ -923,10 +947,10 @@ export function planRobinhoodFundingChips(params: {
     // capacity, never the raw ETH row.
     const sensible = best.usd <= needUsd * 10
     const half = Math.floor(bestCap / 2)
-    if (sensible && half > needUsd && fillableLeg(half, gasIncluded)) chips.push({ label: `Half my ${best.word} ${best.token} ($${half})`, resume: withFollowup([fundSegment(half, best.word, gasIncluded, best.token)]) })
-    if (sensible && bestCap > needUsd && fillableLeg(bestCap, gasIncluded)) chips.push({ label: `All my ${best.word} ${best.token} ($${bestCap})`, resume: withFollowup([fundSegment(bestCap, best.word, gasIncluded, best.token)]) })
+    if (sensible && half > needUsd && fillableLeg(half, gasIncluded)) chips.push({ label: `Half my ${best.word} ${best.token} ($${half})`, resume: withFollowup([fundSegment(half, best.word, gasIncluded, best.token, dest)]) })
+    if (sensible && bestCap > needUsd && fillableLeg(bestCap, gasIncluded)) chips.push({ label: `All my ${best.word} ${best.token} ($${bestCap})`, resume: withFollowup([fundSegment(bestCap, best.word, gasIncluded, best.token, dest)]) })
     const alt = origins.find((o) => o !== best && originCapUsd(o, gasIncluded) >= needUsd)
-    if (alt) chips.push({ label: `Use ${originLabel(alt)} instead (~$${needUsd})`, resume: withFollowup([fundSegment(needUsd, alt.word, gasIncluded, alt.token)]) })
+    if (alt) chips.push({ label: `Use ${originLabel(alt)} instead (~$${needUsd})`, resume: withFollowup([fundSegment(needUsd, alt.word, gasIncluded, alt.token, dest)]) })
     return chips.slice(0, 4)
   }
   // No single origin covers it — combine legs richest-first. The first leg
@@ -949,7 +973,7 @@ export function planRobinhoodFundingChips(params: {
       // the parity floor on its own — splitting a fillable total into two
       // unfillable halves is the same dead offer, twice.
       if (!fillableLeg(take, first && gasIncluded)) return null
-      segs.push(fundSegment(take, o.word, first && gasIncluded, o.token))
+      segs.push(fundSegment(take, o.word, first && gasIncluded, o.token, dest))
       words.push(originLabel(o))
       remaining = Number((remaining - take).toFixed(2))
     }
@@ -995,9 +1019,12 @@ export function planRobinhoodFundingAdvice(params: {
   gasIncluded: boolean
   /** Appended to chip resumes (empty = bridge-only, user re-asks after). */
   followup: string
+  /** Destination — Robinhood Chain when omitted. */
+  dest?: LifiDestination
 }): RobinhoodFundingAdvice {
   const { scan, needUsd, gasIncluded, followup } = params
-  const chips = planRobinhoodFundingChips({ origins: scan.origins, needUsd, gasIncluded, followup })
+  const dest = params.dest ?? LIFI_DESTINATIONS[ROBINHOOD_CHAIN_ID]
+  const chips = planRobinhoodFundingChips({ origins: scan.origins, needUsd, gasIncluded, followup, dest })
   if (chips) return { kind: 'chips', chips }
 
   // Gas-stranded rescue: the richest gasless STABLE origin covering the
@@ -1017,7 +1044,7 @@ export function planRobinhoodFundingAdvice(params: {
     if (donor) {
       const segs = [
         `swap ${GAS_TOPUP_ETH} ETH from ${donor.word.toLowerCase()} to ${strandedLc}`,
-        fundSegment(needUsd, stranded.word, gasIncluded, stranded.token),
+        fundSegment(needUsd, stranded.word, gasIncluded, stranded.token, dest),
       ]
       const resume = followup ? `${segs.join(', then ')}, then ${followup}` : segs.join(', then ')
       return {
@@ -1030,7 +1057,7 @@ export function planRobinhoodFundingAdvice(params: {
         ],
         copy:
           `your ~$${stranded.usd} of ${stranded.token} is already on **${stranded.word}** — the wallet just has no ETH there to pay for the two tiny signatures the bridge needs. ` +
-          `I can fix that from ${donor.word}: move ~${GAS_TOPUP_ETH} ETH over first, then convert the ${stranded.word} ${stranded.token}${gasIncluded ? ' (gas for Robinhood Chain included)' : ''} — one job, each step built and checked when it's your turn to sign.`,
+          `I can fix that from ${donor.word}: move ~${GAS_TOPUP_ETH} ETH over first, then convert the ${stranded.word} ${stranded.token}${gasIncluded ? ` (gas for ${dest.name} included)` : ''} — one job, each step built and checked when it's your turn to sign.`,
       }
     }
     return {
@@ -1090,6 +1117,8 @@ export interface DownsizedRobinhoodBuy {
  * back to the honest refusal.
  */
 export function planDownsizedRobinhoodBuy(params: {
+  /** Destination — Robinhood Chain when omitted. */
+  dest?: LifiDestination
   scan: Pick<FundingShortfall, 'origins'>
   /** The asked size (USDG dollars). */
   buyUsd: number
@@ -1131,6 +1160,7 @@ export function planDownsizedRobinhoodBuy(params: {
       needUsd,
       gasIncluded: includeGas,
       followup: acquiring ? '' : `buy $${max} of ${buySym}`,
+      dest: params.dest,
     })
     if (!chips) continue
     // Lead with the downsize; keep the planner label's "(~$N from X)" tail.
@@ -1159,11 +1189,13 @@ export function planDownsizedRobinhoodBuy(params: {
  *  knows a transfer is settling — writing this pending REPLACES the xchain
  *  pending that carried them, and without the forward the awareness dies
  *  after one turn. */
-export function rhFundingPending(buyUsd: number, buySym: string, inflight?: Record<string, string>) {
+export function rhFundingPending(buyUsd: number, buySym: string, inflight?: Record<string, string>, dest: LifiDestination = LIFI_DESTINATIONS[ROBINHOOD_CHAIN_ID]) {
   return {
     kind: 'rh-funding',
-    summary: `Unfunded buy on Robinhood Chain: $${buyUsd} of ${buySym} — waiting for USDC or gas to land`,
-    data: { buyUsd: String(buyUsd), buySym, ...(inflight ?? {}) },
+    summary: `Unfunded buy on ${dest.name}: $${buyUsd} of ${buySym} — waiting for USDC${dest.gasLeg ? ' or gas' : ''} to land`,
+    // `dest` rides only for a non-default destination so every pre-existing
+    // Robinhood pending stays byte-identical (and under the key cap).
+    data: { buyUsd: String(buyUsd), buySym, ...(dest.chainId !== ROBINHOOD_CHAIN_ID ? { dest: String(dest.chainId) } : {}), ...(inflight ?? {}) },
   }
 }
 
@@ -1258,10 +1290,10 @@ export function offChainStableSource(params: {
   amountUsd?: string
 }): OffChainStableSource | null {
   const { chainId, sellSymbol, knownOnChain, amountHuman, amountUsd } = params
-  // Robinhood Chain is the only destination the funding plan lands on
-  // (FUNDING_ORIGIN_CHAINS bridge TO it, live-probed). Widening this
+  // Only a LiFi-funded destination (Robinhood Chain, Arc — lib/lifi-
+  // destinations, each route live-probed) lands the plan. Widening the set
   // without a probed route would offer a path that can't build.
-  if (chainId !== ROBINHOOD_CHAIN_ID || knownOnChain || !sellSymbol) return null
+  if (!isLifiFundedChain(chainId) || knownOnChain || !sellSymbol) return null
   const stable = primaryStable(chainId)
   if (!stable) return null
   const sourceSymbol = parityFundingSymbol(sellSymbol)

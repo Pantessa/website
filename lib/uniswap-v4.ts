@@ -48,6 +48,7 @@ import {
 } from '@/lib/tx-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, spentTotalUsd, toPolicy } from '@/lib/grant-store'
 import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, TREASURY_ADDRESS, swapFeeAtoms } from '@/lib/fees'
+import { checkFillAgainstTape, startSwapTape } from '@/lib/stock-tape'
 
 // Standard v4 fee → tickSpacing pairs (mirrors v3's tier scan; v4 has no
 // enumerable tier list, these are the factory-conventional no-hook keys).
@@ -668,8 +669,10 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
   // A BUY of "ETH" is refused here instead: this build would pay WETH under
   // an ETH label, and there is no guarded unwrap in it. Only v3 unwraps to
   // native ETH (lib/uniswap-venue.ts). Probed on Robinhood Chain 2026-09-16:
-  // v3 quotes USDG, AAPL, TSLA, NVDA, AMD and SPY into WETH, and v4 quoted
-  // none of the stock pairs, so today an ETH buy never reaches this line.
+  // v3 quotes USDG, AAPL, TSLA, NVDA, AMD and SPY into WETH and v4 quoted none
+  // of the stock pairs. An ETH buy reaches this line when v3 has no pool, or
+  // when a stock → WETH v3 pool is off the tape (lib/stock-tape); LiFi
+  // refuses the same buy after it, so the cascade builds nothing.
   if (buysNativeEth(params.buyToken, chainId)) {
     throw new NoV4PoolError(
       `Uniswap v4 on ${chain.name} can't deliver native ETH, and Uniswap v3 has no pool for ${tokenLabel(params.sellToken, chainId)} → ETH there.`,
@@ -693,6 +696,9 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
   const [currency0, currency1] =
     sellAddr.toLowerCase() < buyAddr.toLowerCase() ? [sellAddr, buyAddr] : [buyAddr, sellAddr]
   const zeroForOne = currency0.toLowerCase() === sellAddr.toLowerCase()
+  // Robinhood Chain stock swaps are checked against the tape (lib/stock-tape);
+  // the read rides alongside the quote.
+  const tapeRead = startSwapTape({ chainId, sellToken: params.sellToken, buyToken: params.buyToken })
 
   // Quote across the standard no-hook pool keys — best amountOut wins.
   const quotes = await Promise.all(
@@ -726,6 +732,10 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
     )
   }
   const best = live[0]
+  // The slippage bound is measured from this pool's own quote — a pool far
+  // from the stock's tape is refused here, before the executability probe
+  // (OffTapeError: the cascade tries the chain's own venue next).
+  const tapeCheck = checkFillAgainstTape(await tapeRead, "Robinhood Chain's Uniswap v4 pool", amountIn, best.amountOut)
   const minOut = (best.amountOut * BigInt(10_000 - slippageBps)) / BigInt(10_000)
   const deadline = Math.floor(Date.now() / 1000) + deadlineSec
   // Permit2 grant outlives the swap deadline by an hour — enough for slow
@@ -854,7 +864,7 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
   const allowanceCheck: GuardrailCheck = { id: 'allowance', level: 'warn', ok: steps.length === 1, note: approvalNote }
 
   // ── Cross-app guardrails: identical gate to v3, same policy host. ─────────
-  const checks: GuardrailCheck[] = [recipientCheck(from, from), validityCheck(deadline), allowanceCheck, calldataCheck, feeCheck]
+  const checks: GuardrailCheck[] = [recipientCheck(from, from), validityCheck(deadline), allowanceCheck, calldataCheck, feeCheck, ...(tapeCheck ? [tapeCheck] : [])]
   const valueUsd = stableUsd(chainId, sellAddr, amountIn) ?? stableUsd(chainId, buyAddr, best.amountOut)
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null

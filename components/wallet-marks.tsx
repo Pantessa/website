@@ -144,6 +144,19 @@ export function WalletConnectWalletMark({ size = 22 }: { size?: number }) {
   )
 }
 
+/** Phantom's official mark (rainbowkit src/wallets/walletConnectors/
+ *  phantomWallet/phantomWallet.svg): the ghost on its lavender tile. The
+ *  upstream file wraps the artwork in a clipPath the size of the tile, which
+ *  the full-bleed rect already is, so it's dropped here. */
+export function PhantomWalletMark({ size = 22 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 28 28" width={size} height={size} fill="none" aria-hidden style={box}>
+      <rect width="28" height="28" fill="#AB9FF2"/>
+<path fill="#FFFDF8" fillRule="evenodd" clipRule="evenodd" d="M12.063 18.128c-1.173 1.796-3.137 4.07-5.75 4.07-1.236 0-2.424-.51-2.424-2.719 0-5.627 7.682-14.337 14.81-14.337 4.056 0 5.671 2.813 5.671 6.008 0 4.101-2.66 8.79-5.306 8.79-.84 0-1.252-.46-1.252-1.192 0-.19.032-.397.095-.62-.902 1.542-2.645 2.973-4.276 2.973-1.188 0-1.79-.747-1.79-1.797 0-.381.079-.778.222-1.176Zm9.63-7.089c0 .931-.549 1.397-1.163 1.397-.624 0-1.164-.466-1.164-1.397 0-.93.54-1.396 1.164-1.396.614 0 1.164.465 1.164 1.396Zm-3.49 0c0 .931-.55 1.397-1.164 1.397-.624 0-1.164-.466-1.164-1.397 0-.93.54-1.396 1.164-1.396.614 0 1.164.465 1.164 1.396Z"/>
+    </svg>
+  )
+}
+
 /** The catch-all lane has no brand of its own — whatever extension is
  *  installed. A neutral wallet glyph on a surface tile keeps the strip's
  *  rhythm without inventing a logo for it. */
@@ -165,6 +178,7 @@ export function InjectedWalletMark({ size = 22 }: { size?: number }) {
 export const WALLET_MARKS: Record<WalletLaneId, WalletMark> = {
   metaMask: MetaMaskWalletMark,
   coinbase: CoinbaseWalletMark,
+  phantom: PhantomWalletMark,
   rainbow: RainbowWalletMark,
   walletConnect: WalletConnectWalletMark,
   injected: InjectedWalletMark,
