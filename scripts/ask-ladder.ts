@@ -61,7 +61,7 @@ export interface LadderOptions {
   origin?: 'chat' | 'link'
 }
 
-const NATIVE_CHAINS = new Set(['base', 'ethereum', 'arbitrum', 'optimism', 'robinhood'])
+const NATIVE_CHAINS = new Set(['base', 'ethereum', 'arbitrum', 'optimism', 'robinhood', 'arc'])
 
 /** Pure replica of the route ladder — same order, all free MCPs active. */
 export function simulateLadder(message: string, opts: LadderOptions = {}): Outcome {

@@ -22,7 +22,7 @@
  *   npm run test:api   # in another
  */
 import { readFile } from 'node:fs/promises'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join as pathJoin } from 'node:path'
 import { tokenMark } from '../lib/token-icons'
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
@@ -139,7 +139,7 @@ import { decideProposalGate } from '../lib/roster-propose'
 import { decideManagerMove, stackingRefusal, undecidedProposalFor } from '../lib/roster-manager'
 import { markPeriodKey, parseMarkAsk, reviewFlipDecision, tryoutReportCard, PAPER_LABEL, TRYOUT_BANNED_PHRASES } from '../lib/roster-tryouts'
 import { houseManagerRow, resolveHouseManager, HOUSE_MANAGER_ID } from '../lib/roster-managers'
-import { walletLineup, walletLaneHint, wcConfigured, WC_APP_METADATA , CDP_INIT_PATIENCE_MS, emailLaneHint } from '../lib/wallet-lineup'
+import { walletLineup, walletLaneHint, walletLaneChips, wcConfigured, WC_APP_METADATA , CDP_INIT_PATIENCE_MS, emailLaneHint, WALLET_LANE_NAMES, type WalletLaneId } from '../lib/wallet-lineup'
 import { hasStoredWalletConnection, shouldRerunConnectAsk, connectAskReleased, bootHoldingFor, initialHoldElapsed, CONNECT_ASK_RELEASE_GRACE_MS, CONNECT_ASK_RERUN_WINDOW_MS, WAGMI_STORE_KEY, WAGMI_RECENT_CONNECTOR_KEY } from '../lib/wallet-reconnect'
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
@@ -210,7 +210,9 @@ import { canonicalChainWord, normalizeChainWords, normalizeDollarWords } from '.
 import {
   clampFundUsd,
   classifyStripeOnrampFailure,
+  deliveryFundUsd,
   fundChipFor,
+  planFitsOneCheckout,
   onrampAssetOf,
   onrampConsentMessage,
   onrampCountryFrom,
@@ -227,7 +229,10 @@ import {
   ONRAMP_SOURCE_CURRENCIES,
   ONRAMP_DEFAULT_NETWORK,
   ONRAMP_ETH_KEEP_USD,
+  ONRAMP_ETH_PRICE_CEILING_USD,
+  ONRAMP_LANDING_COST_USD,
   ONRAMP_NETWORK_LABEL,
+  ONRAMP_SETTLE_SLACK_USD,
   ONRAMP_MAX_USD,
   ONRAMP_MIN_USD,
   STRIPE_NETWORK,
@@ -238,7 +243,11 @@ import { parseEcbUsdRate } from '../lib/ecb-fx'
 import { clarifyOf } from '../lib/clarify'
 import { fundingPathOf, NEVER_MIND_RESUME_RE } from '../lib/funding-path'
 import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '../lib/turn-status'
-import { decideFundingTurn, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, gasTopupLegUsd, MIN_LEG_USD, planFundingChips, planGasTopup, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, type FundingNeed, type FundingSource } from '../lib/funding-plan'
+import { classifyFundingBalances, decideFundingTurn, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, gasTopupLegUsd, MIN_LEG_USD, planFundingChips, planGasTopup, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, strandedCoversPlan, type FundingNeed, type FundingSource } from '../lib/funding-plan'
+import { buyDollarsOf, swapBuyFundChip, swapBuyResume, swapShortfallTurn, type SwapShortfallAsk } from '../lib/swap-shortfall'
+import { laneGasFloorPresetUsd, layerCardKind, layerFundChip, layerShortfallTurn, type LayerShortfallAsk } from '../lib/layer-shortfall'
+import { DEST_GAS_FLOOR_ETH } from '../lib/funding-plan'
+import { ETH_TWO_LEG_HEADROOM_USD } from '../lib/lifi-bridge'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
@@ -297,6 +306,16 @@ import { EXAMPLE_PROMPTS } from '../lib/examples'
 import { swapFeeAtoms, SWAP_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS, HL_BUILDER_FEE_TENTH_BPS, HL_BUILDER_MAX_FEE_RATE } from '../lib/fees'
 import { APP_CHAINS, chainById, chainByKey, chainNamedIn, explorerTokenUrl, primaryStable, publicClientFor, robinhoodChain, sanitizeChainId, serverRpcEndpoints } from '../lib/chains'
 import { WALLET_CHAINS } from '../lib/wallet-chains'
+import { gasIsStable as arcGasIsStable, nativeSymbolFor as arcNativeSymbolFor, STABLE_GAS_RESERVE as ARC_STABLE_GAS_RESERVE } from '../lib/chains'
+import { chainMentions as arcChainMentions } from '../lib/chain-lexicon'
+import { buildTransferArtifact as arcBuildTransferArtifact } from '../lib/transfer-exec'
+import { ARC_BRIDGE_TOOLS, buildLifiBridgeLeg as arcBuildLifiBridgeLeg } from '../lib/lifi-bridge'
+import { fundSegment as arcFundSegment, LIFI_DESTINATIONS as ARC_LIFI_DESTINATIONS, lifiDestination as arcLifiDestination, isLifiFundedChain as arcIsLifiFundedChain } from '../lib/lifi-destinations'
+import { usdPerToken as arcUsdPerToken } from '../lib/usd-probe'
+import { classifyDryRunError as arcClassifyDryRunError } from '../lib/dry-run'
+import { alchemyNetworkEnabled as arcAlchemyNetworkEnabled } from '../lib/alchemy'
+import { buildUniswapSwap as arcBuildUniswapSwap } from '../lib/uniswap-venue'
+import { BaseError as ArcBaseError, InsufficientFundsError as ArcInsufficientFundsError } from 'viem'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp, crossChainPending, crossChainValueUsd , VENUE_SHARE_MAX_BPS } from '../lib/cross-chain-swap'
 import {
   parseAaveSupply,
@@ -1714,6 +1733,75 @@ async function main() {
       const hits = body.match(ENTITY_SPACE_RE) ?? []
       check(`entity-space fence: ${path} has no glued inline-element text`, hits.length === 0, hits.slice(0, 3).join(' '))
     }
+  }
+
+  // Token-tint fence (2026-09-16). Tailwind 3 can't opacity-modify a
+  // CSS-variable color: `border-[color:var(--accent)]/40`,
+  // `bg-[var(--surf-1)]/70`, `bg-[color:var(--accent,#34E0A1)]/10` and their
+  // hover:/focus-within: forms are never generated. 21 shipped that way: the
+  // element fell back to the default border (white in dark mode), no fill.
+  // Tints are the tint-* @layer utilities in app/globals.css now. Fence the
+  // dead form in everything Tailwind scans, hold each tint's name to its mix
+  // (a tint with no rule renders nothing too), and read the built CSS.
+  {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    // tailwind.config.ts content globs: pages/components/app, js/ts/jsx/tsx/mdx.
+    const walk = (dir: string): string[] =>
+      !fs.existsSync(dir) ? [] : fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) =>
+        d.isDirectory() ? walk(path.join(dir, d.name)) : /\.(tsx?|jsx?|mdx)$/.test(d.name) ? [path.join(dir, d.name)] : [])
+    const sources = ['pages', 'components', 'app'].flatMap(walk)
+    // Comments may name the dead class (PortfolioCard's does), so blank them,
+    // keeping newlines for line numbers. A comment opens a line or a JSX {…};
+    // a string like "image/*" never opens one.
+    const code = (src: string) =>
+      src
+        .replace(/(^[ \t]*|\{[ \t]*)(\/\*[\s\S]*?\*\/)/gm, (_m, lead: string, body: string) => lead + body.replace(/[^\n]/g, ' '))
+        .replace(/^([ \t]*)\/\/.*$/gm, '$1')
+    const DEAD_RE = /(?:[\w-]+:)*[\w-]+-\[(?:[a-z-]+:)?var\(--[^\]\s]*\)\]\/(?:\d+|\[[^\]\s]*\])/g
+    const TINT_RE = /(?<![\w-])((?:[\w-]+:)*)(tint-(bg|border)-([a-z0-9-]+?)-(\d+))(?![\w-])/g
+    const dead: string[] = []
+    const used = new Map<string, Set<string>>() // tint class → the variant chains it's used under
+    for (const f of sources) {
+      const src = code(fs.readFileSync(f, 'utf8'))
+      for (const m of src.matchAll(DEAD_RE)) dead.push(`${f}:${src.slice(0, m.index).split('\n').length} ${m[0]}`)
+      for (const m of src.matchAll(TINT_RE)) (used.get(m[2]) ?? used.set(m[2], new Set()).get(m[2])!).add(m[1])
+    }
+    check(
+      `token tints: no Tailwind opacity modifier on a CSS-variable color across ${sources.length} scanned sources (it never generates; use a tint-* utility)`,
+      sources.length >= 300 && dead.length === 0,
+      dead.length ? `${dead.length} dead: ${dead.slice(0, 6).join(' · ')}` : '',
+    )
+    const globalsCss = fs.readFileSync('app/globals.css', 'utf8')
+    const rules = new Map([...globalsCss.matchAll(/\.(tint-(bg|border)-([a-z0-9-]+?)-(\d+))\s*\{([^}]*)\}/g)].map((m) => [m[1], m]))
+    const mixOf = (prop: string, token: string, pct: string) =>
+      `${prop === 'bg' ? 'background-color' : 'border-color'}:color-mix(in oklch,var(--${token}) ${pct}%,`.replace(/\s+/g, '')
+    const noRule = [...used.keys()].filter((c) => !rules.has(c))
+    const drift = [...rules.values()].filter(([, , prop, token, pct, body]) => !body.replace(/\s+/g, '').startsWith(mixOf(prop, token, pct))).map((m) => m[1])
+    check(
+      `token tints: every tint-* class in use has a rule, and each rule mixes the token + percent its name says (${used.size} used, ${rules.size} defined)`,
+      used.size >= 10 && noRule.length === 0 && drift.length === 0,
+      [noRule.length ? `no rule: ${noRule.join(', ')}` : '', drift.length ? `name ≠ mix: ${drift.join(', ')}` : ''].filter(Boolean).join(' · '),
+    )
+    // The build is the proof: a purge or @layer slip passes the source scan.
+    const homeHtml = await (await fetch(`${BASE}/`)).text()
+    const cssHrefs = [...new Set([...homeHtml.matchAll(/href="(\/_next\/static\/[^"]+\.css)"/g)].map((m) => m[1]))]
+    const builtCss = (await Promise.all(cssHrefs.map(async (h) => (await fetch(`${BASE}${h}`)).text()))).join('\n').replace(/\s+/g, '')
+    const unbuilt: string[] = []
+    for (const [cls, chains] of used) {
+      const [, , prop, token, pct] = cls.match(/^(tint-(bg|border)-([a-z0-9-]+?)-(\d+))$/)!
+      for (const chain of chains) {
+        const sel = `.${(chain + cls).replace(/:/g, '\\:')}`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const at = new RegExp(`${sel}(?=[{,:])`).exec(builtCss)?.index
+        const body = at === undefined ? '' : builtCss.slice(builtCss.indexOf('{', at) + 1, builtCss.indexOf('}', builtCss.indexOf('{', at)))
+        if (!body.includes(mixOf(prop, token, pct))) unbuilt.push(chain + cls)
+      }
+    }
+    check(
+      `token tints: the built CSS carries every tint in use, variants included (${[...used.values()].reduce((n, s) => n + s.size, 0)} forms, ${cssHrefs.length} stylesheets)`,
+      cssHrefs.length > 0 && unbuilt.length === 0,
+      unbuilt.slice(0, 6).join(', '),
+    )
   }
 
   // Payees: the wallet's claimed MCP servers (dashboard Agents → My MCP servers).
@@ -5148,15 +5236,17 @@ async function main() {
   // ── The doors: WalletConnect lane (lib/wallet-lineup) ────────────────────
   console.log('— wallet lineup (WC lane, doors run)')
   check(
-    'wallet lineup: env absent = EXACTLY today\'s connectors (injected/MetaMask/Coinbase, in order); a real WC id adds the two WC lanes; the placeholder never counts',
+    // Re-pinned 2026-09-16 (Phantom joins the injected lanes — Nate: "add
+    // phantom wallet to our onboarding"); before: injected/MetaMask/Coinbase.
+    'wallet lineup: env absent = EXACTLY the injected lanes (injected/MetaMask/Coinbase/Phantom, in order); a real WC id adds the two WC lanes; the placeholder never counts',
     (() => {
       const dark = walletLineup(null)
       const placeholder = walletLineup('YOUR_WALLETCONNECT_PROJECT_ID')
       const lit = walletLineup('abc123realprojectid')
       return (
-        JSON.stringify(dark) === JSON.stringify(['injected', 'metaMask', 'coinbase']) &&
+        JSON.stringify(dark) === JSON.stringify(['injected', 'metaMask', 'coinbase', 'phantom']) &&
         JSON.stringify(placeholder) === JSON.stringify(dark) &&
-        JSON.stringify(lit) === JSON.stringify(['injected', 'metaMask', 'coinbase', 'rainbow', 'walletConnect']) &&
+        JSON.stringify(lit) === JSON.stringify(['injected', 'metaMask', 'coinbase', 'phantom', 'rainbow', 'walletConnect']) &&
         wcConfigured(undefined) === false &&
         wcConfigured('abc123realprojectid') === true &&
         // the modal lane's one env-sensitive line: absent = today's copy,
@@ -5165,6 +5255,50 @@ async function main() {
         /QR/.test(walletLaneHint('abc123realprojectid')) &&
         WC_APP_METADATA.appName === 'Pantessa' &&
         WC_APP_METADATA.appUrl === 'https://www.pantessa.com'
+      )
+    })(),
+  )
+  // Phantom (2026-09-16): the lane exists in BOTH env states, is named in the
+  // lane hint both ways, draws in the door's logo strip, and has a factory +
+  // a mark — the three files "ADDING A WALLET" (components/wallet-marks) says
+  // to touch, read from source so a lane can't be added to the lineup without
+  // its connector or its logo.
+  check(
+    'wallet lineup: Phantom is an injected lane in both env states, named in the hint, and a chip in the door strip with its accessible name',
+    (() => {
+      const dark = walletLineup(null)
+      const lit = walletLineup('abc123realprojectid')
+      const chipDark = walletLaneChips(null)
+      const chipLit = walletLaneChips('abc123realprojectid')
+      const phantomIdx = dark.indexOf('phantom')
+      return (
+        phantomIdx > dark.indexOf('coinbase') &&
+        lit.indexOf('phantom') < lit.indexOf('rainbow') &&
+        /Phantom/.test(walletLaneHint(null)) &&
+        /Phantom/.test(walletLaneHint('abc123realprojectid')) &&
+        WALLET_LANE_NAMES.phantom === 'Phantom' &&
+        chipDark.some((c) => c.id === 'phantom' && c.name === 'Phantom') &&
+        chipLit.some((c) => c.id === 'phantom' && c.name === 'Phantom') &&
+        // the catch-all rule is unchanged by the new lane: last without WC, gone with it
+        chipDark[chipDark.length - 1].id === 'injected' &&
+        !chipLit.some((c) => c.id === 'injected')
+      )
+    })(),
+  )
+  check(
+    'wallet lineup: every lane has a RainbowKit factory (lib/wagmi) and a vendored mark (components/wallet-marks) — Phantom included',
+    (() => {
+      const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      const wagmi = strip(readFileSync(pathJoin(process.cwd(), 'lib/wagmi.ts'), 'utf8'))
+      const marks = strip(readFileSync(pathJoin(process.cwd(), 'components/wallet-marks.tsx'), 'utf8'))
+      const lanes: WalletLaneId[] = walletLineup('abc123realprojectid')
+      const factories = wagmi.slice(wagmi.indexOf('const WALLET_FACTORIES'), wagmi.indexOf('const connectors'))
+      const markTable = marks.slice(marks.indexOf('export const WALLET_MARKS'))
+      return (
+        lanes.every((id) => new RegExp(`\\b${id}:\\s*\\w+Wallet\\b`).test(factories)) &&
+        lanes.every((id) => new RegExp(`\\b${id}:\\s*\\w+WalletMark\\b`).test(markTable)) &&
+        /phantomWallet,/.test(wagmi) && /from '@rainbow-me\/rainbowkit\/wallets'/.test(wagmi) &&
+        /export function PhantomWalletMark/.test(marks) && /fill="#AB9FF2"/.test(marks)
       )
     })(),
   )
@@ -7588,6 +7722,407 @@ async function main() {
         JSON.stringify(staleArb),
       )
 
+      // ── The card door on a coin BUY the wallet can't fund (lib/swap-
+      // shortfall, 2026-09-16). Prod ask_failures 2026-09-15: a stranger from
+      // a tweet (fresh Google wallet, empty everywhere) tapped /t/ETH's "Buy
+      // $50 of ETH", then typed "Buy $10 of ETH", and both times read "The
+      // swap sells 50 USDC on Base and the wallet holds 0 … Top up any of
+      // those chains and ask again." — no chip, and they left. The stock buy
+      // had offered the card chip in that state since #668.
+      {
+        // A completing chip: the delivery IS the buy, so the preset is the
+        // asked dollars (no headroom, no keep-back), floored at the session
+        // floor the route clamps to and capped like every preset.
+        check(
+          'coin buy card: a delivery preset is the asked dollars — floored at the $15 session floor, capped, never fractional',
+          deliveryFundUsd(50) === 50 && deliveryFundUsd(10) === ONRAMP_MIN_USD && deliveryFundUsd(15.2) === 16 &&
+            deliveryFundUsd(9_999) === ONRAMP_MAX_USD && deliveryFundUsd(0) === ONRAMP_MIN_USD && deliveryFundUsd(Number.NaN) === ONRAMP_MIN_USD &&
+            clampFundUsd(deliveryFundUsd(37.01)) === deliveryFundUsd(37.01),
+          `${deliveryFundUsd(50)}/${deliveryFundUsd(10)}/${deliveryFundUsd(15.2)}`,
+        )
+        const ethChip = fundChipFor({ needUsd: 50, actionLabel: 'buy $50 of ETH', resume: 'Buy $50 of ETH on Base', completes: true })
+        check(
+          'coin buy card: a completing chip says what lands ("Buy $50 of ETH with card or bank"), flags completes, and keeps the default lane',
+          ethChip?.label === 'Buy $50 of ETH with card or bank' && ethChip.fund?.completes === true && ethChip.fund.presetFiatUsd === 50 &&
+            ethChip.fund.network === ONRAMP_DEFAULT_NETWORK && ethChip.resume === 'Buy $50 of ETH on Base',
+          JSON.stringify(ethChip),
+        )
+        check(
+          'coin buy card: a plan chip never carries completes (its resume must fire on arrival)',
+          fundChipFor({ needUsd: 12, actionLabel: 'buy $10 of AAPL', resume: 'Buy $10 of AAPL' })?.fund?.completes === undefined,
+        )
+        const narrowed = clarifyOf({
+          question: 'Buy it?',
+          options: [
+            { label: 'Buy $50 of ETH with card or bank', resume: 'Buy $50 of ETH on Base', fund: { presetFiatUsd: 50, asset: 'ETH', network: 'ethereum', completes: true } },
+            { label: 'Truthy, not true', resume: 'Buy $50 of ETH on Base', fund: { presetFiatUsd: 50, asset: 'ETH', network: 'ethereum', completes: 'yes' } },
+          ],
+        })
+        check(
+          'coin buy card: clarifyOf keeps completes only as a literal true (anything else fires the resume, as every chip did before)',
+          narrowed?.options[0].fund?.completes === true && !!narrowed.options[1].fund && narrowed.options[1].fund.completes === undefined,
+          JSON.stringify(narrowed),
+        )
+
+        // The refusal FACTS the door is decided on — the same numbers the copy
+        // was written from.
+        const R4 = (reads: [number, number, number][]) =>
+          reads.map(([chainId, nativeEth, usdcBal]) => ({ chainId, chainWord: FUNDING_CHAIN_WORD[chainId], nativeEth, usdcBal }))
+        const buyNeed50: FundingNeed = { chainId: 8453, token: 'USDC', amountHuman: 50, followupResume: 'swap 50 USDC for ETH on Base', actionLabel: 'the buy' }
+        const scanOf = (reads: ReturnType<typeof R4>) => ({ ...classifyFundingBalances(reads, 2000), ethUsd: 2000, readChains: reads.map((r) => r.chainWord), failedChains: [] })
+        const emptyReads = R4([[8453, 0, 0], [42161, 0, 0], [1, 0, 0], [10, 0, 0]])
+        const emptyDecision = decideFundingTurn({ need: buyNeed50, needUsd: fundingPlanUsd(50, 1), gasUsd: 1.5, scan: scanOf(emptyReads), destChainName: 'Base' })
+        const strandedDecision = decideFundingTurn({ need: buyNeed50, needUsd: fundingPlanUsd(50, 1), gasUsd: 1.5, scan: scanOf(R4([[8453, 0, 0], [42161, 0, 60], [1, 0, 0], [10, 0, 0]])), destChainName: 'Base' })
+        const partialDecision = decideFundingTurn({ need: buyNeed50, needUsd: fundingPlanUsd(50, 1), gasUsd: 1.5, scan: scanOf(R4([[8453, 0, 0], [42161, 0.001, 12], [1, 0, 0], [10, 0, 0]])), destChainName: 'Base' })
+        check(
+          'coin buy card: refusal facts — an empty scan is EMPTY with the plan\'s full need; stranded USDC that covers is strandedCovers; money that falls short is neither',
+          emptyDecision.kind === 'refusal' && emptyDecision.facts.empty && !emptyDecision.facts.strandedCovers && emptyDecision.facts.needUsd === fundingPlanUsd(50, 1) + 1.5 &&
+            emptyDecision.facts.chainsRead === 'Base, Arbitrum, Ethereum and Optimism' &&
+            strandedDecision.kind === 'refusal' && strandedDecision.facts.strandedCovers && !strandedDecision.facts.empty &&
+            partialDecision.kind === 'refusal' && !partialDecision.facts.empty && !partialDecision.facts.strandedCovers,
+          JSON.stringify({ emptyDecision, strandedDecision, partialDecision }).slice(0, 600),
+        )
+        check(
+          'coin buy card: strandedCoversPlan is the one rule behind "Your money\'s already there" — the copy and the facts agree',
+          strandedDecision.kind === 'refusal' && /already there/.test(strandedDecision.insufficient) &&
+            partialDecision.kind === 'refusal' && !/already there/.test(partialDecision.insufficient) &&
+            strandedCoversPlan(buyNeed50, 58, [{ chainId: 42161, chainWord: 'Arbitrum', token: 'USDC', balance: 60, usd: 60 }], 0) &&
+            // the needed token already on the destination never counts toward "enough"
+            !strandedCoversPlan(buyNeed50, 58, [{ chainId: 8453, chainWord: 'Base', token: 'USDC', balance: 60, usd: 60 }], 0),
+        )
+
+        const askOf = (buy: string, usd: number, chain = 'Base', dollarAsk = true): SwapShortfallAsk => ({
+          chainName: chain,
+          chainWord: chain,
+          sellToken: 'USDC',
+          buyToken: buy,
+          sellAmountHuman: String(usd),
+          ...(dollarAsk ? { sellAmountUsd: String(usd) } : {}),
+          sellIsStable: true,
+          heldHuman: '0',
+        })
+        const refusalOf = (d: typeof emptyDecision) => (d.kind === 'refusal' ? { insufficient: d.insufficient, ...d.facts } : null)
+        const emptyRefusal = refusalOf(emptyDecision)!
+
+        // THE TWEET STRANGER's exact turn.
+        const stranger = swapShortfallTurn({ ask: askOf('ETH', 50), refusal: emptyRefusal })
+        const strangerChip = stranger.clarify?.options[0]
+        check(
+          'coin buy card: THE TWEET STRANGER — an empty wallet\'s "Buy $50 of ETH" reads plainly (no "The swap sells", no "Top up any of those chains") and names Ethereum as where the ETH lands',
+          stranger.buildPath === 'native-swap-short' &&
+            /^🔄 To buy \$50 of ETH, this wallet needs money in it first — I checked Base, Arbitrum, Ethereum and Optimism and there's no ETH or USDC here yet\./.test(stranger.reply) &&
+            !/The swap sells|Top up any of those chains|found no movable/.test(stranger.reply) &&
+            /lands in this wallet as ETH on Ethereum \(card funding can't deliver ETH to Base for every address\), and that's the whole buy/.test(stranger.reply),
+          stranger.reply,
+        )
+        check(
+          'coin buy card: THE TWEET STRANGER gets a $50 completing card chip + Not now; the resume round-trips the ladder as the swap it restates',
+          strangerChip?.label === 'Buy $50 of ETH with card or bank' && strangerChip.fund?.completes === true && strangerChip.fund.presetFiatUsd === 50 &&
+            strangerChip.resume === 'Buy $50 of ETH on Base' && simulateLadder(strangerChip.resume).gate === 'swap' && simulateLadder(strangerChip.resume).kind === 'action' &&
+            stranger.clarify?.options.length === 2 && NEVER_MIND_RESUME_RE.test(stranger.clarify.options[1].resume),
+          JSON.stringify(stranger.clarify),
+        )
+        const tenDollars = swapShortfallTurn({ ask: askOf('ETH', 10), refusal: emptyRefusal })
+        check(
+          'coin buy card: the stranger\'s "Buy $10 of ETH" opens at the $15 floor and SAYS so before anyone pays',
+          tenDollars.clarify?.options[0].label === 'Buy $15 of ETH with card or bank' && tenDollars.clarify.options[0].fund?.presetFiatUsd === 15 &&
+            /Card checkouts here start at \$15, so it opens there/.test(tenDollars.reply),
+          tenDollars.reply,
+        )
+        const onEthereum = swapShortfallTurn({ ask: askOf('ETH', 50, 'Ethereum'), refusal: emptyRefusal })
+        check(
+          'coin buy card: an ETH buy ON Ethereum carries no lane caveat — the lane is the ask\'s own chain',
+          onEthereum.clarify?.options[0].fund?.completes === true && !/card funding can't deliver/.test(onEthereum.reply),
+          onEthereum.reply,
+        )
+        // Any other coin: the chip carries the ask, and the cascade spends the
+        // landed ETH when the resume fires (audit:funding pins the landing).
+        const uni = swapShortfallTurn({ ask: askOf('UNI', 50), refusal: emptyRefusal })
+        const uniChip = uni.clarify?.options[0]
+        check(
+          'coin buy card: a non-ETH buy gets a PLAN chip — preset sized off the refusal\'s need (headroom + L1 keep-back), label names the buy and chain, resume restates it',
+          !!uniChip?.fund && uniChip.fund.completes === undefined && uniChip.fund.presetFiatUsd === planFundUsd(emptyRefusal.needUsd) &&
+            uniChip.label === `Add $${planFundUsd(emptyRefusal.needUsd)} with card or bank → buy $50 of UNI on Base` && uniChip.resume === 'Buy $50 of UNI on Base' &&
+            simulateLadder(uniChip.resume).kind === 'action' && /lay out the move to Base and the UNI buy for you to sign/.test(uni.reply),
+          JSON.stringify(uni).slice(0, 500),
+        )
+        check(
+          'coin buy card: a token-amount buy restates its amount ("Swap 50 USDC for UNI on Ethereum"), and cents survive a dollar restatement',
+          swapBuyResume(askOf('UNI', 50, 'Ethereum', false)) === 'Swap 50 USDC for UNI on Ethereum' && swapBuyResume({ ...askOf('UNI', 12.5, 'Arbitrum'), sellAmountUsd: '12.5' }) === 'Buy $12.50 of UNI on Arbitrum' &&
+            simulateLadder('Swap 50 USDC for UNI on Ethereum').kind === 'action' && simulateLadder('Buy $12.50 of UNI on Arbitrum').kind === 'action',
+        )
+        // Where money exists, the funding layer's refusal stays the answer and
+        // the card is an addition to it.
+        const partial = swapShortfallTurn({ ask: askOf('ETH', 50), refusal: refusalOf(partialDecision)! })
+        check(
+          'coin buy card: a wallet holding SOME money keeps the refusal that names it, and the card rides along ("Or buy the ETH …")',
+          /^🔄 This buy spends 50 USDC on Base and the wallet holds 0 there\./.test(partial.reply) && partial.reply.includes('~$12 of USDC on Arbitrum') &&
+            /Or buy the ETH with a card or bank below/.test(partial.reply) && partial.clarify?.options[0].fund?.completes === true,
+          partial.reply,
+        )
+        // One checkout, one buy. The preset caps at $500, and the swap layer
+        // has no downsize offer: a capped chip would land short of its own
+        // label and its resume would walk back into this wall — and offer the
+        // card again.
+        const bigUni = swapShortfallTurn({ ask: askOf('UNI', 2000), refusal: { ...emptyRefusal, needUsd: 2201.5 } })
+        const bigEth = swapShortfallTurn({ ask: askOf('ETH', 600), refusal: emptyRefusal })
+        const capEth = swapShortfallTurn({ ask: askOf('ETH', 500), refusal: emptyRefusal })
+        check(
+          'coin buy card: past ONE checkout there is no chip — a $2,000 UNI buy and a $600 ETH buy get the honest next step, while $500 of ETH (the cap itself) still gets its chip',
+          !bigUni.clarify && !bigEth.clarify && /Send ETH or USDC to this wallet/.test(bigUni.reply) && /Send ETH or USDC to this wallet/.test(bigEth.reply) &&
+            capEth.clarify?.options[0].fund?.presetFiatUsd === ONRAMP_MAX_USD &&
+            planFitsOneCheckout(400) && !planFitsOneCheckout(450) && !planFitsOneCheckout(0) && planFundUsd(450) === ONRAMP_MAX_USD,
+          `${bigUni.reply.slice(-90)} | ${bigEth.reply.slice(-90)}`,
+        )
+        const stranded = swapShortfallTurn({ ask: askOf('ETH', 50), refusal: refusalOf(strandedDecision)! })
+        check(
+          'coin buy card: stranded USDC that covers the buy gets NO card chip — the fix is a dollar of gas, not a $50 purchase',
+          !stranded.clarify && /already there/.test(stranded.reply) && !/card or bank/.test(stranded.reply),
+          stranded.reply,
+        )
+        const sell = swapShortfallTurn({
+          ask: { chainName: 'Base', chainWord: 'Base', sellToken: 'ETH', buyToken: 'USDC', sellAmountHuman: '0.0025', sellAmountUsd: '5', sellIsStable: false, heldHuman: '0' },
+          refusal: emptyRefusal,
+        })
+        check(
+          'coin buy card: a SELL keeps its old answer and gets no card chip (buying ETH to sell it is not the ask)',
+          !sell.clarify && sell.reply.startsWith('🔄 The swap sells 0.0025 ETH on Base and the wallet holds 0. ') && buyDollarsOf({ sellIsStable: false, sellAmountUsd: '5', sellAmountHuman: '0.0025' }) === null,
+          sell.reply,
+        )
+        process.env.ONRAMP_ENABLED = 'false'
+        const closed = swapShortfallTurn({ ask: askOf('ETH', 50), refusal: emptyRefusal })
+        check(
+          'coin buy card: with the door CLOSED the empty wallet still reads plainly — no chip, and the one honest next step',
+          !closed.clarify && /this wallet needs money in it first/.test(closed.reply) && /Send ETH or USDC to this wallet on any of those chains, then ask again — nothing was built\./.test(closed.reply) &&
+            !/card or bank/.test(closed.reply) && swapBuyFundChip(askOf('UNI', 50), emptyRefusal) === null,
+          closed.reply,
+        )
+        process.env.ONRAMP_ENABLED = 'true'
+      }
+
+      // ── The card door on a NATIVE LAYER's action the wallet can't fund
+      // (lib/layer-shortfall, 2026-09-16). Prod ask_failures, 45 days,
+      // had_funds=false:
+      // - "I want a 2X Long $12 of HYPE on Hyperliquid, then protect my HYPE
+      //   long with a 5% stop", three times (two strangers on 08-27, 09-04),
+      // - "Supply $25 of USDT to Aave at the best rate" (09-16),
+      // - "Stake 0.05 ETH with Lido" (08-04).
+      // Every reply: "found no movable ETH or USDC … Top up any of those chains
+      // and ask again.", no chip. The NFT buy and the Morpho lend refuse through
+      // the same shape.
+      {
+        const R4 = (reads: [number, number, number][]) =>
+          reads.map(([chainId, nativeEth, usdcBal]) => ({ chainId, chainWord: FUNDING_CHAIN_WORD[chainId], nativeEth, usdcBal }))
+        const EMPTY4 = R4([[8453, 0, 0], [42161, 0, 0], [10, 0, 0], [1, 0, 0]])
+        /** offerFundingPlan's decision over fabricated reads at one ETH price,
+         *  as the refusal the route hands the composer (or null on an offer). */
+        const decideAt = (need: FundingNeed, reads: ReturnType<typeof R4>, ethUsd = 2000) => {
+          const dest = reads.find((r) => r.chainId === need.chainId)
+          const shortEth = need.token === 'ETH' ? 0 : Math.max(0, (DEST_GAS_FLOOR_ETH[need.chainId] ?? 0.0002) - (dest?.nativeEth ?? 0))
+          return decideFundingTurn({
+            need,
+            needUsd: fundingPlanUsd(need.amountHuman, need.token === 'ETH' ? ethUsd : 1),
+            gasUsd: shortEth > 0 ? Math.max(1.5, Math.ceil(shortEth * ethUsd * 1.15 * 2) / 2) : 0,
+            scan: { ...classifyFundingBalances(reads, ethUsd), ethUsd, readChains: reads.map((r) => r.chainWord), failedChains: [] },
+            destChainName: FUNDING_CHAIN_WORD[need.chainId],
+          })
+        }
+        const refusalAt = (need: FundingNeed, reads: ReturnType<typeof R4>, ethUsd = 2000) => {
+          const d = decideAt(need, reads, ethUsd)
+          return d.kind === 'refusal' ? { insufficient: d.insufficient, ...d.facts } : null
+        }
+
+        // The preset floor this lane needed: small plans' 15% was too few
+        // dollars to cover the keep-back at $5,000/ETH.
+        check(
+          'layer card: a preset never lands under the plan plus its fixed landing costs — the 2x HYPE long\'s $9.50 plan opens at $22 (was $21, $0.50 short at $5,000/ETH), a $5 plan at $17; plans over ~$13 keep their 15% headroom unchanged',
+          planFundUsd(9.5) === 22 && planFundUsd(5) === 17 && planFundUsd(12) === 24 && planFundUsd(12.5) === 25 && planFundUsd(58) === 77 &&
+            planFundUsd(12, 'base') === 16 && planFundUsd(100, 'base') === 117,
+          `${planFundUsd(9.5)}/${planFundUsd(5)}/${planFundUsd(12)}/${planFundUsd(12.5)}/${planFundUsd(58)}`,
+        )
+        const keepBackEth = (chainId: number) => {
+          const eth = classifyFundingBalances([{ chainId, chainWord: FUNDING_CHAIN_WORD[chainId], nativeEth: 1, usdcBal: 0 }], 1).sources.find((s) => s.token === 'ETH')
+          return eth ? 1 - eth.balance : Number.NaN
+        }
+        const landingCostOf = (chainId: number) => (keepBackEth(chainId) * ONRAMP_ETH_PRICE_CEILING_USD + (ETH_TWO_LEG_HEADROOM_USD[chainId] ?? 0) + ONRAMP_SETTLE_SLACK_USD).toFixed(2)
+        check(
+          'layer card: ONRAMP_LANDING_COST_USD is re-derived from what it mirrors — the scan\'s keep-back at the price ceiling + the two-leg headroom + the settle slack, on both lanes',
+          landingCostOf(1) === ONRAMP_LANDING_COST_USD.ethereum.toFixed(2) && landingCostOf(8453) === ONRAMP_LANDING_COST_USD.base.toFixed(2),
+          `ethereum ${landingCostOf(1)} vs ${ONRAMP_LANDING_COST_USD.ethereum}, base ${landingCostOf(8453)} vs ${ONRAMP_LANDING_COST_USD.base}`,
+        )
+
+        // THE HL WALL, the exact prod ask from an empty wallet.
+        const hlLong = 'I want a 2X Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop'
+        const hlNeed6: FundingNeed = { chainId: 42161, token: 'USDC', amountHuman: 6, followupResume: `deposit 6 USDC to Hyperliquid, then ${hlLong}`, actionLabel: 'the Hyperliquid position' }
+        const hlAsk: LayerShortfallAsk = {
+          layer: 'hl-open',
+          what: 'go long $12 of HYPE at 2x on Hyperliquid',
+          resume: hlLong,
+          chainId: 42161,
+          token: 'USDC',
+          lead: "🚫 The position needs about $6 of USDC reaching Hyperliquid and the wallet can't cover it yet.",
+          needLine: 'The position needs about $6 of USDC on Hyperliquid as collateral.',
+        }
+        const hlRefusal = refusalAt(hlNeed6, EMPTY4)
+        const hlTurn = hlRefusal ? layerShortfallTurn({ ask: hlAsk, refusal: hlRefusal }) : null
+        const hlChip = hlTurn?.clarify?.options[0]
+        check(
+          'layer card: THE HL WALL — an empty wallet\'s 2x HYPE long reads plainly (the collateral it needs, no "Top up any of those chains"), files under the HL layer, and is answered, not a wall',
+          !!hlTurn && hlTurn.buildPath === 'native-hl-exec' &&
+            /^📈 To go long \$12 of HYPE at 2x on Hyperliquid, this wallet needs money in it first — I checked Base, Arbitrum, Optimism and Ethereum and there's no ETH or USDC here yet\. The position needs about \$6 of USDC on Hyperliquid as collateral\./.test(hlTurn.reply) &&
+            !/found no movable|Top up any of those chains/.test(hlTurn.reply) && /the move to Arbitrum, the Hyperliquid deposit and the position line up as one job for you to sign/.test(hlTurn.reply) &&
+            classifyTurn(hlTurn as unknown as Record<string, unknown>).kind === null,
+          hlTurn?.reply,
+        )
+        check(
+          'layer card: THE HL WALL gets a $22 plan chip + Not now; its resume is the ask itself, which compiles as the 2-step job it was (never "deposit …, then", which would lead with an unfundable deposit)',
+          !!hlChip?.fund && hlChip.fund.completes === undefined && hlChip.fund.presetFiatUsd === 22 && hlChip.fund.network === ONRAMP_DEFAULT_NETWORK &&
+            hlChip.label === 'Add $22 with card or bank → go long $12 of HYPE at 2x on Hyperliquid' && hlChip.resume === hlLong &&
+            simulateLadder(hlChip.resume).gate === 'jobs' && simulateLadder(hlChip.resume).kind === 'action' &&
+            hlTurn?.clarify?.options.length === 2 && NEVER_MIND_RESUME_RE.test(hlTurn.clarify.options[1].resume),
+          JSON.stringify(hlTurn?.clarify),
+        )
+        // The landing: $22 as ETH on Ethereum, at every price the preset is
+        // sized for, re-plans the SAME need into chips whose first compiles as
+        // the funded job (the route compiles it outright, no ok-step).
+        const hlLandings = [2_000, 3_000, 4_000, ONRAMP_ETH_PRICE_CEILING_USD].map((ethUsd) => {
+          const landed = R4([[8453, 0, 0], [42161, 0, 0], [10, 0, 0], [1, (22 - ONRAMP_SETTLE_SLACK_USD) / ethUsd, 0]])
+          const d = decideAt(hlNeed6, landed, ethUsd)
+          const job = d.kind === 'offer' ? compileJobAsk(d.turn.clarify.options[0].resume) : null
+          const builders = job && !('problem' in job) ? job.steps.map((st) => st.builder) : []
+          return { ethUsd, kind: d.kind, ok: builders.includes('native-hl-exec') && builders.includes('native-hl-guardian') && builders[0] === 'native-cross-chain' }
+        })
+        check(
+          'layer card: THE HL WALL\'s $22 landing (ETH on Ethereum) compiles the funded job — move to Arbitrum, deposit, long, stop — at $2k–$5k/ETH',
+          hlLandings.every((l) => l.ok),
+          JSON.stringify(hlLandings),
+        )
+        const hlHeld = layerShortfallTurn({ ask: { ...hlAsk, holdsUnscanned: true }, refusal: hlRefusal! })
+        check(
+          'layer card: money on Hyperliquid the scan can\'t see means NOT empty — the layer\'s lead + the funding refusal stay, and the card rides along ("Or add it …")',
+          hlHeld.reply.startsWith("🚫 The position needs about $6 of USDC reaching Hyperliquid and the wallet can't cover it yet. Across ") &&
+            !/needs money in it first/.test(hlHeld.reply) && /Or add it with a card or bank below — it lands as ETH on Ethereum/.test(hlHeld.reply) && !!hlHeld.clarify?.options[0].fund,
+          hlHeld.reply,
+        )
+
+        // THE AAVE WALL: the card lane IS Ethereum, so the landed ETH pays the
+        // gas the refusal priced a leg for.
+        const aaveNeed: FundingNeed = { chainId: 1, token: 'USDT', amountHuman: 25, followupResume: 'supply 25 USDT to Aave at the best rate', actionLabel: 'the Aave supply' }
+        const aaveAsk: LayerShortfallAsk = {
+          layer: 'aave-supply',
+          what: 'supply 25 USDT to Aave at the best rate',
+          resume: 'Supply 25 USDT to Aave at the best rate',
+          chainId: 1,
+          token: 'USDT',
+          lead: '🏦 The Aave supply needs 25 USDT on Ethereum and the wallet holds 0.',
+        }
+        const aaveRefusal = refusalAt(aaveNeed, EMPTY4)
+        const aaveTurn = aaveRefusal ? layerShortfallTurn({ ask: aaveAsk, refusal: aaveRefusal }) : null
+        const aaveFund = aaveTurn?.clarify?.options[0].fund
+        check(
+          'layer card: THE AAVE WALL — the refusal facts carry the Ethereum gas leg, and the plan chip leaves it out of the preset (the landed ETH is that gas)',
+          !!aaveRefusal && aaveRefusal.gasUsd === 7 && !!aaveFund && aaveFund.presetFiatUsd === planFundUsd(aaveRefusal.needUsd - aaveRefusal.gasUsd) &&
+            aaveFund.presetFiatUsd < planFundUsd(aaveRefusal.needUsd) && aaveTurn?.buildPath === 'native-aave-supply' &&
+            /I'll lay out the swap to USDT and the supply for you to sign/.test(aaveTurn.reply) &&
+            aaveTurn.clarify?.options[0].resume === 'Supply 25 USDT to Aave at the best rate' && simulateLadder('Supply 25 USDT to Aave at the best rate').gate === 'aave-supply',
+          JSON.stringify({ facts: aaveRefusal && { needUsd: aaveRefusal.needUsd, gasUsd: aaveRefusal.gasUsd }, reply: aaveTurn?.reply, fund: aaveFund }),
+        )
+        const tinyAave = refusalAt({ ...aaveNeed, token: 'USDC', amountHuman: 1, followupResume: 'supply 1 USDC to Aave' }, EMPTY4)
+        const tinyChip = tinyAave ? layerFundChip({ ...aaveAsk, what: 'supply 1 USDC to Aave', resume: 'Supply 1 USDC to Aave', token: 'USDC' }, tinyAave) : null
+        check(
+          'layer card: a lane-destination plan chip floors at the preset whose landing clears Ethereum\'s own gas floor at $5,000/ETH ($16: 0.003 ETH × $5,000 + $1)',
+          laneGasFloorPresetUsd() === 16 && tinyChip?.fund?.presetFiatUsd === 16 && planFundUsd(tinyAave ? tinyAave.needUsd - tinyAave.gasUsd : 0) === 15,
+          JSON.stringify({ tinyAave, tinyChip }),
+        )
+
+        // THE LIDO WALL: the delivery IS the stake's ETH — a DIRECT chip.
+        const lidoNeed: FundingNeed = { chainId: 1, token: 'ETH', amountHuman: 0.052, followupResume: 'stake all my ETH on Lido', actionLabel: 'the stake', flexMinAmountHuman: 0.005 }
+        const lidoAsk: LayerShortfallAsk = {
+          layer: 'lido-stake',
+          what: 'stake 0.05 ETH on Lido',
+          resume: 'Stake 0.05 ETH on Lido',
+          chainId: 1,
+          token: 'ETH',
+          lead: '🌊 Staking 0.05 ETH really needs ~0.052 ETH on Ethereum once mainnet gas is counted, and the wallet holds 0 ETH on Ethereum.',
+          needLine: 'Staking 0.05 ETH really needs ~0.052 ETH on Ethereum once mainnet gas is counted.',
+        }
+        const lidoRefusal = refusalAt(lidoNeed, EMPTY4)
+        const lidoTurn = lidoRefusal ? layerShortfallTurn({ ask: lidoAsk, refusal: lidoRefusal }) : null
+        const lidoChip = lidoTurn?.clarify?.options[0]
+        check(
+          'layer card: THE LIDO WALL — a DIRECT chip: preset = the stake\'s own ETH (deliveryFundUsd, no plan headroom or keep-back), no completes (the stake still needs its signature), resume the stake itself',
+          layerCardKind(lidoAsk) === 'direct' && !!lidoRefusal && lidoChip?.fund?.presetFiatUsd === deliveryFundUsd(lidoRefusal.needUsd) &&
+            lidoChip.fund.presetFiatUsd < planFundUsd(lidoRefusal.needUsd) && lidoChip.fund.completes === undefined &&
+            lidoChip.label === `Add $${lidoChip.fund.presetFiatUsd} with card or bank → stake 0.05 ETH on Lido` && lidoChip.resume === 'Stake 0.05 ETH on Lido' &&
+            (() => { const p = parseLidoStake(lidoChip.resume); return !!p && !('problem' in p) && p.amount === '0.05' })() &&
+            !!lidoTurn && /exactly what the stake spends, so nothing gets swapped or bridged, and once it's there I'll build the stake for you to sign/.test(lidoTurn.reply) && lidoTurn.buildPath === 'native-lido',
+          JSON.stringify(lidoTurn),
+        )
+        const lidoLandings = [2_000, 3_000, 4_000, ONRAMP_ETH_PRICE_CEILING_USD].map((ethUsd) => {
+          const r = refusalAt(lidoNeed, EMPTY4, ethUsd)
+          const fund = r ? layerFundChip(lidoAsk, r)?.fund : undefined
+          const landedEth = fund ? (fund.presetFiatUsd - ONRAMP_SETTLE_SLACK_USD) / (ethUsd * 1.05) : 0
+          return { ethUsd, preset: fund?.presetFiatUsd, landedEth: Number(landedEth.toFixed(6)), ok: landedEth >= lidoNeed.amountHuman }
+        })
+        check(
+          'layer card: a direct Lido preset, minted at $2k–$5k/ETH and delivered after a further 5% price move, still lands the stake\'s ETH — the resume builds the stake, it doesn\'t wall again',
+          lidoLandings.every((l) => l.ok),
+          JSON.stringify(lidoLandings),
+        )
+        const guided = refusalAt({ ...lidoNeed, amountHuman: 0.005 }, EMPTY4)
+        const guidedTurn = guided ? layerShortfallTurn({ ask: { ...lidoAsk, what: 'stake ETH on Lido', resume: 'Stake all my ETH on Lido' }, refusal: guided }) : null
+        check(
+          'layer card: a Lido ask with no amount opens its direct chip at the $15 checkout floor and says so; "Stake all my ETH on Lido" sizes itself to what lands',
+          guidedTurn?.clarify?.options[0].fund?.presetFiatUsd === ONRAMP_MIN_USD && /Card checkouts here start at \$15, so it opens there, and whatever the stake doesn't use stays in this wallet\./.test(guidedTurn.reply) &&
+            simulateLadder('Stake all my ETH on Lido').kind === 'action',
+          guidedTurn?.reply,
+        )
+        check(
+          'layer card: DIRECT only when the delivery is the very asset + chain the action spends (ETH on Ethereum); an NFT on Base, USDT on Ethereum and USDC on Arbitrum are PLAN chips',
+          layerCardKind({ chainId: 1, token: 'ETH' }) === 'direct' && layerCardKind({ chainId: 1, token: 'eth' }) === 'direct' &&
+            layerCardKind({ chainId: 8453, token: 'ETH' }) === 'plan' && layerCardKind({ chainId: 1, token: 'USDT' }) === 'plan' && layerCardKind({ chainId: 42161, token: 'USDC' }) === 'plan',
+        )
+
+        // No chip: the money is there, one checkout can't carry it, or the door is closed.
+        const strandedAave = refusalAt(aaveNeed, R4([[8453, 0, 40], [42161, 0, 0], [10, 0, 0], [1, 0, 0]]))
+        const strandedTurn = strandedAave ? layerShortfallTurn({ ask: aaveAsk, refusal: strandedAave }) : null
+        const bigLido = refusalAt({ ...lidoNeed, amountHuman: 0.302 }, EMPTY4)
+        const bigLidoTurn = bigLido ? layerShortfallTurn({ ask: { ...lidoAsk, what: 'stake 0.3 ETH on Lido', resume: 'Stake 0.3 ETH on Lido' }, refusal: bigLido }) : null
+        const bigMorpho = refusalAt({ chainId: 8453, token: 'USDC', amountHuman: 2000, followupResume: 'lend 2000 USDC on morpho', actionLabel: 'the Morpho lend' }, EMPTY4)
+        const bigMorphoTurn = bigMorpho
+          ? layerShortfallTurn({ ask: { layer: 'morpho-lend', what: 'lend 2000 USDC on Morpho on Base', resume: 'Lend 2000 USDC on Morpho on Base', chainId: 8453, token: 'USDC', lead: '🏦 The Morpho lend needs 2000 USDC on Base and the wallet holds 0.' }, refusal: bigMorpho })
+          : null
+        check(
+          'layer card: NO chip when stranded USDC covers the plan (a dollar of gas is the fix), nor past one $500 checkout (a 0.3 ETH stake, a $2,000 lend) — each keeps its honest answer and files under its layer',
+          !!strandedTurn && !strandedTurn.clarify && /already there/.test(strandedTurn.reply) && !/card or bank/.test(strandedTurn.reply) &&
+            !!bigLidoTurn && !bigLidoTurn.clarify && /Send ETH or USDC to this wallet on any of those chains, then ask again — nothing was built\./.test(bigLidoTurn.reply) &&
+            !!bigMorphoTurn && !bigMorphoTurn.clarify && bigMorphoTurn.buildPath === 'native-morpho-lend' && /this wallet needs money in it first/.test(bigMorphoTurn.reply),
+          JSON.stringify({ stranded: strandedTurn?.reply, lido: bigLidoTurn?.reply, morpho: bigMorphoTurn?.reply }),
+        )
+        process.env.ONRAMP_ENABLED = 'false'
+        const closedHl = hlRefusal ? layerShortfallTurn({ ask: hlAsk, refusal: hlRefusal }) : null
+        check(
+          'layer card: with the door CLOSED an empty wallet still reads plainly — no chip, the one honest next step, and the turn files as the HL layer\'s wall (never a planner answer)',
+          !!closedHl && !closedHl.clarify && /this wallet needs money in it first/.test(closedHl.reply) && /Send ETH or USDC to this wallet on any of those chains, then ask again — nothing was built\./.test(closedHl.reply) &&
+            !/card or bank/.test(closedHl.reply) && classifyTurn(closedHl as unknown as Record<string, unknown>).kind === 'native-wall',
+          closedHl?.reply,
+        )
+        process.env.ONRAMP_ENABLED = 'true'
+
+        // Wiring: every funding refusal in the chat route answers through a
+        // shortfall composer, so a layer added later can't bring back the bare
+        // "Top up any of those chains" wall.
+        const routeSrc = await readFile(new URL('../app/api/chat/route.ts', import.meta.url), 'utf8')
+        const refusalSites = [...routeSrc.matchAll(/'insufficient' in offer\b/g)].map((m) => m.index ?? 0)
+        const bare = refusalSites.filter((at) => !/layerShortfallTurn|swapShortfallTurn|layerFundChip/.test(routeSrc.slice(at, at + 3000)))
+        const layers = ['hl-open', 'hl-deposit', 'nft-buy', 'lido-stake', 'aave-supply', 'aave-repay', 'morpho-lend']
+        check(
+          'layer card (wiring): every funding refusal in the chat route answers through a shortfall composer, and all seven layers are wired',
+          refusalSites.length >= 7 && bare.length === 0 && layers.every((l) => routeSrc.includes(`layer: '${l}'`)),
+          JSON.stringify({ sites: refusalSites.length, bare: bare.map((at) => routeSrc.slice(at, at + 160)), missing: layers.filter((l) => !routeSrc.includes(`layer: '${l}'`)) }),
+        )
+      }
+
       // ── Wallet proof (raised by Coinbase's integration review, case
       // 500PC00000kDVUv; the finding was about US, so it outlived the switch
       // to Stripe). The route mints a real payment session, so "who asked"
@@ -7729,6 +8264,18 @@ async function main() {
           'onramp wiring: the dashboard fund card uses the signed door, not a bare provider link',
           fundCardSrc.includes('startOnrampSession') && !/pay\.coinbase\.com/.test(fundCardSrc),
         )
+        // A completing chip (lib/swap-shortfall: "Buy $50 of ETH", the landing
+        // IS the buy) must never fire its resume on arrival — that re-buys
+        // the ETH that just landed as ETH → USDC → ETH. The arrival effect
+        // returns on `wait.completes` BEFORE the line that calls onPick, and
+        // the wait persists the flag so a reload can't lose it.
+        const completesAt = chipSrc.indexOf('if (wait.completes)')
+        const firesAt = chipSrc.indexOf('onPick(wait.resume)')
+        check(
+          'coin buy card (wiring): a completing chip confirms the landing and returns before the arrival effect fires the resume; the wait persists the flag',
+          completesAt > 0 && firesAt > completesAt && /o\.fund\.completes \? \{ completes: true \}/.test(chipSrc),
+          `completes@${completesAt} fires@${firesAt}`,
+        )
       }
 
       process.env.ONRAMP_ENABLED = wasEnabled
@@ -7807,6 +8354,105 @@ async function main() {
           (outdated.status === 503 ||
             (outdated.status === 409 && (outdated.data as { stage?: string }).stage === 'stale' && /out of date/.test(String((outdated.data as { error?: string }).error)))),
         `${outdated.status} ${JSON.stringify(outdated.data)}`,
+      )
+    }
+
+    // ── Route-level: the tweet stranger's exact turn, THROUGH the swap gate
+    // (lib/swap-shortfall). A fresh wallet is empty on every chain the live
+    // scan reads. Whether this server's card door is open decides the chip,
+    // never the plain copy: the route answers 503 before auth when it's closed.
+    {
+      const emptyBuyer = privateKeyToAccount(generatePrivateKey()).address
+      const doorOpen = (await fetch(`${BASE}/api/onramp/session`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' }, body: '{}' })).status !== 503
+      const buyTurn = (message: string) =>
+        fetch(`${BASE}/api/chat`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+          body: JSON.stringify({ message, walletAddress: emptyBuyer, activeServers: [], history: [] }),
+        }).then((r) => r.json() as Promise<Record<string, unknown> & { clarify?: { options?: { label: string; resume: string; fund?: { presetFiatUsd: number; network: string; completes?: true } }[] } }>)
+      const scanNote = (j: Record<string, unknown>) => (/couldn't draw a top-up plan|couldn't read your/i.test(String(j.reply)) ? ' [the live funding scan did not complete — an RPC answer, not this diff; rerun]' : '')
+      const eth = await buyTurn('Buy $50 of ETH')
+      const ethChip = eth.clarify?.options?.[0]
+      check(
+        `coin buy card (route): an EMPTY wallet's "Buy $50 of ETH" is no signable, reads plainly, and ${doorOpen ? 'carries the $50 completing card chip' : 'names the one next step (the card door is closed on this server)'}`,
+        !(eth.orderRequest || eth.txRequest || eth.txChain || eth.jobId) && eth.buildPath === 'native-swap-short' &&
+          /this wallet needs money in it first/.test(String(eth.reply)) && !/The swap sells/.test(String(eth.reply)) &&
+          (doorOpen
+            ? ethChip?.fund?.completes === true && ethChip.fund.presetFiatUsd === 50 && ethChip.fund.network === ONRAMP_DEFAULT_NETWORK && ethChip.resume === 'Buy $50 of ETH on Base'
+            : !eth.clarify && /Send ETH or USDC to this wallet/.test(String(eth.reply))),
+        `door=${doorOpen}${scanNote(eth)} ${JSON.stringify(eth).slice(0, 400)}`,
+      )
+      const cb = await buyTurn('Buy $20 of cbETH')
+      const cbChip = cb.clarify?.options?.[0]
+      check(
+        `coin buy card (route): an EMPTY wallet's "Buy $20 of cbETH" ${doorOpen ? 'carries a PLAN card chip whose resume restates the buy on Base (the cascade spends the landed ETH)' : 'reads plainly with no chip'}`,
+        !(cb.orderRequest || cb.txRequest || cb.txChain || cb.jobId) && cb.buildPath === 'native-swap-short' && /this wallet needs money in it first/.test(String(cb.reply)) &&
+          (doorOpen
+            ? !!cbChip?.fund && cbChip.fund.completes === undefined && cbChip.resume === 'Buy $20 of CBETH on Base' && /→ buy \$20 of CBETH on Base$/.test(cbChip.label) && simulateLadder(cbChip.resume).kind === 'action'
+            : !cb.clarify),
+        `door=${doorOpen}${scanNote(cb)} ${JSON.stringify(cb).slice(0, 400)}`,
+      )
+    }
+
+    // ── Route-level: the native layers' walls THROUGH their gates
+    // (lib/layer-shortfall), from a fresh wallet that is empty on every chain
+    // the live scan reads. Whether this server's card door is open decides the
+    // chip, never the plain copy.
+    {
+      const emptyWallet = privateKeyToAccount(generatePrivateKey()).address
+      const doorOpen = (await fetch(`${BASE}/api/onramp/session`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' }, body: '{}' })).status !== 503
+      const fleet = await fetch(`${BASE}/api/servers?free=1`).then((r) => r.json() as Promise<{ slug: string; endpoint: string | null }[]>).catch(() => [])
+      const rowsOf = (slug: string) => fleet.filter((s) => s.slug === slug)
+      type LayerTurn = Record<string, unknown> & { clarify?: { options?: { label: string; resume: string; fund?: { presetFiatUsd: number; network: string; completes?: true } }[] } }
+      const layerTurn = (message: string, slug: string) =>
+        fetch(`${BASE}/api/chat`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+          body: JSON.stringify({ message, walletAddress: emptyWallet, activeServers: rowsOf(slug), history: [] }),
+        }).then((r) => r.json() as Promise<LayerTurn>)
+      // A live read that didn't answer (RPC, Hyperliquid info) lands on the
+      // layer's own fail-closed path, not this door — name it so a red reads
+      // as the environment, not the diff.
+      const liveNote = (j: LayerTurn) => (/needs money in it first/.test(String(j.reply)) ? '' : ' [the live scan or venue read did not complete — an RPC/venue answer, not this diff; rerun]')
+      const noSignable = (j: LayerTurn) => !(j.orderRequest || j.txRequest || j.txChain || j.jobId)
+
+      const hlRows = rowsOf('hyperliquid-free')
+      const deposit = hlRows.length ? await layerTurn('Deposit 20 USDC to Hyperliquid', 'hyperliquid-free') : null
+      const depositChip = deposit?.clarify?.options?.[0]
+      const depositPlan = Number(String(deposit?.reply ?? '').match(/the ~\$([\d.]+) plan/)?.[1])
+      check(
+        `layer card (route): an EMPTY wallet's "Deposit 20 USDC to Hyperliquid" answers from the HL layer, reads plainly, and ${doorOpen ? 'carries a plan card chip sized off the plan it names' : 'names the one next step (the card door is closed on this server)'}`,
+        !deposit ||
+          (noSignable(deposit) && deposit.buildPath === 'native-hl-exec' && /^📈 To deposit 20 USDC to Hyperliquid, this wallet needs money in it first/.test(String(deposit.reply)) &&
+            (doorOpen
+              ? !!depositChip?.fund && depositChip.fund.completes === undefined && depositChip.fund.network === ONRAMP_DEFAULT_NETWORK && depositChip.resume === 'Deposit 20 USDC to Hyperliquid' &&
+                depositChip.fund.presetFiatUsd === planFundUsd(depositPlan) && depositChip.label === `Add $${depositChip.fund.presetFiatUsd} with card or bank → deposit 20 USDC to Hyperliquid`
+              : !deposit.clarify && /Send ETH or USDC to this wallet/.test(String(deposit.reply)))),
+        deposit ? `door=${doorOpen}${liveNote(deposit)} ${JSON.stringify(deposit).slice(0, 400)}` : 'no hyperliquid-free row in this directory',
+      )
+      const long = hlRows.length ? await layerTurn('2x long $12 of HYPE on hyperliquid', 'hyperliquid-free') : null
+      const longChip = long?.clarify?.options?.[0]
+      check(
+        `layer card (route): an EMPTY wallet's "2x long $12 of HYPE on hyperliquid" (the prod wall's lead step) answers plainly with the collateral it needs${doorOpen ? ' and a plan card chip whose resume is the ask itself' : ''}`,
+        !long ||
+          (noSignable(long) && long.buildPath === 'native-hl-exec' &&
+            /^📈 To go long \$12 of HYPE at 2x on Hyperliquid, this wallet needs money in it first/.test(String(long.reply)) && /The position needs about \$6 of USDC on Hyperliquid as collateral\./.test(String(long.reply)) &&
+            (doorOpen ? !!longChip?.fund && longChip.fund.completes === undefined && longChip.resume === '2x long $12 of HYPE on hyperliquid' && simulateLadder(longChip.resume).kind === 'action' : !long.clarify)),
+        long ? `door=${doorOpen}${liveNote(long)} ${JSON.stringify(long).slice(0, 400)}` : 'no hyperliquid-free row in this directory',
+      )
+
+      const lidoRows = rowsOf('lido-free')
+      const stake = lidoRows.length ? await layerTurn('Stake 0.05 ETH on Lido', 'lido-free') : null
+      const stakeChip = stake?.clarify?.options?.[0]
+      check(
+        `layer card (route): an EMPTY wallet's "Stake 0.05 ETH on Lido" answers from the Lido layer, reads plainly, and ${doorOpen ? 'carries a DIRECT card chip (the delivery is the stake\'s own ETH; the resume builds the stake)' : 'names the one next step'}`,
+        !stake ||
+          (noSignable(stake) && stake.buildPath === 'native-lido' && /^🌊 To stake 0\.05 ETH on Lido, this wallet needs money in it first/.test(String(stake.reply)) &&
+            (doorOpen
+              ? !!stakeChip?.fund && stakeChip.fund.completes === undefined && stakeChip.resume === 'Stake 0.05 ETH on Lido' &&
+                /^Add \$\d+ with card or bank → stake 0\.05 ETH on Lido$/.test(stakeChip.label) && /exactly what the stake spends/.test(String(stake.reply))
+              : !stake.clarify)),
+        stake ? `door=${doorOpen}${liveNote(stake)} ${JSON.stringify(stake).slice(0, 400)}` : 'no lido-free row in this directory',
       )
     }
 
@@ -8708,7 +9354,7 @@ async function main() {
         ...rows.map(([symbol, balance, valueUsd]) => ({ symbol, address: `0x${symbol.toLowerCase().padEnd(40, '0')}`, balance: String(balance), priceUsd: valueUsd == null ? null : valueUsd / balance, valueUsd, chain: c.name })),
       ]
       const tokenUsd = rows.reduce((a, [, , usd]) => a + (usd ?? 0), 0)
-      return { id, key: c.key, name: c.name, short: c.short, color: c.color, totalUsd: tokenUsd + nativeEth * 2500, nativeEth, nativeUsd: nativeEth * 2500, gas: gasStateFor(id, nativeEth, tokenUsd), holdings, ...extra }
+      return { id, key: c.key, name: c.name, short: c.short, color: c.color, totalUsd: tokenUsd + nativeEth * 2500, nativeEth, nativeUsd: nativeEth * 2500, gas: gasStateFor(id, nativeEth, tokenUsd), gasSymbol: 'ETH', gasUnits: nativeEth, holdings, ...extra }
     }
     const ethUsd = 2500
     // The 2026-09-14 screenshot wallet: ETH on Ethereum + Base, USDC + DAI on
@@ -13136,7 +13782,7 @@ async function main() {
   // ── Chain registry + picker (lib/chains) ──────────────────────────────────
   // The registry is the single source of truth for the picker, splash scoping,
   // and per-chain swap builds — every entry must be complete enough to build.
-  check('chains: registry carries base/ethereum/arbitrum/optimism/robinhood', JSON.stringify(APP_CHAINS.map((c) => c.key).sort()) === '["arbitrum","base","ethereum","optimism","robinhood"]')
+  check('chains: registry carries base/ethereum/arbitrum/optimism/robinhood/arc', JSON.stringify(APP_CHAINS.map((c) => c.key).sort()) === '["arbitrum","arc","base","ethereum","optimism","robinhood"]')
   check('chains: every entry is build-complete (router+quoter, wrapped native, explorer, alchemy net)', APP_CHAINS.every((c) => !!c.uniswap?.swapRouter02 && !!c.uniswap?.quoterV2 && /^0x[0-9a-fA-F]{40}$/.test(c.wrappedNative) && c.explorerTx.startsWith('https://') && !!c.alchemyNet && c.viem.id === c.id))
   check('chains: base keeps the original router constants', chainById(8453)?.uniswap?.swapRouter02 === '0x2626664c2603336E57B271c5C0b26F421741e481' && chainById(8453)?.uniswap?.quoterV2 === '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a')
   check('chains: v4 fallback pinned ONLY on Robinhood (quoter + Universal Router + Permit2)', chainById(4663)?.uniswapV4?.quoter === '0x8dc178efb8111bb0973dd9d722ebeff267c98f94' && chainById(4663)?.uniswapV4?.universalRouter === '0x8876789976decbfcbbbe364623c63652db8c0904' && chainById(4663)?.uniswapV4?.permit2 === '0x000000000022d473030f116ddee9f6b43ac78ba3' && APP_CHAINS.every((c) => c.id === 4663 || c.uniswapV4 === null))
@@ -21172,36 +21818,45 @@ async function main() {
       fillLabel({ id: 'x', t: Date.UTC(2026, 8, 8, 14, 2) / 1000, side: 'buy', usd: 12, venue: 'Uniswap v3', venueId: 'uniswap', chainId: 4663, chain: 'Robinhood Chain', txUrl: null, source: 'turn' }, 'AAPL') === 'Bought $12.00 of AAPL · Uniswap v3 · Robinhood Chain · 09-08 14:02' &&
         fillLabel({ id: 'y', t: Date.UTC(2026, 8, 8, 14, 2) / 1000, side: 'sell', usd: 1500, venue: 'CoW', venueId: 'cow', chainId: 8453, chain: null, txUrl: null, source: 'job-step' }, 'ETH') === 'Sold $1,500 of ETH · CoW · 09-08 14:02',
     )
-    // The route + a fixture: a throwaway wallet signs one embed turn naming ETH
+    // The route + a fixture: a throwaway wallet signs embed turns naming ETH
     // through the telemetry route under a key minted HERE (the run's earlier
     // key is purged by now). The sessionId must NOT start with `harness-`: that
     // belt stamps is_internal, and the fills fence would (correctly) hide it —
     // the fixture simulates an ORGANIC stranger, like fixture-ilink-.
-    // its fills carry exactly that receipt, an INTERNAL twin never shows, and
-    // the key is purged after — which removes the fixture rows with it.
+    //
+    // WHY THIS PIN WAS RED FROM #776 TO 2026-09-16 (the route was right; the
+    // fixture never proved anything): the old fixture posted ONE keyed-embed
+    // `tx` beacon with a made-up hash, which the S-2 verifier correctly leaves
+    // `unverified`, then tried to stamp it `attested` through an in-process
+    // Prisma `updateMany` wrapped in `catch {}`. The harness process has no
+    // DATABASE_URL (Prisma reads `.env`, the worktree has only `.env.local`),
+    // so the stamp threw silently, COUNTED_TURN_WHERE fenced the row out, and
+    // the read came back `fills=[]` on every run — receipt wall up or down.
+    //
+    // Now the fixture is HTTP-only and proves the fence instead of bypassing it:
+    //   · a keyed-embed `cow-order` beacon — non-EVM, so the verifier stamps
+    //     `attested` on its own (the documented #685 tranche) and it COUNTS;
+    //   · a forged `tx` beacon (fake hash, same wallet, same symbol) — the
+    //     verifier can never count it (`unverified` or `mismatch`), so it must
+    //     NEVER paint: a stranger's beacon can't draw a fill on anyone's chart;
+    //   · an INTERNAL twin — fenced by is_internal either way.
+    // Exactly one fill (the CoW order) comes back. The key is purged after,
+    // which removes the fixture rows with it.
     const fkMint = await fetch(`${BASE}/api/embed-keys`, { method: 'POST', headers: CJ, body: JSON.stringify({ label: 'harness viz fills' }) })
     const fk = (await fkMint.json()) as { id?: string; key?: string }
     const fillsWallet = `0x${'f1'.repeat(10)}${Date.now().toString(16).padStart(20, '0').slice(-20)}`
-    const fillsTx = `https://basescan.org/tx/0x${'ab'.repeat(32)}`
-    const fillsPost = await fetch(`${BASE}/api/embed/telemetry`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ key: fk.key, sessionId: 'fixture-viz-fills', page: 'https://harness-embed.test/eth', prompt: 'buy $12 of ETH on base', outcome: 'signed', artifact: 'tx', chain: 'base', valueUsd: 12, txUrl: fillsTx, buildPath: 'native-swap-uniswap', walletAddress: fillsWallet }),
-    })
-    const fillsTwin = await fetch(`${BASE}/api/embed/telemetry`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' },
-      body: JSON.stringify({ key: fk.key, sessionId: 'fixture-viz-fills-int', page: 'https://harness-embed.test/eth', prompt: 'sell $99 of ETH on base', outcome: 'signed', artifact: 'tx', chain: 'base', valueUsd: 99, txUrl: fillsTx, buildPath: 'native-swap-uniswap', walletAddress: fillsWallet }),
-    })
-    // QA-7 (integration): the fills read also fences COUNTED_TURN_WHERE, so an
-    // embed-lane fixture with a made-up receipt lands 'unverified' — exactly a
-    // forger's beacon — and correctly never paints. Stamp the ORGANIC fixture as
-    // a counted turn ('attested'), the way a real receipt would; the internal
-    // twin stays as posted (fenced by is_internal either way).
-    try {
-      const { default: prismaFills } = await import('../lib/db')
-      await prismaFills.embedTurn.updateMany({ where: { sessionId: 'fixture-viz-fills', walletAddress: { in: [fillsWallet, fillsWallet.toLowerCase()] } }, data: { verification: 'attested' } })
-    } catch {}
+    const fillsTx = `https://explorer.cow.fi/base/orders/0x${'cd'.repeat(56)}`
+    const fillsBeacon = (body: Record<string, unknown>, internal = false) =>
+      fetch(`${BASE}/api/embed/telemetry`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...(internal ? { 'x-yf-internal-run': '1' } : {}) },
+        body: JSON.stringify({ key: fk.key, page: 'https://harness-embed.test/eth', outcome: 'signed', chain: 'base', walletAddress: fillsWallet, ...body }),
+      })
+    const fillsPost = await fillsBeacon({ sessionId: 'fixture-viz-fills', prompt: 'buy $12 of ETH on base', artifact: 'cow-order', valueUsd: 12, txUrl: fillsTx, buildPath: 'native-swap-cow' })
+    const fillsForged = await fillsBeacon({ sessionId: 'fixture-viz-fills', prompt: 'sell $500 of ETH on base', artifact: 'tx', valueUsd: 500, txUrl: `https://basescan.org/tx/0x${'ab'.repeat(32)}`, buildPath: 'native-swap-uniswap' })
+    const fillsTwin = await fillsBeacon({ sessionId: 'fixture-viz-fills-int', prompt: 'sell $99 of ETH on base', artifact: 'cow-order', valueUsd: 99, txUrl: fillsTx, buildPath: 'native-swap-cow' }, true)
+    const postV = ((await fillsPost.json().catch(() => ({}))) as { verification?: string }).verification
+    const forgedV = ((await fillsForged.json().catch(() => ({}))) as { verification?: string }).verification
     type FillsBody = { symbol?: string; address?: string; fills?: { id: string; t: number; side: string; usd: number | null; venue: string; venueId: string; chainId: number | null; chain: string | null; txUrl: string | null; source: string }[]; cached?: boolean; error?: string }
     const fills1 = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=eth&address=${fillsWallet}`)).json()) as FillsBody
     const fills2 = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=ETH&address=${fillsWallet}`)).json()) as FillsBody
@@ -21210,14 +21865,16 @@ async function main() {
     const fills404 = await fetch(`${BASE}/api/markets/viz/fills?symbol=ZZZZQ&address=${fillsWallet}`)
     const f0 = fills1.fills?.[0]
     check(
-      'viz fills route: the throwaway wallet\'s signed ETH turn comes back as ONE buy fill ($12 · Uniswap v3 · Base · the explorer link, source turn), the internal twin is fenced out, AAPL shows none, the symbol upper-cases, the second read is cached, a bad address is 400 and a stranger symbol 404',
-      (fkMint.status === 200 || fkMint.status === 201) && fillsPost.status === 200 && fillsTwin.status === 200 && fills1.symbol === 'ETH' && fills1.address === fillsWallet.toLowerCase() && fills1.fills?.length === 1 &&
-        f0?.side === 'buy' && f0.usd === 12 && f0.venue === 'Uniswap v3' && f0.venueId === 'uniswap' && f0.chainId === 8453 && f0.chain === 'Base' && f0.txUrl === fillsTx && f0.source === 'turn' && Math.abs(f0.t * 1000 - Date.now()) < 120_000 &&
+      'viz fills route: the throwaway wallet\'s attested CoW order on ETH comes back as ONE buy fill ($12 · CoW · Base · the order link, source turn), the forged-receipt swap beside it never paints (COUNTED_TURN_WHERE), the internal twin is fenced out, AAPL shows none, the symbol upper-cases, the second read is cached, a bad address is 400 and a stranger symbol 404',
+      (fkMint.status === 200 || fkMint.status === 201) && fillsPost.status === 200 && fillsForged.status === 200 && fillsTwin.status === 200 &&
+        postV === 'attested' && forgedV !== undefined && !(COUNTED_VERIFICATIONS as readonly string[]).includes(forgedV) &&
+        fills1.symbol === 'ETH' && fills1.address === fillsWallet.toLowerCase() && fills1.fills?.length === 1 &&
+        f0?.side === 'buy' && f0.usd === 12 && f0.venue === 'CoW' && f0.venueId === 'cow' && f0.chainId === 8453 && f0.chain === 'Base' && f0.txUrl === fillsTx && f0.source === 'turn' && Math.abs(f0.t * 1000 - Date.now()) < 120_000 &&
         fills2.cached === true && fillsOther.fills?.length === 0 && fillsBad.status === 400 && fills404.status === 404 && FILLS_TTL_MS === 60_000,
-      `mint=${fkMint.status} post=${fillsPost.status}/${fillsTwin.status} fills=${JSON.stringify(fills1.fills ?? fills1.error).slice(0, 200)} other=${fillsOther.fills?.length}`,
+      `mint=${fkMint.status} post=${fillsPost.status}/${fillsForged.status}/${fillsTwin.status} verification=${postV}/${forgedV} fills=${JSON.stringify(fills1.fills ?? fills1.error).slice(0, 200)} other=${fillsOther.fills?.length}`,
     )
     const fkGone = await fetch(`${BASE}/api/embed-keys/${fk.id}?purge=1`, { method: 'DELETE', headers: C })
-    check('viz fills fixture: the fixture key is purged after the check (its two turns go with it)', fkGone.status === 200 || fkGone.status === 204, `purge=${fkGone.status}`)
+    check('viz fills fixture: the fixture key is purged after the check (its three turns go with it)', fkGone.status === 200 || fkGone.status === 204, `purge=${fkGone.status}`)
     // FIRST-PARTY fills (2026-09-16): /chat beacons carry NO prompt and NO
     // detail, so a /chat swap used to be invisible to the fills reader. The
     // beacon now carries side-tagged symbols, allowlisted server-side.
@@ -22515,6 +23172,208 @@ async function main() {
         !/>Sell AAPL</.test(dayAapl) && !/>Sell ETH</.test(dayEth) && /sym__act-chip--buy"[^>]*>Buy AAPL</.test(dayAapl),
       `AAPL pressed=${sgTfPressed(dayAapl).join() || 'none'} · ETH pressed=${sgTfPressed(dayEth).join() || 'none'}`,
     )
+  }
+
+  // ── Arc — Circle's L1 (chain 5042, mainnet 2026-09-16) as a first-class
+  // chain AND a LiFi funding destination. Everything Optimism needed (#707)
+  // plus the one fact Optimism didn't have: USDC IS the gas token. Each pin
+  // below is one of the ways a half-added chain lies (scanned but not
+  // parseable, parseable but unsignable, "no ETH for gas" on a chain that
+  // has no ETH), checked against the registry, the grammars, the planners,
+  // the live chain and the running route.
+  console.log('— arc: Circle\'s Arc as a first-class chain + LiFi funding destination')
+  {
+    const arc = chainByKey('arc')
+    const USDC_ARC = '0x3600000000000000000000000000000000000000'
+    check(
+      'arc: registry entry is complete and honest — v3 yes, v4 none, CoW has no Arc book, USDC is the native gas (18-dec view) AND the only USD stable, wrappedNative is that same USDC, BTC/EUR are aliases of cirBTC/EURC, and there is NO ETH key',
+      !!arc && arc.id === 5042 && arc.alchemyNet === 'arc-mainnet' && !!arc.uniswap && arc.uniswapV4 === null && arc.cow === false && !COW_API_BASE[5042] &&
+        arc.nativeSymbol === 'USDC' && arcGasIsStable(arc) && arcNativeSymbolFor(5042) === 'USDC' && arcNativeSymbolFor(8453) === 'ETH' &&
+        arc.viem.nativeCurrency.symbol === 'USDC' && arc.viem.nativeCurrency.decimals === 18 &&
+        Object.keys(arc.stables).length === 1 && arc.stables[USDC_ARC] === 6 && primaryStable(5042)?.symbol === 'USDC' &&
+        arc.wrappedNative.toLowerCase() === USDC_ARC &&
+        arc.tokens.BTC?.address === arc.tokens.CIRBTC?.address && arc.tokens.BTC?.decimals === 8 &&
+        arc.tokens.EUR?.address === arc.tokens.EURC?.address && !('ETH' in arc.tokens) &&
+        resolveToken('BTC', 5042) === arc.tokens.CIRBTC.address.toLowerCase() && tokenDecimals('BTC', 5042) === 8 && resolveToken('ETH', 5042) === null &&
+        // Every existing chain still says ETH — the field landed everywhere.
+        APP_CHAINS.filter((c) => c.id !== 5042).every((c) => c.nativeSymbol === 'ETH'),
+      JSON.stringify({ tokens: Object.keys(arc?.tokens ?? {}), stables: arc?.stables }),
+    )
+    check(
+      'arc: "arc" is an English noun — only a chain slot names the chain (on/from/to arc, "arc chain", "Circle\'s Arc"); the noun never routes',
+      chainNamedIn('buy $10 of BTC on arc')?.id === 5042 && chainNamedIn('swap 12 USDC to arc')?.id === 5042 && chainNamedIn('swap 12 USDC from base to arc')?.id === 8453 && chainNamedIn('use the arc chain')?.id === 5042 &&
+        chainNamedIn("swap 10 USDC to EURC on Circle's Arc")?.id === 5042 && chainNamedIn('bridge it to arc network')?.id === 5042 &&
+        chainNamedIn('the arc of ETH this week, swap 10 USDC for ETH') === null && chainNamedIn('buy an arc lamp') === null && chainNamedIn('arc reactor tokens are dumb') === null &&
+        canonicalChainWord('arc') === 'arc' && canonicalChainWord('arc network') === 'arc' && canonicalChainWord('circle arc') === 'arc' &&
+        arcChainMentions('swap 12 USDC from base to arc').map((m) => m.chain).join(',') === 'base,arc',
+    )
+    // The signature-time blocker: a chain the scanner sees but the wallet
+    // can't switch to is a chip that walls at the popup (#707's lesson).
+    const wcSrcArc = await readFile(new URL('../lib/wallet-chains.ts', import.meta.url), 'utf8')
+    check(
+      'arc: the wallet can switch to it — lib/wallet-chains carries arcChain with its own transport (never publicnode), so wagmi + the CDP connector both know chain 5042',
+      WALLET_CHAINS.some((c) => c.id === 5042) && /arcChain\]/.test(wcSrcArc) && /\[arcChain\.id\]: http\(\)/.test(wcSrcArc) && !/publicnode[^\n]*arc|arc[^\n]*publicnode/i.test(wcSrcArc),
+    )
+    // Token list: the CoinGecko Arc list carries an 18-dec "USDC" squat at
+    // 0x8e98… beside the real 6-dec native one — the registry map must win.
+    await ensureTokenList(5042).catch(() => {})
+    check(
+      'arc: after the CoinGecko warm the registry still wins every USDC lookup (6 decimals at 0x3600…) — the 18-dec "USDC" squat on that list never resolves',
+      resolveToken('USDC', 5042) === USDC_ARC && tokenDecimals('USDC', 5042) === 6 && resolveToken('CIRBTC', 5042) === arc?.tokens.CIRBTC.address.toLowerCase(),
+      `USDC → ${resolveToken('USDC', 5042)} (${tokenDecimals('USDC', 5042)} dec)`,
+    )
+    // ── Funding grammar + jobs ──
+    const fArc = parseRobinhoodFunding('fund arc with $12 from base')
+    const fArcGas = parseRobinhoodFunding('Fund arc with $12 from ethereum including gas')
+    const fRh = parseRobinhoodFunding('Fund robinhood chain with $14 from base including gas')
+    check(
+      'arc funding grammar: "fund arc with $12 from base" → destination 5042 with NO gas leg (even when "including gas" is typed — USDC is the gas); "arc network" reads the same; the Robinhood sentence is unchanged (4663, gas honoured)',
+      !!fArc && fArc.destChainId === 5042 && fArc.destName === 'Arc' && fArc.gasIncluded === false && fArc.originChainId === 8453 && fArc.token === 'USDC' &&
+        !!fArcGas && fArcGas.destChainId === 5042 && fArcGas.gasIncluded === false && fArcGas.originChainId === 1 &&
+        parseRobinhoodFunding('fund arc network with $12 from optimism')?.destChainId === 5042 &&
+        !!fRh && fRh.destChainId === 4663 && fRh.gasIncluded === true && fRh.destName === 'Robinhood Chain',
+      JSON.stringify({ fArc, fArcGas }),
+    )
+    const rdArc = robinhoodFundingFromCrossChain('swap 12 USDC from base to arc')
+    const rdFloor = robinhoodFundingFromCrossChain('move 5 USDC from base to arc')
+    const rdBuy = robinhoodFundingFromCrossChain('swap 20 USDC from base to BTC on arc')
+    const rdEth = robinhoodFundingFromCrossChain('bridge 0.01 ETH from ethereum to arc')
+    const compileShape = (ask: string) => { const j = compileJobAsk(ask); return j && 'steps' in j && j.steps ? j.steps.map((st) => `${st.kind}:${st.builder}`).join(',') : JSON.stringify(j) }
+    check(
+      'arc funding redirect: "swap 12 USDC from base to arc" → "Fund arc with $12 from base" (NEAR can\'t reach Arc); under the $9 floor → $9/$20/$50 chips that compile; "… to BTC on arc" → one fund-then-buy chip; an Ethereum-ETH ask gets the dollar chips (Arc has no canonical bridge, and the copy says USDC pays gas)',
+      !!rdArc && 'ask' in rdArc && rdArc.ask === 'Fund arc with $12 from base' && compileShape('swap 12 USDC from base to arc') === 'sign:native-lifi-fund,wait:wait' &&
+        !!rdFloor && 'clarify' in rdFloor && /smallest clean move onto Arc is \$9/.test(rdFloor.reply) && rdFloor.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => /^Fund arc with \$\d+ from base$/.test(o.resume) && compileShape(o.resume) === 'sign:native-lifi-fund,wait:wait') &&
+        !!rdBuy && 'clarify' in rdBuy && /lands as USDC first, then buys BTC/.test(rdBuy.reply) && compileShape(rdBuy.clarify.options[0].resume) === 'sign:native-lifi-fund,wait:wait,sign:native-lifi-swap' &&
+        !!rdEth && 'clarify' in rdEth && /Arc has no ETH/.test(rdEth.reply) && /pays for gas there/.test(rdEth.reply) && rdEth.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => /using eth$/.test(o.resume) && compileShape(o.resume) === 'sign:native-lifi-fund,wait:wait'),
+      JSON.stringify({ rdArc, floor: rdFloor && 'clarify' in rdFloor ? rdFloor.clarify.options.map((o) => o.resume) : rdFloor }),
+    )
+    const jArc = compileJobAsk('Fund arc with $20 from base, then buy $15 of BTC')
+    const jStock = compileJobAsk('Fund arc with $20 from base, then buy $15 of AAPL')
+    const jRh = compileJobAsk('Fund robinhood chain with $14 from base including gas, then buy $10 of AAPL')
+    const stepsOf = (j: ReturnType<typeof compileJobAsk>) => (j && 'steps' in j && j.steps ? j.steps : [])
+    check(
+      'arc jobs: fund → wait → buy compiles as ONE value leg carrying dest:5042 (no gas leg), the wait names Arc, and the buy runs on chain 5042 selling USDC for BTC; a stock ticker after an Arc funding refuses BY NAME; every Robinhood recipe carries NO dest key (pre-Arc jobs stay byte-identical)',
+      stepsOf(jArc).length === 3 && stepsOf(jArc)[0].builder === 'native-lifi-fund' && (stepsOf(jArc)[0].params as { dest?: number; leg?: string }).dest === 5042 && (stepsOf(jArc)[0].params as { leg?: string }).leg === 'usdg' &&
+        stepsOf(jArc)[1].kind === 'wait' && /Arc/.test(stepsOf(jArc)[1].title) && stepsOf(jArc)[2].builder === 'native-lifi-swap' &&
+        JSON.stringify(stepsOf(jArc)[2].params) === JSON.stringify({ buyUsd: 15, buyToken: 'BTC', sellToken: 'USDC', chainId: 5042 }) &&
+        !!jStock && 'problem' in jStock && /Arc doesn't trade "AAPL"/.test(String(jStock.problem)) && /EURC, CIRBTC, WETH/.test(String(jStock.problem)) &&
+        stepsOf(jRh).length === 4 && stepsOf(jRh).every((st) => !('dest' in (st.params as object))) && stepsOf(jRh)[0].params.leg === 'gas' && stepsOf(jRh)[3].params.chainId === 4663 && stepsOf(jRh)[3].params.sellToken === 'USDG' &&
+        parseSameChainSwapSegment('swap 20 USDC for BTC on arc')?.chainId === 5042 && (() => { const t = parseTransferSegment('send 5 USDC to 0x1111111111111111111111111111111111111111 on arc'); return !!t && 'chainId' in t && t.chainId === 5042 })(),
+      JSON.stringify({ arc: stepsOf(jArc).map((st) => [st.builder, st.params]), stock: jStock }),
+    )
+    const arcDest = ARC_LIFI_DESTINATIONS[5042]
+    const arcChips = planRobinhoodFundingChips({ origins: [{ chainId: 8453, word: 'Base', token: 'USDC', usd: 40, gasEth: 0.01 }], needUsd: 12, gasIncluded: false, followup: 'buy $10 of BTC', dest: arcDest })
+    const arcEmpty = planRobinhoodFundingAdvice({ scan: { origins: [], gaslessOrigins: [], allScanned: [], failedOrigins: [] }, needUsd: 12, gasIncluded: false, followup: '', dest: arcDest })
+    const arcPending = rhFundingPending(10, 'BTC', undefined, arcDest)
+    const rhPending = rhFundingPending(10, 'AAPL')
+    check(
+      'arc chips/advice/pending: fundSegment never emits "including gas" for Arc (and still does for Robinhood Chain); the chips read "Fund arc with …" and every resume compiles; the empty-wallet refusal derives its origin list; the pending carries dest ONLY for Arc; lifiDestination/isLifiFundedChain know both chains and nothing else',
+      arcFundSegment(9, 'Base', true, 'USDC', arcDest) === 'Fund arc with $9 from base' && arcFundSegment(9, 'Base', true, 'ETH', arcDest) === 'Fund arc with $9 from base using eth' && arcFundSegment(9, 'Base', true) === 'Fund robinhood chain with $9 from base including gas' &&
+        !!arcChips && arcChips.length >= 1 && arcChips.every((c) => /^Fund arc with \$\d+ from base, then buy \$10 of BTC$/.test(c.resume) && compileShape(c.resume) === 'sign:native-lifi-fund,wait:wait,sign:native-lifi-swap') &&
+        arcEmpty.kind === 'none' && arcEmpty.copy.includes(fundingOriginWords()) &&
+        arcPending.data.dest === '5042' && /Unfunded buy on Arc/.test(arcPending.summary) && !/or gas/.test(arcPending.summary) && !('dest' in rhPending.data) && /or gas/.test(rhPending.summary) &&
+        arcLifiDestination(5042)?.gasLeg === false && arcLifiDestination(4663)?.gasLeg === true && arcLifiDestination(8453) === null && arcIsLifiFundedChain(5042) && !arcIsLifiFundedChain(10),
+      JSON.stringify({ chips: arcChips?.map((c) => c.resume), pending: arcPending }),
+    )
+    // ── The USDC-gas model ──
+    const arcRead = new Map([[5042, { chainId: 5042, nativeEth: 0, stable: { symbol: 'USDC', address: USDC_ARC as `0x${string}`, balance: 0 } }]])
+    const arcRows = mergeChains([arc!], arcRead, [{ symbol: 'cirBTC', address: arc!.tokens.CIRBTC.address, balance: '0.001', priceUsd: 75000, valueUsd: 75, chain: 'Arc' }], 2500)
+    const arcRowFunded = mergeChains([arc!], new Map([[5042, { chainId: 5042, nativeEth: 0, stable: { symbol: 'USDC', address: USDC_ARC as `0x${string}`, balance: 25 } }]]), [], 2500)[0]
+    const baseRowsForFlags = mergeChains([chainById(8453)!], new Map([[8453, { chainId: 8453, nativeEth: 0.01, stable: { symbol: 'USDC', address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`, balance: 40 } }]]), [], 2500)
+    const arcFlags = walletFlags([...arcRows, ...baseRowsForFlags], 2500)
+    check(
+      'arc gas model: verdicts read the STABLE in USDC units (0 → none with tokens, 0.05 → low, 0.5 → ok, empty chain → empty); the wallet row carries no ETH holding, gasSymbol USDC and gasUnits = the USDC balance; the flag says "no USDC for gas" and its primary fix is the $9 LiFi leg with NO gas clause, its receive door names USDC',
+      gasStateFor(5042, 0, 5) === 'none' && gasStateFor(5042, 0.05, 5) === 'low' && gasStateFor(5042, 0.5, 5) === 'ok' && gasStateFor(5042, 0, 0) === 'empty' &&
+        arcRows[0].gas === 'none' && arcRows[0].gasSymbol === 'USDC' && arcRows[0].gasUnits === 0 && arcRows[0].nativeEth === 0 && !arcRows[0].holdings.some((h) => h.native) && arcRows[0].holdings.map((h) => h.symbol).join() === 'cirBTC' &&
+        arcRowFunded.gas === 'ok' && arcRowFunded.gasUnits === 25 && arcRowFunded.holdings.length === 1 && arcRowFunded.holdings[0].symbol === 'USDC' && arcRowFunded.totalUsd === 25 &&
+        arcFlags.length === 1 && arcFlags[0].kind === 'no-gas' && arcFlags[0].title === 'Arc holds tokens but no USDC for gas' && arcFlags[0].actions[0].ask === `Fund arc with $${MIN_VALUE_LEG_USD} from base` && !arcFlags[0].actions[0].mcps &&
+        arcFlags[0].actions.some((a) => a.door === 'receive' && a.label === 'Receive USDC on Arc'),
+      JSON.stringify({ row: { gas: arcRows[0].gas, holdings: arcRows[0].holdings.map((h) => h.symbol) }, flags: arcFlags.map((f) => [f.title, f.actions.map((a) => a.ask ?? a.label)]) }),
+    )
+    const ethOnArc = await arcBuildTransferArtifact({ amountHuman: '1', token: 'ETH', to: '0x1111111111111111111111111111111111111111', chainId: 5042, chainName: 'Arc' }, '0x2222222222222222222222222222222222222222')
+    const noGasArc = arcClassifyDryRunError(new ArcInsufficientFundsError({ cause: new ArcBaseError('insufficient funds for gas * price + value') }), { chainName: 'Arc', gasSymbol: 'USDC' })
+    const noGasBase = arcClassifyDryRunError(new ArcInsufficientFundsError({ cause: new ArcBaseError('insufficient funds for gas * price + value') }), { chainName: 'Base' })
+    check(
+      'arc gas model: "send 1 ETH on arc" refuses by name (no ETH there — USDC is the gas token) and never moves native USDC under the wrong name; a no-gas dry-run verdict names USDC on Arc and ETH elsewhere; the all-sell/all-send reserve is one shared constant',
+      'problem' in ethOnArc && /has no ETH/.test(ethOnArc.problem) && /gas token is USDC/.test(ethOnArc.problem) &&
+        noGasArc.kind === 'no-gas' && /no USDC for gas on Arc/.test(noGasArc.reason) && noGasBase.kind === 'no-gas' && /no ETH for gas on Base/.test(noGasBase.reason) &&
+        ARC_STABLE_GAS_RESERVE > 0 && ARC_STABLE_GAS_RESERVE < 1,
+      JSON.stringify({ ethOnArc, noGasArc: noGasArc.kind === 'no-gas' ? noGasArc.reason : noGasArc }),
+    )
+    check(
+      'arc alchemy: arc-mainnet is GATED on a live eth_chainId probe (a boolean, never a throw — the Data API call is all-or-nothing, so an unenabled member would blank every other chain); an ungated network answers true without a key',
+      typeof (await arcAlchemyNetworkEnabled('arc-mainnet')) === 'boolean' && (await arcAlchemyNetworkEnabled('base-mainnet')) === true && (await arcAlchemyNetworkEnabled('nope-mainnet')) === false,
+      `arc-mainnet enabled: ${await arcAlchemyNetworkEnabled('arc-mainnet')}`,
+    )
+    // ── Live, read-only, against the real chain + LiFi (the burner signs nothing) ──
+    const arcPk = await readFile('.env.local', 'utf8').then((t) => t.match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null).catch(() => null)
+    const btcProbe = await arcUsdPerToken(5042, 'BTC').catch(() => null)
+    const eurProbe = await arcUsdPerToken(5042, 'EURC').catch(() => null)
+    const wethProbe = await arcUsdPerToken(5042, 'WETH').catch(() => null)
+    check(
+      'arc (live): usdPerToken prices BTC (cirBTC, five figures) and EURC (≈ €1 in USD) on Arc\'s own Uniswap v3 pools; WETH is honestly unpriceable (its pool was empty at launch)',
+      !!btcProbe && btcProbe.usd > 10_000 && btcProbe.usd < 1_000_000 && /v3/.test(btcProbe.via) && !!eurProbe && eurProbe.usd > 0.8 && eurProbe.usd < 1.6 && wethProbe === null,
+      JSON.stringify({ btcProbe, eurProbe, wethProbe }),
+    )
+    if (arcPk) {
+      const arcBurner = privateKeyToAccount((arcPk.startsWith('0x') ? arcPk : `0x${arcPk}`) as `0x${string}`)
+      let legNote = ''
+      let legOk = false
+      try {
+        const leg = await arcBuildLifiBridgeLeg({ leg: 'usdg', usd: 9, from: arcBurner.address, origin: 8453, dest: 5042 })
+        const bridge = leg.steps[leg.bridgeStepIndex]
+        const toolOk = (ARC_BRIDGE_TOOLS as readonly string[]).some((t) => leg.summary.includes(`tool: ${t}`))
+        legOk = !leg.blocked && leg.steps.every((st) => st.tx.chainId === 8453 && st.tx.value === '0') && bridge.tx.to.toLowerCase() === '0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae' &&
+          leg.arrival.chainId === 5042 && leg.arrival.token.toLowerCase() === USDC_ARC && leg.arrival.symbol === 'USDC' && leg.arrival.decimals === 6 && toolOk &&
+          leg.guardrails.checks.every((c) => c.ok) && /USDC on Arc/.test(leg.summary)
+        legNote = `${leg.summary} · checks ${leg.guardrails.checks.map((c) => `${c.ok ? '✓' : '✗'}${c.id}`).join(' ')}`
+      } catch (e) {
+        legNote = `threw: ${e instanceof Error ? e.message : String(e)}`
+      }
+      let gasLegRefused = false
+      try { await arcBuildLifiBridgeLeg({ leg: 'gas', usd: 2, from: arcBurner.address, origin: 8453, dest: 5042 }) } catch (e) { gasLegRefused = /pays gas in USDC/.test(e instanceof Error ? e.message : '') }
+      check(
+        'arc (live): buildLifiBridgeLeg Base → Arc $9 for the burner builds an approve→bridge chain on Base to the pinned LiFi diamond via an ARC_BRIDGE_TOOLS tool (Across/Relay, never Polymer), the arrival waits for USDC on 5042, every guard is green; a GAS leg to Arc throws by name',
+        legOk && gasLegRefused,
+        legNote,
+      )
+      let swapNote = ''
+      let swapOk = false
+      try {
+        const sw = await arcBuildUniswapSwap({ sellToken: 'USDC', buyToken: 'BTC', amountHuman: '5', from: arcBurner.address, chainId: 5042 })
+        swapOk = sw.swapTx.chainId === 5042 && sw.swapTx.to.toLowerCase() === arc!.uniswap!.swapRouter02.toLowerCase() && sw.swapTx.value === '0' && /USDC → ~0\.0000\d+ BTC via Uniswap v3 on Arc/.test(sw.summary) && sw.guardrails.checks.some((c) => c.id === 'fee' && c.ok)
+        swapNote = sw.summary
+      } catch (e) {
+        swapNote = `threw: ${e instanceof Error ? e.message : String(e)}`
+      }
+      check('arc (live): buildUniswapSwap USDC → BTC on Arc builds against Arc\'s SwapRouter02 with the fee sweep, priced by the chain\'s own quoter', swapOk, swapNote)
+      // The running route: an Arc buy from a wallet with no USDC on Arc but
+      // USDC on Base gets the funding offer — the same door Robinhood buys
+      // get, minus any gas leg. (The burner holds Base USDC; it holds nothing
+      // on Arc.)
+      const arcTurn = await fetch(`${BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message: 'buy $5 of BTC on arc', walletAddress: arcBurner.address, activeServers: [{ slug: 'uniswap' }], history: [] }),
+      }).then((r) => r.json() as Promise<{ reply?: string; buildPath?: string; clarify?: { options: { label: string; resume: string }[] }; workingContext?: { pending?: { kind: string; data: Record<string, string> } } }>)
+      const arcOptions = arcTurn.clarify?.options.filter((o) => !/never mind/i.test(o.resume)) ?? []
+      check(
+        'arc (route): "buy $5 of BTC on arc" for a wallet with no USDC on Arc but USDC on Base → the LiFi funding OFFER (buildPath native-lifi-fund-offer): chips "Fund arc with $N from base, then buy $5 of BTC" that compile fund → wait → buy, the reply never promises an ETH gas leg, and the pending is an rh-funding record aimed at 5042',
+        arcTurn.buildPath === 'native-lifi-fund-offer' && arcOptions.length >= 1 && arcOptions.every((o) => /^Fund arc with \$[\d.]+ from \w+(?: using [a-z.]+)?, then buy \$5 of BTC$/.test(o.resume) && compileShape(o.resume) === 'sign:native-lifi-fund,wait:wait,sign:native-lifi-swap') &&
+          !/ETH for gas/.test(arcTurn.reply ?? '') && /pays for gas on Arc/.test(arcTurn.reply ?? '') && arcTurn.workingContext?.pending?.kind === 'rh-funding' && arcTurn.workingContext.pending.data.dest === '5042',
+        JSON.stringify({ buildPath: arcTurn.buildPath, options: arcOptions.map((o) => o.resume), reply: (arcTurn.reply ?? '').slice(0, 240) }),
+      )
+      const refreshArc = await fetch(`${BASE}/api/tx/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'lifi-bridge', leg: 'usdg', usd: '9', origin: '8453', dest: '5042', from: arcBurner.address }) })
+      const refreshArcBody = (await refreshArc.json()) as { tx?: { chainId: number; to: string }; pending?: boolean; error?: string }
+      const refreshBad = await fetch(`${BASE}/api/tx/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'lifi-bridge', leg: 'usdg', usd: '9', origin: '8453', dest: '999', from: arcBurner.address }) })
+      check(
+        'arc (route): POST /api/tx/refresh rebuilds an Arc leg from its recipe (dest=5042 → a Base tx to the diamond, or `pending` while the approval is unseen) and refuses an unknown destination with 400 instead of silently rebuilding for Robinhood Chain',
+        refreshArc.status === 200 && (refreshArcBody.pending === true || (refreshArcBody.tx?.chainId === 8453 && refreshArcBody.tx.to.toLowerCase() === '0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae')) && refreshBad.status === 400,
+        JSON.stringify({ status: refreshArc.status, body: refreshArcBody.pending ? 'pending' : refreshArcBody.tx ? 'tx' : refreshArcBody.error, bad: refreshBad.status }),
+      )
+    } else {
+      check('arc (live): skipped — no burner key in .env.local', true)
+    }
   }
 
   // ── Apps follow the ask (2026-09-16) ─────────────────────────────────────

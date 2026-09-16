@@ -27,7 +27,7 @@ export const UNI_V3_FACTORY: Readonly<Record<number, Address>> = {
 const FEE_TIERS = [100, 500, 3000, 10000] as const
 const FACTORY_ABI = parseAbi(['function getPool(address,address,uint24) view returns (address)'])
 const ZERO = '0x0000000000000000000000000000000000000000'
-const CHAIN_LABEL: Record<number, string> = { 8453: 'Base', 1: 'Ethereum', 42161: 'Arbitrum', 10: 'Optimism', 4663: 'Robinhood Chain' }
+const CHAIN_LABEL: Record<number, string> = { 8453: 'Base', 1: 'Ethereum', 42161: 'Arbitrum', 10: 'Optimism', 4663: 'Robinhood Chain', 5042: 'Arc' }
 
 /** Uniswap v4 PoolManager on Robinhood Chain — read from the v4 quoter's own
  *  `poolManager()` (0x8dc1…8f94 → this) and bytecode-verified (24,009 bytes)

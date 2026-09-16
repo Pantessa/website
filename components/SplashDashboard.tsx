@@ -504,7 +504,7 @@ function ActivityBody({ tile }: { tile: ActivityTile }) {
             <div className="flex min-w-0 items-center gap-2">
               <span
                 className={`grid h-6 w-6 shrink-0 place-items-center rounded-full ${
-                  r.direction === 'in' ? 'bg-[color:var(--accent)]/15 text-[color:var(--accent)]' : 'bg-white/5 text-[color:var(--muted)]'
+                  r.direction === 'in' ? 'tint-bg-accent-15 text-[color:var(--accent)]' : 'bg-white/5 text-[color:var(--muted)]'
                 }`}
               >
                 <Icon className="h-3 w-3" />

@@ -27,6 +27,13 @@ const COINGECKO_BY_CHAIN: Record<number, string> = {
   // Coingecko's slug is 'optimistic-ethereum', not 'optimism' (which 403s) —
   // probed 2026-09-04, 862 tokens.
   10: 'https://tokens.coingecko.com/optimistic-ethereum/all.json',
+  // Arc (5042): tokens.uniswap.org carries NO Arc rows yet (probed
+  // 2026-09-16, launch day), so Coingecko's 19-token list is the only
+  // dynamic source. It lists a permissionless 18-decimal "USDC" squat
+  // (0x8e98…) beside the real 6-decimal native one — the registry's static
+  // map wins every symbol lookup (resolveToken / tokenDecimals consult
+  // staticTokensFor first), pinned in test:api.
+  5042: 'https://tokens.coingecko.com/arc/all.json',
 }
 
 function listUrlsFor(chainId: number): string[] {

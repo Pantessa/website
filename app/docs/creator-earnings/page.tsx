@@ -49,7 +49,7 @@ export default function CreatorEarningsDocsPage() {
           <tbody>
             <tr>
               <td><strong>Uniswap</strong></td>
-              <td>Swaps on Base, Ethereum, Arbitrum, Optimism, Robinhood Chain (v3, v4 fallback) — including every run of a recurring buy</td>
+              <td>Swaps on Base, Ethereum, Arbitrum, Optimism, Arc, Robinhood Chain (v3, v4 fallback) — including every run of a recurring buy</td>
               <td>0.50%</td>
               <td>0.50%</td>
               <td>0.25%</td>

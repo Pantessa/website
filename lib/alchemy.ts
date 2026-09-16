@@ -22,6 +22,13 @@ interface NetChain {
   /** `https://…/tx/` explorer prefix. */
   explorerTx: string
   chainId: number
+  /** Only reached once a live probe says the app has the network enabled —
+   *  Alchemy answers "<NET> is not enabled for this app" per app, and the
+   *  multichain Data API call is all-or-nothing, so an unenabled member
+   *  would blank every OTHER chain's portfolio. The probe is a plain
+   *  eth_chainId on `{net}.g.alchemy.com`, cached per process; enabling the
+   *  network in the Alchemy dashboard lights it here with no deploy. */
+  gated?: true
 }
 
 const CHAINS: NetChain[] = [
@@ -35,10 +42,49 @@ const CHAINS: NetChain[] = [
   // The Data API INDEXES the stocks but never PRICES them (AAPL came back
   // with tokenPrices: [] on 2026-09-08) — see the curated keep below.
   { net: 'robinhood-mainnet', chainId: 4663, label: 'Robinhood Chain', native: 'ETH', explorerTx: 'https://robinhoodchain.blockscout.com/tx/' },
+  // Circle's Arc (chain 5042, mainnet 2026-09-16). Alchemy carries
+  // ARC_MAINNET but it was NOT enabled on our app at launch (probed
+  // 2026-09-16: "ARC_MAINNET is not enabled for this app") — gated on the
+  // live probe until the owner flips it in the dashboard. Gas is USDC there.
+  { net: 'arc-mainnet', chainId: 5042, label: 'Arc', native: 'USDC', explorerTx: 'https://explorer.arc.io/tx/', gated: true },
 ]
 
 const NETWORKS = CHAINS.map((c) => c.net)
 const CHAIN_BY_NET = new Map(CHAINS.map((c) => [c.net, c]))
+
+/** Probe result per gated network: enabled / disabled, re-checked hourly.
+ *  Anchored on globalThis so every route bundle in the process shares it. */
+const GATE_TTL_MS = 60 * 60 * 1000
+const gateStore = globalThis as typeof globalThis & { __alchemyGates?: Map<string, { at: number; enabled: boolean }> }
+
+/** True when the app can read this Alchemy network. Ungated networks are
+ *  always true; a gated one is probed with eth_chainId and cached. A probe
+ *  that fails on the TRANSPORT (not a "not enabled" answer) reads as
+ *  disabled for this hour — the chain's direct RPC reads still serve it. */
+export async function alchemyNetworkEnabled(net: string): Promise<boolean> {
+  const chain = CHAIN_BY_NET.get(net)
+  if (!chain) return false
+  if (!chain.gated) return true
+  const gates = (gateStore.__alchemyGates ??= new Map())
+  const hit = gates.get(net)
+  if (hit && Date.now() - hit.at < GATE_TTL_MS) return hit.enabled
+  let enabled = false
+  try {
+    const json = (await postJson(`https://${net}.g.alchemy.com/v2/${apiKey()}`, { jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] }, 6_000)) as { result?: string }
+    enabled = typeof json.result === 'string' && parseInt(json.result, 16) === chain.chainId
+  } catch {
+    enabled = false
+  }
+  gates.set(net, { at: Date.now(), enabled })
+  return enabled
+}
+
+/** The chains a multichain read may name right now — every ungated one plus
+ *  the gated ones whose probe passed. */
+async function enabledChains(): Promise<NetChain[]> {
+  const flags = await Promise.all(CHAINS.map((c) => alchemyNetworkEnabled(c.net)))
+  return CHAINS.filter((_, i) => flags[i])
+}
 
 /** True when a real Alchemy key is configured (else callers use the Base-only
  *  MCP fallback). */
@@ -102,7 +148,8 @@ export interface MultichainPortfolio {
  * unpriced spam airdrops are filtered out. Sorted richest-first.
  */
 export async function getMultichainPortfolio(address: string, onlyNet?: string): Promise<MultichainPortfolio> {
-  const networks = onlyNet && NETWORKS.includes(onlyNet) ? [onlyNet] : NETWORKS
+  const live = (await enabledChains()).map((c) => c.net)
+  const networks = onlyNet && NETWORKS.includes(onlyNet) ? [onlyNet] : live
   const url = `https://api.g.alchemy.com/data/v1/${apiKey()}/assets/tokens/by-address`
   const json = (await postJson(url, {
     addresses: [{ address, networks }],
@@ -216,7 +263,7 @@ function shortAddr(a: string | null | undefined): string {
  */
 export async function getRecentActivity(address: string, limit = 6, onlyNet?: string): Promise<ActivityRow[]> {
   const lower = address.toLowerCase()
-  const scope = onlyNet ? CHAINS.filter((c) => c.net === onlyNet) : CHAINS
+  const scope = onlyNet ? CHAINS.filter((c) => c.net === onlyNet) : await enabledChains()
   const jobs = scope.flatMap((c) => [
     transfersFor(c.net, address, 'from')
       .then((ts) => ts.map((t) => ({ t, chain: c })))
@@ -302,9 +349,10 @@ async function ethSpotUsd(): Promise<number | null> {
  */
 export async function getTreasuryInflows(address: string, limit = 40): Promise<TreasuryInflow[]> {
   const lower = address.toLowerCase()
+  const inflowChains = await enabledChains()
   const [ethUsd, ...perChain] = await Promise.all([
     ethSpotUsd(),
-    ...CHAINS.map((c) =>
+    ...inflowChains.map((c) =>
       // 0x64 = 100 newest per chain — at current fee volume that's the whole
       // history; when it isn't, the oldest days just fall off the trend.
       transfersFor(c.net, address, 'to', '0x64')
