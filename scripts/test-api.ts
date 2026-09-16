@@ -20832,9 +20832,11 @@ async function main() {
       const symSrc = codeOnlyT(fsT.readFileSync('components/markets/shell/SymbolPage.tsx', 'utf8'))
       const runAskSrc = symSrc.slice(symSrc.indexOf('const runAsk = useCallback('), symSrc.indexOf('const { act, door } = useConnectToAct('))
       check(
-        'mk2/markets: a Trade send scrolls "Your order" into view on every new prompt (keyed on prompt.at), never up to the tab strip',
+        'mk2/markets: a Trade send scrolls "Your order" into view on every new prompt (keyed on prompt.at), never up to the tab strip — and holds the aim while the tab above it loads, until the reader scrolls',
         /<section ref=\{orderRef\} className="mkt-card mkt-trade__chat"/.test(tradeSrc) &&
-          /orderRef\.current\?\.scrollIntoView\(/.test(tradeSrc) && /\}, \[promptAt\]\)/.test(tradeSrc) &&
+          /const panel = orderRef\.current/.test(tradeSrc) && /panel\.scrollIntoView\(/.test(tradeSrc) &&
+          /new ResizeObserver\(aim\)/.test(tradeSrc) && /'wheel', 'touchstart', 'keydown', 'pointerdown'/.test(tradeSrc) &&
+          /\}, \[promptAt\]\)/.test(tradeSrc) &&
           runAskSrc.length > 0 && !/scrollTo|scrollIntoView|tabsRef/.test(runAskSrc),
       )
     }

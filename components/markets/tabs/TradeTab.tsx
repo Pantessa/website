@@ -32,6 +32,9 @@ export type { InjectedPrompt, TradeAsk, TradeSide } from '@/lib/trade-asks'
 // visitor actually sends an order from this page.
 const ChatInterface = dynamic(() => import('@/components/ChatInterface'), { ssr: false })
 
+/** How long a send keeps "Your order" in view while the tab above it loads. */
+const ORDER_AIM_MS = 4000
+
 export default function TradeTab({
   symbol,
   pair,
@@ -85,15 +88,40 @@ export default function TradeTab({
   // which put a button inside this tab ("Build the 4-step job", a route's Buy)
   // a screen away from its own result. The ask fired and the job compiled out
   // of sight, so the click read as "it just pops to the top" (Nate, 2026-09-16).
+  //
+  // A chip from Overview opens this tab and sends in the same click, while the
+  // route quotes and positions above the panel are still loading. Their rows
+  // push the panel down after the scroll set off (the first cut stopped ~760px
+  // short). So the aim holds while the tab settles: every resize of the tab
+  // re-aims, until the reader scrolls on their own or ORDER_AIM_MS passes.
   const orderRef = useRef<HTMLElement | null>(null)
   const promptAt = prompt?.at
   useEffect(() => {
     if (promptAt === undefined) return
-    const frame = requestAnimationFrame(() => {
-      const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-      orderRef.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
-    })
-    return () => cancelAnimationFrame(frame)
+    const panel = orderRef.current
+    if (!panel) return
+    const behavior: ScrollBehavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+    let active = true
+    const aim = () => {
+      if (active) panel.scrollIntoView({ behavior, block: 'start' })
+    }
+    const release = () => {
+      active = false
+    }
+    const frame = requestAnimationFrame(aim)
+    const tab = panel.parentElement
+    const resized = tab && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(aim) : null
+    if (tab) resized?.observe(tab)
+    const intent: (keyof WindowEventMap)[] = ['wheel', 'touchstart', 'keydown', 'pointerdown']
+    intent.forEach((ev) => window.addEventListener(ev, release, { passive: true }))
+    const settled = window.setTimeout(release, ORDER_AIM_MS)
+    return () => {
+      release()
+      cancelAnimationFrame(frame)
+      resized?.disconnect()
+      window.clearTimeout(settled)
+      intent.forEach((ev) => window.removeEventListener(ev, release))
+    }
   }, [promptAt])
 
   const send = () => {
