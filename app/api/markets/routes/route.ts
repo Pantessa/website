@@ -393,7 +393,7 @@ async function compose(sym: string, amount: number, lastIn: number | null, lever
         return {
           ...base,
           quote: cardPreset
-            ? { kind: 'none', value: cardPreset, label: `opens at $${cardPreset}`, sub: `lands as ETH on ${VENUE_CHAIN_LABELS[r.chainId] ?? r.chainId} · card fee at checkout` }
+            ? { kind: 'none', value: cardPreset, label: `opens at $${cardPreset}`, sub: 'lands as ETH · card fee on top' }
             : { kind: 'none', value: null, label: 'card checkout', sub: `over one checkout at this size` },
         }
     }
