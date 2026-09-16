@@ -27,7 +27,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { decodeFunctionData, erc20Abi, isAddress } from 'viem'
-import { chainAlt } from '@/lib/chain-lexicon'
+import { chainAlt, normalizeWorth } from '@/lib/chain-lexicon'
 import type { TxChainStep } from '@/lib/transaction-layer'
 
 // ── The working set's Morpho-capable agent ──────────────────────────────────
@@ -57,6 +57,20 @@ const TOKEN = '\\$?[A-Za-z]{2,12}'
 // "1 more USDC" / "5 extra DAI" — filler between amount and token (the same
 // live-miss class aave-supply.ts earned on 2026-07-13).
 const FILLER = '(?:(?:more|extra|additional)\\s+)?'
+// "$2" / "2 dollars" / "5 bucks" — group 1 xor group 2 carries the number
+// (the swap layer's USD_AMOUNT shape, #421; the Aave lane's #713 twin). Live
+// miss 2026-09-16 (prod, /p/GGjH8ApOjh1D): "I want to earn on morpho $2 worth
+// of USDC on base" fell to the planner, which quizzed the user on markets for
+// three turns, INVENTED a market id and died on market_info's 404 — while the
+// wallet held $1 USDC on Base (no gas) + $13 of ETH on Ethereum, the exact
+// shape the fund-then-lend offer exists for.
+const USD_AMOUNT = '(?:\\$\\s?(\\d+(?:\\.\\d+)?)|(\\d+(?:\\.\\d+)?)\\s?(?:dollars?|usd|bucks?))'
+const usdOf = (m: RegExpMatchArray, i: number) => m[i] ?? m[i + 1]
+// A dollar ask on a dollar-pegged loan asset IS the token amount; anything
+// else is priced from the market's own totals at build time
+// (resolveMorphoLendAmount) — never at parse, never by a model.
+const STABLES = new Set(['USDC', 'USDT', 'DAI', 'USDG', 'GHO', 'USDE', 'PYUSD', 'USDS', 'RLUSD', 'FRAX', 'LUSD', 'USDBC', 'EURC'])
+export const isMorphoStable = (token: string) => STABLES.has(token.replace(/^\$/, '').toUpperCase())
 
 // Morpho's chains: Base (8453, the service default) + Ethereum (1). Anything
 // else refuses BY NAME at the route site. Typo tolerance via the lexicon.
@@ -107,14 +121,41 @@ export interface MorphoLendParams {
    *  the only cue, so the route site builds only when no OTHER selected
    *  agent could serve the verb. */
   weak?: boolean
+  /** `amount` is US DOLLARS, not tokens ("$50 of WETH") — the build site
+   *  prices it from the resolved market (resolveMorphoLendAmount). Dollar
+   *  asks on dollar-pegged tokens resolve at parse time and never set this. */
+  amountIsUsd?: true
 }
 
-// "(lend|supply|deposit|add|put|park) <amt> <token>" — lend/supply are
-// lending-only verbs; the rest are venue-generic (WEAK when bare).
+// "(lend|supply|deposit|add|put|park|invest) <amt> <token>" — lend/supply
+// are lending-only verbs; the rest are venue-generic (WEAK when bare).
+const LEND_VERB = '(?:lend|supply|deposit|add|put|park|invest)'
 const LEND_RE = new RegExp(
-  `\\b(?:lend|supply|deposit|add|put|park)\\s+(${AMOUNT})\\s+${FILLER}(${TOKEN})\\b`,
+  `\\b${LEND_VERB}\\s+(${AMOUNT})\\s+${FILLER}(${TOKEN})\\b`,
   'i',
 )
+// "lend $2 (worth) of USDC …" / "supply 5 dollars of usdc …" / "invest $2 USDC".
+const LEND_USD_RE = new RegExp(
+  `\\b${LEND_VERB}\\s+(?:about\\s+|around\\s+|roughly\\s+|like\\s+)?${USD_AMOUNT}(?:\\s+worth)?\\s+(?:(?:of|in)\\s+)?${FILLER}(${TOKEN})\\b`,
+  'i',
+)
+// Morpho named, an amount + token somewhere, and NO lend verb — "I want to
+// earn on morpho $2 worth of USDC on base", "can I do $2 of USDC on morpho",
+// "$50 of WETH into morpho". The verb was missing or off-grammar live, so the
+// shape carries the intent: Morpho named, an intent cue (or the amount
+// leading the sentence), the amount, the token. Statements ("I have 100 USDC
+// on morpho") carry no cue and fall through; every other lending/trading verb
+// is excluded so this never steals a withdraw, borrow, swap, or stake.
+const AMT_TOKEN_RE = new RegExp(
+  `(?:${USD_AMOUNT}|(${AMOUNT}))(?:\\s+worth)?\\s+(?:(?:of|in)\\s+)?${FILLER}(${TOKEN})\\b`,
+  'i',
+)
+const INTENT_CUE_RE = /\b(?:can|could|let'?s|please|want(?:s|ed)?|wanna|like|do|fo|go|throw|toss|stick|place|move|invest|earn|get|park|drop|put)\b/i
+const OTHER_OP_VERB_RE =
+  /\b(?:withdraw|redeem|borrow|repay|pay\s+(?:back|off|down)|swap|sell|buy|convert|trade|bridge|send|transfer|stake|unstake|short|long|claim|have|had|got|holding|hold|post|pledge)\b/i
+// "earn on morpho" / "put my USDC to work on morpho" with nothing sized —
+// ONE necessary clarify (amount + token), not a market quiz.
+const EARN_CUE_RE = /\b(?:earn(?:ing)?|yield|interest|invest(?:ing)?|lend(?:ing)?|supply(?:ing)?|to\s+work)\b/i
 // Amount missing but the intent is clearly a Morpho lend → ONE necessary
 // clarify (the amount), not a protocol quiz.
 const LEND_NO_AMOUNT_RE = new RegExp(
@@ -129,6 +170,8 @@ const NOT_TOKENS = new Set([
   'it', 'that', 'and', 'collateral', 'as',
   // The FILLER words — captured as the "token" when nothing follows them.
   'more', 'extra', 'additional',
+  // Dollar-form words that can trail the amount.
+  'worth', 'dollars', 'dollar', 'usd', 'bucks', 'about', 'around', 'roughly', 'like',
 ])
 
 /**
@@ -138,17 +181,46 @@ const NOT_TOKENS = new Set([
  * collateral") belong to parseMorphoOp — a token followed by "collateral"
  * is never a lend.
  */
-export function parseMorphoLend(message: string): MorphoLendParams | { problem: string } | null {
+export function parseMorphoLend(rawMessage: string): MorphoLendParams | { problem: string } | null {
+  const message = normalizeWorth(rawMessage)
   if (OTHER_VENUE_RE.test(message)) return null
   if (QUESTION_START_RE.test(message)) return null
   const explicitMorpho = MORPHO_MCP_RE.test(message)
+  const slot = chainSlot(message)
+  // "supply 0.5 WETH collateral" / "… as collateral" is the collateral op.
+  const collateralAfter = (m: RegExpMatchArray) =>
+    /^\s*(?:as\s+)?collateral\b/i.test(message.slice((m.index ?? 0) + m[0].length))
+  // A bare (non-Morpho-worded) lend may only name a Morpho-shaped
+  // destination — "deposit 5 USDC to my savings account" falls through.
+  const destOk = (m: RegExpMatchArray) => {
+    const rest = message.slice((m.index ?? 0) + m[0].length)
+    const dest = rest.match(/\b(?:to|into|in|on|at)\s+(?:an?\s+|the\s+|my\s+)?([A-Za-z0-9]+)/i)
+    return !dest || /^(?:morpho|market|markets|pool|pools|lending|base|ethereum|eth|mainnet)$/i.test(dest[1])
+  }
+  const usdFlag = (token: string) => (isMorphoStable(token) ? {} : { amountIsUsd: true as const })
+
+  // Dollar-denominated lend — checked first so "$2" is never read as the bare
+  // digit form's amount. Stables resolve 1:1 right here.
+  const um = message.match(LEND_USD_RE)
+  if (um && !collateralAfter(um)) {
+    const utoken = um[3].replace(/^\$/, '')
+    if (!NOT_TOKENS.has(utoken.toLowerCase()) && (explicitMorpho || destOk(um))) {
+      const uweak = !explicitMorpho && !/^(?:supply|lend)\b/i.test(um[0])
+      return {
+        amount: usdOf(um, 1),
+        token: utoken,
+        explicitMorpho,
+        chainId: slot.chainId,
+        otherChain: slot.otherChain,
+        ...usdFlag(utoken),
+        ...(uweak ? { weak: true } : {}),
+      }
+    }
+  }
+
   const m = message.match(LEND_RE)
   let weak = false
-  if (m) {
-    // "supply 0.5 WETH collateral" / "… as collateral" is the collateral op.
-    const afterToken = message.slice((m.index ?? 0) + m[0].length)
-    if (/^\s*(?:as\s+)?collateral\b/i.test(afterToken)) return null
-  }
+  if (m && collateralAfter(m)) return null
   if (!explicitMorpho) {
     // Bare imperative — no Morpho word in the sentence. The SELECTED SET is
     // the cue (route site requires the Morpho agent). Two strengths:
@@ -158,10 +230,7 @@ export function parseMorphoLend(message: string): MorphoLendParams | { problem: 
     // serve the verb (Hyperliquid takes deposits too, and so does Aave).
     // A named destination that isn't Morpho-shaped falls through.
     if (!m) return null
-    if (QUESTION_START_RE.test(message)) return null
-    const rest = message.slice((m.index ?? 0) + m[0].length)
-    const dest = rest.match(/\b(?:to|into|in|on|at)\s+(?:an?\s+|the\s+|my\s+)?([A-Za-z0-9]+)/i)
-    if (dest && !/^(?:morpho|market|markets|pool|pools|lending|base|ethereum|eth|mainnet)$/i.test(dest[1])) return null
+    if (!destOk(m)) return null
     weak = !/^(?:supply|lend)\b/i.test(m[0])
   }
 
@@ -173,11 +242,34 @@ export function parseMorphoLend(message: string): MorphoLendParams | { problem: 
         return { problem: `How much ${sym} should I lend? Say e.g. “lend 100 ${sym} on Morpho”.` }
       }
     }
+    // No lend verb, but Morpho is named with an amount + token and an intent
+    // cue (or the amount leads the sentence). Statements and every other op
+    // verb fall through; a token followed by "collateral" is the collateral op.
+    if (explicitMorpho && !OTHER_OP_VERB_RE.test(message)) {
+      const g = message.match(AMT_TOKEN_RE)
+      if (g && !collateralAfter(g) && (INTENT_CUE_RE.test(message.slice(0, g.index ?? 0)) || (g.index ?? 0) === message.search(/\S/))) {
+        const gtoken = g[4].replace(/^\$/, '')
+        if (!NOT_TOKENS.has(gtoken.toLowerCase())) {
+          const isUsd = g[3] === undefined
+          return {
+            amount: isUsd ? usdOf(g, 1) : g[3],
+            token: gtoken,
+            explicitMorpho: true,
+            chainId: slot.chainId,
+            otherChain: slot.otherChain,
+            ...(isUsd ? usdFlag(gtoken) : {}),
+          }
+        }
+      }
+      // Sized nothing, but clearly wants to earn on Morpho → the one clarify.
+      if (EARN_CUE_RE.test(message) && !g) {
+        return { problem: 'What should I lend on Morpho, and how much? Say e.g. “lend 100 USDC on Morpho” — or “$50 of USDC on Morpho”.' }
+      }
+    }
     return null
   }
   const token = m[2].replace(/^\$/, '')
   if (NOT_TOKENS.has(token.toLowerCase())) return null
-  const slot = chainSlot(message)
   return {
     amount: m[1],
     token,
@@ -186,6 +278,32 @@ export function parseMorphoLend(message: string): MorphoLendParams | { problem: 
     otherChain: slot.otherChain,
     ...(weak ? { weak: true } : {}),
   }
+}
+
+/**
+ * The token amount a lend actually moves. A dollar ask on a non-stable loan
+ * asset ("$50 of WETH on morpho") is priced from the market's OWN totals
+ * (impliedLoanPriceUsd — the same number the reply quotes), rounded down to
+ * what the token's decimals can carry; unpriceable → refuse by name, never a
+ * guess. Plain token amounts pass through untouched.
+ */
+export function resolveMorphoLendAmount(
+  params: Pick<MorphoLendParams, 'amount' | 'token' | 'amountIsUsd'>,
+  priceUsd: number | null,
+  decimals: number,
+): { amount: string } | { problem: string } {
+  if (!params.amountIsUsd) return { amount: params.amount }
+  const token = params.token.toUpperCase()
+  const usd = Number(params.amount)
+  if (!(usd > 0)) return { problem: `“$${params.amount}” isn't an amount I can size — say e.g. “$50 of ${token} on Morpho”.` }
+  if (!(typeof priceUsd === 'number' && priceUsd > 0)) {
+    return { problem: `I couldn't price ${token} from the Morpho market just now, so I can't size $${params.amount} of it — say the amount in ${token} instead (e.g. “lend 0.02 ${token} on Morpho”).` }
+  }
+  const dp = Math.min(Math.max(decimals, 0), 8)
+  const f = 10 ** dp
+  const amount = (Math.floor((usd / priceUsd) * f) / f).toFixed(dp).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
+  if (!(Number(amount) > 0)) return { problem: `$${params.amount} of ${token} rounds to nothing at the market's price — try a larger amount.` }
+  return { amount }
 }
 
 // ── Withdraw / borrow / repay / collateral ops ──────────────────────────────
@@ -829,7 +947,7 @@ export function guardMorphoOpBuild(built: MorphoBuiltPlan, exp: MorphoOpGuardExp
 const CANCEL_RE =
   /^(?:no[,.!]?\s*)?(?:cancel|scratch|drop|abandon|abort|forget|nevermind|never\s+mind|don'?t)(?:\s+(?:it|that|this|the))?(?:\s+(?:lend|supply|deposit|one))?[.!\s]*$/i
 const AMEND_RE = new RegExp(
-  `^(?:ok(?:ay)?[,.]?\\s*)?(?:actually[,.]?\\s*)?(?:make\\s+(?:it|that)|change\\s+(?:it|that)(?:\\s+to)?|do)\\s+(${AMOUNT})(?:\\s+[A-Za-z]{2,12})?(?:\\s+instead)?[.!?\\s]*$`,
+  `^(?:ok(?:ay)?[,.]?\\s*)?(?:actually[,.]?\\s*)?(?:make\\s+(?:it|that)|change\\s+(?:it|that)(?:\\s+to)?|do)\\s+(\\$)?(${AMOUNT})(?:\\s+(?:worth\\s+)?(?:of\\s+)?[A-Za-z]{2,12})?(?:\\s+instead)?[.!?\\s]*$`,
   'i',
 )
 const AFFIRM_RE = /^(?:ok(?:ay)?|yes|yep|yeah|confirm|go(?:\s+ahead)?|do\s+it|proceed|send\s+it|sign)[.!\s]*$/i
@@ -847,19 +965,23 @@ export function parseMorphoLendFollowUp(
   pending: { kind: string; data: Record<string, string> } | undefined,
 ): MorphoLendFollowUp | null {
   if (!pending || pending.kind !== 'morpho-lend') return null
-  const text = message.trim()
+  const text = normalizeWorth(message.trim())
   if (CANCEL_RE.test(text)) return { kind: 'cancel' }
   const amend = text.match(AMEND_RE)
   if (amend) {
     const chainId = Number(pending.data.chainId)
+    const token = pending.data.token ?? ''
+    // "make it $5" on a non-stable lend is a dollar amount — priced at build.
+    const isUsd = !!amend[1] && !isMorphoStable(token)
     return {
       kind: 'amend',
       params: {
-        amount: amend[1],
-        token: pending.data.token ?? '',
+        amount: amend[2],
+        token,
         explicitMorpho: true,
         chainId: chainId === 1 ? 1 : 8453,
         otherChain: null,
+        ...(isUsd ? { amountIsUsd: true as const } : {}),
       },
     }
   }
@@ -898,13 +1020,16 @@ export function parseMorphoOpFollowUp(
   const text = message.trim()
   if (CANCEL_RE.test(text)) return { kind: 'cancel' }
   const amend = text.match(AMEND_RE)
+  // A dollar amend on a non-stable op ("make it $5" on a WETH borrow) has no
+  // pricing path here — route it normally rather than read $5 as 5 WETH.
+  if (amend && amend[1] && !isMorphoStable(pending.data.token ?? '')) return null
   if (amend) {
     const chainId = Number(pending.data.chainId)
     return {
       kind: 'amend',
       params: {
         op,
-        amount: amend[1],
+        amount: amend[2],
         max: false,
         token: pending.data.token ?? '',
         explicitMorpho: true,

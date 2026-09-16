@@ -674,8 +674,11 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
       const lend = parseMorphoLend(seg)
       if (!lend || 'problem' in lend || !lend.explicitMorpho || lend.weak) return null
       if (lend.otherChain) return { problem: `Morpho builds run on Base or Ethereum — I can't lend on ${lend.otherChain}.` }
-      const title = `Lend ${lend.amount} ${lend.token.toUpperCase()} on Morpho (${lend.chainId === 1 ? 'Ethereum' : 'Base'})`
-      return { steps: [{ kind: 'sign', builder: 'native-morpho-lend', title, params: { token: lend.token, amount: lend.amount, chainId: lend.chainId } }], title }
+      const title = `Lend ${lend.amountIsUsd ? `$${lend.amount} of ` : `${lend.amount} `}${lend.token.toUpperCase()} on Morpho (${lend.chainId === 1 ? 'Ethereum' : 'Base'})`
+      return {
+        steps: [{ kind: 'sign', builder: 'native-morpho-lend', title, params: { token: lend.token, amount: lend.amount, chainId: lend.chainId, ...(lend.amountIsUsd ? { amountIsUsd: true } : {}) } }],
+        title,
+      }
     },
   },
   {

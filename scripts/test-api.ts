@@ -296,6 +296,7 @@ import {
   morphoCompetingVenueOf,
   guardMorphoOpBuild,
   parseMorphoLendFollowUp,
+  resolveMorphoLendAmount,
   parseMorphoOpFollowUp,
   pickLendMarket,
   pickCollateralMarket,
@@ -10337,6 +10338,45 @@ async function main() {
     const lna = parseMorphoLend('lend USDC on morpho')
     check('morpho parse: missing amount → problem (the one real clarify)', !!lna && 'problem' in lna)
     check('morpho parse: collateral phrasing is NOT a lend', parseMorphoLend('supply 0.5 cbBTC collateral to morpho') === null)
+    // ── Dollar + verbless forms (live prod miss 2026-09-16, /p/GGjH8ApOjh1D) ──
+    // "I want to earn on morpho $2 worth of USDC on base" fell to the planner
+    // with $13 of ETH idle on Ethereum; three quiz turns and an invented
+    // market id later it died on market_info's 404. The Aave lane's #713
+    // grammar, twinned: dollar amounts, the earn/invest verbs, and Morpho as
+    // the named destination of a sized token with no lend verb at all.
+    const live = parseMorphoLend('I want to earn on morpho $2 worth of USDC on base')
+    check('morpho parse: the live "earn on morpho $2 worth of USDC on base" ask is a Base USDC lend of 2', !!live && !('problem' in live) && live.amount === '2' && live.token === 'USDC' && live.explicitMorpho && live.chainId === 8453 && live.otherChain === null && !live.amountIsUsd && !live.weak, JSON.stringify(live))
+    check('morpho ladder: the live ask reaches the morpho-lend gate (never the planner)', simulateLadder('I want to earn on morpho $2 worth of USDC on base').gate === 'morpho-lend')
+    const lusd = parseMorphoLend('supply $100 of USDC on morpho')
+    check('morpho parse: "supply $100 of USDC on morpho" → 100 USDC (stable resolves at parse)', !!lusd && !('problem' in lusd) && lusd.amount === '100' && lusd.token === 'USDC' && !lusd.amountIsUsd)
+    const lwords = parseMorphoLend('lend two dollars of usdc on morpho')
+    check('morpho parse: spelled-out dollars normalize ("two dollars of usdc")', !!lwords && !('problem' in lwords) && lwords.amount === '2' && lwords.token.toUpperCase() === 'USDC')
+    const lweth = parseMorphoLend('invest $50 of WETH on morpho on ethereum')
+    check('morpho parse: a dollar ask on a NON-stable carries amountIsUsd (priced at build) + the chain', !!lweth && !('problem' in lweth) && lweth.amount === '50' && lweth.token === 'WETH' && lweth.amountIsUsd === true && lweth.chainId === 1)
+    const lverbless = parseMorphoLend('can I do $2 of USDC on morpho')
+    check('morpho parse: verbless "can I do $2 of USDC on morpho" → lend', !!lverbless && !('problem' in lverbless) && lverbless.amount === '2' && lverbless.explicitMorpho)
+    const llead = parseMorphoLend('$50 of WETH into morpho')
+    check('morpho parse: the amount leading the sentence is its own cue', !!llead && !('problem' in llead) && llead.amountIsUsd === true)
+    const learn = parseMorphoLend('I want to earn on morpho')
+    check('morpho parse: unsized "earn on morpho" → ONE clarify (amount + token), not the planner', !!learn && 'problem' in learn && /how much/i.test(learn.problem))
+    check('morpho parse: other op verbs never become a lend (borrow / statement / question / collateral)',
+      parseMorphoLend('I want to borrow $50 of USDC on morpho') === null &&
+        parseMorphoLend('I have 100 USDC on morpho') === null &&
+        parseMorphoLend('what can I earn on morpho with $2 of USDC') === null &&
+        parseMorphoLend('post 0.5 WETH as collateral on morpho') === null)
+    check('morpho parse: the live ask is never claimed by AAVE either (mutual exclusion holds)', parseAaveSupply('I want to earn on morpho $2 worth of USDC on base') === null)
+    check('morpho parse: dollar ask on ANOTHER chain still surfaces it by name', (() => { const p = parseMorphoLend('put $20 of USDC on morpho on arbitrum'); return !!p && !('problem' in p) && p.otherChain === 'arbitrum' })())
+    check('morpho size: $50 of WETH at $2,500 → 0.02 WETH; unpriced refuses by name; token amounts pass through',
+      (() => { const a = resolveMorphoLendAmount({ amount: '50', token: 'WETH', amountIsUsd: true }, 2500, 18); const b = resolveMorphoLendAmount({ amount: '50', token: 'WETH', amountIsUsd: true }, null, 18); const c = resolveMorphoLendAmount({ amount: '2', token: 'USDC' }, 1, 6); return 'amount' in a && a.amount === '0.02' && 'problem' in b && /WETH/.test(b.problem) && 'amount' in c && c.amount === '2' })())
+    const musdPend = { kind: 'morpho-lend', data: { amount: '2', token: 'USDC', market: 'USDC/cbBTC', chainId: '8453' } }
+    check('morpho follow-up: "make it $5" amends a stable lend to 5', (() => { const f = parseMorphoLendFollowUp('make it $5', musdPend); return !!f && f.kind === 'amend' && f.params.amount === '5' && !f.params.amountIsUsd })())
+    check('morpho follow-up: "make it $5" on a WETH lend is a DOLLAR amend (priced at build)', (() => { const f = parseMorphoLendFollowUp('make it $5', { ...musdPend, data: { ...musdPend.data, token: 'WETH' } }); return !!f && f.kind === 'amend' && f.params.amountIsUsd === true })())
+    const dollarLendJob = compileJobAsk('Swap 3 USDC from Ethereum to USDC on Base, then earn on morpho $2 worth of USDC on base')
+    check('morpho jobs: the dollar/earn form compiles as a fund-then-lend job (bridge → wait → lend 2 USDC)',
+      !!dollarLendJob && !('problem' in dollarLendJob) && !('clarify' in dollarLendJob) &&
+        JSON.stringify(dollarLendJob.steps.map((s) => `${s.kind}:${s.builder}`)) === JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-morpho-lend']) &&
+        (dollarLendJob.steps[2].params as { amount?: string; amountIsUsd?: boolean }).amount === '2' && !(dollarLendJob.steps[2].params as { amountIsUsd?: boolean }).amountIsUsd,
+      dollarLendJob && 'problem' in dollarLendJob ? dollarLendJob.problem : undefined)
     check('morpho rival: aave in the set → named', morphoCompetingVenueOf([{ slug: 'morpho-free', name: 'Morpho (Free)' }, { slug: 'aave-free', name: 'Aave (Free)' }]) === 'Aave (Free)')
     check('morpho rival: morpho+wallet only → null', morphoCompetingVenueOf([{ slug: 'morpho-free', name: 'Morpho (Free)' }, { slug: 'yeetful-tool-wallet', name: 'Pantessa Wallet' }]) === null)
 
