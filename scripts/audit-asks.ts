@@ -371,6 +371,9 @@ const CORPUS: Entry[] = [
   { ask: 'Fund Robinhood Chain with $100 from Arbitrum including gas, then buy $80 of AAPL', source: 'MK2/EXEC CompoundComposer Fund → Buy (stock)', expect: 'action' },
   { ask: 'Buy $50 of ETH on Base, then stake all the swapped ETH on Lido', source: 'MK2/EXEC dollar-buy job segment (was partial-claimed by the Lido gate)', expect: 'action' },
   { ask: 'Buy $50 of AAPL on Robinhood Chain, then buy $25 of TSLA on Robinhood Chain', source: 'MK2/EXEC dollar-buy job segment (4663, USDG)', expect: 'action' },
+  { ask: '2x Long $25 of ETH on Hyperliquid', source: 'MK2/EXEC QuickAct index-row chip', expect: 'action' },
+  { ask: '2x Short $25 of SOL on Hyperliquid', source: 'MK2/EXEC QuickAct index-row chip (non-EVM home)', expect: 'action' },
+  { ask: 'Buy $25 of ETH on Ethereum', source: 'MK2/EXEC QuickAct index-row chip', expect: 'action' },
 ]
 
 // ── Mutations — what real users do to our example asks ─────────────────────
