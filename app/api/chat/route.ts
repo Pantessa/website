@@ -4623,6 +4623,9 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
               amountHuman: Number((needTotal - held).toFixed(6)),
               followupResume: `swap ${intent.sellAmountHuman} ${sellSym} for ${buySym} on ${FUNDING_CHAIN_WORD[chainId]}`,
               actionLabel: 'the swap',
+              // A holding of what the swap BUYS never funds it: "Buy $50 of
+              // ETH" from an ETH-only wallet planned ETH → USDC → ETH.
+              buyToken: buySym,
             },
             trace,
           })

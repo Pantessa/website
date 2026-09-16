@@ -136,7 +136,26 @@ export interface FundingNeed {
    *  fixed-size follow-up ("buy $12 of AAPL") must NOT set this — moving
    *  less than the action needs strands the money one step later. */
   flexMinAmountHuman?: number
+  /** The token the follow-up BUYS ("swap 50 USDC for ETH on Base" → 'ETH').
+   *  A holding of it is what the ask ends with, never money to fund it: the
+   *  plan used to answer "Buy $50 of ETH" from an ETH-only wallet with
+   *  "Swap 0.028 ETH for USDC on Base, then swap 50 USDC for ETH on Base",
+   *  two conversions and two fees to end where it started (2026-09-16). ETH
+   *  and WETH count as one asset (lib/chains maps both to one address).
+   *  Set only where the follow-up is a swap; a gas-only probe leaves it
+   *  unset, since ETH spent on gas isn't bought back. */
+  buyToken?: string
 }
+
+/** One asset for funding purposes: the registry gives ETH and WETH the same
+ *  address on every chain, and a Uniswap "ETH" buy lands WETH. */
+const sameAsset = (a: string, b: string): boolean => {
+  const norm = (t: string) => (t.toUpperCase() === 'WETH' ? 'ETH' : t.toUpperCase())
+  return norm(a) === norm(b)
+}
+
+/** Is this holding the token the need's follow-up buys? */
+const isBuyToken = (need: FundingNeed, s: { token: string }): boolean => !!need.buyToken && sameAsset(s.token, need.buyToken)
 
 export interface FundingSource {
   chainId: number
@@ -217,14 +236,17 @@ const gasLegResume = (s: FundingSource, amount: string, need: FundingNeed): stri
  * the destination), then the token leg. Funds that land where the wallet
  * can't sign are stranded, not delivered.
  */
-/** The sources a plan may actually spend: dust dropped, and a destination-
- *  chain balance of the NEEDED token excluded (the shortfall already
- *  accounts for it) — a different token on the destination IS a source (it
- *  converts through the native venues, no bridge). */
+/** The sources a plan may actually spend: dust dropped, a destination-chain
+ *  balance of the NEEDED token excluded (the shortfall already accounts for
+ *  it), and the token the follow-up BUYS excluded on every chain (converting
+ *  it to buy it back is a round trip). A different token on the destination
+ *  IS a source (it converts through the native venues, no bridge). */
 export function plannableSources(need: FundingNeed, sources: FundingSource[]): FundingSource[] {
   return rankFundingSources(
     need,
-    sources.filter((s) => s.usd >= DUST_USD && (s.chainId !== need.chainId || s.token.toUpperCase() !== need.token.toUpperCase())),
+    sources.filter(
+      (s) => s.usd >= DUST_USD && (s.chainId !== need.chainId || s.token.toUpperCase() !== need.token.toUpperCase()) && !isBuyToken(need, s),
+    ),
   )
 }
 
@@ -349,18 +371,38 @@ export function shortRefusalCopy(params: {
    *  holding that LOOKS big enough next to a smaller plan and saying nothing
    *  else reads as a broken product — the same lesson as stranded funds. */
   promisableUsd?: number
+  /** Movable holdings of the token the follow-up BUYS (FundingNeed.buyToken).
+   *  Never counted toward the plan, always named: left out, an ETH-only
+   *  wallet asking to buy ETH would read "I found no movable ETH or USDC". */
+  heldBuy?: FundingSource[]
 }): string {
-  const { chainsRead, need, needUsd, sourceSummary, stranded, movableTotalUsd, promisableUsd } = params
+  const { chainsRead, need, needUsd, sourceSummary, stranded, movableTotalUsd, promisableUsd, heldBuy = [] } = params
   const actionLabel = need.actionLabel
   const planLine = `the smallest plan for ${actionLabel} moves ~$${usd2(needUsd)} (solver fees included).`
   // Stranded splits by token: USDC is unstickable with a gas topup; ETH under
-  // the keep-back IS the (insufficient) gas — name it, never promise it.
-  const usdcStranded = stranded.filter((s) => s.token === 'USDC')
+  // the keep-back IS the (insufficient) gas — name it, never promise it. USDC
+  // the follow-up BUYS isn't stuck money for this plan at all: it's named
+  // with the other holdings of the bought token.
+  const usdcStranded = stranded.filter((s) => s.token === 'USDC' && !isBuyToken(need, s))
   const ethStranded = stranded.filter((s) => s.token === 'ETH')
   const ethNote =
     ethStranded.length > 0
       ? `${ethStranded.map((s) => `~$${usd2(Number(s.usd.toFixed(2)))} of ETH on ${s.chainWord}`).join(', ')} (under what a move from there costs, so it can't help)`
       : ''
+  const buyRows = [...heldBuy, ...stranded.filter((s) => s.token === 'USDC' && isBuyToken(need, s))]
+  const buySummary = buyRows.map((s) => `~$${usd2(Number(s.usd.toFixed(2)))} of ${s.token} on ${s.chainWord}`).join(', ')
+  const buySym = (need.buyToken ?? '').toUpperCase()
+  // Nothing in the wallet but the token being bought (and gas-sized ETH that
+  // can't move anyway): say so plainly. "Top up any of those chains" would
+  // invite more of the same token, and the same round trip.
+  if (buySummary && !sourceSummary && usdcStranded.length === 0) {
+    return (
+      `Across ${chainsRead} the only money I can see is ${buySummary}${ethNote ? `, plus ${ethNote}` : ''} — and ${buySym} is what ${actionLabel} gets you, ` +
+      `so there's nothing here to spend on it: converting ${[...new Set(buyRows.map((s) => s.token))].join(' or ')} to ${need.token.toUpperCase()} just to buy it back pays two conversions and ends where it started. ` +
+      `Send ${sameAsset(buySym, 'ETH') ? 'USDC' : 'ETH'} to this wallet on any of those chains and ask again.`
+    )
+  }
+  const notCounted = buySummary ? ` (Not counted: ${buySummary} — ${buySym} is what ${actionLabel} gets you.)` : ''
   if (usdcStranded.length === 0) {
     const seen = [sourceSummary, ethNote].filter(Boolean).join(', plus ')
     // The headroom case: the ETH is there, but funding this takes TWO moves
@@ -372,12 +414,12 @@ export function shortRefusalCopy(params: {
         `Across ${chainsRead} I can see ${seen} — but funding ${actionLabel} from ETH takes two moves off that one balance ` +
         `(a little gas for ${FUNDING_CHAIN_WORD[need.chainId] ?? 'the destination'} first, then the ${need.token.toUpperCase()}), and the first move pays its own fee out of the same ETH — ` +
         `so I can only safely commit ~$${usd2(promisableUsd)} of it, and ${planLine} ` +
-        `Top up any of those chains — a dollar or two is plenty — and ask again.`
+        `Top up any of those chains — a dollar or two is plenty — and ask again.${notCounted}`
       )
     }
     return (
       (seen ? `Across ${chainsRead} I can see ${seen} — ` : `Across ${chainsRead} I found no movable ETH or USDC — `) +
-      `${planLine} Top up any of those chains and ask again.`
+      `${planLine} Top up any of those chains and ask again.${notCounted}`
     )
   }
   const strandedSummary = usdcStranded.map((s) => `~$${usd2(Number(s.usd.toFixed(2)))} of ${s.token} on ${s.chainWord}`).join(', ')
@@ -393,12 +435,12 @@ export function shortRefusalCopy(params: {
     // The money EXISTS — only origin gas is missing. Lead with that.
     return (
       `Your money's already there: across ${chainsRead} I can see ${sourceSummary ? `${sourceSummary}, plus ` : ''}${strandedSummary} — enough for ${actionLabel} — ` +
-      `but there's no ETH on ${gasWords} to sign the move with, so it's stuck where it sits. ${rescue}${alsoEth}`
+      `but there's no ETH on ${gasWords} to sign the move with, so it's stuck where it sits. ${rescue}${alsoEth}${notCounted}`
     )
   }
   return (
     `Across ${chainsRead} I can see ${sourceSummary ? `${sourceSummary}, plus ` : ''}${strandedSummary} that can't move without gas ETH on ${gasWords} — ` +
-    `${planLine} Top up any of those chains (and ${gasWords} needs a little ETH before its USDC can move) and ask again.${alsoEth}`
+    `${planLine} Top up any of those chains (and ${gasWords} needs a little ETH before its USDC can move) and ask again.${alsoEth}${notCounted}`
   )
 }
 
@@ -474,8 +516,10 @@ export function planStrandedRescue(params: {
   // Only USDC stuck on a NON-destination chain is rescuable this way — the
   // needed token already on the destination was subtracted from the
   // shortfall, so unsticking it cannot cover the need.
+  // USDC the follow-up BUYS can't be the rescue either: unsticking it only to
+  // convert it and buy it back is the round trip plannableSources refuses.
   const target = stranded
-    .filter((s) => s.token === 'USDC' && (s.chainId !== need.chainId || need.token.toUpperCase() !== 'USDC'))
+    .filter((s) => s.token === 'USDC' && (s.chainId !== need.chainId || need.token.toUpperCase() !== 'USDC') && !isBuyToken(need, s))
     .sort((a, b) => b.usd - a.usd)[0]
   if (!target || target.usd < needUsd + gasUsd) return null
   const gasLegUsd = gasTopupLegUsd(target.chainId, ethUsd)
@@ -503,6 +547,71 @@ export function planStrandedRescue(params: {
     target,
     donor,
     gasLegUsd,
+  }
+}
+
+/**
+ * A buy of ETH from a wallet whose only money is ETH. With the bought token
+ * excluded (plannableSources) there is nothing left to spend, and every plan
+ * the old planner drew sold ETH for USDC to buy ETH back. When that ETH sits
+ * on another chain, the honest offer is the ETH itself, carried to the swap
+ * chain: one cross-chain leg per source ("Swap 0.025 ETH from Arbitrum to ETH
+ * on Base"). It reaches the round trip's end state with one conversion fewer,
+ * and the copy calls it what it is, a move of ETH the user already owns.
+ *
+ * Sized to the buy's own dollars (USDC is the scan's $1 unit), not the
+ * margined plan: nothing runs after the move, so there is no follow-up for a
+ * fee margin to protect. One leg is a plain cross-chain ask, owned by the
+ * chat's cross-chain gate, which needs NEAR Intents in the set (a chip send
+ * on /chat and /i turns it on, lib/ask-apps). Several legs compile as a job.
+ *
+ * Null unless the buy is ETH itself (a WETH ask wants the wrapped token, and a
+ * move delivers native ETH), the spend is USDC (the one spend token the scan
+ * reads on every chain, so "nothing else to spend" is a fact, not a guess),
+ * every holding worth naming is ETH, and ETH off the swap chain covers the buy.
+ */
+export function planBuyTokenMove(params: {
+  need: FundingNeed
+  sources: FundingSource[]
+  stranded: FundingSource[]
+}): { chips: FundingChip[]; legs: { source: FundingSource; amount: string }[]; moveUsd: number } | null {
+  const { need, sources, stranded } = params
+  const destWord = FUNDING_CHAIN_WORD[need.chainId]
+  if (!destWord || need.buyToken?.toUpperCase() !== 'ETH' || need.token.toUpperCase() !== 'USDC') return null
+  if (![...sources, ...stranded].every((s) => s.usd < DUST_USD || isBuyToken(need, s))) return null
+  const moveUsd = Math.max(MIN_LEG_USD, Number(need.amountHuman.toFixed(2)))
+  // L2 origins first (the deposit is cheaper to sign there), richest first.
+  const offChain = sources
+    .filter((s) => s.token === 'ETH' && s.chainId !== need.chainId && s.usd >= MIN_LEG_USD)
+    .sort((a, b) => Number(a.chainId === 1) - Number(b.chainId === 1) || b.usd - a.usd)
+  const legs: { source: FundingSource; amount: string }[] = []
+  const single = offChain.find((s) => s.usd >= moveUsd)
+  if (single) {
+    legs.push({ source: single, amount: sourceAmountFor(single, moveUsd) })
+  } else {
+    // No one chain covers it: richest first, every leg at least the minimum
+    // a solver fills (the last one may move a little more than the remainder;
+    // the extra lands in the user's own wallet).
+    let covered = 0
+    for (const s of [...offChain].sort((a, b) => b.usd - a.usd)) {
+      const want = Math.min(s.usd, Math.max(moveUsd - covered, MIN_LEG_USD))
+      legs.push({ source: s, amount: sourceAmountFor(s, want) })
+      covered += want
+      if (covered >= moveUsd) break
+    }
+    if (covered < moveUsd) return null
+  }
+  const resume = legs.map((l) => `Swap ${l.amount} ETH from ${l.source.chainWord} to ETH on ${destWord}`).join(', then ')
+  return {
+    chips: [
+      {
+        label: single ? `Move ~$${usd2(moveUsd)} of my ETH from ${single.chainWord} to ${destWord}` : `Move ~$${usd2(moveUsd)} of my ETH to ${destWord} (${legs.length} legs)`,
+        resume,
+      },
+      { label: 'Not now', resume: 'Never mind — leave my funds where they are.' },
+    ],
+    legs,
+    moveUsd,
   }
 }
 
@@ -792,17 +901,45 @@ export function decideFundingTurn(params: {
         }
       }
     }
+    // A buy of ETH from a wallet holding nothing but ETH: the old plan sold it
+    // to buy it back. ETH on another chain moves instead (planBuyTokenMove);
+    // ETH already on the swap chain falls to the refusal, which names it.
+    const move = planBuyTokenMove({ need, sources: scan.sources, stranded: scan.stranded })
+    if (move) {
+      const held = [...scan.sources, ...scan.stranded].filter((s) => s.usd >= DUST_USD)
+      const heldUsd = Number(held.reduce((a, s) => a + s.usd, 0).toFixed(2))
+      const fromWords = [...new Set(move.legs.map((l) => l.source.chainWord))].join(' and ')
+      trace({
+        type: 'status',
+        label: `funding layer claimed the turn: ${need.actionLabel} buys ETH and the wallet's only money is ~$${usd2(heldUsd)} of ETH — no round trip through ${need.token.toUpperCase()}; offering ${move.legs.length} cross-chain move(s) of the ETH itself (~$${usd2(move.moveUsd)} from ${fromWords} to ${destChainName})`,
+      })
+      return {
+        kind: 'offer',
+        turn: {
+          reply:
+            `**You already hold ETH** — ${held.map((s) => `~$${usd2(Number(s.usd.toFixed(2)))} of ETH on ${s.chainWord}`).join(', ')}. ` +
+            `ETH is what ${need.actionLabel} gets you, so I won't sell it for ${need.token.toUpperCase()} just to buy it back (two conversions and two fees to end with the same ETH). ` +
+            `If you want ~$${usd2(move.moveUsd)} of it on ${destChainName}, ${move.legs.length === 1 ? 'one move' : `${move.legs.length} moves`} from ${fromWords} ${move.legs.length === 1 ? 'brings' : 'bring'} it over (NEAR Intents, delivered to your own address). ` +
+            `That moves ETH you already own; it doesn't buy more. To add ETH, send USDC to this wallet on any of ${scan.readChains.join(', ').replace(/, ([^,]*)$/, ' or $1')} and ask again.`,
+          clarify: { question: `Move your ETH to ${destChainName} instead?`, options: move.chips },
+          buildPath: 'native-funding-offer',
+        },
+      }
+    }
     const chainsRead = scan.readChains.join(', ').replace(/, ([^,]*)$/, ' and $1')
     // Short ONLY because of the ETH two-leg headroom: the wallet's movable
     // total covers the plan on paper, but a gas-included plan can't promise
     // the fee it has to pay first. The copy owes the user that sentence.
     const promisable = promisableCapacityUsd(plannableSources(need, scan.sources), gasUsd > 0)
     const headroomShort = gasUsd > 0 && plan.totalUsd >= plan.needUsd && promisable < plan.needUsd
+    // What the wallet holds of the token being bought: never counted, always named.
+    const heldBuy = scan.sources.filter((s) => s.usd >= DUST_USD && isBuyToken(need, s))
     trace({
       type: 'note',
       level: 'warn',
       label:
         `funding layer: ${need.actionLabel} needs ~$${plan.needUsd} moved but the wallet holds ~$${plan.totalUsd} movable across ${chainsRead}` +
+        (heldBuy.length > 0 ? ` (+ ${heldBuy.map((s) => `$${usd2(Number(s.usd.toFixed(2)))} ${s.token}·${s.chainWord}`).join('/')} not counted — ${need.buyToken?.toUpperCase()} is what ${need.actionLabel} buys)` : '') +
         (headroomShort ? ` (only ~$${promisable} of it promisable — a gas-included ETH plan keeps its own leg-1 fee back)` : '') +
         (scan.stranded.length > 0
           ? ` (+ $${usd2(Number(scan.stranded.reduce((a, s) => a + s.usd, 0).toFixed(2)))} gas-stranded/sub-reserve on ${scan.stranded.map((s) => `${s.token}·${s.chainWord}`).join('/')}) — naming it`
@@ -814,6 +951,7 @@ export function decideFundingTurn(params: {
       insufficient: shortRefusalCopy({
         chainsRead,
         need,
+        heldBuy,
         needUsd: plan.needUsd,
         sourceSummary: plan.sourceSummary,
         stranded: scan.stranded,

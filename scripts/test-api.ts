@@ -14771,6 +14771,140 @@ async function main() {
           JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-hl-exec', 'wait:wait']),
       hlOffer.kind === 'offer' ? hlOffer.chips[0].resume : hlOffer.kind,
     )
+
+    // ── The round trip (2026-09-16). "Buy $50 of ETH" from a wallet whose only
+    // money was ETH planned "Swap 0.02825 ETH for USDC on Base, then swap 50
+    // USDC for ETH on Base": two conversions and two fees, ending on the same
+    // ETH. The swap gate now names what the swap BUYS (FundingNeed.buyToken),
+    // and a holding of that token never funds it.
+    {
+      const buyEth: FundingNeed = { chainId: 8453, token: 'USDC', amountHuman: 50, followupResume: 'swap 50 USDC for ETH on Base', actionLabel: 'the swap', buyToken: 'ETH' }
+      const scanOf = (sources: FundingSource[], stranded: FundingSource[] = []) => ({ sources, stranded, ethUsd: 3500, readChains: ['Base', 'Arbitrum', 'Optimism', 'Ethereum'], failedChains: [] })
+      const decide = (need: FundingNeed, sources: FundingSource[], stranded: FundingSource[] = [], gasUsd = 0) =>
+        decideFundingTurn({ need, needUsd: fundingPlanUsd(need.amountHuman, need.token === 'ETH' ? 3500 : 1), gasUsd, scan: scanOf(sources, stranded), destChainName: 'Base' })
+      const optionsOf = (d: ReturnType<typeof decideFundingTurn>) => (d.kind === 'offer' ? d.turn.clarify.options.filter((o) => o.label !== 'Not now') : [])
+      // A leg that converts the bought token into something else (ETH and WETH
+      // are one asset): "Swap 0.02 ETH for USDC", "Swap 0.02 ETH from Arbitrum to USDC".
+      const roundTrip = (resume: string, buy: string) =>
+        resume.split(', then ').some((leg) => {
+          const m = leg.match(/^swap\s+[\d.]+\s+([a-z]+)\b.*?\b(?:for|to)\s+([a-z]+)\s+on\b/i)
+          const asset = (t: string) => (t.toUpperCase() === 'WETH' ? 'ETH' : t.toUpperCase())
+          return !!m && asset(m[1]) === asset(buy) && asset(m[2]) !== asset(buy)
+        })
+
+      const sameChain = decide(buyEth, [src(8453, 'Base', 'ETH', 99.6)])
+      check(
+        'funding round trip: ETH on the swap chain is all the wallet holds → no plan sells it to buy it back; the refusal names the ETH as what the swap gets you and asks for USDC',
+        sameChain.kind === 'refusal' && sameChain.insufficient.includes('the only money I can see is ~$99.60 of ETH on Base') &&
+          /ETH is what the swap gets you/.test(sameChain.insufficient) && /Send USDC to this wallet/.test(sameChain.insufficient) &&
+          !/found no movable/.test(sameChain.insufficient),
+        sameChain.kind === 'refusal' ? sameChain.insufficient : JSON.stringify(optionsOf(sameChain)),
+      )
+      const plain = planFundingChips({ ...buyEth, buyToken: undefined }, 56.5, [src(8453, 'Base', 'ETH', 99.6)])
+      check(
+        'funding round trip: the old plan was the round trip (a need that names no buy still converts the ETH), so the rule is buyToken and nothing wider',
+        plain.kind === 'offer' && roundTrip(plain.chips[0].resume, 'ETH'),
+        plain.kind === 'offer' ? plain.chips[0].resume : plain.kind,
+      )
+
+      const otherChain = decide(buyEth, [src(42161, 'Arbitrum', 'ETH', 99.6)], [], 1.5)
+      const move = optionsOf(otherChain)
+      const moveCc = move.length === 1 ? parseCrossChainSwap(move[0].resume) : null
+      check(
+        'funding round trip: ETH only on another chain → ONE chip, a move of that ETH to the swap chain sized to the buy ($50, no fee margin, no USDC leg, no follow-up swap)',
+        otherChain.kind === 'offer' && move.length === 1 && move[0].resume === 'Swap 0.014286 ETH from Arbitrum to ETH on Base' &&
+          move[0].label === 'Move ~$50 of my ETH from Arbitrum to Base' &&
+          !!moveCc && !('problem' in moveCc) && moveCc.originToken.toUpperCase() === 'ETH' && moveCc.destinationToken.toUpperCase() === 'ETH' &&
+          /arbitrum/i.test(moveCc.originChain) && /base/i.test(moveCc.destinationChain) &&
+          /doesn't buy more/.test(otherChain.turn.reply) && otherChain.turn.reply.includes('~$99.60 of ETH on Arbitrum'),
+        JSON.stringify(otherChain.kind === 'offer' ? { reply: otherChain.turn.reply, move } : otherChain),
+      )
+      const { askAppSlugs: moveApps } = await import('../lib/ask-apps')
+      check(
+        'funding round trip: the lone move is the cross-chain gate\'s ask (not a job), and the chip composes NEAR Intents — the default chat set has none, and a chip send turns it on (lib/ask-apps)',
+        move.length === 1 && compileJobAsk(move[0].resume) === null && simulateLadder(move[0].resume).gate === 'cross-chain' &&
+          moveApps(move[0].resume).includes('near-intents-mcp-yeetful'),
+        move[0]?.resume,
+      )
+      const split = decide(buyEth, [src(10, 'Optimism', 'ETH', 20), src(1, 'Ethereum', 'ETH', 30)], [], 1.5)
+      const splitJob = optionsOf(split).length === 1 ? compileJobAsk(optionsOf(split)[0].resume) : null
+      check(
+        'funding round trip: ETH split across chains that no one chain covers → one chip whose moves compile as a job (no NEAR Intents needed in the set)',
+        !!splitJob && !('problem' in splitJob) &&
+          JSON.stringify(splitJob.steps.map((s) => `${s.kind}:${s.builder}`)) ===
+            JSON.stringify(['sign:native-cross-chain', 'wait:wait', 'sign:native-cross-chain', 'wait:wait']) &&
+          !roundTrip(optionsOf(split)[0].resume, 'ETH'),
+        JSON.stringify(optionsOf(split)),
+      )
+
+      const mixed = planFundingChips(buyEth, 56.5, [src(8453, 'Base', 'ETH', 99.6), src(42161, 'Arbitrum', 'USDC', 60)])
+      check(
+        'funding round trip: ETH on the swap chain + USDC elsewhere → the plan spends the USDC (the destination-chain ETH used to rank FIRST and sell itself)',
+        mixed.kind === 'offer' && mixed.chips[0].resume === 'Swap 56.5 USDC from Arbitrum to USDC on Base, then swap 50 USDC for ETH on Base' &&
+          mixed.chips.every((c) => !roundTrip(c.resume, 'ETH')),
+        mixed.kind === 'offer' ? mixed.chips.map((c) => c.resume).join(' | ') : mixed.kind,
+      )
+      const mixedShort = decide(buyEth, [src(8453, 'Base', 'ETH', 99.6), src(42161, 'Arbitrum', 'USDC', 20)])
+      check(
+        'funding round trip: USDC short + ETH held → an honest refusal that still names the ETH, as not counted',
+        mixedShort.kind === 'refusal' && mixedShort.insufficient.includes('~$20 of USDC on Arbitrum') &&
+          mixedShort.insufficient.includes('(Not counted: ~$99.60 of ETH on Base — ETH is what the swap gets you.)'),
+        mixedShort.kind === 'refusal' ? mixedShort.insufficient : mixedShort.kind,
+      )
+      const weth = decide({ ...buyEth, followupResume: 'swap 50 USDC for WETH on Base', buyToken: 'WETH' }, [src(42161, 'Arbitrum', 'ETH', 99.6)], [], 1.5)
+      check(
+        'funding round trip: WETH is ETH (lib/chains gives both one address) — no ETH → USDC → WETH plan, and no move (it would land native ETH, not the WETH asked for)',
+        weth.kind === 'refusal' && /WETH is what the swap gets you/.test(weth.insufficient) && /converting ETH to USDC/.test(weth.insufficient),
+        weth.kind === 'refusal' ? weth.insufficient : JSON.stringify(optionsOf(weth)),
+      )
+      const uni = decide({ ...buyEth, followupResume: 'swap 50 USDC for UNI on Base', buyToken: 'UNI' }, [src(42161, 'Arbitrum', 'ETH', 99.6)], [], 1.5)
+      check(
+        'funding round trip: ETH still funds a buy of anything else ("Buy $50 of UNI" keeps its ETH plan)',
+        optionsOf(uni).length > 0 && /ETH from Arbitrum to USDC on Base, then swap 50 USDC for UNI on Base$/.test(optionsOf(uni)[0].resume),
+        JSON.stringify(optionsOf(uni)),
+      )
+
+      // The sell direction: "Sell $50 of ETH" buys USDC. USDC must not buy the
+      // ETH it sells back — not as a plan, not as a stranded-USDC rescue.
+      const sellEth: FundingNeed = { chainId: 8453, token: 'ETH', amountHuman: 0.0145, followupResume: 'swap 0.0143 ETH for USDC on Base', actionLabel: 'the swap', buyToken: 'USDC' }
+      const sellShort = decide(sellEth, [src(42161, 'Arbitrum', 'USDC', 60)])
+      const strandedUsdc: FundingSource = { chainId: 42161, chainWord: 'Arbitrum', token: 'USDC', balance: 60, usd: 60 }
+      check(
+        'funding round trip: a sell never buys the ETH it sells with the USDC it buys (no plan, no stranded-USDC rescue), and the refusal names the USDC',
+        sellShort.kind === 'refusal' && /USDC is what the swap gets you/.test(sellShort.insufficient) && /Send ETH to this wallet/.test(sellShort.insufficient) &&
+          planStrandedRescue({ need: sellEth, needUsd: 51.5, gasUsd: 0, sources: [src(10, 'Optimism', 'ETH', 5)], stranded: [strandedUsdc], ethUsd: 3500 }) === null &&
+          planStrandedRescue({ need: { ...sellEth, buyToken: undefined }, needUsd: 51.5, gasUsd: 0, sources: [src(10, 'Optimism', 'ETH', 5)], stranded: [strandedUsdc], ethUsd: 3500 }) !== null,
+        sellShort.kind === 'refusal' ? sellShort.insufficient : JSON.stringify(optionsOf(sellShort)),
+      )
+
+      // The wiring: the swap gate names the buy on its shortfall need, and the
+      // gas-only probe does not (ETH spent on gas is never bought back).
+      const swapGateSrc = (await readFile('app/api/chat/route.ts', 'utf8')).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      check(
+        'funding round trip (source): the swap gate\'s shortfall need carries buyToken: buySym; its gas-only probe (amountHuman 0) carries none',
+        /amountHuman: Number\(\(needTotal - held\)\.toFixed\(6\)\),\s*\n\s*followupResume: `swap \$\{intent\.sellAmountHuman\} \$\{sellSym\} for \$\{buySym\} on \$\{FUNDING_CHAIN_WORD\[chainId\]\}`,\s*\n\s*actionLabel: [^\n]+\n\s*buyToken: buySym,/.test(swapGateSrc) &&
+          /amountHuman: 0,\s*\n\s*followupResume: `swap \$\{intent\.sellAmountHuman\} \$\{sellSym\} for \$\{buySym\} on \$\{FUNDING_CHAIN_WORD\[chainId\]\}`,\s*\n\s*actionLabel: [^\n]+\n\s*\},/.test(swapGateSrc),
+      )
+
+      // The live route in the default chat set: the move answers the
+      // add-the-dapp door without NEAR Intents, and the cross-chain lane
+      // claims it with the apps the chip send turns on.
+      const { DEFAULT_CHAT_FLEET_SLUGS: defaultSet } = await import('../lib/free-fleet')
+      const moveTurn = async (slugs: readonly string[]) =>
+        (await (await fetch(`${BASE}/api/chat`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+          body: JSON.stringify({ message: 'Swap 0.014286 ETH from Arbitrum to ETH on Base', activeServers: slugs.map((slug) => ({ slug })), history: [] }),
+        })).json()) as { reply?: string; door?: { mcps?: string } }
+      const moveBare = await moveTurn(defaultSet)
+      const moveLit = await moveTurn([...new Set([...defaultSet, ...moveApps('Swap 0.014286 ETH from Arbitrum to ETH on Base')])])
+      check(
+        'funding round trip (route): the move chip in the default chat set answers the NEAR Intents door, and the cross-chain lane claims it once the chip\'s apps are on',
+        /Add NEAR Intents with this ask ready/.test(String(moveBare.reply)) && moveBare.door?.mcps === 'near-intents-mcp-yeetful' &&
+          !moveLit.door && /^🔗/.test(String(moveLit.reply)) && !/with this ask ready/.test(String(moveLit.reply)),
+        `bare=${String(moveBare.reply).slice(0, 80)} lit=${String(moveLit.reply).slice(0, 120)}`,
+      )
+    }
   }
 
   // ── DCA — recurring buys (grammar + period math + the chip contract) ─────
