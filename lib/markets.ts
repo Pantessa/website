@@ -504,3 +504,65 @@ export const DEFAULT_MARKETS_VIEW: MarketsView = 'list'
 export function parseMarketsView(raw: string | null | undefined): MarketsView {
   return raw === 'map' || raw === 'list' ? raw : DEFAULT_MARKETS_VIEW
 }
+
+// ── MK2 R2: the session strip (the clocks TradingView doesn't show) ─────────
+
+export interface SessionStrip {
+  /** NYSE regular session right now. */
+  nyse: { open: boolean; label: 'NYSE OPEN' | 'NYSE CLOSED'; /** minutes until the next bell (close if open, open if closed) */ minsToBell: number; bell: 'closes' | 'opens'; reopens: string | null }
+  /** Hyperliquid funding settles on the hour, every hour — minutes to the next tick. */
+  hlFundingMins: number
+  /** The one truth on the token side. */
+  tokens: 'Tokens trade 24/7'
+}
+
+/** Minutes from `now` (ET wall clock) to the next NYSE bell: the 16:00 close
+ *  while the session is open, else the next weekday's 09:30 open. Holidays
+ *  are NOT modelled (same honesty as nyseSession). Pure. */
+export function nyseMinutesToBell(now: Date = new Date()): { mins: number; bell: 'closes' | 'opens' } {
+  const { dow, h, m } = etParts(now)
+  const mins = h * 60 + m
+  const weekday = dow >= 1 && dow <= 5
+  const OPEN = 9 * 60 + 30
+  const CLOSE = 16 * 60
+  if (weekday && mins >= OPEN && mins < CLOSE) return { mins: CLOSE - mins, bell: 'closes' }
+  // Days until the next weekday open (0 = later today).
+  let days = 0
+  let d = dow
+  if (!(weekday && mins < OPEN)) {
+    do {
+      days++
+      d = (d + 1) % 7
+    } while (d === 0 || d === 6)
+  }
+  const toOpen = days === 0 ? OPEN - mins : days * 24 * 60 - mins + OPEN
+  return { mins: toOpen, bell: 'opens' }
+}
+
+/** Minutes to the top of the next UTC hour (Hyperliquid funding tick). */
+export function minutesToNextHour(now: Date = new Date()): number {
+  const m = now.getUTCMinutes()
+  return m === 0 ? 60 : 60 - m
+}
+
+export function sessionStripFor(now: Date = new Date()): SessionStrip {
+  const tape = nyseSession(now)
+  const bell = nyseMinutesToBell(now)
+  return {
+    nyse: { open: tape.open, label: tape.open ? 'NYSE OPEN' : 'NYSE CLOSED', minsToBell: bell.mins, bell: bell.bell, reopens: tape.reopens },
+    hlFundingMins: minutesToNextHour(now),
+    tokens: 'Tokens trade 24/7',
+  }
+}
+
+/** "4h 12m" / "37m" / "2d 3h" — a countdown that never says "0m" for a live bell. */
+export function fmtCountdown(mins: number): string {
+  const m = Math.max(1, Math.round(mins))
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  const rem = m % 60
+  if (h < 24) return rem ? `${h}h ${rem}m` : `${h}h`
+  const d = Math.floor(h / 24)
+  const rh = h % 24
+  return rh ? `${d}d ${rh}h` : `${d}d`
+}

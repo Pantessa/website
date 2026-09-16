@@ -31,7 +31,7 @@ import { base } from 'viem/chains'
 import { dryRunTx, isAllowanceLag, rpcHostOf, transientRpcWords } from '../lib/dry-run'
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
-import { LINK_FEE_PCT } from '../lib/fees'
+import { LINK_FEE_PCT, SWAP_FEE_PCT } from '../lib/fees'
 import { ROBINHOOD_DESK } from '../lib/live-examples'
 import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import {
@@ -50,6 +50,8 @@ import { cellFill, mapItems, polarity, squarify, marketMapLayout, labelTier } fr
 import { readFlow as vizReadFlow, FLOW_TTL_MS } from '../lib/viz/flow'
 import { usdOf } from '../lib/viz/flow-readers'
 import { rankMovers } from '../lib/viz/movers'
+import { profileBins } from '../components/markets/chart/volume-profile'
+import { cleanSparkSymbols, SPARKS_MAX_SYMBOLS } from '../lib/viz/sparks'
 import { marketSections as vizMarketSections } from '../lib/markets'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
@@ -236,7 +238,7 @@ import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingIn
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
 import { CHOOSE_SHAPE_RULES, chooseMosaicShape, composeMosaicAsk, fmtUnits, integerPcts, isMosaicAsk, MOSAIC_STABLE, mosaicAskString, mosaicPresets, mosaicStableFor, mosaicValueRows, parseMosaicAsk, planMosaic, suggestMosaicShape, type MosaicHolding } from '../lib/mosaic'
 import { simulateLadder } from './ask-ladder'
-import { venuesFor as mk2VenuesFor, missingVenueNotes as mk2MissingNotes, composeCompound as mk2ComposeCompound, compoundLegKindsFor as mk2LegKinds, compoundPresets as mk2Presets, type CompoundLegKind as Mk2LegKind, type RoutesResponse as Mk2RoutesResponse } from '../lib/symbol-venues'
+import { limitAtLevel as mk2LimitAtLevel, BEST_OUT_RULE as MK2_BEST_OUT_RULE, venuesFor as mk2VenuesFor, missingVenueNotes as mk2MissingNotes, composeCompound as mk2ComposeCompound, compoundLegKindsFor as mk2LegKinds, compoundPresets as mk2Presets, type CompoundLegKind as Mk2LegKind, type RoutesResponse as Mk2RoutesResponse } from '../lib/symbol-venues'
 import { execAsks as mk2ExecAsks, execSidesFor as mk2ExecSidesFor, sideOf as mk2SideOf, AMOUNTS as MK2_AMOUNTS, STOPS as MK2_STOPS, CADENCES as MK2_CADENCES } from '../lib/trade-asks'
 import { exitChipsFor as mk2ExitChipsFor, positionSummary as mk2PositionSummary, positionIsEmpty as mk2PositionIsEmpty, type SymbolPosition as Mk2SymbolPosition } from '../lib/symbol-position'
 import {
@@ -3023,17 +3025,15 @@ async function main() {
     // it to nate.eth" while its href sent the explicit clause — a reader who
     // retyped the tile got the jobs refusal. Displayed = sent, pinned on the
     // rendered page.
-    const homeForTiles = await (await fetch(`${BASE}/`)).text()
-    const nightTasks = [...homeForTiles.matchAll(/night__task[^>]*>“([^”]+)” →/g)].map((m) => m[1].replace(/<!-- -->/g, ''))
-    // Attribute order is the renderer's, not ours (Next has served both
-    // `href … class` and `class … href` for this <Link>): match the tile's
-    // <a> tag as a whole, then read `href` from inside it.
-    const nightHrefs = [...homeForTiles.matchAll(/<a\b[^>]*\bclass="[^"]*\bnight__tile\b[^"]*"[^>]*>/g)]
-      .map((m) => m[0].match(/\bhref="\/chat\?[^"]*prompt=([^"&]+)"/)?.[1] ?? null)
-      .filter((h): h is string => h !== null)
-      .map((h) => decodeURIComponent(h.replace(/&amp;/g, '&')))
+    // Re-pinned 2026-09-15 (mk2 LANDING): NightShift is OFF the landing
+    // (trimmed, the file stays), so displayed == sent is pinned on the
+    // component's own TILES source — every `ask:` is the sentence its
+    // `href:` encodes (the ASCII/Unicode minus difference is normalized).
+    const nightSrc = (await import('node:fs')).readFileSync('components/NightShift.tsx', 'utf8')
+    const nightTasks = [...nightSrc.matchAll(/^\s*ask: '([^']+)',/gm)].map((m) => m[1])
+    const nightHrefs = [...nightSrc.matchAll(/^\s*href: `\/chat\?[^`]*prompt=\$\{encodeURIComponent\('([^']+)'\)\}`/gm)].map((m) => m[1])
     check(
-      'landing tiles: every NightShift tile displays exactly the ask its href sends',
+      'landing tiles: every NightShift tile displays exactly the ask its href sends (pinned on the TILES source — the section is off the landing)',
       nightTasks.length >= 4 && nightHrefs.length === nightTasks.length && nightTasks.every((t, i) => nightHrefs[i].replace(/−/g, '-') === t.replace(/−/g, '-')),
       JSON.stringify({ nightTasks, nightHrefs }),
     )
@@ -5388,11 +5388,12 @@ async function main() {
         /bootHoldingFor\(\{ hydrated, walletStatus, holdElapsed: walletWaitOver \}\)/.test(link) &&
         /useState\(\(\) => initialHoldElapsed\(/.test(link),
     )
-    const html = await (await fetch(`${BASE}/`)).text()
-    const ticks = [...html.matchAll(/class="night__tick[^"]*"[^>]*?\sy1="([^"]+)"[^>]*?\sy2="([^"]+)"/g)].flatMap((m) => [m[1], m[2]])
+    // Re-pinned 2026-09-15 (mk2 LANDING): the dial is off the landing, so
+    // the rounding rule is pinned on NightShift's own polar helper.
+    const nightDial = code('components/NightShift.tsx')
     check(
-      'onboarding: the landing dial\'s tick coordinates are rounded (≤3 decimals) — Node and the browser disagree on Math.sin/cos in the last bits, and raw floats made every tick a server/client attribute mismatch',
-      ticks.length >= 20 && ticks.every((v) => /^-?\d+(\.\d{1,3})?$/.test(v)),
+      'onboarding: the NightShift dial\'s tick coordinates are rounded (≤3 decimals) — Node and the browser disagree on Math.sin/cos in the last bits, and raw floats made every tick a server/client attribute mismatch',
+      /Math\.round\(\(C \+ Math\.cos\(a\) \* r\) \* 1000\) \/ 1000/.test(nightDial) && /Math\.round\(\(C \+ Math\.sin\(a\) \* r\) \* 1000\) \/ 1000/.test(nightDial),
     )
   }
 
@@ -19035,7 +19036,7 @@ async function main() {
           // MK2 (2026-09-15): the header chips live in the ExecStrip slot now — SymbolPage keeps
           // the two no-chart chips and hands the strip `act` itself; the stub's chips call onAsk.
           (symS.match(/onClick=\{sendOnClick\(/g) ?? []).length === 2 && /\{door\}/.test(symS) &&
-          /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} \/>/.test(symS) &&
+          /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} last=\{stats\?\.last \?\? null\} \/>/.test(symS) &&
           /else prefillAct\(ask\)/.test(railS) && /\{prefillDoor\}/.test(railS) && !/else router\.push\(promptHref\(ask\)\)/.test(railS) &&
           (spineS.match(/if \(openDoorFor\(href\)\) return/g) ?? []).length === 2 &&
           (spineS.match(/<SpineLink\b/g) ?? []).length === 5 &&
@@ -19889,10 +19890,10 @@ async function main() {
 
     const byKey = new Map(OVERLAYS.map((o) => [o.key, o]))
     check(
-      'chart MAs: the overlay bar reads SMA 20 · SMA 50 · SMA 200 · EMA 20 · BB · VWAP, every toggle carries a legend swatch, the 50 wears --chart-ma-50 and the 200 --chart-ma-200, and the symbol page opens on the 50 + the 200',
-      OVERLAYS.map((o) => o.label).join(',') === 'SMA 20,SMA 50,SMA 200,EMA 20,BB,VWAP' && OVERLAYS.every((o) => o.swatch.length > 0) &&
+      'chart MAs: the overlay bar reads SMA 20 · SMA 50 · SMA 200 · EMA 20 · BB · VWAP · VP, every toggle carries a legend swatch, the 50 wears --chart-ma-50 and the 200 --chart-ma-200, and the symbol page opens on the 50 + the 200 + the volume profile',
+      OVERLAYS.map((o) => o.label).join(',') === 'SMA 20,SMA 50,SMA 200,EMA 20,BB,VWAP,VP' && OVERLAYS.every((o) => o.swatch.length > 0) &&
         byKey.get('sma50')?.swatch === 'var(--chart-ma-50)' && byKey.get('sma200')?.swatch === 'var(--chart-ma-200)' &&
-        DEFAULT_SYMBOL_OVERLAYS.join(',') === 'sma50,sma200',
+        DEFAULT_SYMBOL_OVERLAYS.join(',') === 'sma50,sma200,vp', // re-pinned 2026-09-15 (MK2/VIZ): the volume profile joins the bar and opens lit
     )
 
     // The colors are pinned by what they ARE (a blue, a yellow, legible on
@@ -20389,6 +20390,19 @@ async function main() {
     const esSrc = await readFile('components/markets/trade/ExecStrip.tsx', 'utf8')
     const ppSrc = await readFile('components/markets/trade/PositionPanel.tsx', 'utf8')
     const ccSrc = await readFile('components/markets/trade/CompoundComposer.tsx', 'utf8')
+    // R2: the drawn-line limit picker (a level below market = limit BUY, above
+    // = limit SELL, at market = nothing), the leverage slider, the why-best rule.
+    const lvlBuy = mk2LimitAtLevel('ETH', 'Base', 50, 2400, 2500)
+    const lvlSell = mk2LimitAtLevel('ETH', 'Arbitrum', 50, 2600, 2500)
+    check(
+      'MK2/EXEC limit picker: a drawn level under market composes a CoW limit BUY, over market a limit SELL, at market nothing — both sentences land native; RouteTable reads the chart\'s own yf-chart-state key, carries a 1–10x leverage slider on perp rows, and quotes the BEST OUT rule (spot only, never across kinds) in the tag tooltip',
+      lvlBuy?.side === 'buy' && lvlBuy.ask === 'limit order: buy 0.02083 ETH for at most 49.99 USDC on Base' && simulateLadder(lvlBuy.ask).gate === 'swap' && simulateLadder(lvlBuy.ask).kind === 'action' &&
+        lvlSell?.side === 'sell' && /^limit order: sell 0\.01923 ETH for at least [\d.]+ USDC on Arbitrum$/.test(lvlSell.ask) && simulateLadder(lvlSell.ask).kind === 'action' &&
+        mk2LimitAtLevel('ETH', 'Base', 50, 2500, 2500) === null &&
+        rtSrc.includes("`${CHART_DRAW_KEY_PREFIX}${symbol}`") && rtSrc.includes("type=\"range\" min={1} max={LEVERAGE_MAX}") && rtSrc.includes('title={BEST_OUT_RULE}') &&
+        /only spot rows compete/i.test(MK2_BEST_OUT_RULE) && /never|nothing is called best across kinds/i.test(MK2_BEST_OUT_RULE),
+      `${lvlBuy?.ask} | ${lvlSell?.ask}`,
+    )
     check(
       'MK2/EXEC surfaces: RouteTable/ExecStrip/PositionPanel/CompoundComposer each take { symbol, pair, onAsk } (PositionPanel + address?), every chip carries data-ask and SENDS through onAsk on click (never a /chat prefill link), PositionPanel re-exports positionSummary',
       [rtSrc, esSrc, ppSrc, ccSrc].every((src) => src.includes('onAsk: (ask: string) => void') && src.includes('data-ask=')) &&
@@ -20414,7 +20428,7 @@ async function main() {
     }
     check(
       'mk2/markets: /markets server-renders the movers tape seat, the Map · List toggle (SSR = list, every row present), the terminal tables with a sort bar (symbol · last · 24h) and j/k row links',
-      seat(mkHtml, 'mk-tape') &&
+      seat(mkHtml, 'mk-tape-seat" data-seat="MoversTape') &&
         /<main class="mkt-frame__main" data-view="list">/.test(mkHtml) &&
         /class="mk-view__btn is-on" aria-pressed="true"[^>]*title="Terminal list"/.test(mkHtml) &&
         /<table class="mk-table" data-section="equities" data-sort="none">/.test(mkHtml) &&
@@ -20532,6 +20546,43 @@ async function main() {
         railSrc.includes('role="menuitemcheckbox"') && railSrc.includes("DENSITY_KEY = 'pantessa.watchlists.density'") &&
         /\.wl\[data-density="compact"\] \.wl__rowName \{ display: none; \}/.test(await readFile('components/markets/markets.css', 'utf8')),
     )
+    // EXEC's request: the chart's last close reaches ExecStrip + RouteTable at every mount.
+    const symS = await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')
+    const ovS = await readFile('components/markets/tabs/OverviewTab.tsx', 'utf8')
+    const trS = await readFile('components/markets/tabs/TradeTab.tsx', 'utf8')
+    check(
+      'mk2/markets: `last` (the header stats) rides to ExecStrip and to RouteTable on Overview AND Trade, so EXEC can size unit rows (Lido stake, CoW limit) honestly',
+      /<ExecStrip [^>]*last=\{stats\?\.last \?\? null\}/.test(symS) &&
+        /<OverviewTab [^>]*last=\{stats\?\.last \?\? null\}/.test(symS) && /<TradeTab [^>]*last=\{stats\?\.last \?\? null\}/.test(symS) &&
+        /<RouteTable [^>]*last=\{lastProp \?\? last \?\? null\}/.test(ovS) && /<RouteTable [^>]*last=\{last \?\? null\}/.test(trS),
+    )
+    // R2: the session strip (three clocks), the map's phone fallback, the
+    // sparkline column's read, the ?vs= overlay hand-off to VIZ's engine.
+    const strip = mk.sessionStripFor(new Date(Date.UTC(2026, 8, 15, 14, 0, 0))) // Tue 10:00 ET
+    const stripClosed = mk.sessionStripFor(new Date(Date.UTC(2026, 8, 12, 14, 0, 0))) // Sat
+    check(
+      'mk2/markets: sessionStripFor — a Tuesday 10:00 ET reads NYSE OPEN with 6h to the close; a Saturday reads CLOSED opening Mon 9:30 ET (~47.5h); HL funding ticks at the top of the hour; fmtCountdown never prints 0m',
+      strip.nyse.open && strip.nyse.bell === 'closes' && strip.nyse.minsToBell === 360 && strip.hlFundingMins === 60 &&
+        !stripClosed.nyse.open && stripClosed.nyse.bell === 'opens' && stripClosed.nyse.reopens === 'Mon 9:30 ET' && stripClosed.nyse.minsToBell === (24 + 23) * 60 + 30 &&
+        mk.minutesToNextHour(new Date(Date.UTC(2026, 8, 15, 14, 37, 10))) === 23 &&
+        mk.fmtCountdown(0) === '1m' && mk.fmtCountdown(360) === '6h' && mk.fmtCountdown(2850) === '1d 23h' && mk.fmtCountdown(95) === '1h 35m',
+    )
+    check(
+      'mk2/markets: /markets server-renders the session strip (NYSE open|closed · TOKENS 24/7 · HL FUNDING) above the movers seat, and under 640px the map view keeps the map AND renders the ledger under it',
+      /<div class="mk-session" role="status" aria-label="Market sessions" data-nyse="(open|closed)">/.test(mkHtml) &&
+        mkHtml.indexOf('class="mk-session"') < mkHtml.indexOf('class="mk-tape-seat"') &&
+        /NYSE (OPEN|CLOSED)/.test(mkHtml) && mkHtml.includes('TOKENS 24/7') && mkHtml.includes('HL FUNDING') &&
+        (await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')).includes("const showList = view === 'list' || phone"),
+    )
+    const tableSrc = await readFile('components/markets/shell/MarketTable.tsx', 'utf8')
+    const sparksSrc = await readFile('components/markets/shell/useSparks.ts', 'utf8')
+    check(
+      'mk2/markets: the ledger carries a 7d sparkline cell fed by VIZ\'s /api/markets/viz/sparks (batched ≤60, empty until the read lands, nothing drawn under 2 points); SymbolPage hands ?vs= to the engine as `compare`',
+      /<td class="mk-table__spark" data-spark="0"><\/td>/.test(mkHtml) &&
+        tableSrc.includes("import Sparkline from '@/components/markets/viz/Sparkline'") && tableSrc.includes('sparks[r.symbol]!.length >= 2') &&
+        sparksSrc.includes('/api/markets/viz/sparks?symbols=') && sparksSrc.includes('const BATCH = 60') &&
+        /<ChartMount [^>]*compare=\{vs\}/.test(await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')),
+    )
     // The one stylesheet import + the slot card rule (QA's request: whoever
     // owns a class ships its rule).
     const shellSrc = await readFile('components/markets/shell/MarketsShell.tsx', 'utf8')
@@ -20636,6 +20687,21 @@ async function main() {
         JSON.stringify(layout.cells) === JSON.stringify(marketMapLayout(sections, noVolQuotes, 'all', W, H).cells),
       `cells=${cells.length} overlaps=${overlaps} coverage=${((area / (W * H)) * 100).toFixed(1)}%`,
     )
+    const allVol = mapItems(sections, Object.fromEntries(allSyms.map((s, i) => [s, { last: 10, chgPct: 0, volumeUsd: 1000 + i * 1000 }])), 'all')
+    const meanOf = (sec: string) => {
+      const xs = allVol.items.filter((i) => i.section === sec).map((i) => i.weight)
+      return xs.reduce((a, b) => a + b, 0) / xs.length
+    }
+    const cryptoOnly = mapItems(sections, Object.fromEntries(allSyms.map((s, i) => [s, { last: 10, chgPct: 0, volumeUsd: 1000 + i * 1000 }])), 'crypto')
+    check(
+      'market map: the All map normalises per section (each board\'s MEAN cell weight is 1, so a board\'s area is its share of the listing; within a board size still follows volume) while a single-section map keeps raw volume',
+      allVol.sizing === 'volume' && ['equities', 'crypto', 'perps'].every((sec) => Math.abs(meanOf(sec) - 1) < 1e-9) &&
+        (() => {
+          const eq = allVol.items.filter((i) => i.section === 'equities')
+          return eq.length > 1 && eq[eq.length - 1].weight > eq[0].weight
+        })() &&
+        cryptoOnly.items.every((i) => i.weight >= 1000),
+    )
     check(
       'market map: color is a diverging up/down mix toward the surface at zero (never a hue at the midpoint), clamped at ±5%; labels drop below a legible cell',
       polarity(0) === 0 && polarity(null) === 0 && polarity(50) === 1 && polarity(-50) === -1 && polarity(2.5) === 0.5 &&
@@ -20696,13 +20762,14 @@ async function main() {
     )
     const noSym = await fetch(`${BASE}/api/markets/viz/flow`)
     const badSym = await fetch(`${BASE}/api/markets/viz/flow?symbol=${encodeURIComponent('../etc')}`)
+    const strangerSym = await fetch(`${BASE}/api/markets/viz/flow?symbol=ZZZZQ`)
     type FlowBody = { symbol?: string; sources?: { id: string; usd: number | null; gap?: string; venue: string; measure: string }[]; cached?: boolean; error?: string }
     const ethFlow = (await (await fetch(`${BASE}/api/markets/viz/flow?symbol=eth`)).json()) as FlowBody
     const ethFlow2 = (await (await fetch(`${BASE}/api/markets/viz/flow?symbol=ETH`)).json()) as FlowBody
     const ethSources = ethFlow.sources ?? []
     check(
-      'viz flow route: 400 without a symbol (and for junk), 200 for ETH with every source carrying either a number or a gap (never a bare null, never a zero from a failed read), the symbol upper-cased, and the second read cached',
-      noSym.status === 400 && badSym.status === 400 && ethFlow.symbol === 'ETH' && Array.isArray(ethFlow.sources) &&
+      'viz flow route: 400 without a symbol (and for junk), 404 for a ticker the index does not list (no reader fan-out for strangers), 200 for ETH with every source carrying either a number or a gap (never a bare null, never a zero from a failed read), the symbol upper-cased, and the second read cached',
+      noSym.status === 400 && badSym.status === 400 && strangerSym.status === 404 && ethFlow.symbol === 'ETH' && Array.isArray(ethFlow.sources) &&
         ethSources.every((s) => (typeof s.usd === 'number' && Number.isFinite(s.usd)) || (s.usd === null && typeof s.gap === 'string' && s.gap.length > 0)) &&
         ethSources.every((s) => s.venue && s.measure) && ethFlow2.cached === true,
       `sources=${ethSources.map((s) => `${s.id}${s.usd == null ? '(gap)' : ''}`).join(',') || '-'} error=${ethFlow.error ?? '-'}`,
@@ -20716,6 +20783,11 @@ async function main() {
     // The chart engine wiring (the pixels are in the PR's browser drive).
     const mcSrc = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
     const mountSrc = await readFile('components/markets/chart/ChartMount.tsx', 'utf8')
+    const perfSrc = await readFile('components/markets/chart/PerformanceTiles.tsx', 'utf8')
+    check(
+      'viz chart: PerformanceTiles keys its candles effect on the resolved SYMBOL, never on the fresh chartPairFor() object (the ~500 req/s loop on /t/ Overview)',
+      perfSrc.includes('}, [pairSymbol])') && !perfSrc.includes('}, [pair])'),
+    )
     check(
       'viz chart: MarketChart imports look.css, reads --mk-up/--mk-down (falling back to --accent/--sell), --mk-grid and --mk-crosshair through the probe, paints candle bodies in the up/down inks with quiet wicks (WICK_ALPHA), and no paint site still reads tokens.accent/tokens.sell',
       mcSrc.includes("import '@/components/markets/look.css'") && mcSrc.includes("up: get('--mk-up', get('--accent', '#3ecf8e'))") && mcSrc.includes("down: get('--mk-down', get('--sell', '#e5484d'))") &&
@@ -20728,6 +20800,38 @@ async function main() {
       mountSrc.includes('onViewport?: (v: { from: number; to: number; tf: ChartTf }) => void') && mountSrc.includes('onViewport={onViewport}') &&
         mcSrc.includes('onViewport?: (v: { from: number; to: number; tf: ChartTf }) => void') && mcSrc.includes('emitViewport(clamped ?? view)') && mcSrc.includes('requestAnimationFrame(() => {') &&
         mcSrc.includes('onViewportRef.current({ from: bars[lo].t, to: bars[hi].t, tf: tfRef.current })'),
+    )
+    // Volume profile: pure binning of the visible bars by price.
+    const vpBars = Array.from({ length: 40 }, (_, i) => ({ t: 1_700_000_000 + i * 3600, o: 100 + (i % 5), h: 102 + (i % 5), l: 99 + (i % 5), c: 101 + (i % 5), v: i === 7 ? 1000 : 10 }))
+    const vp = profileBins(vpBars, 0, 39, 12)
+    const vpVol = vp.bins.reduce((a, b) => a + b.vol, 0)
+    check(
+      'viz chart: the volume profile bins the VISIBLE bars\' volume by price (a bar spreads over the bins its range covers), conserves total volume, names the point of control, and is empty off-range',
+      vp.bins.length === 12 && Math.abs(vpVol - vpBars.reduce((a, b) => a + b.v, 0)) < 1e-6 && vp.poc >= 0 && vp.bins[vp.poc].vol === vp.max &&
+        vp.bins.every((b) => b.up >= 0 && b.up <= 1) && profileBins(vpBars, 50, 60).bins.length === 0 && profileBins([], 0, 1).bins.length === 0,
+      `bins=${vp.bins.length} poc=${vp.poc} total=${vpVol}`,
+    )
+    check(
+      'viz chart: MarketChart attaches the VolumeProfile primitive on the candle series, feeds it the held bars only while the VP overlay is lit (off when the feed carries no volume), and the symbol page opens with it; the compare line rides the LEFT scale in percentage mode with the series-2 ink and is named in the foot',
+      mcSrc.includes('candleSeries.attachPrimitive(vp)') && mcSrc.includes("vpRef.current?.update(overlays.has('vp') && hasVolume(bars) ? bars : []") &&
+        (await readFile('lib/chart-indicators.ts', 'utf8')).includes("['sma50', 'sma200', 'vp']") &&
+        mcSrc.includes("priceScaleId: 'left'") && mcSrc.includes('mode: PriceScaleMode.Percentage') && mcSrc.includes("compare: get('--mk-series-2'") && mcSrc.includes('% since the first bar on screen (left scale)') &&
+        mountSrc.includes('compare={compare}'),
+    )
+    // Sparks: the batched 7d read.
+    const sp = cleanSparkSymbols(['aapl', 'ETH', 'weth', 'ZZZZQ', 'AAPL'])
+    check(
+      'viz sparks: symbols are resolver-cleared, aliases collapse (weth → ETH), duplicates drop, junk is listed, the batch is capped',
+      sp.symbols.join(',') === 'AAPL,ETH' && sp.junk.join(',') === 'ZZZZQ' && SPARKS_MAX_SYMBOLS === 60 && cleanSparkSymbols(Array.from({ length: 80 }, () => 'ETH')).symbols.length === 1,
+    )
+    type SparksBody = { sparks?: Record<string, number[]>; missing?: string[]; junk?: string[]; error?: string }
+    const sparks = (await (await fetch(`${BASE}/api/markets/viz/sparks?symbols=AAPL,ETH,HYPE,zzzq`)).json()) as SparksBody
+    const sparkVals = Object.values(sparks.sparks ?? {})
+    check(
+      'viz sparks route: AAPL + ETH + HYPE each answer 2–8 finite daily closes (or are named in missing when a feed is down), junk is named, nothing 500s',
+      sparks.junk?.join(',') === 'zzzq' && Array.isArray(sparks.missing) && sparkVals.every((v) => v.length >= 2 && v.length <= 8 && v.every((n) => Number.isFinite(n) && n > 0)) &&
+        (sparks.error === 'reader unavailable' || ['AAPL', 'ETH', 'HYPE'].every((s) => sparks.sparks?.[s] || sparks.missing?.includes(s))),
+      `got=${Object.keys(sparks.sparks ?? {}).join(',')} missing=${sparks.missing?.join(',') || '-'}`,
     )
     const primitives = ['Sparkline', 'Delta', 'StatTile', 'MiniGauge', 'Bars', 'Ribbon', 'MarketMap', 'FlowPanel', 'MoversTape']
     const barrel = await readFile('components/markets/viz/index.ts', 'utf8')
@@ -20762,6 +20866,14 @@ async function main() {
       'mk2/landing: the hero carries the claim (h1 = HERO_LINE, payoff in the gradient italic) and a rehearsal STAMPED as one — illustrative fills, never a receipt impersonated',
       /<h1[^>]*>[^<]*<br\/?><em>[^<]*<\/em><\/h1>/.test(home) && home.replace(/<[^>]+>/g, '').includes(mc.HERO_LINE) &&
         home.includes(mc.REEL_STAMP) && /REHEARSAL/.test(home),
+    )
+    // R2: the rehearsal is a receipt STRIP over the volume pane — SSR paints
+    // beat 0 complete (ask › route line with the fee from lib/fees › ending),
+    // and the typed sentence is not repeated under the CTAs.
+    check(
+      'mk2/landing: the receipt strip SSRs beat 0 complete — the ask, one route line per leg carrying the fee from lib/fees, the ending — and the sentence is not duplicated under the CTAs',
+      /data-reel-beat="0"/.test(home) && mc.HERO_REEL[0].legs.every((l) => home.includes(l.line)) && home.includes(mc.HERO_REEL[0].ending.line) &&
+        home.includes(`fee ${SWAP_FEE_PCT}`) && !/class="lh__ask\b/.test(home) && !/class="lh__hud\b/.test(home),
     )
     check(
       'mk2/landing: the venue band names every venue (≥6) with one prefill chip each (/chat?prompt=, never a fired turn) and the compound ask as one job',
@@ -20823,7 +20935,7 @@ async function main() {
     check(
       'mk2/landing: the root social card is the hero — a live tape + the rehearsal HUD + the stamp; 200 image/png, real PNG',
       ogr.status === 200 && /image\/png/.test(ogr.headers.get('content-type') ?? '') && ogBuf[0] === 0x89 && ogBuf[1] === 0x50 && ogBuf.length > 20_000 &&
-        /REHEARSAL/.test(ogSrc) && /candleSvg\(/.test(ogSrc) && /gemMarkSvg\(/.test(ogSrc),
+        /REEL_STAMP/.test(ogSrc) && /candleSvg\(/.test(ogSrc) && /gemMarkSvg\(/.test(ogSrc),
     )
   }
 

@@ -38,6 +38,7 @@ export default function TradeTab({
   prompt,
   onAsk,
   onAskText,
+  last,
 }: {
   symbol: string
   pair: ChartPair
@@ -46,6 +47,8 @@ export default function TradeTab({
   onAsk?: (ask: TradeAsk) => void
   /** The act door for a bare ask string (the slots' onAsk). */
   onAskText?: (ask: string) => void
+  /** The chart's last close (the header's stats) — EXEC sizes unit rows from it. */
+  last?: number | null
 }) {
   const askText = onAskText ?? ((a: string) => onAsk?.({ side: sideOf(a), label: a, ask: a }))
   const { walletAddress } = useSession()
@@ -87,7 +90,7 @@ export default function TradeTab({
     <div className="mkt-trade mk-trade">
       {/* Every venue a wallet can act on this symbol (EXEC) */}
       <div className="mk-trade__routes">
-        <RouteTable symbol={symbol} pair={pair} onAsk={askText} />
+        <RouteTable symbol={symbol} pair={pair} onAsk={askText} last={last ?? null} />
       </div>
       <section className="mkt-card mkt-order" aria-label={`Trade ${symbol}`}>
         <header className="mkt-card__head">

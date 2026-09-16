@@ -12,13 +12,18 @@ import { fmtPct, performanceTiles, type PerformanceTiles as Tiles } from '@/lib/
 export default function PerformanceTiles({ symbol, compact = false }: { symbol: string; compact?: boolean }) {
   const [tiles, setTiles] = useState<Tiles | null>(null)
   const pair = chartPairFor(symbol)
+  // chartPairFor() returns a FRESH object every render: keyed on it, this
+  // effect re-ran (and re-fetched) on every render — ~500 tf=1d requests a
+  // second on /t/ Overview (memory effect-deps-fresh-object-loop). Key on the
+  // resolved symbol instead.
+  const pairSymbol = pair?.symbol ?? null
 
   useEffect(() => {
-    if (!pair) return
+    if (!pairSymbol) return
     let alive = true
     const run = async () => {
       try {
-        const res = await fetch(`/api/charts/candles?symbol=${encodeURIComponent(pair.symbol)}&tf=1d`, { cache: 'no-store' })
+        const res = await fetch(`/api/charts/candles?symbol=${encodeURIComponent(pairSymbol)}&tf=1d`, { cache: 'no-store' })
         const body = (await res.json()) as { candles?: Candle[] }
         if (alive && body.candles?.length) setTiles(performanceTiles(body.candles))
       } catch {
@@ -31,7 +36,7 @@ export default function PerformanceTiles({ symbol, compact = false }: { symbol: 
       alive = false
       clearInterval(timer)
     }
-  }, [pair])
+  }, [pairSymbol])
 
   if (!pair) return null
   const list = tiles?.tiles ?? []
