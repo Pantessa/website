@@ -98,6 +98,23 @@ export function detectArrival(
   return { deltaEth: ethIn ? deltaEth : 0, deltaStable: stableIn ? deltaStable : 0, usd }
 }
 
+/** Which wait the watcher reads on this render. The surface hands the hook the
+ *  wait it OPENED with, baseline null (ClarifyChips keeps it in state); the
+ *  loop writes the first read's baseline onto its own copy. Re-pointing at the
+ *  surface's object on every render threw that baseline away, so every poll
+ *  re-baselined, and a purchase that landed between two reads BECAME the
+ *  baseline and was never reported. Only a reload, which restores a stored
+ *  baseline, ever saw an arrival (found 2026-09-16 driving a real chip click).
+ *
+ *  So: while it is the same wait (address, network, openedAt), a copy that has
+ *  its baseline wins. A different wait, or none, replaces it. */
+export function watchedWait(current: FundWait | null, incoming: FundWait | null): FundWait | null {
+  if (!incoming || !current) return incoming
+  const same = current.address === incoming.address && current.network === incoming.network && current.openedAt === incoming.openedAt
+  if (!same) return incoming
+  return current.baselineEth !== null && current.baselineStable !== null ? current : incoming
+}
+
 /** "0.0112 ETH" / "$27.69 of ETH" / "25 USDC" — one phrase for banners. */
 export function arrivalPhrase(a: Arrival, stableSymbol = 'USDC'): string {
   const parts: string[] = []

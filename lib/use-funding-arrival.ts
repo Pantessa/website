@@ -14,6 +14,7 @@ import {
   detectArrival,
   pollDelayMs,
   saveFundWait,
+  watchedWait,
   type Arrival,
   type FundWait,
 } from '@/lib/funding-arrival'
@@ -50,10 +51,11 @@ export function useFundingArrival(wait: FundWait | null, enabled: boolean): Fund
     lastReadAt: null,
     failures: 0,
   })
-  // The wait is mutated in place when the first read sets the baseline —
-  // a ref keeps that off the effect's dependency list.
+  // The first read's baseline is written onto the ref's copy — a ref keeps
+  // that off the effect's dependency list, and watchedWait keeps the copy
+  // across renders (the surface's own `wait` still has a null baseline).
   const waitRef = useRef<FundWait | null>(wait)
-  waitRef.current = wait
+  waitRef.current = watchedWait(waitRef.current, wait)
 
   useEffect(() => {
     if (!enabled || !wait) {

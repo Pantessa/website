@@ -179,7 +179,7 @@ import { gasStateFor, mergeChains, robinhoodStockTokens, type RpcChainRead, type
 import { fundingSourcesFromChains, NEAR_INTENTS_SLUG, walletFlags } from '../lib/wallet-flags'
 import { useAskDoor } from '../lib/ask-door'
 import { parseWalletSendBody, WALLET_SEND_CHAIN_IDS } from '../lib/wallet-send'
-import { arrivalPhrase, detectArrival, fundWaitExpired, fundWaitKey, pollDelayMs, FUND_WAIT_TTL_MS, FUND_WATCH_MAX_MS } from '../lib/funding-arrival'
+import { arrivalPhrase, detectArrival, fundWaitExpired, fundWaitKey, pollDelayMs, watchedWait, FUND_WAIT_TTL_MS, FUND_WATCH_MAX_MS, type FundWait } from '../lib/funding-arrival'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
 import { parseNftAsk, parseOpenSeaItemUrl, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
@@ -8795,6 +8795,32 @@ async function main() {
     const w = { address: '0x' + 'cd'.repeat(20), network: 'ethereum' as const, resume: 'buy $10 of AAPL', label: 'Add $25', baselineEth: null, baselineStable: null, openedAt: Date.now() - FUND_WAIT_TTL_MS - 1 }
     check('arrival: a wait older than the TTL is expired; a fresh one is not', fundWaitExpired(w) && !fundWaitExpired({ ...w, openedAt: Date.now() }))
     check('arrival: the storage key is per lowercased wallet', fundWaitKey('0xABCDEF' + '00'.repeat(17)) === 'yf-fund-wait:0xabcdef' + '00'.repeat(17))
+    // THE SAME-TAB LANDING (found 2026-09-16 driving a real chip click): the
+    // hook re-pointed its ref at the surface's wait on every render, and that
+    // object never carries a baseline — so every poll re-baselined and a
+    // purchase that landed between two reads became the new baseline. The
+    // auto-continue only ever fired after a reload. This replays the hook's
+    // ref dance render by render.
+    {
+      const opened: FundWait = { address: '0x' + 'ab'.repeat(20), network: 'ethereum', resume: 'Buy $50 of ETH on Base', label: 'Buy $50 of ETH with card or bank', completes: true, baselineEth: null, baselineStable: null, openedAt: Date.now() }
+      let ref = watchedWait(null, opened)
+      ref = ref ? { ...ref, baselineEth: 0, baselineStable: 0 } : ref // the first read writes the baseline onto the loop's copy
+      ref = watchedWait(ref, opened) // the re-render that setState triggers, handing back the surface's null-baseline wait
+      const landed = ref && ref.baselineEth !== null && ref.baselineStable !== null ? detectArrival({ eth: ref.baselineEth, stable: ref.baselineStable }, { eth: 0.0201, stable: 0 }, 2480) : null
+      check(
+        'arrival: the loop\'s baseline SURVIVES the surface re-rendering its own null-baseline wait, so a same-tab landing is reported',
+        ref?.baselineEth === 0 && landed?.deltaEth === 0.0201,
+        JSON.stringify({ ref, landed }),
+      )
+      const restored: FundWait = { ...opened, baselineEth: 0.004, baselineStable: 0 }
+      check(
+        'arrival: a DIFFERENT wait replaces the loop\'s copy, no wait clears it, and a restored baseline fills a copy that has none',
+        watchedWait(ref, { ...opened, openedAt: opened.openedAt + 1 })?.baselineEth === null && watchedWait(ref, null) === null &&
+          watchedWait(opened, restored)?.baselineEth === 0.004 && watchedWait(null, opened) === opened,
+      )
+      const hookSrc = await readFile(new URL('../lib/use-funding-arrival.ts', import.meta.url), 'utf8')
+      check('arrival: the hook keeps its copy through watchedWait (never a bare re-point at the prop)', /waitRef\.current = watchedWait\(waitRef\.current, wait\)/.test(hookSrc) && !/waitRef\.current = wait\b/.test(hookSrc))
+    }
 
     // The doors: "Wallet details" opens OUR panel; the chip watches.
     const navSrc = await readFile(new URL('../components/NavAccount.tsx', import.meta.url), 'utf8')
