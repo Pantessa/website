@@ -1716,6 +1716,75 @@ async function main() {
     }
   }
 
+  // Token-tint fence (2026-09-16). Tailwind 3 can't opacity-modify a
+  // CSS-variable color: `border-[color:var(--accent)]/40`,
+  // `bg-[var(--surf-1)]/70`, `bg-[color:var(--accent,#34E0A1)]/10` and their
+  // hover:/focus-within: forms are never generated. 21 shipped that way: the
+  // element fell back to the default border (white in dark mode), no fill.
+  // Tints are the tint-* @layer utilities in app/globals.css now. Fence the
+  // dead form in everything Tailwind scans, hold each tint's name to its mix
+  // (a tint with no rule renders nothing too), and read the built CSS.
+  {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    // tailwind.config.ts content globs: pages/components/app, js/ts/jsx/tsx/mdx.
+    const walk = (dir: string): string[] =>
+      !fs.existsSync(dir) ? [] : fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) =>
+        d.isDirectory() ? walk(path.join(dir, d.name)) : /\.(tsx?|jsx?|mdx)$/.test(d.name) ? [path.join(dir, d.name)] : [])
+    const sources = ['pages', 'components', 'app'].flatMap(walk)
+    // Comments may name the dead class (PortfolioCard's does), so blank them,
+    // keeping newlines for line numbers. A comment opens a line or a JSX {…};
+    // a string like "image/*" never opens one.
+    const code = (src: string) =>
+      src
+        .replace(/(^[ \t]*|\{[ \t]*)(\/\*[\s\S]*?\*\/)/gm, (_m, lead: string, body: string) => lead + body.replace(/[^\n]/g, ' '))
+        .replace(/^([ \t]*)\/\/.*$/gm, '$1')
+    const DEAD_RE = /(?:[\w-]+:)*[\w-]+-\[(?:[a-z-]+:)?var\(--[^\]\s]*\)\]\/(?:\d+|\[[^\]\s]*\])/g
+    const TINT_RE = /(?<![\w-])((?:[\w-]+:)*)(tint-(bg|border)-([a-z0-9-]+?)-(\d+))(?![\w-])/g
+    const dead: string[] = []
+    const used = new Map<string, Set<string>>() // tint class → the variant chains it's used under
+    for (const f of sources) {
+      const src = code(fs.readFileSync(f, 'utf8'))
+      for (const m of src.matchAll(DEAD_RE)) dead.push(`${f}:${src.slice(0, m.index).split('\n').length} ${m[0]}`)
+      for (const m of src.matchAll(TINT_RE)) (used.get(m[2]) ?? used.set(m[2], new Set()).get(m[2])!).add(m[1])
+    }
+    check(
+      `token tints: no Tailwind opacity modifier on a CSS-variable color across ${sources.length} scanned sources (it never generates; use a tint-* utility)`,
+      sources.length >= 300 && dead.length === 0,
+      dead.length ? `${dead.length} dead: ${dead.slice(0, 6).join(' · ')}` : '',
+    )
+    const globalsCss = fs.readFileSync('app/globals.css', 'utf8')
+    const rules = new Map([...globalsCss.matchAll(/\.(tint-(bg|border)-([a-z0-9-]+?)-(\d+))\s*\{([^}]*)\}/g)].map((m) => [m[1], m]))
+    const mixOf = (prop: string, token: string, pct: string) =>
+      `${prop === 'bg' ? 'background-color' : 'border-color'}:color-mix(in oklch,var(--${token}) ${pct}%,`.replace(/\s+/g, '')
+    const noRule = [...used.keys()].filter((c) => !rules.has(c))
+    const drift = [...rules.values()].filter(([, , prop, token, pct, body]) => !body.replace(/\s+/g, '').startsWith(mixOf(prop, token, pct))).map((m) => m[1])
+    check(
+      `token tints: every tint-* class in use has a rule, and each rule mixes the token + percent its name says (${used.size} used, ${rules.size} defined)`,
+      used.size >= 10 && noRule.length === 0 && drift.length === 0,
+      [noRule.length ? `no rule: ${noRule.join(', ')}` : '', drift.length ? `name ≠ mix: ${drift.join(', ')}` : ''].filter(Boolean).join(' · '),
+    )
+    // The build is the proof: a purge or @layer slip passes the source scan.
+    const homeHtml = await (await fetch(`${BASE}/`)).text()
+    const cssHrefs = [...new Set([...homeHtml.matchAll(/href="(\/_next\/static\/[^"]+\.css)"/g)].map((m) => m[1]))]
+    const builtCss = (await Promise.all(cssHrefs.map(async (h) => (await fetch(`${BASE}${h}`)).text()))).join('\n').replace(/\s+/g, '')
+    const unbuilt: string[] = []
+    for (const [cls, chains] of used) {
+      const [, , prop, token, pct] = cls.match(/^(tint-(bg|border)-([a-z0-9-]+?)-(\d+))$/)!
+      for (const chain of chains) {
+        const sel = `.${(chain + cls).replace(/:/g, '\\:')}`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const at = new RegExp(`${sel}(?=[{,:])`).exec(builtCss)?.index
+        const body = at === undefined ? '' : builtCss.slice(builtCss.indexOf('{', at) + 1, builtCss.indexOf('}', builtCss.indexOf('{', at)))
+        if (!body.includes(mixOf(prop, token, pct))) unbuilt.push(chain + cls)
+      }
+    }
+    check(
+      `token tints: the built CSS carries every tint in use, variants included (${[...used.values()].reduce((n, s) => n + s.size, 0)} forms, ${cssHrefs.length} stylesheets)`,
+      cssHrefs.length > 0 && unbuilt.length === 0,
+      unbuilt.slice(0, 6).join(', '),
+    )
+  }
+
   // Payees: the wallet's claimed MCP servers (dashboard Agents → My MCP servers).
   // SIWE-only; a fresh wallet has claimed nothing, so an empty array.
   const mineNoAuth = await fetch(`${BASE}/api/mcp/mine`)

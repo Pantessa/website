@@ -20,7 +20,7 @@ export default function DashAskBar() {
   }
   return (
     <div className="dashask">
-      <div className="flex items-center gap-3 py-1.5 pl-4 pr-1.5 rounded-full border border-[var(--line)] bg-[color-mix(in_srgb,var(--surf-1)_92%,transparent)] backdrop-blur-md shadow-[0_10px_36px_-14px_rgba(0,0,0,0.55)] transition-[border-color,box-shadow] duration-200 focus-within:border-[color:var(--accent)]/45 focus-within:shadow-[0_0_0_4px_rgba(52,227,160,0.07),0_0_24px_rgba(52,227,160,0.06)]">
+      <div className="flex items-center gap-3 py-1.5 pl-4 pr-1.5 rounded-full border border-[var(--line)] bg-[color-mix(in_srgb,var(--surf-1)_92%,transparent)] backdrop-blur-md shadow-[0_10px_36px_-14px_rgba(0,0,0,0.55)] transition-[border-color,box-shadow] duration-200 focus-within:tint-border-accent-45 focus-within:shadow-[0_0_0_4px_rgba(52,227,160,0.07),0_0_24px_rgba(52,227,160,0.06)]">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}

@@ -71,7 +71,7 @@ const when = (iso: string) => {
 function FundsBadge({ row }: { row: FailureRow }) {
   if (row.hadFunds === true)
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider bg-[color:var(--accent,#34E0A1)]/10 text-[color:var(--accent,#34E0A1)] whitespace-nowrap">
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider tint-bg-accent-10 text-[color:var(--accent,#34E0A1)] whitespace-nowrap">
         had ${row.fundsUsd?.toLocaleString() ?? '?'}
       </span>
     )

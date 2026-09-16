@@ -193,7 +193,7 @@ export default function ClarifyChips({
                 {/* The alert: money landed. The resume fires the moment this
                     tab is in front — say both, and keep saying it after. */}
                 {arrived && landed && (
-                  <div className="flex items-start gap-2 rounded-lg border border-[color:var(--accent)]/50 bg-[color:var(--accent)]/[0.08] px-3 py-2 text-[12px]">
+                  <div className="flex items-start gap-2 rounded-lg border tint-border-accent-50 tint-bg-accent-8 px-3 py-2 text-[12px]">
                     <Check className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-[color:var(--accent)]" strokeWidth={3} />
                     <span className="text-[color:var(--fg)]">
                       <span className="font-semibold">{arrivalPhrase(landed, watch.stableSymbol)} landed on {chainName}.</span>{' '}
