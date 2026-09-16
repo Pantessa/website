@@ -227,7 +227,7 @@ export default function MarketsIndex({ trending = [] }: { trending?: TrendingRow
   const promptHref = (ask: string) => `/chat?prompt=${encodeURIComponent(ask)}`
   const handOff = useCallback(
     (ask: string) => {
-      const handed = writeArrivalIntent({ text: ask, from: pathname || '/markets' })
+      const handed = writeArrivalIntent({ text: ask, from: pathname ?? '' })
       router.push(handed ? ARRIVAL_APP_HREF : promptHref(ask))
     },
     [pathname, router],

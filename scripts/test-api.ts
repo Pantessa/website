@@ -21278,6 +21278,7 @@ async function main() {
   // 60s, removed on take — so "a URL never fires a turn" stays literally true.
   {
     const ai = await import('../lib/arrival-intent')
+    const { venuesFor: venuesForArrival } = await import('../lib/symbol-venues')
     const { ARRIVAL_KEY, ARRIVAL_TTL_MS, ARRIVAL_APP_HREF, parseArrivalIntent, writeArrivalIntent, takeArrivalIntent } = ai
 
     // A tab's sessionStorage, standing in for the browser's. `store()` reads
@@ -21427,14 +21428,37 @@ async function main() {
       'arrival/core: BOTH /markets senders (the index act door every board · QuickAct · MorningTape · EarnBoard chip rides, and the rail\'s own chips) write the intent with their own pathname and push ARRIVAL_APP_HREF, falling back to promptHref when the write is refused',
       [idxSrcA, railSrcA].every(
         (s) =>
-          /const handed = writeArrivalIntent\(\{ text: ask, from: pathname \|\| '\/markets' \}\)/.test(s) &&
+          // SECURITY: the real pathname or nothing — never a forged '/markets'.
+          /const handed = writeArrivalIntent\(\{ text: ask, from: pathname \?\? '' \}\)/.test(s) &&
+          !/from: pathname \|\|/.test(s) &&
           /router\.push\(handed \? ARRIVAL_APP_HREF : promptHref\(ask\)\)/.test(s) &&
           /redirectFor: promptHref/.test(s),
       ) &&
         /run: handOff, redirectFor: promptHref/.test(idxSrcA) &&
-        /run: handOff,\n\s*redirectFor: promptHref,/.test(railSrcA) &&
+        /const \{ act: handOffAct, door: handOffDoor \} = useConnectToAct\(\{ run: handOff, redirectFor: promptHref \}\)/.test(railSrcA) &&
         // The rail's chips still say what they do, and now they say it honestly.
-        /const sendLabel = onAsk \? 'sends in chat' : 'runs in the app'/.test(railSrcA),
+        /const sendLabelFor = \(handoff: boolean\) => \(onAsk \? 'sends in chat' : handoff \? 'runs in the app' : 'prefills chat · you send it'\)/.test(railSrcA),
+    )
+
+    check(
+      'arrival/core: only asks the PAGE composed for a symbol with an EVM home hand off — a fired alert\'s stored actionAsk keeps the prefill (nothing pins what createAlert accepted), and so do the rail\'s blind Buy/Sell/DCA templates on a coin that lives off-EVM (SOL, XRP, DOGE), whose handoff would open the app with a clarify',
+      /send\(n\.actionAsk!, false\)/.test(railSrcA) &&
+        /send\(`Buy \$10 of \$\{sym\}`, handoffable\(sym\)\)/.test(railSrcA) &&
+        /send\(`Sell \$10 of \$\{sym\}`, handoffable\(sym\)\)/.test(railSrcA) &&
+        /send\(`DCA \$10 into \$\{sym\} weekly`, handoffable\(sym\)\)/.test(railSrcA) &&
+        /send\(ask, handoffable\(alertFor\)\)/.test(railSrcA) &&
+        /venuesFor\(sym, pair, \{ usd: 10 \}\)\.some\(\(r\) => \(r\.kind === 'spot' \|\| r\.kind === 'stock'\) && r\.side === 'buy'\)/.test(railSrcA) &&
+        /\{handOffDoor\}/.test(railSrcA) &&
+        /\{prefillDoor\}/.test(railSrcA) &&
+        // and the predicate agrees with the venue map it reads
+        (() => {
+          const pairOf = chartPairFor
+          const homed = (sym: string) => {
+            const p = pairOf(sym)
+            return !!p && venuesForArrival(sym, p, { usd: 10 }).some((r) => (r.kind === 'spot' || r.kind === 'stock') && r.side === 'buy')
+          }
+          return homed('ETH') && homed('AAPL') && !homed('SOL') && !homed('XRP') && !homed('DOGE')
+        })(),
     )
 
     check(
@@ -21453,11 +21477,18 @@ async function main() {
     )
 
     check(
-      'arrival/core: the fire is HELD until the MCP directory has landed and wagmi has SETTLED (website#763 — a send while the wallet still reads connecting answers "connect your wallet" and auto-resends), then goes through the existing composerSend consumer',
+      'arrival/core: the fire is HELD until a wallet ADDRESS is here and the MCP directory has landed (website#763 — a send while the wallet still reads connecting answers "connect your wallet" and auto-resends), then goes through the existing composerSend consumer',
       /if \(servers\.length === 0\) return/.test(chatSrcA) &&
         /if \(walletStatus === 'connecting' \|\| walletStatus === 'reconnecting'\) return/.test(chatSrcA) &&
         /setComposerSend\(\{ text: arrival\.text, mcps: arrival\.mcps \}\)/.test(chatSrcA) &&
         /setComposerSend\(null\)\s*\n\s*sendFromOverlay\(composerSend\.text\)/.test(chatSrcA),
+    )
+
+    check(
+      'arrival/core: a record that outlived its wallet NEVER fires a guest turn racing AppSpine\'s signed-out bounce — settled disconnected, or no address, parks the ask in the composer and drops the record',
+      /if \(walletStatus === 'disconnected' \|\| !effectiveAddress\) \{\s*\n\s*setInput\(arrival\.text\)\s*\n\s*setArrival\(null\)\s*\n\s*return\s*\n\s*\}/.test(chatSrcA) &&
+        // the guard sits BEFORE the send, and the send is the only setComposerSend the arrival path makes
+        chatSrcA.indexOf("walletStatus === 'disconnected' || !effectiveAddress") < chatSrcA.indexOf('setComposerSend({ text: arrival.text'),
     )
 
     check(

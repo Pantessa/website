@@ -690,19 +690,30 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     if (taken) setArrival(taken)
   }, [embedded, simple, pathname])
 
-  // Hold the fire until the surface can actually run it: the MCP directory
-  // has landed (the ask's gate may need a slug turned on, and the request
-  // body reads the LIVE set) and the wallet has SETTLED — sending while
-  // wagmi still reads 'connecting' answers "connect your wallet" and then
-  // auto-resends (website#763). Then the existing composerSend consumer
-  // above activates the MCPs and sends.
+  // Hold the fire until the surface can actually run it: a wallet is HERE
+  // (an address, not merely a settled status), and the MCP directory has
+  // landed (the ask's gate may need a slug turned on, and the request body
+  // reads the LIVE set). Sending while wagmi still reads 'connecting'
+  // answers "connect your wallet" and then auto-resends (website#763).
+  // Then the existing composerSend consumer above activates the MCPs and
+  // sends.
   useEffect(() => {
     if (!arrival || arrivalPhase === 'sent') return
-    if (servers.length === 0) return
     if (walletStatus === 'connecting' || walletStatus === 'reconnecting') return
+    // Settled with NOBODY here. Every real sender runs post-connect, so this
+    // is a record that outlived its wallet (or one no page of ours wrote) —
+    // and a guest turn fired here would race AppSpine's signed-out bounce.
+    // The ask parks in the composer instead; nothing runs unasked.
+    if (walletStatus === 'disconnected' || !effectiveAddress) {
+      setInput(arrival.text)
+      setArrival(null)
+      return
+    }
+    if (servers.length === 0) return
     setArrivalPhase('sent')
     setComposerSend({ text: arrival.text, mcps: arrival.mcps })
-  }, [arrival, arrivalPhase, servers.length, walletStatus, setComposerSend])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrival, arrivalPhase, servers.length, walletStatus, effectiveAddress, setComposerSend])
 
   // "Don't run it", pressed while the row still holds: the pending fire is
   // dropped (the effect above bails once the intent is gone) and the ask
