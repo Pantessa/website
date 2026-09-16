@@ -17248,7 +17248,9 @@ async function main() {
         tEth.includes('href="/t/ETH?tab=trade"') &&
         tEth.includes('href="/t/ETH?tab=technicals"') &&
         tEth.includes(`/chat?prompt=${encodeURIComponent('Buy $50 of ETH')}`) &&
-        tEth.includes(`/chat?prompt=${encodeURIComponent('Sell $50 of ETH')}`) &&
+        // Re-pinned 2026-09-16 (Nate: "never show the sell option if they do
+        // not own the token"): the server has no wallet, so no Sell ships.
+        !tEth.includes(`/chat?prompt=${encodeURIComponent('Sell $50 of ETH')}`) &&
         tEth.includes(`/chat?prompt=${encodeURIComponent('DCA $10 into ETH weekly')}`) &&
         // The chips SEND now (Markets shell, 2026-09-11); the href stays the
         // no-JS fallback and the eyebrow says what a click does.
@@ -17281,11 +17283,11 @@ async function main() {
     const actAt = tEth.indexOf('class="sym__act"')
     const chartAt = tEth.indexOf('class="tchart sym__chart"')
     check(
-      '/t/ETH: the act strip sits in the header ABOVE the chart — Buy leads (filled), Sell wears the sell colour, DCA + Protect follow; the eyebrow names the contract; no Overview act card',
+      '/t/ETH: the act strip sits in the header ABOVE the chart — Buy leads (filled), DCA + Protect follow, and NO Sell for a visitor who holds none (the server render has no wallet; re-pinned 2026-09-16); the eyebrow names the contract; no Overview act card',
       actAt > 0 && chartAt > actAt &&
         tEth.includes('ACT ON ETH · SENDS THE ASK · YOUR WALLET SIGNS') &&
         /class="sym__act-chip sym__act-chip--buy"[^>]*>Buy ETH</.test(tEth) &&
-        /class="sym__act-chip sym__act-chip--sell"[^>]*>Sell ETH</.test(tEth) &&
+        !/>Sell ETH</.test(tEth) &&
         /sym__act-chip--dca"[^>]*>DCA weekly</.test(tEth) &&
         /sym__act-chip--protect"[^>]*>Protect with a stop</.test(tEth) &&
         !/mkt-card__title">Act on/.test(tEth),
@@ -17293,8 +17295,8 @@ async function main() {
     )
     const tAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
     check(
-      '/t/AAPL: a stock strip never offers Protect (Spot Guardian is Base-only) — Buy / Sell / DCA only, each href a /chat prefill fallback',
-      /sym__act-chip--buy"[^>]*>Buy AAPL</.test(tAapl) && /sym__act-chip--dca"/.test(tAapl) && !/sym__act-chip--protect/.test(tAapl) &&
+      '/t/AAPL: a stock strip never offers Protect (Spot Guardian is Base-only) — Buy / DCA (Sell only for a holder), each href a /chat prefill fallback',
+      /sym__act-chip--buy"[^>]*>Buy AAPL</.test(tAapl) && /sym__act-chip--dca"/.test(tAapl) && !/sym__act-chip--protect/.test(tAapl) && !/>Sell AAPL</.test(tAapl) &&
         tAapl.includes(`href="/chat?prompt=${encodeURIComponent('Buy $50 of AAPL')}"`),
     )
     const tHype = flat(await (await fetch(`${BASE}/t/HYPE`)).text())
@@ -20604,9 +20606,9 @@ async function main() {
       heldAutofillNote(['ETH', 'AAPL'], 'L').startsWith('Added ETH and AAPL from') &&
       heldAutofillNote(['ETH', 'AAPL', 'NVDA', 'TSLA', 'SOL'], 'L').startsWith('Added ETH, AAPL, NVDA and 2 more from'))
     check('holdings autofill: the row marker reads "In your wallet" with value and chains',
-      heldTitle({ symbol: 'AAPL', valueUsd: 11.894, amount: 0.0376, chains: ['Robinhood Chain'] }) === 'In your wallet · $11.89 · Robinhood Chain' &&
-      heldTitle({ symbol: 'ETH', valueUsd: 2500.4, amount: 1, chains: ['Base', 'Ethereum'] }) === 'In your wallet · $2,500 · Base, Ethereum' &&
-      heldTitle({ symbol: 'X', valueUsd: null, amount: 1, chains: [] }) === 'In your wallet')
+      heldTitle({ symbol: 'AAPL', valueUsd: 11.894, amount: 0.0376, chains: ['Robinhood Chain'], chainIds: [4663] }) === 'In your wallet · $11.89 · Robinhood Chain' &&
+      heldTitle({ symbol: 'ETH', valueUsd: 2500.4, amount: 1, chains: ['Base', 'Ethereum'], chainIds: [8453, 1] }) === 'In your wallet · $2,500 · Base, Ethereum' &&
+      heldTitle({ symbol: 'X', valueUsd: null, amount: 1, chains: [], chainIds: [] }) === 'In your wallet')
 
     // 1b. The position beside the price (2026-09-14, Nate: "if they own $10 of
     // it say that and how much they own 0.0004 ETH").
@@ -20615,16 +20617,16 @@ async function main() {
         fmtHeldAmount(1.5) === '1.5' && fmtHeldAmount(1234.4) === '1,234' && fmtHeldAmount(12_345) === '12.3K' && fmtHeldAmount(2_500_000) === '2.5M' &&
         fmtHeldAmount(0) === '0' && fmtHeldAmount(Number.NaN) === '0',
       [0.0004, 0.00041234, 0.0376, 2, 1.5, 1234.4, 12_345, 2_500_000].map(fmtHeldAmount).join(' '))
-    const ethHeld = { symbol: 'ETH', valueUsd: 1.05, amount: 0.0004, chains: ['Base', 'Ethereum'] }
+    const ethHeld = { symbol: 'ETH', valueUsd: 1.05, amount: 0.0004, chains: ['Base', 'Ethereum'], chainIds: [8453, 1] }
     const ethLive = heldPosition(ethHeld, { last: 2520.6 })
     check('watch position: valued at the row’s own last price (0.0004 ETH × 2,520.60 = $1.01), so the price and the position agree as it ticks; the title says how much, what it’s worth and where',
       ethLive?.value === '$1.01' && ethLive.valueUsd === 1.01 && ethLive.qty === '0.0004' && ethLive.amount === '0.0004 ETH' && ethLive.title === 'You hold 0.0004 ETH ($1.01) on Base and Ethereum',
       JSON.stringify(ethLive))
-    const aaplUnpriced = heldPosition({ symbol: 'AAPL', valueUsd: null, amount: 0.0376, chains: ['Robinhood Chain'] }, undefined)
+    const aaplUnpriced = heldPosition({ symbol: 'AAPL', valueUsd: null, amount: 0.0376, chains: ['Robinhood Chain'], chainIds: [4663] }, undefined)
     check('watch position: before a quote lands it shows the holdings read’s value; with no price anywhere, the amount alone; thousands drop the cents; no holding, or none left, shows nothing',
       heldPosition(ethHeld, null)?.value === '$1.05' &&
         aaplUnpriced?.value === null && aaplUnpriced.amount === '0.0376 AAPL' && aaplUnpriced.title === 'You hold 0.0376 AAPL on Robinhood Chain' &&
-        heldPosition({ symbol: 'ETH', valueUsd: null, amount: 1.25, chains: ['Base'] }, { last: 2520.6 })?.value === '$3,151' &&
+        heldPosition({ symbol: 'ETH', valueUsd: null, amount: 1.25, chains: ['Base'], chainIds: [8453] }, { last: 2520.6 })?.value === '$3,151' &&
         heldPosition(undefined, { last: 1 }) === null && heldPosition({ ...ethHeld, amount: 0 }, { last: 2520.6 }) === null,
       JSON.stringify(aaplUnpriced))
 
@@ -20841,6 +20843,10 @@ async function main() {
     const fundSrc = await readFile('components/markets/watchlist/FundWallet.tsx', 'utf8')
     const railFundSrc = await readFile('components/markets/watchlist/WatchlistRail.tsx', 'utf8')
     const hookFundSrc = await readFile('components/markets/watchlist/useWatchlists.ts', 'utf8')
+    // The holdings read itself moved to lib/held-read (2026-09-16, shared with
+    // the YOU HOLD pill and the Sell chips): the fresh flag lives there, the
+    // hook passes it.
+    const heldReadFundSrc = await readFile('lib/held-read.ts', 'utf8')
     const panelFundSrc = await readFile('components/WalletPanel.tsx', 'utf8')
     const chipFundSrc = await readFile('components/ClarifyChips.tsx', 'utf8')
     const buyAt = fundSrc.indexOf('const buy = async')
@@ -20853,7 +20859,8 @@ async function main() {
       chipFundSrc.includes('o.fund && o.resume === w.resume') && panelFundSrc.includes('wait.resume ?') && panelFundSrc.includes("wait.asset ?? 'card purchase'"))
     check('card door: the rail mounts the door at the end of its rows with the holdings read’s verdict (never while it brews), and a landing re-reads the wallet past both caches (fresh=1, reconcile inside the minute) so the purchase fills the list',
       railFundSrc.includes('<FundWallet') && railFundSrc.includes('empty={wl.walletEmpty && !brew}') && railFundSrc.includes('onLanded={wl.recheckWallet}') &&
-        hookFundSrc.includes("'&fresh=1'") && hookFundSrc.includes('lastReconciled.delete(key)') && hookFundSrc.includes('setWalletRead('))
+        heldReadFundSrc.includes("'&fresh=1'") && hookFundSrc.includes('readHeld(holder, HELD_EVERY_MS, fresh)') && hookFundSrc.includes("from '@/lib/held-read'") &&
+        hookFundSrc.includes('lastReconciled.delete(key)') && hookFundSrc.includes('setWalletRead('))
     const fundHtml = flat(await (await fetch(`${BASE}/markets`)).text())
     check('card door: /markets never server-renders the door (no wallet is known before hydration)', fundHtml.includes('class="wl__rows"') && !fundHtml.includes('data-rail-fund'))
   }
@@ -23088,6 +23095,202 @@ async function main() {
     check(
       'earn (view): a remembered Map·List choice wins; with nothing remembered a ≥1280px viewport opens on the MAP and a narrower one on the list; junk stored falls back to the width rule',
       earnDefaultView('list', 1600) === 'list' && earnDefaultView('map', 375) === 'map' && earnDefaultView(null, 1440) === 'map' && earnDefaultView(null, 1279) === 'list' && earnDefaultView('grid', 1440) === 'map',
+    )
+  }
+
+  // ── Sell needs something to sell · the chart opens on the day (2026-09-16) ──
+  // Nate, on /t/AMAT: "when an asset chart loads … we have the 1 hour as the
+  // default, it should be day. We should also never show the sell option if
+  // they do not own the token as there is nothing to sell." One pure rule
+  // (lib/sell-gate) reads the sentence a Sell chip sends and checks it against
+  // the connected wallet's holdings (lib/use-held → the holdings route, now
+  // with chain ids). The rule, every chip grammar agreeing with it, the
+  // holdings wire, the wiring, then the server render.
+  console.log('— markets: sell needs a holding · the day default')
+  {
+    const { isSellAsk, sellTarget, canSellAsk } = await import('../lib/sell-gate')
+    const { verdictChips: sgVerdictChips } = await import('../lib/technicals')
+    const { heldWatchSymbols: sgHeldCut } = await import('../lib/watchlist-holdings')
+    const { DEFAULT_CHART_TF } = await import('../lib/charts')
+
+    // 1. The rule.
+    const shapes: [string, string, number | null][] = [
+      ['Sell $50 of ETH', 'ETH', null],
+      ['Sell $50 of ETH on Base', 'ETH', 8453],
+      ['Sell $12.50 of AMAT', 'AMAT', null],
+      ['Sell all my AAPL for USDG on Robinhood Chain', 'AAPL', 4663],
+      ['Sell all my ETH on Arbitrum', 'ETH', 42161],
+      ['limit order: sell 0.0198 ETH for at least 51.23 USDC on Base', 'ETH', 8453],
+      ['limit order: sell 0.02 ETH for at least 50 USDC', 'ETH', null],
+      ['Sell 0.5 WETH', 'ETH', null],
+      ['sell my cbBTC on base', 'BTC', 8453],
+    ]
+    const misread = shapes.filter(([ask, sym, chainId]) => {
+      const t = sellTarget(ask)
+      return !isSellAsk(ask) || t?.symbol !== sym || t.chainId !== chainId
+    })
+    check(
+      'sell gate: every sell shape the app composes names its token (WETH → ETH, cbBTC → BTC) and its chain when the sentence ends "on <chain>" (none = any chain the wallet holds it on)',
+      misread.length === 0,
+      misread.map(([a]) => `${a} → ${JSON.stringify(sellTarget(a))}`).join(' | ') || `${shapes.length} shapes`,
+    )
+    const notSells = [
+      'Short $50 of ETH on Hyperliquid', '2x Short $50 of HYPE on Hyperliquid', 'Take profit on my ETH long at $4000', 'Protect my spot ETH with a 5% stop',
+      'Protect my ETH in my wallet with a 5% stop', 'Borrow 50 USDC from Aave', 'Close my ETH long on Hyperliquid', 'Withdraw all my ETH from Aave',
+      'Buy $50 of ETH', 'DCA $10 into ETH weekly', 'limit order: buy 0.02 ETH for at most 50 USDC on Base',
+    ]
+    check(
+      'sell gate: a perp Short, a take-profit, a stop, a borrow, a close, a withdraw, a buy, a DCA and a limit BUY are not sells of a held token — the rule never touches them',
+      notSells.every((a) => !isSellAsk(a) && sellTarget(a) === null && canSellAsk(a, null)),
+      notSells.filter((a) => isSellAsk(a) || !canSellAsk(a, null)).join(' | '),
+    )
+    check(
+      'sell gate: a sell naming a chain the rule can’t name, or a token it can’t read, fails closed — no target, no chip, even for a wallet holding plenty',
+      sellTarget('Sell $50 of ETH on Polygon') === null && sellTarget('Sell $50 of ') === null &&
+        !canSellAsk('Sell $50 of ETH on Polygon', [{ symbol: 'ETH', valueUsd: 2500, amount: 1, chains: ['Base'], chainIds: [8453] }]),
+    )
+    const ethOnBase = { symbol: 'ETH', valueUsd: 25, amount: 0.01, chains: ['Base'], chainIds: [8453] }
+    const aaplOn4663 = { symbol: 'AAPL', valueUsd: 11.89, amount: 0.0376, chains: ['Robinhood Chain'], chainIds: [4663] }
+    check(
+      'sell gate: holdings unknown (no wallet, not read yet, a failed read) or an empty wallet → NO Sell; a Buy, a Short and a DCA show regardless',
+      !canSellAsk('Sell $50 of ETH', null) && !canSellAsk('Sell $50 of ETH', undefined) && !canSellAsk('Sell $50 of ETH', []) &&
+        canSellAsk('Buy $50 of ETH', null) && canSellAsk('Short $50 of ETH on Hyperliquid', []) && canSellAsk('DCA $10 into ETH weekly', null),
+    )
+    check(
+      'sell gate: a holder sees Sell — for a chainless sentence wherever it holds, for "… on <chain>" only on the chain it holds; another token, the wrong chain or a zero balance stays hidden',
+      canSellAsk('Sell $50 of ETH', [ethOnBase]) && canSellAsk('Sell $50 of ETH on Base', [ethOnBase]) && !canSellAsk('Sell $50 of ETH on Arbitrum', [ethOnBase]) &&
+        canSellAsk('limit order: sell 0.02 ETH for at least 51 USDC on Base', [ethOnBase]) && !canSellAsk('Sell $50 of AAPL', [ethOnBase]) &&
+        canSellAsk('Sell $50 of AAPL', [aaplOn4663]) && canSellAsk('Sell all my AAPL for USDG on Robinhood Chain', [aaplOn4663]) &&
+        !canSellAsk('Sell $50 of AAPL on Base', [aaplOn4663]) && !canSellAsk('Sell $50 of ETH', [{ ...ethOnBase, amount: 0 }]),
+    )
+
+    // 2. Every chip grammar agrees with the rule: a chip LABELED "Sell…" /
+    // "Limit sell…" (written by a different function than its sentence) is
+    // exactly a chip the rule reads as a sell, of the page's own symbol, on the
+    // chain its row signs on. A new grammar that sells in other words fails here.
+    const SELL_LABEL = /^(?:limit\s+)?sell\b/i
+    const disagree: string[] = []
+    let chipCount = 0
+    const agree = (sym: string, label: string, ask: string, chainId?: number | null) => {
+      chipCount++
+      if (SELL_LABEL.test(label) !== isSellAsk(ask)) disagree.push(`${sym}: "${label}" → "${ask}"`)
+      if (!isSellAsk(ask)) return
+      const t = sellTarget(ask)
+      if (t?.symbol !== sym) disagree.push(`${sym}: "${ask}" sells ${t?.symbol ?? 'nothing readable'}`)
+      if (chainId !== undefined && t?.chainId !== chainId) disagree.push(`${sym}: "${ask}" reads chain ${t?.chainId} (row ${chainId})`)
+    }
+    for (const s of ['ETH', 'BTC', 'LINK', 'AAPL', 'AMAT', 'HYPE', 'SOL', 'DOGE']) {
+      const pair = chartPairFor(s)
+      if (!pair) {
+        disagree.push(`${s}: no chart pair`)
+        continue
+      }
+      const sym = pair.symbol
+      const last = 100
+      for (const a of mk2ExecAsks(pair, { usd: 50, last })) agree(sym, a.label, a.ask)
+      for (const a of tradeAsks(pair)) agree(sym, a.label, a.ask)
+      for (const r of mk2VenuesFor(sym, pair, { last })) agree(sym, r.label, r.ask, r.side === 'sell' && (r.kind === 'spot' || r.kind === 'limit') ? r.chainId : undefined)
+      for (const p of [90, 110]) {
+        for (const o of composeLineActions({ symbol: sym, source: pair.source, price: p, last })) agree(sym, o.label, o.action.ask)
+        const lvl = mk2LimitAtLevel(sym, 'Base', 50, p, last)
+        if (lvl) agree(sym, lvl.label, lvl.ask, 8453)
+      }
+      for (const o of composeZoneActions({ symbol: sym, source: pair.source, p1: 105, p2: 115, last })) agree(sym, o.label, o.action.ask)
+      for (const rating of ['strong_sell', 'sell', 'neutral', 'buy', 'strong_buy'] as const) {
+        for (const c of sgVerdictChips({ symbol: sym, source: pair.source, rating, support: 95, resistance: 105, alerts: true })) agree(sym, c.label ?? c.ask, c.ask)
+      }
+      for (const c of aiChipMenu({ pair, last, tech: null })) agree(sym, c.label, c.ask)
+      for (const c of askDoorChips(`/t/${sym}`, null)) agree(sym, c.label, c.ask)
+    }
+    for (const e of mk2ExitChipsFor({ symbol: 'ETH', spot: [{ chainId: 8453, chainName: 'Base', symbol: 'ETH', balance: 0.01, valueUsd: 25 }], perp: null, lend: null, dca: [], spotGuard: [] }, 'coinbase')) agree('ETH', e.label, e.ask, 8453)
+    for (const e of mk2ExitChipsFor({ symbol: 'AAPL', spot: [{ chainId: 4663, chainName: 'Robinhood Chain', symbol: 'AAPL', balance: 0.0376, valueUsd: 11.89 }], perp: null, lend: null, dca: [], spotGuard: [] }, 'robinhood')) agree('AAPL', e.label, e.ask, 4663)
+    check(
+      'sell gate: every chip grammar agrees with the rule across ETH/BTC/LINK/AAPL/AMAT/HYPE/SOL/DOGE — the header strip, the Trade panel sides, the route table (+ your line), a drawn level and a zone, the verdict chips, the AI chip menu, the ⌘K door and the position exits: labeled Sell ⇔ read as a sell, of that symbol, on the row’s chain',
+      chipCount > 300 && disagree.length === 0,
+      disagree.slice(0, 6).join(' | ') || `${chipCount} chips agree`,
+    )
+
+    // 3. The holdings wire carries chain ids, in the same order as the names.
+    const sgStock = `0x${'9'.padStart(40, '0')}`
+    const sgZ = '0x0000000000000000000000000000000000000000'
+    const sgRow = (symbol: string, address: string, balance: string, valueUsd: number | null, native?: true) => ({ symbol, address, balance, priceUsd: valueUsd, valueUsd, ...(native ? { native } : {}) })
+    const sgCut = sgHeldCut(
+      [
+        { id: 8453, name: 'Base', holdings: [sgRow('ETH', sgZ, '0.01', 25, true)] },
+        { id: 42161, name: 'Arbitrum', holdings: [sgRow('ETH', sgZ, '0.002', 5, true)] },
+        { id: 4663, name: 'Robinhood Chain', holdings: [sgRow('AAPL', sgStock, '0.0376', null)] },
+      ],
+      { curatedSymbol: (chainId, a) => (chainId === 4663 && a.toLowerCase() === sgStock ? 'AAPL' : null), stockAddresses: new Set([sgStock]) },
+    )
+    const sgEth = sgCut.find((h) => h.symbol === 'ETH')
+    const sgAapl = sgCut.find((h) => h.symbol === 'AAPL')
+    check(
+      'sell gate (wire): each held symbol carries its chain ids beside the chain names, same order — ETH on Base + Arbitrum reads [8453, 42161], a stock [4663] — and the rule reads them: Sell on Arbitrum yes, Sell on Ethereum no',
+      sgEth?.chainIds.join() === '8453,42161' && sgEth.chains.join() === 'Base,Arbitrum' && sgAapl?.chainIds.join() === '4663' &&
+        canSellAsk('Sell $50 of ETH on Arbitrum', sgCut) && !canSellAsk('Sell $50 of ETH on Ethereum', sgCut) && canSellAsk('Sell $50 of AAPL', sgCut),
+      JSON.stringify(sgCut),
+    )
+    const sgLive = (await (await fetch(`${BASE}/api/watchlists/holdings?address=0xfef4feed2c57a5dbaa5a0c553aa7a0a0fd66d393`)).json()) as { held?: { symbol: string; chains: string[]; chainIds?: number[] }[] }
+    check(
+      `GET /api/watchlists/holdings: every live holding carries chainIds matching its chain names one for one (${sgLive.held?.map((h) => `${h.symbol}@${h.chainIds?.join('+')}`).join(', ') || 'none held'})`,
+      Array.isArray(sgLive.held) && sgLive.held.every((h) => Array.isArray(h.chainIds) && h.chainIds.length === h.chains.length && h.chainIds.every((id) => Number.isInteger(id) && id > 0)),
+    )
+
+    // 4. The wiring: every surface that renders a Sell chip filters it through
+    // the rule with the connected wallet's holdings — and a new component that
+    // writes a Sell sentence without the rule fails the fence.
+    const sgSurfaces = [
+      'components/markets/trade/ExecStrip.tsx', 'components/markets/trade/RouteTable.tsx', 'components/markets/tabs/TradeTab.tsx',
+      'components/markets/chart/MarketChart.tsx', 'components/markets/technicals/TechnicalsTab.tsx', 'components/markets/ai/AiBrief.tsx',
+      'components/markets/ai/MorningTape.tsx', 'components/AskDoor.tsx', 'components/markets/watchlist/WatchlistRail.tsx',
+      'components/markets/community/CommunityTab.tsx', 'components/ChartOverlay.tsx', 'components/markets/shell/SymbolPage.tsx',
+    ]
+    const sgUngated: string[] = []
+    for (const f of sgSurfaces) {
+      const code = await readFile(f, 'utf8')
+      if (!code.includes('canSellAsk(') || !code.includes('useHeld()')) sgUngated.push(f)
+    }
+    check('sell gate (wiring): the header strip, route table, Trade panel, chart levels, verdict chips, AI brief, morning tape, ⌘K door, watchlist row menu, community posts, chat chart overlay and chartless fallback each filter through canSellAsk with useHeld()', sgUngated.length === 0, sgUngated.join(', '))
+    // A Sell SENTENCE ("Sell $10 of …", "Sell all my …", "Sell 0.5 …"), not a
+    // button word like the launchpad ticket's `Sell ${ticker}`.
+    const sgSellLiteral = /[`'"]Sell (?:\$\d|all my |\d)/
+    const sgFence = (readdirSync('components', { recursive: true }) as string[])
+      .filter((f) => f.endsWith('.tsx'))
+      .map((f) => `components/${f}`)
+      .filter((f) => {
+        const code = require('node:fs').readFileSync(f, 'utf8') as string
+        return sgSellLiteral.test(code) && !code.includes('canSellAsk(')
+      })
+    check('sell gate (fence): no component under components/ writes a Sell sentence ("Sell $…", "Sell all my …") without canSellAsk', sgFence.length === 0, sgFence.join(', '))
+    const heldPillSrc = await readFile('components/markets/shell/HeldPill.tsx', 'utf8')
+    const heldReadSrc = await readFile('lib/held-read.ts', 'utf8')
+    const watchHookSrc = await readFile('components/markets/watchlist/useWatchlists.ts', 'utf8')
+    check(
+      'sell gate (one read): the YOU HOLD pill, the Sell chips and the watchlist rail share ONE holdings read per wallet (lib/held-read) — the pill no longer polls the route on its own, so Sell shows exactly when the pill does',
+      heldPillSrc.includes('useHeld()') && !heldPillSrc.includes('fetch(') && heldReadSrc.includes('/api/watchlists/holdings?address=') &&
+        watchHookSrc.includes("from '@/lib/held-read'") && !watchHookSrc.includes('const heldReads = new Map'),
+    )
+
+    // 5. The chart opens on the day.
+    const mcSrc = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
+    const ttSrc = await readFile('components/markets/technicals/TechnicalsTab.tsx', 'utf8')
+    const heroSrc = await readFile('components/landing/LandingHero.tsx', 'utf8')
+    const cmSrc = await readFile('components/markets/chart/ChartMount.tsx', 'utf8')
+    check(
+      'day default: DEFAULT_CHART_TF is 1d; the chart engine defaults to it and the Technicals tab falls back to it (candles and gauge open on the same frame); your own saved lines load onto that frame (a post’s lines keep theirs), so a chart never reopens on 1H because it once had a line; the landing’s rehearsal still asks for 1H on purpose',
+      DEFAULT_CHART_TF === '1d' && mcSrc.includes('defaultTf = DEFAULT_CHART_TF,') && !mcSrc.includes("defaultTf = '1h'") &&
+        ttSrc.includes(': DEFAULT_CHART_TF))') && cmSrc.includes('stateProp ?? (stored ? { ...stored, tf: defaultTf ?? DEFAULT_CHART_TF } : null)') &&
+        heroSrc.includes('defaultTf="1h"'),
+    )
+    const sgTfPressed = (html: string) => [...html.matchAll(/class="tok__tfbtn mono( is-active)?" aria-pressed="(true|false)">([^<]+)</g)].filter((m) => m[2] === 'true').map((m) => m[3])
+    const dayAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
+    const dayEth = flat(await (await fetch(`${BASE}/t/ETH`)).text())
+    const dayTech = flat(await (await fetch(`${BASE}/t/AMAT?tab=technicals`)).text())
+    check(
+      '/t/AAPL + /t/ETH: the chart ships in the server HTML with 1D pressed (and only 1D); the Technicals tab renders on 1d too; no Sell chip in either header for a visitor with no wallet',
+      sgTfPressed(dayAapl).join() === '1D' && sgTfPressed(dayEth).join() === '1D' && /data-technicals="AMAT" data-tf="1d"/.test(dayTech) &&
+        !/>Sell AAPL</.test(dayAapl) && !/>Sell ETH</.test(dayEth) && /sym__act-chip--buy"[^>]*>Buy AAPL</.test(dayAapl),
+      `AAPL pressed=${sgTfPressed(dayAapl).join() || 'none'} · ETH pressed=${sgTfPressed(dayEth).join() || 'none'}`,
     )
   }
 

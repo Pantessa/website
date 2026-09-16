@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ChartStats } from '@/components/CandleChart'
 import MarketChart, { type ChartMarker } from '@/components/markets/chart/MarketChart'
-import type { ChartTf } from '@/lib/charts'
+import { DEFAULT_CHART_TF, type ChartTf } from '@/lib/charts'
 import { parseChartState, serializeChartState, type ChartState } from '@/lib/chart-state'
 import { DEFAULT_SYMBOL_OVERLAYS } from '@/lib/chart-indicators'
 import { useChartMarkers } from '@/lib/chart-markers'
@@ -100,9 +100,13 @@ export default function ChartMount({
   const restoredRef = useRef(false)
   useEffect(() => {
     restoredRef.current = false
-    setDrawings(stateProp ?? readDrawings(symbol))
+    // A post's lines load on the frame they were drawn on. Your own saved
+    // lines load onto the frame the chart opens on (the day, 2026-09-16),
+    // so a chart never reopens on 1H just because it once had a line on it.
+    const stored = stateProp ? null : readDrawings(symbol)
+    setDrawings(stateProp ?? (stored ? { ...stored, tf: defaultTf ?? DEFAULT_CHART_TF } : null))
     restoredRef.current = true
-  }, [symbol, stateProp])
+  }, [symbol, stateProp, defaultTf])
   const handleStateChange = useCallback(
     (s: ChartState) => {
       if (!restoredRef.current) return

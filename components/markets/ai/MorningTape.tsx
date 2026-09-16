@@ -15,6 +15,8 @@ import { ChevronDown, ChevronRight, Newspaper, RefreshCw } from 'lucide-react'
 import { useWatchlists } from '@/components/markets/watchlist/useWatchlists'
 import { TAPE_FOOTNOTE } from '@/lib/markets-copy'
 import { firstSentenceOf, tapeSymbols, type AiChip, type BriefEvent } from '@/lib/markets-ai'
+import { canSellAsk } from '@/lib/sell-gate'
+import { useHeld } from '@/lib/use-held'
 import '../ai.css'
 
 export const TAPE_OPEN_KEY = 'pantessa.markets.tape'
@@ -28,6 +30,10 @@ export default function MorningTape({ symbols: symbolsProp, onAsk, title = 'Morn
   const [phase, setPhase] = useState<'idle' | 'streaming' | 'done' | 'error'>('idle')
   const [text, setText] = useState('')
   const [chips, setChips] = useState<AiChip[]>([])
+  // The tape's chips span symbols; each Sell shows only while the connected
+  // wallet holds that symbol (lib/sell-gate reads it from the sentence).
+  const held = useHeld()
+  const shown = useMemo(() => chips.filter((c) => canSellAsk(c.ask, held)), [chips, held])
   const [meta, setMeta] = useState<{ cached: boolean; model: string; feed: string | null } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [nonce, setNonce] = useState(0)
@@ -153,9 +159,9 @@ export default function MorningTape({ symbols: symbolsProp, onAsk, title = 'Morn
             ) : null}
             {error ? <p className="mk-ai__err">{error}</p> : null}
           </div>
-          {chips.length ? (
+          {shown.length ? (
             <div className="mk-ai__chips" role="group" aria-label="Act on the tape">
-              {chips.map((c) => (
+              {shown.map((c) => (
                 <button key={c.id} type="button" className={`mk-ai__chip mk-ai__chip--${c.kind}`} onClick={() => onAsk(c.ask)} title={c.ask} data-ask={c.ask}>
                   {c.label}
                 </button>

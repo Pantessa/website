@@ -14,9 +14,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { CHART_TFS, type ChartPair, type ChartTf } from '@/lib/charts'
+import { CHART_TFS, DEFAULT_CHART_TF, type ChartPair, type ChartTf } from '@/lib/charts'
 import { RATING_LABELS, type ChartAction, type Pivots, type Row, type TechnicalsApi, type TechnicalsRefusal } from '@/lib/technicals'
 import RatingGauge, { ratingColor } from './RatingGauge'
+import { canSellAsk } from '@/lib/sell-gate'
+import { useHeld } from '@/lib/use-held'
 
 type Res = TechnicalsApi | TechnicalsRefusal
 const isRefusal = (r: Res): r is TechnicalsRefusal => 'error' in r
@@ -131,7 +133,12 @@ function PivotTable({ pivots, period, last }: { pivots: NonNullable<TechnicalsAp
   )
 }
 
-export function VerdictChips({ chips, onAsk, compact = false }: { chips: ChartAction[]; onAsk?: (ask: string) => void; compact?: boolean }) {
+export function VerdictChips({ chips: all, onAsk, compact = false }: { chips: ChartAction[]; onAsk?: (ask: string) => void; compact?: boolean }) {
+  // A sell verdict's Sell chips show only to a wallet that holds the symbol
+  // (lib/sell-gate); with nothing left to offer, no chip row.
+  const held = useHeld()
+  const chips = all.filter((c) => canSellAsk(c.ask, held))
+  if (chips.length === 0) return null
   const cls = (kind: ChartAction['kind']) =>
     `rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors [@media(hover:none)]:min-h-10 ${
       kind === 'buy' || kind === 'dca'
@@ -173,7 +180,7 @@ export default function TechnicalsTab({
   mirrorTf?: boolean
 }) {
   const tfKeys = useMemo(() => CHART_TFS.map((t) => t.key), [])
-  const [tf, setTfState] = useState<ChartTf>(() => (initialTf && tfKeys.includes(initialTf) ? initialTf : '1d'))
+  const [tf, setTfState] = useState<ChartTf>(() => (initialTf && tfKeys.includes(initialTf) ? initialTf : DEFAULT_CHART_TF))
   const [res, setRes] = useState<Res | null>(null)
   const [loading, setLoading] = useState(false)
   const [tick, setTick] = useState(0)

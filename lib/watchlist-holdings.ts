@@ -67,7 +67,7 @@ export function heldWatchSymbols(
   const curated = opts.curatedSymbol ?? curatedSymbolFor
   const stocks = opts.stockAddresses ?? new Set(robinhoodStockTokens().map((t) => t.address.toLowerCase()))
   const minUsd = opts.minUsd ?? HELD_MIN_USD
-  const acc = new Map<string, { value: number; priced: boolean; amount: number; chains: string[]; order: number }>()
+  const acc = new Map<string, { value: number; priced: boolean; amount: number; chains: string[]; chainIds: number[]; order: number }>()
   for (const c of chains) {
     for (const h of c.holdings) {
       const balance = Number(h.balance)
@@ -76,7 +76,7 @@ export function heldWatchSymbols(
       if (!symbol) continue
       let e = acc.get(symbol)
       if (!e) {
-        e = { value: 0, priced: false, amount: 0, chains: [], order: acc.size }
+        e = { value: 0, priced: false, amount: 0, chains: [], chainIds: [], order: acc.size }
         acc.set(symbol, e)
       }
       e.amount += balance
@@ -84,15 +84,18 @@ export function heldWatchSymbols(
         e.value += h.valueUsd
         e.priced = true
       }
-      if (!e.chains.includes(c.name)) e.chains.push(c.name)
+      if (!e.chainIds.includes(c.id)) {
+        e.chainIds.push(c.id)
+        e.chains.push(c.name)
+      }
     }
   }
   return [...acc.entries()]
     // toPrecision(12) sheds the sum's float dust (0.1 + 0.2); the rail shows 4 digits at most.
-    .map(([symbol, e]) => ({ symbol, valueUsd: e.priced ? Math.round(e.value * 100) / 100 : null, amount: Number(e.amount.toPrecision(12)), chains: e.chains, order: e.order }))
+    .map(([symbol, e]) => ({ symbol, valueUsd: e.priced ? Math.round(e.value * 100) / 100 : null, amount: Number(e.amount.toPrecision(12)), chains: e.chains, chainIds: e.chainIds, order: e.order }))
     .filter((h) => h.valueUsd === null || h.valueUsd >= minUsd)
     .sort((a, b) => (b.valueUsd ?? -1) - (a.valueUsd ?? -1) || a.order - b.order)
-    .map(({ symbol, valueUsd, amount, chains: on }) => ({ symbol, valueUsd, amount, chains: on }))
+    .map(({ symbol, valueUsd, amount, chains: on, chainIds }) => ({ symbol, valueUsd, amount, chains: on, chainIds }))
 }
 
 /** Does the wallet hold nothing? True only when every chain answered and
