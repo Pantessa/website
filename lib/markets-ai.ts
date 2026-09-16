@@ -146,9 +146,10 @@ export function cleanChunk(s: string): string {
 
 // ── The ask fence (regex half; the ladder half is server-side) ─────────────
 
-const ADDRESS_RE = /0x[0-9a-fA-F]{4,}/
-const ENS_RE = /\.eth\b/i
-const URL_RE = /https?:\/\/|www\./i
+// The address / name / URL family is ONE definition shared with the arrival
+// fence (lib/arrival-fence.ts) — a model-proposed chip and a handed-off ask
+// are refused by the same rule, so the two can never drift.
+import { ASK_ADDRESS_RE as ADDRESS_RE, ASK_ENS_RE as ENS_RE, ASK_URL_RE as URL_RE } from './arrival-fence'
 /** Verbs a model-proposed chip may never carry: anything that names a
  *  counterparty or leaves the wallet for somewhere the symbol page isn't
  *  about. The menu (ours) covers the honest ones. */
