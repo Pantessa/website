@@ -53,6 +53,8 @@ import { fmtPrice, type ChartStats } from '@/components/CandleChart'
 import '@/components/markets/look.css'
 import DrawingLayer, { type ChartGeom, type DrawTool } from './DrawingLayer'
 import { SessionBands } from './session-bands'
+import { fillLabel, type FillMarker } from '@/lib/chart-fills'
+import { seriesVar } from '@/lib/markets-look'
 import { VolumeProfile } from './volume-profile'
 
 const POLL_MS: Record<ChartTf, number> = { '15m': 8_000, '1h': 15_000, '4h': 20_000, '1d': 30_000 }
@@ -112,6 +114,9 @@ export interface MarketChartProps {
    *  first bar on screen (the engine's percentage mode), so two tapes with
    *  different prices compare honestly. Same frame as the chart. */
   compare?: string | null
+  /** The connected wallet's own signed executions on this symbol — a receipt
+   *  glyph per fill on its bar, in the venue's series ink (lib/chart-fills). */
+  fills?: FillMarker[]
 }
 
 interface CandlesResponse {
@@ -148,6 +153,8 @@ interface Tokens {
   crosshair: string
   /** The compare line's ink: series slot 2 (orange), never a candle ink. */
   compare: string
+  /** The eight series inks (fill glyphs wear their venue's). */
+  series: string[]
   fg: string
   bg: string
   line: string
@@ -231,6 +238,7 @@ function readTokens(): Tokens {
       grid: probe.css(cs.getPropertyValue('--mk-grid').trim(), 'rgba(255, 255, 255, 0.07)'),
       crosshair: probe.css(cs.getPropertyValue('--mk-crosshair').trim(), 'rgba(255, 255, 255, 0.35)'),
       compare: get('--mk-series-2', '#e0642c'),
+      series: Array.from({ length: 8 }, (_, i) => get(`--mk-series-${i + 1}`, '#9a9a9a')),
       fg: get('--fg', '#ffffff'),
       bg: get('--bg', '#000000'),
       line: get('--line', '#3a3a3a'),
@@ -314,6 +322,7 @@ export default function MarketChart({
   defaultOverlays,
   onViewport,
   compare,
+  fills,
 }: MarketChartProps) {
   const fill = heightProp === 'fill'
   const pair = useMemo(() => chartPairFor(symbol), [symbol])
@@ -829,9 +838,12 @@ export default function MarketChart({
     let alive = true
     const load = async () => {
       try {
-        const res = await fetch(`/api/charts/candles?symbol=${encodeURIComponent(cmpPair.symbol)}&tf=${tf}`, { cache: 'no-store' })
+        // ?warmup=1: the second feed's bars BEFORE its window too, so the line
+        // reaches back as far as the chart's own warmed history instead of
+        // starting mid-plot on 1H.
+        const res = await fetch(`/api/charts/candles?symbol=${encodeURIComponent(cmpPair.symbol)}&tf=${tf}&warmup=1`, { cache: 'no-store' })
         const body = (await res.json()) as CandlesResponse
-        if (alive && body.candles?.length) setCmp({ symbol: cmpPair.symbol, tf, candles: body.candles })
+        if (alive && body.candles?.length) setCmp({ symbol: cmpPair.symbol, tf, candles: [...(body.warmup ?? []), ...body.candles] })
       } catch {
         /* the compare line simply stays off */
       }
@@ -911,23 +923,35 @@ export default function MarketChart({
     if (cs && cs.seriesOrder() < top) cs.setSeriesOrder(top)
   }, [overlays, bars, lineSrc, candles, tokens])
 
-  // News markers → the bars.
+  // News markers + the wallet's own fills → the bars. A fill is a receipt
+  // glyph in its venue's series ink: an up-arrow under the bar for a buy, a
+  // down-arrow over it for a sell; the legend under the chart carries the words.
   useEffect(() => {
     const api = markerApiRef.current
     if (!api || !tokens) return
-    if (!bars.length || !markers?.length) {
+    if (!bars.length || (!markers?.length && !fills?.length)) {
       api.setMarkers([])
       return
     }
     const out: SeriesMarker<Time>[] = []
-    markers.forEach((m, i) => {
+    markers?.forEach((m, i) => {
       const bt = barTimeFor(bars, m.t)
       if (bt === null) return
       out.push({ time: bt as UTCTimestamp, position: 'aboveBar', shape: 'circle', color: alpha(tokens.fg, 0.75), size: 1, id: `news-${i}-${m.t}`, text: m.label.length > 28 ? `${m.label.slice(0, 27)}…` : m.label })
     })
+    fills?.forEach((f) => {
+      // A fill before the first held bar has no bar to sit on; it stays in the legend.
+      if (f.t < bars[0].t) return
+      const bt = barTimeFor(bars, f.t)
+      if (bt === null) return
+      const slot = Number((seriesVar(f.venueId).match(/--mk-series-(\d)/) ?? [])[1] ?? 8) - 1
+      const ink = tokens.series[slot] ?? tokens.fg
+      const amt = f.usd != null && Number.isFinite(f.usd) ? `$${f.usd >= 100 ? Math.round(f.usd).toLocaleString('en-US') : f.usd.toFixed(2)}` : ''
+      out.push({ time: bt as UTCTimestamp, position: f.side === 'buy' ? 'belowBar' : 'aboveBar', shape: f.side === 'buy' ? 'arrowUp' : 'arrowDown', color: ink, size: 1.6, id: `fill-${f.id}`, text: `${f.side === 'buy' ? 'Bought' : 'Sold'} ${amt}`.trim() })
+    })
     out.sort((a, b) => (a.time as number) - (b.time as number))
     api.setMarkers(out)
-  }, [markers, bars, tokens])
+  }, [markers, fills, bars, tokens])
 
   // Pool price → dotted line on the price scale.
   useEffect(() => {
@@ -1214,6 +1238,27 @@ export default function MarketChart({
         )}
       </div>
 
+      {/* Your fills — the glyphs on the bars; the receipt words + explorer link live here. */}
+      {fills && fills.length > 0 && pair && (
+        <ul className="mkt-markers mk-fills" aria-label="Your fills on this chart">
+          {fills.slice(-6).map((f) => {
+            const label = fillLabel(f, pair.symbol)
+            return (
+              <li key={f.id} className={`mk-fills__row mk-fills__row--${f.side}`}>
+                <i className="mk-fills__glyph" style={{ background: seriesVar(f.venueId) }} aria-hidden="true" />
+                {f.txUrl ? (
+                  <a href={f.txUrl} target="_blank" rel="noopener noreferrer nofollow" title={label}>
+                    {label}
+                  </a>
+                ) : (
+                  <span title={label}>{label}</span>
+                )}
+              </li>
+            )
+          })}
+          {fills.length > 6 ? <li className="mk-fills__more">+{fills.length - 6} earlier</li> : null}
+        </ul>
+      )}
       {/* Marker legend — the bars carry a dot; the story is one click here. */}
       {markers && markers.length > 0 && candles.length > 0 && (
         <ul className="mkt-markers">
