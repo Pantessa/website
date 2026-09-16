@@ -375,6 +375,20 @@ const SCENARIOS: Scenario[] = [
     card: { ask: buyAsk(1, 50, 'UNI', false), expect: 'cascade' },
   },
   {
+    name: 'empty → "Buy $2000 of UNI" on Base: NO card chip — one $500 checkout can\'t carry it, and the re-run would offer the card again',
+    need: buyNeed(8453, 2000, 'UNI'),
+    reads: EMPTY,
+    expect: 'refusal',
+    card: { ask: buyAsk(8453, 2000, 'UNI'), expect: 'none' },
+  },
+  {
+    name: 'empty → "Buy $600 of ETH": NO card chip — past one checkout, a "Buy $500 of ETH" chip would sit under a $600 ask',
+    need: buyNeed(8453, 600, 'ETH'),
+    reads: EMPTY,
+    expect: 'refusal',
+    card: { ask: buyAsk(8453, 600, 'ETH'), expect: 'none' },
+  },
+  {
     name: '$12 USDC + gas on Arbitrum → "Buy $50 of ETH" on Base: the refusal still names both holdings, and the card rides along',
     need: buyNeed(8453, 50, 'ETH'),
     reads: [R(8453, 0, 0), R(42161, 0.001, 12), R(10, 0, 0), R(1, 0, 0)],

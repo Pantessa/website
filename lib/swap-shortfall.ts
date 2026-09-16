@@ -36,7 +36,7 @@
 
 import type { ClarifyOption, ClarifyRequest } from '@/lib/clarify'
 import type { FundingRefusalFacts } from '@/lib/funding-plan'
-import { fundChipFor, ONRAMP_ASSET, ONRAMP_DEFAULT_NETWORK, ONRAMP_NETWORK_LABEL } from '@/lib/onramp'
+import { fundChipFor, ONRAMP_ASSET, ONRAMP_DEFAULT_NETWORK, ONRAMP_MAX_USD, ONRAMP_NETWORK_LABEL, planFitsOneCheckout } from '@/lib/onramp'
 
 export interface SwapShortfallAsk {
   /** The swap chain's registry name ("Base"), for copy. */
@@ -88,17 +88,22 @@ export function swapBuyResume(ask: Pick<SwapShortfallAsk, 'chainWord' | 'sellTok
 
 /** The card chip for a buy this refusal can't fund, or null. Null when the
  *  door is closed (lib/onramp fails closed), when the spend side isn't dollars,
- *  and when stranded USDC already covers the plan: that wallet needs a dollar
- *  of gas, and a card purchase for the whole buy would be an upsell. */
+ *  when stranded USDC already covers the plan (that wallet needs a dollar of
+ *  gas, and a card purchase for the whole buy would be an upsell), and when
+ *  one checkout can't carry the buy: the preset caps at ONRAMP_MAX_USD, and a
+ *  capped chip would land short of its own label. The swap layer has no
+ *  downsize offer to catch that, so its resume would come back to this wall
+ *  and offer the card again. */
 export function swapBuyFundChip(ask: SwapShortfallAsk, facts: FundingRefusalFacts): ClarifyOption | null {
   const dollars = buyDollarsOf(ask)
   if (dollars === null || facts.strandedCovers) return null
   const buy = ask.buyToken.toUpperCase()
   const what = ask.sellAmountUsd ? `$${dollarsWord(dollars)} of ${buy}` : `${buy} with ${ask.sellAmountHuman} ${ask.sellToken.toUpperCase()}`
   const resume = swapBuyResume(ask)
-  return buy === ONRAMP_ASSET
-    ? fundChipFor({ needUsd: dollars, actionLabel: `buy ${what}`, resume, completes: true })
-    : fundChipFor({ needUsd: facts.needUsd, actionLabel: `buy ${what} on ${ask.chainName}`, resume })
+  if (buy === ONRAMP_ASSET) {
+    return Math.ceil(dollars) <= ONRAMP_MAX_USD ? fundChipFor({ needUsd: dollars, actionLabel: `buy ${what}`, resume, completes: true }) : null
+  }
+  return planFitsOneCheckout(facts.needUsd) ? fundChipFor({ needUsd: facts.needUsd, actionLabel: `buy ${what} on ${ask.chainName}`, resume }) : null
 }
 
 /**

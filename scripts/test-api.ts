@@ -211,6 +211,7 @@ import {
   classifyStripeOnrampFailure,
   deliveryFundUsd,
   fundChipFor,
+  planFitsOneCheckout,
   onrampAssetOf,
   onrampConsentMessage,
   onrampCountryFrom,
@@ -7726,6 +7727,20 @@ async function main() {
           /^🔄 This buy spends 50 USDC on Base and the wallet holds 0 there\./.test(partial.reply) && partial.reply.includes('~$12 of USDC on Arbitrum') &&
             /Or buy the ETH with a card or bank below/.test(partial.reply) && partial.clarify?.options[0].fund?.completes === true,
           partial.reply,
+        )
+        // One checkout, one buy. The preset caps at $500, and the swap layer
+        // has no downsize offer: a capped chip would land short of its own
+        // label and its resume would walk back into this wall — and offer the
+        // card again.
+        const bigUni = swapShortfallTurn({ ask: askOf('UNI', 2000), refusal: { ...emptyRefusal, needUsd: 2201.5 } })
+        const bigEth = swapShortfallTurn({ ask: askOf('ETH', 600), refusal: emptyRefusal })
+        const capEth = swapShortfallTurn({ ask: askOf('ETH', 500), refusal: emptyRefusal })
+        check(
+          'coin buy card: past ONE checkout there is no chip — a $2,000 UNI buy and a $600 ETH buy get the honest next step, while $500 of ETH (the cap itself) still gets its chip',
+          !bigUni.clarify && !bigEth.clarify && /Send ETH or USDC to this wallet/.test(bigUni.reply) && /Send ETH or USDC to this wallet/.test(bigEth.reply) &&
+            capEth.clarify?.options[0].fund?.presetFiatUsd === ONRAMP_MAX_USD &&
+            planFitsOneCheckout(400) && !planFitsOneCheckout(450) && !planFitsOneCheckout(0) && planFundUsd(450) === ONRAMP_MAX_USD,
+          `${bigUni.reply.slice(-90)} | ${bigEth.reply.slice(-90)}`,
         )
         const stranded = swapShortfallTurn({ ask: askOf('ETH', 50), refusal: refusalOf(strandedDecision)! })
         check(

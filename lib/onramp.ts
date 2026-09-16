@@ -303,11 +303,25 @@ export function planFundUsd(needUsd: number, network: OnrampNetwork = ONRAMP_DEF
   // cannot even clear it delivers ETH the scan will not offer, which is a
   // charge for nothing.
   if (!Number.isFinite(needUsd) || needUsd <= 0) return Math.max(ONRAMP_MIN_USD, Math.ceil(keep))
-  // Round to cents BEFORE the ceil: 100 * 1.15 is 114.99999999999999 in
-  // binary floating point, which would preset $115 off a $114.99 intent and
-  // read as a glitch either way it lands.
-  const withHeadroom = Number((needUsd * (1 + ONRAMP_HEADROOM) + keep).toFixed(2))
-  return Math.min(ONRAMP_MAX_USD, Math.max(ONRAMP_MIN_USD, Math.ceil(withHeadroom)))
+  return Math.min(ONRAMP_MAX_USD, Math.max(ONRAMP_MIN_USD, presetBeforeCapUsd(needUsd, network)))
+}
+
+/** planFundUsd's arithmetic without the ceiling. Round to cents BEFORE the
+ *  ceil: 100 * 1.15 is 114.99999999999999 in binary floating point, which
+ *  would preset $115 off a $114.99 intent and read as a glitch either way it
+ *  lands. */
+function presetBeforeCapUsd(needUsd: number, network: OnrampNetwork): number {
+  const keep = ONRAMP_ETH_KEEP_USD[network] ?? ONRAMP_ETH_KEEP_USD.base
+  return Math.ceil(Number((needUsd * (1 + ONRAMP_HEADROOM) + keep).toFixed(2)))
+}
+
+/** Can ONE checkout fund this plan? False when the preset it needs is past
+ *  ONRAMP_MAX_USD: the capped chip would open a checkout that lands short of
+ *  the plan its own label names, and the resume would walk into the same wall
+ *  and offer the card again. A caller without a downsize path of its own must
+ *  offer no chip there. */
+export function planFitsOneCheckout(needUsd: number, network: OnrampNetwork = ONRAMP_DEFAULT_NETWORK): boolean {
+  return Number.isFinite(needUsd) && needUsd > 0 && presetBeforeCapUsd(needUsd, network) <= ONRAMP_MAX_USD
 }
 
 /** What to preset when the delivery ITSELF is the ask: "Buy $50 of ETH" from
