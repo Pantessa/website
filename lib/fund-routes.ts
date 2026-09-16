@@ -129,7 +129,7 @@ export function stockFundRoutes(input: StockFundInput): FundRoutesPlan {
     const best = scan.origins.find((o) => o.chainId === chainId && originCapUsd(o, includeGas) >= needUsd)
     if (best) routes.push(lifiRow(best, needUsd, includeGas, sym, buyUsd))
   }
-  const moves = `a ${money(buyUsd)} buy moves ~${money(needUsd)}${includeGas ? ' (gas for Robinhood Chain included)' : ''}`
+  const moves = `a ${money(buyUsd)} buy needs ~${money(needUsd)} moved over${includeGas ? ' (gas for Robinhood Chain included)' : ''}`
 
   if (routes.length === 0 && scan.origins.length > 0) {
     const combined = planRobinhoodFundingChips({ origins: scan.origins, needUsd, gasIncluded: includeGas, followup: `buy ${money(buyUsd)} of ${sym}` })
