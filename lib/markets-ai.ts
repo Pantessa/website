@@ -97,6 +97,16 @@ export function tapeSymbols(raw: readonly string[]): string[] {
   }
   return [...out].sort()
 }
+/** The first sentence of a tape (up to the first ". " / "! " / "? "),
+ *  capped — the collapsed rail row's one line. */
+export function firstSentenceOf(text: string): string {
+  const t = text.trim()
+  if (!t) return ''
+  const m = t.match(/^[\s\S]*?[.!?](?=\s|$)/)
+  const first = (m ? m[0] : t).trim()
+  return first.length > 220 ? `${first.slice(0, 217).trimEnd()}…` : first
+}
+
 export function tapeCacheKey(symbols: readonly string[]): string {
   return `tape:${tapeSymbols(symbols).join(',')}`
 }
