@@ -25,6 +25,7 @@ import {
   CandlestickSeries,
   ColorType,
   CrosshairMode,
+  PriceScaleMode,
   HistogramSeries,
   LineSeries,
   LineStyle,
@@ -52,6 +53,7 @@ import { fmtPrice, type ChartStats } from '@/components/CandleChart'
 import '@/components/markets/look.css'
 import DrawingLayer, { type ChartGeom, type DrawTool } from './DrawingLayer'
 import { SessionBands } from './session-bands'
+import { VolumeProfile } from './volume-profile'
 
 const POLL_MS: Record<ChartTf, number> = { '15m': 8_000, '1h': 15_000, '4h': 20_000, '1d': 30_000 }
 const POOL_POLL_MS = 30_000
@@ -106,6 +108,10 @@ export interface MarketChartProps {
   /** The visible window (bar open times + frame) after every range change —
    *  the AI lane reads "what's on screen" off it. Throttled to one per frame. */
   onViewport?: (v: { from: number; to: number; tf: ChartTf }) => void
+  /** A second symbol drawn as a % line on the LEFT scale — indexed to the
+   *  first bar on screen (the engine's percentage mode), so two tapes with
+   *  different prices compare honestly. Same frame as the chart. */
+  compare?: string | null
 }
 
 interface CandlesResponse {
@@ -140,6 +146,8 @@ interface Tokens {
   /** Translucent tints used as-is: the grid and the crosshair. */
   grid: string
   crosshair: string
+  /** The compare line's ink: series slot 2 (orange), never a candle ink. */
+  compare: string
   fg: string
   bg: string
   line: string
@@ -222,6 +230,7 @@ function readTokens(): Tokens {
       down: get('--mk-down', get('--sell', '#e5484d')),
       grid: probe.css(cs.getPropertyValue('--mk-grid').trim(), 'rgba(255, 255, 255, 0.07)'),
       crosshair: probe.css(cs.getPropertyValue('--mk-crosshair').trim(), 'rgba(255, 255, 255, 0.35)'),
+      compare: get('--mk-series-2', '#e0642c'),
       fg: get('--fg', '#ffffff'),
       bg: get('--bg', '#000000'),
       line: get('--line', '#3a3a3a'),
@@ -304,6 +313,7 @@ export default function MarketChart({
   actionUsd,
   defaultOverlays,
   onViewport,
+  compare,
 }: MarketChartProps) {
   const fill = heightProp === 'fill'
   const pair = useMemo(() => chartPairFor(symbol), [symbol])
@@ -331,6 +341,9 @@ export default function MarketChart({
   const markerApiRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
   // The extended-hours shading on a stock's intraday frames (lib/chart-sessions).
   const bandsRef = useRef<SessionBands | null>(null)
+  const vpRef = useRef<VolumeProfile | null>(null)
+  const compareRef = useRef<ISeriesApi<'Line'> | null>(null)
+  const [cmp, setCmp] = useState<{ symbol: string; tf: ChartTf; candles: Candle[] } | null>(null)
   const poolLineRef = useRef<IPriceLine | null>(null)
   const hLineRefs = useRef<Map<string, IPriceLine>>(new Map())
   // Every bar the chart holds, for the engine callbacks (hover/click time, the viewport guard).
@@ -644,6 +657,9 @@ export default function MarketChart({
     const bands = new SessionBands()
     candleSeries.attachPrimitive(bands)
     bandsRef.current = bands
+    const vp = new VolumeProfile()
+    candleSeries.attachPrimitive(vp)
+    vpRef.current = vp
 
     const bump = () => setGeomTick((n) => n + 1)
     // Every range change repaints the drawings and runs the viewport guard.
@@ -727,6 +743,8 @@ export default function MarketChart({
       volRef.current = null
       markerApiRef.current = null
       bandsRef.current = null
+      vpRef.current = null
+      compareRef.current = null
       poolLineRef.current = null
       overlayRefs.current.clear()
       hLineRefs.current.clear()
@@ -788,6 +806,7 @@ export default function MarketChart({
     }))
     vs.setData(bars.map((c, i) => ({ time: c.t as UTCTimestamp, value: c.v, color: alpha(c.c >= c.o ? tokens.up : tokens.down, quiet(i) ? 0.14 : 0.28) })))
     bandsRef.current?.update(sessions ? extendedRuns(sessions) : [], tokens.session)
+    vpRef.current?.update(overlays.has('vp') && hasVolume(bars) ? bars : [], alpha(tokens.muted2, 0.28), alpha(tokens.up, 0.55))
     drawnRef.current = bars.length
     const key = `${symbol}:${tf}`
     if (fitOnceRef.current !== key) {
@@ -797,7 +816,51 @@ export default function MarketChart({
       fitOnceRef.current = key
     }
     setGeomTick((n) => n + 1)
-  }, [bars, sessions, candles.length, data?.tf, data?.symbol, pair?.symbol, symbol, tf, tokens])
+  }, [bars, sessions, candles.length, data?.tf, data?.symbol, pair?.symbol, symbol, tf, tokens, overlays])
+
+  // Compare: a second symbol's candles at the chart's frame, drawn as a line
+  // on the LEFT scale in percentage mode (indexed to the first bar on screen).
+  const cmpPair = useMemo(() => (compare ? chartPairFor(compare) : null), [compare])
+  useEffect(() => {
+    if (!cmpPair || cmpPair.symbol === pair?.symbol) {
+      setCmp(null)
+      return
+    }
+    let alive = true
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/charts/candles?symbol=${encodeURIComponent(cmpPair.symbol)}&tf=${tf}`, { cache: 'no-store' })
+        const body = (await res.json()) as CandlesResponse
+        if (alive && body.candles?.length) setCmp({ symbol: cmpPair.symbol, tf, candles: body.candles })
+      } catch {
+        /* the compare line simply stays off */
+      }
+    }
+    void load()
+    const timer = setInterval(() => void load(), 60_000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [cmpPair, pair?.symbol, tf])
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart || !tokens) return
+    const want = cmp && cmp.tf === tf && cmp.candles.length > 1
+    if (!want) {
+      if (compareRef.current) {
+        chart.removeSeries(compareRef.current)
+        compareRef.current = null
+        chart.applyOptions({ leftPriceScale: { visible: false } })
+      }
+      return
+    }
+    if (!compareRef.current) {
+      compareRef.current = chart.addSeries(LineSeries, { priceScaleId: 'left', lineWidth: 2, color: tokens.compare, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: true, title: cmp.symbol })
+      chart.applyOptions({ leftPriceScale: { visible: true, mode: PriceScaleMode.Percentage, borderColor: alpha(tokens.line, 0.6) } })
+    } else compareRef.current.applyOptions({ color: tokens.compare, title: cmp.symbol })
+    compareRef.current.setData(cmp.candles.map((c) => ({ time: c.t as UTCTimestamp, value: c.c })))
+  }, [cmp, tf, tokens])
 
   // Overlays → line series. The rolling lines read every held bar (older
   // pages, the warm-up, merged polls) and are cut back to the bars on the
@@ -1172,6 +1235,7 @@ export default function MarketChart({
           a link to tradingview.com on the page. With attributionLogo off this
           footer is the ONLY credit: never drop it. */}
       <div className="mkt-chart__foot mono">
+        {cmp && cmp.tf === tf ? <span>vs {cmp.symbol} · % since the first bar on screen (left scale) · </span> : null}
         <span>
           {feedLabel ? `feed · ${String(feedLabel)}` : ''}
           {sessions && feedLabel ? ' · shaded = pre/post-market' : ''}

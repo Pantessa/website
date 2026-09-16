@@ -29,6 +29,13 @@ const FACTORY_ABI = parseAbi(['function getPool(address,address,uint24) view ret
 const ZERO = '0x0000000000000000000000000000000000000000'
 const CHAIN_LABEL: Record<number, string> = { 8453: 'Base', 1: 'Ethereum', 42161: 'Arbitrum', 10: 'Optimism', 4663: 'Robinhood Chain' }
 
+/** Uniswap v4 PoolManager on Robinhood Chain — read from the v4 quoter's own
+ *  `poolManager()` (0x8dc1…8f94 → this) and bytecode-verified (24,009 bytes)
+ *  2026-09-15; it held $47.9M USDG at the probe. v4 is a singleton: the
+ *  manager's balance of a token is that token's liquidity across EVERY v4
+ *  pool — the honest number for a stock that trades in v4-only pools. */
+export const UNI_V4_POOL_MANAGER_4663: Address = '0x8366a39cc670b4001a1121b8f6a443a643e40951'
+
 /** stETH on Ethereum — Lido's liquid staking token (totalSupply = ETH staked through Lido). */
 const STETH: Address = '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84'
 const HL_INFO_URL = 'https://api.hyperliquid.xyz/info'
@@ -81,7 +88,22 @@ export async function readHyperliquid(symbol: string): Promise<FlowSource | null
 export async function readUniswap(symbol: string): Promise<FlowSource[] | null> {
   const pair = chartPairFor(symbol)
   if (pair?.source === 'robinhood') {
-    return [{ id: 'uniswap', venue: 'Uniswap v4', measure: 'pool liquidity', chain: 'Robinhood Chain', usd: null, gap: 'v4 pools need a PoolManager read — not wired yet' }]
+    const client = publicClientFor(4663)
+    if (!client) return null
+    await ensureTokenList(4663)
+    const t = dynamicTokenBySymbol(symbol, 4663)
+    if (!t) return [{ id: 'uniswap', venue: 'Uniswap v4', measure: 'in v4 pools', chain: 'Robinhood Chain', usd: null, gap: 'token list has no address yet' }]
+    const [held, price] = await Promise.all([client.readContract({ address: t.address as Address, abi: erc20Abi, functionName: 'balanceOf', args: [UNI_V4_POOL_MANAGER_4663] }), lastPrice(symbol)])
+    const amt = Number(held) / 10 ** t.decimals
+    return [{
+      id: 'uniswap',
+      venue: 'Uniswap v4',
+      measure: `${symbol} in v4 pools (token side)`,
+      chain: 'Robinhood Chain',
+      usd: price != null ? amt * price : null,
+      detail: `${amt.toLocaleString('en-US', { maximumFractionDigits: 0 })} ${symbol} held by the PoolManager`,
+      gap: price == null ? 'no tape price' : undefined,
+    }]
   }
   const price = await lastPrice(symbol)
   const out = await Promise.all(
