@@ -258,6 +258,7 @@ import {
 import { parseEcbUsdRate } from '../lib/ecb-fx'
 import { clarifyOf } from '../lib/clarify'
 import { fundingPathOf, NEVER_MIND_RESUME_RE } from '../lib/funding-path'
+import { fundSegment as destinationFundSegment, LIFI_DESTINATIONS, LIFI_DESTINATION_CHAINS } from '../lib/lifi-destinations'
 import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '../lib/turn-status'
 import { classifyFundingBalances, decideFundingTurn, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, gasTopupLegUsd, MIN_LEG_USD, planFundingChips, planGasTopup, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, strandedCoversPlan, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { buyDollarsOf, swapBuyFundChip, swapBuyResume, swapShortfallTurn, type SwapShortfallAsk } from '../lib/swap-shortfall'
@@ -10594,15 +10595,44 @@ async function main() {
     // SYNC GUARD: every planner-emitted chip above must parse, so a grammar
     // change that breaks the visualization fails here, loudly, not as a
     // silent fallback to plain text chips in production.
+    // Arc's chips (website#793) come from the same planners with dest 5042,
+    // and none of them drew: the fund parse read only "robinhood chain", so
+    // every Arc chip fell back to plain text, and the gas-stranded rescue
+    // drew Base → Arbitrum → "Fund arc with $11 from arbitrum, then …" as
+    // its goal. One fixture per planner shape, each required non-empty.
+    const arcPathDest = LIFI_DESTINATIONS[5042]
+    const arcRescue = planRobinhoodFundingAdvice({ scan: donorScan, needUsd: 11, gasIncluded: false, followup: 'buy $10 of EURC', dest: arcPathDest })
+    const arcPathSets = {
+      chips: planRobinhoodFundingChips({ origins: [O(8453, 'Base', 40), O(1, 'Ethereum', 20)], needUsd: 12, gasIncluded: false, followup: 'buy $10 of BTC', dest: arcPathDest }) ?? [],
+      combined: planRobinhoodFundingChips({ origins: [O(1, 'Ethereum', 12), O(8453, 'Base', 12)], needUsd: 22, gasIncluded: false, followup: 'buy $15 of BTC', dest: arcPathDest }) ?? [],
+      eth: planRobinhoodFundingChips({ origins: [O(8453, 'Base', 30, 0.012, 'ETH')], needUsd: 10.5, gasIncluded: false, followup: 'buy $10 of EURC', dest: arcPathDest }) ?? [],
+      usdce: planRobinhoodFundingChips({ origins: [O(42161, 'Arbitrum', 20, 0.01, 'USDC.e')], needUsd: 12, gasIncluded: false, followup: '', dest: arcPathDest }) ?? [],
+      rescue: arcRescue.kind === 'gas-stranded' && arcRescue.chips ? arcRescue.chips : [],
+      // The jobs redirect's chips ("move 5 USDC from base to arc" etc.).
+      redirect: ['move 5 USDC from base to arc', 'swap 20 USDC from base to BTC on arc', 'bridge 0.01 ETH from ethereum to arc'].flatMap((ask) => {
+        const r = robinhoodFundingFromCrossChain(ask)
+        return r && 'clarify' in r ? r.clarify.options : []
+      }),
+    }
     const pathChips = [
       ...(chips ?? []), ...(altChips ?? []), ...(comboChips ?? []), ...(bridgeOnlyChips ?? []), ...(usdceChips ?? []),
       ...(covered.kind === 'chips' ? covered.chips : []),
-      ...(rescue.kind === 'gas-stranded' && rescue.chips ? rescue.chips.filter((c) => !/never mind/i.test(c.resume)) : []),
-    ]
+      ...(rescue.kind === 'gas-stranded' && rescue.chips ? rescue.chips : []),
+      ...Object.values(arcPathSets).flat(),
+    ].filter((c) => !NEVER_MIND_RESUME_RE.test(c.resume))
+    // Parsing isn't drawing: a route must show every funding leg as a hop.
+    // A non-null path whose action node still reads as a funding sentence
+    // is the half-parse the Arc rescue shipped with.
+    const drawsEveryLeg = (resume: string) => {
+      const path = fundingPathOf(resume)
+      const action = path?.nodes.find((n) => n.kind === 'action')
+      return !!path && (!action || parseRobinhoodFunding(action.title) === null)
+    }
     check(
-      'funding path: every planner-emitted chip resume parses into a drawable route',
-      pathChips.length >= 10 && pathChips.every((c) => fundingPathOf(c.resume) !== null),
-      JSON.stringify(pathChips.filter((c) => fundingPathOf(c.resume) === null).map((c) => c.resume)),
+      'funding path: every planner-emitted chip resume parses into a drawable route (Robinhood Chain and Arc), every funding leg drawn as a hop, never folded into the action',
+      pathChips.length >= 28 && Object.values(arcPathSets).every((set) => set.some((c) => !NEVER_MIND_RESUME_RE.test(c.resume))) &&
+        pathChips.every((c) => drawsEveryLeg(c.resume)),
+      JSON.stringify({ sizes: Object.fromEntries(Object.entries(arcPathSets).map(([k, v]) => [k, v.length])), undrawn: pathChips.filter((c) => !drawsEveryLeg(c.resume)).map((c) => c.resume) }),
     )
     const leadPath = chips ? fundingPathOf(chips[0].resume) : null
     check(
@@ -10619,6 +10649,42 @@ async function main() {
         rescuePath.nodes[0].detail === `${GAS_TOPUP_ETH} ETH` &&
         rescuePath.nodes[1].detail === '$11 USDC' && rescuePath.arrows.join(' | ') === 'bridge | bridge | then',
       JSON.stringify(rescuePath),
+    )
+    // Arc lands USDC and never "+ gas": the landed USDC is the gas.
+    const arcLeadPath = arcPathSets.chips[0] ? fundingPathOf(arcPathSets.chips[0].resume) : null
+    check(
+      'funding path (arc): the lead chip draws Base → Arc (USDC, no "+ gas") → the buy',
+      !!arcLeadPath && arcLeadPath.nodes.map((n) => n.title).join(' | ') === 'Base | Arc | Buy $10 of BTC' &&
+        arcLeadPath.nodes[0].detail === '$12 USDC' && arcLeadPath.nodes[1].detail === 'USDC' &&
+        arcLeadPath.nodes[2].kind === 'action' && arcLeadPath.arrows.join(' | ') === 'bridge | then',
+      JSON.stringify(arcLeadPath),
+    )
+    const arcEthChip = arcPathSets.eth[0]
+    const arcEthPath = arcEthChip ? fundingPathOf(arcEthChip.resume) : null
+    const arcRescuePath = arcPathSets.rescue[0] ? fundingPathOf(arcPathSets.rescue[0].resume) : null
+    const nodeLine = (path: ReturnType<typeof fundingPathOf>) => path?.nodes.map((n) => `${n.title}${n.detail ? ` [${n.detail}]` : ''}`).join(' → ')
+    check(
+      'funding path (arc): the ETH-origin chip "Fund arc with $10.5 from base using eth" draws Base ($10.5 ETH) → Arc (USDC); the gas-stranded rescue folds Base → Arbitrum → Arc → the buy; a typed "including gas" still lands plain USDC (the jobs compiler drops it on Arc)',
+      arcEthChip?.resume === 'Fund arc with $10.5 from base using eth, then buy $10 of EURC' &&
+        nodeLine(arcEthPath) === 'Base [$10.5 ETH] → Arc [USDC] → Buy $10 of EURC' &&
+        nodeLine(arcRescuePath) === `Base [${GAS_TOPUP_ETH} ETH] → Arbitrum [$11 USDC] → Arc [USDC] → Buy $10 of EURC` &&
+        arcRescuePath?.arrows.join(' | ') === 'bridge | bridge | then' &&
+        nodeLine(fundingPathOf('Fund arc with $12 from base including gas')) === 'Base [$12 USDC] → Arc [USDC]',
+      JSON.stringify({ eth: arcEthChip?.resume, ethPath: nodeLine(arcEthPath), rescue: nodeLine(arcRescuePath) }),
+    )
+    // The destination table drives the parse: each destination's fund
+    // sentence lands on it by name, with the stable the registry says the
+    // legs deliver ("+ gas" only where a separate gas leg exists). A new
+    // destination draws, or fails here, the day it joins the table.
+    check(
+      'funding path: every LiFi destination draws its fund sentence, landing by name on the registry\'s primary stable, "+ gas" only where a gas leg exists',
+      LIFI_DESTINATION_CHAINS.length >= 2 &&
+        LIFI_DESTINATION_CHAINS.every((id) => {
+          const dest = LIFI_DESTINATIONS[id]
+          const landing = fundingPathOf(`${destinationFundSegment(12, 'Base', true, 'USDC', dest)}, then buy $10 of BTC`)?.nodes[1]
+          return primaryStable(id)?.symbol.toUpperCase() === dest.stable && landing?.title === dest.name && landing.detail === (dest.gasLeg ? `${dest.stable} + gas` : dest.stable)
+        }),
+      JSON.stringify(LIFI_DESTINATION_CHAINS.map((id) => ({ id, stable: LIFI_DESTINATIONS[id].stable, registry: primaryStable(id)?.symbol, path: nodeLine(fundingPathOf(destinationFundSegment(12, 'Base', true, 'USDC', LIFI_DESTINATIONS[id]))) }))),
     )
     // The universal planner's two leg shapes: a destination-chain conversion
     // draws a same-chain swap; a cross-chain leg draws bridge + swap.
