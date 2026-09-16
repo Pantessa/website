@@ -294,6 +294,38 @@ export const ONRAMP_HEADROOM = 0.15
  *  $30 to buy $10 of AAPL reads as broken, $24 reads as a card fee. */
 export const ONRAMP_ETH_KEEP_USD: Record<OnrampNetwork, number> = { base: 2, ethereum: 10 }
 
+/** The top of the ETH price range a preset is sized to hold through. The
+ *  keep-back is ETH (0.002 on mainnet) while presets are dollars, so what a
+ *  landing loses grows with the price. audit:funding and the harness land
+ *  presets at $2,000 through this price and require chips that compile. */
+export const ONRAMP_ETH_PRICE_CEILING_USD = 5_000
+
+/** Dollars a landing can lose between the checkout and the wallet: Stripe's
+ *  network fee plus a price move until delivery. The card fee itself rides ON
+ *  TOP of the preset, so it isn't in here. Every landing check subtracts it
+ *  before converting. */
+export const ONRAMP_SETTLE_SLACK_USD = 1
+
+/** Dollars a landed preset loses before ANY of it reaches a plan, whatever the
+ *  plan's size, with ETH at ONRAMP_ETH_PRICE_CEILING_USD:
+ *
+ *    • the funding scan's keep-back (lib/funding-plan GAS_RESERVE_ETH: 0.002
+ *      ETH on mainnet is $10 at $5,000, 0.0002 on Base is $1),
+ *    • the planner's two-leg headroom on a gas-included plan (lib/lifi-bridge
+ *      ETH_TWO_LEG_HEADROOM_USD: $1 on mainnet, $0.10 on Base),
+ *    • ONRAMP_SETTLE_SLACK_USD.
+ *
+ *  This file is imported by client components and can't import those modules,
+ *  so scripts/test-api.ts re-derives the sum from them.
+ *
+ *  ONRAMP_ETH_KEEP_USD plus the 15% headroom covers these costs on plans above
+ *  ~$13, where 15% is at least $2. Smaller plans exist: the 2x HYPE long's
+ *  deposit plan is $9.50, and a $2 Morpho lend's is $5. At $5,000/ETH their
+ *  presets ($21, $16) landed $0.50 and $1 short. The charge would go through,
+ *  the resume would wall, and it would offer the card again. So a preset is
+ *  also never less than the plan plus these costs (found 2026-09-16). */
+export const ONRAMP_LANDING_COST_USD: Record<OnrampNetwork, number> = { base: 2.1, ethereum: 12 }
+
 /** What to preset in the on-ramp for a plan that needs `needUsd`. Always at
  *  or above the plan, at or above the derived floor, and never above the
  *  clamp. Pure — the harness pins the arithmetic, not a live quote. */
@@ -312,7 +344,8 @@ export function planFundUsd(needUsd: number, network: OnrampNetwork = ONRAMP_DEF
  *  lands. */
 function presetBeforeCapUsd(needUsd: number, network: OnrampNetwork): number {
   const keep = ONRAMP_ETH_KEEP_USD[network] ?? ONRAMP_ETH_KEEP_USD.base
-  return Math.ceil(Number((needUsd * (1 + ONRAMP_HEADROOM) + keep).toFixed(2)))
+  const landingCost = ONRAMP_LANDING_COST_USD[network] ?? ONRAMP_LANDING_COST_USD.base
+  return Math.ceil(Number(Math.max(needUsd * (1 + ONRAMP_HEADROOM) + keep, needUsd + landingCost).toFixed(2)))
 }
 
 /** Can ONE checkout fund this plan? False when the preset it needs is past
@@ -470,6 +503,21 @@ export interface FundChipParams {
    *  only the ETH that just landed plans ETH → USDC → ETH and charges both
    *  swaps for the round trip. */
   completes?: boolean
+  /** The delivery lands the very asset the ask spends, on the very chain it
+   *  runs on: a Lido stake of ETH, delivered on the Ethereum lane. Unlike
+   *  `completes`, the ask still needs its own signature afterwards.
+   *  `needUsd` is then the dollars of ETH to land. The preset is
+   *  deliveryFundUsd: nothing converts or bridges, so there's no plan
+   *  headroom or keep-back to add. The label reads like any plan chip's, and
+   *  the resume fires on arrival to build the action (lib/layer-shortfall).
+   *  Ignored when `completes` is set. */
+  direct?: boolean
+  /** A floor on the preset, for a caller whose landing must clear a threshold
+   *  of its own. Example: an Aave supply on Ethereum, where the card lane IS
+   *  the destination chain, so the landed ETH must also cover that chain's
+   *  gas floor (lib/layer-shortfall). Still capped at ONRAMP_MAX_USD.
+   *  Ignored when `completes` is set. */
+  minPresetUsd?: number
 }
 
 /** The fund chip, or null when the door is closed. Callers append it to their
@@ -477,7 +525,7 @@ export interface FundChipParams {
  *  an addition to an honest answer, never a replacement for one. */
 export function fundChipFor(params: FundChipParams): ClarifyOption | null {
   if (!onrampEnabled()) return null
-  const { needUsd, actionLabel, resume, network = ONRAMP_DEFAULT_NETWORK, completes = false } = params
+  const { needUsd, actionLabel, resume, network = ONRAMP_DEFAULT_NETWORK, completes = false, direct = false, minPresetUsd } = params
   if (!resume.trim() || !actionLabel.trim()) return null
   if (completes) {
     const presetFiatUsd = deliveryFundUsd(needUsd)
@@ -487,7 +535,9 @@ export function fundChipFor(params: FundChipParams): ClarifyOption | null {
       fund: { presetFiatUsd, asset: ONRAMP_ASSET, network, completes: true },
     }
   }
-  const presetFiatUsd = planFundUsd(needUsd, network)
+  const sized = direct ? deliveryFundUsd(needUsd) : planFundUsd(needUsd, network)
+  const floor = typeof minPresetUsd === 'number' && Number.isFinite(minPresetUsd) ? Math.ceil(minPresetUsd) : 0
+  const presetFiatUsd = Math.min(ONRAMP_MAX_USD, Math.max(sized, floor))
   return {
     label: `Add $${presetFiatUsd} with card or bank → ${actionLabel}`,
     resume,

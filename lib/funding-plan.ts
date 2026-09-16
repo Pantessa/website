@@ -632,6 +632,12 @@ export interface FundingOfferTurn {
 export interface FundingRefusalFacts {
   /** Dollars the smallest plan moves, gas leg included — what a door must fund. */
   needUsd: number
+  /** The destination gas leg inside needUsd: dollars of ETH the plan delivers
+   *  so the destination can sign the follow-up (0 when it already can). A door
+   *  that delivers ETH onto the destination chain pays that gas with the
+   *  delivery itself, so it leaves the leg out of its sizing
+   *  (lib/layer-shortfall). */
+  gasUsd: number
   /** The chains that were read, joined for copy ("Base, Arbitrum and Ethereum"). */
   chainsRead: string
   /** Nothing worth naming on any scanned chain — movable and stranded together
@@ -856,6 +862,7 @@ export function decideFundingTurn(params: {
       }),
       facts: {
         needUsd: plan.needUsd,
+        gasUsd,
         chainsRead,
         // Every row the scan kept, movable or stranded — including the needed
         // token already on the destination, which the plan excludes but the
