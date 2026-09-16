@@ -22470,10 +22470,10 @@ async function main() {
       )
       const ccWire = await readFile('components/markets/trade/CompoundComposer.tsx', 'utf8')
       check(
-        'fund legs (wiring): CompoundComposer reads the connected wallet (useSession), fetches /api/markets/routes/funding with for=compound (the buy chain + the buy flag for a coin), lists FROM only from the wallet\'s legs, passes the picked leg into composeCompound, says FUND_CONNECT_NOTE with no wallet, holds Send while the read is in flight, and never maps SPOT_CHAINS into a FROM picker',
+        'fund legs (wiring): CompoundComposer reads the connected wallet (useSession), fetches /api/markets/routes/funding with for=compound for every size it offers (the buy chain + the buy flag for a coin), lists FROM only from the wallet\'s legs, passes the picked leg into composeCompound, says FUND_CONNECT_NOTE with no wallet, holds Send while the read is in flight, and never maps SPOT_CHAINS into a FROM picker',
         ccWire.includes('useSession()') && ccWire.includes('/api/markets/routes/funding?') && ccWire.includes("for: 'compound'") && ccWire.includes("qs.set('chain', String(fundDest))") &&
-          ccWire.includes('shownLegs.map((l) =>') && ccWire.includes('fund: fundLeg') && ccWire.includes('FUND_CONNECT_NOTE') && ccWire.includes('disabled={plan.legs.length === 0 || checking}') &&
-          !/SPOT_CHAINS\.filter\(/.test(ccWire) && !ccWire.includes('setOriginChainId(c.id)'),
+          ccWire.includes('for (const amount of AMOUNTS)') && ccWire.includes('data-fund-origins={legs.map((l) => l.chainId)') && ccWire.includes('fund: fundLeg') && ccWire.includes('FUND_CONNECT_NOTE') &&
+          ccWire.includes('disabled={plan.legs.length === 0 || checking}') && !/SPOT_CHAINS\.filter\(/.test(ccWire) && !ccWire.includes('setOriginChainId(c.id)'),
       )
     }
 

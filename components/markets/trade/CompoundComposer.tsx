@@ -65,37 +65,45 @@ export default function CompoundComposer({ symbol, pair, onAsk }: { symbol: stri
   const [chainId, setChainId] = useState<number | undefined>(undefined)
   const isStock = pair.source === 'robinhood'
 
-  // The connected wallet's funding legs, keyed by everything they were sized
-  // for (wallet · symbol · size · the chain they land on · a buy after them),
-  // so a switched wallet or a changed plan never sends another read's leg.
+  // The connected wallet's funding legs, keyed by everything they were read
+  // for (wallet · symbol · the chain they land on · a buy after them), so a
+  // switched wallet or a changed plan never sends another read's leg. Every
+  // size is read at once — the server reads the wallet once and caches it —
+  // so picking a size never waits; a new wallet or destination does.
   const { walletAddress } = useSession()
   const fundDest = kinds.includes('fund') ? compoundFundDest(symbol, pair, kinds, chainId) : null
   const fundBuy = isStock || kinds.includes('buy')
-  const fundBase = walletAddress && fundDest !== null ? `${walletAddress.toLowerCase()}|${pair.symbol}|${fundDest}|${fundBuy ? 1 : 0}|` : null
-  const fundKey = fundBase ? `${fundBase}${usd}` : null
-  const [fund, setFund] = useState<{ key: string; body: FundLegsResponse | null } | null>(null)
+  const fundBase = walletAddress && fundDest !== null ? `${walletAddress.toLowerCase()}|${pair.symbol}|${fundDest}|${fundBuy ? 1 : 0}` : null
+  const [fund, setFund] = useState<{ base: string; bySize: Partial<Record<number, FundLegsResponse | null>> } | null>(null)
   const [fundTick, setFundTick] = useState(0)
 
   useEffect(() => {
-    if (!fundKey || !walletAddress || fundDest === null) return
+    if (!fundBase || !walletAddress || fundDest === null) return
     let alive = true
-    const qs = new URLSearchParams({ symbol: pair.symbol, amount: String(usd), address: walletAddress, for: 'compound' })
-    if (!isStock) {
-      qs.set('chain', String(fundDest))
-      qs.set('buy', fundBuy ? '1' : '0')
+    const land = (amount: number, body: FundLegsResponse | null) => {
+      if (!alive) return
+      setFund((f) => {
+        const bySize = f?.base === fundBase ? f.bySize : {}
+        // A re-read that fails keeps the last good answer for that size.
+        if (body === null && bySize[amount]) return f
+        return { base: fundBase, bySize: { ...bySize, [amount]: body } }
+      })
     }
-    fetch(`/api/markets/routes/funding?${qs}`, { cache: 'no-store' })
-      .then((res) => (res.ok ? (res.json() as Promise<FundLegsResponse>) : Promise.reject(new Error(String(res.status)))))
-      .then((body) => {
-        if (alive) setFund({ key: fundKey, body })
-      })
-      .catch(() => {
-        if (alive) setFund({ key: fundKey, body: null })
-      })
+    for (const amount of AMOUNTS) {
+      const qs = new URLSearchParams({ symbol: pair.symbol, amount: String(amount), address: walletAddress, for: 'compound' })
+      if (!isStock) {
+        qs.set('chain', String(fundDest))
+        qs.set('buy', fundBuy ? '1' : '0')
+      }
+      fetch(`/api/markets/routes/funding?${qs}`, { cache: 'no-store' })
+        .then((res) => (res.ok ? (res.json() as Promise<FundLegsResponse>) : Promise.reject(new Error(String(res.status)))))
+        .then((body) => land(amount, body))
+        .catch(() => land(amount, null))
+    }
     return () => {
       alive = false
     }
-  }, [fundKey, fundTick, walletAddress, fundDest, fundBuy, isStock, pair.symbol, usd])
+  }, [fundBase, fundTick, walletAddress, fundDest, fundBuy, isStock, pair.symbol])
 
   // Money moves between visits: re-read when the tab comes back.
   useEffect(() => {
@@ -106,14 +114,11 @@ export default function CompoundComposer({ symbol, pair, onAsk }: { symbol: stri
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [])
 
-  const fundBody = fundKey && fund?.key === fundKey ? fund.body : null
-  const fundView: FundView = fundDest === null ? 'off' : !walletAddress ? 'no-wallet' : fund?.key !== fundKey ? 'pending' : fundBody ? fundBody.state : 'unread'
+  // undefined = not read yet for this plan · null = the read failed.
+  const fundBody = fundBase && fund?.base === fundBase ? fund.bySize[usd] : undefined
+  const fundView: FundView = fundDest === null ? 'off' : !walletAddress ? 'no-wallet' : fundBody === undefined ? 'pending' : fundBody === null ? 'unread' : fundBody.state
   const legs = useMemo(() => fundBody?.legs ?? [], [fundBody])
-  // While a new size is read, the same wallet's last chains stay on screen
-  // (the picker doesn't blink); the plan never uses them.
-  const shownLegs = fundView === 'pending' && fundBase && fund?.key.startsWith(fundBase) ? (fund.body?.legs ?? []) : legs
   const fundLeg = legs.find((l) => l.chainId === originChainId) ?? legs[0] ?? null
-  const shownPick = shownLegs.find((l) => l.chainId === originChainId) ?? shownLegs[0] ?? null
   const fundNotes =
     fundView === 'off' ? [] : fundView === 'no-wallet' ? [FUND_CONNECT_NOTE] : fundView === 'pending' ? [FUND_CHECKING_NOTE] : fundBody ? fundBody.notes : [FUND_UNREAD_NOTE]
 
@@ -219,16 +224,16 @@ export default function CompoundComposer({ symbol, pair, onAsk }: { symbol: stri
           </div>
         )}
         {/* FROM lists only the chains THIS wallet can fund the job from. */}
-        {shownLegs.length > 0 && (
-          <div className="mkt-compound__opt" data-fund-origins={shownLegs.map((l) => l.chainId).join(',')}>
+        {legs.length > 0 && (
+          <div className="mkt-compound__opt" data-fund-origins={legs.map((l) => l.chainId).join(',')}>
             <span className="mkt-order__k mono">FROM</span>
             <div className="mkt-order__presets" role="group" aria-label="Fund from">
-              {shownLegs.map((l) => (
+              {legs.map((l) => (
                 <button
                   key={l.chainId}
                   type="button"
-                  className={`mkt-order__preset ${shownPick?.chainId === l.chainId ? 'is-on' : ''}`}
-                  aria-pressed={shownPick?.chainId === l.chainId}
+                  className={`mkt-order__preset ${fundLeg?.chainId === l.chainId ? 'is-on' : ''}`}
+                  aria-pressed={fundLeg?.chainId === l.chainId}
                   data-origin={l.chainId}
                   data-token={l.token}
                   title={`${l.label}: ~$${l.usd} of ${l.token}`}
