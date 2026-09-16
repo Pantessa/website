@@ -17,7 +17,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { LayoutGrid, Rows3 } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
 import {
@@ -42,6 +42,7 @@ import MarketMap from '@/components/markets/slots/MarketMap'
 import EarnBoard from '@/components/markets/earn/EarnBoard'
 import MorningTape from '@/components/markets/ai/MorningTape'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
+import { ARRIVAL_APP_HREF, writeArrivalIntent } from '@/lib/arrival-intent'
 import type { TrendingRow } from '@/app/markets/trending'
 
 // Rows before "show all" — a folded board leads with the household names.
@@ -209,6 +210,7 @@ function useRowKeys() {
 
 export default function MarketsIndex({ trending = [] }: { trending?: TrendingRow[] }) {
   const router = useRouter()
+  const pathname = usePathname()
   const sections = useMemo(() => marketSections(), [])
   const ids = useMemo(() => sections.map((s) => s.id), [sections])
   const allRows = useMemo(() => sections.flatMap((s) => s.rows), [sections])
@@ -220,11 +222,23 @@ export default function MarketsIndex({ trending = [] }: { trending?: TrendingRow
   const showList = view === 'list' || phone
   const open = useCallback((symbol: string) => router.push(`/t/${symbol}`), [router])
   // ONE act door for the index: the rail's Morning tape (AI) and every row's
-  // QuickAct chips (EXEC) prefill chat the way the rail's own chips do — a
-  // URL never fires a turn, and a visitor with no wallet connects first
-  // (lib/use-connect-to-act, the WatchlistRail pattern).
+  // QuickAct chips (EXEC) run in the app the way the rail's own chips do —
+  // a visitor with no wallet connects first (lib/use-connect-to-act, the
+  // WatchlistRail pattern), and the tap itself is the SEND: the ask travels
+  // out of band (lib/arrival-intent — same tab, 60s, one shot) and /chat
+  // fires it on arrival. The URL stays a plain /chat, so nothing pasted
+  // anywhere ever fires a turn. No storage / a fenced ask degrades to the
+  // old `?prompt=` prefill, which the door's email + Google lanes keep
+  // using anyway (they land after an OAuth round trip, past the TTL).
   const promptHref = (ask: string) => `/chat?prompt=${encodeURIComponent(ask)}`
-  const { act: indexAct, door: indexDoor } = useConnectToAct({ run: (ask) => router.push(promptHref(ask)), redirectFor: promptHref })
+  const handOff = useCallback(
+    (ask: string) => {
+      const handed = writeArrivalIntent({ text: ask, from: pathname ?? '' })
+      router.push(handed ? ARRIVAL_APP_HREF : promptHref(ask))
+    },
+    [pathname, router],
+  )
+  const { act: indexAct, door: indexDoor } = useConnectToAct({ run: handOff, redirectFor: promptHref })
   useRowKeys()
 
   // Two grid items for the page's .mkt-frame: the data column and the side
