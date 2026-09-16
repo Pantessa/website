@@ -343,6 +343,11 @@ export async function fetchLifiQuote(params: {
   swapAtoms: bigint
   from: string
   slippageBps: number
+  /** LiFi bridge tool keys the route may use (comma-joined into
+   *  `allowBridges`). Omitted = LiFi's own pick. The Arc funding legs pin
+   *  the fast tools: LiFi's default for Base → Arc was Polymer at ~18 min
+   *  while Across/Relay settle in 1–4s (probed 2026-09-16). */
+  allowBridges?: readonly string[]
 }): Promise<LifiQuote> {
   const url = new URL(LIFI_API)
   url.searchParams.set('fromChain', String(params.chainId))
@@ -352,6 +357,7 @@ export async function fetchLifiQuote(params: {
   url.searchParams.set('fromAmount', params.swapAtoms.toString())
   url.searchParams.set('fromAddress', params.from)
   url.searchParams.set('slippage', (params.slippageBps / 10_000).toString())
+  if (params.allowBridges && params.allowBridges.length > 0) url.searchParams.set('allowBridges', params.allowBridges.join(','))
   const headers: Record<string, string> = { accept: 'application/json' }
   if (process.env.LIFI_API_KEY) headers['x-lifi-api-key'] = process.env.LIFI_API_KEY
   let res: Response
