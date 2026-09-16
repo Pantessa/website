@@ -3,18 +3,17 @@
 import { LogIn, LogOut, Loader2, ShieldCheck } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { useSession } from '@/lib/session'
-import { SIGN_IN_LANDING } from '@/lib/app-entry'
+import { signInLandingHere, useSession } from '@/lib/session'
 
 /**
  * Combined sign-in affordance (one button, connect → sign):
  * - signed in → a "Signed in" chip whose click signs out
  * - otherwise → "Sign in" that connects the wallet (if needed) and runs SIWE in
- *   one flow. `redirectTo` defaults to the fresh-login landing, Markets (the
- *   generic nav entry); pass a path for in-page gates that should return the
- *   user where they were.
+ *   one flow. Pass `redirectTo` for a flow of the caller's own; without one
+ *   the sign-in keeps the user on the page they're on, or goes to Markets
+ *   from the landing page (lib/app-entry signInLandingFor), read on click.
  */
-export default function AuthButton({ redirectTo = SIGN_IN_LANDING }: { redirectTo?: string }) {
+export default function AuthButton({ redirectTo }: { redirectTo?: string }) {
   const router = useRouter()
   const { address, signingIn, connectAndSignIn, signOut } = useSession()
 
@@ -40,7 +39,7 @@ export default function AuthButton({ redirectTo = SIGN_IN_LANDING }: { redirectT
 
   return (
     <button
-      onClick={() => connectAndSignIn(redirectTo)}
+      onClick={() => connectAndSignIn(redirectTo ?? signInLandingHere())}
       disabled={signingIn}
       type="button"
       title="Sign in with your wallet — connect and sign in one step"

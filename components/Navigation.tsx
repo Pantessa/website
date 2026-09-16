@@ -15,7 +15,6 @@ import { cdpEnabled } from '@/lib/cdp-embedded'
 import { YeetfulMark } from '@/components/Logo'
 import { AskDoorTrigger } from '@/components/AskDoor'
 import { isMarketsPath } from '@/lib/markets'
-import { SIGN_IN_LANDING } from '@/lib/app-entry'
 import SiteAccount, { signInLabel, signInPill } from '@/components/SiteAccount'
 import SpineLink from '@/components/SpineLink'
 
@@ -97,18 +96,14 @@ export default function Navigation() {
   // email).
   const disconnected = !isConnected && !sessionAddress
 
-  // A sign-in from the brochure is a fresh login, and a fresh login lands on
-  // Markets (lib/app-entry SIGN_IN_LANDING; 2026-09-11, Nate: "not the
-  // setting / dashboard"). The app surfaces, where a sign-in keeps you on
-  // the same URL, render no brochure nav at all (the returns above); their
-  // own account seat (SiteAccount) carries that redirect.
-  const signInRedirect = SIGN_IN_LANDING
-
-  // The disconnected sign-in affordance (one control) — shared everywhere.
+  // The disconnected sign-in affordance (one control) — shared everywhere. It
+  // names no destination: a sign-in from the landing page goes on to Markets,
+  // and one from any other page (the docs, a link board, a share page)
+  // keeps you there (lib/app-entry signInLandingFor, 2026-09-16).
   const disconnectedCta = cdpEnabled ? (
-    <CreateAccountButton className={signInPill} label={signInLabel} redirectTo={signInRedirect} />
+    <CreateAccountButton className={signInPill} label={signInLabel} />
   ) : (
-    <AuthButton redirectTo={signInRedirect} />
+    <AuthButton />
   )
 
   // DESKTOP account cluster (top bar):
@@ -121,7 +116,7 @@ export default function Navigation() {
   // NavAccount already covers the connect-to-pay case (it offers "Sign in with
   // wallet" + Wallet details while connected-but-not-signed-in), so chat now
   // shows the exact same dropdown as everywhere else.
-  const desktopAccount = <SiteAccount redirectTo={signInRedirect} />
+  const desktopAccount = <SiteAccount />
 
   // MOBILE drawer account cluster — the drawer has room, so it stays explicit
   // (Dashboard link + auth + wallet) rather than the collapsed desktop pill.

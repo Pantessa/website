@@ -14,9 +14,8 @@ import {
 import Caret from '@/components/Caret'
 import WalletPanel from '@/components/WalletPanel'
 import { cn } from '@/lib/utils'
-import { useSession } from '@/lib/session'
-import { isMarketsPath } from '@/lib/markets'
-import { SIGN_IN_LANDING, isPublicAppPath } from '@/lib/app-entry'
+import { signInLandingHere, useSession } from '@/lib/session'
+import { isPublicAppPath } from '@/lib/app-entry'
 
 /**
  * Consolidated account control for the brochure (non-chat) surface.
@@ -46,16 +45,6 @@ export default function NavAccount() {
 
   const authed = !!sessionAddress
   const closeNow = useCallback(() => setOpen(false), [])
-
-  // On the chat surface this pill IS the chat account control, so signing in
-  // from it must keep the user on chat (query included), not send them to the
-  // dashboard. The markets surface (where the pill docks in the watchlist
-  // column) is the same: sign in beside the chart, stay on the chart.
-  // Everywhere else it's a fresh login, and a fresh login lands on Markets
-  // (lib/app-entry SIGN_IN_LANDING), not the dashboard, which is settings.
-  const stayHere = pathname.startsWith('/chat') || isMarketsPath(pathname)
-  const signInRedirect =
-    stayHere && typeof window !== 'undefined' ? window.location.pathname + window.location.search : SIGN_IN_LANDING
 
   useEffect(() => closeNow(), [pathname, closeNow])
   useEffect(() => {
@@ -133,7 +122,10 @@ export default function NavAccount() {
                   disabled={signingIn}
                   onClick={() => {
                     closeNow()
-                    connectAndSignIn(signInRedirect)
+                    // Signing in keeps you where you are: a chat, an intent
+                    // link, a chart. Only a sign-in from the landing page goes
+                    // on to Markets (lib/app-entry signInLandingFor).
+                    connectAndSignIn(signInLandingHere())
                   }}
                 >
                   <LogIn width={15} height={15} strokeWidth={2.25} />

@@ -17,9 +17,9 @@ import { CDP_INIT_PATIENCE_MS, emailLaneHint, walletLaneChips } from '@/lib/wall
 import { WALLET_MARKS } from '@/components/wallet-marks'
 import { PantessaMark } from '@/components/Logo'
 import { cn } from '@/lib/utils'
-import { useSession } from '@/lib/session'
+import { currentAppHref, signInLandingHere, useSession } from '@/lib/session'
 import { OAUTH_INTENT_KEY, type OAuthIntent } from '@/components/CdpOAuthReturn'
-import { SIGN_IN_LANDING } from '@/lib/app-entry'
+import { sameAppHref } from '@/lib/app-entry'
 
 // Social providers via CDP Embedded Wallets. Enable each + set its OAuth client
 // id/secret and redirect URIs in the CDP Portal; the app needs only the project
@@ -39,8 +39,9 @@ const OAUTH_PROVIDERS = [
  * wagmi connector explicitly (it reuses the just-authenticated CDP session, so
  * there's no second prompt), then sign them in: this is the account door (sign
  * in to keep, rule 6), the dashboard's gate needs a SIWE session, and the
- * embedded wallet signs the message without a prompt. Then they land on
- * `redirectTo`. The Google lane does the same after its redirect
+ * embedded wallet signs the message without a prompt. Then they land on the
+ * door's `redirectTo`, or, without one, stay on the page they're on (Markets
+ * from the landing page). The Google lane does the same after its redirect
  * (CdpOAuthReturn). A connect-only door (`walletConnectOnly`) stops at the
  * connect on every lane.
  *
@@ -54,7 +55,7 @@ export default function CreateAccountButton({
   className,
   style,
   label = 'Create an account',
-  redirectTo = SIGN_IN_LANDING,
+  redirectTo,
   walletConnectOnly = false,
   onOpenChange,
 }: {
@@ -63,7 +64,11 @@ export default function CreateAccountButton({
    *  creator's accent (brandCtaStyle). */
   style?: CSSProperties
   label?: ReactNode
-  /** Where to land after a successful sign-in (email or wallet). */
+  /** Where to land after a successful sign-in, when the door has a flow of
+   *  its own (a SpineLink's target, a plan checkout). Leave it off and the
+   *  sign-in keeps the visitor on the page they're on, or goes to Markets
+   *  from the landing page (lib/app-entry signInLandingFor), read when they
+   *  act. */
   redirectTo?: string
   /** Connect-to-act surfaces (/i, /chat's connect gate): every lane only
    *  CONNECTS — no SIWE request fires (the run is the guest lane; SIWE is
@@ -105,7 +110,8 @@ export function CreateAccountModal({
   resumeAsk,
 }: {
   onClose: () => void
-  redirectTo: string
+  /** A flow target of the caller's own; see CreateAccountButton. */
+  redirectTo?: string
   walletConnectOnly?: boolean
   /** An action held on a public page (lib/use-connect-to-act). The Google
    *  lane leaves the page, so the ask rides the OAuth intent and the page
@@ -121,12 +127,16 @@ export function CreateAccountModal({
   const { signInWithOAuth } = useSignInWithOAuth()
   const { connectAsync, connectors } = useConnect()
 
+  // Where this door's sign-in lands, read when the visitor acts: the caller's
+  // flow target, else the page they're on (Markets from the landing page).
+  const landing = () => redirectTo ?? signInLandingHere()
+
   // Social sign-in is a full-page redirect to the provider. Persist the intent
   // so CdpOAuthReturn can connect wagmi, sign in (unless this door is
   // connect-only), hand a held action back to its page, and route once the
-  // browser comes back.
+  // browser comes back. The provider returns to this very page.
   function startOAuth(provider: 'google') {
-    const intent: OAuthIntent = { redirectTo, signIn: !walletConnectOnly }
+    const intent: OAuthIntent = { redirectTo: landing(), signIn: !walletConnectOnly }
     if (resumeAsk) intent.resumeAsk = resumeAsk
     try {
       sessionStorage.setItem(OAUTH_INTENT_KEY, JSON.stringify(intent))
@@ -217,18 +227,20 @@ export function CreateAccountModal({
       if (!connector) throw new Error('Embedded wallet connector unavailable.')
       await connectAsync({ connector })
       if (walletConnectOnly) {
-        // Connect to act: the connection is the whole step on this door.
+        // Connect to act: the connection is the whole step on this door. It
+        // writes no session, so staying on this page needs no refresh.
+        const to = landing()
         onClose()
-        router.push(redirectTo)
+        if (!sameAppHref(to, currentAppHref())) router.push(to)
       } else {
         // Sign in to keep: mint the SIWE session the account surfaces gate
         // on (the dashboard sent every account made here home without one).
         // The embedded wallet signs without a prompt, in the session rather
         // than this door: the connect can swap the door's host for the
         // account pill (the nav's does) and take the door with it, and the
-        // sign-in still lands on redirectTo. A slow one shows the silent
+        // sign-in still lands where it was headed. A slow one shows the silent
         // "Signing you in…" card.
-        await signInOnceConnected(redirectTo)
+        await signInOnceConnected(landing())
         onClose()
       }
     } catch (err) {
@@ -282,7 +294,7 @@ export function CreateAccountModal({
               className="ca__wallet ca__wallet--lead"
               onClick={() => {
                 if (walletConnectOnly) openConnectModal?.()
-                else connectAndSignIn(redirectTo)
+                else connectAndSignIn(landing())
                 onClose()
               }}
             >

@@ -26,7 +26,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useAccount } from 'wagmi'
 import { Check, Copy, GitFork, Loader2, LogIn, Plus, ScanLine, Wand2, X } from 'lucide-react'
-import { useSession } from '@/lib/session'
+import { signInLandingHere, useSession } from '@/lib/session'
 import TileBar from '@/components/MosaicTileBar'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import CreateAccountButton from '@/components/CreateAccountButton'
@@ -64,14 +64,6 @@ function coarseAge(iso: string): string {
   const hours = Math.floor(mins / 60)
   if (hours < 48) return `${hours}h ago`
   return `${Math.floor(hours / 24)}d ago`
-}
-
-/** Where to land after sign-in: this page, query included (the
- *  ChatSignInGate.hereWithQuery pattern — a hardcoded path would drop the
- *  ?from= fork door on the post-sign-in redirect). */
-function hereWithQuery(): string {
-  if (typeof window === 'undefined') return '/mosaic'
-  return window.location.pathname + window.location.search
 }
 
 /** The tile bar — width IS the percent (flex-grow carries it), small tiles
@@ -340,6 +332,8 @@ export default function MosaicStudio({ from }: { from?: string }) {
     </span>
   )
 
+  // Signing in keeps you in the studio, ?from= fork door included: the door
+  // names no destination (lib/app-entry signInLandingFor, read on press).
   const signInDoor = cdpEnabled ? (
     <CreateAccountButton
       className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[var(--accent)] text-black text-sm font-semibold hover:opacity-90 transition-opacity"
@@ -349,11 +343,10 @@ export default function MosaicStudio({ from }: { from?: string }) {
           <span>Sign in to mint</span>
         </>
       }
-      redirectTo={hereWithQuery()}
     />
   ) : (
     <button
-      onClick={() => connectAndSignIn(hereWithQuery())}
+      onClick={() => connectAndSignIn(signInLandingHere())}
       disabled={signingIn}
       type="button"
       title="Connect a wallet and sign in — one step"
