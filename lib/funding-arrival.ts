@@ -17,13 +17,18 @@
 // Pure parts (detection, schedule, key/TTL) live here for the harness; the
 // React hook that drives them is lib/use-funding-arrival.ts.
 
-import type { OnrampNetwork } from '@/lib/onramp'
+import type { OnrampAsset, OnrampNetwork } from '@/lib/onramp'
 
 export interface FundWait {
   /** Lowercased destination wallet. */
   address: string
   network: OnrampNetwork
-  /** The ask restated — what fires when the money is here. */
+  /** What was bought, when the surface that opened the on-ramp says (the
+   *  watchlist rail's card door does). Absent on a chat chip's wait. */
+  asset?: OnrampAsset
+  /** The ask restated — what fires when the money is here. EMPTY for a plain
+   *  top-up (the watchlist rail's card door): there is nothing to continue,
+   *  and since no fund chip carries an empty resume, no chip adopts it. */
   resume: string
   /** What the chip said ("Add $25 with card or bank → buy $10 of AAPL"). */
   label: string
@@ -56,6 +61,19 @@ export function fundWaitKey(address: string): string {
 
 export function fundWaitExpired(w: FundWait, now = Date.now()): boolean {
   return now - w.openedAt > FUND_WAIT_TTL_MS
+}
+
+/** Which wait the watcher compares against when its caller renders again.
+ *  The same purchase (address, network, openedAt) keeps the copy the watcher
+ *  holds, because that copy carries the baseline the first read wrote and the
+ *  caller's object never learns it. A different purchase, or none, replaces it.
+ *  Until 2026-09-16 the watcher took the caller's object on every render, so
+ *  each poll reset the baseline and the next read became a new baseline
+ *  instead of an arrival. A purchase was only noticed after a reload (the
+ *  stored copy has the baseline), never in the tab that opened it. */
+export function keepWatchedWait(held: FundWait | null, next: FundWait | null): FundWait | null {
+  if (held && next && held.address === next.address && held.network === next.network && held.openedAt === next.openedAt) return held
+  return next
 }
 
 /** How long until the next read, given how long we've been watching. Tight
@@ -96,23 +114,6 @@ export function detectArrival(
   const usdEth = ethUsd !== null ? deltaEth * ethUsd : null
   const usd = usdEth === null && !stableIn ? null : Math.round(((usdEth ?? 0) + deltaStable) * 100) / 100
   return { deltaEth: ethIn ? deltaEth : 0, deltaStable: stableIn ? deltaStable : 0, usd }
-}
-
-/** Which wait the watcher reads on this render. The surface hands the hook the
- *  wait it OPENED with, baseline null (ClarifyChips keeps it in state); the
- *  loop writes the first read's baseline onto its own copy. Re-pointing at the
- *  surface's object on every render threw that baseline away, so every poll
- *  re-baselined, and a purchase that landed between two reads BECAME the
- *  baseline and was never reported. Only a reload, which restores a stored
- *  baseline, ever saw an arrival (found 2026-09-16 driving a real chip click).
- *
- *  So: while it is the same wait (address, network, openedAt), a copy that has
- *  its baseline wins. A different wait, or none, replaces it. */
-export function watchedWait(current: FundWait | null, incoming: FundWait | null): FundWait | null {
-  if (!incoming || !current) return incoming
-  const same = current.address === incoming.address && current.network === incoming.network && current.openedAt === incoming.openedAt
-  if (!same) return incoming
-  return current.baselineEth !== null && current.baselineStable !== null ? current : incoming
 }
 
 /** "0.0112 ETH" / "$27.69 of ETH" / "25 USDC" — one phrase for banners. */

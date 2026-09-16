@@ -303,6 +303,12 @@ interface YeetfulStore {
    *  NOT persisted. */
   composerSend: { text: string; mcps?: string[] } | null
   setComposerSend: (send: { text: string; mcps?: string[] } | null) => void
+  /** The apps a chip's send turned on (ChatInterface sendChip) and when. A
+   *  working-set restore that lands AFTER (the wallet's DB copy) keeps them,
+   *  so a late copy never takes a chip's Aave out from under its thread.
+   *  NOT persisted. */
+  chipApps: { ids: string[]; at: number } | null
+  noteChipApps: (ids: string[]) => void
   /** The job/recurring-buy the rail opened a detail card for (position, PnL,
    *  pending signatures). Session state — never persisted. */
   jobDetail: { type: 'job' | 'dca'; id: string } | null
@@ -844,6 +850,8 @@ export const useYeetfulStore = create<YeetfulStore>()(
       setComposerPrefill: (prompt) => set({ composerPrefill: prompt }),
       composerSend: null,
       setComposerSend: (send) => set({ composerSend: send }),
+      chipApps: null,
+      noteChipApps: (ids) => set((s) => ({ chipApps: { ids: [...new Set([...(s.chipApps?.ids ?? []), ...ids])], at: Date.now() } })),
       jobDetail: null,
       setJobDetail: (detail) => set({ jobDetail: detail }),
       chartDetail: null,
