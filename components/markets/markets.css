@@ -168,12 +168,11 @@ button.mk-held:hover { border-color: var(--accent); }
   .mk-overview > .mkt-card[aria-label="Performance"] { grid-area: perf; }
   .mk-overview > .mkt-card[aria-label="Key stats"] { grid-area: stats; }
   .mk-overview { grid-template-areas: "lead flow" "perf stats" "routes routes"; }
-  .mk-trade { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "routes routes" "order compound" "position position" "chat chat"; }
+  .mk-trade { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "routes routes" "order compound" "position position"; }
   .mk-trade__routes { grid-area: routes; }
   .mk-trade > .mkt-order { grid-area: order; }
   .mk-trade__compound { grid-area: compound; }
   .mk-trade__position { grid-area: position; }
-  .mk-trade > .mkt-trade__chat { grid-area: chat; }
 }
 
 /* ── The rail's Morning tape seat (AI fills it; empty on an empty list) ──── */

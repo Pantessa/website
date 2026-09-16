@@ -20814,12 +20814,12 @@ async function main() {
     )
     const tTrade = flat(await (await fetch(`${BASE}/t/AAPL?tab=trade`)).text())
     check(
-      'mk2/markets: Trade mounts RouteTable → the order panel → CompoundComposer → PositionPanel → the runtime seat, each non-empty in the server HTML',
+      'mk2/markets: Trade mounts RouteTable → the order panel → CompoundComposer → PositionPanel, each non-empty in the server HTML, and no in-page runtime seat (asks run in the app since 2026-09-16)',
       seat(tTrade, 'mk-trade__routes') && seat(tTrade, 'mk-trade__compound') && seat(tTrade, 'mk-trade__position') &&
         tTrade.indexOf('class="mk-trade__routes"') < tTrade.indexOf('class="mkt-card mkt-order"') &&
         tTrade.indexOf('class="mkt-card mkt-order"') < tTrade.indexOf('class="mk-trade__compound"') &&
         tTrade.indexOf('class="mk-trade__compound"') < tTrade.indexOf('class="mk-trade__position"') &&
-        tTrade.indexOf('class="mk-trade__position"') < tTrade.indexOf('class="mkt-card mkt-trade__chat"'),
+        !tTrade.includes('mkt-trade__chat'),
     )
     // The pure pieces under the header + the table.
     check(
@@ -21805,8 +21805,15 @@ async function main() {
     )
 
     check(
-      'arrival/core: decision 1 — /t/<symbol> keeps EXECUTING IN PLACE on its Trade tab (the chart is the order form); SymbolPage hands nothing off',
-      !(await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')).includes('writeArrivalIntent'),
+      'arrival/core: decision 1 reversed (2026-09-16, "Buy AMAT goes nowhere") — every /t/<symbol> chip hands its ask to the app through the act door (writeArrivalIntent → /chat, the ?prompt= prefill as the fallback), and the Trade tab mounts no in-page ChatInterface',
+      await (async () => {
+        const sym = await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')
+        const trade = await readFile('components/markets/tabs/TradeTab.tsx', 'utf8')
+        return /const handed = writeArrivalIntent\(\{ text: ask, from: pathname \?\? '' \}\)\s*\n\s*router\.push\(handed \? ARRIVAL_APP_HREF : promptHref\(ask\)\)/.test(sym) &&
+          /useConnectToAct\(\{ run: runAsk, redirectFor: promptHref \}\)/.test(sym) &&
+          !/setTab\('trade'\)/.test(sym) &&
+          !/ChatInterface/.test(trade.replace(/\/\/[^\n]*/g, ''))
+      })(),
     )
 
     // The receiver: one surface, one take, held until it can actually run.
@@ -22022,7 +22029,8 @@ async function main() {
       { name: 'from /i/<slug> → source', rec: { ...ok, from: '/i/buy-aapl' }, want: 'source' },
       { name: 'from /embed → source', rec: { ...ok, from: '/embed' }, want: 'source' },
       { name: 'from /chat → source', rec: { ...ok, from: '/chat' }, want: 'source' },
-      { name: 'from /t/AAPL (the symbol page runs in place, decision 1) → source', rec: { ...ok, from: '/t/AAPL' }, want: 'source' },
+      { name: 'from /tx (a path that only starts like a symbol page) → source', rec: { ...ok, from: '/tx' }, want: 'source' },
+      { name: 'from /t/AMAT (a symbol page hands its chips to the app, 2026-09-16) → ok', rec: { ...ok, from: '/t/AMAT' }, want: 'ok' },
       { name: 'from /marketsX (a prefix, not a path) → source', rec: { ...ok, from: '/marketsx' }, want: 'source' },
       { name: 'from /markets?x=1 (a pathname never carries a query) → source', rec: { ...ok, from: '/markets?x=1' }, want: 'source' },
       { name: 'from /markets#x → source', rec: { ...ok, from: '/markets#x' }, want: 'source' },
@@ -22069,8 +22077,8 @@ async function main() {
     const fenceSrc = await readFile('lib/arrival-fence.ts', 'utf8')
     const marketsAiSrc = await readFile('lib/markets-ai.ts', 'utf8')
     check('arrival fence: lib/markets-ai.ts fenceAsk reads ASK_ADDRESS_RE / ASK_ENS_RE / ASK_URL_RE from lib/arrival-fence (no local copy)', marketsAiSrc.includes("import { ASK_ADDRESS_RE as ADDRESS_RE, ASK_ENS_RE as ENS_RE, ASK_URL_RE as URL_RE } from './arrival-fence'") && !/^const (ADDRESS|ENS|URL)_RE = /m.test(marketsAiSrc) && aiFenceAsk('Buy $25 of 0xbeef', 'AAPL').ok === false && aiFenceAsk('Buy $25 of AAPL for vitalik.eth', 'AAPL').ok === false && aiFenceAsk('Buy $25 of AAPL www.x.y', 'AAPL').ok === false)
-    check('arrival fence: the module is pure — imports only lib/intent-links (isTransferShaped) + the TTL constant, touches no window / document / storage / fetch, and reads the TTL from CORE\'s module so the two cannot disagree', /^import \{ isTransferShaped \} from '\.\/intent-links'$/m.test(fenceSrc) && /^import \{ ARRIVAL_TTL_MS \} from '\.\/arrival-intent'$/m.test(fenceSrc) && (fenceSrc.match(/^import /gm) ?? []).length === 2 && !/\b(window|document|sessionStorage|localStorage|fetch|navigator)\b/.test(fenceSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, '')) && ARRIVAL_SOURCES.length === 1 && ARRIVAL_SOURCES[0] === '/markets' && ARRIVAL_MAX_TEXT === 280 && ARRIVAL_MAX_MCPS === 6 && ARRIVAL_FUTURE_SKEW_MS === 5_000)
-    check('arrival fence: arrivalSourceAllowed — /markets and /markets/<sub> pass; /marketsx, /markets?q, /markets#h, /, /t/ETH, /chat, /i/x, /embed do not', arrivalSourceAllowed('/markets') && arrivalSourceAllowed('/markets/') && arrivalSourceAllowed('/markets/earn') && !arrivalSourceAllowed('/marketsx') && !arrivalSourceAllowed('/markets?q=1') && !arrivalSourceAllowed('/markets#h') && !arrivalSourceAllowed('/') && !arrivalSourceAllowed('/t/ETH') && !arrivalSourceAllowed('/chat') && !arrivalSourceAllowed('/i/x') && !arrivalSourceAllowed('/embed') && !arrivalSourceAllowed(''))
+    check('arrival fence: the module is pure — imports only lib/intent-links (isTransferShaped) + the TTL constant, touches no window / document / storage / fetch, and reads the TTL from CORE\'s module so the two cannot disagree', /^import \{ isTransferShaped \} from '\.\/intent-links'$/m.test(fenceSrc) && /^import \{ ARRIVAL_TTL_MS \} from '\.\/arrival-intent'$/m.test(fenceSrc) && (fenceSrc.match(/^import /gm) ?? []).length === 2 && !/\b(window|document|sessionStorage|localStorage|fetch|navigator)\b/.test(fenceSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, '')) && ARRIVAL_SOURCES.length === 2 && ARRIVAL_SOURCES[0] === '/markets' && ARRIVAL_SOURCES[1] === '/t' && ARRIVAL_MAX_TEXT === 280 && ARRIVAL_MAX_MCPS === 6 && ARRIVAL_FUTURE_SKEW_MS === 5_000)
+    check('arrival fence: arrivalSourceAllowed — /markets, /markets/<sub> and /t/<SYM> pass; /marketsx, /markets?q, /markets#h, /tx, /, /chat, /i/x, /embed do not', arrivalSourceAllowed('/markets') && arrivalSourceAllowed('/markets/') && arrivalSourceAllowed('/markets/earn') && arrivalSourceAllowed('/t/ETH') && arrivalSourceAllowed('/t/AMAT') && !arrivalSourceAllowed('/marketsx') && !arrivalSourceAllowed('/markets?q=1') && !arrivalSourceAllowed('/markets#h') && !arrivalSourceAllowed('/tx') && !arrivalSourceAllowed('/t?x=1') && !arrivalSourceAllowed('/') && !arrivalSourceAllowed('/chat') && !arrivalSourceAllowed('/i/x') && !arrivalSourceAllowed('/embed') && !arrivalSourceAllowed(''))
 
     // ── The ladder proof ── every sentence a /markets sender can COMPOSE lands
     // on a native gate (kind:'action') or an honest deterministic clarify —

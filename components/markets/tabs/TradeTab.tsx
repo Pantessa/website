@@ -5,22 +5,20 @@
 // The panel composes ONE sentence an existing parser accepts (buy/sell →
 // the swap layer with 4663 inference for stocks; DCA → lib/dca; protect →
 // the Spot Guardian on Base or the HL Guardian for perps) and SENDS it: the
-// same ChatInterface the /i runtime mounts in `simple` mode takes the ask as
-// an injected prompt, so the guarded build and the sign card render right
-// here under the chart. Connect to act, sign in to keep (rule 6 — every
+// frame's act door hands it to the app, which runs it on arrival with the
+// dapps it needs (lib/arrival-intent; 2026-09-16 — the build used to land in
+// a panel at the foot of this tab, where nobody saw it). Connect to act, sign in to keep (rule 6 — every
 // sign-in CTA inside ChatInterface is already the unified door). The wallet
 // signature is the only gate; the panel itself never touches funds.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import dynamic from 'next/dynamic'
+import { useMemo, useState } from 'react'
 import type { ChartPair } from '@/lib/charts'
 import { symbolName } from '@/lib/markets'
-import { useYeetfulStore } from '@/lib/store'
 import RouteTable from '@/components/markets/slots/RouteTable'
 import CompoundComposer from '@/components/markets/slots/CompoundComposer'
 import PositionPanel from '@/components/markets/slots/PositionPanel'
 import { useSession } from '@/lib/session'
-import { AMOUNTS, CADENCES, SIDE_LABEL, STOPS, composeAsk, sideOf, sidesFor, type Cadence, type InjectedPrompt, type TradeAsk, type TradeSide } from '@/lib/trade-asks'
+import { AMOUNTS, CADENCES, SIDE_LABEL, STOPS, composeAsk, sideOf, sidesFor, type Cadence, type TradeAsk, type TradeSide } from '@/lib/trade-asks'
 
 // The grammar (sides a pair can offer, the sentence per side, the default
 // chip row) lives in lib/trade-asks — pure, shared with the header strip,
@@ -28,22 +26,15 @@ import { AMOUNTS, CADENCES, SIDE_LABEL, STOPS, composeAsk, sideOf, sidesFor, typ
 export { composeAsk, sideOf, sidesFor, tradeAsks } from '@/lib/trade-asks'
 export type { InjectedPrompt, TradeAsk, TradeSide } from '@/lib/trade-asks'
 
-// ChatInterface is heavy (wagmi, the store, every card); load it only when a
-// visitor actually sends an order from this page.
-const ChatInterface = dynamic(() => import('@/components/ChatInterface'), { ssr: false })
-
 export default function TradeTab({
   symbol,
   pair,
-  prompt,
   onAsk,
   onAskText,
   last,
 }: {
   symbol: string
   pair: ChartPair
-  /** The ask in flight (set by the frame when a chip or this panel fires). */
-  prompt?: InjectedPrompt | null
   onAsk?: (ask: TradeAsk) => void
   /** The act door for a bare ask string (the slots' onAsk). */
   onAskText?: (ask: string) => void
@@ -53,31 +44,14 @@ export default function TradeTab({
   const askText = onAskText ?? ((a: string) => onAsk?.({ side: sideOf(a), label: a, ask: a }))
   const { walletAddress } = useSession()
   const sides = useMemo(() => sidesFor(pair), [pair])
-  const [side, setSide] = useState<TradeSide>(() => {
-    const s = prompt ? sideOf(prompt.text) : 'buy'
-    return sides.includes(s) ? s : sides[0]
-  })
-  // A chip fired from Overview lands the panel on its own amount ($50 →
-  // the custom slot; a preset value lights its chip).
-  const firedUsd = prompt ? Number(prompt.text.match(/\$(\d+)/)?.[1] ?? NaN) : NaN
-  const [usd, setUsd] = useState<number>(AMOUNTS.includes(firedUsd as (typeof AMOUNTS)[number]) ? firedUsd : 10)
-  const [custom, setCustom] = useState<string>(Number.isFinite(firedUsd) && !AMOUNTS.includes(firedUsd as (typeof AMOUNTS)[number]) ? String(firedUsd) : '')
+  const [side, setSide] = useState<TradeSide>(sides[0])
+  const [usd, setUsd] = useState<number>(10)
+  const [custom, setCustom] = useState<string>('')
   const [pct, setPct] = useState<number>(5)
   const [cadence, setCadence] = useState<Cadence>('weekly')
 
   const amount = custom.trim() ? Math.max(1, Math.floor(Number(custom) || 0)) : usd
   const ask = composeAsk(pair, side, { usd: amount, pct, cadence })
-
-  // The symbol page is its own thread — never append an order into
-  // whatever chat the visitor had open (the /i runtime's rule).
-  const setCurrentChatId = useYeetfulStore((s) => s.setCurrentChatId)
-  const armed = !!prompt
-  const detachedRef = useRef(false)
-  useEffect(() => {
-    if (!armed || detachedRef.current) return
-    detachedRef.current = true
-    setCurrentChatId(null)
-  }, [armed, setCurrentChatId])
 
   const send = () => {
     onAsk?.({ side, label: SIDE_LABEL[side](pair), ask })
@@ -201,19 +175,6 @@ export default function TradeTab({
         <PositionPanel symbol={symbol} pair={pair} address={walletAddress ?? undefined} onAsk={askText} />
       </div>
 
-      {/* The build lands here — the same runtime as an intent link */}
-      <section className="mkt-card mkt-trade__chat" aria-label="Your order" data-armed={armed ? '1' : '0'}>
-        {armed ? (
-          <div className="mkt-trade__runtime">
-            <ChatInterface simple injectedPrompt={prompt} />
-          </div>
-        ) : (
-          <div className="mkt-trade__empty">
-            <p className="mkt-card__title">Your order builds here.</p>
-            <p className="mkt-card__note">Pick a side and an amount, send the sentence, and the guarded transaction appears in this panel for your wallet to sign.</p>
-          </div>
-        )}
-      </section>
     </div>
   )
 }
