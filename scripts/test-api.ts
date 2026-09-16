@@ -20484,6 +20484,23 @@ async function main() {
         ppSrc.includes('address?: string') && ppSrc.includes("export { positionSummary, positionIsEmpty } from '@/lib/symbol-position'") &&
         rtSrc.includes("fetch(`/api/markets/routes?") && ppSrc.includes('/api/markets/position?symbol='),
     )
+    // The route table's columns line up across EVERY row (2026-09-16): each row
+    // used to be its own grid with `auto` fee/tags/chip columns, so a wider chip
+    // or a NEEDS A POSITION tag moved that row's quote and fee (51px of drift
+    // on /t/NVDA, 199px on /t/ETH, chips hanging off the card at 1024px). The
+    // groups own the tracks, group → list → row subgrid them, and the card's
+    // own width (a size container, not the viewport) picks the layout.
+    const tradeCss = (await readFile('components/markets/trade/trade.css', 'utf8')).replace(/\s+/g, ' ')
+    const cqBlock = (min: number) => tradeCss.split(`@container mkt-routes (min-width: ${min}px) {`)[1]?.split(/@container|@media/)[0] ?? ''
+    check(
+      'MK2/EXEC route table: one set of columns for the whole table — .mkt-routes__groups owns the tracks (wide: six, fee/tags/chip max-content), group → list → row subgrid them with the parent gap, and the card is its own size container',
+      /\.mkt-routes \{[^}]*container: mkt-routes \/ inline-size;/.test(tradeCss) &&
+        /\.mkt-routes__group, \.mkt-routes__groups \.mkt-routes__list, \.mkt-routes__groups \.mkt-route \{ display: grid; grid-template-columns: subgrid; column-gap: normal; \}/.test(cqBlock(520)) &&
+        /\.mkt-routes__groups \{ grid-template-columns: 26px minmax\([^)]*\) minmax\([^)]*\) max-content max-content max-content; \}/.test(cqBlock(800)) &&
+        // No row ever sizes its own content columns again at medium/wide.
+        !/\.mkt-route \{[^}]*grid-template-columns:[^};]*\bauto\b[^};]*\bauto\b/.test(tradeCss),
+      `520:${cqBlock(520).length} 800:${cqBlock(800).length}`,
+    )
   }
 
   // ── MK2/MARKETS ──────────────────────────────────────────────────────────

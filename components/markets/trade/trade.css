@@ -20,8 +20,18 @@
 .mkt-exec__chip--sell:hover { background: color-mix(in oklab, var(--sell) 12%, transparent); border-color: var(--sell); }
 .mkt-exec__chip--neutral { color: var(--fg); }
 
-/* ── RouteTable ─────────────────────────────────────────────────────────── */
-.mkt-routes { display: flex; flex-direction: column; gap: 12px; }
+/* ── RouteTable ───────────────────────────────────────────────────────────
+   ONE set of columns for the whole table. A row that sized its own `auto`
+   columns let a wide chip or a NEEDS A POSITION tag shift its quote and fee
+   off every other row's. .mkt-routes__groups owns the tracks; group → list
+   → row subgrid them (`column-gap: normal` on a subgrid = the parent's
+   gap). The card is a size container, so its own width picks the layout:
+     ≥ 800px   wide    mark · venue · quote · fee · tags · chip, one line
+     520–799   medium  mark · venue · quote · chip; fee + tags underneath
+     < 520     narrow  each row its own grid: venue + chip, quote, meta
+   The base rules ARE the narrow layout — the loading ghosts use it at every
+   width (they sit outside .mkt-routes__groups). */
+.mkt-routes { display: flex; flex-direction: column; gap: 16px; container: mkt-routes / inline-size; }
 .mkt-routes__head { align-items: flex-start; }
 .mkt-routes__controls { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .mkt-routes__presets { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
@@ -31,32 +41,36 @@
   color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer;
 }
 .mkt-routes__filter.is-on { color: var(--fg); border-color: var(--fg); }
-.mkt-routes__groups { display: flex; flex-direction: column; gap: 14px; }
-.mkt-routes__group { display: flex; flex-direction: column; gap: 4px; }
-.mkt-routes__kind { display: flex; align-items: baseline; gap: 10px; font-size: 10px; letter-spacing: 0.14em; color: var(--muted-2); padding: 2px 0; }
+.mkt-routes__groups { display: flex; flex-direction: column; gap: 26px; }
+.mkt-routes__group { display: flex; flex-direction: column; }
+.mkt-routes__kind { display: flex; align-items: baseline; gap: 10px; font-size: 10px; letter-spacing: 0.14em; color: var(--muted-2); padding: 0 0 10px; }
 .mkt-routes__kind-sub { letter-spacing: 0.02em; text-transform: none; color: var(--muted-2); opacity: 0.8; }
 .mkt-routes__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-top: 1px solid var(--line); }
 .mkt-route {
-  display: grid; grid-template-columns: 26px minmax(96px, 1.1fr) minmax(120px, 1.4fr) auto auto auto; align-items: center; gap: 10px;
-  padding: 9px 0; border-bottom: 1px solid var(--line); min-width: 0;
+  display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; column-gap: 12px; row-gap: 6px; align-items: center;
+  padding: 14px 0; border-bottom: 1px solid var(--line); min-width: 0;
 }
 .mkt-route.is-best { background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 10%, transparent), transparent 60%); }
-.mkt-route__mark { width: 26px; height: 26px; display: inline-grid; place-items: center; border-radius: 8px; background: var(--surf-2, var(--surf-1)); color: var(--fg); overflow: hidden; }
+.mkt-route__mark { grid-column: 1; grid-row: 1 / span 3; align-self: start; width: 26px; height: 26px; display: inline-grid; place-items: center; border-radius: 8px; background: var(--surf-2, var(--surf-1)); color: var(--fg); overflow: hidden; }
 .mkt-route__lettermark { font-size: 9px; letter-spacing: 0.06em; color: var(--muted); }
-.mkt-route__venue { display: flex; flex-direction: column; min-width: 0; }
+.mkt-route__venue { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .mkt-route__name { font-size: 13px; font-weight: 600; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mkt-route__chain { font-size: 10px; letter-spacing: 0.06em; color: var(--muted-2); white-space: nowrap; }
-.mkt-route__num { display: flex; flex-direction: column; min-width: 0; }
-.mkt-route__val { font-size: 14px; font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mkt-route__chain { font-size: 10px; letter-spacing: 0.06em; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mkt-route__num { grid-column: 2 / -1; grid-row: 2; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.mkt-route__num > * { max-width: 100%; }
+.mkt-route__val { font-size: 14px; font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mkt-route__val--soft { font-weight: 500; color: var(--muted); }
 .mkt-route__sub { font-size: 10.5px; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mkt-route__fee { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; }
-.mkt-route__tags { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.mkt-route__meta { grid-column: 2 / -1; grid-row: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; }
+.mkt-route__fee { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }
+.mkt-route__tags { margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.mkt-route__tags:empty { display: none; }
 .mkt-route__tag { font-size: 9px; letter-spacing: 0.1em; padding: 2px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted-2); white-space: nowrap; }
 .mkt-route__tag--best { border-color: var(--accent); color: var(--accent); }
 .mkt-route__chip {
-  min-height: 32px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--accent); background: var(--accent); color: var(--ink, #0b1210);
-  font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; justify-self: end;
+  grid-column: 3; grid-row: 1; justify-self: end;
+  min-height: 32px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--accent); background: var(--accent); color: var(--ink, #0b1210);
+  font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap;
 }
 .mkt-route__chip:hover { filter: brightness(1.05); }
 .mkt-route__chip--sell { background: transparent; color: var(--sell); border-color: color-mix(in oklab, var(--sell) 55%, transparent); }
@@ -66,21 +80,47 @@
 .mkt-route--ghost .mkt-route__chip { height: 32px; width: 90px; border: 0; }
 @keyframes mkt-ghost { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.7; } }
 .mkt-routes__notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.mkt-routes__notes .mkt-card__note { margin-top: 4px; }
-.mkt-routes__foot { font-size: 10.5px; color: var(--muted-2); letter-spacing: 0.02em; line-height: 1.5; }
+.mkt-routes__notes .mkt-card__note { margin-top: 0; }
+.mkt-routes__foot { margin: 0; font-size: 10.5px; color: var(--muted-2); letter-spacing: 0.02em; line-height: 1.5; }
+.mkt-routes__notes + .mkt-routes__foot { margin-top: -14px; }
+/* The narrow layout has room for a phone's longest chip only a notch smaller. */
+@container mkt-routes (max-width: 519.98px) {
+  .mkt-route__chip { padding: 0 11px; font-size: 12px; }
+}
+
+/* medium + wide: the shared tracks (subgrid through group → list → row) */
+@container mkt-routes (min-width: 520px) {
+  .mkt-routes__groups {
+    display: grid; align-items: start;
+    grid-template-columns: 26px minmax(6rem, 0.8fr) minmax(8.5rem, 1.25fr) max-content;
+    column-gap: clamp(14px, 2.4cqi, 28px); row-gap: 30px;
+  }
+  .mkt-routes__groups > *, .mkt-routes__group > *, .mkt-routes__groups .mkt-routes__list > * { grid-column: 1 / -1; min-width: 0; }
+  .mkt-routes__group, .mkt-routes__groups .mkt-routes__list, .mkt-routes__groups .mkt-route { display: grid; grid-template-columns: subgrid; column-gap: normal; }
+  .mkt-routes__groups .mkt-route__mark { grid-column: 1; grid-row: 1 / span 2; }
+  .mkt-routes__groups .mkt-route__venue { grid-column: 2; grid-row: 1; }
+  .mkt-routes__groups .mkt-route__num { grid-column: 3; grid-row: 1; flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
+  .mkt-routes__groups .mkt-route__meta { display: contents; }
+  .mkt-routes__groups .mkt-route__chip { grid-column: 4; grid-row: 1; justify-self: stretch; }
+  .mkt-routes__groups .mkt-route__fee { grid-column: 2 / 4; grid-row: 2; }
+  .mkt-routes__groups .mkt-route__tags { grid-column: 4; grid-row: 2; margin-left: 0; }
+  .mkt-routes__groups .mkt-route__more { grid-column: 2 / -1; grid-row: 3; }
+  .mkt-routes__notes { margin-top: -8px; }
+  .mkt-routes__notes + .mkt-routes__foot { margin-top: -20px; }
+}
+@container mkt-routes (min-width: 800px) {
+  .mkt-routes__groups { grid-template-columns: 26px minmax(7rem, 1fr) minmax(9rem, 1.35fr) max-content max-content max-content; }
+  .mkt-routes__groups .mkt-route__mark { grid-row: 1; align-self: center; }
+  .mkt-routes__groups .mkt-route__fee { grid-column: 4; grid-row: 1; flex-direction: column; align-items: flex-start; }
+  .mkt-routes__groups .mkt-route__tags { grid-column: 5; grid-row: 1; }
+  .mkt-routes__groups .mkt-route__chip { grid-column: 6; grid-row: 1; }
+  .mkt-routes__groups .mkt-route__more { grid-row: 2; }
+}
 
 @media (max-width: 720px) {
   .mkt-routes__head { flex-direction: column; }
   .mkt-routes__controls { align-items: flex-start; }
   .mkt-routes__presets { justify-content: flex-start; }
-  .mkt-route { grid-template-columns: 26px minmax(0, 1fr) auto; grid-template-areas: 'mark venue chip' 'mark num chip' 'mark meta chip'; row-gap: 3px; }
-  .mkt-route__mark { grid-area: mark; align-self: start; }
-  .mkt-route__venue { grid-area: venue; }
-  .mkt-route__num { grid-area: num; }
-  .mkt-route__fee { grid-area: meta; }
-  .mkt-route__tags { display: none; }
-  .mkt-route.is-best .mkt-route__fee::after { content: ' · best out'; color: var(--accent); }
-  .mkt-route__chip { grid-area: chip; align-self: center; }
 }
 
 /* ── PositionPanel ──────────────────────────────────────────────────────── */
@@ -129,8 +169,10 @@
 .mkt-routes__slider input[type='range'] { width: 110px; accent-color: var(--accent); }
 .mkt-routes__slider span { font-size: 11px; color: var(--muted); min-width: 26px; text-align: right; font-variant-numeric: tabular-nums; }
 .mkt-routes__why { margin-left: auto; background: none; border: 0; padding: 0; font: inherit; font-size: 10px; letter-spacing: 0.08em; text-transform: none; color: var(--accent); cursor: pointer; text-decoration: underline dotted; }
-.mkt-routes__rule { margin: 0 0 4px; font-size: 11.5px; line-height: 1.5; color: var(--muted); padding: 8px 10px; border: 1px dashed var(--line); border-radius: 10px; }
-.mkt-routes__list--level { border-top: 0; margin-bottom: 2px; }
+.mkt-routes__rule { margin: 0 0 10px; font-size: 11.5px; line-height: 1.5; color: var(--muted); padding: 8px 10px; border: 1px dashed var(--line); border-radius: 10px; }
+/* Your-line rows lead their group: they take the list's top rule and the
+   venue list under them drops its own (two rules 2px apart read as a seam). */
+.mkt-routes__list--level + .mkt-routes__list { border-top: 0; }
 .mkt-route--level { background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 7%, transparent), transparent 55%); }
 
 /* ── QuickAct (index-row chips; MARKETS reveals on row hover/focus) ─────── */
@@ -141,11 +183,10 @@
 .mkt-quick__chip:hover { border-color: var(--accent); }
 
 /* ── "What you'll sign" row expand ──────────────────────────────────────── */
-.mkt-route__more { grid-column: 1 / -1; display: none; margin: 2px 0 4px 36px; padding: 8px 12px; border: 1px dashed var(--line); border-radius: 10px; font-size: 11.5px; line-height: 1.5; color: var(--muted); }
+.mkt-route__more { grid-column: 1 / -1; grid-row: 4; display: none; margin: 4px 0 0; padding: 10px 14px; border: 1px dashed var(--line); border-radius: 10px; font-size: 11.5px; line-height: 1.5; color: var(--muted); }
 .mkt-route.is-open .mkt-route__more { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 4px 16px; }
 .mkt-route__more dt { font-size: 9.5px; letter-spacing: 0.12em; color: var(--muted-2); }
 .mkt-route__more dd { margin: 0; color: var(--fg); font-variant-numeric: tabular-nums; }
 .mkt-route__more .mkt-route__ticket-note { grid-column: 1 / -1; font-size: 10px; letter-spacing: 0.06em; color: var(--muted-2); }
 .mkt-route__toggle { background: none; border: 0; padding: 0; font: inherit; font-size: 10px; letter-spacing: 0.06em; color: var(--muted-2); cursor: pointer; text-decoration: underline dotted; white-space: nowrap; }
 .mkt-route__toggle:hover { color: var(--accent); }
-@media (max-width: 720px) { .mkt-route__more { margin-left: 0; } .mkt-route__fee { flex-direction: row; gap: 8px; } }

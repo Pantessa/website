@@ -265,8 +265,10 @@ export default function RouteTable({
                           <span className="mkt-route__val mono">${fmtLevel(lvl.price)}</span>
                           <span className="mkt-route__sub mono">{lvl.hint}</span>
                         </span>
-                        <span className="mkt-route__fee mono">{feeLabel(list[0]?.feeBps ?? 0)}</span>
-                        <span className="mkt-route__tags"><span className="mkt-route__tag mono">FROM YOUR CHART</span></span>
+                        <span className="mkt-route__meta">
+                          <span className="mkt-route__fee mono">{feeLabel(list[0]?.feeBps ?? 0)}</span>
+                          <span className="mkt-route__tags"><span className="mkt-route__tag mono">FROM YOUR CHART</span></span>
+                        </span>
                         <button type="button" className={`mkt-route__chip ${lvl.side === 'sell' ? 'mkt-route__chip--sell' : ''}`} title={lvl.ask} data-ask={lvl.ask} onClick={() => onAsk(lvl.ask)}>
                           {lvl.label}
                         </button>
@@ -296,20 +298,24 @@ export default function RouteTable({
                         </span>
                       )}
                     </span>
-                    <span className="mkt-route__fee mono" title="Pantessa's fee on this route (lib/fees)">
-                      {feeLabel(r.feeBps)}
-                      {r.ticket && (
-                        <>
-                          {' '}
-                          <button type="button" className="mkt-route__toggle mono" aria-expanded={open === r.id} aria-controls={`ticket-${r.id}`} onClick={() => setOpen((o) => (o === r.id ? null : r.id))}>
-                            {open === r.id ? 'hide' : "what you'll sign"}
-                          </button>
-                        </>
-                      )}
-                    </span>
-                    <span className="mkt-route__tags">
-                      {r.best && <span className="mkt-route__tag mkt-route__tag--best mono" title={BEST_OUT_RULE}>BEST OUT</span>}
-                      {r.needs === 'position' && <span className="mkt-route__tag mono">NEEDS A POSITION</span>}
+                    {/* fee + tags: one wrapping line on a phone, their own
+                        columns wider up (the meta box is display: contents) */}
+                    <span className="mkt-route__meta">
+                      <span className="mkt-route__fee mono" title="Pantessa's fee on this route (lib/fees)">
+                        {feeLabel(r.feeBps)}
+                        {r.ticket && (
+                          <>
+                            {' '}
+                            <button type="button" className="mkt-route__toggle mono" aria-expanded={open === r.id} aria-controls={`ticket-${r.id}`} onClick={() => setOpen((o) => (o === r.id ? null : r.id))}>
+                              {open === r.id ? 'hide' : "what you'll sign"}
+                            </button>
+                          </>
+                        )}
+                      </span>
+                      <span className="mkt-route__tags">
+                        {r.best && <span className="mkt-route__tag mkt-route__tag--best mono" title={BEST_OUT_RULE}>BEST OUT</span>}
+                        {r.needs === 'position' && <span className="mkt-route__tag mono">NEEDS A POSITION</span>}
+                      </span>
                     </span>
                     <button type="button" className={`mkt-route__chip ${r.side === 'sell' ? 'mkt-route__chip--sell' : ''}`} title={r.ask} data-ask={r.ask} onClick={() => onAsk(r.ask)}>
                       {r.label}
