@@ -32,6 +32,7 @@ import { validateProposedAsk } from '@/lib/markets-ai-ladder'
 import { parseChartState } from '@/lib/chart-state'
 import { alertRuleProblem, type AlertRule } from '@/lib/watchlists'
 import { symbolName } from '@/lib/markets'
+import { RATING_LABELS } from '@/lib/technicals'
 import { CANDLE_TFS } from '@/lib/candles-server'
 
 export const runtime = 'nodejs'
@@ -64,7 +65,10 @@ const Body = z.object({
   address: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
   kind: z.enum(['ask', 'explain']).default('ask'),
   bar: Bar.optional(),
-  verdict: z.string().max(80).optional(),
+  /** The gauge verdict "explain this" is about — an enum, never free text:
+   *  the explain cache is shared per (symbol, tf, bar, verdict), so one
+   *  visitor's words must never reach the sentence everyone reads (QA-2). */
+  verdict: z.enum(['strong_sell', 'sell', 'neutral', 'buy', 'strong_buy']).optional(),
   /** Harness-only: the mock's scenario. Ignored unless MK2_AI_MOCK=1. */
   mockScenario: z.string().max(32).optional(),
 })
@@ -102,7 +106,7 @@ export async function POST(req: NextRequest) {
   // ── Explain this (one sentence, cached per bar) ──────────────────────────
   if (body.kind === 'explain') {
     if (!body.bar) return NextResponse.json({ error: 'Name the bar to explain.' }, { status: 400 })
-    const key = explainCacheKey(symbol, tf, body.bar.t)
+    const key = `${explainCacheKey(symbol, tf, body.bar.t)}:${body.verdict ?? '-'}`
     const hit = explainCache.get(key)
     if (hit && Date.now() - hit.at < EXPLAIN_TTL_MS) return answer({ kind: 'answer', text: hit.text }, { deterministic: false, model: `${model} (cached)` })
     if (!modelAvailable()) return answer({ kind: 'answer', text: explainFallback(body.bar) }, { deterministic: true, model: 'none' })
@@ -110,7 +114,7 @@ export async function POST(req: NextRequest) {
     const candles = tape.loaded.series.candles
     const i = candles.findIndex((c) => c.t === body.bar!.t)
     const prev = i > 0 ? { c: candles[i - 1].c } : null
-    const text = await modelText({ system: EXPLAIN_SYSTEM, user: explainUserPrompt({ symbol, tf, bar: body.bar, prev, tech, verdict: body.verdict ?? null }), maxTokens: EXPLAIN_MAX_TOKENS, mock: { scenario } })
+    const text = await modelText({ system: EXPLAIN_SYSTEM, user: explainUserPrompt({ symbol, tf, bar: body.bar, prev, tech, verdict: body.verdict ? RATING_LABELS[body.verdict] : null }), maxTokens: EXPLAIN_MAX_TOKENS, mock: { scenario } })
     const out = cleanProse(text ?? explainFallback(body.bar), 400)
     explainCache.set(key, { at: Date.now(), text: out })
     return answer({ kind: 'answer', text: out }, { deterministic: !text, model })

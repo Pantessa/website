@@ -294,7 +294,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
               what the harness pins; the slot's body is theirs). */}
           {pair && (
             <div className="sym__exec" data-seat="ExecStrip">
-              <ExecStrip symbol={sym} pair={pair} onAsk={act} />
+              <ExecStrip symbol={sym} pair={pair} onAsk={act} last={stats?.last ?? null} />
             </div>
           )}
         </header>
@@ -303,7 +303,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
         <div ref={shellRef} className={expanded ? 'tchart sym__chart tchart--expanded' : 'tchart sym__chart'}>
           <div className="tchart__canvas">
             {pair ? (
-              <ChartMount symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} onViewport={setViewport} />
+              <ChartMount symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} onViewport={setViewport} compare={vs} />
             ) : (
               <div className="flex flex-1 items-center justify-center">
                 <div className="mkt-card max-w-md text-center">
@@ -367,7 +367,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
           <div className="sym__body" data-tab={tab}>
             {pair ? (
               tab === 'overview' ? (
-                <OverviewTab symbol={sym} pair={pair} onAsk={onAsk} onAskText={act} />
+                <OverviewTab symbol={sym} pair={pair} onAsk={onAsk} onAskText={act} last={stats?.last ?? null} />
               ) : tab === 'news' ? (
                 <NewsTab symbol={sym} pair={pair} />
               ) : tab === 'community' ? (
@@ -375,7 +375,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
               ) : tab === 'technicals' ? (
                 <TechnicalsTab symbol={sym} pair={pair} initialTf={initialTf} onAsk={onChartAsk} />
               ) : (
-                <TradeTab symbol={sym} pair={pair} prompt={prompt} onAsk={onAsk} onAskText={act} />
+                <TradeTab symbol={sym} pair={pair} prompt={prompt} onAsk={onAsk} onAskText={act} last={stats?.last ?? null} />
               )
             ) : (
               <section className="mkt-card">

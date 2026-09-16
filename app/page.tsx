@@ -49,6 +49,11 @@ const DESCRIPTION = HOME_DESCRIPTION
  *  JSX below, byte-identical (pinned in test-api). */
 const ROSTER_HOME = process.env.NEXT_PUBLIC_ROSTER_HOMEPAGE === 'true'
 
+/** The honesty strip + the links stats read the ledger at render: on a
+ *  static route they'd bake at build. ISR every 5 minutes keeps the public
+ *  numbers within five minutes of the ledger (QA-4, mk2 2026-09-15). */
+export const revalidate = 300
+
 const ROSTER_TITLE = 'Pantessa — Your wallet gets a staff. You keep the only pen.'
 const ROSTER_DESCRIPTION =
   'Hire AI agents into mandate slots — rebalance, DCA, protection, yield. They compete on public signed records and can only propose: every move lands in your inbox as a guarded, signable card. Non-custodial; firing is instant; there is nothing to withdraw.'

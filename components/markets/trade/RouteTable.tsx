@@ -14,8 +14,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getProtocolMark } from '@/components/protocol-marks'
 import { PantessaMark } from '@/components/Logo'
 import type { ChartPair } from '@/lib/charts'
+import { parseChartState } from '@/lib/chart-state'
 import {
+  BEST_OUT_RULE,
+  CHART_DRAW_KEY_PREFIX,
   DEFAULT_ROUTE_USD,
+  SPOT_CHAINS,
+  limitAtLevel,
   VENUE_KIND_LABEL,
   VENUE_KIND_ORDER,
   VENUE_NAME,
@@ -28,8 +33,28 @@ import './trade.css'
 
 export const ROUTE_AMOUNTS = [10, 25, 50, 100, 250] as const
 export const ROUTE_LEVERAGES = [1, 2, 3, 5] as const
+export const LEVERAGE_MAX = 10
+const DRAW_POLL_MS = 2_000
+
+/** The last horizontal line the trader drew on this symbol's chart (ChartMount
+ *  persists drawings per symbol in localStorage) — null when none. */
+function lastDrawnLevel(symbol: string): number | null {
+  try {
+    const raw = window.localStorage.getItem(`${CHART_DRAW_KEY_PREFIX}${symbol}`)
+    const s = raw ? parseChartState(raw) : null
+    if (!s) return null
+    for (let i = s.lines.length - 1; i >= 0; i--) {
+      const l = s.lines[i]
+      if (l.kind === 'h') return l.price
+    }
+    return null
+  } catch {
+    return null
+  }
+}
 const POLL_MS = 30_000
 
+const fmtLevel = (p: number) => (p >= 1000 ? p.toLocaleString('en-US', { maximumFractionDigits: 0 }) : p >= 1 ? p.toFixed(2) : p.toPrecision(3))
 const feeLabel = (bps: number) => (bps > 0 ? `${(bps / 100).toFixed(2)}%` : 'no fee')
 
 function VenueMark({ venue }: { venue: string }) {
@@ -60,8 +85,23 @@ export default function RouteTable({
   const [data, setData] = useState<RoutesResponse | null>(null)
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [filter, setFilter] = useState<VenueKind | 'all'>('all')
+  const [drawn, setDrawn] = useState<number | null>(null)
+  const [why, setWhy] = useState(false)
   const usd = custom.trim() ? Math.max(1, Math.floor(Number(custom) || 0)) : amount
   const seq = useRef(0)
+
+  // The trader's own price: the chart's last drawn horizontal line, re-read
+  // every 2s (same-tab writes fire no storage event) and on tab return.
+  useEffect(() => {
+    const read = () => setDrawn(lastDrawnLevel(pair.symbol))
+    read()
+    const id = setInterval(read, DRAW_POLL_MS)
+    window.addEventListener('focus', read)
+    return () => {
+      clearInterval(id)
+      window.removeEventListener('focus', read)
+    }
+  }, [pair.symbol])
 
   const load = useCallback(async () => {
     const id = ++seq.current
@@ -151,13 +191,17 @@ export default function RouteTable({
             </label>
           </div>
           {hasPerp && (
-            <div className="mkt-routes__presets" role="group" aria-label="Perp leverage">
+            <div className="mkt-routes__presets mkt-routes__lev" role="group" aria-label="Perp leverage">
               <span className="mkt-order__k mono">LEV</span>
               {ROUTE_LEVERAGES.map((l) => (
                 <button key={l} type="button" className={`mkt-order__preset ${leverage === l ? 'is-on' : ''}`} onClick={() => setLeverage(l)}>
                   {l}x
                 </button>
               ))}
+              <label className="mkt-routes__slider" title="Sets cross leverage venue-side before the order (signed 1/2), then the order (2/2) — never decorative.">
+                <input type="range" min={1} max={LEVERAGE_MAX} step={1} value={leverage} aria-label="Leverage" onChange={(e) => setLeverage(Number(e.target.value))} />
+                <span className="mono">{leverage}x</span>
+              </label>
             </div>
           )}
         </div>
@@ -197,7 +241,38 @@ export default function RouteTable({
               <div className="mkt-routes__kind mono">
                 <span>{VENUE_KIND_LABEL[kind].toUpperCase()}</span>
                 <span className="mkt-routes__kind-sub">{kindHint(kind)}</span>
+                {kind === 'spot' && list.some((r) => r.best) && (
+                  <button type="button" className="mkt-routes__why" title={BEST_OUT_RULE} aria-label="Why this is best" data-rule={BEST_OUT_RULE} onClick={() => setWhy((w) => !w)}>
+                    why best?
+                  </button>
+                )}
               </div>
+              {kind === 'spot' && why && <p className="mkt-routes__rule">{BEST_OUT_RULE}</p>}
+              {kind === 'limit' && drawn != null && data?.last != null && (
+                <ul className="mkt-routes__list mkt-routes__list--level" aria-label="At your drawn line">
+                  {SPOT_CHAINS.filter((c) => c.cow && list.some((r) => r.chainId === c.id))
+                    .map((c) => ({ c, lvl: limitAtLevel(pair.symbol, c.word, usd, drawn, data.last!) }))
+                    .filter((x): x is { c: (typeof SPOT_CHAINS)[number]; lvl: NonNullable<ReturnType<typeof limitAtLevel>> } => !!x.lvl)
+                    .map(({ c, lvl }) => (
+                      <li key={`level:${c.id}`} className={`mkt-route mkt-route--level ${lvl.side === 'sell' ? 'mkt-route--sell' : ''}`} data-route={`limit:cow:${c.id}:level`}>
+                        <span className="mkt-route__mark" aria-hidden="true"><VenueMark venue="cow" /></span>
+                        <span className="mkt-route__venue">
+                          <span className="mkt-route__name">Your line · CoW Swap</span>
+                          <span className="mkt-route__chain mono">{c.name}</span>
+                        </span>
+                        <span className="mkt-route__num">
+                          <span className="mkt-route__val mono">${fmtLevel(lvl.price)}</span>
+                          <span className="mkt-route__sub mono">{lvl.hint}</span>
+                        </span>
+                        <span className="mkt-route__fee mono">{feeLabel(list[0]?.feeBps ?? 0)}</span>
+                        <span className="mkt-route__tags"><span className="mkt-route__tag mono">FROM YOUR CHART</span></span>
+                        <button type="button" className={`mkt-route__chip ${lvl.side === 'sell' ? 'mkt-route__chip--sell' : ''}`} title={lvl.ask} data-ask={lvl.ask} onClick={() => onAsk(lvl.ask)}>
+                          {lvl.label}
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              )}
               <ul className="mkt-routes__list">
                 {list.map((r) => (
                   <li key={r.id} className={`mkt-route ${r.best ? 'is-best' : ''} ${r.side === 'sell' ? 'mkt-route--sell' : ''}`} data-route={r.id}>
@@ -224,7 +299,7 @@ export default function RouteTable({
                       {feeLabel(r.feeBps)}
                     </span>
                     <span className="mkt-route__tags">
-                      {r.best && <span className="mkt-route__tag mkt-route__tag--best mono">BEST OUT</span>}
+                      {r.best && <span className="mkt-route__tag mkt-route__tag--best mono" title={BEST_OUT_RULE}>BEST OUT</span>}
                       {r.needs === 'position' && <span className="mkt-route__tag mono">NEEDS A POSITION</span>}
                     </span>
                     <button type="button" className={`mkt-route__chip ${r.side === 'sell' ? 'mkt-route__chip--sell' : ''}`} title={r.ask} data-ask={r.ask} onClick={() => onAsk(r.ask)}>

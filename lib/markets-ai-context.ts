@@ -10,7 +10,9 @@ import { loadCandleSeries, resolveTf, type LoadedSeries } from './candles-server
 import { computeTechnicals, RATING_LABELS, type Technicals } from './technicals'
 import { getNews } from './news'
 import { performanceFromCandles, sessionState, stats24h, symbolName } from './markets'
-import { chipMenu, venueWordsFor, type AiChip, type BriefContext, type PositionContext } from './markets-ai'
+import { chipMenu, tapeSymbols, venueWordsFor, type AiChip, type BriefContext, type PositionContext, type TapeRow } from './markets-ai'
+import type { SymbolPosition } from './symbol-position'
+import { RATING_LABELS as RATING_WORDS } from './technicals'
 import { ladderFilterMenu } from './markets-ai-ladder'
 
 export interface TapeRead {
@@ -86,7 +88,7 @@ export async function composeBriefContext(tape: TapeRead): Promise<{ ctx: BriefC
     tech: techSummary(tech),
     news: (news?.items ?? []).map((n) => ({ title: n.title, source: n.source, publishedAt: n.publishedAt })),
     menu,
-    venues: venueWordsFor(pair),
+    venues: venueWordsFor(pair, last),
   }
   return { ctx, dropped }
 }
@@ -135,4 +137,91 @@ export async function readPosition(address: `0x${string}`, pair: ChartPair, last
     }
   }
   return { symbol: pair.symbol, last, change24hPct, rows, perp }
+}
+
+// ── EXEC's position route, called IN-PROCESS ────────────────────────────────
+// `GET /api/markets/position` composes spot (every app chain) + the HL
+// clearinghouse + Aave + Lido, and returns Pantessa's own standing rows
+// (DCA · guardian · spot guard) ONLY to the wallet's own SIWE session (QA-3,
+// rule 6). The brief route used to hop it over HTTP on `req.nextUrl.origin`
+// (Host-derived → an SSRF class, QA-5); now the handler is imported and
+// invoked directly with a CONSTANT internal URL — no socket, no Host, and
+// the session is read by the handler from the CURRENT request's cookies
+// (`getSessionAddress()` → `cookies()`), so an own-session caller gets its
+// standing rows and a stranger gets them NAMED as private. Any failure
+// falls back to the chain-only reader above (fail-soft, never a 500).
+export async function readSymbolPosition(pair: ChartPair, address: `0x${string}`, last: number | null, change24hPct: number | null): Promise<PositionContext> {
+  try {
+    const { GET: positionGet } = await import('@/app/api/markets/position/route')
+    const { NextRequest } = await import('next/server')
+    const url = new URL('http://pantessa.internal/api/markets/position')
+    url.searchParams.set('symbol', pair.symbol)
+    url.searchParams.set('address', address)
+    const res = await positionGet(new NextRequest(url, { headers: { accept: 'application/json' } }))
+    if (!res.ok) throw new Error(`position ${res.status}`)
+    const p = (await res.json()) as SymbolPosition
+    const rows: PositionContext['rows'] = []
+    for (const h of p.spot) {
+      const existing = rows.find((r) => r.chain === h.chainName)
+      if (existing) {
+        existing.amount += h.balance
+        if (h.valueUsd != null) existing.valueUsd = (existing.valueUsd ?? 0) + h.valueUsd
+      } else rows.push({ chain: h.chainName, amount: h.balance, valueUsd: h.valueUsd ?? (last ? h.balance * last : null) })
+    }
+    return {
+      symbol: pair.symbol,
+      last,
+      change24hPct,
+      rows,
+      perp: p.perp ? { side: p.perp.side, size: p.perp.sizeUnits, markPx: p.perp.markPx ?? p.perp.entryPx, pnlUsd: p.perp.pnlUsd, leverage: p.perp.leverage } : null,
+      lend: p.lend ? { suppliedUsd: p.lend.suppliedUsd, borrowedUsd: p.lend.borrowedUsd, healthFactor: p.lend.healthFactor } : null,
+      stake: p.stake ? { stEth: p.stake.stEth, usd: p.stake.usd, aprPct: p.stake.aprPct } : null,
+      privateRows: p.private ?? [],
+      failed: p.failed ?? [],
+    }
+  } catch {
+    return readPosition(address, pair, last, change24hPct)
+  }
+}
+
+// ── The morning tape ────────────────────────────────────────────────────────
+/** One row per symbol of the list (deep tape + technicals, all cached by
+ *  candles-server) plus a chip menu drawn from the two biggest movers. A
+ *  symbol whose tape is down is simply absent from the rows (named in
+ *  `missing`), never a zero. */
+export async function composeTapeContext(symbolsRaw: readonly string[]): Promise<{ rows: TapeRow[]; menu: AiChip[]; missing: string[] }> {
+  const symbols = tapeSymbols(symbolsRaw)
+  const reads = await Promise.allSettled(symbols.map((s) => readTape(s, '1d')))
+  const rows: TapeRow[] = []
+  const missing: string[] = []
+  const tapes: TapeRead[] = []
+  reads.forEach((r, i) => {
+    if (r.status !== 'fulfilled' || !r.value) {
+      missing.push(symbols[i])
+      return
+    }
+    const t = r.value
+    tapes.push(t)
+    rows.push({
+      symbol: t.pair.symbol,
+      name: symbolName(t.pair.symbol),
+      last: t.last,
+      change24hPct: t.change24hPct,
+      verdict: t.tech ? RATING_WORDS[t.tech.summary.rating] : null,
+      s1: t.tech?.pivots?.classic.s1 ?? null,
+      r1: t.tech?.pivots?.classic.r1 ?? null,
+      sessionLine: sessionState(t.pair).line,
+    })
+  })
+  // Chips: the two biggest movers' first buy and sell, then the rest's
+  // first chip — the model picks; every one is ladder-filtered.
+  const movers = [...tapes].sort((a, b) => Math.abs(b.change24hPct ?? 0) - Math.abs(a.change24hPct ?? 0))
+  const menuRaw: AiChip[] = []
+  for (const t of movers) {
+    const chips = chipMenu({ pair: t.pair, last: t.last, tech: t.tech })
+    for (const c of chips.slice(0, menuRaw.length < 4 ? 2 : 1)) menuRaw.push({ ...c, id: `m${menuRaw.length}` })
+    if (menuRaw.length >= 10) break
+  }
+  const { chips: menu } = ladderFilterMenu(menuRaw)
+  return { rows, menu: menu.map((c, i) => ({ ...c, id: `m${i}` })), missing }
 }

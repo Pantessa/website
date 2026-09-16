@@ -18,6 +18,7 @@ import VoiceButton from '@/components/VoiceButton'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { useSession } from '@/lib/session'
 import { normalizeSpokenAsk } from '@/lib/voice-ask'
+import { hoverBarLabel, useChartHover, type HoverBar } from '@/lib/markets-ai-hover'
 import type { ChartPair } from '@/lib/charts'
 import type { ChartState } from '@/lib/chart-state'
 import type { AskAnswer } from '@/lib/markets-ai'
@@ -59,6 +60,51 @@ export default function AskChart({ symbol, pair, chartState, visible, onAsk, onC
   const here = typeof window === 'undefined' ? '/' : `${window.location.pathname}${window.location.search}`
 
   const suggestions = useMemo(() => askChartSuggestions(symbol, pair), [symbol, pair])
+  // "Explain this": the bar under the chart's crosshair (lib/markets-ai-hover,
+  // reported by the chart) or, until the chart reports, the window's last bar.
+  const hover = useChartHover((st) => (st.symbol === pair.symbol ? st.bar : null))
+  // Crosshair fallback through the ChartState: the newest drawing that
+  // carries a TIME (a note, a trend line's end) names the bar the user was
+  // looking at; else the window's last bar.
+  const markedT = useMemo(() => {
+    const times = (chartState?.lines ?? []).map((l) => (l.kind === 'note' ? l.t : l.kind === 'trend' ? l.t2 : null)).filter((t): t is number => typeof t === 'number' && t > 0)
+    return times.length ? times[times.length - 1] : null
+  }, [chartState])
+  const [lastBar, setLastBar] = useState<{ bar: HoverBar; marked: boolean } | null>(null)
+  useEffect(() => {
+    if (hover) return
+    const ctrl = new AbortController()
+    void (async () => {
+      try {
+        const res = await fetch(`/api/charts/candles?symbol=${encodeURIComponent(pair.symbol)}&tf=${chartState?.tf ?? '1h'}`, { signal: ctrl.signal })
+        const j = (await res.json()) as { candles?: HoverBar[] }
+        const candles = j.candles ?? []
+        const marked = markedT ? [...candles].reverse().find((c) => c.t <= markedT) : undefined
+        const pick = marked ?? candles[candles.length - 1]
+        if (pick) setLastBar({ bar: pick, marked: !!marked })
+      } catch {
+        /* no chip */
+      }
+    })()
+    return () => ctrl.abort()
+  }, [pair.symbol, chartState?.tf, hover, markedT])
+  const explainBar = hover ?? lastBar?.bar ?? null
+  const explainMode: 'hover' | 'marked' | 'last' = hover ? 'hover' : lastBar?.marked ? 'marked' : 'last'
+  const explain = useCallback(async () => {
+    if (!explainBar || busy) return
+    setBusy(true)
+    setAsked(explainMode === 'last' ? 'Explain the last bar' : hoverBarLabel(explainBar, chartState?.tf))
+    setReply(null)
+    try {
+      const res = await fetch('/api/markets/ask', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ symbol: pair.symbol, tf: chartState?.tf, kind: 'explain', bar: explainBar }) })
+      const j = (await res.json().catch(() => ({}))) as (AskAnswer & { deterministic: boolean; model: string }) | { error?: string }
+      setReply('kind' in j ? j : { kind: 'answer', text: (j as { error?: string }).error ?? `HTTP ${res.status}`, deterministic: true, model: 'none' })
+    } catch (e) {
+      setReply({ kind: 'answer', text: (e as Error).message, deterministic: true, model: 'none' })
+    } finally {
+      setBusy(false)
+    }
+  }, [explainBar, busy, explainMode, pair.symbol, chartState?.tf])
 
   const submit = useCallback(
     async (question: string) => {
@@ -174,6 +220,11 @@ export default function AskChart({ symbol, pair, chartState, visible, onAsk, onC
               {s.label}
             </button>
           ))}
+          {explainBar ? (
+            <button type="button" className={`mk-ai__sugg-chip${explainMode !== 'last' ? ' mk-ai__sugg-chip--hover' : ''}`} onClick={() => void explain()} data-explain={explainMode} title={`${explainBar.o} → ${explainBar.c}`}>
+              {explainMode === 'last' ? 'Explain the last bar' : hoverBarLabel(explainBar, chartState?.tf)}
+            </button>
+          ) : null}
         </div>
       ) : null}
 

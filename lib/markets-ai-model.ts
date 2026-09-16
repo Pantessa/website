@@ -10,11 +10,12 @@
 
 import { pickChips, splitChipsLine, type AiChip } from './markets-ai'
 
-/** The model the markets AI runs on: its own env, else the planner's, else
+/** The model the markets AI runs on: `MK2_AI_MODEL` (the one env Nate flips;
+ *  QA's ask), else `MARKETS_AI_MODEL`, else the planner's, else
  *  the planner's default — the route's known-good model (README §10: the
  *  brief "defaults to the latest Claude model the route uses"). The
  *  claude-api skill's own default is `claude-opus-5`; flipping is one env. */
-export const MARKETS_AI_MODEL = process.env.MARKETS_AI_MODEL || process.env.PLANNER_MODEL || 'claude-haiku-4-5-20251001'
+export const MARKETS_AI_MODEL = process.env.MK2_AI_MODEL || process.env.MARKETS_AI_MODEL || process.env.PLANNER_MODEL || 'claude-haiku-4-5-20251001'
 const TIMEOUT_MS = 45_000
 
 export function modelMocked(): boolean {
@@ -160,7 +161,7 @@ function mockAskText(call: ModelCall): string {
 }
 
 function mockText(call: ModelCall): string {
-  if (call.system.startsWith('You write the market brief')) return mockBriefText(call)
+  if (call.system.startsWith('You write the market brief') || call.system.startsWith('You write the morning tape')) return mockBriefText(call)
   if (call.system.startsWith('You write one or two plain sentences')) return 'You hold a mock amount; the numbers are the ones in the prompt.'
   if (call.system.startsWith('You explain one candle')) return 'This bar closed where the context says it closed, a mock sentence.'
   return mockAskText(call)
