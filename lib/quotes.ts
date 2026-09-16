@@ -20,6 +20,12 @@ import { normalizeWatchSymbol, sessionFor, type Quote } from '@/lib/watchlists'
 
 export const QUOTE_TTL_MS = 15_000
 export const QUOTES_MAX_SYMBOLS = 250
+/** Robinhood's batch historicals answers 400 past 75 symbols (measured
+ *  2026-09-16: 75 → 200, 76 → 400). A bigger request sent in one call failed
+ *  whole, and every stock on the board fell back to Yahoo's regular-session
+ *  price — which the stock-swap tape check (lib/stock-tape) then compared a
+ *  24/7 pool against. */
+export const ROBINHOOD_BATCH_MAX = 75
 const UPSTREAM_TIMEOUT_MS = 6_000
 const COINBASE_CONCURRENCY = 6
 const UA = 'Mozilla/5.0 (compatible; Pantessa/1.0; +https://www.pantessa.com)'
@@ -239,13 +245,17 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
   const coins = fresh.filter((f) => f.pair.source === 'coinbase')
   const perps = fresh.filter((f) => f.pair.source === 'hyperliquid')
 
-  // One batch promise for the stocks; each symbol's inflight entry resolves off it.
-  const stockBatch = stocks.length
-    ? fetchRobinhoodBatch(stocks.map((s) => s.pair.pair)).catch((err) => {
+  // One batch promise per ROBINHOOD_BATCH_MAX stocks; each symbol's inflight
+  // entry resolves off its own chunk, so one refused chunk falls back alone.
+  const stockBatches: Promise<Map<string, { last: number; prev: number; asOf: number }> | null>[] = []
+  for (let i = 0; i < stocks.length; i += ROBINHOOD_BATCH_MAX) {
+    stockBatches.push(
+      fetchRobinhoodBatch(stocks.slice(i, i + ROBINHOOD_BATCH_MAX).map((s) => s.pair.pair)).catch((err) => {
         console.warn(`[quotes] robinhood batch down (${err instanceof Error ? err.message : String(err)}) — yahoo per symbol`)
         return null
-      })
-    : Promise.resolve(new Map())
+      }),
+    )
+  }
 
   const settle = (symbol: string, p: Promise<Quote | null>) => {
     const wrapped = p
@@ -264,16 +274,16 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
     )
   }
 
-  for (const s of stocks) {
+  stocks.forEach((s, i) => {
     settle(
       s.symbol,
-      stockBatch.then(async (batch) => {
+      stockBatches[Math.floor(i / ROBINHOOD_BATCH_MAX)].then(async (batch) => {
         const row = batch?.get(s.pair.pair)
         if (row) return quoteOf(row.last, row.prev, 'robinhood', s.pair, row.asOf)
         return fetchYahooQuote(s.pair)
       }),
     )
-  }
+  })
   for (const p of perps) settle(p.symbol, fetchHyperliquid(p.pair))
   // Coinbase is per-product; a bounded worker pool keeps a 40-coin list under
   // its public rate limit while still finishing inside one poll.

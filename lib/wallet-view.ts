@@ -25,6 +25,7 @@
 import { erc20Abi, formatEther, formatUnits } from 'viem'
 import { APP_CHAINS, chainById, primaryStable, publicClientFor, type AppChain } from '@/lib/chains'
 import { alchemyEnabled, getMultichainPortfolio, getRecentActivity } from '@/lib/alchemy'
+import { readQuotes } from '@/lib/quotes'
 import { usdPerToken } from '@/lib/usd-probe'
 import { dynamicTokensFor, ensureTokenList, type TokenInfo } from '@/lib/token-list'
 import { robinhoodRowActions } from '@/lib/robinhood-row-actions'
@@ -279,14 +280,17 @@ export async function readStockBalances(address: `0x${string}`): Promise<NonNull
   return out
 }
 
-/** Price the rows the index couldn't — Robinhood stocks quote against USDG
- *  on the venue's own pools (lib/usd-probe). Bounded: only held rows, only
- *  on the stock chain, only when unpriced. Mutates in place, fail-soft. */
+/** Price the rows the index couldn't — Robinhood stocks at their tape
+ *  (lib/usd-probe → lib/stock-tape), never a pool. Bounded: only held rows,
+ *  only on the stock chain, only when unpriced. Mutates in place, fail-soft. */
 export async function priceUnpricedStockRows(chains: WalletChainView[]): Promise<void> {
   const rh = chains.find((c) => c.id === STOCK_CHAIN_ID)
   if (!rh) return
   const targets = rh.holdings.filter((h) => !h.native && h.priceUsd == null).slice(0, 12)
   if (targets.length === 0) return
+  // One batched tape read for every row (lib/quotes caches per symbol), so
+  // the per-row probes below read the cache instead of a call each.
+  await readQuotes(targets.map((h) => h.symbol)).catch(() => null)
   await Promise.all(
     targets.map(async (h) => {
       const probe = await usdPerToken(STOCK_CHAIN_ID, h.address).catch(() => null)

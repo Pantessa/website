@@ -143,6 +143,7 @@ import { parseTransferSegment, buildTransferArtifact } from '@/lib/transfer-exec
 import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
+import { OffTapeError, TapeUnavailableError } from '@/lib/stock-tape'
 import { fundChipFor, ONRAMP_NETWORK_LABEL } from '@/lib/onramp'
 import { fundingOriginWords } from '@/lib/funding-origins'
 import { FEATURED_STOCKS, parseStockListAsk, robinhoodStocks } from '@/lib/stock-list'
@@ -4799,6 +4800,16 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
         workingContext: swapWorkingContext(intent, 'uniswap', ctx, chainId),
       })
     } catch (err) {
+      // The v3 pool sits off the stock's tape (lib/stock-tape): the build it
+      // would offer is slippage-bounded to a wrong price. Skip it like a
+      // missing pool — v4, then the chain's own venue — and name it if
+      // nothing down the cascade fills near the tape.
+      if (err instanceof OffTapeError) {
+        trace({ type: 'note', level: 'warn', label: `tape guard: ${err.message.slice(0, 220)} — skipping the pool` })
+        if (chain.uniswapV4) return await prepareUniswapV4Turn(intent, walletAddress, chainId, ctx, trace, feeBps, err)
+        return NextResponse.json({ reply: `🚫 ${err.message} Nothing was built, no signature needed.`, blocked: true, buildPath: 'native-swap-off-tape' })
+      }
+      if (err instanceof TapeUnavailableError) return tapeHoldReply(err, trace)
       // v3 has no pool → fall through to the guarded v4 layer where the chain
       // carries one (Robinhood's tokenized stocks are v4-only). Pairs v3 CAN
       // fill never reach here — v4 is strictly the fallback.
@@ -4869,6 +4880,20 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
 }
 
 /**
+ * No tape to check a Robinhood Chain stock fill against (lib/stock-tape):
+ * the feed didn't answer (hold — try again), the last print is too old, or
+ * no feed lists the stock at all (refused by name). Nothing is built blind.
+ */
+function tapeHoldReply(err: TapeUnavailableError, trace: (event: unknown) => void) {
+  trace({ type: 'note', level: 'warn', label: `tape guard: no usable tape for ${err.symbol} (${err.reason}: ${err.detail}) — ${err.permanent ? 'refusing by name' : 'holding the build'}` })
+  return NextResponse.json({
+    reply: `${err.permanent ? '🚫' : '🔄'} ${err.message}`,
+    buildPath: err.permanent ? 'native-swap-off-tape' : 'native-swap-hold',
+    ...(err.permanent ? { blocked: true } : {}),
+  })
+}
+
+/**
  * The Uniswap v4 fallback turn — reached ONLY when v3 threw NoV3PoolError on
  * a chain that carries a v4 deployment (lib/chains.ts uniswapV4). Same trust
  * shape as v3: deterministic build, calldata guard inside the builder (a
@@ -4883,6 +4908,9 @@ async function prepareUniswapV4Turn(
   ctx: WorkingContext | undefined,
   trace: (event: unknown) => void,
   feeBps?: number,
+  /** Set when v3's pool sat off the stock's tape — a missing v4 pool then
+   *  means "try the chain's own venue", not "no pool". */
+  offTape?: OffTapeError,
 ) {
   const chain = chainById(chainId)!
   trace({ type: 'select', service: 'Uniswap v4 (native venue)', endpoint: `V4 Quoter → Universal Router build on ${chain.name}`, priceUsd: 0, reason: 'v4 fallback — the pair has no v3 pool; Pantessa builds + verifies the router calldata deterministically' })
@@ -4941,6 +4969,12 @@ async function prepareUniswapV4Turn(
       workingContext: swapWorkingContext(intent, 'uniswap', ctx, chainId),
     })
   } catch (err) {
+    if (err instanceof OffTapeError || (offTape && err instanceof NoV4PoolError)) {
+      const lead = offTape ?? (err as OffTapeError)
+      trace({ type: 'note', level: 'warn', label: `tape guard: ${err instanceof OffTapeError ? err.message.slice(0, 200) : 'no v4 pool'} — routing to the chain's own settlement venue (LiFi)` })
+      return await prepareLifiTurn(intent, walletAddress, chainId, ctx, trace, lead.message, lead)
+    }
+    if (err instanceof TapeUnavailableError) return tapeHoldReply(err, trace)
     if (err instanceof NoV4PoolError) {
       trace({ type: 'note', level: 'warn', label: `no v4 pool either — the pair isn't on Uniswap on ${chain.name}` })
       return NextResponse.json({
@@ -4954,7 +4988,7 @@ async function prepareUniswapV4Turn(
       // settlement layer instead of refusing. The honest refusal survives
       // ONLY for the case where LiFi can't fill either (prepareLifiTurn).
       trace({ type: 'note', level: 'info', label: `v4 pool is venue-gated (quotes but a direct swap can't fill) — routing to the LiFi settlement venue (${err.message.slice(0, 120)})` })
-      return await prepareLifiTurn(intent, walletAddress, chainId, ctx, trace, err.message)
+      return await prepareLifiTurn(intent, walletAddress, chainId, ctx, trace, offTape ? offTape.message : err.message, offTape)
     }
     const msg = err instanceof Error ? err.message : 'quote failed'
     trace({ type: 'note', level: 'warn', label: `Uniswap v4 build failed: ${msg.slice(0, 200)}` })
@@ -4979,6 +5013,9 @@ async function prepareLifiTurn(
   ctx: WorkingContext | undefined,
   trace: (event: unknown) => void,
   gateReason: string,
+  /** Set when the trade is here because a Uniswap pool sat off the stock's
+   *  tape (not because the pool is venue-gated). */
+  offTape?: OffTapeError,
 ) {
   const chain = chainById(chainId)!
   trace({ type: 'select', service: 'LiFi (native settlement venue)', endpoint: `li.quest quote → pinned-router build on ${chain.name}`, priceUsd: 0, reason: 'the pool only fills through the chain\'s own venue — LiFi wraps it; Pantessa pins the router, cross-checks the price on-chain, and simulates before offering' })
@@ -5003,8 +5040,12 @@ async function prepareLifiTurn(
     const sell = intent.sellToken!.toUpperCase()
     const buy = intent.buyToken!.toUpperCase()
     trace({ type: 'status', label: `guardrails passed — ${built.steps.length}-step LiFi card built (${intent.sellAmountHuman} ${sell} → ${buy} through ${chain.name}'s own venue), awaiting signature` })
+    const tapeChecked = built.guardrails.checks.some((c) => c.id === 'tape')
+    const why = offTape
+      ? `${offTape.message} So the trade routes through ${chain.name}'s own settlement venue via LiFi, which prices it inside the bound — Pantessa pinned the settlement contract, checked the fill against the tape, and dry-ran it.`
+      : `This pair only settles through ${chain.name}'s own swap venue, so the trade routes via LiFi — Pantessa pinned the settlement contract, price-checked the fill against ${tapeChecked ? 'the tape' : 'its own on-chain quote'}, and dry-ran it.`
     return NextResponse.json({
-      reply: `🔏 ${built.summary}\n🔗 This pair only settles through ${chain.name}'s own swap venue, so the trade routes via LiFi — Pantessa pinned the settlement contract, price-checked the fill against its own on-chain quote, and dry-ran it. The card below carries every step${built.feeHuman !== '0' ? `, including the ${built.feeHuman} ${sell} Pantessa fee as its own visible transfer` : ''}.${warns.length ? `\n${warns.join('\n')}` : ''}`,
+      reply: `🔏 ${built.summary}\n🔗 ${why} The card below carries every step${built.feeHuman !== '0' ? `, including the ${built.feeHuman} ${sell} Pantessa fee as its own visible transfer` : ''}.${warns.length ? `\n${warns.join('\n')}` : ''}`,
       txChain: {
         summary: built.summary,
         steps: built.steps,
@@ -5020,6 +5061,13 @@ async function prepareLifiTurn(
       workingContext: swapWorkingContext(intent, 'lifi', ctx, chainId),
     })
   } catch (err) {
+    if (err instanceof OffTapeError) {
+      // The chain's own venue is off the tape too — nothing fills near the
+      // stock's price, so nothing is built.
+      trace({ type: 'note', level: 'warn', label: `tape guard: LiFi is off the tape too (${err.message.slice(0, 160)}) — refusing by name` })
+      return NextResponse.json({ reply: `🚫 ${gateReason} ${err.message} Nothing was built, no signature needed.`, blocked: true, buildPath: 'native-swap-off-tape' })
+    }
+    if (err instanceof TapeUnavailableError) return tapeHoldReply(err, trace)
     if (err instanceof NoLifiRouteError) {
       // LiFi can't fill either — the ONE case that keeps the honest refusal.
       trace({ type: 'note', level: 'warn', label: `LiFi has no route either — honest refusal stands (${err.message.slice(0, 160)})` })

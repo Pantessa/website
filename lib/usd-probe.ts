@@ -2,8 +2,9 @@
 //  USD price probe for dollar-denominated swap asks ("swap $1 worth of ETH
 //  for USDG", "buy $5 of AAPL"). Prices ONE whole token in the chain's
 //  primary stable via the same venue quoters the build itself uses — v3
-//  fee-tier scan first, v4 no-hook scan when v3 has no pool (Robinhood's
-//  tokenized stocks are v4-only). Stables are $1 face value.
+//  fee-tier scan first, v4 no-hook scan when v3 has no pool. Stables are $1
+//  face value; Robinhood Chain stocks are their tape (lib/stock-tape), not
+//  their pools.
 //
 //  Lives in its own module (not lib/uniswap-venue.ts) because it needs BOTH
 //  venue layers and uniswap-v4.ts already imports uniswap-venue.ts — a
@@ -13,6 +14,8 @@
 import { chainById, primaryStable, publicClientFor } from '@/lib/chains'
 import { classifyDryRunError } from '@/lib/dry-run'
 import { resolveToken, tokenDecimals, tokenLabel } from '@/lib/cow'
+import { STOCK_TAPE_CHAIN_ID, stockTapeFor, swapLegOf } from '@/lib/stock-tape'
+import { ensureTokenList } from '@/lib/token-list'
 import { FEE_TIERS, QUOTER_V2_ABI } from '@/lib/uniswap-venue'
 import { quoteV4BestOut } from '@/lib/uniswap-v4'
 
@@ -33,6 +36,19 @@ export async function usdPerToken(chainId: number, token: string): Promise<UsdPr
   const addr = resolveToken(token, chainId)
   if (!addr) return null
   if (chain.stables[addr.toLowerCase()] !== undefined) return { usd: 1, via: 'stable face value' }
+  // A Robinhood Chain stock is worth its tape, never its pool: a "$50 of
+  // AMAT" sell sized off a pool paying under 1% of the tape (2026-09-16)
+  // would have sold ~100× the shares, and a transfer valued that way slips
+  // under a spend cap. No tape → null; callers already refuse or show the
+  // row unpriced (lib/stock-tape).
+  if (chainId === STOCK_TAPE_CHAIN_ID) {
+    await ensureTokenList(chainId)
+    const leg = swapLegOf(token, chainId)
+    if (leg?.kind === 'stock') {
+      const tape = await stockTapeFor(leg.symbol)
+      return tape ? { usd: tape.usd, via: `${tape.feed === 'yahoo' ? 'the Yahoo Finance' : "Robinhood's"} tape for ${leg.symbol}` } : null
+    }
+  }
   const stable = primaryStable(chainId)
   if (!stable || stable.address.toLowerCase() === addr.toLowerCase()) return null
   const dec = tokenDecimals(token, chainId) ?? 18
