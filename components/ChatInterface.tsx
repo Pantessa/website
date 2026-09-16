@@ -326,6 +326,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     setActiveServerIds,
     linkSetActive,
     setLinkServerIds,
+    noteChipApps,
     manualSlugs,
     updateChatServers,
     chats,
@@ -691,6 +692,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       // An /i link's set stays marked as the link's (store.linkSetActive).
       if (linkSetActive) setLinkServerIds(next)
       else setActiveServerIds(next)
+      noteChipApps(missing)
       if (currentChatId) updateChatServers(currentChatId, next)
       setChipSend({ ...chipSend, rounds: chipSend.rounds + 1 })
       return

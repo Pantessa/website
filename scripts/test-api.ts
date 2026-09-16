@@ -22399,6 +22399,14 @@ async function main() {
       /const ids = resolveAppIds\(slugs, servers\)/.test(wsSrcF) && /resolveAppIds\(\s*\n\s*mcps\.split\(','\)/.test(irSrcF) && /const missing = missingAppIds\(want, servers, activeServerIds\)/.test(doorSrcF) &&
         !/srv\.slug === s\.trim\(\)/.test(irSrcF) && !/want\.map\(\(slug\) => servers\.find/.test(doorSrcF),
     )
+    const storeSrcF = await readFile('lib/store.ts', 'utf8')
+    check(
+      'apps follow the ask (source): the apps a chip turned on survive a late working-set restore — sendChip notes them (store.chipApps, not persisted) and the wallet\'s DB copy, when it lands after the chip, is applied WITH them (so a signed-in visitor\'s next typed turn keeps the chip\'s Aave)',
+      /noteChipApps\(missing\)/.test(chatSrcF) &&
+        /noteChipApps: \(ids\) => set\(\(s\) => \(\{ chipApps: \{ ids: \[\.\.\.new Set\(\[\.\.\.\(s\.chipApps\?\.ids \?\? \[\]\), \.\.\.ids\]\)\], at: Date\.now\(\) \} \}\)\)/.test(storeSrcF) &&
+        !/chipApps: state\.chipApps/.test(storeSrcF) &&
+        /const kept = chip && chip\.at >= loadStartedAt \? chip\.ids\.filter/.test(wsSrcF) && /if \(valid\.length\) setActiveServerIds\(\[\.\.\.new Set\(\[\.\.\.valid, \.\.\.kept\]\)\]\)/.test(wsSrcF),
+    )
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)

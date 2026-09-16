@@ -167,12 +167,17 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
     if (dbRestoredFor.current === authedAddress) return
     dbRestoredFor.current = authedAddress
     const routeOwnsSet = !!chatId || !!new URLSearchParams(window.location.search).get('mcps')
+    const loadStartedAt = Date.now()
     void loadWalletSet().then((ids) => {
       if (!ids || routeOwnsSet) return
       // Same stale-id guard as the local restore: only ids still in the
       // loaded directory make it into the working set.
       const valid = ids.filter((id) => servers.some((s) => s.id === id))
-      if (valid.length) setActiveServerIds(valid)
+      // A /markets chip that turned its apps on while the copy was loading
+      // keeps them: the chip's thread already runs on them (store.chipApps).
+      const chip = useYeetfulStore.getState().chipApps
+      const kept = chip && chip.at >= loadStartedAt ? chip.ids.filter((id) => servers.some((s) => s.id === id)) : []
+      if (valid.length) setActiveServerIds([...new Set([...valid, ...kept])])
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authedAddress, servers, chatId, loadWalletSet, setActiveServerIds])
