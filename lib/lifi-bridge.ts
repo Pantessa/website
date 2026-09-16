@@ -785,7 +785,7 @@ const originLabel = (o: FundingOrigin) => (o.token === 'USDC' ? o.word : `${o.wo
  *  an ETH row funding a gas-included segment runs TWO legs off the one
  *  balance and must keep ETH_TWO_LEG_HEADROOM_USD back for leg 1's own
  *  fee + inter-leg drift, or the chip is a mid-job wall. */
-const originCapUsd = (o: FundingOrigin, gasIncluded: boolean) =>
+export const originCapUsd = (o: FundingOrigin, gasIncluded: boolean): number =>
   o.token === 'ETH' && gasIncluded ? Math.max(0, o.usd - (ETH_TWO_LEG_HEADROOM_USD[o.chainId] ?? 1)) : o.usd
 
 export interface FundingShortfall {

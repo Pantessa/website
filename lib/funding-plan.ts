@@ -80,6 +80,19 @@ export const DEST_GAS_FLOOR_ETH: Record<number, number> = { 1: 0.003, 8453: 0.00
 /** The smallest gas leg worth quoting. */
 const MIN_GAS_LEG_USD = 1.5
 
+/** ETH the destination wallet is short of its gas floor (0 = it can sign). */
+export const destGasShortEth = (chainId: number, nativeEth: number): number => Math.max(0, (DEST_GAS_FLOOR_ETH[chainId] ?? 0.0002) - nativeEth)
+
+/** The dollars of a destination gas leg: the ETH short of the floor, priced
+ *  with 15% headroom, at least MIN_GAS_LEG_USD, rounded up to the next $0.50.
+ *  0 when the wallet already holds the floor. ONE rule for the funding offer
+ *  (offerFundingPlan) and the card door that sizes an empty wallet's plan
+ *  without a scan (lib/card-buy), so the two presets can't drift. */
+export function destGasLegUsd(chainId: number, nativeEth: number, ethUsd: number): number {
+  const shortEth = destGasShortEth(chainId, nativeEth)
+  return shortEth > 0 ? Math.max(MIN_GAS_LEG_USD, Math.ceil(shortEth * ethUsd * 1.15 * 2) / 2) : 0
+}
+
 /** The dollars a source may actually PROMISE to a plan.
  *
  *  A stable spends its whole row: the legs' fees are paid in ETH, so the
@@ -700,15 +713,14 @@ export async function offerFundingPlan(params: {
       const destClient = publicClientFor(need.chainId)
       if (!destClient) return null
       const nativeWei = await destClient.getBalance({ address: user as `0x${string}` })
-      const floor = DEST_GAS_FLOOR_ETH[need.chainId] ?? 0.0002
-      const shortEth = Math.max(0, floor - Number(formatEther(nativeWei)))
-      if (shortEth > 0) {
+      const nativeEth = Number(formatEther(nativeWei))
+      if (destGasShortEth(need.chainId, nativeEth) > 0) {
         const ethProbe = await usdPerToken(8453, 'ETH').catch(() => null)
         if (!ethProbe) {
           trace({ type: 'note', level: 'warn', label: 'funding layer: destination needs a gas leg but ETH is unpriceable — falling through' })
           return null
         }
-        gasUsd = Math.max(MIN_GAS_LEG_USD, Math.ceil(shortEth * ethProbe.usd * 1.15 * 2) / 2)
+        gasUsd = destGasLegUsd(need.chainId, nativeEth, ethProbe.usd)
       }
     } catch {
       trace({ type: 'note', level: 'warn', label: "funding layer: couldn't read the destination gas balance — falling through" })

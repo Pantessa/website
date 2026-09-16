@@ -259,7 +259,7 @@ import { parseEcbUsdRate } from '../lib/ecb-fx'
 import { clarifyOf } from '../lib/clarify'
 import { fundingPathOf, NEVER_MIND_RESUME_RE } from '../lib/funding-path'
 import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '../lib/turn-status'
-import { classifyFundingBalances, decideFundingTurn, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, gasTopupLegUsd, MIN_LEG_USD, planFundingChips, planGasTopup, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, strandedCoversPlan, type FundingNeed, type FundingSource } from '../lib/funding-plan'
+import { classifyFundingBalances, decideFundingTurn, destGasLegUsd, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, gasTopupLegUsd, MIN_LEG_USD, planFundingChips, planGasTopup, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, strandedCoversPlan, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { buyDollarsOf, swapBuyFundChip, swapBuyResume, swapShortfallTurn, type SwapShortfallAsk } from '../lib/swap-shortfall'
 import { laneGasFloorPresetUsd, layerCardKind, layerFundChip, layerShortfallTurn, type LayerShortfallAsk } from '../lib/layer-shortfall'
 import { DEST_GAS_FLOOR_ETH } from '../lib/funding-plan'
@@ -269,11 +269,13 @@ import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingIn
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
 import { CHOOSE_SHAPE_RULES, chooseMosaicShape, composeMosaicAsk, fmtUnits, integerPcts, isMosaicAsk, MOSAIC_STABLE, mosaicAskString, mosaicPresets, mosaicStableFor, mosaicValueRows, parseMosaicAsk, planMosaic, suggestMosaicShape, type MosaicHolding } from '../lib/mosaic'
 import { simulateLadder } from './ask-ladder'
+import { coinFundRoutes, stockFundRoutes } from '../lib/fund-routes'
+import { cardBuyChip, cardBuyTurn, type CardBuyAsk } from '../lib/card-buy'
 import { ARRIVAL_FUTURE_SKEW_MS, ARRIVAL_MAX_MCPS, ARRIVAL_MAX_TEXT, ARRIVAL_SOURCES, arrivalAllowed, arrivalSourceAllowed, arrivalTextProblem, type ArrivalRefusal } from '../lib/arrival-fence'
 import { ARRIVAL_TTL_MS } from '../lib/arrival-intent'
 import { ladderFilterMenu as aiLadderFilterMenu } from '../lib/markets-ai-ladder'
 import { alertActionChips as arrivalAlertChips } from '../lib/watchlists'
-import { quickActs as mk2QuickActs, ROUTE_TICKET_NOTE as MK2_TICKET_NOTE, SETTLES as MK2_SETTLES, limitAtLevel as mk2LimitAtLevel, BEST_OUT_RULE as MK2_BEST_OUT_RULE, venuesFor as mk2VenuesFor, missingVenueNotes as mk2MissingNotes, composeCompound as mk2ComposeCompound, compoundLegKindsFor as mk2LegKinds, compoundPresets as mk2Presets, type CompoundLegKind as Mk2LegKind, type RoutesResponse as Mk2RoutesResponse } from '../lib/symbol-venues'
+import { quickActs as mk2QuickActs, ROUTE_TICKET_NOTE as MK2_TICKET_NOTE, SETTLES as MK2_SETTLES, limitAtLevel as mk2LimitAtLevel, BEST_OUT_RULE as MK2_BEST_OUT_RULE, venuesFor as mk2VenuesFor, missingVenueNotes as mk2MissingNotes, composeCompound as mk2ComposeCompound, compoundLegKindsFor as mk2LegKinds, compoundPresets as mk2Presets, type CompoundLegKind as Mk2LegKind, type RoutesResponse as Mk2RoutesResponse, type FundRoutesResponse as Mk2FundRoutesResponse, FUND_CONNECT_NOTE as MK2_FUND_CONNECT_NOTE } from '../lib/symbol-venues'
 import { execAsks as mk2ExecAsks, execSidesFor as mk2ExecSidesFor, sideOf as mk2SideOf, AMOUNTS as MK2_AMOUNTS, STOPS as MK2_STOPS, CADENCES as MK2_CADENCES } from '../lib/trade-asks'
 import { exitChipsFor as mk2ExitChipsFor, positionSummary as mk2PositionSummary, positionIsEmpty as mk2PositionIsEmpty, type SymbolPosition as Mk2SymbolPosition } from '../lib/symbol-position'
 import {
@@ -21229,26 +21231,55 @@ async function main() {
     const hype = mk2VenuesFor('HYPE', hypePair, { last: 20 })
     const link = mk2VenuesFor('LINK', linkPair, { last: 20 })
     const kinds = (rows: ReturnType<typeof mk2VenuesFor>) => new Set(rows.map((r) => r.kind))
+    // RE-PINNED 2026-09-16 (Nate on /t/AAPL: "Fund from Base" offered to a
+    // wallet with nothing on Base): the public map carries NO per-chain
+    // funding rows — those are per wallet (lib/fund-routes, pinned below) —
+    // and exactly one card row when the on-ramp door is open.
     check(
-      'MK2/EXEC venue map: ETH lists spot on Base/Ethereum/Arbitrum/Optimism, CoW limits only where a book exists (never Optimism or 4663), a leveraged perp + Guardian stop, Aave supply + a USDC borrow, Lido stake, DCA, the Spot Guardian on Base, and NEAR funding from every other chain',
+      'MK2/EXEC venue map: ETH lists spot on Base/Ethereum/Arbitrum/Optimism, CoW limits only where a book exists (never Optimism or 4663), a leveraged perp + Guardian stop, Aave supply + a USDC borrow, Lido stake, DCA, the Spot Guardian on Base — and NO per-chain funding row (funding is per wallet)',
       new Set(eth.filter((r) => r.kind === 'spot').map((r) => r.chainId)).size === 4 &&
         eth.filter((r) => r.kind === 'limit').every((r) => [8453, 1, 42161].includes(r.chainId)) && eth.some((r) => r.kind === 'limit') &&
         eth.some((r) => r.kind === 'perp' && r.ask.startsWith('2x Long')) && eth.some((r) => r.kind === 'protect' && r.venue === 'hyperliquid' && r.needs === 'position') &&
         eth.some((r) => r.kind === 'lend' && r.ask === 'Supply $50 of ETH to Aave') && eth.some((r) => r.kind === 'lend' && r.ask === 'Borrow 50 USDC from Aave') &&
         eth.some((r) => r.kind === 'stake' && r.ask === 'Stake 0.02 ETH on Lido' && r.chainId === 1) && eth.some((r) => r.kind === 'dca') &&
-        eth.some((r) => r.kind === 'protect' && r.venue === 'pantessa' && r.chainId === 8453) && eth.filter((r) => r.kind === 'fund').length === 3,
+        eth.some((r) => r.kind === 'protect' && r.venue === 'pantessa' && r.chainId === 8453) && eth.filter((r) => r.kind === 'fund').length === 0,
       `${eth.length} rows: ${[...kinds(eth)].join(',')}`,
     )
     check(
-      'MK2/EXEC venue map: a Robinhood Chain stock is stock buy/sell + DCA on 4663 + a LiFi funding job from each origin — no perp, lend, stake or limit row, and the missing kinds are NAMED',
-      [...kinds(aapl)].sort().join() === ['dca', 'fund', 'stock'].join() && aapl.every((r) => r.kind === 'fund' || r.chainId === 4663) && mk2MissingNotes('AAPL', aaplPair).length === 1,
+      'MK2/EXEC venue map: a Robinhood Chain stock is stock buy/sell + DCA on 4663 — no perp, lend, stake, limit or per-chain funding row, and the missing kinds are NAMED',
+      [...kinds(aapl)].sort().join() === ['dca', 'stock'].join() && aapl.every((r) => r.chainId === 4663) && mk2MissingNotes('AAPL', aaplPair).length === 1,
       [...kinds(aapl)].join(','),
     )
+    {
+      const aaplCard = mk2VenuesFor('AAPL', aaplPair, { last: 230, card: true }).filter((r) => r.kind === 'fund')
+      const ethCard = mk2VenuesFor('ETH', ethPair, { last: 2500, card: true, usd: 12.5 }).filter((r) => r.kind === 'fund')
+      const linkCard = mk2VenuesFor('LINK', linkPair, { last: 20, card: true }).filter((r) => r.kind === 'fund')
+      const aeroCard = mk2VenuesFor('AERO', chartPairFor('AERO') ?? linkPair, { card: true }).filter((r) => r.kind === 'fund')
+      check(
+        'card row: with the on-ramp door open the map adds ONE "Buy with card" funding row — a stock names no chain ("Buy $50 of AAPL with a card"), ETH buys on the card\'s own Ethereum lane at no Pantessa fee (the delivery IS the buy), any other coin on its funding destination; a perp chart or a non-EVM home gets none',
+        aaplCard.length === 1 && aaplCard[0].id === 'fund:card' && aaplCard[0].venue === 'card' && aaplCard[0].label === 'Buy with card' && aaplCard[0].ask === 'Buy $50 of AAPL with a card' && aaplCard[0].fee === 'swap' &&
+          ethCard.length === 1 && ethCard[0].ask === 'Buy $12.50 of ETH on Ethereum with a card' && ethCard[0].fee === 'none' && ethCard[0].chainId === 1 &&
+          linkCard.length === 1 && linkCard[0].ask === 'Buy $50 of LINK on Ethereum with a card' &&
+          (chartPairFor('AERO') ? aeroCard.length === 1 && aeroCard[0].ask === 'Buy $50 of AERO on Base with a card' : true) &&
+          mk2VenuesFor('HYPE', hypePair, { card: true }).every((r) => r.kind !== 'fund') && mk2VenuesFor('SOL', solPair, { card: true }).every((r) => r.kind !== 'fund'),
+        JSON.stringify([...aaplCard, ...ethCard, ...linkCard, ...aeroCard].map((r) => `${r.ask} [${r.fee}]`)),
+      )
+      const symVenuesSrc = await readFile('lib/symbol-venues.ts', 'utf8')
+      check(
+        'card row: the public venue map writes no per-chain funding sentence any more — "Fund Robinhood Chain with … from <chain>" and "Bring USDC from <chain>" live only in the per-wallet composer (lib/fund-routes), so no visitor is ever shown a chain their wallet can\'t fund from',
+        !/Fund Robinhood Chain with \$\{/.test(symVenuesSrc.split('export function venuesFor')[1]?.split('export function missingVenueNotes')[0] ?? 'x') &&
+          !/Bring USDC from/.test(symVenuesSrc.split('export function venuesFor')[1]?.split('export function missingVenueNotes')[0] ?? 'x'),
+      )
+    }
     check(
       'MK2/EXEC venue map: a coin whose home is not an EVM chain (SOL) gets Hyperliquid perps + the Guardian only — never a spot row that could buy a Base squat; an HL chart (HYPE) the same',
       [...kinds(sol)].sort().join() === ['perp', 'protect'].join() && [...kinds(hype)].sort().join() === ['perp', 'protect'].join() && sol.every((r) => r.venue === 'hyperliquid'),
     )
-    const allRows = [...eth, ...aapl, ...sol, ...hype, ...link, ...mk2VenuesFor('BTC', chartPairFor('BTC')!, { last: 60000 })]
+    const allRows = [
+      ...eth, ...aapl, ...sol, ...hype, ...link, ...mk2VenuesFor('BTC', chartPairFor('BTC')!, { last: 60000 }),
+      // the card rows (door open) ride the same ladder proof
+      ...['ETH', 'AAPL', 'LINK', 'BTC', 'NVDA'].flatMap((sym) => (chartPairFor(sym) ? mk2VenuesFor(sym, chartPairFor(sym)!, { card: true, usd: 25 }).filter((r) => r.kind === 'fund') : [])),
+    ]
     const dead = allRows.map((r) => ({ ask: r.ask, out: simulateLadder(r.ask) })).filter((x) => x.out.kind !== 'action')
     check(
       'MK2/EXEC venue map: EVERY row across ETH/AAPL/SOL/HYPE/LINK/BTC lands on a native layer through the ladder replica (never the planner, never a clarify)',
@@ -21326,6 +21357,214 @@ async function main() {
       (await fetch(`${BASE}/api/markets/routes?symbol=USDC`)).status === 404 && (await fetch(`${BASE}/api/markets/routes?symbol=%3Cscript%3E`)).status === 400 &&
         (await (await fetch(`${BASE}/api/markets/routes?symbol=AAPL&amount=25`)).json().then((b: Mk2RoutesResponse) => b.routes.every((r) => ['stock', 'dca', 'fund'].includes(r.kind)))),
     )
+
+    // ── FUND ROUTES + CARD BUY (2026-09-16) ─────────────────────────────────
+    // Nate on /t/AAPL's route table: "it shows options like 'Fund from Base'
+    // but the user does not have any tokens on base so we should not show an
+    // option path for this, also should we add a buy with Card option here as
+    // well?" The Fund rows are per wallet (lib/fund-routes, off the chat's own
+    // scans: a row IS the chat's funding chip for that origin) and the card row
+    // opens the checkout lib/card-buy sizes as an empty wallet's plan.
+    {
+      const fundShape = (ask: string) => {
+        const j = compileJobAsk(ask)
+        return j && 'steps' in j && j.steps ? j.steps.map((st) => `${st.kind}:${st.builder}`).join(',') : JSON.stringify(j)
+      }
+      const baseUsdc: FundingOrigin = { chainId: 8453, word: 'Base', token: 'USDC', usd: 120, gasEth: 0.001 }
+      const arbEth: FundingOrigin = { chainId: 42161, word: 'Arbitrum', token: 'ETH', usd: 80, gasEth: 0.03, spendable: true }
+      const opStuck: FundingOrigin = { chainId: 10, word: 'Optimism', token: 'USDC', usd: 12, gasEth: 0 }
+      const scanOf = (origins: FundingOrigin[], extra: { hasGas?: boolean; gaslessOrigins?: FundingOrigin[]; failedOrigins?: string[] } = {}) => ({
+        hasGas: extra.hasGas ?? false, origins, gaslessOrigins: extra.gaslessOrigins ?? [], failedOrigins: extra.failedOrigins ?? [],
+      })
+      const need50 = robinhoodBuyNeedUsd(50, 0, true)
+      const chatChip = (o: FundingOrigin, needUsd = need50, gasIncluded = true, followup = 'buy $50 of AAPL') =>
+        planRobinhoodFundingChips({ origins: [o], needUsd, gasIncluded, followup })?.[0]?.resume
+      const stock = stockFundRoutes({ sym: 'AAPL', buyUsd: 50, holdingUsd: 0, scan: scanOf([baseUsdc, arbEth], { gaslessOrigins: [opStuck] }) })
+      check(
+        'fund routes (stock): a wallet with USDC on Base and ETH on Arbitrum gets EXACTLY a Base row and an Arbitrum row (none for Ethereum or Optimism), each sentence IS the chat\'s own funding chip for that origin (the ETH one spends ETH), lands native and compiles fund legs → wait → the 4663 buy; the Optimism USDC with no gas is NAMED, not dropped',
+        stock.state === 'rows' && stock.routes.map((r) => r.chainId).join() === '8453,42161' && stock.routes[0].label === 'Fund from Base' && stock.routes[1].label === 'Fund from Arbitrum' &&
+          stock.routes[0].ask === chatChip(baseUsdc) && stock.routes[1].ask === chatChip(arbEth) && /from arbitrum using eth including gas, then buy \$50 of AAPL$/.test(stock.routes[1].ask) &&
+          stock.routes.every((r) => r.kind === 'fund' && r.venue === 'lifi' && r.feeBps === 0 && r.ticket?.feeUsd === 0 && r.ticket.note === MK2_TICKET_NOTE && simulateLadder(r.ask).kind === 'action' && /^sign:native-lifi-fund,.*wait:wait,sign:native-lifi-swap$/.test(fundShape(r.ask)) && !/0x[0-9a-fA-F]{6,}/.test(JSON.stringify(r))) &&
+          stock.routes[0].quote?.label === '$120 USDC' && stock.notes.some((n) => /~\$12 of USDC on Optimism can't move yet: there's no ETH there to pay the gas/.test(n)),
+        JSON.stringify({ asks: stock.routes.map((r) => `${r.ask} ⇒ ${fundShape(r.ask)}`), notes: stock.notes }),
+      )
+      const empty = stockFundRoutes({ sym: 'AAPL', buyUsd: 50, holdingUsd: 0, scan: scanOf([]) })
+      const short = stockFundRoutes({ sym: 'AAPL', buyUsd: 50, holdingUsd: 0, scan: scanOf([{ ...baseUsdc, usd: 20 }]) })
+      const split = stockFundRoutes({ sym: 'AAPL', buyUsd: 50, holdingUsd: 0, scan: scanOf([{ ...baseUsdc, usd: 35 }, { chainId: 42161, word: 'Arbitrum', token: 'USDC', usd: 35, gasEth: 0.001 }]) })
+      const covered = stockFundRoutes({ sym: 'AAPL', buyUsd: 50, holdingUsd: 62, scan: scanOf([baseUsdc]) })
+      const bigger = stockFundRoutes({ sym: 'AAPL', buyUsd: 250, holdingUsd: 0, scan: scanOf([baseUsdc, arbEth]) })
+      const gassed = stockFundRoutes({ sym: 'NVDA', buyUsd: 25, holdingUsd: 0, scan: scanOf([{ chainId: 42161, word: 'Arbitrum', token: 'USDC.e', usd: 60, gasEth: 0.001 }], { hasGas: true, failedOrigins: ['Optimism'] }) })
+      check(
+        'fund routes (stock): an empty wallet gets NO rows and says there\'s nothing to bring; $20 on Base for a $50 buy is no row + "pick a smaller size"; $35 + $35 is no single-chain row + "Buy AAPL can combine"; USDG already covering the buy is no row + "nothing to bring"; the SAME wallet at $250 loses its rows; a wallet with gas on 4663 moves no gas leg, spends USDC.e by name, and a chain that didn\'t read is named, never read as empty',
+        empty.routes.length === 0 && empty.state === 'none' && /No USDC or ETH on Base, Ethereum, Arbitrum, or Optimism to bring over yet/.test(empty.notes.join(' ')) &&
+          short.routes.length === 0 && short.state === 'short' && /biggest balance is ~\$20 of USDC on Base/.test(short.notes.join(' ')) && /Pick a smaller size/.test(short.notes.join(' ')) &&
+          split.routes.length === 0 && split.state === 'short' && /can combine what you hold on Base and Arbitrum/.test(split.notes.join(' ')) &&
+          covered.routes.length === 0 && covered.state === 'covered' && /already covers a \$50 buy/.test(covered.notes.join(' ')) &&
+          bigger.routes.length === 0 && bigger.state === 'short' &&
+          gassed.routes.length === 1 && gassed.routes[0].ask === chatChip(gassed.routes.length ? { chainId: 42161, word: 'Arbitrum', token: 'USDC.e', usd: 60, gasEth: 0.001 } : baseUsdc, robinhoodBuyNeedUsd(25, 0, false), false, 'buy $25 of NVDA') &&
+          /using usdc\.e, then buy \$25 of NVDA$/.test(gassed.routes[0].ask) && !/including gas/.test(gassed.routes[0].ask) && gassed.failed.join() === 'Optimism' && /Couldn't read Optimism just now/.test(gassed.notes.join(' ')),
+        JSON.stringify({ empty: empty.notes, short: short.notes, split: split.notes, covered: covered.notes, bigger: bigger.state, gassed: [gassed.routes[0]?.ask, gassed.notes] }),
+      )
+      const coinScan = {
+        sources: [
+          { chainId: 8453, chainWord: 'Base', token: 'USDC' as const, balance: 120, usd: 120 },
+          { chainId: 42161, chainWord: 'Arbitrum', token: 'ETH' as const, balance: 0.03, usd: 90 },
+          { chainId: 1, chainWord: 'Ethereum', token: 'USDC' as const, balance: 70, usd: 70 },
+        ],
+        stranded: [{ chainId: 10, chainWord: 'Optimism', token: 'USDC' as const, balance: 15, usd: 15 }],
+        failedChains: [] as string[],
+      }
+      const uni = coinFundRoutes({ sym: 'UNI', usd: 50, destChainId: 1, scan: coinScan })
+      const ethPage = coinFundRoutes({ sym: 'ETH', usd: 50, destChainId: 8453, scan: coinScan })
+      const noCoin = coinFundRoutes({ sym: 'UNI', usd: 50, destChainId: 1, scan: { sources: [], stranded: [], failedChains: [] } })
+      // Live 2026-09-16 (the burner on /t/ETH): $0.30 of Arbitrum USDC read as
+      // "your biggest balance elsewhere is ~$0" beside USDC that buys it right there.
+      const dustCoin = coinFundRoutes({ sym: 'ETH', usd: 10, destChainId: 8453, scan: { sources: [{ chainId: 8453, chainWord: 'Base', token: 'USDC', balance: 12, usd: 12 }, { chainId: 42161, chainWord: 'Arbitrum', token: 'USDC', balance: 0.3, usd: 0.3 }], stranded: [], failedChains: [] } })
+      check(
+        'fund routes (coin): UNI (buys on Ethereum) gets a Base USDC row and an Arbitrum ETH row through NEAR Intents — never the Ethereum USDC (it buys right there, named) nor the gas-less Optimism USDC (named); the ETH page never spends ETH to buy ETH; an empty wallet gets no rows and says so; dust is never "your biggest balance"; every sentence lands on the cross-chain gate',
+        uni.state === 'rows' && uni.routes.map((r) => r.ask).join(' | ') === 'Swap 50 USDC from Base to UNI on Ethereum | Swap 0.016667 ETH from Arbitrum to UNI on Ethereum' &&
+          uni.routes.every((r) => r.venue === 'near' && r.feeBps === CROSS_CHAIN_FEE_BPS && simulateLadder(r.ask).gate === 'cross-chain' && simulateLadder(r.ask).kind === 'action' && r.ticket?.feeUsd === Math.round(((50 * CROSS_CHAIN_FEE_BPS) / 10_000) * 100) / 100) &&
+          /~\$70 of USDC on Ethereum can buy it right there/.test(uni.notes.join(' ')) && /~\$15 of USDC on Optimism can't move yet/.test(uni.notes.join(' ')) &&
+          ethPage.routes.map((r) => r.ask).join(' | ') === 'Swap 50 USDC from Ethereum to ETH on Base' && /~\$120 of USDC on Base can buy it right there/.test(ethPage.notes.join(' ')) &&
+          noCoin.routes.length === 0 && noCoin.state === 'none' && /No USDC or ETH on Base, Arbitrum, or Optimism to bring over yet/.test(noCoin.notes.join(' ')) &&
+          dustCoin.state === 'covered' && dustCoin.notes.length === 1 && /~\$12 of USDC on Base can buy it right there/.test(dustCoin.notes[0]),
+        JSON.stringify({ uni: [uni.routes.map((r) => r.ask), uni.notes], eth: [ethPage.routes.map((r) => r.ask), ethPage.notes], none: noCoin.notes, dust: dustCoin.notes }),
+      )
+
+      // The card checkout: the SAME chip an empty wallet's plain ask gets.
+      check(
+        'card buy: the destination gas leg is ONE rule for the funding offer and the card preset (destGasLegUsd): $1.50 minimum on an L2, 0.003 ETH ×1.15 on Ethereum, nothing when the floor is held',
+        destGasLegUsd(8453, 0, 4000) === 1.5 && destGasLegUsd(1, 0, 4000) === 14 && destGasLegUsd(1, 0.01, 4000) === 0 && destGasLegUsd(42161, 0.001, 4000) === 0,
+        `${destGasLegUsd(8453, 0, 4000)}/${destGasLegUsd(1, 0, 4000)}/${destGasLegUsd(1, 0.01, 4000)}`,
+      )
+      const wasOnramp = process.env.ONRAMP_ENABLED
+      const wasStripe = process.env.STRIPE_SECRET_KEY
+      let expectedAaplPreset: number | null = null
+      try {
+        process.env.ONRAMP_ENABLED = 'true'
+        process.env.STRIPE_SECRET_KEY = wasStripe || 'sk_test_harness'
+        const stockAsk: CardBuyAsk = { kind: 'stock', sym: 'AAPL', buyUsd: 50 }
+        const stockChip = cardBuyChip(stockAsk, null)
+        const emptyWalletChip = fundChipFor({ needUsd: robinhoodBuyNeedUsd(50, 0, true), actionLabel: 'buy $50 of AAPL', resume: 'Buy $50 of AAPL' })
+        expectedAaplPreset = stockChip?.fund?.presetFiatUsd ?? null
+        const coinAsk: CardBuyAsk = { kind: 'coin', sym: 'UNI', buyUsd: 50, chainId: 1, chainName: 'Ethereum', chainWord: 'Ethereum' }
+        const decision = decideFundingTurn({
+          need: { chainId: 1, token: 'USDC', amountHuman: 50, followupResume: 'swap 50.00 USDC for UNI on Ethereum', actionLabel: 'the buy' },
+          needUsd: fundingPlanUsd(50, 1),
+          gasUsd: destGasLegUsd(1, 0, 4000),
+          scan: { sources: [], stranded: [], ethUsd: 4000, readChains: ['Base', 'Arbitrum', 'Optimism', 'Ethereum'], failedChains: [] },
+          destChainName: 'Ethereum',
+        })
+        const refusalChip =
+          decision.kind === 'refusal'
+            ? swapBuyFundChip({ chainName: 'Ethereum', chainWord: 'Ethereum', sellToken: 'USDC', buyToken: 'UNI', sellAmountHuman: '50.00', sellAmountUsd: '50', sellIsStable: true, heldHuman: '0' }, decision.facts)
+            : null
+        const coinChip = cardBuyChip(coinAsk, 4000)
+        const ethChip = cardBuyChip({ kind: 'coin', sym: 'ETH', buyUsd: 50, chainId: 1, chainName: 'Ethereum', chainWord: 'Ethereum' }, null)
+        check(
+          'card buy: "Buy $50 of AAPL with a card" opens the SAME checkout an empty wallet\'s "Buy $50 of AAPL" gets (nothing held, the gas leg in); a coin buy the same chip an empty-scan refusal carries (decideFundingTurn → swapBuyFundChip); an ETH buy completes on arrival at its own dollars — and no resume says "card" again (it would loop back to the checkout)',
+          !!stockChip?.fund && JSON.stringify(stockChip) === JSON.stringify(emptyWalletChip) && stockChip.resume === 'Buy $50 of AAPL' &&
+            !!coinChip?.fund && JSON.stringify(coinChip) === JSON.stringify(refusalChip) && coinChip.resume === 'Buy $50 of UNI on Ethereum' &&
+            ethChip?.fund?.completes === true && ethChip.fund.presetFiatUsd === 50 && ethChip.fund.network === ONRAMP_DEFAULT_NETWORK &&
+            [stockChip, coinChip, ethChip].every((c) => !!c && !/card/i.test(c.resume) && simulateLadder(c.resume).kind === 'action'),
+          JSON.stringify({ stockChip, emptyWalletChip, coinChip, refusalChip, ethChip }),
+        )
+        const turn = cardBuyTurn(stockAsk, null)
+        const big = cardBuyTurn({ kind: 'stock', sym: 'AAPL', buyUsd: 1000 }, null)
+        const bigSmaller = big.clarify?.options[0]
+        check(
+          'card buy: the turn leads with the checkout chip, then the SAME buy from the wallet, then Not now — and says where the ETH lands and what the checkout opens at; a $1,000 card buy past one checkout offers no checkout, names the $500 cap, and offers the largest round size that fits ($400, whose own chip exists) plus the wallet path',
+          turn.buildPath === 'native-card-buy' && turn.clarify?.options.length === 3 && !!turn.clarify.options[0].fund && turn.clarify.options[1].resume === 'Buy $50 of AAPL' && /never mind/i.test(turn.clarify.options[2].resume) &&
+            new RegExp(`opens at \\$${expectedAaplPreset}`).test(turn.reply) && /on Ethereum/.test(turn.reply) && /Robinhood Chain/.test(turn.reply) &&
+            !big.clarify?.options.some((o) => o.fund) && /tops out at \$500/.test(big.reply) && bigSmaller?.resume === 'Buy $400 of AAPL with a card' &&
+            !!cardBuyChip({ kind: 'stock', sym: 'AAPL', buyUsd: 400 }, null)?.fund && !!big.clarify?.options.some((o) => o.resume === 'Buy $1000 of AAPL') &&
+            simulateLadder(bigSmaller.resume).kind === 'action',
+          JSON.stringify({ turn, big }),
+        )
+        process.env.ONRAMP_ENABLED = 'false'
+        const closed = cardBuyTurn(stockAsk, null)
+        check(
+          'card buy: a CLOSED card door never renders a checkout — it says so and offers the same buy from the wallet',
+          closed.buildPath === 'native-card-buy' && !closed.clarify?.options.some((o) => o.fund) && closed.clarify?.options[0].resume === 'Buy $50 of AAPL' && /isn't open here/.test(closed.reply),
+          JSON.stringify(closed),
+        )
+      } finally {
+        if (wasOnramp === undefined) delete process.env.ONRAMP_ENABLED
+        else process.env.ONRAMP_ENABLED = wasOnramp
+        if (wasStripe === undefined) delete process.env.STRIPE_SECRET_KEY
+        else process.env.STRIPE_SECRET_KEY = wasStripe
+      }
+
+      // Wiring: the chat reads the flag, the table reads the per-wallet rows.
+      const chatSrc = await readFile('app/api/chat/route.ts', 'utf8')
+      const tableSrc = await readFile('components/markets/trade/RouteTable.tsx', 'utf8')
+      const cardAt = chatSrc.indexOf('if (intent.viaCard && intent.mode !== \'limit\'')
+      check(
+        'card buy (wiring): the swap layer answers a `viaCard` dollar buy with cardBuyTurn BEFORE any balance scan (the Robinhood funding plan and the swap shortfall read balances after it); RouteTable fetches /api/markets/routes/funding for the connected wallet and says FUND_CONNECT_NOTE to a visitor with none',
+        cardAt > 0 && chatSrc.indexOf('cardBuyTurn(cardAsk', cardAt) > cardAt && cardAt < chatSrc.indexOf('const shortfall = await readFundingShortfall(walletAddress, lifiDest.chainId)') && cardAt < chatSrc.indexOf('const turn = swapShortfallTurn({') &&
+          tableSrc.includes('/api/markets/routes/funding?') && tableSrc.includes('FUND_CONNECT_NOTE') && tableSrc.includes("r.venue === 'card'") && MK2_FUND_CONNECT_NOTE.length > 20,
+      )
+
+      // HTTP: the per-wallet endpoint.
+      const fundUrl = (q: string) => `${BASE}/api/markets/routes/funding?${q}`
+      const freshWallet = privateKeyToAccount(generatePrivateKey()).address
+      const fNoAddr = await fetch(fundUrl('symbol=AAPL&amount=50'))
+      const fBadAddr = await fetch(fundUrl('symbol=AAPL&amount=50&address=0x1234'))
+      const fStable = await fetch(fundUrl(`symbol=USDC&address=${freshWallet}`))
+      const fHype = await fetch(fundUrl(`symbol=HYPE&amount=50&address=${freshWallet}`))
+      const fHypeJ = (await fHype.json()) as Mk2FundRoutesResponse
+      const fAapl = await fetch(fundUrl(`symbol=AAPL&amount=50&address=${freshWallet}`))
+      const fAaplJ = (await fAapl.json()) as Mk2FundRoutesResponse
+      const fAapl2J = (await (await fetch(fundUrl(`symbol=AAPL&amount=25&address=${freshWallet}`))).json()) as Mk2FundRoutesResponse
+      check(
+        'fund routes (route): GET /api/markets/routes/funding answers 400 without an address or with a malformed one, 404 for a stable, an empty `none` for a perp chart, and for a FRESH wallet on AAPL 200 with NO rows and a note that says why — public (no cookie set), and a re-read at another size within 30s reuses the scan',
+        fNoAddr.status === 400 && fBadAddr.status === 400 && fStable.status === 404 &&
+          fHype.status === 200 && fHypeJ.routes.length === 0 && fHypeJ.state === 'none' &&
+          fAapl.status === 200 && fAaplJ.routes.length === 0 && ['none', 'unread'].includes(fAaplJ.state) && fAaplJ.notes.length > 0 && !fAapl.headers.get('set-cookie') &&
+          fAaplJ.amountUsd === 50 && fAapl2J.amountUsd === 25 && (fAaplJ.state === 'unread' || fAapl2J.cached === true),
+        JSON.stringify({ aapl: fAaplJ, again: { cached: fAapl2J.cached, state: fAapl2J.state } }),
+      )
+      const fundBurner = '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0'
+      const fEthJ = (await (await fetch(fundUrl(`symbol=ETH&amount=10&address=${fundBurner}`))).json()) as Mk2FundRoutesResponse
+      check(
+        'fund routes (route): the burner on ETH (buys on Base) — every row the live scan returns is a NEAR row from a chain OTHER than Base that lands on the cross-chain gate, spends USDC (never ETH to buy ETH), carries fee bps AND dollars, and no address anywhere',
+        fEthJ.symbol === 'ETH' && ['rows', 'covered', 'short', 'none', 'unread'].includes(fEthJ.state) &&
+          fEthJ.routes.every((r) => r.kind === 'fund' && r.venue === 'near' && r.chainId !== 8453 && / USDC from /.test(r.ask) && simulateLadder(r.ask).gate === 'cross-chain' && r.ticket?.feeUsd === Math.round(((10 * r.feeBps) / 10_000) * 100) / 100) &&
+          !/0x[0-9a-fA-F]{6,}/.test(JSON.stringify(fEthJ)),
+        JSON.stringify(fEthJ),
+      )
+
+      // HTTP: the public map's card row + the chat turn, in whichever state this
+      // server's door is (the session route answers 503 before auth when closed).
+      const doorOpen = (await fetch(`${BASE}/api/onramp/session`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' }, body: '{}' })).status !== 503
+      const mapAapl = (await (await fetch(`${BASE}/api/markets/routes?symbol=AAPL&amount=50`)).json()) as Mk2RoutesResponse
+      const mapCard = mapAapl.routes.filter((r) => r.kind === 'fund')
+      check(
+        `card row (route): the AAPL map at $50 carries ${doorOpen ? 'ONE card row whose quote reads what the checkout opens at (the same preset the chat chip carries) and whose ticket says what gets signed' : 'NO funding row (the card door is closed on this server, and per-chain funding is per wallet)'}`,
+        doorOpen
+          ? mapCard.length === 1 && mapCard[0].id === 'fund:card' && mapCard[0].ask === 'Buy $50 of AAPL with a card' && mapCard[0].quote?.label === `opens at $${expectedAaplPreset}` &&
+              /consent signature/.test(mapCard[0].ticket?.signs ?? '') && mapCard[0].feeBps === 20
+          : mapCard.length === 0,
+        `door=${doorOpen} ${JSON.stringify(mapCard)}`,
+      )
+      const cardChat = (message: string) =>
+        fetch(`${BASE}/api/chat`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+          body: JSON.stringify({ message, walletAddress: freshWallet, activeServers: [], history: [] }),
+        }).then((r) => r.json() as Promise<Record<string, unknown> & { clarify?: { options?: { label: string; resume: string; fund?: { presetFiatUsd: number; completes?: true } }[] } }>)
+      const aaplCard = await cardChat('Buy $50 of AAPL with a card')
+      const ethCardTurn = await cardChat('Buy $50 of ETH on Ethereum with a card')
+      check(
+        `card buy (route): "Buy $50 of AAPL with a card" and "Buy $50 of ETH on Ethereum with a card" answer the card turn, never a build — ${doorOpen ? 'the AAPL checkout chip at the map\'s preset resuming the plain buy, the ETH chip completing at $50' : 'saying the checkout isn\'t open and offering the plain buy from the wallet'}`,
+        [aaplCard, ethCardTurn].every((t) => t.buildPath === 'native-card-buy' && !(t.orderRequest || t.txRequest || t.txChain || t.jobId)) &&
+          (doorOpen
+            ? aaplCard.clarify?.options?.[0]?.fund?.presetFiatUsd === expectedAaplPreset && aaplCard.clarify.options[0].resume === 'Buy $50 of AAPL' &&
+              ethCardTurn.clarify?.options?.[0]?.fund?.completes === true && ethCardTurn.clarify.options[0].fund.presetFiatUsd === 50
+            : aaplCard.clarify?.options?.[0]?.resume === 'Buy $50 of AAPL' && /isn't open here/.test(String(aaplCard.reply)) && ethCardTurn.clarify?.options?.[0]?.resume === 'Buy $50 of ETH on Ethereum'),
+        `door=${doorOpen} ${JSON.stringify({ aapl: aaplCard, eth: ethCardTurn }).slice(0, 700)}`,
+      )
+    }
 
     // The position API — public by address, read-only, exits are sentences.
     const burner = '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0'

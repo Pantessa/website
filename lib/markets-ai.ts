@@ -837,8 +837,10 @@ export function venueWordsFor(pair: ChartPair, last: number | null = null): stri
         break
     }
   }
-  const fundFrom = rows.filter((r) => r.kind === 'fund').length
-  if (fundFrom) words.push(`funding from ${fundFrom} other chain${fundFrom === 1 ? '' : 's'} (NEAR Intents / LiFi)`)
+  // Funding is per wallet now (lib/fund-routes: only the chains a wallet can
+  // actually fund from), so the venue map carries no funding rows to count.
+  // A page with a spot or stock buy can still be funded.
+  if (rows.some((r) => r.kind === 'spot' || r.kind === 'stock')) words.push(`funding from the wallet's other chains (${pair.source === 'robinhood' ? 'LiFi' : 'NEAR Intents'}) or a card`)
   words.push('price alerts')
   for (const n of missingVenueNotes(pair.symbol, pair)) words.push(`not here: ${n}`)
   return words

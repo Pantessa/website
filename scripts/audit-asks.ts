@@ -403,6 +403,19 @@ const CORPUS: Entry[] = [
   { ask: 'Stake 0.02 ETH on Lido', source: 'MK2/EXEC RouteTable stake row', expect: 'action' },
   { ask: 'Swap 50 USDC from Optimism to ETH on Base', source: 'MK2/EXEC RouteTable fund row (NEAR)', expect: 'action' },
   { ask: 'Fund Robinhood Chain with $50 from Ethereum including gas, then buy $40 of AAPL', source: 'MK2/EXEC RouteTable stock fund row', expect: 'action' },
+  // 2026-09-16 (Nate on /t/AAPL: "Fund from Base" for a wallet with nothing on
+  // Base): the Fund rows are per wallet now (lib/fund-routes) and spend the
+  // token the origin holds, in the chat chips' own words; the card row buys
+  // with a card (lib/card-buy).
+  { ask: 'Fund robinhood chain with $54.5 from base including gas, then buy $50 of AAPL', source: 'RouteTable wallet fund row (USDC origin)', expect: 'action' },
+  { ask: 'Fund robinhood chain with $54.5 from arbitrum using eth including gas, then buy $50 of AAPL', source: 'RouteTable wallet fund row (ETH origin)', expect: 'action' },
+  { ask: 'Fund robinhood chain with $26.5 from arbitrum using usdc.e, then buy $25 of NVDA', source: 'RouteTable wallet fund row (USDC.e origin, gas already there)', expect: 'action' },
+  { ask: 'Swap 0.016667 ETH from Arbitrum to UNI on Ethereum', source: 'RouteTable wallet fund row (NEAR, ETH origin)', expect: 'action' },
+  { ask: 'Buy $50 of AAPL with a card', source: 'RouteTable card row (stock)', expect: 'action' },
+  { ask: 'Buy $50 of ETH on Ethereum with a card', source: 'RouteTable card row (ETH: the delivery is the buy)', expect: 'action' },
+  { ask: 'Buy $50 of UNI on Ethereum with a card', source: 'RouteTable card row (coin)', expect: 'action' },
+  { ask: 'Buy $12.50 of AERO on Base with a card', source: 'RouteTable card row (custom size, cents)', expect: 'action' },
+  { ask: 'Buy $400 of AAPL with a card', source: 'card buy: the smaller size one checkout fits', expect: 'action' },
   { ask: 'Sell all my ETH on Arbitrum', source: 'MK2/EXEC PositionPanel exit', expect: 'action' },
   { ask: 'Close my ETH short on Hyperliquid', source: 'MK2/EXEC PositionPanel exit', expect: 'action' },
   { ask: 'Withdraw all my LINK from Aave', source: 'MK2/EXEC PositionPanel exit', expect: 'action' },
