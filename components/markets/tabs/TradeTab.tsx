@@ -7,9 +7,9 @@
 // the Spot Guardian on Base or the HL Guardian for perps) and SENDS it: the
 // frame's act door hands it to the app, which runs it on arrival with the
 // dapps it needs (lib/arrival-intent; 2026-09-16 — the build used to land in
-// a panel at the foot of this tab, where nobody saw it). Connect to act, sign in to keep (rule 6 — every
-// sign-in CTA inside ChatInterface is already the unified door). The wallet
-// signature is the only gate; the panel itself never touches funds.
+// a panel at the foot of this tab, where nobody saw it). Connect to act,
+// sign in to keep (rule 6). The wallet signature is the only gate; the panel
+// itself never touches funds.
 
 import { useMemo, useState } from 'react'
 import type { ChartPair } from '@/lib/charts'

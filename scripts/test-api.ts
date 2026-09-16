@@ -21811,7 +21811,7 @@ async function main() {
         const trade = await readFile('components/markets/tabs/TradeTab.tsx', 'utf8')
         return /const handed = writeArrivalIntent\(\{ text: ask, from: pathname \?\? '' \}\)\s*\n\s*router\.push\(handed \? ARRIVAL_APP_HREF : promptHref\(ask\)\)/.test(sym) &&
           /useConnectToAct\(\{ run: runAsk, redirectFor: promptHref \}\)/.test(sym) &&
-          !/setTab\('trade'\)/.test(sym) &&
+          !/const runAsk = useCallback\([\s\S]{0,400}setTab\('trade'\)/.test(sym) &&
           !/ChatInterface/.test(trade.replace(/\/\/[^\n]*/g, ''))
       })(),
     )
