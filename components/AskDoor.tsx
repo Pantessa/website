@@ -36,6 +36,7 @@ import { askDoorChips, askDoorHidden, askDoorNav, askDoorPillHidden, askDoorPlac
 import { normalizeSpokenAsk } from '@/lib/voice-ask'
 import { useYeetfulStore, type McpServer } from '@/lib/store'
 import { FREE_FLEET_FALLBACK } from '@/lib/free-fleet'
+import { missingAppIds } from '@/lib/ask-apps'
 import { CATALOG } from '@/lib/mcp-data'
 import type { InjectedPrompt } from '@/lib/trade-asks'
 
@@ -238,8 +239,7 @@ function AskDoorSheet() {
     const want = fire.mcps ?? []
     if (want.length > 0) {
       if (servers.length === 0) return
-      const ids = want.map((slug) => servers.find((s) => s.slug === slug)?.id).filter((id): id is string => !!id)
-      const missing = ids.filter((id) => !activeServerIds.includes(id))
+      const missing = missingAppIds(want, servers, activeServerIds)
       if (missing.length > 0) {
         setActiveServerIds([...activeServerIds, ...missing])
         return

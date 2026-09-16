@@ -12,9 +12,9 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   detectArrival,
+  keepWatchedWait,
   pollDelayMs,
   saveFundWait,
-  watchedWait,
   type Arrival,
   type FundWait,
 } from '@/lib/funding-arrival'
@@ -51,11 +51,12 @@ export function useFundingArrival(wait: FundWait | null, enabled: boolean): Fund
     lastReadAt: null,
     failures: 0,
   })
-  // The first read's baseline is written onto the ref's copy — a ref keeps
-  // that off the effect's dependency list, and watchedWait keeps the copy
-  // across renders (the surface's own `wait` still has a null baseline).
+  // The first read writes the baseline into this ref (and storage), never
+  // into the caller's object, so a render for the same purchase must keep
+  // the ref's copy (keepWatchedWait). A ref keeps it off the effect's
+  // dependency list.
   const waitRef = useRef<FundWait | null>(wait)
-  waitRef.current = watchedWait(waitRef.current, wait)
+  waitRef.current = keepWatchedWait(waitRef.current, wait)
 
   useEffect(() => {
     if (!enabled || !wait) {

@@ -5,19 +5,22 @@ import { isBuildPath } from '@/lib/build-path'
 import { INTENT_SLUG_RE } from '@/lib/intent-links'
 import type { OriginKind } from '@/lib/value-origin'
 import { COUNTED_VERIFICATIONS, verifyTurnNow } from '@/lib/link-receipt-verify'
+import { sanitizeFillSymbols } from '@/lib/fill-symbols'
+import { isIndexSymbol } from '@/lib/viz/flow'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 // Per-turn embed telemetry — the client posts one compact beacon after each
 // embedded chat turn (and again when something gets signed):
-//   { key, sessionId, page?, prompt?, outcome, artifact?, chain?, detail?, txUrl?, valueUsd?, buildPath?, jobId? }
+//   { key, sessionId, page?, prompt?, outcome, artifact?, chain?, detail?, txUrl?, valueUsd?, buildPath?, jobId?, symbols? }
 // KEYED embeds only: telemetry is a feature of the embed key (it's what the
 // owner dashboard renders); keyless mounts record nothing here — with ONE
 // exception: FIRST-PARTY beacons ({ firstParty: true }, no key) from
 // yeetful.com's own chat record value-bearing outcomes (tx-built / signed)
 // under embedKeyId '' so the "money moved" metric counts the whole product.
-// First-party rows carry NO prompt (chat asks stay private) and are only
+// First-party rows carry NO prompt (chat asks stay private) — only the
+// side-tagged symbols the trade moved (lib/fill-symbols.ts) — and are only
 // accepted when the reported origin matches this deployment's own host —
 // a keyless third-party embed still records nothing. Public + self-reported
 // by design (it runs on host sites) — inputs are clamped and allowlisted,
@@ -118,6 +121,15 @@ export async function POST(req: NextRequest) {
       ? body.feeBps
       : undefined
 
+  // The traded symbols, side-tagged ("buy:ETH") — the one trade detail a
+  // first-party row keeps (no prompt, no detail). Self-reported like valueUsd,
+  // so every entry is re-allowlisted against the Markets index; job artifacts
+  // are never tagged (their fills are read from job steps — no double marker).
+  const symbols =
+    (outcome === 'tx-built' || outcome === 'signed') && artifact !== 'job' && artifact !== 'job-step'
+      ? sanitizeFillSymbols(body.symbols, isIndexSymbol)
+      : []
+
   let row: { id: string } | null = null
   try {
     row = await prisma.embedTurn.create({
@@ -144,6 +156,7 @@ export async function POST(req: NextRequest) {
         walletAddress,
         feeBps,
         isInternal: internalRun,
+        symbols,
         // Money follows the receipt (S-2): a signed row starts fail-closed
         // and is promoted below by the same verifier the funnel event gets.
         verification: outcome === 'signed' ? 'unverified' : undefined,

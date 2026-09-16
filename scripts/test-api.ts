@@ -55,6 +55,7 @@ import { rankMovers } from '../lib/viz/movers'
 import { profileBins } from '../components/markets/chart/volume-profile'
 import { cleanSparkSymbols, SPARKS_MAX_SYMBOLS } from '../lib/viz/sparks'
 import { namesSymbol, sideOf, venueOfBuild, FILLS_TTL_MS } from '../lib/viz/fills'
+import { fillSymbolsInAsk, fillSymbolsOf, fillSymbolsForPair, sanitizeFillSymbols } from '../lib/fill-symbols'
 import { fillLabel } from '../lib/chart-fills'
 import { marketSections as vizMarketSections } from '../lib/markets'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
@@ -179,7 +180,7 @@ import { gasStateFor, mergeChains, robinhoodStockTokens, type RpcChainRead, type
 import { fundingSourcesFromChains, NEAR_INTENTS_SLUG, walletFlags } from '../lib/wallet-flags'
 import { useAskDoor } from '../lib/ask-door'
 import { parseWalletSendBody, WALLET_SEND_CHAIN_IDS } from '../lib/wallet-send'
-import { arrivalPhrase, detectArrival, fundWaitExpired, fundWaitKey, pollDelayMs, watchedWait, FUND_WAIT_TTL_MS, FUND_WATCH_MAX_MS, type FundWait } from '../lib/funding-arrival'
+import { arrivalPhrase, detectArrival, fundWaitExpired, fundWaitKey, pollDelayMs, FUND_WAIT_TTL_MS, FUND_WATCH_MAX_MS } from '../lib/funding-arrival'
 import { usdToTokenAmount } from '../lib/usd-probe'
 import { parseRobinhoodBridge, guardRobinhoodBridge, RH_L1_INBOX, ARB_SYS } from '../lib/robinhood-bridge'
 import { parseNftAsk, parseOpenSeaItemUrl, guardNftTransfer, ERC721_ABI as NFT_ERC721_ABI, ERC1155_ABI as NFT_ERC1155_ABI } from '../lib/nft-layer'
@@ -9086,32 +9087,6 @@ async function main() {
     const w = { address: '0x' + 'cd'.repeat(20), network: 'ethereum' as const, resume: 'buy $10 of AAPL', label: 'Add $25', baselineEth: null, baselineStable: null, openedAt: Date.now() - FUND_WAIT_TTL_MS - 1 }
     check('arrival: a wait older than the TTL is expired; a fresh one is not', fundWaitExpired(w) && !fundWaitExpired({ ...w, openedAt: Date.now() }))
     check('arrival: the storage key is per lowercased wallet', fundWaitKey('0xABCDEF' + '00'.repeat(17)) === 'yf-fund-wait:0xabcdef' + '00'.repeat(17))
-    // THE SAME-TAB LANDING (found 2026-09-16 driving a real chip click): the
-    // hook re-pointed its ref at the surface's wait on every render, and that
-    // object never carries a baseline — so every poll re-baselined and a
-    // purchase that landed between two reads became the new baseline. The
-    // auto-continue only ever fired after a reload. This replays the hook's
-    // ref dance render by render.
-    {
-      const opened: FundWait = { address: '0x' + 'ab'.repeat(20), network: 'ethereum', resume: 'Buy $50 of ETH on Base', label: 'Buy $50 of ETH with card or bank', completes: true, baselineEth: null, baselineStable: null, openedAt: Date.now() }
-      let ref = watchedWait(null, opened)
-      ref = ref ? { ...ref, baselineEth: 0, baselineStable: 0 } : ref // the first read writes the baseline onto the loop's copy
-      ref = watchedWait(ref, opened) // the re-render that setState triggers, handing back the surface's null-baseline wait
-      const landed = ref && ref.baselineEth !== null && ref.baselineStable !== null ? detectArrival({ eth: ref.baselineEth, stable: ref.baselineStable }, { eth: 0.0201, stable: 0 }, 2480) : null
-      check(
-        'arrival: the loop\'s baseline SURVIVES the surface re-rendering its own null-baseline wait, so a same-tab landing is reported',
-        ref?.baselineEth === 0 && landed?.deltaEth === 0.0201,
-        JSON.stringify({ ref, landed }),
-      )
-      const restored: FundWait = { ...opened, baselineEth: 0.004, baselineStable: 0 }
-      check(
-        'arrival: a DIFFERENT wait replaces the loop\'s copy, no wait clears it, and a restored baseline fills a copy that has none',
-        watchedWait(ref, { ...opened, openedAt: opened.openedAt + 1 })?.baselineEth === null && watchedWait(ref, null) === null &&
-          watchedWait(opened, restored)?.baselineEth === 0.004 && watchedWait(null, opened) === opened,
-      )
-      const hookSrc = await readFile(new URL('../lib/use-funding-arrival.ts', import.meta.url), 'utf8')
-      check('arrival: the hook keeps its copy through watchedWait (never a bare re-point at the prop)', /waitRef\.current = watchedWait\(waitRef\.current, wait\)/.test(hookSrc) && !/waitRef\.current = wait\b/.test(hookSrc))
-    }
 
     // The doors: "Wallet details" opens OUR panel; the chip watches.
     const navSrc = await readFile(new URL('../components/NavAccount.tsx', import.meta.url), 'utf8')
@@ -9387,7 +9362,8 @@ async function main() {
         !/Ask the chat to fund it/.test(wfPanel) &&
         /takeFire\(\)\n\s+send\(fire\.text\)/.test(wfDoor) && /setActiveServerIds\(\[\.\.\.activeServerIds, \.\.\.missing\]\)/.test(wfDoor) && /fetch\('\/api\/servers'\)/.test(wfDoor) &&
         /walletAddress && walletStatus !== 'connected' && elapsed < 10_000/.test(wfDoor) &&
-        /sendFromOverlay\(composerSend\.text\)/.test(wfChat) && /setActiveServerIds\(\[\.\.\.activeServerIds, \.\.\.missing\]\)/.test(wfChat) && /flags: walletFlags\(chains, ethUsd\)/.test(wfView),
+        // Re-pinned 2026-09-16 (apps follow the ask): the chat's send slot is a chip send — the flag's mcps ride with the ask's own apps, activated in sendChip.
+        /sendChip\(composerSend\.text, composerSend\.mcps \?\? \[\]\)/.test(wfChat) && /const next = \[\.\.\.activeServerIds, \.\.\.missing\]/.test(wfChat) && /flags: walletFlags\(chains, ethUsd\)/.test(wfView),
     )
     // Over HTTP: the drill wallet's view carries the flags array, and every
     // ask on it is a native action in the ladder replica.
@@ -20562,6 +20538,89 @@ async function main() {
     await prisma.watchlistHoldingSeen.deleteMany({ where: { owner: { in: hoOwners } } }).catch(() => {})
   }
 
+  // ── MARKETS/WATCH — the card door (2026-09-16) ───────────────────────────
+  // Nate, on an empty rail signed in with an account that holds nothing: "can
+  // we add a buy ETH or USDC using stripe call out and linkage here". The
+  // holdings read says whether the wallet holds nothing and whether card
+  // funding is on; the rail offers the signed Stripe door and watches for the
+  // money. The rules first, then the read, then the wiring (the pixel drive
+  // is in the PR).
+  console.log('— markets/watch card door')
+  {
+    const { walletLooksEmpty } = await import('../lib/watchlist-holdings')
+    const { railFundPhase, RAIL_FUND_OPTIONS, RAIL_FUND_PRESET_USD } = await import('../lib/watchlists')
+    const { ONRAMP_DEFAULT_NETWORK, ONRAMP_MAX_USD, ONRAMP_MIN_USD, onrampAssetOf, onrampConsentMessage } = await import('../lib/onramp')
+
+    // 1. What "holds nothing" means.
+    const Z0 = '0x0000000000000000000000000000000000000000'
+    const frow = (symbol: string, balance: string, valueUsd: number | null, native?: true) => ({ symbol, address: Z0, balance, priceUsd: null, valueUsd, ...(native ? { native } : {}) })
+    const fview = (chains: ReturnType<typeof frow>[][], failedChains: string[] = []) => ({ chains: chains.map((holdings) => ({ holdings })), failedChains })
+    check('card door: a wallet holds nothing when every chain answered and everything on it together is dust (a fresh account, or $0.70 of scraps); a zero-balance row is not a holding',
+      walletLooksEmpty(fview([[], [], []])) && walletLooksEmpty(fview([[frow('ETH', '0.0002', 0.4, true)], [frow('USDC', '0.3', 0.3)]])) && walletLooksEmpty(fview([[frow('ETH', '0', null, true)]])))
+    check('card door: $1 of anything is something, and so is a holding nobody could price (a stock bought a minute ago); a chain that didn’t answer is unread, never empty',
+      !walletLooksEmpty(fview([[frow('USDC', '1', 1)]])) && !walletLooksEmpty(fview([[frow('AAPL', '0.01', null)]])) &&
+        !walletLooksEmpty(fview([[], []], ['Base'])) && !walletLooksEmpty({ chains: [{ holdings: [], unread: true }], failedChains: [] }))
+
+    // 2. What the door shows.
+    const phaseAt = (s: Partial<Parameters<typeof railFundPhase>[0]>) => railFundPhase({ wallet: true, empty: true, cardFunding: true, waiting: false, landed: false, ...s })
+    check('card door: an empty wallet gets the offer when this deployment sells by card; no wallet, a wallet with something in it, or no on-ramp gets nothing (fail closed: never a button that 503s)',
+      phaseAt({}) === 'offer' && phaseAt({ wallet: false }) === null && phaseAt({ empty: false }) === null && phaseAt({ cardFunding: false }) === null)
+    check('card door: a purchase on its way to a still-empty wallet watches instead of offering the button again (a second tap is a second charge); a landing shows until dismissed, whatever the wallet reads; a wait on a wallet that now holds something stays quiet',
+      phaseAt({ waiting: true }) === 'watching' && phaseAt({ waiting: true, cardFunding: false }) === 'watching' && phaseAt({ waiting: true, empty: false }) === null &&
+        phaseAt({ landed: true, empty: false }) === 'landed' && phaseAt({ landed: true, wallet: false }) === null)
+    check('card door: ETH leads (it pays its own gas), USDC second; both on the default lane and both assets the session route delivers; the opening amount sits inside the on-ramp’s bounds, and a USDC buy’s consent names the asset and the chain',
+      RAIL_FUND_OPTIONS.map((o) => o.asset).join() === 'ETH,USDC' && RAIL_FUND_OPTIONS.every((o) => o.network === ONRAMP_DEFAULT_NETWORK && onrampAssetOf(o.asset) === o.asset) &&
+        RAIL_FUND_PRESET_USD >= ONRAMP_MIN_USD && RAIL_FUND_PRESET_USD <= ONRAMP_MAX_USD &&
+        onrampConsentMessage({ address: '0x' + 'ab'.repeat(20), presetFiatUsd: RAIL_FUND_PRESET_USD, asset: 'USDC', network: ONRAMP_DEFAULT_NETWORK, issuedAt: 0 }).includes(`Asset: USDC on ${ONRAMP_DEFAULT_NETWORK}`))
+
+    // 3. The read.
+    const fundAddr = '0x' + 'cd'.repeat(20)
+    const fRes = await fetch(`${BASE}/api/watchlists/holdings?address=${fundAddr}`)
+    const fBody = (await fRes.json()) as { held: unknown[]; empty?: unknown; cardFunding?: unknown; failedChains: string[] }
+    check('GET /api/watchlists/holdings: says whether the wallet holds nothing (an address nobody funded reads empty unless a chain didn’t answer) and whether this deployment sells funds by card',
+      fRes.status === 200 && (fBody.failedChains.length ? fBody.empty === false : fBody.empty === true) && typeof fBody.cardFunding === 'boolean',
+      JSON.stringify({ empty: fBody.empty, cardFunding: fBody.cardFunding, failed: fBody.failedChains }))
+    const fFresh = await fetch(`${BASE}/api/watchlists/holdings?address=${fundAddr}&fresh=1`)
+    check('GET /api/watchlists/holdings: fresh=1 rides the Wallet panel’s bounded bypass: asked again right away it is still the cached view (one fresh read per address every 8s, no amplifier)',
+      fFresh.status === 200 && fFresh.headers.get('x-wallet-cache') === 'hit', `${fFresh.status} ${fFresh.headers.get('x-wallet-cache')}`)
+    const fLive = (await (await fetch(`${BASE}/api/watchlists/holdings?address=0xfef4feed2c57a5dbaa5a0c553aa7a0a0fd66d393`)).json()) as { held?: unknown[]; empty?: unknown }
+    check(`GET /api/watchlists/holdings: a wallet with holdings never reads empty (${fLive.held?.length ?? 0} held)`, !fLive.held?.length || fLive.empty === false)
+
+    // 3b. The watcher keeps the baseline it wrote. Found on this drive: the
+    // hook took its caller's wait object on every render, the caller's copy
+    // never has a baseline, so each poll re-baselined and a purchase was only
+    // noticed after a reload (the stored copy has one). The chat's fund chip
+    // shares the hook.
+    const { keepWatchedWait } = await import('../lib/funding-arrival')
+    const opened = { address: '0x' + 'cd'.repeat(20), network: 'ethereum' as const, resume: '', label: 'Buy ETH with a card', baselineEth: null, baselineStable: null, openedAt: 1_789_000_000_000 }
+    const baselined = { ...opened, baselineEth: 0, baselineStable: 0 }
+    const arrivalSrc = await readFile('lib/use-funding-arrival.ts', 'utf8')
+    check('arrival: a render for the SAME purchase keeps the watcher’s baselined copy (so the next read can be an arrival); a new purchase, or none, replaces it; the hook routes every render through it',
+      keepWatchedWait(baselined, opened) === baselined && keepWatchedWait(baselined, { ...opened, openedAt: opened.openedAt + 1 })?.openedAt === opened.openedAt + 1 &&
+        keepWatchedWait(baselined, null) === null && keepWatchedWait(null, opened) === opened &&
+        arrivalSrc.includes('waitRef.current = keepWatchedWait(waitRef.current, wait)') && !/waitRef\.current = wait\s*$/m.test(arrivalSrc))
+
+    // 4. The wiring.
+    const fundSrc = await readFile('components/markets/watchlist/FundWallet.tsx', 'utf8')
+    const railFundSrc = await readFile('components/markets/watchlist/WatchlistRail.tsx', 'utf8')
+    const hookFundSrc = await readFile('components/markets/watchlist/useWatchlists.ts', 'utf8')
+    const panelFundSrc = await readFile('components/WalletPanel.tsx', 'utf8')
+    const chipFundSrc = await readFile('components/ClarifyChips.tsx', 'utf8')
+    const buyAt = fundSrc.indexOf('const buy = async')
+    // Code only: the comment above the call explains the rule in words ("a popup after an await").
+    const beforeTab = buyAt < 0 ? 'await' : fundSrc.slice(buyAt, fundSrc.indexOf('await startOnrampSession(', buyAt)).replace(/\/\/.*$/gm, '')
+    check('card door: a buy goes through the one on-ramp door (startOnrampSession, nothing awaited before it opens the tab), writes a wait with an EMPTY resume and the asset, watches it with useFundingArrival, and clears only its own waits',
+      buyAt >= 0 && !beforeTab.includes('await') && fundSrc.includes("resume: ''") && fundSrc.includes('asset: o.asset') && fundSrc.includes('saveFundWait(w)') &&
+        fundSrc.includes('useFundingArrival(wait,') && (fundSrc.match(/clearFundWait\(/g) ?? []).length === 2 && (fundSrc.match(/resume === ''\) clearFundWait\(/g) ?? []).length === 2)
+    check('card door: a chat chip adopts a stored wait only when its own resume matches, so the door’s empty-resume wait never fires a chat turn; the Wallet panel quotes a resume only when there is one',
+      chipFundSrc.includes('o.fund && o.resume === w.resume') && panelFundSrc.includes('wait.resume ?') && panelFundSrc.includes("wait.asset ?? 'card purchase'"))
+    check('card door: the rail mounts the door at the end of its rows with the holdings read’s verdict (never while it brews), and a landing re-reads the wallet past both caches (fresh=1, reconcile inside the minute) so the purchase fills the list',
+      railFundSrc.includes('<FundWallet') && railFundSrc.includes('empty={wl.walletEmpty && !brew}') && railFundSrc.includes('onLanded={wl.recheckWallet}') &&
+        hookFundSrc.includes("'&fresh=1'") && hookFundSrc.includes('lastReconciled.delete(key)') && hookFundSrc.includes('setWalletRead('))
+    const fundHtml = flat(await (await fetch(`${BASE}/markets`)).text())
+    check('card door: /markets never server-renders the door (no wallet is known before hydration)', fundHtml.includes('class="wl__rows"') && !fundHtml.includes('data-rail-fund'))
+  }
+
   // ── MARKETS/CHART — moving averages (2026-09-14) ─────────────────────────
   // Nate: "add the 200 day moving average and make it yellow, blue for the 50
   // day". The chart's window is 180 bars, so over the window alone an SMA 200
@@ -21673,6 +21732,59 @@ async function main() {
     )
     const fkGone = await fetch(`${BASE}/api/embed-keys/${fk.id}?purge=1`, { method: 'DELETE', headers: C })
     check('viz fills fixture: the fixture key is purged after the check (its two turns go with it)', fkGone.status === 200 || fkGone.status === 204, `purge=${fkGone.status}`)
+    // FIRST-PARTY fills (2026-09-16): /chat beacons carry NO prompt and NO
+    // detail, so a /chat swap used to be invisible to the fills reader. The
+    // beacon now carries side-tagged symbols, allowlisted server-side.
+    const eqTags = (a: string[] | undefined, b: string[] | undefined) => JSON.stringify(a) === JSON.stringify(b)
+    check(
+      'fill symbols: an ask tags the charted symbols it trades with a side (swap X for Y sells X + buys Y; buy X with Y; sell; long; names → tickers), stables/sends/chain + venue words never tag, a HL order names its own coin + direction, job artifacts are never tagged, and the server allowlist canonicalizes + drops junk',
+      eqTags(fillSymbolsInAsk('Swap $5 of ETH for AAPL on robinhood chain'), ['sell:ETH', 'buy:AAPL']) &&
+        eqTags(fillSymbolsInAsk('buy $10 of AAPL with ETH'), ['buy:AAPL', 'sell:ETH']) &&
+        eqTags(fillSymbolsInAsk('Sell $50 of ETH'), ['sell:ETH']) &&
+        eqTags(fillSymbolsInAsk('2x long $12 of HYPE with a 5% stop'), ['buy:HYPE']) &&
+        eqTags(fillSymbolsInAsk('buy $10 of apple every week'), ['buy:AAPL']) &&
+        eqTags(fillSymbolsInAsk('swap 1 USDC to ETH on arbitrum'), ['buy:ETH']) &&
+        eqTags(fillSymbolsInAsk('Buy $10 of AAPL on optimism'), ['buy:AAPL']) &&
+        eqTags(fillSymbolsInAsk('supply $2 of USDC to aave'), []) &&
+        eqTags(fillSymbolsInAsk('send 0.01 ETH to 0x1111111111111111111111111111111111111111'), []) &&
+        eqTags(fillSymbolsInAsk('Why is TSLA moving?'), []) &&
+        eqTags(fillSymbolsInAsk('buy $10 of coin now'), []) &&
+        eqTags(fillSymbolsOf({ ask: 'buy ETH', meta: { orderRequest: { protocol: 'hyperliquid', hl: { expected: { coin: 'HYPE', isBuy: false } } } } }), ['sell:HYPE']) &&
+        fillSymbolsOf({ ask: 'buy $5 of ETH', artifact: 'job' }) === undefined &&
+        fillSymbolsOf({ ask: 'buy $5 of ETH', meta: { jobId: 'j1' } }) === undefined &&
+        eqTags(fillSymbolsForPair('WETH', 'USDC'), ['sell:ETH']) &&
+        eqTags(sanitizeFillSymbols(['buy:eth', 'sell:WETH', 'buy:USDC', 'buy:NOPE', 'hi', 3, 'sell:$aapl', 'buy:BTC', 'buy:SOL', 'buy:DOGE']), ['buy:ETH', 'sell:AAPL', 'buy:BTC', 'buy:SOL']),
+      `swap=${JSON.stringify(fillSymbolsInAsk('Swap $5 of ETH for AAPL on robinhood chain'))}`,
+    )
+    const fpWallet = `0x${'f2'.repeat(10)}${Date.now().toString(16).padStart(20, '0').slice(-20)}`
+    const fpTx = `https://basescan.org/tx/0x${'cd'.repeat(32)}`
+    // A first-party /chat beacon from this build's own origin (verifies `dev`,
+    // which counts). The prompt + detail it carries are dropped by the route;
+    // only the allowlisted symbols survive.
+    const fpPost = await fetch(`${BASE}/api/embed/telemetry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ firstParty: true, sessionId: 'fixture-viz-fills-fp', page: `${BASE}/chat`, prompt: 'swap $7 of ARB for ETH', detail: 'swap ARB for ETH', outcome: 'signed', artifact: 'tx', chain: 'base', chainId: 8453, valueUsd: 7, txUrl: fpTx, buildPath: 'native-swap-uniswap', walletAddress: fpWallet, symbols: ['sell:ARB', 'buy:weth', 'buy:USDC', 'buy:ZZZZQ'] }),
+    })
+    const fpJob = await fetch(`${BASE}/api/embed/telemetry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ firstParty: true, sessionId: 'fixture-viz-fills-fpjob', page: `${BASE}/chat`, outcome: 'signed', artifact: 'job-step', chain: 'multi', valueUsd: 3, buildPath: 'native-swap-uniswap', walletAddress: fpWallet, symbols: ['buy:AAPL'] }),
+    })
+    const fpBody = (await fpPost.json().catch(() => ({}))) as { ok?: boolean; verification?: string }
+    const fpEth = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=ETH&address=${fpWallet}`)).json()) as FillsBody
+    const fpArb = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=ARB&address=${fpWallet}`)).json()) as FillsBody
+    const fpAapl = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=AAPL&address=${fpWallet}`)).json()) as FillsBody
+    const fe = fpEth.fills?.[0]
+    const fa = fpArb.fills?.[0]
+    check(
+      'viz fills route (first-party): a prompt-less /chat signed beacon tagged sell:ARB + buy:WETH paints ONE buy on ETH and ONE sell on ARB ($7 · Uniswap v3 · Base · its explorer link, source turn); the stable + unknown tags are dropped, and a job-step beacon\'s tag is never stored (its fill comes from the job step)',
+      fpPost.status === 200 && fpBody.ok === true && fpBody.verification === 'dev' && fpJob.status === 200 &&
+        fpEth.fills?.length === 1 && fe?.side === 'buy' && fe.usd === 7 && fe.venue === 'Uniswap v3' && fe.chainId === 8453 && fe.txUrl === fpTx && fe.source === 'turn' &&
+        fpArb.fills?.length === 1 && fa?.side === 'sell' && fa.usd === 7 &&
+        fpAapl.fills?.length === 0,
+      `post=${fpPost.status} ${JSON.stringify(fpBody)} eth=${JSON.stringify(fpEth.fills ?? fpEth.error).slice(0, 200)} arb=${fpArb.fills?.length} aapl=${fpAapl.fills?.length}`,
+    )
     check(
       'viz chart: ChartMount takes `fills`, MarketChart draws each as an arrow glyph on its bar in the venue\'s series ink (up under a buy, down over a sell, never on a bar it predates), lists the receipts with explorer links under the chart, and the compare feed reads ?warmup=1',
       mountSrc.includes('fills?: FillMarker[]') && mountSrc.includes('fills={fills}') && mcSrc.includes("shape: f.side === 'buy' ? 'arrowUp' : 'arrowDown'") && mcSrc.includes('if (f.t < bars[0].t) return') &&
@@ -22222,12 +22334,13 @@ async function main() {
       /if \(servers\.length === 0\) return/.test(chatSrcA) &&
         /if \(walletStatus === 'connecting' \|\| walletStatus === 'reconnecting'\) return/.test(chatSrcA) &&
         /setComposerSend\(\{ text: arrival\.text, mcps: arrival\.mcps \}\)/.test(chatSrcA) &&
-        /setComposerSend\(null\)\s*\n\s*sendFromOverlay\(composerSend\.text\)/.test(chatSrcA),
+        // Re-pinned 2026-09-16 (apps follow the ask): the consumer sends as a chip, so the handoff runs with its ask's apps.
+        /setComposerSend\(null\)\s*\n\s*sendChip\(composerSend\.text, composerSend\.mcps \?\? \[\]\)/.test(chatSrcA),
     )
 
     check(
       'arrival/core: a record that outlived its wallet NEVER fires a guest turn racing AppSpine\'s signed-out bounce — settled disconnected, or no address, parks the ask in the composer and drops the record',
-      /if \(walletStatus === 'disconnected' \|\| !effectiveAddress\) \{\s*\n\s*setInput\(arrival\.text\)\s*\n\s*setArrival\(null\)\s*\n\s*return\s*\n\s*\}/.test(chatSrcA) &&
+      /if \(walletStatus === 'disconnected' \|\| !effectiveAddress\) \{\s*\n\s*parkAsk\(arrival\.text\)\s*\n\s*setArrival\(null\)\s*\n\s*return\s*\n\s*\}/.test(chatSrcA) &&
         // the guard sits BEFORE the send, and the send is the only setComposerSend the arrival path makes
         chatSrcA.indexOf("walletStatus === 'disconnected' || !effectiveAddress") < chatSrcA.indexOf('setComposerSend({ text: arrival.text'),
     )
@@ -22242,7 +22355,7 @@ async function main() {
     check(
       'arrival/core: "Don\'t run it" is offered ONLY while the row still holds (after the fire there is nothing to call off), and it PARKS the ask in the composer instead of losing it — the pending send is dropped because the fire effect bails on a cleared intent',
       /onDismiss=\{arrivalPhase === 'holding' \? dropArrival : undefined\}/.test(chatSrcA) &&
-        /const dropArrival = \(\) => \{\s*\n\s*if \(arrival\) \{\s*\n\s*setInput\(arrival\.text\)\s*\n\s*textareaRef\.current\?\.focus\(\)\s*\n\s*\}\s*\n\s*setArrival\(null\)\s*\n\s*\}/.test(chatSrcA) &&
+        /const dropArrival = \(\) => \{\s*\n\s*if \(arrival\) \{\s*\n\s*parkAsk\(arrival\.text\)\s*\n\s*textareaRef\.current\?\.focus\(\)\s*\n\s*\}\s*\n\s*setArrival\(null\)\s*\n\s*\}/.test(chatSrcA) &&
         /if \(!arrival \|\| arrivalPhase === 'sent'\) return/.test(chatSrcA),
     )
 
@@ -22719,6 +22832,238 @@ async function main() {
     check(
       'earn (view): a remembered Map·List choice wins; with nothing remembered a ≥1280px viewport opens on the MAP and a narrower one on the list; junk stored falls back to the width rule',
       earnDefaultView('list', 1600) === 'list' && earnDefaultView('map', 375) === 'map' && earnDefaultView(null, 1440) === 'map' && earnDefaultView(null, 1279) === 'list' && earnDefaultView('grid', 1440) === 'map',
+    )
+  }
+
+  // ── Apps follow the ask (2026-09-16) ─────────────────────────────────────
+  // A chip tapped on /markets ran in the app WITHOUT the dapp its ask needs:
+  // the EARN board's "Supply $25 of USDT to Aave at the best rate" answered
+  // "it just needs the Aave dapp in this chat's set" (prod /p/WVONZuJSbfra),
+  // and "2x Short $25 of HYPE on Hyperliquid" the Hyperliquid door. Every
+  // chip send (a /markets handoff, a /t order, the ask door, chart / example
+  // / clarify chips, an unedited parked ask) now turns on the apps its
+  // sentence composes (lib/ask-apps) before it fires. Proven here three ways:
+  // every sentence a surface composes reaches its gate WITH those apps (the
+  // ladder replica names the gate, the route's own detectors read the set),
+  // the live route answers the door without them and claims the turn with
+  // them, and the send paths in the source all go through the one chip send.
+  {
+    const askApps = await import('../lib/ask-apps')
+    const intentLinks = await import('../lib/intent-links')
+    const { aaveAgentOf: aaveAgentOfA } = await import('../lib/aave-supply')
+    const { morphoAgentOf: morphoAgentOfA } = await import('../lib/morpho-supply')
+    const { lidoAgentOf: lidoAgentOfA } = await import('../lib/lido-stake')
+    const { hlAgentOf: hlAgentOfA } = await import('../lib/hyperliquid-exec')
+    const { quickActs: qaA, venuesFor: venuesForA, composeCompound: compoundA, compoundPresets: presetsA } = await import('../lib/symbol-venues')
+    const { composeAsk: composeAskA, sidesFor: sidesForA, execAsks: execAsksA } = await import('../lib/trade-asks')
+    const { composeLineActions: lineActsA } = await import('../lib/chart-actions')
+    const { verdictChips: verdictA } = await import('../lib/technicals')
+    const mcA = await import('../lib/markets-copy')
+    const { chipMenu: menuA } = await import('../lib/markets-ai')
+    const { ladderFilterMenu: ladderMenuA } = await import('../lib/markets-ai-ladder')
+    const { alertActionChips: alertChipsA } = await import('../lib/watchlists')
+    const { marketSections: sectionsA } = await import('../lib/markets')
+    const { rowsFromWire: earnWireA } = await import('../lib/earn')
+
+    type DirRow = { id: string; slug: string; name: string; description?: string | null; endpoint?: string | null; gated?: boolean }
+    // The route's own reading of a working set, per app (the doors it answers).
+    const APP_DETECT: Record<string, { label: string; ok: (rows: DirRow[]) => boolean }> = {
+      aave: { label: 'Aave', ok: (rows) => { const r = aaveAgentOfA(rows); return !!r.agent && r.usable } },
+      'morpho-free': { label: 'Morpho', ok: (rows) => { const r = morphoAgentOfA(rows); return !!r.agent && r.usable } },
+      'lido-free': { label: 'Lido', ok: (rows) => { const r = lidoAgentOfA(rows as never); return !!r.agent && r.usable } },
+      'hyperliquid-free': { label: 'Hyperliquid', ok: (rows) => { const r = hlAgentOfA(rows); return !!r.agent && r.usable } },
+      'near-intents-mcp-yeetful': { label: 'NEAR Intents', ok: (rows) => { const r = crossChainAgentOf(rows); return !!r.agent && r.usable } },
+    }
+    // The ladder replica's gate → the app its route door asks for.
+    const NEED_BY_GATE: Record<string, string> = {
+      'aave-supply': 'aave', 'aave-op': 'aave', 'morpho-lend': 'morpho-free', 'morpho-op': 'morpho-free',
+      guardian: 'hyperliquid-free', hyperliquid: 'hyperliquid-free', lido: 'lido-free', 'cross-chain': 'near-intents-mcp-yeetful',
+    }
+    const rowsFor = (dir: DirRow[], slugs: readonly string[]) => { const ids = askApps.resolveAppIds(slugs, dir); return dir.filter((r) => ids.includes(r.id)) }
+
+    // Compose: Morpho-named lending composes Morpho, never Aave.
+    const morphoAsk = 'Lend $25 of USDC on Morpho on Base'
+    check(
+      'apps follow the ask (compose): a Morpho-named lending ask composes Morpho and NOT Aave (the EARN board\'s Morpho rows composed to Aave via "lend" and met the add-Morpho door); Aave-named and venue-less lending still compose Aave',
+      composeMcps(morphoAsk).includes('morpho-free') && !composeMcps(morphoAsk).includes('aave') &&
+        composeMcps('Withdraw my USDC from Morpho').includes('morpho-free') && !composeMcps('Withdraw my USDC from Morpho').includes('aave') &&
+        composeMcps('Supply $25 of USDT to Aave at the best rate').includes('aave') && !composeMcps('Supply $25 of USDT to Aave at the best rate').includes('morpho-free') &&
+        composeMcps('Borrow 25 USDC from Aave').includes('aave') && composeMcps('Lend 100 USDC').includes('aave'),
+      JSON.stringify({ morpho: composeMcps(morphoAsk), withdraw: composeMcps('Withdraw my USDC from Morpho') }),
+    )
+    const fiveRuleAsk = 'Swap my AAPL, stake ETH on Lido, supply USDC to Aave and vote on the proposal'
+    check(
+      'apps follow the ask (compose): a link keeps its four-slug cap, a chip send takes every composed app — NEAR Intents included even when the rules fill the cap',
+      composeMcps(fiveRuleAsk).length === 4 && !composeMcps(fiveRuleAsk).includes('near-intents-mcp-yeetful') &&
+        askApps.askAppSlugs(fiveRuleAsk).length > 4 && askApps.askAppSlugs(fiveRuleAsk).includes('near-intents-mcp-yeetful') &&
+        JSON.stringify(askApps.askAppSlugs(morphoAsk)) === JSON.stringify(composeMcps(morphoAsk)),
+      JSON.stringify({ link: composeMcps(fiveRuleAsk), chip: askApps.askAppSlugs(fiveRuleAsk) }),
+    )
+    check(
+      'apps follow the ask (compose): Morpho is a mintable app — a creator can pick it, sanitizeMcps keeps it, and its "runs on" pill says Morpho',
+      intentLinks.MINTABLE_MCPS.some((m) => m.slug === 'morpho-free') && JSON.stringify(intentLinks.sanitizeMcps(['morpho-free'])) === '["morpho-free"]' && runsOnLabel('morpho-free', morphoAsk) === 'Morpho',
+    )
+
+    // Resolve: the slug a surface names finds the row the route's gate reads,
+    // on any database's spelling — and never a paid lookalike.
+    const fx = (slug: string, name: string, extra: Partial<DirRow> = {}): DirRow => ({ id: `fx-${slug}`, slug, name, description: '', gated: false, endpoint: `https://${slug}.fixture/mcp`, ...extra })
+    const prodDir: DirRow[] = [fx('aave', 'Aave'), fx('morpho-free', 'Morpho (Free)'), fx('lido-free', 'Lido (Free)'), fx('hyperliquid-free', 'Hyperliquid (Free)'), fx('near-intents-mcp-yeetful', 'NEAR Intents MCP · Yeetful', { description: 'Cross-chain swaps over MCP via the official NEAR Intents 1Click API' }), fx('uniswap-free', 'Uniswap (Free)', { endpoint: null }), fx('robinhood-free', 'Robinhood Chain (Free)'), fx('yeetful-tool-funding', 'Pantessa Finance', { description: 'cross-chain funding offers' })]
+    const seedDir: DirRow[] = [fx('aave-free', 'Aave (Free)'), fx('morpho-free', 'Morpho (Free)'), fx('lido-free', 'Lido (Free)'), fx('hyperliquid-free', 'Hyperliquid (Free)'), fx('near-intents-free', 'NEAR Intents (Free)')]
+    check(
+      'apps follow the ask (resolve): the route\'s own door slug `aave-free` lands on prod\'s `aave` row (the "Add Aave with this ask ready" link lit nothing on prod), `aave` lands on the seed\'s `aave-free`, and NEAR Intents resolves from any of its three spellings',
+      JSON.stringify(askApps.resolveAppIds(['aave-free'], prodDir)) === '["fx-aave"]' &&
+        JSON.stringify(askApps.resolveAppIds(['aave'], seedDir)) === '["fx-aave-free"]' &&
+        JSON.stringify(askApps.resolveAppIds(['near-intents'], prodDir)) === '["fx-near-intents-mcp-yeetful"]' &&
+        JSON.stringify(askApps.resolveAppIds(['near-intents-mcp-yeetful'], seedDir)) === '["fx-near-intents-free"]' &&
+        JSON.stringify(askApps.resolveAppIds(['aave', 'aave-free', 'nope-free'], prodDir)) === '["fx-aave"]',
+    )
+    check(
+      'apps follow the ask (resolve): a paid lookalike is never lit (a gated "Aave Yield Pro" row with no free Aave), a description that merely says "cross-chain" is never taken for NEAR Intents, and missingAppIds skips what the set already has',
+      askApps.resolveAppIds(['aave'], [fx('aave-yield-pro', 'Aave Yield Pro', { gated: true })]).length === 0 &&
+        askApps.resolveAppIds(['near-intents-mcp-yeetful'], [fx('yeetful-tool-funding', 'Pantessa Finance', { description: 'cross-chain funding offers' })]).length === 0 &&
+        JSON.stringify(askApps.missingAppIds(['aave', 'near-intents-mcp-yeetful'], prodDir, ['fx-near-intents-mcp-yeetful'])) === '["fx-aave"]',
+    )
+    const liveDir = (await (await fetch(`${BASE}/api/servers`)).json()) as DirRow[]
+    const parity = [['prod-shaped', prodDir], ['seed-shaped', seedDir], ['live /api/servers', liveDir]] as const
+    const parityMiss: string[] = []
+    for (const [label, dir] of parity) {
+      for (const [slug, d] of Object.entries(APP_DETECT)) {
+        const picked = rowsFor(dir, [slug])
+        if (picked.length !== 1 || !d.ok(picked)) parityMiss.push(`${label}: ${slug} → ${picked.map((r) => r.slug).join(',') || 'nothing'}`)
+      }
+    }
+    check(
+      'apps follow the ask (resolve ↔ route): on a prod-shaped, a seed-shaped and the LIVE directory, each gated app resolves to exactly one row that the route\'s own detector (aaveAgentOf · morphoAgentOf · lidoAgentOf · hlAgentOf · crossChainAgentOf) reads as present AND usable',
+      parityMiss.length === 0 && liveDir.length > 0,
+      parityMiss.join(' | ') || `${liveDir.length} live rows`,
+    )
+
+    // The proof: every sentence our surfaces compose reaches its gate with
+    // the apps a chip send lights (and the link set for the same sentence
+    // carries them too).
+    const corpus: { sender: string; ask: string }[] = []
+    const seenA = new Set<string>()
+    const addA = (sender: string, ask: string | null | undefined) => {
+      if (!ask || seenA.has(ask)) return
+      seenA.add(ask)
+      corpus.push({ sender, ask })
+    }
+    const ratingsA = ['strong_sell', 'sell', 'neutral', 'buy', 'strong_buy'] as const
+    for (const sec of sectionsA()) {
+      for (const r of sec.rows) {
+        const pair = chartPairFor(r.symbol)
+        if (!pair) continue
+        const last = pair.source === 'robinhood' ? 187.5 : 2447.25
+        for (const a of qaA(r.symbol, pair)) addA('QuickAct', a.ask)
+        for (const tpl of [`Buy $10 of ${r.symbol}`, `Sell $10 of ${r.symbol}`, `DCA $10 into ${r.symbol} weekly`]) addA('Rail', tpl)
+        for (const c of alertChipsA({ symbol: r.symbol, condition: 'below', value: last * 0.95, basePrice: null }, pair)) addA('Alert', c.ask)
+        const menus = [menuA({ pair, last: null, tech: null }), ...ratingsA.map((rating) => menuA({ pair, last, tech: { summary: { rating }, pivots: { classic: { s1: last * 0.97, r1: last * 1.03 } } } as never }))]
+        for (const m of menus) for (const c of ladderMenuA(m).chips) addA('MorningTape', c.ask)
+        for (const v of venuesForA(r.symbol, pair, { usd: 25, last })) addA('RouteTable', v.ask)
+        for (const side of sidesForA(pair)) addA('TradeTab', composeAskA(pair, side, { usd: 50, pct: 5, cadence: 'weekly' }))
+        for (const e of execAsksA(pair, { usd: 50, last, leverage: 2 })) addA('ExecStrip', e.ask)
+        for (const price of [last * 0.9, last * 1.1]) for (const o of lineActsA({ symbol: r.symbol, source: pair.source, price, last })) addA('ChartLevel', o.action.ask)
+        for (const rating of ratingsA) for (const c of verdictA({ symbol: r.symbol, source: pair.source, rating, support: last * 0.97, resistance: last * 1.03 })) addA('Verdict', c.ask)
+        for (const p of presetsA(r.symbol, pair)) addA('Compound', compoundA(r.symbol, pair, p.kinds, { usd: 25 }).ask)
+      }
+    }
+    for (const b of mcA.HERO_REEL) addA('Hero', b.ask)
+    for (const v of mcA.LANDING_VENUES) addA('LandingVenue', v.ask)
+    addA('VenueBand', mcA.VENUE_BAND.compound)
+    const earnLive = (await (await fetch(`${BASE}/api/markets/earn`)).json()) as { rows: unknown[] }
+    for (const r of earnWireA(earnLive.rows as never)) for (const usd of [10, 25, 100]) addA('EarnBoard', r.askFor(usd))
+    for (const a of ['USDC', 'USDT', 'ETH']) addA('EarnBoard', `Supply $25 of ${a} to Aave at the best rate`)
+    addA('EarnBoard', 'Stake 0.0104 ETH on Lido')
+    addA('EarnBoard', morphoAsk)
+    const needCount: Record<string, number> = {}
+    const chipMiss: string[] = []
+    const linkMiss: string[] = []
+    for (const { sender, ask } of corpus) {
+      const need = NEED_BY_GATE[String(simulateLadder(ask).gate)]
+      if (!need) continue
+      needCount[need] = (needCount[need] ?? 0) + 1
+      if (!APP_DETECT[need].ok(rowsFor(liveDir, askApps.askAppSlugs(ask)))) chipMiss.push(`[${sender}] ${ask} → ${APP_DETECT[need].label}`)
+      if (!APP_DETECT[need].ok(rowsFor(liveDir, composeMcps(ask)))) linkMiss.push(`[${sender}] ${ask} → ${APP_DETECT[need].label}`)
+    }
+    check(
+      `apps follow the ask (proof): ${corpus.length} sentences the surfaces compose (QuickAct · rail · alerts · Morning tape · route table · Trade tab · exec strip · chart levels · verdicts · compound · hero · landing venues · EARN board) — every one whose gate needs a dapp (${Object.entries(needCount).map(([k, v]) => `${APP_DETECT[k].label} ${v}`).join(' · ')}) reaches it with the apps a chip send lights, and each gated lane is exercised`,
+      corpus.length > 2_000 && chipMiss.length === 0 && Object.keys(APP_DETECT).every((k) => (needCount[k] ?? 0) > 0),
+      chipMiss.slice(0, 8).join(' | ') || JSON.stringify(needCount),
+    )
+    check(
+      'apps follow the ask (proof): an intent link minted from any of those sentences opens with the same dapp (composeMcps, capped at four)',
+      linkMiss.length === 0,
+      linkMiss.slice(0, 8).join(' | '),
+    )
+
+    // The live route: the door without the apps, the lane with them.
+    const laneAsks: [string, RegExp][] = [
+      ['Supply $25 of USDT to Aave at the best rate', /^🏦/],
+      ['Borrow 25 USDC from Aave', /^🏦/],
+      ['2x Short $25 of HYPE on Hyperliquid', /^📈/],
+      ['Protect my ETH long with a 5% stop', /^🛡️/],
+      ['Stake 0.0104 ETH on Lido', /^🌊/],
+      [morphoAsk, /^🏦/],
+      ['Swap 25 USDC from Ethereum to ETH on Base', /^🔗/],
+    ]
+    const laneMiss: string[] = []
+    for (const [ask, lane] of laneAsks) {
+      const turn = async (rows: DirRow[]) =>
+        (await (await fetch(`${BASE}/api/chat`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+          body: JSON.stringify({ message: ask, activeServers: rows, activeServerIds: rows.map((r) => r.id), history: [] }),
+        })).json()) as { reply?: string; door?: { mcps?: string } }
+      const bare = await turn([])
+      const lit = await turn(rowsFor(liveDir, askApps.askAppSlugs(ask)))
+      const doorSlug = bare.door?.mcps ?? ''
+      // The door's own link slug must light a row the gate reads, on prod's spelling too.
+      const doorWorks = !!doorSlug && Object.values(APP_DETECT).some((d) => d.ok(rowsFor(liveDir, [doorSlug])) && d.ok(rowsFor(prodDir, [doorSlug])))
+      const bareIsDoor = /with this ask ready/.test(String(bare.reply)) && doorWorks
+      const litClaims = !lit.door && !/with this ask ready/.test(String(lit.reply)) && lane.test(String(lit.reply))
+      if (!bareIsDoor || !litClaims) laneMiss.push(`${ask}: bare=${bareIsDoor ? 'door' : String(bare.reply).slice(0, 60)} lit=${String(lit.reply).slice(0, 80)}`)
+    }
+    check(
+      'apps follow the ask (route): each lane (Aave supply + borrow · Hyperliquid order + guardian · Lido · Morpho · a cross-chain swap) answers the add-the-dapp door on an EMPTY set — whose link slug now lights the right row on prod\'s spelling too — and CLAIMS the turn once the set carries the apps its chip lights',
+      laneMiss.length === 0,
+      laneMiss.join(' | '),
+    )
+
+    // The send paths: every chip goes through the one chip send.
+    const chatSrcF = await readFile('components/ChatInterface.tsx', 'utf8')
+    check(
+      'apps follow the ask (source): example + chart + clarify chips, the composerSend slot (/markets handoff + wallet flags), a first-party injected prompt (/t orders, the ask door, /i) and an unedited parked ask all send through sendChip — which the embed skips (host-owned set) — and the old prefill fallback is gone',
+      /const runExample = \(prompt: string, slug\?: string\) => \{\s*\n\s*analytics\.exampleRun\(prompt, true\)\s*\n\s*sendChip\(prompt, slug \? \[slug\] : \[\]\)/.test(chatSrcF) &&
+        !/analytics\.exampleRun\(prompt, false\)/.test(chatSrcF) &&
+        /const sendFromOverlay = \(prompt: string\) => runExample\(prompt\)/.test(chatSrcF) &&
+        /onPick=\{\(resume\) => sendChip\(resume\)\}/.test(chatSrcF) &&
+        /if \(embedded\) void handleSend\(injectedPrompt\.text\)\s*\n\s*else sendChip\(injectedPrompt\.text\)/.test(chatSrcF) &&
+        /\} else parkAsk\(injectedPrompt\.text\)/.test(chatSrcF) &&
+        /if \(text && text === parked && !loading && !pendingPayment\) \{\s*\n\s*parkedAskRef\.current = null\s*\n\s*setInput\(''\)\s*\n\s*sendChip\(text\)/.test(chatSrcF) &&
+        (chatSrcF.match(/sendComposer\(\)/g) ?? []).length === 2 && !/onClick=\{\(\) => void handleSend\(\)\}/.test(chatSrcF) &&
+        /if \(embedded \|\| parseChartAsk\(prompt\)\?\.pair \|\| \(!simple && parseMarketsNavAsk\(prompt\)\)\) \{/.test(chatSrcF) &&
+        /const want = \[\.\.\.new Set\(\[\.\.\.slugs, \.\.\.askAppSlugs\(prompt\)\]\)\]/.test(chatSrcF),
+    )
+    check(
+      'apps follow the ask (source): the chip send waits for the LIVE set to carry the apps (the request body reads it), keeps an /i link\'s set marked as the link\'s, re-adds after a load re-seeds the set at most APP_SEND_ROUNDS times and then sends anyway, and loads the directory once where the page never did (/t, the ask door)',
+      /if \(linkSetActive\) setLinkServerIds\(next\)\s*\n\s*else setActiveServerIds\(next\)/.test(chatSrcF) &&
+        /missing\.length > 0 && chipSend\.rounds < APP_SEND_ROUNDS/.test(chatSrcF) && /const APP_SEND_ROUNDS = \d+/.test(chatSrcF) &&
+        /if \(!chipSend \|\| servers\.length > 0 \|\| directoryAskedRef\.current\) return/.test(chatSrcF) &&
+        /setChipSend\(null\)\s*\n\s*fireChip\(chipSend\.text\)/.test(chatSrcF),
+    )
+    const [wsSrcF, irSrcF, doorSrcF] = await Promise.all(['components/ChatWorkspace.tsx', 'components/IntentRuntime.tsx', 'components/AskDoor.tsx'].map((f) => readFile(f, 'utf8')))
+    check(
+      'apps follow the ask (source): the ?mcps= deep link (the route\'s own "Add X with this ask ready" door), an /i link\'s set and the ask door\'s fire all resolve slugs through the app families — no exact-slug lookup left to miss prod\'s `aave`',
+      /const ids = resolveAppIds\(slugs, servers\)/.test(wsSrcF) && /resolveAppIds\(\s*\n\s*mcps\.split\(','\)/.test(irSrcF) && /const missing = missingAppIds\(want, servers, activeServerIds\)/.test(doorSrcF) &&
+        !/srv\.slug === s\.trim\(\)/.test(irSrcF) && !/want\.map\(\(slug\) => servers\.find/.test(doorSrcF),
+    )
+    const storeSrcF = await readFile('lib/store.ts', 'utf8')
+    check(
+      'apps follow the ask (source): the apps a chip turned on survive a late working-set restore — sendChip notes them (store.chipApps, not persisted) and the wallet\'s DB copy, when it lands after the chip, is applied WITH them (so a signed-in visitor\'s next typed turn keeps the chip\'s Aave)',
+      /noteChipApps\(missing\)/.test(chatSrcF) &&
+        /noteChipApps: \(ids\) => set\(\(s\) => \(\{ chipApps: \{ ids: \[\.\.\.new Set\(\[\.\.\.\(s\.chipApps\?\.ids \?\? \[\]\), \.\.\.ids\]\)\], at: Date\.now\(\) \} \}\)\)/.test(storeSrcF) &&
+        !/chipApps: state\.chipApps/.test(storeSrcF) &&
+        /const kept = chip && chip\.at >= loadStartedAt \? chip\.ids\.filter/.test(wsSrcF) && /if \(valid\.length\) setActiveServerIds\(\[\.\.\.new Set\(\[\.\.\.valid, \.\.\.kept\]\)\]\)/.test(wsSrcF),
     )
   }
 
