@@ -51,6 +51,8 @@ import TechnicalsTab from '@/components/markets/tabs/TechnicalsTab'
 import TradeTab from '@/components/markets/tabs/TradeTab'
 import { sideOf, type InjectedPrompt, type TradeAsk } from '@/lib/trade-asks'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
+import { useSession } from '@/lib/session'
+import { useSymbolFills } from '@/lib/chart-fills'
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
 
@@ -175,6 +177,10 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
   // lines loaded back onto the chart ("copy these lines to my chart").
   const [chartState, setChartState] = useState<ChartState | null>(null)
   const [loadedState, setLoadedState] = useState<ChartState | null>(null)
+  // The connected wallet's own fills on this symbol (VIZ's glyphs + receipt
+  // legend under the chart). Public by address; no wallet → no read.
+  const { walletAddress } = useSession()
+  const fills = useSymbolFills(sym, walletAddress)
   // What's on screen (VIZ's onViewport, bar open times) — AskChart's context.
   const [viewport, setViewport] = useState<{ from: number; to: number; tf: ChartTf } | null>(null)
 
@@ -303,7 +309,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
         <div ref={shellRef} className={expanded ? 'tchart sym__chart tchart--expanded' : 'tchart sym__chart'}>
           <div className="tchart__canvas">
             {pair ? (
-              <ChartMount symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} onViewport={setViewport} compare={vs} />
+              <ChartMount symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} onViewport={setViewport} compare={vs} fills={fills} />
             ) : (
               <div className="flex flex-1 items-center justify-center">
                 <div className="mkt-card max-w-md text-center">

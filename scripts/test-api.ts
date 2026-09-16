@@ -20625,6 +20625,17 @@ async function main() {
         idxSrc.includes('<MorningTape onAsk={tapeAct} />') && idxSrc.includes('useConnectToAct({ run: (ask) => router.push(promptHref(ask)), redirectFor: promptHref })') &&
         idxSrc.includes('{tapeDoor}') && /\.mk-rail-seat:empty \{ display: none; \}/.test(await readFile('components/markets/markets.css', 'utf8')),
     )
+    // EXEC's QuickAct on every index row (hover/focus reveal, the index's one
+    // act door) + VIZ's fills on the chart for the connected wallet.
+    const symSrc2 = await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')
+    check(
+      'mk2/markets: every /markets ledger row seats EXEC\'s QuickAct (hidden until hover/focus-within, none on touch) through the index\'s ONE connect-to-act door shared with the Morning tape; SymbolPage hands the connected wallet\'s fills to the engine',
+      /<span class="mk-table__quick" data-seat="QuickAct"><span class="mkt-quick[^"]*"[^>]*data-acts="[1-9]"/.test(mkHtml) &&
+        (mkHtml.match(/data-seat="QuickAct"/g) ?? []).length >= 24 &&
+        (await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')).includes('<Board key={s.id} section={s} onAsk={indexAct} />') &&
+        /\.mk-table__row:hover \.mk-table__quick, \.mk-table__row:focus-within \.mk-table__quick \{ opacity: 1; pointer-events: auto; \}/.test(await readFile('components/markets/markets.css', 'utf8')) &&
+        symSrc2.includes('const fills = useSymbolFills(sym, walletAddress)') && /<ChartMount [^>]*fills=\{fills\}/.test(symSrc2),
+    )
     // The one stylesheet import + the slot card rule (QA's request: whoever
     // owns a class ships its rule).
     const shellSrc = await readFile('components/markets/shell/MarketsShell.tsx', 'utf8')
