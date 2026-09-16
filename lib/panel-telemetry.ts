@@ -23,6 +23,8 @@ export function postPanelTelemetry(payload: {
   txUrl?: string
   valueUsd?: number
   buildPath: 'app-mode-swap' | 'app-mode-vote'
+  /** Side-tagged traded symbols ("sell:ETH", "buy:AAPL") — lib/fill-symbols. */
+  symbols?: string[]
 }) {
   void fetch('/api/embed/telemetry', {
     method: 'POST',

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthAddress } from '@/lib/api-key'
 import { isInternalRun } from '@/lib/internal-run'
+import { onrampEnabled } from '@/lib/onramp'
 import { readHeldSymbols } from '@/lib/watchlist-holdings'
 import { syncHeldSymbols } from '@/lib/watchlists-store'
 
@@ -10,11 +11,16 @@ export const dynamic = 'force-dynamic'
 // /api/watchlists/holdings — the watchlist fills itself with what the
 // connected wallet holds (Nate, 2026-09-11; lib/watchlists planHeldAutofill).
 //
-// GET ?address=0x… → { held } — the wallet's watchable holdings. Public by
-//   address, like GET /api/wallet: balances are on-chain public data, and a
-//   connect-only guest's rail autofills from it (connect to act, #553). It
-//   rides the Wallet panel's cache (lib/wallet-view getWalletViewCached), so
-//   it adds no new read amplifier.
+// GET ?address=0x… → { held, empty, cardFunding } — the wallet's watchable
+//   holdings. Public by address, like GET /api/wallet: balances are on-chain
+//   public data, and a connect-only guest's rail autofills from it (connect
+//   to act, #553). It rides the Wallet panel's cache (lib/wallet-view
+//   getWalletViewCached), so it adds no new read amplifier. `empty` says the
+//   wallet holds nothing at all (lib/watchlist-holdings walletLooksEmpty) and
+//   `cardFunding` whether this deployment can sell it some (lib/onramp
+//   onrampEnabled): together they open the rail's card door (2026-09-16)
+//   without a second read. `fresh=1` is the panel's bounded bypass (one fresh
+//   read per address every 8s), asked for when a card purchase lands.
 // POST { symbols } → { list, added, dismissed } — the ACCOUNT sync (SIWE
 //   cookie or Bearer yf_). The owner's primary list gains the held symbols
 //   its ledger has never seen. The symbols are the client's own GET result;
@@ -29,9 +35,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'address must be a 0x-prefixed 40-hex wallet address.' }, { status: 400 })
   }
   try {
-    const { held, failedChains, cached } = await readHeldSymbols(address as `0x${string}`)
+    const fresh = req.nextUrl.searchParams.get('fresh') === '1'
+    const { held, empty, failedChains, cached } = await readHeldSymbols(address as `0x${string}`, { fresh })
     return NextResponse.json(
-      { address: address.toLowerCase(), held, failedChains },
+      { address: address.toLowerCase(), held, empty, cardFunding: onrampEnabled(), failedChains },
       { headers: { 'cache-control': 'no-store', 'x-wallet-cache': cached ? 'hit' : 'miss' } },
     )
   } catch (e) {
