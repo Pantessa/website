@@ -13,12 +13,15 @@ import { ArrowRight } from 'lucide-react'
 import SpineLink from '@/components/SpineLink'
 import { getProtocolMark } from '@/components/protocol-marks'
 import { fmtPrice } from '@/components/CandleChart'
-import { LANDING_SYMBOL, LANDING_VENUES, TAPE_FOOTNOTE, VENUE_BAND } from '@/lib/markets-copy'
+import { LANDING_VENUES, TAPE_FOOTNOTE, VENUE_BAND } from '@/lib/markets-copy'
 
 /** EXEC's RouteQuote (lib/symbol-venues): the fields the band reads. */
 interface RouteLive { venue?: string; kind?: string; side?: string; quote?: { label?: string; sub?: string; value?: number | null } | null }
 
 const chatPrefill = (ask: string) => `/chat?prompt=${encodeURIComponent(ask)}`
+
+/** The symbol at the center of the orbit (lib/markets-copy VENUE_BAND). */
+const BAND_SYMBOL = VENUE_BAND.symbol
 
 export default function VenueBand() {
   const [px, setPx] = useState<{ last: number; chg: number | null } | null>(null)
@@ -28,9 +31,9 @@ export default function VenueBand() {
     let dead = false
     const readQuote = async () => {
       try {
-        const r = await fetch(`/api/quotes?symbols=${LANDING_SYMBOL}`)
+        const r = await fetch(`/api/quotes?symbols=${BAND_SYMBOL}`)
         const j = await r.json()
-        const q = j?.quotes?.[LANDING_SYMBOL]
+        const q = j?.quotes?.[BAND_SYMBOL]
         if (!dead && q && typeof q.last === 'number') setPx({ last: q.last, chg: typeof q.chgPct === 'number' ? q.chgPct : null })
       } catch { /* the word stays */ }
     }
@@ -58,7 +61,7 @@ export default function VenueBand() {
     }
     const bySymbol = new Map<string, Set<string>>()
     for (const v of LANDING_VENUES) {
-      const sym = v.symbol ?? LANDING_SYMBOL
+      const sym = v.symbol ?? BAND_SYMBOL
       if (!bySymbol.has(sym)) bySymbol.set(sym, new Set())
       bySymbol.get(sym)!.add(v.key)
     }
@@ -79,8 +82,8 @@ export default function VenueBand() {
       </div>
 
       <div className="lvb__orbit">
-        <div className="lvb__core" aria-label={`${LANDING_SYMBOL}, the symbol every venue below acts on`}>
-          <span className="lvb__coresym">{LANDING_SYMBOL}</span>
+        <div className="lvb__core" aria-label={`${BAND_SYMBOL}, the symbol every venue below acts on`}>
+          <span className="lvb__coresym">{BAND_SYMBOL}</span>
           <span className="lvb__corepx mono">
             {px ? (
               <>

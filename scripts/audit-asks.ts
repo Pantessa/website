@@ -340,8 +340,12 @@ const CORPUS: Entry[] = [
   // prefills. The hero REHEARSES these (HERO_REEL), the venue orbit prefills
   // them (LANDING_VENUES), and the compound is the moat in one line — a typed
   // example must never dead-end when pasted.
-  { ask: 'Buy $50 of ETH', source: 'mk2 landing hero reel', expect: 'action' },
-  { ask: 'Stake 0.05 ETH with Lido', source: 'mk2 landing hero reel', expect: 'action' },
+  // The hero leads with AAPL on Robinhood Chain (2026-09-16); the reel's HYPE
+  // beat is the typed-reel row above.
+  { ask: 'Buy $50 of AAPL', source: 'mk2 landing hero reel (the main example)', expect: 'action' },
+  { ask: 'Fund Robinhood Chain with $50 from Base including gas, then buy $40 of AAPL', source: 'mk2 landing hero reel (one job)', expect: 'action' },
+  { ask: 'Buy $50 of ETH', source: 'mk2 landing venue orbit (Uniswap)', expect: 'action' },
+  { ask: 'Stake 0.05 ETH with Lido', source: 'mk2 landing venue orbit (Lido)', expect: 'action' },
   { ask: 'Sell $50 of ETH', source: 'mk2 landing venue orbit (CoW)', expect: 'action' },
   { ask: '2x long $12 of ETH', source: 'mk2 landing venue orbit (Hyperliquid)', expect: 'action' },
   { ask: 'Supply $50 of USDC to Aave', source: 'mk2 landing venue orbit (Aave)', expect: 'action' },

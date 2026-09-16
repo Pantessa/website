@@ -68,6 +68,8 @@ export interface ChartMountProps {
   compare?: string | null
   /** The connected wallet's own fills on this symbol (lib/chart-fills useSymbolFills). */
   fills?: FillMarker[]
+  /** Drawn over the plot above the time axis (MarketChart `overlay`). */
+  overlay?: ReactNode
 }
 
 export default function ChartMount({
@@ -84,6 +86,7 @@ export default function ChartMount({
   onViewport,
   compare,
   fills,
+  overlay,
 }: ChartMountProps) {
   const [drawings, setDrawings] = useState<ChartState | null>(null)
   // News-on-bars: the News tab toggles markers into COMM's session store;
@@ -126,6 +129,7 @@ export default function ChartMount({
       onViewport={onViewport}
       compare={compare}
       fills={fills}
+      overlay={overlay}
     />
   )
 }

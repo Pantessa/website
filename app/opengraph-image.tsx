@@ -4,17 +4,21 @@ import { join } from 'node:path'
 import { headers } from 'next/headers'
 import { gemMarkSvg } from '@/lib/og-marks'
 import { candleSvg, fmtOgPrice } from '@/lib/markets-seo'
-import type { Candle } from '@/lib/charts'
-import { HERO_LINE, HERO_REEL, LANDING_SYMBOL, REEL_STAMP } from '@/lib/markets-copy'
+import { CHART_FEED_LABELS, chartPairFor, type Candle, type ChartFeed } from '@/lib/charts'
+import { venueLabel } from '@/lib/markets'
+import { HERO_LINE, HERO_REEL, REEL_STAMP } from '@/lib/markets-copy'
 
 // Social card for the site (og:image + twitter:image via app/twitter-image.tsx).
 // mk2 LANDING (2026-09-15): the card IS the hero — the claim in the serif with
-// the gradient-italic payoff, and beside it the executing chart: a live ETH
-// tape (self-fetched from /api/charts/candles on this host, the /t card's
-// idiom; a feed miss draws the grid, never a fake series) with the rehearsal
-// HUD on it (the first reel beat: the ask, the venue leg, the guard tick,
-// the receipt line) and its honesty stamp. Deliberately no body copy — share
-// previews render too small to read it. Fonts from assets/og-fonts.
+// the gradient-italic payoff, and beside it the executing chart: a live tape
+// of the first reel beat's symbol (AAPL on Robinhood Chain since 2026-09-16;
+// self-fetched from /api/charts/candles on this host, the /t card's idiom; a
+// feed miss draws the grid, never a fake series) with the rehearsal HUD on it
+// (the first reel beat: the ask, the venue leg, the receipt line) and its
+// honesty stamp. The venue, the feed and the 24h move come from the pair and
+// the route, never typed: a stock tape prints 16 hourly bars a trading day,
+// so "24 bars back" is not a day. Deliberately no body copy — share previews
+// render too small to read it. Fonts from assets/og-fonts.
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -33,39 +37,49 @@ const toDataUri = (svg: string) => `data:image/svg+xml;base64,${Buffer.from(svg)
 // The house mark comes from lib/og-marks — ONE source across every OG card.
 const MARK = gemMarkSvg(ACCENT)
 
-interface Series { candles: Candle[]; last: number | null }
+interface Series { candles: Candle[]; last: number | null; feed: ChartFeed | null; changePct24h: number | null }
+
+const EMPTY: Series = { candles: [], last: null, feed: null, changePct24h: null }
 
 /** Self-fetch the cached candle proxy on this deployment's own host. */
 async function loadSeries(symbol: string): Promise<Series> {
   try {
     const h = await headers()
     const host = h.get('x-forwarded-host') ?? h.get('host')
-    if (!host) return { candles: [], last: null }
+    if (!host) return EMPTY
     const proto = h.get('x-forwarded-proto') ?? (/^(localhost|127\.0\.0\.1)/.test(host) ? 'http' : 'https')
     const res = await fetch(`${proto}://${host}/api/charts/candles?symbol=${encodeURIComponent(symbol)}&tf=1h`, {
       cache: 'no-store',
       signal: AbortSignal.timeout(9_000),
     })
     const body = (await res.json()) as Partial<Series> & { error?: string }
-    if (body.error || !Array.isArray(body.candles)) return { candles: [], last: null }
-    return { candles: body.candles, last: body.last ?? null }
+    if (body.error || !Array.isArray(body.candles)) return EMPTY
+    return {
+      candles: body.candles,
+      last: body.last ?? null,
+      feed: body.feed && Object.prototype.hasOwnProperty.call(CHART_FEED_LABELS, body.feed) ? body.feed : null,
+      changePct24h: typeof body.changePct24h === 'number' ? body.changePct24h : null,
+    }
   } catch {
-    return { candles: [], last: null }
+    return EMPTY
   }
 }
 
 export default async function Image() {
+  const beat = HERO_REEL[0]
+  const pair = chartPairFor(beat.symbol)
   const fonts = join(process.cwd(), 'assets', 'og-fonts')
   const [serif, serifItalic, sans, sansSemi, series] = await Promise.all([
     readFile(join(fonts, 'newsreader-500.ttf')),
     readFile(join(fonts, 'newsreader-500-italic.ttf')),
     readFile(join(fonts, 'geist-500.ttf')),
     readFile(join(fonts, 'geist-600.ttf')),
-    loadSeries(LANDING_SYMBOL),
+    loadSeries(beat.symbol),
   ])
-  const beat = HERO_REEL[0]
   const n = series.candles.length
-  const chg = n >= 2 && series.candles[n - 25]?.c > 0 ? ((series.candles[n - 1].c - series.candles[n - 25].c) / series.candles[n - 25].c) * 100 : null
+  const chg = n >= 2 ? series.changePct24h : null
+  // The tape that actually drew (Yahoo Finance when Robinhood's is down).
+  const feed = series.feed ?? pair?.source ?? null
   const chart = candleSvg(series.candles, { width: 600, height: 300, up: ACCENT, down: DOWN, grid: 'rgba(255,255,255,0.07)', count: 72 })
 
   return new ImageResponse(
@@ -113,10 +127,12 @@ export default async function Image() {
 
         {/* right: the stage — a live tape with the rehearsal HUD on it */}
         <div style={{ position: 'absolute', left: 620, top: 64, width: 520, height: 502, display: 'flex', flexDirection: 'column', borderRadius: 22, border: '1.5px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.03)', overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1.5px solid rgba(255,255,255,0.10)' }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-              <span style={{ color: INK, fontSize: 24, fontWeight: 600, letterSpacing: -0.5 }}>{LANDING_SYMBOL} / USD</span>
-              <span style={{ color: MUTED, fontSize: 13, letterSpacing: 2.5 }}>COINBASE SPOT</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 22px', borderBottom: '1.5px solid rgba(255,255,255,0.10)' }}>
+            {/* The venue sits UNDER the symbol: "ROBINHOOD CHAIN · 24/7" beside
+                it pushed the price and the 24h move off the card. */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <span style={{ color: INK, fontSize: 24, fontWeight: 600, letterSpacing: -0.5 }}>{pair?.label ?? `${beat.symbol} / USD`}</span>
+              <span style={{ color: MUTED, fontSize: 12, letterSpacing: 2.5 }}>{venueLabel(pair).toUpperCase()}</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
               {series.last != null && <span style={{ color: INK, fontSize: 24, fontWeight: 600 }}>${fmtOgPrice(series.last)}</span>}
@@ -144,7 +160,7 @@ export default async function Image() {
             <span style={{ marginTop: 6, fontSize: 10, letterSpacing: 1.5, color: MUTED }}>{REEL_STAMP}</span>
           </div>
           <div style={{ position: 'absolute', left: 22, bottom: 14, display: 'flex', fontSize: 11, letterSpacing: 2, color: MUTED }}>
-            <span>{n >= 2 ? 'LIVE TAPE · COINBASE' : 'LIVE CHART · FEED WARMING UP'}</span>
+            <span>{n >= 2 && feed ? `LIVE TAPE · ${CHART_FEED_LABELS[feed].toUpperCase()}` : 'LIVE CHART · FEED WARMING UP'}</span>
           </div>
         </div>
       </div>

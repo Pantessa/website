@@ -4,9 +4,9 @@
 // the claim; right, the engine itself (ChartMount on a live symbol) with a
 // HUD that REHEARSES the product on a loop — an ask types itself, the route
 // draws across dapps, a guard check ticks, and it ends on a receipt or an
-// ARMED stop. No wallet is needed to watch. The chart follows the ask (ETH
-// → ETH → HYPE). Fills are illustrative and the HUD says so: a rehearsal
-// never impersonates a receipt.
+// ARMED stop. No wallet is needed to watch. The chart follows the ask (AAPL
+// → AAPL → HYPE: a tokenized stock on Robinhood Chain leads). Fills are
+// illustrative and the HUD says so: a rehearsal never impersonates a receipt.
 //
 // "Do it for real" is one click: the act row (EXEC's ExecStrip slot) and the
 // rehearsal's own button run through lib/use-connect-to-act — a connected
@@ -24,7 +24,7 @@ import { getProtocolMark } from '@/components/protocol-marks'
 import { fmtPrice } from '@/components/CandleChart'
 import { chartPairFor } from '@/lib/charts'
 import { HERO_LINE, HERO_REEL, LANDING_EYEBROW, LANDING_LEDE, REEL_STAMP, type ReelBeat } from '@/lib/markets-copy'
-import { symbolName } from '@/lib/markets'
+import { symbolName, venueLabel } from '@/lib/markets'
 import { useAskDoor } from '@/lib/ask-door'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
 
@@ -79,9 +79,10 @@ function LegMark({ venue }: { venue: string }) {
   return <span className="lh__legmark">{Mark ? <Mark size={14} /> : <b>{venue[0]}</b>}</span>
 }
 
-/** The receipt strip: bottom-left inside the chart frame, over the volume
- *  pane, never the price action. One line per leg, each appearing as it
- *  lands; the ending line closes it; the stamp keeps it honest. */
+/** The receipt strip: bottom-left inside the plot (the chart's `overlay`
+ *  slot), just above the time axis, over the volume pane. One line per leg,
+ *  each appearing as it lands; the ending line closes it; the stamp keeps it
+ *  honest. */
 function Hud({ beat, state }: { beat: ReelBeat; state: ReelState }) {
   const wiping = state.phase === 'wipe'
   const ended = state.phase === 'end' || wiping
@@ -94,7 +95,7 @@ function Hud({ beat, state }: { beat: ReelBeat; state: ReelState }) {
       {beat.legs.map((l, i) => (
         <div key={l.venue} className={`lh__rcptleg${i < state.legs ? ' is-in' : ''}`}>
           <LegMark venue={l.venue} />
-          <span>{l.line}</span>
+          <span className="lh__legline">{l.line}</span>
         </div>
       ))}
       <div className={`lh__rcptend${ended ? ' is-in' : ''}${beat.ending.kind === 'armed' ? ' lh__rcptend--armed' : ''}`}>
@@ -157,7 +158,7 @@ export default function LandingHero() {
           <div className="lh__bar">
             <div className="lh__sym">
               <span className="lh__symname">{symbol} / USD</span>
-              <span className="lh__symsrc mono">{symbolName(symbol)}{pair ? ` · ${pair.source === 'hyperliquid' ? 'Hyperliquid perps' : 'Coinbase spot'}` : ''}</span>
+              <span className="lh__symsrc mono">{symbolName(symbol)}{pair ? ` · ${venueLabel(pair)}` : ''}</span>
             </div>
             <div className="lh__px">
               {stats?.last != null && <span className="lh__last mono">${fmtPrice(stats.last)}</span>}
@@ -170,8 +171,7 @@ export default function LandingHero() {
             </div>
           </div>
           <div className="lh__chart">
-            <ChartMount symbol={symbol} height={380} defaultTf="1h" onStats={onStats} onAsk={act} />
-            <Hud beat={beat} state={state} />
+            <ChartMount symbol={symbol} height={380} defaultTf="1h" onStats={onStats} onAsk={act} overlay={<Hud beat={beat} state={state} />} />
           </div>
           <div className="lh__strip">
             {pair && <ExecStrip symbol={symbol} pair={pair} onAsk={act} />}
