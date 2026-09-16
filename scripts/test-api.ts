@@ -20622,8 +20622,8 @@ async function main() {
     check(
       'mk2/markets: the /markets rail seats AI\'s MorningTape above the watchlist rows (a seat in the aside before data-slot="watchlist"; empty seats collapse), and its chips prefill chat through useConnectToAct like the rail\'s own',
       /<aside class="mkt-frame__rail"[^>]*><div class="mk-rail-seat" data-seat="MorningTape">[\s\S]*?<\/div><div data-slot="watchlist"/.test(mkHtml) &&
-        idxSrc.includes('<MorningTape onAsk={tapeAct} />') && idxSrc.includes('useConnectToAct({ run: (ask) => router.push(promptHref(ask)), redirectFor: promptHref })') &&
-        idxSrc.includes('{tapeDoor}') && /\.mk-rail-seat:empty \{ display: none; \}/.test(await readFile('components/markets/markets.css', 'utf8')),
+        idxSrc.includes('<MorningTape onAsk={indexAct} />') && idxSrc.includes('useConnectToAct({ run: (ask) => router.push(promptHref(ask)), redirectFor: promptHref })') &&
+        idxSrc.includes('{indexDoor}') && /\.mk-rail-seat:empty \{ display: none; \}/.test(await readFile('components/markets/markets.css', 'utf8')),
     )
     // EXEC's QuickAct on every index row (hover/focus reveal, the index's one
     // act door) + VIZ's fills on the chart for the connected wallet.
