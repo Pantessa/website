@@ -21268,7 +21268,7 @@ async function main() {
   // rows from the venues' own readers, one chip per row whose sentence lands
   // on the venue's native gate. The server under test needs no extra env.
   {
-    const { aaveRows: earnAaveRows, lidoRow: earnLidoRow, morphoRows: earnMorphoRows, rankEarnRows: earnRank, rowsToWire: earnToWire, rowsFromWire: earnFromWire, yieldLadder: earnLadder, filterEarnRows: earnFilter } = await import('../lib/earn')
+    const { aaveRows: earnAaveRows, lidoRow: earnLidoRow, morphoRows: earnMorphoRows, rankEarnRows: earnRank, rowsToWire: earnToWire, rowsFromWire: earnFromWire, yieldLadder: earnLadder, filterEarnRows: earnFilter, featuredFirst: earnFeatured, sortEarnRows: earnSort } = await import('../lib/earn')
     const { mapItems: earnMapItems, UNQUOTED_SCALE: earnUnqScale } = await import('../lib/viz/market-map')
     const { marketSections: earnSections, defaultMarketsView: earnDefaultView } = await import('../lib/markets')
     const aaveFixture = [
@@ -21313,6 +21313,13 @@ async function main() {
         ranked.find((r) => r.venue === 'lido')!.best === true && ranked.find((r) => r.asset === 'ETH' && r.venue === 'aave')!.best === false &&
         earnLadder(ranked).every((r) => r.best) && earnLadder(ranked).length === 2 && earnFilter(ranked, 'stable', 'all').every((r) => r.asset === 'USDC') && earnFilter(ranked, 'all', 'lido').length === 1,
       ranked.map((r) => `${r.asset}/${r.venue}:${r.apyPct}${r.best ? '*' : ''}`).join(' '),
+    )
+    const exotic = { ...morpho[0], id: 'morpho:8453:MXNB', asset: 'MXNB', apyPct: 17.6 }
+    const fam = earnFeatured([...ranked, exotic])
+    check(
+      'earn: the DEFAULT order is familiar-first — USDC/ETH rows (by rate) come before a 17.6% peso coin, and the sort bar\'s RATE key restores the pure rate order with the exotic on top',
+      fam[0].asset === 'USDC' && fam[fam.length - 1].asset === 'MXNB' && earnSort([...ranked, exotic], 'apy', 'desc')[0].asset === 'MXNB' && earnSort([...ranked, exotic], 'featured', 'desc')[0].asset === 'USDC',
+      fam.map((r) => `${r.asset}:${r.apyPct}`).join(' '),
     )
     const wire = earnToWire(ranked, 2500)
     const back = earnFromWire(wire)

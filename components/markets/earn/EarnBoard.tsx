@@ -11,6 +11,7 @@ import { fmtCompact, seriesVar } from '@/lib/markets-look'
 import {
   EARN_AMOUNTS,
   EARN_DEFAULT_USD,
+  EARN_FOLD_AT,
   EARN_FOOTNOTE,
   earnClassOf,
   filterEarnRows,
@@ -49,7 +50,8 @@ export default function EarnBoard({ onAsk }: { onAsk?: (ask: string) => void }) 
   const [error, setError] = useState(false)
   const [cls, setCls] = useState<EarnClass | 'all'>('all')
   const [venue, setVenue] = useState<EarnVenue | 'all'>('all')
-  const [sort, setSort] = useState<{ key: EarnSortKey; dir: 'asc' | 'desc' }>({ key: 'apy', dir: 'desc' })
+  const [sort, setSort] = useState<{ key: EarnSortKey; dir: 'asc' | 'desc' }>({ key: 'featured', dir: 'desc' })
+  const [open, setOpen] = useState(false)
   const [usd, setUsd] = useState<number>(EARN_DEFAULT_USD)
 
   useEffect(() => {
@@ -72,11 +74,13 @@ export default function EarnBoard({ onAsk }: { onAsk?: (ask: string) => void }) 
   }, [])
 
   const all = useMemo(() => (data ? rankEarnRows(rowsFromWire(data.rows)) : []), [data])
-  const rows = useMemo(() => sortEarnRows(filterEarnRows(all, cls, venue), sort.key, sort.dir), [all, cls, venue, sort])
+  const filtered = useMemo(() => sortEarnRows(filterEarnRows(all, cls, venue), sort.key, sort.dir), [all, cls, venue, sort])
+  const rows = open ? filtered : filtered.slice(0, EARN_FOLD_AT)
   const ladder = useMemo(() => yieldLadder(all, 8), [all])
   const bars: BarRow[] = ladder.map((r) => ({ id: r.id, name: `${r.asset} · ${r.venueLabel}`, value: r.apyPct ?? 0, text: fmtApy(r.apyPct), color: venueInk(r.venue) }))
 
   const toggle = (key: EarnSortKey) => setSort((s) => (s.key === key ? { key, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: key === 'asset' ? 'asc' : 'desc' }))
+  const empty = data && filtered.length === 0
 
   return (
     <section className="mkt-sec mk-earn" id="earn" aria-label="Earn" data-seat="EarnBoard" data-rows={rows.length}>
@@ -104,7 +108,7 @@ export default function EarnBoard({ onAsk }: { onAsk?: (ask: string) => void }) 
         </div>
       )}
 
-      <div className="mk-board mk-earn__board">
+      <div className="mk-earn__board">
         <div className="mk-earn__bar">
           <div className="mk-earn__chips" role="group" aria-label="Asset class">
             {CLASS_LABELS.map((c) => (
@@ -132,9 +136,10 @@ export default function EarnBoard({ onAsk }: { onAsk?: (ask: string) => void }) 
         <div className="mk-table__sortbar" role="group" aria-label="Sort">
           {(
             [
-              ['asset', 'Asset'],
+              ['featured', 'Familiar first'],
               ['apy', 'Rate'],
               ['tvl', 'Earning there'],
+              ['asset', 'Asset'],
             ] as [EarnSortKey, string][]
           ).map(([k, label]) => (
             <button key={k} type="button" className={`mk-table__sort${sort.key === k ? ' is-on' : ''}`} onClick={() => toggle(k)} aria-sort={sort.key === k ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
@@ -142,59 +147,49 @@ export default function EarnBoard({ onAsk }: { onAsk?: (ask: string) => void }) 
             </button>
           ))}
         </div>
-        <table className="mk-table mk-earn__table">
-          <thead className="sr-only">
-            <tr>
-              <th>Asset</th>
-              <th>Venue</th>
-              <th>Rate</th>
-              <th>Earning there</th>
-              <th>Act</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => {
-              const ask = r.askFor(usd)
-              return (
-                <tr key={r.id} className="mk-table__row mk-earn__row" data-venue={r.venue} data-best={r.best || undefined}>
-                  <td className="mk-earn__asset">
-                    <span className="mk-table__sym">{r.asset}</span>
-                    <span className="mk-earn__cls mono">{earnClassOf(r.asset).toUpperCase()}</span>
-                    {r.receives && <span className="mk-earn__recv mono">→ {r.receives}</span>}
-                  </td>
-                  <td className="mk-earn__venue">
-                    <i className="mk-earn__ink" style={{ background: venueInk(r.venue) }} aria-hidden="true" />
+        <div className="mk-earn__rows" role="list" aria-label="Ways to earn">
+          {rows.map((r) => {
+            const ask = r.askFor(usd)
+            return (
+              <div key={r.id} className="mk-earn__row" role="listitem" data-venue={r.venue} data-best={r.best || undefined}>
+                <div className="mk-earn__asset">
+                  <span className="mk-table__sym">{r.asset}</span>
+                  <span className="mk-earn__cls mono">{earnClassOf(r.asset).toUpperCase()}</span>
+                  {r.receives && <span className="mk-earn__recv mono">→ {r.receives}</span>}
+                </div>
+                <div className="mk-earn__venue">
+                  <i className="mk-earn__ink" style={{ background: venueInk(r.venue) }} aria-hidden="true" />
+                  <span className="mk-earn__venuetext">
                     <span>
                       <b>{r.venueLabel}</b> <span className="mono mk-earn__chain">{r.chainLabel}</span>
-                      <small>{r.detail}</small>
                     </span>
-                  </td>
-                  <td className="mk-table__num mono mk-earn__apy">
-                    {fmtApy(r.apyPct)}
-                    {r.best && <span className="mk-earn__best mono">BEST</span>}
-                  </td>
-                  <td className="mk-table__num mono mk-earn__tvl">{r.tvlUsd == null ? <span className="mk-table__dash">—</span> : fmtCompact(r.tvlUsd, { usd: true })}</td>
-                  <td className="mk-earn__act">
-                    {ask ? (
-                      <button type="button" className="mkt-exec__chip mk-earn__go" onClick={() => onAsk?.(ask)} title={ask} disabled={!onAsk}>
-                        {KIND_WORD[r.kind]} ${usd}
-                      </button>
-                    ) : (
-                      <span className="mk-table__dash mono" title="No live price to size this in ETH">—</span>
-                    )}
-                  </td>
-                </tr>
-              )
-            })}
-            {data && rows.length === 0 && (
-              <tr>
-                <td colSpan={5} className="mk-earn__empty">
-                  {error || data.failed.length === 3 ? 'The venues did not answer just now — nothing is shown rather than a stale rate.' : 'Nothing in this filter.'}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                    <small>{r.detail}</small>
+                  </span>
+                </div>
+                <div className="mk-earn__apy mono">
+                  {fmtApy(r.apyPct)}
+                  {r.best && <span className="mk-earn__best mono">BEST</span>}
+                </div>
+                <div className="mk-earn__tvl mono">{r.tvlUsd == null ? <span className="mk-table__dash">—</span> : fmtCompact(r.tvlUsd, { usd: true })}</div>
+                <div className="mk-earn__act">
+                  {ask ? (
+                    <button type="button" className="mkt-exec__chip mk-earn__go" onClick={() => onAsk?.(ask)} title={ask} disabled={!onAsk}>
+                      {KIND_WORD[r.kind]} ${usd}
+                    </button>
+                  ) : (
+                    <span className="mk-table__dash mono" title="No live price to size this in ETH">—</span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+          {empty && <p className="mk-earn__empty">{error || data!.failed.length === 3 ? 'The venues did not answer just now — nothing is shown rather than a stale rate.' : 'Nothing in this filter.'}</p>}
+        </div>
+        {filtered.length > EARN_FOLD_AT && (
+          <button type="button" className="mkt-sec__more mono mk-earn__more" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+            {open ? 'SHOW FEWER' : `SHOW ALL ${filtered.length}`}
+          </button>
+        )}
         <p className="mk-earn__foot mono">
           {EARN_FOOTNOTE}
           {data?.failed.length ? ` · not answering: ${data.failed.join(', ')}` : ''}

@@ -62,6 +62,8 @@ export interface EarnResponse {
 
 export const EARN_AMOUNTS = [10, 25, 100] as const
 export const EARN_DEFAULT_USD = 25
+/** Rows shown before the fold — the rest behind SHOW ALL (the boards' idiom). */
+export const EARN_FOLD_AT = 12
 export const EARN_FOOTNOTE = 'Rates are variable and read live from each venue · the chip sends the sentence · your wallet signs · not advice'
 
 const STABLES = new Set(['USDC', 'USDT', 'USDG', 'DAI', 'PYUSD', 'RLUSD', 'USDE', 'GHO', 'USDS', 'FRAX', 'LUSD', 'CRVUSD', 'EURC', 'USD1', 'USDA', 'USDTB'])
@@ -212,8 +214,20 @@ export function rankEarnRows(rows: readonly EarnRow[]): EarnRow[] {
     .sort((a, b) => (b.apyPct ?? -Infinity) - (a.apyPct ?? -Infinity) || (b.tvlUsd ?? 0) - (a.tvlUsd ?? 0) || a.asset.localeCompare(b.asset))
 }
 
-export type EarnSortKey = 'apy' | 'tvl' | 'asset'
+/** The assets a first-time visitor is likely to hold. The board's DEFAULT
+ *  order puts their best rows first (by rate), then the long tail (by rate):
+ *  a stranger should see "USDC 5.33% · ETH 2.27%" before a peso coin at 17%.
+ *  The sort bar's RATE overrides this with the pure rate order. */
+export const FEATURED_EARN_ASSETS: readonly string[] = ['USDC', 'ETH', 'USDT', 'USDG', 'BTC', 'WBTC', 'CBBTC', 'DAI', 'PYUSD']
+export function featuredFirst(rows: readonly EarnRow[]): EarnRow[] {
+  const featured = new Set(FEATURED_EARN_ASSETS)
+  const rank = (r: EarnRow) => (featured.has(r.asset) ? 0 : 1)
+  return [...rows].sort((a, b) => rank(a) - rank(b) || (b.apyPct ?? -Infinity) - (a.apyPct ?? -Infinity) || (b.tvlUsd ?? 0) - (a.tvlUsd ?? 0))
+}
+
+export type EarnSortKey = 'featured' | 'apy' | 'tvl' | 'asset'
 export function sortEarnRows(rows: readonly EarnRow[], key: EarnSortKey, dir: 'asc' | 'desc'): EarnRow[] {
+  if (key === 'featured') return dir === 'desc' ? featuredFirst(rows) : featuredFirst(rows).reverse()
   const s = dir === 'asc' ? 1 : -1
   const num = (v: number | null) => (v == null ? (dir === 'asc' ? Infinity : -Infinity) : v)
   return [...rows].sort((a, b) => {
