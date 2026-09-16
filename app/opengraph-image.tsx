@@ -128,27 +128,20 @@ export default async function Image() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={toDataUri(chart)} width={600} height={300} alt="" />
           </div>
-          {/* the HUD: the first beat, complete */}
-          <div style={{ position: 'absolute', left: 18, top: 92, width: 300, display: 'flex', flexDirection: 'column', padding: '14px 16px', borderRadius: 14, border: `1.5px solid rgba(52,227,160,0.45)`, background: 'rgba(5,7,8,0.86)' }}>
-            <span style={{ fontFamily: 'Newsreader', color: INK, fontSize: 24, letterSpacing: -0.4 }}>{beat.ask}</span>
-            <div style={{ display: 'flex', flexDirection: 'column', marginTop: 10, fontSize: 14, color: '#b8bfb5' }}>
-              <span style={{ color: INK, fontWeight: 600 }}>{beat.legs[0].venue} <span style={{ color: MUTED, fontSize: 11, letterSpacing: 2, marginLeft: 8 }}>{beat.legs[0].chain.toUpperCase()}</span></span>
-              <span style={{ marginTop: 2 }}>{beat.legs[0].what}</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', marginTop: 10, paddingTop: 10, borderTop: '1px dashed rgba(255,255,255,0.14)', fontSize: 12, color: MUTED }}>
-              {beat.guard.map((g) => (
-                <span key={g} style={{ display: 'flex', alignItems: 'center' }}>
-                  {/* a drawn tick — the embedded fonts carry no ✓ glyph */}
-                  <div style={{ display: 'flex', width: 6, height: 6, borderRadius: 3, background: ACCENT, marginRight: 8 }} />
-                  <span>{g}</span>
-                </span>
-              ))}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12, letterSpacing: 2, color: ACCENT }}>
-              <div style={{ display: 'flex', width: 8, height: 8, borderRadius: 4, background: ACCENT }} />
+          {/* the receipt strip: the first beat, complete — bottom-left over the volume pane */}
+          <div style={{ position: 'absolute', left: 16, bottom: 44, maxWidth: 420, display: 'flex', flexDirection: 'column', padding: '12px 14px 10px', borderRadius: 12, border: '1.5px solid rgba(255,255,255,0.14)', background: 'rgba(16,16,18,0.84)' }}>
+            <span style={{ display: 'flex', color: INK, fontSize: 19, fontWeight: 600, letterSpacing: -0.3 }}>
+              <span style={{ color: ACCENT, marginRight: 8 }}>›</span>
+              <span>{beat.ask}</span>
+            </span>
+            {beat.legs.map((l) => (
+              <span key={l.venue} style={{ display: 'flex', marginTop: 6, fontSize: 14, color: '#b8bfb5' }}>{l.line}</span>
+            ))}
+            <span style={{ display: 'flex', marginTop: 8, fontSize: 13, letterSpacing: 1.2, color: ACCENT }}>
+              <div style={{ display: 'flex', width: 7, height: 7, borderRadius: 4, background: ACCENT, marginRight: 8, marginTop: 4 }} />
               <span>{beat.ending.line.toUpperCase()}</span>
-            </div>
-            <span style={{ marginTop: 8, fontSize: 10, letterSpacing: 1.5, color: MUTED }}>{REEL_STAMP}</span>
+            </span>
+            <span style={{ marginTop: 6, fontSize: 10, letterSpacing: 1.5, color: MUTED }}>{REEL_STAMP}</span>
           </div>
           <div style={{ position: 'absolute', left: 22, bottom: 14, display: 'flex', fontSize: 11, letterSpacing: 2, color: MUTED }}>
             <span>{n >= 2 ? 'LIVE TAPE · COINBASE' : 'LIVE CHART · FEED WARMING UP'}</span>

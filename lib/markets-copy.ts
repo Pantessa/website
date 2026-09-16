@@ -9,7 +9,7 @@
 //  lib/fees so the killer line can never drift from what the builders stamp.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { SWAP_FEE_BPS, SWAP_FEE_PCT } from '@/lib/fees'
+import { HL_BUILDER_FEE_TENTH_BPS, SWAP_FEE_BPS, SWAP_FEE_PCT } from '@/lib/fees'
 
 /** The nav word — landing nav, app spine, footer. */
 export const MARKETS_NAV_WORD = 'Markets'
@@ -246,46 +246,45 @@ export const LANDING_LEDE =
   'A chart is a window. This one is a door: every dapp your wallet can act on a symbol through, side by side, live — and the ask compiles into one signed job. You keep the pen.'
 
 /** A rehearsal beat: the ask the hero types, the route it draws across
- *  dapps, and how it ends. Fills are ILLUSTRATIVE and the HUD says so —
- *  a rehearsal never impersonates a receipt. */
+ *  dapps (ONE receipt line per leg: venue · what · fee), and how it ends.
+ *  Fees come from lib/fees — never typed. Fills are ILLUSTRATIVE and the
+ *  strip says so: a rehearsal never impersonates a receipt. */
 export interface ReelBeat {
   /** The symbol the chart follows for this beat (must chart). */
   symbol: string
   ask: string
-  legs: { venue: string; chain: string; what: string }[]
-  guard: string[]
+  legs: { venue: string; line: string }[]
   ending: { kind: 'receipt' | 'armed'; line: string }
 }
+
+const HL_FEE_PCT = `${(HL_BUILDER_FEE_TENTH_BPS / 1000).toFixed(2)}%`
 
 export const HERO_REEL: ReelBeat[] = [
   {
     symbol: 'ETH',
     ask: 'Buy $50 of ETH',
-    legs: [{ venue: 'Uniswap v3', chain: 'Base', what: '50 USDC → ETH · pool-quoted' }],
-    guard: ['calldata re-decoded · target pinned', 'slippage bound · your wallet is the recipient'],
-    ending: { kind: 'receipt', line: 'signed by your wallet · receipted on-chain' },
+    legs: [{ venue: 'Uniswap', line: `Uniswap v3 · Base · $50 → ETH · fee ${SWAP_FEE_PCT}` }],
+    ending: { kind: 'receipt', line: 'filled · signed by your wallet · receipted' },
   },
   {
     symbol: 'ETH',
     ask: 'Stake 0.05 ETH with Lido',
-    legs: [{ venue: 'Lido', chain: 'Ethereum', what: '0.05 ETH → stETH · earning' }],
-    guard: ['contract pinned · selector checked', 'gas reserve kept back'],
-    ending: { kind: 'receipt', line: 'signed by your wallet · stETH in your wallet' },
+    legs: [{ venue: 'Lido', line: 'Lido · Ethereum · 0.05 ETH → stETH · fee 0' }],
+    ending: { kind: 'receipt', line: 'staked · signed by your wallet · earning' },
   },
   {
     symbol: 'HYPE',
     ask: '2X long $12 of HYPE, then protect my HYPE long with a 5% stop',
     legs: [
-      { venue: 'Hyperliquid', chain: 'perps', what: '2x long · $12 · leverage set first' },
-      { venue: 'Guardian', chain: 'standing', what: 'stop 5% under entry · watched every minute' },
+      { venue: 'Hyperliquid', line: `Hyperliquid · 2x · $12 · fee ${HL_FEE_PCT}` },
+      { venue: 'Guardian', line: 'Guardian · stop 5% under entry · checked every minute' },
     ],
-    guard: ['one job, two steps · each re-quoted at its turn', 'agent can only close · never withdraw'],
-    ending: { kind: 'armed', line: 'ARMED · runs while you sleep · non-custodial' },
+    ending: { kind: 'armed', line: 'ARMED · one signature · runs while you sleep' },
   },
 ]
 
 /** The HUD's honesty stamp — a rehearsal is not a receipt. */
-export const REEL_STAMP = 'REHEARSAL · illustrative fills · the real card quotes the pool'
+export const REEL_STAMP = 'REHEARSAL · illustrative · the real card quotes the pool'
 
 /** "Every dapp, one chart": a venue around the symbol, its live number
  *  (from /api/markets/routes when EXEC's route lands; the `stat` here is the
@@ -299,6 +298,9 @@ export interface LandingVenue {
   ask: string
   /** What the live number IS, said honestly when we can't read it. */
   stat: string
+  /** The symbol whose route feeds this card when it isn't LANDING_SYMBOL
+   *  (Robinhood Chain has no ETH row — the stock card reads AAPL's). */
+  symbol?: string
 }
 
 export const LANDING_SYMBOL = 'ETH'
@@ -310,7 +312,7 @@ export const LANDING_VENUES: LandingVenue[] = [
   { key: 'aave', name: 'Aave', kind: 'lend', chain: 'Ethereum', ask: 'Supply $50 of USDC to Aave', stat: 'supply APY' },
   { key: 'lido', name: 'Lido', kind: 'stake', chain: 'Ethereum', ask: 'Stake 0.05 ETH with Lido', stat: 'staking APR' },
   { key: 'near', name: 'NEAR Intents', kind: 'fund', chain: 'cross-chain', ask: 'Swap 20 USDC from base to arbitrum', stat: 'route · ETA' },
-  { key: 'robinhood', name: 'Robinhood Chain', kind: 'stock', chain: '24/7 stocks', ask: 'Buy $10 of AAPL', stat: 'AAPL · on-chain' },
+  { key: 'robinhood', name: 'Robinhood Chain', kind: 'stock', chain: '24/7 stocks', ask: 'Buy $10 of AAPL', stat: 'AAPL · on-chain', symbol: 'AAPL' },
   { key: 'dca', name: 'DCA', kind: 'schedule', chain: 'standing', ask: 'DCA $10 into ETH weekly', stat: 'every UTC week' },
 ]
 

@@ -139,20 +139,25 @@ export async function readPosition(address: `0x${string}`, pair: ChartPair, last
   return { symbol: pair.symbol, last, change24hPct, rows, perp }
 }
 
-// ── EXEC's position route, hopped server-side ───────────────────────────────
+// ── EXEC's position route, called IN-PROCESS ────────────────────────────────
 // `GET /api/markets/position` composes spot (every app chain) + the HL
 // clearinghouse + Aave + Lido, and returns Pantessa's own standing rows
 // (DCA · guardian · spot guard) ONLY to the wallet's own SIWE session (QA-3,
-// rule 6). The brief route forwards the request's cookie so an own-session
-// caller gets them and a stranger gets them NAMED as private. On any hop
-// failure the chain-only reader above answers (fail-soft, never a 500).
-export async function readSymbolPosition(origin: string, cookie: string | null, pair: ChartPair, address: `0x${string}`, last: number | null, change24hPct: number | null): Promise<PositionContext> {
+// rule 6). The brief route used to hop it over HTTP on `req.nextUrl.origin`
+// (Host-derived → an SSRF class, QA-5); now the handler is imported and
+// invoked directly with a CONSTANT internal URL — no socket, no Host, and
+// the session is read by the handler from the CURRENT request's cookies
+// (`getSessionAddress()` → `cookies()`), so an own-session caller gets its
+// standing rows and a stranger gets them NAMED as private. Any failure
+// falls back to the chain-only reader above (fail-soft, never a 500).
+export async function readSymbolPosition(pair: ChartPair, address: `0x${string}`, last: number | null, change24hPct: number | null): Promise<PositionContext> {
   try {
-    const res = await fetch(`${origin}/api/markets/position?symbol=${encodeURIComponent(pair.symbol)}&address=${address}`, {
-      headers: { accept: 'application/json', ...(cookie ? { cookie } : {}) },
-      signal: AbortSignal.timeout(12_000),
-      cache: 'no-store',
-    })
+    const { GET: positionGet } = await import('@/app/api/markets/position/route')
+    const { NextRequest } = await import('next/server')
+    const url = new URL('http://pantessa.internal/api/markets/position')
+    url.searchParams.set('symbol', pair.symbol)
+    url.searchParams.set('address', address)
+    const res = await positionGet(new NextRequest(url, { headers: { accept: 'application/json' } }))
     if (!res.ok) throw new Error(`position ${res.status}`)
     const p = (await res.json()) as SymbolPosition
     const rows: PositionContext['rows'] = []

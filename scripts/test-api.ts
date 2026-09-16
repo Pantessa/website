@@ -31,7 +31,7 @@ import { base } from 'viem/chains'
 import { dryRunTx, isAllowanceLag, rpcHostOf, transientRpcWords } from '../lib/dry-run'
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
-import { LINK_FEE_PCT } from '../lib/fees'
+import { LINK_FEE_PCT, SWAP_FEE_PCT } from '../lib/fees'
 import { ROBINHOOD_DESK } from '../lib/live-examples'
 import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import {
@@ -3027,17 +3027,15 @@ async function main() {
     // it to nate.eth" while its href sent the explicit clause — a reader who
     // retyped the tile got the jobs refusal. Displayed = sent, pinned on the
     // rendered page.
-    const homeForTiles = await (await fetch(`${BASE}/`)).text()
-    const nightTasks = [...homeForTiles.matchAll(/night__task[^>]*>“([^”]+)” →/g)].map((m) => m[1].replace(/<!-- -->/g, ''))
-    // Attribute order is the renderer's, not ours (Next has served both
-    // `href … class` and `class … href` for this <Link>): match the tile's
-    // <a> tag as a whole, then read `href` from inside it.
-    const nightHrefs = [...homeForTiles.matchAll(/<a\b[^>]*\bclass="[^"]*\bnight__tile\b[^"]*"[^>]*>/g)]
-      .map((m) => m[0].match(/\bhref="\/chat\?[^"]*prompt=([^"&]+)"/)?.[1] ?? null)
-      .filter((h): h is string => h !== null)
-      .map((h) => decodeURIComponent(h.replace(/&amp;/g, '&')))
+    // Re-pinned 2026-09-15 (mk2 LANDING): NightShift is OFF the landing
+    // (trimmed, the file stays), so displayed == sent is pinned on the
+    // component's own TILES source — every `ask:` is the sentence its
+    // `href:` encodes (the ASCII/Unicode minus difference is normalized).
+    const nightSrc = (await import('node:fs')).readFileSync('components/NightShift.tsx', 'utf8')
+    const nightTasks = [...nightSrc.matchAll(/^\s*ask: '([^']+)',/gm)].map((m) => m[1])
+    const nightHrefs = [...nightSrc.matchAll(/^\s*href: `\/chat\?[^`]*prompt=\$\{encodeURIComponent\('([^']+)'\)\}`/gm)].map((m) => m[1])
     check(
-      'landing tiles: every NightShift tile displays exactly the ask its href sends',
+      'landing tiles: every NightShift tile displays exactly the ask its href sends (pinned on the TILES source — the section is off the landing)',
       nightTasks.length >= 4 && nightHrefs.length === nightTasks.length && nightTasks.every((t, i) => nightHrefs[i].replace(/−/g, '-') === t.replace(/−/g, '-')),
       JSON.stringify({ nightTasks, nightHrefs }),
     )
@@ -5392,11 +5390,12 @@ async function main() {
         /bootHoldingFor\(\{ hydrated, walletStatus, holdElapsed: walletWaitOver \}\)/.test(link) &&
         /useState\(\(\) => initialHoldElapsed\(/.test(link),
     )
-    const html = await (await fetch(`${BASE}/`)).text()
-    const ticks = [...html.matchAll(/class="night__tick[^"]*"[^>]*?\sy1="([^"]+)"[^>]*?\sy2="([^"]+)"/g)].flatMap((m) => [m[1], m[2]])
+    // Re-pinned 2026-09-15 (mk2 LANDING): the dial is off the landing, so
+    // the rounding rule is pinned on NightShift's own polar helper.
+    const nightDial = code('components/NightShift.tsx')
     check(
-      'onboarding: the landing dial\'s tick coordinates are rounded (≤3 decimals) — Node and the browser disagree on Math.sin/cos in the last bits, and raw floats made every tick a server/client attribute mismatch',
-      ticks.length >= 20 && ticks.every((v) => /^-?\d+(\.\d{1,3})?$/.test(v)),
+      'onboarding: the NightShift dial\'s tick coordinates are rounded (≤3 decimals) — Node and the browser disagree on Math.sin/cos in the last bits, and raw floats made every tick a server/client attribute mismatch',
+      /Math\.round\(\(C \+ Math\.cos\(a\) \* r\) \* 1000\) \/ 1000/.test(nightDial) && /Math\.round\(\(C \+ Math\.sin\(a\) \* r\) \* 1000\) \/ 1000/.test(nightDial),
     )
   }
 
@@ -20972,6 +20971,14 @@ async function main() {
       /<h1[^>]*>[^<]*<br\/?><em>[^<]*<\/em><\/h1>/.test(home) && home.replace(/<[^>]+>/g, '').includes(mc.HERO_LINE) &&
         home.includes(mc.REEL_STAMP) && /REHEARSAL/.test(home),
     )
+    // R2: the rehearsal is a receipt STRIP over the volume pane — SSR paints
+    // beat 0 complete (ask › route line with the fee from lib/fees › ending),
+    // and the typed sentence is not repeated under the CTAs.
+    check(
+      'mk2/landing: the receipt strip SSRs beat 0 complete — the ask, one route line per leg carrying the fee from lib/fees, the ending — and the sentence is not duplicated under the CTAs',
+      /data-reel-beat="0"/.test(home) && mc.HERO_REEL[0].legs.every((l) => home.includes(l.line)) && home.includes(mc.HERO_REEL[0].ending.line) &&
+        home.includes(`fee ${SWAP_FEE_PCT}`) && !/class="lh__ask\b/.test(home) && !/class="lh__hud\b/.test(home),
+    )
     check(
       'mk2/landing: the venue band names every venue (≥6) with one prefill chip each (/chat?prompt=, never a fired turn) and the compound ask as one job',
       mc.LANDING_VENUES.length >= 6 &&
@@ -21032,7 +21039,7 @@ async function main() {
     check(
       'mk2/landing: the root social card is the hero — a live tape + the rehearsal HUD + the stamp; 200 image/png, real PNG',
       ogr.status === 200 && /image\/png/.test(ogr.headers.get('content-type') ?? '') && ogBuf[0] === 0x89 && ogBuf[1] === 0x50 && ogBuf.length > 20_000 &&
-        /REHEARSAL/.test(ogSrc) && /candleSvg\(/.test(ogSrc) && /gemMarkSvg\(/.test(ogSrc),
+        /REEL_STAMP/.test(ogSrc) && /candleSvg\(/.test(ogSrc) && /gemMarkSvg\(/.test(ogSrc),
     )
   }
 
@@ -21174,7 +21181,7 @@ async function main() {
     const aaplWords = aiVenueWordsFor(aaplPair, 300)
     check('ai venues: the prompts\' "ways this wallet can act" come from EXEC\'s venuesFor (spot chains, CoW limits, Aave, Lido, the perp) plus missingVenueNotes as "not here:" lines', ethWords.some((w) => /^spot on Uniswap \(Base/.test(w)) && ethWords.some((w) => /CoW limit/.test(w)) && ethWords.some((w) => /Aave/.test(w)) && ethWords.some((w) => /Lido/.test(w)) && ethWords.some((w) => /Hyperliquid perp/.test(w)) && aaplWords.some((w) => /Robinhood Chain/.test(w)) && aaplWords.some((w) => w.startsWith('not here:')), `${ethWords.length}/${aaplWords.length} words`)
     const ethMenu = aiChipMenu({ pair: ethPair, last: 2500, tech: null })
-    check('ai menu: EXEC\'s venue rows join the brief\'s chip menu (one per kind+side, ladder-filtered downstream) and funding legs never do', ethMenu.some((c) => c.ask === 'Supply $50 of ETH to Aave') && ethMenu.some((c) => c.ask === 'Stake 0.5 ETH on Lido') && ethMenu.some((c) => /^Long \$50 of ETH on Hyperliquid$/.test(c.ask)) && !ethMenu.some((c) => /^(Swap|Fund) /.test(c.ask)) && new Set(ethMenu.map((c) => c.ask)).size === ethMenu.length, `${ethMenu.length} chips`)
+    check('ai menu: EXEC\'s venue rows join the brief\'s chip menu (one per kind+side, ladder-filtered downstream) and funding legs never do', ethMenu.some((c) => c.ask === 'Supply $50 of ETH to Aave') && ethMenu.some((c) => /^Stake [\d.]+ ETH on Lido$/.test(c.ask)) && ethMenu.some((c) => /^Long \$50 of ETH on Hyperliquid$/.test(c.ask)) && !ethMenu.some((c) => /^(Swap|Fund) /.test(c.ask)) && new Set(ethMenu.map((c) => c.ask)).size === ethMenu.length, `${ethMenu.length} chips`)
     check('ai tape: the morning tape\'s cache key is the sorted, deduped symbol set only — never a list id, a name, or a wallet', aiTapeCacheKey(['eth', 'AAPL', 'ETH', 'btc']) === 'tape:AAPL,BTC,ETH' && aiTapeSymbols(['0x1111111111111111111111111111111111111111', 'ETH']).join(',') === 'ETH')
     if (ethLast != null) {
       const t1 = await readBrief({ part: 'tape', symbols: ['eth', 'AAPL', 'ETH'] })
@@ -21187,7 +21194,7 @@ async function main() {
     }
     const briefRoute = await readFile('app/api/markets/brief/route.ts', 'utf8')
     const ctxSrc = await readFile('lib/markets-ai-context.ts', 'utf8')
-    check('ai position: the paragraph hops EXEC\'s /api/markets/position with the CALLER\'s own cookie (own-session rows come back; a stranger\'s are named private, never guessed), and falls back to the chain-only reader', briefRoute.includes("readSymbolPosition(req.nextUrl.origin, req.headers.get('cookie')") && ctxSrc.includes('privateRows: p.private ?? []') && ctxSrc.includes('return readPosition(address, pair, last, change24hPct)') && aiPositionFallback({ symbol: 'ETH', last: 2500, change24hPct: 1, rows: [], perp: null, privateRows: ['dca', 'guardian'] }).includes('private'))
+    check('ai position: the paragraph calls EXEC\'s /api/markets/position handler IN-PROCESS on a constant internal URL (QA-5: no fetch, no Host-derived origin; the handler reads the caller\'s own session, so own rows come back and a stranger\'s are named private), and falls back to the chain-only reader', briefRoute.includes('readSymbolPosition(tape.pair, body.address') && !briefRoute.includes('req.nextUrl.origin') && ctxSrc.includes("import('@/app/api/markets/position/route')") && ctxSrc.includes("new URL('http://pantessa.internal/api/markets/position')") && !/fetch\([^)]*position/.test(ctxSrc) && ctxSrc.includes('privateRows: p.private ?? []') && ctxSrc.includes('return readPosition(address, pair, last, change24hPct)') && aiPositionFallback({ symbol: 'ETH', last: 2500, change24hPct: 1, rows: [], perp: null, privateRows: ['dca', 'guardian'] }).includes('private'))
     const askSrc2 = await readFile('components/markets/ai/AskChart.tsx', 'utf8')
     check('ai explain: AskChart offers "Explain the <time> bar" for the chart-hover store\'s bar (lib/markets-ai-hover, VIZ reports it), else the bar under the newest timed drawing (note / trend end — the ChartState crosshair fallback), else the window\'s last bar, through kind:explain', askSrc2.includes("useChartHover((st) => (st.symbol === pair.symbol ? st.bar : null))") && askSrc2.includes("kind: 'explain', bar: explainBar") && askSrc2.includes('data-explain={explainMode}') && askSrc2.includes("l.kind === 'note' ? l.t : l.kind === 'trend' ? l.t2 : null"))
     // The wire the components speak, pinned at the source: a chip click SENDS

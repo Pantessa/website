@@ -34,9 +34,11 @@ export default function VenueBand() {
         if (!dead && q && typeof q.last === 'number') setPx({ last: q.last, chg: typeof q.chgPct === 'number' ? q.chgPct : null })
       } catch { /* the word stays */ }
     }
-    const readRoutes = async () => {
+    // One routes read per distinct symbol the cards name (ETH, plus AAPL for
+    // the stock card — Robinhood Chain has no ETH row).
+    const readRoutes = async (symbol: string, keys: Set<string>) => {
       try {
-        const r = await fetch(`/api/markets/routes?symbol=${LANDING_SYMBOL}`)
+        const r = await fetch(`/api/markets/routes?symbol=${encodeURIComponent(symbol)}`)
         if (!r.ok) return
         const j = await r.json()
         const rows: RouteLive[] = Array.isArray(j?.routes) ? j.routes : []
@@ -47,15 +49,21 @@ export default function VenueBand() {
           const label = row.quote && typeof row.quote === 'object' && typeof row.quote.label === 'string' ? row.quote.label : null
           if (!label) continue
           const key = row.kind === 'dca' ? 'dca' : String(row.venue ?? '').toLowerCase()
-          if (!key) continue
+          if (!key || !keys.has(key)) continue
           if (next[key] && row.side === 'sell') continue
           next[key] = row.quote?.sub ? `${label} · ${row.quote.sub}` : label
         }
-        if (!dead && Object.keys(next).length) setLive(next)
-      } catch { /* EXEC's route isn't here yet — the words stay */ }
+        if (!dead && Object.keys(next).length) setLive((prev) => ({ ...prev, ...next }))
+      } catch { /* the route didn't answer — the words stay */ }
+    }
+    const bySymbol = new Map<string, Set<string>>()
+    for (const v of LANDING_VENUES) {
+      const sym = v.symbol ?? LANDING_SYMBOL
+      if (!bySymbol.has(sym)) bySymbol.set(sym, new Set())
+      bySymbol.get(sym)!.add(v.key)
     }
     readQuote()
-    readRoutes()
+    for (const [sym, keys] of bySymbol) readRoutes(sym, keys)
     const t = setInterval(readQuote, 30_000)
     return () => { dead = true; clearInterval(t) }
   }, [])

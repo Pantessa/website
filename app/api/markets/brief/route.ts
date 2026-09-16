@@ -76,10 +76,11 @@ export async function POST(req: NextRequest) {
   // ── The position paragraph: uncached, address-keyed, model optional ──────
   if (body.part === 'position') {
     if (!body.address) return NextResponse.json({ error: 'The position paragraph needs an address.' }, { status: 400 })
-    // EXEC's position route, hopped with this request's own cookie: an
-    // own-session caller gets its standing rows, a stranger gets them
+    // EXEC's position composer, called in-process (QA-5: no HTTP hop, no
+    // Host-derived origin): the handler reads THIS request's session, so an
+    // own-session caller gets its standing rows and a stranger gets them
     // named as private (never guessed).
-    const pos = await readSymbolPosition(req.nextUrl.origin, req.headers.get('cookie'), tape.pair, body.address as `0x${string}`, tape.last, tape.change24hPct)
+    const pos = await readSymbolPosition(tape.pair, body.address as `0x${string}`, tape.last, tape.change24hPct)
     const held = positionHeld(pos)
     let text: string | null = null
     if (held && modelAvailable() && !(await bumpAndCheckMarketsAi(req.headers, body))) {
