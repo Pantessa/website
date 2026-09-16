@@ -12,6 +12,7 @@ import { useAppShellMode } from '@/components/AppShell'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATALOG } from '@/lib/mcp-data'
 import { FREE_FLEET_FALLBACK, DEFAULT_CHAT_FLEET_SLUGS } from '@/lib/free-fleet'
+import { resolveAppIds } from '@/lib/ask-apps'
 
 // Free fleet leads the static fallback so the MCP rail's default (free) view
 // is never empty when /api/servers is down.
@@ -88,9 +89,9 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
     const raw = new URLSearchParams(window.location.search).get('mcps')
     if (!raw) return
     const slugs = raw.split(',').map((s) => s.trim()).filter(Boolean)
-    const ids = slugs
-      .map((slug) => servers.find((s) => s.slug === slug)?.id)
-      .filter((id): id is string => !!id)
+    // Through the app families: the route's own "Add Aave with this ask
+    // ready" door links name `aave-free`, and prod's Aave row is `aave`.
+    const ids = resolveAppIds(slugs, servers)
     if (ids.length) {
       appliedMcpParam.current = true
       setActiveServerIds(ids)
@@ -166,12 +167,17 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
     if (dbRestoredFor.current === authedAddress) return
     dbRestoredFor.current = authedAddress
     const routeOwnsSet = !!chatId || !!new URLSearchParams(window.location.search).get('mcps')
+    const loadStartedAt = Date.now()
     void loadWalletSet().then((ids) => {
       if (!ids || routeOwnsSet) return
       // Same stale-id guard as the local restore: only ids still in the
       // loaded directory make it into the working set.
       const valid = ids.filter((id) => servers.some((s) => s.id === id))
-      if (valid.length) setActiveServerIds(valid)
+      // A /markets chip that turned its apps on while the copy was loading
+      // keeps them: the chip's thread already runs on them (store.chipApps).
+      const chip = useYeetfulStore.getState().chipApps
+      const kept = chip && chip.at >= loadStartedAt ? chip.ids.filter((id) => servers.some((s) => s.id === id)) : []
+      if (valid.length) setActiveServerIds([...new Set([...valid, ...kept])])
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authedAddress, servers, chatId, loadWalletSet, setActiveServerIds])
