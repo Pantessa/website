@@ -30,7 +30,6 @@ export function robinhoodRowActions(h: RobinhoodHolding): SuggestedPrompt[] {
     // quote a stale amount.
     return [
       { label: `Buy more ${sym}`, prompt: `Buy $10 of ${sym} on Robinhood Chain` },
-      { label: `DCA $10 weekly`, prompt: `Buy $10 of ${sym} every week on Robinhood Chain` },
       ...(bal > 0 ? [{ label: `Sell ${sym}`, prompt: `Sell all my ${sym} for USDG on Robinhood Chain` }] : []),
     ]
   }

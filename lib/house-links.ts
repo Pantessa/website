@@ -13,17 +13,17 @@ export type HouseLink = {
   ask: string
   label: string
   /** Extra mark keys for venues the runtime uses but composeMcps can't see —
-   *  native layers build most asks with no MCP at all (the ETH DCA swaps on
-   *  Uniswap without the uniswap MCP in the set). Resolved by
+   *  native layers build most asks with no MCP at all (a native swap builds
+   *  on Uniswap without the uniswap MCP in the set). Resolved by
    *  getProtocolMark, so any registry-matchable key works. */
   venueMarks?: string[]
 }
 
 export const HOUSE_LINKS: HouseLink[] = [
   { slug: 'buy-aapl', ask: 'Buy $10 of AAPL', label: 'Buy a stock' },
-  // The recurring buy builds on the Uniswap venue (native swap layer — no
-  // MCP in the set), so the venue mark is declared here.
-  { slug: 'dca-eth', ask: 'DCA $25 into ETH weekly', label: 'Set a recurring buy', venueMarks: ['uniswap'] },
+  // /i/dca-eth ("DCA $25 into ETH weekly") is retired from the set
+  // (2026-09-16): a recurring buy only reminds the wallet to sign each
+  // period. The link stays live in the DB, just unsurfaced.
   { slug: 'stake-eth', ask: 'Stake 0.05 ETH with Lido', label: 'Stake ETH' },
   // The Guardian/jobs aha as a PURE intent — the visitor asks for the
   // position; the system discovers the empty HL account and offers the whole

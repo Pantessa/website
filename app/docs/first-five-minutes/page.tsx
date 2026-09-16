@@ -76,17 +76,17 @@ export default function FirstFiveMinutesPage() {
         <h2>Minutes 4 and 5 — tell it once</h2>
         <p>
           This is the part that stays working after you close the tab. Say{' '}
-          <SpineLink href={ask('Buy $10 of AAPL every week on Robinhood Chain', 'robinhood-free')}>
-            &ldquo;Buy $10 of AAPL every week&rdquo;
-          </SpineLink>{' '}
-          and you get a recurring buy you confirm each period —{' '}
-          <Link href="/docs/jobs">a standing intent</Link>. Say{' '}
           <SpineLink href={ask('Set a stop-loss on my ETH position at -8%', 'hyperliquid-free')}>
             &ldquo;Stop-loss my ETH perp at -8%&rdquo;
           </SpineLink>{' '}
           and <Link href="/docs/guardian">Guardian</Link>{' '}watches it every minute with a key that
-          can only reduce that position — revocable with one click. The Jobs tab in the chat rail
-          shows everything that&apos;s running and flags the moments that need you.
+          can only reduce that position — revocable with one click. Say{' '}
+          <SpineLink href={ask('Fund Robinhood Chain with $50 from Base including gas, then buy $40 of AAPL', 'robinhood-free')}>
+            &ldquo;Fund Robinhood Chain with $50 from Base including gas, then buy $40 of AAPL&rdquo;
+          </SpineLink>{' '}
+          and you get <Link href="/docs/jobs">a job</Link>{' '}that waits for the bridge to settle, then
+          offers the buy. The Jobs tab in the chat rail shows everything that&apos;s running and flags
+          the moments that need you.
         </p>
 
         <h2>Where to go from here</h2>
@@ -96,8 +96,8 @@ export default function FirstFiveMinutesPage() {
             artifact is safe to give.
           </li>
           <li>
-            <Link href="/docs/jobs">Jobs: standing intents</Link>{' '}— multi-step asks, recurring
-            buys, and what &ldquo;tell it once&rdquo; compiles into.
+            <Link href="/docs/jobs">Jobs: standing intents</Link>{' '}— multi-step asks and what
+            &ldquo;tell it once&rdquo; compiles into.
           </li>
           <li>
             <Link href="/docs/embed">Embed the chat</Link>{' '}— this whole thing on your own site, in

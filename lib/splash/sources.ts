@@ -116,9 +116,6 @@ function holdingRowActions(h: HoldingRow, where: string): SuggestedPrompt[] {
   const actions: SuggestedPrompt[] = [
     { label: `Sell ${h.symbol}`, prompt: `Swap ${sellAmt} ${h.symbol} for USDC ${where}` },
     { label: `Buy more ${h.symbol}`, prompt: `Swap $10 of USDC for ${h.symbol} ${where}` },
-    // Recurring buy (lib/dca): the chain word parses when `where` names a
-    // first-class chain; otherwise the turn's resolver picks the chain.
-    { label: 'DCA $10 weekly', prompt: `Buy $10 of ${h.symbol} every week ${where}` },
   ]
   return actions
 }
@@ -940,9 +937,6 @@ function robinhoodPrompts(holdings: RobinhoodHolding[]): SuggestedPrompt[] {
   const prompts: SuggestedPrompt[] = []
   const usdg = holdings.find((h) => h.symbol === 'USDG' && (h.usd ?? 0) >= 5)
   if (usdg) {
-    // Funded wallets lead with the auto-trader: a recurring buy (confirm-mode
-    // DCA — the native layer builds each period's buy, the user signs it).
-    prompts.push({ label: 'DCA $10 into AAPL weekly', prompt: 'Buy $10 of AAPL every week on Robinhood Chain' })
     const amt = Math.min(Math.floor(Number(usdg.balance)), 50) || 5
     prompts.push({ label: `Buy AAPL with ${amt} USDG`, prompt: `Swap ${amt} USDG for AAPL on Robinhood Chain` })
   }
@@ -961,7 +955,6 @@ function robinhoodPrompts(holdings: RobinhoodHolding[]): SuggestedPrompt[] {
     // No USDG doesn't block the buy: an unfunded ask triggers the Base
     // funding plan (LiFi legs + the swap, compiled into one job).
     prompts.push({ label: 'Buy $10 of AAPL', prompt: 'Buy $10 of AAPL on Robinhood Chain' })
-    prompts.push({ label: 'DCA $10 into AAPL weekly', prompt: 'Buy $10 of AAPL every week on Robinhood Chain' })
   }
   if (prompts.length < 3) {
     prompts.push({ label: 'Bridge more ETH in', prompt: 'Bridge 0.01 ETH from Ethereum to Robinhood Chain' })
@@ -1135,8 +1128,6 @@ const SOURCE_PREVIEWS: Record<string, { message: string; prompts: SuggestedPromp
     prompts: [
       { label: 'Price of ETH', prompt: 'What is the current price of ETH in USDC on Uniswap?' },
       { label: 'Quote a swap', prompt: 'Quote swapping 100 USDC to ETH on Base' },
-      // The auto-trader: a recurring buy you sign once per period (lib/dca).
-      { label: 'DCA $25 into ETH weekly', prompt: 'Buy $25 of ETH every week on Base' },
     ],
   },
   snapshot: {
@@ -1210,8 +1201,6 @@ const SOURCE_PREVIEWS: Record<string, { message: string; prompts: SuggestedPromp
       // The killer ask leads: an unfunded buy triggers the funding plan
       // (Base USDC → gas + USDG → the stock, compiled into a job).
       { label: 'Buy $10 of AAPL', prompt: 'Buy $10 of AAPL on Robinhood Chain' },
-      // The auto-trader: a recurring buy you sign once per period (lib/dca).
-      { label: 'DCA $10 into AAPL weekly', prompt: 'Buy $10 of AAPL every week on Robinhood Chain' },
       { label: 'What can I trade here?', prompt: 'What tokenized stocks can I trade on Robinhood Chain?' },
     ],
   },

@@ -69,14 +69,13 @@ function stockRefusal(t: string): GuardianCoinFence {
     reply:
       `🛡️ **${t} isn't a Hyperliquid market** — it's ${what} on Robinhood Chain. ` +
       `The Guardian only protects Hyperliquid perp positions, and the Spot Guardian runs on Base, so there's no stop I can arm on it. ` +
-      `Price alerts aren't live yet; on Robinhood Chain I can chart it, set up a DCA, or sell it now.`,
+      `Price alerts aren't live yet; on Robinhood Chain I can chart it or sell it now.`,
     problem:
       `${t} isn't a Hyperliquid market — it's ${what} on Robinhood Chain. The Guardian only protects Hyperliquid perp positions ` +
-      `and the Spot Guardian runs on Base, so there's no stop to arm on it; on Robinhood Chain a DCA or a sell can run instead.`,
+      `and the Spot Guardian runs on Base, so there's no stop to arm on it; on Robinhood Chain a sell can run instead.`,
     question: `What should I do with ${t} instead?`,
     chips: [
       { label: `Chart ${t}`, resume: `Show me the ${t} chart` },
-      { label: `DCA $10 into ${t} weekly`, resume: `DCA $10 into ${t} weekly` },
       { label: `Sell all my ${t}`, resume: `Sell all my ${t} for USDG on Robinhood Chain` },
     ],
   }
