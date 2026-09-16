@@ -14857,6 +14857,12 @@ async function main() {
         weth.kind === 'refusal' && /WETH is what the swap gets you/.test(weth.insufficient) && /converting ETH to USDC/.test(weth.insufficient),
         weth.kind === 'refusal' ? weth.insufficient : JSON.stringify(optionsOf(weth)),
       )
+      const wrap = planFundingChips({ chainId: 8453, token: 'ETH', amountHuman: 0.0105, followupResume: 'swap 0.01 ETH for WETH on Base', actionLabel: 'the swap', buyToken: 'WETH' }, 38, [src(42161, 'Arbitrum', 'ETH', 99.6)])
+      check(
+        'funding round trip: a need whose buy is the same asset ("swap 0.01 ETH for WETH") converts nothing, so the rule stands aside and the ETH still moves',
+        wrap.kind === 'offer' && /^Swap [\d.]+ ETH from Arbitrum to ETH on Base, then swap 0\.01 ETH for WETH on Base$/.test(wrap.chips[0].resume),
+        wrap.kind === 'offer' ? wrap.chips[0].resume : wrap.kind,
+      )
       const uni = decide({ ...buyEth, followupResume: 'swap 50 USDC for UNI on Base', buyToken: 'UNI' }, [src(42161, 'Arbitrum', 'ETH', 99.6)], [], 1.5)
       check(
         'funding round trip: ETH still funds a buy of anything else ("Buy $50 of UNI" keeps its ETH plan)',

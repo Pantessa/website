@@ -154,8 +154,11 @@ const sameAsset = (a: string, b: string): boolean => {
   return norm(a) === norm(b)
 }
 
-/** Is this holding the token the need's follow-up buys? */
-const isBuyToken = (need: FundingNeed, s: { token: string }): boolean => !!need.buyToken && sameAsset(s.token, need.buyToken)
+/** Is this holding the token the need's follow-up buys? Never when the need
+ *  and the buy are one asset ("swap 0.01 ETH for WETH" converts nothing, so
+ *  there's no round trip to refuse). */
+const isBuyToken = (need: FundingNeed, s: { token: string }): boolean =>
+  !!need.buyToken && !sameAsset(need.token, need.buyToken) && sameAsset(s.token, need.buyToken)
 
 export interface FundingSource {
   chainId: number
