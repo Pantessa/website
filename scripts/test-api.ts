@@ -296,6 +296,7 @@ import {
   spotTriggerFired,
 } from '../lib/spot-guard'
 import { spotGuardShareContent } from '../lib/share-receipts'
+import { buildSpotSell } from '../lib/spot-guard-exec'
 import {
   buildDcaSpendPermission,
   guardAutoBuy,
@@ -17631,6 +17632,161 @@ async function main() {
       steps: [approveStep, mkSwapStep()],
     })
     check('spot guard: erc-20 approve+sell passes without a wrap', erc.ok, JSON.stringify(erc.checks.filter((c) => !c.ok)).slice(0, 200))
+
+    // The fee-on sell is what the sweep REALLY builds. buildUniswapSwap takes
+    // the default fee (lib/fees), so the USDC parks on the router and the
+    // router's own sweepTokenWithFee pays the owner minus the treasury's cut.
+    // The 1-call fixture above is the fee-off shape. Until 2026-09-16 it was
+    // the only shape guardSpotSell took, so every triggered stop refused
+    // ("got 2 calls") and nothing ever sold.
+    const feeDeadline = NOW + 600
+    const feeMinOut = BigInt(900000000)
+    const feeSwapCall = (over: Record<string, unknown> = {}) =>
+      encodeFunctionData({
+        abi: SWAP_ROUTER_02_ABI,
+        functionName: 'exactInputSingle',
+        args: [{ tokenIn: WETH as `0x${string}`, tokenOut: USDC as `0x${string}`, fee: 500, recipient: ADDRESS_THIS, amountIn: amount, amountOutMinimum: feeMinOut, sqrtPriceLimitX96: BigInt(0), ...over } as never],
+      })
+    const feeSweepCall = (over: { token?: string; min?: bigint; to?: string; bips?: bigint; feeTo?: string } = {}) =>
+      encodeFunctionData({
+        abi: SWAP_ROUTER_02_ABI,
+        functionName: 'sweepTokenWithFee',
+        args: [(over.token ?? USDC) as `0x${string}`, over.min ?? feeMinOut, (over.to ?? OWNER) as `0x${string}`, over.bips ?? BigInt(SWAP_FEE_BPS), (over.feeTo ?? TREASURY_ADDRESS) as `0x${string}`],
+      })
+    const feeSwapStep = (calls: `0x${string}`[]) => ({
+      to: ROUTER,
+      value: '0',
+      data: encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'multicall', args: [BigInt(feeDeadline), calls] }),
+    })
+    const feeSell = (calls: `0x${string}`[], over: Partial<typeof guardBase> = {}) => guardSpotSell({ ...guardBase, steps: [wrapStep, approveStep, feeSwapStep(calls)], ...over })
+    const spotRefusedFor = (r: { ok: boolean; checks: { ok: boolean; note: string }[] }, re: RegExp) => !r.ok && r.checks.some((c) => !c.ok && re.test(c.note))
+    // The fixture must BE the builder's shape: guardUniswapV3Build runs inside
+    // buildUniswapSwap and accepts exactly one payout shape for a fee-on
+    // ERC-20 buy pinned to a recipient override, so it referees the fixture.
+    const feeBuilderShape = guardUniswapV3Build(
+      {
+        swapTx: { to: ROUTER, data: feeSwapStep([feeSwapCall(), feeSweepCall()]).data, value: '0', chainId: 8453 },
+        approveTx: { ...approveStep, chainId: 8453 },
+      },
+      { chainId: 8453, swapRouter02: ROUTER, sellToken: WETH, buyToken: USDC, sellIsEth: false, nativeOut: false, amountIn: amount, minOut: feeMinOut, poolFee: 500, recipient: OWNER, deadline: feeDeadline, feeBps: SWAP_FEE_BPS },
+      NOW,
+    )
+    check(
+      "spot guard: the fee-on fixture is exactly the build buildUniswapSwap's own guard accepts for the sweep's call (default fee, recipient = the owner)",
+      feeBuilderShape.ok,
+      feeBuilderShape.reasons.join(' '),
+    )
+    const feeHappy = feeSell([feeSwapCall(), feeSweepCall()])
+    check(
+      "spot guard: the sweep's fee-on sell passes (swap → router, sweepTokenWithFee → the OWNER minus the treasury's canonical bps)",
+      feeHappy.ok && (feeHappy.checks.find((c) => c.id === 'swap')?.note ?? '').includes(`swept to the owner minus ${SWAP_FEE_BPS}bps to the treasury`),
+      JSON.stringify(feeHappy.checks.filter((c) => !c.ok)).slice(0, 240),
+    )
+    const feeErc = guardSpotSell({ ...guardBase, policy: { ...guardBase.policy, tokenAddress: WETH, native: false }, permission: permW, steps: [approveStep, feeSwapStep([feeSwapCall(), feeSweepCall()])] })
+    check('spot guard: an erc-20 protection passes the fee-on sell too', feeErc.ok, JSON.stringify(feeErc.checks.filter((c) => !c.ok)).slice(0, 200))
+    check(
+      'spot guard (fee on): a hijacked sweep recipient refuses by name',
+      spotRefusedFor(feeSell([feeSwapCall(), feeSweepCall({ to: SPENDER })]), /sweep pays 0x1111111111111111111111111111111111111111, not the OWNER/),
+    )
+    check(
+      'spot guard (fee on): a foreign fee recipient refuses (the cut goes to TREASURY_ADDRESS only)',
+      spotRefusedFor(feeSell([feeSwapCall(), feeSweepCall({ feeTo: SPENDER })]), /not the Pantessa treasury/),
+    )
+    check(
+      "spot guard (fee on): a weakened sweep minimum refuses (the sweep re-asserts the swap's minOut)",
+      spotRefusedFor(feeSell([feeSwapCall(), feeSweepCall({ min: BigInt(1) })]), /sweep minimum 1 ≠ the swap's minOut 900000000/),
+    )
+    check(
+      'spot guard (fee on): a fee off the canonical tiers refuses (100bps = the on-chain max; 0bps reverts on-chain)',
+      spotRefusedFor(feeSell([feeSwapCall(), feeSweepCall({ bips: BigInt(100) })]), /fee 100bps is not a canonical tier/) &&
+        spotRefusedFor(feeSell([feeSwapCall(), feeSweepCall({ bips: BigInt(0) })]), /fee 0bps is not a canonical tier/),
+    )
+    check('spot guard (fee on): a sweep of anything but USDC refuses', spotRefusedFor(feeSell([feeSwapCall(), feeSweepCall({ token: WETH })]), /the sweep is not for USDC/))
+    check(
+      'spot guard (fee on): the swap must park on the router (a direct payout beside a sweep refuses)',
+      spotRefusedFor(feeSell([feeSwapCall({ recipient: OWNER }), feeSweepCall()]), /not the router the fee sweep splits from/),
+    )
+    check(
+      'spot guard (fee on): an unwrap payout refuses (the stop sells to USDC, never native ETH)',
+      spotRefusedFor(
+        feeSell([feeSwapCall(), encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'unwrapWETH9WithFee', args: [feeMinOut, OWNER as `0x${string}`, BigInt(SWAP_FEE_BPS), TREASURY_ADDRESS] })]),
+        /second call is unwrapWETH9WithFee, not sweepTokenWithFee/,
+      ),
+    )
+    check('spot guard (fee on): a third router call refuses', spotRefusedFor(feeSell([feeSwapCall(), feeSweepCall(), feeSweepCall()]), /got 3 calls/))
+    check(
+      "spot guard (fee on): the swap's minOut still has to clear the quote floor",
+      spotRefusedFor(feeSell([feeSwapCall({ amountOutMinimum: BigInt(1) }), feeSweepCall({ min: BigInt(1) })]), /minOut 1 below the quote floor 850000000/),
+    )
+    // The floor guards the OWNER's proceeds. A minOut sitting exactly on the
+    // floor passes fee-off, but fee on, the treasury's cut comes out of it.
+    const onFloor = guardBase.minOutAtomic
+    check(
+      "spot guard (fee on): the floor is checked AFTER the treasury's cut (a minOut exactly on the floor passes fee-off, refuses fee-on)",
+      guardSpotSell({ ...guardBase, steps: [wrapStep, approveStep, mkSwapStep({ amountOutMinimum: onFloor })] }).ok &&
+        spotRefusedFor(
+          feeSell([feeSwapCall({ amountOutMinimum: onFloor }), feeSweepCall({ min: onFloor })]),
+          new RegExp(`owner's minimum after the ${SWAP_FEE_BPS}bps fee, ${onFloor - swapFeeAtoms(onFloor, SWAP_FEE_BPS)}, is below the quote floor ${onFloor}`),
+        ),
+    )
+  }
+
+  // ── Spot guardian (live): the sweep's own build through its own guard ───
+  console.log('— spot guardian (live build)')
+  {
+    // buildSpotSell is the sweep's step 1 (fresh Base v3 quote, output pinned
+    // to the owner at the default fee, wrap + exact approve, the 3% floor off
+    // the mark). Read-only: quotes and one allowance read, nothing signed. The
+    // spender holds no WETH allowance, so the approve step rides, as on a
+    // first run. Needs DATABASE_URL in the harness env (the builder reads the
+    // spender's grant), like the Arc live swap pin.
+    const OWNER = '0x5eaabd731d2bc0490c2d47e41858e9b0629455a0'
+    const SPENDER = '0x1111111111111111111111111111111111111111'
+    const pulled = BigInt('10000000000000000') // 0.01 ETH
+    let liveNote = ''
+    let liveOk = false
+    for (let attempt = 1; attempt <= 3 && !liveOk; attempt++) {
+      try {
+        const mark = await arcUsdPerToken(8453, 'ETH')
+        if (!mark) throw new Error('no ETH mark on Base')
+        const nowSec = Math.floor(Date.now() / 1000)
+        const sell = await buildSpotSell({ chainId: 8453, native: true, tokenSymbol: 'ETH', ownerWallet: OWNER, spender: SPENDER, pulled, markUsd: mark.usd })
+        if (!sell.ok) {
+          liveNote = `build refused: ${sell.detail}`
+          break
+        }
+        const { steps, minOutAtomic, guardChain } = sell.build
+        const guard = guardSpotSell({
+          policy: { status: 'triggered', tokenAddress: NATIVE_TOKEN_SENTINEL, native: true, amountAtoms: pulled, trigger: { mode: 'price', value: Math.ceil(mark.usd) + 500, refPrice: mark.usd } },
+          permission: buildSpotGuardPermission({ account: OWNER, spender: SPENDER, token: NATIVE_TOKEN_SENTINEL, amountAtoms: pulled, nowSec, salt: BigInt(9) }),
+          ownerWallet: OWNER,
+          spender: SPENDER,
+          chain: guardChain,
+          markPrice: mark.usd,
+          minOutAtomic,
+          steps,
+          pulledAtomic: pulled,
+          nowSec,
+        })
+        const outer = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: steps[steps.length - 1].data as `0x${string}` })
+        const calls = (outer.args as readonly [bigint, readonly `0x${string}`[]])[1]
+        const payout = calls[1] ? decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[1] }) : null
+        const payoutArgs = (payout?.args ?? []) as readonly unknown[]
+        const feeOnShape =
+          steps.length === 3 && calls.length === 2 && payout?.functionName === 'sweepTokenWithFee' &&
+          String(payoutArgs[2]).toLowerCase() === OWNER && payoutArgs[3] === BigInt(SWAP_FEE_BPS) && String(payoutArgs[4]).toLowerCase() === TREASURY_ADDRESS.toLowerCase()
+        liveOk = guard.ok && feeOnShape
+        liveNote = `mark $${mark.usd.toFixed(2)} · ${steps.length} steps · calls [${calls.map((c) => decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: c }).functionName).join(', ')}] · floor ${minOutAtomic} · ${guard.checks.map((c) => `${c.ok ? '✓' : '✗'}${c.id}${c.ok ? '' : ` (${c.note})`}`).join(' ')}`
+        if (!guard.ok || !feeOnShape) break // a refusal is a verdict, not a flake
+      } catch (e) {
+        liveNote = `attempt ${attempt} threw: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`
+      }
+    }
+    check(
+      "spot guard (live): the sweep's real build of a 0.01 ETH stop on Base (buildSpotSell: wrap, approve, the fee-on v3 sell to the owner) passes guardSpotSell",
+      liveOk,
+      liveNote.slice(0, 600),
+    )
   }
 
   // ── Token charts (the uniform chart button + /t pages) ───────────────────
