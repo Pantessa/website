@@ -20918,6 +20918,15 @@ async function main() {
       headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' },
       body: JSON.stringify({ key: fk.key, sessionId: 'fixture-viz-fills-int', page: 'https://harness-embed.test/eth', prompt: 'sell $99 of ETH on base', outcome: 'signed', artifact: 'tx', chain: 'base', valueUsd: 99, txUrl: fillsTx, buildPath: 'native-swap-uniswap', walletAddress: fillsWallet }),
     })
+    // QA-7 (integration): the fills read also fences COUNTED_TURN_WHERE, so an
+    // embed-lane fixture with a made-up receipt lands 'unverified' — exactly a
+    // forger's beacon — and correctly never paints. Stamp the ORGANIC fixture as
+    // a counted turn ('attested'), the way a real receipt would; the internal
+    // twin stays as posted (fenced by is_internal either way).
+    try {
+      const { default: prismaFills } = await import('../lib/db')
+      await prismaFills.embedTurn.updateMany({ where: { sessionId: 'fixture-viz-fills', walletAddress: { in: [fillsWallet, fillsWallet.toLowerCase()] } }, data: { verification: 'attested' } })
+    } catch {}
     type FillsBody = { symbol?: string; address?: string; fills?: { id: string; t: number; side: string; usd: number | null; venue: string; venueId: string; chainId: number | null; chain: string | null; txUrl: string | null; source: string }[]; cached?: boolean; error?: string }
     const fills1 = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=eth&address=${fillsWallet}`)).json()) as FillsBody
     const fills2 = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=ETH&address=${fillsWallet}`)).json()) as FillsBody
