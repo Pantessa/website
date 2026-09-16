@@ -128,16 +128,14 @@ const swapNeed = (sell: string, amount: number, buy: string, chainId = 8453): Fu
   buyToken: buy,
 })
 /** Legs of a chip resume that convert the token the follow-up BUYS into
- *  something else (invariant 6). ETH and WETH are one asset, as they are in
- *  lib/funding-plan. */
+ *  something else (invariant 6). Symbols match exactly, as they do in
+ *  lib/funding-plan (a WETH buy may still spend ETH). */
 function roundTripLegs(need: FundingNeed, resume: string): string[] {
   if (!need.buyToken) return []
-  const asset = (t: string) => (t.toUpperCase() === 'WETH' ? 'ETH' : t.toUpperCase())
-  const buy = asset(need.buyToken)
-  if (asset(need.token) === buy) return [] // "swap ETH for WETH" converts nothing
+  const buy = need.buyToken.toUpperCase()
   return resume.split(', then ').filter((leg) => {
     const m = leg.match(/^swap\s+[\d.]+\s+([a-z]+)\b.*?\b(?:for|to)\s+([a-z]+)\s+on\b/i)
-    return !!m && asset(m[1]) === buy && asset(m[2]) !== buy
+    return !!m && m[1].toUpperCase() === buy && m[2].toUpperCase() !== buy
   })
 }
 const NFT_NEED: FundingNeed = {
@@ -510,12 +508,22 @@ const SCENARIOS: Scenario[] = [
     expect: 'refusal',
   },
   {
-    // ETH and WETH share one address in lib/chains, and a move lands native
-    // ETH, not the wrapped token the ask named — so no move, no round trip.
-    name: 'ETH on Arbitrum only → "Buy $50 of WETH" on Base: WETH is ETH for funding — refusal, no ETH → USDC → WETH plan',
+    // Symbols match exactly: the scan's ETH is native, and with no wrap builder
+    // converting through USDC is the only way to deliver the WETH asked for.
+    name: 'ETH on Arbitrum only → "Buy $50 of WETH" on Base: the ETH still funds it (a WETH buy is not an ETH buy)',
     need: swapNeed('USDC', 50, 'WETH'),
     reads: [R(8453, 0, 0), R(42161, 0.05, 0), R(10, 0, 0), R(1, 0, 0)],
+    expect: 'offer',
+  },
+  {
+    // Why the match is exact: #791's card chip for a WETH buy lands ETH on
+    // the on-ramp lane and fires "Buy $50 of WETH" again. Treating that ETH as
+    // WETH would refuse the landed money and offer the card a second time.
+    name: 'empty → "Buy $50 of WETH" on Base: a card cascade chip whose landed ETH re-plans into chips that compile',
+    need: buyNeed(8453, 50, 'WETH'),
+    reads: EMPTY,
     expect: 'refusal',
+    card: { ask: buyAsk(8453, 50, 'WETH'), expect: 'cascade' },
   },
   {
     name: 'the SELL direction — $60 USDC with gas on Arbitrum → "Sell $50 of ETH" on Base: no USDC → ETH → USDC plan',

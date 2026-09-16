@@ -141,25 +141,19 @@ export interface FundingNeed {
    *  A holding of it is what the ask ends with, never money to fund it: the
    *  plan used to answer "Buy $50 of ETH" from an ETH-only wallet with
    *  "Swap 0.028 ETH for USDC on Base, then swap 50 USDC for ETH on Base",
-   *  two conversions and two fees to end where it started (2026-09-16). ETH
-   *  and WETH count as one asset (lib/chains maps both to one address).
+   *  two conversions and two fees to end where it started (2026-09-16).
    *  Set only where the follow-up is a swap; a gas-only probe leaves it
    *  unset, since ETH spent on gas isn't bought back. */
   buyToken?: string
 }
 
-/** One asset for funding purposes: the registry gives ETH and WETH the same
- *  address on every chain, and a Uniswap "ETH" buy lands WETH. */
-const sameAsset = (a: string, b: string): boolean => {
-  const norm = (t: string) => (t.toUpperCase() === 'WETH' ? 'ETH' : t.toUpperCase())
-  return norm(a) === norm(b)
-}
-
-/** Is this holding the token the need's follow-up buys? Never when the need
- *  and the buy are one asset ("swap 0.01 ETH for WETH" converts nothing, so
- *  there's no round trip to refuse). */
+/** Is this holding the token the need's follow-up buys? Exact symbols, on
+ *  purpose. lib/chains gives ETH and WETH one address, but the scan's ETH is
+ *  native, and with no wrap builder a WETH buy can only be delivered from ETH
+ *  by converting through a stable. The card door relies on that too: a WETH
+ *  buy's card chip lands ETH and fires the buy again (lib/swap-shortfall). */
 const isBuyToken = (need: FundingNeed, s: { token: string }): boolean =>
-  !!need.buyToken && !sameAsset(need.token, need.buyToken) && sameAsset(s.token, need.buyToken)
+  !!need.buyToken && s.token.toUpperCase() === need.buyToken.toUpperCase()
 
 export interface FundingSource {
   chainId: number
@@ -422,7 +416,7 @@ export function shortRefusalCopy(params: {
     return (
       `Across ${chainsRead} the only money I can see is ${buySummary}${ethNote ? `, plus ${ethNote}` : ''} — and ${buySym} is what ${actionLabel} gets you, ` +
       `so there's nothing here to spend on it: converting ${[...new Set(buyRows.map((s) => s.token))].join(' or ')} to ${need.token.toUpperCase()} just to buy it back pays two conversions and ends where it started. ` +
-      `Send ${sameAsset(buySym, 'ETH') ? 'USDC' : 'ETH'} to this wallet on any of those chains and ask again.`
+      `Send ${buySym === 'ETH' ? 'USDC' : 'ETH'} to this wallet on any of those chains and ask again.`
     )
   }
   const notCounted = buySummary ? ` (Not counted: ${buySummary} — ${buySym} is what ${actionLabel} gets you.)` : ''

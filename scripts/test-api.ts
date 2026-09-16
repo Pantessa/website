@@ -15446,13 +15446,12 @@ async function main() {
       const decide = (need: FundingNeed, sources: FundingSource[], stranded: FundingSource[] = [], gasUsd = 0) =>
         decideFundingTurn({ need, needUsd: fundingPlanUsd(need.amountHuman, need.token === 'ETH' ? 3500 : 1), gasUsd, scan: scanOf(sources, stranded), destChainName: 'Base' })
       const optionsOf = (d: ReturnType<typeof decideFundingTurn>) => (d.kind === 'offer' ? d.turn.clarify.options.filter((o) => o.label !== 'Not now') : [])
-      // A leg that converts the bought token into something else (ETH and WETH
-      // are one asset): "Swap 0.02 ETH for USDC", "Swap 0.02 ETH from Arbitrum to USDC".
+      // A leg that converts the bought token into something else:
+      // "Swap 0.02 ETH for USDC", "Swap 0.02 ETH from Arbitrum to USDC".
       const roundTrip = (resume: string, buy: string) =>
         resume.split(', then ').some((leg) => {
           const m = leg.match(/^swap\s+[\d.]+\s+([a-z]+)\b.*?\b(?:for|to)\s+([a-z]+)\s+on\b/i)
-          const asset = (t: string) => (t.toUpperCase() === 'WETH' ? 'ETH' : t.toUpperCase())
-          return !!m && asset(m[1]) === asset(buy) && asset(m[2]) !== asset(buy)
+          return !!m && m[1].toUpperCase() === buy.toUpperCase() && m[2].toUpperCase() !== buy.toUpperCase()
         })
 
       const sameChain = decide(buyEth, [src(8453, 'Base', 'ETH', 99.6)])
@@ -15514,17 +15513,17 @@ async function main() {
           mixedShort.insufficient.includes('(Not counted: ~$99.60 of ETH on Base — ETH is what the swap gets you.)'),
         mixedShort.kind === 'refusal' ? mixedShort.insufficient : mixedShort.kind,
       )
+      // WETH is matched by symbol, not by lib/chains' shared address: the scan's
+      // ETH is native, there's no wrap builder, and #791's card chip for a WETH
+      // buy lands ETH and fires the buy again. Excluding ETH there would refuse
+      // the landed money and offer the card a second time.
       const weth = decide({ ...buyEth, followupResume: 'swap 50 USDC for WETH on Base', buyToken: 'WETH' }, [src(42161, 'Arbitrum', 'ETH', 99.6)], [], 1.5)
-      check(
-        'funding round trip: WETH is ETH (lib/chains gives both one address) — no ETH → USDC → WETH plan, and no move (it would land native ETH, not the WETH asked for)',
-        weth.kind === 'refusal' && /WETH is what the swap gets you/.test(weth.insufficient) && /converting ETH to USDC/.test(weth.insufficient),
-        weth.kind === 'refusal' ? weth.insufficient : JSON.stringify(optionsOf(weth)),
-      )
       const wrap = planFundingChips({ chainId: 8453, token: 'ETH', amountHuman: 0.0105, followupResume: 'swap 0.01 ETH for WETH on Base', actionLabel: 'the swap', buyToken: 'WETH' }, 38, [src(42161, 'Arbitrum', 'ETH', 99.6)])
       check(
-        'funding round trip: a need whose buy is the same asset ("swap 0.01 ETH for WETH") converts nothing, so the rule stands aside and the ETH still moves',
-        wrap.kind === 'offer' && /^Swap [\d.]+ ETH from Arbitrum to ETH on Base, then swap 0\.01 ETH for WETH on Base$/.test(wrap.chips[0].resume),
-        wrap.kind === 'offer' ? wrap.chips[0].resume : wrap.kind,
+        'funding round trip: a WETH buy keeps its ETH plan (exact symbols — the scan\'s ETH is native, no wrap builder, and the card door\'s WETH chip lands ETH), and an ETH-for-WETH need still moves the ETH',
+        optionsOf(weth).length > 0 && /ETH from Arbitrum to USDC on Base, then swap 50 USDC for WETH on Base$/.test(optionsOf(weth)[0].resume) &&
+          wrap.kind === 'offer' && /^Swap [\d.]+ ETH from Arbitrum to ETH on Base, then swap 0\.01 ETH for WETH on Base$/.test(wrap.chips[0].resume),
+        JSON.stringify({ weth: optionsOf(weth).map((o) => o.resume), wrap: wrap.kind === 'offer' ? wrap.chips[0].resume : wrap.kind }),
       )
       const uni = decide({ ...buyEth, followupResume: 'swap 50 USDC for UNI on Base', buyToken: 'UNI' }, [src(42161, 'Arbitrum', 'ETH', 99.6)], [], 1.5)
       check(
