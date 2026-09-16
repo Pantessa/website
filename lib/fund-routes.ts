@@ -45,8 +45,8 @@ import {
   fundingLegResume,
   fundingLegsFrom,
   fundingPlanUsd,
+  plannableSources,
   promisableCapacityUsd,
-  rankFundingSources,
   sourceAmountFor,
   type FundingNeed,
   type FundingScan,
@@ -402,13 +402,11 @@ export function coinFundLegs(input: CoinFundLegsInput): FundLegsPlan {
     if (shortfall > 0 && heldUsd >= NAMED_MIN_USD) notes.push(`Your ~${money(Math.floor(heldUsd))} of USDC on ${dest.name} already counts toward the buy.`)
   }
 
-  const need = needOn(dest, 'USDC', shortfall)
-  // A holding of the token the job BUYS never funds it (lib/funding-plan
-  // FundingNeed.buyToken): ETH elsewhere is a move, not a way to buy ETH.
-  const origins = rankFundingSources(
-    need,
-    scan.sources.filter((s) => s.chainId !== dest.id && !(sym === 'ETH' && s.token === 'ETH') && s.usd >= NAMED_MIN_USD),
-  )
+  // The token the page buys is never money for it (FundingNeed.buyToken, the
+  // chat planner's own rule): the ETH page never spends ETH, bridge or buy.
+  const need: FundingNeed = { ...needOn(dest, 'USDC', shortfall), buyToken: sym }
+  // The picker is about OTHER chains: what's on the buy's chain is counted above.
+  const origins = plannableSources(need, scan.sources).filter((s) => s.chainId !== dest.id && s.usd >= NAMED_MIN_USD)
   const legs: FundLeg[] = []
   for (const c of SPOT_CHAINS) {
     if (c.id === dest.id) continue

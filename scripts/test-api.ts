@@ -22405,7 +22405,7 @@ async function main() {
       }
       const linkLegs = coinFundLegs({ sym: 'LINK', usd: 50, destChainId: 1, buy: true, scan: coinScan })
       const gasUsd1 = destGasLegUsd(1, 0, 3000)
-      const need30 = { chainId: 1, token: 'USDC', amountHuman: 30, followupResume: 'swap 50 USDC for LINK on Ethereum', actionLabel: 'the buy' }
+      const need30 = { chainId: 1, token: 'USDC', amountHuman: 30, followupResume: 'swap 50 USDC for LINK on Ethereum', actionLabel: 'the buy', buyToken: 'LINK' }
       const chatChip = (src: (typeof coinScan.sources)[number]) => {
         const plan = planFundingChips(need30, fundingPlanUsd(30, 1), [src], gasUsd1)
         return plan.kind === 'offer' ? plan.chips[0].resume : null
