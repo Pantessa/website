@@ -9,8 +9,10 @@
  *
  *   BASE=https://www.pantessa.com npm run fingerprint:deploy
  *   W_WALLET=0x…  a wallet with ≥$100 of Base ETH (the spot-guard floor)
- *   W4_WALLET=0x… a 4663 wallet holding USDG (else a whale is auto-picked)
+ *   W4_WALLET=0x… a 4663 wallet holding USDG (else one is picked on-chain)
  *   ASK="buy $5 of UNI on base"   sized to what the burner can fund
+ *   ALCHEMY_API_KEY (env, else .env.local) — the 4663 pick reads the chain
+ *     through lib/chains' Alchemy lane; the public RPC rate-limits per IP
  *
  * Read-only: nothing is signed, no rows are written (every chat probe sends
  * x-yf-no-ask-log so the ask-failure queue stays a real-user queue).
@@ -25,8 +27,10 @@
  * no PAY_PORTION; a map that claims the tier must meet calldata encoding it.
  */
 import { readFileSync } from 'node:fs'
+import { BaseError, erc20Abi, formatEther, formatUnits, parseAbiItem, parseEther, parseUnits, zeroAddress } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { PrismaClient } from '@prisma/client'
+import { publicClientFor } from '../lib/chains'
 import { composeMcps } from '../lib/intent-links'
 import { SWAP_FEE_BPS, LINK_SWAP_FEE_BPS, NET_FEE_BPS_BY_BUILD_PATH, TREASURY_ADDRESS } from '../lib/fees'
 
@@ -39,7 +43,7 @@ const LIMIT_ASK = process.env.LIMIT_ASK ?? 'limit sell 5 USDC for 2 UNI on base'
 /** The 4663 stock lane's ask. Stocks quote against USDG; the venue that
  *  answers (v3 since Robinhood seeded pools ~Aug 2026, v4 before, LiFi for
  *  gated pools) is decoded, never assumed. Build-only — the probe wallet is
- *  a chain whale (or W4_WALLET), and nothing is ever signed. */
+ *  picked on-chain (or W4_WALLET), and nothing is ever signed. */
 const V4_ASK = process.env.V4_ASK ?? 'swap 25 USDG for AAPL on robinhood'
 
 function envLocal(key: string): string | null {
@@ -130,24 +134,77 @@ function v4ExecuteFee(data: string): { commands: string; bips: number | null; re
 
 /** Robinhood Chain's money token — the v4 stock lane quotes against it. */
 const USDG_4663 = '0x5fc5360d0400a0fd4f2af552add042d716f1d168'
+const USDG_DECIMALS = 6
+
+/** What the picked wallet must hold. USDG: whatever the ask sells (the 4663
+ *  swap turn reads the wallet's USDG first and answers a funding plan when
+ *  it's short), never under 20. ETH: enough to pay for the approve + swap. */
+const ASK_USDG = Number(V4_ASK.match(/(\d+(?:\.\d+)?)\s*USDG\b/i)?.[1] ?? V4_ASK.match(/\$\s*(\d+(?:\.\d+)?)/)?.[1] ?? 0)
+const PICK_MIN_USDG = parseUnits(Math.max(20, ASK_USDG).toFixed(USDG_DECIMALS), USDG_DECIMALS)
+const PICK_MIN_ETH = parseEther('0.001')
+
+/** The pick reads USDG Transfer logs in windows this wide, walking back from
+ *  head. The Alchemy key every checkout carries is on the Free tier, which
+ *  refuses eth_getLogs past a 10-block range (-32600, measured 2026-09-16).
+ *  The refusal never surfaces as a range error: lib/chains' fallback retries
+ *  the call on the public RPC, which times out ("context deadline exceeded",
+ *  printed by viem as "Missing or invalid parameters.") or answers 429.
+ *  Every plan accepts 10 blocks, and USDG moves ~3 transfers a block, so one
+ *  window near head names dozens of recipients. */
+const LOG_WINDOW = BigInt(10)
+const MAX_WINDOWS = BigInt(50)
+const MAX_RECIPIENTS = 80
+const TRANSFER = parseAbiItem('event Transfer(address indexed from, address indexed to, uint256 value)')
+
+const amount = (atoms: bigint, decimals: number, digits: number) =>
+  Number(formatUnits(atoms, decimals)).toLocaleString('en-US', { maximumFractionDigits: digits })
 
 /** The v4 probe wallet must COVER the ask (the builder pre-reads the sell
  *  balance and answers a funding plan when short — a correct answer but not a
- *  fee artifact). W4_WALLET wins; else the chain's own explorer names a
- *  whale EOA. */
-async function usdgWallet(): Promise<string | null> {
-  if (process.env.W4_WALLET) return process.env.W4_WALLET.toLowerCase()
+ *  fee artifact). W4_WALLET wins; else the chain itself names one: the most
+ *  recent USDG recipient that is an EOA (no code) holding the ask's USDG and
+ *  gas. The explorer used to name a whale, but since 2026-09-16 Blockscout's
+ *  API answers with a Cloudflare challenge page. `how` says which wallet was
+ *  picked and why, or why none was. */
+async function usdgWallet(): Promise<{ wallet: string | null; how: string }> {
+  if (process.env.W4_WALLET) return { wallet: process.env.W4_WALLET.toLowerCase(), how: 'W4_WALLET' }
+  const client = publicClientFor(4663)
+  if (!client) return { wallet: null, how: 'lib/chains has no Robinhood Chain client' }
+  const seen = new Set<string>()
   try {
-    const r = await fetch(`https://robinhoodchain.blockscout.com/api/v2/tokens/${USDG_4663}/holders`)
-    const items = ((await r.json()) as { items?: Array<{ address?: { hash?: string; is_contract?: boolean } }> }).items ?? []
-    for (const it of items.slice(0, 8)) {
-      const a = it.address
-      if (a?.hash && /^0x[0-9a-fA-F]{40}$/.test(a.hash) && !a.is_contract) return a.hash.toLowerCase()
+    const head = await client.getBlockNumber()
+    for (let w = BigInt(0); w < MAX_WINDOWS && seen.size < MAX_RECIPIENTS; w++) {
+      const toBlock = head - w * LOG_WINDOW
+      const logs = await client.getLogs({ address: USDG_4663, event: TRANSFER, fromBlock: toBlock - LOG_WINDOW + BigInt(1), toBlock })
+      // Newest first: the most recent recipient that qualifies wins.
+      for (const log of logs.reverse()) {
+        const to = log.args.to?.toLowerCase() as `0x${string}` | undefined
+        if (!to || to === zeroAddress || seen.has(to)) continue
+        if (seen.size >= MAX_RECIPIENTS) break
+        seen.add(to)
+        const code = await client.getCode({ address: to })
+        if (code && code !== '0x') continue
+        const [usdg, eth] = await Promise.all([
+          client.readContract({ address: USDG_4663, abi: erc20Abi, functionName: 'balanceOf', args: [to] }),
+          client.getBalance({ address: to }),
+        ])
+        if (usdg >= PICK_MIN_USDG && eth >= PICK_MIN_ETH) {
+          return {
+            wallet: to,
+            how: `picked on-chain: received USDG in block ${log.blockNumber}, holds ${amount(usdg, USDG_DECIMALS, 2)} USDG + ${amount(eth, 18, 4)} ETH`,
+          }
+        }
+      }
     }
-  } catch {
-    /* fall through to UNPROVEN */
+  } catch (e) {
+    const said = e instanceof BaseError ? `${e.shortMessage}${e.details ? ` (${e.details.slice(0, 120)})` : ''}` : String(e)
+    const keyless = process.env.ALCHEMY_API_KEY ? '' : ' — no ALCHEMY_API_KEY, so every read went to the public RPC, which rate-limits per IP'
+    return { wallet: null, how: `the 4663 RPC failed (${seen.size} recipients checked): ${said}${keyless}` }
   }
-  return null
+  return {
+    wallet: null,
+    how: `checked the ${seen.size} most recent USDG recipients: none is an EOA holding ${formatUnits(PICK_MIN_USDG, USDG_DECIMALS)} USDG + ${formatEther(PICK_MIN_ETH)} ETH`,
+  }
 }
 
 /** The 4663 stock lane. Tokenized stocks historically had NO v3 route (the
@@ -162,11 +219,12 @@ async function usdgWallet(): Promise<string | null> {
  *  silent pass. */
 async function stockFeeLane(servers: unknown[], slug: string) {
   const claim = NET_FEE_BPS_BY_BUILD_PATH['native-swap-uniswap-v4'] ?? 0
-  const wallet = await usdgWallet()
+  const { wallet, how } = await usdgWallet()
   if (!wallet) {
-    check('4663 stock lane: UNPROVEN (no USDG wallet — set W4_WALLET=0x…)', false)
+    check('4663 stock lane: UNPROVEN (no USDG wallet — set W4_WALLET=0x…)', false, how)
     return
   }
+  console.log(`   4663 wallet ${wallet} (${how})`)
   type Decoded = { venue: 'v3' | 'v4' | 'none'; commands: string; bips: number | null; recipient: string | null; reply?: string }
   const read = (body: ChatBody): Decoded => {
     for (const step of body.txChain?.steps ?? []) {
@@ -224,6 +282,10 @@ async function main() {
   if (!wallet) throw new Error('No wallet — set WALLET=0x… or run from a worktree with .env.local')
   const dbUrl = envLocal('DATABASE_URL')
   if (!dbUrl) throw new Error('No DATABASE_URL in .env.local')
+  // lib/chains reads the key when it builds the 4663 client for the stock
+  // lane's wallet pick. tsx doesn't load .env.local, so seed it from there.
+  const alchemyKey = process.env.ALCHEMY_API_KEY ?? envLocal('ALCHEMY_API_KEY')
+  if (alchemyKey) process.env.ALCHEMY_API_KEY = alchemyKey
   const prisma = new PrismaClient({ datasources: { db: { url: dbUrl } } })
 
   // A REAL live row of each class — the tier is a DB lookup, so a fabricated
