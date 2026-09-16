@@ -21311,7 +21311,7 @@ async function main() {
       'earn: ranking marks ONE best row per asset (USDC → Aave 11.38 over Morpho 4.40; ETH → Lido 2.27 over Aave 2.13) and orders by rate desc; the yield ladder is the best rows only',
       ranked[0].asset === 'USDC' && ranked[0].venue === 'aave' && ranked[0].best === true && ranked.find((r) => r.venue === 'morpho')!.best === false &&
         ranked.find((r) => r.venue === 'lido')!.best === true && ranked.find((r) => r.asset === 'ETH' && r.venue === 'aave')!.best === false &&
-        earnLadder(ranked).every((r) => r.best) && earnLadder(ranked).length === 2 && earnFilter(ranked, 'stable', 'all').every((r) => r.asset === 'USDC') && earnFilter(ranked, 'all', 'lido').length === 1,
+        earnLadder(ranked).every((r) => r.best) && earnLadder(ranked).length === 2 && earnLadder([...ranked, { ...ranked[0], id: 'z', asset: 'ZERO', apyPct: 0 }]).length === 2 && earnFilter(ranked, 'stable', 'all').every((r) => r.asset === 'USDC') && earnFilter(ranked, 'all', 'lido').length === 1,
       ranked.map((r) => `${r.asset}/${r.venue}:${r.apyPct}${r.best ? '*' : ''}`).join(' '),
     )
     const exotic = { ...morpho[0], id: 'morpho:8453:MXNB', asset: 'MXNB', apyPct: 17.6 }

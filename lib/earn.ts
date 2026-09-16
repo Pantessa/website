@@ -253,8 +253,10 @@ export function filterEarnRows(rows: readonly EarnRow[], cls: EarnClass | 'all',
 
 /** The yield ladder — one bar per asset (its best row), familiar assets
  *  first then by rate, top N — the same order the board opens on. */
+/** A best rate under this isn't a yield worth a bar (WBTC 0.00% on Aave). */
+export const LADDER_MIN_APY_PCT = 0.1
 export function yieldLadder(rows: readonly EarnRow[], n = 8): EarnRow[] {
-  return featuredFirst(rankEarnRows(rows).filter((r) => r.best && r.apyPct != null)).slice(0, n)
+  return featuredFirst(rankEarnRows(rows).filter((r) => r.best && r.apyPct != null && r.apyPct >= LADDER_MIN_APY_PCT)).slice(0, n)
 }
 
 /** Wire → rows (the client re-attaches `askFor` from the template). */
