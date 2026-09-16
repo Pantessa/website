@@ -43,7 +43,8 @@ const VENUE_LABELS: { id: EarnVenue | 'all'; label: string }[] = [
 const KIND_WORD: Record<EarnRow['kind'], string> = { stake: 'Stake', supply: 'Supply', lend: 'Lend' }
 
 const fmtApy = (n: number | null) => (n == null ? '—' : `${n.toFixed(2)}%`)
-const venueInk = (venue: EarnVenue) => `var(${seriesVar(venue)})`
+// seriesVar already returns the `var(--mk-series-N)` expression.
+const venueInk = (venue: EarnVenue) => seriesVar(venue)
 
 export default function EarnBoard({ onAsk }: { onAsk?: (ask: string) => void }) {
   const [data, setData] = useState<EarnResponse | null>(null)

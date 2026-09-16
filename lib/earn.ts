@@ -242,9 +242,10 @@ export function filterEarnRows(rows: readonly EarnRow[], cls: EarnClass | 'all',
   return rows.filter((r) => (cls === 'all' || earnClassOf(r.asset) === cls) && (venue === 'all' || r.venue === venue))
 }
 
-/** The yield ladder — one bar per asset (its best row), top N by APY. */
+/** The yield ladder — one bar per asset (its best row), familiar assets
+ *  first then by rate, top N — the same order the board opens on. */
 export function yieldLadder(rows: readonly EarnRow[], n = 8): EarnRow[] {
-  return rankEarnRows(rows).filter((r) => r.best && r.apyPct != null).slice(0, n)
+  return featuredFirst(rankEarnRows(rows).filter((r) => r.best && r.apyPct != null)).slice(0, n)
 }
 
 /** Wire → rows (the client re-attaches `askFor` from the template). */
