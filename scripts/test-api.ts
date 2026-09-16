@@ -22354,10 +22354,12 @@ async function main() {
     const mcSrc = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
     const ttSrc = await readFile('components/markets/technicals/TechnicalsTab.tsx', 'utf8')
     const heroSrc = await readFile('components/landing/LandingHero.tsx', 'utf8')
+    const cmSrc = await readFile('components/markets/chart/ChartMount.tsx', 'utf8')
     check(
-      'day default: DEFAULT_CHART_TF is 1d; the chart engine defaults to it and the Technicals tab falls back to it (candles and gauge open on the same frame); the landing’s rehearsal still asks for 1H on purpose',
+      'day default: DEFAULT_CHART_TF is 1d; the chart engine defaults to it and the Technicals tab falls back to it (candles and gauge open on the same frame); your own saved lines load onto that frame (a post’s lines keep theirs), so a chart never reopens on 1H because it once had a line; the landing’s rehearsal still asks for 1H on purpose',
       DEFAULT_CHART_TF === '1d' && mcSrc.includes('defaultTf = DEFAULT_CHART_TF,') && !mcSrc.includes("defaultTf = '1h'") &&
-        ttSrc.includes(': DEFAULT_CHART_TF))') && heroSrc.includes('defaultTf="1h"'),
+        ttSrc.includes(': DEFAULT_CHART_TF))') && cmSrc.includes('stateProp ?? (stored ? { ...stored, tf: defaultTf ?? DEFAULT_CHART_TF } : null)') &&
+        heroSrc.includes('defaultTf="1h"'),
     )
     const sgTfPressed = (html: string) => [...html.matchAll(/class="tok__tfbtn mono( is-active)?" aria-pressed="(true|false)">([^<]+)</g)].filter((m) => m[2] === 'true').map((m) => m[3])
     const dayAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
