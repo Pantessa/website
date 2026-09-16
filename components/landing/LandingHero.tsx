@@ -31,26 +31,25 @@ import { useConnectToAct } from '@/lib/use-connect-to-act'
 const promptHref = (ask: string) => `/chat?prompt=${encodeURIComponent(ask)}`
 
 /** One rehearsal, as phases. `typed` is how much of the ask is on screen. */
-type Phase = 'typing' | 'route' | 'guard' | 'end' | 'wipe'
-interface ReelState { beat: number; phase: Phase; typed: number; legs: number; guards: number }
+type Phase = 'typing' | 'route' | 'end' | 'wipe'
+interface ReelState { beat: number; phase: Phase; typed: number; legs: number }
 
 const TYPE_MS = 46
-const LEG_MS = 650
-const GUARD_MS = 520
+const LEG_MS = 700
 const END_HOLD_MS = 3200
 const WIPE_MS = 500
 
+/** SSR paints beat 0 COMPLETE (a crawler and the first frame read a real
+ *  sentence + its receipt); after mount the loop wipes and types beat 1. */
+const complete = (i: number): ReelState => ({ beat: i, phase: 'end', typed: HERO_REEL[i].ask.length, legs: HERO_REEL[i].legs.length })
+
 function useReel(reduce: boolean): ReelState {
   const last = HERO_REEL.length - 1
-  const [s, setS] = useState<ReelState>(() =>
-    reduce
-      ? { beat: last, phase: 'end', typed: HERO_REEL[last].ask.length, legs: HERO_REEL[last].legs.length, guards: HERO_REEL[last].guard.length }
-      : { beat: 0, phase: 'typing', typed: 0, legs: 0, guards: 0 },
-  )
+  const [s, setS] = useState<ReelState>(() => complete(0))
   // The preference is read after mount (SSR can't know it): when it flips
   // on, park on the last beat, complete and still — never mid-typing.
   useEffect(() => {
-    if (reduce) setS({ beat: last, phase: 'end', typed: HERO_REEL[last].ask.length, legs: HERO_REEL[last].legs.length, guards: HERO_REEL[last].guard.length })
+    if (reduce) setS(complete(last))
   }, [reduce, last])
   useEffect(() => {
     if (reduce) return
@@ -62,14 +61,11 @@ function useReel(reduce: boolean): ReelState {
       else { next = { ...s, phase: 'route' }; delay = 500 }
     } else if (s.phase === 'route') {
       if (s.legs < b.legs.length) { next = { ...s, legs: s.legs + 1 }; delay = LEG_MS }
-      else { next = { ...s, phase: 'guard' }; delay = 250 }
-    } else if (s.phase === 'guard') {
-      if (s.guards < b.guard.length) { next = { ...s, guards: s.guards + 1 }; delay = GUARD_MS }
       else { next = { ...s, phase: 'end' }; delay = END_HOLD_MS }
     } else if (s.phase === 'end') {
       next = { ...s, phase: 'wipe' }; delay = WIPE_MS
     } else {
-      next = { beat: (s.beat + 1) % HERO_REEL.length, phase: 'typing', typed: 0, legs: 0, guards: 0 }
+      next = { beat: (s.beat + 1) % HERO_REEL.length, phase: 'typing', typed: 0, legs: 0 }
       delay = 200
     }
     const t = setTimeout(() => setS(next), delay)
@@ -83,35 +79,28 @@ function LegMark({ venue }: { venue: string }) {
   return <span className="lh__legmark">{Mark ? <Mark size={14} /> : <b>{venue[0]}</b>}</span>
 }
 
+/** The receipt strip: bottom-left inside the chart frame, over the volume
+ *  pane, never the price action. One line per leg, each appearing as it
+ *  lands; the ending line closes it; the stamp keeps it honest. */
 function Hud({ beat, state }: { beat: ReelBeat; state: ReelState }) {
   const wiping = state.phase === 'wipe'
+  const ended = state.phase === 'end' || wiping
   return (
-    <div className="lh__hud" style={{ opacity: wiping ? 0 : 1, transition: 'opacity .4s ease' }} aria-hidden="true">
-      <div className="lh__hudask">
-        {beat.ask.slice(0, state.typed)}
+    <div className={`lh__rcpt mono${wiping ? ' is-wiping' : ''}`} aria-hidden="true" data-reel-beat={state.beat}>
+      <div className="lh__rcptask">
+        <span className="lh__rcptq">›</span> {beat.ask.slice(0, state.typed)}
         {state.phase === 'typing' && <i className="lh__caret" />}
       </div>
-      <ul className="lh__legs">
-        {beat.legs.map((l, i) => (
-          <li key={l.venue} className={`lh__leg${i < state.legs ? ' is-in' : ''}`}>
-            <LegMark venue={l.venue} />
-            <span>
-              <span className="lh__legname">{l.venue}</span>
-              <span className="lh__legchain mono">{l.chain}</span>
-              <span className="lh__legwhat mono">{l.what}</span>
-            </span>
-          </li>
-        ))}
-      </ul>
-      <ul className="lh__guard mono">
-        {beat.guard.map((g, i) => (
-          <li key={g} className={i < state.guards ? 'is-in' : ''}>{g}</li>
-        ))}
-      </ul>
-      <div className={`lh__end mono${state.phase === 'end' || state.phase === 'wipe' ? ' is-in' : ''}${beat.ending.kind === 'armed' ? ' lh__end--armed' : ''}`}>
-        <i /> {beat.ending.line}
+      {beat.legs.map((l, i) => (
+        <div key={l.venue} className={`lh__rcptleg${i < state.legs ? ' is-in' : ''}`}>
+          <LegMark venue={l.venue} />
+          <span>{l.line}</span>
+        </div>
+      ))}
+      <div className={`lh__rcptend${ended ? ' is-in' : ''}${beat.ending.kind === 'armed' ? ' lh__rcptend--armed' : ''}`}>
+        {beat.ending.kind === 'armed' ? '◆' : '✓'} {beat.ending.line}
       </div>
-      <div className="lh__stamp mono">{REEL_STAMP}</div>
+      <div className="lh__rcptstamp">{REEL_STAMP}</div>
     </div>
   )
 }
@@ -157,13 +146,6 @@ export default function LandingHero() {
               See the {symbol} chart <ArrowRight className="w-3.5 h-3.5" />
             </SpineLink>
           </div>
-          <p className="lh__ask" aria-label="Example asks">
-            <span className="lh__asklabel mono">say it</span>
-            <span className="lh__typed">
-              &ldquo;{beat.ask.slice(0, state.typed)}
-              {!reduce && state.phase === 'typing' && <i className="lh__caret" aria-hidden="true" />}&rdquo;
-            </span>
-          </p>
           <div className="lh__quiet mono">
             <span><b>no custody</b> · your wallet signs</span>
             <span><b>no sign-up</b> to look</span>

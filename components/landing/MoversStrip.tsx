@@ -5,7 +5,8 @@
 // push is the rule-6-correct thing.
 
 import { useRouter } from 'next/navigation'
-import MoversTape from '@/components/markets/slots/MoversTape'
+import '@/components/markets/look.css'
+import MoversTape from '@/components/markets/viz/MoversTape'
 
 export default function MoversStrip() {
   const router = useRouter()

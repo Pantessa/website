@@ -26,7 +26,9 @@ async function realNumbers() {
     }
     const chainSet = new Set(chains.map((c) => c.chain).filter((c): c is string => !!c))
     const moved = agg._sum.valueUsd ?? 0
+    const asOf = new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
     return {
+      asOf,
       moved: moved >= 1000 ? `$${Math.round(moved).toLocaleString('en-US')}` : `$${moved.toFixed(2)}`,
       signed: String(agg._count._all),
       venues: String(venues.size),
@@ -45,7 +47,10 @@ export default async function HonestyStrip() {
         <div>
           <span className="lhon__eyebrow mono">{HONESTY.eyebrow}</span>
           <p className="lhon__lead">{HONESTY.lead}</p>
-          <p className="lhon__note">{HONESTY.note}</p>
+          <p className="lhon__note">
+            {HONESTY.note}
+            {n && <span className="lhon__asof mono"> · as of {n.asOf} · refreshed every 5 min</span>}
+          </p>
         </div>
         {n ? (
           (
