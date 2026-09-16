@@ -52,6 +52,8 @@ import { usdOf } from '../lib/viz/flow-readers'
 import { rankMovers } from '../lib/viz/movers'
 import { profileBins } from '../components/markets/chart/volume-profile'
 import { cleanSparkSymbols, SPARKS_MAX_SYMBOLS } from '../lib/viz/sparks'
+import { namesSymbol, sideOf, venueOfBuild, FILLS_TTL_MS } from '../lib/viz/fills'
+import { fillLabel } from '../lib/chart-fills'
 import { marketSections as vizMarketSections } from '../lib/markets'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
 import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
@@ -20832,6 +20834,58 @@ async function main() {
       sparks.junk?.join(',') === 'zzzq' && Array.isArray(sparks.missing) && sparkVals.every((v) => v.length >= 2 && v.length <= 8 && v.every((n) => Number.isFinite(n) && n > 0)) &&
         (sparks.error === 'reader unavailable' || ['AAPL', 'ETH', 'HYPE'].every((s) => sparks.sparks?.[s] || sparks.missing?.includes(s))),
       `got=${Object.keys(sparks.sparks ?? {}).join(',')} missing=${sparks.missing?.join(',') || '-'}`,
+    )
+    // Your fills on the chart — the pure rules.
+    check(
+      'viz fills: a symbol is matched as a whole word ("$ETH", "eth", never ETHENA), a sale/short/close/exit reads as a sell, and a build path names its venue with a stable series entity',
+      namesSymbol('buy $12 of ETH on base', 'ETH') && namesSymbol('Swap 25 USDC for eth', 'ETH') && namesSymbol('$ETH', 'ETH') && !namesSymbol('buy ETHENA', 'ETH') && !namesSymbol('WETH only', 'ETH') && namesSymbol('AAPL', 'AAPL') &&
+        sideOf('Buy $12 of AAPL') === 'buy' && sideOf('Sell all my AAPL for USDG') === 'sell' && sideOf('close my ETH long') === 'sell' && sideOf('2x long HYPE') === 'buy' &&
+        venueOfBuild('native-swap-uniswap').venue === 'Uniswap v3' && venueOfBuild('native-swap-uniswap').venueId === 'uniswap' && venueOfBuild('native-swap-lifi').venue === 'LiFi' && venueOfBuild('native-hl-exec').venue === 'Hyperliquid' && venueOfBuild('native-cow').venueId === 'cow' && venueOfBuild(null).venue === 'Pantessa',
+    )
+    check(
+      'viz fills: the receipt line reads "Bought $12 of AAPL · Uniswap v3 · Robinhood Chain · MM-DD HH:MM" (UTC)',
+      fillLabel({ id: 'x', t: Date.UTC(2026, 8, 8, 14, 2) / 1000, side: 'buy', usd: 12, venue: 'Uniswap v3', venueId: 'uniswap', chainId: 4663, chain: 'Robinhood Chain', txUrl: null, source: 'turn' }, 'AAPL') === 'Bought $12.00 of AAPL · Uniswap v3 · Robinhood Chain · 09-08 14:02' &&
+        fillLabel({ id: 'y', t: Date.UTC(2026, 8, 8, 14, 2) / 1000, side: 'sell', usd: 1500, venue: 'CoW', venueId: 'cow', chainId: 8453, chain: null, txUrl: null, source: 'job-step' }, 'ETH') === 'Sold $1,500 of ETH · CoW · 09-08 14:02',
+    )
+    // The route + a fixture: a throwaway wallet signs one embed turn naming ETH
+    // through the telemetry route (the way the harness's other signed rows
+    // land) under a key minted HERE (the run's earlier key is purged by now),
+    // its fills carry exactly that receipt, an INTERNAL twin never shows, and
+    // the key is purged after — which removes the fixture rows with it.
+    const fkMint = await fetch(`${BASE}/api/embed-keys`, { method: 'POST', headers: CJ, body: JSON.stringify({ label: 'harness viz fills' }) })
+    const fk = (await fkMint.json()) as { id?: string; key?: string }
+    const fillsWallet = `0x${'f1'.repeat(10)}${Date.now().toString(16).padStart(20, '0').slice(-20)}`
+    const fillsTx = `https://basescan.org/tx/0x${'ab'.repeat(32)}`
+    const fillsPost = await fetch(`${BASE}/api/embed/telemetry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: fk.key, sessionId: 'harness-viz-fills', page: 'https://harness-embed.test/eth', prompt: 'buy $12 of ETH on base', outcome: 'signed', artifact: 'tx', chain: 'base', valueUsd: 12, txUrl: fillsTx, buildPath: 'native-swap-uniswap', walletAddress: fillsWallet }),
+    })
+    const fillsTwin = await fetch(`${BASE}/api/embed/telemetry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' },
+      body: JSON.stringify({ key: fk.key, sessionId: 'harness-viz-fills-int', page: 'https://harness-embed.test/eth', prompt: 'sell $99 of ETH on base', outcome: 'signed', artifact: 'tx', chain: 'base', valueUsd: 99, txUrl: fillsTx, buildPath: 'native-swap-uniswap', walletAddress: fillsWallet }),
+    })
+    type FillsBody = { symbol?: string; address?: string; fills?: { id: string; t: number; side: string; usd: number | null; venue: string; venueId: string; chainId: number | null; chain: string | null; txUrl: string | null; source: string }[]; cached?: boolean; error?: string }
+    const fills1 = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=eth&address=${fillsWallet}`)).json()) as FillsBody
+    const fills2 = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=ETH&address=${fillsWallet}`)).json()) as FillsBody
+    const fillsOther = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=AAPL&address=${fillsWallet}`)).json()) as FillsBody
+    const fillsBad = await fetch(`${BASE}/api/markets/viz/fills?symbol=ETH&address=nope`)
+    const fills404 = await fetch(`${BASE}/api/markets/viz/fills?symbol=ZZZZQ&address=${fillsWallet}`)
+    const f0 = fills1.fills?.[0]
+    check(
+      'viz fills route: the throwaway wallet\'s signed ETH turn comes back as ONE buy fill ($12 · Uniswap v3 · Base · the explorer link, source turn), the internal twin is fenced out, AAPL shows none, the symbol upper-cases, the second read is cached, a bad address is 400 and a stranger symbol 404',
+      fkMint.status === 200 && fillsPost.status === 200 && fillsTwin.status === 200 && fills1.symbol === 'ETH' && fills1.address === fillsWallet.toLowerCase() && fills1.fills?.length === 1 &&
+        f0?.side === 'buy' && f0.usd === 12 && f0.venue === 'Uniswap v3' && f0.venueId === 'uniswap' && f0.chainId === 8453 && f0.chain === 'Base' && f0.txUrl === fillsTx && f0.source === 'turn' && Math.abs(f0.t * 1000 - Date.now()) < 120_000 &&
+        fills2.cached === true && fillsOther.fills?.length === 0 && fillsBad.status === 400 && fills404.status === 404 && FILLS_TTL_MS === 60_000,
+      `mint=${fkMint.status} post=${fillsPost.status}/${fillsTwin.status} fills=${JSON.stringify(fills1.fills ?? fills1.error).slice(0, 200)} other=${fillsOther.fills?.length}`,
+    )
+    const fkGone = await fetch(`${BASE}/api/embed-keys/${fk.id}?purge=1`, { method: 'DELETE', headers: C })
+    check('viz fills fixture: the fixture key is purged after the check (its two turns go with it)', fkGone.status === 200 || fkGone.status === 204, `purge=${fkGone.status}`)
+    check(
+      'viz chart: ChartMount takes `fills`, MarketChart draws each as an arrow glyph on its bar in the venue\'s series ink (up under a buy, down over a sell, never on a bar it predates), lists the receipts with explorer links under the chart, and the compare feed reads ?warmup=1',
+      mountSrc.includes('fills?: FillMarker[]') && mountSrc.includes('fills={fills}') && mcSrc.includes("shape: f.side === 'buy' ? 'arrowUp' : 'arrowDown'") && mcSrc.includes('if (f.t < bars[0].t) return') &&
+        mcSrc.includes('const ink = tokens.series[slot] ?? tokens.fg') && mcSrc.includes('aria-label="Your fills on this chart"') && mcSrc.includes('&warmup=1`, { cache: \'no-store\' })') && mcSrc.includes('candles: [...(body.warmup ?? []), ...body.candles]'),
     )
     const primitives = ['Sparkline', 'Delta', 'StatTile', 'MiniGauge', 'Bars', 'Ribbon', 'MarketMap', 'FlowPanel', 'MoversTape']
     const barrel = await readFile('components/markets/viz/index.ts', 'utf8')
