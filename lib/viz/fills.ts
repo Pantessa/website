@@ -11,6 +11,7 @@
 // cache row, never a shared key. The Map is bounded.
 
 import prisma from '@/lib/db'
+import { COUNTED_TURN_WHERE } from '@/lib/value-origin'
 import { chartPairFor } from '@/lib/charts'
 import { chainById, chainByKey, sanitizeChainId } from '@/lib/chains'
 import type { FillMarker, FillsResponse } from '@/lib/chart-fills'
@@ -73,7 +74,7 @@ function explorerTx(chainId: number | null, hash: string | null): string | null 
 
 async function readTurns(symbol: string, address: string): Promise<FillMarker[]> {
   const rows = await prisma.embedTurn.findMany({
-    where: { outcome: 'signed', walletAddress: address, isInternal: false, OR: [{ prompt: { contains: symbol, mode: 'insensitive' } }, { detail: { contains: symbol, mode: 'insensitive' } }] },
+    where: { AND: [{ outcome: 'signed', walletAddress: address, isInternal: false }, COUNTED_TURN_WHERE, { OR: [{ prompt: { contains: symbol, mode: 'insensitive' } }, { detail: { contains: symbol, mode: 'insensitive' } }] }] },
     orderBy: { createdAt: 'desc' },
     take: TAKE,
     select: { id: true, prompt: true, detail: true, chain: true, txUrl: true, valueUsd: true, buildPath: true, createdAt: true },
