@@ -20656,12 +20656,13 @@ async function main() {
         /<ChartMount [^>]*compare=\{vs\}/.test(await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')),
     )
     // AI's request: the Morning tape at the top of the /markets rail, its
-    // chips through the rail's own connect-to-act prefill door.
+    // chips through the rail's own connect-to-act door (which hands the ask
+    // to /chat since squad ARRIVAL — lib/arrival-intent).
     const idxSrc = await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')
     check(
-      'mk2/markets: the /markets rail seats AI\'s MorningTape above the watchlist rows (a seat in the aside before data-slot="watchlist"; empty seats collapse), and its chips prefill chat through useConnectToAct like the rail\'s own',
+      'mk2/markets: the /markets rail seats AI\'s MorningTape above the watchlist rows (a seat in the aside before data-slot="watchlist"; empty seats collapse), and its chips hand the ask to the app through useConnectToAct like the rail\'s own (ARRIVAL 2026-09-16: `handOff`, was a ?prompt= push)',
       /<aside class="mkt-frame__rail"[^>]*><div class="mk-rail-seat" data-seat="MorningTape">[\s\S]*?<\/div><div data-slot="watchlist"/.test(mkHtml) &&
-        idxSrc.includes('<MorningTape onAsk={indexAct} />') && idxSrc.includes('useConnectToAct({ run: (ask) => router.push(promptHref(ask)), redirectFor: promptHref })') &&
+        idxSrc.includes('<MorningTape onAsk={indexAct} />') && idxSrc.includes('useConnectToAct({ run: handOff, redirectFor: promptHref })') &&
         idxSrc.includes('{indexDoor}') && /\.mk-rail-seat:empty \{ display: none; \}/.test(await readFile('components/markets/markets.css', 'utf8')),
     )
     // EXEC's QuickAct on every index row (hover/focus reveal, the index's one
@@ -21262,6 +21263,212 @@ async function main() {
     const askSrc = await readFile('components/markets/ai/AskChart.tsx', 'utf8')
     check('ai components: AiBrief streams /api/markets/brief, chips call onAsk on click, the position call is address-keyed and separate, and the footer wears the tape footnote + byline', briefSrc.includes("fetch('/api/markets/brief'") && briefSrc.includes('onClick={() => onAsk(c.ask)}') && briefSrc.includes("part: 'position', address: walletAddress") && briefSrc.includes('TAPE_FOOTNOTE') && briefSrc.includes('Written by a model from our own tape'))
     check('ai components: AskChart never auto-sends an act (the chip is a button → onAsk), applies chart answers through onChartState, posts the alert rule to /api/alerts, and signed-out alerts open the unified door', askSrc.includes('onClick={() => onAsk(reply.chip.ask)}') && !askSrc.includes('onAsk(j.chip') && askSrc.includes("if (j.kind === 'chart') onChartState?.(j.state)") && askSrc.includes("fetch('/api/alerts'") && askSrc.includes('<CreateAccountButton className="mk-ai__cta" label="Sign in to set alerts"'))
+  }
+
+  // ── ARRIVAL/CORE ──────────────────────────────────────────────────────────
+  // "Anytime someone clicks and it goes to the apps page, automatically run
+  // that query" (Nate, 2026-09-16). The tap on /markets IS the send; /chat is
+  // only where it renders. The ask travels OUT OF BAND — same tab, versioned,
+  // 60s, removed on take — so "a URL never fires a turn" stays literally true.
+  {
+    const ai = await import('../lib/arrival-intent')
+    const { ARRIVAL_KEY, ARRIVAL_TTL_MS, ARRIVAL_APP_HREF, parseArrivalIntent, writeArrivalIntent, takeArrivalIntent } = ai
+
+    // A tab's sessionStorage, standing in for the browser's. `store()` reads
+    // `window.sessionStorage` behind try/catch, so a fake window is enough to
+    // exercise the write/take/one-shot path in node.
+    class FakeStore {
+      map = new Map<string, string>()
+      throwOn: 'none' | 'set' | 'get' | 'remove' = 'none'
+      getItem(k: string) {
+        if (this.throwOn === 'get') throw new Error('blocked')
+        return this.map.has(k) ? this.map.get(k)! : null
+      }
+      setItem(k: string, v: string) {
+        if (this.throwOn === 'set') throw new Error('blocked')
+        this.map.set(k, v)
+      }
+      removeItem(k: string) {
+        if (this.throwOn === 'remove') throw new Error('blocked')
+        this.map.delete(k)
+      }
+    }
+    const g = globalThis as unknown as { window?: { sessionStorage: FakeStore } }
+    const hadWindow = 'window' in g
+    const withStore = <T,>(s: FakeStore | null, fn: () => T): T => {
+      const before = g.window
+      if (s) g.window = { sessionStorage: s }
+      else delete g.window
+      try {
+        return fn()
+      } finally {
+        if (hadWindow) g.window = before
+        else delete g.window
+      }
+    }
+
+    const NOW = 1_770_000_000_000
+    const live = { v: 1, text: 'Buy $10 of AAPL', from: '/markets', at: NOW }
+
+    check(
+      'arrival/core: the handoff is one constant key, a 60s TTL and a PLAIN /chat — never a ?prompt= URL, never localStorage, never a cookie',
+      ARRIVAL_KEY === 'pantessa.arrival.v1' &&
+        ARRIVAL_TTL_MS === 60_000 &&
+        ARRIVAL_APP_HREF === '/chat' &&
+        !/localStorage|document\.cookie|searchParams|location\.search/.test(await readFile('lib/arrival-intent.ts', 'utf8')),
+      `${ARRIVAL_KEY} · ${ARRIVAL_TTL_MS}ms → ${ARRIVAL_APP_HREF}`,
+    )
+
+    // Pure parse: the fence is the only authority on "may this run", and a
+    // record it refuses reads exactly like an absent one.
+    check(
+      'arrival/core: parseArrivalIntent is pure — a live record parses, a stale one, a future one, a foreign source, a wrong version and unparseable bytes are all null',
+      !!parseArrivalIntent(JSON.stringify(live), NOW) &&
+        parseArrivalIntent(JSON.stringify(live), NOW + ARRIVAL_TTL_MS + 1) === null &&
+        parseArrivalIntent(JSON.stringify({ ...live, at: NOW + 10 * 60_000 }), NOW) === null &&
+        parseArrivalIntent(JSON.stringify({ ...live, from: '/i/buy-aapl' }), NOW) === null &&
+        parseArrivalIntent(JSON.stringify({ ...live, v: 2 }), NOW) === null &&
+        parseArrivalIntent('{not json', NOW) === null &&
+        parseArrivalIntent(null, NOW) === null &&
+        parseArrivalIntent('', NOW) === null,
+    )
+
+    check(
+      'arrival/core: a parsed intent carries only the four contract fields — an unknown key a page (or an attacker) stuffed into the record never reaches the receiver',
+      (() => {
+        const got = parseArrivalIntent(JSON.stringify({ ...live, mcps: ['robinhood-free'], evil: 'x', send: true }), NOW)
+        return !!got && Object.keys(got).sort().join(',') === 'at,from,mcps,text,v' && got.mcps?.join(',') === 'robinhood-free'
+      })(),
+    )
+
+    check(
+      'arrival/core: write → take round-trips the ask and its MCPs in the SAME tab, and the key is gone afterwards (one shot)',
+      (() => {
+        const s = new FakeStore()
+        return withStore(s, () => {
+          const ok = writeArrivalIntent({ text: 'Buy $10 of AAPL', mcps: ['robinhood-free'], from: '/markets' }, NOW)
+          const stored = s.map.get(ARRIVAL_KEY)
+          const got = takeArrivalIntent(NOW + 500)
+          return ok && !!stored && got?.text === 'Buy $10 of AAPL' && got?.mcps?.join(',') === 'robinhood-free' && got?.from === '/markets' && !s.map.has(ARRIVAL_KEY)
+        })
+      })(),
+    )
+
+    check(
+      'arrival/core: a second take is null (a reload, a back button or a second surface in the tab can never re-fire the ask), and so is a take with nothing stored',
+      (() => {
+        const s = new FakeStore()
+        return withStore(s, () => {
+          writeArrivalIntent({ text: 'Buy $10 of AAPL', from: '/markets' }, NOW)
+          const first = takeArrivalIntent(NOW + 100)
+          const second = takeArrivalIntent(NOW + 200)
+          return !!first && second === null && takeArrivalIntent(NOW + 300) === null
+        })
+      })(),
+    )
+
+    check(
+      'arrival/core: take REMOVES a record it then refuses — stale, malformed and fenced ones are cleared, so a dropped handoff never lingers for the next mount',
+      (() => {
+        const stale = new FakeStore()
+        const bad = new FakeStore()
+        const fenced = new FakeStore()
+        return withStore(stale, () => {
+          stale.map.set(ARRIVAL_KEY, JSON.stringify(live))
+          const a = takeArrivalIntent(NOW + ARRIVAL_TTL_MS + 1) === null && !stale.map.has(ARRIVAL_KEY)
+          return withStore(bad, () => {
+            bad.map.set(ARRIVAL_KEY, 'not json at all')
+            const b = takeArrivalIntent(NOW) === null && !bad.map.has(ARRIVAL_KEY)
+            return withStore(fenced, () => {
+              fenced.map.set(ARRIVAL_KEY, JSON.stringify({ ...live, from: '/i/buy-aapl' }))
+              const c = takeArrivalIntent(NOW) === null && !fenced.map.has(ARRIVAL_KEY)
+              return a && b && c
+            })
+          })
+        })
+      })(),
+    )
+
+    check(
+      'arrival/core: no storage (private mode, a server render) and a fenced ask both make writeArrivalIntent return FALSE — the sender then falls back to the ?prompt= prefill instead of losing the ask',
+      withStore(null, () => writeArrivalIntent({ text: 'Buy $10 of AAPL', from: '/markets' }, NOW) === false && takeArrivalIntent(NOW) === null) &&
+        (() => {
+          const s = new FakeStore()
+          return withStore(s, () => {
+            const refused = writeArrivalIntent({ text: 'Buy $10 of AAPL', from: '/i/buy-aapl' }, NOW)
+            const blocked = ((): boolean => {
+              s.throwOn = 'set'
+              const r = writeArrivalIntent({ text: 'Buy $10 of AAPL', from: '/markets' }, NOW)
+              s.throwOn = 'none'
+              return r === false
+            })()
+            return refused === false && blocked && !s.map.has(ARRIVAL_KEY)
+          })
+        })(),
+    )
+
+    // The senders, at the source: the tap writes the intent and pushes a plain
+    // /chat; the door's email + Google lanes keep the prefill URL (they land
+    // after an OAuth round trip, long past the 60s record).
+    const idxSrcA = await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')
+    const railSrcA = await readFile('components/markets/watchlist/WatchlistRail.tsx', 'utf8')
+    check(
+      'arrival/core: BOTH /markets senders (the index act door every board · QuickAct · MorningTape · EarnBoard chip rides, and the rail\'s own chips) write the intent with their own pathname and push ARRIVAL_APP_HREF, falling back to promptHref when the write is refused',
+      [idxSrcA, railSrcA].every(
+        (s) =>
+          /const handed = writeArrivalIntent\(\{ text: ask, from: pathname \|\| '\/markets' \}\)/.test(s) &&
+          /router\.push\(handed \? ARRIVAL_APP_HREF : promptHref\(ask\)\)/.test(s) &&
+          /redirectFor: promptHref/.test(s),
+      ) &&
+        /run: handOff, redirectFor: promptHref/.test(idxSrcA) &&
+        /run: handOff,\n\s*redirectFor: promptHref,/.test(railSrcA) &&
+        // The rail's chips still say what they do, and now they say it honestly.
+        /const sendLabel = onAsk \? 'sends in chat' : 'runs in the app'/.test(railSrcA),
+    )
+
+    check(
+      'arrival/core: decision 1 — /t/<symbol> keeps EXECUTING IN PLACE on its Trade tab (the chart is the order form); SymbolPage hands nothing off',
+      !(await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')).includes('writeArrivalIntent'),
+    )
+
+    // The receiver: one surface, one take, held until it can actually run.
+    const chatSrcA = await readFile('components/ChatInterface.tsx', 'utf8')
+    check(
+      'arrival/core: the receiver takes the intent ONCE per mount and only on the first-party /chat surface — never the embed, never simple mode (/i), so a link runtime can never inherit a handoff left in the tab',
+      /if \(arrivalTakenRef\.current\) return/.test(chatSrcA) &&
+        /if \(embedded \|\| simple\) return/.test(chatSrcA) &&
+        /if \(!pathname\?\.startsWith\('\/chat'\)\) return/.test(chatSrcA) &&
+        /arrivalTakenRef\.current = true\s*\n\s*const taken = takeArrivalIntent\(\)/.test(chatSrcA),
+    )
+
+    check(
+      'arrival/core: the fire is HELD until the MCP directory has landed and wagmi has SETTLED (website#763 — a send while the wallet still reads connecting answers "connect your wallet" and auto-resends), then goes through the existing composerSend consumer',
+      /if \(servers\.length === 0\) return/.test(chatSrcA) &&
+        /if \(walletStatus === 'connecting' \|\| walletStatus === 'reconnecting'\) return/.test(chatSrcA) &&
+        /setComposerSend\(\{ text: arrival\.text, mcps: arrival\.mcps \}\)/.test(chatSrcA) &&
+        /setComposerSend\(null\)\s*\n\s*sendFromOverlay\(composerSend\.text\)/.test(chatSrcA),
+    )
+
+    check(
+      'arrival/core: the arrival moment is mounted EXACTLY once, above the thread, and only for an intent taken on this mount (holding → sent)',
+      (chatSrcA.match(/<ArrivalBanner\b/g) ?? []).length === 1 &&
+        /\{arrival && <ArrivalBanner intent=\{arrival\} phase=\{arrivalPhase\} onDismiss=\{\(\) => setArrival\(null\)\} \/>\}/.test(chatSrcA) &&
+        /<div ref=\{threadRef\}[^>]*>\n\s*\{\/\* The arrival moment/.test(chatSrcA),
+    )
+
+    check(
+      'arrival/core: the contract survives — ?prompt= still only PREFILLS (send:false) wherever it comes from, so a pasted or tweeted /chat link fires nothing',
+      /setUrlPrompt\(\{ text, send: false, at: Date\.now\(\) \}\)/.test(await readFile('components/ChatWorkspace.tsx', 'utf8')),
+    )
+
+    // And on the wire: the rendered /markets carries no /chat?prompt= for its
+    // chips — they are buttons that hand off, not links that prefill.
+    const mktArrivalHtml = await (await fetch(`${BASE}/markets`)).text()
+    check(
+      'arrival/core: the served /markets page ships NO /chat?prompt= — every act on it is a click that hands the ask to the app',
+      mktArrivalHtml.length > 1000 && !/\/chat\?prompt=/.test(mktArrivalHtml),
+      `${mktArrivalHtml.length} bytes`,
+    )
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
