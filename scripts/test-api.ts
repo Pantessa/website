@@ -21729,6 +21729,17 @@ async function main() {
         (await readFile('components/markets/trade/RouteTable.tsx', 'utf8')).includes('data-ticket="1"') && (await readFile('components/markets/trade/RouteTable.tsx', 'utf8')).includes('r.ticket.note.toUpperCase()'),
       `spot fee $${spotBuy?.ticket?.feeUsd} out=${spotBuy?.ticket?.out} min=${spotBuy?.ticket?.minOut} settles=${spotBuy?.ticket?.settles}`,
     )
+    // A buy of ETH is delivered as native ETH (the router's unwrap), so its
+    // ticket names unwrapWETH9WithFee; an ETH sell still names the sweep.
+    const ethSpotBuys = j1.routes.filter((r) => r.kind === 'spot' && r.side === 'buy')
+    const ethSpotSells = j1.routes.filter((r) => r.kind === 'spot' && r.side === 'sell')
+    check(
+      'MK2/EXEC order ticket: an ETH spot BUY settles as native ETH (unwrapWETH9WithFee), an ETH spot SELL keeps the sweep',
+      ethSpotBuys.length > 0 && ethSpotSells.length > 0 &&
+        ethSpotBuys.every((r) => /unwrapWETH9WithFee: native ETH out/.test(r.ticket!.settles)) &&
+        ethSpotSells.every((r) => /sweepTokenWithFee/.test(r.ticket!.settles)),
+      `buy=${ethSpotBuys[0]?.ticket?.settles} sell=${ethSpotSells[0]?.ticket?.settles}`,
+    )
     // R3: QuickAct — the index-row chips, honest per class, all native.
     const qaEth = mk2QuickActs('ETH', ethPair)
     const qaAapl = mk2QuickActs('AAPL', aaplPair)

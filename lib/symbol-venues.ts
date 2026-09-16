@@ -613,6 +613,9 @@ export const ROUTE_TICKET_NOTE = 'estimate · the guarded card quotes the pool'
 
 export const SETTLES: Record<string, string> = {
   uniswap: 'Uniswap v3 SwapRouter02 (sweepTokenWithFee split)',
+  // A buy of native ETH: the router unwraps its WETH in the same multicall
+  // (lib/uniswap-venue), and the fee split is paid in ETH.
+  'uniswap-native-eth': 'Uniswap v3 SwapRouter02 (unwrapWETH9WithFee: native ETH out, fee split)',
   cow: 'CoW Protocol GPv2Settlement (partnerFee in the signed appData)',
   hyperliquid: 'Hyperliquid L1 exchange (builder fee on the fill)',
   aave: 'Aave v4 spoke on Ethereum',
