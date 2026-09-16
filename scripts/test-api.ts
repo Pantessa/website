@@ -20084,7 +20084,8 @@ async function main() {
     const panelFundSrc = await readFile('components/WalletPanel.tsx', 'utf8')
     const chipFundSrc = await readFile('components/ClarifyChips.tsx', 'utf8')
     const buyAt = fundSrc.indexOf('const buy = async')
-    const beforeTab = buyAt < 0 ? 'await' : fundSrc.slice(buyAt, fundSrc.indexOf('await startOnrampSession(', buyAt))
+    // Code only: the comment above the call explains the rule in words ("a popup after an await").
+    const beforeTab = buyAt < 0 ? 'await' : fundSrc.slice(buyAt, fundSrc.indexOf('await startOnrampSession(', buyAt)).replace(/\/\/.*$/gm, '')
     check('card door: a buy goes through the one on-ramp door (startOnrampSession, nothing awaited before it opens the tab), writes a wait with an EMPTY resume and the asset, watches it with useFundingArrival, and clears only its own waits',
       buyAt >= 0 && !beforeTab.includes('await') && fundSrc.includes("resume: ''") && fundSrc.includes('asset: o.asset') && fundSrc.includes('saveFundWait(w)') &&
         fundSrc.includes('useFundingArrival(wait,') && (fundSrc.match(/clearFundWait\(/g) ?? []).length === 2 && (fundSrc.match(/resume === ''\) clearFundWait\(/g) ?? []).length === 2)
