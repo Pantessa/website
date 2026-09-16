@@ -98,6 +98,8 @@ export function usdOf(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+const MORPHO_MARKET_ID_RE = /^0x[0-9a-fA-F]{64}$/
+
 const fmtUsdAmount = (usd: number) => (Number.isInteger(usd) ? `$${usd}` : `$${usd.toFixed(2)}`)
 
 /** Aave v4 (Ethereum spokes): one row per supplyable asset. The ask says "at
@@ -136,7 +138,10 @@ export function aaveRows(reserves: readonly AaveReserveRow[]): EarnRow[] {
       tvlUsd: tvl,
       detail: multi ? `${list.length} spokes · best on ${best.spoke ?? 'a spoke'}` : `${best.spoke ?? 'Main'} spoke`,
       best: false,
-      askFor: (usd) => `Supply ${fmtUsdAmount(usd)} of ${askAsset} to Aave${multi ? ' at the best rate' : ''}`,
+      // The AAVE token itself: "Supply $25 of AAVE to Aave" reads as the venue
+      // word twice and falls to the planner (probed through the ladder) — the
+      // row shows its rate, the chip is omitted rather than sent to freelance.
+      askFor: (usd) => (sym === 'AAVE' ? null : `Supply ${fmtUsdAmount(usd)} of ${askAsset} to Aave${multi ? ' at the best rate' : ''}`),
     })
   }
   return rows
@@ -173,7 +178,9 @@ export function morphoRows(markets: readonly MorphoMarketRow[], chainId: 1 | 845
   const seen = new Map<string, { row: MorphoMarketRow; count: number; tvl: number | null }>()
   for (const m of markets) {
     const loan = m.loan?.toUpperCase()
-    if (!loan || m.curated === false || typeof m.marketId !== 'string') continue
+    // Same validity rule as lib/morpho-supply's marketRowValid: a curated row
+    // with a 32-byte hex market id — anything else never becomes a chip.
+    if (!loan || m.curated === false || typeof m.marketId !== 'string' || !MORPHO_MARKET_ID_RE.test(m.marketId)) continue
     const cur = seen.get(loan)
     const u = usdOf(m.totalSupplyUsd)
     if (!cur) seen.set(loan, { row: m, count: 1, tvl: u })
@@ -189,7 +196,9 @@ export function morphoRows(markets: readonly MorphoMarketRow[], chainId: 1 | 845
       kind: 'lend',
       chainId,
       chainLabel,
-      asset: loan,
+      // Shown as ETH like Aave's WETH row (one asset, one 'best'); the ask keeps
+      // the venue's own word — Morpho lends WETH.
+      asset: loan === 'WETH' ? 'ETH' : loan,
       apyPct: pctOf(row.supplyApy),
       tvlUsd: tvl,
       detail: `vs ${row.collateral ?? '?'} collateral · deepest of ${count} curated market${count === 1 ? '' : 's'}`,
