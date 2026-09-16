@@ -245,7 +245,9 @@ function venueChipKind(r: VenueRoute): AiChip['kind'] {
  *  prose. Ids the menu doesn't know are dropped (a "chip" the model typed
  *  itself is not a chip). */
 export function splitChipsLine(text: string): { body: string; ids: string[] } {
-  const m = text.match(/(?:^|\n)\s*CHIPS?\s*:\s*([^\n]*)\s*$/i)
+  // `CHIPS: m0, m2` — or, as the live tape once ended, a bare `m2, m0` line
+  // with the word dropped: still ids only, still split off the prose.
+  const m = text.match(/(?:^|\n)\s*CHIPS?\s*:\s*([^\n]*)\s*$/i) ?? text.match(/(?:^|\n)\s*((?:m\d{1,2})(?:\s*,\s*m\d{1,2})*)\s*$/i)
   if (!m) return { body: text.trim(), ids: [] }
   const body = text.slice(0, m.index ?? 0).trim()
   const ids = m[1]
