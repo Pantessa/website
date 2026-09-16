@@ -21449,6 +21449,10 @@ async function main() {
         /send\(`DCA \$10 into \$\{sym\} weekly`, handoffable\(sym\)\)/.test(railSrcA) &&
         /send\(ask, handoffable\(alertFor\)\)/.test(railSrcA) &&
         /venuesFor\(sym, pair, \{ usd: 10 \}\)\.some\(\(r\) => \(r\.kind === 'spot' \|\| r\.kind === 'stock'\) && r\.side === 'buy'\)/.test(railSrcA) &&
+        // A one-letter stock ticker (F, P) has an EVM home but never parses —
+        // "Buy $10 of F" falls to the PLANNER, and a planner answer is no
+        // better a welcome than a clarify. Those rows stay on prefill.
+        /if \(sym\.length <= 1\) return false/.test(railSrcA) &&
         /\{handOffDoor\}/.test(railSrcA) &&
         /\{prefillDoor\}/.test(railSrcA) &&
         // and the predicate agrees with the venue map it reads
@@ -21458,7 +21462,10 @@ async function main() {
             const p = pairOf(sym)
             return !!p && venuesForArrival(sym, p, { usd: 10 }).some((r) => (r.kind === 'spot' || r.kind === 'stock') && r.side === 'buy')
           }
-          return homed('ETH') && homed('AAPL') && !homed('SOL') && !homed('XRP') && !homed('DOGE')
+          return homed('ETH') && homed('AAPL') && !homed('SOL') && !homed('XRP') && !homed('DOGE') &&
+            // the one-letter rule is the rail's, not the venue map's: F and P
+            // both HAVE a stock lane, which is exactly why the guard is needed.
+            homed('F') && homed('P')
         })(),
     )
 
