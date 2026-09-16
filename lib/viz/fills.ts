@@ -2,9 +2,10 @@
 // only. Two sources, both fenced `isInternal:false` (the harness/drill rows
 // never paint on a stranger's chart) and both PUBLIC BY ADDRESS like
 // /api/wallet (a signed turn is on-chain public data; nothing here spends):
-//   · embed_turns  outcome='signed' by wallet_address whose prompt/detail
-//                  names the symbol (first-party chat rows carry NO prompt by
-//                  design, so they only match through `detail`)
+//   · embed_turns  outcome='signed' by wallet_address tagged with the symbol
+//                  in `symbols` ("buy:ETH" — the only trade detail a first-party
+//                  chat row carries; no prompt by design), or, for keyed-embed
+//                  and legacy rows, whose prompt/detail names it
 //   · job_steps    kind='sign' status='done' on the wallet's own jobs whose
 //                  title/params name the symbol (the settled swap steps)
 // Cached 60s per symbol+address — the address is only ever part of ITS OWN
@@ -74,18 +75,27 @@ function explorerTx(chainId: number | null, hash: string | null): string | null 
 
 async function readTurns(symbol: string, address: string): Promise<FillMarker[]> {
   const rows = await prisma.embedTurn.findMany({
-    where: { AND: [{ outcome: 'signed', walletAddress: address, isInternal: false }, COUNTED_TURN_WHERE, { OR: [{ prompt: { contains: symbol, mode: 'insensitive' } }, { detail: { contains: symbol, mode: 'insensitive' } }] }] },
+    where: {
+      AND: [
+        { outcome: 'signed', walletAddress: address, isInternal: false },
+        COUNTED_TURN_WHERE,
+        { OR: [{ symbols: { hasSome: [`buy:${symbol}`, `sell:${symbol}`] } }, { prompt: { contains: symbol, mode: 'insensitive' } }, { detail: { contains: symbol, mode: 'insensitive' } }] },
+      ],
+    },
     orderBy: { createdAt: 'desc' },
     take: TAKE,
-    select: { id: true, prompt: true, detail: true, chain: true, txUrl: true, valueUsd: true, buildPath: true, createdAt: true },
+    select: { id: true, prompt: true, detail: true, symbols: true, chain: true, txUrl: true, valueUsd: true, buildPath: true, createdAt: true },
   })
   const out: FillMarker[] = []
   for (const r of rows) {
     const text = `${r.prompt ?? ''} ${r.detail ?? ''}`
-    if (!namesSymbol(text, symbol)) continue
+    // A symbol tag is the row's own word on side; the text match is the
+    // fallback for keyed-embed/legacy rows that carry the ask.
+    const tag = r.symbols.find((t) => t === `buy:${symbol}` || t === `sell:${symbol}`)
+    if (!tag && !namesSymbol(text, symbol)) continue
     const { venue, venueId } = venueOfBuild(r.buildPath)
     const { chainId, chain } = chainOf(r.chain)
-    out.push({ id: `turn:${r.id}`, t: Math.floor(r.createdAt.getTime() / 1000), side: sideOf(text), usd: r.valueUsd ?? null, venue, venueId, chainId, chain, txUrl: r.txUrl ?? null, source: 'turn' })
+    out.push({ id: `turn:${r.id}`, t: Math.floor(r.createdAt.getTime() / 1000), side: tag ? (tag.startsWith('sell:') ? 'sell' : 'buy') : sideOf(text), usd: r.valueUsd ?? null, venue, venueId, chainId, chain, txUrl: r.txUrl ?? null, source: 'turn' })
   }
   return out
 }

@@ -6,6 +6,7 @@ import { ArrowDown, Loader2, ShieldAlert, ShieldX } from 'lucide-react'
 import SendTxChain from '@/components/SendTxChain'
 import { txChainOf, type TxChainRequest } from '@/lib/transaction-layer'
 import { chainById } from '@/lib/chains'
+import { fillSymbolsForPair } from '@/lib/fill-symbols'
 import { chainLabelOf, postPanelTelemetry } from '@/lib/panel-telemetry'
 
 /**
@@ -207,6 +208,7 @@ export default function SwapPanel({
                       chain: chainLabelOf(cid),
                       valueUsd: quote.valueUsd,
                       buildPath: 'app-mode-swap',
+                      symbols: fillSymbolsForPair(sellToken, buyToken),
                     })
                   }}
                   className="mt-3 w-full rounded-lg border border-[color:var(--accent)]/50 bg-[color:var(--accent)]/10 px-3 py-2 text-xs font-semibold text-[color:var(--accent)] transition-colors hover:bg-[color:var(--accent)]/20"
@@ -226,6 +228,7 @@ export default function SwapPanel({
                         chain: chainLabelOf(cid),
                         valueUsd: quote.valueUsd,
                         buildPath: 'app-mode-swap',
+                        symbols: fillSymbolsForPair(sellToken, buyToken),
                       })
                     }}
                   />
