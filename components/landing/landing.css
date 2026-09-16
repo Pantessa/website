@@ -42,18 +42,28 @@
 .lh__live { font-size: 9.5px; letter-spacing: .14em; color: var(--accent); }
 .lh__chart { position: relative; }
 .lh__chart .mkt-chart { padding: 8px 8px 0; }
-/* the receipt strip — bottom-left, over the volume pane, never the candles */
-.lh__rcpt { position: absolute; left: 12px; bottom: 34px; z-index: 5; max-width: min(440px, calc(100% - 24px)); pointer-events: none; display: flex; flex-direction: column; gap: 3px; padding: 8px 11px 7px; border-radius: 10px; border: 1px solid var(--mk-glass-line, var(--line)); background: var(--mk-glass, color-mix(in srgb, var(--bg) 80%, transparent)); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 10px 30px -18px rgba(0,0,0,.7); font-size: 11px; line-height: 1.35; color: var(--muted); transition: opacity .35s ease; }
+/* the receipt strip — bottom-left, over the volume pane.
+   It lives INSIDE the plot wrapper (MarketChart's overlay slot), so its
+   bottom is measured from the plot: the engine's time axis is 26px, and the
+   strip sits 6px above it at every width. It used to hang off the chart
+   container, whose footer changes height (a stock's session legend wraps it
+   to two lines at 1440, three on a phone), which put the strip 15–40px over
+   the axis labels. */
+.lh__rcpt { position: absolute; left: 8px; bottom: 32px; z-index: 5; max-width: min(440px, calc(100% - 16px)); pointer-events: none; display: flex; flex-direction: column; gap: 3px; padding: 8px 11px 7px; border-radius: 10px; border: 1px solid var(--mk-glass-line, var(--line)); background: var(--mk-glass, color-mix(in srgb, var(--bg) 80%, transparent)); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 10px 30px -18px rgba(0,0,0,.7); font-size: 11px; line-height: 1.35; color: var(--muted); transition: opacity .35s ease; }
 .lh__rcpt.is-wiping { opacity: 0; }
-.lh__rcptask { color: var(--fg); font-size: 12px; font-weight: 500; letter-spacing: -.005em; min-height: 1.35em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Lines WRAP, never clip: the ask takes up to two lines, and a leg or an
+   ending wraps on a phone. A clipped ask hid the part that says what the job
+   does ("…, then buy $40 of AAPL"), and a clipped leg hid its fee. */
+.lh__rcptask { color: var(--fg); font-size: 12px; font-weight: 500; letter-spacing: -.005em; min-height: 1.35em; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .lh__rcptq { color: var(--accent); margin-right: 2px; }
 .lh__rcptask .lh__caret { height: .85em; }
-.lh__rcptleg { display: none; align-items: center; gap: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transform: translateX(-4px); transition: opacity .3s ease, transform .3s ease; }
+.lh__rcptleg { display: none; align-items: flex-start; gap: 7px; opacity: 0; transform: translateX(-4px); transition: opacity .3s ease, transform .3s ease; }
 .lh__rcptleg.is-in { display: flex; opacity: 1; transform: none; }
-.lh__rcptleg .lh__legmark { width: 16px; height: 16px; border-radius: 5px; }
+.lh__rcptleg .lh__legmark { flex: none; width: 16px; height: 16px; border-radius: 5px; }
 .lh__rcptleg .lh__legmark svg { width: 11px; height: 11px; }
 .lh__rcptleg .lh__legmark b { font-size: 9px; }
-.lh__rcptend { display: none; color: var(--accent); letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity .3s ease; }
+.lh__legline { min-width: 0; text-wrap: pretty; }
+.lh__rcptend { display: none; color: var(--accent); letter-spacing: .04em; text-wrap: pretty; opacity: 0; transition: opacity .3s ease; }
 .lh__rcptend.is-in { display: block; opacity: 1; }
 .lh__rcptend--armed { color: #d9a94a; }
 .lh__rcptstamp { font-size: 8.5px; letter-spacing: .1em; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -68,10 +78,10 @@
 }
 @media (max-width: 640px) {
   .lh { padding-top: 28px; }
-  /* the chart footer wraps to two lines on a phone — anchor the strip above
-     it, over the volume pane's foot, never the price action (measured 375:
-     canvas bottom ≈ 88px above the container's) */
-  .lh__rcpt { left: 8px; bottom: 96px; max-width: calc(100% - 16px); padding: 6px 9px 5px; font-size: 10px; }
+  .lh__rcpt { padding: 6px 9px 5px; font-size: 10px; }
+  /* 11px holds the longest ask (the fund-then-buy job) in two lines down to
+     360px; a third line is the fallback below that, never an ellipsis. */
+  .lh__rcptask { font-size: 11px; -webkit-line-clamp: 3; }
   .lh__rcptstamp { display: none; }
 }
 

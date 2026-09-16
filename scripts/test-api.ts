@@ -21114,6 +21114,57 @@ async function main() {
       ogr.status === 200 && /image\/png/.test(ogr.headers.get('content-type') ?? '') && ogBuf[0] === 0x89 && ogBuf[1] === 0x50 && ogBuf.length > 20_000 &&
         /REEL_STAMP/.test(ogSrc) && /candleSvg\(/.test(ogSrc) && /gemMarkSvg\(/.test(ogSrc),
     )
+    // 2026-09-16 (Nate: "change the main example of ETH to AAPL on
+    // robinhood"): the hero leads with a tokenized stock. Everything that
+    // names the example's venue or feed derives it from the pair: the stage
+    // header (venueLabel) and the social card, whose venue, feed and 24h move
+    // used to be typed for Coinbase. The venue band keeps its own symbol
+    // (VENUE_BAND.symbol). Pick another hero symbol → re-pin consciously.
+    const mkts = await import('../lib/markets')
+    const heroSym = mc.HERO_REEL[0].symbol
+    const heroPair = chartPairFor(heroSym)
+    const heroHtml = home.slice(home.indexOf('data-landing-hero'), home.indexOf('data-venue-band'))
+    const heroSrc = fsMod.readFileSync('components/landing/LandingHero.tsx', 'utf8')
+    check(
+      'mk2/landing: the hero leads with a Robinhood Chain stock — beat 0 is a robinhood pair, the stage header SSRs "<company> · <venue>" from the pair (never a typed "Coinbase spot"), the CTA opens its /t page, and the social card reads the same symbol with no typed venue or feed',
+      heroPair?.source === 'robinhood' &&
+        heroHtml.includes(`${mkts.symbolName(heroSym)} · ${mkts.venueLabel(heroPair)}`) &&
+        heroHtml.includes(`href="/t/${heroPair.symbol}"`) &&
+        /venueLabel\(pair\)/.test(heroSrc) && !/Coinbase spot/.test(heroSrc) &&
+        /loadSeries\(beat\.symbol\)/.test(ogSrc) && /venueLabel\(pair\)/.test(ogSrc) && !/COINBASE|LANDING_SYMBOL/.test(ogSrc),
+      `sym=${heroSym} source=${heroPair?.source ?? '-'}`,
+    )
+    const multiLeg = mc.HERO_REEL.filter((b) => b.legs.length > 1)
+    check(
+      'mk2/landing: a reel beat that draws more than one leg is ONE job — it compiles through the jobs registry to at least as many steps as it draws, so the HUD never shows a compound the compiler splits or drops',
+      multiLeg.length >= 1 &&
+        multiLeg.every((b) => {
+          const j = compileJobAsk(b.ask)
+          return !!j && 'steps' in j && j.steps.length >= b.legs.length
+        }),
+      multiLeg.map((b) => {
+        const j = compileJobAsk(b.ask)
+        return `${b.symbol}:${j && 'steps' in j ? j.steps.length : 'no job'}`
+      }).join(' '),
+    )
+    const landingCss = fsMod.readFileSync('components/landing/landing.css', 'utf8')
+    const cssRule = (sel: string) => (landingCss.match(new RegExp(`^\\${sel} \\{[^}]*\\}`, 'm')) ?? [''])[0]
+    check(
+      'mk2/landing: the receipt strip wraps, never clips — the ask clamps at two lines and no ask, leg or ending rule is nowrap (a clipped ask hid "…, then buy $40 of AAPL"; a clipped leg hid its fee)',
+      /-webkit-line-clamp: 2/.test(cssRule('.lh__rcptask')) &&
+        ['.lh__rcptask', '.lh__rcptleg', '.lh__rcptend'].every((sel) => cssRule(sel) !== '' && !/nowrap/.test(cssRule(sel))),
+    )
+    // The strip is positioned from the PLOT (MarketChart's overlay slot), not
+    // the chart container: a stock's footer wraps to two lines and pushed the
+    // container-anchored strip 40px over the time axis at 1440.
+    const plotAt = heroHtml.indexOf('class="mkt-chart__canvas')
+    const stripAt = heroHtml.indexOf('class="lh__rcpt')
+    const footAt = heroHtml.indexOf('class="mkt-chart__foot')
+    check(
+      'mk2/landing: the receipt strip renders inside the plot wrapper (before the chart footer) and anchors above the time axis, not off the container',
+      plotAt >= 0 && stripAt > plotAt && footAt > stripAt && /bottom: 32px/.test(cssRule('.lh__rcpt')) && !/\.lh__rcpt \{[^}]*bottom: 96px/.test(landingCss),
+      `plot=${plotAt} strip=${stripAt} foot=${footAt}`,
+    )
   }
 
   // ── MK2/AI ── the chart that talks (squad 2026-09-15). The server under

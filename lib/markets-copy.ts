@@ -259,18 +259,28 @@ export interface ReelBeat {
 
 const HL_FEE_PCT = `${(HL_BUILDER_FEE_TENTH_BPS / 1000).toFixed(2)}%`
 
+/** The reel leads with a tokenized stock on Robinhood Chain (Nate,
+ *  2026-09-16: "change the main example of ETH to AAPL on robinhood"). Beat
+ *  0 is the front door's main example: the first frame, the crawler's
+ *  sentence, the social card. Venues are what the build settles on today
+ *  (GET /api/markets/routes?symbol=AAPL: "Uniswap v3 on Robinhood Chain (USDG
+ *  pool)"; the Base funding row: "two funding legs + a wait + the buy — one
+ *  job card", no Pantessa fee on the funding legs, so that leg names none). */
 export const HERO_REEL: ReelBeat[] = [
   {
-    symbol: 'ETH',
-    ask: 'Buy $50 of ETH',
-    legs: [{ venue: 'Uniswap', line: `Uniswap v3 · Base · $50 → ETH · fee ${SWAP_FEE_PCT}` }],
+    symbol: 'AAPL',
+    ask: 'Buy $50 of AAPL',
+    legs: [{ venue: 'Uniswap', line: `Uniswap v3 · Robinhood Chain · $50 → AAPL · fee ${SWAP_FEE_PCT}` }],
     ending: { kind: 'receipt', line: 'filled · signed by your wallet · receipted' },
   },
   {
-    symbol: 'ETH',
-    ask: 'Stake 0.05 ETH with Lido',
-    legs: [{ venue: 'Lido', line: 'Lido · Ethereum · 0.05 ETH → stETH · fee 0' }],
-    ending: { kind: 'receipt', line: 'staked · signed by your wallet · earning' },
+    symbol: 'AAPL',
+    ask: 'Fund Robinhood Chain with $50 from Base including gas, then buy $40 of AAPL',
+    legs: [
+      { venue: 'LiFi', line: 'LiFi · Base → Robinhood Chain · $50 → USDG + gas' },
+      { venue: 'Uniswap', line: `Uniswap v3 · Robinhood Chain · $40 → AAPL · fee ${SWAP_FEE_PCT}` },
+    ],
+    ending: { kind: 'receipt', line: 'one job · waited for the bridge · bought' },
   },
   {
     symbol: 'HYPE',
@@ -298,12 +308,10 @@ export interface LandingVenue {
   ask: string
   /** What the live number IS, said honestly when we can't read it. */
   stat: string
-  /** The symbol whose route feeds this card when it isn't LANDING_SYMBOL
+  /** The symbol whose route feeds this card when it isn't VENUE_BAND.symbol
    *  (Robinhood Chain has no ETH row — the stock card reads AAPL's). */
   symbol?: string
 }
-
-export const LANDING_SYMBOL = 'ETH'
 
 export const LANDING_VENUES: LandingVenue[] = [
   { key: 'uniswap', name: 'Uniswap', kind: 'spot', chain: 'Base', ask: 'Buy $50 of ETH', stat: 'pool quote' },
@@ -317,6 +325,12 @@ export const LANDING_VENUES: LandingVenue[] = [
 ]
 
 export const VENUE_BAND = {
+  /** The symbol the band orbits. ETH on purpose, while the hero leads with
+   *  AAPL: the band's claim is "every way your wallet can act on it", and ETH
+   *  has the most ways (spot, limit, perp, lend, stake, fund, schedule). A
+   *  Robinhood Chain stock has buy, sell, DCA and funding (lib/symbol-venues),
+   *  so its card here reads AAPL's own route. */
+  symbol: 'ETH',
   eyebrow: 'EVERY DAPP, ONE CHART',
   h2: 'One symbol. Every way your wallet can act on it.',
   sub: 'Spot, limit, perp, lend, stake, fund, 24/7 stock, schedule — each venue live around the chart, one chip each, and a compound ask compiles into one signed job. A charting subscription shows you the window. This is the door.',

@@ -118,6 +118,12 @@ export interface MarketChartProps {
   /** The connected wallet's own signed executions on this symbol — a receipt
    *  glyph per fill on its bar, in the venue's series ink (lib/chart-fills). */
   fills?: FillMarker[]
+  /** Drawn over the plot, inside the canvas wrapper — so it positions against
+   *  the plot and the time axis, never the footer, whose height changes (a
+   *  stock's session legend wraps it to two lines). Must be
+   *  pointer-transparent: the chart keeps its gestures. The landing's
+   *  rehearsal strip rides here. */
+  overlay?: ReactNode
 }
 
 interface CandlesResponse {
@@ -324,6 +330,7 @@ export default function MarketChart({
   onViewport,
   compare,
   fills,
+  overlay,
 }: MarketChartProps) {
   const fill = heightProp === 'fill'
   const pair = useMemo(() => chartPairFor(symbol), [symbol])
@@ -1228,6 +1235,7 @@ export default function MarketChart({
           pending={pending}
           hover={hover}
         />
+        {overlay}
         {noteDraft && (
           <form
             className="mkt-pop mkt-pop--note"
