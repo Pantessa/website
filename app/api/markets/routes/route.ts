@@ -10,11 +10,18 @@ import { AAVE_MCP } from '@/lib/aave-exec'
 import { LIDO_MCP } from '@/lib/lido-stake'
 import { hlInfo } from '@/lib/hl-guardian-store'
 import { CROSS_CHAIN_FEE_BPS, HL_BUILDER_FEE_TENTH_BPS, SWAP_FEE_BPS } from '@/lib/fees'
+import { HL_EXEC_SLIPPAGE_BPS } from '@/lib/hyperliquid-exec'
+import { LIFI_MAX_QUOTE_SHORTFALL_BPS } from '@/lib/lifi-venue'
 import {
   DEFAULT_ROUTE_USD,
   missingVenueNotes,
   venuesFor,
+  GAS_FLOOR_ETH,
+  VENUE_CHAIN_LABELS,
+  ROUTE_TICKET_NOTE,
+  SETTLES,
   type RouteQuote,
+  type RouteTicket,
   type RoutesResponse,
   type VenueRoute,
 } from '@/lib/symbol-venues'
@@ -160,6 +167,51 @@ const feeBpsOf = (fee: VenueRoute['fee']): number => {
 const fmtUsd = (n: number): string =>
   n >= 1000 ? `$${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : n >= 1 ? `$${n.toFixed(2)}` : `$${n.toPrecision(3)}`
 
+
+// ── The order ticket per row (no build, no wallet, no address) ─────────────
+const SWAP_SLIPPAGE_BPS = 50 // every swap builder's default (uniswap-venue / v4 / lifi / cow-build)
+const gasLine = (chainId: number): string | null => {
+  const floor = GAS_FLOOR_ETH[chainId]
+  return floor ? `≈ ${floor} ETH floor on ${VENUE_CHAIN_LABELS[chainId] ?? chainId}` : null
+}
+const fmtUnits = (n: number, sym: string) => `${n >= 1000 ? n.toFixed(0) : n >= 1 ? n.toFixed(4) : n.toPrecision(4)} ${sym}`
+function ticketFor(r: VenueRoute, feeBps: number, amount: number, sym: string, ctx: { spot?: { usdPerToken: number; tokenOut: number }; hl?: HlCtx | null; stock?: { usdPerToken: number; tokenOut: number; quoteUsd: number } | null; lev?: number }): RouteTicket {
+  const feeUsd = Math.round(((amount * feeBps) / 10_000) * 100) / 100
+  const base = { feeBps, feeUsd, settles: SETTLES[r.venue] ?? r.venue, note: ROUTE_TICKET_NOTE }
+  switch (r.kind) {
+    case 'spot': {
+      const out = ctx.spot ? ctx.spot.tokenOut * (1 - feeBps / 10_000) : null
+      return { ...base, out: out != null ? (r.side === 'buy' ? fmtUnits(out, sym) : `≈ $${(amount * (1 - feeBps / 10_000)).toFixed(2)} USDC`) : null, slippageBps: SWAP_SLIPPAGE_BPS, minOut: out != null ? (r.side === 'buy' ? fmtUnits(out * (1 - SWAP_SLIPPAGE_BPS / 10_000), sym) : `≈ $${(amount * (1 - feeBps / 10_000) * (1 - SWAP_SLIPPAGE_BPS / 10_000)).toFixed(2)} USDC`) : null, gas: gasLine(r.chainId), signs: 'approve (if needed) + swap — one card, deadline-watched' }
+    }
+    case 'limit': {
+      const m = r.ask.match(/(?:buy|sell) ([\d.]+) \w+ for at (?:most|least) ([\d.]+) USDC/)
+      return { ...base, out: m ? (r.side === 'buy' ? `${m[1]} ${sym} (at-or-better)` : `${m[2]} USDC (at-or-better)`) : null, slippageBps: null, minOut: m ? (r.side === 'buy' ? `${m[1]} ${sym}` : `${m[2]} USDC`) : null, gas: null, signs: 'EIP-712 order — gasless, cancel any time' }
+    }
+    case 'stock': {
+      const px = ctx.stock?.usdPerToken
+      const out = px ? (amount * (1 - feeBps / 10_000)) / px : null
+      return { ...base, out: out != null ? (r.side === 'buy' ? fmtUnits(out, sym) : `≈ $${(amount * (1 - feeBps / 10_000)).toFixed(2)} USDG`) : null, slippageBps: SWAP_SLIPPAGE_BPS, minOut: out != null ? (r.side === 'buy' ? fmtUnits(out * (1 - SWAP_SLIPPAGE_BPS / 10_000), sym) : null) : null, gas: gasLine(4663), signs: 'approve (if needed) + swap on Robinhood Chain — one card' }
+    }
+    case 'perp': {
+      const lev = ctx.lev ?? null
+      const collateral = lev ? amount / lev : null
+      return { ...base, out: ctx.hl ? `${(amount / ctx.hl.markPx).toPrecision(4)} ${sym} at $${ctx.hl.markPx}${lev ? ` · ${lev}x = $${collateral!.toFixed(2)} collateral` : ' · account leverage'}` : null, slippageBps: HL_EXEC_SLIPPAGE_BPS, minOut: ctx.hl ? `fills within ${HL_EXEC_SLIPPAGE_BPS / 100}% of mark (IOC)` : null, gas: null, signs: lev ? 'L1 actions: set leverage (1/2) + order (2/2) — consent-signed, no gas' : 'L1 order action — consent-signed, no gas' }
+    }
+    case 'lend':
+      return { ...base, out: r.side === 'buy' ? `$${amount} of ${sym} supplied (aToken)` : `${amount} USDC borrowed`, slippageBps: null, minOut: null, gas: gasLine(1), signs: r.side === 'buy' ? 'approve (if needed) + supply — pinned selector' : 'borrow — health factor previewed first' }
+    case 'stake':
+      return { ...base, out: `${r.ask.match(/Stake ([\d.]+) ETH/)?.[1] ?? '?'} stETH (1:1)`, slippageBps: null, minOut: null, gas: gasLine(1), signs: 'submit() — one transaction, gas buffer kept' }
+    case 'dca':
+      return { ...base, out: 'a guarded buy each period, sized fresh', slippageBps: SWAP_SLIPPAGE_BPS, minOut: null, gas: gasLine(r.chainId), signs: 'a schedule row now; each period’s swap is its own card' }
+    case 'protect':
+      return { ...base, out: r.venue === 'hyperliquid' ? 'a Guardian policy on your live perp' : 'a one-shot Spend Permission on Base', slippageBps: r.venue === 'hyperliquid' ? HL_EXEC_SLIPPAGE_BPS : 300, minOut: r.venue === 'hyperliquid' ? null : 'independent 3% floor at sweep', gas: null, signs: r.venue === 'hyperliquid' ? 'delegated agent — personal_sign consent' : 'EIP-712 Spend Permission (smart wallets)' }
+    case 'fund':
+      return r.venue === 'near'
+        ? { ...base, out: `≈ $${(amount * (1 - feeBps / 10_000)).toFixed(2)} of ${sym} on the destination`, slippageBps: null, minOut: 'the 1Click quote, guard-verified to the deposit', gas: gasLine(r.chainId), signs: 'one deposit transfer to a one-time address' }
+        : { ...base, out: `USDG + gas on Robinhood Chain, then the buy`, slippageBps: LIFI_MAX_QUOTE_SHORTFALL_BPS, minOut: `≥ ${100 - LIFI_MAX_QUOTE_SHORTFALL_BPS / 100}% of our own quote`, gas: gasLine(r.chainId), signs: 'two funding legs + a wait + the buy — one job card' }
+  }
+}
+
 async function compose(sym: string, amount: number, lastIn: number | null, leverage: number | undefined): Promise<RoutesResponse> {
   const pair = chartPairFor(sym)!
   let last = lastIn
@@ -262,6 +314,8 @@ async function compose(sym: string, amount: number, lastIn: number | null, lever
     }
   })
 
+  const withTickets: RouteQuote[] = quoted.map((r) => ({ ...r, ticket: ticketFor(r, r.feeBps, amount, sym, { spot: spot.get(r.chainId), hl, stock, lev: leverage }) }))
+
   return {
     symbol: sym,
     source: pair.source,
@@ -269,7 +323,7 @@ async function compose(sym: string, amount: number, lastIn: number | null, lever
     last,
     lastDerived: lastIn === null && last !== null ? true : undefined,
     leverage: leverage ?? null,
-    routes: quoted,
+    routes: withTickets,
     notes: missingVenueNotes(sym, pair),
     failed,
     updatedAt: new Date().toISOString(),
