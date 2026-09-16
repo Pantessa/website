@@ -10,11 +10,12 @@
 
 import { pickChips, splitChipsLine, type AiChip } from './markets-ai'
 
-/** The model the markets AI runs on: its own env, else the planner's, else
+/** The model the markets AI runs on: `MK2_AI_MODEL` (the one env Nate flips;
+ *  QA's ask), else `MARKETS_AI_MODEL`, else the planner's, else
  *  the planner's default — the route's known-good model (README §10: the
  *  brief "defaults to the latest Claude model the route uses"). The
  *  claude-api skill's own default is `claude-opus-5`; flipping is one env. */
-export const MARKETS_AI_MODEL = process.env.MARKETS_AI_MODEL || process.env.PLANNER_MODEL || 'claude-haiku-4-5-20251001'
+export const MARKETS_AI_MODEL = process.env.MK2_AI_MODEL || process.env.MARKETS_AI_MODEL || process.env.PLANNER_MODEL || 'claude-haiku-4-5-20251001'
 const TIMEOUT_MS = 45_000
 
 export function modelMocked(): boolean {
