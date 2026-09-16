@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { RefreshCw, Sparkles } from 'lucide-react'
 import { useSession } from '@/lib/session'
+import { useAskDoor } from '@/lib/ask-door'
 import { TAPE_FOOTNOTE } from '@/lib/markets-copy'
 import type { ChartPair, ChartTf } from '@/lib/charts'
 import type { AiChip, BriefEvent } from '@/lib/markets-ai'
@@ -120,6 +121,14 @@ export default function AiBrief({ symbol, pair, tf = '1h', onAsk }: AiBriefProps
     })()
     return () => ctrl.abort()
   }, [walletAddress, phase, pair.symbol, tf])
+
+  // The ⌘K door's suggestion row shows this brief's chips while the page is
+  // up (lib/ask-door askDoorChips merges them on /t/<sym>).
+  const setBriefChips = useAskDoor((s) => s.setBriefChips)
+  useEffect(() => {
+    setBriefChips(chips.length ? { symbol: pair.symbol, chips: chips.map((c) => ({ label: c.label, ask: c.ask })) } : null)
+    return () => setBriefChips(null)
+  }, [chips, pair.symbol, setBriefChips])
 
   const paragraphs = text.split(/\n\n+/).filter((p) => p.trim())
   const streaming = phase === 'streaming'

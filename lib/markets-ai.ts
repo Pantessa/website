@@ -183,7 +183,10 @@ export function chipMenu(input: MenuInput): AiChip[] {
     if (last && tech.pivots) {
       for (const level of [tech.pivots.classic.s1, tech.pivots.classic.r1]) {
         for (const o of composeLineActions({ symbol: pair.symbol, source: pair.source, price: level, last })) {
-          if (o.action.kind === 'limit' || o.action.kind === 'stop') push(o.action.kind, `${o.label} · $${askPrice(level)}`, o.action.ask)
+          // The line chips say "Buy here"; a brief chip has no line to point
+          // at, so it names the symbol and the price.
+          const label = o.label === 'Buy here' ? `Buy ${pair.symbol} at $${askPrice(level)}` : o.label === 'Sell here' ? `Sell ${pair.symbol} at $${askPrice(level)}` : `Stop under $${askPrice(level)}`
+          if (o.action.kind === 'limit' || o.action.kind === 'stop') push(o.action.kind, label, o.action.ask)
         }
       }
     }
