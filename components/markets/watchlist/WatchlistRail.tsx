@@ -136,17 +136,22 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
     redirectFor: promptHref,
   })
 
-  // WHICH chips may run on arrival. Two rules, both about not opening the app
-  // with a refusal:
+  // WHICH chips may run on arrival. Three rules, all about not opening the app
+  // with a refusal or a guess:
   //  · the ask must be one the PAGE composed from its own templates — a fired
   //    alert carries whatever string `createAlert` stored, which nothing pins;
   //  · the symbol must have an EVM home. The rail's blind "Buy $10 of <sym>"
   //    is honest for ETH or AAPL and lands a clarify for SOL, XRP or DOGE
   //    ("SOL lives on Solana"), and the first thing after tapping BUY should
-  //    not be a refusal.
+  //    not be a refusal;
+  //  · and it must be longer than one character. A one-letter stock ticker
+  //    (F, P) never parses — #739 covered caps up to three letters, length 1
+  //    is still a gap in main — so "Buy $10 of F" falls to the PLANNER, and a
+  //    planner answer is no better a welcome than a clarify.
   // Everything else keeps today's behaviour exactly: the ask lands in the
   // composer and the visitor reads it before pressing send.
   const handoffable = useCallback((sym: string) => {
+    if (sym.length <= 1) return false
     const pair = chartPairFor(sym)
     if (!pair) return false
     return venuesFor(sym, pair, { usd: 10 }).some((r) => (r.kind === 'spot' || r.kind === 'stock') && r.side === 'buy')
