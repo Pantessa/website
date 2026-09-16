@@ -2,6 +2,7 @@ import { connectorsForWallets } from '@rainbow-me/rainbowkit'
 import {
   coinbaseWallet,
   metaMaskWallet,
+  phantomWallet,
   rainbowWallet,
   walletConnectWallet,
   injectedWallet,
@@ -56,6 +57,9 @@ const WALLET_FACTORIES: Record<WalletLaneId, Parameters<typeof connectorsForWall
   injected: injectedWallet,
   metaMask: metaMaskWallet,
   coinbase: coinbaseWallet,
+  // Injected-only (namespace `phantom.ethereum`); RainbowKit dedupes it
+  // against the EIP-6963 announce by rdns, so an installed Phantom lists once.
+  phantom: phantomWallet,
   rainbow: rainbowWallet,
   walletConnect: walletConnectWallet,
 }
