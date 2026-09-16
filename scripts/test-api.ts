@@ -196,7 +196,7 @@ import { isCacheable, routeCacheKey, getCached, setCached, clearRouteCache } fro
 import { routeSavings } from '../lib/route-telemetry'
 import { portfolioFromToolResult, portfolioOf } from '../lib/portfolio-display'
 import { jobContextFor } from '../lib/job-context'
-import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/swap-intent'
+import { crossChainAgentOf, detectCrossChain, pickSwapVenue, swapWorkingContext } from '../lib/swap-intent'
 import { buildUniswapV4Swap, encodeV4SwapCalldata, guardUniswapV4Build, NoV4PoolError, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
 import { guardLifiBuild, isLifiNoRouteMessage, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
 import { clampNativeSellAtoms, fillableLeg, FUNDING_ALT_USDC, FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, fundingAltUsdcFor, fundingNeedUsd, listWords, fundingSourceSymbols, LIFI_LEG_FLAT_USD, MIN_VALUE_LEG_USD, minLegNote, offChainStableSource, ROBINHOOD_CHAIN_ID, STABLE_LEG_MIN_OUT_BPS, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
@@ -281,7 +281,7 @@ import {
   usdcAtomsToHuman,
   SPEND_PERMISSION_MANAGER,
 } from '../lib/dca-auto'
-import { ADDRESS_THIS, SWAP_ROUTER_02_ABI, buysNativeEth, guardUniswapV3Build, type V3GuardExpectations } from '../lib/uniswap-venue'
+import { ADDRESS_THIS, SWAP_ROUTER_02_ABI, guardUniswapV3Build, type V3GuardExpectations } from '../lib/uniswap-venue'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
   VIA_RE,
@@ -295,7 +295,7 @@ import {
 } from '../lib/share-receipts'
 import { EXAMPLE_PROMPTS } from '../lib/examples'
 import { swapFeeAtoms, SWAP_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS, HL_BUILDER_FEE_TENTH_BPS, HL_BUILDER_MAX_FEE_RATE } from '../lib/fees'
-import { APP_CHAINS, chainById, chainByKey, chainNamedIn, explorerTokenUrl, primaryStable, publicClientFor, robinhoodChain, sanitizeChainId, serverRpcEndpoints } from '../lib/chains'
+import { APP_CHAINS, buysNativeEth, chainById, chainByKey, chainNamedIn, explorerTokenUrl, primaryStable, publicClientFor, robinhoodChain, sanitizeChainId, serverRpcEndpoints } from '../lib/chains'
 import { WALLET_CHAINS } from '../lib/wallet-chains'
 import { parseCrossChainSwap, guardCrossChainBuild, expectedOriginChainId, parseCrossChainFollowUp, crossChainPending, crossChainValueUsd , VENUE_SHARE_MAX_BPS } from '../lib/cross-chain-swap'
 import {
@@ -9198,6 +9198,37 @@ async function main() {
         !guardUniswapV3Build({ ...ethFeeGood, swapTx: { ...ethFeeGood.swapTx, data: '0xdeadbeef' } }, expEth).ok,
     )
 
+    // The venue pick: a MARKET buy of native ETH builds on Uniswap v3 (the
+    // unwrap) even when nothing in the set asks for Uniswap, because a CoW
+    // order would hand over WETH. That is the stranger's /t/ETH "Buy $50 of
+    // ETH" chip, whose composed set is NEAR Intents alone. Naming CoW, a limit
+    // order, or any non-ETH buy keeps the old pick.
+    const pv = (message: string, o: { buyToken?: string; mode?: 'swap' | 'limit'; chainId?: number; uni?: boolean; cow?: boolean } = {}) =>
+      pickSwapVenue({ message, intent: { buyToken: o.buyToken ?? 'ETH', mode: o.mode ?? 'swap' }, chainId: o.chainId ?? 8453, uniActive: o.uni ?? false, cowActive: o.cow ?? false })
+    check(
+      'venue pick: a market buy of ETH with no swap app in the set builds on Uniswap (native-eth-buy), on every chain with a CoW book',
+      pv('Buy $50 of ETH').venue === 'uniswap' && pv('Buy $50 of ETH').reason === 'native-eth-buy' &&
+        pv('Buy $50 of eth on arbitrum', { chainId: 42161 }).reason === 'native-eth-buy' &&
+        pv('Buy $50 of ETH on ethereum', { chainId: 1 }).reason === 'native-eth-buy',
+      JSON.stringify(pv('Buy $50 of ETH')),
+    )
+    check(
+      'venue pick: CoW stays for a WETH buy, any other token, a limit buy of ETH, an ask that names CoW, and a set that marks CoW active',
+      pv('Buy $50 of WETH', { buyToken: 'WETH' }).venue === 'cow' &&
+        pv('Buy $50 of UNI', { buyToken: 'UNI' }).venue === 'cow' &&
+        pv('limit order: buy 0.02 ETH for at most 40 USDC', { mode: 'limit' }).venue === 'cow' &&
+        pv('Buy $50 of ETH on cow swap').venue === 'cow' &&
+        pv('Buy $50 of ETH via CoW').venue === 'cow' &&
+        pv('Buy $50 of ETH', { uni: true, cow: true }).reason === 'native-eth-buy',
+    )
+    check(
+      'venue pick: the old rules hold (uni named, Uniswap-only set, no CoW book on Robinhood Chain and Optimism)',
+      pv('swap 1 USDC for WETH on uni', { buyToken: 'WETH' }).reason === 'named-uniswap' &&
+        pv('swap 1 USDC for WETH', { buyToken: 'WETH', uni: true }).reason === 'set-uniswap' &&
+        pv('Buy $50 of WETH on robinhood', { buyToken: 'WETH', chainId: 4663 }).reason === 'no-cow-book' &&
+        pv('Buy $50 of WETH on optimism', { buyToken: 'WETH', chainId: 10 }).reason === 'no-cow-book',
+    )
+
     // v4 has no guarded unwrap: a buy of ETH there refuses by name before any
     // quote (never a WETH payout under an ETH label).
     let v4EthBuy = ''
@@ -16187,6 +16218,74 @@ async function main() {
       ethRefresh.status === 200 && (er.pending === true || !!er.tx || (er.blocked === true && !/Build failed verification/.test(er.reasons ?? ''))),
       JSON.stringify(er).slice(0, 160),
     )
+
+    // The stranger's /t/ETH chip, live through chat: "Buy $1 of ETH" with the
+    // set that chip composes (NEAR Intents only, no swap app) must build the
+    // v3 unwrap to the payer, not a CoW order for WETH. It needs a wallet that
+    // holds the USDC and a little Base gas, so it reads as the .env.local
+    // burner (read-only: nothing is signed). An underfunded burner skips by name.
+    const envFs = await import('node:fs')
+    const pkRaw = (() => {
+      try {
+        return envFs.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+      } catch {
+        return null
+      }
+    })()
+    if (!pkRaw) {
+      check('venue pick (live chat): no burner key in .env.local — skipped', true)
+    } else {
+      const burner = privateKeyToAccount((pkRaw.startsWith('0x') ? pkRaw : `0x${pkRaw}`) as `0x${string}`)
+      const baseClient = publicClientFor(8453)
+      let usdcHeld = BigInt(-1)
+      let gasHeld = BigInt(-1)
+      try {
+        ;[usdcHeld, gasHeld] = await Promise.all([
+          baseClient!.readContract({ address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', abi: erc20Abi, functionName: 'balanceOf', args: [burner.address] }),
+          baseClient!.getBalance({ address: burner.address }),
+        ])
+      } catch {
+        /* unreadable → skipped by name below */
+      }
+      if (usdcHeld < BigInt(1_500_000) || gasHeld < BigInt(300_000_000_000_000)) {
+        check('venue pick (live chat): skipped — the burner needs ≥1.5 USDC and ≥0.0003 ETH on Base', true, `usdc=${usdcHeld} eth=${gasHeld}`)
+      } else {
+        let chipTurn: { buildPath?: string; reply?: string; txChain?: { steps?: { label: string; tx?: { data?: string } }[] }; orderRequest?: unknown } = {}
+        for (let attempt = 0; attempt < 3 && !chipTurn.buildPath; attempt++) {
+          if (attempt) await new Promise((r) => setTimeout(r, 2500 * attempt))
+          chipTurn = await fetch(`${BASE}/api/chat`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1', 'x-yf-internal-run': '1' },
+            body: JSON.stringify({
+              message: 'Buy $1 of ETH',
+              activeServers: [{ slug: 'near-intents-mcp-yeetful', name: 'NEAR Intents (Free)', kind: 'data', callable: true }],
+              history: [],
+              walletAddress: burner.address,
+            }),
+          })
+            .then((r) => r.text())
+            .then((t) => (t ? JSON.parse(t) : {}))
+            .catch(() => ({}))
+        }
+        const chipSwap = chipTurn.txChain?.steps?.find((s) => s.label === 'swap')
+        let payout = ''
+        let payoutTo = ''
+        try {
+          const mc = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: (chipSwap?.tx?.data ?? '0x') as `0x${string}` })
+          const inner = (mc.args as readonly [bigint, readonly `0x${string}`[]])[1]
+          const pay = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: inner[1] })
+          payout = pay.functionName
+          payoutTo = String((pay.args as readonly unknown[])[1])
+        } catch {
+          /* red below */
+        }
+        check(
+          'venue pick (live chat): the stranger chip "Buy $1 of ETH" (NEAR Intents set) builds the Uniswap v3 unwrap to the payer, never a CoW WETH order',
+          chipTurn.buildPath === 'native-swap-uniswap' && !chipTurn.orderRequest && /^unwrapWETH9/.test(payout) && payoutTo.toLowerCase() === burner.address.toLowerCase(),
+          `buildPath=${chipTurn.buildPath} payout=${payout || 'none'} reply=${String(chipTurn.reply ?? '').slice(0, 120)}`,
+        )
+      }
+    }
   }
 
   console.log('— panel swap')

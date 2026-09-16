@@ -35,9 +35,9 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeFunctionData, erc20Abi } from 'viem'
-import { chainById, publicClientFor } from '@/lib/chains'
+import { buysNativeEth, chainById, publicClientFor } from '@/lib/chains'
 import { resolveToken, tokenDecimals, tokenLabel, humanToAtoms, formatAtoms } from '@/lib/cow'
-import { buysNativeEth, stableUsd, UNISWAP_POLICY_HOST } from '@/lib/uniswap-venue'
+import { stableUsd, UNISWAP_POLICY_HOST } from '@/lib/uniswap-venue'
 import {
   buildReport,
   policyCheck,
@@ -667,9 +667,9 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
   //
   // A BUY of "ETH" is refused here instead: this build would pay WETH under
   // an ETH label, and there is no guarded unwrap in it. Only v3 unwraps to
-  // native ETH (lib/uniswap-venue.ts), and v3 has a WETH pool for every pair
-  // probed on Robinhood Chain (USDG, AAPL, TSLA, NVDA, AMD, SPY — 2026-09-16)
-  // while v4 has none, so this is a no-route today, never a WETH delivery.
+  // native ETH (lib/uniswap-venue.ts). Probed on Robinhood Chain 2026-09-16:
+  // v3 quotes USDG, AAPL, TSLA, NVDA, AMD and SPY into WETH, and v4 quoted
+  // none of the stock pairs, so today an ETH buy never reaches this line.
   if (buysNativeEth(params.buyToken, chainId)) {
     throw new NoV4PoolError(
       `Uniswap v4 on ${chain.name} can't deliver native ETH, and Uniswap v3 has no pool for ${tokenLabel(params.sellToken, chainId)} → ETH there.`,

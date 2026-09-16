@@ -25,7 +25,7 @@
 
 import { decodeFunctionData, encodeFunctionData, erc20Abi } from 'viem'
 import { publicClient } from '@/lib/auth'
-import { chainById, publicClientFor } from '@/lib/chains'
+import { buysNativeEth, chainById, publicClientFor } from '@/lib/chains'
 import { resolveToken, tokenDecimals, tokenLabel, humanToAtoms, formatAtoms } from '@/lib/cow' // cross-app token utils (per-chain maps + atoms math)
 import {
   buildReport,
@@ -159,21 +159,6 @@ export const SWAP_ROUTER_02_ABI = [
 
 /** SwapRouter02's "pay the router itself" recipient sentinel. */
 export const ADDRESS_THIS = '0x0000000000000000000000000000000000000002' as const
-
-/**
- * Does a buy of `buyToken` on `chainId` mean the chain's NATIVE coin? True
- * only for the literal symbol "ETH" (any case), on a chain whose gas coin is
- * ETH, where the symbol resolves to the registry's wrapped native. "WETH", a
- * raw 0x address, or any other ticker is the ERC-20. Pure (static registry
- * maps only). The v3 builder, the v4 refusal and the DCA autopilot guard's
- * expectation all read this one rule.
- */
-export function buysNativeEth(buyToken: string, chainId: number): boolean {
-  const chain = chainById(chainId)
-  if (!chain || chain.viem.nativeCurrency.symbol !== 'ETH') return false
-  if (buyToken.trim().toUpperCase() !== 'ETH') return false
-  return resolveToken(buyToken, chainId) === chain.wrappedNative.toLowerCase()
-}
 
 // ── The guard (pure, fail-closed) ───────────────────────────────────────────
 

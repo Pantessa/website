@@ -305,6 +305,21 @@ export function primaryStable(chainId: number): { symbol: string; address: `0x${
   return null
 }
 
+/**
+ * Does a buy of `buyToken` on `chainId` mean the chain's NATIVE coin? True
+ * only for the literal symbol "ETH" (any case), on a chain whose gas coin is
+ * ETH, where the pinned "ETH" entry is the registry's wrapped native (the
+ * token every v3 pool quotes). "WETH", a raw 0x address, or any other ticker
+ * is the ERC-20. Pure. The v3 builder's unwrap, the v4 refusal, the chat
+ * route's venue pick and the DCA autopilot guard all read this one rule.
+ */
+export function buysNativeEth(buyToken: string, chainId: number): boolean {
+  const chain = BY_ID.get(chainId)
+  if (!chain || chain.viem.nativeCurrency.symbol !== 'ETH') return false
+  if (buyToken.trim().toUpperCase() !== 'ETH') return false
+  return chain.tokens.ETH?.address.toLowerCase() === chain.wrappedNative.toLowerCase()
+}
+
 /** Explorer token page for a contract on a first-class chain — the ⓘ "more
  *  info" target splash holding rows carry. Accepts a chain id or the human
  *  label rows use ("Ethereum", "Robinhood Chain"); native pseudo-holdings

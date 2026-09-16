@@ -255,7 +255,7 @@ export interface AutoBuyGuardInput {
   chain: { chainId: number; swapRouter02: string; usdcAddress: string }
   /** The buy token's resolved address on this chain (from the official list). */
   expectedBuyAddr: string
-  /** The schedule buys native ETH (lib/uniswap-venue buysNativeEth on the
+  /** The schedule buys native ETH (lib/chains buysNativeEth on the
    *  schedule's own token): the output must be UNWRAPPED to the owner. False
    *  = an ERC-20 schedule, where an unwrap delivers the wrong asset. */
   nativeOut: boolean
