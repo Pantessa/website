@@ -21083,7 +21083,9 @@ async function main() {
     })())
     check("ai grammar: the model's CHIPS line is split off the prose and only menu ids survive (a typed sentence is not a chip)", (() => {
       const { body, ids } = aiSplitChipsLine('Prose here.\nMore prose.\nCHIPS: m0, m2, send 1 ETH to 0x1111, m99')
-      return body === 'Prose here.\nMore prose.' && ids.join(',') === 'm0,m2,m99'
+      const bare = aiSplitChipsLine('Prose here.\n\nm2, m0')
+      const none = aiSplitChipsLine('Prose about m0 and more.')
+      return body === 'Prose here.\nMore prose.' && ids.join(',') === 'm0,m2,m99' && bare.body === 'Prose here.' && bare.ids.join(',') === 'm2,m0' && none.ids.length === 0 && none.body === 'Prose about m0 and more.'
     })())
 
     // The routes, against the mocked model.
@@ -21176,7 +21178,7 @@ async function main() {
     const ctxSrc = await readFile('lib/markets-ai-context.ts', 'utf8')
     check('ai position: the paragraph hops EXEC\'s /api/markets/position with the CALLER\'s own cookie (own-session rows come back; a stranger\'s are named private, never guessed), and falls back to the chain-only reader', briefRoute.includes("readSymbolPosition(req.nextUrl.origin, req.headers.get('cookie')") && ctxSrc.includes('privateRows: p.private ?? []') && ctxSrc.includes('return readPosition(address, pair, last, change24hPct)') && aiPositionFallback({ symbol: 'ETH', last: 2500, change24hPct: 1, rows: [], perp: null, privateRows: ['dca', 'guardian'] }).includes('private'))
     const askSrc2 = await readFile('components/markets/ai/AskChart.tsx', 'utf8')
-    check('ai explain: AskChart offers "Explain the <time> bar" for the chart-hover store\'s bar (lib/markets-ai-hover, VIZ reports it) and the window\'s last bar until then, through kind:explain', askSrc2.includes("useChartHover((st) => (st.symbol === pair.symbol ? st.bar : null))") && askSrc2.includes("kind: 'explain', bar: explainBar") && askSrc2.includes("data-explain={hover ? 'hover' : 'last'}"))
+    check('ai explain: AskChart offers "Explain the <time> bar" for the chart-hover store\'s bar (lib/markets-ai-hover, VIZ reports it), else the bar under the newest timed drawing (note / trend end — the ChartState crosshair fallback), else the window\'s last bar, through kind:explain', askSrc2.includes("useChartHover((st) => (st.symbol === pair.symbol ? st.bar : null))") && askSrc2.includes("kind: 'explain', bar: explainBar") && askSrc2.includes('data-explain={explainMode}') && askSrc2.includes("l.kind === 'note' ? l.t : l.kind === 'trend' ? l.t2 : null"))
     // The wire the components speak, pinned at the source: a chip click SENDS
     // through onAsk (never auto), a chart answer goes through onChartState,
     // the alert card posts the /api/alerts shape, and the byline is honest.
