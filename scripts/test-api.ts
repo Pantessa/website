@@ -228,7 +228,10 @@ import {
   ONRAMP_SOURCE_CURRENCIES,
   ONRAMP_DEFAULT_NETWORK,
   ONRAMP_ETH_KEEP_USD,
+  ONRAMP_ETH_PRICE_CEILING_USD,
+  ONRAMP_LANDING_COST_USD,
   ONRAMP_NETWORK_LABEL,
+  ONRAMP_SETTLE_SLACK_USD,
   ONRAMP_MAX_USD,
   ONRAMP_MIN_USD,
   STRIPE_NETWORK,
@@ -241,6 +244,9 @@ import { fundingPathOf, NEVER_MIND_RESUME_RE } from '../lib/funding-path'
 import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '../lib/turn-status'
 import { classifyFundingBalances, decideFundingTurn, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, gasTopupLegUsd, MIN_LEG_USD, planFundingChips, planGasTopup, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, strandedCoversPlan, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { buyDollarsOf, swapBuyFundChip, swapBuyResume, swapShortfallTurn, type SwapShortfallAsk } from '../lib/swap-shortfall'
+import { laneGasFloorPresetUsd, layerCardKind, layerFundChip, layerShortfallTurn, type LayerShortfallAsk } from '../lib/layer-shortfall'
+import { DEST_GAS_FLOOR_ETH } from '../lib/funding-plan'
+import { ETH_TWO_LEG_HEADROOM_USD } from '../lib/lifi-bridge'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
@@ -7768,6 +7774,229 @@ async function main() {
         process.env.ONRAMP_ENABLED = 'true'
       }
 
+      // ── The card door on a NATIVE LAYER's action the wallet can't fund
+      // (lib/layer-shortfall, 2026-09-16). Prod ask_failures, 45 days,
+      // had_funds=false:
+      // - "I want a 2X Long $12 of HYPE on Hyperliquid, then protect my HYPE
+      //   long with a 5% stop", three times (two strangers on 08-27, 09-04),
+      // - "Supply $25 of USDT to Aave at the best rate" (09-16),
+      // - "Stake 0.05 ETH with Lido" (08-04).
+      // Every reply: "found no movable ETH or USDC … Top up any of those chains
+      // and ask again.", no chip. The NFT buy and the Morpho lend refuse through
+      // the same shape.
+      {
+        const R4 = (reads: [number, number, number][]) =>
+          reads.map(([chainId, nativeEth, usdcBal]) => ({ chainId, chainWord: FUNDING_CHAIN_WORD[chainId], nativeEth, usdcBal }))
+        const EMPTY4 = R4([[8453, 0, 0], [42161, 0, 0], [10, 0, 0], [1, 0, 0]])
+        /** offerFundingPlan's decision over fabricated reads at one ETH price,
+         *  as the refusal the route hands the composer (or null on an offer). */
+        const decideAt = (need: FundingNeed, reads: ReturnType<typeof R4>, ethUsd = 2000) => {
+          const dest = reads.find((r) => r.chainId === need.chainId)
+          const shortEth = need.token === 'ETH' ? 0 : Math.max(0, (DEST_GAS_FLOOR_ETH[need.chainId] ?? 0.0002) - (dest?.nativeEth ?? 0))
+          return decideFundingTurn({
+            need,
+            needUsd: fundingPlanUsd(need.amountHuman, need.token === 'ETH' ? ethUsd : 1),
+            gasUsd: shortEth > 0 ? Math.max(1.5, Math.ceil(shortEth * ethUsd * 1.15 * 2) / 2) : 0,
+            scan: { ...classifyFundingBalances(reads, ethUsd), ethUsd, readChains: reads.map((r) => r.chainWord), failedChains: [] },
+            destChainName: FUNDING_CHAIN_WORD[need.chainId],
+          })
+        }
+        const refusalAt = (need: FundingNeed, reads: ReturnType<typeof R4>, ethUsd = 2000) => {
+          const d = decideAt(need, reads, ethUsd)
+          return d.kind === 'refusal' ? { insufficient: d.insufficient, ...d.facts } : null
+        }
+
+        // The preset floor this lane needed: small plans' 15% was too few
+        // dollars to cover the keep-back at $5,000/ETH.
+        check(
+          'layer card: a preset never lands under the plan plus its fixed landing costs — the 2x HYPE long\'s $9.50 plan opens at $22 (was $21, $0.50 short at $5,000/ETH), a $5 plan at $17; plans over ~$13 keep their 15% headroom unchanged',
+          planFundUsd(9.5) === 22 && planFundUsd(5) === 17 && planFundUsd(12) === 24 && planFundUsd(12.5) === 25 && planFundUsd(58) === 77 &&
+            planFundUsd(12, 'base') === 16 && planFundUsd(100, 'base') === 117,
+          `${planFundUsd(9.5)}/${planFundUsd(5)}/${planFundUsd(12)}/${planFundUsd(12.5)}/${planFundUsd(58)}`,
+        )
+        const keepBackEth = (chainId: number) => {
+          const eth = classifyFundingBalances([{ chainId, chainWord: FUNDING_CHAIN_WORD[chainId], nativeEth: 1, usdcBal: 0 }], 1).sources.find((s) => s.token === 'ETH')
+          return eth ? 1 - eth.balance : Number.NaN
+        }
+        const landingCostOf = (chainId: number) => (keepBackEth(chainId) * ONRAMP_ETH_PRICE_CEILING_USD + (ETH_TWO_LEG_HEADROOM_USD[chainId] ?? 0) + ONRAMP_SETTLE_SLACK_USD).toFixed(2)
+        check(
+          'layer card: ONRAMP_LANDING_COST_USD is re-derived from what it mirrors — the scan\'s keep-back at the price ceiling + the two-leg headroom + the settle slack, on both lanes',
+          landingCostOf(1) === ONRAMP_LANDING_COST_USD.ethereum.toFixed(2) && landingCostOf(8453) === ONRAMP_LANDING_COST_USD.base.toFixed(2),
+          `ethereum ${landingCostOf(1)} vs ${ONRAMP_LANDING_COST_USD.ethereum}, base ${landingCostOf(8453)} vs ${ONRAMP_LANDING_COST_USD.base}`,
+        )
+
+        // THE HL WALL, the exact prod ask from an empty wallet.
+        const hlLong = 'I want a 2X Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop'
+        const hlNeed6: FundingNeed = { chainId: 42161, token: 'USDC', amountHuman: 6, followupResume: `deposit 6 USDC to Hyperliquid, then ${hlLong}`, actionLabel: 'the Hyperliquid position' }
+        const hlAsk: LayerShortfallAsk = {
+          layer: 'hl-open',
+          what: 'go long $12 of HYPE at 2x on Hyperliquid',
+          resume: hlLong,
+          chainId: 42161,
+          token: 'USDC',
+          lead: "🚫 The position needs about $6 of USDC reaching Hyperliquid and the wallet can't cover it yet.",
+          needLine: 'The position needs about $6 of USDC on Hyperliquid as collateral.',
+        }
+        const hlRefusal = refusalAt(hlNeed6, EMPTY4)
+        const hlTurn = hlRefusal ? layerShortfallTurn({ ask: hlAsk, refusal: hlRefusal }) : null
+        const hlChip = hlTurn?.clarify?.options[0]
+        check(
+          'layer card: THE HL WALL — an empty wallet\'s 2x HYPE long reads plainly (the collateral it needs, no "Top up any of those chains"), files under the HL layer, and is answered, not a wall',
+          !!hlTurn && hlTurn.buildPath === 'native-hl-exec' &&
+            /^📈 To go long \$12 of HYPE at 2x on Hyperliquid, this wallet needs money in it first — I checked Base, Arbitrum, Optimism and Ethereum and there's no ETH or USDC here yet\. The position needs about \$6 of USDC on Hyperliquid as collateral\./.test(hlTurn.reply) &&
+            !/found no movable|Top up any of those chains/.test(hlTurn.reply) && /the move to Arbitrum, the Hyperliquid deposit and the position line up as one job for you to sign/.test(hlTurn.reply) &&
+            classifyTurn(hlTurn as unknown as Record<string, unknown>).kind === null,
+          hlTurn?.reply,
+        )
+        check(
+          'layer card: THE HL WALL gets a $22 plan chip + Not now; its resume is the ask itself, which compiles as the 2-step job it was (never "deposit …, then", which would lead with an unfundable deposit)',
+          !!hlChip?.fund && hlChip.fund.completes === undefined && hlChip.fund.presetFiatUsd === 22 && hlChip.fund.network === ONRAMP_DEFAULT_NETWORK &&
+            hlChip.label === 'Add $22 with card or bank → go long $12 of HYPE at 2x on Hyperliquid' && hlChip.resume === hlLong &&
+            simulateLadder(hlChip.resume).gate === 'jobs' && simulateLadder(hlChip.resume).kind === 'action' &&
+            hlTurn?.clarify?.options.length === 2 && NEVER_MIND_RESUME_RE.test(hlTurn.clarify.options[1].resume),
+          JSON.stringify(hlTurn?.clarify),
+        )
+        // The landing: $22 as ETH on Ethereum, at every price the preset is
+        // sized for, re-plans the SAME need into chips whose first compiles as
+        // the funded job (the route compiles it outright, no ok-step).
+        const hlLandings = [2_000, 3_000, 4_000, ONRAMP_ETH_PRICE_CEILING_USD].map((ethUsd) => {
+          const landed = R4([[8453, 0, 0], [42161, 0, 0], [10, 0, 0], [1, (22 - ONRAMP_SETTLE_SLACK_USD) / ethUsd, 0]])
+          const d = decideAt(hlNeed6, landed, ethUsd)
+          const job = d.kind === 'offer' ? compileJobAsk(d.turn.clarify.options[0].resume) : null
+          const builders = job && !('problem' in job) ? job.steps.map((st) => st.builder) : []
+          return { ethUsd, kind: d.kind, ok: builders.includes('native-hl-exec') && builders.includes('native-hl-guardian') && builders[0] === 'native-cross-chain' }
+        })
+        check(
+          'layer card: THE HL WALL\'s $22 landing (ETH on Ethereum) compiles the funded job — move to Arbitrum, deposit, long, stop — at $2k–$5k/ETH',
+          hlLandings.every((l) => l.ok),
+          JSON.stringify(hlLandings),
+        )
+        const hlHeld = layerShortfallTurn({ ask: { ...hlAsk, holdsUnscanned: true }, refusal: hlRefusal! })
+        check(
+          'layer card: money on Hyperliquid the scan can\'t see means NOT empty — the layer\'s lead + the funding refusal stay, and the card rides along ("Or add it …")',
+          hlHeld.reply.startsWith("🚫 The position needs about $6 of USDC reaching Hyperliquid and the wallet can't cover it yet. Across ") &&
+            !/needs money in it first/.test(hlHeld.reply) && /Or add it with a card or bank below — it lands as ETH on Ethereum/.test(hlHeld.reply) && !!hlHeld.clarify?.options[0].fund,
+          hlHeld.reply,
+        )
+
+        // THE AAVE WALL: the card lane IS Ethereum, so the landed ETH pays the
+        // gas the refusal priced a leg for.
+        const aaveNeed: FundingNeed = { chainId: 1, token: 'USDT', amountHuman: 25, followupResume: 'supply 25 USDT to Aave at the best rate', actionLabel: 'the Aave supply' }
+        const aaveAsk: LayerShortfallAsk = {
+          layer: 'aave-supply',
+          what: 'supply 25 USDT to Aave at the best rate',
+          resume: 'Supply 25 USDT to Aave at the best rate',
+          chainId: 1,
+          token: 'USDT',
+          lead: '🏦 The Aave supply needs 25 USDT on Ethereum and the wallet holds 0.',
+        }
+        const aaveRefusal = refusalAt(aaveNeed, EMPTY4)
+        const aaveTurn = aaveRefusal ? layerShortfallTurn({ ask: aaveAsk, refusal: aaveRefusal }) : null
+        const aaveFund = aaveTurn?.clarify?.options[0].fund
+        check(
+          'layer card: THE AAVE WALL — the refusal facts carry the Ethereum gas leg, and the plan chip leaves it out of the preset (the landed ETH is that gas)',
+          !!aaveRefusal && aaveRefusal.gasUsd === 7 && !!aaveFund && aaveFund.presetFiatUsd === planFundUsd(aaveRefusal.needUsd - aaveRefusal.gasUsd) &&
+            aaveFund.presetFiatUsd < planFundUsd(aaveRefusal.needUsd) && aaveTurn?.buildPath === 'native-aave-supply' &&
+            /I'll lay out the swap to USDT and the supply for you to sign/.test(aaveTurn.reply) &&
+            aaveTurn.clarify?.options[0].resume === 'Supply 25 USDT to Aave at the best rate' && simulateLadder('Supply 25 USDT to Aave at the best rate').gate === 'aave-supply',
+          JSON.stringify({ facts: aaveRefusal && { needUsd: aaveRefusal.needUsd, gasUsd: aaveRefusal.gasUsd }, reply: aaveTurn?.reply, fund: aaveFund }),
+        )
+        const tinyAave = refusalAt({ ...aaveNeed, token: 'USDC', amountHuman: 1, followupResume: 'supply 1 USDC to Aave' }, EMPTY4)
+        const tinyChip = tinyAave ? layerFundChip({ ...aaveAsk, what: 'supply 1 USDC to Aave', resume: 'Supply 1 USDC to Aave', token: 'USDC' }, tinyAave) : null
+        check(
+          'layer card: a lane-destination plan chip floors at the preset whose landing clears Ethereum\'s own gas floor at $5,000/ETH ($16: 0.003 ETH × $5,000 + $1)',
+          laneGasFloorPresetUsd() === 16 && tinyChip?.fund?.presetFiatUsd === 16 && planFundUsd(tinyAave ? tinyAave.needUsd - tinyAave.gasUsd : 0) === 15,
+          JSON.stringify({ tinyAave, tinyChip }),
+        )
+
+        // THE LIDO WALL: the delivery IS the stake's ETH — a DIRECT chip.
+        const lidoNeed: FundingNeed = { chainId: 1, token: 'ETH', amountHuman: 0.052, followupResume: 'stake all my ETH on Lido', actionLabel: 'the stake', flexMinAmountHuman: 0.005 }
+        const lidoAsk: LayerShortfallAsk = {
+          layer: 'lido-stake',
+          what: 'stake 0.05 ETH on Lido',
+          resume: 'Stake 0.05 ETH on Lido',
+          chainId: 1,
+          token: 'ETH',
+          lead: '🌊 Staking 0.05 ETH really needs ~0.052 ETH on Ethereum once mainnet gas is counted, and the wallet holds 0 ETH on Ethereum.',
+          needLine: 'Staking 0.05 ETH really needs ~0.052 ETH on Ethereum once mainnet gas is counted.',
+        }
+        const lidoRefusal = refusalAt(lidoNeed, EMPTY4)
+        const lidoTurn = lidoRefusal ? layerShortfallTurn({ ask: lidoAsk, refusal: lidoRefusal }) : null
+        const lidoChip = lidoTurn?.clarify?.options[0]
+        check(
+          'layer card: THE LIDO WALL — a DIRECT chip: preset = the stake\'s own ETH (deliveryFundUsd, no plan headroom or keep-back), no completes (the stake still needs its signature), resume the stake itself',
+          layerCardKind(lidoAsk) === 'direct' && !!lidoRefusal && lidoChip?.fund?.presetFiatUsd === deliveryFundUsd(lidoRefusal.needUsd) &&
+            lidoChip.fund.presetFiatUsd < planFundUsd(lidoRefusal.needUsd) && lidoChip.fund.completes === undefined &&
+            lidoChip.label === `Add $${lidoChip.fund.presetFiatUsd} with card or bank → stake 0.05 ETH on Lido` && lidoChip.resume === 'Stake 0.05 ETH on Lido' &&
+            (() => { const p = parseLidoStake(lidoChip.resume); return !!p && !('problem' in p) && p.amount === '0.05' })() &&
+            !!lidoTurn && /exactly what the stake spends, so nothing gets swapped or bridged, and once it's there I'll build the stake for you to sign/.test(lidoTurn.reply) && lidoTurn.buildPath === 'native-lido',
+          JSON.stringify(lidoTurn),
+        )
+        const lidoLandings = [2_000, 3_000, 4_000, ONRAMP_ETH_PRICE_CEILING_USD].map((ethUsd) => {
+          const r = refusalAt(lidoNeed, EMPTY4, ethUsd)
+          const fund = r ? layerFundChip(lidoAsk, r)?.fund : undefined
+          const landedEth = fund ? (fund.presetFiatUsd - ONRAMP_SETTLE_SLACK_USD) / (ethUsd * 1.05) : 0
+          return { ethUsd, preset: fund?.presetFiatUsd, landedEth: Number(landedEth.toFixed(6)), ok: landedEth >= lidoNeed.amountHuman }
+        })
+        check(
+          'layer card: a direct Lido preset, minted at $2k–$5k/ETH and delivered after a further 5% price move, still lands the stake\'s ETH — the resume builds the stake, it doesn\'t wall again',
+          lidoLandings.every((l) => l.ok),
+          JSON.stringify(lidoLandings),
+        )
+        const guided = refusalAt({ ...lidoNeed, amountHuman: 0.005 }, EMPTY4)
+        const guidedTurn = guided ? layerShortfallTurn({ ask: { ...lidoAsk, what: 'stake ETH on Lido', resume: 'Stake all my ETH on Lido' }, refusal: guided }) : null
+        check(
+          'layer card: a Lido ask with no amount opens its direct chip at the $15 checkout floor and says so; "Stake all my ETH on Lido" sizes itself to what lands',
+          guidedTurn?.clarify?.options[0].fund?.presetFiatUsd === ONRAMP_MIN_USD && /Card checkouts here start at \$15, so it opens there, and whatever the stake doesn't use stays in this wallet\./.test(guidedTurn.reply) &&
+            simulateLadder('Stake all my ETH on Lido').kind === 'action',
+          guidedTurn?.reply,
+        )
+        check(
+          'layer card: DIRECT only when the delivery is the very asset + chain the action spends (ETH on Ethereum); an NFT on Base, USDT on Ethereum and USDC on Arbitrum are PLAN chips',
+          layerCardKind({ chainId: 1, token: 'ETH' }) === 'direct' && layerCardKind({ chainId: 1, token: 'eth' }) === 'direct' &&
+            layerCardKind({ chainId: 8453, token: 'ETH' }) === 'plan' && layerCardKind({ chainId: 1, token: 'USDT' }) === 'plan' && layerCardKind({ chainId: 42161, token: 'USDC' }) === 'plan',
+        )
+
+        // No chip: the money is there, one checkout can't carry it, or the door is closed.
+        const strandedAave = refusalAt(aaveNeed, R4([[8453, 0, 40], [42161, 0, 0], [10, 0, 0], [1, 0, 0]]))
+        const strandedTurn = strandedAave ? layerShortfallTurn({ ask: aaveAsk, refusal: strandedAave }) : null
+        const bigLido = refusalAt({ ...lidoNeed, amountHuman: 0.302 }, EMPTY4)
+        const bigLidoTurn = bigLido ? layerShortfallTurn({ ask: { ...lidoAsk, what: 'stake 0.3 ETH on Lido', resume: 'Stake 0.3 ETH on Lido' }, refusal: bigLido }) : null
+        const bigMorpho = refusalAt({ chainId: 8453, token: 'USDC', amountHuman: 2000, followupResume: 'lend 2000 USDC on morpho', actionLabel: 'the Morpho lend' }, EMPTY4)
+        const bigMorphoTurn = bigMorpho
+          ? layerShortfallTurn({ ask: { layer: 'morpho-lend', what: 'lend 2000 USDC on Morpho on Base', resume: 'Lend 2000 USDC on Morpho on Base', chainId: 8453, token: 'USDC', lead: '🏦 The Morpho lend needs 2000 USDC on Base and the wallet holds 0.' }, refusal: bigMorpho })
+          : null
+        check(
+          'layer card: NO chip when stranded USDC covers the plan (a dollar of gas is the fix), nor past one $500 checkout (a 0.3 ETH stake, a $2,000 lend) — each keeps its honest answer and files under its layer',
+          !!strandedTurn && !strandedTurn.clarify && /already there/.test(strandedTurn.reply) && !/card or bank/.test(strandedTurn.reply) &&
+            !!bigLidoTurn && !bigLidoTurn.clarify && /Send ETH or USDC to this wallet on any of those chains, then ask again — nothing was built\./.test(bigLidoTurn.reply) &&
+            !!bigMorphoTurn && !bigMorphoTurn.clarify && bigMorphoTurn.buildPath === 'native-morpho-lend' && /this wallet needs money in it first/.test(bigMorphoTurn.reply),
+          JSON.stringify({ stranded: strandedTurn?.reply, lido: bigLidoTurn?.reply, morpho: bigMorphoTurn?.reply }),
+        )
+        process.env.ONRAMP_ENABLED = 'false'
+        const closedHl = hlRefusal ? layerShortfallTurn({ ask: hlAsk, refusal: hlRefusal }) : null
+        check(
+          'layer card: with the door CLOSED an empty wallet still reads plainly — no chip, the one honest next step, and the turn files as the HL layer\'s wall (never a planner answer)',
+          !!closedHl && !closedHl.clarify && /this wallet needs money in it first/.test(closedHl.reply) && /Send ETH or USDC to this wallet on any of those chains, then ask again — nothing was built\./.test(closedHl.reply) &&
+            !/card or bank/.test(closedHl.reply) && classifyTurn(closedHl as unknown as Record<string, unknown>).kind === 'native-wall',
+          closedHl?.reply,
+        )
+        process.env.ONRAMP_ENABLED = 'true'
+
+        // Wiring: every funding refusal in the chat route answers through a
+        // shortfall composer, so a layer added later can't bring back the bare
+        // "Top up any of those chains" wall.
+        const routeSrc = await readFile(new URL('../app/api/chat/route.ts', import.meta.url), 'utf8')
+        const refusalSites = [...routeSrc.matchAll(/'insufficient' in offer\b/g)].map((m) => m.index ?? 0)
+        const bare = refusalSites.filter((at) => !/layerShortfallTurn|swapShortfallTurn|layerFundChip/.test(routeSrc.slice(at, at + 3000)))
+        const layers = ['hl-open', 'hl-deposit', 'nft-buy', 'lido-stake', 'aave-supply', 'aave-repay', 'morpho-lend']
+        check(
+          'layer card (wiring): every funding refusal in the chat route answers through a shortfall composer, and all seven layers are wired',
+          refusalSites.length >= 7 && bare.length === 0 && layers.every((l) => routeSrc.includes(`layer: '${l}'`)),
+          JSON.stringify({ sites: refusalSites.length, bare: bare.map((at) => routeSrc.slice(at, at + 160)), missing: layers.filter((l) => !routeSrc.includes(`layer: '${l}'`)) }),
+        )
+      }
+
       // ── Wallet proof (raised by Coinbase's integration review, case
       // 500PC00000kDVUv; the finding was about US, so it outlived the switch
       // to Stripe). The route mints a real payment session, so "who asked"
@@ -8036,6 +8265,68 @@ async function main() {
             ? !!cbChip?.fund && cbChip.fund.completes === undefined && cbChip.resume === 'Buy $20 of CBETH on Base' && /→ buy \$20 of CBETH on Base$/.test(cbChip.label) && simulateLadder(cbChip.resume).kind === 'action'
             : !cb.clarify),
         `door=${doorOpen}${scanNote(cb)} ${JSON.stringify(cb).slice(0, 400)}`,
+      )
+    }
+
+    // ── Route-level: the native layers' walls THROUGH their gates
+    // (lib/layer-shortfall), from a fresh wallet that is empty on every chain
+    // the live scan reads. Whether this server's card door is open decides the
+    // chip, never the plain copy.
+    {
+      const emptyWallet = privateKeyToAccount(generatePrivateKey()).address
+      const doorOpen = (await fetch(`${BASE}/api/onramp/session`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' }, body: '{}' })).status !== 503
+      const fleet = await fetch(`${BASE}/api/servers?free=1`).then((r) => r.json() as Promise<{ slug: string; endpoint: string | null }[]>).catch(() => [])
+      const rowsOf = (slug: string) => fleet.filter((s) => s.slug === slug)
+      type LayerTurn = Record<string, unknown> & { clarify?: { options?: { label: string; resume: string; fund?: { presetFiatUsd: number; network: string; completes?: true } }[] } }
+      const layerTurn = (message: string, slug: string) =>
+        fetch(`${BASE}/api/chat`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+          body: JSON.stringify({ message, walletAddress: emptyWallet, activeServers: rowsOf(slug), history: [] }),
+        }).then((r) => r.json() as Promise<LayerTurn>)
+      // A live read that didn't answer (RPC, Hyperliquid info) lands on the
+      // layer's own fail-closed path, not this door — name it so a red reads
+      // as the environment, not the diff.
+      const liveNote = (j: LayerTurn) => (/needs money in it first/.test(String(j.reply)) ? '' : ' [the live scan or venue read did not complete — an RPC/venue answer, not this diff; rerun]')
+      const noSignable = (j: LayerTurn) => !(j.orderRequest || j.txRequest || j.txChain || j.jobId)
+
+      const hlRows = rowsOf('hyperliquid-free')
+      const deposit = hlRows.length ? await layerTurn('Deposit 20 USDC to Hyperliquid', 'hyperliquid-free') : null
+      const depositChip = deposit?.clarify?.options?.[0]
+      const depositPlan = Number(String(deposit?.reply ?? '').match(/the ~\$([\d.]+) plan/)?.[1])
+      check(
+        `layer card (route): an EMPTY wallet's "Deposit 20 USDC to Hyperliquid" answers from the HL layer, reads plainly, and ${doorOpen ? 'carries a plan card chip sized off the plan it names' : 'names the one next step (the card door is closed on this server)'}`,
+        !deposit ||
+          (noSignable(deposit) && deposit.buildPath === 'native-hl-exec' && /^📈 To deposit 20 USDC to Hyperliquid, this wallet needs money in it first/.test(String(deposit.reply)) &&
+            (doorOpen
+              ? !!depositChip?.fund && depositChip.fund.completes === undefined && depositChip.fund.network === ONRAMP_DEFAULT_NETWORK && depositChip.resume === 'Deposit 20 USDC to Hyperliquid' &&
+                depositChip.fund.presetFiatUsd === planFundUsd(depositPlan) && depositChip.label === `Add $${depositChip.fund.presetFiatUsd} with card or bank → deposit 20 USDC to Hyperliquid`
+              : !deposit.clarify && /Send ETH or USDC to this wallet/.test(String(deposit.reply)))),
+        deposit ? `door=${doorOpen}${liveNote(deposit)} ${JSON.stringify(deposit).slice(0, 400)}` : 'no hyperliquid-free row in this directory',
+      )
+      const long = hlRows.length ? await layerTurn('2x long $12 of HYPE on hyperliquid', 'hyperliquid-free') : null
+      const longChip = long?.clarify?.options?.[0]
+      check(
+        `layer card (route): an EMPTY wallet's "2x long $12 of HYPE on hyperliquid" (the prod wall's lead step) answers plainly with the collateral it needs${doorOpen ? ' and a plan card chip whose resume is the ask itself' : ''}`,
+        !long ||
+          (noSignable(long) && long.buildPath === 'native-hl-exec' &&
+            /^📈 To go long \$12 of HYPE at 2x on Hyperliquid, this wallet needs money in it first/.test(String(long.reply)) && /The position needs about \$6 of USDC on Hyperliquid as collateral\./.test(String(long.reply)) &&
+            (doorOpen ? !!longChip?.fund && longChip.fund.completes === undefined && longChip.resume === '2x long $12 of HYPE on hyperliquid' && simulateLadder(longChip.resume).kind === 'action' : !long.clarify)),
+        long ? `door=${doorOpen}${liveNote(long)} ${JSON.stringify(long).slice(0, 400)}` : 'no hyperliquid-free row in this directory',
+      )
+
+      const lidoRows = rowsOf('lido-free')
+      const stake = lidoRows.length ? await layerTurn('Stake 0.05 ETH on Lido', 'lido-free') : null
+      const stakeChip = stake?.clarify?.options?.[0]
+      check(
+        `layer card (route): an EMPTY wallet's "Stake 0.05 ETH on Lido" answers from the Lido layer, reads plainly, and ${doorOpen ? 'carries a DIRECT card chip (the delivery is the stake\'s own ETH; the resume builds the stake)' : 'names the one next step'}`,
+        !stake ||
+          (noSignable(stake) && stake.buildPath === 'native-lido' && /^🌊 To stake 0\.05 ETH on Lido, this wallet needs money in it first/.test(String(stake.reply)) &&
+            (doorOpen
+              ? !!stakeChip?.fund && stakeChip.fund.completes === undefined && stakeChip.resume === 'Stake 0.05 ETH on Lido' &&
+                /^Add \$\d+ with card or bank → stake 0\.05 ETH on Lido$/.test(stakeChip.label) && /exactly what the stake spends/.test(String(stake.reply))
+              : !stake.clarify)),
+        stake ? `door=${doorOpen}${liveNote(stake)} ${JSON.stringify(stake).slice(0, 400)}` : 'no lido-free row in this directory',
       )
     }
 
