@@ -197,7 +197,7 @@ import { routeSavings } from '../lib/route-telemetry'
 import { portfolioFromToolResult, portfolioOf } from '../lib/portfolio-display'
 import { jobContextFor } from '../lib/job-context'
 import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/swap-intent'
-import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
+import { buildUniswapV4Swap, encodeV4SwapCalldata, guardUniswapV4Build, NoV4PoolError, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
 import { guardLifiBuild, isLifiNoRouteMessage, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
 import { clampNativeSellAtoms, fillableLeg, FUNDING_ALT_USDC, FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, fundingAltUsdcFor, fundingNeedUsd, listWords, fundingSourceSymbols, LIFI_LEG_FLAT_USD, MIN_VALUE_LEG_USD, minLegNote, offChainStableSource, ROBINHOOD_CHAIN_ID, STABLE_LEG_MIN_OUT_BPS, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData, inflightSettlingNote } from '../lib/inflight-funding'
@@ -281,7 +281,7 @@ import {
   usdcAtomsToHuman,
   SPEND_PERMISSION_MANAGER,
 } from '../lib/dca-auto'
-import { ADDRESS_THIS, SWAP_ROUTER_02_ABI } from '../lib/uniswap-venue'
+import { ADDRESS_THIS, SWAP_ROUTER_02_ABI, buysNativeEth, guardUniswapV3Build, type V3GuardExpectations } from '../lib/uniswap-venue'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
   VIA_RE,
@@ -9058,6 +9058,182 @@ async function main() {
     }
   }
 
+  // ── Uniswap v3: native ETH out + the calldata guard ───────────────────────
+  // "ETH" resolves to the wrapped native, so the pool pays WETH. A buy of ETH
+  // must end in the router's unwrap (native ETH to the recipient, the fee
+  // split paid in ETH); a buy of WETH keeps the sweep. Until 2026-09-16 the
+  // builder swept WETH under an "ETH" label, proven on a Base fork (Transfer
+  // ROUTER → USER in WETH, no native value moved). guardUniswapV3Build
+  // decodes every build; each hand-patched shape below must refuse.
+  console.log('— uniswap v3 (native ETH out + calldata guard)')
+  {
+    const ROUTER = '0x2626664c2603336E57B271c5C0b26F421741e481'
+    const USDC_B = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+    const WETH_B = '0x4200000000000000000000000000000000000006'
+    const PAYER = '0x1111111111111111111111111111111111111111'
+    const OTHER = '0x2222222222222222222222222222222222222222'
+    const amountIn = BigInt(50_000_000) // 50 USDC
+    const minOut = BigInt('20810065413962593') // ~0.0208 WETH, the fork run's bound
+    const deadline = Math.floor(Date.now() / 1000) + 600
+    const bps = SWAP_FEE_BPS || LINK_SWAP_FEE_BPS
+    type Payout = 'unwrapWETH9WithFee' | 'unwrapWETH9' | 'sweepTokenWithFee'
+    const swapCall = (o: { tokenIn?: string; tokenOut?: string; recipient?: string; amountIn?: bigint; minOut?: bigint }) =>
+      encodeFunctionData({
+        abi: SWAP_ROUTER_02_ABI,
+        functionName: 'exactInputSingle',
+        args: [{
+          tokenIn: (o.tokenIn ?? USDC_B) as `0x${string}`,
+          tokenOut: (o.tokenOut ?? WETH_B) as `0x${string}`,
+          fee: 100,
+          recipient: (o.recipient ?? ADDRESS_THIS) as `0x${string}`,
+          amountIn: o.amountIn ?? amountIn,
+          amountOutMinimum: o.minOut ?? minOut,
+          sqrtPriceLimitX96: BigInt(0),
+        }],
+      })
+    const payoutCall = (kind: Payout, o: { to?: string; min?: bigint; bips?: number; feeTo?: string; token?: string } = {}) => {
+      const to = (o.to ?? PAYER) as `0x${string}`
+      const min = o.min ?? minOut
+      const bips = BigInt(o.bips ?? bps)
+      const feeTo = (o.feeTo ?? TREASURY_ADDRESS) as `0x${string}`
+      if (kind === 'unwrapWETH9WithFee') return encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'unwrapWETH9WithFee', args: [min, to, bips, feeTo] })
+      if (kind === 'unwrapWETH9') return encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'unwrapWETH9', args: [min, to] })
+      return encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'sweepTokenWithFee', args: [(o.token ?? WETH_B) as `0x${string}`, min, to, bips, feeTo] })
+    }
+    const swapTxOf = (calls: `0x${string}`[], over: Partial<{ to: string; value: string; chainId: number }> = {}) => ({
+      to: ROUTER,
+      data: encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'multicall', args: [BigInt(deadline), calls] }),
+      value: '0',
+      chainId: 8453,
+      ...over,
+    })
+    const approveOf = (amount = amountIn, token = USDC_B) => ({
+      to: token,
+      data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [ROUTER as `0x${string}`, amount] }),
+      value: '0',
+      chainId: 8453,
+    })
+    const expEth: V3GuardExpectations = { chainId: 8453, swapRouter02: ROUTER, sellToken: USDC_B, buyToken: WETH_B, sellIsEth: false, nativeOut: true, amountIn, minOut, poolFee: 100, recipient: PAYER, deadline, feeBps: bps }
+    const expWeth: V3GuardExpectations = { ...expEth, nativeOut: false }
+    const ethBuild = (calls: `0x${string}`[]) => ({ swapTx: swapTxOf(calls), approveTx: approveOf() })
+    const refusedFor = (r: { ok: boolean; reasons: string[] }, re: RegExp) => !r.ok && r.reasons.some((x) => re.test(x))
+
+    const ethChains = APP_CHAINS.filter((c) => c.viem.nativeCurrency.symbol === 'ETH')
+    check(
+      'uniswap v3: "ETH" (any case) is the native coin on every ETH-gas registry chain; "WETH", its address and other tickers stay the ERC-20',
+      ethChains.length >= 5 &&
+        ethChains.every((c) => buysNativeEth('ETH', c.id) && buysNativeEth(' eth ', c.id) && !buysNativeEth('WETH', c.id) && !buysNativeEth(c.wrappedNative, c.id) && !buysNativeEth('USDC', c.id)) &&
+        APP_CHAINS.filter((c) => c.viem.nativeCurrency.symbol !== 'ETH').every((c) => !buysNativeEth('ETH', c.id)) &&
+        !buysNativeEth('ETH', 999_999),
+    )
+
+    const ethFeeGood = ethBuild([swapCall({}), payoutCall('unwrapWETH9WithFee')])
+    const ethFeeVerdict = guardUniswapV3Build(ethFeeGood, expEth)
+    check('uniswap v3 guard: ETH buy, fee on: [swap → router, unwrapWETH9WithFee → payer + treasury] PASSES', ethFeeVerdict.ok, ethFeeVerdict.reasons.join(' '))
+    check(
+      'uniswap v3 guard: ETH buy, fee off: [swap → router, unwrapWETH9 → payer] PASSES',
+      guardUniswapV3Build({ swapTx: swapTxOf([swapCall({}), payoutCall('unwrapWETH9')]), approveTx: null }, { ...expEth, feeBps: 0 }).ok,
+    )
+    check(
+      'uniswap v3 guard: WETH buy, fee on: [swap → router, sweepTokenWithFee → payer + treasury] PASSES',
+      guardUniswapV3Build({ swapTx: swapTxOf([swapCall({}), payoutCall('sweepTokenWithFee')]), approveTx: approveOf() }, expWeth).ok,
+    )
+    check(
+      'uniswap v3 guard: WETH buy, fee off: [swap → payer] PASSES',
+      guardUniswapV3Build({ swapTx: swapTxOf([swapCall({ recipient: PAYER })]), approveTx: null }, { ...expWeth, feeBps: 0 }).ok,
+    )
+    const expEthSell: V3GuardExpectations = { ...expWeth, sellToken: WETH_B, buyToken: USDC_B, sellIsEth: true, amountIn: BigInt(10) ** BigInt(16), minOut: BigInt(20_000_000) }
+    const ethSellTx = (value: string) =>
+      swapTxOf([swapCall({ tokenIn: WETH_B, tokenOut: USDC_B, amountIn: expEthSell.amountIn, minOut: expEthSell.minOut }), payoutCall('sweepTokenWithFee', { token: USDC_B, min: expEthSell.minOut })], { value })
+    check(
+      'uniswap v3 guard: an ETH SELL rides value = amountIn with no approval; value drift or an approval step refuses',
+      guardUniswapV3Build({ swapTx: ethSellTx(expEthSell.amountIn.toString()), approveTx: null }, expEthSell).ok &&
+        !guardUniswapV3Build({ swapTx: ethSellTx('1'), approveTx: null }, expEthSell).ok &&
+        !guardUniswapV3Build({ swapTx: ethSellTx(expEthSell.amountIn.toString()), approveTx: approveOf(expEthSell.amountIn, WETH_B) }, expEthSell).ok,
+    )
+
+    // Hand-patched ETH buys.
+    check(
+      'uniswap v3 guard: an ETH buy that SWEEPS (WETH delivery, the pre-fix build) refuses by name',
+      refusedFor(guardUniswapV3Build(ethBuild([swapCall({}), payoutCall('sweepTokenWithFee')]), expEth), /WETH delivery/),
+    )
+    check(
+      'uniswap v3 guard: an ETH buy paying WETH straight to the payer (one call, no unwrap) refuses',
+      !guardUniswapV3Build(ethBuild([swapCall({ recipient: PAYER })]), expEth).ok,
+    )
+    check(
+      'uniswap v3 guard: the unwrap refuses a hijacked recipient, a foreign fee recipient, a fatter fee, and a weakened minimum',
+      !guardUniswapV3Build(ethBuild([swapCall({}), payoutCall('unwrapWETH9WithFee', { to: OTHER })]), expEth).ok &&
+        !guardUniswapV3Build(ethBuild([swapCall({}), payoutCall('unwrapWETH9WithFee', { feeTo: OTHER })]), expEth).ok &&
+        !guardUniswapV3Build(ethBuild([swapCall({}), payoutCall('unwrapWETH9WithFee', { bips: 100 })]), expEth).ok &&
+        !guardUniswapV3Build(ethBuild([swapCall({}), payoutCall('unwrapWETH9WithFee', { min: BigInt(1) })]), expEth).ok,
+    )
+    check(
+      'uniswap v3 guard: a fee-priced ETH buy that unwraps WITHOUT the split (fee stripped) refuses',
+      !guardUniswapV3Build(ethBuild([swapCall({}), payoutCall('unwrapWETH9')]), expEth).ok,
+    )
+    check(
+      'uniswap v3 guard: the swap must park on the router before the unwrap; output to the payer directly refuses',
+      refusedFor(guardUniswapV3Build(ethBuild([swapCall({ recipient: PAYER }), payoutCall('unwrapWETH9WithFee')]), expEth), /land on the router/),
+    )
+    check(
+      'uniswap v3 guard: an extra router call, an unwrap of a non-WETH output, and an off-tier fee all refuse',
+      !guardUniswapV3Build(ethBuild([swapCall({}), payoutCall('unwrapWETH9WithFee'), payoutCall('sweepTokenWithFee')]), expEth).ok &&
+        refusedFor(
+          guardUniswapV3Build({ swapTx: swapTxOf([swapCall({ tokenOut: USDC_B }), payoutCall('unwrapWETH9WithFee')]), approveTx: approveOf() }, { ...expEth, buyToken: USDC_B }),
+          /wrapped native/,
+        ) &&
+        refusedFor(guardUniswapV3Build(ethBuild([swapCall({}), payoutCall('unwrapWETH9WithFee', { bips: 37 })]), { ...expEth, feeBps: 37 }), /canonical tiers/),
+    )
+    // Hand-patched WETH buy.
+    check(
+      'uniswap v3 guard: a WETH buy that UNWRAPS refuses by name (native ETH out when the ERC-20 was asked)',
+      refusedFor(guardUniswapV3Build({ swapTx: swapTxOf([swapCall({}), payoutCall('unwrapWETH9WithFee')]), approveTx: approveOf() }, expWeth), /ERC-20/),
+    )
+    check(
+      'uniswap v3 guard: a non-pinned router, the wrong chain, an inflated approval, and opaque calldata all refuse',
+      !guardUniswapV3Build({ ...ethFeeGood, swapTx: { ...ethFeeGood.swapTx, to: '0x000000000000000000000000000000000000dEaD' } }, expEth).ok &&
+        !guardUniswapV3Build({ ...ethFeeGood, swapTx: { ...ethFeeGood.swapTx, chainId: 1 } }, expEth).ok &&
+        !guardUniswapV3Build({ ...ethFeeGood, approveTx: approveOf(amountIn * BigInt(2)) }, expEth).ok &&
+        !guardUniswapV3Build({ ...ethFeeGood, swapTx: { ...ethFeeGood.swapTx, data: '0xdeadbeef' } }, expEth).ok,
+    )
+
+    // v4 has no guarded unwrap: a buy of ETH there refuses by name before any
+    // quote (never a WETH payout under an ETH label).
+    let v4EthBuy = ''
+    try {
+      await buildUniswapV4Swap({ sellToken: 'USDG', buyToken: 'ETH', amountHuman: '10', from: PAYER, chainId: 4663 })
+      v4EthBuy = 'built'
+    } catch (e) {
+      v4EthBuy = e instanceof NoV4PoolError ? e.message : `other error: ${e instanceof Error ? e.message : String(e)}`
+    }
+    check('uniswap v4: a buy of native ETH refuses by name (no-route) instead of paying WETH', /can't deliver native ETH/.test(v4EthBuy), v4EthBuy.slice(0, 140))
+
+    // The unwrap pays out the router's WETH9 balance. If a registry chain ever
+    // pairs a router with a different wrapped native than "ETH" resolves to,
+    // the swap output would be stranded on the router. Live read, retried.
+    const routerWeth = await Promise.all(
+      APP_CHAINS.filter((c) => c.uniswap).map(async (c) => {
+        const client = publicClientFor(c.id)
+        for (let i = 0; client && c.uniswap && i < 3; i++) {
+          try {
+            const weth9 = await client.readContract({ address: c.uniswap.swapRouter02, abi: parseAbi(['function WETH9() view returns (address)']), functionName: 'WETH9' })
+            return { key: c.key, ok: weth9.toLowerCase() === c.wrappedNative.toLowerCase(), got: weth9 }
+          } catch {
+            await new Promise((r) => setTimeout(r, 800 * (i + 1)))
+          }
+        }
+        return { key: c.key, ok: false, got: 'RPC unreachable after 3 tries' }
+      }),
+    )
+    const wethMismatch = routerWeth.filter((r) => !r.ok)
+    check(
+      "uniswap v3: every registry SwapRouter02's WETH9() is the chain's wrappedNative (what ETH resolves to)",
+      routerWeth.length >= 5 && wethMismatch.length === 0,
+      wethMismatch.map((r) => `${r.key}: ${r.got}`).join('; '),
+    )
+  }
+
   // ── Uniswap v4 fallback: the calldata guard on the Universal Router build ─
   // The v4 layer serves the pairs v3 can't fill (Robinhood's tokenized-stock
   // pools). Everything the user signs is decoded and verified against pinned
@@ -15019,6 +15195,9 @@ async function main() {
       spender,
       chain: { chainId: 8453, swapRouter02: router, usdcAddress: usdc },
       expectedBuyAddr: weth,
+      // These fixtures model a WETH schedule (the ERC-20 out). ETH schedules
+      // unwrap — pinned just below.
+      nativeOut: false,
       pulledAtomic: pulled,
       nowSec,
     }
@@ -15041,6 +15220,53 @@ async function main() {
       !guardAutoBuy({ ...guardBase, steps: [mkApprove(pulled), { ...mkSwap({}), to: '0x5555555555555555555555555555555555555555' }] }).ok &&
         !guardAutoBuy({ ...guardBase, steps: [mkApprove(pulled * BigInt(2)), mkSwap({})] }).ok &&
         !guardAutoBuy({ ...guardBase, schedule: { ...guardBase.schedule, mode: 'confirm' }, steps: [mkApprove(pulled), mkSwap({})] }).ok,
+    )
+    // ETH schedules (buysNativeEth on the schedule's own token): the builder
+    // unwraps, so the guard must see [swap → router, unwrap → OWNER]. A sweep
+    // or a direct payout would hand the owner WETH, which can't pay gas.
+    const mkEthSwap = (opts: { unwrapTo?: string; feeOff?: boolean; sweep?: boolean; direct?: boolean }) => {
+      const inner = encodeFunctionData({
+        abi: SWAP_ROUTER_02_ABI,
+        functionName: 'exactInputSingle',
+        args: [{
+          tokenIn: usdc as `0x${string}`,
+          tokenOut: weth as `0x${string}`,
+          fee: 500,
+          recipient: (opts.direct ? owner : ADDRESS_THIS) as `0x${string}`,
+          amountIn: pulled,
+          amountOutMinimum: BigInt(1),
+          sqrtPriceLimitX96: BigInt(0),
+        }],
+      })
+      const to = (opts.unwrapTo ?? owner) as `0x${string}`
+      const payout = opts.direct
+        ? null
+        : opts.sweep
+          ? encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'sweepTokenWithFee', args: [weth as `0x${string}`, BigInt(1), to, BigInt(20), treasury as `0x${string}`] })
+          : opts.feeOff
+            ? encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'unwrapWETH9', args: [BigInt(1), to] })
+            : encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'unwrapWETH9WithFee', args: [BigInt(1), to, BigInt(20), treasury as `0x${string}`] })
+      return {
+        to: router,
+        data: encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'multicall', args: [BigInt(nowSec + 600), payout ? [inner, payout] : [inner]] }),
+        value: '0',
+      }
+    }
+    const ethSchedule = { ...guardBase, nativeOut: true }
+    check(
+      'dca autopilot guard: an ETH schedule passes the unwrap to the owner (fee on AND fee off)',
+      guardAutoBuy({ ...ethSchedule, steps: [mkApprove(pulled), mkEthSwap({})] }).ok &&
+        guardAutoBuy({ ...ethSchedule, steps: [mkApprove(pulled), mkEthSwap({ feeOff: true })] }).ok,
+    )
+    check(
+      'dca autopilot guard: an ETH schedule refuses WETH delivery (a sweep, or straight to the owner) and an unwrap to the spender',
+      !guardAutoBuy({ ...ethSchedule, steps: [mkApprove(pulled), mkEthSwap({ sweep: true })] }).ok &&
+        !guardAutoBuy({ ...ethSchedule, steps: [mkApprove(pulled), mkEthSwap({ direct: true })] }).ok &&
+        !guardAutoBuy({ ...ethSchedule, steps: [mkApprove(pulled), mkEthSwap({ unwrapTo: spender })] }).ok,
+    )
+    check(
+      'dca autopilot guard: a WETH schedule refuses an unwrap (the owner asked for the ERC-20)',
+      !guardAutoBuy({ ...guardBase, steps: [mkApprove(pulled), mkEthSwap({})] }).ok,
     )
     check('dca autopilot: atomic → human feeds the builder losslessly', usdcAtomsToHuman(BigInt(10_000_000)) === '10' && usdcAtomsToHuman(BigInt(10_500_000)) === '10.5' && usdcAtomsToHuman(BigInt(123)) === '0.000123')
 
@@ -15888,6 +16114,79 @@ async function main() {
         JSON.stringify(fq).slice(0, 140),
       )
     }
+  }
+  // The native-ETH twin, live through the same route. A buy of "ETH" ends in
+  // unwrapWETH9WithFee(min, user, SWAP_FEE_BPS, treasury): native ETH out,
+  // the fee paid in ETH. The WETH buy above keeps the sweep. The refresh
+  // recipe must carry the literal "ETH" so the sign-time re-quote rebuilds
+  // the same delivery.
+  {
+    const ethQuote = await fetch(`${BASE}/api/panels/swap`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ from: owner.address, chainId: 8453, sellToken: 'USDC', buyToken: 'ETH', amountHuman: '1' }),
+    })
+    const eq = (await ethQuote.json()) as {
+      ok?: boolean
+      blocked?: boolean
+      blockKind?: string
+      summary?: string
+      txChain?: { steps?: { label: string; tx?: { data?: string; value?: string } }[]; refresh?: { params?: Record<string, string> } }
+      guardrails?: { checks?: { id: string; ok: boolean }[] }
+    }
+    const ethSwapStep = eq?.txChain?.steps?.find((s) => s.label === 'swap')
+    if (eq?.ok && typeof ethSwapStep?.tx?.data === 'string') {
+      try {
+        const mc = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: ethSwapStep.tx.data as `0x${string}` })
+        const inner = (mc.args as readonly [bigint, readonly `0x${string}`[]])[1]
+        const swapDec = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: inner[0] })
+        const payDec = inner[1] ? decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: inner[1] }) : null
+        const sp = (swapDec.args as readonly unknown[])[0] as { tokenOut: string; recipient: string; amountOutMinimum: bigint }
+        const pa = (payDec?.args ?? []) as readonly unknown[]
+        const feeOn = SWAP_FEE_BPS > 0
+        check(
+          `venue fees: a live USDC→ETH v3 build unwraps to native ETH (${feeOn ? 'unwrapWETH9WithFee(user, SWAP_FEE_BPS, treasury)' : 'unwrapWETH9(user)'}), never sweeps WETH`,
+          inner.length === 2 &&
+            sp.tokenOut.toLowerCase() === '0x4200000000000000000000000000000000000006' &&
+            sp.recipient.toLowerCase() === ADDRESS_THIS.toLowerCase() &&
+            payDec?.functionName === (feeOn ? 'unwrapWETH9WithFee' : 'unwrapWETH9') &&
+            pa[0] === sp.amountOutMinimum &&
+            String(pa[1]).toLowerCase() === owner.address.toLowerCase() &&
+            (!feeOn || (pa[2] === BigInt(SWAP_FEE_BPS) && String(pa[3]).toLowerCase() === TREASURY_ADDRESS.toLowerCase())) &&
+            ethSwapStep.tx.value === '0',
+          `calls=${inner.length} payout=${payDec?.functionName ?? 'none'}`,
+        )
+        check(
+          'venue fees: the live ETH build passes its own calldata guard, names ETH, and keeps "ETH" in the refresh recipe',
+          !!eq.guardrails?.checks?.some((c) => c.id === 'calldata' && c.ok) &&
+            /→ ~[\d.]+ ETH via Uniswap v3/.test(eq.summary ?? '') &&
+            eq.txChain?.refresh?.params?.buyToken === 'ETH',
+          `summary=${(eq.summary ?? '').slice(0, 90)} buyToken=${eq.txChain?.refresh?.params?.buyToken}`,
+        )
+      } catch (e) {
+        check('venue fees: uniswap v3 ETH-out multicall decodes', false, String(e).slice(0, 120))
+      }
+    } else {
+      check(
+        'venue fees: uniswap v3 ETH-out build (live via panel route) — built or policy-refused honestly',
+        eq?.ok === true || (eq?.blocked === true && eq?.blockKind === 'policy'),
+        JSON.stringify(eq).slice(0, 140),
+      )
+    }
+    // The sign-time re-quote runs the same builder and guard. A wallet with no
+    // allowance gets `pending` (the approval step reappears): never a
+    // verification block, never an error.
+    const ethRefresh = await fetch(`${BASE}/api/tx/refresh`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'uniswap-swap', from: owner.address, sellToken: 'USDC', buyToken: 'ETH', amountHuman: '1', chainId: '8453' }),
+    })
+    const er = (await ethRefresh.json()) as { pending?: boolean; blocked?: boolean; reasons?: string; tx?: unknown; error?: string }
+    check(
+      'tx refresh: re-quoting a USDC→ETH v3 step rebuilds through the guard (pending on allowance, or a policy refusal, never a verification block)',
+      ethRefresh.status === 200 && (er.pending === true || !!er.tx || (er.blocked === true && !/Build failed verification/.test(er.reasons ?? ''))),
+      JSON.stringify(er).slice(0, 160),
+    )
   }
 
   console.log('— panel swap')

@@ -63,18 +63,22 @@ type ChatBody = Record<string, unknown> & {
 }
 
 /** SwapRouter02.sweepTokenWithFee(token, amountMinimum, recipient, feeBips,
- *  feeRecipient) — the Uniswap lane's fee lives in the CALLDATA the wallet
- *  signs, so that is what gets read here. (The refresh recipe's feeBps only
- *  appears on link turns: an organic build omits the param and the builder
- *  falls back to the base rate, which is why its absence must never be read
- *  as "no fee".) */
+ *  feeRecipient), or unwrapWETH9WithFee(amountMinimum, recipient, feeBips,
+ *  feeRecipient) on a native-ETH buy — the Uniswap lane's fee lives in the
+ *  CALLDATA the wallet signs, so that is what gets read here. (The refresh
+ *  recipe's feeBps only appears on link turns: an organic build omits the
+ *  param and the builder falls back to the base rate, which is why its
+ *  absence must never be read as "no fee".) */
 function sweepFeeBips(data: string): number | null {
-  const i = data.toLowerCase().indexOf('e0e189a0')
-  if (i < 0) return null
-  const words = data.slice(i + 8)
-  const feeBips = words.slice(3 * 64, 4 * 64)
-  if (feeBips.length < 64) return null
-  return Number.parseInt(feeBips, 16)
+  const d = data.toLowerCase()
+  for (const [selector, word] of [['e0e189a0', 3], ['9b2c0a37', 2]] as const) {
+    const i = d.indexOf(selector)
+    if (i < 0) continue
+    const feeBips = d.slice(i + 8).slice(word * 64, (word + 1) * 64)
+    if (feeBips.length < 64) return null
+    return Number.parseInt(feeBips, 16)
+  }
+  return null
 }
 
 async function driveChat(ask: string, wallet: string, servers: unknown[], slug?: string): Promise<ChatBody> {
@@ -99,7 +103,7 @@ function encodedFeeBps(body: ChatBody): { bps: number | null; where: string } {
   }
   for (const step of body.txChain?.steps ?? []) {
     const bips = sweepFeeBips(step.tx?.data ?? '')
-    if (bips !== null) return { bps: bips, where: 'Uniswap sweepTokenWithFee calldata' }
+    if (bips !== null) return { bps: bips, where: 'Uniswap sweepTokenWithFee / unwrapWETH9WithFee calldata' }
   }
   return { bps: null, where: `no fee-bearing artifact — reply="${String(body.reply ?? '').slice(0, 110)}"` }
 }

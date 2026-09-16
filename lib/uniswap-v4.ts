@@ -37,7 +37,7 @@
 import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeFunctionData, erc20Abi } from 'viem'
 import { chainById, publicClientFor } from '@/lib/chains'
 import { resolveToken, tokenDecimals, tokenLabel, humanToAtoms, formatAtoms } from '@/lib/cow'
-import { stableUsd, UNISWAP_POLICY_HOST } from '@/lib/uniswap-venue'
+import { buysNativeEth, stableUsd, UNISWAP_POLICY_HOST } from '@/lib/uniswap-venue'
 import {
   buildReport,
   policyCheck,
@@ -664,6 +664,17 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
   // the ETH venue on every chain we quote, and v4's native-currency settle
   // path is a different (unguarded-here) shape. Symbols like "ETH" resolve
   // to the wrapped token address and sell as ERC-20.
+  //
+  // A BUY of "ETH" is refused here instead: this build would pay WETH under
+  // an ETH label, and there is no guarded unwrap in it. Only v3 unwraps to
+  // native ETH (lib/uniswap-venue.ts), and v3 has a WETH pool for every pair
+  // probed on Robinhood Chain (USDG, AAPL, TSLA, NVDA, AMD, SPY — 2026-09-16)
+  // while v4 has none, so this is a no-route today, never a WETH delivery.
+  if (buysNativeEth(params.buyToken, chainId)) {
+    throw new NoV4PoolError(
+      `Uniswap v4 on ${chain.name} can't deliver native ETH, and Uniswap v3 has no pool for ${tokenLabel(params.sellToken, chainId)} → ETH there.`,
+    )
+  }
   const sellAddr = resolveToken(params.sellToken, chainId) as `0x${string}` | null
   const buyAddr = resolveToken(params.buyToken, chainId) as `0x${string}` | null
   if (!sellAddr) throw new Error(`Unknown sell token on ${chain.name}: ${params.sellToken}`)

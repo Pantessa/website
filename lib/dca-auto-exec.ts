@@ -23,7 +23,7 @@ import { chainById, primaryStable, publicClientFor } from '@/lib/chains'
 import { getActiveGrant } from '@/lib/grant-store'
 import { resolveToken } from '@/lib/cow'
 import { ensureTokenList } from '@/lib/token-list'
-import { buildUniswapSwap } from '@/lib/uniswap-venue'
+import { buildUniswapSwap, buysNativeEth } from '@/lib/uniswap-venue'
 import { getSpenderAddress, isCdpConfigured, sendSpenderTx, spendNetwork } from '@/lib/cdp'
 import { SPEND_PERMISSION_MANAGER } from '@/lib/spend-permission'
 import { cadenceLabel, periodKeyFor, type DcaCadence } from '@/lib/dca'
@@ -539,6 +539,7 @@ export async function executeAutoDcaSweep(limit = 2): Promise<AutoSweepSummary> 
         spender,
         chain: { chainId: s.chainId, swapRouter02: registryRouter, usdcAddress: stable.address },
         expectedBuyAddr: buyAddr,
+        nativeOut: buysNativeEth(s.buyToken, s.chainId),
         steps,
         pulledAtomic: pulled,
         nowSec,
