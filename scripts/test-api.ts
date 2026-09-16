@@ -20085,6 +20085,10 @@ async function main() {
     const fundSrc = await readFile('components/markets/watchlist/FundWallet.tsx', 'utf8')
     const railFundSrc = await readFile('components/markets/watchlist/WatchlistRail.tsx', 'utf8')
     const hookFundSrc = await readFile('components/markets/watchlist/useWatchlists.ts', 'utf8')
+    // The holdings read itself moved to lib/held-read (2026-09-16, shared with
+    // the YOU HOLD pill and the Sell chips): the fresh flag lives there, the
+    // hook passes it.
+    const heldReadFundSrc = await readFile('lib/held-read.ts', 'utf8')
     const panelFundSrc = await readFile('components/WalletPanel.tsx', 'utf8')
     const chipFundSrc = await readFile('components/ClarifyChips.tsx', 'utf8')
     const buyAt = fundSrc.indexOf('const buy = async')
@@ -20097,7 +20101,8 @@ async function main() {
       chipFundSrc.includes('o.fund && o.resume === w.resume') && panelFundSrc.includes('wait.resume ?') && panelFundSrc.includes("wait.asset ?? 'card purchase'"))
     check('card door: the rail mounts the door at the end of its rows with the holdings read’s verdict (never while it brews), and a landing re-reads the wallet past both caches (fresh=1, reconcile inside the minute) so the purchase fills the list',
       railFundSrc.includes('<FundWallet') && railFundSrc.includes('empty={wl.walletEmpty && !brew}') && railFundSrc.includes('onLanded={wl.recheckWallet}') &&
-        hookFundSrc.includes("'&fresh=1'") && hookFundSrc.includes('lastReconciled.delete(key)') && hookFundSrc.includes('setWalletRead('))
+        heldReadFundSrc.includes("'&fresh=1'") && hookFundSrc.includes('readHeld(holder, HELD_EVERY_MS, fresh)') && hookFundSrc.includes("from '@/lib/held-read'") &&
+        hookFundSrc.includes('lastReconciled.delete(key)') && hookFundSrc.includes('setWalletRead('))
     const fundHtml = flat(await (await fetch(`${BASE}/markets`)).text())
     check('card door: /markets never server-renders the door (no wallet is known before hydration)', fundHtml.includes('class="wl__rows"') && !fundHtml.includes('data-rail-fund'))
   }
