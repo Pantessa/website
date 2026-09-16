@@ -29,6 +29,7 @@ import {
 } from '@/lib/tx-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
 import { SWAP_FEE_BPS, TREASURY_ADDRESS, swapFeeAtoms } from '@/lib/fees'
+import { checkFillAgainstTape, startSwapTape } from '@/lib/stock-tape'
 
 /** Uniswap v3 on Base (developers.uniswap.org, verified live by the MCP's
  *  smoke suite 2026-07-02). Kept as the Base constants for existing
@@ -214,6 +215,9 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   const atoms = humanToAtoms(params.amountHuman, sellDec)
   if (!atoms) throw new Error(`Couldn't read the amount "${params.amountHuman}" (${sellDec} decimals max).`)
   const amountIn = BigInt(atoms)
+  // A Robinhood Chain stock swap is checked against the tape once the quote
+  // lands (lib/stock-tape); the read starts now so it rides alongside.
+  const tapeRead = startSwapTape({ chainId, sellToken: params.sellToken, buyToken: params.buyToken })
 
   // Fresh quote across every fee tier — best amountOut wins.
   const tiers = await Promise.all(
@@ -238,6 +242,11 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
     throw new NoV3PoolError(`No Uniswap v3 pool on ${chain.name} can fill ${tokenLabel(params.sellToken, chainId)} → ${tokenLabel(params.buyToken, chainId)} for this amount.`)
   }
   const best = live[0]
+  // The slippage bound below is measured from this pool's own quote, so a
+  // pool far from the stock's tape would still build a "guarded" swap that
+  // loses the money. Off tape → OffTapeError, and the cascade tries the
+  // chain's own venue; no tape → TapeUnavailableError (fail closed).
+  const tapeCheck = checkFillAgainstTape(await tapeRead, "Robinhood Chain's Uniswap v3 pool", amountIn, best.amountOut)
   const minOut = (best.amountOut * BigInt(10_000 - slippageBps)) / BigInt(10_000)
   const deadline = Math.floor(Date.now() / 1000) + deadlineSec
 
@@ -332,7 +341,7 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
     recipient.toLowerCase() === from.toLowerCase()
       ? recipientCheck(from, from)
       : { id: 'recipient', level: 'block', ok: true, note: `Proceeds pinned to ${recipient} (recipient override — re-verified by the caller's independent guard).` }
-  const checks: GuardrailCheck[] = [recipCheck, validityCheck(deadline), allowanceCheck, feeCheck]
+  const checks: GuardrailCheck[] = [recipCheck, validityCheck(deadline), allowanceCheck, feeCheck, ...(tapeCheck ? [tapeCheck] : [])]
   const valueUsd = stableUsd(chainId, sellAddr, amountIn) ?? stableUsd(chainId, buyAddr, best.amountOut)
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null

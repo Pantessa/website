@@ -38,6 +38,7 @@ import { buildAaveRepayArtifact, buildAaveSupplyArtifact } from '@/lib/aave-exec
 import { buildMorphoLendArtifact, buildMorphoRepayArtifact } from '@/lib/morpho-exec'
 import type { MorphoChainId } from '@/lib/morpho-supply'
 import { buildGuardedSwap } from '@/lib/swap-exec'
+import { TapeUnavailableError } from '@/lib/stock-tape'
 import type { PolicyBlock } from '@/lib/tx-guardrails'
 import { buildLifiBridgeLeg, checkChainArrival, ROBINHOOD_CHAIN_ID, type ChainArrival, type FundingLeg } from '@/lib/lifi-bridge'
 import { ensureTokenList } from '@/lib/token-list'
@@ -249,12 +250,17 @@ export async function advanceJob(job: JobWithSteps): Promise<void> {
         // RPC still fails by name instead of spinning. 2026-09-15: one
         // rate-limited balanceOf on Robinhood Chain failed a funded $34
         // funding job outright.
-        const transient = transientRpcWords(e)
+        // A stock tape that didn't answer is the same kind of miss: the build
+        // is refused until the fill can be checked (lib/stock-tape), so hold
+        // and retry. A stock no feed lists at all never gets here — the
+        // cascade refuses that by name.
+        const tapeDown = e instanceof TapeUnavailableError && !e.permanent ? e : null
+        const transient = transientRpcWords(e) ?? tapeDown?.detail ?? null
         if (transient) {
           const prior = (step.result as { rpcTries?: unknown } | null)?.rpcTries
           const tries = (typeof prior === 'number' ? prior : 0) + 1
           const host = rpcHostOf(e)
-          const who = host ? `${host} didn't answer` : "An RPC didn't answer"
+          const who = tapeDown ? `The ${tapeDown.symbol} price feed didn't answer` : host ? `${host} didn't answer` : "An RPC didn't answer"
           console.warn(`[jobs] rpc withheld step ${step.seq + 1} of ${fresh.id} (${step.builder}) try ${tries}/${RPC_WITHHOLD_MAX}: ${transient}`)
           if (tries < RPC_WITHHOLD_MAX) {
             await prisma.jobStep.update({

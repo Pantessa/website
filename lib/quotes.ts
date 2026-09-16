@@ -4,8 +4,8 @@
 //
 //   robinhood   — ONE batch historicals call for every stock in the request
 //                 (`?symbols=A,B,C`, 24/7 bounds): last non-interpolated
-//                 close vs the tape's previous_close_price. Yahoo's chart
-//                 meta is the per-symbol fallback when the batch is down.
+//                 close vs the tape's previous_close_price. Yahoo's daily
+//                 chart is the per-symbol fallback when the batch is down.
 //   coinbase    — /products/<X>-USD/stats (last + 24h open), per symbol.
 //   hyperliquid — ONE metaAndAssetCtxs call serves every perp (markPx vs
 //                 prevDayPx), cached for the whole TTL.
@@ -20,6 +20,12 @@ import { normalizeWatchSymbol, sessionFor, type Quote } from '@/lib/watchlists'
 
 export const QUOTE_TTL_MS = 15_000
 export const QUOTES_MAX_SYMBOLS = 250
+/** Robinhood's batch historicals answers 400 past 75 symbols (measured
+ *  2026-09-16: 75 → 200, 76 → 400). A bigger request sent in one call failed
+ *  whole, and every stock on the board fell back to Yahoo's regular-session
+ *  price — which the stock-swap tape check (lib/stock-tape) then compared a
+ *  24/7 pool against. */
+export const ROBINHOOD_BATCH_MAX = 75
 const UPSTREAM_TIMEOUT_MS = 6_000
 const COINBASE_CONCURRENCY = 6
 const UA = 'Mozilla/5.0 (compatible; Pantessa/1.0; +https://www.pantessa.com)'
@@ -132,21 +138,87 @@ async function fetchRobinhoodBatch(symbols: string[]): Promise<Map<string, { las
   return out
 }
 
-interface YahooMeta {
-  chart?: { result?: { meta?: { regularMarketPrice?: number; chartPreviousClose?: number; previousClose?: number; regularMarketTime?: number } }[] }
+// ── Yahoo (per symbol, when the batch doesn't answer) ───────────────────────
+//
+// The previous close comes off the daily bars, never the chart meta's
+// `chartPreviousClose`: that is the close before the requested RANGE. Measured
+// 2026-09-16 on AAPL mid-session: range=5d gave 315.34 (Sep 9's close, so every
+// Yahoo-served stock showed a five-day move as the day's), 2d gave 333.08, 1d
+// gave 331.34, the right one. 1d isn't the fix either: it follows the calendar,
+// so on a day the exchange is shut it reads flat (Bursa Malaysia's holiday the
+// same day: previous close = last price). `previousClose` only rides intraday
+// intervals.
+//
+// The rule: the close of the last daily bar dated before the day the price
+// printed (`regularMarketTime`), on the exchange's calendar. It holds when the
+// session's own bar has no close yet (Toyota on Tokyo after its close) and
+// when the window carries a later day's bar. 5d, not 2d, so either of those
+// can't push the prior session out of the window. Against Robinhood's daily
+// closes that day, all 199 listings matched (chartPreviousClose: 7 within
+// 0.1%). Robinhood's own `previous_close_price` takes an ex-dividend day's
+// dividend off the prior close and Yahoo's bars don't, so on that day the two
+// feeds' changes differ by the dividend (TSM, PR on 2026-09-16).
+
+/** The chart fields the fallback quote reads (interval=1d). */
+export interface YahooChartResult {
+  meta?: { regularMarketPrice?: number; regularMarketTime?: number; exchangeTimezoneName?: string }
+  timestamp?: number[]
+  indicators?: { quote?: { close?: (number | null)[] }[] }
 }
 
-async function fetchYahooQuote(pair: ChartPair): Promise<Quote | null> {
+/** Unix seconds → 'YYYY-MM-DD' on the exchange's calendar. Every stock this
+ *  fallback serves is a US listing, so a zone Intl doesn't know reads as New York. */
+function exchangeDayOf(timeZone: string | undefined): (t: number) => string {
+  const opts = { year: 'numeric', month: '2-digit', day: '2-digit' } as const
+  let fmt: Intl.DateTimeFormat
+  try {
+    fmt = new Intl.DateTimeFormat('en-US', { ...opts, timeZone: timeZone || 'America/New_York' })
+  } catch {
+    fmt = new Intl.DateTimeFormat('en-US', { ...opts, timeZone: 'America/New_York' })
+  }
+  return (t) => {
+    const parts = fmt.formatToParts(new Date(t * 1000))
+    const part = (type: string) => parts.find((p) => p.type === type)?.value
+    return `${part('year')}-${part('month')}-${part('day')}`
+  }
+}
+
+/** The close of the session before the one the price printed in; null when the
+ *  bars hold no earlier session. */
+function previousSessionClose(result: YahooChartResult): number | null {
+  const closes = result.indicators?.quote?.[0]?.close ?? []
+  const bars = (result.timestamp ?? [])
+    .map((t, i) => ({ t, c: closes[i] }))
+    .filter((b): b is { t: number; c: number } => typeof b.c === 'number' && b.c > 0)
+    .sort((a, b) => a.t - b.t)
+  const printedAt = result.meta?.regularMarketTime || bars[bars.length - 1]?.t
+  if (!printedAt) return null
+  const dayOf = exchangeDayOf(result.meta?.exchangeTimezoneName)
+  const session = dayOf(printedAt)
+  const before = bars.filter((b) => dayOf(b.t) < session)
+  return before.length > 0 ? before[before.length - 1].c : null
+}
+
+/** A Yahoo daily chart → the quote. Pure, so the harness pins it on measured
+ *  payloads. No earlier session in the bars → no quote: a change we can't
+ *  state isn't shown as flat. */
+export function yahooQuoteOf(result: YahooChartResult, pair: ChartPair): Quote | null {
+  const meta = result.meta
+  if (!meta) return null
+  const prev = previousSessionClose(result) ?? Number.NaN
+  return quoteOf(Number(meta.regularMarketPrice), prev, 'yahoo', pair, meta.regularMarketTime ? meta.regularMarketTime * 1000 : Date.now())
+}
+
+/** Exported for the harness's live pin (Yahoo against Robinhood's daily closes). */
+export async function fetchYahooQuote(pair: ChartPair): Promise<Quote | null> {
   const res = await fetchWithTimeout(
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(pair.pair)}?interval=1d&range=5d`,
     { headers: { 'user-agent': UA, accept: 'application/json' } },
   )
   if (!res.ok) throw new Error(`yahoo ${res.status}`)
-  const raw = (await res.json()) as YahooMeta
-  const meta = raw.chart?.result?.[0]?.meta
-  if (!meta) throw new Error('yahoo shape')
-  const prev = Number(meta.chartPreviousClose ?? meta.previousClose)
-  return quoteOf(Number(meta.regularMarketPrice), prev, 'yahoo', pair, meta.regularMarketTime ? meta.regularMarketTime * 1000 : Date.now())
+  const result = ((await res.json()) as { chart?: { result?: YahooChartResult[] } }).chart?.result?.[0]
+  if (!result?.meta) throw new Error('yahoo shape')
+  return yahooQuoteOf(result, pair)
 }
 
 // ── The batched reader ──────────────────────────────────────────────────────
@@ -239,13 +311,17 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
   const coins = fresh.filter((f) => f.pair.source === 'coinbase')
   const perps = fresh.filter((f) => f.pair.source === 'hyperliquid')
 
-  // One batch promise for the stocks; each symbol's inflight entry resolves off it.
-  const stockBatch = stocks.length
-    ? fetchRobinhoodBatch(stocks.map((s) => s.pair.pair)).catch((err) => {
+  // One batch promise per ROBINHOOD_BATCH_MAX stocks; each symbol's inflight
+  // entry resolves off its own chunk, so one refused chunk falls back alone.
+  const stockBatches: Promise<Map<string, { last: number; prev: number; asOf: number }> | null>[] = []
+  for (let i = 0; i < stocks.length; i += ROBINHOOD_BATCH_MAX) {
+    stockBatches.push(
+      fetchRobinhoodBatch(stocks.slice(i, i + ROBINHOOD_BATCH_MAX).map((s) => s.pair.pair)).catch((err) => {
         console.warn(`[quotes] robinhood batch down (${err instanceof Error ? err.message : String(err)}) — yahoo per symbol`)
         return null
-      })
-    : Promise.resolve(new Map())
+      }),
+    )
+  }
 
   const settle = (symbol: string, p: Promise<Quote | null>) => {
     const wrapped = p
@@ -264,16 +340,16 @@ export async function readQuotes(symbolsRaw: readonly string[]): Promise<QuoteRe
     )
   }
 
-  for (const s of stocks) {
+  stocks.forEach((s, i) => {
     settle(
       s.symbol,
-      stockBatch.then(async (batch) => {
+      stockBatches[Math.floor(i / ROBINHOOD_BATCH_MAX)].then(async (batch) => {
         const row = batch?.get(s.pair.pair)
         if (row) return quoteOf(row.last, row.prev, 'robinhood', s.pair, row.asOf)
         return fetchYahooQuote(s.pair)
       }),
     )
-  }
+  })
   for (const p of perps) settle(p.symbol, fetchHyperliquid(p.pair))
   // Coinbase is per-product; a bounded worker pool keeps a 40-coin list under
   // its public rate limit while still finishing inside one poll.

@@ -12,6 +12,7 @@
 //  and the chart shows nothing — a wrong pool price is worse than none.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { parseUnits } from 'viem'
 import { chainById, primaryStable, publicClientFor } from '@/lib/chains'
 import { chartPairFor } from '@/lib/charts'
 import { classifyDryRunError } from '@/lib/dry-run'
@@ -31,7 +32,12 @@ const TTL_MS = 30_000
 const cache = new Map<string, { at: number; value: PoolPrice | null }>()
 const inflight = new Map<string, Promise<PoolPrice | null>>()
 
-async function quotePool(symbol: string): Promise<PoolPrice | null> {
+/**
+ * One direction through the build's own quoters: a BUY spends
+ * POOL_QUOTE_USD of USDG; a SELL (`sellShares`) sells that many shares for
+ * USDG. Either way `usdPerToken` is the USD per share the order gets.
+ */
+async function quotePool(symbol: string, sellShares?: number): Promise<PoolPrice | null> {
   const chain = chainById(STOCK_CHAIN_ID)
   const stable = primaryStable(STOCK_CHAIN_ID)
   if (!chain || !stable) return null
@@ -39,7 +45,14 @@ async function quotePool(symbol: string): Promise<PoolPrice | null> {
   const token = dynamicTokenBySymbol(symbol, STOCK_CHAIN_ID)
   if (!token || !/^0x[0-9a-fA-F]{40}$/.test(token.address)) return null
   const tokenAddr = token.address as `0x${string}`
-  const amountIn = BigInt(POOL_QUOTE_USD) * BigInt(10) ** BigInt(stable.decimals)
+  const selling = sellShares !== undefined
+  if (selling && !(sellShares > 0 && Number.isFinite(sellShares))) return null
+  const amountIn = selling
+    ? parseUnits(sellShares.toFixed(Math.min(token.decimals, 12)), token.decimals)
+    : BigInt(POOL_QUOTE_USD) * BigInt(10) ** BigInt(stable.decimals)
+  if (amountIn <= BigInt(0)) return null
+  const [tokenIn, tokenOut] = selling ? [tokenAddr, stable.address] : [stable.address, tokenAddr]
+  const pairLabel = selling ? `${symbol}/${stable.symbol}` : `${stable.symbol}/${symbol}`
 
   let best: bigint | null = null
   let via = ''
@@ -54,7 +67,7 @@ async function quotePool(symbol: string): Promise<PoolPrice | null> {
               address: chain.uniswap!.quoterV2,
               abi: QUOTER_V2_ABI,
               functionName: 'quoteExactInputSingle',
-              args: [{ tokenIn: stable.address, tokenOut: tokenAddr, amountIn, fee, sqrtPriceLimitX96: BigInt(0) }],
+              args: [{ tokenIn, tokenOut, amountIn, fee, sqrtPriceLimitX96: BigInt(0) }],
             })
             return result[0]
           } catch (err) {
@@ -66,7 +79,7 @@ async function quotePool(symbol: string): Promise<PoolPrice | null> {
       const live = tiers.filter((t): t is bigint => t !== null && t > BigInt(0))
       if (live.length) {
         best = live.reduce((a, b) => (b > a ? b : a))
-        via = `Uniswap v3 ${stable.symbol}/${symbol}`
+        via = `Uniswap v3 ${pairLabel}`
       } else if (transportFailures === FEE_TIERS.length) {
         // Every tier died on the transport — no chain evidence at all; the
         // v4 probe below reads the same RPC, so stop here (fail-soft).
@@ -75,18 +88,40 @@ async function quotePool(symbol: string): Promise<PoolPrice | null> {
     }
   }
   if (best === null) {
-    const v4 = await quoteV4BestOut(STOCK_CHAIN_ID, stable.address, tokenAddr, amountIn).catch(() => null)
+    const v4 = await quoteV4BestOut(STOCK_CHAIN_ID, tokenIn, tokenOut, amountIn).catch(() => null)
     if (v4 !== null && v4 > BigInt(0)) {
       best = v4
-      via = `Uniswap v4 ${stable.symbol}/${symbol}`
+      via = `Uniswap v4 ${pairLabel}`
     }
   }
   if (best === null) return null
-  const tokenOut = Number(best) / 10 ** token.decimals
-  if (!Number.isFinite(tokenOut) || tokenOut <= 0) return null
-  const usdPerToken = POOL_QUOTE_USD / tokenOut
+  if (selling) {
+    const usdOut = Number(best) / 10 ** stable.decimals
+    const usdPerToken = usdOut / sellShares
+    if (!Number.isFinite(usdPerToken) || usdPerToken <= 0) return null
+    return { symbol, chainId: STOCK_CHAIN_ID, side: 'sell', quoteUsd: usdOut, tokenOut: sellShares, usdPerToken, via, asOf: Date.now() }
+  }
+  const tokenOutHuman = Number(best) / 10 ** token.decimals
+  if (!Number.isFinite(tokenOutHuman) || tokenOutHuman <= 0) return null
+  const usdPerToken = POOL_QUOTE_USD / tokenOutHuman
   if (!Number.isFinite(usdPerToken) || usdPerToken <= 0) return null
-  return { symbol, chainId: STOCK_CHAIN_ID, quoteUsd: POOL_QUOTE_USD, tokenOut, usdPerToken, via, asOf: Date.now() }
+  return { symbol, chainId: STOCK_CHAIN_ID, side: 'buy', quoteUsd: POOL_QUOTE_USD, tokenOut: tokenOutHuman, usdPerToken, via, asOf: Date.now() }
+}
+
+function cached(key: string, run: () => Promise<PoolPrice | null>): Promise<PoolPrice | null> {
+  const hit = cache.get(key)
+  if (hit && Date.now() - hit.at < TTL_MS) return Promise.resolve(hit.value)
+  const running = inflight.get(key)
+  if (running) return running
+  const p = run()
+    .catch(() => null)
+    .then((value) => {
+      cache.set(key, { at: Date.now(), value })
+      return value
+    })
+    .finally(() => inflight.delete(key))
+  inflight.set(key, p)
+  return p
 }
 
 /**
@@ -97,18 +132,18 @@ async function quotePool(symbol: string): Promise<PoolPrice | null> {
 export async function poolPriceFor(symbolRaw: string): Promise<PoolPrice | null> {
   const pair = chartPairFor(symbolRaw)
   if (!pair || pair.source !== 'robinhood') return null
-  const key = pair.symbol
-  const hit = cache.get(key)
-  if (hit && Date.now() - hit.at < TTL_MS) return hit.value
-  const running = inflight.get(key)
-  if (running) return running
-  const p = quotePool(key)
-    .catch(() => null)
-    .then((value) => {
-      cache.set(key, { at: Date.now(), value })
-      return value
-    })
-    .finally(() => inflight.delete(key))
-  inflight.set(key, p)
-  return p
+  return cached(pair.symbol, () => quotePool(pair.symbol))
+}
+
+/**
+ * What the pool pays per share on a SELL of POOL_QUOTE_USD worth of shares at
+ * the tape (`tapeUsd` sizes the order) — the other side of the same pool,
+ * which a thin pool can price very differently from a buy (2026-09-16: RUN's
+ * pool was +5% over the tape on a buy and −53% under it on a sell). Null on
+ * the same misses as poolPriceFor. Cached 30s per symbol.
+ */
+export async function poolSellPriceFor(symbolRaw: string, tapeUsd: number): Promise<PoolPrice | null> {
+  const pair = chartPairFor(symbolRaw)
+  if (!pair || pair.source !== 'robinhood' || !(tapeUsd > 0)) return null
+  return cached(`sell:${pair.symbol}`, () => quotePool(pair.symbol, POOL_QUOTE_USD / tapeUsd))
 }

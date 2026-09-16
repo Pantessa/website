@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { ChevronDown, ChevronUp, Maximize2, Minimize2 } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
 import ChartMount, { type ChartStats } from '@/components/markets/chart/ChartMount'
@@ -24,7 +24,6 @@ import { CHART_FEED_LABELS, chartPairFor, type ChartFeed, type ChartTf } from '@
 import {
   DEFAULT_MARKET_TAB,
   MARKET_TABS,
-  marketTabUrl,
   parseMarketTab,
   parseVsParam,
   rangePosition,
@@ -49,7 +48,8 @@ import NewsTab from '@/components/markets/tabs/NewsTab'
 import CommunityTab from '@/components/markets/tabs/CommunityTab'
 import TechnicalsTab from '@/components/markets/tabs/TechnicalsTab'
 import TradeTab from '@/components/markets/tabs/TradeTab'
-import { sideOf, type InjectedPrompt, type TradeAsk } from '@/lib/trade-asks'
+import { sideOf, type TradeAsk } from '@/lib/trade-asks'
+import { ARRIVAL_APP_HREF, writeArrivalIntent } from '@/lib/arrival-intent'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
 import { useSession } from '@/lib/session'
 import { useSymbolFills } from '@/lib/chart-fills'
@@ -126,30 +126,24 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
     })
   }, [])
 
-  // ── The send door: a chip anywhere on the page lands on Trade and fires ──
+  // ── The send door: every chip on the page runs in the app ──
+  // (2026-09-16, Nate: "Buy AMAT goes nowhere… should it open the app page
+  // with the prompt fire?") The build used to land in a panel at the foot
+  // of the Trade tab, below the order form, the composer and the position
+  // panel, so a chip click scrolled to the tab strip and looked dead. Now
+  // the tap is the SEND the /markets chips already are: the ask travels out
+  // of band (lib/arrival-intent: same tab, 60s, one shot) and /chat fires it
+  // on arrival with the apps it needs. A fenced ask or no storage falls back
+  // to the `?prompt=` prefill, and a URL still never fires a turn.
   const router = useRouter()
-  const [prompt, setPrompt] = useState<InjectedPrompt | null>(null)
+  const pathname = usePathname()
   const tabsRef = useRef<HTMLElement | null>(null)
   const runAsk = useCallback(
     (ask: string) => {
-      // A symbol with no candle feed has no Trade panel: its asks go to chat.
-      if (!pair) {
-        router.push(promptHref(ask))
-        return
-      }
-      setPrompt({ text: ask, send: true, at: Date.now() })
-      setTab('trade')
-      // The header chips sit above the chart; the build lands under it. Bring
-      // the tab strip up under the nav so the order panel is on screen (the
-      // chart stays one scroll away — it never unmounts).
-      requestAnimationFrame(() => {
-        const el = tabsRef.current
-        if (!el) return
-        const top = el.getBoundingClientRect().top + window.scrollY - 72
-        window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-      })
+      const handed = writeArrivalIntent({ text: ask, from: pathname ?? '' })
+      router.push(handed ? ARRIVAL_APP_HREF : promptHref(ask))
     },
-    [pair, router],
+    [pathname, router],
   )
   // Looking needs no wallet; acting does (2026-09-14, Nate: "only on an
   // action item 'buy $10 of APPLE'"). Every ask on the page comes through
@@ -157,11 +151,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
   // chip, a post, the watchlist. A connected wallet runs it now; a visitor
   // with none gets the connect door, and the ask runs once a wallet lands
   // (lib/use-connect-to-act).
-  const { act, door } = useConnectToAct({
-    run: runAsk,
-    redirectFor: (ask) => (pair ? marketTabUrl('trade', window.location.pathname, window.location.search) : promptHref(ask)),
-    resumable: !!pair,
-  })
+  const { act, door } = useConnectToAct({ run: runAsk, redirectFor: promptHref })
   const onAsk = useCallback((a: TradeAsk) => act(a.ask), [act])
   // A chip is a real link (the /chat prefill: no-JS, a new tab); a plain
   // click sends through the act door instead.
@@ -389,7 +379,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
               ) : tab === 'technicals' ? (
                 <TechnicalsTab symbol={sym} pair={pair} initialTf={initialTf} onAsk={onChartAsk} />
               ) : (
-                <TradeTab symbol={sym} pair={pair} prompt={prompt} onAsk={onAsk} onAskText={act} last={stats?.last ?? null} />
+                <TradeTab symbol={sym} pair={pair} onAsk={onAsk} onAskText={act} last={stats?.last ?? null} />
               )
             ) : (
               <section className="mkt-card">
