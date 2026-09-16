@@ -22212,7 +22212,7 @@ async function main() {
     )
     check(
       'arc: "arc" is an English noun — only a chain slot names the chain (on/from/to arc, "arc chain", "Circle\'s Arc"); the noun never routes',
-      chainNamedIn('buy $10 of BTC on arc')?.id === 5042 && chainNamedIn('swap 12 USDC from base to arc')?.id === 5042 && chainNamedIn('use the arc chain')?.id === 5042 &&
+      chainNamedIn('buy $10 of BTC on arc')?.id === 5042 && chainNamedIn('swap 12 USDC to arc')?.id === 5042 && chainNamedIn('swap 12 USDC from base to arc')?.id === 8453 && chainNamedIn('use the arc chain')?.id === 5042 &&
         chainNamedIn("swap 10 USDC to EURC on Circle's Arc")?.id === 5042 && chainNamedIn('bridge it to arc network')?.id === 5042 &&
         chainNamedIn('the arc of ETH this week, swap 10 USDC for ETH') === null && chainNamedIn('buy an arc lamp') === null && chainNamedIn('arc reactor tokens are dumb') === null &&
         canonicalChainWord('arc') === 'arc' && canonicalChainWord('arc network') === 'arc' && canonicalChainWord('circle arc') === 'arc' &&
