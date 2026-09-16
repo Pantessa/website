@@ -27,6 +27,8 @@ import type { ChartState } from '@/lib/chart-state'
 import type { PublicComment, PublicPost, PostSort } from '@/lib/chart-posts'
 import { ageLabel } from '@/lib/news-shared'
 import ChartSketch from './ChartSketch'
+import { canSellAsk } from '@/lib/sell-gate'
+import { useHeld } from '@/lib/use-held'
 import '../comm.css'
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
@@ -218,6 +220,7 @@ function PostCard({
   const [busy, setBusy] = useState<'comment' | 'fork' | 'mint' | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const mine = !!sessionAddress && sessionAddress.toLowerCase() === post.author
+  const held = useHeld()
 
   const loadComments = useCallback(async () => {
     const r = await fetch(`/api/posts/${post.id}`, { cache: 'no-store' })
@@ -286,6 +289,9 @@ function PostCard({
     }
   }
 
+  // A post's Sell asks show only to a reader whose wallet holds the token
+  // (lib/sell-gate): the author's idea, not the reader's option otherwise.
+  const shownAsks = post.asks.filter((a) => canSellAsk(a, held))
   const chip = (ask: string, i: number) =>
     onAsk ? (
       <button key={i} type="button" className="mkp__chip" onClick={() => onAsk(ask)} title="Sends this ask in chat — your wallet signs">
@@ -331,7 +337,7 @@ function PostCard({
         </h3>
         {post.body && <p className="mkp__body">{post.body}</p>}
 
-        {(post.asks.length > 0 || post.linkSlug) && (
+        {(shownAsks.length > 0 || post.linkSlug) && (
           <div className="mkp__chips">
             {post.linkSlug && (
               <Link href={`/i/${post.linkSlug}`} className="mkp__exec" title="Opens the guarded runtime — only your wallet signs">
@@ -339,7 +345,7 @@ function PostCard({
                 <small>{post.executedBy > 0 ? `· executed by ${post.executedBy} wallet${post.executedBy === 1 ? '' : 's'}` : '· not executed yet'}</small>
               </Link>
             )}
-            {post.asks.map(chip)}
+            {shownAsks.map(chip)}
           </div>
         )}
 

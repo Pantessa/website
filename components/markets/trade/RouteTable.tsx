@@ -9,6 +9,9 @@
 // page the page's own connect-to-act door opens for a stranger). The rows
 // come from lib/symbol-venues (pure); the numbers from
 // GET /api/markets/routes (30s cache, fail-soft per row — "—" still sends).
+// A sell row (Sell, Limit sell, your line above market) renders only while
+// the connected wallet holds the symbol on that row's chain (lib/sell-gate,
+// 2026-09-16): nothing to sell, no row.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getProtocolMark } from '@/components/protocol-marks'
@@ -29,6 +32,8 @@ import {
   type RoutesResponse,
   type VenueKind,
 } from '@/lib/symbol-venues'
+import { canSellAsk, isSellAsk } from '@/lib/sell-gate'
+import { useHeld } from '@/lib/use-held'
 import './trade.css'
 
 export const ROUTE_AMOUNTS = [10, 25, 50, 100, 250] as const
@@ -140,8 +145,12 @@ export default function RouteTable({
     }
   }, [load, custom])
 
+  // The rows this wallet can act on: a sell only where it holds the symbol.
+  const held = useHeld()
+  const routes = useMemo(() => (data?.routes ?? []).filter((r) => canSellAsk(r.ask, held)), [data, held])
+
   const rows = useMemo(() => {
-    const list = data?.routes ?? []
+    const list = routes
     const filtered = filter === 'all' ? list : list.filter((r) => r.kind === filter)
     const groups = new Map<VenueKind, RouteQuote[]>()
     for (const k of VENUE_KIND_ORDER) {
@@ -149,14 +158,14 @@ export default function RouteTable({
       if (g.length) groups.set(k, g)
     }
     return groups
-  }, [data, filter])
+  }, [routes, filter])
 
-  const kindsPresent = useMemo(() => VENUE_KIND_ORDER.filter((k) => data?.routes.some((r) => r.kind === k)), [data])
-  const hasPerp = data?.routes.some((r) => r.kind === 'perp') ?? false
-  const venues = useMemo(() => new Set((data?.routes ?? []).map((r) => r.venue)).size, [data])
+  const kindsPresent = useMemo(() => VENUE_KIND_ORDER.filter((k) => routes.some((r) => r.kind === k)), [routes])
+  const hasPerp = routes.some((r) => r.kind === 'perp')
+  const venues = useMemo(() => new Set(routes.map((r) => r.venue)).size, [routes])
 
   return (
-    <section className="mkt-card mkt-routes" aria-label={`Every way to act on ${symbol}`} data-state={state} data-rows={data?.routes.length ?? 0}>
+    <section className="mkt-card mkt-routes" aria-label={`Every way to act on ${symbol}`} data-state={state} data-rows={routes.length}>
       <header className="mkt-card__head mkt-routes__head">
         <div>
           <h2 className="mkt-card__title">Every way to act on {pair.symbol}</h2>
@@ -253,7 +262,7 @@ export default function RouteTable({
                 <ul className="mkt-routes__list mkt-routes__list--level" aria-label="At your drawn line">
                   {SPOT_CHAINS.filter((c) => c.cow && list.some((r) => r.chainId === c.id))
                     .map((c) => ({ c, lvl: limitAtLevel(pair.symbol, c.word, usd, drawn, data.last!) }))
-                    .filter((x): x is { c: (typeof SPOT_CHAINS)[number]; lvl: NonNullable<ReturnType<typeof limitAtLevel>> } => !!x.lvl)
+                    .filter((x): x is { c: (typeof SPOT_CHAINS)[number]; lvl: NonNullable<ReturnType<typeof limitAtLevel>> } => !!x.lvl && canSellAsk(x.lvl.ask, held))
                     .map(({ c, lvl }) => (
                       <li key={`level:${c.id}`} className={`mkt-route mkt-route--level ${lvl.side === 'sell' ? 'mkt-route--sell' : ''}`} data-route={`limit:cow:${c.id}:level`}>
                         <span className="mkt-route__mark" aria-hidden="true"><VenueMark venue="cow" /></span>
@@ -314,7 +323,8 @@ export default function RouteTable({
                       </span>
                       <span className="mkt-route__tags">
                         {r.best && <span className="mkt-route__tag mkt-route__tag--best mono" title={BEST_OUT_RULE}>BEST OUT</span>}
-                        {r.needs === 'position' && <span className="mkt-route__tag mono">NEEDS A POSITION</span>}
+                        {/* A sell row only renders for a holder, so it never needs the tag. */}
+                        {r.needs === 'position' && !isSellAsk(r.ask) && <span className="mkt-route__tag mono">NEEDS A POSITION</span>}
                       </span>
                     </span>
                     <button type="button" className={`mkt-route__chip ${r.side === 'sell' ? 'mkt-route__chip--sell' : ''}`} title={r.ask} data-ask={r.ask} onClick={() => onAsk(r.ask)}>

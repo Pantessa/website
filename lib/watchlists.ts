@@ -371,6 +371,9 @@ export interface HeldSymbol {
   amount: number
   /** Chain names it sits on ('Base', 'Robinhood Chain', …). */
   chains: string[]
+  /** The same chains by id, in the same order — what a per-chain Sell row
+   *  checks (lib/sell-gate). */
+  chainIds: number[]
 }
 
 export interface HeldAutofillPlan {

@@ -53,6 +53,8 @@ import { sideOf, type InjectedPrompt, type TradeAsk } from '@/lib/trade-asks'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
 import { useSession } from '@/lib/session'
 import { useSymbolFills } from '@/lib/chart-fills'
+import { canSellAsk } from '@/lib/sell-gate'
+import { useHeld } from '@/lib/use-held'
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
 
@@ -181,6 +183,10 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
   // legend under the chart). Public by address; no wallet → no read.
   const { walletAddress } = useSession()
   const fills = useSymbolFills(sym, walletAddress)
+  // A chartless token's Sell chip waits on the same rule as every other Sell
+  // (lib/sell-gate): the wallet has to hold it.
+  const held = useHeld()
+  const fallbackSell = `Sell $50 of ${sym}`
   // What's on screen (VIZ's onViewport, bar open times) — AskChart's context.
   const [viewport, setViewport] = useState<{ from: number; to: number; tf: ChartTf } | null>(null)
 
@@ -322,9 +328,11 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
                     <Link href={promptHref(`Buy $50 of ${sym}`)} className="mkt-chip mkt-chip--buy" onClick={sendOnClick(`Buy $50 of ${sym}`)}>
                       Buy {sym}
                     </Link>
-                    <Link href={promptHref(`Sell $50 of ${sym}`)} className="mkt-chip" onClick={sendOnClick(`Sell $50 of ${sym}`)}>
-                      Sell {sym}
-                    </Link>
+                    {canSellAsk(fallbackSell, held) && (
+                      <Link href={promptHref(fallbackSell)} className="mkt-chip" onClick={sendOnClick(fallbackSell)}>
+                        Sell {sym}
+                      </Link>
+                    )}
                   </div>
                 </div>
               </div>

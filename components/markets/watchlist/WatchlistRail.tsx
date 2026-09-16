@@ -34,6 +34,8 @@ import AddTicker from './AddTicker'
 import AlertForm from './AlertForm'
 import ImportModal from './ImportModal'
 import { useAlerts, useQuotes, useWatchlists } from './useWatchlists'
+import { canSellAsk } from '@/lib/sell-gate'
+import { useHeld } from '@/lib/use-held'
 
 const promptHref = (ask: string) => `/chat?prompt=${encodeURIComponent(ask)}`
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
@@ -70,6 +72,8 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
   const pathname = usePathname()
   const { toast } = useToast()
   const wl = useWatchlists()
+  // A row's "Sell $10" shows only while the connected wallet holds it (lib/sell-gate).
+  const walletHeld = useHeld()
   const alerts = useAlerts(wl.mode === 'authed')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -546,9 +550,11 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                               <button type="button" className="wl__chip wl__chip--accent" onClick={() => send(`Buy $10 of ${sym}`, handoffable(sym))} title={sendLabelFor(handoffable(sym))}>
                                 Buy $10
                               </button>
-                              <button type="button" className="wl__chip" onClick={() => send(`Sell $10 of ${sym}`, handoffable(sym))} title={sendLabelFor(handoffable(sym))}>
-                                Sell $10
-                              </button>
+                              {canSellAsk(`Sell $10 of ${sym}`, walletHeld) && (
+                                <button type="button" className="wl__chip" onClick={() => send(`Sell $10 of ${sym}`, handoffable(sym))} title={sendLabelFor(handoffable(sym))}>
+                                  Sell $10
+                                </button>
+                              )}
                               <button type="button" className="wl__chip" onClick={() => send(`DCA $10 into ${sym} weekly`, handoffable(sym))} title={sendLabelFor(handoffable(sym))}>
                                 DCA weekly
                               </button>

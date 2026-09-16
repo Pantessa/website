@@ -10,6 +10,10 @@
 // here under the chart. Connect to act, sign in to keep (rule 6 — every
 // sign-in CTA inside ChatInterface is already the unified door). The wallet
 // signature is the only gate; the panel itself never touches funds.
+//
+// The Sell side shows only while the connected wallet holds the symbol
+// (lib/sell-gate, 2026-09-16): nothing to sell, no Sell. A perp's Short is
+// not a sell of a held token and stays.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
@@ -21,6 +25,8 @@ import CompoundComposer from '@/components/markets/slots/CompoundComposer'
 import PositionPanel from '@/components/markets/slots/PositionPanel'
 import { useSession } from '@/lib/session'
 import { AMOUNTS, CADENCES, SIDE_LABEL, STOPS, composeAsk, sideOf, sidesFor, type Cadence, type InjectedPrompt, type TradeAsk, type TradeSide } from '@/lib/trade-asks'
+import { canSellAsk } from '@/lib/sell-gate'
+import { useHeld } from '@/lib/use-held'
 
 // The grammar (sides a pair can offer, the sentence per side, the default
 // chip row) lives in lib/trade-asks — pure, shared with the header strip,
@@ -52,11 +58,16 @@ export default function TradeTab({
 }) {
   const askText = onAskText ?? ((a: string) => onAsk?.({ side: sideOf(a), label: a, ask: a }))
   const { walletAddress } = useSession()
-  const sides = useMemo(() => sidesFor(pair), [pair])
-  const [side, setSide] = useState<TradeSide>(() => {
+  const allSides = useMemo(() => sidesFor(pair), [pair])
+  const held = useHeld()
+  const sides = useMemo(() => allSides.filter((s) => canSellAsk(composeAsk(pair, s), held)), [allSides, pair, held])
+  // The side asked for is kept even while Sell is hidden, so a Sell fired
+  // from the header lands on Sell as soon as the holdings read says it's held.
+  const [pickedSide, setSide] = useState<TradeSide>(() => {
     const s = prompt ? sideOf(prompt.text) : 'buy'
-    return sides.includes(s) ? s : sides[0]
+    return allSides.includes(s) ? s : allSides[0]
   })
+  const side = sides.includes(pickedSide) ? pickedSide : sides[0]
   // A chip fired from Overview lands the panel on its own amount ($50 →
   // the custom slot; a preset value lights its chip).
   const firedUsd = prompt ? Number(prompt.text.match(/\$(\d+)/)?.[1] ?? NaN) : NaN

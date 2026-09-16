@@ -37,6 +37,7 @@ import {
   type WatchlistShape,
 } from '@/lib/watchlists'
 import type { AlertShape, NotificationShape } from '@/lib/watchlists-store'
+import { HELD_EVERY_MS, readHeld } from '@/lib/held-read'
 
 const ACTIVE_KEY = 'pantessa.watchlists.active'
 
@@ -48,30 +49,12 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 // ── Holdings reads ──────────────────────────────────────────────────────────
-// Module-level so they outlive the rail remounting on every client navigation
-// between /markets and /t pages: one read and one reconcile per wallet per
-// mode per minute. A wallet doesn't change that fast, and the server rides
-// the Wallet panel's cache anyway. Rows show the position (2026-09-14), so a
-// page left open also re-reads once a minute while the tab is visible.
-const HELD_EVERY_MS = 60_000
-const heldReads = new Map<string, { at: number; read: Promise<HeldSymbol[] | null> }>()
+// The read itself is shared with the page (lib/held-read: the YOU HOLD pill
+// and the Sell chips read the same one): one read and one reconcile per
+// wallet per mode per minute. Rows show the position (2026-09-14), so a page
+// left open also re-reads once a minute while the tab is visible.
 const lastReconciled = new Map<string, number>()
 const NO_HELD: ReadonlyMap<string, HeldSymbol> = new Map()
-
-/** A read younger than `maxAgeMs` is shared, not repeated. */
-function readHeld(address: string, maxAgeMs = HELD_EVERY_MS): Promise<HeldSymbol[] | null> {
-  const hit = heldReads.get(address)
-  if (hit && Date.now() - hit.at < maxAgeMs) return hit.read
-  const read = fetch(`/api/watchlists/holdings?address=${encodeURIComponent(address)}`, { cache: 'no-store' })
-    .then(async (r) => (r.ok ? (((await r.json()) as { held?: HeldSymbol[] }).held ?? []) : null))
-    .catch(() => null)
-  heldReads.set(address, { at: Date.now(), read })
-  // A failed read retries on the next mount instead of waiting out the window.
-  void read.then((v) => {
-    if (v === null && heldReads.get(address)?.read === read) heldReads.delete(address)
-  })
-  return read
-}
 
 // The guest ledger's bookkeeping. Only the owner's own gestures call these;
 // the autofill writes the ledger itself (its adds are never "by hand").

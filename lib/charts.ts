@@ -41,6 +41,11 @@ export const CHART_TFS: { key: ChartTf; label: string }[] = [
   { key: '1d', label: '1D' },
 ]
 
+/** The frame a token chart opens on: the day (Nate, 2026-09-16). The chart
+ *  engine and the Technicals tab both read it, so the candles and the gauge
+ *  open on the same frame. The landing's rehearsal still asks for 1H. */
+export const DEFAULT_CHART_TF: ChartTf = '1d'
+
 export interface ChartPair {
   /** Canonical charted symbol (aliases collapse: WETH → ETH). */
   symbol: string
