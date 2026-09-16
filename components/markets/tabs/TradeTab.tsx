@@ -3,8 +3,8 @@
 // Trade — the overlay chips promoted to a proper order panel. Real (SHELL).
 //
 // The panel composes ONE sentence an existing parser accepts (buy/sell →
-// the swap layer with 4663 inference for stocks; DCA → lib/dca; protect →
-// the Spot Guardian on Base or the HL Guardian for perps) and SENDS it: the
+// the swap layer with 4663 inference for stocks; protect → the Spot
+// Guardian on Base or the HL Guardian for perps) and SENDS it: the
 // frame's act door hands it to the app, which runs it on arrival with the
 // dapps it needs (lib/arrival-intent; 2026-09-16 — the build used to land in
 // a panel at the foot of this tab, where nobody saw it). Connect to act,
@@ -18,7 +18,7 @@ import RouteTable from '@/components/markets/slots/RouteTable'
 import CompoundComposer from '@/components/markets/slots/CompoundComposer'
 import PositionPanel from '@/components/markets/slots/PositionPanel'
 import { useSession } from '@/lib/session'
-import { AMOUNTS, CADENCES, SIDE_LABEL, STOPS, composeAsk, sideOf, sidesFor, type Cadence, type TradeAsk, type TradeSide } from '@/lib/trade-asks'
+import { AMOUNTS, SIDE_LABEL, STOPS, composeAsk, sideOf, sidesFor, type TradeAsk, type TradeSide } from '@/lib/trade-asks'
 
 // The grammar (sides a pair can offer, the sentence per side, the default
 // chip row) lives in lib/trade-asks — pure, shared with the header strip,
@@ -48,10 +48,9 @@ export default function TradeTab({
   const [usd, setUsd] = useState<number>(10)
   const [custom, setCustom] = useState<string>('')
   const [pct, setPct] = useState<number>(5)
-  const [cadence, setCadence] = useState<Cadence>('weekly')
 
   const amount = custom.trim() ? Math.max(1, Math.floor(Number(custom) || 0)) : usd
-  const ask = composeAsk(pair, side, { usd: amount, pct, cadence })
+  const ask = composeAsk(pair, side, { usd: amount, pct })
 
   const send = () => {
     onAsk?.({ side, label: SIDE_LABEL[side](pair), ask })
@@ -83,12 +82,12 @@ export default function TradeTab({
               className={`mkt-order__side ${side === s ? 'is-on' : ''} ${s === 'sell' ? 'mkt-order__side--sell' : ''}`}
               onClick={() => setSide(s)}
             >
-              {s === 'buy' ? (isPerp ? 'Long' : 'Buy') : s === 'sell' ? (isPerp ? 'Short' : 'Sell') : s === 'dca' ? 'DCA' : 'Protect'}
+              {s === 'buy' ? (isPerp ? 'Long' : 'Buy') : s === 'sell' ? (isPerp ? 'Short' : 'Sell') : 'Protect'}
             </button>
           ))}
         </div>
 
-        {/* Amount / stop / cadence */}
+        {/* Amount / stop */}
         {side !== 'protect' ? (
           <div className="mkt-order__row">
             <span className="mkt-order__k mono">AMOUNT</span>
@@ -131,18 +130,6 @@ export default function TradeTab({
             </div>
           </div>
         )}
-        {side === 'dca' && (
-          <div className="mkt-order__row">
-            <span className="mkt-order__k mono">EVERY</span>
-            <div className="mkt-order__presets">
-              {CADENCES.map((c) => (
-                <button key={c} type="button" className={`mkt-order__preset ${cadence === c ? 'is-on' : ''}`} onClick={() => setCadence(c)}>
-                  {c === 'daily' ? 'day' : c === 'weekly' ? 'week' : 'month'}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* The sentence + send */}
         <div className="mkt-order__ask">
@@ -150,7 +137,7 @@ export default function TradeTab({
             &ldquo;{ask}&rdquo;
           </p>
           <button type="button" className={`mkt-order__send ${side === 'sell' ? 'mkt-order__send--sell' : ''}`} onClick={send}>
-            {side === 'protect' ? 'Arm it' : side === 'dca' ? 'Start it' : 'Send it'}
+            {side === 'protect' ? 'Arm it' : 'Send it'}
           </button>
         </div>
         <p className="mkt-card__note">
@@ -158,11 +145,9 @@ export default function TradeTab({
             ? isPerp
               ? 'The Guardian watches the venue every minute and closes the position at your stop — delegated, never custodial.'
               : 'A one-shot Spend Permission on Base: the Guardian sells only if your line breaks. Signed once.'
-            : side === 'dca'
-              ? 'Each period compiles a fresh guarded swap for you to sign — no double buys, cancel any time.'
-              : pair.source === 'robinhood'
-                ? 'Settles on Robinhood Chain in USDG. An empty wallet gets a funding path, not a wall.'
-                : 'Quote → deterministic build → guardrails → your signature → receipt. The sentence is the whole order form.'}
+            : pair.source === 'robinhood'
+              ? 'Settles on Robinhood Chain in USDG. An empty wallet gets a funding path, not a wall.'
+              : 'Quote → deterministic build → guardrails → your signature → receipt. The sentence is the whole order form.'}
         </p>
       </section>
 

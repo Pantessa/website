@@ -231,8 +231,6 @@ function ticketFor(r: VenueRoute, feeBps: number, amount: number, sym: string, c
       return { ...base, out: r.side === 'buy' ? `$${amount} of ${sym} supplied (aToken)` : `${amount} USDC borrowed`, slippageBps: null, minOut: null, gas: gasLine(1), signs: r.side === 'buy' ? 'approve (if needed) + supply — pinned selector' : 'borrow — health factor previewed first' }
     case 'stake':
       return { ...base, out: `${r.ask.match(/Stake ([\d.]+) ETH/)?.[1] ?? '?'} stETH (1:1)`, slippageBps: null, minOut: null, gas: gasLine(1), signs: 'submit() — one transaction, gas buffer kept' }
-    case 'dca':
-      return { ...base, out: 'a guarded buy each period, sized fresh', slippageBps: SWAP_SLIPPAGE_BPS, minOut: null, gas: gasLine(r.chainId), signs: 'a schedule row now; each period’s swap is its own card' }
     case 'protect':
       return { ...base, out: r.venue === 'hyperliquid' ? 'a Guardian policy on your live perp' : 'a one-shot Spend Permission on Base', slippageBps: r.venue === 'hyperliquid' ? HL_EXEC_SLIPPAGE_BPS : 300, minOut: r.venue === 'hyperliquid' ? null : 'independent 3% floor at sweep', gas: null, signs: r.venue === 'hyperliquid' ? 'delegated agent — personal_sign consent' : 'EIP-712 Spend Permission (smart wallets)' }
     case 'fund':
@@ -361,8 +359,6 @@ async function compose(sym: string, amount: number, lastIn: number | null, lever
               : `pool ${prem >= 0 ? '+' : ''}${prem.toFixed(2)}% vs tape`
         return { ...base, quote: { kind: 'price', value: pool.usdPerToken, label: fmtUsd(pool.usdPerToken), sub } }
       }
-      case 'dca':
-        return { ...base, quote: { kind: 'none', value: null, label: 'every week', sub: 'you sign each buy' } }
       case 'fund':
         return { ...base, quote: { kind: 'none', value: null, label: r.venue === 'near' ? 'settles in seconds' : 'one signed job' } }
     }

@@ -46,12 +46,14 @@ export default function VenueBand() {
         const j = await r.json()
         const rows: RouteLive[] = Array.isArray(j?.routes) ? j.routes : []
         // One number per band card: the venue's BUY-side row (or its only
-        // row); the DCA card is the house 'pantessa' row of kind 'dca'.
+        // row). A protect row feeds the Guardian card, never its venue's
+        // card: the Hyperliquid stop has no side, so it used to overwrite
+        // the perp's mark · funding with "watches every minute".
         const next: Record<string, string> = {}
         for (const row of rows) {
           const label = row.quote && typeof row.quote === 'object' && typeof row.quote.label === 'string' ? row.quote.label : null
           if (!label) continue
-          const key = row.kind === 'dca' ? 'dca' : String(row.venue ?? '').toLowerCase()
+          const key = row.kind === 'protect' ? (row.venue === 'hyperliquid' ? 'guardian' : '') : String(row.venue ?? '').toLowerCase()
           if (!key || !keys.has(key)) continue
           if (next[key] && row.side === 'sell') continue
           next[key] = row.quote?.sub ? `${label} · ${row.quote.sub}` : label

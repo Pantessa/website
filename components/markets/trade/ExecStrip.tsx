@@ -1,12 +1,12 @@
 'use client'
 
 // ExecStrip (MK2/EXEC) — the header-level act row: the honest set of sides
-// for the pair (Buy · Sell · Long · Short · Stake · Supply · DCA · Protect,
+// for the pair (Buy · Sell · Long · Short · Stake · Supply · Protect,
 // where each is honest — lib/trade-asks execSidesFor). One chip per side;
 // each chip's label is a complete ask that SENDS on click (the chip IS the
-// contract). Replaces the Overview-era Buy/Sell/DCA/Protect strip and KEEPS
-// its wire: the `sym__act` wrapper, the eyebrow sentence, the legacy
-// `sym__act-chip sym__act-chip--buy|sell|dca|protect` class names on the
+// contract). Replaces the Overview-era Buy/Sell/DCA/Protect strip (DCA
+// dropped 2026-09-16) and KEEPS its wire: the `sym__act` wrapper, the eyebrow
+// sentence, the legacy `sym__act-chip sym__act-chip--buy|sell|protect` class names on the
 // equivalent sides (long/short wear buy/sell), and the `/chat?prompt=` href
 // as the no-JS fallback (a URL never fires a turn — memory chip-send-
 // contract), so main's act-strip pins stay green on the merged tree. The
@@ -27,7 +27,6 @@ const LEGACY: Record<ExecSide, string> = {
   long: 'buy',
   sell: 'sell',
   short: 'sell',
-  dca: 'dca',
   protect: 'protect',
   stake: 'stake',
   supply: 'supply',

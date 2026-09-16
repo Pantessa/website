@@ -4,7 +4,7 @@
 // · Moving Averages) drawn from OUR OWN candles by lib/technicals, the two
 // indicator tables, the five pivot families — and under the summary, the
 // verdict as buttons. Every chip carries a complete ask an existing parser
-// claims (swap / dca / spot-guard / HL guardian / HL open) and SENDS on
+// claims (swap / spot-guard / HL guardian / HL open) and SENDS on
 // click when the host wires onAsk (the chip-send contract, the same path
 // ChartOverlay's chips take); on the standalone page, where no chat is
 // mounted, a chip is a /chat?prompt= prefill link — a URL never fires a
@@ -134,7 +134,7 @@ function PivotTable({ pivots, period, last }: { pivots: NonNullable<TechnicalsAp
 export function VerdictChips({ chips, onAsk, compact = false }: { chips: ChartAction[]; onAsk?: (ask: string) => void; compact?: boolean }) {
   const cls = (kind: ChartAction['kind']) =>
     `rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors [@media(hover:none)]:min-h-10 ${
-      kind === 'buy' || kind === 'dca'
+      kind === 'buy'
         ? 'border-[var(--accent)] text-[color:var(--accent)] hover:bg-[var(--accent)] hover:text-[color:var(--ink,#000)]'
         : kind === 'sell'
           ? 'border-[var(--sell)] text-[color:var(--sell)] hover:bg-[var(--sell)] hover:text-white'
