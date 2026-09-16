@@ -127,7 +127,6 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
   // ── The send door: a chip anywhere on the page lands on Trade and fires ──
   const router = useRouter()
   const [prompt, setPrompt] = useState<InjectedPrompt | null>(null)
-  const tabsRef = useRef<HTMLElement | null>(null)
   const runAsk = useCallback(
     (ask: string) => {
       // A symbol with no candle feed has no Trade panel: its asks go to chat.
@@ -135,17 +134,10 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
         router.push(promptHref(ask))
         return
       }
+      // The Trade tab brings its "Your order" panel on screen for every new
+      // prompt (TradeTab): the build lands there, at the foot of the tab.
       setPrompt({ text: ask, send: true, at: Date.now() })
       setTab('trade')
-      // The header chips sit above the chart; the build lands under it. Bring
-      // the tab strip up under the nav so the order panel is on screen (the
-      // chart stays one scroll away — it never unmounts).
-      requestAnimationFrame(() => {
-        const el = tabsRef.current
-        if (!el) return
-        const top = el.getBoundingClientRect().top + window.scrollY - 72
-        window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-      })
     },
     [pair, router],
   )
@@ -350,7 +342,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
 
         {/* ── Tabs ── */}
         <div className="sym__main">
-          <nav ref={tabsRef} className="sym__tabs" role="tablist" aria-label="Symbol sections">
+          <nav className="sym__tabs" role="tablist" aria-label="Symbol sections">
             {MARKET_TABS.map((t) => (
               <a
                 key={t.tab}

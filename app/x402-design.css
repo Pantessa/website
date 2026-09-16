@@ -5300,7 +5300,7 @@
 .mkt-order__send { min-height: 40px; padding: 0 18px; border: 1px solid var(--accent); border-radius: 999px; background: var(--accent); color: var(--ink); font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .mkt-order__send:hover { filter: brightness(1.06); }
 .mkt-order__send--sell { background: var(--sell); border-color: var(--sell); color: #fff; }
-.mkt-trade__chat { padding: 0; overflow: hidden; }
+.mkt-trade__chat { padding: 0; overflow: hidden; scroll-margin-top: 72px; } /* a send scrolls here (TradeTab); clears the phone's sticky strip */
 .mkt-trade__empty { padding: 22px 16px; }
 .mkt-trade__runtime { display: flex; flex-direction: column; height: clamp(440px, 62dvh, 760px); }
 .mkt-trade__runtime > div { height: 100%; }

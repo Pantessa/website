@@ -79,6 +79,23 @@ export default function TradeTab({
     setCurrentChatId(null)
   }, [armed, setCurrentChatId])
 
+  // Every send brings "Your order" on screen, because that is where the build
+  // lands: at the foot of this tab, under the routes, the order card, the
+  // composer and the positions. The page used to scroll UP to the tab strip,
+  // which put a button inside this tab ("Build the 4-step job", a route's Buy)
+  // a screen away from its own result. The ask fired and the job compiled out
+  // of sight, so the click read as "it just pops to the top" (Nate, 2026-09-16).
+  const orderRef = useRef<HTMLElement | null>(null)
+  const promptAt = prompt?.at
+  useEffect(() => {
+    if (promptAt === undefined) return
+    const frame = requestAnimationFrame(() => {
+      const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+      orderRef.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [promptAt])
+
   const send = () => {
     onAsk?.({ side, label: SIDE_LABEL[side](pair), ask })
   }
@@ -202,7 +219,7 @@ export default function TradeTab({
       </div>
 
       {/* The build lands here — the same runtime as an intent link */}
-      <section className="mkt-card mkt-trade__chat" aria-label="Your order" data-armed={armed ? '1' : '0'}>
+      <section ref={orderRef} className="mkt-card mkt-trade__chat" aria-label="Your order" data-armed={armed ? '1' : '0'}>
         {armed ? (
           <div className="mkt-trade__runtime">
             <ChatInterface simple injectedPrompt={prompt} />

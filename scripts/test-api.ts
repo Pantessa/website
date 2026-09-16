@@ -20821,6 +20821,23 @@ async function main() {
         tTrade.indexOf('class="mk-trade__compound"') < tTrade.indexOf('class="mk-trade__position"') &&
         tTrade.indexOf('class="mk-trade__position"') < tTrade.indexOf('class="mkt-card mkt-trade__chat"'),
     )
+    // …which puts "Your order" LAST, so a send must scroll there. The page
+    // used to scroll up to the tab strip: "Build the 4-step job" fired and the
+    // job compiled a screen below the viewport ("it just pops to the top",
+    // Nate, 2026-09-16). Comments stripped: a pin a comment can satisfy is not a pin.
+    {
+      const fsT = await import('node:fs')
+      const codeOnlyT = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      const tradeSrc = codeOnlyT(fsT.readFileSync('components/markets/tabs/TradeTab.tsx', 'utf8'))
+      const symSrc = codeOnlyT(fsT.readFileSync('components/markets/shell/SymbolPage.tsx', 'utf8'))
+      const runAskSrc = symSrc.slice(symSrc.indexOf('const runAsk = useCallback('), symSrc.indexOf('const { act, door } = useConnectToAct('))
+      check(
+        'mk2/markets: a Trade send scrolls "Your order" into view on every new prompt (keyed on prompt.at), never up to the tab strip',
+        /<section ref=\{orderRef\} className="mkt-card mkt-trade__chat"/.test(tradeSrc) &&
+          /orderRef\.current\?\.scrollIntoView\(/.test(tradeSrc) && /\}, \[promptAt\]\)/.test(tradeSrc) &&
+          runAskSrc.length > 0 && !/scrollTo|scrollIntoView|tabsRef/.test(runAskSrc),
+      )
+    }
     // The pure pieces under the header + the table.
     check(
       'mk2/markets: rangePosition is 0 at the low, 1 at the high, clamped, null on a flat or unknown range; sortMarketRows sinks unquoted rows in BOTH directions and keeps the section order on ties',
