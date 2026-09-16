@@ -21298,6 +21298,8 @@ async function main() {
     const reduced = arrivalCss.slice(arrivalCss.indexOf('@media (prefers-reduced-motion: reduce)'))
     check('arrival/ux css: every colour is a site token (no hex, no rgb literal — only --bg/--surf/--line/--fg/--muted/--accent/--ink + the chat faces); the light theme only re-floors the cascade under :root[data-theme=\'light\']; reduced motion stills the cascade, glow, pulse and rise; ≤480px shrinks the stone', cssVars.every((v) => siteTokens.has(v)) && !/#[0-9a-fA-F]{3,8}\b/.test(arrivalCss) && !/rgba?\(/.test(arrivalCss) && arrivalCss.includes(":root[data-theme='light'] .arrival {") && reduced.includes('.arrival__band') && reduced.includes('animation: none') && reduced.includes('.arrival--leaving { transform: none; }') && arrivalCss.includes('@media (max-width: 480px)'), `vars=${[...new Set(cssVars)].join(',')}`)
 
+  }
+
   // ── ARRIVAL/SECURITY ── (squad 2026-09-16) The arrival fence (lib/arrival-
   // fence.ts) and the ladder proof. A chip tapped on /markets RUNS on /chat
   // through a same-tab sessionStorage record; sessionStorage is writable by
