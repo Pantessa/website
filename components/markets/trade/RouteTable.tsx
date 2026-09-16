@@ -87,6 +87,7 @@ export default function RouteTable({
   const [filter, setFilter] = useState<VenueKind | 'all'>('all')
   const [drawn, setDrawn] = useState<number | null>(null)
   const [why, setWhy] = useState(false)
+  const [open, setOpen] = useState<string | null>(null)
   const usd = custom.trim() ? Math.max(1, Math.floor(Number(custom) || 0)) : amount
   const seq = useRef(0)
 
@@ -275,7 +276,7 @@ export default function RouteTable({
               )}
               <ul className="mkt-routes__list">
                 {list.map((r) => (
-                  <li key={r.id} className={`mkt-route ${r.best ? 'is-best' : ''} ${r.side === 'sell' ? 'mkt-route--sell' : ''}`} data-route={r.id}>
+                  <li key={r.id} className={`mkt-route ${r.best ? 'is-best' : ''} ${r.side === 'sell' ? 'mkt-route--sell' : ''} ${open === r.id ? 'is-open' : ''}`} data-route={r.id}>
                     <span className="mkt-route__mark" aria-hidden="true">
                       <VenueMark venue={r.venue} />
                     </span>
@@ -297,6 +298,14 @@ export default function RouteTable({
                     </span>
                     <span className="mkt-route__fee mono" title="Pantessa's fee on this route (lib/fees)">
                       {feeLabel(r.feeBps)}
+                      {r.ticket && (
+                        <>
+                          {' '}
+                          <button type="button" className="mkt-route__toggle mono" aria-expanded={open === r.id} aria-controls={`ticket-${r.id}`} onClick={() => setOpen((o) => (o === r.id ? null : r.id))}>
+                            {open === r.id ? 'hide' : "what you'll sign"}
+                          </button>
+                        </>
+                      )}
                     </span>
                     <span className="mkt-route__tags">
                       {r.best && <span className="mkt-route__tag mkt-route__tag--best mono" title={BEST_OUT_RULE}>BEST OUT</span>}
@@ -305,6 +314,18 @@ export default function RouteTable({
                     <button type="button" className={`mkt-route__chip ${r.side === 'sell' ? 'mkt-route__chip--sell' : ''}`} title={r.ask} data-ask={r.ask} onClick={() => onAsk(r.ask)}>
                       {r.label}
                     </button>
+                    {r.ticket && open === r.id && (
+                      <dl className="mkt-route__more" id={`ticket-${r.id}`} data-ticket="1">
+                        <div><dt className="mono">YOU SEND</dt><dd>“{r.ask}”</dd></div>
+                        <div><dt className="mono">EST. OUT</dt><dd>{r.ticket.out ?? '— (no live quote; the card quotes it)'}</dd></div>
+                        <div><dt className="mono">PANTESSA FEE</dt><dd>{r.ticket.feeBps > 0 ? `${(r.ticket.feeBps / 100).toFixed(2)}% · $${r.ticket.feeUsd.toFixed(2)} on $${data.amountUsd}` : 'none'}</dd></div>
+                        <div><dt className="mono">{r.ticket.slippageBps != null ? 'MIN RECEIVED' : 'FILL RULE'}</dt><dd>{r.ticket.minOut ?? (r.ticket.slippageBps != null ? `${(r.ticket.slippageBps / 100).toFixed(2)}% bound pinned by the builder` : 'at-or-better')}{r.ticket.slippageBps != null && r.ticket.minOut ? ` · ${(r.ticket.slippageBps / 100).toFixed(2)}% bound` : ''}</dd></div>
+                        <div><dt className="mono">GAS</dt><dd>{r.ticket.gas ?? 'none — no transaction'}</dd></div>
+                        <div><dt className="mono">SETTLES AT</dt><dd>{r.ticket.settles}</dd></div>
+                        <div><dt className="mono">YOU SIGN</dt><dd>{r.ticket.signs}</dd></div>
+                        <span className="mkt-route__ticket-note mono">{r.ticket.note.toUpperCase()}</span>
+                      </dl>
+                    )}
                   </li>
                 ))}
               </ul>
