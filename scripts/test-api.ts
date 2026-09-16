@@ -14253,11 +14253,22 @@ async function main() {
       // §E6: a v2 token verifies only against the job ROW's wallet, so a
       // well-formed token on a MISSING job reads 404 (the id isn't a secret —
       // cuids, and the owner path says 404 too); a malformed one stays 401.
-      const shapedWrong = await fetch(`${BASE}/api/jobs/job-token-probe?t=${'f'.repeat(64)}`)
+      // The unverifiable probe is a live v2 token bound to ANOTHER wallet: a
+      // v1 shape stopped being well-formed at JOB_TOKEN_V1_SUNSET (09-16).
+      const shapedWrong = await fetch(`${BASE}/api/jobs/job-token-probe?t=${signJobToken('job-token-probe', '0x00000000000000000000000000000000000000bb')}`)
       check(
         'job token: valid token passes the auth gate (404 on missing job); malformed token stays 401; a well-formed but unverifiable token on a missing job is 404, never 200',
         tokenRead.status === 404 && badTokenRead.status === 401 && shapedWrong.status === 404,
         `got ${tokenRead.status}/${badTokenRead.status}/${shapedWrong.status}`,
+      )
+      // The v1 sunset over HTTP: a v1-shaped token is malformed once the
+      // sunset passes (401, same as garbage), a plausible 404 before it.
+      const v1Shaped = await fetch(`${BASE}/api/jobs/job-token-probe?t=${'f'.repeat(64)}`)
+      const v1Expected = Date.now() >= JOB_TOKEN_V1_SUNSET ? 401 : 404
+      check(
+        'job token: a v1-shaped token reads 401 after JOB_TOKEN_V1_SUNSET (404 before it) — the sunset is enforced at the route, not only in the lib',
+        v1Shaped.status === v1Expected,
+        `got ${v1Shaped.status}, expected ${v1Expected}`,
       )
     } else {
       console.log('  ⚪ job token: SESSION_SECRET not available to the harness — token checks skipped')
