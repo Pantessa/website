@@ -1,5 +1,6 @@
 'use client'
 
+import { fillSymbolsOf } from '@/lib/fill-symbols'
 import { guardWarnLines } from '@/lib/content-origin'
 import ExternalBuildNotice from '@/components/ExternalBuildNotice'
 import { analytics } from '@/lib/analytics'
@@ -1187,9 +1188,19 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       // Job-driven turns carry the job id so the server can tag DCA-schedule
       // runs as standing dca-run origin (attended vs standing money-moved).
       jobId: data && typeof data.jobId === 'string' ? data.jobId : undefined,
+      // The traded symbols, side-tagged ("buy:ETH") — the only trade detail
+      // the first-party lane keeps, so /t/<symbol> can paint the fill.
+      symbols: outcome === 'tx-built' ? fillSymbolsOf({ ask: prompt, meta: data, artifact }) : undefined,
     })
   }
-  const reportEmbedSigned = (info: { artifact: string; chain?: string; chainId?: number; txUrl?: string; detail?: string; valueUsd?: number; buildPath?: string; feeBps?: number; jobId?: string }) => {
+  // The user ask a rendered assistant message answered — the sentence
+  // fillSymbolsOf reads on the signed beacon (it never leaves the client).
+  const askBefore = (index: number): string | null => {
+    const list = currentChat?.messages ?? []
+    for (let j = index - 1; j >= 0; j--) if (list[j]?.role === 'user') return list[j].content
+    return null
+  }
+  const reportEmbedSigned = (info: { artifact: string; chain?: string; chainId?: number; txUrl?: string; detail?: string; valueUsd?: number; buildPath?: string; feeBps?: number; jobId?: string; symbols?: string[] }) => {
     // txUrl + chainId ride the turn event so /i's signed beacon can carry
     // the tx hash for on-chain receipt verification (2026-09-01).
     onEmbedEvent?.('turn', { outcome: 'signed', artifact: info.artifact, valueUsd: info.valueUsd, txUrl: info.txUrl, chainId: info.chainId })
@@ -1936,6 +1947,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                                 onEmbedEvent?.('order-signed', info)
                                 reportEmbedSigned({
                                   artifact: 'hl-order',
+                                  symbols: fillSymbolsOf({ ask: askBefore(i), meta: msg.meta, artifact: 'hl-order' }),
                                   chain: 'hyperliquid',
                                   txUrl: info.explorerUrl,
                                   detail: info.detail?.slice(0, 60),
@@ -1957,6 +1969,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               onEmbedEvent?.('order-signed', info)
                               reportEmbedSigned({
                                 artifact: 'cow-order',
+                                symbols: fillSymbolsOf({ ask: askBefore(i), meta: msg.meta, artifact: 'cow-order' }),
                                 chain: 'ethereum',
                                 txUrl: (info as { explorerUrl?: string }).explorerUrl,
                                 detail: (info as { orderUid?: string }).orderUid?.slice(0, 60),
@@ -2039,7 +2052,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               // source of truth) so Robinhood/Arbitrum/etc. link to
                               // the right explorer, not a basescan fallback.
                               const explorer = chainById(chainId)?.explorerTx ?? 'https://basescan.org/tx/'
-                              reportEmbedSigned({ artifact: 'tx', chain: chainLabel(chainId), chainId, txUrl: `${explorer}${hash}`, valueUsd: guardrailUsdOf(msg.meta), buildPath: buildPathOf(msg.meta), feeBps: feeBpsOf(msg.meta) })
+                              reportEmbedSigned({ artifact: 'tx', chain: chainLabel(chainId), chainId, txUrl: `${explorer}${hash}`, valueUsd: guardrailUsdOf(msg.meta), buildPath: buildPathOf(msg.meta), feeBps: feeBpsOf(msg.meta), symbols: fillSymbolsOf({ ask: askBefore(i), meta: msg.meta, artifact: 'tx' }) })
                               // Durable signing log → the message's DB meta
                               // (the /p share page renders it with explorer links).
                               if (currentChatId) recordSignedTxs(currentChatId, msg.id, [{ hash, chainId, title: builtTx.action ?? 'transaction' }])
@@ -2065,6 +2078,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               const explorer = chainById(chainId)?.explorerTx ?? 'https://basescan.org/tx/'
                               reportEmbedSigned({
                                 artifact: 'tx-chain',
+                                symbols: fillSymbolsOf({ ask: askBefore(i), meta: msg.meta, artifact: 'tx-chain' }),
                                 chain: chainLabel(chainId),
                                 chainId,
                                 txUrl: `${explorer}${hash}`,

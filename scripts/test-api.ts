@@ -55,6 +55,7 @@ import { rankMovers } from '../lib/viz/movers'
 import { profileBins } from '../components/markets/chart/volume-profile'
 import { cleanSparkSymbols, SPARKS_MAX_SYMBOLS } from '../lib/viz/sparks'
 import { namesSymbol, sideOf, venueOfBuild, FILLS_TTL_MS } from '../lib/viz/fills'
+import { fillSymbolsInAsk, fillSymbolsOf, fillSymbolsForPair, sanitizeFillSymbols } from '../lib/fill-symbols'
 import { fillLabel } from '../lib/chart-fills'
 import { marketSections as vizMarketSections } from '../lib/markets'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
@@ -21126,6 +21127,59 @@ async function main() {
     )
     const fkGone = await fetch(`${BASE}/api/embed-keys/${fk.id}?purge=1`, { method: 'DELETE', headers: C })
     check('viz fills fixture: the fixture key is purged after the check (its two turns go with it)', fkGone.status === 200 || fkGone.status === 204, `purge=${fkGone.status}`)
+    // FIRST-PARTY fills (2026-09-16): /chat beacons carry NO prompt and NO
+    // detail, so a /chat swap used to be invisible to the fills reader. The
+    // beacon now carries side-tagged symbols, allowlisted server-side.
+    const eqTags = (a: string[] | undefined, b: string[] | undefined) => JSON.stringify(a) === JSON.stringify(b)
+    check(
+      'fill symbols: an ask tags the charted symbols it trades with a side (swap X for Y sells X + buys Y; buy X with Y; sell; long; names → tickers), stables/sends/chain + venue words never tag, a HL order names its own coin + direction, job artifacts are never tagged, and the server allowlist canonicalizes + drops junk',
+      eqTags(fillSymbolsInAsk('Swap $5 of ETH for AAPL on robinhood chain'), ['sell:ETH', 'buy:AAPL']) &&
+        eqTags(fillSymbolsInAsk('buy $10 of AAPL with ETH'), ['buy:AAPL', 'sell:ETH']) &&
+        eqTags(fillSymbolsInAsk('Sell $50 of ETH'), ['sell:ETH']) &&
+        eqTags(fillSymbolsInAsk('2x long $12 of HYPE with a 5% stop'), ['buy:HYPE']) &&
+        eqTags(fillSymbolsInAsk('buy $10 of apple every week'), ['buy:AAPL']) &&
+        eqTags(fillSymbolsInAsk('swap 1 USDC to ETH on arbitrum'), ['buy:ETH']) &&
+        eqTags(fillSymbolsInAsk('Buy $10 of AAPL on optimism'), ['buy:AAPL']) &&
+        eqTags(fillSymbolsInAsk('supply $2 of USDC to aave'), []) &&
+        eqTags(fillSymbolsInAsk('send 0.01 ETH to 0x1111111111111111111111111111111111111111'), []) &&
+        eqTags(fillSymbolsInAsk('Why is TSLA moving?'), []) &&
+        eqTags(fillSymbolsInAsk('buy $10 of coin now'), []) &&
+        eqTags(fillSymbolsOf({ ask: 'buy ETH', meta: { orderRequest: { protocol: 'hyperliquid', hl: { expected: { coin: 'HYPE', isBuy: false } } } } }), ['sell:HYPE']) &&
+        fillSymbolsOf({ ask: 'buy $5 of ETH', artifact: 'job' }) === undefined &&
+        fillSymbolsOf({ ask: 'buy $5 of ETH', meta: { jobId: 'j1' } }) === undefined &&
+        eqTags(fillSymbolsForPair('WETH', 'USDC'), ['sell:ETH']) &&
+        eqTags(sanitizeFillSymbols(['buy:eth', 'sell:WETH', 'buy:USDC', 'buy:NOPE', 'hi', 3, 'sell:$aapl', 'buy:BTC', 'buy:SOL', 'buy:DOGE']), ['buy:ETH', 'sell:AAPL', 'buy:BTC', 'buy:SOL']),
+      `swap=${JSON.stringify(fillSymbolsInAsk('Swap $5 of ETH for AAPL on robinhood chain'))}`,
+    )
+    const fpWallet = `0x${'f2'.repeat(10)}${Date.now().toString(16).padStart(20, '0').slice(-20)}`
+    const fpTx = `https://basescan.org/tx/0x${'cd'.repeat(32)}`
+    // A first-party /chat beacon from this build's own origin (verifies `dev`,
+    // which counts). The prompt + detail it carries are dropped by the route;
+    // only the allowlisted symbols survive.
+    const fpPost = await fetch(`${BASE}/api/embed/telemetry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ firstParty: true, sessionId: 'fixture-viz-fills-fp', page: `${BASE}/chat`, prompt: 'swap $7 of ARB for ETH', detail: 'swap ARB for ETH', outcome: 'signed', artifact: 'tx', chain: 'base', chainId: 8453, valueUsd: 7, txUrl: fpTx, buildPath: 'native-swap-uniswap', walletAddress: fpWallet, symbols: ['sell:ARB', 'buy:weth', 'buy:USDC', 'buy:ZZZZQ'] }),
+    })
+    const fpJob = await fetch(`${BASE}/api/embed/telemetry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ firstParty: true, sessionId: 'fixture-viz-fills-fpjob', page: `${BASE}/chat`, outcome: 'signed', artifact: 'job-step', chain: 'multi', valueUsd: 3, buildPath: 'native-swap-uniswap', walletAddress: fpWallet, symbols: ['buy:AAPL'] }),
+    })
+    const fpBody = (await fpPost.json().catch(() => ({}))) as { ok?: boolean; verification?: string }
+    const fpEth = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=ETH&address=${fpWallet}`)).json()) as FillsBody
+    const fpArb = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=ARB&address=${fpWallet}`)).json()) as FillsBody
+    const fpAapl = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=AAPL&address=${fpWallet}`)).json()) as FillsBody
+    const fe = fpEth.fills?.[0]
+    const fa = fpArb.fills?.[0]
+    check(
+      'viz fills route (first-party): a prompt-less /chat signed beacon tagged sell:ARB + buy:WETH paints ONE buy on ETH and ONE sell on ARB ($7 · Uniswap v3 · Base · its explorer link, source turn); the stable + unknown tags are dropped, and a job-step beacon\'s tag is never stored (its fill comes from the job step)',
+      fpPost.status === 200 && fpBody.ok === true && fpBody.verification === 'dev' && fpJob.status === 200 &&
+        fpEth.fills?.length === 1 && fe?.side === 'buy' && fe.usd === 7 && fe.venue === 'Uniswap v3' && fe.chainId === 8453 && fe.txUrl === fpTx && fe.source === 'turn' &&
+        fpArb.fills?.length === 1 && fa?.side === 'sell' && fa.usd === 7 &&
+        fpAapl.fills?.length === 0,
+      `post=${fpPost.status} ${JSON.stringify(fpBody)} eth=${JSON.stringify(fpEth.fills ?? fpEth.error).slice(0, 200)} arb=${fpArb.fills?.length} aapl=${fpAapl.fills?.length}`,
+    )
     check(
       'viz chart: ChartMount takes `fills`, MarketChart draws each as an arrow glyph on its bar in the venue\'s series ink (up under a buy, down over a sell, never on a bar it predates), lists the receipts with explorer links under the chart, and the compare feed reads ?warmup=1',
       mountSrc.includes('fills?: FillMarker[]') && mountSrc.includes('fills={fills}') && mcSrc.includes("shape: f.side === 'buy' ? 'arrowUp' : 'arrowDown'") && mcSrc.includes('if (f.t < bars[0].t) return') &&
