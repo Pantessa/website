@@ -36,6 +36,8 @@ import { fenceGuardianCoin } from '@/lib/hl-guardian-fence'
 
 import { hlPerpUniverseCached } from '@/lib/hl-universe'
 import { parseLidoStake } from '@/lib/lido-stake'
+import { parseSpotGuardArm } from '@/lib/spot-guard'
+import { primaryStable } from '@/lib/chains'
 import { fundingAltUsdcFor, fundingOriginWords, GAS_LEG_USD, MIN_VALUE_LEG_USD } from '@/lib/lifi-bridge'
 import { parseNftAsk } from '@/lib/nft-layer'
 import { parseMultiSendSegments, parseTransferSegment } from '@/lib/transfer-exec'
@@ -232,6 +234,14 @@ const SWAP_SEG_CHAINS: Record<string, { id: number; name: string }> = {
 
 const SWAP_SEG_RE = new RegExp(
   `\\bswap\\s+(\\d+(?:\\.\\d+)?)\\s+\\$?([A-Za-z]{2,12})\\s+(?:for|into|to)\\s+\\$?([A-Za-z]{2,12})\\s+on\\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'optimism', 'robinhood'])})\\b`,
+  'i',
+)
+
+// "buy $50 of ETH on Base" / "buy $50 worth of AAPL on robinhood" — the
+// dollar-buy job segment (MK2/EXEC). Disjoint from the funding fund-buy
+// ("buy $X of Y" with no chain word, only after a funding leg).
+const DOLLAR_BUY_SEG_RE = new RegExp(
+  `\\bbuy\\s+\\$(\\d+(?:\\.\\d+)?)(?:\\s+worth)?\\s+of\\s+\\$?([A-Za-z]{2,12})\\s+on\\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'optimism', 'robinhood'])})\\b`,
   'i',
 )
 
@@ -583,6 +593,41 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
     },
   },
   {
+    // MK2/EXEC (2026-09-15): a DOLLAR buy as a job step — "buy $50 of ETH on
+    // Base" is the chat's own swap sentence, but the registry had no segment
+    // for it, so "Buy $50 of ETH on Base, then stake all the swapped ETH on
+    // Lido" compiled to nothing and the Lido gate claimed the whole ask,
+    // DROPPING the buy (the #595 partial-claim class). Sized in the chain's
+    // primary stable (USDC; USDG on 4663 — the dollars ARE the units) and
+    // handed to the same native-swap builder as a same-chain swap. The chain
+    // word is REQUIRED (jobs stay strict; the chat layer's picker/4663
+    // inference is not replicated here). A lone "buy $50 of ETH on base"
+    // still belongs to the swap layer: compileJobAsk returns null under two
+    // segments.
+    id: 'dollar-buy',
+    label: 'dollar buys on a named chain',
+    parse: (seg, ctx) => {
+      const m = normalizeWorth(normalizeChainWords(seg)).match(DOLLAR_BUY_SEG_RE)
+      if (!m) return null
+      const segWord = m[3].toLowerCase().replace(/\s+/g, ' ')
+      const chain = SWAP_SEG_CHAINS[canonicalChainWord(segWord) ?? segWord]
+      if (!chain) return null
+      const stable = primaryStable(chain.id)
+      if (!stable) return null
+      const usd = Number(m[1])
+      if (!Number.isFinite(usd) || usd <= 0) return { problem: 'names a dollar amount of zero.' }
+      let buyToken = m[2]
+      if (chain.id === 4663) {
+        const buy = pairJobStockToken(buyToken, ctx)
+        if (!('token' in buy)) return buy
+        buyToken = buy.token
+      }
+      const sameSwap: SameChainSwapSegment = { amountHuman: String(usd), sellToken: stable.symbol, buyToken, chainId: chain.id, chainName: chain.name }
+      const title = `Buy $${usd} of ${buyToken.toUpperCase()} on ${chain.name}`
+      return { steps: [{ kind: 'sign', builder: 'native-swap', title, params: sameSwap as unknown as Record<string, unknown> }], title }
+    },
+  },
+  {
     id: 'hyperliquid',
     label: 'Hyperliquid deposits/orders',
     parse: (seg) => {
@@ -700,6 +745,12 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
     parse: (seg) => {
       const parsed = parseGuardianArm(seg)
       if (!parsed) return null
+      // A SPOT stop ("in my wallet" / "on Base" / "spot") is the Spot
+      // Guardian's, not an HL policy — until it has a job segment of its
+      // own it refuses BY NAME instead of arming the wrong venue
+      // (MK2/EXEC found "…, then protect my ETH in my wallet with a 5% stop"
+      // compiling to native-hl-guardian, 2026-09-15).
+      if (parseSpotGuardArm(seg)) return { problem: `is a spot stop (the Spot Guardian on Base) — that isn't a job step yet; run the job, then send "${seg.trim()}" on its own.` }
       // The chat gate's coin fence — a stock segment refuses the job BY NAME
       // instead of compiling a guardian step no runner can arm. Sync: the
       // route warms the cached universe before compiling; cold falls back to

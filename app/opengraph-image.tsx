@@ -1,207 +1,150 @@
 import { ImageResponse } from 'next/og'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { headers } from 'next/headers'
 import { gemMarkSvg } from '@/lib/og-marks'
-import { HERO_LINE } from '@/lib/markets-copy'
+import { candleSvg, fmtOgPrice } from '@/lib/markets-seo'
+import type { Candle } from '@/lib/charts'
+import { HERO_LINE, HERO_REEL, LANDING_SYMBOL, REEL_STAMP } from '@/lib/markets-copy'
 
 // Social card for the site (og:image + twitter:image via app/twitter-image.tsx).
-// The Markets card ("The chart that executes." — the site title since the
-// 2026-09-11 MARKETS re-message; it was the links-first "You have an intent.
-// We do the rest." from 2026-07-22, and "Mega dapps are here" before the
-// squad's GTM sweep 2026-09-08), drawn in the fusion hero's language: protocol
-// rivers converging into one emerald core on #050708, a big serif headline
-// with the emerald→gold gradient italic, and a prominent logo lockup + tag.
-// Deliberately NO body copy — share previews render too small to read it.
-// Fonts are embedded from assets/og-fonts (static TTF instances of the same
-// Google-Fonts families the site loads: Newsreader 500 + Geist 500/600).
+// mk2 LANDING (2026-09-15): the card IS the hero — the claim in the serif with
+// the gradient-italic payoff, and beside it the executing chart: a live ETH
+// tape (self-fetched from /api/charts/candles on this host, the /t card's
+// idiom; a feed miss draws the grid, never a fake series) with the rehearsal
+// HUD on it (the first reel beat: the ask, the venue leg, the guard tick,
+// the receipt line) and its honesty stamp. Deliberately no body copy — share
+// previews render too small to read it. Fonts from assets/og-fonts.
 
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 export const alt = `Pantessa — ${HERO_LINE}`
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
 const BG = '#050708'
 const INK = '#FAFAF7'
+const MUTED = '#8a9186'
 const ACCENT = '#34e3a0'
+const DOWN = '#ff5d5d'
 
-// Where the rivers fuse (the hero's transmuting core).
-const CX = 600
-const CY = 345
-
-// The living artwork as one SVG layer: ambient glow → four protocol rivers
-// with particles → the core → a dark veil ellipse that damps the glow behind
-// the headline (the hero's .fhero__veil, baked in).
-const ART = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
-  <defs>
-    <radialGradient id="amb" cx="0.5" cy="0.42" r="0.7">
-      <stop offset="0" stop-color="rgba(52,227,160,0.07)"/>
-      <stop offset="0.65" stop-color="rgba(52,227,160,0)"/>
-    </radialGradient>
-    <radialGradient id="core" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="rgba(52,227,160,0.26)"/>
-      <stop offset="1" stop-color="rgba(52,227,160,0)"/>
-    </radialGradient>
-    <radialGradient id="veil" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="rgba(5,7,8,0.62)"/>
-      <stop offset="1" stop-color="rgba(5,7,8,0)"/>
-    </radialGradient>
-    <linearGradient id="gU" gradientUnits="userSpaceOnUse" x1="130" y1="195" x2="${CX}" y2="${CY}">
-      <stop offset="0" stop-color="rgba(255,107,175,0.12)"/><stop offset="0.4" stop-color="rgba(255,107,175,0.75)"/><stop offset="1" stop-color="rgba(255,107,175,0.2)"/>
-    </linearGradient>
-    <linearGradient id="gS" gradientUnits="userSpaceOnUse" x1="1070" y1="185" x2="${CX}" y2="${CY}">
-      <stop offset="0" stop-color="rgba(255,201,77,0.12)"/><stop offset="0.4" stop-color="rgba(255,201,77,0.75)"/><stop offset="1" stop-color="rgba(255,201,77,0.2)"/>
-    </linearGradient>
-    <linearGradient id="gC" gradientUnits="userSpaceOnUse" x1="150" y1="480" x2="${CX}" y2="${CY}">
-      <stop offset="0" stop-color="rgba(122,167,255,0.12)"/><stop offset="0.4" stop-color="rgba(122,167,255,0.75)"/><stop offset="1" stop-color="rgba(122,167,255,0.2)"/>
-    </linearGradient>
-    <linearGradient id="gY" gradientUnits="userSpaceOnUse" x1="1050" y1="492" x2="${CX}" y2="${CY}">
-      <stop offset="0" stop-color="rgba(52,227,160,0.12)"/><stop offset="0.4" stop-color="rgba(52,227,160,0.8)"/><stop offset="1" stop-color="rgba(52,227,160,0.25)"/>
-    </linearGradient>
-  </defs>
-  <rect width="1200" height="630" fill="url(#amb)"/>
-  <g fill="none" stroke-linecap="round">
-    <path d="M130,195 C300,130 430,210 585,330" stroke="url(#gU)" stroke-width="2.5"/>
-    <path d="M138,213 C305,152 432,228 580,338" stroke="rgba(255,107,175,0.28)" stroke-width="1.3"/>
-    <path d="M1070,185 C900,115 760,210 618,328" stroke="url(#gS)" stroke-width="2.5"/>
-    <path d="M1062,203 C898,138 762,228 622,336" stroke="rgba(255,201,77,0.28)" stroke-width="1.3"/>
-    <path d="M150,480 C330,545 460,470 585,362" stroke="url(#gC)" stroke-width="2.5"/>
-    <path d="M158,462 C332,522 458,452 582,355" stroke="rgba(122,167,255,0.28)" stroke-width="1.3"/>
-    <path d="M1050,492 C880,555 745,470 618,360" stroke="url(#gY)" stroke-width="2.5" stroke-dasharray="7 8"/>
-  </g>
-  <g fill="#FF6BAF"><circle cx="223" cy="166" r="3.5" opacity="0.9"/><circle cx="320" cy="175" r="3" opacity="0.7"/><circle cx="416" cy="214" r="2.5" opacity="0.55"/><circle cx="505" cy="269" r="2" opacity="0.4"/></g>
-  <g fill="#FFC94D"><circle cx="975" cy="160" r="3.5" opacity="0.9"/><circle cx="880" cy="172" r="3" opacity="0.7"/><circle cx="788" cy="213" r="2.5" opacity="0.55"/><circle cx="700" cy="266" r="2" opacity="0.4"/></g>
-  <g fill="#7AA7FF"><circle cx="256" cy="502" r="3.5" opacity="0.9"/><circle cx="356" cy="494" r="3" opacity="0.7"/><circle cx="450" cy="462" r="2.5" opacity="0.55"/><circle cx="521" cy="414" r="2" opacity="0.4"/></g>
-  <g fill="#34e3a0"><circle cx="947" cy="510" r="3.5" opacity="0.9"/><circle cx="849" cy="497" r="3" opacity="0.7"/><circle cx="757" cy="459" r="2.5" opacity="0.55"/><circle cx="683" cy="413" r="2" opacity="0.4"/></g>
-  <circle cx="${CX}" cy="${CY}" r="185" fill="url(#core)"/>
-  <g fill="none">
-    <circle cx="${CX}" cy="${CY}" r="96" stroke="rgba(255,210,94,0.16)" stroke-width="1"/>
-    <circle cx="${CX}" cy="${CY}" r="66" stroke="rgba(52,227,160,0.45)" stroke-width="1.4"/>
-    <circle cx="${CX}" cy="${CY}" r="42" stroke="rgba(52,227,160,0.75)" stroke-width="2"/>
-    <circle cx="${CX}" cy="${CY}" r="20" stroke="rgba(125,240,189,0.9)" stroke-width="2" fill="rgba(52,227,160,0.16)"/>
-  </g>
-  <ellipse cx="${CX}" cy="${CY}" rx="360" ry="160" fill="url(#veil)"/>
-</svg>`
+const toDataUri = (svg: string) => `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
 
 // The house mark comes from lib/og-marks — ONE source across every OG card.
 const MARK = gemMarkSvg(ACCENT)
 
-const toDataUri = (svg: string) => `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
+interface Series { candles: Candle[]; last: number | null }
 
-// Glyph medallions at the river sources (the hero's protocol chips, glyph-only
-// so the card carries zero fine print).
-const MEDALLIONS = [
-  { x: 130, y: 195, color: '#FF6BAF', rgb: '255,107,175', glyph: 'U', dashed: false },
-  { x: 1070, y: 185, color: '#FFC94D', rgb: '255,201,77', glyph: 'S', dashed: false },
-  { x: 150, y: 480, color: '#7AA7FF', rgb: '122,167,255', glyph: 'C', dashed: false },
-  { x: 1050, y: 492, color: '#34e3a0', rgb: '52,227,160', glyph: '+', dashed: true },
-]
+/** Self-fetch the cached candle proxy on this deployment's own host. */
+async function loadSeries(symbol: string): Promise<Series> {
+  try {
+    const h = await headers()
+    const host = h.get('x-forwarded-host') ?? h.get('host')
+    if (!host) return { candles: [], last: null }
+    const proto = h.get('x-forwarded-proto') ?? (/^(localhost|127\.0\.0\.1)/.test(host) ? 'http' : 'https')
+    const res = await fetch(`${proto}://${host}/api/charts/candles?symbol=${encodeURIComponent(symbol)}&tf=1h`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(9_000),
+    })
+    const body = (await res.json()) as Partial<Series> & { error?: string }
+    if (body.error || !Array.isArray(body.candles)) return { candles: [], last: null }
+    return { candles: body.candles, last: body.last ?? null }
+  } catch {
+    return { candles: [], last: null }
+  }
+}
 
 export default async function Image() {
   const fonts = join(process.cwd(), 'assets', 'og-fonts')
-  const [serif, serifItalic, sans, sansSemi] = await Promise.all([
+  const [serif, serifItalic, sans, sansSemi, series] = await Promise.all([
     readFile(join(fonts, 'newsreader-500.ttf')),
     readFile(join(fonts, 'newsreader-500-italic.ttf')),
     readFile(join(fonts, 'geist-500.ttf')),
     readFile(join(fonts, 'geist-600.ttf')),
+    loadSeries(LANDING_SYMBOL),
   ])
+  const beat = HERO_REEL[0]
+  const n = series.candles.length
+  const chg = n >= 2 && series.candles[n - 25]?.c > 0 ? ((series.candles[n - 1].c - series.candles[n - 25].c) / series.candles[n - 25].c) * 100 : null
+  const chart = candleSvg(series.candles, { width: 600, height: 300, up: ACCENT, down: DOWN, grid: 'rgba(255,255,255,0.07)', count: 72 })
 
   return new ImageResponse(
     (
-      <div
-        style={{
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          position: 'relative',
-          background: BG,
-          fontFamily: 'Geist',
-        }}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={toDataUri(ART)} width={1200} height={630} alt="" style={{ position: 'absolute', top: 0, left: 0 }} />
+      <div style={{ width: '100%', height: '100%', display: 'flex', position: 'relative', background: BG, fontFamily: 'Geist' }}>
+        {/* ambient glow behind the stage */}
+        <div style={{ position: 'absolute', right: -120, top: 60, width: 720, height: 520, borderRadius: 360, background: 'radial-gradient(circle, rgba(52,227,160,0.16) 0%, rgba(52,227,160,0) 70%)', display: 'flex' }} />
 
-        {MEDALLIONS.map((m) => (
-          <div
-            key={m.glyph}
-            style={{
-              position: 'absolute',
-              left: m.x - 33,
-              top: m.y - 33,
-              width: 66,
-              height: 66,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: 33,
-              border: `1.5px ${m.dashed ? 'dashed' : 'solid'} rgba(${m.rgb},0.55)`,
-              background: `rgba(${m.rgb},0.09)`,
-              boxShadow: `0 0 36px rgba(${m.rgb},0.28)`,
-              color: m.color,
-              fontSize: 30,
-              fontWeight: 600,
-            }}
-          >
-            {m.glyph}
-          </div>
-        ))}
-
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: 1200,
-            height: 630,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            paddingTop: 58,
-          }}
-        >
-          {/* logo lockup + tag */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 22 }}>
+        {/* left: lockup + the claim */}
+        <div style={{ position: 'absolute', left: 64, top: 56, display: 'flex', flexDirection: 'column', width: 520 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={toDataUri(MARK)} width={82} height={82} alt="" />
-            <span style={{ color: INK, fontSize: 62, fontWeight: 600, letterSpacing: -2.5 }}>pantessa</span>
+            <img src={toDataUri(MARK)} width={58} height={58} alt="" />
+            <span style={{ color: INK, fontSize: 44, fontWeight: 600, letterSpacing: -1.8 }}>pantessa</span>
           </div>
-          <div style={{ display: 'flex', marginTop: 20, fontSize: 25, letterSpacing: 6.5, color: '#8a9186' }}>
-            <span>MARKETS</span>
-            <span style={{ color: ACCENT, margin: '0 18px' }}>·</span>
+          <div style={{ display: 'flex', marginTop: 22, fontSize: 17, letterSpacing: 4.5, color: MUTED }}>
             <span>STOCKS 24/7</span>
-            <span style={{ color: ACCENT, margin: '0 18px' }}>·</span>
-            <span>YOUR WALLET SIGNS</span>
+            <span style={{ color: ACCENT, margin: '0 12px' }}>·</span>
+            <span>PERPS</span>
+            <span style={{ color: ACCENT, margin: '0 12px' }}>·</span>
+            <span>SPOT</span>
+            <span style={{ color: ACCENT, margin: '0 12px' }}>·</span>
+            <span>YIELD</span>
           </div>
-
-          {/* the headline — hero serif, gradient italic on the payoff line */}
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              marginTop: 52,
-              fontFamily: 'Newsreader',
-              fontWeight: 500,
-              // 116px: "The chart" / "that executes." — two lines, the
-              // payoff line in the gradient italic, ~900px wide at this size.
-              fontSize: 116,
-              lineHeight: 1.02,
-              letterSpacing: -3.4,
-            }}
-          >
+          <div style={{ display: 'flex', flexDirection: 'column', marginTop: 46, fontFamily: 'Newsreader', fontWeight: 500, fontSize: 92, lineHeight: 0.98, letterSpacing: -3 }}>
             <span style={{ color: INK }}>The chart</span>
             <span
               style={{
                 fontStyle: 'italic',
-                letterSpacing: -1.8,
+                letterSpacing: -1.6,
                 backgroundImage: `linear-gradient(92deg, #7df0bd 6%, ${ACCENT} 46%, #ffd25e 104%)`,
                 backgroundClip: 'text',
                 color: 'transparent',
-                paddingBottom: 14,
-                paddingLeft: 10,
+                paddingBottom: 12,
                 paddingRight: 10,
               }}
             >
               that executes.
             </span>
+          </div>
+          <div style={{ display: 'flex', marginTop: 34, fontSize: 19, letterSpacing: 5, color: MUTED }}>
+            <span>YOUR WALLET SIGNS</span>
+          </div>
+        </div>
+
+        {/* right: the stage — a live tape with the rehearsal HUD on it */}
+        <div style={{ position: 'absolute', left: 620, top: 64, width: 520, height: 502, display: 'flex', flexDirection: 'column', borderRadius: 22, border: '1.5px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.03)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1.5px solid rgba(255,255,255,0.10)' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+              <span style={{ color: INK, fontSize: 24, fontWeight: 600, letterSpacing: -0.5 }}>{LANDING_SYMBOL} / USD</span>
+              <span style={{ color: MUTED, fontSize: 13, letterSpacing: 2.5 }}>COINBASE SPOT</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+              {series.last != null && <span style={{ color: INK, fontSize: 24, fontWeight: 600 }}>${fmtOgPrice(series.last)}</span>}
+              {chg != null && <span style={{ color: chg >= 0 ? ACCENT : DOWN, fontSize: 15, fontWeight: 600 }}>{chg >= 0 ? '▲' : '▼'} {Math.abs(chg).toFixed(2)}%</span>}
+              <span style={{ color: ACCENT, fontSize: 12, letterSpacing: 2.5 }}>LIVE</span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', position: 'relative', width: 520, height: 300, marginTop: 8, marginLeft: -40 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={toDataUri(chart)} width={600} height={300} alt="" />
+          </div>
+          {/* the receipt strip: the first beat, complete — bottom-left over the volume pane */}
+          <div style={{ position: 'absolute', left: 16, bottom: 44, maxWidth: 420, display: 'flex', flexDirection: 'column', padding: '12px 14px 10px', borderRadius: 12, border: '1.5px solid rgba(255,255,255,0.14)', background: 'rgba(16,16,18,0.84)' }}>
+            <span style={{ display: 'flex', color: INK, fontSize: 19, fontWeight: 600, letterSpacing: -0.3 }}>
+              <span style={{ color: ACCENT, marginRight: 8 }}>›</span>
+              <span>{beat.ask}</span>
+            </span>
+            {beat.legs.map((l) => (
+              <span key={l.venue} style={{ display: 'flex', marginTop: 6, fontSize: 14, color: '#b8bfb5' }}>{l.line}</span>
+            ))}
+            <span style={{ display: 'flex', marginTop: 8, fontSize: 13, letterSpacing: 1.2, color: ACCENT }}>
+              <div style={{ display: 'flex', width: 7, height: 7, borderRadius: 4, background: ACCENT, marginRight: 8, marginTop: 4 }} />
+              <span>{beat.ending.line.toUpperCase()}</span>
+            </span>
+            <span style={{ marginTop: 6, fontSize: 10, letterSpacing: 1.5, color: MUTED }}>{REEL_STAMP}</span>
+          </div>
+          <div style={{ position: 'absolute', left: 22, bottom: 14, display: 'flex', fontSize: 11, letterSpacing: 2, color: MUTED }}>
+            <span>{n >= 2 ? 'LIVE TAPE · COINBASE' : 'LIVE CHART · FEED WARMING UP'}</span>
           </div>
         </div>
       </div>

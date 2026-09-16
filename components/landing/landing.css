@@ -1,0 +1,155 @@
+/* ── LANDING (mk2) — the front door's own stylesheet. Lane CSS; the site's
+   globals are frozen this round. Tokens on :root come from x402-design.css
+   (--bg/--fg/--surf-1/--line/--accent/--sell/--muted/--muted-2); both themes
+   come free. Section prefixes: lh (hero) · lmv (movers) · lvb (venue band) ·
+   lmap (map teaser) · lhon (honesty) · lcmp (compare) · lsh (share). */
+
+/* ── Movers strip: a full-bleed ribbon right under the nav ─────────────── */
+.lmv { width: 100vw; margin-left: calc(50% - 50vw); border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surf-1) 60%, transparent); overflow: hidden; }
+.lmv__in { max-width: 1440px; margin: 0 auto; padding: 0 clamp(16px, 3vw, 40px); }
+.lmv .mk-slot { border: 0; padding: 8px 0; }
+
+/* ── Hero: claim left, the executing chart right ───────────────────────── */
+.lh { position: relative; isolation: isolate; overflow: hidden; width: 100vw; margin-left: calc(50% - 50vw); padding: clamp(40px, 6vh, 72px) clamp(16px, 4vw, 64px) clamp(48px, 7vh, 84px); background:
+  radial-gradient(70% 60% at 78% 40%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%),
+  var(--bg); }
+.lh__in { max-width: 1440px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(28px, 4vw, 64px); align-items: center; }
+.lh__copy { min-width: 0; }
+.lh__eyebrow { font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--muted-2); }
+.lh__h1 { margin: 18px 0 0; font-family: var(--font-serif); font-weight: 500; font-size: clamp(44px, 5.6vw, 84px); line-height: .98; letter-spacing: -.03em; color: var(--fg); text-wrap: balance; max-width: 11ch; }
+.lh__h1 em { font-style: italic; background: linear-gradient(92deg, color-mix(in srgb, var(--accent) 80%, #fff) 6%, var(--accent) 46%, #d9a94a 104%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lh__lede { margin: 22px 0 0; max-width: 46ch; font-size: clamp(15px, 1.15vw, 17px); line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+.lh__ctas { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 28px; }
+.lh__ask { margin-top: 22px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 15px; color: var(--fg); }
+.lh__asklabel { font-size: 10.5px; letter-spacing: .22em; text-transform: uppercase; color: var(--muted-2); }
+.lh__typed { font-family: var(--font-serif); font-size: clamp(17px, 1.4vw, 21px); letter-spacing: -.01em; }
+.lh__caret { display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -.15em; background: var(--accent); animation: lh-blink 1s steps(2) infinite; }
+@keyframes lh-blink { 50% { opacity: 0; } }
+.lh__quiet { margin-top: 26px; display: flex; gap: 14px 22px; flex-wrap: wrap; font-size: 11px; letter-spacing: .08em; color: var(--muted-2); }
+.lh__quiet b { color: var(--muted); font-weight: 500; }
+
+/* the stage: a real chart with a HUD on it */
+.lh__stage { min-width: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--surf-1); box-shadow: 0 30px 80px -40px color-mix(in srgb, var(--accent) 35%, transparent), 0 1px 0 color-mix(in srgb, var(--fg) 6%, transparent) inset; overflow: hidden; }
+.lh__bar { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.lh__sym { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.lh__symname { font-size: 15px; font-weight: 600; color: var(--fg); letter-spacing: -.01em; }
+.lh__symsrc { font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted-2); }
+.lh__px { margin-left: auto; display: flex; align-items: baseline; gap: 8px; font-variant-numeric: tabular-nums; }
+.lh__last { font-size: 18px; color: var(--fg); }
+.lh__chg { font-size: 11px; }
+.lh__chg.is-up { color: var(--accent); }
+.lh__chg.is-down { color: var(--sell); }
+.lh__live { font-size: 9.5px; letter-spacing: .14em; color: var(--accent); }
+.lh__chart { position: relative; }
+.lh__chart .mkt-chart { padding: 8px 8px 0; }
+/* the receipt strip — bottom-left, over the volume pane, never the candles */
+.lh__rcpt { position: absolute; left: 12px; bottom: 34px; z-index: 5; max-width: min(440px, calc(100% - 24px)); pointer-events: none; display: flex; flex-direction: column; gap: 3px; padding: 8px 11px 7px; border-radius: 10px; border: 1px solid var(--mk-glass-line, var(--line)); background: var(--mk-glass, color-mix(in srgb, var(--bg) 80%, transparent)); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 10px 30px -18px rgba(0,0,0,.7); font-size: 11px; line-height: 1.35; color: var(--muted); transition: opacity .35s ease; }
+.lh__rcpt.is-wiping { opacity: 0; }
+.lh__rcptask { color: var(--fg); font-size: 12px; font-weight: 500; letter-spacing: -.005em; min-height: 1.35em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lh__rcptq { color: var(--accent); margin-right: 2px; }
+.lh__rcptask .lh__caret { height: .85em; }
+.lh__rcptleg { display: none; align-items: center; gap: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transform: translateX(-4px); transition: opacity .3s ease, transform .3s ease; }
+.lh__rcptleg.is-in { display: flex; opacity: 1; transform: none; }
+.lh__rcptleg .lh__legmark { width: 16px; height: 16px; border-radius: 5px; }
+.lh__rcptleg .lh__legmark svg { width: 11px; height: 11px; }
+.lh__rcptleg .lh__legmark b { font-size: 9px; }
+.lh__rcptend { display: none; color: var(--accent); letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity .3s ease; }
+.lh__rcptend.is-in { display: block; opacity: 1; }
+.lh__rcptend--armed { color: #d9a94a; }
+.lh__rcptstamp { font-size: 8.5px; letter-spacing: .1em; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lh__strip { padding: 10px 12px 12px; border-top: 1px solid var(--line); }
+.lh__strip .mk-slot { border: 0; padding: 4px 0; }
+.lh__doit { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.lh__doit b { color: var(--fg); font-weight: 500; }
+
+@media (max-width: 1023px) {
+  .lh__in { grid-template-columns: minmax(0, 1fr); }
+  .lh__h1 { max-width: 14ch; }
+}
+@media (max-width: 640px) {
+  .lh { padding-top: 28px; }
+  /* the chart footer wraps to two lines on a phone — anchor the strip above
+     it, over the volume pane's foot, never the price action (measured 375:
+     canvas bottom ≈ 88px above the container's) */
+  .lh__rcpt { left: 8px; bottom: 96px; max-width: calc(100% - 16px); padding: 6px 9px 5px; font-size: 10px; }
+  .lh__rcptstamp { display: none; }
+}
+
+/* ── Every dapp, one chart ─────────────────────────────────────────────── */
+.lvb { padding: clamp(64px, 9vh, 112px) 0 clamp(40px, 6vh, 64px); max-width: 1220px; margin: 0 auto; }
+.lvb__head { max-width: 760px; margin: 0 auto; text-align: center; }
+.lvb__eyebrow, .lmap__eyebrow, .lhon__eyebrow, .lcmp__eyebrow, .lsh__eyebrow { font-size: 12px; letter-spacing: .18em; color: var(--muted-2); }
+.lvb__h2, .lmap__h2, .lcmp__h2, .lsh__h2 { margin: 14px 0 0; font-family: var(--font-serif); font-weight: 500; font-size: clamp(30px, 3.6vw, 48px); line-height: 1.05; letter-spacing: -.025em; color: var(--fg); text-wrap: balance; }
+.lvb__sub, .lmap__sub, .lcmp__sub { margin: 16px auto 0; max-width: 62ch; font-size: 15px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+
+.lvb__orbit { position: relative; margin: clamp(36px, 5vh, 56px) auto 0; max-width: 1080px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.lvb__core { grid-column: 2 / 4; grid-row: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 22px; border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: 18px; background: radial-gradient(60% 60% at 50% 50%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%), var(--surf-1); text-align: center; }
+.lvb__coresym { font-family: var(--font-serif); font-size: 40px; letter-spacing: -.02em; color: var(--fg); line-height: 1; }
+.lvb__corepx { font-size: 15px; color: var(--fg); font-variant-numeric: tabular-nums; }
+.lvb__corepx .is-up { color: var(--accent); }
+.lvb__corepx .is-down { color: var(--sell); }
+.lvb__corenote { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); }
+.lvb__v { display: flex; flex-direction: column; gap: 6px; padding: 14px 14px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); text-decoration: none; color: inherit; transition: border-color .15s ease, transform .15s ease; min-width: 0; }
+.lvb__v:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); transform: translateY(-2px); }
+.lvb__vhead { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lvb__vmark { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 8px; color: var(--fg); background: color-mix(in srgb, var(--fg) 7%, transparent); flex-shrink: 0; }
+.lvb__vmark svg { width: 16px; height: 16px; }
+.lvb__vname { font-size: 13px; font-weight: 600; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lvb__vkind { margin-left: auto; font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); }
+.lvb__vstat { font-size: 18px; color: var(--fg); font-variant-numeric: tabular-nums; letter-spacing: -.01em; min-height: 1.2em; }
+.lvb__vstat.is-word { font-size: 12px; color: var(--muted-2); letter-spacing: .06em; text-transform: uppercase; }
+.lvb__vchain { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2); }
+.lvb__vask { margin-top: 6px; display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; font-size: 12px; padding: 6px 11px; border-radius: 999px; border: 1px solid var(--line-2, var(--line)); color: var(--fg); }
+.lvb__v:hover .lvb__vask { border-color: var(--accent); color: var(--accent); }
+.lvb__compound { margin: 18px auto 0; max-width: 1080px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 16px; border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line)); border-radius: 14px; background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.lvb__compoundk { font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); }
+.lvb__compoundask { font-family: var(--font-serif); font-size: clamp(16px, 1.5vw, 20px); color: var(--fg); letter-spacing: -.01em; }
+.lvb__compoundbtn { margin-left: auto; }
+.lvb__foot { margin-top: 14px; text-align: center; font-size: 11px; letter-spacing: .04em; color: var(--muted-2); }
+@media (max-width: 900px) {
+  .lvb__orbit { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lvb__core { grid-column: 1 / 3; grid-row: 1; }
+}
+
+/* ── Market map teaser ─────────────────────────────────────────────────── */
+.lmap { padding: clamp(48px, 7vh, 80px) 0; max-width: 1220px; margin: 0 auto; }
+.lmap__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.lmap__counts { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; letter-spacing: .06em; color: var(--muted); }
+.lmap__counts b { font-size: 22px; color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums; margin-right: 6px; letter-spacing: -.01em; }
+.lmap__map { margin-top: 22px; border: 1px solid var(--line); border-radius: 18px; background: var(--surf-1); overflow: hidden; min-height: 240px; }
+.lmap__map .mk-slot { border: 0; }
+.lmap__foot { margin-top: 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 11px; letter-spacing: .04em; color: var(--muted-2); }
+
+/* ── Honesty strip ─────────────────────────────────────────────────────── */
+.lhon { width: 100vw; margin-left: calc(50% - 50vw); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surf-1) 55%, transparent); }
+.lhon__in { max-width: 1220px; margin: 0 auto; padding: clamp(28px, 4vh, 44px) clamp(16px, 3vw, 40px); display: grid; grid-template-columns: minmax(0, 2fr) repeat(4, minmax(0, 1fr)); gap: 18px 24px; align-items: center; }
+.lhon__lead { font-family: var(--font-serif); font-size: clamp(18px, 1.6vw, 22px); line-height: 1.25; letter-spacing: -.015em; color: var(--fg); text-wrap: balance; }
+.lhon__asof { white-space: nowrap; }
+.lhon__note { margin-top: 8px; font-size: 11px; line-height: 1.5; color: var(--muted-2); }
+.lhon__stat { display: flex; flex-direction: column; gap: 4px; }
+.lhon__v { font-size: clamp(22px, 2.2vw, 30px); color: var(--fg); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.lhon__k { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted-2); }
+@media (max-width: 900px) { .lhon__in { grid-template-columns: repeat(2, minmax(0, 1fr)); } .lhon__lead { grid-column: 1 / 3; } }
+
+/* ── Compare band (their meters vs ours) ───────────────────────────────── */
+.lcmp__meters { margin: clamp(32px, 5vh, 48px) auto 0; max-width: 1080px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.lcmp__m { display: flex; flex-direction: column; gap: 6px; padding: 14px 14px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); }
+.lcmp__mk { font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); }
+.lcmp__mtheirs { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.lcmp__mtheirs s { opacity: .8; }
+.lcmp__mours { font-family: var(--font-serif); font-size: 34px; line-height: 1; color: var(--accent); }
+.lcmp__mnote { font-size: 10px; color: var(--muted-2); }
+.lcmp__asof { margin-top: 10px; text-align: center; font-size: 10.5px; letter-spacing: .06em; color: var(--muted-2); }
+@media (max-width: 900px) { .lcmp__meters { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .lcmp__meters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ── Share band head (links + embed hand-off) ──────────────────────────── */
+.lsh { max-width: 1220px; margin: clamp(56px, 8vh, 96px) auto 0; padding: 22px 16px 0; text-align: center; border-top: 1px solid var(--line); }
+.lsh .lsh__h2 { font-size: clamp(22px, 2.4vw, 30px); margin-top: 10px; color: var(--muted); }
+
+/* Reduced motion: every rehearsal is a still; nothing hides */
+@media (prefers-reduced-motion: reduce) {
+  .lh__rcptleg, .lh__rcptend { opacity: 1; transform: none; transition: none; }
+  .lh__caret { animation: none; }
+  .lvb__v { transition: none; }
+}
