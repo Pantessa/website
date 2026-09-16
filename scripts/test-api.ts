@@ -197,8 +197,24 @@ import { routeSavings } from '../lib/route-telemetry'
 import { portfolioFromToolResult, portfolioOf } from '../lib/portfolio-display'
 import { jobContextFor } from '../lib/job-context'
 import { crossChainAgentOf, detectCrossChain, swapWorkingContext } from '../lib/swap-intent'
-import { encodeV4SwapCalldata, guardUniswapV4Build, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
-import { guardLifiBuild, isLifiNoRouteMessage, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
+import { encodeV4SwapCalldata, guardUniswapV4Build, GatedV4PoolError, NoV4PoolError, type V4BuiltStep, type V4GuardExpectations, type V4PoolKey } from '../lib/uniswap-v4'
+import { guardLifiBuild, isLifiNoRouteMessage, verifyLifiQuoteEcho, lifiPriceAcceptable, lifiRoutersFor, NoLifiRouteError, type LifiBuiltStep, type LifiGuardExpectations, type LifiQuote } from '../lib/lifi-venue'
+import {
+  checkFillAgainstTape,
+  offTapeSentence,
+  OffTapeError,
+  STOCK_TAPE_BOUND_PCT,
+  STOCK_TAPE_WARN_PCT,
+  tapeBand,
+  tapeCheckOf,
+  tapeFillOf,
+  tapeMissMessage,
+  TapeUnavailableError,
+  type PricedLeg,
+  type SwapLegKind,
+} from '../lib/stock-tape'
+import { buildGuardedSwap } from '../lib/swap-exec'
+import { ROBINHOOD_BATCH_MAX } from '../lib/quotes'
 import { clampNativeSellAtoms, fillableLeg, FUNDING_ALT_USDC, FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, fundingAltUsdcFor, fundingNeedUsd, listWords, fundingSourceSymbols, LIFI_LEG_FLAT_USD, MIN_VALUE_LEG_USD, minLegNote, offChainStableSource, ROBINHOOD_CHAIN_ID, STABLE_LEG_MIN_OUT_BPS, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData, inflightSettlingNote } from '../lib/inflight-funding'
 import { sanitizeWorkingContext } from '../lib/working-context'
@@ -290,7 +306,7 @@ import {
   usdcAtomsToHuman,
   SPEND_PERMISSION_MANAGER,
 } from '../lib/dca-auto'
-import { ADDRESS_THIS, SWAP_ROUTER_02_ABI } from '../lib/uniswap-venue'
+import { ADDRESS_THIS, NoV3PoolError, SWAP_ROUTER_02_ABI } from '../lib/uniswap-venue'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
   VIA_RE,
@@ -22968,6 +22984,265 @@ async function main() {
     check(
       'earn (view): a remembered Map·List choice wins; with nothing remembered a ≥1280px viewport opens on the MAP and a narrower one on the list; junk stored falls back to the width rule',
       earnDefaultView('list', 1600) === 'list' && earnDefaultView('map', 375) === 'map' && earnDefaultView(null, 1440) === 'map' && earnDefaultView(null, 1279) === 'list' && earnDefaultView('grid', 1440) === 'map',
+    )
+  }
+
+  // ── TAPE PARITY (2026-09-16): a Robinhood Chain stock swap is checked against
+  // the stock's tape (lib/stock-tape). "Buy $50 of AMAT" had built a guarded
+  // Uniswap v3 swap through a 1% pool quoting ~$33k a share against a $421.84
+  // tape — ~0.0015 AMAT for $50 — because every slippage bound is measured
+  // from the builder's own pool quote. 22 curated listings had pools like it.
+  {
+    const tapeNow = Date.now()
+    const tl = (kind: SwapLegKind, symbol: string, usd: number, decimals: number, feed = 'robinhood'): PricedLeg => ({ symbol, address: `0x${'1'.repeat(40)}`, decimals, kind, usd, feed, asOf: tapeNow })
+    const usdgLeg = tl('stable', 'USDG', 1, 6, 'face value')
+    const amatLeg = tl('stock', 'AMAT', 421.84, 18)
+    const V3 = "Robinhood Chain's Uniswap v3 pool"
+    // Shares as 18-decimal atoms without float drift past 6 places.
+    const shareAtoms = (shares: number) => BigInt(Math.round(shares * 1e6)) * BigInt(1e12)
+
+    // The build that shipped: 50 USDG → 0.001515581146145081 AMAT (live quote, 2026-09-16).
+    const shipped = tapeFillOf(V3, usdgLeg, amatLeg, BigInt('50000000'), BigInt('1515581146145081'))!
+    check(
+      'tape parity: the AMAT build that shipped (50 USDG → 0.0015156 AMAT on the v3 1% pool) prices at $32,990.65 a share, 78× the $421.84 tape — band off',
+      shipped.side === 'buy' && shipped.symbol === 'AMAT' && Math.abs(shipped.sharePx - 32990.65) < 0.01 && shipped.devPct > 7700 && tapeBand(shipped.devPct) === 'off',
+      `${shipped.sharePx} ${shipped.devPct}`,
+    )
+    let shippedThrow: unknown = null
+    try {
+      checkFillAgainstTape({ sell: usdgLeg, buy: amatLeg }, V3, BigInt('50000000'), BigInt('1515581146145081'))
+    } catch (e) {
+      shippedThrow = e
+    }
+    check(
+      'tape parity: the builder check THROWS OffTapeError for that fill (no calldata leaves the builder) and the refusal names the venue, the stock, both prices and the 10% bound',
+      shippedThrow instanceof OffTapeError &&
+        (shippedThrow as Error).message === "Robinhood Chain's Uniswap v3 pool fills this AMAT buy at $32,990.65 a share — 78× Robinhood's tape ($421.84), outside the 10% bound.",
+      shippedThrow instanceof Error ? shippedThrow.message : String(shippedThrow),
+    )
+    const soldAmat = tapeFillOf(V3, amatLeg, usdgLeg, BigInt('118528351981794050'), BigInt('121109'))!
+    check(
+      'tape parity: the sell side of the same pool (0.11853 AMAT → 0.121109 USDG) pays $1.02 a share, 99.76% below the tape — off, and the sentence says "sell … below"',
+      soldAmat.side === 'sell' && tapeBand(soldAmat.devPct) === 'off' &&
+        offTapeSentence(soldAmat) === "Robinhood Chain's Uniswap v3 pool fills this AMAT sell at $1.02 a share — 99.76% below Robinhood's tape ($421.84), outside the 10% bound.",
+      offTapeSentence(soldAmat),
+    )
+    check(
+      'tape parity: the bands — within 3% ok, past 3% warn, past 10% off (10.00% itself still builds), either side; NaN and Infinity are off',
+      STOCK_TAPE_BOUND_PCT === 10 && STOCK_TAPE_WARN_PCT === 3 &&
+        tapeBand(0) === 'ok' && tapeBand(3) === 'ok' && tapeBand(-3) === 'ok' && tapeBand(3.01) === 'warn' && tapeBand(-9.99) === 'warn' && tapeBand(10) === 'warn' &&
+        tapeBand(10.01) === 'off' && tapeBand(-10.01) === 'off' && tapeBand(Number.NaN) === 'off' && tapeBand(Number.POSITIVE_INFINITY) === 'off',
+    )
+    const richSell = tapeFillOf(V3, amatLeg, usdgLeg, shareAtoms(0.1), BigInt(Math.round(0.1 * 421.84 * 1.11 * 1e6)))!
+    const cheapBuy = tapeFillOf(V3, usdgLeg, amatLeg, BigInt('100000000'), shareAtoms(100 / (421.84 * 0.89)))!
+    check(
+      'tape parity: symmetric on purpose — a sell paying 11% OVER the tape and a buy 11% UNDER it are off too (the thin side of a broken pool, or not the share we think)',
+      Math.abs(richSell.devPct - 11) < 0.01 && tapeBand(richSell.devPct) === 'off' && Math.abs(cheapBuy.devPct + 11) < 0.01 && tapeBand(cheapBuy.devPct) === 'off',
+      `${richSell.devPct} ${cheapBuy.devPct}`,
+    )
+    const sounCheck = tapeCheckOf(tapeFillOf(V3, usdgLeg, tl('stock', 'SOUN', 5.94, 18), BigInt('100000000'), shareAtoms(100 / 6.45))!)
+    const aaplCheck = tapeCheckOf(tapeFillOf(V3, usdgLeg, tl('stock', 'AAPL', 333.96, 18), BigInt('100000000'), shareAtoms(100 / 334.09))!)
+    check(
+      'tape parity: a thin pool inside the bound (SOUN +8.59%) builds with a WARN row naming the gap; a healthy one (AAPL +0.04%) carries a passing block-level row with both prices',
+      sounCheck.id === 'tape' && sounCheck.level === 'warn' && sounCheck.ok === false &&
+        sounCheck.note === "This SOUN buy fills at $6.45 a share, 8.59% above Robinhood's tape ($5.94) — inside the 10% bound, but a real gap." &&
+        aaplCheck.id === 'tape' && aaplCheck.level === 'block' && aaplCheck.ok === true &&
+        aaplCheck.note === "Checked against Robinhood's tape: this AAPL buy fills at $334.09 a share vs $333.96 (+0.04%, within the 10% bound).",
+      `${sounCheck.note} || ${aaplCheck.note}`,
+    )
+    const yahooFill = tapeFillOf(V3, usdgLeg, tl('stock', 'AMAT', 421.84, 18, 'yahoo'), BigInt('50000000'), BigInt('1515581146145081'))!
+    const stockForStock = tapeFillOf(V3, tl('stock', 'AAPL', 333.96, 18), amatLeg, shareAtoms(1), shareAtoms(0.79))!
+    const noShares = tapeFillOf(V3, usdgLeg, amatLeg, BigInt('50000000'), BigInt(0))!
+    check(
+      'tape parity: a Yahoo-served tape is named as such; stock-for-stock reads the stock bought; a pair with no stock has no fill to check; a quote with no shares out is off and says so',
+      /the Yahoo Finance tape \(\$421\.84\)/.test(offTapeSentence(yahooFill)) &&
+        stockForStock.symbol === 'AMAT' && stockForStock.side === 'buy' && Math.abs(stockForStock.devPct - 0.212) < 0.01 &&
+        tapeFillOf(V3, usdgLeg, tl('coin', 'ETH', 2400, 18, 'coinbase'), BigInt('50000000'), BigInt('20000000000000000')) === null &&
+        checkFillAgainstTape(null, V3, BigInt(1), BigInt(1)) === null &&
+        tapeBand(noShares.devPct) === 'off' && /returns no AMAT for this order/.test(offTapeSentence(noShares)),
+    )
+    const tapeDownErr = new TapeUnavailableError(tapeMissMessage('AMAT', 'down'), 'AMAT', 'down', 'no AMAT quote from Robinhood or Yahoo')
+    const noFeedErr = new TapeUnavailableError(tapeMissMessage('CASHCAT', 'no-feed'), 'CASHCAT', 'no-feed', 'no feed lists CASHCAT')
+    const staleErr = new TapeUnavailableError(tapeMissMessage('AMAT', 'stale', Date.parse('2026-09-11T20:00:00Z')), 'AMAT', 'stale', 'last AMAT print is too old')
+    check(
+      'tape parity: no tape, no build — a feed that did not answer or went stale is transient (hold / withhold), a stock no feed lists is PERMANENT and refused by name',
+      !tapeDownErr.permanent && !staleErr.permanent && noFeedErr.permanent &&
+        /try again in a moment\. Nothing was built\./.test(tapeDownErr.message) && /from 2026-09-11 — too old/.test(staleErr.message) &&
+        /Robinhood's market data has no price for CASHCAT/.test(noFeedErr.message) && /Nothing was built\./.test(noFeedErr.message),
+    )
+
+    // ── The cascade (lib/swap-exec, the jobs runner + swap panel): off tape
+    // falls through like a missing pool, then refuses by name.
+    const cascadeCalls: string[] = []
+    const cascadeParams = { sellToken: 'USDG', buyToken: 'AMAT', amountHuman: '50', from: '0x6ea08ca8f313d860808ef7431fc72c6fbcf4a72d', chainId: 4663 }
+    const lifiFillErr = new OffTapeError(tapeFillOf("Robinhood Chain's own settlement venue (via LiFi)", usdgLeg, amatLeg, BigInt('49900000'), shareAtoms(49.9 / 470))!)
+    const fakeTx = { to: `0x${'2'.repeat(40)}`, data: '0x', value: '0', chainId: 4663, action: 'swap' }
+    const v3Built = { summary: 'v3 fill', guardrails: { ok: true, valueUsd: 50, checks: [] }, blocked: false, swapTx: fakeTx, approveTx: null, minimumOut: '1', validUntil: 1 }
+    const lifiBuilt = { summary: 'lifi fill', guardrails: { ok: true, valueUsd: 50, checks: [] }, blocked: false, steps: [{ label: 'swap', title: 'swap', tx: fakeTx, validUntil: 1 }], swapStepIndex: 0, minimumOut: '1', feeHuman: '0.1', tool: 'fly' }
+    const venue = (name: string, run: () => unknown) => async () => {
+      cascadeCalls.push(name)
+      return run()
+    }
+    const thrower = (err: Error) => () => {
+      throw err
+    }
+    const runCascade = async (venues: Record<string, () => unknown>) => {
+      cascadeCalls.length = 0
+      try {
+        return { result: await buildGuardedSwap(cascadeParams, venues as never), calls: cascadeCalls.join(','), threw: null as unknown }
+      } catch (e) {
+        return { result: null, calls: cascadeCalls.join(','), threw: e }
+      }
+    }
+    const offV3 = venue('v3', thrower(new OffTapeError(shipped)))
+    const noV3 = venue('v3', thrower(new NoV3PoolError('no v3 pool')))
+    const noV4 = venue('v4', thrower(new NoV4PoolError('no v4 pool')))
+    const lifiOk = venue('lifi', () => lifiBuilt)
+    const c1 = await runCascade({ v3: offV3, v4: noV4, lifi: lifiOk })
+    check(
+      'tape parity (cascade): an off-tape v3 pool is skipped like a missing one — no v4 pool → the chain\'s own venue via LiFi builds (v3,v4,lifi)',
+      !!c1.result && c1.result.ok && c1.result.buildPath === 'native-swap-lifi' && c1.result.txChain.refresh.kind === 'lifi-swap' && c1.calls === 'v3,v4,lifi',
+      `${c1.calls} ${JSON.stringify(c1.result ?? c1.threw).slice(0, 200)}`,
+    )
+    const c2 = await runCascade({ v3: offV3, v4: noV4, lifi: venue('lifi', thrower(lifiFillErr)) })
+    check(
+      'tape parity (cascade): the chain\'s own venue off the tape too → refused by name, BOTH venues in the reason, blockKind execution (never "policy"), nothing built',
+      !!c2.result && !c2.result.ok && c2.result.blockKind === 'execution' &&
+        c2.result.reasons === `${new OffTapeError(shipped).message} ${lifiFillErr.message} Nothing was built.`,
+      c2.result && !c2.result.ok ? c2.result.reasons : String(c2.threw),
+    )
+    const c3 = await runCascade({ v3: offV3, v4: noV4, lifi: venue('lifi', thrower(new NoLifiRouteError('LiFi found no route for the pair.'))) })
+    check(
+      'tape parity (cascade): off-tape pool and no LiFi route → the refusal leads with the off-tape pool, not "no pool"',
+      !!c3.result && !c3.result.ok && c3.result.blockKind === 'execution' &&
+        c3.result.reasons.startsWith(new OffTapeError(shipped).message) && /LiFi couldn't route it through the chain's own venue either — nothing was built\./.test(c3.result.reasons),
+      c3.result && !c3.result.ok ? c3.result.reasons : String(c3.threw),
+    )
+    const c4 = await runCascade({ v3: noV3, v4: noV4, lifi: lifiOk })
+    const c5 = await runCascade({ v3: venue('v3', () => v3Built), v4: noV4, lifi: lifiOk })
+    const c6 = await runCascade({ v3: noV3, v4: venue('v4', thrower(new GatedV4PoolError('gated'))), lifi: lifiOk })
+    const c7 = await runCascade({ v3: noV3, v4: venue('v4', thrower(new OffTapeError(shipped))), lifi: lifiOk })
+    check(
+      'tape parity (cascade): unchanged paths hold — no v3 and no v4 pool is still "no pool" without a LiFi call; a v3 fill builds alone; a gated v4 pool still reaches LiFi; an off-tape v4 pool reaches LiFi too',
+      !!c4.result && !c4.result.ok && c4.result.reasons === 'No Uniswap v3 or v4 pool on Robinhood Chain can fill USDG → AMAT for this amount.' && c4.calls === 'v3,v4' &&
+        !!c5.result && c5.result.ok && c5.result.buildPath === 'native-swap-uniswap' && c5.calls === 'v3' &&
+        !!c6.result && c6.result.ok && c6.result.buildPath === 'native-swap-lifi' && c6.calls === 'v3,v4,lifi' &&
+        !!c7.result && c7.result.ok && c7.result.buildPath === 'native-swap-lifi' && c7.calls === 'v3,v4,lifi',
+      [c4, c5, c6, c7].map((c) => `${c.calls}:${c.result ? (c.result.ok ? c.result.buildPath : c.result.reasons) : String(c.threw)}`).join(' | '),
+    )
+    const c8 = await runCascade({ v3: venue('v3', thrower(tapeDownErr)), v4: noV4, lifi: lifiOk })
+    const c9 = await runCascade({ v3: venue('v3', thrower(noFeedErr)), v4: noV4, lifi: lifiOk })
+    const runnerSrc = await readFile('lib/jobs-runner.ts', 'utf8')
+    check(
+      'tape parity (cascade): a tape that did not answer THROWS out of the cascade (the jobs runner withholds and retries it like an RPC miss); a stock no feed lists comes back as a named execution refusal',
+      c8.result === null && c8.threw instanceof TapeUnavailableError && c8.calls === 'v3' &&
+        !!c9.result && !c9.result.ok && c9.result.blockKind === 'execution' && c9.result.reasons === noFeedErr.message && c9.calls === 'v3' &&
+        runnerSrc.includes('e instanceof TapeUnavailableError && !e.permanent') && runnerSrc.includes("didn't answer"),
+      `${c8.calls}:${String(c8.threw)} | ${c9.calls}:${c9.result && !c9.result.ok ? c9.result.reasons : ''}`,
+    )
+
+    // ── Quotes: Robinhood's batch refuses past 75 symbols, so the reader
+    // chunks — or every stock silently falls back to Yahoo's session price.
+    const tapeTickers = [...ROBINHOOD_TICKER_SET].filter((t) => chartPairFor(t)?.source === 'robinhood' && !['AAPL', 'AMAT', 'RUN'].includes(t))
+    const bigSet = tapeTickers.slice(0, ROBINHOOD_BATCH_MAX + 5)
+    const smallSet = tapeTickers.slice(-2)
+    const feedsOf = async (syms: string[]) =>
+      ((await (await fetch(`${BASE}/api/quotes?symbols=${encodeURIComponent(syms.join(','))}`)).json()) as { quotes: Record<string, { feed: string }> }).quotes
+    const smallFeeds = await feedsOf(smallSet)
+    const bigFeeds = await feedsOf(bigSet)
+    const robinhoodUp = smallSet.some((t) => smallFeeds[t]?.feed === 'robinhood')
+    const rhBelow = bigSet.slice(0, ROBINHOOD_BATCH_MAX).filter((t) => bigFeeds[t]?.feed === 'robinhood').length
+    const rhAbove = bigSet.slice(ROBINHOOD_BATCH_MAX).filter((t) => bigFeeds[t]?.feed === 'robinhood').length
+    check(
+      `tape parity (quotes): ${bigSet.length} stock symbols in one request still read Robinhood's 24/7 tape on both sides of the ${ROBINHOOD_BATCH_MAX}-symbol batch cap (one un-chunked call answered 400 and sent every stock to Yahoo)`,
+      ROBINHOOD_BATCH_MAX === 75 && bigSet.length === 80 && (!robinhoodUp || (rhBelow > 0 && rhAbove > 0)),
+      robinhoodUp ? `robinhood feeds: ${rhBelow} below the cap, ${rhAbove} above` : 'robinhood feed down for a 2-symbol read — chunking unproven this run',
+    )
+
+    // ── The routes API compares a stock row with the REAL tape.
+    for (const sym of ['AMAT', 'AAPL']) {
+      const q = ((await (await fetch(`${BASE}/api/quotes?symbols=${sym}`)).json()) as { quotes: Record<string, { last: number }> }).quotes[sym]
+      const rt = (await (await fetch(`${BASE}/api/markets/routes?symbol=${sym}&amount=50`)).json()) as Mk2RoutesResponse
+      const rows = rt.routes.filter((r) => r.kind === 'stock' && r.quote && typeof r.quote.value === 'number')
+      const rowOk = (r: (typeof rows)[number]) => {
+        const prem = ((r.quote!.value as number) / q.last - 1) * 100
+        const sub = r.quote!.sub ?? ''
+        if (Math.abs(prem) > STOCK_TAPE_BOUND_PCT + 1) return /vs tape · off tape, won't fill here$/.test(sub) && r.ticket!.out === null && r.ticket!.minOut === null
+        if (Math.abs(prem) < STOCK_TAPE_BOUND_PCT - 1) return /^pool [+-]\d+\.\d\d% vs tape$/.test(sub) && !/off tape/.test(sub) && (Math.abs(prem) < 0.05 || (sub.includes('+') === prem > 0))
+        return /vs tape/.test(sub)
+      }
+      check(
+        `tape parity (routes): /api/markets/routes?symbol=${sym} with no last reads its last from the TAPE (never the pool), and each stock row's "vs tape" sub agrees with pool vs tape — past the bound it says "off tape" and prints no estimate`,
+        !!q && q.last > 0 && typeof rt.last === 'number' && Math.abs(rt.last / q.last - 1) < 0.01 && rows.length === 2 && rows.every(rowOk) &&
+          rows.every((r) => !/\+0\.00% vs tape/.test(r.quote!.sub ?? '') || Math.abs((r.quote!.value as number) / q.last - 1) < 0.0005),
+        `tape=${q?.last} last=${rt.last} ${rows.map((r) => `${r.id.split(':').pop()} ${r.quote!.label} "${r.quote!.sub}" out=${r.ticket?.out}`).join(' | ')}`,
+      )
+    }
+
+    // ── Chat + refresh over HTTP, read-only: large USDG holders on Robinhood
+    // Chain as the quote context (any wallet with USDG + gas works; nothing
+    // is signed or sent).
+    const quoteWallets = ['0x6ea08ca8f313d860808ef7431fc72c6fbcf4a72d', '0xf70da97812cb96acdf810712aa562db8dfa3dbef', '0xb8159ba378904f803639d274cec79f788931c9c8']
+    const venuePaths = ['native-swap-uniswap', 'native-swap-uniswap-v4', 'native-swap-lifi', 'native-swap-off-tape', 'native-swap-hold']
+    type TapeTurn = { reply?: string; buildPath?: string; blocked?: boolean; txChain?: { steps: unknown[] }; guardrails?: { checks: { id: string; level: string; ok: boolean; note: string }[] } }
+    const stockTurn = async (message: string): Promise<{ wallet: string; turn: TapeTurn } | null> => {
+      for (const wallet of quoteWallets) {
+        const turn = (await (await fetch(`${BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message, walletAddress: wallet, activeServers: [], history: [] }) })).json()) as TapeTurn
+        if (venuePaths.includes(turn.buildPath ?? '')) return { wallet, turn }
+      }
+      return null
+    }
+    const tapeRowOf = (t: TapeTurn) => t.guardrails?.checks.find((c) => c.id === 'tape')
+    const amatTurn = await stockTurn('Buy $5 of AMAT on robinhood chain')
+    const amatT = amatTurn?.turn
+    const v3OffTape = !!amatT && /Uniswap v3 pool fills this AMAT buy at .* outside the 10% bound\./.test(amatT.reply ?? '')
+    check(
+      'tape parity (chat): "Buy $5 of AMAT" reaches a venue — any signable card carries its tape row (passing, or a warning), a v3 card is never built past the bound, and an off-tape pool routed to the chain\'s own venue is NAMED in the reply',
+      !!amatT &&
+        (amatT.txChain ? !!tapeRowOf(amatT) && tapeRowOf(amatT)!.level !== undefined && (tapeRowOf(amatT)!.ok || tapeRowOf(amatT)!.level === 'warn') : !!amatT.blocked || amatT.buildPath === 'native-swap-hold') &&
+        (amatT.buildPath !== 'native-swap-lifi' || v3OffTape || /only settles through/.test(amatT.reply ?? '')),
+      amatT ? `${amatTurn!.wallet.slice(0, 8)} ${amatT.buildPath} tape=${tapeRowOf(amatT)?.note ?? 'none'} reply=${(amatT.reply ?? '').slice(0, 260)}` : 'no quote wallet reached a venue (all three lack USDG + gas on 4663 now — refresh the list)',
+    )
+    const aaplTurn = await stockTurn('Buy $5 of AAPL on robinhood chain')
+    check(
+      'tape parity (chat): a healthy stock pool (AAPL) still builds, carrying a tape row inside the bound',
+      !!aaplTurn?.turn.txChain && !!tapeRowOf(aaplTurn.turn) && (tapeRowOf(aaplTurn.turn)!.ok || tapeRowOf(aaplTurn.turn)!.level === 'warn'),
+      aaplTurn ? `${aaplTurn.turn.buildPath} ${tapeRowOf(aaplTurn.turn)?.note ?? 'no tape row'}` : 'no quote wallet reached a venue',
+    )
+    if (chartPairFor('CASHCAT') === null) {
+      const cashcat = await stockTurn('Buy $5 of CASHCAT on robinhood chain')
+      check(
+        'tape parity (chat): a listed stock with no price feed (CASHCAT) is refused by name — no tape, no build',
+        !!cashcat && cashcat.turn.blocked === true && cashcat.turn.buildPath === 'native-swap-off-tape' && !cashcat.turn.txChain && /no price for CASHCAT/.test(cashcat.turn.reply ?? ''),
+        cashcat ? `${cashcat.turn.buildPath} ${(cashcat.turn.reply ?? '').slice(0, 160)}` : 'no quote wallet reached a venue',
+      )
+    }
+    if (amatTurn) {
+      const refreshed = (await (
+        await fetch(`${BASE}/api/tx/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'uniswap-swap', sellToken: 'USDG', buyToken: 'AMAT', amountHuman: '5', chainId: '4663', from: amatTurn.wallet }) })
+      ).json()) as { tx?: unknown; blocked?: boolean; blockKind?: string; reasons?: string; pending?: boolean; guardrails?: { checks: { id: string }[] } }
+      check(
+        'tape parity (refresh): re-quoting a Uniswap v3 AMAT card never hands back calldata without a tape row — with the pool off tape it WITHHOLDS as an execution block that names the bound (an error would fall back to the prebuilt calldata)',
+        v3OffTape
+          ? refreshed.blocked === true && refreshed.blockKind === 'execution' && /outside the 10% bound\. Ask for the swap again for a fresh route\./.test(refreshed.reasons ?? '') && !refreshed.tx
+          : !refreshed.tx || !!refreshed.guardrails?.checks.some((c) => c.id === 'tape'),
+        `v3OffTape=${v3OffTape} ${JSON.stringify(refreshed).slice(0, 240)}`,
+      )
+    }
+
+    // ── Sizing: a dollar amount of a stock converts at the tape, never a pool.
+    // Main sized "Sell $5 of AMAT" as 41.285123 AMAT (~$17,500 at the tape)
+    // off the broken pool's one-share sell quote; the reply names the shares
+    // whether the wallet holds them (a card) or not (the affordability line).
+    const sellTurn = (await (
+      await fetch(`${BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: 'Sell $5 of AMAT on robinhood chain', walletAddress: quoteWallets[0], activeServers: [], history: [] }) })
+    ).json()) as TapeTurn
+    const soldShares = Number((sellTurn.reply ?? '').match(/(?:spend|[Ss]wap|sells) ([\d.]+) AMAT/)?.[1] ?? Number.NaN)
+    const amatTape = ((await (await fetch(`${BASE}/api/quotes?symbols=AMAT`)).json()) as { quotes: Record<string, { last: number }> }).quotes.AMAT
+    check(
+      'tape parity (sizing): "Sell $5 of AMAT" sizes its shares at the tape (~0.012 AMAT), never at the pool — main sized 41.29 AMAT (~$17,500) off the pool\'s $0.12 sell quote; usdPerToken prices every 4663 stock this way (transfers against a spend cap too)',
+      Number.isFinite(soldShares) && !!amatTape && Math.abs((soldShares * amatTape.last) / 5 - 1) < 0.03,
+      `shares=${soldShares} tape=${amatTape?.last} reply=${(sellTurn.reply ?? '').slice(0, 200)}`,
     )
   }
 

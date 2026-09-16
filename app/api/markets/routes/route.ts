@@ -4,7 +4,8 @@ import { tokenHome } from '@/lib/token-home'
 import { chainById, primaryStable, publicClientFor } from '@/lib/chains'
 import { dynamicTokenBySymbol, ensureTokenList } from '@/lib/token-list'
 import { FEE_TIERS, QUOTER_V2_ABI } from '@/lib/uniswap-venue'
-import { poolPriceFor } from '@/lib/pool-price'
+import { poolPriceFor, poolSellPriceFor, type PoolPrice } from '@/lib/pool-price'
+import { fmtTapeGap, stockTapeFor, STOCK_TAPE_BOUND_PCT, type TapePrice } from '@/lib/stock-tape'
 import { callMcpTool } from '@/lib/mcp-call'
 import { AAVE_MCP } from '@/lib/aave-exec'
 import { LIDO_MCP } from '@/lib/lido-stake'
@@ -35,7 +36,9 @@ export const dynamic = 'force-dynamic'
 // chain (QuoterV2, sized at the real order so impact is IN the number), the
 // CoW limit price the row rests at, Hyperliquid mark / hourly funding / max
 // leverage, Aave supply + borrow APY, Lido's 7-day APR, the Robinhood Chain
-// pool price beside the tape. Public (no wallet — every row is a sentence
+// pool price beside the TAPE — the server's own read of it (lib/stock-tape),
+// never a price derived from the same pool, so a broken pool can't read
+// "+0.00% vs tape". Public (no wallet — every row is a sentence
 // the wallet signs later); 30s cache per (symbol, amount, last-bucket,
 // leverage); every provider fail-soft: a row with no quote carries
 // `quote: null` and still sends (the build itself is the honest gate).
@@ -175,7 +178,21 @@ const gasLine = (chainId: number): string | null => {
   return floor ? `≈ ${floor} ETH floor on ${VENUE_CHAIN_LABELS[chainId] ?? chainId}` : null
 }
 const fmtUnits = (n: number, sym: string) => `${n >= 1000 ? n.toFixed(0) : n >= 1 ? n.toFixed(4) : n.toPrecision(4)} ${sym}`
-function ticketFor(r: VenueRoute, feeBps: number, amount: number, sym: string, ctx: { spot?: { usdPerToken: number; tokenOut: number }; hl?: HlCtx | null; stock?: { usdPerToken: number; tokenOut: number; quoteUsd: number } | null; lev?: number }): RouteTicket {
+/** A stock row's side of the pool against the tape: the pool's per-share
+ *  price for that side, and its gap from the tape (null without a tape). */
+interface StockSide {
+  pool: PoolPrice | null
+  tapeUsd: number | null
+  premPct: number | null
+  /** Past the tape guard's bound — the card won't fill in this pool. */
+  offTape: boolean
+}
+function stockSideOf(pool: PoolPrice | null, tapeUsd: number | null): StockSide {
+  const premPct = pool && tapeUsd ? ((pool.usdPerToken - tapeUsd) / tapeUsd) * 100 : null
+  return { pool, tapeUsd, premPct, offTape: premPct !== null && !(Math.abs(premPct) <= STOCK_TAPE_BOUND_PCT) }
+}
+
+function ticketFor(r: VenueRoute, feeBps: number, amount: number, sym: string, ctx: { spot?: { usdPerToken: number; tokenOut: number }; hl?: HlCtx | null; stock?: StockSide; lev?: number }): RouteTicket {
   const feeUsd = Math.round(((amount * feeBps) / 10_000) * 100) / 100
   const base = { feeBps, feeUsd, settles: SETTLES[r.venue] ?? r.venue, note: ROUTE_TICKET_NOTE }
   switch (r.kind) {
@@ -188,9 +205,22 @@ function ticketFor(r: VenueRoute, feeBps: number, amount: number, sym: string, c
       return { ...base, out: m ? (r.side === 'buy' ? `${m[1]} ${sym} (at-or-better)` : `${m[2]} USDC (at-or-better)`) : null, slippageBps: null, minOut: m ? (r.side === 'buy' ? `${m[1]} ${sym}` : `${m[2]} USDC`) : null, gas: null, signs: 'EIP-712 order — gasless, cancel any time' }
     }
     case 'stock': {
-      const px = ctx.stock?.usdPerToken
-      const out = px ? (amount * (1 - feeBps / 10_000)) / px : null
-      return { ...base, out: out != null ? (r.side === 'buy' ? fmtUnits(out, sym) : `≈ $${(amount * (1 - feeBps / 10_000)).toFixed(2)} USDG`) : null, slippageBps: SWAP_SLIPPAGE_BPS, minOut: out != null ? (r.side === 'buy' ? fmtUnits(out * (1 - SWAP_SLIPPAGE_BPS / 10_000), sym) : null) : null, gas: gasLine(4663), signs: 'approve (if needed) + swap on Robinhood Chain — one card' }
+      const side = ctx.stock
+      if (side?.offTape) {
+        // The pool is past the tape guard's bound: the card won't fill there
+        // (lib/stock-tape) — it tries the chain's own venue, or refuses. No
+        // estimate from a price nobody will trade at.
+        return { ...base, out: null, slippageBps: SWAP_SLIPPAGE_BPS, minOut: null, gas: gasLine(4663), settles: "Robinhood Chain's own venue via LiFi, checked against the tape — the Uniswap pool is off it", signs: 'approve (if needed) + swap on Robinhood Chain — one card, or a refusal by name', note: `pool ${fmtTapeGap(side.premPct!)}% off the tape · the card routes around it` }
+      }
+      const px = side?.pool?.usdPerToken
+      if (r.side === 'buy') {
+        const out = px ? (amount * (1 - feeBps / 10_000)) / px : null
+        return { ...base, out: out != null ? fmtUnits(out, sym) : null, slippageBps: SWAP_SLIPPAGE_BPS, minOut: out != null ? fmtUnits(out * (1 - SWAP_SLIPPAGE_BPS / 10_000), sym) : null, gas: gasLine(4663), signs: 'approve (if needed) + swap on Robinhood Chain — one card' }
+      }
+      // A sell of $amount sizes its shares at the tape, then fills at the
+      // pool's sell price.
+      const usdOut = px && side?.tapeUsd ? amount * (px / side.tapeUsd) * (1 - feeBps / 10_000) : amount * (1 - feeBps / 10_000)
+      return { ...base, out: `≈ $${usdOut.toFixed(2)} USDG`, slippageBps: SWAP_SLIPPAGE_BPS, minOut: px && side?.tapeUsd ? `≈ $${(usdOut * (1 - SWAP_SLIPPAGE_BPS / 10_000)).toFixed(2)} USDG` : null, gas: gasLine(4663), signs: 'approve (if needed) + swap on Robinhood Chain — one card' }
     }
     case 'perp': {
       const lev = ctx.lev ?? null
@@ -226,13 +256,23 @@ async function compose(sym: string, amount: number, lastIn: number | null, lever
   // quote → HL mark → the 4663 pool), and the map is composed again with it.
   const wantLidoFirst = routes.some((r) => r.kind === 'stake') || (last === null && sym === 'ETH' && !tokenHome(sym))
 
-  const [spotR, hlR, aaveR, aaveUsdcR, lidoR, stockR] = await Promise.allSettled([
+  const [spotR, hlR, aaveR, aaveUsdcR, lidoR, stockR, tapeR] = await Promise.allSettled([
     Promise.allSettled(wantSpot.map((id) => withTimeout(uniswapQuote(sym, id, amount)).then((q) => [id, q] as const))),
     wantPerp ? withTimeout(hlContext(sym)) : Promise.resolve(null),
     wantAave ? withTimeout(aaveApy(sym)) : Promise.resolve(null),
     wantAave ? withTimeout(aaveApy('USDC')) : Promise.resolve(null),
     wantLidoFirst ? withTimeout(lidoApr()) : Promise.resolve(null),
     wantStock ? withTimeout(poolPriceFor(sym)) : Promise.resolve(null),
+    // The stock's tape, read server-side (the same read the build's tape guard
+    // uses), and the SELL side of the pool sized at it.
+    wantStock
+      ? withTimeout(
+          stockTapeFor(sym).then(async (tape): Promise<{ tape: TapePrice | null; sell: PoolPrice | null }> => {
+            const sizeAt = tape?.usd ?? lastIn
+            return { tape, sell: sizeAt ? await poolSellPriceFor(sym, sizeAt) : null }
+          }),
+        )
+      : Promise.resolve(null),
   ])
 
   const spot = new Map<number, { usdPerToken: number; tokenOut: number }>()
@@ -247,13 +287,22 @@ async function compose(sym: string, amount: number, lastIn: number | null, lever
   const aaveUsdc = aaveUsdcR.status === 'fulfilled' ? aaveUsdcR.value : null
   const lido = lidoR.status === 'fulfilled' ? lidoR.value : (failed.push('lido'), null)
   const stock = stockR.status === 'fulfilled' ? stockR.value : (failed.push('robinhood'), null)
+  const stockTape = tapeR.status === 'fulfilled' ? tapeR.value : null
+  if (wantStock && !stockTape?.tape) failed.push('tape')
+  // The tape a stock row is compared with: the server's read, else the
+  // caller's own chart tape (`last`) — never the pool itself.
+  const tapeUsd = stockTape?.tape?.usd ?? (wantStock ? lastIn : null)
+  const stockBuy = stockSideOf(stock, tapeUsd)
+  const stockSell = stockSideOf(stockTape?.sell ?? null, tapeUsd)
 
   // Best spot = the most token for the same dollars (lowest effective price).
   let bestSpotChain: number | null = null
   for (const [id, q] of spot) if (bestSpotChain === null || q.usdPerToken < spot.get(bestSpotChain)!.usdPerToken) bestSpotChain = id
 
   if (last === null) {
-    const derived = (bestSpotChain !== null ? spot.get(bestSpotChain)!.usdPerToken : null) ?? hl?.markPx ?? stock?.usdPerToken ?? null
+    // A stock's `last` is its tape. Deriving it from the pool made the pool
+    // read "+0.00% vs tape" against itself (AMAT, 2026-09-16: 156× the tape).
+    const derived = (bestSpotChain !== null ? spot.get(bestSpotChain)!.usdPerToken : null) ?? hl?.markPx ?? stockTape?.tape?.usd ?? null
     if (derived && Number.isFinite(derived) && derived > 0) {
       last = derived
       routes = venuesFor(sym, pair, { usd: amount, last, leverage })
@@ -300,12 +349,17 @@ async function compose(sym: string, amount: number, lastIn: number | null, lever
         return { ...base, quote: { kind: 'apy', value: lido, label: `${lido.toFixed(2)}% APR`, sub: '7-day average, rebasing daily' } }
       }
       case 'stock': {
-        if (!stock) return { ...base, quote: null }
-        const prem = last ? ((stock.usdPerToken - last) / last) * 100 : null
-        return {
-          ...base,
-          quote: { kind: 'price', value: stock.usdPerToken, label: fmtUsd(stock.usdPerToken), sub: prem != null ? `pool ${prem >= 0 ? '+' : ''}${prem.toFixed(2)}% vs tape` : `pool price via ${stock.via}` },
-        }
+        const side = r.side === 'sell' ? stockSell : stockBuy
+        const pool = side.pool ?? stock
+        if (!pool) return { ...base, quote: null }
+        const prem = side.pool ? side.premPct : null
+        const sub =
+          prem === null
+            ? `pool price via ${pool.via} · no tape to compare`
+            : side.offTape
+              ? `pool ${prem >= 0 ? '+' : '-'}${fmtTapeGap(prem)}% vs tape · off tape, won't fill here`
+              : `pool ${prem >= 0 ? '+' : ''}${prem.toFixed(2)}% vs tape`
+        return { ...base, quote: { kind: 'price', value: pool.usdPerToken, label: fmtUsd(pool.usdPerToken), sub } }
       }
       case 'dca':
         return { ...base, quote: { kind: 'none', value: null, label: 'every week', sub: 'you sign each buy' } }
@@ -314,7 +368,7 @@ async function compose(sym: string, amount: number, lastIn: number | null, lever
     }
   })
 
-  const withTickets: RouteQuote[] = quoted.map((r) => ({ ...r, ticket: ticketFor(r, r.feeBps, amount, sym, { spot: spot.get(r.chainId), hl, stock, lev: leverage }) }))
+  const withTickets: RouteQuote[] = quoted.map((r) => ({ ...r, ticket: ticketFor(r, r.feeBps, amount, sym, { spot: spot.get(r.chainId), hl, stock: r.side === 'sell' ? stockSell : stockBuy, lev: leverage }) }))
 
   return {
     symbol: sym,

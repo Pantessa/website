@@ -14,6 +14,7 @@ import { buildUniswapSwap } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { buildLifiBridgeLeg, isLifiFundedChain, type FundingLeg } from '@/lib/lifi-bridge'
+import { OffTapeError, TapeUnavailableError } from '@/lib/stock-tape'
 import { ensureTokenList } from '@/lib/token-list'
 import { sanitizeChainId, publicClientFor, chainById, DEFAULT_CHAIN_ID } from '@/lib/chains'
 import { dryRunTx, isAllowanceLag } from '@/lib/dry-run'
@@ -199,6 +200,22 @@ export async function POST(req: NextRequest) {
     if (gate) return gate
     return NextResponse.json({ tx: uni.swapTx, summary: uni.summary, guardrails: uni.guardrails, validUntil: uni.validUntil })
   } catch (err) {
+    if (err instanceof OffTapeError) {
+      // The pool (or the chain's own venue) moved off the stock's tape since
+      // the card was built (lib/stock-tape). WITHHOLD — an `error` here would
+      // send the card back to its prebuilt calldata, and a fresh ask routes
+      // around the pool.
+      return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: `${err.message} Ask for the swap again for a fresh route.` })
+    }
+    if (err instanceof TapeUnavailableError) {
+      // No feed lists the stock → nothing can ever pass the check: withhold.
+      // The feed didn't answer → a plain error: the card falls back to its
+      // own still-live calldata, whose minimum was set from a quote checked
+      // against the tape when the card was built, and its deadline still
+      // stands.
+      if (err.permanent) return NextResponse.json({ blocked: true, blockKind: 'execution', reasons: err.message })
+      return NextResponse.json({ error: `tape unavailable: ${err.detail}` }, { status: 502 })
+    }
     if (err instanceof GatedV4PoolError) {
       // Quotes-but-can't-execute (Robinhood stock pools): the prebuilt tx is
       // dead by design — the card must WITHHOLD, never fall back to it. (A
