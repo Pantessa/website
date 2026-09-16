@@ -5897,12 +5897,15 @@ async function main() {
     const docsHtml = await docsRes.text()
     // §2.6 copy fences ride the hallmark: the required phrase must be on the
     // board, and the banned standings words must not (checked as rendered
-    // words — the page copy carries none of them in any mode).
+    // words — the page copy carries none of them in any mode). Whole words
+    // only: the HTML also carries hashed chunk filenames, and a build whose
+    // hash spelled "…apy…" (0gjvwnsapy6y1.js, 2026-09-16) failed this fence
+    // with no banned word on the page.
     const agentsOn =
       agentsRes.status === 200 &&
       agentsHtml.includes('The standings are signatures') &&
       /real signed history — never projections/i.test(agentsHtml) &&
-      !/top performer|returns|APY/i.test(agentsHtml)
+      !/\b(?:top performer|returns|APY)\b/i.test(agentsHtml)
     const rosterOn =
       rosterRes.status === 200 &&
       rosterHtml.includes('You keep the only pen') &&
