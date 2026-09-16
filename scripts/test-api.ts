@@ -17658,7 +17658,7 @@ async function main() {
       value: '0',
       data: encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'multicall', args: [BigInt(feeDeadline), calls] }),
     })
-    const feeSell = (calls: `0x${string}`[], over: Partial<typeof guardBase> = {}) => guardSpotSell({ ...guardBase, steps: [wrapStep, approveStep, feeSwapStep(calls)], ...over })
+    const feeSell = (calls: `0x${string}`[]) => guardSpotSell({ ...guardBase, steps: [wrapStep, approveStep, feeSwapStep(calls)] })
     const spotRefusedFor = (r: { ok: boolean; checks: { ok: boolean; note: string }[] }, re: RegExp) => !r.ok && r.checks.some((c) => !c.ok && re.test(c.note))
     // The fixture must BE the builder's shape: guardUniswapV3Build runs inside
     // buildUniswapSwap and accepts exactly one payout shape for a fee-on
