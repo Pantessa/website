@@ -17714,6 +17714,15 @@ async function main() {
       ),
     )
     check('spot guard (fee on): a third router call refuses', spotRefusedFor(feeSell([feeSwapCall(), feeSweepCall(), feeSweepCall()]), /got 3 calls/))
+    // Security pass on #807: a price-limited swap can fill part of the pull,
+    // clear the floor, read "sold", and leave the rest on the spender. Both
+    // shapes refuse it; a pool fee outside the v3 tiers refuses too.
+    check(
+      'spot guard: a price-limited swap refuses in both shapes (a partial fill would leave part of the pull on the spender)',
+      spotRefusedFor(feeSell([feeSwapCall({ sqrtPriceLimitX96: BigInt('4295128740') }), feeSweepCall()]), /price limit, so it could sell only part of the pull/) &&
+        spotRefusedFor(guardSpotSell({ ...guardBase, steps: [wrapStep, approveStep, mkSwapStep({ sqrtPriceLimitX96: BigInt('4295128740') })] }), /price limit, so it could sell only part of the pull/),
+    )
+    check('spot guard: a pool fee outside the v3 tiers refuses', spotRefusedFor(feeSell([feeSwapCall({ fee: 7777 }), feeSweepCall()]), /pool fee 7777 is not a Uniswap v3 tier/))
     check(
       "spot guard (fee on): the swap's minOut still has to clear the quote floor",
       spotRefusedFor(feeSell([feeSwapCall({ amountOutMinimum: BigInt(1) }), feeSweepCall({ min: BigInt(1) })]), /minOut 1 below the quote floor 850000000/),

@@ -26,7 +26,7 @@ import {
   type DcaSpendPermission,
 } from './dca-auto'
 import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, TREASURY_ADDRESS, swapFeeAtoms } from './fees'
-import { ADDRESS_THIS, SWAP_ROUTER_02_ABI } from './uniswap-venue'
+import { ADDRESS_THIS, FEE_TIERS, SWAP_ROUTER_02_ABI } from './uniswap-venue'
 import type { GuardrailCheck } from './tx-guardrails'
 
 /** The permission struct is protocol-shaped, not DCA-shaped — reuse it. */
@@ -339,9 +339,11 @@ export function guardSpotSell(input: SpotSellGuardInput): { ok: boolean; checks:
             const p = (inner.args as readonly unknown[])[0] as {
               tokenIn: string
               tokenOut: string
+              fee: number
               recipient: string
               amountIn: bigint
               amountOutMinimum: bigint
+              sqrtPriceLimitX96: bigint
             }
             const owner = ownerWallet.toLowerCase()
             const usdc = chain.usdcAddress.toLowerCase()
@@ -350,6 +352,11 @@ export function guardSpotSell(input: SpotSellGuardInput): { ok: boolean; checks:
             if (p.tokenIn.toLowerCase() !== sellAddr) problems.push('tokenIn is not the protected asset')
             if (p.tokenOut.toLowerCase() !== usdc) problems.push('tokenOut is not USDC')
             if (p.amountIn !== pulledAtomic) problems.push(`amountIn ${p.amountIn} ≠ the pull`)
+            // A price limit can stop the swap part-way: the output still clears
+            // the floor, the run reads "sold", and the unsold rest of the pull
+            // stays on the spender. The builder never sets one.
+            if (p.sqrtPriceLimitX96 !== BigInt(0)) problems.push('the swap carries a price limit, so it could sell only part of the pull')
+            if (!(FEE_TIERS as readonly number[]).includes(Number(p.fee))) problems.push(`pool fee ${p.fee} is not a Uniswap v3 tier`)
             if (p.amountOutMinimum < minOutAtomic) problems.push(`minOut ${p.amountOutMinimum} below the quote floor ${minOutAtomic}`)
             let feeBips = 0
             if (!feeOn) {
