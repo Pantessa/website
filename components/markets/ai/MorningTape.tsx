@@ -5,14 +5,19 @@
 // the model narrates OUR rows (last, 24h, verdict, S1/R1 per symbol) and
 // ends with chips from the biggest movers' own menus. Shared cache keyed on
 // the sorted symbol set only. With no `symbols` prop it reads the rail's
-// active list (useWatchlists) so the rail mounts it with just `onAsk`.
+// active list (useWatchlists) so the rail mounts it with just `onAsk`; a
+// `symbols` prop overrides that read. COMPACT in a rail: collapsed by
+// default to a one-line header + the first sentence, open on click to a
+// bounded body that scrolls inside; remembered per browser.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Newspaper, RefreshCw } from 'lucide-react'
+import { ChevronDown, ChevronRight, Newspaper, RefreshCw } from 'lucide-react'
 import { useWatchlists } from '@/components/markets/watchlist/useWatchlists'
 import { TAPE_FOOTNOTE } from '@/lib/markets-copy'
-import { tapeSymbols, type AiChip, type BriefEvent } from '@/lib/markets-ai'
+import { firstSentenceOf, tapeSymbols, type AiChip, type BriefEvent } from '@/lib/markets-ai'
 import '../ai.css'
+
+export const TAPE_OPEN_KEY = 'pantessa.markets.tape'
 
 export type MorningTapeProps = { symbols?: readonly string[]; onAsk: (ask: string) => void; title?: string }
 
@@ -27,6 +32,26 @@ export default function MorningTape({ symbols: symbolsProp, onAsk, title = 'Morn
   const [error, setError] = useState<string | null>(null)
   const [nonce, setNonce] = useState(0)
   const abortRef = useRef<AbortController | null>(null)
+  // Collapsed by default (a rail is ~850px tall; the whole tape was ~500 of
+  // it); the choice is remembered per browser.
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(TAPE_OPEN_KEY) === '1') setOpen(true)
+    } catch {
+      /* default closed */
+    }
+  }, [])
+  const toggle = () => {
+    setOpen((o) => {
+      try {
+        window.localStorage.setItem(TAPE_OPEN_KEY, o ? '0' : '1')
+      } catch {
+        /* per-browser convenience only */
+      }
+      return !o
+    })
+  }
 
   useEffect(() => {
     if (!key) {
@@ -86,52 +111,64 @@ export default function MorningTape({ symbols: symbolsProp, onAsk, title = 'Morn
 
   if (!key) return null
   const streaming = phase === 'streaming'
+  const firstSentence = firstSentenceOf(text)
   return (
-    <section className="mk-ai mk-ai--tape" data-slot="MorningTape" data-lane="AI" data-phase={phase} aria-busy={streaming}>
-      <header className="mk-ai__head">
-        <span className="mk-ai__title">
-          <Newspaper className="mk-ai__ico" aria-hidden />
-          {title}
+    <section className={`mk-ai mk-ai--tape${open ? ' is-open' : ''}`} data-slot="MorningTape" data-lane="AI" data-phase={phase} data-open={open ? '1' : '0'} aria-busy={streaming}>
+      <button type="button" className="mk-ai__tape-bar" onClick={toggle} aria-expanded={open} aria-controls="mk-ai-tape-body">
+        {open ? <ChevronDown className="mk-ai__ico" aria-hidden /> : <ChevronRight className="mk-ai__ico" aria-hidden />}
+        <Newspaper className="mk-ai__ico mk-ai__ico--accent" aria-hidden />
+        <span className="mk-ai__tape-title">{title}</span>
+        <span className="mk-ai__eyebrow mono">
+          {symbols.length} SYMBOL{symbols.length === 1 ? '' : 'S'}
+          {streaming ? ' · WRITING' : meta?.cached ? ' · SHARED' : phase === 'error' ? ' · UNAVAILABLE' : ''}
         </span>
-        <span className="mk-ai__eyebrow mono">{streaming ? 'WRITING' : meta?.cached ? 'SHARED' : phase === 'done' ? 'JUST WRITTEN' : phase === 'error' ? 'UNAVAILABLE' : ''}</span>
-        <button type="button" className="mk-ai__ghost" onClick={() => setNonce((n) => n + 1)} disabled={streaming} aria-label="Reread the tape" title="Reread">
-          <RefreshCw className={`mk-ai__ico${streaming ? ' mk-ai__ico--spin' : ''}`} aria-hidden />
-        </button>
-      </header>
-      <div className="mk-ai__tape-syms">
-        {symbols.map((s) => (
-          <b key={s}>{s}</b>
-        ))}
-        {meta?.feed?.startsWith('missing') ? <span>· no chart for {meta.feed.slice(9)}</span> : null}
-      </div>
-      <div className="mk-ai__body">
-        {text ? (
-          <p className="mk-ai__p">
-            {text}
-            {streaming ? <span className="mk-ai__caret" aria-hidden /> : null}
-          </p>
-        ) : streaming ? (
-          <p className="mk-ai__p mk-ai__p--wait">
-            Reading {symbols.length} tapes
-            <span className="mk-ai__caret" aria-hidden />
-          </p>
-        ) : null}
-        {error ? <p className="mk-ai__err">{error}</p> : null}
-      </div>
-      {chips.length ? (
-        <div className="mk-ai__chips" role="group" aria-label="Act on the tape">
-          {chips.map((c) => (
-            <button key={c.id} type="button" className={`mk-ai__chip mk-ai__chip--${c.kind}`} onClick={() => onAsk(c.ask)} title={c.ask} data-ask={c.ask}>
-              {c.label}
+      </button>
+      {!open ? (
+        <p className="mk-ai__p mk-ai__tape-lead">
+          {firstSentence || (streaming ? `Reading ${symbols.length} tapes` : error ? error : '')}
+          {streaming && !firstSentence ? <span className="mk-ai__caret" aria-hidden /> : null}
+        </p>
+      ) : (
+        <div id="mk-ai-tape-body" className="mk-ai__tape-body">
+          <div className="mk-ai__tape-syms">
+            {symbols.map((s) => (
+              <b key={s}>{s}</b>
+            ))}
+            {meta?.feed?.startsWith('missing') ? <span>· no chart for {meta.feed.slice(9)}</span> : null}
+            <button type="button" className="mk-ai__ghost mk-ai__ghost--sm" onClick={() => setNonce((n) => n + 1)} disabled={streaming} aria-label="Reread the tape" title="Reread">
+              <RefreshCw className={`mk-ai__ico${streaming ? ' mk-ai__ico--spin' : ''}`} aria-hidden />
             </button>
-          ))}
+          </div>
+          <div className="mk-ai__body">
+            {text ? (
+              <p className="mk-ai__p">
+                {text}
+                {streaming ? <span className="mk-ai__caret" aria-hidden /> : null}
+              </p>
+            ) : streaming ? (
+              <p className="mk-ai__p mk-ai__p--wait">
+                Reading {symbols.length} tapes
+                <span className="mk-ai__caret" aria-hidden />
+              </p>
+            ) : null}
+            {error ? <p className="mk-ai__err">{error}</p> : null}
+          </div>
+          {chips.length ? (
+            <div className="mk-ai__chips" role="group" aria-label="Act on the tape">
+              {chips.map((c) => (
+                <button key={c.id} type="button" className={`mk-ai__chip mk-ai__chip--${c.kind}`} onClick={() => onAsk(c.ask)} title={c.ask} data-ask={c.ask}>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <footer className="mk-ai__foot mono">
+            <span>{TAPE_FOOTNOTE}</span>
+            <span>·</span>
+            <span>Written by a model from our own tape</span>
+          </footer>
         </div>
-      ) : null}
-      <footer className="mk-ai__foot mono">
-        <span>{TAPE_FOOTNOTE}</span>
-        <span>·</span>
-        <span>Written by a model from our own tape</span>
-      </footer>
+      )}
     </section>
   )
 }

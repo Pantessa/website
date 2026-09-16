@@ -85,36 +85,20 @@
 .mk-ai__sugg-chip:hover { color: var(--fg); border-color: var(--line-2); }
 .mk-ai__sugg-chip--hover { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 55%, var(--line)); }
 
-/* ── the morning tape (watchlist rail top) ── */
-.mk-ai--tape { gap: 10px; padding: 14px 14px 12px; border-radius: 14px; }
-.mk-ai--tape .mk-ai__title { font-size: 15px; }
-.mk-ai--tape .mk-ai__p { font-size: 13.5px; line-height: 1.55; }
-.mk-ai--tape .mk-ai__chips { gap: 6px; }
-.mk-ai--tape .mk-ai__chip { font-size: 12px; padding: 6px 11px; }
-.mk-ai__tape-syms { display: flex; flex-wrap: wrap; gap: 4px 8px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10.5px; color: var(--muted-2); }
+/* ── the morning tape (watchlist rail top) — compact: a bar + one line, open to a bounded scroll ── */
+.mk-ai--tape { gap: 8px; padding: 10px 12px; border-radius: 12px; }
+.mk-ai--tape::before { display: none; }
+.mk-ai__tape-bar { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; background: transparent; border: 0; padding: 0; color: var(--fg); cursor: pointer; }
+.mk-ai__tape-bar .mk-ai__ico { width: 14px; height: 14px; color: var(--muted); }
+.mk-ai__tape-bar .mk-ai__ico--accent { color: var(--accent); }
+.mk-ai__tape-title { font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 14px; letter-spacing: -0.01em; }
+.mk-ai__tape-bar .mk-ai__eyebrow { margin-left: auto; white-space: nowrap; }
+.mk-ai__tape-lead { font-size: 12.5px; line-height: 1.45; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.mk-ai__tape-body { display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto; padding-right: 2px; scrollbar-width: thin; }
+.mk-ai__tape-body .mk-ai__p { font-size: 13px; line-height: 1.5; }
+.mk-ai__tape-body .mk-ai__chips { gap: 6px; }
+.mk-ai__tape-body .mk-ai__chip { font-size: 11.5px; padding: 5px 10px; }
+.mk-ai__tape-syms { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10.5px; color: var(--muted-2); }
 .mk-ai__tape-syms b { color: var(--fg); font-weight: 600; }
-
-.mk-ai__asked { display: block; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11.5px; color: var(--muted); margin-bottom: 6px; }
-.mk-ai__asked::before { content: '› '; color: var(--accent); }
-.mk-ai__reply { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: color-mix(in oklab, var(--surf-2) 70%, transparent); position: relative; animation: mk-ai-in .25s ease-out; }
-@keyframes mk-ai-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .mk-ai__reply { animation: none; } }
-.mk-ai__reply--chart { border-color: color-mix(in oklab, var(--accent) 45%, var(--line)); }
-.mk-ai__reply--alert { border-color: color-mix(in oklab, var(--gold) 50%, var(--line)); }
-.mk-ai__alert { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 9px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); }
-.mk-ai__alert-label { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12.5px; color: var(--fg); }
-.mk-ai__alert-then { color: var(--muted); }
-.mk-ai__cta {
-  display: inline-flex; align-items: center; border: 1px solid var(--accent); border-radius: 999px; padding: 6px 13px; font-size: 12px; font-weight: 600;
-  color: var(--accent); background: transparent; transition: background .15s, color .15s; white-space: nowrap;
-}
-.mk-ai__cta:hover:not(:disabled) { background: var(--accent); color: var(--ink); }
-.mk-ai__cta:disabled { opacity: .5; cursor: default; }
-
-@media (max-width: 640px) {
-  .mk-ai { padding: 14px 14px 12px; border-radius: 14px; }
-  .mk-ai__p { font-size: 14px; }
-  .mk-ai__head .mk-ai__eyebrow { order: 3; flex-basis: 100%; margin-left: 0; }
-  .mk-ai__chips { gap: 6px; }
-  .mk-ai__chip { font-size: 12px; padding: 6px 11px; }
-}
+.mk-ai__ghost--sm { width: 22px; height: 22px; margin-left: auto; }
+.mk-ai__ghost--sm .mk-ai__ico { width: 12px; height: 12px; }
