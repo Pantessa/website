@@ -32,6 +32,10 @@ export interface FundWait {
   resume: string
   /** What the chip said ("Add $25 with card or bank → buy $10 of AAPL"). */
   label: string
+  /** The delivery IS the ask (ClarifyFundAction.completes): the arrival is
+   *  confirmed and `resume` never fires. Persisted with the wait so a reload
+   *  can't turn a finished ETH buy into a second, circular one. */
+  completes?: boolean
   /** Balances when the on-ramp opened; null until the first read lands. */
   baselineEth: number | null
   baselineStable: number | null

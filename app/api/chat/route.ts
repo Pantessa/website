@@ -38,7 +38,7 @@ import {
   type LidoPositionPayload,
   type LidoStakeParams,
 } from '@/lib/lido-stake'
-import { DEST_GAS_FLOOR_ETH, FUNDING_CHAIN_WORD, fundingFallbackForFailures, offerFundingPlan, softenClaimedFailureBlock } from '@/lib/funding-plan'
+import { DEST_GAS_FLOOR_ETH, FUNDING_CHAIN_WORD, fundingFallbackForFailures, offerFundingPlan, softenClaimedFailureBlock, type FundingRefusalFacts } from '@/lib/funding-plan'
 import {
   parseCrossChainSwap,
   parseCrossChainFollowUp,
@@ -144,6 +144,8 @@ import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { fundChipFor, ONRAMP_NETWORK_LABEL } from '@/lib/onramp'
+import { swapShortfallTurn } from '@/lib/swap-shortfall'
+import { layerCardDoorCopy, layerFundChip, layerShortfallTurn, type LayerShortfallAsk, type LayerShortfallTurn } from '@/lib/layer-shortfall'
 import { fundingOriginWords } from '@/lib/funding-origins'
 import { FEATURED_STOCKS, parseStockListAsk, robinhoodStocks } from '@/lib/stock-list'
 import { tokenHome } from '@/lib/token-home'
@@ -200,6 +202,20 @@ import type { RouterDecision } from '@/lib/router'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+/** One trace line per native-layer refusal that went through the card door
+ *  (lib/layer-shortfall): what the scan saw, and which chip — if any — rode
+ *  along, so a trace tells a closed door from a withheld one. */
+function traceLayerShortfall(trace: (event: unknown) => void, layer: string, facts: FundingRefusalFacts, turn: LayerShortfallTurn) {
+  const fund = turn.clarify?.options.find((o) => o.fund)?.fund
+  trace({
+    type: 'note',
+    level: 'warn',
+    label:
+      `${layer}: the funding scan can't cover the ~$${facts.needUsd} plan${facts.empty ? ' — the wallet is empty on every scanned chain' : ''} — ` +
+      (fund ? `honest refusal + a card chip ($${fund.presetFiatUsd} preset, the resume fires on arrival)` : facts.strandedCovers ? 'honest refusal, no card door (stranded USDC covers it — a dollar of gas is the fix)' : 'honest refusal, no card door'),
+  })
+}
+
 /**
  * "You have an intent — we do the rest," with NO ok-step: a Hyperliquid OPEN
  * against an under-collateralized account compiles straight into the FUNDED
@@ -214,6 +230,9 @@ export const dynamic = 'force-dynamic'
  */
 async function hlAutoFundedJobTurn(
   short: HlOpenShortfall,
+  /** The open that leads the ask (the lone HL gate's intent, or a job's lead
+   *  step) — names the position when the wallet can't fund it. */
+  intent: HlOrderIntent,
   message: string,
   walletAddress: string,
   nativeTrace: (event: unknown) => void,
@@ -236,9 +255,28 @@ async function hlAutoFundedJobTurn(
     trace: nativeTrace,
   })
   if (offer && 'insufficient' in offer) {
-    return NextResponse.json({
-      reply: `🚫 The position needs about $${short.depositUsdc} of USDC reaching Hyperliquid and the wallet can't cover it yet. ${offer.insufficient}`,
+    // The card door (lib/layer-shortfall). The resume is the ask itself, not
+    // `fundedAsk`: on return this function runs again, the landed ETH on
+    // Ethereum is a source, and the funded job compiles outright. A
+    // "deposit …, then" prefix would lead with a deposit the wallet can't
+    // fund on Arbitrum yet. Live 2026-08-27: two strangers, "I want a 2X Long
+    // $12 of HYPE …", walled twice each with no way forward.
+    const size = intent.notionalUsd ? `$${intent.notionalUsd} of ` : intent.sizeUnits ? `${intent.sizeUnits} ` : ''
+    const turn = layerShortfallTurn({
+      ask: {
+        layer: 'hl-open',
+        what: `go ${intent.isBuy === false ? 'short' : 'long'} ${size}${intent.coin}${intent.leverage ? ` at ${intent.leverage}x` : ''} on Hyperliquid`,
+        resume: message.trim(),
+        chainId: 42161,
+        token: 'USDC',
+        lead: `🚫 The position needs about $${short.depositUsdc} of USDC reaching Hyperliquid and the wallet can't cover it yet.`,
+        needLine: `The position needs about $${short.depositUsdc} of USDC on Hyperliquid as collateral.`,
+        holdsUnscanned: short.withdrawableUsd > 0,
+      },
+      refusal: offer,
     })
+    traceLayerShortfall(nativeTrace, 'hl auto-fund', offer, turn)
+    return NextResponse.json(turn)
   }
   let resume = fundedAsk
   if (offer) {
@@ -1046,7 +1084,7 @@ async function handleChatTurn(req: NextRequest) {
       if (leadStep?.builder === 'native-hl-exec' && (leadStep.params as { kind?: string }).kind === 'open') {
         const short = await hlOpenCollateralShortfall(leadStep.params as unknown as HlOrderIntent, walletAddress)
         if (short) {
-          const autoTurn = await hlAutoFundedJobTurn(short, message, walletAddress, nativeTrace, swapFeeBps, internalRun)
+          const autoTurn = await hlAutoFundedJobTurn(short, leadStep.params as unknown as HlOrderIntent, message, walletAddress, nativeTrace, swapFeeBps, internalRun)
           if (autoTurn) return autoTurn
           // No plan available (scan/price down) — fall through to the job;
           // the step's own guard explains itself if it can't build.
@@ -1483,9 +1521,19 @@ async function handleChatTurn(req: NextRequest) {
               trace: nativeTrace,
             })
             if (offer && 'insufficient' in offer) {
-              return NextResponse.json({
-                reply: `🚫 The deposit needs ${hlIntent.amountUsdc} USDC on Arbitrum and the wallet holds ${arbUsdc.toFixed(2)} there. ${offer.insufficient}`,
+              const turn = layerShortfallTurn({
+                ask: {
+                  layer: 'hl-deposit',
+                  what: `deposit ${hlIntent.amountUsdc} USDC to Hyperliquid`,
+                  resume: `Deposit ${hlIntent.amountUsdc} USDC to Hyperliquid`,
+                  chainId: 42161,
+                  token: 'USDC',
+                  lead: `🚫 The deposit needs ${hlIntent.amountUsdc} USDC on Arbitrum and the wallet holds ${arbUsdc.toFixed(2)} there.`,
+                },
+                refusal: offer,
               })
+              traceLayerShortfall(nativeTrace, 'hl deposit', offer, turn)
+              return NextResponse.json(turn)
             }
             if (offer) return NextResponse.json({ ...offer, reply: `🌉 ${offer.reply}` })
           }
@@ -1498,7 +1546,7 @@ async function handleChatTurn(req: NextRequest) {
         if (hlIntent.kind === 'open' && walletAddress) {
           const short = await hlOpenCollateralShortfall(hlIntent, walletAddress)
           if (short) {
-            const autoTurn = await hlAutoFundedJobTurn(short, message, walletAddress, nativeTrace, swapFeeBps, internalRun)
+            const autoTurn = await hlAutoFundedJobTurn(short, hlIntent, message, walletAddress, nativeTrace, swapFeeBps, internalRun)
             if (autoTurn) return autoTurn
           }
         }
@@ -1795,19 +1843,38 @@ async function handleChatTurn(req: NextRequest) {
                 if (bal !== null && needWei > bal) {
                   const shortEth = Math.ceil(Number(formatEther(needWei - bal)) * 1e6) / 1e6
                   const itemUrl = `https://opensea.io/item/${itemSlug}/${built.nft.contract}/${built.nft.tokenId}`
+                  const buyResume = `buy the nft ${itemUrl}${nftAsk.maxPriceEth ? ` for up to ${nftAsk.maxPriceEth} ETH` : ''}`
                   const offer = await offerFundingPlan({
                     user: walletAddress,
                     need: {
                       chainId: buyChainId,
                       token: 'ETH',
                       amountHuman: shortEth,
-                      followupResume: `buy the nft ${itemUrl}${nftAsk.maxPriceEth ? ` for up to ${nftAsk.maxPriceEth} ETH` : ''}`,
+                      followupResume: buyResume,
                       actionLabel: 'the buy',
                     },
                     trace: nativeTrace,
                   })
                   if (offer && 'insufficient' in offer) {
-                    return NextResponse.json({ reply: `🖼️ ${built.refusal ?? 'The wallet can’t cover this buy.'} ${offer.insufficient}` })
+                    // An NFT on Ethereum is a DIRECT card chip (the delivery
+                    // IS the ETH the fill spends); anywhere else the landed
+                    // ETH moves first. Either way the resume re-resolves the
+                    // listing fresh when it fires.
+                    const listedEth = formatEther(BigInt(built.tx.value ?? '0'))
+                    const turn = layerShortfallTurn({
+                      ask: {
+                        layer: 'nft-buy',
+                        what: `buy ${built.nft.name}`,
+                        resume: buyResume,
+                        chainId: buyChainId,
+                        token: 'ETH',
+                        lead: `🖼️ ${built.refusal ?? 'The wallet can’t cover this buy.'}`,
+                        needLine: `${built.nft.name} is listed at ${listedEth} ETH on ${chainById(buyChainId)?.name ?? 'its chain'}, plus gas.`,
+                      },
+                      refusal: offer,
+                    })
+                    traceLayerShortfall(nativeTrace, 'nft buy', offer, turn)
+                    return NextResponse.json(turn)
                   }
                   if (offer) return NextResponse.json({ ...offer, reply: `🖼️ ${offer.reply}` })
                 }
@@ -2690,31 +2757,53 @@ async function lidoFundingTurn(
   if (!offer) return null
   const holding = `the wallet holds ${balEth.toFixed(4).replace(/\.?0+$/, '') || '0'} ETH on Ethereum`
   if ('insufficient' in offer) {
-    const askNote =
+    const wst = receive === 'wstETH' ? ' as wstETH' : ''
+    const needs =
       askEth !== null
-        ? `Staking ${askEth} ETH really needs ~${targetEth} ETH on Ethereum once mainnet gas is counted, and ${holding}.`
-        : `Staking on Lido needs at least ~${targetEth} ETH on Ethereum once mainnet gas is counted, and ${holding}.`
+        ? `Staking ${askEth} ETH really needs ~${targetEth} ETH on Ethereum once mainnet gas is counted`
+        : `Staking on Lido needs at least ~${targetEth} ETH on Ethereum once mainnet gas is counted`
+    const askNote = `${needs}, and ${holding}.`
+    // The card door (lib/layer-shortfall). The card delivers ETH on Ethereum,
+    // exactly what the stake spends, so the chip is DIRECT: the preset is the
+    // ETH itself, with no plan headroom or keep-back, and the resume builds
+    // the stake when it fires. The stake still needs its own signature, so it
+    // never `completes`. Live 2026-08-04: an empty wallet's "Stake 0.05 ETH
+    // with Lido" read "Top up any of those chains and ask again."
+    const cardAsk: LayerShortfallAsk = {
+      layer: 'lido-stake',
+      what: `${askEth !== null ? `stake ${askEth} ETH` : 'stake ETH'} on Lido${wst}`,
+      resume: askEth !== null ? `Stake ${askEth} ETH on Lido${wst}` : `Stake all my ETH on Lido${wst}`,
+      chainId: 1,
+      token: 'ETH',
+      lead: `🌊 ${askNote}`,
+      needLine: `${needs}.`,
+    }
     // Use-what-you-have (the funded miss of 2026-08-12: "Stake 0.05 ETH"
     // walled a wallet holding 0.0063 ETH on mainnet — enough for a SMALLER
     // stake, which nobody offered). When the wallet's own mainnet ETH clears
     // the economical floor, the refusal carries the affordable stake as
-    // chips whose resumes round-trip parseLidoStake — never a dead end.
+    // chips whose resumes round-trip parseLidoStake — never a dead end. It
+    // leads; the card, which tops the wallet up to the full ask, follows.
     const affordable = suggestedStakeEth(String(balEth))
     if (affordable && askEth !== null && Number(affordable) < askEth) {
-      trace({ type: 'status', label: `lido layer: ${askEth} ETH is out of reach, but ${affordable} ETH is stakeable from mainnet now — offering it as a chip` })
+      const chip = layerFundChip(cardAsk, offer)
+      trace({ type: 'status', label: `lido layer: ${askEth} ETH is out of reach, but ${affordable} ETH is stakeable from mainnet now — offering it as a chip${chip?.fund ? ` (+ a $${chip.fund.presetFiatUsd} card chip for the full ask)` : ''}` })
       return NextResponse.json({
-        reply: `🌊 ${askNote} ${offer.insufficient} You **can** stake ${affordable} ETH right now from what's already on Ethereum (gas buffer kept).`,
+        reply: `🌊 ${askNote} ${offer.insufficient} You **can** stake ${affordable} ETH right now from what's already on Ethereum (gas buffer kept).${layerCardDoorCopy(cardAsk, offer, chip, false)}`,
         clarify: {
           question: `Stake ${affordable} ETH instead?`,
           options: [
-            { label: `Stake ${affordable} ETH on Lido`, resume: `Stake ${affordable} ETH on Lido${receive === 'wstETH' ? ' as wstETH' : ''}` },
+            { label: `Stake ${affordable} ETH on Lido`, resume: `Stake ${affordable} ETH on Lido${wst}` },
+            ...(chip ? [chip] : []),
             { label: 'Not now', resume: 'Never mind — leave my funds where they are.' },
           ],
         },
         buildPath: 'native-lido',
       })
     }
-    return NextResponse.json({ reply: `🌊 ${askNote} ${offer.insufficient}`, buildPath: 'native-lido' })
+    const turn = layerShortfallTurn({ ask: cardAsk, refusal: offer })
+    traceLayerShortfall(trace, 'lido', offer, turn)
+    return NextResponse.json(turn)
   }
   const tinyNote =
     askEth !== null && askEth < LIDO_MIN_STAKE_ETH
@@ -2876,6 +2965,10 @@ async function aaveFundingTurn(
   askAmount: number,
   followupResume: string,
   actionLabel: string,
+  /** The ask as the card door restates it when the wallet can't fund it at
+   *  all (lib/layer-shortfall): the verb phrase, and the resume that re-runs
+   *  it once the card's ETH lands. */
+  card: { layer: 'aave-supply' | 'aave-repay'; what: string; resume: string },
   trace: (event: unknown) => void,
 ) {
   if (!Number.isFinite(askAmount) || askAmount <= 0) return null
@@ -2902,9 +2995,22 @@ async function aaveFundingTurn(
   })
   if (!offer) return null
   if ('insufficient' in offer) {
-    return NextResponse.json({
-      reply: `🏦 ${actionLabel[0].toUpperCase()}${actionLabel.slice(1)} needs ${askAmount} ${token} on Ethereum and the wallet holds ${held}. ${offer.insufficient}`,
+    // The card door (lib/layer-shortfall). Live 2026-09-16: an empty CDP
+    // account's "Supply $25 of USDT to Aave at the best rate" walled here.
+    // The card lane IS Ethereum, so the landed ETH swaps to the reserve token
+    // right there and pays the gas the refusal priced a leg for.
+    const turn = layerShortfallTurn({
+      ask: {
+        ...card,
+        chainId: 1,
+        token,
+        lead: `🏦 ${actionLabel[0].toUpperCase()}${actionLabel.slice(1)} needs ${askAmount} ${token} on Ethereum and the wallet holds ${held}.`,
+        holdsUnscanned: held > 0,
+      },
+      refusal: offer,
     })
+    traceLayerShortfall(trace, card.layer === 'aave-repay' ? 'aave repay' : 'aave supply', offer, turn)
+    return NextResponse.json(turn)
   }
   return NextResponse.json({ ...offer, reply: `🌉 ${offer.reply}` })
 }
@@ -2925,6 +3031,8 @@ async function morphoFundingTurn(
   chainId: 1 | 8453,
   followupResume: string,
   actionLabel: string,
+  /** The ask as the card door restates it (lib/layer-shortfall). */
+  card: { what: string; resume: string },
   trace: (event: unknown) => void,
 ) {
   if (!Number.isFinite(askAmount) || askAmount <= 0) return null
@@ -2946,9 +3054,19 @@ async function morphoFundingTurn(
   })
   if (!offer) return null
   if ('insufficient' in offer) {
-    return NextResponse.json({
-      reply: `🏦 ${actionLabel[0].toUpperCase()}${actionLabel.slice(1)} needs ${askAmount} ${token} on ${chainName} and the wallet holds ${held}. ${offer.insufficient}`,
+    const turn = layerShortfallTurn({
+      ask: {
+        layer: 'morpho-lend',
+        ...card,
+        chainId,
+        token,
+        lead: `🏦 ${actionLabel[0].toUpperCase()}${actionLabel.slice(1)} needs ${askAmount} ${token} on ${chainName} and the wallet holds ${held}.`,
+        holdsUnscanned: held > 0,
+      },
+      refusal: offer,
     })
+    traceLayerShortfall(trace, 'morpho lend', offer, turn)
+    return NextResponse.json(turn)
   }
   return NextResponse.json({ ...offer, reply: `🌉 ${offer.reply}` })
 }
@@ -3021,6 +3139,9 @@ async function buildAaveSupplyTurn(
     return NextResponse.json({ reply: `🏦 ${resolvedAmount.problem}` })
   }
   if (params.amountIsUsd) trace({ type: 'status', label: `native aave layer: $${params.amount} of ${token} = ${resolvedAmount.amount} ${token} at the pool's own price` })
+  // The ask as asked, for the card door's restatement: a dollar ask stays a
+  // dollar ask so it re-prices when the resume fires.
+  const askedSupply = `${params.amountIsUsd ? `$${params.amount} of ${token}` : `${params.amount} ${token}`} to Aave${params.bestRate ? ' at the best rate' : ''}`
   params = { ...params, amount: resolvedAmount.amount, amountIsUsd: undefined }
 
   const atoms = humanToAtoms(params.amount, picked.decimals)
@@ -3039,7 +3160,20 @@ async function buildAaveSupplyTurn(
   // through — AaveKit's build validates against real balances and fails
   // closed on its own.
   if (token !== 'ETH' && token !== 'WETH') {
-    const fundingTurn = await aaveFundingTurn(walletAddress, picked.currency, picked.decimals, token, Number(params.amount), `supply ${params.amount} ${token} to Aave`, 'the Aave supply', trace)
+    // "at the best rate" rides the followup too: the job's supply step
+    // honours it (lib/aave-exec), and without it a funded job supplied to the
+    // deepest pool instead of the rate the user asked for.
+    const fundingTurn = await aaveFundingTurn(
+      walletAddress,
+      picked.currency,
+      picked.decimals,
+      token,
+      Number(params.amount),
+      `supply ${params.amount} ${token} to Aave${params.bestRate ? ' at the best rate' : ''}`,
+      'the Aave supply',
+      { layer: 'aave-supply', what: `supply ${askedSupply}`, resume: `Supply ${askedSupply}` },
+      trace,
+    )
     if (fundingTurn) return fundingTurn
   }
 
@@ -3271,6 +3405,9 @@ async function buildAaveOpTurn(
       repayAsk,
       params.max ? `repay all my ${token} debt on aave` : `repay ${params.amount} ${token} on aave`,
       'the Aave repayment',
+      params.max
+        ? { layer: 'aave-repay', what: `repay your ${token} debt on Aave`, resume: `Repay all my ${token} debt on Aave` }
+        : { layer: 'aave-repay', what: `repay ${params.amount} ${token} on Aave`, resume: `Repay ${params.amount} ${token} on Aave` },
       trace,
     )
     if (fundingTurn) return fundingTurn
@@ -3523,6 +3660,9 @@ async function buildMorphoLendTurn(
     trace({ type: 'note', level: 'warn', label: `dollar ask could not be sized: ${sized.problem.slice(0, 160)}` })
     return NextResponse.json({ reply: `🏦 ${sized.problem}` })
   }
+  // The ask as asked, for the card door's restatement (a dollar ask re-prices
+  // when the resume fires), with the chain pinned by name.
+  const askedLend = `${params.amountIsUsd ? `$${params.amount} of ${token}` : `${params.amount} ${token}`} on Morpho on ${chainName}`
   if (params.amountIsUsd) {
     trace({ type: 'status', label: `sized $${params.amount} of ${token} → ${sized.amount} ${token} at the market's implied price` })
     params = { ...params, amount: sized.amount, amountIsUsd: undefined }
@@ -3544,6 +3684,7 @@ async function buildMorphoLendTurn(
     params.chainId,
     `lend ${params.amount} ${token} on morpho${params.chainId === 1 ? ' on ethereum' : ''}`,
     'the Morpho lend',
+    { what: `lend ${askedLend}`, resume: `Lend ${askedLend}` },
     trace,
   )
   if (morphoFunding) return morphoFunding
@@ -4630,6 +4771,9 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
           trace({ type: 'note', level: 'info', label: `native swap layer: limit order on ${heldWord} ${sellSym} held (< ${needTotal}) — CoW settles when funded, saying so` })
         } else if (!intent.sellAll && held < needTotal) {
           const buySym = intent.buyToken.toUpperCase()
+          // Spending a stable is a BUY ("Buy $50 of ETH" spends USDC): every
+          // line of the funding answer names it that way, not "the swap".
+          const sellIsStable = !!sellAddr && chain.stables[sellAddr.toLowerCase()] !== undefined
           const offer = await offerFundingPlan({
             user: walletAddress,
             need: {
@@ -4637,14 +4781,35 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
               token: sellSym,
               amountHuman: Number((needTotal - held).toFixed(6)),
               followupResume: `swap ${intent.sellAmountHuman} ${sellSym} for ${buySym} on ${FUNDING_CHAIN_WORD[chainId]}`,
-              actionLabel: 'the swap',
+              actionLabel: sellIsStable ? 'the buy' : 'the swap',
             },
             trace,
           })
           if (offer && 'insufficient' in offer) {
-            return NextResponse.json({
-              reply: `🔄 The swap sells ${intent.sellAmountHuman} ${sellSym} on ${chain.name} and the wallet holds ${heldWord}. ${offer.insufficient}`,
+            // The honest refusal, plus the card door when this is a BUY the
+            // wallet can't fund (lib/swap-shortfall): an empty wallet reading
+            // "top up any of those chains" had no way forward at all (live
+            // 2026-09-15, a stranger from a tweet, "Buy $50 of ETH" twice).
+            const turn = swapShortfallTurn({
+              ask: {
+                chainName: chain.name,
+                chainWord: FUNDING_CHAIN_WORD[chainId],
+                sellToken: sellSym,
+                buyToken: buySym,
+                sellAmountHuman: intent.sellAmountHuman,
+                ...(intent.sellAmountUsd ? { sellAmountUsd: intent.sellAmountUsd } : {}),
+                sellIsStable,
+                heldHuman: heldWord,
+              },
+              refusal: offer,
             })
+            const door = turn.clarify?.options[0]?.fund
+            trace({
+              type: 'note',
+              level: 'warn',
+              label: `native swap layer: ${sellSym} short on ${chain.name} (holds ${heldWord}) and the funding scan can't cover the ~$${offer.needUsd} plan${offer.empty ? ' — the wallet is empty on every scanned chain' : ''} — ${door ? `honest refusal + a card chip (${door.completes ? `the $${door.presetFiatUsd} of ETH delivery IS the buy` : `$${door.presetFiatUsd} preset, the cascade spends it on return`})` : 'honest refusal, no card door'}`,
+            })
+            return NextResponse.json(turn)
           }
           if (offer) return NextResponse.json({ ...offer, reply: `🌉 ${offer.reply}` })
           // null → the plan couldn't be drawn (scan or price unavailable).
