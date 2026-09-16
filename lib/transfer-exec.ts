@@ -24,7 +24,7 @@
 
 import { decodeFunctionData, encodeFunctionData, erc20Abi, formatUnits, parseUnits } from 'viem'
 import { normalize } from 'viem/ens'
-import { chainById, publicClientFor } from '@/lib/chains'
+import { chainById, publicClientFor, gasIsStable, STABLE_GAS_RESERVE } from '@/lib/chains'
 import { chainAlt, canonicalChainWord, normalizeChainWords } from '@/lib/chain-lexicon'
 import { resolveToken, tokenDecimals, tokenLabel } from '@/lib/cow'
 import { ensureTokenList } from '@/lib/token-list'
@@ -263,6 +263,12 @@ export async function buildTransferArtifact(params: TransferSegment, from: strin
 
   const native = params.token.toUpperCase() === 'ETH'
   const wantAll = params.amountHuman === 'all'
+  // A stable-gas chain (Arc) has no ETH at all — "send 1 ETH on arc" would
+  // move native USDC under the wrong name. Refuse by name; the stable send
+  // below is the real one.
+  if (native && gasIsStable(chain)) {
+    return { problem: `${params.chainName} has no ETH — its gas token is ${chain.nativeSymbol}. Say “send ${params.amountHuman === 'all' ? 'all my' : params.amountHuman} ${chain.nativeSymbol} to ${params.to} on ${params.chainName}”.` }
+  }
   let tx: EvmTxRequest
   let atoms: bigint
   let decimals: number
@@ -301,7 +307,18 @@ export async function buildTransferArtifact(params: TransferSegment, from: strin
       .catch(() => null)) as bigint | null ?? BigInt(-1)
     if (balance < BigInt(0)) return { problem: `I couldn't read your ${label} balance on ${params.chainName} — not offering a send I can't verify.` }
     if (wantAll && balance <= BigInt(0)) return { problem: `You don't hold any ${label} on ${params.chainName} — nothing to send.` }
-    atoms = wantAll ? balance : parseUnits(params.amountHuman, decimals)
+    // On a stable-gas chain an all-send of the stable keeps the gas sliver
+    // back, exactly as an all-ETH send does elsewhere — the send itself has
+    // to be paid for out of the same balance.
+    const stableGasAll = wantAll && gasIsStable(chain) && addr.toLowerCase() === chain.tokens[chain.nativeSymbol]?.address.toLowerCase()
+    if (stableGasAll) {
+      atoms = balance - parseUnits(String(STABLE_GAS_RESERVE), decimals)
+      if (atoms <= BigInt(0)) {
+        return { problem: `Your ${formatUnits(balance, decimals)} ${label} on ${params.chainName} doesn't clear the ~${STABLE_GAS_RESERVE} ${label} gas reserve an all-send keeps back (${label} pays for gas there) — nothing to send.` }
+      }
+    } else {
+      atoms = wantAll ? balance : parseUnits(params.amountHuman, decimals)
+    }
     const data = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [to, atoms] })
     tx = { to: addr as `0x${string}`, data, value: '0', chainId: params.chainId, action: 'transfer' }
   }
@@ -309,7 +326,7 @@ export async function buildTransferArtifact(params: TransferSegment, from: strin
   // Every note below quotes the RESOLVED amount — an 'all' send is pinned to
   // the exact atoms just read, and the user sees that number before signing.
   const amountShown = wantAll ? formatUnits(atoms, decimals) : params.amountHuman
-  const allSuffix = wantAll ? ` (your full balance${native ? ', minus the gas reserve' : ''})` : ''
+  const allSuffix = wantAll ? ` (your full balance${native || (gasIsStable(chain) && atoms < balance) ? ', minus the gas reserve' : ''})` : ''
 
   // Live-balance check — never offer a send the wallet can't fund.
   const balanceCheck: GuardrailCheck = {

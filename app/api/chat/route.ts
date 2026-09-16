@@ -24,7 +24,7 @@ import type { McpServer } from '@/lib/store'
 import { voteRequestFromToolResult, friendlyVoteError, type VoteRequest } from '@/lib/snapshot-vote'
 import { parseVoteIntent, resolveVoteReference, type VoteIntent } from '@/lib/vote-intent'
 import { crossChainAgentOf, detectCrossChain, parseSwapIntent, parseSwapFollowUp, swapClarify, swapWorkingContext, type SwapIntent } from '@/lib/swap-intent'
-import { chainById, chainByKey, primaryStable, publicClientFor, sanitizeChainId, DEFAULT_CHAIN_ID, APP_CHAINS } from '@/lib/chains'
+import { chainById, chainByKey, primaryStable, publicClientFor, sanitizeChainId, DEFAULT_CHAIN_ID, APP_CHAINS, gasIsStable, STABLE_GAS_RESERVE } from '@/lib/chains'
 import { usdPerToken, usdToTokenAmount } from '@/lib/usd-probe'
 import { parseRobinhoodBridge, buildRobinhoodBridge } from '@/lib/robinhood-bridge'
 import {
@@ -4283,19 +4283,24 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
         buildPath: 'native-swap-balance',
       })
     }
-    const reserveEth = isEth ? (DEST_GAS_FLOOR_ETH[chainId] ?? 0.0002) : 0
-    const atoms = isEth ? balance - parseUnits(String(reserveEth), 18) : balance
+    // A stable-gas chain (Arc: USDC pays gas) keeps the same sliver back
+    // when the sell IS the gas token — an all-USDC sell there would strand
+    // the swap's own approve + swap.
+    const stableGasSell = !isEth && gasIsStable(chain) && sellSym === chain.nativeSymbol
+    const keepsGas = isEth || stableGasSell
+    const reserveEth = isEth ? (DEST_GAS_FLOOR_ETH[chainId] ?? 0.0002) : stableGasSell ? STABLE_GAS_RESERVE : 0
+    const atoms = keepsGas ? balance - parseUnits(String(reserveEth), dec) : balance
     if (atoms <= BigInt(0)) {
-      trace({ type: 'status', label: `native swap layer: ${formatUnits(balance, 18)} ETH on ${chain.name} doesn't clear the ${reserveEth} ETH gas reserve an all-sell keeps back — no build` })
+      trace({ type: 'status', label: `native swap layer: ${formatUnits(balance, dec)} ${sellSym} on ${chain.name} doesn't clear the ${reserveEth} ${sellSym} gas reserve an all-sell keeps back — no build` })
       return NextResponse.json({
-        reply: `🔄 Your ${formatUnits(balance, 18)} ETH on ${chain.name} doesn't clear the ~${reserveEth} ETH an all-sell keeps back for the swap's own gas — nothing to sell.`,
+        reply: `🔄 Your ${formatUnits(balance, dec)} ${sellSym} on ${chain.name} doesn't clear the ~${reserveEth} ${sellSym} an all-sell keeps back for the swap's own gas${stableGasSell ? ` (${sellSym} pays for gas on ${chain.name})` : ''} — nothing to sell.`,
         buildPath: 'native-swap-balance',
       })
     }
     const amountHuman = formatUnits(atoms, dec)
     intent = { ...intent, sellAmountHuman: amountHuman }
-    sized.note = `Sized from your live balance: ${amountHuman} ${sellSym} on ${chain.name} — your full holding${isEth ? ` minus a ${reserveEth} ETH gas reserve for the swap itself` : ''}, read at build time and pinned in the calldata.`
-    trace({ type: 'status', label: `native swap layer: “all my ${sellSym}” sized from the live balance — ${amountHuman} ${sellSym} on ${chain.name}${isEth ? ` (${formatUnits(balance, 18)} ETH held, ${reserveEth} kept for gas)` : ''}` })
+    sized.note = `Sized from your live balance: ${amountHuman} ${sellSym} on ${chain.name} — your full holding${keepsGas ? ` minus a ${reserveEth} ${sellSym} gas reserve for the swap itself` : ''}, read at build time and pinned in the calldata.`
+    trace({ type: 'status', label: `native swap layer: “all my ${sellSym}” sized from the live balance — ${amountHuman} ${sellSym} on ${chain.name}${keepsGas ? ` (${formatUnits(balance, dec)} ${sellSym} held, ${reserveEth} kept for gas)` : ''}` })
   }
 
   if (intent.problem || !intent.sellToken || !intent.buyToken || !intent.sellAmountHuman) {

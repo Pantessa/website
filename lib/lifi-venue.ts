@@ -539,7 +539,7 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
     const verdict = await dryRunTx(
       client,
       { from, to: quote.transactionRequest.to, data: quote.transactionRequest.data, value: '0' },
-      { chainName: chainById(chainId)?.name },
+      { chainName: chainById(chainId)?.name, gasSymbol: chainById(chainId)?.nativeSymbol },
     )
     if (verdict.kind === 'clean') {
       simCheck = { id: 'simulation', level: 'block', ok: true, note: 'Swap simulated clean (estimateGas) against the live chain.' }

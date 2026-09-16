@@ -40,7 +40,7 @@ async function dryRunGate(
   const client = publicClientFor(chainId)
   if (!client) return null
   const chainName = chainById(chainId)?.name ?? `chain ${chainId}`
-  const verdict = await dryRunTx(client, { from, ...tx }, { chainName })
+  const verdict = await dryRunTx(client, { from, ...tx }, { chainName, gasSymbol: chainById(chainId)?.nativeSymbol })
   if (verdict.kind === 'clean') return null
   if (verdict.kind === 'unavailable') {
     console.warn('[tx/refresh] dry-run unavailable — offering the slippage-bounded tx', JSON.stringify({ kind, chainId, detail: verdict.detail.slice(0, 300) }))

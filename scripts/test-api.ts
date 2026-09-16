@@ -8707,7 +8707,7 @@ async function main() {
         ...rows.map(([symbol, balance, valueUsd]) => ({ symbol, address: `0x${symbol.toLowerCase().padEnd(40, '0')}`, balance: String(balance), priceUsd: valueUsd == null ? null : valueUsd / balance, valueUsd, chain: c.name })),
       ]
       const tokenUsd = rows.reduce((a, [, , usd]) => a + (usd ?? 0), 0)
-      return { id, key: c.key, name: c.name, short: c.short, color: c.color, totalUsd: tokenUsd + nativeEth * 2500, nativeEth, nativeUsd: nativeEth * 2500, gas: gasStateFor(id, nativeEth, tokenUsd), holdings, ...extra }
+      return { id, key: c.key, name: c.name, short: c.short, color: c.color, totalUsd: tokenUsd + nativeEth * 2500, nativeEth, nativeUsd: nativeEth * 2500, gas: gasStateFor(id, nativeEth, tokenUsd), gasSymbol: 'ETH', gasUnits: nativeEth, holdings, ...extra }
     }
     const ethUsd = 2500
     // The 2026-09-14 screenshot wallet: ETH on Ethereum + Base, USDC + DAI on

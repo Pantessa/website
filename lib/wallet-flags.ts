@@ -28,6 +28,7 @@ import {
   type FundingSource,
 } from '@/lib/funding-plan'
 import { MIN_VALUE_LEG_USD } from '@/lib/lifi-bridge'
+import { fundSegment, lifiDestination, type LifiDestination } from '@/lib/lifi-destinations'
 import { GAS_RESERVE_ETH, STOCK_CHAIN_ID, type WalletChainView } from '@/lib/wallet-view'
 
 export type WalletFlagKind = 'no-gas' | 'low-gas' | 'unread'
@@ -92,25 +93,28 @@ export function fundingSourcesFromChains(chains: WalletChainView[], ethUsd: numb
   return classifyFundingBalances(reads, ethUsd).sources
 }
 
-/** The Robinhood Chain fix: no NEAR route lands there, so the smallest
- *  clean LiFi move (value floor + a gas leg) from the cheapest origin that
- *  can carry it. Null when no origin can. */
-function planRobinhoodGasFix(sources: FundingSource[]): { ask: string; origin: FundingSource; usd: number } | null {
+/** The LiFi-destination fix (Robinhood Chain, Arc): no NEAR route lands
+ *  there, so the smallest clean LiFi move from the cheapest origin that can
+ *  carry it — value floor plus a gas leg where the destination's gas is ETH
+ *  (Robinhood Chain); on Arc the landed USDC IS the gas, so the value leg
+ *  alone is the fix. Null when no origin can. */
+function planLifiDestFix(sources: FundingSource[], dest: LifiDestination): { ask: string; origin: FundingSource; usd: number } | null {
   const usd = MIN_VALUE_LEG_USD
+  const headroom = dest.gasLeg ? ROBINHOOD_GAS_HEADROOM_USD : 0
   const rank = (s: FundingSource) => (s.chainId === 1 ? 2 : 0) + (s.token === 'ETH' ? 1 : 0)
   const origin = sources
-    .filter((s) => s.usd >= usd + ROBINHOOD_GAS_HEADROOM_USD)
+    .filter((s) => s.usd >= usd + headroom)
     .sort((a, b) => rank(a) - rank(b) || b.usd - a.usd)[0]
   if (!origin) return null
   return {
-    ask: `Fund robinhood chain with $${usd} from ${origin.chainWord.toLowerCase()}${origin.token === 'ETH' ? ' using eth' : ''} including gas`,
+    ask: fundSegment(usd, origin.chainWord, true, origin.token === 'ETH' ? 'ETH' : 'USDC', dest),
     origin,
     usd,
   }
 }
 
-const outsideDoors = (chainName: string): WalletFlagAction[] => [
-  { door: 'receive', label: `Receive ETH on ${chainName}`, note: 'from another wallet or an exchange' },
+const outsideDoors = (chainName: string, gasSymbol: string): WalletFlagAction[] => [
+  { door: 'receive', label: `Receive ${gasSymbol} on ${chainName}`, note: 'from another wallet or an exchange' },
   { door: 'card', label: 'Add funds with a card', note: 'via Stripe' },
 ]
 
@@ -121,14 +125,17 @@ export function walletFlags(chains: WalletChainView[], ethUsd: number | null): W
   const out: WalletFlag[] = []
 
   const gasFixFor = (c: WalletChainView): WalletFlagAction | null => {
-    if (c.id === STOCK_CHAIN_ID) {
-      const rh = planRobinhoodGasFix(sources)
-      return rh
+    const dest = lifiDestination(c.id)
+    if (dest) {
+      const fix = planLifiDestFix(sources, dest)
+      return fix
         ? {
             primary: true,
-            label: `Fund ${c.name} (+ gas)`,
-            ask: rh.ask,
-            note: `the smallest clean move: ~${fmtUsd(rh.usd)} of USDG plus gas, from your ${rh.origin.chainWord} ${rh.origin.token} · you sign each leg`,
+            label: dest.gasLeg ? `Fund ${c.name} (+ gas)` : `Fund ${c.name}`,
+            ask: fix.ask,
+            note: dest.gasLeg
+              ? `the smallest clean move: ~${fmtUsd(fix.usd)} of USDG plus gas, from your ${fix.origin.chainWord} ${fix.origin.token} · you sign each leg`
+              : `the smallest clean move: ~${fmtUsd(fix.usd)} of ${c.gasSymbol} (${c.name}'s gas token), from your ${fix.origin.chainWord} ${fix.origin.token} · you sign once`,
           }
         : null
     }
@@ -156,11 +163,11 @@ export function walletFlags(chains: WalletChainView[], ethUsd: number | null): W
       chainId: c.id,
       chainName: c.name,
       tone: 'warn',
-      title: `${c.name} holds tokens but no ETH for gas`,
+      title: `${c.name} holds tokens but no ${c.gasSymbol} for gas`,
       detail: fix
-        ? `${fmtUsd(tokenUsd)} (${list}) can't move until a little ETH lands there.`
-        : `${fmtUsd(tokenUsd)} (${list}) can't move until a little ETH lands there — nothing else in this wallet can carry the top-up, so it has to come from outside.`,
-      actions: fix ? [fix, ...outsideDoors(c.name)] : outsideDoors(c.name),
+        ? `${fmtUsd(tokenUsd)} (${list}) can't move until a little ${c.gasSymbol} lands there.`
+        : `${fmtUsd(tokenUsd)} (${list}) can't move until a little ${c.gasSymbol} lands there — nothing else in this wallet can carry the top-up, so it has to come from outside.`,
+      actions: fix ? [fix, ...outsideDoors(c.name, c.gasSymbol)] : outsideDoors(c.name, c.gasSymbol),
     })
   }
 
@@ -175,8 +182,8 @@ export function walletFlags(chains: WalletChainView[], ethUsd: number | null): W
       chainName: c.name,
       tone: 'info',
       title: `${c.name} is low on gas`,
-      detail: `${fmtEth(c.nativeEth)} ETH signs a move, but a plan keeps ${fmtEth(reserve)} ETH back — a small top-up avoids a stall mid-job.`,
-      actions: topup ? [{ ...topup, label: `Top up gas on ${c.name}` }] : [outsideDoors(c.name)[0]],
+      detail: `${fmtEth(c.gasUnits)} ${c.gasSymbol} signs a move, but a plan keeps ${fmtEth(reserve)} ${c.gasSymbol} back — a small top-up avoids a stall mid-job.`,
+      actions: topup ? [{ ...topup, label: `Top up gas on ${c.name}` }] : [outsideDoors(c.name, c.gasSymbol)[0]],
     })
   }
 

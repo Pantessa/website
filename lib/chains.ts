@@ -370,6 +370,14 @@ export const APP_CHAINS: AppChain[] = [
  *  gas, and "no ETH for gas" copy must say the real token. */
 export const gasIsStable = (chain: Pick<AppChain, 'nativeSymbol'>): boolean => chain.nativeSymbol !== 'ETH'
 
+/** Gas kept back on a stable-gas chain when the STABLE itself is sold or
+ *  sent in full — whole units of that stable. Arc measured 2026-09-16:
+ *  gasPrice ≈ 92.5 gwei-equivalent in the 18-dec native view, so a 200k-gas
+ *  swap costs ≈ $0.0185; 0.10 USDC covers several transactions. */
+export const STABLE_GAS_RESERVE = 0.1
+/** Below this much of its stable a stable-gas chain can't sign a plain move. */
+export const STABLE_GAS_FLOOR = 0.02
+
 /** The gas token's symbol for a chain id ('ETH' for unknown ids). */
 export function nativeSymbolFor(chainId: number): 'ETH' | 'USDC' {
   return chainById(chainId)?.nativeSymbol ?? 'ETH'
