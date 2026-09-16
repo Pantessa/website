@@ -21423,6 +21423,10 @@ async function main() {
         'Buy $10 of P': 'single-letter stock ticker P (rail chip)',
         'Buy $10 of AVAX': '"AVAX" reads as cross-chain-shaped with no imperative parse (rail chip)',
         'Sell $10 of AVAX': '"AVAX" reads as cross-chain-shaped (rail chip)',
+        'Buy $50 of F': 'single-letter stock ticker F (fired-alert chip, lib/watchlists alertActionChips)',
+        'Buy $50 of P': 'single-letter stock ticker P (fired-alert chip)',
+        'Buy $50 of AVAX': '"AVAX" reads as cross-chain-shaped (fired-alert chip)',
+        'Sell $50 of AVAX': '"AVAX" reads as cross-chain-shaped (fired-alert chip)',
         'Supply $25 of AAVE to Aave': 'the venue word twice — PR #777 already gives the AAVE row no chip',
         'Supply $25 of AAVE to Aave at the best rate': 'the venue word twice — PR #777 gives the AAVE row no chip',
         'Supply $100.50 of AAVE to Aave': 'the venue word twice — PR #777 gives the AAVE row no chip',
@@ -21444,13 +21448,17 @@ async function main() {
       for (const r of stillFalling) console.log(`  ⚠️  arrival ladder KNOWN GAP (main): [${r.sender}] "${r.ask}" → planner — ${KNOWN_GAPS[r.ask]}`)
       check(`arrival ladder: ${rows.length} sentences the /markets senders compose (${Object.entries(bySender).map(([k, v]) => `${k} ${v}`).join(' · ')}) — none falls to the planner beyond the ${Object.keys(KNOWN_GAPS).length} KNOWN_GAPS, and no listed gap has silently healed (re-pin it)`, rows.length > 2_000 && newFalls.length === 0 && healed.length === 0, `new=${newFalls.map((r) => `[${r.sender}] ${r.ask}`).join(' | ').slice(0, 400)} healed=${healed.join(' | ')}`)
       // The honest clarifies: a coin whose home chain we don't trade spot
-      // ("SOL lives on Solana — HL door") or an unsized pair — a deterministic
-      // refusal-by-name with chips, no model. They are ALL the rail's own
-      // Buy/Sell/DCA templates on non-EVM homes (QuickAct reads venuesFor and
-      // composes "Long $25 of SOL on Hyperliquid" instead) — request to CORE
-      // in ROUNDS.md: the rail chips should read venuesFor too.
-      const clarifyNotRail = clarify.filter((r) => r.sender !== 'Rail')
-      check('arrival ladder: every clarify is a rail Buy/Sell/DCA template on a non-EVM home or a single-letter sell (deterministic, chips, no model) — QuickAct, the fired-alert chips, the tape menu and the EARN templates never clarify', clarifyNotRail.filter((r) => !/^Sell \$\d+ of (F|ON|P)$/.test(r.ask)).length === 0, `${clarify.length} clarifies; non-rail: ${clarifyNotRail.map((r) => `[${r.sender}] ${r.ask}`).join(' | ').slice(0, 300)}`)
+      // ("SOL lives on Solana — HL door") or a single-letter sell — a
+      // deterministic refusal-by-name with chips, no model. They are ALL the
+      // blind `Buy/Sell $N of <sym>` / `DCA $10 into <sym> weekly` TEMPLATES:
+      // the rail's own chips (WatchlistRail.tsx) and the fired-alert chips
+      // (lib/watchlists alertActionChips). QuickAct reads venuesFor and
+      // composes "Long $25 of SOL on Hyperliquid" instead — request in
+      // ROUNDS.md: the templates should read venuesFor too. The tape menu
+      // (ladder-filtered) and the EARN templates never clarify.
+      const templateClarify = (r: Row) => (r.sender === 'Rail' || r.sender === 'Alert') && /^((Buy|Sell) \$\d+ of [A-Z0-9]+|DCA \$\d+ into [A-Z0-9]+ weekly)$/.test(r.ask)
+      const clarifyOffTemplate = clarify.filter((r) => !templateClarify(r))
+      check('arrival ladder: every clarify is a blind rail / fired-alert Buy/Sell/DCA template (a non-EVM home or a single-letter ticker; deterministic, chips, no model) — QuickAct, the tape menu and the EARN templates never clarify', clarifyOffTemplate.length === 0, `${clarify.length} clarifies; off-template: ${clarifyOffTemplate.map((r) => `[${r.sender}] ${r.ask}`).join(' | ').slice(0, 300)}`)
       check('arrival ladder: the fence refuses NONE of the sentences the senders compose (no chip can be walled by its own handoff)', fenced.length === 0, fenced.slice(0, 5).join(' | '))
       // The tape's chips reach the page only through ladderFilterMenu (the
       // route filters the MENU before the model picks ids), so a menu sentence
