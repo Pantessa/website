@@ -19037,7 +19037,7 @@ async function main() {
           // MK2 (2026-09-15): the header chips live in the ExecStrip slot now — SymbolPage keeps
           // the two no-chart chips and hands the strip `act` itself; the stub's chips call onAsk.
           (symS.match(/onClick=\{sendOnClick\(/g) ?? []).length === 2 && /\{door\}/.test(symS) &&
-          /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} \/>/.test(symS) &&
+          /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} last=\{stats\?\.last \?\? null\} \/>/.test(symS) &&
           /else prefillAct\(ask\)/.test(railS) && /\{prefillDoor\}/.test(railS) && !/else router\.push\(promptHref\(ask\)\)/.test(railS) &&
           (spineS.match(/if \(openDoorFor\(href\)\) return/g) ?? []).length === 2 &&
           (spineS.match(/<SpineLink\b/g) ?? []).length === 5 &&
@@ -20416,7 +20416,7 @@ async function main() {
     }
     check(
       'mk2/markets: /markets server-renders the movers tape seat, the Map · List toggle (SSR = list, every row present), the terminal tables with a sort bar (symbol · last · 24h) and j/k row links',
-      seat(mkHtml, 'mk-tape') &&
+      seat(mkHtml, 'mk-tape-seat" data-seat="MoversTape') &&
         /<main class="mkt-frame__main" data-view="list">/.test(mkHtml) &&
         /class="mk-view__btn is-on" aria-pressed="true"[^>]*title="Terminal list"/.test(mkHtml) &&
         /<table class="mk-table" data-section="equities" data-sort="none">/.test(mkHtml) &&
@@ -20533,6 +20533,43 @@ async function main() {
       /class="wl[^"]*" data-mode="[a-z]+" data-density="comfortable"/.test(mkHtml) &&
         railSrc.includes('role="menuitemcheckbox"') && railSrc.includes("DENSITY_KEY = 'pantessa.watchlists.density'") &&
         /\.wl\[data-density="compact"\] \.wl__rowName \{ display: none; \}/.test(await readFile('components/markets/markets.css', 'utf8')),
+    )
+    // EXEC's request: the chart's last close reaches ExecStrip + RouteTable at every mount.
+    const symS = await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')
+    const ovS = await readFile('components/markets/tabs/OverviewTab.tsx', 'utf8')
+    const trS = await readFile('components/markets/tabs/TradeTab.tsx', 'utf8')
+    check(
+      'mk2/markets: `last` (the header stats) rides to ExecStrip and to RouteTable on Overview AND Trade, so EXEC can size unit rows (Lido stake, CoW limit) honestly',
+      /<ExecStrip [^>]*last=\{stats\?\.last \?\? null\}/.test(symS) &&
+        /<OverviewTab [^>]*last=\{stats\?\.last \?\? null\}/.test(symS) && /<TradeTab [^>]*last=\{stats\?\.last \?\? null\}/.test(symS) &&
+        /<RouteTable [^>]*last=\{lastProp \?\? last \?\? null\}/.test(ovS) && /<RouteTable [^>]*last=\{last \?\? null\}/.test(trS),
+    )
+    // R2: the session strip (three clocks), the map's phone fallback, the
+    // sparkline column's read, the ?vs= overlay hand-off to VIZ's engine.
+    const strip = mk.sessionStripFor(new Date(Date.UTC(2026, 8, 15, 14, 0, 0))) // Tue 10:00 ET
+    const stripClosed = mk.sessionStripFor(new Date(Date.UTC(2026, 8, 12, 14, 0, 0))) // Sat
+    check(
+      'mk2/markets: sessionStripFor — a Tuesday 10:00 ET reads NYSE OPEN with 6h to the close; a Saturday reads CLOSED opening Mon 9:30 ET (~47.5h); HL funding ticks at the top of the hour; fmtCountdown never prints 0m',
+      strip.nyse.open && strip.nyse.bell === 'closes' && strip.nyse.minsToBell === 360 && strip.hlFundingMins === 60 &&
+        !stripClosed.nyse.open && stripClosed.nyse.bell === 'opens' && stripClosed.nyse.reopens === 'Mon 9:30 ET' && stripClosed.nyse.minsToBell === (24 + 23) * 60 + 30 &&
+        mk.minutesToNextHour(new Date(Date.UTC(2026, 8, 15, 14, 37, 10))) === 23 &&
+        mk.fmtCountdown(0) === '1m' && mk.fmtCountdown(360) === '6h' && mk.fmtCountdown(2850) === '1d 23h' && mk.fmtCountdown(95) === '1h 35m',
+    )
+    check(
+      'mk2/markets: /markets server-renders the session strip (NYSE open|closed · TOKENS 24/7 · HL FUNDING) above the movers seat, and under 640px the map view keeps the map AND renders the ledger under it',
+      /<div class="mk-session" role="status" aria-label="Market sessions" data-nyse="(open|closed)">/.test(mkHtml) &&
+        mkHtml.indexOf('class="mk-session"') < mkHtml.indexOf('class="mk-tape-seat"') &&
+        /NYSE (OPEN|CLOSED)/.test(mkHtml) && mkHtml.includes('TOKENS 24/7') && mkHtml.includes('HL FUNDING') &&
+        (await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')).includes("const showList = view === 'list' || phone"),
+    )
+    const tableSrc = await readFile('components/markets/shell/MarketTable.tsx', 'utf8')
+    const sparksSrc = await readFile('components/markets/shell/useSparks.ts', 'utf8')
+    check(
+      'mk2/markets: the ledger carries a 7d sparkline cell fed by VIZ\'s /api/markets/viz/sparks (batched ≤60, empty until the read lands, nothing drawn under 2 points); SymbolPage hands ?vs= to the engine as `compare`',
+      /<td class="mk-table__spark" data-spark="0"><\/td>/.test(mkHtml) &&
+        tableSrc.includes("import Sparkline from '@/components/markets/viz/Sparkline'") && tableSrc.includes('sparks[r.symbol]!.length >= 2') &&
+        sparksSrc.includes('/api/markets/viz/sparks?symbols=') && sparksSrc.includes('const BATCH = 60') &&
+        /<ChartMount [^>]*compare=\{vs\}/.test(await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')),
     )
     // The one stylesheet import + the slot card rule (QA's request: whoever
     // owns a class ships its rule).
