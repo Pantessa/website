@@ -227,7 +227,7 @@ export default function CompoundComposer({ symbol, pair, onAsk }: { symbol: stri
         {legs.length > 0 && (
           <div className="mkt-compound__opt" data-fund-origins={legs.map((l) => l.chainId).join(',')}>
             <span className="mkt-order__k mono">FROM</span>
-            <div className="mkt-order__presets" role="group" aria-label="Fund from">
+            <div className="mkt-order__presets mkt-compound__from" role="group" aria-label="Fund from">
               {legs.map((l) => (
                 <button
                   key={l.chainId}
