@@ -55,6 +55,7 @@ import { rankMovers } from '../lib/viz/movers'
 import { profileBins } from '../components/markets/chart/volume-profile'
 import { cleanSparkSymbols, SPARKS_MAX_SYMBOLS } from '../lib/viz/sparks'
 import { namesSymbol, sideOf, venueOfBuild, FILLS_TTL_MS } from '../lib/viz/fills'
+import { fillSymbolsInAsk, fillSymbolsOf, fillSymbolsForPair, sanitizeFillSymbols } from '../lib/fill-symbols'
 import { fillLabel } from '../lib/chart-fills'
 import { marketSections as vizMarketSections } from '../lib/markets'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
@@ -20156,6 +20157,89 @@ async function main() {
     await prisma.watchlistHoldingSeen.deleteMany({ where: { owner: { in: hoOwners } } }).catch(() => {})
   }
 
+  // ── MARKETS/WATCH — the card door (2026-09-16) ───────────────────────────
+  // Nate, on an empty rail signed in with an account that holds nothing: "can
+  // we add a buy ETH or USDC using stripe call out and linkage here". The
+  // holdings read says whether the wallet holds nothing and whether card
+  // funding is on; the rail offers the signed Stripe door and watches for the
+  // money. The rules first, then the read, then the wiring (the pixel drive
+  // is in the PR).
+  console.log('— markets/watch card door')
+  {
+    const { walletLooksEmpty } = await import('../lib/watchlist-holdings')
+    const { railFundPhase, RAIL_FUND_OPTIONS, RAIL_FUND_PRESET_USD } = await import('../lib/watchlists')
+    const { ONRAMP_DEFAULT_NETWORK, ONRAMP_MAX_USD, ONRAMP_MIN_USD, onrampAssetOf, onrampConsentMessage } = await import('../lib/onramp')
+
+    // 1. What "holds nothing" means.
+    const Z0 = '0x0000000000000000000000000000000000000000'
+    const frow = (symbol: string, balance: string, valueUsd: number | null, native?: true) => ({ symbol, address: Z0, balance, priceUsd: null, valueUsd, ...(native ? { native } : {}) })
+    const fview = (chains: ReturnType<typeof frow>[][], failedChains: string[] = []) => ({ chains: chains.map((holdings) => ({ holdings })), failedChains })
+    check('card door: a wallet holds nothing when every chain answered and everything on it together is dust (a fresh account, or $0.70 of scraps); a zero-balance row is not a holding',
+      walletLooksEmpty(fview([[], [], []])) && walletLooksEmpty(fview([[frow('ETH', '0.0002', 0.4, true)], [frow('USDC', '0.3', 0.3)]])) && walletLooksEmpty(fview([[frow('ETH', '0', null, true)]])))
+    check('card door: $1 of anything is something, and so is a holding nobody could price (a stock bought a minute ago); a chain that didn’t answer is unread, never empty',
+      !walletLooksEmpty(fview([[frow('USDC', '1', 1)]])) && !walletLooksEmpty(fview([[frow('AAPL', '0.01', null)]])) &&
+        !walletLooksEmpty(fview([[], []], ['Base'])) && !walletLooksEmpty({ chains: [{ holdings: [], unread: true }], failedChains: [] }))
+
+    // 2. What the door shows.
+    const phaseAt = (s: Partial<Parameters<typeof railFundPhase>[0]>) => railFundPhase({ wallet: true, empty: true, cardFunding: true, waiting: false, landed: false, ...s })
+    check('card door: an empty wallet gets the offer when this deployment sells by card; no wallet, a wallet with something in it, or no on-ramp gets nothing (fail closed: never a button that 503s)',
+      phaseAt({}) === 'offer' && phaseAt({ wallet: false }) === null && phaseAt({ empty: false }) === null && phaseAt({ cardFunding: false }) === null)
+    check('card door: a purchase on its way to a still-empty wallet watches instead of offering the button again (a second tap is a second charge); a landing shows until dismissed, whatever the wallet reads; a wait on a wallet that now holds something stays quiet',
+      phaseAt({ waiting: true }) === 'watching' && phaseAt({ waiting: true, cardFunding: false }) === 'watching' && phaseAt({ waiting: true, empty: false }) === null &&
+        phaseAt({ landed: true, empty: false }) === 'landed' && phaseAt({ landed: true, wallet: false }) === null)
+    check('card door: ETH leads (it pays its own gas), USDC second; both on the default lane and both assets the session route delivers; the opening amount sits inside the on-ramp’s bounds, and a USDC buy’s consent names the asset and the chain',
+      RAIL_FUND_OPTIONS.map((o) => o.asset).join() === 'ETH,USDC' && RAIL_FUND_OPTIONS.every((o) => o.network === ONRAMP_DEFAULT_NETWORK && onrampAssetOf(o.asset) === o.asset) &&
+        RAIL_FUND_PRESET_USD >= ONRAMP_MIN_USD && RAIL_FUND_PRESET_USD <= ONRAMP_MAX_USD &&
+        onrampConsentMessage({ address: '0x' + 'ab'.repeat(20), presetFiatUsd: RAIL_FUND_PRESET_USD, asset: 'USDC', network: ONRAMP_DEFAULT_NETWORK, issuedAt: 0 }).includes(`Asset: USDC on ${ONRAMP_DEFAULT_NETWORK}`))
+
+    // 3. The read.
+    const fundAddr = '0x' + 'cd'.repeat(20)
+    const fRes = await fetch(`${BASE}/api/watchlists/holdings?address=${fundAddr}`)
+    const fBody = (await fRes.json()) as { held: unknown[]; empty?: unknown; cardFunding?: unknown; failedChains: string[] }
+    check('GET /api/watchlists/holdings: says whether the wallet holds nothing (an address nobody funded reads empty unless a chain didn’t answer) and whether this deployment sells funds by card',
+      fRes.status === 200 && (fBody.failedChains.length ? fBody.empty === false : fBody.empty === true) && typeof fBody.cardFunding === 'boolean',
+      JSON.stringify({ empty: fBody.empty, cardFunding: fBody.cardFunding, failed: fBody.failedChains }))
+    const fFresh = await fetch(`${BASE}/api/watchlists/holdings?address=${fundAddr}&fresh=1`)
+    check('GET /api/watchlists/holdings: fresh=1 rides the Wallet panel’s bounded bypass: asked again right away it is still the cached view (one fresh read per address every 8s, no amplifier)',
+      fFresh.status === 200 && fFresh.headers.get('x-wallet-cache') === 'hit', `${fFresh.status} ${fFresh.headers.get('x-wallet-cache')}`)
+    const fLive = (await (await fetch(`${BASE}/api/watchlists/holdings?address=0xfef4feed2c57a5dbaa5a0c553aa7a0a0fd66d393`)).json()) as { held?: unknown[]; empty?: unknown }
+    check(`GET /api/watchlists/holdings: a wallet with holdings never reads empty (${fLive.held?.length ?? 0} held)`, !fLive.held?.length || fLive.empty === false)
+
+    // 3b. The watcher keeps the baseline it wrote. Found on this drive: the
+    // hook took its caller's wait object on every render, the caller's copy
+    // never has a baseline, so each poll re-baselined and a purchase was only
+    // noticed after a reload (the stored copy has one). The chat's fund chip
+    // shares the hook.
+    const { keepWatchedWait } = await import('../lib/funding-arrival')
+    const opened = { address: '0x' + 'cd'.repeat(20), network: 'ethereum' as const, resume: '', label: 'Buy ETH with a card', baselineEth: null, baselineStable: null, openedAt: 1_789_000_000_000 }
+    const baselined = { ...opened, baselineEth: 0, baselineStable: 0 }
+    const arrivalSrc = await readFile('lib/use-funding-arrival.ts', 'utf8')
+    check('arrival: a render for the SAME purchase keeps the watcher’s baselined copy (so the next read can be an arrival); a new purchase, or none, replaces it; the hook routes every render through it',
+      keepWatchedWait(baselined, opened) === baselined && keepWatchedWait(baselined, { ...opened, openedAt: opened.openedAt + 1 })?.openedAt === opened.openedAt + 1 &&
+        keepWatchedWait(baselined, null) === null && keepWatchedWait(null, opened) === opened &&
+        arrivalSrc.includes('waitRef.current = keepWatchedWait(waitRef.current, wait)') && !/waitRef\.current = wait\s*$/m.test(arrivalSrc))
+
+    // 4. The wiring.
+    const fundSrc = await readFile('components/markets/watchlist/FundWallet.tsx', 'utf8')
+    const railFundSrc = await readFile('components/markets/watchlist/WatchlistRail.tsx', 'utf8')
+    const hookFundSrc = await readFile('components/markets/watchlist/useWatchlists.ts', 'utf8')
+    const panelFundSrc = await readFile('components/WalletPanel.tsx', 'utf8')
+    const chipFundSrc = await readFile('components/ClarifyChips.tsx', 'utf8')
+    const buyAt = fundSrc.indexOf('const buy = async')
+    // Code only: the comment above the call explains the rule in words ("a popup after an await").
+    const beforeTab = buyAt < 0 ? 'await' : fundSrc.slice(buyAt, fundSrc.indexOf('await startOnrampSession(', buyAt)).replace(/\/\/.*$/gm, '')
+    check('card door: a buy goes through the one on-ramp door (startOnrampSession, nothing awaited before it opens the tab), writes a wait with an EMPTY resume and the asset, watches it with useFundingArrival, and clears only its own waits',
+      buyAt >= 0 && !beforeTab.includes('await') && fundSrc.includes("resume: ''") && fundSrc.includes('asset: o.asset') && fundSrc.includes('saveFundWait(w)') &&
+        fundSrc.includes('useFundingArrival(wait,') && (fundSrc.match(/clearFundWait\(/g) ?? []).length === 2 && (fundSrc.match(/resume === ''\) clearFundWait\(/g) ?? []).length === 2)
+    check('card door: a chat chip adopts a stored wait only when its own resume matches, so the door’s empty-resume wait never fires a chat turn; the Wallet panel quotes a resume only when there is one',
+      chipFundSrc.includes('o.fund && o.resume === w.resume') && panelFundSrc.includes('wait.resume ?') && panelFundSrc.includes("wait.asset ?? 'card purchase'"))
+    check('card door: the rail mounts the door at the end of its rows with the holdings read’s verdict (never while it brews), and a landing re-reads the wallet past both caches (fresh=1, reconcile inside the minute) so the purchase fills the list',
+      railFundSrc.includes('<FundWallet') && railFundSrc.includes('empty={wl.walletEmpty && !brew}') && railFundSrc.includes('onLanded={wl.recheckWallet}') &&
+        hookFundSrc.includes("'&fresh=1'") && hookFundSrc.includes('lastReconciled.delete(key)') && hookFundSrc.includes('setWalletRead('))
+    const fundHtml = flat(await (await fetch(`${BASE}/markets`)).text())
+    check('card door: /markets never server-renders the door (no wallet is known before hydration)', fundHtml.includes('class="wl__rows"') && !fundHtml.includes('data-rail-fund'))
+  }
+
   // ── MARKETS/CHART — moving averages (2026-09-14) ─────────────────────────
   // Nate: "add the 200 day moving average and make it yellow, blue for the 50
   // day". The chart's window is 180 bars, so over the window alone an SMA 200
@@ -21221,36 +21305,45 @@ async function main() {
       fillLabel({ id: 'x', t: Date.UTC(2026, 8, 8, 14, 2) / 1000, side: 'buy', usd: 12, venue: 'Uniswap v3', venueId: 'uniswap', chainId: 4663, chain: 'Robinhood Chain', txUrl: null, source: 'turn' }, 'AAPL') === 'Bought $12.00 of AAPL · Uniswap v3 · Robinhood Chain · 09-08 14:02' &&
         fillLabel({ id: 'y', t: Date.UTC(2026, 8, 8, 14, 2) / 1000, side: 'sell', usd: 1500, venue: 'CoW', venueId: 'cow', chainId: 8453, chain: null, txUrl: null, source: 'job-step' }, 'ETH') === 'Sold $1,500 of ETH · CoW · 09-08 14:02',
     )
-    // The route + a fixture: a throwaway wallet signs one embed turn naming ETH
+    // The route + a fixture: a throwaway wallet signs embed turns naming ETH
     // through the telemetry route under a key minted HERE (the run's earlier
     // key is purged by now). The sessionId must NOT start with `harness-`: that
     // belt stamps is_internal, and the fills fence would (correctly) hide it —
     // the fixture simulates an ORGANIC stranger, like fixture-ilink-.
-    // its fills carry exactly that receipt, an INTERNAL twin never shows, and
-    // the key is purged after — which removes the fixture rows with it.
+    //
+    // WHY THIS PIN WAS RED FROM #776 TO 2026-09-16 (the route was right; the
+    // fixture never proved anything): the old fixture posted ONE keyed-embed
+    // `tx` beacon with a made-up hash, which the S-2 verifier correctly leaves
+    // `unverified`, then tried to stamp it `attested` through an in-process
+    // Prisma `updateMany` wrapped in `catch {}`. The harness process has no
+    // DATABASE_URL (Prisma reads `.env`, the worktree has only `.env.local`),
+    // so the stamp threw silently, COUNTED_TURN_WHERE fenced the row out, and
+    // the read came back `fills=[]` on every run — receipt wall up or down.
+    //
+    // Now the fixture is HTTP-only and proves the fence instead of bypassing it:
+    //   · a keyed-embed `cow-order` beacon — non-EVM, so the verifier stamps
+    //     `attested` on its own (the documented #685 tranche) and it COUNTS;
+    //   · a forged `tx` beacon (fake hash, same wallet, same symbol) — the
+    //     verifier can never count it (`unverified` or `mismatch`), so it must
+    //     NEVER paint: a stranger's beacon can't draw a fill on anyone's chart;
+    //   · an INTERNAL twin — fenced by is_internal either way.
+    // Exactly one fill (the CoW order) comes back. The key is purged after,
+    // which removes the fixture rows with it.
     const fkMint = await fetch(`${BASE}/api/embed-keys`, { method: 'POST', headers: CJ, body: JSON.stringify({ label: 'harness viz fills' }) })
     const fk = (await fkMint.json()) as { id?: string; key?: string }
     const fillsWallet = `0x${'f1'.repeat(10)}${Date.now().toString(16).padStart(20, '0').slice(-20)}`
-    const fillsTx = `https://basescan.org/tx/0x${'ab'.repeat(32)}`
-    const fillsPost = await fetch(`${BASE}/api/embed/telemetry`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ key: fk.key, sessionId: 'fixture-viz-fills', page: 'https://harness-embed.test/eth', prompt: 'buy $12 of ETH on base', outcome: 'signed', artifact: 'tx', chain: 'base', valueUsd: 12, txUrl: fillsTx, buildPath: 'native-swap-uniswap', walletAddress: fillsWallet }),
-    })
-    const fillsTwin = await fetch(`${BASE}/api/embed/telemetry`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' },
-      body: JSON.stringify({ key: fk.key, sessionId: 'fixture-viz-fills-int', page: 'https://harness-embed.test/eth', prompt: 'sell $99 of ETH on base', outcome: 'signed', artifact: 'tx', chain: 'base', valueUsd: 99, txUrl: fillsTx, buildPath: 'native-swap-uniswap', walletAddress: fillsWallet }),
-    })
-    // QA-7 (integration): the fills read also fences COUNTED_TURN_WHERE, so an
-    // embed-lane fixture with a made-up receipt lands 'unverified' — exactly a
-    // forger's beacon — and correctly never paints. Stamp the ORGANIC fixture as
-    // a counted turn ('attested'), the way a real receipt would; the internal
-    // twin stays as posted (fenced by is_internal either way).
-    try {
-      const { default: prismaFills } = await import('../lib/db')
-      await prismaFills.embedTurn.updateMany({ where: { sessionId: 'fixture-viz-fills', walletAddress: { in: [fillsWallet, fillsWallet.toLowerCase()] } }, data: { verification: 'attested' } })
-    } catch {}
+    const fillsTx = `https://explorer.cow.fi/base/orders/0x${'cd'.repeat(56)}`
+    const fillsBeacon = (body: Record<string, unknown>, internal = false) =>
+      fetch(`${BASE}/api/embed/telemetry`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...(internal ? { 'x-yf-internal-run': '1' } : {}) },
+        body: JSON.stringify({ key: fk.key, page: 'https://harness-embed.test/eth', outcome: 'signed', chain: 'base', walletAddress: fillsWallet, ...body }),
+      })
+    const fillsPost = await fillsBeacon({ sessionId: 'fixture-viz-fills', prompt: 'buy $12 of ETH on base', artifact: 'cow-order', valueUsd: 12, txUrl: fillsTx, buildPath: 'native-swap-cow' })
+    const fillsForged = await fillsBeacon({ sessionId: 'fixture-viz-fills', prompt: 'sell $500 of ETH on base', artifact: 'tx', valueUsd: 500, txUrl: `https://basescan.org/tx/0x${'ab'.repeat(32)}`, buildPath: 'native-swap-uniswap' })
+    const fillsTwin = await fillsBeacon({ sessionId: 'fixture-viz-fills-int', prompt: 'sell $99 of ETH on base', artifact: 'cow-order', valueUsd: 99, txUrl: fillsTx, buildPath: 'native-swap-cow' }, true)
+    const postV = ((await fillsPost.json().catch(() => ({}))) as { verification?: string }).verification
+    const forgedV = ((await fillsForged.json().catch(() => ({}))) as { verification?: string }).verification
     type FillsBody = { symbol?: string; address?: string; fills?: { id: string; t: number; side: string; usd: number | null; venue: string; venueId: string; chainId: number | null; chain: string | null; txUrl: string | null; source: string }[]; cached?: boolean; error?: string }
     const fills1 = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=eth&address=${fillsWallet}`)).json()) as FillsBody
     const fills2 = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=ETH&address=${fillsWallet}`)).json()) as FillsBody
@@ -21259,14 +21352,69 @@ async function main() {
     const fills404 = await fetch(`${BASE}/api/markets/viz/fills?symbol=ZZZZQ&address=${fillsWallet}`)
     const f0 = fills1.fills?.[0]
     check(
-      'viz fills route: the throwaway wallet\'s signed ETH turn comes back as ONE buy fill ($12 · Uniswap v3 · Base · the explorer link, source turn), the internal twin is fenced out, AAPL shows none, the symbol upper-cases, the second read is cached, a bad address is 400 and a stranger symbol 404',
-      (fkMint.status === 200 || fkMint.status === 201) && fillsPost.status === 200 && fillsTwin.status === 200 && fills1.symbol === 'ETH' && fills1.address === fillsWallet.toLowerCase() && fills1.fills?.length === 1 &&
-        f0?.side === 'buy' && f0.usd === 12 && f0.venue === 'Uniswap v3' && f0.venueId === 'uniswap' && f0.chainId === 8453 && f0.chain === 'Base' && f0.txUrl === fillsTx && f0.source === 'turn' && Math.abs(f0.t * 1000 - Date.now()) < 120_000 &&
+      'viz fills route: the throwaway wallet\'s attested CoW order on ETH comes back as ONE buy fill ($12 · CoW · Base · the order link, source turn), the forged-receipt swap beside it never paints (COUNTED_TURN_WHERE), the internal twin is fenced out, AAPL shows none, the symbol upper-cases, the second read is cached, a bad address is 400 and a stranger symbol 404',
+      (fkMint.status === 200 || fkMint.status === 201) && fillsPost.status === 200 && fillsForged.status === 200 && fillsTwin.status === 200 &&
+        postV === 'attested' && forgedV !== undefined && !(COUNTED_VERIFICATIONS as readonly string[]).includes(forgedV) &&
+        fills1.symbol === 'ETH' && fills1.address === fillsWallet.toLowerCase() && fills1.fills?.length === 1 &&
+        f0?.side === 'buy' && f0.usd === 12 && f0.venue === 'CoW' && f0.venueId === 'cow' && f0.chainId === 8453 && f0.chain === 'Base' && f0.txUrl === fillsTx && f0.source === 'turn' && Math.abs(f0.t * 1000 - Date.now()) < 120_000 &&
         fills2.cached === true && fillsOther.fills?.length === 0 && fillsBad.status === 400 && fills404.status === 404 && FILLS_TTL_MS === 60_000,
-      `mint=${fkMint.status} post=${fillsPost.status}/${fillsTwin.status} fills=${JSON.stringify(fills1.fills ?? fills1.error).slice(0, 200)} other=${fillsOther.fills?.length}`,
+      `mint=${fkMint.status} post=${fillsPost.status}/${fillsForged.status}/${fillsTwin.status} verification=${postV}/${forgedV} fills=${JSON.stringify(fills1.fills ?? fills1.error).slice(0, 200)} other=${fillsOther.fills?.length}`,
     )
     const fkGone = await fetch(`${BASE}/api/embed-keys/${fk.id}?purge=1`, { method: 'DELETE', headers: C })
-    check('viz fills fixture: the fixture key is purged after the check (its two turns go with it)', fkGone.status === 200 || fkGone.status === 204, `purge=${fkGone.status}`)
+    check('viz fills fixture: the fixture key is purged after the check (its three turns go with it)', fkGone.status === 200 || fkGone.status === 204, `purge=${fkGone.status}`)
+    // FIRST-PARTY fills (2026-09-16): /chat beacons carry NO prompt and NO
+    // detail, so a /chat swap used to be invisible to the fills reader. The
+    // beacon now carries side-tagged symbols, allowlisted server-side.
+    const eqTags = (a: string[] | undefined, b: string[] | undefined) => JSON.stringify(a) === JSON.stringify(b)
+    check(
+      'fill symbols: an ask tags the charted symbols it trades with a side (swap X for Y sells X + buys Y; buy X with Y; sell; long; names → tickers), stables/sends/chain + venue words never tag, a HL order names its own coin + direction, job artifacts are never tagged, and the server allowlist canonicalizes + drops junk',
+      eqTags(fillSymbolsInAsk('Swap $5 of ETH for AAPL on robinhood chain'), ['sell:ETH', 'buy:AAPL']) &&
+        eqTags(fillSymbolsInAsk('buy $10 of AAPL with ETH'), ['buy:AAPL', 'sell:ETH']) &&
+        eqTags(fillSymbolsInAsk('Sell $50 of ETH'), ['sell:ETH']) &&
+        eqTags(fillSymbolsInAsk('2x long $12 of HYPE with a 5% stop'), ['buy:HYPE']) &&
+        eqTags(fillSymbolsInAsk('buy $10 of apple every week'), ['buy:AAPL']) &&
+        eqTags(fillSymbolsInAsk('swap 1 USDC to ETH on arbitrum'), ['buy:ETH']) &&
+        eqTags(fillSymbolsInAsk('Buy $10 of AAPL on optimism'), ['buy:AAPL']) &&
+        eqTags(fillSymbolsInAsk('supply $2 of USDC to aave'), []) &&
+        eqTags(fillSymbolsInAsk('send 0.01 ETH to 0x1111111111111111111111111111111111111111'), []) &&
+        eqTags(fillSymbolsInAsk('Why is TSLA moving?'), []) &&
+        eqTags(fillSymbolsInAsk('buy $10 of coin now'), []) &&
+        eqTags(fillSymbolsOf({ ask: 'buy ETH', meta: { orderRequest: { protocol: 'hyperliquid', hl: { expected: { coin: 'HYPE', isBuy: false } } } } }), ['sell:HYPE']) &&
+        fillSymbolsOf({ ask: 'buy $5 of ETH', artifact: 'job' }) === undefined &&
+        fillSymbolsOf({ ask: 'buy $5 of ETH', meta: { jobId: 'j1' } }) === undefined &&
+        eqTags(fillSymbolsForPair('WETH', 'USDC'), ['sell:ETH']) &&
+        eqTags(sanitizeFillSymbols(['buy:eth', 'sell:WETH', 'buy:USDC', 'buy:NOPE', 'hi', 3, 'sell:$aapl', 'buy:BTC', 'buy:SOL', 'buy:DOGE']), ['buy:ETH', 'sell:AAPL', 'buy:BTC', 'buy:SOL']),
+      `swap=${JSON.stringify(fillSymbolsInAsk('Swap $5 of ETH for AAPL on robinhood chain'))}`,
+    )
+    const fpWallet = `0x${'f2'.repeat(10)}${Date.now().toString(16).padStart(20, '0').slice(-20)}`
+    const fpTx = `https://basescan.org/tx/0x${'cd'.repeat(32)}`
+    // A first-party /chat beacon from this build's own origin (verifies `dev`,
+    // which counts). The prompt + detail it carries are dropped by the route;
+    // only the allowlisted symbols survive.
+    const fpPost = await fetch(`${BASE}/api/embed/telemetry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ firstParty: true, sessionId: 'fixture-viz-fills-fp', page: `${BASE}/chat`, prompt: 'swap $7 of ARB for ETH', detail: 'swap ARB for ETH', outcome: 'signed', artifact: 'tx', chain: 'base', chainId: 8453, valueUsd: 7, txUrl: fpTx, buildPath: 'native-swap-uniswap', walletAddress: fpWallet, symbols: ['sell:ARB', 'buy:weth', 'buy:USDC', 'buy:ZZZZQ'] }),
+    })
+    const fpJob = await fetch(`${BASE}/api/embed/telemetry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ firstParty: true, sessionId: 'fixture-viz-fills-fpjob', page: `${BASE}/chat`, outcome: 'signed', artifact: 'job-step', chain: 'multi', valueUsd: 3, buildPath: 'native-swap-uniswap', walletAddress: fpWallet, symbols: ['buy:AAPL'] }),
+    })
+    const fpBody = (await fpPost.json().catch(() => ({}))) as { ok?: boolean; verification?: string }
+    const fpEth = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=ETH&address=${fpWallet}`)).json()) as FillsBody
+    const fpArb = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=ARB&address=${fpWallet}`)).json()) as FillsBody
+    const fpAapl = (await (await fetch(`${BASE}/api/markets/viz/fills?symbol=AAPL&address=${fpWallet}`)).json()) as FillsBody
+    const fe = fpEth.fills?.[0]
+    const fa = fpArb.fills?.[0]
+    check(
+      'viz fills route (first-party): a prompt-less /chat signed beacon tagged sell:ARB + buy:WETH paints ONE buy on ETH and ONE sell on ARB ($7 · Uniswap v3 · Base · its explorer link, source turn); the stable + unknown tags are dropped, and a job-step beacon\'s tag is never stored (its fill comes from the job step)',
+      fpPost.status === 200 && fpBody.ok === true && fpBody.verification === 'dev' && fpJob.status === 200 &&
+        fpEth.fills?.length === 1 && fe?.side === 'buy' && fe.usd === 7 && fe.venue === 'Uniswap v3' && fe.chainId === 8453 && fe.txUrl === fpTx && fe.source === 'turn' &&
+        fpArb.fills?.length === 1 && fa?.side === 'sell' && fa.usd === 7 &&
+        fpAapl.fills?.length === 0,
+      `post=${fpPost.status} ${JSON.stringify(fpBody)} eth=${JSON.stringify(fpEth.fills ?? fpEth.error).slice(0, 200)} arb=${fpArb.fills?.length} aapl=${fpAapl.fills?.length}`,
+    )
     check(
       'viz chart: ChartMount takes `fills`, MarketChart draws each as an arrow glyph on its bar in the venue\'s series ink (up under a buy, down over a sell, never on a bar it predates), lists the receipts with explorer links under the chart, and the compare feed reads ?warmup=1',
       mountSrc.includes('fills?: FillMarker[]') && mountSrc.includes('fills={fills}') && mcSrc.includes("shape: f.side === 'buy' ? 'arrowUp' : 'arrowDown'") && mcSrc.includes('if (f.t < bars[0].t) return') &&
