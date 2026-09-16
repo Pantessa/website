@@ -40,7 +40,10 @@ import ClarifyChips from '@/components/ClarifyChips'
 import PaymentConfirm from '@/components/PaymentConfirm'
 import { voteRequestOf, voteCandidatesOf, voteProposalOf } from '@/lib/snapshot-vote'
 import { clarifyRequestOf } from '@/lib/clarify'
-import { useYeetfulStore, type RouterTraceEvent } from '@/lib/store'
+import { useYeetfulStore, type McpServer, type RouterTraceEvent } from '@/lib/store'
+import { askAppSlugs, missingAppIds } from '@/lib/ask-apps'
+import { FREE_FLEET_FALLBACK } from '@/lib/free-fleet'
+import { CATALOG } from '@/lib/mcp-data'
 import { useSession } from '@/lib/session'
 import { latestWorkingContext, type WorkingContext } from '@/lib/working-context'
 import { EXAMPLE_PROMPTS, TRY_PROMPTS } from '@/lib/examples'
@@ -104,6 +107,12 @@ interface PaymentToSign {
   signing: SigningRequest
 }
 
+/** The directory's fallback when /api/servers is down — the chat workspace's
+ *  and the ask door's own. */
+const STATIC_SERVERS: McpServer[] = [...FREE_FLEET_FALLBACK, ...CATALOG]
+/** How many times a chip send re-adds its apps after a load re-seeded the set
+ *  before it sends anyway (sendChip). */
+const APP_SEND_ROUNDS = 4
 
 /** Build the assistant message meta from receipts + an optional vote request /
  *  ambiguous-proposal candidates. */
@@ -312,8 +321,12 @@ interface ChatInterfaceProps {
 export default function ChatInterface({ embedded = false, contextAddress, onEmbedEvent, injectedPrompt, embedKey, embedOrigin, embedSession, intentLinkSlug, simple = false }: ChatInterfaceProps = {}) {
   const {
     servers,
+    setServers,
     activeServerIds,
     setActiveServerIds,
+    linkSetActive,
+    setLinkServerIds,
+    noteChipApps,
     manualSlugs,
     updateChatServers,
     chats,
@@ -374,14 +387,24 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const router = useRouter()
 
   const [input, setInput] = useState('')
+  // An ask a PAGE put in the composer (a ?prompt= link, a rail verb, a chip
+  // parked mid-turn). Pressed unedited, it sends as the chip it came from,
+  // with its apps (sendChip below); a single edited character makes it a
+  // typed ask.
+  const parkedAskRef = useRef<string | null>(null)
+  const parkAsk = (text: string) => {
+    setInput(text)
+    parkedAskRef.current = text.trim() || null
+  }
 
   // A rail row's action (a due recurring buy, a pause/cancel verb) lands in
   // the composer — prefill only, the user always sends it. One-shot handoff.
   useEffect(() => {
     if (!composerPrefill) return
-    setInput(composerPrefill)
+    parkAsk(composerPrefill)
     setComposerPrefill(null)
     textareaRef.current?.focus()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [composerPrefill, setComposerPrefill])
   // App Mode's transcript view-switch: a command-bar send opens the transcript
   // over the panels; the pill flips back. Reset when the mode or chat changes.
@@ -606,7 +629,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // prefilled — a URL must never fire a turn) and by chips whose MCP still
   // needs a toggle.
   const pickExample = (prompt: string, slug?: string) => {
-    setInput(prompt)
+    parkAsk(prompt)
     if (slug) {
       const srv = servers.find((s) => s.slug === slug)
       if (srv && !activeServerIds.includes(srv.id)) {
@@ -618,57 +641,105 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     textareaRef.current?.focus()
   }
 
+  // ── A chip runs with the apps its ask needs ───────────────────────────────
+  // Every chip is a sentence one of our surfaces composed: a /markets row
+  // handed to the app, a /t order, the ask door, a chart or example chip, a
+  // clarify chip, a wallet flag. The route's venue gates build nothing without
+  // their dapp in the set — a tap on the EARN board's Aave row answered "it
+  // just needs the Aave dapp in this chat's set", and "2x Short $25 of HYPE on
+  // Hyperliquid" hit the same wall (prod, 2026-09-16, /p/WVONZuJSbfra). So a
+  // chip's send first turns on the apps its sentence composes (lib/ask-apps:
+  // Aave, Hyperliquid, Lido, Morpho… plus NEAR Intents for the bridge a short
+  // wallet needs), waits for the LIVE set to carry them (the request body
+  // reads it), then fires. A typed ask keeps the user's own set and still
+  // meets the add-the-dapp door. The embed's set is its host's
+  // (mountPantessaChat `mcps`) and is never grown from here.
+  //
+  // A load that re-seeds the set in the meantime (the wallet's cached set,
+  // its DB copy) is absorbed by re-adding, up to APP_SEND_ROUNDS; past that
+  // the ask sends anyway and the route names what's missing — a definitive
+  // settle, never a hostage ask ([[chat-id-load-race]]).
+  const [chipSend, setChipSend] = useState<{ text: string; slugs: string[]; rounds: number } | null>(null)
+  const fireChip = (prompt: string) => {
+    // Mid-turn the ask lands in the composer instead, so it's never silently
+    // dropped (handleSend no-ops while loading) — and still sends as a chip.
+    if (loading || pendingPayment) {
+      parkAsk(prompt)
+      textareaRef.current?.focus()
+      return
+    }
+    void handleSend(prompt)
+  }
+  const sendChip = (prompt: string, slugs: readonly string[] = []) => {
+    // A chart ask opens the overlay and a markets ask navigates: reads that
+    // need no dapp (handleSend owns both).
+    if (embedded || parseChartAsk(prompt)?.pair || (!simple && parseMarketsNavAsk(prompt))) {
+      fireChip(prompt)
+      return
+    }
+    const want = [...new Set([...slugs, ...askAppSlugs(prompt)])]
+    if (servers.length > 0 && missingAppIds(want, servers, activeServerIds).length === 0) {
+      fireChip(prompt)
+      return
+    }
+    setChipSend({ text: prompt, slugs: want, rounds: 0 })
+  }
+  useEffect(() => {
+    if (!chipSend || servers.length === 0) return
+    const missing = missingAppIds(chipSend.slugs, servers, activeServerIds)
+    if (missing.length > 0 && chipSend.rounds < APP_SEND_ROUNDS) {
+      const next = [...activeServerIds, ...missing]
+      // An /i link's set stays marked as the link's (store.linkSetActive).
+      if (linkSetActive) setLinkServerIds(next)
+      else setActiveServerIds(next)
+      noteChipApps(missing)
+      if (currentChatId) updateChatServers(currentChatId, next)
+      setChipSend({ ...chipSend, rounds: chipSend.rounds + 1 })
+      return
+    }
+    setChipSend(null)
+    fireChip(chipSend.text)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chipSend, servers, activeServerIds])
+  // The /t order panel and the ask door mount this runtime on pages that
+  // never loaded the directory: a chip send there fetches it once.
+  const directoryAskedRef = useRef(false)
+  useEffect(() => {
+    if (!chipSend || servers.length > 0 || directoryAskedRef.current) return
+    directoryAskedRef.current = true
+    const land = (rows: McpServer[]) => {
+      if (useYeetfulStore.getState().servers.length === 0) setServers(rows)
+    }
+    fetch('/api/servers')
+      .then((r) => r.json())
+      .then((data: McpServer[]) => land(Array.isArray(data) && data.length > 0 ? data : STATIC_SERVERS))
+      .catch(() => land(STATIC_SERVERS))
+  }, [chipSend, servers.length, setServers])
+
   // One-tap RUN for in-page example chips (empty state + splash cards): a
   // click IS the first turn — asking is free, and anything transactional
   // still ends at the wallet signature (wallet-mode payments get the heads-up
   // confirm; native builds get the sign card), so an auto-sent ask can never
-  // move money. When the ask's MCP isn't in the working set yet we fall back
-  // to prefill: the toggle has to land in state before a send would carry it.
+  // move money. The chip's own MCP rides along with the ask's apps.
   const runExample = (prompt: string, slug?: string) => {
-    const srv = slug ? servers.find((s) => s.slug === slug) : undefined
-    if (srv && !activeServerIds.includes(srv.id)) {
-      analytics.exampleRun(prompt, false)
-      pickExample(prompt, slug)
-      return
-    }
     analytics.exampleRun(prompt, true)
-    void handleSend(prompt)
+    sendChip(prompt, slug ? [slug] : [])
   }
 
   // Chart-overlay chips SEND their ask — the click is the send (2026-07-28:
-  // prefill-then-press-send-again read as friction). Mid-turn the ask lands
-  // in the composer instead so it's never silently dropped (handleSend
-  // no-ops while loading).
-  const sendFromOverlay = (prompt: string) => {
-    if (loading || pendingPayment) {
-      setInput(prompt)
-      textareaRef.current?.focus()
-      return
-    }
-    runExample(prompt)
-  }
+  // prefill-then-press-send-again read as friction).
+  const sendFromOverlay = (prompt: string) => runExample(prompt)
 
   // A wallet-window action on a chat surface (a flag's "Fix gas on …", a
-  // rebalance shape): the store hands the complete ask over once and this
-  // sends it — the same path as a chart chip, composer fallback mid-turn.
+  // rebalance shape) and a /markets handoff: the store hands the complete ask
+  // over once and it sends as a chip. Its `mcps` (a bridge leg → NEAR
+  // Intents) ride along with the ask's own apps.
   useEffect(() => {
     if (!composerSend) return
-    // The ask's gate may need MCPs the set lacks (a bridge leg → NEAR
-    // Intents): turn them on and wait for the set to carry them — the
-    // request body reads the LIVE set, so a same-tick send would miss them.
-    const want = composerSend.mcps ?? []
-    if (want.length > 0 && servers.length > 0) {
-      const ids = want.map((slug) => servers.find((s) => s.slug === slug)?.id).filter((id): id is string => !!id)
-      const missing = ids.filter((id) => !activeServerIds.includes(id))
-      if (missing.length > 0) {
-        setActiveServerIds([...activeServerIds, ...missing])
-        return
-      }
-    }
     setComposerSend(null)
-    sendFromOverlay(composerSend.text)
+    sendChip(composerSend.text, composerSend.mcps ?? [])
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [composerSend, servers, activeServerIds])
+  }, [composerSend])
 
   // ── Arrival: a chip tapped on /markets RUNS here ──────────────────────────
   // The tap on the public page was the send; this surface is only where it
@@ -705,7 +776,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     // and a guest turn fired here would race AppSpine's signed-out bounce.
     // The ask parks in the composer instead; nothing runs unasked.
     if (walletStatus === 'disconnected' || !effectiveAddress) {
-      setInput(arrival.text)
+      parkAsk(arrival.text)
       setArrival(null)
       return
     }
@@ -722,7 +793,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // nothing to call off, and the row retires itself after the reply lands.
   const dropArrival = () => {
     if (arrival) {
-      setInput(arrival.text)
+      parkAsk(arrival.text)
       textareaRef.current?.focus()
     }
     setArrival(null)
@@ -849,7 +920,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       // the old "Try <name>: " stub left the visitor composing from scratch.
       pickExample(q ?? TRY_PROMPTS[trySlug] ?? ex?.prompt ?? `Try ${srv?.name ?? 'this agent'}: `, trySlug)
     } else if (q) {
-      setInput(q)
+      parkAsk(q)
       textareaRef.current?.focus()
     }
     window.history.replaceState(null, '', '/chat')
@@ -1301,8 +1372,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   useEffect(() => {
     if (!injectedPrompt || injectedPrompt.at === lastInjectedAt.current) return
     lastInjectedAt.current = injectedPrompt.at
-    if (injectedPrompt.send) void handleSend(injectedPrompt.text)
-    else setInput(injectedPrompt.text)
+    // A first-party injection is a chip: a /t order, the ask door, an /i
+    // link's ask. The embed's host prompt runs on the host's own set.
+    if (injectedPrompt.send) {
+      if (embedded) void handleSend(injectedPrompt.text)
+      else sendChip(injectedPrompt.text)
+    } else parkAsk(injectedPrompt.text)
   }, [injectedPrompt]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Auto-Router: POST the streaming endpoint, buffer each trace event into the
@@ -1507,10 +1582,26 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     setPendingPayment(null)
   }
 
+  // The composer's send. An ask a page parked here, sent unedited, is still
+  // that page's chip and runs with its apps; anything typed is the user's
+  // own ask on the user's own set.
+  const sendComposer = () => {
+    const text = input.trim()
+    const parked = parkedAskRef.current
+    if (text && text === parked && !loading && !pendingPayment) {
+      parkedAskRef.current = null
+      setInput('')
+      sendChip(text)
+      return
+    }
+    if (text && !loading && !pendingPayment) parkedAskRef.current = null
+    void handleSend()
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      handleSend()
+      sendComposer()
     }
   }
 
@@ -2142,7 +2233,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                       (() => {
                         const clarify = clarifyRequestOf(msg.meta)
                         return clarify ? (
-                          <ClarifyChips clarify={clarify} disabled={loading} onPick={(resume) => void handleSend(resume)} />
+                          <ClarifyChips clarify={clarify} disabled={loading} onPick={(resume) => sendChip(resume)} />
                         ) : null
                       })()}
                     {/* A spend-policy refusal (blocked build) is fixable right
@@ -2333,7 +2424,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             disabled={loading || !!pendingPayment}
           />
           <button
-            onClick={() => void handleSend()}
+            onClick={() => sendComposer()}
             disabled={!input.trim() || loading || !!pendingPayment}
             className={cn(
               'flex-shrink-0 w-11 h-11 md:w-9 md:h-9 rounded-full flex items-center justify-center transition-all duration-200',

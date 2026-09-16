@@ -8840,7 +8840,8 @@ async function main() {
         !/Ask the chat to fund it/.test(wfPanel) &&
         /takeFire\(\)\n\s+send\(fire\.text\)/.test(wfDoor) && /setActiveServerIds\(\[\.\.\.activeServerIds, \.\.\.missing\]\)/.test(wfDoor) && /fetch\('\/api\/servers'\)/.test(wfDoor) &&
         /walletAddress && walletStatus !== 'connected' && elapsed < 10_000/.test(wfDoor) &&
-        /sendFromOverlay\(composerSend\.text\)/.test(wfChat) && /setActiveServerIds\(\[\.\.\.activeServerIds, \.\.\.missing\]\)/.test(wfChat) && /flags: walletFlags\(chains, ethUsd\)/.test(wfView),
+        // Re-pinned 2026-09-16 (apps follow the ask): the chat's send slot is a chip send — the flag's mcps ride with the ask's own apps, activated in sendChip.
+        /sendChip\(composerSend\.text, composerSend\.mcps \?\? \[\]\)/.test(wfChat) && /const next = \[\.\.\.activeServerIds, \.\.\.missing\]/.test(wfChat) && /flags: walletFlags\(chains, ethUsd\)/.test(wfView),
     )
     // Over HTTP: the drill wallet's view carries the flags array, and every
     // ask on it is a native action in the ladder replica.
@@ -21675,12 +21676,13 @@ async function main() {
       /if \(servers\.length === 0\) return/.test(chatSrcA) &&
         /if \(walletStatus === 'connecting' \|\| walletStatus === 'reconnecting'\) return/.test(chatSrcA) &&
         /setComposerSend\(\{ text: arrival\.text, mcps: arrival\.mcps \}\)/.test(chatSrcA) &&
-        /setComposerSend\(null\)\s*\n\s*sendFromOverlay\(composerSend\.text\)/.test(chatSrcA),
+        // Re-pinned 2026-09-16 (apps follow the ask): the consumer sends as a chip, so the handoff runs with its ask's apps.
+        /setComposerSend\(null\)\s*\n\s*sendChip\(composerSend\.text, composerSend\.mcps \?\? \[\]\)/.test(chatSrcA),
     )
 
     check(
       'arrival/core: a record that outlived its wallet NEVER fires a guest turn racing AppSpine\'s signed-out bounce — settled disconnected, or no address, parks the ask in the composer and drops the record',
-      /if \(walletStatus === 'disconnected' \|\| !effectiveAddress\) \{\s*\n\s*setInput\(arrival\.text\)\s*\n\s*setArrival\(null\)\s*\n\s*return\s*\n\s*\}/.test(chatSrcA) &&
+      /if \(walletStatus === 'disconnected' \|\| !effectiveAddress\) \{\s*\n\s*parkAsk\(arrival\.text\)\s*\n\s*setArrival\(null\)\s*\n\s*return\s*\n\s*\}/.test(chatSrcA) &&
         // the guard sits BEFORE the send, and the send is the only setComposerSend the arrival path makes
         chatSrcA.indexOf("walletStatus === 'disconnected' || !effectiveAddress") < chatSrcA.indexOf('setComposerSend({ text: arrival.text'),
     )
@@ -21695,7 +21697,7 @@ async function main() {
     check(
       'arrival/core: "Don\'t run it" is offered ONLY while the row still holds (after the fire there is nothing to call off), and it PARKS the ask in the composer instead of losing it — the pending send is dropped because the fire effect bails on a cleared intent',
       /onDismiss=\{arrivalPhase === 'holding' \? dropArrival : undefined\}/.test(chatSrcA) &&
-        /const dropArrival = \(\) => \{\s*\n\s*if \(arrival\) \{\s*\n\s*setInput\(arrival\.text\)\s*\n\s*textareaRef\.current\?\.focus\(\)\s*\n\s*\}\s*\n\s*setArrival\(null\)\s*\n\s*\}/.test(chatSrcA) &&
+        /const dropArrival = \(\) => \{\s*\n\s*if \(arrival\) \{\s*\n\s*parkAsk\(arrival\.text\)\s*\n\s*textareaRef\.current\?\.focus\(\)\s*\n\s*\}\s*\n\s*setArrival\(null\)\s*\n\s*\}/.test(chatSrcA) &&
         /if \(!arrival \|\| arrivalPhase === 'sent'\) return/.test(chatSrcA),
     )
 
@@ -22172,6 +22174,238 @@ async function main() {
     check(
       'earn (view): a remembered Map·List choice wins; with nothing remembered a ≥1280px viewport opens on the MAP and a narrower one on the list; junk stored falls back to the width rule',
       earnDefaultView('list', 1600) === 'list' && earnDefaultView('map', 375) === 'map' && earnDefaultView(null, 1440) === 'map' && earnDefaultView(null, 1279) === 'list' && earnDefaultView('grid', 1440) === 'map',
+    )
+  }
+
+  // ── Apps follow the ask (2026-09-16) ─────────────────────────────────────
+  // A chip tapped on /markets ran in the app WITHOUT the dapp its ask needs:
+  // the EARN board's "Supply $25 of USDT to Aave at the best rate" answered
+  // "it just needs the Aave dapp in this chat's set" (prod /p/WVONZuJSbfra),
+  // and "2x Short $25 of HYPE on Hyperliquid" the Hyperliquid door. Every
+  // chip send (a /markets handoff, a /t order, the ask door, chart / example
+  // / clarify chips, an unedited parked ask) now turns on the apps its
+  // sentence composes (lib/ask-apps) before it fires. Proven here three ways:
+  // every sentence a surface composes reaches its gate WITH those apps (the
+  // ladder replica names the gate, the route's own detectors read the set),
+  // the live route answers the door without them and claims the turn with
+  // them, and the send paths in the source all go through the one chip send.
+  {
+    const askApps = await import('../lib/ask-apps')
+    const intentLinks = await import('../lib/intent-links')
+    const { aaveAgentOf: aaveAgentOfA } = await import('../lib/aave-supply')
+    const { morphoAgentOf: morphoAgentOfA } = await import('../lib/morpho-supply')
+    const { lidoAgentOf: lidoAgentOfA } = await import('../lib/lido-stake')
+    const { hlAgentOf: hlAgentOfA } = await import('../lib/hyperliquid-exec')
+    const { quickActs: qaA, venuesFor: venuesForA, composeCompound: compoundA, compoundPresets: presetsA } = await import('../lib/symbol-venues')
+    const { composeAsk: composeAskA, sidesFor: sidesForA, execAsks: execAsksA } = await import('../lib/trade-asks')
+    const { composeLineActions: lineActsA } = await import('../lib/chart-actions')
+    const { verdictChips: verdictA } = await import('../lib/technicals')
+    const mcA = await import('../lib/markets-copy')
+    const { chipMenu: menuA } = await import('../lib/markets-ai')
+    const { ladderFilterMenu: ladderMenuA } = await import('../lib/markets-ai-ladder')
+    const { alertActionChips: alertChipsA } = await import('../lib/watchlists')
+    const { marketSections: sectionsA } = await import('../lib/markets')
+    const { rowsFromWire: earnWireA } = await import('../lib/earn')
+
+    type DirRow = { id: string; slug: string; name: string; description?: string | null; endpoint?: string | null; gated?: boolean }
+    // The route's own reading of a working set, per app (the doors it answers).
+    const APP_DETECT: Record<string, { label: string; ok: (rows: DirRow[]) => boolean }> = {
+      aave: { label: 'Aave', ok: (rows) => { const r = aaveAgentOfA(rows); return !!r.agent && r.usable } },
+      'morpho-free': { label: 'Morpho', ok: (rows) => { const r = morphoAgentOfA(rows); return !!r.agent && r.usable } },
+      'lido-free': { label: 'Lido', ok: (rows) => { const r = lidoAgentOfA(rows as never); return !!r.agent && r.usable } },
+      'hyperliquid-free': { label: 'Hyperliquid', ok: (rows) => { const r = hlAgentOfA(rows); return !!r.agent && r.usable } },
+      'near-intents-mcp-yeetful': { label: 'NEAR Intents', ok: (rows) => { const r = crossChainAgentOf(rows); return !!r.agent && r.usable } },
+    }
+    // The ladder replica's gate → the app its route door asks for.
+    const NEED_BY_GATE: Record<string, string> = {
+      'aave-supply': 'aave', 'aave-op': 'aave', 'morpho-lend': 'morpho-free', 'morpho-op': 'morpho-free',
+      guardian: 'hyperliquid-free', hyperliquid: 'hyperliquid-free', lido: 'lido-free', 'cross-chain': 'near-intents-mcp-yeetful',
+    }
+    const rowsFor = (dir: DirRow[], slugs: readonly string[]) => { const ids = askApps.resolveAppIds(slugs, dir); return dir.filter((r) => ids.includes(r.id)) }
+
+    // Compose: Morpho-named lending composes Morpho, never Aave.
+    const morphoAsk = 'Lend $25 of USDC on Morpho on Base'
+    check(
+      'apps follow the ask (compose): a Morpho-named lending ask composes Morpho and NOT Aave (the EARN board\'s Morpho rows composed to Aave via "lend" and met the add-Morpho door); Aave-named and venue-less lending still compose Aave',
+      composeMcps(morphoAsk).includes('morpho-free') && !composeMcps(morphoAsk).includes('aave') &&
+        composeMcps('Withdraw my USDC from Morpho').includes('morpho-free') && !composeMcps('Withdraw my USDC from Morpho').includes('aave') &&
+        composeMcps('Supply $25 of USDT to Aave at the best rate').includes('aave') && !composeMcps('Supply $25 of USDT to Aave at the best rate').includes('morpho-free') &&
+        composeMcps('Borrow 25 USDC from Aave').includes('aave') && composeMcps('Lend 100 USDC').includes('aave'),
+      JSON.stringify({ morpho: composeMcps(morphoAsk), withdraw: composeMcps('Withdraw my USDC from Morpho') }),
+    )
+    const fiveRuleAsk = 'Swap my AAPL, stake ETH on Lido, supply USDC to Aave and vote on the proposal'
+    check(
+      'apps follow the ask (compose): a link keeps its four-slug cap, a chip send takes every composed app — NEAR Intents included even when the rules fill the cap',
+      composeMcps(fiveRuleAsk).length === 4 && !composeMcps(fiveRuleAsk).includes('near-intents-mcp-yeetful') &&
+        askApps.askAppSlugs(fiveRuleAsk).length > 4 && askApps.askAppSlugs(fiveRuleAsk).includes('near-intents-mcp-yeetful') &&
+        JSON.stringify(askApps.askAppSlugs(morphoAsk)) === JSON.stringify(composeMcps(morphoAsk)),
+      JSON.stringify({ link: composeMcps(fiveRuleAsk), chip: askApps.askAppSlugs(fiveRuleAsk) }),
+    )
+    check(
+      'apps follow the ask (compose): Morpho is a mintable app — a creator can pick it, sanitizeMcps keeps it, and its "runs on" pill says Morpho',
+      intentLinks.MINTABLE_MCPS.some((m) => m.slug === 'morpho-free') && JSON.stringify(intentLinks.sanitizeMcps(['morpho-free'])) === '["morpho-free"]' && runsOnLabel('morpho-free', morphoAsk) === 'Morpho',
+    )
+
+    // Resolve: the slug a surface names finds the row the route's gate reads,
+    // on any database's spelling — and never a paid lookalike.
+    const fx = (slug: string, name: string, extra: Partial<DirRow> = {}): DirRow => ({ id: `fx-${slug}`, slug, name, description: '', gated: false, endpoint: `https://${slug}.fixture/mcp`, ...extra })
+    const prodDir: DirRow[] = [fx('aave', 'Aave'), fx('morpho-free', 'Morpho (Free)'), fx('lido-free', 'Lido (Free)'), fx('hyperliquid-free', 'Hyperliquid (Free)'), fx('near-intents-mcp-yeetful', 'NEAR Intents MCP · Yeetful', { description: 'Cross-chain swaps over MCP via the official NEAR Intents 1Click API' }), fx('uniswap-free', 'Uniswap (Free)', { endpoint: null }), fx('robinhood-free', 'Robinhood Chain (Free)'), fx('yeetful-tool-funding', 'Pantessa Finance', { description: 'cross-chain funding offers' })]
+    const seedDir: DirRow[] = [fx('aave-free', 'Aave (Free)'), fx('morpho-free', 'Morpho (Free)'), fx('lido-free', 'Lido (Free)'), fx('hyperliquid-free', 'Hyperliquid (Free)'), fx('near-intents-free', 'NEAR Intents (Free)')]
+    check(
+      'apps follow the ask (resolve): the route\'s own door slug `aave-free` lands on prod\'s `aave` row (the "Add Aave with this ask ready" link lit nothing on prod), `aave` lands on the seed\'s `aave-free`, and NEAR Intents resolves from any of its three spellings',
+      JSON.stringify(askApps.resolveAppIds(['aave-free'], prodDir)) === '["fx-aave"]' &&
+        JSON.stringify(askApps.resolveAppIds(['aave'], seedDir)) === '["fx-aave-free"]' &&
+        JSON.stringify(askApps.resolveAppIds(['near-intents'], prodDir)) === '["fx-near-intents-mcp-yeetful"]' &&
+        JSON.stringify(askApps.resolveAppIds(['near-intents-mcp-yeetful'], seedDir)) === '["fx-near-intents-free"]' &&
+        JSON.stringify(askApps.resolveAppIds(['aave', 'aave-free', 'nope-free'], prodDir)) === '["fx-aave"]',
+    )
+    check(
+      'apps follow the ask (resolve): a paid lookalike is never lit (a gated "Aave Yield Pro" row with no free Aave), a description that merely says "cross-chain" is never taken for NEAR Intents, and missingAppIds skips what the set already has',
+      askApps.resolveAppIds(['aave'], [fx('aave-yield-pro', 'Aave Yield Pro', { gated: true })]).length === 0 &&
+        askApps.resolveAppIds(['near-intents-mcp-yeetful'], [fx('yeetful-tool-funding', 'Pantessa Finance', { description: 'cross-chain funding offers' })]).length === 0 &&
+        JSON.stringify(askApps.missingAppIds(['aave', 'near-intents-mcp-yeetful'], prodDir, ['fx-near-intents-mcp-yeetful'])) === '["fx-aave"]',
+    )
+    const liveDir = (await (await fetch(`${BASE}/api/servers`)).json()) as DirRow[]
+    const parity = [['prod-shaped', prodDir], ['seed-shaped', seedDir], ['live /api/servers', liveDir]] as const
+    const parityMiss: string[] = []
+    for (const [label, dir] of parity) {
+      for (const [slug, d] of Object.entries(APP_DETECT)) {
+        const picked = rowsFor(dir, [slug])
+        if (picked.length !== 1 || !d.ok(picked)) parityMiss.push(`${label}: ${slug} → ${picked.map((r) => r.slug).join(',') || 'nothing'}`)
+      }
+    }
+    check(
+      'apps follow the ask (resolve ↔ route): on a prod-shaped, a seed-shaped and the LIVE directory, each gated app resolves to exactly one row that the route\'s own detector (aaveAgentOf · morphoAgentOf · lidoAgentOf · hlAgentOf · crossChainAgentOf) reads as present AND usable',
+      parityMiss.length === 0 && liveDir.length > 0,
+      parityMiss.join(' | ') || `${liveDir.length} live rows`,
+    )
+
+    // The proof: every sentence our surfaces compose reaches its gate with
+    // the apps a chip send lights (and the link set for the same sentence
+    // carries them too).
+    const corpus: { sender: string; ask: string }[] = []
+    const seenA = new Set<string>()
+    const addA = (sender: string, ask: string | null | undefined) => {
+      if (!ask || seenA.has(ask)) return
+      seenA.add(ask)
+      corpus.push({ sender, ask })
+    }
+    const ratingsA = ['strong_sell', 'sell', 'neutral', 'buy', 'strong_buy'] as const
+    for (const sec of sectionsA()) {
+      for (const r of sec.rows) {
+        const pair = chartPairFor(r.symbol)
+        if (!pair) continue
+        const last = pair.source === 'robinhood' ? 187.5 : 2447.25
+        for (const a of qaA(r.symbol, pair)) addA('QuickAct', a.ask)
+        for (const tpl of [`Buy $10 of ${r.symbol}`, `Sell $10 of ${r.symbol}`, `DCA $10 into ${r.symbol} weekly`]) addA('Rail', tpl)
+        for (const c of alertChipsA({ symbol: r.symbol, condition: 'below', value: last * 0.95, basePrice: null }, pair)) addA('Alert', c.ask)
+        const menus = [menuA({ pair, last: null, tech: null }), ...ratingsA.map((rating) => menuA({ pair, last, tech: { summary: { rating }, pivots: { classic: { s1: last * 0.97, r1: last * 1.03 } } } as never }))]
+        for (const m of menus) for (const c of ladderMenuA(m).chips) addA('MorningTape', c.ask)
+        for (const v of venuesForA(r.symbol, pair, { usd: 25, last })) addA('RouteTable', v.ask)
+        for (const side of sidesForA(pair)) addA('TradeTab', composeAskA(pair, side, { usd: 50, pct: 5, cadence: 'weekly' }))
+        for (const e of execAsksA(pair, { usd: 50, last, leverage: 2 })) addA('ExecStrip', e.ask)
+        for (const price of [last * 0.9, last * 1.1]) for (const o of lineActsA({ symbol: r.symbol, source: pair.source, price, last })) addA('ChartLevel', o.action.ask)
+        for (const rating of ratingsA) for (const c of verdictA({ symbol: r.symbol, source: pair.source, rating, support: last * 0.97, resistance: last * 1.03 })) addA('Verdict', c.ask)
+        for (const p of presetsA(r.symbol, pair)) addA('Compound', compoundA(r.symbol, pair, p.kinds, { usd: 25 }).ask)
+      }
+    }
+    for (const b of mcA.HERO_REEL) addA('Hero', b.ask)
+    for (const v of mcA.LANDING_VENUES) addA('LandingVenue', v.ask)
+    addA('VenueBand', mcA.VENUE_BAND.compound)
+    const earnLive = (await (await fetch(`${BASE}/api/markets/earn`)).json()) as { rows: unknown[] }
+    for (const r of earnWireA(earnLive.rows as never)) for (const usd of [10, 25, 100]) addA('EarnBoard', r.askFor(usd))
+    for (const a of ['USDC', 'USDT', 'ETH']) addA('EarnBoard', `Supply $25 of ${a} to Aave at the best rate`)
+    addA('EarnBoard', 'Stake 0.0104 ETH on Lido')
+    addA('EarnBoard', morphoAsk)
+    const needCount: Record<string, number> = {}
+    const chipMiss: string[] = []
+    const linkMiss: string[] = []
+    for (const { sender, ask } of corpus) {
+      const need = NEED_BY_GATE[String(simulateLadder(ask).gate)]
+      if (!need) continue
+      needCount[need] = (needCount[need] ?? 0) + 1
+      if (!APP_DETECT[need].ok(rowsFor(liveDir, askApps.askAppSlugs(ask)))) chipMiss.push(`[${sender}] ${ask} → ${APP_DETECT[need].label}`)
+      if (!APP_DETECT[need].ok(rowsFor(liveDir, composeMcps(ask)))) linkMiss.push(`[${sender}] ${ask} → ${APP_DETECT[need].label}`)
+    }
+    check(
+      `apps follow the ask (proof): ${corpus.length} sentences the surfaces compose (QuickAct · rail · alerts · Morning tape · route table · Trade tab · exec strip · chart levels · verdicts · compound · hero · landing venues · EARN board) — every one whose gate needs a dapp (${Object.entries(needCount).map(([k, v]) => `${APP_DETECT[k].label} ${v}`).join(' · ')}) reaches it with the apps a chip send lights, and each gated lane is exercised`,
+      corpus.length > 2_000 && chipMiss.length === 0 && Object.keys(APP_DETECT).every((k) => (needCount[k] ?? 0) > 0),
+      chipMiss.slice(0, 8).join(' | ') || JSON.stringify(needCount),
+    )
+    check(
+      'apps follow the ask (proof): an intent link minted from any of those sentences opens with the same dapp (composeMcps, capped at four)',
+      linkMiss.length === 0,
+      linkMiss.slice(0, 8).join(' | '),
+    )
+
+    // The live route: the door without the apps, the lane with them.
+    const laneAsks: [string, RegExp][] = [
+      ['Supply $25 of USDT to Aave at the best rate', /^🏦/],
+      ['Borrow 25 USDC from Aave', /^🏦/],
+      ['2x Short $25 of HYPE on Hyperliquid', /^📈/],
+      ['Protect my ETH long with a 5% stop', /^🛡️/],
+      ['Stake 0.0104 ETH on Lido', /^🌊/],
+      [morphoAsk, /^🏦/],
+      ['Swap 25 USDC from Ethereum to ETH on Base', /^🔗/],
+    ]
+    const laneMiss: string[] = []
+    for (const [ask, lane] of laneAsks) {
+      const turn = async (rows: DirRow[]) =>
+        (await (await fetch(`${BASE}/api/chat`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+          body: JSON.stringify({ message: ask, activeServers: rows, activeServerIds: rows.map((r) => r.id), history: [] }),
+        })).json()) as { reply?: string; door?: { mcps?: string } }
+      const bare = await turn([])
+      const lit = await turn(rowsFor(liveDir, askApps.askAppSlugs(ask)))
+      const doorSlug = bare.door?.mcps ?? ''
+      // The door's own link slug must light a row the gate reads, on prod's spelling too.
+      const doorWorks = !!doorSlug && Object.values(APP_DETECT).some((d) => d.ok(rowsFor(liveDir, [doorSlug])) && d.ok(rowsFor(prodDir, [doorSlug])))
+      const bareIsDoor = /with this ask ready/.test(String(bare.reply)) && doorWorks
+      const litClaims = !lit.door && !/with this ask ready/.test(String(lit.reply)) && lane.test(String(lit.reply))
+      if (!bareIsDoor || !litClaims) laneMiss.push(`${ask}: bare=${bareIsDoor ? 'door' : String(bare.reply).slice(0, 60)} lit=${String(lit.reply).slice(0, 80)}`)
+    }
+    check(
+      'apps follow the ask (route): each lane (Aave supply + borrow · Hyperliquid order + guardian · Lido · Morpho · a cross-chain swap) answers the add-the-dapp door on an EMPTY set — whose link slug now lights the right row on prod\'s spelling too — and CLAIMS the turn once the set carries the apps its chip lights',
+      laneMiss.length === 0,
+      laneMiss.join(' | '),
+    )
+
+    // The send paths: every chip goes through the one chip send.
+    const chatSrcF = await readFile('components/ChatInterface.tsx', 'utf8')
+    check(
+      'apps follow the ask (source): example + chart + clarify chips, the composerSend slot (/markets handoff + wallet flags), a first-party injected prompt (/t orders, the ask door, /i) and an unedited parked ask all send through sendChip — which the embed skips (host-owned set) — and the old prefill fallback is gone',
+      /const runExample = \(prompt: string, slug\?: string\) => \{\s*\n\s*analytics\.exampleRun\(prompt, true\)\s*\n\s*sendChip\(prompt, slug \? \[slug\] : \[\]\)/.test(chatSrcF) &&
+        !/analytics\.exampleRun\(prompt, false\)/.test(chatSrcF) &&
+        /const sendFromOverlay = \(prompt: string\) => runExample\(prompt\)/.test(chatSrcF) &&
+        /onPick=\{\(resume\) => sendChip\(resume\)\}/.test(chatSrcF) &&
+        /if \(embedded\) void handleSend\(injectedPrompt\.text\)\s*\n\s*else sendChip\(injectedPrompt\.text\)/.test(chatSrcF) &&
+        /\} else parkAsk\(injectedPrompt\.text\)/.test(chatSrcF) &&
+        /if \(text && text === parked && !loading && !pendingPayment\) \{\s*\n\s*parkedAskRef\.current = null\s*\n\s*setInput\(''\)\s*\n\s*sendChip\(text\)/.test(chatSrcF) &&
+        (chatSrcF.match(/sendComposer\(\)/g) ?? []).length === 2 && !/onClick=\{\(\) => void handleSend\(\)\}/.test(chatSrcF) &&
+        /if \(embedded \|\| parseChartAsk\(prompt\)\?\.pair \|\| \(!simple && parseMarketsNavAsk\(prompt\)\)\) \{/.test(chatSrcF) &&
+        /const want = \[\.\.\.new Set\(\[\.\.\.slugs, \.\.\.askAppSlugs\(prompt\)\]\)\]/.test(chatSrcF),
+    )
+    check(
+      'apps follow the ask (source): the chip send waits for the LIVE set to carry the apps (the request body reads it), keeps an /i link\'s set marked as the link\'s, re-adds after a load re-seeds the set at most APP_SEND_ROUNDS times and then sends anyway, and loads the directory once where the page never did (/t, the ask door)',
+      /if \(linkSetActive\) setLinkServerIds\(next\)\s*\n\s*else setActiveServerIds\(next\)/.test(chatSrcF) &&
+        /missing\.length > 0 && chipSend\.rounds < APP_SEND_ROUNDS/.test(chatSrcF) && /const APP_SEND_ROUNDS = \d+/.test(chatSrcF) &&
+        /if \(!chipSend \|\| servers\.length > 0 \|\| directoryAskedRef\.current\) return/.test(chatSrcF) &&
+        /setChipSend\(null\)\s*\n\s*fireChip\(chipSend\.text\)/.test(chatSrcF),
+    )
+    const [wsSrcF, irSrcF, doorSrcF] = await Promise.all(['components/ChatWorkspace.tsx', 'components/IntentRuntime.tsx', 'components/AskDoor.tsx'].map((f) => readFile(f, 'utf8')))
+    check(
+      'apps follow the ask (source): the ?mcps= deep link (the route\'s own "Add X with this ask ready" door), an /i link\'s set and the ask door\'s fire all resolve slugs through the app families — no exact-slug lookup left to miss prod\'s `aave`',
+      /const ids = resolveAppIds\(slugs, servers\)/.test(wsSrcF) && /resolveAppIds\(\s*\n\s*mcps\.split\(','\)/.test(irSrcF) && /const missing = missingAppIds\(want, servers, activeServerIds\)/.test(doorSrcF) &&
+        !/srv\.slug === s\.trim\(\)/.test(irSrcF) && !/want\.map\(\(slug\) => servers\.find/.test(doorSrcF),
+    )
+    const storeSrcF = await readFile('lib/store.ts', 'utf8')
+    check(
+      'apps follow the ask (source): the apps a chip turned on survive a late working-set restore — sendChip notes them (store.chipApps, not persisted) and the wallet\'s DB copy, when it lands after the chip, is applied WITH them (so a signed-in visitor\'s next typed turn keeps the chip\'s Aave)',
+      /noteChipApps\(missing\)/.test(chatSrcF) &&
+        /noteChipApps: \(ids\) => set\(\(s\) => \(\{ chipApps: \{ ids: \[\.\.\.new Set\(\[\.\.\.\(s\.chipApps\?\.ids \?\? \[\]\), \.\.\.ids\]\)\], at: Date\.now\(\) \} \}\)\)/.test(storeSrcF) &&
+        !/chipApps: state\.chipApps/.test(storeSrcF) &&
+        /const kept = chip && chip\.at >= loadStartedAt \? chip\.ids\.filter/.test(wsSrcF) && /if \(valid\.length\) setActiveServerIds\(\[\.\.\.new Set\(\[\.\.\.valid, \.\.\.kept\]\)\]\)/.test(wsSrcF),
     )
   }
 
