@@ -22,7 +22,7 @@
  *   npm run test:api   # in another
  */
 import { readFile } from 'node:fs/promises'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join as pathJoin } from 'node:path'
 import { tokenMark } from '../lib/token-icons'
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
@@ -139,7 +139,7 @@ import { decideProposalGate } from '../lib/roster-propose'
 import { decideManagerMove, stackingRefusal, undecidedProposalFor } from '../lib/roster-manager'
 import { markPeriodKey, parseMarkAsk, reviewFlipDecision, tryoutReportCard, PAPER_LABEL, TRYOUT_BANNED_PHRASES } from '../lib/roster-tryouts'
 import { houseManagerRow, resolveHouseManager, HOUSE_MANAGER_ID } from '../lib/roster-managers'
-import { walletLineup, walletLaneHint, wcConfigured, WC_APP_METADATA , CDP_INIT_PATIENCE_MS, emailLaneHint } from '../lib/wallet-lineup'
+import { walletLineup, walletLaneHint, walletLaneChips, wcConfigured, WC_APP_METADATA , CDP_INIT_PATIENCE_MS, emailLaneHint, WALLET_LANE_NAMES, type WalletLaneId } from '../lib/wallet-lineup'
 import { hasStoredWalletConnection, shouldRerunConnectAsk, connectAskReleased, bootHoldingFor, initialHoldElapsed, CONNECT_ASK_RELEASE_GRACE_MS, CONNECT_ASK_RERUN_WINDOW_MS, WAGMI_STORE_KEY, WAGMI_RECENT_CONNECTOR_KEY } from '../lib/wallet-reconnect'
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
@@ -5217,15 +5217,17 @@ async function main() {
   // ── The doors: WalletConnect lane (lib/wallet-lineup) ────────────────────
   console.log('— wallet lineup (WC lane, doors run)')
   check(
-    'wallet lineup: env absent = EXACTLY today\'s connectors (injected/MetaMask/Coinbase, in order); a real WC id adds the two WC lanes; the placeholder never counts',
+    // Re-pinned 2026-09-16 (Phantom joins the injected lanes — Nate: "add
+    // phantom wallet to our onboarding"); before: injected/MetaMask/Coinbase.
+    'wallet lineup: env absent = EXACTLY the injected lanes (injected/MetaMask/Coinbase/Phantom, in order); a real WC id adds the two WC lanes; the placeholder never counts',
     (() => {
       const dark = walletLineup(null)
       const placeholder = walletLineup('YOUR_WALLETCONNECT_PROJECT_ID')
       const lit = walletLineup('abc123realprojectid')
       return (
-        JSON.stringify(dark) === JSON.stringify(['injected', 'metaMask', 'coinbase']) &&
+        JSON.stringify(dark) === JSON.stringify(['injected', 'metaMask', 'coinbase', 'phantom']) &&
         JSON.stringify(placeholder) === JSON.stringify(dark) &&
-        JSON.stringify(lit) === JSON.stringify(['injected', 'metaMask', 'coinbase', 'rainbow', 'walletConnect']) &&
+        JSON.stringify(lit) === JSON.stringify(['injected', 'metaMask', 'coinbase', 'phantom', 'rainbow', 'walletConnect']) &&
         wcConfigured(undefined) === false &&
         wcConfigured('abc123realprojectid') === true &&
         // the modal lane's one env-sensitive line: absent = today's copy,
@@ -5234,6 +5236,50 @@ async function main() {
         /QR/.test(walletLaneHint('abc123realprojectid')) &&
         WC_APP_METADATA.appName === 'Pantessa' &&
         WC_APP_METADATA.appUrl === 'https://www.pantessa.com'
+      )
+    })(),
+  )
+  // Phantom (2026-09-16): the lane exists in BOTH env states, is named in the
+  // lane hint both ways, draws in the door's logo strip, and has a factory +
+  // a mark — the three files "ADDING A WALLET" (components/wallet-marks) says
+  // to touch, read from source so a lane can't be added to the lineup without
+  // its connector or its logo.
+  check(
+    'wallet lineup: Phantom is an injected lane in both env states, named in the hint, and a chip in the door strip with its accessible name',
+    (() => {
+      const dark = walletLineup(null)
+      const lit = walletLineup('abc123realprojectid')
+      const chipDark = walletLaneChips(null)
+      const chipLit = walletLaneChips('abc123realprojectid')
+      const phantomIdx = dark.indexOf('phantom')
+      return (
+        phantomIdx > dark.indexOf('coinbase') &&
+        lit.indexOf('phantom') < lit.indexOf('rainbow') &&
+        /Phantom/.test(walletLaneHint(null)) &&
+        /Phantom/.test(walletLaneHint('abc123realprojectid')) &&
+        WALLET_LANE_NAMES.phantom === 'Phantom' &&
+        chipDark.some((c) => c.id === 'phantom' && c.name === 'Phantom') &&
+        chipLit.some((c) => c.id === 'phantom' && c.name === 'Phantom') &&
+        // the catch-all rule is unchanged by the new lane: last without WC, gone with it
+        chipDark[chipDark.length - 1].id === 'injected' &&
+        !chipLit.some((c) => c.id === 'injected')
+      )
+    })(),
+  )
+  check(
+    'wallet lineup: every lane has a RainbowKit factory (lib/wagmi) and a vendored mark (components/wallet-marks) — Phantom included',
+    (() => {
+      const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      const wagmi = strip(readFileSync(pathJoin(process.cwd(), 'lib/wagmi.ts'), 'utf8'))
+      const marks = strip(readFileSync(pathJoin(process.cwd(), 'components/wallet-marks.tsx'), 'utf8'))
+      const lanes: WalletLaneId[] = walletLineup('abc123realprojectid')
+      const factories = wagmi.slice(wagmi.indexOf('const WALLET_FACTORIES'), wagmi.indexOf('const connectors'))
+      const markTable = marks.slice(marks.indexOf('export const WALLET_MARKS'))
+      return (
+        lanes.every((id) => new RegExp(`\\b${id}:\\s*\\w+Wallet\\b`).test(factories)) &&
+        lanes.every((id) => new RegExp(`\\b${id}:\\s*\\w+WalletMark\\b`).test(markTable)) &&
+        /phantomWallet,/.test(wagmi) && /from '@rainbow-me\/rainbowkit\/wallets'/.test(wagmi) &&
+        /export function PhantomWalletMark/.test(marks) && /fill="#AB9FF2"/.test(marks)
       )
     })(),
   )
