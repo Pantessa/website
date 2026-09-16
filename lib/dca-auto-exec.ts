@@ -19,7 +19,7 @@ import { spendPermissionManagerAbi } from '@coinbase/cdp-sdk'
 import { encodeFunctionData } from 'viem'
 import prisma from '@/lib/db'
 import { jobsEnv } from '@/lib/jobs-runner'
-import { chainById, primaryStable, publicClientFor } from '@/lib/chains'
+import { buysNativeEth, chainById, primaryStable, publicClientFor } from '@/lib/chains'
 import { getActiveGrant } from '@/lib/grant-store'
 import { resolveToken } from '@/lib/cow'
 import { ensureTokenList } from '@/lib/token-list'
@@ -539,6 +539,7 @@ export async function executeAutoDcaSweep(limit = 2): Promise<AutoSweepSummary> 
         spender,
         chain: { chainId: s.chainId, swapRouter02: registryRouter, usdcAddress: stable.address },
         expectedBuyAddr: buyAddr,
+        nativeOut: buysNativeEth(s.buyToken, s.chainId),
         steps,
         pulledAtomic: pulled,
         nowSec,

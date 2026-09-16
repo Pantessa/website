@@ -23,7 +23,7 @@ import {
 import type { McpServer } from '@/lib/store'
 import { voteRequestFromToolResult, friendlyVoteError, type VoteRequest } from '@/lib/snapshot-vote'
 import { parseVoteIntent, resolveVoteReference, type VoteIntent } from '@/lib/vote-intent'
-import { crossChainAgentOf, detectCrossChain, parseSwapIntent, parseSwapFollowUp, swapClarify, swapWorkingContext, type SwapIntent } from '@/lib/swap-intent'
+import { crossChainAgentOf, detectCrossChain, parseSwapIntent, parseSwapFollowUp, pickSwapVenue, swapClarify, swapWorkingContext, type SwapIntent } from '@/lib/swap-intent'
 import { chainById, chainByKey, primaryStable, publicClientFor, sanitizeChainId, DEFAULT_CHAIN_ID, APP_CHAINS, gasIsStable, STABLE_GAS_RESERVE } from '@/lib/chains'
 import { usdPerToken, usdToTokenAmount } from '@/lib/usd-probe'
 import { parseRobinhoodBridge, buildRobinhoodBridge } from '@/lib/robinhood-bridge'
@@ -2165,11 +2165,15 @@ async function handleChatTurn(req: NextRequest) {
         }
         const uniActive = activeServers.some((s) => s.slug === 'uniswap' || /uniswap/i.test(s.name))
         const cowActive = activeServers.some((s) => s.slug === 'cow-swap' || /cow[\s·-]?swap/i.test(s.name))
-        let venue: 'uniswap' | 'cow' =
-          /\buni\s?swap\b|\buni\b/i.test(message) || (uniActive && !cowActive) ? 'uniswap' : 'cow'
-        // The venue must exist on the target chain — CoW has no order book on
-        // Robinhood Chain, so the default flips to Uniswap there.
-        if (venue === 'cow' && !buildChain.cow) venue = 'uniswap'
+        // The venue must exist on the target chain (CoW has no order book on
+        // Robinhood Chain or Optimism), and a market buy of native ETH goes
+        // to Uniswap v3's unwrap: a CoW order would hand over WETH. That one
+        // is the stranger's "Buy $50 of ETH" chip on /t/ETH, whose composed
+        // set carries no swap app.
+        const { venue, reason: venueReason } = pickSwapVenue({ message, intent: swapIntent, chainId: buildChain.id, uniActive, cowActive })
+        if (venueReason === 'native-eth-buy') {
+          nativeTrace({ type: 'note', level: 'info', label: `venue: a market buy of native ETH builds on Uniswap v3 (the router unwraps to ETH), not CoW (which would deliver WETH)` })
+        }
         const pair = swapIntent.sellToken && swapIntent.buyToken
           ? `${swapIntent.mode === 'limit' ? 'limit ' : ''}${swapIntent.sellAmountHuman ?? '?'} ${swapIntent.sellToken.toUpperCase()} → ${swapIntent.buyToken.toUpperCase()}`
           : 'swap ask (pair not fully parsed yet)'
