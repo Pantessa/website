@@ -704,6 +704,19 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     setComposerSend({ text: arrival.text, mcps: arrival.mcps })
   }, [arrival, arrivalPhase, servers.length, walletStatus, setComposerSend])
 
+  // "Don't run it", pressed while the row still holds: the pending fire is
+  // dropped (the effect above bails once the intent is gone) and the ask
+  // PARKS IN THE COMPOSER — the visitor asked not to run it yet, not to lose
+  // it. Offered only while we can honour it: once the turn has fired there is
+  // nothing to call off, and the row retires itself after the reply lands.
+  const dropArrival = () => {
+    if (arrival) {
+      setInput(arrival.text)
+      textareaRef.current?.focus()
+    }
+    setArrival(null)
+  }
+
   // The voice door (components/VoiceButton). Words mirror into the composer
   // as they're heard; the finished transcript is normalized to a typed-
   // looking ask ("ten dollars" → "$10") and SENT — the gesture is the send,
@@ -1626,7 +1639,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             sent, so the composer firing by itself reads as the handoff it
             is. Mounted only when an intent was TAKEN on this mount, which
             can only happen on the first-party /chat surface. */}
-        {arrival && <ArrivalBanner intent={arrival} phase={arrivalPhase} onDismiss={() => setArrival(null)} />}
+        {arrival && <ArrivalBanner intent={arrival} phase={arrivalPhase} onDismiss={arrivalPhase === 'holding' ? dropArrival : undefined} />}
         {/* The LINKS destination: the public /links page rendered as the
             main screen (board on top, mint composer in place) — the spine's
             LINKS tab is a real place, not just a drawer. Branch INSIDE the
