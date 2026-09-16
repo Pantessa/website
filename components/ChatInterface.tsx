@@ -2301,7 +2301,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       >
         <div
           className={cn(
-            'flex items-center gap-3 py-2 pl-4 pr-2 rounded-full border border-[var(--line)] bg-[color-mix(in_srgb,var(--surf-1)_85%,transparent)] backdrop-blur-md transition-[border-color,box-shadow] duration-200 focus-within:border-[color:var(--accent)]/45 focus-within:shadow-[0_0_0_4px_rgba(52,227,160,0.07),0_0_24px_rgba(52,227,160,0.06)]',
+            'flex items-center gap-3 py-2 pl-4 pr-2 rounded-full border border-[var(--line)] bg-[color-mix(in_srgb,var(--surf-1)_85%,transparent)] backdrop-blur-md transition-[border-color,box-shadow] duration-200 focus-within:tint-border-accent-45 focus-within:shadow-[0_0_0_4px_rgba(52,227,160,0.07),0_0_24px_rgba(52,227,160,0.06)]',
             !embedded && 'shadow-[0_10px_36px_-14px_rgba(0,0,0,0.55)]',
           )}
         >

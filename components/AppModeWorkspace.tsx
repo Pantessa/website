@@ -383,7 +383,7 @@ function HoldingsBody({ tile, reduced }: { tile: HoldingsTile; reduced: boolean 
                     initial={reduced ? { width: `${share * 100}%` } : { width: 0 }}
                     animate={{ width: `${share * 100}%` }}
                     transition={{ duration: 0.7, ease: 'easeOut', delay: reduced ? 0 : 0.15 + i * 0.06 }}
-                    className="h-full rounded-full bg-[color:var(--accent)]/70"
+                    className="h-full rounded-full tint-bg-accent-70"
                   />
                 </div>
               )}
@@ -481,7 +481,7 @@ function ActivityBody({ tile }: { tile: ActivityTile }) {
             <div className="flex min-w-0 items-center gap-2">
               <span
                 className={`grid h-6 w-6 shrink-0 place-items-center rounded-full ${
-                  r.direction === 'in' ? 'bg-[color:var(--accent)]/15 text-[color:var(--accent)]' : 'bg-white/5 text-[color:var(--muted)]'
+                  r.direction === 'in' ? 'tint-bg-accent-15 text-[color:var(--accent)]' : 'bg-white/5 text-[color:var(--muted)]'
                 }`}
               >
                 <Icon className="h-3 w-3" />

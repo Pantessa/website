@@ -156,7 +156,7 @@ export default function WalletSendForm({
 
   if (phase === 'sent' && sent) {
     return (
-      <div className="rounded-xl border border-[color:var(--accent)]/50 bg-[color:var(--accent)]/[0.06] px-3.5 py-3 space-y-2">
+      <div className="rounded-xl border tint-border-accent-50 tint-bg-accent-6 px-3.5 py-3 space-y-2">
         <div className="flex items-center gap-2 text-[12.5px]">
           <CheckCircle2 className="w-4 h-4 text-[color:var(--done)] flex-shrink-0" />
           <span className="font-medium text-[color:var(--fg)]">Sent.</span>
@@ -196,7 +196,7 @@ export default function WalletSendForm({
                 disabled={phase !== 'form'}
                 className={cn(
                   'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] transition-colors disabled:opacity-60',
-                  on ? 'border-[color:var(--accent)] bg-[color:var(--accent)]/10 text-[color:var(--fg)]' : 'border-[var(--line)] text-[color:var(--muted)] hover:border-[var(--line-2)]',
+                  on ? 'border-[color:var(--accent)] tint-bg-accent-10 text-[color:var(--fg)]' : 'border-[var(--line)] text-[color:var(--muted)] hover:border-[var(--line-2)]',
                 )}
               >
                 {Mark ? <Mark size={14} /> : <span className="w-2.5 h-2.5 rounded-full" style={{ background: c.color }} />}
@@ -223,7 +223,7 @@ export default function WalletSendForm({
                   disabled={phase === 'building'}
                   className={cn(
                     'inline-flex items-baseline gap-1.5 rounded-full border px-2.5 py-1 text-[12px] transition-colors disabled:opacity-60',
-                    on ? 'border-[color:var(--accent)] bg-[color:var(--accent)]/10 text-[color:var(--fg)]' : 'border-[var(--line)] text-[color:var(--muted)] hover:border-[var(--line-2)]',
+                    on ? 'border-[color:var(--accent)] tint-bg-accent-10 text-[color:var(--fg)]' : 'border-[var(--line)] text-[color:var(--muted)] hover:border-[var(--line-2)]',
                   )}
                   title={h.native ? 'Native ETH — also this chain’s gas' : h.address}
                 >
