@@ -86,6 +86,7 @@ import { policyCheckInflow, recipientCheck, validityCheck, MAX_VALID_SEC } from 
 import { FIRST_PARTY_MCP_SOURCE, guardPlannerArtifact, isFirstPartyMcp, PERMIT2_ADDRESS } from '../lib/planner-artifact-guard'
 import { LIMIT_EXAMPLES, parseSwapIntent, swapClarify } from '../lib/swap-intent'
 import { parseChartState, chartStateToAsks, serializeChartState, chartStatesEqual, type ChartState } from '../lib/chart-state'
+import { ARRIVAL_APP_HREF, ARRIVAL_KEY } from '../lib/arrival-intent'
 import { briefCacheKey as aiBriefCacheKey, buildChartMutation as aiBuildChartMutation, chipMenu as aiChipMenu, fenceAsk as aiFenceAsk, firstSentenceOf as aiFirstSentenceOf, parseAlertAsk as aiParseAlertAsk, parseDrawAsk as aiParseDrawAsk, positionFallback as aiPositionFallback, renderNewsBlock as aiRenderNewsBlock, splitChipsLine as aiSplitChipsLine, tapeCacheKey as aiTapeCacheKey, tapeSymbols as aiTapeSymbols, venueWordsFor as aiVenueWordsFor } from '../lib/markets-ai'
 import { ladderVerdict as aiLadderVerdict } from '../lib/markets-ai-ladder'
 import { askDoorChips as aiAskDoorChips } from '../lib/ask-door'
@@ -21517,6 +21518,96 @@ async function main() {
       'arrival/core: the served /markets page ships NO /chat?prompt= — every act on it is a click that hands the ask to the app',
       mktArrivalHtml.length > 1000 && !/\/chat\?prompt=/.test(mktArrivalHtml),
       `${mktArrivalHtml.length} bytes`,
+    )
+  }
+
+  // ── ARRIVAL/QA ────────────────────────────────────────────────────────────
+  // Integration-level pins for the "actions run on arrival" squad: the shape
+  // of the handoff at the two ends nobody lane owns alone — what /markets
+  // serves, what /chat serves, and the storage discipline the fence rests on.
+  // Every pin here is green BEFORE the feature lands (the stubs) and tightens
+  // by itself as CORE/SECURITY/UX push: the receiver and sender pins are
+  // "IF the code mentions the handoff, it must be shaped like this".
+  // The browser half (exactly ONE POST /api/chat, 0 on every other door) is
+  // ~/yeetful/squad-arrival-2026-09-16/tools/arrival-drive.mjs.
+  {
+    console.log('\n— ARRIVAL/QA —')
+    const qaFs = await import('node:fs')
+    const qaSrc = (p: string) => qaFs.readFileSync(p, 'utf8')
+    const qaCode = (p: string) => qaSrc(p).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+
+    // The senders: a chip on /markets is a BUTTON that carries its whole
+    // sentence and fires on click. It must never be served as a link into
+    // the app — "a chip SENDS, a link PREFILLS" starts in the markup, and a
+    // crawler (or a middle-click) must not be able to walk a chip into /chat.
+    const mktHtml = await (await fetch(`${BASE}/markets`)).text()
+    check(
+      'arrival/qa: /markets serves its act chips as BUTTONS carrying the whole ask (data-ask), never as <a href="/chat?prompt=…"> — the click is the send',
+      /class="[^"]*mkt-quick__chip[^"]*"/.test(mktHtml) && /data-ask="/.test(mktHtml) && !/<a[^>]+href="\/chat\?prompt=/.test(mktHtml),
+      `chips=${(mktHtml.match(/data-ask="/g) || []).length}`,
+    )
+
+    // The receiver's other end: a URL still never fires a turn. The prompt is
+    // read client-side into the composer, so the server must not bake it into
+    // the page (a prefill that arrives in the HTML is one refactor away from
+    // being a send).
+    // A distinctive sentence on purpose: the page's own example chips carry
+    // ordinary asks ("Buy $10 of AAPL every week on Robinhood Chain"), so a
+    // plain one would match the markup rather than a reflection.
+    const promptAsk = 'Buy $10 of AAPL (qa-arrival-probe)'
+    const chatHtml = await (await fetch(`${BASE}/chat?prompt=${encodeURIComponent(promptAsk)}`)).text()
+    check(
+      'arrival/qa: /chat?prompt=… renders with the ask NOWHERE in the served HTML (the prefill is a client read; a URL never fires a turn)',
+      !chatHtml.includes(promptAsk) && !chatHtml.includes(encodeURIComponent(promptAsk)),
+      `bytes=${chatHtml.length}`,
+    )
+
+    // Storage discipline: the handoff lives in sessionStorage, same tab, and
+    // nowhere else. localStorage would outlive the tab, a cookie would reach
+    // the server, and the URL is the thing we are deliberately NOT using.
+    const arrivalSrc = qaCode('lib/arrival-intent.ts')
+    check(
+      'arrival/qa: lib/arrival-intent.ts touches sessionStorage ONLY — no localStorage, no document.cookie, no URL/searchParams, no fetch',
+      !/localStorage/.test(arrivalSrc) && !/document\.cookie/.test(arrivalSrc) && !/searchParams|location\.(search|href)\s*=/.test(arrivalSrc) && !/\bfetch\(/.test(arrivalSrc),
+    )
+    check(
+      'arrival/qa: the key is versioned and the TTL is a minute (lib/arrival-intent ARRIVAL_KEY / ARRIVAL_TTL_MS), and the app href a sender pushes carries no query',
+      ARRIVAL_KEY === 'pantessa.arrival.v1' && ARRIVAL_TTL_MS === 60_000 && ARRIVAL_APP_HREF === '/chat',
+      `${ARRIVAL_KEY} ttl=${ARRIVAL_TTL_MS} href=${ARRIVAL_APP_HREF}`,
+    )
+
+    // The fence's allowed doors: only the public market front doors may hand
+    // an intent to the app. '/', '/i', '/embed' and a bare prefix must never
+    // be in the list (an /i page's own runtime carries its ask in the link).
+    check(
+      'arrival/qa: lib/arrival-fence ARRIVAL_SOURCES lists only public markets doors — never "/", "/i", "/embed", "/chat" or an empty prefix — and ARRIVAL_MAX_TEXT ≤ 280',
+      ARRIVAL_SOURCES.length > 0 &&
+        ARRIVAL_SOURCES.every((s) => typeof s === 'string' && s.startsWith('/') && s.length > 1) &&
+        ARRIVAL_SOURCES.every((s) => ['/markets', '/t'].some((allowed) => s === allowed || s.startsWith(allowed + '/'))) &&
+        !ARRIVAL_SOURCES.some((s) => /^\/(i|embed|chat)\b/.test(s)) &&
+        ARRIVAL_MAX_TEXT <= 280,
+      ARRIVAL_SOURCES.join(' '),
+    )
+
+    // The receiver is /chat-only, by construction. Vacuous until CORE pushes
+    // the effect; a real fence from that moment on.
+    const chatIfaceSrc = qaCode('components/ChatInterface.tsx')
+    const receiverWired = chatIfaceSrc.includes('takeArrivalIntent')
+    check(
+      `arrival/qa: the arrival take is gated off the embed, /i and simple mode${receiverWired ? '' : ' (not wired yet — vacuous)'}`,
+      !receiverWired || (/!embedded/.test(chatIfaceSrc) && /!simple/.test(chatIfaceSrc) && /takeArrivalIntent/.test(chatIfaceSrc) && !/takeArrivalIntent\(\)\s*\n?\s*setComposerSend/.test(chatIfaceSrc)),
+      `wired=${receiverWired}`,
+    )
+
+    // The senders keep the door for the lanes that navigate away (email /
+    // Google land after an OAuth round trip, where the 60s record is gone —
+    // decision 2: those keep prefilling).
+    const mktIndexSrc = qaCode('components/markets/shell/MarketsIndex.tsx')
+    const senderWired = mktIndexSrc.includes('writeArrivalIntent')
+    check(
+      `arrival/qa: MarketsIndex's act door keeps redirectFor: promptHref for the lanes that navigate away${senderWired ? '' : ' (handoff not wired yet — vacuous)'}`,
+      !senderWired || (/redirectFor:\s*promptHref/.test(mktIndexSrc) && /writeArrivalIntent\(/.test(mktIndexSrc) && /ARRIVAL_APP_HREF/.test(mktIndexSrc)),
+      `wired=${senderWired}`,
     )
   }
 
