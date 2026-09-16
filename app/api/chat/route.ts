@@ -24,7 +24,7 @@ import type { McpServer } from '@/lib/store'
 import { voteRequestFromToolResult, friendlyVoteError, type VoteRequest } from '@/lib/snapshot-vote'
 import { parseVoteIntent, resolveVoteReference, type VoteIntent } from '@/lib/vote-intent'
 import { crossChainAgentOf, detectCrossChain, parseSwapIntent, parseSwapFollowUp, swapClarify, swapWorkingContext, type SwapIntent } from '@/lib/swap-intent'
-import { chainById, chainByKey, primaryStable, publicClientFor, sanitizeChainId, DEFAULT_CHAIN_ID, APP_CHAINS } from '@/lib/chains'
+import { chainById, chainByKey, primaryStable, publicClientFor, sanitizeChainId, DEFAULT_CHAIN_ID, APP_CHAINS, gasIsStable, STABLE_GAS_RESERVE } from '@/lib/chains'
 import { usdPerToken, usdToTokenAmount } from '@/lib/usd-probe'
 import { parseRobinhoodBridge, buildRobinhoodBridge } from '@/lib/robinhood-bridge'
 import {
@@ -149,7 +149,7 @@ import { FEATURED_STOCKS, parseStockListAsk, robinhoodStocks } from '@/lib/stock
 import { tokenHome } from '@/lib/token-home'
 import { NEVER_MIND_RESUME_RE } from '@/lib/funding-path'
 import { cleanServerName } from '@/lib/utils'
-import { fundingSourceSymbols, GAS_TOPUP_ETH, minLegNote, offChainStableSource, valueLegUsd, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
+import { fundingSourceSymbols, GAS_TOPUP_ETH, lifiDestination, minLegNote, offChainStableSource, valueLegUsd, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
 import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-funding'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { COW_VAULT_RELAYER } from '@/lib/cow-guardrails'
@@ -835,13 +835,16 @@ async function handleChatTurn(req: NextRequest) {
         })
       }
       if (fu?.kind === 'recheck' && Number.isFinite(buyUsd) && buyUsd > 0 && /^[A-Z0-9]{1,10}$/.test(buySym)) {
-        const rerun = parseSwapIntent(`buy $${buyUsd} of ${buySym} on robinhood`)
+        // The pending's `dest` names the chain (absent = Robinhood Chain, the
+        // only destination before Arc); an unknown id falls back the same way.
+        const pendingDest = lifiDestination(Number(pendingRhFunding.data.dest ?? ROBINHOOD_CHAIN_ID)) ?? lifiDestination(ROBINHOOD_CHAIN_ID)!
+        const rerun = parseSwapIntent(`buy $${buyUsd} of ${buySym} on ${pendingDest.word}`)
         if (rerun.isSwap) {
           nativeTrace({
             type: 'status',
-            label: `funding layer: follow-up on the unfunded ${buySym} buy — fresh scan, re-running “buy $${buyUsd} of ${buySym}” on Robinhood Chain (planner bypassed)`,
+            label: `funding layer: follow-up on the unfunded ${buySym} buy — fresh scan, re-running “buy $${buyUsd} of ${buySym}” on ${pendingDest.name} (planner bypassed)`,
           })
-          return await prepareSwapTurn(rerun, walletAddress, 'uniswap', workingContext, nativeTrace, ROBINHOOD_CHAIN_ID, swapFeeBps, contentOrigin)
+          return await prepareSwapTurn(rerun, walletAddress, 'uniswap', workingContext, nativeTrace, pendingDest.chainId, swapFeeBps, contentOrigin)
         }
       }
     }
@@ -4283,19 +4286,24 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
         buildPath: 'native-swap-balance',
       })
     }
-    const reserveEth = isEth ? (DEST_GAS_FLOOR_ETH[chainId] ?? 0.0002) : 0
-    const atoms = isEth ? balance - parseUnits(String(reserveEth), 18) : balance
+    // A stable-gas chain (Arc: USDC pays gas) keeps the same sliver back
+    // when the sell IS the gas token — an all-USDC sell there would strand
+    // the swap's own approve + swap.
+    const stableGasSell = !isEth && gasIsStable(chain) && sellSym === chain.nativeSymbol
+    const keepsGas = isEth || stableGasSell
+    const reserveEth = isEth ? (DEST_GAS_FLOOR_ETH[chainId] ?? 0.0002) : stableGasSell ? STABLE_GAS_RESERVE : 0
+    const atoms = keepsGas ? balance - parseUnits(String(reserveEth), dec) : balance
     if (atoms <= BigInt(0)) {
-      trace({ type: 'status', label: `native swap layer: ${formatUnits(balance, 18)} ETH on ${chain.name} doesn't clear the ${reserveEth} ETH gas reserve an all-sell keeps back — no build` })
+      trace({ type: 'status', label: `native swap layer: ${formatUnits(balance, dec)} ${sellSym} on ${chain.name} doesn't clear the ${reserveEth} ${sellSym} gas reserve an all-sell keeps back — no build` })
       return NextResponse.json({
-        reply: `🔄 Your ${formatUnits(balance, 18)} ETH on ${chain.name} doesn't clear the ~${reserveEth} ETH an all-sell keeps back for the swap's own gas — nothing to sell.`,
+        reply: `🔄 Your ${formatUnits(balance, dec)} ${sellSym} on ${chain.name} doesn't clear the ~${reserveEth} ${sellSym} an all-sell keeps back for the swap's own gas${stableGasSell ? ` (${sellSym} pays for gas on ${chain.name})` : ''} — nothing to sell.`,
         buildPath: 'native-swap-balance',
       })
     }
     const amountHuman = formatUnits(atoms, dec)
     intent = { ...intent, sellAmountHuman: amountHuman }
-    sized.note = `Sized from your live balance: ${amountHuman} ${sellSym} on ${chain.name} — your full holding${isEth ? ` minus a ${reserveEth} ETH gas reserve for the swap itself` : ''}, read at build time and pinned in the calldata.`
-    trace({ type: 'status', label: `native swap layer: “all my ${sellSym}” sized from the live balance — ${amountHuman} ${sellSym} on ${chain.name}${isEth ? ` (${formatUnits(balance, 18)} ETH held, ${reserveEth} kept for gas)` : ''}` })
+    sized.note = `Sized from your live balance: ${amountHuman} ${sellSym} on ${chain.name} — your full holding${keepsGas ? ` minus a ${reserveEth} ${sellSym} gas reserve for the swap itself` : ''}, read at build time and pinned in the calldata.`
+    trace({ type: 'status', label: `native swap layer: “all my ${sellSym}” sized from the live balance — ${amountHuman} ${sellSym} on ${chain.name}${keepsGas ? ` (${formatUnits(balance, dec)} ${sellSym} held, ${reserveEth} kept for gas)` : ''}` })
   }
 
   if (intent.problem || !intent.sellToken || !intent.buyToken || !intent.sellAmountHuman) {
@@ -4384,20 +4392,26 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
   // (fund → wait → buy) via the chips' resume messages (lib/jobs.ts
   // parseRobinhoodFunding). RPC trouble falls through to the normal
   // build, which fails closed on its own.
-  const rhStable = chainId === ROBINHOOD_CHAIN_ID && intent.mode !== 'limit' ? primaryStable(chainId) : null
+  // Both LiFi-funded destinations land here: Robinhood Chain (USDG, ETH gas
+  // → an optional gas leg) and Arc (USDC, which IS the gas → never a gas leg).
+  const lifiDest = intent.mode !== 'limit' ? lifiDestination(chainId) : null
+  const rhStable = lifiDest ? primaryStable(chainId) : null
   // The target is the stable ITSELF ("I need $50 of USDG on Robinhood") —
   // an acquisition, not a buy: the funding legs landing ARE the outcome, so
   // the chips carry no follow-up buy, and the need subtracts what's already
   // held there.
   const acquiring = !!rhStable && intent.buyToken.toUpperCase() === rhStable.symbol.toUpperCase()
-  if (rhStable && intent.sellToken.toUpperCase() === rhStable.symbol.toUpperCase()) {
+  if (rhStable && lifiDest && intent.sellToken.toUpperCase() === rhStable.symbol.toUpperCase()) {
     try {
-      const shortfall = await readFundingShortfall(walletAddress)
+      const shortfall = await readFundingShortfall(walletAddress, lifiDest.chainId)
+      // On a stable-gas destination the sell spends the gas token itself, so
+      // "covered" means the amount PLUS the gas sliver the swap keeps back.
+      const needAtoms = BigInt(sellAmount) + (lifiDest.gasLeg ? BigInt(0) : BigInt(Math.round(STABLE_GAS_RESERVE * 10 ** rhStable.decimals)))
       // A conversion claims the turn even when the USDG is already there —
       // "convert 1 USDC to USDG" asks to MOVE named money, and answering
       // "covered already, you hold $5" would be a refusal dressed as good
       // news. Top-ups (the acquisition grammar) keep the holding gate.
-      if (shortfall.usdgAtoms < BigInt(sellAmount) || convertingFrom) {
+      if (shortfall.usdgAtoms < needAtoms || convertingFrom) {
         const buyUsd = Number(Number(intent.sellAmountHuman).toFixed(2)) // USDG is the $1 unit of account
         const buySym = intent.buyToken.toUpperCase()
         const holdingUsd = Number(shortfall.usdgAtoms) / 10 ** rhStable.decimals
@@ -4416,6 +4430,7 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
           needUsd,
           gasIncluded: includeGas,
           followup: acquiring ? '' : `buy $${buyUsd} of ${buySym}`,
+          dest: lifiDest,
         })
         const holdingsSummary = shortfall.origins.map((o) => `~$${o.usd} of ${o.token} on ${o.word}`).join(', ')
         // In-flight settlement awareness (live 2026-07-21): the user signed a
@@ -4443,7 +4458,7 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
         // When the ask is under the bridge's FLAT cost the plan moves more
         // than was asked — the one thing that must never happen quietly.
         // minLegNote says the arithmetic out loud wherever the plan appears.
-        const floorNote = minLegNote(buyUsd)
+        const floorNote = minLegNote(buyUsd, lifiDest)
         const floorSuffix = floorNote ? ` ${floorNote}` : ''
         // Any of the three outcomes leaves the buy PENDING — a typed
         // follow-up ("I have $10 USDC on arbitrum", "sent the ETH, check
@@ -4455,7 +4470,7 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
           v: 1,
           age: 0,
           ...(ctx?.scope ? { scope: ctx.scope } : {}),
-          pending: rhFundingPending(buyUsd, buySym, inflight ? inflightPendingData(inflight.dep) : undefined),
+          pending: rhFundingPending(buyUsd, buySym, inflight ? inflightPendingData(inflight.dep) : undefined, lifiDest),
         } satisfies WorkingContext
         if (advice.kind === 'chips') {
           const options = [...advice.chips]
@@ -4467,13 +4482,13 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
           return NextResponse.json({
             reply: convertingFrom
               ? `🌉 **We can make this happen.** ${convertingFrom} doesn't exist on ${chain.name} — ${rhStable.symbol} is its dollar — so the ${convertingFrom} has to come from where you actually hold it. You're holding **${holdingsSummary}**, ` +
-                `so I'll convert $${floorNote ? valueLegUsd(needUsd, includeGas) : buyUsd} of it into ${rhStable.symbol}${includeGas ? ' and drop in a little ETH for gas (you have none on ' + chain.name + ' yet)' : ` (you already have gas on ${chain.name}, so nothing extra moves)`}${acquiring ? '' : `, then buy the ${buySym}`}. ` +
+                `so I'll convert $${floorNote ? valueLegUsd(needUsd, includeGas) : buyUsd} of it into ${rhStable.symbol}${includeGas ? ' and drop in a little ETH for gas (you have none on ' + chain.name + ' yet)' : lifiDest.gasLeg ? ` (you already have gas on ${chain.name}, so nothing extra moves)` : ` (${rhStable.symbol} pays for gas on ${chain.name}, so nothing extra moves)`}${acquiring ? '' : `, then buy the ${buySym}`}. ` +
                 `Lands in seconds — one job, you sign each step.${floorSuffix}${inflightSuffix}`
               : acquiring
               ? `🌉 **We can make this happen.** You asked for $${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there — but you're holding **${holdingsSummary}**, so I'll convert enough to close the gap${includeGas ? ' (a little ETH for gas included)' : ''}, ` +
                 `landing on ${chain.name} in seconds. One job, you sign each step.${floorSuffix}${inflightSuffix}`
               : `🌉 **We can make this happen.** You're holding **${holdingsSummary}** — ` +
-                `this buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there, so I'll convert some of it${includeGas ? ', drop in a little ETH for gas,' : ''} ` +
+                `this buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there, so I'll convert some of it${includeGas ? ', drop in a little ETH for gas,' : lifiDest.gasLeg ? '' : ` (${rhStable.symbol} pays for gas on ${chain.name}, so nothing extra moves)`} ` +
                 `and buy the ${buySym} — all in one job you sign step by step, funds arriving on ${chain.name} in seconds.${floorSuffix}${inflightSuffix}`,
             clarify: { question: 'Fund it from another chain?', options: options.slice(0, 4) },
             buildPath: 'native-lifi-fund-offer',
@@ -4500,7 +4515,7 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
         // partial read could lowball a wallet whose money hid behind a
         // failed RPC.
         if (shortfall.failedOrigins.length === 0) {
-          const downsized = planDownsizedRobinhoodBuy({ scan: shortfall, buyUsd, holdingUsd: creditUsd, includeGas, buySym, acquiring })
+          const downsized = planDownsizedRobinhoodBuy({ dest: lifiDest, scan: shortfall, buyUsd, holdingUsd: creditUsd, includeGas, buySym, acquiring })
           if (downsized) {
             trace({
               type: 'status',

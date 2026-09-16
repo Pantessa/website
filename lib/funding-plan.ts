@@ -29,10 +29,11 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { erc20Abi, formatEther, formatUnits } from 'viem'
-import { chainById, publicClientFor } from '@/lib/chains'
+import { chainById, publicClientFor, primaryStable } from '@/lib/chains'
 import { chainAlt, canonicalChainWord } from '@/lib/chain-lexicon'
 import { ETH_TWO_LEG_HEADROOM_USD, FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, fundingNeedUsd, listWords, planRobinhoodFundingAdvice, readFundingShortfall } from '@/lib/lifi-bridge'
 import { describeInflightDeposit } from '@/lib/inflight-funding'
+import { isLifiFundedChain, lifiDestination } from '@/lib/lifi-destinations'
 import { usdPerToken } from '@/lib/usd-probe'
 
 /** Chains the scanner reads — the intersection of lib/chains first-class
@@ -865,7 +866,7 @@ const HELD_RE = new RegExp(`\\b(?:holds?|have|has)\\s+(?:only\\s+)?~?\\$?(\\d+(?
 const TRIGGER_TOKEN_RE = new RegExp(`\\b(?:insufficient|not enough)\\s+(?:balance\\s+of\\s+)?(${TOKEN_SYM})\\b`, 'i')
 const TOKEN_SYM_STRICT_RE = /^(?:[A-Z]{2,6}|[A-Z][a-z]?ETH)$/
 const CHAIN_HINT_RE = new RegExp(
-  String.raw`\bon\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'optimism', 'robinhood'])}|arbitrum\s+one)\b`,
+  String.raw`\bon\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'optimism', 'robinhood', 'arc'])}|arbitrum\s+one)\b`,
   'i',
 )
 
@@ -879,6 +880,9 @@ const CHAIN_HINT_IDS: Record<string, number> = {
   mainnet: 1,
   robinhood: 4663,
   'robinhood chain': 4663,
+  arc: 5042,
+  'arc chain': 5042,
+  'arc network': 5042,
 }
 
 export interface DetectedShortfall {
@@ -916,7 +920,7 @@ export function detectBalanceShortfall(text: string): DetectedShortfall | null {
     : token.toUpperCase() === 'USDG'
       ? 4663
       : undefined
-  if (!chainId || !(FUNDING_CHAIN_WORD[chainId] || chainId === 4663)) return null
+  if (!chainId || !(FUNDING_CHAIN_WORD[chainId] || isLifiFundedChain(chainId))) return null
 
   const held = text.match(HELD_RE)
   // A held-match naming a DIFFERENT token is someone else's number.
@@ -986,13 +990,15 @@ export async function fundingFallbackForFailures(
     // doesn't deliver there): scan Base/Ethereum/Arbitrum USDC and offer
     // bridge-only chips — a lone funding segment compiles as a job
     // (lib/jobs.ts), and the user re-asks their action once funds land.
-    if (detected.chainId === 4663) {
-      if (detected.token !== 'USDG') continue // only the USDG plan is probed there
+    const lifiDest = lifiDestination(detected.chainId)
+    if (lifiDest) {
+      const destStable = primaryStable(lifiDest.chainId)?.symbol.toUpperCase() ?? 'USDG'
+      if (detected.token !== destStable) continue // only the destination-stable plan is probed there
       let scan: Awaited<ReturnType<typeof readFundingShortfall>>
       try {
-        scan = await readFundingShortfall(user)
+        scan = await readFundingShortfall(user, lifiDest.chainId)
       } catch {
-        trace?.({ type: 'note', level: 'warn', label: 'funding fallback: Robinhood Chain balance reads unavailable — surfacing the failure as-is' })
+        trace?.({ type: 'note', level: 'warn', label: `funding fallback: ${lifiDest.name} balance reads unavailable — surfacing the failure as-is` })
         return null
       }
       // In-flight settlement awareness — read-only, fail-soft: no deposit in
@@ -1017,7 +1023,7 @@ export async function fundingFallbackForFailures(
         : ''
       const includeGas = !scan.hasGas
       const needUsd = fundingNeedUsd(detected.shortfall, includeGas)
-      const advice = planRobinhoodFundingAdvice({ scan, needUsd, gasIncluded: includeGas, followup: '' })
+      const advice = planRobinhoodFundingAdvice({ scan, needUsd, gasIncluded: includeGas, followup: '', dest: lifiDest })
       const holdings = scan.origins.map((o) => `~$${o.usd} of ${o.token} on ${o.word}`).join(', ')
       if (advice.kind === 'gas-stranded') {
         // The money EXISTS — it just can't sign where it sits. With a donor
@@ -1026,7 +1032,7 @@ export async function fundingFallbackForFailures(
         // names the stranded USDC — a scan that hid it once told a user
         // "none on Base, Ethereum, or Arbitrum" minutes after THEY bridged
         // $12 in.
-        trace?.({ type: 'status', label: `funding fallback claimed the turn: USDG short on Robinhood Chain after the ${f.name} failure — ~$${advice.stranded.usd} ${advice.stranded.token} on ${advice.stranded.word} is gas-stranded (${advice.donor ? `offering a topup from ${advice.donor.word}` : 'asking for an ETH topup'})` })
+        trace?.({ type: 'status', label: `funding fallback claimed the turn: ${destStable} short on ${lifiDest.name} after the ${f.name} failure — ~$${advice.stranded.usd} ${advice.stranded.token} on ${advice.stranded.word} is gas-stranded (${advice.donor ? `offering a topup from ${advice.donor.word}` : 'asking for an ETH topup'})` })
         if (!advice.chips) {
           return {
             claimed: f.name,
@@ -1041,7 +1047,7 @@ export async function fundingFallbackForFailures(
         return {
           claimed: f.name,
           offer: {
-            reply: `**Your money's already in place** — this needs more USDG on Robinhood Chain, and ${advice.copy}${inflightSuffix}`,
+            reply: `**Your money's already in place** — this needs more ${destStable} on ${lifiDest.name}, and ${advice.copy}${inflightSuffix}`,
             clarify: { question: `Fix the ${advice.stranded.word} gas and bridge it?`, options: advice.chips.slice(0, 4) },
             buildPath: 'native-lifi-fund-offer',
           },
@@ -1053,30 +1059,30 @@ export async function fundingFallbackForFailures(
       }
       if (advice.kind === 'none') {
         if (scan.failedOrigins.length > 0) return null // partial scan must not claim an empty wallet
-        trace?.({ type: 'note', level: 'warn', label: `funding fallback: USDG short on Robinhood Chain and the scan (${advice.copy}) can't cover the ~$${needUsd} plan — honest refusal` })
+        trace?.({ type: 'note', level: 'warn', label: `funding fallback: ${destStable} short on ${lifiDest.name} and the scan (${advice.copy}) can't cover the ~$${needUsd} plan — honest refusal` })
         return {
           claimed: f.name,
           offer: null,
           contextBlock:
-            `### Funding scan (after the ${f.name} balance check)\nAcross ${listWords(FUNDING_ORIGIN_CHAINS.map((c) => FUNDING_ORIGIN_WORD[c]), 'and')} I can see: ${advice.copy} — the smallest plan for this moves ~$${needUsd} onto Robinhood Chain (bridge fees${includeGas ? ' and a gas leg' : ''} included). ` +
+            `### Funding scan (after the ${f.name} balance check)\nAcross ${listWords(FUNDING_ORIGIN_CHAINS.map((c) => FUNDING_ORIGIN_WORD[c]), 'and')} I can see: ${advice.copy} — the smallest plan for this moves ~$${needUsd} onto ${lifiDest.name} (bridge fees${includeGas ? ' and a gas leg' : ''} included). ` +
             `The user should know exactly what they hold, per chain, and what the smallest plan needs — and what unlocks the buy (topping up any of those chains, then asking again). ` +
             `Frame it as a checkpoint, not an error: nothing was attempted, signed, or lost — no ❌ or "failed" headlines.${inflightNoneDirective}`,
         }
       }
       const chips = [...advice.chips, { label: 'Not now', resume: 'Never mind — leave my USDC where it is.' }]
-      trace?.({ type: 'status', label: `funding fallback claimed the turn: USDG short on Robinhood Chain after the ${f.name} failure — offering ${chips.length - 1} LiFi funding path(s) (~$${needUsd} needed)` })
+      trace?.({ type: 'status', label: `funding fallback claimed the turn: ${destStable} short on ${lifiDest.name} after the ${f.name} failure — offering ${chips.length - 1} LiFi funding path(s) (~$${needUsd} needed)` })
       return {
         claimed: f.name,
         offer: {
           reply:
-            `**We can make this happen.** You're holding ${holdings} — this just needs more USDG on Robinhood Chain than the wallet has there yet. ` +
-            `I can bridge it over (LiFi-routed, delivered to your own address, arrives in seconds)${includeGas ? ', drop in a little ETH so Robinhood Chain gas is covered,' : ''} — every step built and guard-checked when it's your turn to sign. Once it settles, ask again and I'll build the trade with the funds in place.${inflightSuffix}`,
-          clarify: { question: 'Fund Robinhood Chain from another chain?', options: chips.slice(0, 4) },
+            `**We can make this happen.** You're holding ${holdings} — this just needs more ${destStable} on ${lifiDest.name} than the wallet has there yet. ` +
+            `I can bridge it over (LiFi-routed, delivered to your own address, arrives in seconds)${includeGas ? `, drop in a little ETH so ${lifiDest.name} gas is covered,` : ''} — every step built and guard-checked when it's your turn to sign. Once it settles, ask again and I'll build the trade with the funds in place.${inflightSuffix}`,
+          clarify: { question: `Fund ${lifiDest.name} from another chain?`, options: chips.slice(0, 4) },
           buildPath: 'native-lifi-fund-offer',
         },
         contextBlock:
           `### Funding path ready (after the ${f.name} balance check)\n` +
-          `The call stopped at a pre-flight balance check — more USDG is needed on Robinhood Chain — and the wallet holds ${holdings || 'USDC on other chains'}. The system RENDERS funding chips directly under your reply (this is guaranteed — never hedge about whether they appear, never add placeholder lines about them). ` +
+          `The call stopped at a pre-flight balance check — more ${destStable} is needed on ${lifiDest.name} — and the wallet holds ${holdings || 'USDC on other chains'}. The system RENDERS funding chips directly under your reply (this is guaranteed — never hedge about whether they appear, never add placeholder lines about them). ` +
           `Tell the user the chips below bridge the money over (they sign, delivered to their own address, arrives in seconds), and that once it settles they should re-ask so the action rebuilds with funds in place. ` +
           `Do NOT invent your own bridge instructions, amounts, or addresses.\n${TONE_DIRECTIVE}`,
       }

@@ -209,6 +209,14 @@ const CORPUS: Entry[] = [
   // Chip resume strings (funding / DCA — the chip IS the contract)
   { ask: 'Fund robinhood chain with $12 from base', source: 'lifi funding chip', expect: 'action' },
   { ask: 'Fund robinhood chain with $12 from base, then buy $10 of AAPL', source: 'lifi funding chip', expect: 'action' },
+  // Arc (Circle's L1, 5042 — USDC gas, LiFi-funded like Robinhood Chain; 2026-09-16).
+  { ask: 'Fund arc with $12 from base', source: 'arc funding chip', expect: 'action' },
+  { ask: 'Fund arc with $20 from base, then buy $15 of BTC', source: 'arc funding chip (fund → wait → buy cirBTC)', expect: 'action' },
+  { ask: 'swap 12 USDC from base to arc', source: 'arc cross-chain → funding redirect', expect: 'action' },
+  { ask: 'buy $10 of BTC on arc', source: 'arc swap (BTC = cirBTC)', expect: 'action' },
+  { ask: 'swap $10 of USDC to EUR on arc', source: 'arc swap (EUR = EURC)', expect: 'action' },
+  { ask: 'send 5 USDC to 0x1111111111111111111111111111111111111111 on arc', source: 'arc send', expect: 'action' },
+  { ask: 'move 5 USDC from base to arc', source: 'arc funding under the $9 floor → floor chips', expect: 'clarify-ok' },
   // A Robinhood-destination leg is a LiFi FUNDING move (NEAR can't reach
   // 4663) and $5 is under the $9 parity floor — the honest answer is the
   // floor chips, never a leg built to be withheld (#694). $20 compiles.

@@ -1,6 +1,6 @@
 import { http, type Chain, type Transport } from 'viem'
 import { mainnet, base, baseSepolia, arbitrum, optimism } from 'wagmi/chains'
-import { robinhoodChain } from '@/lib/chains'
+import { arcChain, robinhoodChain } from '@/lib/chains'
 
 /**
  * THE chain list every wallet lane can sign on — ONE source for the wagmi
@@ -27,7 +27,7 @@ import { robinhoodChain } from '@/lib/chains'
  * Networks modal mirrors this list). A chain the funding scanner can SEE but
  * the wallet can't switch to is a chip that walls at signature time.
  */
-export const WALLET_CHAINS = [base, baseSepolia, mainnet, arbitrum, optimism, robinhoodChain] as const satisfies readonly [Chain, ...Chain[]]
+export const WALLET_CHAINS = [base, baseSepolia, mainnet, arbitrum, optimism, robinhoodChain, arcChain] as const satisfies readonly [Chain, ...Chain[]]
 
 /**
  * Browser-side transports, one per wallet chain. Fresh object per call so
@@ -39,7 +39,7 @@ export const WALLET_CHAINS = [base, baseSepolia, mainnet, arbitrum, optimism, ro
  * backwards through history — on a 2s chain that wall is ~4 minutes and the
  * first live Optimism run died on the approve step. Ethereum is the one
  * exception (12s blocks, and its viem default is CORS-hostile); Base,
- * Arbitrum, Optimism + Robinhood Chain keep viem's defaults, which serve
+ * Arbitrum, Optimism, Robinhood Chain + Arc keep their chain defaults, which serve
  * full archive depth with CORS `*` (measured 2026-09-04).
  */
 export function walletTransports(): Record<(typeof WALLET_CHAINS)[number]['id'], Transport> {
@@ -50,5 +50,11 @@ export function walletTransports(): Record<(typeof WALLET_CHAINS)[number]['id'],
     [arbitrum.id]: http(),
     [optimism.id]: http(),
     [robinhoodChain.id]: http(),
+    // Arc's chain default is dRPC's public Arc endpoint (lib/chains): measured
+    // 2026-09-16 — full archive depth (reads at −100k blocks ok), CORS `*`,
+    // 25 parallel reads in 0.5s, eth_getTransactionReceipt served. Circle's
+    // own rpc.mainnet.arc.io rate-limits receipt polling, so it is NOT the
+    // browser transport.
+    [arcChain.id]: http(),
   }
 }
