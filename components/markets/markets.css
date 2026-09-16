@@ -31,7 +31,13 @@
 .mk-table__row:last-child { box-shadow: none; }
 .mk-table__row:hover { background: color-mix(in srgb, var(--fg) 5%, transparent); }
 .mk-table__row:has(.mk-table__link:focus-visible) { background: color-mix(in srgb, var(--accent) 12%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
-.mk-table__id { padding: 0; }
+.mk-table__id { padding: 0; position: relative; }
+/* EXEC's QuickAct seat: hidden until the row is hovered or a chip/link inside
+   it has focus; sits over the right end of the id cell (never shifts the row). */
+.mk-table__quick { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: inline-flex; opacity: 0; pointer-events: none; transition: opacity .12s ease; }
+.mk-table__row:hover .mk-table__quick, .mk-table__row:focus-within .mk-table__quick { opacity: 1; pointer-events: auto; }
+.mk-table__row:hover .mk-table__name, .mk-table__row:focus-within .mk-table__name { visibility: hidden; }
+@media (hover: none) { .mk-table__quick { display: none; } }
 .mk-table__link { display: grid; grid-template-columns: 24px auto minmax(0, 1fr); align-items: center; gap: 10px; padding: 9px 14px; color: var(--fg); text-decoration: none; outline: none; min-width: 0; }
 .mk-table__sym { font-size: 13px; font-weight: 600; letter-spacing: 0.02em; }
 .mk-table__name { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -169,6 +175,11 @@ button.mk-held:hover { border-color: var(--accent); }
   .mk-trade__position { grid-area: position; }
   .mk-trade > .mkt-trade__chat { grid-area: chat; }
 }
+
+/* ── The rail's Morning tape seat (AI fills it; empty on an empty list) ──── */
+.mk-rail-seat { flex: 0 0 auto; min-width: 0; }
+.mk-rail-seat:empty { display: none; }
+.mk-rail-seat > * { margin: 10px 12px 0; }
 
 /* ── Watchlist rail density (MK2) — compact hides the company name and
    tightens the row; the position column and the price keep their seats. */

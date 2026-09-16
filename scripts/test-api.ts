@@ -240,7 +240,7 @@ import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingIn
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
 import { CHOOSE_SHAPE_RULES, chooseMosaicShape, composeMosaicAsk, fmtUnits, integerPcts, isMosaicAsk, MOSAIC_STABLE, mosaicAskString, mosaicPresets, mosaicStableFor, mosaicValueRows, parseMosaicAsk, planMosaic, suggestMosaicShape, type MosaicHolding } from '../lib/mosaic'
 import { simulateLadder } from './ask-ladder'
-import { limitAtLevel as mk2LimitAtLevel, BEST_OUT_RULE as MK2_BEST_OUT_RULE, venuesFor as mk2VenuesFor, missingVenueNotes as mk2MissingNotes, composeCompound as mk2ComposeCompound, compoundLegKindsFor as mk2LegKinds, compoundPresets as mk2Presets, type CompoundLegKind as Mk2LegKind, type RoutesResponse as Mk2RoutesResponse } from '../lib/symbol-venues'
+import { quickActs as mk2QuickActs, ROUTE_TICKET_NOTE as MK2_TICKET_NOTE, SETTLES as MK2_SETTLES, limitAtLevel as mk2LimitAtLevel, BEST_OUT_RULE as MK2_BEST_OUT_RULE, venuesFor as mk2VenuesFor, missingVenueNotes as mk2MissingNotes, composeCompound as mk2ComposeCompound, compoundLegKindsFor as mk2LegKinds, compoundPresets as mk2Presets, type CompoundLegKind as Mk2LegKind, type RoutesResponse as Mk2RoutesResponse } from '../lib/symbol-venues'
 import { execAsks as mk2ExecAsks, execSidesFor as mk2ExecSidesFor, sideOf as mk2SideOf, AMOUNTS as MK2_AMOUNTS, STOPS as MK2_STOPS, CADENCES as MK2_CADENCES } from '../lib/trade-asks'
 import { exitChipsFor as mk2ExitChipsFor, positionSummary as mk2PositionSummary, positionIsEmpty as mk2PositionIsEmpty, type SymbolPosition as Mk2SymbolPosition } from '../lib/symbol-position'
 import {
@@ -20283,6 +20283,36 @@ async function main() {
         r2.status === 200 && j2.cached === true,
       `status=${r1.status} rows=${j1.routes?.length} quoted=${j1.routes?.filter((r) => r.quote).length} failed=${JSON.stringify(j1.failed)} cached2=${j2.cached}`,
     )
+    // R3: the order ticket — every row carries what the wallet would sign,
+    // composed from the route's own numbers + lib/fees, never an address.
+    const tickets = j1.routes.map((r) => r.ticket)
+    const spotBuy = j1.routes.find((r) => r.kind === 'spot' && r.side === 'buy' && r.quote)
+    const feeMath = (r: (typeof j1.routes)[number]) => Math.round(((j1.amountUsd * r.feeBps) / 10_000) * 100) / 100
+    check(
+      'MK2/EXEC order ticket: every route row carries a ticket (est. out · fee bps AND dollars = amount × bps · min received / slippage bound · gas floor by chain · settlement venue NAME · what you sign) with no 0x address anywhere; a quoted spot buy pins min received under est. out at the 0.50% builder bound; the note reads "estimate · the guarded card quotes the pool"',
+      tickets.every((t) => !!t && typeof t.settles === 'string' && t.settles.length > 8 && !/0x[0-9a-fA-F]{6,}/.test(JSON.stringify(t)) && typeof t.signs === 'string' && t.note === MK2_TICKET_NOTE) &&
+        j1.routes.every((r) => r.ticket!.feeBps === r.feeBps && r.ticket!.feeUsd === feeMath(r)) &&
+        !!spotBuy && spotBuy.ticket!.slippageBps === 50 && !!spotBuy.ticket!.out && !!spotBuy.ticket!.minOut && parseFloat(spotBuy.ticket!.minOut) < parseFloat(spotBuy.ticket!.out) &&
+        j1.routes.filter((r) => r.kind === 'limit').every((r) => r.ticket!.slippageBps === null && r.ticket!.gas === null) &&
+        j1.routes.filter((r) => r.kind === 'perp').every((r) => r.ticket!.slippageBps === 100 && r.ticket!.gas === null) &&
+        j1.routes.filter((r) => r.kind === 'spot' && r.chainId === 1).every((r) => /0\.001 ETH floor on Ethereum/.test(r.ticket!.gas ?? '')) &&
+        Object.values(MK2_SETTLES).every((v) => !/0x/.test(v)) &&
+        (await readFile('components/markets/trade/RouteTable.tsx', 'utf8')).includes('data-ticket="1"') && (await readFile('components/markets/trade/RouteTable.tsx', 'utf8')).includes('r.ticket.note.toUpperCase()'),
+      `spot fee $${spotBuy?.ticket?.feeUsd} out=${spotBuy?.ticket?.out} min=${spotBuy?.ticket?.minOut} settles=${spotBuy?.ticket?.settles}`,
+    )
+    // R3: QuickAct — the index-row chips, honest per class, all native.
+    const qaEth = mk2QuickActs('ETH', ethPair)
+    const qaAapl = mk2QuickActs('AAPL', aaplPair)
+    const qaSol = mk2QuickActs('SOL', solPair)
+    check(
+      'MK2/EXEC QuickAct: ETH = Buy $25 · Long 2x · DCA weekly; a stock = Buy $25 on 4663 · DCA weekly (never a perp); SOL = Long 2x · Short 2x (never a spot buy of a squat); every chip lands native; QuickAct.tsx stops the row link and sends through onAsk',
+      qaEth.map((a) => a.label).join() === 'Buy $25,Long 2x,DCA weekly' && qaEth[1].ask === '2x Long $25 of ETH on Hyperliquid' &&
+        qaAapl.map((a) => a.label).join() === 'Buy $25 on 4663,DCA weekly' && qaAapl[0].ask === 'Buy $25 of AAPL' &&
+        qaSol.map((a) => a.label).join() === 'Long 2x,Short 2x' &&
+        [...qaEth, ...qaAapl, ...qaSol, ...mk2QuickActs('HYPE', hypePair), ...mk2QuickActs('LINK', linkPair)].every((a) => simulateLadder(a.ask).kind === 'action') &&
+        (await readFile('components/markets/trade/QuickAct.tsx', 'utf8')).includes('e.stopPropagation()') && (await readFile('components/markets/trade/QuickAct.tsx', 'utf8')).includes('onAsk(ask)'),
+      `${qaEth.map((a) => a.ask).join(' | ')} || ${qaAapl.map((a) => a.ask).join(' | ')} || ${qaSol.map((a) => a.ask).join(' | ')}`,
+    )
     check(
       'MK2/EXEC routes API: a stable (USDC) is 404 by name, a malformed symbol 400, a stock answers only 4663 stock/dca/fund rows',
       (await fetch(`${BASE}/api/markets/routes?symbol=USDC`)).status === 404 && (await fetch(`${BASE}/api/markets/routes?symbol=%3Cscript%3E`)).status === 400 &&
@@ -20584,6 +20614,26 @@ async function main() {
         tableSrc.includes("import Sparkline from '@/components/markets/viz/Sparkline'") && tableSrc.includes('sparks[r.symbol]!.length >= 2') &&
         sparksSrc.includes('/api/markets/viz/sparks?symbols=') && sparksSrc.includes('const BATCH = 60') &&
         /<ChartMount [^>]*compare=\{vs\}/.test(await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')),
+    )
+    // AI's request: the Morning tape at the top of the /markets rail, its
+    // chips through the rail's own connect-to-act prefill door.
+    const idxSrc = await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')
+    check(
+      'mk2/markets: the /markets rail seats AI\'s MorningTape above the watchlist rows (a seat in the aside before data-slot="watchlist"; empty seats collapse), and its chips prefill chat through useConnectToAct like the rail\'s own',
+      /<aside class="mkt-frame__rail"[^>]*><div class="mk-rail-seat" data-seat="MorningTape">[\s\S]*?<\/div><div data-slot="watchlist"/.test(mkHtml) &&
+        idxSrc.includes('<MorningTape onAsk={tapeAct} />') && idxSrc.includes('useConnectToAct({ run: (ask) => router.push(promptHref(ask)), redirectFor: promptHref })') &&
+        idxSrc.includes('{tapeDoor}') && /\.mk-rail-seat:empty \{ display: none; \}/.test(await readFile('components/markets/markets.css', 'utf8')),
+    )
+    // EXEC's QuickAct on every index row (hover/focus reveal, the index's one
+    // act door) + VIZ's fills on the chart for the connected wallet.
+    const symSrc2 = await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')
+    check(
+      'mk2/markets: every /markets ledger row seats EXEC\'s QuickAct (hidden until hover/focus-within, none on touch) through the index\'s ONE connect-to-act door shared with the Morning tape; SymbolPage hands the connected wallet\'s fills to the engine',
+      /<span class="mk-table__quick" data-seat="QuickAct"><span class="mkt-quick[^"]*"[^>]*data-acts="[1-9]"/.test(mkHtml) &&
+        (mkHtml.match(/data-seat="QuickAct"/g) ?? []).length >= 24 &&
+        (await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')).includes('<Board key={s.id} section={s} onAsk={indexAct} />') &&
+        /\.mk-table__row:hover \.mk-table__quick, \.mk-table__row:focus-within \.mk-table__quick \{ opacity: 1; pointer-events: auto; \}/.test(await readFile('components/markets/markets.css', 'utf8')) &&
+        symSrc2.includes('const fills = useSymbolFills(sym, walletAddress)') && /<ChartMount [^>]*fills=\{fills\}/.test(symSrc2),
     )
     // The one stylesheet import + the slot card rule (QA's request: whoever
     // owns a class ships its rule).
@@ -21051,7 +21101,9 @@ async function main() {
     })())
     check("ai grammar: the model's CHIPS line is split off the prose and only menu ids survive (a typed sentence is not a chip)", (() => {
       const { body, ids } = aiSplitChipsLine('Prose here.\nMore prose.\nCHIPS: m0, m2, send 1 ETH to 0x1111, m99')
-      return body === 'Prose here.\nMore prose.' && ids.join(',') === 'm0,m2,m99'
+      const bare = aiSplitChipsLine('Prose here.\n\nm2, m0')
+      const none = aiSplitChipsLine('Prose about m0 and more.')
+      return body === 'Prose here.\nMore prose.' && ids.join(',') === 'm0,m2,m99' && bare.body === 'Prose here.' && bare.ids.join(',') === 'm2,m0' && none.ids.length === 0 && none.body === 'Prose about m0 and more.'
     })())
 
     // The routes, against the mocked model.
@@ -21144,7 +21196,7 @@ async function main() {
     const ctxSrc = await readFile('lib/markets-ai-context.ts', 'utf8')
     check('ai position: the paragraph hops EXEC\'s /api/markets/position with the CALLER\'s own cookie (own-session rows come back; a stranger\'s are named private, never guessed), and falls back to the chain-only reader', briefRoute.includes("readSymbolPosition(req.nextUrl.origin, req.headers.get('cookie')") && ctxSrc.includes('privateRows: p.private ?? []') && ctxSrc.includes('return readPosition(address, pair, last, change24hPct)') && aiPositionFallback({ symbol: 'ETH', last: 2500, change24hPct: 1, rows: [], perp: null, privateRows: ['dca', 'guardian'] }).includes('private'))
     const askSrc2 = await readFile('components/markets/ai/AskChart.tsx', 'utf8')
-    check('ai explain: AskChart offers "Explain the <time> bar" for the chart-hover store\'s bar (lib/markets-ai-hover, VIZ reports it) and the window\'s last bar until then, through kind:explain', askSrc2.includes("useChartHover((st) => (st.symbol === pair.symbol ? st.bar : null))") && askSrc2.includes("kind: 'explain', bar: explainBar") && askSrc2.includes("data-explain={hover ? 'hover' : 'last'}"))
+    check('ai explain: AskChart offers "Explain the <time> bar" for the chart-hover store\'s bar (lib/markets-ai-hover, VIZ reports it), else the bar under the newest timed drawing (note / trend end — the ChartState crosshair fallback), else the window\'s last bar, through kind:explain', askSrc2.includes("useChartHover((st) => (st.symbol === pair.symbol ? st.bar : null))") && askSrc2.includes("kind: 'explain', bar: explainBar") && askSrc2.includes('data-explain={explainMode}') && askSrc2.includes("l.kind === 'note' ? l.t : l.kind === 'trend' ? l.t2 : null"))
     // The wire the components speak, pinned at the source: a chip click SENDS
     // through onAsk (never auto), a chart answer goes through onChartState,
     // the alert card posts the /api/alerts shape, and the byline is honest.

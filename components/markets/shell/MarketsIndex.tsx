@@ -38,6 +38,8 @@ import MarketsSide from '@/components/markets/shell/MarketsSide'
 import SessionStrip from '@/components/markets/shell/SessionStrip'
 import MoversTape from '@/components/markets/slots/MoversTape'
 import MarketMap from '@/components/markets/slots/MarketMap'
+import MorningTape from '@/components/markets/ai/MorningTape'
+import { useConnectToAct } from '@/lib/use-connect-to-act'
 import type { TrendingRow } from '@/app/markets/trending'
 
 // Rows before "show all" — a folded board leads with the household names.
@@ -49,7 +51,7 @@ const TAB_LABELS: Readonly<Record<MarketSectionId, string>> = {
   perps: 'Perps',
 }
 
-function Board({ section }: { section: MarketSection }) {
+function Board({ section, onAsk }: { section: MarketSection; onAsk?: (ask: string) => void }) {
   const [open, setOpen] = useState(false)
   const rows = open ? section.rows : section.rows.slice(0, FOLD_AT)
   const { quotes } = useQuotes(rows.map((r) => r.symbol))
@@ -63,7 +65,7 @@ function Board({ section }: { section: MarketSection }) {
         <span className="mkt-sec__count mono">{section.rows.length} LISTED</span>
       </header>
       <div className="mk-board">
-        <MarketTable rows={rows} quotes={quotes} section={section.id} />
+        <MarketTable rows={rows} quotes={quotes} section={section.id} onAsk={onAsk} />
       </div>
       {section.rows.length > FOLD_AT && (
         <button type="button" className="mkt-sec__more mono" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
@@ -211,6 +213,12 @@ export default function MarketsIndex({ trending = [] }: { trending?: TrendingRow
   const showMap = view === 'map'
   const showList = view === 'list' || phone
   const open = useCallback((symbol: string) => router.push(`/t/${symbol}`), [router])
+  // ONE act door for the index: the rail's Morning tape (AI) and every row's
+  // QuickAct chips (EXEC) prefill chat the way the rail's own chips do — a
+  // URL never fires a turn, and a visitor with no wallet connects first
+  // (lib/use-connect-to-act, the WatchlistRail pattern).
+  const promptHref = (ask: string) => `/chat?prompt=${encodeURIComponent(ask)}`
+  const { act: indexAct, door: indexDoor } = useConnectToAct({ run: (ask) => router.push(promptHref(ask)), redirectFor: promptHref })
   useRowKeys()
 
   // Two grid items for the page's .mkt-frame: the data column and the side
@@ -269,7 +277,7 @@ export default function MarketsIndex({ trending = [] }: { trending?: TrendingRow
               </p>
             </section>
           )}
-          {showList && sections.map((s) => <Board key={s.id} section={s} />)}
+          {showList && sections.map((s) => <Board key={s.id} section={s} onAsk={indexAct} />)}
           <section className="mkt-card mkt-frame__how" aria-labelledby="mkt-how">
             <h2 id="mkt-how" className="mkt-card__title">
               How a chart executes
@@ -294,8 +302,12 @@ export default function MarketsIndex({ trending = [] }: { trending?: TrendingRow
       {/* ── The side column: ask + account on top, the watchlist docked
           under it at full height ── */}
       <MarketsSide label="Your watchlist">
+        <div className="mk-rail-seat" data-seat="MorningTape">
+          <MorningTape onAsk={indexAct} />
+        </div>
         <WatchlistSlot />
       </MarketsSide>
+      {indexDoor}
     </>
   )
 }

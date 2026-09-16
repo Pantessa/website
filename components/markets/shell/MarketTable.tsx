@@ -17,6 +17,8 @@ import { chgClass, fmtPct, fmtQuotePrice, type QuoteMap } from '@/lib/markets-qu
 import { sortMarketRows, type MarketRow, type MarketSortDir, type MarketSortKey } from '@/lib/markets'
 import Sparkline from '@/components/markets/viz/Sparkline'
 import { useSparks } from '@/components/markets/shell/useSparks'
+import QuickAct from '@/components/markets/trade/QuickAct'
+import { chartPairFor } from '@/lib/charts'
 
 const HEADS: { key: MarketSortKey; label: string }[] = [
   { key: 'symbol', label: 'Symbol' },
@@ -24,7 +26,7 @@ const HEADS: { key: MarketSortKey; label: string }[] = [
   { key: 'chg', label: '24h' },
 ]
 
-export default function MarketTable({ rows, quotes, section }: { rows: readonly MarketRow[]; quotes: QuoteMap; section: string }) {
+export default function MarketTable({ rows, quotes, section, onAsk }: { rows: readonly MarketRow[]; quotes: QuoteMap; section: string; /** The index's act door — EXEC's QuickAct chips send through it (connect-to-act). */ onAsk?: (ask: string) => void }) {
   const [sort, setSort] = useState<{ key: MarketSortKey; dir: MarketSortDir } | null>(null)
   const sorted = useMemo(() => (sort ? sortMarketRows(rows, quotes, sort.key, sort.dir) : [...rows]), [rows, quotes, sort])
   // 7d sparkline closes (VIZ's sparks route); empty until the read lands.
@@ -68,6 +70,7 @@ export default function MarketTable({ rows, quotes, section }: { rows: readonly 
         {sorted.map((r) => {
           const q = quotes[r.symbol]
           const markWhere = r.source === 'robinhood' ? { chain: 'Robinhood Chain' } : {}
+          const pair = onAsk ? chartPairFor(r.symbol) : null
           return (
             <tr key={r.symbol} className="mk-table__row" data-symbol={r.symbol}>
               <td className="mk-table__id">
@@ -76,6 +79,13 @@ export default function MarketTable({ rows, quotes, section }: { rows: readonly 
                   <span className="mk-table__sym mono">{r.symbol}</span>
                   <span className="mk-table__name">{r.name}</span>
                 </Link>
+                {/* EXEC's QuickAct: 2–3 honest chips, revealed on row hover/focus; the chips
+                    stopPropagation so the row link stays a link (a MARKETS seat). */}
+                {pair && onAsk && (
+                  <span className="mk-table__quick" data-seat="QuickAct">
+                    <QuickAct symbol={r.symbol} pair={pair} onAsk={onAsk} />
+                  </span>
+                )}
               </td>
               <td className="mk-table__spark" data-spark={sparks[r.symbol]?.length ?? 0}>
                 {sparks[r.symbol] && sparks[r.symbol]!.length >= 2 ? <Sparkline values={sparks[r.symbol]!} width={64} height={20} title={`${r.symbol} · 7 days`} /> : null}
