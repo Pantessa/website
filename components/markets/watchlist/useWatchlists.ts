@@ -50,9 +50,10 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 
 // ── Holdings reads ──────────────────────────────────────────────────────────
 // The read itself is shared with the page (lib/held-read: the YOU HOLD pill
-// and the Sell chips read the same one): one read and one reconcile per
-// wallet per mode per minute. Rows show the position (2026-09-14), so a page
-// left open also re-reads once a minute while the tab is visible.
+// and the Sell chips read the same one, holdings + the empty-wallet and card
+// door flags): one read and one reconcile per wallet per mode per minute. Rows
+// show the position (2026-09-14), so a page left open also re-reads once a
+// minute while the tab is visible.
 const lastReconciled = new Map<string, number>()
 const NO_HELD: ReadonlyMap<string, HeldSymbol> = new Map()
 
@@ -88,6 +89,16 @@ export interface WatchlistsApi {
   /** A wallet is behind the rail (or on its way back) and its first holdings
    *  read + autofill haven't settled; the rail brews on an empty first list. */
   checkingWallet: boolean
+  /** The wallet whose holdings the rail reads: the session's in account mode,
+   *  the connected one as a guest. */
+  holder: string | null
+  /** Its last settled holdings read found nothing in it (every chain answered). */
+  walletEmpty: boolean
+  /** This deployment can sell that wallet funds by card (the rail's card door). */
+  cardFunding: boolean
+  /** Read the wallet again NOW, past the minute window and the server cache,
+   *  and reconcile: a card purchase just landed and belongs on the list. */
+  recheckWallet: () => void
   /** The last holdings autofill that added something (the rail's one note). */
   autofill: { added: string[]; listName: string; at: number } | null
   createList: (name: string, symbols?: string[], sections?: WatchlistShape['sections']) => Promise<WatchlistShape | null>
@@ -120,6 +131,13 @@ export function useWatchlists(): WatchlistsApi {
   const [error, setError] = useState<string | null>(null)
   const [held, setHeld] = useState<ReadonlyMap<string, HeldSymbol>>(NO_HELD)
   const [autofill, setAutofill] = useState<WatchlistsApi['autofill']>(null)
+  // The card door's inputs (2026-09-16), per wallet: did the last read find
+  // nothing in it, and is card funding on. `recheck` bumps when a purchase
+  // lands, which runs the read + reconcile below again, fresh.
+  const [walletRead, setWalletRead] = useState<{ holder: string; empty: boolean; cardFunding: boolean } | null>(null)
+  const [recheck, setRecheck] = useState(0)
+  const recheckedRef = useRef(0)
+  const recheckWallet = useCallback(() => setRecheck((n) => n + 1), [])
   // The wallet check (2026-09-14). Settled means this wallet's first holdings
   // read and reconcile finished, either way; until then an empty list is
   // waiting on the wallet, not empty. A remembered wallet wagmi is still
@@ -222,14 +240,20 @@ export function useWatchlists(): WatchlistsApi {
     }
     let alive = true
     const key = heldKey
+    // A landed purchase asked for this run: read past both caches and
+    // reconcile again inside the minute, so the buy joins the list now.
+    const fresh = recheck > recheckedRef.current
+    recheckedRef.current = recheck
+    if (fresh) lastReconciled.delete(key)
     const reconcile = async () => {
-      const got = await readHeld(holder)
+      const got = await readHeld(holder, HELD_EVERY_MS, fresh)
       if (!alive || !got) return
-      setHeld(new Map(got.map((h) => [h.symbol, h])))
+      setHeld(new Map(got.held.map((h) => [h.symbol, h])))
+      setWalletRead({ holder, empty: got.empty, cardFunding: got.cardFunding })
       const last = lastReconciled.get(key)
       if (last !== undefined && Date.now() - last < HELD_EVERY_MS) return
       lastReconciled.set(key, Date.now())
-      const symbols = got.map((h) => h.symbol)
+      const symbols = got.held.map((h) => h.symbol)
       if (authed) {
         try {
           const r = await api<{ list: WatchlistShape | null; added: string[]; dismissed: string[] }>('/api/watchlists/holdings', {
@@ -272,7 +296,7 @@ export function useWatchlists(): WatchlistsApi {
     return () => {
       alive = false
     }
-  }, [ready, holder, heldKey, authed, modeKey, update, updateGuest])
+  }, [ready, holder, heldKey, authed, modeKey, update, updateGuest, recheck])
 
   // A page left open keeps each row's position current (a buy made from the
   // rail's own chips lands while you watch): re-read once a minute while the
@@ -285,7 +309,12 @@ export function useWatchlists(): WatchlistsApi {
       if (document.hidden) return
       // Half the window: by the next tick the last read is a minute old.
       const got = await readHeld(holder, HELD_EVERY_MS / 2)
-      if (alive && got) setHeld(new Map(got.map((h) => [h.symbol, h])))
+      if (alive && got) {
+        setHeld(new Map(got.held.map((h) => [h.symbol, h])))
+        // Money that arrives from anywhere (an exchange, another wallet)
+        // closes the card door within the minute too.
+        setWalletRead({ holder, empty: got.empty, cardFunding: got.cardFunding })
+      }
     }
     const t = setInterval(refresh, HELD_EVERY_MS)
     const onVisible = () => {
@@ -453,6 +482,10 @@ export function useWatchlists(): WatchlistsApi {
     error,
     held,
     checkingWallet,
+    holder,
+    walletEmpty: !!holder && walletRead?.holder === holder && walletRead.empty,
+    cardFunding: !!holder && walletRead?.holder === holder && walletRead.cardFunding,
+    recheckWallet,
     autofill,
     createList,
     renameList,

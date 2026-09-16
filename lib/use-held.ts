@@ -20,9 +20,9 @@ export function useHeld(): readonly HeldSymbol[] | null {
     if (!walletAddress) return
     let alive = true
     const read = async (maxAgeMs?: number) => {
-      const held = await readHeld(walletAddress, maxAgeMs)
+      const got = await readHeld(walletAddress, maxAgeMs)
       // A failed read keeps what was known; it never clears a holding.
-      if (alive && held) setGot({ address: walletAddress, held })
+      if (alive && got) setGot({ address: walletAddress, held: got.held })
     }
     void read()
     // Half the window: by the next tick the last read is a minute old.
@@ -41,5 +41,5 @@ export function useHeld(): readonly HeldSymbol[] | null {
   if (!walletAddress) return null
   // Another wallet's holdings never answer for this one (a switch, a reconnect).
   if (got?.address === walletAddress) return got.held
-  return peekHeld(walletAddress)
+  return peekHeld(walletAddress)?.held ?? null
 }

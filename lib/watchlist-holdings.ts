@@ -98,13 +98,41 @@ export function heldWatchSymbols(
     .map(({ symbol, valueUsd, amount, chains: on, chainIds }) => ({ symbol, valueUsd, amount, chains: on, chainIds }))
 }
 
+/** Does the wallet hold nothing? True only when every chain answered and
+ *  everything on them together is dust (under HELD_MIN_USD). Never true on a
+ *  doubt: a chain that didn't answer is unread, not zero, and a holding nobody
+ *  could price (a stock bought a minute ago) is still something. The
+ *  watchlist rail offers card funding on it (lib/watchlists railFundPhase).
+ *  Pure; the harness composes views by hand. */
+export function walletLooksEmpty(
+  view: { chains: readonly Pick<WalletChainView, 'holdings' | 'unread'>[]; failedChains: readonly string[] },
+  minUsd = HELD_MIN_USD,
+): boolean {
+  if (view.failedChains.length > 0) return false
+  let usd = 0
+  for (const c of view.chains) {
+    if (c.unread) return false
+    for (const h of c.holdings) {
+      if (!(Number(h.balance) > 0)) continue
+      if (h.valueUsd == null || !Number.isFinite(h.valueUsd)) return false
+      usd += h.valueUsd
+    }
+  }
+  return usd < minUsd
+}
+
 /** The whole read: the cached wallet view plus warmed curated lists → held
- *  symbols. Never throws for one bad chain (the view fails soft per chain);
- *  a chain that didn't answer simply contributes nothing this visit. */
-export async function readHeldSymbols(address: `0x${string}`): Promise<{ held: HeldSymbol[]; failedChains: string[]; cached: boolean }> {
+ *  symbols, and whether the wallet holds anything at all. Never throws for
+ *  one bad chain (the view fails soft per chain); a chain that didn't answer
+ *  simply contributes nothing this visit. `fresh` is the view cache's
+ *  bounded bypass (one fresh read per address every 8s). */
+export async function readHeldSymbols(
+  address: `0x${string}`,
+  opts: { fresh?: boolean } = {},
+): Promise<{ held: HeldSymbol[]; empty: boolean; failedChains: string[]; cached: boolean }> {
   const [{ view, cached }] = await Promise.all([
-    getWalletViewCached(address),
+    getWalletViewCached(address, opts),
     Promise.all(APP_CHAINS.map((c) => ensureTokenList(c.id).catch(() => {}))),
   ])
-  return { held: heldWatchSymbols(view.chains), failedChains: view.failedChains, cached }
+  return { held: heldWatchSymbols(view.chains), empty: walletLooksEmpty(view), failedChains: view.failedChains, cached }
 }

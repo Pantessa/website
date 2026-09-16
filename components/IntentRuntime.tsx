@@ -41,6 +41,7 @@ import { isTransferShaped, linkEyebrow } from '@/lib/intent-links'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATALOG } from '@/lib/mcp-data'
 import { FREE_FLEET_FALLBACK } from '@/lib/free-fleet'
+import { resolveAppIds } from '@/lib/ask-apps'
 
 const STATIC_SERVERS: McpServer[] = [...FREE_FLEET_FALLBACK, ...CATALOG]
 
@@ -245,10 +246,10 @@ export default function IntentRuntime({
   useEffect(() => {
     if (appliedMcps.current || servers.length === 0 || !mcps) return
     appliedMcps.current = true
-    const ids = mcps
-      .split(',')
-      .map((s) => servers.find((srv) => srv.slug === s.trim())?.id)
-      .filter((id): id is string => !!id)
+    const ids = resolveAppIds(
+      mcps.split(',').map((s) => s.trim()).filter(Boolean),
+      servers,
+    )
     // The LINK's set, marked as such — it runs this page and never becomes
     // the wallet's working set on /chat (store.linkSetActive).
     if (ids.length) setLinkServerIds(ids)

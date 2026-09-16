@@ -304,3 +304,45 @@ export function chartableSymbols(): string[] {
   for (const s of [...ROBINHOOD_TICKER_SET].sort()) push(s)
   return out
 }
+
+/** Chain and venue names that double as chart names or tickers ("on
+ *  arbitrum" is not ARB, "supply USDC to aave" is not AAVE, "stake on lido"
+ *  is not LDO). After a place preposition they name WHERE, so there they
+ *  count as a token only when clearly typed as one ("$AAVE", or AAVE in a
+ *  lowercase sentence); "buy $5 of aave" still names the token. */
+const PLACE_PREPOSITIONS = new Set(['on', 'to', 'with', 'via', 'at', 'from', 'into', 'using', 'through', 'onto'])
+const TRADE_PLACE_WORDS = new Set([
+  'ETHEREUM', 'ARBITRUM', 'OPTIMISM', 'POLYGON', 'HYPERLIQUID', 'UNISWAP', 'LIDO', 'CURVE',
+  'COMPOUND', 'AAVE', 'MORPHO', 'AERODROME', 'JUPITER', 'OP', 'ARB', 'UNI',
+])
+
+/**
+ * Every CHARTED symbol a sentence names, in order, with the word index it sat
+ * at — the same word rules as parseChartAsk (tickers vs English words, names →
+ * tickers), minus the chart-word gate, plus a chain/venue fence. Used to tag a
+ * trade's fills with the symbols it moved (lib/fill-symbols.ts). Stables and
+ * unknown tokens never appear.
+ */
+export function chartSymbolsIn(text: string): { symbol: string; at: number }[] {
+  const words = text
+    .slice(0, 400)
+    .replace(/\bS\s*&\s*P(?:\s*500)?\b/gi, ' SPY ')
+    .replace(/['’]s\b/gi, '')
+    .split(/[^A-Za-z0-9$]+/)
+    .filter(Boolean)
+  const out: { symbol: string; at: number }[] = []
+  words.forEach((w, at) => {
+    const raw = w.replace(/^\$/, '').toUpperCase()
+    if (!raw) return
+    const typed = typedAsTicker(w, text)
+    const ticker = typed && isChartedStock(raw)
+    if (!ticker && CHART_STOPWORDS.has(raw)) return
+    if (TRADE_PLACE_WORDS.has(raw) && !typed && at > 0 && PLACE_PREPOSITIONS.has(words[at - 1].toLowerCase())) return
+    const byName = CHART_NAMES[raw] ?? CHART_STOCK_NAMES[raw]
+    const pair = chartPairFor(byName ?? raw)
+    if (!pair) return
+    if (pair.source === 'robinhood' && !byName && !ticker && (raw.length < 4 || ENGLISH_WORD_TICKERS.has(raw))) return
+    out.push({ symbol: pair.symbol, at })
+  })
+  return out
+}

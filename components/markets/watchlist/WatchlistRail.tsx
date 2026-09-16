@@ -9,7 +9,9 @@
 // (lib/watchlists heldPosition). Guests build lists in localStorage; signing
 // in adopts them. While the lists load, or a wallet check can still fill an
 // empty list, the rows area brews instead of calling itself empty
-// (lib/watchlists railBrewPhase).
+// (lib/watchlists railBrewPhase). A wallet that holds nothing gets the card
+// door under the rows: Buy ETH or USDC through Stripe, watched until it lands
+// (./FundWallet, lib/watchlists railFundPhase).
 //
 // Chips follow the chip-send contract: with an `onAsk` (a chat surface
 // mounted next to the chart) they SEND; without one the tap is still the
@@ -32,6 +34,7 @@ import { useToast } from '@/lib/toast'
 import { DEFAULT_LIST_NAME, RAIL_BREW_COPY, fmtQuotePrice, heldAutofillNote, heldPosition, heldTitle, quoteCellState, railBrewPhase, sectionedRows, symbolName, type Quote, type WatchlistShape } from '@/lib/watchlists'
 import AddTicker from './AddTicker'
 import AlertForm from './AlertForm'
+import FundWallet from './FundWallet'
 import ImportModal from './ImportModal'
 import { useAlerts, useQuotes, useWatchlists } from './useWatchlists'
 import { canSellAsk } from '@/lib/sell-gate'
@@ -642,6 +645,10 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
             </div>
           )
         })}
+        {/* ── Card door: a wallet that holds nothing buys ETH or USDC here.
+            Mounted whenever a wallet might be behind the rail, so a purchase
+            it is watching survives the wallet filling up. ─────────────── */}
+        <FundWallet holder={wl.holder} empty={wl.walletEmpty && !brew} cardFunding={wl.cardFunding} onLanded={wl.recheckWallet} />
       </div>
 
       {/* ── Alerts (armed) ────────────────────────────────────────── */}
