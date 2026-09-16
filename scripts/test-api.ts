@@ -17787,6 +17787,15 @@ async function main() {
       liveOk,
       liveNote.slice(0, 600),
     )
+    // Once the sell can pass its guard, a swap that lands REVERTED must fail
+    // the run. The old waitTx returned on any receipt, so a reverted sell
+    // read "sold" while the WETH sat on the spender (Base fork, 2026-09-16).
+    const spotWaitTx = readFileSync('lib/spot-guard-exec.ts', 'utf8').match(/async function waitTx\([\s\S]*?\n\}/)?.[0] ?? ''
+    check(
+      "spot guard exec: waitTx throws on a reverted receipt and on a missing client (a reverted sell never reads 'sold')",
+      /receipt\.status !== 'success'\) throw/.test(spotWaitTx) && /if \(!client\) throw/.test(spotWaitTx),
+      spotWaitTx.slice(0, 200),
+    )
   }
 
   // ── Token charts (the uniform chart button + /t pages) ───────────────────

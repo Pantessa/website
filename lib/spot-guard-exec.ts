@@ -634,8 +634,11 @@ function encodeManagerCall(functionName: 'approveWithSignature' | 'spend', args:
   return encodeFunctionData({ abi: spendPermissionManagerAbi, functionName, args } as Parameters<typeof encodeFunctionData>[0])
 }
 
+// A mined REVERT is a failure, as in dca-auto-exec. Returning on any receipt
+// once recorded a reverted sell as "sold" (proven on a Base fork, 2026-09-16).
 async function waitTx(hash: `0x${string}`): Promise<void> {
   const client = publicClientFor(SPOT_GUARD_CHAIN_ID)
-  if (!client) return
-  await client.waitForTransactionReceipt({ hash, timeout: 120_000 })
+  if (!client) throw new Error('No Base RPC client to confirm the transaction.')
+  const receipt = await client.waitForTransactionReceipt({ hash, timeout: 120_000 })
+  if (receipt.status !== 'success') throw new Error(`tx ${hash} reverted`)
 }
