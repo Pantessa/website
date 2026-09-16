@@ -367,6 +367,8 @@ export interface RouteQuote extends VenueRoute {
   quote: { kind: 'price' | 'apy' | 'funding' | 'none'; value: number | null; label: string; sub?: string } | null
   /** Best WITHIN its kind (spot: most token for the same dollars). */
   best?: true
+  /** The order ticket this row would build (server-composed, no wallet). */
+  ticket?: RouteTicket
 }
 
 export interface RoutesResponse {
@@ -585,3 +587,72 @@ export function limitAtLevel(symbol: string, chainWord: string, usd: number, pri
 /** The plain-words rule behind the BEST OUT tag — one sentence, quoted in
  *  the table's tooltip and pinned in the harness. */
 export const BEST_OUT_RULE = 'BEST OUT = the most token for the same dollars across the spot chains quoted right now (fee tier scanned, impact included). Only spot rows compete: a perp, a loan, a stake or a schedule is a different thing, so nothing is called best across kinds.'
+
+// ── "What you'll sign": the order ticket a row would build ─────────────────
+// Composed from the routes route's own numbers + lib/fees + each builder's
+// pinned bounds — no build, no wallet, no address ever (venues are NAMED).
+// The guarded card re-quotes the pool at signature; this is the estimate.
+export interface RouteTicket {
+  /** Estimated out ("0.02017 ETH", "$50 notional at 2x = $25 collateral"). */
+  out: string | null
+  feeBps: number
+  feeUsd: number
+  /** The slippage bound the builder pins (null = the venue has none: a resting order fills at-or-better). */
+  slippageBps: number | null
+  /** The minimum received the builder will pin, at that bound. */
+  minOut: string | null
+  /** The gas the wallet needs on the signing chain (lib/wallet-view floors), or null for gasless venues. */
+  gas: string | null
+  /** The settlement venue / contract NAME — never an address. */
+  settles: string
+  /** What the wallet signs ("approve + swap, one card", "EIP-712 order"…). */
+  signs: string
+  note: string
+}
+export const ROUTE_TICKET_NOTE = 'estimate · the guarded card quotes the pool'
+
+export const SETTLES: Record<string, string> = {
+  uniswap: 'Uniswap v3 SwapRouter02 (sweepTokenWithFee split)',
+  cow: 'CoW Protocol GPv2Settlement (partnerFee in the signed appData)',
+  hyperliquid: 'Hyperliquid L1 exchange (builder fee on the fill)',
+  aave: 'Aave v4 spoke on Ethereum',
+  lido: 'Lido stETH contract',
+  near: 'NEAR Intents 1Click deposit (one-time address, guard-verified)',
+  lifi: 'LiFi diamond → Robinhood Chain (settlement contract pinned)',
+  robinhood: 'Uniswap v3 on Robinhood Chain (USDG pool)',
+  pantessa: 'Pantessa Guardian (Spend Permission / DCA schedule)',
+}
+
+/** Gas the wallet must hold on the signing chain — mirrors lib/wallet-view
+ *  GAS_FLOOR_ETH (client-safe copy; the panel names the same floors). */
+export const GAS_FLOOR_ETH: Record<number, number> = { 1: 0.001, 8453: 0.00003, 42161: 0.00003, 10: 0.00003, 4663: 0.00003 }
+
+// ── QuickAct: the compact chip row for an index row ─────────────────────────
+// Two or three chips a /markets row can act with without opening the page,
+// honest per class: coins Buy $25 (+ Long 2x if the venue lists a perp) +
+// DCA weekly; a stock Buy $25 (4663) + DCA weekly; a non-EVM home Long 2x +
+// Short 2x. Every ask is a venuesFor row, so every one is ladder-pinned.
+export interface QuickAct {
+  label: string
+  ask: string
+  tone: 'buy' | 'sell' | 'neutral'
+}
+export const QUICK_ACT_USD = 25
+export function quickActs(symbol: string, pair: ChartPair): QuickAct[] {
+  const rows = venuesFor(symbol, pair, { usd: QUICK_ACT_USD, dcaUsd: 10, leverage: 2 })
+  const sym = (pair?.symbol ?? symbol).toUpperCase()
+  const out: QuickAct[] = []
+  const pick = (kind: VenueKind, side?: 'buy' | 'sell') => rows.find((r) => r.kind === kind && (side ? r.side === side : true))
+  const stock = pick('stock', 'buy')
+  const spot = pick('spot', 'buy')
+  const long = pick('perp', 'buy')
+  const short = pick('perp', 'sell')
+  const dca = pick('dca')
+  if (stock) out.push({ label: `Buy $${QUICK_ACT_USD} on 4663`, ask: stock.ask, tone: 'buy' })
+  else if (spot) out.push({ label: `Buy $${QUICK_ACT_USD}`, ask: spot.ask, tone: 'buy' })
+  if (long) out.push({ label: `Long 2x`, ask: long.ask, tone: spot || stock ? 'neutral' : 'buy' })
+  if (!spot && !stock && short) out.push({ label: `Short 2x`, ask: short.ask, tone: 'sell' })
+  if (dca && out.length < 3) out.push({ label: 'DCA weekly', ask: dca.ask, tone: 'neutral' })
+  void sym
+  return out.slice(0, 3)
+}
