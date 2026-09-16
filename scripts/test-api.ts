@@ -5281,7 +5281,9 @@ async function main() {
         (gate.match(/<span>Connect wallet<\/span>/g) ?? []).length === 1 &&
         /'Connect wallet'\}<\/span>/.test(gate) &&
         !/<span>Sign in<\/span>/.test(gate) &&
-        /walletConnectOnly\s+redirectTo=\{hereWithQuery\(\)\}/.test(gate) &&
+        // Re-pinned 2026-09-16 (sign-in keeps you on task): the door names no
+        // destination; it lands on the page it is pressed on.
+        /<span>Connect wallet<\/span>\s*<\/>\s*\}\s*walletConnectOnly\s*\/>/.test(gate) &&
         // Re-pinned 2026-09-11 (signed out → home): the app surfaces send a
         // signed-out visitor home (AppSpine), so sign-out goes there directly
         // instead of landing on /chat or a markets page first and bouncing.
@@ -18891,7 +18893,9 @@ async function main() {
       !/<header class="nav/.test(chatHtml) && !chatHtml.includes('nav__tabs') &&
         /class="relative flex max-lg:pb-\[calc\(48px\+env\(safe-area-inset-bottom\)\)\] h-dvh"/.test(chatHtml) &&
         !chatHtml.includes('h-[calc(100dvh-4rem)]') &&
-        /<SiteAccount redirectTo=\{typeof window !== 'undefined' \? window\.location\.pathname \+ window\.location\.search : '\/chat'\} \/>/.test(chatIfaceSrc) &&
+        // Re-pinned 2026-09-16: the seat names no destination (a sign-in stays
+        // in this chat, read on press, lib/app-entry signInLandingFor).
+        /<SiteAccount \/>/.test(chatIfaceSrc) &&
         !/<NavAccount/.test(chatIfaceSrc) &&
         /<header class="nav/.test(docsGuestHtml) && docsGuestHtml.includes('nav__tabs'),
     )
@@ -18956,21 +18960,117 @@ async function main() {
           ae.SIGN_IN_LANDING === '/markets',
       )
       const src = (p: string) => readFile(new URL(`../${p}`, import.meta.url), 'utf8')
-      const [doorS, authS, oauthS, acctS, navS, sessS, mctaS, spineLinkS] = await Promise.all(
+      const [doorS, authS, oauthS, acctS, navS, sessS, mctaS, spineLinkS, dashLayoutS] = await Promise.all(
         [
           'components/CreateAccountButton.tsx', 'components/AuthButton.tsx', 'components/CdpOAuthReturn.tsx', 'components/NavAccount.tsx',
-          'components/Navigation.tsx', 'lib/session.tsx', 'components/MobileCtaBar.tsx', 'components/SpineLink.tsx',
+          'components/Navigation.tsx', 'lib/session.tsx', 'components/MobileCtaBar.tsx', 'components/SpineLink.tsx', 'app/dashboard/layout.tsx',
+        ].map(src),
+      )
+      // SIGN-IN KEEPS YOU ON TASK (2026-09-16, Nate: "If the user is in a chat
+      // or anywhere else doing something, please do not redirect them to the
+      // markets page, keep them running on their task, only redirect if they
+      // are on the landing and not signed in or where it makes sense to not
+      // ruin their task process"). Re-pins the 2026-09-11 "every generic door
+      // falls back to Markets". The rule is lib/app-entry signInLandingFor:
+      // the landing page goes to Markets (or back to the app page the visitor
+      // was sent home from), every other page stays put.
+      const landingFor = ae.signInLandingFor
+      check(
+        'sign-in lands: only the landing page goes on to Markets; a chat, an intent link, a symbol page, the docs, a link board and a checkout keep their page and query',
+        landingFor('/') === '/markets' && landingFor('/?utm_source=x') === '/markets' &&
+          landingFor('/chat') === '/chat' &&
+          landingFor('/chat/cm123?mcps=uniswap-free&prompt=Buy%20%2410') === '/chat/cm123?mcps=uniswap-free&prompt=Buy%20%2410' &&
+          landingFor('/i/buy-aapl') === '/i/buy-aapl' &&
+          landingFor('/t/AAPL?tab=trade') === '/t/AAPL?tab=trade' && landingFor('/markets') === '/markets' &&
+          landingFor('/docs/desk#install') === '/docs/desk' && landingFor('/links') === '/links' &&
+          landingFor('/l/nate') === '/l/nate' && landingFor('/pricing?checkout=growth') === '/pricing?checkout=growth' &&
+          ae.SIGN_IN_LANDING === '/markets',
+      )
+      // The way back rides a sessionStorage record, not ?next= on the landing
+      // URL: Next 16.2's router caches a route under its pathname with the URL
+      // it was first fetched at, so later soft navigations to / (the logo, a
+      // sign-out) came back wearing the stale query (caught by the drive).
+      const T0 = 1_000_000_000_000
+      const rec = (here: string, at = T0) => ae.signInReturnRecord(here, at)
+      check(
+        "sign-in lands: a visitor the signed-in app sent home leaves the page they opened (a 30-minute record), and a sign-in on the landing lands back on it; only /chat, /wallet and the dashboard on this site are ever come back to",
+        ae.readSignInReturn(rec('/chat?prompt=Buy%20%2410%20of%20AAPL'), T0 + 60_000) === '/chat?prompt=Buy%20%2410%20of%20AAPL' &&
+          landingFor('/', ae.readSignInReturn(rec('/chat?prompt=Buy%20%2410%20of%20AAPL'), T0)) === '/chat?prompt=Buy%20%2410%20of%20AAPL' &&
+          landingFor('/', ae.readSignInReturn(rec('/wallet'), T0)) === '/wallet' &&
+          landingFor('/', ae.readSignInReturn(rec('/dashboard/keys?tab=new'), T0)) === '/dashboard/keys?tab=new' &&
+          // the record only matters on the landing page
+          landingFor('/docs', '/chat') === '/docs' && landingFor('/t/AAPL', '/wallet') === '/t/AAPL' &&
+          // stale, from the future, unreadable, or naming a page that isn't one to come back to
+          ae.readSignInReturn(rec('/chat'), T0 + ae.SIGN_IN_RETURN_TTL_MS + 1) === null &&
+          ae.readSignInReturn(rec('/chat', T0 + 60_000), T0) === null &&
+          ae.readSignInReturn('not json', T0) === null && ae.readSignInReturn(null, T0) === null &&
+          ae.readSignInReturn(JSON.stringify({ href: '/api/auth/logout', at: T0 }), T0) === null &&
+          rec('/markets') === null && rec('/t/AAPL') === null && rec('/docs') === null && rec('/chatty') === null &&
+          rec(`/chat?prompt=${'x'.repeat(3000)}`) === null &&
+          // a way back never leaves the signed-in app pages, or the site
+          landingFor('/', 'https://evil.example/chat') === '/markets' && landingFor('/', '//evil.example/chat') === '/markets' &&
+          landingFor('/', '/\\evil.example/chat') === '/markets' && landingFor('/', 'javascript:alert(1)') === '/markets' &&
+          landingFor('/', '/api/auth/logout') === '/markets' && landingFor('/', '/chat/../api/auth/logout') === '/markets' &&
+          landingFor('/', '/markets') === '/markets' &&
+          ae.homeReturnHref('/dashboard?tab=keys') === '/dashboard?tab=keys' && ae.homeReturnHref(null) === null,
+      )
+      check(
+        'sign-in lands: the page the visitor is already on is the same page (path, a trailing slash aside, and query exactly), so it refreshes in place; any other page is a navigation',
+        ae.sameAppHref('/chat?a=1', '/chat?a=1') && ae.sameAppHref('/docs/', '/docs') && ae.sameAppHref('/', '/') &&
+          ae.sameAppHref('/t/AAPL?tab=trade#chart', '/t/AAPL?tab=trade') &&
+          !ae.sameAppHref('/chat?a=1', '/chat?a=2') && !ae.sameAppHref('/chat', '/markets') &&
+          !ae.sameAppHref('/chat?a=1&b=2', '/chat?b=2&a=1') && !ae.sameAppHref('//evil.example/chat', '/chat'),
+      )
+      check(
+        "sign-in lands (sources): the door, AuthButton and the account menu read the landing on press (signInLandingHere), the brochure nav names none, the Google return keeps the door's, the session refreshes the page it is already on, and no door lands on /dashboard",
+        /const landing = \(\) => redirectTo \?\? signInLandingHere\(\)/.test(doorS) &&
+          /const intent: OAuthIntent = \{ redirectTo: landing\(\), signIn: !walletConnectOnly \}/.test(doorS) &&
+          /connectAndSignIn\(redirectTo \?\? signInLandingHere\(\)\)/.test(authS) &&
+          /connectAndSignIn\(signInLandingHere\(\)\)/.test(acctS) && !/stayHere|window\.location|SIGN_IN_LANDING/.test(acctS) &&
+          /const target = intent\?\.redirectTo \|\| signInLandingHere\(\)/.test(oauthS) &&
+          !/signInRedirect|SIGN_IN_LANDING/.test(navS) && /const desktopAccount = <SiteAccount \/>/.test(navS) &&
+          /return signInLandingFor\(currentAppHref\(\), homeReturn\)/.test(sessS) &&
+          /homeReturn = readSignInReturn\(window\.sessionStorage\.getItem\(SIGN_IN_RETURN_KEY\), Date\.now\(\)\)/.test(sessS) &&
+          /if \(sameAppHref\(redirectTo, currentAppHref\(\)\)\) router\.refresh\(\)\s*else router\.push\(redirectTo\)/.test(sessS) &&
+          (sessS.match(/router\.push\(/g) ?? []).length === 1 && (sessS.match(/\bland\(redirectTo\)/g) ?? []).length === 3 &&
+          /<SpineLink href="\/markets"/.test(mctaS) &&
+          ![doorS, authS, oauthS, acctS, navS, mctaS].some((s) => /redirectTo = '\/dashboard'|\|\| '\/dashboard'|: '\/dashboard'|connectAndSignIn\('\/dashboard'\)/.test(s)),
+      )
+      // A door on a page the visitor works in never reads that page while
+      // rendering: in-app navigation renders the new page before the router
+      // writes its URL, so a render-time window.location named the previous
+      // page (#758's /i sign-up landed back on it; from /markets into /chat it
+      // was Markets).
+      const workDoors = await Promise.all(
+        [
+          'components/ChatInterface.tsx', 'components/ChatSignInGate.tsx', 'components/IntentRuntime.tsx', 'components/MosaicStudio.tsx',
+          'components/markets/shell/MarketsTopStrip.tsx', 'components/markets/watchlist/WatchlistRail.tsx', 'components/markets/ai/AskChart.tsx',
+          'components/SiteAccount.tsx', 'components/Navigation.tsx',
         ].map(src),
       )
       check(
-        'fresh login → Markets: the door, AuthButton, the Google return, the account menu and the brochure nav all fall back to SIGN_IN_LANDING, and none of them to /dashboard',
-        /redirectTo = SIGN_IN_LANDING,/.test(doorS) &&
-          /redirectTo = SIGN_IN_LANDING \}/.test(authS) &&
-          /intent\?\.redirectTo \|\| SIGN_IN_LANDING/.test(oauthS) &&
-          /window\.location\.pathname \+ window\.location\.search : SIGN_IN_LANDING/.test(acctS) &&
-          /const signInRedirect = SIGN_IN_LANDING/.test(navS) &&
-          /<SpineLink href="\/markets"/.test(mctaS) &&
-          ![doorS, authS, oauthS, acctS, navS, mctaS].some((s) => /redirectTo = '\/dashboard'|\|\| '\/dashboard'|: '\/dashboard'|connectAndSignIn\('\/dashboard'\)/.test(s)),
+        'sign-in lands: no door on a chat, an intent link, the mosaic studio or a markets page computes its landing from window.location while rendering',
+        workDoors.every((s) => !/redirectTo=\{[^}]*window\.location|hereWithQuery|hereHref|const here = [^\n]*window\.location/.test(s)) &&
+          /<SiteAccount \/>/.test(workDoors[4]),
+      )
+      check(
+        "session: a pending sign-in whose wallet list closed with nothing connecting is dropped (connectAskReleased), so a later connect-to-act never fires a signature, or a landing, nobody asked for; a waiting caller's intent is never the list's to drop",
+        /const listSeenOpen = useRef\(false\)/.test(sessS) &&
+          /if \(!intent \|\| intent\.settle\) \{\s*listSeenOpen\.current = false\s*return\s*\}/.test(sessS) &&
+          /if \(connectModalOpen\) \{\s*listSeenOpen\.current = true\s*return\s*\}/.test(sessS) &&
+          /if \(!listSeenOpen\.current\) return/.test(sessS) &&
+          /const released = connectAskReleased\(\{\s*pending: true,\s*hasAddress: isConnected && !!walletAddress,\s*doorOpen: false,\s*listOpen: false,/.test(sessS) &&
+          /if \(!released\) return\s*pendingSignInRef\.current = null\s*listSeenOpen\.current = false/.test(sessS) &&
+          /\[connectModalOpen, isConnected, walletAddress, walletStatus, signInRequests\]\)/.test(sessS),
+      )
+      check(
+        "signed out → home keeps the way back: the spine and the dashboard's layout remember the page a signed-out arrival opened and replace to a plain '/'; a deliberate sign-out (signedOutJustNow) remembers nothing, forgets any way back, and a landed sign-in forgets it too",
+        /if \(!signedOut \|\| publicPage\) return\s*if \(!signedOutJustNow\(\)\) rememberSignInReturn\(pathname \+ window\.location\.search\)\s*router\.replace\('\/'\)/.test(spineSrc) &&
+          /if \(!signedOut\) return\s*if \(!signedOutJustNow\(\)\) rememberSignInReturn\(pathname \+ window\.location\.search\)\s*router\.replace\('\/'\)/.test(dashLayoutS) &&
+          /const signOut = useCallback\(async \(\) => \{\s*signedOutAt = Date\.now\(\)\s*forgetSignInReturn\(\)\s*await endSession\(\)\s*signedOutAt = Date\.now\(\)\s*\}, \[endSession\]\)/.test(sessS) &&
+          /if \(status === 'authed' && walletStatus === 'disconnected'\) \{\s*void endSession\(\)\s*\}/.test(sessS) &&
+          /\(redirectTo\?: string\) => \{\s*forgetSignInReturn\(\)\s*if \(!redirectTo\) return/.test(sessS) &&
+          !/homeFor|\?next=/.test(spineSrc + dashLayoutS),
       )
       // Re-pinned 2026-09-14 (public markets): the spine still sends a settled
       // signed-out visitor home, except on a public app page (the markets
@@ -18981,7 +19081,9 @@ async function main() {
           !chatHtml.includes('Start a new chat') && !mkHtml.includes('Start a new chat') &&
           /const \{ walletAddress, signedOut, connectAndSignIn \} = useSession\(\)/.test(spineSrc) &&
           /const publicPage = isPublicAppPath\(pathname\)/.test(spineSrc) &&
-          /if \(signedOut && !publicPage\) router\.replace\('\/'\)/.test(spineSrc) &&
+          // Re-pinned 2026-09-16: the gate remembers the page a signed-out
+          // arrival opened first; the exact effect is pinned in the landing block.
+          /if \(!signedOut \|\| publicPage\) return\s*if \(!signedOutJustNow\(\)\) rememberSignInReturn\([^)]*\)\s*router\.replace\('\/'\)/.test(spineSrc) &&
           /signedOut: isSignedOut\(\{\s*sessionStatus: status,\s*sessionAddress: address,\s*walletStatus,\s*walletAddress: walletAddress \?\? null,\s*walletRemembered: remembered,\s*\}\)/.test(sessS) &&
           /setRemembered\(walletRemembered\(\(key\) => window\.localStorage\.getItem\(key\)\)\)/.test(sessS),
       )
@@ -19129,27 +19231,32 @@ async function main() {
         /pendingSignInRef\.current = \{ redirectTo, settle \}/.test(onceBody) && /setSignInRequests\(\(n\) => n \+ 1\)/.test(onceBody) &&
           !/openConnectModal/.test(onceBody) &&
           /const step = pendingSignInStep\(\{/.test(sessS) && /callerWaits: !!intent\.settle,/.test(sessS) &&
-          /\[status, address, isConnected, walletAddress, signingIn, signIn, router, signInRequests\]\)/.test(sessS) &&
+          // Re-pinned 2026-09-16: the effect lands through session land()
+          // (refresh on the page it's already on), so it depends on land.
+          /\[status, address, isConnected, walletAddress, signingIn, signIn, land, signInRequests\]\)/.test(sessS) &&
           /signInOnceConnected,\s*signOut,/.test(sessS),
       )
       check(
         'email lane: after the embedded wallet connects, the account door signs in (signInOnceConnected, then closes) and a walletConnectOnly door only routes',
-        /await connectAsync\(\{ connector \}\)\s*if \(walletConnectOnly\) \{\s*onClose\(\)\s*router\.push\(redirectTo\)\s*\} else \{\s*await signInOnceConnected\(redirectTo\)\s*onClose\(\)\s*\}/.test(doorS),
+        // Re-pinned 2026-09-16: both land where the door says (landing(): its
+        // flow target, else the page it was pressed on), and the connect-only
+        // lane, which writes no session, doesn't navigate to the page it's on.
+        /await connectAsync\(\{ connector \}\)\s*if \(walletConnectOnly\) \{\s*const to = landing\(\)\s*onClose\(\)\s*if \(!sameAppHref\(to, currentAppHref\(\)\)\) router\.push\(to\)\s*\} else \{\s*await signInOnceConnected\(landing\(\)\)\s*onClose\(\)\s*\}/.test(doorS),
       )
       check(
         "google lane: the door's OAuth intent asks to sign in unless the door is connect-only; the return makes the embedded wallet the ACTIVE connection, signs in only when asked, and otherwise just routes",
-        /const intent: OAuthIntent = \{ redirectTo, signIn: !walletConnectOnly \}/.test(doorS) &&
+        /const intent: OAuthIntent = \{ redirectTo: landing\(\), signIn: !walletConnectOnly \}/.test(doorS) &&
           /sessionStorage\.setItem\(OAUTH_INTENT_KEY, JSON\.stringify\(intent\)\)/.test(doorS) &&
           /let connected = isConnected && activeConnector\?\.id === CDP_CONNECTOR_ID/.test(oauthS) &&
           /err\.name === 'ConnectorAlreadyConnectedError'/.test(oauthS) &&
-          /if \(connected && intent\?\.signIn\) await signInOnceConnected\(target\)\s*else router\.push\(target\)/.test(oauthS),
+          /if \(connected && intent\?\.signIn\) await signInOnceConnected\(target\)\s*else if \(!sameAppHref\(target, currentAppHref\(\)\)\) router\.push\(target\)/.test(oauthS),
       )
       check(
         "connect-only doors: /i, /chat's guest banner and the chat's connect gate pass walletConnectOnly, and on it the wallet lane only opens the wallet list",
-        /redirectTo=\{hereHref\(\)\} walletConnectOnly \/>/.test(runtimeS) &&
-          /walletConnectOnly\s+redirectTo=\{hereWithQuery\(\)\}/.test(gateS) &&
-          /walletConnectOnly\s+onOpenChange=\{setConnectDoorOpen\}/.test(chatS) &&
-          /if \(walletConnectOnly\) openConnectModal\?\.\(\)\s*else connectAndSignIn\(redirectTo\)/.test(doorS),
+        /label=\{ctaLabel\} walletConnectOnly \/>/.test(runtimeS) &&
+          /<span>Connect wallet<\/span>\s*<\/>\s*\}\s*walletConnectOnly\s*\/>/.test(gateS) &&
+          /walletConnectOnly\s+onOpenChange=\{setConnectDoorOpen\}\s*\/>/.test(chatS) &&
+          /if \(walletConnectOnly\) openConnectModal\?\.\(\)\s*else connectAndSignIn\(landing\(\)\)/.test(doorS),
       )
       const grace = Number(waitS.match(/export const SILENT_SIGN_GRACE_MS = (\d+)/)?.[1] ?? NaN)
       check(

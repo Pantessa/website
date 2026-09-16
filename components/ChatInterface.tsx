@@ -1535,9 +1535,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                   beside Embed IS the way in — and the consolidated account pill
                   (Dashboard / Wallet details / Sign out) once connected. Chain
                   switching lives in the ChainPicker to the left, so the pill
-                  needs no chain chip. Sign-in returns to THIS chat URL (query
-                  included, so ?mcps=/?prompt= deep links survive). */}
-              <SiteAccount redirectTo={typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/chat'} />
+                  needs no chain chip. Sign-in keeps you in THIS chat: the
+                  door names no destination, so it lands on the page you're
+                  on, read when you press it (lib/app-entry signInLandingFor). */}
+              <SiteAccount />
             </div>
           )}
         </div>
@@ -2143,7 +2144,6 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                                     label={label}
                                     walletConnectOnly
                                     onOpenChange={setConnectDoorOpen}
-                                    redirectTo={typeof window === 'undefined' ? '/chat' : window.location.pathname + window.location.search}
                                   />
                                 </span>
                                 {missed}

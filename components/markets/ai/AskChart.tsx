@@ -57,7 +57,6 @@ export default function AskChart({ symbol, pair, chartState, visible, onAsk, onC
   const [alertErr, setAlertErr] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
-  const here = typeof window === 'undefined' ? '/' : `${window.location.pathname}${window.location.search}`
 
   const suggestions = useMemo(() => askChartSuggestions(symbol, pair), [symbol, pair])
   // "Explain this": the bar under the chart's crosshair (lib/markets-ai-hover,
@@ -279,7 +278,7 @@ export default function AskChart({ symbol, pair, chartState, visible, onAsk, onC
                     {alertState === 'saving' ? 'Saving…' : 'Set alert'}
                   </button>
                 ) : (
-                  <CreateAccountButton className="mk-ai__cta" label="Sign in to set alerts" redirectTo={here} />
+                  <CreateAccountButton className="mk-ai__cta" label="Sign in to set alerts" />
                 )}
               </div>
               {alertErr ? <p className="mk-ai__err">{alertErr}</p> : null}

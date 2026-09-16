@@ -29,7 +29,76 @@ import { createSiweMessage } from 'viem/siwe'
 import { getAddress } from 'viem'
 import { useYeetfulStore } from '@/lib/store'
 import { cdpEnabled } from '@/lib/cdp-embedded'
-import { isSignedOut, pendingSignInStep, walletRemembered } from '@/lib/app-entry'
+import {
+  SIGN_IN_RETURN_KEY,
+  isSignedOut,
+  pendingSignInStep,
+  readSignInReturn,
+  sameAppHref,
+  signInLandingFor,
+  signInReturnRecord,
+  walletRemembered,
+} from '@/lib/app-entry'
+import { connectAskReleased, hasStoredWalletConnection } from '@/lib/wallet-reconnect'
+
+/**
+ * When this tab last signed out on purpose (the account menu, the dashboard's
+ * Sign out). The signed-in app's signed-out gates read it (signedOutJustNow):
+ * a visitor who signs out goes home plain, while one who arrives signed out
+ * leaves the page they opened to come back to (rememberSignInReturn). Module
+ * scope, so it holds across whatever the sign-out re-renders or remounts; the
+ * gate's replace can land after the sign-out's own push('/') and win.
+ */
+let signedOutAt = 0
+const SIGNED_OUT_GRACE_MS = 10_000
+
+/** True for a beat after a deliberate sign-out in this tab. Browser only. */
+export function signedOutJustNow(now = Date.now()): boolean {
+  return signedOutAt > 0 && now - signedOutAt < SIGNED_OUT_GRACE_MS
+}
+
+/** The page the visitor is on right now: path and query. Browser only. */
+export function currentAppHref(): string {
+  return window.location.pathname + window.location.search
+}
+
+/**
+ * A signed-out gate is sending this visitor home from `here`: remember it, so
+ * a sign-in on the landing lands back on it (lib/app-entry signInReturnRecord;
+ * pages that aren't worth coming back to leave nothing). Browser only.
+ */
+export function rememberSignInReturn(here: string): void {
+  const rec = signInReturnRecord(here, Date.now())
+  try {
+    if (rec) window.sessionStorage.setItem(SIGN_IN_RETURN_KEY, rec)
+  } catch {
+    // storage blocked: the landing's sign-in goes on to Markets
+  }
+}
+
+function forgetSignInReturn(): void {
+  try {
+    window.sessionStorage.removeItem(SIGN_IN_RETURN_KEY)
+  } catch {
+    // storage blocked: nothing was kept
+  }
+}
+
+/**
+ * Where a sign-in with no destination of its own lands, read now
+ * (lib/app-entry signInLandingFor): the page the visitor is on, or from the
+ * landing page, the app page they were sent home from, else Markets. Call it
+ * when the visitor acts, never while rendering. Browser only.
+ */
+export function signInLandingHere(): string {
+  let homeReturn: string | null = null
+  try {
+    homeReturn = readSignInReturn(window.sessionStorage.getItem(SIGN_IN_RETURN_KEY), Date.now())
+  } catch {
+    // storage blocked: no way back to offer
+  }
+  return signInLandingFor(currentAppHref(), homeReturn)
+}
 
 type Status = 'loading' | 'authed' | 'guest'
 
@@ -58,7 +127,11 @@ interface SessionValue {
    */
   signedOut: boolean
   error: string | null
-  /** Run SIWE on the already-connected wallet; optionally redirect on success. */
+  /** Run SIWE on the already-connected wallet; optionally land on
+   *  `redirectTo` on success. Every `redirectTo` here lands the same way: the
+   *  page the visitor is already on refreshes in place, another page is a
+   *  navigation (lib/app-entry sameAppHref). A door with no destination of
+   *  its own passes signInLandingHere(). */
   signIn: (redirectTo?: string) => Promise<void>
   /**
    * One-shot connect → sign. If a wallet is already connected, signs straight
@@ -91,8 +164,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const chainId = useChainId()
   const { signMessageAsync } = useSignMessage()
   const config = useConfig()
-  const { openConnectModal } = useConnectModal()
+  const { openConnectModal, connectModalOpen } = useConnectModal()
   const router = useRouter()
+
+  // Where a finished sign-in goes. Another page is a navigation. The page
+  // the visitor is already on is a refresh: the server parts that read the
+  // session render again, and nothing else moves (no history entry, no
+  // scroll jump, client state kept). A sign-in that lands also ends any way
+  // back from home (rememberSignInReturn): its visitor is in.
+  const land = useCallback(
+    (redirectTo?: string) => {
+      forgetSignInReturn()
+      if (!redirectTo) return
+      if (sameAppHref(redirectTo, currentAppHref())) router.refresh()
+      else router.push(redirectTo)
+    },
+    [router],
+  )
 
   const [address, setAddress] = useState<string | null>(null)
   const [status, setStatus] = useState<Status>('loading')
@@ -169,14 +257,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         throw new Error(body.error || 'Sign-in verification failed.')
       }
       await refresh()
-      if (redirectTo) router.push(redirectTo)
+      land(redirectTo)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Sign-in failed.'
       setError(/rejected|denied|User rejected/i.test(msg) ? null : msg)
     } finally {
       setSigningIn(false)
     }
-  }, [isConnected, walletAddress, chainId, signMessageAsync, refresh, router])
+  }, [isConnected, walletAddress, chainId, signMessageAsync, refresh, land])
 
   // One-shot connect → sign (see the interface doc). Connected? sign now, in the
   // same gesture. Disconnected? record intent + open the modal; the effect below
@@ -230,17 +318,58 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (settle) {
       // Land whether or not the signature went through, then let the caller go.
       void (step === 'sign' ? signIn() : Promise.resolve()).then(() => {
-        if (redirectTo) router.push(redirectTo)
+        land(redirectTo)
         settle()
       })
     } else if (step === 'land') {
-      if (redirectTo) router.push(redirectTo)
+      land(redirectTo)
     } else if (step === 'sign') {
       void signIn(redirectTo)
     }
-  }, [status, address, isConnected, walletAddress, signingIn, signIn, router, signInRequests])
+  }, [status, address, isConnected, walletAddress, signingIn, signIn, land, signInRequests])
 
-  const signOut = useCallback(async () => {
+  // A pending sign-in whose wallet list was dismissed is dropped. The list
+  // connectAndSignIn opened has been up and is gone, with no wallet connected
+  // and nothing still connecting (lib/wallet-reconnect connectAskReleased,
+  // the chat connect gate's rule): the visitor said no. Kept, the intent
+  // waited for ANY later connect, so a connect-to-act press minutes later (a
+  // Buy chip on a symbol page, an /i run) fired a signature nobody asked for
+  // and carried the visitor off to where this sign-in was headed. A caller
+  // that waits (signInOnceConnected) made its own connect, so it's not
+  // this list's to drop.
+  const listSeenOpen = useRef(false)
+  useEffect(() => {
+    const intent = pendingSignInRef.current
+    if (!intent || intent.settle) {
+      listSeenOpen.current = false
+      return
+    }
+    if (connectModalOpen) {
+      listSeenOpen.current = true
+      return
+    }
+    if (!listSeenOpen.current) return
+    let stored = false
+    try {
+      stored = hasStoredWalletConnection(window.localStorage)
+    } catch {
+      // storage blocked: nothing stored to wait for
+    }
+    const released = connectAskReleased({
+      pending: true,
+      hasAddress: isConnected && !!walletAddress,
+      doorOpen: false,
+      listOpen: false,
+      walletStatus,
+      storedConnection: stored,
+      handshakeInFlight: false,
+    })
+    if (!released) return
+    pendingSignInRef.current = null
+    listSeenOpen.current = false
+  }, [connectModalOpen, isConnected, walletAddress, walletStatus, signInRequests])
+
+  const endSession = useCallback(async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' })
     } finally {
@@ -281,6 +410,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [config])
 
+  // A sign-out someone asked for. The orphan effect below ends a session too,
+  // but nobody chose that one: its visitor still goes home carrying the page.
+  const signOut = useCallback(async () => {
+    signedOutAt = Date.now()
+    forgetSignInReturn()
+    await endSession()
+    signedOutAt = Date.now()
+  }, [endSession])
+
   // A SIWE session without a wallet behind it is an orphan — every authed
   // surface re-gates on the wallet anyway, so the only thing it can do is
   // strand the UI in portal mode (Dashboard tab + / redirect) after a
@@ -289,9 +427,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // settled on truly disconnected.
   useEffect(() => {
     if (status === 'authed' && walletStatus === 'disconnected') {
-      void signOut()
+      void endSession()
     }
-  }, [status, walletStatus, signOut])
+  }, [status, walletStatus, endSession])
 
   const needsSignIn = status === 'guest' && isConnected && !!walletAddress
   const sessionMatchesWallet =

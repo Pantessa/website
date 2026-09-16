@@ -51,7 +51,9 @@ export interface WatchlistRailProps {
   symbol?: string
   /** Chip-send: present when a chat surface can take the ask. */
   onAsk?: (ask: string) => void
-  /** Where the sign-in door lands afterwards (defaults to the current path). */
+  /** A flow target for the rail's sign-in doors. Without one they keep the
+   *  visitor on the page they're on, query included (lib/app-entry
+   *  signInLandingFor). */
   redirectTo?: string
   className?: string
   onClose?: () => void
@@ -107,7 +109,6 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
     const ch = Math.max(8, ...symbols.map((s) => (quotes[s] ? fmtQuotePrice(quotes[s].last).length : 0)))
     return { '--wl-last-ch': `${ch}ch` } as CSSProperties
   }, [symbols, quotes])
-  const here = redirectTo ?? (typeof window !== 'undefined' ? window.location.pathname : '/markets')
 
   // Send or prefill — the one door for every chip on the rail. With no
   // `onAsk` (the /markets index) a chip prefills chat, and a visitor with no
@@ -311,7 +312,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                       <Link2 className="h-3.5 w-3.5" /> {active.isPublic ? 'Copy public link' : 'Share as a public list'}
                     </button>
                   ) : (
-                    <CreateAccountButton className="wl__popItem wl__popItem--door" label="Sign in to share this list" redirectTo={here} />
+                    <CreateAccountButton className="wl__popItem wl__popItem--door" label="Sign in to share this list" redirectTo={redirectTo} />
                   )}
                 </li>
                 {active.isPublic && (
@@ -525,7 +526,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                                   <Bell className="h-3.5 w-3.5" /> Set an alert
                                 </button>
                               ) : (
-                                <CreateAccountButton className="wl__popItem wl__popItem--door" label="Sign in to set alerts" redirectTo={here} />
+                                <CreateAccountButton className="wl__popItem wl__popItem--door" label="Sign in to set alerts" redirectTo={redirectTo} />
                               )}
                             </li>
                             <li className="wl__popGroup">
@@ -629,7 +630,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
         {wl.mode === 'guest' && wl.ready ? (
           <span>
             saved in this browser ·{' '}
-            <CreateAccountButton className="wl__link" label="sign in to keep it everywhere" redirectTo={here} />
+            <CreateAccountButton className="wl__link" label="sign in to keep it everywhere" redirectTo={redirectTo} />
           </span>
         ) : (
           <span title={active?.owner ?? ''}>∞ lists · ∞ tickers · ∞ alerts · free{active?.owner ? ` · ${short(active.owner)}` : ''}</span>

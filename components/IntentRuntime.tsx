@@ -214,10 +214,6 @@ export default function IntentRuntime({
     box.scrollIntoView({ block: 'center' })
   }
 
-  /** Where sign-in should land: this link, exactly as opened. */
-  const hereHref = () =>
-    typeof window === 'undefined' ? `/i/${slug}` : window.location.pathname + window.location.search
-
   // Best-effort funnel events — never block or throw into the runtime.
   const posted = useRef(new Set<string>())
   const postEvent = (kind: string, extra?: { valueUsd?: number; txHash?: string; chainId?: number }) => {
@@ -531,11 +527,14 @@ export default function IntentRuntime({
               </button>
             ) : cdpEnabled ? (
               // The unified sign-in door — wallet, Google, or email — landing
-              // right back on this link (sign-in UX contract, CLAUDE.md).
+              // right back on this link (sign-in UX contract, CLAUDE.md): it
+              // names no destination, so it stays on the page it is pressed
+              // on. A redirect read here at render named the PREVIOUS page
+              // after an in-app click into /i (#758).
               // walletConnectOnly: connecting IS the whole step here — the run
               // is the guest lane, and no SIWE popup lands between the click
               // and the build.
-              <CreateAccountButton className={ctaClass} style={ctaStyle} label={ctaLabel} redirectTo={hereHref()} walletConnectOnly />
+              <CreateAccountButton className={ctaClass} style={ctaStyle} label={ctaLabel} walletConnectOnly />
             ) : (
               <button type="button" onClick={() => openConnectModal?.()} className={ctaClass} style={ctaStyle}>
                 {ctaLabel}

@@ -8,7 +8,7 @@
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { PanelLeftClose } from 'lucide-react'
-import { useSession } from '@/lib/session'
+import { rememberSignInReturn, signedOutJustNow, useSession } from '@/lib/session'
 import { useAppSidebar } from '@/lib/app-sidebar'
 import AppSpine from '@/components/AppSpine'
 import DashAskBar from '@/components/DashAskBar'
@@ -52,10 +52,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // Wait for the session to SETTLE before deciding: `address` is null while
   // status === 'loading' (before /api/auth/me resolves), so redirecting on that
   // would bounce a signed-in user mid-hydration. Only 'guest' means truly out.
+  // A visitor who arrived signed out leaves this page to come back to (lib/
+  // session rememberSignInReturn), so a sign-in on the landing lands back
+  // here; one who just signed out here leaves nothing (signedOutJustNow).
   const signedOut = mounted && status === 'guest' && !address
   useEffect(() => {
-    if (signedOut) router.replace('/')
-  }, [signedOut, router])
+    if (!signedOut) return
+    if (!signedOutJustNow()) rememberSignInReturn(pathname + window.location.search)
+    router.replace('/')
+  }, [signedOut, pathname, router])
 
   // Nothing to render until we know the user is authed: null through the
   // loading phase, and through the brief tick before the redirect above lands.
