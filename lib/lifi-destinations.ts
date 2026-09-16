@@ -23,6 +23,11 @@ export interface LifiDestination {
    *  contract with lib/jobs parseRobinhoodFunding ("fund robinhood chain
    *  with $12 from base", "fund arc with $12 from base"). */
   word: string
+  /** The dollar the value leg lands as: the chain's primary stable (USDG on
+   *  Robinhood Chain, USDC on Arc). A client-safe copy of the registry fact
+   *  (lib/chains primaryStable, pinned equal by the harness) for surfaces
+   *  that draw the landing without importing the registry (lib/funding-path). */
+  stable: string
   /** True when a SEPARATE native-gas leg exists (ETH gas); false when the
    *  landed stable pays gas itself. */
   gasLeg: boolean
@@ -32,13 +37,13 @@ export const ROBINHOOD_CHAIN_ID = 4663
 export const ARC_CHAIN_ID = 5042
 
 export const LIFI_DESTINATIONS: Readonly<Record<number, LifiDestination>> = {
-  [ROBINHOOD_CHAIN_ID]: { chainId: ROBINHOOD_CHAIN_ID, key: 'robinhood', name: 'Robinhood Chain', word: 'robinhood chain', gasLeg: true },
+  [ROBINHOOD_CHAIN_ID]: { chainId: ROBINHOOD_CHAIN_ID, key: 'robinhood', name: 'Robinhood Chain', word: 'robinhood chain', stable: 'USDG', gasLeg: true },
   // LiFi routes Base / Ethereum USDC → Arc USDC through the SAME canonical
   // origin diamond as the Robinhood legs (probed live 2026-09-16: Base via
   // across in 4s / relaydepository in 1s, Ethereum via across in 2s, ~$0.04
   // of fees on $10; Arbitrum only via Polymer at ~18 min). The bridge
   // module pins the fast tools for this destination.
-  [ARC_CHAIN_ID]: { chainId: ARC_CHAIN_ID, key: 'arc', name: 'Arc', word: 'arc', gasLeg: false },
+  [ARC_CHAIN_ID]: { chainId: ARC_CHAIN_ID, key: 'arc', name: 'Arc', word: 'arc', stable: 'USDC', gasLeg: false },
 }
 
 /** The destination record for a chain id, or null when the chain is not a

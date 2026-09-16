@@ -39,6 +39,8 @@ import { FREE_FLEET_FALLBACK } from '@/lib/free-fleet'
 import { missingAppIds } from '@/lib/ask-apps'
 import { CATALOG } from '@/lib/mcp-data'
 import type { InjectedPrompt } from '@/lib/trade-asks'
+import { canSellAsk } from '@/lib/sell-gate'
+import { useHeld } from '@/lib/use-held'
 
 // ChatInterface is heavy (wagmi, the store, every card); it loads only when
 // a visitor actually sends something through the door.
@@ -135,7 +137,9 @@ function AskDoorSheet() {
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const hidden = askDoorHidden(pathname)
   const briefChips = useAskDoor((s) => s.briefChips)
-  const chips = useMemo(() => askDoorChips(pathname, briefChips), [pathname, briefChips])
+  // A Sell suggestion only for a wallet that holds the token (lib/sell-gate).
+  const held = useHeld()
+  const chips = useMemo(() => askDoorChips(pathname, briefChips).filter((c) => canSellAsk(c.ask, held)), [pathname, briefChips, held])
   const sym = askDoorSymbol(pathname)
   const placeholder = askDoorPlaceholder(pathname)
 

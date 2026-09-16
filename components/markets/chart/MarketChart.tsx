@@ -42,7 +42,7 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts'
 import { Eraser, Minus, MousePointer2, RectangleHorizontal, StickyNote, TrendingUp } from 'lucide-react'
-import { CHART_TFS, chartPairFor, type Candle, type ChartTf } from '@/lib/charts'
+import { CHART_TFS, DEFAULT_CHART_TF, chartPairFor, type Candle, type ChartTf } from '@/lib/charts'
 import { newLineId, serializeChartState, type ChartLine, type ChartState } from '@/lib/chart-state'
 import { composeLineActions, composeZoneActions, missingActionNote, type LineActionOffer } from '@/lib/chart-actions'
 import { bollinger, ema, hasVolume, mergeHistory, onWindow, OVERLAYS, prependHistory, sma, vwap, type LinePoint, type OverlayKey } from '@/lib/chart-indicators'
@@ -57,6 +57,8 @@ import { fillLabel, type FillMarker } from '@/lib/chart-fills'
 import { useChartHover } from '@/lib/markets-ai-hover'
 import { seriesVar } from '@/lib/markets-look'
 import { VolumeProfile } from './volume-profile'
+import { canSellAsk } from '@/lib/sell-gate'
+import { useHeld } from '@/lib/use-held'
 
 const POLL_MS: Record<ChartTf, number> = { '15m': 8_000, '1h': 15_000, '4h': 20_000, '1d': 30_000 }
 const POOL_POLL_MS = 30_000
@@ -315,7 +317,7 @@ const toLineData = (pts: LinePoint[]) => pts.filter((p) => p.v !== null).map((p)
 export default function MarketChart({
   symbol,
   height: heightProp = 360,
-  defaultTf = '1h',
+  defaultTf = DEFAULT_CHART_TF,
   state,
   onStateChange,
   markers,
@@ -1087,14 +1089,21 @@ export default function MarketChart({
     }
   }, [geomTick, bars])
 
+  // A level's Sell chips ("Sell here", "Sell ETH now") show only while the
+  // connected wallet holds the symbol (lib/sell-gate): nothing to sell, no chip.
+  const held = useHeld()
   const offersFor = useCallback(
     (line: ChartLine): LineActionOffer[] => {
       if (!pair || last === null) return []
-      if (line.kind === 'h') return composeLineActions({ symbol: pair.symbol, source: pair.source, price: line.price, last, usd: actionUsd })
-      if (line.kind === 'zone') return composeZoneActions({ symbol: pair.symbol, source: pair.source, p1: line.p1, p2: line.p2, last, usd: actionUsd })
-      return []
+      const offers =
+        line.kind === 'h'
+          ? composeLineActions({ symbol: pair.symbol, source: pair.source, price: line.price, last, usd: actionUsd })
+          : line.kind === 'zone'
+            ? composeZoneActions({ symbol: pair.symbol, source: pair.source, p1: line.p1, p2: line.p2, last, usd: actionUsd })
+            : []
+      return offers.filter((o) => canSellAsk(o.action.ask, held))
     },
-    [pair, last, actionUsd],
+    [pair, last, actionUsd, held],
   )
 
   const premium = poolPremiumPct(pool, last)

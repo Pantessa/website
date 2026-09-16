@@ -36,7 +36,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { decodeFunctionData, encodeFunctionData, erc20Abi } from 'viem'
-import { chainById, publicClientFor } from '@/lib/chains'
+import { buysNativeEth, chainById, publicClientFor } from '@/lib/chains'
 import { dryRunTx, isAllowanceLag } from '@/lib/dry-run'
 import { resolveToken, tokenDecimals, tokenLabel, humanToAtoms, formatAtoms } from '@/lib/cow'
 import { stableUsd } from '@/lib/uniswap-venue'
@@ -402,6 +402,14 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
   if (!client) throw new Error(`No RPC client configured for ${chain.name}.`)
   const from = params.from as `0x${string}`
   if (!ADDR_RE.test(from)) throw new Error('A valid wallet address is required.')
+  // A buy of native ETH is refused: LiFi would be asked for the wrapped
+  // native ("ETH" resolves to it) and pay WETH under an ETH label. Only
+  // Uniswap v3 unwraps to ETH (lib/uniswap-venue.ts). Since the stock tape
+  // guard, an off-tape stock → WETH pool on Robinhood Chain falls through to
+  // here. The cascade reads NoLifiRouteError as nothing built.
+  if (buysNativeEth(params.buyToken, chainId)) {
+    throw new NoLifiRouteError(`${chain.name}'s own settlement venue (via LiFi) can't deliver native ETH; this build would pay WETH instead.`)
+  }
 
   const sellAddr = resolveToken(params.sellToken, chainId) as `0x${string}` | null
   const buyAddr = resolveToken(params.buyToken, chainId) as `0x${string}` | null

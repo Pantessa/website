@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { chartPairFor } from '@/lib/charts'
 import { tokenHome } from '@/lib/token-home'
-import { chainById, primaryStable, publicClientFor } from '@/lib/chains'
+import { buysNativeEth, chainById, primaryStable, publicClientFor } from '@/lib/chains'
 import { dynamicTokenBySymbol, ensureTokenList } from '@/lib/token-list'
 import { FEE_TIERS, QUOTER_V2_ABI } from '@/lib/uniswap-venue'
 import { poolPriceFor, poolSellPriceFor, type PoolPrice } from '@/lib/pool-price'
@@ -203,7 +203,9 @@ function ticketFor(r: VenueRoute, feeBps: number, amount: number, sym: string, c
   switch (r.kind) {
     case 'spot': {
       const out = ctx.spot ? ctx.spot.tokenOut * (1 - feeBps / 10_000) : null
-      return { ...base, out: out != null ? (r.side === 'buy' ? fmtUnits(out, sym) : `≈ $${(amount * (1 - feeBps / 10_000)).toFixed(2)} USDC`) : null, slippageBps: SWAP_SLIPPAGE_BPS, minOut: out != null ? (r.side === 'buy' ? fmtUnits(out * (1 - SWAP_SLIPPAGE_BPS / 10_000), sym) : `≈ $${(amount * (1 - feeBps / 10_000) * (1 - SWAP_SLIPPAGE_BPS / 10_000)).toFixed(2)} USDC`) : null, gas: gasLine(r.chainId), signs: 'approve (if needed) + swap — one card, deadline-watched' }
+      // A buy of ETH settles as native ETH (the router unwraps), not the sweep.
+      const settles = r.side === 'buy' && buysNativeEth(sym, r.chainId) ? SETTLES['uniswap-native-eth'] : base.settles
+      return { ...base, settles, out: out != null ? (r.side === 'buy' ? fmtUnits(out, sym) : `≈ $${(amount * (1 - feeBps / 10_000)).toFixed(2)} USDC`) : null, slippageBps: SWAP_SLIPPAGE_BPS, minOut: out != null ? (r.side === 'buy' ? fmtUnits(out * (1 - SWAP_SLIPPAGE_BPS / 10_000), sym) : `≈ $${(amount * (1 - feeBps / 10_000) * (1 - SWAP_SLIPPAGE_BPS / 10_000)).toFixed(2)} USDC`) : null, gas: gasLine(r.chainId), signs: 'approve (if needed) + swap — one card, deadline-watched' }
     }
     case 'limit': {
       const m = r.ask.match(/(?:buy|sell) ([\d.]+) \w+ for at (?:most|least) ([\d.]+) USDC/)

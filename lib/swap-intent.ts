@@ -10,6 +10,7 @@
 
 import type { WorkingContext } from './working-context'
 import { canonicalChainWord, chainMentions, normalizeArrows, normalizeWorth, wordDistance } from './chain-lexicon'
+import { buysNativeEth, chainById } from './chains'
 
 export interface SwapIntent {
   isSwap: boolean
@@ -537,6 +538,41 @@ export function swapClarify(intent: SwapIntent, opts: { targets?: string[] } = {
     }
   }
   return null
+}
+
+// ── Venue pick for a same-chain swap ask ─────────────────────────────────────
+
+/** Why pickSwapVenue chose its venue: the route traces it. */
+export type SwapVenueReason = 'named-uniswap' | 'set-uniswap' | 'default-cow' | 'no-cow-book' | 'native-eth-buy'
+
+/**
+ * Which native venue builds a same-chain swap ask. Uniswap when the message
+ * names it, or the working set carries Uniswap without CoW; otherwise CoW,
+ * the no-preference default. Two exceptions send a CoW pick to Uniswap:
+ *   - the chain has no CoW order book;
+ *   - a MARKET buy of native ETH. A CoW order pays WETH, which can't pay gas,
+ *     and CoW's native-ETH payout is a 2300-gas transfer that smart-contract
+ *     wallets can't receive. Uniswap v3 unwraps in the same multicall. An ask
+ *     that names CoW keeps CoW (its card says WETH), and limit orders stay on
+ *     CoW (resting orders only exist there).
+ */
+export function pickSwapVenue(input: {
+  message: string
+  intent: Pick<SwapIntent, 'mode' | 'buyToken'>
+  chainId: number
+  uniActive: boolean
+  cowActive: boolean
+}): { venue: 'uniswap' | 'cow'; reason: SwapVenueReason } {
+  const { message, intent, chainId, uniActive, cowActive } = input
+  if (/\buni\s?swap\b|\buni\b/i.test(message)) return { venue: 'uniswap', reason: 'named-uniswap' }
+  if (uniActive && !cowActive) return { venue: 'uniswap', reason: 'set-uniswap' }
+  const chain = chainById(chainId)
+  if (chain && !chain.cow) return { venue: 'uniswap', reason: 'no-cow-book' }
+  const namesCow = /\bcow(?:\s?swap)?\b/i.test(message)
+  if (!namesCow && chain?.uniswap && intent.mode !== 'limit' && intent.buyToken && buysNativeEth(intent.buyToken, chainId)) {
+    return { venue: 'uniswap', reason: 'native-eth-buy' }
+  }
+  return { venue: 'cow', reason: 'default-cow' }
 }
 
 // ── Working context for swap/order artifacts (invariant #11) ─────────────────
