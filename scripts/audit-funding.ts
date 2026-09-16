@@ -28,6 +28,19 @@
  *      other buy — the resume replays as an action AND the landing state, the
  *      preset arriving as ETH on the on-ramp lane at $2k–$5k/ETH, plans chips
  *      that compile), or 'none'. The reply still names every holding.
+ *   5. layerCard ⇒ a NATIVE LAYER's action the wallet can't fund (the HL open
+ *      and deposit, the Aave supply and repay, the Morpho lend, the Lido stake,
+ *      the NFT buy) answers through lib/layer-shortfall with the on-ramp OPEN,
+ *      and the chip matches the row:
+ *      - 'plan': the landed ETH moves or converts first. The resume replays as
+ *        an action, and at every price from $2k to $5k/ETH (the chip minted and
+ *        the ETH delivered at that price) the landed wallet re-plans into chips
+ *        that compile as jobs. The HL open compiles its first chip outright.
+ *      - 'direct': the delivery IS the ETH the action spends. At every price,
+ *        after a 5% adverse move, the landing still covers the need, so the
+ *        resume builds the action itself.
+ *      - 'none'.
+ *      The reply still names every holding, and an empty wallet reads plainly.
  *
  *   npm run audit:funding           # report + nonzero exit on findings
  *   npm run audit:funding -- -v     # also print every outcome row
@@ -41,8 +54,10 @@ import {
   type FundingBalanceRead,
   type FundingNeed,
 } from '../lib/funding-plan'
-import { deliveryFundUsd, ONRAMP_DEFAULT_NETWORK } from '../lib/onramp'
+import { deliveryFundUsd, ONRAMP_DEFAULT_NETWORK, ONRAMP_ETH_PRICE_CEILING_USD, ONRAMP_MAX_USD, ONRAMP_SETTLE_SLACK_USD, planFundUsd } from '../lib/onramp'
 import { buyDollarsOf, swapShortfallTurn, type SwapShortfallAsk } from '../lib/swap-shortfall'
+import { laneGasFloorPresetUsd, layerCardKind, layerPlanUsd, layerShortfallTurn, LAYER_SHORTFALL, ONRAMP_LANE_CHAIN_ID, type LayerShortfallAsk } from '../lib/layer-shortfall'
+import { compileJobAsk } from '../lib/jobs'
 import { simulateLadder } from './ask-ladder'
 
 // The card door reads the environment (lib/onramp fails closed without both).
@@ -125,6 +140,117 @@ const buyAsk = (chainId: number, usdc: number, buy: string, dollarAsk = true): S
 /** A fresh embedded wallet: nothing on any scanned chain. */
 const EMPTY = [R(8453, 0, 0), R(42161, 0, 0), R(10, 0, 0), R(1, 0, 0)]
 
+// ── The native layers' funding needs, exactly as the route hands them to the
+// funding layer, and the card ask each one restates (lib/layer-shortfall).
+/** The prod ask that walled three times (strangers 08-27, test account 09-04). */
+const HL_LONG_ASK = 'I want a 2X Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop'
+const hlOpenNeed = (depositUsdc: number, message: string): FundingNeed => ({
+  chainId: 42161,
+  token: 'USDC',
+  amountHuman: depositUsdc,
+  followupResume: `deposit ${depositUsdc} USDC to Hyperliquid, then ${message}`,
+  actionLabel: 'the Hyperliquid position',
+})
+const hlOpenAsk = (depositUsdc: number, message: string, what: string, extra: Partial<LayerShortfallAsk> = {}): LayerShortfallAsk => ({
+  layer: 'hl-open',
+  what,
+  resume: message,
+  chainId: 42161,
+  token: 'USDC',
+  lead: `🚫 The position needs about $${depositUsdc} of USDC reaching Hyperliquid and the wallet can't cover it yet.`,
+  needLine: `The position needs about $${depositUsdc} of USDC on Hyperliquid as collateral.`,
+  ...extra,
+})
+const hlDepositNeed = (amount: number, heldArb: number): FundingNeed => ({
+  chainId: 42161,
+  token: 'USDC',
+  amountHuman: Number((amount - heldArb).toFixed(2)),
+  followupResume: `deposit ${amount} USDC to Hyperliquid`,
+  actionLabel: 'the Hyperliquid deposit',
+})
+const hlDepositAsk = (amount: number, heldArb: number): LayerShortfallAsk => ({
+  layer: 'hl-deposit',
+  what: `deposit ${amount} USDC to Hyperliquid`,
+  resume: `Deposit ${amount} USDC to Hyperliquid`,
+  chainId: 42161,
+  token: 'USDC',
+  lead: `🚫 The deposit needs ${amount} USDC on Arbitrum and the wallet holds ${heldArb.toFixed(2)} there.`,
+})
+const aaveSupplyNeed = (amount: number, token: string, bestRate = false): FundingNeed => ({
+  chainId: 1,
+  token,
+  amountHuman: amount,
+  followupResume: `supply ${amount} ${token} to Aave${bestRate ? ' at the best rate' : ''}`,
+  actionLabel: 'the Aave supply',
+})
+const aaveSupplyAsk = (amount: number, token: string, bestRate = false, extra: Partial<LayerShortfallAsk> = {}): LayerShortfallAsk => ({
+  layer: 'aave-supply',
+  what: `supply ${amount} ${token} to Aave${bestRate ? ' at the best rate' : ''}`,
+  resume: `Supply ${amount} ${token} to Aave${bestRate ? ' at the best rate' : ''}`,
+  chainId: 1,
+  token,
+  lead: `🏦 The Aave supply needs ${amount} ${token} on Ethereum and the wallet holds 0.`,
+  ...extra,
+})
+const morphoLendNeed = (amount: number, chainId: 1 | 8453): FundingNeed => ({
+  chainId,
+  token: 'USDC',
+  amountHuman: amount,
+  followupResume: `lend ${amount} USDC on morpho${chainId === 1 ? ' on ethereum' : ''}`,
+  actionLabel: 'the Morpho lend',
+})
+const morphoLendAsk = (amount: number, chainId: 1 | 8453): LayerShortfallAsk => ({
+  layer: 'morpho-lend',
+  what: `lend ${amount} USDC on Morpho on ${FUNDING_CHAIN_WORD[chainId]}`,
+  resume: `Lend ${amount} USDC on Morpho on ${FUNDING_CHAIN_WORD[chainId]}`,
+  chainId,
+  token: 'USDC',
+  lead: `🏦 The Morpho lend needs ${amount} USDC on ${FUNDING_CHAIN_WORD[chainId]} and the wallet holds 0.`,
+})
+/** Mirror of the route's lidoFundingTurn sizing: the ask floored at the
+ *  economical minimum, plus the gas buffer, minus mainnet ETH already held. */
+const LIDO_MIN_STAKE_ETH = 0.003
+const LIDO_BUFFER_ETH = 0.002
+const lidoNeed = (askEth: number | null, heldEth = 0): FundingNeed => ({
+  chainId: 1,
+  token: 'ETH',
+  amountHuman: Number((Math.max(askEth ?? 0, LIDO_MIN_STAKE_ETH) + LIDO_BUFFER_ETH - heldEth).toFixed(6)),
+  followupResume: 'stake all my ETH on Lido',
+  actionLabel: 'the stake',
+  flexMinAmountHuman: Math.max(0, Number((LIDO_MIN_STAKE_ETH + LIDO_BUFFER_ETH - heldEth).toFixed(6))),
+})
+const lidoAsk = (askEth: number | null): LayerShortfallAsk => {
+  const target = Number((Math.max(askEth ?? 0, LIDO_MIN_STAKE_ETH) + LIDO_BUFFER_ETH).toFixed(6))
+  const needs = askEth !== null ? `Staking ${askEth} ETH really needs ~${target} ETH on Ethereum once mainnet gas is counted` : `Staking on Lido needs at least ~${target} ETH on Ethereum once mainnet gas is counted`
+  return {
+    layer: 'lido-stake',
+    what: askEth !== null ? `stake ${askEth} ETH on Lido` : 'stake ETH on Lido',
+    resume: askEth !== null ? `Stake ${askEth} ETH on Lido` : 'Stake all my ETH on Lido',
+    chainId: 1,
+    token: 'ETH',
+    lead: `🌊 ${needs}, and the wallet holds 0 ETH on Ethereum.`,
+    needLine: `${needs}.`,
+  }
+}
+const NFT_ITEM = (slug: string) => `https://opensea.io/item/${slug}/0x6cf64997bcfcec770e231aba2ba9ea38ff9511a0/198`
+/** The NFT buy's need: the listing plus the destination gas floor. */
+const nftNeed = (chainId: number, listedEth: number): FundingNeed => ({
+  chainId,
+  token: 'ETH',
+  amountHuman: Number((listedEth + (DEST_GAS_FLOOR_ETH[chainId] ?? 0.0002)).toFixed(6)),
+  followupResume: `buy the nft ${NFT_ITEM(chainId === 1 ? 'ethereum' : 'base')}`,
+  actionLabel: 'the buy',
+})
+const nftAsk = (chainId: number, listedEth: number): LayerShortfallAsk => ({
+  layer: 'nft-buy',
+  what: 'buy Freek #198',
+  resume: `buy the nft ${NFT_ITEM(chainId === 1 ? 'ethereum' : 'base')}`,
+  chainId,
+  token: 'ETH',
+  lead: `🖼️ Buying needs ${listedEth} ETH but the wallet holds 0 ETH on ${FUNDING_CHAIN_WORD[chainId]} (plus gas).`,
+  needLine: `Freek #198 is listed at ${listedEth} ETH on ${FUNDING_CHAIN_WORD[chainId]}, plus gas.`,
+})
+
 interface Scenario {
   name: string
   need: FundingNeed
@@ -134,6 +260,8 @@ interface Scenario {
   expect: 'offer' | 'refusal' | 'fallthrough'
   /** The swap layer's card door on this refusal (invariant 4). */
   card?: { ask: SwapShortfallAsk; expect: 'completes' | 'cascade' | 'none' }
+  /** A native layer's card door on this refusal (invariant 5). */
+  layerCard?: { ask: LayerShortfallAsk; expect: 'plan' | 'direct' | 'none' }
   /** Expected copy mentions that are KNOWN missing today — documented gaps.
    *  Warn instead of fail; a no-longer-missing entry fails (stale). */
   knownUnnamed?: string[]
@@ -412,7 +540,204 @@ const SCENARIOS: Scenario[] = [
       expect: 'none',
     },
   },
+  {
+    name: 'empty → "Buy $2 of UNI" on Base (the smallest plan the swap layer prices, $5): the preset still funds its own landing at $5,000/ETH (the fixed landing-cost floor; $16 landed $1 short)',
+    need: buyNeed(8453, 2, 'UNI'),
+    reads: EMPTY,
+    expect: 'refusal',
+    card: { ask: buyAsk(8453, 2, 'UNI'), expect: 'cascade' },
+  },
+
+  // ── The card door on a NATIVE LAYER's action (lib/layer-shortfall). ──
+  // Prod ask_failures, 45 days, had_funds=false, every one "found no movable
+  // ETH or USDC … Top up any of those chains and ask again." with no chip.
+  {
+    name: 'THE HL WALL (2026-08-27 ×2, 09-04) — empty → "I want a 2X Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop": a plan chip; the landing compiles the funded job at $2k–$5k/ETH ($21 landed $0.50 short at $5,000)',
+    need: hlOpenNeed(6, HL_LONG_ASK),
+    reads: EMPTY,
+    expect: 'refusal',
+    layerCard: { ask: hlOpenAsk(6, HL_LONG_ASK, 'go long $12 of HYPE at 2x on Hyperliquid'), expect: 'plan' },
+  },
+  {
+    name: 'empty, but $2 already on Hyperliquid → the same long (the deposit floors at the $5 bridge minimum): NOT the empty wallet\'s copy (the layer read money the scan can\'t see), and the card rides along',
+    need: hlOpenNeed(5, HL_LONG_ASK),
+    reads: EMPTY,
+    expect: 'refusal',
+    layerCard: { ask: hlOpenAsk(5, HL_LONG_ASK, 'go long $12 of HYPE at 2x on Hyperliquid', { holdsUnscanned: true }), expect: 'plan' },
+  },
+  {
+    name: 'empty → "Deposit 20 USDC to Hyperliquid": a plan chip whose landing funds the move to Arbitrum + the deposit',
+    need: hlDepositNeed(20, 0),
+    reads: EMPTY,
+    expect: 'refusal',
+    layerCard: { ask: hlDepositAsk(20, 0), expect: 'plan' },
+  },
+  {
+    name: '$3 USDC + gas on Base → "Deposit 20 USDC to Hyperliquid": the refusal still names both holdings, and the card rides along',
+    need: hlDepositNeed(20, 0),
+    reads: [R(8453, 0.001, 3), R(42161, 0, 0), R(10, 0, 0), R(1, 0, 0)],
+    expect: 'refusal',
+    layerCard: { ask: hlDepositAsk(20, 0), expect: 'plan' },
+  },
+  {
+    name: 'THE AAVE WALL (2026-09-16, an empty CDP account) — "Supply $25 of USDT to Aave at the best rate": a plan chip sized WITHOUT the Ethereum gas leg (the card lane IS Ethereum), and the landing swaps + supplies at $2k–$5k/ETH',
+    need: aaveSupplyNeed(25, 'USDT', true),
+    reads: EMPTY,
+    expect: 'refusal',
+    layerCard: { ask: aaveSupplyAsk(25, 'USDT', true), expect: 'plan' },
+  },
+  {
+    name: 'empty → "Supply 1 USDC to Aave" (a $2.50 plan): the lane-destination preset floors where its landing still clears Ethereum\'s gas floor at $5,000/ETH',
+    need: aaveSupplyNeed(1, 'USDC'),
+    reads: EMPTY,
+    expect: 'refusal',
+    layerCard: { ask: aaveSupplyAsk(1, 'USDC'), expect: 'plan' },
+  },
+  {
+    name: '12 USDT held on Ethereum, nothing else → "Supply 25 USDT to Aave": the scan sees no ETH or USDC, but the wallet is NOT empty — the layer\'s own lead stays',
+    need: aaveSupplyNeed(13, 'USDT'),
+    reads: EMPTY,
+    expect: 'refusal',
+    layerCard: { ask: aaveSupplyAsk(25, 'USDT', false, { lead: '🏦 The Aave supply needs 25 USDT on Ethereum and the wallet holds 12.', holdsUnscanned: true }), expect: 'plan' },
+  },
+  {
+    name: '$40 gasless USDC on Base → "Supply 25 USDT to Aave": NO card chip — the money is there and needs a dollar of gas, not a card purchase',
+    need: aaveSupplyNeed(25, 'USDT'),
+    reads: [R(8453, 0, 40), R(42161, 0, 0), R(10, 0, 0), R(1, 0, 0)],
+    expect: 'refusal',
+    layerCard: { ask: aaveSupplyAsk(25, 'USDT'), expect: 'none' },
+  },
+  {
+    name: 'empty → "Repay all my USDC debt on Aave" (a $20 debt): a plan chip; the landing swaps + repays on Ethereum',
+    need: { chainId: 1, token: 'USDC', amountHuman: 20, followupResume: 'repay all my USDC debt on aave', actionLabel: 'the Aave repayment' },
+    reads: EMPTY,
+    expect: 'refusal',
+    layerCard: {
+      ask: { layer: 'aave-repay', what: 'repay your USDC debt on Aave', resume: 'Repay all my USDC debt on Aave', chainId: 1, token: 'USDC', lead: '🏦 The Aave repayment needs 20 USDC on Ethereum and the wallet holds 0.' },
+      expect: 'plan',
+    },
+  },
+  {
+    name: 'empty → "Lend 2 USDC on Morpho on Base" (a $5 plan): the landing funds the move to Base + the lend at $5,000/ETH ($16 landed $1 short)',
+    need: morphoLendNeed(2, 8453),
+    reads: EMPTY,
+    expect: 'refusal',
+    layerCard: { ask: morphoLendAsk(2, 8453), expect: 'plan' },
+  },
+  {
+    name: 'empty → "Lend 100 USDC on Morpho on Ethereum": a lane-destination plan chip, no Ethereum gas leg in the preset',
+    need: morphoLendNeed(100, 1),
+    reads: EMPTY,
+    expect: 'refusal',
+    layerCard: { ask: morphoLendAsk(100, 1), expect: 'plan' },
+  },
+  {
+    name: 'empty → "Lend 2000 USDC on Morpho on Base": NO card chip — one $500 checkout can\'t carry it',
+    need: morphoLendNeed(2000, 8453),
+    reads: EMPTY,
+    expect: 'refusal',
+    layerCard: { ask: morphoLendAsk(2000, 8453), expect: 'none' },
+  },
+  {
+    name: 'THE LIDO WALL (2026-08-04) — empty → "Stake 0.05 ETH with Lido": a DIRECT chip (the card delivers the stake\'s own ETH on Ethereum), and the landing covers the stake after a 5% price move at $2k–$5k/ETH',
+    need: lidoNeed(0.05),
+    reads: EMPTY,
+    expect: 'refusal',
+    layerCard: { ask: lidoAsk(0.05), expect: 'direct' },
+  },
+  {
+    name: 'empty → "help me stake on Lido" (no amount): a direct chip at the $15 checkout floor; "Stake all my ETH" sizes itself to what lands',
+    need: lidoNeed(null),
+    reads: EMPTY,
+    expect: 'refusal',
+    layerCard: { ask: lidoAsk(null), expect: 'direct' },
+  },
+  {
+    name: 'empty → "Stake 0.3 ETH on Lido": NO card chip — the ETH is worth more than one $500 checkout',
+    need: lidoNeed(0.3),
+    reads: EMPTY,
+    expect: 'refusal',
+    layerCard: { ask: lidoAsk(0.3), expect: 'none' },
+  },
+  {
+    name: 'empty → buy an NFT listed at 0.004 ETH on Base: a plan chip; the landed ETH on Ethereum moves to Base, then the fill',
+    need: nftNeed(8453, 0.004),
+    reads: EMPTY,
+    expect: 'refusal',
+    layerCard: { ask: nftAsk(8453, 0.004), expect: 'plan' },
+  },
+  {
+    name: 'empty → buy an NFT listed at 0.02 ETH on Ethereum: a DIRECT chip — the delivery IS the ETH the fill spends',
+    need: nftNeed(1, 0.02),
+    reads: EMPTY,
+    expect: 'refusal',
+    layerCard: { ask: nftAsk(1, 0.02), expect: 'direct' },
+  },
 ]
+
+/** Price a need at `ethUsd` the way offerFundingPlan does: the token plan, the
+ *  destination gas leg, and the flexible floor. */
+function decideAt(need: FundingNeed, reads: FundingBalanceRead[], ethUsd: number) {
+  const tokenUsd = need.token.toUpperCase() === 'ETH' ? ethUsd : 1
+  const scan = { ...classifyFundingBalances(reads, ethUsd), ethUsd, readChains: reads.map((r) => r.chainWord), failedChains: [] }
+  const flexMinUsd = typeof need.flexMinAmountHuman === 'number' ? (need.flexMinAmountHuman > 0 ? fundingPlanUsd(need.flexMinAmountHuman, tokenUsd) : 0) : undefined
+  return decideFundingTurn({
+    need,
+    needUsd: need.amountHuman > 0 ? fundingPlanUsd(need.amountHuman, tokenUsd) : 0,
+    gasUsd: gasUsdFor(need, reads, ethUsd),
+    scan,
+    destChainName: FUNDING_CHAIN_WORD[need.chainId],
+    flexMinUsd,
+  })
+}
+
+/** A native layer's card chip, minted AND delivered at each price from $2k to
+ *  the ceiling. The chip is re-minted at each price because an ETH-denominated
+ *  need (a stake, an NFT) costs more dollars as ETH rises, and a preset is
+ *  always sized at the price the wallet saw.
+ *  - PLAN: the preset lands (minus the settle slack) as ETH on the lane, and
+ *    the SAME need re-plans into chips whose resumes compile as jobs.
+ *  - DIRECT: the landing, after a further 5% adverse move, covers the need,
+ *    so the layer builds the action itself.
+ *  Returns one finding per failing price. */
+function layerLandingFindings(s: Scenario & { layerCard: NonNullable<Scenario['layerCard']> }): string[] {
+  const out: string[] = []
+  for (const ethUsd of [2_000, 3_000, 4_000, ONRAMP_ETH_PRICE_CEILING_USD]) {
+    const minted = decideAt(s.need, s.reads, ethUsd)
+    // At this price the wallet might be offered a plan instead: no refusal,
+    // no card chip, nothing to land.
+    if (minted.kind !== 'refusal') continue
+    const turn = layerShortfallTurn({ ask: s.layerCard.ask, refusal: { insufficient: minted.insufficient, ...minted.facts } })
+    const fund = turn.clarify?.options.find((o) => o.fund)?.fund
+    if (!fund) {
+      out.push(`no card chip when minted at $${ethUsd}/ETH (the ${ETH_USD}/ETH row had one)`)
+      continue
+    }
+    const laneChainId = ONRAMP_LANE_CHAIN_ID[fund.network]
+    if (s.layerCard.expect === 'direct') {
+      const landedEth = (fund.presetFiatUsd - ONRAMP_SETTLE_SLACK_USD) / (ethUsd * 1.05)
+      if (landedEth < s.need.amountHuman) out.push(`$${fund.presetFiatUsd} direct preset minted at $${ethUsd}/ETH lands ${landedEth.toFixed(6)} ETH after a 5% move — under the ${s.need.amountHuman} ETH the action needs`)
+      continue
+    }
+    const landedEth = (fund.presetFiatUsd - ONRAMP_SETTLE_SLACK_USD) / ethUsd
+    const landing = s.reads.some((r) => r.chainId === laneChainId)
+      ? s.reads.map((r) => (r.chainId === laneChainId ? { ...r, nativeEth: r.nativeEth + landedEth } : r))
+      : [...s.reads, R(laneChainId, landedEth, 0)]
+    const rerun = decideAt(s.need, landing, ethUsd)
+    if (rerun.kind !== 'offer') {
+      out.push(`$${fund.presetFiatUsd} preset landed at $${ethUsd}/ETH re-plans as ${rerun.kind}${rerun.kind === 'refusal' ? ` — "${rerun.insufficient}"` : ''}`)
+      continue
+    }
+    for (const c of rerun.turn.clarify.options) {
+      if (c.label === 'Not now') continue
+      const o = simulateLadder(c.resume)
+      const job = compileJobAsk(c.resume)
+      if (o.kind !== 'action') out.push(`landing chip at $${ethUsd}/ETH dead-ends at ${o.gate}/${o.kind}: "${c.resume}"`)
+      else if (!job || 'problem' in job || 'clarify' in job) out.push(`landing chip at $${ethUsd}/ETH doesn't compile as a job${job && 'problem' in job ? ` (${job.problem})` : ''}: "${c.resume}"`)
+    }
+  }
+  return out
+}
 
 /** The on-ramp's landing state for a cascade chip: the preset converted in
  *  full minus $1 of slack (network fee + drift — Stripe's fee rides ON TOP),
@@ -578,6 +903,64 @@ for (const s of SCENARIOS) {
             console.log(header)
             flag(f)
           }
+        }
+      }
+    }
+
+    // ── Invariant 5: a native layer's card door on this refusal.
+    if (s.layerCard) {
+      const { ask, expect } = s.layerCard
+      const turn = layerShortfallTurn({ ask, refusal: { insufficient: copy, ...decision.facts } })
+      const chip = turn.clarify?.options.find((o) => o.fund)
+      const gotCard = !chip ? 'none' : layerCardKind(ask, chip.fund!.network)
+      if (verbose) console.log(`    → layer card ${gotCard}: ${turn.reply}${chip ? `\n      [${chip.label}] resume "${chip.resume}"` : ''}`)
+      if (gotCard !== expect) {
+        console.log(header)
+        flag(`layer card expected ${expect}, got ${gotCard}: "${turn.reply}"`)
+      }
+      if (turn.buildPath !== LAYER_SHORTFALL[ask.layer].buildPath) {
+        console.log(header)
+        flag(`the refusal files as ${turn.buildPath}, not its layer's ${LAYER_SHORTFALL[ask.layer].buildPath}`)
+      }
+      for (const mention of owed) {
+        if (!turn.reply.includes(mention)) {
+          console.log(header)
+          flag(`layer card reply dropped "${mention}" — the money the refusal named is invisible again: "${turn.reply}"`)
+        }
+      }
+      // Empty on every chain the scan reads AND nothing the layer read itself:
+      // the plain answer, never the funding layer's homework.
+      const empty = owed.length === 0 && !ask.holdsUnscanned
+      if (empty !== /this wallet needs money in it first/.test(turn.reply)) {
+        console.log(header)
+        flag(`${empty ? 'an empty wallet does not' : 'a wallet holding money'} ${empty ? 'read plainly' : 'reads as empty'}: "${turn.reply}"`)
+      }
+      if (empty && /found no movable|Top up any of those chains/.test(turn.reply)) {
+        console.log(header)
+        flag(`an empty wallet still reads the funding layer's homework: "${turn.reply}"`)
+      }
+      if (chip?.fund) {
+        const outcome = simulateLadder(chip.resume)
+        if (outcome.kind !== 'action') {
+          console.log(header)
+          flag(`layer card resume dead-ends at ${outcome.gate}/${outcome.kind}: "${chip.resume}"`)
+        }
+        if (chip.resume !== ask.resume || chip.fund.completes || chip.fund.network !== ONRAMP_DEFAULT_NETWORK) {
+          console.log(header)
+          flag(`layer card chip drifted from its ask: resume "${chip.resume}", completes ${chip.fund.completes}, network ${chip.fund.network}`)
+        }
+        // The preset rule per kind, recomputed from the refusal's own facts.
+        const wantPreset =
+          gotCard === 'direct'
+            ? deliveryFundUsd(decision.facts.needUsd)
+            : Math.min(ONRAMP_MAX_USD, Math.max(planFundUsd(layerPlanUsd(ask, decision.facts)), ask.chainId === ONRAMP_LANE_CHAIN_ID[chip.fund.network] ? laneGasFloorPresetUsd() : 0))
+        if (chip.fund.presetFiatUsd !== wantPreset) {
+          console.log(header)
+          flag(`a ${gotCard} chip presets $${chip.fund.presetFiatUsd}, not $${wantPreset}: "${chip.label}"`)
+        }
+        for (const f of layerLandingFindings({ ...s, layerCard: s.layerCard })) {
+          console.log(header)
+          flag(f)
         }
       }
     }
