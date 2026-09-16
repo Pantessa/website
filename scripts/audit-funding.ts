@@ -458,10 +458,11 @@ const SCENARIOS: Scenario[] = [
   // USDC for ETH on Base": two conversions, two fees, the same ETH at the end.
   // A holding of the token a swap BUYS never funds it (invariant 6).
   {
-    name: 'THE ROUND TRIP — 0.05 ETH on Base only → "Buy $50 of ETH" on Base: nothing else to spend, so the refusal names the ETH as what the swap gets you',
+    name: 'THE ROUND TRIP — 0.05 ETH on Base only → "Buy $50 of ETH" on Base: nothing else to spend, so the refusal names the ETH as what the buy gets you, and the card door that completes rides along',
     need: swapNeed('USDC', 50, 'ETH'),
     reads: [R(8453, 0.05, 0), R(42161, 0, 0), R(10, 0, 0), R(1, 0, 0)],
     expect: 'refusal',
+    card: { ask: buyAsk(8453, 50, 'ETH'), expect: 'completes' },
   },
   {
     name: 'THE ROUND TRIP, one chain over — 0.05 ETH on Arbitrum only → "Buy $50 of ETH" on Base: ONE move of that ETH to Base, no USDC leg, no follow-up swap',
@@ -494,10 +495,11 @@ const SCENARIOS: Scenario[] = [
     expect: 'offer',
   },
   {
-    name: 'ETH on Base + $20 USDC with gas on Arbitrum → "Buy $50 of ETH" on Base: short on USDC, the ETH named as not counted',
+    name: 'ETH on Base + $20 USDC with gas on Arbitrum → "Buy $50 of ETH" on Base: short on USDC, the ETH named as not counted, the card still offered',
     need: swapNeed('USDC', 50, 'ETH'),
     reads: [R(8453, 0.05, 0), R(42161, 0.001, 20), R(10, 0, 0), R(1, 0, 0)],
     expect: 'refusal',
+    card: { ask: buyAsk(8453, 50, 'ETH'), expect: 'completes' },
   },
   {
     // Other money exists, so "the only money is ETH" is false and no move is
