@@ -12,6 +12,7 @@ import { useAppShellMode } from '@/components/AppShell'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATALOG } from '@/lib/mcp-data'
 import { FREE_FLEET_FALLBACK, DEFAULT_CHAT_FLEET_SLUGS } from '@/lib/free-fleet'
+import { resolveAppIds } from '@/lib/ask-apps'
 
 // Free fleet leads the static fallback so the MCP rail's default (free) view
 // is never empty when /api/servers is down.
@@ -88,9 +89,9 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
     const raw = new URLSearchParams(window.location.search).get('mcps')
     if (!raw) return
     const slugs = raw.split(',').map((s) => s.trim()).filter(Boolean)
-    const ids = slugs
-      .map((slug) => servers.find((s) => s.slug === slug)?.id)
-      .filter((id): id is string => !!id)
+    // Through the app families: the route's own "Add Aave with this ask
+    // ready" door links name `aave-free`, and prod's Aave row is `aave`.
+    const ids = resolveAppIds(slugs, servers)
     if (ids.length) {
       appliedMcpParam.current = true
       setActiveServerIds(ids)

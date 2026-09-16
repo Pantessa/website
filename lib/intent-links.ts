@@ -45,6 +45,7 @@ export const MINTABLE_MCPS: Array<{ slug: string; label: string }> = [
   { slug: 'snapshot-free', label: 'Snapshot DAO' },
   { slug: 'lido-free', label: 'Lido' },
   { slug: 'aave', label: 'Aave' },
+  { slug: 'morpho-free', label: 'Morpho' },
   { slug: 'near-intents-mcp-yeetful', label: 'NEAR Intents (bridging)' },
   { slug: 'yeetful-tool-wallet', label: 'Pantessa Wallet' },
 ]
@@ -78,8 +79,10 @@ export function isCrossChainAsk(ask: string): boolean {
  *  most asks with no MCP at all — these slugs mainly pull the right splash
  *  cards + reads into the runtime so the build has its context. Doubles as
  *  the mint stage's live "runs on" row (MintLinkForm mirrors it on every
- *  keystroke), so every rule here shows its work as lit pills. */
-export function composeMcps(ask: string): string[] {
+ *  keystroke), so every rule here shows its work as lit pills. A link keeps
+ *  the first four; a chip's send (lib/ask-apps) takes them all, since it
+ *  only adds to a set that's already there. */
+export function composeMcps(ask: string, cap = 4): string[] {
   const a = ask.toLowerCase()
   const slugs: string[] = []
   // Every noun alternation is plural-tolerant — "Show my NFTs" once composed
@@ -99,14 +102,19 @@ export function composeMcps(ask: string): string[] {
   if (/\b(uniswap|dex)\b/.test(a) || tileShape || (!crossChainShape && /\b(swaps?|swapping|convert)\b/.test(a))) slugs.push('uniswap-free')
   if (/\b(cow ?swap|cow ?protocol|cow|limit orders?)\b/.test(a)) slugs.push('cow-free')
   if (/\b(stake|steth|wsteth|lido)\b/.test(a)) slugs.push('lido-free')
-  if (/\b(supply|borrow|repay|aave|lend)\b/.test(a)) slugs.push('aave')
+  // The lending verbs name no venue on their own. Morpho named takes them
+  // ("Lend $25 of USDC on Morpho on Base", the EARN board's Morpho rows,
+  // composed to Aave until 2026-09-16 and answered the add-Morpho door).
+  const morpho = /\bmorpho\b/.test(a)
+  if (/\baave\b/.test(a) || (!morpho && /\b(supply|borrow|repay|lend)\b/.test(a))) slugs.push('aave')
+  if (morpho) slugs.push('morpho-free')
   if (/\b(vote|proposal|snapshot|dao|governance)\b/.test(a)) slugs.push('snapshot-free')
   if (/\b(portfolio|balances?|holdings?|wallet)\b/.test(a)) slugs.push('yeetful-tool-wallet')
   // Bridging/swapping rides the native cross-chain + funding layers; the
   // NEAR Intents MCP joins the set whenever movement between chains is
   // plausible — which is any funded action, so it's the default companion.
   slugs.push('near-intents-mcp-yeetful')
-  return [...new Set(slugs)].slice(0, 4)
+  return [...new Set(slugs)].slice(0, cap)
 }
 
 /** Why a link is or isn't LIVE — the one lifecycle rule every reader shares
