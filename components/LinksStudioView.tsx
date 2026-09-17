@@ -10,6 +10,11 @@
 // The public leaderboard (LinksBoardView) is still one tap away, but it is
 // not what "my links" should open onto — a creator signing in to check their
 // own funnel was landing on everyone else's board instead.
+//
+// Layout (.linkstudio in x402-design.css): a size container, so it follows
+// its OWN width, not the viewport's (the rail drawer can sit beside it). Wide:
+// the mint stage and your page side by side, then the money and the funnel
+// table across both. Narrow: one column — page, mint, money, table.
 
 import Link from 'next/link'
 import { CreatorPagePanel } from '@/components/CreatorPagePanel'
@@ -24,8 +29,8 @@ export default function LinksStudioView({
    *  The dashboard route owns that contract; the in-app view does not —
    *  /chat's own query params mean something else entirely. */
   readQueryPrefill,
-  /** Rendered inside the chat scroller: narrower measure, its own heading,
-   *  no dashboard chrome around it. */
+  /** Rendered inside the chat scroller: its own heading and gutters, no
+   *  dashboard chrome around it. */
   inApp,
 }: {
   readQueryPrefill?: boolean
@@ -34,9 +39,9 @@ export default function LinksStudioView({
   const { links, earnings, loadError, reload, updatedAt } = useIntentLinks()
 
   return (
-    <section className={inApp ? 'w-full max-w-2xl mx-auto px-4 py-6' : undefined}>
+    <section className={`linkstudio${inApp ? ' px-4 sm:px-6 py-6' : ''}`}>
       {inApp && (
-        <div className="flex items-baseline justify-between gap-3 mb-5">
+        <div className="flex items-baseline justify-between gap-3 mb-6">
           <h1 className="text-xl font-semibold text-[color:var(--fg)]">Your intent links</h1>
           {/* The board didn't go away — it just stopped being the front
               door to your own links. */}
@@ -49,19 +54,27 @@ export default function LinksStudioView({
         </div>
       )}
 
-      {/* The page comes first: naming it (and branding it) is the thing every
-          minted link then lands on. */}
-      <CreatorPagePanel className="mb-6" />
+      <div className="linkstudio__top">
+        {/* The page comes first in reading order: naming it (and branding
+            it) is the thing every minted link then lands on. On a wide
+            screen it sits beside the mint stage instead of above it. */}
+        <CreatorPagePanel className="linkstudio__page" />
 
-      <MintLinkForm readQueryPrefill={readQueryPrefill} externalError={loadError} onMinted={reload} className="mb-8" />
+        <MintLinkForm
+          readQueryPrefill={readQueryPrefill}
+          externalError={loadError}
+          onMinted={reload}
+          className="linkstudio__mint"
+        />
+      </div>
 
       {earnings && (earnings.totalEarnedUsd > 0 || earnings.totalSignedUsd > 0) ? (
-        <LinkEarningsPanel earnings={earnings} onClaimed={reload} className="mb-6" />
+        <LinkEarningsPanel earnings={earnings} onClaimed={reload} className="mt-8" />
       ) : (
         links &&
         links.length > 0 && (
           // No earnings yet is a STATE, not an absence — say what fills it.
-          <p className="mb-6 text-[12px] text-[color:var(--muted-2)]">
+          <p className="mt-8 text-[12px] text-[color:var(--muted-2)]">
             Nothing earned yet — earnings appear here the first time a visitor signs a swap or stock buy
             from one of your links.
           </p>
@@ -71,12 +84,12 @@ export default function LinksStudioView({
       {/* The list is loading, or it failed: both used to render as an empty
           studio with no word — indistinguishable from "you have no links". */}
       {links === null && !loadError && (
-        <p className="text-[13px] text-[color:var(--muted-2)]" aria-live="polite">
+        <p className="mt-8 text-[13px] text-[color:var(--muted-2)]" aria-live="polite">
           Loading your links…
         </p>
       )}
       {loadError && (
-        <p className="text-[13px] text-[color:var(--muted)]" role="status">
+        <p className="mt-8 text-[13px] text-[color:var(--muted)]" role="status">
           {loadError}{' '}
           <button type="button" onClick={reload} className="text-[color:var(--accent)] hover:underline">
             Try again
@@ -85,17 +98,20 @@ export default function LinksStudioView({
       )}
 
       {links && links.length > 0 && (
-        <>
+        <div className="mt-10">
           {/* the funnel is the scoreboard during a drill — it re-reads
               itself every 30s while this tab is visible */}
-          <div className="flex items-center justify-end mb-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+            <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)]">
+              Your links <span className="text-[color:var(--muted)]">· {links.length}</span>
+            </h2>
             <LivePill updatedAt={updatedAt} />
           </div>
           <LinkFunnelTable links={links} onChanged={reload} />
-        </>
+        </div>
       )}
       {links && links.length === 0 && !loadError && (
-        <p className="text-[13px] text-[color:var(--muted-2)]">
+        <p className="mt-8 text-[13px] text-[color:var(--muted-2)]">
           No links yet — mint the first one above. The ask you&apos;d paste in chat is exactly the
           ask that belongs here.
         </p>

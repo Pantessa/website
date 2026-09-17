@@ -34,18 +34,18 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
   if (rows.length === 0) return null
 
   return (
-    <div className="overflow-x-auto">
+    <div className="linkfunnel">
       <table className="w-full text-sm">
         <thead>
           <tr className="mono text-[10.5px] uppercase tracking-wider text-[color:var(--muted-2)] text-left">
             <th className="py-2 pr-3 font-medium">Link</th>
-            <th className="py-2 pr-3 font-medium text-right whitespace-nowrap">Opens</th>
-            <th className="py-2 pr-3 font-medium text-right whitespace-nowrap">Connects</th>
-            <th className="py-2 pr-3 font-medium text-right whitespace-nowrap">Built</th>
-            <th className="py-2 pr-3 font-medium text-right whitespace-nowrap">Signed</th>
-            <th className="py-2 pr-3 font-medium text-right whitespace-nowrap">$ moved</th>
-            <th className="py-2 pr-3 font-medium text-right whitespace-nowrap">Earned</th>
-            <th className="py-2 font-medium text-right"></th>
+            <th className="linkfunnel__num py-2 pr-3 font-medium text-right whitespace-nowrap">Opens</th>
+            <th className="linkfunnel__num py-2 pr-3 font-medium text-right whitespace-nowrap">Connects</th>
+            <th className="linkfunnel__num py-2 pr-3 font-medium text-right whitespace-nowrap">Built</th>
+            <th className="linkfunnel__num py-2 pr-3 font-medium text-right whitespace-nowrap">Signed</th>
+            <th className="linkfunnel__num py-2 pr-3 font-medium text-right whitespace-nowrap">$ moved</th>
+            <th className="linkfunnel__num py-2 pr-3 font-medium text-right whitespace-nowrap">Earned</th>
+            <th className="linkfunnel__num py-2 font-medium text-right"></th>
           </tr>
         </thead>
         <tbody>
@@ -56,14 +56,17 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
             const state = linkLifecycle({ revoked: false, expiresAt: l.expiresAt, maxSigns: l.maxSigns }, l.signsCount)
             return (
             <tr key={l.slug} className="border-t border-[var(--line)]">
-              {/* w-full + max-w-0: in an auto-layout table a cell grows to its
-                  content, so the ask cell never truncated and a long ask pushed
-                  "$ moved" and "Earned" off the right edge — the two columns
-                  the creator is actually here for. This pins the ask cell to
-                  the leftover width; the flex row and the ask span carry
-                  min-w-0 so they are actually allowed to shrink into it. */}
-              <td className="py-2.5 pr-3 w-full max-w-0">
-                <div className="flex items-center gap-2 min-w-0">
+              {/* .linkfunnel__link (x402-design.css) = width 100% + max-width 0:
+                  in an auto-layout table a cell grows to its content, so the
+                  ask cell never truncated and a long ask pushed "$ moved" and
+                  "Earned" off the right edge — the two columns the creator is
+                  actually here for. That pins the ask cell to the leftover
+                  width; the flex row and the ask span carry min-w-0 so they
+                  are actually allowed to shrink into it. On a narrow table
+                  the leftover is ~0, so the cell takes a real width there and
+                  the ask wraps under the slug. */}
+              <td className="linkfunnel__link py-3 pr-3">
+                <div className="linkfunnel__head flex items-center gap-2 min-w-0">
                   <button
                     type="button"
                     onClick={() => copy(l.slug)}
@@ -73,7 +76,7 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                     {copied === l.slug ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                     /i/{l.slug}
                   </button>
-                  <span className="text-[13px] text-[color:var(--muted)] line-clamp-2 min-w-0" title={l.ask}>
+                  <span className="linkfunnel__ask text-[13px] text-[color:var(--muted)] line-clamp-2 min-w-0" title={l.ask}>
                     {l.ask}
                   </span>
                   {l.redirectUrl && (
@@ -115,15 +118,15 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                   </div>
                 )}
               </td>
-              <td className="py-2.5 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">{l.funnel.open}</td>
-              <td className="py-2.5 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">{l.funnel.connect}</td>
-              <td className="py-2.5 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">{l.funnel.built}</td>
-              <td className="py-2.5 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">{l.funnel.signed}</td>
-              <td className="py-2.5 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">
+              <td className="linkfunnel__num py-3 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">{l.funnel.open}</td>
+              <td className="linkfunnel__num py-3 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">{l.funnel.connect}</td>
+              <td className="linkfunnel__num py-3 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">{l.funnel.built}</td>
+              <td className="linkfunnel__num py-3 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">{l.funnel.signed}</td>
+              <td className="linkfunnel__num py-3 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap">
                 {l.signedUsd > 0 ? `$${l.signedUsd.toFixed(2)}` : '—'}
               </td>
               <td
-                className="py-2.5 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap text-[color:var(--accent)]"
+                className="linkfunnel__num py-3 pr-3 text-right mono text-[13px] tabular-nums whitespace-nowrap text-[color:var(--accent)]"
                 title={
                   l.earnedUsd <= 0 && l.signedUsd > 0
                     ? 'Fee-free route — bridges, transfers, stakes and sales move money but earn nothing.'
@@ -132,7 +135,7 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
               >
                 {l.earnedUsd > 0 ? formatEarnedUsd(l.earnedUsd) : '—'}
               </td>
-              <td className="py-2.5 text-right whitespace-nowrap">
+              <td className="linkfunnel__num py-3 text-right whitespace-nowrap">
                 {state === 'live' && (
                 <a
                   href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${l.ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(absoluteUrl(`/i/${l.slug}`))}`}

@@ -12,8 +12,50 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { PantessaMark } from '@/components/Logo'
 import { useCreatorPage } from '@/lib/creator-page'
 import { absoluteUrl } from '@/lib/site-url'
+
+/** The /l share card before the page exists — a picture of
+ *  app/l/[handle]/opengraph-image.tsx in its house look (.pagestage), with
+ *  the name being typed as the hero. Nothing is reserved by typing: the
+ *  placeholder is the card's shape, and the claim is still the only write. */
+function PageCardPreview({ handle }: { handle: string }) {
+  const name = handle.trim().toLowerCase().replace(/^@/, '')
+  return (
+    <div className="pagestage" aria-hidden="true">
+      <div className="pagestage__head">
+        <span className="pagestage__lockup">
+          <PantessaMark size={24} />
+          pantessa
+        </span>
+        <span className="pagestage__eyebrow">
+          <i className="pagestage__dot" /> CREATOR PAGE
+        </span>
+      </div>
+      <div className="pagestage__hero">
+        <p
+          className={`pagestage__handle${name.length > 18 ? ' pagestage__handle--long' : ''}${name ? '' : ' pagestage__handle--ghost'}`}
+        >
+          @{name || 'your-name'}
+        </p>
+        {/* no count: the real card counts the links you already have */}
+        <p className="pagestage__proof">Links that move money</p>
+        <p className="pagestage__sub">Tap one, connect your own wallet, and the path builds itself.</p>
+      </div>
+      <div className="pagestage__foot">
+        <span className="pagestage__pills">
+          {['Guarded build', 'Your wallet signs', 'Receipted'].map((label) => (
+            <span key={label} className="pagestage__pill">
+              <i className="pagestage__dot" /> {label}
+            </span>
+          ))}
+        </span>
+        <span className="pagestage__site">pantessa.com</span>
+      </div>
+    </div>
+  )
+}
 
 export function CreatorPagePanel({
   className,
@@ -44,54 +86,62 @@ export function CreatorPagePanel({
   return (
     <div className={`rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-4 py-4${className ? ` ${className}` : ''}`}>
       {!myHandle ? (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          {/* min-w keeps the copy readable — at phone widths the claim
-              controls wrap BELOW instead of crushing this column */}
-          <div className="min-w-[240px] flex-1">
-            {/* var(--fg), not text-white — this panel renders on the themed
-                dashboard AND in the rail modal; white vanishes in light mode. */}
-            <p className="text-[14px] font-medium text-[color:var(--fg)]">Name your page</p>
-            <p className="text-[12px] text-[color:var(--muted-2)] mt-0.5">
-              One name — <span className="mono">/l/your-name</span> — and every link you mint
-              lives on one shareable page. Then paste your site and the page wears your brand.
-            </p>
+        // Same shape as the claimed branch below: the share card, then the
+        // controls — so the studio's side column stacks both states alike.
+        <div className="cpanel__body flex flex-col md:flex-row gap-4">
+          <div className="cpanel__card w-full md:w-[280px] flex-shrink-0">
+            <PageCardPreview handle={handleInput} />
           </div>
-          <span className="inline-flex items-center gap-2">
-            <input
-              value={handleInput}
-              onChange={(e) => setHandleInput(e.target.value)}
-              placeholder="your-name"
-              maxLength={20}
-              className="w-36 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 text-[13px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
-            />
-            <button
-              type="button"
-              onClick={() => void claimHandle()}
-              disabled={claiming || !handleInput.trim()}
-              className="btn btn--solid text-[12px] disabled:opacity-50"
-            >
-              {claiming ? 'Claiming…' : 'Claim'}
-            </button>
-          </span>
-          {handleMsg && (
-            <span className="text-[12px] text-amber-400 w-full">
-              {handleMsg.text}
-              {handleMsg.url && (
-                <>
-                  {' '}
-                  <a href={handleMsg.url} className="mono underline hover:text-[color:var(--accent)]">
-                    {handleMsg.url}
-                  </a>
-                </>
-              )}
+          <div className="min-w-0 flex-1 flex flex-col items-start gap-2">
+            <div>
+              {/* var(--fg), not text-white — this panel renders on the themed
+                  dashboard AND in the rail modal; white vanishes in light mode. */}
+              <p className="text-[14px] font-medium text-[color:var(--fg)]">Name your page</p>
+              <p className="text-[12px] text-[color:var(--muted-2)] mt-0.5">
+                One name — <span className="mono">/l/your-name</span> — and every link you mint
+                lives on one shareable page. Then paste your site and the page wears your brand.
+              </p>
+            </div>
+            <span className="inline-flex items-center gap-2">
+              <input
+                value={handleInput}
+                onChange={(e) => setHandleInput(e.target.value)}
+                placeholder="your-name"
+                maxLength={20}
+                className="w-36 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 text-[13px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+              />
+              <button
+                type="button"
+                onClick={() => void claimHandle()}
+                disabled={claiming || !handleInput.trim()}
+                className="btn btn--solid text-[12px] disabled:opacity-50"
+              >
+                {claiming ? 'Claiming…' : 'Claim'}
+              </button>
             </span>
-          )}
+            {handleMsg && (
+              <span className="text-[12px] text-amber-400 w-full">
+                {handleMsg.text}
+                {handleMsg.url && (
+                  <>
+                    {' '}
+                    <a href={handleMsg.url} className="mono underline hover:text-[color:var(--accent)]">
+                      {handleMsg.url}
+                    </a>
+                  </>
+                )}
+              </span>
+            )}
+          </div>
         </div>
       ) : (
-        <div className="flex flex-col md:flex-row gap-4">
+        // cpanel__body / cpanel__card: the links studio stacks the card over
+        // the controls when this panel sits in its narrow side column
+        // (.linkstudio in x402-design.css). Everywhere else: md: row.
+        <div className="cpanel__body flex flex-col md:flex-row gap-4">
           {/* The live share card — the real OG route, re-rendered on every
               claim/brand change. Tapping it opens the page itself. */}
-          <a href={`/l/${myHandle}`} className="block w-full md:w-[280px] flex-shrink-0" title="Open your page">
+          <a href={`/l/${myHandle}`} className="cpanel__card block w-full md:w-[280px] flex-shrink-0" title="Open your page">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={`/l/${myHandle}/opengraph-image?v=${ogNonce}`}
