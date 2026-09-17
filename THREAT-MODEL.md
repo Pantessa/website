@@ -184,7 +184,7 @@ codebase does. Everything after the pull is ours.
 > Verified lists and one copy of the shared open questions, and drops this
 > note.
 
-Verified for the DCA autopilot (2026-09-17, #DCA_PR):
+Verified for the DCA autopilot (2026-09-17, #812):
 - **An autonomous buy can only pay the owner, minus the pinned treasury fee,
   and the owner's guaranteed minimum sits within 3% of the token's market
   mark.** The sweep builds, `guardAutoBuy` re-decodes every step, and only
