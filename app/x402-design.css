@@ -5815,7 +5815,7 @@
    The "Act on X" chips left the Overview card for the header row, between
    the identity and the quote, so they sit ABOVE the chart and read on every
    tab. Buy/Long is the one filled chip on the page; Sell/Short wears the
-   sell colour; DCA / Protect stay quiet outlines. Wraps to its own row under
+   sell colour; Protect stays a quiet outline. Wraps to its own row under
    the identity on narrow screens (the eyebrow folds away; chips speak). */
 .sym__act { display: flex; flex-direction: column; align-items: center; gap: 10px; flex: 1 1 360px; min-width: 0; }
 .sym__act-eyebrow { font-size: 9.5px; letter-spacing: 0.14em; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }

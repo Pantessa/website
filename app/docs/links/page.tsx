@@ -23,8 +23,8 @@ export default function LinksDocsPage() {
       <p className="docs__lead">
         An intent link is a short URL — <code>pantessa.com/i/&lt;slug&gt;</code> — that carries an
         ask as a plain sentence: <em>&ldquo;Buy $10 of AAPL&rdquo;</em>,{' '}
-        <em>&ldquo;Stake 0.05 ETH with Lido&rdquo;</em>, <em>&ldquo;DCA $25 into ETH
-        weekly&rdquo;</em>. Whoever opens it connects <strong>their own wallet</strong>, Pantessa
+        <em>&ldquo;Stake 0.05 ETH with Lido&rdquo;</em>, <em>&ldquo;Swap 5 USDC from Base to
+        Arbitrum&rdquo;</em>. Whoever opens it connects <strong>their own wallet</strong>, Pantessa
         scans, funds across chains, and builds the guarded path — and they sign, or nothing
         happens. You have an intent; we do the rest.
       </p>

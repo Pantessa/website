@@ -2,7 +2,7 @@
 
 // RouteTable (MK2/EXEC) — every venue a wallet can act on this symbol
 // through, side by side, with LIVE numbers: Uniswap spot per chain, CoW
-// limit, Hyperliquid perp (+ leverage), Aave supply/borrow, Lido stake, DCA,
+// limit, Hyperliquid perp (+ leverage), Aave supply/borrow, Lido stake,
 // the Guardian stops, NEAR / LiFi funding, Robinhood Chain stocks. One chip
 // per row; every chip is a sentence a native parser reads and SENDS on click
 // (memory chip-send-contract — the wallet signature is the gate; on a public
@@ -380,8 +380,6 @@ function kindHint(kind: VenueKind): string {
       return 'Aave v4 · Ethereum'
     case 'stake':
       return 'Lido · stETH'
-    case 'dca':
-      return 'standing · you sign each buy'
     case 'protect':
       return 'standing · signed once'
     case 'fund':
