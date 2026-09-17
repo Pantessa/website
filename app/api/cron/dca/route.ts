@@ -3,8 +3,10 @@ import { executeAutoDcaSweep } from '@/lib/dca-auto-exec'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-// Each execution is ~2–4 Base txs with receipt waits; the sweep caps
-// executions per pass and the hourly cadence drains any backlog.
+// Each execution is ~2–4 Base txs with receipt waits (a buy that fails after
+// the pull adds a retry and a refund). The sweep caps executions per pass,
+// starts none after 20s, and the next pass reconciles anything cut off
+// (lib/autopilot-unwind).
 export const maxDuration = 60
 
 // The DCA autopilot heartbeat — Vercel cron, hourly (vercel.json). Same

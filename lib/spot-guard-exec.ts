@@ -12,6 +12,13 @@
 //  The guard runs BEFORE the pull; a refused build costs nothing and the
 //  policy parks in 'error' for the owner (resume retries) — never a blind
 //  loop on a live market.
+//
+//  After the pull the sell can still fail (a price that moved past the
+//  bound, a deadline, an RPC), and the one-shot permission can never pull
+//  again. So nothing after the pull reads "failed" (lib/autopilot-unwind):
+//  one fresh retry against the same floor, then the pull goes back to the
+//  owner, and a run that can't prove where the money went stays UNWINDING
+//  until the next pass's reconcile does.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { spendPermissionManagerAbi } from '@coinbase/cdp-sdk'
@@ -24,8 +31,20 @@ import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { ensureTokenList } from '@/lib/token-list'
 import { buildUniswapSwap } from '@/lib/uniswap-venue'
 import { usdPerToken } from '@/lib/usd-probe'
-import { getSpenderAddress, isCdpConfigured, sendSpenderTx, spendNetwork } from '@/lib/cdp'
+import { getSpenderAddress, isCdpConfigured, spendNetwork } from '@/lib/cdp'
 import { SPEND_PERMISSION_MANAGER } from '@/lib/spend-permission'
+import { planRefund, reissueMatches, type LedgerStep } from '@/lib/autopilot-unwind'
+import {
+  permissionWindowSpend,
+  resolveLedger,
+  RunLedger,
+  saleFailureWords,
+  sendRunTx,
+  settleRun,
+  verifyPull,
+  type SaleStep,
+  type SettleResult,
+} from '@/lib/autopilot-unwind-exec'
 import {
   managerGetHash,
   managerIsApproved,
@@ -40,7 +59,9 @@ import {
   parseSpotGuardArm,
   parseSpotGuardManage,
   permissionMatchesPolicy,
+  spotRearmAsk,
   spotTriggerFired,
+  spotUnwindCopy,
   type SpotSellGuardInput,
   type SpotSellStep,
   type SpotTrigger,
@@ -310,6 +331,19 @@ async function runManage(op: 'pause' | 'resume' | 'cancel', token: string | null
     return { reply: `🛡️ Resumed — watching ${p.tokenSymbol} again (${triggerLabel(p.triggerMode, p.triggerValue, p.refPrice)}).`, buildPath: 'native-spot-guard' }
   }
   if (p.status === 'error') {
+    // A run that pulled used the one-shot permission: resuming would watch a
+    // stop that can never pull again, and its run row is the record of where
+    // the owner's money went. Only a run that pulled nothing clears.
+    const pulledRun = await prisma.spotGuardRun.findFirst({ where: { policyId: p.id, status: { in: ['unwinding', 'refunded', 'sold'] } } })
+    if (pulledRun) {
+      return {
+        reply:
+          pulledRun.status === 'unwinding'
+            ? `🛡️ That stop already fired and its ${p.amountHuman} ${p.tokenSymbol} is on its way back to your wallet — there's nothing to resume until it lands.`
+            : `🛡️ That stop already fired and used its one-time permission${pulledRun.status === 'refunded' ? ` (your ${p.amountHuman} ${p.tokenSymbol} went back to your wallet)` : ''}. To protect ${p.tokenSymbol} again, re-arm it: "${spotRearmAsk(p)}".`,
+        buildPath: 'native-spot-guard',
+      }
+    }
     await prisma.spotGuardRun.deleteMany({ where: { policyId: p.id, status: 'failed' } })
     await prisma.spotGuardPolicy.update({ where: { id: p.id }, data: { status: 'active', error: null } })
     return { reply: `🛡️ Cleared the error and resumed — watching ${p.tokenSymbol} again.`, buildPath: 'native-spot-guard' }
@@ -402,6 +436,12 @@ export interface SpotSellBuild {
  * DB, no CDP, nothing signed: the sweep and the harness's live pin both run
  * this, so guardSpotSell is always proven against the build it really gets
  * (a hand-built 1-call fixture once hid that every fee-on stop refused).
+ *
+ * `held: 'wrapped'` builds the retry of a native pull a first attempt
+ * already wrapped: no wrap step, the WETH sells directly. The approval is
+ * always there, exactly the pull: the builder drops it when the spender's
+ * allowance already covers the pull, which a failed attempt leaves behind,
+ * and the guard takes only the shape with it.
  */
 export async function buildSpotSell(input: {
   chainId: number
@@ -411,16 +451,19 @@ export async function buildSpotSell(input: {
   spender: string
   pulled: bigint
   markUsd: number
+  held?: 'native' | 'wrapped'
 }): Promise<{ ok: true; build: SpotSellBuild } | { ok: false; detail: string }> {
   const chain = chainById(input.chainId)
   const stable = primaryStable(input.chainId)
   const registryRouter = chain?.uniswap?.swapRouter02
   const weth = chain?.wrappedNative
   if (!chain || !stable || !registryRouter || !weth) {
-    return { ok: false, detail: 'Chain registry incomplete — refused. Nothing pulled.' }
+    return { ok: false, detail: 'Chain registry incomplete — refused.' }
   }
   await ensureTokenList(input.chainId)
   const dec = input.native ? 18 : (tokenDecimals(input.tokenSymbol, input.chainId) ?? 18)
+  const sellAddr = input.native ? weth : resolveToken(input.tokenSymbol, input.chainId)
+  if (!sellAddr) return { ok: false, detail: `Couldn't resolve ${input.tokenSymbol} on ${chain.name} — refused.` }
   const amountTokens = Number(formatUnits(input.pulled, dec))
   const built = await buildUniswapSwap({
     sellToken: input.native ? 'WETH' : input.tokenSymbol,
@@ -431,30 +474,47 @@ export async function buildSpotSell(input: {
     recipient: input.ownerWallet,
   })
   if (built.blocked) {
-    return { ok: false, detail: `Venue build refused: ${built.guardrails.checks.filter((c) => !c.ok).map((c) => c.note).join(' ') || 'guardrail block'} Nothing pulled.` }
+    return { ok: false, detail: `Venue build refused: ${built.guardrails.checks.filter((c) => !c.ok).map((c) => c.note).join(' ') || 'guardrail block'}` }
   }
   const minOutAtomic = BigInt(Math.floor(input.markUsd * amountTokens * (1 - MIN_OUT_SLIP) * 10 ** stable.decimals))
-  const wrapStep: SpotSellStep | null = input.native
-    ? {
-        to: weth,
-        data: encodeFunctionData({ abi: [{ name: 'deposit', type: 'function', stateMutability: 'payable', inputs: [], outputs: [] }] as const, functionName: 'deposit' }),
-        value: input.pulled.toString(),
-      }
-    : null
-  const venueSteps = [...(built.approveTx ? [built.approveTx] : []), built.swapTx].map((s: { to: string; data: string; value?: string }) => ({
-    to: s.to,
-    data: s.data,
-    value: s.value ?? '0',
-  }))
+  const wrapStep: SpotSellStep | null =
+    input.native && input.held !== 'wrapped'
+      ? {
+          to: weth,
+          data: encodeFunctionData({ abi: [{ name: 'deposit', type: 'function', stateMutability: 'payable', inputs: [], outputs: [] }] as const, functionName: 'deposit' }),
+          value: input.pulled.toString(),
+        }
+      : null
+  const approveStep: SpotSellStep = built.approveTx
+    ? { to: built.approveTx.to, data: built.approveTx.data, value: built.approveTx.value ?? '0' }
+    : { to: sellAddr, data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [registryRouter, input.pulled] }), value: '0' }
+  const swapStep: SpotSellStep = { to: built.swapTx.to, data: built.swapTx.data, value: built.swapTx.value ?? '0' }
   return {
     ok: true,
     build: {
-      steps: [...(wrapStep ? [wrapStep] : []), ...venueSteps],
+      steps: [...(wrapStep ? [wrapStep] : []), approveStep, swapStep],
       minOutAtomic,
       amountTokens,
       guardChain: { chainId: input.chainId, usdcAddress: stable.address, swapRouter02: registryRouter, wethAddress: weth },
     },
   }
+}
+
+/** Why a retry's guard refused, in the owner's words. The floor is the
+ *  common one (the market kept falling after the stop fired); anything else
+ *  names the checks. */
+function spotRetryRefusalWords(checks: Array<{ id: string; ok: boolean; note: string }>, firedMark: number): string {
+  const failed = checks.filter((c) => !c.ok)
+  if (failed.length > 0 && failed.every((c) => c.id === 'swap' && /quote floor/.test(c.note))) {
+    return `the price kept falling, and a fresh quote would have sold under the floor, ${MIN_OUT_SLIP * 100}% below the $${short(firedMark, 2)} the stop fired at`
+  }
+  return `the fresh sell didn't pass its guard: ${failed.map((c) => c.note).join(' ')}`
+}
+
+/** The guarded steps, named for the run's ledger: [wrap] approve swap. */
+function spotSaleSteps(steps: SpotSellStep[]): SaleStep[] {
+  const names: SaleStep['step'][] = steps.length === 3 ? ['wrap', 'approve', 'swap'] : ['approve', 'swap']
+  return steps.map((s, i) => ({ step: names[i], to: s.to, data: s.data, value: s.value }))
 }
 
 // ── The sweep (per-minute cron) ────────────────────────────────────────────
@@ -465,10 +525,21 @@ export interface SpotSweepSummary {
   sold: string[]
   held: string[]
   failed: string[]
+  /** Pulled, the sell didn't go through, the pull went back to the owner. */
+  refunded: string[]
+  /** Pulled, and where the money went isn't proven yet (reconcile continues). */
+  unwinding: string[]
 }
 
+/** A fire can take ~30s (pull, sell, maybe a retry and a refund) and the
+ *  cron's function budget is 60s: no new fire starts after this. */
+const SWEEP_START_BY_MS = 20_000
+/** Reconcile (a refund is ~2 sends) only starts with this much of the pass used. */
+const SWEEP_RECONCILE_BY_MS = 30_000
+
 export async function executeSpotGuardSweep(limit = 2): Promise<SpotSweepSummary> {
-  const summary: SpotSweepSummary = { scanned: 0, fired: 0, sold: [], held: [], failed: [] }
+  const startedAt = Date.now()
+  const summary: SpotSweepSummary = { scanned: 0, fired: 0, sold: [], held: [], failed: [], refunded: [], unwinding: [] }
   if (!isCdpConfigured() || spendNetwork() !== 'base') return summary
 
   const policies = await prisma.spotGuardPolicy.findMany({
@@ -479,6 +550,7 @@ export async function executeSpotGuardSweep(limit = 2): Promise<SpotSweepSummary
 
   for (const p of policies) {
     if (summary.fired >= limit) break
+    if (Date.now() - startedAt > SWEEP_START_BY_MS) break // the next minute picks it up
     const tag = `${p.id.slice(0, 8)}:${p.tokenSymbol}`
     const nowSec = Math.floor(Date.now() / 1000)
 
@@ -522,12 +594,16 @@ export async function executeSpotGuardSweep(limit = 2): Promise<SpotSweepSummary
     }
     summary.fired += 1
 
+    // Before the pull only: nothing has moved, so the run can say so.
     const fail = async (detail: string) => {
       await prisma.spotGuardRun.update({ where: { id: run.id }, data: { status: 'failed', detail } }).catch(() => {})
       await prisma.spotGuardPolicy.update({ where: { id: p.id }, data: { status: 'error', error: detail } }).catch(() => {})
       summary.failed.push(tag)
     }
 
+    // The run's ledger, once the first spender send is about to go out. It
+    // holds only intents the database took, so it knows whether a pull went.
+    let ledger: RunLedger | null = null
     try {
       const spender = await getSpenderAddress()
       if (spender.toLowerCase() !== p.spender) {
@@ -547,74 +623,286 @@ export async function executeSpotGuardSweep(limit = 2): Promise<SpotSweepSummary
         markUsd: probe.usd,
       })
       if (!sell.ok) {
-        await fail(sell.detail)
+        await fail(`${sell.detail} Nothing pulled.`)
         continue
       }
-      const { steps, minOutAtomic, amountTokens, guardChain } = sell.build
-      const guard = guardSpotSell({
-        policy: {
-          status: 'triggered',
-          tokenAddress: p.native ? NATIVE_TOKEN_SENTINEL : p.tokenAddress,
-          native: p.native,
-          amountAtoms: pulled,
-          trigger,
-        },
-        permission,
-        ownerWallet: p.wallet,
-        spender,
-        chain: guardChain,
-        markPrice: probe.usd,
-        minOutAtomic,
-        steps,
-        pulledAtomic: pulled,
-        nowSec,
-      })
+      const { steps, amountTokens, guardChain } = sell.build
+      const guardFor = (build: SpotSellBuild, held: 'native' | 'wrapped') =>
+        guardSpotSell({
+          policy: {
+            status: 'triggered',
+            tokenAddress: p.native ? NATIVE_TOKEN_SENTINEL : p.tokenAddress,
+            native: p.native,
+            amountAtoms: pulled,
+            trigger,
+            held,
+          },
+          permission,
+          ownerWallet: p.wallet,
+          spender,
+          chain: build.guardChain,
+          markPrice: probe.usd,
+          minOutAtomic: build.minOutAtomic,
+          steps: build.steps,
+          pulledAtomic: pulled,
+          nowSec: Math.floor(Date.now() / 1000),
+        })
+      const guard = guardFor(sell.build, 'native')
       if (!guard.ok) {
         await fail(`Spot guard refused: ${guard.checks.filter((c) => !c.ok).map((c) => c.note).join(' ')} Nothing pulled.`)
         continue
       }
 
-      // 2. Approve the permission on-chain once, then pull.
+      // 2. Approve the permission on-chain once, then pull. Every spender
+      //    send from here is written to the run's ledger first and carries
+      //    its derived idempotency key (lib/autopilot-unwind).
+      ledger = spotLedger(run.id, null)!
       if (!p.permissionApproved && !(await managerIsApproved(permission))) {
-        const approveHash = await sendSpenderTx({
-          to: SPEND_PERMISSION_MANAGER as `0x${string}`,
+        const permit = await sendRunTx(ledger, 1, {
+          step: 'permit',
+          to: SPEND_PERMISSION_MANAGER,
           data: encodeManagerCall('approveWithSignature', [permissionTuple(permission), p.permissionSig as `0x${string}`]),
+          value: '0',
         })
-        await waitTx(approveHash)
+        if (permit.outcome !== 'success') {
+          await fail(`The permission couldn't be approved on-chain (${permit.words}). Nothing pulled.`)
+          continue
+        }
         await prisma.spotGuardPolicy.update({ where: { id: p.id }, data: { permissionApproved: true } }).catch(() => {})
       }
-      const spendHash = await sendSpenderTx({
-        to: SPEND_PERMISSION_MANAGER as `0x${string}`,
+      const pull = await sendRunTx(ledger, 1, {
+        step: 'spend',
+        to: SPEND_PERMISSION_MANAGER,
         data: encodeManagerCall('spend', [permissionTuple(permission), pulled]),
+        value: '0',
       })
-      await waitTx(spendHash)
-      await prisma.spotGuardRun.update({ where: { id: run.id }, data: { spendTx: spendHash } }).catch(() => {})
-
-      // 3. Execute the guarded steps exactly as decoded.
-      for (const step of steps) {
-        const hash = await sendSpenderTx({
-          to: step.to as `0x${string}`,
-          data: step.data as `0x${string}`,
-          ...(step.value !== '0' ? { value: BigInt(step.value) } : {}),
-        })
-        await waitTx(hash)
-        if (step === steps[steps.length - 1]) {
-          await prisma.spotGuardRun.update({ where: { id: run.id }, data: { swapTx: hash } }).catch(() => {})
-        }
+      if ('hash' in pull && pull.hash) await prisma.spotGuardRun.update({ where: { id: run.id }, data: { spendTx: pull.hash } }).catch(() => {})
+      if (pull.outcome === 'refused' || pull.outcome === 'reverted') {
+        await fail(`The pull didn't go through (${pull.words}). Nothing pulled.`)
+        continue
       }
 
-      const valueUsd = Number((probe.usd * amountTokens).toFixed(2))
-      await prisma.spotGuardRun.update({
-        where: { id: run.id },
-        data: { status: 'sold', valueUsd, detail: `Stop fired at $${short(probe.usd, 2)} — sold ${p.amountHuman} ${p.tokenSymbol} → USDC to the owner.` },
-      })
-      await prisma.spotGuardPolicy.update({ where: { id: p.id }, data: { status: 'done', error: null } }).catch(() => {})
-      summary.sold.push(tag)
+      // 3. From here the owner's asset may sit on the spender, so the run
+      //    ends sold, refunded, or unwinding: never "failed".
+      let result: SettleResult
+      if (pull.outcome === 'unresolved') {
+        result = { kind: 'unwinding', note: `the pull was sent and isn't confirmed yet (${pull.words})`, operator: false, why: '' }
+      } else {
+        const verified = await verifyPull({ ledger, permission, permissionHash: p.permissionHash, pulledAtomic: pulled, nativeSentinel: NATIVE_TOKEN_SENTINEL, receipt: pull.receipt })
+        result = await settleRun({
+          ledger,
+          native: p.native,
+          pullVerified: verified.ok,
+          allowRetry: true,
+          firstSteps: spotSaleSteps(steps),
+          // Attempt 2: a fresh quote, the same floor (3% under the mark the
+          // stop fired at), the same guard. The kill switch stops a retry.
+          rebuild: async (_attempt, held) => {
+            if ((await getActiveGrant(p.wallet))?.paused) return { ok: false, words: 'the kill switch was paused, so nothing sells' }
+            const heldForm = held === 'wrapped' ? 'wrapped' : 'native'
+            const again = await buildSpotSell({ chainId: p.chainId, native: p.native, tokenSymbol: p.tokenSymbol, ownerWallet: p.wallet, spender, pulled, markUsd: probe.usd, held: heldForm })
+            if (!again.ok) return { ok: false, words: again.detail }
+            const g = guardFor(again.build, heldForm)
+            if (!g.ok) return { ok: false, words: spotRetryRefusalWords(g.checks, probe.usd) }
+            return { ok: true, steps: spotSaleSteps(again.build.steps) }
+          },
+          refund: {
+            permission,
+            ownerWallet: p.wallet,
+            pulledAtomic: pulled,
+            nativeSentinel: NATIVE_TOKEN_SENTINEL,
+            wethAddress: guardChain.wethAddress,
+          },
+        })
+        if (result.kind === 'unwinding' && result.operator && !verified.ok) result = { ...result, note: `${result.note} ${verified.note}` }
+      }
+      await recordSpotSettle(p, run.id, result, { markUsd: probe.usd, amountTokens }, summary, tag)
     } catch (e) {
-      await fail(`Spot guard run failed: ${(e as Error).message?.slice(0, 240)}`)
+      // A throw after a pull went out must not read "nothing pulled": the run
+      // parks unwinding and the next pass's reconcile reads its ledger.
+      const words = ((e as Error).message ?? String(e)).split('\n')[0].slice(0, 240)
+      if (ledger?.entries.some((x) => x.step === 'spend')) {
+        await recordSpotSettle(p, run.id, { kind: 'unwinding', note: `the sweep stopped mid-run (${words})`, operator: false, why: '' }, { markUsd: probe.usd, amountTokens: 0 }, summary, tag).catch(() => {})
+      } else {
+        await fail(`Spot guard run failed: ${words}. Nothing pulled.`)
+      }
+    }
+  }
+
+  // Then earlier passes' open runs (a pull that couldn't prove where the
+  // money went). After the fires, so a live stop never waits on them; the
+  // per-minute cadence gets to them within the function's budget.
+  if (Date.now() - startedAt < SWEEP_RECONCILE_BY_MS) {
+    const reconciled = await reconcileSpotGuardRuns().catch(() => null)
+    if (reconciled) {
+      summary.sold.push(...reconciled.sold)
+      summary.refunded.push(...reconciled.refunded)
+      summary.unwinding.push(...reconciled.unwinding)
+      summary.failed.push(...reconciled.failed)
     }
   }
   return summary
+}
+
+// ── Recording a pulled run's end ────────────────────────────────────────────
+
+async function recordSpotSettle(
+  p: { id: string; tokenSymbol: string; amountHuman: string; triggerMode: string; triggerValue: number },
+  runId: string,
+  result: SettleResult,
+  ctx: { markUsd: number; amountTokens: number },
+  summary: Pick<SpotSweepSummary, 'sold' | 'refunded' | 'unwinding' | 'failed'>,
+  tag: string,
+): Promise<void> {
+  const rearmAsk = spotRearmAsk(p)
+  if (result.kind === 'sold') {
+    const valueUsd = ctx.amountTokens > 0 ? Number((ctx.markUsd * ctx.amountTokens).toFixed(2)) : null
+    await prisma.spotGuardRun.update({
+      where: { id: runId },
+      data: { status: 'sold', swapTx: result.hash, ...(valueUsd !== null ? { valueUsd } : {}), detail: `Stop fired at $${short(ctx.markUsd, 2)} — sold ${p.amountHuman} ${p.tokenSymbol} → USDC to the owner.` },
+    })
+    await prisma.spotGuardPolicy.update({ where: { id: p.id }, data: { status: 'done', error: null } }).catch(() => {})
+    summary.sold.push(tag)
+    return
+  }
+  if (result.kind === 'nothing-pulled') {
+    const detail = `The sweep stopped before the pull landed (${result.note}) — nothing pulled.`
+    await prisma.spotGuardRun.update({ where: { id: runId }, data: { status: 'failed', detail } }).catch(() => {})
+    await prisma.spotGuardPolicy.update({ where: { id: p.id }, data: { status: 'error', error: detail } }).catch(() => {})
+    summary.failed.push(tag)
+    return
+  }
+  const outcome = result.kind === 'refunded' ? 'refunded' : result.operator ? 'operator' : 'unwinding'
+  // A person has to look: say so where one will (the function's logs).
+  if (outcome === 'operator') console.error(`[spot-guard] run ${runId} (${p.amountHuman} ${p.tokenSymbol}) needs an operator: ${result.kind === 'unwinding' ? result.note : ''}`)
+  const copy = spotUnwindCopy({
+    outcome,
+    tokenSymbol: p.tokenSymbol,
+    amountHuman: p.amountHuman,
+    markUsd: ctx.markUsd,
+    why: result.why,
+    refundTx: result.kind === 'refunded' ? result.hash : undefined,
+    note: result.kind === 'unwinding' ? result.note : undefined,
+    rearmAsk,
+  })
+  await prisma.spotGuardRun
+    .update({ where: { id: runId }, data: { status: result.kind === 'refunded' ? 'refunded' : 'unwinding', ...(result.kind === 'refunded' ? { refundTx: result.hash } : {}), detail: copy } })
+    .catch(() => {})
+  await prisma.spotGuardPolicy.update({ where: { id: p.id }, data: { status: 'error', error: copy } }).catch(() => {})
+  if (result.kind === 'refunded') summary.refunded.push(tag)
+  else summary.unwinding.push(tag)
+}
+
+function spotLedger(runId: string, raw: string | null): RunLedger | null {
+  return RunLedger.open('spot', runId, raw, async (json) => {
+    await prisma.spotGuardRun.update({ where: { id: runId }, data: { txLog: json } })
+  })
+}
+
+// ── Reconcile: runs an earlier pass left open ──────────────────────────────
+
+/** A run the in-pass flow still owns writes its ledger every few seconds;
+ *  one quiet this long was left by a pass that ended (timed out, killed). */
+const UNWINDING_QUIET_MS = 90_000
+const RUNNING_STALE_MS = 3 * 60_000
+
+/**
+ * Close what an earlier pass left open: a run parked UNWINDING, or one still
+ * RUNNING long after any pass could own it (the function hit its time limit
+ * mid-run). The ledger's open sends are resolved from receipts or replayed
+ * keys, then the same decision table runs with no retry: a pass minutes
+ * later returns the money, it never sells late.
+ */
+export async function reconcileSpotGuardRuns(limit = 3): Promise<Pick<SpotSweepSummary, 'sold' | 'refunded' | 'unwinding' | 'failed'>> {
+  const out: Pick<SpotSweepSummary, 'sold' | 'refunded' | 'unwinding' | 'failed'> = { sold: [], refunded: [], unwinding: [], failed: [] }
+  const now = Date.now()
+  const runs = await prisma.spotGuardRun.findMany({
+    where: {
+      policy: { originEnv: jobsEnv(), chainId: SPOT_GUARD_CHAIN_ID },
+      OR: [
+        { status: 'unwinding', updatedAt: { lt: new Date(now - UNWINDING_QUIET_MS) } },
+        { status: 'running', updatedAt: { lt: new Date(now - RUNNING_STALE_MS) } },
+      ],
+    },
+    include: { policy: true },
+    orderBy: { updatedAt: 'asc' },
+    take: limit,
+  })
+  for (const run of runs) {
+    // The row's updatedAt is the lease: only one pass takes a quiet run.
+    const lease = await prisma.spotGuardRun.updateMany({ where: { id: run.id, updatedAt: run.updatedAt }, data: { status: run.status } })
+    if (lease.count !== 1) continue
+    const p = run.policy
+    const tag = `${p.id.slice(0, 8)}:${p.tokenSymbol}`
+    const markUsd = run.markPrice ?? 0
+    const permission = parsePermission(p.permissionJson)
+    const ledger = spotLedger(run.id, run.txLog)
+    const chain = chainById(p.chainId)
+    const router = chain?.uniswap?.swapRouter02
+    const weth = chain?.wrappedNative
+    if (!permission || !ledger || !router || !weth || !p.spender) {
+      await recordSpotSettle(p, run.id, { kind: 'unwinding', note: "the run's ledger or permission doesn't read", operator: true, why: '' }, { markUsd, amountTokens: 0 }, out, tag)
+      continue
+    }
+    const pulled = permission.allowance
+    const sellAddr = p.native ? weth : p.tokenAddress
+    try {
+      const expected = spotExpectedRequests({ permission, signature: p.permissionSig, pulled, native: p.native, weth, router, sellAddr, owner: p.wallet })
+      await resolveLedger(ledger, {
+        spendLanded: async () => {
+          const at = ledger.entries.find((e) => e.step === 'spend')?.at ?? Math.floor(run.createdAt.getTime() / 1000)
+          const w = await permissionWindowSpend(permission, at)
+          // One-shot: the permission's only window, so any spend is this run's.
+          return w === null || w === 'overwritten' ? null : w.spend > BigInt(0)
+        },
+        expected: (e) => reissueMatches(e, expected, router),
+      })
+      const verified = await verifyPull({ ledger, permission, permissionHash: p.permissionHash, pulledAtomic: pulled, nativeSentinel: NATIVE_TOKEN_SENTINEL })
+      let result = await settleRun({
+        ledger,
+        native: p.native,
+        pullVerified: verified.ok,
+        allowRetry: false,
+        rebuild: async () => ({ ok: false, words: 'a later pass never sells' }),
+        refund: { permission, ownerWallet: p.wallet, pulledAtomic: pulled, nativeSentinel: NATIVE_TOKEN_SENTINEL, wethAddress: weth },
+      })
+      if (result.kind === 'unwinding' && result.operator && !verified.ok) result = { ...result, note: `${result.note} ${verified.note}` }
+      const dec = p.native ? 18 : (tokenDecimals(p.tokenSymbol, p.chainId) ?? 18)
+      await recordSpotSettle(p, run.id, result, { markUsd, amountTokens: Number(formatUnits(pulled, dec)) }, out, tag)
+    } catch (e) {
+      const words = ((e as Error).message ?? String(e)).split('\n')[0].slice(0, 200)
+      await recordSpotSettle(p, run.id, { kind: 'unwinding', note: `reconcile stopped (${words})`, operator: false, why: saleFailureWords(ledger.entries) }, { markUsd, amountTokens: 0 }, out, tag)
+    }
+  }
+  return out
+}
+
+/** Every deterministic request a spot run could send, encoded afresh — a
+ *  later pass re-issues a ledger entry only if it matches one exactly. */
+function spotExpectedRequests(input: {
+  permission: NonNullable<ReturnType<typeof parsePermission>>
+  signature: string | null
+  pulled: bigint
+  native: boolean
+  weth: string
+  router: string
+  sellAddr: string
+  owner: string
+}): Partial<Record<LedgerStep, Array<{ to: string; data: string; value: string }>>> {
+  const { permission, signature, pulled, native, weth, router, sellAddr, owner } = input
+  const refunds = native
+    ? [...planRefund({ form: 'wrapped', ownerWallet: owner, pulledAtomic: pulled, token: permission.token, wethAddress: weth })]
+    : planRefund({ form: 'erc20', ownerWallet: owner, pulledAtomic: pulled, token: permission.token, wethAddress: weth })
+  return {
+    ...(signature && /^0x[0-9a-fA-F]+$/.test(signature)
+      ? { permit: [{ to: SPEND_PERMISSION_MANAGER, data: encodeManagerCall('approveWithSignature', [permissionTuple(permission), signature as `0x${string}`]), value: '0' }] }
+      : {}),
+    spend: [{ to: SPEND_PERMISSION_MANAGER, data: encodeManagerCall('spend', [permissionTuple(permission), pulled]), value: '0' }],
+    wrap: native ? [{ to: weth, data: encodeFunctionData({ abi: [{ name: 'deposit', type: 'function', stateMutability: 'payable', inputs: [], outputs: [] }] as const, functionName: 'deposit' }), value: pulled.toString() }] : [],
+    approve: [{ to: sellAddr, data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [router as `0x${string}`, pulled] }), value: '0' }],
+    unwrap: refunds.filter((s) => s.step === 'unwrap'),
+    return: refunds.filter((s) => s.step === 'return'),
+  }
 }
 
 // Local helpers (mirrors dca-auto-exec's — kept private there and here).
@@ -632,13 +920,4 @@ const permissionTuple = (p: NonNullable<ReturnType<typeof parsePermission>>) => 
 
 function encodeManagerCall(functionName: 'approveWithSignature' | 'spend', args: readonly unknown[]): `0x${string}` {
   return encodeFunctionData({ abi: spendPermissionManagerAbi, functionName, args } as Parameters<typeof encodeFunctionData>[0])
-}
-
-// A mined REVERT is a failure, as in dca-auto-exec. Returning on any receipt
-// once recorded a reverted sell as "sold" (proven on a Base fork, 2026-09-16).
-async function waitTx(hash: `0x${string}`): Promise<void> {
-  const client = publicClientFor(SPOT_GUARD_CHAIN_ID)
-  if (!client) throw new Error('No Base RPC client to confirm the transaction.')
-  const receipt = await client.waitForTransactionReceipt({ hash, timeout: 120_000 })
-  if (receipt.status !== 'success') throw new Error(`tx ${hash} reverted`)
 }

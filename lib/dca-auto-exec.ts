@@ -10,13 +10,16 @@
 //  Execution order per due period (deliberate):
 //    build swap (fresh quote) → guardAutoBuy → pull → approve → swap.
 //  The guard runs BEFORE the pull, so a refused build costs nothing and the
-//  user's USDC never moves. A post-pull revert (slippage) leaves the pull
-//  parked on the spender, recorded honestly — never retried into a second
-//  pull that period.
+//  user's USDC never moves. A buy that fails AFTER the pull (a price that
+//  moved past the bound, a deadline) gets one fresh retry, re-guarded; if
+//  that doesn't fill either, the USDC goes back to the owner — never a
+//  second pull that period, and never parked on the spender
+//  (lib/autopilot-unwind). A run that can't prove where the money went stays
+//  UNWINDING, holds the schedule's next pulls, and the next pass reconciles.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { spendPermissionManagerAbi } from '@coinbase/cdp-sdk'
-import { encodeFunctionData } from 'viem'
+import { encodeFunctionData, erc20Abi } from 'viem'
 import prisma from '@/lib/db'
 import { jobsEnv } from '@/lib/jobs-runner'
 import { buysNativeEth, chainById, primaryStable, publicClientFor } from '@/lib/chains'
@@ -24,12 +27,26 @@ import { getActiveGrant } from '@/lib/grant-store'
 import { resolveToken } from '@/lib/cow'
 import { ensureTokenList } from '@/lib/token-list'
 import { buildUniswapSwap } from '@/lib/uniswap-venue'
-import { getSpenderAddress, isCdpConfigured, sendSpenderTx, spendNetwork } from '@/lib/cdp'
+import { getSpenderAddress, isCdpConfigured, spendNetwork } from '@/lib/cdp'
 import { SPEND_PERMISSION_MANAGER } from '@/lib/spend-permission'
 import { cadenceLabel, periodKeyFor, type DcaCadence } from '@/lib/dca'
 import type { DcaTurn } from '@/lib/dca-exec'
+import { parseLedger, planRefund, reissueMatches } from '@/lib/autopilot-unwind'
+import {
+  permissionWindowSpend,
+  resolveLedger,
+  RunLedger,
+  saleFailureWords,
+  sendRunTx,
+  settleRun,
+  verifyPull,
+  type SaleStep,
+  type SettleResult,
+} from '@/lib/autopilot-unwind-exec'
+import { NATIVE_TOKEN_SENTINEL } from '@/lib/spot-guard'
 import {
   buildDcaSpendPermission,
+  dcaUnwindCopy,
   guardAutoBuy,
   parseDcaAutoToggle,
   parsePermission,
@@ -412,12 +429,18 @@ export interface AutoSweepSummary {
   held: string[]
   failed: string[]
   skipped: string[]
+  /** Pulled, the buy didn't go through, the USDC went back to the owner. */
+  refunded: string[]
+  /** Pulled, and where the money went isn't proven yet (reconcile continues). */
+  unwinding: string[]
 }
 
-async function waitTx(hash: `0x${string}`): Promise<void> {
-  const receipt = await baseClient().waitForTransactionReceipt({ hash, timeout: 60_000 })
-  if (receipt.status !== 'success') throw new Error(`tx ${hash} reverted`)
-}
+/** An execution can take ~30s (pull, buy, maybe a retry and a refund) and
+ *  the cron's function budget is 60s: no new execution starts after this. */
+const SWEEP_START_BY_MS = 20_000
+
+/** The period word a schedule's receipt copy uses. */
+const cadenceNoun = (c: DcaCadence) => (c === 'day' ? 'day' : c === 'week' ? 'week' : 'month')
 
 /**
  * Execute every armed schedule whose current UTC period has no claim yet.
@@ -425,8 +448,19 @@ async function waitTx(hash: `0x${string}`): Promise<void> {
  * fits its duration budget — the hourly cadence drains any backlog.
  */
 export async function executeAutoDcaSweep(limit = 2): Promise<AutoSweepSummary> {
-  const summary: AutoSweepSummary = { scanned: 0, executed: 0, bought: [], held: [], failed: [], skipped: [] }
+  const startedAt = Date.now()
+  const summary: AutoSweepSummary = { scanned: 0, executed: 0, bought: [], held: [], failed: [], skipped: [], refunded: [], unwinding: [] }
   if (!isCdpConfigured() || spendNetwork() !== 'base') return summary
+
+  // Earlier passes' open runs first (a pull that couldn't prove where the
+  // money went), then this period's buys.
+  const reconciled = await reconcileDcaAutoRuns().catch(() => null)
+  if (reconciled) {
+    summary.bought.push(...reconciled.bought)
+    summary.refunded.push(...reconciled.refunded)
+    summary.unwinding.push(...reconciled.unwinding)
+    summary.failed.push(...reconciled.failed)
+  }
 
   const schedules = await prisma.dcaSchedule.findMany({
     where: { mode: 'auto', status: 'active', originEnv: jobsEnv(), chainId: DCA_AUTO_CHAIN_ID },
@@ -436,12 +470,22 @@ export async function executeAutoDcaSweep(limit = 2): Promise<AutoSweepSummary> 
 
   for (const s of schedules) {
     if (summary.executed >= limit) break
+    if (Date.now() - startedAt > SWEEP_START_BY_MS) break // the next hour picks it up
     const cadence = s.cadence as DcaCadence
     const periodKey = periodKeyFor(cadence)
     const tag = `${s.id.slice(0, 8)}:${periodKey}`
 
     const claimed = await prisma.dcaAutoRun.findUnique({ where: { scheduleId_periodKey: { scheduleId: s.id, periodKey } } })
     if (claimed) continue
+
+    // An earlier period's pull still unaccounted for holds every new pull on
+    // this schedule: never move more of the owner's money while some is
+    // on its way back (reconcile above closes it).
+    const open = await prisma.dcaAutoRun.findFirst({ where: { scheduleId: s.id, status: { in: ['running', 'unwinding'] } }, select: { periodKey: true } })
+    if (open) {
+      summary.held.push(tag)
+      continue
+    }
 
     // A manual buy in flight or settled this period wins — autopilot defers.
     const manual = await prisma.dcaRun.findUnique({ where: { scheduleId_periodKey: { scheduleId: s.id, periodKey } } })
@@ -491,12 +535,16 @@ export async function executeAutoDcaSweep(limit = 2): Promise<AutoSweepSummary> 
     }
     summary.executed += 1
 
+    // Before the pull only: nothing has moved, so the run can say so.
     const fail = async (detail: string) => {
       await prisma.dcaAutoRun.update({ where: { id: run.id }, data: { status: 'failed', detail } }).catch(() => {})
       await prisma.dcaSchedule.update({ where: { id: s.id }, data: { autoError: detail } }).catch(() => {})
       summary.failed.push(tag)
     }
 
+    // The run's ledger, once the first spender send is about to go out. It
+    // holds only intents the database took, so it knows whether a pull went.
+    let ledger: RunLedger | null = null
     try {
       const stable = primaryStable(s.chainId)
       await ensureTokenList(s.chainId)
@@ -511,82 +559,263 @@ export async function executeAutoDcaSweep(limit = 2): Promise<AutoSweepSummary> 
         continue
       }
       // The router pin comes from the REGISTRY — never from the built tx.
-      const registryRouter = chainById(s.chainId)?.uniswap?.swapRouter02
-      if (!registryRouter) {
+      const chain = chainById(s.chainId)
+      const registryRouter = chain?.uniswap?.swapRouter02
+      if (!registryRouter || !chain) {
         await fail('No registry-pinned SwapRouter02 for this chain — refused. Nothing pulled.')
         continue
       }
       const pulled = permission.allowance
 
-      // 1. Build fresh + guard — BEFORE any money moves.
-      const built = await buildUniswapSwap({
-        sellToken: s.sellToken,
-        buyToken: s.buyToken,
-        amountHuman: usdcAtomsToHuman(pulled),
-        from: spender,
-        chainId: s.chainId,
-        recipient: s.wallet,
-      })
-      if (built.blocked) {
-        await fail(`Venue build refused: ${built.guardrails.checks.filter((c) => !c.ok).map((c) => c.note).join(' ') || 'guardrail block'} Nothing pulled.`)
-        continue
-      }
-      const steps = [...(built.approveTx ? [built.approveTx] : []), built.swapTx]
-      const guard = guardAutoBuy({
-        schedule: { mode: s.mode, status: s.status, buyUsd: s.buyUsd, cadence, chainId: s.chainId },
-        permission,
-        ownerWallet: s.wallet,
-        spender,
-        chain: { chainId: s.chainId, swapRouter02: registryRouter, usdcAddress: stable.address },
-        expectedBuyAddr: buyAddr,
-        nativeOut: buysNativeEth(s.buyToken, s.chainId),
-        steps,
-        pulledAtomic: pulled,
-        nowSec,
-      })
-      if (!guard.ok) {
-        await fail(`Autopilot guard refused: ${guard.checks.filter((c) => !c.ok).map((c) => c.note).join(' ')} Nothing pulled.`)
-        continue
-      }
-
-      // 2. Approve the permission on-chain once (first run), then pull.
-      if (!s.permissionApproved && !(await managerIsApproved(permission))) {
-        const approveHash = await sendSpenderTx({
-          to: SPEND_PERMISSION_MANAGER as `0x${string}`,
-          data: encodeManagerCall('approveWithSignature', [permissionTuple(permission), s.permissionSig as `0x${string}`]),
+      // 1. Build fresh + guard — BEFORE any money moves. A retry after the
+      //    pull runs this same build and guard again.
+      let summaryLine = ''
+      const buildBuy = async (): Promise<{ ok: true; steps: SaleStep[]; summary: string } | { ok: false; words: string }> => {
+        const built = await buildUniswapSwap({
+          sellToken: s.sellToken,
+          buyToken: s.buyToken,
+          amountHuman: usdcAtomsToHuman(pulled),
+          from: spender,
+          chainId: s.chainId,
+          recipient: s.wallet,
         })
-        await waitTx(approveHash)
+        if (built.blocked) {
+          return { ok: false, words: `the venue build refused: ${built.guardrails.checks.filter((c) => !c.ok).map((c) => c.note).join(' ') || 'guardrail block'}` }
+        }
+        const raw = [...(built.approveTx ? [built.approveTx] : []), built.swapTx]
+        const guard = guardAutoBuy({
+          schedule: { mode: s.mode, status: s.status, buyUsd: s.buyUsd, cadence, chainId: s.chainId },
+          permission,
+          ownerWallet: s.wallet,
+          spender,
+          chain: { chainId: s.chainId, swapRouter02: registryRouter, usdcAddress: stable.address },
+          expectedBuyAddr: buyAddr,
+          nativeOut: buysNativeEth(s.buyToken, s.chainId),
+          steps: raw,
+          pulledAtomic: pulled,
+          nowSec: Math.floor(Date.now() / 1000),
+        })
+        if (!guard.ok) return { ok: false, words: `the autopilot guard refused: ${guard.checks.filter((c) => !c.ok).map((c) => c.note).join(' ')}` }
+        const steps: SaleStep[] = raw.map((t) => ({ step: t === built.swapTx ? 'swap' : 'approve', to: t.to, data: t.data, value: t.value ?? '0' }))
+        return { ok: true, steps, summary: built.summary }
+      }
+      const first = await buildBuy()
+      if (!first.ok) {
+        await fail(`${first.words[0].toUpperCase()}${first.words.slice(1)} Nothing pulled.`)
+        continue
+      }
+      summaryLine = first.summary
+
+      // 2. Approve the permission on-chain once (first run), then pull. Every
+      //    spender send from here is written to the run's ledger first and
+      //    carries its derived idempotency key (lib/autopilot-unwind).
+      ledger = dcaLedger(run.id, null)!
+      if (!s.permissionApproved && !(await managerIsApproved(permission))) {
+        const permit = await sendRunTx(ledger, 1, {
+          step: 'permit',
+          to: SPEND_PERMISSION_MANAGER,
+          data: encodeManagerCall('approveWithSignature', [permissionTuple(permission), s.permissionSig as `0x${string}`]),
+          value: '0',
+        })
+        if (permit.outcome !== 'success') {
+          await fail(`The permission couldn't be approved on-chain (${permit.words}). Nothing pulled.`)
+          continue
+        }
       }
       if (!s.permissionApproved) {
         await prisma.dcaSchedule.update({ where: { id: s.id }, data: { permissionApproved: true } }).catch(() => {})
       }
-      const spendHash = await sendSpenderTx({
-        to: SPEND_PERMISSION_MANAGER as `0x${string}`,
+      const pull = await sendRunTx(ledger, 1, {
+        step: 'spend',
+        to: SPEND_PERMISSION_MANAGER,
         data: encodeManagerCall('spend', [permissionTuple(permission), pulled]),
+        value: '0',
       })
-      await waitTx(spendHash)
-      await prisma.dcaAutoRun.update({ where: { id: run.id }, data: { spendTx: spendHash } }).catch(() => {})
-
-      // 3. Execute the guarded build exactly as decoded.
-      for (const step of steps) {
-        const hash = await sendSpenderTx({ to: step.to as `0x${string}`, data: step.data as `0x${string}` })
-        await waitTx(hash)
-        if (step === built.swapTx) {
-          await prisma.dcaAutoRun.update({ where: { id: run.id }, data: { swapTx: hash } }).catch(() => {})
-        }
+      if ('hash' in pull && pull.hash) await prisma.dcaAutoRun.update({ where: { id: run.id }, data: { spendTx: pull.hash } }).catch(() => {})
+      if (pull.outcome === 'refused' || pull.outcome === 'reverted') {
+        await fail(`The pull didn't go through (${pull.words}). Nothing pulled.`)
+        continue
       }
 
-      await prisma.dcaAutoRun.update({
-        where: { id: run.id },
-        data: { status: 'bought', valueUsd: s.buyUsd, detail: built.summary },
-      })
-      await prisma.dcaSchedule.update({ where: { id: s.id }, data: { autoError: null } }).catch(() => {})
-      summary.bought.push(tag)
+      // 3. From here the owner's USDC may sit on the spender, so the run
+      //    ends bought, refunded, or unwinding: never "failed".
+      let result: SettleResult
+      if (pull.outcome === 'unresolved') {
+        result = { kind: 'unwinding', note: `the pull was sent and isn't confirmed yet (${pull.words})`, operator: false, why: '' }
+      } else {
+        const verified = await verifyPull({ ledger, permission, permissionHash: s.permissionHash, pulledAtomic: pulled, nativeSentinel: NATIVE_TOKEN_SENTINEL, receipt: pull.receipt })
+        result = await settleRun({
+          ledger,
+          native: false,
+          pullVerified: verified.ok,
+          allowRetry: true,
+          firstSteps: first.steps,
+          // Attempt 2: a fresh quote, the same guard. The kill switch stops it.
+          rebuild: async () => {
+            if ((await getActiveGrant(s.wallet))?.paused) return { ok: false, words: 'the kill switch was paused, so nothing buys' }
+            const again = await buildBuy()
+            if (!again.ok) return again
+            summaryLine = again.summary
+            return { ok: true, steps: again.steps }
+          },
+          refund: { permission, ownerWallet: s.wallet, pulledAtomic: pulled, nativeSentinel: NATIVE_TOKEN_SENTINEL, wethAddress: chain.wrappedNative },
+        })
+        if (result.kind === 'unwinding' && result.operator && !verified.ok) result = { ...result, note: `${result.note} ${verified.note}` }
+      }
+      await recordDcaSettle(s, run.id, result, summaryLine, summary, tag)
     } catch (e) {
-      await fail(`Autopilot run failed: ${(e as Error).message?.slice(0, 240)}`)
+      // A throw after a pull went out must not read "nothing pulled": the run
+      // parks unwinding and the next pass's reconcile reads its ledger.
+      const words = ((e as Error).message ?? String(e)).split('\n')[0].slice(0, 240)
+      if (ledger?.entries.some((x) => x.step === 'spend')) {
+        await recordDcaSettle(s, run.id, { kind: 'unwinding', note: `the sweep stopped mid-run (${words})`, operator: false, why: '' }, '', summary, tag).catch(() => {})
+      } else {
+        await fail(`Autopilot run failed: ${words}. Nothing pulled.`)
+      }
     }
   }
   return summary
+}
+
+// ── Recording a pulled run's end ────────────────────────────────────────────
+
+async function recordDcaSettle(
+  s: { id: string; buyUsd: number; buyToken: string; cadence: string },
+  runId: string,
+  result: SettleResult,
+  summaryLine: string,
+  summary: Pick<AutoSweepSummary, 'bought' | 'refunded' | 'unwinding' | 'failed'>,
+  tag: string,
+): Promise<void> {
+  if (result.kind === 'sold') {
+    await prisma.dcaAutoRun.update({
+      where: { id: runId },
+      data: { status: 'bought', swapTx: result.hash, valueUsd: s.buyUsd, detail: summaryLine || `Bought $${s.buyUsd} of ${s.buyToken} to the owner.` },
+    })
+    await prisma.dcaSchedule.update({ where: { id: s.id }, data: { autoError: null } }).catch(() => {})
+    summary.bought.push(tag)
+    return
+  }
+  if (result.kind === 'nothing-pulled') {
+    const detail = `The sweep stopped before the pull landed (${result.note}) — nothing pulled.`
+    await prisma.dcaAutoRun.update({ where: { id: runId }, data: { status: 'failed', detail } }).catch(() => {})
+    await prisma.dcaSchedule.update({ where: { id: s.id }, data: { autoError: detail } }).catch(() => {})
+    summary.failed.push(tag)
+    return
+  }
+  // A person has to look: say so where one will (the function's logs).
+  if (result.kind === 'unwinding' && result.operator) console.error(`[dca-auto] run ${runId} ($${s.buyUsd} USDC) needs an operator: ${result.note}`)
+  const copy = dcaUnwindCopy({
+    outcome: result.kind === 'refunded' ? 'refunded' : result.operator ? 'operator' : 'unwinding',
+    buyUsd: s.buyUsd,
+    buyToken: s.buyToken,
+    period: cadenceNoun(s.cadence as DcaCadence),
+    why: result.why,
+    refundTx: result.kind === 'refunded' ? result.hash : undefined,
+    note: result.kind === 'unwinding' ? result.note : undefined,
+  })
+  await prisma.dcaAutoRun
+    .update({ where: { id: runId }, data: { status: result.kind === 'refunded' ? 'refunded' : 'unwinding', ...(result.kind === 'refunded' ? { refundTx: result.hash } : {}), detail: copy } })
+    .catch(() => {})
+  await prisma.dcaSchedule.update({ where: { id: s.id }, data: { autoError: copy } }).catch(() => {})
+  if (result.kind === 'refunded') summary.refunded.push(tag)
+  else summary.unwinding.push(tag)
+}
+
+function dcaLedger(runId: string, raw: string | null): RunLedger | null {
+  return RunLedger.open('dca', runId, raw, async (json) => {
+    await prisma.dcaAutoRun.update({ where: { id: runId }, data: { txLog: json } })
+  })
+}
+
+// ── Reconcile: runs an earlier pass left open ──────────────────────────────
+
+/** A run the in-pass flow still owns writes its ledger every few seconds;
+ *  one quiet this long was left by a pass that ended (timed out, killed). */
+const UNWINDING_QUIET_MS = 90_000
+const RUNNING_STALE_MS = 3 * 60_000
+
+/**
+ * Close what an earlier pass left open (a run parked UNWINDING, or one still
+ * RUNNING long after any pass could own it): resolve the ledger's open sends
+ * from receipts or replayed keys, then run the decision table with no
+ * retry, so a later pass returns the USDC and never buys late.
+ */
+export async function reconcileDcaAutoRuns(limit = 3): Promise<Pick<AutoSweepSummary, 'bought' | 'refunded' | 'unwinding' | 'failed'>> {
+  const out: Pick<AutoSweepSummary, 'bought' | 'refunded' | 'unwinding' | 'failed'> = { bought: [], refunded: [], unwinding: [], failed: [] }
+  const now = Date.now()
+  const runs = await prisma.dcaAutoRun.findMany({
+    where: {
+      schedule: { originEnv: jobsEnv(), chainId: DCA_AUTO_CHAIN_ID },
+      OR: [
+        { status: 'unwinding', updatedAt: { lt: new Date(now - UNWINDING_QUIET_MS) } },
+        { status: 'running', updatedAt: { lt: new Date(now - RUNNING_STALE_MS) } },
+      ],
+    },
+    include: { schedule: true },
+    orderBy: { updatedAt: 'asc' },
+    take: limit,
+  })
+  for (const run of runs) {
+    // The row's updatedAt is the lease: only one pass takes a quiet run.
+    const lease = await prisma.dcaAutoRun.updateMany({ where: { id: run.id, updatedAt: run.updatedAt }, data: { status: run.status } })
+    if (lease.count !== 1) continue
+    const s = run.schedule
+    const tag = `${s.id.slice(0, 8)}:${run.periodKey}`
+    const permission = parsePermission(s.permissionJson)
+    const ledger = dcaLedger(run.id, run.txLog)
+    const chain = chainById(s.chainId)
+    const router = chain?.uniswap?.swapRouter02
+    const stable = primaryStable(s.chainId)
+    if (!permission || !ledger || !router || !chain || !stable) {
+      await recordDcaSettle(s, run.id, { kind: 'unwinding', note: "the run's ledger or permission doesn't read", operator: true, why: '' }, '', out, tag)
+      continue
+    }
+    const pulled = permission.allowance
+    try {
+      const refunds = planRefund({ form: 'erc20', ownerWallet: s.wallet, pulledAtomic: pulled, token: permission.token, wethAddress: chain.wrappedNative })
+      const expected = {
+        ...(s.permissionSig && /^0x[0-9a-fA-F]+$/.test(s.permissionSig)
+          ? { permit: [{ to: SPEND_PERMISSION_MANAGER, data: encodeManagerCall('approveWithSignature', [permissionTuple(permission), s.permissionSig as `0x${string}`]), value: '0' }] }
+          : {}),
+        spend: [{ to: SPEND_PERMISSION_MANAGER, data: encodeManagerCall('spend', [permissionTuple(permission), pulled]), value: '0' }],
+        approve: [{ to: stable.address, data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [router, pulled] }), value: '0' }],
+        return: refunds,
+      }
+      await resolveLedger(ledger, {
+        spendLanded: async () => {
+          const at = ledger.entries.find((e) => e.step === 'spend')?.at ?? Math.floor(run.createdAt.getTime() / 1000)
+          const w = await permissionWindowSpend(permission, at)
+          if (w === null || w === 'overwritten') return null
+          if (w.spend === BigInt(0)) return false
+          // One pull per window: if another run of this schedule confirmed a
+          // pull in the same window, that was the window's pull, not this one.
+          const siblings = await prisma.dcaAutoRun.findMany({
+            where: { scheduleId: s.id, id: { not: run.id }, createdAt: { gte: new Date((w.start - 300) * 1000), lt: new Date(w.end * 1000) } },
+            select: { txLog: true },
+          })
+          const siblingPulled = siblings.some((x) => parseLedger(x.txLog)?.some((e) => e.step === 'spend' && e.outcome === 'success' && e.at >= w.start - 300 && e.at < w.end))
+          return !siblingPulled
+        },
+        expected: (e) => reissueMatches(e, expected, router),
+      })
+      const verified = await verifyPull({ ledger, permission, permissionHash: s.permissionHash, pulledAtomic: pulled, nativeSentinel: NATIVE_TOKEN_SENTINEL })
+      let result = await settleRun({
+        ledger,
+        native: false,
+        pullVerified: verified.ok,
+        allowRetry: false,
+        rebuild: async () => ({ ok: false, words: 'a later pass never buys' }),
+        refund: { permission, ownerWallet: s.wallet, pulledAtomic: pulled, nativeSentinel: NATIVE_TOKEN_SENTINEL, wethAddress: chain.wrappedNative },
+      })
+      if (result.kind === 'unwinding' && result.operator && !verified.ok) result = { ...result, note: `${result.note} ${verified.note}` }
+      await recordDcaSettle(s, run.id, result, '', out, tag)
+    } catch (e) {
+      const words = ((e as Error).message ?? String(e)).split('\n')[0].slice(0, 200)
+      await recordDcaSettle(s, run.id, { kind: 'unwinding', note: `reconcile stopped (${words})`, operator: false, why: saleFailureWords(ledger.entries) }, '', out, tag)
+    }
+  }
+  return out
 }
 
 // Local encode helper — viem's encodeFunctionData against the vendored
