@@ -173,9 +173,10 @@ Open questions:
 ### Spend-Permission autopilots (DCA autopilot, Spot Guardian)
 
 The other place user money moves with no human present. A smart wallet signs
-a Spend Permission naming Pantessa's CDP spender. A per-minute cron pulls
-within it, then buys (DCA) or sells (a fired spot stop) through a guarded
-Uniswap v3 swap whose output is pinned to the owner. The on-chain
+a Spend Permission naming Pantessa's CDP spender. A cron (hourly for DCA,
+every minute for spot stops) pulls within it, then buys (DCA) or sells (a
+fired spot stop) through a guarded Uniswap v3 swap whose output is pinned to
+the owner. The on-chain
 SpendPermissionManager caps the pull whatever this codebase does. Everything
 after the pull is ours.
 
@@ -203,6 +204,41 @@ Verified (2026-09-16, #807):
   as `sold` (proven on a Base fork).
 - Claim before build, one run per policy (`spot_guard_runs` is unique on the
   policy), and the kill switch (`paused`) holds without claiming.
+
+Verified for the DCA autopilot (2026-09-17, #812):
+- **An autonomous buy can only pay the owner, minus the pinned treasury fee,
+  and the owner's guaranteed minimum sits within 3% of the token's market
+  mark.** The sweep builds, `guardAutoBuy` re-decodes every step, and only
+  then does it pull. The guard checks:
+  - the exact USDC approval, and the pinned router;
+  - the builder's payout shapes:
+    - an ERC-20, fee off: the swap pays the owner;
+    - an ERC-20, fee on: the swap pays the router, then `sweepTokenWithFee`
+      pays the owner in the schedule's token;
+    - native ETH: the swap pays the router, then `unwrapWETH9WithFee` (or
+      `unwrapWETH9`, fee off) pays the owner in ETH;
+    - fee on, the cut goes to `TREASURY_ADDRESS` at a canonical tier, and the
+      payout's minimum equals the swap's;
+  - an independent floor. The sweep prices the token with `usdPerToken`, and
+    the floor is what the pull buys at that mark, less `AUTO_BUY_FLOOR_BPS`
+    (3%). The swap's minimum and, fee on, the owner's minimum after the cut
+    must clear it. A buy with no floor refuses;
+  - no price limit (a partial fill would leave the rest of the pull on the
+    spender);
+  - a real v3 pool tier.
+
+  Hostile shapes tried, across the payout shapes each one applies to: a
+  minimum of 1, a foreign fee recipient, 0 bps and 100 bps, a weakened payout
+  minimum, a price limit, and a bogus tier. Before this, a regressed builder
+  could set a minimum of 1, and a thin pool's fill passed. Measured on Base
+  the same day: the minimum on a $100 DEGEN buy sat 44% under the mark, and
+  on $10 of BRETT 37%. Both refuse now. Pinned by the `dca autopilot` checks
+  in `scripts/test-api.ts`. They include a live build of the sweep's own
+  `buildAutoBuy` (an ETH buy and a cbBTC buy), and a mutation run showed each
+  check has a pin that fails without it.
+- **The sweep's order is pinned.** A source pin holds it: the build and
+  floor, then the guard, then the pull (a reverted receipt is the unwind's
+  `sendRunTx`, below).
 
 Verified (2026-09-17, lib/autopilot-unwind):
 - **A pull never strands on the spender.** Before this, a sale that failed
@@ -247,6 +283,25 @@ Open questions:
 - A refunded run leaves its exact-amount router approval on the spender. Only
   the spender's own router calls can use it, and every sell re-approves
   exactly, but nothing resets it.
+- **An armed schedule re-resolves its token by symbol every period.** Nothing
+  pins the address at arm, and `guardAutoBuy`'s `expectedBuyAddr` and the
+  floor's mark both come from that same resolution, so neither can notice a
+  different token. Symbols aren't ambiguity-checked the way names are: the
+  first list and the first entry win. Measured 2026-09-17 on Base: 6 symbols
+  resolve to a different address when only CoinGecko's list loads (a cold
+  instance whose tokens.uniswap.org fetch fails), among them TAO, AUSD and
+  ABT (Arcblock → Abbott Laboratories' tokenized stock). 113 symbols sit at
+  more than one CoinGecko address. (Task filed 2026-09-17.)
+- **The floor's mark moves with the pools it reads.** The mark comes from the
+  same v3 pools, through the same RPC client, as the build's quote, so the
+  floor catches a regressed builder and a thin pool, but not a pool pushed
+  before the quote. Shown on a Base fork
+  (2026-09-17): a $100 DEGEN buy pushed the thin 30 bps DEGEN/USDC pool about
+  3×. The next sweep's mark read the pushed pool, and a $100 buy through the
+  100 bps pool passed the floor. The owner got 33,084 DEGEN, worth $99.85 at
+  the pushed mark but $32.16 at the mark before the push. A v3 TWAP mark or an
+  off-chain reference would catch that. The spot stop reads the same kind of
+  mark for its trigger and its floor.
 - The spender is one CDP server wallet for every permission on the platform.
   What does CDP's own policy engine allow it to sign, and is there an
   allowlist of destinations (SpendPermissionManager, WETH, the pinned router,

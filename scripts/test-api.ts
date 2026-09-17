@@ -332,7 +332,10 @@ import {
   spendPermissionTypedData,
   usdcAtomsToHuman,
   SPEND_PERMISSION_MANAGER,
+  AUTO_BUY_FLOOR_BPS,
+  autoBuyFloorAtoms,
 } from '../lib/dca-auto'
+import { buildAutoBuy } from '../lib/dca-auto-exec'
 import { ADDRESS_THIS, NoV3PoolError, SWAP_ROUTER_02_ABI, guardUniswapV3Build, type V3GuardExpectations } from '../lib/uniswap-venue'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
@@ -16427,29 +16430,34 @@ async function main() {
     const router = '0x2626664c2603336E57B271c5C0b26F421741e481'
     const weth = '0x4200000000000000000000000000000000000006'
     const pulled = perm.allowance
-    const treasury = '0x9cc0000000000000000000000000000000009999'
+    const treasury = TREASURY_ADDRESS
+    // The sweep's independent floor: the $25 pull at a $2,500 mark, less
+    // AUTO_BUY_FLOOR_BPS. The fixtures' minOut is the builder's: 50 bps under
+    // a 0.01 WETH quote, which clears the floor after the treasury's cut too.
+    const floor = autoBuyFloorAtoms(pulled, 2500, 18)
+    const minOut = BigInt('9950000000000000')
     const mkApprove = (amount: bigint, to = usdc, spenderArg = router) => ({
       to,
       data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [spenderArg as `0x${string}`, amount] }),
       value: '0',
     })
-    const mkSwap = (opts: { recipient?: string; sweepTo?: string; amountIn?: bigint; tokenIn?: string; deadline?: number; noSweep?: boolean; minOut?: bigint }) => {
+    const mkSwap = (opts: { recipient?: string; sweepTo?: string; amountIn?: bigint; tokenIn?: string; deadline?: number; noSweep?: boolean; minOut?: bigint; fee?: number; priceLimit?: bigint; sweepMin?: bigint; bips?: bigint; feeTo?: string }) => {
       const inner = encodeFunctionData({
         abi: SWAP_ROUTER_02_ABI,
         functionName: 'exactInputSingle',
         args: [{
           tokenIn: (opts.tokenIn ?? usdc) as `0x${string}`,
           tokenOut: weth as `0x${string}`,
-          fee: 500,
+          fee: opts.fee ?? 500,
           recipient: (opts.recipient ?? (opts.noSweep ? owner : ADDRESS_THIS)) as `0x${string}`,
           amountIn: opts.amountIn ?? pulled,
-          amountOutMinimum: opts.minOut ?? BigInt(1),
-          sqrtPriceLimitX96: BigInt(0),
+          amountOutMinimum: opts.minOut ?? minOut,
+          sqrtPriceLimitX96: opts.priceLimit ?? BigInt(0),
         }],
       })
       const calls = opts.noSweep
         ? [inner]
-        : [inner, encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'sweepTokenWithFee', args: [weth as `0x${string}`, BigInt(1), (opts.sweepTo ?? owner) as `0x${string}`, BigInt(20), treasury as `0x${string}`] })]
+        : [inner, encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'sweepTokenWithFee', args: [weth as `0x${string}`, opts.sweepMin ?? opts.minOut ?? minOut, (opts.sweepTo ?? owner) as `0x${string}`, opts.bips ?? BigInt(SWAP_FEE_BPS), (opts.feeTo ?? treasury) as `0x${string}`] })]
       return {
         to: router,
         data: encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'multicall', args: [BigInt(opts.deadline ?? nowSec + 600), calls] }),
@@ -16467,6 +16475,7 @@ async function main() {
       // unwrap — pinned just below.
       nativeOut: false,
       pulledAtomic: pulled,
+      minOutAtomic: floor,
       nowSec,
     }
     check('dca autopilot guard: the fee build passes (approve exact + swap → sweep to owner)', guardAutoBuy({ ...guardBase, steps: [mkApprove(pulled), mkSwap({})] }).ok)
@@ -16492,28 +16501,32 @@ async function main() {
     // ETH schedules (buysNativeEth on the schedule's own token): the builder
     // unwraps, so the guard must see [swap → router, unwrap → OWNER]. A sweep
     // or a direct payout would hand the owner WETH, which can't pay gas.
-    const mkEthSwap = (opts: { unwrapTo?: string; feeOff?: boolean; sweep?: boolean; direct?: boolean }) => {
+    const mkEthSwap = (opts: { unwrapTo?: string; feeOff?: boolean; sweep?: boolean; direct?: boolean; minOut?: bigint; fee?: number; priceLimit?: bigint; unwrapMin?: bigint; bips?: bigint; feeTo?: string }) => {
+      const swapMin = opts.minOut ?? minOut
       const inner = encodeFunctionData({
         abi: SWAP_ROUTER_02_ABI,
         functionName: 'exactInputSingle',
         args: [{
           tokenIn: usdc as `0x${string}`,
           tokenOut: weth as `0x${string}`,
-          fee: 500,
+          fee: opts.fee ?? 500,
           recipient: (opts.direct ? owner : ADDRESS_THIS) as `0x${string}`,
           amountIn: pulled,
-          amountOutMinimum: BigInt(1),
-          sqrtPriceLimitX96: BigInt(0),
+          amountOutMinimum: swapMin,
+          sqrtPriceLimitX96: opts.priceLimit ?? BigInt(0),
         }],
       })
       const to = (opts.unwrapTo ?? owner) as `0x${string}`
+      const payoutMin = opts.unwrapMin ?? swapMin
+      const bips = opts.bips ?? BigInt(SWAP_FEE_BPS)
+      const feeTo = (opts.feeTo ?? treasury) as `0x${string}`
       const payout = opts.direct
         ? null
         : opts.sweep
-          ? encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'sweepTokenWithFee', args: [weth as `0x${string}`, BigInt(1), to, BigInt(20), treasury as `0x${string}`] })
+          ? encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'sweepTokenWithFee', args: [weth as `0x${string}`, payoutMin, to, bips, feeTo] })
           : opts.feeOff
-            ? encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'unwrapWETH9', args: [BigInt(1), to] })
-            : encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'unwrapWETH9WithFee', args: [BigInt(1), to, BigInt(20), treasury as `0x${string}`] })
+            ? encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'unwrapWETH9', args: [payoutMin, to] })
+            : encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'unwrapWETH9WithFee', args: [payoutMin, to, bips, feeTo] })
       return {
         to: router,
         data: encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'multicall', args: [BigInt(nowSec + 600), payout ? [inner, payout] : [inner]] }),
@@ -16535,6 +16548,106 @@ async function main() {
     check(
       'dca autopilot guard: a WETH schedule refuses an unwrap (the owner asked for the ERC-20)',
       !guardAutoBuy({ ...guardBase, steps: [mkApprove(pulled), mkEthSwap({})] }).ok,
+    )
+
+    // The gaps #807 closed in guardSpotSell, closed for the autonomous buy
+    // (2026-09-17). Each refusal is asserted by its reason, so a pin can't
+    // pass on some other refusal. The fixtures are the builder's own shapes:
+    // buildUniswapSwap's guard referees them first.
+    const dcaRefusedFor = (r: { ok: boolean; checks: { ok: boolean; note: string }[] }, re: RegExp) => !r.ok && r.checks.some((c) => !c.ok && re.test(c.note))
+    const autoBuy = (swapStep: { to: string; data: string; value: string }, over: Partial<typeof guardBase> = {}) =>
+      guardAutoBuy({ ...guardBase, ...over, steps: [mkApprove(pulled), swapStep] })
+    const builderExp = { chainId: 8453, swapRouter02: router, sellToken: usdc, buyToken: weth, sellIsEth: false, amountIn: pulled, minOut, poolFee: 500, recipient: owner, deadline: nowSec + 600, feeBps: SWAP_FEE_BPS }
+    const refereeSweep = guardUniswapV3Build({ swapTx: { ...mkSwap({}), chainId: 8453 }, approveTx: { ...mkApprove(pulled), chainId: 8453 } }, { ...builderExp, nativeOut: false }, nowSec)
+    const refereeUnwrap = guardUniswapV3Build({ swapTx: { ...mkEthSwap({}), chainId: 8453 }, approveTx: { ...mkApprove(pulled), chainId: 8453 } }, { ...builderExp, nativeOut: true }, nowSec)
+    check(
+      "dca autopilot guard: the fee-on fixtures are exactly what buildUniswapSwap's own guard accepts for the sweep's call (default fee, recipient = the owner)",
+      refereeSweep.ok && refereeUnwrap.ok,
+      [...refereeSweep.reasons, ...refereeUnwrap.reasons].join(' '),
+    )
+    // A floor helper that throws on a bad mark would fail this pin, not the run.
+    const floorOf = (atoms: bigint, mark: number, decimals: number) => {
+      try {
+        return autoBuyFloorAtoms(atoms, mark, decimals)
+      } catch {
+        return null
+      }
+    }
+    check(
+      'dca autopilot: the floor is the pull at the mark less AUTO_BUY_FLOOR_BPS, in bigint math (no usable mark or decimals, no floor)',
+      AUTO_BUY_FLOOR_BPS === 300 && floor === BigInt('9700000000000000') &&
+        floorOf(BigInt(10_000_000), 76_000, 8) === BigInt(12763) &&
+        [0, -1, Number.NaN, Number.POSITIVE_INFINITY, 1e-20].every((mark) => floorOf(pulled, mark, 18) === BigInt(0)) &&
+        floorOf(pulled, 2500, -1) === BigInt(0) && floorOf(pulled, 2500, 1.5) === BigInt(0) && floorOf(BigInt(0), 2500, 18) === BigInt(0),
+      `floor ${floor}`,
+    )
+    const feeOnHappy = autoBuy(mkSwap({}))
+    check(
+      'dca autopilot guard: the fee-on buy names the treasury cut and the floor it cleared',
+      feeOnHappy.ok && (feeOnHappy.checks.find((c) => c.id === 'swap')?.note ?? '').includes(`swept to the owner minus ${SWAP_FEE_BPS}bps to the treasury, the owner's minimum at or above the floor`),
+      JSON.stringify(feeOnHappy.checks.filter((c) => !c.ok)).slice(0, 240),
+    )
+    const priceLimit = BigInt('4295128740')
+    check(
+      'dca autopilot guard: a price-limited swap refuses in every payout shape (a partial fill would leave the rest of the pull on the spender)',
+      dcaRefusedFor(autoBuy(mkSwap({ priceLimit })), /price limit, so it could spend only part of the pull/) &&
+        dcaRefusedFor(autoBuy(mkSwap({ noSweep: true, priceLimit })), /price limit, so it could spend only part of the pull/) &&
+        dcaRefusedFor(autoBuy(mkEthSwap({ priceLimit }), { nativeOut: true }), /price limit, so it could spend only part of the pull/),
+    )
+    check(
+      'dca autopilot guard: a pool fee outside the v3 tiers refuses (no pool, so the swap would revert after the pull)',
+      dcaRefusedFor(autoBuy(mkSwap({ fee: 7777 })), /pool fee 7777 is not a Uniswap v3 tier/) &&
+        dcaRefusedFor(autoBuy(mkEthSwap({ fee: 7777 }), { nativeOut: true }), /pool fee 7777 is not a Uniswap v3 tier/),
+    )
+    check(
+      "dca autopilot guard: a minOut of 1 refuses against the independent floor in every payout shape (a regressed builder or a bad quote can't take any fill)",
+      dcaRefusedFor(autoBuy(mkSwap({ noSweep: true, minOut: BigInt(1) })), new RegExp(`minOut 1 is below the floor ${floor}`)) &&
+        dcaRefusedFor(autoBuy(mkSwap({ minOut: BigInt(1) })), new RegExp(`minOut 1 is below the floor ${floor}`)) &&
+        dcaRefusedFor(autoBuy(mkEthSwap({ minOut: BigInt(1) }), { nativeOut: true }), new RegExp(`minOut 1 is below the floor ${floor}`)),
+    )
+    check('dca autopilot guard: a buy with no independent floor refuses', dcaRefusedFor(autoBuy(mkSwap({}), { minOutAtomic: BigInt(0) }), /No independent floor/))
+    const ownerMinOnFloor = floor - swapFeeAtoms(floor, SWAP_FEE_BPS)
+    check(
+      "dca autopilot guard (fee on): the floor is checked AFTER the treasury's cut (a minOut exactly on the floor passes fee-off, refuses fee-on, in the sweep AND the unwrap)",
+      autoBuy(mkSwap({ noSweep: true, minOut: floor })).ok &&
+        autoBuy(mkEthSwap({ feeOff: true, minOut: floor }), { nativeOut: true }).ok &&
+        dcaRefusedFor(autoBuy(mkSwap({ minOut: floor })), new RegExp(`owner's minimum after the ${SWAP_FEE_BPS}bps fee, ${ownerMinOnFloor}, is below the floor ${floor}`)) &&
+        dcaRefusedFor(autoBuy(mkEthSwap({ minOut: floor }), { nativeOut: true }), new RegExp(`owner's minimum after the ${SWAP_FEE_BPS}bps fee, ${ownerMinOnFloor}, is below the floor ${floor}`)),
+    )
+    check(
+      'dca autopilot guard (fee on): a foreign fee recipient refuses in the sweep AND the unwrap (the cut goes to TREASURY_ADDRESS only)',
+      dcaRefusedFor(autoBuy(mkSwap({ feeTo: spender })), new RegExp(`the fee goes to ${spender}, not the Pantessa treasury`)) &&
+        dcaRefusedFor(autoBuy(mkEthSwap({ feeTo: spender }), { nativeOut: true }), new RegExp(`the fee goes to ${spender}, not the Pantessa treasury`)),
+    )
+    check(
+      'dca autopilot guard (fee on): a fee off the canonical tiers refuses in the sweep AND the unwrap (100bps = the on-chain max; 0bps reverts on-chain)',
+      dcaRefusedFor(autoBuy(mkSwap({ bips: BigInt(100) })), /fee 100bps is not a canonical tier/) &&
+        dcaRefusedFor(autoBuy(mkSwap({ bips: BigInt(0) })), /fee 0bps is not a canonical tier/) &&
+        dcaRefusedFor(autoBuy(mkEthSwap({ bips: BigInt(100) }), { nativeOut: true }), /fee 100bps is not a canonical tier/) &&
+        dcaRefusedFor(autoBuy(mkEthSwap({ bips: BigInt(0) }), { nativeOut: true }), /fee 0bps is not a canonical tier/),
+    )
+    check(
+      "dca autopilot guard: a weakened payout minimum refuses (the sweep and both unwraps re-assert the swap's minOut)",
+      dcaRefusedFor(autoBuy(mkSwap({ sweepMin: BigInt(1) })), new RegExp(`sweep minimum 1 ≠ the swap's minOut ${minOut}`)) &&
+        dcaRefusedFor(autoBuy(mkEthSwap({ unwrapMin: BigInt(1) }), { nativeOut: true }), new RegExp(`unwrap minimum 1 ≠ the swap's minOut ${minOut}`)) &&
+        dcaRefusedFor(autoBuy(mkEthSwap({ feeOff: true, unwrapMin: BigInt(1) }), { nativeOut: true }), new RegExp(`unwrap minimum 1 ≠ the swap's minOut ${minOut}`)),
+    )
+    // The sweep's order is the guarantee: build + floor, then the guard,
+    // then the pull — and the retry after a pull runs the same build and
+    // guard (the `rebuild` handed to settleRun calls buildBuy again). A swap
+    // that lands REVERTED is sendRunTx's job now (the `autopilot unwind
+    // (source)` pins), since #813 removed the sweep's bare waitTx.
+    const dcaExecSrc = readFileSync('lib/dca-auto-exec.ts', 'utf8')
+    const dcaSweepSrc = dcaExecSrc.slice(dcaExecSrc.indexOf('export async function executeAutoDcaSweep'))
+    const dcaGuardToPull = dcaSweepSrc.slice(dcaSweepSrc.indexOf('guardAutoBuy('), dcaSweepSrc.indexOf("encodeManagerCall('spend'"))
+    check(
+      'dca autopilot exec: the sweep builds (buildAutoBuy) and guards, with the floor, before the pull — and its post-pull retry rebuilds through the same closure',
+      dcaSweepSrc.indexOf('buildAutoBuy(') > 0 &&
+        dcaSweepSrc.indexOf('buildAutoBuy(') < dcaSweepSrc.indexOf('guardAutoBuy(') &&
+        dcaSweepSrc.indexOf('guardAutoBuy(') < dcaSweepSrc.indexOf("encodeManagerCall('spend'") &&
+        /minOutAtomic,/.test(dcaGuardToPull) &&
+        /rebuild: async \(\) => \{[\s\S]{0,400}await buildBuy\(\)/.test(dcaSweepSrc),
+      dcaGuardToPull.slice(0, 200),
     )
     check('dca autopilot: atomic → human feeds the builder losslessly', usdcAtomsToHuman(BigInt(10_000_000)) === '10' && usdcAtomsToHuman(BigInt(10_500_000)) === '10.5' && usdcAtomsToHuman(BigInt(123)) === '0.000123')
 
@@ -16573,6 +16686,67 @@ async function main() {
       toggleRes.status === 200 && typeof toggleBody.reply === 'string' && toggleBody.reply.includes('🤖'),
       String(toggleBody.reply).slice(0, 80),
     )
+  }
+
+  // ── DCA autopilot (live): the sweep's own build through its own guard ────
+  console.log('— dca autopilot (live build)')
+  {
+    // buildAutoBuy is the sweep's step 1: a fresh Base v3 quote for the exact
+    // pull, output pinned to the owner at the default fee, and the floor off
+    // the usdPerToken mark. Read-only: quotes and one allowance read, nothing
+    // signed. An ETH schedule unwraps; a cbBTC schedule sweeps. Needs
+    // DATABASE_URL in the harness env (the builder reads the spender's grant),
+    // like the spot guardian's live pin.
+    const OWNER = '0x5eaabd731d2bc0490c2d47e41858e9b0629455a0'
+    const SPENDER = '0x1111111111111111111111111111111111111111'
+    const pulled = BigInt(10_000_000) // $10
+    for (const buyToken of ['ETH', 'cbBTC']) {
+      let liveNote = ''
+      let liveOk = false
+      for (let attempt = 1; attempt <= 3 && !liveOk; attempt++) {
+        try {
+          const nowSec = Math.floor(Date.now() / 1000)
+          const buy = await buildAutoBuy({ chainId: 8453, sellToken: 'USDC', buyToken, ownerWallet: OWNER, spender: SPENDER, pulled })
+          if (!buy.ok) {
+            liveNote = `attempt ${attempt} build refused: ${buy.detail}` // a price read or quote can flake; retry
+            continue
+          }
+          const { steps, minOutAtomic, guardChain, expectedBuyAddr, nativeOut } = buy.build
+          const guard = guardAutoBuy({
+            schedule: { mode: 'auto', status: 'active', buyUsd: 10, cadence: 'week', chainId: 8453 },
+            permission: buildDcaSpendPermission({ account: OWNER, spender: SPENDER, token: guardChain.usdcAddress, buyUsd: 10, cadence: 'week', nowSec, salt: BigInt(11) }),
+            ownerWallet: OWNER,
+            spender: SPENDER,
+            chain: guardChain,
+            expectedBuyAddr,
+            nativeOut,
+            steps,
+            pulledAtomic: pulled,
+            minOutAtomic,
+            nowSec,
+          })
+          const outer = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: steps[steps.length - 1].data as `0x${string}` })
+          const calls = (outer.args as readonly [bigint, readonly `0x${string}`[]])[1]
+          const payout = calls[1] ? decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[1] }) : null
+          const payoutArgs = (payout?.args ?? []) as readonly unknown[]
+          const [to, bips, feeTo] = buyToken === 'ETH' ? [payoutArgs[1], payoutArgs[2], payoutArgs[3]] : [payoutArgs[2], payoutArgs[3], payoutArgs[4]]
+          const feeOnShape =
+            nativeOut === (buyToken === 'ETH') && calls.length === 2 &&
+            payout?.functionName === (buyToken === 'ETH' ? 'unwrapWETH9WithFee' : 'sweepTokenWithFee') &&
+            String(to).toLowerCase() === OWNER && bips === BigInt(SWAP_FEE_BPS) && String(feeTo).toLowerCase() === TREASURY_ADDRESS.toLowerCase()
+          liveOk = guard.ok && feeOnShape && minOutAtomic > BigInt(0)
+          liveNote = `${steps.length} steps · calls [${calls.map((c) => decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: c }).functionName).join(', ')}] · floor ${minOutAtomic} · ${guard.checks.map((c) => `${c.ok ? '✓' : '✗'}${c.id}${c.ok ? '' : ` (${c.note})`}`).join(' ')}`
+          if (!guard.ok || !feeOnShape) break // a refusal is a verdict, not a flake
+        } catch (e) {
+          liveNote = `attempt ${attempt} threw: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`
+        }
+      }
+      check(
+        `dca autopilot guard (live): the sweep's real build of a $10 ${buyToken} buy on Base (buildAutoBuy: approve, the fee-on v3 buy ${buyToken === 'ETH' ? 'unwrapped' : 'swept'} to the owner, the floor off the mark) passes guardAutoBuy`,
+        liveOk,
+        liveNote.slice(0, 600),
+      )
+    }
   }
 
   // ── HL execution layer (parse + build + guard + submit relay) ────────────
