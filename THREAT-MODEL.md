@@ -204,12 +204,49 @@ Verified (2026-09-16, #807):
 - Claim before build, one run per policy (`spot_guard_runs` is unique on the
   policy), and the kill switch (`paused`) holds without claiming.
 
+Verified (2026-09-17, lib/autopilot-unwind):
+- **A pull never strands on the spender.** Before this, a sale that failed
+  after the pull (the swap is bounded 50 bps from a quote taken before 3–4
+  spender transactions, in a falling market) left the run `failed` and the
+  asset on the spender for good, proven on a Base fork for both autopilots.
+  Now, after the pull, a run ends only where the chain proves the money went:
+  `sold`/`bought` (a swap receipt succeeded) or `refunded` (the pull went
+  back to the owner). Until then it is `unwinding`, says so to the owner, and
+  a DCA schedule pulls nothing new. The in-pass order is one fresh retry
+  (rebuilt, re-guarded against the same floor, not while the kill switch is
+  paused), then the refund. A later pass's reconcile returns the money and
+  never sells late.
+- **A refund can only return exactly the pull, in the pulled asset, to the
+  wallet it came from.** `guardRefund` re-decodes every step: a plain ETH
+  send of the pull to the permission's account (no calldata), an
+  `unwrap(pull)` on the pinned WETH first when the sale had wrapped it, or
+  `transfer(owner, pull)` on the permission's own token. The amount is sized
+  by the pull, never by the spender's balance (every permission shares it),
+  and the pull must be proven by its receipt: the manager's own
+  `SpendPermissionUsed` for the stored permission hash, plus the token's
+  exact `Transfer`, so a token that delivers less than it moves can't size a
+  refund. Hostile shapes pinned by the `autopilot unwind` checks, each
+  mutation-tested.
+- **No spender transaction is sent twice.** Every send is written to the
+  run's ledger (`tx_log`) before it goes out and carries a CDP idempotency key
+  derived from (run, step, attempt). The SDK's HTTP client retries dropped
+  POSTs, so an unkeyed transfer could broadcast twice, paid from other users'
+  money on the shared spender. A pass that dies mid-send is reconciled by
+  re-issuing the ledger's own request under its key: CDP replays its first
+  answer. A re-issue must match a fresh encoding byte for byte; a swap is
+  only re-issued past its deadline, when it can only revert. Proven on the
+  fork (a pass killed after its swap broadcast: one replay, no second send,
+  refunded).
+
 Open questions:
-- **A failure after the pull strands the asset on the spender.** The spot
-  permission is one-shot and nothing refunds it. The DCA autopilot has the
-  same pull-then-swap shape. The swap is bounded 50 bps from the build-time
-  quote while 3–4 spender transactions land first, in a falling market, so
-  this is the likely failure, not an edge case. (Task filed 2026-09-16.)
+- A send whose outcome stays unknown for more than an hour (a dropped
+  transaction, a CDP answer that never comes back, a key past its 24h memory)
+  becomes an operator case: the run stays `unwinding`, the owner is told
+  nothing more moves until a person checks, and the function logs
+  `needs an operator`. Nobody is paged by it yet.
+- A refunded run leaves its exact-amount router approval on the spender. Only
+  the spender's own router calls can use it, and every sell re-approves
+  exactly, but nothing resets it.
 - The spender is one CDP server wallet for every permission on the platform.
   What does CDP's own policy engine allow it to sign, and is there an
   allowlist of destinations (SpendPermissionManager, WETH, the pinned router,
