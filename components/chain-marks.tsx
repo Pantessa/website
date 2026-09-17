@@ -9,7 +9,9 @@
 // here as a compact path on the brand lime.
 //
 // ADDING A CHAIN: add a `<Name>ChainMark` below + a row in CHAIN_MARKS keyed
-// by the lib/chains.ts `key`. The picker resolves marks via getChainMark().
+// by the lib/chains.ts `key` (and a slot in CHAIN_MARK_ORDER for where it
+// reads in the wallet address's row). The picker resolves marks via
+// getChainMark().
 
 import type { ComponentType } from 'react'
 
@@ -125,4 +127,19 @@ export const CHAIN_MARKS: Record<string, ChainMark> = {
 
 export function getChainMark(key: string | null | undefined): ChainMark | null {
   return (key && CHAIN_MARKS[key.toLowerCase()]) || null
+}
+
+// The order a row of EVERY chain's mark reads in (the wallet address row):
+// the L1, then the rollups, then the app chains (Nate, 2026-09-17: "Eth,
+// Base, OP, Arb, Robinhood, Arc"). Keys are lib/chains `key`s. APP_CHAINS
+// order stays the picker's and the scans' order. A chain with no slot here
+// sorts after these, in registry order (sort is stable).
+export const CHAIN_MARK_ORDER: readonly string[] = ['ethereum', 'base', 'optimism', 'arbitrum', 'robinhood', 'arc']
+
+export function byChainMarkOrder(a: { key: string }, b: { key: string }): number {
+  const rank = (key: string) => {
+    const i = CHAIN_MARK_ORDER.indexOf(key)
+    return i === -1 ? CHAIN_MARK_ORDER.length : i
+  }
+  return rank(a.key) - rank(b.key)
 }

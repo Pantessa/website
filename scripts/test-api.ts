@@ -9322,6 +9322,26 @@ async function main() {
           /onClick=\{openAccountModal\}/.test(wpPage) &&
           /getRecentActivity\(address, 12\)/.test(wpView),
       )
+      // The address row wears every app chain's mark (2026-09-17, Nate: "on
+      // the wallet section it says 'wallet on arc' what it should show is all
+      // the supported chains logos Eth, Base, OP, ARb, Robinhood, Arc"). The
+      // address is the same on every chain, so naming the one the wallet is
+      // switched to read as its only home. Registry-driven: a chain added to
+      // lib/chains shows up in the row, and needs a mark to pass.
+      const { byChainMarkOrder, getChainMark } = await import('../components/chain-marks')
+      const marked = [...APP_CHAINS].sort(byChainMarkOrder)
+      const addressRowSrc = wpPanel.match(/const addressRow = \(([\s\S]*?)\n  \)\n/)?.[1] ?? ''
+      check(
+        'wallet page: the address row shows every app chain\'s mark, L1 first (Ethereum · Base · Optimism · Arbitrum · Robinhood Chain · Arc), in both frames, and no longer names the one chain the wallet is switched to',
+        new Set(marked.map((c) => c.id)).size === APP_CHAINS.length &&
+          marked.every((c) => getChainMark(c.key) !== null) &&
+          marked.slice(0, 6).map((c) => c.key).join(' ') === 'ethereum base optimism arbitrum robinhood arc' &&
+          /const ADDRESS_CHAINS = \[\.\.\.APP_CHAINS\]\.sort\(byChainMarkOrder\)/.test(wpPanel) &&
+          /ADDRESS_CHAINS\.map\(\(c\) => \{\s*const Mark = getChainMark\(c\.key\)/.test(wpPanel) &&
+          addressRowSrc.includes('<AddressChains />') && !/wallet on/.test(addressRowSrc) &&
+          (wpPanel.match(/\{addressRow\}/g) ?? []).length === 2,
+        marked.map((c) => c.key).join(' '),
+      )
     }
 
     // Over HTTP: public by address, shape, cache, fences.
