@@ -3,9 +3,9 @@ import { chartPairFor } from '@/lib/charts'
 import { primaryStable } from '@/lib/chains'
 import { scanFundingSources, type FundingScan } from '@/lib/funding-plan'
 import { readFundingShortfall, ROBINHOOD_CHAIN_ID, type FundingShortfall } from '@/lib/lifi-bridge'
-import { coinFundRoutes, stockFundRoutes, unreadFundRoutes, type FundRoutesPlan } from '@/lib/fund-routes'
+import { coinFundLegs, coinFundRoutes, stockFundLegs, stockFundRoutes, unreadFundLegs, unreadFundRoutes, type FundLegsPlan, type FundRoutesPlan } from '@/lib/fund-routes'
 import { tokenHome } from '@/lib/token-home'
-import { DEFAULT_ROUTE_USD, fundDestChainFor, type FundRoutesResponse } from '@/lib/symbol-venues'
+import { DEFAULT_ROUTE_USD, fundDestChainFor, SPOT_CHAINS, type FundLegsResponse, type FundRoutesResponse } from '@/lib/symbol-venues'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -27,6 +27,14 @@ export const dynamic = 'force-dynamic'
 // cached 30s per wallet per lane, so a table that re-reads on every size
 // change costs one scan, not one per click. Never a 500: an unreadable
 // scan answers `state: 'unread'` with no rows and says so.
+//
+// `for=compound` answers the Trade tab's compound composer instead: its
+// funding LEGS (lib/fund-routes stockFundLegs / coinFundLegs) off the same
+// cached scan — one per chain that can fund the job, in the chat's own
+// funding sentence — plus the notes for the chains that can't. A coin's legs
+// land on `chain` (the composer's buy chain, a spot chain id; default the
+// symbol's funding destination) and are sized for the buy that follows
+// unless `buy=0`.
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/
 const SCAN_TTL_MS = 30_000
@@ -72,6 +80,8 @@ export async function GET(req: NextRequest) {
   const sym = pair.symbol.toUpperCase()
   const headers = { 'cache-control': 'no-store' }
 
+  if (sp.get('for') === 'compound') return compoundLegs(sp, address, pair, sym, amount, headers)
+
   const reply = (plan: FundRoutesPlan, cached = false) =>
     NextResponse.json({ symbol: sym, amountUsd: amount, ...plan, updatedAt: new Date().toISOString(), cached } satisfies FundRoutesResponse, { headers })
 
@@ -99,5 +109,53 @@ export async function GET(req: NextRequest) {
     return reply(coinFundRoutes({ sym, usd: amount, destChainId: fundDestChainFor(sym), scan: scan.value }), cached)
   } catch {
     return reply(unreadFundRoutes())
+  }
+}
+
+/** `for=compound`: the composer's funding legs off the same cached scans. */
+async function compoundLegs(
+  sp: URLSearchParams,
+  address: string,
+  pair: NonNullable<ReturnType<typeof chartPairFor>>,
+  sym: string,
+  amount: number,
+  headers: Record<string, string>,
+): Promise<NextResponse> {
+  const chainRaw = sp.get('chain')
+  const chainId = chainRaw == null || chainRaw === '' ? null : Number(chainRaw)
+  if (chainId !== null && !SPOT_CHAINS.some((c) => c.id === chainId)) {
+    return NextResponse.json({ error: `chain must be one of ${SPOT_CHAINS.map((c) => c.id).join(', ')} — the chains a compound buys on.` }, { status: 400 })
+  }
+  const buyRaw = sp.get('buy')
+  if (buyRaw !== null && buyRaw !== '0' && buyRaw !== '1') return NextResponse.json({ error: 'buy must be 0 or 1.' }, { status: 400 })
+  const stock = pair.source === 'robinhood'
+  const buy = stock || buyRaw !== '0'
+  const perpOnly = pair.source === 'hyperliquid' || (!stock && !!tokenHome(sym))
+  const destChainId = perpOnly ? null : stock ? ROBINHOOD_CHAIN_ID : (chainId ?? fundDestChainFor(sym))
+
+  const reply = (plan: FundLegsPlan, cached = false) =>
+    NextResponse.json({ symbol: sym, amountUsd: amount, destChainId, buy, ...plan, updatedAt: new Date().toISOString(), cached } satisfies FundLegsResponse, { headers })
+
+  // No spot buy on this page, so no leg for money to land on.
+  if (destChainId === null) return reply({ legs: [], notes: [], state: 'none', failed: [] })
+
+  if (stock) {
+    try {
+      const { scan, cached } = await scanFor('lifi', address)
+      if (scan.lane !== 'lifi') throw new Error('lane mismatch')
+      const usdg = primaryStable(ROBINHOOD_CHAIN_ID)
+      const holdingUsd = usdg ? Number(scan.value.usdgAtoms) / 10 ** usdg.decimals : 0
+      return reply(stockFundLegs({ sym, buyUsd: amount, holdingUsd, scan: scan.value }), cached)
+    } catch {
+      return reply(unreadFundLegs())
+    }
+  }
+
+  try {
+    const { scan, cached } = await scanFor('near', address)
+    if (scan.lane !== 'near') throw new Error('lane mismatch')
+    return reply(coinFundLegs({ sym, usd: amount, destChainId, buy, scan: scan.value }), cached)
+  } catch {
+    return reply(unreadFundLegs())
   }
 }

@@ -270,13 +270,13 @@ import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingIn
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
 import { CHOOSE_SHAPE_RULES, chooseMosaicShape, composeMosaicAsk, fmtUnits, integerPcts, isMosaicAsk, MOSAIC_STABLE, mosaicAskString, mosaicPresets, mosaicStableFor, mosaicValueRows, parseMosaicAsk, planMosaic, suggestMosaicShape, type MosaicHolding } from '../lib/mosaic'
 import { simulateLadder } from './ask-ladder'
-import { coinFundRoutes, stockFundRoutes } from '../lib/fund-routes'
+import { coinFundLegs, coinFundRoutes, stockFundLegs, stockFundRoutes } from '../lib/fund-routes'
 import { cardBuyChip, cardBuyTurn, type CardBuyAsk } from '../lib/card-buy'
 import { ARRIVAL_FUTURE_SKEW_MS, ARRIVAL_MAX_MCPS, ARRIVAL_MAX_TEXT, ARRIVAL_SOURCES, arrivalAllowed, arrivalSourceAllowed, arrivalTextProblem, type ArrivalRefusal } from '../lib/arrival-fence'
 import { ARRIVAL_TTL_MS } from '../lib/arrival-intent'
 import { ladderFilterMenu as aiLadderFilterMenu } from '../lib/markets-ai-ladder'
 import { alertActionChips as arrivalAlertChips } from '../lib/watchlists'
-import { quickActs as mk2QuickActs, ROUTE_TICKET_NOTE as MK2_TICKET_NOTE, SETTLES as MK2_SETTLES, limitAtLevel as mk2LimitAtLevel, BEST_OUT_RULE as MK2_BEST_OUT_RULE, venuesFor as mk2VenuesFor, missingVenueNotes as mk2MissingNotes, composeCompound as mk2ComposeCompound, compoundLegKindsFor as mk2LegKinds, compoundPresets as mk2Presets, type CompoundLegKind as Mk2LegKind, type RoutesResponse as Mk2RoutesResponse, type FundRoutesResponse as Mk2FundRoutesResponse, FUND_CONNECT_NOTE as MK2_FUND_CONNECT_NOTE } from '../lib/symbol-venues'
+import { quickActs as mk2QuickActs, ROUTE_TICKET_NOTE as MK2_TICKET_NOTE, SETTLES as MK2_SETTLES, limitAtLevel as mk2LimitAtLevel, BEST_OUT_RULE as MK2_BEST_OUT_RULE, venuesFor as mk2VenuesFor, missingVenueNotes as mk2MissingNotes, composeCompound as mk2ComposeCompound, compoundLegKindsFor as mk2LegKinds, compoundPresets as mk2Presets, type CompoundLegKind as Mk2LegKind, type RoutesResponse as Mk2RoutesResponse, type FundRoutesResponse as Mk2FundRoutesResponse, FUND_CONNECT_NOTE as MK2_FUND_CONNECT_NOTE, compoundFundDest as mk2CompoundFundDest, type FundLegsResponse as Mk2FundLegsResponse } from '../lib/symbol-venues'
 import { execAsks as mk2ExecAsks, execSidesFor as mk2ExecSidesFor, sideOf as mk2SideOf, AMOUNTS as MK2_AMOUNTS, STOPS as MK2_STOPS } from '../lib/trade-asks'
 import { exitChipsFor as mk2ExitChipsFor, positionSummary as mk2PositionSummary, positionIsEmpty as mk2PositionIsEmpty, type SymbolPosition as Mk2SymbolPosition } from '../lib/symbol-position'
 import {
@@ -23143,11 +23143,42 @@ async function main() {
     // The compound composer — every emitted compound compiles to exactly its
     // legs plus the settlement waits, every step native, and the route's
     // ladder claims it as a job (or the lone-clause gate for a single leg).
-    const cases: [string, Mk2LegKind[], Record<string, number>][] = [
-      ['ETH', ['buy', 'stake'], {}], ['ETH', ['fund', 'buy', 'stake'], { originChainId: 1, chainId: 8453 }], ['ETH', ['buy', 'supply'], {}],
-      ['ETH', ['deposit', 'long', 'protect'], { leverage: 2 }], ['ETH', ['short', 'protect'], { leverage: 3 }], ['ETH', ['fund', 'buy', 'supply'], { usd: 100 }],
-      ['LINK', ['buy', 'supply'], {}], ['LINK', ['fund', 'buy'], { chainId: 8453 }], ['BTC', ['deposit', 'short'], {}],
-      ['SOL', ['deposit', 'long', 'protect'], { leverage: 5 }], ['HYPE', ['long', 'protect'], {}], ['AAPL', ['fund', 'buy'], {}], ['AAPL', ['fund', 'buy'], { originChainId: 42161, usd: 100 }],
+    // RE-PINNED 2026-09-16 (the route table's "Fund from Base" report, in the
+    // composer's FROM picker): a fund leg comes ONLY from a wallet's own scan
+    // (lib/fund-routes stockFundLegs / coinFundLegs), so the fund cases take
+    // theirs from fixture wallets — a stock from USDC and from ETH, with and
+    // without the 4663 gas leg; a coin from USDC and from ETH, with the
+    // destination gas leg, without it, and as a plain bridge.
+    const legOriginsStock: FundingOrigin[] = [
+      { chainId: 8453, word: 'Base', token: 'USDC', usd: 400, gasEth: 0.001 },
+      { chainId: 42161, word: 'Arbitrum', token: 'ETH', usd: 300, gasEth: 0.1, spendable: true },
+    ]
+    const stockLeg = (usd: number, origin: number, hasGas = false) =>
+      stockFundLegs({ sym: 'AAPL', buyUsd: usd, holdingUsd: 0, scan: { hasGas, origins: legOriginsStock, gaslessOrigins: [], failedOrigins: [] } }).legs.find((l) => l.chainId === origin) ?? null
+    // USDC on Optimism, only ETH on Arbitrum (gas there), nothing and no gas on
+    // Base or Ethereum: a buy on Base/Ethereum gets the gas leg + the value leg,
+    // a buy on Arbitrum the value leg alone.
+    const legScanCoin = {
+      sources: [
+        { chainId: 10, chainWord: 'Optimism', token: 'USDC' as const, balance: 400, usd: 400 },
+        { chainId: 42161, chainWord: 'Arbitrum', token: 'ETH' as const, balance: 0.1, usd: 300 },
+      ],
+      stranded: [] as { chainId: number; chainWord: string; token: 'USDC' | 'ETH'; balance: number; usd: number }[],
+      failedChains: [] as string[],
+      ethUsd: 3000,
+      nativeEth: { 10: 0.001, 42161: 0.1002, 8453: 0, 1: 0 } as Partial<Record<number, number>>,
+    }
+    // $100 of USDC already on Base with no gas to sign there: a gas-only leg.
+    const legScanGasOnly = { ...legScanCoin, stranded: [{ chainId: 8453, chainWord: 'Base', token: 'USDC' as const, balance: 100, usd: 100 }] }
+    const coinLeg = (sym: string, usd: number, dest: number, buy: boolean, origin: number, scan = legScanCoin) =>
+      coinFundLegs({ sym, usd, destChainId: dest, buy, scan }).legs.find((l) => l.chainId === origin) ?? null
+    const cases: [string, Mk2LegKind[], Parameters<typeof mk2ComposeCompound>[3]][] = [
+      ['ETH', ['buy', 'stake'], {}], ['ETH', ['fund', 'buy', 'stake'], { chainId: 8453, fund: coinLeg('ETH', 50, 8453, true, 10) }], ['ETH', ['buy', 'supply'], {}],
+      ['ETH', ['deposit', 'long', 'protect'], { leverage: 2 }], ['ETH', ['short', 'protect'], { leverage: 3 }], ['ETH', ['fund', 'buy', 'supply'], { usd: 100, fund: coinLeg('ETH', 100, 1, true, 10) }],
+      ['LINK', ['buy', 'supply'], {}], ['LINK', ['fund', 'buy'], { chainId: 8453, fund: coinLeg('LINK', 50, 8453, true, 42161) }], ['LINK', ['fund', 'buy'], { chainId: 42161, fund: coinLeg('LINK', 50, 42161, true, 10) }],
+      ['LINK', ['fund', 'supply'], { fund: coinLeg('LINK', 50, 1, false, 10) }], ['LINK', ['fund', 'buy'], { chainId: 8453, fund: coinLeg('LINK', 50, 8453, true, 10, legScanGasOnly) }],
+      ['BTC', ['deposit', 'short'], {}], ['SOL', ['deposit', 'long', 'protect'], { leverage: 5 }], ['HYPE', ['long', 'protect'], {}],
+      ['AAPL', ['fund', 'buy'], { fund: stockLeg(50, 8453) }], ['AAPL', ['fund', 'buy'], { usd: 100, fund: stockLeg(100, 42161) }], ['AAPL', ['fund', 'buy'], { usd: 25, fund: stockLeg(25, 8453, true) }],
     ]
     const compoundBad: string[] = []
     for (const [sym, legKinds, opts] of cases) {
@@ -23158,10 +23189,13 @@ async function main() {
       const ok = plan.legs.length === legKinds.length && !!steps && steps.length === plan.expectedSteps && steps.every((st) => /^native-|^wait$/.test(st.builder)) && lad.gate === 'jobs' && lad.kind === 'action'
       if (!ok) compoundBad.push(`${sym} ${legKinds.join('→')}: "${plan.ask}" expected ${plan.expectedSteps} got ${steps ? steps.map((st) => st.builder).join('→') : JSON.stringify(compiled)} ladder ${lad.gate}/${lad.kind}`)
     }
+    const fundCases = cases.filter(([, k]) => k.includes('fund'))
     check(
-      `MK2/EXEC CompoundComposer: ${cases.length} composed compounds (bridge → buy → stake · buy → supply · deposit → 2x long → Guardian stop · fund → buy a stock …) each compile to EXACTLY legs + waits, every step native, the ladder claims them as jobs`,
-      compoundBad.length === 0,
-      compoundBad.join(' || ') || 'all compile',
+      `MK2/EXEC CompoundComposer: ${cases.length} composed compounds (bridge → buy → stake · buy → supply · deposit → 2x long → Guardian stop · fund → buy a stock …) each compile to EXACTLY legs + waits, every step native, the ladder claims them as jobs — the ${fundCases.length} fund cases on a WALLET's legs (a stock from USDC, from ETH, with gas already on 4663; a coin from USDC and from ETH with the destination gas leg, without it, gas only, and as a plain bridge)`,
+      compoundBad.length === 0 && fundCases.every(([, , o]) => !!o?.fund) &&
+        ['USDC:2:2', 'ETH:2:2', 'USDC:1:1', 'USDC:1:2', 'ETH:1:2'].every((shape) => fundCases.some(([, , o]) => `${o?.fund?.token}:${o?.fund?.waits}:${o?.fund?.builders.length}` === shape)) &&
+        fundCases.some(([, , o]) => o?.fund?.forBuy === false) && fundCases.some(([, , o]) => /^Swap [\d.]+ USDC from Optimism to ETH on Base$/.test(o?.fund?.segment ?? '')),
+      compoundBad.join(' || ') || fundCases.map(([sym, , o]) => `${sym} ${o?.fund?.token}:${o?.fund?.waits}:${o?.fund?.builders.length} ${o?.fund?.segment}`).join(' | '),
     )
     check(
       'MK2/EXEC CompoundComposer never offers a leg the jobs registry cannot chain: DCA and the Spot Guardian are not leg kinds; a stock chains fund → buy only; a non-EVM coin chains perp legs only; presets exist for every class',
@@ -23172,6 +23206,145 @@ async function main() {
       'MK2/EXEC CompoundComposer: an incoherent set drops the leg that cannot follow (a Guardian stop with no long, a stake for a non-ETH coin) instead of guessing',
       mk2ComposeCompound('ETH', ethPair, ['protect']).legs.length === 0 && mk2ComposeCompound('LINK', linkPair, ['buy', 'stake']).legs.map((l) => l.kind).join() === 'buy',
     )
+
+    // ── The composer's FROM picker follows the wallet (2026-09-16) ──────────
+    // The route table's Fund rows went per wallet ("it shows 'Fund from Base'
+    // but the user does not have any tokens on base"); the composer on the same
+    // tab still offered Base / Ethereum / Arbitrum / Optimism to everyone and
+    // spent USDC from whichever was picked, so a wallet with nothing on Base,
+    // or only ETH there, built a job that walled at step 1.
+    {
+      const noLegStock = mk2ComposeCompound('AAPL', aaplPair, ['fund', 'buy'], { usd: 50 })
+      const noLegCoin = mk2ComposeCompound('LINK', linkPair, ['fund', 'buy'], { usd: 50 })
+      const legBase50 = stockLeg(50, 8453)!
+      const coinDest1 = coinLeg('LINK', 50, 1, true, 10)!
+      const venuesSrc = await readFile('lib/symbol-venues.ts', 'utf8')
+      const composeSrc = venuesSrc.split('export function composeCompound')[1]?.split('function finish(')[0] ?? ''
+      check(
+        'fund legs (composer): with no wallet leg there is NO fund leg — a stock plan is the lone "Buy $50 of AAPL" (the swap layer plans its own funding), a coin plan starts at the buy; a leg sized for another order size, another destination or another shape is dropped, never sent; composeCompound writes no funding sentence and takes no origin of its own',
+        !!legBase50 && !!coinDest1 && mk2ComposeCompound('LINK', linkPair, ['fund', 'buy'], { usd: 50, fund: coinDest1 }).legs[0]?.kind === 'fund' &&
+          noLegStock.legs.map((l) => l.kind).join() === 'buy' && noLegStock.ask === 'Buy $50 of AAPL' && simulateLadder(noLegStock.ask).kind === 'action' &&
+          noLegCoin.legs.map((l) => l.kind).join() === 'buy' && noLegCoin.ask === 'Swap 50 USDC for LINK on Ethereum' && simulateLadder(noLegCoin.ask).kind === 'action' &&
+          mk2ComposeCompound('AAPL', aaplPair, ['fund', 'buy'], { usd: 100, fund: legBase50 }).legs.every((l) => l.kind !== 'fund') &&
+          mk2ComposeCompound('LINK', linkPair, ['fund', 'buy'], { usd: 50, chainId: 8453, fund: coinDest1 }).legs.every((l) => l.kind !== 'fund') &&
+          mk2ComposeCompound('LINK', linkPair, ['fund', 'supply'], { usd: 50, fund: coinDest1 }).legs.every((l) => l.kind !== 'fund') &&
+          mk2ComposeCompound('AAPL', aaplPair, ['buy'], { usd: 50, fund: legBase50 }).ask === 'Buy $50 of AAPL' &&
+          composeSrc.length > 500 && !/Fund Robinhood Chain with|Bring USDC from|from \$\{origin|originChainId|SPOT_CHAINS\.find\(\(c\) => c\.id !== chain/.test(composeSrc) &&
+          !/originChainId/.test(venuesSrc) && mk2CompoundFundDest('AAPL', aaplPair, ['fund', 'buy']) === 4663 && mk2CompoundFundDest('ETH', ethPair, ['fund', 'buy', 'stake']) === 1 &&
+          mk2CompoundFundDest('LINK', linkPair, ['fund', 'buy'], 42161) === 42161 && mk2CompoundFundDest('SOL', solPair, ['deposit', 'long']) === null,
+        JSON.stringify({ stock: noLegStock.ask, coin: noLegCoin.ask }),
+      )
+
+      // A stock: the composer's leg IS the route row's fund segment.
+      const stockOrigins: FundingOrigin[] = [
+        { chainId: 8453, word: 'Base', token: 'USDC', usd: 120, gasEth: 0.001 },
+        { chainId: 42161, word: 'Arbitrum', token: 'ETH', usd: 80, gasEth: 0.03, spendable: true },
+      ]
+      const stockScan = { hasGas: false, origins: stockOrigins, gaslessOrigins: [{ chainId: 10, word: 'Optimism', token: 'USDC', usd: 12, gasEth: 0 }], failedOrigins: [] as string[] }
+      const sLegs = stockFundLegs({ sym: 'AAPL', buyUsd: 50, holdingUsd: 0, scan: stockScan })
+      const sRows = stockFundRoutes({ sym: 'AAPL', buyUsd: 50, holdingUsd: 0, scan: stockScan })
+      const sAsks = sLegs.legs.map((l) => mk2ComposeCompound('AAPL', aaplPair, ['fund', 'buy'], { usd: 50, fund: l }).ask)
+      const sEmpty = stockFundLegs({ sym: 'AAPL', buyUsd: 50, holdingUsd: 0, scan: { hasGas: false, origins: [], gaslessOrigins: [], failedOrigins: [] } })
+      const sCovered = stockFundLegs({ sym: 'AAPL', buyUsd: 50, holdingUsd: 62, scan: stockScan })
+      const sGassed = stockFundLegs({ sym: 'AAPL', buyUsd: 50, holdingUsd: 0, scan: { ...stockScan, hasGas: true } })
+      check(
+        'fund legs (stock): a wallet with USDC on Base and ETH on Arbitrum gets FROM Base and FROM Arbitrum only (never Ethereum or Optimism), and each composed job is the route row\'s own ask word for word ("…from arbitrum using eth including gas, then buy $50 of AAPL") — the same notes, the same state; an empty wallet, USDG that already covers the buy, and gas already on 4663 (one funding builder, not two) read the same as the rows',
+        sLegs.legs.map((l) => `${l.chainId}:${l.token}`).join() === '8453:USDC,42161:ETH' && sLegs.state === 'rows' &&
+          JSON.stringify(sAsks) === JSON.stringify(sRows.routes.map((r) => r.ask)) && /from arbitrum using eth including gas, then buy \$50 of AAPL$/.test(sAsks[1]) &&
+          JSON.stringify(sLegs.notes) === JSON.stringify(sRows.notes) && /Optimism can't move yet/.test(sLegs.notes.join(' ')) &&
+          sLegs.legs.every((l) => l.forUsd === 50 && l.destChainId === 4663 && l.forBuy && l.waits === 1 && l.builders.join() === 'native-lifi-fund,native-lifi-fund' && !/0x[0-9a-fA-F]{6,}/.test(JSON.stringify(l))) &&
+          sEmpty.legs.length === 0 && sEmpty.state === 'none' && JSON.stringify(sEmpty.notes) === JSON.stringify(stockFundRoutes({ sym: 'AAPL', buyUsd: 50, holdingUsd: 0, scan: { hasGas: false, origins: [], gaslessOrigins: [], failedOrigins: [] } }).notes) &&
+          sCovered.legs.length === 0 && sCovered.state === 'covered' && /already covers a \$50 buy/.test(sCovered.notes.join(' ')) &&
+          sGassed.legs.every((l) => l.builders.join() === 'native-lifi-fund' && !/including gas/.test(l.segment)),
+        JSON.stringify({ asks: sAsks, rows: sRows.routes.map((r) => r.ask), notes: sLegs.notes }),
+      )
+
+      // A coin: the leg feeds a buy on the destination, so it is the chat's
+      // own funding plan from that one chain (lib/funding-plan fundingLegsFrom).
+      const coinScan = {
+        sources: [
+          { chainId: 8453, chainWord: 'Base', token: 'USDC' as const, balance: 120, usd: 120 },
+          { chainId: 42161, chainWord: 'Arbitrum', token: 'ETH' as const, balance: 0.03, usd: 90 },
+          { chainId: 1, chainWord: 'Ethereum', token: 'USDC' as const, balance: 20, usd: 20 },
+        ],
+        stranded: [{ chainId: 10, chainWord: 'Optimism', token: 'USDC' as const, balance: 15, usd: 15 }],
+        failedChains: [] as string[],
+        ethUsd: 3000,
+        nativeEth: { 8453: 0.001, 42161: 0.0302, 1: 0, 10: 0 },
+      }
+      const linkLegs = coinFundLegs({ sym: 'LINK', usd: 50, destChainId: 1, buy: true, scan: coinScan })
+      const gasUsd1 = destGasLegUsd(1, 0, 3000)
+      const need30 = { chainId: 1, token: 'USDC', amountHuman: 30, followupResume: 'swap 50 USDC for LINK on Ethereum', actionLabel: 'the buy', buyToken: 'LINK' }
+      const chatChip = (src: (typeof coinScan.sources)[number]) => {
+        const plan = planFundingChips(need30, fundingPlanUsd(30, 1), [src], gasUsd1)
+        return plan.kind === 'offer' ? plan.chips[0].resume : null
+      }
+      const linkAsks = linkLegs.legs.map((l) => mk2ComposeCompound('LINK', linkPair, ['fund', 'buy'], { usd: 50, chainId: 1, fund: l }).ask)
+      const ethLegs = coinFundLegs({ sym: 'ETH', usd: 50, destChainId: 1, buy: true, scan: coinScan })
+      const coveredBase = coinFundLegs({ sym: 'LINK', usd: 50, destChainId: 8453, buy: true, scan: coinScan })
+      const gasOnly = coinFundLegs({ sym: 'LINK', usd: 50, destChainId: 1, buy: true, scan: { ...coinScan, sources: [...coinScan.sources.slice(0, 2), { ...coinScan.sources[2], balance: 60, usd: 60 }] } })
+      const plain = coinFundLegs({ sym: 'LINK', usd: 50, destChainId: 1, buy: false, scan: coinScan })
+      const destUnread = coinFundLegs({ sym: 'LINK', usd: 50, destChainId: 1, buy: true, scan: { ...coinScan, failedChains: ['Ethereum'] } })
+      const tooBig = coinFundLegs({ sym: 'LINK', usd: 250, destChainId: 1, buy: true, scan: coinScan })
+      check(
+        'fund legs (coin): LINK buying on Ethereum with $20 of USDC already there and no Ethereum gas gets FROM Base (USDC) and FROM Arbitrum (ETH) — never Ethereum (the buy\'s chain) or the gas-less Optimism USDC (named) — and each composed job IS the chat\'s own funding chip from that chain (the gas leg, the shortfall with the planner\'s headroom, the buy); the ETH page never spends ETH; USDC already on the buy\'s chain with gas there is `covered`; USDC there without gas is a gas-only leg; a plain bridge spends exactly the size; an unread destination offers nothing; a size no chain covers says how much',
+        linkLegs.state === 'rows' && linkLegs.legs.map((l) => `${l.chainId}:${l.token}`).join() === '8453:USDC,42161:ETH' &&
+          JSON.stringify(linkAsks) === JSON.stringify([chatChip(coinScan.sources[0]), chatChip(coinScan.sources[1])]) &&
+          linkLegs.legs.every((l) => l.waits === 2 && l.builders.join() === 'native-cross-chain,native-cross-chain' && l.forUsd === 50 && l.destChainId === 1 && l.forBuy) &&
+          /Your ~\$20 of USDC on Ethereum already counts toward the buy/.test(linkLegs.notes.join(' ')) && /~\$15 of USDC on Optimism can't move yet/.test(linkLegs.notes.join(' ')) &&
+          ethLegs.legs.map((l) => `${l.chainId}:${l.token}`).join() === '8453:USDC' &&
+          coveredBase.legs.length === 0 && coveredBase.state === 'covered' && /already covers the buy/.test(coveredBase.notes.join(' ')) &&
+          gasOnly.legs.length === 2 && gasOnly.legs.every((l) => l.waits === 1 && / to ETH on Ethereum$/.test(l.segment)) &&
+          JSON.stringify(plain.legs.map((l) => l.segment)) === JSON.stringify(['Swap 50 USDC from Base to USDC on Ethereum', 'Swap 0.016667 ETH from Arbitrum to USDC on Ethereum']) && plain.legs.every((l) => !l.forBuy && l.waits === 1) &&
+          destUnread.legs.length === 0 && destUnread.state === 'unread' && /Couldn't read Ethereum just now/.test(destUnread.notes.join(' ')) &&
+          tooBig.legs.length === 0 && tooBig.state === 'short' && /needs ~\$\d+(\.\d\d)? moved over \(gas for Ethereum included\)/.test(tooBig.notes.join(' ')),
+        JSON.stringify({ asks: linkAsks, chips: [chatChip(coinScan.sources[0]), chatChip(coinScan.sources[1])], notes: linkLegs.notes, eth: ethLegs.legs.map((l) => l.segment), gasOnly: gasOnly.legs.map((l) => l.segment), tooBig: tooBig.notes }),
+      )
+
+      // HTTP: the endpoint's compound mode, and the wiring.
+      const legUrl = (q: string) => `${BASE}/api/markets/routes/funding?for=compound&${q}`
+      const freshLegWallet = privateKeyToAccount(generatePrivateKey()).address
+      const lAapl = await fetch(legUrl(`symbol=AAPL&amount=50&address=${freshLegWallet}`))
+      const lAaplJ = (await lAapl.json()) as Mk2FundLegsResponse
+      const lHypeJ = (await (await fetch(legUrl(`symbol=HYPE&amount=50&address=${freshLegWallet}`))).json()) as Mk2FundLegsResponse
+      const lBadChain = await fetch(legUrl(`symbol=LINK&amount=50&address=${freshLegWallet}&chain=137`))
+      const lBadBuy = await fetch(legUrl(`symbol=LINK&amount=50&address=${freshLegWallet}&chain=1&buy=2`))
+      check(
+        'fund legs (route): GET /api/markets/routes/funding?for=compound answers a FRESH wallet on AAPL 200 with no legs and a note that says why (landing on Robinhood Chain), a perp chart with none and no destination, a chain that isn\'t a spot chain 400, a buy flag that isn\'t 0/1 400 — public, no cookie',
+        lAapl.status === 200 && lAaplJ.legs.length === 0 && ['none', 'unread'].includes(lAaplJ.state) && lAaplJ.notes.length > 0 && lAaplJ.destChainId === 4663 && lAaplJ.buy === true && lAaplJ.amountUsd === 50 && !lAapl.headers.get('set-cookie') &&
+          lHypeJ.legs.length === 0 && lHypeJ.state === 'none' && lHypeJ.destChainId === null &&
+          lBadChain.status === 400 && lBadBuy.status === 400,
+        JSON.stringify({ aapl: lAaplJ, hype: lHypeJ.state, badChain: lBadChain.status, badBuy: lBadBuy.status }),
+      )
+      const legBurner = '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0'
+      const bLink = (await (await fetch(legUrl(`symbol=LINK&amount=25&address=${legBurner}&chain=1&buy=1`))).json()) as Mk2FundLegsResponse
+      const bEth = (await (await fetch(legUrl(`symbol=ETH&amount=25&address=${legBurner}&chain=8453&buy=1`))).json()) as Mk2FundLegsResponse
+      const bAapl = (await (await fetch(legUrl(`symbol=AAPL&amount=25&address=${legBurner}`))).json()) as Mk2FundLegsResponse
+      const bAaplRows = (await (await fetch(`${BASE}/api/markets/routes/funding?symbol=AAPL&amount=25&address=${legBurner}`)).json()) as Mk2FundRoutesResponse
+      const liveLegOk = (sym: string, pair: ReturnType<typeof chartPairFor>, body: Mk2FundLegsResponse, kinds: Mk2LegKind[], chainId?: number) =>
+        body.legs.every((l) => {
+          const plan = mk2ComposeCompound(sym, pair!, kinds, { usd: 25, chainId, fund: l })
+          const compiled = compileJobAskFull(plan.ask)
+          const steps = compiled && 'steps' in compiled ? compiled.steps : null
+          return plan.legs[0]?.kind === 'fund' && l.chainId !== body.destChainId && !!steps && steps.length === plan.expectedSteps && steps.every((st) => /^native-|^wait$/.test(st.builder)) && simulateLadder(plan.ask).gate === 'jobs'
+        })
+      check(
+        'fund legs (route): the burner\'s LIVE legs — LINK on Ethereum, ETH on Base, AAPL on Robinhood Chain — each come from a chain other than the one the job buys on, compose a job that compiles to exactly its steps under the jobs gate, never spend ETH on the ETH page, carry no address, and for AAPL are the live route rows\' own asks at the same size',
+        [bLink, bEth, bAapl].every((b) => ['rows', 'covered', 'short', 'none', 'unread'].includes(b.state) && !/0x[0-9a-fA-F]{6,}/.test(JSON.stringify(b))) &&
+          bLink.destChainId === 1 && bEth.destChainId === 8453 && bAapl.destChainId === 4663 &&
+          liveLegOk('LINK', linkPair, bLink, ['fund', 'buy'], 1) && liveLegOk('ETH', ethPair, bEth, ['fund', 'buy'], 8453) && liveLegOk('AAPL', aaplPair, bAapl, ['fund', 'buy']) &&
+          bEth.legs.every((l) => l.token !== 'ETH') &&
+          JSON.stringify(bAapl.legs.map((l) => mk2ComposeCompound('AAPL', aaplPair, ['fund', 'buy'], { usd: 25, fund: l }).ask)) === JSON.stringify(bAaplRows.routes.map((r) => r.ask)),
+        JSON.stringify({ link: [bLink.state, bLink.legs.map((l) => l.segment)], eth: [bEth.state, bEth.legs.map((l) => l.segment)], aapl: [bAapl.state, bAapl.legs.map((l) => l.segment), bAaplRows.routes.map((r) => r.ask)] }),
+      )
+      const ccWire = await readFile('components/markets/trade/CompoundComposer.tsx', 'utf8')
+      check(
+        'fund legs (wiring): CompoundComposer reads the connected wallet (useSession), fetches /api/markets/routes/funding with for=compound for every size it offers (the buy chain + the buy flag for a coin), lists FROM only from the wallet\'s legs, passes the picked leg into composeCompound, says FUND_CONNECT_NOTE with no wallet, holds Send while the read is in flight, and never maps SPOT_CHAINS into a FROM picker',
+        ccWire.includes('useSession()') && ccWire.includes('/api/markets/routes/funding?') && ccWire.includes("for: 'compound'") && ccWire.includes("qs.set('chain', String(fundDest))") &&
+          ccWire.includes('for (const amount of AMOUNTS)') && ccWire.includes('data-fund-origins={legs.map((l) => l.chainId)') && ccWire.includes('fund: fundLeg') && ccWire.includes('FUND_CONNECT_NOTE') &&
+          ccWire.includes('disabled={plan.legs.length === 0 || checking}') && !/SPOT_CHAINS\.filter\(/.test(ccWire) && !ccWire.includes('setOriginChainId(c.id)'),
+      )
+    }
 
     // The surfaces send complete asks (data-ask on every chip) and the slot
     // props match the README contract.
@@ -23328,6 +23501,18 @@ async function main() {
         tTrade.indexOf('class="mk-trade__compound"') < tTrade.indexOf('class="mk-trade__position"') &&
         !tTrade.includes('mkt-trade__chat'),
     )
+    {
+      // The server has no wallet: the composer renders the stranger's view of
+      // its funding leg (2026-09-16) — no FROM chains, the leg's row saying
+      // what connecting shows, and a job that starts at the buy.
+      const cc = tTrade.slice(tTrade.indexOf('class="mk-trade__compound"'), tTrade.indexOf('class="mk-trade__position"'))
+      check(
+        'mk2/markets: a stranger\'s Trade tab composer on /t/AAPL lists NO chain to fund from — the Bridge in row says what connecting a wallet shows, and the sentence is the lone "Buy $50 of AAPL"',
+        cc.includes('data-fund-state="no-wallet"') && !cc.includes('data-fund-origins') && !cc.includes('data-origin=') &&
+          cc.includes('Connect a wallet and this lists the chains your money is already on.') && cc.includes('data-ask="Buy $50 of AAPL"') && !/Fund robinhood chain|from base|Fund from/i.test(cc),
+        cc.slice(0, 600),
+      )
+    }
     // The pure pieces under the header + the table.
     check(
       'mk2/markets: rangePosition is 0 at the low, 1 at the high, clamped, null on a flat or unknown range; sortMarketRows sinks unquoted rows in BOTH directions and keeps the section order on ties',

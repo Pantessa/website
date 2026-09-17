@@ -8,15 +8,33 @@
 // plus the settlement waits). The preview lists the steps before anything
 // is sent; Send hands the sentence to the page's act door (connect to act —
 // the wallet signature is the gate).
+//
+// The funding leg is per wallet (2026-09-16, the report the route table's
+// Fund rows answered: "it shows 'Fund from Base' but the user does not have
+// any tokens on base"). The FROM picker here offered Base / Ethereum /
+// Arbitrum / Optimism to every visitor and always spent USDC, so a wallet
+// with nothing on Base, or only ETH there, could build a job that walled at
+// step 1. The connected wallet's legs come from
+// GET /api/markets/routes/funding?for=compound (lib/fund-routes): only the
+// chains that can fund this job, each spending the token the wallet holds
+// there, the first one picked. With no wallet, nothing fundable, or the money
+// already where the buy runs, the plan has no fund leg and its step says why.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ChartPair } from '@/lib/charts'
+import { useSession } from '@/lib/session'
 import {
+  FUND_CHECKING_NOTE,
+  FUND_CONNECT_NOTE,
+  FUND_UNREAD_NOTE,
   SPOT_CHAINS,
+  compoundFundDest,
   composeCompound,
   compoundLegKindsFor,
   compoundPresets,
   type CompoundLegKind,
+  type FundLegsResponse,
+  type FundRoutesState,
 } from '@/lib/symbol-venues'
 import './trade.css'
 
@@ -33,6 +51,10 @@ const LEG_LABEL: Record<CompoundLegKind, string> = {
 const AMOUNTS = [25, 50, 100, 250] as const
 const LEVS = [1, 2, 3, 5] as const
 
+/** Where the funding leg stands: not asked for, no wallet to read, the read
+ *  in flight, or what the read found (lib/fund-routes). */
+type FundView = 'off' | 'no-wallet' | 'pending' | FundRoutesState
+
 export default function CompoundComposer({ symbol, pair, onAsk }: { symbol: string; pair: ChartPair; onAsk: (ask: string) => void }) {
   const available = useMemo(() => compoundLegKindsFor(symbol, pair), [symbol, pair])
   const presets = useMemo(() => compoundPresets(symbol, pair), [symbol, pair])
@@ -41,8 +63,67 @@ export default function CompoundComposer({ symbol, pair, onAsk }: { symbol: stri
   const [leverage, setLeverage] = useState<number>(1)
   const [originChainId, setOriginChainId] = useState<number | undefined>(undefined)
   const [chainId, setChainId] = useState<number | undefined>(undefined)
+  const isStock = pair.source === 'robinhood'
 
-  const plan = useMemo(() => composeCompound(symbol, pair, kinds, { usd, leverage, originChainId, chainId }), [symbol, pair, kinds, usd, leverage, originChainId, chainId])
+  // The connected wallet's funding legs, keyed by everything they were read
+  // for (wallet · symbol · the chain they land on · a buy after them), so a
+  // switched wallet or a changed plan never sends another read's leg. Every
+  // size is read at once — the server reads the wallet once and caches it —
+  // so picking a size never waits; a new wallet or destination does.
+  const { walletAddress } = useSession()
+  const fundDest = kinds.includes('fund') ? compoundFundDest(symbol, pair, kinds, chainId) : null
+  const fundBuy = isStock || kinds.includes('buy')
+  const fundBase = walletAddress && fundDest !== null ? `${walletAddress.toLowerCase()}|${pair.symbol}|${fundDest}|${fundBuy ? 1 : 0}` : null
+  const [fund, setFund] = useState<{ base: string; bySize: Partial<Record<number, FundLegsResponse | null>> } | null>(null)
+  const [fundTick, setFundTick] = useState(0)
+
+  useEffect(() => {
+    if (!fundBase || !walletAddress || fundDest === null) return
+    let alive = true
+    const land = (amount: number, body: FundLegsResponse | null) => {
+      if (!alive) return
+      setFund((f) => {
+        const bySize = f?.base === fundBase ? f.bySize : {}
+        // A re-read that fails keeps the last good answer for that size.
+        if (body === null && bySize[amount]) return f
+        return { base: fundBase, bySize: { ...bySize, [amount]: body } }
+      })
+    }
+    for (const amount of AMOUNTS) {
+      const qs = new URLSearchParams({ symbol: pair.symbol, amount: String(amount), address: walletAddress, for: 'compound' })
+      if (!isStock) {
+        qs.set('chain', String(fundDest))
+        qs.set('buy', fundBuy ? '1' : '0')
+      }
+      fetch(`/api/markets/routes/funding?${qs}`, { cache: 'no-store' })
+        .then((res) => (res.ok ? (res.json() as Promise<FundLegsResponse>) : Promise.reject(new Error(String(res.status)))))
+        .then((body) => land(amount, body))
+        .catch(() => land(amount, null))
+    }
+    return () => {
+      alive = false
+    }
+  }, [fundBase, fundTick, walletAddress, fundDest, fundBuy, isStock, pair.symbol])
+
+  // Money moves between visits: re-read when the tab comes back.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') setFundTick((t) => t + 1)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
+  // undefined = not read yet for this plan · null = the read failed.
+  const fundBody = fundBase && fund?.base === fundBase ? fund.bySize[usd] : undefined
+  const fundView: FundView = fundDest === null ? 'off' : !walletAddress ? 'no-wallet' : fundBody === undefined ? 'pending' : fundBody === null ? 'unread' : fundBody.state
+  const legs = useMemo(() => fundBody?.legs ?? [], [fundBody])
+  const fundLeg = legs.find((l) => l.chainId === originChainId) ?? legs[0] ?? null
+  const fundNotes =
+    fundView === 'off' ? [] : fundView === 'no-wallet' ? [FUND_CONNECT_NOTE] : fundView === 'pending' ? [FUND_CHECKING_NOTE] : fundBody ? fundBody.notes : [FUND_UNREAD_NOTE]
+
+  const plan = useMemo(() => composeCompound(symbol, pair, kinds, { usd, leverage, chainId, fund: fundLeg }), [symbol, pair, kinds, usd, leverage, chainId, fundLeg])
+  const fundInPlan = plan.legs.some((l) => l.kind === 'fund')
   const toggle = (k: CompoundLegKind) =>
     setKinds((prev) => {
       const next = new Set(prev)
@@ -67,11 +148,21 @@ export default function CompoundComposer({ symbol, pair, onAsk }: { symbol: stri
 
   const wantsPerp = kinds.includes('long') || kinds.includes('short') || kinds.includes('deposit')
   const wantsChain = kinds.includes('buy') || kinds.includes('fund')
-  const isStock = pair.source === 'robinhood'
   const stepNo = { n: 0 }
+  // The fund leg the plan left out still gets its row, saying why.
+  const fundOff = fundView !== 'off' && !fundInPlan
+  const checking = fundView === 'pending'
+  const fundOffLabel =
+    fundView === 'pending' ? 'Bridge in' : fundView === 'no-wallet' ? 'Bridge in — connect a wallet to pick a chain' : fundView === 'covered' ? 'Bridge in — not needed' : 'Bridge in — left out of the job'
 
   return (
-    <section className="mkt-card mkt-compound" aria-label={`Chain ${symbol} across dapps`} data-legs={plan.legs.length} data-steps={plan.expectedSteps}>
+    <section
+      className="mkt-card mkt-compound"
+      aria-label={`Chain ${symbol} across dapps`}
+      data-legs={plan.legs.length}
+      data-steps={plan.expectedSteps}
+      data-fund-state={fundView}
+    >
       <header className="mkt-card__head">
         <div>
           <h2 className="mkt-card__title">Chain it — one signed job</h2>
@@ -132,13 +223,24 @@ export default function CompoundComposer({ symbol, pair, onAsk }: { symbol: stri
             </div>
           </div>
         )}
-        {kinds.includes('fund') && (
-          <div className="mkt-compound__opt">
+        {/* FROM lists only the chains THIS wallet can fund the job from. */}
+        {legs.length > 0 && (
+          <div className="mkt-compound__opt" data-fund-origins={legs.map((l) => l.chainId).join(',')}>
             <span className="mkt-order__k mono">FROM</span>
-            <div className="mkt-order__presets">
-              {SPOT_CHAINS.filter((c) => isStock || c.id !== (chainId ?? 0)).map((c) => (
-                <button key={c.id} type="button" className={`mkt-order__preset ${plan.legs.some((l) => l.kind === 'fund' && l.segment.includes(`from ${c.word}`)) ? 'is-on' : ''}`} onClick={() => setOriginChainId(c.id)}>
-                  {c.name}
+            <div className="mkt-order__presets mkt-compound__from" role="group" aria-label="Fund from">
+              {legs.map((l) => (
+                <button
+                  key={l.chainId}
+                  type="button"
+                  className={`mkt-order__preset ${fundLeg?.chainId === l.chainId ? 'is-on' : ''}`}
+                  aria-pressed={fundLeg?.chainId === l.chainId}
+                  data-origin={l.chainId}
+                  data-token={l.token}
+                  title={`${l.label}: ~$${l.usd} of ${l.token}`}
+                  onClick={() => setOriginChainId(l.chainId)}
+                >
+                  {l.name}
+                  {l.token !== 'USDC' ? ` · ${l.token}` : ''}
                 </button>
               ))}
             </div>
@@ -146,17 +248,50 @@ export default function CompoundComposer({ symbol, pair, onAsk }: { symbol: stri
         )}
       </div>
 
-      {plan.legs.length === 0 ? (
+      {plan.legs.length === 0 && !fundOff ? (
         <p className="mkt-card__note">Pick at least one leg that can follow the others — a Guardian stop needs a long, a stake needs ETH.</p>
       ) : (
         <ol className="mkt-compound__plan" aria-label="Steps">
+          {fundOff && (
+            <li className="mkt-compound__step mkt-compound__step--off" data-leg="fund" data-fund-state={fundView}>
+              <span className="mkt-compound__n mono" aria-hidden="true">
+                {checking ? '…' : '–'}
+              </span>
+              <div>
+                <div className="mkt-compound__step-label">{fundOffLabel}</div>
+                <ul className="mkt-compound__fundnotes" aria-live="polite">
+                  {fundNotes.map((n) => (
+                    <li key={n} className="mkt-compound__step-hint">
+                      {n}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </li>
+          )}
           {plan.legs.map((l) => (
-            <li key={l.kind} className="mkt-compound__step" data-leg={l.kind}>
+            <li
+              key={l.kind}
+              className="mkt-compound__step"
+              data-leg={l.kind}
+              data-origin={l.kind === 'fund' ? fundLeg?.chainId : undefined}
+              data-token={l.kind === 'fund' ? fundLeg?.token : undefined}
+            >
               <span className="mkt-compound__n mono">{++stepNo.n}</span>
               <div>
                 <div className="mkt-compound__step-label">{l.label}</div>
                 <div className="mkt-compound__step-seg mono">“{l.segment}”</div>
-                <div className="mkt-compound__step-hint">{l.hint}{l.wait ? ' The job waits for settlement before the next step.' : ''}</div>
+                {/* Every leg that settles names its own wait in its hint. */}
+                <div className="mkt-compound__step-hint">{l.hint}</div>
+                {l.kind === 'fund' && fundNotes.length > 0 && (
+                  <ul className="mkt-compound__fundnotes" aria-live="polite">
+                    {fundNotes.map((n) => (
+                      <li key={n} className="mkt-compound__step-hint">
+                        {n}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </li>
           ))}
@@ -167,8 +302,8 @@ export default function CompoundComposer({ symbol, pair, onAsk }: { symbol: stri
         <p className="mkt-compound__sentence" data-ask={plan.ask}>
           {plan.legs.length > 0 ? <>&ldquo;{plan.ask}&rdquo;</> : <span className="mkt-card__note">Nothing to send yet.</span>}
         </p>
-        <button type="button" className="mkt-compound__send" disabled={plan.legs.length === 0} onClick={() => onAsk(plan.ask)}>
-          {plan.legs.length > 1 ? `Build the ${plan.expectedSteps}-step job` : 'Send it'}
+        <button type="button" className="mkt-compound__send" disabled={plan.legs.length === 0 || checking} onClick={() => onAsk(plan.ask)}>
+          {checking ? 'Checking your balances…' : plan.legs.length > 1 ? `Build the ${plan.expectedSteps}-step job` : 'Send it'}
         </button>
         <p className="mkt-card__note">
           {plan.legs.length > 1
