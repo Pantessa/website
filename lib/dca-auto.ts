@@ -12,9 +12,10 @@
 //  on-chain revoke is always the user's nuclear option.
 //
 //  This module is PURE (no prisma, no CDP, no RPC): permission construction,
-//  EIP-712 payloads, the arm/disarm grammar, and guardAutoBuy — the
-//  independent calldata re-decode that must pass before the sweep sends
-//  ANYTHING. Fail-closed throughout: an unknown shape is a refusal.
+//  EIP-712 payloads, the arm/disarm grammar, the buy's independent floor, and
+//  guardAutoBuy — the independent calldata re-decode that must pass before
+//  the sweep sends ANYTHING. Fail-closed throughout: an unknown shape is a
+//  refusal.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { decodeFunctionData, erc20Abi } from 'viem'
