@@ -225,10 +225,15 @@ Open questions:
   swap's 50 bps bound while those transactions land, the swap reverts and the
   USDC stays on Pantessa's spender, recorded as failed, with no refund. The
   spot stop has the same shape. (Task filed 2026-09-16.)
-- The floor's mark reads the same v3 pools the build quotes. It catches a
-  regressed builder and a thin pool, but not a price pushed off across every
-  pool at quote time: the mark and the quote would both read it. An off-chain
-  reference price would catch that.
+- **The floor's mark moves with the pools it reads.** The mark comes from the
+  same v3 pools the build quotes, so the floor catches a regressed builder and
+  a thin pool, but not a pool pushed before the quote. Shown on a Base fork
+  (2026-09-17): a $100 DEGEN buy pushed the thin 30 bps DEGEN/USDC pool about
+  3×. The next sweep's mark read the pushed pool, and a $100 buy through the
+  100 bps pool passed the floor. The owner got 33,084 DEGEN, worth $99.85 at
+  the pushed mark but $32.16 at the mark before the push. A v3 TWAP mark or an
+  off-chain reference would catch that. The spot stop reads the same kind of
+  mark for its trigger and its floor.
 - The spender is one CDP server wallet for every permission on the platform.
   What does CDP's own policy engine allow it to sign, and is there an
   allowlist of destinations enforced at CDP, beneath our guards?
