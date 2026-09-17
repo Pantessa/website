@@ -9,12 +9,15 @@
 //  USDC→native ETH via relay — every quote through the SAME canonical
 //  LiFi diamond address on each origin).
 //
-//  Two funding legs, each its own guarded approve→bridge chain the USER
+//  Three funding legs, each its own guarded approve→bridge chain the USER
 //  signs on the origin chain:
 //    · gas  — origin USDC → native ETH on Robinhood Chain (a few dollars,
 //             enough gas for many Orbit-chain transactions)
 //    · usdg — origin USDC → USDG on Robinhood Chain (the money that buys
 //             the stock)
+//    · eth  — origin ETH → native ETH on Robinhood Chain, sized as VALUE:
+//             the move a buy of ETH gets instead of ETH → USDG → ETH
+//             (2026-09-16; see planRobinhoodEthMove)
 //
 //  Trust shape mirrors the venue layer: LiFi's inner calldata is
 //  aggregator-opaque, so everything AROUND it is pinned and fail-closed:
@@ -160,6 +163,13 @@ export const FUNDING_MARGIN_BPS = 400
 export const STABLE_LEG_MIN_OUT_BPS = 9_600
 /** Gas leg (USDC→ETH): tolerated shortfall vs our own ETH/USD read. */
 export const GAS_LEG_MIN_OUT_BPS = 9_000
+/** ETH move (ETH→ETH): a route guaranteeing less than this share of the ETH
+ *  that leaves is a bad or self-dealing fill. The same-asset twin of the
+ *  stable leg's dollar-parity floor, checked in atoms, so no price read sits
+ *  in the way. Probed 2026-09-16, min-out as a share of what leaves: Base,
+ *  Arbitrum and Optimism 98.2–99.2% at $1–$100 (layerswap, relay); Ethereum
+ *  96.8% at $1 and 98.0–99.7% from $2 (relay, across). */
+export const ETH_MOVE_MIN_OUT_BPS = STABLE_LEG_MIN_OUT_BPS
 
 // The canonical LiFi diamond per origin — the SAME address observed as both
 // transactionRequest.to and approvalAddress on live cross-chain quotes to
@@ -417,7 +427,7 @@ export function guardLifiBridgeBuild(steps: LifiBridgeStep[], exp: LifiBridgeExp
 
 // ── The builder ─────────────────────────────────────────────────────────────
 
-export type FundingLeg = 'gas' | 'usdg'
+export type FundingLeg = 'gas' | 'usdg' | 'eth'
 
 export interface LifiBridgeBuilt {
   summary: string
@@ -456,6 +466,9 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
   const destination = chainById(destId)!
   if (params.leg === 'gas' && !destRec.gasLeg) {
     throw new Error(`${destination.name} pays gas in ${destination.nativeSymbol} — a funding leg there needs no separate gas leg.`)
+  }
+  if (params.leg === 'eth' && destination.nativeSymbol !== 'ETH') {
+    throw new Error(`${destination.name}'s native token is ${destination.nativeSymbol} — an ETH move lands only where ETH is native.`)
   }
   const routers = lifiBridgeRoutersFor(originId)
   if (routers.length === 0) throw new Error(`LiFi bridging isn’t allowlisted on ${origin.name}.`)
@@ -497,9 +510,14 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
     nativeSell ? parseEther((usd / ethUsdRead!).toFixed(8)) : BigInt(Math.round(usd * 10 ** sell.decimals))
   let sellAtoms = sizeSellAtoms(params.usd)
   const gasLeg = params.leg === 'gas'
-  const destinationToken = gasLeg ? NATIVE_TOKEN : usdg.address
-  const destSymbol = gasLeg ? 'ETH' : usdg.symbol
-  const destDecimals = gasLeg ? 18 : usdg.decimals
+  // An ETH move carries the user's own ETH as ETH, so only native ETH can be
+  // its sell side (USDC → ETH would be a buy, and buys live on the swap).
+  const moveLeg = params.leg === 'eth'
+  if (moveLeg && !nativeSell) throw new Error('An ETH move sells native ETH ("using eth") — nothing else moves as ETH.')
+  const nativeOut = gasLeg || moveLeg
+  const destinationToken = nativeOut ? NATIVE_TOKEN : usdg.address
+  const destSymbol = nativeOut ? 'ETH' : usdg.symbol
+  const destDecimals = nativeOut ? 18 : usdg.decimals
 
   // Funding must actually be fundable — read the origin balance up front.
   // A native sell must also clear the keep-back: the leg's own signature
@@ -606,7 +624,19 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
   // against our own venue-quoter ETH/USD read (fail-soft — a dead probe
   // warns instead of blocking).
   let priceCheck: GuardrailCheck
-  if (!gasLeg && !nativeSell) {
+  if (moveLeg) {
+    // ETH in, ETH out: parity in atoms, no oracle between them.
+    const floor = (sellAtoms * BigInt(ETH_MOVE_MIN_OUT_BPS)) / BigInt(10_000)
+    const ok = toAmountMin >= floor
+    priceCheck = {
+      id: 'price',
+      level: 'block',
+      ok,
+      note: ok
+        ? `Guaranteed ≥ ${formatAtoms(toAmountMin.toString(), 18)} ETH for the ${formatAtoms(sellAtoms.toString(), 18)} ETH that leaves — within ${(10_000 - ETH_MOVE_MIN_OUT_BPS) / 100}% of it.`
+        : `The route guarantees only ${formatAtoms(toAmountMin.toString(), 18)} ETH for the ${formatAtoms(sellAtoms.toString(), 18)} ETH that leaves — more than ${(10_000 - ETH_MOVE_MIN_OUT_BPS) / 100}% lost on the way, refusing a bad fill.`,
+    }
+  } else if (!gasLeg && !nativeSell) {
     const floor = (sellAtoms * BigInt(STABLE_LEG_MIN_OUT_BPS)) / BigInt(10_000)
     const ok = toAmountMin >= floor
     priceCheck = {
@@ -678,7 +708,9 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
     label: 'bridge',
     title: gasLeg
       ? `Bridge $${params.usd} ${sell.symbol} → gas ETH on ${destination.name} (via ${quote.tool})`
-      : `Bridge $${params.usd} ${sell.symbol} → ${destSymbol} on ${destination.name} (via ${quote.tool})`,
+      : moveLeg
+        ? `Move $${params.usd} of ${origin.name} ETH → ETH on ${destination.name} (via ${quote.tool})`
+        : `Bridge $${params.usd} ${sell.symbol} → ${destSymbol} on ${destination.name} (via ${quote.tool})`,
     tx: {
       to: quote.transactionRequest.to,
       data: quote.transactionRequest.data,
@@ -703,12 +735,12 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
 
   // Destination baseline for the arrival wait — read BEFORE anything is
   // signed, so the wait measures the delta this leg is expected to add.
-  const baseline = gasLeg
+  const baseline = nativeOut
     ? await destClient.getBalance({ address: from })
     : await destClient.readContract({ address: usdg.address, abi: erc20Abi, functionName: 'balanceOf', args: [from] })
   const arrival: ChainArrival = {
     chainId: destId,
-    token: gasLeg ? 'native' : usdg.address,
+    token: nativeOut ? 'native' : usdg.address,
     decimals: destDecimals,
     symbol: destSymbol,
     baselineAtoms: baseline.toString(),
@@ -742,7 +774,9 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
 
   const summary = gasLeg
     ? `Bridge $${params.usd} of ${origin.name} ${sell.symbol} → ~${formatAtoms(toAmountMin.toString(), 18)} ETH on ${destination.name} for gas (LiFi-routed, tool: ${quote.tool}) — arrives in seconds, delivered to your own address.`
-    : `Bridge $${params.usd} of ${origin.name} ${sell.symbol} → ≥ ${formatAtoms(toAmountMin.toString(), destDecimals)} ${destSymbol} on ${destination.name} (LiFi-routed, tool: ${quote.tool}) — arrives in seconds, delivered to your own address.`
+    : moveLeg
+      ? `Move $${params.usd} of your ${origin.name} ETH → ≥ ${formatAtoms(toAmountMin.toString(), 18)} ETH on ${destination.name} (LiFi-routed, tool: ${quote.tool}) — the same ETH, arriving in seconds at your own address.`
+      : `Bridge $${params.usd} of ${origin.name} ${sell.symbol} → ≥ ${formatAtoms(toAmountMin.toString(), destDecimals)} ${destSymbol} on ${destination.name} (LiFi-routed, tool: ${quote.tool}) — arrives in seconds, delivered to your own address.`
 
   return {
     summary,
@@ -795,6 +829,11 @@ export interface FundingShortfall {
   /** True when the wallet can already pay gas there (always true on a
    *  stable-gas destination — the stable is the gas). */
   hasGas: boolean
+  /** Whole dollars of native ETH already on an ETH-gas destination (null
+   *  when ETH couldn't be priced or the destination's native token isn't
+   *  ETH) — what a buy of ETH names beside the move, so a re-ask after a
+   *  move sees the ETH that landed. */
+  destEthUsd?: number | null
   /** Origins the plan may spend — stables first (dollar-parity legs), then
    *  movable ETH; richest first within each group. */
   origins: FundingOrigin[]
@@ -884,6 +923,7 @@ export async function readFundingShortfall(user: string, destChainId: number = R
     // A stable-gas destination (Arc) never needs a gas leg: the landed
     // stable IS the gas. Its native read is the same money as usdgAtoms.
     hasGas: destRec.gasLeg ? nativeWei >= RH_GAS_FLOOR_WEI : true,
+    destEthUsd: destRec.gasLeg && ethUsd ? Math.floor(Number(formatEther(nativeWei)) * ethUsd) : null,
     origins: allScanned.filter((o) => o.usd > 0 && movable(o)),
     gaslessOrigins: allScanned.filter((o) => o.usd > 0 && !movable(o)),
     allScanned,
@@ -902,6 +942,31 @@ export interface RobinhoodFundingChip {
  *  A non-USDC token rides the "using usdc.e" clause (before "including gas"). */
 const fundSegment = (usd: number, word: string, gas: boolean, token = 'USDC', dest?: LifiDestination) => destFundSegment(usd, word, gas, token, dest)
 
+/** The gas leg on its own: lib/jobs.ts parseRobinhoodGasFunding's grammar.
+ *  Robinhood Chain only — Arc has no separate gas leg. */
+const gasSegment = (word: string, token = 'USDC') =>
+  `Fund robinhood chain gas from ${word.toLowerCase()}${token === 'USDC' ? '' : ` using ${token.toLowerCase()}`}`
+
+/** An ETH move: lib/jobs.ts parseRobinhoodEthMove's grammar. */
+const moveSegment = (usd: number, word: string) => `Move $${usd} of ETH from ${word.toLowerCase()} to robinhood chain`
+
+/**
+ * Is this origin row the token the follow-up BUYS? A holding of it is what
+ * the buy ends with, so it never funds the buy's VALUE leg: "Buy $10 of ETH
+ * on robinhood chain" from an ETH-only wallet planned "Fund robinhood chain
+ * with $12.5 from base using eth including gas, then buy $10 of ETH", which
+ * is ETH → USDG → ETH, two conversions and two fees to land the asset it
+ * started from (2026-09-16). The rule is per leg: the gas leg is spent on
+ * gas, never bought back, so ETH may still pay it.
+ *
+ * Exact symbols, like lib/funding-plan's isBuyToken (the generic planner's
+ * side of the same rule): the scan's ETH is native and there is no wrap
+ * builder, so converting through the stable is the only way ETH becomes
+ * WETH, and a WETH buy may spend it.
+ */
+export const buysOrigin = (buyToken: string | undefined, o: { token: string }): boolean =>
+  !!buyToken && o.token.trim().toUpperCase() === buyToken.trim().toUpperCase()
+
 /**
  * Turn a multi-origin scan into chips. `followup` is appended to every
  * resume (", then buy $5 of NVDA"); empty = bridge-only (the MCP-path
@@ -910,6 +975,10 @@ const fundSegment = (usd: number, word: string, gas: boolean, token = 'USDC', de
  * origin gets an "instead" chip, and when NO single origin covers but
  * several combined do, one chip carries a fund segment per origin (gas on
  * the first leg only). Returns null when the whole wallet can't cover it.
+ *
+ * `buyToken` names what the follow-up buys: a row of that token never funds
+ * the value leg (buysOrigin). It can still pay the gas leg, as its own
+ * segment ahead of a value leg from another origin.
  */
 export function planRobinhoodFundingChips(params: {
   origins: FundingOrigin[]
@@ -919,8 +988,10 @@ export function planRobinhoodFundingChips(params: {
   /** The chain the legs land on — Robinhood Chain when omitted (every
    *  pre-existing caller); Arc's chips read "Fund arc with …". */
   dest?: LifiDestination
+  buyToken?: string
 }): RobinhoodFundingChip[] | null {
-  const { origins, needUsd, gasIncluded, followup, dest } = params
+  const { needUsd, gasIncluded, followup, dest, buyToken } = params
+  const origins = params.origins.filter((o) => !buysOrigin(buyToken, o))
   const withFollowup = (segs: string[]) => (followup ? `${segs.join(', then ')}, then ${followup}` : segs.join(', then '))
   const chips: RobinhoodFundingChip[] = []
   // The FIRST covering origin leads — origins arrive stables-first, so a
@@ -952,6 +1023,25 @@ export function planRobinhoodFundingChips(params: {
     const alt = origins.find((o) => o !== best && originCapUsd(o, gasIncluded) >= needUsd)
     if (alt) chips.push({ label: `Use ${originLabel(alt)} instead (~$${needUsd})`, resume: withFollowup([fundSegment(needUsd, alt.word, gasIncluded, alt.token, dest)]) })
     return chips.slice(0, 4)
+  }
+  // The bought token pays the gas leg alone and another origin pays the
+  // value: "$11 of Arbitrum USDC + ETH on Base" buying $10 of ETH is $2 short
+  // of a USDC plan that carries its own gas, and exactly covered when the
+  // ETH buys the gas. The gas payer's row must cover the leg by itself (a
+  // single leg, so no two-leg headroom); L2 rows sign cheaper than mainnet.
+  if (gasIncluded && (dest?.gasLeg ?? true)) {
+    const valueUsd = valueLegUsd(needUsd, true)
+    const payer = params.origins
+      .filter((o) => buysOrigin(buyToken, o) && o.usd >= GAS_LEG_USD)
+      .sort((a, b) => Number(a.chainId === 1) - Number(b.chainId === 1) || b.usd - a.usd)[0]
+    const value = payer ? origins.find((o) => originCapUsd(o, false) >= valueUsd) : undefined
+    if (payer && value) {
+      chips.push({
+        label: `Just enough (~$${valueUsd} from ${originLabel(value)}, gas from ${payer.word} ${payer.token})`,
+        resume: withFollowup([gasSegment(payer.word, payer.token), fundSegment(valueUsd, value.word, false, value.token, dest)]),
+      })
+      return chips
+    }
   }
   // No single origin covers it — combine legs richest-first. The first leg
   // carries the gas segment and must be worth more than the gas leg alone;
@@ -1003,6 +1093,103 @@ export function planRobinhoodFundingChips(params: {
  *  grammar: "swap 0.001 ETH from base to arbitrum"). */
 export const GAS_TOPUP_ETH = '0.001'
 
+/** The smallest ETH move the planner offers: the size the gas leg already
+ *  proves fills. LiFi quoted $1 moves from every origin on 2026-09-16, but a
+ *  route minimum that drifted once (GAS_LEG_LADDER_USD) can drift again. */
+export const ETH_MOVE_MIN_USD = GAS_LEG_USD
+
+export interface RobinhoodEthMove {
+  /** ONE action chip plus the decline chip. */
+  chips: RobinhoodFundingChip[]
+  legs: { origin: FundingOrigin; usd: number }[]
+  /** The dollars of ETH the move carries (at least ETH_MOVE_MIN_USD). */
+  moveUsd: number
+}
+
+/**
+ * A buy of ETH on Robinhood Chain from a wallet whose only money is ETH on
+ * the funding origins. With the bought token out of the value leg
+ * (buysOrigin) nothing is left to fund the buy, and every plan the old
+ * planner drew sold that ETH for USDG to buy ETH back. The honest offer is
+ * the ETH itself, carried over as ETH: one LiFi leg per origin, native ETH
+ * in and native ETH out through the same pinned diamond as every funding
+ * leg (probed 2026-09-16 from Base, Arbitrum, Optimism and Ethereum: 1–3s,
+ * 96.8–99.7% of the dollars delivered even at $1). It lands the same native
+ * ETH the buy would (a v3 ETH buy unwraps, website#801), and that ETH is
+ * Robinhood Chain's gas too, so no gas leg rides along. The canonical bridge
+ * reaches Robinhood Chain from Ethereum only and takes minutes, so it isn't
+ * the move's lane. lib/funding-plan planBuyTokenMove is the generic
+ * planner's twin (NEAR Intents there; 1Click can't deliver to 4663).
+ *
+ * Sized to the dollars of the buy the wallet can't already cover there
+ * (`shortUsd`), with no margin: nothing runs after the move, so no follow-up
+ * needs a fee buffer. One covering origin → one segment (L2 rows first, their
+ * signatures cost cents); no single covering origin → one segment per origin,
+ * richest first, which compiles as a job.
+ *
+ * Null unless the buy is ETH itself (a WETH buy may spend the ETH, see
+ * buysOrigin, and a move lands native ETH) and no other row could fund a value leg: a USDC row
+ * at or above the parity floor buys the ETH instead, so a move beside it
+ * would be an answer to a question nobody asked. Robinhood Chain only — Arc's
+ * native token is USDC.
+ */
+export function planRobinhoodEthMove(params: {
+  scan: Pick<FundingShortfall, 'origins' | 'gaslessOrigins'>
+  buyToken: string | undefined
+  shortUsd: number
+}): RobinhoodEthMove | null {
+  const { scan, buyToken, shortUsd } = params
+  if (buyToken?.trim().toUpperCase() !== 'ETH' || !(shortUsd > 0)) return null
+  const held = [...scan.origins, ...scan.gaslessOrigins]
+  if (held.some((o) => !buysOrigin(buyToken, o) && o.usd >= MIN_VALUE_LEG_USD)) return null
+  const moveUsd = Math.max(ETH_MOVE_MIN_USD, Number(shortUsd.toFixed(2)))
+  const movable = scan.origins
+    .filter((o) => o.token === 'ETH' && o.spendable !== false && o.usd >= ETH_MOVE_MIN_USD)
+    .sort((a, b) => Number(a.chainId === 1) - Number(b.chainId === 1) || b.usd - a.usd)
+  const legs: RobinhoodEthMove['legs'] = []
+  const single = movable.find((o) => o.usd >= moveUsd)
+  if (single) {
+    legs.push({ origin: single, usd: moveUsd })
+  } else {
+    // Richest first, every leg at least the move minimum (the last one may
+    // carry a little more than the remainder — it lands in the user's own
+    // wallet either way).
+    let covered = 0
+    for (const o of [...movable].sort((a, b) => b.usd - a.usd)) {
+      const usd = Math.min(o.usd, Math.max(Number((moveUsd - covered).toFixed(2)), ETH_MOVE_MIN_USD))
+      legs.push({ origin: o, usd })
+      covered = Number((covered + usd).toFixed(2))
+      if (covered >= moveUsd) break
+    }
+    if (covered < moveUsd) return null
+  }
+  return {
+    chips: [
+      {
+        label: single ? `Move ~$${moveUsd} of my ETH from ${single.word} to Robinhood Chain` : `Move ~$${moveUsd} of my ETH to Robinhood Chain (${legs.length} legs)`,
+        resume: legs.map((l) => moveSegment(l.usd, l.origin.word)).join(', then '),
+      },
+      { label: 'Not now', resume: 'Never mind — leave my funds where they are.' },
+    ],
+    legs,
+    moveUsd,
+  }
+}
+
+/** One scanned row as the copy names it, with what the row can't do said out
+ *  loud. Money the user owns is never invisible, least of all the token the
+ *  buy is for. */
+const heldRowWords = (o: FundingOrigin, gasless: boolean, buyToken: string | undefined) =>
+  `~$${o.usd} of ${o.token} on ${o.word}${
+    gasless
+      ? o.token === 'ETH'
+        ? ' (under what a move from there costs)'
+        : ' (no ETH there to sign with)'
+      : buysOrigin(buyToken, o)
+        ? ` (not counted: ${buyToken!.trim().toUpperCase()} is what this buy gets you)`
+        : ''
+  }`
+
 export type RobinhoodFundingAdvice =
   /** Signable USDC covers the plan — offer the chips. */
   | { kind: 'chips'; chips: RobinhoodFundingChip[] }
@@ -1010,6 +1197,10 @@ export type RobinhoodFundingAdvice =
    *  donor-funded topup job when another origin can send gas; null = the
    *  user must top up ETH themselves and `copy` says exactly where/how much. */
   | { kind: 'gas-stranded'; stranded: FundingOrigin; donor: FundingOrigin | null; chips: RobinhoodFundingChip[] | null; copy: string }
+  /** A buy of ETH whose wallet holds nothing but ETH: the ETH moves over as
+   *  ETH (planRobinhoodEthMove). `copy` names every row and says the move
+   *  isn't a buy. */
+  | ({ kind: 'move'; copy: string } & RobinhoodEthMove)
   /** Nothing covers it — `copy` is the honest per-chain accounting. */
   | { kind: 'none'; copy: string }
 
@@ -1021,16 +1212,24 @@ export function planRobinhoodFundingAdvice(params: {
   followup: string
   /** Destination — Robinhood Chain when omitted. */
   dest?: LifiDestination
+  /** What the follow-up buys (buysOrigin): never spent on the value leg. */
+  buyToken?: string
+  /** Dollars of the buy not already covered at the destination — sizes the
+   *  ETH move. No move without it. */
+  buyShortUsd?: number
 }): RobinhoodFundingAdvice {
-  const { scan, needUsd, gasIncluded, followup } = params
+  const { scan, needUsd, gasIncluded, followup, buyToken } = params
   const dest = params.dest ?? LIFI_DESTINATIONS[ROBINHOOD_CHAIN_ID]
-  const chips = planRobinhoodFundingChips({ origins: scan.origins, needUsd, gasIncluded, followup, dest })
+  const chips = planRobinhoodFundingChips({ origins: scan.origins, needUsd, gasIncluded, followup, dest, buyToken })
   if (chips) return { kind: 'chips', chips }
 
   // Gas-stranded rescue: the richest gasless STABLE origin covering the
   // need. ETH rows never land here — sub-keep-back ETH IS the (missing)
-  // gas, so "send gas to unstick it" would be nonsense advice.
-  const stranded = scan.gaslessOrigins.find((o) => o.token !== 'ETH' && o.usd >= needUsd) ?? null
+  // gas, so "send gas to unstick it" would be nonsense advice. Nor does the
+  // token the buy is for: unsticking it to sell it and buy it back is the
+  // round trip. The donor below may be any chain, ETH-only ones included:
+  // the topup is gas, and ETH still pays gas.
+  const stranded = scan.gaslessOrigins.find((o) => o.token !== 'ETH' && !buysOrigin(buyToken, o) && o.usd >= needUsd) ?? null
   if (stranded) {
     // A donor origin can sign there AND part with the topup: its own signing
     // floor, the leg itself, and 50% headroom so the donation never leaves
@@ -1071,21 +1270,31 @@ export function planRobinhoodFundingAdvice(params: {
     }
   }
 
-  // Nothing covers it — say exactly what was seen, per chain, including
-  // money that exists but can't sign and chains that couldn't be read.
-  const parts: string[] = []
   const held = [...scan.origins, ...scan.gaslessOrigins].sort((a, b) => b.usd - a.usd)
-  if (held.length > 0)
-    parts.push(
-      held
-        .map(
-          (o) =>
-            `~$${o.usd} of ${o.token} on ${o.word}${
-              scan.gaslessOrigins.includes(o) ? (o.token === 'ETH' ? ' (under what a move from there costs)' : ' (no ETH there to sign with)') : ''
-            }`,
-        )
-        .join(', '),
-    )
+  const move = dest.key === 'robinhood' && params.buyShortUsd !== undefined ? planRobinhoodEthMove({ scan, buyToken, shortUsd: params.buyShortUsd }) : null
+  if (move) {
+    const eth = held.filter((o) => buysOrigin(buyToken, o))
+    const others = held.filter((o) => !buysOrigin(buyToken, o))
+    const moves = move.legs.length === 1 ? 'one move brings' : `${move.legs.length} moves bring`
+    return {
+      kind: 'move',
+      ...move,
+      copy:
+        `**You already hold ETH**: ${eth.map((o) => heldRowWords(o, scan.gaslessOrigins.includes(o), undefined)).join(', ')}` +
+        (others.length > 0
+          ? `, plus ${others.map((o) => (scan.gaslessOrigins.includes(o) ? heldRowWords(o, true, undefined) : `${heldRowWords(o, false, undefined)} (too little to bridge on its own)`)).join(', ')}`
+          : '') +
+        `. ETH is what this buy gets you, so I won't sell it for USDG just to buy it back: that's two conversions and two fees to end with the ETH you started with. ` +
+        `If you want ~$${move.moveUsd} of it on Robinhood Chain, ${moves} it over (LiFi-routed, a few seconds, to your own address), and ETH is Robinhood Chain's gas, so nothing else has to land. ` +
+        `That moves ETH you already own; it doesn't buy more.`,
+    }
+  }
+
+  // Nothing covers it — say exactly what was seen, per chain, including
+  // money that exists but can't sign, the token the buy is for (named, never
+  // counted), and chains that couldn't be read.
+  const parts: string[] = []
+  if (held.length > 0) parts.push(held.map((o) => heldRowWords(o, scan.gaslessOrigins.includes(o), buyToken)).join(', '))
   // Derived, never hardcoded: this sentence names every chain we actually
   // looked at, so widening FUNDING_ORIGIN_CHAINS can't leave it claiming we
   // checked three places when we checked four.
@@ -1131,18 +1340,27 @@ export function planDownsizedRobinhoodBuy(params: {
   acquiring: boolean
 }): DownsizedRobinhoodBuy | null {
   const { scan, buyUsd, holdingUsd, includeGas, buySym, acquiring } = params
+  // A smaller buy of ETH is still a buy of ETH: the ETH rows never fund it
+  // (buysOrigin), so they never size it either.
+  const buyToken = acquiring ? undefined : buySym
+  const origins = scan.origins.filter((o) => !buysOrigin(buyToken, o))
   // Capacity: the richest single origin, or combined non-dust origins when
   // no single one leads (mirrors planRobinhoodFundingChips' two shapes).
   // Origins count at their PROMISABLE capacity (originCapUsd) — sizing the
   // max buy off an ETH row's raw movable balance offered a plan whose
   // second leg couldn't clear leg 1's own fee (live 2026-07-28).
-  const usable = scan.origins.filter((o) => o.usd >= 2)
+  const usable = origins.filter((o) => o.usd >= 2)
   const combined = usable.length >= 2 ? usable.reduce((a, o) => a + originCapUsd(o, includeGas && o === usable[0]), 0) : 0
-  const capUsd = Math.max(...scan.origins.map((o) => originCapUsd(o, includeGas)), combined, 0)
-  if (capUsd <= 0) return null
+  const capUsd = Math.max(...origins.map((o) => originCapUsd(o, includeGas)), combined, 0)
+  // The bought token can still pay the gas leg (the chip planner's
+  // gas-payer shape), and then one origin's whole row is value.
+  const gasPaidByBuyToken = includeGas && scan.origins.some((o) => buysOrigin(buyToken, o) && o.usd >= GAS_LEG_USD)
+  const valueOnlyCapUsd = gasPaidByBuyToken ? Math.max(...origins.map((o) => originCapUsd(o, false)), 0) : 0
+  if (capUsd <= 0 && valueOnlyCapUsd <= 0) return null
   const gasLeg = includeGas ? GAS_LEG_USD : 0
   // Invert fundingNeedUsd, then floor to a clean quarter-dollar label.
-  const maxRaw = holdingUsd + (capUsd - gasLeg) / (1 + FUNDING_MARGIN_BPS / 10_000)
+  const margin = 1 + FUNDING_MARGIN_BPS / 10_000
+  const maxRaw = holdingUsd + Math.max((capUsd - gasLeg) / margin, valueOnlyCapUsd / margin)
   let max = Math.floor(maxRaw * 4) / 4
   // Only a genuine downsize, and only a meaningful one: at least a tenth of
   // what was asked, and never under the size at which fundingNeedUsd starts
@@ -1161,6 +1379,7 @@ export function planDownsizedRobinhoodBuy(params: {
       gasIncluded: includeGas,
       followup: acquiring ? '' : `buy $${max} of ${buySym}`,
       dest: params.dest,
+      buyToken,
     })
     if (!chips) continue
     // Lead with the downsize; keep the planner label's "(~$N from X)" tail.

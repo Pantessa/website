@@ -39,7 +39,7 @@ import { hlPerpUniverseCached } from '@/lib/hl-universe'
 import { parseLidoStake } from '@/lib/lido-stake'
 import { parseSpotGuardArm } from '@/lib/spot-guard'
 import { primaryStable, chainById } from '@/lib/chains'
-import { fundingAltUsdcFor, fundingOriginWords, GAS_LEG_USD, MIN_VALUE_LEG_USD } from '@/lib/lifi-bridge'
+import { ETH_MOVE_MIN_USD, fundingAltUsdcFor, fundingOriginWords, GAS_LEG_USD, MIN_VALUE_LEG_USD } from '@/lib/lifi-bridge'
 import { parseNftAsk } from '@/lib/nft-layer'
 import { parseMultiSendSegments, parseTransferSegment } from '@/lib/transfer-exec'
 import { pairStockToken, stockChipLabel } from '@/lib/stock-pairing'
@@ -165,7 +165,21 @@ export function robinhoodFundingFromCrossChain(segment: string): { ask: string }
   const floor = MIN_VALUE_LEG_USD
   if (token === 'ETH') {
     // The plan is dollar-sized (LiFi legs are quoted in USD) — ask for the
-    // dollar figure instead of pricing ETH here.
+    // dollar figure instead of pricing ETH here. On Robinhood Chain, ETH
+    // asked to land as ETH moves as ETH (parseRobinhoodEthMove, one native
+    // leg); only an ask that names another landing token takes the USDG legs.
+    if (dest.gasLeg && destToken === 'ETH') {
+      return {
+        reply: `The canonical Robinhood Chain bridge only runs from Ethereum — from ${origin.word}, ETH moves as ETH by one LiFi leg sized in dollars (a few seconds, to your own address, and ETH is Robinhood Chain's gas too). Pick how much of your ${origin.word} ETH to move.`,
+        clarify: {
+          question: `How much ETH to move from ${origin.word}?`,
+          options: [
+            ...[10, 20, 50].map((usd) => ({ label: `$${usd} of ETH from ${origin.word}`, resume: `Move $${usd} of ETH from ${originWord} to robinhood chain` })),
+            { label: 'Not now', resume: 'Never mind — leave my funds where they are.' },
+          ],
+        },
+      }
+    }
     return {
       reply: dest.gasLeg
         ? `The canonical Robinhood Chain bridge only runs from Ethereum — from ${origin.word} the money moves by a LiFi leg sized in dollars, landing as USDG (Robinhood Chain's dollar) with a little ETH for gas when the wallet there needs it. Pick how much of your ${origin.word} ETH to move.`
@@ -217,6 +231,55 @@ export function parseRobinhoodFunding(segment: string): RobinhoodFundingAsk | nu
     token: /\busing\s+usdc\.?e\b/i.test(segment) ? 'USDC.e' : /\busing\s+eth\b/i.test(segment) ? 'ETH' : 'USDC',
     destChainId: dest.chainId,
     destName: dest.name,
+  }
+}
+
+// "Move $10 of ETH from base to robinhood chain": the chip a buy of ETH gets
+// when the wallet's only money is ETH (lib/lifi-bridge planRobinhoodEthMove).
+// The ETH crosses as ETH in ONE LiFi leg instead of ETH → USDG → ETH. Dollar-
+// sized like every funding leg, so it never collides with the canonical
+// bridge's ETH-sized "bridge 0.01 ETH from ethereum to robinhood chain".
+const MOVE_ETH_RE = new RegExp(
+  String.raw`\b(?:move|bridge)\s+\$(\d+(?:\.\d+)?)(?:\s+worth)?\s+of\s+(?:my\s+)?eth\s+from\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'optimism'])})\s+(?:to|onto)\s+robin\s?hoo?d(?:\s?chain)?\b`,
+  'i',
+)
+
+export interface RobinhoodEthMoveAsk {
+  moveUsd: number
+  originChainId: number
+  originWord: string
+}
+
+export function parseRobinhoodEthMove(segment: string): RobinhoodEthMoveAsk | null {
+  const m = normalizeChainWords(segment).match(MOVE_ETH_RE)
+  if (!m) return null
+  const moveUsd = Number(m[1])
+  if (!Number.isFinite(moveUsd) || moveUsd <= 0) return null
+  const originWord = m[2].toLowerCase().replace(/\s+/g, ' ')
+  const origin = FUND_ORIGINS[canonicalChainWord(originWord) ?? originWord]
+  return origin ? { moveUsd, originChainId: origin.id, originWord: origin.word } : null
+}
+
+// "Fund robinhood chain gas from base using eth": the gas leg on its own.
+// The planner emits it when the token a buy is for pays the gas and another
+// origin pays the value ("…, then Fund robinhood chain with $10.5 from
+// arbitrum, then buy $10 of ETH"): gas is spent, never bought back. Robinhood
+// Chain only — Arc's gas is the USDC that lands.
+const FUND_GAS_RE = new RegExp(
+  String.raw`\bfund\s+robin\s?hoo?d(?:\s?chain)?\s+gas\s+from\s+(${chainAlt(['base', 'ethereum', 'arbitrum', 'optimism'])})\b`,
+  'i',
+)
+
+export function parseRobinhoodGasFunding(segment: string): { originChainId: number; originWord: string; token: string } | null {
+  const m = normalizeChainWords(segment).match(FUND_GAS_RE)
+  if (!m) return null
+  const originWord = m[1].toLowerCase().replace(/\s+/g, ' ')
+  const origin = FUND_ORIGINS[canonicalChainWord(originWord) ?? originWord]
+  if (!origin) return null
+  return {
+    originChainId: origin.id,
+    originWord: origin.word,
+    token: /\busing\s+usdc\.?e\b/i.test(segment) ? 'USDC.e' : /\busing\s+eth\b/i.test(segment) ? 'ETH' : 'USDC',
   }
 }
 
@@ -437,6 +500,39 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
     id: 'robinhood-funding',
     label: 'Robinhood Chain funding plans',
     parse: (seg) => {
+      // The ETH move: one value leg of native ETH, landing as ETH.
+      const move = parseRobinhoodEthMove(seg)
+      if (move) {
+        if (move.moveUsd < ETH_MOVE_MIN_USD) {
+          return { problem: `the smallest ETH move onto Robinhood Chain is $${ETH_MOVE_MIN_USD} (the size LiFi reliably fills), and $${move.moveUsd} is under it.` }
+        }
+        return {
+          steps: [
+            { kind: 'sign', builder: 'native-lifi-fund', title: `Move ~$${move.moveUsd} of ${move.originWord} ETH → ETH on Robinhood Chain`, params: { leg: 'eth', usd: move.moveUsd, origin: move.originChainId, token: 'ETH' } },
+            { kind: 'wait', builder: 'wait', title: 'The ETH arrives on Robinhood Chain', params: {}, waitPredicate: { kind: 'chain-arrival', fromSteps: [0] } },
+          ],
+          title: `Move $${move.moveUsd} of ETH from ${move.originWord} to Robinhood Chain`,
+          fundingSeen: true,
+          fundingDest: 4663,
+        }
+      }
+      // The gas leg on its own (the bought token paying gas beside another
+      // origin's value leg).
+      const gasOnly = parseRobinhoodGasFunding(seg)
+      if (gasOnly) {
+        if (gasOnly.token !== 'USDC' && gasOnly.token !== 'ETH' && fundingAltUsdcFor(gasOnly.originChainId)?.symbol !== gasOnly.token) {
+          return { problem: `${gasOnly.originWord} has no ${gasOnly.token} in the chain registry — only Arbitrum's bridged USDC.e is supported.` }
+        }
+        return {
+          steps: [
+            { kind: 'sign', builder: 'native-lifi-fund', title: `Bridge ~$${GAS_LEG_USD} of gas ETH → Robinhood Chain (from ${gasOnly.originWord})`, params: { leg: 'gas', usd: GAS_LEG_USD, origin: gasOnly.originChainId, token: gasOnly.token } },
+            { kind: 'wait', builder: 'wait', title: 'Gas arrives on Robinhood Chain', params: {}, waitPredicate: { kind: 'chain-arrival', fromSteps: [0] } },
+          ],
+          title: `Fund Robinhood Chain gas from ${gasOnly.originWord}`,
+          fundingSeen: true,
+          fundingDest: 4663,
+        }
+      }
       let fund = parseRobinhoodFunding(seg)
       if (!fund) {
         // "swap 20 USDC from base to USDG on robinhood" IS this segment —
@@ -840,7 +936,8 @@ export function compileJobAsk(rawMessage: string): CompiledJob | { problem: stri
   // wait are already a job), and a multi-clause send ("send all my USDC on
   // arbitrum and 5 USDC on base to 0x…" — one sentence, two chains, two
   // signatures = a job even without a "then").
-  const loneMultiStep = (seg: string) => !!parseRobinhoodFunding(seg) || robinhoodFundingFromCrossChain(seg) !== null || parseMultiSendSegments(seg) !== null
+  const loneMultiStep = (seg: string) =>
+    !!parseRobinhoodFunding(seg) || !!parseRobinhoodEthMove(seg) || !!parseRobinhoodGasFunding(seg) || robinhoodFundingFromCrossChain(seg) !== null || parseMultiSendSegments(seg) !== null
   if (segments.length < 2 && !(segments.length === 1 && loneMultiStep(segments[0]))) return null
 
   const steps: CompiledStep[] = []

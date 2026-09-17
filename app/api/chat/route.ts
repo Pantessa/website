@@ -153,7 +153,7 @@ import { FEATURED_STOCKS, parseStockListAsk, robinhoodStocks } from '@/lib/stock
 import { tokenHome } from '@/lib/token-home'
 import { NEVER_MIND_RESUME_RE } from '@/lib/funding-path'
 import { cleanServerName } from '@/lib/utils'
-import { fundingSourceSymbols, GAS_TOPUP_ETH, lifiDestination, minLegNote, offChainStableSource, valueLegUsd, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
+import { buysOrigin, fundingSourceSymbols, GAS_TOPUP_ETH, lifiDestination, minLegNote, offChainStableSource, valueLegUsd, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
 import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-funding'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { COW_VAULT_RELAYER } from '@/lib/cow-guardrails'
@@ -4609,14 +4609,34 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
         // wallet holding $12 movable + $0.48 held, and the flagship
         // "Buy $12 of AAPL" ask walled three times (live 2026-07-27).
         const needUsd = robinhoodBuyNeedUsd(buyUsd, creditUsd, includeGas)
+        // What the buy is FOR never pays for it (lib/lifi-bridge buysOrigin):
+        // "Buy $10 of ETH on robinhood chain" from an ETH-only wallet planned
+        // ETH → USDG → ETH, two conversions to land the asset it started from
+        // (2026-09-16). An acquisition buys the stable itself, which no origin
+        // holds, so it carries no buy token.
+        const buyToken = acquiring ? undefined : buySym
         const advice = planRobinhoodFundingAdvice({
           scan: shortfall,
           needUsd,
           gasIncluded: includeGas,
           followup: acquiring ? '' : `buy $${buyUsd} of ${buySym}`,
           dest: lifiDest,
+          buyToken,
+          buyShortUsd: Math.max(0, Number((buyUsd - creditUsd).toFixed(2))),
         })
-        const holdingsSummary = shortfall.origins.map((o) => `~$${o.usd} of ${o.token} on ${o.word}`).join(', ')
+        const holdingsSummary = shortfall.origins.filter((o) => !buysOrigin(buyToken, o)).map((o) => `~$${o.usd} of ${o.token} on ${o.word}`).join(', ')
+        // The bought token's rows, named beside every plan that won't sell
+        // them (a lead chip may still spend a little of it on the gas leg).
+        const heldBuy = shortfall.origins.filter((o) => buysOrigin(buyToken, o))
+        const gasFromHeldBuy = advice.kind === 'chips' && /^fund robinhood chain gas from /i.test(advice.chips[0]?.resume ?? '')
+        const heldBuyNote =
+          heldBuy.length > 0
+            ? ` (your ${heldBuy.map((o) => `~$${o.usd} of ${o.token} on ${o.word}`).join(', ')} ${gasFromHeldBuy ? 'pays only the gas' : "isn't sold for it"}: ${buySym} is what this buy gets you)`
+            : ''
+        // A buy of ETH is unlocked by money that isn't ETH: topping up ETH
+        // would only earn a move of it, never the buy.
+        const buysEth = buysOrigin(buyToken, { token: 'ETH' })
+        const topUpWords = buysEth ? 'USDC' : 'USDC or ETH'
         // In-flight settlement awareness (live 2026-07-21): the user signed a
         // NEAR Intents deposit toward a funding origin ~60s before this ask,
         // and the scan — a plain balance read — reported the mid-flight money
@@ -4671,7 +4691,7 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
               : acquiring
               ? `🌉 **We can make this happen.** You asked for $${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there — but you're holding **${holdingsSummary}**, so I'll convert enough to close the gap${includeGas ? ' (a little ETH for gas included)' : ''}, ` +
                 `landing on ${chain.name} in seconds. One job, you sign each step.${floorSuffix}${inflightSuffix}`
-              : `🌉 **We can make this happen.** You're holding **${holdingsSummary}** — ` +
+              : `🌉 **We can make this happen.** You're holding **${holdingsSummary}**${heldBuyNote} — ` +
                 `this buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there, so I'll convert some of it${includeGas ? ', drop in a little ETH for gas,' : lifiDest.gasLeg ? '' : ` (${rhStable.symbol} pays for gas on ${chain.name}, so nothing extra moves)`} ` +
                 `and buy the ${buySym} — all in one job you sign step by step, funds arriving on ${chain.name} in seconds.${floorSuffix}${inflightSuffix}`,
             clarify: { question: 'Fund it from another chain?', options: options.slice(0, 4) },
@@ -4687,6 +4707,22 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
           return NextResponse.json({
             reply: `⛽ **Your money's already in place** — ${acquiring ? `you asked for $${buyUsd} of ${rhStable.symbol} on ${chain.name}` : `this buy needs ~$${buyUsd} of ${rhStable.symbol} on ${chain.name}`}, and ${advice.copy}${inflightSuffix}`,
             ...(advice.chips ? { clarify: { question: `Fix the ${advice.stranded.word} gas and run it?`, options: advice.chips.slice(0, 4) } } : {}),
+            buildPath: 'native-lifi-fund-offer',
+            workingContext: pendingFunding,
+          })
+        }
+        if (advice.kind === 'move') {
+          trace({
+            type: 'status',
+            label: `funding layer claimed the turn: the buy is ${buySym} and the wallet's only money is ${buySym} (${advice.legs.map((l) => `$${l.origin.usd} on ${l.origin.word}`).join(', ')}) — no round trip through ${rhStable.symbol}; offering ${advice.legs.length} LiFi move(s) of the ETH itself (~$${advice.moveUsd} to ${chain.name})`,
+          })
+          return NextResponse.json({
+            reply:
+              `🌉 ${advice.copy}` +
+              ((shortfall.destEthUsd ?? 0) >= 1 ? ` You also hold ~$${shortfall.destEthUsd} of ETH on ${chain.name} already.` : '') +
+              (creditUsd >= 1 ? ` The ~$${creditUsd.toFixed(2)} of ${rhStable.symbol} you already hold on ${chain.name} still buys ${buySym} on its own; ask for that once the ETH lands.` : '') +
+              ` To buy more ${buySym}, send USDC to this wallet on ${fundingOriginWords()} and ask again.${inflightSuffix}`,
+            clarify: { question: `Move your ETH to ${chain.name} instead?`, options: advice.chips },
             buildPath: 'native-lifi-fund-offer',
             workingContext: pendingFunding,
           })
@@ -4709,7 +4745,7 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
               reply:
                 `🌉 **We can make this happen — just a notch smaller.** ${acquiring ? 'You asked for' : 'The buy needs'} ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and you're at ~$${holdingUsd.toFixed(2)} there; across the chains I can bridge from I see: ${advice.copy}. ` +
                 `That doesn't quite cover $${buyUsd} — but it does cover **$${downsized.buyUsd}**${includeGas ? ' (gas leg included)' : ''}, built and guard-checked when it's your turn to sign. ` +
-                `Or top up USDC or ETH on ${fundingOriginWords()} (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll run the full $${buyUsd}.${inflightSuffix}`,
+                `Or top up ${topUpWords} on ${fundingOriginWords()} (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll run the full $${buyUsd}.${inflightSuffix}`,
               clarify: {
                 question: `Run the size your wallet covers?`,
                 options: [...downsized.chips, { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }],
@@ -4742,8 +4778,10 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
             `🌉 Here's where this stands: ${acquiring ? 'you asked for' : 'the buy needs'} ~$${buyUsd} of ${rhStable.symbol} on ${chain.name} and the wallet holds ~$${holdingUsd.toFixed(2)} there. ` +
             `Across the chains I can bridge from I see: ${advice.copy} — not enough yet for the ~$${needUsd} plan${includeGas ? ' (gas leg included)' : ''}.${floorSuffix} ` +
             (rhFundChip
-              ? `You can add it with a card or bank below — it lands as ETH on ${ONRAMP_NETWORK_LABEL[rhFundChip.fund?.network ?? 'ethereum']}, which covers the gas, and I'll swap and bridge it the rest of the way. The preset is a little over the plan so the card fee, the gas and the swap don't leave you short.${inflightSuffix}`
-              : `Here's what unlocks it: top up USDC or ETH on ${fundingOriginWords()} (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll pick it up from that point — nothing was built or spent in the meantime.${inflightSuffix}`),
+              ? buysEth
+                ? `You can add it with a card or bank below — it lands as ETH on ${ONRAMP_NETWORK_LABEL[rhFundChip.fund?.network ?? 'ethereum']}, the ETH this buy is for, and I'll offer to move it the rest of the way to ${chain.name} (no swap needed). The preset is a little over the plan so the card fee and the move don't leave you short.${inflightSuffix}`
+                : `You can add it with a card or bank below — it lands as ETH on ${ONRAMP_NETWORK_LABEL[rhFundChip.fund?.network ?? 'ethereum']}, which covers the gas, and I'll swap and bridge it the rest of the way. The preset is a little over the plan so the card fee, the gas and the swap don't leave you short.${inflightSuffix}`
+              : `Here's what unlocks it: top up ${topUpWords} on ${fundingOriginWords()} (or ${rhStable.symbol} on ${chain.name}), tell me when it's there, and I'll pick it up from that point — nothing was built or spent in the meantime.${inflightSuffix}`),
           ...(rhFundChip
             ? {
                 clarify: {
