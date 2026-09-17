@@ -120,7 +120,7 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Jobs: standing intents',
     seoTitle: 'Jobs API — compound intents, built and guarded step by step',
     description:
-      'Say it once — "bridge, then deposit, then long, then protect it" — and the runner builds, guards, and offers each step for signature. Recurring buys included. dryRun previews everything for $0.',
+      'Say it once — "bridge, then deposit, then long, then protect it" — and the runner builds, guards, and offers each step for signature. dryRun previews everything for $0.',
     ready: true,
     door: 'user',
   },
@@ -139,7 +139,9 @@ export const DOCS_PAGES: DocsPage[] = [
     seoTitle: 'Recurring buys (DCA) — one tap per buy, or arm autopilot',
     description:
       'Two tiers, one schedule: every wallet gets confirm-mode (each buy built fresh, you sign it), and smart wallets can arm autopilot — one signature caps the spend on-chain and each period buys itself.',
-    ready: true,
+    // Unlisted 2026-09-16 (Nate: DCA mostly reminds you to sign, so it isn't
+    // featured). The page still routes for anyone who types a recurring buy.
+    ready: false,
     door: 'user',
   },
   {

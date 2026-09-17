@@ -24,7 +24,7 @@ export const HERO_SUB =
 /** <title> for the homepage — the hero line, no suffix (pinned in test-api). */
 export const HOME_TITLE = `Pantessa — ${HERO_LINE}`
 export const HOME_DESCRIPTION =
-  'Live charts for tokenized stocks (24/7 on Robinhood Chain), crypto spot and Hyperliquid perps — and every chart is the order form. Buy, sell, DCA or protect from a chip; Pantessa builds the guarded transaction, your own wallet signs. Unlimited watchlists and alerts, free.'
+  'Live charts for tokenized stocks (24/7 on Robinhood Chain), crypto spot and Hyperliquid perps — and every chart is the order form. Buy, sell or protect from a chip; Pantessa builds the guarded transaction, your own wallet signs. Unlimited watchlists and alerts, free.'
 
 /** The value line against a metered charting subscription. Never add a cap. */
 export const UNLIMITED_LINE = 'Unlimited watchlists · unlimited tickers · unlimited alerts · free'
@@ -321,19 +321,22 @@ export const LANDING_VENUES: LandingVenue[] = [
   { key: 'lido', name: 'Lido', kind: 'stake', chain: 'Ethereum', ask: 'Stake 0.05 ETH with Lido', stat: 'staking APR' },
   { key: 'near', name: 'NEAR Intents', kind: 'fund', chain: 'cross-chain', ask: 'Swap 20 USDC from base to arbitrum', stat: 'route · ETA' },
   { key: 'robinhood', name: 'Robinhood Chain', kind: 'stock', chain: '24/7 stocks', ask: 'Buy $10 of AAPL', stat: 'AAPL · on-chain', symbol: 'AAPL' },
-  { key: 'dca', name: 'DCA', kind: 'schedule', chain: 'standing', ask: 'DCA $10 into ETH weekly', stat: 'every UTC week' },
+  // The standing card is the Guardian, not a recurring buy (2026-09-16): a
+  // DCA only reminds the wallet to sign each period; the Guardian keeps
+  // watching after the one signature.
+  { key: 'guardian', name: 'Guardian', kind: 'protect', chain: 'standing', ask: 'Protect my ETH long with a 5% stop', stat: 'watches every minute' },
 ]
 
 export const VENUE_BAND = {
   /** The symbol the band orbits. ETH on purpose, while the hero leads with
    *  AAPL: the band's claim is "every way your wallet can act on it", and ETH
-   *  has the most ways (spot, limit, perp, lend, stake, fund, schedule). A
-   *  Robinhood Chain stock has buy, sell, DCA and funding (lib/symbol-venues),
-   *  so its card here reads AAPL's own route. */
+   *  has the most ways (spot, limit, perp, lend, stake, fund, protect). A
+   *  Robinhood Chain stock has buy, sell and funding (lib/symbol-venues), so
+   *  its card here reads AAPL's own route. */
   symbol: 'ETH',
   eyebrow: 'EVERY DAPP, ONE CHART',
   h2: 'One symbol. Every way your wallet can act on it.',
-  sub: 'Spot, limit, perp, lend, stake, fund, 24/7 stock, schedule — each venue live around the chart, one chip each, and a compound ask compiles into one signed job. A charting subscription shows you the window. This is the door.',
+  sub: 'Spot, limit, perp, lend, stake, fund, 24/7 stock, stop — each venue live around the chart, one chip each, and a compound ask compiles into one signed job. A charting subscription shows you the window. This is the door.',
   compound: 'Buy $50 of ETH, then stake 0.05 ETH with Lido',
 } as const
 

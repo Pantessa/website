@@ -59,11 +59,11 @@ export const PLANS: Plan[] = [
     tagline: 'For indie dapps and weekend forks',
     priceUsd: 0,
     // Right-sized 2026-07-21: ~40-80 real asks/month — plenty for the aha
-    // (first swap, first DCA, first guardian), bounded house-inference COGS.
+    // (first swap, first job, first guardian), bounded house-inference COGS.
     credits: 250,
     highlights: [
       '3 active intent links — mint, share, earn',
-      '3 standing intents — jobs, DCA, guardian',
+      '3 standing intents — jobs and guardians',
       '250 chat credits / month',
       'Embed on 1 site',
       'Compose up to 3 MCPs per set',

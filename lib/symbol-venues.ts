@@ -7,8 +7,10 @@
 //
 //  Every `ask` is a SENTENCE in a native parser's own example phrasing
 //  (memory chip-send-contract: the chip IS the contract) — swap / CoW limit
-//  / HL perp (+ leverage) / Aave supply+borrow / Lido stake / DCA / Spot
+//  / HL perp (+ leverage) / Aave supply+borrow / Lido stake / Spot
 //  Guardian + HL Guardian / 4663 stock buys / a card buy (lib/card-buy).
+//  No DCA row (2026-09-16): a recurring buy only reminds the wallet to sign
+//  each period, so the map doesn't offer one (typing it still works).
 //  Nothing here writes calldata, addresses or amounts that get signed; the
 //  harness pins every row through scripts/ask-ladder.ts (a row that lands on
 //  the planner is a bug).
@@ -29,7 +31,7 @@
 //    wallet — the row says Base and names the caveat;
 //  • the HL Guardian only protects a LIVE perp — `needs: 'position'`;
 //  • a Robinhood Chain stock has no perp, no lend, no stake, no resting
-//    book: buy / sell / DCA on 4663 + funding (the wallet's own chains, or a
+//    book: buy / sell on 4663 + funding (the wallet's own chains, or a
 //    card), and the missing kinds are NAMED (`missingVenueNotes`), never silent;
 //  • a coin whose home isn't an EVM chain (SOL, XRP… lib/token-home) gets
 //    Hyperliquid perps only — a spot row could only ever buy a Base squat;
@@ -45,7 +47,7 @@ import { tokenHome } from '@/lib/token-home'
 import { fmtAskPrice, fmtAskUnits } from '@/lib/chart-actions'
 import { ONRAMP_DEFAULT_NETWORK } from '@/lib/onramp'
 
-export type VenueKind = 'spot' | 'limit' | 'perp' | 'lend' | 'stake' | 'dca' | 'protect' | 'fund' | 'stock'
+export type VenueKind = 'spot' | 'limit' | 'perp' | 'lend' | 'stake' | 'protect' | 'fund' | 'stock'
 
 export type VenueRoute = {
   /** Stable row id (`spot:uniswap:8453:buy`). */
@@ -79,8 +81,6 @@ export type VenueRoute = {
 export interface VenuesOptions {
   /** Dollar size for buy/sell/perp/lend/fund rows (default $50). */
   usd?: number
-  /** Dollar size per period for the DCA row (default $10). */
-  dcaUsd?: number
   /** Stop distance for protect rows (default 5%). */
   stopPct?: number
   /** Leverage for the perp rows (omit = the venue's current setting). */
@@ -97,7 +97,6 @@ export interface VenuesOptions {
 }
 
 export const DEFAULT_ROUTE_USD = 50
-export const DEFAULT_ROUTE_DCA_USD = 10
 export const DEFAULT_ROUTE_STOP_PCT = 5
 export const DEFAULT_ROUTE_LIMIT_PCT = 1
 
@@ -210,14 +209,13 @@ export const FUND_CONNECT_NOTE = 'Connect a wallet and this lists the chains you
 
 /**
  * Every venue a wallet can act on `symbol` through, in the order a trader
- * reaches for them: spot → limit → perp → lend → stake → standing (DCA,
- * protect) → funding. Empty for a chartless symbol; stables never reach
+ * reaches for them: spot → limit → perp → lend → stake → protect →
+ * funding. Empty for a chartless symbol; stables never reach
  * here (chartPairFor refuses them first).
  */
 export function venuesFor(symbol: string, pair: ChartPair, opts: VenuesOptions = {}): VenueRoute[] {
   const sym = (pair?.symbol ?? symbol).toUpperCase()
   const usd = opts.usd ?? DEFAULT_ROUTE_USD
-  const dcaUsd = opts.dcaUsd ?? DEFAULT_ROUTE_DCA_USD
   const stopPct = opts.stopPct ?? DEFAULT_ROUTE_STOP_PCT
   const lev = opts.leverage && opts.leverage > 1 ? `${opts.leverage}x ` : ''
   const last = opts.last && Number.isFinite(opts.last) && opts.last > 0 ? opts.last : null
@@ -235,12 +233,6 @@ export function venuesFor(symbol: string, pair: ChartPair, opts: VenuesOptions =
       id: `stock:robinhood:${ROBINHOOD_CHAIN_ID}:sell`,
       kind: 'stock', venue: 'robinhood', chainId: ROBINHOOD_CHAIN_ID, side: 'sell', fee: 'swap',
       label: `Sell ${sym}`, ask: `Sell ${usdWord(usd)} of ${sym}`, mcp: 'robinhood-free', needs: 'position',
-    })
-    out.push({
-      id: `dca:robinhood:${ROBINHOOD_CHAIN_ID}`,
-      kind: 'dca', venue: 'pantessa', chainId: ROBINHOOD_CHAIN_ID, side: 'buy', fee: 'swap',
-      label: 'DCA weekly', ask: `DCA ${usdWord(dcaUsd)} into ${sym} weekly`,
-      note: 'Each period compiles a fresh guarded buy for you to sign — no double buys, cancel any time.',
     })
     // Funding from the wallet's own chains comes per wallet (lib/fund-routes).
     const card = opts.card ? cardRow(sym, pair, usd) : null
@@ -338,13 +330,8 @@ export function venuesFor(symbol: string, pair: ChartPair, opts: VenuesOptions =
     }
   }
 
-  // ── Standing: DCA + protect ──
+  // ── Standing: the Spot Guardian ──
   if (!isPerpChart) {
-    out.push({
-      id: `dca:pantessa`, kind: 'dca', venue: 'pantessa', chainId: SPOT_GUARD_CHAIN_ID, side: 'buy', fee: 'swap',
-      label: 'DCA weekly', ask: `DCA ${usdWord(dcaUsd)} into ${sym} weekly`,
-      note: 'Each period compiles a fresh guarded swap for you to sign — no double buys, cancel any time.',
-    })
     out.push({
       id: `protect:spot:${SPOT_GUARD_CHAIN_ID}`, kind: 'protect', venue: 'pantessa', chainId: SPOT_GUARD_CHAIN_ID, fee: 'none', needs: 'position',
       label: 'Spot stop on Base', ask: `Protect my ${sym} in my wallet with a ${stopPct}% stop`,
@@ -366,7 +353,7 @@ export function missingVenueNotes(symbol: string, pair: ChartPair): string[] {
   const sym = (pair?.symbol ?? symbol).toUpperCase()
   const notes: string[] = []
   if (pair.source === 'robinhood') {
-    notes.push('No perp, lending or resting book for a tokenized stock — buys and sells fill at market on Robinhood Chain; a DCA schedule buys over time.')
+    notes.push('No perp, lending or resting book for a tokenized stock — buys and sells fill at market on Robinhood Chain.')
     return notes
   }
   const home = tokenHome(sym)
@@ -381,7 +368,7 @@ export function missingVenueNotes(symbol: string, pair: ChartPair): string[] {
 }
 
 /** The kinds present, in display order. */
-export const VENUE_KIND_ORDER: VenueKind[] = ['spot', 'limit', 'stock', 'perp', 'lend', 'stake', 'dca', 'protect', 'fund']
+export const VENUE_KIND_ORDER: VenueKind[] = ['spot', 'limit', 'stock', 'perp', 'lend', 'stake', 'protect', 'fund']
 
 export const VENUE_KIND_LABEL: Record<VenueKind, string> = {
   spot: 'Spot',
@@ -389,7 +376,6 @@ export const VENUE_KIND_LABEL: Record<VenueKind, string> = {
   perp: 'Perp',
   lend: 'Lend',
   stake: 'Stake',
-  dca: 'DCA',
   protect: 'Protect',
   fund: 'Fund',
   stock: 'Stock',
@@ -702,7 +688,7 @@ export const SETTLES: Record<string, string> = {
   near: 'NEAR Intents 1Click deposit (one-time address, guard-verified)',
   lifi: 'LiFi diamond → Robinhood Chain (settlement contract pinned)',
   robinhood: 'Uniswap v3 on Robinhood Chain (USDG pool)',
-  pantessa: 'Pantessa Guardian (Spend Permission / DCA schedule)',
+  pantessa: 'Pantessa Guardian (Spend Permission)',
   card: `Stripe checkout → ETH in your wallet on ${venueChainLabel(CARD_LANE_CHAIN_ID)}, then the buy`,
 }
 
@@ -711,10 +697,10 @@ export const SETTLES: Record<string, string> = {
 export const GAS_FLOOR_ETH: Record<number, number> = { 1: 0.001, 8453: 0.00003, 42161: 0.00003, 10: 0.00003, 4663: 0.00003 }
 
 // ── QuickAct: the compact chip row for an index row ─────────────────────────
-// Two or three chips a /markets row can act with without opening the page,
-// honest per class: coins Buy $25 (+ Long 2x if the venue lists a perp) +
-// DCA weekly; a stock Buy $25 (4663) + DCA weekly; a non-EVM home Long 2x +
-// Short 2x. Every ask is a venuesFor row, so every one is ladder-pinned.
+// One or two chips a /markets row can act with without opening the page,
+// honest per class: coins Buy $25 (+ Long 2x if the venue lists a perp); a
+// stock Buy $25 (4663); a non-EVM home Long 2x + Short 2x. No DCA chip
+// (2026-09-16). Every ask is a venuesFor row, so every one is ladder-pinned.
 export interface QuickAct {
   label: string
   ask: string
@@ -722,7 +708,7 @@ export interface QuickAct {
 }
 export const QUICK_ACT_USD = 25
 export function quickActs(symbol: string, pair: ChartPair): QuickAct[] {
-  const rows = venuesFor(symbol, pair, { usd: QUICK_ACT_USD, dcaUsd: 10, leverage: 2 })
+  const rows = venuesFor(symbol, pair, { usd: QUICK_ACT_USD, leverage: 2 })
   const sym = (pair?.symbol ?? symbol).toUpperCase()
   const out: QuickAct[] = []
   const pick = (kind: VenueKind, side?: 'buy' | 'sell') => rows.find((r) => r.kind === kind && (side ? r.side === side : true))
@@ -730,12 +716,10 @@ export function quickActs(symbol: string, pair: ChartPair): QuickAct[] {
   const spot = pick('spot', 'buy')
   const long = pick('perp', 'buy')
   const short = pick('perp', 'sell')
-  const dca = pick('dca')
   if (stock) out.push({ label: `Buy $${QUICK_ACT_USD} on 4663`, ask: stock.ask, tone: 'buy' })
   else if (spot) out.push({ label: `Buy $${QUICK_ACT_USD}`, ask: spot.ask, tone: 'buy' })
   if (long) out.push({ label: `Long 2x`, ask: long.ask, tone: spot || stock ? 'neutral' : 'buy' })
   if (!spot && !stock && short) out.push({ label: `Short 2x`, ask: short.ask, tone: 'sell' })
-  if (dca && out.length < 3) out.push({ label: 'DCA weekly', ask: dca.ask, tone: 'neutral' })
   void sym
   return out.slice(0, 3)
 }

@@ -402,9 +402,12 @@ async function run() {
     check('usd field mapped onto valueUsd', tile.holdings[0].valueUsd === 80)
     check('idle USDG → buy-a-stock chip', tile.prompts.some((p) => /Swap 50 USDG for AAPL on Robinhood Chain/.test(p.prompt)))
     check('held stock → sell chip', tile.prompts.some((p) => /Swap 0\.25 AAPL for USDG/.test(p.prompt)))
-    // DCA + buy + sell already fill the three chip slots; the bridge-in chip
-    // rides only when there's room (a funded wallet with no stock yet).
-    check('chips cap at 3 — DCA, buy, sell fill them', tile.prompts.length === 3 && !tile.prompts.some((p) => /Bridge/.test(p.prompt)))
+    // Buy + sell, then the bridge-in chip takes the third slot. No recurring
+    // buy since 2026-09-16: a DCA only reminds the wallet to sign each period.
+    check(
+      'chips cap at 3 — buy, sell, bridge-in; no DCA chip',
+      tile.prompts.length === 3 && tile.prompts.some((p) => /Bridge/.test(p.prompt)) && !tile.prompts.some((p) => /every week|\bdca\b/i.test(`${p.label} ${p.prompt}`)),
+    )
     const noStock = (await rh.build(async () => ({ kind: 'portfolio', totalUsd: 90, holdings: [
       { symbol: 'USDG', kind: 'stable', balance: '80.00', usd: 80, priceUsd: 1 },
       { symbol: 'ETH', kind: 'native', balance: '0.003', usd: 10, priceUsd: 3300 },

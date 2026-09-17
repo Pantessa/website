@@ -92,7 +92,7 @@ export default function ButtonGenerator() {
         <textarea
           value={ask}
           onChange={(e) => setAsk(e.target.value)}
-          placeholder='e.g. "Buy $10 of AAPL" · "Stake 0.05 ETH with Lido" · "DCA $25 into ETH weekly"'
+          placeholder='e.g. "Buy $10 of AAPL" · "Stake 0.05 ETH with Lido" · "Swap 5 USDC from Base to Arbitrum"'
           rows={2}
           maxLength={400}
           className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"

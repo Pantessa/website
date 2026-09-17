@@ -204,10 +204,9 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
   if (jobs.length === 0 && schedules.length === 0 && guards.length === 0 && inbox.length === 0) {
     return (
       <p className="px-3 py-6 text-xs leading-relaxed text-[color:var(--muted-2)]">
-        Nothing running yet. Recurring buys (“buy $10 of AAPL every week”),
-        protections (“protect my SYRUP long with a 10% stop loss”) and
-        multi-step jobs land here the moment you arm one — with every state
-        visible, and nothing signed without you.
+        Nothing running yet. Protections (“protect my SYRUP long with a 10%
+        stop loss”) and multi-step jobs land here the moment you arm one —
+        with every state visible, and nothing signed without you.
       </p>
     )
   }
