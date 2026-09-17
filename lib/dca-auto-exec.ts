@@ -8,7 +8,8 @@
 //  table, guardian-runs pattern).
 //
 //  Execution order per due period (deliberate):
-//    build swap (fresh quote) → guardAutoBuy → pull → approve → swap.
+//    build swap (fresh quote + the floor off a market mark) → guardAutoBuy →
+//    pull → approve → swap.
 //  The guard runs BEFORE the pull, so a refused build costs nothing and the
 //  user's USDC never moves. A post-pull revert (slippage) leaves the pull
 //  parked on the spender, recorded honestly — never retried into a second
@@ -21,14 +22,16 @@ import prisma from '@/lib/db'
 import { jobsEnv } from '@/lib/jobs-runner'
 import { buysNativeEth, chainById, primaryStable, publicClientFor } from '@/lib/chains'
 import { getActiveGrant } from '@/lib/grant-store'
-import { resolveToken } from '@/lib/cow'
+import { resolveToken, tokenDecimals } from '@/lib/cow'
 import { ensureTokenList } from '@/lib/token-list'
 import { buildUniswapSwap } from '@/lib/uniswap-venue'
+import { usdPerToken } from '@/lib/usd-probe'
 import { getSpenderAddress, isCdpConfigured, sendSpenderTx, spendNetwork } from '@/lib/cdp'
 import { SPEND_PERMISSION_MANAGER } from '@/lib/spend-permission'
 import { cadenceLabel, periodKeyFor, type DcaCadence } from '@/lib/dca'
 import type { DcaTurn } from '@/lib/dca-exec'
 import {
+  autoBuyFloorAtoms,
   buildDcaSpendPermission,
   guardAutoBuy,
   parseDcaAutoToggle,
@@ -37,6 +40,7 @@ import {
   serializePermission,
   spendPermissionTypedData,
   usdcAtomsToHuman,
+  type AutoBuyGuardInput,
   type DcaSpendPermission,
 } from '@/lib/dca-auto'
 
@@ -403,6 +407,77 @@ export async function armDcaSchedule(
   }
 }
 
+// ── The buy build (the sweep's step 1) ─────────────────────────────────────
+
+export interface AutoBuyBuild {
+  /** approve? + swap, sent exactly as guardAutoBuy decodes them. */
+  steps: AutoBuyGuardInput['steps']
+  /** The guard's independent floor, in the buy token's atoms. */
+  minOutAtomic: bigint
+  /** The registry pins and the resolved buy token the guard checks against. */
+  guardChain: AutoBuyGuardInput['chain']
+  expectedBuyAddr: string
+  nativeOut: boolean
+  /** The builder's one-line receipt. */
+  summary: string
+}
+
+/**
+ * A period's buy, built exactly as the sweep sends it: a fresh v3 quote for
+ * the exact pull, output pinned to the owner at the builder's default fee,
+ * and the independent floor off a market mark read here, never off the
+ * build. No DB writes, no CDP, nothing signed: the sweep and the harness's
+ * live pin both run this, so guardAutoBuy is always proven against the build
+ * it really gets.
+ */
+export async function buildAutoBuy(input: {
+  chainId: number
+  sellToken: string
+  buyToken: string
+  ownerWallet: string
+  spender: string
+  pulled: bigint
+}): Promise<{ ok: true; build: AutoBuyBuild } | { ok: false; detail: string }> {
+  const stable = primaryStable(input.chainId)
+  await ensureTokenList(input.chainId)
+  const buyAddr = resolveToken(input.buyToken, input.chainId)
+  if (!stable || !buyAddr) {
+    return { ok: false, detail: `Couldn't resolve ${input.buyToken}/USDC on Base — nothing pulled.` }
+  }
+  // The router pin comes from the REGISTRY — never from the built tx.
+  const registryRouter = chainById(input.chainId)?.uniswap?.swapRouter02
+  if (!registryRouter) {
+    return { ok: false, detail: 'No registry-pinned SwapRouter02 for this chain — refused. Nothing pulled.' }
+  }
+  const buyDecimals = tokenDecimals(input.buyToken, input.chainId)
+  const mark = await usdPerToken(input.chainId, input.buyToken).catch(() => null)
+  if (buyDecimals === null || !mark) {
+    return { ok: false, detail: `Couldn't price ${input.buyToken} on Base to set the buy's floor — refused. Nothing pulled.` }
+  }
+  const built = await buildUniswapSwap({
+    sellToken: input.sellToken,
+    buyToken: input.buyToken,
+    amountHuman: usdcAtomsToHuman(input.pulled),
+    from: input.spender,
+    chainId: input.chainId,
+    recipient: input.ownerWallet,
+  })
+  if (built.blocked) {
+    return { ok: false, detail: `Venue build refused: ${built.guardrails.checks.filter((c) => !c.ok).map((c) => c.note).join(' ') || 'guardrail block'} Nothing pulled.` }
+  }
+  return {
+    ok: true,
+    build: {
+      steps: [...(built.approveTx ? [built.approveTx] : []), built.swapTx].map((s) => ({ to: s.to, data: s.data, value: s.value })),
+      minOutAtomic: autoBuyFloorAtoms(input.pulled, mark.usd, buyDecimals),
+      guardChain: { chainId: input.chainId, swapRouter02: registryRouter, usdcAddress: stable.address },
+      expectedBuyAddr: buyAddr,
+      nativeOut: buysNativeEth(input.buyToken, input.chainId),
+      summary: built.summary,
+    },
+  }
+}
+
 // ── The sweep (cron) ───────────────────────────────────────────────────────
 
 export interface AutoSweepSummary {
@@ -498,50 +573,31 @@ export async function executeAutoDcaSweep(limit = 2): Promise<AutoSweepSummary> 
     }
 
     try {
-      const stable = primaryStable(s.chainId)
-      await ensureTokenList(s.chainId)
-      const buyAddr = resolveToken(s.buyToken, s.chainId)
-      if (!stable || !buyAddr) {
-        await fail(`Couldn't resolve ${s.buyToken}/USDC on Base — nothing pulled.`)
-        continue
-      }
       const spender = await getSpenderAddress()
       if (spender.toLowerCase() !== s.spender) {
         await fail('Bound spender changed — re-arm to continue. Nothing pulled.')
         continue
       }
-      // The router pin comes from the REGISTRY — never from the built tx.
-      const registryRouter = chainById(s.chainId)?.uniswap?.swapRouter02
-      if (!registryRouter) {
-        await fail('No registry-pinned SwapRouter02 for this chain — refused. Nothing pulled.')
-        continue
-      }
       const pulled = permission.allowance
 
-      // 1. Build fresh + guard — BEFORE any money moves.
-      const built = await buildUniswapSwap({
-        sellToken: s.sellToken,
-        buyToken: s.buyToken,
-        amountHuman: usdcAtomsToHuman(pulled),
-        from: spender,
-        chainId: s.chainId,
-        recipient: s.wallet,
-      })
-      if (built.blocked) {
-        await fail(`Venue build refused: ${built.guardrails.checks.filter((c) => !c.ok).map((c) => c.note).join(' ') || 'guardrail block'} Nothing pulled.`)
+      // 1. Build fresh + the independent floor + guard — BEFORE any money moves.
+      const buy = await buildAutoBuy({ chainId: s.chainId, sellToken: s.sellToken, buyToken: s.buyToken, ownerWallet: s.wallet, spender, pulled })
+      if (!buy.ok) {
+        await fail(buy.detail)
         continue
       }
-      const steps = [...(built.approveTx ? [built.approveTx] : []), built.swapTx]
+      const { steps, minOutAtomic, guardChain, expectedBuyAddr, nativeOut } = buy.build
       const guard = guardAutoBuy({
         schedule: { mode: s.mode, status: s.status, buyUsd: s.buyUsd, cadence, chainId: s.chainId },
         permission,
         ownerWallet: s.wallet,
         spender,
-        chain: { chainId: s.chainId, swapRouter02: registryRouter, usdcAddress: stable.address },
-        expectedBuyAddr: buyAddr,
-        nativeOut: buysNativeEth(s.buyToken, s.chainId),
+        chain: guardChain,
+        expectedBuyAddr,
+        nativeOut,
         steps,
         pulledAtomic: pulled,
+        minOutAtomic,
         nowSec,
       })
       if (!guard.ok) {
@@ -571,14 +627,14 @@ export async function executeAutoDcaSweep(limit = 2): Promise<AutoSweepSummary> 
       for (const step of steps) {
         const hash = await sendSpenderTx({ to: step.to as `0x${string}`, data: step.data as `0x${string}` })
         await waitTx(hash)
-        if (step === built.swapTx) {
+        if (step === steps[steps.length - 1]) {
           await prisma.dcaAutoRun.update({ where: { id: run.id }, data: { swapTx: hash } }).catch(() => {})
         }
       }
 
       await prisma.dcaAutoRun.update({
         where: { id: run.id },
-        data: { status: 'bought', valueUsd: s.buyUsd, detail: built.summary },
+        data: { status: 'bought', valueUsd: s.buyUsd, detail: buy.build.summary },
       })
       await prisma.dcaSchedule.update({ where: { id: s.id }, data: { autoError: null } }).catch(() => {})
       summary.bought.push(tag)

@@ -19,8 +19,9 @@
 
 import { decodeFunctionData, erc20Abi } from 'viem'
 import type { DcaCadence } from '@/lib/dca'
+import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, TREASURY_ADDRESS, swapFeeAtoms } from '@/lib/fees'
 import { usdcAtomic, SPEND_PERMISSION_MANAGER } from '@/lib/spend-permission'
-import { ADDRESS_THIS, SWAP_ROUTER_02_ABI } from '@/lib/uniswap-venue'
+import { ADDRESS_THIS, FEE_TIERS, SWAP_ROUTER_02_ABI } from '@/lib/uniswap-venue'
 import type { GuardrailCheck } from '@/lib/tx-guardrails'
 
 export { SPEND_PERMISSION_MANAGER }
@@ -243,6 +244,34 @@ export function parseDcaAutoToggle(message: string): { op: 'arm' | 'disarm'; tok
   return null
 }
 
+// ── The independent floor — the sweep reads a market mark and derives it;
+//    guardAutoBuy holds the build's OWNER minimum to it. ─────────────────────
+
+/** How far below the market the owner's minimum may sit before an autonomous
+ *  buy refuses, in bps. The mark is usdPerToken: one whole token sold into its
+ *  best v3 pool. The gap it measures therefore includes the pool fee both
+ *  ways, the builder's 50 bps slippage bound, the treasury's cut and the buy's
+ *  price impact. Measured on Base, 2026-09-17: 0.8–1.7% on 5–30 bps pools
+ *  (ETH, cbBTC, AERO, VIRTUAL, EURC, ZORA), 2.7% on a 1% pool (MORPHO), and a
+ *  thin USDC pool far past it (a $100 DEGEN buy: 44%). */
+export const AUTO_BUY_FLOOR_BPS = 300
+
+/**
+ * The autonomous buy's independent floor, in the buy token's atoms: what the
+ * pulled USDC (6 decimals) buys at `markUsd` (USD per whole token, read by the
+ * sweep, never taken from the build), less AUTO_BUY_FLOOR_BPS. Bigint math off
+ * the mark scaled to 1e18. Zero when no honest floor can be made (a mark that
+ * isn't a positive finite number, bad decimals), and guardAutoBuy refuses a
+ * zero floor.
+ */
+export function autoBuyFloorAtoms(pulledAtomic: bigint, markUsd: number, buyDecimals: number): bigint {
+  const zero = BigInt(0)
+  if (pulledAtomic <= zero || !Number.isInteger(buyDecimals) || buyDecimals < 0) return zero
+  const markE18 = markUsd * 1e18
+  if (!Number.isFinite(markE18) || markE18 < 1) return zero
+  return (pulledAtomic * BigInt(10) ** BigInt(buyDecimals + 12) * BigInt(10_000 - AUTO_BUY_FLOOR_BPS)) / (BigInt(Math.round(markE18)) * BigInt(10_000))
+}
+
 // ── guardAutoBuy — the independent re-decode. NOTHING is sent unless every
 //    check passes. Mirrors transfer-exec's doctrine: the builder built it,
 //    the guard doesn't trust the builder. ──────────────────────────────────
@@ -263,13 +292,34 @@ export interface AutoBuyGuardInput {
   steps: Array<{ to: string; data: string; value: string }>
   /** The exact atomic USDC the sweep pulled (== permission.allowance). */
   pulledAtomic: bigint
+  /** The sweep's independent floor in the buy token's atoms
+   *  (autoBuyFloorAtoms off the market mark). Zero refuses. */
+  minOutAtomic: bigint
   nowSec: number
 }
 
 const check = (id: string, ok: boolean, note: string): GuardrailCheck => ({ id, level: 'block', ok, note })
 
+/**
+ * Every byte re-decoded against the pins, never against the build. Expected:
+ * [approve(USDC → the pinned router, exactly the pull)] + swap, with swap =
+ * SwapRouter02.multicall(deadline, calls), tokenIn = USDC, tokenOut = the
+ * schedule token, amountIn = the pull, no price limit, a real v3 tier, and
+ * calls in one of the shapes the v3 builder emits:
+ *   ERC-20, fee off: [exactInputSingle(recipient = the OWNER)]
+ *   ERC-20, fee on:  [exactInputSingle(recipient = the router),
+ *                     sweepTokenWithFee(the token, the swap's minOut,
+ *                                       the OWNER, a canonical tier, the treasury)]
+ *   native ETH:      [exactInputSingle(recipient = the router),
+ *                     unwrapWETH9WithFee(the swap's minOut, the OWNER,
+ *                                        a canonical tier, the treasury)
+ *                     | unwrapWETH9(the swap's minOut, the OWNER)]
+ * The fee is the default (lib/fees), so fee on is what the sweep builds. The
+ * floor guards the OWNER's proceeds: the swap's minOut and, fee on, the
+ * minimum left after the treasury's cut must both clear it.
+ */
 export function guardAutoBuy(input: AutoBuyGuardInput): { ok: boolean; checks: GuardrailCheck[] } {
-  const { schedule, permission, ownerWallet, spender, chain, expectedBuyAddr, nativeOut, steps, pulledAtomic, nowSec } = input
+  const { schedule, permission, ownerWallet, spender, chain, expectedBuyAddr, nativeOut, steps, pulledAtomic, minOutAtomic, nowSec } = input
   const checks: GuardrailCheck[] = []
   const owner = ownerWallet.toLowerCase()
 
@@ -288,6 +338,9 @@ export function guardAutoBuy(input: AutoBuyGuardInput): { ok: boolean; checks: G
   checks.push(check('pull-amount', pulledAtomic === permission.allowance, pulledAtomic === permission.allowance ? 'Pull is exactly the signed allowance — never more.' : `Pull ${pulledAtomic} ≠ signed allowance ${permission.allowance}.`))
 
   checks.push(check('chain', schedule.chainId === chain.chainId, schedule.chainId === chain.chainId ? 'Build is on the schedule’s chain.' : 'Build chain does not match the schedule.'))
+
+  const hasFloor = minOutAtomic > BigInt(0)
+  checks.push(check('min-out', hasFloor, hasFloor ? 'An independent floor off the market mark is set.' : 'No independent floor — refusing a floorless autonomous buy.'))
 
   // Every step's target must be a pinned contract; every step's calldata must
   // re-decode to exactly the shape the sweep intends. Unknown = refusal.
@@ -326,54 +379,92 @@ export function guardAutoBuy(input: AutoBuyGuardInput): { ok: boolean; checks: G
         if (Number(deadline) <= nowSec) {
           swapNote = 'Swap deadline already passed — stale build.'
         } else if (calls.length < 1 || calls.length > 2) {
-          swapNote = `Expected swap(+sweep) in the multicall, got ${calls.length} calls.`
+          swapNote = `Expected swap(+payout) in the multicall, got ${calls.length} calls.`
         } else {
           const inner = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[0] })
           if (inner.functionName === 'exactInputSingle') {
             const p = (inner.args as readonly unknown[])[0] as {
               tokenIn: string
               tokenOut: string
+              fee: number
               recipient: string
               amountIn: bigint
               amountOutMinimum: bigint
+              sqrtPriceLimitX96: bigint
             }
-            const tokenInOk = p.tokenIn.toLowerCase() === chain.usdcAddress.toLowerCase()
-            const tokenOutOk = p.tokenOut.toLowerCase() === expectedBuyAddr.toLowerCase()
-            const amountOk = p.amountIn === pulledAtomic
-            const minOutOk = p.amountOutMinimum > BigInt(0)
-            let recipientOk = false
-            let recipientNote = ''
+            const problems: string[] = []
+            if (p.tokenIn.toLowerCase() !== chain.usdcAddress.toLowerCase()) problems.push('tokenIn is not USDC')
+            if (p.tokenOut.toLowerCase() !== expectedBuyAddr.toLowerCase()) problems.push('tokenOut is not the schedule token')
+            if (p.amountIn !== pulledAtomic) problems.push('amountIn is not the exact pull')
+            // A price limit can stop the swap part-way: the output still clears
+            // the minimum, the run reads "bought", and the unspent rest of the
+            // pull stays on the spender. The builder never sets one.
+            if (p.sqrtPriceLimitX96 !== BigInt(0)) problems.push('the swap carries a price limit, so it could spend only part of the pull')
+            // A tier with no pool reverts, and by then the pull has happened.
+            if (!(FEE_TIERS as readonly number[]).includes(Number(p.fee))) problems.push(`pool fee ${p.fee} is not a Uniswap v3 tier`)
+            if (p.amountOutMinimum <= BigInt(0)) problems.push('no minimum-out bound')
+            else if (p.amountOutMinimum < minOutAtomic) problems.push(`minOut ${p.amountOutMinimum} is below the floor ${minOutAtomic}`)
+            let feeBips = 0
             if (calls.length === 2) {
               // Output parks on the router. An ERC-20 schedule: sweepTokenWithFee
-              // pays the OWNER minus the visible treasury bps. A native-ETH
+              // pays the OWNER minus the treasury's canonical bps. A native-ETH
               // schedule: unwrapWETH9WithFee (or unwrapWETH9, fee off) pays the
               // owner in ETH. Either shape on the wrong schedule delivers the
               // wrong asset and refuses.
-              const payout = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[1] })
-              const parked = p.recipient.toLowerCase() === ADDRESS_THIS.toLowerCase()
-              if (nativeOut && (payout.functionName === 'unwrapWETH9WithFee' || payout.functionName === 'unwrapWETH9')) {
-                const [, unwrapRecipient] = payout.args as readonly [bigint, string, ...unknown[]]
-                recipientOk = parked && unwrapRecipient.toLowerCase() === owner
-                recipientNote = recipientOk ? '' : ` Unwrap pays ${unwrapRecipient} — not the schedule owner.`
-              } else if (!nativeOut && payout.functionName === 'sweepTokenWithFee') {
-                const [sweepToken, , sweepRecipient] = payout.args as [string, bigint, string, bigint, string]
-                recipientOk = parked && sweepRecipient.toLowerCase() === owner && sweepToken.toLowerCase() === expectedBuyAddr.toLowerCase()
-                recipientNote = recipientOk ? '' : ` Sweep pays ${sweepRecipient} — not the schedule owner.`
-              } else {
-                recipientNote = nativeOut
-                  ? ` Second call is ${payout.functionName}, not an unwrap to native ETH — the schedule buys ETH.`
-                  : ` Second call is ${payout.functionName}, not sweepTokenWithFee.`
+              if (p.recipient.toLowerCase() !== ADDRESS_THIS.toLowerCase()) problems.push(`swap pays ${p.recipient}, not the router the payout call pays from`)
+              let payout: { functionName: string; args?: readonly unknown[] } | null = null
+              try {
+                payout = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[1] })
+              } catch {
+                problems.push('second call does not decode as a SwapRouter02 payout')
+              }
+              if (payout) {
+                const kind = nativeOut ? 'unwrap' : 'sweep'
+                let paid: { min: bigint; to: string; fee: { bips: bigint; to: string } | null } | null = null
+                if (nativeOut && payout.functionName === 'unwrapWETH9WithFee') {
+                  const [min, to, bips, feeTo] = payout.args as readonly [bigint, string, bigint, string]
+                  paid = { min, to, fee: { bips, to: feeTo } }
+                } else if (nativeOut && payout.functionName === 'unwrapWETH9') {
+                  const [min, to] = payout.args as readonly [bigint, string]
+                  paid = { min, to, fee: null }
+                } else if (!nativeOut && payout.functionName === 'sweepTokenWithFee') {
+                  const [token, min, to, bips, feeTo] = payout.args as readonly [string, bigint, string, bigint, string]
+                  if (token.toLowerCase() !== expectedBuyAddr.toLowerCase()) problems.push('the sweep is not for the schedule token')
+                  paid = { min, to, fee: { bips, to: feeTo } }
+                } else {
+                  problems.push(
+                    nativeOut
+                      ? `second call is ${payout.functionName}, not an unwrap to native ETH — the schedule buys ETH`
+                      : `second call is ${payout.functionName}, not sweepTokenWithFee`,
+                  )
+                }
+                if (paid) {
+                  if (paid.to.toLowerCase() !== owner) problems.push(`${kind} pays ${paid.to}, not the schedule owner`)
+                  if (paid.fee) {
+                    if (paid.fee.to.toLowerCase() !== TREASURY_ADDRESS.toLowerCase()) problems.push(`the fee goes to ${paid.fee.to}, not the Pantessa treasury`)
+                    // 0 bps reverts on-chain; anything else is off our price list.
+                    if (paid.fee.bips > BigInt(0) && [SWAP_FEE_BPS, LINK_SWAP_FEE_BPS].includes(Number(paid.fee.bips))) feeBips = Number(paid.fee.bips)
+                    else problems.push(`fee ${paid.fee.bips}bps is not a canonical tier`)
+                  }
+                  if (paid.min !== p.amountOutMinimum) {
+                    problems.push(`${kind} minimum ${paid.min} ≠ the swap's minOut ${p.amountOutMinimum}`)
+                  } else if (feeBips > 0) {
+                    // What the owner is guaranteed once the treasury takes its cut.
+                    const ownerMin = paid.min - swapFeeAtoms(paid.min, feeBips)
+                    if (ownerMin < minOutAtomic) problems.push(`the owner's minimum after the ${feeBips}bps fee, ${ownerMin}, is below the floor ${minOutAtomic}`)
+                  }
+                }
               }
             } else if (nativeOut) {
-              recipientNote = ' A direct payout delivers WETH — the schedule buys native ETH.'
-            } else {
-              recipientOk = p.recipient.toLowerCase() === owner
-              recipientNote = recipientOk ? '' : ` Swap pays ${p.recipient} — not the schedule owner.`
+              problems.push('a direct payout delivers WETH — the schedule buys native ETH')
+            } else if (p.recipient.toLowerCase() !== owner) {
+              problems.push(`swap pays ${p.recipient}, not the schedule owner`)
             }
-            swapOk = tokenInOk && tokenOutOk && amountOk && minOutOk && recipientOk
+            swapOk = problems.length === 0
+            const payoutWords = calls.length === 1 ? 'paid straight to the owner' : nativeOut ? 'unwrapped to the owner as native ETH' : 'swept to the owner'
             swapNote = swapOk
-              ? `Swaps the exact pull USDC → the schedule token, output pinned to the owner's wallet.`
-              : `${!tokenInOk ? 'tokenIn is not USDC. ' : ''}${!tokenOutOk ? 'tokenOut is not the schedule token. ' : ''}${!amountOk ? 'amountIn is not the exact pull. ' : ''}${!minOutOk ? 'No minimum-out bound. ' : ''}${recipientNote}`.trim()
+              ? `Swaps the exact pull USDC → the schedule token, ${payoutWords}${feeBips > 0 ? ` minus ${feeBips}bps to the treasury` : ''}, the owner's minimum at or above the floor.`
+              : `${problems.join('; ')}.`
           } else {
             swapNote = `First multicall entry is ${inner.functionName}, not exactInputSingle.`
           }
