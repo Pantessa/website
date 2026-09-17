@@ -26098,6 +26098,51 @@ async function main() {
     )
   }
 
+  // ── /markets social card (2026-09-17) ──────────────────────────────────
+  // The index shared a text-only preview: its metadata set a title and a
+  // description and no picture. app/markets/opengraph-image.tsx draws THE
+  // BOARD — the index's three families, their household names, live quotes
+  // from our own /api/quotes, the family's honest size — beside the claim.
+  {
+    const { marketsOgBoard, marketsOgSymbols, MARKETS_OG_ROWS } = await import('../lib/markets-seo')
+    const { FEATURED: ogFeatured } = await import('../lib/markets')
+    const mkHtml = await (await fetch(`${BASE}/markets`)).text()
+    const ogTag = mkHtml.match(/<meta property="og:image" content="([^"]+)"/)?.[1] ?? ''
+    const twTag = mkHtml.match(/<meta name="twitter:image" content="([^"]+)"/)?.[1] ?? ''
+    check(
+      'markets card: /markets carries its OWN og:image + twitter:image (…/markets/opengraph-image, …/markets/twitter-image), 1200×630 PNG with an alt that says what the card shows',
+      /\/markets\/opengraph-image/.test(ogTag) && /\/markets\/twitter-image/.test(twTag) &&
+        /<meta property="og:image:width" content="1200"/.test(mkHtml) && /<meta property="og:image:height" content="630"/.test(mkHtml) &&
+        /<meta property="og:image:alt" content="Pantessa Markets — The chart that executes\./.test(mkHtml) && /<meta name="twitter:image:alt" content="Pantessa Markets/.test(mkHtml),
+      JSON.stringify({ ogTag, twTag }),
+    )
+    const [mkCard, mkTw] = await Promise.all([fetch(`${BASE}/markets/opengraph-image`), fetch(`${BASE}/markets/twitter-image`)])
+    const [mkCardBytes, mkTwBytes] = await Promise.all([mkCard.arrayBuffer(), mkTw.arrayBuffer()])
+    check(
+      'markets card: the card and its twitter mirror render (200 PNG, a drawn board — not a blank, ≥ 60KB)',
+      mkCard.status === 200 && /image\/png/.test(mkCard.headers.get('content-type') ?? '') && mkCardBytes.byteLength >= 60_000 &&
+        mkTw.status === 200 && /image\/png/.test(mkTw.headers.get('content-type') ?? '') && mkTwBytes.byteLength >= 60_000,
+      `${mkCard.status} ${mkCardBytes.byteLength}B / ${mkTw.status} ${mkTwBytes.byteLength}B`,
+    )
+    const ogBoard = marketsOgBoard()
+    const sections = vizMarketSections()
+    const rowsFit = ogBoard.reduce((n, g) => n + g.symbols.length, 0)
+    check(
+      'markets card (board): three families in the index\'s order, every drawn symbol charts AND leads its own section as a featured name, the row cap holds (11 rows fit one card), totals equal the section row counts, and the batched read asks for exactly the drawn symbols',
+      ogBoard.map((g) => g.id).join(',') === sections.map((s) => s.id).join(',') &&
+        ogBoard.every((g, i) => g.total === sections[i].rows.length && g.symbols.length === Math.min(MARKETS_OG_ROWS[g.id], ogFeatured[g.id].length) && g.symbols.every((sym) => !!chartPairFor(sym) && ogFeatured[g.id].includes(sym) && sections[i].rows.some((r) => r.symbol === sym))) &&
+        rowsFit === 11 && marketsOgSymbols().join(',') === ogBoard.flatMap((g) => g.symbols).join(','),
+      JSON.stringify(ogBoard.map((g) => [g.id, g.total, g.symbols])),
+    )
+    const [mkOgSrc, mkTwSrc] = await Promise.all([readFile('app/markets/opengraph-image.tsx', 'utf8'), readFile('app/markets/twitter-image.tsx', 'utf8')])
+    check(
+      'markets card (source): the card self-fetches /api/quotes on its own host with a timeout and falls to the dashed board on a miss (never a 500, never a fake number), and the twitter mirror re-exports the card while declaring its own runtime + dynamic (route-segment config can\'t be re-exported)',
+      /\/api\/quotes\?symbols=/.test(mkOgSrc) && /AbortSignal\.timeout\(/.test(mkOgSrc) && /return NO_QUOTES/.test(mkOgSrc) && /FEED WARMING UP/.test(mkOgSrc) &&
+        /export const dynamic = 'force-dynamic'/.test(mkOgSrc) &&
+        /export \{ default, alt, size, contentType \} from '\.\/opengraph-image'/.test(mkTwSrc) && /export const runtime = 'nodejs'/.test(mkTwSrc) && /export const dynamic = 'force-dynamic'/.test(mkTwSrc),
+    )
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }
