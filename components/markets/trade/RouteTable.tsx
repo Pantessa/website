@@ -31,7 +31,9 @@ import {
   BEST_OUT_RULE,
   CHART_DRAW_KEY_PREFIX,
   DEFAULT_ROUTE_USD,
+  FUND_CHECKING_NOTE,
   FUND_CONNECT_NOTE,
+  FUND_UNREAD_NOTE,
   SPOT_CHAINS,
   limitAtLevel,
   VENUE_KIND_LABEL,
@@ -194,8 +196,8 @@ export default function RouteTable({
   const fundNotes = useMemo<string[]>(() => {
     if (!fundApplies) return []
     if (!walletAddress) return [FUND_CONNECT_NOTE]
-    if (fundPending) return ['Checking which chains your money is on…']
-    if (!walletFunding) return ["Couldn't read your balances just now. Buy still plans the funding when you send it."]
+    if (fundPending) return [FUND_CHECKING_NOTE]
+    if (!walletFunding) return [FUND_UNREAD_NOTE]
     return walletFunding.notes
   }, [fundApplies, walletAddress, fundPending, walletFunding])
 

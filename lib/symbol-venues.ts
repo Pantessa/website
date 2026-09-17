@@ -206,6 +206,10 @@ function cardRow(symbol: string, pair: ChartPair, usd: number): VenueRoute | nul
 
 /** What the Fund group says to a visitor with no wallet connected. */
 export const FUND_CONNECT_NOTE = 'Connect a wallet and this lists the chains your money is already on.'
+/** While the connected wallet's funding read is in flight. */
+export const FUND_CHECKING_NOTE = 'Checking which chains your money is on…'
+/** When the wallet's balances couldn't be read (the route's `unread`, or no answer). */
+export const FUND_UNREAD_NOTE = "Couldn't read your balances just now. Buy still plans the funding when you send it."
 
 /**
  * Every venue a wallet can act on `symbol` through, in the order a trader
@@ -452,6 +456,53 @@ export interface FundRoutesResponse {
   cached?: boolean
 }
 
+/** One chain the compound composer can fund its job from, for ONE wallet
+ *  (lib/fund-routes stockFundLegs / coinFundLegs, off the same scans as the
+ *  rows above; GET /api/markets/routes/funding?for=compound carries them).
+ *  The segment is the chat's own funding sentence from that chain, spending
+ *  the token the wallet holds there. */
+export interface FundLeg {
+  /** The origin chain the leg spends from. */
+  chainId: number
+  /** 'Base' */
+  name: string
+  /** What it spends there: 'USDC', 'USDC.e' or 'ETH'. */
+  token: string
+  /** Dollars the leg moves, a destination gas leg included. */
+  usd: number
+  /** The funding segment(s), ", then "-joined, in the jobs grammar. */
+  segment: string
+  /** The sign builders the compiler emits for it (waits counted apart). */
+  builders: string[]
+  /** The settlement waits the compiler inserts after them. */
+  waits: number
+  label: string
+  hint: string
+  /** The order size the leg was sized for, in dollars. */
+  forUsd: number
+  /** The chain the money lands on (Robinhood Chain for a stock). */
+  destChainId: number
+  /** Sized for a buy that follows on the destination (always, for a stock). */
+  forBuy: boolean
+}
+
+/** The wire shape of GET /api/markets/routes/funding?for=compound — the
+ *  composer's funding legs and the plain-words facts behind a missing one. */
+export interface FundLegsResponse {
+  symbol: string
+  amountUsd: number
+  /** The chain the legs land on; null when the page funds no buy. */
+  destChainId: number | null
+  buy: boolean
+  /** One per origin chain that can fund the job, in picker order. */
+  legs: FundLeg[]
+  notes: string[]
+  state: FundRoutesState
+  failed: string[]
+  updatedAt: string
+  cached?: boolean
+}
+
 // ── Compound asks: legs the jobs compiler chains into ONE signed job ────────
 // Only segments lib/jobs' JOB_SEGMENT_PARSERS registry compiles (memory
 // job-segment-registry): cross-chain funding (NEAR / LiFi), same-chain swap
@@ -475,14 +526,21 @@ export interface CompoundLeg {
   builders: string[]
   /** Compiler inserts a settlement wait after this leg. */
   wait?: true
+  /** How many waits, when a leg runs several settling segments (a funding
+   *  leg with a destination gas leg waits after each). Absent = `wait`'s one. */
+  waits?: number
   /** One line of honesty. */
   hint: string
 }
 
 export interface CompoundOptions {
   usd?: number
-  /** Origin chain for the funding leg (default Arbitrum for coins, Base for stocks). */
-  originChainId?: number
+  /** The funding leg, from the connected wallet's own scan (FundLeg). Absent
+   *  or null = NO fund leg: which chain can fund a job is a fact about one
+   *  wallet (2026-09-16, the "Fund from Base" report), so this module never
+   *  picks an origin. A leg sized for another size, chain or shape is
+   *  dropped, never sent. */
+  fund?: FundLeg | null
   /** The chain the buy settles on (default: the symbol's first spot chain). */
   chainId?: number
   leverage?: number
@@ -512,11 +570,37 @@ export function compoundLegKindsFor(symbol: string, pair: ChartPair): CompoundLe
   return out
 }
 
+/** The chain a coin compound buys on: the picked chain, else Ethereum when it
+ *  stakes or supplies (both live on mainnet), else the symbol's first spot
+ *  chain. The composer's funding read asks for legs landing HERE. */
+export function compoundChainFor(symbol: string, kinds: CompoundLegKind[], chainId?: number): (typeof SPOT_CHAINS)[number] {
+  const sym = symbol.toUpperCase()
+  const want = new Set(kinds)
+  return SPOT_CHAINS.find((c) => c.id === (chainId ?? (want.has('supply') || want.has('stake') ? 1 : SPOT_CHAIN_OF(sym)))) ?? SPOT_CHAINS[0]
+}
+
+/** Where a compound's funding leg would land (Robinhood Chain for a stock,
+ *  the buy chain for a coin), or null when the pair chains no fund leg. */
+export function compoundFundDest(symbol: string, pair: ChartPair, kinds: CompoundLegKind[], chainId?: number): number | null {
+  if (!compoundLegKindsFor(symbol, pair).includes('fund')) return null
+  return pair.source === 'robinhood' ? ROBINHOOD_CHAIN_ID : compoundChainFor(pair?.symbol ?? symbol, kinds, chainId).id
+}
+
+/** A wallet's funding leg only rides the plan it was sized for. */
+const legFits = (leg: FundLeg | null | undefined, usd: number, destChainId: number, buy: boolean): leg is FundLeg =>
+  !!leg && leg.forUsd === usd && leg.destChainId === destChainId && leg.forBuy === buy && leg.segment.length > 0 && leg.builders.length > 0
+
+const fundLegOf = (leg: FundLeg): CompoundLeg => ({
+  kind: 'fund', label: leg.label, segment: leg.segment, builders: leg.builders, wait: true, ...(leg.waits !== 1 ? { waits: leg.waits } : {}), hint: leg.hint,
+})
+
 /**
  * Compose the legs for a chosen set of kinds. Order is canonical (fund →
  * buy → stake/supply · deposit → long/short → protect); an incoherent set
  * (protect without a long, stake without a buy, buy without a chain the
- * symbol trades on) drops the leg that can't follow, never guesses.
+ * symbol trades on) drops the leg that can't follow, never guesses. The fund
+ * leg comes only from the wallet (`opts.fund`, lib/fund-routes): without one
+ * the plan starts at the next leg.
  */
 export function composeCompound(symbol: string, pair: ChartPair, kinds: CompoundLegKind[], opts: CompoundOptions = {}): CompoundPlan {
   const sym = (pair?.symbol ?? symbol).toUpperCase()
@@ -527,32 +611,30 @@ export function composeCompound(symbol: string, pair: ChartPair, kinds: Compound
   const legs: CompoundLeg[] = []
 
   if (pair.source === 'robinhood') {
-    const origin = SPOT_CHAINS.find((c) => c.id === (opts.originChainId ?? 8453)) ?? SPOT_CHAINS[0]
-    if (want.has('fund') || want.has('buy')) {
+    // A stock chains fund → buy only. The buy is the order size and the fund
+    // leg moves what that buy needs from ONE chain (lib/fund-routes — the
+    // route table's own row and the chat's own chip, word for word).
+    const fund = want.has('fund') && legFits(opts.fund, usd, ROBINHOOD_CHAIN_ID, true) ? opts.fund : null
+    if (fund) {
+      legs.push(fundLegOf(fund))
       // A stock buy is a job step ONLY after a funding leg (the registry's
       // robinhood-fund-buy); a lone "Buy $X of AAPL" is the swap layer.
-      const buyUsd = Math.max(1, Math.round(usd * 0.8))
+      legs.push({ kind: 'buy', label: `Buy ${usdWord(usd)} of ${sym}`, segment: `buy ${usdWord(usd)} of ${sym}`, builders: ['native-lifi-swap'], hint: 'Fills in the Robinhood Chain pool once the USDG lands.' })
+    } else if (want.has('fund') || want.has('buy')) {
       legs.push({
-        kind: 'fund', label: `Fund from ${origin.name}`, segment: `Fund Robinhood Chain with $${usd} from ${origin.word} including gas`,
-        builders: ['native-lifi-fund', 'native-lifi-fund'], wait: true, hint: `USDC on ${origin.name} → gas ETH + USDG on Robinhood Chain (two legs, one signature each).`,
+        kind: 'buy', label: `Buy ${usdWord(usd)} of ${sym}`, segment: `Buy ${usdWord(usd)} of ${sym}`, builders: ['native-swap'],
+        hint: 'Settles in USDG on Robinhood Chain, 24/7. With no USDG there, the reply plans the funding from what your wallet holds.',
       })
-      legs.push({ kind: 'buy', label: `Buy $${buyUsd} of ${sym}`, segment: `buy $${buyUsd} of ${sym}`, builders: ['native-lifi-swap'], hint: 'Fills in the Robinhood Chain pool once the USDG lands (≈80% of the funding, the rest covers gas + fees).' })
     }
     return finish(legs)
   }
 
   const home = tokenHome(sym)
   const perpOnly = !!home || pair.source === 'hyperliquid'
-  const chain = SPOT_CHAINS.find((c) => c.id === (opts.chainId ?? (want.has('supply') || want.has('stake') ? 1 : SPOT_CHAIN_OF(sym)))) ?? SPOT_CHAINS[0]
-  const origin = SPOT_CHAINS.find((c) => c.id === opts.originChainId && c.id !== chain.id) ?? SPOT_CHAINS.find((c) => c.id !== chain.id)!
+  const chain = compoundChainFor(sym, kinds, opts.chainId)
 
   if (!perpOnly) {
-    if (want.has('fund')) {
-      legs.push({
-        kind: 'fund', label: `Bring USDC from ${origin.name}`, segment: `Swap ${usd} USDC from ${origin.word} to USDC on ${chain.word}`,
-        builders: ['native-cross-chain'], wait: true, hint: `${usd} USDC ${origin.name} → ${chain.name} through NEAR Intents; the job waits for settlement before the next leg.`,
-      })
-    }
+    if (want.has('fund') && legFits(opts.fund, usd, chain.id, want.has('buy'))) legs.push(fundLegOf(opts.fund))
     if (want.has('buy')) {
       legs.push({ kind: 'buy', label: `Buy ${sym} on ${chain.name}`, segment: `swap ${usd} USDC for ${sym} on ${chain.word}`, builders: ['native-swap'], hint: `Uniswap v3 on ${chain.name}, guarded, re-quoted at signature.` })
     }
@@ -589,7 +671,7 @@ export function composeCompound(symbol: string, pair: ChartPair, kinds: Compound
 
 function finish(legs: CompoundLeg[]): CompoundPlan {
   const ask = legs.map((l, i) => (i === 0 ? l.segment.charAt(0).toUpperCase() + l.segment.slice(1) : l.segment)).join(', then ')
-  const expectedSteps = legs.reduce((n, l) => n + l.builders.length + (l.wait ? 1 : 0), 0)
+  const expectedSteps = legs.reduce((n, l) => n + l.builders.length + (l.waits ?? (l.wait ? 1 : 0)), 0)
   return { legs, ask, expectedSteps }
 }
 
