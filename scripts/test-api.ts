@@ -232,8 +232,13 @@ import {
   onrampAssetOf,
   onrampConsentMessage,
   onrampCountryFrom,
+  onrampHasLane,
+  onrampOfferFor,
+  onrampSellable,
+  onrampSellableLanes,
   onrampSourceAmount,
   onrampSourceCurrencyFor,
+  onrampUnsellableMessage,
   planFundUsd,
   stripeOnrampParams,
   EUR_USD_FALLBACK,
@@ -247,6 +252,8 @@ import {
   ONRAMP_ETH_KEEP_USD,
   ONRAMP_ETH_PRICE_CEILING_USD,
   ONRAMP_LANDING_COST_USD,
+  ONRAMP_LANES,
+  ONRAMP_LANES_EVERYWHERE,
   ONRAMP_NETWORK_LABEL,
   ONRAMP_SETTLE_SLACK_USD,
   ONRAMP_MAX_USD,
@@ -7782,6 +7789,53 @@ async function main() {
           eurForm.get('lock_wallet_address') === 'true',
         eurForm.toString(),
       )
+      // What a checkout can SELL, by currency (2026-09-17). A European's "Buy
+      // USDC" from the watchlist rail opened a EUR checkout Stripe minted
+      // fine (200) and then couldn't price: the hosted page's quote call
+      // answered 499 liquidity_api_error, and the page read "An unknown error
+      // occurred" with Continue dead. Measured on the page's own quote call,
+      // on our account and on Stripe's own: EUR→USDC failed 58 of 60 on
+      // Ethereum and every sample on Base, Solana and Polygon; EUR→ETH on
+      // Base is crypto_onramp_invalid_currency_pair; EUR→ETH on Ethereum and
+      // every USD lane priced every time. The table is those measurements.
+      const laneKeys = (lanes: readonly { asset: string; network: string }[]) => lanes.map((l) => `${l.asset}@${l.network}`).join()
+      check(
+        'onramp lanes: a euro checkout sells ETH on Ethereum and nothing else (Stripe prices no USDC for euros, and ETH on Base is no euro pair); a dollar checkout sells all four, ETH first',
+        laneKeys(onrampSellableLanes('eur')) === 'ETH@ethereum' &&
+          laneKeys(onrampSellableLanes('usd')) === 'ETH@ethereum,ETH@base,USDC@ethereum,USDC@base' &&
+          !onrampSellable({ asset: 'USDC', network: 'ethereum' }, 'eur') &&
+          !onrampSellable({ asset: 'USDC', network: 'base' }, 'eur') &&
+          !onrampSellable({ asset: 'ETH', network: 'base' }, 'eur') &&
+          onrampSellable({ asset: 'ETH', network: 'ethereum' }, 'eur') &&
+          !onrampSellable({ asset: 'DOGE', network: 'ethereum' }, 'usd'),
+        `eur=${laneKeys(onrampSellableLanes('eur'))} usd=${laneKeys(onrampSellableLanes('usd'))}`,
+      )
+      check(
+        'onramp lanes: the table is complete (every lane × every currency is decided), and what every checkout sells is ETH on Ethereum: the lane every chat fund chip opens, so no chip lands on a checkout that can\'t price it',
+        ONRAMP_LANES.length === 4 &&
+          ONRAMP_LANES.every((l) => onrampAssetOf(l.asset) === l.asset && (l.network === 'base' || l.network === 'ethereum')) &&
+          laneKeys(ONRAMP_LANES_EVERYWHERE) === 'ETH@ethereum' &&
+          onrampHasLane(ONRAMP_LANES_EVERYWHERE, { asset: ONRAMP_ASSET, network: ONRAMP_DEFAULT_NETWORK }),
+        laneKeys(ONRAMP_LANES_EVERYWHERE),
+      )
+      const eurUsdc = onrampUnsellableMessage({ asset: 'USDC', network: 'ethereum' }, 'eur')
+      check(
+        'onramp lanes: the refusal says what can\'t be sold and for which money, and names the lane that works there',
+        eurUsdc === "Stripe can't sell USDC on Ethereum for euros right now. ETH on Ethereum works: buy that instead, or send USDC to this wallet.",
+        eurUsdc,
+      )
+      const ptOffer = onrampOfferFor(new Headers({ 'x-vercel-ip-country': 'PT' }), true)
+      const usOffer = onrampOfferFor(new Headers({ 'x-vercel-ip-country': 'US' }), true)
+      const nowhereOffer = onrampOfferFor(new Headers(), true)
+      const closedOffer = onrampOfferFor(new Headers({ 'x-vercel-ip-country': 'PT' }), false)
+      check(
+        'onramp offer: decided by the same country read as the session route: Portugal gets a euro checkout selling ETH on Ethereum; the US and an unknown country get dollars and all four; a closed door offers nothing',
+        ptOffer.enabled && ptOffer.currency === 'eur' && laneKeys(ptOffer.lanes) === 'ETH@ethereum' &&
+          usOffer.currency === 'usd' && laneKeys(usOffer.lanes) === laneKeys(ONRAMP_LANES) &&
+          nowhereOffer.currency === 'usd' && laneKeys(nowhereOffer.lanes) === laneKeys(ONRAMP_LANES) &&
+          !closedOffer.enabled && closedOffer.lanes.length === 0 && closedOffer.currency === 'eur',
+        JSON.stringify({ ptOffer, closedOffer }),
+      )
       check(
         'onramp: omitting the currency is still the USD lane, unchanged — a caller that never heard of currencies cannot break',
         stripeOnrampParams({ address: FUND_ADDR, presetFiatUsd: 27, asset: 'ETH', network: 'ethereum' }).toString() ===
@@ -8369,6 +8423,23 @@ async function main() {
           'onramp wiring: the dashboard fund card uses the signed door, not a bare provider link',
           fundCardSrc.includes('startOnrampSession') && !/pay\.coinbase\.com/.test(fundCardSrc),
         )
+        // No signature for a checkout that can't price its lane: the starter
+        // asks the offer AFTER opening the tab (the popup rule) and BEFORE the
+        // wallet prompt, and a lane refusal is a whole sentence (no operator
+        // suffix), like a region or stale one.
+        const offerAt = starterSrc.indexOf('fetchOnrampOffer()')
+        check(
+          'onramp wiring: the starter checks the lane against this visitor\'s offer after opening the tab and before asking for the signature; an unsellable refusal carries no operator suffix',
+          offerAt > starterSrc.indexOf('window.open') && offerAt < starterSrc.indexOf('signMessage({') &&
+            starterSrc.includes('onrampHasLane(offer.lanes, fund)') && /data\.stage === 'unsellable'/.test(starterSrc),
+          `offer@${offerAt} open@${starterSrc.indexOf('window.open')} sign@${starterSrc.indexOf('signMessage({')}`,
+        )
+        check(
+          'onramp wiring: the dashboard card shows "Buy USDC" only when this visitor\'s offer sells USDC on Base, and says why when it doesn\'t (a euro checkout)',
+          fundCardSrc.includes('useOnrampOffer(') && fundCardSrc.includes('onrampHasLane(offer.lanes, TOPUP_LANE)') &&
+            /\{canBuy && \(/.test(fundCardSrc) && /\{notSoldHere && offer && \(/.test(fundCardSrc) &&
+            /TOPUP_LANE: OnrampLane = \{ asset: 'USDC', network: 'base' \}/.test(fundCardSrc),
+        )
         // A completing chip (lib/swap-shortfall: "Buy $50 of ETH", the landing
         // IS the buy) must never fire its resume on arrival — that re-buys
         // the ETH that just landed as ETH → USDC → ETH. The arrival effect
@@ -8459,6 +8530,51 @@ async function main() {
           (outdated.status === 503 ||
             (outdated.status === 409 && (outdated.data as { stage?: string }).stage === 'stale' && /out of date/.test(String((outdated.data as { error?: string }).error)))),
         `${outdated.status} ${JSON.stringify(outdated.data)}`,
+      )
+
+      // A lane the visitor's checkout can't price (lib/onramp WHAT A CHECKOUT
+      // CAN SELL). Refused BY NAME, and before any signature is read: the
+      // answer depends only on the requester's own country. A European's
+      // "Buy USDC" used to mint (200) onto Stripe's "An unknown error
+      // occurred". The edge writes x-vercel-ip-country in production; next
+      // start passes the harness's header through.
+      const laneAt = async (country: string, asset: string) => {
+        const r = await fetch(`${BASE}/api/onramp/session`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1', 'x-vercel-ip-country': country },
+          body: JSON.stringify({ address: stranger.address, presetFiatUsd: 25, asset, network: 'ethereum' }),
+        })
+        return { status: r.status, data: (await r.json().catch(() => ({}))) as { url?: string; error?: string; stage?: string } }
+      }
+      const [eurUsdcPost, eurEthPost, usUsdcPost] = await Promise.all([laneAt('PT', 'USDC'), laneAt('PT', 'ETH'), laneAt('US', 'USDC')])
+      const doorShut = eurUsdcPost.status === 503 && eurEthPost.status === 503 && usUsdcPost.status === 503
+      check(
+        'onramp route: a European USDC checkout is refused BY NAME before any signature is read (stage unsellable), never minted onto Stripe\'s error page; ETH from Portugal and USDC from the US both go on to the signature check',
+        doorShut ||
+          (eurUsdcPost.status === 400 && eurUsdcPost.data.stage === 'unsellable' && !eurUsdcPost.data.url &&
+            /USDC on Ethereum for euros/.test(eurUsdcPost.data.error ?? '') &&
+            eurEthPost.status === 401 && eurEthPost.data.stage === 'auth' &&
+            usUsdcPost.status === 401 && usUsdcPost.data.stage === 'auth'),
+        JSON.stringify({ eurUsdcPost, eurEthPost, usUsdcPost }),
+      )
+      const offerFrom = async (country: string) => {
+        const r = await fetch(`${BASE}/api/onramp/offer`, { headers: { 'x-vercel-ip-country': country } })
+        return {
+          status: r.status,
+          cache: r.headers.get('cache-control') ?? '',
+          body: (await r.json().catch(() => ({}))) as { enabled?: unknown; currency?: string; lanes?: { asset: string; network: string }[] },
+        }
+      }
+      const [ptLive, usLive] = await Promise.all([offerFrom('PT'), offerFrom('US')])
+      const liveLanes = (b: { lanes?: { asset: string; network: string }[] }) => (b.lanes ?? []).map((l) => `${l.asset}@${l.network}`).join()
+      check(
+        'GET /api/onramp/offer: what this visitor can buy by card, never cached; Portugal gets euros and ETH on Ethereum alone, the US gets dollars and all four; a closed door lists no lanes (and the session route agrees: shut here means shut there)',
+        ptLive.status === 200 && usLive.status === 200 && /no-store/.test(ptLive.cache) &&
+          ptLive.body.currency === 'eur' && usLive.body.currency === 'usd' && typeof ptLive.body.enabled === 'boolean' &&
+          (ptLive.body.enabled
+            ? !doorShut && liveLanes(ptLive.body) === 'ETH@ethereum' && liveLanes(usLive.body) === 'ETH@ethereum,ETH@base,USDC@ethereum,USDC@base'
+            : doorShut && liveLanes(ptLive.body) === '' && liveLanes(usLive.body) === ''),
+        JSON.stringify({ pt: ptLive.body, us: usLive.body, doorShut }),
       )
     }
 
@@ -22454,7 +22570,7 @@ async function main() {
   console.log('— markets/watch card door')
   {
     const { walletLooksEmpty } = await import('../lib/watchlist-holdings')
-    const { railFundPhase, RAIL_FUND_OPTIONS, RAIL_FUND_PRESET_USD } = await import('../lib/watchlists')
+    const { railFundOptionsFor, railFundPhase, RAIL_FUND_OPTIONS, RAIL_FUND_PRESET_USD } = await import('../lib/watchlists')
     const { ONRAMP_DEFAULT_NETWORK, ONRAMP_MAX_USD, ONRAMP_MIN_USD, onrampAssetOf, onrampConsentMessage } = await import('../lib/onramp')
 
     // 1. What "holds nothing" means.
@@ -22478,6 +22594,14 @@ async function main() {
       RAIL_FUND_OPTIONS.map((o) => o.asset).join() === 'ETH,USDC' && RAIL_FUND_OPTIONS.every((o) => o.network === ONRAMP_DEFAULT_NETWORK && onrampAssetOf(o.asset) === o.asset) &&
         RAIL_FUND_PRESET_USD >= ONRAMP_MIN_USD && RAIL_FUND_PRESET_USD <= ONRAMP_MAX_USD &&
         onrampConsentMessage({ address: '0x' + 'ab'.repeat(20), presetFiatUsd: RAIL_FUND_PRESET_USD, asset: 'USDC', network: ONRAMP_DEFAULT_NETWORK, issuedAt: 0 }).includes(`Asset: USDC on ${ONRAMP_DEFAULT_NETWORK}`))
+    // 2b. Which of those buttons THIS visitor gets (2026-09-17: a European's
+    // Buy USDC opened a euro checkout Stripe couldn't price).
+    const railLabels = (country: string | null, enabled = true) =>
+      railFundOptionsFor(onrampOfferFor(new Headers(country ? { 'x-vercel-ip-country': country } : {}), enabled)).map((o) => o.label).join()
+    check('card door: the rail offers only what this visitor’s checkout can sell: Portugal (a euro checkout) gets Buy ETH alone, the US and an unknown country get ETH then USDC, a failed offer read falls back to what every checkout sells (ETH), and a closed door offers no button',
+      railLabels('PT') === 'Buy ETH' && railLabels('DE') === 'Buy ETH' && railLabels('US') === 'Buy ETH,Buy USDC' && railLabels(null) === 'Buy ETH,Buy USDC' &&
+        railFundOptionsFor(null).map((o) => o.label).join() === 'Buy ETH' && railLabels('US', false) === '',
+      `PT=${railLabels('PT')} US=${railLabels('US')} null=${railFundOptionsFor(null).map((o) => o.label).join()}`)
 
     // 3. The read.
     const fundAddr = '0x' + 'cd'.repeat(20)
@@ -22522,6 +22646,10 @@ async function main() {
     check('card door: a buy goes through the one on-ramp door (startOnrampSession, nothing awaited before it opens the tab), writes a wait with an EMPTY resume and the asset, watches it with useFundingArrival, and clears only its own waits',
       buyAt >= 0 && !beforeTab.includes('await') && fundSrc.includes("resume: ''") && fundSrc.includes('asset: o.asset') && fundSrc.includes('saveFundWait(w)') &&
         fundSrc.includes('useFundingArrival(wait,') && (fundSrc.match(/clearFundWait\(/g) ?? []).length === 2 && (fundSrc.match(/resume === ''\) clearFundWait\(/g) ?? []).length === 2)
+    check('card door: the door reads the offer only when it would offer, renders nothing until that read lands (never a Buy USDC that flashes and vanishes), and draws its buttons and copy from the narrowed options',
+      fundSrc.includes("useOnrampOffer(phase === 'offer')") && fundSrc.includes('if (offer === undefined) return null') &&
+        fundSrc.includes('railFundOptionsFor(offer)') && fundSrc.includes('options.map((o, i) =>') && !fundSrc.includes('RAIL_FUND_OPTIONS') &&
+        !fundSrc.includes('Buy ETH or USDC with a card'))
     check('card door: a chat chip adopts a stored wait only when its own resume matches, so the door’s empty-resume wait never fires a chat turn; the Wallet panel quotes a resume only when there is one',
       chipFundSrc.includes('o.fund && o.resume === w.resume') && panelFundSrc.includes('wait.resume ?') && panelFundSrc.includes("wait.asset ?? 'card purchase'"))
     check('card door: the rail mounts the door at the end of its rows with the holdings read’s verdict (never while it brews), and a landing re-reads the wallet past both caches (fresh=1, reconcile inside the minute) so the purchase fills the list',

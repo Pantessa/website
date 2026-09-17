@@ -9,7 +9,7 @@
 // constant in this file on purpose. Never add one.
 
 import { chartPairFor, normalizeChartSymbol, parseChartAsk, type ChartPair, type ChartSource } from '@/lib/charts'
-import { ONRAMP_DEFAULT_NETWORK, type OnrampAsset, type OnrampNetwork } from '@/lib/onramp'
+import { ONRAMP_DEFAULT_NETWORK, ONRAMP_LANES_EVERYWHERE, onrampHasLane, type OnrampAsset, type OnrampLane, type OnrampNetwork } from '@/lib/onramp'
 import { ROBINHOOD_TICKERS } from '@/lib/robinhood-tickers'
 
 // ── Shapes (README "Watchlists" contract) ───────────────────────────────────
@@ -671,6 +671,16 @@ export const RAIL_FUND_OPTIONS: readonly RailFundOption[] = [
   { asset: 'ETH', network: ONRAMP_DEFAULT_NETWORK, label: 'Buy ETH' },
   { asset: 'USDC', network: ONRAMP_DEFAULT_NETWORK, label: 'Buy USDC' },
 ]
+
+/** The buttons this visitor gets: RAIL_FUND_OPTIONS narrowed to the lanes
+ *  their checkout can sell (GET /api/onramp/offer). A failed read narrows to
+ *  the lanes every checkout sells. A European gets Buy ETH alone: Stripe
+ *  can't price USDC in euros, and a euro "Buy USDC" opened onto "An unknown
+ *  error occurred" (2026-09-17, lib/onramp WHAT A CHECKOUT CAN SELL). */
+export function railFundOptionsFor(offer: { lanes: readonly OnrampLane[] } | null): RailFundOption[] {
+  const lanes = offer ? offer.lanes : ONRAMP_LANES_EVERYWHERE
+  return RAIL_FUND_OPTIONS.filter((o) => onrampHasLane(lanes, o))
+}
 
 /** What the card door shows; null when it has nothing to say. */
 export type RailFund = 'offer' | 'watching' | 'landed' | null

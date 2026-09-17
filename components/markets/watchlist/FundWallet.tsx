@@ -3,8 +3,11 @@
 // The watchlist rail's card door (2026-09-16, Nate: "when signed in with an
 // account with no tokens can we add a buy ETH or USDC using stripe call out
 // and linkage here"). A wallet the holdings read finds empty gets Buy ETH /
-// Buy USDC in the rail. The buy goes through the same signed Stripe door as
-// the chat's fund chip and the Wallet panel (lib/onramp-client). Then the door
+// Buy USDC in the rail, or only the ones this visitor's checkout can sell: a
+// euro checkout gets Buy ETH alone, because Stripe can't price USDC in euros
+// (2026-09-17, lib/watchlists railFundOptionsFor). The buy goes through the
+// same signed Stripe door as the chat's fund chip and the Wallet panel
+// (lib/onramp-client). Then the door
 // watches the chain for the purchase (lib/funding-arrival): a buyer back from
 // the Stripe tab sees the wait, not the button again, because a second tap is
 // a second charge. When the money lands it says so and has the rail read the
@@ -24,7 +27,8 @@ import { startOnrampSession } from '@/lib/onramp-client'
 import { ONRAMP_NETWORK_LABEL, type OnrampAsset } from '@/lib/onramp'
 import { arrivalPhrase, clearFundWait, loadFundWait, saveFundWait, type Arrival, type FundWait } from '@/lib/funding-arrival'
 import { useFundingArrival } from '@/lib/use-funding-arrival'
-import { RAIL_FUND_OPTIONS, RAIL_FUND_PRESET_USD, railFundPhase, type RailFundOption } from '@/lib/watchlists'
+import { useOnrampOffer } from '@/lib/use-onramp-offer'
+import { RAIL_FUND_PRESET_USD, railFundOptionsFor, railFundPhase, type RailFundOption } from '@/lib/watchlists'
 
 export interface FundWalletProps {
   /** The wallet the rail's holdings read (null: no wallet behind the rail). */
@@ -114,6 +118,9 @@ export default function FundWallet({ holder, empty, cardFunding, onLanded }: Fun
   }
 
   const phase = railFundPhase({ wallet, empty, cardFunding, waiting: watching, landed: !!landed })
+  // Which buttons this visitor's checkout can actually sell, read only when the
+  // door would offer them (lib/onramp WHAT A CHECKOUT CAN SELL).
+  const offer = useOnrampOffer(phase === 'offer')
   if (!phase) return null
 
   if (phase === 'landed' && landed) {
@@ -164,16 +171,24 @@ export default function FundWallet({ holder, empty, cardFunding, onLanded }: Fun
     )
   }
 
-  const chain = ONRAMP_NETWORK_LABEL[RAIL_FUND_OPTIONS[0].network]
+  // Nothing until the offer is read: a button that shows and then vanishes is
+  // worse than a door that appears a moment later.
+  if (offer === undefined) return null
+  const options = railFundOptionsFor(offer)
+  if (!options.length) return null
+  const chain = ONRAMP_NETWORK_LABEL[options[0].network]
+  const stable = options.some((o) => o.asset !== 'ETH')
   return (
     <div className="wl__fund" data-rail-fund="offer">
       <div className="wl__fundHead">
         <CreditCard className="wl__fundIcon" aria-hidden />
         <span className="wl__fundTitle">Fund your wallet</span>
       </div>
-      <p className="wl__fundText">Buy ETH or USDC with a card or bank. It lands in this wallet on {chain}.</p>
+      <p className="wl__fundText">
+        Buy {options.map((o) => o.asset).join(' or ')} with a card or bank. It lands in this wallet on {chain}.
+      </p>
       <div className="wl__fundActs">
-        {RAIL_FUND_OPTIONS.map((o, i) => (
+        {options.map((o, i) => (
           <button
             key={o.asset}
             type="button"
@@ -187,7 +202,7 @@ export default function FundWallet({ holder, empty, cardFunding, onLanded }: Fun
           </button>
         ))}
       </div>
-      <p className="wl__fundNote">Via Stripe. ETH covers its own gas; USDC needs a little ETH to move.</p>
+      <p className="wl__fundNote">Via Stripe. ETH covers its own gas{stable ? '; USDC needs a little ETH to move' : ''}.</p>
       {error && <p className="wl__err">{error}</p>}
     </div>
   )

@@ -17,6 +17,11 @@
 // USDC here, not the ETH the chat's fund chip buys: this card exists to top up
 // the balance x402 settles in, and the account it funds is already live rather
 // than empty-and-gasless.
+//
+// The button shows only when this visitor's checkout can sell USDC on Base
+// (GET /api/onramp/offer). A euro checkout can't: Stripe prices no USDC for
+// euros (2026-09-17, lib/onramp WHAT A CHECKOUT CAN SELL). Europeans get the
+// address and QR, which always work, and a line saying why there's no card.
 
 import { useState } from 'react'
 import { useAccount, useReadContract, useSignMessage } from 'wagmi'
@@ -26,6 +31,11 @@ import { QRCodeSVG } from 'qrcode.react'
 import { Card } from '@/lib/dashboard-ui'
 import { Copy, Check, ArrowUpRight, AlertTriangle, Loader2 } from 'lucide-react'
 import { startOnrampSession } from '@/lib/onramp-client'
+import { onrampHasLane, type OnrampLane } from '@/lib/onramp'
+import { useOnrampOffer } from '@/lib/use-onramp-offer'
+
+/** What the card buys: the token x402 settles in, where it settles. */
+const TOPUP_LANE: OnrampLane = { asset: 'USDC', network: 'base' }
 
 // Native USDC on Base (6 decimals) — the token x402 settles in.
 const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as const
@@ -50,6 +60,10 @@ export default function FundAccountCard() {
     chainId: base.id,
     query: { enabled: !!address, refetchInterval: 30_000 },
   })
+  const offer = useOnrampOffer(!!address)
+  // Only a read offer decides: no button while it's out, or if it failed.
+  const canBuy = !!offer?.enabled && onrampHasLane(offer.lanes, TOPUP_LANE)
+  const notSoldHere = !!offer?.enabled && !canBuy
 
   if (!isConnected || !address) return null
 
@@ -108,26 +122,33 @@ export default function FundAccountCard() {
           {/* Called synchronously off the click — startOnrampSession opens the
               tab as its first statement, and a popup opened after an await is
               no longer a user gesture. */}
-          <button
-            onClick={async () => {
-              if (!address || buying) return
-              setBuyError(null)
-              setBuying(true)
-              const res = await startOnrampSession({
-                address,
-                fund: { presetFiatUsd: TOPUP_PRESET_USD, asset: 'USDC', network: 'base' },
-                signMessage: signMessageAsync,
-              })
-              setBuying(false)
-              if (!res.ok) setBuyError(res.error)
-            }}
-            disabled={buying}
-            className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400 hover:text-emerald-300 disabled:opacity-50 transition-colors"
-          >
-            {buying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-            Buy USDC with card or bank
-            {buying ? null : <ArrowUpRight className="w-3.5 h-3.5" />}
-          </button>
+          {canBuy && (
+            <button
+              onClick={async () => {
+                if (!address || buying) return
+                setBuyError(null)
+                setBuying(true)
+                const res = await startOnrampSession({
+                  address,
+                  fund: { presetFiatUsd: TOPUP_PRESET_USD, ...TOPUP_LANE },
+                  signMessage: signMessageAsync,
+                })
+                setBuying(false)
+                if (!res.ok) setBuyError(res.error)
+              }}
+              disabled={buying}
+              className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400 hover:text-emerald-300 disabled:opacity-50 transition-colors"
+            >
+              {buying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+              Buy USDC with card or bank
+              {buying ? null : <ArrowUpRight className="w-3.5 h-3.5" />}
+            </button>
+          )}
+          {notSoldHere && offer && (
+            <p className="mt-3 text-[11px] text-[color:var(--muted-2)]" data-fund-card="not-sold">
+              Stripe can’t sell USDC for {offer.currency === 'eur' ? 'euros' : 'dollars'} right now, so there’s no card top-up here. Send USDC on Base to the address above.
+            </p>
+          )}
           {/* The address + QR above always work, so a closed or region-blocked
               on-ramp costs the user nothing but this line. */}
           {buyError && <div className="mt-1.5 text-[11px] text-[color:var(--sell)]">{buyError}</div>}

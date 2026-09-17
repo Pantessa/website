@@ -7,8 +7,10 @@ import {
   onrampConsentMessage,
   onrampCountryFrom,
   onrampEnabled,
+  onrampSellable,
   onrampSourceAmount,
   onrampSourceCurrencyFor,
+  onrampUnsellableMessage,
   ONRAMP_CONSENT_TTL_MS,
   stripeOnrampParams,
   type OnrampNetwork,
@@ -115,6 +117,22 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // ── Which checkout this visitor gets, and whether it can sell the lane.
+  // The currency is explained at its use below. The lane check runs HERE,
+  // before the signature, because Stripe mints a session for a lane it can't
+  // price and returns a clean 200. The customer then opens the tab onto "An
+  // unknown error occurred" (a euro USDC buy, 2026-09-17; lib/onramp WHAT A
+  // CHECKOUT CAN SELL). The surfaces already hide those lanes
+  // (GET /api/onramp/offer). This refusal covers a stale client, and it
+  // depends only on the requester's own country, so it's safe to answer
+  // before we know who is asking.
+  const country = onrampCountryFrom(req.headers)
+  const sourceCurrency = onrampSourceCurrencyFor(country)
+  if (!onrampSellable({ asset, network }, sourceCurrency)) {
+    console.warn(`[onramp] refused ${asset} on ${network} for ${country ?? 'unknown country'}: a ${sourceCurrency} checkout can't price it`)
+    return NextResponse.json({ error: onrampUnsellableMessage({ asset, network }, sourceCurrency), stage: 'unsellable' }, { status: 400 })
+  }
+
   // ── Wallet proof. Runs BEFORE the Stripe call so a spoofed request never
   // costs us a session, and before any of it is logged.
   const issuedAt = typeof body.issuedAt === 'number' ? body.issuedAt : Number(body.issuedAt)
@@ -176,9 +194,9 @@ export async function POST(req: NextRequest) {
   // charges the EUR/USD spread on top of the plan — about 16% at today's ECB
   // rate — with nothing on the page saying so. That is also what happens
   // today to anyone who switches the currency by hand, which is the fix
-  // underneath the fix.
-  const country = onrampCountryFrom(req.headers)
-  const sourceCurrency = onrampSourceCurrencyFor(country)
+  // underneath the fix. (`country` and `sourceCurrency` were read above, where
+  // the lane check needed them.)
+  //
   // Only a euro session needs a rate, so a US customer never waits on the ECB
   // and never depends on it being up.
   const { rate, via } = sourceCurrency === 'eur' ? await usdPerEur() : { rate: 1, via: 'n/a' as const }

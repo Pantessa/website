@@ -239,6 +239,109 @@ export function onrampAssetOf(raw: unknown): OnrampAsset | null {
   return (ONRAMP_ASSETS as readonly string[]).includes(up) ? (up as OnrampAsset) : null
 }
 
+// ── WHAT A CHECKOUT CAN SELL, BY CURRENCY (2026-09-17) ────────────────────
+// Stripe minting a session doesn't mean Stripe can price it. The watchlist
+// rail's "Buy USDC", opened from Portugal (EUR checkout, locked to USDC on
+// Ethereum), landed on "An unknown error occurred" with Receive 0 and
+// Continue dead. The hosted page's own quote call had answered HTTP 499
+// `liquidity_api_error` ("An unrecoverable server error was encountered").
+// We never see that: the create call is a clean 200, and the wall is on
+// Stripe's page, after the wallet has signed the consent.
+//
+// Measured against that quote call the same day, on our account AND on
+// Stripe's own crypto.link.com account (so it isn't ours):
+//   EUR → USDC on Ethereum: 58 of 60 failed, at every amount from €22 to
+//     €400, debit and credit alike. On Base, Solana and Polygon, every
+//     sample failed.
+//   EUR → ETH on Base: `crypto_onramp_invalid_currency_pair`. It isn't a euro
+//     pair at all (Stripe's docs: ETH (Base) "isn't supported in the EU").
+//   EUR → ETH on Ethereum: 20 of 20 priced (Bitstamp).
+//   USD → every lane here priced on every sample (Zero Hash).
+// Stripe's availability table still lists USDC (Ethereum) for the EU. The
+// docs and the live quote disagree, and the quote is what the customer sees.
+//
+// A dollar checkout doesn't get a European around it: that's the checkout
+// that failed after Link login + KYC on 2026-09-07 (the currency note above).
+// So the euro lanes are all Europe can buy.
+//
+// Per currency the table is an ALLOWLIST, so a pair nobody has priced stays
+// closed. When Stripe prices a pair, add it here; the rail and the dashboard
+// card offer it again with no other change.
+
+/** One thing a card checkout can deliver: an asset on a network. */
+export interface OnrampLane {
+  asset: OnrampAsset
+  network: OnrampNetwork
+}
+
+/** Every lane this module can mint, in offer order: ETH first (it pays its
+ *  own gas), the default network first. */
+export const ONRAMP_LANES: readonly OnrampLane[] = [
+  { asset: 'ETH', network: 'ethereum' },
+  { asset: 'ETH', network: 'base' },
+  { asset: 'USDC', network: 'ethereum' },
+  { asset: 'USDC', network: 'base' },
+]
+
+const laneKey = (lane: { asset: string; network: string }): string => `${lane.asset}@${lane.network}`
+
+/** The lanes Stripe prices in each checkout currency, keyed `ASSET@network`.
+ *  Measured, not taken from the docs; see the note above. */
+export const ONRAMP_SELLABLE: Record<OnrampSourceCurrency, ReadonlySet<string>> = {
+  usd: new Set(['ETH@ethereum', 'ETH@base', 'USDC@ethereum', 'USDC@base']),
+  eur: new Set(['ETH@ethereum']),
+}
+
+/** Can a checkout in `currency` price this lane? */
+export function onrampSellable(lane: { asset: string; network: string }, currency: OnrampSourceCurrency): boolean {
+  return ONRAMP_SELLABLE[currency]?.has(laneKey(lane)) === true
+}
+
+/** The lanes a checkout in `currency` can sell, in offer order. */
+export function onrampSellableLanes(currency: OnrampSourceCurrency): OnrampLane[] {
+  return ONRAMP_LANES.filter((lane) => onrampSellable(lane, currency))
+}
+
+/** The lanes EVERY checkout sells: what a surface offers when it couldn't
+ *  learn which checkout this visitor gets. ETH on Ethereum today, which is
+ *  also the lane every chat fund chip uses (ONRAMP_ASSET on
+ *  ONRAMP_DEFAULT_NETWORK). */
+export const ONRAMP_LANES_EVERYWHERE: readonly OnrampLane[] = ONRAMP_LANES.filter((lane) =>
+  ONRAMP_SOURCE_CURRENCIES.every((currency) => onrampSellable(lane, currency)),
+)
+
+export function onrampHasLane(lanes: readonly OnrampLane[], lane: { asset: string; network: string }): boolean {
+  return lanes.some((l) => l.asset === lane.asset && l.network === lane.network)
+}
+
+/** The refusal for a lane this checkout can't price. It says what can't be
+ *  sold and in which currency, and names a lane that does sell there. */
+export function onrampUnsellableMessage(lane: { asset: string; network: OnrampNetwork }, currency: OnrampSourceCurrency): string {
+  const money = currency === 'eur' ? 'euros' : 'dollars'
+  const what = `${lane.asset} on ${ONRAMP_NETWORK_LABEL[lane.network] ?? lane.network}`
+  const works = onrampSellableLanes(currency)[0]
+  return works
+    ? `Stripe can't sell ${what} for ${money} right now. ${works.asset} on ${ONRAMP_NETWORK_LABEL[works.network]} works: buy that instead, or send ${lane.asset} to this wallet.`
+    : `Stripe can't sell ${what} for ${money} right now. You can still send ${lane.asset} to this wallet.`
+}
+
+/** What this visitor can buy by card. Decided from the same edge country
+ *  read the session route uses, so the buttons a surface shows are exactly
+ *  the lanes the route will mint. */
+export interface OnrampOffer {
+  /** This deployment can mint a Stripe session (onrampEnabled). */
+  enabled: boolean
+  /** The checkout currency this visitor gets (onrampSourceCurrencyFor). */
+  currency: OnrampSourceCurrency
+  /** The lanes that checkout can sell, in offer order; none when closed. */
+  lanes: OnrampLane[]
+}
+
+export function onrampOfferFor(headers: Headers, enabled: boolean = onrampEnabled()): OnrampOffer {
+  const currency = onrampSourceCurrencyFor(onrampCountryFrom(headers))
+  return { enabled, currency, lanes: enabled ? onrampSellableLanes(currency) : [] }
+}
+
 /** The smallest preset that can still produce a fillable plan on Base.
  *
  *  DERIVED, not chosen. Work it backwards from the parity guard: a bridged
