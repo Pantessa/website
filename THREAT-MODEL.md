@@ -206,15 +206,15 @@ Verified for the DCA autopilot (2026-09-17, #DCA_PR):
     spender);
   - a real v3 pool tier.
 
-  Hostile shapes tried, in every payout shape: a minimum of 1, a foreign fee
-  recipient, 0 bps and 100 bps, a weakened payout minimum, a price limit, and
-  a bogus tier. Before this, a regressed builder could set a minimum of 1, and
-  a thin pool's fill passed. Measured on Base the same day: the minimum on a
-  $100 DEGEN buy sat 44% under the mark, and on $10 of BRETT 37%. Both refuse
-  now. Pinned by the `dca autopilot` checks in `scripts/test-api.ts`. They
-  include a live build of the sweep's own `buildAutoBuy` (an ETH buy and a
-  cbBTC buy), and a mutation run showed each check has a pin that fails
-  without it.
+  Hostile shapes tried, across the payout shapes each one applies to: a
+  minimum of 1, a foreign fee recipient, 0 bps and 100 bps, a weakened payout
+  minimum, a price limit, and a bogus tier. Before this, a regressed builder
+  could set a minimum of 1, and a thin pool's fill passed. Measured on Base
+  the same day: the minimum on a $100 DEGEN buy sat 44% under the mark, and
+  on $10 of BRETT 37%. Both refuse now. Pinned by the `dca autopilot` checks
+  in `scripts/test-api.ts`. They include a live build of the sweep's own
+  `buildAutoBuy` (an ETH buy and a cbBTC buy), and a mutation run showed each
+  check has a pin that fails without it.
 - **A reverted transaction fails the run.** `waitTx` in `lib/dca-auto-exec.ts`
   throws on a non-success receipt. A source pin holds the sweep's order: the
   build and floor, then the guard, then the pull.
