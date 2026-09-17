@@ -12,6 +12,7 @@
 // and is stamped into wallet_arrivals on the visitor's first sign-in — so
 // /dashboard/users can show which wallets a share actually brought in.
 
+import { X_MENTION } from '@/lib/social'
 import { createHash } from 'node:crypto'
 import { chainById } from '@/lib/chains'
 import { cadenceLabel, type DcaCadence } from '@/lib/dca'
@@ -267,10 +268,10 @@ export function receiptTweetHref(receipt: {
       ? `${receipt.ask.slice(0, TWEET_ASK_MAX - 1).trimEnd()}…`
       : receipt.ask
   const text = receipt.standing
-    ? `${receipt.headline} — set up in one sentence on @yeetful_ai. It runs whether I'm at the keyboard or not. Receipt:`
+    ? `${receipt.headline} — set up in one sentence on ${X_MENTION}. It runs whether I'm at the keyboard or not. Receipt:`
     : ask
-      ? `"${ask}" → built, guarded, signed on @yeetful_ai. Receipt:`
-      : `${receipt.headline} — built, guarded, signed on @yeetful_ai. Receipt:`
+      ? `"${ask}" → built, guarded, signed on ${X_MENTION}. Receipt:`
+      : `${receipt.headline} — built, guarded, signed on ${X_MENTION}. Receipt:`
   const params = new URLSearchParams({ text, url: shareReceiptUrl(receipt.id, receipt.via) })
   return `https://twitter.com/intent/tweet?${params.toString()}`
 }
