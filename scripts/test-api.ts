@@ -2780,18 +2780,50 @@ async function main() {
       const noHash = await beacon({})
       // 2. A hash no chain has ever seen → unverified (chain says nothing).
       const ghost = await beacon({ txUrl: `https://basescan.org/tx/0x${'77'.repeat(32)}` })
-      // 3. Someone ELSE's real Base tx (aged block, skip the OP-stack system tx) → mismatch.
-      let foreign: { hash: string; from: string; to: string | null; input: string } | null = null
+      // 3. Someone ELSE's real Base tx (aged block, skip OP-stack system + deposit txs) → mismatch.
+      // The positive branch (4.) replays this same tx as a REAL receipt, so the
+      // pick must have SUCCEEDED: a reverted one reads `mismatch` there, and
+      // 1 in 40–80 of the old first-tx picks had reverted (the 2026-09-16 flake
+      // on 257946c3). Receipts come from Base's own RPC, never publicnode (its
+      // free tier refuses eth_getTransactionReceipt) and never receiptClientFor
+      // (the code under test). The scan starts at a random tx so two harnesses
+      // sharing the TEST DB don't pick one hash (the single-use rule would read
+      // the second as reused).
+      let foreign: { hash: string; from: string; to: string | null; input: string; block: string; receipt: string } | null = null
+      const foreignReverted: string[] = []
+      let foreignDark = ''
       try {
         const { createPublicClient: cpc, http: viemHttp } = await import('viem')
         const { base: baseChain } = await import('viem/chains')
         const pub = cpc({ chain: baseChain, transport: viemHttp('https://base-rpc.publicnode.com') })
+        const receipts = cpc({ chain: baseChain, transport: viemHttp('https://mainnet.base.org', { timeout: 5_000 }) })
         const tip = await pub.getBlockNumber()
-        const blk = await pub.getBlock({ blockNumber: tip - BigInt(64), includeTransactions: true })
-        const cand = blk.transactions.slice(1).find((t) => typeof t === 'object' && !!t.to && t.from.toLowerCase() !== spoofWallet)
-        if (cand && typeof cand === 'object') foreign = { hash: cand.hash, from: cand.from.toLowerCase(), to: cand.to ? cand.to.toLowerCase() : null, input: cand.input }
-      } catch {
+        pick: for (let back = 64; back < 67; back++) {
+          const blk = await pub.getBlock({ blockNumber: tip - BigInt(back), includeTransactions: true })
+          const cands = blk.transactions.slice(1).filter((t) => t.type !== 'deposit' && !!t.to && t.from.toLowerCase() !== spoofWallet)
+          const start = Math.floor(Math.random() * cands.length)
+          for (let i = 0; i < Math.min(4, cands.length); i++) {
+            const t = cands[(start + i) % cands.length]
+            const r = await receipts.getTransactionReceipt({ hash: t.hash })
+            if (r.status !== 'success') {
+              foreignReverted.push(t.hash)
+              continue
+            }
+            foreign = { hash: t.hash, from: t.from.toLowerCase(), to: t.to ? t.to.toLowerCase() : null, input: t.input, block: String(blk.number), receipt: r.status }
+            break pick
+          }
+        }
+      } catch (e) {
         /* RPC dark — the unverified branches still prove the fence */
+        foreignDark = ((e as { shortMessage?: string }).shortMessage ?? String(e)).split('\n')[0].slice(0, 120)
+      }
+      // Every check that leans on the pick names it, so a red names the tx.
+      const foreignNote = {
+        tx: foreign?.hash ?? null,
+        block: foreign?.block ?? null,
+        receipt: foreign?.receipt ?? null,
+        ...(foreignReverted.length ? { passedOverReverted: foreignReverted } : {}),
+        ...(foreignDark ? { rpcDark: foreignDark } : {}),
       }
       const spoof = await beacon({ txUrl: `https://basescan.org/tx/${foreign?.hash ?? `0x${'99'.repeat(32)}`}` })
       const s2Mid = await studio()
@@ -2805,7 +2837,7 @@ async function main() {
       check(
         "receipt money: someone else's real Base tx as the hash is a MISMATCH (RPC-dark degrades to unverified — still nothing)",
         spoof.status === 200 && (foreign ? spoof.body.verification === 'mismatch' : spoof.body.verification === 'unverified'),
-        JSON.stringify({ v: spoof.body.verification, live: !!foreign }),
+        JSON.stringify({ v: spoof.body.verification, live: !!foreign, ...foreignNote }),
       )
       check(
         'receipt money: three $4,999 spoofed signs leave the STUDIO at $0 moved / $0 earned / claimable unchanged / no referred wallet',
@@ -2879,7 +2911,11 @@ async function main() {
         }
       })()
       if (!foreign || !dbUrlS2) {
-        check(`receipt money: verified branch skipped — ${!foreign ? 'Base RPC dark' : 'no DATABASE_URL for the expectation fixture'}`, true)
+        check(
+          `receipt money: verified branch skipped — ${!foreign ? (foreignDark ? 'Base RPC dark' : 'no successful Base tx in the scan') : 'no DATABASE_URL for the expectation fixture'}`,
+          true,
+          JSON.stringify(foreignNote),
+        )
       } else {
         const { PrismaClient } = await import('@prisma/client')
         const db = new PrismaClient({ datasources: { db: { url: dbUrlS2 } } })
@@ -2893,14 +2929,15 @@ async function main() {
           check(
             'receipt money: a REAL receipt (success, sent by the signing wallet, to the artifact on record) stores VERIFIED and the studio counts it ($4,000 moved → $10 earned at the 50bps link tier)',
             real.body.verification === 'verified' && !!realRow && realRow.signedUsd === 4000 && Math.abs(realRow.earnedUsd - 10) < 0.001,
-            JSON.stringify({ v: real.body, row: realRow }),
+            JSON.stringify({ v: real.body, row: realRow, ...foreignNote }),
           )
           const reused = await beacon({ walletAddress: foreign.from, txUrl: `https://basescan.org/tx/${foreign.hash}`, valueUsd: 4000 })
           const s2Reuse = await studio()
+          const reuseSignedUsd = s2Reuse.links.find((l) => l.slug === s2Slug)?.signedUsd
           check(
             'receipt money: the SAME real hash a second time is a MISMATCH (single-use per table) and adds nothing',
-            reused.body.verification === 'mismatch' && s2Reuse.links.find((l) => l.slug === s2Slug)?.signedUsd === 4000,
-            JSON.stringify(reused.body),
+            reused.body.verification === 'mismatch' && reuseSignedUsd === 4000,
+            JSON.stringify({ v: reused.body, signedUsd: reuseSignedUsd ?? null, ...foreignNote }),
           )
           await db.intentLinkExpectation.delete({ where: { id: exp.id } }).catch(() => {})
         } finally {
