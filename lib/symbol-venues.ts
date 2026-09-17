@@ -8,12 +8,21 @@
 //  Every `ask` is a SENTENCE in a native parser's own example phrasing
 //  (memory chip-send-contract: the chip IS the contract) — swap / CoW limit
 //  / HL perp (+ leverage) / Aave supply+borrow / Lido stake / Spot
-//  Guardian + HL Guardian / NEAR cross-chain funding / Robinhood Chain
-//  funding / 4663 stock buys. No DCA row (2026-09-16): a recurring buy only
-//  reminds the wallet to sign each period, so the map doesn't offer one
-//  (typing it still works). Nothing here writes calldata, addresses or
-//  amounts that get signed; the harness pins every row through
-//  scripts/ask-ladder.ts (a row that lands on the planner is a bug).
+//  Guardian + HL Guardian / 4663 stock buys / a card buy (lib/card-buy).
+//  No DCA row (2026-09-16): a recurring buy only reminds the wallet to sign
+//  each period, so the map doesn't offer one (typing it still works).
+//  Nothing here writes calldata, addresses or amounts that get signed; the
+//  harness pins every row through scripts/ask-ladder.ts (a row that lands on
+//  the planner is a bug).
+//
+//  FUNDING FROM ANOTHER CHAIN IS NOT IN THIS MAP (2026-09-16, Nate on
+//  /t/AAPL: "it shows 'Fund from Base' but the user does not have any tokens
+//  on base"). The map used to list a funding row for every origin chain, for
+//  every visitor, each spending USDC whether or not the wallet held any. Which
+//  chains can fund an order is a fact about ONE wallet, so those rows come
+//  from GET /api/markets/routes/funding (lib/fund-routes), built off the same
+//  scans the chat's funding plan spends from. What stays here is the one
+//  funding row that needs no wallet to be true: the card (`opts.card`).
 //
 //  Honesty rules (each one is a walled ask avoided):
 //  • CoW has NO order book on Optimism or Robinhood Chain (lib/chains
@@ -22,8 +31,8 @@
 //    wallet — the row says Base and names the caveat;
 //  • the HL Guardian only protects a LIVE perp — `needs: 'position'`;
 //  • a Robinhood Chain stock has no perp, no lend, no stake, no resting
-//    book: buy / sell on 4663 + funding from any origin, and the
-//    missing kinds are NAMED (`missingVenueNotes`), never silent;
+//    book: buy / sell on 4663 + funding (the wallet's own chains, or a
+//    card), and the missing kinds are NAMED (`missingVenueNotes`), never silent;
 //  • a coin whose home isn't an EVM chain (SOL, XRP… lib/token-home) gets
 //    Hyperliquid perps only — a spot row could only ever buy a Base squat;
 //  • Aave supply/borrow and Lido stake live on Ethereum mainnet (the v4
@@ -36,6 +45,7 @@
 import type { ChartPair } from '@/lib/charts'
 import { tokenHome } from '@/lib/token-home'
 import { fmtAskPrice, fmtAskUnits } from '@/lib/chart-actions'
+import { ONRAMP_DEFAULT_NETWORK } from '@/lib/onramp'
 
 export type VenueKind = 'spot' | 'limit' | 'perp' | 'lend' | 'stake' | 'protect' | 'fund' | 'stock'
 
@@ -80,6 +90,10 @@ export interface VenuesOptions {
   last?: number
   /** Limit distance from `last` for the CoW rows (default 1%). */
   limitPct?: number
+  /** The card on-ramp is open (server: lib/onramp onrampEnabled) — adds the
+   *  "Buy with card" funding row. Omitted = no card row: a door that 503s
+   *  must never render. */
+  card?: boolean
 }
 
 export const DEFAULT_ROUTE_USD = 50
@@ -144,6 +158,55 @@ export const hasAaveReserveCold = (symbol: string): boolean => AAVE_RESERVE_COLD
 
 const usdWord = (usd: number) => (Number.isInteger(usd) ? `$${usd}` : `$${usd.toFixed(2)}`)
 
+/** The chain a coin's funding lands on and its card buy settles on: its first
+ *  spot chain (Base for ETH, Ethereum for most majors). */
+export const fundDestChainFor = (symbol: string): number => (SPOT_CHAIN_HINTS[symbol.toUpperCase()] ?? DEFAULT_SPOT_CHAINS)[0]
+
+/** Where the card on-ramp delivers (lib/onramp's default lane). */
+export const CARD_LANE_CHAIN_ID = ONRAMP_DEFAULT_NETWORK === 'base' ? 8453 : 1
+
+/** The card buy for a symbol, as the chat reads it (lib/card-buy), or null
+ *  when the page has no spot buy for a card to fund (a perp chart, a coin
+ *  whose home isn't an EVM chain). A stock names no chain (4663 inference);
+ *  ETH buys on the card's own lane, where the delivery IS the buy; any other
+ *  coin buys on its funding destination. */
+export function cardBuyAsk(symbol: string, pair: ChartPair, usd: number): string | null {
+  const sym = (pair?.symbol ?? symbol).toUpperCase()
+  if (pair.source === 'robinhood') return `Buy ${usdWord(usd)} of ${sym} with a card`
+  const chain = cardBuyChain(sym, pair)
+  return chain ? `Buy ${usdWord(usd)} of ${sym} on ${chain.word} with a card` : null
+}
+
+/** The chain a coin's card buy settles on (see cardBuyAsk), or null for a
+ *  stock (4663, named by inference) and for a page with no spot buy. */
+export function cardBuyChain(symbol: string, pair: ChartPair): (typeof SPOT_CHAINS)[number] | null {
+  const sym = (pair?.symbol ?? symbol).toUpperCase()
+  if (pair.source === 'robinhood' || pair.source === 'hyperliquid' || tokenHome(sym)) return null
+  return SPOT_CHAINS.find((c) => c.id === (sym === 'ETH' ? CARD_LANE_CHAIN_ID : fundDestChainFor(sym))) ?? null
+}
+
+/** The "Buy with card" row (kind 'fund'), or null (see cardBuyAsk). */
+function cardRow(symbol: string, pair: ChartPair, usd: number): VenueRoute | null {
+  const ask = cardBuyAsk(symbol, pair, usd)
+  if (!ask) return null
+  const sym = (pair?.symbol ?? symbol).toUpperCase()
+  const lane = venueChainLabel(CARD_LANE_CHAIN_ID)
+  return {
+    // An ETH card buy is the delivery itself, no swap after it: no Pantessa fee.
+    id: 'fund:card', kind: 'fund', venue: 'card', chainId: CARD_LANE_CHAIN_ID, side: 'buy', fee: pair.source !== 'robinhood' && sym === 'ETH' ? 'none' : 'swap',
+    label: 'Buy with card', ask,
+    note:
+      pair.source === 'robinhood'
+        ? `Stripe delivers ETH to your wallet on ${lane}; the funding plan carries it to Robinhood Chain and buys — you sign each step.`
+        : sym === 'ETH'
+          ? `Stripe delivers the ETH to your wallet on ${lane} — that's the whole buy.`
+          : `Stripe delivers ETH to your wallet on ${lane}; then the buy — you sign each step.`,
+  }
+}
+
+/** What the Fund group says to a visitor with no wallet connected. */
+export const FUND_CONNECT_NOTE = 'Connect a wallet and this lists the chains your money is already on.'
+
 /**
  * Every venue a wallet can act on `symbol` through, in the order a trader
  * reaches for them: spot → limit → perp → lend → stake → protect →
@@ -171,15 +234,9 @@ export function venuesFor(symbol: string, pair: ChartPair, opts: VenuesOptions =
       kind: 'stock', venue: 'robinhood', chainId: ROBINHOOD_CHAIN_ID, side: 'sell', fee: 'swap',
       label: `Sell ${sym}`, ask: `Sell ${usdWord(usd)} of ${sym}`, mcp: 'robinhood-free', needs: 'position',
     })
-    for (const c of SPOT_CHAINS) {
-      out.push({
-        id: `fund:lifi:${c.id}`,
-        kind: 'fund', venue: 'lifi', chainId: c.id, fee: 'lifi',
-        label: `Fund from ${c.name}`,
-        ask: `Fund Robinhood Chain with ${usdWord(usd)} from ${c.word} including gas, then buy ${usdWord(Math.max(1, Math.round(usd * 0.8)))} of ${sym}`,
-        note: `USDC on ${c.name} → USDG + gas on Robinhood Chain, then the buy — one signed job.`,
-      })
-    }
+    // Funding from the wallet's own chains comes per wallet (lib/fund-routes).
+    const card = opts.card ? cardRow(sym, pair, usd) : null
+    if (card) out.push(card)
     return out
   }
 
@@ -282,18 +339,10 @@ export function venuesFor(symbol: string, pair: ChartPair, opts: VenuesOptions =
     })
   }
 
-  // ── Funding: bring money to where the symbol trades (NEAR Intents) ──
-  if (!isPerpChart) {
-    const dest = SPOT_CHAINS.find((c) => c.id === (SPOT_CHAIN_HINTS[sym] ?? DEFAULT_SPOT_CHAINS)[0])!
-    for (const c of SPOT_CHAINS) {
-      if (c.id === dest.id) continue
-      out.push({
-        id: `fund:near:${c.id}`, kind: 'fund', venue: 'near', chainId: c.id, fee: 'cross-chain',
-        label: `Bring USDC from ${c.name}`,
-        ask: `Swap ${Math.max(1, Math.round(usd))} USDC from ${c.word} to ${sym} on ${dest.word}`, mcp: 'near-intents',
-        note: `USDC on ${c.name} → ${sym} on ${dest.name} through NEAR Intents — one deposit, settles in seconds.`,
-      })
-    }
+  // ── Funding: the card (the wallet's own chains come per wallet — lib/fund-routes) ──
+  if (!isPerpChart && opts.card) {
+    const card = cardRow(sym, pair, usd)
+    if (card) out.push(card)
   }
 
   return out
@@ -342,6 +391,7 @@ export const VENUE_NAME: Record<string, string> = {
   lifi: 'LiFi',
   robinhood: 'Robinhood Chain',
   pantessa: 'Pantessa',
+  card: 'Card or bank',
 }
 
 // ── The wire shape of GET /api/markets/routes (client-safe types) ──────────
@@ -368,6 +418,35 @@ export interface RoutesResponse {
   routes: RouteQuote[]
   notes: string[]
   /** Providers that didn't answer this composition. */
+  failed: string[]
+  updatedAt: string
+  cached?: boolean
+}
+
+/** Why the wallet's funding rows look the way they do. */
+export type FundRoutesState =
+  /** At least one chain the wallet holds money on can fund the order. */
+  | 'rows'
+  /** The money is already where the order settles — nothing to bring. */
+  | 'covered'
+  /** Money exists, but no single chain can move enough (or it can't move). */
+  | 'short'
+  /** Nothing on any chain the scan read. */
+  | 'none'
+  /** The balances couldn't be read — no claim either way. */
+  | 'unread'
+
+/** The wire shape of GET /api/markets/routes/funding?symbol=&amount=&address=
+ *  (lib/fund-routes composes it): the funding rows ONE wallet can actually
+ *  use, and the plain-words facts behind the ones that aren't there. */
+export interface FundRoutesResponse {
+  symbol: string
+  amountUsd: number
+  /** kind 'fund' rows, one per origin chain that can fund the order. */
+  routes: RouteQuote[]
+  notes: string[]
+  state: FundRoutesState
+  /** Origin chains whose reads failed ("unknown", never "empty"). */
   failed: string[]
   updatedAt: string
   cached?: boolean
@@ -610,6 +689,7 @@ export const SETTLES: Record<string, string> = {
   lifi: 'LiFi diamond → Robinhood Chain (settlement contract pinned)',
   robinhood: 'Uniswap v3 on Robinhood Chain (USDG pool)',
   pantessa: 'Pantessa Guardian (Spend Permission)',
+  card: `Stripe checkout → ETH in your wallet on ${venueChainLabel(CARD_LANE_CHAIN_ID)}, then the buy`,
 }
 
 /** Gas the wallet must hold on the signing chain — mirrors lib/wallet-view

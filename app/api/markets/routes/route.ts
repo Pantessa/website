@@ -12,8 +12,11 @@ import { LIDO_MCP } from '@/lib/lido-stake'
 import { hlInfo } from '@/lib/hl-guardian-store'
 import { CROSS_CHAIN_FEE_BPS, HL_BUILDER_FEE_TENTH_BPS, SWAP_FEE_BPS } from '@/lib/fees'
 import { HL_EXEC_SLIPPAGE_BPS } from '@/lib/hyperliquid-exec'
-import { LIFI_MAX_QUOTE_SHORTFALL_BPS } from '@/lib/lifi-venue'
+import { onrampEnabled } from '@/lib/onramp'
+import { usdPerToken } from '@/lib/usd-probe'
+import { cardBuyChip, type CardBuyAsk } from '@/lib/card-buy'
 import {
+  cardBuyChain,
   DEFAULT_ROUTE_USD,
   missingVenueNotes,
   venuesFor,
@@ -38,7 +41,9 @@ export const dynamic = 'force-dynamic'
 // leverage, Aave supply + borrow APY, Lido's 7-day APR, the Robinhood Chain
 // pool price beside the TAPE — the server's own read of it (lib/stock-tape),
 // never a price derived from the same pool, so a broken pool can't read
-// "+0.00% vs tape". Public (no wallet — every row is a sentence
+// "+0.00% vs tape", and the card checkout's opening amount (lib/card-buy)
+// when the on-ramp is open. Funding from the wallet's own chains is per
+// wallet: GET /api/markets/routes/funding. Public (no wallet — every row is a sentence
 // the wallet signs later); 30s cache per (symbol, amount, last-bucket,
 // leverage); every provider fail-soft: a row with no quote carries
 // `quote: null` and still sends (the build itself is the honest gate).
@@ -192,7 +197,7 @@ function stockSideOf(pool: PoolPrice | null, tapeUsd: number | null): StockSide 
   return { pool, tapeUsd, premPct, offTape: premPct !== null && !(Math.abs(premPct) <= STOCK_TAPE_BOUND_PCT) }
 }
 
-function ticketFor(r: VenueRoute, feeBps: number, amount: number, sym: string, ctx: { spot?: { usdPerToken: number; tokenOut: number }; hl?: HlCtx | null; stock?: StockSide; lev?: number }): RouteTicket {
+function ticketFor(r: VenueRoute, feeBps: number, amount: number, sym: string, ctx: { spot?: { usdPerToken: number; tokenOut: number }; hl?: HlCtx | null; stock?: StockSide; lev?: number; cardChain?: string }): RouteTicket {
   const feeUsd = Math.round(((amount * feeBps) / 10_000) * 100) / 100
   const base = { feeBps, feeUsd, settles: SETTLES[r.venue] ?? r.venue, note: ROUTE_TICKET_NOTE }
   switch (r.kind) {
@@ -235,17 +240,23 @@ function ticketFor(r: VenueRoute, feeBps: number, amount: number, sym: string, c
       return { ...base, out: `${r.ask.match(/Stake ([\d.]+) ETH/)?.[1] ?? '?'} stETH (1:1)`, slippageBps: null, minOut: null, gas: gasLine(1), signs: 'submit() — one transaction, gas buffer kept' }
     case 'protect':
       return { ...base, out: r.venue === 'hyperliquid' ? 'a Guardian policy on your live perp' : 'a one-shot Spend Permission on Base', slippageBps: r.venue === 'hyperliquid' ? HL_EXEC_SLIPPAGE_BPS : 300, minOut: r.venue === 'hyperliquid' ? null : 'independent 3% floor at sweep', gas: null, signs: r.venue === 'hyperliquid' ? 'delegated agent — personal_sign consent' : 'EIP-712 Spend Permission (smart wallets)' }
-    case 'fund':
-      return r.venue === 'near'
-        ? { ...base, out: `≈ $${(amount * (1 - feeBps / 10_000)).toFixed(2)} of ${sym} on the destination`, slippageBps: null, minOut: 'the 1Click quote, guard-verified to the deposit', gas: gasLine(r.chainId), signs: 'one deposit transfer to a one-time address' }
-        : { ...base, out: `USDG + gas on Robinhood Chain, then the buy`, slippageBps: LIFI_MAX_QUOTE_SHORTFALL_BPS, minOut: `≥ ${100 - LIFI_MAX_QUOTE_SHORTFALL_BPS / 100}% of our own quote`, gas: gasLine(r.chainId), signs: 'two funding legs + a wait + the buy — one job card' }
+    case 'fund': {
+      // The card row — the only funding row the public map carries (the
+      // wallet's own chains come from /api/markets/routes/funding).
+      const where = ` on ${ctx.cardChain ?? 'Robinhood Chain'}`
+      if (sym === 'ETH' && r.fee === 'none') {
+        return { ...base, out: `$${amount} of ETH in your wallet on ${VENUE_CHAIN_LABELS[r.chainId] ?? r.chainId}`, slippageBps: null, minOut: 'Stripe quotes the ETH at checkout', gas: null, signs: 'a free consent signature to open the checkout — nothing to sign after it lands' }
+      }
+      return { ...base, out: `$${amount} of ${sym}${where}, once the card's ETH lands`, slippageBps: null, minOut: 'the funding plan and the buy quote again once the ETH lands', gas: `paid from the delivered ETH on ${VENUE_CHAIN_LABELS[r.chainId] ?? r.chainId}`, signs: 'a free consent signature to open the checkout, then each funding step and the buy' }
+    }
   }
 }
 
 async function compose(sym: string, amount: number, lastIn: number | null, leverage: number | undefined): Promise<RoutesResponse> {
   const pair = chartPairFor(sym)!
   let last = lastIn
-  let routes = venuesFor(sym, pair, { usd: amount, last: last ?? undefined, leverage })
+  const card = onrampEnabled()
+  let routes = venuesFor(sym, pair, { usd: amount, last: last ?? undefined, leverage, card })
   const failed: string[] = []
   const wantSpot = [...new Set(routes.filter((r) => r.kind === 'spot').map((r) => r.chainId))]
   const wantPerp = routes.some((r) => r.kind === 'perp')
@@ -255,8 +266,12 @@ async function compose(sym: string, amount: number, lastIn: number | null, lever
   // the caller has none, the venue quotes themselves supply it (best spot
   // quote → HL mark → the 4663 pool), and the map is composed again with it.
   const wantLidoFirst = routes.some((r) => r.kind === 'stake') || (last === null && sym === 'ETH' && !tokenHome(sym))
+  // The card checkout's opening amount: a coin other than ETH funds a gas leg
+  // on its buy chain, priced in ETH (lib/card-buy).
+  const cardChain = cardBuyChain(sym, pair)
+  const wantCardEth = routes.some((r) => r.venue === 'card') && !!cardChain && sym !== 'ETH'
 
-  const [spotR, hlR, aaveR, aaveUsdcR, lidoR, stockR, tapeR] = await Promise.allSettled([
+  const [spotR, hlR, aaveR, aaveUsdcR, lidoR, stockR, tapeR, cardEthR] = await Promise.allSettled([
     Promise.allSettled(wantSpot.map((id) => withTimeout(uniswapQuote(sym, id, amount)).then((q) => [id, q] as const))),
     wantPerp ? withTimeout(hlContext(sym)) : Promise.resolve(null),
     wantAave ? withTimeout(aaveApy(sym)) : Promise.resolve(null),
@@ -273,6 +288,7 @@ async function compose(sym: string, amount: number, lastIn: number | null, lever
           }),
         )
       : Promise.resolve(null),
+    wantCardEth ? withTimeout(usdPerToken(8453, 'ETH')) : Promise.resolve(null),
   ])
 
   const spot = new Map<number, { usdPerToken: number; tokenOut: number }>()
@@ -294,6 +310,14 @@ async function compose(sym: string, amount: number, lastIn: number | null, lever
   const tapeUsd = stockTape?.tape?.usd ?? (wantStock ? lastIn : null)
   const stockBuy = stockSideOf(stock, tapeUsd)
   const stockSell = stockSideOf(stockTape?.sell ?? null, tapeUsd)
+  const cardEthUsd = cardEthR.status === 'fulfilled' ? (cardEthR.value?.usd ?? null) : null
+  const cardAsk: CardBuyAsk | null =
+    pair.source === 'robinhood'
+      ? { kind: 'stock', sym, buyUsd: amount }
+      : cardChain
+        ? { kind: 'coin', sym, buyUsd: amount, chainId: cardChain.id, chainName: cardChain.name, chainWord: cardChain.word }
+        : null
+  const cardPreset = card && cardAsk ? (cardBuyChip(cardAsk, cardEthUsd)?.fund?.presetFiatUsd ?? null) : null
 
   // Best spot = the most token for the same dollars (lowest effective price).
   let bestSpotChain: number | null = null
@@ -305,7 +329,7 @@ async function compose(sym: string, amount: number, lastIn: number | null, lever
     const derived = (bestSpotChain !== null ? spot.get(bestSpotChain)!.usdPerToken : null) ?? hl?.markPx ?? stockTape?.tape?.usd ?? null
     if (derived && Number.isFinite(derived) && derived > 0) {
       last = derived
-      routes = venuesFor(sym, pair, { usd: amount, last, leverage })
+      routes = venuesFor(sym, pair, { usd: amount, last, leverage, card })
     }
   }
 
@@ -362,11 +386,18 @@ async function compose(sym: string, amount: number, lastIn: number | null, lever
         return { ...base, quote: { kind: 'price', value: pool.usdPerToken, label: fmtUsd(pool.usdPerToken), sub } }
       }
       case 'fund':
-        return { ...base, quote: { kind: 'none', value: null, label: r.venue === 'near' ? 'settles in seconds' : 'one signed job' } }
+        // The card row: what the checkout opens at (null = past one checkout;
+        // the chat says so and offers a size that fits).
+        return {
+          ...base,
+          quote: cardPreset
+            ? { kind: 'none', value: cardPreset, label: `opens at $${cardPreset}`, sub: 'lands as ETH · card fee on top' }
+            : { kind: 'none', value: null, label: 'card checkout', sub: `over one checkout at this size` },
+        }
     }
   })
 
-  const withTickets: RouteQuote[] = quoted.map((r) => ({ ...r, ticket: ticketFor(r, r.feeBps, amount, sym, { spot: spot.get(r.chainId), hl, stock: r.side === 'sell' ? stockSell : stockBuy, lev: leverage }) }))
+  const withTickets: RouteQuote[] = quoted.map((r) => ({ ...r, ticket: ticketFor(r, r.feeBps, amount, sym, { spot: spot.get(r.chainId), hl, stock: r.side === 'sell' ? stockSell : stockBuy, lev: leverage, cardChain: cardChain?.name }) }))
 
   return {
     symbol: sym,
@@ -416,7 +447,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ...value, cached: false }, { headers })
   } catch (err) {
     // Never a 500: the map itself is pure — serve it unquoted.
-    const routes = venuesFor(pair.symbol, pair, { usd: amount, last: last ?? undefined, leverage }).map((r) => ({ ...r, feeBps: feeBpsOf(r.fee), quote: null }))
+    const routes = venuesFor(pair.symbol, pair, { usd: amount, last: last ?? undefined, leverage, card: onrampEnabled() }).map((r) => ({ ...r, feeBps: feeBpsOf(r.fee), quote: null }))
     const body: RoutesResponse = {
       symbol: pair.symbol,
       source: pair.source,

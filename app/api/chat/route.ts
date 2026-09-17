@@ -146,6 +146,7 @@ import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { OffTapeError, TapeUnavailableError } from '@/lib/stock-tape'
 import { fundChipFor, ONRAMP_NETWORK_LABEL } from '@/lib/onramp'
 import { swapShortfallTurn } from '@/lib/swap-shortfall'
+import { cardBuyTurn, type CardBuyAsk } from '@/lib/card-buy'
 import { layerCardDoorCopy, layerFundChip, layerShortfallTurn, type LayerShortfallAsk, type LayerShortfallTurn } from '@/lib/layer-shortfall'
 import { fundingOriginWords } from '@/lib/funding-origins'
 import { FEATURED_STOCKS, parseStockListAsk, robinhoodStocks } from '@/lib/stock-list'
@@ -4528,6 +4529,43 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
       reply: `🔄 “${intent.sellAmountHuman}” has more decimal places than ${intent.sellToken.toUpperCase()} supports (${sellDec}).`,
     })
   }
+  // ── Card buys ── "Buy $50 of AAPL with a card" (the route table's card
+  // row, or typed): lib/swap-intent strips the fiat clause and flags
+  // `viaCard`. The user chose how to pay, so the answer is the card checkout
+  // for exactly this buy (lib/card-buy), sized as an empty wallet's plan,
+  // never a build from money they didn't pick. A sell, a stable top-up or a
+  // chain the on-ramp's plans don't reach ignores the clause, as before.
+  if (intent.viaCard && intent.mode !== 'limit' && !intent.sellAll) {
+    const buySym = intent.buyToken.toUpperCase()
+    const stableHere = primaryStable(chainId)
+    const sellAddr = resolveToken(intent.sellToken, chainId)
+    const sellIsStable = !!sellAddr && chain.stables[sellAddr.toLowerCase()] !== undefined
+    const buyIsStable = (() => {
+      const addr = resolveToken(intent.buyToken, chainId)
+      return !!addr && chain.stables[addr.toLowerCase()] !== undefined
+    })()
+    const buyUsd = intent.sellAmountUsd ? Number(intent.sellAmountUsd) : sellIsStable ? Number(intent.sellAmountHuman) : NaN
+    const cardAsk: CardBuyAsk | null =
+      !sellIsStable || buyIsStable || !(buyUsd > 0) || buySym === stableHere?.symbol.toUpperCase()
+        ? null
+        : chainId === ROBINHOOD_CHAIN_ID
+          ? { kind: 'stock', sym: buySym, buyUsd }
+          : FUNDING_CHAIN_WORD[chainId]
+            ? { kind: 'coin', sym: buySym, buyUsd, chainId, chainName: chain.name, chainWord: FUNDING_CHAIN_WORD[chainId] }
+            : null
+    if (cardAsk) {
+      const ethUsd = cardAsk.kind === 'coin' && buySym !== 'ETH' ? await usdPerToken(8453, 'ETH').then((p) => p?.usd ?? null).catch(() => null) : null
+      const turn = cardBuyTurn(cardAsk, ethUsd)
+      const door = turn.clarify?.options[0]?.fund
+      trace({
+        type: 'status',
+        label: `card buy: ${buySym} ${cardAsk.kind === 'stock' ? 'on Robinhood Chain' : `on ${chain.name}`} for $${buyUsd} paid by card — ${door ? `the checkout chip (${door.completes ? 'the ETH delivery IS the buy' : `$${door.presetFiatUsd} preset, the funding plan spends it on return`})` : 'no checkout here (door closed or past one checkout) — offering the wallet path by name'}`,
+      })
+      return NextResponse.json(turn)
+    }
+    trace({ type: 'note', level: 'info', label: `card clause on a ${intent.sellToken.toUpperCase()} → ${buySym} swap on ${chain.name} that isn't a dollar buy the card can fund — reading it as a plain swap` })
+  }
+
   // ── Robinhood funding plan ── an unfunded buy on Robinhood Chain is not a
   // dead end when the money is sitting on Base, Ethereum, or Arbitrum:
   // LiFi routes USDC → USDG (and a gas leg → native ETH) directly onto
