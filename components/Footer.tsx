@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { YeetfulMark } from '@/components/Logo'
 import ThemeToggle from '@/components/ThemeToggle'
 import SpineLink from '@/components/SpineLink'
+import { X_PROFILE_URL } from '@/lib/social'
 
 /** `app`: the link lands inside the app shell, which sends a signed-out
  *  visitor home — so it renders as a SpineLink (the sign-in door for them). */
@@ -11,10 +12,9 @@ const GROUPS: { title: string; links: FooterLink[] }[] = [
   {
     title: 'Community',
     links: [
-      // Social handles keep the pre-rebrand names ON PURPOSE — those accounts
-      // have not been renamed (the `pantessa` GitHub org does not exist), so
-      // pointing at a new handle would turn a working link into a 404.
-      { label: 'X / Twitter', href: 'https://x.com/yeetful_ai', ext: true },
+      // X was renamed to @askPantessa (lib/social). Telegram keeps the
+      // pre-rebrand name: that channel has not been renamed.
+      { label: 'X / Twitter', href: X_PROFILE_URL, ext: true },
       { label: 'Telegram', href: 'https://t.me/yeetful', ext: true },
       { label: 'GitHub', href: 'https://github.com/Pantessa', ext: true },
     ],
@@ -61,7 +61,7 @@ const GROUPS: { title: string; links: FooterLink[] }[] = [
 const SOCIALS: { label: string; href: string; icon: React.ReactNode }[] = [
   {
     label: 'X / Twitter',
-    href: 'https://x.com/yeetful_ai',
+    href: X_PROFILE_URL,
     icon: (
       <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden>
         <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24h-6.66l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />

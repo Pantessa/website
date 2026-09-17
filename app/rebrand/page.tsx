@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import Footer from '@/components/Footer'
 import { SITE } from '@/lib/docs'
+import { X_MENTION, X_PROFILE_URL } from '@/lib/social'
 
 /** /rebrand — the public record of the Yeetful → Pantessa rename.
  * Trust surface: dated, factual, zero marketing. It exists so that
@@ -132,8 +133,8 @@ export default function RebrandPage() {
             alive precisely so nothing breaks and nothing looks abandoned. If you review
             domains for a wallet, a blocklist, or a security team and want more evidence than
             this page, open an issue on our GitHub org or message{' '}
-            <a className="text-[color:var(--accent)] hover:underline underline-offset-2" href="https://x.com/yeetful_ai" {...ext}>
-              @yeetful_ai
+            <a className="text-[color:var(--accent)] hover:underline underline-offset-2" href={X_PROFILE_URL} {...ext}>
+              {X_MENTION}
             </a>{' '}
             — we will answer with transaction receipts, deploy history, and whatever else
             helps.

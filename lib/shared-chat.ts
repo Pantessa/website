@@ -4,6 +4,7 @@
 // per-turn avatars, the "Try Pantessa" handoff link, and the OG image all
 // tell the same story.
 
+import { X_MENTION } from '@/lib/social'
 import prisma from '@/lib/db'
 import { SITE_URL } from '@/lib/site-url'
 import type { McpServer } from '@/lib/store'
@@ -136,7 +137,7 @@ const TWEET_PROMPT_MAX = 180
 /**
  * X share intent for a shared chat. The tweet leads with the chat's own
  * opening ask — the "lazy transaction" the page proves — quoted verbatim so
- * every share carries a runnable example, then tags @yeetful_ai. Unlike the
+ * every share carries a runnable example, then tags the X account (lib/social). Unlike the
  * ?prompt= handoff, an over-long ask is truncated here rather than dropped:
  * a tweet with most of the sentence still sells the page.
  */
@@ -148,8 +149,8 @@ export function shareTweetHrefOf(slug: string, messages: Array<{ role: string; c
       : raw
     : null
   const text = ask
-    ? `Lazy transactions are here!\n\n"${ask}" on @yeetful_ai`
-    : 'Lazy transactions are here! Watch a real guarded run on @yeetful_ai'
+    ? `Lazy transactions are here!\n\n"${ask}" on ${X_MENTION}`
+    : `Lazy transactions are here! Watch a real guarded run on ${X_MENTION}`
   const site = SITE_URL
   // The shared URL carries the sharer's short id so arrivals attribute back
   // to the share (the id is a one-way hash — never the wallet).

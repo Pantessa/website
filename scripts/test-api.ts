@@ -1675,6 +1675,17 @@ async function main() {
   )
   const footerHomeHtml = await (await fetch(`${BASE}/`)).text()
   check('rebrand: reachable from the footer on every page', footerHomeHtml.includes('href="/rebrand"'))
+  // Issue #767: @yeetful_ai was renamed to @askPantessa and the old handle
+  // 404s. Every served page links the live account, never the dead one.
+  {
+    const rebrandHtml = await (await fetch(`${BASE}/rebrand`)).text()
+    check(
+      'social: footer + /rebrand link x.com/askPantessa, never the dead @yeetful_ai',
+      footerHomeHtml.includes('href="https://x.com/askPantessa"') &&
+        rebrandHtml.includes('href="https://x.com/askPantessa"') &&
+        !/yeetful_ai/i.test(footerHomeHtml + rebrandHtml),
+    )
+  }
   // The old brand name may appear on a served page ONLY as the footer's
   // "Formerly Yeetful" + the /rebrand record. Everything else renders through
   // cleanServerName's display map — except hardcoded PROSE that names the
@@ -6447,7 +6458,7 @@ async function main() {
   check(
     'share page renders the X share button with the pre-written tweet',
     html.includes('twitter.com/intent/tweet?text=Lazy+transactions+are+here') &&
-      html.includes(encodeURIComponent('"Buy $2 of AAPL on Robinhood Chain" on @yeetful_ai').replaceAll('%20', '+')),
+      html.includes(encodeURIComponent('"Buy $2 of AAPL on Robinhood Chain" on @askPantessa').replaceAll('%20', '+')),
   )
   {
     const href = shareTweetHrefOf('some-slug', [
@@ -6457,19 +6468,19 @@ async function main() {
     const p = new URL(href).searchParams
     check(
       'shareTweetHrefOf quotes the first user ask and links the share page',
-      p.get('text') === 'Lazy transactions are here!\n\n"Buy $2 of AAPL on Robinhood Chain" on @yeetful_ai' &&
+      p.get('text') === 'Lazy transactions are here!\n\n"Buy $2 of AAPL on Robinhood Chain" on @askPantessa' &&
         p.get('url')?.endsWith('/p/some-slug') === true,
     )
     const long = new URL(shareTweetHrefOf('s', [{ role: 'user', content: 'y'.repeat(500) }])).searchParams
     const longText = long.get('text') ?? ''
     check(
       'shareTweetHrefOf truncates an over-long ask with an ellipsis (never drops it)',
-      longText.includes('…') && longText.length <= 256 && longText.endsWith('on @yeetful_ai'),
+      longText.includes('…') && longText.length <= 256 && longText.endsWith('on @askPantessa'),
     )
     const bare = new URL(shareTweetHrefOf('s', [{ role: 'assistant', content: 'hi' }])).searchParams
     check(
       'shareTweetHrefOf: no user turn → generic tweet, still tagged',
-      bare.get('text')?.includes('@yeetful_ai') === true && bare.get('text')?.includes('"') === false,
+      bare.get('text')?.includes('@askPantessa') === true && bare.get('text')?.includes('"') === false,
     )
   }
 
