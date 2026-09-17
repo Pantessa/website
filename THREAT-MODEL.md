@@ -225,9 +225,19 @@ Open questions:
   swap's 50 bps bound while those transactions land, the swap reverts and the
   USDC stays on Pantessa's spender, recorded as failed, with no refund. The
   spot stop has the same shape. (Task filed 2026-09-16.)
+- **An armed schedule re-resolves its token by symbol every period.** Nothing
+  pins the address at arm, and `guardAutoBuy`'s `expectedBuyAddr` and the
+  floor's mark both come from that same resolution, so neither can notice a
+  different token. Symbols aren't ambiguity-checked the way names are: the
+  first list and the first entry win. Measured 2026-09-17 on Base: 6 symbols
+  resolve to a different address when only CoinGecko's list loads (a cold
+  instance whose tokens.uniswap.org fetch fails), among them TAO, AUSD and
+  ABT (Arcblock → Abbott Laboratories' tokenized stock). 113 symbols sit at
+  more than one CoinGecko address. (Task filed 2026-09-17.)
 - **The floor's mark moves with the pools it reads.** The mark comes from the
-  same v3 pools the build quotes, so the floor catches a regressed builder and
-  a thin pool, but not a pool pushed before the quote. Shown on a Base fork
+  same v3 pools, through the same RPC client, as the build's quote, so the
+  floor catches a regressed builder and a thin pool, but not a pool pushed
+  before the quote. Shown on a Base fork
   (2026-09-17): a $100 DEGEN buy pushed the thin 30 bps DEGEN/USDC pool about
   3×. The next sweep's mark read the pushed pool, and a $100 buy through the
   100 bps pool passed the floor. The owner got 33,084 DEGEN, worth $99.85 at
