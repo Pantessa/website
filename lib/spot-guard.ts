@@ -25,7 +25,8 @@ import {
   PERMISSION_START_GRACE_SECONDS,
   type DcaSpendPermission,
 } from './dca-auto'
-import { SWAP_ROUTER_02_ABI } from './uniswap-venue'
+import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, TREASURY_ADDRESS, swapFeeAtoms } from './fees'
+import { ADDRESS_THIS, FEE_TIERS, SWAP_ROUTER_02_ABI } from './uniswap-venue'
 import type { GuardrailCheck } from './tx-guardrails'
 
 /** The permission struct is protocol-shaped, not DCA-shaped — reuse it. */
@@ -238,9 +239,16 @@ const check = (id: string, ok: boolean, note: string): GuardrailCheck => ({ id, 
  * what this passes. Expected shapes:
  *   native:  [wrap(WETH.deposit, value=pull)] + approve(WETH) + swap
  *   erc20:   approve(token) + swap
- * with swap = SwapRouter02.multicall(deadline, [exactInputSingle(...)]),
- * tokenIn = the (wrapped) protected asset, tokenOut = USDC, recipient =
- * the OWNER, amountIn = the pull, minOut ≥ the quote floor.
+ * with swap = SwapRouter02.multicall(deadline, calls), tokenIn = the
+ * (wrapped) protected asset, tokenOut = USDC, amountIn = the pull, and
+ * calls in one of the two shapes the v3 builder emits for a USDC buy:
+ *   fee off: [exactInputSingle(recipient = the OWNER)]
+ *   fee on:  [exactInputSingle(recipient = the router),
+ *             sweepTokenWithFee(USDC, the swap's minOut, the OWNER,
+ *                               a canonical tier, the treasury)]
+ * The fee is the default (lib/fees), so fee-on is what the sweep builds.
+ * The floor guards the OWNER's proceeds: the swap's minOut and, fee on,
+ * the minimum left after the treasury's cut must both clear it.
  */
 export function guardSpotSell(input: SpotSellGuardInput): { ok: boolean; checks: GuardrailCheck[] } {
   const { policy, permission, ownerWallet, spender, chain, markPrice, minOutAtomic, steps, pulledAtomic, nowSec } = input
@@ -321,27 +329,73 @@ export function guardSpotSell(input: SpotSellGuardInput): { ok: boolean; checks:
         const [deadline, calls] = outer.args as [bigint, readonly `0x${string}`[]]
         if (Number(deadline) <= nowSec) {
           swapNote = 'Swap deadline already passed — stale build.'
-        } else if (calls.length !== 1) {
-          swapNote = `Expected exactly the swap in the multicall, got ${calls.length} calls.`
+        } else if (calls.length !== 1 && calls.length !== 2) {
+          swapNote = `Expected the swap (plus the fee sweep, fee on) in the multicall, got ${calls.length} calls.`
         } else {
           const inner = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[0] })
-          if (inner.functionName === 'exactInputSingle') {
+          if (inner.functionName !== 'exactInputSingle') {
+            swapNote = `First multicall entry is ${inner.functionName}, not exactInputSingle.`
+          } else {
             const p = (inner.args as readonly unknown[])[0] as {
               tokenIn: string
               tokenOut: string
+              fee: number
               recipient: string
               amountIn: bigint
               amountOutMinimum: bigint
+              sqrtPriceLimitX96: bigint
             }
+            const owner = ownerWallet.toLowerCase()
+            const usdc = chain.usdcAddress.toLowerCase()
+            const feeOn = calls.length === 2
             const problems: string[] = []
             if (p.tokenIn.toLowerCase() !== sellAddr) problems.push('tokenIn is not the protected asset')
-            if (p.tokenOut.toLowerCase() !== chain.usdcAddress.toLowerCase()) problems.push('tokenOut is not USDC')
-            if (p.recipient.toLowerCase() !== ownerWallet.toLowerCase()) problems.push(`recipient ${p.recipient} is not the OWNER`)
+            if (p.tokenOut.toLowerCase() !== usdc) problems.push('tokenOut is not USDC')
             if (p.amountIn !== pulledAtomic) problems.push(`amountIn ${p.amountIn} ≠ the pull`)
+            // A price limit can stop the swap part-way: the output still clears
+            // the floor, the run reads "sold", and the unsold rest of the pull
+            // stays on the spender. The builder never sets one.
+            if (p.sqrtPriceLimitX96 !== BigInt(0)) problems.push('the swap carries a price limit, so it could sell only part of the pull')
+            if (!(FEE_TIERS as readonly number[]).includes(Number(p.fee))) problems.push(`pool fee ${p.fee} is not a Uniswap v3 tier`)
             if (p.amountOutMinimum < minOutAtomic) problems.push(`minOut ${p.amountOutMinimum} below the quote floor ${minOutAtomic}`)
+            let feeBips = 0
+            if (!feeOn) {
+              if (p.recipient.toLowerCase() !== owner) problems.push(`recipient ${p.recipient} is not the OWNER`)
+            } else {
+              // Fee on: the USDC parks on the router, and the router's own
+              // sweepTokenWithFee pays the OWNER minus the treasury's cut.
+              if (p.recipient.toLowerCase() !== ADDRESS_THIS) problems.push(`swap pays ${p.recipient}, not the router the fee sweep splits from`)
+              let payout: { functionName: string; args?: readonly unknown[] } | null = null
+              try {
+                payout = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[1] })
+              } catch {
+                problems.push('second call does not decode as a SwapRouter02 payout')
+              }
+              if (payout && payout.functionName !== 'sweepTokenWithFee') {
+                problems.push(`second call is ${payout.functionName}, not sweepTokenWithFee — the stop sells to USDC`)
+              } else if (payout) {
+                const [token, sweepMin, sweepRecipient, bips, feeRecipient] = payout.args as readonly [string, bigint, string, bigint, string]
+                if (token.toLowerCase() !== usdc) problems.push('the sweep is not for USDC')
+                if (sweepRecipient.toLowerCase() !== owner) problems.push(`sweep pays ${sweepRecipient}, not the OWNER`)
+                if (feeRecipient.toLowerCase() !== TREASURY_ADDRESS.toLowerCase()) problems.push(`the fee goes to ${feeRecipient}, not the Pantessa treasury`)
+                if (bips > BigInt(0) && [SWAP_FEE_BPS, LINK_SWAP_FEE_BPS].includes(Number(bips))) {
+                  feeBips = Number(bips)
+                } else {
+                  problems.push(`fee ${bips}bps is not a canonical tier`)
+                }
+                if (sweepMin !== p.amountOutMinimum) {
+                  problems.push(`sweep minimum ${sweepMin} ≠ the swap's minOut ${p.amountOutMinimum}`)
+                } else if (feeBips > 0) {
+                  const ownerMin = sweepMin - swapFeeAtoms(sweepMin, feeBips)
+                  if (ownerMin < minOutAtomic) problems.push(`the owner's minimum after the ${feeBips}bps fee, ${ownerMin}, is below the quote floor ${minOutAtomic}`)
+                }
+              }
+            }
             swapOk = problems.length === 0
             swapNote = swapOk
-              ? 'Sell decodes exactly: protected asset → USDC, owner receives, minOut at the quote floor.'
+              ? feeOn
+                ? `Sell decodes exactly: protected asset → USDC on the router, swept to the owner minus ${feeBips}bps to the treasury, the owner's minimum at the quote floor.`
+                : 'Sell decodes exactly: protected asset → USDC, owner receives, minOut at the quote floor.'
               : problems.join('; ')
           }
         }

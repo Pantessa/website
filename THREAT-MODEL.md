@@ -30,6 +30,7 @@ pins it) as the audit runs.
 | House burner key | `PRIVATE_KEY` (Vercel env) | direct theft of house funds; every chat turn can spend it |
 | Session signing secret | `SESSION_SECRET` | forge any user's session; full account takeover, no wallet needed |
 | Cron trigger secret | `CRON_SECRET` | drive the guardian runner on demand |
+| The autopilot spender | CDP server wallet (`CDP_WALLET_SECRET`) | pull up to every live Spend Permission's allowance, then send the pull anywhere |
 | API keys (`yf_`) | hashed in DB, held by users/agents | act as that owner: mint links, spend under their policy |
 | Treasury address | `lib/fees.ts` (code constant) | fee revenue redirected (a code-review target, not a runtime one) |
 | The user's own wallet | never ours | *by design, unreachable* — non-custodial is the whole posture |
@@ -168,6 +169,51 @@ Open questions:
   looping orders?
 - Revocation: when a user retires a policy, is the key destroyed or just
   marked inactive?
+
+### Spend-Permission autopilots (DCA autopilot, Spot Guardian)
+
+The other place user money moves with no human present. A smart wallet signs
+a Spend Permission naming Pantessa's CDP spender. A per-minute cron pulls
+within it, then buys (DCA) or sells (a fired spot stop) through a guarded
+Uniswap v3 swap whose output is pinned to the owner. The on-chain
+SpendPermissionManager caps the pull whatever this codebase does. Everything
+after the pull is ours.
+
+Verified (2026-09-16, #807):
+- **The spot sell can only pay the owner, minus the pinned treasury fee.**
+  `guardSpotSell` re-decodes every step before the pull:
+  - the exact wrap and approval, and the pinned router;
+  - both builder shapes:
+    - fee off: the swap pays the owner;
+    - fee on: the swap pays the router, then `sweepTokenWithFee` pays the
+      owner in USDC, with the fee to `TREASURY_ADDRESS` at a canonical tier
+      and a sweep minimum equal to the swap's;
+  - the owner's post-fee minimum clears an independent floor off the mark;
+  - no price limit (a partial fill would leave the rest on the spender);
+  - a real v3 pool tier.
+
+  Hostile shapes tried: the router's sentinels (`0x…01`, `0x…02`) as
+  recipient, the contract-balance amount flag, trailing calldata, dirty
+  address bits (the router reads the same 20-byte recipient), price limits,
+  and bogus tiers. Pinned by the `spot guard` checks in `scripts/test-api.ts`.
+  They include a live build of the sweep's own `buildSpotSell`, and a
+  mutation run showed each check has a pin that fails without it.
+- **A reverted transaction fails the run.** Both executors' `waitTx` throw on
+  a non-success receipt. Before #807 the spot sweep recorded a reverted sell
+  as `sold` (proven on a Base fork).
+- Claim before build, one run per policy (`spot_guard_runs` is unique on the
+  policy), and the kill switch (`paused`) holds without claiming.
+
+Open questions:
+- **A failure after the pull strands the asset on the spender.** The spot
+  permission is one-shot and nothing refunds it. The DCA autopilot has the
+  same pull-then-swap shape. The swap is bounded 50 bps from the build-time
+  quote while 3–4 spender transactions land first, in a falling market, so
+  this is the likely failure, not an edge case. (Task filed 2026-09-16.)
+- The spender is one CDP server wallet for every permission on the platform.
+  What does CDP's own policy engine allow it to sign, and is there an
+  allowlist of destinations (SpendPermissionManager, WETH, the pinned router,
+  the sell tokens) enforced at CDP, beneath our guards?
 
 ### The funded house burner (`PRIVATE_KEY`)
 

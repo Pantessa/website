@@ -41,6 +41,7 @@ import {
   parseSpotGuardManage,
   permissionMatchesPolicy,
   spotTriggerFired,
+  type SpotSellGuardInput,
   type SpotSellStep,
   type SpotTrigger,
 } from '@/lib/spot-guard'
@@ -382,6 +383,80 @@ export async function armSpotGuardPolicy(
   }
 }
 
+// ── The sell build (the sweep's step 1) ────────────────────────────────────
+
+export interface SpotSellBuild {
+  steps: SpotSellStep[]
+  /** The guard's independent floor, in the stable's atoms. */
+  minOutAtomic: bigint
+  /** The pull in whole tokens (the run's receipt value). */
+  amountTokens: number
+  /** The registry pins the guard checks the steps against. */
+  guardChain: SpotSellGuardInput['chain']
+}
+
+/**
+ * The stop's sell, built exactly as the sweep sends it: a fresh v3 quote
+ * with the output pinned to the owner at the builder's default fee, the wrap
+ * for a native protection, and the independent floor off the fired mark. No
+ * DB, no CDP, nothing signed: the sweep and the harness's live pin both run
+ * this, so guardSpotSell is always proven against the build it really gets
+ * (a hand-built 1-call fixture once hid that every fee-on stop refused).
+ */
+export async function buildSpotSell(input: {
+  chainId: number
+  native: boolean
+  tokenSymbol: string
+  ownerWallet: string
+  spender: string
+  pulled: bigint
+  markUsd: number
+}): Promise<{ ok: true; build: SpotSellBuild } | { ok: false; detail: string }> {
+  const chain = chainById(input.chainId)
+  const stable = primaryStable(input.chainId)
+  const registryRouter = chain?.uniswap?.swapRouter02
+  const weth = chain?.wrappedNative
+  if (!chain || !stable || !registryRouter || !weth) {
+    return { ok: false, detail: 'Chain registry incomplete — refused. Nothing pulled.' }
+  }
+  await ensureTokenList(input.chainId)
+  const dec = input.native ? 18 : (tokenDecimals(input.tokenSymbol, input.chainId) ?? 18)
+  const amountTokens = Number(formatUnits(input.pulled, dec))
+  const built = await buildUniswapSwap({
+    sellToken: input.native ? 'WETH' : input.tokenSymbol,
+    buyToken: stable.symbol,
+    amountHuman: formatUnits(input.pulled, dec),
+    from: input.spender,
+    chainId: input.chainId,
+    recipient: input.ownerWallet,
+  })
+  if (built.blocked) {
+    return { ok: false, detail: `Venue build refused: ${built.guardrails.checks.filter((c) => !c.ok).map((c) => c.note).join(' ') || 'guardrail block'} Nothing pulled.` }
+  }
+  const minOutAtomic = BigInt(Math.floor(input.markUsd * amountTokens * (1 - MIN_OUT_SLIP) * 10 ** stable.decimals))
+  const wrapStep: SpotSellStep | null = input.native
+    ? {
+        to: weth,
+        data: encodeFunctionData({ abi: [{ name: 'deposit', type: 'function', stateMutability: 'payable', inputs: [], outputs: [] }] as const, functionName: 'deposit' }),
+        value: input.pulled.toString(),
+      }
+    : null
+  const venueSteps = [...(built.approveTx ? [built.approveTx] : []), built.swapTx].map((s: { to: string; data: string; value?: string }) => ({
+    to: s.to,
+    data: s.data,
+    value: s.value ?? '0',
+  }))
+  return {
+    ok: true,
+    build: {
+      steps: [...(wrapStep ? [wrapStep] : []), ...venueSteps],
+      minOutAtomic,
+      amountTokens,
+      guardChain: { chainId: input.chainId, usdcAddress: stable.address, swapRouter02: registryRouter, wethAddress: weth },
+    },
+  }
+}
+
 // ── The sweep (per-minute cron) ────────────────────────────────────────────
 
 export interface SpotSweepSummary {
@@ -454,52 +529,28 @@ export async function executeSpotGuardSweep(limit = 2): Promise<SpotSweepSummary
     }
 
     try {
-      const chain = chainById(p.chainId)
-      const stable = primaryStable(p.chainId)
-      const registryRouter = chain?.uniswap?.swapRouter02
-      const weth = chain?.wrappedNative
-      if (!chain || !stable || !registryRouter || !weth) {
-        await fail('Chain registry incomplete — refused. Nothing pulled.')
-        continue
-      }
       const spender = await getSpenderAddress()
       if (spender.toLowerCase() !== p.spender) {
         await fail('Bound spender changed — re-arm to continue. Nothing pulled.')
         continue
       }
-      await ensureTokenList(p.chainId)
       const pulled = permission.allowance
-      const dec = p.native ? 18 : (tokenDecimals(p.tokenSymbol, p.chainId) ?? 18)
-      const amountTokens = Number(formatUnits(pulled, dec))
-      const sellSymbol = p.native ? 'WETH' : p.tokenSymbol
 
       // 1. Fresh build + independent floor + guard — BEFORE any money moves.
-      const built = await buildUniswapSwap({
-        sellToken: sellSymbol,
-        buyToken: stable.symbol,
-        amountHuman: formatUnits(pulled, dec),
-        from: spender,
+      const sell = await buildSpotSell({
         chainId: p.chainId,
-        recipient: p.wallet,
+        native: p.native,
+        tokenSymbol: p.tokenSymbol,
+        ownerWallet: p.wallet,
+        spender,
+        pulled,
+        markUsd: probe.usd,
       })
-      if (built.blocked) {
-        await fail(`Venue build refused: ${built.guardrails.checks.filter((c) => !c.ok).map((c) => c.note).join(' ') || 'guardrail block'} Nothing pulled.`)
+      if (!sell.ok) {
+        await fail(sell.detail)
         continue
       }
-      const minOutAtomic = BigInt(Math.floor(probe.usd * amountTokens * (1 - MIN_OUT_SLIP) * 10 ** stable.decimals))
-      const wrapStep: SpotSellStep | null = p.native
-        ? {
-            to: weth,
-            data: encodeFunctionData({ abi: [{ name: 'deposit', type: 'function', stateMutability: 'payable', inputs: [], outputs: [] }] as const, functionName: 'deposit' }),
-            value: pulled.toString(),
-          }
-        : null
-      const venueSteps = [...(built.approveTx ? [built.approveTx] : []), built.swapTx].map((s: { to: string; data: string; value?: string }) => ({
-        to: s.to,
-        data: s.data,
-        value: s.value ?? '0',
-      }))
-      const steps: SpotSellStep[] = [...(wrapStep ? [wrapStep] : []), ...venueSteps]
+      const { steps, minOutAtomic, amountTokens, guardChain } = sell.build
       const guard = guardSpotSell({
         policy: {
           status: 'triggered',
@@ -511,7 +562,7 @@ export async function executeSpotGuardSweep(limit = 2): Promise<SpotSweepSummary
         permission,
         ownerWallet: p.wallet,
         spender,
-        chain: { chainId: p.chainId, usdcAddress: stable.address, swapRouter02: registryRouter, wethAddress: weth },
+        chain: guardChain,
         markPrice: probe.usd,
         minOutAtomic,
         steps,
@@ -583,8 +634,11 @@ function encodeManagerCall(functionName: 'approveWithSignature' | 'spend', args:
   return encodeFunctionData({ abi: spendPermissionManagerAbi, functionName, args } as Parameters<typeof encodeFunctionData>[0])
 }
 
+// A mined REVERT is a failure, as in dca-auto-exec. Returning on any receipt
+// once recorded a reverted sell as "sold" (proven on a Base fork, 2026-09-16).
 async function waitTx(hash: `0x${string}`): Promise<void> {
   const client = publicClientFor(SPOT_GUARD_CHAIN_ID)
-  if (!client) return
-  await client.waitForTransactionReceipt({ hash, timeout: 120_000 })
+  if (!client) throw new Error('No Base RPC client to confirm the transaction.')
+  const receipt = await client.waitForTransactionReceipt({ hash, timeout: 120_000 })
+  if (receipt.status !== 'success') throw new Error(`tx ${hash} reverted`)
 }
