@@ -558,9 +558,6 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                                   Sell $10
                                 </button>
                               )}
-                              <button type="button" className="wl__chip" onClick={() => send(`DCA $10 into ${sym} weekly`, handoffable(sym))} title={sendLabelFor(handoffable(sym))}>
-                                DCA weekly
-                              </button>
                             </li>
                             <li>
                               {wl.mode === 'authed' ? (

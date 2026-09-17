@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
       const v = validateProposedAsk(m.ask, symbol)
       if (!v.ok) {
         console.warn('[markets/ask] model act dropped by the fence', { why: v.why })
-        return answer({ kind: 'answer', text: `${m.say ? `${cleanProse(m.say, 300)} ` : ''}I can't turn that into a chip here (${v.why}). Try the buy, protect or DCA chips above, or say the amount and the ticker.` }, { deterministic: false, model })
+        return answer({ kind: 'answer', text: `${m.say ? `${cleanProse(m.say, 300)} ` : ''}I can't turn that into a chip here (${v.why}). Try the buy or protect chips above, or say the amount and the ticker.` }, { deterministic: false, model })
       }
       return answer({ kind: 'act', say: cleanProse(m.say || 'Ready to send — your wallet signs.', 300), chip: { label: v.ask, ask: v.ask } }, { deterministic: false, model })
     }

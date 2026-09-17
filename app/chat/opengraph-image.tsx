@@ -94,7 +94,7 @@ export default async function Image() {
             }}
           >
             <span style={{ fontFamily: 'Newsreader', fontStyle: 'italic', fontWeight: 500, fontSize: 34, color: INK }}>
-              buy $10 of AAPL every week…
+              protect my HYPE long with a 5% stop…
             </span>
             <div
               style={{

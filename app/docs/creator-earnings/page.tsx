@@ -201,12 +201,6 @@ export default function CreatorEarningsDocsPage() {
               <td><strong>$0.25</strong></td>
             </tr>
             <tr>
-              <td>DCA $25 of ETH weekly — four runs signed this month</td>
-              <td>$0.50</td>
-              <td>$0.25</td>
-              <td><strong>$0.25</strong></td>
-            </tr>
-            <tr>
               <td>Move $100 USDC from Base to Arbitrum (NEAR Intents)</td>
               <td>$0.20 (1Click keeps $0.10)</td>
               <td>$0.05</td>

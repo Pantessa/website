@@ -3,8 +3,10 @@ import { executeSpotGuardSweep } from '@/lib/spot-guard-exec'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-// A fired policy is ~4-5 Base txs with receipt waits; the sweep caps fires
-// per pass and the per-minute cadence retries the tail.
+// A fired policy is ~4-5 Base txs with receipt waits (a sell that fails
+// after the pull adds a retry and a refund). The sweep caps fires per pass,
+// starts none after 20s, and the next pass reconciles anything cut off
+// (lib/autopilot-unwind).
 export const maxDuration = 60
 
 // The spot-guard heartbeat — per-minute Vercel cron (a stop-loss is only as

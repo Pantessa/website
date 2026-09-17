@@ -47,8 +47,8 @@ const DOOR_CARDS = [
     lead: (
       <>
         Non-custodial, checked, and receipted: the model never writes calldata, every artifact is
-        re-checked fail-closed before your wallet sees it, and standing intents — jobs, recurring
-        buys, Guardian — <strong>never sign for you</strong> beyond what you explicitly delegated.
+        re-checked fail-closed before your wallet sees it, and standing intents — jobs and the
+        Guardian — <strong>never sign for you</strong> beyond what you explicitly delegated.
       </>
     ),
     href: '/docs/trust',
@@ -92,7 +92,7 @@ const STEPS = [
     title: 'Say what should happen — once',
     lead: (
       <>
-        &ldquo;Swap 20 USDC for ETH on Base.&rdquo; &ldquo;Buy $10 of AAPL every week.&rdquo;
+        &ldquo;Swap 20 USDC for ETH on Base.&rdquo; &ldquo;Buy $10 of AAPL.&rdquo;
         &ldquo;Bridge 5 USDC from Base to Arbitrum, then deposit 5 USDC to Hyperliquid, then long
         $12 of ETH on Hyperliquid, then protect my ETH long with a 5% stop.&rdquo; Money asks are claimed by{' '}
         <strong>deterministic parsers</strong>, not sampled from a model — the same sentence hits
@@ -101,7 +101,7 @@ const STEPS = [
       </>
     ),
     links: [
-      { href: '/docs/jobs', label: 'Jobs & recurring buys' },
+      { href: '/docs/jobs', label: 'Jobs: standing intents' },
       { href: '/docs/transactions', label: 'How parsing works' },
     ],
   },

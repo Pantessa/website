@@ -120,7 +120,6 @@ export default function MarketsBand() {
             <div className="mkt__chips">
               <span className="mkt__chip is-pressed">Buy $10 of AAPL</span>
               <span className="mkt__chip">Sell $50 of AAPL</span>
-              <span className="mkt__chip">DCA $10 into AAPL weekly</span>
             </div>
           </div>
           <div className="mkt__tabs mono">

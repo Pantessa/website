@@ -1103,10 +1103,17 @@ model DcaAutoRun {
   scheduleId String   @map("schedule_id")
   wallet     String // lowercased schedule owner (the swap's pinned recipient)
   periodKey  String   @map("period_key") // same UTC calendar keys as dca_runs
-  status     String   @default("running") // running | bought | failed
+  /// running | bought | skipped | failed (nothing pulled) | unwinding (pulled,
+  /// where the money went isn't proven yet) | refunded (the pull went back to
+  /// the owner). After the pull a run never reads 'failed' (lib/autopilot-unwind).
+  status     String   @default("running")
   valueUsd   Float?   @map("value_usd") // the pulled USDC, guardrail-priced
   spendTx    String?  @map("spend_tx") // SpendPermissionManager.spend hash
   swapTx     String?  @map("swap_tx") // the venue swap hash (output → owner)
+  refundTx   String?  @map("refund_tx") // the tx that returned the pull to the owner
+  /// Every spender send for the run, written BEFORE it goes out: step, attempt,
+  /// idempotency key, the request, then its hash and outcome (JSON).
+  txLog      String?  @map("tx_log")
   detail     String? // human receipt line / failure reason
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
@@ -1354,11 +1361,18 @@ model SpotGuardRun {
   id        String   @id @default(cuid())
   policyId  String   @map("policy_id")
   wallet    String // lowercased policy owner (the sell's pinned recipient)
-  status    String   @default("running") // running | sold | failed
+  /// running | sold | failed (nothing pulled) | unwinding (pulled, where the
+  /// money went isn't proven yet) | refunded (the pull went back to the owner).
+  /// After the pull a run never reads 'failed' (lib/autopilot-unwind).
+  status    String   @default("running")
   valueUsd  Float?   @map("value_usd") // mark-priced protected value at fire time
   markPrice Float?   @map("mark_price")
   spendTx   String?  @map("spend_tx") // SpendPermissionManager.spend hash
   swapTx    String?  @map("swap_tx") // the venue sell hash (USDC → owner)
+  refundTx  String?  @map("refund_tx") // the tx that returned the pull to the owner
+  /// Every spender send for the run, written BEFORE it goes out: step, attempt,
+  /// idempotency key, the request, then its hash and outcome (JSON).
+  txLog     String?  @map("tx_log")
   detail    String? // human receipt line / failure reason
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

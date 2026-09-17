@@ -72,13 +72,13 @@ export function symbolPageSeo(symbolRaw: string): SymbolSeo {
     description = `No live chart for ${symbol || 'this token'} yet. You can still trade it from one sentence in chat — guarded, signed only by your wallet.`
   } else if (pair.source === 'robinhood') {
     title = `${symbol} 24/7 — trade ${name} on Robinhood Chain | Pantessa Markets`
-    description = `Live ${symbol} chart from ${FEED_LINE.robinhood}. Buy, sell or DCA ${name} from the chart — guarded transactions, signed only by your wallet. Unlimited watchlists and alerts, free.`
+    description = `Live ${symbol} chart from ${FEED_LINE.robinhood}. Buy or sell ${name} from the chart — guarded transactions, signed only by your wallet. Unlimited watchlists and alerts, free.`
   } else if (pair.source === 'hyperliquid') {
     title = `${symbol} perps live chart — long or short from the chart | Pantessa Markets`
     description = `Live ${symbol} / USD candles from ${FEED_LINE.hyperliquid}. Open a sized long or short with a stop from the chart — guarded, signed only by your wallet.`
   } else {
     title = `${symbol} live chart — trade ${name} from the chart | Pantessa Markets`
-    description = `Live ${symbol} / USD candles from ${FEED_LINE.coinbase}. Swap, DCA or protect ${name} from the chart — one sentence, guarded, your wallet signs.`
+    description = `Live ${symbol} / USD candles from ${FEED_LINE.coinbase}. Swap or protect ${name} from the chart — one sentence, guarded, your wallet signs.`
   }
 
   const crumbs = {

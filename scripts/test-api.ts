@@ -215,10 +215,10 @@ import {
 } from '../lib/stock-tape'
 import { buildGuardedSwap } from '../lib/swap-exec'
 import { ROBINHOOD_BATCH_MAX } from '../lib/quotes'
-import { clampNativeSellAtoms, fillableLeg, FUNDING_ALT_USDC, FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, fundingAltUsdcFor, fundingNeedUsd, listWords, fundingSourceSymbols, LIFI_LEG_FLAT_USD, MIN_VALUE_LEG_USD, minLegNote, offChainStableSource, ROBINHOOD_CHAIN_ID, STABLE_LEG_MIN_OUT_BPS, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
+import { buildLifiBridgeLeg, clampNativeSellAtoms, ETH_MOVE_MIN_OUT_BPS, ETH_MOVE_MIN_USD, fillableLeg, FUNDING_ALT_USDC, FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, fundingAltUsdcFor, fundingNeedUsd, listWords, fundingSourceSymbols, LIFI_LEG_FLAT_USD, MIN_VALUE_LEG_USD, minLegNote, offChainStableSource, ROBINHOOD_CHAIN_ID, STABLE_LEG_MIN_OUT_BPS, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodEthMove, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData, inflightSettlingNote } from '../lib/inflight-funding'
 import { sanitizeWorkingContext } from '../lib/working-context'
-import { parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
+import { parseRobinhoodEthMove, parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
 import { parseMultiSendSegments, parseTransferSegment } from '../lib/transfer-exec'
 import { buildFundsDetail, classifyTurn, FAILURE_PROBE_TOKENS, moneyShaped } from '../lib/ask-failure'
 import { guardSyncDrift } from './guard-sync-check'
@@ -277,7 +277,7 @@ import { ARRIVAL_TTL_MS } from '../lib/arrival-intent'
 import { ladderFilterMenu as aiLadderFilterMenu } from '../lib/markets-ai-ladder'
 import { alertActionChips as arrivalAlertChips } from '../lib/watchlists'
 import { quickActs as mk2QuickActs, ROUTE_TICKET_NOTE as MK2_TICKET_NOTE, SETTLES as MK2_SETTLES, limitAtLevel as mk2LimitAtLevel, BEST_OUT_RULE as MK2_BEST_OUT_RULE, venuesFor as mk2VenuesFor, missingVenueNotes as mk2MissingNotes, composeCompound as mk2ComposeCompound, compoundLegKindsFor as mk2LegKinds, compoundPresets as mk2Presets, type CompoundLegKind as Mk2LegKind, type RoutesResponse as Mk2RoutesResponse, type FundRoutesResponse as Mk2FundRoutesResponse, FUND_CONNECT_NOTE as MK2_FUND_CONNECT_NOTE, compoundFundDest as mk2CompoundFundDest, type FundLegsResponse as Mk2FundLegsResponse } from '../lib/symbol-venues'
-import { execAsks as mk2ExecAsks, execSidesFor as mk2ExecSidesFor, sideOf as mk2SideOf, AMOUNTS as MK2_AMOUNTS, STOPS as MK2_STOPS, CADENCES as MK2_CADENCES } from '../lib/trade-asks'
+import { execAsks as mk2ExecAsks, execSidesFor as mk2ExecSidesFor, sideOf as mk2SideOf, AMOUNTS as MK2_AMOUNTS, STOPS as MK2_STOPS } from '../lib/trade-asks'
 import { exitChipsFor as mk2ExitChipsFor, positionSummary as mk2PositionSummary, positionIsEmpty as mk2PositionIsEmpty, type SymbolPosition as Mk2SymbolPosition } from '../lib/symbol-position'
 import {
   adx as techAdx, askPrice, awesome as techAo, bandOf, bullBearPower as techBbp, camarillaPivots, cci as techCci, classicPivots, computeTechnicals, dmPivots,
@@ -298,6 +298,30 @@ import {
   spotTriggerFired,
 } from '../lib/spot-guard'
 import { spotGuardShareContent } from '../lib/share-receipts'
+import { buildSpotSell } from '../lib/spot-guard-exec'
+import {
+  classifySendError,
+  decideUnwind,
+  guardRefund,
+  parseLedger,
+  planRefund,
+  pullEvidence,
+  reissueMatches,
+  serializeLedger,
+  spenderTxKey,
+  swapDeadlineOf,
+  UNRESOLVED_OPERATOR_SEC,
+  upsertLedger,
+  type LedgerEntry,
+} from '../lib/autopilot-unwind'
+import { spotRearmAsk, spotUnwindCopy } from '../lib/spot-guard'
+import { dcaUnwindCopy } from '../lib/dca-auto'
+import { spendPermissionManagerAbi as unwindManagerAbi } from '@coinbase/cdp-sdk'
+import {
+  encodeEventTopics as unwindEncodeEventTopics,
+  ExecutionRevertedError as UnwindExecutionRevertedError,
+  HttpRequestError as UnwindHttpRequestError,
+} from 'viem'
 import {
   buildDcaSpendPermission,
   guardAutoBuy,
@@ -2782,18 +2806,50 @@ async function main() {
       const noHash = await beacon({})
       // 2. A hash no chain has ever seen → unverified (chain says nothing).
       const ghost = await beacon({ txUrl: `https://basescan.org/tx/0x${'77'.repeat(32)}` })
-      // 3. Someone ELSE's real Base tx (aged block, skip the OP-stack system tx) → mismatch.
-      let foreign: { hash: string; from: string; to: string | null; input: string } | null = null
+      // 3. Someone ELSE's real Base tx (aged block, skip OP-stack system + deposit txs) → mismatch.
+      // The positive branch (4.) replays this same tx as a REAL receipt, so the
+      // pick must have SUCCEEDED: a reverted one reads `mismatch` there, and
+      // 1 in 40–80 of the old first-tx picks had reverted (the 2026-09-16 flake
+      // on 257946c3). Receipts come from Base's own RPC, never publicnode (its
+      // free tier refuses eth_getTransactionReceipt) and never receiptClientFor
+      // (the code under test). The scan starts at a random tx so two harnesses
+      // sharing the TEST DB don't pick one hash (the single-use rule would read
+      // the second as reused).
+      let foreign: { hash: string; from: string; to: string | null; input: string; block: string; receipt: string } | null = null
+      const foreignReverted: string[] = []
+      let foreignDark = ''
       try {
         const { createPublicClient: cpc, http: viemHttp } = await import('viem')
         const { base: baseChain } = await import('viem/chains')
         const pub = cpc({ chain: baseChain, transport: viemHttp('https://base-rpc.publicnode.com') })
+        const receipts = cpc({ chain: baseChain, transport: viemHttp('https://mainnet.base.org', { timeout: 5_000 }) })
         const tip = await pub.getBlockNumber()
-        const blk = await pub.getBlock({ blockNumber: tip - BigInt(64), includeTransactions: true })
-        const cand = blk.transactions.slice(1).find((t) => typeof t === 'object' && !!t.to && t.from.toLowerCase() !== spoofWallet)
-        if (cand && typeof cand === 'object') foreign = { hash: cand.hash, from: cand.from.toLowerCase(), to: cand.to ? cand.to.toLowerCase() : null, input: cand.input }
-      } catch {
+        pick: for (let back = 64; back < 67; back++) {
+          const blk = await pub.getBlock({ blockNumber: tip - BigInt(back), includeTransactions: true })
+          const cands = blk.transactions.slice(1).filter((t) => t.type !== 'deposit' && !!t.to && t.from.toLowerCase() !== spoofWallet)
+          const start = Math.floor(Math.random() * cands.length)
+          for (let i = 0; i < Math.min(4, cands.length); i++) {
+            const t = cands[(start + i) % cands.length]
+            const r = await receipts.getTransactionReceipt({ hash: t.hash })
+            if (r.status !== 'success') {
+              foreignReverted.push(t.hash)
+              continue
+            }
+            foreign = { hash: t.hash, from: t.from.toLowerCase(), to: t.to ? t.to.toLowerCase() : null, input: t.input, block: String(blk.number), receipt: r.status }
+            break pick
+          }
+        }
+      } catch (e) {
         /* RPC dark — the unverified branches still prove the fence */
+        foreignDark = ((e as { shortMessage?: string }).shortMessage ?? String(e)).split('\n')[0].slice(0, 120)
+      }
+      // Every check that leans on the pick names it, so a red names the tx.
+      const foreignNote = {
+        tx: foreign?.hash ?? null,
+        block: foreign?.block ?? null,
+        receipt: foreign?.receipt ?? null,
+        ...(foreignReverted.length ? { passedOverReverted: foreignReverted } : {}),
+        ...(foreignDark ? { rpcDark: foreignDark } : {}),
       }
       const spoof = await beacon({ txUrl: `https://basescan.org/tx/${foreign?.hash ?? `0x${'99'.repeat(32)}`}` })
       const s2Mid = await studio()
@@ -2807,7 +2863,7 @@ async function main() {
       check(
         "receipt money: someone else's real Base tx as the hash is a MISMATCH (RPC-dark degrades to unverified — still nothing)",
         spoof.status === 200 && (foreign ? spoof.body.verification === 'mismatch' : spoof.body.verification === 'unverified'),
-        JSON.stringify({ v: spoof.body.verification, live: !!foreign }),
+        JSON.stringify({ v: spoof.body.verification, live: !!foreign, ...foreignNote }),
       )
       check(
         'receipt money: three $4,999 spoofed signs leave the STUDIO at $0 moved / $0 earned / claimable unchanged / no referred wallet',
@@ -2881,7 +2937,11 @@ async function main() {
         }
       })()
       if (!foreign || !dbUrlS2) {
-        check(`receipt money: verified branch skipped — ${!foreign ? 'Base RPC dark' : 'no DATABASE_URL for the expectation fixture'}`, true)
+        check(
+          `receipt money: verified branch skipped — ${!foreign ? (foreignDark ? 'Base RPC dark' : 'no successful Base tx in the scan') : 'no DATABASE_URL for the expectation fixture'}`,
+          true,
+          JSON.stringify(foreignNote),
+        )
       } else {
         const { PrismaClient } = await import('@prisma/client')
         const db = new PrismaClient({ datasources: { db: { url: dbUrlS2 } } })
@@ -2895,14 +2955,15 @@ async function main() {
           check(
             'receipt money: a REAL receipt (success, sent by the signing wallet, to the artifact on record) stores VERIFIED and the studio counts it ($4,000 moved → $10 earned at the 50bps link tier)',
             real.body.verification === 'verified' && !!realRow && realRow.signedUsd === 4000 && Math.abs(realRow.earnedUsd - 10) < 0.001,
-            JSON.stringify({ v: real.body, row: realRow }),
+            JSON.stringify({ v: real.body, row: realRow, ...foreignNote }),
           )
           const reused = await beacon({ walletAddress: foreign.from, txUrl: `https://basescan.org/tx/${foreign.hash}`, valueUsd: 4000 })
           const s2Reuse = await studio()
+          const reuseSignedUsd = s2Reuse.links.find((l) => l.slug === s2Slug)?.signedUsd
           check(
             'receipt money: the SAME real hash a second time is a MISMATCH (single-use per table) and adds nothing',
-            reused.body.verification === 'mismatch' && s2Reuse.links.find((l) => l.slug === s2Slug)?.signedUsd === 4000,
-            JSON.stringify(reused.body),
+            reused.body.verification === 'mismatch' && reuseSignedUsd === 4000,
+            JSON.stringify({ v: reused.body, signedUsd: reuseSignedUsd ?? null, ...foreignNote }),
           )
           await db.intentLinkExpectation.delete({ where: { id: exp.id } }).catch(() => {})
         } finally {
@@ -3915,7 +3976,8 @@ async function main() {
       // on touch; the chart's act chips are 12px and 40px tall.
       const touch10 = /\[@media\(hover:none\)\]:h-10 \[@media\(hover:none\)\]:w-10/
       check('mobile: overlay close buttons (chart / job detail / request-MCP) are 40px on touch', touch10.test(chartOverlay) && touch10.test(jobOverlay) && touch10.test(addMcp))
-      check('mobile: chart overlay act chips are ≥40px and 12px on touch', (chartOverlay.match(/\[@media\(hover:none\)\]:min-h-10 \[@media\(hover:none\)\]:text-\[12px\]/g) ?? []).length === 3)
+      // Buy + Sell (the DCA chip left 2026-09-16)
+      check('mobile: chart overlay act chips are ≥40px and 12px on touch', (chartOverlay.match(/\[@media\(hover:none\)\]:min-h-10 \[@media\(hover:none\)\]:text-\[12px\]/g) ?? []).length === 2)
       check('mobile: the sign-in door dismiss is a 40px touch target', /@media \(hover: none\) \{ \.ca__close \{ width: 40px; height: 40px;/.test(designCss))
       // The toolbar working-set door beside chain picker + Share + pill was
       // ~30px wide at 375 and ellipsized to "Sn…" — phones show the count.
@@ -3989,7 +4051,14 @@ async function main() {
     const housePage = await fetch(`${BASE}/i/buy-aapl`)
     const houseHtml = flat(await housePage.text())
     check('house links: /i/buy-aapl is live with the canonical ask', housePage.status === 200 && houseHtml.includes('Buy $10 of AAPL'))
-    check('house links: /links start-here strip renders the seeded set', boardHtml.includes('Start here') && boardHtml.includes('/i/dca-eth'))
+    check('house links: /links start-here strip renders the seeded set', boardHtml.includes('Start here') && boardHtml.includes('/i/buy-aapl'))
+    // DCA retired from the house set (2026-09-16): a recurring buy only
+    // reminds the wallet to sign each period. /i/dca-eth stays live in the
+    // DB, just unsurfaced — neither the strip nor the set may offer it.
+    check(
+      'house links: no house link offers a recurring buy (/i/dca-eth unsurfaced)',
+      !boardHtml.includes('/i/dca-eth') && !HOUSE_LINKS.some((h) => h.slug === 'dca-eth' || /\bdca\b|every week|weekly/i.test(h.ask)),
+    )
     const homeHtml = flat(await (await fetch(`${BASE}/`)).text())
     check(
       'house links: the landing link lane renders with tappable house links',
@@ -4034,8 +4103,8 @@ async function main() {
       markNames('protected-long')[0] === 'Hyperliquid' && markNames('protected-long').includes('NEAR Intents'),
     )
     check(
-      'house links: the ETH DCA chip leads with its Uniswap venue mark',
-      markNames('dca-eth')[0] === 'Uniswap',
+      'house links: the stock chip leads with its Robinhood mark',
+      markNames('buy-aapl')[0] === 'Robinhood',
     )
     // Sync guard: every composed MCP stays represented on the chip (the cap
     // must never silently drop a compose slug as venue marks are added).
@@ -4048,7 +4117,7 @@ async function main() {
     )
     check(
       'house links: the landing lane chips render the mark stacks (title carries the apps)',
-      homeHtml.includes('via Uniswap + NEAR Intents'),
+      homeHtml.includes('via Robinhood + NEAR Intents'),
     )
     // The composed MCP set must survive plurals — "Show my NFTs" once
     // composed to NO opensea (\bnft\b can't match "nfts"), so the seeded
@@ -7069,8 +7138,19 @@ async function main() {
         rf1.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => compiles(o.resume) === 'sign:native-lifi-fund,wait:wait'),
       JSON.stringify(rf1).slice(0, 300),
     )
+    // ETH asked to land as ETH moves as ETH (2026-09-16): the chips used to
+    // land USDG ("using eth") because no native ETH value leg existed; LiFi
+    // routes ETH → native ETH on 4663 from every origin, so the answer to
+    // "bridge ETH" is ETH. An explicit USDG landing keeps the funding legs.
     const rfEth = robinhoodFundingFromCrossChain('swap 0.01 ETH from base to robinhood')
-    check('rh funding redirect: an ETH-sized ask → dollar chips "using eth", every resume compiles, the copy says the canonical bridge is Ethereum-only and what lands', !!rfEth && 'clarify' in rfEth && /only runs from Ethereum/.test(rfEth.reply) && /USDG/.test(rfEth.reply) && rfEth.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => /using eth$/.test(o.resume) && compiles(o.resume) === 'sign:native-lifi-fund,wait:wait'))
+    check(
+      'rh funding redirect: an ETH-sized ETH → ETH ask → move chips ("Move $N of ETH from base to robinhood chain"), each one native ETH leg + wait, and the copy says the canonical bridge is Ethereum-only and that ETH lands as ETH',
+      !!rfEth && 'clarify' in rfEth && /only runs from Ethereum/.test(rfEth.reply) && /ETH moves as ETH/.test(rfEth.reply) && !/USDG/.test(rfEth.reply) &&
+        rfEth.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => /^Move \$\d+ of ETH from base to robinhood chain$/.test(o.resume) && compiles(o.resume) === 'sign:native-lifi-fund,wait:wait' && (compileJobAskFull(o.resume) as CompiledJob).steps[0].params.leg === 'eth'),
+      JSON.stringify(rfEth).slice(0, 400),
+    )
+    const rfEthUsdg = robinhoodFundingFromCrossChain('swap 0.01 ETH from base to USDG on robinhood')
+    check('rh funding redirect: ETH → USDG keeps the dollar chips "using eth" (the funding legs), every resume compiles', !!rfEthUsdg && 'clarify' in rfEthUsdg && /USDG/.test(rfEthUsdg.reply) && rfEthUsdg.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => /using eth$/.test(o.resume) && compiles(o.resume) === 'sign:native-lifi-fund,wait:wait'))
     const rfBuy = robinhoodFundingFromCrossChain('swap 20 USDC from base to AAPL on robinhood')
     check('rh funding redirect: "… to AAPL on robinhood" hands over ONE fund-then-buy chip that compiles fund → wait → buy', !!rfBuy && 'clarify' in rfBuy && compiles(rfBuy.clarify.options[0].resume) === 'sign:native-lifi-fund,wait:wait,sign:native-lifi-swap')
     check('rh funding redirect: the canonical ETH-from-Ethereum bridge stays with the bridge layer (no job, no redirect)', robinhoodFundingFromCrossChain('Bridge 0.01 ETH from Ethereum to Robinhood Chain') === null && compileJobAskFull('Bridge 0.01 ETH from Ethereum to Robinhood Chain') === null)
@@ -9191,9 +9271,9 @@ async function main() {
       JSON.stringify(rhMerged.holdings.map((h) => [h.symbol, h.balance, h.valueUsd])),
     )
     check(
-      'wallet stocks: a held stock row wears Buy more / DCA / Sell chips whose asks are native Robinhood-Chain builds; a sub-$1 USDG row wears none',
-      JSON.stringify(aaplRow?.actions?.map((a) => a.label)) === JSON.stringify(['Buy more AAPL', 'DCA $10 weekly', 'Sell AAPL']) &&
-        aaplRow?.actions?.[2]?.prompt === 'Sell all my AAPL for USDG on Robinhood Chain' && parseSwapIntent(aaplRow.actions[2].prompt).sellAll === true &&
+      'wallet stocks: a held stock row wears Buy more / Sell chips (no recurring buy, 2026-09-16) whose asks are native Robinhood-Chain builds; a sub-$1 USDG row wears none',
+      JSON.stringify(aaplRow?.actions?.map((a) => a.label)) === JSON.stringify(['Buy more AAPL', 'Sell AAPL']) &&
+        aaplRow?.actions?.[1]?.prompt === 'Sell all my AAPL for USDG on Robinhood Chain' && parseSwapIntent(aaplRow.actions[1].prompt).sellAll === true &&
         !rhMerged.holdings.find((h) => h.symbol === 'USDG')?.actions,
       JSON.stringify(aaplRow?.actions),
     )
@@ -9214,8 +9294,8 @@ async function main() {
     const wvRh = wv.chains?.find((c) => c.id === 4663)
     const wvStocks = (wvRh?.holdings ?? []).filter((h) => h.actions?.some((a) => /^Sell /.test(a.label)))
     check(
-      `wallet stocks: /api/wallet lists Robinhood Chain, and every held stock row is priced and carries its chips (${wvStocks.map((h) => h.symbol).join(',') || 'none held'})`,
-      wvRes.status === 200 && !!wvRh && wvStocks.every((h) => typeof h.priceUsd === 'number' && h.priceUsd > 0 && (h.actions?.length ?? 0) >= 3),
+      `wallet stocks: /api/wallet lists Robinhood Chain, and every held stock row is priced and carries its Buy more / Sell chips, no DCA (${wvStocks.map((h) => h.symbol).join(',') || 'none held'})`,
+      wvRes.status === 200 && !!wvRh && wvStocks.every((h) => typeof h.priceUsd === 'number' && h.priceUsd > 0 && (h.actions?.length ?? 0) >= 2 && !(h.actions ?? []).some((a) => /\bdca\b|every week/i.test(`${a.label} ${a.prompt}`))),
       JSON.stringify(wvRh?.holdings.map((h) => [h.symbol, h.balance, h.priceUsd, h.actions?.length ?? 0])),
     )
 
@@ -9323,6 +9403,26 @@ async function main() {
           /bootHoldingFor\(\{ hydrated, walletStatus, holdElapsed \}\)/.test(wpPage) &&
           /onClick=\{openAccountModal\}/.test(wpPage) &&
           /getRecentActivity\(address, 12\)/.test(wpView),
+      )
+      // The address row wears every app chain's mark (2026-09-17, Nate: "on
+      // the wallet section it says 'wallet on arc' what it should show is all
+      // the supported chains logos Eth, Base, OP, ARb, Robinhood, Arc"). The
+      // address is the same on every chain, so naming the one the wallet is
+      // switched to read as its only home. Registry-driven: a chain added to
+      // lib/chains shows up in the row, and needs a mark to pass.
+      const { byChainMarkOrder, getChainMark } = await import('../components/chain-marks')
+      const marked = [...APP_CHAINS].sort(byChainMarkOrder)
+      const addressRowSrc = wpPanel.match(/const addressRow = \(([\s\S]*?)\n  \)\n/)?.[1] ?? ''
+      check(
+        'wallet page: the address row shows every app chain\'s mark, L1 first (Ethereum · Base · Optimism · Arbitrum · Robinhood Chain · Arc), in both frames, and no longer names the one chain the wallet is switched to',
+        new Set(marked.map((c) => c.id)).size === APP_CHAINS.length &&
+          marked.every((c) => getChainMark(c.key) !== null) &&
+          marked.slice(0, 6).map((c) => c.key).join(' ') === 'ethereum base optimism arbitrum robinhood arc' &&
+          /const ADDRESS_CHAINS = \[\.\.\.APP_CHAINS\]\.sort\(byChainMarkOrder\)/.test(wpPanel) &&
+          /ADDRESS_CHAINS\.map\(\(c\) => \{\s*const Mark = getChainMark\(c\.key\)/.test(wpPanel) &&
+          addressRowSrc.includes('<AddressChains />') && !/wallet on/.test(addressRowSrc) &&
+          (wpPanel.match(/\{addressRow\}/g) ?? []).length === 2,
+        marked.map((c) => c.key).join(' '),
       )
     }
 
@@ -10969,6 +11069,198 @@ async function main() {
       'native clamp: a real shortfall (past tolerance) still refuses',
       clampNativeSellAtoms(wei('3463000000000000'), wei('3000000000000000'), wei('2000000000000000')) === null,
     )
+
+    // ── The round trip on Robinhood Chain (2026-09-16). "Buy $10 of ETH on
+    // robinhood chain" from a wallet holding ETH on Base planned "Fund
+    // robinhood chain with $12.5 from base using eth including gas, then buy
+    // $10 of ETH": ETH → USDG → ETH, two conversions and two fees to land the
+    // asset it started from. The token a buy is for never funds its VALUE leg
+    // (lib/lifi-bridge buysOrigin); it may still pay the gas leg, and an
+    // ETH-only wallet gets its ETH carried over as ETH (planRobinhoodEthMove).
+    {
+      const rtO = (chainId: number, word: string, token: string, usd: number, gasEth = 0.01): FundingOrigin => ({ chainId, word, token, usd, gasEth, ...(token === 'ETH' ? { spendable: true } : {}) })
+      const rtScan = (origins: FundingOrigin[], gasless: FundingOrigin[] = []) => ({ origins, gaslessOrigins: gasless, allScanned: [...origins, ...gasless], failedOrigins: [] as string[] })
+      const rtBuy = (usd: number, held = 0, gas = true, sym = 'ETH') => ({
+        needUsd: robinhoodBuyNeedUsd(usd, held, gas), gasIncluded: gas, followup: `buy $${usd} of ${sym}`, buyToken: sym, buyShortUsd: Number((usd - held).toFixed(2)),
+      })
+      const rtSteps = (resume: string) => {
+        const j = compileJobAskFull(resume)
+        return !j || 'problem' in j || 'clarify' in j ? JSON.stringify(j) : j.steps.map((s) => `${s.kind}:${s.builder}${s.params.leg ? `(${s.params.leg} $${s.params.usd} ${s.params.token} @${s.params.origin})` : ''}`).join(' | ')
+      }
+      // A value leg that sells the bought token: "Fund robinhood chain with $X from base using eth[ including gas]"
+      // in a resume whose follow-up buys ETH. A gas-only segment is not one.
+      const sellsEthForEth = (resume: string) => /\bbuy \$[\d.]+ of eth\b/i.test(resume) && /fund robinhood chain with \$[\d.]+ from [a-z]+ using eth\b/i.test(resume)
+      const ethBase = rtO(8453, 'Base', 'ETH', 60)
+
+      const unruled = planRobinhoodFundingChips({ origins: [ethBase], needUsd: robinhoodBuyNeedUsd(10, 0, true), gasIncluded: true, followup: 'buy $10 of ETH' })
+      check(
+        'rh round trip: the old plan WAS the round trip (no buy token → "…from base using eth including gas, then buy $10 of ETH"), so the rule is buyToken and nothing wider',
+        !!unruled && unruled[0].resume === 'Fund robinhood chain with $12.5 from base using eth including gas, then buy $10 of ETH' &&
+          planRobinhoodFundingChips({ origins: [ethBase], needUsd: robinhoodBuyNeedUsd(10, 0, true), gasIncluded: true, followup: 'buy $10 of ETH', buyToken: 'ETH' }) === null,
+        JSON.stringify(unruled),
+      )
+      const aapl = planRobinhoodFundingAdvice({ scan: rtScan([ethBase]), ...rtBuy(10, 0, true, 'AAPL') })
+      check(
+        'rh round trip: ETH still funds a buy of anything else (AAPL keeps its "using eth" chips)',
+        aapl.kind === 'chips' && aapl.chips[0].resume === 'Fund robinhood chain with $12.5 from base using eth including gas, then buy $10 of AAPL',
+        JSON.stringify(aapl),
+      )
+
+      const move = planRobinhoodFundingAdvice({ scan: rtScan([ethBase]), ...rtBuy(10) })
+      const moveChip = move.kind === 'move' ? move.chips[0] : null
+      const moveJob = moveChip ? compileJobAskFull(moveChip.resume) : null
+      const movePath = moveChip ? fundingPathOf(moveChip.resume) : null
+      check(
+        'rh round trip: an ETH-only wallet buying ETH → ONE move chip, sized to the buy with no margin, compiling to one native-ETH LiFi leg + arrival wait (no gas leg: the ETH is the gas)',
+        move.kind === 'move' && move.chips.length === 2 && move.chips[1].label === 'Not now' &&
+          moveChip?.label === 'Move ~$10 of my ETH from Base to Robinhood Chain' && moveChip.resume === 'Move $10 of ETH from base to robinhood chain' &&
+          !!moveJob && !('problem' in moveJob) && !('clarify' in moveJob) && moveJob.steps.length === 2 &&
+          moveJob.steps[0].builder === 'native-lifi-fund' &&
+          JSON.stringify(moveJob.steps[0].params) === JSON.stringify({ leg: 'eth', usd: 10, origin: 8453, token: 'ETH' }) &&
+          JSON.stringify(moveJob.steps[1].waitPredicate) === JSON.stringify({ kind: 'chain-arrival', fromSteps: [0] }) &&
+          simulateLadder(moveChip.resume).gate === 'jobs' && simulateLadder(moveChip.resume).kind === 'action' &&
+          !!movePath && movePath.nodes.map((n) => `${n.title}[${n.detail}]`).join(' → ') === 'Base[$10 ETH] → Robinhood Chain[ETH]',
+        JSON.stringify({ move, steps: moveChip ? rtSteps(moveChip.resume) : null, movePath }),
+      )
+      check(
+        'rh round trip: the move copy names the ETH, refuses the round trip in words, and says a move is not a buy',
+        move.kind === 'move' && move.copy.includes('~$60 of ETH on Base') && /won't sell it for USDG just to buy it back/.test(move.copy) &&
+          /Robinhood Chain's gas/.test(move.copy) && /it doesn't buy more/.test(move.copy),
+        move.kind === 'move' ? move.copy : move.kind,
+      )
+      const split = planRobinhoodFundingAdvice({ scan: rtScan([rtO(10, 'Optimism', 'ETH', 6), rtO(42161, 'Arbitrum', 'ETH', 6)]), ...rtBuy(10) })
+      check(
+        'rh round trip: ETH split across origins, none covering alone → one chip whose moves compile as a job (richest first, the last leg the remainder)',
+        split.kind === 'move' && split.chips[0].resume === 'Move $6 of ETH from optimism to robinhood chain, then Move $4 of ETH from arbitrum to robinhood chain' &&
+          rtSteps(split.chips[0].resume) === 'sign:native-lifi-fund(eth $6 ETH @10) | wait:wait | sign:native-lifi-fund(eth $4 ETH @42161) | wait:wait',
+        JSON.stringify(split),
+      )
+      const l2First = planRobinhoodFundingAdvice({ scan: rtScan([rtO(1, 'Ethereum', 'ETH', 60), rtO(8453, 'Base', 'ETH', 30)]), ...rtBuy(20) })
+      check(
+        'rh round trip: an L2 row that covers leads a richer mainnet row (its signature costs cents, not L1 gas)',
+        l2First.kind === 'move' && l2First.chips[0].resume === 'Move $20 of ETH from base to robinhood chain',
+        JSON.stringify(l2First),
+      )
+      const heldUsdg = planRobinhoodFundingAdvice({ scan: rtScan([ethBase]), ...rtBuy(10, 8) })
+      check(
+        'rh round trip: USDG already held on Robinhood Chain shrinks the move to the shortfall (floored at the $2 move minimum)',
+        heldUsdg.kind === 'move' && heldUsdg.moveUsd === 2 && heldUsdg.chips[0].resume === 'Move $2 of ETH from base to robinhood chain',
+        JSON.stringify(heldUsdg),
+      )
+      const dustUsdc = planRobinhoodFundingAdvice({ scan: rtScan([rtO(42161, 'Arbitrum', 'USDC', 5, 0.001), ethBase]), ...rtBuy(10) })
+      check(
+        'rh round trip: USDC too small for any value leg doesn\'t block the move, and the copy names it',
+        dustUsdc.kind === 'move' && dustUsdc.copy.includes('~$5 of USDC on Arbitrum (too little to bridge on its own)'),
+        JSON.stringify(dustUsdc),
+      )
+
+      const mixed = planRobinhoodFundingAdvice({ scan: rtScan([rtO(42161, 'Arbitrum', 'USDC', 60, 0.001), ethBase]), ...rtBuy(10) })
+      check(
+        'rh round trip: USDC that covers → chips spend the USDC; no chip sells the ETH, and no "Use Base ETH instead" (the alt chip was the round trip)',
+        mixed.kind === 'chips' && mixed.chips[0].resume === 'Fund robinhood chain with $12.5 from arbitrum including gas, then buy $10 of ETH' &&
+          mixed.chips.every((c) => !sellsEthForEth(c.resume) && !/ETH instead/.test(c.label)),
+        JSON.stringify(mixed),
+      )
+      const gasPayer = planRobinhoodFundingAdvice({ scan: rtScan([rtO(42161, 'Arbitrum', 'USDC', 11, 0.001), ethBase]), ...rtBuy(10) })
+      const gasPayerChip = gasPayer.kind === 'chips' ? gasPayer.chips[0] : null
+      const gasPayerPath = gasPayerChip ? fundingPathOf(gasPayerChip.resume) : null
+      check(
+        'rh round trip: ETH still pays the GAS leg — $11 of USDC covers the value but not value + gas, and a gas-only ETH segment closes it (gas → wait → USDG → wait → buy)',
+        !!gasPayerChip && gasPayerChip.label === 'Just enough (~$10.5 from Arbitrum, gas from Base ETH)' &&
+          gasPayerChip.resume === 'Fund robinhood chain gas from base using eth, then Fund robinhood chain with $10.5 from arbitrum, then buy $10 of ETH' &&
+          rtSteps(gasPayerChip.resume) === 'sign:native-lifi-fund(gas $2 ETH @8453) | wait:wait | sign:native-lifi-fund(usdg $10.5 USDC @42161) | wait:wait | sign:native-lifi-swap' &&
+          !sellsEthForEth(gasPayerChip.resume) &&
+          !!gasPayerPath && gasPayerPath.nodes.map((n) => `${n.title}[${n.detail ?? ''}]`).join(' → ') === 'Base[ETH] → Robinhood Chain[gas] → Arbitrum[$10.5 USDC] → Robinhood Chain[USDG] → Buy $10 of ETH[]',
+        JSON.stringify({ gasPayer, steps: gasPayerChip ? rtSteps(gasPayerChip.resume) : null, gasPayerPath }),
+      )
+      const shortUsdc = planRobinhoodFundingAdvice({ scan: rtScan([rtO(42161, 'Arbitrum', 'USDC', 10, 0.001), ethBase]), ...rtBuy(10) })
+      check(
+        'rh round trip: USDC short even with ETH paying gas → the refusal names the ETH as not counted (and no move: the USDC could fund a value leg)',
+        shortUsdc.kind === 'none' && shortUsdc.copy.includes('~$60 of ETH on Base (not counted: ETH is what this buy gets you)') && shortUsdc.copy.includes('~$10 of USDC on Arbitrum'),
+        JSON.stringify(shortUsdc),
+      )
+      const downsizeGas = planDownsizedRobinhoodBuy({ scan: { origins: [rtO(42161, 'Arbitrum', 'USDC', 10, 0.001), ethBase] }, buyUsd: 12, holdingUsd: 0, includeGas: true, buySym: 'ETH', acquiring: false })
+      check(
+        'rh round trip: the downsize sizes off the USDC with the ETH paying gas — "$9.5 of ETH instead", no ETH in the value leg',
+        !!downsizeGas && downsizeGas.buyUsd === 9.5 &&
+          downsizeGas.chips[0].resume === 'Fund robinhood chain gas from base using eth, then Fund robinhood chain with $10 from arbitrum, then buy $9.5 of ETH' &&
+          !/not counted|round trip/i.test(downsizeGas.chips[0].label) && /gas from Base ETH/.test(downsizeGas.chips[0].label),
+        JSON.stringify(downsizeGas),
+      )
+      check(
+        'rh round trip: an ETH-only wallet gets no downsized ETH buy (a smaller buy of ETH is still a buy of ETH); AAPL keeps its ETH-funded downsize',
+        planDownsizedRobinhoodBuy({ scan: { origins: [rtO(8453, 'Base', 'ETH', 10)] }, buyUsd: 12, holdingUsd: 0, includeGas: false, buySym: 'ETH', acquiring: false }) === null &&
+          /using eth, then buy \$9\.5 of AAPL$/.test(planDownsizedRobinhoodBuy({ scan: { origins: [rtO(8453, 'Base', 'ETH', 10)] }, buyUsd: 12, holdingUsd: 0, includeGas: false, buySym: 'AAPL', acquiring: false })?.chips[0].resume ?? ''),
+      )
+      const tiny = planRobinhoodFundingAdvice({ scan: rtScan([rtO(8453, 'Base', 'ETH', 1)]), ...rtBuy(10) })
+      const subKeepback = planRobinhoodFundingAdvice({ scan: rtScan([], [{ ...rtO(1, 'Ethereum', 'ETH', 3, 0.0013), spendable: false }]), ...rtBuy(10) })
+      check(
+        'rh round trip: ETH too small to move is named as not counted; sub-keep-back ETH keeps "under what a move from there costs" — neither becomes a move',
+        tiny.kind === 'none' && tiny.copy === '~$1 of ETH on Base (not counted: ETH is what this buy gets you)' &&
+          subKeepback.kind === 'none' && subKeepback.copy === '~$3 of ETH on Ethereum (under what a move from there costs)',
+        JSON.stringify({ tiny, subKeepback }),
+      )
+      const weth = planRobinhoodFundingAdvice({ scan: rtScan([ethBase]), ...rtBuy(10, 0, true, 'WETH') })
+      check(
+        'rh round trip: exact symbols, like the generic planner — a WETH buy may spend ETH (no wrap builder: the stable is the only way ETH becomes WETH), and no move (it lands native ETH)',
+        weth.kind === 'chips' && weth.chips[0].resume === 'Fund robinhood chain with $12.5 from base using eth including gas, then buy $10 of WETH' &&
+          planRobinhoodEthMove({ scan: rtScan([ethBase]), buyToken: 'WETH', shortUsd: 10 }) === null,
+        JSON.stringify(weth),
+      )
+      const rescue = planRobinhoodFundingAdvice({
+        scan: { origins: [rtO(8453, 'Base', 'ETH', 30)], gaslessOrigins: [rtO(42161, 'Arbitrum', 'USDC', 60, 0)], allScanned: [rtO(8453, 'Base', 'ETH', 30), rtO(42161, 'Arbitrum', 'USDC', 60, 0)], failedOrigins: [] },
+        ...rtBuy(10),
+      })
+      check(
+        'rh round trip: gas-stranded USDC is still rescued with gas from an ETH-only chain (the topup is gas), and the plan spends the USDC',
+        rescue.kind === 'gas-stranded' && rescue.donor?.word === 'Base' && !!rescue.chips &&
+          rescue.chips[0].resume === `swap ${GAS_TOPUP_ETH} ETH from base to arbitrum, then Fund robinhood chain with $12.5 from arbitrum including gas, then buy $10 of ETH` &&
+          !sellsEthForEth(rescue.chips[0].resume),
+        JSON.stringify(rescue),
+      )
+
+      // The grammars the chips compile through.
+      // The move reads exactly the origin words the funding sentence reads
+      // (typos included, and not "op", a perp ticker — #712).
+      const originWords = ['base', 'ethereum', 'mainnet', 'Etherium', 'arbitrum', 'arb', 'optimism', 'op']
+      const moves = originWords.map((w) => parseRobinhoodEthMove(`Move $10 of ETH from ${w} to robinhood chain`)?.originChainId ?? null)
+      const funds = originWords.map((w) => parseRobinhoodFunding(`Fund robinhood chain with $10 from ${w}`)?.originChainId ?? null)
+      const smallMove = compileJobAskFull('Move $1 of ETH from base to robinhood chain')
+      check(
+        'rh round trip (grammar): "Move $X of ETH from <origin> to robinhood chain" reads the same origin words as the funding sentence, and "move $10 worth of my eth from arb to robinhood"; $1 refuses by name; the canonical ETH-sized bridge stays the bridge layer\'s',
+        JSON.stringify(moves) === JSON.stringify(funds) && JSON.stringify(moves) === JSON.stringify([8453, 1, 1, 1, 42161, 42161, 10, null]) &&
+          parseRobinhoodEthMove('move $10 worth of my eth from arb to robinhood')?.moveUsd === 10 &&
+          parseRobinhoodEthMove('Move $10 of USDC from base to robinhood chain') === null &&
+          !!smallMove && 'problem' in smallMove && /smallest ETH move onto Robinhood Chain is \$2/.test(smallMove.problem) &&
+          simulateLadder('Bridge 0.01 ETH from Ethereum to Robinhood Chain').gate === 'rh-bridge',
+        JSON.stringify({ moves, funds, smallMove }),
+      )
+      const gasOnly = compileJobAskFull('Fund robinhood chain gas from base using eth')
+      check(
+        'rh round trip (grammar): a lone "Fund robinhood chain gas from base using eth" is a job — one $2 gas leg selling ETH, then its arrival wait; "using usdc.e" off Arbitrum refuses',
+        !!gasOnly && !('problem' in gasOnly) && !('clarify' in gasOnly) && gasOnly.steps.length === 2 &&
+          JSON.stringify(gasOnly.steps[0].params) === JSON.stringify({ leg: 'gas', usd: GAS_LEG_USD, origin: 8453, token: 'ETH' }) &&
+          JSON.stringify(gasOnly.steps[1].waitPredicate) === JSON.stringify({ kind: 'chain-arrival', fromSteps: [0] }) &&
+          ((r) => !!r && 'problem' in r)(compileJobAskFull('Fund robinhood chain gas from base using usdc.e')),
+        JSON.stringify(gasOnly),
+      )
+      let wrongSell = ''
+      await buildLifiBridgeLeg({ leg: 'eth', usd: 10, from: '0x1111111111111111111111111111111111111111', origin: 8453, token: 'USDC' }).catch((e: unknown) => { wrongSell = e instanceof Error ? e.message : String(e) })
+      check('rh round trip (builder): an ETH move with a non-ETH sell side refuses before it quotes (USDC → ETH is a buy, not a move)', /sells native ETH/.test(wrongSell), wrongSell)
+      check('rh round trip (builder): the move\'s parity floor is the stable leg\'s, in ETH atoms', ETH_MOVE_MIN_OUT_BPS === STABLE_LEG_MIN_OUT_BPS && ETH_MOVE_MIN_USD === GAS_LEG_USD)
+
+      // The wiring: the swap gate names the buy (never on an acquisition) and
+      // sizes the move off the shortfall; the refresh route rebuilds 'eth' legs.
+      const rtRouteSrc = (await readFile('app/api/chat/route.ts', 'utf8')).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      const rtRefreshSrc = await readFile('app/api/tx/refresh/route.ts', 'utf8')
+      check(
+        'rh round trip (source): the Robinhood funding block passes buyToken (undefined for an acquisition) + buyShortUsd to the advice, answers kind "move", and the refresh route accepts leg "eth"',
+        /const buyToken = acquiring \? undefined : buySym/.test(rtRouteSrc) &&
+          /followup: acquiring \? '' : `buy \$\$\{buyUsd\} of \$\{buySym\}`,\s*\n\s*dest: lifiDest,\s*\n\s*buyToken,\s*\n\s*buyShortUsd: Math\.max\(0, Number\(\(buyUsd - creditUsd\)\.toFixed\(2\)\)\),/.test(rtRouteSrc) &&
+          /if \(advice\.kind === 'move'\)/.test(rtRouteSrc) &&
+          /body\.leg === 'eth'/.test(rtRefreshSrc),
+      )
+    }
 
     // ── The rh-funding follow-up parser: the typed continuations that must
     // re-enter the funding layer instead of falling to the planner.
@@ -13751,6 +14043,45 @@ async function main() {
     refreshBadTier.status === 400 && /unknown fee tier/i.test(refreshBadTierBody.error ?? ''),
     JSON.stringify(refreshBadTierBody),
   )
+  // The ETH move's refresh recipe ({leg:'eth'}) rebuilds instead of bouncing
+  // as an unknown leg; a leg nobody mints still does. (The empty wallet can't
+  // fund it, so whatever comes back — blocked by balance, or the venue's own
+  // answer — is past the recipe check.)
+  const refreshLeg = async (leg: string) => {
+    const r = await fetch(`${BASE}/api/tx/refresh`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'lifi-bridge', from: owner.address, leg, usd: '10', origin: '8453', token: 'ETH' }),
+    })
+    return { status: r.status, body: (await r.json().catch(() => ({}))) as { error?: string; blocked?: boolean; reasons?: string } }
+  }
+  const refreshEthLeg = await refreshLeg('eth')
+  const refreshBadLeg = await refreshLeg('stake')
+  check(
+    'tx refresh: an ETH move recipe (leg "eth") passes the recipe check; an unknown leg is still a 400',
+    !/missing\/invalid from, leg or usd/.test(refreshEthLeg.body.error ?? '') && refreshEthLeg.status !== 400 &&
+      refreshBadLeg.status === 400 && /missing\/invalid from, leg or usd/.test(refreshBadLeg.body.error ?? ''),
+    JSON.stringify({ refreshEthLeg, refreshBadLeg }).slice(0, 400),
+  )
+  // The round trip, over HTTP (2026-09-16): the swap gate's Robinhood funding
+  // block for an empty wallet. A buy of ETH is unlocked by money that isn't
+  // ETH — topping up ETH would only earn a move of it — and a card delivery
+  // of ETH IS the ETH the buy is for; a stock buy keeps both.
+  const rtAsk = async (message: string) =>
+    (await (await fetch(`${BASE}/api/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+      body: JSON.stringify({ message, activeServers: [], walletAddress: owner.address }),
+    })).json()) as { reply?: string; clarify?: { options?: { label: string; resume: string }[] } }
+  const rtEmptyEth = await rtAsk('Buy $20 of ETH on robinhood chain')
+  const rtEmptyAapl = await rtAsk('Buy $20 of AAPL on robinhood chain')
+  const rtEthReply = String(rtEmptyEth.reply ?? '')
+  const rtAaplReply = String(rtEmptyAapl.reply ?? '')
+  check(
+    'rh round trip (route): an empty wallet buying ETH on Robinhood Chain is pointed at USDC, never "USDC or ETH" (or the card door names the ETH as what the buy is for); AAPL keeps "USDC or ETH"',
+    /Robinhood Chain/.test(rtEthReply) && !/top up USDC or ETH/.test(rtEthReply) && (/top up USDC on /.test(rtEthReply) || /the ETH this buy is for/.test(rtEthReply)) &&
+      (/top up USDC or ETH on /.test(rtAaplReply) || /swap and bridge it the rest of the way/.test(rtAaplReply)) &&
+      (rtEmptyEth.clarify?.options ?? []).every((o) => !/using eth/i.test(o.resume)),
+    JSON.stringify({ eth: rtEthReply.slice(0, 260), aapl: rtAaplReply.slice(0, 200) }),
+  )
   // Dry-run classifier (the 2026-09-08 SPY withhold): an RPC that didn't
   // answer is NOT revert evidence. viem's first lines for transport failures
   // never say "timeout"/"rate limit" — the old regex booked every one of them
@@ -14441,7 +14772,8 @@ async function main() {
       check(
         'guardian fence (route): "protect my AAPL with a 5% stop" refuses by name with working chips — no arm, no sign-in gate, no add-Hyperliquid door',
         /AAPL isn't a Hyperliquid market/.test(fenceTurn.reply ?? '') && fenceTurn.buildPath === 'native-hl-guardian' && !fenceTurn.guardianPolicyId && !fenceTurn.signInGate &&
-          (fenceTurn.clarify?.options ?? []).some((o) => o.resume === 'DCA $10 into AAPL weekly') &&
+          (fenceTurn.clarify?.options ?? []).some((o) => o.resume === 'Sell all my AAPL for USDG on Robinhood Chain') &&
+          !(fenceTurn.clarify?.options ?? []).some((o) => /\bdca\b|weekly/i.test(o.resume)) &&
           /AAPL isn't a Hyperliquid market/.test(fenceNoHl.reply ?? '') && !fenceNoHl.door && !(fenceNoHl.reply ?? '').includes('Add Hyperliquid'),
         JSON.stringify({ fenceTurn, fenceNoHl }).slice(0, 360),
       )
@@ -15960,27 +16292,37 @@ async function main() {
       periodKeyFor('week', new Date(Date.UTC(2026, 6, 16))) === '2026-W29' && periodKeyFor('week', new Date(Date.UTC(2027, 0, 1))) === '2026-W53',
     )
 
-    // Discoverability contract: every DCA suggestion chip (empty-state
-    // gallery + splash) must parse into a schedule create — a suggestion
-    // that falls through to the swap layer would silently drop the cadence.
-    const galleryDca = EXAMPLE_PROMPTS.find((e) => /every week/i.test(e.prompt))
-    const galleryParse = galleryDca ? parseDcaCreate(galleryDca.prompt) : null
+    // Retired as a suggestion (2026-09-16, Nate): a recurring buy in confirm
+    // mode only reminds the wallet to sign each period, so no surface OFFERS
+    // one. Typing one still works (the grammar pins above). These fences keep
+    // a DCA chip from creeping back: the empty-state gallery, and every
+    // chip-composing source — markets + symbol pages, splash, the wallet
+    // drawer, the briefing, the guardian fence's clarify, house links, the
+    // landing. Existing schedules keep their manage chips (PositionPanel,
+    // rail, splash tile): "pause my ETH dca" names no amount and no cadence.
     check(
-      'dca: the empty-state gallery chip parses into a schedule (never a one-shot)',
-      !!galleryDca && !!galleryParse && !('problem' in galleryParse) && galleryParse.cadence === 'week' && galleryParse.chainId === 4663,
-      galleryDca?.prompt,
+      'dca: the empty-state gallery offers no recurring buy',
+      EXAMPLE_PROMPTS.every((e) => !parseDcaCreate(e.prompt)),
+      EXAMPLE_PROMPTS.map((e) => e.prompt).join(' | '),
     )
-    const splashDcaPrompts = [
-      'Buy $10 of AAPL every week on Robinhood Chain', // robinhood splash + preview
-      'Buy $25 of ETH every week on Base', // uniswap preview
-    ]
-    check(
-      'dca: splash/preview suggestion prompts all parse into schedule creates',
-      splashDcaPrompts.every((p) => {
-        const c = parseDcaCreate(p)
-        return !!c && !('problem' in c) && c.cadence === 'week' && c.chainId !== null
-      }),
-    )
+    {
+      const codeOnly = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      const DCA_OFFER_RE = /\bdca\s+\$[^\n]{0,40}?\binto\b|\bevery (?:day|week|month)\b|\binto [^\n]{1,30}? (?:daily|weekly|monthly)\b/i
+      const walk = (dir: string): string[] =>
+        readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? walk(`${dir}/${d.name}`) : /\.tsx?$/.test(d.name) ? [`${dir}/${d.name}`] : []))
+      const offerSurfaces = [
+        'lib/trade-asks.ts', 'lib/symbol-venues.ts', 'lib/chart-actions.ts', 'lib/technicals.ts', 'lib/markets-ai.ts', 'lib/markets-copy.ts', 'lib/markets-seo.ts',
+        'lib/examples.ts', 'lib/splash/sources.ts', 'lib/robinhood-row-actions.ts', 'lib/briefing.ts', 'lib/hl-guardian-fence.ts', 'lib/house-links.ts',
+        'components/ChartOverlay.tsx', 'components/MarketsBand.tsx', 'components/landing/VenueBand.tsx', 'app/api/markets/routes/route.ts',
+        ...walk('components/markets'),
+      ]
+      const offering = offerSurfaces.filter((f) => DCA_OFFER_RE.test(codeOnly(readFileSync(f, 'utf8'))))
+      check(
+        'dca: no chip-composing surface offers a recurring buy (markets, symbol pages, splash, drawer, briefing, guardian fence, house links, landing)',
+        offerSurfaces.length > 20 && offering.length === 0,
+        offering.join(', '),
+      )
+    }
   }
 
   // ── DCA AUTOPILOT (Spend Permissions: grammar + typed data + the guard) ──
@@ -16424,7 +16766,7 @@ async function main() {
       check(
         'guardian fence (cold): a Robinhood Chain stock protect ask refuses BY NAME, and every chip it offers lands natively',
         !cold.ok && cold.reason === 'stock' && /AAPL isn't a Hyperliquid market/.test(cold.reply) && /Robinhood Chain/.test(cold.reply) && /Spot Guardian runs on Base/.test(cold.reply) &&
-          coldChips.length === 3 && coldChips.every((c) => c.out.kind === 'action' && c.out.gate !== 'planner') && coldChips.some((c) => c.out.gate === 'dca'),
+          coldChips.length === 2 && coldChips.every((c) => c.out.kind === 'action' && c.out.gate !== 'planner' && c.out.gate !== 'dca'),
         JSON.stringify(coldChips),
       )
       const ladderStock = simulateLadder('protect my AAPL with a 5% stop')
@@ -17347,13 +17689,12 @@ async function main() {
       funding: { ...fundingBase, sources: [{ chainId: 8453, chainWord: 'Base', token: 'USDC', balance: 180, usd: 180 }], stranded: [] },
     })
     const workChip = idle[0]?.actions?.[0]
-    const dcaChip = idle[0]?.actions?.[1]
-    const swapChip = idle[0]?.actions?.[2]
+    const swapChip = idle[0]?.actions?.[1]
     const swapIntent = swapChip ? parseSwapIntent(swapChip.prompt) : null
     check(
-      'briefing: idle USDC → rebalance + DCA + swap chips that round-trip (swap names the chain)',
-      idle.length === 1 && !!workChip && parseRebalanceAsk(workChip.prompt) &&
-        !!dcaChip && !!parseDcaCreate(dcaChip.prompt) &&
+      'briefing: idle USDC → rebalance + swap chips that round-trip (swap names the chain; no recurring buy since 2026-09-16)',
+      idle.length === 1 && idle[0]?.actions?.length === 2 && !!workChip && parseRebalanceAsk(workChip.prompt) &&
+        !(idle[0]?.actions ?? []).some((a) => parseDcaCreate(a.prompt)) &&
         !!swapIntent && swapIntent.isSwap && !swapIntent.problem && swapIntent.sellToken === 'USDC' && /on Base/i.test(swapChip!.prompt),
       JSON.stringify(idle[0]?.actions).slice(0, 160),
     )
@@ -17633,6 +17974,519 @@ async function main() {
       steps: [approveStep, mkSwapStep()],
     })
     check('spot guard: erc-20 approve+sell passes without a wrap', erc.ok, JSON.stringify(erc.checks.filter((c) => !c.ok)).slice(0, 200))
+
+    // The fee-on sell is what the sweep REALLY builds. buildUniswapSwap takes
+    // the default fee (lib/fees), so the USDC parks on the router and the
+    // router's own sweepTokenWithFee pays the owner minus the treasury's cut.
+    // The 1-call fixture above is the fee-off shape. Until 2026-09-16 it was
+    // the only shape guardSpotSell took, so every triggered stop refused
+    // ("got 2 calls") and nothing ever sold.
+    const feeDeadline = NOW + 600
+    const feeMinOut = BigInt(900000000)
+    const feeSwapCall = (over: Record<string, unknown> = {}) =>
+      encodeFunctionData({
+        abi: SWAP_ROUTER_02_ABI,
+        functionName: 'exactInputSingle',
+        args: [{ tokenIn: WETH as `0x${string}`, tokenOut: USDC as `0x${string}`, fee: 500, recipient: ADDRESS_THIS, amountIn: amount, amountOutMinimum: feeMinOut, sqrtPriceLimitX96: BigInt(0), ...over } as never],
+      })
+    const feeSweepCall = (over: { token?: string; min?: bigint; to?: string; bips?: bigint; feeTo?: string } = {}) =>
+      encodeFunctionData({
+        abi: SWAP_ROUTER_02_ABI,
+        functionName: 'sweepTokenWithFee',
+        args: [(over.token ?? USDC) as `0x${string}`, over.min ?? feeMinOut, (over.to ?? OWNER) as `0x${string}`, over.bips ?? BigInt(SWAP_FEE_BPS), (over.feeTo ?? TREASURY_ADDRESS) as `0x${string}`],
+      })
+    const feeSwapStep = (calls: `0x${string}`[]) => ({
+      to: ROUTER,
+      value: '0',
+      data: encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'multicall', args: [BigInt(feeDeadline), calls] }),
+    })
+    const feeSell = (calls: `0x${string}`[]) => guardSpotSell({ ...guardBase, steps: [wrapStep, approveStep, feeSwapStep(calls)] })
+    const spotRefusedFor = (r: { ok: boolean; checks: { ok: boolean; note: string }[] }, re: RegExp) => !r.ok && r.checks.some((c) => !c.ok && re.test(c.note))
+    // The fixture must BE the builder's shape: guardUniswapV3Build runs inside
+    // buildUniswapSwap and accepts exactly one payout shape for a fee-on
+    // ERC-20 buy pinned to a recipient override, so it referees the fixture.
+    const feeBuilderShape = guardUniswapV3Build(
+      {
+        swapTx: { to: ROUTER, data: feeSwapStep([feeSwapCall(), feeSweepCall()]).data, value: '0', chainId: 8453 },
+        approveTx: { ...approveStep, chainId: 8453 },
+      },
+      { chainId: 8453, swapRouter02: ROUTER, sellToken: WETH, buyToken: USDC, sellIsEth: false, nativeOut: false, amountIn: amount, minOut: feeMinOut, poolFee: 500, recipient: OWNER, deadline: feeDeadline, feeBps: SWAP_FEE_BPS },
+      NOW,
+    )
+    check(
+      "spot guard: the fee-on fixture is exactly the build buildUniswapSwap's own guard accepts for the sweep's call (default fee, recipient = the owner)",
+      feeBuilderShape.ok,
+      feeBuilderShape.reasons.join(' '),
+    )
+    const feeHappy = feeSell([feeSwapCall(), feeSweepCall()])
+    check(
+      "spot guard: the sweep's fee-on sell passes (swap → router, sweepTokenWithFee → the OWNER minus the treasury's canonical bps)",
+      feeHappy.ok && (feeHappy.checks.find((c) => c.id === 'swap')?.note ?? '').includes(`swept to the owner minus ${SWAP_FEE_BPS}bps to the treasury`),
+      JSON.stringify(feeHappy.checks.filter((c) => !c.ok)).slice(0, 240),
+    )
+    const feeErc = guardSpotSell({ ...guardBase, policy: { ...guardBase.policy, tokenAddress: WETH, native: false }, permission: permW, steps: [approveStep, feeSwapStep([feeSwapCall(), feeSweepCall()])] })
+    check('spot guard: an erc-20 protection passes the fee-on sell too', feeErc.ok, JSON.stringify(feeErc.checks.filter((c) => !c.ok)).slice(0, 200))
+    check(
+      'spot guard (fee on): a hijacked sweep recipient refuses by name',
+      spotRefusedFor(feeSell([feeSwapCall(), feeSweepCall({ to: SPENDER })]), /sweep pays 0x1111111111111111111111111111111111111111, not the OWNER/),
+    )
+    check(
+      'spot guard (fee on): a foreign fee recipient refuses (the cut goes to TREASURY_ADDRESS only)',
+      spotRefusedFor(feeSell([feeSwapCall(), feeSweepCall({ feeTo: SPENDER })]), /not the Pantessa treasury/),
+    )
+    check(
+      "spot guard (fee on): a weakened sweep minimum refuses (the sweep re-asserts the swap's minOut)",
+      spotRefusedFor(feeSell([feeSwapCall(), feeSweepCall({ min: BigInt(1) })]), /sweep minimum 1 ≠ the swap's minOut 900000000/),
+    )
+    check(
+      'spot guard (fee on): a fee off the canonical tiers refuses (100bps = the on-chain max; 0bps reverts on-chain)',
+      spotRefusedFor(feeSell([feeSwapCall(), feeSweepCall({ bips: BigInt(100) })]), /fee 100bps is not a canonical tier/) &&
+        spotRefusedFor(feeSell([feeSwapCall(), feeSweepCall({ bips: BigInt(0) })]), /fee 0bps is not a canonical tier/),
+    )
+    check('spot guard (fee on): a sweep of anything but USDC refuses', spotRefusedFor(feeSell([feeSwapCall(), feeSweepCall({ token: WETH })]), /the sweep is not for USDC/))
+    check(
+      'spot guard (fee on): the swap must park on the router (a direct payout beside a sweep refuses)',
+      spotRefusedFor(feeSell([feeSwapCall({ recipient: OWNER }), feeSweepCall()]), /not the router the fee sweep splits from/),
+    )
+    check(
+      'spot guard (fee on): an unwrap payout refuses (the stop sells to USDC, never native ETH)',
+      spotRefusedFor(
+        feeSell([feeSwapCall(), encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'unwrapWETH9WithFee', args: [feeMinOut, OWNER as `0x${string}`, BigInt(SWAP_FEE_BPS), TREASURY_ADDRESS] })]),
+        /second call is unwrapWETH9WithFee, not sweepTokenWithFee/,
+      ),
+    )
+    check('spot guard (fee on): a third router call refuses', spotRefusedFor(feeSell([feeSwapCall(), feeSweepCall(), feeSweepCall()]), /got 3 calls/))
+    // Security pass on #807: a price-limited swap can fill part of the pull,
+    // clear the floor, read "sold", and leave the rest on the spender. Both
+    // shapes refuse it; a pool fee outside the v3 tiers refuses too.
+    check(
+      'spot guard: a price-limited swap refuses in both shapes (a partial fill would leave part of the pull on the spender)',
+      spotRefusedFor(feeSell([feeSwapCall({ sqrtPriceLimitX96: BigInt('4295128740') }), feeSweepCall()]), /price limit, so it could sell only part of the pull/) &&
+        spotRefusedFor(guardSpotSell({ ...guardBase, steps: [wrapStep, approveStep, mkSwapStep({ sqrtPriceLimitX96: BigInt('4295128740') })] }), /price limit, so it could sell only part of the pull/),
+    )
+    check('spot guard: a pool fee outside the v3 tiers refuses', spotRefusedFor(feeSell([feeSwapCall({ fee: 7777 }), feeSweepCall()]), /pool fee 7777 is not a Uniswap v3 tier/))
+    check(
+      "spot guard (fee on): the swap's minOut still has to clear the quote floor",
+      spotRefusedFor(feeSell([feeSwapCall({ amountOutMinimum: BigInt(1) }), feeSweepCall({ min: BigInt(1) })]), /minOut 1 below the quote floor 850000000/),
+    )
+    // The floor guards the OWNER's proceeds. A minOut sitting exactly on the
+    // floor passes fee-off, but fee on, the treasury's cut comes out of it.
+    const onFloor = guardBase.minOutAtomic
+    check(
+      "spot guard (fee on): the floor is checked AFTER the treasury's cut (a minOut exactly on the floor passes fee-off, refuses fee-on)",
+      guardSpotSell({ ...guardBase, steps: [wrapStep, approveStep, mkSwapStep({ amountOutMinimum: onFloor })] }).ok &&
+        spotRefusedFor(
+          feeSell([feeSwapCall({ amountOutMinimum: onFloor }), feeSweepCall({ min: onFloor })]),
+          new RegExp(`owner's minimum after the ${SWAP_FEE_BPS}bps fee, ${onFloor - swapFeeAtoms(onFloor, SWAP_FEE_BPS)}, is below the quote floor ${onFloor}`),
+        ),
+    )
+  }
+
+  // ── Spot guardian (live): the sweep's own build through its own guard ───
+  console.log('— spot guardian (live build)')
+  {
+    // buildSpotSell is the sweep's step 1 (fresh Base v3 quote, output pinned
+    // to the owner at the default fee, wrap + exact approve, the 3% floor off
+    // the mark). Read-only: quotes and one allowance read, nothing signed. The
+    // spender holds no WETH allowance, so the approve step rides, as on a
+    // first run. Needs DATABASE_URL in the harness env (the builder reads the
+    // spender's grant), like the Arc live swap pin.
+    const OWNER = '0x5eaabd731d2bc0490c2d47e41858e9b0629455a0'
+    const SPENDER = '0x1111111111111111111111111111111111111111'
+    const pulled = BigInt('10000000000000000') // 0.01 ETH
+    let liveNote = ''
+    let liveOk = false
+    for (let attempt = 1; attempt <= 3 && !liveOk; attempt++) {
+      try {
+        const mark = await arcUsdPerToken(8453, 'ETH')
+        if (!mark) throw new Error('no ETH mark on Base')
+        const nowSec = Math.floor(Date.now() / 1000)
+        const sell = await buildSpotSell({ chainId: 8453, native: true, tokenSymbol: 'ETH', ownerWallet: OWNER, spender: SPENDER, pulled, markUsd: mark.usd })
+        if (!sell.ok) {
+          liveNote = `build refused: ${sell.detail}`
+          break
+        }
+        const { steps, minOutAtomic, guardChain } = sell.build
+        const guard = guardSpotSell({
+          policy: { status: 'triggered', tokenAddress: NATIVE_TOKEN_SENTINEL, native: true, amountAtoms: pulled, trigger: { mode: 'price', value: Math.ceil(mark.usd) + 500, refPrice: mark.usd } },
+          permission: buildSpotGuardPermission({ account: OWNER, spender: SPENDER, token: NATIVE_TOKEN_SENTINEL, amountAtoms: pulled, nowSec, salt: BigInt(9) }),
+          ownerWallet: OWNER,
+          spender: SPENDER,
+          chain: guardChain,
+          markPrice: mark.usd,
+          minOutAtomic,
+          steps,
+          pulledAtomic: pulled,
+          nowSec,
+        })
+        const outer = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: steps[steps.length - 1].data as `0x${string}` })
+        const calls = (outer.args as readonly [bigint, readonly `0x${string}`[]])[1]
+        const payout = calls[1] ? decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[1] }) : null
+        const payoutArgs = (payout?.args ?? []) as readonly unknown[]
+        const feeOnShape =
+          steps.length === 3 && calls.length === 2 && payout?.functionName === 'sweepTokenWithFee' &&
+          String(payoutArgs[2]).toLowerCase() === OWNER && payoutArgs[3] === BigInt(SWAP_FEE_BPS) && String(payoutArgs[4]).toLowerCase() === TREASURY_ADDRESS.toLowerCase()
+        liveOk = guard.ok && feeOnShape
+        liveNote = `mark $${mark.usd.toFixed(2)} · ${steps.length} steps · calls [${calls.map((c) => decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: c }).functionName).join(', ')}] · floor ${minOutAtomic} · ${guard.checks.map((c) => `${c.ok ? '✓' : '✗'}${c.id}${c.ok ? '' : ` (${c.note})`}`).join(' ')}`
+        if (!guard.ok || !feeOnShape) break // a refusal is a verdict, not a flake
+      } catch (e) {
+        liveNote = `attempt ${attempt} threw: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`
+      }
+    }
+    check(
+      "spot guard (live): the sweep's real build of a 0.01 ETH stop on Base (buildSpotSell: wrap, approve, the fee-on v3 sell to the owner) passes guardSpotSell",
+      liveOk,
+      liveNote.slice(0, 600),
+    )
+    // A retry of a native pull the first attempt already wrapped sells the
+    // WETH: the sweep's real build of that shape must pass the guard too.
+    let wrappedNote = ''
+    let wrappedOk = false
+    for (let attempt = 1; attempt <= 3 && !wrappedOk; attempt++) {
+      try {
+        const mark = await arcUsdPerToken(8453, 'ETH')
+        if (!mark) throw new Error('no ETH mark on Base')
+        const nowSec = Math.floor(Date.now() / 1000)
+        const sell = await buildSpotSell({ chainId: 8453, native: true, tokenSymbol: 'ETH', ownerWallet: OWNER, spender: SPENDER, pulled, markUsd: mark.usd, held: 'wrapped' })
+        if (!sell.ok) {
+          wrappedNote = `build refused: ${sell.detail}`
+          break
+        }
+        const guardInput = {
+          policy: { status: 'triggered', tokenAddress: NATIVE_TOKEN_SENTINEL, native: true, amountAtoms: pulled, trigger: { mode: 'price' as const, value: Math.ceil(mark.usd) + 500, refPrice: mark.usd }, held: 'wrapped' as const },
+          permission: buildSpotGuardPermission({ account: OWNER, spender: SPENDER, token: NATIVE_TOKEN_SENTINEL, amountAtoms: pulled, nowSec, salt: BigInt(9) }),
+          ownerWallet: OWNER,
+          spender: SPENDER,
+          chain: sell.build.guardChain,
+          markPrice: mark.usd,
+          minOutAtomic: sell.build.minOutAtomic,
+          steps: sell.build.steps,
+          pulledAtomic: pulled,
+          nowSec,
+        }
+        const guard = guardSpotSell(guardInput)
+        const asFirstRun = guardSpotSell({ ...guardInput, policy: { ...guardInput.policy, held: 'native' } })
+        wrappedOk = guard.ok && sell.build.steps.length === 2 && sell.build.steps[0].to.toLowerCase() === '0x4200000000000000000000000000000000000006' && !asFirstRun.ok
+        wrappedNote = `${sell.build.steps.length} steps · wrapped guard ${guard.checks.map((c) => `${c.ok ? '✓' : '✗'}${c.id}`).join(' ')} · as a first run: ${asFirstRun.ok ? 'passed (should refuse)' : 'refused'}`
+        if (!wrappedOk) break
+      } catch (e) {
+        wrappedNote = `attempt ${attempt} threw: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`
+      }
+    }
+    check(
+      "spot guard (live): the retry of a wrapped pull (buildSpotSell held 'wrapped': approve WETH + the sell, no wrap) passes the guard, and the same steps refuse as a first run",
+      wrappedOk,
+      wrappedNote.slice(0, 400),
+    )
+  }
+
+  // ── Autopilot unwind: a pull never strands (lib/autopilot-unwind) ────────
+  // Both Spend-Permission autopilots pull the owner's money onto the one CDP
+  // spender, then trade it. Before 2026-09-17 a trade that failed after the
+  // pull parked the run 'failed' with the asset on the spender for good
+  // (Base fork: owner −0.01 ETH, spender +0.01 WETH; DCA owner −$10 USDC).
+  console.log('— autopilot unwind')
+  {
+    const OWNER = '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0'
+    const SPENDER = '0x1111111111111111111111111111111111111111'
+    const OTHER = '0x2222222222222222222222222222222222222222'
+    const WETH = '0x4200000000000000000000000000000000000006'
+    const USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+    const ROUTER = '0x2626664c2603336E57B271c5C0b26F421741e481'
+    const NOW = 1_789_600_000
+    const pulledEth = BigInt('10000000000000000')
+    const pulledUsdc = BigInt(10_000_000)
+    const nativePerm = { account: OWNER, spender: SPENDER, token: NATIVE_TOKEN_SENTINEL, allowance: pulledEth }
+    const usdcPerm = { account: OWNER, spender: SPENDER, token: USDC, allowance: pulledUsdc }
+    const refusedFor = (r: { ok: boolean; checks: { ok: boolean; note: string }[] }, re: RegExp) => !r.ok && r.checks.some((c) => !c.ok && re.test(c.note))
+
+    // Keys: CDP's X-Idempotency-Key is a UUID v4; one per (run, step, attempt), derived.
+    const k1 = spenderTxKey('spot', 'run1', 'return', 1)
+    check(
+      'autopilot unwind: idempotency keys are UUID v4, stable for the same send, distinct across table, run, step and attempt',
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(k1) &&
+        k1 === spenderTxKey('spot', 'run1', 'return', 1) &&
+        new Set([k1, spenderTxKey('dca', 'run1', 'return', 1), spenderTxKey('spot', 'run2', 'return', 1), spenderTxKey('spot', 'run1', 'unwrap', 1), spenderTxKey('spot', 'run1', 'return', 2)]).size === 5,
+      k1,
+    )
+
+    // The ledger: strict parse (an unreadable ledger is an operator case, never a guess).
+    const entry = (over: Partial<LedgerEntry>): LedgerEntry => ({ step: 'spend', attempt: 1, key: spenderTxKey('spot', 'r', over.step ?? 'spend', over.attempt ?? 1), to: SPENDER, data: '0x', value: '0', at: NOW, ...over })
+    const hashOf = (n: number) => `0x${n.toString(16).padStart(64, '0')}`
+    const sample = [entry({ hash: hashOf(1), outcome: 'success' }), entry({ step: 'swap', hash: hashOf(2), outcome: 'reverted', words: 'the swap reverted on-chain' })]
+    const round = parseLedger(serializeLedger(sample))
+    const canon = (xs: LedgerEntry[] | null) => JSON.stringify((xs ?? []).map((x) => Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b)))))
+    check('autopilot unwind: the ledger round-trips; null/empty reads as no sends', round !== null && canon(round) === canon(sample) && parseLedger(null)?.length === 0 && parseLedger('')?.length === 0)
+    check(
+      'autopilot unwind: a malformed ledger entry makes the whole ledger unreadable (bad step, key, hash, outcome, or not JSON)',
+      parseLedger(JSON.stringify([{ ...sample[0], step: 'drain' }])) === null &&
+        parseLedger(JSON.stringify([{ ...sample[0], key: 'not-a-uuid' }])) === null &&
+        parseLedger(JSON.stringify([{ ...sample[0], hash: '0x12' }])) === null &&
+        parseLedger(JSON.stringify([{ ...sample[0], outcome: 'maybe' }])) === null &&
+        parseLedger('{nope') === null,
+    )
+    const upserted = upsertLedger(sample, { ...sample[1], outcome: 'success', words: undefined })
+    check('autopilot unwind: upsert replaces the entry for its (step, attempt) and appends a new one', upserted.length === 2 && upserted[1].outcome === 'success' && upsertLedger(sample, entry({ step: 'swap', attempt: 2 })).length === 3)
+
+    // Send errors: refused = never broadcast, safe to move the same money another way.
+    check(
+      'autopilot unwind: a CDP 4xx or a revert-worded answer was refused before broadcast; a 5xx or a dropped connection is unknown',
+      classifySendError(Object.assign(new Error('Invalid request'), { statusCode: 400, errorMessage: 'gas estimation failed' })).kind === 'refused' &&
+        classifySendError(Object.assign(new Error('x'), { statusCode: 409, errorMessage: 'Idempotency key was already used with a different request payload.' })).kind === 'refused' &&
+        classifySendError(Object.assign(new Error('x'), { statusCode: 500, errorMessage: 'execution reverted: Too little received' })).kind === 'refused' &&
+        classifySendError(Object.assign(new Error('Bad gateway'), { statusCode: 502, errorMessage: 'Bad gateway' })).kind === 'unknown' &&
+        classifySendError(Object.assign(new Error('Request timed out. Please try again.'), { name: 'NetworkError' })).kind === 'unknown',
+    )
+    check(
+      "autopilot unwind: viem's own errors classify through the dry-run rulebook (a reverted estimate refused, an HTTP failure unknown)",
+      classifySendError(new UnwindExecutionRevertedError({ message: 'execution reverted: Too little received' })).kind === 'refused' &&
+        classifySendError(new UnwindHttpRequestError({ url: 'https://api.cdp.coinbase.com/platform/v2/evm', status: 502 })).kind === 'unknown',
+    )
+
+    // The refund: exactly the pull, in the pulled asset, to the wallet it came from.
+    const nativePlan = planRefund({ form: 'native', ownerWallet: OWNER, pulledAtomic: pulledEth, token: NATIVE_TOKEN_SENTINEL, wethAddress: WETH })
+    const wrappedPlan = planRefund({ form: 'wrapped', ownerWallet: OWNER, pulledAtomic: pulledEth, token: NATIVE_TOKEN_SENTINEL, wethAddress: WETH })
+    const usdcPlan = planRefund({ form: 'erc20', ownerWallet: OWNER, pulledAtomic: pulledUsdc, token: USDC, wethAddress: WETH })
+    const refundBase = { ownerWallet: OWNER, nativeSentinel: NATIVE_TOKEN_SENTINEL, wethAddress: WETH }
+    const nativeGuard = (steps: typeof nativePlan, over: Record<string, unknown> = {}) => guardRefund({ ...refundBase, form: 'native', permission: nativePerm, pulledAtomic: pulledEth, steps, ...over })
+    const wrappedGuard = (steps: typeof nativePlan, over: Record<string, unknown> = {}) => guardRefund({ ...refundBase, form: 'wrapped', permission: nativePerm, pulledAtomic: pulledEth, steps, ...over })
+    const usdcGuard = (steps: typeof nativePlan, over: Record<string, unknown> = {}) => guardRefund({ ...refundBase, form: 'erc20', permission: usdcPerm, pulledAtomic: pulledUsdc, steps, ...over })
+    check(
+      'autopilot unwind: the three refund shapes pass their guard (ETH as ETH, wrapped ETH unwrapped then sent, an ERC-20 transferred)',
+      nativeGuard(nativePlan).ok && wrappedGuard(wrappedPlan).ok && usdcGuard(usdcPlan).ok &&
+        nativePlan.length === 1 && nativePlan[0].to === OWNER && nativePlan[0].data === '0x' && nativePlan[0].value === pulledEth.toString() &&
+        wrappedPlan.map((x) => x.step).join() === 'unwrap,return' && wrappedPlan[0].to === WETH &&
+        usdcPlan.length === 1 && usdcPlan[0].to === USDC && usdcPlan[0].value === '0',
+    )
+    const retarget = (steps: typeof nativePlan, i: number, over: Partial<(typeof nativePlan)[number]>) => steps.map((x, j) => (j === i ? { ...x, ...over } : x))
+    check(
+      'autopilot unwind: a refund to anyone but the permission owner refuses (native send, ERC-20 transfer, and an owner that is not the account)',
+      refusedFor(nativeGuard(retarget(nativePlan, 0, { to: SPENDER })), /not the owner the pull/) &&
+        refusedFor(usdcGuard(retarget(usdcPlan, 0, { data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [OTHER, pulledUsdc] }) })), /not the owner the pull/) &&
+        refusedFor(nativeGuard(planRefund({ form: 'native', ownerWallet: OTHER, pulledAtomic: pulledEth, token: NATIVE_TOKEN_SENTINEL, wethAddress: WETH }), { ownerWallet: OTHER }), /is not the permission's account/),
+    )
+    check(
+      'autopilot unwind: a refund of anything but exactly the pull refuses (one wei more, a different allowance, a wrong unwrap amount)',
+      refusedFor(nativeGuard(retarget(nativePlan, 0, { value: (pulledEth + BigInt(1)).toString() })), /not the owner the pull/) &&
+        refusedFor(nativeGuard(nativePlan, { pulledAtomic: pulledEth + BigInt(1) }), /is not the signed allowance/) &&
+        refusedFor(wrappedGuard(retarget(wrappedPlan, 0, { data: encodeFunctionData({ abi: [{ name: 'withdraw', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'wad', type: 'uint256' }], outputs: [] }] as const, functionName: 'withdraw', args: [pulledEth * BigInt(2)] }) })), /Unwrap does not decode/),
+    )
+    check(
+      'autopilot unwind: hostile refund shapes refuse (calldata on the ETH send, value on a transfer, an unwrap off the pinned WETH, a foreign token, a third step, the wrong form)',
+      refusedFor(nativeGuard(retarget(nativePlan, 0, { data: '0xdeadbeef' })), /extra calldata/) &&
+        refusedFor(usdcGuard(retarget(usdcPlan, 0, { value: '1' })), /Return does not decode/) &&
+        refusedFor(wrappedGuard(retarget(wrappedPlan, 0, { to: OTHER as `0x${string}` })), /Unwrap does not decode/) &&
+        refusedFor(usdcGuard(retarget(usdcPlan, 0, { to: WETH })), /Return does not decode/) &&
+        refusedFor(nativeGuard([...nativePlan, nativePlan[0]]), /Expected return, got return → return/) &&
+        refusedFor(wrappedGuard(nativePlan), /Expected unwrap → return/) &&
+        refusedFor(guardRefund({ ...refundBase, form: 'erc20', permission: nativePerm, pulledAtomic: pulledEth, steps: usdcPlan }), /doesn't match a permission/),
+    )
+
+    // Pull evidence: the manager's own event for this permission, and for an ERC-20 the exact Transfer.
+    const PERM_HASH = `0x${'ab'.repeat(32)}`
+    const usedLog = (over: { hash?: string; spend?: bigint; token?: string; address?: string } = {}) => ({
+      address: over.address ?? SPEND_PERMISSION_MANAGER,
+      topics: unwindEncodeEventTopics({ abi: unwindManagerAbi, eventName: 'SpendPermissionUsed', args: { hash: (over.hash ?? PERM_HASH) as `0x${string}`, account: OWNER as `0x${string}`, spender: SPENDER as `0x${string}` } }) as string[],
+      data: encodeAbiParameters(
+        [{ type: 'address' }, { type: 'tuple', components: [{ type: 'uint48' }, { type: 'uint48' }, { type: 'uint160' }] }],
+        [(over.token ?? USDC) as `0x${string}`, [NOW - 100, NOW + 600_000, over.spend ?? pulledUsdc]],
+      ),
+    })
+    const transferLog = (value: bigint, to = SPENDER) => ({
+      address: USDC,
+      topics: unwindEncodeEventTopics({ abi: erc20Abi, eventName: 'Transfer', args: { from: OWNER as `0x${string}`, to: to as `0x${string}` } }) as string[],
+      data: encodeAbiParameters([{ type: 'uint256' }], [value]),
+    })
+    const evidence = (logs: ReturnType<typeof usedLog>[], over: Record<string, unknown> = {}) =>
+      pullEvidence({ receipt: { status: 'success', logs }, manager: SPEND_PERMISSION_MANAGER, permissionHash: PERM_HASH, permission: usdcPerm, pulledAtomic: pulledUsdc, nativeSentinel: NATIVE_TOKEN_SENTINEL, ...over })
+    check(
+      "autopilot unwind: the pull's receipt proves the run's amount (SpendPermissionUsed for the stored hash, plus the exact USDC Transfer owner → spender)",
+      evidence([usedLog(), transferLog(pulledUsdc)]).ok &&
+        pullEvidence({ receipt: { status: 'success', logs: [usedLog({ token: NATIVE_TOKEN_SENTINEL, spend: pulledEth })] }, manager: SPEND_PERMISSION_MANAGER, permissionHash: PERM_HASH, permission: nativePerm, pulledAtomic: pulledEth, nativeSentinel: NATIVE_TOKEN_SENTINEL }).ok,
+    )
+    check(
+      "autopilot unwind: pull evidence refuses another permission's event, a different window spend, a short Transfer (a token that delivers less), an event from another contract, and a reverted receipt",
+      !evidence([usedLog({ hash: `0x${'cd'.repeat(32)}` }), transferLog(pulledUsdc)]).ok &&
+        !evidence([usedLog({ spend: pulledUsdc * BigInt(2) }), transferLog(pulledUsdc)]).ok &&
+        !evidence([usedLog(), transferLog(pulledUsdc - BigInt(1))]).ok &&
+        !evidence([usedLog(), transferLog(pulledUsdc, OTHER)]).ok &&
+        !evidence([usedLog({ address: OTHER }), transferLog(pulledUsdc)]).ok &&
+        !pullEvidence({ receipt: { status: 'reverted', logs: [usedLog(), transferLog(pulledUsdc)] }, manager: SPEND_PERMISSION_MANAGER, permissionHash: PERM_HASH, permission: usdcPerm, pulledAtomic: pulledUsdc, nativeSentinel: NATIVE_TOKEN_SENTINEL }).ok,
+    )
+
+    // The decision table.
+    const pulledOk = entry({ hash: hashOf(1), outcome: 'success' })
+    const decide = (ledger: LedgerEntry[], over: Record<string, unknown> = {}) =>
+      decideUnwind({ ledger, native: true, allowRetry: true, maxSaleAttempts: 2, pullVerified: true, nowSec: NOW + 60, ...over })
+    const e = (step: LedgerEntry['step'], attempt: number, outcome?: LedgerEntry['outcome'], n = 9) => entry({ step, attempt, ...(outcome ? { outcome, hash: hashOf(n) } : {}) })
+    check(
+      'autopilot unwind: no confirmed pull is nothing-pulled; an unresolved pull waits (and after an hour needs an operator); an unproven pull never refunds',
+      decide([]).kind === 'nothing-pulled' &&
+        decide([entry({ outcome: 'refused' })]).kind === 'nothing-pulled' &&
+        decide([entry({ outcome: 'reverted', hash: hashOf(1) })]).kind === 'nothing-pulled' &&
+        decide([entry({ hash: hashOf(1) })]).kind === 'wait' &&
+        decide([entry({ hash: hashOf(1) })], { nowSec: NOW + UNRESOLVED_OPERATOR_SEC + 1 }).kind === 'operator' &&
+        decide([pulledOk], { pullVerified: false }).kind === 'operator',
+    )
+    const first = decide([pulledOk])
+    const afterRevert = decide([pulledOk, e('wrap', 1, 'success', 2), e('approve', 1, 'success', 3), e('swap', 1, 'reverted', 4)])
+    const afterRefusedWrap = decide([pulledOk, e('wrap', 1, 'refused'), e('approve', 1)])
+    check(
+      'autopilot unwind: after the pull the first sale is attempt 1; a failed sale retries once from where the pull sits (wrapped, still ETH, or USDC)',
+      first.kind === 'retry' && first.attempt === 1 && first.held === 'native' &&
+        afterRevert.kind === 'retry' && afterRevert.attempt === 2 && afterRevert.held === 'wrapped' &&
+        afterRefusedWrap.kind === 'retry' && afterRefusedWrap.held === 'native' &&
+        (() => {
+          const d = decide([pulledOk, e('approve', 1, 'success', 3), e('swap', 1, 'refused')], { native: false })
+          return d.kind === 'retry' && d.attempt === 2 && d.held === 'erc20'
+        })(),
+    )
+    const twoFailed = [pulledOk, e('wrap', 1, 'success', 2), e('approve', 1, 'success', 3), e('swap', 1, 'reverted', 4), e('approve', 2, 'success', 5), e('swap', 2, 'refused')]
+    const refundNow = decide(twoFailed)
+    const noRetry = decide([pulledOk, e('wrap', 1, 'success', 2), e('approve', 1, 'success', 3), e('swap', 1, 'refused')], { allowRetry: false })
+    check(
+      'autopilot unwind: two failed sales refund (held as wrapped ETH); a later pass (no retry) refunds after one',
+      refundNow.kind === 'refund' && refundNow.held === 'wrapped' && refundNow.attempt === 1 &&
+        noRetry.kind === 'refund' && noRetry.held === 'wrapped',
+    )
+    const partial = decide([...twoFailed, e('unwrap', 1, 'success', 6), e('return', 1, 'refused')])
+    const refundStarted = decide([pulledOk, e('wrap', 1, 'success', 2), e('approve', 1, 'success', 3), e('swap', 1, 'reverted', 4), e('unwrap', 1, 'refused')])
+    check(
+      'autopilot unwind: a refund refused before broadcast goes again under a new key, from where the money now sits (unwrapped: a plain ETH send); once a refund has started, the sale is never retried',
+      partial.kind === 'refund' && partial.held === 'native' && partial.attempt === 2 &&
+        refundStarted.kind === 'refund' && refundStarted.held === 'wrapped' && refundStarted.attempt === 2,
+    )
+    check(
+      'autopilot unwind: a sale that landed is sold; a return that landed is refunded; anything sent and unresolved waits',
+      decide([pulledOk, e('wrap', 1, 'success', 2), e('approve', 1, 'success', 3), e('swap', 1, 'success', 4)]).kind === 'sold' &&
+        decide([...twoFailed, e('unwrap', 1, 'success', 6), e('return', 1, 'success', 7)]).kind === 'refunded' &&
+        decide([pulledOk, e('wrap', 1, 'success', 2), e('approve', 1, 'success', 3), entry({ step: 'swap', attempt: 1 })]).kind === 'wait' &&
+        decide([...twoFailed, e('unwrap', 1, 'success', 6), entry({ step: 'return', attempt: 1, hash: hashOf(7) })]).kind === 'wait',
+    )
+    check(
+      "autopilot unwind: the ledger can't prove where the money is → operator (a refund that reverted, a sale AND a refund, two wraps for one pull, two pulls)",
+      decide([...twoFailed, e('unwrap', 1, 'success', 6), e('return', 1, 'reverted', 7)]).kind === 'operator' &&
+        decide([pulledOk, e('swap', 1, 'success', 4), e('return', 1, 'success', 7)]).kind === 'operator' &&
+        decide([pulledOk, e('wrap', 1, 'success', 2), e('wrap', 2, 'success', 5), e('swap', 2, 'refused')]).kind === 'operator' &&
+        decide([pulledOk, entry({ attempt: 2, hash: hashOf(8), outcome: 'success' })]).kind === 'operator',
+    )
+
+    // Re-issue: only exactly a request the run would send; a swap only to the router, past its deadline (resolveLedger).
+    const spendReq = { to: SPEND_PERMISSION_MANAGER, data: '0x415a9735aa', value: '0' }
+    const swapData = encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'multicall', args: [BigInt(NOW + 600), []] })
+    check(
+      'autopilot unwind: a later pass re-issues a deterministic step only when it matches a fresh encoding byte for byte, and a swap only to the pinned router',
+      reissueMatches({ step: 'spend', ...spendReq }, { spend: [spendReq] }, ROUTER) &&
+        !reissueMatches({ step: 'spend', ...spendReq, data: '0x415a9735ab' }, { spend: [spendReq] }, ROUTER) &&
+        !reissueMatches({ step: 'return', to: OWNER, data: '0x', value: '1' }, { spend: [spendReq] }, ROUTER) &&
+        reissueMatches({ step: 'swap', to: ROUTER, data: swapData, value: '0' }, {}, ROUTER) &&
+        !reissueMatches({ step: 'swap', to: OTHER, data: swapData, value: '0' }, {}, ROUTER) &&
+        swapDeadlineOf(swapData) === NOW + 600 && swapDeadlineOf('0xdeadbeef') === null,
+    )
+
+    // The retry's guard shape: a wrapped pull sells WETH with no wrap step.
+    const wrappedPerm = buildSpotGuardPermission({ account: OWNER, spender: SPENDER, token: NATIVE_TOKEN_SENTINEL, amountAtoms: pulledEth, nowSec: NOW, salt: BigInt(3) })
+    const approveWeth = { to: WETH, value: '0', data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [ROUTER as `0x${string}`, pulledEth] }) }
+    const minOut = BigInt(24_000_000)
+    const wrapStep = { to: WETH, value: pulledEth.toString(), data: encodeFunctionData({ abi: [{ name: 'deposit', type: 'function', stateMutability: 'payable', inputs: [], outputs: [] }] as const, functionName: 'deposit' }) }
+    const sellStep = {
+      to: ROUTER,
+      value: '0',
+      data: encodeFunctionData({
+        abi: SWAP_ROUTER_02_ABI,
+        functionName: 'multicall',
+        args: [
+          BigInt(NOW + 600),
+          [
+            encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'exactInputSingle', args: [{ tokenIn: WETH as `0x${string}`, tokenOut: USDC as `0x${string}`, fee: 500, recipient: ADDRESS_THIS, amountIn: pulledEth, amountOutMinimum: minOut, sqrtPriceLimitX96: BigInt(0) }] }),
+            encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'sweepTokenWithFee', args: [USDC as `0x${string}`, minOut, OWNER as `0x${string}`, BigInt(SWAP_FEE_BPS), TREASURY_ADDRESS] }),
+          ],
+        ],
+      }),
+    }
+    const retryGuard = (held: 'native' | 'wrapped' | undefined, steps: { to: string; value: string; data: string }[]) =>
+      guardSpotSell({
+        policy: { status: 'triggered', tokenAddress: NATIVE_TOKEN_SENTINEL, native: true, amountAtoms: pulledEth, trigger: { mode: 'price', value: 2500, refPrice: 2600 }, ...(held ? { held } : {}) },
+        permission: wrappedPerm,
+        ownerWallet: OWNER,
+        spender: SPENDER,
+        chain: { chainId: 8453, usdcAddress: USDC, swapRouter02: ROUTER, wethAddress: WETH },
+        markPrice: 2450,
+        minOutAtomic: BigInt(23_000_000),
+        steps,
+        pulledAtomic: pulledEth,
+        nowSec: NOW,
+      })
+    check(
+      "autopilot unwind: guardSpotSell takes a wrapped retry (approve WETH + sell) only when told the pull is wrapped, and never a second wrap on it",
+      retryGuard('wrapped', [approveWeth, sellStep]).ok &&
+        retryGuard('native', [wrapStep, approveWeth, sellStep]).ok &&
+        refusedFor(retryGuard(undefined, [approveWeth, sellStep]), /Expected wrap\+approve\+swap \(3 steps\), got 2/) &&
+        refusedFor(retryGuard('wrapped', [wrapStep, approveWeth, sellStep]), /Expected approve\+swap \(2 steps\), got 3/),
+    )
+
+    // The owner's words: where the money is, first; the re-arm ask parses.
+    const pctAsk = spotRearmAsk({ tokenSymbol: 'ETH', triggerMode: 'price_move_pct', triggerValue: 10 })
+    const priceAsk = spotRearmAsk({ tokenSymbol: 'CBETH', triggerMode: 'price', triggerValue: 2400.5 })
+    const pa = parseSpotGuardArm(pctAsk)
+    const pb = parseSpotGuardArm(priceAsk)
+    check(
+      "autopilot unwind: a refunded stop's re-arm ask parses back to its own terms (both trigger modes)",
+      !!pa && pa.token === 'ETH' && pa.triggerMode === 'price_move_pct' && pa.triggerValue === 10 &&
+        !!pb && pb.token === 'CBETH' && pb.triggerMode === 'price' && pb.triggerValue === 2400.5,
+      `${pctAsk} | ${priceAsk}`,
+    )
+    const spotRefunded = spotUnwindCopy({ outcome: 'refunded', tokenSymbol: 'ETH', amountHuman: '0.01', markUsd: 2438.931, why: 'the swap reverted on-chain', refundTx: hashOf(7), rearmAsk: pctAsk })
+    const spotWaiting = spotUnwindCopy({ outcome: 'unwinding', tokenSymbol: 'ETH', amountHuman: '0.01', markUsd: 2438.931, why: '', note: 'the swap (attempt 1) was sent and has not resolved yet', rearmAsk: pctAsk })
+    const dcaRefunded = dcaUnwindCopy({ outcome: 'refunded', buyUsd: 10, buyToken: 'ETH', period: 'week', why: 'the swap reverted on-chain', refundTx: hashOf(7) })
+    const dcaWaiting = dcaUnwindCopy({ outcome: 'unwinding', buyUsd: 10, buyToken: 'ETH', period: 'day', why: '', note: 'x' })
+    check(
+      'autopilot unwind: the copy says where the money is (back in the wallet with the tx, or coming back if the trade does not settle) and never "failed"',
+      /Your 0\.01 ETH is back in your wallet \(tx 0x00000000…\)/.test(spotRefunded) && spotRefunded.includes(`"${pctAsk}" re-arms it`) &&
+        /comes back to your wallet/.test(spotWaiting) &&
+        /so your \$10 USDC went back to your wallet \(tx 0x00000000…\)\. Autopilot buys again next week\./.test(dcaRefunded) &&
+        /^Today's autopilot buy of \$10 of ETH hasn't settled yet/.test(dcaWaiting) && /comes back to your wallet/.test(dcaWaiting) &&
+        ![spotRefunded, spotWaiting, dcaRefunded, dcaWaiting].some((t) => /\bfailed\b/i.test(t)),
+      spotRefunded,
+    )
+    const shareRefunded = spotGuardShareContent({ tokenSymbol: 'ETH', amountHuman: '0.01', triggerMode: 'price_move_pct', triggerValue: 10, refPrice: 2600, status: 'error' }, { status: 'refunded', valueUsd: null, markPrice: 2438.93 })
+    check(
+      'autopilot unwind: a refunded stop never shares as standing or as moved to USDC',
+      /went back to the wallet/.test(shareRefunded.headline) && !/standing|moved to USDC/.test(shareRefunded.headline) && shareRefunded.valueUsd === null,
+      shareRefunded.headline,
+    )
+
+    // Executor wiring (source): every spender send goes through the ledger, keyed.
+    const unwindExec = readFileSync('lib/autopilot-unwind-exec.ts', 'utf8')
+    const spotExec = readFileSync('lib/spot-guard-exec.ts', 'utf8')
+    const dcaExec = readFileSync('lib/dca-auto-exec.ts', 'utf8')
+    const cdpSrc = readFileSync('lib/cdp.ts', 'utf8')
+    const sendRunTxSrc = unwindExec.match(/export async function sendRunTx\([\s\S]*?\n\}/)?.[0] ?? ''
+    check(
+      'autopilot unwind (source): sendRunTx writes the intent BEFORE the send, sends with the derived idempotency key, and books a reverted receipt as reverted (never a sale)',
+      sendRunTxSrc.indexOf('await ledger.intent(intent)') > -1 &&
+        sendRunTxSrc.indexOf('await ledger.intent(intent)') < sendRunTxSrc.indexOf('sendSpenderTx(') &&
+        /idempotencyKey: key/.test(sendRunTxSrc) &&
+        /if \(r\.receipt\.status !== 'success'\)[\s\S]{0,160}outcome: 'reverted'/.test(sendRunTxSrc) &&
+        /\.\.\.\(opts\.idempotencyKey \? \{ idempotencyKey: opts\.idempotencyKey \} : \{\}\)/.test(cdpSrc),
+      sendRunTxSrc.slice(0, 200),
+    )
+    const stripComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    check(
+      'autopilot unwind (source): neither sweep sends a spender transaction around the ledger, and neither keeps a bare waitTx',
+      !/sendSpenderTx\(/.test(stripComments(spotExec)) && !/sendSpenderTx\(/.test(stripComments(dcaExec)) &&
+        !/function waitTx\(/.test(spotExec) && !/function waitTx\(/.test(dcaExec),
+    )
+    check(
+      'autopilot unwind (source): a throw after a pull parks the run unwinding instead of "nothing pulled" (both sweeps read the ledger first)',
+      /if \(ledger\?\.entries\.some\(\(x\) => x\.step === 'spend'\)\) \{\s*await recordSpotSettle\(/.test(spotExec) &&
+        /if \(ledger\?\.entries\.some\(\(x\) => x\.step === 'spend'\)\) \{\s*await recordDcaSettle\(/.test(dcaExec),
+    )
+    check(
+      "autopilot unwind (source): a DCA schedule with an earlier run still running or unwinding pulls nothing new, and a spot stop that pulled can't be resumed",
+      /status: \{ in: \['running', 'unwinding'\] \}[\s\S]{0,200}summary\.held\.push\(tag\)/.test(dcaExec) &&
+        /status: \{ in: \['unwinding', 'refunded', 'sold'\] \}/.test(spotExec),
+    )
   }
 
   // ── Token charts (the uniform chart button + /t pages) ───────────────────
@@ -17882,7 +18736,8 @@ async function main() {
         // Re-pinned 2026-09-16 (Nate: "never show the sell option if they do
         // not own the token"): the server has no wallet, so no Sell ships.
         !tEth.includes(`/chat?prompt=${encodeURIComponent('Sell $50 of ETH')}`) &&
-        tEth.includes(`/chat?prompt=${encodeURIComponent('DCA $10 into ETH weekly')}`) &&
+        // No recurring-buy chip (2026-09-16): a DCA only reminds you to sign.
+        !tEth.includes(encodeURIComponent('DCA $10 into ETH weekly')) &&
         // The chips SEND now (Markets shell, 2026-09-11); the href stays the
         // no-JS fallback and the eyebrow says what a click does.
         tEth.includes('SENDS THE ASK · YOUR WALLET SIGNS') &&
@@ -17914,20 +18769,20 @@ async function main() {
     const actAt = tEth.indexOf('class="sym__act"')
     const chartAt = tEth.indexOf('class="tchart sym__chart"')
     check(
-      '/t/ETH: the act strip sits in the header ABOVE the chart — Buy leads (filled), DCA + Protect follow, and NO Sell for a visitor who holds none (the server render has no wallet; re-pinned 2026-09-16); the eyebrow names the contract; no Overview act card',
+      '/t/ETH: the act strip sits in the header ABOVE the chart — Buy leads (filled), Protect follows, NO Sell for a visitor who holds none (the server render has no wallet) and no DCA chip (both 2026-09-16); the eyebrow names the contract; no Overview act card',
       actAt > 0 && chartAt > actAt &&
         tEth.includes('ACT ON ETH · SENDS THE ASK · YOUR WALLET SIGNS') &&
         /class="sym__act-chip sym__act-chip--buy"[^>]*>Buy ETH</.test(tEth) &&
         !/>Sell ETH</.test(tEth) &&
-        /sym__act-chip--dca"[^>]*>DCA weekly</.test(tEth) &&
+        !/sym__act-chip--dca|>DCA weekly</.test(tEth) &&
         /sym__act-chip--protect"[^>]*>Protect with a stop</.test(tEth) &&
         !/mkt-card__title">Act on/.test(tEth),
       `act@${actAt} chart@${chartAt}`,
     )
     const tAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
     check(
-      '/t/AAPL: a stock strip never offers Protect (Spot Guardian is Base-only) — Buy / DCA (Sell only for a holder), each href a /chat prefill fallback',
-      /sym__act-chip--buy"[^>]*>Buy AAPL</.test(tAapl) && /sym__act-chip--dca"/.test(tAapl) && !/sym__act-chip--protect/.test(tAapl) && !/>Sell AAPL</.test(tAapl) &&
+      '/t/AAPL: a stock strip never offers Protect (Spot Guardian is Base-only) or DCA (2026-09-16) — Buy for a visitor (Sell only for a holder), each href a /chat prefill fallback',
+      /sym__act-chip--buy"[^>]*>Buy AAPL</.test(tAapl) && !/sym__act-chip--dca|>DCA weekly</.test(tAapl) && !/sym__act-chip--protect/.test(tAapl) && !/>Sell AAPL</.test(tAapl) &&
         tAapl.includes(`href="/chat?prompt=${encodeURIComponent('Buy $50 of AAPL')}"`),
     )
     const tHype = flat(await (await fetch(`${BASE}/t/HYPE`)).text())
@@ -17967,7 +18822,8 @@ async function main() {
     const aaplPair = chartPairFor('AAPL')!
     check(
       'ask door: chips are context-aware — the symbol page offers that symbol\'s real trade asks (+ a why-is-it-moving read), elsewhere the curated examples',
-      askDoorChips('/t/AAPL').slice(0, 3).every((c, i) => c.ask === tradeAsks(aaplPair)[i].ask) &&
+      tradeAsks(aaplPair).length > 0 &&
+        askDoorChips('/t/AAPL').slice(0, tradeAsks(aaplPair).length).every((c, i) => c.ask === tradeAsks(aaplPair)[i].ask) &&
         askDoorChips('/t/AAPL').some((c) => c.label === 'Why is AAPL moving?') &&
         askDoorChips('/t/hype')[0].ask === 'Long $50 of HYPE on Hyperliquid' &&
         askDoorChips('/pricing').map((c) => c.ask).join('|') === EXAMPLE_PROMPTS.map((p) => p.prompt).join('|') &&
@@ -19463,6 +20319,8 @@ async function main() {
   // pool-vs-tape honesty line. Every composed ask is replayed through the
   // ladder replica — a level whose chip lands on the planner is a bug.
   {
+    // The zone's `dca` action is a drawing saved before 2026-09-16: the
+    // contract still accepts it; lib/chart-actions no longer composes one.
     const fullState: ChartState = {
       v: 1,
       symbol: 'ETH',
@@ -19515,11 +20373,11 @@ async function main() {
     ]
     const landed = offers.map((o) => ({ ask: o.action.ask, out: simulateLadder(o.action.ask) }))
     const fell = landed.filter((l) => l.out.kind !== 'action')
-    const expectedGate: Record<string, string> = { limit: 'swap', stop: 'spot-guard|guardian', protect: 'guardian', dca: 'dca', buy: 'swap|hyperliquid', sell: 'swap|hyperliquid' }
+    const expectedGate: Record<string, string> = { limit: 'swap', stop: 'spot-guard|guardian', protect: 'guardian', buy: 'swap|hyperliquid', sell: 'swap|hyperliquid' }
     const wrongGate = offers.filter((o, i) => !new RegExp(`^(?:${expectedGate[o.action.kind]})$`).test(landed[i].out.gate))
     check(
       `chart actions: every composed level/zone ask lands natively in the ladder replica (${offers.length} asks: ETH spot both sides, HYPE perps both sides, AAPL stock, SOL non-EVM → HL perp, PEPE dust, three zones) on its own gate`,
-      offers.length >= 28 && fell.length === 0 && wrongGate.length === 0,
+      offers.length >= 24 && fell.length === 0 && wrongGate.length === 0,
       fell.length ? `FELL: ${fell.map((f) => `${f.ask} → ${f.out.gate}/${f.out.kind}`).join(' | ')}` : wrongGate.length ? `WRONG GATE: ${wrongGate.map((o) => o.action.ask).join(' | ')}` : '',
     )
     const ethBelow = composeLineActions({ symbol: 'ETH', source: 'coinbase', price: 2300, last: 2400 })
@@ -19527,7 +20385,7 @@ async function main() {
     const aapl = composeLineActions({ symbol: 'AAPL', source: 'robinhood', price: 200, last: 230 })
     const bigPx = composeLineActions({ symbol: 'BTC', source: 'coinbase', price: 61234.56, last: 70000 })
     check(
-      'chart actions: honesty — stop + limit BUY only below market, limit SELL only above (never a market order in limit clothes), stocks never get a limit or a stop, prices carry no separators/exponents',
+      'chart actions: honesty — stop + limit BUY only below market, limit SELL only above (never a market order in limit clothes), stocks never get a limit or a stop, no level or zone composes a DCA (2026-09-16), prices carry no separators/exponents',
       ethBelow.some((o) => o.action.kind === 'stop') &&
         ethBelow.some((o) => o.action.kind === 'limit' && /\bbuy\b/.test(o.action.ask)) &&
         !ethBelow.some((o) => o.action.kind === 'limit' && /\bsell\b/.test(o.action.ask)) &&
@@ -19535,7 +20393,8 @@ async function main() {
         ethAbove.some((o) => o.action.kind === 'limit' && /\bsell\b/.test(o.action.ask)) &&
         !ethAbove.some((o) => o.action.kind === 'limit' && /\bbuy\b/.test(o.action.ask)) &&
         !aapl.some((o) => o.action.kind === 'limit' || o.action.kind === 'stop') &&
-        aapl.some((o) => o.action.kind === 'dca') &&
+        aapl.some((o) => o.action.kind === 'buy') &&
+        !offers.some((o) => o.action.kind === 'dca' || /\bdca\b|weekly/i.test(o.action.ask) || /\bdca\b/i.test(o.label)) &&
         bigPx.some((o) => o.action.ask === 'Protect my spot BTC if it drops to $61235') &&
         offers.every((o) => !/[,e]\d/.test(o.action.ask.replace(/[A-Za-z]+/g, ''))) &&
         fmtAskPrice(2400) === '2400' && fmtAskPrice(0.000009) === '0.000009' && fmtAskUnits(25, 2300) === '0.01087' && fmtAskUnits(25, 0.000009) === '2777778',
@@ -19558,9 +20417,9 @@ async function main() {
       lines: stockOffers.map((o, i) => ({ id: `s${i}`, kind: 'h', price: 200 + i, action: o.action })),
     })
     check(
-      'chart actions: a Robinhood Chain stock level (either side, line or zone) never offers stop / protect / limit — a 4663 chart-state never emits a protect ask (only buy / sell / dca; no "protect" or "stop" word at all)',
-      stockOffers.length >= 8 &&
-        stockOffers.every((o) => o.action.kind === 'buy' || o.action.kind === 'sell' || o.action.kind === 'dca') &&
+      'chart actions: a Robinhood Chain stock level (either side, line or zone) never offers stop / protect / limit — a 4663 chart-state never emits a protect ask (only buy / sell; a stock zone carries no action; no "protect" or "stop" word at all)',
+      stockOffers.length === 4 &&
+        stockOffers.every((o) => o.action.kind === 'buy' || o.action.kind === 'sell') &&
         stockState !== null &&
         chartStateToAsks(stockState).every((ask) => !/\b(?:protect|stop|take profit|limit)\b/i.test(ask)) &&
         !actionKindsFor('AAPL', 'robinhood').has('stop') &&
@@ -19774,7 +20633,10 @@ async function main() {
     let chipCount = 0
     for (const c of chipCases) for (const r of ratings) {
       const chips = verdictChips({ symbol: c.symbol, source: c.source, rating: r, support: 123.45, resistance: 130.5 })
-      if (chips.length < 2) chipBad.push(`${c.symbol}/${r}: ${chips.length} chips`)
+      // A stock's buy / neutral verdict is the Buy alone since DCA left the
+      // chips (2026-09-16): no stop can be armed on 4663, so there's no pair.
+      const minChips = c.source === 'robinhood' && r !== 'sell' && r !== 'strong_sell' ? 1 : 2
+      if (chips.length < minChips) chipBad.push(`${c.symbol}/${r}: ${chips.length} chips`)
       for (const ch of chips) {
         chipCount++
         const out = simulateLadder(ch.ask)
@@ -19787,16 +20649,18 @@ async function main() {
     // A STOCK verdict never emits a protect/stop ask (Spot Guardian is Base-only, the HL
     // guardian is perps-only — the ladder would CLAIM it and the build would refuse; MSG lane).
     const stockAsks = ratings.flatMap((r) => verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: r, support: 300, resistance: 330 }).map((c) => c.ask))
-    check('tech: a stock (source robinhood) verdict emits ONLY swap / DCA asks across all five ratings — never protect / stop / guardian', stockAsks.length === 10 && stockAsks.every((a) => !/protect|stop|guardian|take profit|alert/i.test(a)) && stockAsks.every((a) => ['swap', 'dca'].includes(simulateLadder(a).gate)), stockAsks.join(' | '))
+    check('tech: a stock (source robinhood) verdict emits ONLY swap asks across all five ratings — never protect / stop / guardian / DCA', stockAsks.length === 7 && stockAsks.every((a) => !/protect|stop|guardian|take profit|alert|\bdca\b|weekly/i.test(a)) && stockAsks.every((a) => simulateLadder(a).gate === 'swap'), stockAsks.join(' | '))
     check('tech: a stock SELL verdict pairs "Sell $50" with the live-sized "Sell all my AAPL"', verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'strong_sell' }).map((c) => c.ask).join(' | ') === 'Sell $50 of AAPL | Sell all my AAPL' && simulateLadder('Sell all my AAPL').note?.includes('sized live') === true)
     // The alert chip stays OFF until WATCH's grammar has a ladder rung: this pin FAILS the
     // day "Alert me when AAPL hits $330" stops falling to the planner — flip `alerts` then.
     const alertChip = verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'neutral', resistance: 330, alerts: true })[1]
     check('tech: with alerts ON a neutral stock carries "Alert me when AAPL hits $R1" — and TODAY that ask falls to the planner (no alert rung yet; flip the default when this pin turns red)', alertChip.kind === 'alert' && alertChip.ask === 'Alert me when AAPL hits $330' && simulateLadder(alertChip.ask).kind === 'planner' && verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'neutral', resistance: 330 }).every((c) => c.kind !== 'alert'))
-    check('tech: sell verdicts carry Sell + Protect (spot coin) / Sell + Sell-all (stock); buy verdicts Buy + DCA (spot) / Buy + Protect (perp)',
+    check('tech: sell verdicts carry Sell + Protect (spot coin) / Sell + Sell-all (stock); buy verdicts Buy + Protect (spot coin, perp) / Buy alone (stock) — no DCA chip since 2026-09-16',
       verdictChips({ symbol: 'ETH', source: 'coinbase', rating: 'sell' }).map((c) => c.kind).join(',') === 'sell,protect' &&
       verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'sell' }).map((c) => c.kind).join(',') === 'sell,sell' &&
-      verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'strong_buy' }).map((c) => c.kind).join(',') === 'buy,dca' &&
+      verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'strong_buy' }).map((c) => c.kind).join(',') === 'buy' &&
+      verdictChips({ symbol: 'ETH', source: 'coinbase', rating: 'buy' }).map((c) => c.kind).join(',') === 'buy,protect' &&
+      verdictChips({ symbol: 'ETH', source: 'coinbase', rating: 'neutral' }).map((c) => c.kind).join(',') === 'protect,buy' &&
       verdictChips({ symbol: 'HYPE', source: 'hyperliquid', rating: 'buy' }).map((c) => c.kind).join(',') === 'buy,protect')
 
     // The API contract on live symbols (feeds are keyless public data)
@@ -19815,7 +20679,8 @@ async function main() {
               (b.rows!.movingAverages.length + b.omitted!.filter((n) => /Average|Ichimoku/.test(n)).length) === 15 &&
               b.rows!.oscillators.every((x) => Number.isFinite(x.value) && ['buy', 'neutral', 'sell'].includes(x.signal)) &&
               !!b.pivots && ['classic', 'fibonacci', 'camarilla', 'woodie', 'dm'].every((f) => Number.isFinite(b.pivots![f]?.p) && Number.isFinite(b.pivots![f]?.r1) && Number.isFinite(b.pivots![f]?.s1)) &&
-              b.chips.length >= 2 && b.chips.every((c) => simulateLadder(c.ask).kind === 'action') && (b.bars ?? 0) >= 200
+              // a stock's buy / neutral verdict is the Buy alone (no DCA chip since 2026-09-16)
+              b.chips.length >= (sym === 'AAPL' && !/sell/.test(b.summary!.rating) ? 1 : 2) && b.chips.every((c) => simulateLadder(c.ask).kind === 'action') && (b.bars ?? 0) >= 200
             : /feed unavailable|tape too short/.test(b.error!) && /AAPL|ETH/.test(b.reason ?? '') && b.chips.length === 0),
         live ? `${b.feed} bars=${b.bars} ${b.summary!.rating} osc=${b.oscillators!.rating} ma=${b.movingAverages!.rating} omitted=${b.omitted!.length} chips=${b.chips.map((c) => c.ask).join(' / ')}` : `REFUSED: ${b.error}`,
       )
@@ -20080,29 +20945,26 @@ async function main() {
     // chip IS the contract (memory chip-send-contract).
     const hypePair = chartPairFor('HYPE')!
     const solPair = chartPairFor('SOL')!
-    const dcaAsk = composeTradeAsk(ethPair, 'dca', { usd: 25, cadence: 'daily' })
-    const dcaParsed = parseDcaCreate(dcaAsk)
     const spot = parseSpotGuardArm(composeTradeAsk(ethPair, 'protect', { pct: 10 }))
     const perp = parseGuardianArm(composeTradeAsk(hypePair, 'protect', { pct: 5 }))
     const hlLong = parseHlIntent(composeTradeAsk(hypePair, 'buy', { usd: 10 }))
     const buy = parseSwapIntent(composeTradeAsk(aaplPair, 'buy', { usd: 10 }))
     const sell = parseSwapIntent(composeTradeAsk(ethPair, 'sell', { usd: 50 }))
     check(
-      'markets: order-panel sentences round-trip — swap buy/sell, DCA (cadence), spot protect, perp protect, HL long',
+      'markets: order-panel sentences round-trip — swap buy/sell, spot protect, perp protect, HL long',
       buy.isSwap && !buy.problem && buy.buyToken === 'AAPL' && buy.sellAmountUsd === '10' &&
         sell.isSwap && !sell.problem && sell.sellToken === 'ETH' && sell.sellAmountUsd === '50' &&
-        !!dcaParsed && !('problem' in dcaParsed) && dcaParsed.cadence === 'day' && dcaParsed.buyUsd === 25 &&
         spot?.token === 'ETH' && spot.triggerMode === 'price_move_pct' && spot.triggerValue === 10 &&
         perp?.coin === 'HYPE' && perp.triggerValue === 5 &&
         !!hlLong,
-      `buy=${JSON.stringify(buy)} sell=${JSON.stringify(sell)} dca=${JSON.stringify(dcaParsed)} spot=${JSON.stringify(spot)} perp=${JSON.stringify(perp)} hl=${hlLong ? hlLong.kind : null}`,
+      `buy=${JSON.stringify(buy)} sell=${JSON.stringify(sell)} spot=${JSON.stringify(spot)} perp=${JSON.stringify(perp)} hl=${hlLong ? hlLong.kind : null}`,
     )
     check(
-      'markets: sides are honest per venue — stocks no Protect (Spot Guardian is Base-only), perps Long/Short/Protect, non-EVM coins Buy/Sell only, ETH all four',
-      tradeSidesFor(aaplPair).join() === 'buy,sell,dca' &&
+      'markets: sides are honest per venue — stocks no Protect (Spot Guardian is Base-only), perps Long/Short/Protect, non-EVM coins Buy/Sell only, ETH all three; no DCA side anywhere (2026-09-16)',
+      tradeSidesFor(aaplPair).join() === 'buy,sell' &&
         tradeSidesFor(hypePair).join() === 'buy,sell,protect' &&
         tradeSidesFor(solPair).join() === 'buy,sell' &&
-        tradeSidesFor(ethPair).join() === 'buy,sell,dca,protect' &&
+        tradeSidesFor(ethPair).join() === 'buy,sell,protect' &&
         tradeAsks(hypePair)[0].ask === 'Long $50 of HYPE on Hyperliquid',
     )
 
@@ -20595,7 +21457,7 @@ async function main() {
         /aria-label="Full screen chart"/.test(tAapl) &&
         // the Overview chips ship in the server HTML with the /chat prefill fallback
         tAapl.includes(`/chat?prompt=${encodeURIComponent('Buy $50 of AAPL')}`) &&
-        tAapl.includes(`/chat?prompt=${encodeURIComponent('DCA $10 into AAPL weekly')}`) &&
+        !tAapl.includes(encodeURIComponent('DCA $10 into AAPL weekly')) &&
         !tAapl.includes(encodeURIComponent('Protect my AAPL')),
     )
     const tTech = await fetch(`${BASE}/t/AAPL?tab=technicals`)
@@ -21872,18 +22734,19 @@ async function main() {
     // funding rows — those are per wallet (lib/fund-routes, pinned below) —
     // and exactly one card row when the on-ramp door is open.
     check(
-      'MK2/EXEC venue map: ETH lists spot on Base/Ethereum/Arbitrum/Optimism, CoW limits only where a book exists (never Optimism or 4663), a leveraged perp + Guardian stop, Aave supply + a USDC borrow, Lido stake, DCA, the Spot Guardian on Base — and NO per-chain funding row (funding is per wallet)',
+      'MK2/EXEC venue map: ETH lists spot on Base/Ethereum/Arbitrum/Optimism, CoW limits only where a book exists (never Optimism or 4663), a leveraged perp + Guardian stop, Aave supply + a USDC borrow, Lido stake, the Spot Guardian on Base — NO per-chain funding row (funding is per wallet) and no DCA row (2026-09-16)',
       new Set(eth.filter((r) => r.kind === 'spot').map((r) => r.chainId)).size === 4 &&
         eth.filter((r) => r.kind === 'limit').every((r) => [8453, 1, 42161].includes(r.chainId)) && eth.some((r) => r.kind === 'limit') &&
         eth.some((r) => r.kind === 'perp' && r.ask.startsWith('2x Long')) && eth.some((r) => r.kind === 'protect' && r.venue === 'hyperliquid' && r.needs === 'position') &&
         eth.some((r) => r.kind === 'lend' && r.ask === 'Supply $50 of ETH to Aave') && eth.some((r) => r.kind === 'lend' && r.ask === 'Borrow 50 USDC from Aave') &&
-        eth.some((r) => r.kind === 'stake' && r.ask === 'Stake 0.02 ETH on Lido' && r.chainId === 1) && eth.some((r) => r.kind === 'dca') &&
+        eth.some((r) => r.kind === 'stake' && r.ask === 'Stake 0.02 ETH on Lido' && r.chainId === 1) && !eth.some((r) => /\bdca\b|weekly/i.test(`${r.id} ${r.label} ${r.ask}`)) &&
         eth.some((r) => r.kind === 'protect' && r.venue === 'pantessa' && r.chainId === 8453) && eth.filter((r) => r.kind === 'fund').length === 0,
       `${eth.length} rows: ${[...kinds(eth)].join(',')}`,
     )
     check(
-      'MK2/EXEC venue map: a Robinhood Chain stock is stock buy/sell + DCA on 4663 — no perp, lend, stake, limit or per-chain funding row, and the missing kinds are NAMED',
-      [...kinds(aapl)].sort().join() === ['dca', 'stock'].join() && aapl.every((r) => r.chainId === 4663) && mk2MissingNotes('AAPL', aaplPair).length === 1,
+      'MK2/EXEC venue map: a Robinhood Chain stock is stock buy/sell on 4663 — no perp, lend, stake, limit, DCA or per-chain funding row, and the missing kinds are NAMED (no DCA pitch in the note)',
+      [...kinds(aapl)].sort().join() === ['stock'].join() && aapl.every((r) => r.chainId === 4663) && mk2MissingNotes('AAPL', aaplPair).length === 1 &&
+        !/\bdca\b/i.test(mk2MissingNotes('AAPL', aaplPair)[0]),
       [...kinds(aapl)].join(','),
     )
     {
@@ -21931,16 +22794,16 @@ async function main() {
     // exports MARKETS + the ask door import.
     const ethExec = mk2ExecAsks(ethPair, { usd: 50, last: 2500 })
     check(
-      'MK2/EXEC ExecStrip: ETH offers Buy · Sell · Long · Short · Stake · Supply · DCA · Protect, a stock Buy · Sell · DCA, an HL chart Long · Short · Protect, SOL Long · Short — and every chip lands native',
-      mk2ExecSidesFor(ethPair).join() === ['buy', 'sell', 'long', 'short', 'stake', 'supply', 'dca', 'protect'].join() &&
-        mk2ExecSidesFor(aaplPair).join() === ['buy', 'sell', 'dca'].join() && mk2ExecSidesFor(hypePair).join() === ['long', 'short', 'protect'].join() &&
+      'MK2/EXEC ExecStrip: ETH offers Buy · Sell · Long · Short · Stake · Supply · Protect, a stock Buy · Sell, an HL chart Long · Short · Protect, SOL Long · Short (no DCA chip, 2026-09-16) — and every chip lands native',
+      mk2ExecSidesFor(ethPair).join() === ['buy', 'sell', 'long', 'short', 'stake', 'supply', 'protect'].join() &&
+        mk2ExecSidesFor(aaplPair).join() === ['buy', 'sell'].join() && mk2ExecSidesFor(hypePair).join() === ['long', 'short', 'protect'].join() &&
         mk2ExecSidesFor(solPair).join() === ['long', 'short'].join() &&
         [...ethExec, ...mk2ExecAsks(aaplPair), ...mk2ExecAsks(hypePair), ...mk2ExecAsks(solPair)].every((a) => simulateLadder(a.ask).kind === 'action'),
       ethExec.map((a) => a.ask).join(' | '),
     )
     check(
-      'MK2/EXEC trade-asks stays byte-compatible: tradeAsks(ETH) still yields buy/sell/dca/protect, sideOf/AMOUNTS/STOPS/CADENCES unchanged',
-      tradeAsks(ethPair).map((a) => a.side).join() === 'buy,sell,dca,protect' && mk2SideOf('Sell $50 of ETH') === 'sell' && MK2_AMOUNTS.join() === '10,25,100' && MK2_STOPS.join() === '5,10,15' && MK2_CADENCES.join() === 'daily,weekly,monthly',
+      'MK2/EXEC trade-asks stays byte-compatible: tradeAsks(ETH) yields buy/sell/protect (DCA dropped 2026-09-16), sideOf/AMOUNTS/STOPS unchanged',
+      tradeAsks(ethPair).map((a) => a.side).join() === 'buy,sell,protect' && mk2SideOf('Sell $50 of ETH') === 'sell' && MK2_AMOUNTS.join() === '10,25,100' && MK2_STOPS.join() === '5,10,15',
     )
 
     // The routes API — public, cached, fail-soft, never a 500.
@@ -21991,18 +22854,18 @@ async function main() {
     const qaAapl = mk2QuickActs('AAPL', aaplPair)
     const qaSol = mk2QuickActs('SOL', solPair)
     check(
-      'MK2/EXEC QuickAct: ETH = Buy $25 · Long 2x · DCA weekly; a stock = Buy $25 on 4663 · DCA weekly (never a perp); SOL = Long 2x · Short 2x (never a spot buy of a squat); every chip lands native; QuickAct.tsx stops the row link and sends through onAsk',
-      qaEth.map((a) => a.label).join() === 'Buy $25,Long 2x,DCA weekly' && qaEth[1].ask === '2x Long $25 of ETH on Hyperliquid' &&
-        qaAapl.map((a) => a.label).join() === 'Buy $25 on 4663,DCA weekly' && qaAapl[0].ask === 'Buy $25 of AAPL' &&
+      'MK2/EXEC QuickAct: ETH = Buy $25 · Long 2x; a stock = Buy $25 on 4663 (never a perp); SOL = Long 2x · Short 2x (never a spot buy of a squat); no DCA chip (2026-09-16); every chip lands native; QuickAct.tsx stops the row link and sends through onAsk',
+      qaEth.map((a) => a.label).join() === 'Buy $25,Long 2x' && qaEth[1].ask === '2x Long $25 of ETH on Hyperliquid' &&
+        qaAapl.map((a) => a.label).join() === 'Buy $25 on 4663' && qaAapl[0].ask === 'Buy $25 of AAPL' &&
         qaSol.map((a) => a.label).join() === 'Long 2x,Short 2x' &&
         [...qaEth, ...qaAapl, ...qaSol, ...mk2QuickActs('HYPE', hypePair), ...mk2QuickActs('LINK', linkPair)].every((a) => simulateLadder(a.ask).kind === 'action') &&
         (await readFile('components/markets/trade/QuickAct.tsx', 'utf8')).includes('e.stopPropagation()') && (await readFile('components/markets/trade/QuickAct.tsx', 'utf8')).includes('onAsk(ask)'),
       `${qaEth.map((a) => a.ask).join(' | ')} || ${qaAapl.map((a) => a.ask).join(' | ')} || ${qaSol.map((a) => a.ask).join(' | ')}`,
     )
     check(
-      'MK2/EXEC routes API: a stable (USDC) is 404 by name, a malformed symbol 400, a stock answers only 4663 stock/dca/fund rows',
+      'MK2/EXEC routes API: a stable (USDC) is 404 by name, a malformed symbol 400, a stock answers only 4663 stock/fund rows (no DCA row)',
       (await fetch(`${BASE}/api/markets/routes?symbol=USDC`)).status === 404 && (await fetch(`${BASE}/api/markets/routes?symbol=%3Cscript%3E`)).status === 400 &&
-        (await (await fetch(`${BASE}/api/markets/routes?symbol=AAPL&amount=25`)).json().then((b: Mk2RoutesResponse) => b.routes.every((r) => ['stock', 'dca', 'fund'].includes(r.kind)))),
+        (await (await fetch(`${BASE}/api/markets/routes?symbol=AAPL&amount=25`)).json().then((b: Mk2RoutesResponse) => b.routes.every((r) => ['stock', 'fund'].includes(r.kind)))),
     )
 
     // ── FUND ROUTES + CARD BUY (2026-09-16) ─────────────────────────────────
@@ -23606,11 +24469,11 @@ async function main() {
     )
 
     check(
-      'arrival/core: only asks the PAGE composed for a symbol with an EVM home hand off — a fired alert\'s stored actionAsk keeps the prefill (nothing pins what createAlert accepted), and so do the rail\'s blind Buy/Sell/DCA templates on a coin that lives off-EVM (SOL, XRP, DOGE), whose handoff would open the app with a clarify',
+      'arrival/core: only asks the PAGE composed for a symbol with an EVM home hand off — a fired alert\'s stored actionAsk keeps the prefill (nothing pins what createAlert accepted), and so do the rail\'s blind Buy/Sell templates on a coin that lives off-EVM (SOL, XRP, DOGE), whose handoff would open the app with a clarify (the rail\'s DCA chip is gone, 2026-09-16)',
       /send\(n\.actionAsk!, false\)/.test(railSrcA) &&
         /send\(`Buy \$10 of \$\{sym\}`, handoffable\(sym\)\)/.test(railSrcA) &&
         /send\(`Sell \$10 of \$\{sym\}`, handoffable\(sym\)\)/.test(railSrcA) &&
-        /send\(`DCA \$10 into \$\{sym\} weekly`, handoffable\(sym\)\)/.test(railSrcA) &&
+        !/DCA \$10 into/.test(railSrcA) &&
         /send\(ask, handoffable\(alertFor\)\)/.test(railSrcA) &&
         /venuesFor\(sym, pair, \{ usd: 10 \}\)\.some\(\(r\) => \(r\.kind === 'spot' \|\| r\.kind === 'stock'\) && r\.side === 'buy'\)/.test(railSrcA) &&
         // A one-letter stock ticker (F, P) has an EVM home but never parses —
@@ -23913,7 +24776,7 @@ async function main() {
     // on a native gate (kind:'action') or an honest deterministic clarify —
     // never the planner, because a planner answer on arrival would be a model
     // deciding what to do with a stranger's click. Senders: QuickAct rows
-    // (lib/symbol-venues quickActs) · the rail's Buy/Sell/DCA chips + fired-
+    // (lib/symbol-venues quickActs) · the rail's Buy/Sell chips + fired-
     // alert chips (lib/watchlists alertActionChips) · the Morning tape's chip
     // MENU (lib/markets-ai chipMenu, which the route ladder-filters BEFORE the
     // model sees it — pinned below) · the EARN board's three templates (PR
@@ -23940,7 +24803,6 @@ async function main() {
           for (const a of mk2QuickActs(r.symbol, pair)) add('QuickAct', r.symbol, a.ask)
           add('Rail', r.symbol, `Buy $10 of ${r.symbol}`)
           add('Rail', r.symbol, `Sell $10 of ${r.symbol}`)
-          add('Rail', r.symbol, `DCA $10 into ${r.symbol} weekly`)
           const last = pair.source === 'robinhood' ? 187.5 : 2447.25
           for (const c of arrivalAlertChips({ symbol: r.symbol, condition: 'below', value: last * 0.95, basePrice: null }, pair)) add('Alert', r.symbol, c.ask)
           for (const c of arrivalAlertChips({ symbol: r.symbol, condition: 'pct_move', value: 5, basePrice: last }, pair)) add('Alert', r.symbol, c.ask)
@@ -24003,15 +24865,15 @@ async function main() {
       // The honest clarifies: a coin whose home chain we don't trade spot
       // ("SOL lives on Solana — HL door") or a single-letter sell — a
       // deterministic refusal-by-name with chips, no model. They are ALL the
-      // blind `Buy/Sell $N of <sym>` / `DCA $10 into <sym> weekly` TEMPLATES:
+      // blind `Buy/Sell $N of <sym>` TEMPLATES:
       // the rail's own chips (WatchlistRail.tsx) and the fired-alert chips
       // (lib/watchlists alertActionChips). QuickAct reads venuesFor and
       // composes "Long $25 of SOL on Hyperliquid" instead — request in
       // ROUNDS.md: the templates should read venuesFor too. The tape menu
       // (ladder-filtered) and the EARN templates never clarify.
-      const templateClarify = (r: Row) => (r.sender === 'Rail' || r.sender === 'Alert') && /^((Buy|Sell) \$\d+ of [A-Z0-9]+|DCA \$\d+ into [A-Z0-9]+ weekly)$/.test(r.ask)
+      const templateClarify = (r: Row) => (r.sender === 'Rail' || r.sender === 'Alert') && /^(Buy|Sell) \$\d+ of [A-Z0-9]+$/.test(r.ask)
       const clarifyOffTemplate = clarify.filter((r) => !templateClarify(r))
-      check('arrival ladder: every clarify is a blind rail / fired-alert Buy/Sell/DCA template (a non-EVM home or a single-letter ticker; deterministic, chips, no model) — QuickAct, the tape menu and the EARN templates never clarify', clarifyOffTemplate.length === 0, `${clarify.length} clarifies; off-template: ${clarifyOffTemplate.map((r) => `[${r.sender}] ${r.ask}`).join(' | ').slice(0, 300)}`)
+      check('arrival ladder: every clarify is a blind rail / fired-alert Buy/Sell template (a non-EVM home or a single-letter ticker; deterministic, chips, no model) — QuickAct, the tape menu and the EARN templates never clarify', clarifyOffTemplate.length === 0, `${clarify.length} clarifies; off-template: ${clarifyOffTemplate.map((r) => `[${r.sender}] ${r.ask}`).join(' | ').slice(0, 300)}`)
       check('arrival ladder: the fence refuses NONE of the sentences the senders compose (no chip can be walled by its own handoff)', fenced.length === 0, fenced.slice(0, 5).join(' | '))
       // The tape's chips reach the page only through ladderFilterMenu (the
       // route filters the MENU before the model picks ids), so a menu sentence
@@ -24939,12 +25801,12 @@ async function main() {
         if (!pair) continue
         const last = pair.source === 'robinhood' ? 187.5 : 2447.25
         for (const a of qaA(r.symbol, pair)) addA('QuickAct', a.ask)
-        for (const tpl of [`Buy $10 of ${r.symbol}`, `Sell $10 of ${r.symbol}`, `DCA $10 into ${r.symbol} weekly`]) addA('Rail', tpl)
+        for (const tpl of [`Buy $10 of ${r.symbol}`, `Sell $10 of ${r.symbol}`]) addA('Rail', tpl)
         for (const c of alertChipsA({ symbol: r.symbol, condition: 'below', value: last * 0.95, basePrice: null }, pair)) addA('Alert', c.ask)
         const menus = [menuA({ pair, last: null, tech: null }), ...ratingsA.map((rating) => menuA({ pair, last, tech: { summary: { rating }, pivots: { classic: { s1: last * 0.97, r1: last * 1.03 } } } as never }))]
         for (const m of menus) for (const c of ladderMenuA(m).chips) addA('MorningTape', c.ask)
         for (const v of venuesForA(r.symbol, pair, { usd: 25, last })) addA('RouteTable', v.ask)
-        for (const side of sidesForA(pair)) addA('TradeTab', composeAskA(pair, side, { usd: 50, pct: 5, cadence: 'weekly' }))
+        for (const side of sidesForA(pair)) addA('TradeTab', composeAskA(pair, side, { usd: 50, pct: 5 }))
         for (const e of execAsksA(pair, { usd: 50, last, leverage: 2 })) addA('ExecStrip', e.ask)
         for (const price of [last * 0.9, last * 1.1]) for (const o of lineActsA({ symbol: r.symbol, source: pair.source, price, last })) addA('ChartLevel', o.action.ask)
         for (const rating of ratingsA) for (const c of verdictA({ symbol: r.symbol, source: pair.source, rating, support: last * 0.97, resistance: last * 1.03 })) addA('Verdict', c.ask)

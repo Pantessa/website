@@ -12,7 +12,6 @@
 //             → lib/hl-guardian parseGuardianArm (perps):
 //               "Protect my HYPE long with a stop at $30"
 //               "Take profit on HYPE at $40"
-//    dca      → lib/dca CREATE_RE: "DCA $10 into ETH weekly"
 //    buy/sell → the swap grammar ("Buy $25 of AAPL") or the HL open
 //               grammar ("Long $25 of HYPE on Hyperliquid")
 //
@@ -27,7 +26,7 @@
 //    wearing a limit's clothes (the market chip says so instead);
 //  • Robinhood Chain stocks have NO resting book (cow:false on 4663) and
 //    the Spot Guardian runs on Base only — a stock level offers market
-//    buy/sell + DCA and names why the rest is missing;
+//    buy/sell and names why the rest is missing;
 //  • coins whose home is not an EVM chain (SOL/XRP/DOGE — lib/token-home)
 //    get Hyperliquid perp long/short only — a spot ask on them can only
 //    ever answer with the HL door, so the level says the perp out loud.
@@ -57,12 +56,9 @@ export interface ComposeLineInput {
   last: number
   /** Dollar size for limit / market asks (default $25). */
   usd?: number
-  /** Dollar size per period for DCA asks (default $10). */
-  dcaUsd?: number
 }
 
 export const DEFAULT_ACTION_USD = 25
-export const DEFAULT_DCA_USD = 10
 
 /** A price the grammars read back verbatim: plain digits, a dot, no
  *  separators, no exponent, precision by magnitude. */
@@ -99,19 +95,21 @@ export function fmtAskUnits(usd: number, price: number): string | null {
 const usdLabel = (usd: number) => (Number.isInteger(usd) ? `$${usd}` : `$${usd.toFixed(2)}`)
 
 /** Which kinds a source can execute at all — the toolbar hides tools whose
- *  actions could never compose (a zone on a perp has no DCA). */
+ *  actions could never compose (a zone on a perp has no limit). No level
+ *  composes a DCA any more (2026-09-16): a recurring buy only reminds the
+ *  wallet to sign each period. */
 export function actionKindsFor(symbol: string, source: ChartSource): ReadonlySet<ChartActionKind> {
   if (source === 'hyperliquid') return new Set<ChartActionKind>(['buy', 'sell', 'stop', 'protect'])
-  if (source === 'robinhood') return new Set<ChartActionKind>(['buy', 'sell', 'dca'])
+  if (source === 'robinhood') return new Set<ChartActionKind>(['buy', 'sell'])
   if (tokenHome(symbol)) return new Set<ChartActionKind>(['buy', 'sell'])
-  return new Set<ChartActionKind>(['buy', 'sell', 'stop', 'limit', 'dca', 'protect'])
+  return new Set<ChartActionKind>(['buy', 'sell', 'stop', 'limit', 'protect'])
 }
 
 /** Why a level can't do the thing a trader expects — named, never silent. */
 export function missingActionNote(symbol: string, source: ChartSource): string | null {
-  if (source === 'robinhood') return 'No resting orders on Robinhood Chain yet — buys and sells fill at market; a DCA schedule buys the level over time.'
+  if (source === 'robinhood') return 'No resting orders on Robinhood Chain yet — buys and sells fill at market, so a level can’t trigger a trade here.'
   if (source === 'hyperliquid') return 'Perp levels arm the Guardian (stop / take-profit on your live position); entries fill at market (IOC).'
-  if (tokenHome(symbol)) return `${symbol} lives on ${tokenHome(symbol)} — levels open Hyperliquid perps; no spot limit, stop or DCA here.`
+  if (tokenHome(symbol)) return `${symbol} lives on ${tokenHome(symbol)} — levels open Hyperliquid perps; no spot limit or stop here.`
   return null
 }
 
@@ -124,7 +122,6 @@ export function composeLineActions(input: ComposeLineInput): LineActionOffer[] {
   const { symbol, source } = input
   const sym = symbol.toUpperCase()
   const usd = input.usd ?? DEFAULT_ACTION_USD
-  const dcaUsd = input.dcaUsd ?? DEFAULT_DCA_USD
   const price = input.price
   const last = input.last
   if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(last) || last <= 0) return []
@@ -159,7 +156,6 @@ export function composeLineActions(input: ComposeLineInput): LineActionOffer[] {
     out.push(
       { action: { kind: 'buy', ask: `Buy ${usdLabel(usd)} of ${sym}` }, label: `Buy ${sym}`, hint: 'Fills at the pool price now — no resting book on Robinhood Chain yet.' },
       { action: { kind: 'sell', ask: `Sell ${usdLabel(usd)} of ${sym}` }, label: `Sell ${sym}`, hint: 'Fills at the pool price now.' },
-      { action: { kind: 'dca', ask: `DCA ${usdLabel(dcaUsd)} into ${sym} weekly` }, label: 'DCA into this', hint: `${usdLabel(dcaUsd)} a week, each buy signed by you — the level is your note, not a trigger.` },
     )
     return out
   }
@@ -199,11 +195,6 @@ export function composeLineActions(input: ComposeLineInput): LineActionOffer[] {
       hint: `Spot Guardian sells your ${sym} on Base if it trades at or below $${px} — one signature, fires on its own.`,
     })
   }
-  out.push({
-    action: { kind: 'dca', ask: `DCA ${usdLabel(dcaUsd)} into ${sym} weekly` },
-    label: 'DCA into this',
-    hint: `${usdLabel(dcaUsd)} a week, each buy signed by you — the level is your note, not a trigger.`,
-  })
   out.push(
     { action: { kind: 'buy', ask: `Buy ${usdLabel(usd)} of ${sym}` }, label: `Buy ${sym} now`, hint: 'Market — fills at today’s price, not the line.' },
     { action: { kind: 'sell', ask: `Sell ${usdLabel(usd)} of ${sym}` }, label: `Sell ${sym} now`, hint: 'Market — fills at today’s price, not the line.' },
@@ -218,13 +209,13 @@ export interface ComposeZoneInput {
   p2: number
   last: number
   usd?: number
-  dcaUsd?: number
 }
 
 /**
- * A zone between two prices: DCA into it (the schedule is the honest
- * reading of "accumulate here"), plus the limit at its floor when the whole
- * zone sits under market, or at its ceiling when it sits above.
+ * A zone between two prices: the limit at its floor when the whole zone
+ * sits under market, or at its ceiling when it sits above, plus a stop under
+ * a zone below market. A zone that straddles the market, or sits on a chain
+ * with no resting book, carries no action — it stays a drawing.
  */
 export function composeZoneActions(input: ComposeZoneInput): LineActionOffer[] {
   const { symbol, source, last } = input
@@ -233,10 +224,6 @@ export function composeZoneActions(input: ComposeZoneInput): LineActionOffer[] {
   if (!Number.isFinite(lo) || lo <= 0 || !Number.isFinite(hi) || hi <= lo || !Number.isFinite(last) || last <= 0) return []
   const kinds = actionKindsFor(symbol, source)
   const out: LineActionOffer[] = []
-  if (kinds.has('dca')) {
-    const dca = composeLineActions({ ...input, price: lo }).find((o) => o.action.kind === 'dca')
-    if (dca) out.push({ ...dca, label: 'DCA into this zone', hint: `${dca.hint} Zone: $${fmtAskPrice(lo)} – $${fmtAskPrice(hi)}.` })
-  }
   if (kinds.has('limit')) {
     if (hi < last) {
       const buy = composeLineActions({ ...input, price: lo }).find((o) => o.action.kind === 'limit')

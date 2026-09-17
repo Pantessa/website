@@ -4,7 +4,7 @@
 //  /api/charts/technicals route feeds it the same series /api/charts/candles
 //  serves, the TechnicalsTab draws the three gauges from its output, and the
 //  verdict chips it composes are asks the existing parsers accept (swap /
-//  dca / spot-guard / HL guardian / HL open) — the gauge is a button.
+//  spot-guard / HL guardian / HL open) — the gauge is a button.
 //
 //  The indicator set and the buy/sell rules mirror the ones TradingView
 //  publishes for its "Technical Ratings" indicator (help center article
@@ -692,14 +692,14 @@ export function computeTechnicals(candles: Candle[], tf: ChartTf): Technicals | 
 
 // ── Chips — the verdict as a button ───────────────────────────────────────
 // Every ask below is a sentence an EXISTING parser claims natively (pinned
-// through scripts/ask-ladder.ts): swap ("Buy $25 of AAPL"), dca, spot-guard
+// through scripts/ask-ladder.ts): swap ("Buy $25 of AAPL"), spot-guard
 // ("Protect my spot ETH with a 5% stop" / "… if it drops to $S1"), the HL
 // guardian ("Protect my HYPE long …") and HL opens ("Long $25 of HYPE on
 // Hyperliquid"). Perp-only coins and coins whose real home is another chain
 // (lib/token-home) take the Hyperliquid forms — a spot chip for SOL would
 // book a Base squat.
 
-export type ChipKind = 'buy' | 'sell' | 'stop' | 'limit' | 'dca' | 'protect' | 'alert'
+export type ChipKind = 'buy' | 'sell' | 'stop' | 'limit' | 'protect' | 'alert'
 export interface ChartAction {
   kind: ChipKind
   ask: string
@@ -721,7 +721,7 @@ export interface ChipInput {
   alerts?: boolean
 }
 
-// Stocks (source 'robinhood', chain 4663) get ONLY swap / DCA / alert asks:
+// Stocks (source 'robinhood', chain 4663) get ONLY swap / alert asks:
 // the Spot Guardian runs on Base and the HL guardian on perps, so a protect
 // or stop chip on AAPL would land on a layer that cannot build it (MSG lane
 // finding, 2026-09-11 — the ladder CLAIMS "protect my AAPL with a 5% stop"
@@ -742,7 +742,6 @@ export function verdictChips(input: ChipInput): ChartAction[] {
   const protectPct: ChartAction = perp
     ? { kind: 'protect', ask: `Protect my ${sym} long with a 5% stop`, label: 'Protect with a 5% stop' }
     : { kind: 'protect', ask: `Protect my spot ${sym} with a 5% stop`, label: 'Protect with a 5% stop' }
-  const dca: ChartAction | null = perp ? null : { kind: 'dca', ask: `DCA $10 into ${sym} weekly`, label: 'DCA $10 weekly' }
   const stopAtS1: ChartAction | null = s1
     ? perp
       ? { kind: 'stop', ask: `Protect my ${sym} long with a stop at $${s1}`, label: `Stop under S1 · $${s1}` }
@@ -753,16 +752,20 @@ export function verdictChips(input: ChipInput): ChartAction[] {
   const takeProfitR1: ChartAction | null = perp && r1 ? { kind: 'limit', ask: `Take profit on my ${sym} long at $${r1}`, label: `Take profit at R1 · $${r1}` } : null
   const sellAll: ChartAction = { kind: 'sell', ask: `Sell all my ${sym}`, label: `Sell all my ${sym}` }
   const alertR1: ChartAction | null = input.alerts && r1 ? { kind: 'alert', ask: `Alert me when ${sym} hits $${r1}`, label: `Alert at R1 · $${r1}` } : null
+  // No DCA chip (2026-09-16): a recurring buy only reminds the wallet to
+  // sign each period. A buy verdict pairs the buy with a stop where one can
+  // be armed; a stock has none, so it gets the buy alone.
   switch (input.rating) {
     case 'strong_sell':
     case 'sell':
       return stock ? [sell, sellAll] : [sell, protectPct]
     case 'strong_buy':
     case 'buy':
-      return dca ? [buy, dca] : [buy, protectPct]
+      if (stock) return alertR1 ? [buy, alertR1] : [buy]
+      return [buy, protectPct]
     default:
-      if (stock) return [dca!, alertR1 ?? buy]
-      return perp ? [stopAtS1 ?? protectPct, takeProfitR1 ?? buy] : [stopAtS1 ?? protectPct, dca!]
+      if (stock) return alertR1 ? [buy, alertR1] : [buy]
+      return perp ? [stopAtS1 ?? protectPct, takeProfitR1 ?? buy] : [stopAtS1 ?? protectPct, buy]
   }
 }
 

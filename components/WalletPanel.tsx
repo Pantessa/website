@@ -58,7 +58,7 @@ import {
   WifiOff,
   X,
 } from 'lucide-react'
-import { getChainMark } from '@/components/chain-marks'
+import { byChainMarkOrder, getChainMark } from '@/components/chain-marks'
 import WalletSendForm from '@/components/WalletSendForm'
 import WalletRebalance from '@/components/WalletRebalance'
 import { useAskDoor } from '@/lib/ask-door'
@@ -68,6 +68,7 @@ import { startOnrampSession } from '@/lib/onramp-client'
 import { ONRAMP_ASSET, ONRAMP_DEFAULT_NETWORK, ONRAMP_NETWORK_LABEL } from '@/lib/onramp'
 import { loadFundWait, type FundWait } from '@/lib/funding-arrival'
 import { timeAgo } from '@/lib/dashboard-ui'
+import { APP_CHAINS } from '@/lib/chains'
 import type { WalletChainView, WalletView } from '@/lib/wallet-view'
 import { isWalletPath, WALLET_PAGE_HREF } from '@/lib/wallet-page'
 import TokenIcon from '@/components/TokenIcon'
@@ -82,6 +83,8 @@ const REFRESH_MS = 30_000
 /** Recent rows per frame: the modal keeps its six, the page has room for the
  *  whole feed /api/wallet returns (twelve). */
 const RECENT_ROWS = { modal: 6, page: 12 } as const
+/** Every app chain, in the order the address row's marks read. */
+const ADDRESS_CHAINS = [...APP_CHAINS].sort(byChainMarkOrder)
 
 const fmtUsd = (n: number | null | undefined) =>
   n == null ? '—' : `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -175,6 +178,27 @@ function FlagCard({ flag, onAsk, onDoor }: { flag: WalletFlag; onAsk: (a: Wallet
         </div>
       </div>
     </div>
+  )
+}
+
+/** Every chain the address works on, as marks beside it. The address is
+ *  the same on all of them. The row used to name only the chain the wallet
+ *  was switched to ("wallet on Arc"), which read as the wallet's one home
+ *  (Nate, 2026-09-17: "what it should show is all the supported chains
+ *  logos"). The chain rows below still say "wallet is here". */
+function AddressChains() {
+  return (
+    <ul data-wallet-chains aria-label={`Same address on ${ADDRESS_CHAINS.map((c) => c.name).join(', ')}`} className="flex items-center gap-1.5">
+      {ADDRESS_CHAINS.map((c) => {
+        const Mark = getChainMark(c.key)
+        return (
+          <li key={c.id} title={c.name} className="rounded-full ring-1 ring-[var(--line)]">
+            {Mark ? <Mark size={20} /> : <span className="block w-5 h-5 rounded-full" style={{ background: c.color }} />}
+            <span className="sr-only">{c.name}</span>
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 
@@ -470,7 +494,7 @@ export function WalletDetails({
         <span className={cn('min-w-0 truncate', !page && 'max-w-[260px]')}>{address}</span>
         {copied ? <Check className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--accent)]" /> : <Copy className="w-3.5 h-3.5 flex-shrink-0" />}
       </button>
-      {chain && <span className="text-[11px] text-[color:var(--muted-2)]">wallet on {chain.name}</span>}
+      <AddressChains />
     </div>
   )
 

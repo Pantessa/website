@@ -15,6 +15,8 @@
 //  gasLegResume / planStrandedRescue):
 //    "Fund robinhood chain with $14 from base[ using usdc.e][ including gas]"
 //    "Fund arc with $12 from base[ using eth]"       (every LiFi destination)
+//    "Fund robinhood chain gas from base[ using eth]" (the gas leg alone)
+//    "Move $10 of ETH from base to robinhood chain"  (ETH landing as ETH)
 //    "Swap 12.5 USDC from Base to ETH on Arbitrum"   (cross-chain leg)
 //    "swap 0.001 ETH from ethereum to base"          (plain move / gas topup)
 //    "Swap 12 USDC for ETH on Base"                  (same-chain venue swap)
@@ -102,6 +104,22 @@ function parseSegment(seg: string): PathEdge | null {
       // ignores "including gas" on a stable-gas chain (Arc's USDC IS the gas).
       to: chainNode(dest.name, fund[5] && dest.gasLeg ? `${dest.stable} + gas` : dest.stable),
     }
+  }
+  // "Fund robinhood chain gas from base[ using eth]" — the gas leg alone,
+  // paid by the token a buy is for while another origin pays the value.
+  const gas = seg.match(/^fund robinhood chain gas from ([a-z][a-z ]*?)(?: using ([a-z0-9.]+))?$/i)
+  if (gas) {
+    const from = chainDisplay(gas[1])
+    if (!from) return null
+    return { from: chainNode(from, tokenDisplay(gas[2] ?? 'USDC')), label: 'bridge', to: chainNode('Robinhood Chain', 'gas') }
+  }
+  // "Move $10 of ETH from base to robinhood chain" — the user's own ETH,
+  // landing as ETH (it is Robinhood Chain's gas, too).
+  const ethMove = seg.match(/^move \$([\d.,]+) of eth from ([a-z][a-z ]*?) to robinhood chain$/i)
+  if (ethMove) {
+    const from = chainDisplay(ethMove[2])
+    if (!from) return null
+    return { from: chainNode(from, `$${ethMove[1]} ETH`), label: 'bridge', to: chainNode('Robinhood Chain', 'ETH') }
   }
   // "Swap 12.5 USDC from Base to ETH on Arbitrum" — the amount leaves the
   // origin as one token and arrives on the destination as another (or the

@@ -7,7 +7,9 @@
 // prefilling so the set change lands before the send.
 //
 // Keep these mapped to what actually converts (the pivot surfaces): the $1
-// guarded swap, the DCA schedule, the Guardian stop-loss, the portfolio card.
+// guarded swap, the Guardian stop-loss, the portfolio card. No recurring buy
+// (2026-09-16): a DCA in confirm mode only reminds the wallet to sign each
+// period, so it isn't an example anywhere.
 
 export interface ExamplePrompt {
   /** Short chip label. */
@@ -30,12 +32,6 @@ export const EXAMPLE_PROMPTS: ExamplePrompt[] = [
     label: 'Show my portfolio',
     prompt: "What's in my wallet?",
     slug: 'yeetful-tool-wallet',
-  },
-  {
-    // Standing intent in one sentence (lib/dca) — native layer; teaches that
-    // "every week" is a thing you can SAY here.
-    label: 'DCA $10 into AAPL weekly',
-    prompt: 'Buy $10 of AAPL every week on Robinhood Chain',
   },
   {
     // The Guardian: autonomous protection via a revocable delegated key.
