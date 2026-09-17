@@ -140,6 +140,13 @@ export default function DcaDocsPage() {
             wallet, never in Pantessa&rsquo;s. A receipt row appears in your rail — same as a
             buy you signed yourself.
           </li>
+          <li>
+            <strong>If the buy can&rsquo;t fill, the USDC comes back.</strong>{' '}A price that
+            moves past the slippage bound between the quote and the swap gets one fresh,
+            re-guarded try. If that doesn&rsquo;t fill either, the pulled USDC goes back to your
+            wallet in the same run, and your schedule says so. It is never left sitting with
+            Pantessa&rsquo;s executor.
+          </li>
         </ol>
         <p>
           Buys route through the same venues and carry the same visible 0.20% fee as any

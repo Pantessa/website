@@ -292,9 +292,14 @@ export function spotGuardShareContent(
   const trigger =
     p.triggerMode === 'price' ? `if it touches $${p.triggerValue}` : `if it drops ${p.triggerValue}% from $${p.refPrice.toFixed(2)}`
   const fired = lastRun?.status === 'sold'
+  // Fired, the sell didn't go through, the asset went back (lib/autopilot-unwind):
+  // not standing any more, and nothing moved to USDC.
+  const returned = lastRun?.status === 'refunded'
   const headline = fired
     ? `Spot stop fired on ${p.tokenSymbol}${lastRun?.valueUsd ? ` · ${usd(lastRun.valueUsd)} moved to USDC` : ''}`
-    : `Spot stop standing on ${p.amountHuman} ${p.tokenSymbol} · ${trigger}`
+    : returned
+      ? `Spot stop fired on ${p.tokenSymbol} · the sell didn't go through, so the ${p.amountHuman} ${p.tokenSymbol} went back to the wallet`
+      : `Spot stop standing on ${p.amountHuman} ${p.tokenSymbol} · ${trigger}`
   return {
     headline,
     ask: `protect my spot ${p.tokenSymbol} with a ${p.triggerMode === 'price' ? `stop loss at $${p.triggerValue}` : `${p.triggerValue}% stop loss`}`,
@@ -304,7 +309,7 @@ export function spotGuardShareContent(
       { label: 'Watching', value: `${p.amountHuman} ${p.tokenSymbol} (spot, Base)` },
       { label: 'Trigger', value: trigger },
       { label: 'Cap', value: 'one-shot Spend Permission — the wallet contract enforces it' },
-      ...(fired && lastRun?.markPrice ? [{ label: 'Fired at', value: `$${lastRun.markPrice.toFixed(2)}` }] : []),
+      ...((fired || returned) && lastRun?.markPrice ? [{ label: 'Fired at', value: `$${lastRun.markPrice.toFixed(2)}` }] : []),
     ],
     txs: [],
   }

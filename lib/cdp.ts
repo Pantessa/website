@@ -71,6 +71,12 @@ export async function getSpenderAddress(): Promise<`0x${string}`> {
 export async function sendSpenderTx(
   tx: { to: `0x${string}`; data: `0x${string}`; value?: bigint },
   network: SpendPermissionNetwork = spendNetwork(),
+  /** CDP's X-Idempotency-Key (a UUID v4, remembered 24h): the same key with
+   *  the same request returns CDP's first answer instead of sending again.
+   *  The SDK's HTTP client retries dropped connections on this POST, so a
+   *  send that moves money should always carry one (lib/autopilot-unwind
+   *  spenderTxKey derives them per run and step). */
+  opts: { idempotencyKey?: string } = {},
 ): Promise<`0x${string}`> {
   const c = cdp()
   const spender = await getSpenderAccount()
@@ -78,6 +84,7 @@ export async function sendSpenderTx(
     address: spender.address as `0x${string}`,
     network,
     transaction: { to: tx.to, data: tx.data, value: tx.value ?? BigInt(0) },
+    ...(opts.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : {}),
   })
   return result.transactionHash as `0x${string}`
 }

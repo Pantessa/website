@@ -218,6 +218,11 @@ export interface SpotSellGuardInput {
     native: boolean
     amountAtoms: bigint
     trigger: SpotTrigger
+    /** Where a native pull sits when this sell was built. 'native' (the
+     *  default): ETH as pulled, so the sell wraps it. 'wrapped': a first
+     *  attempt already wrapped it and didn't fill, so the retry sells the
+     *  WETH with no wrap step. */
+    held?: 'native' | 'wrapped'
   }
   permission: SpotSpendPermission
   ownerWallet: string
@@ -274,8 +279,9 @@ export function guardSpotSell(input: SpotSellGuardInput): { ok: boolean; checks:
   const hasFloor = minOutAtomic > BigInt(0)
   checks.push(check('min-out', hasFloor, hasFloor ? 'A live quote floor is set.' : 'No quote floor — refusing a floorless market sell.'))
 
-  // Step shape: [wrap?] approve swap.
-  const expectWrap = policy.native
+  // Step shape: [wrap?] approve swap. A retry of a native pull the first
+  // attempt already wrapped sells the WETH directly.
+  const expectWrap = policy.native && policy.held !== 'wrapped'
   const expectedSteps = expectWrap ? 3 : 2
   if (steps.length !== expectedSteps) {
     checks.push(check('steps', false, `Expected ${expectWrap ? 'wrap+approve+swap' : 'approve+swap'} (${expectedSteps} steps), got ${steps.length}.`))
@@ -284,8 +290,9 @@ export function guardSpotSell(input: SpotSellGuardInput): { ok: boolean; checks:
   const [wrapStep, approveStep, swapStep] = expectWrap
     ? [steps[0], steps[1], steps[2]]
     : [null, steps[0], steps[1]]
-  // The asset the router spends: the wrapped native, or the ERC-20 itself.
-  const sellAddr = (expectWrap ? chain.wethAddress : policy.tokenAddress).toLowerCase()
+  // The asset the router spends: the wrapped native (wrapped now or by an
+  // earlier attempt), or the ERC-20 itself.
+  const sellAddr = (policy.native ? chain.wethAddress : policy.tokenAddress).toLowerCase()
 
   if (wrapStep) {
     let wrapOk = false
@@ -407,4 +414,40 @@ export function guardSpotSell(input: SpotSellGuardInput): { ok: boolean; checks:
   checks.push(check('swap', swapOk, swapNote))
 
   return { ok: checks.every((c) => c.ok), checks }
+}
+
+// ── After the pull: the owner-facing words (lib/autopilot-unwind) ──────────
+
+/** The chat ask that re-arms a protection on its old terms. It must parse
+ *  (parseSpotGuardArm): a refunded stop's error names it as the way back. */
+export function spotRearmAsk(p: { tokenSymbol: string; triggerMode: string; triggerValue: number }): string {
+  return p.triggerMode === 'price_move_pct'
+    ? `protect my ${p.tokenSymbol} on base with a ${p.triggerValue}% stop`
+    : `protect my ${p.tokenSymbol} on base with a stop loss at $${p.triggerValue}`
+}
+
+/**
+ * What the policy says after a fired stop's sell didn't go through. The
+ * money's location is the first thing it says: back in the wallet (with the
+ * refund tx), on its way back, or waiting for a person. Never "failed".
+ */
+export function spotUnwindCopy(input: {
+  outcome: 'refunded' | 'unwinding' | 'operator'
+  tokenSymbol: string
+  amountHuman: string
+  markUsd: number
+  why: string
+  refundTx?: string
+  note?: string
+  rearmAsk: string
+}): string {
+  const mark = `$${Number(input.markUsd.toFixed(2))}`
+  const asset = `${input.amountHuman} ${input.tokenSymbol}`
+  if (input.outcome === 'refunded') {
+    return `Stop fired at ${mark}, but the sell didn't go through${input.why ? ` (${input.why})` : ''}. Your ${asset} is back in your wallet${input.refundTx ? ` (tx ${input.refundTx.slice(0, 10)}…)` : ''}. The protection used its one-time permission, so ${input.tokenSymbol} is unprotected now: "${input.rearmAsk}" re-arms it.`
+  }
+  if (input.outcome === 'unwinding') {
+    return `Stop fired at ${mark}; the sell hasn't settled yet${input.note ? ` (${input.note})` : ''}. If it doesn't go through, your ${asset} comes back to your wallet. Checking again every minute.`
+  }
+  return `Stop fired at ${mark}, but Pantessa can't confirm where your ${asset} went${input.note ? ` (${input.note})` : ''}, so nothing more moves until a person checks the chain and settles it.`
 }
