@@ -298,6 +298,29 @@ import {
 import { spotGuardShareContent } from '../lib/share-receipts'
 import { buildSpotSell } from '../lib/spot-guard-exec'
 import {
+  classifySendError,
+  decideUnwind,
+  guardRefund,
+  parseLedger,
+  planRefund,
+  pullEvidence,
+  reissueMatches,
+  serializeLedger,
+  spenderTxKey,
+  swapDeadlineOf,
+  UNRESOLVED_OPERATOR_SEC,
+  upsertLedger,
+  type LedgerEntry,
+} from '../lib/autopilot-unwind'
+import { spotRearmAsk, spotUnwindCopy } from '../lib/spot-guard'
+import { dcaUnwindCopy } from '../lib/dca-auto'
+import { spendPermissionManagerAbi as unwindManagerAbi } from '@coinbase/cdp-sdk'
+import {
+  encodeEventTopics as unwindEncodeEventTopics,
+  ExecutionRevertedError as UnwindExecutionRevertedError,
+  HttpRequestError as UnwindHttpRequestError,
+} from 'viem'
+import {
   buildDcaSpendPermission,
   guardAutoBuy,
   parseDcaAutoToggle,
@@ -17796,14 +17819,354 @@ async function main() {
       liveOk,
       liveNote.slice(0, 600),
     )
-    // Once the sell can pass its guard, a swap that lands REVERTED must fail
-    // the run. The old waitTx returned on any receipt, so a reverted sell
-    // read "sold" while the WETH sat on the spender (Base fork, 2026-09-16).
-    const spotWaitTx = readFileSync('lib/spot-guard-exec.ts', 'utf8').match(/async function waitTx\([\s\S]*?\n\}/)?.[0] ?? ''
+    // A retry of a native pull the first attempt already wrapped sells the
+    // WETH: the sweep's real build of that shape must pass the guard too.
+    let wrappedNote = ''
+    let wrappedOk = false
+    for (let attempt = 1; attempt <= 3 && !wrappedOk; attempt++) {
+      try {
+        const mark = await arcUsdPerToken(8453, 'ETH')
+        if (!mark) throw new Error('no ETH mark on Base')
+        const nowSec = Math.floor(Date.now() / 1000)
+        const sell = await buildSpotSell({ chainId: 8453, native: true, tokenSymbol: 'ETH', ownerWallet: OWNER, spender: SPENDER, pulled, markUsd: mark.usd, held: 'wrapped' })
+        if (!sell.ok) {
+          wrappedNote = `build refused: ${sell.detail}`
+          break
+        }
+        const guardInput = {
+          policy: { status: 'triggered', tokenAddress: NATIVE_TOKEN_SENTINEL, native: true, amountAtoms: pulled, trigger: { mode: 'price' as const, value: Math.ceil(mark.usd) + 500, refPrice: mark.usd }, held: 'wrapped' as const },
+          permission: buildSpotGuardPermission({ account: OWNER, spender: SPENDER, token: NATIVE_TOKEN_SENTINEL, amountAtoms: pulled, nowSec, salt: BigInt(9) }),
+          ownerWallet: OWNER,
+          spender: SPENDER,
+          chain: sell.build.guardChain,
+          markPrice: mark.usd,
+          minOutAtomic: sell.build.minOutAtomic,
+          steps: sell.build.steps,
+          pulledAtomic: pulled,
+          nowSec,
+        }
+        const guard = guardSpotSell(guardInput)
+        const asFirstRun = guardSpotSell({ ...guardInput, policy: { ...guardInput.policy, held: 'native' } })
+        wrappedOk = guard.ok && sell.build.steps.length === 2 && sell.build.steps[0].to.toLowerCase() === '0x4200000000000000000000000000000000000006' && !asFirstRun.ok
+        wrappedNote = `${sell.build.steps.length} steps · wrapped guard ${guard.checks.map((c) => `${c.ok ? '✓' : '✗'}${c.id}`).join(' ')} · as a first run: ${asFirstRun.ok ? 'passed (should refuse)' : 'refused'}`
+        if (!wrappedOk) break
+      } catch (e) {
+        wrappedNote = `attempt ${attempt} threw: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`
+      }
+    }
     check(
-      "spot guard exec: waitTx throws on a reverted receipt and on a missing client (a reverted sell never reads 'sold')",
-      /receipt\.status !== 'success'\) throw/.test(spotWaitTx) && /if \(!client\) throw/.test(spotWaitTx),
-      spotWaitTx.slice(0, 200),
+      "spot guard (live): the retry of a wrapped pull (buildSpotSell held 'wrapped': approve WETH + the sell, no wrap) passes the guard, and the same steps refuse as a first run",
+      wrappedOk,
+      wrappedNote.slice(0, 400),
+    )
+  }
+
+  // ── Autopilot unwind: a pull never strands (lib/autopilot-unwind) ────────
+  // Both Spend-Permission autopilots pull the owner's money onto the one CDP
+  // spender, then trade it. Before 2026-09-17 a trade that failed after the
+  // pull parked the run 'failed' with the asset on the spender for good
+  // (Base fork: owner −0.01 ETH, spender +0.01 WETH; DCA owner −$10 USDC).
+  console.log('— autopilot unwind')
+  {
+    const OWNER = '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0'
+    const SPENDER = '0x1111111111111111111111111111111111111111'
+    const OTHER = '0x2222222222222222222222222222222222222222'
+    const WETH = '0x4200000000000000000000000000000000000006'
+    const USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+    const ROUTER = '0x2626664c2603336E57B271c5C0b26F421741e481'
+    const NOW = 1_789_600_000
+    const pulledEth = BigInt('10000000000000000')
+    const pulledUsdc = BigInt(10_000_000)
+    const nativePerm = { account: OWNER, spender: SPENDER, token: NATIVE_TOKEN_SENTINEL, allowance: pulledEth }
+    const usdcPerm = { account: OWNER, spender: SPENDER, token: USDC, allowance: pulledUsdc }
+    const refusedFor = (r: { ok: boolean; checks: { ok: boolean; note: string }[] }, re: RegExp) => !r.ok && r.checks.some((c) => !c.ok && re.test(c.note))
+
+    // Keys: CDP's X-Idempotency-Key is a UUID v4; one per (run, step, attempt), derived.
+    const k1 = spenderTxKey('spot', 'run1', 'return', 1)
+    check(
+      'autopilot unwind: idempotency keys are UUID v4, stable for the same send, distinct across table, run, step and attempt',
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(k1) &&
+        k1 === spenderTxKey('spot', 'run1', 'return', 1) &&
+        new Set([k1, spenderTxKey('dca', 'run1', 'return', 1), spenderTxKey('spot', 'run2', 'return', 1), spenderTxKey('spot', 'run1', 'unwrap', 1), spenderTxKey('spot', 'run1', 'return', 2)]).size === 5,
+      k1,
+    )
+
+    // The ledger: strict parse (an unreadable ledger is an operator case, never a guess).
+    const entry = (over: Partial<LedgerEntry>): LedgerEntry => ({ step: 'spend', attempt: 1, key: spenderTxKey('spot', 'r', over.step ?? 'spend', over.attempt ?? 1), to: SPENDER, data: '0x', value: '0', at: NOW, ...over })
+    const hashOf = (n: number) => `0x${n.toString(16).padStart(64, '0')}`
+    const sample = [entry({ hash: hashOf(1), outcome: 'success' }), entry({ step: 'swap', hash: hashOf(2), outcome: 'reverted', words: 'the swap reverted on-chain' })]
+    const round = parseLedger(serializeLedger(sample))
+    const canon = (xs: LedgerEntry[] | null) => JSON.stringify((xs ?? []).map((x) => Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b)))))
+    check('autopilot unwind: the ledger round-trips; null/empty reads as no sends', round !== null && canon(round) === canon(sample) && parseLedger(null)?.length === 0 && parseLedger('')?.length === 0)
+    check(
+      'autopilot unwind: a malformed ledger entry makes the whole ledger unreadable (bad step, key, hash, outcome, or not JSON)',
+      parseLedger(JSON.stringify([{ ...sample[0], step: 'drain' }])) === null &&
+        parseLedger(JSON.stringify([{ ...sample[0], key: 'not-a-uuid' }])) === null &&
+        parseLedger(JSON.stringify([{ ...sample[0], hash: '0x12' }])) === null &&
+        parseLedger(JSON.stringify([{ ...sample[0], outcome: 'maybe' }])) === null &&
+        parseLedger('{nope') === null,
+    )
+    const upserted = upsertLedger(sample, { ...sample[1], outcome: 'success', words: undefined })
+    check('autopilot unwind: upsert replaces the entry for its (step, attempt) and appends a new one', upserted.length === 2 && upserted[1].outcome === 'success' && upsertLedger(sample, entry({ step: 'swap', attempt: 2 })).length === 3)
+
+    // Send errors: refused = never broadcast, safe to move the same money another way.
+    check(
+      'autopilot unwind: a CDP 4xx or a revert-worded answer was refused before broadcast; a 5xx or a dropped connection is unknown',
+      classifySendError(Object.assign(new Error('Invalid request'), { statusCode: 400, errorMessage: 'gas estimation failed' })).kind === 'refused' &&
+        classifySendError(Object.assign(new Error('x'), { statusCode: 409, errorMessage: 'Idempotency key was already used with a different request payload.' })).kind === 'refused' &&
+        classifySendError(Object.assign(new Error('x'), { statusCode: 500, errorMessage: 'execution reverted: Too little received' })).kind === 'refused' &&
+        classifySendError(Object.assign(new Error('Bad gateway'), { statusCode: 502, errorMessage: 'Bad gateway' })).kind === 'unknown' &&
+        classifySendError(Object.assign(new Error('Request timed out. Please try again.'), { name: 'NetworkError' })).kind === 'unknown',
+    )
+    check(
+      "autopilot unwind: viem's own errors classify through the dry-run rulebook (a reverted estimate refused, an HTTP failure unknown)",
+      classifySendError(new UnwindExecutionRevertedError({ message: 'execution reverted: Too little received' })).kind === 'refused' &&
+        classifySendError(new UnwindHttpRequestError({ url: 'https://api.cdp.coinbase.com/platform/v2/evm', status: 502 })).kind === 'unknown',
+    )
+
+    // The refund: exactly the pull, in the pulled asset, to the wallet it came from.
+    const nativePlan = planRefund({ form: 'native', ownerWallet: OWNER, pulledAtomic: pulledEth, token: NATIVE_TOKEN_SENTINEL, wethAddress: WETH })
+    const wrappedPlan = planRefund({ form: 'wrapped', ownerWallet: OWNER, pulledAtomic: pulledEth, token: NATIVE_TOKEN_SENTINEL, wethAddress: WETH })
+    const usdcPlan = planRefund({ form: 'erc20', ownerWallet: OWNER, pulledAtomic: pulledUsdc, token: USDC, wethAddress: WETH })
+    const refundBase = { ownerWallet: OWNER, nativeSentinel: NATIVE_TOKEN_SENTINEL, wethAddress: WETH }
+    const nativeGuard = (steps: typeof nativePlan, over: Record<string, unknown> = {}) => guardRefund({ ...refundBase, form: 'native', permission: nativePerm, pulledAtomic: pulledEth, steps, ...over })
+    const wrappedGuard = (steps: typeof nativePlan, over: Record<string, unknown> = {}) => guardRefund({ ...refundBase, form: 'wrapped', permission: nativePerm, pulledAtomic: pulledEth, steps, ...over })
+    const usdcGuard = (steps: typeof nativePlan, over: Record<string, unknown> = {}) => guardRefund({ ...refundBase, form: 'erc20', permission: usdcPerm, pulledAtomic: pulledUsdc, steps, ...over })
+    check(
+      'autopilot unwind: the three refund shapes pass their guard (ETH as ETH, wrapped ETH unwrapped then sent, an ERC-20 transferred)',
+      nativeGuard(nativePlan).ok && wrappedGuard(wrappedPlan).ok && usdcGuard(usdcPlan).ok &&
+        nativePlan.length === 1 && nativePlan[0].to === OWNER && nativePlan[0].data === '0x' && nativePlan[0].value === pulledEth.toString() &&
+        wrappedPlan.map((x) => x.step).join() === 'unwrap,return' && wrappedPlan[0].to === WETH &&
+        usdcPlan.length === 1 && usdcPlan[0].to === USDC && usdcPlan[0].value === '0',
+    )
+    const retarget = (steps: typeof nativePlan, i: number, over: Partial<(typeof nativePlan)[number]>) => steps.map((x, j) => (j === i ? { ...x, ...over } : x))
+    check(
+      'autopilot unwind: a refund to anyone but the permission owner refuses (native send, ERC-20 transfer, and an owner that is not the account)',
+      refusedFor(nativeGuard(retarget(nativePlan, 0, { to: SPENDER })), /not the owner the pull/) &&
+        refusedFor(usdcGuard(retarget(usdcPlan, 0, { data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [OTHER, pulledUsdc] }) })), /not the owner the pull/) &&
+        refusedFor(nativeGuard(planRefund({ form: 'native', ownerWallet: OTHER, pulledAtomic: pulledEth, token: NATIVE_TOKEN_SENTINEL, wethAddress: WETH }), { ownerWallet: OTHER }), /is not the permission's account/),
+    )
+    check(
+      'autopilot unwind: a refund of anything but exactly the pull refuses (one wei more, a different allowance, a wrong unwrap amount)',
+      refusedFor(nativeGuard(retarget(nativePlan, 0, { value: (pulledEth + BigInt(1)).toString() })), /not the owner the pull/) &&
+        refusedFor(nativeGuard(nativePlan, { pulledAtomic: pulledEth + BigInt(1) }), /is not the signed allowance/) &&
+        refusedFor(wrappedGuard(retarget(wrappedPlan, 0, { data: encodeFunctionData({ abi: [{ name: 'withdraw', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'wad', type: 'uint256' }], outputs: [] }] as const, functionName: 'withdraw', args: [pulledEth * BigInt(2)] }) })), /Unwrap does not decode/),
+    )
+    check(
+      'autopilot unwind: hostile refund shapes refuse (calldata on the ETH send, value on a transfer, an unwrap off the pinned WETH, a foreign token, a third step, the wrong form)',
+      refusedFor(nativeGuard(retarget(nativePlan, 0, { data: '0xdeadbeef' })), /extra calldata/) &&
+        refusedFor(usdcGuard(retarget(usdcPlan, 0, { value: '1' })), /Return does not decode/) &&
+        refusedFor(wrappedGuard(retarget(wrappedPlan, 0, { to: OTHER as `0x${string}` })), /Unwrap does not decode/) &&
+        refusedFor(usdcGuard(retarget(usdcPlan, 0, { to: WETH })), /Return does not decode/) &&
+        refusedFor(nativeGuard([...nativePlan, nativePlan[0]]), /Expected return, got return → return/) &&
+        refusedFor(wrappedGuard(nativePlan), /Expected unwrap → return/) &&
+        refusedFor(guardRefund({ ...refundBase, form: 'erc20', permission: nativePerm, pulledAtomic: pulledEth, steps: usdcPlan }), /doesn't match a permission/),
+    )
+
+    // Pull evidence: the manager's own event for this permission, and for an ERC-20 the exact Transfer.
+    const PERM_HASH = `0x${'ab'.repeat(32)}`
+    const usedLog = (over: { hash?: string; spend?: bigint; token?: string; address?: string } = {}) => ({
+      address: over.address ?? SPEND_PERMISSION_MANAGER,
+      topics: unwindEncodeEventTopics({ abi: unwindManagerAbi, eventName: 'SpendPermissionUsed', args: { hash: (over.hash ?? PERM_HASH) as `0x${string}`, account: OWNER as `0x${string}`, spender: SPENDER as `0x${string}` } }) as string[],
+      data: encodeAbiParameters(
+        [{ type: 'address' }, { type: 'tuple', components: [{ type: 'uint48' }, { type: 'uint48' }, { type: 'uint160' }] }],
+        [(over.token ?? USDC) as `0x${string}`, [NOW - 100, NOW + 600_000, over.spend ?? pulledUsdc]],
+      ),
+    })
+    const transferLog = (value: bigint, to = SPENDER) => ({
+      address: USDC,
+      topics: unwindEncodeEventTopics({ abi: erc20Abi, eventName: 'Transfer', args: { from: OWNER as `0x${string}`, to: to as `0x${string}` } }) as string[],
+      data: encodeAbiParameters([{ type: 'uint256' }], [value]),
+    })
+    const evidence = (logs: ReturnType<typeof usedLog>[], over: Record<string, unknown> = {}) =>
+      pullEvidence({ receipt: { status: 'success', logs }, manager: SPEND_PERMISSION_MANAGER, permissionHash: PERM_HASH, permission: usdcPerm, pulledAtomic: pulledUsdc, nativeSentinel: NATIVE_TOKEN_SENTINEL, ...over })
+    check(
+      "autopilot unwind: the pull's receipt proves the run's amount (SpendPermissionUsed for the stored hash, plus the exact USDC Transfer owner → spender)",
+      evidence([usedLog(), transferLog(pulledUsdc)]).ok &&
+        pullEvidence({ receipt: { status: 'success', logs: [usedLog({ token: NATIVE_TOKEN_SENTINEL, spend: pulledEth })] }, manager: SPEND_PERMISSION_MANAGER, permissionHash: PERM_HASH, permission: nativePerm, pulledAtomic: pulledEth, nativeSentinel: NATIVE_TOKEN_SENTINEL }).ok,
+    )
+    check(
+      "autopilot unwind: pull evidence refuses another permission's event, a different window spend, a short Transfer (a token that delivers less), an event from another contract, and a reverted receipt",
+      !evidence([usedLog({ hash: `0x${'cd'.repeat(32)}` }), transferLog(pulledUsdc)]).ok &&
+        !evidence([usedLog({ spend: pulledUsdc * BigInt(2) }), transferLog(pulledUsdc)]).ok &&
+        !evidence([usedLog(), transferLog(pulledUsdc - BigInt(1))]).ok &&
+        !evidence([usedLog(), transferLog(pulledUsdc, OTHER)]).ok &&
+        !evidence([usedLog({ address: OTHER }), transferLog(pulledUsdc)]).ok &&
+        !pullEvidence({ receipt: { status: 'reverted', logs: [usedLog(), transferLog(pulledUsdc)] }, manager: SPEND_PERMISSION_MANAGER, permissionHash: PERM_HASH, permission: usdcPerm, pulledAtomic: pulledUsdc, nativeSentinel: NATIVE_TOKEN_SENTINEL }).ok,
+    )
+
+    // The decision table.
+    const pulledOk = entry({ hash: hashOf(1), outcome: 'success' })
+    const decide = (ledger: LedgerEntry[], over: Record<string, unknown> = {}) =>
+      decideUnwind({ ledger, native: true, allowRetry: true, maxSaleAttempts: 2, pullVerified: true, nowSec: NOW + 60, ...over })
+    const e = (step: LedgerEntry['step'], attempt: number, outcome?: LedgerEntry['outcome'], n = 9) => entry({ step, attempt, ...(outcome ? { outcome, hash: hashOf(n) } : {}) })
+    check(
+      'autopilot unwind: no confirmed pull is nothing-pulled; an unresolved pull waits (and after an hour needs an operator); an unproven pull never refunds',
+      decide([]).kind === 'nothing-pulled' &&
+        decide([entry({ outcome: 'refused' })]).kind === 'nothing-pulled' &&
+        decide([entry({ outcome: 'reverted', hash: hashOf(1) })]).kind === 'nothing-pulled' &&
+        decide([entry({ hash: hashOf(1) })]).kind === 'wait' &&
+        decide([entry({ hash: hashOf(1) })], { nowSec: NOW + UNRESOLVED_OPERATOR_SEC + 1 }).kind === 'operator' &&
+        decide([pulledOk], { pullVerified: false }).kind === 'operator',
+    )
+    const first = decide([pulledOk])
+    const afterRevert = decide([pulledOk, e('wrap', 1, 'success', 2), e('approve', 1, 'success', 3), e('swap', 1, 'reverted', 4)])
+    const afterRefusedWrap = decide([pulledOk, e('wrap', 1, 'refused'), e('approve', 1)])
+    check(
+      'autopilot unwind: after the pull the first sale is attempt 1; a failed sale retries once from where the pull sits (wrapped, still ETH, or USDC)',
+      first.kind === 'retry' && first.attempt === 1 && first.held === 'native' &&
+        afterRevert.kind === 'retry' && afterRevert.attempt === 2 && afterRevert.held === 'wrapped' &&
+        afterRefusedWrap.kind === 'retry' && afterRefusedWrap.held === 'native' &&
+        (() => {
+          const d = decide([pulledOk, e('approve', 1, 'success', 3), e('swap', 1, 'refused')], { native: false })
+          return d.kind === 'retry' && d.attempt === 2 && d.held === 'erc20'
+        })(),
+    )
+    const twoFailed = [pulledOk, e('wrap', 1, 'success', 2), e('approve', 1, 'success', 3), e('swap', 1, 'reverted', 4), e('approve', 2, 'success', 5), e('swap', 2, 'refused')]
+    const refundNow = decide(twoFailed)
+    const noRetry = decide([pulledOk, e('wrap', 1, 'success', 2), e('approve', 1, 'success', 3), e('swap', 1, 'refused')], { allowRetry: false })
+    check(
+      'autopilot unwind: two failed sales refund (held as wrapped ETH); a later pass (no retry) refunds after one',
+      refundNow.kind === 'refund' && refundNow.held === 'wrapped' && refundNow.attempt === 1 &&
+        noRetry.kind === 'refund' && noRetry.held === 'wrapped',
+    )
+    const partial = decide([...twoFailed, e('unwrap', 1, 'success', 6), e('return', 1, 'refused')])
+    const refundStarted = decide([pulledOk, e('wrap', 1, 'success', 2), e('approve', 1, 'success', 3), e('swap', 1, 'reverted', 4), e('unwrap', 1, 'refused')])
+    check(
+      'autopilot unwind: a refund refused before broadcast goes again under a new key, from where the money now sits (unwrapped: a plain ETH send); once a refund has started, the sale is never retried',
+      partial.kind === 'refund' && partial.held === 'native' && partial.attempt === 2 &&
+        refundStarted.kind === 'refund' && refundStarted.held === 'wrapped' && refundStarted.attempt === 2,
+    )
+    check(
+      'autopilot unwind: a sale that landed is sold; a return that landed is refunded; anything sent and unresolved waits',
+      decide([pulledOk, e('wrap', 1, 'success', 2), e('approve', 1, 'success', 3), e('swap', 1, 'success', 4)]).kind === 'sold' &&
+        decide([...twoFailed, e('unwrap', 1, 'success', 6), e('return', 1, 'success', 7)]).kind === 'refunded' &&
+        decide([pulledOk, e('wrap', 1, 'success', 2), e('approve', 1, 'success', 3), entry({ step: 'swap', attempt: 1 })]).kind === 'wait' &&
+        decide([...twoFailed, e('unwrap', 1, 'success', 6), entry({ step: 'return', attempt: 1, hash: hashOf(7) })]).kind === 'wait',
+    )
+    check(
+      "autopilot unwind: the ledger can't prove where the money is → operator (a refund that reverted, a sale AND a refund, two wraps for one pull, two pulls)",
+      decide([...twoFailed, e('unwrap', 1, 'success', 6), e('return', 1, 'reverted', 7)]).kind === 'operator' &&
+        decide([pulledOk, e('swap', 1, 'success', 4), e('return', 1, 'success', 7)]).kind === 'operator' &&
+        decide([pulledOk, e('wrap', 1, 'success', 2), e('wrap', 2, 'success', 5), e('swap', 2, 'refused')]).kind === 'operator' &&
+        decide([pulledOk, entry({ attempt: 2, hash: hashOf(8), outcome: 'success' })]).kind === 'operator',
+    )
+
+    // Re-issue: only exactly a request the run would send; a swap only to the router, past its deadline (resolveLedger).
+    const spendReq = { to: SPEND_PERMISSION_MANAGER, data: '0x415a9735aa', value: '0' }
+    const swapData = encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'multicall', args: [BigInt(NOW + 600), []] })
+    check(
+      'autopilot unwind: a later pass re-issues a deterministic step only when it matches a fresh encoding byte for byte, and a swap only to the pinned router',
+      reissueMatches({ step: 'spend', ...spendReq }, { spend: [spendReq] }, ROUTER) &&
+        !reissueMatches({ step: 'spend', ...spendReq, data: '0x415a9735ab' }, { spend: [spendReq] }, ROUTER) &&
+        !reissueMatches({ step: 'return', to: OWNER, data: '0x', value: '1' }, { spend: [spendReq] }, ROUTER) &&
+        reissueMatches({ step: 'swap', to: ROUTER, data: swapData, value: '0' }, {}, ROUTER) &&
+        !reissueMatches({ step: 'swap', to: OTHER, data: swapData, value: '0' }, {}, ROUTER) &&
+        swapDeadlineOf(swapData) === NOW + 600 && swapDeadlineOf('0xdeadbeef') === null,
+    )
+
+    // The retry's guard shape: a wrapped pull sells WETH with no wrap step.
+    const wrappedPerm = buildSpotGuardPermission({ account: OWNER, spender: SPENDER, token: NATIVE_TOKEN_SENTINEL, amountAtoms: pulledEth, nowSec: NOW, salt: BigInt(3) })
+    const approveWeth = { to: WETH, value: '0', data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [ROUTER as `0x${string}`, pulledEth] }) }
+    const minOut = BigInt(24_000_000)
+    const wrapStep = { to: WETH, value: pulledEth.toString(), data: encodeFunctionData({ abi: [{ name: 'deposit', type: 'function', stateMutability: 'payable', inputs: [], outputs: [] }] as const, functionName: 'deposit' }) }
+    const sellStep = {
+      to: ROUTER,
+      value: '0',
+      data: encodeFunctionData({
+        abi: SWAP_ROUTER_02_ABI,
+        functionName: 'multicall',
+        args: [
+          BigInt(NOW + 600),
+          [
+            encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'exactInputSingle', args: [{ tokenIn: WETH as `0x${string}`, tokenOut: USDC as `0x${string}`, fee: 500, recipient: ADDRESS_THIS, amountIn: pulledEth, amountOutMinimum: minOut, sqrtPriceLimitX96: BigInt(0) }] }),
+            encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'sweepTokenWithFee', args: [USDC as `0x${string}`, minOut, OWNER as `0x${string}`, BigInt(SWAP_FEE_BPS), TREASURY_ADDRESS] }),
+          ],
+        ],
+      }),
+    }
+    const retryGuard = (held: 'native' | 'wrapped' | undefined, steps: { to: string; value: string; data: string }[]) =>
+      guardSpotSell({
+        policy: { status: 'triggered', tokenAddress: NATIVE_TOKEN_SENTINEL, native: true, amountAtoms: pulledEth, trigger: { mode: 'price', value: 2500, refPrice: 2600 }, ...(held ? { held } : {}) },
+        permission: wrappedPerm,
+        ownerWallet: OWNER,
+        spender: SPENDER,
+        chain: { chainId: 8453, usdcAddress: USDC, swapRouter02: ROUTER, wethAddress: WETH },
+        markPrice: 2450,
+        minOutAtomic: BigInt(23_000_000),
+        steps,
+        pulledAtomic: pulledEth,
+        nowSec: NOW,
+      })
+    check(
+      "autopilot unwind: guardSpotSell takes a wrapped retry (approve WETH + sell) only when told the pull is wrapped, and never a second wrap on it",
+      retryGuard('wrapped', [approveWeth, sellStep]).ok &&
+        retryGuard('native', [wrapStep, approveWeth, sellStep]).ok &&
+        refusedFor(retryGuard(undefined, [approveWeth, sellStep]), /Expected wrap\+approve\+swap \(3 steps\), got 2/) &&
+        refusedFor(retryGuard('wrapped', [wrapStep, approveWeth, sellStep]), /Expected approve\+swap \(2 steps\), got 3/),
+    )
+
+    // The owner's words: where the money is, first; the re-arm ask parses.
+    const pctAsk = spotRearmAsk({ tokenSymbol: 'ETH', triggerMode: 'price_move_pct', triggerValue: 10 })
+    const priceAsk = spotRearmAsk({ tokenSymbol: 'CBETH', triggerMode: 'price', triggerValue: 2400.5 })
+    const pa = parseSpotGuardArm(pctAsk)
+    const pb = parseSpotGuardArm(priceAsk)
+    check(
+      "autopilot unwind: a refunded stop's re-arm ask parses back to its own terms (both trigger modes)",
+      !!pa && pa.token === 'ETH' && pa.triggerMode === 'price_move_pct' && pa.triggerValue === 10 &&
+        !!pb && pb.token === 'CBETH' && pb.triggerMode === 'price' && pb.triggerValue === 2400.5,
+      `${pctAsk} | ${priceAsk}`,
+    )
+    const spotRefunded = spotUnwindCopy({ outcome: 'refunded', tokenSymbol: 'ETH', amountHuman: '0.01', markUsd: 2438.931, why: 'the swap reverted on-chain', refundTx: hashOf(7), rearmAsk: pctAsk })
+    const spotWaiting = spotUnwindCopy({ outcome: 'unwinding', tokenSymbol: 'ETH', amountHuman: '0.01', markUsd: 2438.931, why: '', note: 'the swap (attempt 1) was sent and has not resolved yet', rearmAsk: pctAsk })
+    const dcaRefunded = dcaUnwindCopy({ outcome: 'refunded', buyUsd: 10, buyToken: 'ETH', period: 'week', why: 'the swap reverted on-chain', refundTx: hashOf(7) })
+    const dcaWaiting = dcaUnwindCopy({ outcome: 'unwinding', buyUsd: 10, buyToken: 'ETH', period: 'day', why: '', note: 'x' })
+    check(
+      'autopilot unwind: the copy says where the money is (back in the wallet with the tx, or coming back if the trade does not settle) and never "failed"',
+      /Your 0\.01 ETH is back in your wallet \(tx 0x00000000…\)/.test(spotRefunded) && spotRefunded.includes(`"${pctAsk}" re-arms it`) &&
+        /comes back to your wallet/.test(spotWaiting) &&
+        /so your \$10 USDC went back to your wallet \(tx 0x00000000…\)\. Autopilot buys again next week\./.test(dcaRefunded) &&
+        /^Today's autopilot buy of \$10 of ETH hasn't settled yet/.test(dcaWaiting) && /comes back to your wallet/.test(dcaWaiting) &&
+        ![spotRefunded, spotWaiting, dcaRefunded, dcaWaiting].some((t) => /\bfailed\b/i.test(t)),
+      spotRefunded,
+    )
+    const shareRefunded = spotGuardShareContent({ tokenSymbol: 'ETH', amountHuman: '0.01', triggerMode: 'price_move_pct', triggerValue: 10, refPrice: 2600, status: 'error' }, { status: 'refunded', valueUsd: null, markPrice: 2438.93 })
+    check(
+      'autopilot unwind: a refunded stop never shares as standing or as moved to USDC',
+      /went back to the wallet/.test(shareRefunded.headline) && !/standing|moved to USDC/.test(shareRefunded.headline) && shareRefunded.valueUsd === null,
+      shareRefunded.headline,
+    )
+
+    // Executor wiring (source): every spender send goes through the ledger, keyed.
+    const unwindExec = readFileSync('lib/autopilot-unwind-exec.ts', 'utf8')
+    const spotExec = readFileSync('lib/spot-guard-exec.ts', 'utf8')
+    const dcaExec = readFileSync('lib/dca-auto-exec.ts', 'utf8')
+    const cdpSrc = readFileSync('lib/cdp.ts', 'utf8')
+    const sendRunTxSrc = unwindExec.match(/export async function sendRunTx\([\s\S]*?\n\}/)?.[0] ?? ''
+    check(
+      'autopilot unwind (source): sendRunTx writes the intent BEFORE the send, sends with the derived idempotency key, and books a reverted receipt as reverted (never a sale)',
+      sendRunTxSrc.indexOf('await ledger.intent(intent)') > -1 &&
+        sendRunTxSrc.indexOf('await ledger.intent(intent)') < sendRunTxSrc.indexOf('sendSpenderTx(') &&
+        /idempotencyKey: key/.test(sendRunTxSrc) &&
+        /if \(r\.receipt\.status !== 'success'\)[\s\S]{0,160}outcome: 'reverted'/.test(sendRunTxSrc) &&
+        /\.\.\.\(opts\.idempotencyKey \? \{ idempotencyKey: opts\.idempotencyKey \} : \{\}\)/.test(cdpSrc),
+      sendRunTxSrc.slice(0, 200),
+    )
+    const stripComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    check(
+      'autopilot unwind (source): neither sweep sends a spender transaction around the ledger, and neither keeps a bare waitTx',
+      !/sendSpenderTx\(/.test(stripComments(spotExec)) && !/sendSpenderTx\(/.test(stripComments(dcaExec)) &&
+        !/function waitTx\(/.test(spotExec) && !/function waitTx\(/.test(dcaExec),
+    )
+    check(
+      'autopilot unwind (source): a throw after a pull parks the run unwinding instead of "nothing pulled" (both sweeps read the ledger first)',
+      /if \(ledger\?\.entries\.some\(\(x\) => x\.step === 'spend'\)\) \{\s*await recordSpotSettle\(/.test(spotExec) &&
+        /if \(ledger\?\.entries\.some\(\(x\) => x\.step === 'spend'\)\) \{\s*await recordDcaSettle\(/.test(dcaExec),
+    )
+    check(
+      "autopilot unwind (source): a DCA schedule with an earlier run still running or unwinding pulls nothing new, and a spot stop that pulled can't be resumed",
+      /status: \{ in: \['running', 'unwinding'\] \}[\s\S]{0,200}summary\.held\.push\(tag\)/.test(dcaExec) &&
+        /status: \{ in: \['unwinding', 'refunded', 'sold'\] \}/.test(spotExec),
     )
   }
 
