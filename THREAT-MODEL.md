@@ -169,6 +169,70 @@ Open questions:
 - Revocation: when a user retires a policy, is the key destroyed or just
   marked inactive?
 
+### Spend-Permission autopilots (DCA autopilot, Spot Guardian)
+
+The other place user money moves with no human present. A smart wallet signs
+a Spend Permission naming Pantessa's CDP spender. A cron (hourly for DCA,
+every minute for spot stops) pulls within it, then buys (DCA) or sells (a
+fired spot stop) through a guarded Uniswap v3 swap whose output is pinned to
+the owner. The on-chain SpendPermissionManager caps the pull whatever this
+codebase does. Everything after the pull is ours.
+
+> **Overlap with #807** (open when this was written): #807 adds this section
+> too, with the Spot Guardian's `guardSpotSell` verification and an asset-table
+> row for the spender. Whichever merges second keeps one heading, both
+> Verified lists and one copy of the shared open questions, and drops this
+> note.
+
+Verified for the DCA autopilot (2026-09-17, #DCA_PR):
+- **An autonomous buy can only pay the owner, minus the pinned treasury fee,
+  and the owner's guaranteed minimum sits within 3% of the token's market
+  mark.** The sweep builds, `guardAutoBuy` re-decodes every step, and only
+  then does it pull. The guard checks:
+  - the exact USDC approval, and the pinned router;
+  - the builder's payout shapes:
+    - an ERC-20, fee off: the swap pays the owner;
+    - an ERC-20, fee on: the swap pays the router, then `sweepTokenWithFee`
+      pays the owner in the schedule's token;
+    - native ETH: the swap pays the router, then `unwrapWETH9WithFee` (or
+      `unwrapWETH9`, fee off) pays the owner in ETH;
+    - fee on, the cut goes to `TREASURY_ADDRESS` at a canonical tier, and the
+      payout's minimum equals the swap's;
+  - an independent floor. The sweep prices the token with `usdPerToken`, and
+    the floor is what the pull buys at that mark, less `AUTO_BUY_FLOOR_BPS`
+    (3%). The swap's minimum and, fee on, the owner's minimum after the cut
+    must clear it. A buy with no floor refuses;
+  - no price limit (a partial fill would leave the rest of the pull on the
+    spender);
+  - a real v3 pool tier.
+
+  Hostile shapes tried, in every payout shape: a minimum of 1, a foreign fee
+  recipient, 0 bps and 100 bps, a weakened payout minimum, a price limit, and
+  a bogus tier. Before this, a regressed builder could set a minimum of 1, and
+  a thin pool's fill passed. Measured on Base the same day: the minimum on a
+  $100 DEGEN buy sat 44% under the mark, and on $10 of BRETT 37%. Both refuse
+  now. Pinned by the `dca autopilot` checks in `scripts/test-api.ts`. They
+  include a live build of the sweep's own `buildAutoBuy` (an ETH buy and a
+  cbBTC buy), and a mutation run showed each check has a pin that fails
+  without it.
+- **A reverted transaction fails the run.** `waitTx` in `lib/dca-auto-exec.ts`
+  throws on a non-success receipt. A source pin holds the sweep's order: the
+  build and floor, then the guard, then the pull.
+
+Open questions:
+- **A failure after the pull strands the pull on the spender.** The sweep
+  claims the period, pulls, approves, then swaps. If the market moves past the
+  swap's 50 bps bound while those transactions land, the swap reverts and the
+  USDC stays on Pantessa's spender, recorded as failed, with no refund. The
+  spot stop has the same shape. (Task filed 2026-09-16.)
+- The floor's mark reads the same v3 pools the build quotes. It catches a
+  regressed builder and a thin pool, but not a price pushed off across every
+  pool at quote time: the mark and the quote would both read it. An off-chain
+  reference price would catch that.
+- The spender is one CDP server wallet for every permission on the platform.
+  What does CDP's own policy engine allow it to sign, and is there an
+  allowlist of destinations enforced at CDP, beneath our guards?
+
 ### The funded house burner (`PRIVATE_KEY`)
 
 Chat turns can spend real house USDC. Since #467 the spend policy is
