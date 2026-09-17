@@ -30,7 +30,7 @@ export default function OnboardingChecklist() {
   const steps = [
     {
       label: 'Mint your first link',
-      hint: 'One sentence — "Buy $5 of AAPL", "DCA $25 into ETH weekly" — becomes a link anyone can act on. We\'ll prefill an ask.',
+      hint: 'One sentence — "Buy $5 of AAPL", "Stake 0.05 ETH with Lido" — becomes a link anyone can act on. We\'ll prefill an ask.',
       done: status.minted,
       href: linksStudioHref({ ask: 'Buy $5 of AAPL' }),
       cta: 'Mint a link',

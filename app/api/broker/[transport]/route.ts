@@ -47,7 +47,6 @@ async function guarded<T>(run: () => Promise<T>) {
 const CAPABILITIES = [
   'Buy tokenized stocks (AAPL, TSLA, NVDA…) on Robinhood Chain — with automatic cross-chain funding when the money sits on Base/Ethereum/Arbitrum',
   "Swap tokens (Uniswap v3/v4, CoW incl. MEV-protected + limit orders) — dollar-denominated asks welcome ('swap $5 of ETH')",
-  "Recurring buys — 'buy $10 of AAPL every week' becomes a DCA schedule",
   'Protect a Hyperliquid position — stop-loss / take-profit the Guardian watches every minute',
   'Cross-chain moves (NEAR Intents), Robinhood Chain bridging, Aave, Lido staking, NFT transfers + Seaport listings, Snapshot votes',
   'FIND WORK: GET /api/roster/feed lists open mandate slots humans posted (kind, mandate sentence, cap — never their wallet). broker_open with slot_token courts a listing; getting HIRED (their signature) makes your future opens auto-address to their inbox.',

@@ -56,7 +56,7 @@
 .mk-ai__chip--sell { border-color: color-mix(in oklab, var(--sell) 60%, var(--line-2)); color: var(--sell); background: transparent; }
 .mk-ai__chip--sell:hover { background: color-mix(in oklab, var(--sell) 14%, transparent); }
 .mk-ai__chip--protect, .mk-ai__chip--stop { border-color: color-mix(in oklab, var(--gold) 55%, var(--line-2)); }
-.mk-ai__chip--dca, .mk-ai__chip--limit { border-color: var(--line-2); }
+.mk-ai__chip--limit { border-color: var(--line-2); }
 
 .mk-ai__pos { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px; border: 1px dashed var(--line); background: color-mix(in oklab, var(--surf-2) 60%, transparent); position: relative; }
 .mk-ai__pos--held { border-style: solid; border-color: color-mix(in oklab, var(--accent) 45%, var(--line)); }

@@ -74,7 +74,10 @@ const CORPUS: Entry[] = [
   // lib/examples.ts EXAMPLE_PROMPTS + TRY_PROMPTS
   { ask: 'Swap $1 of ETH to USDC', source: 'examples', expect: 'action' },
   { ask: "What's in my wallet?", source: 'examples', expect: 'planner' },
-  { ask: 'Buy $10 of AAPL every week on Robinhood Chain', source: 'examples', expect: 'action' },
+  // DCA stopped being OFFERED on 2026-09-16 (a recurring buy only reminds the
+  // wallet to sign each period). The typed forms below stay in the corpus: a
+  // person who types one must still get a schedule, not a dead-end.
+  { ask: 'Buy $10 of AAPL every week on Robinhood Chain', source: 'typed recurring buy (was an example chip)', expect: 'action' },
   { ask: 'Set a stop-loss on my ETH position at -8%', source: 'examples', expect: 'action' },
   { ask: 'Swap 1 USDC from Base to Arbitrum.', source: 'examples/try', expect: 'action' },
   { ask: 'Buy $2 of AAPL', source: 'examples/try + FundAnything', expect: 'action' },
@@ -121,13 +124,13 @@ const CORPUS: Entry[] = [
   { ask: 'buy $10 worth of eth', source: 'voice door (normalized spoken buy)', expect: 'action' },
   { ask: 'Buy $50 of ETH', source: 'chart overlay buy chip', expect: 'action' },
   { ask: 'Sell $50 of ETH', source: 'chart overlay sell chip (live 2026-07-28 dead-end)', expect: 'action' },
-  { ask: 'DCA $10 into ETH weekly', source: 'chart overlay DCA chip', expect: 'action' },
+  { ask: 'DCA $10 into ETH weekly', source: 'typed DCA (was a chart overlay chip)', expect: 'action' },
   // Stock charts (2026-09-10): the same overlay chips on an AAPL chart land
   // on the Robinhood Chain builders (stock → 4663 inference), and the chart
   // ask itself pops the overlay by ticker or company name.
   { ask: 'Buy $50 of AAPL', source: 'chart overlay buy chip on a stock chart', expect: 'action' },
   { ask: 'Sell $50 of AAPL', source: 'chart overlay sell chip on a stock chart', expect: 'action' },
-  { ask: 'DCA $10 into AAPL weekly', source: 'chart overlay DCA chip on a stock chart', expect: 'action' },
+  { ask: 'DCA $10 into AAPL weekly', source: 'typed DCA on a stock (was a stock chart chip)', expect: 'action' },
   { ask: 'show me the AAPL chart', source: 'stock chart ask (ticker)', expect: 'action' },
   { ask: 'show me the apple chart', source: 'stock chart ask (company name, spoken)', expect: 'action' },
   { ask: 'pull up the nvidia candles', source: 'stock chart ask (company name)', expect: 'action' },
@@ -141,8 +144,8 @@ const CORPUS: Entry[] = [
   { ask: 'Swap 5 USDC for ETH on Base', source: 'splash/holdings', expect: 'action' },
   { ask: 'Swap 0.0100 ETH for USDC on Base', source: 'splash/holdings', expect: 'action' },
   { ask: 'Swap $10 of USDC for UNI on Base', source: 'splash/holdings', expect: 'action' },
-  { ask: 'Buy $10 of UNI every week on Base', source: 'splash/holdings', expect: 'action' },
-  { ask: 'Buy $25 of ETH every week on Base', source: 'splash/uniswap preview', expect: 'action' },
+  { ask: 'Buy $10 of UNI every week on Base', source: 'typed recurring buy (was a splash/holdings chip)', expect: 'action' },
+  { ask: 'Buy $25 of ETH every week on Base', source: 'typed recurring buy (was a splash/uniswap chip)', expect: 'action' },
   { ask: 'Long $12 of ETH on Hyperliquid', source: 'splash/hl', expect: 'action' },
   { ask: 'Close my ETH long on Hyperliquid', source: 'splash/hl', expect: 'action' },
   { ask: 'Protect my ETH long with a 10% stop loss', source: 'splash/hl', expect: 'action' },
@@ -166,7 +169,8 @@ const CORPUS: Entry[] = [
   { ask: 'Send my Pudgy Penguin #2489 NFT on Ethereum to ', source: 'splash/nft (blank recipient)', expect: 'clarify-ok' },
 
   // Standing-intent tiles + docs + house links
-  { ask: 'Buy $10 of AAPL every week', source: 'standing-intent + docs', expect: 'action' },
+  { ask: 'Buy $10 of AAPL every week', source: 'typed recurring buy (was the docs standing-intent example)', expect: 'action' },
+  { ask: 'Fund Robinhood Chain with $50 from Base including gas, then buy $40 of AAPL', source: '/docs/first-five-minutes (the standing-intent example since 2026-09-16)', expect: 'action' },
   {
     ask: 'Swap 1 USDC from Base to Arbitrum, then send the 1 USDC on Arbitrum to nate.eth',
     source: 'standing-intent (job)', expect: 'action',
@@ -188,7 +192,7 @@ const CORPUS: Entry[] = [
     source: 'docs/jobs curl', expect: 'action',
   },
   { ask: 'Buy $10 of AAPL', source: 'house link /i/buy-aapl', expect: 'action' },
-  { ask: 'DCA $25 into ETH weekly', source: 'house link /i/dca-eth', expect: 'action' },
+  { ask: 'DCA $25 into ETH weekly', source: 'retired house link /i/dca-eth (live, unsurfaced since 2026-09-16)', expect: 'action' },
   { ask: 'Stake 0.05 ETH with Lido', source: 'house link /i/stake-eth', expect: 'action' },
   { ask: 'Set a stop-loss on my Hyperliquid ETH position at -5%', source: 'retired house link /i/stop-loss (row stays live)', expect: 'action' },
   { ask: 'I want a 2X Long $12 of HYPE on Hyperliquid, then protect my HYPE long with a 5% stop', source: 'house link /i/protected-long (pure intent — funding auto-offered, 2x set venue-side)', expect: 'action' },
@@ -347,7 +351,7 @@ const CORPUS: Entry[] = [
   { ask: 'Buy $50 of SOL', source: 'chart overlay chip (non-EVM home → HL door)', expect: 'clarify-ok' },
   { ask: 'Sell $50 of SOL', source: 'chart overlay chip (non-EVM home → HL door)', expect: 'clarify-ok' },
   { ask: 'Buy $50 of XRP', source: 'chart overlay chip (no EVM home at all)', expect: 'clarify-ok' },
-  { ask: 'DCA $10 into SOL weekly', source: 'chart overlay chip (hidden now; typed form refuses by name)', expect: 'clarify-ok' },
+  { ask: 'DCA $10 into SOL weekly', source: 'typed DCA on a non-EVM coin (refuses by name)', expect: 'clarify-ok' },
   { ask: 'long $50 of SOL on hyperliquid', source: 'the HL door chip resume', expect: 'action' },
   // The flagship link's most natural follow-up — a READ we hold.
   { ask: 'what stocks can I buy on robinhood', source: 'prod 2026-09-08 (planner → brokerage prose / paid x402 call)', expect: 'action' },
@@ -384,7 +388,7 @@ const CORPUS: Entry[] = [
   { ask: 'Supply $50 of USDC to Aave', source: 'mk2 landing venue orbit (Aave)', expect: 'action' },
   { ask: 'Swap 20 USDC from base to arbitrum', source: 'mk2 landing venue orbit (NEAR Intents)', expect: 'action' },
   { ask: 'Buy $10 of AAPL', source: 'mk2 landing venue orbit (Robinhood Chain)', expect: 'action' },
-  { ask: 'DCA $10 into ETH weekly', source: 'mk2 landing venue orbit (DCA)', expect: 'action' },
+  { ask: 'Protect my ETH long with a 5% stop', source: 'mk2 landing venue orbit (Guardian; replaced the DCA card 2026-09-16)', expect: 'action' },
   { ask: 'Buy $50 of ETH, then stake 0.05 ETH with Lido', source: 'mk2 landing compound (one job)', expect: 'action' },
 
   // MK2/EXEC (2026-09-15) — the symbol page's venue map, header strip,

@@ -56,10 +56,9 @@ export default function MarketsDocsPage() {
         </p>
         <ul>
           <li>
-            <strong>Buy, sell, DCA.</strong>{' '}
+            <strong>Buy and sell.</strong>{' '}
             <SpineLink href={ask('Buy $10 of AAPL', 'robinhood-free')}>Buy $10 of AAPL</SpineLink> ·{' '}
-            <SpineLink href={ask('Sell $50 of ETH')}>Sell $50 of ETH</SpineLink> ·{' '}
-            <SpineLink href={ask('DCA $10 into AAPL weekly', 'robinhood-free')}>DCA $10 into AAPL weekly</SpineLink>. A stock buy
+            <SpineLink href={ask('Sell $50 of ETH')}>Sell $50 of ETH</SpineLink>. A stock buy
             on an empty wallet turns into a funding path first (card or bank → ETH → the chain that trades it) and
             picks up where it left off when the money lands.
           </li>
@@ -107,7 +106,7 @@ export default function MarketsDocsPage() {
         <h2>Alerts that act</h2>
         <p>
           An alert has two buttons: <strong>{ALERT_MODES.notify}</strong> and <strong>{ALERT_MODES.act}</strong>. The
-          first pings you. The second is a standing intent — a Guardian, a Spot Guardian or a DCA — signed once and
+          first pings you. The second is a standing intent — a Guardian or a Spot Guardian — signed once and
           then working between your turns, non-custodial, killable from the rail. Price reads are batched per symbol,
           which is why they are free at any volume.
         </p>

@@ -27,7 +27,8 @@ export type ChartActionKind = 'buy' | 'sell' | 'stop' | 'limit' | 'dca' | 'prote
  *  (limit → lib/swap-intent's LIMIT grammar, protect → lib/spot-guard or
  *  lib/hl-guardian, dca → lib/dca, buy/sell → the swap / HL grammars).
  *  lib/chart-actions composes them; the harness pins every shape through
- *  the ask-ladder replica. */
+ *  the ask-ladder replica. `dca` is still accepted so drawings saved before
+ *  2026-09-16 keep parsing; lib/chart-actions no longer composes it. */
 export interface ChartAction {
   kind: ChartActionKind
   ask: string

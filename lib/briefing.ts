@@ -212,8 +212,8 @@ export function composeBriefingItems(inputs: BriefingInputs): StatRow[] {
     }
 
     // 3. Idle stables — not a problem, an opportunity; soft chips only
-    //    (DCA round-trips parseDcaCreate; the swap round-trips
-    //    parseSwapIntent). Scoped to chains that actually READ.
+    //    (the swap round-trips parseSwapIntent). Scoped to chains that
+    //    actually READ.
     for (const s of inputs.funding.sources) {
       if (s.token !== 'USDC' || s.usd < IDLE_STABLE_FLOOR_USD) continue
       const swapUsd = Math.min(50, Math.max(10, Math.floor(s.usd / 2)))
@@ -226,7 +226,6 @@ export function composeBriefingItems(inputs: BriefingInputs): StatRow[] {
           // Leads: the full rebalance read (round-trips parseRebalanceAsk —
           // live rates + honest gas math, one batch offered as chips).
           { label: 'Put it to work', prompt: 'Rebalance my portfolio' },
-          { label: 'DCA $10 → ETH weekly', prompt: 'DCA $10 into ETH weekly' },
           { label: `Swap $${swapUsd} → ETH`, prompt: `Swap $${swapUsd} of USDC for ETH on ${s.chainWord}` },
         ],
       })

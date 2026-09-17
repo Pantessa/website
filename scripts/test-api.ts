@@ -275,7 +275,7 @@ import { ARRIVAL_TTL_MS } from '../lib/arrival-intent'
 import { ladderFilterMenu as aiLadderFilterMenu } from '../lib/markets-ai-ladder'
 import { alertActionChips as arrivalAlertChips } from '../lib/watchlists'
 import { quickActs as mk2QuickActs, ROUTE_TICKET_NOTE as MK2_TICKET_NOTE, SETTLES as MK2_SETTLES, limitAtLevel as mk2LimitAtLevel, BEST_OUT_RULE as MK2_BEST_OUT_RULE, venuesFor as mk2VenuesFor, missingVenueNotes as mk2MissingNotes, composeCompound as mk2ComposeCompound, compoundLegKindsFor as mk2LegKinds, compoundPresets as mk2Presets, type CompoundLegKind as Mk2LegKind, type RoutesResponse as Mk2RoutesResponse } from '../lib/symbol-venues'
-import { execAsks as mk2ExecAsks, execSidesFor as mk2ExecSidesFor, sideOf as mk2SideOf, AMOUNTS as MK2_AMOUNTS, STOPS as MK2_STOPS, CADENCES as MK2_CADENCES } from '../lib/trade-asks'
+import { execAsks as mk2ExecAsks, execSidesFor as mk2ExecSidesFor, sideOf as mk2SideOf, AMOUNTS as MK2_AMOUNTS, STOPS as MK2_STOPS } from '../lib/trade-asks'
 import { exitChipsFor as mk2ExitChipsFor, positionSummary as mk2PositionSummary, positionIsEmpty as mk2PositionIsEmpty, type SymbolPosition as Mk2SymbolPosition } from '../lib/symbol-position'
 import {
   adx as techAdx, askPrice, awesome as techAo, bandOf, bullBearPower as techBbp, camarillaPivots, cci as techCci, classicPivots, computeTechnicals, dmPivots,
@@ -3913,7 +3913,8 @@ async function main() {
       // on touch; the chart's act chips are 12px and 40px tall.
       const touch10 = /\[@media\(hover:none\)\]:h-10 \[@media\(hover:none\)\]:w-10/
       check('mobile: overlay close buttons (chart / job detail / request-MCP) are 40px on touch', touch10.test(chartOverlay) && touch10.test(jobOverlay) && touch10.test(addMcp))
-      check('mobile: chart overlay act chips are ≥40px and 12px on touch', (chartOverlay.match(/\[@media\(hover:none\)\]:min-h-10 \[@media\(hover:none\)\]:text-\[12px\]/g) ?? []).length === 3)
+      // Buy + Sell (the DCA chip left 2026-09-16)
+      check('mobile: chart overlay act chips are ≥40px and 12px on touch', (chartOverlay.match(/\[@media\(hover:none\)\]:min-h-10 \[@media\(hover:none\)\]:text-\[12px\]/g) ?? []).length === 2)
       check('mobile: the sign-in door dismiss is a 40px touch target', /@media \(hover: none\) \{ \.ca__close \{ width: 40px; height: 40px;/.test(designCss))
       // The toolbar working-set door beside chain picker + Share + pill was
       // ~30px wide at 375 and ellipsized to "Sn…" — phones show the count.
@@ -3987,7 +3988,14 @@ async function main() {
     const housePage = await fetch(`${BASE}/i/buy-aapl`)
     const houseHtml = flat(await housePage.text())
     check('house links: /i/buy-aapl is live with the canonical ask', housePage.status === 200 && houseHtml.includes('Buy $10 of AAPL'))
-    check('house links: /links start-here strip renders the seeded set', boardHtml.includes('Start here') && boardHtml.includes('/i/dca-eth'))
+    check('house links: /links start-here strip renders the seeded set', boardHtml.includes('Start here') && boardHtml.includes('/i/buy-aapl'))
+    // DCA retired from the house set (2026-09-16): a recurring buy only
+    // reminds the wallet to sign each period. /i/dca-eth stays live in the
+    // DB, just unsurfaced — neither the strip nor the set may offer it.
+    check(
+      'house links: no house link offers a recurring buy (/i/dca-eth unsurfaced)',
+      !boardHtml.includes('/i/dca-eth') && !HOUSE_LINKS.some((h) => h.slug === 'dca-eth' || /\bdca\b|every week|weekly/i.test(h.ask)),
+    )
     const homeHtml = flat(await (await fetch(`${BASE}/`)).text())
     check(
       'house links: the landing link lane renders with tappable house links',
@@ -4032,8 +4040,8 @@ async function main() {
       markNames('protected-long')[0] === 'Hyperliquid' && markNames('protected-long').includes('NEAR Intents'),
     )
     check(
-      'house links: the ETH DCA chip leads with its Uniswap venue mark',
-      markNames('dca-eth')[0] === 'Uniswap',
+      'house links: the stock chip leads with its Robinhood mark',
+      markNames('buy-aapl')[0] === 'Robinhood',
     )
     // Sync guard: every composed MCP stays represented on the chip (the cap
     // must never silently drop a compose slug as venue marks are added).
@@ -4046,7 +4054,7 @@ async function main() {
     )
     check(
       'house links: the landing lane chips render the mark stacks (title carries the apps)',
-      homeHtml.includes('via Uniswap + NEAR Intents'),
+      homeHtml.includes('via Robinhood + NEAR Intents'),
     )
     // The composed MCP set must survive plurals — "Show my NFTs" once
     // composed to NO opensea (\bnft\b can't match "nfts"), so the seeded
@@ -9189,9 +9197,9 @@ async function main() {
       JSON.stringify(rhMerged.holdings.map((h) => [h.symbol, h.balance, h.valueUsd])),
     )
     check(
-      'wallet stocks: a held stock row wears Buy more / DCA / Sell chips whose asks are native Robinhood-Chain builds; a sub-$1 USDG row wears none',
-      JSON.stringify(aaplRow?.actions?.map((a) => a.label)) === JSON.stringify(['Buy more AAPL', 'DCA $10 weekly', 'Sell AAPL']) &&
-        aaplRow?.actions?.[2]?.prompt === 'Sell all my AAPL for USDG on Robinhood Chain' && parseSwapIntent(aaplRow.actions[2].prompt).sellAll === true &&
+      'wallet stocks: a held stock row wears Buy more / Sell chips (no recurring buy, 2026-09-16) whose asks are native Robinhood-Chain builds; a sub-$1 USDG row wears none',
+      JSON.stringify(aaplRow?.actions?.map((a) => a.label)) === JSON.stringify(['Buy more AAPL', 'Sell AAPL']) &&
+        aaplRow?.actions?.[1]?.prompt === 'Sell all my AAPL for USDG on Robinhood Chain' && parseSwapIntent(aaplRow.actions[1].prompt).sellAll === true &&
         !rhMerged.holdings.find((h) => h.symbol === 'USDG')?.actions,
       JSON.stringify(aaplRow?.actions),
     )
@@ -9212,8 +9220,8 @@ async function main() {
     const wvRh = wv.chains?.find((c) => c.id === 4663)
     const wvStocks = (wvRh?.holdings ?? []).filter((h) => h.actions?.some((a) => /^Sell /.test(a.label)))
     check(
-      `wallet stocks: /api/wallet lists Robinhood Chain, and every held stock row is priced and carries its chips (${wvStocks.map((h) => h.symbol).join(',') || 'none held'})`,
-      wvRes.status === 200 && !!wvRh && wvStocks.every((h) => typeof h.priceUsd === 'number' && h.priceUsd > 0 && (h.actions?.length ?? 0) >= 3),
+      `wallet stocks: /api/wallet lists Robinhood Chain, and every held stock row is priced and carries its Buy more / Sell chips, no DCA (${wvStocks.map((h) => h.symbol).join(',') || 'none held'})`,
+      wvRes.status === 200 && !!wvRh && wvStocks.every((h) => typeof h.priceUsd === 'number' && h.priceUsd > 0 && (h.actions?.length ?? 0) >= 2 && !(h.actions ?? []).some((a) => /\bdca\b|every week/i.test(`${a.label} ${a.prompt}`))),
       JSON.stringify(wvRh?.holdings.map((h) => [h.symbol, h.balance, h.priceUsd, h.actions?.length ?? 0])),
     )
 
@@ -14439,7 +14447,8 @@ async function main() {
       check(
         'guardian fence (route): "protect my AAPL with a 5% stop" refuses by name with working chips — no arm, no sign-in gate, no add-Hyperliquid door',
         /AAPL isn't a Hyperliquid market/.test(fenceTurn.reply ?? '') && fenceTurn.buildPath === 'native-hl-guardian' && !fenceTurn.guardianPolicyId && !fenceTurn.signInGate &&
-          (fenceTurn.clarify?.options ?? []).some((o) => o.resume === 'DCA $10 into AAPL weekly') &&
+          (fenceTurn.clarify?.options ?? []).some((o) => o.resume === 'Sell all my AAPL for USDG on Robinhood Chain') &&
+          !(fenceTurn.clarify?.options ?? []).some((o) => /\bdca\b|weekly/i.test(o.resume)) &&
           /AAPL isn't a Hyperliquid market/.test(fenceNoHl.reply ?? '') && !fenceNoHl.door && !(fenceNoHl.reply ?? '').includes('Add Hyperliquid'),
         JSON.stringify({ fenceTurn, fenceNoHl }).slice(0, 360),
       )
@@ -15958,27 +15967,37 @@ async function main() {
       periodKeyFor('week', new Date(Date.UTC(2026, 6, 16))) === '2026-W29' && periodKeyFor('week', new Date(Date.UTC(2027, 0, 1))) === '2026-W53',
     )
 
-    // Discoverability contract: every DCA suggestion chip (empty-state
-    // gallery + splash) must parse into a schedule create — a suggestion
-    // that falls through to the swap layer would silently drop the cadence.
-    const galleryDca = EXAMPLE_PROMPTS.find((e) => /every week/i.test(e.prompt))
-    const galleryParse = galleryDca ? parseDcaCreate(galleryDca.prompt) : null
+    // Retired as a suggestion (2026-09-16, Nate): a recurring buy in confirm
+    // mode only reminds the wallet to sign each period, so no surface OFFERS
+    // one. Typing one still works (the grammar pins above). These fences keep
+    // a DCA chip from creeping back: the empty-state gallery, and every
+    // chip-composing source — markets + symbol pages, splash, the wallet
+    // drawer, the briefing, the guardian fence's clarify, house links, the
+    // landing. Existing schedules keep their manage chips (PositionPanel,
+    // rail, splash tile): "pause my ETH dca" names no amount and no cadence.
     check(
-      'dca: the empty-state gallery chip parses into a schedule (never a one-shot)',
-      !!galleryDca && !!galleryParse && !('problem' in galleryParse) && galleryParse.cadence === 'week' && galleryParse.chainId === 4663,
-      galleryDca?.prompt,
+      'dca: the empty-state gallery offers no recurring buy',
+      EXAMPLE_PROMPTS.every((e) => !parseDcaCreate(e.prompt)),
+      EXAMPLE_PROMPTS.map((e) => e.prompt).join(' | '),
     )
-    const splashDcaPrompts = [
-      'Buy $10 of AAPL every week on Robinhood Chain', // robinhood splash + preview
-      'Buy $25 of ETH every week on Base', // uniswap preview
-    ]
-    check(
-      'dca: splash/preview suggestion prompts all parse into schedule creates',
-      splashDcaPrompts.every((p) => {
-        const c = parseDcaCreate(p)
-        return !!c && !('problem' in c) && c.cadence === 'week' && c.chainId !== null
-      }),
-    )
+    {
+      const codeOnly = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      const DCA_OFFER_RE = /\bdca\s+\$[^\n]{0,40}?\binto\b|\bevery (?:day|week|month)\b|\binto [^\n]{1,30}? (?:daily|weekly|monthly)\b/i
+      const walk = (dir: string): string[] =>
+        readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? walk(`${dir}/${d.name}`) : /\.tsx?$/.test(d.name) ? [`${dir}/${d.name}`] : []))
+      const offerSurfaces = [
+        'lib/trade-asks.ts', 'lib/symbol-venues.ts', 'lib/chart-actions.ts', 'lib/technicals.ts', 'lib/markets-ai.ts', 'lib/markets-copy.ts', 'lib/markets-seo.ts',
+        'lib/examples.ts', 'lib/splash/sources.ts', 'lib/robinhood-row-actions.ts', 'lib/briefing.ts', 'lib/hl-guardian-fence.ts', 'lib/house-links.ts',
+        'components/ChartOverlay.tsx', 'components/MarketsBand.tsx', 'components/landing/VenueBand.tsx', 'app/api/markets/routes/route.ts',
+        ...walk('components/markets'),
+      ]
+      const offering = offerSurfaces.filter((f) => DCA_OFFER_RE.test(codeOnly(readFileSync(f, 'utf8'))))
+      check(
+        'dca: no chip-composing surface offers a recurring buy (markets, symbol pages, splash, drawer, briefing, guardian fence, house links, landing)',
+        offerSurfaces.length > 20 && offering.length === 0,
+        offering.join(', '),
+      )
+    }
   }
 
   // ── DCA AUTOPILOT (Spend Permissions: grammar + typed data + the guard) ──
@@ -16422,7 +16441,7 @@ async function main() {
       check(
         'guardian fence (cold): a Robinhood Chain stock protect ask refuses BY NAME, and every chip it offers lands natively',
         !cold.ok && cold.reason === 'stock' && /AAPL isn't a Hyperliquid market/.test(cold.reply) && /Robinhood Chain/.test(cold.reply) && /Spot Guardian runs on Base/.test(cold.reply) &&
-          coldChips.length === 3 && coldChips.every((c) => c.out.kind === 'action' && c.out.gate !== 'planner') && coldChips.some((c) => c.out.gate === 'dca'),
+          coldChips.length === 2 && coldChips.every((c) => c.out.kind === 'action' && c.out.gate !== 'planner' && c.out.gate !== 'dca'),
         JSON.stringify(coldChips),
       )
       const ladderStock = simulateLadder('protect my AAPL with a 5% stop')
@@ -17345,13 +17364,12 @@ async function main() {
       funding: { ...fundingBase, sources: [{ chainId: 8453, chainWord: 'Base', token: 'USDC', balance: 180, usd: 180 }], stranded: [] },
     })
     const workChip = idle[0]?.actions?.[0]
-    const dcaChip = idle[0]?.actions?.[1]
-    const swapChip = idle[0]?.actions?.[2]
+    const swapChip = idle[0]?.actions?.[1]
     const swapIntent = swapChip ? parseSwapIntent(swapChip.prompt) : null
     check(
-      'briefing: idle USDC → rebalance + DCA + swap chips that round-trip (swap names the chain)',
-      idle.length === 1 && !!workChip && parseRebalanceAsk(workChip.prompt) &&
-        !!dcaChip && !!parseDcaCreate(dcaChip.prompt) &&
+      'briefing: idle USDC → rebalance + swap chips that round-trip (swap names the chain; no recurring buy since 2026-09-16)',
+      idle.length === 1 && idle[0]?.actions?.length === 2 && !!workChip && parseRebalanceAsk(workChip.prompt) &&
+        !(idle[0]?.actions ?? []).some((a) => parseDcaCreate(a.prompt)) &&
         !!swapIntent && swapIntent.isSwap && !swapIntent.problem && swapIntent.sellToken === 'USDC' && /on Base/i.test(swapChip!.prompt),
       JSON.stringify(idle[0]?.actions).slice(0, 160),
     )
@@ -17880,7 +17898,8 @@ async function main() {
         // Re-pinned 2026-09-16 (Nate: "never show the sell option if they do
         // not own the token"): the server has no wallet, so no Sell ships.
         !tEth.includes(`/chat?prompt=${encodeURIComponent('Sell $50 of ETH')}`) &&
-        tEth.includes(`/chat?prompt=${encodeURIComponent('DCA $10 into ETH weekly')}`) &&
+        // No recurring-buy chip (2026-09-16): a DCA only reminds you to sign.
+        !tEth.includes(encodeURIComponent('DCA $10 into ETH weekly')) &&
         // The chips SEND now (Markets shell, 2026-09-11); the href stays the
         // no-JS fallback and the eyebrow says what a click does.
         tEth.includes('SENDS THE ASK · YOUR WALLET SIGNS') &&
@@ -17912,20 +17931,20 @@ async function main() {
     const actAt = tEth.indexOf('class="sym__act"')
     const chartAt = tEth.indexOf('class="tchart sym__chart"')
     check(
-      '/t/ETH: the act strip sits in the header ABOVE the chart — Buy leads (filled), DCA + Protect follow, and NO Sell for a visitor who holds none (the server render has no wallet; re-pinned 2026-09-16); the eyebrow names the contract; no Overview act card',
+      '/t/ETH: the act strip sits in the header ABOVE the chart — Buy leads (filled), Protect follows, NO Sell for a visitor who holds none (the server render has no wallet) and no DCA chip (both 2026-09-16); the eyebrow names the contract; no Overview act card',
       actAt > 0 && chartAt > actAt &&
         tEth.includes('ACT ON ETH · SENDS THE ASK · YOUR WALLET SIGNS') &&
         /class="sym__act-chip sym__act-chip--buy"[^>]*>Buy ETH</.test(tEth) &&
         !/>Sell ETH</.test(tEth) &&
-        /sym__act-chip--dca"[^>]*>DCA weekly</.test(tEth) &&
+        !/sym__act-chip--dca|>DCA weekly</.test(tEth) &&
         /sym__act-chip--protect"[^>]*>Protect with a stop</.test(tEth) &&
         !/mkt-card__title">Act on/.test(tEth),
       `act@${actAt} chart@${chartAt}`,
     )
     const tAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
     check(
-      '/t/AAPL: a stock strip never offers Protect (Spot Guardian is Base-only) — Buy / DCA (Sell only for a holder), each href a /chat prefill fallback',
-      /sym__act-chip--buy"[^>]*>Buy AAPL</.test(tAapl) && /sym__act-chip--dca"/.test(tAapl) && !/sym__act-chip--protect/.test(tAapl) && !/>Sell AAPL</.test(tAapl) &&
+      '/t/AAPL: a stock strip never offers Protect (Spot Guardian is Base-only) or DCA (2026-09-16) — Buy for a visitor (Sell only for a holder), each href a /chat prefill fallback',
+      /sym__act-chip--buy"[^>]*>Buy AAPL</.test(tAapl) && !/sym__act-chip--dca|>DCA weekly</.test(tAapl) && !/sym__act-chip--protect/.test(tAapl) && !/>Sell AAPL</.test(tAapl) &&
         tAapl.includes(`href="/chat?prompt=${encodeURIComponent('Buy $50 of AAPL')}"`),
     )
     const tHype = flat(await (await fetch(`${BASE}/t/HYPE`)).text())
@@ -17965,7 +17984,8 @@ async function main() {
     const aaplPair = chartPairFor('AAPL')!
     check(
       'ask door: chips are context-aware — the symbol page offers that symbol\'s real trade asks (+ a why-is-it-moving read), elsewhere the curated examples',
-      askDoorChips('/t/AAPL').slice(0, 3).every((c, i) => c.ask === tradeAsks(aaplPair)[i].ask) &&
+      tradeAsks(aaplPair).length > 0 &&
+        askDoorChips('/t/AAPL').slice(0, tradeAsks(aaplPair).length).every((c, i) => c.ask === tradeAsks(aaplPair)[i].ask) &&
         askDoorChips('/t/AAPL').some((c) => c.label === 'Why is AAPL moving?') &&
         askDoorChips('/t/hype')[0].ask === 'Long $50 of HYPE on Hyperliquid' &&
         askDoorChips('/pricing').map((c) => c.ask).join('|') === EXAMPLE_PROMPTS.map((p) => p.prompt).join('|') &&
@@ -19461,6 +19481,8 @@ async function main() {
   // pool-vs-tape honesty line. Every composed ask is replayed through the
   // ladder replica — a level whose chip lands on the planner is a bug.
   {
+    // The zone's `dca` action is a drawing saved before 2026-09-16: the
+    // contract still accepts it; lib/chart-actions no longer composes one.
     const fullState: ChartState = {
       v: 1,
       symbol: 'ETH',
@@ -19513,11 +19535,11 @@ async function main() {
     ]
     const landed = offers.map((o) => ({ ask: o.action.ask, out: simulateLadder(o.action.ask) }))
     const fell = landed.filter((l) => l.out.kind !== 'action')
-    const expectedGate: Record<string, string> = { limit: 'swap', stop: 'spot-guard|guardian', protect: 'guardian', dca: 'dca', buy: 'swap|hyperliquid', sell: 'swap|hyperliquid' }
+    const expectedGate: Record<string, string> = { limit: 'swap', stop: 'spot-guard|guardian', protect: 'guardian', buy: 'swap|hyperliquid', sell: 'swap|hyperliquid' }
     const wrongGate = offers.filter((o, i) => !new RegExp(`^(?:${expectedGate[o.action.kind]})$`).test(landed[i].out.gate))
     check(
       `chart actions: every composed level/zone ask lands natively in the ladder replica (${offers.length} asks: ETH spot both sides, HYPE perps both sides, AAPL stock, SOL non-EVM → HL perp, PEPE dust, three zones) on its own gate`,
-      offers.length >= 28 && fell.length === 0 && wrongGate.length === 0,
+      offers.length >= 24 && fell.length === 0 && wrongGate.length === 0,
       fell.length ? `FELL: ${fell.map((f) => `${f.ask} → ${f.out.gate}/${f.out.kind}`).join(' | ')}` : wrongGate.length ? `WRONG GATE: ${wrongGate.map((o) => o.action.ask).join(' | ')}` : '',
     )
     const ethBelow = composeLineActions({ symbol: 'ETH', source: 'coinbase', price: 2300, last: 2400 })
@@ -19525,7 +19547,7 @@ async function main() {
     const aapl = composeLineActions({ symbol: 'AAPL', source: 'robinhood', price: 200, last: 230 })
     const bigPx = composeLineActions({ symbol: 'BTC', source: 'coinbase', price: 61234.56, last: 70000 })
     check(
-      'chart actions: honesty — stop + limit BUY only below market, limit SELL only above (never a market order in limit clothes), stocks never get a limit or a stop, prices carry no separators/exponents',
+      'chart actions: honesty — stop + limit BUY only below market, limit SELL only above (never a market order in limit clothes), stocks never get a limit or a stop, no level or zone composes a DCA (2026-09-16), prices carry no separators/exponents',
       ethBelow.some((o) => o.action.kind === 'stop') &&
         ethBelow.some((o) => o.action.kind === 'limit' && /\bbuy\b/.test(o.action.ask)) &&
         !ethBelow.some((o) => o.action.kind === 'limit' && /\bsell\b/.test(o.action.ask)) &&
@@ -19533,7 +19555,8 @@ async function main() {
         ethAbove.some((o) => o.action.kind === 'limit' && /\bsell\b/.test(o.action.ask)) &&
         !ethAbove.some((o) => o.action.kind === 'limit' && /\bbuy\b/.test(o.action.ask)) &&
         !aapl.some((o) => o.action.kind === 'limit' || o.action.kind === 'stop') &&
-        aapl.some((o) => o.action.kind === 'dca') &&
+        aapl.some((o) => o.action.kind === 'buy') &&
+        !offers.some((o) => o.action.kind === 'dca' || /\bdca\b|weekly/i.test(o.action.ask) || /\bdca\b/i.test(o.label)) &&
         bigPx.some((o) => o.action.ask === 'Protect my spot BTC if it drops to $61235') &&
         offers.every((o) => !/[,e]\d/.test(o.action.ask.replace(/[A-Za-z]+/g, ''))) &&
         fmtAskPrice(2400) === '2400' && fmtAskPrice(0.000009) === '0.000009' && fmtAskUnits(25, 2300) === '0.01087' && fmtAskUnits(25, 0.000009) === '2777778',
@@ -19556,9 +19579,9 @@ async function main() {
       lines: stockOffers.map((o, i) => ({ id: `s${i}`, kind: 'h', price: 200 + i, action: o.action })),
     })
     check(
-      'chart actions: a Robinhood Chain stock level (either side, line or zone) never offers stop / protect / limit — a 4663 chart-state never emits a protect ask (only buy / sell / dca; no "protect" or "stop" word at all)',
-      stockOffers.length >= 8 &&
-        stockOffers.every((o) => o.action.kind === 'buy' || o.action.kind === 'sell' || o.action.kind === 'dca') &&
+      'chart actions: a Robinhood Chain stock level (either side, line or zone) never offers stop / protect / limit — a 4663 chart-state never emits a protect ask (only buy / sell; a stock zone carries no action; no "protect" or "stop" word at all)',
+      stockOffers.length === 4 &&
+        stockOffers.every((o) => o.action.kind === 'buy' || o.action.kind === 'sell') &&
         stockState !== null &&
         chartStateToAsks(stockState).every((ask) => !/\b(?:protect|stop|take profit|limit)\b/i.test(ask)) &&
         !actionKindsFor('AAPL', 'robinhood').has('stop') &&
@@ -19772,7 +19795,10 @@ async function main() {
     let chipCount = 0
     for (const c of chipCases) for (const r of ratings) {
       const chips = verdictChips({ symbol: c.symbol, source: c.source, rating: r, support: 123.45, resistance: 130.5 })
-      if (chips.length < 2) chipBad.push(`${c.symbol}/${r}: ${chips.length} chips`)
+      // A stock's buy / neutral verdict is the Buy alone since DCA left the
+      // chips (2026-09-16): no stop can be armed on 4663, so there's no pair.
+      const minChips = c.source === 'robinhood' && r !== 'sell' && r !== 'strong_sell' ? 1 : 2
+      if (chips.length < minChips) chipBad.push(`${c.symbol}/${r}: ${chips.length} chips`)
       for (const ch of chips) {
         chipCount++
         const out = simulateLadder(ch.ask)
@@ -19785,16 +19811,18 @@ async function main() {
     // A STOCK verdict never emits a protect/stop ask (Spot Guardian is Base-only, the HL
     // guardian is perps-only — the ladder would CLAIM it and the build would refuse; MSG lane).
     const stockAsks = ratings.flatMap((r) => verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: r, support: 300, resistance: 330 }).map((c) => c.ask))
-    check('tech: a stock (source robinhood) verdict emits ONLY swap / DCA asks across all five ratings — never protect / stop / guardian', stockAsks.length === 10 && stockAsks.every((a) => !/protect|stop|guardian|take profit|alert/i.test(a)) && stockAsks.every((a) => ['swap', 'dca'].includes(simulateLadder(a).gate)), stockAsks.join(' | '))
+    check('tech: a stock (source robinhood) verdict emits ONLY swap asks across all five ratings — never protect / stop / guardian / DCA', stockAsks.length === 7 && stockAsks.every((a) => !/protect|stop|guardian|take profit|alert|\bdca\b|weekly/i.test(a)) && stockAsks.every((a) => simulateLadder(a).gate === 'swap'), stockAsks.join(' | '))
     check('tech: a stock SELL verdict pairs "Sell $50" with the live-sized "Sell all my AAPL"', verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'strong_sell' }).map((c) => c.ask).join(' | ') === 'Sell $50 of AAPL | Sell all my AAPL' && simulateLadder('Sell all my AAPL').note?.includes('sized live') === true)
     // The alert chip stays OFF until WATCH's grammar has a ladder rung: this pin FAILS the
     // day "Alert me when AAPL hits $330" stops falling to the planner — flip `alerts` then.
     const alertChip = verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'neutral', resistance: 330, alerts: true })[1]
     check('tech: with alerts ON a neutral stock carries "Alert me when AAPL hits $R1" — and TODAY that ask falls to the planner (no alert rung yet; flip the default when this pin turns red)', alertChip.kind === 'alert' && alertChip.ask === 'Alert me when AAPL hits $330' && simulateLadder(alertChip.ask).kind === 'planner' && verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'neutral', resistance: 330 }).every((c) => c.kind !== 'alert'))
-    check('tech: sell verdicts carry Sell + Protect (spot coin) / Sell + Sell-all (stock); buy verdicts Buy + DCA (spot) / Buy + Protect (perp)',
+    check('tech: sell verdicts carry Sell + Protect (spot coin) / Sell + Sell-all (stock); buy verdicts Buy + Protect (spot coin, perp) / Buy alone (stock) — no DCA chip since 2026-09-16',
       verdictChips({ symbol: 'ETH', source: 'coinbase', rating: 'sell' }).map((c) => c.kind).join(',') === 'sell,protect' &&
       verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'sell' }).map((c) => c.kind).join(',') === 'sell,sell' &&
-      verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'strong_buy' }).map((c) => c.kind).join(',') === 'buy,dca' &&
+      verdictChips({ symbol: 'AAPL', source: 'robinhood', rating: 'strong_buy' }).map((c) => c.kind).join(',') === 'buy' &&
+      verdictChips({ symbol: 'ETH', source: 'coinbase', rating: 'buy' }).map((c) => c.kind).join(',') === 'buy,protect' &&
+      verdictChips({ symbol: 'ETH', source: 'coinbase', rating: 'neutral' }).map((c) => c.kind).join(',') === 'protect,buy' &&
       verdictChips({ symbol: 'HYPE', source: 'hyperliquid', rating: 'buy' }).map((c) => c.kind).join(',') === 'buy,protect')
 
     // The API contract on live symbols (feeds are keyless public data)
@@ -19813,7 +19841,8 @@ async function main() {
               (b.rows!.movingAverages.length + b.omitted!.filter((n) => /Average|Ichimoku/.test(n)).length) === 15 &&
               b.rows!.oscillators.every((x) => Number.isFinite(x.value) && ['buy', 'neutral', 'sell'].includes(x.signal)) &&
               !!b.pivots && ['classic', 'fibonacci', 'camarilla', 'woodie', 'dm'].every((f) => Number.isFinite(b.pivots![f]?.p) && Number.isFinite(b.pivots![f]?.r1) && Number.isFinite(b.pivots![f]?.s1)) &&
-              b.chips.length >= 2 && b.chips.every((c) => simulateLadder(c.ask).kind === 'action') && (b.bars ?? 0) >= 200
+              // a stock's buy / neutral verdict is the Buy alone (no DCA chip since 2026-09-16)
+              b.chips.length >= (sym === 'AAPL' && !/sell/.test(b.summary!.rating) ? 1 : 2) && b.chips.every((c) => simulateLadder(c.ask).kind === 'action') && (b.bars ?? 0) >= 200
             : /feed unavailable|tape too short/.test(b.error!) && /AAPL|ETH/.test(b.reason ?? '') && b.chips.length === 0),
         live ? `${b.feed} bars=${b.bars} ${b.summary!.rating} osc=${b.oscillators!.rating} ma=${b.movingAverages!.rating} omitted=${b.omitted!.length} chips=${b.chips.map((c) => c.ask).join(' / ')}` : `REFUSED: ${b.error}`,
       )
@@ -20078,29 +20107,26 @@ async function main() {
     // chip IS the contract (memory chip-send-contract).
     const hypePair = chartPairFor('HYPE')!
     const solPair = chartPairFor('SOL')!
-    const dcaAsk = composeTradeAsk(ethPair, 'dca', { usd: 25, cadence: 'daily' })
-    const dcaParsed = parseDcaCreate(dcaAsk)
     const spot = parseSpotGuardArm(composeTradeAsk(ethPair, 'protect', { pct: 10 }))
     const perp = parseGuardianArm(composeTradeAsk(hypePair, 'protect', { pct: 5 }))
     const hlLong = parseHlIntent(composeTradeAsk(hypePair, 'buy', { usd: 10 }))
     const buy = parseSwapIntent(composeTradeAsk(aaplPair, 'buy', { usd: 10 }))
     const sell = parseSwapIntent(composeTradeAsk(ethPair, 'sell', { usd: 50 }))
     check(
-      'markets: order-panel sentences round-trip — swap buy/sell, DCA (cadence), spot protect, perp protect, HL long',
+      'markets: order-panel sentences round-trip — swap buy/sell, spot protect, perp protect, HL long',
       buy.isSwap && !buy.problem && buy.buyToken === 'AAPL' && buy.sellAmountUsd === '10' &&
         sell.isSwap && !sell.problem && sell.sellToken === 'ETH' && sell.sellAmountUsd === '50' &&
-        !!dcaParsed && !('problem' in dcaParsed) && dcaParsed.cadence === 'day' && dcaParsed.buyUsd === 25 &&
         spot?.token === 'ETH' && spot.triggerMode === 'price_move_pct' && spot.triggerValue === 10 &&
         perp?.coin === 'HYPE' && perp.triggerValue === 5 &&
         !!hlLong,
-      `buy=${JSON.stringify(buy)} sell=${JSON.stringify(sell)} dca=${JSON.stringify(dcaParsed)} spot=${JSON.stringify(spot)} perp=${JSON.stringify(perp)} hl=${hlLong ? hlLong.kind : null}`,
+      `buy=${JSON.stringify(buy)} sell=${JSON.stringify(sell)} spot=${JSON.stringify(spot)} perp=${JSON.stringify(perp)} hl=${hlLong ? hlLong.kind : null}`,
     )
     check(
-      'markets: sides are honest per venue — stocks no Protect (Spot Guardian is Base-only), perps Long/Short/Protect, non-EVM coins Buy/Sell only, ETH all four',
-      tradeSidesFor(aaplPair).join() === 'buy,sell,dca' &&
+      'markets: sides are honest per venue — stocks no Protect (Spot Guardian is Base-only), perps Long/Short/Protect, non-EVM coins Buy/Sell only, ETH all three; no DCA side anywhere (2026-09-16)',
+      tradeSidesFor(aaplPair).join() === 'buy,sell' &&
         tradeSidesFor(hypePair).join() === 'buy,sell,protect' &&
         tradeSidesFor(solPair).join() === 'buy,sell' &&
-        tradeSidesFor(ethPair).join() === 'buy,sell,dca,protect' &&
+        tradeSidesFor(ethPair).join() === 'buy,sell,protect' &&
         tradeAsks(hypePair)[0].ask === 'Long $50 of HYPE on Hyperliquid',
     )
 
@@ -20593,7 +20619,7 @@ async function main() {
         /aria-label="Full screen chart"/.test(tAapl) &&
         // the Overview chips ship in the server HTML with the /chat prefill fallback
         tAapl.includes(`/chat?prompt=${encodeURIComponent('Buy $50 of AAPL')}`) &&
-        tAapl.includes(`/chat?prompt=${encodeURIComponent('DCA $10 into AAPL weekly')}`) &&
+        !tAapl.includes(encodeURIComponent('DCA $10 into AAPL weekly')) &&
         !tAapl.includes(encodeURIComponent('Protect my AAPL')),
     )
     const tTech = await fetch(`${BASE}/t/AAPL?tab=technicals`)
@@ -21866,18 +21892,19 @@ async function main() {
     const link = mk2VenuesFor('LINK', linkPair, { last: 20 })
     const kinds = (rows: ReturnType<typeof mk2VenuesFor>) => new Set(rows.map((r) => r.kind))
     check(
-      'MK2/EXEC venue map: ETH lists spot on Base/Ethereum/Arbitrum/Optimism, CoW limits only where a book exists (never Optimism or 4663), a leveraged perp + Guardian stop, Aave supply + a USDC borrow, Lido stake, DCA, the Spot Guardian on Base, and NEAR funding from every other chain',
+      'MK2/EXEC venue map: ETH lists spot on Base/Ethereum/Arbitrum/Optimism, CoW limits only where a book exists (never Optimism or 4663), a leveraged perp + Guardian stop, Aave supply + a USDC borrow, Lido stake, the Spot Guardian on Base, and NEAR funding from every other chain — no DCA row (2026-09-16)',
       new Set(eth.filter((r) => r.kind === 'spot').map((r) => r.chainId)).size === 4 &&
         eth.filter((r) => r.kind === 'limit').every((r) => [8453, 1, 42161].includes(r.chainId)) && eth.some((r) => r.kind === 'limit') &&
         eth.some((r) => r.kind === 'perp' && r.ask.startsWith('2x Long')) && eth.some((r) => r.kind === 'protect' && r.venue === 'hyperliquid' && r.needs === 'position') &&
         eth.some((r) => r.kind === 'lend' && r.ask === 'Supply $50 of ETH to Aave') && eth.some((r) => r.kind === 'lend' && r.ask === 'Borrow 50 USDC from Aave') &&
-        eth.some((r) => r.kind === 'stake' && r.ask === 'Stake 0.02 ETH on Lido' && r.chainId === 1) && eth.some((r) => r.kind === 'dca') &&
+        eth.some((r) => r.kind === 'stake' && r.ask === 'Stake 0.02 ETH on Lido' && r.chainId === 1) && !eth.some((r) => /\bdca\b|weekly/i.test(`${r.id} ${r.label} ${r.ask}`)) &&
         eth.some((r) => r.kind === 'protect' && r.venue === 'pantessa' && r.chainId === 8453) && eth.filter((r) => r.kind === 'fund').length === 3,
       `${eth.length} rows: ${[...kinds(eth)].join(',')}`,
     )
     check(
-      'MK2/EXEC venue map: a Robinhood Chain stock is stock buy/sell + DCA on 4663 + a LiFi funding job from each origin — no perp, lend, stake or limit row, and the missing kinds are NAMED',
-      [...kinds(aapl)].sort().join() === ['dca', 'fund', 'stock'].join() && aapl.every((r) => r.kind === 'fund' || r.chainId === 4663) && mk2MissingNotes('AAPL', aaplPair).length === 1,
+      'MK2/EXEC venue map: a Robinhood Chain stock is stock buy/sell on 4663 + a LiFi funding job from each origin — no perp, lend, stake, limit or DCA row, and the missing kinds are NAMED (no DCA pitch in the note)',
+      [...kinds(aapl)].sort().join() === ['fund', 'stock'].join() && aapl.every((r) => r.kind === 'fund' || r.chainId === 4663) && mk2MissingNotes('AAPL', aaplPair).length === 1 &&
+        !/\bdca\b/i.test(mk2MissingNotes('AAPL', aaplPair)[0]),
       [...kinds(aapl)].join(','),
     )
     check(
@@ -21900,16 +21927,16 @@ async function main() {
     // exports MARKETS + the ask door import.
     const ethExec = mk2ExecAsks(ethPair, { usd: 50, last: 2500 })
     check(
-      'MK2/EXEC ExecStrip: ETH offers Buy · Sell · Long · Short · Stake · Supply · DCA · Protect, a stock Buy · Sell · DCA, an HL chart Long · Short · Protect, SOL Long · Short — and every chip lands native',
-      mk2ExecSidesFor(ethPair).join() === ['buy', 'sell', 'long', 'short', 'stake', 'supply', 'dca', 'protect'].join() &&
-        mk2ExecSidesFor(aaplPair).join() === ['buy', 'sell', 'dca'].join() && mk2ExecSidesFor(hypePair).join() === ['long', 'short', 'protect'].join() &&
+      'MK2/EXEC ExecStrip: ETH offers Buy · Sell · Long · Short · Stake · Supply · Protect, a stock Buy · Sell, an HL chart Long · Short · Protect, SOL Long · Short (no DCA chip, 2026-09-16) — and every chip lands native',
+      mk2ExecSidesFor(ethPair).join() === ['buy', 'sell', 'long', 'short', 'stake', 'supply', 'protect'].join() &&
+        mk2ExecSidesFor(aaplPair).join() === ['buy', 'sell'].join() && mk2ExecSidesFor(hypePair).join() === ['long', 'short', 'protect'].join() &&
         mk2ExecSidesFor(solPair).join() === ['long', 'short'].join() &&
         [...ethExec, ...mk2ExecAsks(aaplPair), ...mk2ExecAsks(hypePair), ...mk2ExecAsks(solPair)].every((a) => simulateLadder(a.ask).kind === 'action'),
       ethExec.map((a) => a.ask).join(' | '),
     )
     check(
-      'MK2/EXEC trade-asks stays byte-compatible: tradeAsks(ETH) still yields buy/sell/dca/protect, sideOf/AMOUNTS/STOPS/CADENCES unchanged',
-      tradeAsks(ethPair).map((a) => a.side).join() === 'buy,sell,dca,protect' && mk2SideOf('Sell $50 of ETH') === 'sell' && MK2_AMOUNTS.join() === '10,25,100' && MK2_STOPS.join() === '5,10,15' && MK2_CADENCES.join() === 'daily,weekly,monthly',
+      'MK2/EXEC trade-asks stays byte-compatible: tradeAsks(ETH) yields buy/sell/protect (DCA dropped 2026-09-16), sideOf/AMOUNTS/STOPS unchanged',
+      tradeAsks(ethPair).map((a) => a.side).join() === 'buy,sell,protect' && mk2SideOf('Sell $50 of ETH') === 'sell' && MK2_AMOUNTS.join() === '10,25,100' && MK2_STOPS.join() === '5,10,15',
     )
 
     // The routes API — public, cached, fail-soft, never a 500.
@@ -21960,18 +21987,18 @@ async function main() {
     const qaAapl = mk2QuickActs('AAPL', aaplPair)
     const qaSol = mk2QuickActs('SOL', solPair)
     check(
-      'MK2/EXEC QuickAct: ETH = Buy $25 · Long 2x · DCA weekly; a stock = Buy $25 on 4663 · DCA weekly (never a perp); SOL = Long 2x · Short 2x (never a spot buy of a squat); every chip lands native; QuickAct.tsx stops the row link and sends through onAsk',
-      qaEth.map((a) => a.label).join() === 'Buy $25,Long 2x,DCA weekly' && qaEth[1].ask === '2x Long $25 of ETH on Hyperliquid' &&
-        qaAapl.map((a) => a.label).join() === 'Buy $25 on 4663,DCA weekly' && qaAapl[0].ask === 'Buy $25 of AAPL' &&
+      'MK2/EXEC QuickAct: ETH = Buy $25 · Long 2x; a stock = Buy $25 on 4663 (never a perp); SOL = Long 2x · Short 2x (never a spot buy of a squat); no DCA chip (2026-09-16); every chip lands native; QuickAct.tsx stops the row link and sends through onAsk',
+      qaEth.map((a) => a.label).join() === 'Buy $25,Long 2x' && qaEth[1].ask === '2x Long $25 of ETH on Hyperliquid' &&
+        qaAapl.map((a) => a.label).join() === 'Buy $25 on 4663' && qaAapl[0].ask === 'Buy $25 of AAPL' &&
         qaSol.map((a) => a.label).join() === 'Long 2x,Short 2x' &&
         [...qaEth, ...qaAapl, ...qaSol, ...mk2QuickActs('HYPE', hypePair), ...mk2QuickActs('LINK', linkPair)].every((a) => simulateLadder(a.ask).kind === 'action') &&
         (await readFile('components/markets/trade/QuickAct.tsx', 'utf8')).includes('e.stopPropagation()') && (await readFile('components/markets/trade/QuickAct.tsx', 'utf8')).includes('onAsk(ask)'),
       `${qaEth.map((a) => a.ask).join(' | ')} || ${qaAapl.map((a) => a.ask).join(' | ')} || ${qaSol.map((a) => a.ask).join(' | ')}`,
     )
     check(
-      'MK2/EXEC routes API: a stable (USDC) is 404 by name, a malformed symbol 400, a stock answers only 4663 stock/dca/fund rows',
+      'MK2/EXEC routes API: a stable (USDC) is 404 by name, a malformed symbol 400, a stock answers only 4663 stock/fund rows (no DCA row)',
       (await fetch(`${BASE}/api/markets/routes?symbol=USDC`)).status === 404 && (await fetch(`${BASE}/api/markets/routes?symbol=%3Cscript%3E`)).status === 400 &&
-        (await (await fetch(`${BASE}/api/markets/routes?symbol=AAPL&amount=25`)).json().then((b: Mk2RoutesResponse) => b.routes.every((r) => ['stock', 'dca', 'fund'].includes(r.kind)))),
+        (await (await fetch(`${BASE}/api/markets/routes?symbol=AAPL&amount=25`)).json().then((b: Mk2RoutesResponse) => b.routes.every((r) => ['stock', 'fund'].includes(r.kind)))),
     )
 
     // The position API — public by address, read-only, exits are sentences.
@@ -23182,11 +23209,11 @@ async function main() {
     )
 
     check(
-      'arrival/core: only asks the PAGE composed for a symbol with an EVM home hand off — a fired alert\'s stored actionAsk keeps the prefill (nothing pins what createAlert accepted), and so do the rail\'s blind Buy/Sell/DCA templates on a coin that lives off-EVM (SOL, XRP, DOGE), whose handoff would open the app with a clarify',
+      'arrival/core: only asks the PAGE composed for a symbol with an EVM home hand off — a fired alert\'s stored actionAsk keeps the prefill (nothing pins what createAlert accepted), and so do the rail\'s blind Buy/Sell templates on a coin that lives off-EVM (SOL, XRP, DOGE), whose handoff would open the app with a clarify (the rail\'s DCA chip is gone, 2026-09-16)',
       /send\(n\.actionAsk!, false\)/.test(railSrcA) &&
         /send\(`Buy \$10 of \$\{sym\}`, handoffable\(sym\)\)/.test(railSrcA) &&
         /send\(`Sell \$10 of \$\{sym\}`, handoffable\(sym\)\)/.test(railSrcA) &&
-        /send\(`DCA \$10 into \$\{sym\} weekly`, handoffable\(sym\)\)/.test(railSrcA) &&
+        !/DCA \$10 into/.test(railSrcA) &&
         /send\(ask, handoffable\(alertFor\)\)/.test(railSrcA) &&
         /venuesFor\(sym, pair, \{ usd: 10 \}\)\.some\(\(r\) => \(r\.kind === 'spot' \|\| r\.kind === 'stock'\) && r\.side === 'buy'\)/.test(railSrcA) &&
         // A one-letter stock ticker (F, P) has an EVM home but never parses —
@@ -23489,7 +23516,7 @@ async function main() {
     // on a native gate (kind:'action') or an honest deterministic clarify —
     // never the planner, because a planner answer on arrival would be a model
     // deciding what to do with a stranger's click. Senders: QuickAct rows
-    // (lib/symbol-venues quickActs) · the rail's Buy/Sell/DCA chips + fired-
+    // (lib/symbol-venues quickActs) · the rail's Buy/Sell chips + fired-
     // alert chips (lib/watchlists alertActionChips) · the Morning tape's chip
     // MENU (lib/markets-ai chipMenu, which the route ladder-filters BEFORE the
     // model sees it — pinned below) · the EARN board's three templates (PR
@@ -23516,7 +23543,6 @@ async function main() {
           for (const a of mk2QuickActs(r.symbol, pair)) add('QuickAct', r.symbol, a.ask)
           add('Rail', r.symbol, `Buy $10 of ${r.symbol}`)
           add('Rail', r.symbol, `Sell $10 of ${r.symbol}`)
-          add('Rail', r.symbol, `DCA $10 into ${r.symbol} weekly`)
           const last = pair.source === 'robinhood' ? 187.5 : 2447.25
           for (const c of arrivalAlertChips({ symbol: r.symbol, condition: 'below', value: last * 0.95, basePrice: null }, pair)) add('Alert', r.symbol, c.ask)
           for (const c of arrivalAlertChips({ symbol: r.symbol, condition: 'pct_move', value: 5, basePrice: last }, pair)) add('Alert', r.symbol, c.ask)
@@ -23579,15 +23605,15 @@ async function main() {
       // The honest clarifies: a coin whose home chain we don't trade spot
       // ("SOL lives on Solana — HL door") or a single-letter sell — a
       // deterministic refusal-by-name with chips, no model. They are ALL the
-      // blind `Buy/Sell $N of <sym>` / `DCA $10 into <sym> weekly` TEMPLATES:
+      // blind `Buy/Sell $N of <sym>` TEMPLATES:
       // the rail's own chips (WatchlistRail.tsx) and the fired-alert chips
       // (lib/watchlists alertActionChips). QuickAct reads venuesFor and
       // composes "Long $25 of SOL on Hyperliquid" instead — request in
       // ROUNDS.md: the templates should read venuesFor too. The tape menu
       // (ladder-filtered) and the EARN templates never clarify.
-      const templateClarify = (r: Row) => (r.sender === 'Rail' || r.sender === 'Alert') && /^((Buy|Sell) \$\d+ of [A-Z0-9]+|DCA \$\d+ into [A-Z0-9]+ weekly)$/.test(r.ask)
+      const templateClarify = (r: Row) => (r.sender === 'Rail' || r.sender === 'Alert') && /^(Buy|Sell) \$\d+ of [A-Z0-9]+$/.test(r.ask)
       const clarifyOffTemplate = clarify.filter((r) => !templateClarify(r))
-      check('arrival ladder: every clarify is a blind rail / fired-alert Buy/Sell/DCA template (a non-EVM home or a single-letter ticker; deterministic, chips, no model) — QuickAct, the tape menu and the EARN templates never clarify', clarifyOffTemplate.length === 0, `${clarify.length} clarifies; off-template: ${clarifyOffTemplate.map((r) => `[${r.sender}] ${r.ask}`).join(' | ').slice(0, 300)}`)
+      check('arrival ladder: every clarify is a blind rail / fired-alert Buy/Sell template (a non-EVM home or a single-letter ticker; deterministic, chips, no model) — QuickAct, the tape menu and the EARN templates never clarify', clarifyOffTemplate.length === 0, `${clarify.length} clarifies; off-template: ${clarifyOffTemplate.map((r) => `[${r.sender}] ${r.ask}`).join(' | ').slice(0, 300)}`)
       check('arrival ladder: the fence refuses NONE of the sentences the senders compose (no chip can be walled by its own handoff)', fenced.length === 0, fenced.slice(0, 5).join(' | '))
       // The tape's chips reach the page only through ladderFilterMenu (the
       // route filters the MENU before the model picks ids), so a menu sentence
@@ -24515,12 +24541,12 @@ async function main() {
         if (!pair) continue
         const last = pair.source === 'robinhood' ? 187.5 : 2447.25
         for (const a of qaA(r.symbol, pair)) addA('QuickAct', a.ask)
-        for (const tpl of [`Buy $10 of ${r.symbol}`, `Sell $10 of ${r.symbol}`, `DCA $10 into ${r.symbol} weekly`]) addA('Rail', tpl)
+        for (const tpl of [`Buy $10 of ${r.symbol}`, `Sell $10 of ${r.symbol}`]) addA('Rail', tpl)
         for (const c of alertChipsA({ symbol: r.symbol, condition: 'below', value: last * 0.95, basePrice: null }, pair)) addA('Alert', c.ask)
         const menus = [menuA({ pair, last: null, tech: null }), ...ratingsA.map((rating) => menuA({ pair, last, tech: { summary: { rating }, pivots: { classic: { s1: last * 0.97, r1: last * 1.03 } } } as never }))]
         for (const m of menus) for (const c of ladderMenuA(m).chips) addA('MorningTape', c.ask)
         for (const v of venuesForA(r.symbol, pair, { usd: 25, last })) addA('RouteTable', v.ask)
-        for (const side of sidesForA(pair)) addA('TradeTab', composeAskA(pair, side, { usd: 50, pct: 5, cadence: 'weekly' }))
+        for (const side of sidesForA(pair)) addA('TradeTab', composeAskA(pair, side, { usd: 50, pct: 5 }))
         for (const e of execAsksA(pair, { usd: 50, last, leverage: 2 })) addA('ExecStrip', e.ask)
         for (const price of [last * 0.9, last * 1.1]) for (const o of lineActsA({ symbol: r.symbol, source: pair.source, price, last })) addA('ChartLevel', o.action.ask)
         for (const rating of ratingsA) for (const c of verdictA({ symbol: r.symbol, source: pair.source, rating, support: last * 0.97, resistance: last * 1.03 })) addA('Verdict', c.ask)
