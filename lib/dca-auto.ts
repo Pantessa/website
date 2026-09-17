@@ -487,3 +487,30 @@ export function usdcAtomsToHuman(atomic: bigint): string {
   const frac = (atomic % BigInt(1_000_000)).toString().padStart(6, '0').replace(/0+$/, '')
   return frac ? `${whole}.${frac}` : whole.toString()
 }
+
+/**
+ * What an autopilot schedule says after a buy that pulled and didn't go
+ * through (lib/autopilot-unwind). The USDC's location comes first: back in
+ * the wallet (with the refund tx), on its way back, or waiting for a person.
+ * Cleared by the next bought period.
+ */
+export function dcaUnwindCopy(input: {
+  outcome: 'refunded' | 'unwinding' | 'operator'
+  buyUsd: number
+  buyToken: string
+  period: 'day' | 'week' | 'month'
+  why: string
+  refundTx?: string
+  note?: string
+}): string {
+  const thisPeriod = input.period === 'day' ? "Today's" : `This ${input.period}'s`
+  const nextPeriod = input.period === 'day' ? 'tomorrow' : `next ${input.period}`
+  const buy = `${thisPeriod} autopilot buy of $${input.buyUsd} of ${input.buyToken}`
+  if (input.outcome === 'refunded') {
+    return `${buy} didn't go through${input.why ? ` (${input.why})` : ''}, so your $${input.buyUsd} USDC went back to your wallet${input.refundTx ? ` (tx ${input.refundTx.slice(0, 10)}…)` : ''}. Autopilot buys again ${nextPeriod}.`
+  }
+  if (input.outcome === 'unwinding') {
+    return `${buy} hasn't settled yet${input.note ? ` (${input.note})` : ''}. If it doesn't go through, your $${input.buyUsd} USDC comes back to your wallet. New buys wait until it settles.`
+  }
+  return `${buy} didn't settle, and Pantessa can't confirm where your $${input.buyUsd} USDC went${input.note ? ` (${input.note})` : ''}, so no new buys run until a person checks the chain and settles it.`
+}

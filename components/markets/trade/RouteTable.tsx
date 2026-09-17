@@ -12,22 +12,33 @@
 // A sell row (Sell, Limit sell, your line above market) renders only while
 // the connected wallet holds the symbol on that row's chain (lib/sell-gate,
 // 2026-09-16): nothing to sell, no row.
+//
+// The Fund group is per wallet (2026-09-16, Nate: "it shows 'Fund from Base'
+// but the user does not have any tokens on base"): the connected wallet's
+// rows come from GET /api/markets/routes/funding, one per chain that can
+// actually fund the order, with a line for the money that can't. The card
+// row (when the on-ramp is open) needs no wallet and closes the group. A
+// visitor with no wallet sees the card and what connecting would show.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { CreditCard } from 'lucide-react'
 import { getProtocolMark } from '@/components/protocol-marks'
 import { PantessaMark } from '@/components/Logo'
 import type { ChartPair } from '@/lib/charts'
 import { parseChartState } from '@/lib/chart-state'
+import { useSession } from '@/lib/session'
 import {
   BEST_OUT_RULE,
   CHART_DRAW_KEY_PREFIX,
   DEFAULT_ROUTE_USD,
+  FUND_CONNECT_NOTE,
   SPOT_CHAINS,
   limitAtLevel,
   VENUE_KIND_LABEL,
   VENUE_KIND_ORDER,
   VENUE_NAME,
   venueChainLabel,
+  type FundRoutesResponse,
   type RouteQuote,
   type RoutesResponse,
   type VenueKind,
@@ -64,6 +75,7 @@ const feeLabel = (bps: number) => (bps > 0 ? `${(bps / 100).toFixed(2)}%` : 'no 
 
 function VenueMark({ venue }: { venue: string }) {
   if (venue === 'pantessa') return <PantessaMark size={18} />
+  if (venue === 'card') return <CreditCard size={18} strokeWidth={1.75} aria-hidden="true" />
   const Mark = getProtocolMark(venue === 'near' ? 'near-intents' : venue)
   if (!Mark) return <span className="mkt-route__lettermark mono">{venue.slice(0, 2).toUpperCase()}</span>
   return <Mark size={18} />
@@ -95,6 +107,15 @@ export default function RouteTable({
   const [open, setOpen] = useState<string | null>(null)
   const usd = custom.trim() ? Math.max(1, Math.floor(Number(custom) || 0)) : amount
   const seq = useRef(0)
+  // The connected wallet's own funding rows (lib/fund-routes), keyed by the
+  // wallet + symbol they were read for, so a switched wallet never shows
+  // another wallet's rows. A size change keeps the rows on screen until the
+  // re-read lands, the way the quotes above do.
+  const { walletAddress } = useSession()
+  const [funding, setFunding] = useState<{ key: string; body: FundRoutesResponse | null } | null>(null)
+  const fundSeq = useRef(0)
+  const fundBase = walletAddress ? `${walletAddress.toLowerCase()}|${pair.symbol}|` : null
+  const fundKey = fundBase ? `${fundBase}${usd}` : null
 
   // The trader's own price: the chart's last drawn horizontal line, re-read
   // every 2s (same-tab writes fire no storage event) and on tab return.
@@ -109,7 +130,23 @@ export default function RouteTable({
     }
   }, [pair.symbol])
 
+  const loadFunding = useCallback(async () => {
+    const id = ++fundSeq.current
+    if (!walletAddress || !fundKey || !fundBase) return
+    const qs = new URLSearchParams({ symbol: pair.symbol, amount: String(usd), address: walletAddress })
+    try {
+      const res = await fetch(`/api/markets/routes/funding?${qs}`, { cache: 'no-store' })
+      if (!res.ok) throw new Error(String(res.status))
+      const body = (await res.json()) as FundRoutesResponse
+      if (id === fundSeq.current) setFunding({ key: fundKey, body })
+    } catch {
+      // Keep the last good read for this wallet; say nothing new on a blip.
+      if (id === fundSeq.current) setFunding((f) => (f?.key.startsWith(fundBase) && f.body ? f : { key: fundKey, body: null }))
+    }
+  }, [pair.symbol, usd, walletAddress, fundKey, fundBase])
+
   const load = useCallback(async () => {
+    void loadFunding()
     const id = ++seq.current
     setState((s) => (s === 'ready' ? s : 'loading'))
     const qs = new URLSearchParams({ symbol: pair.symbol, amount: String(usd) })
@@ -126,7 +163,7 @@ export default function RouteTable({
       if (id !== seq.current) return
       setState((s) => (s === 'ready' ? s : 'error'))
     }
-  }, [pair.symbol, usd, last, leverage])
+  }, [pair.symbol, usd, last, leverage, loadFunding])
 
   // Load on mount + every 30s while the tab is visible; re-load on size/leverage.
   useEffect(() => {
@@ -149,20 +186,44 @@ export default function RouteTable({
   const held = useHeld()
   const routes = useMemo(() => (data?.routes ?? []).filter((r) => canSellAsk(r.ask, held)), [data, held])
 
+  // Does this page fund a buy at all? (A perp chart or a non-EVM home has no
+  // spot buy for money to land on — the map lists no funding there.)
+  const fundApplies = !!data && (data.source === 'robinhood' || data.routes.some((r) => r.kind === 'spot'))
+  const walletFunding = fundBase && funding?.key.startsWith(fundBase) ? funding.body : null
+  const fundPending = !!fundBase && !funding?.key.startsWith(fundBase)
+  const fundNotes = useMemo<string[]>(() => {
+    if (!fundApplies) return []
+    if (!walletAddress) return [FUND_CONNECT_NOTE]
+    if (fundPending) return ['Checking which chains your money is on…']
+    if (!walletFunding) return ["Couldn't read your balances just now. Buy still plans the funding when you send it."]
+    return walletFunding.notes
+  }, [fundApplies, walletAddress, fundPending, walletFunding])
+
   const rows = useMemo(() => {
-    const list = routes
+    // The wallet's own funding rows first, then the card (the public map's
+    // only funding row).
+    const list = [...routes.filter((r) => r.venue !== 'card'), ...(walletFunding?.routes ?? []), ...routes.filter((r) => r.venue === 'card')]
     const filtered = filter === 'all' ? list : list.filter((r) => r.kind === filter)
     const groups = new Map<VenueKind, RouteQuote[]>()
     for (const k of VENUE_KIND_ORDER) {
       const g = filtered.filter((r) => r.kind === k)
       if (g.length) groups.set(k, g)
     }
+    // The Fund group stands even with no row in it, to say why.
+    if ((filter === 'all' || filter === 'fund') && !groups.has('fund') && fundNotes.length > 0) groups.set('fund', [])
     return groups
-  }, [routes, filter])
+  }, [routes, filter, walletFunding, fundNotes])
 
-  const kindsPresent = useMemo(() => VENUE_KIND_ORDER.filter((k) => routes.some((r) => r.kind === k)), [routes])
+  const kindsPresent = useMemo(
+    () => VENUE_KIND_ORDER.filter((k) => routes.some((r) => r.kind === k) || (k === 'fund' && ((walletFunding?.routes.length ?? 0) > 0 || fundNotes.length > 0))),
+    [routes, walletFunding, fundNotes],
+  )
   const hasPerp = routes.some((r) => r.kind === 'perp')
-  const venues = useMemo(() => new Set(routes.map((r) => r.venue)).size, [routes])
+  // A card checkout isn't a dapp; the wallet's funding venues are.
+  const venues = useMemo(
+    () => new Set([...routes, ...(walletFunding?.routes ?? [])].filter((r) => r.venue !== 'card').map((r) => r.venue)).size,
+    [routes, walletFunding],
+  )
 
   return (
     <section className="mkt-card mkt-routes" aria-label={`Every way to act on ${symbol}`} data-state={state} data-rows={routes.length}>
@@ -345,6 +406,15 @@ export default function RouteTable({
                   </li>
                 ))}
               </ul>
+              {kind === 'fund' && fundNotes.length > 0 && (
+                <ul className="mkt-routes__fundnotes" aria-live="polite" data-fund-state={walletAddress ? (fundPending ? 'pending' : (walletFunding?.state ?? 'unread')) : 'no-wallet'}>
+                  {fundNotes.map((n) => (
+                    <li key={n} className="mkt-routes__fundnote">
+                      {n}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           ))}
           {data.notes.length > 0 && (

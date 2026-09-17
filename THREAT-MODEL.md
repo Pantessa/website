@@ -30,6 +30,7 @@ pins it) as the audit runs.
 | House burner key | `PRIVATE_KEY` (Vercel env) | direct theft of house funds; every chat turn can spend it |
 | Session signing secret | `SESSION_SECRET` | forge any user's session; full account takeover, no wallet needed |
 | Cron trigger secret | `CRON_SECRET` | drive the guardian runner on demand |
+| The autopilot spender | CDP server wallet (`CDP_WALLET_SECRET`) | pull up to every live Spend Permission's allowance, then send the pull anywhere |
 | API keys (`yf_`) | hashed in DB, held by users/agents | act as that owner: mint links, spend under their policy |
 | Treasury address | `lib/fees.ts` (code constant) | fee revenue redirected (a code-review target, not a runtime one) |
 | The user's own wallet | never ours | *by design, unreachable* — non-custodial is the whole posture |
@@ -175,14 +176,34 @@ The other place user money moves with no human present. A smart wallet signs
 a Spend Permission naming Pantessa's CDP spender. A cron (hourly for DCA,
 every minute for spot stops) pulls within it, then buys (DCA) or sells (a
 fired spot stop) through a guarded Uniswap v3 swap whose output is pinned to
-the owner. The on-chain SpendPermissionManager caps the pull whatever this
-codebase does. Everything after the pull is ours.
+the owner. The on-chain
+SpendPermissionManager caps the pull whatever this codebase does. Everything
+after the pull is ours.
 
-> **Overlap with #807** (open when this was written): #807 adds this section
-> too, with the Spot Guardian's `guardSpotSell` verification and an asset-table
-> row for the spender. Whichever merges second keeps one heading, both
-> Verified lists and one copy of the shared open questions, and drops this
-> note.
+Verified (2026-09-16, #807):
+- **The spot sell can only pay the owner, minus the pinned treasury fee.**
+  `guardSpotSell` re-decodes every step before the pull:
+  - the exact wrap and approval, and the pinned router;
+  - both builder shapes:
+    - fee off: the swap pays the owner;
+    - fee on: the swap pays the router, then `sweepTokenWithFee` pays the
+      owner in USDC, with the fee to `TREASURY_ADDRESS` at a canonical tier
+      and a sweep minimum equal to the swap's;
+  - the owner's post-fee minimum clears an independent floor off the mark;
+  - no price limit (a partial fill would leave the rest on the spender);
+  - a real v3 pool tier.
+
+  Hostile shapes tried: the router's sentinels (`0x…01`, `0x…02`) as
+  recipient, the contract-balance amount flag, trailing calldata, dirty
+  address bits (the router reads the same 20-byte recipient), price limits,
+  and bogus tiers. Pinned by the `spot guard` checks in `scripts/test-api.ts`.
+  They include a live build of the sweep's own `buildSpotSell`, and a
+  mutation run showed each check has a pin that fails without it.
+- **A reverted transaction fails the run.** Both executors' `waitTx` throw on
+  a non-success receipt. Before #807 the spot sweep recorded a reverted sell
+  as `sold` (proven on a Base fork).
+- Claim before build, one run per policy (`spot_guard_runs` is unique on the
+  policy), and the kill switch (`paused`) holds without claiming.
 
 Verified for the DCA autopilot (2026-09-17, #812):
 - **An autonomous buy can only pay the owner, minus the pinned treasury fee,
@@ -215,16 +236,53 @@ Verified for the DCA autopilot (2026-09-17, #812):
   in `scripts/test-api.ts`. They include a live build of the sweep's own
   `buildAutoBuy` (an ETH buy and a cbBTC buy), and a mutation run showed each
   check has a pin that fails without it.
-- **A reverted transaction fails the run.** `waitTx` in `lib/dca-auto-exec.ts`
-  throws on a non-success receipt. A source pin holds the sweep's order: the
-  build and floor, then the guard, then the pull.
+- **The sweep's order is pinned.** A source pin holds it: the build and
+  floor, then the guard, then the pull (a reverted receipt is the unwind's
+  `sendRunTx`, below).
+
+Verified (2026-09-17, lib/autopilot-unwind):
+- **A pull never strands on the spender.** Before this, a sale that failed
+  after the pull (the swap is bounded 50 bps from a quote taken before 3–4
+  spender transactions, in a falling market) left the run `failed` and the
+  asset on the spender for good, proven on a Base fork for both autopilots.
+  Now, after the pull, a run ends only where the chain proves the money went:
+  `sold`/`bought` (a swap receipt succeeded) or `refunded` (the pull went
+  back to the owner). Until then it is `unwinding`, says so to the owner, and
+  a DCA schedule pulls nothing new. The in-pass order is one fresh retry
+  (rebuilt, re-guarded against the same floor, not while the kill switch is
+  paused), then the refund. A later pass's reconcile returns the money and
+  never sells late.
+- **A refund can only return exactly the pull, in the pulled asset, to the
+  wallet it came from.** `guardRefund` re-decodes every step: a plain ETH
+  send of the pull to the permission's account (no calldata), an
+  `unwrap(pull)` on the pinned WETH first when the sale had wrapped it, or
+  `transfer(owner, pull)` on the permission's own token. The amount is sized
+  by the pull, never by the spender's balance (every permission shares it),
+  and the pull must be proven by its receipt: the manager's own
+  `SpendPermissionUsed` for the stored permission hash, plus the token's
+  exact `Transfer`, so a token that delivers less than it moves can't size a
+  refund. Hostile shapes pinned by the `autopilot unwind` checks, each
+  mutation-tested.
+- **No spender transaction is sent twice.** Every send is written to the
+  run's ledger (`tx_log`) before it goes out and carries a CDP idempotency key
+  derived from (run, step, attempt). The SDK's HTTP client retries dropped
+  POSTs, so an unkeyed transfer could broadcast twice, paid from other users'
+  money on the shared spender. A pass that dies mid-send is reconciled by
+  re-issuing the ledger's own request under its key: CDP replays its first
+  answer. A re-issue must match a fresh encoding byte for byte; a swap is
+  only re-issued past its deadline, when it can only revert. Proven on the
+  fork (a pass killed after its swap broadcast: one replay, no second send,
+  refunded).
 
 Open questions:
-- **A failure after the pull strands the pull on the spender.** The sweep
-  claims the period, pulls, approves, then swaps. If the market moves past the
-  swap's 50 bps bound while those transactions land, the swap reverts and the
-  USDC stays on Pantessa's spender, recorded as failed, with no refund. The
-  spot stop has the same shape. (Task filed 2026-09-16.)
+- A send whose outcome stays unknown for more than an hour (a dropped
+  transaction, a CDP answer that never comes back, a key past its 24h memory)
+  becomes an operator case: the run stays `unwinding`, the owner is told
+  nothing more moves until a person checks, and the function logs
+  `needs an operator`. Nobody is paged by it yet.
+- A refunded run leaves its exact-amount router approval on the spender. Only
+  the spender's own router calls can use it, and every sell re-approves
+  exactly, but nothing resets it.
 - **An armed schedule re-resolves its token by symbol every period.** Nothing
   pins the address at arm, and `guardAutoBuy`'s `expectedBuyAddr` and the
   floor's mark both come from that same resolution, so neither can notice a
@@ -246,7 +304,8 @@ Open questions:
   mark for its trigger and its floor.
 - The spender is one CDP server wallet for every permission on the platform.
   What does CDP's own policy engine allow it to sign, and is there an
-  allowlist of destinations enforced at CDP, beneath our guards?
+  allowlist of destinations (SpendPermissionManager, WETH, the pinned router,
+  the sell tokens) enforced at CDP, beneath our guards?
 
 ### The funded house burner (`PRIVATE_KEY`)
 

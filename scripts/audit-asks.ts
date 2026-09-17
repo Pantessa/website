@@ -293,6 +293,14 @@ const CORPUS: Entry[] = [
   { ask: 'send all my USDG on robinhood to nate.eth', source: 'transfer chain chip (USDG lane)', expect: 'action' },
   { ask: 'Fund robinhood chain with $30 from ethereum using eth including gas, then buy $25 of NVDA', source: 'funding chip (using-eth + gas variant)', expect: 'action' },
   { ask: 'Fund robinhood chain with $9 from optimism, then buy $12 of SPY', source: 'funding chip (Optimism origin, #707)', expect: 'action' },
+  // A buy of ETH never sells ETH to buy it back (2026-09-16): an ETH-only
+  // wallet gets the ETH moved as ETH, and ETH can still pay the gas leg
+  // beside another origin's value leg.
+  { ask: 'Buy $10 of ETH on robinhood chain', source: 'the round-trip repro ask (2026-09-16)', expect: 'action' },
+  { ask: 'Move $10 of ETH from base to robinhood chain', source: 'funding move chip (ETH-only wallet buying ETH)', expect: 'action' },
+  { ask: 'Move $6 of ETH from optimism to robinhood chain, then Move $4 of ETH from arbitrum to robinhood chain', source: 'funding move chip (split across origins)', expect: 'action' },
+  { ask: 'Fund robinhood chain gas from base using eth, then Fund robinhood chain with $10.5 from arbitrum, then buy $10 of ETH', source: 'funding chip (ETH pays only the gas leg)', expect: 'action' },
+  { ask: 'bridge 0.0005 ETH from arbitrum to robinhood chain', source: 'typed ETH bridge from an L2 (→ move chips, ETH lands as ETH)', expect: 'clarify-ok' },
   { ask: 'lend 100 USDC on morpho', source: 'morpho seeded chip', expect: 'action' },
   // Live 2026-09-16 (prod /p/GGjH8ApOjh1D): the exact ask fell to the planner
   // with $13 of ETH on Ethereum idle — three quiz turns, an invented market id.
@@ -407,6 +415,19 @@ const CORPUS: Entry[] = [
   { ask: 'Stake 0.02 ETH on Lido', source: 'MK2/EXEC RouteTable stake row', expect: 'action' },
   { ask: 'Swap 50 USDC from Optimism to ETH on Base', source: 'MK2/EXEC RouteTable fund row (NEAR)', expect: 'action' },
   { ask: 'Fund Robinhood Chain with $50 from Ethereum including gas, then buy $40 of AAPL', source: 'MK2/EXEC RouteTable stock fund row', expect: 'action' },
+  // 2026-09-16 (Nate on /t/AAPL: "Fund from Base" for a wallet with nothing on
+  // Base): the Fund rows are per wallet now (lib/fund-routes) and spend the
+  // token the origin holds, in the chat chips' own words; the card row buys
+  // with a card (lib/card-buy).
+  { ask: 'Fund robinhood chain with $54.5 from base including gas, then buy $50 of AAPL', source: 'RouteTable wallet fund row (USDC origin)', expect: 'action' },
+  { ask: 'Fund robinhood chain with $54.5 from arbitrum using eth including gas, then buy $50 of AAPL', source: 'RouteTable wallet fund row (ETH origin)', expect: 'action' },
+  { ask: 'Fund robinhood chain with $26.5 from arbitrum using usdc.e, then buy $25 of NVDA', source: 'RouteTable wallet fund row (USDC.e origin, gas already there)', expect: 'action' },
+  { ask: 'Swap 0.016667 ETH from Arbitrum to UNI on Ethereum', source: 'RouteTable wallet fund row (NEAR, ETH origin)', expect: 'action' },
+  { ask: 'Buy $50 of AAPL with a card', source: 'RouteTable card row (stock)', expect: 'action' },
+  { ask: 'Buy $50 of ETH on Ethereum with a card', source: 'RouteTable card row (ETH: the delivery is the buy)', expect: 'action' },
+  { ask: 'Buy $50 of UNI on Ethereum with a card', source: 'RouteTable card row (coin)', expect: 'action' },
+  { ask: 'Buy $12.50 of AERO on Base with a card', source: 'RouteTable card row (custom size, cents)', expect: 'action' },
+  { ask: 'Buy $400 of AAPL with a card', source: 'card buy: the smaller size one checkout fits', expect: 'action' },
   { ask: 'Sell all my ETH on Arbitrum', source: 'MK2/EXEC PositionPanel exit', expect: 'action' },
   { ask: 'Close my ETH short on Hyperliquid', source: 'MK2/EXEC PositionPanel exit', expect: 'action' },
   { ask: 'Withdraw all my LINK from Aave', source: 'MK2/EXEC PositionPanel exit', expect: 'action' },

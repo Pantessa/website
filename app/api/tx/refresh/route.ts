@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
   // recipe shape: {leg, usd} — the builder re-quotes the cross-chain route,
   // re-runs every gate, and re-reads the destination baseline.
   if (body.kind === 'lifi-bridge') {
-    const leg = body.leg === 'gas' || body.leg === 'usdg' ? (body.leg as FundingLeg) : null
+    const leg = body.leg === 'gas' || body.leg === 'usdg' || body.leg === 'eth' ? (body.leg as FundingLeg) : null
     const usd = typeof body.usd === 'string' && /^[0-9]+(\.[0-9]+)?$/.test(body.usd) ? Number(body.usd) : null
     // Origin chain the leg leaves from — pre-origin recipes omit it (Base).
     const origin = typeof body.origin === 'string' && /^[0-9]+$/.test(body.origin) ? Number(body.origin) : 8453
