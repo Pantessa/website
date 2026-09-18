@@ -385,6 +385,37 @@ mint, or mutate. That's this section.
   `/api/servers/discover` (already `assertPublicHttps`) is signed-in only
   too. Still to re-read: OpenSea item URLs, `redirectUrl` on links (validated
   at mint, never fetched by us), the broker webhook fence.
+- **The journey log's beacon** (`POST /api/journey`, 2026-09-18). Public and
+  unauthenticated by design: its subject is visitors who have not signed in.
+  Everything it receives is a stranger's claim. Verified, harness-pinned:
+  a closed set of kinds, pathnames only (no query string ever reaches the
+  table), short scrubbed strings (a 64-hex key, a seed phrase and an email
+  are cut before the write), a flat eight-key detail bag, a 24 KB body cap,
+  thirty events a batch, and an hourly per-IP cap counted in EVENTS
+  (`lib/journey-limits`, the same window table as the fence below). It
+  answers 204 before it writes, so a prober learns nothing from status or
+  timing. What it cannot do: authorize, pay, or gate anything. No read path
+  outside the admin-gated `/api/admin/flows` touches `visitor_events`, and
+  that screen renders every string as text, behind the admin SESSION only
+  (never a bearer key: the answer carries emails and ask text). The `wallet`
+  and `team` fields are self-reported, so they are weighed as claims
+  (`lib/user-flows teamVerdict`, harness-pinned). The first cut got this
+  wrong and the security review caught it: a stranger posting
+  `{ w: <victim>, team: true }` took the victim's whole timeline off the
+  default view. Now only VERIFIED evidence hides a person: an admin's or
+  test wallet's session cookie on the request (`is_team`), that session's
+  network that day, a hand mark, our own wallet list. A claim
+  (`team_claimed`) hides the visitor id that made it and nothing else. A
+  false wallet still puts a stranger's own clicks on that wallet's admin
+  timeline; it cannot hide it, and table history is stitched only for a
+  person's own wallet. A label is a stranger's string all the way to the
+  screen: it is looked up with `Object.hasOwn`, never as a bare object key
+  (`constructor` once crashed the page). Asks sent from the chat embedded
+  on another site are not recorded on either half.
+  Open: the log is only as private as its salt rotation. `visitor_salts`
+  rows older than yesterday are deleted lazily by the next write; on a day
+  with no traffic at all an old salt outlives its two days until the next
+  visit. A cron would close it.
 - **The new rate fence** (`lib/turn-limits.ts`). It trusts platform-stamped
   IP headers. Confirm Vercel always overwrites `x-forwarded-for` on the edge;
   if a client can inject it, the IP tier is bypassable (the wallet tier still
@@ -439,6 +470,13 @@ Also open:
   dev-only and that prod cookies are `Secure`, `HttpOnly`, `SameSite`).
 - Logging: does any log line carry a private key, session JWT, bearer key, or
   full wallet+balance profile?
+- **`visitor_events` holds no IP address and no full user agent** (2026-09-18).
+  The visitor id is `sha256(day's salt · IP · UA)`, the salt is random and
+  deleted after two days (`lib/visitor-id.ts`), and the stored device is a
+  family string ("mobile · iOS · Safari"). What it does hold that is worth
+  protecting: the text of asks (240 chars), which page a wallet was on, and
+  when. Rows are swept after 120 days. Account emails on the flows screen are
+  read live from Coinbase for the admin request and stored nowhere.
 
 ## 5. Process risk
 

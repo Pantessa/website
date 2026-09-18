@@ -8,6 +8,7 @@ import AskDoor from '@/components/AskDoor'
 import { AppShellMount } from '@/components/AppShell'
 import Providers from '@/components/Providers'
 import ViaTracker from '@/components/ViaTracker'
+import JourneyTracker from '@/components/JourneyTracker'
 import { Analytics } from "@vercel/analytics/next"
 
 
@@ -102,6 +103,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Suspense fallback={null}>
             <ViaTracker />
           </Suspense>
+          {/* The journey log: views, clicks, time on page and errors, with no
+              cookie (lib/journey.ts). What /dashboard/admin/flows reads. */}
+          <JourneyTracker />
           <Navigation />
           <AppShellMount />
           {children}

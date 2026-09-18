@@ -6,6 +6,7 @@
 // pseudonymous public chain data and double as the user id for funnels.
 
 import { track } from '@vercel/analytics'
+import { trackJourney } from '@/lib/journey'
 
 function send(name: string, props?: Record<string, string | number | boolean>) {
   try {
@@ -13,6 +14,14 @@ function send(name: string, props?: Record<string, string | number | boolean>) {
   } catch {
     /* analytics must never throw into the app */
   }
+  // The same event, onto the visitor's own timeline (lib/journey.ts): Vercel
+  // can count these, but only our log can say which person did it and what
+  // they did next. The wallet rides the batch, never the label.
+  if (props && 'address' in props) {
+    const { address: _address, ...rest } = props
+    void _address
+    trackJourney('event', name, rest)
+  } else trackJourney('event', name, props)
 }
 
 export const analytics = {
@@ -22,6 +31,17 @@ export const analytics = {
 
   /** SIWE verified — the moment a visitor becomes a portal user. */
   signedIn: (address: string) => send('siwe_signed_in', { address }),
+
+  /** The sign-in door (components/CreateAccountButton): it opened, a lane was
+   *  picked, it said something went wrong, or the Coinbase SDK never came up
+   *  (a blocker kills the email + Google lanes silently). Each of these is a
+   *  place a newcomer can stop, and none of them leaves a row anywhere else. */
+  signInDoor: (state: 'open' | 'lane' | 'code_sent' | 'error' | 'cdp_timeout', detail?: Record<string, string | boolean>) =>
+    send(`signin_door_${state}`, detail),
+
+  /** A SIWE request that did not end in a session: declined in the wallet, or
+   *  refused by the server. */
+  signInFailed: (reason: string) => send('siwe_failed', { reason: reason.slice(0, 120) }),
 
   /** Directory engagement: an agent toggled into/out of the runner. */
   agentToggled: (slug: string, active: boolean) =>
