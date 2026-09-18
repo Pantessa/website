@@ -82,10 +82,11 @@ export function sourceOf(input: { referrer?: string | null; utm?: string | null;
     if (/google|bing|duckduckgo/.test(utmSource)) return { source: 'search', label: SOURCE_LABEL.search }
     return { source: 'other', label: utmSource.slice(0, 40) }
   }
+  // A raw user agent, or the family string deviceOf() stored from one.
   const ua = input.ua ?? ''
-  if (/LinkedInApp/i.test(ua)) return { source: 'linkedin', label: `${SOURCE_LABEL.linkedin} app` }
-  if (/\bTwitter(?:Android|for)?/i.test(ua)) return { source: 'twitter', label: `${SOURCE_LABEL.twitter} app` }
-  if (/\b(FBAN|FBAV|Instagram|TelegramBot|Discord)\b/i.test(ua)) return { source: 'social', label: SOURCE_LABEL.social }
+  if (/LinkedIn ?App/i.test(ua)) return { source: 'linkedin', label: `${SOURCE_LABEL.linkedin} app` }
+  if (/\bTwitter(?:Android|for)?|\bX app\b/i.test(ua)) return { source: 'twitter', label: `${SOURCE_LABEL.twitter} app` }
+  if (/\b(FBAN|FBAV|Instagram|TelegramBot|Discord)\b|\bMeta app\b/i.test(ua)) return { source: 'social', label: SOURCE_LABEL.social }
   if (/^\/(i|l|p|r|w)\//.test(input.landing ?? '')) return { source: 'link', label: SOURCE_LABEL.link }
   return { source: 'direct', label: SOURCE_LABEL.direct }
 }
@@ -553,4 +554,132 @@ export function summarize(flows: FlowSummaryInput[]): FlowSummary {
     withErrors: flows.filter((f) => f.hadError).length,
     silent: flows.filter((f) => !f.human).length,
   }
+}
+
+// ── a stored row → a line on the timeline ─────────────────────────────────
+
+export interface VisitorEventRow {
+  at: number
+  kind: string
+  path: string
+  label: string | null
+  detail: Record<string, unknown> | null
+  referrer: string | null
+}
+
+const FLOW_KINDS = new Set<string>(Object.keys(KIND_TONE))
+const str = (v: unknown) => (typeof v === 'string' ? v : '')
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+
+const EVENT_WORDS: Record<string, string> = {
+  example_chip: 'Tapped an example',
+  ask_door: 'Used the ⌘K ask door',
+  voice_ask: 'Spoke an ask',
+  agent_added: 'Turned an app on',
+  agent_removed: 'Turned an app off',
+  wallet_flag_action: 'Acted on a wallet flag',
+  wallet_rebalance: 'Sent a rebalance from the wallet page',
+  chat_paid: 'A paid turn settled',
+  api_key_minted: 'Minted an API key',
+  grant_signed: 'Signed a spend grant',
+  agent_approval_toggled: 'Changed an agent approval',
+  docs_prompt_copied: 'Copied a docs prompt',
+}
+
+/**
+ * One visitor_events row as a timeline item, or null for a row the timeline
+ * is better without. Product events (the analytics chokepoint tees into the
+ * log) are promoted to the kinds the fold understands: the sign-in door, a
+ * connect, a sign-in.
+ */
+export function itemFromRow(r: VisitorEventRow): FlowItem | null {
+  const d = r.detail ?? {}
+  const from = r.kind === 'ask' || r.kind === 'reply' ? 'server' : 'visitor'
+  const base = { at: r.at, path: r.path || null, from } as const
+  switch (r.kind) {
+    case 'view':
+      return { ...base, kind: 'view', title: `Opened ${r.path}`, detail: r.referrer ? `came from ${r.referrer}` : null }
+    case 'leave': {
+      const ms = num(d.ms)
+      const scroll = num(d.scroll)
+      return {
+        ...base,
+        kind: 'leave',
+        title: `Left ${r.path} after ${humanMs(ms)}`,
+        detail: `${scroll >= 1 ? `scrolled ${Math.round(scroll)}%` : 'no scroll'}${d.input === false ? ' · no pointer, touch or key' : ''}`,
+        n: { ms, scroll, input: d.input !== false },
+      }
+    }
+    case 'click': {
+      const to = str(d.to)
+      return { ...base, kind: 'click', title: `Clicked “${r.label ?? '?'}”`, detail: to ? `→ ${to}` : null }
+    }
+    case 'error':
+      return { ...base, kind: 'error', title: `Script error: ${r.label ?? 'unknown'}`, detail: [str(d.src), d.line ? `line ${num(d.line)}` : ''].filter(Boolean).join(' · ') || null }
+    case 'api-error': {
+      const status = num(d.status)
+      return { ...base, kind: 'api-error', title: status ? `${r.label ?? 'An endpoint'} answered ${status}` : `${r.label ?? 'An endpoint'} could not be reached`, detail: null }
+    }
+    case 'ask':
+      return { ...base, kind: 'ask', title: `Asked: ${r.label ?? ''}`, detail: d.money === true ? 'a money ask' : null }
+    case 'reply': {
+      const shape = str(d.shape)
+      const kind = (FLOW_KINDS.has(shape) ? shape : 'reply-answer') as FlowKind
+      return { ...base, kind, title: r.label ?? 'Got a reply', detail: str(d.said) || null }
+    }
+    case 'event': {
+      const name = r.label ?? ''
+      if (name === 'signin_door_open') return { ...base, kind: 'door', title: d.connectOnly === true ? 'Opened the connect-a-wallet door' : 'Opened the sign-in door' }
+      if (name === 'signin_door_lane') return { ...base, kind: 'door', title: `Chose the ${str(d.lane) || '?'} lane` }
+      if (name === 'signin_door_code_sent') return { ...base, kind: 'door', title: 'Was emailed a sign-in code' }
+      if (name === 'signin_door_error') return { ...base, kind: 'door-error', title: 'The sign-in door showed an error', detail: str(d.message) || null }
+      if (name === 'signin_door_cdp_timeout') return { ...base, kind: 'door-error', title: 'Email + Google sign-in never loaded', detail: 'The Coinbase SDK did not initialize (a blocker, usually). Only the wallet lane worked.' }
+      if (name === 'siwe_failed') return { ...base, kind: 'door-error', title: 'The sign-in signature did not complete', detail: str(d.reason) || null }
+      if (name === 'wallet_connected') return { ...base, kind: 'connect', title: `Connected a wallet${str(d.connector) ? ` (${str(d.connector)})` : ''}` }
+      if (name === 'siwe_signed_in') return { ...base, kind: 'signin', title: 'Signed in' }
+      // The server's own `ask` row is the record of a sent message. This one
+      // only matters when that row is missing (see dropEchoedSends).
+      if (name === 'chat_message_sent') return { ...base, kind: 'event', title: 'Sent a message', detail: 'chat_message_sent' }
+      const words = EVENT_WORDS[name] ?? name.replace(/_/g, ' ')
+      const extra = str(d.prompt) || str(d.slug) || str(d.action) || str(d.label)
+      return { ...base, kind: 'event', title: extra ? `${words}: “${extra}”` : words }
+    }
+    default:
+      return null
+  }
+}
+
+/** A sent message the server also recorded is one fact, not two. One the
+ *  server has NO record of is a finding: the request never arrived. */
+export function dropEchoedSends(itemsAsc: FlowItem[]): FlowItem[] {
+  const asks = itemsAsc.filter((i) => i.kind === 'ask').map((i) => i.at)
+  return itemsAsc.flatMap((i) => {
+    if (!(i.kind === 'event' && i.detail === 'chat_message_sent')) return [i]
+    if (asks.some((t) => Math.abs(t - i.at) <= 20_000)) return []
+    return [{ ...i, kind: 'api-error' as const, title: 'Sent a message the server never recorded', detail: 'The chat request did not reach /api/chat, or it failed before the turn ran.' }]
+  })
+}
+
+/** The same control pressed again and again inside a few seconds is one
+ *  line, and three or more is a wall worth reading: nothing happened. */
+export const RAGE_CLICKS = 3
+export function collapseClicks(itemsAsc: FlowItem[]): FlowItem[] {
+  const out: FlowItem[] = []
+  let run = 0
+  for (const i of itemsAsc) {
+    const prev = out[out.length - 1]
+    if (i.kind === 'click' && prev?.kind === 'click' && prev.title.replace(/ ×\d+$/, '') === i.title && i.at - prev.at <= 4_000) {
+      run++
+      out[out.length - 1] = { ...prev, at: prev.at, title: `${i.title} ×${run + 1}`, detail: run + 1 >= RAGE_CLICKS ? `pressed ${run + 1} times in a row. Did nothing happen?` : prev.detail }
+      continue
+    }
+    run = 0
+    out.push(i)
+  }
+  return out
+}
+
+/** How many runs of repeated presses a timeline holds. */
+export function rageRuns(items: FlowItem[]): number {
+  return items.filter((i) => i.kind === 'click' && / ×(\d+)$/.test(i.title) && Number(/ ×(\d+)$/.exec(i.title)?.[1]) >= RAGE_CLICKS).length
 }

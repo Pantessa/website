@@ -58,11 +58,16 @@ const looksLikeSeedPhrase = (s: string) => {
   return words.length >= 12 && words.length <= 24 && words.every((w) => /^[a-z]{3,8}$/.test(w))
 }
 
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g
+
 export function scrub(text: string, max: number): string | null {
   const flat = text.replace(/\s+/g, ' ').trim()
   if (!flat) return null
   if (SECRET_RE.test(flat) || looksLikeSeedPhrase(flat)) return '[redacted]'
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
+  // A button can carry an address book entry or an account email as its
+  // label. The log has no use for either.
+  const masked = flat.replace(EMAIL_RE, '[email]')
+  return masked.length > max ? `${masked.slice(0, max - 1)}…` : masked
 }
 
 /** A pathname, and only a pathname: no origin, no query, no fragment. */
