@@ -102,6 +102,15 @@ import { DEFAULT_TAB, parseTabParam, tabUrl } from '../lib/app-tab-url'
 import { LINKS_STUDIO_HREF } from '../lib/links-href'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
 import { BUILD_PATHS, venueOfBuildPath } from '../lib/build-path'
+import { netFeeBpsForTurn } from '../lib/fees'
+import {
+  BUILD_PATH_OF_JOB_BUILDER,
+  BUILD_PATH_OF_REFRESH_KIND,
+  STEP_BUILD_PATH_KEY,
+  jobStepBuildPath,
+  jobStepChainId,
+  stampJobStepPath,
+} from '../lib/job-step-telemetry'
 
 /** A venue label is a product name ('uniswap'); a build path is an internal
  *  one ('native-swap-lifi', 'app-mode-swap'). The public /activity payload must
@@ -26435,6 +26444,141 @@ async function main() {
       /\/api\/quotes\?symbols=/.test(mkOgSrc) && /AbortSignal\.timeout\(/.test(mkOgSrc) && /return NO_QUOTES/.test(mkOgSrc) && /FEED WARMING UP/.test(mkOgSrc) &&
         /export const dynamic = 'force-dynamic'/.test(mkOgSrc) &&
         /export \{ default, alt, size, contentType \} from '\.\/opengraph-image'/.test(mkTwSrc) && /export const runtime = 'nodejs'/.test(mkTwSrc) && /export const dynamic = 'force-dynamic'/.test(mkTwSrc),
+    )
+  }
+
+  // ── job-step telemetry: a signed job step reports what it BUILT ─────────
+  // Found in prod 2026-09-18: $308.50 of $347.50 of real signed 30-day
+  // volume was `job-step` rows with build_path NULL — the beacon sent the
+  // raw job builder id, the telemetry allowlist dropped it, and every fee
+  // reader (lib/fees, the creator studio + claims, the public fee strip,
+  // the admin Growth books) needs a fee-bearing path to price a turn. A
+  // funded link buy earned its creator $0 while the visitor paid 50 bps.
+  {
+    const runnerSrc = await readFile('lib/jobs-runner.ts', 'utf8')
+    const jobsSrc = await readFile('lib/jobs.ts', 'utf8')
+    const cardSrc = await readFile('components/JobCard.tsx', 'utf8')
+    const chatSrc = await readFile('components/ChatInterface.tsx', 'utf8')
+
+    // Every builder the COMPILER can emit for a signable step must resolve
+    // to a path — statically here, or from the artifact the builder's own
+    // build stamps (the two venue-cascade builders + the HL layer, which
+    // names its own path per branch). A new chainable action that forgets
+    // its path writes another NULL row; this is the gate.
+    const CASCADE_BUILDERS = ['native-swap', 'native-lifi-swap', 'native-hl-exec']
+    const compiledBuilders = [...new Set([...jobsSrc.matchAll(/builder: '([a-z0-9-]+)'/g)].map((m) => m[1]))]
+      .filter((b) => b !== 'wait' && b !== 'native-hl-guardian')
+    const unpathed = compiledBuilders.filter((b) => !BUILD_PATH_OF_JOB_BUILDER[b] && !CASCADE_BUILDERS.includes(b))
+    check(
+      'job-step path: every sign builder the jobs compiler emits resolves to a BuildPath — statically, or from the cascade/HL build that names its own',
+      unpathed.length === 0 && compiledBuilders.length >= 12,
+      JSON.stringify({ builders: compiledBuilders.length, unpathed }),
+    )
+    check(
+      'job-step path: every mapped path is a real BuildPath and resolves to a venue (no raw builder id can reach a beacon)',
+      Object.values(BUILD_PATH_OF_JOB_BUILDER).every((p) => (BUILD_PATHS as readonly string[]).includes(p) && !!venueOfBuildPath(p)) &&
+        Object.values(BUILD_PATH_OF_REFRESH_KIND).every((p) => (BUILD_PATHS as readonly string[]).includes(p) && !!venueOfBuildPath(p)),
+    )
+
+    // The ladder: the runner's stamp wins, the txChain refresh recipe is the
+    // legacy/in-flight fallback, the static map is the floor, and an
+    // unknown builder reports NOTHING (never the raw id — that is the bug).
+    const swapArtifact = (kind: string) => ({ txChain: { summary: 's', steps: [], refresh: { kind, stepIndex: 0, params: {} } } })
+    check(
+      'job-step path (ladder): the stamped path wins; else the refresh recipe names the venue (v3 / v4 / LiFi / bridge); else the builder\'s one answer; an unknown builder reports nothing',
+      jobStepBuildPath('native-swap', { ...swapArtifact('uniswap-swap'), [STEP_BUILD_PATH_KEY]: 'native-swap-lifi' }) === 'native-swap-lifi' &&
+        jobStepBuildPath('native-swap', swapArtifact('uniswap-swap')) === 'native-swap-uniswap' &&
+        jobStepBuildPath('native-lifi-swap', swapArtifact('uniswap-v4-swap')) === 'native-swap-uniswap-v4' &&
+        jobStepBuildPath('native-lifi-swap', swapArtifact('lifi-swap')) === 'native-swap-lifi' &&
+        jobStepBuildPath('native-lifi-fund', swapArtifact('lifi-bridge')) === 'native-fund-bridge' &&
+        jobStepBuildPath('native-lifi-fund', null) === 'native-fund-bridge' &&
+        jobStepBuildPath('native-aave-repay', null) === 'native-aave-op' &&
+        jobStepBuildPath('native-swap', null) === undefined &&
+        jobStepBuildPath('native-something-new', { [STEP_BUILD_PATH_KEY]: 'native-something-new' }) === undefined,
+    )
+    check(
+      'job-step path (stamp): the offer keeps the artifact and adds the cascade\'s winner; an unmapped builder is left unstamped rather than guessed',
+      JSON.stringify(stampJobStepPath('native-swap', { txChain: { a: 1 } }, 'native-swap-uniswap-v4')) ===
+        JSON.stringify({ txChain: { a: 1 }, [STEP_BUILD_PATH_KEY]: 'native-swap-uniswap-v4' }) &&
+        (stampJobStepPath('native-lifi-fund', { x: 1 }) as Record<string, unknown>)[STEP_BUILD_PATH_KEY] === 'native-fund-bridge' &&
+        (stampJobStepPath('native-swap', { x: 1 }, 'not-a-path') as Record<string, unknown>)[STEP_BUILD_PATH_KEY] === undefined &&
+        (stampJobStepPath('native-brand-new', { x: 1 }) as Record<string, unknown>)[STEP_BUILD_PATH_KEY] === undefined,
+    )
+
+    // THE money rule: a swap step pays the fee, a leg that MOVES money to
+    // make the next step possible does not (lib/lifi-bridge takes none, and
+    // the runner asks 1Click for no appFees). A stray link-tier stamp on a
+    // fee-free leg must still earn nothing.
+    const feeBearing = (p: string) => (FEE_BEARING_BUILD_PATHS as Set<string>).has(p)
+    check(
+      'job-step fees: swap steps are fee-bearing; funding, bridge, transfer, NFT, lending, staking and HL-deposit legs are not — and a stray 50 bps stamp on a fee-free leg still earns $0',
+      ['native-swap-uniswap', 'native-swap-uniswap-v4', 'native-swap-lifi', 'native-hl-exec'].every(feeBearing) &&
+        ['native-fund-bridge', 'native-cross-chain-leg', 'native-transfer', 'native-nft-buy', 'native-lido', 'native-hl-deposit'].every((p) => !feeBearing(p) && netFeeBpsFor(p) === 0) &&
+        netFeeBpsForTurn('native-fund-bridge', 50) === 50 && creatorEarningsUsd(12.5, feeBearing('native-fund-bridge') ? netFeeBpsForTurn('native-fund-bridge', 50) : 0) === 0 &&
+        creatorEarningsUsd(12, netFeeBpsForTurn('native-swap-uniswap', 50)) === 0.03,
+    )
+    check(
+      'job-step fees: a job cross-chain leg keeps its OWN path — the runner builds it with no appFees, so it must not inherit native-cross-chain\'s fee',
+      BUILD_PATH_OF_JOB_BUILDER['native-cross-chain'] === 'native-cross-chain-leg' &&
+        netFeeBpsFor('native-cross-chain') === CROSS_CHAIN_NET_FEE_BPS && netFeeBpsFor('native-cross-chain-leg') === 0 &&
+        venueOfBuildPath('native-cross-chain-leg') === 'near-intents' &&
+        /DELIBERATELY fee-free/.test(runnerSrc),
+    )
+
+    // The chain the step was signed on — 'multi' was every job row's chain
+    // until now, and /activity resolves a real one through the registry.
+    check(
+      'job-step chain: read from the artifact the step signs (txRequest, hex or decimal; else the first txChain leg); an off-chain order reports none',
+      jobStepChainId({ txRequest: { chainId: 8453 } }) === 8453 &&
+        jobStepChainId({ txRequest: { chainId: '0x2105' } }) === 8453 &&
+        jobStepChainId({ txChain: { steps: [{ tx: {} }, { tx: { chainId: 4663 } }] } }) === 4663 &&
+        jobStepChainId({ orderRequest: { protocol: 'hyperliquid' } }) === undefined &&
+        jobStepChainId(null) === undefined,
+    )
+
+    // The write sites. These three lines are the whole bug: the runner has
+    // to stamp, the card has to read the artifact, and the beacon has to
+    // send the PATH — `buildPath: info.builder` is what wrote 28 NULL rows.
+    check(
+      'job-step wiring (runner): the offer stamps the built path onto the artifact, and both cascade builders + the HL layer forward the path their build named',
+      /artifact: stampJobStepPath\(step\.builder, built\.artifact, built\.buildPath\)/.test(runnerSrc) &&
+        (runnerSrc.match(/buildPath: asBuildPath\(built\.buildPath\)/g) ?? []).length === 2 &&
+        (runnerSrc.match(/buildPath: asBuildPath\(turn\.buildPath\)/g) ?? []).length === 2,
+    )
+    check(
+      'job-step wiring (client): the card resolves path + chain + receipt from the signed step\'s own artifact, and the beacon sends the PATH, never the raw builder id',
+      /jobStepBuildPath\(builder, stepArtifact\)/.test(cardSrc) && /jobStepChainId\(stepArtifact\)/.test(cardSrc) &&
+        /buildPath: info\.buildPath,/.test(chatSrc) && !/buildPath: info\.builder/.test(chatSrc) &&
+        /chainId: info\.chainId,/.test(chatSrc) && /artifact: 'job-step'/.test(chatSrc),
+    )
+    check(
+      'job-step wiring (HL): the bridge deposit and the perp order no longer share one fee-bearing path',
+      /buildPath: 'native-hl-deposit'/.test(await readFile('lib/hyperliquid-exec.ts', 'utf8')) &&
+        feeBearing('native-hl-exec') && !feeBearing('native-hl-deposit'),
+    )
+
+    // Live: the telemetry route's allowlist is what dropped the raw ids —
+    // prove it accepts every path a job step can now report, and still
+    // refuses a raw builder id.
+    const beacon = async (buildPath: string) =>
+      (await fetch(`${BASE}/api/embed/telemetry`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1', referer: BASE },
+        body: JSON.stringify({
+          firstParty: true,
+          sessionId: `harness-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+          page: `${BASE}/chat`,
+          outcome: 'tx-built',
+          artifact: 'job-step',
+          buildPath,
+          valueUsd: 1,
+        }),
+      })).status
+    const accepted = await Promise.all([...new Set(Object.values(BUILD_PATH_OF_JOB_BUILDER)), 'native-swap-uniswap'].map(beacon))
+    check(
+      'job-step path (live): the telemetry route accepts every path a job step reports (the allowlist is where the raw builder ids died)',
+      accepted.every((s) => s === 200),
+      JSON.stringify(accepted),
     )
   }
 

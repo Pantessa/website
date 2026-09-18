@@ -783,7 +783,7 @@ export interface HlExecTurn {
   orderRequest?: Record<string, unknown>
   txRequest?: Record<string, unknown>
   guardrails?: GuardrailReport
-  buildPath?: 'native-hl-exec'
+  buildPath?: 'native-hl-exec' | 'native-hl-deposit'
 }
 
 /**
@@ -819,7 +819,11 @@ export async function buildHlExecTurn(
       reply: `🔏 ${built.summary}`,
       txRequest: { ...built.tx, action: 'deposit to Hyperliquid' },
       guardrails: built.guardrails,
-      buildPath: 'native-hl-exec',
+      // NOT native-hl-exec: the builder fee rides the perp ORDER, never the
+      // bridge deposit. Sharing the order's fee-bearing path made every
+      // deposit read as fee-earning volume (lib/fees) — a one-shot deposit
+      // in chat and a deposit step inside a job both landed there.
+      buildPath: 'native-hl-deposit',
     }
   }
 
