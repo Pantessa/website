@@ -16,6 +16,8 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 export interface InferenceScope {
   /** A user's own Anthropic key (BYOK). Absent = the house key. */
   apiKey?: string
+  /** Whose stored key `apiKey` is (lowercased) — where a refusal is noted. */
+  keyOwner?: string | null
   /** BYOK owners may pick a sharper synthesis model on their own key. */
   synthModel?: string | null
   /** Who this request is attributed to in the meter (lowercased wallet). */

@@ -166,9 +166,11 @@ import { sanitizeWorkingContext, contextBlockForPlanner, type WorkingContext, ex
 import { getSessionAddress } from '@/lib/auth'
 import { hasGuardianStep, mutationGate, sessionOwnsWallet } from '@/lib/chat-mutation-gate'
 import { bumpAndCheckUnsignedTurn, clientIpFrom, turnLimitReply } from '@/lib/turn-limits'
-import { spendCredits } from '@/lib/billing'
+import { admitHouseTurn } from '@/lib/billing'
+import { answerGateReply } from '@/lib/answer-gate-copy'
+import { resolveInferenceKey, noteInferenceKeyFailure } from '@/lib/byok'
 import { houseModelText } from '@/lib/house-model'
-import { inferenceScope } from '@/lib/inference-context'
+import { enterInferenceScope, inferenceScope } from '@/lib/inference-context'
 import type { InferenceSurface } from '@/lib/inference-meter'
 import { recordEmbedSighting, resolveEmbedKey } from '@/lib/embed-key'
 import { walletContextLine } from '@/lib/wallet-context'
@@ -651,11 +653,55 @@ async function handleChatTurn(req: NextRequest) {
       }
     }
 
+    // ── Whose key, whose answers (pricing v2) ────────────────────────────────
+    // PROVEN owner = the embed key's owner (the host pays for their visitors)
+    // or the SIWE session. The body's `walletAddress` is client-asserted: it
+    // keys the free taste and nothing a person paid for (lib/billing PROOF
+    // RULE). A BYOK key — the host's, when they opted their embeds in, else
+    // the signed-in user's own — runs every house-model call in this request
+    // (lib/inference-context reaches all of them) and is admitted without
+    // touching any allowance.
+    const provenOwner = embedBill?.ownerAddress ?? sessionAddress ?? null
+    const hostKey = embedBill ? await resolveInferenceKey(embedBill.ownerAddress, { forEmbed: true }) : null
+    const byok = hostKey ?? (await resolveInferenceKey(sessionAddress))
+    enterInferenceScope({
+      apiKey: byok?.apiKey,
+      keyOwner: byok ? (hostKey ? embedBill?.ownerAddress : sessionAddress) ?? null : null,
+      synthModel: byok?.synthModel,
+      owner: provenOwner ?? walletAddress ?? null,
+    })
+    /** ONE admission for ONE house-answered turn. Every door that reaches the
+     *  house model calls this first — the manual path's choke point, the
+     *  auto-router and the governance turn (both were unmetered before v2). */
+    const gateHouseAnswer = async (): Promise<{ refusal: NextResponse | null; remaining: number; lane?: string }> => {
+      const adm = await admitHouseTurn({
+        owner: provenOwner,
+        wallet: walletAddress,
+        ip: clientIpFrom(req.headers),
+        embed: !!embedBill,
+        byok: !!byok,
+        reason: embedBill ? 'embed-house-inference' : 'house-inference',
+      })
+      if (adm.ok) return { refusal: null, remaining: adm.remaining, lane: adm.lane }
+      return {
+        refusal: NextResponse.json({
+          reply: answerGateReply(adm.gate ?? 'taste', { waiting: adm.waiting }),
+          planGate: { plan: adm.plan, upgradeUrl: '/pricing', gate: adm.gate ?? 'taste' },
+        }),
+        remaining: adm.remaining,
+      }
+    }
+
     // ── Auto-Router: the engine picks services across the whole directory and
     //    streams its reasoning + the answer (burner mode; wallet is B5). The
     //    manual path below is untouched. ───────────────────────────────────
     if (body.autoRouter === true) {
       const inferenceSlug = typeof body.inferenceSlug === 'string' ? body.inferenceSlug : undefined
+      // The routing pass ALWAYS runs on the house model, whatever engine ends
+      // up answering — so an auto-routed turn is a house answer (it was free
+      // and unmetered before v2).
+      const routed = await gateHouseAnswer()
+      if (routed.refusal) return routed.refusal
       return streamAutoRouter(message, history, walletAddress, undefined, undefined, inferenceSlug, workingContext)
     }
 
@@ -762,6 +808,9 @@ async function handleChatTurn(req: NextRequest) {
       if (sp) govIntent = { ...govIntent, spaceQuery: sp }
     }
     if (govIntent && snapshotActive) {
+      // The governance turn synthesizes on the house model (unmetered pre-v2).
+      const govGate = await gateHouseAnswer()
+      if (govGate.refusal) return govGate.refusal
       let govSeq = 0
       const gov = await runGovernanceTurn({
         message: govMessage,
@@ -2251,40 +2300,18 @@ async function handleChatTurn(req: NextRequest) {
       }
     }
 
-    // ── Plan gate (billing): house-model answers are metered in YEET credits.
-    // Attributable turns (SIWE session first, else the wallet in context)
-    // debit ONE credit per house-synthesized turn, checked here — the single
-    // choke point both burner and wallet phase-1 pass through (phase-2
-    // executes an already-debited turn). Anonymous guests keep the existing
-    // burner limits; paid inference engines are x402-receipted, not credits.
-    // spendCredits fails OPEN — a billing-store hiccup never blocks chat.
+    // ── Answer gate (billing, pricing v2): one house-synthesized turn = one
+    // house answer, admitted here — the single choke point both burner and
+    // wallet phase-1 pass through (phase-2 executes an already-admitted
+    // turn). Lanes in order: the free daily taste → the Plus allowance → the
+    // bank of earned/bought answers; a BYOK key skips all three. Paid
+    // inference engines are x402-receipted from the user's wallet, never
+    // answers. admitHouseTurn fails OPEN — a billing hiccup never blocks chat.
     if (isHouseInference(synthesizer)) {
-      // Bill precedence: a valid embed key (the HOST pays for their site's
-      // visitors) > the SIWE session > the wallet in context.
-      const billTo = embedBill?.ownerAddress ?? (await getSessionAddress()) ?? walletAddress
-      if (billTo) {
-        const credit = await spendCredits(billTo, embedBill ? 'embed-house-inference' : 'house-inference')
-        if (!credit.ok) {
-          // Honest copy per gate: monthly allowance vs the free-tier daily
-          // cap vs the system-wide daily breaker (lib/billing.ts).
-          const reply =
-            credit.gate === 'house'
-              ? `🪙 Pantessa’s house inference is at its daily safety cap — back at midnight UTC. Standing jobs, DCA and guardian protections keep running (they don’t use the model). A paid engine like **Pantessa · Claude** works right now, pay-per-call from your wallet.`
-              : credit.gate === 'daily'
-                ? `🪙 That’s the free plan’s daily chat limit — it resets at midnight UTC (your monthly credits are fine). Upgrade at **pantessa.com/pricing** for no daily cap, or add a paid engine and keep going pay-per-call.`
-                : embedBill
-                  ? `🪙 This site’s Pantessa plan is out of included answers for the month. The chat resumes when the plan renews or the site upgrades — or connect a paid engine and pay per call from your own wallet.`
-                  : `🪙 You’ve used all **${credit.allowance.toLocaleString()} YEET credits** on the ${credit.planName} plan this month. Upgrade at **pantessa.com/pricing** for more — or add a paid engine like **Pantessa · Claude** and keep going pay-per-call from your wallet.`
-          return NextResponse.json({
-            reply,
-            planGate: { plan: credit.plan, upgradeUrl: '/pricing', gate: credit.gate ?? 'monthly' },
-          })
-        }
-        if (!embedBill && credit.remaining <= Math.max(25, Math.ceil(credit.allowance * 0.1))) {
-          notes.push(
-            `YEET credits running low — ${credit.remaining.toLocaleString()} left this month on the ${credit.planName} plan. Upgrade at pantessa.com/pricing.`,
-          )
-        }
+      const gate = await gateHouseAnswer()
+      if (gate.refusal) return gate.refusal
+      if (!embedBill && (gate.lane === 'plan' || gate.lane === 'bank') && gate.remaining <= 25) {
+        notes.push(`${gate.remaining.toLocaleString()} answers left beyond your daily free ones — every trade you sign earns more, or see pantessa.com/pricing.`)
       }
     }
 
@@ -6734,6 +6761,8 @@ async function planViaAnthropic(prompt: string, surface: InferenceSurface = 'cha
 function houseUnavailableReason(): string {
   const failed = inferenceScope()?.byokFailure
   if (failed) {
+    const who = inferenceScope()?.keyOwner
+    if (who) noteInferenceKeyFailure(who, failed.status)
     return failed.status === 429
       ? 'your own API key is rate-limited right now (429) — try again in a minute, or remove the key in Settings to use your included answers'
       : `your own API key was refused (${failed.status}) — check it in Settings → Your AI key`
