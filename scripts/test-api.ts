@@ -22600,6 +22600,89 @@ async function main() {
         heldPosition(undefined, { last: 1 }) === null && heldPosition({ ...ethHeld, amount: 0 }, { last: 2520.6 }) === null,
       JSON.stringify(aaplUnpriced))
 
+    // 1c. Memory first, then a background check (Nate, 2026-09-18: "since the
+    // watchlist was loaded first time, I have since bought more tokens… first
+    // load from memory, but background check for more tokens owned"). The rail
+    // paints the positions this browser remembers while its own read is in
+    // flight, and the minute poll reconciles as well as reprices — but only
+    // when the read turns something up, so an open page writes nothing all day.
+    const { heldReconcileReason, parseHeldSnapshots, readHeldSnapshot, writeHeldSnapshot, HELD_SNAPSHOT_KEY, HELD_SNAPSHOT_MAX_AGE_MS, HELD_SNAPSHOT_WALLETS } = await import('../lib/watchlists')
+    const reasonOf = (held: string[], reconciled: string[] | null, forced?: boolean) => heldReconcileReason({ held, reconciled, forced })
+    check('watch background: the first read of a wallet reconciles; a later read with the SAME symbols does not (the poll is a check, not a sync); the token bought since does',
+      reasonOf(['ETH', 'AAPL'], null) === 'first' && reasonOf(['ETH', 'AAPL'], ['ETH', 'AAPL']) === null && reasonOf(['ETH', 'AAPL', 'UNI'], ['ETH', 'AAPL']) === 'new',
+      [reasonOf(['ETH'], null), reasonOf(['ETH'], ['ETH']), reasonOf(['ETH', 'UNI'], ['ETH'])].join(','))
+    check('watch background: a holding that LEAVES the wallet writes nothing (the ledger only ever learns what is held), an empty wallet reconciles once, and a landed card purchase forces a run with nothing new in it',
+      reasonOf(['ETH'], ['ETH', 'AAPL']) === null && reasonOf([], null) === 'first' && reasonOf([], []) === null && reasonOf(['ETH'], ['ETH'], true) === 'forced')
+
+    // The memory itself: strict in, bounded out.
+    const snapRow = { symbol: 'eth', valueUsd: 1.05, amount: 0.0004, chains: ['Base'], chainIds: [8453] }
+    const parsedSnaps = parseHeldSnapshots(JSON.stringify({
+      '0x00000000000000000000000000000000000000ab': { at: 1_700_000_000_000, held: [snapRow, { symbol: 'AAPL', valueUsd: null, amount: 0, chains: [], chainIds: [] }, { nope: true }, 'junk'] },
+      'not-an-address': { at: 1, held: [] },
+      '0x00000000000000000000000000000000000000cd': { held: [] },
+    }))
+    check('watch memory: strict — a corrupt key reads as no memory, a non-address or clockless entry drops, and a row without a symbol and a positive amount is not a position',
+      parseHeldSnapshots('nope') && Object.keys(parseHeldSnapshots('nope')).length === 0 && Object.keys(parseHeldSnapshots(JSON.stringify([1, 2]))).length === 0 &&
+        Object.keys(parsedSnaps).join() === '0x00000000000000000000000000000000000000ab' &&
+        parsedSnaps['0x00000000000000000000000000000000000000ab'].held.length === 1 && parsedSnaps['0x00000000000000000000000000000000000000ab'].held[0].symbol === 'ETH',
+      JSON.stringify(parsedSnaps))
+    {
+      // The browser half, against a localStorage stand-in (no awaits inside).
+      const store = new Map<string, string>()
+      const g = globalThis as { window?: unknown }
+      const hadWindow = 'window' in g
+      g.window = { localStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) } }
+      const A = '0x00000000000000000000000000000000000000aa'
+      const B = '0x00000000000000000000000000000000000000bb'
+      const now = 1_800_000_000_000
+      writeHeldSnapshot(A, [{ symbol: 'ETH', valueUsd: 1.05, amount: 0.0004, chains: ['Base'], chainIds: [8453] }], now)
+      const back = readHeldSnapshot(A, now + 5_000)
+      const otherWallet = readHeldSnapshot(B, now + 5_000)
+      const stale = readHeldSnapshot(A, now + HELD_SNAPSHOT_MAX_AGE_MS + 1)
+      const upper = readHeldSnapshot(A.toUpperCase().replace('0X', '0x'), now + 5_000)
+      for (let i = 0; i < HELD_SNAPSHOT_WALLETS + 2; i++) writeHeldSnapshot(`0x${String(i).padStart(40, '0')}`, [{ symbol: 'UNI', valueUsd: 2, amount: 1, chains: ['Base'], chainIds: [8453] }], now + 1_000 + i)
+      const kept = Object.keys(parseHeldSnapshots(store.get(HELD_SNAPSHOT_KEY) ?? null))
+      const evicted = readHeldSnapshot('0x0000000000000000000000000000000000000000', now + 2_000)
+      if (hadWindow) g.window = undefined
+      delete g.window
+      check('watch memory: what a read found comes back for that wallet (any case), never for another; older than a day is not painted; only the newest few wallets are kept',
+        back?.length === 1 && back[0].symbol === 'ETH' && back[0].amount === 0.0004 && upper?.length === 1 && otherWallet === null && stale === null &&
+          kept.length === HELD_SNAPSHOT_WALLETS && evicted === null,
+        JSON.stringify({ back, kept: kept.length }))
+    }
+
+    // The wiring: memory paints, a live read arms. A Sell chip reads
+    // lib/use-held → lib/held-read, which must never answer from the snapshot.
+    const heldReadSrc = await readFile('lib/held-read.ts', 'utf8')
+    const useHeldSrc = await readFile('lib/use-held.ts', 'utf8')
+    const wlHookSrc = await readFile('components/markets/watchlist/useWatchlists.ts', 'utf8')
+    check('watch memory: every read that answers is remembered (one write site, in the shared read), and nothing that ARMS a chip reads that memory back — peekHeld and lib/use-held stay live-only',
+      /writeHeldSnapshot\(address, v\.held\)/.test(heldReadSrc) && !/readHeldSnapshot/.test(heldReadSrc) && !/HeldSnapshot/.test(useHeldSrc) &&
+        /return lastRead\.get\(address\) \?\? null/.test(heldReadSrc))
+    check('watch background: the rail’s minute poll runs the SAME reconcile as the visit (not a numbers-only refresh), gated by heldReconcileReason; the wallet’s remembered positions fill in until its own read lands',
+      /const readAndReconcile = useCallback\(/.test(wlHookSrc) &&
+        /heldReconcileReason\(\{ held: symbols, reconciled: reconciledHeld\.get\(key\) \?\? null, forced: fresh \}\)/.test(wlHookSrc) &&
+        /void readAndReconcile\(\{ maxAgeMs: HELD_EVERY_MS \/ 2, alive: \(\) => alive \}\)/.test(wlHookSrc) &&
+        /const held = holder && heldRead\?\.holder === holder \? heldRead\.held : remembered/.test(wlHookSrc) &&
+        /const snap = readHeldSnapshot\(holder\)/.test(wlHookSrc))
+
+    // One page, two instances of this hook (the rail and the Morning tape
+    // beside it). Only the rail reads the wallet, and a fill is announced —
+    // or the instance that didn't do it keeps showing the list as it was:
+    // found 2026-09-18 with the rail saying "Nothing watched yet." while the
+    // tape beside it already read "2 SYMBOLS" off the same fill.
+    const tapeHookSrc = await readFile('components/markets/ai/MorningTape.tsx', 'utf8')
+    check('watch background: the page has ONE holdings reader — the Morning tape takes the lists with holdings off, so no wallet is read (or reconciled) twice on one page',
+      /useWatchlists\(\{ holdings: false \}\)/.test(tapeHookSrc) &&
+        /const readsHoldings = opts\.holdings !== false/.test(wlHookSrc) &&
+        /const holder = !readsHoldings \|\| status === 'loading' \? null/.test(wlHookSrc))
+    check('watch background: a fill reaches the OTHER instance on the page and never announces back to itself — the rail shows what the autofill added, and nobody toasts it twice',
+      /announceHeldFill\(\{ modeKey: listsKey, mode: 'authed', list, added: r\.added, listName: list\.name \}, selfListener\.current\)/.test(wlHookSrc) &&
+        /announceHeldFill\(\{ modeKey: listsKey, mode: 'guest', list: null, added: plan\.add, listName \}, selfListener\.current\)/.test(wlHookSrc) &&
+        /for \(const fn of \[\.\.\.fillListeners\]\) if \(fn !== from\) fn\(fill\)/.test(wlHookSrc) &&
+        /if \(f\.mode === 'guest'\) update\(\(\) => readGuestLists\(\)\)/.test(wlHookSrc) &&
+        /if \(!modeKey \|\| f\.modeKey !== modeKey \|\| !f\.added\.length\) return/.test(wlHookSrc))
+
     // 2. The guest ledger (browser-scoped, like guest lists).
     const led = parseHeldLedger(JSON.stringify({ seen: ['weth', 'AAPL', 7], auto: ['ETH'], pending: ['NVDA'] }))
     check('holdings ledger (guest): strict — a corrupt key reads empty, symbols normalize, non-strings drop', parseHeldLedger('nope').seen.length === 0 && parseHeldLedger('[1,2]').seen.length === 0 && led.seen.join() === 'ETH,AAPL' && led.auto.join() === 'ETH' && led.pending.join() === 'NVDA')
@@ -22709,13 +22792,16 @@ async function main() {
     check('holdings rail: the hook reads /api/watchlists/holdings, plans with planHeldAutofill, hands the guest ledger over on sign-in, and routes every guest write through updateGuest (the stale-closure fix: no persistGuest, no [...lists, …])',
       hookSrc.includes('/api/watchlists/holdings') && hookSrc.includes('planHeldAutofill(') && hookSrc.includes('guestHeldAdoption(') && hookSrc.includes('updateGuest(') && !hookSrc.includes('persistGuest(') && !/\[\.\.\.lists,/.test(hookSrc))
     check('holdings rail: rows the wallet holds wear the "In your wallet" marker and the autofill says what it added', railSrc.includes('data-held') && railSrc.includes('heldTitle(') && railSrc.includes('heldAutofillNote('))
-    const pollAt = hookSrc.indexOf('readHeld(holder, HELD_EVERY_MS / 2)')
-    const pollBlock = pollAt < 0 ? '' : hookSrc.slice(hookSrc.lastIndexOf('useEffect(', pollAt), hookSrc.indexOf('}, [ready, holder])', pollAt))
-    check('watch position: a held row renders heldPosition beside its price (before the quote cell, the amount’s ticker in its own span to give way on a narrow rail), every price cell is as wide as the list’s widest price, the marker quotes the same value, and the hook re-reads holdings on a visible-tab clock that never reconciles (no POST, no autofill plan)',
+    // The poll used to reprice only; since 2026-09-18 it runs the SAME
+    // reconcile as the visit (re-pinned on purpose — the whole point is that a
+    // token bought after the page loaded joins the list without a navigation).
+    const pollAt = hookSrc.indexOf('readAndReconcile({ maxAgeMs: HELD_EVERY_MS / 2')
+    const pollBlock = pollAt < 0 ? '' : hookSrc.slice(hookSrc.lastIndexOf('useEffect(', pollAt), hookSrc.indexOf('}, [ready, holder, readAndReconcile])', pollAt))
+    check('watch position: a held row renders heldPosition beside its price (before the quote cell, the amount’s ticker in its own span to give way on a narrow rail), every price cell is as wide as the list’s widest price, the marker quotes the same value, and the hook re-reads holdings on a visible-tab clock — the background check, reconcile included',
       railSrc.includes('heldPosition(inWallet, q)') && railSrc.includes('data-position') && railSrc.indexOf('data-position') < railSrc.indexOf('className="wl__rowQuote mono"') &&
         railSrc.includes('wl__rowPosUnit') && railSrc.includes("'--wl-last-ch'") && railSrc.includes('style={priceCell}') &&
         railSrc.includes('valueUsd: pos?.valueUsd ?? inWallet.valueUsd') &&
-        pollBlock.includes('setInterval(') && pollBlock.includes('visibilitychange') && !pollBlock.includes("'POST'") && !pollBlock.includes('planHeldAutofill('),
+        pollBlock.includes('setInterval(') && pollBlock.includes('visibilitychange') && pollBlock.includes('document.hidden'),
       pollBlock ? `poll block ${pollBlock.length} chars` : 'no poll block')
 
     // 8. The rail brews while it waits (2026-09-14, Nate: "a loader icon
@@ -22841,8 +22927,8 @@ async function main() {
       chipFundSrc.includes('o.fund && o.resume === w.resume') && panelFundSrc.includes('wait.resume ?') && panelFundSrc.includes("wait.asset ?? 'card purchase'"))
     check('card door: the rail mounts the door at the end of its rows with the holdings read’s verdict (never while it brews), and a landing re-reads the wallet past both caches (fresh=1, reconcile inside the minute) so the purchase fills the list',
       railFundSrc.includes('<FundWallet') && railFundSrc.includes('empty={wl.walletEmpty && !brew}') && railFundSrc.includes('onLanded={wl.recheckWallet}') &&
-        heldReadFundSrc.includes("'&fresh=1'") && hookFundSrc.includes('readHeld(holder, HELD_EVERY_MS, fresh)') && hookFundSrc.includes("from '@/lib/held-read'") &&
-        hookFundSrc.includes('lastReconciled.delete(key)') && hookFundSrc.includes('setWalletRead('))
+        heldReadFundSrc.includes("'&fresh=1'") && hookFundSrc.includes('readHeld(holder, opts.maxAgeMs ?? HELD_EVERY_MS, fresh)') && hookFundSrc.includes("from '@/lib/held-read'") &&
+        hookFundSrc.includes('forced: fresh') && hookFundSrc.includes('setWalletRead('))
     const fundHtml = flat(await (await fetch(`${BASE}/markets`)).text())
     check('card door: /markets never server-renders the door (no wallet is known before hydration)', fundHtml.includes('class="wl__rows"') && !fundHtml.includes('data-rail-fund'))
   }

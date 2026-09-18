@@ -519,6 +519,119 @@ export function mirrorAccountLedger(ledger: HeldLedger, accountWatched: Iterable
   return { ...ledger, seen: dedupeSymbols([...ledger.seen.filter((s) => !watched.has(s)), ...accountDismissed]) }
 }
 
+// ── Remembered holdings, and the background check ───────────────────────────
+// Nate, 2026-09-18, on a rail whose positions were read once at load: "since
+// the watchlist was loaded first time, I have since bought more tokens, can we
+// load in the background to see if the user has more tokens they purchase,
+// first load from memory, but background check for more tokens owned". Two
+// halves, both here:
+//
+//   memory — the last holdings read for a wallet is remembered in this
+//            browser, so a cold load paints each row's position with the
+//            lists instead of popping it in seconds later. Remembered
+//            holdings only PAINT. A chip that ACTS (every Sell chip, through
+//            lib/sell-gate and lib/use-held) still waits for a live read, so
+//            nothing is offered on a memory of a token that was since sold.
+//
+//   check  — the rail's minute poll reconciles as well as reprices
+//            (heldReconcileReason below), so a token bought after the page
+//            loaded joins the list while the page is open. It used to wait
+//            for the next navigation, because the autofill ran once per mount.
+
+export const HELD_SNAPSHOT_KEY = 'pantessa.wallet.held.v1'
+/** Older than this and the memory is dropped, not painted. */
+export const HELD_SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000
+/** Wallets remembered at once (newest kept) — a shared browser, a switcher. */
+export const HELD_SNAPSHOT_WALLETS = 4
+
+export interface HeldSnapshot {
+  /** When the read that produced it answered. */
+  at: number
+  held: HeldSymbol[]
+}
+
+function parseHeldSymbol(raw: unknown): HeldSymbol | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const v = raw as Record<string, unknown>
+  const symbol = typeof v.symbol === 'string' ? normalizeWatchSymbol(v.symbol) : null
+  const amount = typeof v.amount === 'number' && Number.isFinite(v.amount) && v.amount > 0 ? v.amount : null
+  if (!symbol || amount == null) return null
+  const valueUsd = typeof v.valueUsd === 'number' && Number.isFinite(v.valueUsd) ? v.valueUsd : null
+  const chains = Array.isArray(v.chains) ? v.chains.filter((c): c is string => typeof c === 'string') : []
+  const chainIds = Array.isArray(v.chainIds) ? v.chainIds.filter((c): c is number => typeof c === 'number' && Number.isFinite(c)) : []
+  return { symbol, valueUsd, amount, chains, chainIds }
+}
+
+/** Strict reader — a corrupt or foreign value reads as nothing remembered. */
+export function parseHeldSnapshots(raw: unknown): Record<string, HeldSnapshot> {
+  if (typeof raw !== 'string' || !raw) return {}
+  try {
+    const v = JSON.parse(raw) as unknown
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
+    const out: Record<string, HeldSnapshot> = {}
+    for (const [addr, snapRaw] of Object.entries(v as Record<string, unknown>)) {
+      if (!/^0x[0-9a-f]{40}$/.test(addr)) continue
+      if (!snapRaw || typeof snapRaw !== 'object' || Array.isArray(snapRaw)) continue
+      const snap = snapRaw as Record<string, unknown>
+      const at = typeof snap.at === 'number' && Number.isFinite(snap.at) ? snap.at : null
+      if (at == null || !Array.isArray(snap.held)) continue
+      out[addr] = { at, held: snap.held.map(parseHeldSymbol).filter((h): h is HeldSymbol => h !== null) }
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+/** What this browser last saw in that wallet, or null when it has no memory
+ *  of it (or one too old to paint). */
+export function readHeldSnapshot(address: string, now = Date.now()): HeldSymbol[] | null {
+  if (typeof window === 'undefined') return null
+  let snaps: Record<string, HeldSnapshot> = {}
+  try {
+    snaps = parseHeldSnapshots(window.localStorage.getItem(HELD_SNAPSHOT_KEY))
+  } catch {
+    return null
+  }
+  const snap = snaps[address.toLowerCase()]
+  if (!snap || now - snap.at > HELD_SNAPSHOT_MAX_AGE_MS) return null
+  return snap.held
+}
+
+/** Remember what a read just found, newest HELD_SNAPSHOT_WALLETS wallets. */
+export function writeHeldSnapshot(address: string, held: readonly HeldSymbol[], now = Date.now()): void {
+  if (typeof window === 'undefined') return
+  try {
+    const snaps = parseHeldSnapshots(window.localStorage.getItem(HELD_SNAPSHOT_KEY))
+    snaps[address.toLowerCase()] = { at: now, held: [...held] }
+    const kept = Object.entries(snaps)
+      .sort((a, b) => b[1].at - a[1].at)
+      .slice(0, HELD_SNAPSHOT_WALLETS)
+    window.localStorage.setItem(HELD_SNAPSHOT_KEY, JSON.stringify(Object.fromEntries(kept)))
+  } catch {
+    /* private mode / quota — the rail just paints once the read lands */
+  }
+}
+
+/** Why a holdings read reconciles, or null when it only reprices. The first
+ *  read for a wallet reconciles (the visit's autofill), and so does one that
+ *  turns up a symbol the last reconcile never saw — the token bought since
+ *  the page loaded. A read that finds nothing new writes NOTHING, however
+ *  many tabs poll or how often: the minute poll is a check, not a sync. A
+ *  landed card purchase forces one (the rail's recheck). */
+export function heldReconcileReason(s: {
+  /** The symbols this read found. */
+  held: readonly string[]
+  /** The symbols of the last reconciled read for this wallet, null when none. */
+  reconciled: readonly string[] | null
+  forced?: boolean
+}): 'first' | 'new' | 'forced' | null {
+  if (s.forced) return 'forced'
+  if (s.reconciled === null) return 'first'
+  const known = new Set(s.reconciled)
+  return s.held.some((sym) => !known.has(sym)) ? 'new' : null
+}
+
 // ── Sections ────────────────────────────────────────────────────────────────
 
 /** Sectioned view of a list: named sections in order, then the unsectioned
