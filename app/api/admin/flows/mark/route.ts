@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
-import { getAuthAddress } from '@/lib/api-key'
+import { getSessionAddress } from '@/lib/auth'
 import { isAdminAddress } from '@/lib/admin'
 
 export const runtime = 'nodejs'
@@ -18,7 +18,8 @@ const KEY_RE = /^(0x[0-9a-f]{40}|v:[a-z0-9-]{8,40})$/
  * reads team_marks.
  */
 export async function POST(req: NextRequest) {
-  const admin = await getAuthAddress(req)
+  // Session only, like the read beside it.
+  const admin = await getSessionAddress()
   if (!admin) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
   if (!isAdminAddress(admin)) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
   const body = (await req.json().catch(() => null)) as { key?: unknown; on?: unknown; note?: unknown } | null

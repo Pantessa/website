@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { getAddress, isAddress } from 'viem'
 import prisma from '@/lib/db'
-import { getAuthAddress } from '@/lib/api-key'
+import { getSessionAddress } from '@/lib/auth'
 import { isAdminAddress, isTestWallet } from '@/lib/admin'
 import { isCdpListingConfigured, listCdpEndUsers, type CdpEndUser } from '@/lib/cdp'
 import { INTERNAL_ORIGIN_SQL, INTERNAL_TRAFFIC_WHERE, isCountedTurn } from '@/lib/value-origin'
@@ -20,6 +20,7 @@ import {
   rageRuns,
   sourceOf,
   summarize,
+  teamVerdict,
   type FlowItem,
   type FlowSource,
 } from '@/lib/user-flows'
@@ -71,7 +72,9 @@ const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…`
 const usd = (n: number | null | undefined) => (n && n > 0 ? ` · $${n.toFixed(2)}` : '')
 
 export async function GET(req: NextRequest) {
-  const admin = await getAuthAddress(req)
+  // The SESSION only, never a bearer key: this answer carries account emails
+  // and the text of what people asked, and an API key is a thing that leaks.
+  const admin = await getSessionAddress()
   if (!admin) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
   if (!isAdminAddress(admin)) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
 
@@ -100,15 +103,16 @@ export async function GET(req: NextRequest) {
   const events = eventsDesc.reverse()
   const marked = new Set(marks.map((m) => m.key.toLowerCase()))
 
-  type Vid = { rows: typeof events; wallets: string[]; team: boolean; bot: boolean; nets: Set<string>; country: string | null; device: string | null }
+  type Vid = { rows: typeof events; wallets: string[]; team: boolean; claimed: boolean; bot: boolean; nets: Set<string>; country: string | null; device: string | null }
   const vids = new Map<string, Vid>()
   const teamNets = new Set<string>()
   for (const e of events) {
     let v = vids.get(e.vid)
-    if (!v) vids.set(e.vid, (v = { rows: [], wallets: [], team: false, bot: false, nets: new Set(), country: null, device: null }))
+    if (!v) vids.set(e.vid, (v = { rows: [], wallets: [], team: false, claimed: false, bot: false, nets: new Set(), country: null, device: null }))
     v.rows.push(e)
     if (e.wallet && !v.wallets.includes(e.wallet)) v.wallets.push(e.wallet)
     if (e.isTeam) v.team = true
+    if (e.teamClaimed) v.claimed = true
     if (e.isBot) v.bot = true
     if (e.net) v.nets.add(e.net)
     v.country ??= e.country
@@ -300,32 +304,39 @@ export async function GET(req: NextRequest) {
   const flows = []
   let hiddenSilent = 0
   for (const p of people.values()) {
-    const vs = p.vids.map((id) => vids.get(id)!).filter(Boolean)
+    const allVs = p.vids.map((id) => vids.get(id)!).filter(Boolean)
     const account = p.wallet ? (accountOf.get(p.wallet) ?? null) : null
-    const allWallets = [...new Set([...(p.wallet ? [p.wallet] : []), ...vs.flatMap((v) => v.wallets)])]
-    const team =
-      allWallets.some((w) => isTestWallet(w) || isAdminAddress(w) || marked.has(w)) ||
-      p.vids.some((id) => marked.has(`v:${id}`)) ||
-      vs.some((v) => v.team || [...v.nets].some((n) => teamNets.has(n))) ||
-      (!!account?.email && TEAM_EMAIL.test(account.email))
-    const teamWhy = !team
-      ? null
-      : allWallets.some((w) => isTestWallet(w) || isAdminAddress(w))
-        ? 'a team wallet'
-        : allWallets.some((w) => marked.has(w)) || p.vids.some((id) => marked.has(`v:${id}`))
-          ? 'marked by hand'
-          : vs.some((v) => v.team)
-            ? 'an admin’s browser'
-            : account?.email && TEAM_EMAIL.test(account.email)
-              ? 'a team email'
-              : 'same network as an admin that day'
+    const ownWallets = [...new Set([...(p.wallet ? [p.wallet] : []), ...allVs.flatMap((v) => v.wallets)])]
+    // lib/user-flows teamVerdict: verified evidence hides the person; a bare
+    // claim hides only the visitor id that made it (a stranger can claim
+    // anyone's wallet, and that must not take the owner's timeline away).
+    const verdict = teamVerdict({
+      // The person's OWN wallet, not every wallet one of their visitor ids
+      // named: a stranger's browser can name one of ours next to a victim's.
+      walletIsOurs: isTestWallet(p.wallet) || isAdminAddress(p.wallet),
+      walletMarked: !!p.wallet && marked.has(p.wallet),
+      emailIsOurs: !!account?.email && TEAM_EMAIL.test(account.email),
+      vids: allVs.map((v, i) => ({ verified: v.team, onTeamNet: [...v.nets].some((n) => teamNets.has(n)), marked: marked.has(`v:${p.vids[i]}`), claimed: v.claimed })),
+      hasTableHistory: !!p.wallet && (dbItems.get(p.wallet)?.length ?? 0) > 0,
+    })
+    const team = verdict.team
+    const teamWhy = verdict.why
     if (team && !includeTeam) {
       hiddenOurs.add(p.key)
       continue
     }
+    // Claimed-ours visitor ids inside a person who is not ours: their rows go,
+    // the person stays.
+    const dropped = new Set(includeTeam ? [] : verdict.dropVids)
+    const vs = allVs.filter((_, i) => !dropped.has(i))
+    const shownVids = p.vids.filter((_, i) => !dropped.has(i))
+    for (const i of dropped) hiddenOurs.add(`v:${p.vids[i]}`)
+    const allWallets = ownWallets
 
     const visitorItems = vs.flatMap((v) => v.rows.map((r) => itemFromRow({ at: r.createdAt.getTime(), kind: r.kind, path: r.path, label: r.label, detail: (r.detail ?? null) as Record<string, unknown> | null, referrer: r.referrer })).filter((i): i is FlowItem => !!i))
-    const stitched = allWallets.flatMap((w) => dbItems.get(w) ?? [])
+    // Table history for the person's own wallet only: a second wallet a
+    // browser named is its own person, with its own history.
+    const stitched = p.wallet ? (dbItems.get(p.wallet) ?? []) : []
     const items = foldLeaves(collapseClicks(dropEchoedSends(backfillAsks(mergeItems([...visitorItems, ...stitched])))))
     if (items.length === 0) continue
     const fold = foldFlow(items, { hasWallet: allWallets.length > 0 })
@@ -347,7 +358,7 @@ export async function GET(req: NextRequest) {
       id: p.key,
       wallet: p.wallet,
       wallets: allWallets,
-      vids: p.vids,
+      vids: shownVids,
       email: account?.email ?? null,
       method: account?.method ?? null,
       team,

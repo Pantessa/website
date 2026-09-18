@@ -231,13 +231,13 @@ function Timeline({ flow }: { flow: Flow }) {
                   {clock(it.at)}
                 </span>
                 <span className="text-[13px] break-words min-w-0" style={{ color: tone === 'info' ? 'var(--muted)' : tone === 'act' ? undefined : TONE_INK[tone] }}>
-                  <span className={tone === 'act' ? 'text-white' : ''}>{it.title}</span>
+                  <span className={tone === 'act' ? 'text-white' : ''}>{String(it.title ?? '')}</span>
                 </span>
                 <span className="text-[10px] mono text-[color:var(--muted-2)] whitespace-nowrap" title={`Recorded by ${FROM_WORD[it.from]}`}>
                   +{humanMs(it.at - start)}
                 </span>
               </div>
-              {it.detail && it.detail !== 'chat_message_sent' && <p className="text-xs text-[color:var(--muted)] mt-0.5 break-words">{it.detail}</p>}
+              {it.detail && it.detail !== 'chat_message_sent' && <p className="text-xs text-[color:var(--muted)] mt-0.5 break-words">{String(it.detail)}</p>}
             </div>
           </li>
         )
@@ -460,7 +460,7 @@ function FlowsPage() {
         (f.email ?? '').includes(q) ||
         f.vids.some((v) => v.includes(q)) ||
         f.pages.some((p) => p.toLowerCase().includes(q)) ||
-        f.items.some((i) => i.title.toLowerCase().includes(q) || (i.detail ?? '').toLowerCase().includes(q))
+        f.items.some((i) => String(i.title ?? '').toLowerCase().includes(q) || String(i.detail ?? '').toLowerCase().includes(q))
       )
     })
   }, [data, pick, outcome, source, query])

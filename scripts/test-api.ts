@@ -7355,6 +7355,27 @@ async function main() {
       rows[0]?.kind === 'door' && rows[1]?.kind === 'door-error' && rows[2]?.kind === 'connect' && /Phantom/.test(rows[2]?.title ?? '') && rows[3]?.kind === 'reply-wall' &&
         rows[3]?.detail === 'Top up and ask again.' && rows[3]?.from === 'server' && rows[4]?.title === 'POST /api/onramp/session answered 403' && rows[5] === null,
     )
+    const proto = ['constructor', '__proto__', 'toString', 'hasOwnProperty'].map((label) => F.itemFromRow({ at: T0, kind: 'event', path: '/', label, detail: null, referrer: null }))
+    check(
+      'flows rows: a label is a stranger’s string — `constructor` and `__proto__` come back as plain words, never as an object’s own machinery (it crashed the page once)',
+      proto.every((i) => !!i && typeof i.title === 'string' && i.title.length > 0 && i.kind === 'event'),
+      proto.map((i) => typeof i?.title).join(','),
+    )
+    const vid = (o: Partial<import('../lib/user-flows').TeamVid>) => ({ verified: false, onTeamNet: false, marked: false, claimed: false, ...o })
+    const person = (o: Partial<Parameters<typeof F.teamVerdict>[0]>) => F.teamVerdict({ walletIsOurs: false, walletMarked: false, emailIsOurs: false, vids: [], hasTableHistory: false, ...o })
+    const hijack = person({ vids: [vid({}), vid({ claimed: true })], hasTableHistory: true })
+    check(
+      'flows team: a CLAIM hides only the visitor id that made it — a stranger naming your wallet with team:true cannot take your timeline off the screen',
+      !hijack.team && hijack.dropVids.join() === '1' && !person({ vids: [vid({ claimed: true })], hasTableHistory: true }).team &&
+        person({ vids: [vid({ claimed: true })] }).team && person({ vids: [vid({ claimed: true })] }).why === 'its browser says it is ours',
+      JSON.stringify(hijack),
+    )
+    check(
+      'flows team: VERIFIED evidence hides the person — a team wallet, a hand mark, an admin’s session, an admin’s network that day, a team email',
+      person({ walletIsOurs: true }).why === 'a team wallet' && person({ walletMarked: true }).why === 'marked by hand' && person({ vids: [vid({ marked: true })] }).why === 'marked by hand' &&
+        person({ vids: [vid({}), vid({ verified: true })] }).why === 'an admin’s browser' && person({ vids: [vid({ onTeamNet: true })] }).why === 'same network as an admin that day' &&
+        person({ emailIsOurs: true }).why === 'a team email' && !person({ vids: [vid({})], hasTableHistory: true }).team,
+    )
     const seen = (detail: Record<string, unknown>) => F.itemFromRow({ at: T0, kind: 'event', path: '/', label: 'wallet_seen', detail, referrer: null })?.title ?? ''
     check(
       'flows rows: a wallet that came back on its own is not a wallet someone connected, and the analytics echo of a connect is one fact, not two',
@@ -7432,7 +7453,8 @@ async function main() {
         const r = await fetch(`${BASE}/api/admin/flows?days=1&internal=1&silent=1${extra}`, { headers: { cookie: ufSession } })
         return { status: r.status, body: (await r.json()) as { windowDays: number; flows: UfFlow[]; summary: { people: number; funnel: { n: number }[] }; hidden: { team: number; silent: number } } }
       }
-      const mine = (flows: UfFlow[]) => flows.find((f) => f.items.some((i) => i.title.includes(ufTag)))
+      // By its own click label: a later probe in this block reuses the tag.
+      const mine = (flows: UfFlow[]) => flows.find((f) => f.items.some((i) => i.title.includes(`Buy AAPL ${ufTag}`)))
       // after() writes once the response is out: give the rows a moment.
       let read = await readFlows()
       for (let i = 0; i < 8 && !mine(read.body.flows)?.items.some((x) => x.kind === 'ask'); i++) {
@@ -7457,6 +7479,42 @@ async function main() {
         me ? `${me.stage}/${me.outcome}` : 'flow not found',
       )
       check('flows round trip: a browser that sent Global Privacy Control left no row', !read.body.flows.some((f) => f.items.some((i) => i.title.includes(`gpc ${ufTag}`))))
+
+      // A browser that CLAIMS to be ours: hidden by default, shown under
+      // ?team=1 with the honest reason, and stored as a claim, not as proof.
+      const claimUa = `${ufUa}-claims`
+      await fetch(`${BASE}/api/journey`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'user-agent': claimUa },
+        body: JSON.stringify({ team: true, events: [{ k: 'view', p: '/markets' }, { k: 'click', p: '/markets', l: `claimed ${ufTag}` }, { k: 'leave', p: '/markets', d: { ms: 4000, scroll: 10, input: true } }] }),
+      })
+      // An ask from the chat embedded on someone else's site is not ours to log.
+      await realFetch(`${BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'user-agent': ufUa, 'x-yf-internal-run': '1' },
+        body: JSON.stringify({ message: `show me the BTC chart ${ufTag}`, activeServers: [], embedOrigin: 'https://host.example' }),
+      })
+      await new Promise((r) => setTimeout(r, 2500))
+      const claimedHidden = !(await readFlows()).body.flows.some((f) => f.items.some((i) => i.title.includes(`claimed ${ufTag}`)))
+      const withOurs = (await readFlows('&team=1')).body.flows
+      const claimedShown = withOurs.find((f) => f.items.some((i) => i.title.includes(`claimed ${ufTag}`)))
+      check(
+        'flows team (over the wire): a browser’s own team flag hides its rows and nobody else’s, and is shown as a claim',
+        claimedHidden && !!claimedShown && claimedShown.team && claimedShown.teamWhy === 'its browser says it is ours' && !!mine((await readFlows()).body.flows),
+        claimedShown ? String(claimedShown.teamWhy) : 'not found under ?team=1',
+      )
+      check('flows: an ask from the embedded chat on another site is recorded on neither half', !withOurs.some((f) => f.items.some((i) => i.title.includes(`BTC chart ${ufTag}`))))
+      // The admin read answers a SESSION, never a bearer key (it carries emails).
+      const adminKey = (await fetch(`${BASE}/api/keys`, { method: 'POST', headers: { cookie: ufSession, 'content-type': 'application/json' }, body: JSON.stringify({ label: 'test:api flows (admin key)' }) })
+        .then((r) => r.json())
+        .catch(() => null)) as { secret?: string; id?: string } | null
+      if (adminKey?.secret) {
+        const viaKey = await fetch(`${BASE}/api/admin/flows`, { headers: { authorization: `Bearer ${adminKey.secret}` } })
+        check('flows: an ADMIN’s API key cannot read the flows (session only — a key is a thing that leaks)', viaKey.status === 401, String(viaKey.status))
+        if (adminKey.id) await fetch(`${BASE}/api/keys/${adminKey.id}`, { method: 'DELETE', headers: { cookie: ufSession } }).catch(() => {})
+      } else {
+        console.log('  ↳ flows bearer-key check SKIPPED (could not mint a key for the admin)')
+      }
 
       // "That was me."
       if (me) {
@@ -7494,7 +7552,9 @@ async function main() {
     check(
       'flows wiring: the page sits under Growth (the rail stays lit on it), Growth links to it, and the privacy page says what is kept',
       isSectionActive('/dashboard/admin/flows', '/dashboard/admin', false) && read('app/dashboard/admin/page.tsx').includes('/dashboard/admin/flows') &&
-        read('app/dashboard/admin/flows/page.tsx').includes('/api/admin/flows') && /Global Privacy Control/.test(read('app/docs/privacy/page.tsx')) && /deleted after 120 days/.test(read('app/docs/privacy/page.tsx')),
+        read('app/dashboard/admin/flows/page.tsx').includes('/api/admin/flows') && /Global Privacy Control/.test(read('app/docs/privacy/page.tsx')) && /deleted after 120 days/.test(read('app/docs/privacy/page.tsx')) &&
+        // Session-only on both admin routes, and no bare-object lookup of a stranger's label.
+        !/getAuthAddress/.test(read('app/api/admin/flows/route.ts')) && !/getAuthAddress/.test(read('app/api/admin/flows/mark/route.ts')) && /Object\.hasOwn\(EVENT_WORDS, name\)/.test(read('lib/user-flows.ts')),
     )
   }
 

@@ -396,10 +396,22 @@ mint, or mutate. That's this section.
   answers 204 before it writes, so a prober learns nothing from status or
   timing. What it cannot do: authorize, pay, or gate anything. No read path
   outside the admin-gated `/api/admin/flows` touches `visitor_events`, and
-  that screen renders every string as text. The `wallet` and `team` fields
-  are self-reported on purpose, the `x-yf-internal-run` argument again: a
-  false "team" only hides your own rows from an admin's default view, and a
-  false wallet only puts your own clicks on that wallet's admin timeline.
+  that screen renders every string as text, behind the admin SESSION only
+  (never a bearer key: the answer carries emails and ask text). The `wallet`
+  and `team` fields are self-reported, so they are weighed as claims
+  (`lib/user-flows teamVerdict`, harness-pinned). The first cut got this
+  wrong and the security review caught it: a stranger posting
+  `{ w: <victim>, team: true }` took the victim's whole timeline off the
+  default view. Now only VERIFIED evidence hides a person: an admin's or
+  test wallet's session cookie on the request (`is_team`), that session's
+  network that day, a hand mark, our own wallet list. A claim
+  (`team_claimed`) hides the visitor id that made it and nothing else. A
+  false wallet still puts a stranger's own clicks on that wallet's admin
+  timeline; it cannot hide it, and table history is stitched only for a
+  person's own wallet. A label is a stranger's string all the way to the
+  screen: it is looked up with `Object.hasOwn`, never as a bare object key
+  (`constructor` once crashed the page). Asks sent from the chat embedded
+  on another site are not recorded on either half.
   Open: the log is only as private as its salt rotation. `visitor_salts`
   rows older than yesterday are deleted lazily by the next write; on a day
   with no traffic at all an old salt outlives its two days until the next

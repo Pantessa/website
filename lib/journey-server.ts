@@ -35,6 +35,7 @@ interface RowBase {
   country: string | null
   device: string
   isTeam: boolean
+  teamClaimed: boolean
   isInternal: boolean
   isBot: boolean
 }
@@ -49,7 +50,11 @@ async function baseFor(headers: Headers, wallet: string | null, opts: { team?: b
     wallet,
     country: (headers.get('x-vercel-ip-country') ?? '').slice(0, 2).toUpperCase() || null,
     device: deviceOf(ua),
-    isTeam: opts.team === true || isTestWallet(wallet) || isAdminAddress(wallet) || isAdminAddress(opts.sessionAddress) || isTestWallet(opts.sessionAddress),
+    // Two strengths of "ours", kept apart on purpose. The session cookie is
+    // verified; the body flag and the wallet are whatever the sender typed.
+    // Only the verified one may hide anybody else's rows (the flows route).
+    isTeam: isAdminAddress(opts.sessionAddress) || isTestWallet(opts.sessionAddress),
+    teamClaimed: opts.team === true || isTestWallet(wallet) || isAdminAddress(wallet),
     isInternal: who.local || !isPublicHost(host) || isInternalRun(headers, opts.body),
     isBot: isBotUa(ua),
   }
@@ -100,7 +105,6 @@ export async function writeJourneyBatch(
 /** The page a chat turn was sent from, as a pathname. */
 function surfaceOf(headers: Headers, reqBody: Record<string, unknown>): string {
   if (typeof reqBody.intentLinkSlug === 'string' && reqBody.intentLinkSlug) return `/i/${reqBody.intentLinkSlug.slice(0, 40)}`
-  if (typeof reqBody.embedKey === 'string' || typeof reqBody.embedOrigin === 'string') return '/embed'
   try {
     const ref = headers.get('referer')
     if (ref) return new URL(ref).pathname.slice(0, 160)
@@ -127,6 +131,10 @@ export async function recordTurn(
     if (optedOut(headers)) return
     const message = typeof reqBody.message === 'string' ? reqBody.message.trim() : ''
     if (!message || reqBody.phase === 'execute') return
+    // The chat embedded on someone else's site is their visitors, not ours:
+    // the browser half never runs there, and neither does this one.
+    // (embed_turns is that surface's own telemetry.)
+    if ((typeof reqBody.embedKey === 'string' && reqBody.embedKey) || (typeof reqBody.embedOrigin === 'string' && reqBody.embedOrigin)) return
     const wallet = typeof reqBody.walletAddress === 'string' && /^0x[0-9a-fA-F]{40}$/.test(reqBody.walletAddress) ? reqBody.walletAddress.toLowerCase() : null
     const base = await baseFor(headers, wallet, { body: reqBody })
     const path = surfaceOf(headers, reqBody)

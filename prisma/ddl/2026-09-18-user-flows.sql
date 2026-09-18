@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS visitor_events (
   country     text,
   device      text,
   is_team     boolean NOT NULL DEFAULT false,
+  team_claimed boolean NOT NULL DEFAULT false,
   is_internal boolean NOT NULL DEFAULT false,
   is_bot      boolean NOT NULL DEFAULT false,
   created_at  timestamptz(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -38,3 +39,7 @@ CREATE TABLE IF NOT EXISTS team_marks (
   marked_by  text NOT NULL,
   created_at timestamptz(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- A database created from the first cut of this file (before the security
+-- review split "verified ours" from "claims to be ours").
+ALTER TABLE visitor_events ADD COLUMN IF NOT EXISTS team_claimed boolean NOT NULL DEFAULT false;

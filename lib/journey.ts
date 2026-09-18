@@ -81,7 +81,8 @@ function readArrival(): { ref?: string; utm?: string } {
   const out: { ref?: string; utm?: string } = {}
   try {
     const ref = document.referrer
-    if (ref && new URL(ref).origin !== window.location.origin) out.ref = ref.slice(0, 200)
+    // The hostname is all that is ever kept, so it is all that is ever sent.
+    if (ref && new URL(ref).origin !== window.location.origin) out.ref = new URL(ref).hostname.slice(0, 120)
   } catch {
     /* an opaque referrer is no referrer */
   }

@@ -676,7 +676,9 @@ export function itemFromRow(r: VisitorEventRow): FlowItem | null {
       // The server's own `ask` row is the record of a sent message. This one
       // only matters when that row is missing (see dropEchoedSends).
       if (name === 'chat_message_sent') return { ...base, kind: 'event', title: 'Sent a message', detail: 'chat_message_sent' }
-      const words = EVENT_WORDS[name] ?? name.replace(/_/g, ' ')
+      // The label is a stranger's string: `constructor` and `__proto__` are
+      // keys of every plain object, and neither is a word of ours.
+      const words = Object.hasOwn(EVENT_WORDS, name) ? EVENT_WORDS[name] : name.replace(/_/g, ' ')
       const extra = str(d.prompt) || str(d.slug) || str(d.action) || str(d.label)
       return { ...base, kind: 'event', title: extra ? `${words}: “${extra}”` : words }
     }
@@ -788,4 +790,46 @@ export function backfillAsks(itemsAsc: FlowItem[]): FlowItem[] {
     out.push(i)
   }
   return out
+}
+
+// ── whose rows are ours ───────────────────────────────────────────────────
+
+export interface TeamVid {
+  /** a row of this visitor id carried an admin's or test wallet's SESSION */
+  verified: boolean
+  /** its network hash matches a verified visitor's that day */
+  onTeamNet: boolean
+  /** an admin marked this visitor id by hand */
+  marked: boolean
+  /** its browser (or the wallet it named) CLAIMED to be the team's */
+  claimed: boolean
+}
+
+export interface TeamVerdict {
+  /** hide this person entirely */
+  team: boolean
+  why: string | null
+  /** indexes of visitor ids whose rows are hidden even though the person is not */
+  dropVids: number[]
+}
+
+/**
+ * Who is hidden as ours. A claim is not evidence about anyone but the
+ * claimant: a stranger can post `{ w: <someone's wallet>, team: true }`, and
+ * that must never take the real owner's timeline off the screen. So:
+ *   · verified evidence (a team wallet, a hand mark, an admin's session, an
+ *     admin's network, a team email) hides the PERSON;
+ *   · a bare claim hides only the visitor id that made it, and the person
+ *     only when nothing else is left of them.
+ */
+export function teamVerdict(p: { walletIsOurs: boolean; walletMarked: boolean; emailIsOurs: boolean; vids: TeamVid[]; hasTableHistory: boolean }): TeamVerdict {
+  if (p.walletIsOurs) return { team: true, why: 'a team wallet', dropVids: [] }
+  if (p.walletMarked || p.vids.some((v) => v.marked)) return { team: true, why: 'marked by hand', dropVids: [] }
+  if (p.vids.some((v) => v.verified)) return { team: true, why: 'an admin’s browser', dropVids: [] }
+  if (p.emailIsOurs) return { team: true, why: 'a team email', dropVids: [] }
+  if (p.vids.some((v) => v.onTeamNet)) return { team: true, why: 'same network as an admin that day', dropVids: [] }
+  const dropVids = p.vids.flatMap((v, i) => (v.claimed ? [i] : []))
+  const nothingLeft = dropVids.length > 0 && dropVids.length === p.vids.length && !p.hasTableHistory
+  if (nothingLeft) return { team: true, why: 'its browser says it is ours', dropVids: [] }
+  return { team: false, why: null, dropVids }
 }

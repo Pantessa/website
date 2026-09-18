@@ -1690,25 +1690,30 @@ model AlertNotification {
 /// what the browser said was connected — display only, nothing is authorized
 /// or paid off this table.
 model VisitorEvent {
-  id         String   @id @default(cuid())
-  vid        String
+  id          String   @id @default(cuid())
+  vid         String
   /// The same hash over the IP alone: events that share it came from one
   /// network that day. Its one use is tagging our own devices as team.
-  net        String?
-  wallet     String?
-  kind       String // lib/journey-events JOURNEY_KINDS
-  path       String   @default("")
-  label      String?
-  detail     Json?
-  referrer   String? // external hostname, first view of a page load only
-  utm        String?
-  country    String?
-  device     String? // "mobile · iOS · Safari" — families, never the full UA
-  /// An admin's browser, a test wallet, or the harness header.
-  isTeam     Boolean  @default(false) @map("is_team")
-  isInternal Boolean  @default(false) @map("is_internal")
-  isBot      Boolean  @default(false) @map("is_bot")
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  net         String?
+  wallet      String?
+  kind        String // lib/journey-events JOURNEY_KINDS
+  path        String   @default("")
+  label       String?
+  detail      Json?
+  referrer    String? // external hostname, first view of a page load only
+  utm         String?
+  country     String?
+  device      String? // "mobile · iOS · Safari" — families, never the full UA
+  /// VERIFIED ours: the request carried an admin's or a test wallet's session
+  /// cookie. The only team evidence allowed to hide anyone else's rows.
+  isTeam      Boolean  @default(false) @map("is_team")
+  /// CLAIMED ours: the browser said so (a flag an admin sign-in leaves on
+  /// that machine), or named one of our wallets. A stranger can say the same,
+  /// so a claim hides the rows it rides on and nothing more.
+  teamClaimed Boolean  @default(false) @map("team_claimed")
+  isInternal  Boolean  @default(false) @map("is_internal")
+  isBot       Boolean  @default(false) @map("is_bot")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([createdAt(sort: Desc)])
   @@index([vid, createdAt])
