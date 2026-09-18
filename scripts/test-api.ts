@@ -364,7 +364,8 @@ import { chainMentions as arcChainMentions } from '../lib/chain-lexicon'
 import { buildTransferArtifact as arcBuildTransferArtifact } from '../lib/transfer-exec'
 import { ARC_BRIDGE_TOOLS, buildLifiBridgeLeg as arcBuildLifiBridgeLeg } from '../lib/lifi-bridge'
 import { fundSegment as arcFundSegment, LIFI_DESTINATIONS as ARC_LIFI_DESTINATIONS, lifiDestination as arcLifiDestination, isLifiFundedChain as arcIsLifiFundedChain } from '../lib/lifi-destinations'
-import { usdPerToken as arcUsdPerToken } from '../lib/usd-probe'
+import { judgePoolDepth, MAX_PROBE_DECAY_BPS, MIN_DEPTH_QUOTE_UNITS, usdPerToken as arcUsdPerToken } from '../lib/usd-probe'
+import { FEE_TIERS as ARC_FEE_TIERS, QUOTER_V2_ABI as ARC_QUOTER_V2_ABI } from '../lib/uniswap-venue'
 import { classifyDryRunError as arcClassifyDryRunError } from '../lib/dry-run'
 import { alchemyNetworkEnabled as arcAlchemyNetworkEnabled } from '../lib/alchemy'
 import { buildUniswapSwap as arcBuildUniswapSwap } from '../lib/uniswap-venue'
@@ -26092,14 +26093,106 @@ async function main() {
     )
     // ── Live, read-only, against the real chain + LiFi (the burner signs nothing) ──
     const arcPk = await readFile('.env.local', 'utf8').then((t) => t.match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null).catch(() => null)
+    // ── The depth fence (lib/usd-probe) ──────────────────────────────────
+    // A quote is only a price when the pool can absorb it. These pins assert
+    // the RULE, never today's market: the first is pure arithmetic, the
+    // second re-derives the rule from live chain state and requires the
+    // probe to agree with it. Arc's WETH pool woke up on 2026-09-18 holding
+    // ~$18 of USDC and answered $18.25 per WETH (marginal ~$2,485) — a pin
+    // written as "WETH is unpriceable" went red on a market move, so this
+    // one says "the probe answers exactly what the fence decides" instead.
+    {
+      const deep = judgePoolDepth(BigInt(2_500_000_000), BigInt(1_250_000_000)) // 0% decay
+      const edgeOk = judgePoolDepth(BigInt(1_900_000_000), BigInt(1_000_000_000)) // 5.00% decay — at the fence
+      const edgeBad = judgePoolDepth(BigInt(1_890_000_000), BigInt(1_000_000_000)) // 5.50% decay — over it
+      const drained = judgePoolDepth(BigInt(18_251_574), BigInt(18_249_000)) // Arc's WETH pool: ~50% decay
+      const dust = judgePoolDepth(BigInt(5), BigInt(2)) // SHIB: −25% "decay" is rounding, not thinness
+      const negative = judgePoolDepth(BigInt(2_010_000_000), BigInt(1_000_000_000)) // half pays worse — clamps to 0
+      const noPool = judgePoolDepth(null, null)
+      const halfDead = judgePoolDepth(BigInt(1_000), null)
+      check(
+        `depth fence (rule): a v3/v4 tier is a PRICE only when one whole token decays ≤ ${MAX_PROBE_DECAY_BPS} bps against twice the half-token quote — a drained pool (~50%) is refused, an exactly-at-the-fence pool passes and one bp over does not, a quote under ${MIN_DEPTH_QUOTE_UNITS} stable units is rounding noise and steps aside rather than accusing a healthy pool, and negative decay clamps to zero`,
+        deep.trusted && deep.decayBps === 0 &&
+          edgeOk.trusted && edgeOk.decayBps === MAX_PROBE_DECAY_BPS &&
+          !edgeBad.trusted && edgeBad.decayBps === 550 &&
+          !drained.trusted && drained.decayBps !== null && drained.decayBps > 4_000 &&
+          dust.trusted && dust.decayBps === null &&
+          negative.trusted && negative.decayBps === 0 &&
+          !noPool.trusted && noPool.decayBps === null &&
+          halfDead.trusted && halfDead.decayBps === null &&
+          MAX_PROBE_DECAY_BPS > 400 && MAX_PROBE_DECAY_BPS < 2_300,
+        JSON.stringify({ deep, edgeOk, edgeBad, drained, dust, negative, noPool, halfDead, MAX_PROBE_DECAY_BPS, MIN_DEPTH_QUOTE_UNITS: String(MIN_DEPTH_QUOTE_UNITS) }),
+      )
+    }
     const btcProbe = await arcUsdPerToken(5042, 'BTC').catch(() => null)
     const eurProbe = await arcUsdPerToken(5042, 'EURC').catch(() => null)
-    const wethProbe = await arcUsdPerToken(5042, 'WETH').catch(() => null)
     check(
-      'arc (live): usdPerToken prices BTC (cirBTC, five figures) and EURC (≈ €1 in USD) on Arc\'s own Uniswap v3 pools; WETH is honestly unpriceable (its pool was empty at launch)',
-      !!btcProbe && btcProbe.usd > 10_000 && btcProbe.usd < 1_000_000 && /v3/.test(btcProbe.via) && !!eurProbe && eurProbe.usd > 0.8 && eurProbe.usd < 1.6 && wethProbe === null,
-      JSON.stringify({ btcProbe, eurProbe, wethProbe }),
+      'arc (live): usdPerToken prices BTC (cirBTC, five figures) and EURC (≈ €1 in USD) on Arc\'s own Uniswap v3 pools',
+      !!btcProbe && btcProbe.usd > 10_000 && btcProbe.usd < 1_000_000 && /v3/.test(btcProbe.via) && !!eurProbe && eurProbe.usd > 0.8 && eurProbe.usd < 1.6,
+      JSON.stringify({ btcProbe, eurProbe }),
     )
+    {
+      // The INVARIANT, checked without the fence's own arithmetic: whatever
+      // usdPerToken prices on Arc must agree with the pool's MARGINAL price
+      // (a 1/1000-size quote, where slippage is negligible), and whatever it
+      // refuses must have earned the refusal — no tier whose full-size quote
+      // is anywhere near its own marginal price. Derived from live chain
+      // state, so a puddle that fills up (or dries out) flips the ANSWER
+      // without flipping the pin; which tiers are thin today is market state
+      // and deliberately not asserted. Independent of judgePoolDepth on
+      // purpose: the fence's arithmetic is pinned purely above, and a pin
+      // that re-used it would move with it under a mutation.
+      const MARGINAL_TOLERANCE = 0.15 // the fence allows ~10% understatement at its limit; 15% leaves headroom
+      const MARGINAL_MIN_UNITS = 1_000 // below this the 1/1000 quote is rounding, not a price
+      const arcStable = primaryStable(5042)!
+      const arcClient = publicClientFor(5042)!
+      const arcQuote = async (tokenIn: string, amountIn: bigint, fee: number): Promise<bigint | null> => {
+        if (amountIn <= BigInt(0)) return null
+        try {
+          const { result } = await arcClient.simulateContract({
+            address: chainById(5042)!.uniswap!.quoterV2,
+            abi: ARC_QUOTER_V2_ABI,
+            functionName: 'quoteExactInputSingle',
+            args: [{ tokenIn: tokenIn as `0x${string}`, tokenOut: arcStable.address, amountIn, fee, sqrtPriceLimitX96: BigInt(0) }],
+          })
+          return result[0]
+        } catch {
+          return null
+        }
+      }
+      const rows: Array<Record<string, unknown>> = []
+      let invariantHolds = true
+      for (const [sym, dec] of [['WETH', 18], ['BTC', 8], ['EURC', 6]] as const) {
+        const addr = (chainById(5042)!.tokens as Record<string, { address: string }>)[sym].address
+        const one = BigInt(10) ** BigInt(dec)
+        const tiers = await Promise.all(
+          ARC_FEE_TIERS.map(async (fee) => {
+            const [full, small] = await Promise.all([arcQuote(addr, one, fee), arcQuote(addr, one / BigInt(1_000), fee)])
+            const fullUsd = full !== null && full > BigInt(0) ? Number(full) / 10 ** arcStable.decimals : null
+            const marginalUsd = small !== null && small >= BigInt(MARGINAL_MIN_UNITS) ? (Number(small) * 1_000) / 10 ** arcStable.decimals : null
+            return { fee, fullUsd, marginalUsd }
+          }),
+        )
+        const got = (await arcUsdPerToken(5042, sym).catch(() => null))?.usd ?? null
+        const marginals = tiers.map((t) => t.marginalUsd).filter((m): m is number => m !== null && m > 0)
+        const bestMarginal = marginals.length ? Math.max(...marginals) : null
+        let ok: boolean
+        if (got !== null) {
+          // Priced → it must be a price, not a drain.
+          ok = bestMarginal === null || Math.abs(got - bestMarginal) / bestMarginal <= MARGINAL_TOLERANCE
+        } else {
+          // Refused → no tier may have been healthy enough to price.
+          ok = tiers.every((t) => t.fullUsd === null || t.marginalUsd === null || Math.abs(t.fullUsd - t.marginalUsd) / t.marginalUsd > MARGINAL_TOLERANCE)
+        }
+        if (!ok) invariantHolds = false
+        rows.push({ sym, got, bestMarginal, ok, tiers })
+      }
+      check(
+        'depth fence (live, Arc): every price usdPerToken returns is within 15% of the pool\'s own marginal price, and every refusal is earned — no tier was healthy enough to price. Checked against fresh 1/1000-size quotes, not against the fence\'s own arithmetic, so it catches a fence that stops fencing: Arc\'s WETH 1% pool answers $18 for one whole WETH against a ~$2,485 marginal, and the unfenced probe hands that $18 to holdings, sizing and spend caps',
+        invariantHolds,
+        JSON.stringify(rows),
+      )
+    }
     if (arcPk) {
       const arcBurner = privateKeyToAccount((arcPk.startsWith('0x') ? arcPk : `0x${arcPk}`) as `0x${string}`)
       let legNote = ''
