@@ -3271,6 +3271,50 @@ async function main() {
       'rail list: expired / capped rows wear the same state pill',
       /linkLifecycle\(\{ revoked: false, expiresAt: l\.expiresAt, maxSigns: l\.maxSigns \}, l\.signsCount\)/.test(linksFs.readFileSync('components/LinksRailTab.tsx', 'utf8')),
     )
+    // The LINKS tab (Nate 2026-09-17: "make the links tab content a bit
+    // wider … seems a bit crammed, can also use 2 columns"). The studio and
+    // the in-app board were one max-w-2xl column in a 1,100px+ main screen;
+    // the funnel table's ask cell got ~90px. They are size containers now:
+    // two columns by their OWN width (the rail drawer can sit beside them),
+    // the money and the funnel table across both, and a narrow funnel table
+    // stacks the slug over the ask instead of drawing it over Opens.
+    const studioViewSrc = linksFs.readFileSync('components/LinksStudioView.tsx', 'utf8')
+    const boardViewSrc = linksFs.readFileSync('components/LinksBoardView.tsx', 'utf8')
+    const linksTabCss = linksFs.readFileSync('app/x402-design.css', 'utf8')
+    check(
+      'links tab: the studio is the wide .linkstudio frame (no max-w-2xl) — page + mint share the two-column top, the funnel table sits outside it',
+      !/max-w-2xl/.test(studioViewSrc) &&
+        /<section className=\{`linkstudio\$\{inApp/.test(studioViewSrc) &&
+        /<div className="linkstudio__top">[\s\S]*?<CreatorPagePanel className="linkstudio__page" \/>\s*<MintLinkForm[\s\S]*?className="linkstudio__mint"\s*\/>\s*<\/div>/.test(studioViewSrc) &&
+        studioViewSrc.indexOf('<LinkFunnelTable') > studioViewSrc.indexOf('className="linkstudio__mint"'),
+    )
+    check(
+      'links tab: the in-app board wears the same frame (board | mint), the public /links page keeps its reading column',
+      /inApp \? 'linkstudio px-4 sm:px-6 py-6' : 'w-full max-w-2xl mx-auto px-4 py-16'/.test(boardViewSrc) &&
+        ["'linkstudio__top linkstudio__top--board'", "'linkstudio__board'", "'linkstudio__mint'"].every((c) => boardViewSrc.includes(`inApp ? ${c} : undefined`)),
+    )
+    check(
+      'links tab: the layout follows its own width — two columns at a 960px container, the side column stacks the page card, the funnel table stacks under 640px',
+      /\.linkstudio \{\s*container: linkstudio \/ inline-size;[^}]*max-width: 1200px/.test(linksTabCss) &&
+        /@container linkstudio \(min-width: 960px\) \{[\s\S]*?grid-template-areas: "mint page";[\s\S]*?grid-template-areas: "board mint";[\s\S]*?\.linkstudio__page \.cpanel__body \{ flex-direction: column; \}/.test(linksTabCss) &&
+        /\.linkfunnel \{ container: linkfunnel \/ inline-size; overflow-x: auto; \}/.test(linksTabCss) &&
+        /@container linkfunnel \(max-width: 639px\) \{[\s\S]*?\.linkfunnel \.linkfunnel__link \{ width: 15rem; min-width: 15rem; max-width: 15rem; \}/.test(linksTabCss) &&
+        /<td className="linkfunnel__link py-3 pr-3">/.test(tableSrc) &&
+        (tableSrc.match(/className="linkfunnel__num /g) || []).length === 14,
+    )
+    {
+      // The build is the proof the frame ships: the served /chat stylesheet
+      // carries the containers and their queries.
+      const chatHtml = await (await fetch(`${BASE}/chat`)).text()
+      const hrefs = [...new Set([...chatHtml.matchAll(/href="(\/_next\/static\/[^"]+\.css)"/g)].map((m) => m[1]))]
+      const served = (await Promise.all(hrefs.map(async (h) => (await fetch(`${BASE}${h}`)).text()))).join('\n').replace(/\s+/g, '')
+      check(
+        'links tab: the served stylesheet carries the .linkstudio + .linkfunnel containers and their queries',
+        hrefs.length > 0 &&
+          ['container:linkstudio/inline-size', '@containerlinkstudio(min-width:960px)', 'container:linkfunnel/inline-size', '@containerlinkfunnel(max-width:639px)'].every((rule) => served.includes(rule)),
+        `${hrefs.length} stylesheets`,
+      )
+    }
     const railSeatSrc = linksFs.readFileSync('components/LinksRailTab.tsx', 'utf8')
     const creatorPageSrc = linksFs.readFileSync('lib/creator-page.tsx', 'utf8')
     check(

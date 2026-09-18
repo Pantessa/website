@@ -32,7 +32,10 @@ export default function LinksBoardView({
   onMinted?: () => void
 }) {
   return (
-    <section className={`w-full max-w-2xl mx-auto px-4 ${inApp ? 'py-6' : 'py-16'}`}>
+    // In-app it takes the LINKS tab's wide frame (.linkstudio, x402-design.css):
+    // the board and the mint composer side by side once the tab is wide
+    // enough. The public /links page keeps its single reading column.
+    <section className={inApp ? 'linkstudio px-4 sm:px-6 py-6' : 'w-full max-w-2xl mx-auto px-4 py-16'}>
       <div className="flex items-center gap-2 mb-6">
         <YeetfulMark size={15} />
         <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
@@ -49,43 +52,49 @@ export default function LinksBoardView({
         on the conversions their link produces.
       </p>
 
-      {/* The board leads — live proof before the pitch. Every row is a link
-          a visitor can tap right now. */}
-      <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-3">
-        The board
-      </h2>
-      {board.byClaims.length === 0 && board.byRecent.length === 0 ? (
-        <p className="text-[13px] text-[color:var(--muted-2)]">
-          The board is empty — the first link to move a dollar tops it. Mint yours below.
-        </p>
-      ) : (
-        <IntentLinksBoard board={board} />
-      )}
-      <p className="mono text-[11px] text-[color:var(--muted-2)] mt-4 mb-12">
-        A claim is a finished flow — the visitor signed with their own wallet. Dollars moved are
-        guardrail-priced signed notional, the same source as /activity. Recently minted is the
-        newest live links, straight from mint. Asks only; creators stay pseudonymous.
-      </p>
+      <div className={inApp ? 'linkstudio__top linkstudio__top--board' : undefined}>
+        {/* The board leads — live proof before the pitch. Every row is a link
+            a visitor can tap right now. */}
+        <div className={inApp ? 'linkstudio__board' : undefined}>
+          <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-3">
+            The board
+          </h2>
+          {board.byClaims.length === 0 && board.byRecent.length === 0 ? (
+            <p className="text-[13px] text-[color:var(--muted-2)]">
+              The board is empty — the first link to move a dollar tops it. Mint yours and be first.
+            </p>
+          ) : (
+            <IntentLinksBoard board={board} />
+          )}
+          <p className={`mono text-[11px] text-[color:var(--muted-2)] mt-4${inApp ? '' : ' mb-12'}`}>
+            A claim is a finished flow — the visitor signed with their own wallet. Dollars moved are
+            guardrail-priced signed notional, the same source as /activity. Recently minted is the
+            newest live links, straight from mint. Asks only; creators stay pseudonymous.
+          </p>
+        </div>
 
-      {/* Mint yours — the composer itself, not a button to a form behind
-          sign-in. A stranger writes the sentence right here and watches
-          the card their link will wear assemble; the mint press is the
-          sign-in door (guestDoor), carrying the ask through to the
-          studio. */}
-      <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-3">
-        Mint yours
-      </h2>
-      <MintLinkForm guestDoor onMinted={onMinted} className="mb-6" />
-      <div className="flex items-center gap-3 flex-wrap">
-        <Link href="/links/embed" className="btn btn--ghost text-[13px]">
-          Put a button on your site
-        </Link>
-        <Link href="/mosaic" className="btn btn--ghost text-[13px]">
-          Mint your bags as a Mosaic
-        </Link>
-        <Link href="/docs/links" className="btn btn--ghost text-[13px]">
-          How it works
-        </Link>
+        {/* Mint yours — the composer itself, not a button to a form behind
+            sign-in. A stranger writes the sentence right here and watches
+            the card their link will wear assemble; the mint press is the
+            sign-in door (guestDoor), carrying the ask through to the
+            studio. */}
+        <div className={inApp ? 'linkstudio__mint' : undefined}>
+          <h2 className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-3">
+            Mint yours
+          </h2>
+          <MintLinkForm guestDoor onMinted={onMinted} className="mb-6" />
+          <div className="flex items-center gap-3 flex-wrap">
+            <Link href="/links/embed" className="btn btn--ghost text-[13px]">
+              Put a button on your site
+            </Link>
+            <Link href="/mosaic" className="btn btn--ghost text-[13px]">
+              Mint your bags as a Mosaic
+            </Link>
+            <Link href="/docs/links" className="btn btn--ghost text-[13px]">
+              How it works
+            </Link>
+          </div>
+        </div>
       </div>
 
       {/* Creator pages: every claimed /l/<handle> storefront. Claiming a

@@ -4982,6 +4982,133 @@
     .mintstage__eyebrow { display: none; }
   }
 
+  /* ── The app's LINKS tab (components/LinksStudioView, and LinksBoardView
+     in-app) ─────────────────────────────────────────────────────────────────
+     Both used to be one 672px column in the middle of a main screen that is
+     1,100px+ on a laptop, so the funnel table's ask cell got ~90px and every
+     ask wrapped to "Convert 1 USDC / to 1…". The tab is as wide as the screen
+     allows now (1,200px) and it lays itself out by ITS OWN width, not the
+     viewport's: the rail drawer can be open beside it, so a 1440 window hands
+     it anywhere from ~1,100px to ~1,380px. Wide: two columns up top (the mint
+     stage + your page; the board + the mint stage), then everything else
+     across both. Narrow: one column in the old reading order.
+     The container is safe here: nothing inside positions itself `fixed` (the
+     sign-in door portals to <body>). */
+  .linkstudio {
+    container: linkstudio / inline-size;
+    width: 100%; max-width: 1200px; margin-inline: auto;
+  }
+  .linkstudio__top {
+    display: grid; gap: 24px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "page" "mint";
+  }
+  .linkstudio__top--board { row-gap: 48px; grid-template-areas: "board" "mint"; }
+  .linkstudio__page { grid-area: page; min-width: 0; }
+  .linkstudio__mint { grid-area: mint; min-width: 0; }
+  .linkstudio__board { grid-area: board; min-width: 0; }
+  @container linkstudio (min-width: 960px) {
+    /* the mint stage leads on the left; the page it lands on sits beside it */
+    .linkstudio__top {
+      grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+      grid-template-areas: "mint page";
+      column-gap: 32px; align-items: start;
+    }
+    .linkstudio__top--board {
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+      grid-template-areas: "board mint";
+    }
+    /* the side column is ~400–500px: the share card stacks over its controls
+       (CreatorPagePanel's own md: row layout assumes the full width) */
+    .linkstudio__page .cpanel__body { flex-direction: column; }
+    .linkstudio__page .cpanel__card { width: 100%; }
+  }
+
+  /* ── .linkfunnel — the studio's per-link funnel table (LinkFunnelTable),
+     sized by its own width like the studio around it. The link cell takes
+     the leftover width (width 100% + max-width 0; see the component). Wide:
+     the figure columns get air. Narrow (a phone, or a tab squeezed beside the
+     drawer): the leftover width is ~0 — the slug drew over the Opens column
+     and the ask vanished — so the link cell takes a real width, the ask wraps
+     under the slug, and the table scrolls sideways instead. */
+  .linkfunnel { container: linkfunnel / inline-size; overflow-x: auto; }
+  .linkfunnel__link { width: 100%; max-width: 0; }
+  @container linkfunnel (min-width: 880px) {
+    .linkfunnel .linkfunnel__num { padding-left: 16px; }
+  }
+  @container linkfunnel (max-width: 639px) {
+    /* pinned, not auto: the A/B phrasing lines are nowrap, and an auto cell
+       grew to their full width (a 1,095px table on a phone) */
+    .linkfunnel .linkfunnel__link { width: 15rem; min-width: 15rem; max-width: 15rem; }
+    .linkfunnel .linkfunnel__head { flex-wrap: wrap; row-gap: 2px; }
+    .linkfunnel .linkfunnel__ask { order: 1; flex-basis: 100%; }
+  }
+
+  /* ── .pagestage — the /l share card before the page exists
+     (components/CreatorPagePanel, unclaimed). A picture of
+     app/l/[handle]/opengraph-image.tsx in its house look, with the name being
+     typed as the hero. It scales like the PNG it stands in for: the frame is
+     1200×630 and every size below is the OG art's own px in cqi (1 OG px =
+     1/12 cqi), so it reads the same at 280px beside the copy as at 440px in
+     the studio's side column. Dark in both site themes, like .mintstage. */
+  .pagestage {
+    container-type: inline-size;
+    position: relative; isolation: isolate; overflow: hidden;
+    aspect-ratio: 1200 / 630; border-radius: 10px;
+    background: #050708; border: 1px solid rgba(255, 255, 255, 0.11);
+    color: #fafaf7;
+  }
+  .pagestage::before {
+    content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    background: radial-gradient(80% 80% at 50% 35%, rgba(52, 227, 160, 0.1), transparent 70%);
+  }
+  .pagestage__head {
+    position: absolute; top: 4cqi; left: 5.333cqi; right: 5.333cqi;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .pagestage__lockup {
+    display: inline-flex; align-items: center; gap: 1.167cqi;
+    font-size: 2.833cqi; font-weight: 600; letter-spacing: -0.1cqi;
+  }
+  .pagestage__lockup svg { width: 3.833cqi; height: 3.833cqi; }
+  .pagestage__eyebrow {
+    display: inline-flex; align-items: center; gap: 0.833cqi;
+    font-size: 1.417cqi; letter-spacing: 0.333cqi; color: #8a9186; white-space: nowrap;
+  }
+  .pagestage__dot {
+    display: inline-block; flex-shrink: 0;
+    width: 0.667cqi; height: 0.667cqi; border-radius: 50%; background: #34e3a0;
+  }
+  .pagestage__hero {
+    position: absolute; top: 18.167cqi; left: 5.333cqi; right: 5.333cqi;
+    display: flex; flex-direction: column;
+  }
+  .pagestage__handle {
+    font-family: var(--font-serif); font-style: italic; font-weight: 500;
+    font-size: 7cqi; line-height: 1.05;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .pagestage__handle--long { font-size: 5.333cqi; }
+  /* the placeholder name — the card's shape, not a name anyone owns */
+  .pagestage__handle--ghost { color: rgba(250, 250, 247, 0.34); }
+  .pagestage__proof {
+    margin-top: 2.167cqi; font-size: 2.5cqi; font-weight: 600; letter-spacing: -0.042cqi;
+    color: #34e3a0;
+  }
+  .pagestage__sub { margin-top: 1.333cqi; font-size: 2cqi; color: #8a9186; }
+  .pagestage__foot {
+    position: absolute; bottom: 3.667cqi; left: 5.333cqi; right: 5.333cqi;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .pagestage__pills { display: flex; gap: 1.167cqi; }
+  .pagestage__pill {
+    display: inline-flex; align-items: center; gap: 0.75cqi;
+    padding: 0.75cqi 1.333cqi; border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.14); background: rgba(255, 255, 255, 0.03);
+    font-size: 1.583cqi; white-space: nowrap;
+  }
+  .pagestage__site { font-size: 1.75cqi; font-weight: 600; color: #34e3a0; }
+
   /* ── .desktx — the desk transcript strip (/docs/desk; the launch clip's
      storyboard). Terminal on a token surface (never bg-black — paper gets a
      paper terminal), role inks as theme-aware tokens, the caret blinks, the
