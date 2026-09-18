@@ -186,6 +186,8 @@ export interface FlowItem {
   from: 'visitor' | 'server' | 'db'
   /** kind-specific numbers the fold reads: ms + scroll + input on a leave. */
   n?: { ms?: number; scroll?: number; input?: boolean; usd?: number; hadFunds?: boolean | null }
+  /** On a wall a table kept: the words that were asked (ask_failures.prompt). */
+  ask?: string
 }
 
 export const KIND_TONE: Record<FlowKind, FlowTone> = {
@@ -234,6 +236,7 @@ export type FlowOutcome =
   | 'signed'
   | 'wallet-refused'
   | 'withheld'
+  | 'job-failed'
   | 'built-unsigned'
   | 'offer-unanswered'
   | 'ask-walled'
@@ -248,6 +251,7 @@ export const OUTCOME_LABEL: Record<FlowOutcome, string> = {
   signed: 'Signed',
   'wallet-refused': 'Wallet refused the transaction',
   withheld: 'We withheld the transaction',
+  'job-failed': 'A job failed partway',
   'built-unsigned': 'Got a transaction, never signed',
   'offer-unanswered': 'Got an offer, never took it',
   'ask-walled': 'Asked, hit a wall',
@@ -263,6 +267,7 @@ export const OUTCOME_TONE: Record<FlowOutcome, FlowTone> = {
   signed: 'good',
   'wallet-refused': 'bad',
   withheld: 'bad',
+  'job-failed': 'bad',
   'built-unsigned': 'warn',
   'offer-unanswered': 'warn',
   'ask-walled': 'bad',
@@ -370,7 +375,10 @@ export function foldFlow(itemsAsc: FlowItem[], opts?: { hasWallet?: boolean }): 
   // The END of the story decides: read the last decisive item.
   const decisive = last(items, 'signed', 'refused', 'withheld', 'reply-built', 'built', 'job', 'job-failed', 'reply-offer', 'reply-wall', 'reply-answer', 'ask', 'door-error')
   const lastAsk = last(items, 'ask')
-  const askWords = lastAsk ? `“${clip(lastAsk.title.replace(/^Asked:\s*/, ''), 90)}”` : 'their ask'
+  const asked = lastAsk ? lastAsk.title.replace(/^Asked:\s*/, '') : (decisive?.ask ?? null)
+  const askWords = asked ? `“${clip(asked, 90)}”` : 'their ask'
+  /** the same, where it opens a sentence */
+  const AskWords = asked ? askWords : 'Their ask'
 
   if (stage === 'signed' && (!decisive || decisive.kind === 'signed' || (last(items, 'signed')?.at ?? 0) >= decisive.at - 1)) {
     outcome = 'signed'
@@ -382,8 +390,8 @@ export function foldFlow(itemsAsc: FlowItem[], opts?: { hasWallet?: boolean }): 
     outcome = 'withheld'
     stoppedAt = `We withheld a step of ${askWords}${decisive.detail ? `: ${clip(decisive.detail, 140)}` : '.'}`
   } else if (decisive?.kind === 'job-failed') {
-    outcome = 'built-unsigned'
-    stoppedAt = `A job failed${decisive.detail ? `: ${clip(decisive.detail, 140)}` : '.'}`
+    outcome = 'job-failed'
+    stoppedAt = `${decisive.title}${decisive.detail ? `: ${clip(decisive.detail, 160)}` : '.'}`
   } else if (decisive && (decisive.kind === 'reply-built' || decisive.kind === 'built' || decisive.kind === 'job')) {
     outcome = stage === 'signed' ? 'signed' : 'built-unsigned'
     stoppedAt = stage === 'signed' ? 'Signed earlier; the latest transaction is unsigned.' : `We built ${askWords} and they never signed it.`
@@ -393,7 +401,7 @@ export function foldFlow(itemsAsc: FlowItem[], opts?: { hasWallet?: boolean }): 
   } else if (decisive?.kind === 'reply-wall') {
     outcome = 'ask-walled'
     const funds = decisive.n?.hadFunds === true ? ' They had the money.' : decisive.n?.hadFunds === false ? ' Their wallet was empty.' : ''
-    stoppedAt = `${askWords} ended with nothing to act on.${funds}`
+    stoppedAt = `${AskWords} ended with nothing to act on.${funds}`
   } else if (decisive?.kind === 'reply-answer' || decisive?.kind === 'ask') {
     outcome = 'asked-answered'
     stoppedAt = `Asked ${askWords}, got an answer, and left.`
@@ -635,7 +643,14 @@ export function itemFromRow(r: VisitorEventRow): FlowItem | null {
       if (name === 'signin_door_error') return { ...base, kind: 'door-error', title: 'The sign-in door showed an error', detail: str(d.message) || null }
       if (name === 'signin_door_cdp_timeout') return { ...base, kind: 'door-error', title: 'Email + Google sign-in never loaded', detail: 'The Coinbase SDK did not initialize (a blocker, usually). Only the wallet lane worked.' }
       if (name === 'siwe_failed') return { ...base, kind: 'door-error', title: 'The sign-in signature did not complete', detail: str(d.reason) || null }
-      if (name === 'wallet_connected') return { ...base, kind: 'connect', title: `Connected a wallet${str(d.connector) ? ` (${str(d.connector)})` : ''}` }
+      // The tracker reads wagmi directly (wallet_seen); the analytics event is
+      // the same fact again, and only fires for some connects.
+      if (name === 'wallet_connected') return null
+      if (name === 'wallet_seen') {
+        const via = str(d.connector) && str(d.connector) !== 'unknown' ? ` (${str(d.connector)})` : ''
+        return { ...base, kind: 'connect', title: d.switched === true ? `Switched to another wallet${via}` : d.returning === true ? `Arrived with a wallet already connected${via}` : `Connected a wallet${via}` }
+      }
+      if (name === 'wallet_gone') return { ...base, kind: 'event', title: 'Disconnected the wallet' }
       if (name === 'siwe_signed_in') return { ...base, kind: 'signin', title: 'Signed in' }
       // The server's own `ask` row is the record of a sent message. This one
       // only matters when that row is missing (see dropEchoedSends).
@@ -682,4 +697,74 @@ export function collapseClicks(itemsAsc: FlowItem[]): FlowItem[] {
 /** How many runs of repeated presses a timeline holds. */
 export function rageRuns(items: FlowItem[]): number {
   return items.filter((i) => i.kind === 'click' && / ×(\d+)$/.test(i.title) && Number(/ ×(\d+)$/.exec(i.title)?.[1]) >= RAGE_CLICKS).length
+}
+
+/**
+ * One stay on a page is one line. A visitor who flips to another tab and
+ * back produces a `leave` for every stretch (the tracker times only what was
+ * visible); told one by one they read as someone leaving the page five times.
+ * Between one page view and the next, the stretches become a single line at
+ * the moment of the last one: the total time, the furthest scroll, and how
+ * often they looked away.
+ */
+export function foldLeaves(itemsAsc: FlowItem[]): FlowItem[] {
+  const out: FlowItem[] = []
+  // index in `out` of the open stay's leave line, per page path
+  let open: { path: string | null; at: number } | null = null
+  let openIdx = -1
+  for (const i of itemsAsc) {
+    if (i.kind === 'view') {
+      open = null
+      openIdx = -1
+      out.push(i)
+      continue
+    }
+    if (i.kind !== 'leave' || i.from !== 'visitor') {
+      out.push(i)
+      continue
+    }
+    if (open && openIdx >= 0 && open.path === (i.path ?? null)) {
+      const prev = out[openIdx]
+      const ms = (prev.n?.ms ?? 0) + (i.n?.ms ?? 0)
+      const scroll = Math.max(prev.n?.scroll ?? 0, i.n?.scroll ?? 0)
+      const input = prev.n?.input === true || i.n?.input === true
+      const stretches = Number(/in (\d+) stretches/.exec(prev.detail ?? '')?.[1] ?? 1) + 1
+      out.splice(openIdx, 1)
+      out.push({
+        ...i,
+        title: `Left ${i.path ?? 'the page'} after ${humanMs(ms)}`,
+        detail: `${scroll >= 1 ? `scrolled ${Math.round(scroll)}%` : 'no scroll'} · in ${stretches} stretches (looked away ${stretches - 1}×)${input ? '' : ' · no pointer, touch or key'}`,
+        n: { ms, scroll, input },
+      })
+      openIdx = out.length - 1
+      continue
+    }
+    out.push(i)
+    open = { path: i.path ?? null, at: i.at }
+    openIdx = out.length - 1
+  }
+  return out
+}
+
+/**
+ * A wall a table kept (ask_failures) names the words that were asked, and
+ * sometimes nothing else on the timeline does: a guest's chat is never
+ * stored, and history from before the journey log has no `ask` row. Where a
+ * wall stands with no ask in the 90 seconds before it, the ask is put back
+ * in, a moment ahead of its wall. A retry keeps both of its asks.
+ */
+const ASK_BEFORE_WALL_MS = 90_000
+export function backfillAsks(itemsAsc: FlowItem[]): FlowItem[] {
+  const out: FlowItem[] = []
+  for (const i of itemsAsc) {
+    const carries = (i.kind === 'reply-wall' || i.kind === 'refused' || i.kind === 'withheld') && !!i.ask
+    if (carries) {
+      const told = out.some((p) => p.kind === 'ask' && i.at - p.at <= ASK_BEFORE_WALL_MS && i.at >= p.at)
+      // A wallet refusing a BUILT artifact follows a build, not a bare ask.
+      const afterBuild = i.kind !== 'reply-wall' && out.some((p) => (p.kind === 'reply-built' || p.kind === 'built') && i.at - p.at <= 30 * 60_000)
+      if (!told && !afterBuild) out.push({ at: i.at - 1000, kind: 'ask', title: `Asked: ${i.ask}`, from: i.from, path: i.path ?? null })
+    }
+    out.push(i)
+  }
+  return out
 }

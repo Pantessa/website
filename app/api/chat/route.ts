@@ -418,14 +418,18 @@ export async function POST(req: NextRequest) {
   } catch {
     /* fall through — the inner handler 400s on the empty body */
   }
+  // The journey log stamps the ask when it arrived and the reply when it was
+  // ready, not when after() got round to writing them.
+  const turnStartedAt = Date.now()
   let res = await fenceConnectAsk(await handleChatTurn(new NextRequest(req.nextUrl, { method: 'POST', headers: req.headers, body: raw })), raw)
+  const turnFinishedAt = Date.now()
   try {
     if (!raw || !res.headers.get('content-type')?.includes('application/json')) {
       // A streamed turn (the auto-router's SSE) has no JSON to read, but the
       // ask still happened: the journey log keeps it (lib/journey-server.ts).
       if (raw && req.headers.get('x-yf-no-ask-log') !== '1') {
         const streamedAsk = JSON.parse(raw) as Record<string, unknown>
-        after(() => recordTurn(req.headers, streamedAsk, null, true))
+        after(() => recordTurn(req.headers, streamedAsk, null, { streamed: true, startedAt: turnStartedAt, finishedAt: turnFinishedAt }))
       }
       return res
     }
@@ -460,7 +464,7 @@ export async function POST(req: NextRequest) {
     // the response, so it costs the turn nothing.
     {
       const turnBody = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
-      after(() => recordTurn(req.headers, reqBody, turnBody, false))
+      after(() => recordTurn(req.headers, reqBody, turnBody, { streamed: false, startedAt: turnStartedAt, finishedAt: turnFinishedAt }))
     }
     const message = typeof reqBody.message === 'string' ? reqBody.message : ''
     if (reqBody.phase === 'execute' || !message.trim() || !moneyShaped(message)) return res

@@ -7158,6 +7158,333 @@ async function main() {
     )
   }
 
+  // ── User flows (the journey log + the admin timeline) ─────────────────────
+  console.log('— user flows')
+  {
+    const F = await import('../lib/user-flows')
+    const JE = await import('../lib/journey-events')
+    const JL = await import('../lib/journey-limits')
+    const VI = await import('../lib/visitor-id')
+    const JC = await import('../lib/journey')
+    const ufFs = await import('node:fs')
+
+    // Where they came from.
+    const src = (i: Parameters<typeof F.sourceOf>[0]) => F.sourceOf(i).source
+    check(
+      'flows source: t.co is X, lnkd.in and the LinkedIn Android app are LinkedIn, a search engine is search',
+      src({ referrer: F.externalReferrerHost('https://t.co/abc') }) === 'twitter' &&
+        src({ referrer: F.externalReferrerHost('https://lnkd.in/x') }) === 'linkedin' &&
+        src({ referrer: F.externalReferrerHost('android-app://com.linkedin.android/') }) === 'linkedin' &&
+        src({ referrer: F.externalReferrerHost('https://www.linkedin.com/feed/') }) === 'linkedin' &&
+        src({ referrer: F.externalReferrerHost('https://duckduckgo.com/') }) === 'search',
+    )
+    check(
+      'flows source: our own pages and the Google sign-in hop are never a source',
+      F.externalReferrerHost('https://www.pantessa.com/markets') === '' && F.externalReferrerHost('https://accounts.google.com/o/oauth2') === '' &&
+        F.externalReferrerHost('') === '' && F.externalReferrerHost('https://www.example.org/x?y=1') === 'example.org',
+    )
+    check(
+      'flows source: a stripped referrer still resolves — utm_source, an in-app browser, a shared-link landing, else direct',
+      src({ utm: 'utm_source=linkedin&utm_medium=social' }) === 'linkedin' && src({ ua: 'mobile · iOS · X app' }) === 'twitter' &&
+        src({ ua: 'Mozilla/5.0 (iPhone) LinkedInApp/9.1' }) === 'linkedin' && src({ landing: '/i/8chpvmy5' }) === 'link' && src({ landing: '/markets' }) === 'direct',
+    )
+    check(
+      'flows device: families only, and an automated client is named',
+      F.deviceOf('Mozilla/5.0 (iPhone; CPU iPhone OS 26_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/23D127 Twitter for iPhone') === 'mobile · iOS · X app' &&
+        F.deviceOf('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36') === 'desktop · Mac · Chrome' &&
+        F.isBotUa('Twitterbot/1.0') && F.isBotUa('Mozilla/5.0 (X11; Linux x86_64) HeadlessChrome/145.0.0.0 Safari/537.36') && F.isBotUa('') &&
+        !F.isBotUa('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36'),
+    )
+
+    // Who, without a cookie.
+    const idA = VI.visitorIdOf('salt-monday', '203.0.113.7', 'UA-1')
+    check(
+      'flows visitor id: stable inside a day, different the next, different per browser, and the address is not in it',
+      idA === VI.visitorIdOf('salt-monday', '203.0.113.7', 'UA-1') && idA !== VI.visitorIdOf('salt-tuesday', '203.0.113.7', 'UA-1') &&
+        idA !== VI.visitorIdOf('salt-monday', '203.0.113.7', 'UA-2') && /^[0-9a-f]{16}$/.test(idA) && !idA.includes('203') &&
+        VI.networkIdOf('salt-monday', '203.0.113.7') === VI.networkIdOf('salt-monday', '203.0.113.7') && VI.networkIdOf('salt-monday', '203.0.113.7') !== idA,
+      idA,
+    )
+    const gpc = new Headers({ 'sec-gpc': '1' })
+    check('flows opt-out: Global Privacy Control and Do Not Track both turn the log off', VI.optedOut(gpc) && VI.optedOut(new Headers({ dnt: '1' })) && !VI.optedOut(new Headers()))
+
+    // What a browser may tell us.
+    const dirty = JE.sanitizeBatch({
+      events: [
+        { k: 'view', p: '/markets?prompt=secret#frag', ago: 99_999_999 },
+        { k: 'click', p: '/markets', l: `Pay ${'ab'.repeat(32)} now`, d: { tag: 'button', nested: { a: 1 }, to: '/t/AAPL' } },
+        { k: 'click', p: '/dashboard', l: 'Email someone@example.com about it' },
+        { k: 'click', p: '/x', l: 'abandon ability able about above absent absorb abstract absurd abuse access accident' },
+        { k: 'steal', p: '/markets', l: 'nope' },
+        { k: 'view', p: 'https://evil.example/x' },
+        ...Array.from({ length: 60 }, () => ({ k: 'click', p: '/spam', l: 'x' })),
+      ],
+      w: 'not-a-wallet',
+      team: 'yes',
+    })
+    check(
+      // 66 sent: the first MAX_BATCH are read, and two of those (a made-up kind, an absolute URL) are dropped.
+      'flows sanitizer: pathnames only, a closed set of kinds, a capped batch, and no wallet that isn’t one',
+      dirty.events.length === JE.MAX_BATCH - 2 && dirty.events[0].path === '/markets' && dirty.events[0].agoMs === JE.MAX_AGO_MS &&
+        !dirty.events.some((e) => (e.kind as string) === 'steal' || e.path.startsWith('http')) && dirty.wallet === null && dirty.team === false,
+      `${dirty.events.length} events`,
+    )
+    check(
+      'flows sanitizer: a key, a seed phrase and an email never reach the log; a nested detail is dropped',
+      dirty.events[1].label === '[redacted]' && dirty.events[2].label === 'Email [email] about it' && dirty.events[3].label === '[redacted]' &&
+        dirty.events[1].detail?.to === '/t/AAPL' && !('nested' in (dirty.events[1].detail ?? {})),
+      JSON.stringify(dirty.events.slice(1, 4).map((e) => e.label)),
+    )
+    check('flows fence: an hourly event cap per address, counted in events', !JL.journeyLimited(JL.JOURNEY_IP_HOURLY_CAP) && JL.journeyLimited(JL.JOURNEY_IP_HOURLY_CAP + 1))
+    check(
+      'flows browser: a signed-out page’s polls are not walls, a refused action is, our own beacon never is',
+      !JC.shouldLogApiFailure('GET', '/api/jobs', 401) && !JC.shouldLogApiFailure('GET', '/api/quotes', 200) && JC.shouldLogApiFailure('POST', '/api/intent-links', 401) &&
+        JC.shouldLogApiFailure('GET', '/api/watchlists/holdings', 504) && !JC.shouldLogApiFailure('POST', '/api/journey', 500) && !JC.shouldLogApiFailure('GET', '/markets', 500),
+    )
+    check(
+      'flows browser: extension noise and a declined signature are not our script errors',
+      !JC.shouldLogScriptError('Script error.') && !JC.shouldLogScriptError('boom', 'chrome-extension://abc/inpage.js') && !JC.shouldLogScriptError('User rejected the request.') &&
+        JC.shouldLogScriptError("TypeError: Cannot read properties of undefined (reading 'map')", 'https://www.pantessa.com/_next/static/chunks/x.js'),
+    )
+
+    // The judgement.
+    const T0 = Date.parse('2026-09-18T08:00:00Z')
+    const it = (s: number, kind: import('../lib/user-flows').FlowKind, title = kind as string, extra: Partial<import('../lib/user-flows').FlowItem> = {}) =>
+      ({ at: T0 + s * 1000, kind, title, from: 'visitor', path: '/', ...extra }) as import('../lib/user-flows').FlowItem
+    const bounce = F.foldFlow([it(0, 'view'), it(3, 'leave', 'leave', { n: { ms: 3000, scroll: 0, input: true } })])
+    const silentVisit = F.foldFlow([it(0, 'view'), it(1, 'leave', 'leave', { n: { ms: 900, scroll: 0, input: false } })])
+    check(
+      'flows fold: a three-second visit is a bounce, and one with no hand on it is silent — not a person who left',
+      bounce.outcome === 'bounced' && bounce.stage === 'arrived' && bounce.human && /after 3s/.test(bounce.stoppedAt) && !silentVisit.human && /bot or an instant back/.test(silentVisit.stoppedAt),
+      bounce.stoppedAt,
+    )
+    const looked = F.foldFlow([it(0, 'view', 'v', { path: '/' }), it(8, 'click', 'Clicked “Markets”'), it(9, 'view', 'v', { path: '/markets' }), it(70, 'leave', 'l', { path: '/markets', n: { ms: 61_000, scroll: 80, input: true } })])
+    check('flows fold: two pages and a click is someone who looked around and never opened sign-in', looked.stage === 'engaged' && looked.outcome === 'looked' && looked.exit === '/markets' && /Never opened sign-in/.test(looked.stoppedAt), looked.stoppedAt)
+    check(
+      'flows fold: the door — opened and backed out, or opened and it failed',
+      F.foldFlow([it(0, 'view'), it(5, 'door')]).outcome === 'door-abandoned' && F.foldFlow([it(0, 'view'), it(5, 'door'), it(9, 'door-error', 'e', { detail: 'Could not send the code.' })]).outcome === 'door-error',
+    )
+    check('flows fold: a wallet with nothing asked is connected-idle', F.foldFlow([it(0, 'view'), it(5, 'door'), it(9, 'connect')]).outcome === 'connected-idle' && F.foldFlow([it(0, 'view')], { hasWallet: true }).stage === 'connected')
+    const walled = F.foldFlow([it(0, 'view'), it(4, 'connect'), it(9, 'ask', 'Asked: Buy $50 of ETH'), it(11, 'reply-wall', 'Wall', { n: { hadFunds: true } })])
+    check('flows fold: a money ask with nothing to act on is a wall, and it says whether they had the money', walled.outcome === 'ask-walled' && walled.stage === 'asked' && /Buy \$50 of ETH/.test(walled.stoppedAt) && /They had the money/.test(walled.stoppedAt), walled.stoppedAt)
+    const climbed = F.foldFlow([it(0, 'ask', 'Asked: Buy $50 of ETH'), it(2, 'reply-wall'), it(60, 'ask', 'Asked: Buy $10 of ETH'), it(62, 'reply-built'), it(90, 'signed', 'Signed', { n: { usd: 10 } })])
+    check('flows fold: the END of the story decides — a wall that was later climbed is not where they stopped', climbed.outcome === 'signed' && climbed.stage === 'signed' && climbed.usd === 10, climbed.stoppedAt)
+    check(
+      'flows fold: an offer nobody took, a transaction nobody signed, a wallet that refused it',
+      F.foldFlow([it(0, 'ask', 'Asked: x'), it(2, 'reply-offer', 'Got an offer to fund by card')]).outcome === 'offer-unanswered' &&
+        F.foldFlow([it(0, 'ask', 'Asked: x'), it(2, 'reply-built')]).outcome === 'built-unsigned' &&
+        F.foldFlow([it(0, 'ask', 'Asked: x'), it(2, 'reply-built'), it(9, 'refused', 'r', { detail: 'Chain not configured' })]).outcome === 'wallet-refused',
+    )
+    const failedJob = F.foldFlow([it(0, 'ask', 'Asked: fund and buy'), it(2, 'reply-built'), it(40, 'job-failed', 'Job failed: Fund Robinhood Chain → Buy $12 of SPY', { detail: 'RPC Request failed.' })])
+    check('flows fold: a job that failed partway is its own wall, named with the reason', failedJob.outcome === 'job-failed' && F.OUTCOME_TONE['job-failed'] === 'bad' && /RPC Request failed/.test(failedJob.stoppedAt), failedJob.stoppedAt)
+    const wallOnly = [{ at: T0 + 5000, kind: 'reply-wall', title: 'Wall (planner-answer): Buy $10 of ETH', from: 'db', ask: 'Buy $10 of ETH', n: { hadFunds: false } }] as import('../lib/user-flows').FlowItem[]
+    const put = F.backfillAsks(wallOnly)
+    const retry = F.backfillAsks([{ at: T0, kind: 'ask', title: 'Asked: Buy $10 of ETH', from: 'server' }, ...wallOnly])
+    check(
+      'flows merge: a wall with no ask on record gets its ask put back (a guest’s chat is never stored); one that has its ask is left alone',
+      put.length === 2 && put[0].kind === 'ask' && put[0].title === 'Asked: Buy $10 of ETH' && put[0].at < put[1].at && retry.length === 2 &&
+        /^“Buy \$10 of ETH” ended/.test(F.foldFlow(put).stoppedAt) && /^Their ask ended/.test(F.foldFlow([{ at: T0, kind: 'reply-wall', title: 'Wall', from: 'db' }]).stoppedAt),
+      F.foldFlow(put).stoppedAt,
+    )
+    const history = F.foldFlow([{ at: T0, kind: 'ask', title: 'Asked: Buy $10 of ETH', from: 'db' }, { at: T0 + 1000, kind: 'reply-wall', title: 'Wall', from: 'db', n: { hadFunds: false } }])
+    check('flows fold: history from our tables alone is never called silent', history.human && history.outcome === 'ask-walled' && /wallet was empty/.test(history.stoppedAt))
+    const twoVisits = F.foldFlow([it(0, 'view'), it(10, 'leave', 'l', { n: { ms: 10_000, scroll: 10, input: true } }), it(3 * 3600, 'view'), it(3 * 3600 + 40, 'leave', 'l', { n: { ms: 40_000, scroll: 90, input: true } })])
+    check('flows fold: a gap starts a new visit, and time on pages is the sum of the stretches', twoVisits.visits === 2 && twoVisits.activeMs === 50_000)
+
+    // One reply, read.
+    const shape = (b: Record<string, unknown> | null, money = true) => F.replyShape(b, money)
+    check(
+      'flows reply: something to sign, something to choose and a wall are three different answers',
+      shape({ txChain: [{}], buildPath: 'native-swap-uniswap' }).kind === 'reply-built' && shape({ jobId: 'j1' }).kind === 'reply-built' &&
+        shape({ clarify: { options: [{ label: 'Add $25 with card', fund: { presetFiatUsd: 25 } }] } }).title.includes('fund by card') &&
+        shape({ clarify: { options: [{ label: 'Just enough' }] }, buildPath: 'native-funding-offer' }).title.includes('from their own wallet') &&
+        shape({ connectWallet: true }).kind === 'reply-offer' && shape({ reply: 'Top up any of those chains and ask again.' }).kind === 'reply-wall' &&
+        shape({ reply: 'ETH is up 2% today.' }, false).kind === 'reply-answer' && shape(null).kind === 'reply-wall' && shape({ rateGate: { scope: 'ip' }, reply: 'x' }).kind === 'reply-wall',
+    )
+
+    // The two halves, merged.
+    const merged = F.mergeItems([
+      { at: T0, kind: 'reply-wall', title: 'Refused by native-affordability-short', from: 'server' },
+      { at: T0 + 800, kind: 'reply-wall', title: 'Wall (native-wall): Sell $50 of AMAT', from: 'db', n: { hadFunds: true } },
+      { at: T0 + 5000, kind: 'reply-built', title: 'Got a transaction to sign (native-swap-uniswap)', from: 'server' },
+      { at: T0 + 6000, kind: 'built', title: 'A sign card rendered', from: 'db' },
+    ])
+    check(
+      'flows merge: one moment told twice is one line — the wall keeps the funds snapshot, the build keeps its name',
+      merged.length === 2 && merged[0].from === 'db' && merged[0].n?.hadFunds === true && merged[1].kind === 'reply-built',
+      merged.map((m) => `${m.kind}/${m.from}`).join(' '),
+    )
+    const sent = (at: number) => ({ at, kind: 'event', title: 'Sent a message', detail: 'chat_message_sent', from: 'visitor' }) as import('../lib/user-flows').FlowItem
+    const echoed = F.dropEchoedSends([sent(T0), { at: T0 + 900, kind: 'ask', title: 'Asked: hi', from: 'server' }])
+    const lost = F.dropEchoedSends([sent(T0)])
+    check('flows merge: a sent message the server has no record of is a finding, not an echo', echoed.length === 1 && echoed[0].kind === 'ask' && lost.length === 1 && lost[0].kind === 'api-error' && /never recorded/.test(lost[0].title))
+    const pressed = F.collapseClicks([0, 1, 2, 3].map((s) => it(s, 'click', 'Clicked “Buy AAPL”')).concat([it(30, 'click', 'Clicked “Buy AAPL”')]))
+    check('flows merge: the same control pressed four times in a row is one line that asks whether anything happened', pressed.length === 2 && pressed[0].title === 'Clicked “Buy AAPL” ×4' && /Did nothing happen/.test(pressed[0].detail ?? '') && F.rageRuns(pressed) === 1, pressed[0].title)
+    const lv = (s: number, ms: number, scroll: number, path = '/markets') => it(s, 'leave', `Left ${path}`, { path, n: { ms, scroll, input: true } })
+    const stays = F.foldLeaves([it(0, 'view', 'v', { path: '/markets' }), lv(10, 10_000, 20), it(12, 'click', 'Clicked “TSLA”', { path: '/markets' }), lv(40, 25_000, 60), lv(90, 5_000, 35), it(91, 'view', 'v', { path: '/t/TSLA' }), lv(99, 8_000, 0, '/t/TSLA')])
+    const stay = stays.filter((i) => i.kind === 'leave')
+    check(
+      'flows merge: one stay on a page is one line — tab-aways add up instead of reading as leaving three times, and the total is kept',
+      stay.length === 2 && stay[0].n?.ms === 40_000 && stay[0].n?.scroll === 60 && /in 3 stretches/.test(stay[0].detail ?? '') && /after 40s/.test(stay[0].title) && stay[1].n?.ms === 8_000 &&
+        F.foldFlow(stays).activeMs === 48_000 && stays.findIndex((i) => i.kind === 'click') < stays.findIndex((i) => i === stay[0]),
+      stay.map((l) => `${l.title} | ${l.detail}`).join(' ; '),
+    )
+    const rows = [
+      F.itemFromRow({ at: T0, kind: 'event', path: '/', label: 'signin_door_open', detail: { connectOnly: true }, referrer: null }),
+      F.itemFromRow({ at: T0, kind: 'event', path: '/', label: 'signin_door_cdp_timeout', detail: null, referrer: null }),
+      F.itemFromRow({ at: T0, kind: 'event', path: '/', label: 'wallet_seen', detail: { connector: 'Phantom', returning: false }, referrer: null }),
+      F.itemFromRow({ at: T0, kind: 'reply', path: '/chat', label: 'Refused by native-x', detail: { shape: 'reply-wall', said: 'Top up and ask again.' }, referrer: null }),
+      F.itemFromRow({ at: T0, kind: 'api-error', path: '/t/AAPL', label: 'POST /api/onramp/session', detail: { status: 403 }, referrer: null }),
+      F.itemFromRow({ at: T0, kind: 'made-up', path: '/', label: null, detail: null, referrer: null }),
+    ]
+    check(
+      'flows rows: product events are promoted to the door, a connect and a wall; an unknown row is left out',
+      rows[0]?.kind === 'door' && rows[1]?.kind === 'door-error' && rows[2]?.kind === 'connect' && /Phantom/.test(rows[2]?.title ?? '') && rows[3]?.kind === 'reply-wall' &&
+        rows[3]?.detail === 'Top up and ask again.' && rows[3]?.from === 'server' && rows[4]?.title === 'POST /api/onramp/session answered 403' && rows[5] === null,
+    )
+    const seen = (detail: Record<string, unknown>) => F.itemFromRow({ at: T0, kind: 'event', path: '/', label: 'wallet_seen', detail, referrer: null })?.title ?? ''
+    check(
+      'flows rows: a wallet that came back on its own is not a wallet someone connected, and the analytics echo of a connect is one fact, not two',
+      /already connected \(MetaMask\)/.test(seen({ connector: 'MetaMask', returning: true })) && /^Connected a wallet/.test(seen({ connector: 'MetaMask', returning: false })) &&
+        /^Switched/.test(seen({ connector: 'MetaMask', returning: false, switched: true })) &&
+        F.itemFromRow({ at: T0, kind: 'event', path: '/', label: 'wallet_connected', detail: { connector: 'MetaMask' }, referrer: null }) === null,
+    )
+    const sum = F.summarize([
+      { stage: 'arrived', outcome: 'bounced', source: 'twitter', hadError: false, human: true, exit: '/' },
+      { stage: 'engaged', outcome: 'looked', source: 'twitter', hadError: false, human: true, exit: '/markets' },
+      { stage: 'asked', outcome: 'ask-walled', source: 'linkedin', hadError: true, human: true, exit: '/chat' },
+      { stage: 'signed', outcome: 'signed', source: 'direct', hadError: false, human: true, exit: '/chat' },
+    ])
+    check(
+      'flows summary: the climb is cumulative and never rises, sources count their own, and an exit page only counts for people who never acted',
+      sum.funnel[0].n === 4 && sum.funnel.every((f, i) => i === 0 || f.n <= sum.funnel[i - 1].n) && sum.funnel[sum.funnel.length - 1].n === 1 &&
+        sum.sources.find((s) => s.source === 'twitter')?.n === 2 && sum.sources.find((s) => s.source === 'twitter')?.engaged === 1 && sum.withErrors === 1 &&
+        sum.exits.length === 2 && !sum.exits.some((e) => e.path === '/chat'),
+      JSON.stringify(sum.funnel.map((f) => f.n)),
+    )
+
+    // Over HTTP: the beacon, then the admin read.
+    const ufTag = `harness-flows-${Math.random().toString(36).slice(2, 10)}`
+    const ufUa = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 ${ufTag}`
+    const beacon = (body: unknown, headers: Record<string, string> = {}) =>
+      fetch(`${BASE}/api/journey`, { method: 'POST', headers: { 'content-type': 'application/json', 'user-agent': ufUa, ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) })
+    const bOk = await beacon({
+      ref: 'https://t.co/xyz',
+      utm: 'utm_source=x',
+      events: [
+        { k: 'view', p: '/markets?prompt=do-not-keep', ago: 9000 },
+        { k: 'click', p: '/markets', l: `Buy AAPL ${ufTag}`, d: { tag: 'button' }, ago: 6000 },
+        { k: 'event', p: '/markets', l: 'signin_door_open', d: { connectOnly: true }, ago: 4000 },
+        { k: 'leave', p: '/markets', d: { ms: 8000, scroll: 40, input: true }, ago: 500 },
+      ],
+    })
+    const bBig = await beacon('x'.repeat(JE.MAX_BODY_BYTES + 10))
+    const bJunk = await beacon('{not json')
+    const bGpc = await beacon({ events: [{ k: 'click', p: '/markets', l: `gpc ${ufTag}` }] }, { 'sec-gpc': '1' })
+    check(
+      'flows beacon: a batch is accepted with an empty 204, an oversized body is refused, junk learns nothing',
+      bOk.status === 204 && (await bOk.text()) === '' && bBig.status === 413 && bJunk.status === 204 && bGpc.status === 204,
+      `${bOk.status}/${bBig.status}/${bJunk.status}`,
+    )
+
+    const fAnon = await fetch(`${BASE}/api/admin/flows`)
+    const fNonAdmin = await fetch(`${BASE}/api/admin/flows`, { headers: C })
+    const mAnon = await fetch(`${BASE}/api/admin/flows/mark`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'v:abcdef123456' }) })
+    const mNonAdmin = await fetch(`${BASE}/api/admin/flows/mark`, { method: 'POST', headers: { ...C, 'content-type': 'application/json' }, body: JSON.stringify({ key: 'v:abcdef123456' }) })
+    check('flows: no auth → 401, a non-admin wallet → 403 — on the read and on the team mark', fAnon.status === 401 && fNonAdmin.status === 403 && mAnon.status === 401 && mNonAdmin.status === 403)
+
+    const ufPk = (() => {
+      try {
+        return ufFs.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+      } catch {
+        return null
+      }
+    })()
+    if (!ufPk) {
+      console.log('  ↳ flows admin read SKIPPED (no PRIVATE_KEY in .env.local)')
+    } else {
+      const ufSession = await signIn(privateKeyToAccount((ufPk.startsWith('0x') ? ufPk : `0x${ufPk}`) as `0x${string}`))
+      // One real turn from the same browser: the server adds the ask and the
+      // shape of its answer to the timeline the beacon started. A chart ask
+      // is native, costs nothing and moves nothing. realFetch, because the
+      // suite's wrapper stamps x-yf-no-ask-log on every chat call and the
+      // journey hook honors that opt-out like the ask-failure log does.
+      await realFetch(`${BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'user-agent': ufUa, 'x-yf-internal-run': '1' },
+        body: JSON.stringify({ message: 'show me the ETH chart', activeServers: [] }),
+      })
+      type UfFlow = { id: string; vids: string[]; source: string; stage: string; outcome: string; team: boolean; teamWhy: string | null; pages: string[]; items: { kind: string; title: string; path: string | null; from: string }[] }
+      const readFlows = async (extra = '') => {
+        const r = await fetch(`${BASE}/api/admin/flows?days=1&internal=1&silent=1${extra}`, { headers: { cookie: ufSession } })
+        return { status: r.status, body: (await r.json()) as { windowDays: number; flows: UfFlow[]; summary: { people: number; funnel: { n: number }[] }; hidden: { team: number; silent: number } } }
+      }
+      const mine = (flows: UfFlow[]) => flows.find((f) => f.items.some((i) => i.title.includes(ufTag)))
+      // after() writes once the response is out: give the rows a moment.
+      let read = await readFlows()
+      for (let i = 0; i < 8 && !mine(read.body.flows)?.items.some((x) => x.kind === 'ask'); i++) {
+        await new Promise((r) => setTimeout(r, 750))
+        read = await readFlows()
+      }
+      const me = mine(read.body.flows)
+      check(
+        'flows: admin → 200 with a summary and one timeline per person; an unknown window falls to 3 days',
+        read.status === 200 && read.body.windowDays === 1 && Array.isArray(read.body.flows) && read.body.summary.people === read.body.flows.length &&
+          read.body.summary.funnel[0].n === read.body.flows.length && ((await (await fetch(`${BASE}/api/admin/flows?days=999`, { headers: { cookie: ufSession } })).json()) as { windowDays: number }).windowDays === 3,
+      )
+      check(
+        'flows round trip: the beacon’s visit reads back as one person from X, on /markets with no query string, who opened the door',
+        !!me && me.source === 'twitter' && me.pages.join() === '/markets' && me.items.every((i) => !String(i.path ?? '').includes('?') && !i.title.includes('do-not-keep')) &&
+          me.items.some((i) => i.kind === 'door') && me.items.some((i) => i.kind === 'click' && i.title.includes('Buy AAPL')),
+        me ? `${me.source} ${me.pages.join()} ${me.items.map((i) => i.kind).join(',')}` : 'flow not found',
+      )
+      check(
+        'flows round trip: the SERVER adds the ask and what it answered to the same person’s timeline, with no help from the browser',
+        !!me && me.items.some((i) => i.kind === 'ask' && i.from === 'server' && /ETH chart/.test(i.title)) && me.items.some((i) => i.from === 'server' && i.kind.startsWith('reply-')) && me.stage === 'asked',
+        me ? `${me.stage}/${me.outcome}` : 'flow not found',
+      )
+      check('flows round trip: a browser that sent Global Privacy Control left no row', !read.body.flows.some((f) => f.items.some((i) => i.title.includes(`gpc ${ufTag}`))))
+
+      // "That was me."
+      if (me) {
+        const markKey = `v:${me.vids[0]}`
+        const post = (body: unknown) => fetch(`${BASE}/api/admin/flows/mark`, { method: 'POST', headers: { cookie: ufSession, 'content-type': 'application/json' }, body: JSON.stringify(body) })
+        const bad = await post({ key: 'DROP TABLE' })
+        const on = await post({ key: markKey, on: true })
+        const hiddenNow = mine((await readFlows()).body.flows)
+        const shownAsTeam = mine((await readFlows('&team=1')).body.flows)
+        const off = await post({ key: markKey, on: false })
+        const back = mine((await readFlows()).body.flows)
+        check(
+          'flows team mark: a bad key → 400; a marked visitor leaves the default view, shows under ?team=1 saying why, and comes back when unmarked',
+          bad.status === 400 && on.status === 200 && !hiddenNow && !!shownAsTeam && shownAsTeam.team && shownAsTeam.teamWhy === 'marked by hand' && off.status === 200 && !!back && !back.team,
+        )
+      }
+    }
+
+    // The wiring, read from source.
+    const read = (p: string) => ufFs.readFileSync(p, 'utf8')
+    const journeySrc = read('lib/journey.ts')
+    const code = journeySrc.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n')
+    check(
+      'flows wiring: the browser half plants nothing on the device — no cookie, and the one stored key is the admin’s own team flag',
+      !/document\.cookie/.test(code) && !/sessionStorage/.test(code) && (code.match(/localStorage\.(get|set)Item\(([^,)]+)/g) ?? []).every((m) => m.endsWith('(TEAM_KEY')) &&
+        /globalPrivacyControl/.test(code) && /'\/embed'/.test(code) && !/\.value\b/.test(code),
+    )
+    check(
+      'flows wiring: the tracker is mounted once and reads the wallet off wagmi, the analytics chokepoint tees into it, and the chat route records each turn at the time it happened',
+      /<JourneyTracker \/>/.test(read('app/layout.tsx')) && /trackJourney\('event', name/.test(read('lib/analytics.ts')) &&
+        (read('app/api/chat/route.ts').match(/recordTurn\(req\.headers/g) ?? []).length === 2 && /startedAt: turnStartedAt/.test(read('app/api/chat/route.ts')) &&
+        /useAccount\(\)/.test(read('components/JourneyTracker.tsx')) && /setJourneyWallet\(now\)/.test(read('components/JourneyTracker.tsx')),
+    )
+    const { isSectionActive } = await import('../components/DashboardSidebar')
+    check(
+      'flows wiring: the page sits under Growth (the rail stays lit on it), Growth links to it, and the privacy page says what is kept',
+      isSectionActive('/dashboard/admin/flows', '/dashboard/admin', false) && read('app/dashboard/admin/page.tsx').includes('/dashboard/admin/flows') &&
+        read('app/dashboard/admin/flows/page.tsx').includes('/api/admin/flows') && /Global Privacy Control/.test(read('app/docs/privacy/page.tsx')) && /deleted after 120 days/.test(read('app/docs/privacy/page.tsx')),
+    )
+  }
+
   // ── Email signup (double opt-in) ──────────────────────────────────────────
   console.log('— subscribe')
   // .invalid domain → stored but never emailed (isUndeliverable guard), and the

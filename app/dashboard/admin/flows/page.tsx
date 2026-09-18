@@ -365,12 +365,15 @@ const PICKS: { id: Pick; label: string }[] = [
   { id: 'wallet', label: 'Has a wallet' },
   { id: 'live', label: 'On the site now' },
 ]
-const WALL_OUTCOMES = new Set<FlowOutcome>(['wallet-refused', 'withheld', 'built-unsigned', 'offer-unanswered', 'ask-walled', 'connected-idle', 'door-error', 'door-abandoned'])
+const WALL_OUTCOMES = new Set<FlowOutcome>(['wallet-refused', 'withheld', 'job-failed', 'built-unsigned', 'offer-unanswered', 'ask-walled', 'connected-idle', 'door-error', 'door-abandoned'])
 
 function FlowsPage() {
   const { address } = useSession()
   const params = useSearchParams()
   const focusWallet = params.get('wallet')?.toLowerCase() ?? null
+  // Local development only: a localhost visit is stamped internal (it has no
+  // platform IP), so seeing your own clicks on a dev build takes ?internal=1.
+  const internal = params.get('internal') === '1'
   const daysParam = Number(params.get('days'))
   const [days, setDays] = useState<FlowWindow>((FLOW_WINDOWS as readonly number[]).includes(daysParam) ? (daysParam as FlowWindow) : 3)
   const [team, setTeam] = useState(false)
@@ -389,7 +392,7 @@ function FlowsPage() {
     async (quiet = false) => {
       if (!quiet) setLoading(true)
       try {
-        const res = await fetch(`/api/admin/flows?days=${days}${team ? '&team=1' : ''}${silent ? '&silent=1' : ''}`, { cache: 'no-store' })
+        const res = await fetch(`/api/admin/flows?days=${days}${team ? '&team=1' : ''}${silent ? '&silent=1' : ''}${internal ? '&internal=1' : ''}`, { cache: 'no-store' })
         if (res.ok) {
           setData(await res.json())
           setError(null)
@@ -406,7 +409,7 @@ function FlowsPage() {
         setLoading(false)
       }
     },
-    [days, team, silent],
+    [days, team, silent, internal],
   )
 
   useEffect(() => {

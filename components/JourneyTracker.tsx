@@ -14,8 +14,9 @@
 
 import { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
+import { useAccount } from 'wagmi'
 import { isAdminAddress } from '@/lib/admin'
-import { flushJourney, labelOfClick, markTeamBrowser, observeFetch, shouldLogScriptError, trackJourney } from '@/lib/journey'
+import { flushJourney, labelOfClick, markTeamBrowser, observeFetch, setJourneyWallet, shouldLogScriptError, trackJourney } from '@/lib/journey'
 import { useSession } from '@/lib/session'
 
 const MAX_ERRORS_PER_LOAD = 8
@@ -23,8 +24,28 @@ const MAX_ERRORS_PER_LOAD = 8
 export default function JourneyTracker() {
   const pathname = usePathname()
   const { address } = useSession()
+  const { address: wallet, connector } = useAccount()
   // The page currently being timed.
   const page = useRef<{ path: string; visibleSince: number | null; scroll: number; input: boolean } | null>(null)
+  // Has this page load seen a press yet? A wallet that shows up before one
+  // came back on its own (wagmi's reconnect); after one, the visitor connected it.
+  const pressed = useRef(false)
+  // Re-arms the once-only input listeners; set by the listener effect below.
+  const armInput = useRef<() => void>(() => {})
+
+  // The wallet rides every batch from the moment it is here. Read straight
+  // off wagmi: its onConnect callback does not fire for every reconnect, and
+  // a returning wallet is exactly the person whose timeline needs a name.
+  const lastWallet = useRef<string | null>(null)
+  useEffect(() => {
+    const now = wallet ? wallet.toLowerCase() : null
+    if (now === lastWallet.current) return
+    const before = lastWallet.current
+    lastWallet.current = now
+    setJourneyWallet(now)
+    if (now) trackJourney('event', 'wallet_seen', { connector: connector?.name ?? 'unknown', returning: !pressed.current, switched: before !== null })
+    else if (before) trackJourney('event', 'wallet_gone')
+  }, [wallet, connector])
 
   // An admin signed in here once: this browser is the team's from now on.
   useEffect(() => {
@@ -43,6 +64,8 @@ export default function JourneyTracker() {
     }
     closePage()
     page.current = { path: pathname, visibleSince: Date.now(), scroll: 0, input: false }
+    // "A hand touched it" is judged per page, so each page listens afresh.
+    armInput.current()
     trackJourney('view', null, undefined, pathname)
   }, [pathname])
 
@@ -71,6 +94,7 @@ export default function JourneyTracker() {
     }
     const onClick = (e: MouseEvent) => {
       touch()
+      pressed.current = true
       const hit = labelOfClick(e.target)
       if (hit) trackJourney('click', hit.label, hit.detail)
     }
@@ -112,10 +136,17 @@ export default function JourneyTracker() {
     }
 
     const passive = { passive: true } as const
+    // Once per page, not once per load: pointermove fires by the hundred, and
+    // one is all a page needs. addEventListener ignores a duplicate, so
+    // re-arming a listener that has not fired yet is harmless.
+    const arm = () => {
+      window.addEventListener('pointermove', touch, { passive: true, once: true })
+      window.addEventListener('touchstart', touch, { passive: true, once: true })
+      window.addEventListener('keydown', touch, { passive: true, once: true })
+    }
+    armInput.current = arm
+    arm()
     window.addEventListener('scroll', onScroll, passive)
-    window.addEventListener('pointermove', touch, { passive: true, once: true })
-    window.addEventListener('touchstart', touch, { passive: true, once: true })
-    window.addEventListener('keydown', touch, { passive: true, once: true })
     document.addEventListener('click', onClick, { capture: true, passive: true })
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('pagehide', onPageHide)
@@ -131,6 +162,7 @@ export default function JourneyTracker() {
       window.removeEventListener('pagehide', onPageHide)
       window.removeEventListener('error', onError)
       window.removeEventListener('unhandledrejection', onRejection)
+      armInput.current = () => {}
       restoreFetch()
     }
   }, [])

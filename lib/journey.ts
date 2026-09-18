@@ -27,6 +27,9 @@ const TEAM_KEY = 'pantessa.team'
 type Queued = Omit<JourneyEventIn, 'ago'> & { at: number }
 
 let queue: Queued[] = []
+/** Two events in one millisecond (a page left and the next one opened) would
+ *  sort by luck. Each event lands at least 1ms after the one before it. */
+let lastAt = 0
 let timer: ReturnType<typeof setTimeout> | null = null
 let wallet: string | null = null
 let arrival: { ref?: string; utm?: string } | null = null
@@ -92,7 +95,8 @@ function readArrival(): { ref?: string; utm?: string } {
 export function trackJourney(kind: JourneyKind, label?: string | null, detail?: Record<string, string | number | boolean>, path?: string): void {
   try {
     if (off()) return
-    queue.push({ k: kind, p: path ?? window.location.pathname, ...(label ? { l: label.slice(0, 240) } : {}), ...(detail ? { d: detail } : {}), at: Date.now() })
+    lastAt = Math.max(Date.now(), lastAt + 1)
+    queue.push({ k: kind, p: path ?? window.location.pathname, ...(label ? { l: label.slice(0, 240) } : {}), ...(detail ? { d: detail } : {}), at: lastAt })
     if (queue.length >= MAX_BATCH) return flushJourney()
     if (!timer) timer = setTimeout(() => flushJourney(), FLUSH_MS)
   } catch {

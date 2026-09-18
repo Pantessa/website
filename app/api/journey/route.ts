@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { after, NextRequest, NextResponse } from 'next/server'
 import { getSessionAddress } from '@/lib/auth'
 import { MAX_BODY_BYTES, sanitizeBatch } from '@/lib/journey-events'
 import { writeJourneyBatch } from '@/lib/journey-server'
@@ -15,8 +15,9 @@ export const dynamic = 'force-dynamic'
  * strings, pathnames only), fenced per IP per hour, and dropped whole for a
  * browser that sent Global Privacy Control or Do Not Track.
  *
- * Always answers 204 with no body: a beacon has no reader, and the answer
- * must not tell a prober which of its events were kept.
+ * Always answers 204 with no body, before anything is written: a beacon has
+ * no reader, and the answer must not tell a prober which of its events were
+ * kept (or that the hourly fence tripped).
  */
 export async function POST(req: NextRequest) {
   const done = () => new NextResponse(null, { status: 204 })
@@ -32,11 +33,20 @@ export async function POST(req: NextRequest) {
     const clean = sanitizeBatch(body)
     if (clean.events.length === 0) return done()
     // A signed-in admin's browser is the team's, whatever wallet it shows.
+    // Read before after(): the cookie store belongs to the request.
     const sessionAddress = await getSessionAddress().catch(() => null)
-    const verdict = await writeJourneyBatch(req.headers, clean, { body, sessionAddress })
-    if (verdict === 'limited') return new NextResponse(null, { status: 429 })
+    const headers = new Headers(req.headers)
+    // The answer goes out first. Nothing in the write is the visitor's to
+    // wait for, and a prober learns nothing from how long it took.
+    after(async () => {
+      try {
+        await writeJourneyBatch(headers, clean, { body, sessionAddress })
+      } catch (e) {
+        console.warn('[journey] batch failed:', e instanceof Error ? e.message.split('\n')[0] : e)
+      }
+    })
   } catch (e) {
-    console.warn('[journey] batch failed:', e instanceof Error ? e.message.split('\n')[0] : e)
+    console.warn('[journey] batch refused:', e instanceof Error ? e.message.split('\n')[0] : e)
   }
   return done()
 }

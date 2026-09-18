@@ -116,7 +116,13 @@ function surfaceOf(headers: Headers, reqBody: Record<string, unknown>): string {
  * Phase-2 executes and empty messages are not asks. A streamed reply has no
  * JSON body to read, so only the ask is kept.
  */
-export async function recordTurn(headers: Headers, reqBody: Record<string, unknown>, resBody: Record<string, unknown> | null, streamed: boolean): Promise<void> {
+export async function recordTurn(
+  headers: Headers,
+  reqBody: Record<string, unknown>,
+  resBody: Record<string, unknown> | null,
+  turn: { streamed: boolean; startedAt: number; finishedAt: number },
+): Promise<void> {
+  const { streamed } = turn
   try {
     if (optedOut(headers)) return
     const message = typeof reqBody.message === 'string' ? reqBody.message.trim() : ''
@@ -125,7 +131,6 @@ export async function recordTurn(headers: Headers, reqBody: Record<string, unkno
     const base = await baseFor(headers, wallet, { body: reqBody })
     const path = surfaceOf(headers, reqBody)
     const money = moneyShaped(message)
-    const now = Date.now()
     const rows: Prisma.VisitorEventCreateManyInput[] = [
       {
         ...base,
@@ -133,7 +138,7 @@ export async function recordTurn(headers: Headers, reqBody: Record<string, unkno
         path,
         label: scrub(message, 240),
         detail: { money, apps: Array.isArray(reqBody.activeServers) ? reqBody.activeServers.length : 0 },
-        createdAt: new Date(now - 1),
+        createdAt: new Date(turn.startedAt),
       },
     ]
     if (!streamed) {
@@ -150,7 +155,8 @@ export async function recordTurn(headers: Headers, reqBody: Record<string, unkno
           // The words they actually read, only when those words were the wall.
           ...(shape.kind === 'reply-wall' && reply ? { said: scrub(reply, 160) ?? '' } : {}),
         },
-        createdAt: new Date(now),
+        // Strictly after the ask, however fast the turn was.
+        createdAt: new Date(Math.max(turn.finishedAt, turn.startedAt + 1)),
       })
     }
     const { default: prisma } = await import('@/lib/db')

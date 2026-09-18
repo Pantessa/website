@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { getAddress, isAddress } from 'viem'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
 import { isAdminAddress, isTestWallet } from '@/lib/admin'
 import { isCdpListingConfigured, listCdpEndUsers, type CdpEndUser } from '@/lib/cdp'
+import { INTERNAL_ORIGIN_SQL, INTERNAL_TRAFFIC_WHERE, isCountedTurn } from '@/lib/value-origin'
 import {
   FLOW_WINDOWS,
   LIVE_MS,
+  backfillAsks,
   collapseClicks,
   dropEchoedSends,
   foldFlow,
+  foldLeaves,
   itemFromRow,
   mergeItems,
   rageRuns,
@@ -57,6 +61,10 @@ async function soft<T>(label: string, q: Promise<T>, fallback: T): Promise<T> {
     return fallback
   }
 }
+
+// The same fence the Growth books use: our own origins (localhost, previews,
+// fixture TLDs) are not people, stamped or not.
+const REAL_ORIGIN = Prisma.raw(INTERNAL_ORIGIN_SQL)
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 const usd = (n: number | null | undefined) => (n && n > 0 ? ` · $${n.toFixed(2)}` : '')
@@ -115,7 +123,7 @@ export async function GET(req: NextRequest) {
     prisma.$queryRaw<{ w: string }[]>`
       SELECT DISTINCT w FROM (
         SELECT lower(owner_address) AS w FROM chats WHERE NOT is_internal AND updated_at >= ${since}
-        UNION ALL SELECT lower(coalesce(wallet_address, owner_address)) FROM embed_turns WHERE NOT is_internal AND created_at >= ${since}
+        UNION ALL SELECT lower(coalesce(wallet_address, owner_address)) FROM embed_turns WHERE NOT ${REAL_ORIGIN} AND session_id NOT LIKE 'harness-%' AND created_at >= ${since}
         UNION ALL SELECT lower(wallet) FROM ask_failures WHERE NOT is_internal AND created_at >= ${since}
         UNION ALL SELECT lower(wallet) FROM intent_link_events WHERE NOT is_internal AND created_at >= ${since}
         UNION ALL SELECT lower(wallet) FROM jobs WHERE NOT is_internal AND created_at >= ${since}
@@ -150,8 +158,12 @@ export async function GET(req: NextRequest) {
         soft(
           'turns',
           prisma.embedTurn.findMany({
-            where: { isInternal: false, createdAt: { gte: since }, OR: [{ walletAddress: { in: both } }, { walletAddress: null, ownerAddress: { in: both } }] },
-            select: { walletAddress: true, ownerAddress: true, outcome: true, artifact: true, chain: true, buildPath: true, valueUsd: true, prompt: true, intentLinkSlug: true, detail: true, createdAt: true },
+            where: {
+              createdAt: { gte: since },
+              NOT: [INTERNAL_TRAFFIC_WHERE, { sessionId: { startsWith: 'harness-' } }],
+              OR: [{ walletAddress: { in: both } }, { walletAddress: null, ownerAddress: { in: both } }],
+            },
+            select: { walletAddress: true, ownerAddress: true, outcome: true, artifact: true, chain: true, buildPath: true, valueUsd: true, prompt: true, intentLinkSlug: true, detail: true, verification: true, createdAt: true },
             orderBy: { createdAt: 'asc' },
             take: 3000,
           }),
@@ -227,7 +239,10 @@ export async function GET(req: NextRequest) {
     const at = t.createdAt.getTime()
     const where = t.intentLinkSlug ? `/i/${t.intentLinkSlug}` : null
     const what = [t.artifact, t.chain ? `chain ${t.chain}` : null, t.buildPath].filter(Boolean).join(' · ')
-    if (t.outcome === 'signed') put(who, { at, kind: 'signed', title: `Signed${usd(t.valueUsd)}`, detail: what || null, from: 'db', path: where, n: { usd: t.valueUsd ?? 0 } })
+    // Money follows the receipt (lib/value-origin): a signature whose receipt
+    // check came back refuted is shown, and is not called signed.
+    if (t.outcome === 'signed' && !isCountedTurn(t)) put(who, { at, kind: 'event', title: `Reported a signature the receipt check did not back (${t.verification})`, detail: what || null, from: 'db', path: where })
+    else if (t.outcome === 'signed') put(who, { at, kind: 'signed', title: `Signed${usd(t.valueUsd)}`, detail: what || null, from: 'db', path: where, n: { usd: t.valueUsd ?? 0 } })
     else if (t.outcome === 'tx-built') put(who, { at, kind: 'built', title: `A sign card rendered${usd(t.valueUsd)}`, detail: what || null, from: 'db', path: where })
     else if (t.outcome === 'refused') put(who, { at, kind: 'reply-wall', title: 'The turn was refused', detail: t.detail ? clip(t.detail, 160) : null, from: 'db', path: where })
   }
@@ -236,9 +251,10 @@ export async function GET(req: NextRequest) {
     const funds = f.hadFunds === true ? `Had funds: ${f.fundsDetail ?? `$${(f.fundsUsd ?? 0).toFixed(2)}`}` : f.hadFunds === false ? 'Wallet was empty' : null
     const said = f.reply ? clip(f.reply.replace(/\s+/g, ' '), 220) : null
     const detail = [said, funds].filter(Boolean).join(' — ') || null
-    if (f.kind === 'wallet-refused') put(f.wallet, { at, kind: 'refused', title: `Wallet refused: ${clip(f.prompt, 120)}`, detail: said, from: 'db' })
-    else if (f.kind === 'withheld') put(f.wallet, { at, kind: 'withheld', title: `We withheld a step: ${clip(f.prompt, 120)}`, detail: said, from: 'db' })
-    else put(f.wallet, { at, kind: 'reply-wall', title: `Wall (${f.kind}${f.buildPath ? ` · ${f.buildPath}` : ''}): ${clip(f.prompt, 120)}`, detail, from: 'db', n: { hadFunds: f.hadFunds } })
+    const ask = clip(f.prompt.replace(/\s+/g, ' '), 240)
+    if (f.kind === 'wallet-refused') put(f.wallet, { at, kind: 'refused', title: `Wallet refused: ${clip(f.prompt, 120)}`, detail: said, from: 'db', ask })
+    else if (f.kind === 'withheld') put(f.wallet, { at, kind: 'withheld', title: `We withheld a step: ${clip(f.prompt, 120)}`, detail: said, from: 'db', ask })
+    else put(f.wallet, { at, kind: 'reply-wall', title: `Wall (${f.kind}${f.buildPath ? ` · ${f.buildPath}` : ''}): ${clip(f.prompt, 120)}`, detail, from: 'db', n: { hadFunds: f.hadFunds }, ask })
   }
   for (const e of linkEvents) {
     const at = e.createdAt.getTime()
@@ -305,7 +321,7 @@ export async function GET(req: NextRequest) {
 
     const visitorItems = vs.flatMap((v) => v.rows.map((r) => itemFromRow({ at: r.createdAt.getTime(), kind: r.kind, path: r.path, label: r.label, detail: (r.detail ?? null) as Record<string, unknown> | null, referrer: r.referrer })).filter((i): i is FlowItem => !!i))
     const stitched = allWallets.flatMap((w) => dbItems.get(w) ?? [])
-    const items = collapseClicks(dropEchoedSends(mergeItems([...visitorItems, ...stitched])))
+    const items = foldLeaves(collapseClicks(dropEchoedSends(backfillAsks(mergeItems([...visitorItems, ...stitched])))))
     if (items.length === 0) continue
     const fold = foldFlow(items, { hasWallet: allWallets.length > 0 })
     const bot = vs.length > 0 && vs.every((v) => v.bot)
