@@ -164,7 +164,7 @@ import prisma from '../lib/db'
 import { identiconCells } from '../components/ManagerMark'
 import { addrsUnion, arcQuery } from '../lib/gtm-arc'
 import { isInternalRun, INTERNAL_RUN_HEADER } from '../lib/internal-run'
-import { chainIdOfTurn, CHAT_EXPECTATION_SLUG, COUNTED_EVENT_SQL, COUNTED_EVENT_WHERE, decideReceiptVerdict, expectedReceiptClass, extractTxHash } from '../lib/link-receipt-verify'
+import { chainIdOfTurn, CHAT_EXPECTATION_SLUG, COUNTED_EVENT_SQL, COUNTED_EVENT_WHERE, decideReceiptVerdict, expectedReceiptClass, expectedTurnClass, extractTxHash } from '../lib/link-receipt-verify'
 import { deskExecuteConsentMessage, cleanSenderLabel } from '../lib/broker-exec'
 import { brandFromRow, isDeniedBrandHost, isDeniedBrandName, THIRD_PARTY_BRAND_HOSTS } from '../lib/brand-denylist'
 import { fenceToolOutput, hasFencedToolOutput, toolOutputNonce, toolOutputRule } from '../lib/tool-output-fence'
@@ -26563,6 +26563,31 @@ async function main() {
       JSON.stringify(body),
     )
 
+    // ── money follows the receipt (S-2) — what turning the rail on counts ─
+    // A rail-signed row never carries an /i slug (the overlay only mounts off
+    // /i), so its class is 'job' → `attested` → COUNTED with no tx hash
+    // needed. That is what makes this fix actually move the money metric
+    // rather than file uncounted rows.
+    check(
+      "job-step beacon (counting): a slug-less job-step row verifies as 'job' → attested → counted, so a rail-signed step moves money with no hash to prove; 'job-step' is not an EVM artifact class",
+      (await expectedTurnClass({ artifact: 'job-step' })) === 'job' &&
+        (await expectedTurnClass({ artifact: 'tx' })) === 'evm-tx' &&
+        (COUNTED_VERIFICATIONS as readonly string[]).includes('attested'),
+    )
+    // The one money-affecting side effect, pinned so it stays deliberate: on
+    // an /i link the class comes from the LINK's ask, so a job step signed
+    // there is receipt-checked for the first time now that the card forwards
+    // its hash. Hashless rows land 'unverified' (uncounted) today, so the
+    // verdict can only move unverified → verified/mismatch — it can never
+    // un-count a row that counts today.
+    check(
+      "job-step beacon (counting): forwarding the hash can only PROMOTE an /i-linked job step — 'unverified' and 'mismatch' both count nothing, so no row that counts today can stop counting",
+      !(COUNTED_VERIFICATIONS as readonly string[]).includes('unverified') &&
+        !(COUNTED_VERIFICATIONS as readonly string[]).includes('mismatch') &&
+        (COUNTED_VERIFICATIONS as readonly string[]).includes('verified'),
+      JSON.stringify(COUNTED_VERIFICATIONS),
+    )
+
     // ── live: the route accepts exactly what the overlay sends ───────────
     const railPost = await fetch(`${BASE}/api/embed/telemetry`, {
       method: 'POST',
@@ -26574,10 +26599,11 @@ async function main() {
         ),
       ),
     })
-    const railJson = (await railPost.json()) as { ok?: boolean; internal?: boolean }
+    const railJson = (await railPost.json()) as { ok?: boolean; internal?: boolean; verification?: string }
     check(
-      "job-step beacon (live): the rail's exact body is accepted by the telemetry route — a step signed in the overlay now records, and the harness row is stamped internal",
-      railPost.status === 200 && railJson.ok === true && railJson.internal === true,
+      "job-step beacon (live): the rail's exact body is accepted by the telemetry route AND lands on a COUNTED verdict — a step signed in the overlay now really moves money; the harness row is stamped internal",
+      railPost.status === 200 && railJson.ok === true && railJson.internal === true &&
+        !!railJson.verification && (COUNTED_VERIFICATIONS as readonly string[]).includes(railJson.verification),
       `${railPost.status} ${JSON.stringify(railJson)}`,
     )
     // Discrimination: the same body WITHOUT the first-party marker (what a

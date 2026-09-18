@@ -99,7 +99,6 @@ export default function JobDetailOverlay() {
 
   const close = useCallback(() => setJobDetail(null), [setJobDetail])
 
-
   // A schedule action lands in the composer — never auto-sends.
   const prefill = (prompt: string) => {
     setComposerPrefill(prompt)
