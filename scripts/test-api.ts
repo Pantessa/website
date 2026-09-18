@@ -7258,6 +7258,12 @@ async function main() {
       bounce.outcome === 'bounced' && bounce.stage === 'arrived' && bounce.human && /after 3s/.test(bounce.stoppedAt) && !silentVisit.human && /bot or an instant back/.test(silentVisit.stoppedAt),
       bounce.stoppedAt,
     )
+    const killed = [it(0, 'view'), F.itemFromRow({ at: T0 + 1500, kind: 'event', path: '/', label: 'hand', detail: null, referrer: null })!]
+    check(
+      'flows fold: a page that is killed without ever sending a leave (in-app browsers) still reads as a person, from the first touch alone',
+      F.foldFlow(killed).human && killed[1].detail === F.HAND && !F.foldFlow([it(0, 'view')]).human && /without reporting how long/.test(F.foldFlow(killed).stoppedAt),
+      F.foldFlow(killed).stoppedAt,
+    )
     const looked = F.foldFlow([it(0, 'view', 'v', { path: '/' }), it(8, 'click', 'Clicked “Markets”'), it(9, 'view', 'v', { path: '/markets' }), it(70, 'leave', 'l', { path: '/markets', n: { ms: 61_000, scroll: 80, input: true } })])
     check('flows fold: two pages and a click is someone who looked around and never opened sign-in', looked.stage === 'engaged' && looked.outcome === 'looked' && looked.exit === '/markets' && /Never opened sign-in/.test(looked.stoppedAt), looked.stoppedAt)
     check(

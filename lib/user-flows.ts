@@ -284,6 +284,10 @@ export const OUTCOME_TONE: Record<FlowOutcome, FlowTone> = {
   bounced: 'info',
 }
 
+/** Marks the tracker's "a hand touched the page" row. It is evidence for the
+ *  fold and never a line on the timeline. */
+export const HAND = '·hand'
+
 /** A visit that ends inside this many ms of its only page view is a bounce. */
 export const BOUNCE_MS = 10_000
 /** A gap this long starts a new visit on the same timeline. */
@@ -349,7 +353,10 @@ export function foldFlow(itemsAsc: FlowItem[], opts?: { hasWallet?: boolean }): 
   // Input is only reported by a browser. A timeline with no browser half
   // (history from before the log existed) can't be called silent.
   const browserHalf = items.some((i) => i.from === 'visitor')
-  const human = !browserHalf || clicks > 0 || leaves.some((l) => l.n?.input === true) || has(items, 'ask', 'connect', 'signin', 'door')
+  // Input rides a `leave`, and an in-app browser (X, LinkedIn on iOS) often
+  // never fires one: the page is killed, not hidden. So the tracker also
+  // reports the first touch the moment it happens (HAND).
+  const human = !browserHalf || clicks > 0 || items.some((i) => i.n?.input === true) || has(items, 'ask', 'connect', 'signin', 'door')
 
   let visits = items.length ? 1 : 0
   for (let i = 1; i < items.length; i++) if (items[i].at - items[i - 1].at > VISIT_GAP_MS) visits++
@@ -435,6 +442,9 @@ export function foldFlow(itemsAsc: FlowItem[], opts?: { hasWallet?: boolean }): 
       ? 'No page activity on record.'
       : !human
         ? `One page${exit ? ` (${exit})` : ''}, no scroll, tap or key. A bot or an instant back-button.`
+        : leaves.length === 0
+          ? // Touched the page, and the browser never said goodbye: how long they stayed is not known, so it is not guessed.
+            `Opened ${exit ?? 'one page'} and touched it. The page was closed without reporting how long they stayed (in-app browsers do that).`
         : onPage && onPage < BOUNCE_MS
           ? `Left ${exit ?? 'the page'} after ${secs(onPage)}.`
           : `Read ${exit ?? 'one page'}${onPage ? ` for ${secs(onPage)}` : ''}${maxScroll ? `, scrolled ${Math.round(maxScroll)}%` : ''}, clicked nothing.`
@@ -661,6 +671,7 @@ export function itemFromRow(r: VisitorEventRow): FlowItem | null {
         return { ...base, kind: 'connect', title: d.switched === true ? `Switched to another wallet${via}` : d.returning === true ? `Arrived with a wallet already connected${via}` : `Connected a wallet${via}` }
       }
       if (name === 'wallet_gone') return { ...base, kind: 'event', title: 'Disconnected the wallet' }
+      if (name === 'hand') return { ...base, kind: 'event', title: 'First touch', detail: HAND, n: { input: true } }
       if (name === 'siwe_signed_in') return { ...base, kind: 'signin', title: 'Signed in' }
       // The server's own `ask` row is the record of a sent message. This one
       // only matters when that row is missing (see dropEchoedSends).

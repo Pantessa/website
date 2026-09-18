@@ -76,8 +76,16 @@ export default function JourneyTracker() {
     const restoreFetch = observeFetch()
     const seenErrors = new Set<string>()
 
+    // The first touch of a page load is reported at once, not only inside
+    // the next `leave`: a page that is killed rather than hidden (in-app
+    // browsers do it) never sends one, and its visitor would read as a bot.
+    let handSent = false
     const touch = () => {
       if (page.current) page.current.input = true
+      if (!handSent) {
+        handSent = true
+        trackJourney('event', 'hand')
+      }
     }
     let ticking = false
     const onScroll = () => {

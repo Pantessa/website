@@ -8,6 +8,7 @@ import { isCdpListingConfigured, listCdpEndUsers, type CdpEndUser } from '@/lib/
 import { INTERNAL_ORIGIN_SQL, INTERNAL_TRAFFIC_WHERE, isCountedTurn } from '@/lib/value-origin'
 import {
   FLOW_WINDOWS,
+  HAND,
   LIVE_MS,
   backfillAsks,
   collapseClicks,
@@ -139,7 +140,12 @@ export async function GET(req: NextRequest) {
   for (const u of cdpUsers) for (const w of u.wallets) accountOf.set(w, u)
   const wallets = new Set<string>([...visitorWallets, ...dbActive.map((r) => r.w)])
   for (const u of cdpUsers) if (Date.parse(u.createdAt) >= since.getTime()) for (const w of u.wallets) wallets.add(w)
-  const lower = [...wallets].filter((w) => isAddress(w)).slice(0, 600)
+  // Our own wallets hold most of the rows in every table. With team hidden,
+  // their history is never read at all; they are only counted.
+  const ours = (w: string) => isTestWallet(w) || isAdminAddress(w) || marked.has(w)
+  const hiddenOurs = new Set<string>()
+  if (!includeTeam) for (const w of wallets) if (ours(w)) hiddenOurs.add(`w:${w}`)
+  const lower = [...wallets].filter((w) => isAddress(w) && (includeTeam || !ours(w))).slice(0, 600)
   // Tables hold a mix of lowercased and checksummed addresses.
   const both = [...new Set(lower.flatMap((w) => [w, getAddress(w)]))]
 
@@ -292,7 +298,6 @@ export async function GET(req: NextRequest) {
   for (const w of dbItems.keys()) if (!people.has(`w:${w}`)) people.set(`w:${w}`, { key: `w:${w}`, wallet: w, vids: [] })
 
   const flows = []
-  let hiddenTeam = 0
   let hiddenSilent = 0
   for (const p of people.values()) {
     const vs = p.vids.map((id) => vids.get(id)!).filter(Boolean)
@@ -315,7 +320,7 @@ export async function GET(req: NextRequest) {
               ? 'a team email'
               : 'same network as an admin that day'
     if (team && !includeTeam) {
-      hiddenTeam++
+      hiddenOurs.add(p.key)
       continue
     }
 
@@ -334,6 +339,8 @@ export async function GET(req: NextRequest) {
     const src = vs.length
       ? sourceOf({ referrer: firstRow?.referrer, utm: firstRow?.utm, ua: vs[0].device, landing: fold.landing })
       : { source: (items.some((i) => i.path?.startsWith('/i/')) ? 'link' : 'direct') as FlowSource, label: items.some((i) => i.path?.startsWith('/i/')) ? 'Shared link' : 'No page record' }
+    // Evidence rows judged the flow above; they are not lines on it.
+    const shownItems = items.filter((i) => i.detail !== HAND)
     const firstAt = items[0].at
     const lastAt = items[items.length - 1].at
     flows.push({
@@ -355,10 +362,10 @@ export async function GET(req: NextRequest) {
       live: now - lastAt <= LIVE_MS,
       /** the journey log saw this person's browser (false = history from tables only) */
       tracked: vs.length > 0,
-      rage: rageRuns(items),
+      rage: rageRuns(shownItems),
       ...fold,
-      items: items.slice(-MAX_ITEMS),
-      truncated: Math.max(0, items.length - MAX_ITEMS),
+      items: shownItems.slice(-MAX_ITEMS),
+      truncated: Math.max(0, shownItems.length - MAX_ITEMS),
     })
   }
   flows.sort((a, b) => b.lastAt - a.lastAt)
@@ -369,7 +376,7 @@ export async function GET(req: NextRequest) {
     generatedAt: new Date(now).toISOString(),
     /** When the journey log's first row landed: nothing before it has pages. */
     trackingSince: (await soft('first', prisma.visitorEvent.findFirst({ where: { isInternal: false }, orderBy: { createdAt: 'asc' }, select: { createdAt: true } }), null))?.createdAt ?? null,
-    hidden: { team: hiddenTeam, silent: hiddenSilent },
+    hidden: { team: hiddenOurs.size, silent: hiddenSilent },
     eventsCapped: eventsDesc.length >= MAX_EVENTS,
     summary: summarize(shown),
     flows: shown,
