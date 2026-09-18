@@ -7026,6 +7026,129 @@ async function main() {
     )
   }
 
+  // ── Admin growth (the go-to-market books) ─────────────────────────────────
+  console.log('— admin growth')
+  {
+    const gAnon = await fetch(`${BASE}/api/admin/growth`)
+    check('growth: no auth → 401', gAnon.status === 401)
+    const gNonAdmin = await fetch(`${BASE}/api/admin/growth`, { headers: C })
+    check('growth: non-admin wallet → 403 (the account emails never leave the allowlist)', gNonAdmin.status === 403)
+
+    // The math, with no database: a fee only on a fee-bearing path, at the
+    // stamped tier; a creator's half only where a creator exists.
+    const G = await import('../lib/admin-growth')
+    const { SWAP_FEE_BPS, LINK_SWAP_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS, CREATOR_FEE_SPLIT } = await import('../lib/fees')
+    const now = Date.parse('2026-09-18T12:00:00Z')
+    const row = (o: Partial<import('../lib/admin-growth').GrowthTurnRow>) =>
+      ({ day: '2026-09-18', source: 'chat', buildPath: 'native-swap-uniswap', feeBps: null, creator: null, tester: false, usd: 100, n: 1, ...o }) as import('../lib/admin-growth').GrowthTurnRow
+    const near = (a: number, b: number) => Math.abs(a - b) < 1e-9
+    const organic = G.splitOfRow(row({}))
+    check(
+      'growth math: an organic swap earns the organic tier, all of it Pantessa’s',
+      near(organic.feeUsd, (100 * SWAP_FEE_BPS) / 10_000) && organic.creatorUsd === 0 && near(organic.pantessaUsd, organic.feeUsd),
+    )
+    const linked = G.splitOfRow(row({ source: 'link', feeBps: LINK_SWAP_FEE_BPS, creator: '0xc' }))
+    check(
+      'growth math: a creator’s link earns the stamped link tier, split with the creator',
+      near(linked.feeUsd, (100 * LINK_SWAP_FEE_BPS) / 10_000) && near(linked.creatorUsd, linked.feeUsd * CREATOR_FEE_SPLIT) && near(linked.pantessaUsd + linked.creatorUsd, linked.feeUsd),
+    )
+    const house = G.splitOfRow(row({ source: 'link', feeBps: LINK_SWAP_FEE_BPS, creator: null }))
+    check('growth math: a house link owes no creator', house.creatorUsd === 0 && near(house.pantessaUsd, house.feeUsd) && house.feeUsd > 0)
+    const xchain = G.splitOfRow(row({ buildPath: 'native-cross-chain', feeBps: 50 }))
+    check('growth math: a cross-chain dollar earns the NET rate whatever tier was stamped', near(xchain.feeUsd, (100 * CROSS_CHAIN_NET_FEE_BPS) / 10_000))
+    const free = [G.splitOfRow(row({ buildPath: 'native-morpho-lend' })), G.splitOfRow(row({ buildPath: null, feeBps: 50, creator: '0xc' }))]
+    check(
+      'growth math: a fee-free or unstamped path moves volume and earns nothing (a stamped tier alone is not a fee)',
+      free.every((f) => f.volumeUsd === 100 && f.feeUsd === 0 && f.creatorUsd === 0 && f.feeBearingUsd === 0),
+    )
+    const mixed = [
+      row({}),
+      row({ source: 'link', feeBps: LINK_SWAP_FEE_BPS, creator: '0xc', usd: 40, n: 2 }),
+      row({ source: 'standing', buildPath: null, usd: 12 }),
+      row({ day: '2026-09-10', buildPath: 'native-cross-chain', usd: 7 }),
+      row({ day: '2026-08-01', usd: 1000, n: 5 }),
+    ]
+    const venues = G.feesByVenue(mixed)
+    const total = G.sumSplit(mixed)
+    const sumOf = (k: 'volumeUsd' | 'feeUsd' | 'creatorUsd' | 'pantessaUsd' | 'trades') => venues.reduce((s, v) => s + v[k], 0)
+    check(
+      'growth math: the venue table sums to the headline, and unstamped volume lands on "unattributed"',
+      near(sumOf('volumeUsd'), total.volumeUsd) && near(sumOf('feeUsd'), total.feeUsd) && near(sumOf('creatorUsd') + sumOf('pantessaUsd'), total.feeUsd) &&
+        sumOf('trades') === total.trades && venues.some((v) => v.venue === 'unattributed' && v.volumeUsd === 12 && v.effectiveBps === null),
+    )
+    const series = G.dailySeries(mixed, 7, now)
+    const last = series[series.length - 1]
+    check(
+      'growth math: the daily series is dense, stacks to each day’s total, and its cumulative line carries pre-window money',
+      series.length === 7 && series[0].day === '2026-09-12' && last.day === '2026-09-18' &&
+        series.every((p) => near(p.link + p.chat + p.embed + p.standing, p.totalUsd)) &&
+        near(last.cumulativeUsd, total.volumeUsd) && near(last.cumulativeFeeUsd, total.feeUsd) && near(series[0].cumulativeUsd, 1007),
+    )
+    const win = G.windowRows(mixed, 7, now)
+    check(
+      'growth math: window = today + the N−1 days before; the previous window is the N before that',
+      win.current.length === 3 && win.previous.length === 1 && win.previous[0].day === '2026-09-10' &&
+        G.deltaPct(10, 0) === null && G.deltaPct(15, 10) === 0.5,
+    )
+    const byCreator = G.earningsByCreator(mixed)
+    check('growth math: creators are owed exactly the creator side of the split', byCreator.size === 1 && near(byCreator.get('0xc')!.earnedUsd, total.creatorUsd))
+    check(
+      'growth math: an account’s stage is the furthest it got',
+      G.accountStage({ turns: 0, built: 0, signed: 0 }) === 'signed-up' && G.accountStage({ turns: 3, built: 0, signed: 0 }) === 'asked' &&
+        G.accountStage({ turns: 3, built: 1, signed: 0 }) === 'built' && G.accountStage({ turns: 1, built: 1, signed: 2 }) === 'traded',
+    )
+
+    // The live read, as a real admin (the .env.local burner is an owner wallet).
+    const gFs = await import('node:fs')
+    const gPk = (() => {
+      try {
+        return gFs.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+      } catch {
+        return null
+      }
+    })()
+    if (!gPk) {
+      console.log('  ↳ growth admin read SKIPPED (no PRIVATE_KEY in .env.local)')
+    } else {
+      const gSession = await signIn(privateKeyToAccount((gPk.startsWith('0x') ? gPk : `0x${gPk}`) as `0x${string}`))
+      const gRes = await fetch(`${BASE}/api/admin/growth?days=30`, { headers: { cookie: gSession } })
+      const g = await gRes.json()
+      check(
+        'growth: admin → 200 with tiles, a dense 30-day series, fees, accounts, creators, traders',
+        gRes.status === 200 && g.windowDays === 30 && Array.isArray(g.series) && g.series.length === 30 && !!g.tiles && !!g.fees?.totals?.window &&
+          Array.isArray(g.accounts?.rows) && typeof g.accounts.ok === 'boolean' && Array.isArray(g.creators) && Array.isArray(g.traders) && !!g.engagement,
+      )
+      const tw = g.fees.totals.window
+      const vSum = (k: string) => (g.fees.window as Record<string, number>[]).reduce((s, v) => s + v[k], 0)
+      const close = (a: number, b: number) => Math.abs(a - b) < 0.01
+      check(
+        'growth: the books balance — venue rows sum to the totals, Pantessa + creators = the fee, sources sum to the volume tile',
+        close(vSum('volumeUsd'), tw.volumeUsd) && close(vSum('feeUsd'), tw.feeUsd) && close(tw.pantessaUsd + tw.creatorUsd, tw.feeUsd) &&
+          close((g.sources as { usd: number }[]).reduce((s, x) => s + x.usd, 0), g.tiles.volumeUsd) && close(g.tiles.volumeUsd, tw.volumeUsd) &&
+          tw.feeBearingUsd <= tw.volumeUsd + 0.01,
+      )
+      check(
+        'growth: every account row carries a stage, and a wallet’s email rides onto its trader row only from the account list',
+        (g.accounts.rows as { stage: string }[]).every((a) => ['signed-up', 'asked', 'built', 'traded'].includes(a.stage)) &&
+          (g.traders as { email: string | null; wallet: string }[]).every((t) => t.email === null || (g.accounts.rows as { email: string | null }[]).some((a) => a.email === t.email) || !g.external),
+      )
+      const gExt = await (await fetch(`${BASE}/api/admin/growth?days=7&external=1`, { headers: { cookie: gSession } })).json()
+      const gBad = await (await fetch(`${BASE}/api/admin/growth?days=999`, { headers: { cookie: gSession } })).json()
+      check(
+        'growth: ?external=1 drops every team wallet; an unknown window falls to 30 days',
+        gExt.external === true && gExt.windowDays === 7 && gExt.series.length === 7 &&
+          (gExt.traders as { test: boolean }[]).every((t) => !t.test) && (gExt.creators as { test: boolean }[]).every((c) => !c.test) &&
+          (gExt.accounts.rows as { test: boolean }[]).every((a) => !a.test) && gExt.tiles.volumeUsd <= g.tiles.volumeAllTimeUsd + 0.01 && gBad.windowDays === 30,
+      )
+    }
+    const sidebarSrc = (await import('node:fs')).readFileSync('components/DashboardSidebar.tsx', 'utf8')
+    const growthPageSrc = (await import('node:fs')).readFileSync('app/dashboard/admin/page.tsx', 'utf8')
+    check(
+      'growth: the admin rail says Growth, and the page reads the growth API (the x402-era overview is off it)',
+      /href: '\/dashboard\/admin', label: 'Growth'/.test(sidebarSrc) && growthPageSrc.includes('/api/admin/growth') && !growthPageSrc.includes('/api/admin/overview'),
+    )
+  }
+
   // ── Email signup (double opt-in) ──────────────────────────────────────────
   console.log('— subscribe')
   // .invalid domain → stored but never emailed (isUndeliverable guard), and the

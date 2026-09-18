@@ -143,3 +143,63 @@ export async function createGrantSpendPermission(
     allowanceAtomic: params.allowance.toString(),
   }
 }
+
+/** One embedded-wallet account (the door's email + Google lanes). */
+export interface CdpEndUser {
+  userId: string
+  /** The address the account signed up with; null for a wallet-less lane. */
+  email: string | null
+  /** 'email' | 'google' | … — the first authentication method on the account. */
+  method: string
+  name: string | null
+  /** Lowercased EVM addresses (EOAs first, then smart accounts). */
+  wallets: string[]
+  createdAt: string
+  lastAuthenticatedAt: string | null
+}
+
+/** Listing end users is a plain API-key read — it doesn't need the wallet
+ *  secret that signing does. */
+export function isCdpListingConfigured(): boolean {
+  return Boolean(process.env.CDP_API_KEY_ID && process.env.CDP_API_KEY_SECRET)
+}
+
+const END_USER_TTL_MS = 60_000
+const END_USER_CAP = 2_000
+let _endUsers: { at: number; users: CdpEndUser[] } | null = null
+
+/**
+ * Every embedded-wallet account in the CDP project, newest first. The email a
+ * person signs up with lives at Coinbase and nowhere in our database, so this
+ * is the only place an account's email and its wallet address meet. Admin
+ * surfaces only. Cached for a minute; throws when CDP is unreachable so the
+ * caller can say so instead of showing an empty list.
+ */
+export async function listCdpEndUsers(): Promise<CdpEndUser[]> {
+  if (!isCdpListingConfigured()) throw new Error('CDP not configured — set CDP_API_KEY_ID and CDP_API_KEY_SECRET.')
+  if (_endUsers && Date.now() - _endUsers.at < END_USER_TTL_MS) return _endUsers.users
+  if (!_cdp) _cdp = new CdpClient()
+  const users: CdpEndUser[] = []
+  let pageToken: string | undefined
+  do {
+    const page = await _cdp.endUser.listEndUsers({ pageSize: 100, pageToken })
+    for (const u of page.endUsers) {
+      const methods = u.authenticationMethods as { type: string; email?: string; name?: string }[]
+      const withEmail = methods.find((m) => m.email)
+      const last = (u as { lastAuthenticatedAt?: string }).lastAuthenticatedAt
+      users.push({
+        userId: u.userId,
+        email: withEmail?.email?.toLowerCase() ?? null,
+        method: (withEmail ?? methods[0])?.type ?? 'unknown',
+        name: methods.find((m) => m.name)?.name ?? null,
+        wallets: [...u.evmAccounts, ...u.evmSmartAccounts].map((a) => a.toLowerCase()),
+        createdAt: u.createdAt,
+        lastAuthenticatedAt: last ?? null,
+      })
+    }
+    pageToken = page.nextPageToken || undefined
+  } while (pageToken && users.length < END_USER_CAP)
+  users.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+  _endUsers = { at: Date.now(), users }
+  return users
+}
