@@ -3,7 +3,6 @@ import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
 import { LINK_FENCE_REPLY, cleanAsk, composeMcps, mintSlug } from '@/lib/intent-links'
 import { mayMintLink } from '@/lib/link-fence'
-import { isAdminAddress } from '@/lib/admin'
 import {
   MOSAIC_CHAIN_IDS,
   composeMosaicAsk,

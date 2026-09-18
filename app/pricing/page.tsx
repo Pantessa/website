@@ -1,18 +1,19 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { SITE } from '@/lib/docs'
-import { PLANS } from '@/lib/plans'
+import { ANSWER_PACK, EARN_CENTS_PER_ANSWER, LISTED_PLANS, PLAN_BY_ID, TASTE, answersEarnedByFee } from '@/lib/plans'
 import PricingPlans from '@/components/PricingPlans'
 import StayUpToDate from '@/components/StayUpToDate'
 import Footer from '@/components/Footer'
-import { LINK_FEE_PCT, SWAP_FEE_PCT } from '@/lib/fees'
+import { CREATOR_FEE_SPLIT, LINK_FEE_PCT, LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, SWAP_FEE_PCT } from '@/lib/fees'
 
-/** /pricing — the external plan page. Server component for SEO; the cards +
- * checkout are the PricingPlans client child. The same plan config powers
- * the dashboard plan page, so numbers can't drift. */
+/** /pricing (pricing v2) — the take rate is the business; a plan prices house
+ * answers and nothing else. Server component for SEO; cards + checkout are the
+ * PricingPlans client child. Every number is read from lib/plans + lib/fees,
+ * so the page, the checkout and the gate can never drift. */
 
 const TITLE = 'Pricing — Pantessa'
-const DESCRIPTION =
-  'Three plans metered in YEET credits, with a generous free tier. House-model answers spend credits; on-chain calls stay pay-per-call from your own wallet. Monthly billing via Stripe.'
+const DESCRIPTION = `Looking is free, forever. Trading costs ${SWAP_FEE_PCT}, taken inside the trade you sign. Every trade refills your chat — or get Plus for $${PLAN_BY_ID.plus.priceUsd} a month, or bring your own API key for free.`
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -25,33 +26,58 @@ export const metadata: Metadata = {
 const JSON_LD = JSON.stringify({
   '@context': 'https://schema.org',
   '@type': 'Product',
-  name: 'Pantessa embeddable agent chat',
+  name: 'Pantessa',
   description: DESCRIPTION,
-  offers: PLANS.map((p) => ({
-    '@type': 'Offer',
-    name: `Pantessa ${p.name}`,
-    price: String(p.priceUsd),
-    priceCurrency: 'USD',
-  })),
+  offers: [
+    ...LISTED_PLANS.map((p) => ({ '@type': 'Offer', name: `Pantessa ${p.name}`, price: String(p.priceUsd), priceCurrency: 'USD' })),
+    { '@type': 'Offer', name: `Pantessa — ${ANSWER_PACK.answers} answers`, price: String(ANSWER_PACK.priceUsd), priceCurrency: 'USD' },
+  ],
 })
+
+/** The refill ladder, computed from the live rates — never typed. */
+const organicFee = (usd: number) => (usd * SWAP_FEE_BPS) / 10_000
+const linkNetFee = (usd: number) => (usd * LINK_SWAP_FEE_BPS * (1 - CREATOR_FEE_SPLIT)) / 10_000
+const LADDER = [
+  { label: 'A $1 swap', answers: answersEarnedByFee(organicFee(1)), note: 'Too small to earn. A script farming tiny trades gets nothing.' },
+  { label: 'A $100 swap', answers: answersEarnedByFee(organicFee(100)), note: `A ${Math.round(organicFee(100) * 100)}¢ fee.` },
+  { label: 'A $1,000 swap', answers: answersEarnedByFee(organicFee(1000)), note: `A $${organicFee(1000).toFixed(2)} fee.` },
+  { label: '$100 through a shared link', answers: answersEarnedByFee(linkNetFee(100)), note: 'After the link’s creator takes their half.' },
+]
 
 const FAQ: { q: string; a: string }[] = [
   {
-    q: 'How do creator kickbacks work?',
-    a: `Pantessa takes a ${LINK_FEE_PCT} fee on swap conversions that come through an intent link (${SWAP_FEE_PCT} in plain chat) — and half of the link fee is yours. Earnings accrue automatically from server-truth signed turns; claims open at $10 and pay out in USDC on Base. Every plan earns the same split; plans differ only in how many links can be active at once.`,
+    q: 'What costs money, exactly?',
+    a: `Two things. Trading: ${SWAP_FEE_PCT} on a swap (${LINK_FEE_PCT} through a shared link, half of it to whoever shared it), taken inside the transaction you sign. And house-model answers beyond the free ones. Nothing else — no seat, no account fee, no minimum, no fee on sends, bridges, staking, lending or NFT sales.`,
   },
   {
-    q: 'What is a YEET credit?',
-    a: 'One credit is one answer written by the house model. Credits are ledgered off-chain today and are designed to become an ERC-20 — your balance and usage history carry over when that ships.',
+    q: 'What is a house answer?',
+    a: `A reply the house model writes — “what is Morpho”, “why is this moving”. Anything that builds a transaction (a swap, a stock buy, a DCA, a stop) is compiled without the model and never uses one. You get ${TASTE.wallet} house answers a day free.`,
   },
   {
-    q: 'What about on-chain calls and paid MCPs?',
-    a: 'Never credits. Swaps, votes, and paid data/inference MCPs settle pay-per-call in USDC on Base over x402, from your own wallet, with a receipt for every call — the same on every plan.',
+    q: 'Which trades refill my chat?',
+    a: `Swaps that settle through Uniswap on any chain we support, including tokenized stocks on Robinhood Chain: 1 answer for every ${EARN_CENTS_PER_ANSWER}¢ of fee, once the receipt is verified on-chain. CoW orders, Hyperliquid fills and cross-chain swaps don’t earn yet — their fee isn’t in a single receipt we can verify.`,
+  },
+  {
+    q: 'Is my API key safe with you?',
+    a: 'It is checked with Anthropic’s free token-counting endpoint, encrypted at rest, and never shown again — not to you, not in a log. Use a key from its own Console workspace with a spend limit, and remove it from Settings whenever you like. A key that stops working never falls back to our bill silently; the chat tells you.',
   },
   {
     q: 'What happens when I run out?',
-    a: 'House-model answers pause until the month resets or you upgrade. Everything paid keeps working — add a paid engine like Pantessa · Claude and the chat continues pay-per-call.',
+    a: 'House answers pause until midnight UTC. Trades, DCA, guardians, jobs, charts, watchlists and alerts all keep working. Answers you earned or bought are spent only for a wallet that has signed in — one free signature.',
   },
+  {
+    q: 'How do creator kickbacks work?',
+    a: `A swap that comes through an intent link pays ${LINK_FEE_PCT}, and half of it is the link creator’s — for life on every wallet that link brought. Claims open at $10 and pay out in USDC on Base. Every account earns the same split.`,
+  },
+]
+
+const ALWAYS_FREE = [
+  'Every chart, every timeframe, every symbol',
+  'Unlimited watchlists and sections',
+  'Unlimited price alerts',
+  'Technicals, news and community on every symbol page',
+  'DCA schedules, guardians and multi-step jobs — no caps',
+  'Intent links, your public page, and creator earnings',
 ]
 
 export default function PricingPage() {
@@ -63,18 +89,45 @@ export default function PricingPage() {
           <div className="pricing__head">
             <span className="pricing__eyebrow mono">PRICING</span>
             <h1 className="pricing__h1">
-              Plans that scale with <span className="pricing__em">your dapp.</span>
+              Looking is free. <span className="pricing__em">Trading pays.</span>
             </h1>
             <p className="pricing__sub">
-              Every plan gets the full product — intent links, safe transaction building, receipts,
-              the embeddable chat. Plans meter <strong>active links</strong> and{' '}
-              <strong>YEET credits</strong>; on-chain calls stay pay-per-call from your users&rsquo;
-              own wallets. And every plan earns: creators keep{' '}
-              <strong>half of Pantessa&rsquo;s {LINK_FEE_PCT} link fee</strong>{' '}on their links&rsquo; conversions.
+              Charts, watchlists, alerts and every automation are free at every tier, with no limits. A trade costs{' '}
+              <strong>{SWAP_FEE_PCT}</strong>, taken inside the transaction you sign, and nothing else. The one thing with a
+              meter is the house model, and <strong>every trade you sign refills it</strong>.
             </p>
           </div>
 
           <PricingPlans />
+
+          <div className="pricing__split">
+            <div className="pricing__panel">
+              <span className="pricing__eyebrow mono">EVERY TRADE REFILLS YOUR CHAT</span>
+              <ul className="pricing__ladder">
+                {LADDER.map((r) => (
+                  <li key={r.label}>
+                    <span className="pricing__ladderlabel">{r.label}</span>
+                    <span className="pricing__laddernum">{r.answers}</span>
+                    <span className="pricing__laddernote">{r.note}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="pricing__fine">
+                1 answer per {EARN_CENTS_PER_ANSWER}¢ of fee, granted when the receipt verifies on-chain. Earned answers never expire.
+              </p>
+            </div>
+            <div className="pricing__panel">
+              <span className="pricing__eyebrow mono">FREE AT EVERY TIER, FOREVER</span>
+              <ul className="pricing__feats pricing__feats--wide">
+                {ALWAYS_FREE.map((f) => (
+                  <li key={f}>{f}</li>
+                ))}
+              </ul>
+              <p className="pricing__fine">
+                Other platforms meter looking. <Link href="/compare">See the comparison</Link>.
+              </p>
+            </div>
+          </div>
 
           <div className="pricing__faq">
             {FAQ.map((f) => (
@@ -86,9 +139,8 @@ export default function PricingPage() {
           </div>
 
           <p className="pricing__enterprise">
-            Running a top-ten venue or need custom terms?{' '}
-            <a href="mailto:hello@yeetful.com?subject=Pantessa%20Enterprise">Talk to us</a> — SSO,
-            custom credit pools, and co-marketing live there.
+            Embedding Pantessa for your community, or need white-label, team seats or an SLA?{' '}
+            <a href="mailto:hello@yeetful.com?subject=Pantessa%20for%20teams">Talk to us</a>. Team terms are arranged by hand.
           </p>
         </section>
 
