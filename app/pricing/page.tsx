@@ -63,7 +63,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'What happens when I run out?',
-    a: 'House answers pause until midnight UTC. Trades, DCA, guardians, jobs, charts, watchlists and alerts all keep working. Answers you earned or bought are spent only for a wallet that has signed in — one free signature.',
+    a: 'House answers pause until midnight UTC. Trades, DCA, guardians, jobs, charts, watchlists and alerts all keep working. You can also add a paid engine like Pantessa · Claude and keep going pay-per-call from your wallet. Answers you earned or bought are spent only for a wallet that has signed in — one free signature.',
   },
   {
     q: 'How do creator kickbacks work?',

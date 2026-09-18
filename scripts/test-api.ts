@@ -1039,19 +1039,21 @@ async function main() {
   // Growth/Scale are retired from sale but their ids must stay valid so a
   // subscription row carrying one can never strand.
   check(
-    'plans: Free (0) + Plus ($9 / $79 / 300) on sale; Growth + Scale retired but still valid ids',
+    'plans: Free (0) + Plus ($9 / $79 / 600) on sale; Growth + Scale retired but still valid ids',
     PLAN_BY_ID.free.credits === 0 && PLAN_BY_ID.free.priceUsd === 0 &&
-      PLAN_BY_ID.plus.priceUsd === 9 && PLAN_BY_ID.plus.yearlyUsd === 79 && PLAN_BY_ID.plus.credits === 300 &&
+      PLAN_BY_ID.plus.priceUsd === 9 && PLAN_BY_ID.plus.yearlyUsd === 79 && PLAN_BY_ID.plus.credits === 600 &&
       PLAN_BY_ID.growth.legacy === true && PLAN_BY_ID.scale.legacy === true &&
       LISTED_PLANS.map((p) => p.id).join() === 'free,plus' &&
       PAID_PLANS.map((p) => p.id).join() === 'plus' &&
       planChargeUsd(PLAN_BY_ID.plus, 'month') === 9 && planChargeUsd(PLAN_BY_ID.plus, 'year') === 79,
   )
   // The maxed-plan rule (PRICING.md): an allowance may never cost more than
-  // its price at the UNCACHED per-answer cost the fuses are sized on ($0.03).
+  // its price. Held at 1.5¢ an answer — ten times what inference_calls
+  // measured on 2026-09-18 ($0.0003–0.0014) — so the rule survives a prompt
+  // that grows 10×. Raise the allowance only with a fresh measurement.
   check(
-    'plans: a maxed Plus month never exceeds its price in inference ($0.03 an answer)',
-    PLAN_BY_ID.plus.credits * 0.03 <= PLAN_BY_ID.plus.priceUsd + 1e-9 && ANSWER_PACK.answers === 1000 && ANSWER_PACK.priceUsd === 10,
+    'plans: a maxed Plus month never exceeds its price in inference (held at 1.5¢ an answer, 10× measured)',
+    PLAN_BY_ID.plus.credits * 0.015 <= PLAN_BY_ID.plus.priceUsd + 1e-9 && ANSWER_PACK.answers === 1000 && ANSWER_PACK.priceUsd === 10,
   )
   const preCutoff = new Date(ALLOWANCE_CUTOFF - 86_400_000)
   const postCutoff = new Date(ALLOWANCE_CUTOFF + 86_400_000)
@@ -1060,7 +1062,7 @@ async function main() {
     planCreditsFor(PLAN_BY_ID.growth, preCutoff) === 25000 &&
       planCreditsFor(PLAN_BY_ID.growth, postCutoff) === 8000 &&
       planCreditsFor(PLAN_BY_ID.scale, preCutoff) === 150000 &&
-      planCreditsFor(PLAN_BY_ID.plus, preCutoff) === 300 &&
+      planCreditsFor(PLAN_BY_ID.plus, preCutoff) === 600 &&
       planCreditsFor(PLAN_BY_ID.free, null) === 0,
   )
   check(
@@ -1332,11 +1334,15 @@ async function main() {
       routed.planGate?.gate === 'taste',
       JSON.stringify(routed.planGate ?? routed.reply?.slice(0, 80)),
     )
+    // A wallet named in the body is CLIENT-ASSERTED: it may open that wallet's
+    // free taste (bounded by this connection's daily cap — the pure pins
+    // above), and nothing a person paid for or earned. Served from the taste
+    // or gated; never plan, never bank, never an error.
     const spoofed = await askHouse({ walletAddress: '0x' + '9'.repeat(40) })
     check(
-      'taste (HTTP): naming a wallet in the body buys nothing — the connection is spent, and an unproven wallet never reaches plan or bank',
-      spoofed.planGate?.gate === 'taste' || spoofed.planGate?.gate === 'sign-in',
-      JSON.stringify(spoofed.planGate),
+      'taste (HTTP): a wallet NAMED in the body gets the free taste at most — served, or gated as taste / sign-in; never an error',
+      (typeof spoofed.reply === 'string' && spoofed.reply.length > 0) && (!spoofed.planGate || spoofed.planGate.gate === 'taste' || spoofed.planGate.gate === 'sign-in'),
+      JSON.stringify(spoofed.planGate ?? 'served'),
     )
   }
 

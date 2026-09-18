@@ -125,7 +125,7 @@ export default function PlanPanel() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
           <Kpi label="free, every day" value={String(u.tasteDaily)} sub="resets midnight UTC" small />
           <Kpi label="banked" value={u.bank.toLocaleString()} sub="earned + bought · never expire" small />
-          <Kpi label={isPaid ? 'plan, left this month' : 'plan'} value={isPaid ? planLeft.toLocaleString() : '—'} sub={isPaid ? `of ${u.allowance.toLocaleString()}` : 'Plus adds 300 a month'} small />
+          <Kpi label={isPaid ? 'plan, left this month' : 'plan'} value={isPaid ? planLeft.toLocaleString() : '—'} sub={isPaid ? `of ${u.allowance.toLocaleString()}` : `Plus adds ${(data.plans.find((p) => p.id === 'plus')?.credits ?? 0).toLocaleString()} a month`} small />
           <Kpi label="banked this month" value={u.granted > 0 ? `+${u.granted.toLocaleString()}` : '0'} small />
         </div>
         {isPaid && (

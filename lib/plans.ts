@@ -130,11 +130,15 @@ export const PLANS: Plan[] = [
     tagline: 'For people who ask more than they trade',
     priceUsd: 9,
     yearlyUsd: 79,
-    credits: 300,
+    // 600, not 300: the first measured week (inference_calls, 2026-09-18) put
+    // a house answer at $0.0003–0.0014, far under the $0.03 estimate the
+    // fuses are sized on. The maxed-plan rule is held at 1.5¢ an answer — ten
+    // times the measured cost — so a maxed month still never exceeds its price.
+    credits: 600,
     popular: true,
     highlights: [
       'Everything in Free',
-      '300 house answers a month, on top of the daily free ones',
+      '600 house answers a month, on top of the daily free ones',
       'Market briefs and "explain this" without the hourly limit',
       'Earned and bought answers still stack, and never expire',
       'Early access to new agents',
