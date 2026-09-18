@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 import prisma from '@/lib/db'
 import { getStripe } from '@/lib/stripe'
-import { isPlanId } from '@/lib/plans'
+import { ANSWER_PACK, isPlanId } from '@/lib/plans'
+import { grantAnswers } from '@/lib/billing'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -10,7 +11,8 @@ export const dynamic = 'force-dynamic'
 // Stripe webhook — the ONLY writer of paid subscription state. Point the
 // Stripe dashboard (or `stripe listen --forward-to`) at /api/billing/webhook
 // with STRIPE_WEBHOOK_SECRET set. Handled events:
-//   checkout.session.completed          → activate the plan for the wallet
+//   checkout.session.completed          → activate the plan for the wallet,
+//                                          or grant a paid answer pack
 //   customer.subscription.updated       → status / renewal / plan changes
 //   customer.subscription.deleted       → back to the free tier
 // Unhandled events 200 so Stripe doesn't retry them forever.
@@ -61,6 +63,13 @@ export async function POST(req: NextRequest) {
         const session = event.data.object
         const owner = (session.metadata?.ownerAddress ?? session.client_reference_id ?? '').toLowerCase()
         const plan = session.metadata?.plan
+        // A pack (mode 'payment'): grant its answers ONCE. The ledger's
+        // unique grant key is the idempotency, so a redelivered event is a
+        // no-op. Only a PAID session grants — never an open or unpaid one.
+        if (owner && session.mode === 'payment' && session.metadata?.pack && session.payment_status === 'paid') {
+          await grantAnswers(owner, ANSWER_PACK.answers, 'answer-pack', `pack:${session.id}`, { strict: true })
+          break
+        }
         if (owner && isPlanId(plan) && session.subscription) {
           const subId = typeof session.subscription === 'string' ? session.subscription : session.subscription.id
           const customerId = typeof session.customer === 'string' ? session.customer : (session.customer?.id ?? null)

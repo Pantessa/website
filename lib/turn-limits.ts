@@ -218,3 +218,26 @@ export function turnLimitReply(scope: 'ip' | 'wallet'): string {
     ? `🚦 That's a lot of turns for an unsigned wallet in one hour. **Sign in** (one free signature) and your own plan takes over — no hourly guest cap. Anything already signed, plus standing jobs and receipts, keeps running. Otherwise the guest lane reopens within the hour.`
     : `🚦 This connection has hit the hourly guest cap. **Sign in** (one free signature) and your own plan takes over — no guest caps. Anything already signed, plus standing jobs and receipts, keeps running. Otherwise the guest lane reopens within the hour.`
 }
+
+/** Saving a bring-your-own model key makes one outbound call to the model
+ *  provider with a caller-supplied credential. Session-gated already; this
+ *  keeps the route from ever being a key-testing oracle. Own buckets
+ *  (`k:<hash>` per connection, `k:w:<wallet>` per account). */
+export const AI_KEY_WRITE_HOURLY_CAP = 10
+
+export async function bumpAndCheckAiKeyWrite(ip: string | null, wallet: string): Promise<boolean> {
+  const keys = [`k:w:${wallet.toLowerCase()}`, ...(ip ? [`k:${hashIp(ip)}`] : [])]
+  try {
+    const { default: prisma } = await import('@/lib/db')
+    const rows = await prisma.$queryRaw<{ count: number }[]>`
+      INSERT INTO unsigned_turn_windows (key, window_start, count)
+      SELECT unnest(${keys}::text[]), ${hourStartUTC()}, 1
+      ON CONFLICT (key, window_start)
+      DO UPDATE SET count = unsigned_turn_windows.count + 1
+      RETURNING count
+    `
+    return rows.some((r) => Number(r.count) > AI_KEY_WRITE_HOURLY_CAP)
+  } catch {
+    return false
+  }
+}

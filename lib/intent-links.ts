@@ -205,17 +205,21 @@ export function validateRedirect(raw: string): { ok: true; url: string; host: st
 export const EVENT_KINDS = ['open', 'connect', 'built', 'signed', 'settled'] as const
 export type IntentEventKind = (typeof EVENT_KINDS)[number]
 
-/** Active-link capacity per plan — the third capacity axis alongside
- *  standing intents (PRICING.md). Soft: mints past the cap get a friendly
- *  upgrade pointer; existing links keep running forever. Admin wallets
- *  (OWNER_WALLETS ∪ ADMIN_WALLETS) are exempt — the cap gates external
- *  creators, not the team minting demo/marketing links. */
-export const LINK_CAPS: Record<string, number> = { free: 3, growth: 25, scale: Infinity }
+/** Active links are NOT a plan feature (pricing v2): links are the growth
+ *  loop, and capping them by plan capped the loop. What remains is an ABUSE
+ *  fence — a wallet nobody has ever seen trade may hold this many live links
+ *  (mint spam costs a signature, nothing else); a wallet with one verified
+ *  trade, any paid plan, or an admin wallet mints without limit. Soft: a mint
+ *  past the fence is told how to lift it; links already shared keep working
+ *  forever. */
+export const UNPROVEN_ACTIVE_LINKS = 10
 
-export function activeLinkCapFor(planId: string, isAdmin: boolean): number {
-  if (isAdmin) return Infinity
-  return LINK_CAPS[planId] ?? 3
+export function activeLinkCapFor(o: { isAdmin: boolean; paidPlan: boolean; hasVerifiedTrade: boolean }): number {
+  return o.isAdmin || o.paidPlan || o.hasVerifiedTrade ? Infinity : UNPROVEN_ACTIVE_LINKS
 }
+
+/** The mint-refusal copy, one place for both mint doors. */
+export const LINK_FENCE_REPLY = `A wallet that hasn’t traded yet can keep ${UNPROVEN_ACTIVE_LINKS} links live at once. Sign any trade through Pantessa and the limit is gone for good — or revoke a link first. Links you’ve already shared keep working forever.`
 
 // ── Creator handles (/l/<handle> storefronts) ──────────────────────────────
 // Opt-in public page names. Opt-in is the privacy contract: a wallet is

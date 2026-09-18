@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
-import { activeLinkCapFor, cleanAsk, composeMcps, mintSlug, parseAllowWallets, parseExpiry, parseMaxSigns, sanitizeMcps, sanitizeVariants, validateRedirect } from '@/lib/intent-links'
+import { LINK_FENCE_REPLY, cleanAsk, composeMcps, mintSlug, parseAllowWallets, parseExpiry, parseMaxSigns, sanitizeMcps, sanitizeVariants, validateRedirect } from '@/lib/intent-links'
 import { FEE_BEARING_BUILD_PATHS, creatorEarningsUsd, netFeeBpsForTurn } from '@/lib/fees'
-import { getEffectivePlan } from '@/lib/billing'
+import { mayMintLink } from '@/lib/link-fence'
 import { isAdminAddress } from '@/lib/admin'
 import { isMosaicAsk } from '@/lib/mosaic'
 import { resolveRecipient } from '@/lib/inbox'
@@ -102,19 +102,10 @@ export async function POST(req: NextRequest) {
     senderLabel = myHandle ? `@${myHandle.handle}` : `${creator.slice(0, 6)}…${creator.slice(-4)}`
   }
 
-  // Capacity gate (soft): active links per plan, mirroring standing-intent
-  // tiers. Existing links are never touched — the cap gates NEW mints only.
-  // Admin wallets mint uncapped (demo/marketing links, not plan-gated usage).
-  const { plan } = await getEffectivePlan(creator)
-  const cap = activeLinkCapFor(plan.id, isAdminAddress(creator))
-  if (cap !== Infinity) {
-    const active = await prisma.intentLink.count({ where: { creator, revoked: false } })
-    if (active >= cap) {
-      return NextResponse.json(
-        { error: `Your plan carries ${cap} active intent links — upgrade on /pricing for more, or revoke one first. Links you've already shared keep working forever.`, upgrade: '/pricing' },
-        { status: 402 },
-      )
-    }
+  // Abuse fence (soft; pricing v2 retired the per-plan link caps): only a
+  // wallet nobody has seen trade is limited. Existing links are never touched.
+  if (!(await mayMintLink(creator))) {
+    return NextResponse.json({ error: LINK_FENCE_REPLY }, { status: 402 })
   }
 
   // Slug collisions at 40 bits are lottery-rare; retry twice anyway.

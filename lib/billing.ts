@@ -343,14 +343,18 @@ export async function admitHouseTurn(input: AdmitInput): Promise<Admission> {
 }
 
 /** Grant banked answers exactly once per `grantKey` (the unique index is the
- *  idempotency). Returns the number granted (0 on a replay or a hiccup). */
-export async function grantAnswers(owner: string, answers: number, reason: string, grantKey: string): Promise<number> {
+ *  idempotency). Returns the number granted; 0 on a replay. A store error is
+ *  swallowed (0) unless `strict` — the Stripe webhook passes strict so a paid
+ *  pack that could not be written 500s and Stripe redelivers it. */
+export async function grantAnswers(owner: string, answers: number, reason: string, grantKey: string, opts: { strict?: boolean } = {}): Promise<number> {
   if (!Number.isInteger(answers) || answers <= 0) return 0
   try {
     await prisma.creditLedgerEntry.create({ data: { ownerAddress: norm(owner), delta: answers, reason, pool: 'bank', grantKey } })
     return answers
-  } catch {
-    return 0 // unique violation = already granted; anything else = fail soft
+  } catch (err) {
+    const replay = (err as { code?: string })?.code === 'P2002' // unique violation = already granted
+    if (!replay && opts.strict) throw err
+    return 0
   }
 }
 

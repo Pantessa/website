@@ -3,12 +3,16 @@ import type Stripe from 'stripe'
 import { getSessionAddress } from '@/lib/auth'
 import prisma from '@/lib/db'
 import { getStripe, billingOrigin } from '@/lib/stripe'
-import { PLAN_BY_ID, isPlanId, stripeProductFor } from '@/lib/plans'
+import { ANSWER_PACK, PLAN_BY_ID, isBillingInterval, isPlanId, planChargeUsd, stripeProductFor } from '@/lib/plans'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// Start a Stripe Checkout session for a paid plan. SIWE session only (a
+// Start a Stripe Checkout session. Two things are for sale (pricing v2):
+//   { plan: 'plus', interval?: 'month' | 'year' }  → the Plus subscription
+//   { pack: true }                                  → one pack of banked answers
+// Retired plans (growth | scale) are refused — nothing sells them any more.
+// SIWE session only (a
 // Bearer key must not be able to start charging its owner's card). The price
 // is authored inline from lib/plans.ts (`price_data`) — the single source, so
 // /pricing and checkout can't drift — but attached to the plan's live Stripe
@@ -28,43 +32,70 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => ({}) as Record<string, unknown>)
-  const planId = body.plan
-  if (!isPlanId(planId) || PLAN_BY_ID[planId].priceUsd === 0) {
-    return NextResponse.json({ error: 'plan must be a paid plan id (growth | scale).' }, { status: 400 })
-  }
-  const plan = PLAN_BY_ID[planId]
   const owner = addr.toLowerCase()
-
+  const origin = billingOrigin(req.nextUrl.origin)
   const existing = await prisma.subscription.findUnique({ where: { ownerAddress: owner } }).catch(() => null)
 
-  const origin = billingOrigin(req.nextUrl.origin)
-  // Attach the code-authored price to the plan's live Stripe Product when one
-  // exists; otherwise fall back to an ad-hoc product so billing still works
-  // before the products are wired.
-  const productId = stripeProductFor(plan)
-  const priceData: Stripe.Checkout.SessionCreateParams.LineItem.PriceData = {
-    currency: 'usd',
-    unit_amount: plan.priceUsd * 100,
-    recurring: { interval: 'month' },
-    ...(productId
-      ? { product: productId }
-      : {
-          product_data: {
-            name: `Pantessa ${plan.name}`,
-            description: `${plan.credits.toLocaleString()} YEET credits / month — ${plan.tagline}`,
+  let params: (customerId?: string) => Stripe.Checkout.SessionCreateParams
+  if (body.pack === true) {
+    // ONE-TIME: a pack of answers that never expire. The webhook grants them
+    // on `checkout.session.completed`, idempotent on the session id.
+    const packProduct = process.env.STRIPE_PRODUCT_PACK
+    params = (customerId) => ({
+      mode: 'payment',
+      ...(customerId ? { customer: customerId } : {}),
+      client_reference_id: owner,
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: 'usd',
+            unit_amount: ANSWER_PACK.priceUsd * 100,
+            ...(packProduct
+              ? { product: packProduct }
+              : { product_data: { name: `Pantessa — ${ANSWER_PACK.answers.toLocaleString('en-US')} answers`, description: 'House-model answers that never expire.' } }),
           },
-        }),
+        },
+      ],
+      metadata: { ownerAddress: owner, pack: String(ANSWER_PACK.answers) },
+      success_url: `${origin}/dashboard/plan?pack=1`,
+      cancel_url: `${origin}/pricing`,
+    })
+  } else {
+    const planId = body.plan
+    if (!isPlanId(planId) || PLAN_BY_ID[planId].priceUsd === 0 || PLAN_BY_ID[planId].legacy) {
+      return NextResponse.json({ error: 'plan must be a plan on sale (plus), or pass { pack: true }.' }, { status: 400 })
+    }
+    const plan = PLAN_BY_ID[planId]
+    const interval = isBillingInterval(body.interval) ? body.interval : 'month'
+    // Attach the code-authored price to the plan's live Stripe Product when
+    // one exists; otherwise Stripe creates the product inline, so billing
+    // works before the product is wired.
+    const productId = stripeProductFor(plan)
+    const priceData: Stripe.Checkout.SessionCreateParams.LineItem.PriceData = {
+      currency: 'usd',
+      unit_amount: planChargeUsd(plan, interval) * 100,
+      recurring: { interval },
+      ...(productId
+        ? { product: productId }
+        : {
+            product_data: {
+              name: `Pantessa ${plan.name}`,
+              description: `${plan.credits.toLocaleString('en-US')} house answers a month — ${plan.tagline}`,
+            },
+          }),
+    }
+    params = (customerId) => ({
+      mode: 'subscription',
+      ...(customerId ? { customer: customerId } : {}),
+      client_reference_id: owner,
+      line_items: [{ quantity: 1, price_data: priceData }],
+      metadata: { ownerAddress: owner, plan: plan.id },
+      subscription_data: { metadata: { ownerAddress: owner, plan: plan.id } },
+      success_url: `${origin}/dashboard/plan?upgraded=1`,
+      cancel_url: `${origin}/pricing`,
+    })
   }
-  const params = (customerId?: string): Stripe.Checkout.SessionCreateParams => ({
-    mode: 'subscription',
-    ...(customerId ? { customer: customerId } : {}),
-    client_reference_id: owner,
-    line_items: [{ quantity: 1, price_data: priceData }],
-    metadata: { ownerAddress: owner, plan: plan.id },
-    subscription_data: { metadata: { ownerAddress: owner, plan: plan.id } },
-    success_url: `${origin}/dashboard/plan?upgraded=1`,
-    cancel_url: `${origin}/pricing`,
-  })
 
   try {
     // Reuse the wallet's stored Stripe customer when one exists so upgrades
