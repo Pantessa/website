@@ -18,6 +18,7 @@
 
 import { chartPairFor, normalizeChartSymbol, type Candle, type ChartPair } from '@/lib/charts'
 import { ROBINHOOD_TICKER_NAMES } from '@/lib/robinhood-tickers'
+import { FEATURED, marketSections, type MarketSectionId } from '@/lib/markets'
 import { SITE_URL } from '@/lib/site-url'
 import { TAPE_FOOTNOTE } from '@/lib/markets-copy'
 
@@ -231,4 +232,52 @@ export function fmtOgPrice(n: number): string {
   if (n >= 1) return n.toFixed(2)
   if (n >= 0.01) return n.toFixed(4)
   return n.toPrecision(3)
+}
+
+// ── /markets — the index's own social card ────────────────────────────────
+//    The card shows the board the page shows: every market family with its
+//    household names and the family's honest size (how many symbols the
+//    resolver charts there). Pure: the picture reads quotes at render time,
+//    the shape is decided here so the harness can pin it against the index.
+
+export interface MarketsOgGroup {
+  id: MarketSectionId
+  /** Board label, upper-cased by the card. */
+  label: string
+  /** Where the family trades — the venue word the section blurb uses. */
+  venue: string
+  /** How many symbols the index lists in this family (the section's rows). */
+  total: number
+  /** The rows the card draws: the section's featured names, in the index's
+   *  own order, capped so three families fit one 630px card. */
+  symbols: string[]
+}
+
+export const MARKETS_OG_ROWS: Readonly<Record<MarketSectionId, number>> = { equities: 4, crypto: 4, perps: 3 }
+
+const MARKETS_OG_VENUE: Readonly<Record<MarketSectionId, string>> = {
+  equities: 'Robinhood Chain · 24/7',
+  crypto: 'Coinbase spot',
+  perps: 'Hyperliquid perps',
+}
+
+const MARKETS_OG_LABEL: Readonly<Record<MarketSectionId, string>> = {
+  equities: 'Digital equities',
+  crypto: 'Crypto',
+  perps: 'Perps',
+}
+
+export function marketsOgBoard(): MarketsOgGroup[] {
+  return marketSections().map((section) => {
+    const listed = new Set(section.rows.map((r) => r.symbol))
+    // Featured names that the index actually lists (a featured name the
+    // resolver dropped must not draw a dead row), in FEATURED's order.
+    const symbols = FEATURED[section.id].filter((s) => listed.has(s)).slice(0, MARKETS_OG_ROWS[section.id])
+    return { id: section.id, label: MARKETS_OG_LABEL[section.id], venue: MARKETS_OG_VENUE[section.id], total: section.rows.length, symbols }
+  })
+}
+
+/** Every symbol the card draws, for one batched quotes read. */
+export function marketsOgSymbols(): string[] {
+  return marketsOgBoard().flatMap((g) => g.symbols)
 }
