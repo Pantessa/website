@@ -45,10 +45,12 @@ export default function EmbedDocsPage() {
             <strong><code>key</code></strong> — a <em>publishable</em> embed key (<code>yfe_…</code>),
             minted on the <Link href="/dashboard">dashboard</Link>. It&apos;s safe in page source
             (it can read nothing and spend nothing that isn&apos;t already yours): it attributes
-            the embed to your account, lists the site under <em>Your embeds</em>, and bills
-            house-model answers to <strong>your plan&apos;s YEET credits</strong>{' '}instead of each
-            visitor&apos;s free tier. Keyless embeds still work — tracked anonymously by origin,
-            metered per visitor.
+            the embed to your account and lists the site under <em>Your embeds</em>. Each visitor
+            gets a few free house-model answers a day; past those, answers draw on{' '}
+            <strong>your account&apos;s pool</strong>, which refills from the trades your visitors
+            sign. Opt in under{' '}
+            <Link href="/dashboard/plan#ai-key">Your AI key</Link>{' '}to run them on your own API key
+            instead. Keyless embeds still work — tracked anonymously by origin, metered per visitor.
           </li>
           <li>
             <strong><code>mcps</code></strong> — directory slugs resolved against{' '}

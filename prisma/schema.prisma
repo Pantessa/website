@@ -743,10 +743,65 @@ model CreditLedgerEntry {
   ownerAddress String   @map("owner_address")
   delta        Int
   reason       String
+  /// Which pool this movement belongs to (pricing v2, lib/billing.ts):
+  /// 'taste' = the free daily lane (informational — the taste is counted in
+  /// unsigned_turn_windows, never against a balance), 'plan' = the monthly
+  /// Plus allowance, 'bank' = earned + bought answers that never expire.
+  /// NULL = a pre-v2 row (read as 'plan' usage for its own month).
+  pool         String?
+  /// Idempotency key for a GRANT: 'earned:<embedTurnId>', 'pack:<stripe
+  /// session id>', 'pack-usdc:<tx hash>'. Unique, so a replayed webhook or a
+  /// re-sent beacon can never grant twice.
+  grantKey     String?  @unique @map("grant_key")
   createdAt    DateTime @default(now()) @map("created_at")
 
   @@index([ownerAddress, createdAt])
   @@map("credit_ledger")
+}
+
+/// One model API call we made (pricing v2): the measured cost of inference,
+/// per surface. `keySource` says whose key paid — 'house' is our bill, 'byok'
+/// is the user's own key (recorded for the dashboard, costs us nothing).
+/// Written fire-and-forget by lib/inference-meter.ts; never blocks a turn.
+model InferenceCall {
+  id               String   @id @default(cuid())
+  surface          String // chat-plan | chat-synth | auto-router | governance | markets-brief | markets-tape | markets-position | markets-ask | markets-explain | mcp-lint
+  model            String
+  keySource        String   @default("house") @map("key_source")
+  ownerAddress     String?  @map("owner_address")
+  inputTokens      Int      @default(0) @map("input_tokens")
+  outputTokens     Int      @default(0) @map("output_tokens")
+  cacheReadTokens  Int      @default(0) @map("cache_read_tokens")
+  cacheWriteTokens Int      @default(0) @map("cache_write_tokens")
+  costUsd          Float    @default(0) @map("cost_usd")
+  ok               Boolean  @default(true)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([surface, createdAt])
+  @@map("inference_calls")
+}
+
+/// A user's OWN model API key (bring your own key, pricing v2). Encrypted at
+/// rest with AES-256-GCM under BYOK_KEY_SECRET (lib/byok.ts); the plaintext
+/// never lands in a log, a beacon, or an error. One key per (owner,
+/// provider). `useForEmbeds` is the host's explicit opt-in to run their
+/// embed visitors' house answers on this key too.
+model InferenceKey {
+  ownerAddress String    @map("owner_address")
+  provider     String    @default("anthropic")
+  ciphertext   String
+  nonce        String
+  tag          String
+  last4        String
+  synthModel   String?   @map("synth_model")
+  useForEmbeds Boolean   @default(false) @map("use_for_embeds")
+  lastError    String?   @map("last_error")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  lastUsedAt   DateTime? @map("last_used_at")
+
+  @@id([ownerAddress, provider])
+  @@map("inference_keys")
 }
 
 /// A PUBLIC embed key (`yfe_…`) — safe to ship in a host page's source, like

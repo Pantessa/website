@@ -5,12 +5,17 @@
 //  the report to mcp_servers.routability. A lint run costs a handful of
 //  house planner calls (direct Anthropic) + live probes, so it's throttled:
 //  a fresh-enough saved report is returned as-is (cached: true) instead of
-//  re-running. No auth needed — the report is public data about a public
-//  service, and the cooldown bounds the spend.
+//  re-running. READING a saved report is public (public data about a public
+//  service). RUNNING a fresh lint needs a signed-in wallet and draws on its
+//  own daily fuse (lib/inference-fuse): the per-service cooldown alone let an
+//  anonymous loop run ~144 lints a day PER service across the directory, each
+//  a handful of house model calls (pricing v2 audit, 2026-09-16).
 // ─────────────────────────────────────────────────────────────────────────
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { lintService, type RoutabilityReport } from '@/lib/mcp-lint'
+import { getSessionAddress } from '@/lib/auth'
+import { bumpFuse } from '@/lib/inference-fuse'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -28,6 +33,19 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ sl
     const saved = server.routability as unknown as RoutabilityReport | null
     if (saved?.lintedAt && Date.now() - new Date(saved.lintedAt).getTime() < COOLDOWN_MS) {
       return NextResponse.json({ report: saved, cached: true })
+    }
+
+    if (!(await getSessionAddress())) {
+      return NextResponse.json(
+        { error: 'Sign in to run diagnostics — a fresh run makes live model calls. The last saved report is public.', report: saved ?? null, signInRequired: true },
+        { status: 401 },
+      )
+    }
+    if (await bumpFuse('mcp-lint')) {
+      return NextResponse.json(
+        { error: 'Diagnostics are at their daily limit — back at midnight UTC. The last saved report is below.', report: saved ?? null },
+        { status: 429 },
+      )
     }
 
     const report = await lintService(slug, { probe: true, planner: true })

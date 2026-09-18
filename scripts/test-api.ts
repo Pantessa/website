@@ -59,7 +59,7 @@ import { fillSymbolsInAsk, fillSymbolsOf, fillSymbolsForPair, sanitizeFillSymbol
 import { fillLabel } from '../lib/chart-fills'
 import { marketSections as vizMarketSections } from '../lib/markets'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
-import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
+import { buildSmartRequest, computeRating, plannerPrompt, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txChainOf } from '../lib/transaction-layer'
 import { resolveToken, COW_API_BASE, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, COW_APP_DATA_HASH, COW_CANONICAL_APP_DATA_HASHES, cowAppDataJson, cowAppDataHash, cowAppDataBpsOf, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
 import { ensureTokenList, primeTokenList } from '../lib/token-list'
@@ -97,7 +97,7 @@ import { sma, ema, bollinger, vwap, hasVolume, warmupBefore, mergeHistory, onWin
 import { clampToFirstBar, wantsOlderBars, PRELOAD_MIN_BARS } from '../lib/chart-viewport'
 import { equitySession, extendedRuns, FRAME_SEC, sessionsApply, type EquitySession } from '../lib/chart-sessions'
 import { PAGE_BARS } from '../lib/candles-server'
-import { activeLinkCapFor, composeMcps, isCrossChainAsk, linkEyebrow, linkLockup, linkLockupWord, runsOnLabel } from '../lib/intent-links'
+import { activeLinkCapFor, UNPROVEN_ACTIVE_LINKS, composeMcps, isCrossChainAsk, linkEyebrow, linkLockup, linkLockupWord, runsOnLabel } from '../lib/intent-links'
 import { DEFAULT_TAB, parseTabParam, tabUrl } from '../lib/app-tab-url'
 import { LINKS_STUDIO_HREF } from '../lib/links-href'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
@@ -506,8 +506,16 @@ import {
 } from '../lib/value-origin'
 import { cleanServerName } from '../lib/utils'
 import { SITE_URL } from '../lib/site-url'
-import { PLAN_BY_ID, planCreditsFor, ALLOWANCE_CUTOFF } from '../lib/plans'
-import { FREE_DAILY_TURN_CAP, HOUSE_DAILY_TURN_CAP } from '../lib/billing'
+import { PLAN_BY_ID, planCreditsFor, ALLOWANCE_CUTOFF, LISTED_PLANS, PAID_PLANS, TASTE, ANSWER_PACK, answersEarnedByFee, planChargeUsd } from '../lib/plans'
+import { HOUSE_DAILY_TURN_CAP, TASTE_HOUSE_DAILY_CAP, tasteCovers, tasteKeysFor, chooseLane } from '../lib/billing'
+import { FUSE_CAPS, fuseBlown, fuseKey } from '../lib/inference-fuse'
+import { answersForReceipt, feeRoutersFor, MAX_ANSWERS_PER_RECEIPT } from '../lib/earned-answers'
+import { houseRequestBody, splitForCache } from '../lib/house-model'
+import { PROMPT_CACHE_BREAK } from '../lib/prompt-cache-break'
+import { costUsd, rateFor } from '../lib/inference-meter'
+import { looksLikeAnthropicKey, sealKey, openKey, byokEnabled, isByokSynthModel } from '../lib/byok'
+import { answerGateReply, EARN_PER_100_USD } from '../lib/answer-gate-copy'
+import { withInferenceScope, inferenceScope } from '../lib/inference-context'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -1015,42 +1023,62 @@ async function main() {
   const planRes = await fetch(`${BASE}/api/billing/plan`, { headers: C })
   const planBody = await planRes.json()
   check(
-    'fresh wallet is on the free tier with the full allowance',
+    'fresh wallet is on the free tier: no plan allowance, an empty bank, the daily taste',
     planRes.status === 200 &&
       planBody.usage?.plan === 'free' &&
-      planBody.usage?.allowance === 250 &&
+      planBody.usage?.allowance === 0 &&
       planBody.usage?.used === 0 &&
-      planBody.usage?.remaining === 250,
-    `plan=${planBody.usage?.plan} used=${planBody.usage?.used}`,
+      planBody.usage?.bank === 0 &&
+      planBody.usage?.remaining === 0 &&
+      planBody.usage?.tasteDaily === TASTE.wallet,
+    `plan=${planBody.usage?.plan} bank=${planBody.usage?.bank} taste=${planBody.usage?.tasteDaily}`,
   )
-  // COGS lock-in (PRICING.md addendum 2026-07-21): allowances sized so a
-  // maxed plan never exceeds its price in inference cost; pre-cutoff paid
-  // subscriptions keep their original allowance forever.
+  // Pricing v2 (2026-09-18): the take rate is the business; a plan prices
+  // house answers only. Free has NO monthly allowance (the taste is per
+  // connection, a wallet is free to mint); Plus is the one plan on sale;
+  // Growth/Scale are retired from sale but their ids must stay valid so a
+  // subscription row carrying one can never strand.
   check(
-    'plans: right-sized allowances (250 / 8k / 40k) with legacy grandfathering (25k / 150k)',
-    PLAN_BY_ID.free.credits === 250 &&
-      PLAN_BY_ID.growth.credits === 8000 && PLAN_BY_ID.growth.legacyCredits === 25000 &&
-      PLAN_BY_ID.scale.credits === 40000 && PLAN_BY_ID.scale.legacyCredits === 150000,
+    'plans: Free (0) + Plus ($9 / $79 / 600) on sale; Growth + Scale retired but still valid ids',
+    PLAN_BY_ID.free.credits === 0 && PLAN_BY_ID.free.priceUsd === 0 &&
+      PLAN_BY_ID.plus.priceUsd === 9 && PLAN_BY_ID.plus.yearlyUsd === 79 && PLAN_BY_ID.plus.credits === 600 &&
+      PLAN_BY_ID.growth.legacy === true && PLAN_BY_ID.scale.legacy === true &&
+      LISTED_PLANS.map((p) => p.id).join() === 'free,plus' &&
+      PAID_PLANS.map((p) => p.id).join() === 'plus' &&
+      planChargeUsd(PLAN_BY_ID.plus, 'month') === 9 && planChargeUsd(PLAN_BY_ID.plus, 'year') === 79,
+  )
+  // The maxed-plan rule (PRICING.md): an allowance may never cost more than
+  // its price. Held at 1.5¢ an answer — ten times what inference_calls
+  // measured on 2026-09-18 ($0.0003–0.0014) — so the rule survives a prompt
+  // that grows 10×. Raise the allowance only with a fresh measurement.
+  check(
+    'plans: a maxed Plus month never exceeds its price in inference (held at 1.5¢ an answer, 10× measured)',
+    PLAN_BY_ID.plus.credits * 0.015 <= PLAN_BY_ID.plus.priceUsd + 1e-9 && ANSWER_PACK.answers === 1000 && ANSWER_PACK.priceUsd === 10,
   )
   const preCutoff = new Date(ALLOWANCE_CUTOFF - 86_400_000)
   const postCutoff = new Date(ALLOWANCE_CUTOFF + 86_400_000)
   check(
-    'plans: planCreditsFor grandfathers pre-cutoff subs, current for new + free',
+    'plans: planCreditsFor still grandfathers a pre-cutoff legacy subscription',
     planCreditsFor(PLAN_BY_ID.growth, preCutoff) === 25000 &&
       planCreditsFor(PLAN_BY_ID.growth, postCutoff) === 8000 &&
       planCreditsFor(PLAN_BY_ID.scale, preCutoff) === 150000 &&
-      planCreditsFor(PLAN_BY_ID.free, preCutoff) === 250 &&
-      planCreditsFor(PLAN_BY_ID.growth, null) === 8000,
+      planCreditsFor(PLAN_BY_ID.plus, preCutoff) === 600 &&
+      planCreditsFor(PLAN_BY_ID.free, null) === 0,
   )
   check(
-    'billing: circuit breakers exported with sane clamped defaults (the "leave it open" bound)',
-    FREE_DAILY_TURN_CAP >= 5 && FREE_DAILY_TURN_CAP <= 1000 && HOUSE_DAILY_TURN_CAP >= 100,
+    'billing: two fuses, not one — a flood can only exhaust the FREE lane',
+    HOUSE_DAILY_TURN_CAP >= 100 && TASTE_HOUSE_DAILY_CAP >= 50 && FUSE_CAPS.taste === TASTE_HOUSE_DAILY_CAP && FUSE_CAPS.paid === HOUSE_DAILY_TURN_CAP &&
+      fuseKey('taste') !== fuseKey('paid') && !fuseBlown('taste', FUSE_CAPS.taste) && fuseBlown('taste', FUSE_CAPS.taste + 1),
   )
   check(
-    'plan config ships 3 plans (free/growth/scale)',
+    'plan API lists only the plans on sale + the pack + the key block (never a key)',
     Array.isArray(planBody.plans) &&
-      planBody.plans.length === 3 &&
-      planBody.plans.some((p: { id: string; priceUsd: number }) => p.id === 'free' && p.priceUsd === 0),
+      planBody.plans.length === 2 &&
+      planBody.plans.some((p: { id: string; priceUsd: number }) => p.id === 'free' && p.priceUsd === 0) &&
+      planBody.plans.some((p: { id: string; priceUsd: number }) => p.id === 'plus' && p.priceUsd === 9) &&
+      planBody.pack?.answers === 1000 &&
+      typeof planBody.aiKey?.enabled === 'boolean' && planBody.aiKey?.key === null &&
+      !JSON.stringify(planBody).includes('sk-ant-'),
   )
   const coNoAuth = await fetch(`${BASE}/api/billing/checkout`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ plan: 'growth' }),
@@ -1062,8 +1090,261 @@ async function main() {
   // Without STRIPE_SECRET_KEY the route answers 503 before validating the
   // plan id; with a key configured a free plan must 400.
   check('checkout refuses the free plan (400) or reports Stripe unconfigured (503)', coBadPlan.status === 400 || coBadPlan.status === 503)
+  const coRetired = await fetch(`${BASE}/api/billing/checkout`, { method: 'POST', headers: CJ, body: JSON.stringify({ plan: 'growth' }) })
+  check('checkout refuses a RETIRED plan — nothing sells Growth/Scale any more (400, or 503 unconfigured)', coRetired.status === 400 || coRetired.status === 503)
+  // Bring your own key: session only, shape-checked before anything leaves.
+  const akNoAuth = await fetch(`${BASE}/api/billing/ai-key`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'sk-ant-nope' }) })
+  check('ai-key: saving a key requires a SIWE session → 401', akNoAuth.status === 401)
+  const akBad = await fetch(`${BASE}/api/billing/ai-key`, { method: 'POST', headers: CJ, body: JSON.stringify({ key: '0x' + 'ab'.repeat(32) }) })
+  const akBadBody = (await akBad.json().catch(() => ({}))) as { error?: string }
+  check(
+    'ai-key: a non-Anthropic secret (a wallet key!) is refused by SHAPE — never sent upstream, never echoed',
+    (akBad.status === 400 || akBad.status === 503) && !JSON.stringify(akBadBody).includes('abab'),
+    `${akBad.status} ${akBadBody.error ?? ''}`,
+  )
   const whUnsigned = await fetch(`${BASE}/api/billing/webhook`, { method: 'POST', body: '{}' })
   check('webhook without signature/config → 400 or 503', whUnsigned.status === 400 || whUnsigned.status === 503)
+
+  // ── Pricing v2: the answer lanes, the fuses, earned answers, BYOK ─────────
+  console.log('— pricing v2')
+  // THE TASTE is keyed to the connection AND the wallet; a wallet is free to
+  // mint, so it is never the only key. Post-increment counts: the turn that
+  // lands ON a cap is served.
+  check(
+    'taste: a wallet with history gets the full taste; a FRESH wallet gets a guest’s; the connection cap binds them all',
+    tasteCovers({ ip: 1, who: TASTE.wallet, hasWallet: true, walletHasHistory: true }) &&
+      !tasteCovers({ ip: 1, who: TASTE.wallet + 1, hasWallet: true, walletHasHistory: true }) &&
+      tasteCovers({ ip: 1, who: TASTE.freshWallet, hasWallet: true, walletHasHistory: false }) &&
+      !tasteCovers({ ip: 1, who: TASTE.freshWallet + 1, hasWallet: true, walletHasHistory: false }) &&
+      tasteCovers({ ip: 1, who: TASTE.guest, hasWallet: false, walletHasHistory: false }) &&
+      !tasteCovers({ ip: 1, who: TASTE.guest + 1, hasWallet: false, walletHasHistory: false }) &&
+      !tasteCovers({ ip: TASTE.ip + 1, who: 1, hasWallet: true, walletHasHistory: true }) &&
+      tasteCovers({ ip: null, who: 1, hasWallet: true, walletHasHistory: false }) &&
+      TASTE.freshWallet <= TASTE.guest && TASTE.ip > TASTE.wallet,
+  )
+  check(
+    'taste keys: connection + wallet, or connection + a guest bucket — a new wallet on one connection mints NO new connection budget',
+    tasteKeysFor('abc', '0xAbC').join() === 't:i:abc,t:w:0xabc' &&
+      tasteKeysFor('abc', null).join() === 't:i:abc,t:g:abc' &&
+      tasteKeysFor(null, '0xAbC').join() === 't:w:0xabc' &&
+      tasteKeysFor('abc', '0x1')[0] === tasteKeysFor('abc', '0x2')[0],
+  )
+  // PROOF RULE: plan + bank spend something a person paid for or earned, so
+  // they draw only for a PROVEN owner. The body's walletAddress is
+  // client-asserted — before v2 it could name whose credits to burn.
+  check(
+    'lanes: own key first, then the taste, then plan, then bank — and an UNPROVEN wallet never reaches plan or bank',
+    chooseLane({ byok: true, taste: true, planLeft: 5, bank: 5, proven: true }) === 'byok' &&
+      chooseLane({ byok: false, taste: true, planLeft: 5, bank: 5, proven: true }) === 'taste' &&
+      chooseLane({ byok: false, taste: false, planLeft: 5, bank: 5, proven: true }) === 'plan' &&
+      chooseLane({ byok: false, taste: false, planLeft: 0, bank: 5, proven: true }) === 'bank' &&
+      chooseLane({ byok: false, taste: false, planLeft: 5, bank: 5, proven: false }) === null &&
+      chooseLane({ byok: false, taste: false, planLeft: 0, bank: 0, proven: true }) === null,
+  )
+  // Earned answers: 1 per 2¢ of NET fee, floored, no minimum — so a sybil's
+  // tiny swap earns 0 and COGS ≤ fee by construction.
+  check(
+    'earned: 1 answer per 2¢ of net fee — $1 swap 0, $100 swap 10, $1,000 swap 100, float-safe, junk → 0',
+    answersEarnedByFee(0.002) === 0 && answersEarnedByFee(0.0199) === 0 && answersEarnedByFee(0.02) === 1 &&
+      answersEarnedByFee(0.2) === 10 && answersEarnedByFee(2) === 100 && answersEarnedByFee(0.25) === 12 &&
+      answersEarnedByFee(0.1 + 0.2 - 0.1) === 10 &&
+      answersEarnedByFee(-1) === 0 && answersEarnedByFee(Number.NaN) === 0 && answersEarnedByFee(Infinity) === 0,
+  )
+  // The beacon's valueUsd / buildPath / feeBps are the BROWSER's word. The
+  // grant trusts only the chain: `to` must be one of our fee routers, and the
+  // notional is min(claimed, what the receipt shows the signer moved).
+  check(
+    'earned: a $1 swap claiming $1,000,000 earns 0; a send claiming a swap’s build path earns 0; unreadable earns 0',
+    answersForReceipt({ claimedUsd: 1_000_000, onChainUsd: 1, viaFeeRouter: true, linkTier: false }) === 0 &&
+      answersForReceipt({ claimedUsd: 100, onChainUsd: 100, viaFeeRouter: false, linkTier: false }) === 0 &&
+      answersForReceipt({ claimedUsd: 100, onChainUsd: null, viaFeeRouter: true, linkTier: false }) === 0 &&
+      answersForReceipt({ claimedUsd: 0, onChainUsd: 100, viaFeeRouter: true, linkTier: false }) === 0,
+  )
+  check(
+    'earned: $100 organic → 10, $100 through a link → 12 (net of the creator’s half), capped per receipt',
+    answersForReceipt({ claimedUsd: 100, onChainUsd: 100, viaFeeRouter: true, linkTier: false }) === 10 &&
+      answersForReceipt({ claimedUsd: 100, onChainUsd: 100, viaFeeRouter: true, linkTier: true }) === 12 &&
+      answersForReceipt({ claimedUsd: 100, onChainUsd: 99, viaFeeRouter: true, linkTier: false }) === 10 &&
+      answersForReceipt({ claimedUsd: 10_000_000, onChainUsd: 10_000_000, viaFeeRouter: true, linkTier: false }) === MAX_ANSWERS_PER_RECEIPT,
+  )
+  check(
+    'earned: the fee routers are OUR venue routers, per chain (v3 everywhere, the v4 Universal Router on 4663)',
+    feeRoutersFor(8453).has('0x2626664c2603336e57b271c5c0b26f421741e481') &&
+      feeRoutersFor(4663).has('0x8876789976decbfcbbbe364623c63652db8c0904') &&
+      feeRoutersFor(4663).size === 2 && feeRoutersFor(999_999).size === 0,
+  )
+  // Prompt caching: the planner prompt leads with its STABLE half (rules +
+  // the endpoint menu), then the break, then this turn. Anything per-turn
+  // above the break would silently kill the cache.
+  {
+    const eps: PlannableEndpoint[] = Array.from({ length: 60 }, (_, i) => ({
+      id: `ep-${i}`, serverSlug: `svc-${i % 6}`, serverName: `Service ${i % 6}`, method: 'GET', url: `https://svc${i % 6}.example.com/v1/thing-${i}`,
+      description: `Returns thing number ${i} with a long and specific description of what it is for and when to call it`, priceUsd: '0',
+      parameters: [{ name: 'q', group: 'query', required: true, type: 'string', example: `example-${i}`, description: '' }],
+    })) as unknown as PlannableEndpoint[]
+    const ask = 'UNIQUE-TURN-MARKER what is the price of thing 7?'
+    const prompt = plannerPrompt(ask, eps, [{ role: 'user', content: 'UNIQUE-HISTORY-MARKER' }], 'UNIQUE-CONTEXT-MARKER')
+    const at = prompt.indexOf(PROMPT_CACHE_BREAK)
+    const stableHalf = prompt.slice(0, at)
+    check(
+      'prompt cache: menu + rules sit ABOVE the break; the ask, history and context sit BELOW it',
+      at > 0 && stableHalf.includes('id=ep-59') && stableHalf.includes('You are an API-call planner.') &&
+        !stableHalf.includes('UNIQUE-TURN-MARKER') && !stableHalf.includes('UNIQUE-HISTORY-MARKER') && !stableHalf.includes('UNIQUE-CONTEXT-MARKER') &&
+        prompt.slice(at).includes('UNIQUE-TURN-MARKER') && prompt.slice(at).includes('UNIQUE-HISTORY-MARKER'),
+    )
+    check(
+      'prompt cache: the stable half is byte-identical across turns (the cache key)',
+      plannerPrompt('a different ask entirely', eps).slice(0, at) === stableHalf,
+    )
+    const body = houseRequestBody(prompt, 'claude-haiku-4-5', 1024) as { system?: Array<{ text: string; cache_control?: { type: string } }>; messages: Array<{ content: string }> }
+    check(
+      'prompt cache: the wire sends the stable half as ONE cached system block and only this turn as the message',
+      body.system?.length === 1 && body.system[0].cache_control?.type === 'ephemeral' && body.system[0].text === stableHalf &&
+        !body.messages[0].content.includes('id=ep-59') && body.messages[0].content.includes('UNIQUE-TURN-MARKER'),
+    )
+    const short = houseRequestBody(`tiny menu${PROMPT_CACHE_BREAK}the ask`, 'claude-haiku-4-5', 64) as { system?: unknown; messages: Array<{ content: string }> }
+    check(
+      'prompt cache: a prefix under the model’s cacheable minimum is sent whole (a marker there would silently do nothing)',
+      short.system === undefined && short.messages[0].content.includes('tiny menu') && splitForCache('no break here').stable === null,
+    )
+  }
+  check(
+    'meter: priced from the rate table — cache reads 0.1×, writes 1.25×, a dated id is its family, an UNKNOWN model is never free',
+    costUsd('claude-haiku-4-5', { input_tokens: 1_000_000 }) === 1 &&
+      costUsd('claude-haiku-4-5-20251001', { output_tokens: 1_000_000 }) === 5 &&
+      costUsd('claude-haiku-4-5', { cache_read_input_tokens: 1_000_000 }) === 0.1 &&
+      costUsd('claude-haiku-4-5', { cache_creation_input_tokens: 1_000_000 }) === 1.25 &&
+      rateFor('some-future-model').inUsd === 10 &&
+      // a 15k-token menu read from cache + 2k fresh + 300 out: about a third of a cent
+      costUsd('claude-haiku-4-5', { cache_read_input_tokens: 15_000, input_tokens: 2_000, output_tokens: 300 }) < 0.006,
+  )
+  {
+    const had = process.env.BYOK_KEY_SECRET
+    delete process.env.BYOK_KEY_SECRET
+    const offWithoutSecret = !byokEnabled()
+    process.env.BYOK_KEY_SECRET = 'harness-only-secret-harness-only-secret-0123456789'
+    const plain = 'sk-ant-api03-' + 'A1b2C3d4'.repeat(8)
+    const sealed = sealKey(plain)
+    let tamperThrows = false
+    try {
+      openKey({ ...sealed, ciphertext: Buffer.from('tampered-ciphertext-tampered').toString('base64') })
+    } catch {
+      tamperThrows = true
+    }
+    let wrongSecretThrows = false
+    process.env.BYOK_KEY_SECRET = 'a-different-secret-a-different-secret-9876543210'
+    try {
+      openKey(sealed)
+    } catch {
+      wrongSecretThrows = true
+    }
+    process.env.BYOK_KEY_SECRET = 'harness-only-secret-harness-only-secret-0123456789'
+    check(
+      'byok: sealed with AES-256-GCM under its OWN secret — round-trips, a fresh nonce per write, tamper + wrong secret both throw, OFF with no secret',
+      offWithoutSecret && byokEnabled() && openKey(sealed) === plain && !sealed.ciphertext.includes('sk-ant') &&
+        sealKey(plain).nonce !== sealed.nonce && tamperThrows && wrongSecretThrows,
+    )
+    if (had === undefined) delete process.env.BYOK_KEY_SECRET
+    else process.env.BYOK_KEY_SECRET = had
+  }
+  check(
+    'byok: only an Anthropic-shaped key is accepted — never a wallet key, an OpenAI key, or a sentence; Opus/Fable are not one toggle away',
+    looksLikeAnthropicKey('sk-ant-api03-' + 'x'.repeat(40)) && !looksLikeAnthropicKey('0x' + 'ab'.repeat(32)) &&
+      !looksLikeAnthropicKey('sk-proj-' + 'x'.repeat(40)) && !looksLikeAnthropicKey('sk-ant-short') && !looksLikeAnthropicKey(42) &&
+      isByokSynthModel('claude-haiku-4-5') && isByokSynthModel('claude-sonnet-5') && !isByokSynthModel('claude-opus-5') && !isByokSynthModel('claude-fable-5-1'),
+  )
+  check(
+    'inference scope: the request’s key reaches a nested async call and never leaks outside its request',
+    (await withInferenceScope({ apiKey: 'sk-ant-scope-test', owner: '0xabc' }, async () => {
+      await new Promise((r) => setTimeout(r, 1))
+      return inferenceScope()?.apiKey
+    })) === 'sk-ant-scope-test' && inferenceScope() === undefined,
+  )
+  {
+    const gates = ['taste', 'sign-in', 'taste-fuse', 'house', 'host'] as const
+    const replies = gates.map((g) => answerGateReply(g, { waiting: 42 }))
+    check(
+      'refusals: every gate names what STILL WORKS; the taste names every door out; the sign-in gate names the banked count',
+      replies.every((r) => /never use the model/.test(r)) &&
+        /Sign a trade/.test(replies[0]) && /bring your own API key/.test(replies[0]) && /Plus/.test(replies[0]) && /1,000 answers for \$10/.test(replies[0]) &&
+        /42 more banked/.test(replies[1]) && /Sign in/.test(replies[1]) &&
+        /resting for today/.test(replies[2]) && !/upgrade/i.test(replies.join(' ')),
+    )
+  }
+  {
+    // SOURCE pins: the three doors that reach the house model all pass the ONE
+    // gate (the auto-router and the governance turn were unmetered before v2),
+    // the day windows survive the hourly sweep, and a fresh lint needs a session.
+    const routeSrc = readFileSync('app/api/chat/route.ts', 'utf8')
+    const gateAt = (needle: string) => {
+      const i = routeSrc.indexOf(needle)
+      return i > 0 && /gateHouseAnswer\(\)/.test(routeSrc.slice(Math.max(0, i - 900), i))
+    }
+    check(
+      'chat route: one gate in front of EVERY house door — auto-router, governance, the manual choke point; no ungated spend left',
+      gateAt('return streamAutoRouter(') && gateAt('const gov = await runGovernanceTurn(') &&
+        /if \(isHouseInference\(synthesizer\)\) \{\s*const gate = await gateHouseAnswer\(\)/.test(routeSrc) &&
+        !routeSrc.includes('spendCredits') && !routeSrc.includes("'x-api-key': key"),
+    )
+    const limitsSrc = readFileSync('lib/turn-limits.ts', 'utf8')
+    check(
+      'limiter: the hourly sweep never eats a DAY window (fuses f:, taste t:)',
+      (limitsSrc.match(/key NOT LIKE 'f:%' AND key NOT LIKE 't:%'/g) ?? []).length >= 2,
+    )
+    const lintSrc = readFileSync('app/api/servers/[slug]/lint/route.ts', 'utf8')
+    check(
+      'mcp lint: a FRESH run needs a session and draws on a fuse (it was unauthenticated house inference)',
+      /getSessionAddress\(\)/.test(lintSrc) && /bumpFuse\('mcp-lint'\)/.test(lintSrc) && lintSrc.indexOf('getSessionAddress()') < lintSrc.indexOf('lintService(slug'),
+    )
+    const byokSrc = readFileSync('lib/byok.ts', 'utf8')
+    check(
+      'byok: the key never rides a URL, and a refused key never reaches for the house key',
+      !/https:\/\/[^'"`]*\$\{(key|apiKey|plain)\}/.test(byokSrc) && !/console\.(log|warn|error)\(/.test(byokSrc) &&
+        /if \(byok && scope\) scope\.byokFailure/.test(readFileSync('lib/house-model.ts', 'utf8')),
+    )
+  }
+  // HTTP: the taste, end to end. A platform-stamped IP makes this an ordinary
+  // stranger (loopback is exempt, like every fence). Start the server with
+  // TASTE_GUEST_DAILY=1 to keep this to ONE model call; it holds either way.
+  {
+    const ip = `198.51.100.${1 + Math.floor(Math.random() * 250)}`
+    const askHouse = async (extra: Record<string, unknown> = {}) => {
+      const r = await fetch(`${BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': ip, 'x-yf-no-ask-log': '1', 'x-yf-internal-run': '1' },
+        body: JSON.stringify({ message: 'In one short sentence, what is a stablecoin?', activeServers: [], history: [], ...extra }),
+      })
+      return (await r.json().catch(() => ({}))) as { reply?: string; planGate?: { gate?: string; plan?: string } }
+    }
+    let served = 0
+    let refusal: Awaited<ReturnType<typeof askHouse>> | null = null
+    for (let i = 0; i < TASTE.guest + 2 && !refusal; i++) {
+      const out = await askHouse()
+      if (out.planGate) refusal = out
+      else served++
+    }
+    check(
+      'taste (HTTP): a wallet-less stranger is served a few free answers, then refused with the doors out — never a bare error',
+      served >= 1 && served <= TASTE.guest && refusal?.planGate?.gate === 'taste' && /today’s free answers/.test(refusal?.reply ?? '') && /never use the model/.test(refusal?.reply ?? ''),
+      `served=${served} gate=${refusal?.planGate?.gate}`,
+    )
+    const routed = await askHouse({ autoRouter: true })
+    check(
+      'taste (HTTP): the AUTO-ROUTER door is behind the same gate (it was free and unmetered before v2)',
+      routed.planGate?.gate === 'taste',
+      JSON.stringify(routed.planGate ?? routed.reply?.slice(0, 80)),
+    )
+    // A wallet named in the body is CLIENT-ASSERTED: it may open that wallet's
+    // free taste (bounded by this connection's daily cap — the pure pins
+    // above), and nothing a person paid for or earned. Served from the taste
+    // or gated; never plan, never bank, never an error.
+    const spoofed = await askHouse({ walletAddress: '0x' + '9'.repeat(40) })
+    check(
+      'taste (HTTP): a wallet NAMED in the body gets the free taste at most — served, or gated as taste / sign-in; never an error',
+      (typeof spoofed.reply === 'string' && spoofed.reply.length > 0) && (!spoofed.planGate || spoofed.planGate.gate === 'taste' || spoofed.planGate.gate === 'sign-in'),
+      JSON.stringify(spoofed.planGate ?? 'served'),
+    )
+  }
 
   // ── Embed keys: public attribution keys + the sites ledger ────────────────
   console.log('— embed keys')
@@ -1658,12 +1939,21 @@ async function main() {
   const pricingRes = await fetch(`${BASE}/pricing`)
   const pricingHtml = await pricingRes.text()
   check(
-    'pricing: creator kickback + active-link caps displayed',
+    'pricing: looking is free, the fee is named, Plus + pack + own-key are the doors, no retired plan is offered',
     pricingRes.status === 200 &&
       /creator kickbacks/i.test(pricingHtml) &&
-      pricingHtml.includes('3 active intent links') &&
-      pricingHtml.includes('25 active intent links') &&
-      pricingHtml.includes('Unlimited intent links'),
+      pricingHtml.includes('Looking is free.') &&
+      pricingHtml.includes('Unlimited watchlists') &&
+      pricingHtml.includes('Bring your own API key') &&
+      pricingHtml.includes('1,000 answers') &&
+      />Plus</.test(pricingHtml) &&
+      !/>Growth<|>Scale<|YEET credit|\$99|\$499/.test(pricingHtml),
+  )
+  // The refill ladder is COMPUTED from the live rates, so the page can never
+  // promise a number the grant does not pay.
+  check(
+    'pricing: the refill ladder prints what the grant pays ($100 swap → 10; a $1 swap → 0)',
+    EARN_PER_100_USD === answersEarnedByFee(0.2) && pricingHtml.includes(`>${answersEarnedByFee(0.2)}<`) && pricingHtml.includes(`>${answersEarnedByFee(2)}<`) && answersEarnedByFee(0.002) === 0,
   )
 
   // /rebrand — the public record of the Yeetful → Pantessa rename (the §1.1
@@ -3077,21 +3367,21 @@ async function main() {
         linkLockup(false, null) === 'Intent link',
     )
 
-    // Plan cap: free carries 3 active links; this run minted 2, so one more
-    // fits and the 4th refuses with the upgrade pointer.
+    // Pricing v2: links are the growth loop — the 3/25/∞ PLAN caps are gone.
+    // What is left is an abuse fence on wallets nobody has seen trade.
     const third = await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: M, body: JSON.stringify({ ask: 'Swap $5 of ETH to USDC' }) })
     const fourth = await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: M, body: JSON.stringify({ ask: 'DCA $25 into ETH weekly' }) })
-    check('intent links: free plan carries 3 active links; the 4th mint → 402 + upgrade pointer', third.status === 200 && fourth.status === 402)
-
-    // Admin wallets mint uncapped on EVERY plan; external creators keep the
-    // plan ladder (the pure gate the mint route routes every mint through).
+    check('intent links: no plan cap — a free wallet mints its 4th live link', third.status === 200 && fourth.status === 200, `${third.status}/${fourth.status}`)
+    {
+      const fourthSlug = ((await fourth.clone().json().catch(() => ({}))) as { slug?: string }).slug
+      if (fourthSlug) await fetch(`${BASE}/api/intent-links/${fourthSlug}`, { method: 'DELETE', headers: { cookie: mallorySession } }).catch(() => {})
+    }
     check(
-      'intent links: admin wallets are cap-exempt on every plan',
-      activeLinkCapFor('free', true) === Infinity && activeLinkCapFor('growth', true) === Infinity && activeLinkCapFor('unknown-plan', true) === Infinity,
-    )
-    check(
-      'intent links: non-admin caps hold — free 3, growth 25, scale ∞, unknown falls back to 3',
-      activeLinkCapFor('free', false) === 3 && activeLinkCapFor('growth', false) === 25 && activeLinkCapFor('scale', false) === Infinity && activeLinkCapFor('unknown-plan', false) === 3,
+      'intent links: the abuse fence — only an unproven wallet is limited (10 live); a trade, a paid plan or an admin lifts it',
+      activeLinkCapFor({ isAdmin: false, paidPlan: false, hasVerifiedTrade: false }) === UNPROVEN_ACTIVE_LINKS && UNPROVEN_ACTIVE_LINKS === 10 &&
+        activeLinkCapFor({ isAdmin: true, paidPlan: false, hasVerifiedTrade: false }) === Infinity &&
+        activeLinkCapFor({ isAdmin: false, paidPlan: true, hasVerifiedTrade: false }) === Infinity &&
+        activeLinkCapFor({ isAdmin: false, paidPlan: false, hasVerifiedTrade: true }) === Infinity,
     )
 
     // Revoke frees capacity — the cap counts ACTIVE links only.
@@ -3124,7 +3414,7 @@ async function main() {
     const beforeRevoke = await ownerList()
     const revoke = await fetch(`${BASE}/api/intent-links/${thirdSlug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
     const fifth = await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: M, body: JSON.stringify({ ask: 'DCA $25 into ETH weekly' }) })
-    check('intent links: revoke frees capacity (next mint 200) and needs auth', revoke.status === 200 && fifth.status === 200)
+    check('intent links: a revoke works and the next mint is 200 (and needs auth)', revoke.status === 200 && fifth.status === 200)
     {
       // The funnel DOES aggregate settled — on a job-class link (a DCA
       // schedule compiles to a job; the runner's own between-leg arrival
