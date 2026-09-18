@@ -67,3 +67,15 @@ export const DailyFlow = dynamic(() => import('./ActivityCharts').then((m) => m.
   ssr: false,
   loading: skeleton(260),
 })
+export const MoneyBySource = dynamic(() => import('./GrowthCharts').then((m) => m.MoneyBySource), {
+  ssr: false,
+  loading: skeleton(260),
+})
+export const FeeSplitDaily = dynamic(() => import('./GrowthCharts').then((m) => m.FeeSplitDaily), {
+  ssr: false,
+  loading: skeleton(220),
+})
+export const TradersWeekly = dynamic(() => import('./GrowthCharts').then((m) => m.TradersWeekly), {
+  ssr: false,
+  loading: skeleton(220),
+})

@@ -42,8 +42,8 @@ export const DASH_SECTIONS = [
 // (server-enforced by each page; this is just nav visibility). Incidents =
 // /incidents (the self-heal logs); admins only, page 404s for everyone else.
 const ADMIN_SECTIONS = [
-  // Users merged INTO Adoption (2026-07-22) — /dashboard/users redirects.
-  { href: '/dashboard/admin', label: 'Adoption', icon: LineChart, exact: false },
+  // The go-to-market books (was Adoption) — /dashboard/users redirects here.
+  { href: '/dashboard/admin', label: 'Growth', icon: LineChart, exact: false },
   { href: '/dashboard/treasury', label: 'Treasury', icon: Landmark, exact: false },
   { href: '/dashboard/failures', label: 'Failures', icon: ShieldAlert, exact: false },
   // The MCP admission queue (lib/mcp-review.ts). Non-admin reviewer wallets

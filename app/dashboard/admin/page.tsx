@@ -1,74 +1,142 @@
 'use client'
 
-// Dashboard · Adoption — the company-wide progress view (CEO glance), now the
-// MERGED Adoption + Users page (2026-07-22): one place for wallet growth,
-// money flow, the link economy, the milestone funnel, and the per-wallet
-// cohort journey. Admin-only; /api/admin/overview + /api/admin/cohorts both
-// enforce the allowlist server-side, and this page mirrors the check
-// client-side so non-admins see a clean "not authorized" panel.
+// Dashboard · Growth — the go-to-market books (admin-only).
 //
-// One "External only" toggle governs BOTH sources (cohorts ?external=1 +
-// overview ?excludeOwners=1), and every wallet shown anywhere carries the
-// tester-vs-wild badge — the leak-phase numbers stay honest.
+// Rebuilt 2026-09-18 for the links + markets era. The old Adoption page
+// measured the x402 expense-account funnel (keys, settled calls, agent
+// toggles, embedders); the company now earns a take rate on signed trades, so
+// this page answers four questions in order:
+//
+//   1. How much money is moving, and from where (links · app · embeds · standing)?
+//   2. What did it earn, and how does that split — Pantessa vs link creators?
+//   3. Who signed up (the Coinbase accounts, with their email) and how far did
+//      each one get?
+//   4. Is it compounding — traders coming back, creators converting, the
+//      strangers' arc?
+//
+// /api/admin/growth + /api/admin/cohorts both enforce the allowlist
+// server-side; this page mirrors the check so a non-admin sees a clean panel.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowUpRight, Check, Download, Mail, ShieldAlert } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, Check, Copy, Download, Mail, ShieldAlert } from 'lucide-react'
 import { useSession } from '@/lib/session'
-import { isAdminAddress, isTestWallet } from '@/lib/admin'
-import { Card, CardTitle, Kpi, SkeletonKpi, SkeletonCard, WalletKindBadge, short, timeAgo } from '@/lib/dashboard-ui'
-import { ActiveWallets, LinksDaily, SpendByAgent, SpendOverTime, WalletsOverTime } from '@/components/LazyCharts'
+import { isAdminAddress } from '@/lib/admin'
+import { formatEarnedUsd } from '@/lib/fees'
+import { ACCOUNT_STAGES, GROWTH_WINDOWS, type AccountStage } from '@/lib/admin-growth'
+import { Card, CardTitle, SkeletonCard, SkeletonKpi, WalletKindBadge, short, timeAgo } from '@/lib/dashboard-ui'
+import { FeeSplitDaily, MoneyBySource, TradersWeekly } from '@/components/LazyCharts'
+import { SOURCE_LABEL, useSourceColors, type GrowthPoint } from '@/components/GrowthCharts'
 
-interface Overview {
-  excludeOwners: boolean
+interface FeeSplit {
+  volumeUsd: number
+  trades: number
+  feeBearingUsd: number
+  feeUsd: number
+  creatorUsd: number
+  pantessaUsd: number
+}
+interface VenueRow extends FeeSplit {
+  venue: string
+  effectiveBps: number | null
+}
+interface Account {
+  email: string | null
+  name: string | null
+  method: string
+  wallet: string | null
+  test: boolean
+  createdAt: string
+  lastSignInAt: string | null
+  lastTurnAt: string | null
+  turns: number
+  built: number
+  signed: number
+  usd: number
+  chats: number
+  links: number
+  watching: number
+  lastWall: string | null
+  stage: AccountStage
+}
+interface Growth {
+  windowDays: number
+  external: boolean
+  generatedAt: string
   tiles: {
-    signedIn: number
-    new7d: number
-    newPrev7d: number
-    activated: number
-    paid: number
-    settledUsd: number
-    paidCalls: number
-    declineRate: number | null
+    volumeUsd: number
+    volumeDelta: number | null
+    volumeAllTimeUsd: number
+    trades: number
+    tradesDelta: number | null
+    avgTradeUsd: number | null
+    feeUsd: number
+    feeDelta: number | null
+    feeAllTimeUsd: number
+    pantessaUsd: number
+    creatorUsd: number
+    takeRateBps: number | null
+    activeTraders: number
+    newTraders: number
+    newTradersDelta: number | null
+    tradersAllTime: number
+    repeatTraders: number
+    teamUsd: number
+    anonymousUsd: number
+    signups: number
+    signupsDelta: number | null
+    accountsAllTime: number
   }
-  funnel: { key: string; label: string; value: number }[]
-  newWalletsDaily: { day: string; n: number }[]
-  activeWalletsDaily: { day: string; n: number }[]
-  revenueDaily: { day: string; settled: number; okCalls: number; declined: number; blocked: number }[]
-  byService: { service: string; spent: number; calls: number }[]
-  roster: {
-    address: string
-    firstSeen: string
-    lastActive: string
-    chats: number
-    keys: number
-    settled: number
-    okCalls: number
-    orgs: number
+  series: GrowthPoint[]
+  sources: { source: string; usd: number; trades: number }[]
+  fees: {
+    window: VenueRow[]
+    allTime: VenueRow[]
+    totals: { window: FeeSplit; allTime: FeeSplit }
+    claims: { requestedUsd: number; paidUsd: number }
+    creatorOwedUsd: number
+  }
+  weekly: { week: string; newTraders: number; returningTraders: number; usd: number }[]
+  traders: {
+    wallet: string
+    email: string | null
+    test: boolean
+    usd: number
+    trades: number
+    usdWindow: number
+    activeDays: number
+    firstAt: string
+    lastAt: string
+    referredBy: string | null
   }[]
-  orgs: { orgs: number; members: number; org_settled: number }
-  supply: { callable: number; servers: number }
-  activation: { count: number; medianHours: number | null; p25Hours: number | null; p75Hours: number | null }
-  cohorts: { week: string; size: number; returned: number; paid: number }[]
-  recentSignups: { email: string; status: string; createdAt: string; verifiedAt: string | null }[]
-  agentAdds: {
-    slug: string
-    name: string
-    hasPage: boolean
-    added: number
-    removed: number
-    visitors: number
-    lastAt: string | null
+  creators: {
+    creator: string
+    handle: string | null
+    brandName: string | null
+    test: boolean
+    links: number
+    linksWindow: number
+    lastMint: string
+    opens: number
+    connects: number
+    signs: number
+    referred: number
+    volumeUsd: number
+    trades: number
+    earnedUsd: number
+    claimRequestedUsd: number
+    claimPaidUsd: number
+    owedUsd: number
   }[]
-  embedders: {
-    origin: string
-    pageUrl: string | null
-    turns: number
-    owner: string | null
-    keyed: boolean
-    firstSeen: string
-    lastSeen: string
-  }[]
+  creatorCount: number
+  linkFunnel: { opens: number; connects: number; built: number; signed: number; signers: number }
+  accounts: { ok: boolean; reason: string | null; rows: Account[] }
+  subscribers: { email: string; status: string; createdAt: string }[]
+  alertEmails: { email: string; owner: string; alerts: number; lastAt: string }[]
+  engagement: Record<string, number> | null
+  topWatched: { symbol: string; n: number }[]
+  topTraded: { symbol: string; n: number; usd: number }[]
+  failures: { kind: string; n: number; funded: number; fundsUsd: number }[]
 }
 
 interface ArcStops {
@@ -78,175 +146,155 @@ interface ArcStops {
   signed: number
   returned: number
 }
-
 interface Cohort {
   windowDays: number
-  external: boolean
-  /** §2.2: the five-stop arc, strangers only (harness + test wallets always
-   *  excluded server-side). Optional: older cached responses lack it. */
   arc?: { total: ArcStops; bySource: ({ source: string } & ArcStops)[] }
-  funnel: { key: string; label: string; value: number }[]
-  moneyMovedUsd: number
-  movedEvents: number
-  linksMinted: number
-  linkConversions: number
-  linkMovedUsd: number
-  linksDaily: { day: string; minted: number; convs: number; usd: number }[]
   wallets: {
     address: string
     firstSeen: string
     surface: 'chat' | 'embed' | null
     firstChat: string | null
-    firstToggle: string | null
     firstSigned: string | null
     firstStanding: string | null
     standingKind: 'job' | 'dca' | 'guardian' | null
     firstLink: string | null
     links: number
-    linkMovedUsd: number
     viaLink: boolean
     via: string | null
     moneyMovedUsd: number
-    movedEvents: number
-    embedOrigins: string[]
     test: boolean
   }[]
 }
 
-const WINDOWS = [7, 14, 30] as const
-
-const usd = (n: number) => `$${n.toFixed(n > 0 && n < 1 ? 4 : 2)}`
-
-/** Human-friendly duration: hours under 2 days, else days. */
-function fmtHours(h: number | null): string {
-  if (h == null) return '—'
-  if (h < 1) return `${Math.round(h * 60)}m`
-  if (h < 48) return `${h.toFixed(1)}h`
-  return `${(h / 24).toFixed(1)}d`
+const usd = (n: number) =>
+  n >= 1000 ? `$${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : `$${n.toFixed(2)}`
+const ARC_KEYS = ['arrived', 'asked', 'built', 'signed', 'returned'] as const
+const STAGE_LABEL: Record<AccountStage, string> = {
+  'signed-up': 'Signed up',
+  asked: 'Asked',
+  built: 'Built a trade',
+  traded: 'Traded',
 }
-
-function weekLabel(iso: string): string {
-  const d = new Date(iso)
-  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`
+/** Where each account's journey ends — the four buckets are disjoint. */
+const STAGE_STOP: Record<AccountStage, string> = {
+  'signed-up': 'Signed up, never asked',
+  asked: 'Asked, nothing built',
+  built: 'Built, never signed',
+  traded: 'Traded',
 }
+const VENUE_LABEL: Record<string, string> = {
+  uniswap: 'Uniswap',
+  cow: 'CoW Swap',
+  lifi: 'LiFi (stocks)',
+  'near-intents': 'NEAR Intents',
+  hyperliquid: 'Hyperliquid',
+  unattributed: 'No venue stamped',
+}
+const venueLabel = (v: string) => VENUE_LABEL[v] ?? v.charAt(0).toUpperCase() + v.slice(1)
 
-const pct = (num: number, den: number) => (den > 0 ? `${Math.round((num / den) * 100)}%` : '—')
-
-/** Short absolute date for a milestone cell (month/day; the window is ≤30d). */
 function mmdd(iso: string): string {
   const d = new Date(iso)
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`
 }
 
-function csvEscape(v: string | number): string {
-  const s = String(v)
+function csvEscape(v: string | number | null): string {
+  const s = v == null ? '' : String(v)
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
-/** The wallet roster as a CSV a CEO can drop into a spreadsheet. */
-function rosterToCsv(roster: Overview['roster']): string {
-  const head = ['address', 'kind', 'first_seen', 'last_active', 'chats', 'keys', 'settled_calls', 'settled_usd', 'orgs']
-  const rows = roster.map((r) => [
-    r.address,
-    isTestWallet(r.address) ? 'tester' : 'wild',
-    r.firstSeen,
-    r.lastActive,
-    r.chats,
-    r.keys,
-    r.okCalls,
-    r.settled.toFixed(6),
-    r.orgs,
-  ])
-  return [head, ...rows].map((row) => row.map(csvEscape).join(',')).join('\n')
+function downloadCsv(name: string, head: string[], rows: (string | number | null)[][]) {
+  const body = [head, ...rows].map((r) => r.map(csvEscape).join(',')).join('\n')
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(new Blob([body], { type: 'text/csv;charset=utf-8' }))
+  a.download = `pantessa-${name}-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(a.href)
 }
 
-/**
- * Milestone bars — each bar is % OF THE COHORT, not step-over-step
- * conversion: milestones aren't strictly ordered (a wallet can mint a link
- * without a recorded chat turn), so step conversion would read >100% and lie.
- */
-function MilestoneBars({ steps }: { steps: { key: string; label: string; value: number }[] }) {
-  const top = steps[0]?.value ?? 0
-  if (top === 0) return <p className="text-xs text-[color:var(--muted-2)] py-4">No wallets in this window yet.</p>
+/** Change vs the previous window. Quiet when there's no base to compare to. */
+function Delta({ value }: { value: number | null }) {
+  if (value == null) return null
+  const up = value >= 0
+  const Icon = up ? ArrowUpRight : ArrowDownRight
   return (
-    <div className="space-y-2.5">
-      {steps.map((s) => (
-        <div key={s.key} className="min-w-0">
-          <div className="flex items-baseline justify-between gap-3 mb-1">
-            <span className="text-xs text-[color:var(--muted)] truncate">{s.label}</span>
-            <span className="text-sm text-white font-semibold tabular-nums">
-              {s.value}
-              <span className="text-[11px] text-[color:var(--muted-2)] font-normal ml-1.5">
-                {Math.round((s.value / top) * 100)}%
-              </span>
-            </span>
+    <span
+      className={`inline-flex items-center gap-0.5 text-[11px] mono tabular-nums ${up ? 'text-[color:var(--accent,#34E0A1)]' : 'text-red-400'}`}
+      title="vs the previous window of the same length"
+    >
+      <Icon className="w-3 h-3" />
+      {value >= 9 ? `${Math.round(value + 1)}×` : `${Math.round(Math.abs(value) * 100)}%`}
+    </span>
+  )
+}
+
+function Stat({ label, value, delta, sub, lead }: { label: string; value: string; delta?: number | null; sub?: React.ReactNode; lead?: boolean }) {
+  return (
+    <div
+      className={`min-w-0 rounded-2xl border p-4 ${lead ? 'border-[color:color-mix(in_srgb,var(--accent,#34E0A1)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--accent,#34E0A1)_6%,var(--surf-1))]' : 'border-[var(--line)] bg-[var(--surf-1)]'}`}
+    >
+      <p className="text-[10px] uppercase tracking-[0.14em] text-[color:var(--muted-2)] mono">{label}</p>
+      <p className="flex items-baseline gap-2 mt-1 min-w-0">
+        <span className="text-white font-semibold text-2xl truncate tabular-nums">{value}</span>
+        <Delta value={delta ?? null} />
+      </p>
+      {sub && <p className="text-[11px] text-[color:var(--muted-2)] mt-0.5">{sub}</p>}
+    </div>
+  )
+}
+
+const TH = 'py-2 pr-3 font-medium'
+const THEAD = 'text-left text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mono'
+const BTN =
+  'inline-flex items-center gap-1.5 text-[11px] px-3 rounded-md min-h-[32px] border border-[var(--line)] text-[color:var(--muted)] hover:text-white transition-colors disabled:opacity-40'
+
+/** Where each dollar of fee came from and went: four bars on one scale per pair. */
+function FeeWaterfall({ t, owedUsd, claims }: { t: FeeSplit; owedUsd: number; claims: { requestedUsd: number; paidUsd: number } }) {
+  const feeFree = Math.max(0, t.volumeUsd - t.feeBearingUsd)
+  const bar = (part: number, whole: number) => `${whole > 0 ? Math.max((part / whole) * 100, part > 0 ? 2 : 0) : 0}%`
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="flex items-baseline justify-between text-xs mb-1.5">
+          <span className="text-[color:var(--muted)]">Signed volume</span>
+          <span className="text-white font-semibold tabular-nums">{usd(t.volumeUsd)}</span>
+        </div>
+        <div className="flex h-3 rounded-full overflow-hidden bg-[var(--surf-2,rgba(255,255,255,0.04))]">
+          <div style={{ width: bar(t.feeBearingUsd, t.volumeUsd), background: 'var(--accent, #34E0A1)', opacity: 0.85 }} />
+        </div>
+        <p className="text-[11px] text-[color:var(--muted-2)] mt-1.5">
+          <span className="text-[color:var(--accent,#34E0A1)]">{usd(t.feeBearingUsd)}</span> took a fee ·{' '}
+          {usd(feeFree)} rode a fee-free route (bridges, stakes, lending, sends, NFT listings, or a turn with no venue stamped)
+        </p>
+      </div>
+      <div>
+        <div className="flex items-baseline justify-between text-xs mb-1.5">
+          <span className="text-[color:var(--muted)]">Fees earned</span>
+          <span className="text-white font-semibold tabular-nums">{formatEarnedUsd(t.feeUsd)}</span>
+        </div>
+        <div className="flex h-3 rounded-full overflow-hidden bg-[var(--surf-2,rgba(255,255,255,0.04))]">
+          <div style={{ width: bar(t.pantessaUsd, t.feeUsd), background: 'var(--accent, #34E0A1)', opacity: 0.85 }} />
+          <div style={{ width: bar(t.creatorUsd, t.feeUsd), background: '#6AA8FF', opacity: 0.85 }} />
+        </div>
+        <div className="grid grid-cols-2 gap-3 mt-2">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.14em] mono text-[color:var(--accent,#34E0A1)]">Pantessa keeps</p>
+            <p className="text-white font-semibold tabular-nums">{formatEarnedUsd(t.pantessaUsd)}</p>
           </div>
-          <div className="h-2.5 rounded-full bg-[var(--surf-2,rgba(255,255,255,0.04))] overflow-hidden">
-            <div
-              className="h-full rounded-full"
-              style={{
-                width: `${Math.max((s.value / top) * 100, s.value > 0 ? 4 : 0)}%`,
-                background: 'linear-gradient(90deg, var(--accent, #34E0A1), #60A5FA)',
-                opacity: 0.85,
-              }}
-            />
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.14em] mono text-[#6AA8FF]">Creators earn</p>
+            <p className="text-white font-semibold tabular-nums">{formatEarnedUsd(t.creatorUsd)}</p>
           </div>
         </div>
-      ))}
+      </div>
+      <p className="text-[11px] text-[color:var(--muted-2)] border-t border-[var(--line)] pt-3">
+        Owed to creators, all time: <span className="text-white tabular-nums">{formatEarnedUsd(owedUsd)}</span> ·
+        claims requested {usd(claims.requestedUsd)} · paid {usd(claims.paidUsd)}. A creator&rsquo;s half is owed on their
+        own links and on every later trade by a wallet they referred; house links owe nobody.
+      </p>
     </div>
   )
 }
 
-const PAGE_SIZE = 25
-
-/** Client-side pager over already-fetched rows — Prev/Next + "x–y of n". */
-function usePager<T>(rows: T[], size = PAGE_SIZE) {
-  const [page, setPage] = useState(0)
-  // Snap back when the data shrinks under the current page (window/toggle flips).
-  const pages = Math.max(1, Math.ceil(rows.length / size))
-  const cur = Math.min(page, pages - 1)
-  return {
-    rows: rows.slice(cur * size, (cur + 1) * size),
-    cur,
-    pages,
-    total: rows.length,
-    from: rows.length === 0 ? 0 : cur * size + 1,
-    to: Math.min(rows.length, (cur + 1) * size),
-    prev: () => setPage(Math.max(0, cur - 1)),
-    next: () => setPage(Math.min(pages - 1, cur + 1)),
-  }
-}
-
-function PagerBar({ p }: { p: ReturnType<typeof usePager<unknown>> }) {
-  if (p.total <= PAGE_SIZE) return null
-  return (
-    <div className="flex items-center justify-between gap-3 mt-3">
-      <span className="mono text-[11px] text-[color:var(--muted-2)] tabular-nums">
-        {p.from}–{p.to} of {p.total}
-      </span>
-      <span className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={p.prev}
-          disabled={p.cur === 0}
-          className="px-3 py-1.5 text-xs mono rounded-lg border border-[var(--line)] text-[color:var(--muted)] hover:text-white disabled:opacity-40 disabled:hover:text-[color:var(--muted)] transition-colors"
-        >
-          ← Prev
-        </button>
-        <button
-          type="button"
-          onClick={p.next}
-          disabled={p.cur >= p.pages - 1}
-          className="px-3 py-1.5 text-xs mono rounded-lg border border-[var(--line)] text-[color:var(--muted)] hover:text-white disabled:opacity-40 disabled:hover:text-[color:var(--muted)] transition-colors"
-        >
-          Next →
-        </button>
-      </span>
-    </div>
-  )
-}
-
-/** A milestone cell: green check + the date it happened, or a quiet dash. */
 function Mile({ at, note }: { at: string | null; note?: string }) {
   if (!at) return <span className="text-[color:var(--muted-2)]">—</span>
   return (
@@ -258,47 +306,66 @@ function Mile({ at, note }: { at: string | null; note?: string }) {
   )
 }
 
+function StageChip({ stage }: { stage: AccountStage }) {
+  const hot = stage === 'traded'
+  return (
+    <span
+      className={`px-1.5 py-0.5 rounded text-[10px] mono uppercase tracking-wide whitespace-nowrap ${
+        hot
+          ? 'bg-[color:color-mix(in_srgb,var(--accent,#34E0A1)_14%,transparent)] text-[color:var(--accent,#34E0A1)]'
+          : 'bg-[var(--surf-2,rgba(255,255,255,0.05))] text-[color:var(--muted)]'
+      }`}
+    >
+      {STAGE_LABEL[stage]}
+    </span>
+  )
+}
+
 export default function AdminPage() {
   const { address } = useSession()
-  const [data, setData] = useState<Overview | null>(null)
+  const [data, setData] = useState<Growth | null>(null)
   const [cohort, setCohort] = useState<Cohort | null>(null)
-  const [days, setDays] = useState<(typeof WINDOWS)[number]>(14)
+  const [days, setDays] = useState<(typeof GROWTH_WINDOWS)[number]>(30)
   const [external, setExternal] = useState(false)
+  const [feeScope, setFeeScope] = useState<'window' | 'allTime'>('window')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  // Pagers ride above the early returns (hooks run every render); empty
-  // arrays until the data lands.
-  const cohortPager = usePager(cohort?.wallets ?? [])
-  const rosterPager = usePager(data?.roster ?? [])
+  const [copied, setCopied] = useState(false)
+  const S = useSourceColors()
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [ovRes, coRes] = await Promise.all([
-        fetch(`/api/admin/overview${external ? '?excludeOwners=1' : ''}`, { cache: 'no-store' }),
-        fetch(`/api/admin/cohorts?days=${days}${external ? '&external=1' : ''}`, { cache: 'no-store' }),
+      const q = `days=${days}${external ? '&external=1' : ''}`
+      const [gRes, cRes] = await Promise.all([
+        fetch(`/api/admin/growth?${q}`, { cache: 'no-store' }),
+        fetch(`/api/admin/cohorts?${q}`, { cache: 'no-store' }),
       ])
-      if (ovRes.ok) setData(await ovRes.json())
-      if (coRes.ok) setCohort(await coRes.json())
-      if (!ovRes.ok && !coRes.ok) {
+      if (cRes.ok) setCohort(await cRes.json())
+      if (gRes.ok) setData(await gRes.json())
+      else {
         setData(null)
-        setCohort(null)
-        setError(`The adoption APIs returned ${ovRes.status}/${coRes.status}. ${ovRes.status === 403 ? 'This wallet is not an admin.' : 'Check the server logs.'}`)
+        setError(gRes.status === 403 ? 'This wallet is not an admin.' : `The growth API returned ${gRes.status}. Check the server logs.`)
       }
     } catch {
       setData(null)
-      setCohort(null)
-      setError('Could not reach the adoption APIs.')
+      setError('Could not reach the growth API.')
     } finally {
       setLoading(false)
     }
-  }, [external, days])
+  }, [days, external])
 
   useEffect(() => {
     if (isAdminAddress(address)) void load()
     else setLoading(false)
   }, [address, load])
+
+  const stageCounts = useMemo(() => {
+    const c: Record<AccountStage, number> = { 'signed-up': 0, asked: 0, built: 0, traded: 0 }
+    for (const a of data?.accounts.rows ?? []) c[a.stage]++
+    return c
+  }, [data])
 
   if (address && !isAdminAddress(address)) {
     return (
@@ -307,18 +374,18 @@ export default function AdminPage() {
           <ShieldAlert className="w-7 h-7" />
         </div>
         <h1 className="text-xl font-semibold text-white mb-2">Not authorized</h1>
-        <p className="text-sm text-[color:var(--muted)]">The adoption dashboard is limited to Pantessa admins.</p>
+        <p className="text-sm text-[color:var(--muted)]">The growth dashboard is limited to Pantessa admins.</p>
       </div>
     )
   }
 
-  if (error && !data && !cohort) {
+  if (error && !data) {
     return (
       <div className="max-w-md mx-auto px-6 py-24 text-center">
         <div className="w-14 h-14 mx-auto rounded-2xl bg-[var(--surf-1)] border border-[var(--line)] grid place-items-center text-[color:var(--muted)] mb-5">
           <ShieldAlert className="w-7 h-7" />
         </div>
-        <h1 className="text-xl font-semibold text-white mb-2">Couldn’t load adoption data</h1>
+        <h1 className="text-xl font-semibold text-white mb-2">Couldn’t load growth data</h1>
         <p className="text-sm text-[color:var(--muted)] mb-6">{error}</p>
         <button className="btn btn--solid" onClick={() => void load()}>
           Retry
@@ -327,48 +394,53 @@ export default function AdminPage() {
     )
   }
 
-  if (loading || !data) {
+  if (!data) {
     return (
       <>
-        <h1 className="dash__h1">Adoption</h1>
+        <h1 className="dash__h1">Growth</h1>
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
-          <SkeletonKpi />
-          <SkeletonKpi />
-          <SkeletonKpi />
-          <SkeletonKpi />
-          <SkeletonKpi />
-          <SkeletonKpi />
+          {Array.from({ length: 6 }, (_, i) => (
+            <SkeletonKpi key={i} />
+          ))}
         </div>
-        <SkeletonCard className="mt-3" bodyClassName="h-48" />
+        <SkeletonCard className="mt-3" bodyClassName="h-64" />
         <div className="grid lg:grid-cols-2 gap-3 mt-3">
-          <SkeletonCard bodyClassName="h-40" />
-          <SkeletonCard bodyClassName="h-40" />
+          <SkeletonCard bodyClassName="h-48" />
+          <SkeletonCard bodyClassName="h-48" />
         </div>
-        <span className="sr-only" role="status">Loading adoption data…</span>
+        <span className="sr-only" role="status">Loading growth data…</span>
       </>
     )
   }
 
   const t = data.tiles
-  const wow = t.new7d - t.newPrev7d
-  const revDaily = data.revenueDaily.map((d) => ({ day: d.day, spent: d.settled, calls: d.okCalls }))
+  const e = data.engagement
+  const w = `${data.windowDays}d`
+  const accounts = data.accounts.rows
+  const emails = accounts.map((a) => a.email).filter((x): x is string => !!x)
+  const sourceTotal = data.sources.reduce((s, x) => s + x.usd, 0)
+  const feeRows = data.fees[feeScope]
+  const feeTotals = data.fees.totals[feeScope]
+  const failTotal = data.failures.reduce((s, f) => s + f.n, 0)
+  const failFunded = data.failures.reduce((s, f) => s + f.funded, 0)
+  const lf = data.linkFunnel
 
   return (
-    <>
+    <div className={loading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
       <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
-        <h1 className="dash__h1">Adoption</h1>
+        <h1 className="dash__h1">Growth</h1>
         <div className="flex items-center gap-4">
           <div className="flex rounded-lg border border-[var(--line)] overflow-hidden">
-            {WINDOWS.map((w) => (
+            {GROWTH_WINDOWS.map((d) => (
               <button
-                key={w}
-                onClick={() => setDays(w)}
+                key={d}
+                onClick={() => setDays(d)}
                 className={`px-3 py-1.5 text-xs mono transition-colors ${
-                  days === w ? 'bg-[var(--surf-1)] text-white' : 'text-[color:var(--muted)] hover:text-white'
+                  days === d ? 'bg-[var(--surf-1)] text-white' : 'text-[color:var(--muted)] hover:text-white'
                 }`}
-                aria-pressed={days === w}
+                aria-pressed={days === d}
               >
-                {w}d
+                {d}d
               </button>
             ))}
           </div>
@@ -376,56 +448,463 @@ export default function AdminPage() {
             <input
               type="checkbox"
               checked={external}
-              onChange={(e) => setExternal(e.target.checked)}
+              onChange={(ev) => setExternal(ev.target.checked)}
               className="accent-[var(--accent,#34E0A1)]"
             />
-            External only
+            Strangers only
           </label>
         </div>
       </div>
       <p className="text-sm text-[color:var(--muted)] mb-5">
-        Company-wide progress: wallet growth, money flow, and the link economy. The window picker
-        scopes the cohort sections; every wallet shown carries its tester-vs-wild badge.
+        Real, receipt-counted money only. Harness and drill runs never count.{' '}
+        {external
+          ? 'Team wallets are out, and so is any trade with no wallet on it.'
+          : `Of this window, ${usd(t.teamUsd)} was our own wallets${t.anonymousUsd > 0 ? ` and ${usd(t.anonymousUsd)} has no wallet on the turn` : ''}.`}
       </p>
 
-      {/* North-star tiles — all-time on the left, this cohort on the right */}
+      {/* 1 — the six numbers */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-        <Kpi
-          label="Signed-in wallets"
-          value={String(t.signedIn)}
-          sub={`${t.new7d} new this week${wow !== 0 ? ` (${wow > 0 ? '+' : ''}${wow} WoW)` : ''}`}
+        <Stat lead label={`Money moved · ${w}`} value={usd(t.volumeUsd)} delta={t.volumeDelta} sub={`${usd(t.volumeAllTimeUsd)} all time · ${t.trades} trades${t.avgTradeUsd != null ? ` · avg ${usd(t.avgTradeUsd)}` : ''}`} />
+        <Stat label={`Fees earned · ${w}`} value={formatEarnedUsd(t.feeUsd)} delta={t.feeDelta} sub={`${formatEarnedUsd(t.feeAllTimeUsd)} all time${t.takeRateBps != null ? ` · ${t.takeRateBps.toFixed(1)} bps blended take` : ''}`} />
+        <Stat
+          label="The split"
+          value={formatEarnedUsd(t.pantessaUsd)}
+          sub={
+            <>
+              Pantessa keeps · creators earn <span className="text-white">{formatEarnedUsd(t.creatorUsd)}</span>
+            </>
+          }
         />
-        <Kpi label={`New wallets · ${cohort?.windowDays ?? days}d`} value={String(cohort?.funnel[0]?.value ?? 0)} sub="first seen in the window" />
-        <Kpi
-          label="Links minted"
-          value={String(cohort?.linksMinted ?? 0)}
-          sub={`${cohort?.funnel.find((s) => s.key === 'minted')?.value ?? 0} wallets, this cohort`}
-        />
-        <Kpi
-          label="Link conversions"
-          value={String(cohort?.linkConversions ?? 0)}
-          sub={`${usd(cohort?.linkMovedUsd ?? 0)} moved via links`}
-        />
-        <Kpi label="Money moved" value={usd(cohort?.moneyMovedUsd ?? 0)} sub={`${cohort?.movedEvents ?? 0} events, this cohort`} />
-        <Kpi
-          label="Settled USDC · x402"
-          value={usd(t.settledUsd)}
-          sub={t.declineRate != null ? `${Math.round(t.declineRate * 100)}% declined` : 'no calls yet'}
+        <Stat label={`Active traders · ${w}`} value={String(t.activeTraders)} sub={`${t.tradersAllTime} ever · ${t.repeatTraders} traded on 2+ days`} />
+        <Stat label={`First-time traders · ${w}`} value={String(t.newTraders)} delta={t.newTradersDelta} sub="wallets whose first signed trade landed in the window" />
+        <Stat
+          label={`New accounts · ${w}`}
+          value={data.accounts.ok ? String(t.signups) : '—'}
+          delta={t.signupsDelta}
+          sub={data.accounts.ok ? `${t.accountsAllTime} email + Google accounts ever` : 'Coinbase did not answer'}
         />
       </div>
 
-      {/* THE GTM ARC (§2.2) — the one screen GTM is judged by. Strangers
-          only: harness-stamped turns + test wallets are excluded on the
-          server, unconditionally — this table never counts us. */}
+      {/* 2 — money, by where it came from */}
       <Card className="mt-3">
-        <CardTitle>The arc · strangers only ({cohort?.windowDays ?? days}d) — arrived → asked → built → signed → returned</CardTitle>
+        <CardTitle eyebrow={`last ${w}`}>Money moved · by source</CardTitle>
+        <MoneyBySource series={data.series} />
+        <div className="flex h-2 rounded-full overflow-hidden bg-[var(--surf-2,rgba(255,255,255,0.04))] mt-4">
+          {data.sources.map((s) => (
+            <div key={s.source} style={{ width: `${sourceTotal > 0 ? (s.usd / sourceTotal) * 100 : 0}%`, background: S[s.source], opacity: 0.85 }} />
+          ))}
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
+          {data.sources.map((s) => (
+            <div key={s.source} className="min-w-0">
+              <p className="flex items-center gap-1.5 text-[11px] text-[color:var(--muted)]">
+                <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: S[s.source] }} />
+                <span className="truncate">{SOURCE_LABEL[s.source]}</span>
+              </p>
+              <p className="text-white font-semibold tabular-nums">
+                {usd(s.usd)}
+                <span className="text-[11px] text-[color:var(--muted-2)] font-normal ml-1.5">
+                  {sourceTotal > 0 ? `${Math.round((s.usd / sourceTotal) * 100)}%` : '—'} · {s.trades}
+                </span>
+              </p>
+            </div>
+          ))}
+        </div>
+        <p className="text-[11px] text-[color:var(--muted-2)] mt-3">
+          Bars are daily signed dollars; the line is the all-time total. <em>Links</em> = signed on an /i link.{' '}
+          <em>App chat</em> = /chat, /markets and /t. <em>Standing</em> = job steps and DCA runs, money that moved after the
+          first signature.
+        </p>
+      </Card>
+
+      {/* 3 — the fee, and who gets it */}
+      <div className="grid lg:grid-cols-2 gap-3 mt-3">
+        <Card>
+          <div className="flex items-start justify-between gap-3">
+            <CardTitle eyebrow={feeScope === 'window' ? `last ${w}` : 'all time'}>Where the fee goes</CardTitle>
+            <div className="flex rounded-lg border border-[var(--line)] overflow-hidden shrink-0">
+              {(['window', 'allTime'] as const).map((k) => (
+                <button
+                  key={k}
+                  onClick={() => setFeeScope(k)}
+                  aria-pressed={feeScope === k}
+                  className={`px-2.5 py-1 text-[11px] mono transition-colors ${feeScope === k ? 'bg-[var(--surf-2,rgba(255,255,255,0.06))] text-white' : 'text-[color:var(--muted)] hover:text-white'}`}
+                >
+                  {k === 'window' ? w : 'all'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <FeeWaterfall t={feeTotals} owedUsd={data.fees.creatorOwedUsd} claims={data.fees.claims} />
+        </Card>
+        <Card>
+          <CardTitle eyebrow={`last ${w}`}>Fees per day · Pantessa and creators</CardTitle>
+          <FeeSplitDaily series={data.series} />
+          <p className="text-[11px] text-[color:var(--muted-2)] mt-3">
+            Computed from each signed trade&rsquo;s stamped fee tier. What actually landed on-chain is on{' '}
+            <Link href="/dashboard/treasury" className="underline hover:text-white">
+              Treasury
+            </Link>
+            .
+          </p>
+        </Card>
+      </div>
+
+      <Card className="mt-3">
+        <CardTitle eyebrow={feeScope === 'window' ? `last ${w}` : 'all time'}>Volume and fees · by venue</CardTitle>
+        {feeRows.length === 0 ? (
+          <p className="text-xs text-[color:var(--muted-2)] py-4">Nothing signed in this window.</p>
+        ) : (
+          <div className="overflow-x-auto -mx-1 px-1">
+            <table className="w-full text-sm min-w-[640px]">
+              <thead>
+                <tr className={THEAD}>
+                  <th className={TH}>Venue</th>
+                  <th className={`${TH} text-right`}>Trades</th>
+                  <th className={`${TH} text-right`}>Volume</th>
+                  <th className={`${TH} text-right`}>Net rate</th>
+                  <th className={`${TH} text-right`}>Fees</th>
+                  <th className={`${TH} text-right`}>Creators</th>
+                  <th className={`${TH} text-right`}>Pantessa</th>
+                </tr>
+              </thead>
+              <tbody className="text-[color:var(--muted)]">
+                {feeRows.map((r) => (
+                  <tr key={r.venue} className="border-t border-[var(--line)]">
+                    <td className="py-2 pr-3 text-white">{venueLabel(r.venue)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{r.trades}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-white">{usd(r.volumeUsd)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">
+                      {r.effectiveBps != null ? `${(r.effectiveBps / 100).toFixed(2)}%` : <span className="text-[color:var(--muted-2)]">no fee</span>}
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{r.feeUsd > 0 ? formatEarnedUsd(r.feeUsd) : '—'}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{r.creatorUsd > 0 ? formatEarnedUsd(r.creatorUsd) : '—'}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-white">{r.pantessaUsd > 0 ? formatEarnedUsd(r.pantessaUsd) : '—'}</td>
+                  </tr>
+                ))}
+                <tr className="border-t border-[var(--line-2,var(--line))] font-medium text-white">
+                  <td className="py-2 pr-3">Total</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{feeTotals.trades}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{usd(feeTotals.volumeUsd)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">
+                    {feeTotals.feeBearingUsd > 0 ? `${((feeTotals.feeUsd / feeTotals.feeBearingUsd) * 100).toFixed(2)}%` : '—'}
+                  </td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{formatEarnedUsd(feeTotals.feeUsd)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{formatEarnedUsd(feeTotals.creatorUsd)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{formatEarnedUsd(feeTotals.pantessaUsd)}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p className="text-[11px] text-[color:var(--muted-2)] mt-2">
+              Net rate is what reaches us after the venue&rsquo;s own share (NEAR Intents keeps half of its app fee). &ldquo;No
+              venue stamped&rdquo; is signed volume whose turn carries no build path. Today that is every job step, swaps
+              included, so a funded buy run as a job counts as volume and books no fee even where one was charged on-chain.
+              Treasury has what actually arrived.
+            </p>
+          </div>
+        )}
+      </Card>
+
+      {/* 4 — who signed up */}
+      <Card className="mt-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <CardTitle eyebrow="Coinbase embedded wallets · email + Google">Accounts ({accounts.length})</CardTitle>
+          <div className="flex items-center gap-2">
+            <button
+              className={BTN}
+              disabled={emails.length === 0}
+              onClick={() => {
+                void navigator.clipboard.writeText(emails.join(', ')).then(() => {
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 1500)
+                })
+              }}
+            >
+              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />} {copied ? 'Copied' : 'Copy emails'}
+            </button>
+            <button
+              className={BTN}
+              disabled={accounts.length === 0}
+              onClick={() =>
+                downloadCsv(
+                  'accounts',
+                  ['email', 'name', 'method', 'wallet', 'kind', 'stage', 'created_at', 'last_sign_in', 'asks', 'trades', 'moved_usd', 'links', 'watching', 'last_wall'],
+                  accounts.map((a) => [a.email, a.name, a.method, a.wallet, a.test ? 'tester' : 'wild', a.stage, a.createdAt, a.lastSignInAt, a.turns, a.signed, a.usd, a.links, a.watching, a.lastWall]),
+                )
+              }
+            >
+              <Download className="w-3.5 h-3.5" /> CSV
+            </button>
+          </div>
+        </div>
+        {!data.accounts.ok ? (
+          <p className="text-xs text-[color:var(--muted-2)] py-4">
+            Couldn&rsquo;t read the account list from Coinbase: {data.accounts.reason} The emails live at Coinbase, not in our
+            database, so this section is empty until it answers.
+          </p>
+        ) : accounts.length === 0 ? (
+          <p className="text-xs text-[color:var(--muted-2)] py-4">No email or Google accounts yet.</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+              {ACCOUNT_STAGES.map((s) => (
+                <div key={s} className="rounded-xl border border-[var(--line)] px-3 py-2">
+                  <p className="text-[10px] uppercase tracking-[0.14em] mono text-[color:var(--muted-2)]">{STAGE_STOP[s]}</p>
+                  <p className="text-white font-semibold tabular-nums">
+                    {stageCounts[s]}
+                    <span className="text-[11px] text-[color:var(--muted-2)] font-normal ml-1.5">
+                      {Math.round((stageCounts[s] / accounts.length) * 100)}%
+                    </span>
+                  </p>
+                </div>
+              ))}
+            </div>
+            <div className="overflow-x-auto -mx-1 px-1">
+              <table className="w-full text-sm min-w-[860px]">
+                <thead>
+                  <tr className={THEAD}>
+                    <th className={TH}>Email</th>
+                    <th className={TH}>Wallet</th>
+                    <th className={TH}>Joined</th>
+                    <th className={TH}>Last sign-in</th>
+                    <th className={TH}>Got to</th>
+                    <th className={`${TH} text-right`}>Asks</th>
+                    <th className={`${TH} text-right`}>Trades</th>
+                    <th className={`${TH} text-right`}>Moved</th>
+                    <th className={`${TH} text-right`}>Reach out</th>
+                  </tr>
+                </thead>
+                <tbody className="text-[color:var(--muted)]">
+                  {accounts.map((a) => (
+                    <tr key={`${a.email}-${a.wallet}`} className="border-t border-[var(--line)] align-top">
+                      <td className="py-2 pr-3 text-white">
+                        <span className="break-all">{a.email ?? <span className="text-[color:var(--muted-2)]">no email on file</span>}</span>
+                        <span className="ml-2 text-[10px] mono uppercase tracking-wide text-[color:var(--muted-2)]">{a.method}</span>
+                        {a.lastWall && a.stage !== 'traded' && (
+                          <span className="block text-[11px] text-[color:var(--muted-2)] mt-0.5 max-w-[340px] truncate" title={a.lastWall}>
+                            last wall: “{a.lastWall}”
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 mono whitespace-nowrap">
+                        {a.wallet ? (
+                          <Link href={`/w/${a.wallet}`} className="hover:text-white" title={a.wallet}>
+                            {short(a.wallet)}
+                          </Link>
+                        ) : (
+                          '—'
+                        )}
+                        <WalletKindBadge test={a.test} />
+                      </td>
+                      <td className="py-2 pr-3 whitespace-nowrap">{timeAgo(a.createdAt)}</td>
+                      <td className="py-2 pr-3 whitespace-nowrap">{a.lastSignInAt ? timeAgo(a.lastSignInAt) : '—'}</td>
+                      <td className="py-2 pr-3">
+                        <StageChip stage={a.stage} />
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums">{a.turns || '—'}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums">{a.signed || '—'}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-white">{a.usd > 0 ? usd(a.usd) : '—'}</td>
+                      <td className="py-2 pr-3 text-right">
+                        {a.email && (
+                          <a href={`mailto:${a.email}`} className={BTN}>
+                            <Mail className="w-3.5 h-3.5" /> Email
+                          </a>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[11px] text-[color:var(--muted-2)] mt-2">
+              Read live from Coinbase. Wallet-only users (MetaMask, Phantom, Coinbase Wallet) have no email and show up under
+              Traders and the arc below.
+            </p>
+          </>
+        )}
+      </Card>
+
+      <div className="grid lg:grid-cols-2 gap-3 mt-3">
+        <Card>
+          <CardTitle eyebrow="landing form">Waitlist emails ({data.subscribers.length})</CardTitle>
+          <EmailList
+            rows={data.subscribers.map((s) => ({ email: s.email, note: s.status === 'verified' ? 'verified' : 'pending', at: s.createdAt }))}
+            empty="No waitlist signups yet."
+          />
+        </Card>
+        <Card>
+          <CardTitle eyebrow="gave an email for a price alert">Alert emails ({data.alertEmails.length})</CardTitle>
+          <EmailList
+            rows={data.alertEmails.map((a) => ({ email: a.email, note: `${a.alerts} alert${a.alerts === 1 ? '' : 's'} · ${short(a.owner)}`, at: a.lastAt }))}
+            empty="Nobody has attached an email to an alert yet."
+          />
+        </Card>
+      </div>
+
+      {/* 5 — is it compounding */}
+      <div className="grid lg:grid-cols-2 gap-3 mt-3">
+        <Card>
+          <CardTitle eyebrow="12 weeks">Traders per week · first trade vs came back</CardTitle>
+          <TradersWeekly weekly={data.weekly} />
+        </Card>
+        <Card>
+          <CardTitle eyebrow={`last ${w} · strangers' events`}>The link funnel</CardTitle>
+          <div className="space-y-2.5">
+            {(
+              [
+                ['Opened a link', lf.opens],
+                ['Connected a wallet', lf.connects],
+                ['Got a built trade', lf.built],
+                ['Signed', lf.signed],
+              ] as const
+            ).map(([label, v], i, arr) => {
+              const top = arr[0][1]
+              const prev = i === 0 ? null : arr[i - 1][1]
+              return (
+                <div key={label}>
+                  <div className="flex items-baseline justify-between gap-3 mb-1">
+                    <span className="text-xs text-[color:var(--muted)]">{label}</span>
+                    <span className="text-sm text-white font-semibold tabular-nums">
+                      {v}
+                      {prev != null && prev > 0 && (
+                        <span className="text-[11px] text-[color:var(--muted-2)] font-normal ml-1.5">{Math.round((v / prev) * 100)}% of the step before</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="h-2.5 rounded-full bg-[var(--surf-2,rgba(255,255,255,0.04))] overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${top > 0 ? Math.max((v / top) * 100, v > 0 ? 3 : 0) : 0}%`, background: 'var(--accent, #34E0A1)', opacity: 0.85 }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <p className="text-[11px] text-[color:var(--muted-2)] mt-3">
+            {lf.signers} distinct wallets signed. {e ? `${e.links_win} links minted in the window; ${e.handles} creator pages claimed.` : ''}
+          </p>
+        </Card>
+      </div>
+
+      <Card className="mt-3">
+        <div className="flex items-start justify-between gap-3">
+          <CardTitle eyebrow="all time · biggest first">Traders ({t.tradersAllTime})</CardTitle>
+          <button
+            className={BTN}
+            disabled={data.traders.length === 0}
+            onClick={() =>
+              downloadCsv(
+                'traders',
+                ['wallet', 'email', 'kind', 'moved_usd', 'trades', 'moved_usd_window', 'active_days', 'first_trade', 'last_trade', 'referred_by'],
+                data.traders.map((r) => [r.wallet, r.email, r.test ? 'tester' : 'wild', r.usd, r.trades, r.usdWindow, r.activeDays, r.firstAt, r.lastAt, r.referredBy]),
+              )
+            }
+          >
+            <Download className="w-3.5 h-3.5" /> CSV
+          </button>
+        </div>
+        {data.traders.length === 0 ? (
+          <p className="text-xs text-[color:var(--muted-2)] py-4">No wallet has a signed trade on record yet.</p>
+        ) : (
+          <div className="overflow-x-auto -mx-1 px-1 max-h-[420px] overflow-y-auto">
+            <table className="w-full text-sm min-w-[720px]">
+              <thead>
+                <tr className={THEAD}>
+                  <th className={TH}>Wallet</th>
+                  <th className={`${TH} text-right`}>Moved</th>
+                  <th className={`${TH} text-right`}>{w}</th>
+                  <th className={`${TH} text-right`}>Trades</th>
+                  <th className={`${TH} text-right`}>Days active</th>
+                  <th className={TH}>First trade</th>
+                  <th className={TH}>Last trade</th>
+                  <th className={TH}>Brought by</th>
+                </tr>
+              </thead>
+              <tbody className="text-[color:var(--muted)]">
+                {data.traders.map((r) => (
+                  <tr key={r.wallet} className="border-t border-[var(--line)]">
+                    <td className="py-2 pr-3 mono text-white whitespace-nowrap">
+                      <Link href={`/w/${r.wallet}`} className="hover:text-[color:var(--accent,#34E0A1)]" title={r.wallet}>
+                        {short(r.wallet)}
+                      </Link>
+                      <WalletKindBadge test={r.test} />
+                      {r.email && <span className="ml-2 text-[11px] font-sans text-[color:var(--muted)]">{r.email}</span>}
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-white">{usd(r.usd)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{r.usdWindow > 0 ? usd(r.usdWindow) : '—'}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{r.trades}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{r.activeDays}</td>
+                    <td className="py-2 pr-3 whitespace-nowrap">{timeAgo(r.firstAt)}</td>
+                    <td className="py-2 pr-3 whitespace-nowrap">{timeAgo(r.lastAt)}</td>
+                    <td className="py-2 pr-3 mono text-xs">{r.referredBy ? short(r.referredBy) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card className="mt-3">
+        <CardTitle eyebrow="all time · by volume brought in">Link creators ({data.creatorCount})</CardTitle>
+        {data.creators.length === 0 ? (
+          <p className="text-xs text-[color:var(--muted-2)] py-4">No creator has minted a link yet.</p>
+        ) : (
+          <div className="overflow-x-auto -mx-1 px-1 max-h-[420px] overflow-y-auto">
+            <table className="w-full text-sm min-w-[820px]">
+              <thead>
+                <tr className={THEAD}>
+                  <th className={TH}>Creator</th>
+                  <th className={`${TH} text-right`}>Links</th>
+                  <th className={`${TH} text-right`}>Opens</th>
+                  <th className={`${TH} text-right`}>Connects</th>
+                  <th className={`${TH} text-right`}>Signs</th>
+                  <th className={`${TH} text-right`}>Referred</th>
+                  <th className={`${TH} text-right`}>Volume</th>
+                  <th className={`${TH} text-right`}>Earned</th>
+                  <th className={`${TH} text-right`}>Paid</th>
+                </tr>
+              </thead>
+              <tbody className="text-[color:var(--muted)]">
+                {data.creators.map((c) => (
+                  <tr key={c.creator} className="border-t border-[var(--line)]">
+                    <td className="py-2 pr-3 text-white whitespace-nowrap">
+                      {c.handle ? (
+                        <Link href={`/l/${c.handle}`} className="hover:text-[color:var(--accent,#34E0A1)]">
+                          @{c.handle}
+                        </Link>
+                      ) : (
+                        <span className="mono">{short(c.creator)}</span>
+                      )}
+                      <WalletKindBadge test={c.test} />
+                      {c.linksWindow > 0 && <span className="ml-2 text-[10px] mono text-[color:var(--accent,#34E0A1)]">+{c.linksWindow} this window</span>}
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{c.links}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{c.opens || '—'}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{c.connects || '—'}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{c.signs || '—'}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{c.referred || '—'}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-white">{c.volumeUsd > 0 ? usd(c.volumeUsd) : '—'}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{c.earnedUsd > 0 ? formatEarnedUsd(c.earnedUsd) : '—'}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">
+                      {c.claimPaidUsd > 0 ? usd(c.claimPaidUsd) : c.claimRequestedUsd > 0 ? <span className="text-amber-400">{usd(c.claimRequestedUsd)} asked</span> : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* The strangers' arc — the one table that never counts us. */}
+      <Card className="mt-3">
+        <CardTitle eyebrow={`last ${cohort?.windowDays ?? data.windowDays}d · strangers only, always`}>The arc · arrived → asked → built → signed → returned</CardTitle>
         {cohort?.arc ? (
           <div className="overflow-x-auto">
             <table className="w-full text-[12px] mt-1">
               <thead>
                 <tr className="text-left text-[color:var(--muted-2)] mono text-[10.5px] uppercase tracking-wider">
                   <th className="py-1 pr-3 font-normal">source</th>
-                  {(['arrived', 'asked', 'built', 'signed', 'returned'] as const).map((k) => (
+                  {ARC_KEYS.map((k) => (
                     <th key={k} className="py-1 pr-3 font-normal text-right">{k}</th>
                   ))}
                 </tr>
@@ -434,217 +913,70 @@ export default function AdminPage() {
                 {cohort.arc.bySource.map((r) => (
                   <tr key={r.source} className="border-t border-[var(--line)]">
                     <td className="py-1.5 pr-3 text-[color:var(--muted)]">{r.source}</td>
-                    {(['arrived', 'asked', 'built', 'signed', 'returned'] as const).map((k) => (
+                    {ARC_KEYS.map((k) => (
                       <td key={k} className="py-1.5 pr-3 mono text-right">{r[k]}</td>
                     ))}
                   </tr>
                 ))}
-                <tr className="border-t border-[var(--line-2)] font-medium">
+                <tr className="border-t border-[var(--line-2,var(--line))] font-medium">
                   <td className="py-1.5 pr-3">all strangers</td>
-                  {(['arrived', 'asked', 'built', 'signed', 'returned'] as const).map((k, i, keys) => {
+                  {ARC_KEYS.map((k, i) => {
                     const v = cohort.arc!.total[k]
-                    const prev = i === 0 ? null : cohort.arc!.total[keys[i - 1]]
-                    const pct = prev ? ` (${Math.round((v / prev) * 100)}%)` : ''
+                    const prev = i === 0 ? null : cohort.arc!.total[ARC_KEYS[i - 1]]
                     return (
                       <td key={k} className="py-1.5 pr-3 mono text-right">
                         {v}
-                        {prev != null && prev > 0 && <span className="text-[color:var(--muted-2)] text-[10.5px]">{pct}</span>}
+                        {prev != null && prev > 0 && <span className="text-[color:var(--muted-2)] text-[10.5px]"> ({Math.round((v / prev) * 100)}%)</span>}
                       </td>
                     )
                   })}
                 </tr>
               </tbody>
             </table>
-            <p className="text-[11px] text-[color:var(--muted-2)] mt-2">
-              Wallet-attributed server truth only; sources are first touch. A drill or test wallet can never appear here.
-            </p>
           </div>
         ) : (
           <p className="text-xs text-[color:var(--muted-2)] py-4">Arc data unavailable.</p>
         )}
       </Card>
 
-      {/* Milestone funnel — links-first key points */}
       <Card className="mt-3">
-        <CardTitle>Milestone funnel · wallets reaching each step ({cohort?.windowDays ?? days}d cohort)</CardTitle>
-        {cohort ? (
-          <MilestoneBars steps={cohort.funnel} />
-        ) : (
-          <p className="text-xs text-[color:var(--muted-2)] py-4">Cohort data unavailable.</p>
-        )}
-      </Card>
-
-      {/* Growth + money flow */}
-      <div className="grid lg:grid-cols-2 gap-3 mt-3">
-        <Card>
-          <CardTitle>New wallets (60d)</CardTitle>
-          <WalletsOverTime daily={data.newWalletsDaily} />
-        </Card>
-        <Card>
-          <CardTitle>Active wallets (30d)</CardTitle>
-          <ActiveWallets daily={data.activeWalletsDaily} />
-        </Card>
-        <Card>
-          <CardTitle>Settled USDC (30d)</CardTitle>
-          <SpendOverTime daily={revDaily} />
-        </Card>
-        <Card>
-          <CardTitle>Revenue by service</CardTitle>
-          <SpendByAgent perAgent={data.byService} />
-        </Card>
-      </div>
-
-      {/* Per-wallet journey table (the old Users page, + the link economy) */}
-      <Card className="mt-3">
-        <CardTitle>Cohort · newest first ({cohort?.wallets.length ?? 0})</CardTitle>
-        <p className="text-xs text-[color:var(--muted-2)] mt-0.5 mb-3">
-          <em>chat</em> = first-party /chat; <em>embed</em> = turns under an embed key this wallet owns.
-          <em> Link</em> = first intent link minted (count in parens). Moved = wallet-attributable
-          notional (signed job steps + guardian closes); link $ counts separately toward the global
-          number.
-        </p>
+        <CardTitle eyebrow={`first seen in the last ${cohort?.windowDays ?? data.windowDays}d · newest first`}>New wallets · how far each got ({cohort?.wallets.length ?? 0})</CardTitle>
         {!cohort || cohort.wallets.length === 0 ? (
-          <p className="text-xs text-[color:var(--muted-2)] py-4">
-            No {external ? 'external ' : ''}wallets first seen in the last {cohort?.windowDays ?? days} days.
-          </p>
+          <p className="text-xs text-[color:var(--muted-2)] py-4">No {external ? 'stranger ' : ''}wallets first seen in this window.</p>
         ) : (
-          <div className="overflow-x-auto -mx-1 px-1">
-            <table className="w-full text-sm min-w-[860px]">
+          <div className="overflow-x-auto -mx-1 px-1 max-h-[420px] overflow-y-auto">
+            <table className="w-full text-sm min-w-[760px]">
               <thead>
-                <tr className="text-left text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mono">
-                  <th className="py-2 pr-3 font-medium">Wallet</th>
-                  <th className="py-2 pr-3 font-medium">Arrived</th>
-                  <th className="py-2 pr-3 font-medium">Chatted</th>
-                  <th className="py-2 pr-3 font-medium">Signed</th>
-                  <th className="py-2 pr-3 font-medium">Standing</th>
-                  <th className="py-2 pr-3 font-medium">Link</th>
-                  <th className="py-2 pr-3 font-medium text-right">Link $</th>
-                  <th className="py-2 pr-3 font-medium text-right">Moved</th>
+                <tr className={THEAD}>
+                  <th className={TH}>Wallet</th>
+                  <th className={TH}>Arrived</th>
+                  <th className={TH}>Asked</th>
+                  <th className={TH}>Signed</th>
+                  <th className={TH}>Standing</th>
+                  <th className={TH}>Minted a link</th>
+                  <th className={`${TH} text-right`}>Moved</th>
                 </tr>
               </thead>
               <tbody className="text-[color:var(--muted)]">
-                {cohortPager.rows.map((w) => (
-                  <tr key={w.address} className="border-t border-[var(--line)]">
+                {cohort.wallets.map((r) => (
+                  <tr key={r.address} className="border-t border-[var(--line)]">
                     <td className="py-2 pr-3 mono text-white whitespace-nowrap">
-                      {short(w.address)}
-                      <WalletKindBadge test={w.test} />
-                      {w.embedOrigins.length > 0 && (
-                        <span
-                          className="ml-2 align-middle text-[10px] text-[color:var(--muted-2)]"
-                          title={w.embedOrigins.join(', ')}
-                        >
-                          {w.embedOrigins[0].replace(/^https?:\/\//, '')}
-                          {w.embedOrigins.length > 1 && ` +${w.embedOrigins.length - 1}`}
-                        </span>
-                      )}
+                      {short(r.address)}
+                      <WalletKindBadge test={r.test} />
                     </td>
                     <td className="py-2 pr-3 whitespace-nowrap">
-                      {timeAgo(w.firstSeen)}
-                      {w.viaLink && (
-                        <span
-                          className="ml-2 align-middle px-1.5 py-0.5 rounded text-[10px] mono uppercase tracking-wide bg-[color:color-mix(in_srgb,var(--accent,#34E0A1)_14%,transparent)] text-[color:var(--accent,#34E0A1)]"
-                          title="Connected on someone's /i intent link"
-                        >
-                          via link
-                        </span>
-                      )}
-                      {w.via && (
-                        <span
-                          className="ml-2 align-middle px-1.5 py-0.5 rounded text-[10px] mono uppercase tracking-wide bg-[color:color-mix(in_srgb,var(--accent,#34E0A1)_14%,transparent)] text-[color:var(--accent,#34E0A1)]"
-                          title={`First sign-in carried a share link (sharer id ${w.via})`}
-                        >
-                          via share
+                      {timeAgo(r.firstSeen)}
+                      {(r.viaLink || r.via) && (
+                        <span className="ml-2 align-middle px-1.5 py-0.5 rounded text-[10px] mono uppercase tracking-wide bg-[color:color-mix(in_srgb,var(--accent,#34E0A1)_14%,transparent)] text-[color:var(--accent,#34E0A1)]">
+                          {r.viaLink ? 'via link' : 'via share'}
                         </span>
                       )}
                     </td>
-                    <td className="py-2 pr-3">
-                      <Mile at={w.firstChat} note={w.firstChat ? (w.surface ?? undefined) : undefined} />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <Mile at={w.firstSigned} />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <Mile at={w.firstStanding} note={w.standingKind ?? undefined} />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <Mile at={w.firstLink} note={w.links > 1 ? `×${w.links}` : undefined} />
-                    </td>
-                    <td className="py-2 pr-3 text-right tabular-nums">
-                      {w.linkMovedUsd > 0 ? usd(w.linkMovedUsd) : '—'}
-                    </td>
-                    <td className="py-2 pr-3 text-right tabular-nums text-white">
-                      {w.moneyMovedUsd > 0 ? usd(w.moneyMovedUsd) : '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <PagerBar p={cohortPager} />
-          </div>
-        )}
-      </Card>
-
-      {/* The link economy per day — minted · conversions · $ moved. */}
-      <Card className="mt-3">
-        <CardTitle>Link economy · daily (30d)</CardTitle>
-        <p className="text-xs text-[color:var(--muted-2)] mt-0.5 mb-3">
-          Links minted and signed conversions (bars, left axis) with guardrail-priced dollars moved
-          through links (line, right axis). Window-independent — always the last 30 days.
-        </p>
-        <LinksDaily daily={cohort?.linksDaily ?? []} />
-      </Card>
-
-      {/* Embedders — every site that has mounted the embedded chat. */}
-      <Card className="mt-3">
-        <CardTitle>Embedders · sites running the chat</CardTitle>
-        <p className="text-xs text-[color:var(--muted-2)] mt-0.5 mb-3">
-          Origins that mounted <span className="mono">/embed</span>, from the sight beacon +
-          per-turn attribution. <em>Keyed</em> rows bill the owner&rsquo;s plan; anonymous rows are
-          keyless embeds (origin only, referrer-policy permitting).
-        </p>
-        {(data.embedders?.length ?? 0) === 0 ? (
-          <p className="text-xs text-[color:var(--muted-2)] py-4">
-            No embeds sighted yet. This fills in the moment a site mounts the chat.
-          </p>
-        ) : (
-          <div className="overflow-x-auto -mx-1 px-1">
-            <table className="w-full text-sm min-w-[560px]">
-              <thead>
-                <tr className="text-left text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mono">
-                  <th className="py-2 pr-3 font-medium">Origin</th>
-                  <th className="py-2 pr-3 font-medium">Owner</th>
-                  <th className="py-2 pr-3 font-medium text-right">Turns</th>
-                  <th className="py-2 pr-3 font-medium text-right">First seen</th>
-                  <th className="py-2 pr-3 font-medium text-right">Last</th>
-                </tr>
-              </thead>
-              <tbody className="text-[color:var(--muted)]">
-                {data.embedders.map((e) => (
-                  <tr key={`${e.keyed}-${e.origin}`} className="border-t border-[var(--line)]">
-                    <td className="py-2 pr-3 text-white">
-                      <a
-                        href={e.pageUrl ?? e.origin}
-                        target="_blank"
-                        rel="noreferrer"
-                        title={e.pageUrl ?? e.origin}
-                        className="hover:text-[color:var(--accent,#34E0A1)] transition-colors"
-                      >
-                        {e.origin.replace(/^https?:\/\//, '')}
-                      </a>
-                    </td>
-                    <td className="py-2 pr-3 mono text-xs">
-                      {e.keyed && e.owner ? (
-                        <>
-                          {short(e.owner)}
-                          <WalletKindBadge test={isTestWallet(e.owner)} />
-                        </>
-                      ) : (
-                        <span className="text-[color:var(--muted-2)]">anonymous</span>
-                      )}
-                    </td>
-                    <td className="py-2 pr-3 text-right mono">{e.turns}</td>
-                    <td className="py-2 pr-3 text-right text-xs text-[color:var(--muted-2)]">{timeAgo(e.firstSeen)}</td>
-                    <td className="py-2 pr-3 text-right text-xs text-[color:var(--muted-2)]">{timeAgo(e.lastSeen)}</td>
+                    <td className="py-2 pr-3"><Mile at={r.firstChat} note={r.firstChat ? (r.surface ?? undefined) : undefined} /></td>
+                    <td className="py-2 pr-3"><Mile at={r.firstSigned} /></td>
+                    <td className="py-2 pr-3"><Mile at={r.firstStanding} note={r.standingKind ?? undefined} /></td>
+                    <td className="py-2 pr-3"><Mile at={r.firstLink} note={r.links > 1 ? `×${r.links}` : undefined} /></td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-white">{r.moneyMovedUsd > 0 ? usd(r.moneyMovedUsd) : '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -653,230 +985,99 @@ export default function AdminPage() {
         )}
       </Card>
 
-      {/* Agent adoption — toggles into vs out of chat runners. */}
-      <Card className="mt-3">
-        <CardTitle>Agent adoption · added &amp; removed</CardTitle>
-        <p className="text-xs text-[color:var(--muted-2)] mt-0.5 mb-3">
-          Each time a user toggles an agent into their chat runner it counts as an <em>add</em>; toggling it back out is a{' '}
-          <em>remove</em>. Guest toggles count too, so “Wallets” (distinct signed-in wallets) is a floor.
-        </p>
-        {data.agentAdds.length === 0 ? (
-          <p className="text-xs text-[color:var(--muted-2)] py-4">
-            No agent toggles recorded yet. This fills in as users add agents to their runner.
-          </p>
-        ) : (
-          <div className="overflow-x-auto -mx-1 px-1">
-            <table className="w-full text-sm min-w-[560px]">
-              <thead>
-                <tr className="text-left text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mono">
-                  <th className="py-2 pr-3 font-medium">Agent</th>
-                  <th className="py-2 pr-3 font-medium text-right">Added</th>
-                  <th className="py-2 pr-3 font-medium text-right">Removed</th>
-                  <th className="py-2 pr-3 font-medium text-right">Net</th>
-                  <th className="py-2 pr-3 font-medium text-right">Wallets</th>
-                  <th className="py-2 pr-3 font-medium text-right">Last</th>
-                </tr>
-              </thead>
-              <tbody className="text-[color:var(--muted)]">
-                {data.agentAdds.map((a) => {
-                  const net = a.added - a.removed
-                  return (
-                    <tr key={a.slug} className="border-t border-[var(--line)]">
-                      <td className="py-2 pr-3 text-white">
-                        {a.hasPage ? (
-                          <Link
-                            href={`/servers/${a.slug}`}
-                            className="inline-flex items-center gap-1 hover:text-[color:var(--accent,#34E0A1)] transition-colors"
-                          >
-                            {a.name}
-                            <ArrowUpRight className="w-3.5 h-3.5 opacity-60" />
-                          </Link>
-                        ) : (
-                          <span className="whitespace-nowrap">
-                            {a.name}
-                            <span className="ml-2 align-middle text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[var(--surf-1)] border border-[var(--line)] text-[color:var(--muted-2)]">
-                              No page
-                            </span>
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2 pr-3 text-right tabular-nums text-white">{a.added}</td>
-                      <td className="py-2 pr-3 text-right tabular-nums">{a.removed || '—'}</td>
-                      <td
-                        className={`py-2 pr-3 text-right tabular-nums ${net > 0 ? 'text-[color:var(--accent,#34E0A1)]' : net < 0 ? 'text-red-400' : ''}`}
-                      >
-                        {net > 0 ? `+${net}` : net}
-                      </td>
-                      <td className="py-2 pr-3 text-right tabular-nums">{a.visitors || '—'}</td>
-                      <td className="py-2 pr-3 text-right whitespace-nowrap">{a.lastAt ? timeAgo(a.lastAt) : '—'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+      {/* 6 — the product's pulse */}
+      {e && (
+        <Card className="mt-3">
+          <CardTitle eyebrow="totals, with this window in parentheses">What people use</CardTitle>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-4">
+            {(
+              [
+                ['Asks in saved chats', e.turns_win, `${e.built_win} built trades across every surface · ${w}`],
+                ['Chats started', e.chats_win, w],
+                ['Watchlists', e.watchlists, `${e.watchlist_owners} people · ${e.watch_items} symbols (+${e.watchlists_win})`],
+                ['Public lists', e.public_lists, 'shared at /lists'],
+                ['Price alerts live', e.alerts_active, `${e.alerts_fired} fired ever (+${e.alerts_win})`],
+                ['Chart posts', e.posts, `${e.comments} comments (+${e.posts_win})`],
+                [`Links minted · ${w}`, e.links_win, `${e.handles} creator pages claimed`],
+                ['Jobs running', e.jobs_live, `${e.jobs_done} finished`],
+                ['DCA schedules', e.dca_active, 'active'],
+                ['Guardians armed', e.guardians_active + e.spot_guards_active, `${e.guardians_active} Hyperliquid · ${e.spot_guards_active} spot`],
+              ] as const
+            ).map(([label, v, sub]) => (
+              <div key={label} className="min-w-0">
+                <p className="text-[10px] uppercase tracking-[0.14em] mono text-[color:var(--muted-2)]">{label}</p>
+                <p className="text-white font-semibold text-lg tabular-nums">{v}</p>
+                <p className="text-[11px] text-[color:var(--muted-2)]">{sub}</p>
+              </div>
+            ))}
           </div>
-        )}
-      </Card>
+          <div className="grid lg:grid-cols-2 gap-6 mt-5 pt-4 border-t border-[var(--line)]">
+            <RankList title="Most watched" rows={data.topWatched.map((r) => ({ symbol: r.symbol, value: `${r.n} ${r.n === 1 ? 'person' : 'people'}`, weight: r.n }))} empty="Nobody is watching anything yet." />
+            <RankList title="Most bought · all time" rows={data.topTraded.map((r) => ({ symbol: r.symbol, value: `${usd(r.usd)} · ${r.n}`, weight: r.usd }))} empty="No buy has a symbol stamped yet." />
+          </div>
+        </Card>
+      )}
 
-      {/* Activation & retention */}
-      <div className="grid lg:grid-cols-2 gap-3 mt-3">
-        <Card>
-          <CardTitle>Activation &amp; weekly cohorts</CardTitle>
-          <div className="mb-4">
-            <p className="text-[10px] uppercase tracking-[0.14em] text-[color:var(--muted-2)] mono">
-              Median time to first payment
-            </p>
-            <p className="text-2xl font-semibold text-white mt-1">{fmtHours(data.activation.medianHours)}</p>
-            <p className="text-[11px] text-[color:var(--muted-2)] mt-0.5">
-              {data.activation.count} activated
-              {data.activation.medianHours != null &&
-                ` · p25–p75 ${fmtHours(data.activation.p25Hours)}–${fmtHours(data.activation.p75Hours)}`}
+      <Card className="mt-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <CardTitle eyebrow={`last ${w}`}>Money asks we didn&rsquo;t turn into a trade</CardTitle>
+            <p className="text-sm text-[color:var(--muted)] -mt-1">
+              <span className="text-white font-semibold tabular-nums">{failTotal}</span> walled ·{' '}
+              <span className={failFunded > 0 ? 'text-amber-400 font-semibold tabular-nums' : 'tabular-nums'}>{failFunded}</span> from a wallet
+              that had the money
+              {data.failures.length > 0 && <> · {data.failures.map((f) => `${f.n} ${f.kind}`).join(' · ')}</>}
             </p>
           </div>
-          {data.cohorts.length === 0 ? (
-            <p className="text-xs text-[color:var(--muted-2)]">No signup cohorts yet.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mono">
-                  <th className="py-2 pr-3 font-medium">Week of</th>
-                  <th className="py-2 pr-3 font-medium text-right">Signups</th>
-                  <th className="py-2 pr-3 font-medium text-right">Returned</th>
-                  <th className="py-2 pr-3 font-medium text-right">Paid</th>
-                </tr>
-              </thead>
-              <tbody className="text-[color:var(--muted)]">
-                {data.cohorts.map((c) => (
-                  <tr key={c.week} className="border-t border-[var(--line)]">
-                    <td className="py-2 pr-3 whitespace-nowrap mono text-white">{weekLabel(c.week)}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">{c.size}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">
-                      {c.returned} <span className="text-[color:var(--muted-2)]">({pct(c.returned, c.size)})</span>
-                    </td>
-                    <td className="py-2 pr-3 text-right tabular-nums text-white">
-                      {c.paid} <span className="text-[color:var(--muted-2)]">({pct(c.paid, c.size)})</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </Card>
-
-        {/* Email signups — the landing "stay up to date" list, with one-click outreach */}
-        <Card>
-          <CardTitle>Email signups ({data.recentSignups.length})</CardTitle>
-          {data.recentSignups.length === 0 ? (
-            <p className="text-xs text-[color:var(--muted-2)] py-4">No email signups yet.</p>
-          ) : (
-            <div className="overflow-x-auto -mx-1 px-1">
-              <table className="w-full text-sm min-w-[420px]">
-                <thead>
-                  <tr className="text-left text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mono">
-                    <th className="py-2 pr-3 font-medium">Email</th>
-                    <th className="py-2 pr-3 font-medium">Status</th>
-                    <th className="py-2 pr-3 font-medium">Signed up</th>
-                    <th className="py-2 pr-3 font-medium text-right">Reach out</th>
-                  </tr>
-                </thead>
-                <tbody className="text-[color:var(--muted)]">
-                  {data.recentSignups.map((s) => (
-                    <tr key={s.email} className="border-t border-[var(--line)]">
-                      <td className="py-2 pr-3 text-white break-all">{s.email}</td>
-                      <td className="py-2 pr-3 whitespace-nowrap">
-                        {s.status === 'verified' ? (
-                          <span className="text-[color:var(--accent,#34E0A1)]">Verified</span>
-                        ) : (
-                          <span className="text-[color:var(--muted-2)]">Pending</span>
-                        )}
-                      </td>
-                      <td className="py-2 pr-3 whitespace-nowrap">{timeAgo(s.createdAt)}</td>
-                      <td className="py-2 pr-3 text-right">
-                        <a
-                          href={`mailto:${s.email}`}
-                          className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-md bg-white text-zinc-950 hover:bg-zinc-200 transition-colors"
-                        >
-                          <Mail className="w-3.5 h-3.5" /> Email
-                        </a>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* Wallet roster */}
-      <Card className="mt-3">
-        <div className="flex items-center justify-between gap-3 mb-3">
-          <CardTitle>Wallets ({data.roster.length})</CardTitle>
-          <button
-            className="flex items-center gap-1.5 text-[11px] px-3 rounded-md min-h-[36px] bg-white text-zinc-950 hover:bg-zinc-200 disabled:opacity-50 transition-colors"
-            onClick={() => {
-              const blob = new Blob([rosterToCsv(data.roster)], { type: 'text/csv;charset=utf-8' })
-              const a = document.createElement('a')
-              a.href = URL.createObjectURL(blob)
-              a.download = `yeetful-wallets-${new Date().toISOString().slice(0, 10)}.csv`
-              a.click()
-              URL.revokeObjectURL(a.href)
-            }}
-            disabled={data.roster.length === 0}
-          >
-            <Download className="w-3.5 h-3.5" /> CSV
-          </button>
-        </div>
-        <div className="overflow-x-auto -mx-1 px-1">
-          <table className="w-full text-sm min-w-[640px]">
-            <thead>
-              <tr className="text-left text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mono">
-                <th className="py-2 pr-3 font-medium">Wallet</th>
-                <th className="py-2 pr-3 font-medium">First seen</th>
-                <th className="py-2 pr-3 font-medium">Last active</th>
-                <th className="py-2 pr-3 font-medium text-right">Chats</th>
-                <th className="py-2 pr-3 font-medium text-right">Keys</th>
-                <th className="py-2 pr-3 font-medium text-right">Calls</th>
-                <th className="py-2 pr-3 font-medium text-right">Settled</th>
-                <th className="py-2 pr-3 font-medium text-right">Orgs</th>
-              </tr>
-            </thead>
-            <tbody className="text-[color:var(--muted)]">
-              {rosterPager.rows.map((r) => (
-                <tr key={r.address} className="border-t border-[var(--line)]">
-                  <td className="py-2 pr-3 mono text-white">
-                    {short(r.address)}
-                    <WalletKindBadge test={isTestWallet(r.address)} />
-                  </td>
-                  <td className="py-2 pr-3 whitespace-nowrap">{timeAgo(r.firstSeen)}</td>
-                  <td className="py-2 pr-3 whitespace-nowrap">{timeAgo(r.lastActive)}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{r.chats}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{r.keys}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{r.okCalls}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums text-white">{usd(r.settled)}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{r.orgs || '—'}</td>
-                </tr>
-              ))}
-              {data.roster.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="py-6 text-center text-[color:var(--muted-2)]">
-                    No wallets yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          <PagerBar p={rosterPager} />
+          <Link href="/dashboard/failures?funded=1" className={BTN}>
+            Open the queue <ArrowUpRight className="w-3.5 h-3.5" />
+          </Link>
         </div>
       </Card>
+    </div>
+  )
+}
 
-      {/* Orgs + supply context */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
-        <Kpi label="Organizations" value={String(data.orgs.orgs)} sub={`${data.orgs.members} members`} />
-        <Kpi label="Org spend" value={usd(data.orgs.org_settled)} small />
-        <Kpi label="Callable services" value={String(data.supply.callable)} sub={`of ${data.supply.servers} listed`} />
-        <Kpi label="Activated wallets" value={String(t.activated)} sub="minted a key or curated their agents" />
-      </div>
-    </>
+function EmailList({ rows, empty }: { rows: { email: string; note: string; at: string }[]; empty: string }) {
+  if (rows.length === 0) return <p className="text-xs text-[color:var(--muted-2)] py-4">{empty}</p>
+  return (
+    <ul className="max-h-[260px] overflow-y-auto -mr-2 pr-2">
+      {rows.map((r) => (
+        <li key={r.email} className="flex items-center justify-between gap-3 py-1.5 border-t border-[var(--line)] first:border-t-0 text-sm">
+          <a href={`mailto:${r.email}`} className="text-white hover:text-[color:var(--accent,#34E0A1)] break-all min-w-0">
+            {r.email}
+          </a>
+          <span className="text-[11px] text-[color:var(--muted-2)] whitespace-nowrap shrink-0">
+            {r.note} · {timeAgo(r.at)}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function RankList({ title, rows, empty }: { title: string; rows: { symbol: string; value: string; weight: number }[]; empty: string }) {
+  const top = rows[0]?.weight ?? 0
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] uppercase tracking-[0.14em] mono text-[color:var(--muted-2)] mb-2">{title}</p>
+      {rows.length === 0 ? (
+        <p className="text-xs text-[color:var(--muted-2)]">{empty}</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {rows.map((r) => (
+            <li key={r.symbol} className="grid grid-cols-[64px_1fr_auto] items-center gap-3 text-sm">
+              <Link href={`/t/${r.symbol}`} className="mono text-white hover:text-[color:var(--accent,#34E0A1)] truncate">
+                {r.symbol}
+              </Link>
+              <span className="h-1.5 rounded-full bg-[var(--surf-2,rgba(255,255,255,0.04))] overflow-hidden">
+                <span className="block h-full rounded-full" style={{ width: `${top > 0 ? (r.weight / top) * 100 : 0}%`, background: 'var(--accent, #34E0A1)', opacity: 0.7 }} />
+              </span>
+              <span className="text-[11px] text-[color:var(--muted)] tabular-nums whitespace-nowrap">{r.value}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
