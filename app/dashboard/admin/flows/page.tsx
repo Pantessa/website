@@ -51,7 +51,6 @@ import { useSession } from '@/lib/session'
 import { isAdminAddress } from '@/lib/admin'
 import { Card, CardTitle, SkeletonCard, short, timeAgo } from '@/lib/dashboard-ui'
 import {
-  FLOW_STAGES,
   FLOW_WINDOWS,
   KIND_TONE,
   OUTCOME_LABEL,
@@ -125,6 +124,7 @@ const KIND_ICON: Record<FlowKind, React.ComponentType<{ className?: string; styl
   account: UserPlus,
   ask: MessageSquare,
   'reply-answer': MessageCircle,
+  'reply-connect': Wallet,
   'reply-offer': ListChecks,
   'reply-built': FileSignature,
   'reply-wall': Ban,
@@ -365,7 +365,7 @@ const PICKS: { id: Pick; label: string }[] = [
   { id: 'wallet', label: 'Has a wallet' },
   { id: 'live', label: 'On the site now' },
 ]
-const WALL_OUTCOMES = new Set<FlowOutcome>(['wallet-refused', 'withheld', 'job-failed', 'built-unsigned', 'offer-unanswered', 'ask-walled', 'connected-idle', 'door-error', 'door-abandoned'])
+const WALL_OUTCOMES = new Set<FlowOutcome>(['wallet-refused', 'withheld', 'job-failed', 'built-unsigned', 'offer-unanswered', 'ask-walled', 'ask-needs-wallet', 'connected-idle', 'door-error', 'door-abandoned'])
 
 function FlowsPage() {
   const { address } = useSession()
@@ -706,7 +706,7 @@ function FlowsPage() {
       </Card>
       <p className="mt-3 text-[11px] text-[color:var(--muted-2)]">
         No cookie and no stored id: a visitor is a hash of the day’s salt, their IP and their browser family, and the salt is deleted after two days. Browsers that send Global Privacy Control or Do Not Track are not
-        recorded at all. {FLOW_STAGES.length} rungs, judged in lib/user-flows.ts.
+        recorded at all, and neither is the chat embedded on other sites.
       </p>
     </div>
   )

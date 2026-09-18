@@ -159,6 +159,7 @@ export type FlowKind =
   | 'account' // an email / Google account was created
   | 'ask' // sent a request
   | 'reply-answer' // got a plain answer to a question that moved no money
+  | 'reply-connect' // was told to connect a wallet before the ask can run
   | 'reply-offer' // got something to act on that is not yet signable (chips, a funding offer, a clarify)
   | 'reply-built' // got something to sign
   | 'reply-wall' // a money ask that ended with nothing to act on
@@ -201,6 +202,7 @@ export const KIND_TONE: Record<FlowKind, FlowTone> = {
   account: 'good',
   ask: 'act',
   'reply-answer': 'info',
+  'reply-connect': 'warn',
   'reply-offer': 'warn',
   'reply-built': 'good',
   'reply-wall': 'bad',
@@ -240,6 +242,7 @@ export type FlowOutcome =
   | 'built-unsigned'
   | 'offer-unanswered'
   | 'ask-walled'
+  | 'ask-needs-wallet'
   | 'asked-answered'
   | 'connected-idle'
   | 'door-error'
@@ -255,6 +258,7 @@ export const OUTCOME_LABEL: Record<FlowOutcome, string> = {
   'built-unsigned': 'Got a transaction, never signed',
   'offer-unanswered': 'Got an offer, never took it',
   'ask-walled': 'Asked, hit a wall',
+  'ask-needs-wallet': 'Asked, was told to connect first, left',
   'asked-answered': 'Asked, got an answer, left',
   'connected-idle': 'Connected, never asked',
   'door-error': 'Sign-in failed',
@@ -271,6 +275,7 @@ export const OUTCOME_TONE: Record<FlowOutcome, FlowTone> = {
   'built-unsigned': 'warn',
   'offer-unanswered': 'warn',
   'ask-walled': 'bad',
+  'ask-needs-wallet': 'warn',
   'asked-answered': 'info',
   'connected-idle': 'warn',
   'door-error': 'bad',
@@ -355,7 +360,7 @@ export function foldFlow(itemsAsc: FlowItem[], opts?: { hasWallet?: boolean }): 
       ? 'built'
       : has(items, 'reply-offer')
         ? 'offered'
-        : has(items, 'ask', 'reply-wall', 'reply-answer')
+        : has(items, 'ask', 'reply-wall', 'reply-answer', 'reply-connect')
           ? 'asked'
           : opts?.hasWallet || has(items, 'connect', 'signin', 'account')
             ? 'connected'
@@ -373,7 +378,7 @@ export function foldFlow(itemsAsc: FlowItem[], opts?: { hasWallet?: boolean }): 
   let outcome: FlowOutcome
   let stoppedAt: string
   // The END of the story decides: read the last decisive item.
-  const decisive = last(items, 'signed', 'refused', 'withheld', 'reply-built', 'built', 'job', 'job-failed', 'reply-offer', 'reply-wall', 'reply-answer', 'ask', 'door-error')
+  const decisive = last(items, 'signed', 'refused', 'withheld', 'reply-built', 'built', 'job', 'job-failed', 'reply-offer', 'reply-wall', 'reply-connect', 'reply-answer', 'ask', 'door-error')
   const lastAsk = last(items, 'ask')
   const asked = lastAsk ? lastAsk.title.replace(/^Asked:\s*/, '') : (decisive?.ask ?? null)
   const askWords = asked ? `“${clip(asked, 90)}”` : 'their ask'
@@ -402,6 +407,11 @@ export function foldFlow(itemsAsc: FlowItem[], opts?: { hasWallet?: boolean }): 
     outcome = 'ask-walled'
     const funds = decisive.n?.hadFunds === true ? ' They had the money.' : decisive.n?.hadFunds === false ? ' Their wallet was empty.' : ''
     stoppedAt = `${AskWords} ended with nothing to act on.${funds}`
+  } else if (decisive?.kind === 'reply-connect') {
+    // Asking costs nothing; connecting is the first real commitment. A
+    // visitor who stops here wanted the thing and not the wallet step.
+    outcome = 'ask-needs-wallet'
+    stoppedAt = `Asked ${askWords}, was told to connect a wallet first, and ${opts?.hasWallet || has(items, 'connect') ? 'never sent it again' : 'never connected one'}.`
   } else if (decisive?.kind === 'reply-answer' || decisive?.kind === 'ask') {
     outcome = 'asked-answered'
     stoppedAt = `Asked ${askWords}, got an answer, and left.`
@@ -467,7 +477,7 @@ export function replyShape(body: Record<string, unknown> | null, moneyAsk: boole
   if (body.jobId) return { kind: 'reply-built', title: `Got a multi-step job${via}` }
   if (body.guardianPolicyId) return { kind: 'reply-built', title: `Got a Guardian protection to arm${via}` }
   if (body.dcaScheduleId) return { kind: 'reply-built', title: `Got a recurring buy${via}` }
-  if (body.connectWallet) return { kind: 'reply-offer', title: 'Got asked to connect a wallet' }
+  if (body.connectWallet) return { kind: 'reply-connect', title: 'Was told to connect a wallet first' }
   if (body.clarify && typeof body.clarify === 'object') {
     // The card door rides as one of the chips (lib/onramp fundChipFor).
     const options = (body.clarify as { options?: unknown }).options

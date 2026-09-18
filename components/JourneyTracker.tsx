@@ -16,7 +16,7 @@ import { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import { isAdminAddress } from '@/lib/admin'
-import { flushJourney, labelOfClick, markTeamBrowser, observeFetch, setJourneyWallet, shouldLogScriptError, trackJourney } from '@/lib/journey'
+import { flushJourney, journeyOff, labelOfClick, markTeamBrowser, observeFetch, setJourneyWallet, shouldLogScriptError, trackJourney } from '@/lib/journey'
 import { useSession } from '@/lib/session'
 
 const MAX_ERRORS_PER_LOAD = 8
@@ -69,8 +69,10 @@ export default function JourneyTracker() {
     trackJourney('view', null, undefined, pathname)
   }, [pathname])
 
-  // Page-lifetime listeners: mounted once.
+  // Page-lifetime listeners: mounted once. Not at all on /embed or for a
+  // browser that opted out: nothing is wrapped, nothing listens.
   useEffect(() => {
+    if (journeyOff()) return
     const restoreFetch = observeFetch()
     const seenErrors = new Set<string>()
 

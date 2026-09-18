@@ -37,6 +37,13 @@ let arrivalSent = false
 /** The untouched fetch, captured before observeFetch() wraps window.fetch. */
 let rawFetch: typeof fetch | null = null
 
+/** True where the log must not run at all: the server, a browser that asked
+ *  not to be tracked, and /embed (another site's visitors). The tracker reads
+ *  it before attaching a single listener. */
+export function journeyOff(): boolean {
+  return off()
+}
+
 function off(): boolean {
   if (typeof window === 'undefined') return true
   const nav = navigator as Navigator & { globalPrivacyControl?: boolean }

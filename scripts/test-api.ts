@@ -7275,6 +7275,13 @@ async function main() {
         F.foldFlow([it(0, 'ask', 'Asked: x'), it(2, 'reply-built')]).outcome === 'built-unsigned' &&
         F.foldFlow([it(0, 'ask', 'Asked: x'), it(2, 'reply-built'), it(9, 'refused', 'r', { detail: 'Chain not configured' })]).outcome === 'wallet-refused',
     )
+    const needsWallet = F.foldFlow([it(0, 'view'), it(5, 'ask', 'Asked: Buy $25 of TSLA'), it(6, 'reply-connect', 'Was told to connect a wallet first')])
+    const resent = F.foldFlow([it(0, 'ask', 'Asked: Buy $50 of ETH'), it(1, 'reply-connect'), it(3, 'connect'), it(4, 'ask', 'Asked: Buy $50 of ETH'), it(6, 'reply-wall', 'Wall', { n: { hadFunds: false } })])
+    check(
+      'flows fold: being told to connect first is not an offer — it holds the asked rung, and stopping there is its own outcome',
+      needsWallet.stage === 'asked' && needsWallet.outcome === 'ask-needs-wallet' && /never connected one/.test(needsWallet.stoppedAt) && resent.stage === 'asked' && resent.outcome === 'ask-walled',
+      needsWallet.stoppedAt,
+    )
     const failedJob = F.foldFlow([it(0, 'ask', 'Asked: fund and buy'), it(2, 'reply-built'), it(40, 'job-failed', 'Job failed: Fund Robinhood Chain → Buy $12 of SPY', { detail: 'RPC Request failed.' })])
     check('flows fold: a job that failed partway is its own wall, named with the reason', failedJob.outcome === 'job-failed' && F.OUTCOME_TONE['job-failed'] === 'bad' && /RPC Request failed/.test(failedJob.stoppedAt), failedJob.stoppedAt)
     const wallOnly = [{ at: T0 + 5000, kind: 'reply-wall', title: 'Wall (planner-answer): Buy $10 of ETH', from: 'db', ask: 'Buy $10 of ETH', n: { hadFunds: false } }] as import('../lib/user-flows').FlowItem[]
@@ -7298,7 +7305,7 @@ async function main() {
       shape({ txChain: [{}], buildPath: 'native-swap-uniswap' }).kind === 'reply-built' && shape({ jobId: 'j1' }).kind === 'reply-built' &&
         shape({ clarify: { options: [{ label: 'Add $25 with card', fund: { presetFiatUsd: 25 } }] } }).title.includes('fund by card') &&
         shape({ clarify: { options: [{ label: 'Just enough' }] }, buildPath: 'native-funding-offer' }).title.includes('from their own wallet') &&
-        shape({ connectWallet: true }).kind === 'reply-offer' && shape({ reply: 'Top up any of those chains and ask again.' }).kind === 'reply-wall' &&
+        shape({ connectWallet: true }).kind === 'reply-connect' && shape({ reply: 'Top up any of those chains and ask again.' }).kind === 'reply-wall' &&
         shape({ reply: 'ETH is up 2% today.' }, false).kind === 'reply-answer' && shape(null).kind === 'reply-wall' && shape({ rateGate: { scope: 'ip' }, reply: 'x' }).kind === 'reply-wall',
     )
 
