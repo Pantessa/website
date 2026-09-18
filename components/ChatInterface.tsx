@@ -67,6 +67,7 @@ import { chainById } from '@/lib/chains'
 import AppModeWorkspace from '@/components/AppModeWorkspace'
 import LinksWorkspace from '@/components/LinksWorkspace'
 import JobDetailOverlay from '@/components/JobDetailOverlay'
+import { claimJobStepReport, jobStepSignedInfo } from '@/lib/job-step-telemetry'
 import ChartOverlay from '@/components/ChartOverlay'
 import VoiceButton, { type VoiceState } from '@/components/VoiceButton'
 import { parseChartAsk } from '@/lib/charts'
@@ -2096,15 +2097,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                           jobId={(msg.meta as { jobId: string }).jobId}
                           token={typeof (msg.meta as { jobToken?: unknown }).jobToken === 'string' ? (msg.meta as { jobToken: string }).jobToken : undefined}
                           onStepSigned={(info) => {
-                            reportEmbedSigned({
-                              artifact: 'job-step',
-                              chain: 'multi',
-                              detail: info.detail?.slice(0, 60),
-                              valueUsd: info.valueUsd ?? undefined,
-                              buildPath: info.builder,
-                              feeBps: info.feeBps,
-                              jobId: (msg.meta as { jobId: string }).jobId,
-                            })
+                            // Shared fence: the Jobs rail's overlay mounts a
+                            // JobCard over this same job, and the beacon is
+                            // keyed only by sessionId server-side — a second
+                            // report would count the money twice.
+                            if (!claimJobStepReport(info)) return
+                            reportEmbedSigned(jobStepSignedInfo(info))
                           }}
                           onSettled={(info) => {
                             // Additive turn outcome (embed contract): a job

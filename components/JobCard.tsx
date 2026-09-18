@@ -18,6 +18,8 @@ import SpendPolicyFix, { type PolicyBlockInfo } from '@/components/SpendPolicyFi
 import ShareReceiptButton from '@/components/ShareReceiptButton'
 import { orderRequestOf, txChainOf, txRequestOf } from '@/lib/transaction-layer'
 import { feeBpsOfArtifact } from '@/lib/fees'
+import { chainById } from '@/lib/chains'
+import type { JobStepSignal } from '@/lib/job-step-telemetry'
 import { LIVE_JOB_STATUSES, jobStatusWord } from '@/lib/step-status'
 
 interface StepRow {
@@ -63,8 +65,11 @@ export default function JobCard({
   /** Capability token from the turn that compiled the job — the embed path's
    *  auth (no SIWE session in an iframe visitor). Appended as ?t=. */
   token?: string
-  /** Telemetry hook — fired once per signed step with its value + builder. */
-  onStepSigned?: (info: { builder: string; valueUsd?: number | null; detail?: string; feeBps?: number }) => void
+  /** Telemetry hook — fired once per signed step with everything the `signed`
+   *  beacon needs (lib/job-step-telemetry). Every mount point must report:
+   *  the rail's overlay used to drop this signal, so steps signed there
+   *  recorded no money moved at all. */
+  onStepSigned?: (info: JobStepSignal) => void
   /** Fired ONCE when the poll first observes a terminal status — the
    *  settlement signal /i's arc and embed hosts read. Also fires on mount
    *  for an already-finished job (a reopened thread), which is truthful. */
@@ -119,7 +124,16 @@ export default function JobCard({
     }
   }, [job, jobId, onSettled])
 
-  const completeStep = async (seq: number, builder: string, result: Record<string, unknown>, valueUsd?: number | null) => {
+  const completeStep = async (
+    seq: number,
+    builder: string,
+    result: Record<string, unknown>,
+    valueUsd?: number | null,
+    // The receipt the sign surface handed back: an EVM chain + hash for tx
+    // steps, a venue explorer URL for HL/OpenSea orders. Rides the beacon so
+    // a job step's row carries the same tx evidence a one-shot's does.
+    receipt?: { chainId?: number; txUrl?: string },
+  ) => {
     await fetch(`/api/jobs/${jobId}/complete${q}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -128,8 +142,28 @@ export default function JobCard({
     // The fee tier read from the signed step's OWN artifact (the shared
     // lib/fees reader) — job-step beacons price like one-shots (C2b).
     const stepArtifact = job?.steps.find((s) => s.seq === seq)?.artifact
-    onStepSigned?.({ builder, valueUsd, detail: String(result.detail ?? result.txHash ?? ''), feeBps: feeBpsOfArtifact(stepArtifact) })
+    onStepSigned?.({
+      jobId,
+      seq,
+      builder,
+      valueUsd,
+      detail: String(result.detail ?? result.txHash ?? ''),
+      feeBps: feeBpsOfArtifact(stepArtifact),
+      // Job builders aren't BUILD_PATHS, so the route drops this today — sent
+      // anyway, unchanged from what the chat lane has always sent, so the
+      // wire is identical whichever card the user signed in.
+      buildPath: builder,
+      chainId: receipt?.chainId,
+      txUrl: receipt?.txUrl,
+    })
     void load()
+  }
+
+  // Explorer link for a confirmed hash — the chain registry is the single
+  // source (a basescan fallback would mislabel a Robinhood/Arbitrum tx).
+  const explorerFor = (chainId: number, hash: string): string | undefined => {
+    const base = chainById(chainId)?.explorerTx
+    return base ? `${base}${hash}` : undefined
   }
 
   const cancel = async () => {
@@ -279,6 +313,7 @@ export default function JobCard({
                           step.builder,
                           { detail: info.orderUid ? `Listed on OpenSea — order ${info.orderUid.slice(0, 12)}…` : 'Listed on OpenSea', explorerUrl: info.explorerUrl },
                           step.valueUsd,
+                          { txUrl: info.explorerUrl ?? undefined },
                         )
                       }
                     />
@@ -286,21 +321,27 @@ export default function JobCard({
                   {order && order.protocol !== 'opensea' && (
                     <SignHlActionButton
                       order={order}
-                      onPlaced={(info) => void completeStep(step.seq, step.builder, { detail: info.detail, explorerUrl: info.explorerUrl }, info.valueUsd)}
+                      onPlaced={(info) =>
+                        void completeStep(step.seq, step.builder, { detail: info.detail, explorerUrl: info.explorerUrl }, info.valueUsd, {
+                          txUrl: info.explorerUrl,
+                        })
+                      }
                     />
                   )}
                   {tx && (
                     <SendTxButton
                       tx={tx}
                       summary={(step.artifact as { summary?: string } | null)?.summary}
-                      onConfirmed={(hash) =>
+                      onConfirmed={(hash) => {
+                        const chainId = tx.chainId ?? 8453
                         void completeStep(
                           step.seq,
                           step.builder,
-                          { txHash: hash, txs: [{ hash, chainId: tx.chainId ?? 8453, title: step.title }] },
+                          { txHash: hash, txs: [{ hash, chainId, title: step.title }] },
                           step.valueUsd,
+                          { chainId, txUrl: explorerFor(chainId, hash) },
                         )
-                      }
+                      }}
                     />
                   )}
                   {/* multi-tx sign steps (approve → bridge/swap) ride the SAME
@@ -313,7 +354,12 @@ export default function JobCard({
                       // txs = every confirmed hash in the chain (approve AND
                       // swap AND fee), so the persisted step result carries
                       // the full signing log the shared page renders.
-                      onCompleted={(info) => void completeStep(step.seq, step.builder, { txHash: info.hash, txs: info.txs }, step.valueUsd)}
+                      onCompleted={(info) =>
+                        void completeStep(step.seq, step.builder, { txHash: info.hash, txs: info.txs }, step.valueUsd, {
+                          chainId: info.chainId,
+                          txUrl: explorerFor(info.chainId, info.hash),
+                        })
+                      }
                     />
                   )}
                 </div>

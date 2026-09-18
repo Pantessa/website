@@ -32,6 +32,14 @@ import { dryRunTx, isAllowanceLag, rpcHostOf, transientRpcWords } from '../lib/d
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
 import { LINK_FEE_PCT, SWAP_FEE_PCT } from '../lib/fees'
+import {
+  claimJobStepReport,
+  firstPartyJobStepBody,
+  jobStepKey,
+  jobStepSignedInfo,
+  resetJobStepReports,
+  type JobStepSignal,
+} from '../lib/job-step-telemetry'
 import { ROBINHOOD_DESK } from '../lib/live-examples'
 import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import {
@@ -101,7 +109,7 @@ import { activeLinkCapFor, composeMcps, isCrossChainAsk, linkEyebrow, linkLockup
 import { DEFAULT_TAB, parseTabParam, tabUrl } from '../lib/app-tab-url'
 import { LINKS_STUDIO_HREF } from '../lib/links-href'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
-import { BUILD_PATHS, venueOfBuildPath } from '../lib/build-path'
+import { BUILD_PATHS, isBuildPath, venueOfBuildPath } from '../lib/build-path'
 
 /** A venue label is a product name ('uniswap'); a build path is an internal
  *  one ('native-swap-lifi', 'app-mode-swap'). The public /activity payload must
@@ -26437,6 +26445,155 @@ async function main() {
         /export \{ default, alt, size, contentType \} from '\.\/opengraph-image'/.test(mkTwSrc) && /export const runtime = 'nodejs'/.test(mkTwSrc) && /export const dynamic = 'force-dynamic'/.test(mkTwSrc),
     )
   }
+
+  // ── A job step signed in the Jobs rail moves the money metric (2026-09-18) ─
+  // components/JobDetailOverlay mounted `<JobCard onStepSigned={() => void
+  // loadContext()} />` — it took the signal and threw it away, so a step
+  // signed from the rail's detail card recorded NOTHING: no embed_turns row,
+  // no money moved, no creator earnings, nothing on /activity. Only a step
+  // signed in the chat thread reported. lib/job-step-telemetry now owns the
+  // wire for BOTH lanes plus the double-count fence between them.
+  {
+    const [cardSrc, overlaySrc, chatSrc, teleSrc] = await Promise.all([
+      readFile('components/JobCard.tsx', 'utf8'),
+      readFile('components/JobDetailOverlay.tsx', 'utf8'),
+      readFile('components/ChatInterface.tsx', 'utf8'),
+      readFile('lib/job-step-telemetry.ts', 'utf8'),
+    ])
+
+    // The fence that keeps this fixed: EVERY JobCard mount reports. A mount
+    // whose handler never reaches lib/job-step-telemetry is the bug itself.
+    const mountsIn = (src: string) => [...src.matchAll(/<JobCard[\s\S]{0,2500}?\/>/g)].map((m) => m[0])
+    const mounts = [...mountsIn(chatSrc), ...mountsIn(overlaySrc)]
+    // Every JobCard in the repo is one of these two files — a third mount that
+    // forgets to report is the bug this PR fixes, so the count is pinned too.
+    const walkTsx = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? walkTsx(`${dir}/${d.name}`) : /\.tsx$/.test(d.name) ? [`${dir}/${d.name}`] : []))
+    const jobCardFiles = [...walkTsx('components'), ...walkTsx('app')].filter((f) => /<JobCard[\s>]/.test(readFileSync(f, 'utf8')))
+    const reportsFromLib = (m: string) => /onStepSigned/.test(m) && /jobStepSignedInfo|postJobStepSigned|onStepSigned=\{onStepSigned\}/.test(m)
+    check(
+      'job-step beacon: every JobCard mount in the app reports through lib/job-step-telemetry — no mount may swallow the signal (the rail overlay did)',
+      mounts.length === 3 && mounts.every(reportsFromLib) && !/onStepSigned=\{\(\) =>/.test(overlaySrc) &&
+        jobCardFiles.length === 2 && jobCardFiles.every((f) => /ChatInterface|JobDetailOverlay/.test(f)),
+      `${mounts.length} mounts in ${jobCardFiles.length} files, ${mounts.filter((m) => !reportsFromLib(m)).length} silent`,
+    )
+    check(
+      'job-step beacon: the overlay owns a real reporter (postJobStepSigned with the connected wallet) and still refreshes the position block',
+      /import \{ postJobStepSigned, type JobStepSignal \} from '@\/lib\/job-step-telemetry'/.test(overlaySrc) &&
+        /postJobStepSigned\(info, \{ walletAddress: address \}\)/.test(overlaySrc) &&
+        /const \{ address \} = useAccount\(\)/.test(overlaySrc) &&
+        /void loadContext\(\)/.test(overlaySrc),
+    )
+    check(
+      'job-step beacon: the chat lane stopped spelling the fields inline — it maps through the shared jobStepSignedInfo and claims the fence first',
+      /if \(!claimJobStepReport\(info\)\) return/.test(chatSrc) &&
+        /reportEmbedSigned\(jobStepSignedInfo\(info\)\)/.test(chatSrc) &&
+        !/artifact: 'job-step',\s*\n\s*chain: 'multi'/.test(chatSrc),
+    )
+    // The overlay is first-party BY CONSTRUCTION (it never mounts in an embed
+    // or on /i) — which is why its reporter may hard-code the first-party lane
+    // and why the shared fence can never swallow a host page's `turn` event:
+    // no onEmbedEvent listener exists where the overlay lives.
+    check(
+      'job-step beacon: the overlay only mounts first-party (!embedded && !simple), so its keyless lane is always the right one and no host-page listener can be fenced out',
+      /\{!embedded && !simple && <JobDetailOverlay \/>\}/.test(chatSrc) &&
+        !/onEmbedEvent/.test(overlaySrc) &&
+        /firstParty: true/.test(teleSrc),
+    )
+
+    // JobCard hands back everything the beacon needs — including the receipt
+    // (chain + explorer URL) each sign surface already had and used to drop.
+    check(
+      'job-step beacon: JobCard hands back the full signal — jobId + seq (the fence identity), builder, value, fee tier, and the receipt each sign surface returns',
+      /onStepSigned\?: \(info: JobStepSignal\) => void/.test(cardSrc) &&
+        /receipt\?: \{ chainId\?: number; txUrl\?: string \}/.test(cardSrc) &&
+        /jobId,\n\s*seq,\n\s*builder,/.test(cardSrc) &&
+        /chainId: receipt\?\.chainId/.test(cardSrc) && /txUrl: receipt\?\.txUrl/.test(cardSrc) &&
+        // EVERY sign surface the card embeds feeds its receipt through — all
+        // four call sites pass the argument, none of them drops it.
+        (cardSrc.match(/completeStep\(/g) ?? []).length === 4 &&
+        (cardSrc.match(/\{\s*(?:chainId|txUrl)[:,]/g) ?? []).length === 4,
+      `completeStep calls=${(cardSrc.match(/completeStep\(/g) ?? []).length}, receipts=${(cardSrc.match(/\{\s*(?:chainId|txUrl)[:,]/g) ?? []).length}`,
+    )
+    check(
+      'job-step beacon: the explorer link comes from the chain registry, never a basescan fallback (a 4663 step would link to the wrong explorer)',
+      /const base = chainById\(chainId\)\?\.explorerTx/.test(cardSrc) && !/basescan\.org/.test(cardSrc),
+    )
+
+    // ── the double-count fence ───────────────────────────────────────────
+    // Both JobCards can be mounted over the same job at once (the overlay
+    // renders OVER the chat that holds the job's message), and the beacon is
+    // keyed only by sessionId server-side — a second report is counted twice
+    // as money moved.
+    resetJobStepReports()
+    const JOBSTEP_WALLET = '0x00000000000000000000000000000000000beef1'
+    const sig = (jobId: string, seq: number): JobStepSignal => ({ jobId, seq, builder: 'native-swap', valueUsd: 12.5, feeBps: 50, detail: '0xabc' })
+    const first = claimJobStepReport(sig('job-aaa', 0))
+    const second = claimJobStepReport(sig('job-aaa', 0))
+    const otherStep = claimJobStepReport(sig('job-aaa', 1))
+    const otherJob = claimJobStepReport(sig('job-bbb', 0))
+    check(
+      'job-step beacon (fence): one report per (job, step) — the second card, or a sign button that fires twice, reports nothing; a DIFFERENT step and a different job still report',
+      first === true && second === false && otherStep === true && otherJob === true &&
+        jobStepKey(sig('job-aaa', 0)) === 'job-aaa#0' && jobStepKey(sig('job-aaa', 1)) !== jobStepKey(sig('job-aaa', 0)),
+      `${first}/${second}/${otherStep}/${otherJob}`,
+    )
+
+    // ── the wire ─────────────────────────────────────────────────────────
+    const info = jobStepSignedInfo(sig('job-ccc', 2))
+    check(
+      "job-step beacon (wire): the shared mapping is the one both lanes send — artifact 'job-step', chain 'multi', the step's value + fee tier + jobId, and buildPath still carries the raw builder (unchanged from the chat lane, so switching the rail on can't re-price anything)",
+      info.artifact === 'job-step' && info.chain === 'multi' && info.valueUsd === 12.5 && info.feeBps === 50 &&
+        info.jobId === 'job-ccc' && info.buildPath === 'native-swap' && info.detail === '0xabc',
+      JSON.stringify(info),
+    )
+    // The builder is NOT a BUILD_PATH, so the route drops it and the row books
+    // no fee. That is a real gap and a deliberate NON-change here: it moves
+    // creator earnings, so it lands in its own PR. Pinned so the day someone
+    // fixes it, they have to do it on purpose.
+    check(
+      'job-step beacon (wire): job builders are not build paths — the route still drops build_path on a job-step row, so this PR changes no fee and no creator claim',
+      isBuildPath('native-job') && !isBuildPath('native-swap') && !isBuildPath('native-lifi-fund') && !isBuildPath(info.buildPath),
+    )
+    const body = firstPartyJobStepBody(sig('job-ddd', 0), { sessionId: 'harness-jobstep-wire', walletAddress: JOBSTEP_WALLET, page: `${BASE}/chat` })
+    check(
+      'job-step beacon (wire): the first-party body carries the lane marker, the signing wallet and the page, and NEVER free text (the first-party lane keeps chat asks private)',
+      body.firstParty === true && body.outcome === 'signed' && body.artifact === 'job-step' &&
+        body.walletAddress === JOBSTEP_WALLET && body.page === `${BASE}/chat` && body.detail === undefined && body.prompt === undefined,
+      JSON.stringify(body),
+    )
+
+    // ── live: the route accepts exactly what the overlay sends ───────────
+    const railPost = await fetch(`${BASE}/api/embed/telemetry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(
+        firstPartyJobStepBody(
+          { jobId: 'cmtsqkx0l00074h3p885cmygz', seq: 1, builder: 'native-swap', valueUsd: 4.2, feeBps: 20, chainId: 8453, txUrl: 'https://basescan.org/tx/0x' + 'a'.repeat(64) },
+          { sessionId: 'harness-jobstep-rail', walletAddress: JOBSTEP_WALLET, page: `${BASE}/chat` },
+        ),
+      ),
+    })
+    const railJson = (await railPost.json()) as { ok?: boolean; internal?: boolean }
+    check(
+      "job-step beacon (live): the rail's exact body is accepted by the telemetry route — a step signed in the overlay now records, and the harness row is stamped internal",
+      railPost.status === 200 && railJson.ok === true && railJson.internal === true,
+      `${railPost.status} ${JSON.stringify(railJson)}`,
+    )
+    // Discrimination: the same body WITHOUT the first-party marker (what a
+    // keyless third-party mount is) still records nothing.
+    const railNoLane = await fetch(`${BASE}/api/embed/telemetry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...firstPartyJobStepBody(sig('job-eee', 0), { sessionId: 'harness-jobstep-nolane', page: `${BASE}/chat` }), firstParty: false }),
+    })
+    check(
+      'job-step beacon (live): drop the first-party marker and the same body records nothing (202) — the overlay is accepted because it IS our own surface, not because job-step is special',
+      railNoLane.status === 202,
+      String(railNoLane.status),
+    )
+  }
+
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
