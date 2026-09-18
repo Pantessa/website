@@ -22084,7 +22084,11 @@ async function main() {
           /const silent = connector\?\.id === CDP_CONNECTOR_ID/.test(waitS) &&
           /return \{ shown: signingIn && \(!silent \|\| late\), silent \}/.test(waitS) &&
           /silent \? 'Signing you in…'/.test(waitS) && /\{!silent && \(/.test(waitS) &&
-          /if \(!wait\.shown \|\| dismissed\) return null/.test(waitS) && /silent=\{wait\.silent\}/.test(waitS) &&
+          // Re-pinned 2026-09-18: a third reason to stand down — on a phone the
+          // handoff card takes over while the wallet app hasn't come forward
+          // (lib/wallet-handoff), because "the request is open in your wallet"
+          // is not true yet and this card's button is disabled meanwhile.
+          /if \(!wait\.shown \|\| dismissed \|\| handoff\) return null/.test(waitS) && /silent=\{wait\.silent\}/.test(waitS) &&
           /sigWait\.shown && !sigDismissed/.test(runtimeS) && /silent=\{sigWait\.silent\}/.test(runtimeS),
         `grace=${grace}`,
       )
