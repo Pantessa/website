@@ -80,10 +80,20 @@
 .mk-ai__send:disabled { opacity: .45; cursor: default; }
 .mk-ai__mic { flex: none; }
 
-.mk-ai__sugg { display: flex; flex-wrap: wrap; gap: 6px; position: relative; }
+.mk-ai__sugg { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; position: relative; }
 .mk-ai__sugg-chip { padding: 5px 11px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); color: var(--muted); background: transparent; transition: color .15s, border-color .15s; white-space: nowrap; }
 .mk-ai__sugg-chip:hover { color: var(--fg); border-color: var(--line-2); }
 .mk-ai__sugg-chip--hover { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 55%, var(--line)); }
+/* The act suggestion is a SEND, not a question — it wears the act chip's
+   filled treatment so it can never read as one of the prose chips beside it. */
+.mk-ai__sugg-chip--act {
+  display: inline-flex; align-items: center; font-weight: 600;
+  background: var(--accent); color: var(--ink); border-color: var(--accent);
+  transition: filter .15s, transform .15s;
+}
+.mk-ai__sugg-chip--act:hover { color: var(--ink); border-color: var(--accent); filter: brightness(1.06); transform: translateY(-1px); }
+.mk-ai__sugg-chip--act .mk-ai__ico--inline { width: 13px; height: 13px; margin-right: 5px; color: var(--ink); }
+.mk-ai__sugg-foot { flex-basis: 100%; }
 
 /* ── the morning tape (watchlist rail top) — compact: a bar + one line, open to a bounded scroll ── */
 .mk-ai--tape { gap: 8px; padding: 10px 12px; border-radius: 12px; }
