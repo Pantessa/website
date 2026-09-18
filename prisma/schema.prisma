@@ -1676,3 +1676,64 @@ model AlertNotification {
   @@index([owner, seenAt, createdAt])
   @@map("alert_notifications")
 }
+
+// ── User flows (2026-09-18) ────────────────────────────────────────────────
+// Every table we had was keyed by wallet, and visitors were leaving before a
+// wallet existed. These three are the first-party, cookie-less journey log
+// behind /dashboard/admin/flows (lib/user-flows.ts is the vocabulary).
+
+/// One thing a visitor did: a page view, a click on one of our controls, a
+/// page left (time + scroll), a script error, a failing endpoint, an ask and
+/// the shape of what came back. `vid` is NOT a cookie: it is a hash of the
+/// day's salt + IP + user agent (lib/visitor-id.ts), so it rotates daily and,
+/// once the salt is deleted, can't be walked back to an address. `wallet` is
+/// what the browser said was connected — display only, nothing is authorized
+/// or paid off this table.
+model VisitorEvent {
+  id         String   @id @default(cuid())
+  vid        String
+  /// The same hash over the IP alone: events that share it came from one
+  /// network that day. Its one use is tagging our own devices as team.
+  net        String?
+  wallet     String?
+  kind       String // lib/journey-events JOURNEY_KINDS
+  path       String   @default("")
+  label      String?
+  detail     Json?
+  referrer   String? // external hostname, first view of a page load only
+  utm        String?
+  country    String?
+  device     String? // "mobile · iOS · Safari" — families, never the full UA
+  /// An admin's browser, a test wallet, or the harness header.
+  isTeam     Boolean  @default(false) @map("is_team")
+  isInternal Boolean  @default(false) @map("is_internal")
+  isBot      Boolean  @default(false) @map("is_bot")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([vid, createdAt])
+  @@index([wallet, createdAt])
+  @@map("visitor_events")
+}
+
+/// The day's salt for visitor ids. Rows older than yesterday are deleted, and
+/// with them any way to recompute a past visitor id from an IP address.
+model VisitorSalt {
+  day  String @id // YYYY-MM-DD, UTC
+  salt String
+
+  @@map("visitor_salts")
+}
+
+/// "That one is me." A wallet (0x…) or a visitor id (v:…) an admin marked as
+/// the team's from the flows screen. TEST_WALLETS is a constant in lib/admin
+/// and has drifted behind every new test wallet; this is the same idea with a
+/// button on it.
+model TeamMark {
+  key       String   @id
+  note      String?
+  markedBy  String   @map("marked_by")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("team_marks")
+}

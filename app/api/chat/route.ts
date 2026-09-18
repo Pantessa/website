@@ -68,6 +68,7 @@ import { rebalanceTurnFor } from '@/lib/rebalance-exec'
 import { parseMosaicAsk } from '@/lib/mosaic'
 import { mosaicTurnFor } from '@/lib/mosaic-exec'
 import { isInternalRun } from '@/lib/internal-run'
+import { recordTurn } from '@/lib/journey-server'
 import { gateSignablePayload } from '@/lib/affordability'
 import { runSpotGuardTurn } from '@/lib/spot-guard-exec'
 import {
@@ -419,7 +420,15 @@ export async function POST(req: NextRequest) {
   }
   let res = await fenceConnectAsk(await handleChatTurn(new NextRequest(req.nextUrl, { method: 'POST', headers: req.headers, body: raw })), raw)
   try {
-    if (!raw || !res.headers.get('content-type')?.includes('application/json')) return res
+    if (!raw || !res.headers.get('content-type')?.includes('application/json')) {
+      // A streamed turn (the auto-router's SSE) has no JSON to read, but the
+      // ask still happened: the journey log keeps it (lib/journey-server.ts).
+      if (raw && req.headers.get('x-yf-no-ask-log') !== '1') {
+        const streamedAsk = JSON.parse(raw) as Record<string, unknown>
+        after(() => recordTurn(req.headers, streamedAsk, null, true))
+      }
+      return res
+    }
     const reqBody = JSON.parse(raw) as Record<string, unknown>
     // THE affordability choke point (lib/affordability.ts, squad PATHS r3):
     // every signable leaving this route — native, planner passthrough,
@@ -446,6 +455,13 @@ export async function POST(req: NextRequest) {
     }
     // The API harness provokes walls on purpose — its probes opt out.
     if (req.headers.get('x-yf-no-ask-log') === '1') return res
+    // The journey log (lib/journey-server.ts): this ask and the shape of what
+    // came back, on the same timeline the visitor's browser started. After
+    // the response, so it costs the turn nothing.
+    {
+      const turnBody = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
+      after(() => recordTurn(req.headers, reqBody, turnBody, false))
+    }
     const message = typeof reqBody.message === 'string' ? reqBody.message : ''
     if (reqBody.phase === 'execute' || !message.trim() || !moneyShaped(message)) return res
     const data = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
