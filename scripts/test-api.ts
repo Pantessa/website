@@ -7188,6 +7188,7 @@ async function main() {
       src({ utm: 'utm_source=linkedin&utm_medium=social' }) === 'linkedin' && src({ ua: 'mobile · iOS · X app' }) === 'twitter' &&
         src({ ua: 'Mozilla/5.0 (iPhone) LinkedInApp/9.1' }) === 'linkedin' && src({ landing: '/i/8chpvmy5' }) === 'link' && src({ landing: '/markets' }) === 'direct',
     )
+    check('flows source: history nobody watched arrive is "not recorded", never "direct"', F.SOURCE_LABEL.unknown === 'Not recorded' && src({}) === 'direct')
     check(
       'flows device: families only, and an automated client is named',
       F.deviceOf('Mozilla/5.0 (iPhone; CPU iPhone OS 26_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/23D127 Twitter for iPhone') === 'mobile · iOS · X app' &&

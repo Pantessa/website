@@ -349,7 +349,8 @@ export async function GET(req: NextRequest) {
     const firstRow = vs.flatMap((v) => v.rows).find((r) => r.kind === 'view' && (r.referrer || r.utm)) ?? vs[0]?.rows.find((r) => r.kind === 'view') ?? null
     const src = vs.length
       ? sourceOf({ referrer: firstRow?.referrer, utm: firstRow?.utm, ua: vs[0].device, landing: fold.landing })
-      : { source: (items.some((i) => i.path?.startsWith('/i/')) ? 'link' : 'direct') as FlowSource, label: items.some((i) => i.path?.startsWith('/i/')) ? 'Shared link' : 'No page record' }
+      : // No browser half: a link event still says they came by a link; otherwise nobody saw them arrive.
+        { source: (items.some((i) => i.path?.startsWith('/i/')) ? 'link' : 'unknown') as FlowSource, label: items.some((i) => i.path?.startsWith('/i/')) ? 'Shared link' : 'Not recorded' }
     // Evidence rows judged the flow above; they are not lines on it.
     const shownItems = items.filter((i) => i.detail !== HAND)
     const firstAt = items[0].at

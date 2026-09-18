@@ -265,7 +265,7 @@ function FlowRow({ flow, open, onToggle, onMark }: { flow: Flow; open: boolean; 
           )}
           <span className="text-sm text-white font-medium break-all">{who}</span>
           {flow.email && flow.wallet && <span className="text-xs mono text-[color:var(--muted-2)]">{short(flow.wallet)}</span>}
-          <Tag title={flow.sourceLabel}>{flow.source === 'other' ? flow.sourceLabel : SOURCE_LABEL[flow.source]}</Tag>
+          {flow.source !== 'unknown' && <Tag title={flow.sourceLabel}>{flow.source === 'other' ? flow.sourceLabel : SOURCE_LABEL[flow.source]}</Tag>}
           {flow.country && (
             <span className="text-xs text-[color:var(--muted)] whitespace-nowrap">
               {flag(flow.country)} {flow.country}

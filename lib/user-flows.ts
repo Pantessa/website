@@ -20,7 +20,7 @@ export type FlowWindow = (typeof FLOW_WINDOWS)[number]
 
 // ── where they came from ──────────────────────────────────────────────────
 
-export type FlowSource = 'twitter' | 'linkedin' | 'search' | 'github' | 'desk' | 'link' | 'social' | 'direct' | 'other'
+export type FlowSource = 'twitter' | 'linkedin' | 'search' | 'github' | 'desk' | 'link' | 'social' | 'direct' | 'other' | 'unknown'
 
 export const SOURCE_LABEL: Record<FlowSource, string> = {
   twitter: 'X / Twitter',
@@ -32,6 +32,9 @@ export const SOURCE_LABEL: Record<FlowSource, string> = {
   social: 'Social',
   direct: 'Direct',
   other: 'Other site',
+  // History from our tables alone: nobody saw them arrive, so nobody can say
+  // from where. "Direct" would be a claim.
+  unknown: 'Not recorded',
 }
 
 const HOST_SOURCES: [RegExp, FlowSource][] = [
