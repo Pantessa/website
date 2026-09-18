@@ -163,7 +163,7 @@ export default function PricingPlans({ currentPlan }: { currentPlan?: PlanId }) 
         </article>
         <article className="pricing__way">
           <span className="pricing__waytag mono">ONE-TIME · ${ANSWER_PACK.priceUsd}</span>
-          <h3 className="pricing__wayname">{ANSWER_PACK.answers.toLocaleString('en-US')} answers</h3>
+          <h3 className="pricing__wayname">{`${ANSWER_PACK.answers.toLocaleString('en-US')} answers`}</h3>
           <p className="pricing__waybody">No subscription. They sit in your account until you use them, however long that takes.</p>
           {buyButton({ kind: 'pack' }, `Buy for $${ANSWER_PACK.priceUsd}`, false, 'pack')}
         </article>
