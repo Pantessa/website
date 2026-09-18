@@ -167,6 +167,9 @@ import { getSessionAddress } from '@/lib/auth'
 import { hasGuardianStep, mutationGate, sessionOwnsWallet } from '@/lib/chat-mutation-gate'
 import { bumpAndCheckUnsignedTurn, clientIpFrom, turnLimitReply } from '@/lib/turn-limits'
 import { spendCredits } from '@/lib/billing'
+import { houseModelText } from '@/lib/house-model'
+import { inferenceScope } from '@/lib/inference-context'
+import type { InferenceSurface } from '@/lib/inference-meter'
 import { recordEmbedSighting, resolveEmbedKey } from '@/lib/embed-key'
 import { walletContextLine } from '@/lib/wallet-context'
 import { grantViolation, type GrantPolicy } from '@/lib/spend-grant'
@@ -392,7 +395,7 @@ async function planSmartPicks(
   /** User address for the "$USER_ADDRESS" context token (see PlanContext). */
   userAddress?: string,
 ): Promise<{ picks: PlannedPick[]; dropped: PlannableEndpoint[]; txHash?: string; clarify?: ClarifyRequest }> {
-  const { text, txHash } = await callInference(inference, plannerPrompt(message, smart, history, contextBlockForPlanner(ctx), { userAddress }))
+  const { text, txHash } = await callInference(inference, plannerPrompt(message, smart, history, contextBlockForPlanner(ctx), { userAddress }), 'chat-plan')
   // Never pay two services for the same capability — keep the best per
   // capability (same dedup the Auto-Router applies). dropped → surfaced as notes.
   const { picks, dropped } = dedupePlannerPicks(parsePlannerPicks(text, smart), smart)
@@ -765,7 +768,7 @@ async function handleChatTurn(req: NextRequest) {
         intent: govIntent,
         walletAddress,
         emit: clientTurnId ? (e) => recordTraceLine(clientTurnId, govSeq++, e, walletAddress ? 'wallet' : 'burner') : () => {},
-        synthesize: (p) => planViaAnthropic(p),
+        synthesize: (p) => planViaAnthropic(p, 'governance'),
         ctx: workingContext,
       })
       return NextResponse.json({
@@ -5704,7 +5707,7 @@ async function executeWithSignatures(
     // House synthesizer: direct Anthropic on the planner key — nothing was
     // signed at plan time (prepared=null) and nothing is paid here.
     const t = await planViaAnthropic(prompt)
-    if (!t) throw new Error('house synthesis unavailable (ANTHROPIC_API_KEY missing or the API call failed)')
+    if (!t) throw new Error(houseUnavailableReason())
     text = t
   } else {
     const header = paymentHeaderFor(inferenceCall, signatures)
@@ -6371,8 +6374,10 @@ export function streamAutoRouter(
         // do we fall back to the paid inference MCP, and ONLY then do we ledger
         // the routing cost (burner: counts against the grant; wallet: house eats).
         const runRoutingInference = async (inf: McpServer, prompt: string) => {
-          const direct = await planViaAnthropic(prompt)
+          const direct = await planViaAnthropic(prompt, 'auto-router')
           if (direct) return { text: direct, txHash: undefined }
+          // A refused BYOK key must not quietly become a house-paid x402 call.
+          if (inferenceScope()?.byokFailure) throw new Error(houseUnavailableReason())
           // Fell back to the paid answer engine for PLANNING — the weak path that
           // collapses routing. Make it loud (the silent fallback cost a whole
           // debugging cycle): a server warn + a visible note in the engine window.
@@ -6714,24 +6719,26 @@ function capPrompt(protocol: 'mcp' | 'http', prompt: string): string {
 // what the answer engine is, and sidesteps the x402 self-pay break (a from==to
 // transfer when the answer engine's payTo is the house burner). Returns null on
 // any failure or when no key is set, so the caller falls back to the paid MCP.
-const PLANNER_MODEL = process.env.PLANNER_MODEL || 'claude-haiku-4-5-20251001'
-async function planViaAnthropic(prompt: string): Promise<string | null> {
-  const key = process.env.ANTHROPIC_API_KEY
-  if (!key) return null
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: PLANNER_MODEL, max_tokens: 1024, messages: [{ role: 'user', content: prompt }] }),
-      signal: AbortSignal.timeout(INFERENCE_TIMEOUT_MS),
-    })
-    if (!res.ok) return null
-    const j = (await res.json()) as { content?: Array<{ type: string; text?: string }> }
-    const text = (j.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('').trim()
-    return text || null
-  } catch {
-    return null
+async function planViaAnthropic(prompt: string, surface: InferenceSurface = 'chat-synth'): Promise<string | null> {
+  // lib/house-model owns the wire: whose key (a BYOK key in this request's
+  // inference scope beats the house key, and a refused BYOK key never falls
+  // back to ours), prompt caching of the planner's stable half, and the cost
+  // meter. A BYOK owner may run SYNTHESIS on a sharper model; planning stays
+  // on the planner model the routing evals were tuned on.
+  const synthModel = surface === 'chat-synth' ? inferenceScope()?.synthModel : null
+  return houseModelText(prompt, { surface, timeoutMs: INFERENCE_TIMEOUT_MS, ...(synthModel ? { model: synthModel } : {}) })
+}
+
+/** The honest words for a house call that failed — a refused BYOK key must
+ *  never read as "the house is down". */
+function houseUnavailableReason(): string {
+  const failed = inferenceScope()?.byokFailure
+  if (failed) {
+    return failed.status === 429
+      ? 'your own API key is rate-limited right now (429) — try again in a minute, or remove the key in Settings to use your included answers'
+      : `your own API key was refused (${failed.status}) — check it in Settings → Your AI key`
   }
+  return 'house synthesis unavailable (ANTHROPIC_API_KEY missing or the API call failed)'
 }
 
 /**
@@ -6763,11 +6770,13 @@ function isHouseInference(s: Pick<McpServer, 'slug'>): boolean {
 async function callInference(
   inference: Pick<McpServer, 'endpoint' | 'tool' | 'protocol'> & { slug?: string; name?: string; priceUsd?: string | null; receiver?: string | null },
   prompt: string,
+  /** Meter label when the HOUSE model answers (lib/inference-meter). */
+  surface: InferenceSurface = 'chat-synth',
 ) {
   // House synthesizer: direct Anthropic on the planner key — no x402, no USDC.
   if (inference.slug === HOUSE_INFERENCE_SLUG) {
-    const text = await planViaAnthropic(prompt)
-    if (!text) throw new Error('house synthesis unavailable (ANTHROPIC_API_KEY missing or the API call failed)')
+    const text = await planViaAnthropic(prompt, surface)
+    if (!text) throw new Error(houseUnavailableReason())
     return { text, txHash: undefined }
   }
   const protocol = inferenceProtocolOf(inference)

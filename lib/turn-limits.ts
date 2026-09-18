@@ -106,7 +106,7 @@ export async function bumpAndCheckUnsignedTurn(
     // fire-and-forget.
     if (Math.random() < 0.02) {
       void prisma
-        .$executeRaw`DELETE FROM unsigned_turn_windows WHERE window_start < now() - interval '3 hours'`.catch(
+        .$executeRaw`DELETE FROM unsigned_turn_windows WHERE (window_start < now() - interval '3 hours' AND key NOT LIKE 'f:%' AND key NOT LIKE 't:%') OR window_start < now() - interval '3 days'`.catch(
         () => {},
       )
     }
@@ -142,7 +142,7 @@ export async function bumpAndCheckBrokerCall(ip: string | null): Promise<boolean
     `
     if (Math.random() < 0.02) {
       void prisma
-        .$executeRaw`DELETE FROM unsigned_turn_windows WHERE window_start < now() - interval '3 hours'`.catch(
+        .$executeRaw`DELETE FROM unsigned_turn_windows WHERE (window_start < now() - interval '3 hours' AND key NOT LIKE 'f:%' AND key NOT LIKE 't:%') OR window_start < now() - interval '3 days'`.catch(
         () => {},
       )
     }

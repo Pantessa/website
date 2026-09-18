@@ -26,7 +26,7 @@ import {
   type ProposedLine,
 } from '@/lib/markets-ai'
 import { modelAvailable, modelLabel, modelMocked, modelText } from '@/lib/markets-ai-model'
-import { bumpAndCheckMarketsAi, MARKETS_AI_WALL } from '@/lib/markets-ai-fence'
+import { admitMarketsAi } from '@/lib/markets-ai-fence'
 import { readPosition, readTape, techSummary } from '@/lib/markets-ai-context'
 import { validateProposedAsk } from '@/lib/markets-ai-ladder'
 import { parseChartState } from '@/lib/chart-state'
@@ -110,11 +110,12 @@ export async function POST(req: NextRequest) {
     const hit = explainCache.get(key)
     if (hit && Date.now() - hit.at < EXPLAIN_TTL_MS) return answer({ kind: 'answer', text: hit.text }, { deterministic: false, model: `${model} (cached)` })
     if (!modelAvailable()) return answer({ kind: 'answer', text: explainFallback(body.bar) }, { deterministic: true, model: 'none' })
-    if (await bumpAndCheckMarketsAi(req.headers, body)) return answer({ kind: 'answer', text: MARKETS_AI_WALL }, { deterministic: true, model: 'wall' })
+    const explainAdm = await admitMarketsAi(req.headers, body, 'markets-explain')
+    if (explainAdm.wall) return answer({ kind: 'answer', text: explainAdm.wall }, { deterministic: true, model: 'wall' })
     const candles = tape.loaded.series.candles
     const i = candles.findIndex((c) => c.t === body.bar!.t)
     const prev = i > 0 ? { c: candles[i - 1].c } : null
-    const text = await modelText({ system: EXPLAIN_SYSTEM, user: explainUserPrompt({ symbol, tf, bar: body.bar, prev, tech, verdict: body.verdict ? RATING_LABELS[body.verdict] : null }), maxTokens: EXPLAIN_MAX_TOKENS, mock: { scenario } })
+    const text = await modelText({ system: EXPLAIN_SYSTEM, user: explainUserPrompt({ symbol, tf, bar: body.bar, prev, tech, verdict: body.verdict ? RATING_LABELS[body.verdict] : null }), maxTokens: EXPLAIN_MAX_TOKENS, surface: 'markets-explain', apiKey: explainAdm.apiKey, owner: explainAdm.owner, mock: { scenario } })
     const out = cleanProse(text ?? explainFallback(body.bar), 400)
     explainCache.set(key, { at: Date.now(), text: out })
     return answer({ kind: 'answer', text: out }, { deterministic: !text, model })
@@ -148,7 +149,8 @@ export async function POST(req: NextRequest) {
 
   // ── The model ────────────────────────────────────────────────────────────
   if (!modelAvailable()) return answer({ kind: 'answer', text: 'The model is not available right now. Drawings ("draw a line at 180"), alerts ("tell me when it crosses 4k") and complete asks still work.' }, { deterministic: true, model: 'none' })
-  if (await bumpAndCheckMarketsAi(req.headers, body)) return answer({ kind: 'answer', text: MARKETS_AI_WALL }, { deterministic: true, model: 'wall' })
+  const adm = await admitMarketsAi(req.headers, body, 'markets-ask')
+  if (adm.wall) return answer({ kind: 'answer', text: adm.wall }, { deterministic: true, model: 'wall' })
 
   let position: string | null = null
   if (body.address) {
@@ -170,7 +172,7 @@ export async function POST(req: NextRequest) {
     venues: venueWordsFor(pair),
     question,
   }
-  const text = await modelText({ system: ASK_SYSTEM, user: askUserPrompt(ctx), maxTokens: ASK_MAX_TOKENS, mock: { scenario } })
+  const text = await modelText({ system: ASK_SYSTEM, user: askUserPrompt(ctx), maxTokens: ASK_MAX_TOKENS, surface: 'markets-ask', apiKey: adm.apiKey, owner: adm.owner, mock: { scenario } })
   if (!text) return answer({ kind: 'answer', text: 'The model did not answer — try again in a moment.' }, { deterministic: true, model })
   const m = parseModelAnswer(text)
   if (!m) return answer({ kind: 'answer', text: cleanProse(text) }, { deterministic: false, model })
