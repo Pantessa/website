@@ -12,6 +12,7 @@ import { WALLET_CHAINS, walletTransports } from '@/lib/wallet-chains'
 import { cdpEmbeddedConnector, cdpEnabled } from '@/lib/cdp-embedded'
 import { hostWalletConnector } from '@/lib/host-wallet'
 import { walletLineup, WC_APP_METADATA, type WalletLaneId } from '@/lib/wallet-lineup'
+import { requestWalletAppOpen } from '@/lib/wallet-handoff'
 
 // WalletConnect Cloud project ID — create one at https://cloud.reown.com and
 // add it to .env.local as NEXT_PUBLIC_WC_PROJECT_ID (needed for the
@@ -45,6 +46,34 @@ const lineup = walletLineup(process.env.NEXT_PUBLIC_WC_PROJECT_ID)
  * popup-after-await problem has another answer.)
  */
 coinbaseWallet.preference = 'eoaOnly'
+
+/**
+ * MetaMask on a PHONE: we own the jump to the app.
+ *
+ * `metaMaskWallet` switches to the wagmi `metaMask()` connector — the MetaMask
+ * SDK — whenever RainbowKit's `isMobile()` is true, and the SDK brings the app
+ * forward by navigating the page to a `metamask://…` link on every method that
+ * needs approval. Both mobile browsers only honour an app launch while the
+ * page holds a user activation, so the launch landed for the CONNECT tap and
+ * was dropped for the signature that lib/session fires from its post-connect
+ * effect: connected, then a page that says "waiting for your signature" beside
+ * a wallet that was never brought up (Nate, 2026-09-18).
+ *
+ * `openDeeplink` is the SDK's own hook for this (`preferredOpenLink`): with it
+ * set the SDK hands us the link and never navigates itself. lib/wallet-handoff
+ * tries the launch, and when the browser refuses, puts a button on screen —
+ * a tap carries the activation the effect didn't have.
+ *
+ * Set as a property on the wallet FACTORY because that is RainbowKit's own
+ * escape hatch for SDK options (it spreads its own enumerable properties into
+ * `metaMask({…})`, last, so ours win) — the same door `coinbaseWallet
+ * .preference` goes through above. It must be assigned before
+ * `connectorsForWallets` runs, which is why it lives here and not in a
+ * component. Inert off mobile: the desktop lanes are the injected provider or
+ * WalletConnect, and neither ever asks to open an app.
+ */
+;(metaMaskWallet as unknown as { openDeeplink: (link: string) => void }).openDeeplink =
+  requestWalletAppOpen
 
 // The CDP embedded-wallet connector ("create an account") is appended as a plain
 // wagmi connector, not a RainbowKit modal entry — it's driven by a dedicated CTA
