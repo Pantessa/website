@@ -1152,7 +1152,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const chainLabel = (id: unknown): string | undefined => {
     const n = typeof id === 'string' ? parseInt(id, 16) || Number(id) : typeof id === 'number' ? id : NaN
     if (Number.isNaN(n)) return undefined
-    return { 1: 'ethereum', 10: 'optimism', 100: 'gnosis', 5042: 'arc', 8453: 'base', 42161: 'arbitrum' }[n] ?? String(n)
+    // The registry is the single source (lib/chains) — the hand-written map
+    // it replaced had no Robinhood Chain, the chain most job steps sign on.
+    return chainById(n)?.key ?? { 100: 'gnosis' }[n] ?? String(n)
   }
   // The guardrail layer prices every transaction it builds (policy caps are
   // USD) — that notional rides the beacon as valueUsd.
@@ -2098,10 +2100,19 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                           onStepSigned={(info) => {
                             reportEmbedSigned({
                               artifact: 'job-step',
-                              chain: 'multi',
+                              // The step's OWN chain when the artifact named
+                              // one — 'multi' only for an off-chain order.
+                              chain: info.chainId ? chainLabel(info.chainId) ?? String(info.chainId) : 'multi',
+                              chainId: info.chainId,
                               detail: info.detail?.slice(0, 60),
+                              txUrl: info.txUrl,
                               valueUsd: info.valueUsd ?? undefined,
-                              buildPath: info.builder,
+                              // What the step BUILT, not the builder id: a
+                              // raw id fails the telemetry allowlist and the
+                              // row lands with build_path NULL, which is $0
+                              // of fee and $0 of creator earnings on a swap
+                              // that really paid the fee.
+                              buildPath: info.buildPath,
                               feeBps: info.feeBps,
                               jobId: (msg.meta as { jobId: string }).jobId,
                             })

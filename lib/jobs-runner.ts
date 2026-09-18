@@ -38,6 +38,8 @@ import { buildAaveRepayArtifact, buildAaveSupplyArtifact } from '@/lib/aave-exec
 import { buildMorphoLendArtifact, buildMorphoRepayArtifact } from '@/lib/morpho-exec'
 import type { MorphoChainId } from '@/lib/morpho-supply'
 import { buildGuardedSwap } from '@/lib/swap-exec'
+import { isBuildPath, type BuildPath } from '@/lib/build-path'
+import { stampJobStepPath } from '@/lib/job-step-telemetry'
 import { TapeUnavailableError } from '@/lib/stock-tape'
 import type { PolicyBlock } from '@/lib/tx-guardrails'
 import { buildLifiBridgeLeg, checkChainArrival, ROBINHOOD_CHAIN_ID, type ChainArrival, type FundingLeg } from '@/lib/lifi-bridge'
@@ -68,6 +70,9 @@ function throwRefusal(reasons: string, guardrails: unknown): never {
   if (pb) throw new PolicyRefusedError(reasons, pb)
   throw new Error(reasons)
 }
+
+/** A builder's own report of what it built, allowlisted (lib/build-path). */
+const asBuildPath = (v: unknown): BuildPath | undefined => (isBuildPath(v) ? v : undefined)
 
 const NEAR_INTENTS_MCP = 'https://near-intents.yeetful.com/mcp'
 /** A sign artifact left unsigned this long is stale — rebuild on next offer. */
@@ -235,7 +240,12 @@ export async function advanceJob(job: JobWithSteps): Promise<void> {
           where: { id: step.id },
           data: {
             status: 'offered',
-            artifact: built.artifact as object,
+            // The step reports the path of what it ACTUALLY built (the venue
+            // cascade names its own winner; everything else has one answer),
+            // so the signed beacon carries a real build_path instead of a
+            // raw builder id the telemetry allowlist drops —
+            // lib/job-step-telemetry.
+            artifact: stampJobStepPath(step.builder, built.artifact, built.buildPath) as object,
             guardReport: (built.guardReport as object | undefined) ?? undefined,
             valueUsd: built.valueUsd,
             expiresAt: new Date(Date.now() + OFFER_TTL_MS),
@@ -351,7 +361,7 @@ export async function buildSignArtifact(
   wallet: string,
   builder: string,
   params: Record<string, unknown>,
-): Promise<{ artifact: Record<string, unknown>; guardReport?: unknown; valueUsd: number | null }> {
+): Promise<{ artifact: Record<string, unknown>; guardReport?: unknown; valueUsd: number | null; buildPath?: BuildPath }> {
   if (builder === 'native-cross-chain') {
     const p = params as unknown as CrossChainSwapParams
     // DELIBERATELY fee-free: the funding plan compiles its rescue legs as
@@ -378,8 +388,11 @@ export async function buildSignArtifact(
   }
   if (builder === 'native-hl-exec') {
     const turn = await buildHlExecTurn(params as unknown as HlIntent, wallet, () => {})
-    if (turn.orderRequest) return { artifact: { orderRequest: turn.orderRequest }, guardReport: turn.guardrails, valueUsd: turn.guardrails?.valueUsd ?? null }
-    if (turn.txRequest) return { artifact: { txRequest: turn.txRequest }, guardReport: turn.guardrails, valueUsd: turn.guardrails?.valueUsd ?? null }
+    // The layer names its own path per branch: a perp ORDER carries the
+    // builder fee, the bridge DEPOSIT carries none — they must not share one
+    // fee-bearing path (lib/build-path).
+    if (turn.orderRequest) return { artifact: { orderRequest: turn.orderRequest }, guardReport: turn.guardrails, valueUsd: turn.guardrails?.valueUsd ?? null, buildPath: asBuildPath(turn.buildPath) }
+    if (turn.txRequest) return { artifact: { txRequest: turn.txRequest }, guardReport: turn.guardrails, valueUsd: turn.guardrails?.valueUsd ?? null, buildPath: asBuildPath(turn.buildPath) }
     throw new Error(turn.reply.replace(/^[^\w]+/, ''))
   }
   if (builder === 'native-lido') {
@@ -430,6 +443,10 @@ export async function buildSignArtifact(
       artifact: { txChain: built.txChain, summary: built.summary },
       guardReport: built.guardrails,
       valueUsd: built.guardrails.valueUsd ?? null,
+      // The venue the cascade actually settled on (v3 | v4 | LiFi) — only the
+      // build knows, and the signed beacon has to report it: this is the step
+      // that carries the 20/50 bps fee (lib/job-step-telemetry).
+      buildPath: asBuildPath(built.buildPath),
     }
   }
   if (builder === 'native-aave-supply' || builder === 'native-aave-repay') {
@@ -528,6 +545,10 @@ export async function buildSignArtifact(
       artifact: { txChain: built.txChain, summary: built.summary },
       guardReport: built.guardrails,
       valueUsd: built.guardrails.valueUsd ?? Number(amountHuman),
+      // The builder id is historical; the VENUE is whatever the cascade
+      // answered with (stocks trade on seeded v3 pools now), so the fee-
+      // bearing path the beacon reports comes from the build, not the id.
+      buildPath: asBuildPath(built.buildPath),
     }
   }
   if (builder === 'native-transfer') {

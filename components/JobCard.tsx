@@ -18,6 +18,8 @@ import SpendPolicyFix, { type PolicyBlockInfo } from '@/components/SpendPolicyFi
 import ShareReceiptButton from '@/components/ShareReceiptButton'
 import { orderRequestOf, txChainOf, txRequestOf } from '@/lib/transaction-layer'
 import { feeBpsOfArtifact } from '@/lib/fees'
+import { jobStepBuildPath, jobStepChainId } from '@/lib/job-step-telemetry'
+import { chainById } from '@/lib/chains'
 import { LIVE_JOB_STATUSES, jobStatusWord } from '@/lib/step-status'
 
 interface StepRow {
@@ -64,7 +66,18 @@ export default function JobCard({
    *  auth (no SIWE session in an iframe visitor). Appended as ?t=. */
   token?: string
   /** Telemetry hook — fired once per signed step with its value + builder. */
-  onStepSigned?: (info: { builder: string; valueUsd?: number | null; detail?: string; feeBps?: number }) => void
+  onStepSigned?: (info: {
+    builder: string
+    valueUsd?: number | null
+    detail?: string
+    feeBps?: number
+    /** The path of what the step ACTUALLY built (lib/job-step-telemetry) —
+     *  the venue cascade's winner, not the raw builder id. */
+    buildPath?: string
+    /** The chain the step was signed on; undefined for an off-chain order. */
+    chainId?: number
+    txUrl?: string
+  }) => void
   /** Fired ONCE when the poll first observes a terminal status — the
    *  settlement signal /i's arc and embed hosts read. Also fires on mount
    *  for an already-finished job (a reopened thread), which is truthful. */
@@ -125,10 +138,25 @@ export default function JobCard({
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ seq, result }),
     }).catch(() => {})
-    // The fee tier read from the signed step's OWN artifact (the shared
-    // lib/fees reader) — job-step beacons price like one-shots (C2b).
+    // What the signed step was, read from its OWN artifact: the fee tier
+    // (the shared lib/fees reader) AND the build path + chain + receipt the
+    // one-shot lanes have always reported. Without the path every job-step
+    // row landed with build_path NULL, so a swap that paid 20/50 bps on
+    // chain counted as volume and earned its link creator nothing
+    // (lib/job-step-telemetry).
     const stepArtifact = job?.steps.find((s) => s.seq === seq)?.artifact
-    onStepSigned?.({ builder, valueUsd, detail: String(result.detail ?? result.txHash ?? ''), feeBps: feeBpsOfArtifact(stepArtifact) })
+    const chainId = jobStepChainId(stepArtifact)
+    const txHash = typeof result.txHash === 'string' ? result.txHash : ''
+    const explorer = chainId ? chainById(chainId)?.explorerTx : undefined
+    onStepSigned?.({
+      builder,
+      valueUsd,
+      detail: String(result.detail ?? result.txHash ?? ''),
+      feeBps: feeBpsOfArtifact(stepArtifact),
+      buildPath: jobStepBuildPath(builder, stepArtifact),
+      chainId,
+      txUrl: explorer && /^0x[0-9a-fA-F]{64}$/.test(txHash) ? `${explorer}${txHash}` : undefined,
+    })
     void load()
   }
 
