@@ -24,24 +24,9 @@ export const SpendByAgent = dynamic(() => import('./DashboardCharts').then((m) =
   ssr: false,
   loading: skeleton(220),
 })
-export const WalletsOverTime = dynamic(() => import('./AdminCharts').then((m) => m.WalletsOverTime), {
-  ssr: false,
-  loading: skeleton(220),
-})
-export const ActiveWallets = dynamic(() => import('./AdminCharts').then((m) => m.ActiveWallets), {
-  ssr: false,
-  loading: skeleton(220),
-})
 export const LinksDaily = dynamic(() => import('./AdminCharts').then((m) => m.LinksDaily), {
   ssr: false,
   loading: skeleton(220),
-})
-// Funnel is pure CSS (no Recharts) but lives in AdminCharts, so import it lazily
-// too — that keeps the whole AdminCharts module (and its Recharts dep) out of
-// the initial bundle.
-export const Funnel = dynamic(() => import('./AdminCharts').then((m) => m.Funnel), {
-  ssr: false,
-  loading: skeleton(120),
 })
 export const PriceChart = dynamic(() => import('./DashboardCharts').then((m) => m.PriceChart), {
   ssr: false,
