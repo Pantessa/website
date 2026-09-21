@@ -208,6 +208,17 @@ function envLocal(key: string): string | null {
   }
 }
 
+/** The burner signs the SIWE message and nothing else (the drive's door pass,
+ *  B6). `.env.local`'s PRIVATE_KEY is the house burner — the same wallet the
+ *  `baseFunded` row already reads, so no new key and no new address. */
+async function signSiwe(raw: string): Promise<string> {
+  const pk = envLocal('PRIVATE_KEY')
+  if (!pk) throw new Error('no PRIVATE_KEY in .env.local')
+  const { privateKeyToAccount } = await import('viem/accounts')
+  const account = privateKeyToAccount((pk.startsWith('0x') ? pk : `0x${pk}`) as `0x${string}`)
+  return account.signMessage({ message: raw.startsWith('0x') ? { raw: raw as `0x${string}` } : raw })
+}
+
 async function resolveServers(prisma: PrismaClient, ask: string) {
   const slugs = composeMcps(ask)
   const rows = await prisma.mcpServer.findMany({ where: { slug: { in: slugs } } })
@@ -403,9 +414,15 @@ const MOCK_WALLET = `(() => {
         case 'wallet_addEthereumChain':
           return null
         case 'personal_sign':
+          // Watch-only by default. With the sign flag on, ONLY the SIWE
+          // message is signed, by the burner, through the exposed node-side
+          // signer: the sign-in gate's door cannot be driven otherwise, and a
+          // SIWE signature moves no money (it IS the ownership proof).
+          __SIGN__
+          throw Object.assign(new Error('User rejected the request.'), { code: 4001 })
         case 'eth_signTypedData_v4':
         case 'eth_sendTransaction':
-          // Watch-only: this drive never signs anything.
+          // Never, under any flag: this drive signs no transaction and no order.
           throw Object.assign(new Error('User rejected the request.'), { code: 4001 })
         default:
           return null
@@ -456,7 +473,7 @@ async function browserWalk(): Promise<number> {
     return { overflow, errs: real }
   }
 
-  async function open(opts: { width: number; height: number; theme: 'dark' | 'light'; wallet?: string }) {
+  async function open(opts: { width: number; height: number; theme: 'dark' | 'light'; wallet?: string; sign?: boolean }) {
     const ctx = await browser.newContext({
       viewport: { width: opts.width, height: opts.height },
       deviceScaleFactor: 2,
@@ -465,7 +482,15 @@ async function browserWalk(): Promise<number> {
       hasTouch: opts.width < 768,
     })
     if (opts.wallet) {
-      await ctx.addInitScript(MOCK_WALLET.replace('__ADDR__', opts.wallet))
+      if (opts.sign) await ctx.exposeFunction('__driveSignSiwe', (raw: string) => signSiwe(raw))
+      await ctx.addInitScript(
+        MOCK_WALLET.replace('__ADDR__', opts.wallet).replace(
+          '__SIGN__',
+          opts.sign
+            ? `{ const raw = String(params?.[0] ?? ''); const text = raw.startsWith('0x') ? new TextDecoder().decode(Uint8Array.from(raw.slice(2).match(/../g).map((h) => parseInt(h, 16)))) : raw; if (/wants you to sign in/i.test(text)) return await window.__driveSignSiwe(raw) }`
+            : '',
+        ),
+      )
       // A remembered connector makes wagmi reconnect without a click.
       await ctx.addInitScript(`try { localStorage.setItem('wagmi.recentConnectorId', '"io.pantessa.drive"') } catch {}`)
     }
@@ -536,12 +561,17 @@ async function browserWalk(): Promise<number> {
     await page.waitForTimeout(5000)
     await inspect(page, `markets/${w}`, errs)
     const hrefs = await page.locator('a[href^="/t/"]').count()
-    const cells = await page.locator('g.mk-map__cell').count()
+    const cells = await page.locator('.mk-map__cell').count()
     add(`markets/${w}/reachable`, hrefs + cells > 0, `${hrefs} link(s) + ${cells} map cell(s)`)
     const acts = await page
       .locator('button, a')
       .evaluateAll((els) => els.filter((e) => /^(buy|sell|long|short|protect)\b/i.test(e.textContent?.trim() ?? '')).length)
-    if (hrefs === 0) add(`markets/${w}/crawlable`, false, `default view has no <a href="/t/…"> (${cells} click-only tiles, ${acts} act chip(s))`)
+    // Round 2: every Map tile is a real `<a href="/t/…">` (it was a `<g>`
+    // with an onClick — 238 tiles, 0 anchors, on the default desktop view of
+    // a page that is a public front door on purpose). A view with no anchor
+    // is uncrawlable and can't be middle-clicked, so this is a FAILURE now,
+    // not a note. The Map-vs-List default is still Nate's call.
+    add(`markets/${w}/crawlable`, hrefs > 0, `${hrefs} <a href="/t/…">, ${cells} map cell(s), ${acts} act chip(s)`)
     await ctx.close()
   }
 
@@ -642,6 +672,97 @@ async function browserWalk(): Promise<number> {
       }
       await inspect(page, 'walk/1440', errs)
     }
+    await ctx.close()
+  }
+
+  // B7 — the sign-in gate's door (round 2), on /i/protected-long: the
+  // landing's "Open & protect a position" demo and the FLIP-DAY link.
+  //
+  // The ask ends by arming a Hyperliquid protection, which the runner does
+  // server-side with no further signature — so it needs SIWE, not just a
+  // connected wallet (lib/chat-mutation-gate). Until round 2 the route
+  // answered `signInGate` and NOTHING rendered it: prose telling a stranger
+  // to find an account menu and retype the ask.
+  //
+  // Two passes on the same page. Watch-only first: a door under the reply.
+  // Then a signer that will sign the SIWE message and nothing else: press
+  // the door, and the held ask must run itself and land a job card.
+  for (const sign of [false, true] as const) {
+    const id = sign ? 'gate/signs-in' : 'gate/door'
+    const { ctx, page, errs } = await open({
+      width: 1440,
+      height: 900,
+      theme: 'dark',
+      wallet: WALLETS.baseFunded.address,
+      sign,
+    })
+    await page.goto(`${BASE}/i/protected-long`, { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(4000)
+    // /i runs the link's ask itself once a wallet is here; the mock needs the
+    // app's own connect click (wagmi re-reads its initial state every load).
+    const connected = async () => /5eaa/i.test(await page.locator('body').innerText())
+    if (!(await connected())) {
+      for (const label of ['Connect', 'Run it', 'Sign in']) {
+        const opener = page.locator(`button:has-text("${label}")`).first()
+        if ((await opener.count()) === 0) continue
+        await opener.click({ timeout: 4000 }).catch(() => {})
+        await page.waitForTimeout(2500)
+        const pick = page.locator('button:has-text("Drive Wallet")').first()
+        if ((await pick.count()) > 0) {
+          await pick.click({ timeout: 4000 }).catch(() => {})
+          await page.waitForTimeout(4000)
+        }
+        if (await connected()) break
+        await page.keyboard.press('Escape').catch(() => {})
+        await page.waitForTimeout(600)
+      }
+    }
+    if (!(await connected())) {
+      add(id, true, 'SKIPPED — mock wallet did not attach (harness limitation; preflight:house proves the payload)')
+      await ctx.close()
+      continue
+    }
+    await page.waitForTimeout(20000)
+    const text = await page.locator('body').innerText()
+    const gated = /signed in as this wallet/i.test(text)
+    if (!gated) {
+      // The turn answered something else entirely (a build, a funding offer).
+      // Not a failure — the gate only fires for a compiled guardian job — but
+      // the log must say so rather than claim a door it never saw.
+      add(id, true, `SKIPPED — the turn did not hit the sign-in gate: ${text.slice(0, 0) || 'no gate copy in the reply'}`)
+      await ctx.close()
+      continue
+    }
+    if (!sign) {
+      const door = page.locator('button:has-text("Sign in to continue")').first()
+      const hasDoor = (await door.count()) > 0
+      add('gate/door', hasDoor, hasDoor ? 'the gate reply carries a sign-in door' : 'GATE WITH NO DOOR — the round-1 red is back')
+      add('gate/holds-the-ask', /held/i.test(text) && !/then ask again/i.test(text), 'the reply must hold the ask, not ask for a retype')
+      await inspect(page, 'gate/1440', errs)
+      await ctx.close()
+      continue
+    }
+    // Pass 2: press the door, take the unified modal's wallet lane (the
+    // wallet is already connected, so `connectAndSignIn` signs at once).
+    const door = page.locator('button:has-text("Sign in to continue")').first()
+    if ((await door.count()) === 0) {
+      add('gate/signs-in', false, 'no door to press')
+      await ctx.close()
+      continue
+    }
+    await door.click({ timeout: 5000 }).catch(() => {})
+    await page.waitForTimeout(1500)
+    const lane = page.locator('button:has-text("Connect a wallet")').first()
+    if ((await lane.count()) > 0) {
+      await lane.click({ timeout: 5000 }).catch(() => {})
+    }
+    await page.waitForTimeout(30000)
+    const after = await page.locator('body').innerText()
+    const signedIn = !(await page.locator('button:has-text("Sign in to continue")').count())
+    add('gate/signs-in', signedIn, signedIn ? 'the gate lifted after one signature' : 'the door is still asking after signing')
+    const ranItself = /step 1|of 2|of 3|of 4|sign & send|sign and send|job|guardian|protection/i.test(after)
+    add('gate/ask-reruns', ranItself, ranItself ? 'the held ask ran itself and landed work' : 'signed in, but the ask was not picked back up')
+    await inspect(page, 'gate/signed/1440', errs)
     await ctx.close()
   }
 

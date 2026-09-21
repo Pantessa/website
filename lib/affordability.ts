@@ -36,9 +36,12 @@
 
 import { decodeFunctionData, erc20Abi, formatUnits, isAddress } from 'viem'
 import { buildsNatively } from '@/scripts/ask-ladder'
+import { bridgeAlternatives, heldElsewhereLine } from '@/lib/bridge-shortfall'
 import { chainById, publicClientFor } from '@/lib/chains'
+import { parseCrossChainSwap } from '@/lib/cross-chain-swap'
 import { dynamicTokenByAddress } from '@/lib/token-list'
 import { fundingOriginWords } from '@/lib/funding-origins'
+import type { FundingSource } from '@/lib/funding-plan'
 
 export type SpendKind = 'value' | 'approve' | 'transfer' | 'swap-in' | 'permit2' | 'order'
 
@@ -424,6 +427,11 @@ export const AFFORDABILITY_SHORT_PATH = 'native-affordability-short'
 
 export interface RefusalChip { label: string; resume: string }
 
+/** A dollar-pegged token. A wallet short of one of these on one chain is
+ *  nearly always holding another one somewhere else — which is why "buy" is
+ *  the wrong chip here and the wallet scan is the right one. */
+export const isStableSymbol = (symbol: string): boolean => /^(?:usd[ctgse]?|usdc\.e|usdt0|dai|frax|pyusd)$/i.test(symbol)
+
 /**
  * The chips that ride the refusal. Before the NO-DEAD-ENDS squad this gate
  * stripped every signable key and left prose: a stranger who typed
@@ -460,9 +468,10 @@ export function affordabilityChips(
   const sym = v.symbol.toUpperCase()
   // A stable is FUNDED, never "bought": "Buy $25 of USDC" is a chip that
   // reads like a joke to anyone short of USDC on one chain while holding
-  // $360 of USDT on another (QA drive, 2026-09-21). That refusal wants a
-  // funding chip, which lib/funding-plan owns — see FUND.md.
-  if (/^(?:usd[ctgse]?|usdc\.e|dai|frax|pyusd)$/i.test(sym)) return out
+  // $360 of USDT on another (QA drive, 2026-09-21). Round 2 answers that
+  // case from the WALLET instead — see `bridgeShortfallCopy` below, which
+  // needs a scan and so can't live in this pure composer.
+  if (isStableSymbol(sym)) return out
   // A sell of something the wallet doesn't hold: the honest next step is
   // acquiring it. Size from the ask, so the chip is the ask the user already
   // typed, inverted — never a number we made up.
@@ -471,6 +480,52 @@ export function affordabilityChips(
   if (usd && (sells || v.held === BigInt(0))) push(`Buy $${usd} of ${sym}`, `Buy $${usd} of ${sym} first`)
   else if (sells) for (const s of [25, 50]) push(`Buy $${s} of ${sym}`, `Buy $${s} of ${sym} first`)
   return out.slice(0, 3)
+}
+
+/** What a stable shortfall needs that this module can't read on its own: the
+ *  wallet's other holdings. Injected so the gate keeps ONE I/O surface and
+ *  the audits can fabricate any wallet (lib/funding-plan scanFundingSources
+ *  satisfies it). */
+export interface ShortfallScan {
+  sources: FundingSource[]
+  stranded?: FundingSource[]
+  failedChains?: string[]
+}
+
+/**
+ * The stable branch of the refusal, answered from the WALLET.
+ *
+ * A stable shortfall is the one verdict with nothing to buy: "Buy $25 of
+ * USDC" reads as a joke to a wallet holding $342 of USDT one chain over
+ * (QA's `bridge/usdt`, the last chipless wall of round 1). So this scans
+ * instead — names every holding ≥ $0.50 (invariant clause 4), and, when the
+ * ask was a cross-chain move, offers the same move from where the money
+ * actually is, or the venue swap that skips the bridge entirely
+ * (lib/bridge-shortfall).
+ *
+ * Fails soft in every direction: no scan, a failed scan, an ask that isn't a
+ * bridge, or nothing held — the prose refusal stands exactly as before.
+ */
+export async function bridgeShortfallCopy(
+  ask: string | undefined,
+  v: Extract<AffordabilityVerdict, { kind: 'short' }>,
+  scan: (() => Promise<ShortfallScan | null>) | undefined,
+  verify: (a: string) => boolean = buildsNatively,
+): Promise<{ line: string | null; chips: RefusalChip[] }> {
+  if (!scan || v.gas || !isStableSymbol(v.symbol)) return { line: null, chips: [] }
+  const read = await scan().catch(() => null)
+  if (!read) return { line: null, chips: [] }
+  const lines: string[] = []
+  const held = heldElsewhereLine({ sources: read.sources, stranded: read.stranded, failedChains: read.failedChains })
+  if (held) lines.push(held)
+  let chips: RefusalChip[] = []
+  const parsed = ask ? parseCrossChainSwap(ask) : null
+  if (parsed && !('problem' in parsed)) {
+    const alt = bridgeAlternatives({ parsed, sources: read.sources, stranded: read.stranded, verify })
+    lines.push(...alt.lines)
+    chips = alt.chips
+  }
+  return { line: lines.length ? lines.join(' ') : null, chips }
 }
 
 /**
@@ -482,7 +537,7 @@ export function affordabilityChips(
 export async function gateSignablePayload<T extends Record<string, unknown>>(
   payload: T,
   wallet: string | null | undefined,
-  opts: { reader?: BalanceReader; log?: (line: string) => void; ask?: string } = {},
+  opts: { reader?: BalanceReader; log?: (line: string) => void; ask?: string; scan?: () => Promise<ShortfallScan | null> } = {},
 ): Promise<{ payload: T; verdict: AffordabilityVerdict | null }> {
   if (!wallet || !isAddress(wallet)) return { payload, verdict: null }
   if (!payload.txRequest && !payload.txChain && !payload.orderRequest) return { payload, verdict: null }
@@ -508,13 +563,25 @@ export async function gateSignablePayload<T extends Record<string, unknown>>(
   // Never a bare wall: the refusal carries what to press next (see
   // affordabilityChips). A verdict with no buildable alternative keeps the
   // prose alone rather than inventing a button.
-  const chips = affordabilityChips(opts.ask, verdict, buildsNatively)
+  // A stable shortfall has nothing to buy — it gets the wallet instead: what
+  // it holds, and the move re-origined (or skipped) when the ask was a
+  // bridge. Everything else keeps the pure composer's chips.
+  const fromWallet = await bridgeShortfallCopy(opts.ask, verdict, opts.scan)
+  if (fromWallet.line) gated[textKey] = `${gated[textKey] as string} ${fromWallet.line}`
+  const chips = fromWallet.chips.length ? fromWallet.chips : affordabilityChips(opts.ask, verdict, buildsNatively)
   if (chips.length) {
+    const fromScan = fromWallet.chips.length > 0
     gated.clarify = {
-      question: verdict.gas ? `Put gas on ${verdict.chainName}?` : `Get ${verdict.symbol.toUpperCase()} first?`,
+      question: verdict.gas ? `Put gas on ${verdict.chainName}?` : fromScan ? `Use what you already hold?` : `Get ${verdict.symbol.toUpperCase()} first?`,
       options: chips.map((c) => ({ label: c.label, resume: c.resume })),
     }
-    gated[textKey] = `${gated[textKey] as string} ${verdict.gas ? 'Or tap a top-up and I’ll plan it from what you hold.' : 'Or tap below and I’ll build the buy instead.'}`
+    gated[textKey] = `${gated[textKey] as string} ${
+      verdict.gas
+        ? 'Or tap a top-up and I’ll plan it from what you hold.'
+        : fromScan
+          ? 'Or tap below and I’ll build it from money you already have.'
+          : 'Or tap below and I’ll build the buy instead.'
+    }`
   }
   gated.affordability = {
     short: { chainId: verdict.chainId, token: verdict.token, symbol: verdict.symbol, held: verdict.held.toString(), needs: verdict.needs.toString(), gas: verdict.gas },
