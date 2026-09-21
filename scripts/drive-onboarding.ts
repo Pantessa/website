@@ -647,7 +647,12 @@ async function browserWalk(): Promise<number> {
       return bad0
     }
 
-    const buy = page.locator('button:has-text("Buy $"), button:has-text("Buy AAPL")').first()
+    // The act strip paints after its routes call, and an act chip may be a
+    // button or a link (the AI bar's is an <a> since #826) — match both, and
+    // give a loaded page a moment more rather than reading a slow paint as a
+    // missing chip.
+    const buy = page.locator('button:has-text("Buy $"), button:has-text("Buy AAPL"), a:has-text("Buy AAPL")').first()
+    await buy.waitFor({ state: 'attached', timeout: 12_000 }).catch(() => {})
     if ((await buy.count()) === 0) {
       add('walk/buy-chip', false, 'no Buy chip on /t/AAPL with a wallet')
     } else {
@@ -698,24 +703,28 @@ async function browserWalk(): Promise<number> {
     })
     await page.goto(`${BASE}/i/protected-long`, { waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(4000)
-    // /i runs the link's ask itself once a wallet is here; the mock needs the
-    // app's own connect click (wagmi re-reads its initial state every load).
-    const connected = async () => /5eaa/i.test(await page.locator('body').innerText())
-    if (!(await connected())) {
-      for (const label of ['Connect', 'Run it', 'Sign in']) {
-        const opener = page.locator(`button:has-text("${label}")`).first()
-        if ((await opener.count()) === 0) continue
-        await opener.click({ timeout: 4000 }).catch(() => {})
-        await page.waitForTimeout(2500)
-        const pick = page.locator('button:has-text("Drive Wallet")').first()
-        if ((await pick.count()) > 0) {
-          await pick.click({ timeout: 4000 }).catch(() => {})
-          await page.waitForTimeout(4000)
-        }
-        if (await connected()) break
-        await page.keyboard.press('Escape').catch(() => {})
-        await page.waitForTimeout(600)
+    // /i runs the link's ask itself once a wallet is here. Three doors deep:
+    // the splash CTA opens the unified door, whose wallet lane opens the
+    // wallet list, which is where the mock announces itself. Connected = the
+    // splash CTA is gone (the runtime took over), or the address is on screen.
+    const splashCta = () => page.locator('button:has-text("Connect & build my path")').first()
+    const connected = async () => (await splashCta().count()) === 0 || /5eaa/i.test(await page.locator('body').innerText())
+    for (let tries = 0; tries < 3 && !(await connected()); tries++) {
+      await splashCta().click({ timeout: 4000 }).catch(() => {})
+      await page.waitForTimeout(1500)
+      const lane = page.locator('button:has-text("Connect a wallet")').first()
+      if ((await lane.count()) > 0) {
+        await lane.click({ timeout: 4000 }).catch(() => {})
+        await page.waitForTimeout(2000)
       }
+      const pick = page.locator('button:has-text("Drive Wallet")').first()
+      if ((await pick.count()) > 0) {
+        await pick.click({ timeout: 4000 }).catch(() => {})
+        await page.waitForTimeout(4000)
+      }
+      if (await connected()) break
+      await page.keyboard.press('Escape').catch(() => {})
+      await page.waitForTimeout(800)
     }
     if (!(await connected())) {
       add(id, true, 'SKIPPED — mock wallet did not attach (harness limitation; preflight:house proves the payload)')
@@ -729,7 +738,7 @@ async function browserWalk(): Promise<number> {
       // The turn answered something else entirely (a build, a funding offer).
       // Not a failure — the gate only fires for a compiled guardian job — but
       // the log must say so rather than claim a door it never saw.
-      add(id, true, `SKIPPED — the turn did not hit the sign-in gate: ${text.slice(0, 0) || 'no gate copy in the reply'}`)
+      add(id, true, `SKIPPED — the turn did not hit the sign-in gate (it answered something else): ${text.replace(/\s+/g, ' ').slice(-140)}`)
       await ctx.close()
       continue
     }
