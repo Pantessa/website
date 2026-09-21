@@ -342,19 +342,26 @@ export function onrampOfferFor(headers: Headers, enabled: boolean = onrampEnable
   return { enabled, currency, lanes: enabled ? onrampSellableLanes(currency) : [] }
 }
 
-/** The smallest preset that can still produce a fillable plan on Base.
+/** The smallest preset any checkout opens at.
  *
- *  DERIVED, not chosen. Work it backwards from the parity guard: a bridged
- *  value leg must clear MIN_VALUE_LEG_USD ($9, lib/lifi-bridge) and a
- *  gas-bearing segment carries GAS_LEG_USD ($2) on top, so ~$11 has to
- *  SURVIVE to the wallet. Against that, a preset loses Stripe's onramp fee
- *  (~4% of source, plus a network fee) on the way in, and ORIGIN_ETH_KEEPBACK
- *  + ETH_TWO_LEG_HEADROOM_USD + the floor() in the origin scan on the way
- *  out (~$2 on Base). $15 is the first round number that clears both ends.
+ *  Sized 2026-09-03 against a $9 parity floor: a bridged value leg had to
+ *  clear MIN_VALUE_LEG_USD (lib/lifi-bridge) and a gas-bearing segment
+ *  carries GAS_LEG_USD ($2) on top, so ~$11 had to SURVIVE to the wallet.
+ *  Against that, a preset loses Stripe's network fee on the way in, and
+ *  ORIGIN_ETH_KEEPBACK + ETH_TWO_LEG_HEADROOM_USD + the floor() in the origin
+ *  scan on the way out (~$2 on Base). $15 was the first round number that
+ *  cleared both ends.
+ *
+ *  The parity floor dropped to $3 on 2026-09-21 (LiFi legs got ten times
+ *  cheaper), so on Base this could now be ~$8. It was deliberately NOT moved
+ *  with it: it is a price a stranger sees on every card chip, and it is also
+ *  the clamp the session route applies to every preset, deliveries included.
+ *  On the default Ethereum lane the L1 keep-back decides the preset long
+ *  before this does. Lowering it is a pricing call, not a derivation.
  *
  *  It cannot import those constants — lib/lifi-bridge is server-side and this
  *  module is imported by a client component — so scripts/test-api.ts owns the
- *  cross-check and fails if the parity floor moves out from under it. */
+ *  cross-check and fails if the parity floor moves ABOVE what it covers. */
 export const ONRAMP_MIN_USD = 15
 
 /** Ceiling on any preset — mirrors clarify's MAX_FUND_USD clamp. */

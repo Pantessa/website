@@ -27,7 +27,7 @@ import {
   type FundingBalanceRead,
   type FundingSource,
 } from '@/lib/funding-plan'
-import { MIN_VALUE_LEG_USD } from '@/lib/lifi-bridge'
+import { GAS_LEG_USD, MIN_VALUE_LEG_USD } from '@/lib/lifi-bridge'
 import { fundSegment, lifiDestination, type LifiDestination } from '@/lib/lifi-destinations'
 import { GAS_RESERVE_ETH, STOCK_CHAIN_ID, type WalletChainView } from '@/lib/wallet-view'
 
@@ -100,14 +100,17 @@ export function fundingSourcesFromChains(chains: WalletChainView[], ethUsd: numb
  *  alone is the fix. Null when no origin can. */
 function planLifiDestFix(sources: FundingSource[], dest: LifiDestination): { ask: string; origin: FundingSource; usd: number } | null {
   const usd = MIN_VALUE_LEG_USD
+  // "including gas" takes the gas leg OUT of the named dollars (lib/jobs), so
+  // the sentence names both: the value leg stays at the floor, never under it.
+  const askUsd = usd + (dest.gasLeg ? GAS_LEG_USD : 0)
   const headroom = dest.gasLeg ? ROBINHOOD_GAS_HEADROOM_USD : 0
   const rank = (s: FundingSource) => (s.chainId === 1 ? 2 : 0) + (s.token === 'ETH' ? 1 : 0)
   const origin = sources
-    .filter((s) => s.usd >= usd + headroom)
+    .filter((s) => s.usd >= askUsd + headroom)
     .sort((a, b) => rank(a) - rank(b) || b.usd - a.usd)[0]
   if (!origin) return null
   return {
-    ask: fundSegment(usd, origin.chainWord, true, origin.token === 'ETH' ? 'ETH' : 'USDC', dest),
+    ask: fundSegment(askUsd, origin.chainWord, true, origin.token === 'ETH' ? 'ETH' : 'USDC', dest),
     origin,
     usd,
   }

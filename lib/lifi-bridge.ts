@@ -200,30 +200,48 @@ export function lifiBridgeRoutersFor(chainId: number): `0x${string}`[] {
   return DEFAULT_BRIDGE_ROUTERS[chainId] ?? []
 }
 
-/** What ONE LiFi leg onto Robinhood Chain costs FLAT, whatever its size —
- *  the number a percentage margin cannot express. Probed live 2026-09-03
- *  (Base USDC → USDG), where the loss barely moves across two orders of
- *  magnitude:
+/** What ONE LiFi value leg costs near the floor, with headroom — the number
+ *  a percentage margin cannot express, because the PERCENTAGE is what moves
+ *  with size and the percentage is exactly what STABLE_LEG_MIN_OUT_BPS
+ *  measures.
  *
- *      $1 → $0.16    $1.50 → $0.17   $3 → $0.18    $5 → $0.21
- *      $10 → $0.29   $20 → $0.20     $50 → $0.30   $100 → $0.46
+ *  Re-measured 2026-09-21: three passes between 14:50Z and 15:17Z, agreeing
+ *  with a sample taken earlier the same day (li.quest quotes, slippage 0.5%,
+ *  shortfall = dollars in minus toAmountMin; `npm run probe:lifi-leg`
+ *  repeats it). USDC → USDG from Base, Ethereum, Arbitrum and Optimism:
  *
- *  The shortfall is fixed; the PERCENTAGE is what moves — and the
- *  percentage is exactly what STABLE_LEG_MIN_OUT_BPS measures. Carried with
- *  headroom over the worst sample so a busy-gas hour doesn't reopen the
- *  hole. */
-export const LIFI_LEG_FLAT_USD = 0.35
+ *      $1 → $0.024   $1.50 → $0.025   $2 → $0.027
+ *      $3 → $0.030   $5 → $0.036      $9 → $0.048 (across) / $0.045–0.062 (lifiIntents)
+ *
+ *  About $0.023 flat plus 0.3%, the same within a tenth of a cent from all
+ *  four origins and across all three passes. `across` answers nearly every
+ *  row; `lifiIntents` takes some $9 rows, and its guaranteed minimum sits
+ *  further under its estimate. The legs that carry a swap cost more and move
+ *  more: USDC.e → USDG (Arbitrum, Optimism) $0.012–0.045 up to $3, $0.061 at
+ *  $5, $0.07–0.15 at $9 — and one $1 row answered by `relaydepository`
+ *  guaranteed only 93.2%, which is why the floor stops at $3 and not lower.
+ *  USDC → Arc USDC costs less ($0.006–0.028).
+ *
+ *  The 2026-09-03 probe read $0.16–0.46 at every size ($1 → $0.16,
+ *  $5 → $0.21, $100 → $0.46) and the constant was 0.35. The venue got ten
+ *  times cheaper in eighteen days, so it can move back: if legs at the floor
+ *  start refusing on parity again, re-run the probe and raise this.
+ *
+ *  0.12 is 2.6× the worst sample from $1.50 to $3 (USDC.e from Optimism,
+ *  $0.045), 1.8× the relaydepository $1 outlier, and 2× the worst USDC
+ *  sample at any size probed. */
+export const LIFI_LEG_FLAT_USD = 0.12
 
 /** The smallest VALUE leg whose flat cost still clears the parity guard —
  *  derived FROM that guard, so moving the floor moves this with it.
  *
- *  Below it the guard refuses every single time, which means the chip was
- *  never fillable: live 2026-09-03 a "$1.5 from Base" chip compiled into a
- *  job that died on step 1 with *"the route guarantees only 1.329574 USDG
- *  for $1.5 — more than 4% below dollar parity, refusing a bad fill"*. The
- *  guard was right; the OFFER was the bug. Verified against the real
- *  builder the same day: $1.50 blocked, $3 blocked, $5 / $5.50 / $6 / $8 /
- *  $12 all passed.
+ *  Below it the guard can refuse, which means the chip may never fill:
+ *  live 2026-09-03, when a leg cost ~$0.17 flat, a "$1.5 from Base" chip
+ *  compiled into a job that died on step 1 with *"the route guarantees only
+ *  1.329574 USDG for $1.5 — more than 4% below dollar parity, refusing a bad
+ *  fill"*. The guard was right; the OFFER was the bug. The floor was $9 until
+ *  the 2026-09-21 re-measure (see LIFI_LEG_FLAT_USD); today a $1 leg
+ *  guarantees 97.6%, and the floor keeps its distance from that edge.
  *
  *  A value leg moves the user's exact dollars, so — unlike the gas leg's
  *  GAS_LEG_LADDER_USD — it must never resize itself at build time. The
@@ -260,8 +278,8 @@ export const MIN_UNFLOORED_BUY_USD = MIN_VALUE_LEG_USD / (1 + FUNDING_MARGIN_BPS
 export function minLegNote(buyUsd: number, dest: LifiDestination = LIFI_DESTINATIONS[ROBINHOOD_CHAIN_ID]): string | null {
   if (buyUsd >= MIN_UNFLOORED_BUY_USD) return null
   return (
-    `Moving money between chains costs about $${LIFI_LEG_FLAT_USD.toFixed(2)} flat no matter the size, so $${buyUsd} would arrive more than ` +
-    `${(10_000 - STABLE_LEG_MIN_OUT_BPS) / 100}% light and I'd refuse the fill. The smallest move that lands clean is ~$${MIN_VALUE_LEG_USD} — the rest stays yours as ${primaryStable(dest.chainId)?.symbol ?? 'the chain stable'} on ${dest.name}.`
+    `Moving money between chains costs a few cents flat whatever the size, and on a move as small as $${buyUsd} that can be more than the ` +
+    `${(10_000 - STABLE_LEG_MIN_OUT_BPS) / 100}% I allow before refusing the fill. The smallest move I can count on landing clean is ~$${MIN_VALUE_LEG_USD} — the rest stays yours as ${primaryStable(dest.chainId)?.symbol ?? 'the chain stable'} on ${dest.name}.`
   )
 }
 
