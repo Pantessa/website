@@ -27011,11 +27011,23 @@ async function main() {
         (runnerSrc.match(/buildPath: asBuildPath\(built\.buildPath\)/g) ?? []).length === 2 &&
         (runnerSrc.match(/buildPath: asBuildPath\(turn\.buildPath\)/g) ?? []).length === 2,
     )
+    // RE-PINNED on the #821 merge: the chat lane no longer spells the beacon
+    // inline — both mounts (the thread and the Jobs rail's overlay, which used
+    // to throw the signal away entirely) map through the SHARED
+    // jobStepSignedInfo, so the fields this pin guards moved into
+    // lib/job-step-telemetry. Same rule, asserted where it now lives: the card
+    // resolves from the artifact, and the mapper forwards the PATH — the one
+    // substitution that wrote 28 NULL rows must appear in neither.
+    const teleWireSrc = await readFile('lib/job-step-telemetry.ts', 'utf8')
     check(
-      'job-step wiring (client): the card resolves path + chain + receipt from the signed step\'s own artifact, and the beacon sends the PATH, never the raw builder id',
+      'job-step wiring (client): the card resolves path + chain + receipt from the signed step\'s own artifact, and the shared beacon mapping both mounts use sends the PATH, never the raw builder id',
       /jobStepBuildPath\(builder, stepArtifact\)/.test(cardSrc) && /jobStepChainId\(stepArtifact\)/.test(cardSrc) &&
-        /buildPath: info\.buildPath,/.test(chatSrc) && !/buildPath: info\.builder/.test(chatSrc) &&
-        /chainId: info\.chainId,/.test(chatSrc) && /artifact: 'job-step'/.test(chatSrc),
+        /buildPath: signal\.buildPath,/.test(teleWireSrc) && /artifact: 'job-step'/.test(teleWireSrc) &&
+        /chainId: signal\.chainId,/.test(teleWireSrc) &&
+        // the substitution itself, banned at both the mapper and the chat lane
+        !/buildPath: signal\.builder/.test(teleWireSrc) && !/buildPath: info\.builder/.test(chatSrc) &&
+        // and the chat lane really does go through the shared mapping
+        /reportEmbedSigned\(jobStepSignedInfo\(info\)\)/.test(chatSrc),
     )
     check(
       'job-step wiring (HL): the bridge deposit and the perp order no longer share one fee-bearing path',
