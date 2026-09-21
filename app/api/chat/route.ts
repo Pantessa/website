@@ -148,7 +148,7 @@ import { parseNftAsk, parseNftListAsk, parseNftMarketAsk, parseNftTransferFollow
 import { chainListSentence, nftGalleryChains, readNftGallery } from '@/lib/nft-gallery'
 import { marketReplyCopy, readNftOffers, readNftWorth } from '@/lib/nft-market'
 import { parseTransferSegment, buildTransferArtifact } from '@/lib/transfer-exec'
-import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
+import { buildUniswapSwap, NoV3PoolError, v3ApprovalSteps } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { OffTapeError, TapeUnavailableError } from '@/lib/stock-tape'
@@ -5266,18 +5266,23 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
         // recipe) — prices move while approvals mine.
         const sell = intent.sellToken.toUpperCase()
         const buy = intent.buyToken.toUpperCase()
-        trace({ type: 'status', label: `guardrails passed — approve → swap card built (${intent.sellAmountHuman} ${sell} → ${buy}), awaiting signature` })
+        // A partial allowance on a token whose approve() refuses to change a
+        // live one (Ethereum USDT) puts a reset to zero in front — three steps,
+        // and the re-quote still aims at the last.
+        const approvalSteps = v3ApprovalSteps(uni, sell)
+        const resets = !!uni.resetTx
+        trace({ type: 'status', label: `guardrails passed — ${resets ? 'reset → ' : ''}approve → swap card built (${intent.sellAmountHuman} ${sell} → ${buy}), awaiting signature` })
         return NextResponse.json({
-          reply: `🔏 ${uni.summary}\n🔗 Two steps in the card below — sign the ${sell} approval, and the swap appears automatically once it confirms (re-quoted fresh). Nothing to retype.${warns.length ? `\n${warns.join('\n')}` : ''}`,
+          reply: `🔏 ${uni.summary}\n🔗 ${resets ? `Three steps in the card below — ${sell} won't change an allowance that's already set, so the first step clears your older, smaller one, the second is the ${sell} approval` : `Two steps in the card below — sign the ${sell} approval`}, and the swap appears automatically once it confirms (re-quoted fresh). Nothing to retype.${warns.length ? `\n${warns.join('\n')}` : ''}`,
           txChain: {
             summary: uni.summary,
             steps: [
-              { label: 'approve', title: `Approve ${sell} to Uniswap's SwapRouter02`, tx: uni.approveTx },
+              ...approvalSteps,
               { label: 'swap', title: `Swap ${intent.sellAmountHuman} ${sell} → ${buy}`, tx: uni.swapTx, validUntil: uni.validUntil },
             ],
             refresh: {
               kind: 'uniswap-swap',
-              stepIndex: 1,
+              stepIndex: approvalSteps.length,
               params: { sellToken: intent.sellToken, buyToken: intent.buyToken, amountHuman: intent.sellAmountHuman, chainId: String(chainId), ...(feeBps !== undefined ? { feeBps: String(feeBps) } : {}) },
             },
           },

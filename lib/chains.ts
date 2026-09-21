@@ -52,6 +52,13 @@ export const arcChain = defineChain({
 export interface AppChainToken {
   address: `0x${string}`
   decimals: number
+  /** The token's approve() REVERTS when the current allowance and the new
+   *  amount are both non-zero (Tether's mainnet contract). A build that finds
+   *  a partial allowance must send approve(spender, 0) first —
+   *  lib/erc20-approval reads this flag, builders and guards alike. Measured,
+   *  not guessed: every registry token on every chain was driven through
+   *  approve 1 → approve 2 on a fork (2026-09-21); only this one reverted. */
+  approveReset?: true
 }
 
 export interface AppChain {
@@ -161,7 +168,7 @@ export const APP_CHAINS: AppChain[] = [
     },
     tokens: {
       USDC: { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', decimals: 6 },
-      USDT: { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', decimals: 6 },
+      USDT: { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', decimals: 6, approveReset: true },
       DAI: { address: '0x6B175474E89094C44Da98b954EedeAC495271d0F', decimals: 18 },
       WETH: { address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', decimals: 18 },
       ETH: { address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', decimals: 18 },

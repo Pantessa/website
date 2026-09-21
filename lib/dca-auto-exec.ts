@@ -482,6 +482,9 @@ export async function buildAutoBuy(input: {
   if (built.blocked) {
     return { ok: false, detail: `Venue build refused: ${built.guardrails.checks.filter((c) => !c.ok).map((c) => c.note).join(' ') || 'guardrail block'} Nothing pulled.` }
   }
+  // The spender's USDC needs no allowance reset (lib/erc20-approval); a build
+  // that carries one is not the shape guardAutoBuy checks — stop before the pull.
+  if (built.resetTx) return { ok: false, detail: 'Venue build carried an allowance reset this autopilot does not send. Nothing pulled.' }
   return {
     ok: true,
     build: {
