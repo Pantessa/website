@@ -148,7 +148,7 @@ const DOLLAR_OTHER_RE = new RegExp(
   'i',
 )
 
-export function parseCrossChainSwap(rawMessage: string): CrossChainSwapParams | { problem: string } | null {
+export function parseCrossChainSwap(rawMessage: string): CrossChainSwapParams | { problem: string; missing?: CrossChainMissing } | null {
   const privacy = extractPrivacy(rawMessage)
   const parsed = parseCrossChainCore(privacy.rest)
   if (!parsed || 'problem' in parsed) return parsed
@@ -165,7 +165,7 @@ export function parseCrossChainSwap(rawMessage: string): CrossChainSwapParams | 
   return { ...parsed, ...(privacy.confidential ? { confidential: true as const } : {}), ...(privacy.recipient ? { recipient: privacy.recipient } : {}) }
 }
 
-function parseCrossChainCore(rawMessage: string): CrossChainSwapParams | { problem: string } | null {
+function parseCrossChainCore(rawMessage: string): CrossChainSwapParams | { problem: string; missing?: CrossChainMissing } | null {
   const message = normalizeChainWords(normalizeArrows(rawMessage)).replace(DOLLAR_STABLE_RE, '$1 $2')
   const dollarOther = message.match(DOLLAR_OTHER_RE)
   if (dollarOther) {
@@ -186,12 +186,13 @@ function parseCrossChainCore(rawMessage: string): CrossChainSwapParams | { probl
       const dest = message.slice((al.index ?? 0) + al[0].length).match(DEST_RE)
       const destWord = dest ? prettyChainWord(canonicalChainWord(dest[2]) ?? dest[2]) : 'Arbitrum'
       const originWord = prettyChainWord(canonicalChainWord(al[2]) ?? al[2])
-      return { problem: `How much ${tok}? Say e.g. “swap 5 ${tok} from ${originWord} to ${destWord}” and I'll build it.` }
+      return { problem: `How much ${tok}? Say e.g. “swap 5 ${tok} from ${originWord} to ${destWord}” and I'll build it.`, missing: { what: 'amount', token: tok, originWord, destWord } }
     }
     const dOnly = message.match(DEST_ONLY_RE)
     if (dOnly) {
       const tok = cleanTok(dOnly[2]).toUpperCase()
-      return { problem: `Which chain should the ${dOnly[1]} ${tok} come FROM? Say e.g. “swap ${dOnly[1]} ${tok} from Base to ${prettyChainWord(canonicalChainWord(dOnly[3]) ?? dOnly[3])}” and I'll build it.` }
+      const destWord = prettyChainWord(canonicalChainWord(dOnly[3]) ?? dOnly[3])
+      return { problem: `Which chain should the ${dOnly[1]} ${tok} come FROM? Say e.g. “swap ${dOnly[1]} ${tok} from Base to ${destWord}” and I'll build it.`, missing: { what: 'origin', token: tok, amount: Number(dOnly[1]), destWord } }
     }
     return null
   }
@@ -628,4 +629,53 @@ export function composePrivacyLines(params: CrossChainSwapParams, wallet: string
       ? `- **Still public:** your deposit on ${prettyChainWord(params.originChain)} and the payout on ${prettyChainWord(params.destinationChain)} are ordinary transfers. What's hidden is that they belong together. Refunds return to your wallet, not the delivery address.`
       : `- **Still public:** your deposit and the payout are ordinary transfers, and both touch this wallet — anyone can match them by amount and timing. For real privacy, deliver to an address that isn't linked to this one: say “deliver it to 0x…”.`,
   ]
+}
+
+
+// ── The missing slot is OUR problem ─────────────────────────────────────────
+// "bridge 20 usdc to arbitrum" used to answer "Which chain should the 20 USDC
+// come FROM?" — a question the wallet already answers. With a wallet
+// connected the route scans it (lib/funding-plan scanFundingSources) and these
+// PURE helpers turn the scan into chips whose resumes are the exact sentence
+// parseCrossChainSwap builds. No wallet / nothing fits → the old words stand.
+
+/** What an under-specified move still needs (rides beside `problem`). */
+export type CrossChainMissing =
+  | { what: 'origin'; token: string; amount: number; destWord: string }
+  | { what: 'amount'; token: string; originWord: string; destWord: string }
+
+export interface MoveSource {
+  chainWord: string
+  token: string
+  balance: number
+}
+
+const moveUnits = (token: string, n: number) => {
+  const dp = /^usd/i.test(token) || token.toUpperCase() === 'DAI' ? 2 : 5
+  const f = 10 ** dp
+  return String(Math.floor(n * f) / f)
+}
+
+/** Chips for the slot the sentence left out, from what the wallet holds.
+ *  Empty when nothing movable fits — the caller then says what it found. */
+export function missingSlotChips(missing: CrossChainMissing, sources: MoveSource[]): { label: string; resume: string }[] {
+  const sameTok = sources.filter((s) => s.token.toUpperCase() === missing.token.toUpperCase() && s.balance > 0)
+  const norm = (w: string) => (canonicalChainWord(w) ?? w).toLowerCase()
+  if (missing.what === 'origin') {
+    return sameTok
+      .filter((s) => norm(s.chainWord) !== norm(missing.destWord) && s.balance >= missing.amount)
+      .sort((a, b) => b.balance - a.balance)
+      .slice(0, 4)
+      .map((s) => ({
+        label: `From ${prettyChainWord(norm(s.chainWord))} · holds ${moveUnits(s.token, s.balance)} ${missing.token}`,
+        resume: `Swap ${missing.amount} ${missing.token} from ${prettyChainWord(norm(s.chainWord))} to ${missing.destWord}`,
+      }))
+  }
+  const held = sameTok.find((s) => norm(s.chainWord) === norm(missing.originWord))
+  if (!held) return []
+  const sizes = [...new Set([held.balance, held.balance / 2].map((n) => moveUnits(missing.token, n)))].filter((n) => Number(n) > 0)
+  return sizes.map((n, i) => ({
+    label: `${i === 0 ? 'All' : 'Half'} · ${n} ${missing.token}`,
+    resume: `Swap ${n} ${missing.token} from ${missing.originWord} to ${missing.destWord}`,
+  }))
 }

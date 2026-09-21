@@ -38,7 +38,7 @@ import {
   type LidoPositionPayload,
   type LidoStakeParams,
 } from '@/lib/lido-stake'
-import { DEST_GAS_FLOOR_ETH, FUNDING_CHAIN_WORD, fundingFallbackForFailures, offerFundingPlan, softenClaimedFailureBlock, type FundingRefusalFacts } from '@/lib/funding-plan'
+import { DEST_GAS_FLOOR_ETH, FUNDING_CHAIN_WORD, fundingFallbackForFailures, offerFundingPlan, scanFundingSources, softenClaimedFailureBlock, type FundingRefusalFacts } from '@/lib/funding-plan'
 import {
   parseCrossChainSwap,
   parseCrossChainFollowUp,
@@ -51,16 +51,19 @@ import {
   crossChainValueUsd,
   type CrossChainSwapParams,
   type BuiltSwap,
+  missingSlotChips,
 } from '@/lib/cross-chain-swap'
 import { CROSS_CHAIN_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS } from '@/lib/fees'
 import { INTENT_SLUG_RE } from '@/lib/intent-links'
 import prismaDb from '@/lib/db'
 import { prettyChainWord } from '@/lib/chain-lexicon'
-import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, hlOpenCollateralShortfall, hlUnsizedChips, parseHlIntent, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
+import { arbitrumUsdcBalance, buildHlExecTurn, hlAgentOf, HL_MIN_DEPOSIT_USDC, hlCanonicalAsk, hlOpenCollateralShortfall, hlUnsizedChips, nearestHlCoins, parseHlIntent, type HlOpenShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { parseGuardianArm } from '@/lib/hl-guardian'
 import { fenceGuardianCoin } from '@/lib/hl-guardian-fence'
 
 import { hlPerpUniverse } from '@/lib/hl-universe'
+import { rescueIntent } from '@/lib/intent-rescue'
+import { buildsNatively } from '@/scripts/ask-ladder'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import { compileJobAsk, stampSwapFeeTier } from '@/lib/jobs'
 import { advanceJob, createJob } from '@/lib/jobs-runner'
@@ -1588,6 +1591,25 @@ async function handleChatTurn(req: NextRequest) {
     if (hlIntent) {
       const hlAgent = hlAgentOf(activeServers)
       if (hlAgent.agent && hlAgent.usable) {
+        // A coin the venue doesn't list ("HYP", live 2026-09-21) used to end
+        // the turn at "HYP is not a Hyperliquid perp". The live universe
+        // knows what they meant: offer the same ask with the listed coin.
+        // A failed universe read falls through — the build refuses by name.
+        if (hlIntent.kind !== 'deposit') {
+          const universe = await hlPerpUniverse().catch(() => null)
+          if (universe && !universe.listed.has(hlIntent.coin)) {
+            const near = nearestHlCoins(hlIntent.coin, universe.listed)
+            nativeTrace({ type: 'status', label: `native hl layer claimed the turn: ${hlIntent.coin} isn't a listed perp — ${near.length ? `offering ${near.join(', ')}` : 'no near match, refusing by name'}` })
+            if (near.length) {
+              return NextResponse.json({
+                reply: `📈 **${hlIntent.coin}** isn't a Hyperliquid perp. Did you mean ${near.map((n) => `**${n}**`).join(' or ')}? Pick one and I'll build it.`,
+                clarify: { question: `Which market?`, options: near.map((n) => ({ label: hlCanonicalAsk(hlIntent, n).replace(/ on hyperliquid$/, '').replace(/^./, (c) => c.toUpperCase()), resume: hlCanonicalAsk(hlIntent, n) })) },
+                buildPath: 'native-hl-exec',
+              })
+            }
+            return NextResponse.json({ reply: `📈 **${hlIntent.coin}** isn't a Hyperliquid perp, and nothing listed is close to it. Say the ticker the way Hyperliquid lists it (HYPE, ETH, BTC, SOL…).`, buildPath: 'native-hl-exec' })
+          }
+        }
         // Unsized open ("buy some HYPE and 2x long" — the funded miss of
         // 2026-08-12 that fell to the planner): the side, coin and leverage
         // are the ask; the size is the one missing input. Chips, not prose —
@@ -2287,6 +2309,29 @@ async function handleChatTurn(req: NextRequest) {
       if (ccAgent.agent && ccAgent.usable) {
         const cc = parseCrossChainSwap(message)
         if (cc && 'problem' in cc) {
+          // The slot the sentence left out is usually one the WALLET answers:
+          // which chain holds the token, or how much of it is there. Scan and
+          // offer it as chips; a failed or empty scan keeps the plain words.
+          if (cc.missing && walletAddress) {
+            const scan = await scanFundingSources(walletAddress).catch(() => null)
+            const chips = scan ? missingSlotChips(cc.missing, scan.sources) : []
+            if (chips.length) {
+              nativeTrace({ type: 'status', label: `native cross-chain layer: ask left out its ${cc.missing.what} — answered from the wallet scan with ${chips.length} chip${chips.length === 1 ? '' : 's'}` })
+              const m = cc.missing
+              return NextResponse.json({
+                reply: m.what === 'origin'
+                  ? `🔗 Moving ${m.amount} ${m.token} to ${m.destWord} — here's where your wallet can send it from. Pick one and I'll build it.`
+                  : `🔗 Moving your ${m.token} from ${m.originWord} to ${m.destWord} — how much? Here's what the wallet can move.`,
+                clarify: { question: m.what === 'origin' ? 'From which chain?' : `How much ${m.token}?`, options: chips },
+                buildPath: 'native-cross-chain',
+              })
+            }
+            if (scan && cc.missing.what === 'origin') {
+              const held = scan.sources.filter((x) => x.token === cc.missing!.token).map((x) => `${x.balance.toFixed(2)} on ${x.chainWord}`)
+              nativeTrace({ type: 'status', label: 'native cross-chain layer: ask left out its origin and no chain holds enough — saying what the wallet holds' })
+              return NextResponse.json({ reply: `🔗 No chain in this wallet holds ${cc.missing.amount} ${cc.missing.token} to move${held.length ? ` — I see ${held.join(', ')}` : ''}. Say a smaller amount, or name the chain it should leave from.`, buildPath: 'native-cross-chain' })
+            }
+          }
           nativeTrace({ type: 'status', label: `native cross-chain layer: ask under-specified — ${cc.problem.slice(0, 160)}` })
           return NextResponse.json({ reply: `🔗 ${cc.problem}` })
         }
@@ -2300,6 +2345,31 @@ async function handleChatTurn(req: NextRequest) {
         nativeTrace({ type: 'note', level: 'info', label: 'native cross-chain layer passed: cross-chain-shaped ask but no imperative swap parse — normal routing (quote questions route via the planner)' })
       }
       // Otherwise (a quote question, etc.) fall through to routing below.
+    }
+
+    // ── The intent net — the last gate before the planner. A money ask no
+    //    grammar read used to land on the house model, which has no builders:
+    //    it disclaims and sends the user to the venue's own site (live
+    //    2026-09-21, a $4,300 wallet: "buy $20 worth of HYPE and long for 2x"
+    //    → "use Hyperliquid's UI directly"). The net reads the ask loosely and
+    //    answers with the canonical sentence(s) a connected dapp builds — each
+    //    verified against the real ladder, so a chip is never a second dead
+    //    end. The tap re-enters the ladder, where that layer's own funding
+    //    plan (bridge legs, gas legs, the card door) does the rest. Reads and
+    //    questions return null and stay the planner's.
+    if (moneyShaped(message)) {
+      const rescue = rescueIntent(message, buildsNatively)
+      if (rescue) {
+        nativeTrace({ type: 'status', label: `intent net claimed the turn: no grammar read the ask (${rescue.read}) — offering ${rescue.chips.length} buildable reading${rescue.chips.length === 1 ? '' : 's'}: ${rescue.chips.map((c) => `“${c.resume}”`).join(' · ').slice(0, 300)}` })
+        const one = rescue.chips.length === 1
+        return NextResponse.json({
+          reply: one
+            ? `🧭 I read that as **${rescue.chips[0].label}**. Tap it and I'll build it — if the wallet is short on that chain, I'll plan the move from what you hold.`
+            : `🧭 I can build that. Which did you mean? Tap one — if the wallet is short on that chain, I'll plan the move from what you hold.`,
+          clarify: { question: one ? 'Build this?' : 'Which one?', options: rescue.chips.map((c) => ({ label: c.label, resume: c.resume })) },
+          buildPath: 'native-intent-net',
+        })
+      }
     }
 
     // Need an inference provider to phrase an answer. With none selected, fall
@@ -7087,6 +7157,17 @@ function capabilitiesBlock(servers: McpServer[], smart: PlannableEndpoint[] = []
   ].join('\n')
 }
 
+/** What the answer model must know about the product it speaks for. The
+ *  capability block lists each connected MCP's READ tools and forbids claiming
+ *  more — so the model concluded Pantessa can't trade, disclaimed, and sent a
+ *  funded user to the venue's own site (live 2026-09-21; memory
+ *  planner-competitor-referrals has the older cases naming competitors). The
+ *  native builders run BEFORE the model and never appear in that list. */
+const NATIVE_BUILDERS_RULE = [
+  `Pantessa itself BUILDS guarded transactions the user signs in this chat — you never see those builders, they run before you on asks worded as plain commands: spot swaps and tokenized stocks, cross-chain moves, Hyperliquid perps (long/short, leverage, deposits, stops), Aave and Morpho (supply, borrow, repay, withdraw), Lido staking, sends, NFT buys and sales. If the wallet is short on the needed chain, Pantessa plans the bridge and gas legs from what the wallet holds.`,
+  `So NEVER say Pantessa or you "can't execute", "can't place orders" or "can't prepare transactions", and NEVER tell the user to go to another app, exchange or protocol website to do it. If the user wants money to move and nothing was built, the wording wasn't recognized: reply with ONE short line offering the exact command to send instead, in one of these shapes — "2x long $20 of HYPE on hyperliquid", "Buy $20 of AAPL", "Sell $50 of ETH", "Swap 20 USDC from base to arbitrum", "Stake 0.05 ETH on Lido", "Supply $25 of USDC to Aave", "Lend $20 of USDC on Morpho", "Borrow 10 USDC from Aave". Do not invent prices, market ids or addresses.`,
+].join('\n')
+
 function buildPrompt(message: string, contextBlocks: string[], history: ConversationTurn[] = [], ctx?: WorkingContext, userAddress?: string, capabilities = ''): string {
   const convo = answerHistoryBlock(history)
   // Structured continuity (RR2): the scope + offered items from prior turns,
@@ -7102,11 +7183,13 @@ function buildPrompt(message: string, contextBlocks: string[], history: Conversa
     const capBlock = capabilities
       ? `${capabilities}\n\nIf the user asks what they can do, what this is, what's available, or how to use it, answer by naming the connected agents above and summarizing what each can do — concisely, one short line per agent. Never pad the list with capabilities no connected agent provides.\n\n`
       : ''
-    return `You are Pantessa, a concise assistant. Continue the conversation and answer the user's latest message directly, using the earlier turns for context.\n\n${capBlock}${walletLine ? `${walletLine}\n\n` : ''}${ctxBlock ? `${ctxBlock}\n\n` : ''}${convoBlock}User: ${message}`
+    return `You are Pantessa, a concise assistant. Continue the conversation and answer the user's latest message directly, using the earlier turns for context.\n\n${NATIVE_BUILDERS_RULE}\n\n${capBlock}${walletLine ? `${walletLine}\n\n` : ''}${ctxBlock ? `${ctxBlock}\n\n` : ''}${convoBlock}User: ${message}`
   }
   return [
     `You are Pantessa, a concise assistant. Use the live data below (fetched and paid for over x402) to answer.`,
     `Cite specifics from the data. If the data doesn't cover it, say so briefly.`,
+    ``,
+    NATIVE_BUILDERS_RULE,
     // Even with data in hand, a capability/meta ask ("what can I do here?") must
     // describe ALL connected agents — not just whichever one the planner happened
     // to call. So the capability block travels into the data branch too.

@@ -295,7 +295,7 @@ import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun,
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
 import { moveAsk, parseRebalanceAsk, planRebalance, type RebalanceInputs } from '../lib/rebalance'
 import { CHOOSE_SHAPE_RULES, chooseMosaicShape, composeMosaicAsk, fmtUnits, integerPcts, isMosaicAsk, MOSAIC_STABLE, mosaicAskString, mosaicPresets, mosaicStableFor, mosaicValueRows, parseMosaicAsk, planMosaic, suggestMosaicShape, type MosaicHolding } from '../lib/mosaic'
-import { simulateLadder } from './ask-ladder'
+import { simulateLadder, buildsNatively } from './ask-ladder'
 import { coinFundLegs, coinFundRoutes, stockFundLegs, stockFundRoutes } from '../lib/fund-routes'
 import { cardBuyChip, cardBuyTurn, type CardBuyAsk } from '../lib/card-buy'
 import { ARRIVAL_FUTURE_SKEW_MS, ARRIVAL_MAX_MCPS, ARRIVAL_MAX_TEXT, ARRIVAL_SOURCES, arrivalAllowed, arrivalSourceAllowed, arrivalTextProblem, type ArrivalRefusal } from '../lib/arrival-fence'
@@ -471,6 +471,8 @@ import {
   ARBITRUM_USDC,
   type HlOrderIntent,
   type HlWireApproveBuilderFeeAction,
+  nearestHlCoins,
+  hlCanonicalAsk,
 } from '../lib/hyperliquid-exec'
 import { createL1ActionHash } from '@nktkas/hyperliquid/signing'
 import { isReportableWalletError, walletErrorWords, WALLET_REFUSAL_KIND } from '../lib/wallet-refusal'
@@ -528,6 +530,8 @@ import { costUsd, rateFor } from '../lib/inference-meter'
 import { looksLikeAnthropicKey, sealKey, openKey, byokEnabled, isByokSynthModel } from '../lib/byok'
 import { answerGateReply, EARN_PER_100_USD } from '../lib/answer-gate-copy'
 import { withInferenceScope, inferenceScope } from '../lib/inference-context'
+import { rescueIntent } from '../lib/intent-rescue'
+import { missingSlotChips } from '../lib/cross-chain-swap'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -28264,6 +28268,90 @@ async function main() {
       accepted.every((s) => s === 200),
       JSON.stringify(accepted),
     )
+  }
+
+  // ── INTENT NET + HL slot reader (2026-09-21). A $4,300 wallet asked "buy
+  //    $20 worth of HYPE and long for 2x" and was told to use Hyperliquid's
+  //    own site: no leverage shape read "long for 2x", and the planner's own
+  //    clarify chip parsed under nothing. Pinned: the grammar, its fences (it
+  //    never claims part of an ask), the typo'd-coin chips, the net's
+  //    contract (every chip builds natively; reads stay the planner's), and
+  //    the wallet answering a move's missing slot.
+  {
+    const open = (a: string) => { const i = parseHlIntent(a); return i && i.kind === 'open' ? i : null }
+    const live = open('buy $20 worth of HYPE and long for 2x')
+    check('intent net: the live miss builds — "buy $20 worth of HYPE and long for 2x" is a 2x long of $20 HYPE', !!live && live.coin === 'HYPE' && live.isBuy === true && live.notionalUsd === 20 && live.leverage === 2, JSON.stringify(live))
+    const chip = open('Buy $20 worth of HYPE and open a 2x long position on Hyperliquid perpetuals')
+    check('intent net: the planner\'s own clarify chip builds (venue word need not touch the coin)', !!chip && chip.coin === 'HYPE' && chip.notionalUsd === 20 && chip.leverage === 2, JSON.stringify(chip))
+    const typo = open('buy $$20 worth of HYP and long for 2x')
+    check('intent net: a doubled dollar sign still reads as the amount', !!typo && typo.notionalUsd === 20 && typo.coin === 'HYP', JSON.stringify(typo))
+    const orders: [string, string, boolean, number, number | undefined][] = [
+      ['long HYPE 2x with $20', 'HYPE', true, 20, 2],
+      ['put $20 into a 2x HYPE long', 'HYPE', true, 20, 2],
+      ['open a 3x short position on BTC worth $40', 'BTC', false, 40, 3],
+      ['long hype $20 x2', 'HYPE', true, 20, 2],
+      ['can you open a $25 long on ETH on hyperliquid?', 'ETH', true, 25, undefined],
+    ]
+    const wrong = orders.filter(([a, coin, isBuy, usd, lev]) => { const i = open(a); return !(i && i.coin === coin && i.isBuy === isBuy && i.notionalUsd === usd && i.leverage === lev) })
+    check('intent net: side, leverage, size and coin read in any order', wrong.length === 0, wrong.map((w) => w[0]).join(' | '))
+    const partial = [
+      '2x long $12 of HYPE and protect my HYPE long with a 5% stop loss',
+      'long $20 of HYPE 2x then protect it with a 5% stop',
+      'long $20 of HYPE and short $20 of ETH 2x',
+      'long $20 of HYPE 2x, $30 of ETH',
+      'sell my ETH and long HYPE 2x',
+    ].filter((a) => parseHlIntent(a) !== null)
+    check('intent net: the HL open grammar never claims PART of an ask (a second action, both sides, two sizes → null)', partial.length === 0, partial.join(' | '))
+    const notPerp = ['buy $20 of HYPE', 'buy $50 of AAPL', 'what is a 2x long?', 'how long does a bridge take', 'swap 2x more usdc for eth', 'stake 2 eth for a long time'].filter((a) => parseHlIntent(a) !== null)
+    check('intent net: spot buys, questions and stray "long"/"2x" words are not perp orders', notPerp.length === 0, notPerp.join(' | '))
+
+    const listed = ['BTC', 'ETH', 'HYPE', 'SOL', 'kPEPE', 'HYPER', 'AAVE']
+    check('intent net: a typo\'d coin offers the listed one ("HYP" → HYPE first)', nearestHlCoins('HYP', listed)[0] === 'HYPE' && nearestHlCoins('HYPE', listed).length === 0 && nearestHlCoins('PEPE', listed).includes('kPEPE') && nearestHlCoins('ZZZZZZ', listed).length === 0, JSON.stringify([nearestHlCoins('HYP', listed), nearestHlCoins('PEPE', listed)]))
+    const typoChip = hlCanonicalAsk({ kind: 'open', coin: 'HYP', isBuy: true, notionalUsd: 20, leverage: 2 }, 'HYPE')
+    const back = open(typoChip)
+    check('intent net: the corrected-coin chip round-trips into the same order', !!back && back.coin === 'HYPE' && back.notionalUsd === 20 && back.leverage === 2, typoChip)
+
+    const netAsks = ['stake 0.05 ETH', 'put 0.1 eth into lido', 'borrow $10 usdc from aave', 'pay back $10 of usdc on aave', 'pull out $20 usdc from morpho', 'purchase $15 of tesla stock', 'ape $20 into PEPE', 'cash out $50 of ETH', 'earn yield on my usdc', 'can you stake 0.05 ETH for me']
+    const missed = netAsks.filter((a) => !rescueIntent(a, buildsNatively))
+    check('intent net: money asks no grammar reads become chips, not a planner answer', missed.length === 0, missed.join(' | '))
+    const deadChips = netAsks.flatMap((a) => rescueIntent(a, buildsNatively)?.chips ?? []).filter((c) => !buildsNatively(c.resume))
+    check('intent net: every chip it offers is a sentence the native ladder builds (a chip is never a second dead end)', deadChips.length === 0, deadChips.map((c) => c.resume).join(' | '))
+    check('intent net: a named venue wins — "put 0.1 eth into lido" offers the Lido stake, never a lending chip', (rescueIntent('put 0.1 eth into lido', buildsNatively)?.chips ?? []).every((c) => c.venue === 'lido'))
+    check('intent net: unverifiable readings are dropped (verify = never → no chips, the planner keeps the turn)', rescueIntent('stake 0.05 ETH', () => false) === null)
+    const reads = ['what is staking?', 'is aave safe?', 'how much USDC do I have', 'why did my swap fail', 'compare aave and morpho rates', 'show me my aave position', 'tell me a joke', 'hello'].filter((a) => rescueIntent(a, buildsNatively) !== null)
+    check('intent net: questions and reads stay the planner\'s', reads.length === 0, reads.join(' | '))
+    const fenced = ['send 5 usdc to 0x2055000000000000000000000000000000000001', 'buy this https://opensea.io/item/base/0xabc/1', 'pay nate.eth $5 of usdc'].filter((a) => rescueIntent(a, () => true) !== null)
+    check('intent net: an ask carrying an address, ENS name or link is never re-worded', fenced.length === 0, fenced.join(' | '))
+    check('intent net: the ladder replica carries the net as its last rung', simulateLadder('stake 0.05 ETH').gate === 'intent-net' && simulateLadder('what is staking?').kind === 'planner')
+
+    const srcs = [{ chainWord: 'optimism', token: 'USDC', balance: 160.129 }, { chainWord: 'base', token: 'USDC', balance: 63.4 }, { chainWord: 'arbitrum', token: 'USDC', balance: 500 }, { chainWord: 'ethereum', token: 'ETH', balance: 0.4 }]
+    const dOnly = parseCrossChainSwap('bridge 20 usdc to arbitrum')
+    const miss = dOnly && 'problem' in dOnly ? dOnly.missing : undefined
+    const fromChips = miss ? missingSlotChips(miss, srcs) : []
+    check('intent net: "bridge 20 usdc to arbitrum" — the wallet answers "from where" (chains that hold it, never the destination)', miss?.what === 'origin' && fromChips.length === 2 && fromChips[0].resume === 'Swap 20 USDC from Optimism to Arbitrum' && !fromChips.some((c) => /from arbitrum/i.test(c.resume)), JSON.stringify(fromChips))
+    const fromBuilds = fromChips.filter((c) => { const p = parseCrossChainSwap(c.resume); return !p || 'problem' in p })
+    check('intent net: every origin chip is a sentence the cross-chain layer builds', fromChips.length > 0 && fromBuilds.length === 0, fromBuilds.map((c) => c.resume).join(' | '))
+    const aOnly = parseCrossChainSwap('send my usdc from base to arbitrum')
+    const amtMiss = aOnly && 'problem' in aOnly ? aOnly.missing : undefined
+    const amtChips = amtMiss ? missingSlotChips(amtMiss, srcs) : []
+    const amtParsed = amtChips.map((c) => parseCrossChainSwap(c.resume))
+    check('intent net: an amountless move offers sizes from the balance (floored, never above it)', amtMiss?.what === 'amount' && amtChips.length === 2 && amtParsed.every((p) => !!p && !('problem' in p) && Number(p.amount) <= 63.4), JSON.stringify(amtChips))
+    check('intent net: nothing movable fits → no chips (the plain words stand)', !!miss && missingSlotChips({ ...miss, amount: 9999 } as typeof miss, srcs).length === 0)
+
+    const routeSrc = readFileSync('app/api/chat/route.ts', 'utf8')
+    const netAt = routeSrc.indexOf('rescueIntent(message, buildsNatively)')
+    const plannerAt = routeSrc.indexOf('Need an inference provider to phrase an answer')
+    const swapAt = routeSrc.indexOf('native swap layer claimed the turn')
+    check('intent net (route): the net sits after every native gate and before the planner', netAt > swapAt && swapAt > 0 && netAt < plannerAt, `${swapAt} < ${netAt} < ${plannerAt}`)
+    check('intent net (route): both answer prompts carry the native-builders rule (never "can\'t execute", never another site)', (routeSrc.match(/NATIVE_BUILDERS_RULE/g) ?? []).length >= 3 && /NEVER tell the user to go to another app/.test(routeSrc))
+
+    // Live: the exact failed ask, with the default-fleet HL app, claims natively.
+    const liveTurn = await fetch(`${BASE}/api/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1' },
+      body: JSON.stringify({ message: 'stake 0.05 ETH', activeServers: [], history: [] }),
+    }).then((r) => r.json()).catch(() => null) as { buildPath?: string; clarify?: { options?: { resume?: string }[] } } | null
+    check('intent net (live): "stake 0.05 ETH" answers the Lido chip from the net, not planner prose', liveTurn?.buildPath === 'native-intent-net' && liveTurn?.clarify?.options?.[0]?.resume === 'Stake 0.05 ETH on Lido', JSON.stringify(liveTurn)?.slice(0, 200))
   }
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
