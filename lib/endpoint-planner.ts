@@ -16,6 +16,7 @@
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
 import { clarifyPromptLine } from '@/lib/clarify'
+import { PROMPT_CACHE_BREAK } from '@/lib/prompt-cache-break'
 
 /** Hard ceiling for auto-planned calls — a planner mistake can cost at most this. */
 export const SMART_MAX_PER_CALL_USD = 0.05
@@ -539,19 +540,28 @@ export function plannerPrompt(
 
   const convo = conversationBlock(history)
   const ctxVars = contextVarsLine(planCtx)
-  return [
+  // ORDER MATTERS (pricing v2): everything that is the same for every turn on
+  // this working set — the role, the rules, the clarify rule, the MENU — comes
+  // FIRST, then PROMPT_CACHE_BREAK, then this turn. The house caller
+  // (lib/house-model) sends the first half as a cached system block, so the
+  // menu (most of a planner call's input) bills at 0.1× from the second turn
+  // on. Anything per-turn above the break would silently kill the cache.
+  const stable = [
     `You are an API-call planner.`,
+    `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven (they have successfully settled paid calls before) and some ★start-here (the service owner flagged them as the best entry point into what the service does). Pick AT MOST ONE endpoint per service — only if calling it would genuinely help answer the user. When two endpoints would both answer the need equally well, prefer the ✓proven one, and then the cheaper one — but still pick an un-proven endpoint when it is clearly the better fit for the request. When the ask is broad or you are unsure where to start within a service, start with its ★start-here endpoint. Fill in parameter values derived from the user's message and the conversation (use sensible values; respect types; include every required param; skip optional params you can't infer). Pass tokens/assets in the FORM the user gave them (a symbol stays a symbol) — NEVER substitute a contract address from memory; addresses differ per chain and a wrong-chain address fails or misroutes. If no endpoint of a service helps, skip that service entirely.`,
+    clarifyPromptLine(),
+    menu,
+  ].join('\n\n')
+  const turn = [
     ...(contextBlock ? [contextBlock] : []),
     ...(convo ? [convo] : []),
     `A user asked${history.length || contextBlock ? ' (interpret it in the context of the conversation above — a terse follow-up like "baseball" continues the previous question, and ordinal references like "the second one" mean the numbered items in the working context)' : ''}:\n"""${message}"""`,
-    `Below are paid API endpoints, grouped by service, each tagged with its price in [$…]; some are tagged ✓proven (they have successfully settled paid calls before) and some ★start-here (the service owner flagged them as the best entry point into what the service does). Pick AT MOST ONE endpoint per service — only if calling it would genuinely help answer the user. When two endpoints would both answer the need equally well, prefer the ✓proven one, and then the cheaper one — but still pick an un-proven endpoint when it is clearly the better fit for the request. When the ask is broad or you are unsure where to start within a service, start with its ★start-here endpoint. Fill in parameter values derived from the user's message and the conversation (use sensible values; respect types; include every required param; skip optional params you can't infer). Pass tokens/assets in the FORM the user gave them (a symbol stays a symbol) — NEVER substitute a contract address from memory; addresses differ per chain and a wrong-chain address fails or misroutes. If no endpoint of a service helps, skip that service entirely.`,
     ...(ctxVars ? [ctxVars] : []),
-    clarifyPromptLine(),
-    menu,
     `Respond with ONLY this JSON, no prose, no code fences:`,
     `{"picks":[{"endpointId":"<id>","params":{"<name>":"<value>"}}]}`,
     `If nothing helps: {"picks":[]}. If the CLARIFY RULE applies: {"picks":[],"clarify":{…}}.`,
   ].join('\n\n')
+  return `${stable}${PROMPT_CACHE_BREAK}${turn}`
 }
 
 /** Parse + validate the planner's reply against the offered endpoints. */

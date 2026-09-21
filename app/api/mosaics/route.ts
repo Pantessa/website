@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
-import { activeLinkCapFor, cleanAsk, composeMcps, mintSlug } from '@/lib/intent-links'
-import { getEffectivePlan } from '@/lib/billing'
-import { isAdminAddress } from '@/lib/admin'
+import { LINK_FENCE_REPLY, cleanAsk, composeMcps, mintSlug } from '@/lib/intent-links'
+import { mayMintLink } from '@/lib/link-fence'
 import {
   MOSAIC_CHAIN_IDS,
   composeMosaicAsk,
@@ -90,19 +89,9 @@ export async function POST(req: NextRequest) {
 
   const agent = body.agent ? cleanAsk(String(body.agent)).slice(0, 40) : null
 
-  // Capacity gate (soft): mosaics count against the same active-link cap as
-  // every other intent link — one capacity axis, mirroring the links route.
-  // Existing links are never touched; admin wallets mint uncapped.
-  const { plan } = await getEffectivePlan(creator)
-  const cap = activeLinkCapFor(plan.id, isAdminAddress(creator))
-  if (cap !== Infinity) {
-    const active = await prisma.intentLink.count({ where: { creator, revoked: false } })
-    if (active >= cap) {
-      return NextResponse.json(
-        { error: `Your plan carries ${cap} active intent links — upgrade on /pricing for more, or revoke one first. Links you've already shared keep working forever.`, upgrade: '/pricing' },
-        { status: 402 },
-      )
-    }
+  // Abuse fence (soft): mosaics count as links — one fence, both mint doors.
+  if (!(await mayMintLink(creator))) {
+    return NextResponse.json({ error: LINK_FENCE_REPLY }, { status: 402 })
   }
 
   // Slug collisions at 40 bits are lottery-rare; retry twice anyway.
