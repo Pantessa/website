@@ -10372,7 +10372,11 @@ async function main() {
       )
       check(
         'private swap grammar: Robinhood Chain and Arc have no private lane — refused by name, never a quiet public bridge',
-        /NEAR Intents/.test(pv('swap 5 USDC from base to robinhood privately')?.problem ?? '') && /NEAR Intents/.test(pv('swap 5 USDC from base to arc privately')?.problem ?? ''),
+        // Re-pinned 2026-09-21: 1Click lists Robinhood Chain now, so the refusal
+        // names the chain and the public bridge, and must not say NEAR can't reach it.
+        /Robinhood Chain.*public bridge/.test(pv('swap 5 USDC from base to robinhood privately')?.problem ?? '') &&
+          /Arc.*public bridge/.test(pv('swap 5 USDC from base to arc privately')?.problem ?? '') &&
+          !/doesn't reach/.test(pv('swap 5 USDC from base to robinhood privately')?.problem ?? ''),
       )
       const pubPending = crossChainPending({ amount: '5', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'arbitrum' }, DEPOSIT, 's')
       const privPending = crossChainPending({ amount: '5', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'arbitrum', confidential: true, recipient: OTHER }, DEPOSIT, 's')
