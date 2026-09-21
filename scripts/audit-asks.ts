@@ -267,7 +267,8 @@ const CORPUS: Entry[] = [
   // stall's top-up leg and the Robinhood Chain funding sentence.
   { ask: 'Swap 0.0006 ETH from Base to ETH on Arbitrum', source: 'wallet flag: Fix gas on Arbitrum', expect: 'action' },
   { ask: 'Swap 1.5 USDC from Base to ETH on Optimism', source: 'wallet flag: Fix gas on Optimism (USDC donor)', expect: 'action' },
-  { ask: 'Fund robinhood chain with $9 from base including gas', source: 'wallet flag: Fund Robinhood Chain (+ gas)', expect: 'action' },
+  { ask: 'Fund robinhood chain with $5 from base including gas', source: 'wallet flag: Fund Robinhood Chain (+ gas) — $3 floor + $2 gas leg', expect: 'action' },
+  { ask: 'Fund arc with $3 from base', source: 'wallet flag: Fund Arc (the $3 floor; USDC is the gas)', expect: 'action' },
   { ask: 'tile my wallet 45% ETH, 35% USDC, 20% CBBTC on base', source: 'wallet window: Rebalance for me (choose-for-me shape)', expect: 'action' },
   { ask: 'tile my wallet 45% ETH, 45% USDC, 10% CBBTC', source: 'house mosaic /i/tile-barbell', expect: 'action' },
   { ask: 'tile my wallet 50% USDC, 30% ETH, 20% WSTETH', source: 'house mosaic /i/tile-steady', expect: 'action' },

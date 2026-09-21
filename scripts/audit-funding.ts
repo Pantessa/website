@@ -1145,7 +1145,10 @@ const RH_SCENARIOS: RhScenario[] = [
   { name: '$60 USDC + gas on Arbitrum, ETH on Base → buy $10 of ETH: chips spend the USDC, never the ETH', buyUsd: 10, buySym: 'ETH', origins: [RO(42161, 'USDC', 60, 0.001), RO(8453, 'ETH', 60)], expect: 'chips' },
   { name: '$11 USDC + gas on Arbitrum, ETH on Base → buy $10 of ETH: ETH pays only the gas leg, USDC the value', buyUsd: 10, buySym: 'ETH', origins: [RO(42161, 'USDC', 11, 0.001), RO(8453, 'ETH', 60)], expect: 'chips' },
   { name: '$10 USDC + gas on Arbitrum, ETH on Base → buy $12 of ETH: downsized to $9.5, ETH paying the gas', buyUsd: 12, buySym: 'ETH', origins: [RO(42161, 'USDC', 10, 0.001), RO(8453, 'ETH', 60)], expect: 'downsized' },
-  { name: '$5 USDC on Arbitrum (under any value leg) + $60 of ETH on Base → buy $10 of ETH: the move, the USDC named', buyUsd: 10, buySym: 'ETH', origins: [RO(42161, 'USDC', 5, 0.001), RO(8453, 'ETH', 60)], expect: 'move' },
+  { name: '$2 USDC on Arbitrum (under any value leg) + $60 of ETH on Base → buy $10 of ETH: the move, the USDC named', buyUsd: 10, buySym: 'ETH', origins: [RO(42161, 'USDC', 2, 0.001), RO(8453, 'ETH', 60)], expect: 'move' },
+  // $5 was under the floor until it dropped from $9 to $3 (2026-09-21). It is a
+  // value leg now, so the USDC buys what it can and the ETH pays only the gas.
+  { name: '$5 USDC + gas on Arbitrum (a value leg since the $3 floor), ETH on Base → buy $10 of ETH: downsized, ETH paying the gas', buyUsd: 10, buySym: 'ETH', origins: [RO(42161, 'USDC', 5, 0.001), RO(8453, 'ETH', 60)], expect: 'downsized' },
   { name: 'gasless $60 USDC on Arbitrum + an ETH-only Base donor → buy $10 of ETH: the rescue (the topup is gas), USDC pays', buyUsd: 10, buySym: 'ETH', origins: [RO(8453, 'ETH', 30)], gasless: [RO(42161, 'USDC', 60, 0)], expect: 'gas-stranded' },
   { name: '$60 of ETH on Base only → buy $10 of WETH: exact symbols (no wrap builder) — the ETH plan stands, no move', buyUsd: 10, buySym: 'WETH', origins: [RO(8453, 'ETH', 60)], expect: 'chips' },
   { name: 'sub-keep-back ETH on Ethereum only → buy $10 of ETH: named, never moved', buyUsd: 10, buySym: 'ETH', origins: [], gasless: [RO(1, 'ETH', 3, 0.0013, false)], expect: 'none' },

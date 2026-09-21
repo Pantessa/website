@@ -136,7 +136,7 @@ const FUND_ORIGINS: Record<string, { id: number; word: string }> = {
  * Base to USDG on Robinhood Chain" walked to the NEAR door / "Robinhood
  * Chain not supported by NEAR Intents"). Rewrites the ask into the canonical
  * funding sentence the funding parser reads, or answers with chips when the
- * amount is under the parity floor (LiFi's flat fee makes anything smaller
+ * amount is under the parity floor (LiFi's flat fee can make anything smaller
  * refuse at build) or sized in ETH (the plan is dollar-sized). Null when the
  * segment isn't this shape; a problem names an origin the plan can't leave.
  */
@@ -205,7 +205,7 @@ export function robinhoodFundingFromCrossChain(segment: string): { ask: string }
   if (!Number.isFinite(fundUsd) || fundUsd <= 0) return null
   if (fundUsd < floor) {
     return {
-      reply: `The smallest clean move onto ${dest.name} is $${floor} — LiFi's flat fee is what the parity guard refuses on anything smaller, so a $${cc.amount} leg would be built only to be withheld.`,
+      reply: `The smallest clean move onto ${dest.name} is $${floor} — LiFi's flat fee takes too big a share of anything smaller for the parity guard to be sure of it, so a $${cc.amount} leg could be built only to be withheld.`,
       clarify: { question: `Move a little more instead?`, options: [...chipsFor(suffix, [floor, 20, 50]), { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }] },
     }
   }

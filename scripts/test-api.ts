@@ -234,7 +234,7 @@ import {
 import { buildGuardedSwap } from '../lib/swap-exec'
 import { fundedBuysOf, preflightFundedBuy, unfillableBuyCopy, verdictOfSwapResult, VENUE_PREFLIGHT_TIMEOUT_MS } from '../lib/venue-preflight'
 import { fetchYahooQuote, quietSymbols, RH_NEAR_WINDOW, RH_WIDE_WINDOW, ROBINHOOD_BATCH_MAX, type RhRead } from '../lib/quotes'
-import { buildLifiBridgeLeg, clampNativeSellAtoms, ETH_MOVE_MIN_OUT_BPS, ETH_MOVE_MIN_USD, fillableLeg, FUNDING_ALT_USDC, FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, fundingAltUsdcFor, fundingNeedUsd, listWords, fundingSourceSymbols, LIFI_LEG_FLAT_USD, MIN_VALUE_LEG_USD, minLegNote, offChainStableSource, ROBINHOOD_CHAIN_ID, STABLE_LEG_MIN_OUT_BPS, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodEthMove, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
+import { buildLifiBridgeLeg, clampNativeSellAtoms, ETH_MOVE_MIN_OUT_BPS, ETH_MOVE_MIN_USD, fillableLeg, FUNDING_ALT_USDC, FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, fundingAltUsdcFor, fundingNeedUsd, listWords, fundingSourceSymbols, LIFI_LEG_FLAT_USD, MIN_VALUE_LEG_USD, minLegNote, offChainStableSource, ROBINHOOD_CHAIN_ID, STABLE_LEG_MIN_OUT_BPS, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodEthMove, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, valueLegUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData, inflightSettlingNote } from '../lib/inflight-funding'
 import { sanitizeWorkingContext } from '../lib/working-context'
 import { parseRobinhoodEthMove, parseRobinhoodFunding, parseSameChainSwapSegment, JOB_SEGMENT_PARSERS } from '../lib/jobs'
@@ -8283,8 +8283,8 @@ async function main() {
     check('rh funding redirect: an Optimism origin compiles the same way (#707)', compiles('move 25 USDC from optimism to robinhood chain') === 'sign:native-lifi-fund,wait:wait')
     const rf1 = robinhoodFundingFromCrossChain('Convert $1 USDC from Base to USDG on Robinhood Chain via cross-chain swap')
     check(
-      'rh funding redirect: $1 (under the $9 floor) → the floor chips, every resume compiles, the lead line says why (prod 2026-09-04)',
-      !!rf1 && 'clarify' in rf1 && /smallest clean move .* \$9/.test(rf1.reply) && rf1.clarify.options.some((o) => o.label === '$9 from Base') &&
+      'rh funding redirect: $1 (under the floor) → the floor chips, every resume compiles, the lead line says why (prod 2026-09-04)',
+      !!rf1 && 'clarify' in rf1 && rf1.reply.includes(`smallest clean move onto Robinhood Chain is $${MIN_VALUE_LEG_USD}`) && rf1.clarify.options.some((o) => o.label === `$${MIN_VALUE_LEG_USD} from Base`) &&
         rf1.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => compiles(o.resume) === 'sign:native-lifi-fund,wait:wait'),
       JSON.stringify(rf1).slice(0, 300),
     )
@@ -8380,7 +8380,7 @@ async function main() {
     const rhDollar = await chatJson({ message: 'Convert $1 USDC from Base to USDG on Robinhood Chain via cross-chain swap' })
     check(
       'rh funding redirect (route): the prod 09-04 ask answers the floor chips from the jobs layer — never the add-NEAR door',
-      rhDollar.buildPath === 'native-job' && /smallest clean move/.test(String(rhDollar.reply)) && rhDollar.clarify?.options?.some((o: { label: string }) => o.label === '$9 from Base') && !rhDollar.door,
+      rhDollar.buildPath === 'native-job' && /smallest clean move/.test(String(rhDollar.reply)) && rhDollar.clarify?.options?.some((o: { label: string }) => o.label === `$${MIN_VALUE_LEG_USD} from Base`) && !rhDollar.door,
       JSON.stringify(rhDollar).slice(0, 300),
     )
     const rhTwenty = await chatJson({ message: 'Swap 20 USDC from Base to USDG on Robinhood Chain' })
@@ -8640,17 +8640,23 @@ async function main() {
       const wasEnabled = process.env.ONRAMP_ENABLED
       const wasStripeKey = process.env.STRIPE_SECRET_KEY
 
-      // The floor is DERIVED, not chosen, and lib/onramp cannot import the
-      // constants it comes from (lib/lifi-bridge is server-side; lib/onramp is
-      // imported by a client component). So this is where the two are held
-      // together: ~$11 has to SURVIVE to the wallet for a gas-bearing segment
-      // to clear the parity guard, and a preset loses Stripe's onramp fee on
-      // the way in and the ETH keep-back on the way out. If MIN_VALUE_LEG_USD
-      // ever moves, this fails and ONRAMP_MIN_USD gets re-derived on purpose.
+      // lib/onramp cannot import the constants its floor was sized against
+      // (lib/lifi-bridge is server-side; lib/onramp is imported by a client
+      // component). So this is where the two are held together: the parity
+      // floor plus the gas leg has to SURVIVE to the wallet, and a preset loses
+      // the ETH keep-back on the way out. If MIN_VALUE_LEG_USD moves UP past
+      // what $15 covers, this fails. It moved DOWN on 2026-09-21 ($9 → $3) and
+      // ONRAMP_MIN_USD was left at $15 on purpose (a pricing call, see
+      // lib/onramp), so the second check pins that the slack is known.
       check(
         'onramp: the minimum preset still clears the parity floor + gas leg + ETH keep-back',
         ONRAMP_MIN_USD >= MIN_VALUE_LEG_USD + GAS_LEG_USD + ONRAMP_ETH_KEEP_USD.base,
         `min=${ONRAMP_MIN_USD} vs value=${MIN_VALUE_LEG_USD}+gas=${GAS_LEG_USD}+keep=${ONRAMP_ETH_KEEP_USD.base}`,
+      )
+      check(
+        'onramp: the $15 minimum is a chosen price, not the derived one (it stayed put when the parity floor dropped to $3)',
+        ONRAMP_MIN_USD === 15 && MIN_VALUE_LEG_USD + GAS_LEG_USD + ONRAMP_ETH_KEEP_USD.base < ONRAMP_MIN_USD,
+        `min=${ONRAMP_MIN_USD} derived=${MIN_VALUE_LEG_USD + GAS_LEG_USD + ONRAMP_ETH_KEEP_USD.base}`,
       )
       // The DEFAULT lane is Ethereum (2026-09-07): Stripe gates ETH-on-Base by
       // the customer's home address and walled a real US session after KYC,
@@ -10021,18 +10027,21 @@ async function main() {
     // ── Minimum fillable leg ── live 2026-09-03: the "$1.5 from Base" chip
     // compiled into a job that DIED on step 1 — "only 1.329574 USDG for $1.5,
     // more than 4% below dollar parity". The guard was right; the OFFER was
-    // the bug. A LiFi leg costs ~$0.16–0.46 FLAT at every size probed from $1
-    // to $100, so the percentage loss is what moves, and under the floor it
-    // can never clear. Never offer what can't fill.
+    // the bug. A LiFi leg cost ~$0.16–0.46 FLAT that day at every size probed
+    // from $1 to $100, so the percentage loss is what moves. Re-measured
+    // 2026-09-21: ~$0.02–0.07 a leg, and the floor followed it from $9 to $3
+    // (`npm run probe:lifi-leg` repeats the measurement). It stops at $3, not
+    // lower: a $1 USDC.e leg from Arbitrum answered by relaydepository
+    // guaranteed 93.2% the same day. Never offer what can't fill.
     check(
       'min leg: the floor is DERIVED from the parity guard (flat cost / the guard tolerance)',
-      MIN_VALUE_LEG_USD === Math.ceil(LIFI_LEG_FLAT_USD / (1 - STABLE_LEG_MIN_OUT_BPS / 10_000)) && MIN_VALUE_LEG_USD >= 6,
+      MIN_VALUE_LEG_USD === Math.ceil(LIFI_LEG_FLAT_USD / (1 - STABLE_LEG_MIN_OUT_BPS / 10_000)) && MIN_VALUE_LEG_USD >= 3,
       String(MIN_VALUE_LEG_USD),
     )
     check(
       'min leg: a leg AT the floor clears parity, a leg below it cannot (the arithmetic the guard applies)',
       MIN_VALUE_LEG_USD - LIFI_LEG_FLAT_USD >= MIN_VALUE_LEG_USD * (STABLE_LEG_MIN_OUT_BPS / 10_000) &&
-        3 - LIFI_LEG_FLAT_USD < 3 * (STABLE_LEG_MIN_OUT_BPS / 10_000),
+        MIN_VALUE_LEG_USD - 1 - LIFI_LEG_FLAT_USD < (MIN_VALUE_LEG_USD - 1) * (STABLE_LEG_MIN_OUT_BPS / 10_000),
     )
     check(
       'min leg: fundingNeedUsd floors the VALUE portion, and the gas leg rides on top of it',
@@ -10063,9 +10072,9 @@ async function main() {
       planRobinhoodFundingChips({
         origins: [
           { chainId: 8453, word: 'Base', token: 'USDC', usd: 10, gasEth: 0.01 },
-          { chainId: 1, word: 'Ethereum', token: 'USDC', usd: 5, gasEth: 0.01 },
+          { chainId: 1, word: 'Ethereum', token: 'USDC', usd: MIN_VALUE_LEG_USD - 1, gasEth: 0.01 },
         ],
-        needUsd: 14,
+        needUsd: 10 + MIN_VALUE_LEG_USD - 1,
         gasIncluded: false,
         followup: '',
       }) === null,
@@ -10087,7 +10096,7 @@ async function main() {
     )
     check(
       'min leg: the downsize never counter-offers a buy the floor would silently inflate',
-      planDownsizedRobinhoodBuy({ scan: { origins: [{ chainId: 8453, word: 'Base', token: 'USDC', usd: 6, gasEth: 0.01 }] }, buyUsd: 25, holdingUsd: 0, includeGas: false, buySym: 'AAPL', acquiring: false }) === null,
+      planDownsizedRobinhoodBuy({ scan: { origins: [{ chainId: 8453, word: 'Base', token: 'USDC', usd: MIN_VALUE_LEG_USD - 0.5, gasEth: 0.01 }] }, buyUsd: 25, holdingUsd: 0, includeGas: false, buySym: 'AAPL', acquiring: false }) === null,
     )
     check(
       'min leg: the note says the flat cost out loud below the floor, and stays silent above it',
@@ -10883,8 +10892,8 @@ async function main() {
     const rh = walletFlags([mkChain(8453, 0.005, [['USDC', 20, 20]]), mkChain(4663, 0, [['USDG', 12.51, 12.51]])], ethUsd)
     const rhFix = rh.find((f) => f.kind === 'no-gas')?.actions[0]
     check(
-      'wallet flags: a Robinhood Chain stall can’t ride NEAR — its fix is the LiFi funding sentence at the $9 floor with the gas leg, from Base USDC, and it compiles as a job',
-      rhFix?.ask === 'Fund robinhood chain with $9 from base including gas' && simulateLadder(rhFix.ask).gate === 'jobs' && simulateLadder(rhFix.ask).kind === 'action' && /Fund Robinhood Chain/.test(rhFix.label) && !rhFix.mcps,
+      'wallet flags: a Robinhood Chain stall can’t ride NEAR — its fix is the LiFi funding sentence sized floor + gas leg (the value leg stays AT the floor once "including gas" takes its $2 out), from Base USDC, and it compiles as a job',
+      rhFix?.ask === `Fund robinhood chain with $${MIN_VALUE_LEG_USD + GAS_LEG_USD} from base including gas` && valueLegUsd(MIN_VALUE_LEG_USD + GAS_LEG_USD, true) === MIN_VALUE_LEG_USD && simulateLadder(rhFix.ask).gate === 'jobs' && simulateLadder(rhFix.ask).kind === 'action' && /Fund Robinhood Chain/.test(rhFix.label) && !rhFix.mcps,
       `${rhFix?.ask} → ${rhFix?.ask ? JSON.stringify(simulateLadder(rhFix.ask)) : ''}`,
     )
     const low = walletFlags([mkChain(1, 0.0015, [['USDC', 50, 50]]), mkChain(8453, 0.01, [])], ethUsd)
@@ -12513,17 +12522,25 @@ async function main() {
       'funding chips: the same ETH row still covers a single-leg (gas-free) plan at full size',
       planRobinhoodFundingChips({ origins: [ethTight], needUsd: 11, gasIncluded: false, followup: 'buy $8.65 of AAPL' }) !== null,
     )
-    // The counter-offer this wallet used to get was a ~$7 plan — under the
-    // parity floor, i.e. exactly the chip that compiled and died on step 1
-    // (live 2026-09-03). Once the gas leg and the $1 keep-back come out of
-    // an $11 ETH row there is no fillable bridge left, so the honest
-    // refusal (which NAMES the flat cost) is the right answer, not a
-    // smaller number that can't clear either.
-    const ethDownsized = planDownsizedRobinhoodBuy({ scan: { origins: [ethTight] }, buyUsd: 12, holdingUsd: 0, includeGas: true, buySym: 'AAPL', acquiring: false })
+    // A counter-offer whose value leg is under the parity floor is exactly
+    // the chip that compiled and died on step 1 (live 2026-09-03). Once the
+    // gas leg and the $1 keep-back come out of a row this small there is no
+    // fillable bridge left, so the honest refusal (which NAMES the flat cost)
+    // is the right answer, not a smaller number that can't clear either.
+    // Sized off the floor: at $9 the $11 row above was this case; at $3
+    // (2026-09-21) that row carries a real $8 value leg, pinned next.
+    const ethUnderFloor = O(1, 'Ethereum', MIN_VALUE_LEG_USD + GAS_LEG_USD + 0.5, 0.0063, 'ETH')
+    const ethDownsized = planDownsizedRobinhoodBuy({ scan: { origins: [ethUnderFloor] }, buyUsd: 12, holdingUsd: 0, includeGas: true, buySym: 'AAPL', acquiring: false })
     check(
       'funding downsize: a wallet whose remaining capacity is under the parity floor gets the refusal, not a dead counter-offer',
       ethDownsized === null,
       JSON.stringify(ethDownsized),
+    )
+    const ethTightDownsized = planDownsizedRobinhoodBuy({ scan: { origins: [ethTight] }, buyUsd: 12, holdingUsd: 0, includeGas: true, buySym: 'AAPL', acquiring: false })
+    check(
+      'funding downsize: the $11 ETH row is a real counter-offer since the $3 floor — its value leg clears the floor and the chip compiles',
+      !!ethTightDownsized && ethTightDownsized.chips.every((c) => { const f = parseRobinhoodFunding(c.resume.split(', then ')[0]); return !!f && fillableLeg(f.fundUsd, f.gasIncluded) && !!compileJobAsk(c.resume) }),
+      JSON.stringify(ethTightDownsized),
     )
     const ethAllChips = planRobinhoodFundingChips({ origins: [O(8453, 'Base', 20, 0.011, 'ETH')], needUsd: 13.5, gasIncluded: true, followup: 'buy $12 of AAPL' })
     check(
@@ -12626,10 +12643,10 @@ async function main() {
         heldUsdg.kind === 'move' && heldUsdg.moveUsd === 2 && heldUsdg.chips[0].resume === 'Move $2 of ETH from base to robinhood chain',
         JSON.stringify(heldUsdg),
       )
-      const dustUsdc = planRobinhoodFundingAdvice({ scan: rtScan([rtO(42161, 'Arbitrum', 'USDC', 5, 0.001), ethBase]), ...rtBuy(10) })
+      const dustUsdc = planRobinhoodFundingAdvice({ scan: rtScan([rtO(42161, 'Arbitrum', 'USDC', MIN_VALUE_LEG_USD - 1, 0.001), ethBase]), ...rtBuy(10) })
       check(
         'rh round trip: USDC too small for any value leg doesn\'t block the move, and the copy names it',
-        dustUsdc.kind === 'move' && dustUsdc.copy.includes('~$5 of USDC on Arbitrum (too little to bridge on its own)'),
+        dustUsdc.kind === 'move' && dustUsdc.copy.includes(`~$${MIN_VALUE_LEG_USD - 1} of USDC on Arbitrum (too little to bridge on its own)`),
         JSON.stringify(dustUsdc),
       )
 
@@ -27413,14 +27430,14 @@ async function main() {
       JSON.stringify({ fArc, fArcGas }),
     )
     const rdArc = robinhoodFundingFromCrossChain('swap 12 USDC from base to arc')
-    const rdFloor = robinhoodFundingFromCrossChain('move 5 USDC from base to arc')
+    const rdFloor = robinhoodFundingFromCrossChain(`move ${MIN_VALUE_LEG_USD - 1} USDC from base to arc`)
     const rdBuy = robinhoodFundingFromCrossChain('swap 20 USDC from base to BTC on arc')
     const rdEth = robinhoodFundingFromCrossChain('bridge 0.01 ETH from ethereum to arc')
     const compileShape = (ask: string) => { const j = compileJobAsk(ask); return j && 'steps' in j && j.steps ? j.steps.map((st) => `${st.kind}:${st.builder}`).join(',') : JSON.stringify(j) }
     check(
-      'arc funding redirect: "swap 12 USDC from base to arc" → "Fund arc with $12 from base" (NEAR can\'t reach Arc); under the $9 floor → $9/$20/$50 chips that compile; "… to BTC on arc" → one fund-then-buy chip; an Ethereum-ETH ask gets the dollar chips (Arc has no canonical bridge, and the copy says USDC pays gas)',
+      'arc funding redirect: "swap 12 USDC from base to arc" → "Fund arc with $12 from base" (NEAR can\'t reach Arc); under the floor → floor/$20/$50 chips that compile; "… to BTC on arc" → one fund-then-buy chip; an Ethereum-ETH ask gets the dollar chips (Arc has no canonical bridge, and the copy says USDC pays gas)',
       !!rdArc && 'ask' in rdArc && rdArc.ask === 'Fund arc with $12 from base' && compileShape('swap 12 USDC from base to arc') === 'sign:native-lifi-fund,wait:wait' &&
-        !!rdFloor && 'clarify' in rdFloor && /smallest clean move onto Arc is \$9/.test(rdFloor.reply) && rdFloor.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => /^Fund arc with \$\d+ from base$/.test(o.resume) && compileShape(o.resume) === 'sign:native-lifi-fund,wait:wait') &&
+        !!rdFloor && 'clarify' in rdFloor && rdFloor.reply.includes(`smallest clean move onto Arc is $${MIN_VALUE_LEG_USD}`) && rdFloor.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => /^Fund arc with \$\d+ from base$/.test(o.resume) && compileShape(o.resume) === 'sign:native-lifi-fund,wait:wait') &&
         !!rdBuy && 'clarify' in rdBuy && /lands as USDC first, then buys BTC/.test(rdBuy.reply) && compileShape(rdBuy.clarify.options[0].resume) === 'sign:native-lifi-fund,wait:wait,sign:native-lifi-swap' &&
         !!rdEth && 'clarify' in rdEth && /Arc has no ETH/.test(rdEth.reply) && /pays for gas there/.test(rdEth.reply) && rdEth.clarify.options.filter((o) => !/never mind/i.test(o.resume)).every((o) => /using eth$/.test(o.resume) && compileShape(o.resume) === 'sign:native-lifi-fund,wait:wait'),
       JSON.stringify({ rdArc, floor: rdFloor && 'clarify' in rdFloor ? rdFloor.clarify.options.map((o) => o.resume) : rdFloor }),
