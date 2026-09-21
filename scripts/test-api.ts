@@ -29,7 +29,7 @@ import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 
 import { createPublicClient, custom, http, HttpRequestError, InvalidAddressError, RpcRequestError, TimeoutError } from 'viem'
 import { base } from 'viem/chains'
 import { dryRunTx, isAllowanceLag, rpcHostOf, transientRpcWords } from '../lib/dry-run'
-import { createSiweMessage } from 'viem/siwe'
+import { createSiweMessage, parseSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
 import { LINK_FEE_PCT, SWAP_FEE_PCT } from '../lib/fees'
 import {
@@ -474,6 +474,7 @@ import {
 } from '../lib/hyperliquid-exec'
 import { createL1ActionHash } from '@nktkas/hyperliquid/signing'
 import { isReportableWalletError, walletErrorWords, WALLET_REFUSAL_KIND } from '../lib/wallet-refusal'
+import { SIWE_STATEMENT, siweStatementConformant, siweStatementOffenders } from '../lib/siwe-message'
 import { encryptAgentKey, signL1ActionWithDelegation } from '../lib/hl-guardian-store'
 import { compileJobAsk as compileJobAskFull, robinhoodFundingFromCrossChain, stampSwapFeeTier, type CompiledJob } from '../lib/jobs'
 import { parseStockListAsk } from '../lib/stock-list'
@@ -5762,6 +5763,92 @@ async function main() {
         lanes.every((id) => new RegExp(`\\b${id}:\\s*\\w+WalletMark\\b`).test(markTable)) &&
         /phantomWallet,/.test(wagmi) && /from '@rainbow-me\/rainbowkit\/wallets'/.test(wagmi) &&
         /export function PhantomWalletMark/.test(marks) && /fill="#AB9FF2"/.test(marks)
+      )
+    })(),
+  )
+
+  // ── The message a wallet is asked to sign in with (lib/siwe-message) ─────
+  // Born 2026-09-21: the statement carried an em dash, so the SIWE message
+  // was off-spec while still wearing the "wants you to sign in with your
+  // Ethereum account" preamble. Lenient wallets rendered it; Phantom, which
+  // verifies a sign-in message's fields, opened the request and dismissed it.
+  // The house style is full of em dashes, so this is a fence, not a note.
+  console.log('— SIWE message (sign-in door)')
+  check(
+    'siwe: the statement is EIP-4361 conformant (ASCII per the statement ABNF) — no em dash, curly quote, ellipsis or NBSP',
+    siweStatementConformant(SIWE_STATEMENT) &&
+      siweStatementOffenders(SIWE_STATEMENT).length === 0 &&
+      // the rule discriminates: each of these is what a copy edit reaches for
+      ['\u2014', '\u2019', '\u2026', '\u00a0', '\n', '\u00e9', '\ud83d\ude80'].every(
+        (c) => !siweStatementConformant(`Sign in to Pantessa${c}`) &&
+          siweStatementOffenders(`Sign in to Pantessa${c}`).length === 1,
+      ) &&
+      // ...and does not over-reject: EIP-4361 allows RFC 3986 reserved chars
+      siweStatementConformant("Sign in. It's you: no funds move (nothing spends)!"),
+  )
+  check(
+    'siwe: lib/session composes the message from SIWE_STATEMENT — no inline statement literal to drift off-spec',
+    (() => {
+      const src = readFileSync(pathJoin(process.cwd(), 'lib/session.tsx'), 'utf8')
+      // the createSiweMessage({...}) call itself — bounded by its own closing
+      // `})` so refactors around it can never widen the window silently
+      const at = src.indexOf('createSiweMessage({')
+      const call = src.slice(at, src.indexOf('})', at))
+      return (
+        /statement:\s*SIWE_STATEMENT\b/.test(call) &&
+        !/statement:\s*['"`]/.test(call) &&
+        /from '@\/lib\/siwe-message'/.test(src)
+      )
+    })(),
+  )
+  check(
+    'siwe: the whole composed message conforms — preamble, EIP-55 address, ASCII statement, alphanumeric nonce, version 1',
+    (() => {
+      const nonce = 'a1b2c3d4e5f60718'
+      const address = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
+      const msg = createSiweMessage({
+        domain: 'www.pantessa.com',
+        address,
+        statement: SIWE_STATEMENT,
+        uri: 'https://www.pantessa.com',
+        version: '1',
+        chainId: 1,
+        nonce,
+      })
+      const parsed = parseSiweMessage(msg)
+      return (
+        msg.startsWith('www.pantessa.com wants you to sign in with your Ethereum account:') &&
+        parsed.statement === SIWE_STATEMENT &&
+        siweStatementConformant(parsed.statement ?? '') &&
+        // EIP-4361: nonce = 8*( ALPHA / DIGIT ); address = ERC-55 checksummed
+        /^[A-Za-z0-9]{8,}$/.test(parsed.nonce ?? '') &&
+        parsed.address === address &&
+        parsed.version === '1' &&
+        // every line of the message is ASCII — a strict parser sees no surprises
+        [...msg].every((c) => c.codePointAt(0)! <= 0x7e)
+      )
+    })(),
+  )
+  {
+    const nonceRes = await fetch(`${BASE}/api/auth/nonce`, { cache: 'no-store' })
+    const { nonce } = (await nonceRes.json()) as { nonce?: string }
+    check(
+      'siwe: the live nonce this server issues is EIP-4361 shaped (8+ alphanumerics, nothing to break a strict parse)',
+      typeof nonce === 'string' && /^[A-Za-z0-9]{8,}$/.test(nonce),
+      nonce?.slice(0, 12),
+    )
+  }
+  check(
+    'siwe: a wallet that refuses the sign-in is reportable (ask_failures kind wallet-refused, artifact siwe); a human no still is not',
+    (() => {
+      const src = readFileSync(pathJoin(process.cwd(), 'lib/session.tsx'), 'utf8')
+      const route = readFileSync(pathJoin(process.cwd(), 'app/api/ask-failures/wallet/route.ts'), 'utf8')
+      return (
+        /reportWalletRefusal\(/.test(src) &&
+        /artifact:\s*'siwe'/.test(src) &&
+        /'siwe'/.test(route.slice(route.indexOf('const ARTIFACTS'), route.indexOf('export async function POST'))) &&
+        isReportableWalletError('Provided chainId "1337" must match the active chainId') &&
+        !isReportableWalletError('User rejected the request.')
       )
     })(),
   )

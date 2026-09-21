@@ -40,6 +40,8 @@ import {
   walletRemembered,
 } from '@/lib/app-entry'
 import { connectAskReleased, hasStoredWalletConnection } from '@/lib/wallet-reconnect'
+import { SIWE_STATEMENT } from '@/lib/siwe-message'
+import { reportWalletRefusal, walletErrorWords } from '@/lib/wallet-refusal'
 
 /**
  * When this tab last signed out on purpose (the account menu, the dashboard's
@@ -160,7 +162,7 @@ interface SessionValue {
 const SessionContext = createContext<SessionValue | null>(null)
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const { address: walletAddress, isConnected, status: walletStatus } = useAccount()
+  const { address: walletAddress, isConnected, status: walletStatus, connector } = useAccount()
   const chainId = useChainId()
   const { signMessageAsync } = useSignMessage()
   const config = useConfig()
@@ -237,14 +239,35 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const message = createSiweMessage({
         domain: window.location.host,
         address: getAddress(walletAddress),
-        statement: 'Sign in to Pantessa. This proves you own this wallet — no funds are moved.',
+        statement: SIWE_STATEMENT,
         uri: window.location.origin,
         version: '1',
         chainId,
         nonce,
       })
 
-      const signature = await signMessageAsync({ message })
+      // Only the WALLET's refusal is a wallet refusal: our own nonce/verify
+      // failures fall to the outer catch and book no row.
+      let signature: `0x${string}`
+      try {
+        signature = await signMessageAsync({ message })
+      } catch (err) {
+        // A sign-in was the one signature in the app that reported NOTHING
+        // when it failed: the takeover card closes with `signingIn`, and
+        // `error` is rendered only by AccountSwitchBanner — so a wallet that
+        // refused this message left no trace anywhere, which is exactly why
+        // Phantom's dismissal (lib/siwe-message) took a live report to find.
+        // A human "no" is still not a failure; the beacon drops those itself.
+        reportWalletRefusal({
+          wallet: walletAddress,
+          artifact: 'siwe',
+          ask: 'Sign in to Pantessa',
+          detail: walletErrorWords(err),
+          connector: connector?.id,
+          chainId,
+        })
+        throw err
+      }
 
       const verifyRes = await fetch('/api/auth/verify', {
         method: 'POST',
@@ -259,7 +282,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       await refresh()
       land(redirectTo)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Sign-in failed.'
+      // The wallet's own words, not viem's wrapper (lib/wallet-refusal).
+      const msg = walletErrorWords(err)
       const declined = /rejected|denied|User rejected/i.test(msg)
       // A sign-in that didn't happen leaves no row anywhere else: a newcomer
       // who declines the signature just looks like someone who left.
@@ -268,7 +292,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } finally {
       setSigningIn(false)
     }
-  }, [isConnected, walletAddress, chainId, signMessageAsync, refresh, land])
+  }, [isConnected, walletAddress, chainId, signMessageAsync, refresh, land, connector])
 
   // One-shot connect → sign (see the interface doc). Connected? sign now, in the
   // same gesture. Disconnected? record intent + open the modal; the effect below

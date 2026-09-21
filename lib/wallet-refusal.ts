@@ -20,7 +20,7 @@ export const WALLET_REFUSAL_KIND = 'wallet-refused'
  *  in one browser's red text until it rode this beacon. */
 export const WITHHELD_KIND = 'withheld'
 
-export type WalletArtifact = 'hl-order' | 'hl-leverage' | 'hl-agent' | 'cow-order' | 'tx' | 'tx-chain' | 'vote' | 'opensea-listing'
+export type WalletArtifact = 'hl-order' | 'hl-leverage' | 'hl-agent' | 'cow-order' | 'tx' | 'tx-chain' | 'vote' | 'opensea-listing' | 'siwe'
 
 export interface WalletRefusalReport {
   /** Default `wallet-refused`; `withheld` when the step never reached a wallet. */

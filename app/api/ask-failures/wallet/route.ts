@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic'
 // x-yf-no-ask-log, and a bad beacon is a 202, never an error.
 
 const cap = (v: unknown, n: number): string | null => (typeof v === 'string' && v.trim() ? v.trim().slice(0, n) : null)
-const ARTIFACTS = new Set(['hl-order', 'hl-leverage', 'hl-agent', 'cow-order', 'tx', 'tx-chain', 'vote', 'opensea-listing'])
+const ARTIFACTS = new Set(['hl-order', 'hl-leverage', 'hl-agent', 'cow-order', 'tx', 'tx-chain', 'vote', 'opensea-listing', 'siwe'])
 
 export async function POST(req: NextRequest) {
   if (req.headers.get('x-yf-no-ask-log') === '1') {
