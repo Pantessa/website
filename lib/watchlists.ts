@@ -662,22 +662,124 @@ export function heldReconcileReason(s: {
 }
 
 // ── Sections ────────────────────────────────────────────────────────────────
+// A list's sections are the owner's own words (TradingView's `###Stocks`, a
+// name typed into the ⋯ menu). What they are NOT is a place a symbol can fall
+// out of: until 2026-09-21 a symbol no section named landed in a headerless
+// tail rendered straight under the last section, so a wallet's GOOGL, MSFT and
+// COIN — autofilled after the import — read as CRYPTO on Nate's own rail while
+// AAPL and NVDA sat under STOCKS. Same asset, two categories, and the count on
+// the header said 3 while six rows hung below it.
+//
+// So a section NAMED for an asset class owns its class in that list: any
+// symbol no section claims by name is filed by what it is. Derived at read
+// time, never written — rename the section and the rule lets go, and a guest
+// list, an authed list and a public /lists page all group the same way.
+
+/** What a watchlist row IS, as far as grouping cares. */
+export type WatchClass = 'stocks' | 'crypto' | 'perps'
+
+/** A symbol's class, from the feed that charts it: Robinhood Chain listings
+ *  are tokenized stocks, Coinbase spot is crypto, an HL-only listing is a
+ *  perp. Null when nothing charts it — an unknown ticker is never filed. */
+export function watchClassOf(symbol: string): WatchClass | null {
+  const src = chartPairFor(symbol)?.source
+  if (src === 'robinhood') return 'stocks'
+  if (src === 'coinbase') return 'crypto'
+  if (src === 'hyperliquid') return 'perps'
+  return null
+}
+
+/** The class words a section name may be built from. A name has to SAY its
+ *  class — a theme ('AI plays', 'Semis', 'DeFi') files nothing, because the
+ *  owner grouping by theme means something we cannot derive. */
+const CLASS_WORDS: Readonly<Record<WatchClass, readonly string[]>> = {
+  stocks: ['stock', 'stocks', 'equity', 'equities', 'share', 'shares'],
+  crypto: ['crypto', 'cryptos', 'cryptocurrency', 'cryptocurrencies', 'coin', 'coins', 'token', 'tokens'],
+  perps: ['perp', 'perps', 'perpetual', 'perpetuals', 'futures'],
+}
+
+/** The class a section name declares, or null. Case- and decoration-blind
+ *  ('###US STOCKS', 'Crypto 🪙'), and a name that says TWO classes ('crypto
+ *  stocks') declares neither — an ambiguous name is not an instruction. */
+export function sectionClassOf(name: string): WatchClass | null {
+  const words = String(name ?? '')
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter(Boolean)
+  const hits = (Object.keys(CLASS_WORDS) as WatchClass[]).filter((c) => words.some((w) => CLASS_WORDS[c].includes(w)))
+  return hits.length === 1 ? hits[0] : null
+}
+
+/** Where a class looks for a home, best first. A perp lands under 'Perps'
+ *  when the list keeps one and under 'Crypto' when it does not — a perp is
+ *  crypto; a stock is never either. */
+const CLASS_FALLBACK: Readonly<Record<WatchClass, readonly WatchClass[]>> = {
+  stocks: ['stocks'],
+  crypto: ['crypto'],
+  perps: ['perps', 'crypto'],
+}
+
+/** The section this list would file `symbol` under by class, or null when the
+ *  list keeps no section for it. First section of a class wins (list order).
+ *  A section that names the symbol outright is the owner's word and needs no
+ *  rule — this answers for the ones nothing names. */
+export function classSectionFor(list: Pick<WatchlistShape, 'sections'>, symbol: string): string | null {
+  const cls = watchClassOf(symbol)
+  if (!cls) return null
+  const sections = list.sections ?? []
+  for (const want of CLASS_FALLBACK[cls]) {
+    const hit = sections.find((s) => sectionClassOf(s.name) === want)
+    if (hit) return hit.name
+  }
+  return null
+}
+
+export interface SectionRow {
+  /** The section's name, or null for the tail (what no section holds). */
+  name: string | null
+  symbols: string[]
+  /** The subset of `symbols` the class rule filed, not the owner. */
+  auto: string[]
+}
 
 /** Sectioned view of a list: named sections in order, then the unsectioned
- *  tail. A symbol claimed by no section lands in the tail; a section naming a
- *  symbol the list doesn't hold is dropped (the list is the truth). */
-export function sectionedRows(list: Pick<WatchlistShape, 'symbols' | 'sections'>): { name: string | null; symbols: string[] }[] {
+ *  tail. A section naming a symbol the list doesn't hold drops it (the list is
+ *  the truth); a symbol no section names is filed by class when the list keeps
+ *  a section for its class, and lands in the tail when it does not. `auto`
+ *  lists the ones the class rule placed — what the ⋯ menu reads so it never
+ *  offers a move that snaps straight back. */
+export function sectionedRows(list: Pick<WatchlistShape, 'symbols' | 'sections'>): SectionRow[] {
   const claimed = new Set<string>()
-  const rows: { name: string | null; symbols: string[] }[] = []
+  const rows: SectionRow[] = []
   const held = new Set(list.symbols)
+  const byName = new Map<string, SectionRow>()
   for (const s of list.sections ?? []) {
-    const syms = s.symbols.filter((x) => held.has(x) && !claimed.has(x))
-    syms.forEach((x) => claimed.add(x))
-    if (syms.length) rows.push({ name: s.name, symbols: syms })
+    // Two sections of one name are one section — they render under one header.
+    let row = byName.get(s.name)
+    if (!row) {
+      row = { name: s.name, symbols: [], auto: [] }
+      byName.set(s.name, row)
+      rows.push(row)
+    }
+    for (const x of s.symbols) {
+      if (!held.has(x) || claimed.has(x)) continue
+      claimed.add(x)
+      row.symbols.push(x)
+    }
   }
-  const tail = list.symbols.filter((x) => !claimed.has(x))
-  if (tail.length || rows.length === 0) rows.push({ name: null, symbols: tail })
-  return rows
+  const tail: SectionRow = { name: null, symbols: [], auto: [] }
+  for (const sym of list.symbols) {
+    if (claimed.has(sym)) continue
+    const into = classSectionFor(list, sym)
+    const row = into === null ? undefined : byName.get(into)
+    if (row) {
+      row.symbols.push(sym)
+      row.auto.push(sym)
+    } else tail.symbols.push(sym)
+  }
+  const out = rows.filter((r) => r.symbols.length > 0)
+  if (tail.symbols.length || out.length === 0) out.push(tail)
+  return out
 }
 
 /** Move a symbol into a section (null = unsectioned). Pure. */

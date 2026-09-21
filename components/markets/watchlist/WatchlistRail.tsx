@@ -461,12 +461,17 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
         {rows.map((group) => {
           const key = group.name ?? '__tail'
           const isCollapsed = !!collapsed[key]
+          // The tail is what no section holds. It wears a header of its own
+          // whenever something above it is named — headerless, its rows read
+          // as the last section's (Nate, 2026-09-21: "COIN, MSFT GOOGL should
+          // be under stocks"), and its count said otherwise.
+          const head = group.name ?? (rows.length > 1 ? 'Other' : null)
           return (
             <div key={key} className="wl__section">
-              {group.name && (
+              {head && (
                 <button type="button" className="wl__sectionHead" onClick={() => setCollapsed((c) => ({ ...c, [key]: !c[key] }))} aria-expanded={!isCollapsed}>
                   {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                  <span className="truncate">{group.name}</span>
+                  <span className="truncate">{head}</span>
                   <span className="wl__popMeta mono">{group.symbols.length}</span>
                 </button>
               )}
@@ -594,7 +599,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                                     {s}
                                   </button>
                                 ))}
-                              {group.name && (
+                              {group.name && !group.auto.includes(sym) && (
                                 <button
                                   type="button"
                                   role="menuitem"

@@ -56,7 +56,9 @@ export default async function PublicListPage({ params }: Params) {
           <div className="lists__table">
             {groups.map((g) => (
               <div key={g.name ?? '__tail'}>
-                {g.name && <div className="lists__section">{g.name}</div>}
+                {/* The tail is named once anything above it is, or its rows
+                    read as the section before them (lib/watchlists). */}
+                {(g.name ?? (groups.length > 1 ? 'Other' : null)) && <div className="lists__section">{g.name ?? 'Other'}</div>}
                 {g.symbols.map((sym) => {
                   const q = quotes[sym]
                   const pair = chartPairFor(sym)
