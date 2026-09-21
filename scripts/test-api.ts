@@ -149,6 +149,7 @@ import { decideManagerMove, stackingRefusal, undecidedProposalFor } from '../lib
 import { markPeriodKey, parseMarkAsk, reviewFlipDecision, tryoutReportCard, PAPER_LABEL, TRYOUT_BANNED_PHRASES } from '../lib/roster-tryouts'
 import { houseManagerRow, resolveHouseManager, HOUSE_MANAGER_ID } from '../lib/roster-managers'
 import { walletLineup, walletLaneHint, walletLaneChips, wcConfigured, WC_APP_METADATA , CDP_INIT_PATIENCE_MS, emailLaneHint, WALLET_LANE_NAMES, type WalletLaneId } from '../lib/wallet-lineup'
+import { walletAppFor, handoffCopy, handoffShownOn, WALLET_APP_SETTLE_MS, requestWalletAppOpen, walletAppOpenSnapshot, clearWalletAppOpen } from '../lib/wallet-handoff'
 import { hasStoredWalletConnection, shouldRerunConnectAsk, connectAskReleased, bootHoldingFor, initialHoldElapsed, CONNECT_ASK_RELEASE_GRACE_MS, CONNECT_ASK_RERUN_WINDOW_MS, WAGMI_STORE_KEY, WAGMI_RECENT_CONNECTOR_KEY } from '../lib/wallet-reconnect'
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
@@ -5462,6 +5463,170 @@ async function main() {
         lanes.every((id) => new RegExp(`\\b${id}:\\s*\\w+WalletMark\\b`).test(markTable)) &&
         /phantomWallet,/.test(wagmi) && /from '@rainbow-me\/rainbowkit\/wallets'/.test(wagmi) &&
         /export function PhantomWalletMark/.test(marks) && /fill="#AB9FF2"/.test(marks)
+      )
+    })(),
+  )
+
+  // ── The wallet APP handoff on mobile (lib/wallet-handoff) ────────────────
+  // Nate, 2026-09-18, on a phone: "when trying to connect to metamask the
+  // second signing screen after connection does not pop up". On mobile the
+  // MetaMask lane is the MetaMask SDK, which brings the app forward by
+  // NAVIGATING to a metamask:// link — and both mobile browsers drop an app
+  // launch that no tap is carrying, which is exactly the SIWE signature
+  // lib/session fires from its post-connect effect. These pin the answer:
+  // the link may only ever be the wallet's, the launch is watched, and a
+  // dropped one becomes a button.
+  console.log('— mobile: the wallet app handoff')
+  check(
+    'wallet handoff: the ONLY links we will navigate to are MetaMask’s own (scheme + universal link) — an off-wallet https URL, a javascript: URL, and a link with whitespace or control characters in it are all refused',
+    walletAppFor('metamask://connect?channelId=abc') === 'MetaMask' &&
+      walletAppFor('METAMASK://connect') === 'MetaMask' &&
+      walletAppFor('https://metamask.app.link/connect?channelId=abc') === 'MetaMask' &&
+      walletAppFor('https://metamask.app.link.evil.com/connect') === null &&
+      walletAppFor('http://metamask.app.link/connect') === null &&
+      walletAppFor('https://pantessa.com') === null &&
+      // eslint-disable-next-line no-script-url
+      walletAppFor('javascript:alert(1)') === null &&
+      walletAppFor('metamask://connect?a=1 b=2') === null &&
+      walletAppFor('metamask://con\nnect') === null &&
+      walletAppFor('') === null &&
+      walletAppFor(null) === null,
+  )
+  check(
+    'wallet handoff: the card names the wallet and says what to do; a second dropped launch stops asking for the same tap and says the app may not be installed',
+    (() => {
+      const first = handoffCopy({ link: 'metamask://x', app: 'MetaMask', tried: false })
+      const again = handoffCopy({ link: 'metamask://x', app: 'MetaMask', tried: true })
+      return (
+        /Open MetaMask/.test(first.title) &&
+        /Open MetaMask/.test(first.cta) &&
+        /tap below/i.test(first.body) &&
+        /Still waiting on MetaMask/.test(again.title) &&
+        /installed/i.test(again.body) &&
+        first.title !== again.title &&
+        first.body !== again.body &&
+        // /embed signs through the host page's own relay — never our card
+        handoffShownOn('/embed') === false &&
+        handoffShownOn('/embed/abc') === false &&
+        handoffShownOn('/chat') === true &&
+        handoffShownOn('/i/abc') === true &&
+        handoffShownOn(null) === true
+      )
+    })(),
+  )
+  {
+    // The behaviour itself, against a stand-in for the two things the holder
+    // reads: whether the page went away, and where it navigated. A launch the
+    // browser honoured hides the page, and NOTHING is shown; a launch it
+    // dropped leaves the page visible, and the button appears with the link
+    // still in hand. Globals are restored before anything else runs.
+    const priorWindow = (globalThis as Record<string, unknown>).window
+    const priorDocument = (globalThis as Record<string, unknown>).document
+    const makeDom = () => {
+      const handlers: Record<string, Set<() => void>> = {}
+      const on = (k: string, f: () => void) => {
+        ;(handlers[k] ??= new Set()).add(f)
+      }
+      const off = (k: string, f: () => void) => handlers[k]?.delete(f)
+      const dom = {
+        navigated: [] as string[],
+        visibility: 'visible',
+        fire(k: string) {
+          for (const f of [...(handlers[k] ?? [])]) f()
+        },
+      }
+      ;(globalThis as Record<string, unknown>).document = {
+        get visibilityState() {
+          return dom.visibility
+        },
+        addEventListener: on,
+        removeEventListener: off,
+        createElement: () => ({ click: () => {}, set href(_v: string) {}, target: '', rel: '' }),
+      }
+      ;(globalThis as Record<string, unknown>).window = {
+        addEventListener: on,
+        removeEventListener: off,
+        location: {
+          set href(v: string) {
+            dom.navigated.push(v)
+          },
+        },
+      }
+      return dom
+    }
+    const settled = () => new Promise((r) => setTimeout(r, WALLET_APP_SETTLE_MS + 150))
+    try {
+      // (a) the launch lands: the page hides, so there is nothing to offer.
+      const landed = makeDom()
+      requestWalletAppOpen('metamask://connect?channelId=landed')
+      const navigatedOnce = landed.navigated.length === 1
+      landed.visibility = 'hidden'
+      landed.fire('visibilitychange')
+      const quietAfterHide = walletAppOpenSnapshot() === null
+      await settled()
+      const stillQuiet = walletAppOpenSnapshot() === null
+      clearWalletAppOpen()
+
+      // (b) the launch is dropped (the effect-fired signature, no activation):
+      // the page never hides, so the card goes up holding the same link.
+      const dropped = makeDom()
+      requestWalletAppOpen('metamask://connect?channelId=dropped')
+      const quietBeforeSettle = walletAppOpenSnapshot() === null
+      await settled()
+      const shown = walletAppOpenSnapshot()
+      // (c) a link that isn't the wallet's never navigates and never shows.
+      const before = dropped.navigated.length
+      requestWalletAppOpen('https://evil.example/steal')
+      const refused = dropped.navigated.length === before && walletAppOpenSnapshot() === shown
+      clearWalletAppOpen()
+      const cleared = walletAppOpenSnapshot() === null
+
+      check(
+        'wallet handoff (behaviour): a launch the browser honours hides the page and shows nothing; a launch it DROPS leaves the page visible and surfaces the card with the same link, untried; a non-wallet link neither navigates nor shows',
+        navigatedOnce &&
+          quietAfterHide &&
+          stillQuiet &&
+          quietBeforeSettle &&
+          !!shown &&
+          shown!.link === 'metamask://connect?channelId=dropped' &&
+          shown!.app === 'MetaMask' &&
+          shown!.tried === false &&
+          refused &&
+          cleared,
+        JSON.stringify({ navigatedOnce, quietAfterHide, stillQuiet, quietBeforeSettle, shown, refused, cleared }),
+      )
+    } finally {
+      clearWalletAppOpen()
+      if (priorWindow === undefined) delete (globalThis as Record<string, unknown>).window
+      else (globalThis as Record<string, unknown>).window = priorWindow
+      if (priorDocument === undefined) delete (globalThis as Record<string, unknown>).document
+      else (globalThis as Record<string, unknown>).document = priorDocument
+    }
+  }
+  check(
+    'wallet handoff (wiring): lib/wagmi hands the MetaMask SDK our openDeeplink (with it set the SDK never navigates itself), Providers mounts the card, and the signature takeover steps aside while a handoff is up',
+    (() => {
+      const strip = (s2: string) => s2.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      const wagmi = strip(readFileSync(pathJoin(process.cwd(), 'lib/wagmi.ts'), 'utf8'))
+      const providers = strip(readFileSync(pathJoin(process.cwd(), 'components/Providers.tsx'), 'utf8'))
+      const takeover = strip(readFileSync(pathJoin(process.cwd(), 'components/SignatureWaitTakeover.tsx'), 'utf8'))
+      const card = strip(readFileSync(pathJoin(process.cwd(), 'components/WalletAppHandoff.tsx'), 'utf8'))
+      return (
+        /openDeeplink\s*(\]|=)/.test(wagmi) &&
+        /requestWalletAppOpen/.test(wagmi) &&
+        /from '@\/lib\/wallet-handoff'/.test(wagmi) &&
+        /<WalletAppHandoff \/>/.test(providers) &&
+        /import WalletAppHandoff from '@\/components\/WalletAppHandoff'/.test(providers) &&
+        /dismissed \|\| handoff\) return null/.test(takeover) &&
+        // the card's button is the tap, and it is never disabled — the whole
+        // bug was a disabled "open the request" button on a page whose wallet
+        // was never brought up
+        /onClick=\{openWalletAppNow\}/.test(card) &&
+        !/disabled/.test(card) &&
+        // and it sits ABOVE RainbowKit's modal (2147483646): RainbowKit's own
+        // mobile "Continue in MetaMask" screen has no retry button, so a card
+        // behind it would be the same dead end with an extra step
+        /zIndex: 2147483647/.test(card)
       )
     })(),
   )
@@ -21920,7 +22085,11 @@ async function main() {
           /const silent = connector\?\.id === CDP_CONNECTOR_ID/.test(waitS) &&
           /return \{ shown: signingIn && \(!silent \|\| late\), silent \}/.test(waitS) &&
           /silent \? 'Signing you in…'/.test(waitS) && /\{!silent && \(/.test(waitS) &&
-          /if \(!wait\.shown \|\| dismissed\) return null/.test(waitS) && /silent=\{wait\.silent\}/.test(waitS) &&
+          // Re-pinned 2026-09-18: a third reason to stand down — on a phone the
+          // handoff card takes over while the wallet app hasn't come forward
+          // (lib/wallet-handoff), because "the request is open in your wallet"
+          // is not true yet and this card's button is disabled meanwhile.
+          /if \(!wait\.shown \|\| dismissed \|\| handoff\) return null/.test(waitS) && /silent=\{wait\.silent\}/.test(waitS) &&
           /sigWait\.shown && !sigDismissed/.test(runtimeS) && /silent=\{sigWait\.silent\}/.test(runtimeS),
         `grace=${grace}`,
       )
