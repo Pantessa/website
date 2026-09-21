@@ -232,6 +232,7 @@ import {
   type SwapLegKind,
 } from '../lib/stock-tape'
 import { buildGuardedSwap } from '../lib/swap-exec'
+import { fundedBuysOf, preflightFundedBuy, unfillableBuyCopy, verdictOfSwapResult, VENUE_PREFLIGHT_TIMEOUT_MS } from '../lib/venue-preflight'
 import { fetchYahooQuote, quietSymbols, RH_NEAR_WINDOW, RH_WIDE_WINDOW, ROBINHOOD_BATCH_MAX, type RhRead } from '../lib/quotes'
 import { buildLifiBridgeLeg, clampNativeSellAtoms, ETH_MOVE_MIN_OUT_BPS, ETH_MOVE_MIN_USD, fillableLeg, FUNDING_ALT_USDC, FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, fundingAltUsdcFor, fundingNeedUsd, listWords, fundingSourceSymbols, LIFI_LEG_FLAT_USD, MIN_VALUE_LEG_USD, minLegNote, offChainStableSource, ROBINHOOD_CHAIN_ID, STABLE_LEG_MIN_OUT_BPS, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodEthMove, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData, inflightSettlingNote } from '../lib/inflight-funding'
@@ -10961,6 +10962,168 @@ async function main() {
         (comboJob.steps[3].params as { origin?: number }).origin === 8453,
       comboJob && 'problem' in comboJob ? comboJob.problem : JSON.stringify(comboJob?.steps.map((s) => s.params)),
     )
+    // ── VENUE PRE-FLIGHT (lib/venue-preflight.ts) ──────────────────────────
+    // The funding offer and this compiler both run ABOVE the venue cascade,
+    // so a funded buy of a listing no venue can fill used to sign both
+    // bridge legs and only then refuse at the buy step — stranding USDG on
+    // 4663. 105 of the 201 curated Robinhood Chain listings refuse today
+    // (measured 2026-09-21, read-only). The verdict is the cascade's own,
+    // so it can never drift from the builder; these pins hold the seam.
+    const compileShapeRh = (ask: string) => { const j = compileJobAsk(ask); return j && 'steps' in j && j.steps ? j.steps.map((st) => `${st.kind}:${st.builder}`).join(',') : JSON.stringify(j) }
+    const pfBuy = { chainId: 4663, sellToken: 'USDG', buyToken: 'CRM', amountHuman: '10.00' }
+    const pfCalls: string[] = []
+    const pfVenue = (name: string, run: () => unknown) => async () => {
+      pfCalls.push(name)
+      return run()
+    }
+    const pfThrow = (err: Error) => () => {
+      throw err
+    }
+    const pfSwapTx = { to: `0x${'3'.repeat(40)}`, data: '0x', value: '0', chainId: 4663, action: 'swap' }
+    const pfV3Built = { summary: 'v3 fill', guardrails: { ok: true, valueUsd: 10, checks: [] }, blocked: false, swapTx: pfSwapTx, approveTx: null, minimumOut: '1', validUntil: 1 }
+    const pfRun = async (venues: Record<string, () => unknown>, timeoutMs?: number) => {
+      pfCalls.length = 0
+      const v = await preflightFundedBuy(pfBuy, venues as never, timeoutMs)
+      return { v, calls: pfCalls.join(',') }
+    }
+    // The task's own reproduction: the compiled job, and the buy read out of it.
+    const pfJob = compileJobAsk('Fund robinhood chain with $12 from base including gas, then buy $10 of CRM')
+    const pfJobBuys = pfJob && 'steps' in pfJob ? fundedBuysOf(pfJob) : []
+    const pfLoneFund = compileJobAsk('Fund robinhood chain with $7 from ethereum including gas')
+    const pfBridgeJob = compileJobAsk('swap 1 USDC from base to arbitrum, then send the 1 USDC on arbitrum to 0x2055f0a5e1b2d69f0fcbf3e0f0e8e7ba7a5b2a9c')
+    check(
+      'venue pre-flight: fundedBuysOf reads the funded buy out of the compiled job — chain, the destination stable it spends, the ticker and the dollars — and finds none in a bridge-only job or a job with no funded buy',
+      pfJobBuys.length === 1 && JSON.stringify(pfJobBuys[0]) === JSON.stringify({ chainId: 4663, sellToken: 'USDG', buyToken: 'CRM', amountHuman: '10.00' }) &&
+        (pfLoneFund && 'steps' in pfLoneFund ? fundedBuysOf(pfLoneFund).length : -1) === 0 &&
+        (pfBridgeJob && 'steps' in pfBridgeJob ? fundedBuysOf(pfBridgeJob).length : -1) === 0,
+      JSON.stringify(pfJobBuys),
+    )
+    // Which cascade answers mean "no venue" — and which must NOT.
+    const pfExec = verdictOfSwapResult({ ok: false, blockKind: 'execution', reasons: 'No Uniswap v3 or v4 pool on Robinhood Chain can fill USDG → CRM for this amount.' })
+    const pfPolicy = verdictOfSwapResult({ ok: false, blockKind: 'policy', reasons: 'the daily cap is spent' })
+    const pfOk = verdictOfSwapResult({ ok: true, txChain: { summary: '', steps: [], refresh: { kind: 'uniswap-swap', stepIndex: 0, params: {} } }, buildPath: 'native-swap-uniswap', summary: '', guardrails: { ok: true, checks: [] } })
+    check(
+      'venue pre-flight: only the cascade\'s EXECUTION family (no pool / off tape / no route / no feed) counts as "no venue" — a POLICY block is the caller\'s own spend policy and says nothing about the venue, so it fails open',
+      pfExec.kind === 'no-venue' && pfExec.reason.startsWith('No Uniswap v3 or v4 pool') && pfPolicy.kind === 'unknown' && pfOk.kind === 'fillable',
+      JSON.stringify([pfExec.kind, pfPolicy.kind, pfOk.kind]),
+    )
+    const pfNoPool = await pfRun({ v3: pfVenue('v3', pfThrow(new NoV3PoolError('no v3 pool'))), v4: pfVenue('v4', pfThrow(new NoV4PoolError('no v4 pool'))), lifi: pfVenue('lifi', () => pfV3Built) })
+    const pfFills = await pfRun({ v3: pfVenue('v3', () => pfV3Built), v4: pfVenue('v4', pfThrow(new NoV4PoolError('no v4 pool'))), lifi: pfVenue('lifi', () => pfV3Built) })
+    check(
+      'venue pre-flight: no pool on either Uniswap version → no-venue carrying the cascade\'s own words; a venue that quotes → fillable, and the ladder stops at the first fill (nothing further is asked)',
+      pfNoPool.v.kind === 'no-venue' && pfNoPool.v.reason === 'No Uniswap v3 or v4 pool on Robinhood Chain can fill USDG → CRM for this amount.' &&
+        pfFills.v.kind === 'fillable' && pfFills.calls === 'v3',
+      `${pfNoPool.calls}:${pfNoPool.v.kind} | ${pfFills.calls}:${pfFills.v.kind}`,
+    )
+    // A refusal is the only verdict that stops money, so it is read twice —
+    // "every fee tier threw" is also what a rate-limited 4663 RPC looks like.
+    let pfFlaky = 0
+    const pfFlakyRun = await pfRun({
+      v3: pfVenue('v3', () => {
+        pfFlaky += 1
+        if (pfFlaky === 1) throw new NoV3PoolError('no v3 pool')
+        return pfV3Built
+      }),
+      v4: pfVenue('v4', pfThrow(new NoV4PoolError('no v4 pool'))),
+      lifi: pfVenue('lifi', () => pfV3Built),
+    })
+    check(
+      'venue pre-flight: a refusal is confirmed by a SECOND read before it stops anything — a one-off "no pool" that the re-read contradicts ends `unknown` (fail open), and a real one asks the whole ladder twice',
+      pfFlakyRun.v.kind === 'unknown' && /the re-read did not/.test(pfFlakyRun.v.why) && pfFlakyRun.calls === 'v3,v4,v3' &&
+        pfNoPool.calls === 'v3,v4,v3,v4' && pfFills.calls === 'v3',
+      `flaky=${pfFlakyRun.calls}:${pfFlakyRun.v.kind} | real=${pfNoPool.calls}`,
+    )
+    // FAIL OPEN. A transport error, a tape outage or a hung quote must never
+    // refuse a buy the venues can actually fill.
+    const pfRpc = await pfRun({ v3: pfVenue('v3', pfThrow(new Error('The request took too long to respond.'))), v4: pfVenue('v4', () => pfV3Built), lifi: pfVenue('lifi', () => pfV3Built) })
+    const pfTapeDown = await pfRun({ v3: pfVenue('v3', pfThrow(new TapeUnavailableError(tapeMissMessage('CRM', 'down'), 'CRM', 'down', 'no quote'))), v4: pfVenue('v4', () => pfV3Built), lifi: pfVenue('lifi', () => pfV3Built) })
+    const pfSlowStart = Date.now()
+    const pfSlow = await pfRun({ v3: pfVenue('v3', () => new Promise(() => {})), v4: pfVenue('v4', () => pfV3Built), lifi: pfVenue('lifi', () => pfV3Built) }, 120)
+    const pfSlowMs = Date.now() - pfSlowStart
+    check(
+      'venue pre-flight: fails OPEN — an RPC error, a tape that did not answer and a quote that never returns all come back `unknown` (never `no-venue`), the hung one inside its own timeout, and the default budget clears the measured p95',
+      pfRpc.v.kind === 'unknown' && pfTapeDown.v.kind === 'unknown' && pfSlow.v.kind === 'unknown' && pfSlowMs < 2_000 && VENUE_PREFLIGHT_TIMEOUT_MS >= 3_000,
+      `rpc=${pfRpc.v.kind} tape=${pfTapeDown.v.kind} slow=${pfSlow.v.kind} in ${pfSlowMs}ms`,
+    )
+    const pfCopy = unfillableBuyCopy(pfBuy, 'No Uniswap v3 or v4 pool on Robinhood Chain can fill USDG → CRM for this amount.')
+    const pfCopyTail = unfillableBuyCopy(pfBuy, "Robinhood's market data has no price for CASHCAT, so there's nothing to check against. Nothing was built.")
+    check(
+      'venue pre-flight: the refusal says there is nothing to FUND (not just nothing to build), names the pair and the chain, carries the cascade\'s own reason, and says "Nothing was built" exactly once even when the reason already ended with it',
+      /^Robinhood Chain has no venue that can fill USDG → CRM right now, so there's nothing to fund/.test(pfCopy) &&
+        /it would just leave it sitting on Robinhood Chain/.test(pfCopy) && pfCopy.includes('No Uniswap v3 or v4 pool') && /Nothing was built and nothing moved\.$/.test(pfCopy) &&
+        (pfCopyTail.match(/Nothing was built/g) ?? []).length === 1 && /Nothing was built and nothing moved\.$/.test(pfCopyTail),
+      pfCopyTail,
+    )
+    // ── LIVE (the running route): the same wallet, two tickers. Skipped
+    // when there is no burner key around, since both halves need a wallet
+    // the funding scan can actually see money on.
+    {
+      const pfFs = await import('node:fs')
+      const pfPk = (() => {
+        try {
+          return pfFs.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+        } catch {
+          return null
+        }
+      })()
+      if (pfPk) {
+        const pfWallet = privateKeyToAccount((pfPk.startsWith('0x') ? pfPk : `0x${pfPk}`) as `0x${string}`).address
+        type PfTurn = { reply?: string; buildPath?: string; jobId?: string; clarify?: { options: { label: string; resume: string }[] } }
+        const pfAsk = async (message: string) =>
+          (await fetch(`${BASE}/api/chat`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' },
+            body: JSON.stringify({ message, walletAddress: pfWallet, activeServers: [{ slug: 'uniswap' }], history: [] }),
+          }).then((r) => r.json())) as PfTurn
+        const pfChips = (t: PfTurn) => (t.clarify?.options ?? []).filter((o) => !/never mind/i.test(o.resume)).map((o) => o.resume)
+        // The OFFER: an unfillable listing is refused where a fillable one
+        // is funded, from the same wallet in the same breath.
+        const offerBad = await pfAsk('Buy $10 of CRM on robinhood chain')
+        const offerGood = await pfAsk('Buy $10 of AAPL on robinhood chain')
+        check(
+          'venue pre-flight (route): an unfundable buy is refused BEFORE the offer — "Buy $10 of CRM on robinhood chain" gets the named no-venue refusal with NO chips and NO job, while the same wallet asking for AAPL still gets its funding chips (each one compiling fund → wait → buy)',
+          /no venue that can fill USDG → CRM/.test(offerBad.reply ?? '') && /Nothing was built and nothing moved\./.test(offerBad.reply ?? '') && pfChips(offerBad).length === 0 && !offerBad.jobId &&
+            pfChips(offerGood).length >= 1 && pfChips(offerGood).every((r) => /^Fund robinhood chain with \$[\d.]+ from \w+(?: including gas)?, then buy \$10 of AAPL$/.test(r) && compileShapeRh(r) === 'sign:native-lifi-fund,wait:wait,sign:native-lifi-swap'),
+          JSON.stringify({ bad: (offerBad.reply ?? '').slice(0, 160), badChips: pfChips(offerBad), goodChips: pfChips(offerGood) }),
+        )
+        // The JOB: a TYPED compound ask never passes the offer, so the
+        // compiler's own door has to hold it. Nothing is signed either way.
+        const jobBad = await pfAsk('Fund robinhood chain with $12 from base including gas, then buy $10 of CRM')
+        check(
+          'venue pre-flight (route): the typed compound ask — the one that skips the offer entirely — is refused at the jobs door with no job row created, so the two bridge legs never get a signature to strand',
+          /no venue that can fill USDG → CRM/.test(jobBad.reply ?? '') && !jobBad.jobId && jobBad.buildPath === 'native-job',
+          JSON.stringify({ buildPath: jobBad.buildPath, jobId: jobBad.jobId ?? null, reply: (jobBad.reply ?? '').slice(0, 160) }),
+        )
+      }
+    }
+
+    // Every door that turns a compiled funding job into real money runs it.
+    const pfChatSrc = await readFile('app/api/chat/route.ts', 'utf8')
+    const pfJobsSrc = await readFile('app/api/jobs/route.ts', 'utf8')
+    const pfBrokerSrc = await readFile('lib/broker-exec.ts', 'utf8')
+    const pfOfferIdx = pfChatSrc.indexOf('const fillCheck = acquiring')
+    const pfScanIdx = pfChatSrc.indexOf('const shortfall = await readFundingShortfall(walletAddress, lifiDest.chainId)')
+    const pfRefuseIdx = pfChatSrc.indexOf("if (fill?.kind === 'no-venue')")
+    const pfAdviceIdx = pfChatSrc.indexOf('const advice = planRobinhoodFundingAdvice({')
+    check(
+      'venue pre-flight (wiring): the chat offer STARTS the check before awaiting the balance scan (concurrent — no extra wall-clock) and refuses ABOVE planRobinhoodFundingAdvice, so no advice branch — chips, gas-stranded, ETH move, downsize or the honest refusal — can offer to move money onto a chain that cannot complete the buy',
+      pfOfferIdx > 0 && pfScanIdx > pfOfferIdx && pfRefuseIdx > pfScanIdx && pfAdviceIdx > pfRefuseIdx,
+      JSON.stringify({ pfOfferIdx, pfScanIdx, pfRefuseIdx, pfAdviceIdx }),
+    )
+    // EVERY createJob of a compiled ask, not just the first one in the file:
+    // a new door added without the guard fails this, which is the point.
+    const pfGated = (src: string) => {
+      const creates = [...src.matchAll(/await createJob\(/g)].map((m) => m.index)
+      const guards = [...src.matchAll(/unfillableFundedBuyReason\(/g)].map((m) => m.index)
+      return creates.length > 0 && creates.every((c) => guards.some((g) => g < c && c - g < 2_500))
+    }
+    const pfDoors = { chat: pfGated(pfChatSrc), api: pfGated(pfJobsSrc), broker: pfGated(pfBrokerSrc) }
+    check(
+      'venue pre-flight (wiring): EVERY door that turns a compiled ask into a job runs the guard just above its createJob — both chat doors (the jobs gate and the HL auto-funded one), the agent-facing jobs API (whose dry run reports it too, so a plan that validates clean cannot then 400) and the broker desk',
+      pfDoors.chat && pfDoors.api && pfDoors.broker && pfJobsSrc.includes('if (unfillable) return NextResponse.json({ error: unfillable }, { status: 400 })'),
+      JSON.stringify(pfDoors),
+    )
+
     // A LONE funding segment compiles (the MCP-fallback's bridge-only chips
     // carry no follow-up) — but a lone anything-else still returns null.
     const lone = compileJobAsk('Fund robinhood chain with $7 from ethereum including gas')

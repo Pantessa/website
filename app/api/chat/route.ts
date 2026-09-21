@@ -154,6 +154,7 @@ import { tokenHome } from '@/lib/token-home'
 import { NEVER_MIND_RESUME_RE } from '@/lib/funding-path'
 import { cleanServerName } from '@/lib/utils'
 import { buysOrigin, fundingSourceSymbols, GAS_TOPUP_ETH, lifiDestination, minLegNote, offChainStableSource, valueLegUsd, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
+import { preflightFundedBuy, unfillableBuyCopy, unfillableFundedBuyReason } from '@/lib/venue-preflight'
 import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-funding'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { COW_VAULT_RELAYER } from '@/lib/cow-guardrails'
@@ -299,6 +300,14 @@ async function hlAutoFundedJobTurn(
     type: 'status',
     label: `hl auto-fund: open is under-collateralized ($${short.withdrawableUsd.toFixed(2)} withdrawable vs ~$${short.notionalUsd} notional) — compiled the funded job directly: ${compiled.title.slice(0, 160)}`,
   })
+  // Same rule as every other job door (lib/venue-preflight.ts): no funding
+  // legs move for a buy no venue can fill. An HL-collateral plan carries no
+  // such buy today, so this is a no-op that keeps the invariant literal.
+  const hlUnfillable = await unfillableFundedBuyReason(compiled)
+  if (hlUnfillable) {
+    nativeTrace({ type: 'note', level: 'warn', label: `hl auto-fund: venue pre-flight refuses the funded job — ${hlUnfillable.slice(0, 160)}` })
+    return NextResponse.json({ reply: `🛑 ${hlUnfillable}`, buildPath: 'native-job' })
+  }
   const job = await createJob(walletAddress, stampSwapFeeTier(compiled, linkFeeBps), 'chat', { internal: internalRun })
   await advanceJob(job).catch(() => {})
   const gasLegNote = /\b(?:to|for) eth on arbitrum\b/i.test(resume) ? ' (plus a little Arbitrum ETH so the deposit can pay its own gas)' : ''
@@ -1091,6 +1100,17 @@ async function handleChatTurn(req: NextRequest) {
           // No plan available (scan/price down) — fall through to the job;
           // the step's own guard explains itself if it can't build.
         }
+      }
+      // The funded buy at the end of a funding plan, checked BEFORE the job
+      // exists (lib/venue-preflight.ts) — the same rule the segment already
+      // applies to tickers, for venues. A typed compound ask reaches here
+      // without passing the chat funding offer, and its bridge legs would
+      // sign and settle before the buy step discovered no venue can fill it.
+      // Read-only and fail-open: only a definite venue miss refuses.
+      const jobUnfillable = await unfillableFundedBuyReason(jobAsk)
+      if (jobUnfillable) {
+        nativeTrace({ type: 'note', level: 'warn', label: `jobs layer: venue pre-flight refuses the funding job — ${jobUnfillable.slice(0, 160)}` })
+        return NextResponse.json({ reply: `🛑 ${jobUnfillable}`, buildPath: 'native-job' })
       }
       nativeTrace({ type: 'status', label: `jobs layer claimed the turn: ${jobAsk.steps.length}-step job — ${jobAsk.title} — planner bypassed` })
       // C2b closes over jobs: a link-priced turn's compiled swaps carry the
@@ -4587,6 +4607,21 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
   const acquiring = !!rhStable && intent.buyToken.toUpperCase() === rhStable.symbol.toUpperCase()
   if (rhStable && lifiDest && intent.sellToken.toUpperCase() === rhStable.symbol.toUpperCase()) {
     try {
+      // VENUE PRE-FLIGHT (lib/venue-preflight.ts): this offer runs ABOVE the
+      // venue cascade, so without it a funded buy of a listing no venue can
+      // fill moves the money and dies at the buy step, leaving the stable
+      // stranded on the destination chain (105 of the 201 curated Robinhood
+      // Chain listings, measured 2026-09-21). Read-only, started ALONGSIDE
+      // the balance scan so it costs no wall-clock, and failing OPEN —
+      // only a definite venue miss refuses.
+      const fillCheck = acquiring
+        ? null
+        : preflightFundedBuy({
+            chainId: lifiDest.chainId,
+            sellToken: rhStable.symbol,
+            buyToken: intent.buyToken.toUpperCase(),
+            amountHuman: Number(Number(intent.sellAmountHuman).toFixed(2)).toFixed(2),
+          })
       const shortfall = await readFundingShortfall(walletAddress, lifiDest.chainId)
       // On a stable-gas destination the sell spends the gas token itself, so
       // "covered" means the amount PLUS the gas sliver the swap keeps back.
@@ -4598,6 +4633,25 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
       if (shortfall.usdgAtoms < needAtoms || convertingFrom) {
         const buyUsd = Number(Number(intent.sellAmountHuman).toFixed(2)) // USDG is the $1 unit of account
         const buySym = intent.buyToken.toUpperCase()
+        // Nothing to fund. This sits ABOVE every advice branch on purpose:
+        // the chips, the gas-stranded rescue, the ETH move and the honest
+        // "top up and ask again" refusal all end in money on a chain that
+        // can't complete the buy, so an unfillable listing must not reach
+        // any of them. `unknown` (transport, timeout, policy) falls through
+        // to the offer exactly as before.
+        const fill = (await fillCheck?.catch(() => null)) ?? null
+        if (fill?.kind === 'no-venue') {
+          const unfillable = { chainId: lifiDest.chainId, sellToken: rhStable.symbol, buyToken: buySym, amountHuman: buyUsd.toFixed(2) }
+          trace({
+            type: 'note',
+            level: 'warn',
+            label: `funding layer: venue pre-flight says no venue on ${chain.name} fills ${rhStable.symbol} → ${buySym} — refusing the funding offer rather than stranding the bridge (${fill.reason.slice(0, 120)})`,
+          })
+          return NextResponse.json({ reply: `🛑 ${unfillableBuyCopy(unfillable, fill.reason)}`, buildPath: 'native-lifi-fund-offer' })
+        }
+        if (fill?.kind === 'unknown') {
+          trace({ type: 'note', level: 'info', label: `funding layer: venue pre-flight couldn't tell (${fill.why.slice(0, 100)}) — proceeding with the offer` })
+        }
         const holdingUsd = Number(shortfall.usdgAtoms) / 10 ** rhStable.decimals
         // What the plan may count as already-covered. Zero for a conversion:
         // the named source is the money to move, so held USDG neither
