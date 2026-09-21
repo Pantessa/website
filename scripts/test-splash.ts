@@ -162,6 +162,24 @@ async function run() {
     check('long/short labels intact', /HYPE long 2x/.test(tile.rows[0].label) && /ETH short/.test(tile.rows[1].label))
   }
 
+  console.log('splash sources — hyperliquid (idle collateral offers the open)')
+  {
+    const idle = (perp: Record<string, unknown>) => async () =>
+      ({ perp: { accountValueUsd: '130.00', positions: [], ...perp } })
+    const openChip = async (perp: Record<string, unknown>) => {
+      const t = (await hl.build(idle(perp), ADDR, srv('hyperliquid-free', 'Hyperliquid (Free)'))) as RowsTile
+      return t.prompts.some((p) => /^Long \$12 of ETH/.test(p.prompt))
+    }
+    // A unified account keeps its collateral in spot USDC, so the perp ledger's
+    // own withdrawable reads ~0 while the account is funded — measured live
+    // 2026-09-21: withdrawable "0.0", $122 available. Reading withdrawable
+    // alone withheld the open chip from every funded unified account.
+    check('unified account: available collateral offers the open', await openChip({ withdrawableUsd: '0.0', availableToTradeUsd: '122.77' }))
+    check('classic account: withdrawable still offers the open', await openChip({ withdrawableUsd: '100' }))
+    check('an MCP that never sends the field falls back to withdrawable', await openChip({ withdrawableUsd: '100', availableToTradeUsd: undefined }))
+    check('an empty account is still offered nothing', (await openChip({ withdrawableUsd: '0.0', availableToTradeUsd: '0' })) === false)
+  }
+
   console.log('splash sources — aave')
   {
     const positioned = async () => ({

@@ -429,6 +429,9 @@ const hyperliquidSource: SplashSource = {
       perp?: {
         accountValueUsd?: string | null
         withdrawableUsd?: string | null
+        /** The honest collateral figure — absent on MCP builds before
+         *  free-mcps#33, hence the withdrawable fallback below. */
+        availableToTradeUsd?: string | null
         positions?: HlPosition[]
       }
       pnl?: Record<string, { pnl: string | null }> | null
@@ -485,8 +488,12 @@ const hyperliquidSource: SplashSource = {
         }]
       }),
     }
-    const withdrawable = Number(data.perp?.withdrawableUsd ?? 0)
-    if (positions.length === 0 && withdrawable >= 12) {
+    // Idle collateral, not `withdrawable`: on a unified account the venue keeps
+    // perp collateral in spot USDC and sweeps the perp ledger to the margin in
+    // use, so `withdrawableUsd` reads ~0 for a fully funded account and the
+    // open chip never appeared. Same rule as lib/hyperliquid-exec hlCollateralUsd.
+    const idleCollateral = Number(data.perp?.availableToTradeUsd ?? data.perp?.withdrawableUsd ?? 0)
+    if (positions.length === 0 && idleCollateral >= 12) {
       prompts.push({ label: 'Long $12 of ETH', prompt: 'Long $12 of ETH on Hyperliquid' })
     }
     if (prompts.length < 3) prompts.push({ label: 'How am I doing?', prompt: 'Summarize my Hyperliquid positions — PnL, risk, anything near liquidation?' })
