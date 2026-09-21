@@ -111,8 +111,11 @@ export function extractPrivacy(message: string): { rest: string; confidential: b
   return { rest: rest.replace(/\s{2,}/g, ' ').replace(/\s+([,.;!])/g, '$1').trim(), confidential, ...(recipient ? { recipient } : {}), ...(problem ? { problem } : {}) }
 }
 
-/** Chains a private swap can't reach: they fund over LiFi, which has no
- *  confidential lane. A private ask never quietly becomes a public bridge. */
+/** Chains a private swap isn't built for: money moves INTO them over LiFi,
+ *  which has no confidential lane. A private ask never quietly becomes a
+ *  public bridge. (1Click lists Robinhood Chain — confidential routes
+ *  included — since 2026-09-21; wiring the private lane there is its own
+ *  change. Arc is still unlisted.) */
 const NO_PRIVATE_LANE = new Set(['robinhood', 'arc'])
 
 const cleanTok = (t: string) => t.replace(/^\$/, '')
@@ -159,7 +162,7 @@ export function parseCrossChainSwap(rawMessage: string): CrossChainSwapParams | 
   const lane = [parsed.originChain, parsed.destinationChain].map((c) => canonicalChainWord(c) ?? c.toLowerCase()).find((c) => NO_PRIVATE_LANE.has(c))
   if (lane) {
     return {
-      problem: `Private mode and separate delivery addresses run on NEAR Intents, which doesn't reach ${prettyChainWord(lane)} — moves there go over a public bridge. Drop “privately”${privacy.recipient ? ' and the delivery address' : ''} and I'll build the ordinary move, or pick another chain.`,
+      problem: `Private mode and separate delivery addresses aren't available on ${prettyChainWord(lane)} yet — moves there go over a public bridge. Drop “privately”${privacy.recipient ? ' and the delivery address' : ''} and I'll build the ordinary move, or pick another chain.`,
     }
   }
   return { ...parsed, ...(privacy.confidential ? { confidential: true as const } : {}), ...(privacy.recipient ? { recipient: privacy.recipient } : {}) }
@@ -256,6 +259,11 @@ const ORIGIN_CHAIN_IDS: Record<string, number> = {
   gnosis: 100,
   xdai: 100,
   scroll: 534352,
+  // Robinhood Chain: 1Click's "hood" since 2026-09-21. Money going IN still
+  // redirects onto the LiFi funding plan (lib/jobs — LiFi out-delivered NEAR
+  // on every measured row, and NEAR has no liquidity into gas ETH); money
+  // coming OUT builds here (USDG/ETH → any chain, ~30s vs the canonical
+  // bridge's 7 days).
   robinhood: 4663,
   'robinhood chain': 4663,
   // Arc (5042): NEAR Intents lists no Arc asset (1Click tokens probed

@@ -7,6 +7,7 @@
 //  the shared Neon DB.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { NEAR_INTENTS_MCP } from '@/lib/near-fund-leg'
 import { rpcHostOf, transientRpcWords } from '@/lib/dry-run'
 import { HttpTransport, InfoClient } from '@nktkas/hyperliquid'
 import { affordabilityRefusal, checkAffordability } from '@/lib/affordability'
@@ -74,7 +75,6 @@ function throwRefusal(reasons: string, guardrails: unknown): never {
 /** A builder's own report of what it built, allowlisted (lib/build-path). */
 const asBuildPath = (v: unknown): BuildPath | undefined => (isBuildPath(v) ? v : undefined)
 
-const NEAR_INTENTS_MCP = 'https://near-intents.yeetful.com/mcp'
 /** A sign artifact left unsigned this long is stale — rebuild on next offer. */
 const OFFER_TTL_MS = 30 * 60_000
 /** A wait that hasn't settled in this long fails the job (refunds surface). */
@@ -493,7 +493,9 @@ export async function buildSignArtifact(
   if (builder === 'native-lifi-fund') {
     // One funding leg of the Robinhood plan: Base USDC → gas ETH or USDG on
     // Robinhood Chain, built fresh (quote + guardrails + destination
-    // baseline) at offer time. The artifact carries a txChain so the JobCard
+    // baseline) at offer time. The builder id is historical: a USDG leg now
+    // tries NEAR Intents first and falls back to LiFi (lib/near-fund-leg);
+    // the recipe carries the venue so a re-quote stays on it. The artifact carries a txChain so the JobCard
     // embeds the same self-advancing SendTxChain chat uses, refresh recipe
     // included (LiFi quotes go stale in ~90s — the deadline watch re-quotes).
     const p = params as { leg: FundingLeg; usd: number; origin?: number; token?: string; dest?: number }
@@ -510,7 +512,7 @@ export async function buildSignArtifact(
         txChain: {
           summary: built.summary,
           steps: built.steps,
-          refresh: { kind: 'lifi-bridge', stepIndex: built.bridgeStepIndex, params: { leg: p.leg, usd: String(p.usd), origin: String(origin), ...(p.token ? { token: p.token } : {}), ...(dest !== undefined ? { dest: String(dest) } : {}) } },
+          refresh: { kind: 'lifi-bridge', stepIndex: built.bridgeStepIndex, params: { leg: p.leg, usd: String(p.usd), origin: String(origin), ...(p.token ? { token: p.token } : {}), ...(dest !== undefined ? { dest: String(dest) } : {}), venue: built.venue } },
         },
         summary: built.summary,
         arrival: built.arrival as unknown as Record<string, unknown>,

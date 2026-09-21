@@ -532,6 +532,7 @@ import { answerGateReply, EARN_PER_100_USD } from '../lib/answer-gate-copy'
 import { withInferenceScope, inferenceScope } from '../lib/inference-context'
 import { rescueIntent } from '../lib/intent-rescue'
 import { missingSlotChips } from '../lib/cross-chain-swap'
+import { guardNearValueLeg, nearHoodFundingEnabled, NEAR_ORIGIN_WORD, NEAR_STEP_MAX_TTL_SEC, type NearValueLegExpectations } from '../lib/near-fund-leg'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -10375,7 +10376,11 @@ async function main() {
       )
       check(
         'private swap grammar: Robinhood Chain and Arc have no private lane — refused by name, never a quiet public bridge',
-        /NEAR Intents/.test(pv('swap 5 USDC from base to robinhood privately')?.problem ?? '') && /NEAR Intents/.test(pv('swap 5 USDC from base to arc privately')?.problem ?? ''),
+        // Re-pinned 2026-09-21: 1Click lists Robinhood Chain now, so the refusal
+        // names the chain and the public bridge, and must not say NEAR can't reach it.
+        /Robinhood Chain.*public bridge/.test(pv('swap 5 USDC from base to robinhood privately')?.problem ?? '') &&
+          /Arc.*public bridge/.test(pv('swap 5 USDC from base to arc privately')?.problem ?? '') &&
+          !/doesn't reach/.test(pv('swap 5 USDC from base to robinhood privately')?.problem ?? ''),
       )
       const pubPending = crossChainPending({ amount: '5', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'arbitrum' }, DEPOSIT, 's')
       const privPending = crossChainPending({ amount: '5', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'arbitrum', confidential: true, recipient: OTHER }, DEPOSIT, 's')
@@ -28359,6 +28364,108 @@ async function main() {
       body: JSON.stringify({ message: 'stake 0.05 ETH', activeServers: [], history: [] }),
     }).then((r) => r.json()).catch(() => null) as { buildPath?: string; clarify?: { options?: { resume?: string }[] } } | null
     check('intent net (live): "stake 0.05 ETH" answers the Lido chip from the net, not planner prose', liveTurn?.buildPath === 'native-intent-net' && liveTurn?.clarify?.options?.[0]?.resume === 'Stake 0.05 ETH on Lido', JSON.stringify(liveTurn)?.slice(0, 200))
+  }
+
+  // ── NEAR Intents as the FALLBACK venue for a Robinhood value leg ──────────
+  // 1Click reaches Robinhood Chain ("hood") since 2026-09-21. Measured that
+  // day LiFi out-delivered it on every row (99.3–99.7% in 1–8s vs 98.1–99.6%
+  // in 26–46s), so LiFi stays first and NEAR only catches a value leg LiFi
+  // can't quote or fails its own price check on. These pins are offline: the
+  // guard is pure, and the wiring is read from source.
+  {
+    const FROM = '0x1111111111111111111111111111111111111111'
+    const DEPOSIT = '0x76b4c56085ED136a8744D52bE956396624a730E8'
+    const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+    const nowSec = 1_790_000_000
+    const exp: NearValueLegExpectations = {
+      originChainId: 8453,
+      from: FROM,
+      sell: { symbol: 'USDC', address: USDC_BASE, decimals: 6 },
+      nativeSell: false,
+      sellAtoms: BigInt(9_000_000),
+      dest: { symbol: 'USDG', decimals: 6 },
+      minOutFloorAtoms: (BigInt(9_000_000) * BigInt(STABLE_LEG_MIN_OUT_BPS)) / BigInt(10_000),
+    }
+    const transferData = (to: string, atoms: bigint) => encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [to as `0x${string}`, atoms] })
+    const good = () => ({
+      kind: 'swap_ready',
+      quote: { sell: { amountAtoms: '9000000', token: 'USDC', chain: 'Base', usd: '8.99' }, receive: { token: 'USDG', chain: 'Robinhood Chain', minimumAtoms: '8799000' } },
+      deposit: { address: DEPOSIT, addressExpires: new Date((nowSec + 3 * 86_400) * 1000).toISOString(), deliveredTo: `${FROM} on Robinhood Chain`, refundsGoTo: FROM },
+      steps: [{ action: 'send_transaction', label: 'deposit', summary: 'deposit', tx: { to: USDC_BASE, data: transferData(DEPOSIT, BigInt(9_000_000)), value: '0', chainId: 8453 } }],
+    })
+    const g = guardNearValueLeg(good(), exp, nowSec)
+    check('near value leg: a well-formed Base USDC → USDG build passes, one deposit step, min-out carried', g.ok && g.tx?.to === USDC_BASE && g.toAmountMin === BigInt(8_799_000), JSON.stringify(g.reasons))
+    check(
+      'near value leg: a multi-day venue deadline is capped — the step re-quotes within NEAR_STEP_MAX_TTL_SEC',
+      g.validUntil === nowSec + NEAR_STEP_MAX_TTL_SEC && NEAR_STEP_MAX_TTL_SEC <= 30 * 60,
+      String(g.validUntil),
+    )
+    const refuses = (name: string, mutate: (b: ReturnType<typeof good>) => void, needle: RegExp, e: NearValueLegExpectations = exp) => {
+      const b = good()
+      mutate(b)
+      const r = guardNearValueLeg(b, e, nowSec)
+      check(`near value leg refuses: ${name}`, !r.ok && !r.tx && needle.test(r.reasons.join(' ')), r.reasons.join(' | ') || 'PASSED THE GUARD')
+    }
+    refuses('a transfer to an address that is not the quoted deposit address', (b) => { b.steps[0].tx.data = transferData('0x2222222222222222222222222222222222222222', BigInt(9_000_000)) }, /deposit address/i)
+    refuses('a transfer for more than the quote', (b) => { b.steps[0].tx.data = transferData(DEPOSIT, BigInt(90_000_000)) }, /amount does not match/i)
+    refuses('a quote that sells a different size than the leg', (b) => { b.quote.sell.amountAtoms = '5000000'; b.steps[0].tx.data = transferData(DEPOSIT, BigInt(5_000_000)) }, /not the 9000000 this leg moves/)
+    refuses('a transfer of a different token than the leg sells', (b) => { b.steps[0].tx.to = '0x3333333333333333333333333333333333333333' }, /not USDC/)
+    refuses('an approve dressed as the deposit', (b) => { b.steps[0].tx.data = encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [DEPOSIT as `0x${string}`, BigInt(9_000_000)] }) }, /not transfer/)
+    refuses('delivery to another chain', (b) => { b.quote.receive.chain = 'Arbitrum' }, /not Robinhood Chain/)
+    refuses('delivery of another token', (b) => { b.quote.receive.token = 'USDe' }, /not USDG/)
+    refuses('a guaranteed minimum under the parity floor', (b) => { b.quote.receive.minimumAtoms = '8000000' }, /under the .* floor/)
+    refuses('no guaranteed minimum at all', (b) => { delete (b.quote.receive as { minimumAtoms?: string }).minimumAtoms }, /no guaranteed minimum/)
+    refuses('payout to a wallet that is not the payer', (b) => { b.deposit.deliveredTo = '0x4444444444444444444444444444444444444444 on Robinhood Chain' }, /./)
+    refuses('refunds to a wallet that is not the payer', (b) => { b.deposit.refundsGoTo = '0x4444444444444444444444444444444444444444' }, /refund/i)
+    refuses('a build on the wrong origin chain', (b) => { b.steps[0].tx.chainId = 1 }, /origin chain/)
+    refuses('a deposit address about to expire', (b) => { b.deposit.addressExpires = new Date((nowSec + 120) * 1000).toISOString() }, /expires too soon/)
+    refuses('an unrequested app fee to our treasury (funding legs are free)', (b) => { (b as unknown as { appFee: unknown }).appFee = { requested: [], applied: [{ recipient: TREASURY_ADDRESS, fee: 20 }] } }, /fee/i)
+    refuses('calldata on an ETH-funded leg', () => {}, /plain value transfer|native|amount/i, { ...exp, nativeSell: true, sell: { symbol: 'ETH', address: '0x0000000000000000000000000000000000000000', decimals: 18 } })
+
+    // Native ETH sell: a bare value transfer to the deposit address.
+    const ethExp: NearValueLegExpectations = { ...exp, nativeSell: true, sell: { symbol: 'ETH', address: '0x0000000000000000000000000000000000000000', decimals: 18 }, sellAtoms: BigInt('4000000000000000'), minOutFloorAtoms: BigInt(9_000_000) }
+    const ethBuild = good()
+    ethBuild.quote.sell.amountAtoms = '4000000000000000'
+    ethBuild.quote.receive.minimumAtoms = '10600000'
+    ethBuild.steps[0].tx = { to: DEPOSIT, data: '0x', value: '4000000000000000', chainId: 8453 }
+    const ge = guardNearValueLeg(ethBuild, ethExp, nowSec)
+    check('near value leg: an ETH-funded leg passes as a bare value transfer to the deposit address', ge.ok && ge.tx?.value === '4000000000000000' && ge.tx?.data === '0x', JSON.stringify(ge.reasons))
+
+    check('near value leg: every NEAR origin is a funding origin (no chain NEAR can build that the planner never offers)', Object.keys(NEAR_ORIGIN_WORD).every((id) => (FUNDING_ORIGIN_CHAINS as readonly number[]).includes(Number(id))), JSON.stringify(NEAR_ORIGIN_WORD))
+    const prevFlag = process.env.NEAR_HOOD_FUNDING
+    process.env.NEAR_HOOD_FUNDING = 'off'
+    const off = nearHoodFundingEnabled()
+    delete process.env.NEAR_HOOD_FUNDING
+    const on = nearHoodFundingEnabled()
+    if (prevFlag !== undefined) process.env.NEAR_HOOD_FUNDING = prevFlag
+    check('near value leg: NEAR_HOOD_FUNDING=off is the one-env way back to LiFi-only; unset means on', off === false && on === true)
+
+    // Wiring, read from source: LiFi is quoted FIRST; NEAR is only reached
+    // from LiFi's failure paths or a NEAR-step refresh; the gas leg and the
+    // ETH move can never reach it; the recipe remembers the venue.
+    const bridgeSrc = readFileSync('lib/lifi-bridge.ts', 'utf8')
+    const capable = bridgeSrc.slice(bridgeSrc.indexOf('const nearCapable ='), bridgeSrc.indexOf('const nearFunded ='))
+    check("near value leg (wiring): only a 'usdg' leg into Robinhood Chain selling USDC or ETH is NEAR-capable", /params\.leg === 'usdg'/.test(capable) && /destId === ROBINHOOD_CHAIN_ID/.test(capable) && /tokenKey === 'USDC' \|\| nativeSell/.test(capable), capable.slice(0, 200))
+    const fallbackDef = bridgeSrc.slice(bridgeSrc.indexOf('const nearFallback ='), bridgeSrc.indexOf('const nearFallback =') + 200)
+    check('near value leg (wiring): the fallback needs no pinned venue, a funded wallet, and the env switch on', /params\.venue === undefined/.test(fallbackDef) && /nearFunded/.test(fallbackDef) && /nearHoodFundingEnabled\(\)/.test(fallbackDef), fallbackDef)
+    const tryNearCalls = [...bridgeSrc.matchAll(/await tryNear\(\)/g)].map((m) => m.index ?? 0)
+    const firstLifiQuote = bridgeSrc.indexOf('quote = await fetchLifiQuote(')
+    const nearRefresh = bridgeSrc.indexOf("if (params.venue === 'near') {")
+    check(
+      'near value leg (wiring): LiFi is quoted first — NEAR is called from a NEAR-step refresh, the LiFi quote catch, and the LiFi price/venue refusal, nowhere else',
+      tryNearCalls.length === 3 && tryNearCalls[0] > nearRefresh && tryNearCalls[0] < firstLifiQuote && tryNearCalls[1] > firstLifiQuote && tryNearCalls[2] > firstLifiQuote,
+      JSON.stringify({ tryNearCalls, firstLifiQuote, nearRefresh }),
+    )
+    check("near value leg (wiring): the job recipe carries the venue that built the step", /venue: built\.venue/.test(readFileSync('lib/jobs-runner.ts', 'utf8')))
+    const refreshSrc = readFileSync('app/api/tx/refresh/route.ts', 'utf8')
+    check("near value leg (wiring): a recipe with no venue re-quotes as LiFi (every pre-NEAR recipe was a LiFi step list)", /const venue = body\.venue === 'near' \? 'near' : 'lifi'/.test(refreshSrc))
+
+    // Over HTTP: the refresh route validates the venue before it builds.
+    const bad = await fetch(`${BASE}/api/tx/refresh`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ kind: 'lifi-bridge', leg: 'usdg', usd: '9', origin: '8453', from: FROM, venue: 'wormhole' }) })
+    check('near value leg (route): /api/tx/refresh refuses an unknown funding venue with a 400', bad.status === 400, String(bad.status))
+    const gasOnNear = await fetch(`${BASE}/api/tx/refresh`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ kind: 'lifi-bridge', leg: 'gas', usd: '2', origin: '8453', from: FROM, venue: 'near' }) })
+    const gasBody = (await gasOnNear.json().catch(() => ({}))) as { error?: string; tx?: unknown }
+    check('near value leg (route): a gas leg pinned to NEAR never builds (NEAR has no liquidity into gas ETH)', gasOnNear.status === 502 && !gasBody.tx && /cannot be rebuilt on NEAR/.test(gasBody.error ?? ''), `${gasOnNear.status} ${JSON.stringify(gasBody).slice(0, 160)}`)
   }
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
