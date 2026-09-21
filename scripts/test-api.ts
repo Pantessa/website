@@ -452,6 +452,11 @@ import {
   builderEligibleFromAccountValue,
   HL_BUILDER_MIN_ACCOUNT_USD,
   guardHlExecBuild,
+  hlCollateralUsd,
+  hlNonceStale,
+  HL_NONCE_MAX_AGE_MS,
+  HL_NONCE_SIGNABLE_MS,
+  readHlCollateralUsd,
   buildHlDeposit,
   buildHlLeverageAction,
   guardHlLeverageBuild,
@@ -16988,6 +16993,20 @@ async function main() {
           settlingAfter?.status === 'failed' && /no arrival expectations/.test(settlingAfter.failReason ?? '') && signingAfter?.status === 'waiting_signature',
           JSON.stringify({ settling: settlingAfter?.failReason ?? settlingAfter?.status, signing: signingAfter?.status }),
         )
+        // A sign step whose artifact went stale unsigned (a Hyperliquid nonce
+        // lives 2 minutes, the offer 30) is rebuilt on request — never signed.
+        {
+          const { refreshOfferedStep } = await import('../lib/jobs-runner')
+          const stranger = await refreshOfferedStep(signing.id, '0x00000000000000000000000000000000000beef1')
+          const notWaiting = await refreshOfferedStep(settling.id, DRILL_WALLET)
+          const refreshed = await refreshOfferedStep(signing.id, DRILL_WALLET)
+          const stepAfter = await prisma.jobStep.findFirst({ where: { jobId: signing.id, seq: 0 } })
+          check(
+            'jobs refresh: an offered sign step re-arms for a fresh build — owner only, live signature waits only',
+            !stranger.ok && !notWaiting.ok && refreshed.ok && !!stepAfter && stepAfter.updatedAt.getTime() > signing.createdAt.getTime(),
+            JSON.stringify({ stranger, notWaiting, refreshed, step: stepAfter?.status }),
+          )
+        }
         // The JobCard poll advances its OWN mid-settlement job inline (the
         // open card never depends on the cron window). Token door, GET only.
         // The poll advance is fenced to the SERVER's own env (originEnv
@@ -18326,6 +18345,49 @@ async function main() {
         !guardHlExecBuild(openIntent, { ...action, orders: [{ ...action.orders[0], a: 9 }] }, ctx).ok &&
         !guardHlExecBuild(openIntent, { ...action, orders: [{ ...action.orders[0], p: '3300' }] }, ctx).ok,
     )
+    // Unified accounts: the venue keeps collateral in spot USDC and the perp
+    // `withdrawable` reads ~$0 for a funded account (prod 2026-09-21: a signed
+    // HYPE open refused at submit a minute after its build read $119).
+    check(
+      'hl collateral: a unified account reads the venue\'s available-to-trade, not the ~$0 perp withdrawable',
+      hlCollateralUsd({ perpWithdrawable: 0.18, availableToTrade: ['124.46', '124.46'], isBuy: true }) === 124.46 &&
+        guardHlExecBuild(openIntent, action, { ...ctx, withdrawableUsd: hlCollateralUsd({ perpWithdrawable: 0.18, availableToTrade: ['124.46', '124.46'], isBuy: true }) }).ok,
+    )
+    check(
+      'hl collateral: side picked when known, smaller side when not, never under withdrawable, junk ignored',
+      hlCollateralUsd({ perpWithdrawable: 5, availableToTrade: ['40', '90'], isBuy: false }) === 90 &&
+        hlCollateralUsd({ perpWithdrawable: 5, availableToTrade: ['40', '90'] }) === 40 &&
+        hlCollateralUsd({ perpWithdrawable: 50, availableToTrade: ['40', '40'], isBuy: true }) === 50 &&
+        hlCollateralUsd({ perpWithdrawable: 0, availableToTrade: null }) === 0 &&
+        hlCollateralUsd({ perpWithdrawable: NaN, availableToTrade: ['x', '1'] }) === 0,
+    )
+    check(
+      'hl collateral: free spot USDC counts only when the account mode lets spot back perps',
+      hlCollateralUsd({ perpWithdrawable: 0.1, abstraction: 'unifiedAccount', spotUsdcFree: 124 }) === 124 &&
+        hlCollateralUsd({ perpWithdrawable: 0.1, abstraction: 'portfolioMargin', spotUsdcFree: 124 }) === 124 &&
+        hlCollateralUsd({ perpWithdrawable: 0.1, abstraction: 'disabled', spotUsdcFree: 124 }) === 0.1 &&
+        hlCollateralUsd({ perpWithdrawable: 0.1, abstraction: null, spotUsdcFree: 124 }) === 0.1,
+    )
+    {
+      // Live, read-only: the coin-less read answers a finite number for an
+      // account that has never touched the venue.
+      const fresh = await readHlCollateralUsd('0x000000000000000000000000000000000000dEaD').catch(() => null)
+      check('hl collateral (live): the deposit-arrival read answers a finite figure', fresh === null ? true : Number.isFinite(fresh) && fresh >= 0, String(fresh))
+    }
+    {
+      const now = 1_800_000_000_000
+      const card = await readFile('components/JobCard.tsx', 'utf8')
+      const relay = await readFile('app/api/hl/submit/route.ts', 'utf8')
+      check(
+        'hl nonce: the sign surface calls a build stale BEFORE the relay must refuse it, and a job card can rebuild it',
+        HL_NONCE_SIGNABLE_MS < HL_NONCE_MAX_AGE_MS &&
+          !hlNonceStale(now - 30_000, now) &&
+          hlNonceStale(now - HL_NONCE_SIGNABLE_MS - 1, now) &&
+          hlNonceStale(NaN, now) &&
+          /onStale=\{retry\}/.test(card) &&
+          /> HL_NONCE_MAX_AGE_MS/.test(relay) && !/120_000/.test(relay),
+      )
+    }
     const closeIntent: HlOrderIntent = { kind: 'close', coin: 'ETH' }
     const closeSnap = { ...snap, positionSzi: 0.02 }
     const closeAction = buildHlOrderAction(closeIntent, closeSnap)

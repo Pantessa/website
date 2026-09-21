@@ -39,13 +39,14 @@ import {
   classifyHlSignFailure,
   hlActionSummary,
   hlConsentMessage,
+  hlNonceStale,
   isUserRejectedSignError,
   type HlWireAction,
 } from '@/lib/hyperliquid-exec'
 import { reportWalletRefusal, walletErrorWords, type WalletArtifact } from '@/lib/wallet-refusal'
 import { SIGN_CTA_CLASS } from '@/lib/sign-cta'
 
-type Status = 'idle' | 'signing' | 'submitting' | 'enabling' | 'filled' | 'error'
+type Status = 'idle' | 'signing' | 'submitting' | 'enabling' | 'refreshing' | 'filled' | 'error'
 type Delegation = 'unknown' | 'active' | 'none'
 
 interface L1Step {
@@ -60,9 +61,14 @@ interface L1Step {
 export default function SignHlActionButton({
   order,
   onPlaced,
+  onStale,
 }: {
   order: Eip712OrderRequest
   onPlaced?: (info: { explorerUrl?: string; detail?: string; valueUsd?: number | null }) => void
+  /** The host can rebuild this artifact (a job step). When the build has
+   *  aged past what the relay accepts, the button asks for a fresh one
+   *  instead of spending a signature on a nonce that must be refused. */
+  onStale?: () => Promise<void> | void
 }) {
   const { address, connector } = useAccount()
   const chainId = useChainId()
@@ -101,6 +107,14 @@ export default function SignHlActionButton({
     }
   }, [address])
 
+  // A rebuilt artifact (fresh nonce) is a fresh card: clear the old refusal.
+  const artifactNonce = order.hl?.nonce
+  useEffect(() => {
+    setStatus((s) => (s === 'error' || s === 'refreshing' ? 'idle' : s))
+    setError('')
+    setPreDone(false)
+  }, [artifactNonce])
+
   if (order.protocol !== 'hyperliquid' || !order.hl) return null
   const hl = order.hl
   const feeStep = hl.feeApproval && !feeDone ? hl.feeApproval : null
@@ -138,6 +152,14 @@ export default function SignHlActionButton({
 
   const fail = (e: unknown, fallback: string, artifact: WalletArtifact, ask: string) => {
     const msg = e instanceof Error ? walletErrorWords(e) : ''
+    // A slow wallet prompt can age a fresh build past the relay's window —
+    // where the host can rebuild, do that rather than show a dead end.
+    if (onStale && /build is stale/i.test(msg)) {
+      setError('That quote aged out while it was being signed — a fresh one is on its way.')
+      setStatus('idle')
+      void Promise.resolve(onStale()).catch(() => {})
+      return
+    }
     setError(isUserRejectedSignError(msg) ? 'Signature request declined.' : humanizeVenueError(msg) || fallback)
     setStatus('error')
     if (msg && (e as { fromWallet?: boolean } | null)?.fromWallet && !isUserRejectedSignError(msg)) {
@@ -269,11 +291,28 @@ export default function SignHlActionButton({
     }
   }
 
+  /** True when the host is rebuilding a stale artifact — nothing to sign yet. */
+  const refreshIfStale = async (nonce: number): Promise<boolean> => {
+    if (!onStale || !hlNonceStale(nonce)) return false
+    setError('')
+    setStatus('refreshing')
+    try {
+      await onStale()
+    } catch {
+      /* the host keeps polling; the button stays usable */
+    }
+    // The fresh artifact resets this card (artifactNonce effect). If the
+    // rebuild produced nothing new, fall back to idle rather than spin.
+    setTimeout(() => setStatus((s) => (s === 'refreshing' ? 'idle' : s)), 12_000)
+    return true
+  }
+
   const signPre = async () => {
     if (!address || !hl.pre) {
       setError(address ? 'Missing leverage step.' : 'Connect your wallet first — it is your Hyperliquid account.')
       return
     }
+    if (await refreshIfStale(hl.pre.nonce)) return
     setError('')
     const step: L1Step = {
       action: hl.pre.action as HlWireAction,
@@ -298,6 +337,7 @@ export default function SignHlActionButton({
       setError('Connect your wallet first — it is your Hyperliquid account.')
       return
     }
+    if (await refreshIfStale(hl.nonce)) return
     setError('')
     const step: L1Step = {
       action: hl.action as HlWireAction,
@@ -327,11 +367,13 @@ export default function SignHlActionButton({
     }
   }
 
-  const inFlight = status === 'signing' || status === 'submitting' || status === 'enabling'
+  const inFlight = status === 'signing' || status === 'submitting' || status === 'enabling' || status === 'refreshing'
   const retry = status === 'error' ? 'Retry — sign' : 'Sign'
   const stepTag = totalSteps > 1 ? ` ${currentStep}/${totalSteps} ·` : ''
   const buttonLabel = inFlight
-    ? status === 'enabling'
+    ? status === 'refreshing'
+      ? 'Refreshing the quote…'
+      : status === 'enabling'
       ? 'Approve the Pantessa agent in your wallet…'
       : status === 'signing'
         ? 'Confirm in your wallet…'

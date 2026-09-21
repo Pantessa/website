@@ -20,7 +20,7 @@ const RPC_WITHHOLD_MAX = 6
 import prisma from '@/lib/db'
 import { callMcpTool } from '@/lib/mcp-call'
 import { CONFIDENTIAL_LEVEL, crossChainValueUsd, expectedOriginChainId, guardCrossChainBuild, type BuiltSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
-import { buildHlExecTurn, type HlIntent } from '@/lib/hyperliquid-exec'
+import { buildHlExecTurn, readHlCollateralUsd, type HlIntent } from '@/lib/hyperliquid-exec'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import type { GuardianArmAsk } from '@/lib/hl-guardian'
 import { LINK_SWAP_FEE_BPS } from '@/lib/fees'
@@ -676,9 +676,9 @@ async function evaluateWait(
   }
 
   if (pred.kind === 'hl-credit') {
-    const info = new InfoClient({ transport: new HttpTransport() })
-    const st = await info.clearinghouseState({ user: job.wallet as `0x${string}` })
-    const withdrawable = Number(st.withdrawable)
+    // Unified accounts sweep a landed deposit into spot USDC, so the perp
+    // `withdrawable` alone would never see it (hlCollateralUsd).
+    const withdrawable = await readHlCollateralUsd(job.wallet)
     if (withdrawable >= (pred.minUsd ?? 1)) return { done: true, result: { withdrawableUsd: withdrawable } }
     return {}
   }
@@ -720,6 +720,25 @@ export async function retryFailedJob(jobId: string, wallet: string): Promise<{ o
   const claim = await prisma.jobStep.updateMany({ where: { id: failed.id, status: 'failed' }, data: { status: 'pending' } })
   if (claim.count !== 1) return { ok: false, error: 'already retried' }
   await prisma.job.update({ where: { id: jobId }, data: { status: 'running', failReason: null, currentStep: failed.seq } })
+  const fresh = await getJobWithSteps(jobId)
+  if (fresh) await advanceJob(fresh).catch(() => {})
+  return { ok: true }
+}
+
+/** Rebuild the sign step a live job is OFFERING — its artifact went stale
+ *  before the user signed (a Hyperliquid nonce lives 2 minutes; the offer
+ *  stands for 30). Exactly the TTL-expiry path, asked for early: the step
+ *  goes back to pending and rebuilds through the same guarded builder.
+ *  Nothing is signed here; a step that isn't offered is left alone. */
+export async function refreshOfferedStep(jobId: string, wallet: string): Promise<{ ok: boolean; error?: string }> {
+  const job = await getJobWithSteps(jobId)
+  if (!job || job.wallet !== wallet.toLowerCase()) return { ok: false, error: 'job not found' }
+  if (job.status !== 'waiting_signature') return { ok: false, error: 'this job is not waiting on a signature' }
+  const offered = job.steps.find((s) => s.seq === job.currentStep && s.kind === 'sign' && s.status === 'offered')
+  if (!offered) return { ok: false, error: 'no offered step to refresh' }
+  const claim = await prisma.jobStep.updateMany({ where: { id: offered.id, status: 'offered' }, data: { status: 'pending' } })
+  if (claim.count !== 1) return { ok: false, error: 'already refreshing' }
+  await prisma.job.update({ where: { id: jobId }, data: { status: 'running' } })
   const fresh = await getJobWithSteps(jobId)
   if (fresh) await advanceJob(fresh).catch(() => {})
   return { ok: true }

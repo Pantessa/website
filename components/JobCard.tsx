@@ -336,6 +336,7 @@ export default function JobCard({
                   {order && order.protocol !== 'opensea' && (
                     <SignHlActionButton
                       order={order}
+                      onStale={retry}
                       onPlaced={(info) =>
                         void completeStep(step.seq, step.builder, { detail: info.detail, explorerUrl: info.explorerUrl }, info.valueUsd, {
                           txUrl: info.explorerUrl,

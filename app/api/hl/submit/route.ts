@@ -7,6 +7,7 @@ import {
   guardHlBuilderFeeApproval,
   guardHlExecBuild,
   guardHlLeverageBuild,
+  HL_NONCE_MAX_AGE_MS,
   hlActionTypedData,
   hlApproveBuilderFeeTypedData,
   hlConsentMessage,
@@ -107,7 +108,7 @@ export async function POST(req: NextRequest) {
     if (feeSigner.toLowerCase() !== from.toLowerCase()) {
       return NextResponse.json({ error: 'Signature recovers to a different wallet than `from`.' }, { status: 403 })
     }
-    if (fa.nonce !== nonce || Math.abs(Date.now() - nonce) > 120_000) {
+    if (fa.nonce !== nonce || Math.abs(Date.now() - nonce) > HL_NONCE_MAX_AGE_MS) {
       return NextResponse.json({ error: 'This approval is stale — ask again for a fresh build.' }, { status: 400 })
     }
     const feeGuard = guardHlBuilderFeeApproval(fa, isTestnet)
@@ -196,7 +197,7 @@ export async function POST(req: NextRequest) {
     }
   }
   // Nonce staleness: HL rejects old nonces anyway; refuse clearly first.
-  if (Math.abs(Date.now() - nonce) > 120_000) {
+  if (Math.abs(Date.now() - nonce) > HL_NONCE_MAX_AGE_MS) {
     return NextResponse.json({ error: 'This build is stale (nonce >2 min old) — ask again for a fresh quote.' }, { status: 400 })
   }
 
@@ -206,7 +207,7 @@ export async function POST(req: NextRequest) {
   const coin = expected.coin.toUpperCase()
   let snap
   try {
-    snap = await fetchHlSnapshot(coin, from, isTestnet)
+    snap = await fetchHlSnapshot(coin, from, isTestnet, expected.kind === 'open' ? expected.isBuy : undefined)
   } catch (e) {
     return NextResponse.json({ error: `Hyperliquid read failed: ${(e as Error).message}` }, { status: 502 })
   }
