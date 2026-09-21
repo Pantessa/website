@@ -28623,6 +28623,45 @@ async function main() {
     const gasBody = (await gasOnNear.json().catch(() => ({}))) as { error?: string; tx?: unknown }
     check('near value leg (route): a gas leg pinned to NEAR never builds (NEAR has no liquidity into gas ETH)', gasOnNear.status === 502 && !gasBody.tx && /cannot be rebuilt on NEAR/.test(gasBody.error ?? ''), `${gasOnNear.status} ${JSON.stringify(gasBody).slice(0, 160)}`)
   }
+  // ── NO-DEAD-ENDS / GRAMMAR (2026-09-21): a money ask never dead-ends ─────
+  // Three classes, each born from a live prod row or a QA drive:
+  //   1. the intent net's door — a verb family moneyShaped() rejects is dead
+  //      code in production (audit:asks pins every family; here we pin the
+  //      gate itself so a tightening of the regex fails loudly);
+  //   2. the affordability refusal — it stripped every signable key and left
+  //      prose, so "Sell $50 of AMAT" on a $360 wallet had nothing to press;
+  //   3. the spot-guard wall — it named OUR INFRASTRUCTURE at a stranger
+  //      ("aren't provisioned in this environment yet") and offered nothing,
+  //      on a path that cannot succeed in prod for ANY wallet we mint.
+  {
+    const { moneyShaped } = await import('../lib/ask-failure-shape')
+    const { INTENT_NET_PROBES, rescueIntent } = await import('../lib/intent-rescue')
+    const { buildsNatively } = await import('./ask-ladder')
+    const { affordabilityChips, affordabilityRefusal } = await import('../lib/affordability')
+    const { spotGuardFallback } = await import('../lib/spot-guard-exec')
+
+    const unreachable = INTENT_NET_PROBES.filter((p) => !moneyShaped(p.ask))
+    check('no dead ends: every intent-net verb family passes moneyShaped (the route\'s only door to the net)', unreachable.length === 0, unreachable.map((p) => `${p.family}: "${p.ask}"`).join(' | '))
+    const chipless = INTENT_NET_PROBES.filter((p) => !rescueIntent(p.ask, buildsNatively)?.chips.length)
+    check('no dead ends: every intent-net verb family produces at least one verified chip', chipless.length === 0, chipless.map((p) => p.family).join(', '))
+    check('no dead ends: a reference question is still the planner\'s (the net never claims a read)', !moneyShaped('what is a stop loss?') || rescueIntent('what is a stop loss?', buildsNatively) === null, 'a question produced chips')
+
+    const shortOf = (symbol: string, gas = false, held = BigInt(0)) => ({ kind: 'short' as const, chainId: 8453, chainName: 'Base', token: '0xabc', symbol, decimals: 18, held, needs: BigInt(10) ** BigInt(17), gas })
+    const sell = affordabilityChips('Sell $50 of AMAT', shortOf('AMAT'), buildsNatively)
+    check('no dead ends: a sell of a token the wallet does not hold offers the BUY at the same size', sell.length === 1 && sell[0].resume === 'Buy $50 of AMAT' && buildsNatively(sell[0].resume), JSON.stringify(sell))
+    const gasChips = affordabilityChips('Sell $50 of NVDA', shortOf('ETH', true), buildsNatively)
+    check('no dead ends: a wallet with no gas is offered a top-up that builds', gasChips.length > 0 && gasChips.every((c) => buildsNatively(c.resume)), JSON.stringify(gasChips))
+    check('no dead ends: a stable shortfall is never told to "buy" the stable (that refusal wants a funding chip)', affordabilityChips('Swap 5 USDC from Base to Arbitrum', shortOf('USDC'), buildsNatively).length === 0, 'offered a buy of a stable')
+    // The float-precision leak: "holds 0.002664920295868572 NVDA" (QA drive).
+    const longTail = affordabilityRefusal(shortOf('NVDA', false, BigInt('2664920295868572')))
+    check('no dead ends: refusal amounts read as balances, not as raw quotients', !/\d\.\d{7,}/.test(longTail), longTail.slice(0, 180))
+
+    const fb = spotGuardFallback('UNI', 5, 'LEAD.')
+    check('no dead ends: the spot-guard wall carries the alert door and a chip that builds', /\/t\/UNI/.test(fb.reply) && (fb.clarify?.options.length ?? 0) > 0 && fb.clarify!.options.every((o) => buildsNatively(o.resume)), JSON.stringify(fb).slice(0, 200))
+    const sgSrc = readFileSync('lib/spot-guard-exec.ts', 'utf8')
+    check('no dead ends: no spot-guard reply describes our infrastructure to a stranger ("this environment", "not provisioned")', !/reply:[^\n]*(?:this environment|aren.t provisioned|not provisioned)/i.test(sgSrc), 'an env-shaped sentence is still in a reply')
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }

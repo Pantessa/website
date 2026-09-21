@@ -35,6 +35,7 @@
 //    · Spend tokens are strict: held < needs → short, by name.
 
 import { decodeFunctionData, erc20Abi, formatUnits, isAddress } from 'viem'
+import { buildsNatively } from '@/scripts/ask-ladder'
 import { chainById, publicClientFor } from '@/lib/chains'
 import { dynamicTokenByAddress } from '@/lib/token-list'
 import { fundingOriginWords } from '@/lib/funding-origins'
@@ -386,11 +387,20 @@ export async function checkAffordability(
   return { kind: 'ok', checked: reqs.length }
 }
 
+/**
+ * Token amounts as a person writes them. Below 1 the old rule printed the
+ * raw quotient — a stranger selling NVDA was told the wallet holds
+ * "0.002664920295868572 NVDA" (QA drive, 2026-09-21), which reads like a
+ * stack trace, not a balance. Four significant figures is plenty to tell
+ * "some" from "none", which is the only question this sentence asks.
+ */
 const fmt = (atoms: bigint, decimals: number) => {
   const s = formatUnits(atoms, decimals)
   const n = Number(s)
   if (!Number.isFinite(n)) return s
-  return n === 0 ? '0' : n >= 1 ? n.toFixed(Math.min(6, decimals)).replace(/\.?0+$/, '') : s.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '')
+  if (n === 0) return '0'
+  if (n >= 1) return n.toFixed(Math.min(6, decimals)).replace(/\.?0+$/, '')
+  return Number(n.toPrecision(4)).toString()
 }
 
 /** The sentence the stranger reads instead of a Sign button. */
@@ -412,6 +422,57 @@ export function affordabilityRefusal(v: Extract<AffordabilityVerdict, { kind: 's
 
 export const AFFORDABILITY_SHORT_PATH = 'native-affordability-short'
 
+export interface RefusalChip { label: string; resume: string }
+
+/**
+ * The chips that ride the refusal. Before the NO-DEAD-ENDS squad this gate
+ * stripped every signable key and left prose: a stranger who typed
+ * "Sell $50 of AMAT" holding no AMAT got "Send AMAT to this wallet…" and
+ * nothing to press — on a wallet holding $360 (QA drive, 2026-09-21). The
+ * invariant is that a refusal always carries a next step that works.
+ *
+ * Two readings, both composed from the ORIGINAL ask, never invented:
+ *   · you can't sell what you don't hold → offer the BUY at the same size
+ *     (the chip already exists one branch over — "Buy $50 of AMAT" lands);
+ *   · the chain can't pay for gas → offer the top-up on that chain.
+ * Every candidate is checked against the real ladder (`verify`), the same
+ * contract the intent net uses, so a chip is never a second dead end.
+ *
+ * PURE. `verify` is injected; no I/O.
+ */
+export function affordabilityChips(
+  ask: string | undefined,
+  v: Extract<AffordabilityVerdict, { kind: 'short' }>,
+  verify: (a: string) => boolean,
+): RefusalChip[] {
+  const out: RefusalChip[] = []
+  const push = (resume: string, label: string) => {
+    if (out.some((c) => c.resume.toLowerCase() === resume.toLowerCase())) return
+    if (verify(resume)) out.push({ label, resume })
+  }
+  const chain = v.chainName.toLowerCase().replace(/\s+chain$/, '')
+  if (v.gas) {
+    // Stables first: a wallet that can't pay gas usually still holds dollars
+    // on that chain, and the swap layer plans the move when it doesn't.
+    for (const st of ['USDC', 'USDT']) push(`Swap ${chain === 'ethereum' ? 15 : 5} ${st} for ETH on ${chain}`, `Top up gas on ${v.chainName} with ${st}`)
+    return out.slice(0, 3)
+  }
+  const sym = v.symbol.toUpperCase()
+  // A stable is FUNDED, never "bought": "Buy $25 of USDC" is a chip that
+  // reads like a joke to anyone short of USDC on one chain while holding
+  // $360 of USDT on another (QA drive, 2026-09-21). That refusal wants a
+  // funding chip, which lib/funding-plan owns — see FUND.md.
+  if (/^(?:usd[ctgse]?|usdc\.e|dai|frax|pyusd)$/i.test(sym)) return out
+  // A sell of something the wallet doesn't hold: the honest next step is
+  // acquiring it. Size from the ask, so the chip is the ask the user already
+  // typed, inverted — never a number we made up.
+  const usd = ask?.match(/\$\s?(\d[\d,]*(?:\.\d+)?)/)?.[1]?.replace(/,/g, '')
+  const sells = !!ask && /\b(?:sell|dump|offload|cash\s+out|exit)\b/i.test(ask)
+  if (usd && (sells || v.held === BigInt(0))) push(`Buy $${usd} of ${sym}`, `Buy $${usd} of ${sym} first`)
+  else if (sells) for (const s of [25, 50]) push(`Buy $${s} of ${sym}`, `Buy $${s} of ${sym} first`)
+  return out.slice(0, 3)
+}
+
 /**
  * Gate a response payload: when its signable is provably unaffordable, the
  * artifact is REMOVED and the reply becomes the refusal. Every other verdict
@@ -421,7 +482,7 @@ export const AFFORDABILITY_SHORT_PATH = 'native-affordability-short'
 export async function gateSignablePayload<T extends Record<string, unknown>>(
   payload: T,
   wallet: string | null | undefined,
-  opts: { reader?: BalanceReader; log?: (line: string) => void } = {},
+  opts: { reader?: BalanceReader; log?: (line: string) => void; ask?: string } = {},
 ): Promise<{ payload: T; verdict: AffordabilityVerdict | null }> {
   if (!wallet || !isAddress(wallet)) return { payload, verdict: null }
   if (!payload.txRequest && !payload.txChain && !payload.orderRequest) return { payload, verdict: null }
@@ -444,6 +505,17 @@ export async function gateSignablePayload<T extends Record<string, unknown>>(
   delete gated.jobToken
   gated[textKey] = affordabilityRefusal(verdict)
   gated.buildPath = AFFORDABILITY_SHORT_PATH
+  // Never a bare wall: the refusal carries what to press next (see
+  // affordabilityChips). A verdict with no buildable alternative keeps the
+  // prose alone rather than inventing a button.
+  const chips = affordabilityChips(opts.ask, verdict, buildsNatively)
+  if (chips.length) {
+    gated.clarify = {
+      question: verdict.gas ? `Put gas on ${verdict.chainName}?` : `Get ${verdict.symbol.toUpperCase()} first?`,
+      options: chips.map((c) => ({ label: c.label, resume: c.resume })),
+    }
+    gated[textKey] = `${gated[textKey] as string} ${verdict.gas ? 'Or tap a top-up and I’ll plan it from what you hold.' : 'Or tap below and I’ll build the buy instead.'}`
+  }
   gated.affordability = {
     short: { chainId: verdict.chainId, token: verdict.token, symbol: verdict.symbol, held: verdict.held.toString(), needs: verdict.needs.toString(), gas: verdict.gas },
     withheldBuildPath: typeof payload.buildPath === 'string' ? payload.buildPath : null,

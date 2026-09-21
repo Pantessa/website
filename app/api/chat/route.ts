@@ -462,7 +462,7 @@ export async function POST(req: NextRequest) {
     if (typeof reqBody.walletAddress === 'string' && isAddress(reqBody.walletAddress)) {
       const body = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
       if (body && (body.txRequest || body.txChain || body.orderRequest)) {
-        const gated = await gateSignablePayload(body, reqBody.walletAddress, { log: (line) => console.warn(line) })
+        const gated = await gateSignablePayload(body, reqBody.walletAddress, { log: (line) => console.warn(line), ask: typeof reqBody.message === 'string' ? reqBody.message : undefined })
         if (gated.verdict?.kind === 'short') res = NextResponse.json(gated.payload, { status: res.status })
       }
     }
@@ -1464,6 +1464,7 @@ async function handleChatTurn(req: NextRequest) {
         reply: spotTurn.reply,
         ...(spotTurn.spotGuardArm ? { spotGuardArm: spotTurn.spotGuardArm } : {}),
         ...(spotTurn.signInGate ? { signInGate: spotTurn.signInGate } : {}),
+        ...(spotTurn.clarify ? { clarify: spotTurn.clarify } : {}),
         buildPath: spotTurn.buildPath,
       })
     }
@@ -6436,7 +6437,7 @@ export function streamAutoRouter(
       // event carrying a signable is checked against the wallet's balance of
       // what it spends before it reaches the card.
       const sendSignable = async (event: Record<string, unknown>) => {
-        const gated = await gateSignablePayload(event, walletAddress, { log: (line) => console.warn(line) })
+        const gated = await gateSignablePayload(event, walletAddress, { log: (line) => console.warn(line), ask: message })
         if (gated.verdict?.kind === 'short') send({ type: 'note', level: 'warn', label: `affordability gate withheld the ${String(event.buildPath ?? 'planner')} build — ${String(gated.payload.content).slice(0, 160)}` })
         send(gated.payload)
       }
