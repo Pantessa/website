@@ -3931,7 +3931,7 @@ async function buildMorphoLendTurn(
       blocked: true,
     })
   }
-  trace({ type: 'status', label: `guard verified every step — ${guard.steps.length === 2 ? 'approve → lend' : 'lend'} card built, awaiting signature` })
+  trace({ type: 'status', label: `guard verified every step — ${guard.steps.length === 3 ? 'reset → approve → lend' : guard.steps.length === 2 ? 'approve → lend' : 'lend'} card built, awaiting signature` })
 
   // 5) Money-moved value + the spend-policy gate at the point of signing.
   const valueUsd = price !== null ? Number(params.amount) * price : morphoStableUsd(token, Number(params.amount))
