@@ -20,7 +20,7 @@
 //  the venue, so the guard hard-refuses them.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { normalizeWorth } from '@/lib/chain-lexicon'
+import { normalizeWorth, wordDistance } from '@/lib/chain-lexicon'
 import { createL1ActionHash } from '@nktkas/hyperliquid/signing'
 import { encodeFunctionData, erc20Abi, parseUnits } from 'viem'
 import type { Eip712TypedData } from '@/lib/eip712'
@@ -106,14 +106,101 @@ const NOT_A_COIN = new Set([
   'hyperliquid', 'hl', 'base', 'ethereum', 'mainnet', 'arbitrum', 'optimism', 'robinhood', 'arc', 'chain',
 ])
 
+// Loose leverage shapes — "long for 2x", "long hype x2", "5x", "2 times
+// leverage". They only count beside a long/short word (checked by the
+// caller): a bare "2x" next to "buy" is not perp evidence on its own.
+// Live miss 2026-09-21: "buy $20 worth of HYPE and long for 2x" matched none
+// of the positional shapes above, fell to the planner, and a $4,300 wallet
+// was told to go use Hyperliquid's own site.
+const LOOSE_LEVERAGE_RES = [
+  /(?<![\w$.])(\d{1,3}(?:\.\d+)?)\s?x\b/,
+  /\bx\s?(\d{1,3}(?:\.\d+)?)\b/,
+  /\b(\d{1,3}(?:\.\d+)?)\s+times(?:\s+(?:leverage|margin))?\b/,
+  /\bleverage\s+(?:of\s+)?(\d{1,3}(?:\.\d+)?)\b/,
+]
+
 /** The leverage named anywhere in the (normalized) message, or undefined. */
 function leverageIn(m: string): number | undefined {
-  for (const re of LEVERAGE_RES) {
+  const sided = /\b(?:long|short)\b/.test(m)
+  for (const re of sided ? [...LEVERAGE_RES, ...LOOSE_LEVERAGE_RES] : LEVERAGE_RES) {
     const lev = m.match(re)
     const n = lev ? Number(lev[1]) : NaN
     if (Number.isFinite(n) && n > 0) return n
   }
   return undefined
+}
+
+// ── Slot reader ─────────────────────────────────────────────────────────────
+// The positional grammars below read "<side> <size> <coin> <venue>" in that
+// order. People don't talk in that order: "long HYPE 2x with $20", "put $20
+// into a 2x HYPE long", "open a 3x short position on BTC worth $40", "Buy $20
+// worth of HYPE and open a 2x long position on Hyperliquid perpetuals" (the
+// planner's OWN clarify chip, which then parsed under nothing). The slot
+// reader takes side, leverage, size and coin wherever they sit.
+//
+// It must never claim PART of an ask (the #595 class): any second action
+// word — a stop, a swap, a send, a close, a "then" — sends it back to null so
+// the jobs compiler / guardian / planner keep the whole sentence.
+const SLOT_OTHER_ACTION_RE = /\b(?:then|after that|afterwards|close|exit|stop|stops|stop[\s-]?loss|take[\s-]?profit|tp|sl|protect|guard|swap|convert|bridge|send|transfer|stake|unstake|supply|lend|borrow|repay|withdraw|deposit|dca|every|weekly|daily|monthly|limit|alert|chart|if|when)\b/
+// A question about perps is a READ, not an order ("what is a 2x long?").
+const SLOT_QUESTION_RE = /^(?:(?:can|could|would|will)\s+you\s+|please\s+)*(?:what|whats|what's|how|why|when|which|who|should|is|are|does|do|did|explain|tell me about)\b/
+const SLOT_NOT_A_COIN = new Set([
+  'i', 'id', "i'd", 'im', "i'm", 'want', 'wanna', 'would', 'like', 'need', 'lets', "let's", 'please', 'go', 'going', 'get', 'open', 'opening', 'start', 'enter',
+  'take', 'make', 'place', 'put', 'do', 'buy', 'sell', 'worth', 'size', 'sized', 'trade', 'order', 'bet', 'up', 'as', 'by', 'is', 'be', 'from', 'using', 'use',
+  'times', 'x', 'lev', 'levered', 'cross', 'isolated', 'about', 'around', 'roughly', 'just', 'only', 'also', 'too', 'out', 'new', 'one', 'notional', 'collateral',
+  'money', 'cash', 'funds', 'wallet', 'tokens', 'token', 'coin', 'coins', 'crypto', 'price', 'exposure', 'bucks', 'dollar', 'usdt', 'usdg', 'dai', 'or', 'but', 'so',
+])
+function slotCoin(m: string, sideWord: string): string | null {
+  const ok = (w: string | undefined): w is string => !!w && /^[a-z][a-z0-9]{1,9}$/.test(w) && !NOT_A_COIN.has(w) && !SLOT_NOT_A_COIN.has(w)
+  // 1. "$20 of HYPE", "worth of hype"   2. "long HYPE" / "long on hype"
+  // 3. "HYPE long" / "hype perp"        4. the one remaining candidate
+  const ofTok = m.match(/\bof\s+\$?([a-z][a-z0-9]{1,9})\b/)
+  if (ok(ofTok?.[1])) return ofTok![1]
+  const after = m.match(new RegExp(String.raw`\b${sideWord}\s+(?:(?:on|in|into|the|a|some|position|positions)\s+)*([a-z][a-z0-9]{1,9})\b`))
+  if (ok(after?.[1])) return after![1]
+  const before = m.match(new RegExp(String.raw`\b([a-z][a-z0-9]{1,9})\s+(?:${sideWord}|perps?|perpetuals?)\b`))
+  if (ok(before?.[1])) return before![1]
+  const rest = [...new Set((m.match(/\b[a-z][a-z0-9]{1,9}\b/g) ?? []).filter(ok))]
+  return rest.length === 1 ? rest[0] : null
+}
+/** A second action, both sides at once, or two different dollar figures —
+ *  the sentence is more than one open, so no open grammar may claim it. */
+function hlOpenFenced(m: string): boolean {
+  if (SLOT_OTHER_ACTION_RE.test(m)) return true
+  if (/\blong\b/.test(m) && /\bshort\b/.test(m)) return true
+  const dollars = [...m.matchAll(/\$\s?(\d[\d,]*(?:\.\d+)?)/g)].map((d) => d[1].replace(/,/g, ''))
+  return new Set(dollars).size > 1
+}
+function parseHlSlots(m: string, leverage: number | undefined, venueWorded: boolean): HlOrderIntent | HlUnsizedIntent | null {
+  if (hlOpenFenced(m) || SLOT_QUESTION_RE.test(m)) return null
+  const hasLong = /\blong\b/.test(m)
+  const hasShort = /\bshort\b/.test(m)
+  const perpWorded = venueWorded || /\b(?:perps?|perpetuals?|futures)\b/.test(m)
+  let sideWord: string
+  let isBuy: boolean
+  if (hasLong || hasShort) {
+    sideWord = hasLong ? 'long' : 'short'
+    isBuy = hasLong
+  } else {
+    // buy/sell is a perp side only when the venue or the word "perp" says so.
+    const bs = perpWorded ? m.match(/\b(buy|sell)\b/) : null
+    if (!bs) return null
+    sideWord = bs[1]
+    isBuy = bs[1] === 'buy'
+  }
+  if (!perpWorded && leverage === undefined) return null
+  // "sell" beside "long" is a second action ("sell my eth and long hype").
+  if ((hasLong || hasShort) && /\bsell\b/.test(m)) return null
+  const coin = slotCoin(m, sideWord)
+  if (!coin) return null
+  const withLev = leverage !== undefined ? { leverage } : {}
+  const dollars = [...m.matchAll(/\$\s?(\d[\d,]*(?:\.\d+)?)/g)].map((d) => Number(d[1].replace(/,/g, '')))
+  if (dollars.length && Number.isFinite(dollars[0]) && dollars[0] > 0) {
+    return { kind: 'open', coin: coin.toUpperCase(), isBuy, notionalUsd: dollars[0], ...withLev }
+  }
+  const units = m.match(new RegExp(String.raw`(?<![\w$.])(\d+(?:\.\d+)?)\s+${coin}\b`))
+  if (units && Number(units[1]) > 0) return { kind: 'open', coin: coin.toUpperCase(), isBuy, sizeUnits: Number(units[1]), ...withLev }
+  return { kind: 'open-unsized', coin: coin.toUpperCase(), isBuy, ...withLev }
 }
 // Filler tolerance (the aave-parse lesson): let "please", "for me", "now",
 // "a", "my" pepper the phrase without breaking the match.
@@ -131,8 +218,12 @@ export function parseHlIntent(message: string): HlIntent | null {
   const m = normalizeWorth(message).toLowerCase().replace(/\s+/g, ' ').trim()
   const venueWorded = new RegExp(VENUE).test(m)
   const leverage = leverageIn(m)
-  // Venue word OR a leverage phrase — one of the two must be there.
-  if (!venueWorded && leverage === undefined) return null
+  // Venue word OR a leverage phrase — one of the two must be there. (A
+  // long/short beside the word "perp" is the third door; only the slot
+  // reader opens it.)
+  if (!venueWorded && leverage === undefined) {
+    return /\b(?:long|short)\b/.test(m) && /\b(?:perps?|perpetuals?)\b/.test(m) ? parseHlSlots(m, undefined, false) : null
+  }
   // Venue-less leverage asks: the deposit/close shapes below all demand the
   // venue word (they end in VENUE), so only the open shapes are reachable.
   const venueTail = venueWorded ? String.raw`\s*${VENUE}` : ''
@@ -156,6 +247,10 @@ export function parseHlIntent(message: string): HlIntent | null {
   // Decimals are CAPTURED so the guard can refuse them by name — dropping
   // "2.5x" silently would trade at the account's setting instead.
   const withLev = leverage !== undefined ? { leverage } : {}
+  // Never claim PART of an ask (the #595 class). The jobs compiler runs above
+  // this gate and takes "long …, then protect it"; if it ever misses one, an
+  // open that silently drops the stop is worse than no claim at all.
+  if (hlOpenFenced(m)) return null
   const open = m.match(
     new RegExp(
       String.raw`\b(long|short|buy|sell)${FILLER}\s+(?:\$([\d.]+)(?:\s+(?:of|worth of))?\s+([a-z0-9]{2,10})|([\d.]+)\s+([a-z0-9]{2,10}))\s*(?:perp)?${venueTail}`,
@@ -171,6 +266,12 @@ export function parseHlIntent(message: string): HlIntent | null {
       if (Number.isFinite(sizeUnits) && sizeUnits > 0) return { kind: 'open', coin: open[5].toUpperCase(), isBuy, sizeUnits, ...withLev }
     }
   }
+
+  // Any order of side / leverage / size / coin. Runs BEFORE the unsized
+  // fallback: that one reads "open a 2x long on HYPE for $20" as unsized and
+  // asks "how much?" with the answer sitting in the sentence.
+  const slots = parseHlSlots(m, leverage, venueWorded)
+  if (slots?.kind === 'open') return slots
 
   // Unsized open — side + coin, no amount: "buy some HYPE and 2x long",
   // "2x long HYPE", "long hype on hyperliquid", "go long on ETH with 3x".
@@ -188,7 +289,7 @@ export function parseHlIntent(message: string): HlIntent | null {
       return { kind: 'open-unsized', coin: word.toUpperCase(), isBuy, ...withLev }
     }
   }
-  return null
+  return slots
 }
 
 /** The size chips for an unsized open — the exact strings the HL layer
@@ -201,6 +302,35 @@ export function hlUnsizedChips(intent: HlUnsizedIntent): { label: string; resume
     label: `${lev}${side[0].toUpperCase()}${side.slice(1)} $${usd} of ${intent.coin}`,
     resume: `${lev}${side} $${usd} of ${intent.coin} on hyperliquid`,
   }))
+}
+
+/** The one sentence the positional grammar reads back into this exact
+ *  intent — what every chip that re-asks an open must carry. */
+export function hlCanonicalAsk(intent: HlOrderIntent | HlUnsizedIntent, coin = intent.coin): string {
+  const side = intent.isBuy ? 'long' : 'short'
+  const lev = intent.leverage ? `${intent.leverage}x ` : ''
+  if (intent.kind === 'open-unsized') return `${lev}${side} ${coin} on hyperliquid`
+  if (intent.kind === 'close') return `close my ${coin} position on hyperliquid`
+  return intent.notionalUsd !== undefined ? `${lev}${side} $${intent.notionalUsd} of ${coin} on hyperliquid` : `${lev}${side} ${intent.sizeUnits} ${coin} on hyperliquid`
+}
+
+/** Listed perps a mistyped coin most likely meant ("HYP" → HYPE), nearest
+ *  first. PURE. A typo'd ticker used to end the turn at "HYP is not a
+ *  Hyperliquid perp" (live 2026-09-21) with the fix one letter away. */
+export function nearestHlCoins(coin: string, listed: Iterable<string>, max = 3): string[] {
+  const c = coin.toUpperCase()
+  const scored: { name: string; d: number }[] = []
+  for (const name of listed) {
+    const n = name.toUpperCase()
+    if (n === c) return []
+    // kPEPE-style names compare without the venue's k prefix too.
+    const bare = /^K[A-Z]/.test(name) && name[0] === 'k' ? n.slice(1) : n
+    const d = Math.min(wordDistance(c.toLowerCase(), n.toLowerCase()), wordDistance(c.toLowerCase(), bare.toLowerCase()))
+    const prefix = n.startsWith(c) || c.startsWith(n) || bare.startsWith(c)
+    const limit = c.length <= 3 ? 1 : 2
+    if (d <= limit || (prefix && Math.abs(n.length - c.length) <= 2)) scored.push({ name, d: prefix ? Math.min(d, 1) : d })
+  }
+  return scored.sort((a, b) => a.d - b.d || a.name.length - b.name.length || a.name.localeCompare(b.name)).slice(0, max).map((x) => x.name)
 }
 
 // ── Order action build (deterministic) ──────────────────────────────────────

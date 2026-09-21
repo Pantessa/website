@@ -253,7 +253,9 @@ const DOLLAR_WORDS_RE = /\b(a|an|one|two|three|four|five|six|seven|eight|nine|te
  *  canonical dollar form every grammar reads (the HL grammar reads ONLY it —
  *  "long 10 dollars of HYPE" was a planner fall). `usd` never eats USDC/USDG. */
 const DIGIT_DOLLARS_RE = /(?<![\w$.])(\d+(?:\.\d+)?)\s?(?:dollars?|bucks?|usd)(?:['’]s?)?(?![a-z])/gi
-export function normalizeDollarWords(text: string): string {
+export function normalizeDollarWords(rawText: string): string {
+  // "$$20" — a doubled dollar sign (live 2026-09-21) read as no amount at all.
+  const text = rawText.replace(/\${2,}(?=\s?\d)/g, '$')
   const spelled = text.replace(DOLLAR_WORDS_RE, (_full, lead: string, unit: string | undefined, mult: string | undefined) => {
     let n = NUMBER_WORDS[lead.toLowerCase()] ?? 0
     if (unit) n += NUMBER_WORDS[unit.toLowerCase()] ?? 0
