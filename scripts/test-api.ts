@@ -23752,6 +23752,18 @@ async function main() {
     check('holdings autofill: a removed holding (NVDA) stays off on every later visit — it is in the ledger', afterRemove.add.length === 0 && afterRemove.newlySeen.length === 0)
     const newBuy = planHeldAutofill({ held: ['ETH', 'AAPL', 'NVDA', 'TSLA'], watched: ['AAPL', 'UNI', 'ETH'], seen: nate.newlySeen })
     check('holdings autofill: a token bought later joins on the next visit; the removed one still does not', newBuy.add.join() === 'TSLA' && newBuy.newlySeen.join() === 'TSLA')
+    // 1a. The OPEN list follows the wallet (2026-09-21). Live: MSFT, GOOGL and
+    // COIN were bought, filed on list one ("My watchlist") while the owner
+    // watched list two ("From TradingView") — and, now sitting on A list,
+    // could never reach the one on screen.
+    const twoLists = { watched: ['AAPL', 'UNI', 'COIN', 'MSFT', 'GOOGL', 'TSLA', 'NVDA', 'ETH', 'BTC', 'HYPE'], seen: ['NVDA', 'AAPL', 'ETH', 'UNI', 'MSFT', 'COIN', 'GOOGL'] }
+    const heldNow = ['ETH', 'AAPL', 'GOOGL', 'MSFT', 'COIN', 'NVDA']
+    const openTv = planHeldAutofill({ held: heldNow, ...twoLists, target: ['AAPL', 'TSLA', 'NVDA', 'ETH', 'BTC', 'HYPE', 'UNI'] })
+    check('holdings autofill: the list on screen gains the holdings it lacks, even ones already filed on another list (the live MSFT / GOOGL / COIN miss)', openTv.add.join() === 'GOOGL,MSFT,COIN' && openTv.newlySeen.length === 0, JSON.stringify(openTv))
+    check('holdings autofill: a list already in step gains nothing', planHeldAutofill({ held: heldNow, ...twoLists, target: ['AAPL', 'UNI', 'COIN', 'MSFT', 'GOOGL', 'ETH', 'NVDA'] }).add.length === 0)
+    const dismissedMsft = planHeldAutofill({ held: heldNow, ...twoLists, target: ['AAPL', 'TSLA', 'NVDA', 'ETH'], dismissed: ['MSFT'] })
+    check('holdings autofill: a removal is the owner’s word — a dismissed symbol stays off the open list even while it sits on another one', dismissedMsft.add.join() === 'GOOGL,COIN', JSON.stringify(dismissedMsft))
+    check('holdings autofill: ledger rows older than the dismissed mark read the old way (seen + on no list = removed)', planHeldAutofill({ held: ['ETH', 'SOL'], watched: ['ETH'], target: ['ETH'], seen: ['ETH', 'SOL'] }).add.length === 0)
     check('holdings autofill: aliases collapse (WETH → ETH) and junk / chartless names never plan', planHeldAutofill({ held: ['WETH', 'weth', '!!!', 'ZZZZQX'], watched: [], seen: [] }).add.join() === 'ETH')
     check('holdings autofill: the note names what was added and how to undo it',
       heldAutofillNote(['ETH'], 'My watchlist') === 'Added ETH from your wallet to My watchlist. Remove any and it stays off.' &&
@@ -23790,6 +23802,11 @@ async function main() {
     // when the read turns something up, so an open page writes nothing all day.
     const { heldReconcileReason, parseHeldSnapshots, readHeldSnapshot, writeHeldSnapshot, HELD_SNAPSHOT_KEY, HELD_SNAPSHOT_MAX_AGE_MS, HELD_SNAPSHOT_WALLETS } = await import('../lib/watchlists')
     const reasonOf = (held: string[], reconciled: string[] | null, forced?: boolean) => heldReconcileReason({ held, reconciled, forced })
+    check('watch background: opening another list is a reason to check again (\'list\'), but a new symbol or a forced run still says so first, and an open list in step writes nothing',
+      heldReconcileReason({ held: ['ETH'], reconciled: ['ETH'], missingFromTarget: true }) === 'list' &&
+        heldReconcileReason({ held: ['ETH', 'SOL'], reconciled: ['ETH'], missingFromTarget: true }) === 'new' &&
+        heldReconcileReason({ held: ['ETH'], reconciled: ['ETH'], missingFromTarget: false }) === null &&
+        heldReconcileReason({ held: ['ETH'], reconciled: null, missingFromTarget: true }) === 'first')
     check('watch background: the first read of a wallet reconciles; a later read with the SAME symbols does not (the poll is a check, not a sync); the token bought since does',
       reasonOf(['ETH', 'AAPL'], null) === 'first' && reasonOf(['ETH', 'AAPL'], ['ETH', 'AAPL']) === null && reasonOf(['ETH', 'AAPL', 'UNI'], ['ETH', 'AAPL']) === 'new',
       [reasonOf(['ETH'], null), reasonOf(['ETH'], ['ETH']), reasonOf(['ETH', 'UNI'], ['ETH'])].join(','))
@@ -23843,7 +23860,10 @@ async function main() {
         /return lastRead\.get\(address\) \?\? null/.test(heldReadSrc))
     check('watch background: the rail’s minute poll runs the SAME reconcile as the visit (not a numbers-only refresh), gated by heldReconcileReason; the wallet’s remembered positions fill in until its own read lands',
       /const readAndReconcile = useCallback\(/.test(wlHookSrc) &&
-        /heldReconcileReason\(\{ held: symbols, reconciled: reconciledHeld\.get\(key\) \?\? null, forced: fresh \}\)/.test(wlHookSrc) &&
+        // Re-pinned 2026-09-21: the call gained `missingFromTarget` (opening
+        // another list is a reason to check again, once per list).
+        /heldReconcileReason\(\{\s*held: symbols,\s*reconciled: reconciledHeld\.get\(key\) \?\? null,\s*forced: fresh,\s*missingFromTarget: reconciledList\.has\(key\) && reconciledList\.get\(key\) !== targetId,\s*\}\)/.test(wlHookSrc) &&
+        /body: JSON\.stringify\(\{ symbols, \.\.\.\(targetId \? \{ listId: targetId \} : \{\}\) \}\)/.test(wlHookSrc) &&
         /void readAndReconcile\(\{ maxAgeMs: HELD_EVERY_MS \/ 2, alive: \(\) => alive \}\)/.test(wlHookSrc) &&
         /const held = holder && heldRead\?\.holder === holder \? heldRead\.held : remembered/.test(wlHookSrc) &&
         /const snap = readHeldSnapshot\(holder\)/.test(wlHookSrc))
@@ -23946,6 +23966,35 @@ async function main() {
     const pre = ((await (await fetch(`${BASE}/api/watchlists`, { method: 'POST', headers: { ...HJ, cookie: nateSession }, body: JSON.stringify({ name: DEFAULT_LIST_NAME, symbols: ['AAPL', 'UNI'] }) })).json()) as { list: { id: string } }).list
     const sn = await syncHeld(nateSession, ['ETH', 'AAPL', 'NVDA'])
     check('holdings sync: an existing list (AAPL, UNI) gains only what it lacks, appended in holdings order', sn.list?.id === pre.id && sn.list.symbols.join() === 'AAPL,UNI,ETH,NVDA' && sn.added.join() === 'ETH,NVDA')
+
+    // The OPEN list follows the wallet (2026-09-21, the live case): list one
+    // holds the earlier autofill, the owner watches list two.
+    const hoTwo = privateKeyToAccount(generatePrivateKey())
+    hoOwners.push(hoTwo.address.toLowerCase())
+    const twoSession = await signIn(hoTwo)
+    const mkList = async (name: string, symbols: string[]) =>
+      ((await (await fetch(`${BASE}/api/watchlists`, { method: 'POST', headers: { ...HJ, cookie: twoSession }, body: JSON.stringify({ name, symbols }) })).json()) as { list: { id: string } }).list
+    const syncTo = async (symbols: string[], listId?: string): Promise<Sync> =>
+      (await (await fetch(`${BASE}/api/watchlists/holdings`, { method: 'POST', headers: { ...HJ, cookie: twoSession }, body: JSON.stringify({ symbols, listId }) })).json()) as Sync
+    const mine = await mkList(DEFAULT_LIST_NAME, ['AAPL', 'UNI'])
+    const tv = await mkList('From TradingView', ['AAPL', 'TSLA', 'NVDA', 'ETH', 'BTC'])
+    const t0 = await syncTo(['ETH', 'AAPL', 'NVDA', 'MSFT'])
+    check('holdings sync (open list): with no list named, the first list is the target and gains what it lacks', t0.list?.id === mine.id && t0.added.join() === 'ETH,NVDA,MSFT', JSON.stringify(t0))
+    const t1 = await syncTo(['ETH', 'AAPL', 'NVDA', 'MSFT', 'GOOGL'], tv.id)
+    check('holdings sync (open list): the list the owner has open gains what IT lacks — MSFT (already filed on list one) and the new GOOGL', t1.list?.id === tv.id && t1.added.join() === 'MSFT,GOOGL' && t1.list.symbols.join() === 'AAPL,TSLA,NVDA,ETH,BTC,MSFT,GOOGL', JSON.stringify(t1))
+    const t2 = await syncTo(['ETH', 'AAPL', 'NVDA', 'MSFT', 'GOOGL'], tv.id)
+    check('holdings sync (open list): in step → nothing added (the minute poll writes nothing)', t2.added.length === 0)
+    await fetch(`${BASE}/api/watchlists/${tv.id}/items?symbol=MSFT`, { method: 'DELETE', headers: { cookie: twoSession } })
+    const t3 = await syncTo(['ETH', 'AAPL', 'NVDA', 'MSFT', 'GOOGL'], tv.id)
+    check('holdings sync (open list): removed from the open list → it stays off, though it still sits on list one; the response names the removal', t3.added.length === 0 && !t3.list?.symbols.includes('MSFT') && t3.dismissed.includes('MSFT'), JSON.stringify(t3))
+    const other = await mkList('AI names', ['NVDA'])
+    const t4 = await syncTo(['ETH', 'AAPL', 'NVDA', 'MSFT', 'GOOGL'], other.id)
+    check('holdings sync (open list): a dismissed symbol is off EVERY list the autofill fills; the rest of the wallet joins the newly opened one', t4.list?.id === other.id && t4.added.join() === 'ETH,AAPL,GOOGL', JSON.stringify(t4))
+    await fetch(`${BASE}/api/watchlists/${tv.id}/items`, { method: 'POST', headers: { ...HJ, cookie: twoSession }, body: JSON.stringify({ symbols: ['MSFT'] }) })
+    const t5 = await syncTo(['ETH', 'AAPL', 'NVDA', 'MSFT', 'GOOGL'], other.id)
+    check('holdings sync (open list): adding it back by hand clears the mark — the autofill may place it again', t5.added.join() === 'MSFT', JSON.stringify(t5))
+    const t6 = await syncTo(['ETH', 'SOL'], 'not-my-list')
+    check('holdings sync (open list): a list id that isn’t the owner’s falls back to the first list (never another wallet’s)', t6.list?.id === mine.id && t6.added.join() === 'SOL', JSON.stringify(t6))
 
     // Two tabs restoring at once: one list, each symbol once.
     const [ra, rb] = await Promise.all([syncHeld(raceSession, ['ETH', 'BTC']), syncHeld(raceSession, ['ETH', 'BTC'])])

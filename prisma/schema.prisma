@@ -1677,6 +1677,9 @@ model WatchlistHoldingSeen {
   owner     String // lowercased SIWE wallet
   symbol    String // normalized chart symbol
   added     Boolean  @default(false)
+  /// The owner removed it (a row removal or a list delete). The autofill never
+  /// puts a dismissed symbol back; adding it by hand clears the mark.
+  dismissed Boolean  @default(false)
   createdAt DateTime @default(now()) @map("created_at")
 
   @@id([owner, symbol])

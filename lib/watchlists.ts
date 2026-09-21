@@ -378,19 +378,43 @@ export interface HeldSymbol {
 }
 
 export interface HeldAutofillPlan {
-  /** Held symbols to append to the primary list, in holdings order. */
+  /** Held symbols to append to the TARGET list, in holdings order. */
   add: string[]
   /** Held symbols the ledger doesn't know yet — record every one of them. */
   newlySeen: string[]
 }
 
-export function planHeldAutofill(input: { held: readonly string[]; watched: Iterable<string>; seen: Iterable<string> }): HeldAutofillPlan {
+/**
+ * What the list the owner is LOOKING AT gains from the wallet.
+ *
+ * Until 2026-09-21 the rule was "held, on NO list, never seen → the FIRST
+ * list". Live: a wallet bought MSFT, GOOGL and COIN; all three were filed on
+ * "My watchlist" (list one) while the owner watched "From TradingView" (list
+ * two) — and because they now sat on A list, they could never reach the one
+ * on screen. The open list is the one that keeps pace with the wallet.
+ *
+ * A removal is the owner's word and outlives everything: `dismissed` is the
+ * ledger's explicit mark (set by a row removal or a list delete, cleared by
+ * adding the ticker back by hand). Ledger rows written before the mark
+ * existed are read the old way: seen, and on no list at all = removed.
+ */
+export function planHeldAutofill(input: {
+  held: readonly string[]
+  /** Every symbol on any of the owner's lists. */
+  watched: Iterable<string>
+  /** The symbols of the list being filled. Omitted = `watched` (one list). */
+  target?: Iterable<string>
+  seen: Iterable<string>
+  dismissed?: Iterable<string>
+}): HeldAutofillPlan {
   const watched = new Set(input.watched)
+  const target = input.target ? new Set(input.target) : watched
   const seen = new Set(input.seen)
+  const dismissed = new Set(input.dismissed ?? [])
   // Chartable only: a list row must always quote (the add-ticker contract).
   const held = dedupeSymbols(input.held).filter((s) => !!chartPairFor(s))
-  const newlySeen = held.filter((s) => !seen.has(s))
-  return { add: newlySeen.filter((s) => !watched.has(s)), newlySeen }
+  const removed = (s: string) => dismissed.has(s) || (seen.has(s) && !watched.has(s))
+  return { add: held.filter((s) => !target.has(s) && !removed(s)), newlySeen: held.filter((s) => !seen.has(s)) }
 }
 
 function joinAnd(items: readonly string[]): string {
@@ -625,11 +649,16 @@ export function heldReconcileReason(s: {
   /** The symbols of the last reconciled read for this wallet, null when none. */
   reconciled: readonly string[] | null
   forced?: boolean
-}): 'first' | 'new' | 'forced' | null {
+  /** A held symbol the list on screen doesn't carry and the owner never
+   *  removed: the owner switched lists (or the last fill went to another
+   *  one). Still writes nothing when the open list is already in step. */
+  missingFromTarget?: boolean
+}): 'first' | 'new' | 'forced' | 'list' | null {
   if (s.forced) return 'forced'
   if (s.reconciled === null) return 'first'
   const known = new Set(s.reconciled)
-  return s.held.some((sym) => !known.has(sym)) ? 'new' : null
+  if (s.held.some((sym) => !known.has(sym))) return 'new'
+  return s.missingFromTarget ? 'list' : null
 }
 
 // ── Sections ────────────────────────────────────────────────────────────────
