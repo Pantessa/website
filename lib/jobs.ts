@@ -704,7 +704,10 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
       if (!cc) return null
       if ('problem' in cc) return { problem: cc.problem }
       const ccp = cc as CrossChainSwapParams
-      const title = `Bridge ${ccp.amount} ${ccp.originToken.toUpperCase()} (${ccp.originChain}) → ${ccp.destinationToken.toUpperCase()} (${ccp.destinationChain})`
+      // A job leg always pays out to the wallet running the job — later steps
+      // spend what it delivers. A delivery address belongs on a single swap.
+      if (ccp.recipient) return { problem: 'A separate delivery address works on a single swap, not inside a multi-step job — the next step needs the funds in your own wallet. Ask for the private swap on its own.' }
+      const title = `${ccp.confidential ? 'Private bridge' : 'Bridge'} ${ccp.amount} ${ccp.originToken.toUpperCase()} (${ccp.originChain}) → ${ccp.destinationToken.toUpperCase()} (${ccp.destinationChain})`
       return {
         steps: [
           { kind: 'sign', builder: 'native-cross-chain', title, params: ccp as unknown as Record<string, unknown> },

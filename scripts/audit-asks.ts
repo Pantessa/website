@@ -80,6 +80,8 @@ const CORPUS: Entry[] = [
   { ask: 'Buy $10 of AAPL every week on Robinhood Chain', source: 'typed recurring buy (was an example chip)', expect: 'action' },
   { ask: 'Set a stop-loss on my ETH position at -8%', source: 'examples', expect: 'action' },
   { ask: 'Swap 1 USDC from Base to Arbitrum.', source: 'examples/try', expect: 'action' },
+  { ask: 'Swap 1 USDC from Base to Arbitrum privately', source: 'private mode (typed)', expect: 'action' },
+  { ask: 'Privately bridge 5 USDC from Base to Optimism', source: 'private mode (typed, leading)', expect: 'action' },
   { ask: 'Buy $2 of AAPL', source: 'examples/try + FundAnything', expect: 'action' },
   { ask: 'Quote 100 USDC to WETH on Base — which fee tier is best?', source: 'examples/try', expect: 'planner' },
 

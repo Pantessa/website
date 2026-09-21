@@ -18,7 +18,7 @@ const WITHHELD_HOLD_MS = 90_000
 const RPC_WITHHOLD_MAX = 6
 import prisma from '@/lib/db'
 import { callMcpTool } from '@/lib/mcp-call'
-import { crossChainValueUsd, expectedOriginChainId, guardCrossChainBuild, type BuiltSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
+import { CONFIDENTIAL_LEVEL, crossChainValueUsd, expectedOriginChainId, guardCrossChainBuild, type BuiltSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
 import { buildHlExecTurn, type HlIntent } from '@/lib/hyperliquid-exec'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import type { GuardianArmAsk } from '@/lib/hl-guardian'
@@ -376,8 +376,11 @@ export async function buildSignArtifact(
       destinationToken: p.destinationToken,
       amount: p.amount,
       from: wallet,
+      ...(p.confidential ? { confidentiality: CONFIDENTIAL_LEVEL } : {}),
     }, { timeoutMs: 20_000 })) as BuiltSwap
-    const guard = guardCrossChainBuild(raw, { chainId: expectedOriginChainId(p.originChain) })
+    // A job leg never carries a delivery address (lib/jobs refuses one), so
+    // the payout is pinned to the wallet running the job.
+    const guard = guardCrossChainBuild(raw, { chainId: expectedOriginChainId(p.originChain), confidential: Boolean(p.confidential), deliverTo: wallet, refundTo: wallet })
     if (!guard.ok || !guard.tx) throw new Error(guard.reasons.join(' '))
     const valueUsd = crossChainValueUsd(raw)
     return {
