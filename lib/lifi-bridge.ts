@@ -1480,7 +1480,14 @@ export function planRobinhoodFundingAdvice(params: {
   // Derived, never hardcoded: this sentence names every chain we actually
   // looked at, so widening FUNDING_ORIGIN_CHAINS can't leave it claiming we
   // checked three places when we checked four.
-  else parts.push(`no USDC or ETH on ${listWords(FUNDING_ORIGIN_CHAINS.map((c) => FUNDING_ORIGIN_WORD[c]))}`)
+  // Derived from what the scan actually reads (USDC, its bridged variant,
+  // the FUNDING_STABLES hop tokens, native ETH) — a list that named two
+  // tokens while the scan read five would be a smaller lie than the old
+  // "no USDC anywhere", but a lie all the same.
+  else
+    parts.push(
+      `no ${listWords([...new Set(['USDC', ...FUNDING_ORIGIN_CHAINS.flatMap((c) => (FUNDING_STABLES[c] ?? []).map((x) => x.symbol)), 'ETH'])], 'or')} on ${listWords(FUNDING_ORIGIN_CHAINS.map((c) => FUNDING_ORIGIN_WORD[c]))}`,
+    )
   if (scan.failedOrigins.length > 0) parts.push(`couldn't check ${scan.failedOrigins.join(' or ')}`)
   return { kind: 'none', copy: parts.join('; ') }
 }
