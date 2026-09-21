@@ -1199,6 +1199,10 @@ const RO = (chainId: number, token: string, usd: number, gasEth = 0.01, spendabl
   usd,
   gasEth,
   ...(token === 'ETH' ? { spendable: spendable ?? true } : {}),
+  // A stable with no LiFi leg of its own converts to USDC where it sits
+  // first — the scan sets this, and the fixture mirrors it from the same
+  // table so a row added to FUNDING_STABLES is a hop row here too.
+  ...((FUNDING_STABLES[chainId] ?? []).some((x) => x.symbol.toUpperCase() === token.toUpperCase()) ? { hop: true } : {}),
 })
 
 const RH_SCENARIOS: RhScenario[] = [
@@ -1219,6 +1223,16 @@ const RH_SCENARIOS: RhScenario[] = [
   { name: 'sub-keep-back ETH on Ethereum only → buy $10 of ETH: named, never moved', buyUsd: 10, buySym: 'ETH', origins: [], gasless: [RO(1, 'ETH', 3, 0.0013, false)], expect: 'none' },
   { name: 'empty wallet → buy $10 of ETH on Robinhood Chain', buyUsd: 10, buySym: 'ETH', origins: [], expect: 'none' },
   { name: '$60 of ETH on Base only → buy $10 of AAPL: ETH still funds a buy of anything else', buyUsd: 10, buySym: 'AAPL', origins: [RO(8453, 'ETH', 60)], expect: 'chips' },
+  // ── The stock buys prod walled on (2026-09-21): "Buy $50 of TSLA", "Buy
+  // $10 of AAPL" from wallets whose funds_detail read "USDT … (no funding
+  // path yet)". LiFi has no measured USDT→USDG leg; the conversion hop has
+  // no new venue at all — swap where it sits, then the funding leg we know.
+  { name: 'THE STOCK WALL — $360 USDT on Arbitrum only → buy $50 of TSLA on Robinhood Chain: convert on Arbitrum, then the usual leg', buyUsd: 50, buySym: 'TSLA', origins: [RO(42161, 'USDT', 360, 0.002)], expect: 'chips' },
+  { name: '$80 USDT on Optimism only → buy $10 of AAPL: the hop from a second chain', buyUsd: 10, buySym: 'AAPL', origins: [RO(10, 'USDT', 80, 0.002)], expect: 'chips' },
+  { name: '$120 DAI on Ethereum only → buy $50 of NVDA: DAI hops too', buyUsd: 50, buySym: 'NVDA', origins: [RO(1, 'DAI', 120, 0.01)], expect: 'chips' },
+  { name: '$30 USDT on Arbitrum + $30 USDC on Base, neither covers a $50 buy → combine, the hop leg carrying its conversion', buyUsd: 50, buySym: 'AAPL', origins: [RO(8453, 'USDC', 30, 0.002), RO(42161, 'USDT', 30, 0.002)], expect: 'chips' },
+  { name: 'gasless $80 USDT on Arbitrum + an ETH Base donor → buy $10 of AAPL: the rescue unsticks it, then it hops', buyUsd: 10, buySym: 'AAPL', origins: [RO(8453, 'ETH', 8)], gasless: [RO(42161, 'USDT', 80, 0)], expect: 'gas-stranded' },
+  { name: '$4 USDT on Optimism only → buy $50 of AAPL: nowhere near the plan, the refusal names it', buyUsd: 50, buySym: 'AAPL', origins: [RO(10, 'USDT', 4, 0.002)], expect: 'none' },
 ]
 
 
