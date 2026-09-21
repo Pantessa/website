@@ -223,7 +223,7 @@ import {
   type SwapLegKind,
 } from '../lib/stock-tape'
 import { buildGuardedSwap } from '../lib/swap-exec'
-import { ROBINHOOD_BATCH_MAX } from '../lib/quotes'
+import { fetchYahooQuote, quietSymbols, RH_NEAR_WINDOW, RH_WIDE_WINDOW, ROBINHOOD_BATCH_MAX, type RhRead } from '../lib/quotes'
 import { buildLifiBridgeLeg, clampNativeSellAtoms, ETH_MOVE_MIN_OUT_BPS, ETH_MOVE_MIN_USD, fillableLeg, FUNDING_ALT_USDC, FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, fundingAltUsdcFor, fundingNeedUsd, listWords, fundingSourceSymbols, LIFI_LEG_FLAT_USD, MIN_VALUE_LEG_USD, minLegNote, offChainStableSource, ROBINHOOD_CHAIN_ID, STABLE_LEG_MIN_OUT_BPS, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodEthMove, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData, inflightSettlingNote } from '../lib/inflight-funding'
 import { sanitizeWorkingContext } from '../lib/working-context'
@@ -25880,6 +25880,79 @@ async function main() {
       `tape parity (quotes): ${bigSet.length} stock symbols in one request still read Robinhood's 24/7 tape on both sides of the ${ROBINHOOD_BATCH_MAX}-symbol batch cap (one un-chunked call answered 400 and sent every stock to Yahoo)`,
       ROBINHOOD_BATCH_MAX === 75 && bigSet.length === 80 && (!robinhoodUp || (rhBelow > 0 && rhAbove > 0)),
       robinhoodUp ? `robinhood feeds: ${rhBelow} below the cap, ${rhAbove} above` : 'robinhood feed down for a 2-symbol read — chunking unproven this run',
+    )
+
+    // ── Quotes: the tape's own window. `5minute&span=day` is the trailing 24
+    // hours, and the 24-hour market prints 08:00Z–23:59Z on WEEKDAYS only, so
+    // that window holds nothing from Saturday ~23:55Z until Monday 08:00Z —
+    // about 32 hours every week, 56 around a Monday holiday. Measured 2026-09-21 07:50Z: all 102 stocks in a scan
+    // were served by Yahoo, whose `last` is Friday's REGULAR close (a
+    // different number from the 24/7 tape the 4663 tokens track), 59 hours
+    // old and read as current — STOCK_TAPE_MAX_AGE_MS is 96h.
+    check(
+      'quotes: the wide retry window is hourly-over-a-week — NOT interval=day (whose close is the regular-session close even under bounds=24_7, i.e. the very number Yahoo serves) and not 5minute (26.8 MiB for a 75-symbol batch vs 2.26 MiB)',
+      RH_NEAR_WINDOW.interval === '5minute' && RH_NEAR_WINDOW.span === 'day' && RH_WIDE_WINDOW.interval === 'hour' && RH_WIDE_WINDOW.span === 'week',
+      `${RH_NEAR_WINDOW.interval}/${RH_NEAR_WINDOW.span} → ${RH_WIDE_WINDOW.interval}/${RH_WIDE_WINDOW.span}`,
+    )
+    const quietIn = (reads: [string, RhRead][], asked: string[]) => quietSymbols(new Map(reads), asked)
+    check(
+      'quotes: only the symbols the near window has no print for go to the retry — a row with a previous close but zero non-interpolated bars is quiet, a row with a print is not, an unanswered symbol is, and the asked order and case are kept',
+      quietIn([['AAPL', { prev: 336.13 }], ['TSLA', { prev: 364.27, last: { price: 369.25, asOf: 1 } }], ['FIX', { prev: 1651.37 }]], ['aapl', 'TSLA', 'FIX', 'ZZZZ']).join() === 'aapl,FIX,ZZZZ' &&
+        quietIn([['AAPL', { prev: 1, last: { price: 2, asOf: 3 } }]], ['AAPL']).length === 0 &&
+        quietIn([], ['AAPL']).join() === 'AAPL',
+      quietIn([['AAPL', { prev: 336.13 }], ['TSLA', { prev: 364.27, last: { price: 369.25, asOf: 1 } }], ['FIX', { prev: 1651.37 }]], ['aapl', 'TSLA', 'FIX', 'ZZZZ']).join(),
+    )
+
+    // Live: read the wide window ourselves, then assert the served quotes
+    // cover exactly what it can see. Discriminates at ANY hour — outside the
+    // trading day every listed stock is recovered by it, and inside one the
+    // thin names are (2026-09-21 08:30Z, mid-session: 7 of 75 recovered, and
+    // main served those 7 from Yahoo — FIX 1651.37 vs the tape's 1640.00).
+    const rhWindow = async (syms: string[], w: { interval: string; span: string }) => {
+      const res = await fetch(`https://api.robinhood.com/marketdata/historicals/?symbols=${syms.join(',')}&interval=${w.interval}&span=${w.span}&bounds=24_7`, {
+        headers: { 'user-agent': 'Mozilla/5.0 (compatible; Pantessa/1.0; +https://www.pantessa.com)', accept: 'application/json' },
+      })
+      const out = new Map<string, { px: number; at: number }>()
+      if (!res.ok) return out
+      const body = (await res.json()) as { results?: { symbol?: string; historicals?: { close_price?: string; interpolated?: boolean; begins_at?: string }[] }[] }
+      for (const r of body.results ?? []) {
+        const real = (r.historicals ?? []).filter((h) => !h.interpolated && Number(h.close_price) > 0)
+        const last = real[real.length - 1]
+        if (r.symbol && last?.begins_at) out.set(r.symbol.toUpperCase(), { px: Number(last.close_price), at: Date.parse(last.begins_at) })
+      }
+      return out
+    }
+    const tapeSet = tapeTickers.slice(0, ROBINHOOD_BATCH_MAX)
+    const [tapeNear, tapeWide, tapeServed] = await Promise.all([rhWindow(tapeSet, RH_NEAR_WINDOW), rhWindow(tapeSet, RH_WIDE_WINDOW), feedsOf(tapeSet)])
+    const servedQ = tapeServed as unknown as Record<string, { feed: string; last: number; asOf: number } | undefined>
+    const recovered = tapeSet.filter((t) => tapeWide.has(t) && !tapeNear.has(t))
+    const wideCovered = tapeSet.filter((t) => tapeWide.has(t))
+    const offTape = wideCovered.filter((t) => servedQ[t]?.feed !== 'robinhood')
+    const tooOld = wideCovered.filter((t) => (servedQ[t]?.asOf ?? 0) < (tapeWide.get(t)?.at ?? 0))
+    check(
+      `tape parity (quotes): every stock the 24/7 tape has a print for is served from the tape, whatever the hour — the trailing-24h window holds nothing from Saturday ~23:55Z until Monday 08:00Z, about 32 hours every week, and a stock quiet in it used to fall to Yahoo's regular-session close`,
+      tapeWide.size === 0 || (offTape.length === 0 && tooOld.length === 0),
+      tapeWide.size === 0
+        ? 'robinhood historicals down for the wide window — recovery unproven this run'
+        : `${wideCovered.length}/${tapeSet.length} on the tape, ${recovered.length} of them quiet in the near window (${recovered.slice(0, 8).join(' ') || 'none — a busy session'})${offTape.length ? `; off tape: ${offTape.slice(0, 6).map((t) => `${t}=${servedQ[t]?.feed ?? 'missing'}`).join(' ')}` : ''}${tooOld.length ? `; stale asOf: ${tooOld.slice(0, 6).join(' ')}` : ''}`,
+    )
+    // The brief's ask, stated as a fact about the two feeds rather than a
+    // clock reading: wherever the tape printed after Yahoo's session close,
+    // the served quote is the tape's later print, not Yahoo's.
+    const yahooCmp = await Promise.all(
+      (recovered.length ? recovered : wideCovered).slice(0, 4).map(async (t) => {
+        const pair = chartPairFor(t)
+        const y = pair ? await fetchYahooQuote(pair).catch(() => null) : null
+        return { t, y, wide: tapeWide.get(t), served: servedQ[t] }
+      }),
+    )
+    const laterThanYahoo = yahooCmp.filter((r) => r.y && r.wide && r.wide.at > r.y.asOf)
+    check(
+      'tape parity (quotes): where the 24/7 tape kept printing after the regular close, the served asOf is the tape\'s print, later than the Yahoo fallback\'s — the two feeds are different prices, not two reads of one',
+      laterThanYahoo.every((r) => r.served?.feed === 'robinhood' && (r.served?.asOf ?? 0) >= (r.wide?.at ?? 0) && (r.served?.asOf ?? 0) > (r.y?.asOf ?? 0)),
+      laterThanYahoo.length === 0
+        ? `no symbol in the sample has a tape print after Yahoo's (${yahooCmp.map((r) => `${r.t} tape=${r.wide ? new Date(r.wide.at).toISOString().slice(5, 16) : '—'} yahoo=${r.y ? new Date(r.y.asOf).toISOString().slice(5, 16) : 'down'}`).join(' ')}) — in-session, or a feed is down`
+        : laterThanYahoo.map((r) => `${r.t} served=${r.served?.feed}@${new Date(r.served?.asOf ?? 0).toISOString().slice(5, 16)} tape=${r.wide!.px}@${new Date(r.wide!.at).toISOString().slice(5, 16)} yahoo=${r.y!.last}@${new Date(r.y!.asOf).toISOString().slice(5, 16)}`).join('  '),
     )
 
     // ── The routes API compares a stock row with the REAL tape.

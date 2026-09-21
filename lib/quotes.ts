@@ -4,8 +4,13 @@
 //
 //   robinhood   — ONE batch historicals call for every stock in the request
 //                 (`?symbols=A,B,C`, 24/7 bounds): last non-interpolated
-//                 close vs the tape's previous_close_price. Yahoo's daily
-//                 chart is the per-symbol fallback when the batch is down.
+//                 close vs the tape's previous_close_price, plus ONE wider
+//                 read for whatever that window came back quiet for (the
+//                 weekend, a holiday, a thin name) — see RH_WIDE_WINDOW.
+//                 Yahoo's daily chart is the per-symbol fallback when the
+//                 batch is down, and its `last` is a REGULAR-session close,
+//                 which is a different number from the 24/7 tape the 4663
+//                 stock tokens track (lib/stock-tape prices fills off it).
 //   coinbase    — /products/<X>-USD/stats (last + 24h open), per symbol.
 //   hyperliquid — ONE metaAndAssetCtxs call serves every perp (markPx vs
 //                 prevDayPx), cached for the whole TTL.
@@ -117,23 +122,104 @@ interface RhResult {
   historicals?: RhRow[]
 }
 
-async function fetchRobinhoodBatch(symbols: string[]): Promise<Map<string, { last: number; prev: number; asOf: number }>> {
-  const out = new Map<string, { last: number; prev: number; asOf: number }>()
+/** One `marketdata/historicals` window. */
+interface RhWindow {
+  interval: string
+  span: string
+}
+
+/** The in-session window: 5-minute buckets over the trailing 24 hours, so the
+ *  last print is at most 5 minutes old. */
+export const RH_NEAR_WINDOW: RhWindow = { interval: '5minute', span: 'day' }
+/** The window that survives the tape's own close. The 24-hour market prints
+ *  08:00Z–23:59Z on weekdays only (measured 2026-09-21: 16 hourly buckets a
+ *  day Mon–Fri, none Sat/Sun), so the trailing-24h window above goes blind
+ *  from Saturday ~23:55Z until Monday 08:00Z — about 32 hours every week,
+ *  and 56 around a Monday holiday, which is still inside the tape's own 96h
+ *  staleness bound, so nothing reads as stale: the wrong price is simply
+ *  served as current. A week of hourly buckets always holds the last
+ *  print. Hourly, not 5-minute: 2,016 buckets a symbol is 26.8 MiB for a
+ *  75-symbol batch against 2.26 MiB at 168 (measured), and the hour bucket's
+ *  close IS the last 5-minute close inside it (AAPL 334.875 both ways,
+ *  2026-09-18T23Z). `interval=day` is NOT an option — its close is the
+ *  regular-session close even under `bounds=24_7` (AAPL 336.13, the same
+ *  number Yahoo serves), which is the price this whole path exists to avoid. */
+export const RH_WIDE_WINDOW: RhWindow = { interval: 'hour', span: 'week' }
+
+/** What one window knows about a symbol. `last` is absent when the window
+ *  holds no real print; `prev` only ever comes off RH_NEAR_WINDOW — the wider
+ *  spans drop `previous_close_price` entirely (measured, 10 and 75 symbols). */
+export interface RhRead {
+  last?: { price: number; asOf: number }
+  prev?: number
+}
+
+/** Symbols with a `previous_close_price` but no print in this window. They are
+ *  the retry list: the tape has a price for them, just not inside this span. */
+export function quietSymbols(reads: ReadonlyMap<string, RhRead>, asked: readonly string[]): string[] {
+  return asked.filter((s) => !reads.get(s.toUpperCase())?.last)
+}
+
+/** A window's answer for a batch, keyed by ticker. Rows with no usable print
+ *  still appear when the row carried a previous close. */
+async function fetchRobinhoodWindow(symbols: string[], window: RhWindow): Promise<Map<string, RhRead>> {
+  const out = new Map<string, RhRead>()
   if (symbols.length === 0) return out
   const res = await fetchWithTimeout(
-    `https://api.robinhood.com/marketdata/historicals/?symbols=${encodeURIComponent(symbols.join(','))}&interval=5minute&span=day&bounds=24_7`,
+    `https://api.robinhood.com/marketdata/historicals/?symbols=${encodeURIComponent(symbols.join(','))}&interval=${window.interval}&span=${window.span}&bounds=24_7`,
     { headers: { 'user-agent': UA, accept: 'application/json' } },
   )
-  if (!res.ok) throw new Error(`robinhood ${res.status}`)
+  if (!res.ok) throw new Error(`robinhood ${window.interval}/${window.span} ${res.status}`)
   const raw = (await res.json()) as { results?: (RhResult | null)[] }
   if (!Array.isArray(raw.results)) throw new Error('robinhood shape')
   for (const r of raw.results) {
-    if (!r?.symbol || !Array.isArray(r.historicals)) continue
-    const rows = r.historicals.filter((h) => !h.interpolated && Number(h.close_price) > 0)
+    if (!r?.symbol) continue
+    const prev = Number(r.previous_close_price)
+    const read: RhRead = Number.isFinite(prev) && prev > 0 ? { prev } : {}
+    const rows = (Array.isArray(r.historicals) ? r.historicals : []).filter((h) => !h.interpolated && Number(h.close_price) > 0)
     const lastRow = rows[rows.length - 1]
-    if (!lastRow) continue
-    const asOf = lastRow.begins_at ? Date.parse(lastRow.begins_at) : Date.now()
-    out.set(r.symbol.toUpperCase(), { last: Number(lastRow.close_price), prev: Number(r.previous_close_price), asOf: Number.isFinite(asOf) ? asOf : Date.now() })
+    if (lastRow) {
+      // The bucket's START. On RH_WIDE_WINDOW that reads up to 59 minutes
+      // older than the print really is — never fresher, which is the safe
+      // direction for the tape's staleness gate (lib/stock-tape).
+      const asOf = lastRow.begins_at ? Date.parse(lastRow.begins_at) : Date.now()
+      read.last = { price: Number(lastRow.close_price), asOf: Number.isFinite(asOf) ? asOf : Date.now() }
+    }
+    out.set(r.symbol.toUpperCase(), read)
+  }
+  return out
+}
+
+/**
+ * The tape for a batch of stocks: the near window first (fresh to 5 minutes),
+ * then ONE wider read for whatever came back quiet — the weekend, a holiday,
+ * or a thin name that simply hasn't traded in 24 hours. The wider read carries
+ * no previous close, so the change still measures against the near window's
+ * `previous_close_price`; a symbol the near window never answered for keeps no
+ * quote at all (the caller falls back to Yahoo) rather than showing a price
+ * with a change we can't state.
+ */
+async function fetchRobinhoodBatch(symbols: string[]): Promise<Map<string, { last: number; prev: number; asOf: number }>> {
+  const out = new Map<string, { last: number; prev: number; asOf: number }>()
+  if (symbols.length === 0) return out
+  const near = await fetchRobinhoodWindow(symbols, RH_NEAR_WINDOW)
+  const quiet = quietSymbols(near, symbols)
+  if (quiet.length > 0) {
+    const wide = await fetchRobinhoodWindow(quiet, RH_WIDE_WINDOW).catch((err) => {
+      console.warn(`[quotes] robinhood ${RH_WIDE_WINDOW.interval}/${RH_WIDE_WINDOW.span} down for ${quiet.length} quiet symbol(s) (${err instanceof Error ? err.message : String(err)}) — yahoo per symbol`)
+      return null
+    })
+    if (wide)
+      for (const [sym, r] of wide) {
+        if (!r.last) continue
+        const row = near.get(sym)
+        if (row) row.last = r.last
+        else near.set(sym, { last: r.last })
+      }
+  }
+  for (const [sym, r] of near) {
+    if (!r.last || !(r.prev !== undefined && r.prev > 0)) continue
+    out.set(sym, { last: r.last.price, prev: r.prev, asOf: r.last.asOf })
   }
   return out
 }
