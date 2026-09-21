@@ -26,12 +26,18 @@
 // signature has run SILENT_SIGN_GRACE_MS: the door's email and Google lanes
 // sign right after they connect, and a fast one shouldn't flash a card.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { usePathname } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import { CDP_CONNECTOR_ID } from '@coinbase/cdp-wagmi'
 import { Loader2, PenLine, X } from 'lucide-react'
 import { useSession } from '@/lib/session'
+import {
+  clearWalletAppOpen,
+  subscribeWalletAppOpen,
+  walletAppOpenServerSnapshot,
+  walletAppOpenSnapshot,
+} from '@/lib/wallet-handoff'
 
 /** How long a silent signature runs before its card shows. The embedded
  *  wallet's sign-in is three quick round-trips (nonce, CDP's signature,
@@ -131,11 +137,26 @@ export default function SignatureWaitTakeover() {
   const { signingIn, signIn } = useSession()
   const pathname = usePathname()
   const wait = useSignatureWait(signingIn)
+  // On a phone the wallet is another app, and the browser can refuse the jump
+  // to it (lib/wallet-handoff). While that is true this card's words are wrong
+  // — the request is NOT "open in your wallet", it is queued in an app nobody
+  // switched to — and its button is disabled exactly when it is needed. The
+  // handoff card takes over: it says so, and its button opens the app.
+  const handoff = useSyncExternalStore(
+    subscribeWalletAppOpen,
+    walletAppOpenSnapshot,
+    walletAppOpenServerSnapshot,
+  )
   // Dismiss hides the card for THIS flight only; the next explicit sign-in
   // click brings it back (signingIn drops when the round-trip settles).
   const [dismissed, setDismissed] = useState(false)
   useEffect(() => {
-    if (!signingIn) setDismissed(false)
+    if (!signingIn) {
+      setDismissed(false)
+      // The sign-in ended — signed, rejected, failed. A handoff card still
+      // pointing at its request is pointing at nothing.
+      clearWalletAppOpen()
+    }
   }, [signingIn])
 
   // /embed signs through the host page's wallet relay — not our surface to
@@ -144,7 +165,7 @@ export default function SignatureWaitTakeover() {
   // only ever a click the visitor made on the post-receipt save bar).
   if (pathname?.startsWith('/embed')) return null
   if (pathname === '/i' || pathname?.startsWith('/i/')) return null
-  if (!wait.shown || dismissed) return null
+  if (!wait.shown || dismissed || handoff) return null
 
   return (
     <SignatureWaitModal
