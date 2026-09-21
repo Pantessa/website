@@ -444,7 +444,14 @@ async function browserWalk(): Promise<number> {
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     )
     if (overflow > 1) add(`${id}/overflow`, false, `${overflow}px of horizontal scroll`)
-    const real = errs.filter((e) => !/favicon|ERR_|net::|Download the React|401|Failed to load resource/i.test(e))
+    // Environment noise, not findings: CDP's embedded-wallet API allows
+    // www.pantessa.com and not localhost, so every local page logs a CORS
+    // refusal for auth/mfa + auth/refresh; guest polls answer 401 by design.
+    const real = errs.filter(
+      (e) =>
+        !/favicon|ERR_|net::|Download the React|401|Failed to load resource/i.test(e) &&
+        !/api\.cdp\.coinbase\.com|Access to XMLHttpRequest|has been blocked by CORS/i.test(e),
+    )
     if (real.length) add(`${id}/console`, false, real.slice(0, 2).join(' | ').slice(0, 200))
     return { overflow, errs: real }
   }
@@ -517,14 +524,24 @@ async function browserWalk(): Promise<number> {
     await ctx.close()
   }
 
-  // B4 — /markets: the rail and a chip that reaches the app.
-  {
-    const { ctx, page, errs } = await open({ width: 1440, height: 900, theme: 'dark' })
+  // B4 — /markets, the app's front door and the landing every fresh sign-in
+  // gets. A symbol must be REACHABLE at every width; the Map's tiles navigate
+  // on click, so reachability is hrefs OR map cells. The href count is
+  // reported separately because a view with no anchors is uncrawlable and
+  // can't be middle-clicked — /markets is a public front door on purpose
+  // (#765), so that number matters even when the view works.
+  for (const w of [1440, 1279, 375] as const) {
+    const { ctx, page, errs } = await open({ width: w, height: 900, theme: 'dark' })
     await page.goto(`${BASE}/markets`, { waitUntil: 'domcontentloaded' })
-    await page.waitForTimeout(4000)
-    await inspect(page, 'markets/1440', errs)
-    const rows = await page.locator('a[href^="/t/"]').count()
-    add('markets/rows', rows > 0, `${rows} symbol link(s)`)
+    await page.waitForTimeout(5000)
+    await inspect(page, `markets/${w}`, errs)
+    const hrefs = await page.locator('a[href^="/t/"]').count()
+    const cells = await page.locator('g.mk-map__cell').count()
+    add(`markets/${w}/reachable`, hrefs + cells > 0, `${hrefs} link(s) + ${cells} map cell(s)`)
+    const acts = await page
+      .locator('button, a')
+      .evaluateAll((els) => els.filter((e) => /^(buy|sell|long|short|protect)\b/i.test(e.textContent?.trim() ?? '')).length)
+    if (hrefs === 0) add(`markets/${w}/crawlable`, false, `default view has no <a href="/t/…"> (${cells} click-only tiles, ${acts} act chip(s))`)
     await ctx.close()
   }
 
