@@ -9557,6 +9557,64 @@ async function main() {
     const g = guardCrossChainBuild(goodBuild, { chainId: 8453 })
     check('xchain guard: correct transfer PASSES', g.ok && g.tx?.to === USDC_BASE && g.depositAddress === DEPOSIT)
 
+    // ── Private mode (NEAR Confidential Intents) ─────────────────────────────
+    {
+      const ME = '0x9Cc09AD0D6832FfbBFb1B70F1D9e5d0a6d00892a'
+      const OTHER = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+      const privBuild = { ...goodBuild, confidential: { level: 'basic', deliversToPayer: false }, deposit: { ...goodBuild.deposit, deliveredTo: `${OTHER} on Arbitrum`, refundsGoTo: ME } }
+      check(
+        'private swap guard: a private ask the venue did NOT confirm is REFUSED (never falls back to a public swap) — and an older MCP that drops the field reads the same',
+        !guardCrossChainBuild(goodBuild, { chainId: 8453, confidential: true }).ok &&
+          guardCrossChainBuild(privBuild, { chainId: 8453, confidential: true, deliverTo: OTHER, refundTo: ME }).ok,
+      )
+      check('private swap guard: privacy nobody asked for is refused', !guardCrossChainBuild(privBuild, { chainId: 8453 }).ok)
+      check(
+        'private swap guard: the payout is bound to the asked address — a different one, a missing one, and a foreign refund all refuse',
+        !guardCrossChainBuild({ ...privBuild, deposit: { ...privBuild.deposit, deliveredTo: `${ME} on Arbitrum` } }, { chainId: 8453, confidential: true, deliverTo: OTHER, refundTo: ME }).ok &&
+          !guardCrossChainBuild({ ...privBuild, deposit: { ...goodBuild.deposit } }, { chainId: 8453, confidential: true, deliverTo: OTHER, refundTo: ME }).ok &&
+          !guardCrossChainBuild({ ...privBuild, deposit: { ...privBuild.deposit, refundsGoTo: OTHER } }, { chainId: 8453, confidential: true, deliverTo: OTHER, refundTo: ME }).ok &&
+          // today's MCP names no deliveredTo on a to-self build: still passes.
+          guardCrossChainBuild(goodBuild, { chainId: 8453, deliverTo: ME, refundTo: ME }).ok,
+      )
+      const pv = (a: string) => parseCrossChainSwap(a) as { confidential?: boolean; recipient?: string; problem?: string; amount?: string; destinationChain?: string } | null
+      const plain = pv('swap 5 USDC from base to arbitrum')
+      check(
+        'private swap grammar: every private phrasing sets the flag and leaves the swap itself byte-identical to the public parse',
+        ['swap 5 USDC from base to arbitrum privately', 'privately swap 5 USDC from base to arbitrum', 'private swap 5 USDC from base to arbitrum', 'bridge 5 USDC from base to arbitrum confidentially', 'swap 5 USDC from base to arbitrum in private mode', 'swap 5 USDC from base to arbitrum using incognito mode'].every((a) => {
+          const r = pv(a)
+          return r?.confidential === true && !r.recipient && r.amount === '5' && r.destinationChain === 'arbitrum'
+        }) && !!plain && !('confidential' in plain) && !('recipient' in plain),
+      )
+      check(
+        'private swap grammar: a delivery address is checksummed; a bad checksum refuses by name; a bare "to 0x…" is never read as a recipient',
+        pv(`swap 5 USDC from base to arbitrum privately, deliver to ${OTHER.toLowerCase()}`)?.recipient === OTHER &&
+          /checksum/.test(pv('swap 5 USDC from base to arbitrum privately, deliver to 0xD8dA6BF26964aF9D7eEd9e03E53415D37aA96046')?.problem ?? '') &&
+          !pv(`swap 5 USDC from base to ${OTHER} on arbitrum`)?.recipient,
+      )
+      check(
+        'private swap grammar: Robinhood Chain and Arc have no private lane — refused by name, never a quiet public bridge',
+        /NEAR Intents/.test(pv('swap 5 USDC from base to robinhood privately')?.problem ?? '') && /NEAR Intents/.test(pv('swap 5 USDC from base to arc privately')?.problem ?? ''),
+      )
+      const pubPending = crossChainPending({ amount: '5', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'arbitrum' }, DEPOSIT, 's')
+      const privPending = crossChainPending({ amount: '5', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'arbitrum', confidential: true, recipient: OTHER }, DEPOSIT, 's')
+      const fu = (m: string, pend: typeof pubPending) => parseCrossChainFollowUp(m, pend) as { kind: string; params?: { confidential?: boolean; recipient?: string; amount?: string }; problem?: string } | null
+      check(
+        "private swap follow-ups: the card's switch sentences amend the pending swap; a new size KEEPS the privacy choice; pending stays within the sanitizer's 8 keys",
+        fu('make it private', pubPending)?.params?.confidential === true &&
+          fu('make it public', privPending)?.kind === 'amend' && !fu('make it public', privPending)?.params?.confidential && !fu('make it public', privPending)?.params?.recipient &&
+          fu(`deliver it to ${OTHER}`, pubPending)?.params?.recipient === OTHER && fu(`deliver it to ${OTHER}`, pubPending)?.params?.confidential === true &&
+          fu('deliver it to 0x1234', pubPending)?.kind === 'problem' &&
+          fu('make it 2', privPending)?.params?.confidential === true && fu('make it 2', privPending)?.params?.recipient === OTHER && fu('make it 2', privPending)?.params?.amount === '2' &&
+          fu('deliver it back to my wallet', privPending)?.params?.confidential === true && !fu('deliver it back to my wallet', privPending)?.params?.recipient &&
+          Object.keys(privPending.data).length <= 8,
+      )
+      check(
+        'private swap fence: an ask naming a delivery address is outbound-to-third-party (links + embeds hold it to prefill), and a job leg refuses one',
+        outboundToThirdParty(`swap 5 USDC from base to arbitrum privately, deliver to ${OTHER}`).outbound &&
+          !outboundToThirdParty('swap 5 USDC from base to arbitrum privately').outbound,
+      )
+    }
+
     // Wrong recipient (the fabricated-address class of bug) MUST be refused.
     const evilData = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: ['0x000000000000000000000000000000000000dEaD' as `0x${string}`, BigInt(1000000)] })
     const evilBuild = { ...goodBuild, steps: [{ action: 'send_transaction', tx: { to: USDC_BASE, data: evilData, value: '0', chainId: 8453 } }] }

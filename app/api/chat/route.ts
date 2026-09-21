@@ -45,6 +45,9 @@ import {
   guardCrossChainBuild,
   expectedOriginChainId,
   crossChainPending,
+  composePrivacyLines,
+  CONFIDENTIAL_LEVEL,
+  type SwapPrivacy,
   crossChainValueUsd,
   type CrossChainSwapParams,
   type BuiltSwap,
@@ -847,6 +850,9 @@ async function handleChatTurn(req: NextRequest) {
           workingContext: { v: 1, age: 0, ...(workingContext?.scope ? { scope: workingContext.scope } : {}) } satisfies WorkingContext,
         })
       }
+      if (cc?.kind === 'problem') {
+        return NextResponse.json({ reply: `🔗 ${cc.problem}` })
+      }
       if (cc?.kind === 'noop') {
         return NextResponse.json({
           reply: `🔏 The swap is built above — sign the deposit transfer with the button to send it. Say “cancel” to drop it.`,
@@ -856,7 +862,7 @@ async function handleChatTurn(req: NextRequest) {
         const ccAgent = crossChainAgentOf(activeServers)
         if (ccAgent.agent && ccAgent.usable) {
           nativeTrace({ type: 'status', label: `native cross-chain layer: amending the pending deposit to ${cc.params.amount} ${cc.params.originToken.toUpperCase()} (${cc.params.originChain} → ${cc.params.destinationChain})` })
-          return await buildCrossChainSwapTurn(ccAgent.agent, cc.params, walletAddress, workingContext, message, nativeTrace)
+          return await buildCrossChainSwapTurn(ccAgent.agent, cc.params, walletAddress, workingContext, message, nativeTrace, contentOrigin)
         }
         // Amend parsed but the agent left the set (or is a shell row) since
         // the build — fall through to normal routing, with the breadcrumb.
@@ -2214,7 +2220,7 @@ async function handleChatTurn(req: NextRequest) {
         }
         if (cc) {
           nativeTrace({ type: 'status', label: `native cross-chain layer claimed the turn: swap ${cc.amount} ${cc.originToken.toUpperCase()} (${cc.originChain}) → ${cc.destinationToken.toUpperCase()} (${cc.destinationChain}) — planner bypassed` })
-          return await buildCrossChainSwapTurn(ccAgent.agent, cc, walletAddress, workingContext, message, nativeTrace)
+          return await buildCrossChainSwapTurn(ccAgent.agent, cc, walletAddress, workingContext, message, nativeTrace, contentOrigin)
         }
         // The breadcrumb that keeps a parse miss from reading as MCP flake:
         // cross-chain-shaped but not an imperative build → the planner routes
@@ -2545,9 +2551,16 @@ function composeCrossChainReply(
     '',
     `- **You send:** ${params.amount} ${sellTok} on ${cap(params.originChain)} — one signature, that's the whole job`,
   ]
+  const elsewhere = Boolean(params.recipient && params.recipient.toLowerCase() !== walletAddress.toLowerCase())
   if (recv) {
-    lines.push(`- **You receive:** ~${recv[1]} ${recv[2].toUpperCase()} on ${cap(params.destinationChain)}, delivered to your wallet (${short(walletAddress)})${eta ? ` in ${eta[1].trim()}` : ''}`)
+    // A separate delivery address prints IN FULL — it is where the money
+    // lands, and the one value the deposit calldata can't show.
+    const where = elsewhere ? `delivered to \`${params.recipient}\` — not this wallet` : `delivered to your wallet (${short(walletAddress)})`
+    lines.push(`- **You receive:** ~${recv[1]} ${recv[2].toUpperCase()} on ${cap(params.destinationChain)}${eta ? ` in ${eta[1].trim()}` : ''}, ${where}`)
+  } else if (elsewhere) {
+    lines.push(`- **Delivered to:** \`${params.recipient}\` — not this wallet`)
   }
+  lines.push(...composePrivacyLines(params, walletAddress))
   // A same-token move arriving visibly lighter reads as broken unless the
   // cost is named — solver/route costs are fixed-ish, so small sizes pay a
   // big percentage.
@@ -2579,7 +2592,9 @@ function composeCrossChainReply(
     lines.push('', summary)
   }
   for (const w of guard.warnings) lines.push('', `⚠️ **Heads up:** ${w}`)
-  lines.push('', `Want a different size? Just say “make it 2” and I'll rebuild it.`)
+  lines.push('', params.confidential
+    ? `Want a different size? Say “make it 2”. Say “make it public” to turn private mode off.`
+    : `Want a different size? Say “make it 2”. Want the route kept off the public record? Flip **Private** on the card, or say “make it private”.`)
   return lines.join('\n')
 }
 
@@ -2590,7 +2605,19 @@ async function buildCrossChainSwapTurn(
   ctx?: WorkingContext,
   originalMessage?: string,
   trace: (event: unknown) => void = () => {},
+  contentOrigin: ContentOrigin = 'first-party',
 ) {
+  // Where money LANDS is only ever chosen by the person signing, typing on
+  // our own surface. A link or an embed host that names a delivery address
+  // is the drainer shape wearing a privacy label — refuse it by name. (The
+  // outbound fence already holds such an ask to prefill; this is the brace.)
+  if (params.recipient && isThirdPartyOrigin(contentOrigin)) {
+    trace({ type: 'note', level: 'warn', label: `native cross-chain layer REFUSED a delivery address from ${contentOrigin} content` })
+    return NextResponse.json({
+      reply: `🚫 This ask came from ${contentOrigin === 'link' ? 'a link' : 'the page hosting this chat'} and names an address for the funds to land at. I only deliver to an address you type yourself in the Pantessa app — here, swaps pay out to your own wallet. Nothing was built.`,
+      blocked: true,
+    })
+  }
   if (!walletAddress) {
     trace({ type: 'note', level: 'info', label: 'no wallet connected — asking to connect before building' })
     return NextResponse.json({
@@ -2617,6 +2644,8 @@ async function buildCrossChainSwapTurn(
       // the model, never from the tool's own suggestion).
       feeRecipient: TREASURY_ADDRESS,
       feeBps: CROSS_CHAIN_FEE_BPS,
+      ...(params.recipient ? { recipient: params.recipient } : {}),
+      ...(params.confidential ? { confidentiality: CONFIDENTIAL_LEVEL } : {}),
     })) as BuiltSwap
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'the build failed'
@@ -2629,7 +2658,22 @@ async function buildCrossChainSwapTurn(
   const guard = guardCrossChainBuild(built, {
     chainId: expectedOriginChainId(params.originChain),
     fee: { recipient: TREASURY_ADDRESS, bps: CROSS_CHAIN_FEE_BPS },
+    confidential: Boolean(params.confidential),
+    deliverTo: params.recipient ?? walletAddress,
+    refundTo: walletAddress,
   })
+  if (params.confidential && built.confidential?.level !== CONFIDENTIAL_LEVEL) {
+    // The venue (or an MCP build that predates private mode) answered with an
+    // ordinary public quote. Nothing is offered — and the swap the user was
+    // amending stays pending, so "make it public" / "cancel" still resolve
+    // instead of falling to the planner mid-conversation.
+    trace({ type: 'note', level: 'warn', label: 'private mode asked for but not confirmed by the venue — nothing offered (a private ask never becomes a public swap)' })
+    return NextResponse.json({
+      reply: `🚫 Private mode isn't available for this swap right now — the venue didn't confirm it, so I built nothing rather than hand you an ordinary public swap. ${ctx?.pending?.kind === 'xchain' ? 'The swap above is unchanged and still signable.' : 'Say the same swap without “privately” and I\'ll build it.'}`,
+      blocked: true,
+      ...(ctx?.pending?.kind === 'xchain' ? { workingContext: { v: 1 as const, age: 0, ...(ctx.scope ? { scope: ctx.scope } : {}), ...(ctx.offers ? { offers: ctx.offers } : {}), pending: ctx.pending } satisfies WorkingContext } : {}),
+    })
+  }
   if (!guard.ok || !guard.tx) {
     // A verification failure is a REFUSAL, not a warning — never offer a
     // transfer we couldn't prove is correct.
@@ -2656,8 +2700,26 @@ async function buildCrossChainSwapTurn(
   const summary = guard.summary ?? built.quote?.summary ?? 'Cross-chain swap'
   return NextResponse.json({
     reply: composeCrossChainReply(params, guard, summary, walletAddress),
-    txRequest: guard.tx,
-    guardrails: { ok: true, warnings: guard.warnings, valueUsd },
+    // `privacy` rides the tx card: the sign card's Private switch reads it
+    // (components/PrivateSwapToggle) and sends the amend sentences above.
+    txRequest: {
+      ...guard.tx,
+      privacy: {
+        confidential: Boolean(params.confidential),
+        ...(params.recipient && params.recipient.toLowerCase() !== walletAddress.toLowerCase() ? { recipient: params.recipient } : {}),
+        canDeliverElsewhere: !isThirdPartyOrigin(contentOrigin),
+      } satisfies SwapPrivacy,
+    },
+    guardrails: {
+      ok: true,
+      warnings: guard.warnings,
+      valueUsd,
+      // §E5's renderer prints every warn-level check above the button — the
+      // delivery address, in full, is the last thing read before signing.
+      ...(params.recipient && params.recipient.toLowerCase() !== walletAddress.toLowerCase()
+        ? { checks: [{ id: 'recipient', level: 'warn', note: `The payout LEAVES your wallet's control: it is delivered to ${params.recipient} on ${prettyChainWord(params.destinationChain)}. Refunds return to you.` }] }
+        : {}),
+    },
     // Which layer built it — echoed on the tx-built/signed telemetry beacons
     // so /dashboard/embeds can break the funnel down per builder (lib/build-path.ts).
     buildPath: 'native-cross-chain',

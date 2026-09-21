@@ -46,7 +46,74 @@ export interface CrossChainSwapParams {
   originChain: string
   destinationToken: string
   destinationChain: string
+  /** NEAR Confidential Intents: the route between the deposit and the payout
+   *  stays off the public record. Absent = the ordinary public lane. */
+  confidential?: true
+  /** Deliver to this address instead of the paying wallet. Only ever typed by
+   *  the user on a first-party surface (the chat route refuses it from a link
+   *  or an embed host); refunds always return to the paying wallet. */
+  recipient?: string
 }
+
+// ── Private mode (NEAR Confidential Intents) ────────────────────────────────
+//
+// What it hides: the ROUTE — which deposit became which payout. What it does
+// not hide: the deposit transfer on the origin chain and the payout on the
+// destination chain, both ordinary public transfers. So a private swap that
+// pays out to the wallet that paid in is matchable by amount and timing; the
+// privacy is real only when the payout goes to a different address. Every
+// reply says so (composePrivacyLines) — never sell it as more than it is.
+
+/** The level every private build asks for. "advanced" exists; nothing in the
+ *  docs says what it adds, and the two priced identically (2026-09-21). */
+export const CONFIDENTIAL_LEVEL = 'basic' as const
+
+const PRIVATE_WORDS = '(?:privately|confidentially|in\\s+private(?:\\s+mode)?|in\\s+confidential\\s+mode|(?:using|with|via|in)\\s+(?:private|confidential|incognito)\\s+mode|incognito|as\\s+a\\s+(?:private|confidential)\\s+swap|private\\s+mode|confidential\\s+mode)'
+const PRIVATE_RE = new RegExp(`(?:[,;]\\s*|\\s+|^)${PRIVATE_WORDS}(?=[\\s,.;!]|$)`, 'gi')
+// "private swap of 5 USDC …" / "confidential bridge 5 USDC …" — the adjective
+// sits on the verb; drop it and keep the verb.
+const PRIVATE_ADJ_RE = /\b(?:private|confidential)\s+(?=(?:swap|bridge|move|convert|send|trade|transfer)\b)/gi
+// "… deliver[ed] to 0x…" / "pay out to 0x…" / "receive at 0x…" / "recipient 0x…".
+// A bare "to 0x…" is NOT read as a recipient: that slot is the grammar's
+// destination token, and a guess there would move money to a contract.
+const RECIPIENT_RE =
+  /(?:[,;]\s*|\s+)(?:and\s+)?(?:deliver(?:ed|ing)?(?:\s+it)?|pay(?:\s+it)?\s+out|paid\s+out|payout|receiv(?:e|ed|ing)(?:\s+it)?|arriv(?:e|ing)|land(?:ing)?|recipient(?:\s+is)?)\s*(?:to|at|in|into|on|:)?\s*(?:address\s+|wallet\s+)?(0x[0-9a-fA-F]{40})\b/i
+
+/** A typed 0x recipient: well-formed, a good checksum when mixed-case (a bad
+ *  EIP-55 checksum is a typo'd address — refuse by name, the wallet-send
+ *  rule), never the zero address. Returns the checksummed form. */
+export function checkRecipient(raw: string): { ok: true; address: string } | { ok: false; problem: string } {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(raw)) return { ok: false, problem: `“${raw}” isn't a full 0x address — a delivery address is 0x followed by 40 hex characters.` }
+  if (/^0x0{40}$/.test(raw)) return { ok: false, problem: `That's the zero address — anything delivered there is gone. Give me the address you want the funds to land at.` }
+  const mixed = /[a-f]/.test(raw.slice(2)) && /[A-F]/.test(raw.slice(2))
+  if (mixed && !isAddress(raw, { strict: true })) {
+    return { ok: false, problem: `The delivery address ${raw} fails its checksum — one character is likely wrong. Paste it again and I'll build it.` }
+  }
+  return { ok: true, address: getAddress(raw.toLowerCase()) }
+}
+
+/** Pull the privacy words and the delivery clause OUT of the sentence, so the
+ *  swap grammar below reads exactly what it always has. */
+export function extractPrivacy(message: string): { rest: string; confidential: boolean; recipient?: string; problem?: string } {
+  let rest = message
+  let recipient: string | undefined
+  let problem: string | undefined
+  const r = rest.match(RECIPIENT_RE)
+  if (r) {
+    const checked = checkRecipient(r[1])
+    if (checked.ok) recipient = checked.address
+    else problem = checked.problem
+    rest = rest.replace(r[0], ' ')
+  }
+  const before = rest
+  rest = rest.replace(PRIVATE_ADJ_RE, '').replace(PRIVATE_RE, ' ')
+  const confidential = rest !== before
+  return { rest: rest.replace(/\s{2,}/g, ' ').replace(/\s+([,.;!])/g, '$1').trim(), confidential, ...(recipient ? { recipient } : {}), ...(problem ? { problem } : {}) }
+}
+
+/** Chains a private swap can't reach: they fund over LiFi, which has no
+ *  confidential lane. A private ask never quietly becomes a public bridge. */
+const NO_PRIVATE_LANE = new Set(['robinhood', 'arc'])
 
 const cleanTok = (t: string) => t.replace(/^\$/, '')
 
@@ -82,6 +149,23 @@ const DOLLAR_OTHER_RE = new RegExp(
 )
 
 export function parseCrossChainSwap(rawMessage: string): CrossChainSwapParams | { problem: string } | null {
+  const privacy = extractPrivacy(rawMessage)
+  const parsed = parseCrossChainCore(privacy.rest)
+  if (!parsed || 'problem' in parsed) return parsed
+  if (!privacy.confidential && !privacy.recipient && !privacy.problem) return parsed
+  // From here the sentence IS a cross-chain swap and it asked for privacy
+  // and/or a delivery address — anything we can't honor refuses by name.
+  if (privacy.problem) return { problem: privacy.problem }
+  const lane = [parsed.originChain, parsed.destinationChain].map((c) => canonicalChainWord(c) ?? c.toLowerCase()).find((c) => NO_PRIVATE_LANE.has(c))
+  if (lane) {
+    return {
+      problem: `Private mode and separate delivery addresses run on NEAR Intents, which doesn't reach ${prettyChainWord(lane)} — moves there go over a public bridge. Drop “privately”${privacy.recipient ? ' and the delivery address' : ''} and I'll build the ordinary move, or pick another chain.`,
+    }
+  }
+  return { ...parsed, ...(privacy.confidential ? { confidential: true as const } : {}), ...(privacy.recipient ? { recipient: privacy.recipient } : {}) }
+}
+
+function parseCrossChainCore(rawMessage: string): CrossChainSwapParams | { problem: string } | null {
   const message = normalizeChainWords(normalizeArrows(rawMessage)).replace(DOLLAR_STABLE_RE, '$1 $2')
   const dollarOther = message.match(DOLLAR_OTHER_RE)
   if (dollarOther) {
@@ -202,7 +286,9 @@ export interface BuiltSwap {
   kind?: string
   appFee?: BuiltAppFee
   quote?: { sell?: { amountAtoms?: string; token?: string; chain?: string; usd?: string }; receive?: { token?: string; chain?: string }; summary?: string }
-  deposit?: { address?: string; addressExpires?: string | null; deliveredTo?: string }
+  deposit?: { address?: string; addressExpires?: string | null; deliveredTo?: string; refundsGoTo?: string }
+  /** Present only when the venue ECHOED the confidential level we asked for. */
+  confidential?: { level?: string; deliversToPayer?: boolean; note?: string }
   balanceCheck?: { ok?: boolean | null; note?: string }
   steps?: BuiltStep[]
   warnings?: string[]
@@ -316,10 +402,43 @@ export function checkCrossChainFee(
 
 export function guardCrossChainBuild(
   built: BuiltSwap,
-  expected: { chainId: number | null; fee?: { recipient: string; bps: number } | null },
+  expected: {
+    chainId: number | null
+    fee?: { recipient: string; bps: number } | null
+    /** Pass on every private build — the venue must echo the level. */
+    confidential?: boolean
+    /** Where the payout must land. Pass on every build that names one. */
+    deliverTo?: string | null
+    /** Where refunds must return: the paying wallet. */
+    refundTo?: string | null
+  },
 ): GuardResult {
   const reasons: string[] = []
   const warnings: string[] = []
+
+  // A private ask the venue (or an older MCP build that drops the field) did
+  // not honor would hand the user an ordinary public swap they believe is
+  // private. Refuse; and refuse the mirror — privacy nobody asked for.
+  const echoedLevel = built.confidential?.level
+  if (expected.confidential && echoedLevel !== CONFIDENTIAL_LEVEL) {
+    reasons.push('Private mode was asked for but the venue did not confirm it — a private swap never falls back to a public one.')
+  }
+  if (!expected.confidential && echoedLevel) {
+    reasons.push('The build came back marked confidential, which was not asked for.')
+  }
+  // The payout address is the one value in this build the deposit calldata
+  // cannot prove — it lives in the venue's quote. Bind it to what the tool
+  // says it quoted; a build that names a different address (or, when a
+  // separate address was asked for, names none) refuses.
+  const deliveredTo = built.deposit?.deliveredTo?.trim().split(/\s+/)[0]
+  if (expected.deliverTo) {
+    if (deliveredTo ? !eqAddr(deliveredTo, expected.deliverTo) : expected.deliverTo !== expected.refundTo) {
+      reasons.push(`The quote delivers to ${deliveredTo ?? 'an address it did not name'}, not ${expected.deliverTo}.`)
+    }
+  }
+  if (expected.refundTo && built.deposit?.refundsGoTo && !eqAddr(built.deposit.refundsGoTo, expected.refundTo)) {
+    reasons.push('Refunds on this quote would not return to your wallet.')
+  }
 
   const step = built.steps?.[0]
   const tx = step?.tx
@@ -404,8 +523,15 @@ const CC_AMEND_RE = new RegExp(
   'i',
 )
 
+// "make it private" / "go private" / "turn on private mode" — and the way back.
+const CC_PRIVATE_ON_RE = /^(?:ok(?:ay)?[,.]?\s*)?(?:actually[,.]?\s*)?(?:make\s+(?:it|that|this)\s+(?:private|confidential)|go\s+(?:private|confidential|incognito)|(?:turn|switch)\s+(?:on\s+)?(?:private|confidential|incognito)(?:\s+mode)?(?:\s+on)?|(?:use|enable)\s+(?:private|confidential|incognito)\s+mode|do\s+it\s+privately|privately)\b/i
+const CC_PRIVATE_OFF_RE = /^(?:ok(?:ay)?[,.]?\s*)?(?:actually[,.]?\s*)?(?:make\s+(?:it|that|this)\s+public|go\s+public|(?:turn|switch)\s+off\s+(?:private|confidential|incognito)(?:\s+mode)?|(?:turn|switch)\s+(?:private|confidential|incognito)(?:\s+mode)?\s+off|disable\s+(?:private|confidential|incognito)\s+mode|not\s+private(?:ly)?)[.!\s]*$/i
+const CC_DELIVER_RE = /(?:deliver(?:\s+it)?|pay(?:\s+it)?\s+out|send\s+(?:it|the\s+payout)|recipient(?:\s+is)?)\s*(?:to|at|:)?\s*(?:address\s+|wallet\s+)?(0x[0-9a-fA-F]*)/i
+const CC_DELIVER_BACK_RE = /^(?:ok(?:ay)?[,.]?\s*)?(?:actually[,.]?\s*)?(?:deliver(?:\s+it)?|pay(?:\s+it)?\s+out|send\s+it)\s+(?:back\s+)?to\s+(?:my\s+(?:own\s+)?wallet|me|myself|this\s+wallet)[.!\s]*$/i
+
 export type CrossChainFollowUp =
   | { kind: 'cancel' }
+  | { kind: 'problem'; problem: string }
   | { kind: 'amend'; params: CrossChainSwapParams }
   | { kind: 'noop' }
 
@@ -423,18 +549,39 @@ export function parseCrossChainFollowUp(
   if (!pending || pending.kind !== 'xchain') return null
   const text = message.trim()
   if (CC_CANCEL_RE.test(text)) return { kind: 'cancel' }
+  const base: CrossChainSwapParams = {
+    amount: pending.data.amount ?? '',
+    originToken: pending.data.originToken ?? '',
+    originChain: pending.data.originChain ?? '',
+    destinationToken: pending.data.destinationToken ?? '',
+    destinationChain: pending.data.destinationChain ?? '',
+    ...(pending.data.confidential === '1' ? { confidential: true as const } : {}),
+    ...(pending.data.recipient && /^0x[0-9a-fA-F]{40}$/.test(pending.data.recipient) ? { recipient: pending.data.recipient } : {}),
+  }
+  // Privacy amendments — the sign card's Private switch sends these exact
+  // sentences (components/PrivateSwapToggle), so the switch and a typed ask
+  // are one code path. A delivery address implies private mode: a payout to
+  // a second address over the PUBLIC lane is a labeled trail between the two.
+  const deliver = text.match(CC_DELIVER_RE)
+  if (deliver) {
+    const checked = checkRecipient(deliver[1])
+    if (!checked.ok) return { kind: 'problem', problem: checked.problem }
+    return { kind: 'amend', params: { ...base, confidential: true, recipient: checked.address } }
+  }
+  if (CC_DELIVER_BACK_RE.test(text)) {
+    const { recipient: _drop, ...mine } = base
+    return { kind: 'amend', params: mine }
+  }
+  if (CC_PRIVATE_OFF_RE.test(text)) {
+    const { confidential: _c, recipient: _r, ...pub } = base
+    return { kind: 'amend', params: pub }
+  }
+  if (CC_PRIVATE_ON_RE.test(text) && text.length <= 60) return { kind: 'amend', params: { ...base, confidential: true } }
   const amend = text.match(CC_AMEND_RE)
   if (amend) {
-    return {
-      kind: 'amend',
-      params: {
-        amount: amend[1],
-        originToken: pending.data.originToken ?? '',
-        originChain: pending.data.originChain ?? '',
-        destinationToken: pending.data.destinationToken ?? '',
-        destinationChain: pending.data.destinationChain ?? '',
-      },
-    }
+    // A new size keeps the privacy choice — "make it 2" must not quietly
+    // turn a private swap public.
+    return { kind: 'amend', params: { ...base, amount: amend[1] } }
   }
   // "confirm" / "yes" / "go ahead" against an already-built swap → the button
   // is right there; don't build a second deposit address, just say so.
@@ -455,6 +602,30 @@ export function crossChainPending(params: CrossChainSwapParams, depositAddress: 
       destinationToken: params.destinationToken,
       destinationChain: params.destinationChain,
       depositAddress,
+      // 8 keys — the working-context sanitizer's cap. Keep it at 8.
+      ...(params.confidential ? { confidential: '1' } : {}),
+      ...(params.recipient ? { recipient: params.recipient } : {}),
     },
   }
+}
+
+/** What the sign card's Private switch reads (rides on txRequest.privacy). */
+export interface SwapPrivacy {
+  confidential: boolean
+  /** Set when the payout goes somewhere other than the paying wallet. */
+  recipient?: string
+  /** False on a link or an embed: only you, typing, choose where money lands. */
+  canDeliverElsewhere: boolean
+}
+
+/** The honest lines a private build adds to its reply. */
+export function composePrivacyLines(params: CrossChainSwapParams, wallet: string): string[] {
+  if (!params.confidential) return []
+  const elsewhere = Boolean(params.recipient && params.recipient.toLowerCase() !== wallet.toLowerCase())
+  return [
+    `- **Private mode:** on — the route between your deposit and the payout stays off the public record (NEAR Confidential Intents). Same single signature.`,
+    elsewhere
+      ? `- **Still public:** your deposit on ${prettyChainWord(params.originChain)} and the payout on ${prettyChainWord(params.destinationChain)} are ordinary transfers. What's hidden is that they belong together. Refunds return to your wallet, not the delivery address.`
+      : `- **Still public:** your deposit and the payout are ordinary transfers, and both touch this wallet — anyone can match them by amount and timing. For real privacy, deliver to an address that isn't linked to this one: say “deliver it to 0x…”.`,
+  ]
 }
