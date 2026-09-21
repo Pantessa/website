@@ -36,11 +36,12 @@
 
 import { decodeFunctionData, erc20Abi, formatUnits, isAddress } from 'viem'
 import { buildsNatively } from '@/scripts/ask-ladder'
-import { bridgeAlternatives, heldElsewhereLine } from '@/lib/bridge-shortfall'
+import { bridgeAlternatives, bridgeCardChip, heldElsewhereLine } from '@/lib/bridge-shortfall'
 import { chainById, publicClientFor } from '@/lib/chains'
 import { parseCrossChainSwap } from '@/lib/cross-chain-swap'
 import { dynamicTokenByAddress } from '@/lib/token-list'
 import { fundingOriginWords } from '@/lib/funding-origins'
+import { ONRAMP_DEFAULT_NETWORK } from '@/lib/onramp'
 import type { FundingSource } from '@/lib/funding-plan'
 
 export type SpendKind = 'value' | 'approve' | 'transfer' | 'swap-in' | 'permit2' | 'order'
@@ -425,7 +426,7 @@ export function affordabilityRefusal(v: Extract<AffordabilityVerdict, { kind: 's
 
 export const AFFORDABILITY_SHORT_PATH = 'native-affordability-short'
 
-export interface RefusalChip { label: string; resume: string }
+export interface RefusalChip { label: string; resume: string; fund?: import('@/lib/clarify').ClarifyOption['fund'] }
 
 /** A dollar-pegged token. A wallet short of one of these on one chain is
  *  nearly always holding another one somewhere else — which is why "buy" is
@@ -490,6 +491,8 @@ export interface ShortfallScan {
   sources: FundingSource[]
   stranded?: FundingSource[]
   failedChains?: string[]
+  /** What the scan priced ETH at — the card chip's resume is sized in ETH. */
+  ethUsd?: number | null
 }
 
 /**
@@ -524,6 +527,22 @@ export async function bridgeShortfallCopy(
     const alt = bridgeAlternatives({ parsed, sources: read.sources, stranded: read.stranded, verify })
     lines.push(...alt.lines)
     chips = alt.chips
+    // Nothing in the wallet can pay for it: the card door, which a bridge
+    // has never had (its refusal has no follow-up to restate, so the
+    // funding layer leaves it to the surface — audit:funding's 8
+    // bridge-only cells). The money lands as ETH on the on-ramp's lane and
+    // goes where the visitor asked it to go.
+    if (!chips.length) {
+      const card = bridgeCardChip({
+        amount: parsed.amount,
+        destToken: parsed.destinationToken,
+        destChain: parsed.destinationChain,
+        landsOn: ONRAMP_DEFAULT_NETWORK,
+        ethUsd: read.ethUsd,
+        verify,
+      })
+      if (card) chips = [{ label: card.label, resume: card.resume, fund: card.fund }]
+    }
   }
   return { line: lines.length ? lines.join(' ') : null, chips }
 }
@@ -573,7 +592,8 @@ export async function gateSignablePayload<T extends Record<string, unknown>>(
     const fromScan = fromWallet.chips.length > 0
     gated.clarify = {
       question: verdict.gas ? `Put gas on ${verdict.chainName}?` : fromScan ? `Use what you already hold?` : `Get ${verdict.symbol.toUpperCase()} first?`,
-      options: chips.map((c) => ({ label: c.label, resume: c.resume })),
+      // `fund` rides through: a card chip is the door itself, not a prefill.
+      options: chips.map((c) => ({ label: c.label, resume: c.resume, ...(c.fund ? { fund: c.fund } : {}) })),
     }
     gated[textKey] = `${gated[textKey] as string} ${
       verdict.gas
