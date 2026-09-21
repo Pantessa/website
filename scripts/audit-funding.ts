@@ -59,9 +59,11 @@ import {
   decideFundingTurn,
   DEST_GAS_FLOOR_ETH,
   FUNDING_CHAIN_WORD,
+  FUNDING_STABLES,
   fundingPlanUsd,
   type FundingBalanceRead,
   type FundingNeed,
+  type FundingRefusalFacts,
 } from '../lib/funding-plan'
 import { deliveryFundUsd, ONRAMP_DEFAULT_NETWORK, ONRAMP_ETH_PRICE_CEILING_USD, ONRAMP_MAX_USD, ONRAMP_SETTLE_SLACK_USD, planFundUsd } from '../lib/onramp'
 import { buyDollarsOf, swapShortfallTurn, type SwapShortfallAsk } from '../lib/swap-shortfall'
@@ -91,11 +93,12 @@ const GAS_RESERVE_ETH: Record<number, number> = { 1: 0.002, 8453: 0.0002, 42161:
 const DUST_USD = 0.5
 const MIN_GAS_LEG_USD = 1.5
 
-const R = (chainId: number, nativeEth: number, usdcBal: number): FundingBalanceRead => ({
+const R = (chainId: number, nativeEth: number, usdcBal: number, stables?: { symbol: string; balance: number }[]): FundingBalanceRead => ({
   chainId,
   chainWord: FUNDING_CHAIN_WORD[chainId],
   nativeEth,
   usdcBal,
+  ...(stables ? { stables } : {}),
 })
 
 /** Mirror of offerFundingPlan's I/O shell: destination gas need from the
@@ -575,6 +578,67 @@ const SCENARIOS: Scenario[] = [
     reads: [R(1, 0.017, 0), R(8453, 0, 0), R(42161, 0, 0)],
     expect: 'offer',
   },
+  // ── THE DRIVE WALLET (QA, 2026-09-21): 0x37dad9…0293 holds USDT $359.67 +
+  // ETH $2.93 on Arbitrum and nothing anywhere else. On main, five different
+  // asks in the same second each answered "top up" and named only the $2.93
+  // — $360 in the wallet, "top up" on the screen. Its token is `USDT0` at
+  // 1Click and our token slot takes no digits, so the direct leg cannot
+  // compile; the conversion hop can, and does.
+  {
+    name: 'THE DRIVE WALLET — $359.67 USDT + $2.93 ETH on Arbitrum → "Buy $25 of ETH" on Base: the USDT converts on Arbitrum, then bridges',
+    need: swapNeed('USDC', 25, 'ETH'),
+    reads: [R(8453, 0, 0), R(42161, 0.001465, 0, [{ symbol: 'USDT', balance: 359.67 }]), R(10, 0, 0), R(1, 0, 0)],
+    expect: 'offer',
+  },
+  {
+    name: 'THE DRIVE WALLET → "Supply $25 of USDC to Aave" on Ethereum: same wallet, a chain further',
+    need: aaveSupplyNeed(25, 'USDC'),
+    reads: [R(8453, 0, 0), R(42161, 0.001465, 0, [{ symbol: 'USDT', balance: 359.67 }]), R(10, 0, 0), R(1, 0, 0)],
+    expect: 'offer',
+  },
+  {
+    name: 'THE DRIVE WALLET → "Deposit 20 USDC to Hyperliquid": the USDT is already on Arbitrum, so one venue swap, no bridge',
+    need: hlDepositNeed(20, 0),
+    reads: [R(8453, 0, 0), R(42161, 0.001465, 0, [{ symbol: 'USDT', balance: 359.67 }]), R(10, 0, 0), R(1, 0, 0)],
+    expect: 'offer',
+  },
+  {
+    name: '$120 of DAI + gas on Ethereum → "Buy $50 of UNI" on Base: DAI rides a leg of its own (1Click lists it on Ethereum)',
+    need: buyNeed(8453, 50, 'UNI'),
+    reads: [R(8453, 0, 0), R(42161, 0, 0), R(10, 0, 0), R(1, 0.002, 0, [{ symbol: 'DAI', balance: 120 }])],
+    expect: 'offer',
+    card: { ask: buyAsk(8453, 50, 'UNI'), expect: 'none' },
+  },
+  {
+    name: '$4 of USDT + gas on Optimism → "Buy $50 of UNI" on Base: nowhere near the plan — the refusal names the USDT, and the card rides along',
+    need: buyNeed(8453, 50, 'UNI'),
+    reads: [R(8453, 0, 0), R(42161, 0, 0), R(10, 0.001, 0, [{ symbol: 'USDT', balance: 4 }]), R(1, 0, 0)],
+    expect: 'refusal',
+    card: { ask: buyAsk(8453, 50, 'UNI'), expect: 'cascade' },
+  },
+  {
+    name: 'gas-stranded $80 USDT on Ethereum + an $8 ETH donor on Base → HL deposit: the rescue unsticks a stable that is not USDC',
+    need: HL_NEED,
+    reads: [R(1, 0, 0, [{ symbol: 'USDT', balance: 80 }]), R(8453, 0.0042, 0), R(42161, 0, 0), R(10, 0, 0)],
+    expect: 'offer',
+  },
+  {
+    // The donor can't cover mainnet's own ~$6 gas leg, so the honest answer
+    // stands — and it is not a dead end: it names both holdings and the one
+    // dollar of ETH that unlocks them.
+    name: 'gas-stranded $80 USDT on Ethereum + a $3 ETH donor on Base → HL deposit: donor too poor for L1 gas, refusal names both',
+    need: HL_NEED,
+    reads: [R(1, 0, 0, [{ symbol: 'USDT', balance: 80 }]), R(8453, 0.0017, 0), R(42161, 0, 0), R(10, 0, 0)],
+    expect: 'refusal',
+  },
+  {
+    // The rescue's target has no cross-chain leg of its own (USDT0), so once
+    // the topup lands it converts on Arbitrum and the USDC bridges.
+    name: 'gas-stranded $80 USDT on Arbitrum + a $3 ETH donor on Base → "Buy $50 of UNI" on Base: unstick, convert, bridge, buy',
+    need: buyNeed(8453, 50, 'UNI'),
+    reads: [R(42161, 0, 0, [{ symbol: 'USDT', balance: 80 }]), R(8453, 0.0017, 0), R(1, 0, 0), R(10, 0, 0)],
+    expect: 'offer',
+  },
   {
     name: 'dust — $0.30 USDC on Base → HL deposit (below naming threshold)',
     need: HL_NEED,
@@ -907,6 +971,7 @@ function expectedMentions(reads: FundingBalanceRead[]): string[] {
   for (const r of reads) {
     if (r.usdcBal >= DUST_USD) mentions.push(`of USDC on ${r.chainWord}`)
     if (r.nativeEth * ETH_USD >= DUST_USD) mentions.push(`ETH on ${r.chainWord}`)
+    for (const st of r.stables ?? []) if (st.balance >= DUST_USD) mentions.push(`of ${st.symbol} on ${r.chainWord}`)
   }
   return mentions
 }
@@ -1207,7 +1272,393 @@ for (const s of RH_SCENARIOS) {
   }
 }
 
-console.log(`\naudit:funding — ${SCENARIOS.length} wallet-state scenarios through the real funding pipeline, plus ${RH_SCENARIOS.length} through the Robinhood Chain planner (no RPC, no signing).`)
+// ─────────────────────────────────────────────────────────────────────────
+//  THE MATRIX — every wallet shape × every need, checked against THE
+//  INVARIANT rather than against a hand-written expectation.
+//
+//  The table above pins SHAPES we have met. This block asks the harder
+//  question: over the cross product of "money on chain C in token T" and
+//  "an action that needs money on chain D", is there ANY cell where a
+//  wallet that plainly holds enough is told no?
+//
+//  The check is deliberately independent of the planner's own arithmetic —
+//  it is the user's-eye view, with a generous margin so only a REAL wall
+//  trips it:
+//
+//   A. COVERED ⇒ offer. When the routable sources sum to comfortably more
+//      than the plan costs (1.25× + $2 — enough slack for every solver
+//      margin, gas leg and two-leg headroom the planner applies), the turn
+//      MUST be an offer. A refusal there is a wallet holding the money
+//      being told no, which is the bug this squad exists to kill.
+//   B. offer ⇒ every chip compiles (shared ladder + compileJobAsk), no chip
+//      sells the token the follow-up buys back, a lone cross-chain chip
+//      composes NEAR Intents.
+//   C. refusal ⇒ every holding ≥ $0.50 is NAMED, and the turn carries a
+//      DOOR: the swap/layer card chip, or gas-stranded copy whose next step
+//      (a dollar of ETH) is the door. A refusal with neither is a dead end.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Comfort factor over the priced plan before COVERED is claimed. */
+const COVERED_MULT = 1.25
+const COVERED_FLAT_USD = 2
+
+const CHAIN_IDS = [8453, 1, 42161, 10] as const
+/** The extra stables each chain offers, READ FROM THE PLANNER'S OWN TABLE —
+ *  a symbol added to FUNDING_STABLES grows the matrix on its own, and a
+ *  crossChain flag flipped there flips the cell's expectation here. */
+const EXTRA_STABLE_SHAPES: Record<number, { sym: string; cross: boolean }[]> = Object.fromEntries(
+  CHAIN_IDS.map((c) => [c, (FUNDING_STABLES[c] ?? []).map((x) => ({ sym: x.symbol, cross: x.crossChain }))]),
+)
+/** Gas that makes a chain signable, per lib/funding-plan MIN_GAS_TO_SEND_ETH. */
+const SIGNABLE_ETH: Record<number, number> = { 1: 0.0015, 8453: 0.0005, 42161: 0.0005, 10: 0.0005 }
+
+interface WalletShape {
+  name: string
+  /** Filled by shapeMentions at build time (see below). */
+  mentions?: string[]
+  reads: FundingBalanceRead[]
+  /** Dollars a plan could actually reach, by destination chain id. Sources
+   *  that cannot route to a destination (a stable with no cross-chain
+   *  route) only count when they already sit on it. */
+  routableUsd: (destChainId: number) => number
+}
+
+/** Every holding ≥ $0.50 the classifier keeps, phrased as the refusal copy
+ *  must name it. Derived, never hand-written: a row worth naming is exactly
+ *  a row the planner itself decided to keep, so the expectation can't drift
+ *  from the rules (and a $0.24 gas-dust row is never demanded). */
+function shapeMentions(reads: FundingBalanceRead[]): string[] {
+  const { sources, stranded } = classifyFundingBalances(reads, ETH_USD)
+  return [...new Set([...sources, ...stranded].filter((s) => s.usd >= DUST_USD).map((s) => (s.token.toUpperCase() === 'ETH' ? `ETH on ${s.chainWord}` : `of ${s.token} on ${s.chainWord}`)))]
+}
+
+/** One chain's row: native ETH + USDC + any extra registry stables. */
+function row(chainId: number, opts: { eth?: number; usdc?: number; stables?: { symbol: string; balance: number }[] }): FundingBalanceRead {
+  return { chainId, chainWord: FUNDING_CHAIN_WORD[chainId], nativeEth: opts.eth ?? 0, usdcBal: opts.usdc ?? 0, ...(opts.stables ? { stables: opts.stables } : {}) }
+}
+
+/** The wallet shapes: money on exactly ONE chain, one token at a time. */
+function oneChainShapes(): WalletShape[] {
+  const out: WalletShape[] = []
+  for (const chainId of CHAIN_IDS) {
+    const word = FUNDING_CHAIN_WORD[chainId]
+    const keep = GAS_RESERVE_ETH[chainId]
+    const rest = CHAIN_IDS.filter((c) => c !== chainId).map((c) => row(c, {}))
+    const only = (r: FundingBalanceRead) => [r, ...rest]
+    // $60 of movable ETH (the keep-back rides on top, so the row is honest).
+    out.push({
+      name: `$60 of ETH on ${word} only`,
+      reads: only(row(chainId, { eth: 60 / ETH_USD + keep })),
+      routableUsd: () => 60,
+    })
+    out.push({
+      name: `$60 of USDC + gas on ${word} only`,
+      reads: only(row(chainId, { eth: SIGNABLE_ETH[chainId], usdc: 60 })),
+      routableUsd: () => 60,
+    })
+    out.push({
+      name: `$60 of USDC GAS-STRANDED on ${word} only`,
+      reads: only(row(chainId, { usdc: 60 })),
+      // Nothing can sign a move, and nothing can donate gas: not routable.
+      routableUsd: () => 0,
+    })
+    out.push({
+      name: `sub-reserve ETH on ${word} only (under the keep-back)`,
+      reads: only(row(chainId, { eth: keep * 0.6 })),
+      routableUsd: () => 0,
+    })
+    out.push({
+      name: `dust only — $0.30 USDC on ${word}`,
+      reads: only(row(chainId, { eth: SIGNABLE_ETH[chainId], usdc: 0.3 })),
+      routableUsd: () => 0,
+      // The gas ETH is real money on this chain, so it is still named.
+    })
+    for (const { sym, cross } of EXTRA_STABLE_SHAPES[chainId] ?? []) {
+      out.push({
+        name: `$60 of ${sym} + gas on ${word} only${cross ? '' : ' (no direct leg — converts where it sits)'}`,
+        reads: only(row(chainId, { eth: SIGNABLE_ETH[chainId], stables: [{ symbol: sym, balance: 60 }] })),
+        // A dollar is a dollar wherever the scan can read it: directly when
+        // 1Click lists the symbol, via the conversion hop when it doesn't.
+        // The invariant does not care which — only that the turn is an offer.
+        routableUsd: () => 60,
+      })
+    }
+  }
+  return out
+}
+
+/** Two-chain splits where NO single chain covers a ~$50 need but the sum does. */
+function splitShapes(): WalletShape[] {
+  const out: WalletShape[] = []
+  for (let i = 0; i < CHAIN_IDS.length; i++) {
+    for (let j = i + 1; j < CHAIN_IDS.length; j++) {
+      const a = CHAIN_IDS[i]
+      const b = CHAIN_IDS[j]
+      const rest = CHAIN_IDS.filter((c) => c !== a && c !== b).map((c) => row(c, {}))
+      out.push({
+        name: `split — $33 USDC + gas on ${FUNDING_CHAIN_WORD[a]} and $33 USDC + gas on ${FUNDING_CHAIN_WORD[b]}`,
+        reads: [row(a, { eth: SIGNABLE_ETH[a], usdc: 33 }), row(b, { eth: SIGNABLE_ETH[b], usdc: 33 }), ...rest],
+        routableUsd: () => 66,
+        mentions: [`of USDC on ${FUNDING_CHAIN_WORD[a]}`, `of USDC on ${FUNDING_CHAIN_WORD[b]}`, `ETH on ${FUNDING_CHAIN_WORD[a]}`, `ETH on ${FUNDING_CHAIN_WORD[b]}`],
+      })
+      out.push({
+        name: `split — $33 of ETH on ${FUNDING_CHAIN_WORD[a]} and $33 USDC + gas on ${FUNDING_CHAIN_WORD[b]}`,
+        reads: [row(a, { eth: 33 / ETH_USD + GAS_RESERVE_ETH[a] }), row(b, { eth: SIGNABLE_ETH[b], usdc: 33 }), ...rest],
+        routableUsd: () => 66,
+        mentions: [`ETH on ${FUNDING_CHAIN_WORD[a]}`, `of USDC on ${FUNDING_CHAIN_WORD[b]}`, `ETH on ${FUNDING_CHAIN_WORD[b]}`],
+      })
+    }
+  }
+  return out
+}
+
+/** The needs, one per native layer, each with the door its route offers.
+ *
+ *  A need is built FROM the wallet, because every native layer computes its
+ *  shortfall the same way: what the action costs, minus what the destination
+ *  chain already holds of the token. A matrix that asked the funding layer
+ *  to move the gross amount would invent walls no user ever meets. */
+interface MatrixNeed {
+  name: string
+  /** ask − what the destination already holds → the FundingNeed the route hands over. */
+  needFor: (held: number) => FundingNeed
+  /** Token units the action costs on the destination, before the wallet. */
+  ask: number
+  destChainId: number
+  destToken: string
+  /** The refusal's door: the swap card, a layer card, or none of ours. */
+  doorFor: (held: number) => { kind: 'swap'; ask: SwapShortfallAsk } | { kind: 'layer'; ask: LayerShortfallAsk } | { kind: 'none' }
+}
+
+function matrixNeeds(): MatrixNeed[] {
+  const out: MatrixNeed[] = []
+  // A $50 coin buy on each scan chain — the commonest money ask there is.
+  for (const chainId of CHAIN_IDS) {
+    for (const buy of ['UNI', 'ETH']) {
+      out.push({
+        name: `buy $50 of ${buy} on ${FUNDING_CHAIN_WORD[chainId]}`,
+        ask: 50,
+        destChainId: chainId,
+        destToken: 'USDC',
+        needFor: (held) => buyNeed(chainId, Number((50 - held).toFixed(2)), buy),
+        doorFor: (held) => ({ kind: 'swap', ask: { ...buyAsk(chainId, 50, buy), heldHuman: String(held) } }),
+      })
+    }
+  }
+  out.push({
+    name: 'deposit 40 USDC to Hyperliquid',
+    ask: 40,
+    destChainId: 42161,
+    destToken: 'USDC',
+    needFor: (held) => hlDepositNeed(40, held),
+    doorFor: (held) => ({ kind: 'layer', ask: hlDepositAsk(40, held) }),
+  })
+  out.push({
+    name: 'the 2x HYPE long (HL open)',
+    ask: 6,
+    destChainId: 42161,
+    destToken: 'USDC',
+    needFor: (held) => ({ ...hlOpenNeed(6, HL_LONG_ASK), amountHuman: Number(Math.max(0, 6 - held).toFixed(2)) }),
+    doorFor: () => ({ kind: 'layer', ask: hlOpenAsk(6, HL_LONG_ASK, 'go long $12 of HYPE at 2x on Hyperliquid') }),
+  })
+  out.push({
+    name: 'supply 40 USDC to Aave (Ethereum)',
+    ask: 40,
+    destChainId: 1,
+    destToken: 'USDC',
+    needFor: (held) => aaveSupplyNeed(Number((40 - held).toFixed(2)), 'USDC'),
+    doorFor: () => ({ kind: 'layer', ask: aaveSupplyAsk(40, 'USDC') }),
+  })
+  out.push({
+    name: 'supply 40 USDT to Aave (Ethereum)',
+    ask: 40,
+    destChainId: 1,
+    destToken: 'USDT',
+    needFor: (held) => aaveSupplyNeed(Number((40 - held).toFixed(2)), 'USDT'),
+    doorFor: () => ({ kind: 'layer', ask: aaveSupplyAsk(40, 'USDT') }),
+  })
+  out.push({
+    name: 'lend 40 USDC on Morpho (Base)',
+    ask: 40,
+    destChainId: 8453,
+    destToken: 'USDC',
+    needFor: (held) => morphoLendNeed(Number((40 - held).toFixed(2)), 8453),
+    doorFor: () => ({ kind: 'layer', ask: morphoLendAsk(40, 8453) }),
+  })
+  out.push({
+    name: 'stake 0.01 ETH on Lido',
+    ask: 0.01,
+    destChainId: 1,
+    destToken: 'ETH',
+    needFor: (held) => lidoNeed(0.01, held),
+    doorFor: () => ({ kind: 'layer', ask: lidoAsk(0.01) }),
+  })
+  out.push({
+    name: 'buy an NFT listed at 0.01 ETH on Base',
+    ask: 0.0102,
+    destChainId: 8453,
+    destToken: 'ETH',
+    needFor: (held) => ({ ...nftNeed(8453, 0.01), amountHuman: Number(Math.max(0, 0.0102 - held).toFixed(6)) }),
+    doorFor: () => ({ kind: 'layer', ask: nftAsk(8453, 0.01) }),
+  })
+  // A token SEND: the generic bridge-only need (no follow-up segment).
+  out.push({
+    name: 'send 40 USDC on Arbitrum (bridge-only need)',
+    ask: 40,
+    destChainId: 42161,
+    destToken: 'USDC',
+    needFor: (held) => ({ chainId: 42161, token: 'USDC', amountHuman: Number((40 - held).toFixed(2)), followupResume: '', actionLabel: 'the send' }),
+    doorFor: () => ({ kind: 'none' }),
+  })
+  return out
+}
+
+/** What the destination chain already holds of the need's token — the figure
+ *  every native layer subtracts before it asks the funding layer for help. */
+function heldOnDestination(m: MatrixNeed, reads: FundingBalanceRead[]): number {
+  const r = reads.find((x) => x.chainId === m.destChainId)
+  if (!r) return 0
+  const tok = m.destToken.toUpperCase()
+  if (tok === 'ETH') return Math.max(0, r.nativeEth - (GAS_RESERVE_ETH[m.destChainId] ?? 0.002))
+  if (tok === 'USDC') return r.usdcBal
+  return (r.stables ?? []).find((x) => x.symbol.toUpperCase() === tok)?.balance ?? 0
+}
+
+/** Does this refusal carry a way forward? */
+function refusalDoor(
+  door: ReturnType<MatrixNeed['doorFor']>,
+  refusal: { insufficient: string } & FundingRefusalFacts,
+): { ok: true; via: string } | { ok: false; reply: string } {
+  // The money exists and only origin gas is missing — the copy's own next
+  // step (a dollar of ETH on the named chain) IS the door.
+  if (refusal.strandedCovers) return { ok: true, via: 'gas-topup copy' }
+  if (door.kind === 'swap') {
+    const turn = swapShortfallTurn({ ask: door.ask, refusal })
+    if (turn.clarify?.options.some((o) => o.fund)) return { ok: true, via: 'swap card chip' }
+    return { ok: false, reply: turn.reply }
+  }
+  if (door.kind === 'layer') {
+    const turn = layerShortfallTurn({ ask: door.ask, refusal })
+    if (turn.clarify?.options.some((o) => o.fund)) return { ok: true, via: 'layer card chip' }
+    return { ok: false, reply: turn.reply }
+  }
+  return { ok: false, reply: refusal.insufficient }
+}
+
+const SHAPES: WalletShape[] = [...oneChainShapes(), ...splitShapes()].map((sh) => ({ ...sh, mentions: shapeMentions(sh.reads) }))
+const NEEDS = matrixNeeds()
+let matrixCells = 0
+/** Cells whose refusal carries no door — printed once as a group, since the
+ *  same class repeats across shapes (a $2,000 buy can't be carded, etc.). */
+const doorless = new Map<string, number>()
+/** Doorless cells whose door belongs to another layer — warned, not failed. */
+const doorlessKnown = new Map<string, number>()
+
+for (const shape of SHAPES) {
+  for (const m of NEEDS) {
+    matrixCells++
+    const header = `— [matrix] ${shape.name} → ${m.name}`
+    const scan = {
+      ...classifyFundingBalances(shape.reads, ETH_USD),
+      ethUsd: ETH_USD,
+      readChains: shape.reads.map((r) => r.chainWord),
+      failedChains: [] as string[],
+    }
+    // The route's own arithmetic: the action's cost minus what the
+    // destination already holds. Fully covered there = nothing to fund.
+    const held = heldOnDestination(m, shape.reads)
+    if (held >= m.ask) continue
+    const need = m.needFor(held)
+    const door = m.doorFor(held)
+    const needUsd = need.amountHuman > 0 ? fundingPlanUsd(need.amountHuman, tokenUsdOf(need.token)) : 0
+    const gasUsd = gasUsdFor(need, shape.reads)
+    const flexMinUsd =
+      typeof need.flexMinAmountHuman === 'number'
+        ? need.flexMinAmountHuman > 0
+          ? fundingPlanUsd(need.flexMinAmountHuman, tokenUsdOf(need.token))
+          : 0
+        : undefined
+    const decision = decideFundingTurn({ need, needUsd, gasUsd, scan, destChainName: FUNDING_CHAIN_WORD[need.chainId], flexMinUsd })
+    if (verbose) console.log(`${header}\n    → ${decision.kind}`)
+
+    // ── A. COVERED ⇒ offer. Holdings the buy itself produces never count,
+    // and neither does what the destination already holds (it is inside the
+    // shortfall, not on top of it).
+    const heldUsd = held * tokenUsdOf(m.destToken)
+    const routable = Math.max(0, shape.routableUsd(need.chainId) - heldUsd)
+    const buySym = (need.buyToken ?? '').toUpperCase()
+    const buysWhatItHolds = buySym !== '' && (shape.mentions ?? []).some((x) => x.includes(`of ${buySym} on `) || (buySym === 'ETH' && x.startsWith('ETH on ')))
+    const covered = routable > 0 && !buysWhatItHolds && routable >= (needUsd + gasUsd) * COVERED_MULT + COVERED_FLAT_USD
+    if (covered && decision.kind !== 'offer') {
+      console.log(header)
+      flag(
+        `THE INVARIANT — ~$${routable.toFixed(2)} routable to ${FUNDING_CHAIN_WORD[need.chainId]} against a ~$${(needUsd + gasUsd).toFixed(2)} plan, and the turn is a ${decision.kind}` +
+          `${decision.kind === 'refusal' ? `: "${decision.insufficient}"` : ` (${decision.reason})`}`,
+      )
+      continue
+    }
+
+    // ── B. offer ⇒ every chip is a working contract.
+    if (decision.kind === 'offer') {
+      for (const chip of decision.turn.clarify.options) {
+        if (chip.label === 'Not now') continue
+        const outcome = simulateLadder(chip.resume)
+        const job = compileJobAsk(chip.resume)
+        if (outcome.kind !== 'action') {
+          console.log(header)
+          flag(`chip resume dead-ends at ${outcome.gate}/${outcome.kind}: "${chip.resume}"`)
+        } else if (chip.resume.includes(', then ') && (!job || 'problem' in job || 'clarify' in job)) {
+          console.log(header)
+          flag(`multi-leg chip doesn't compile as a job${job && 'problem' in job ? ` (${job.problem})` : ''}: "${chip.resume}"`)
+        }
+        for (const leg of roundTripLegs(need, chip.resume)) {
+          console.log(header)
+          flag(`chip sells the ${need.buyToken} its follow-up buys back — "${leg}" in "${chip.resume}"`)
+        }
+        if (outcome.gate === 'cross-chain' && !askAppSlugs(chip.resume).includes('near-intents-mcp-yeetful')) {
+          console.log(header)
+          flag(`a lone cross-chain chip doesn't compose NEAR Intents: "${chip.resume}"`)
+        }
+      }
+      continue
+    }
+
+    // ── C. refusal ⇒ names every dollar, and carries a door.
+    if (decision.kind === 'refusal') {
+      const refusal = { insufficient: decision.insufficient, ...decision.facts }
+      for (const mention of shape.mentions ?? []) {
+        if (!decision.insufficient.includes(mention)) {
+          console.log(header)
+          flag(`refusal copy never names "${mention}": "${decision.insufficient}"`)
+        }
+      }
+      const doorOut = refusalDoor(door, refusal)
+      if (!doorOut.ok) {
+        const key = `${m.name} · ${refusal.empty ? 'empty wallet' : 'holding money'}`
+        // A bridge-only need (no follow-up segment) has no action to restate,
+        // so no card chip can carry it: the surface that made the ask owns
+        // that door. Counted and printed, never silently green — but it is
+        // not the funding layer's to close. See FUND.md WRAP / GRAMMAR.md.
+        const bucket = door.kind === 'none' ? doorlessKnown : doorless
+        bucket.set(key, (bucket.get(key) ?? 0) + 1)
+      }
+    }
+  }
+}
+
+if (doorless.size > 0) {
+  console.log('\n— [matrix] refusals with NO door (no card chip, no gas-topup next step):')
+  for (const [key, n] of [...doorless].sort((a, b) => b[1] - a[1])) {
+    flag(`${n} cell(s) dead-end on "${key}"`)
+  }
+}
+if (doorlessKnown.size > 0) {
+  console.log('\n— [matrix] documented doorless class — a bridge-only need has no action to restate,')
+  console.log('  so the card chip belongs to the surface that made the ask, not the funding layer:')
+  for (const [key, n] of [...doorlessKnown].sort((a, b) => b[1] - a[1])) console.log(`  ⚠ ${n} cell(s): "${key}"`)
+}
+
+console.log(`\naudit:funding — ${SCENARIOS.length} wallet-state scenarios through the real funding pipeline, plus ${RH_SCENARIOS.length} through the Robinhood Chain planner, plus ${matrixCells} matrix cells (${SHAPES.length} wallet shapes × ${NEEDS.length} needs) — no RPC, no signing.`)
 if (findings) {
   console.log(`${findings} finding(s). A wallet in one of these states gets chips that dead-end or a refusal that hides their money.`)
   process.exit(1)
