@@ -14,6 +14,7 @@ import {
 } from '@coinbase/cdp-hooks'
 import { Loader2, ArrowLeft, ArrowRight, X, Wallet } from 'lucide-react'
 import { CDP_INIT_PATIENCE_MS, emailLaneHint, walletLaneChips } from '@/lib/wallet-lineup'
+import { analytics } from '@/lib/analytics'
 import { WALLET_MARKS } from '@/components/wallet-marks'
 import { PantessaMark } from '@/components/Logo'
 import { cn } from '@/lib/utils'
@@ -136,6 +137,7 @@ export function CreateAccountModal({
   // connect-only), hand a held action back to its page, and route once the
   // browser comes back. The provider returns to this very page.
   function startOAuth(provider: 'google') {
+    analytics.signInDoor('lane', { lane: provider })
     const intent: OAuthIntent = { redirectTo: landing(), signIn: !walletConnectOnly }
     if (resumeAsk) intent.resumeAsk = resumeAsk
     try {
@@ -157,6 +159,17 @@ export function CreateAccountModal({
 
   useEffect(() => setMounted(true), [])
 
+  // The door's own story, for the journey log (lib/journey.ts): it opened,
+  // and anything it told the visitor went wrong. A stranger who backs out
+  // here is otherwise indistinguishable from one who never tried.
+  useEffect(() => {
+    analytics.signInDoor('open', { connectOnly: walletConnectOnly === true })
+  }, [walletConnectOnly])
+  useEffect(() => {
+    if (error) analytics.signInDoor('error', { message: error.slice(0, 120), step })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one row per message, not per step change
+  }, [error])
+
   // The CDP SDK (Google + email lanes) inits with a cross-origin config
   // fetch; when a blocker or a filter kills it, the lanes would spin
   // forever. After CDP_INIT_PATIENCE_MS the door says so and points at the
@@ -164,7 +177,10 @@ export function CreateAccountModal({
   const [cdpTimedOut, setCdpTimedOut] = useState(false)
   useEffect(() => {
     if (isInitialized) return
-    const t = setTimeout(() => setCdpTimedOut(true), CDP_INIT_PATIENCE_MS)
+    const t = setTimeout(() => {
+      setCdpTimedOut(true)
+      analytics.signInDoor('cdp_timeout')
+    }, CDP_INIT_PATIENCE_MS)
     return () => clearTimeout(t)
   }, [isInitialized])
 
@@ -198,6 +214,7 @@ export function CreateAccountModal({
     setError(null)
     try {
       const { flowId } = await signInWithEmail({ email: addr })
+      analytics.signInDoor('code_sent')
       setFlowId(flowId)
       setOtp('')
       setStep('otp')
@@ -293,6 +310,7 @@ export function CreateAccountModal({
               type="button"
               className="ca__wallet ca__wallet--lead"
               onClick={() => {
+                analytics.signInDoor('lane', { lane: 'wallet' })
                 if (walletConnectOnly) openConnectModal?.()
                 else connectAndSignIn(landing())
                 onClose()
