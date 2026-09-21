@@ -12510,10 +12510,14 @@ async function main() {
       JSON.stringify(ethUnder),
     )
     const emptyAdvice = planRobinhoodFundingAdvice({ scan: { origins: [], gaslessOrigins: [], allScanned: [], failedOrigins: [] }, needUsd: 5, gasIncluded: true, followup: '' })
+    // Re-pinned 2026-09-21: 58ac0141 made the sentence name every token the
+    // scan reads (it said "USDC or ETH" while reading five). The expectation
+    // is spelled out, not rebuilt from FUNDING_STABLES, so a token joining or
+    // leaving the scan is a conscious flip here.
     check(
-      'funding advice: an empty wallet names both scanned tokens on every scanned chain',
+      'funding advice: an empty wallet names every scanned token on every scanned chain',
       emptyAdvice.kind === 'none' &&
-        emptyAdvice.copy.includes(`no USDC or ETH on ${listWords(FUNDING_ORIGIN_CHAINS.map((c) => FUNDING_ORIGIN_WORD[c]))}`) &&
+        emptyAdvice.copy.includes(`no USDC, DAI, USDT, or ETH on ${listWords(FUNDING_ORIGIN_CHAINS.map((c) => FUNDING_ORIGIN_WORD[c]))}`) &&
         // …and it really does name each one, not just match its own template.
         (FUNDING_ORIGIN_CHAINS as readonly number[]).every((c) => emptyAdvice.copy.includes(FUNDING_ORIGIN_WORD[c])),
       JSON.stringify(emptyAdvice),
