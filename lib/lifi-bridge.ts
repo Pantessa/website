@@ -48,6 +48,7 @@ import { chainAlt } from '@/lib/chain-lexicon'
 import { formatAtoms } from '@/lib/cow'
 import { fetchLifiQuote, LIFI_POLICY_HOST, LIFI_QUOTE_TTL_SEC, NoLifiRouteError } from '@/lib/lifi-venue'
 import { usdPerToken } from '@/lib/usd-probe'
+import { buildNearValueLeg, nearHoodFundingEnabled, NEAR_ORIGIN_WORD } from '@/lib/near-fund-leg'
 import { buildReport, policyCheck, recipientCheck, validityCheck, type GuardrailCheck, type GuardrailReport } from '@/lib/tx-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, spentTotalUsd, toPolicy } from '@/lib/grant-store'
 
@@ -440,7 +441,14 @@ export interface LifiBridgeBuilt {
   /** What the arrival wait polls for on Robinhood Chain. */
   arrival: ChainArrival
   valueUsd: number
+  /** Who built the leg. A Robinhood USDG leg tries NEAR Intents first
+   *  (lib/near-fund-leg) and falls back to LiFi; everything else is LiFi.
+   *  The refresh recipe carries it, so a re-quote stays on the venue whose
+   *  step list the card is already walking. */
+  venue: FundingVenue
 }
+
+export type FundingVenue = 'near' | 'lifi'
 
 /** Build + guard ONE funding leg: origin-chain USDC → (native ETH | USDG)
  *  delivered to the sender's own address on Robinhood Chain. The origin
@@ -451,7 +459,7 @@ export interface LifiBridgeBuilt {
  *  anywhere else throws). Throws on transport / no-route (the jobs runner
  *  surfaces the message); a guard or price failure comes back as blocked
  *  with the reasons in the report. */
-export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number; from: string; origin?: number; token?: string; dest?: number }): Promise<LifiBridgeBuilt> {
+export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number; from: string; origin?: number; token?: string; dest?: number; venue?: FundingVenue }): Promise<LifiBridgeBuilt> {
   const from = params.from as `0x${string}`
   if (!ADDR_RE.test(from)) throw new Error('A valid wallet address is required.')
   if (!Number.isFinite(params.usd) || params.usd <= 0) throw new Error(`Couldn't read the funding amount "${params.usd}".`)
@@ -542,6 +550,84 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
       sellAtoms = clamped
     }
   }
+  // ── NEAR Intents: the SECOND venue for the one leg it can carry ──────────
+  // 1Click reaches Robinhood Chain since 2026-09-21 (USDG in fills at every
+  // size; ETH in has no liquidity, so the gas leg and the ETH move never come
+  // here). Measured the same day against live LiFi quotes, Base / Ethereum /
+  // Arbitrum USDC → USDG, $5–$5,000: LiFi delivered 99.3–99.7% in 1–8s, NEAR
+  // 98.1–99.6% in 26–46s. LiFi wins every row, so it stays first; NEAR is
+  // what a value leg falls back to when LiFi has no route, is rate-limited
+  // (live 2026-09-02) or fails its own price/venue check, instead of
+  // stranding the job. Only a FUNDED leg asks: a real 1Click quote mints a
+  // deposit address, and the unfunded case keeps LiFi's named refusal.
+  // `venue` is the refresh recipe's memory: 'near' re-quotes on NEAR only
+  // (a one-step card has no approval slot for a LiFi rebuild), 'lifi' on
+  // LiFi only (the mirror).
+  const nearCapable =
+    params.leg === 'usdg' &&
+    destId === ROBINHOOD_CHAIN_ID &&
+    (tokenKey === 'USDC' || nativeSell) &&
+    Boolean(NEAR_ORIGIN_WORD[originId])
+  const nearFunded = sellBalance >= sellAtoms + keepbackWei
+  const tryNear = async (): Promise<LifiBridgeBuilt | null> => {
+    const floorBps = nativeSell ? GAS_LEG_MIN_OUT_BPS : STABLE_LEG_MIN_OUT_BPS
+    const usdAtoms = BigInt(Math.round(params.usd * 10 ** destDecimals))
+    const near = await buildNearValueLeg({
+      usd: params.usd,
+      originName: origin.name,
+      destName: destination.name,
+      amountHuman: formatAtoms(sellAtoms.toString(), sell.decimals),
+      exp: {
+        originChainId: originId,
+        from,
+        sell,
+        nativeSell,
+        sellAtoms,
+        dest: { symbol: destSymbol, decimals: destDecimals },
+        minOutFloorAtoms: (usdAtoms * BigInt(floorBps)) / BigInt(10_000),
+      },
+    })
+    if (!near) return null
+    const baseline = await destClient.readContract({ address: usdg.address, abi: erc20Abi, functionName: 'balanceOf', args: [from] })
+    const balanceCheck: GuardrailCheck = {
+      id: 'balance',
+      level: 'block',
+      ok: true,
+      note:
+        clampedFromUsd !== null
+          ? `Sized to what the wallet holds: ~$${params.usd} of ${sell.symbol} on ${origin.name} (the $${clampedFromUsd} ask, less fees already paid by earlier legs; gas keep-back kept).`
+          : `The wallet holds ${formatAtoms(sellBalance.toString(), sell.decimals)} ${sell.symbol} on ${origin.name} — covered${nativeSell ? ' (gas keep-back included)' : ''}.`,
+    }
+    const gate = await fundingPolicyGate(from, params.usd, 'NEAR Intents')
+    const checks: GuardrailCheck[] = [recipientCheck(from, from), validityCheck(near.validUntil), balanceCheck, near.priceCheck, near.venueCheck, gate.check]
+    const guardrails = buildReport(params.usd, checks, gate.violation ? { violation: gate.violation, valueUsd: params.usd, host: LIFI_POLICY_HOST } : null)
+    return {
+      summary: near.summary,
+      guardrails,
+      blocked: !guardrails.ok,
+      steps: [near.step],
+      bridgeStepIndex: 0,
+      arrival: {
+        chainId: destId,
+        token: usdg.address,
+        decimals: destDecimals,
+        symbol: destSymbol,
+        baselineAtoms: baseline.toString(),
+        minDeltaAtoms: ((near.toAmountMin * BigInt(95)) / BigInt(100)).toString(),
+      },
+      valueUsd: Number(params.usd.toFixed(2)),
+      venue: 'near',
+    }
+  }
+  if (params.venue === 'near') {
+    if (!nearCapable) throw new Error('This funding leg cannot be rebuilt on NEAR Intents.')
+    if (!nearFunded) throw new Error(`The wallet no longer holds the ${sell.symbol} on ${origin.name} this leg moves.`)
+    const near = await tryNear()
+    if (near) return near
+    throw new Error('NEAR Intents could not re-quote this leg right now — the step you have stays valid until its deposit address expires.')
+  }
+  const nearFallback = params.venue === undefined && nearCapable && nearFunded && nearHoodFundingEnabled()
+
   // Quote — with the gas-leg escalation ladder. A gas leg whose asked size
   // sits under LiFi's live route minimum retries at each GAS_LEG_LADDER_USD
   // rung above the ask instead of stranding the job (live 2026-09-02: a
@@ -579,7 +665,16 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
       }
       break
     } catch (err) {
-      if (!gasLeg || !(err instanceof NoLifiRouteError)) throw err
+      if (!gasLeg) {
+        // A value leg never resizes — but it can change venue.
+        if (nearFallback) {
+          console.warn(`[lifi-bridge] LiFi could not quote the $${params.usd} value leg — trying NEAR Intents: ${err instanceof Error ? err.message.split('\n')[0] : String(err)}`)
+          const near = await tryNear()
+          if (near) return near
+        }
+        throw err
+      }
+      if (!(err instanceof NoLifiRouteError)) throw err
       lastNoRoute = err
     }
   }
@@ -752,25 +847,16 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
   // could still build and sign a funding bridge; the direction-aware
   // invariant says kill switches survive everything). selfSigned: the owner
   // signs each leg, so the caps never wall it — kill switches + allowlist do.
-  const grant = await getActiveGrant(from.toLowerCase())
-  const policy = grant ? toPolicy(grant) : null
-  const spentToday = grant ? await spentTodayUsd(grant.id) : 0
-  const spentTotal = grant ? await spentTotalUsd(grant.id) : 0
-  const { check: polCheck, violation } = policyCheck(params.usd, policy, spentToday, LIFI_POLICY_HOST, spentTotal, { selfSigned: true })
-  if (violation && grant) {
-    await recordLedger({
-      grantId: grant.id,
-      orgId: grant.orgId ?? undefined,
-      host: LIFI_POLICY_HOST,
-      serviceName: 'LiFi',
-      amountUsd: 0,
-      ok: false,
-      note: `blocked: ${violation} (lifi funding bridge)`,
-    })
-  }
+  const { check: polCheck, violation } = await fundingPolicyGate(from, params.usd, 'LiFi')
 
   const checks: GuardrailCheck[] = [recipientCheck(quote.action.toAddress ?? '', from), validityCheck(validUntil), balanceCheck, priceCheck, venueCheck, polCheck]
   const guardrails = buildReport(params.usd, checks, violation ? { violation, valueUsd: params.usd, host: LIFI_POLICY_HOST } : null)
+
+  if (nearFallback && (!priceCheck.ok || !venueCheck.ok)) {
+    console.warn(`[lifi-bridge] LiFi's $${params.usd} value leg failed its ${!priceCheck.ok ? 'price' : 'venue'} check — trying NEAR Intents.`)
+    const near = await tryNear()
+    if (near && !near.blocked) return near
+  }
 
   const summary = gasLeg
     ? `Bridge $${params.usd} of ${origin.name} ${sell.symbol} → ~${formatAtoms(toAmountMin.toString(), 18)} ETH on ${destination.name} for gas (LiFi-routed, tool: ${quote.tool}) — arrives in seconds, delivered to your own address.`
@@ -786,7 +872,34 @@ export async function buildLifiBridgeLeg(params: { leg: FundingLeg; usd: number;
     bridgeStepIndex,
     arrival,
     valueUsd: Number(params.usd.toFixed(2)),
+    venue: 'lifi',
   }
+}
+
+/** The cross-app policy gate every funding leg passes, whichever venue built
+ *  it (2026-07-20 audit: this builder once skipped it, so a FROZEN or REVOKED
+ *  account could still sign a funding bridge). selfSigned: the owner signs
+ *  each leg, so the caps never wall it; kill switches + allowlist do. Funding
+ *  is ONE policy surface (LIFI_POLICY_HOST, always allowed as a native
+ *  venue); the ledger note names the venue that was refused. */
+async function fundingPolicyGate(from: string, usd: number, venueName: string): Promise<{ check: GuardrailCheck; violation: ReturnType<typeof policyCheck>['violation'] }> {
+  const grant = await getActiveGrant(from.toLowerCase())
+  const policy = grant ? toPolicy(grant) : null
+  const spentToday = grant ? await spentTodayUsd(grant.id) : 0
+  const spentTotal = grant ? await spentTotalUsd(grant.id) : 0
+  const { check, violation } = policyCheck(usd, policy, spentToday, LIFI_POLICY_HOST, spentTotal, { selfSigned: true })
+  if (violation && grant) {
+    await recordLedger({
+      grantId: grant.id,
+      orgId: grant.orgId ?? undefined,
+      host: LIFI_POLICY_HOST,
+      serviceName: venueName,
+      amountUsd: 0,
+      ok: false,
+      note: `blocked: ${violation} (${venueName.toLowerCase()} funding leg)`,
+    })
+  }
+  return { check, violation }
 }
 
 // ── Funding shortfall read (the offer turn's evidence) ─────────────────────

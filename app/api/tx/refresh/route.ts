@@ -109,11 +109,18 @@ export async function POST(req: NextRequest) {
     if (dest !== undefined && !isLifiFundedChain(dest)) {
       return NextResponse.json({ error: `unknown funding destination "${body.dest}"` }, { status: 400 })
     }
+    // The venue that built the step the card is walking. Recipes minted
+    // before NEAR carried Robinhood legs have none — they were LiFi builds,
+    // and a LiFi step list ([approve, bridge]) must re-quote as LiFi.
+    if (body.venue !== undefined && body.venue !== 'near' && body.venue !== 'lifi') {
+      return NextResponse.json({ error: 'unknown funding venue' }, { status: 400 })
+    }
+    const venue = body.venue === 'near' ? 'near' : 'lifi'
     if (!from || !leg || !usd) {
       return NextResponse.json({ error: 'missing/invalid from, leg or usd' }, { status: 400 })
     }
     try {
-      const built = await buildLifiBridgeLeg({ leg, usd, from, origin, token, dest })
+      const built = await buildLifiBridgeLeg({ leg, usd, from, origin, token, dest, venue })
       if (built.blocked) {
         const reasons = built.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
         const execFail = built.guardrails.checks.some((c) => !c.ok && (c.id === 'price' || c.id === 'venue'))

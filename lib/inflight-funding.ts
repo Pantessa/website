@@ -22,11 +22,11 @@
 //  hedged copy; nothing here builds, signs, or blocks the refusal itself.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { NEAR_INTENTS_MCP } from '@/lib/near-fund-leg'
 import { isAddress } from 'viem'
 import { callMcpTool } from '@/lib/mcp-call'
 
 /** Same service the jobs runner polls (lib/jobs-runner.ts kind 'oneclick'). */
-const NEAR_INTENTS_MCP = 'https://near-intents.yeetful.com/mcp'
 
 /** A cross-chain deposit the user recently built toward a funding origin. */
 export interface InflightDeposit {
