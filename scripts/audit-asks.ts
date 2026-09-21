@@ -25,7 +25,9 @@
  * that needs live data (stock-list warm, balances) is approximated and
  * noted — this audits PARSE outcomes, not builds.
  */
-import { simulateLadder } from './ask-ladder'
+import { buildsNatively, simulateLadder } from './ask-ladder'
+import { INTENT_NET_PROBES, rescueIntent } from '../lib/intent-rescue'
+import { moneyShaped } from '../lib/ask-failure-shape'
 
 // ── Corpus — the asks WE surface (agent-cataloged 2026-07-22) ──────────────
 // expect: 'action' = a native gate must claim it; 'clarify-ok' = the surface
@@ -74,6 +76,21 @@ const CORPUS: Entry[] = [
   { ask: 'cash out $50 of ETH', source: 'intent net (slang sell)', expect: 'clarify-ok' },
   { ask: 'earn yield on my usdc', source: 'intent net (unsized earn)', expect: 'clarify-ok' },
   { ask: 'I want a 2x long $12 of HYPE with a 5% stop', source: 'intent net (voice pin ask — main built the long and DROPPED the stop)', expect: 'clarify-ok' },
+  // NO-DEAD-ENDS squad, 2026-09-21 — the paraphrase sweep over every house
+  // link and chip grammar. Each of these fell to the PLANNER on the
+  // integration branch; each is now a verified intent-net chip. They are
+  // corpus rows, not sweep output, so the wording can never regress.
+  { ask: '$10 of AAPL please', source: 'sweep (a price and the thing it buys — no verb at all)', expect: 'clarify-ok' },
+  { ask: 'put $10 into AAPL', source: 'sweep (WRONG CHIP: was offered "Supply $10 of AAPL to Aave")', expect: 'clarify-ok' },
+  { ask: 'open a 2x HYPE long for $12 and protect it with a 5% stop', source: 'sweep (coin before the side word)', expect: 'clarify-ok' },
+  { ask: '2x long hype $12, 5% stop', source: 'sweep (comma form, size after the coin)', expect: 'clarify-ok' },
+  { ask: 'transfer 5 usdc base -> arbitrum', source: 'sweep (an arrow is how people write "to")', expect: 'clarify-ok' },
+  { ask: 'i need gas on base', source: 'sweep (a gas ask never carries a size)', expect: 'clarify-ok' },
+  { ask: 'get me some ETH on arbitrum for gas', source: 'sweep (gas, worded as a buy)', expect: 'clarify-ok' },
+  { ask: 'set a 5% stop on my UNI', source: 'sweep (protection, no "protect" word)', expect: 'clarify-ok' },
+  { ask: 'stop loss my UNI at 5%', source: 'sweep (stop-loss as the verb)', expect: 'clarify-ok' },
+  { ask: 'protect my ETH with a stop loss', source: 'sweep (no percentage — the net offers 5% and 10%, never invents one)', expect: 'clarify-ok' },
+  { ask: 'what are gas fees?', source: 'sweep fence (a gas QUESTION is a read)', expect: 'planner' },
   { ask: 'what is staking?', source: 'intent net fence (a question is a READ)', expect: 'planner' },
   { ask: 'is aave safe?', source: 'intent net fence (a question is a READ)', expect: 'planner' },
   { ask: '2X long $12 of HYPE, then protect my HYPE long with a 5% stop', source: 'typed reel (mint stage ghost, 2026-09-04)', expect: 'action' },
@@ -589,7 +606,27 @@ for (const entry of CORPUS) {
   }
 }
 
-console.log(`\naudit:asks — ${CORPUS.length} surfaced asks, mutations applied to actionable ones.`)
+// ── The intent net's own door (NO-DEAD-ENDS squad, 2026-09-21) ────────────
+// The route reaches lib/intent-rescue only for a `moneyShaped` message, so a
+// verb family that gate rejects is dead code in production. `earn`/`yield`,
+// `ape` and `put …into` were exactly that — "earn yield on my usdc" fell to
+// the planner while this audit called it green, because the replica skipped
+// the gate. Both halves are pinned now: the door opens, and something comes
+// out of it.
+for (const probe of INTENT_NET_PROBES) {
+  if (!moneyShaped(probe.ask)) {
+    console.log(`[intent net: ${probe.family}] "${probe.ask}"`)
+    flag(`the verb family is unreachable — moneyShaped() rejects it, so the route never calls the net (add the wording to lib/ask-failure-shape)`)
+    continue
+  }
+  const got = rescueIntent(probe.ask, buildsNatively)
+  if (!got || !got.chips.length) {
+    console.log(`[intent net: ${probe.family}] "${probe.ask}"`)
+    flag(`the net produced no chip — a money ask in this family falls to the planner`)
+  }
+}
+
+console.log(`\naudit:asks — ${CORPUS.length} surfaced asks, mutations applied to actionable ones, ${INTENT_NET_PROBES.length} intent-net families probed.`)
 if (findings) {
   console.log(`${findings} finding(s). A user typing one of OUR OWN example asks (or a typo of it) hits a dead-end.`)
   process.exit(1)
