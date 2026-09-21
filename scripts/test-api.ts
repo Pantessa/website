@@ -289,7 +289,7 @@ import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '../lib/turn-status'
 import { classifyFundingBalances, decideFundingTurn, destGasLegUsd, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, gasTopupLegUsd, MIN_LEG_USD, planFundingChips, planGasTopup, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, strandedCoversPlan, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { buyDollarsOf, swapBuyFundChip, swapBuyResume, swapShortfallTurn, type SwapShortfallAsk } from '../lib/swap-shortfall'
 import { laneGasFloorPresetUsd, layerCardKind, layerFundChip, layerShortfallTurn, type LayerShortfallAsk } from '../lib/layer-shortfall'
-import { DEST_GAS_FLOOR_ETH } from '../lib/funding-plan'
+import { DEST_GAS_FLOOR_ETH, FUNDING_STABLES } from '../lib/funding-plan'
 import { ETH_TWO_LEG_HEADROOM_USD } from '../lib/lifi-bridge'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
@@ -12511,11 +12511,17 @@ async function main() {
     )
     const emptyAdvice = planRobinhoodFundingAdvice({ scan: { origins: [], gaslessOrigins: [], allScanned: [], failedOrigins: [] }, needUsd: 5, gasIncluded: true, followup: '' })
     check(
-      'funding advice: an empty wallet names both scanned tokens on every scanned chain',
+      'funding advice: an empty wallet names EVERY token the scan reads, on every scanned chain',
+      // Re-pinned in round 2: the sentence said "no USDC or ETH" while the
+      // scan had grown to five tokens (#841's FUNDING_STABLES). It derives
+      // from that table now, so this derives from it too — and then checks
+      // the copy really names each one, rather than matching its own template.
       emptyAdvice.kind === 'none' &&
-        emptyAdvice.copy.includes(`no USDC or ETH on ${listWords(FUNDING_ORIGIN_CHAINS.map((c) => FUNDING_ORIGIN_WORD[c]))}`) &&
-        // …and it really does name each one, not just match its own template.
-        (FUNDING_ORIGIN_CHAINS as readonly number[]).every((c) => emptyAdvice.copy.includes(FUNDING_ORIGIN_WORD[c])),
+        emptyAdvice.copy.includes(
+          `no ${listWords([...new Set(['USDC', ...FUNDING_ORIGIN_CHAINS.flatMap((c) => (FUNDING_STABLES[c] ?? []).map((x) => x.symbol)), 'ETH'])], 'or')} on ${listWords(FUNDING_ORIGIN_CHAINS.map((c) => FUNDING_ORIGIN_WORD[c]))}`,
+        ) &&
+        (FUNDING_ORIGIN_CHAINS as readonly number[]).every((c) => emptyAdvice.copy.includes(FUNDING_ORIGIN_WORD[c])) &&
+        (FUNDING_ORIGIN_CHAINS as readonly number[]).every((c) => (FUNDING_STABLES[c] ?? []).every((x) => emptyAdvice.copy.includes(x.symbol))),
       JSON.stringify(emptyAdvice),
     )
 
@@ -22970,7 +22976,11 @@ async function main() {
       )
       check(
         'sign-in lands: no door on a chat, an intent link, the mosaic studio or a markets page computes its landing from window.location while rendering',
-        workDoors.every((s) => !/redirectTo=\{[^}]*window\.location|hereWithQuery|hereHref|const here = [^\n]*window\.location/.test(s)) &&
+        // Word-bounded: an unbounded `hereHref` also matches the tail of
+        // `signInElsewhereHref` (lib/sign-in-gate, round 2), which reads no
+        // location at all. A fence that fires on a substring of an unrelated
+        // name teaches people to rename around it.
+        workDoors.every((s) => !/redirectTo=\{[^}]*window\.location|\bhereWithQuery\b|\bhereHref\b|const here = [^\n]*window\.location/.test(s)) &&
           /<SiteAccount \/>/.test(workDoors[4]),
       )
       check(
@@ -28676,6 +28686,154 @@ async function main() {
     const sgSrc = readFileSync('lib/spot-guard-exec.ts', 'utf8')
     check('no dead ends: no spot-guard reply describes our infrastructure to a stranger ("this environment", "not provisioned")', !/reply:[^\n]*(?:this environment|aren.t provisioned|not provisioned)/i.test(sgSrc), 'an env-shaped sentence is still in a reply')
   }
+
+  // ── NO-DEAD-ENDS ROUND 2 (2026-09-21): the sign-in gate gets its door ────
+  // `signInGate` shipped on 09-08 and NOTHING rendered it until now: the
+  // route asked for a signature it never gave the user a way to provide, on
+  // /i/protected-long — the landing's "Open & protect a position" demo. The
+  // door is lib/sign-in-gate (pure, pinned here) rendered by ChatInterface,
+  // and it HOLDS the ask so nobody retypes a sentence they arrived with.
+  {
+    const { signInGateOf, signInGateLifted, signInDoorFor, signInElsewhereHref, shouldRerunSignInAsk, SIGN_IN_ASK_RERUN_WINDOW_MS } = await import('../lib/sign-in-gate')
+    const { mutationGateReply } = await import('../lib/chat-mutation-gate')
+
+    const gateMeta = { signInGate: { kind: 'guardian-job-step' }, signInAsk: 'Open a 2x long on HYPE and protect it with a 5% stop' }
+    check('sign-in door: a gate reply carries its kind AND the held ask', signInGateOf(gateMeta)?.kind === 'guardian-job-step' && signInGateOf(gateMeta)?.ask === gateMeta.signInAsk, JSON.stringify(signInGateOf(gateMeta)))
+    check('sign-in door: a gate with no held ask renders nothing (both halves or neither)', signInGateOf({ signInGate: { kind: 'guardian-arm' } }) === null && signInGateOf({ signInAsk: 'x' }) === null && signInGateOf(undefined) === null, 'a half-gate rendered')
+
+    const w = '0xAbC0000000000000000000000000000000000001'
+    check('sign-in door: the gate is answered only by a session that OWNS the connected wallet (the server\'s own rule)', signInGateLifted({ sessionAddress: w.toLowerCase(), walletAddress: w }) && !signInGateLifted({ sessionAddress: '0xdead000000000000000000000000000000000002', walletAddress: w }) && !signInGateLifted({ sessionAddress: null, walletAddress: w }), 'ownership read wrong')
+
+    check('sign-in door: /chat and /i get the unified door, a no-CDP build gets the wallet lane, the embed is sent elsewhere', signInDoorFor({ embedded: false, cdpEnabled: true }) === 'unified' && signInDoorFor({ embedded: false, cdpEnabled: false }) === 'wallet' && signInDoorFor({ embedded: true, cdpEnabled: true }) === 'elsewhere', 'door choice wrong')
+
+    const href = signInElsewhereHref('protect my ETH long with a 5% stop', 'https://www.pantessa.com/')
+    check('sign-in door: the embed\'s link carries the ask as a PREFILL — a URL still never fires a turn', href === 'https://www.pantessa.com/chat?prompt=protect%20my%20ETH%20long%20with%20a%205%25%20stop' && !/send=/.test(href), href)
+
+    const msg = (ageMs: number, meta: unknown = gateMeta, role = 'assistant') => ({ role, meta, createdAt: new Date(Date.now() - ageMs).toISOString() })
+    const rerun = (over: Partial<Parameters<typeof shouldRerunSignInAsk>[0]> = {}) =>
+      shouldRerunSignInAsk({ last: msg(1_000), sessionAddress: w.toLowerCase(), walletAddress: w, loading: false, now: Date.now(), ...over })
+    check('sign-in door: the held ask re-runs the moment the session lands, whichever lane brought it', rerun() === gateMeta.signInAsk, String(rerun()))
+    check('sign-in door: it never re-runs for a session that owns a different wallet, mid-turn, or on a stale reply', rerun({ sessionAddress: '0xdead000000000000000000000000000000000002' }) === null && rerun({ loading: true }) === null && rerun({ last: msg(SIGN_IN_ASK_RERUN_WINDOW_MS + 1_000) }) === null && rerun({ last: msg(1_000, { clarify: {} }) }) === null, 'a stale or foreign gate re-ran')
+
+    const gateCopy = mutationGateReply('guardian-job-step')
+    check('sign-in door: the gate copy stops sending people to a menu and stops asking them to retype', !/account menu/i.test(gateCopy) && !/then ask again/i.test(gateCopy) && /signed in as this wallet/.test(gateCopy) && /Nothing was changed/.test(gateCopy), gateCopy.slice(0, 180))
+
+    const chatSrc = readFileSync('components/ChatInterface.tsx', 'utf8')
+    check('sign-in door: the chat surface renders the gate, re-runs the held ask, and passes the route\'s key into the message', chatSrc.includes('signInGateOf(msg.meta)') && chatSrc.includes('shouldRerunSignInAsk(') && chatSrc.includes('data.signInGate'), 'the door is not wired')
+    check('sign-in door: the door is hidden once the session owns the wallet (a lifted gate never keeps asking)', chatSrc.includes('signInGateLifted({ sessionAddress, walletAddress: effectiveAddress })'), 'the door outlives its gate')
+    const preSrc = readFileSync('scripts/preflight-house.ts', 'utf8')
+    check('sign-in door: preflight counts a gate as actionable ONLY while the source really renders it', preSrc.includes('signInGateHasDoor()') && /signInGateOf\(msg\.meta\)/.test(preSrc) && /shouldRerunSignInAsk\(/.test(preSrc), 'the preflight fence would pass with no door')
+  }
+
+  // ── NO-DEAD-ENDS ROUND 2: the bridge-only wall answers from the wallet ───
+  // `Swap 5 USDC from Base to Arbitrum` holding $342 of USDT ON ARBITRUM was
+  // the last chipless wall of round 1: it never named the $342 and carried
+  // nothing to press. lib/bridge-shortfall reads the ask against the wallet.
+  {
+    const { bridgeAlternatives, bridgeCardChip, heldElsewhereLine, MIN_MOVE_USD } = await import('../lib/bridge-shortfall')
+    const { isStableSymbol, bridgeShortfallCopy } = await import('../lib/affordability')
+    const { buildsNatively } = await import('./ask-ladder')
+    const src = (chainWord: string, token: string, usd: number, balance = usd) => ({ chainId: 0, chainWord, token, balance, usd })
+    const ask = { amount: '5', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'arbitrum' }
+    const alt = (sources: ReturnType<typeof src>[], parsed = ask) => bridgeAlternatives({ parsed, sources, verify: buildsNatively })
+
+    // THE ROW: QA's drive wallet, to the character.
+    const usdtArb = alt([src('arbitrum', 'USDT', 342), src('arbitrum', 'ETH', 2.9, 0.00106)])
+    check(
+      'bridge wall: a stranger holding USDT on the chain they asked to bridge TO is offered the venue swap, not a bridge',
+      usdtArb.chips.length > 0 && usdtArb.chips.every((c) => buildsNatively(c.resume)) && usdtArb.chips.some((c) => /^Swap 5 USDT for USDC on arbitrum$/i.test(c.resume)),
+      JSON.stringify(usdtArb.chips),
+    )
+    check(
+      'bridge wall: the same token on another chain re-origins the move',
+      alt([src('ethereum', 'USDC', 400)]).chips.some((c) => /^Swap 5 USDC from ethereum to arbitrum$/i.test(c.resume)),
+      JSON.stringify(alt([src('ethereum', 'USDC', 400)]).chips),
+    )
+    check(
+      'bridge wall: the destination already holding it is SAID, since the cheapest move is the one you skip',
+      alt([src('arbitrum', 'USDC', 400)]).lines.some((l) => /already have what you asked for/i.test(l)),
+      JSON.stringify(alt([src('arbitrum', 'USDC', 400)]).lines),
+    )
+    // THE PARITY RULE — the bug a naive substitution would ship.
+    const ethOnly = alt([src('ethereum', 'ETH', 4_000, 1.25)])
+    check(
+      'bridge wall: an ETH holding is sized in ETH at the scan\'s own price — never "5 ETH" because the ask said "5 USDC"',
+      ethOnly.chips.length === 1 && /^Swap 0\.0015\d* ETH from ethereum to USDC on arbitrum$/.test(ethOnly.chips[0].resume) && buildsNatively(ethOnly.chips[0].resume),
+      JSON.stringify(ethOnly.chips),
+    )
+    const short = alt([src('ethereum', 'USDT', 3)], { ...ask, amount: '40' })
+    check(
+      'bridge wall: a wallet that can\'t cover the whole ask is offered what it HAS, labelled as such',
+      short.chips.length === 1 && /^Swap 3 USDT from ethereum to USDC on arbitrum$/i.test(short.chips[0].resume) && /what you have/i.test(short.chips[0].label),
+      JSON.stringify(short.chips),
+    )
+    check('bridge wall: dust is never offered as a move (a chip that would refuse itself)', alt([src('ethereum', 'USDC', MIN_MOVE_USD - 0.5)]).chips.length === 0, 'dust got a chip')
+
+    check(
+      'bridge wall: the refusal names every holding >= $0.50 and says why a stranded one can\'t move (invariant clause 4)',
+      (() => {
+        const line = heldElsewhereLine({ sources: [src('arbitrum', 'USDT', 342)], stranded: [src('base', 'USDC', 20)], failedChains: [] }) ?? ''
+        return /\$342 of USDT on arbitrum/.test(line) && /\$20\.00 of USDC on base/.test(line) && /no ETH on that chain/i.test(line)
+      })(),
+      String(heldElsewhereLine({ sources: [src('arbitrum', 'USDT', 342)], stranded: [src('base', 'USDC', 20)] })),
+    )
+    check('bridge wall: a scan that could not read a chain says so rather than claiming an empty wallet', /couldn.t read Base/i.test(heldElsewhereLine({ sources: [], stranded: [], failedChains: ['Base'] }) ?? ''), 'a failed read read as "you have nothing"')
+
+    // The empty wallet's door: the card, sized in the token the move moves.
+    // The door reads the environment and fails closed without both keys; this
+    // block is about what an OPEN door offers, so it opens one (no request is
+    // ever made, and the key is never a real one) and puts the env back.
+    const wasOnramp = process.env.ONRAMP_ENABLED
+    const wasStripeCard = process.env.STRIPE_SECRET_KEY
+    process.env.ONRAMP_ENABLED = 'true'
+    if (!process.env.STRIPE_SECRET_KEY) process.env.STRIPE_SECRET_KEY = 'sk_test_bridge_door'
+    const card = bridgeCardChip({ amount: '40', destToken: 'USDC', destChain: 'arbitrum', landsOn: 'ethereum', ethUsd: 3_000, verify: buildsNatively })
+    check(
+      'bridge wall: an empty wallet gets the card door, and its resume moves the landed ETH where the ask said',
+      !!card?.fund && /^Swap 0\.0133 ETH from ethereum to USDC on arbitrum$/.test(card!.resume) && buildsNatively(card!.resume),
+      JSON.stringify(card),
+    )
+    check('bridge wall: no ETH price, no card chip (a move is sized in the token it moves)', bridgeCardChip({ amount: '40', destToken: 'USDC', destChain: 'arbitrum', landsOn: 'ethereum', ethUsd: null, verify: buildsNatively }) === null, 'a chip was composed with no price')
+    const sameLane = bridgeCardChip({ amount: '40', destToken: 'USDC', destChain: 'ethereum', landsOn: 'ethereum', ethUsd: 3_000, verify: buildsNatively })
+    check('bridge wall: when the delivery lands on the destination itself, the resume is the venue swap', !!sameLane?.fund && /^Swap \$40 of ETH for USDC on ethereum$/.test(sameLane!.resume), JSON.stringify(sameLane))
+    check('bridge wall: a closed card door offers no card chip', bridgeCardChip({ amount: '40', destToken: 'USDC', destChain: 'arbitrum', landsOn: 'ethereum', ethUsd: 3_000, verify: buildsNatively, }) !== null && (() => { const off = process.env.ONRAMP_ENABLED; process.env.ONRAMP_ENABLED = 'false'; const shut = bridgeCardChip({ amount: '40', destToken: 'USDC', destChain: 'arbitrum', landsOn: 'ethereum', ethUsd: 3_000, verify: buildsNatively }); process.env.ONRAMP_ENABLED = off; return shut === null })(), 'the door opened with the on-ramp off')
+    if (wasOnramp === undefined) delete process.env.ONRAMP_ENABLED
+    else process.env.ONRAMP_ENABLED = wasOnramp
+    if (wasStripeCard === undefined) delete process.env.STRIPE_SECRET_KEY
+    else process.env.STRIPE_SECRET_KEY = wasStripeCard
+
+    // The gate's own branch: stables only, scan optional, fail soft.
+    check('bridge wall: the stable branch is what routes here — a stock shortfall keeps the buy chip', isStableSymbol('USDT') && isStableSymbol('usdc.e') && !isStableSymbol('AMAT') && !isStableSymbol('ETH'), 'the stable test is wrong')
+    const shortV = { kind: 'short' as const, chainId: 8453, chainName: 'Base', token: '0xusdc', symbol: 'USDC', decimals: 6, held: BigInt(0), needs: BigInt(5_000_000), gas: false }
+    const noScan = await bridgeShortfallCopy('Swap 5 USDC from Base to Arbitrum', shortV, undefined, buildsNatively)
+    check('bridge wall: no scan, no scan-shaped claims — the prose refusal stands exactly as it did', noScan.line === null && noScan.chips.length === 0, JSON.stringify(noScan))
+    const threw = await bridgeShortfallCopy('Swap 5 USDC from Base to Arbitrum', shortV, async () => { throw new Error('rpc down') }, buildsNatively)
+    check('bridge wall: a failed scan never turns into "you have nothing"', threw.line === null && threw.chips.length === 0, JSON.stringify(threw))
+    const live = await bridgeShortfallCopy(
+      'Swap 5 USDC from Base to Arbitrum',
+      shortV,
+      async () => ({ sources: [src('arbitrum', 'USDT', 342)], stranded: [], failedChains: [], ethUsd: 3_000 }),
+      buildsNatively,
+    )
+    check(
+      'bridge wall: the gate\'s stable branch names the money AND carries a chip that builds',
+      /\$342 of USDT on arbitrum/.test(live.line ?? '') && live.chips.length > 0 && live.chips.every((c) => buildsNatively(c.resume)),
+      JSON.stringify(live).slice(0, 220),
+    )
+    const notABridge = await bridgeShortfallCopy(
+      'Sell $50 of AMAT',
+      shortV,
+      async () => ({ sources: [src('arbitrum', 'USDT', 342)], stranded: [], failedChains: [], ethUsd: 3_000 }),
+      buildsNatively,
+    )
+    check('bridge wall: an ask that isn\'t a move still gets its money named, and no bridge chips', /\$342 of USDT/.test(notABridge.line ?? '') && notABridge.chips.length === 0, JSON.stringify(notABridge).slice(0, 200))
+
+    const routeSrc = readFileSync('app/api/chat/route.ts', 'utf8')
+    check('bridge wall: both affordability gates in the route hand the wallet scan in', (routeSrc.match(/scan: [^\n]*scanFundingSources/g) ?? []).length === 2, 'a gate site lost its scan')
+    const mapSrc = readFileSync('components/markets/viz/MarketMap.tsx', 'utf8')
+    check('markets map: every tile is a real link (SEO, no-JS, middle-click) — it was a <g> with an onClick', /href=\{`\/t\/\$\{encodeURIComponent\(c\.symbol\)\}`\}/.test(mapSrc) && !/role="button"/.test(mapSrc), 'the map tiles are click-only again')
+  }
+
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
