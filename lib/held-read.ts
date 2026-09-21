@@ -4,9 +4,12 @@
 // through here, so a page makes one read per wallet per window, not one per
 // chip. Module-level on purpose: it outlives the rail remounting on every
 // client navigation between /markets and /t pages. A wallet doesn't change that
-// fast, and the server rides the Wallet panel's cache anyway.
+// fast, and the server rides the Wallet panel's cache anyway. Every read that
+// answers is also remembered in this browser (lib/watchlists
+// writeHeldSnapshot): the rail paints that memory while the first read of a
+// cold load is in flight. Memory paints; only a live read arms a chip.
 
-import type { HeldSymbol } from '@/lib/watchlists'
+import { writeHeldSnapshot, type HeldSymbol } from '@/lib/watchlists'
 
 export const HELD_EVERY_MS = 60_000
 
@@ -41,6 +44,10 @@ export function readHeld(address: string, maxAgeMs = HELD_EVERY_MS, fresh = fals
       if (heldReads.get(address)?.read === read) heldReads.delete(address)
     } else {
       lastRead.set(address, v)
+      // Remembered for the next cold load, so the rail's position column
+      // paints with the lists instead of after a read (lib/watchlists
+      // HELD_SNAPSHOT_KEY). Memory paints; only this live read arms a chip.
+      writeHeldSnapshot(address, v.held)
     }
   })
   return read
