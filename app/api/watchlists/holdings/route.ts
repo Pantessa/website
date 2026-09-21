@@ -21,9 +21,10 @@ export const dynamic = 'force-dynamic'
 //   onrampEnabled): together they open the rail's card door (2026-09-16)
 //   without a second read. `fresh=1` is the panel's bounded bypass (one fresh
 //   read per address every 8s), asked for when a card purchase lands.
-// POST { symbols } → { list, added, dismissed } — the ACCOUNT sync (SIWE
-//   cookie or Bearer yf_). The owner's primary list gains the held symbols
-//   its ledger has never seen. The symbols are the client's own GET result;
+// POST { symbols, listId? } → { list, added, dismissed } — the ACCOUNT sync (SIWE
+//   cookie or Bearer yf_). The list the owner has open (`listId`; the first
+//   list without one) gains the held symbols it lacks and the owner never
+//   removed. The symbols are the client's own GET result;
 //   trusting them is safe because they only ever touch the caller's own list
 //   and ledger — exactly what adding a ticker by hand does.
 
@@ -57,6 +58,6 @@ export async function POST(req: NextRequest) {
     body = null
   }
   if (!body || !Array.isArray(body.symbols)) return NextResponse.json({ error: 'Name the held symbols: { symbols: string[] }.' }, { status: 400 })
-  const r = await syncHeldSymbols(addr, body.symbols, isInternalRun(req.headers, body))
+  const r = await syncHeldSymbols(addr, body.symbols, isInternalRun(req.headers, body), body.listId)
   return NextResponse.json(r, { headers: { 'cache-control': 'no-store' } })
 }

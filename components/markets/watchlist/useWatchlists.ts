@@ -12,8 +12,8 @@
 // Holdings autofill (2026-09-11): whenever a wallet is behind the rail — the
 // session's wallet in account mode, the connected one in guest mode — the
 // hook reads what it holds (GET /api/watchlists/holdings) and
-// planHeldAutofill adds the symbols the ledger has never seen to the first
-// list: the account's ledger on the server (POST), this browser's in
+// planHeldAutofill adds the held symbols the OPEN list lacks (and the owner
+// never removed) to that list: the account's ledger on the server (POST), this browser's in
 // localStorage. A removal joins the ledger, so it stays off until the owner
 // adds it back by hand.
 //
@@ -68,6 +68,10 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 // watchlists heldReconcileReason). Module-level like the reads themselves: it
 // outlives the rail remounting between /markets and /t.
 const reconciledHeld = new Map<string, string[]>()
+// …and WHICH list that reconcile filled. The list on screen is the one that
+// follows the wallet, so opening another list is a reason to check again
+// (heldReconcileReason 'list') — once per list, not once per poll.
+const reconciledList = new Map<string, string>()
 const NO_HELD: ReadonlyMap<string, HeldSymbol> = new Map()
 
 // A page runs this hook more than once (the rail and the Morning tape beside
@@ -170,6 +174,8 @@ export function useWatchlists(opts: WatchlistsOptions = {}): WatchlistsApi {
   // as the account's while the account's load is still in flight.
   const ready = !!modeKey && loadedKey === modeKey
   const [activeId, setActiveIdState] = useState<string | null>(null)
+  const activeIdRef = useRef<string | null>(null)
+  activeIdRef.current = activeId
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [heldRead, setHeldRead] = useState<{ holder: string; held: ReadonlyMap<string, HeldSymbol> } | null>(null)
@@ -307,16 +313,35 @@ export function useWatchlists(opts: WatchlistsOptions = {}): WatchlistsApi {
       setHeldRead({ holder, held: new Map(got.held.map((h) => [h.symbol, h])) })
       setWalletRead({ holder, empty: got.empty, cardFunding: got.cardFunding })
       const symbols = got.held.map((h) => h.symbol)
-      const reason = heldReconcileReason({ held: symbols, reconciled: reconciledHeld.get(key) ?? null, forced: fresh })
+      // The list on screen (the first one until the owner picks another).
+      // Read after the holdings answer, and from storage when the state hasn't
+      // restored yet: the visit's check can start before the remembered list does.
+      let openId = activeIdRef.current
+      if (!openId) {
+        try {
+          openId = window.localStorage.getItem(ACTIVE_KEY)
+        } catch {
+          /* ignore */
+        }
+      }
+      const target = listsRef.current.find((l) => l.id === openId) ?? listsRef.current[0] ?? null
+      const targetId = target?.id ?? ''
+      const reason = heldReconcileReason({
+        held: symbols,
+        reconciled: reconciledHeld.get(key) ?? null,
+        forced: fresh,
+        missingFromTarget: reconciledList.has(key) && reconciledList.get(key) !== targetId,
+      })
       if (!reason) return
       // Claimed before the write, so a remount racing the poll can't sync the
       // same read twice; a failed sync gives the claim back.
       reconciledHeld.set(key, symbols)
+      reconciledList.set(key, targetId)
       if (authed) {
         try {
           const r = await api<{ list: WatchlistShape | null; added: string[]; dismissed: string[] }>('/api/watchlists/holdings', {
             method: 'POST',
-            body: JSON.stringify({ symbols }),
+            body: JSON.stringify({ symbols, ...(targetId ? { listId: targetId } : {}) }),
           })
           if (!alive()) return
           const list = r.list
@@ -328,19 +353,27 @@ export function useWatchlists(opts: WatchlistsOptions = {}): WatchlistsApi {
           }
         } catch {
           reconciledHeld.delete(key)
+          reconciledList.delete(key)
         }
         return
       }
       const ledger = readHeldLedger()
-      const plan = planHeldAutofill({ held: symbols, watched: listsRef.current.flatMap((l) => l.symbols), seen: ledger.seen })
-      if (!plan.newlySeen.length) return
-      let listName = DEFAULT_LIST_NAME
+      const plan = planHeldAutofill({
+        held: symbols,
+        watched: listsRef.current.flatMap((l) => l.symbols),
+        target: target?.symbols ?? [],
+        seen: ledger.seen,
+        dismissed: ledger.pending,
+      })
+      if (!plan.newlySeen.length && !plan.add.length) return
+      let listName = target?.name ?? DEFAULT_LIST_NAME
       if (plan.add.length) {
         updateGuest((prev) => {
-          const first = prev[0] ?? newGuestList(DEFAULT_LIST_NAME)
-          listName = first.name
-          const filled = { ...first, symbols: dedupeSymbols([...first.symbols, ...plan.add]) }
-          return prev.length ? [filled, ...prev.slice(1)] : [filled]
+          const at = Math.max(0, prev.findIndex((l) => l.id === targetId))
+          const open = prev[at] ?? newGuestList(DEFAULT_LIST_NAME)
+          listName = open.name
+          const filled = { ...open, symbols: dedupeSymbols([...open.symbols, ...plan.add]) }
+          return prev.length ? prev.map((l, i) => (i === at ? filled : l)) : [filled]
         })
       }
       writeHeldLedger({
@@ -394,6 +427,17 @@ export function useWatchlists(opts: WatchlistsOptions = {}): WatchlistsApi {
       alive = false
     }
   }, [ready, holder, heldKey, recheck, readAndReconcile])
+
+  // Opening another list: that one follows the wallet now. The read comes from
+  // the minute cache, so this costs a sync only when the list lacks something.
+  useEffect(() => {
+    if (!ready || !holder || !activeId) return
+    let alive = true
+    void readAndReconcile({ alive: () => alive })
+    return () => {
+      alive = false
+    }
+  }, [ready, holder, activeId, readAndReconcile])
 
   // A page left open keeps up on its own: once a minute while the tab is
   // visible, and when it comes back into view. Positions stay current (a buy
