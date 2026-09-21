@@ -9,6 +9,7 @@
 // own uncached call.
 
 import { pickChips, splitChipsLine, type AiChip } from './markets-ai'
+import { recordInferenceCall, type InferenceSurface, type ModelUsage } from './inference-meter'
 
 /** The model the markets AI runs on: `MK2_AI_MODEL` (the one env Nate flips;
  *  QA's ask), else `MARKETS_AI_MODEL`, else the planner's, else
@@ -35,13 +36,23 @@ export interface ModelCall {
   user: string
   maxTokens: number
   signal?: AbortSignal
+  /** Which markets surface this is — the meter's label (lib/inference-meter). */
+  surface: InferenceSurface
+  /** Pricing v2: the viewer's OWN Anthropic key (BYOK). Absent = the house
+   *  key. A refused BYOK key never falls back to the house key. */
+  apiKey?: string
+  /** Who the meter attributes the call to (lowercased wallet), if anyone. */
+  owner?: string | null
   /** Harness-only scenario the mock reads (ignored on a real call). */
   mock?: { scenario?: string | null; menu?: AiChip[] }
 }
 
-function headers(): Record<string, string> {
-  return { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY ?? '', 'anthropic-version': '2023-06-01' }
+function headers(key: string): Record<string, string> {
+  return { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' }
 }
+
+const meter = (call: ModelCall, usage: ModelUsage, ok: boolean) =>
+  recordInferenceCall({ surface: call.surface, model: MARKETS_AI_MODEL, keySource: call.apiKey ? 'byok' : 'house', owner: call.owner, usage, ok })
 
 /**
  * Stream the model's text. Yields text deltas; throws on a non-2xx (the
@@ -53,19 +64,25 @@ export async function* streamModelText(call: ModelCall): AsyncGenerator<string, 
     for (const piece of mockStream(call)) yield piece
     return
   }
-  const key = process.env.ANTHROPIC_API_KEY
+  const key = call.apiKey ?? process.env.ANTHROPIC_API_KEY
   if (!key) throw new Error('ANTHROPIC_API_KEY not set')
+  const usage: ModelUsage = {}
+  let metered = false
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
   call.signal?.addEventListener('abort', () => ctrl.abort(), { once: true })
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: headers(),
+      headers: headers(key),
       body: JSON.stringify({ model: MARKETS_AI_MODEL, max_tokens: call.maxTokens, stream: true, system: call.system, messages: [{ role: 'user', content: call.user }] }),
       signal: ctrl.signal,
     })
-    if (!res.ok || !res.body) throw new Error(`model ${res.status}`)
+    if (!res.ok || !res.body) {
+      metered = true
+      meter(call, {}, false)
+      throw new Error(`model ${res.status}`)
+    }
     const reader = res.body.getReader()
     const dec = new TextDecoder()
     let buf = ''
@@ -80,18 +97,23 @@ export async function* streamModelText(call: ModelCall): AsyncGenerator<string, 
         if (!line.startsWith('data:')) continue
         const payload = line.slice(5).trim()
         if (!payload || payload === '[DONE]') continue
-        let ev: { type?: string; delta?: { type?: string; text?: string }; error?: { message?: string } }
+        let ev: { type?: string; delta?: { type?: string; text?: string }; error?: { message?: string }; message?: { usage?: ModelUsage }; usage?: ModelUsage }
         try {
           ev = JSON.parse(payload)
         } catch {
           continue
         }
         if (ev.type === 'error') throw new Error(ev.error?.message ?? 'model stream error')
+        // Usage rides the stream: input counters on message_start, the final
+        // output count on message_delta.
+        if (ev.type === 'message_start' && ev.message?.usage) Object.assign(usage, ev.message.usage)
+        if (ev.type === 'message_delta' && ev.usage) Object.assign(usage, ev.usage)
         if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta' && ev.delta.text) yield ev.delta.text
       }
     }
   } finally {
     clearTimeout(timer)
+    if (!metered) meter(call, usage, true)
   }
 }
 
@@ -100,17 +122,21 @@ export async function* streamModelText(call: ModelCall): AsyncGenerator<string, 
  *  answers nothing. */
 export async function modelText(call: ModelCall): Promise<string | null> {
   if (modelMocked()) return mockText(call)
-  const key = process.env.ANTHROPIC_API_KEY
+  const key = call.apiKey ?? process.env.ANTHROPIC_API_KEY
   if (!key) return null
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: headers(),
+      headers: headers(key),
       body: JSON.stringify({ model: MARKETS_AI_MODEL, max_tokens: call.maxTokens, system: call.system, messages: [{ role: 'user', content: call.user }] }),
       signal: call.signal ?? AbortSignal.timeout(TIMEOUT_MS),
     })
-    if (!res.ok) return null
-    const j = (await res.json()) as { content?: Array<{ type: string; text?: string }> }
+    if (!res.ok) {
+      meter(call, {}, false)
+      return null
+    }
+    const j = (await res.json()) as { content?: Array<{ type: string; text?: string }>; usage?: ModelUsage }
+    meter(call, j.usage ?? {}, true)
     const text = (j.content ?? [])
       .filter((c) => c.type === 'text')
       .map((c) => c.text ?? '')

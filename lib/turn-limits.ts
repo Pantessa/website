@@ -106,7 +106,7 @@ export async function bumpAndCheckUnsignedTurn(
     // fire-and-forget.
     if (Math.random() < 0.02) {
       void prisma
-        .$executeRaw`DELETE FROM unsigned_turn_windows WHERE window_start < now() - interval '3 hours'`.catch(
+        .$executeRaw`DELETE FROM unsigned_turn_windows WHERE (window_start < now() - interval '3 hours' AND key NOT LIKE 'f:%' AND key NOT LIKE 't:%') OR window_start < now() - interval '3 days'`.catch(
         () => {},
       )
     }
@@ -142,7 +142,7 @@ export async function bumpAndCheckBrokerCall(ip: string | null): Promise<boolean
     `
     if (Math.random() < 0.02) {
       void prisma
-        .$executeRaw`DELETE FROM unsigned_turn_windows WHERE window_start < now() - interval '3 hours'`.catch(
+        .$executeRaw`DELETE FROM unsigned_turn_windows WHERE (window_start < now() - interval '3 hours' AND key NOT LIKE 'f:%' AND key NOT LIKE 't:%') OR window_start < now() - interval '3 days'`.catch(
         () => {},
       )
     }
@@ -217,4 +217,27 @@ export function turnLimitReply(scope: 'ip' | 'wallet'): string {
   return scope === 'wallet'
     ? `🚦 That's a lot of turns for an unsigned wallet in one hour. **Sign in** (one free signature) and your own plan takes over — no hourly guest cap. Anything already signed, plus standing jobs and receipts, keeps running. Otherwise the guest lane reopens within the hour.`
     : `🚦 This connection has hit the hourly guest cap. **Sign in** (one free signature) and your own plan takes over — no guest caps. Anything already signed, plus standing jobs and receipts, keeps running. Otherwise the guest lane reopens within the hour.`
+}
+
+/** Saving a bring-your-own model key makes one outbound call to the model
+ *  provider with a caller-supplied credential. Session-gated already; this
+ *  keeps the route from ever being a key-testing oracle. Own buckets
+ *  (`k:<hash>` per connection, `k:w:<wallet>` per account). */
+export const AI_KEY_WRITE_HOURLY_CAP = 10
+
+export async function bumpAndCheckAiKeyWrite(ip: string | null, wallet: string): Promise<boolean> {
+  const keys = [`k:w:${wallet.toLowerCase()}`, ...(ip ? [`k:${hashIp(ip)}`] : [])]
+  try {
+    const { default: prisma } = await import('@/lib/db')
+    const rows = await prisma.$queryRaw<{ count: number }[]>`
+      INSERT INTO unsigned_turn_windows (key, window_start, count)
+      SELECT unnest(${keys}::text[]), ${hourStartUTC()}, 1
+      ON CONFLICT (key, window_start)
+      DO UPDATE SET count = unsigned_turn_windows.count + 1
+      RETURNING count
+    `
+    return rows.some((r) => Number(r.count) > AI_KEY_WRITE_HOURLY_CAP)
+  } catch {
+    return false
+  }
 }

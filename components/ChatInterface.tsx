@@ -38,6 +38,7 @@ import NftMarketCard from '@/components/NftMarketCard'
 import VoteChoiceButtons from '@/components/VoteChoiceButtons'
 import VoteCandidates from '@/components/VoteCandidates'
 import ClarifyChips from '@/components/ClarifyChips'
+import PrivateSwapToggle, { swapPrivacyOf } from '@/components/PrivateSwapToggle'
 import PaymentConfirm from '@/components/PaymentConfirm'
 import { voteRequestOf, voteCandidatesOf, voteProposalOf } from '@/lib/snapshot-vote'
 import { clarifyRequestOf } from '@/lib/clarify'
@@ -67,6 +68,7 @@ import { chainById } from '@/lib/chains'
 import AppModeWorkspace from '@/components/AppModeWorkspace'
 import LinksWorkspace from '@/components/LinksWorkspace'
 import JobDetailOverlay from '@/components/JobDetailOverlay'
+import { claimJobStepReport, jobStepSignedInfo } from '@/lib/job-step-telemetry'
 import ChartOverlay from '@/components/ChartOverlay'
 import VoiceButton, { type VoiceState } from '@/components/VoiceButton'
 import { parseChartAsk } from '@/lib/charts'
@@ -2098,24 +2100,17 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                           jobId={(msg.meta as { jobId: string }).jobId}
                           token={typeof (msg.meta as { jobToken?: unknown }).jobToken === 'string' ? (msg.meta as { jobToken: string }).jobToken : undefined}
                           onStepSigned={(info) => {
-                            reportEmbedSigned({
-                              artifact: 'job-step',
-                              // The step's OWN chain when the artifact named
-                              // one — 'multi' only for an off-chain order.
-                              chain: info.chainId ? chainLabel(info.chainId) ?? String(info.chainId) : 'multi',
-                              chainId: info.chainId,
-                              detail: info.detail?.slice(0, 60),
-                              txUrl: info.txUrl,
-                              valueUsd: info.valueUsd ?? undefined,
-                              // What the step BUILT, not the builder id: a
-                              // raw id fails the telemetry allowlist and the
-                              // row lands with build_path NULL, which is $0
-                              // of fee and $0 of creator earnings on a swap
-                              // that really paid the fee.
-                              buildPath: info.buildPath,
-                              feeBps: info.feeBps,
-                              jobId: (msg.meta as { jobId: string }).jobId,
-                            })
+                            // Shared fence: the Jobs rail's overlay mounts a
+                            // JobCard over this same job, and the beacon is
+                            // keyed only by sessionId server-side — a second
+                            // report would count the money twice.
+                            if (!claimJobStepReport(info)) return
+                            // The field mapping lives in lib/job-step-telemetry
+                            // so this lane and the rail's keyless one cannot
+                            // drift: same chain label, same BUILT path (never
+                            // the raw builder id — that lands build_path NULL,
+                            // i.e. $0 of creator earnings on a swap that paid).
+                            reportEmbedSigned(jobStepSignedInfo(info))
                           }}
                           onSettled={(info) => {
                             // Additive turn outcome (embed contract): a job
@@ -2138,9 +2133,21 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                         // right above the button that sends it.
                         const warnLines = builtTx ? guardWarnLines((msg.meta as { guardrails?: unknown } | undefined)?.guardrails) : []
                         const external = builtTx ? externalBuildOf(msg.meta) : null
+                        // Cross-chain swaps carry their privacy state on the
+                        // card: the Private switch re-asks through the chat's
+                        // own amend grammar (one path for a press and a typed ask).
+                        const privacy = builtTx ? swapPrivacyOf(msg.meta) : null
                         return builtTx ? (
                           <div data-tx-card>
                             {external && <ExternalBuildNotice builtBy={external.builtBy} warnings={external.warnings} txs={[builtTx as { to?: string; value?: string; data?: string; chainId?: number }]} />}
+                            {privacy && (
+                              <PrivateSwapToggle
+                                privacy={privacy}
+                                live={i === currentChat.messages.length - 1}
+                                disabled={loading}
+                                onSend={(ask) => sendChip(ask)}
+                              />
+                            )}
                             {warnLines.map((line, i) => (
                               <p key={i} className="mb-2 text-[12px] leading-snug text-amber-400 [overflow-wrap:anywhere]" data-recipient-check={/LEAVES your wallet/.test(line) ? 'recipient' : 'warn'}>
                                 {line}

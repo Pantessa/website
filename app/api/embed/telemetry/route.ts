@@ -4,7 +4,8 @@ import { resolveEmbedKey, sightingOrigin } from '@/lib/embed-key'
 import { isBuildPath } from '@/lib/build-path'
 import { INTENT_SLUG_RE } from '@/lib/intent-links'
 import type { OriginKind } from '@/lib/value-origin'
-import { COUNTED_VERIFICATIONS, verifyTurnNow } from '@/lib/link-receipt-verify'
+import { COUNTED_VERIFICATIONS, verifyTurnNow, extractTxHash, chainIdOfTurn } from '@/lib/link-receipt-verify'
+import { grantEarnedAnswers } from '@/lib/earned-answers'
 import { sanitizeFillSymbols } from '@/lib/fill-symbols'
 import { isIndexSymbol } from '@/lib/viz/flow'
 
@@ -203,7 +204,34 @@ export async function POST(req: NextRequest) {
       /* fail-soft */
     }
   }
+  // Every trade you sign refills your chat (pricing v2): a VERIFIED receipt
+  // banks answers from the fee it paid — to the embed HOST for a keyed embed
+  // turn (their visitors chat on the host's pool), else to the signer. The
+  // grant re-derives the notional and the fee venue from the chain; the
+  // beacon's own valueUsd only ever LOWERS it (lib/earned-answers). Never for
+  // an internal run, never awaited past the response.
+  let earned: number | undefined
+  if (verification === 'verified' && walletAddress && !internalRun) {
+    const txHash = extractTxHash(str(body.txUrl, 300))
+    const chainId = chainIdOfTurn({ chain: str(body.chain, 40), txUrl: str(body.txUrl, 300) }, body.chainId)
+    const claimedUsd = usd(body.valueUsd)
+    if (txHash && chainId && claimedUsd) {
+      earned = await Promise.race([
+        grantEarnedAnswers({
+          id: row.id,
+          beneficiary: resolved?.ownerAddress ?? walletAddress,
+          wallet: walletAddress,
+          chainId,
+          txHash,
+          claimedUsd,
+          linkTier: !!intentLinkSlug,
+        }),
+        new Promise<number>((r) => setTimeout(() => r(0), 4000)),
+      ]).catch(() => 0)
+    }
+  }
+
   // `internal` echoes the stamp so drills (and the harness) can assert their
   // rows can never read as growth.
-  return NextResponse.json({ ok: true, ...(internalRun ? { internal: true } : {}), ...(verification ? { verification } : {}) })
+  return NextResponse.json({ ok: true, ...(internalRun ? { internal: true } : {}), ...(verification ? { verification } : {}), ...(earned ? { earnedAnswers: earned } : {}) })
 }

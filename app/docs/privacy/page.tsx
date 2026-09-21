@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { DOCS_PAGES, docsUrl } from '@/lib/docs'
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'privacy')!
-const UPDATED = 'September 3, 2026'
+const UPDATED = 'September 18, 2026'
 
 // See the note in app/docs/terms/page.tsx — these are the counsel-owned values.
 const LEGAL_ENTITY = 'Yeetful, Inc.'
@@ -77,6 +77,19 @@ export default function PrivacyPage() {
           form for that purpose. Where a fiat on-ramp provider requires it to determine whether it
           can serve you, your IP address may be sent to that provider. We also keep aggregate,
           privacy-preserving analytics about site usage.
+        </p>
+        <p>
+          <strong>How the site is used.</strong>{' '}We keep our own record of what happens on a visit, so
+          we can find the places people get stuck: the pages opened, the buttons and links pressed
+          (recorded by the label on the control, never by anything typed into a field), time spent and
+          how far a page was scrolled, errors the page ran into, and the requests sent through the chat
+          together with the kind of answer they got. We do not set a cookie or store an identifier on
+          your device for this. Visits are grouped by an identifier we compute on our servers from a
+          salted hash of your IP address and browser type. The salt changes every day and is deleted
+          after two days, so the identifier is different each day and cannot be traced back to your IP
+          address. Once you connect a wallet, the record is also associated with that wallet address.
+          If your browser sends a Global Privacy Control or Do Not Track signal, we do not keep this
+          record. Pages of our chat embedded on other websites are not covered by it.
         </p>
         <p>
           <strong>Payment data.</strong> If you subscribe to a paid plan, payment is processed by
@@ -183,7 +196,8 @@ export default function PrivacyPage() {
         <h2>7. Cookies and sessions</h2>
         <p>
           We use a strictly-necessary, httpOnly session cookie to keep you signed in after a
-          Sign-In With Ethereum signature, and privacy-preserving analytics. We do not use
+          Sign-In With Ethereum signature, and privacy-preserving analytics. Our own usage record
+          (section 1) uses no cookie and nothing stored on your device. We do not use
           third-party advertising cookies and we do not track you across other websites.
         </p>
 
@@ -192,6 +206,7 @@ export default function PrivacyPage() {
           We keep information for as long as your account is active or as needed to provide the
           Service, then for the period required to meet legal, security, and accounting obligations.
           Logs and rate-limiting records are kept for a short period and then deleted or aggregated.
+          The usage record described in section 1 is deleted after 120 days.
           On-chain records cannot be deleted.
         </p>
 

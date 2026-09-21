@@ -284,7 +284,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       // The wallet's own words, not viem's wrapper (lib/wallet-refusal).
       const msg = walletErrorWords(err)
-      setError(/rejected|denied|User rejected/i.test(msg) ? null : msg)
+      const declined = /rejected|denied|User rejected/i.test(msg)
+      // A sign-in that didn't happen leaves no row anywhere else: a newcomer
+      // who declines the signature just looks like someone who left.
+      analytics.signInFailed(declined ? 'declined in the wallet' : msg)
+      setError(declined ? null : msg)
     } finally {
       setSigningIn(false)
     }

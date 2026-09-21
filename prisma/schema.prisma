@@ -743,10 +743,65 @@ model CreditLedgerEntry {
   ownerAddress String   @map("owner_address")
   delta        Int
   reason       String
+  /// Which pool this movement belongs to (pricing v2, lib/billing.ts):
+  /// 'taste' = the free daily lane (informational — the taste is counted in
+  /// unsigned_turn_windows, never against a balance), 'plan' = the monthly
+  /// Plus allowance, 'bank' = earned + bought answers that never expire.
+  /// NULL = a pre-v2 row (read as 'plan' usage for its own month).
+  pool         String?
+  /// Idempotency key for a GRANT: 'earned:<embedTurnId>', 'pack:<stripe
+  /// session id>', 'pack-usdc:<tx hash>'. Unique, so a replayed webhook or a
+  /// re-sent beacon can never grant twice.
+  grantKey     String?  @unique @map("grant_key")
   createdAt    DateTime @default(now()) @map("created_at")
 
   @@index([ownerAddress, createdAt])
   @@map("credit_ledger")
+}
+
+/// One model API call we made (pricing v2): the measured cost of inference,
+/// per surface. `keySource` says whose key paid — 'house' is our bill, 'byok'
+/// is the user's own key (recorded for the dashboard, costs us nothing).
+/// Written fire-and-forget by lib/inference-meter.ts; never blocks a turn.
+model InferenceCall {
+  id               String   @id @default(cuid())
+  surface          String // chat-plan | chat-synth | auto-router | governance | markets-brief | markets-tape | markets-position | markets-ask | markets-explain | mcp-lint
+  model            String
+  keySource        String   @default("house") @map("key_source")
+  ownerAddress     String?  @map("owner_address")
+  inputTokens      Int      @default(0) @map("input_tokens")
+  outputTokens     Int      @default(0) @map("output_tokens")
+  cacheReadTokens  Int      @default(0) @map("cache_read_tokens")
+  cacheWriteTokens Int      @default(0) @map("cache_write_tokens")
+  costUsd          Float    @default(0) @map("cost_usd")
+  ok               Boolean  @default(true)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([surface, createdAt])
+  @@map("inference_calls")
+}
+
+/// A user's OWN model API key (bring your own key, pricing v2). Encrypted at
+/// rest with AES-256-GCM under BYOK_KEY_SECRET (lib/byok.ts); the plaintext
+/// never lands in a log, a beacon, or an error. One key per (owner,
+/// provider). `useForEmbeds` is the host's explicit opt-in to run their
+/// embed visitors' house answers on this key too.
+model InferenceKey {
+  ownerAddress String    @map("owner_address")
+  provider     String    @default("anthropic")
+  ciphertext   String
+  nonce        String
+  tag          String
+  last4        String
+  synthModel   String?   @map("synth_model")
+  useForEmbeds Boolean   @default(false) @map("use_for_embeds")
+  lastError    String?   @map("last_error")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  lastUsedAt   DateTime? @map("last_used_at")
+
+  @@id([ownerAddress, provider])
+  @@map("inference_keys")
 }
 
 /// A PUBLIC embed key (`yfe_…`) — safe to ship in a host page's source, like
@@ -1675,4 +1730,70 @@ model AlertNotification {
 
   @@index([owner, seenAt, createdAt])
   @@map("alert_notifications")
+}
+
+// ── User flows (2026-09-18) ────────────────────────────────────────────────
+// Every table we had was keyed by wallet, and visitors were leaving before a
+// wallet existed. These three are the first-party, cookie-less journey log
+// behind /dashboard/admin/flows (lib/user-flows.ts is the vocabulary).
+
+/// One thing a visitor did: a page view, a click on one of our controls, a
+/// page left (time + scroll), a script error, a failing endpoint, an ask and
+/// the shape of what came back. `vid` is NOT a cookie: it is a hash of the
+/// day's salt + IP + user agent (lib/visitor-id.ts), so it rotates daily and,
+/// once the salt is deleted, can't be walked back to an address. `wallet` is
+/// what the browser said was connected — display only, nothing is authorized
+/// or paid off this table.
+model VisitorEvent {
+  id          String   @id @default(cuid())
+  vid         String
+  /// The same hash over the IP alone: events that share it came from one
+  /// network that day. Its one use is tagging our own devices as team.
+  net         String?
+  wallet      String?
+  kind        String // lib/journey-events JOURNEY_KINDS
+  path        String   @default("")
+  label       String?
+  detail      Json?
+  referrer    String? // external hostname, first view of a page load only
+  utm         String?
+  country     String?
+  device      String? // "mobile · iOS · Safari" — families, never the full UA
+  /// VERIFIED ours: the request carried an admin's or a test wallet's session
+  /// cookie. The only team evidence allowed to hide anyone else's rows.
+  isTeam      Boolean  @default(false) @map("is_team")
+  /// CLAIMED ours: the browser said so (a flag an admin sign-in leaves on
+  /// that machine), or named one of our wallets. A stranger can say the same,
+  /// so a claim hides the rows it rides on and nothing more.
+  teamClaimed Boolean  @default(false) @map("team_claimed")
+  isInternal  Boolean  @default(false) @map("is_internal")
+  isBot       Boolean  @default(false) @map("is_bot")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([vid, createdAt])
+  @@index([wallet, createdAt])
+  @@map("visitor_events")
+}
+
+/// The day's salt for visitor ids. Rows older than yesterday are deleted, and
+/// with them any way to recompute a past visitor id from an IP address.
+model VisitorSalt {
+  day  String @id // YYYY-MM-DD, UTC
+  salt String
+
+  @@map("visitor_salts")
+}
+
+/// "That one is me." A wallet (0x…) or a visitor id (v:…) an admin marked as
+/// the team's from the flows screen. TEST_WALLETS is a constant in lib/admin
+/// and has drifted behind every new test wallet; this is the same idea with a
+/// button on it.
+model TeamMark {
+  key       String   @id
+  note      String?
+  markedBy  String   @map("marked_by")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("team_marks")
 }

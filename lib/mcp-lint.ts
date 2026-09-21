@@ -22,6 +22,7 @@ const QUESTION_CAP = 3
 
 export type { Check, Dimension, RoutabilityReport } from '@/lib/mcp-lint-report'
 import type { Check, Dimension, RoutabilityReport } from '@/lib/mcp-lint-report'
+import { houseModelText } from '@/lib/house-model'
 
 const clamp01 = (n: number) => Math.max(0, Math.min(1, n))
 const gradeOf = (score: number): RoutabilityReport['grade'] =>
@@ -126,21 +127,8 @@ async function probeDimension(plannable: PlannableEndpoint[], fixes: string[]): 
 
 // ── planner (30): survive contact with the REAL router ──────────────────────
 async function anthropic(prompt: string, maxTokens = 1024): Promise<string | null> {
-  const key = process.env.ANTHROPIC_API_KEY
-  if (!key) return null
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: PLANNER_MODEL, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }] }),
-      signal: AbortSignal.timeout(30000),
-    })
-    if (!res.ok) return null
-    const j = (await res.json()) as { content?: Array<{ type: string; text?: string }> }
-    return (j.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('').trim() || null
-  } catch {
-    return null
-  }
+  // lib/house-model: the shared wire (meter + planner-prompt caching).
+  return houseModelText(prompt, { surface: 'mcp-lint', maxTokens, model: PLANNER_MODEL, timeoutMs: 30000 })
 }
 
 async function lintQuestions(server: { name: string; description: string; exampleQueries: string[] }, plannable: PlannableEndpoint[]): Promise<string[]> {

@@ -45,6 +45,9 @@ import {
   guardCrossChainBuild,
   expectedOriginChainId,
   crossChainPending,
+  composePrivacyLines,
+  CONFIDENTIAL_LEVEL,
+  type SwapPrivacy,
   crossChainValueUsd,
   type CrossChainSwapParams,
   type BuiltSwap,
@@ -68,6 +71,7 @@ import { rebalanceTurnFor } from '@/lib/rebalance-exec'
 import { parseMosaicAsk } from '@/lib/mosaic'
 import { mosaicTurnFor } from '@/lib/mosaic-exec'
 import { isInternalRun } from '@/lib/internal-run'
+import { recordTurn } from '@/lib/journey-server'
 import { gateSignablePayload } from '@/lib/affordability'
 import { runSpotGuardTurn } from '@/lib/spot-guard-exec'
 import {
@@ -154,6 +158,7 @@ import { tokenHome } from '@/lib/token-home'
 import { NEVER_MIND_RESUME_RE } from '@/lib/funding-path'
 import { cleanServerName } from '@/lib/utils'
 import { buysOrigin, fundingSourceSymbols, GAS_TOPUP_ETH, lifiDestination, minLegNote, offChainStableSource, valueLegUsd, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
+import { preflightFundedBuy, unfillableBuyCopy, unfillableFundedBuyReason } from '@/lib/venue-preflight'
 import { describeInflightDeposit, inflightPendingData } from '@/lib/inflight-funding'
 import { resolveToken, tokenDecimals, humanToAtoms } from '@/lib/cow'
 import { COW_VAULT_RELAYER } from '@/lib/cow-guardrails'
@@ -166,7 +171,12 @@ import { sanitizeWorkingContext, contextBlockForPlanner, type WorkingContext, ex
 import { getSessionAddress } from '@/lib/auth'
 import { hasGuardianStep, mutationGate, sessionOwnsWallet } from '@/lib/chat-mutation-gate'
 import { bumpAndCheckUnsignedTurn, clientIpFrom, turnLimitReply } from '@/lib/turn-limits'
-import { spendCredits } from '@/lib/billing'
+import { admitHouseTurn } from '@/lib/billing'
+import { answerGateReply } from '@/lib/answer-gate-copy'
+import { resolveInferenceKey, noteInferenceKeyFailure } from '@/lib/byok'
+import { houseModelText } from '@/lib/house-model'
+import { enterInferenceScope, inferenceScope } from '@/lib/inference-context'
+import type { InferenceSurface } from '@/lib/inference-meter'
 import { recordEmbedSighting, resolveEmbedKey } from '@/lib/embed-key'
 import { walletContextLine } from '@/lib/wallet-context'
 import { grantViolation, type GrantPolicy } from '@/lib/spend-grant'
@@ -299,6 +309,14 @@ async function hlAutoFundedJobTurn(
     type: 'status',
     label: `hl auto-fund: open is under-collateralized ($${short.withdrawableUsd.toFixed(2)} withdrawable vs ~$${short.notionalUsd} notional) — compiled the funded job directly: ${compiled.title.slice(0, 160)}`,
   })
+  // Same rule as every other job door (lib/venue-preflight.ts): no funding
+  // legs move for a buy no venue can fill. An HL-collateral plan carries no
+  // such buy today, so this is a no-op that keeps the invariant literal.
+  const hlUnfillable = await unfillableFundedBuyReason(compiled)
+  if (hlUnfillable) {
+    nativeTrace({ type: 'note', level: 'warn', label: `hl auto-fund: venue pre-flight refuses the funded job — ${hlUnfillable.slice(0, 160)}` })
+    return NextResponse.json({ reply: `🛑 ${hlUnfillable}`, buildPath: 'native-job' })
+  }
   const job = await createJob(walletAddress, stampSwapFeeTier(compiled, linkFeeBps), 'chat', { internal: internalRun })
   await advanceJob(job).catch(() => {})
   const gasLegNote = /\b(?:to|for) eth on arbitrum\b/i.test(resume) ? ' (plus a little Arbitrum ETH so the deposit can pay its own gas)' : ''
@@ -392,7 +410,7 @@ async function planSmartPicks(
   /** User address for the "$USER_ADDRESS" context token (see PlanContext). */
   userAddress?: string,
 ): Promise<{ picks: PlannedPick[]; dropped: PlannableEndpoint[]; txHash?: string; clarify?: ClarifyRequest }> {
-  const { text, txHash } = await callInference(inference, plannerPrompt(message, smart, history, contextBlockForPlanner(ctx), { userAddress }))
+  const { text, txHash } = await callInference(inference, plannerPrompt(message, smart, history, contextBlockForPlanner(ctx), { userAddress }), 'chat-plan')
   // Never pay two services for the same capability — keep the best per
   // capability (same dedup the Auto-Router applies). dropped → surfaced as notes.
   const { picks, dropped } = dedupePlannerPicks(parsePlannerPicks(text, smart), smart)
@@ -417,9 +435,21 @@ export async function POST(req: NextRequest) {
   } catch {
     /* fall through — the inner handler 400s on the empty body */
   }
+  // The journey log stamps the ask when it arrived and the reply when it was
+  // ready, not when after() got round to writing them.
+  const turnStartedAt = Date.now()
   let res = await fenceConnectAsk(await handleChatTurn(new NextRequest(req.nextUrl, { method: 'POST', headers: req.headers, body: raw })), raw)
+  const turnFinishedAt = Date.now()
   try {
-    if (!raw || !res.headers.get('content-type')?.includes('application/json')) return res
+    if (!raw || !res.headers.get('content-type')?.includes('application/json')) {
+      // A streamed turn (the auto-router's SSE) has no JSON to read, but the
+      // ask still happened: the journey log keeps it (lib/journey-server.ts).
+      if (raw && req.headers.get('x-yf-no-ask-log') !== '1') {
+        const streamedAsk = JSON.parse(raw) as Record<string, unknown>
+        after(() => recordTurn(req.headers, streamedAsk, null, { streamed: true, startedAt: turnStartedAt, finishedAt: turnFinishedAt }))
+      }
+      return res
+    }
     const reqBody = JSON.parse(raw) as Record<string, unknown>
     // THE affordability choke point (lib/affordability.ts, squad PATHS r3):
     // every signable leaving this route — native, planner passthrough,
@@ -446,6 +476,13 @@ export async function POST(req: NextRequest) {
     }
     // The API harness provokes walls on purpose — its probes opt out.
     if (req.headers.get('x-yf-no-ask-log') === '1') return res
+    // The journey log (lib/journey-server.ts): this ask and the shape of what
+    // came back, on the same timeline the visitor's browser started. After
+    // the response, so it costs the turn nothing.
+    {
+      const turnBody = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
+      after(() => recordTurn(req.headers, reqBody, turnBody, { streamed: false, startedAt: turnStartedAt, finishedAt: turnFinishedAt }))
+    }
     const message = typeof reqBody.message === 'string' ? reqBody.message : ''
     if (reqBody.phase === 'execute' || !message.trim() || !moneyShaped(message)) return res
     const data = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
@@ -648,11 +685,55 @@ async function handleChatTurn(req: NextRequest) {
       }
     }
 
+    // ── Whose key, whose answers (pricing v2) ────────────────────────────────
+    // PROVEN owner = the embed key's owner (the host pays for their visitors)
+    // or the SIWE session. The body's `walletAddress` is client-asserted: it
+    // keys the free taste and nothing a person paid for (lib/billing PROOF
+    // RULE). A BYOK key — the host's, when they opted their embeds in, else
+    // the signed-in user's own — runs every house-model call in this request
+    // (lib/inference-context reaches all of them) and is admitted without
+    // touching any allowance.
+    const provenOwner = embedBill?.ownerAddress ?? sessionAddress ?? null
+    const hostKey = embedBill ? await resolveInferenceKey(embedBill.ownerAddress, { forEmbed: true }) : null
+    const byok = hostKey ?? (await resolveInferenceKey(sessionAddress))
+    enterInferenceScope({
+      apiKey: byok?.apiKey,
+      keyOwner: byok ? (hostKey ? embedBill?.ownerAddress : sessionAddress) ?? null : null,
+      synthModel: byok?.synthModel,
+      owner: provenOwner ?? walletAddress ?? null,
+    })
+    /** ONE admission for ONE house-answered turn. Every door that reaches the
+     *  house model calls this first — the manual path's choke point, the
+     *  auto-router and the governance turn (both were unmetered before v2). */
+    const gateHouseAnswer = async (): Promise<{ refusal: NextResponse | null; remaining: number; lane?: string }> => {
+      const adm = await admitHouseTurn({
+        owner: provenOwner,
+        wallet: walletAddress,
+        ip: clientIpFrom(req.headers),
+        embed: !!embedBill,
+        byok: !!byok,
+        reason: embedBill ? 'embed-house-inference' : 'house-inference',
+      })
+      if (adm.ok) return { refusal: null, remaining: adm.remaining, lane: adm.lane }
+      return {
+        refusal: NextResponse.json({
+          reply: answerGateReply(adm.gate ?? 'taste', { waiting: adm.waiting }),
+          planGate: { plan: adm.plan, upgradeUrl: '/pricing', gate: adm.gate ?? 'taste' },
+        }),
+        remaining: adm.remaining,
+      }
+    }
+
     // ── Auto-Router: the engine picks services across the whole directory and
     //    streams its reasoning + the answer (burner mode; wallet is B5). The
     //    manual path below is untouched. ───────────────────────────────────
     if (body.autoRouter === true) {
       const inferenceSlug = typeof body.inferenceSlug === 'string' ? body.inferenceSlug : undefined
+      // The routing pass ALWAYS runs on the house model, whatever engine ends
+      // up answering — so an auto-routed turn is a house answer (it was free
+      // and unmetered before v2).
+      const routed = await gateHouseAnswer()
+      if (routed.refusal) return routed.refusal
       return streamAutoRouter(message, history, walletAddress, undefined, undefined, inferenceSlug, workingContext)
     }
 
@@ -759,13 +840,16 @@ async function handleChatTurn(req: NextRequest) {
       if (sp) govIntent = { ...govIntent, spaceQuery: sp }
     }
     if (govIntent && snapshotActive) {
+      // The governance turn synthesizes on the house model (unmetered pre-v2).
+      const govGate = await gateHouseAnswer()
+      if (govGate.refusal) return govGate.refusal
       let govSeq = 0
       const gov = await runGovernanceTurn({
         message: govMessage,
         intent: govIntent,
         walletAddress,
         emit: clientTurnId ? (e) => recordTraceLine(clientTurnId, govSeq++, e, walletAddress ? 'wallet' : 'burner') : () => {},
-        synthesize: (p) => planViaAnthropic(p),
+        synthesize: (p) => planViaAnthropic(p, 'governance'),
         ctx: workingContext,
       })
       return NextResponse.json({
@@ -838,6 +922,9 @@ async function handleChatTurn(req: NextRequest) {
           workingContext: { v: 1, age: 0, ...(workingContext?.scope ? { scope: workingContext.scope } : {}) } satisfies WorkingContext,
         })
       }
+      if (cc?.kind === 'problem') {
+        return NextResponse.json({ reply: `🔗 ${cc.problem}` })
+      }
       if (cc?.kind === 'noop') {
         return NextResponse.json({
           reply: `🔏 The swap is built above — sign the deposit transfer with the button to send it. Say “cancel” to drop it.`,
@@ -847,7 +934,7 @@ async function handleChatTurn(req: NextRequest) {
         const ccAgent = crossChainAgentOf(activeServers)
         if (ccAgent.agent && ccAgent.usable) {
           nativeTrace({ type: 'status', label: `native cross-chain layer: amending the pending deposit to ${cc.params.amount} ${cc.params.originToken.toUpperCase()} (${cc.params.originChain} → ${cc.params.destinationChain})` })
-          return await buildCrossChainSwapTurn(ccAgent.agent, cc.params, walletAddress, workingContext, message, nativeTrace)
+          return await buildCrossChainSwapTurn(ccAgent.agent, cc.params, walletAddress, workingContext, message, nativeTrace, contentOrigin)
         }
         // Amend parsed but the agent left the set (or is a shell row) since
         // the build — fall through to normal routing, with the breadcrumb.
@@ -1091,6 +1178,17 @@ async function handleChatTurn(req: NextRequest) {
           // No plan available (scan/price down) — fall through to the job;
           // the step's own guard explains itself if it can't build.
         }
+      }
+      // The funded buy at the end of a funding plan, checked BEFORE the job
+      // exists (lib/venue-preflight.ts) — the same rule the segment already
+      // applies to tickers, for venues. A typed compound ask reaches here
+      // without passing the chat funding offer, and its bridge legs would
+      // sign and settle before the buy step discovered no venue can fill it.
+      // Read-only and fail-open: only a definite venue miss refuses.
+      const jobUnfillable = await unfillableFundedBuyReason(jobAsk)
+      if (jobUnfillable) {
+        nativeTrace({ type: 'note', level: 'warn', label: `jobs layer: venue pre-flight refuses the funding job — ${jobUnfillable.slice(0, 160)}` })
+        return NextResponse.json({ reply: `🛑 ${jobUnfillable}`, buildPath: 'native-job' })
       }
       nativeTrace({ type: 'status', label: `jobs layer claimed the turn: ${jobAsk.steps.length}-step job — ${jobAsk.title} — planner bypassed` })
       // C2b closes over jobs: a link-priced turn's compiled swaps carry the
@@ -2194,7 +2292,7 @@ async function handleChatTurn(req: NextRequest) {
         }
         if (cc) {
           nativeTrace({ type: 'status', label: `native cross-chain layer claimed the turn: swap ${cc.amount} ${cc.originToken.toUpperCase()} (${cc.originChain}) → ${cc.destinationToken.toUpperCase()} (${cc.destinationChain}) — planner bypassed` })
-          return await buildCrossChainSwapTurn(ccAgent.agent, cc, walletAddress, workingContext, message, nativeTrace)
+          return await buildCrossChainSwapTurn(ccAgent.agent, cc, walletAddress, workingContext, message, nativeTrace, contentOrigin)
         }
         // The breadcrumb that keeps a parse miss from reading as MCP flake:
         // cross-chain-shaped but not an imperative build → the planner routes
@@ -2248,40 +2346,18 @@ async function handleChatTurn(req: NextRequest) {
       }
     }
 
-    // ── Plan gate (billing): house-model answers are metered in YEET credits.
-    // Attributable turns (SIWE session first, else the wallet in context)
-    // debit ONE credit per house-synthesized turn, checked here — the single
-    // choke point both burner and wallet phase-1 pass through (phase-2
-    // executes an already-debited turn). Anonymous guests keep the existing
-    // burner limits; paid inference engines are x402-receipted, not credits.
-    // spendCredits fails OPEN — a billing-store hiccup never blocks chat.
+    // ── Answer gate (billing, pricing v2): one house-synthesized turn = one
+    // house answer, admitted here — the single choke point both burner and
+    // wallet phase-1 pass through (phase-2 executes an already-admitted
+    // turn). Lanes in order: the free daily taste → the Plus allowance → the
+    // bank of earned/bought answers; a BYOK key skips all three. Paid
+    // inference engines are x402-receipted from the user's wallet, never
+    // answers. admitHouseTurn fails OPEN — a billing hiccup never blocks chat.
     if (isHouseInference(synthesizer)) {
-      // Bill precedence: a valid embed key (the HOST pays for their site's
-      // visitors) > the SIWE session > the wallet in context.
-      const billTo = embedBill?.ownerAddress ?? (await getSessionAddress()) ?? walletAddress
-      if (billTo) {
-        const credit = await spendCredits(billTo, embedBill ? 'embed-house-inference' : 'house-inference')
-        if (!credit.ok) {
-          // Honest copy per gate: monthly allowance vs the free-tier daily
-          // cap vs the system-wide daily breaker (lib/billing.ts).
-          const reply =
-            credit.gate === 'house'
-              ? `🪙 Pantessa’s house inference is at its daily safety cap — back at midnight UTC. Standing jobs, DCA and guardian protections keep running (they don’t use the model). A paid engine like **Pantessa · Claude** works right now, pay-per-call from your wallet.`
-              : credit.gate === 'daily'
-                ? `🪙 That’s the free plan’s daily chat limit — it resets at midnight UTC (your monthly credits are fine). Upgrade at **pantessa.com/pricing** for no daily cap, or add a paid engine and keep going pay-per-call.`
-                : embedBill
-                  ? `🪙 This site’s Pantessa plan is out of included answers for the month. The chat resumes when the plan renews or the site upgrades — or connect a paid engine and pay per call from your own wallet.`
-                  : `🪙 You’ve used all **${credit.allowance.toLocaleString()} YEET credits** on the ${credit.planName} plan this month. Upgrade at **pantessa.com/pricing** for more — or add a paid engine like **Pantessa · Claude** and keep going pay-per-call from your wallet.`
-          return NextResponse.json({
-            reply,
-            planGate: { plan: credit.plan, upgradeUrl: '/pricing', gate: credit.gate ?? 'monthly' },
-          })
-        }
-        if (!embedBill && credit.remaining <= Math.max(25, Math.ceil(credit.allowance * 0.1))) {
-          notes.push(
-            `YEET credits running low — ${credit.remaining.toLocaleString()} left this month on the ${credit.planName} plan. Upgrade at pantessa.com/pricing.`,
-          )
-        }
+      const gate = await gateHouseAnswer()
+      if (gate.refusal) return gate.refusal
+      if (!embedBill && (gate.lane === 'plan' || gate.lane === 'bank') && gate.remaining <= 25) {
+        notes.push(`${gate.remaining.toLocaleString()} answers left beyond your daily free ones — every trade you sign earns more, or see pantessa.com/pricing.`)
       }
     }
 
@@ -2525,9 +2601,16 @@ function composeCrossChainReply(
     '',
     `- **You send:** ${params.amount} ${sellTok} on ${cap(params.originChain)} — one signature, that's the whole job`,
   ]
+  const elsewhere = Boolean(params.recipient && params.recipient.toLowerCase() !== walletAddress.toLowerCase())
   if (recv) {
-    lines.push(`- **You receive:** ~${recv[1]} ${recv[2].toUpperCase()} on ${cap(params.destinationChain)}, delivered to your wallet (${short(walletAddress)})${eta ? ` in ${eta[1].trim()}` : ''}`)
+    // A separate delivery address prints IN FULL — it is where the money
+    // lands, and the one value the deposit calldata can't show.
+    const where = elsewhere ? `delivered to \`${params.recipient}\` — not this wallet` : `delivered to your wallet (${short(walletAddress)})`
+    lines.push(`- **You receive:** ~${recv[1]} ${recv[2].toUpperCase()} on ${cap(params.destinationChain)}${eta ? ` in ${eta[1].trim()}` : ''}, ${where}`)
+  } else if (elsewhere) {
+    lines.push(`- **Delivered to:** \`${params.recipient}\` — not this wallet`)
   }
+  lines.push(...composePrivacyLines(params, walletAddress))
   // A same-token move arriving visibly lighter reads as broken unless the
   // cost is named — solver/route costs are fixed-ish, so small sizes pay a
   // big percentage.
@@ -2559,7 +2642,9 @@ function composeCrossChainReply(
     lines.push('', summary)
   }
   for (const w of guard.warnings) lines.push('', `⚠️ **Heads up:** ${w}`)
-  lines.push('', `Want a different size? Just say “make it 2” and I'll rebuild it.`)
+  lines.push('', params.confidential
+    ? `Want a different size? Say “make it 2”. Say “make it public” to turn private mode off.`
+    : `Want a different size? Say “make it 2”. Want the route kept off the public record? Flip **Private** on the card, or say “make it private”.`)
   return lines.join('\n')
 }
 
@@ -2570,7 +2655,19 @@ async function buildCrossChainSwapTurn(
   ctx?: WorkingContext,
   originalMessage?: string,
   trace: (event: unknown) => void = () => {},
+  contentOrigin: ContentOrigin = 'first-party',
 ) {
+  // Where money LANDS is only ever chosen by the person signing, typing on
+  // our own surface. A link or an embed host that names a delivery address
+  // is the drainer shape wearing a privacy label — refuse it by name. (The
+  // outbound fence already holds such an ask to prefill; this is the brace.)
+  if (params.recipient && isThirdPartyOrigin(contentOrigin)) {
+    trace({ type: 'note', level: 'warn', label: `native cross-chain layer REFUSED a delivery address from ${contentOrigin} content` })
+    return NextResponse.json({
+      reply: `🚫 This ask came from ${contentOrigin === 'link' ? 'a link' : 'the page hosting this chat'} and names an address for the funds to land at. I only deliver to an address you type yourself in the Pantessa app — here, swaps pay out to your own wallet. Nothing was built.`,
+      blocked: true,
+    })
+  }
   if (!walletAddress) {
     trace({ type: 'note', level: 'info', label: 'no wallet connected — asking to connect before building' })
     return NextResponse.json({
@@ -2597,6 +2694,8 @@ async function buildCrossChainSwapTurn(
       // the model, never from the tool's own suggestion).
       feeRecipient: TREASURY_ADDRESS,
       feeBps: CROSS_CHAIN_FEE_BPS,
+      ...(params.recipient ? { recipient: params.recipient } : {}),
+      ...(params.confidential ? { confidentiality: CONFIDENTIAL_LEVEL } : {}),
     })) as BuiltSwap
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'the build failed'
@@ -2609,7 +2708,22 @@ async function buildCrossChainSwapTurn(
   const guard = guardCrossChainBuild(built, {
     chainId: expectedOriginChainId(params.originChain),
     fee: { recipient: TREASURY_ADDRESS, bps: CROSS_CHAIN_FEE_BPS },
+    confidential: Boolean(params.confidential),
+    deliverTo: params.recipient ?? walletAddress,
+    refundTo: walletAddress,
   })
+  if (params.confidential && built.confidential?.level !== CONFIDENTIAL_LEVEL) {
+    // The venue (or an MCP build that predates private mode) answered with an
+    // ordinary public quote. Nothing is offered — and the swap the user was
+    // amending stays pending, so "make it public" / "cancel" still resolve
+    // instead of falling to the planner mid-conversation.
+    trace({ type: 'note', level: 'warn', label: 'private mode asked for but not confirmed by the venue — nothing offered (a private ask never becomes a public swap)' })
+    return NextResponse.json({
+      reply: `🚫 Private mode isn't available for this swap right now — the venue didn't confirm it, so I built nothing rather than hand you an ordinary public swap. ${ctx?.pending?.kind === 'xchain' ? 'The swap above is unchanged and still signable.' : 'Say the same swap without “privately” and I\'ll build it.'}`,
+      blocked: true,
+      ...(ctx?.pending?.kind === 'xchain' ? { workingContext: { v: 1 as const, age: 0, ...(ctx.scope ? { scope: ctx.scope } : {}), ...(ctx.offers ? { offers: ctx.offers } : {}), pending: ctx.pending } satisfies WorkingContext } : {}),
+    })
+  }
   if (!guard.ok || !guard.tx) {
     // A verification failure is a REFUSAL, not a warning — never offer a
     // transfer we couldn't prove is correct.
@@ -2636,8 +2750,26 @@ async function buildCrossChainSwapTurn(
   const summary = guard.summary ?? built.quote?.summary ?? 'Cross-chain swap'
   return NextResponse.json({
     reply: composeCrossChainReply(params, guard, summary, walletAddress),
-    txRequest: guard.tx,
-    guardrails: { ok: true, warnings: guard.warnings, valueUsd },
+    // `privacy` rides the tx card: the sign card's Private switch reads it
+    // (components/PrivateSwapToggle) and sends the amend sentences above.
+    txRequest: {
+      ...guard.tx,
+      privacy: {
+        confidential: Boolean(params.confidential),
+        ...(params.recipient && params.recipient.toLowerCase() !== walletAddress.toLowerCase() ? { recipient: params.recipient } : {}),
+        canDeliverElsewhere: !isThirdPartyOrigin(contentOrigin),
+      } satisfies SwapPrivacy,
+    },
+    guardrails: {
+      ok: true,
+      warnings: guard.warnings,
+      valueUsd,
+      // §E5's renderer prints every warn-level check above the button — the
+      // delivery address, in full, is the last thing read before signing.
+      ...(params.recipient && params.recipient.toLowerCase() !== walletAddress.toLowerCase()
+        ? { checks: [{ id: 'recipient', level: 'warn', note: `The payout LEAVES your wallet's control: it is delivered to ${params.recipient} on ${prettyChainWord(params.destinationChain)}. Refunds return to you.` }] }
+        : {}),
+    },
     // Which layer built it — echoed on the tx-built/signed telemetry beacons
     // so /dashboard/embeds can break the funnel down per builder (lib/build-path.ts).
     buildPath: 'native-cross-chain',
@@ -4587,6 +4719,21 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
   const acquiring = !!rhStable && intent.buyToken.toUpperCase() === rhStable.symbol.toUpperCase()
   if (rhStable && lifiDest && intent.sellToken.toUpperCase() === rhStable.symbol.toUpperCase()) {
     try {
+      // VENUE PRE-FLIGHT (lib/venue-preflight.ts): this offer runs ABOVE the
+      // venue cascade, so without it a funded buy of a listing no venue can
+      // fill moves the money and dies at the buy step, leaving the stable
+      // stranded on the destination chain (105 of the 201 curated Robinhood
+      // Chain listings, measured 2026-09-21). Read-only, started ALONGSIDE
+      // the balance scan so it costs no wall-clock, and failing OPEN —
+      // only a definite venue miss refuses.
+      const fillCheck = acquiring
+        ? null
+        : preflightFundedBuy({
+            chainId: lifiDest.chainId,
+            sellToken: rhStable.symbol,
+            buyToken: intent.buyToken.toUpperCase(),
+            amountHuman: Number(Number(intent.sellAmountHuman).toFixed(2)).toFixed(2),
+          })
       const shortfall = await readFundingShortfall(walletAddress, lifiDest.chainId)
       // On a stable-gas destination the sell spends the gas token itself, so
       // "covered" means the amount PLUS the gas sliver the swap keeps back.
@@ -4598,6 +4745,25 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
       if (shortfall.usdgAtoms < needAtoms || convertingFrom) {
         const buyUsd = Number(Number(intent.sellAmountHuman).toFixed(2)) // USDG is the $1 unit of account
         const buySym = intent.buyToken.toUpperCase()
+        // Nothing to fund. This sits ABOVE every advice branch on purpose:
+        // the chips, the gas-stranded rescue, the ETH move and the honest
+        // "top up and ask again" refusal all end in money on a chain that
+        // can't complete the buy, so an unfillable listing must not reach
+        // any of them. `unknown` (transport, timeout, policy) falls through
+        // to the offer exactly as before.
+        const fill = (await fillCheck?.catch(() => null)) ?? null
+        if (fill?.kind === 'no-venue') {
+          const unfillable = { chainId: lifiDest.chainId, sellToken: rhStable.symbol, buyToken: buySym, amountHuman: buyUsd.toFixed(2) }
+          trace({
+            type: 'note',
+            level: 'warn',
+            label: `funding layer: venue pre-flight says no venue on ${chain.name} fills ${rhStable.symbol} → ${buySym} — refusing the funding offer rather than stranding the bridge (${fill.reason.slice(0, 120)})`,
+          })
+          return NextResponse.json({ reply: `🛑 ${unfillableBuyCopy(unfillable, fill.reason)}`, buildPath: 'native-lifi-fund-offer' })
+        }
+        if (fill?.kind === 'unknown') {
+          trace({ type: 'note', level: 'info', label: `funding layer: venue pre-flight couldn't tell (${fill.why.slice(0, 100)}) — proceeding with the offer` })
+        }
         const holdingUsd = Number(shortfall.usdgAtoms) / 10 ** rhStable.decimals
         // What the plan may count as already-covered. Zero for a conversion:
         // the named source is the money to move, so held USDG neither
@@ -5704,7 +5870,7 @@ async function executeWithSignatures(
     // House synthesizer: direct Anthropic on the planner key — nothing was
     // signed at plan time (prepared=null) and nothing is paid here.
     const t = await planViaAnthropic(prompt)
-    if (!t) throw new Error('house synthesis unavailable (ANTHROPIC_API_KEY missing or the API call failed)')
+    if (!t) throw new Error(houseUnavailableReason())
     text = t
   } else {
     const header = paymentHeaderFor(inferenceCall, signatures)
@@ -6371,8 +6537,10 @@ export function streamAutoRouter(
         // do we fall back to the paid inference MCP, and ONLY then do we ledger
         // the routing cost (burner: counts against the grant; wallet: house eats).
         const runRoutingInference = async (inf: McpServer, prompt: string) => {
-          const direct = await planViaAnthropic(prompt)
+          const direct = await planViaAnthropic(prompt, 'auto-router')
           if (direct) return { text: direct, txHash: undefined }
+          // A refused BYOK key must not quietly become a house-paid x402 call.
+          if (inferenceScope()?.byokFailure) throw new Error(houseUnavailableReason())
           // Fell back to the paid answer engine for PLANNING — the weak path that
           // collapses routing. Make it loud (the silent fallback cost a whole
           // debugging cycle): a server warn + a visible note in the engine window.
@@ -6714,24 +6882,28 @@ function capPrompt(protocol: 'mcp' | 'http', prompt: string): string {
 // what the answer engine is, and sidesteps the x402 self-pay break (a from==to
 // transfer when the answer engine's payTo is the house burner). Returns null on
 // any failure or when no key is set, so the caller falls back to the paid MCP.
-const PLANNER_MODEL = process.env.PLANNER_MODEL || 'claude-haiku-4-5-20251001'
-async function planViaAnthropic(prompt: string): Promise<string | null> {
-  const key = process.env.ANTHROPIC_API_KEY
-  if (!key) return null
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: PLANNER_MODEL, max_tokens: 1024, messages: [{ role: 'user', content: prompt }] }),
-      signal: AbortSignal.timeout(INFERENCE_TIMEOUT_MS),
-    })
-    if (!res.ok) return null
-    const j = (await res.json()) as { content?: Array<{ type: string; text?: string }> }
-    const text = (j.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('').trim()
-    return text || null
-  } catch {
-    return null
+async function planViaAnthropic(prompt: string, surface: InferenceSurface = 'chat-synth'): Promise<string | null> {
+  // lib/house-model owns the wire: whose key (a BYOK key in this request's
+  // inference scope beats the house key, and a refused BYOK key never falls
+  // back to ours), prompt caching of the planner's stable half, and the cost
+  // meter. A BYOK owner may run SYNTHESIS on a sharper model; planning stays
+  // on the planner model the routing evals were tuned on.
+  const synthModel = surface === 'chat-synth' ? inferenceScope()?.synthModel : null
+  return houseModelText(prompt, { surface, timeoutMs: INFERENCE_TIMEOUT_MS, ...(synthModel ? { model: synthModel } : {}) })
+}
+
+/** The honest words for a house call that failed — a refused BYOK key must
+ *  never read as "the house is down". */
+function houseUnavailableReason(): string {
+  const failed = inferenceScope()?.byokFailure
+  if (failed) {
+    const who = inferenceScope()?.keyOwner
+    if (who) noteInferenceKeyFailure(who, failed.status)
+    return failed.status === 429
+      ? 'your own API key is rate-limited right now (429) — try again in a minute, or remove the key in Settings to use your included answers'
+      : `your own API key was refused (${failed.status}) — check it in Settings → Your AI key`
   }
+  return 'house synthesis unavailable (ANTHROPIC_API_KEY missing or the API call failed)'
 }
 
 /**
@@ -6763,11 +6935,13 @@ function isHouseInference(s: Pick<McpServer, 'slug'>): boolean {
 async function callInference(
   inference: Pick<McpServer, 'endpoint' | 'tool' | 'protocol'> & { slug?: string; name?: string; priceUsd?: string | null; receiver?: string | null },
   prompt: string,
+  /** Meter label when the HOUSE model answers (lib/inference-meter). */
+  surface: InferenceSurface = 'chat-synth',
 ) {
   // House synthesizer: direct Anthropic on the planner key — no x402, no USDC.
   if (inference.slug === HOUSE_INFERENCE_SLUG) {
-    const text = await planViaAnthropic(prompt)
-    if (!text) throw new Error('house synthesis unavailable (ANTHROPIC_API_KEY missing or the API call failed)')
+    const text = await planViaAnthropic(prompt, surface)
+    if (!text) throw new Error(houseUnavailableReason())
     return { text, txHash: undefined }
   }
   const protocol = inferenceProtocolOf(inference)

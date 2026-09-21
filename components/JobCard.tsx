@@ -18,8 +18,8 @@ import SpendPolicyFix, { type PolicyBlockInfo } from '@/components/SpendPolicyFi
 import ShareReceiptButton from '@/components/ShareReceiptButton'
 import { orderRequestOf, txChainOf, txRequestOf } from '@/lib/transaction-layer'
 import { feeBpsOfArtifact } from '@/lib/fees'
-import { jobStepBuildPath, jobStepChainId } from '@/lib/job-step-telemetry'
 import { chainById } from '@/lib/chains'
+import { jobStepBuildPath, jobStepChainId, type JobStepSignal } from '@/lib/job-step-telemetry'
 import { LIVE_JOB_STATUSES, jobStatusWord } from '@/lib/step-status'
 
 interface StepRow {
@@ -65,19 +65,13 @@ export default function JobCard({
   /** Capability token from the turn that compiled the job — the embed path's
    *  auth (no SIWE session in an iframe visitor). Appended as ?t=. */
   token?: string
-  /** Telemetry hook — fired once per signed step with its value + builder. */
-  onStepSigned?: (info: {
-    builder: string
-    valueUsd?: number | null
-    detail?: string
-    feeBps?: number
-    /** The path of what the step ACTUALLY built (lib/job-step-telemetry) —
-     *  the venue cascade's winner, not the raw builder id. */
-    buildPath?: string
-    /** The chain the step was signed on; undefined for an off-chain order. */
-    chainId?: number
-    txUrl?: string
-  }) => void
+  /** Telemetry hook — fired once per signed step with everything the `signed`
+   *  beacon needs (lib/job-step-telemetry): what it BUILT (never the raw
+   *  builder id), the chain it signed on, and the (jobId, seq) identity the
+   *  double-report fence keys on. Every mount point must report: the rail's
+   *  overlay used to drop this signal, so steps signed there recorded no
+   *  money moved at all. */
+  onStepSigned?: (info: JobStepSignal) => void
   /** Fired ONCE when the poll first observes a terminal status — the
    *  settlement signal /i's arc and embed hosts read. Also fires on mount
    *  for an already-finished job (a reopened thread), which is truthful. */
@@ -132,7 +126,16 @@ export default function JobCard({
     }
   }, [job, jobId, onSettled])
 
-  const completeStep = async (seq: number, builder: string, result: Record<string, unknown>, valueUsd?: number | null) => {
+  const completeStep = async (
+    seq: number,
+    builder: string,
+    result: Record<string, unknown>,
+    valueUsd?: number | null,
+    // The receipt the sign surface handed back: an EVM chain + hash for tx
+    // steps, a venue explorer URL for HL/OpenSea orders. Rides the beacon so
+    // a job step's row carries the same tx evidence a one-shot's does.
+    receipt?: { chainId?: number; txUrl?: string },
+  ) => {
     await fetch(`/api/jobs/${jobId}/complete${q}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -145,19 +148,37 @@ export default function JobCard({
     // chain counted as volume and earned its link creator nothing
     // (lib/job-step-telemetry).
     const stepArtifact = job?.steps.find((s) => s.seq === seq)?.artifact
-    const chainId = jobStepChainId(stepArtifact)
+    // The receipt the sign surface handed back is the truth about WHERE the
+    // step signed — it is the only source for an off-chain venue order
+    // (HL/OpenSea have no EVM chain in the artifact). Fall back to reading
+    // the artifact for any caller that passes none.
+    const chainId = receipt?.chainId ?? jobStepChainId(stepArtifact)
     const txHash = typeof result.txHash === 'string' ? result.txHash : ''
     const explorer = chainId ? chainById(chainId)?.explorerTx : undefined
     onStepSigned?.({
+      jobId,
+      seq,
       builder,
       valueUsd,
       detail: String(result.detail ?? result.txHash ?? ''),
       feeBps: feeBpsOfArtifact(stepArtifact),
+      // What the step BUILT, not the builder id: a raw id fails the telemetry
+      // allowlist and the row lands with build_path NULL, which is $0 of fee
+      // and $0 of creator earnings on a swap that really paid it.
       buildPath: jobStepBuildPath(builder, stepArtifact),
       chainId,
-      txUrl: explorer && /^0x[0-9a-fA-F]{64}$/.test(txHash) ? `${explorer}${txHash}` : undefined,
+      txUrl:
+        receipt?.txUrl ??
+        (explorer && /^0x[0-9a-fA-F]{64}$/.test(txHash) ? `${explorer}${txHash}` : undefined),
     })
     void load()
+  }
+
+  // Explorer link for a confirmed hash — the chain registry is the single
+  // source (a basescan fallback would mislabel a Robinhood/Arbitrum tx).
+  const explorerFor = (chainId: number, hash: string): string | undefined => {
+    const base = chainById(chainId)?.explorerTx
+    return base ? `${base}${hash}` : undefined
   }
 
   const cancel = async () => {
@@ -307,6 +328,7 @@ export default function JobCard({
                           step.builder,
                           { detail: info.orderUid ? `Listed on OpenSea — order ${info.orderUid.slice(0, 12)}…` : 'Listed on OpenSea', explorerUrl: info.explorerUrl },
                           step.valueUsd,
+                          { txUrl: info.explorerUrl ?? undefined },
                         )
                       }
                     />
@@ -314,21 +336,27 @@ export default function JobCard({
                   {order && order.protocol !== 'opensea' && (
                     <SignHlActionButton
                       order={order}
-                      onPlaced={(info) => void completeStep(step.seq, step.builder, { detail: info.detail, explorerUrl: info.explorerUrl }, info.valueUsd)}
+                      onPlaced={(info) =>
+                        void completeStep(step.seq, step.builder, { detail: info.detail, explorerUrl: info.explorerUrl }, info.valueUsd, {
+                          txUrl: info.explorerUrl,
+                        })
+                      }
                     />
                   )}
                   {tx && (
                     <SendTxButton
                       tx={tx}
                       summary={(step.artifact as { summary?: string } | null)?.summary}
-                      onConfirmed={(hash) =>
+                      onConfirmed={(hash) => {
+                        const chainId = tx.chainId ?? 8453
                         void completeStep(
                           step.seq,
                           step.builder,
-                          { txHash: hash, txs: [{ hash, chainId: tx.chainId ?? 8453, title: step.title }] },
+                          { txHash: hash, txs: [{ hash, chainId, title: step.title }] },
                           step.valueUsd,
+                          { chainId, txUrl: explorerFor(chainId, hash) },
                         )
-                      }
+                      }}
                     />
                   )}
                   {/* multi-tx sign steps (approve → bridge/swap) ride the SAME
@@ -341,7 +369,12 @@ export default function JobCard({
                       // txs = every confirmed hash in the chain (approve AND
                       // swap AND fee), so the persisted step result carries
                       // the full signing log the shared page renders.
-                      onCompleted={(info) => void completeStep(step.seq, step.builder, { txHash: info.hash, txs: info.txs }, step.valueUsd)}
+                      onCompleted={(info) =>
+                        void completeStep(step.seq, step.builder, { txHash: info.hash, txs: info.txs }, step.valueUsd, {
+                          chainId: info.chainId,
+                          txUrl: explorerFor(info.chainId, info.hash),
+                        })
+                      }
                     />
                   )}
                 </div>

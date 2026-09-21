@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowDownRight, ArrowUpRight, Check, Copy, Download, Mail, ShieldAlert } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, Check, Copy, Download, Footprints, Mail, ShieldAlert } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import { isAdminAddress } from '@/lib/admin'
 import { formatEarnedUsd } from '@/lib/fees'
@@ -429,7 +429,12 @@ export default function AdminPage() {
     <div className={loading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
       <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
         <h1 className="dash__h1">Growth</h1>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
+          {/* The other half of this page: not how much moved, but what each
+              person did and where they stopped. */}
+          <Link href="/dashboard/admin/flows" className="inline-flex items-center gap-1.5 text-xs text-[color:var(--accent,#34E0A1)] hover:underline whitespace-nowrap">
+            <Footprints className="w-3.5 h-3.5" /> User flows
+          </Link>
           <div className="flex rounded-lg border border-[var(--line)] overflow-hidden">
             {GROWTH_WINDOWS.map((d) => (
               <button
@@ -704,7 +709,12 @@ export default function AdminPage() {
                       <td className="py-2 pr-3 text-right tabular-nums">{a.turns || '—'}</td>
                       <td className="py-2 pr-3 text-right tabular-nums">{a.signed || '—'}</td>
                       <td className="py-2 pr-3 text-right tabular-nums text-white">{a.usd > 0 ? usd(a.usd) : '—'}</td>
-                      <td className="py-2 pr-3 text-right">
+                      <td className="py-2 pr-3 text-right whitespace-nowrap">
+                        {a.wallet && (
+                          <Link href={`/dashboard/admin/flows?wallet=${a.wallet}&days=30`} className={`${BTN} mr-1.5`} title="Everything this account did, in order">
+                            <Footprints className="w-3.5 h-3.5" /> Flow
+                          </Link>
+                        )}
                         {a.email && (
                           <a href={`mailto:${a.email}`} className={BTN}>
                             <Mail className="w-3.5 h-3.5" /> Email

@@ -13,6 +13,7 @@ import prisma from '@/lib/db'
 import { mintSlug, composeMcps } from '@/lib/intent-links'
 import { scanFundingSources } from '@/lib/funding-plan'
 import { compileJobAsk } from '@/lib/jobs'
+import { unfillableFundedBuyReason } from '@/lib/venue-preflight'
 import { advanceJob, createJob, getJobWithSteps, cancelJob } from '@/lib/jobs-runner'
 import { signJobToken } from '@/lib/job-token'
 import {
@@ -625,6 +626,13 @@ export async function executeIntent(intentId: string, walletSignature: unknown, 
         'For single steps or clarifications, negotiate further or use broker_handoff.',
     )
   }
+
+  // The funding plan's buy, before any leg can move money (see
+  // lib/venue-preflight.ts): a desk-driven job strands the employer's
+  // stable on the destination chain exactly the same way a chat one does.
+  // Read-only and fail-open — only a definite venue miss refuses.
+  const deskUnfillable = await unfillableFundedBuyReason(compiled)
+  if (deskUnfillable) throw new Error(deskUnfillable)
 
   const job = await createJob(row.wallet, compiled, 'broker', { internal: call?.internal === true })
   // Kick the first build inline (the chat/jobs-API/DCA pattern) so leg 0 is

@@ -32,6 +32,14 @@ import { dryRunTx, isAllowanceLag, rpcHostOf, transientRpcWords } from '../lib/d
 import { createSiweMessage, parseSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
 import { LINK_FEE_PCT, SWAP_FEE_PCT } from '../lib/fees'
+import {
+  claimJobStepReport,
+  firstPartyJobStepBody,
+  jobStepKey,
+  jobStepSignedInfo,
+  resetJobStepReports,
+  type JobStepSignal,
+} from '../lib/job-step-telemetry'
 import { ROBINHOOD_DESK } from '../lib/live-examples'
 import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import {
@@ -59,7 +67,7 @@ import { fillSymbolsInAsk, fillSymbolsOf, fillSymbolsForPair, sanitizeFillSymbol
 import { fillLabel } from '../lib/chart-fills'
 import { marketSections as vizMarketSections } from '../lib/markets'
 import { routerPrompt, parseRouterDecision, selectInferenceProvider, routeMessage, shortlistEndpoints } from '../lib/router'
-import { buildSmartRequest, computeRating, type PlannableEndpoint } from '../lib/endpoint-planner'
+import { buildSmartRequest, computeRating, plannerPrompt, type PlannableEndpoint } from '../lib/endpoint-planner'
 import { buildSignableArtifact, isActionIntent, orderRequestOf, txRequestOf, txChainOf } from '../lib/transaction-layer'
 import { resolveToken, COW_API_BASE, buildCowOrderTypedData, cowOrderAction, buildCowLimitOrder, buildCowSubmitBody, describeCowOrder, describeAmount, formatAtoms, tokenDecimals, tokenLabel, humanToAtoms, applySlippage, COW_APP_DATA_JSON, COW_APP_DATA_HASH, COW_CANONICAL_APP_DATA_HASHES, cowAppDataJson, cowAppDataHash, cowAppDataBpsOf, GPV2_SETTLEMENT, type CowQuoteResult } from '../lib/cow'
 import { ensureTokenList, primeTokenList } from '../lib/token-list'
@@ -97,11 +105,11 @@ import { sma, ema, bollinger, vwap, hasVolume, warmupBefore, mergeHistory, onWin
 import { clampToFirstBar, wantsOlderBars, PRELOAD_MIN_BARS } from '../lib/chart-viewport'
 import { equitySession, extendedRuns, FRAME_SEC, sessionsApply, type EquitySession } from '../lib/chart-sessions'
 import { PAGE_BARS } from '../lib/candles-server'
-import { activeLinkCapFor, composeMcps, isCrossChainAsk, linkEyebrow, linkLockup, linkLockupWord, runsOnLabel } from '../lib/intent-links'
+import { activeLinkCapFor, UNPROVEN_ACTIVE_LINKS, composeMcps, isCrossChainAsk, linkEyebrow, linkLockup, linkLockupWord, runsOnLabel } from '../lib/intent-links'
 import { DEFAULT_TAB, parseTabParam, tabUrl } from '../lib/app-tab-url'
 import { LINKS_STUDIO_HREF } from '../lib/links-href'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
-import { BUILD_PATHS, venueOfBuildPath } from '../lib/build-path'
+import { BUILD_PATHS, isBuildPath, venueOfBuildPath } from '../lib/build-path'
 import { netFeeBpsForTurn } from '../lib/fees'
 import {
   BUILD_PATH_OF_JOB_BUILDER,
@@ -166,7 +174,7 @@ import prisma from '../lib/db'
 import { identiconCells } from '../components/ManagerMark'
 import { addrsUnion, arcQuery } from '../lib/gtm-arc'
 import { isInternalRun, INTERNAL_RUN_HEADER } from '../lib/internal-run'
-import { chainIdOfTurn, CHAT_EXPECTATION_SLUG, COUNTED_EVENT_SQL, COUNTED_EVENT_WHERE, decideReceiptVerdict, expectedReceiptClass, extractTxHash } from '../lib/link-receipt-verify'
+import { chainIdOfTurn, CHAT_EXPECTATION_SLUG, COUNTED_EVENT_SQL, COUNTED_EVENT_WHERE, decideReceiptVerdict, expectedReceiptClass, expectedTurnClass, extractTxHash } from '../lib/link-receipt-verify'
 import { deskExecuteConsentMessage, cleanSenderLabel } from '../lib/broker-exec'
 import { brandFromRow, isDeniedBrandHost, isDeniedBrandName, THIRD_PARTY_BRAND_HOSTS } from '../lib/brand-denylist'
 import { fenceToolOutput, hasFencedToolOutput, toolOutputNonce, toolOutputRule } from '../lib/tool-output-fence'
@@ -224,7 +232,8 @@ import {
   type SwapLegKind,
 } from '../lib/stock-tape'
 import { buildGuardedSwap } from '../lib/swap-exec'
-import { ROBINHOOD_BATCH_MAX } from '../lib/quotes'
+import { fundedBuysOf, preflightFundedBuy, unfillableBuyCopy, verdictOfSwapResult, VENUE_PREFLIGHT_TIMEOUT_MS } from '../lib/venue-preflight'
+import { fetchYahooQuote, quietSymbols, RH_NEAR_WINDOW, RH_WIDE_WINDOW, ROBINHOOD_BATCH_MAX, type RhRead } from '../lib/quotes'
 import { buildLifiBridgeLeg, clampNativeSellAtoms, ETH_MOVE_MIN_OUT_BPS, ETH_MOVE_MIN_USD, fillableLeg, FUNDING_ALT_USDC, FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, fundingAltUsdcFor, fundingNeedUsd, listWords, fundingSourceSymbols, LIFI_LEG_FLAT_USD, MIN_VALUE_LEG_USD, minLegNote, offChainStableSource, ROBINHOOD_CHAIN_ID, STABLE_LEG_MIN_OUT_BPS, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodEthMove, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData, inflightSettlingNote } from '../lib/inflight-funding'
 import { sanitizeWorkingContext } from '../lib/working-context'
@@ -509,8 +518,16 @@ import {
 } from '../lib/value-origin'
 import { cleanServerName } from '../lib/utils'
 import { SITE_URL } from '../lib/site-url'
-import { PLAN_BY_ID, planCreditsFor, ALLOWANCE_CUTOFF } from '../lib/plans'
-import { FREE_DAILY_TURN_CAP, HOUSE_DAILY_TURN_CAP } from '../lib/billing'
+import { PLAN_BY_ID, planCreditsFor, ALLOWANCE_CUTOFF, LISTED_PLANS, PAID_PLANS, TASTE, ANSWER_PACK, answersEarnedByFee, planChargeUsd } from '../lib/plans'
+import { HOUSE_DAILY_TURN_CAP, TASTE_HOUSE_DAILY_CAP, tasteCovers, tasteKeysFor, chooseLane } from '../lib/billing'
+import { FUSE_CAPS, fuseBlown, fuseKey } from '../lib/inference-fuse'
+import { answersForReceipt, feeRoutersFor, MAX_ANSWERS_PER_RECEIPT } from '../lib/earned-answers'
+import { houseRequestBody, splitForCache } from '../lib/house-model'
+import { PROMPT_CACHE_BREAK } from '../lib/prompt-cache-break'
+import { costUsd, rateFor } from '../lib/inference-meter'
+import { looksLikeAnthropicKey, sealKey, openKey, byokEnabled, isByokSynthModel } from '../lib/byok'
+import { answerGateReply, EARN_PER_100_USD } from '../lib/answer-gate-copy'
+import { withInferenceScope, inferenceScope } from '../lib/inference-context'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -1018,42 +1035,62 @@ async function main() {
   const planRes = await fetch(`${BASE}/api/billing/plan`, { headers: C })
   const planBody = await planRes.json()
   check(
-    'fresh wallet is on the free tier with the full allowance',
+    'fresh wallet is on the free tier: no plan allowance, an empty bank, the daily taste',
     planRes.status === 200 &&
       planBody.usage?.plan === 'free' &&
-      planBody.usage?.allowance === 250 &&
+      planBody.usage?.allowance === 0 &&
       planBody.usage?.used === 0 &&
-      planBody.usage?.remaining === 250,
-    `plan=${planBody.usage?.plan} used=${planBody.usage?.used}`,
+      planBody.usage?.bank === 0 &&
+      planBody.usage?.remaining === 0 &&
+      planBody.usage?.tasteDaily === TASTE.wallet,
+    `plan=${planBody.usage?.plan} bank=${planBody.usage?.bank} taste=${planBody.usage?.tasteDaily}`,
   )
-  // COGS lock-in (PRICING.md addendum 2026-07-21): allowances sized so a
-  // maxed plan never exceeds its price in inference cost; pre-cutoff paid
-  // subscriptions keep their original allowance forever.
+  // Pricing v2 (2026-09-18): the take rate is the business; a plan prices
+  // house answers only. Free has NO monthly allowance (the taste is per
+  // connection, a wallet is free to mint); Plus is the one plan on sale;
+  // Growth/Scale are retired from sale but their ids must stay valid so a
+  // subscription row carrying one can never strand.
   check(
-    'plans: right-sized allowances (250 / 8k / 40k) with legacy grandfathering (25k / 150k)',
-    PLAN_BY_ID.free.credits === 250 &&
-      PLAN_BY_ID.growth.credits === 8000 && PLAN_BY_ID.growth.legacyCredits === 25000 &&
-      PLAN_BY_ID.scale.credits === 40000 && PLAN_BY_ID.scale.legacyCredits === 150000,
+    'plans: Free (0) + Plus ($9 / $79 / 600) on sale; Growth + Scale retired but still valid ids',
+    PLAN_BY_ID.free.credits === 0 && PLAN_BY_ID.free.priceUsd === 0 &&
+      PLAN_BY_ID.plus.priceUsd === 9 && PLAN_BY_ID.plus.yearlyUsd === 79 && PLAN_BY_ID.plus.credits === 600 &&
+      PLAN_BY_ID.growth.legacy === true && PLAN_BY_ID.scale.legacy === true &&
+      LISTED_PLANS.map((p) => p.id).join() === 'free,plus' &&
+      PAID_PLANS.map((p) => p.id).join() === 'plus' &&
+      planChargeUsd(PLAN_BY_ID.plus, 'month') === 9 && planChargeUsd(PLAN_BY_ID.plus, 'year') === 79,
+  )
+  // The maxed-plan rule (PRICING.md): an allowance may never cost more than
+  // its price. Held at 1.5¢ an answer — ten times what inference_calls
+  // measured on 2026-09-18 ($0.0003–0.0014) — so the rule survives a prompt
+  // that grows 10×. Raise the allowance only with a fresh measurement.
+  check(
+    'plans: a maxed Plus month never exceeds its price in inference (held at 1.5¢ an answer, 10× measured)',
+    PLAN_BY_ID.plus.credits * 0.015 <= PLAN_BY_ID.plus.priceUsd + 1e-9 && ANSWER_PACK.answers === 1000 && ANSWER_PACK.priceUsd === 10,
   )
   const preCutoff = new Date(ALLOWANCE_CUTOFF - 86_400_000)
   const postCutoff = new Date(ALLOWANCE_CUTOFF + 86_400_000)
   check(
-    'plans: planCreditsFor grandfathers pre-cutoff subs, current for new + free',
+    'plans: planCreditsFor still grandfathers a pre-cutoff legacy subscription',
     planCreditsFor(PLAN_BY_ID.growth, preCutoff) === 25000 &&
       planCreditsFor(PLAN_BY_ID.growth, postCutoff) === 8000 &&
       planCreditsFor(PLAN_BY_ID.scale, preCutoff) === 150000 &&
-      planCreditsFor(PLAN_BY_ID.free, preCutoff) === 250 &&
-      planCreditsFor(PLAN_BY_ID.growth, null) === 8000,
+      planCreditsFor(PLAN_BY_ID.plus, preCutoff) === 600 &&
+      planCreditsFor(PLAN_BY_ID.free, null) === 0,
   )
   check(
-    'billing: circuit breakers exported with sane clamped defaults (the "leave it open" bound)',
-    FREE_DAILY_TURN_CAP >= 5 && FREE_DAILY_TURN_CAP <= 1000 && HOUSE_DAILY_TURN_CAP >= 100,
+    'billing: two fuses, not one — a flood can only exhaust the FREE lane',
+    HOUSE_DAILY_TURN_CAP >= 100 && TASTE_HOUSE_DAILY_CAP >= 50 && FUSE_CAPS.taste === TASTE_HOUSE_DAILY_CAP && FUSE_CAPS.paid === HOUSE_DAILY_TURN_CAP &&
+      fuseKey('taste') !== fuseKey('paid') && !fuseBlown('taste', FUSE_CAPS.taste) && fuseBlown('taste', FUSE_CAPS.taste + 1),
   )
   check(
-    'plan config ships 3 plans (free/growth/scale)',
+    'plan API lists only the plans on sale + the pack + the key block (never a key)',
     Array.isArray(planBody.plans) &&
-      planBody.plans.length === 3 &&
-      planBody.plans.some((p: { id: string; priceUsd: number }) => p.id === 'free' && p.priceUsd === 0),
+      planBody.plans.length === 2 &&
+      planBody.plans.some((p: { id: string; priceUsd: number }) => p.id === 'free' && p.priceUsd === 0) &&
+      planBody.plans.some((p: { id: string; priceUsd: number }) => p.id === 'plus' && p.priceUsd === 9) &&
+      planBody.pack?.answers === 1000 &&
+      typeof planBody.aiKey?.enabled === 'boolean' && planBody.aiKey?.key === null &&
+      !JSON.stringify(planBody).includes('sk-ant-'),
   )
   const coNoAuth = await fetch(`${BASE}/api/billing/checkout`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ plan: 'growth' }),
@@ -1065,8 +1102,261 @@ async function main() {
   // Without STRIPE_SECRET_KEY the route answers 503 before validating the
   // plan id; with a key configured a free plan must 400.
   check('checkout refuses the free plan (400) or reports Stripe unconfigured (503)', coBadPlan.status === 400 || coBadPlan.status === 503)
+  const coRetired = await fetch(`${BASE}/api/billing/checkout`, { method: 'POST', headers: CJ, body: JSON.stringify({ plan: 'growth' }) })
+  check('checkout refuses a RETIRED plan — nothing sells Growth/Scale any more (400, or 503 unconfigured)', coRetired.status === 400 || coRetired.status === 503)
+  // Bring your own key: session only, shape-checked before anything leaves.
+  const akNoAuth = await fetch(`${BASE}/api/billing/ai-key`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'sk-ant-nope' }) })
+  check('ai-key: saving a key requires a SIWE session → 401', akNoAuth.status === 401)
+  const akBad = await fetch(`${BASE}/api/billing/ai-key`, { method: 'POST', headers: CJ, body: JSON.stringify({ key: '0x' + 'ab'.repeat(32) }) })
+  const akBadBody = (await akBad.json().catch(() => ({}))) as { error?: string }
+  check(
+    'ai-key: a non-Anthropic secret (a wallet key!) is refused by SHAPE — never sent upstream, never echoed',
+    (akBad.status === 400 || akBad.status === 503) && !JSON.stringify(akBadBody).includes('abab'),
+    `${akBad.status} ${akBadBody.error ?? ''}`,
+  )
   const whUnsigned = await fetch(`${BASE}/api/billing/webhook`, { method: 'POST', body: '{}' })
   check('webhook without signature/config → 400 or 503', whUnsigned.status === 400 || whUnsigned.status === 503)
+
+  // ── Pricing v2: the answer lanes, the fuses, earned answers, BYOK ─────────
+  console.log('— pricing v2')
+  // THE TASTE is keyed to the connection AND the wallet; a wallet is free to
+  // mint, so it is never the only key. Post-increment counts: the turn that
+  // lands ON a cap is served.
+  check(
+    'taste: a wallet with history gets the full taste; a FRESH wallet gets a guest’s; the connection cap binds them all',
+    tasteCovers({ ip: 1, who: TASTE.wallet, hasWallet: true, walletHasHistory: true }) &&
+      !tasteCovers({ ip: 1, who: TASTE.wallet + 1, hasWallet: true, walletHasHistory: true }) &&
+      tasteCovers({ ip: 1, who: TASTE.freshWallet, hasWallet: true, walletHasHistory: false }) &&
+      !tasteCovers({ ip: 1, who: TASTE.freshWallet + 1, hasWallet: true, walletHasHistory: false }) &&
+      tasteCovers({ ip: 1, who: TASTE.guest, hasWallet: false, walletHasHistory: false }) &&
+      !tasteCovers({ ip: 1, who: TASTE.guest + 1, hasWallet: false, walletHasHistory: false }) &&
+      !tasteCovers({ ip: TASTE.ip + 1, who: 1, hasWallet: true, walletHasHistory: true }) &&
+      tasteCovers({ ip: null, who: 1, hasWallet: true, walletHasHistory: false }) &&
+      TASTE.freshWallet <= TASTE.guest && TASTE.ip > TASTE.wallet,
+  )
+  check(
+    'taste keys: connection + wallet, or connection + a guest bucket — a new wallet on one connection mints NO new connection budget',
+    tasteKeysFor('abc', '0xAbC').join() === 't:i:abc,t:w:0xabc' &&
+      tasteKeysFor('abc', null).join() === 't:i:abc,t:g:abc' &&
+      tasteKeysFor(null, '0xAbC').join() === 't:w:0xabc' &&
+      tasteKeysFor('abc', '0x1')[0] === tasteKeysFor('abc', '0x2')[0],
+  )
+  // PROOF RULE: plan + bank spend something a person paid for or earned, so
+  // they draw only for a PROVEN owner. The body's walletAddress is
+  // client-asserted — before v2 it could name whose credits to burn.
+  check(
+    'lanes: own key first, then the taste, then plan, then bank — and an UNPROVEN wallet never reaches plan or bank',
+    chooseLane({ byok: true, taste: true, planLeft: 5, bank: 5, proven: true }) === 'byok' &&
+      chooseLane({ byok: false, taste: true, planLeft: 5, bank: 5, proven: true }) === 'taste' &&
+      chooseLane({ byok: false, taste: false, planLeft: 5, bank: 5, proven: true }) === 'plan' &&
+      chooseLane({ byok: false, taste: false, planLeft: 0, bank: 5, proven: true }) === 'bank' &&
+      chooseLane({ byok: false, taste: false, planLeft: 5, bank: 5, proven: false }) === null &&
+      chooseLane({ byok: false, taste: false, planLeft: 0, bank: 0, proven: true }) === null,
+  )
+  // Earned answers: 1 per 2¢ of NET fee, floored, no minimum — so a sybil's
+  // tiny swap earns 0 and COGS ≤ fee by construction.
+  check(
+    'earned: 1 answer per 2¢ of net fee — $1 swap 0, $100 swap 10, $1,000 swap 100, float-safe, junk → 0',
+    answersEarnedByFee(0.002) === 0 && answersEarnedByFee(0.0199) === 0 && answersEarnedByFee(0.02) === 1 &&
+      answersEarnedByFee(0.2) === 10 && answersEarnedByFee(2) === 100 && answersEarnedByFee(0.25) === 12 &&
+      answersEarnedByFee(0.1 + 0.2 - 0.1) === 10 &&
+      answersEarnedByFee(-1) === 0 && answersEarnedByFee(Number.NaN) === 0 && answersEarnedByFee(Infinity) === 0,
+  )
+  // The beacon's valueUsd / buildPath / feeBps are the BROWSER's word. The
+  // grant trusts only the chain: `to` must be one of our fee routers, and the
+  // notional is min(claimed, what the receipt shows the signer moved).
+  check(
+    'earned: a $1 swap claiming $1,000,000 earns 0; a send claiming a swap’s build path earns 0; unreadable earns 0',
+    answersForReceipt({ claimedUsd: 1_000_000, onChainUsd: 1, viaFeeRouter: true, linkTier: false }) === 0 &&
+      answersForReceipt({ claimedUsd: 100, onChainUsd: 100, viaFeeRouter: false, linkTier: false }) === 0 &&
+      answersForReceipt({ claimedUsd: 100, onChainUsd: null, viaFeeRouter: true, linkTier: false }) === 0 &&
+      answersForReceipt({ claimedUsd: 0, onChainUsd: 100, viaFeeRouter: true, linkTier: false }) === 0,
+  )
+  check(
+    'earned: $100 organic → 10, $100 through a link → 12 (net of the creator’s half), capped per receipt',
+    answersForReceipt({ claimedUsd: 100, onChainUsd: 100, viaFeeRouter: true, linkTier: false }) === 10 &&
+      answersForReceipt({ claimedUsd: 100, onChainUsd: 100, viaFeeRouter: true, linkTier: true }) === 12 &&
+      answersForReceipt({ claimedUsd: 100, onChainUsd: 99, viaFeeRouter: true, linkTier: false }) === 10 &&
+      answersForReceipt({ claimedUsd: 10_000_000, onChainUsd: 10_000_000, viaFeeRouter: true, linkTier: false }) === MAX_ANSWERS_PER_RECEIPT,
+  )
+  check(
+    'earned: the fee routers are OUR venue routers, per chain (v3 everywhere, the v4 Universal Router on 4663)',
+    feeRoutersFor(8453).has('0x2626664c2603336e57b271c5c0b26f421741e481') &&
+      feeRoutersFor(4663).has('0x8876789976decbfcbbbe364623c63652db8c0904') &&
+      feeRoutersFor(4663).size === 2 && feeRoutersFor(999_999).size === 0,
+  )
+  // Prompt caching: the planner prompt leads with its STABLE half (rules +
+  // the endpoint menu), then the break, then this turn. Anything per-turn
+  // above the break would silently kill the cache.
+  {
+    const eps: PlannableEndpoint[] = Array.from({ length: 60 }, (_, i) => ({
+      id: `ep-${i}`, serverSlug: `svc-${i % 6}`, serverName: `Service ${i % 6}`, method: 'GET', url: `https://svc${i % 6}.example.com/v1/thing-${i}`,
+      description: `Returns thing number ${i} with a long and specific description of what it is for and when to call it`, priceUsd: '0',
+      parameters: [{ name: 'q', group: 'query', required: true, type: 'string', example: `example-${i}`, description: '' }],
+    })) as unknown as PlannableEndpoint[]
+    const ask = 'UNIQUE-TURN-MARKER what is the price of thing 7?'
+    const prompt = plannerPrompt(ask, eps, [{ role: 'user', content: 'UNIQUE-HISTORY-MARKER' }], 'UNIQUE-CONTEXT-MARKER')
+    const at = prompt.indexOf(PROMPT_CACHE_BREAK)
+    const stableHalf = prompt.slice(0, at)
+    check(
+      'prompt cache: menu + rules sit ABOVE the break; the ask, history and context sit BELOW it',
+      at > 0 && stableHalf.includes('id=ep-59') && stableHalf.includes('You are an API-call planner.') &&
+        !stableHalf.includes('UNIQUE-TURN-MARKER') && !stableHalf.includes('UNIQUE-HISTORY-MARKER') && !stableHalf.includes('UNIQUE-CONTEXT-MARKER') &&
+        prompt.slice(at).includes('UNIQUE-TURN-MARKER') && prompt.slice(at).includes('UNIQUE-HISTORY-MARKER'),
+    )
+    check(
+      'prompt cache: the stable half is byte-identical across turns (the cache key)',
+      plannerPrompt('a different ask entirely', eps).slice(0, at) === stableHalf,
+    )
+    const body = houseRequestBody(prompt, 'claude-haiku-4-5', 1024) as { system?: Array<{ text: string; cache_control?: { type: string } }>; messages: Array<{ content: string }> }
+    check(
+      'prompt cache: the wire sends the stable half as ONE cached system block and only this turn as the message',
+      body.system?.length === 1 && body.system[0].cache_control?.type === 'ephemeral' && body.system[0].text === stableHalf &&
+        !body.messages[0].content.includes('id=ep-59') && body.messages[0].content.includes('UNIQUE-TURN-MARKER'),
+    )
+    const short = houseRequestBody(`tiny menu${PROMPT_CACHE_BREAK}the ask`, 'claude-haiku-4-5', 64) as { system?: unknown; messages: Array<{ content: string }> }
+    check(
+      'prompt cache: a prefix under the model’s cacheable minimum is sent whole (a marker there would silently do nothing)',
+      short.system === undefined && short.messages[0].content.includes('tiny menu') && splitForCache('no break here').stable === null,
+    )
+  }
+  check(
+    'meter: priced from the rate table — cache reads 0.1×, writes 1.25×, a dated id is its family, an UNKNOWN model is never free',
+    costUsd('claude-haiku-4-5', { input_tokens: 1_000_000 }) === 1 &&
+      costUsd('claude-haiku-4-5-20251001', { output_tokens: 1_000_000 }) === 5 &&
+      costUsd('claude-haiku-4-5', { cache_read_input_tokens: 1_000_000 }) === 0.1 &&
+      costUsd('claude-haiku-4-5', { cache_creation_input_tokens: 1_000_000 }) === 1.25 &&
+      rateFor('some-future-model').inUsd === 10 &&
+      // a 15k-token menu read from cache + 2k fresh + 300 out: about a third of a cent
+      costUsd('claude-haiku-4-5', { cache_read_input_tokens: 15_000, input_tokens: 2_000, output_tokens: 300 }) < 0.006,
+  )
+  {
+    const had = process.env.BYOK_KEY_SECRET
+    delete process.env.BYOK_KEY_SECRET
+    const offWithoutSecret = !byokEnabled()
+    process.env.BYOK_KEY_SECRET = 'harness-only-secret-harness-only-secret-0123456789'
+    const plain = 'sk-ant-api03-' + 'A1b2C3d4'.repeat(8)
+    const sealed = sealKey(plain)
+    let tamperThrows = false
+    try {
+      openKey({ ...sealed, ciphertext: Buffer.from('tampered-ciphertext-tampered').toString('base64') })
+    } catch {
+      tamperThrows = true
+    }
+    let wrongSecretThrows = false
+    process.env.BYOK_KEY_SECRET = 'a-different-secret-a-different-secret-9876543210'
+    try {
+      openKey(sealed)
+    } catch {
+      wrongSecretThrows = true
+    }
+    process.env.BYOK_KEY_SECRET = 'harness-only-secret-harness-only-secret-0123456789'
+    check(
+      'byok: sealed with AES-256-GCM under its OWN secret — round-trips, a fresh nonce per write, tamper + wrong secret both throw, OFF with no secret',
+      offWithoutSecret && byokEnabled() && openKey(sealed) === plain && !sealed.ciphertext.includes('sk-ant') &&
+        sealKey(plain).nonce !== sealed.nonce && tamperThrows && wrongSecretThrows,
+    )
+    if (had === undefined) delete process.env.BYOK_KEY_SECRET
+    else process.env.BYOK_KEY_SECRET = had
+  }
+  check(
+    'byok: only an Anthropic-shaped key is accepted — never a wallet key, an OpenAI key, or a sentence; Opus/Fable are not one toggle away',
+    looksLikeAnthropicKey('sk-ant-api03-' + 'x'.repeat(40)) && !looksLikeAnthropicKey('0x' + 'ab'.repeat(32)) &&
+      !looksLikeAnthropicKey('sk-proj-' + 'x'.repeat(40)) && !looksLikeAnthropicKey('sk-ant-short') && !looksLikeAnthropicKey(42) &&
+      isByokSynthModel('claude-haiku-4-5') && isByokSynthModel('claude-sonnet-5') && !isByokSynthModel('claude-opus-5') && !isByokSynthModel('claude-fable-5-1'),
+  )
+  check(
+    'inference scope: the request’s key reaches a nested async call and never leaks outside its request',
+    (await withInferenceScope({ apiKey: 'sk-ant-scope-test', owner: '0xabc' }, async () => {
+      await new Promise((r) => setTimeout(r, 1))
+      return inferenceScope()?.apiKey
+    })) === 'sk-ant-scope-test' && inferenceScope() === undefined,
+  )
+  {
+    const gates = ['taste', 'sign-in', 'taste-fuse', 'house', 'host'] as const
+    const replies = gates.map((g) => answerGateReply(g, { waiting: 42 }))
+    check(
+      'refusals: every gate names what STILL WORKS; the taste names every door out; the sign-in gate names the banked count',
+      replies.every((r) => /never use the model/.test(r)) &&
+        /Sign a trade/.test(replies[0]) && /bring your own API key/.test(replies[0]) && /Plus/.test(replies[0]) && /1,000 answers for \$10/.test(replies[0]) &&
+        /42 more banked/.test(replies[1]) && /Sign in/.test(replies[1]) &&
+        /resting for today/.test(replies[2]) && !/upgrade/i.test(replies.join(' ')),
+    )
+  }
+  {
+    // SOURCE pins: the three doors that reach the house model all pass the ONE
+    // gate (the auto-router and the governance turn were unmetered before v2),
+    // the day windows survive the hourly sweep, and a fresh lint needs a session.
+    const routeSrc = readFileSync('app/api/chat/route.ts', 'utf8')
+    const gateAt = (needle: string) => {
+      const i = routeSrc.indexOf(needle)
+      return i > 0 && /gateHouseAnswer\(\)/.test(routeSrc.slice(Math.max(0, i - 900), i))
+    }
+    check(
+      'chat route: one gate in front of EVERY house door — auto-router, governance, the manual choke point; no ungated spend left',
+      gateAt('return streamAutoRouter(') && gateAt('const gov = await runGovernanceTurn(') &&
+        /if \(isHouseInference\(synthesizer\)\) \{\s*const gate = await gateHouseAnswer\(\)/.test(routeSrc) &&
+        !routeSrc.includes('spendCredits') && !routeSrc.includes("'x-api-key': key"),
+    )
+    const limitsSrc = readFileSync('lib/turn-limits.ts', 'utf8')
+    check(
+      'limiter: the hourly sweep never eats a DAY window (fuses f:, taste t:)',
+      (limitsSrc.match(/key NOT LIKE 'f:%' AND key NOT LIKE 't:%'/g) ?? []).length >= 2,
+    )
+    const lintSrc = readFileSync('app/api/servers/[slug]/lint/route.ts', 'utf8')
+    check(
+      'mcp lint: a FRESH run needs a session and draws on a fuse (it was unauthenticated house inference)',
+      /getSessionAddress\(\)/.test(lintSrc) && /bumpFuse\('mcp-lint'\)/.test(lintSrc) && lintSrc.indexOf('getSessionAddress()') < lintSrc.indexOf('lintService(slug'),
+    )
+    const byokSrc = readFileSync('lib/byok.ts', 'utf8')
+    check(
+      'byok: the key never rides a URL, and a refused key never reaches for the house key',
+      !/https:\/\/[^'"`]*\$\{(key|apiKey|plain)\}/.test(byokSrc) && !/console\.(log|warn|error)\(/.test(byokSrc) &&
+        /if \(byok && scope\) scope\.byokFailure/.test(readFileSync('lib/house-model.ts', 'utf8')),
+    )
+  }
+  // HTTP: the taste, end to end. A platform-stamped IP makes this an ordinary
+  // stranger (loopback is exempt, like every fence). Start the server with
+  // TASTE_GUEST_DAILY=1 to keep this to ONE model call; it holds either way.
+  {
+    const ip = `198.51.100.${1 + Math.floor(Math.random() * 250)}`
+    const askHouse = async (extra: Record<string, unknown> = {}) => {
+      const r = await fetch(`${BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': ip, 'x-yf-no-ask-log': '1', 'x-yf-internal-run': '1' },
+        body: JSON.stringify({ message: 'In one short sentence, what is a stablecoin?', activeServers: [], history: [], ...extra }),
+      })
+      return (await r.json().catch(() => ({}))) as { reply?: string; planGate?: { gate?: string; plan?: string } }
+    }
+    let served = 0
+    let refusal: Awaited<ReturnType<typeof askHouse>> | null = null
+    for (let i = 0; i < TASTE.guest + 2 && !refusal; i++) {
+      const out = await askHouse()
+      if (out.planGate) refusal = out
+      else served++
+    }
+    check(
+      'taste (HTTP): a wallet-less stranger is served a few free answers, then refused with the doors out — never a bare error',
+      served >= 1 && served <= TASTE.guest && refusal?.planGate?.gate === 'taste' && /today’s free answers/.test(refusal?.reply ?? '') && /never use the model/.test(refusal?.reply ?? ''),
+      `served=${served} gate=${refusal?.planGate?.gate}`,
+    )
+    const routed = await askHouse({ autoRouter: true })
+    check(
+      'taste (HTTP): the AUTO-ROUTER door is behind the same gate (it was free and unmetered before v2)',
+      routed.planGate?.gate === 'taste',
+      JSON.stringify(routed.planGate ?? routed.reply?.slice(0, 80)),
+    )
+    // A wallet named in the body is CLIENT-ASSERTED: it may open that wallet's
+    // free taste (bounded by this connection's daily cap — the pure pins
+    // above), and nothing a person paid for or earned. Served from the taste
+    // or gated; never plan, never bank, never an error.
+    const spoofed = await askHouse({ walletAddress: '0x' + '9'.repeat(40) })
+    check(
+      'taste (HTTP): a wallet NAMED in the body gets the free taste at most — served, or gated as taste / sign-in; never an error',
+      (typeof spoofed.reply === 'string' && spoofed.reply.length > 0) && (!spoofed.planGate || spoofed.planGate.gate === 'taste' || spoofed.planGate.gate === 'sign-in'),
+      JSON.stringify(spoofed.planGate ?? 'served'),
+    )
+  }
 
   // ── Embed keys: public attribution keys + the sites ledger ────────────────
   console.log('— embed keys')
@@ -1661,12 +1951,21 @@ async function main() {
   const pricingRes = await fetch(`${BASE}/pricing`)
   const pricingHtml = await pricingRes.text()
   check(
-    'pricing: creator kickback + active-link caps displayed',
+    'pricing: looking is free, the fee is named, Plus + pack + own-key are the doors, no retired plan is offered',
     pricingRes.status === 200 &&
       /creator kickbacks/i.test(pricingHtml) &&
-      pricingHtml.includes('3 active intent links') &&
-      pricingHtml.includes('25 active intent links') &&
-      pricingHtml.includes('Unlimited intent links'),
+      pricingHtml.includes('Looking is free.') &&
+      pricingHtml.includes('Unlimited watchlists') &&
+      pricingHtml.includes('Bring your own API key') &&
+      pricingHtml.includes('1,000 answers') &&
+      />Plus</.test(pricingHtml) &&
+      !/>Growth<|>Scale<|YEET credit|\$99|\$499/.test(pricingHtml),
+  )
+  // The refill ladder is COMPUTED from the live rates, so the page can never
+  // promise a number the grant does not pay.
+  check(
+    'pricing: the refill ladder prints what the grant pays ($100 swap → 10; a $1 swap → 0)',
+    EARN_PER_100_USD === answersEarnedByFee(0.2) && pricingHtml.includes(`>${answersEarnedByFee(0.2)}<`) && pricingHtml.includes(`>${answersEarnedByFee(2)}<`) && answersEarnedByFee(0.002) === 0,
   )
 
   // /rebrand — the public record of the Yeetful → Pantessa rename (the §1.1
@@ -3080,21 +3379,21 @@ async function main() {
         linkLockup(false, null) === 'Intent link',
     )
 
-    // Plan cap: free carries 3 active links; this run minted 2, so one more
-    // fits and the 4th refuses with the upgrade pointer.
+    // Pricing v2: links are the growth loop — the 3/25/∞ PLAN caps are gone.
+    // What is left is an abuse fence on wallets nobody has seen trade.
     const third = await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: M, body: JSON.stringify({ ask: 'Swap $5 of ETH to USDC' }) })
     const fourth = await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: M, body: JSON.stringify({ ask: 'DCA $25 into ETH weekly' }) })
-    check('intent links: free plan carries 3 active links; the 4th mint → 402 + upgrade pointer', third.status === 200 && fourth.status === 402)
-
-    // Admin wallets mint uncapped on EVERY plan; external creators keep the
-    // plan ladder (the pure gate the mint route routes every mint through).
+    check('intent links: no plan cap — a free wallet mints its 4th live link', third.status === 200 && fourth.status === 200, `${third.status}/${fourth.status}`)
+    {
+      const fourthSlug = ((await fourth.clone().json().catch(() => ({}))) as { slug?: string }).slug
+      if (fourthSlug) await fetch(`${BASE}/api/intent-links/${fourthSlug}`, { method: 'DELETE', headers: { cookie: mallorySession } }).catch(() => {})
+    }
     check(
-      'intent links: admin wallets are cap-exempt on every plan',
-      activeLinkCapFor('free', true) === Infinity && activeLinkCapFor('growth', true) === Infinity && activeLinkCapFor('unknown-plan', true) === Infinity,
-    )
-    check(
-      'intent links: non-admin caps hold — free 3, growth 25, scale ∞, unknown falls back to 3',
-      activeLinkCapFor('free', false) === 3 && activeLinkCapFor('growth', false) === 25 && activeLinkCapFor('scale', false) === Infinity && activeLinkCapFor('unknown-plan', false) === 3,
+      'intent links: the abuse fence — only an unproven wallet is limited (10 live); a trade, a paid plan or an admin lifts it',
+      activeLinkCapFor({ isAdmin: false, paidPlan: false, hasVerifiedTrade: false }) === UNPROVEN_ACTIVE_LINKS && UNPROVEN_ACTIVE_LINKS === 10 &&
+        activeLinkCapFor({ isAdmin: true, paidPlan: false, hasVerifiedTrade: false }) === Infinity &&
+        activeLinkCapFor({ isAdmin: false, paidPlan: true, hasVerifiedTrade: false }) === Infinity &&
+        activeLinkCapFor({ isAdmin: false, paidPlan: false, hasVerifiedTrade: true }) === Infinity,
     )
 
     // Revoke frees capacity — the cap counts ACTIVE links only.
@@ -3127,7 +3426,7 @@ async function main() {
     const beforeRevoke = await ownerList()
     const revoke = await fetch(`${BASE}/api/intent-links/${thirdSlug}`, { method: 'DELETE', headers: { cookie: mallorySession } })
     const fifth = await fetch(`${BASE}/api/intent-links`, { method: 'POST', headers: M, body: JSON.stringify({ ask: 'DCA $25 into ETH weekly' }) })
-    check('intent links: revoke frees capacity (next mint 200) and needs auth', revoke.status === 200 && fifth.status === 200)
+    check('intent links: a revoke works and the next mint is 200 (and needs auth)', revoke.status === 200 && fifth.status === 200)
     {
       // The funnel DOES aggregate settled — on a job-class link (a DCA
       // schedule compiles to a job; the runner's own between-leg arrival
@@ -7411,6 +7710,407 @@ async function main() {
     )
   }
 
+  // ── User flows (the journey log + the admin timeline) ─────────────────────
+  console.log('— user flows')
+  {
+    const F = await import('../lib/user-flows')
+    const JE = await import('../lib/journey-events')
+    const JL = await import('../lib/journey-limits')
+    const VI = await import('../lib/visitor-id')
+    const JC = await import('../lib/journey')
+    const ufFs = await import('node:fs')
+
+    // Where they came from.
+    const src = (i: Parameters<typeof F.sourceOf>[0]) => F.sourceOf(i).source
+    check(
+      'flows source: t.co is X, lnkd.in and the LinkedIn Android app are LinkedIn, a search engine is search',
+      src({ referrer: F.externalReferrerHost('https://t.co/abc') }) === 'twitter' &&
+        src({ referrer: F.externalReferrerHost('https://lnkd.in/x') }) === 'linkedin' &&
+        src({ referrer: F.externalReferrerHost('android-app://com.linkedin.android/') }) === 'linkedin' &&
+        src({ referrer: F.externalReferrerHost('https://www.linkedin.com/feed/') }) === 'linkedin' &&
+        src({ referrer: F.externalReferrerHost('https://duckduckgo.com/') }) === 'search',
+    )
+    check(
+      'flows source: our own pages and the Google sign-in hop are never a source',
+      F.externalReferrerHost('https://www.pantessa.com/markets') === '' && F.externalReferrerHost('https://accounts.google.com/o/oauth2') === '' &&
+        F.externalReferrerHost('') === '' && F.externalReferrerHost('https://www.example.org/x?y=1') === 'example.org',
+    )
+    check(
+      'flows source: a stripped referrer still resolves — utm_source, an in-app browser, a shared-link landing, else direct',
+      src({ utm: 'utm_source=linkedin&utm_medium=social' }) === 'linkedin' && src({ ua: 'mobile · iOS · X app' }) === 'twitter' &&
+        src({ ua: 'Mozilla/5.0 (iPhone) LinkedInApp/9.1' }) === 'linkedin' && src({ landing: '/i/8chpvmy5' }) === 'link' && src({ landing: '/markets' }) === 'direct',
+    )
+    check('flows source: history nobody watched arrive is "not recorded", never "direct"', F.SOURCE_LABEL.unknown === 'Not recorded' && src({}) === 'direct')
+    check(
+      'flows device: families only, and an automated client is named',
+      F.deviceOf('Mozilla/5.0 (iPhone; CPU iPhone OS 26_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/23D127 Twitter for iPhone') === 'mobile · iOS · X app' &&
+        F.deviceOf('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36') === 'desktop · Mac · Chrome' &&
+        F.isBotUa('Twitterbot/1.0') && F.isBotUa('Mozilla/5.0 (X11; Linux x86_64) HeadlessChrome/145.0.0.0 Safari/537.36') && F.isBotUa('') &&
+        !F.isBotUa('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36'),
+    )
+
+    // Who, without a cookie.
+    const idA = VI.visitorIdOf('salt-monday', '203.0.113.7', 'UA-1')
+    check(
+      'flows visitor id: stable inside a day, different the next, different per browser, and the address is not in it',
+      idA === VI.visitorIdOf('salt-monday', '203.0.113.7', 'UA-1') && idA !== VI.visitorIdOf('salt-tuesday', '203.0.113.7', 'UA-1') &&
+        idA !== VI.visitorIdOf('salt-monday', '203.0.113.7', 'UA-2') && /^[0-9a-f]{16}$/.test(idA) && !idA.includes('203') &&
+        VI.networkIdOf('salt-monday', '203.0.113.7') === VI.networkIdOf('salt-monday', '203.0.113.7') && VI.networkIdOf('salt-monday', '203.0.113.7') !== idA,
+      idA,
+    )
+    const gpc = new Headers({ 'sec-gpc': '1' })
+    check('flows opt-out: Global Privacy Control and Do Not Track both turn the log off', VI.optedOut(gpc) && VI.optedOut(new Headers({ dnt: '1' })) && !VI.optedOut(new Headers()))
+
+    // What a browser may tell us.
+    const dirty = JE.sanitizeBatch({
+      events: [
+        { k: 'view', p: '/markets?prompt=secret#frag', ago: 99_999_999 },
+        { k: 'click', p: '/markets', l: `Pay ${'ab'.repeat(32)} now`, d: { tag: 'button', nested: { a: 1 }, to: '/t/AAPL' } },
+        { k: 'click', p: '/dashboard', l: 'Email someone@example.com about it' },
+        { k: 'click', p: '/x', l: 'abandon ability able about above absent absorb abstract absurd abuse access accident' },
+        { k: 'steal', p: '/markets', l: 'nope' },
+        { k: 'view', p: 'https://evil.example/x' },
+        ...Array.from({ length: 60 }, () => ({ k: 'click', p: '/spam', l: 'x' })),
+      ],
+      w: 'not-a-wallet',
+      team: 'yes',
+    })
+    check(
+      // 66 sent: the first MAX_BATCH are read, and two of those (a made-up kind, an absolute URL) are dropped.
+      'flows sanitizer: pathnames only, a closed set of kinds, a capped batch, and no wallet that isn’t one',
+      dirty.events.length === JE.MAX_BATCH - 2 && dirty.events[0].path === '/markets' && dirty.events[0].agoMs === JE.MAX_AGO_MS &&
+        !dirty.events.some((e) => (e.kind as string) === 'steal' || e.path.startsWith('http')) && dirty.wallet === null && dirty.team === false,
+      `${dirty.events.length} events`,
+    )
+    check(
+      'flows sanitizer: a key, a seed phrase and an email never reach the log; a nested detail is dropped',
+      dirty.events[1].label === '[redacted]' && dirty.events[2].label === 'Email [email] about it' && dirty.events[3].label === '[redacted]' &&
+        dirty.events[1].detail?.to === '/t/AAPL' && !('nested' in (dirty.events[1].detail ?? {})),
+      JSON.stringify(dirty.events.slice(1, 4).map((e) => e.label)),
+    )
+    check('flows fence: an hourly event cap per address, counted in events', !JL.journeyLimited(JL.JOURNEY_IP_HOURLY_CAP) && JL.journeyLimited(JL.JOURNEY_IP_HOURLY_CAP + 1))
+    check(
+      'flows browser: a signed-out page’s polls are not walls, a refused action is, our own beacon never is',
+      !JC.shouldLogApiFailure('GET', '/api/jobs', 401) && !JC.shouldLogApiFailure('GET', '/api/quotes', 200) && JC.shouldLogApiFailure('POST', '/api/intent-links', 401) &&
+        JC.shouldLogApiFailure('GET', '/api/watchlists/holdings', 504) && !JC.shouldLogApiFailure('POST', '/api/journey', 500) && !JC.shouldLogApiFailure('GET', '/markets', 500),
+    )
+    check(
+      'flows browser: extension noise and a declined signature are not our script errors',
+      !JC.shouldLogScriptError('Script error.') && !JC.shouldLogScriptError('boom', 'chrome-extension://abc/inpage.js') && !JC.shouldLogScriptError('User rejected the request.') &&
+        JC.shouldLogScriptError("TypeError: Cannot read properties of undefined (reading 'map')", 'https://www.pantessa.com/_next/static/chunks/x.js'),
+    )
+
+    // The judgement.
+    const T0 = Date.parse('2026-09-18T08:00:00Z')
+    const it = (s: number, kind: import('../lib/user-flows').FlowKind, title = kind as string, extra: Partial<import('../lib/user-flows').FlowItem> = {}) =>
+      ({ at: T0 + s * 1000, kind, title, from: 'visitor', path: '/', ...extra }) as import('../lib/user-flows').FlowItem
+    const bounce = F.foldFlow([it(0, 'view'), it(3, 'leave', 'leave', { n: { ms: 3000, scroll: 0, input: true } })])
+    const silentVisit = F.foldFlow([it(0, 'view'), it(1, 'leave', 'leave', { n: { ms: 900, scroll: 0, input: false } })])
+    check(
+      'flows fold: a three-second visit is a bounce, and one with no hand on it is silent — not a person who left',
+      bounce.outcome === 'bounced' && bounce.stage === 'arrived' && bounce.human && /after 3s/.test(bounce.stoppedAt) && !silentVisit.human && /bot or an instant back/.test(silentVisit.stoppedAt),
+      bounce.stoppedAt,
+    )
+    const killed = [it(0, 'view'), F.itemFromRow({ at: T0 + 1500, kind: 'event', path: '/', label: 'hand', detail: null, referrer: null })!]
+    check(
+      'flows fold: a page that is killed without ever sending a leave (in-app browsers) still reads as a person, from the first touch alone',
+      F.foldFlow(killed).human && killed[1].detail === F.HAND && !F.foldFlow([it(0, 'view')]).human && /without reporting how long/.test(F.foldFlow(killed).stoppedAt),
+      F.foldFlow(killed).stoppedAt,
+    )
+    const looked = F.foldFlow([it(0, 'view', 'v', { path: '/' }), it(8, 'click', 'Clicked “Markets”'), it(9, 'view', 'v', { path: '/markets' }), it(70, 'leave', 'l', { path: '/markets', n: { ms: 61_000, scroll: 80, input: true } })])
+    check('flows fold: two pages and a click is someone who looked around and never opened sign-in', looked.stage === 'engaged' && looked.outcome === 'looked' && looked.exit === '/markets' && /Never opened sign-in/.test(looked.stoppedAt), looked.stoppedAt)
+    check(
+      'flows fold: the door — opened and backed out, or opened and it failed',
+      F.foldFlow([it(0, 'view'), it(5, 'door')]).outcome === 'door-abandoned' && F.foldFlow([it(0, 'view'), it(5, 'door'), it(9, 'door-error', 'e', { detail: 'Could not send the code.' })]).outcome === 'door-error',
+    )
+    check('flows fold: a wallet with nothing asked is connected-idle', F.foldFlow([it(0, 'view'), it(5, 'door'), it(9, 'connect')]).outcome === 'connected-idle' && F.foldFlow([it(0, 'view')], { hasWallet: true }).stage === 'connected')
+    const walled = F.foldFlow([it(0, 'view'), it(4, 'connect'), it(9, 'ask', 'Asked: Buy $50 of ETH'), it(11, 'reply-wall', 'Wall', { n: { hadFunds: true } })])
+    check('flows fold: a money ask with nothing to act on is a wall, and it says whether they had the money', walled.outcome === 'ask-walled' && walled.stage === 'asked' && /Buy \$50 of ETH/.test(walled.stoppedAt) && /They had the money/.test(walled.stoppedAt), walled.stoppedAt)
+    const climbed = F.foldFlow([it(0, 'ask', 'Asked: Buy $50 of ETH'), it(2, 'reply-wall'), it(60, 'ask', 'Asked: Buy $10 of ETH'), it(62, 'reply-built'), it(90, 'signed', 'Signed', { n: { usd: 10 } })])
+    check('flows fold: the END of the story decides — a wall that was later climbed is not where they stopped', climbed.outcome === 'signed' && climbed.stage === 'signed' && climbed.usd === 10, climbed.stoppedAt)
+    check(
+      'flows fold: an offer nobody took, a transaction nobody signed, a wallet that refused it',
+      F.foldFlow([it(0, 'ask', 'Asked: x'), it(2, 'reply-offer', 'Got an offer to fund by card')]).outcome === 'offer-unanswered' &&
+        F.foldFlow([it(0, 'ask', 'Asked: x'), it(2, 'reply-built')]).outcome === 'built-unsigned' &&
+        F.foldFlow([it(0, 'ask', 'Asked: x'), it(2, 'reply-built'), it(9, 'refused', 'r', { detail: 'Chain not configured' })]).outcome === 'wallet-refused',
+    )
+    const needsWallet = F.foldFlow([it(0, 'view'), it(5, 'ask', 'Asked: Buy $25 of TSLA'), it(6, 'reply-connect', 'Was told to connect a wallet first')])
+    const resent = F.foldFlow([it(0, 'ask', 'Asked: Buy $50 of ETH'), it(1, 'reply-connect'), it(3, 'connect'), it(4, 'ask', 'Asked: Buy $50 of ETH'), it(6, 'reply-wall', 'Wall', { n: { hadFunds: false } })])
+    check(
+      'flows fold: being told to connect first is not an offer — it holds the asked rung, and stopping there is its own outcome',
+      needsWallet.stage === 'asked' && needsWallet.outcome === 'ask-needs-wallet' && /never connected one/.test(needsWallet.stoppedAt) && resent.stage === 'asked' && resent.outcome === 'ask-walled',
+      needsWallet.stoppedAt,
+    )
+    const failedJob = F.foldFlow([it(0, 'ask', 'Asked: fund and buy'), it(2, 'reply-built'), it(40, 'job-failed', 'Job failed: Fund Robinhood Chain → Buy $12 of SPY', { detail: 'RPC Request failed.' })])
+    check('flows fold: a job that failed partway is its own wall, named with the reason', failedJob.outcome === 'job-failed' && F.OUTCOME_TONE['job-failed'] === 'bad' && /RPC Request failed/.test(failedJob.stoppedAt), failedJob.stoppedAt)
+    const wallOnly = [{ at: T0 + 5000, kind: 'reply-wall', title: 'Wall (planner-answer): Buy $10 of ETH', from: 'db', ask: 'Buy $10 of ETH', n: { hadFunds: false } }] as import('../lib/user-flows').FlowItem[]
+    const put = F.backfillAsks(wallOnly)
+    const retry = F.backfillAsks([{ at: T0, kind: 'ask', title: 'Asked: Buy $10 of ETH', from: 'server' }, ...wallOnly])
+    check(
+      'flows merge: a wall with no ask on record gets its ask put back (a guest’s chat is never stored); one that has its ask is left alone',
+      put.length === 2 && put[0].kind === 'ask' && put[0].title === 'Asked: Buy $10 of ETH' && put[0].at < put[1].at && retry.length === 2 &&
+        /^“Buy \$10 of ETH” ended/.test(F.foldFlow(put).stoppedAt) && /^Their ask ended/.test(F.foldFlow([{ at: T0, kind: 'reply-wall', title: 'Wall', from: 'db' }]).stoppedAt),
+      F.foldFlow(put).stoppedAt,
+    )
+    const history = F.foldFlow([{ at: T0, kind: 'ask', title: 'Asked: Buy $10 of ETH', from: 'db' }, { at: T0 + 1000, kind: 'reply-wall', title: 'Wall', from: 'db', n: { hadFunds: false } }])
+    check('flows fold: history from our tables alone is never called silent', history.human && history.outcome === 'ask-walled' && /wallet was empty/.test(history.stoppedAt))
+    const twoVisits = F.foldFlow([it(0, 'view'), it(10, 'leave', 'l', { n: { ms: 10_000, scroll: 10, input: true } }), it(3 * 3600, 'view'), it(3 * 3600 + 40, 'leave', 'l', { n: { ms: 40_000, scroll: 90, input: true } })])
+    check('flows fold: a gap starts a new visit, and time on pages is the sum of the stretches', twoVisits.visits === 2 && twoVisits.activeMs === 50_000)
+
+    // One reply, read.
+    const shape = (b: Record<string, unknown> | null, money = true) => F.replyShape(b, money)
+    check(
+      'flows reply: something to sign, something to choose and a wall are three different answers',
+      shape({ txChain: [{}], buildPath: 'native-swap-uniswap' }).kind === 'reply-built' && shape({ jobId: 'j1' }).kind === 'reply-built' &&
+        shape({ clarify: { options: [{ label: 'Add $25 with card', fund: { presetFiatUsd: 25 } }] } }).title.includes('fund by card') &&
+        shape({ clarify: { options: [{ label: 'Just enough' }] }, buildPath: 'native-funding-offer' }).title.includes('from their own wallet') &&
+        shape({ connectWallet: true }).kind === 'reply-connect' && shape({ reply: 'Top up any of those chains and ask again.' }).kind === 'reply-wall' &&
+        shape({ reply: 'ETH is up 2% today.' }, false).kind === 'reply-answer' && shape(null).kind === 'reply-wall' && shape({ rateGate: { scope: 'ip' }, reply: 'x' }).kind === 'reply-wall',
+    )
+
+    // The two halves, merged.
+    const merged = F.mergeItems([
+      { at: T0, kind: 'reply-wall', title: 'Refused by native-affordability-short', from: 'server' },
+      { at: T0 + 800, kind: 'reply-wall', title: 'Wall (native-wall): Sell $50 of AMAT', from: 'db', n: { hadFunds: true } },
+      { at: T0 + 5000, kind: 'reply-built', title: 'Got a transaction to sign (native-swap-uniswap)', from: 'server' },
+      { at: T0 + 6000, kind: 'built', title: 'A sign card rendered', from: 'db' },
+    ])
+    check(
+      'flows merge: one moment told twice is one line — the wall keeps the funds snapshot, the build keeps its name',
+      merged.length === 2 && merged[0].from === 'db' && merged[0].n?.hadFunds === true && merged[1].kind === 'reply-built',
+      merged.map((m) => `${m.kind}/${m.from}`).join(' '),
+    )
+    const sent = (at: number) => ({ at, kind: 'event', title: 'Sent a message', detail: 'chat_message_sent', from: 'visitor' }) as import('../lib/user-flows').FlowItem
+    const echoed = F.dropEchoedSends([sent(T0), { at: T0 + 900, kind: 'ask', title: 'Asked: hi', from: 'server' }])
+    const lost = F.dropEchoedSends([sent(T0)])
+    check('flows merge: a sent message the server has no record of is a finding, not an echo', echoed.length === 1 && echoed[0].kind === 'ask' && lost.length === 1 && lost[0].kind === 'api-error' && /never recorded/.test(lost[0].title))
+    const pressed = F.collapseClicks([0, 1, 2, 3].map((s) => it(s, 'click', 'Clicked “Buy AAPL”')).concat([it(30, 'click', 'Clicked “Buy AAPL”')]))
+    check('flows merge: the same control pressed four times in a row is one line that asks whether anything happened', pressed.length === 2 && pressed[0].title === 'Clicked “Buy AAPL” ×4' && /Did nothing happen/.test(pressed[0].detail ?? '') && F.rageRuns(pressed) === 1, pressed[0].title)
+    const lv = (s: number, ms: number, scroll: number, path = '/markets') => it(s, 'leave', `Left ${path}`, { path, n: { ms, scroll, input: true } })
+    const stays = F.foldLeaves([it(0, 'view', 'v', { path: '/markets' }), lv(10, 10_000, 20), it(12, 'click', 'Clicked “TSLA”', { path: '/markets' }), lv(40, 25_000, 60), lv(90, 5_000, 35), it(91, 'view', 'v', { path: '/t/TSLA' }), lv(99, 8_000, 0, '/t/TSLA')])
+    const stay = stays.filter((i) => i.kind === 'leave')
+    check(
+      'flows merge: one stay on a page is one line — tab-aways add up instead of reading as leaving three times, and the total is kept',
+      stay.length === 2 && stay[0].n?.ms === 40_000 && stay[0].n?.scroll === 60 && /in 3 stretches/.test(stay[0].detail ?? '') && /after 40s/.test(stay[0].title) && stay[1].n?.ms === 8_000 &&
+        F.foldFlow(stays).activeMs === 48_000 && stays.findIndex((i) => i.kind === 'click') < stays.findIndex((i) => i === stay[0]),
+      stay.map((l) => `${l.title} | ${l.detail}`).join(' ; '),
+    )
+    const rows = [
+      F.itemFromRow({ at: T0, kind: 'event', path: '/', label: 'signin_door_open', detail: { connectOnly: true }, referrer: null }),
+      F.itemFromRow({ at: T0, kind: 'event', path: '/', label: 'signin_door_cdp_timeout', detail: null, referrer: null }),
+      F.itemFromRow({ at: T0, kind: 'event', path: '/', label: 'wallet_seen', detail: { connector: 'Phantom', returning: false }, referrer: null }),
+      F.itemFromRow({ at: T0, kind: 'reply', path: '/chat', label: 'Refused by native-x', detail: { shape: 'reply-wall', said: 'Top up and ask again.' }, referrer: null }),
+      F.itemFromRow({ at: T0, kind: 'api-error', path: '/t/AAPL', label: 'POST /api/onramp/session', detail: { status: 403 }, referrer: null }),
+      F.itemFromRow({ at: T0, kind: 'made-up', path: '/', label: null, detail: null, referrer: null }),
+    ]
+    check(
+      'flows rows: product events are promoted to the door, a connect and a wall; an unknown row is left out',
+      rows[0]?.kind === 'door' && rows[1]?.kind === 'door-error' && rows[2]?.kind === 'connect' && /Phantom/.test(rows[2]?.title ?? '') && rows[3]?.kind === 'reply-wall' &&
+        rows[3]?.detail === 'Top up and ask again.' && rows[3]?.from === 'server' && rows[4]?.title === 'POST /api/onramp/session answered 403' && rows[5] === null,
+    )
+    const proto = ['constructor', '__proto__', 'toString', 'hasOwnProperty'].map((label) => F.itemFromRow({ at: T0, kind: 'event', path: '/', label, detail: null, referrer: null }))
+    check(
+      'flows rows: a label is a stranger’s string — `constructor` and `__proto__` come back as plain words, never as an object’s own machinery (it crashed the page once)',
+      proto.every((i) => !!i && typeof i.title === 'string' && i.title.length > 0 && i.kind === 'event'),
+      proto.map((i) => typeof i?.title).join(','),
+    )
+    const vid = (o: Partial<import('../lib/user-flows').TeamVid>) => ({ verified: false, onTeamNet: false, marked: false, claimed: false, ...o })
+    const person = (o: Partial<Parameters<typeof F.teamVerdict>[0]>) => F.teamVerdict({ walletIsOurs: false, walletMarked: false, emailIsOurs: false, vids: [], hasTableHistory: false, ...o })
+    const hijack = person({ vids: [vid({}), vid({ claimed: true })], hasTableHistory: true })
+    check(
+      'flows team: a CLAIM hides only the visitor id that made it — a stranger naming your wallet with team:true cannot take your timeline off the screen',
+      !hijack.team && hijack.dropVids.join() === '1' && !person({ vids: [vid({ claimed: true })], hasTableHistory: true }).team &&
+        person({ vids: [vid({ claimed: true })] }).team && person({ vids: [vid({ claimed: true })] }).why === 'its browser says it is ours',
+      JSON.stringify(hijack),
+    )
+    check(
+      'flows team: VERIFIED evidence hides the person — a team wallet, a hand mark, an admin’s session, an admin’s network that day, a team email',
+      person({ walletIsOurs: true }).why === 'a team wallet' && person({ walletMarked: true }).why === 'marked by hand' && person({ vids: [vid({ marked: true })] }).why === 'marked by hand' &&
+        person({ vids: [vid({}), vid({ verified: true })] }).why === 'an admin’s browser' && person({ vids: [vid({ onTeamNet: true })] }).why === 'same network as an admin that day' &&
+        person({ emailIsOurs: true }).why === 'a team email' && !person({ vids: [vid({})], hasTableHistory: true }).team,
+    )
+    const seen = (detail: Record<string, unknown>) => F.itemFromRow({ at: T0, kind: 'event', path: '/', label: 'wallet_seen', detail, referrer: null })?.title ?? ''
+    check(
+      'flows rows: a wallet that came back on its own is not a wallet someone connected, and the analytics echo of a connect is one fact, not two',
+      /already connected \(MetaMask\)/.test(seen({ connector: 'MetaMask', returning: true })) && /^Connected a wallet/.test(seen({ connector: 'MetaMask', returning: false })) &&
+        /^Switched/.test(seen({ connector: 'MetaMask', returning: false, switched: true })) &&
+        F.itemFromRow({ at: T0, kind: 'event', path: '/', label: 'wallet_connected', detail: { connector: 'MetaMask' }, referrer: null }) === null,
+    )
+    const sum = F.summarize([
+      { stage: 'arrived', outcome: 'bounced', source: 'twitter', hadError: false, human: true, exit: '/' },
+      { stage: 'engaged', outcome: 'looked', source: 'twitter', hadError: false, human: true, exit: '/markets' },
+      { stage: 'asked', outcome: 'ask-walled', source: 'linkedin', hadError: true, human: true, exit: '/chat' },
+      { stage: 'signed', outcome: 'signed', source: 'direct', hadError: false, human: true, exit: '/chat' },
+    ])
+    check(
+      'flows summary: the climb is cumulative and never rises, sources count their own, and an exit page only counts for people who never acted',
+      sum.funnel[0].n === 4 && sum.funnel.every((f, i) => i === 0 || f.n <= sum.funnel[i - 1].n) && sum.funnel[sum.funnel.length - 1].n === 1 &&
+        sum.sources.find((s) => s.source === 'twitter')?.n === 2 && sum.sources.find((s) => s.source === 'twitter')?.engaged === 1 && sum.withErrors === 1 &&
+        sum.exits.length === 2 && !sum.exits.some((e) => e.path === '/chat'),
+      JSON.stringify(sum.funnel.map((f) => f.n)),
+    )
+
+    // Over HTTP: the beacon, then the admin read.
+    const ufTag = `harness-flows-${Math.random().toString(36).slice(2, 10)}`
+    const ufUa = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 ${ufTag}`
+    const beacon = (body: unknown, headers: Record<string, string> = {}) =>
+      fetch(`${BASE}/api/journey`, { method: 'POST', headers: { 'content-type': 'application/json', 'user-agent': ufUa, ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) })
+    const bOk = await beacon({
+      ref: 'https://t.co/xyz',
+      utm: 'utm_source=x',
+      events: [
+        { k: 'view', p: '/markets?prompt=do-not-keep', ago: 9000 },
+        { k: 'click', p: '/markets', l: `Buy AAPL ${ufTag}`, d: { tag: 'button' }, ago: 6000 },
+        { k: 'event', p: '/markets', l: 'signin_door_open', d: { connectOnly: true }, ago: 4000 },
+        { k: 'leave', p: '/markets', d: { ms: 8000, scroll: 40, input: true }, ago: 500 },
+      ],
+    })
+    const bBig = await beacon('x'.repeat(JE.MAX_BODY_BYTES + 10))
+    const bJunk = await beacon('{not json')
+    const bGpc = await beacon({ events: [{ k: 'click', p: '/markets', l: `gpc ${ufTag}` }] }, { 'sec-gpc': '1' })
+    check(
+      'flows beacon: a batch is accepted with an empty 204, an oversized body is refused, junk learns nothing',
+      bOk.status === 204 && (await bOk.text()) === '' && bBig.status === 413 && bJunk.status === 204 && bGpc.status === 204,
+      `${bOk.status}/${bBig.status}/${bJunk.status}`,
+    )
+
+    const fAnon = await fetch(`${BASE}/api/admin/flows`)
+    const fNonAdmin = await fetch(`${BASE}/api/admin/flows`, { headers: C })
+    const mAnon = await fetch(`${BASE}/api/admin/flows/mark`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'v:abcdef123456' }) })
+    const mNonAdmin = await fetch(`${BASE}/api/admin/flows/mark`, { method: 'POST', headers: { ...C, 'content-type': 'application/json' }, body: JSON.stringify({ key: 'v:abcdef123456' }) })
+    check('flows: no auth → 401, a non-admin wallet → 403 — on the read and on the team mark', fAnon.status === 401 && fNonAdmin.status === 403 && mAnon.status === 401 && mNonAdmin.status === 403)
+
+    const ufPk = (() => {
+      try {
+        return ufFs.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+      } catch {
+        return null
+      }
+    })()
+    if (!ufPk) {
+      console.log('  ↳ flows admin read SKIPPED (no PRIVATE_KEY in .env.local)')
+    } else {
+      const ufSession = await signIn(privateKeyToAccount((ufPk.startsWith('0x') ? ufPk : `0x${ufPk}`) as `0x${string}`))
+      // One real turn from the same browser: the server adds the ask and the
+      // shape of its answer to the timeline the beacon started. A chart ask
+      // is native, costs nothing and moves nothing. realFetch, because the
+      // suite's wrapper stamps x-yf-no-ask-log on every chat call and the
+      // journey hook honors that opt-out like the ask-failure log does.
+      await realFetch(`${BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'user-agent': ufUa, 'x-yf-internal-run': '1' },
+        body: JSON.stringify({ message: 'show me the ETH chart', activeServers: [] }),
+      })
+      type UfFlow = { id: string; vids: string[]; source: string; stage: string; outcome: string; team: boolean; teamWhy: string | null; pages: string[]; items: { kind: string; title: string; path: string | null; from: string }[] }
+      const readFlows = async (extra = '') => {
+        const r = await fetch(`${BASE}/api/admin/flows?days=1&internal=1&silent=1${extra}`, { headers: { cookie: ufSession } })
+        return { status: r.status, body: (await r.json()) as { windowDays: number; flows: UfFlow[]; summary: { people: number; funnel: { n: number }[] }; hidden: { team: number; silent: number } } }
+      }
+      // By its own click label: a later probe in this block reuses the tag.
+      const mine = (flows: UfFlow[]) => flows.find((f) => f.items.some((i) => i.title.includes(`Buy AAPL ${ufTag}`)))
+      // after() writes once the response is out: give the rows a moment.
+      let read = await readFlows()
+      for (let i = 0; i < 8 && !mine(read.body.flows)?.items.some((x) => x.kind === 'ask'); i++) {
+        await new Promise((r) => setTimeout(r, 750))
+        read = await readFlows()
+      }
+      const me = mine(read.body.flows)
+      check(
+        'flows: admin → 200 with a summary and one timeline per person; an unknown window falls to 3 days',
+        read.status === 200 && read.body.windowDays === 1 && Array.isArray(read.body.flows) && read.body.summary.people === read.body.flows.length &&
+          read.body.summary.funnel[0].n === read.body.flows.length && ((await (await fetch(`${BASE}/api/admin/flows?days=999`, { headers: { cookie: ufSession } })).json()) as { windowDays: number }).windowDays === 3,
+      )
+      check(
+        'flows round trip: the beacon’s visit reads back as one person from X, on /markets with no query string, who opened the door',
+        !!me && me.source === 'twitter' && me.pages.join() === '/markets' && me.items.every((i) => !String(i.path ?? '').includes('?') && !i.title.includes('do-not-keep')) &&
+          me.items.some((i) => i.kind === 'door') && me.items.some((i) => i.kind === 'click' && i.title.includes('Buy AAPL')),
+        me ? `${me.source} ${me.pages.join()} ${me.items.map((i) => i.kind).join(',')}` : 'flow not found',
+      )
+      check(
+        'flows round trip: the SERVER adds the ask and what it answered to the same person’s timeline, with no help from the browser',
+        !!me && me.items.some((i) => i.kind === 'ask' && i.from === 'server' && /ETH chart/.test(i.title)) && me.items.some((i) => i.from === 'server' && i.kind.startsWith('reply-')) && me.stage === 'asked',
+        me ? `${me.stage}/${me.outcome}` : 'flow not found',
+      )
+      check('flows round trip: a browser that sent Global Privacy Control left no row', !read.body.flows.some((f) => f.items.some((i) => i.title.includes(`gpc ${ufTag}`))))
+
+      // A browser that CLAIMS to be ours: hidden by default, shown under
+      // ?team=1 with the honest reason, and stored as a claim, not as proof.
+      const claimUa = `${ufUa}-claims`
+      await fetch(`${BASE}/api/journey`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'user-agent': claimUa },
+        body: JSON.stringify({ team: true, events: [{ k: 'view', p: '/markets' }, { k: 'click', p: '/markets', l: `claimed ${ufTag}` }, { k: 'leave', p: '/markets', d: { ms: 4000, scroll: 10, input: true } }] }),
+      })
+      // An ask from the chat embedded on someone else's site is not ours to log.
+      await realFetch(`${BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'user-agent': ufUa, 'x-yf-internal-run': '1' },
+        body: JSON.stringify({ message: `show me the BTC chart ${ufTag}`, activeServers: [], embedOrigin: 'https://host.example' }),
+      })
+      await new Promise((r) => setTimeout(r, 2500))
+      const claimedHidden = !(await readFlows()).body.flows.some((f) => f.items.some((i) => i.title.includes(`claimed ${ufTag}`)))
+      const withOurs = (await readFlows('&team=1')).body.flows
+      const claimedShown = withOurs.find((f) => f.items.some((i) => i.title.includes(`claimed ${ufTag}`)))
+      check(
+        'flows team (over the wire): a browser’s own team flag hides its rows and nobody else’s, and is shown as a claim',
+        claimedHidden && !!claimedShown && claimedShown.team && claimedShown.teamWhy === 'its browser says it is ours' && !!mine((await readFlows()).body.flows),
+        claimedShown ? String(claimedShown.teamWhy) : 'not found under ?team=1',
+      )
+      check('flows: an ask from the embedded chat on another site is recorded on neither half', !withOurs.some((f) => f.items.some((i) => i.title.includes(`BTC chart ${ufTag}`))))
+      // The admin read answers a SESSION, never a bearer key (it carries emails).
+      const adminKey = (await fetch(`${BASE}/api/keys`, { method: 'POST', headers: { cookie: ufSession, 'content-type': 'application/json' }, body: JSON.stringify({ label: 'test:api flows (admin key)' }) })
+        .then((r) => r.json())
+        .catch(() => null)) as { secret?: string; id?: string } | null
+      if (adminKey?.secret) {
+        const viaKey = await fetch(`${BASE}/api/admin/flows`, { headers: { authorization: `Bearer ${adminKey.secret}` } })
+        check('flows: an ADMIN’s API key cannot read the flows (session only — a key is a thing that leaks)', viaKey.status === 401, String(viaKey.status))
+        if (adminKey.id) await fetch(`${BASE}/api/keys/${adminKey.id}`, { method: 'DELETE', headers: { cookie: ufSession } }).catch(() => {})
+      } else {
+        console.log('  ↳ flows bearer-key check SKIPPED (could not mint a key for the admin)')
+      }
+
+      // "That was me."
+      if (me) {
+        const markKey = `v:${me.vids[0]}`
+        const post = (body: unknown) => fetch(`${BASE}/api/admin/flows/mark`, { method: 'POST', headers: { cookie: ufSession, 'content-type': 'application/json' }, body: JSON.stringify(body) })
+        const bad = await post({ key: 'DROP TABLE' })
+        const on = await post({ key: markKey, on: true })
+        const hiddenNow = mine((await readFlows()).body.flows)
+        const shownAsTeam = mine((await readFlows('&team=1')).body.flows)
+        const off = await post({ key: markKey, on: false })
+        const back = mine((await readFlows()).body.flows)
+        check(
+          'flows team mark: a bad key → 400; a marked visitor leaves the default view, shows under ?team=1 saying why, and comes back when unmarked',
+          bad.status === 400 && on.status === 200 && !hiddenNow && !!shownAsTeam && shownAsTeam.team && shownAsTeam.teamWhy === 'marked by hand' && off.status === 200 && !!back && !back.team,
+        )
+      }
+    }
+
+    // The wiring, read from source.
+    const read = (p: string) => ufFs.readFileSync(p, 'utf8')
+    const journeySrc = read('lib/journey.ts')
+    const code = journeySrc.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n')
+    check(
+      'flows wiring: the browser half plants nothing on the device — no cookie, and the one stored key is the admin’s own team flag',
+      !/document\.cookie/.test(code) && !/sessionStorage/.test(code) && (code.match(/localStorage\.(get|set)Item\(([^,)]+)/g) ?? []).every((m) => m.endsWith('(TEAM_KEY')) &&
+        /globalPrivacyControl/.test(code) && /'\/embed'/.test(code) && !/\.value\b/.test(code),
+    )
+    check(
+      'flows wiring: the tracker is mounted once and reads the wallet off wagmi, the analytics chokepoint tees into it, and the chat route records each turn at the time it happened',
+      /<JourneyTracker \/>/.test(read('app/layout.tsx')) && /trackJourney\('event', name/.test(read('lib/analytics.ts')) &&
+        (read('app/api/chat/route.ts').match(/recordTurn\(req\.headers/g) ?? []).length === 2 && /startedAt: turnStartedAt/.test(read('app/api/chat/route.ts')) &&
+        /useAccount\(\)/.test(read('components/JourneyTracker.tsx')) && /setJourneyWallet\(now\)/.test(read('components/JourneyTracker.tsx')),
+    )
+    const { isSectionActive } = await import('../components/DashboardSidebar')
+    check(
+      'flows wiring: the page sits under Growth (the rail stays lit on it), Growth links to it, and the privacy page says what is kept',
+      isSectionActive('/dashboard/admin/flows', '/dashboard/admin', false) && read('app/dashboard/admin/page.tsx').includes('/dashboard/admin/flows') &&
+        read('app/dashboard/admin/flows/page.tsx').includes('/api/admin/flows') && /Global Privacy Control/.test(read('app/docs/privacy/page.tsx')) && /deleted after 120 days/.test(read('app/docs/privacy/page.tsx')) &&
+        // Session-only on both admin routes, and no bare-object lookup of a stranger's label.
+        !/getAuthAddress/.test(read('app/api/admin/flows/route.ts')) && !/getAuthAddress/.test(read('app/api/admin/flows/mark/route.ts')) && /Object\.hasOwn\(EVENT_WORDS, name\)/.test(read('lib/user-flows.ts')),
+    )
+  }
+
   // ── Email signup (double opt-in) ──────────────────────────────────────────
   console.log('— subscribe')
   // .invalid domain → stored but never emailed (isUndeliverable guard), and the
@@ -9635,6 +10335,64 @@ async function main() {
     const g = guardCrossChainBuild(goodBuild, { chainId: 8453 })
     check('xchain guard: correct transfer PASSES', g.ok && g.tx?.to === USDC_BASE && g.depositAddress === DEPOSIT)
 
+    // ── Private mode (NEAR Confidential Intents) ─────────────────────────────
+    {
+      const ME = '0x9Cc09AD0D6832FfbBFb1B70F1D9e5d0a6d00892a'
+      const OTHER = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+      const privBuild = { ...goodBuild, confidential: { level: 'basic', deliversToPayer: false }, deposit: { ...goodBuild.deposit, deliveredTo: `${OTHER} on Arbitrum`, refundsGoTo: ME } }
+      check(
+        'private swap guard: a private ask the venue did NOT confirm is REFUSED (never falls back to a public swap) — and an older MCP that drops the field reads the same',
+        !guardCrossChainBuild(goodBuild, { chainId: 8453, confidential: true }).ok &&
+          guardCrossChainBuild(privBuild, { chainId: 8453, confidential: true, deliverTo: OTHER, refundTo: ME }).ok,
+      )
+      check('private swap guard: privacy nobody asked for is refused', !guardCrossChainBuild(privBuild, { chainId: 8453 }).ok)
+      check(
+        'private swap guard: the payout is bound to the asked address — a different one, a missing one, and a foreign refund all refuse',
+        !guardCrossChainBuild({ ...privBuild, deposit: { ...privBuild.deposit, deliveredTo: `${ME} on Arbitrum` } }, { chainId: 8453, confidential: true, deliverTo: OTHER, refundTo: ME }).ok &&
+          !guardCrossChainBuild({ ...privBuild, deposit: { ...goodBuild.deposit } }, { chainId: 8453, confidential: true, deliverTo: OTHER, refundTo: ME }).ok &&
+          !guardCrossChainBuild({ ...privBuild, deposit: { ...privBuild.deposit, refundsGoTo: OTHER } }, { chainId: 8453, confidential: true, deliverTo: OTHER, refundTo: ME }).ok &&
+          // today's MCP names no deliveredTo on a to-self build: still passes.
+          guardCrossChainBuild(goodBuild, { chainId: 8453, deliverTo: ME, refundTo: ME }).ok,
+      )
+      const pv = (a: string) => parseCrossChainSwap(a) as { confidential?: boolean; recipient?: string; problem?: string; amount?: string; destinationChain?: string } | null
+      const plain = pv('swap 5 USDC from base to arbitrum')
+      check(
+        'private swap grammar: every private phrasing sets the flag and leaves the swap itself byte-identical to the public parse',
+        ['swap 5 USDC from base to arbitrum privately', 'privately swap 5 USDC from base to arbitrum', 'private swap 5 USDC from base to arbitrum', 'bridge 5 USDC from base to arbitrum confidentially', 'swap 5 USDC from base to arbitrum in private mode', 'swap 5 USDC from base to arbitrum using incognito mode'].every((a) => {
+          const r = pv(a)
+          return r?.confidential === true && !r.recipient && r.amount === '5' && r.destinationChain === 'arbitrum'
+        }) && !!plain && !('confidential' in plain) && !('recipient' in plain),
+      )
+      check(
+        'private swap grammar: a delivery address is checksummed; a bad checksum refuses by name; a bare "to 0x…" is never read as a recipient',
+        pv(`swap 5 USDC from base to arbitrum privately, deliver to ${OTHER.toLowerCase()}`)?.recipient === OTHER &&
+          /checksum/.test(pv('swap 5 USDC from base to arbitrum privately, deliver to 0xD8dA6BF26964aF9D7eEd9e03E53415D37aA96046')?.problem ?? '') &&
+          !pv(`swap 5 USDC from base to ${OTHER} on arbitrum`)?.recipient,
+      )
+      check(
+        'private swap grammar: Robinhood Chain and Arc have no private lane — refused by name, never a quiet public bridge',
+        /NEAR Intents/.test(pv('swap 5 USDC from base to robinhood privately')?.problem ?? '') && /NEAR Intents/.test(pv('swap 5 USDC from base to arc privately')?.problem ?? ''),
+      )
+      const pubPending = crossChainPending({ amount: '5', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'arbitrum' }, DEPOSIT, 's')
+      const privPending = crossChainPending({ amount: '5', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'arbitrum', confidential: true, recipient: OTHER }, DEPOSIT, 's')
+      const fu = (m: string, pend: typeof pubPending) => parseCrossChainFollowUp(m, pend) as { kind: string; params?: { confidential?: boolean; recipient?: string; amount?: string }; problem?: string } | null
+      check(
+        "private swap follow-ups: the card's switch sentences amend the pending swap; a new size KEEPS the privacy choice; pending stays within the sanitizer's 8 keys",
+        fu('make it private', pubPending)?.params?.confidential === true &&
+          fu('make it public', privPending)?.kind === 'amend' && !fu('make it public', privPending)?.params?.confidential && !fu('make it public', privPending)?.params?.recipient &&
+          fu(`deliver it to ${OTHER}`, pubPending)?.params?.recipient === OTHER && fu(`deliver it to ${OTHER}`, pubPending)?.params?.confidential === true &&
+          fu('deliver it to 0x1234', pubPending)?.kind === 'problem' &&
+          fu('make it 2', privPending)?.params?.confidential === true && fu('make it 2', privPending)?.params?.recipient === OTHER && fu('make it 2', privPending)?.params?.amount === '2' &&
+          fu('deliver it back to my wallet', privPending)?.params?.confidential === true && !fu('deliver it back to my wallet', privPending)?.params?.recipient &&
+          Object.keys(privPending.data).length <= 8,
+      )
+      check(
+        'private swap fence: an ask naming a delivery address is outbound-to-third-party (links + embeds hold it to prefill), and a job leg refuses one',
+        outboundToThirdParty(`swap 5 USDC from base to arbitrum privately, deliver to ${OTHER}`).outbound &&
+          !outboundToThirdParty('swap 5 USDC from base to arbitrum privately').outbound,
+      )
+    }
+
     // Wrong recipient (the fabricated-address class of bug) MUST be refused.
     const evilData = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: ['0x000000000000000000000000000000000000dEaD' as `0x${string}`, BigInt(1000000)] })
     const evilBuild = { ...goodBuild, steps: [{ action: 'send_transaction', tx: { to: USDC_BASE, data: evilData, value: '0', chainId: 8453 } }] }
@@ -11040,6 +11798,168 @@ async function main() {
         (comboJob.steps[3].params as { origin?: number }).origin === 8453,
       comboJob && 'problem' in comboJob ? comboJob.problem : JSON.stringify(comboJob?.steps.map((s) => s.params)),
     )
+    // ── VENUE PRE-FLIGHT (lib/venue-preflight.ts) ──────────────────────────
+    // The funding offer and this compiler both run ABOVE the venue cascade,
+    // so a funded buy of a listing no venue can fill used to sign both
+    // bridge legs and only then refuse at the buy step — stranding USDG on
+    // 4663. 105 of the 201 curated Robinhood Chain listings refuse today
+    // (measured 2026-09-21, read-only). The verdict is the cascade's own,
+    // so it can never drift from the builder; these pins hold the seam.
+    const compileShapeRh = (ask: string) => { const j = compileJobAsk(ask); return j && 'steps' in j && j.steps ? j.steps.map((st) => `${st.kind}:${st.builder}`).join(',') : JSON.stringify(j) }
+    const pfBuy = { chainId: 4663, sellToken: 'USDG', buyToken: 'CRM', amountHuman: '10.00' }
+    const pfCalls: string[] = []
+    const pfVenue = (name: string, run: () => unknown) => async () => {
+      pfCalls.push(name)
+      return run()
+    }
+    const pfThrow = (err: Error) => () => {
+      throw err
+    }
+    const pfSwapTx = { to: `0x${'3'.repeat(40)}`, data: '0x', value: '0', chainId: 4663, action: 'swap' }
+    const pfV3Built = { summary: 'v3 fill', guardrails: { ok: true, valueUsd: 10, checks: [] }, blocked: false, swapTx: pfSwapTx, approveTx: null, minimumOut: '1', validUntil: 1 }
+    const pfRun = async (venues: Record<string, () => unknown>, timeoutMs?: number) => {
+      pfCalls.length = 0
+      const v = await preflightFundedBuy(pfBuy, venues as never, timeoutMs)
+      return { v, calls: pfCalls.join(',') }
+    }
+    // The task's own reproduction: the compiled job, and the buy read out of it.
+    const pfJob = compileJobAsk('Fund robinhood chain with $12 from base including gas, then buy $10 of CRM')
+    const pfJobBuys = pfJob && 'steps' in pfJob ? fundedBuysOf(pfJob) : []
+    const pfLoneFund = compileJobAsk('Fund robinhood chain with $7 from ethereum including gas')
+    const pfBridgeJob = compileJobAsk('swap 1 USDC from base to arbitrum, then send the 1 USDC on arbitrum to 0x2055f0a5e1b2d69f0fcbf3e0f0e8e7ba7a5b2a9c')
+    check(
+      'venue pre-flight: fundedBuysOf reads the funded buy out of the compiled job — chain, the destination stable it spends, the ticker and the dollars — and finds none in a bridge-only job or a job with no funded buy',
+      pfJobBuys.length === 1 && JSON.stringify(pfJobBuys[0]) === JSON.stringify({ chainId: 4663, sellToken: 'USDG', buyToken: 'CRM', amountHuman: '10.00' }) &&
+        (pfLoneFund && 'steps' in pfLoneFund ? fundedBuysOf(pfLoneFund).length : -1) === 0 &&
+        (pfBridgeJob && 'steps' in pfBridgeJob ? fundedBuysOf(pfBridgeJob).length : -1) === 0,
+      JSON.stringify(pfJobBuys),
+    )
+    // Which cascade answers mean "no venue" — and which must NOT.
+    const pfExec = verdictOfSwapResult({ ok: false, blockKind: 'execution', reasons: 'No Uniswap v3 or v4 pool on Robinhood Chain can fill USDG → CRM for this amount.' })
+    const pfPolicy = verdictOfSwapResult({ ok: false, blockKind: 'policy', reasons: 'the daily cap is spent' })
+    const pfOk = verdictOfSwapResult({ ok: true, txChain: { summary: '', steps: [], refresh: { kind: 'uniswap-swap', stepIndex: 0, params: {} } }, buildPath: 'native-swap-uniswap', summary: '', guardrails: { ok: true, checks: [] } })
+    check(
+      'venue pre-flight: only the cascade\'s EXECUTION family (no pool / off tape / no route / no feed) counts as "no venue" — a POLICY block is the caller\'s own spend policy and says nothing about the venue, so it fails open',
+      pfExec.kind === 'no-venue' && pfExec.reason.startsWith('No Uniswap v3 or v4 pool') && pfPolicy.kind === 'unknown' && pfOk.kind === 'fillable',
+      JSON.stringify([pfExec.kind, pfPolicy.kind, pfOk.kind]),
+    )
+    const pfNoPool = await pfRun({ v3: pfVenue('v3', pfThrow(new NoV3PoolError('no v3 pool'))), v4: pfVenue('v4', pfThrow(new NoV4PoolError('no v4 pool'))), lifi: pfVenue('lifi', () => pfV3Built) })
+    const pfFills = await pfRun({ v3: pfVenue('v3', () => pfV3Built), v4: pfVenue('v4', pfThrow(new NoV4PoolError('no v4 pool'))), lifi: pfVenue('lifi', () => pfV3Built) })
+    check(
+      'venue pre-flight: no pool on either Uniswap version → no-venue carrying the cascade\'s own words; a venue that quotes → fillable, and the ladder stops at the first fill (nothing further is asked)',
+      pfNoPool.v.kind === 'no-venue' && pfNoPool.v.reason === 'No Uniswap v3 or v4 pool on Robinhood Chain can fill USDG → CRM for this amount.' &&
+        pfFills.v.kind === 'fillable' && pfFills.calls === 'v3',
+      `${pfNoPool.calls}:${pfNoPool.v.kind} | ${pfFills.calls}:${pfFills.v.kind}`,
+    )
+    // A refusal is the only verdict that stops money, so it is read twice —
+    // "every fee tier threw" is also what a rate-limited 4663 RPC looks like.
+    let pfFlaky = 0
+    const pfFlakyRun = await pfRun({
+      v3: pfVenue('v3', () => {
+        pfFlaky += 1
+        if (pfFlaky === 1) throw new NoV3PoolError('no v3 pool')
+        return pfV3Built
+      }),
+      v4: pfVenue('v4', pfThrow(new NoV4PoolError('no v4 pool'))),
+      lifi: pfVenue('lifi', () => pfV3Built),
+    })
+    check(
+      'venue pre-flight: a refusal is confirmed by a SECOND read before it stops anything — a one-off "no pool" that the re-read contradicts ends `unknown` (fail open), and a real one asks the whole ladder twice',
+      pfFlakyRun.v.kind === 'unknown' && /the re-read did not/.test(pfFlakyRun.v.why) && pfFlakyRun.calls === 'v3,v4,v3' &&
+        pfNoPool.calls === 'v3,v4,v3,v4' && pfFills.calls === 'v3',
+      `flaky=${pfFlakyRun.calls}:${pfFlakyRun.v.kind} | real=${pfNoPool.calls}`,
+    )
+    // FAIL OPEN. A transport error, a tape outage or a hung quote must never
+    // refuse a buy the venues can actually fill.
+    const pfRpc = await pfRun({ v3: pfVenue('v3', pfThrow(new Error('The request took too long to respond.'))), v4: pfVenue('v4', () => pfV3Built), lifi: pfVenue('lifi', () => pfV3Built) })
+    const pfTapeDown = await pfRun({ v3: pfVenue('v3', pfThrow(new TapeUnavailableError(tapeMissMessage('CRM', 'down'), 'CRM', 'down', 'no quote'))), v4: pfVenue('v4', () => pfV3Built), lifi: pfVenue('lifi', () => pfV3Built) })
+    const pfSlowStart = Date.now()
+    const pfSlow = await pfRun({ v3: pfVenue('v3', () => new Promise(() => {})), v4: pfVenue('v4', () => pfV3Built), lifi: pfVenue('lifi', () => pfV3Built) }, 120)
+    const pfSlowMs = Date.now() - pfSlowStart
+    check(
+      'venue pre-flight: fails OPEN — an RPC error, a tape that did not answer and a quote that never returns all come back `unknown` (never `no-venue`), the hung one inside its own timeout, and the default budget clears the measured p95',
+      pfRpc.v.kind === 'unknown' && pfTapeDown.v.kind === 'unknown' && pfSlow.v.kind === 'unknown' && pfSlowMs < 2_000 && VENUE_PREFLIGHT_TIMEOUT_MS >= 3_000,
+      `rpc=${pfRpc.v.kind} tape=${pfTapeDown.v.kind} slow=${pfSlow.v.kind} in ${pfSlowMs}ms`,
+    )
+    const pfCopy = unfillableBuyCopy(pfBuy, 'No Uniswap v3 or v4 pool on Robinhood Chain can fill USDG → CRM for this amount.')
+    const pfCopyTail = unfillableBuyCopy(pfBuy, "Robinhood's market data has no price for CASHCAT, so there's nothing to check against. Nothing was built.")
+    check(
+      'venue pre-flight: the refusal says there is nothing to FUND (not just nothing to build), names the pair and the chain, carries the cascade\'s own reason, and says "Nothing was built" exactly once even when the reason already ended with it',
+      /^Robinhood Chain has no venue that can fill USDG → CRM right now, so there's nothing to fund/.test(pfCopy) &&
+        /it would just leave it sitting on Robinhood Chain/.test(pfCopy) && pfCopy.includes('No Uniswap v3 or v4 pool') && /Nothing was built and nothing moved\.$/.test(pfCopy) &&
+        (pfCopyTail.match(/Nothing was built/g) ?? []).length === 1 && /Nothing was built and nothing moved\.$/.test(pfCopyTail),
+      pfCopyTail,
+    )
+    // ── LIVE (the running route): the same wallet, two tickers. Skipped
+    // when there is no burner key around, since both halves need a wallet
+    // the funding scan can actually see money on.
+    {
+      const pfFs = await import('node:fs')
+      const pfPk = (() => {
+        try {
+          return pfFs.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+        } catch {
+          return null
+        }
+      })()
+      if (pfPk) {
+        const pfWallet = privateKeyToAccount((pfPk.startsWith('0x') ? pfPk : `0x${pfPk}`) as `0x${string}`).address
+        type PfTurn = { reply?: string; buildPath?: string; jobId?: string; clarify?: { options: { label: string; resume: string }[] } }
+        const pfAsk = async (message: string) =>
+          (await fetch(`${BASE}/api/chat`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' },
+            body: JSON.stringify({ message, walletAddress: pfWallet, activeServers: [{ slug: 'uniswap' }], history: [] }),
+          }).then((r) => r.json())) as PfTurn
+        const pfChips = (t: PfTurn) => (t.clarify?.options ?? []).filter((o) => !/never mind/i.test(o.resume)).map((o) => o.resume)
+        // The OFFER: an unfillable listing is refused where a fillable one
+        // is funded, from the same wallet in the same breath.
+        const offerBad = await pfAsk('Buy $10 of CRM on robinhood chain')
+        const offerGood = await pfAsk('Buy $10 of AAPL on robinhood chain')
+        check(
+          'venue pre-flight (route): an unfundable buy is refused BEFORE the offer — "Buy $10 of CRM on robinhood chain" gets the named no-venue refusal with NO chips and NO job, while the same wallet asking for AAPL still gets its funding chips (each one compiling fund → wait → buy)',
+          /no venue that can fill USDG → CRM/.test(offerBad.reply ?? '') && /Nothing was built and nothing moved\./.test(offerBad.reply ?? '') && pfChips(offerBad).length === 0 && !offerBad.jobId &&
+            pfChips(offerGood).length >= 1 && pfChips(offerGood).every((r) => /^Fund robinhood chain with \$[\d.]+ from \w+(?: including gas)?, then buy \$10 of AAPL$/.test(r) && compileShapeRh(r) === 'sign:native-lifi-fund,wait:wait,sign:native-lifi-swap'),
+          JSON.stringify({ bad: (offerBad.reply ?? '').slice(0, 160), badChips: pfChips(offerBad), goodChips: pfChips(offerGood) }),
+        )
+        // The JOB: a TYPED compound ask never passes the offer, so the
+        // compiler's own door has to hold it. Nothing is signed either way.
+        const jobBad = await pfAsk('Fund robinhood chain with $12 from base including gas, then buy $10 of CRM')
+        check(
+          'venue pre-flight (route): the typed compound ask — the one that skips the offer entirely — is refused at the jobs door with no job row created, so the two bridge legs never get a signature to strand',
+          /no venue that can fill USDG → CRM/.test(jobBad.reply ?? '') && !jobBad.jobId && jobBad.buildPath === 'native-job',
+          JSON.stringify({ buildPath: jobBad.buildPath, jobId: jobBad.jobId ?? null, reply: (jobBad.reply ?? '').slice(0, 160) }),
+        )
+      }
+    }
+
+    // Every door that turns a compiled funding job into real money runs it.
+    const pfChatSrc = await readFile('app/api/chat/route.ts', 'utf8')
+    const pfJobsSrc = await readFile('app/api/jobs/route.ts', 'utf8')
+    const pfBrokerSrc = await readFile('lib/broker-exec.ts', 'utf8')
+    const pfOfferIdx = pfChatSrc.indexOf('const fillCheck = acquiring')
+    const pfScanIdx = pfChatSrc.indexOf('const shortfall = await readFundingShortfall(walletAddress, lifiDest.chainId)')
+    const pfRefuseIdx = pfChatSrc.indexOf("if (fill?.kind === 'no-venue')")
+    const pfAdviceIdx = pfChatSrc.indexOf('const advice = planRobinhoodFundingAdvice({')
+    check(
+      'venue pre-flight (wiring): the chat offer STARTS the check before awaiting the balance scan (concurrent — no extra wall-clock) and refuses ABOVE planRobinhoodFundingAdvice, so no advice branch — chips, gas-stranded, ETH move, downsize or the honest refusal — can offer to move money onto a chain that cannot complete the buy',
+      pfOfferIdx > 0 && pfScanIdx > pfOfferIdx && pfRefuseIdx > pfScanIdx && pfAdviceIdx > pfRefuseIdx,
+      JSON.stringify({ pfOfferIdx, pfScanIdx, pfRefuseIdx, pfAdviceIdx }),
+    )
+    // EVERY createJob of a compiled ask, not just the first one in the file:
+    // a new door added without the guard fails this, which is the point.
+    const pfGated = (src: string) => {
+      const creates = [...src.matchAll(/await createJob\(/g)].map((m) => m.index)
+      const guards = [...src.matchAll(/unfillableFundedBuyReason\(/g)].map((m) => m.index)
+      return creates.length > 0 && creates.every((c) => guards.some((g) => g < c && c - g < 2_500))
+    }
+    const pfDoors = { chat: pfGated(pfChatSrc), api: pfGated(pfJobsSrc), broker: pfGated(pfBrokerSrc) }
+    check(
+      'venue pre-flight (wiring): EVERY door that turns a compiled ask into a job runs the guard just above its createJob — both chat doors (the jobs gate and the HL auto-funded one), the agent-facing jobs API (whose dry run reports it too, so a plan that validates clean cannot then 400) and the broker desk',
+      pfDoors.chat && pfDoors.api && pfDoors.broker && pfJobsSrc.includes('if (unfillable) return NextResponse.json({ error: unfillable }, { status: 400 })'),
+      JSON.stringify(pfDoors),
+    )
+
     // A LONE funding segment compiles (the MCP-fallback's bridge-only chips
     // carry no follow-up) — but a lone anything-else still returns null.
     const lone = compileJobAsk('Fund robinhood chain with $7 from ethereum including gas')
@@ -22857,6 +23777,89 @@ async function main() {
         heldPosition(undefined, { last: 1 }) === null && heldPosition({ ...ethHeld, amount: 0 }, { last: 2520.6 }) === null,
       JSON.stringify(aaplUnpriced))
 
+    // 1c. Memory first, then a background check (Nate, 2026-09-18: "since the
+    // watchlist was loaded first time, I have since bought more tokens… first
+    // load from memory, but background check for more tokens owned"). The rail
+    // paints the positions this browser remembers while its own read is in
+    // flight, and the minute poll reconciles as well as reprices — but only
+    // when the read turns something up, so an open page writes nothing all day.
+    const { heldReconcileReason, parseHeldSnapshots, readHeldSnapshot, writeHeldSnapshot, HELD_SNAPSHOT_KEY, HELD_SNAPSHOT_MAX_AGE_MS, HELD_SNAPSHOT_WALLETS } = await import('../lib/watchlists')
+    const reasonOf = (held: string[], reconciled: string[] | null, forced?: boolean) => heldReconcileReason({ held, reconciled, forced })
+    check('watch background: the first read of a wallet reconciles; a later read with the SAME symbols does not (the poll is a check, not a sync); the token bought since does',
+      reasonOf(['ETH', 'AAPL'], null) === 'first' && reasonOf(['ETH', 'AAPL'], ['ETH', 'AAPL']) === null && reasonOf(['ETH', 'AAPL', 'UNI'], ['ETH', 'AAPL']) === 'new',
+      [reasonOf(['ETH'], null), reasonOf(['ETH'], ['ETH']), reasonOf(['ETH', 'UNI'], ['ETH'])].join(','))
+    check('watch background: a holding that LEAVES the wallet writes nothing (the ledger only ever learns what is held), an empty wallet reconciles once, and a landed card purchase forces a run with nothing new in it',
+      reasonOf(['ETH'], ['ETH', 'AAPL']) === null && reasonOf([], null) === 'first' && reasonOf([], []) === null && reasonOf(['ETH'], ['ETH'], true) === 'forced')
+
+    // The memory itself: strict in, bounded out.
+    const snapRow = { symbol: 'eth', valueUsd: 1.05, amount: 0.0004, chains: ['Base'], chainIds: [8453] }
+    const parsedSnaps = parseHeldSnapshots(JSON.stringify({
+      '0x00000000000000000000000000000000000000ab': { at: 1_700_000_000_000, held: [snapRow, { symbol: 'AAPL', valueUsd: null, amount: 0, chains: [], chainIds: [] }, { nope: true }, 'junk'] },
+      'not-an-address': { at: 1, held: [] },
+      '0x00000000000000000000000000000000000000cd': { held: [] },
+    }))
+    check('watch memory: strict — a corrupt key reads as no memory, a non-address or clockless entry drops, and a row without a symbol and a positive amount is not a position',
+      parseHeldSnapshots('nope') && Object.keys(parseHeldSnapshots('nope')).length === 0 && Object.keys(parseHeldSnapshots(JSON.stringify([1, 2]))).length === 0 &&
+        Object.keys(parsedSnaps).join() === '0x00000000000000000000000000000000000000ab' &&
+        parsedSnaps['0x00000000000000000000000000000000000000ab'].held.length === 1 && parsedSnaps['0x00000000000000000000000000000000000000ab'].held[0].symbol === 'ETH',
+      JSON.stringify(parsedSnaps))
+    {
+      // The browser half, against a localStorage stand-in (no awaits inside).
+      const store = new Map<string, string>()
+      const g = globalThis as { window?: unknown }
+      const hadWindow = 'window' in g
+      g.window = { localStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) } }
+      const A = '0x00000000000000000000000000000000000000aa'
+      const B = '0x00000000000000000000000000000000000000bb'
+      const now = 1_800_000_000_000
+      writeHeldSnapshot(A, [{ symbol: 'ETH', valueUsd: 1.05, amount: 0.0004, chains: ['Base'], chainIds: [8453] }], now)
+      const back = readHeldSnapshot(A, now + 5_000)
+      const otherWallet = readHeldSnapshot(B, now + 5_000)
+      const stale = readHeldSnapshot(A, now + HELD_SNAPSHOT_MAX_AGE_MS + 1)
+      const upper = readHeldSnapshot(A.toUpperCase().replace('0X', '0x'), now + 5_000)
+      for (let i = 0; i < HELD_SNAPSHOT_WALLETS + 2; i++) writeHeldSnapshot(`0x${String(i).padStart(40, '0')}`, [{ symbol: 'UNI', valueUsd: 2, amount: 1, chains: ['Base'], chainIds: [8453] }], now + 1_000 + i)
+      const kept = Object.keys(parseHeldSnapshots(store.get(HELD_SNAPSHOT_KEY) ?? null))
+      const evicted = readHeldSnapshot('0x0000000000000000000000000000000000000000', now + 2_000)
+      if (hadWindow) g.window = undefined
+      delete g.window
+      check('watch memory: what a read found comes back for that wallet (any case), never for another; older than a day is not painted; only the newest few wallets are kept',
+        back?.length === 1 && back[0].symbol === 'ETH' && back[0].amount === 0.0004 && upper?.length === 1 && otherWallet === null && stale === null &&
+          kept.length === HELD_SNAPSHOT_WALLETS && evicted === null,
+        JSON.stringify({ back, kept: kept.length }))
+    }
+
+    // The wiring: memory paints, a live read arms. A Sell chip reads
+    // lib/use-held → lib/held-read, which must never answer from the snapshot.
+    const heldReadSrc = await readFile('lib/held-read.ts', 'utf8')
+    const useHeldSrc = await readFile('lib/use-held.ts', 'utf8')
+    const wlHookSrc = await readFile('components/markets/watchlist/useWatchlists.ts', 'utf8')
+    check('watch memory: every read that answers is remembered (one write site, in the shared read), and nothing that ARMS a chip reads that memory back — peekHeld and lib/use-held stay live-only',
+      /writeHeldSnapshot\(address, v\.held\)/.test(heldReadSrc) && !/readHeldSnapshot/.test(heldReadSrc) && !/HeldSnapshot/.test(useHeldSrc) &&
+        /return lastRead\.get\(address\) \?\? null/.test(heldReadSrc))
+    check('watch background: the rail’s minute poll runs the SAME reconcile as the visit (not a numbers-only refresh), gated by heldReconcileReason; the wallet’s remembered positions fill in until its own read lands',
+      /const readAndReconcile = useCallback\(/.test(wlHookSrc) &&
+        /heldReconcileReason\(\{ held: symbols, reconciled: reconciledHeld\.get\(key\) \?\? null, forced: fresh \}\)/.test(wlHookSrc) &&
+        /void readAndReconcile\(\{ maxAgeMs: HELD_EVERY_MS \/ 2, alive: \(\) => alive \}\)/.test(wlHookSrc) &&
+        /const held = holder && heldRead\?\.holder === holder \? heldRead\.held : remembered/.test(wlHookSrc) &&
+        /const snap = readHeldSnapshot\(holder\)/.test(wlHookSrc))
+
+    // One page, two instances of this hook (the rail and the Morning tape
+    // beside it). Only the rail reads the wallet, and a fill is announced —
+    // or the instance that didn't do it keeps showing the list as it was:
+    // found 2026-09-18 with the rail saying "Nothing watched yet." while the
+    // tape beside it already read "2 SYMBOLS" off the same fill.
+    const tapeHookSrc = await readFile('components/markets/ai/MorningTape.tsx', 'utf8')
+    check('watch background: the page has ONE holdings reader — the Morning tape takes the lists with holdings off, so no wallet is read (or reconciled) twice on one page',
+      /useWatchlists\(\{ holdings: false \}\)/.test(tapeHookSrc) &&
+        /const readsHoldings = opts\.holdings !== false/.test(wlHookSrc) &&
+        /const holder = !readsHoldings \|\| status === 'loading' \? null/.test(wlHookSrc))
+    check('watch background: a fill reaches the OTHER instance on the page and never announces back to itself — the rail shows what the autofill added, and nobody toasts it twice',
+      /announceHeldFill\(\{ modeKey: listsKey, mode: 'authed', list, added: r\.added, listName: list\.name \}, selfListener\.current\)/.test(wlHookSrc) &&
+        /announceHeldFill\(\{ modeKey: listsKey, mode: 'guest', list: null, added: plan\.add, listName \}, selfListener\.current\)/.test(wlHookSrc) &&
+        /for \(const fn of \[\.\.\.fillListeners\]\) if \(fn !== from\) fn\(fill\)/.test(wlHookSrc) &&
+        /if \(f\.mode === 'guest'\) update\(\(\) => readGuestLists\(\)\)/.test(wlHookSrc) &&
+        /if \(!modeKey \|\| f\.modeKey !== modeKey \|\| !f\.added\.length\) return/.test(wlHookSrc))
+
     // 2. The guest ledger (browser-scoped, like guest lists).
     const led = parseHeldLedger(JSON.stringify({ seen: ['weth', 'AAPL', 7], auto: ['ETH'], pending: ['NVDA'] }))
     check('holdings ledger (guest): strict — a corrupt key reads empty, symbols normalize, non-strings drop', parseHeldLedger('nope').seen.length === 0 && parseHeldLedger('[1,2]').seen.length === 0 && led.seen.join() === 'ETH,AAPL' && led.auto.join() === 'ETH' && led.pending.join() === 'NVDA')
@@ -22966,13 +23969,16 @@ async function main() {
     check('holdings rail: the hook reads /api/watchlists/holdings, plans with planHeldAutofill, hands the guest ledger over on sign-in, and routes every guest write through updateGuest (the stale-closure fix: no persistGuest, no [...lists, …])',
       hookSrc.includes('/api/watchlists/holdings') && hookSrc.includes('planHeldAutofill(') && hookSrc.includes('guestHeldAdoption(') && hookSrc.includes('updateGuest(') && !hookSrc.includes('persistGuest(') && !/\[\.\.\.lists,/.test(hookSrc))
     check('holdings rail: rows the wallet holds wear the "In your wallet" marker and the autofill says what it added', railSrc.includes('data-held') && railSrc.includes('heldTitle(') && railSrc.includes('heldAutofillNote('))
-    const pollAt = hookSrc.indexOf('readHeld(holder, HELD_EVERY_MS / 2)')
-    const pollBlock = pollAt < 0 ? '' : hookSrc.slice(hookSrc.lastIndexOf('useEffect(', pollAt), hookSrc.indexOf('}, [ready, holder])', pollAt))
-    check('watch position: a held row renders heldPosition beside its price (before the quote cell, the amount’s ticker in its own span to give way on a narrow rail), every price cell is as wide as the list’s widest price, the marker quotes the same value, and the hook re-reads holdings on a visible-tab clock that never reconciles (no POST, no autofill plan)',
+    // The poll used to reprice only; since 2026-09-18 it runs the SAME
+    // reconcile as the visit (re-pinned on purpose — the whole point is that a
+    // token bought after the page loaded joins the list without a navigation).
+    const pollAt = hookSrc.indexOf('readAndReconcile({ maxAgeMs: HELD_EVERY_MS / 2')
+    const pollBlock = pollAt < 0 ? '' : hookSrc.slice(hookSrc.lastIndexOf('useEffect(', pollAt), hookSrc.indexOf('}, [ready, holder, readAndReconcile])', pollAt))
+    check('watch position: a held row renders heldPosition beside its price (before the quote cell, the amount’s ticker in its own span to give way on a narrow rail), every price cell is as wide as the list’s widest price, the marker quotes the same value, and the hook re-reads holdings on a visible-tab clock — the background check, reconcile included',
       railSrc.includes('heldPosition(inWallet, q)') && railSrc.includes('data-position') && railSrc.indexOf('data-position') < railSrc.indexOf('className="wl__rowQuote mono"') &&
         railSrc.includes('wl__rowPosUnit') && railSrc.includes("'--wl-last-ch'") && railSrc.includes('style={priceCell}') &&
         railSrc.includes('valueUsd: pos?.valueUsd ?? inWallet.valueUsd') &&
-        pollBlock.includes('setInterval(') && pollBlock.includes('visibilitychange') && !pollBlock.includes("'POST'") && !pollBlock.includes('planHeldAutofill('),
+        pollBlock.includes('setInterval(') && pollBlock.includes('visibilitychange') && pollBlock.includes('document.hidden'),
       pollBlock ? `poll block ${pollBlock.length} chars` : 'no poll block')
 
     // 8. The rail brews while it waits (2026-09-14, Nate: "a loader icon
@@ -23098,8 +24104,8 @@ async function main() {
       chipFundSrc.includes('o.fund && o.resume === w.resume') && panelFundSrc.includes('wait.resume ?') && panelFundSrc.includes("wait.asset ?? 'card purchase'"))
     check('card door: the rail mounts the door at the end of its rows with the holdings read’s verdict (never while it brews), and a landing re-reads the wallet past both caches (fresh=1, reconcile inside the minute) so the purchase fills the list',
       railFundSrc.includes('<FundWallet') && railFundSrc.includes('empty={wl.walletEmpty && !brew}') && railFundSrc.includes('onLanded={wl.recheckWallet}') &&
-        heldReadFundSrc.includes("'&fresh=1'") && hookFundSrc.includes('readHeld(holder, HELD_EVERY_MS, fresh)') && hookFundSrc.includes("from '@/lib/held-read'") &&
-        hookFundSrc.includes('lastReconciled.delete(key)') && hookFundSrc.includes('setWalletRead('))
+        heldReadFundSrc.includes("'&fresh=1'") && hookFundSrc.includes('readHeld(holder, opts.maxAgeMs ?? HELD_EVERY_MS, fresh)') && hookFundSrc.includes("from '@/lib/held-read'") &&
+        hookFundSrc.includes('forced: fresh') && hookFundSrc.includes('setWalletRead('))
     const fundHtml = flat(await (await fetch(`${BASE}/markets`)).text())
     check('card door: /markets never server-renders the door (no wallet is known before hydration)', fundHtml.includes('class="wl__rows"') && !fundHtml.includes('data-rail-fund'))
   }
@@ -25043,6 +26049,54 @@ async function main() {
     const askSrc = await readFile('components/markets/ai/AskChart.tsx', 'utf8')
     check('ai components: AiBrief streams /api/markets/brief, chips call onAsk on click, the position call is address-keyed and separate, and the footer wears the tape footnote + byline', briefSrc.includes("fetch('/api/markets/brief'") && briefSrc.includes('onClick={() => onAsk(c.ask)}') && briefSrc.includes("part: 'position', address: walletAddress") && briefSrc.includes('TAPE_FOOTNOTE') && briefSrc.includes('Written by a model from our own tape'))
     check('ai components: AskChart never auto-sends an act (the chip is a button → onAsk), applies chart answers through onChartState, posts the alert rule to /api/alerts, and signed-out alerts open the unified door', askSrc.includes('onClick={() => onAsk(reply.chip.ask)}') && !askSrc.includes('onAsk(j.chip') && askSrc.includes("if (j.kind === 'chart') onChartState?.(j.state)") && askSrc.includes("fetch('/api/alerts'") && askSrc.includes('<CreateAccountButton className="mk-ai__cta" label="Sign in to set alerts"'))
+    // ── the suggestion row (2026-09-18) ──────────────────────────────────
+    // A suggestion that carries a complete ask SENDS on one tap, like every
+    // other complete-ask button on the page (memory chip-send-contract). It
+    // used to go through the ask route, which spent a round trip re-deriving
+    // what the grammar already knew and then rendered a SECOND button with
+    // the same words — the first tap read dead. So: every `act` entry is
+    // ladder-valid (the route's own fence + ladder, via chipOk), every
+    // `question` entry is NOT an act (it belongs to this lane), and the
+    // component wires the two differently.
+    {
+      const { askChartSuggestions, SUGGESTED_ACT_USD } = await import('../lib/markets-ai-suggestions')
+      const suggestPairs = ['ETH', 'BTC', 'LINK', 'UNI', 'AAPL', 'TSLA', 'AMAT', 'HYPE', 'FARTCOIN', 'SOL', 'XRP', 'DOGE']
+        .map((s) => chartPairFor(s))
+        .filter((p): p is NonNullable<typeof p> => !!p)
+      const suggRows = suggestPairs.map((p) => ({ pair: p, sugg: askChartSuggestions(p.symbol, p) }))
+      const actRows = suggRows.flatMap((r) => r.sugg.filter((s) => s.kind === 'act').map((s) => ({ symbol: r.pair.symbol, ask: (s as { ask: string }).ask, label: (s as { label: string }).label })))
+      const deadActs = actRows.filter((a) => !chipOk(a.ask, a.symbol))
+      check(
+        `ai suggestions: EVERY act suggestion is a complete ask the ladder builds natively (${actRows.length} across ${suggRows.length} pairs) — the same fence + ladder the route runs before it shows an act chip`,
+        suggRows.length >= 12 && actRows.length === suggRows.length && deadActs.length === 0,
+        deadActs.length ? deadActs.map((a) => `${a.ask} → ${aiLadderVerdict(a.ask).ok ? 'fence' : (aiLadderVerdict(a.ask) as { why: string }).why}`).join(' | ') : actRows.map((a) => a.ask).join(' | '),
+      )
+      check(
+        'ai suggestions: a coin whose home is not an EVM chain is offered the perp it can have, not a spot buy that only clarifies (SOL/XRP/DOGE — the blind-template class the arrival squad hit)',
+        ['SOL', 'XRP', 'DOGE'].every((s) => {
+          const row = actRows.find((a) => a.symbol === s)
+          return !!row && row.ask === `Long $${SUGGESTED_ACT_USD} of ${s} on Hyperliquid` && simulateLadder(`Buy $${SUGGESTED_ACT_USD} of ${s}`).kind !== 'action'
+        }),
+        actRows.filter((a) => ['SOL', 'XRP', 'DOGE'].includes(a.symbol)).map((a) => a.ask).join(' | '),
+      )
+      check(
+        'ai suggestions: the three question entries stay questions (they answer in this lane, never sent as asks) and a stock still leads with Buy',
+        suggRows.every((r) => r.sugg.filter((s) => s.kind === 'question').length === 3) &&
+          suggRows.every((r) => r.sugg.filter((s) => s.kind === 'question').every((s) => !chipOk((s as { q: string }).q, r.pair.symbol))) &&
+          actRows.find((a) => a.symbol === 'AAPL')?.ask === `Buy $${SUGGESTED_ACT_USD} of AAPL`,
+      )
+      const suggCss = await readFile('components/markets/ai.css', 'utf8')
+      check(
+        'ai suggestions: the act chip SENDS on one tap through onAsk (a `?prompt=` link is only the no-JS fallback — a URL never fires a turn), question chips still submit to the route, and the act chip is styled apart from them',
+        askSrc.includes("s.kind === 'act' ?") &&
+          askSrc.includes('onClick={sendOnClick(s.ask)}') &&
+          askSrc.includes('href={promptHref(s.ask)}') &&
+          askSrc.includes('className="mk-ai__sugg-chip mk-ai__sugg-chip--act"') &&
+          askSrc.includes('onClick={() => void submit(s.q)}') &&
+          /A CHIP SENDS · YOUR WALLET SIGNS/.test(askSrc) &&
+          suggCss.includes('.mk-ai__sugg-chip--act {'),
+      )
+    }
   }
 
   // ── ARRIVAL/CORE ──────────────────────────────────────────────────────────
@@ -26138,6 +27192,79 @@ async function main() {
       robinhoodUp ? `robinhood feeds: ${rhBelow} below the cap, ${rhAbove} above` : 'robinhood feed down for a 2-symbol read — chunking unproven this run',
     )
 
+    // ── Quotes: the tape's own window. `5minute&span=day` is the trailing 24
+    // hours, and the 24-hour market prints 08:00Z–23:59Z on WEEKDAYS only, so
+    // that window holds nothing from Saturday ~23:55Z until Monday 08:00Z —
+    // about 32 hours every week, 56 around a Monday holiday. Measured 2026-09-21 07:50Z: all 102 stocks in a scan
+    // were served by Yahoo, whose `last` is Friday's REGULAR close (a
+    // different number from the 24/7 tape the 4663 tokens track), 59 hours
+    // old and read as current — STOCK_TAPE_MAX_AGE_MS is 96h.
+    check(
+      'quotes: the wide retry window is hourly-over-a-week — NOT interval=day (whose close is the regular-session close even under bounds=24_7, i.e. the very number Yahoo serves) and not 5minute (26.8 MiB for a 75-symbol batch vs 2.26 MiB)',
+      RH_NEAR_WINDOW.interval === '5minute' && RH_NEAR_WINDOW.span === 'day' && RH_WIDE_WINDOW.interval === 'hour' && RH_WIDE_WINDOW.span === 'week',
+      `${RH_NEAR_WINDOW.interval}/${RH_NEAR_WINDOW.span} → ${RH_WIDE_WINDOW.interval}/${RH_WIDE_WINDOW.span}`,
+    )
+    const quietIn = (reads: [string, RhRead][], asked: string[]) => quietSymbols(new Map(reads), asked)
+    check(
+      'quotes: only the symbols the near window has no print for go to the retry — a row with a previous close but zero non-interpolated bars is quiet, a row with a print is not, an unanswered symbol is, and the asked order and case are kept',
+      quietIn([['AAPL', { prev: 336.13 }], ['TSLA', { prev: 364.27, last: { price: 369.25, asOf: 1 } }], ['FIX', { prev: 1651.37 }]], ['aapl', 'TSLA', 'FIX', 'ZZZZ']).join() === 'aapl,FIX,ZZZZ' &&
+        quietIn([['AAPL', { prev: 1, last: { price: 2, asOf: 3 } }]], ['AAPL']).length === 0 &&
+        quietIn([], ['AAPL']).join() === 'AAPL',
+      quietIn([['AAPL', { prev: 336.13 }], ['TSLA', { prev: 364.27, last: { price: 369.25, asOf: 1 } }], ['FIX', { prev: 1651.37 }]], ['aapl', 'TSLA', 'FIX', 'ZZZZ']).join(),
+    )
+
+    // Live: read the wide window ourselves, then assert the served quotes
+    // cover exactly what it can see. Discriminates at ANY hour — outside the
+    // trading day every listed stock is recovered by it, and inside one the
+    // thin names are (2026-09-21 08:30Z, mid-session: 7 of 75 recovered, and
+    // main served those 7 from Yahoo — FIX 1651.37 vs the tape's 1640.00).
+    const rhWindow = async (syms: string[], w: { interval: string; span: string }) => {
+      const res = await fetch(`https://api.robinhood.com/marketdata/historicals/?symbols=${syms.join(',')}&interval=${w.interval}&span=${w.span}&bounds=24_7`, {
+        headers: { 'user-agent': 'Mozilla/5.0 (compatible; Pantessa/1.0; +https://www.pantessa.com)', accept: 'application/json' },
+      })
+      const out = new Map<string, { px: number; at: number }>()
+      if (!res.ok) return out
+      const body = (await res.json()) as { results?: { symbol?: string; historicals?: { close_price?: string; interpolated?: boolean; begins_at?: string }[] }[] }
+      for (const r of body.results ?? []) {
+        const real = (r.historicals ?? []).filter((h) => !h.interpolated && Number(h.close_price) > 0)
+        const last = real[real.length - 1]
+        if (r.symbol && last?.begins_at) out.set(r.symbol.toUpperCase(), { px: Number(last.close_price), at: Date.parse(last.begins_at) })
+      }
+      return out
+    }
+    const tapeSet = tapeTickers.slice(0, ROBINHOOD_BATCH_MAX)
+    const [tapeNear, tapeWide, tapeServed] = await Promise.all([rhWindow(tapeSet, RH_NEAR_WINDOW), rhWindow(tapeSet, RH_WIDE_WINDOW), feedsOf(tapeSet)])
+    const servedQ = tapeServed as unknown as Record<string, { feed: string; last: number; asOf: number } | undefined>
+    const recovered = tapeSet.filter((t) => tapeWide.has(t) && !tapeNear.has(t))
+    const wideCovered = tapeSet.filter((t) => tapeWide.has(t))
+    const offTape = wideCovered.filter((t) => servedQ[t]?.feed !== 'robinhood')
+    const tooOld = wideCovered.filter((t) => (servedQ[t]?.asOf ?? 0) < (tapeWide.get(t)?.at ?? 0))
+    check(
+      `tape parity (quotes): every stock the 24/7 tape has a print for is served from the tape, whatever the hour — the trailing-24h window holds nothing from Saturday ~23:55Z until Monday 08:00Z, about 32 hours every week, and a stock quiet in it used to fall to Yahoo's regular-session close`,
+      tapeWide.size === 0 || (offTape.length === 0 && tooOld.length === 0),
+      tapeWide.size === 0
+        ? 'robinhood historicals down for the wide window — recovery unproven this run'
+        : `${wideCovered.length}/${tapeSet.length} on the tape, ${recovered.length} of them quiet in the near window (${recovered.slice(0, 8).join(' ') || 'none — a busy session'})${offTape.length ? `; off tape: ${offTape.slice(0, 6).map((t) => `${t}=${servedQ[t]?.feed ?? 'missing'}`).join(' ')}` : ''}${tooOld.length ? `; stale asOf: ${tooOld.slice(0, 6).join(' ')}` : ''}`,
+    )
+    // The brief's ask, stated as a fact about the two feeds rather than a
+    // clock reading: wherever the tape printed after Yahoo's session close,
+    // the served quote is the tape's later print, not Yahoo's.
+    const yahooCmp = await Promise.all(
+      (recovered.length ? recovered : wideCovered).slice(0, 4).map(async (t) => {
+        const pair = chartPairFor(t)
+        const y = pair ? await fetchYahooQuote(pair).catch(() => null) : null
+        return { t, y, wide: tapeWide.get(t), served: servedQ[t] }
+      }),
+    )
+    const laterThanYahoo = yahooCmp.filter((r) => r.y && r.wide && r.wide.at > r.y.asOf)
+    check(
+      'tape parity (quotes): where the 24/7 tape kept printing after the regular close, the served asOf is the tape\'s print, later than the Yahoo fallback\'s — the two feeds are different prices, not two reads of one',
+      laterThanYahoo.every((r) => r.served?.feed === 'robinhood' && (r.served?.asOf ?? 0) >= (r.wide?.at ?? 0) && (r.served?.asOf ?? 0) > (r.y?.asOf ?? 0)),
+      laterThanYahoo.length === 0
+        ? `no symbol in the sample has a tape print after Yahoo's (${yahooCmp.map((r) => `${r.t} tape=${r.wide ? new Date(r.wide.at).toISOString().slice(5, 16) : '—'} yahoo=${r.y ? new Date(r.y.asOf).toISOString().slice(5, 16) : 'down'}`).join(' ')}) — in-session, or a feed is down`
+        : laterThanYahoo.map((r) => `${r.t} served=${r.served?.feed}@${new Date(r.served?.asOf ?? 0).toISOString().slice(5, 16)} tape=${r.wide!.px}@${new Date(r.wide!.at).toISOString().slice(5, 16)} yahoo=${r.y!.last}@${new Date(r.y!.asOf).toISOString().slice(5, 16)}`).join('  '),
+    )
+
     // ── The routes API compares a stock row with the REAL tape.
     for (const sym of ['AMAT', 'AAPL']) {
       const q = ((await (await fetch(`${BASE}/api/quotes?symbols=${sym}`)).json()) as { quotes: Record<string, { last: number }> }).quotes[sym]
@@ -26796,6 +27923,202 @@ async function main() {
     )
   }
 
+  // ── A job step signed in the Jobs rail moves the money metric (2026-09-18) ─
+  // components/JobDetailOverlay mounted `<JobCard onStepSigned={() => void
+  // loadContext()} />` — it took the signal and threw it away, so a step
+  // signed from the rail's detail card recorded NOTHING: no embed_turns row,
+  // no money moved, no creator earnings, nothing on /activity. Only a step
+  // signed in the chat thread reported. lib/job-step-telemetry now owns the
+  // wire for BOTH lanes plus the double-count fence between them.
+  {
+    const [cardSrc, overlaySrc, chatSrc, teleSrc] = await Promise.all([
+      readFile('components/JobCard.tsx', 'utf8'),
+      readFile('components/JobDetailOverlay.tsx', 'utf8'),
+      readFile('components/ChatInterface.tsx', 'utf8'),
+      readFile('lib/job-step-telemetry.ts', 'utf8'),
+    ])
+
+    // The fence that keeps this fixed: EVERY JobCard mount reports. A mount
+    // whose handler never reaches lib/job-step-telemetry is the bug itself.
+    const mountsIn = (src: string) => [...src.matchAll(/<JobCard[\s\S]{0,2500}?\/>/g)].map((m) => m[0])
+    const mounts = [...mountsIn(chatSrc), ...mountsIn(overlaySrc)]
+    // Every JobCard in the repo is one of these two files — a third mount that
+    // forgets to report is the bug this PR fixes, so the count is pinned too.
+    const walkTsx = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? walkTsx(`${dir}/${d.name}`) : /\.tsx$/.test(d.name) ? [`${dir}/${d.name}`] : []))
+    const jobCardFiles = [...walkTsx('components'), ...walkTsx('app')].filter((f) => /<JobCard[\s>]/.test(readFileSync(f, 'utf8')))
+    const reportsFromLib = (m: string) => /onStepSigned/.test(m) && /jobStepSignedInfo|postJobStepSigned|onStepSigned=\{onStepSigned\}/.test(m)
+    check(
+      'job-step beacon: every JobCard mount in the app reports through lib/job-step-telemetry — no mount may swallow the signal (the rail overlay did)',
+      mounts.length === 3 && mounts.every(reportsFromLib) && !/onStepSigned=\{\(\) =>/.test(overlaySrc) &&
+        jobCardFiles.length === 2 && jobCardFiles.every((f) => /ChatInterface|JobDetailOverlay/.test(f)),
+      `${mounts.length} mounts in ${jobCardFiles.length} files, ${mounts.filter((m) => !reportsFromLib(m)).length} silent`,
+    )
+    check(
+      'job-step beacon: the overlay owns a real reporter (postJobStepSigned with the connected wallet) and still refreshes the position block',
+      /import \{ postJobStepSigned, type JobStepSignal \} from '@\/lib\/job-step-telemetry'/.test(overlaySrc) &&
+        /postJobStepSigned\(info, \{ walletAddress: address \}\)/.test(overlaySrc) &&
+        /const \{ address \} = useAccount\(\)/.test(overlaySrc) &&
+        /void loadContext\(\)/.test(overlaySrc),
+    )
+    check(
+      'job-step beacon: the chat lane stopped spelling the fields inline — it maps through the shared jobStepSignedInfo and claims the fence first',
+      /if \(!claimJobStepReport\(info\)\) return/.test(chatSrc) &&
+        /reportEmbedSigned\(jobStepSignedInfo\(info\)\)/.test(chatSrc) &&
+        !/artifact: 'job-step',\s*\n\s*chain: 'multi'/.test(chatSrc),
+    )
+    // The overlay is first-party BY CONSTRUCTION (it never mounts in an embed
+    // or on /i) — which is why its reporter may hard-code the first-party lane
+    // and why the shared fence can never swallow a host page's `turn` event:
+    // no onEmbedEvent listener exists where the overlay lives.
+    check(
+      'job-step beacon: the overlay only mounts first-party (!embedded && !simple), so its keyless lane is always the right one and no host-page listener can be fenced out',
+      /\{!embedded && !simple && <JobDetailOverlay \/>\}/.test(chatSrc) &&
+        !/onEmbedEvent/.test(overlaySrc) &&
+        /firstParty: true/.test(teleSrc),
+    )
+
+    // JobCard hands back everything the beacon needs — including the receipt
+    // (chain + explorer URL) each sign surface already had and used to drop.
+    check(
+      'job-step beacon: JobCard hands back the full signal — jobId + seq (the fence identity), builder, value, fee tier, and the receipt each sign surface returns',
+      /onStepSigned\?: \(info: JobStepSignal\) => void/.test(cardSrc) &&
+        /receipt\?: \{ chainId\?: number; txUrl\?: string \}/.test(cardSrc) &&
+        /jobId,\n\s*seq,\n\s*builder,/.test(cardSrc) &&
+        // RE-PINNED on the #819 merge: the receipt still LEADS (it is the only
+        // source for an off-chain venue order), but #819's artifact readers are
+        // the fallback, so a caller that passes none still reports a chain.
+        /const chainId = receipt\?\.chainId \?\? jobStepChainId\(stepArtifact\)/.test(cardSrc) &&
+        /txUrl:\s*\n\s*receipt\?\.txUrl \?\?/.test(cardSrc) &&
+        // EVERY sign surface the card embeds feeds its receipt through — all
+        // four call sites pass the argument, none of them drops it.
+        (cardSrc.match(/completeStep\(/g) ?? []).length === 4 &&
+        (cardSrc.match(/\{\s*(?:chainId|txUrl)[:,]/g) ?? []).length === 4,
+      `completeStep calls=${(cardSrc.match(/completeStep\(/g) ?? []).length}, receipts=${(cardSrc.match(/\{\s*(?:chainId|txUrl)[:,]/g) ?? []).length}`,
+    )
+    check(
+      'job-step beacon: the explorer link comes from the chain registry, never a basescan fallback (a 4663 step would link to the wrong explorer)',
+      /const base = chainById\(chainId\)\?\.explorerTx/.test(cardSrc) && !/basescan\.org/.test(cardSrc),
+    )
+
+    // ── the double-count fence ───────────────────────────────────────────
+    // Both JobCards can be mounted over the same job at once (the overlay
+    // renders OVER the chat that holds the job's message), and the beacon is
+    // keyed only by sessionId server-side — a second report is counted twice
+    // as money moved.
+    resetJobStepReports()
+    const JOBSTEP_WALLET = '0x00000000000000000000000000000000000beef1'
+    const sig = (jobId: string, seq: number): JobStepSignal => ({ jobId, seq, builder: 'native-swap', valueUsd: 12.5, feeBps: 50, detail: '0xabc' })
+    const first = claimJobStepReport(sig('job-aaa', 0))
+    const second = claimJobStepReport(sig('job-aaa', 0))
+    const otherStep = claimJobStepReport(sig('job-aaa', 1))
+    const otherJob = claimJobStepReport(sig('job-bbb', 0))
+    check(
+      'job-step beacon (fence): one report per (job, step) — the second card, or a sign button that fires twice, reports nothing; a DIFFERENT step and a different job still report',
+      first === true && second === false && otherStep === true && otherJob === true &&
+        jobStepKey(sig('job-aaa', 0)) === 'job-aaa#0' && jobStepKey(sig('job-aaa', 1)) !== jobStepKey(sig('job-aaa', 0)),
+      `${first}/${second}/${otherStep}/${otherJob}`,
+    )
+
+    // ── the wire ─────────────────────────────────────────────────────────
+    const info = jobStepSignedInfo(sig('job-ccc', 2))
+    check(
+      "job-step beacon (wire): the shared mapping is the one both lanes send — artifact 'job-step', the step's value + fee tier + jobId, and 'multi' as the chain only when the step named none (an off-chain venue order)",
+      info.artifact === 'job-step' && info.chain === 'multi' && info.valueUsd === 12.5 && info.feeBps === 50 &&
+        info.jobId === 'job-ccc' && info.detail === '0xabc',
+      JSON.stringify(info),
+    )
+    // RE-PINNED on the #819 merge. This pin used to assert the OPPOSITE — that
+    // the wire carried the raw builder id, unchanged, "so switching the rail on
+    // can't re-price anything" — and deferred the fix to its own PR because it
+    // moves creator earnings. #819 IS that PR and it is on main now: a step
+    // reports the path of what it ACTUALLY built. So the rule to keep is that
+    // the mapper forwards the RESOLVED path and never substitutes the builder.
+    const builtInfo = jobStepSignedInfo({ ...sig('job-ccc', 2), buildPath: jobStepBuildPath('native-swap', { [STEP_BUILD_PATH_KEY]: 'native-swap-lifi' }) })
+    check(
+      'job-step beacon (wire): the mapper forwards the path the step BUILT and never the raw builder id — a raw id fails the route allowlist and the row lands build_path NULL, which is $0 of creator earnings on a swap that really paid the fee',
+      builtInfo.buildPath === 'native-swap-lifi' && isBuildPath(builtInfo.buildPath) &&
+        // a signal that resolved to nothing reports nothing — never a guess
+        info.buildPath === undefined &&
+        // the substitution that used to live here would fail the allowlist
+        !isBuildPath('native-swap') && !isBuildPath('native-lifi-fund') && isBuildPath('native-job'),
+      `${String(builtInfo.buildPath)} / ${String(info.buildPath)}`,
+    )
+    // The chain label moved into the shared mapper with #819's per-chain read,
+    // so both lanes name the same chain — from the REGISTRY, whose hand-written
+    // predecessor had no Robinhood Chain, the chain most job steps sign on.
+    check(
+      'job-step beacon (wire): the mapper labels the signing chain from the chain registry, so the rail and the chat lane can never disagree about where a step landed',
+      jobStepSignedInfo({ ...sig('job-fff', 0), chainId: 8453 }).chain === 'base' &&
+        jobStepSignedInfo({ ...sig('job-fff', 1), chainId: 4663 }).chain === chainById(4663)?.key &&
+        jobStepSignedInfo({ ...sig('job-fff', 2), chainId: 4663 }).chain !== 'multi',
+      `${jobStepSignedInfo({ ...sig('job-fff', 0), chainId: 8453 }).chain} / ${jobStepSignedInfo({ ...sig('job-fff', 1), chainId: 4663 }).chain}`,
+    )
+    const body = firstPartyJobStepBody(sig('job-ddd', 0), { sessionId: 'harness-jobstep-wire', walletAddress: JOBSTEP_WALLET, page: `${BASE}/chat` })
+    check(
+      'job-step beacon (wire): the first-party body carries the lane marker, the signing wallet and the page, and NEVER free text (the first-party lane keeps chat asks private)',
+      body.firstParty === true && body.outcome === 'signed' && body.artifact === 'job-step' &&
+        body.walletAddress === JOBSTEP_WALLET && body.page === `${BASE}/chat` && body.detail === undefined && body.prompt === undefined,
+      JSON.stringify(body),
+    )
+
+    // ── money follows the receipt (S-2) — what turning the rail on counts ─
+    // A rail-signed row never carries an /i slug (the overlay only mounts off
+    // /i), so its class is 'job' → `attested` → COUNTED with no tx hash
+    // needed. That is what makes this fix actually move the money metric
+    // rather than file uncounted rows.
+    check(
+      "job-step beacon (counting): a slug-less job-step row verifies as 'job' → attested → counted, so a rail-signed step moves money with no hash to prove; 'job-step' is not an EVM artifact class",
+      (await expectedTurnClass({ artifact: 'job-step' })) === 'job' &&
+        (await expectedTurnClass({ artifact: 'tx' })) === 'evm-tx' &&
+        (COUNTED_VERIFICATIONS as readonly string[]).includes('attested'),
+    )
+    // The one money-affecting side effect, pinned so it stays deliberate: on
+    // an /i link the class comes from the LINK's ask, so a job step signed
+    // there is receipt-checked for the first time now that the card forwards
+    // its hash. Hashless rows land 'unverified' (uncounted) today, so the
+    // verdict can only move unverified → verified/mismatch — it can never
+    // un-count a row that counts today.
+    check(
+      "job-step beacon (counting): forwarding the hash can only PROMOTE an /i-linked job step — 'unverified' and 'mismatch' both count nothing, so no row that counts today can stop counting",
+      !(COUNTED_VERIFICATIONS as readonly string[]).includes('unverified') &&
+        !(COUNTED_VERIFICATIONS as readonly string[]).includes('mismatch') &&
+        (COUNTED_VERIFICATIONS as readonly string[]).includes('verified'),
+      JSON.stringify(COUNTED_VERIFICATIONS),
+    )
+
+    // ── live: the route accepts exactly what the overlay sends ───────────
+    const railPost = await fetch(`${BASE}/api/embed/telemetry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(
+        firstPartyJobStepBody(
+          { jobId: 'cmtsqkx0l00074h3p885cmygz', seq: 1, builder: 'native-swap', valueUsd: 4.2, feeBps: 20, chainId: 8453, txUrl: 'https://basescan.org/tx/0x' + 'a'.repeat(64) },
+          { sessionId: 'harness-jobstep-rail', walletAddress: JOBSTEP_WALLET, page: `${BASE}/chat` },
+        ),
+      ),
+    })
+    const railJson = (await railPost.json()) as { ok?: boolean; internal?: boolean; verification?: string }
+    check(
+      "job-step beacon (live): the rail's exact body is accepted by the telemetry route AND lands on a COUNTED verdict — a step signed in the overlay now really moves money; the harness row is stamped internal",
+      railPost.status === 200 && railJson.ok === true && railJson.internal === true &&
+        !!railJson.verification && (COUNTED_VERIFICATIONS as readonly string[]).includes(railJson.verification),
+      `${railPost.status} ${JSON.stringify(railJson)}`,
+    )
+    // Discrimination: the same body WITHOUT the first-party marker (what a
+    // keyless third-party mount is) still records nothing.
+    const railNoLane = await fetch(`${BASE}/api/embed/telemetry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...firstPartyJobStepBody(sig('job-eee', 0), { sessionId: 'harness-jobstep-nolane', page: `${BASE}/chat` }), firstParty: false }),
+    })
+    check(
+      'job-step beacon (live): drop the first-party marker and the same body records nothing (202) — the overlay is accepted because it IS our own surface, not because job-step is special',
+      railNoLane.status === 202,
+      String(railNoLane.status),
+    )
+  }
+
   // ── job-step telemetry: a signed job step reports what it BUILT ─────────
   // Found in prod 2026-09-18: $308.50 of $347.50 of real signed 30-day
   // volume was `job-step` rows with build_path NULL — the beacon sent the
@@ -26894,11 +28217,23 @@ async function main() {
         (runnerSrc.match(/buildPath: asBuildPath\(built\.buildPath\)/g) ?? []).length === 2 &&
         (runnerSrc.match(/buildPath: asBuildPath\(turn\.buildPath\)/g) ?? []).length === 2,
     )
+    // RE-PINNED on the #821 merge: the chat lane no longer spells the beacon
+    // inline — both mounts (the thread and the Jobs rail's overlay, which used
+    // to throw the signal away entirely) map through the SHARED
+    // jobStepSignedInfo, so the fields this pin guards moved into
+    // lib/job-step-telemetry. Same rule, asserted where it now lives: the card
+    // resolves from the artifact, and the mapper forwards the PATH — the one
+    // substitution that wrote 28 NULL rows must appear in neither.
+    const teleWireSrc = await readFile('lib/job-step-telemetry.ts', 'utf8')
     check(
-      'job-step wiring (client): the card resolves path + chain + receipt from the signed step\'s own artifact, and the beacon sends the PATH, never the raw builder id',
+      'job-step wiring (client): the card resolves path + chain + receipt from the signed step\'s own artifact, and the shared beacon mapping both mounts use sends the PATH, never the raw builder id',
       /jobStepBuildPath\(builder, stepArtifact\)/.test(cardSrc) && /jobStepChainId\(stepArtifact\)/.test(cardSrc) &&
-        /buildPath: info\.buildPath,/.test(chatSrc) && !/buildPath: info\.builder/.test(chatSrc) &&
-        /chainId: info\.chainId,/.test(chatSrc) && /artifact: 'job-step'/.test(chatSrc),
+        /buildPath: signal\.buildPath,/.test(teleWireSrc) && /artifact: 'job-step'/.test(teleWireSrc) &&
+        /chainId: signal\.chainId,/.test(teleWireSrc) &&
+        // the substitution itself, banned at both the mapper and the chat lane
+        !/buildPath: signal\.builder/.test(teleWireSrc) && !/buildPath: info\.builder/.test(chatSrc) &&
+        // and the chat lane really does go through the shared mapping
+        /reportEmbedSigned\(jobStepSignedInfo\(info\)\)/.test(chatSrc),
     )
     check(
       'job-step wiring (HL): the bridge deposit and the perp order no longer share one fee-bearing path',
@@ -26930,7 +28265,6 @@ async function main() {
       JSON.stringify(accepted),
     )
   }
-
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }

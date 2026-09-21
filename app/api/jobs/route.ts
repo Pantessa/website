@@ -4,6 +4,7 @@ import { getAuthAddress } from '@/lib/api-key'
 import { compileJobAsk } from '@/lib/jobs'
 import { advanceJob, buildSignArtifact, createJob } from '@/lib/jobs-runner'
 import { isInternalRun } from '@/lib/internal-run'
+import { unfillableFundedBuyReason } from '@/lib/venue-preflight'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -60,6 +61,14 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // A funding plan's buy, checked before the bridge legs can move anything
+  // (lib/venue-preflight.ts): the buy step sits at the END of the job, so a
+  // listing no venue can fill only refuses once the stable is already on
+  // the destination chain. Read-only and fail-open — only a definite venue
+  // miss refuses. A dry run reports it too, so an agent that validates a
+  // plan before committing doesn't get a green light and then a 400.
+  const unfillable = await unfillableFundedBuyReason(compiled)
+
   if (body.dryRun) {
     const first = compiled.steps.findIndex((s) => s.kind === 'sign')
     let preview: Record<string, unknown> = {}
@@ -76,9 +85,14 @@ export async function POST(req: NextRequest) {
       title: compiled.title,
       steps: compiled.steps.map((s, i) => ({ seq: i, kind: s.kind, builder: s.builder, title: s.title, waitPredicate: s.waitPredicate ?? null })),
       firstSignPreview: preview,
-      note: 'Nothing was created or signed — re-POST without dryRun to run it.',
+      ...(unfillable ? { unfillable } : {}),
+      note: unfillable
+        ? `This plan would move money and then fail: ${unfillable} A real POST is refused.`
+        : 'Nothing was created or signed — re-POST without dryRun to run it.',
     })
   }
+
+  if (unfillable) return NextResponse.json({ error: unfillable }, { status: 400 })
 
   // Our own harness/drill run (lib/internal-run.ts) — the arc never counts it.
   const job = await createJob(addr, compiled, 'api', { internal: isInternalRun(req.headers, body) })

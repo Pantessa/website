@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { BRIEF_MAX_TOKENS, BRIEF_TTL_MS, POSITION_MAX_TOKENS, POSITION_SYSTEM, BRIEF_SYSTEM, TAPE_MAX_SYMBOLS, TAPE_MAX_TOKENS, TAPE_SYSTEM, briefCacheKey, briefUserPrompt, cleanChunk, cleanProse, positionFallback, positionHeld, positionUserPrompt, tapeCacheKey, tapeSymbols, tapeUserPrompt, type AiChip, type BriefEvent } from '@/lib/markets-ai'
 import { finishBrief, modelAvailable, modelLabel, modelMocked, modelText, streamModelText } from '@/lib/markets-ai-model'
-import { bumpAndCheckMarketsAi, MARKETS_AI_WALL } from '@/lib/markets-ai-fence'
+import { admitMarketsAi } from '@/lib/markets-ai-fence'
 import { composeBriefContext, composeTapeContext, readSymbolPosition, readTape } from '@/lib/markets-ai-context'
 import { CANDLE_TFS } from '@/lib/candles-server'
 import type { ChartTf } from '@/lib/charts'
@@ -83,8 +83,9 @@ export async function POST(req: NextRequest) {
     const pos = await readSymbolPosition(tape.pair, body.address as `0x${string}`, tape.last, tape.change24hPct)
     const held = positionHeld(pos)
     let text: string | null = null
-    if (held && modelAvailable() && !(await bumpAndCheckMarketsAi(req.headers, body))) {
-      text = await modelText({ system: POSITION_SYSTEM, user: positionUserPrompt(pos), maxTokens: POSITION_MAX_TOKENS, mock: { scenario } })
+    if (held && modelAvailable()) {
+      const adm = await admitMarketsAi(req.headers, body, 'markets-position')
+      if (!adm.wall) text = await modelText({ system: POSITION_SYSTEM, user: positionUserPrompt(pos), maxTokens: POSITION_MAX_TOKENS, surface: 'markets-position', apiKey: adm.apiKey, owner: adm.owner, mock: { scenario } })
     }
     return NextResponse.json({ text: cleanProse(text ?? positionFallback(pos), 600), held }, { headers: { 'cache-control': 'no-store' } })
   }
@@ -107,8 +108,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  if (await bumpAndCheckMarketsAi(req.headers, body)) {
-    return new Response(new ReadableStream<Uint8Array>({ start: (c) => (c.enqueue(line({ type: 'error', reason: MARKETS_AI_WALL })), c.enqueue(line({ type: 'done' })), c.close()) }), { status: 200, headers: ndjson() })
+  const adm = await admitMarketsAi(req.headers, body, 'markets-brief')
+  if (adm.wall) {
+    const reason = adm.wall
+    return new Response(new ReadableStream<Uint8Array>({ start: (c) => (c.enqueue(line({ type: 'error', reason })), c.enqueue(line({ type: 'done' })), c.close()) }), { status: 200, headers: ndjson() })
   }
 
   let composed: Awaited<ReturnType<typeof composeBriefContext>>
@@ -143,7 +146,7 @@ export async function POST(req: NextRequest) {
       let full = ''
       let sent = 0
       try {
-        for await (const delta of streamModelText({ system: BRIEF_SYSTEM, user: briefUserPrompt(ctx), maxTokens: BRIEF_MAX_TOKENS, signal: req.signal, mock: { scenario, menu } })) {
+        for await (const delta of streamModelText({ system: BRIEF_SYSTEM, user: briefUserPrompt(ctx), maxTokens: BRIEF_MAX_TOKENS, signal: req.signal, surface: 'markets-brief', apiKey: adm.apiKey, owner: adm.owner, mock: { scenario, menu } })) {
           full += delta
           // Forward prose as it lands, holding a short tail back: the CHIPS
           // line is never shown as text.
@@ -216,8 +219,10 @@ async function writeTape(req: NextRequest, symbolsRaw: string[], scenario: strin
       return NextResponse.json({ error: 'The tape could not be written just now — try again.' }, { status: 503 })
     }
   }
-  if (await bumpAndCheckMarketsAi(req.headers, { symbols })) {
-    return new Response(new ReadableStream<Uint8Array>({ start: (c) => (c.enqueue(line({ type: 'error', reason: MARKETS_AI_WALL })), c.enqueue(line({ type: 'done' })), c.close()) }), { status: 200, headers: ndjson() })
+  const adm = await admitMarketsAi(req.headers, { symbols }, 'markets-tape')
+  if (adm.wall) {
+    const reason = adm.wall
+    return new Response(new ReadableStream<Uint8Array>({ start: (c) => (c.enqueue(line({ type: 'error', reason })), c.enqueue(line({ type: 'done' })), c.close()) }), { status: 200, headers: ndjson() })
   }
   const ctx = await composeTapeContext(symbols)
   if (!ctx.rows.length) return NextResponse.json({ error: 'None of those symbols has a chart here.' }, { status: 404 })
@@ -234,7 +239,7 @@ async function writeTape(req: NextRequest, symbolsRaw: string[], scenario: strin
       let full = ''
       let sent = 0
       try {
-        for await (const delta of streamModelText({ system: TAPE_SYSTEM, user: tapeUserPrompt(ctx.rows, ctx.menu), maxTokens: TAPE_MAX_TOKENS, signal: req.signal, mock: { scenario, menu: ctx.menu } })) {
+        for await (const delta of streamModelText({ system: TAPE_SYSTEM, user: tapeUserPrompt(ctx.rows, ctx.menu), maxTokens: TAPE_MAX_TOKENS, signal: req.signal, surface: 'markets-tape', apiKey: adm.apiKey, owner: adm.owner, mock: { scenario, menu: ctx.menu } })) {
           full += delta
           const cut = safeCut(full, sent)
           if (cut > sent) {
