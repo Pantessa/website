@@ -44,6 +44,9 @@ interface Slots {
   units?: number
   token?: string
   leverage?: number
+  /** "with a 5% stop" / "10% take profit" — a second action riding a perp
+   *  open. A reading that drops it is never offered. */
+  protect?: { pct: number; kind: 'stop' | 'take profit' }
   side?: 'long' | 'short'
   fromChain?: string
   toChain?: string
@@ -98,6 +101,12 @@ function readSlots(raw: string): Slots {
   if (lev && s.verbs.has('perp')) s.leverage = Number(lev[1])
   if (/\blong\b/.test(m) !== /\bshort\b/.test(m)) s.side = /\blong\b/.test(m) ? 'long' : 'short'
 
+  const prot = m.match(/(\d{1,2}(?:\.\d+)?)\s?%\s+(stop(?:[\s-]?loss)?|take[\s-]?profit|tp|sl)\b/) ?? m.match(/\b(stop(?:[\s-]?loss)?|take[\s-]?profit)\s+(?:at|of)\s+(\d{1,2}(?:\.\d+)?)\s?%/)
+  if (prot) {
+    const [pct, word] = /^\d/.test(prot[1]) ? [prot[1], prot[2]] : [prot[2], prot[1]]
+    s.protect = { pct: Number(pct), kind: /^(?:take|tp)/.test(word) ? 'take profit' : 'stop' }
+  }
+
   const from = m.match(/\bfrom\s+(?:my\s+)?([a-z]+)\b/)
   const to = m.match(/\b(?:to|onto)\s+([a-z]+)\b(?!\s+work)/)
   const on = m.match(/\bon\s+([a-z]+)\b/)
@@ -141,7 +150,15 @@ function compose(s: Slots): RescueChip[] {
   if (s.verbs.has('perp') && s.side && tok && !stable) {
     const lev = s.leverage ? `${s.leverage}x ` : ''
     const size = s.usd !== undefined ? `$${s.usd} of ${up(tok)}` : s.units !== undefined ? `${s.units} ${up(tok)}` : up(tok)
-    add('hyperliquid', `${lev}${s.side} ${size} on hyperliquid`, `${lev}${s.side[0].toUpperCase()}${s.side.slice(1)} ${size} on Hyperliquid`)
+    const Side = `${s.side[0].toUpperCase()}${s.side.slice(1)}`
+    if (s.protect) {
+      // The whole ask or nothing: long + stop is a two-step JOB the compiler
+      // builds. The bare long is never offered beside it — it would drop the stop.
+      const guard = `protect my ${up(tok)} ${s.side} with a ${s.protect.pct}% ${s.protect.kind}`
+      add('hyperliquid', `${lev}${s.side} ${size} on hyperliquid, then ${guard}`, `${lev}${Side} ${size} on Hyperliquid, then a ${s.protect.pct}% ${s.protect.kind}`)
+      return out
+    }
+    add('hyperliquid', `${lev}${s.side} ${size} on hyperliquid`, `${lev}${Side} ${size} on Hyperliquid`)
   }
   // Staking — Lido is the fleet's one ETH staking venue.
   const lidoNamed = s.venues.has('lido')

@@ -20316,7 +20316,12 @@ async function main() {
       'voice: normalized spoken asks reach the native ladder (swap / guardian / HL / DCA / chart)',
       simulateLadder(normalizeSpokenAsk('buy ten dollars worth of eth')).gate === 'swap' &&
         simulateLadder(normalizeSpokenAsk('protect my ETH with a five percent stop')).gate === 'guardian' &&
-        simulateLadder(normalizeSpokenAsk('I want a two x long twelve dollars of HYPE with a five percent stop')).gate === 'hyperliquid' &&
+        // Re-pinned 2026-09-21 (#831): this used to expect gate 'hyperliquid' —
+        // the HL open claimed the sentence and DROPPED the stop. The open
+        // grammar now refuses part-claims; the net offers the whole ask as
+        // the long + stop job.
+        /then protect my HYPE long with a 5% stop/.test(simulateLadder(normalizeSpokenAsk('I want a two x long twelve dollars of HYPE with a five percent stop')).note ?? '') &&
+        simulateLadder(normalizeSpokenAsk('two x long twelve dollars of HYPE')).gate === 'hyperliquid' &&
         simulateLadder(normalizeSpokenAsk('dca twenty five dollars into eth weekly')).gate === 'dca' &&
         simulateLadder(normalizeSpokenAsk('show me the ethereum chart')).gate === 'chart',
     )
@@ -28317,6 +28322,8 @@ async function main() {
     const deadChips = netAsks.flatMap((a) => rescueIntent(a, buildsNatively)?.chips ?? []).filter((c) => !buildsNatively(c.resume))
     check('intent net: every chip it offers is a sentence the native ladder builds (a chip is never a second dead end)', deadChips.length === 0, deadChips.map((c) => c.resume).join(' | '))
     check('intent net: a named venue wins — "put 0.1 eth into lido" offers the Lido stake, never a lending chip', (rescueIntent('put 0.1 eth into lido', buildsNatively)?.chips ?? []).every((c) => c.venue === 'lido'))
+    const guarded = ['I want a 2x long $12 of HYPE with a 5% stop', 'short $25 of BTC 2x with a 4% stop loss', 'long $20 of ETH 3x and set a 10% take profit'].map((a) => rescueIntent(a, buildsNatively)?.chips ?? [])
+    check('intent net: a long that names a stop is offered WHOLE (the long + stop job) — the bare long that drops the stop is never a chip', guarded.every((c) => c.length === 1 && /, then protect my [A-Z]+ (?:long|short) with a \d+% (?:stop|take profit)$/.test(c[0].resume) && simulateLadder(c[0].resume).gate === 'jobs'), JSON.stringify(guarded.map((c) => c.map((x) => x.resume))))
     check('intent net: unverifiable readings are dropped (verify = never → no chips, the planner keeps the turn)', rescueIntent('stake 0.05 ETH', () => false) === null)
     const reads = ['what is staking?', 'is aave safe?', 'how much USDC do I have', 'why did my swap fail', 'compare aave and morpho rates', 'show me my aave position', 'tell me a joke', 'hello'].filter((a) => rescueIntent(a, buildsNatively) !== null)
     check('intent net: questions and reads stay the planner\'s', reads.length === 0, reads.join(' | '))

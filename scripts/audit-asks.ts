@@ -73,6 +73,7 @@ const CORPUS: Entry[] = [
   { ask: 'ape $20 into PEPE', source: 'intent net (slang buy)', expect: 'clarify-ok' },
   { ask: 'cash out $50 of ETH', source: 'intent net (slang sell)', expect: 'clarify-ok' },
   { ask: 'earn yield on my usdc', source: 'intent net (unsized earn)', expect: 'clarify-ok' },
+  { ask: 'I want a 2x long $12 of HYPE with a 5% stop', source: 'intent net (voice pin ask — main built the long and DROPPED the stop)', expect: 'clarify-ok' },
   { ask: 'what is staking?', source: 'intent net fence (a question is a READ)', expect: 'planner' },
   { ask: 'is aave safe?', source: 'intent net fence (a question is a READ)', expect: 'planner' },
   { ask: '2X long $12 of HYPE, then protect my HYPE long with a 5% stop', source: 'typed reel (mint stage ghost, 2026-09-04)', expect: 'action' },
