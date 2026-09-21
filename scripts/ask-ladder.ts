@@ -34,6 +34,7 @@ import { parseSwapIntent, detectCrossChain } from '../lib/swap-intent'
 import { parseCrossChainSwap } from '../lib/cross-chain-swap'
 import { parseStockListAsk } from '../lib/stock-list'
 import { tokenHome } from '../lib/token-home'
+import { rescueIntent } from '../lib/intent-rescue'
 
 export type Kind = 'action' | 'clarify' | 'planner'
 export interface Outcome {
@@ -65,8 +66,22 @@ const NATIVE_CHAINS = new Set(['base', 'ethereum', 'arbitrum', 'optimism', 'robi
 
 /** Pure replica of the route ladder — same order, all free MCPs active. */
 export function simulateLadder(message: string, opts: LadderOptions = {}): Outcome {
-  const out = simulateLadderInner(message)
+  let out = simulateLadderInner(message)
+  // The intent net (lib/intent-rescue) is the route's last gate before the
+  // planner: a money ask no grammar read becomes chips, each one a sentence
+  // the NATIVE ladder (never the net itself) builds.
+  if (out.kind === 'planner') {
+    const rescue = rescueIntent(message, buildsNatively)
+    if (rescue) out = { gate: 'intent-net', kind: 'clarify', chips: true, note: rescue.chips.map((c) => c.resume).join(' | ') }
+  }
   return opts.origin === 'link' ? { ...out, origin: 'link' } : out
+}
+
+/** Does a native layer claim this sentence with something the user can act
+ *  on — a build, or a clarify that carries chips? The net's `verify`. */
+export function buildsNatively(ask: string): boolean {
+  const o = simulateLadderInner(ask)
+  return o.kind === 'action' || (o.kind === 'clarify' && o.chips === true) || (o.kind === 'clarify' && o.gate === 'hyperliquid')
 }
 
 function simulateLadderInner(message: string): Outcome {

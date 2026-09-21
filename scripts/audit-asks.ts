@@ -52,6 +52,30 @@ const CORPUS: Entry[] = [
   // venue-less form and the size chips themselves are actions.
   { ask: 'I want to buy some HYPE and 2x long', source: 'live 2026-08-12 (funded, fell to the planner)', expect: 'clarify-ok' },
   { ask: '2x long $12 of HYPE', source: 'live 2026-08-12 variant (leverage is venue evidence)', expect: 'action' },
+  // 2026-09-21: a $4,300 wallet was sent to Hyperliquid's own site. "long for
+  // 2x" matched no leverage shape; the planner's own clarify chip then parsed
+  // under nothing (venue word not adjacent to the coin). The slot reader takes
+  // side / leverage / size / coin in any order.
+  { ask: 'buy $20 worth of HYPE and long for 2x', source: 'live 2026-09-21 (funded, /p/aazdoNz_EUgq)', expect: 'action' },
+  { ask: 'buy $$20 worth of HYP and long for 2x', source: 'live 2026-09-21 (funded, /p/a3S072NpEFd0 — doubled $ + typo coin)', expect: 'action' },
+  { ask: 'Buy $20 worth of HYPE and open a 2x long position on Hyperliquid perpetuals', source: 'live 2026-09-21 (the planner clarify chip)', expect: 'action' },
+  { ask: 'long HYPE 2x with $20', source: 'HL slot reader (size last)', expect: 'action' },
+  { ask: 'put $20 into a 2x HYPE long', source: 'HL slot reader (coin before side)', expect: 'action' },
+  { ask: 'open a 3x short position on BTC worth $40', source: 'HL slot reader (was an unsized clarify with the size in the sentence)', expect: 'action' },
+  { ask: 'long hype $20 x2', source: 'HL slot reader (x2 form)', expect: 'action' },
+  // The intent net (lib/intent-rescue): money asks no grammar reads become
+  // chips of sentences the native ladder builds — never the planner's prose.
+  { ask: 'stake 0.05 ETH', source: 'intent net (venue-less stake → Lido chip)', expect: 'clarify-ok' },
+  { ask: 'put 0.1 eth into lido', source: 'intent net (Lido named, verbless)', expect: 'clarify-ok' },
+  { ask: 'borrow $10 usdc from aave', source: 'intent net (dollar borrow of a stable → unit form)', expect: 'clarify-ok' },
+  { ask: 'pay back $10 of usdc on aave', source: 'intent net (repay synonym)', expect: 'clarify-ok' },
+  { ask: 'purchase $15 of tesla stock', source: 'intent net (purchase + "stock" suffix)', expect: 'clarify-ok' },
+  { ask: 'ape $20 into PEPE', source: 'intent net (slang buy)', expect: 'clarify-ok' },
+  { ask: 'cash out $50 of ETH', source: 'intent net (slang sell)', expect: 'clarify-ok' },
+  { ask: 'earn yield on my usdc', source: 'intent net (unsized earn)', expect: 'clarify-ok' },
+  { ask: 'I want a 2x long $12 of HYPE with a 5% stop', source: 'intent net (voice pin ask — main built the long and DROPPED the stop)', expect: 'clarify-ok' },
+  { ask: 'what is staking?', source: 'intent net fence (a question is a READ)', expect: 'planner' },
+  { ask: 'is aave safe?', source: 'intent net fence (a question is a READ)', expect: 'planner' },
   { ask: '2X long $12 of HYPE, then protect my HYPE long with a 5% stop', source: 'typed reel (mint stage ghost, 2026-09-04)', expect: 'action' },
   // MARKETS/MSG (2026-09-11): the hero reel's Markets moment — a chart ask is
   // the native chart gate (the overlay opens, no turn burned), never the planner.
