@@ -289,7 +289,7 @@ import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '../lib/turn-status'
 import { classifyFundingBalances, decideFundingTurn, destGasLegUsd, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, gasTopupLegUsd, MIN_LEG_USD, planFundingChips, planGasTopup, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, strandedCoversPlan, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { buyDollarsOf, swapBuyFundChip, swapBuyResume, swapShortfallTurn, type SwapShortfallAsk } from '../lib/swap-shortfall'
 import { laneGasFloorPresetUsd, layerCardKind, layerFundChip, layerShortfallTurn, type LayerShortfallAsk } from '../lib/layer-shortfall'
-import { DEST_GAS_FLOOR_ETH } from '../lib/funding-plan'
+import { DEST_GAS_FLOOR_ETH, FUNDING_STABLES } from '../lib/funding-plan'
 import { ETH_TWO_LEG_HEADROOM_USD } from '../lib/lifi-bridge'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
@@ -12511,11 +12511,17 @@ async function main() {
     )
     const emptyAdvice = planRobinhoodFundingAdvice({ scan: { origins: [], gaslessOrigins: [], allScanned: [], failedOrigins: [] }, needUsd: 5, gasIncluded: true, followup: '' })
     check(
-      'funding advice: an empty wallet names both scanned tokens on every scanned chain',
+      'funding advice: an empty wallet names EVERY token the scan reads, on every scanned chain',
+      // Re-pinned in round 2: the sentence said "no USDC or ETH" while the
+      // scan had grown to five tokens (#841's FUNDING_STABLES). It derives
+      // from that table now, so this derives from it too — and then checks
+      // the copy really names each one, rather than matching its own template.
       emptyAdvice.kind === 'none' &&
-        emptyAdvice.copy.includes(`no USDC or ETH on ${listWords(FUNDING_ORIGIN_CHAINS.map((c) => FUNDING_ORIGIN_WORD[c]))}`) &&
-        // …and it really does name each one, not just match its own template.
-        (FUNDING_ORIGIN_CHAINS as readonly number[]).every((c) => emptyAdvice.copy.includes(FUNDING_ORIGIN_WORD[c])),
+        emptyAdvice.copy.includes(
+          `no ${listWords([...new Set(['USDC', ...FUNDING_ORIGIN_CHAINS.flatMap((c) => (FUNDING_STABLES[c] ?? []).map((x) => x.symbol)), 'ETH'])], 'or')} on ${listWords(FUNDING_ORIGIN_CHAINS.map((c) => FUNDING_ORIGIN_WORD[c]))}`,
+        ) &&
+        (FUNDING_ORIGIN_CHAINS as readonly number[]).every((c) => emptyAdvice.copy.includes(FUNDING_ORIGIN_WORD[c])) &&
+        (FUNDING_ORIGIN_CHAINS as readonly number[]).every((c) => (FUNDING_STABLES[c] ?? []).every((x) => emptyAdvice.copy.includes(x.symbol))),
       JSON.stringify(emptyAdvice),
     )
 
@@ -22970,7 +22976,11 @@ async function main() {
       )
       check(
         'sign-in lands: no door on a chat, an intent link, the mosaic studio or a markets page computes its landing from window.location while rendering',
-        workDoors.every((s) => !/redirectTo=\{[^}]*window\.location|hereWithQuery|hereHref|const here = [^\n]*window\.location/.test(s)) &&
+        // Word-bounded: an unbounded `hereHref` also matches the tail of
+        // `signInElsewhereHref` (lib/sign-in-gate, round 2), which reads no
+        // location at all. A fence that fires on a substring of an unrelated
+        // name teaches people to rename around it.
+        workDoors.every((s) => !/redirectTo=\{[^}]*window\.location|\bhereWithQuery\b|\bhereHref\b|const here = [^\n]*window\.location/.test(s)) &&
           /<SiteAccount \/>/.test(workDoors[4]),
       )
       check(
