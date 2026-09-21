@@ -107,7 +107,18 @@ async function main() {
         'guardrails',
       ].find((k) => body[k] !== undefined && body[k] !== null)
       ok = res.status === 200 && !!artifact
-      verdict = artifact ? `→ ${artifact}` : `BARE REPLY: ${(body.reply ?? '').slice(0, 140)}`
+      // `signInGate` is a THIRD state, and the worst one: the route asks for
+      // a signature it never gives the user a way to provide. Nothing in
+      // components/ or app/ reads the key (2026-09-21 — the only references
+      // are the route that writes it and the two libs that type it), so the
+      // turn renders as prose saying "sign in from the account menu, then ask
+      // again". Counting it actionable would hide that; it gets its own
+      // verdict so the log names the real problem.
+      verdict = artifact
+        ? `→ ${artifact}`
+        : body.signInGate
+          ? `GATE WITH NO DOOR (signInGate: ${(body.signInGate as { kind?: string }).kind}) — nothing renders it: ${(body.reply ?? '').slice(0, 90)}`
+          : `BARE REPLY: ${(body.reply ?? '').slice(0, 140)}`
     } catch (e) {
       verdict = `ERROR: ${(e as Error).message}`
     }
