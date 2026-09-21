@@ -11,14 +11,22 @@
 //   answer → prose
 // The mic is the existing VoiceButton; a spoken question is normalized
 // and submitted like a typed one.
+// The suggestion row underneath carries BOTH kinds and says which is which
+// (lib/markets-ai-suggestions): a `question` goes to this lane and answers
+// here; the `act` chip is a complete ask that SENDS on one tap through
+// `onAsk` — the header strip's contract, not a second trip through the route.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import Link from 'next/link'
 import { ArrowUp, Bell, LineChart, MessageSquare, Send } from 'lucide-react'
 import VoiceButton from '@/components/VoiceButton'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { useSession } from '@/lib/session'
 import { normalizeSpokenAsk } from '@/lib/voice-ask'
 import { hoverBarLabel, useChartHover, type HoverBar } from '@/lib/markets-ai-hover'
+// The suggestion row's grammar is pure (no React, no CSS) so the harness
+// pins every act entry through the ladder replica without rendering.
+import { askChartSuggestions } from '@/lib/markets-ai-suggestions'
 import type { ChartPair } from '@/lib/charts'
 import type { ChartState } from '@/lib/chart-state'
 import type { AskAnswer } from '@/lib/markets-ai'
@@ -35,17 +43,8 @@ export type AskChartProps = {
 
 type Reply = (AskAnswer & { deterministic: boolean; model: string }) | null
 
-/** The suggestion row — every entry is a deterministic door on the server
- *  (a draw, an alert, a complete ask) or a question the model answers. */
-export function askChartSuggestions(symbol: string, pair: ChartPair): { label: string; q: string }[] {
-  const perp = pair.source === 'hyperliquid'
-  return [
-    { label: 'Draw support and resistance', q: 'Draw the support and resistance levels' },
-    { label: "What's the trend on screen?", q: `What is the trend in the ${symbol} candles on screen?` },
-    { label: 'Alert me on a 5% move', q: `Tell me when ${symbol} moves 5%` },
-    { label: perp ? `Long $25 of ${symbol}` : `Buy $25 of ${symbol}`, q: perp ? `Long $25 of ${symbol} on Hyperliquid` : `Buy $25 of ${symbol}` },
-  ]
-}
+/** The no-JS fallback behind an act chip: a prefill, never a fired turn. */
+const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
 
 export default function AskChart({ symbol, pair, chartState, visible, onAsk, onChartState }: AskChartProps) {
   const { walletAddress, address: signedIn } = useSession()
@@ -149,6 +148,18 @@ export default function AskChart({ symbol, pair, chartState, visible, onAsk, onC
     [busy, pair.symbol, chartState, visible, walletAddress, onChartState],
   )
 
+  // An act suggestion sends; modified clicks keep the link's own meaning
+  // (a new tab on the `?prompt=` prefill), as on the header strip.
+  const sendOnClick = useCallback(
+    (ask: string) => (e: ReactMouseEvent<HTMLAnchorElement>) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+      e.preventDefault()
+      onAsk(ask)
+    },
+    [onAsk],
+  )
+  const hasAct = useMemo(() => suggestions.some((s) => s.kind === 'act'), [suggestions])
+
   useEffect(() => () => abortRef.current?.abort(), [])
   // A new symbol is a new conversation.
   useEffect(() => {
@@ -214,16 +225,27 @@ export default function AskChart({ symbol, pair, chartState, visible, onAsk, onC
 
       {!reply && !busy ? (
         <div className="mk-ai__sugg" role="group" aria-label="Suggestions">
-          {suggestions.map((s) => (
-            <button key={s.q} type="button" className="mk-ai__sugg-chip" onClick={() => void submit(s.q)}>
-              {s.label}
-            </button>
-          ))}
+          {suggestions.map((s) =>
+            s.kind === 'act' ? (
+              // A real link (the /chat prefill: no-JS, a new tab); a plain
+              // click SENDS through the page's act door — the same wire and
+              // the same one-tap contract as the header strip's chips.
+              <Link key={s.ask} href={promptHref(s.ask)} className="mk-ai__sugg-chip mk-ai__sugg-chip--act" title={s.ask} data-ask={s.ask} data-sugg="act" onClick={sendOnClick(s.ask)}>
+                <Send className="mk-ai__ico mk-ai__ico--inline" aria-hidden />
+                {s.label}
+              </Link>
+            ) : (
+              <button key={s.q} type="button" className="mk-ai__sugg-chip" data-sugg="question" onClick={() => void submit(s.q)}>
+                {s.label}
+              </button>
+            ),
+          )}
           {explainBar ? (
             <button type="button" className={`mk-ai__sugg-chip${explainMode !== 'last' ? ' mk-ai__sugg-chip--hover' : ''}`} onClick={() => void explain()} data-explain={explainMode} title={`${explainBar.o} → ${explainBar.c}`}>
               {explainMode === 'last' ? 'Explain the last bar' : hoverBarLabel(explainBar, chartState?.tf)}
             </button>
           ) : null}
+          {hasAct ? <span className="mk-ai__sugg-foot mk-ai__eyebrow mono">A CHIP SENDS · YOUR WALLET SIGNS · THE REST ANSWER HERE</span> : null}
         </div>
       ) : null}
 

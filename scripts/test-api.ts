@@ -24956,6 +24956,54 @@ async function main() {
     const askSrc = await readFile('components/markets/ai/AskChart.tsx', 'utf8')
     check('ai components: AiBrief streams /api/markets/brief, chips call onAsk on click, the position call is address-keyed and separate, and the footer wears the tape footnote + byline', briefSrc.includes("fetch('/api/markets/brief'") && briefSrc.includes('onClick={() => onAsk(c.ask)}') && briefSrc.includes("part: 'position', address: walletAddress") && briefSrc.includes('TAPE_FOOTNOTE') && briefSrc.includes('Written by a model from our own tape'))
     check('ai components: AskChart never auto-sends an act (the chip is a button → onAsk), applies chart answers through onChartState, posts the alert rule to /api/alerts, and signed-out alerts open the unified door', askSrc.includes('onClick={() => onAsk(reply.chip.ask)}') && !askSrc.includes('onAsk(j.chip') && askSrc.includes("if (j.kind === 'chart') onChartState?.(j.state)") && askSrc.includes("fetch('/api/alerts'") && askSrc.includes('<CreateAccountButton className="mk-ai__cta" label="Sign in to set alerts"'))
+    // ── the suggestion row (2026-09-18) ──────────────────────────────────
+    // A suggestion that carries a complete ask SENDS on one tap, like every
+    // other complete-ask button on the page (memory chip-send-contract). It
+    // used to go through the ask route, which spent a round trip re-deriving
+    // what the grammar already knew and then rendered a SECOND button with
+    // the same words — the first tap read dead. So: every `act` entry is
+    // ladder-valid (the route's own fence + ladder, via chipOk), every
+    // `question` entry is NOT an act (it belongs to this lane), and the
+    // component wires the two differently.
+    {
+      const { askChartSuggestions, SUGGESTED_ACT_USD } = await import('../lib/markets-ai-suggestions')
+      const suggestPairs = ['ETH', 'BTC', 'LINK', 'UNI', 'AAPL', 'TSLA', 'AMAT', 'HYPE', 'FARTCOIN', 'SOL', 'XRP', 'DOGE']
+        .map((s) => chartPairFor(s))
+        .filter((p): p is NonNullable<typeof p> => !!p)
+      const suggRows = suggestPairs.map((p) => ({ pair: p, sugg: askChartSuggestions(p.symbol, p) }))
+      const actRows = suggRows.flatMap((r) => r.sugg.filter((s) => s.kind === 'act').map((s) => ({ symbol: r.pair.symbol, ask: (s as { ask: string }).ask, label: (s as { label: string }).label })))
+      const deadActs = actRows.filter((a) => !chipOk(a.ask, a.symbol))
+      check(
+        `ai suggestions: EVERY act suggestion is a complete ask the ladder builds natively (${actRows.length} across ${suggRows.length} pairs) — the same fence + ladder the route runs before it shows an act chip`,
+        suggRows.length >= 12 && actRows.length === suggRows.length && deadActs.length === 0,
+        deadActs.length ? deadActs.map((a) => `${a.ask} → ${aiLadderVerdict(a.ask).ok ? 'fence' : (aiLadderVerdict(a.ask) as { why: string }).why}`).join(' | ') : actRows.map((a) => a.ask).join(' | '),
+      )
+      check(
+        'ai suggestions: a coin whose home is not an EVM chain is offered the perp it can have, not a spot buy that only clarifies (SOL/XRP/DOGE — the blind-template class the arrival squad hit)',
+        ['SOL', 'XRP', 'DOGE'].every((s) => {
+          const row = actRows.find((a) => a.symbol === s)
+          return !!row && row.ask === `Long $${SUGGESTED_ACT_USD} of ${s} on Hyperliquid` && simulateLadder(`Buy $${SUGGESTED_ACT_USD} of ${s}`).kind !== 'action'
+        }),
+        actRows.filter((a) => ['SOL', 'XRP', 'DOGE'].includes(a.symbol)).map((a) => a.ask).join(' | '),
+      )
+      check(
+        'ai suggestions: the three question entries stay questions (they answer in this lane, never sent as asks) and a stock still leads with Buy',
+        suggRows.every((r) => r.sugg.filter((s) => s.kind === 'question').length === 3) &&
+          suggRows.every((r) => r.sugg.filter((s) => s.kind === 'question').every((s) => !chipOk((s as { q: string }).q, r.pair.symbol))) &&
+          actRows.find((a) => a.symbol === 'AAPL')?.ask === `Buy $${SUGGESTED_ACT_USD} of AAPL`,
+      )
+      const suggCss = await readFile('components/markets/ai.css', 'utf8')
+      check(
+        'ai suggestions: the act chip SENDS on one tap through onAsk (a `?prompt=` link is only the no-JS fallback — a URL never fires a turn), question chips still submit to the route, and the act chip is styled apart from them',
+        askSrc.includes("s.kind === 'act' ?") &&
+          askSrc.includes('onClick={sendOnClick(s.ask)}') &&
+          askSrc.includes('href={promptHref(s.ask)}') &&
+          askSrc.includes('className="mk-ai__sugg-chip mk-ai__sugg-chip--act"') &&
+          askSrc.includes('onClick={() => void submit(s.q)}') &&
+          /A CHIP SENDS · YOUR WALLET SIGNS/.test(askSrc) &&
+          suggCss.includes('.mk-ai__sugg-chip--act {'),
+      )
+    }
   }
 
   // ── ARRIVAL/CORE ──────────────────────────────────────────────────────────
