@@ -23428,8 +23428,10 @@ async function main() {
       parseGuestLists,
       parseTradingViewExport,
       searchTickers,
+      sectionClassOf,
       sectionedRows,
       usEquitySession,
+      watchClassOf,
     } = await import('../lib/watchlists')
 
     // Pure: symbols collapse to the chart symbol, junk normalizes to null.
@@ -23469,7 +23471,33 @@ async function main() {
     const secList = { id: 'g_x', owner: null, name: 'L', slug: null, symbols: ['AAPL', 'ETH', 'HYPE'], sections: [{ name: 'Stocks', symbols: ['AAPL', 'GHOST'] }], isPublic: false, createdAt: '' }
     const moved = wlMoveToSection(secList, 'ETH', 'Coins')
     const rows = sectionedRows(moved)
-    check('watch: sectionedRows — named sections first, unclaimed tail last, a section naming a symbol the list lacks drops it', rows.map((r) => `${r.name ?? '-'}:${r.symbols.join('+')}`).join('|') === 'Stocks:AAPL|Coins:ETH|-:HYPE')
+    // RE-PINNED 2026-09-21: HYPE used to sit in the tail here. 'Coins' names a
+    // class, so the class rule files it — the tail is for what no section can
+    // hold, not for whatever the import forgot.
+    check('watch: sectionedRows — named sections first, a section naming a symbol the list lacks drops it, a perp files under the list\'s crypto section', rows.map((r) => `${r.name ?? '-'}:${r.symbols.join('+')}`).join('|') === 'Stocks:AAPL|Coins:ETH+HYPE' && rows[1]?.auto.join() === 'HYPE')
+
+    // ── The class rule (Nate, 2026-09-21) ──────────────────────────────────
+    // His rail: a TradingView import with ###STOCKS + ###CRYPTO, then GOOGL,
+    // MSFT and COIN autofilled from the wallet. Nothing named them, so they
+    // rendered in the headerless tail directly under CRYPTO — "some stocks
+    // sorted as crypto", with the CRYPTO header still counting 3.
+    check('watch: watchClassOf reads the class off the feed — Robinhood Chain listings are stocks (COIN the company, not the coin), Coinbase spot is crypto, an HL-only listing is a perp, an uncharted ticker is nothing', watchClassOf('AAPL') === 'stocks' && watchClassOf('COIN') === 'stocks' && watchClassOf('ETH') === 'crypto' && watchClassOf('UNI') === 'crypto' && watchClassOf('HYPE') === 'perps' && watchClassOf('ZZZZQX') === null)
+    check('watch: sectionClassOf reads a section NAME — decoration and case blind, a theme names no class, and a name saying two classes names neither', sectionClassOf('STOCKS') === 'stocks' && sectionClassOf('US Stocks') === 'stocks' && sectionClassOf('Crypto \u{1FA99}') === 'crypto' && sectionClassOf('my coins') === 'crypto' && sectionClassOf('Perps') === 'perps' && sectionClassOf('AI plays') === null && sectionClassOf('Semis') === null && sectionClassOf('DeFi') === null && sectionClassOf('crypto stocks') === null)
+    const nateList = {
+      id: 'g_n', owner: null, name: 'From TradingView', slug: null, isPublic: false, createdAt: '',
+      symbols: ['AAPL', 'TSLA', 'NVDA', 'ETH', 'BTC', 'HYPE', 'UNI', 'GOOGL', 'MSFT', 'COIN'],
+      sections: [{ name: 'STOCKS', symbols: ['AAPL', 'TSLA', 'NVDA'] }, { name: 'CRYPTO', symbols: ['ETH', 'BTC', 'HYPE'] }],
+    }
+    const nateRows = sectionedRows(nateList)
+    check('watch: the screenshot — GOOGL, MSFT and COIN file under STOCKS and UNI under CRYPTO, every symbol is grouped, and each header counts what hangs under it', nateRows.map((r) => `${r.name ?? '-'}:${r.symbols.join('+')}`).join('|') === 'STOCKS:AAPL+TSLA+NVDA+GOOGL+MSFT+COIN|CRYPTO:ETH+BTC+HYPE+UNI' && nateRows.reduce((n, r) => n + r.symbols.length, 0) === nateList.symbols.length, nateRows.map((r) => `${r.name}=${r.symbols.length}`).join(' '))
+    check('watch: a list with a Perps section takes its perps there, not into Crypto (best home first)', sectionedRows({ symbols: ['ETH', 'HYPE', 'AAPL'], sections: [{ name: 'Coins', symbols: [] }, { name: 'Perps', symbols: [] }] }).map((r) => `${r.name ?? '-'}:${r.symbols.join('+')}`).join('|') === 'Coins:ETH|Perps:HYPE|-:AAPL')
+    check('watch: the owner outranks the rule — a stock they filed elsewhere stays there, a section keeping only symbols the list lost still opens for its class, and same-named sections render once', sectionedRows({ symbols: ['AAPL', 'MSFT'], sections: [{ name: 'Stocks', symbols: ['GHOST'] }, { name: 'Watch tight', symbols: ['AAPL'] }] }).map((r) => `${r.name}:${r.symbols.join('+')}`).join('|') === 'Stocks:MSFT|Watch tight:AAPL' && sectionedRows({ symbols: ['AAPL', 'TSLA'], sections: [{ name: 'S', symbols: ['AAPL'] }, { name: 'S', symbols: ['TSLA'] }] }).map((r) => `${r.name}:${r.symbols.join('+')}`).join('|') === 'S:AAPL+TSLA')
+    check('watch: the rule only fills sections the list already keeps — an unsectioned list is one ungrouped run, and a themed list leaves everything it does not name in the tail', JSON.stringify(sectionedRows({ symbols: ['AAPL', 'ETH'] })) === JSON.stringify([{ name: null, symbols: ['AAPL', 'ETH'], auto: [] }]) && sectionedRows({ symbols: ['NVDA', 'ETH', 'ZZZZQX'], sections: [{ name: 'AI plays', symbols: ['NVDA'] }] }).map((r) => `${r.name ?? '-'}:${r.symbols.join('+')}`).join('|') === 'AI plays:NVDA|-:ETH+ZZZZQX')
+    // The surfaces: the tail is a headerless run only when it is the WHOLE
+    // list, and the ⋯ menu never offers a move the rule would undo.
+    const railSrc = readFileSync('components/markets/watchlist/WatchlistRail.tsx', 'utf8')
+    const listsSrc = readFileSync('app/lists/[slug]/page.tsx', 'utf8')
+    check('watch: both surfaces name the tail once anything above it is named (the rail and the public /lists page), and the rail hides "no section" for a row the class rule placed', /rows\.length > 1 \? 'Other'/.test(railSrc) && /\{head && \(/.test(railSrc) && /groups\.length > 1 \? 'Other'/.test(listsSrc) && /group\.name && !group\.auto\.includes\(sym\) &&/.test(railSrc))
     check('watch: parseGuestLists is strict — a corrupt key reads as no lists, a server-shaped id is refused, valid rows normalize', parseGuestLists('nope').length === 0 && parseGuestLists(JSON.stringify([{ id: 'srv123', name: 'x', symbols: [] }])).length === 0 && parseGuestLists(JSON.stringify([{ id: 'g_abc', name: '  My  list ', symbols: ['weth', 'eth', '!!!'] }]))[0]?.symbols.join() === 'ETH')
 
     // ── /api/quotes (the README contract) ──────────────────────────────────
