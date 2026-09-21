@@ -41,9 +41,16 @@ const WHAT: Record<ChatMutation, string> = {
 
 /** The user-facing reply — names the change, asks for the one free signature,
  *  says nothing happened. The phrase "signed in as this wallet" is pinned by
- *  the harness. */
+ *  the harness.
+ *
+ *  It used to end "Sign in (one free signature, from the account menu), then
+ *  ask again" — a menu to go find and an ask to retype, because nothing
+ *  rendered `signInGate` (no-dead-ends squad, QA G-QA-5). The door is under
+ *  the reply now (lib/sign-in-gate + components/ChatInterface), holding this
+ *  ask, so the copy says what the signature IS and lets the door speak for
+ *  itself — it is worded for every surface, the embed's link included. */
 export function mutationGateReply(kind: ChatMutation): string {
-  return `🔐 ${WHAT[kind]}, so it needs you **signed in as this wallet** — a connected wallet alone isn't proof it's yours. Sign in (one free signature, from the account menu), then ask again. Nothing was changed.`
+  return `🔐 ${WHAT[kind]}, so it needs you **signed in as this wallet** — a connected wallet alone isn't proof it's yours. It's one free signature: nothing moves, nothing spends, and this ask is held right where it is. Nothing was changed.`
 }
 
 export interface SignInGate {

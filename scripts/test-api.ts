@@ -28677,6 +28677,44 @@ async function main() {
     check('no dead ends: no spot-guard reply describes our infrastructure to a stranger ("this environment", "not provisioned")', !/reply:[^\n]*(?:this environment|aren.t provisioned|not provisioned)/i.test(sgSrc), 'an env-shaped sentence is still in a reply')
   }
 
+  // ── NO-DEAD-ENDS ROUND 2 (2026-09-21): the sign-in gate gets its door ────
+  // `signInGate` shipped on 09-08 and NOTHING rendered it until now: the
+  // route asked for a signature it never gave the user a way to provide, on
+  // /i/protected-long — the landing's "Open & protect a position" demo. The
+  // door is lib/sign-in-gate (pure, pinned here) rendered by ChatInterface,
+  // and it HOLDS the ask so nobody retypes a sentence they arrived with.
+  {
+    const { signInGateOf, signInGateLifted, signInDoorFor, signInElsewhereHref, shouldRerunSignInAsk, SIGN_IN_ASK_RERUN_WINDOW_MS } = await import('../lib/sign-in-gate')
+    const { mutationGateReply } = await import('../lib/chat-mutation-gate')
+
+    const gateMeta = { signInGate: { kind: 'guardian-job-step' }, signInAsk: 'Open a 2x long on HYPE and protect it with a 5% stop' }
+    check('sign-in door: a gate reply carries its kind AND the held ask', signInGateOf(gateMeta)?.kind === 'guardian-job-step' && signInGateOf(gateMeta)?.ask === gateMeta.signInAsk, JSON.stringify(signInGateOf(gateMeta)))
+    check('sign-in door: a gate with no held ask renders nothing (both halves or neither)', signInGateOf({ signInGate: { kind: 'guardian-arm' } }) === null && signInGateOf({ signInAsk: 'x' }) === null && signInGateOf(undefined) === null, 'a half-gate rendered')
+
+    const w = '0xAbC0000000000000000000000000000000000001'
+    check('sign-in door: the gate is answered only by a session that OWNS the connected wallet (the server\'s own rule)', signInGateLifted({ sessionAddress: w.toLowerCase(), walletAddress: w }) && !signInGateLifted({ sessionAddress: '0xdead000000000000000000000000000000000002', walletAddress: w }) && !signInGateLifted({ sessionAddress: null, walletAddress: w }), 'ownership read wrong')
+
+    check('sign-in door: /chat and /i get the unified door, a no-CDP build gets the wallet lane, the embed is sent elsewhere', signInDoorFor({ embedded: false, cdpEnabled: true }) === 'unified' && signInDoorFor({ embedded: false, cdpEnabled: false }) === 'wallet' && signInDoorFor({ embedded: true, cdpEnabled: true }) === 'elsewhere', 'door choice wrong')
+
+    const href = signInElsewhereHref('protect my ETH long with a 5% stop', 'https://www.pantessa.com/')
+    check('sign-in door: the embed\'s link carries the ask as a PREFILL — a URL still never fires a turn', href === 'https://www.pantessa.com/chat?prompt=protect%20my%20ETH%20long%20with%20a%205%25%20stop' && !/send=/.test(href), href)
+
+    const msg = (ageMs: number, meta: unknown = gateMeta, role = 'assistant') => ({ role, meta, createdAt: new Date(Date.now() - ageMs).toISOString() })
+    const rerun = (over: Partial<Parameters<typeof shouldRerunSignInAsk>[0]> = {}) =>
+      shouldRerunSignInAsk({ last: msg(1_000), sessionAddress: w.toLowerCase(), walletAddress: w, loading: false, now: Date.now(), ...over })
+    check('sign-in door: the held ask re-runs the moment the session lands, whichever lane brought it', rerun() === gateMeta.signInAsk, String(rerun()))
+    check('sign-in door: it never re-runs for a session that owns a different wallet, mid-turn, or on a stale reply', rerun({ sessionAddress: '0xdead000000000000000000000000000000000002' }) === null && rerun({ loading: true }) === null && rerun({ last: msg(SIGN_IN_ASK_RERUN_WINDOW_MS + 1_000) }) === null && rerun({ last: msg(1_000, { clarify: {} }) }) === null, 'a stale or foreign gate re-ran')
+
+    const gateCopy = mutationGateReply('guardian-job-step')
+    check('sign-in door: the gate copy stops sending people to a menu and stops asking them to retype', !/account menu/i.test(gateCopy) && !/then ask again/i.test(gateCopy) && /signed in as this wallet/.test(gateCopy) && /Nothing was changed/.test(gateCopy), gateCopy.slice(0, 180))
+
+    const chatSrc = readFileSync('components/ChatInterface.tsx', 'utf8')
+    check('sign-in door: the chat surface renders the gate, re-runs the held ask, and passes the route\'s key into the message', chatSrc.includes('signInGateOf(msg.meta)') && chatSrc.includes('shouldRerunSignInAsk(') && chatSrc.includes('data.signInGate'), 'the door is not wired')
+    check('sign-in door: the door is hidden once the session owns the wallet (a lifted gate never keeps asking)', chatSrc.includes('signInGateLifted({ sessionAddress, walletAddress: effectiveAddress })'), 'the door outlives its gate')
+    const preSrc = readFileSync('scripts/preflight-house.ts', 'utf8')
+    check('sign-in door: preflight counts a gate as actionable ONLY while the source really renders it', preSrc.includes('signInGateHasDoor()') && /signInGateOf\(msg\.meta\)/.test(preSrc) && /shouldRerunSignInAsk\(/.test(preSrc), 'the preflight fence would pass with no door')
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }
