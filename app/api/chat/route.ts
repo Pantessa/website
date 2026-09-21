@@ -64,6 +64,7 @@ import { fenceGuardianCoin } from '@/lib/hl-guardian-fence'
 import { hlPerpUniverse } from '@/lib/hl-universe'
 import { rescueIntent } from '@/lib/intent-rescue'
 import { buildsNatively } from '@/scripts/ask-ladder'
+import { noPoolChips, nothingToSellChips, unpriceableSellChips } from '@/lib/wall-chips'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import { compileJobAsk, stampSwapFeeTier } from '@/lib/jobs'
 import { advanceJob, createJob } from '@/lib/jobs-runner'
@@ -4573,8 +4574,12 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
         const amountHuman = probe ? usdToTokenAmount(Number(intent.sellAmountUsd), probe.usd, dec) : null
         if (!amountHuman) {
           trace({ type: 'note', level: 'warn', label: `couldn't price ${sellSym} on ${chain.name} to size a $${intent.sellAmountUsd} ask — asking for a token amount` })
+          // The dollar figure is the only thing that failed: selling the
+          // whole balance needs no price at all.
+          const priceChips = unpriceableSellChips({ symbol: sellSym, chainName: chain.name, usd: Number(intent.sellAmountUsd), verify: buildsNatively })
           return NextResponse.json({
             reply: `🔄 I couldn't price ${sellSym} on ${chain.name} to size a $${intent.sellAmountUsd} swap — say a token amount instead, e.g. “swap 0.01 ${sellSym} for ${buySym}”.`,
+            ...(priceChips.length ? { clarify: { question: `Size it another way?`, options: priceChips } } : {}),
           })
         }
         trace({ type: 'status', label: `native swap layer: $${intent.sellAmountUsd} of ${sellSym} ≈ ${amountHuman} ${sellSym} (priced via ${probe!.via})` })
@@ -4631,8 +4636,14 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
     if (balance <= BigInt(0)) {
       trace({ type: 'status', label: `native swap layer: “all my ${sellSym}” on ${chain.name} is 0 — nothing to sell, no build` })
       const elsewhere = APP_CHAINS.find((c) => c.id !== chainId)?.name ?? 'Ethereum'
+      // You cannot sell what you do not have — but you can buy it, or sell it
+      // where it actually lives. Chips verified against the ladder
+      // (lib/wall-chips): a sell of an unheld token is one of the funded
+      // rows in the prod queue, answered with prose and nothing to press.
+      const noneChips = nothingToSellChips({ symbol: sellSym, chainName: chain.name, usd: intent.sellAmountUsd ? Number(intent.sellAmountUsd) : undefined, verify: buildsNatively })
       return NextResponse.json({
         reply: `🔄 You don't hold any ${sellSym} on ${chain.name} — nothing to sell. (If it's on another chain, name it: “sell all my ${sellSym} on ${elsewhere}”.)`,
+        ...(noneChips.length ? { clarify: { question: `What would you like to do instead?`, options: noneChips } } : {}),
         buildPath: 'native-swap-balance',
       })
     }
@@ -5477,8 +5488,15 @@ async function prepareUniswapV4Turn(
     if (err instanceof TapeUnavailableError) return tapeHoldReply(err, trace)
     if (err instanceof NoV4PoolError) {
       trace({ type: 'note', level: 'warn', label: `no v4 pool either — the pair isn't on Uniswap on ${chain.name}` })
+      // "for this amount" is the tell — the pool often exists and is just
+      // too thin for this size, so a smaller one is worth a tap.
+      const buyingHere = !!intent.sellAmountUsd && /^(?:usd[ctgse]?|usdc\.e|dai)$/i.test(intent.sellToken!)
+      const wantSym = (buyingHere ? intent.buyToken! : intent.sellToken!).toUpperCase()
+      const otherSym = (buyingHere ? intent.sellToken! : intent.buyToken!).toUpperCase()
+      const poolChips = noPoolChips({ symbol: wantSym, chainName: chain.name, usd: intent.sellAmountUsd ? Number(intent.sellAmountUsd) : undefined, verify: buildsNatively }, otherSym, buyingHere)
       return NextResponse.json({
         reply: `🔄 No Uniswap v3 or v4 pool on ${chain.name} can fill ${intent.sellToken!.toUpperCase()} → ${intent.buyToken!.toUpperCase()} for this amount.`,
+        ...(poolChips.length ? { clarify: { question: `Try another route?`, options: poolChips } } : {}),
       })
     }
     if (err instanceof GatedV4PoolError) {

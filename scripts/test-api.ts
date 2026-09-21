@@ -28658,6 +28658,21 @@ async function main() {
 
     const fb = spotGuardFallback('UNI', 5, 'LEAD.')
     check('no dead ends: the spot-guard wall carries the alert door and a chip that builds', /\/t\/UNI/.test(fb.reply) && (fb.clarify?.options.length ?? 0) > 0 && fb.clarify!.options.every((o) => buildsNatively(o.resume)), JSON.stringify(fb).slice(0, 200))
+    // The three swap walls from the funded prod queue keep their wording and
+    // gain chips (lib/wall-chips). Pinned on the composers AND on the route
+    // wiring, so a refusal can't quietly go back to being the end of the road.
+    const { noPoolChips, nothingToSellChips, unpriceableSellChips } = await import('../lib/wall-chips')
+    const wallCtx = (symbol: string, usd?: number) => ({ symbol, chainName: 'Robinhood Chain', usd, verify: buildsNatively })
+    const noneChips = nothingToSellChips(wallCtx('AMAT', 50))
+    check('no dead ends: "you don\'t hold any X — nothing to sell" offers where to sell it, or how to get it', noneChips.length > 0 && noneChips.every((c) => buildsNatively(c.resume)), JSON.stringify(noneChips))
+    const priceChips = unpriceableSellChips(wallCtx('NVDA', 50))
+    check('no dead ends: "couldn\'t price X to size a $N swap" offers the sell that needs no price', priceChips.length > 0 && priceChips.every((c) => buildsNatively(c.resume)), JSON.stringify(priceChips))
+    const poolChips = noPoolChips(wallCtx('TSLA', 50), 'AAPL', true)
+    check('no dead ends: "no pool can fill A → B for this amount" offers a smaller size', poolChips.length > 0 && poolChips.every((c) => buildsNatively(c.resume)) && poolChips.some((c) => /\$10 of TSLA/.test(c.resume)), JSON.stringify(poolChips))
+    check('no dead ends: a wall chip is never the ask that just failed', !noneChips.some((c) => /^Sell \$50 of AMAT/i.test(c.resume)) && !poolChips.some((c) => /^Buy \$50 of TSLA/i.test(c.resume)), 'a chip repeats the failed ask')
+    const wallSrc = readFileSync('app/api/chat/route.ts', 'utf8')
+    check('no dead ends: all three swap walls are wired to their chips in the route', ['nothingToSellChips(', 'unpriceableSellChips(', 'noPoolChips('].every((fn) => wallSrc.includes(fn)), 'a wall lost its chips')
+
     const sgSrc = readFileSync('lib/spot-guard-exec.ts', 'utf8')
     check('no dead ends: no spot-guard reply describes our infrastructure to a stranger ("this environment", "not provisioned")', !/reply:[^\n]*(?:this environment|aren.t provisioned|not provisioned)/i.test(sgSrc), 'an env-shaped sentence is still in a reply')
   }

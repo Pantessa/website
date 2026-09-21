@@ -25,7 +25,7 @@
 // audit:asks reported them green, because the replica skipped this gate.
 // scripts/audit-asks.ts now pins one probe sentence per family.
 const MONEY_VERB_RE =
-  /\b(?:send|transfer|swap|sell|buy|bridge|stake|unstake|deposit|withdraw|convert|fund|move|need|want|get\s+me|long|short|list|repay|borrow|supply|protect|mint|pay|(?:re)?tile)\b|\b(?:earn|yield|apy|apr|interest|lend|lending|save|savings)\b|\b(?:ape|grab|acquire|purchase|invest|pick\s+up|dump|offload|exit|unlend|trade|exchange)\b|\bcash\s+out\b|\b(?:pull|take)\s+out\b|\btop\s+up\b|\bstop[\s-]?loss\b|\btake[\s-]?profit\b|\d+(?:\.\d+)?\s*%\s*(?:stop|drop)\b|\bput\b.*\b(?:into|in\s+to)\b|\bget\b.*\b(?:over\s+to|onto|to)\b/i
+  /\b(?:send|transfer|swap|sell|buy|bridge|stake|unstake|deposit|withdraw|convert|fund|move|need|want|get\s+me|long|short|list|repay|borrow|supply|protect|mint|pay|(?:re)?tile)\b|\b(?:earn|yield|apy|apr|interest|lend|lending|save|savings)\b|\b(?:ape|yeet|grab|acquire|purchase|invest|pick\s+up|dump|offload|exit|unlend|trade|exchange)\b|\bcash\s+out\b|\b(?:pull|take)\s+out\b|\btop\s+up\b|\bstop[\s-]?loss\b|\btake[\s-]?profit\b|\d+(?:\.\d+)?\s*%\s*(?:stop|drop)\b|\bput\b.*\b(?:into|in\s+to)\b|\bget\b.*\b(?:over\s+to|onto|to)\b/i
 const MONEY_EVIDENCE_RE = /\d|\$|0x[0-9a-fA-F]{6,}|\.eth\b|\bnft\b|opensea\.io|\b(?:all|everything|max)\b|\busd[cgte]?\b|\beth\b|\bgas\b/i
 
 // A price with the thing it buys and no verb at all — "$10 of AAPL please",
@@ -43,8 +43,14 @@ const BARE_AMOUNT_OF_RE =
 const PROTECT_SHAPE_RE =
   /\b(?:protect|stop[\s-]?loss|take[\s-]?profit)\b[^.?!]*\bmy\b|\bmy\b[^.?!]*\b(?:stop[\s-]?loss|take[\s-]?profit)\b/i
 
+// "fix my gas issue" is the /wallet page's OWN BUTTON LABEL (#763) and `fix`
+// is in no verb list, so our own words fell to the planner. Same for a wallet
+// that "can't sign". A gas QUESTION stays a read — the net's own question
+// fence handles the rest.
+const GAS_SHAPE_RE = /\b(?:fix|top\s*up|need|no|out\s+of|more)\b[^.?!]*\bgas\b|\bgas\b[^.?!]*\b(?:on|for)\b|\bcan'?t\s+(?:sign|send|transact)\b/i
+
 /** Pure: does this message look like it wanted money to move? */
 export function moneyShaped(message: string): boolean {
   if (MONEY_VERB_RE.test(message) && MONEY_EVIDENCE_RE.test(message)) return true
-  return BARE_AMOUNT_OF_RE.test(message) || PROTECT_SHAPE_RE.test(message)
+  return BARE_AMOUNT_OF_RE.test(message) || PROTECT_SHAPE_RE.test(message) || GAS_SHAPE_RE.test(message)
 }
