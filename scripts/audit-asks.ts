@@ -90,6 +90,16 @@ const CORPUS: Entry[] = [
   { ask: 'set a 5% stop on my UNI', source: 'sweep (protection, no "protect" word)', expect: 'clarify-ok' },
   { ask: 'stop loss my UNI at 5%', source: 'sweep (stop-loss as the verb)', expect: 'clarify-ok' },
   { ask: 'protect my ETH with a stop loss', source: 'sweep (no percentage — the net offers 5% and 10%, never invents one)', expect: 'clarify-ok' },
+  // Sweep round 2. The first three are OUR OWN BUTTON LABELS — the /wallet
+  // page's "Fix my gas issue" (#763) fell to the planner because `fix` is in
+  // no verb list.
+  { ask: 'fix my gas issue', source: 'sweep 2 (the /wallet flag button, verbatim)', expect: 'clarify-ok' },
+  { ask: 'fix my gas on arbitrum', source: 'sweep 2 (same button, chain named)', expect: 'clarify-ok' },
+  { ask: 'my arbitrum wallet cant sign', source: 'sweep 2 (a chain worn as an adjective)', expect: 'clarify-ok' },
+  { ask: 'buy 20$ of eth', source: 'sweep 2 (trailing dollar sign)', expect: 'clarify-ok' },
+  { ask: 'yeet $20 into ETH', source: 'sweep 2 (our own former brand name as a verb)', expect: 'clarify-ok' },
+  { ask: 'earn on my ETH', source: 'sweep 2 (ETH yields through Lido, not a lending pool)', expect: 'clarify-ok' },
+  { ask: 'whats the best yield for my USDC', source: 'sweep 2 fence (a question is a read)', expect: 'planner' },
   { ask: 'what are gas fees?', source: 'sweep fence (a gas QUESTION is a read)', expect: 'planner' },
   { ask: 'what is staking?', source: 'intent net fence (a question is a READ)', expect: 'planner' },
   { ask: 'is aave safe?', source: 'intent net fence (a question is a READ)', expect: 'planner' },
@@ -577,6 +587,15 @@ for (const entry of CORPUS) {
   if (entry.expect === 'planner' && base.kind === 'clarify') {
     console.log(header)
     flag(`a question dead-ended in a clarify at ${base.gate} — "${base.note}"`)
+  }
+  // 'clarify-ok' asserted NOTHING until 2026-09-21 — a row could regress all
+  // the way to the planner and the audit stayed green, which made every
+  // intent-net row in this corpus decorative. It means "under-specified on
+  // purpose, answered with something to press", so a planner fall is a
+  // finding like any other.
+  if (entry.expect === 'clarify-ok' && base.kind === 'planner') {
+    console.log(header)
+    flag(`fell to the planner — a surfaced ask must end in a build or chips, never homework${base.note ? ` (${base.note})` : ''}`)
   }
 
   // Link origin must not change the outcome CLASS either: the same sentence

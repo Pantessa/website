@@ -79,7 +79,7 @@ const VERB_FAMILIES: [string, RegExp][] = [
   ['earn', /\b(?:earn|yield|apy|apr|interest|lend|lending|supply|deposit|save|savings)\b|\bput\b.*\bto\s+work\b/],
   ['bridge', /\b(?:bridge|move|send|transfer|get)\b.*\b(?:to|onto|over\s+to)\b/],
   ['sell', /\b(?:sell|dump|offload|cash\s+out|exit)\b/],
-  ['buy', /\b(?:buy|purchase|get|grab|acquire|ape|pick\s+up|invest|want|need)\b/],
+  ['buy', /\b(?:buy|purchase|get|grab|acquire|ape|yeet|pick\s+up|invest|want|need)\b/],
   ['swap', /\b(?:swap|convert|trade|exchange|turn)\b/],
 ]
 const STOP = new Set([
@@ -89,7 +89,7 @@ const STOP = new Set([
   'leveraged', 'margin', 'stake', 'staking', 'earn', 'yield', 'apy', 'apr', 'interest', 'lend', 'lending', 'supply', 'deposit', 'borrow', 'repay', 'withdraw', 'bridge',
   'move', 'send', 'transfer', 'put', 'work', 'worth', 'dollars', 'dollar', 'usd', 'bucks', 'stock', 'stocks', 'share', 'shares', 'token', 'tokens', 'coin', 'coins',
   'crypto', 'money', 'funds', 'wallet', 'best', 'rate', 'idle', 'using', 'use', 'via', 'through', 'times', 'x', 'up', 'out', 'over', 'back', 'off', 'pay', 'grab', 'acquire',
-  'invest', 'pick', 'turn', 'save', 'savings', 'hyperliquid', 'hl', 'aave', 'morpho', 'lido', 'uniswap', 'cow', 'cowswap', 'near', 'intents', 'chain', 'robinhood', 'base',
+  'invest', 'pick', 'turn', 'save', 'savings', 'yeet', 'fix', 'issue', 'hyperliquid', 'hl', 'aave', 'morpho', 'lido', 'uniswap', 'cow', 'cowswap', 'near', 'intents', 'chain', 'robinhood', 'base',
   // Protection / gas vocabulary — never a ticker, and left in the pile it
   // blocked the "one word nothing else explains" token fallback (a 2026-09-21
   // sweep fall: "2x long hype $12, 5% stop" had `hype` AND `stop` unexplained).
@@ -114,7 +114,8 @@ function readSlots(raw: string): Slots {
   // then dies at build, because AAPL is no Aave reserve.)
   if (/\bput\b.*\b(?:into|in\s+to)\b/.test(m)) s.verbs.add(s.venues.has('aave') || s.venues.has('morpho') ? 'earn' : 'buy')
 
-  const usd = [...m.matchAll(/\$\s?(\d[\d,]*(?:\.\d+)?)/g)].map((d) => Number(d[1].replace(/,/g, '')))
+  // "$20" and "20$" — the trailing form is a real typo, not a curiosity.
+  const usd = [...m.matchAll(/\$\s?(\d[\d,]*(?:\.\d+)?)|(\d[\d,]*(?:\.\d+)?)\s?\$/g)].map((d) => Number((d[1] ?? d[2]).replace(/,/g, '')))
   if (new Set(usd).size === 1 && usd[0] > 0) s.usd = usd[0]
 
   const lev = m.match(/(?<![\w$.])(\d{1,3})\s?x\b/) ?? m.match(/\bx\s?(\d{1,3})\b/) ?? m.match(/\b(\d{1,3})\s+times\b/)
@@ -214,6 +215,9 @@ function compose(s: Slots): RescueChip[] {
     }
     // Unsized "earn yield on my usdc": the rebalance/briefing layer sizes it.
     if (s.verbs.has('earn') && !a && stable) add('aave', `Supply $25 of ${up(tok)} to Aave`, `Supply $25 of ${up(tok)} to Aave (pick any size)`)
+    // "earn on my ETH" — ETH's yield venue in this fleet is Lido, not a
+    // lending pool, so the lending chips above compose nothing for it.
+    if (s.verbs.has('earn') && ethLike) add('lido', 'Help me stake ETH on Lido', 'Stake ETH on Lido — size it from my balance')
   }
   // Moves between chains — NEAR Intents' grammar.
   if (tok && s.toChain && (s.verbs.has('bridge') || s.fromChain) && s.toChain !== 'robinhood chain') {
@@ -237,9 +241,13 @@ function compose(s: Slots): RescueChip[] {
   // chain and the swap layer prices it. ASK(FUND): export MIN_GAS_LEG_USD /
   // gasTopupLegUsd's chain floors so these two can never drift.
   if (s.verbs.has('gas') && !s.verbs.has('perp')) {
-    const chain = s.onChain ?? s.toChain
+    const chain = s.onChain ?? s.toChain ?? s.fromChain
     const stables = tok && stable ? [up(tok)] : ['USDC', 'USDT']
-    for (const c of chain ? [chain] : []) for (const st of stables) add('swap', `Swap ${c === 'ethereum' ? 15 : 5} ${st} for ETH on ${c}`, `Top up gas on ${c} with ${st}`)
+    if (chain) for (const st of stables) add('swap', `Swap ${chain === 'ethereum' ? 15 : 5} ${st} for ETH on ${chain}`, `Top up gas on ${chain} with ${st}`)
+    // No chain named ("fix my gas issue" — the /wallet button's own words).
+    // The swap layer reads the chain picker, so the sentence needs none, and
+    // guessing one here would be worse than letting the layer decide.
+    else for (const st of stables) add('swap', `Swap 5 ${st} for ETH`, `Top up gas with ${st}`)
   }
   // Spot — buy / sell by dollars or units. The swap layer finds the chain,
   // the venue and (for a short wallet) the funding plan.

@@ -47,15 +47,18 @@ function take(ctx: Ctx, candidates: [string, string][]): WallChip[] {
 }
 
 /** "You don't hold any X on <chain> — nothing to sell."
- *  You cannot sell what you do not have; you can buy it, or sell it where it
- *  actually lives. */
-export function nothingToSellChips(ctx: Ctx, otherChains: string[]): WallChip[] {
-  const c = chainWord(ctx.chainName)
-  const sizes = ctx.usd ? [ctx.usd] : [25, 50]
-  return take(ctx, [
-    ...otherChains.map((o) => [`Sell all my ${ctx.symbol} on ${chainWord(o)}`, `Sell my ${ctx.symbol} on ${o} instead`] as [string, string]),
-    ...sizes.map((s) => [`Buy $${s} of ${ctx.symbol} on ${c}`, `Buy $${s} of ${ctx.symbol} instead`] as [string, string]),
-  ])
+ *  You cannot sell what you do not have; you can buy it.
+ *
+ *  NOT offered: "sell it on Base instead" for each other chain. We have not
+ *  read those chains, so a chip promising a sell there is a guess — and on an
+ *  empty wallet it produced four buttons that all fail (harness, 2026-09-21).
+ *  The prose keeps the honest version of that hint: name the chain yourself. */
+export function nothingToSellChips(ctx: Ctx): WallChip[] {
+  // Only when the ask named a size. "Sell all my AAPL" from a wallet holding
+  // none is answered by the prose; a "Buy $25" button there is a number we
+  // invented in reply to a sentence that was about everything they had.
+  if (!ctx.usd) return []
+  return take(ctx, [[`Buy $${ctx.usd} of ${ctx.symbol} on ${chainWord(ctx.chainName)}`, `Buy $${ctx.usd} of ${ctx.symbol} instead`]])
 }
 
 /** "I couldn't price X to size a $N swap."

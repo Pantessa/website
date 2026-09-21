@@ -4640,12 +4640,9 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
       // where it actually lives. Chips verified against the ladder
       // (lib/wall-chips): a sell of an unheld token is one of the funded
       // rows in the prod queue, answered with prose and nothing to press.
-      const noneChips = nothingToSellChips(
-        { symbol: sellSym, chainName: chain.name, usd: intent.sellAmountUsd ? Number(intent.sellAmountUsd) : undefined, verify: buildsNatively },
-        APP_CHAINS.filter((c) => c.id !== chainId).map((c) => c.name),
-      )
+      const noneChips = nothingToSellChips({ symbol: sellSym, chainName: chain.name, usd: intent.sellAmountUsd ? Number(intent.sellAmountUsd) : undefined, verify: buildsNatively })
       return NextResponse.json({
-        reply: `🔄 You don't hold any ${sellSym} on ${chain.name} — nothing to sell.${noneChips.length ? '' : ` (If it's on another chain, name it: “sell all my ${sellSym} on ${elsewhere}”.)`}`,
+        reply: `🔄 You don't hold any ${sellSym} on ${chain.name} — nothing to sell. (If it's on another chain, name it: “sell all my ${sellSym} on ${elsewhere}”.)`,
         ...(noneChips.length ? { clarify: { question: `What would you like to do instead?`, options: noneChips } } : {}),
         buildPath: 'native-swap-balance',
       })

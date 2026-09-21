@@ -28663,7 +28663,7 @@ async function main() {
     // wiring, so a refusal can't quietly go back to being the end of the road.
     const { noPoolChips, nothingToSellChips, unpriceableSellChips } = await import('../lib/wall-chips')
     const wallCtx = (symbol: string, usd?: number) => ({ symbol, chainName: 'Robinhood Chain', usd, verify: buildsNatively })
-    const noneChips = nothingToSellChips(wallCtx('AMAT', 50), ['Base'])
+    const noneChips = nothingToSellChips(wallCtx('AMAT', 50))
     check('no dead ends: "you don\'t hold any X — nothing to sell" offers where to sell it, or how to get it', noneChips.length > 0 && noneChips.every((c) => buildsNatively(c.resume)), JSON.stringify(noneChips))
     const priceChips = unpriceableSellChips(wallCtx('NVDA', 50))
     check('no dead ends: "couldn\'t price X to size a $N swap" offers the sell that needs no price', priceChips.length > 0 && priceChips.every((c) => buildsNatively(c.resume)), JSON.stringify(priceChips))
