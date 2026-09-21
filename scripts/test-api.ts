@@ -32,6 +32,14 @@ import { dryRunTx, isAllowanceLag, rpcHostOf, transientRpcWords } from '../lib/d
 import { createSiweMessage } from 'viem/siwe'
 import { grantTypedData } from '../lib/grant-typed-data'
 import { LINK_FEE_PCT, SWAP_FEE_PCT } from '../lib/fees'
+import {
+  claimJobStepReport,
+  firstPartyJobStepBody,
+  jobStepKey,
+  jobStepSignedInfo,
+  resetJobStepReports,
+  type JobStepSignal,
+} from '../lib/job-step-telemetry'
 import { ROBINHOOD_DESK } from '../lib/live-examples'
 import { grantViolation, type GrantPolicy } from '../lib/spend-grant'
 import {
@@ -101,7 +109,7 @@ import { activeLinkCapFor, composeMcps, isCrossChainAsk, linkEyebrow, linkLockup
 import { DEFAULT_TAB, parseTabParam, tabUrl } from '../lib/app-tab-url'
 import { LINKS_STUDIO_HREF } from '../lib/links-href'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
-import { BUILD_PATHS, venueOfBuildPath } from '../lib/build-path'
+import { BUILD_PATHS, isBuildPath, venueOfBuildPath } from '../lib/build-path'
 import { netFeeBpsForTurn } from '../lib/fees'
 import {
   BUILD_PATH_OF_JOB_BUILDER,
@@ -149,6 +157,7 @@ import { decideManagerMove, stackingRefusal, undecidedProposalFor } from '../lib
 import { markPeriodKey, parseMarkAsk, reviewFlipDecision, tryoutReportCard, PAPER_LABEL, TRYOUT_BANNED_PHRASES } from '../lib/roster-tryouts'
 import { houseManagerRow, resolveHouseManager, HOUSE_MANAGER_ID } from '../lib/roster-managers'
 import { walletLineup, walletLaneHint, walletLaneChips, wcConfigured, WC_APP_METADATA , CDP_INIT_PATIENCE_MS, emailLaneHint, WALLET_LANE_NAMES, type WalletLaneId } from '../lib/wallet-lineup'
+import { walletAppFor, handoffCopy, handoffShownOn, WALLET_APP_SETTLE_MS, requestWalletAppOpen, walletAppOpenSnapshot, clearWalletAppOpen } from '../lib/wallet-handoff'
 import { hasStoredWalletConnection, shouldRerunConnectAsk, connectAskReleased, bootHoldingFor, initialHoldElapsed, CONNECT_ASK_RELEASE_GRACE_MS, CONNECT_ASK_RERUN_WINDOW_MS, WAGMI_STORE_KEY, WAGMI_RECENT_CONNECTOR_KEY } from '../lib/wallet-reconnect'
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
@@ -165,7 +174,7 @@ import prisma from '../lib/db'
 import { identiconCells } from '../components/ManagerMark'
 import { addrsUnion, arcQuery } from '../lib/gtm-arc'
 import { isInternalRun, INTERNAL_RUN_HEADER } from '../lib/internal-run'
-import { chainIdOfTurn, CHAT_EXPECTATION_SLUG, COUNTED_EVENT_SQL, COUNTED_EVENT_WHERE, decideReceiptVerdict, expectedReceiptClass, extractTxHash } from '../lib/link-receipt-verify'
+import { chainIdOfTurn, CHAT_EXPECTATION_SLUG, COUNTED_EVENT_SQL, COUNTED_EVENT_WHERE, decideReceiptVerdict, expectedReceiptClass, expectedTurnClass, extractTxHash } from '../lib/link-receipt-verify'
 import { deskExecuteConsentMessage, cleanSenderLabel } from '../lib/broker-exec'
 import { brandFromRow, isDeniedBrandHost, isDeniedBrandName, THIRD_PARTY_BRAND_HOSTS } from '../lib/brand-denylist'
 import { fenceToolOutput, hasFencedToolOutput, toolOutputNonce, toolOutputRule } from '../lib/tool-output-fence'
@@ -224,7 +233,7 @@ import {
 } from '../lib/stock-tape'
 import { buildGuardedSwap } from '../lib/swap-exec'
 import { fundedBuysOf, preflightFundedBuy, unfillableBuyCopy, verdictOfSwapResult, VENUE_PREFLIGHT_TIMEOUT_MS } from '../lib/venue-preflight'
-import { ROBINHOOD_BATCH_MAX } from '../lib/quotes'
+import { fetchYahooQuote, quietSymbols, RH_NEAR_WINDOW, RH_WIDE_WINDOW, ROBINHOOD_BATCH_MAX, type RhRead } from '../lib/quotes'
 import { buildLifiBridgeLeg, clampNativeSellAtoms, ETH_MOVE_MIN_OUT_BPS, ETH_MOVE_MIN_USD, fillableLeg, FUNDING_ALT_USDC, FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, fundingAltUsdcFor, fundingNeedUsd, listWords, fundingSourceSymbols, LIFI_LEG_FLAT_USD, MIN_VALUE_LEG_USD, minLegNote, offChainStableSource, ROBINHOOD_CHAIN_ID, STABLE_LEG_MIN_OUT_BPS, GAS_LEG_LADDER_USD, GAS_LEG_USD, GAS_TOPUP_ETH, guardLifiBridgeBuild, lifiBridgeRoutersFor, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodEthMove, planRobinhoodFundingAdvice, planRobinhoodFundingChips, rhFundingPending, robinhoodBuyNeedUsd, verifyLifiBridgeEcho, type FundingOrigin, type LifiBridgeExpectations, type LifiBridgeStep } from '../lib/lifi-bridge'
 import { classifyOneclickStatus, inflightDepositFromPending, inflightPendingData, inflightSettlingNote } from '../lib/inflight-funding'
 import { sanitizeWorkingContext } from '../lib/working-context'
@@ -5463,6 +5472,170 @@ async function main() {
         lanes.every((id) => new RegExp(`\\b${id}:\\s*\\w+WalletMark\\b`).test(markTable)) &&
         /phantomWallet,/.test(wagmi) && /from '@rainbow-me\/rainbowkit\/wallets'/.test(wagmi) &&
         /export function PhantomWalletMark/.test(marks) && /fill="#AB9FF2"/.test(marks)
+      )
+    })(),
+  )
+
+  // ── The wallet APP handoff on mobile (lib/wallet-handoff) ────────────────
+  // Nate, 2026-09-18, on a phone: "when trying to connect to metamask the
+  // second signing screen after connection does not pop up". On mobile the
+  // MetaMask lane is the MetaMask SDK, which brings the app forward by
+  // NAVIGATING to a metamask:// link — and both mobile browsers drop an app
+  // launch that no tap is carrying, which is exactly the SIWE signature
+  // lib/session fires from its post-connect effect. These pin the answer:
+  // the link may only ever be the wallet's, the launch is watched, and a
+  // dropped one becomes a button.
+  console.log('— mobile: the wallet app handoff')
+  check(
+    'wallet handoff: the ONLY links we will navigate to are MetaMask’s own (scheme + universal link) — an off-wallet https URL, a javascript: URL, and a link with whitespace or control characters in it are all refused',
+    walletAppFor('metamask://connect?channelId=abc') === 'MetaMask' &&
+      walletAppFor('METAMASK://connect') === 'MetaMask' &&
+      walletAppFor('https://metamask.app.link/connect?channelId=abc') === 'MetaMask' &&
+      walletAppFor('https://metamask.app.link.evil.com/connect') === null &&
+      walletAppFor('http://metamask.app.link/connect') === null &&
+      walletAppFor('https://pantessa.com') === null &&
+      // eslint-disable-next-line no-script-url
+      walletAppFor('javascript:alert(1)') === null &&
+      walletAppFor('metamask://connect?a=1 b=2') === null &&
+      walletAppFor('metamask://con\nnect') === null &&
+      walletAppFor('') === null &&
+      walletAppFor(null) === null,
+  )
+  check(
+    'wallet handoff: the card names the wallet and says what to do; a second dropped launch stops asking for the same tap and says the app may not be installed',
+    (() => {
+      const first = handoffCopy({ link: 'metamask://x', app: 'MetaMask', tried: false })
+      const again = handoffCopy({ link: 'metamask://x', app: 'MetaMask', tried: true })
+      return (
+        /Open MetaMask/.test(first.title) &&
+        /Open MetaMask/.test(first.cta) &&
+        /tap below/i.test(first.body) &&
+        /Still waiting on MetaMask/.test(again.title) &&
+        /installed/i.test(again.body) &&
+        first.title !== again.title &&
+        first.body !== again.body &&
+        // /embed signs through the host page's own relay — never our card
+        handoffShownOn('/embed') === false &&
+        handoffShownOn('/embed/abc') === false &&
+        handoffShownOn('/chat') === true &&
+        handoffShownOn('/i/abc') === true &&
+        handoffShownOn(null) === true
+      )
+    })(),
+  )
+  {
+    // The behaviour itself, against a stand-in for the two things the holder
+    // reads: whether the page went away, and where it navigated. A launch the
+    // browser honoured hides the page, and NOTHING is shown; a launch it
+    // dropped leaves the page visible, and the button appears with the link
+    // still in hand. Globals are restored before anything else runs.
+    const priorWindow = (globalThis as Record<string, unknown>).window
+    const priorDocument = (globalThis as Record<string, unknown>).document
+    const makeDom = () => {
+      const handlers: Record<string, Set<() => void>> = {}
+      const on = (k: string, f: () => void) => {
+        ;(handlers[k] ??= new Set()).add(f)
+      }
+      const off = (k: string, f: () => void) => handlers[k]?.delete(f)
+      const dom = {
+        navigated: [] as string[],
+        visibility: 'visible',
+        fire(k: string) {
+          for (const f of [...(handlers[k] ?? [])]) f()
+        },
+      }
+      ;(globalThis as Record<string, unknown>).document = {
+        get visibilityState() {
+          return dom.visibility
+        },
+        addEventListener: on,
+        removeEventListener: off,
+        createElement: () => ({ click: () => {}, set href(_v: string) {}, target: '', rel: '' }),
+      }
+      ;(globalThis as Record<string, unknown>).window = {
+        addEventListener: on,
+        removeEventListener: off,
+        location: {
+          set href(v: string) {
+            dom.navigated.push(v)
+          },
+        },
+      }
+      return dom
+    }
+    const settled = () => new Promise((r) => setTimeout(r, WALLET_APP_SETTLE_MS + 150))
+    try {
+      // (a) the launch lands: the page hides, so there is nothing to offer.
+      const landed = makeDom()
+      requestWalletAppOpen('metamask://connect?channelId=landed')
+      const navigatedOnce = landed.navigated.length === 1
+      landed.visibility = 'hidden'
+      landed.fire('visibilitychange')
+      const quietAfterHide = walletAppOpenSnapshot() === null
+      await settled()
+      const stillQuiet = walletAppOpenSnapshot() === null
+      clearWalletAppOpen()
+
+      // (b) the launch is dropped (the effect-fired signature, no activation):
+      // the page never hides, so the card goes up holding the same link.
+      const dropped = makeDom()
+      requestWalletAppOpen('metamask://connect?channelId=dropped')
+      const quietBeforeSettle = walletAppOpenSnapshot() === null
+      await settled()
+      const shown = walletAppOpenSnapshot()
+      // (c) a link that isn't the wallet's never navigates and never shows.
+      const before = dropped.navigated.length
+      requestWalletAppOpen('https://evil.example/steal')
+      const refused = dropped.navigated.length === before && walletAppOpenSnapshot() === shown
+      clearWalletAppOpen()
+      const cleared = walletAppOpenSnapshot() === null
+
+      check(
+        'wallet handoff (behaviour): a launch the browser honours hides the page and shows nothing; a launch it DROPS leaves the page visible and surfaces the card with the same link, untried; a non-wallet link neither navigates nor shows',
+        navigatedOnce &&
+          quietAfterHide &&
+          stillQuiet &&
+          quietBeforeSettle &&
+          !!shown &&
+          shown!.link === 'metamask://connect?channelId=dropped' &&
+          shown!.app === 'MetaMask' &&
+          shown!.tried === false &&
+          refused &&
+          cleared,
+        JSON.stringify({ navigatedOnce, quietAfterHide, stillQuiet, quietBeforeSettle, shown, refused, cleared }),
+      )
+    } finally {
+      clearWalletAppOpen()
+      if (priorWindow === undefined) delete (globalThis as Record<string, unknown>).window
+      else (globalThis as Record<string, unknown>).window = priorWindow
+      if (priorDocument === undefined) delete (globalThis as Record<string, unknown>).document
+      else (globalThis as Record<string, unknown>).document = priorDocument
+    }
+  }
+  check(
+    'wallet handoff (wiring): lib/wagmi hands the MetaMask SDK our openDeeplink (with it set the SDK never navigates itself), Providers mounts the card, and the signature takeover steps aside while a handoff is up',
+    (() => {
+      const strip = (s2: string) => s2.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      const wagmi = strip(readFileSync(pathJoin(process.cwd(), 'lib/wagmi.ts'), 'utf8'))
+      const providers = strip(readFileSync(pathJoin(process.cwd(), 'components/Providers.tsx'), 'utf8'))
+      const takeover = strip(readFileSync(pathJoin(process.cwd(), 'components/SignatureWaitTakeover.tsx'), 'utf8'))
+      const card = strip(readFileSync(pathJoin(process.cwd(), 'components/WalletAppHandoff.tsx'), 'utf8'))
+      return (
+        /openDeeplink\s*(\]|=)/.test(wagmi) &&
+        /requestWalletAppOpen/.test(wagmi) &&
+        /from '@\/lib\/wallet-handoff'/.test(wagmi) &&
+        /<WalletAppHandoff \/>/.test(providers) &&
+        /import WalletAppHandoff from '@\/components\/WalletAppHandoff'/.test(providers) &&
+        /dismissed \|\| handoff\) return null/.test(takeover) &&
+        // the card's button is the tap, and it is never disabled — the whole
+        // bug was a disabled "open the request" button on a page whose wallet
+        // was never brought up
+        /onClick=\{openWalletAppNow\}/.test(card) &&
+        !/disabled/.test(card) &&
+        // and it sits ABOVE RainbowKit's modal (2147483646): RainbowKit's own
+        // mobile "Continue in MetaMask" screen has no retry button, so a card
+        // behind it would be the same dead end with an extra step
+        /zIndex: 2147483647/.test(card)
       )
     })(),
   )
@@ -22083,7 +22256,11 @@ async function main() {
           /const silent = connector\?\.id === CDP_CONNECTOR_ID/.test(waitS) &&
           /return \{ shown: signingIn && \(!silent \|\| late\), silent \}/.test(waitS) &&
           /silent \? 'Signing you in…'/.test(waitS) && /\{!silent && \(/.test(waitS) &&
-          /if \(!wait\.shown \|\| dismissed\) return null/.test(waitS) && /silent=\{wait\.silent\}/.test(waitS) &&
+          // Re-pinned 2026-09-18: a third reason to stand down — on a phone the
+          // handoff card takes over while the wallet app hasn't come forward
+          // (lib/wallet-handoff), because "the request is open in your wallet"
+          // is not true yet and this card's button is disabled meanwhile.
+          /if \(!wait\.shown \|\| dismissed \|\| handoff\) return null/.test(waitS) && /silent=\{wait\.silent\}/.test(waitS) &&
           /sigWait\.shown && !sigDismissed/.test(runtimeS) && /silent=\{sigWait\.silent\}/.test(runtimeS),
         `grace=${grace}`,
       )
@@ -22764,6 +22941,89 @@ async function main() {
         heldPosition(undefined, { last: 1 }) === null && heldPosition({ ...ethHeld, amount: 0 }, { last: 2520.6 }) === null,
       JSON.stringify(aaplUnpriced))
 
+    // 1c. Memory first, then a background check (Nate, 2026-09-18: "since the
+    // watchlist was loaded first time, I have since bought more tokens… first
+    // load from memory, but background check for more tokens owned"). The rail
+    // paints the positions this browser remembers while its own read is in
+    // flight, and the minute poll reconciles as well as reprices — but only
+    // when the read turns something up, so an open page writes nothing all day.
+    const { heldReconcileReason, parseHeldSnapshots, readHeldSnapshot, writeHeldSnapshot, HELD_SNAPSHOT_KEY, HELD_SNAPSHOT_MAX_AGE_MS, HELD_SNAPSHOT_WALLETS } = await import('../lib/watchlists')
+    const reasonOf = (held: string[], reconciled: string[] | null, forced?: boolean) => heldReconcileReason({ held, reconciled, forced })
+    check('watch background: the first read of a wallet reconciles; a later read with the SAME symbols does not (the poll is a check, not a sync); the token bought since does',
+      reasonOf(['ETH', 'AAPL'], null) === 'first' && reasonOf(['ETH', 'AAPL'], ['ETH', 'AAPL']) === null && reasonOf(['ETH', 'AAPL', 'UNI'], ['ETH', 'AAPL']) === 'new',
+      [reasonOf(['ETH'], null), reasonOf(['ETH'], ['ETH']), reasonOf(['ETH', 'UNI'], ['ETH'])].join(','))
+    check('watch background: a holding that LEAVES the wallet writes nothing (the ledger only ever learns what is held), an empty wallet reconciles once, and a landed card purchase forces a run with nothing new in it',
+      reasonOf(['ETH'], ['ETH', 'AAPL']) === null && reasonOf([], null) === 'first' && reasonOf([], []) === null && reasonOf(['ETH'], ['ETH'], true) === 'forced')
+
+    // The memory itself: strict in, bounded out.
+    const snapRow = { symbol: 'eth', valueUsd: 1.05, amount: 0.0004, chains: ['Base'], chainIds: [8453] }
+    const parsedSnaps = parseHeldSnapshots(JSON.stringify({
+      '0x00000000000000000000000000000000000000ab': { at: 1_700_000_000_000, held: [snapRow, { symbol: 'AAPL', valueUsd: null, amount: 0, chains: [], chainIds: [] }, { nope: true }, 'junk'] },
+      'not-an-address': { at: 1, held: [] },
+      '0x00000000000000000000000000000000000000cd': { held: [] },
+    }))
+    check('watch memory: strict — a corrupt key reads as no memory, a non-address or clockless entry drops, and a row without a symbol and a positive amount is not a position',
+      parseHeldSnapshots('nope') && Object.keys(parseHeldSnapshots('nope')).length === 0 && Object.keys(parseHeldSnapshots(JSON.stringify([1, 2]))).length === 0 &&
+        Object.keys(parsedSnaps).join() === '0x00000000000000000000000000000000000000ab' &&
+        parsedSnaps['0x00000000000000000000000000000000000000ab'].held.length === 1 && parsedSnaps['0x00000000000000000000000000000000000000ab'].held[0].symbol === 'ETH',
+      JSON.stringify(parsedSnaps))
+    {
+      // The browser half, against a localStorage stand-in (no awaits inside).
+      const store = new Map<string, string>()
+      const g = globalThis as { window?: unknown }
+      const hadWindow = 'window' in g
+      g.window = { localStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) } }
+      const A = '0x00000000000000000000000000000000000000aa'
+      const B = '0x00000000000000000000000000000000000000bb'
+      const now = 1_800_000_000_000
+      writeHeldSnapshot(A, [{ symbol: 'ETH', valueUsd: 1.05, amount: 0.0004, chains: ['Base'], chainIds: [8453] }], now)
+      const back = readHeldSnapshot(A, now + 5_000)
+      const otherWallet = readHeldSnapshot(B, now + 5_000)
+      const stale = readHeldSnapshot(A, now + HELD_SNAPSHOT_MAX_AGE_MS + 1)
+      const upper = readHeldSnapshot(A.toUpperCase().replace('0X', '0x'), now + 5_000)
+      for (let i = 0; i < HELD_SNAPSHOT_WALLETS + 2; i++) writeHeldSnapshot(`0x${String(i).padStart(40, '0')}`, [{ symbol: 'UNI', valueUsd: 2, amount: 1, chains: ['Base'], chainIds: [8453] }], now + 1_000 + i)
+      const kept = Object.keys(parseHeldSnapshots(store.get(HELD_SNAPSHOT_KEY) ?? null))
+      const evicted = readHeldSnapshot('0x0000000000000000000000000000000000000000', now + 2_000)
+      if (hadWindow) g.window = undefined
+      delete g.window
+      check('watch memory: what a read found comes back for that wallet (any case), never for another; older than a day is not painted; only the newest few wallets are kept',
+        back?.length === 1 && back[0].symbol === 'ETH' && back[0].amount === 0.0004 && upper?.length === 1 && otherWallet === null && stale === null &&
+          kept.length === HELD_SNAPSHOT_WALLETS && evicted === null,
+        JSON.stringify({ back, kept: kept.length }))
+    }
+
+    // The wiring: memory paints, a live read arms. A Sell chip reads
+    // lib/use-held → lib/held-read, which must never answer from the snapshot.
+    const heldReadSrc = await readFile('lib/held-read.ts', 'utf8')
+    const useHeldSrc = await readFile('lib/use-held.ts', 'utf8')
+    const wlHookSrc = await readFile('components/markets/watchlist/useWatchlists.ts', 'utf8')
+    check('watch memory: every read that answers is remembered (one write site, in the shared read), and nothing that ARMS a chip reads that memory back — peekHeld and lib/use-held stay live-only',
+      /writeHeldSnapshot\(address, v\.held\)/.test(heldReadSrc) && !/readHeldSnapshot/.test(heldReadSrc) && !/HeldSnapshot/.test(useHeldSrc) &&
+        /return lastRead\.get\(address\) \?\? null/.test(heldReadSrc))
+    check('watch background: the rail’s minute poll runs the SAME reconcile as the visit (not a numbers-only refresh), gated by heldReconcileReason; the wallet’s remembered positions fill in until its own read lands',
+      /const readAndReconcile = useCallback\(/.test(wlHookSrc) &&
+        /heldReconcileReason\(\{ held: symbols, reconciled: reconciledHeld\.get\(key\) \?\? null, forced: fresh \}\)/.test(wlHookSrc) &&
+        /void readAndReconcile\(\{ maxAgeMs: HELD_EVERY_MS \/ 2, alive: \(\) => alive \}\)/.test(wlHookSrc) &&
+        /const held = holder && heldRead\?\.holder === holder \? heldRead\.held : remembered/.test(wlHookSrc) &&
+        /const snap = readHeldSnapshot\(holder\)/.test(wlHookSrc))
+
+    // One page, two instances of this hook (the rail and the Morning tape
+    // beside it). Only the rail reads the wallet, and a fill is announced —
+    // or the instance that didn't do it keeps showing the list as it was:
+    // found 2026-09-18 with the rail saying "Nothing watched yet." while the
+    // tape beside it already read "2 SYMBOLS" off the same fill.
+    const tapeHookSrc = await readFile('components/markets/ai/MorningTape.tsx', 'utf8')
+    check('watch background: the page has ONE holdings reader — the Morning tape takes the lists with holdings off, so no wallet is read (or reconciled) twice on one page',
+      /useWatchlists\(\{ holdings: false \}\)/.test(tapeHookSrc) &&
+        /const readsHoldings = opts\.holdings !== false/.test(wlHookSrc) &&
+        /const holder = !readsHoldings \|\| status === 'loading' \? null/.test(wlHookSrc))
+    check('watch background: a fill reaches the OTHER instance on the page and never announces back to itself — the rail shows what the autofill added, and nobody toasts it twice',
+      /announceHeldFill\(\{ modeKey: listsKey, mode: 'authed', list, added: r\.added, listName: list\.name \}, selfListener\.current\)/.test(wlHookSrc) &&
+        /announceHeldFill\(\{ modeKey: listsKey, mode: 'guest', list: null, added: plan\.add, listName \}, selfListener\.current\)/.test(wlHookSrc) &&
+        /for \(const fn of \[\.\.\.fillListeners\]\) if \(fn !== from\) fn\(fill\)/.test(wlHookSrc) &&
+        /if \(f\.mode === 'guest'\) update\(\(\) => readGuestLists\(\)\)/.test(wlHookSrc) &&
+        /if \(!modeKey \|\| f\.modeKey !== modeKey \|\| !f\.added\.length\) return/.test(wlHookSrc))
+
     // 2. The guest ledger (browser-scoped, like guest lists).
     const led = parseHeldLedger(JSON.stringify({ seen: ['weth', 'AAPL', 7], auto: ['ETH'], pending: ['NVDA'] }))
     check('holdings ledger (guest): strict — a corrupt key reads empty, symbols normalize, non-strings drop', parseHeldLedger('nope').seen.length === 0 && parseHeldLedger('[1,2]').seen.length === 0 && led.seen.join() === 'ETH,AAPL' && led.auto.join() === 'ETH' && led.pending.join() === 'NVDA')
@@ -22873,13 +23133,16 @@ async function main() {
     check('holdings rail: the hook reads /api/watchlists/holdings, plans with planHeldAutofill, hands the guest ledger over on sign-in, and routes every guest write through updateGuest (the stale-closure fix: no persistGuest, no [...lists, …])',
       hookSrc.includes('/api/watchlists/holdings') && hookSrc.includes('planHeldAutofill(') && hookSrc.includes('guestHeldAdoption(') && hookSrc.includes('updateGuest(') && !hookSrc.includes('persistGuest(') && !/\[\.\.\.lists,/.test(hookSrc))
     check('holdings rail: rows the wallet holds wear the "In your wallet" marker and the autofill says what it added', railSrc.includes('data-held') && railSrc.includes('heldTitle(') && railSrc.includes('heldAutofillNote('))
-    const pollAt = hookSrc.indexOf('readHeld(holder, HELD_EVERY_MS / 2)')
-    const pollBlock = pollAt < 0 ? '' : hookSrc.slice(hookSrc.lastIndexOf('useEffect(', pollAt), hookSrc.indexOf('}, [ready, holder])', pollAt))
-    check('watch position: a held row renders heldPosition beside its price (before the quote cell, the amount’s ticker in its own span to give way on a narrow rail), every price cell is as wide as the list’s widest price, the marker quotes the same value, and the hook re-reads holdings on a visible-tab clock that never reconciles (no POST, no autofill plan)',
+    // The poll used to reprice only; since 2026-09-18 it runs the SAME
+    // reconcile as the visit (re-pinned on purpose — the whole point is that a
+    // token bought after the page loaded joins the list without a navigation).
+    const pollAt = hookSrc.indexOf('readAndReconcile({ maxAgeMs: HELD_EVERY_MS / 2')
+    const pollBlock = pollAt < 0 ? '' : hookSrc.slice(hookSrc.lastIndexOf('useEffect(', pollAt), hookSrc.indexOf('}, [ready, holder, readAndReconcile])', pollAt))
+    check('watch position: a held row renders heldPosition beside its price (before the quote cell, the amount’s ticker in its own span to give way on a narrow rail), every price cell is as wide as the list’s widest price, the marker quotes the same value, and the hook re-reads holdings on a visible-tab clock — the background check, reconcile included',
       railSrc.includes('heldPosition(inWallet, q)') && railSrc.includes('data-position') && railSrc.indexOf('data-position') < railSrc.indexOf('className="wl__rowQuote mono"') &&
         railSrc.includes('wl__rowPosUnit') && railSrc.includes("'--wl-last-ch'") && railSrc.includes('style={priceCell}') &&
         railSrc.includes('valueUsd: pos?.valueUsd ?? inWallet.valueUsd') &&
-        pollBlock.includes('setInterval(') && pollBlock.includes('visibilitychange') && !pollBlock.includes("'POST'") && !pollBlock.includes('planHeldAutofill('),
+        pollBlock.includes('setInterval(') && pollBlock.includes('visibilitychange') && pollBlock.includes('document.hidden'),
       pollBlock ? `poll block ${pollBlock.length} chars` : 'no poll block')
 
     // 8. The rail brews while it waits (2026-09-14, Nate: "a loader icon
@@ -23005,8 +23268,8 @@ async function main() {
       chipFundSrc.includes('o.fund && o.resume === w.resume') && panelFundSrc.includes('wait.resume ?') && panelFundSrc.includes("wait.asset ?? 'card purchase'"))
     check('card door: the rail mounts the door at the end of its rows with the holdings read’s verdict (never while it brews), and a landing re-reads the wallet past both caches (fresh=1, reconcile inside the minute) so the purchase fills the list',
       railFundSrc.includes('<FundWallet') && railFundSrc.includes('empty={wl.walletEmpty && !brew}') && railFundSrc.includes('onLanded={wl.recheckWallet}') &&
-        heldReadFundSrc.includes("'&fresh=1'") && hookFundSrc.includes('readHeld(holder, HELD_EVERY_MS, fresh)') && hookFundSrc.includes("from '@/lib/held-read'") &&
-        hookFundSrc.includes('lastReconciled.delete(key)') && hookFundSrc.includes('setWalletRead('))
+        heldReadFundSrc.includes("'&fresh=1'") && hookFundSrc.includes('readHeld(holder, opts.maxAgeMs ?? HELD_EVERY_MS, fresh)') && hookFundSrc.includes("from '@/lib/held-read'") &&
+        hookFundSrc.includes('forced: fresh') && hookFundSrc.includes('setWalletRead('))
     const fundHtml = flat(await (await fetch(`${BASE}/markets`)).text())
     check('card door: /markets never server-renders the door (no wallet is known before hydration)', fundHtml.includes('class="wl__rows"') && !fundHtml.includes('data-rail-fund'))
   }
@@ -24950,6 +25213,54 @@ async function main() {
     const askSrc = await readFile('components/markets/ai/AskChart.tsx', 'utf8')
     check('ai components: AiBrief streams /api/markets/brief, chips call onAsk on click, the position call is address-keyed and separate, and the footer wears the tape footnote + byline', briefSrc.includes("fetch('/api/markets/brief'") && briefSrc.includes('onClick={() => onAsk(c.ask)}') && briefSrc.includes("part: 'position', address: walletAddress") && briefSrc.includes('TAPE_FOOTNOTE') && briefSrc.includes('Written by a model from our own tape'))
     check('ai components: AskChart never auto-sends an act (the chip is a button → onAsk), applies chart answers through onChartState, posts the alert rule to /api/alerts, and signed-out alerts open the unified door', askSrc.includes('onClick={() => onAsk(reply.chip.ask)}') && !askSrc.includes('onAsk(j.chip') && askSrc.includes("if (j.kind === 'chart') onChartState?.(j.state)") && askSrc.includes("fetch('/api/alerts'") && askSrc.includes('<CreateAccountButton className="mk-ai__cta" label="Sign in to set alerts"'))
+    // ── the suggestion row (2026-09-18) ──────────────────────────────────
+    // A suggestion that carries a complete ask SENDS on one tap, like every
+    // other complete-ask button on the page (memory chip-send-contract). It
+    // used to go through the ask route, which spent a round trip re-deriving
+    // what the grammar already knew and then rendered a SECOND button with
+    // the same words — the first tap read dead. So: every `act` entry is
+    // ladder-valid (the route's own fence + ladder, via chipOk), every
+    // `question` entry is NOT an act (it belongs to this lane), and the
+    // component wires the two differently.
+    {
+      const { askChartSuggestions, SUGGESTED_ACT_USD } = await import('../lib/markets-ai-suggestions')
+      const suggestPairs = ['ETH', 'BTC', 'LINK', 'UNI', 'AAPL', 'TSLA', 'AMAT', 'HYPE', 'FARTCOIN', 'SOL', 'XRP', 'DOGE']
+        .map((s) => chartPairFor(s))
+        .filter((p): p is NonNullable<typeof p> => !!p)
+      const suggRows = suggestPairs.map((p) => ({ pair: p, sugg: askChartSuggestions(p.symbol, p) }))
+      const actRows = suggRows.flatMap((r) => r.sugg.filter((s) => s.kind === 'act').map((s) => ({ symbol: r.pair.symbol, ask: (s as { ask: string }).ask, label: (s as { label: string }).label })))
+      const deadActs = actRows.filter((a) => !chipOk(a.ask, a.symbol))
+      check(
+        `ai suggestions: EVERY act suggestion is a complete ask the ladder builds natively (${actRows.length} across ${suggRows.length} pairs) — the same fence + ladder the route runs before it shows an act chip`,
+        suggRows.length >= 12 && actRows.length === suggRows.length && deadActs.length === 0,
+        deadActs.length ? deadActs.map((a) => `${a.ask} → ${aiLadderVerdict(a.ask).ok ? 'fence' : (aiLadderVerdict(a.ask) as { why: string }).why}`).join(' | ') : actRows.map((a) => a.ask).join(' | '),
+      )
+      check(
+        'ai suggestions: a coin whose home is not an EVM chain is offered the perp it can have, not a spot buy that only clarifies (SOL/XRP/DOGE — the blind-template class the arrival squad hit)',
+        ['SOL', 'XRP', 'DOGE'].every((s) => {
+          const row = actRows.find((a) => a.symbol === s)
+          return !!row && row.ask === `Long $${SUGGESTED_ACT_USD} of ${s} on Hyperliquid` && simulateLadder(`Buy $${SUGGESTED_ACT_USD} of ${s}`).kind !== 'action'
+        }),
+        actRows.filter((a) => ['SOL', 'XRP', 'DOGE'].includes(a.symbol)).map((a) => a.ask).join(' | '),
+      )
+      check(
+        'ai suggestions: the three question entries stay questions (they answer in this lane, never sent as asks) and a stock still leads with Buy',
+        suggRows.every((r) => r.sugg.filter((s) => s.kind === 'question').length === 3) &&
+          suggRows.every((r) => r.sugg.filter((s) => s.kind === 'question').every((s) => !chipOk((s as { q: string }).q, r.pair.symbol))) &&
+          actRows.find((a) => a.symbol === 'AAPL')?.ask === `Buy $${SUGGESTED_ACT_USD} of AAPL`,
+      )
+      const suggCss = await readFile('components/markets/ai.css', 'utf8')
+      check(
+        'ai suggestions: the act chip SENDS on one tap through onAsk (a `?prompt=` link is only the no-JS fallback — a URL never fires a turn), question chips still submit to the route, and the act chip is styled apart from them',
+        askSrc.includes("s.kind === 'act' ?") &&
+          askSrc.includes('onClick={sendOnClick(s.ask)}') &&
+          askSrc.includes('href={promptHref(s.ask)}') &&
+          askSrc.includes('className="mk-ai__sugg-chip mk-ai__sugg-chip--act"') &&
+          askSrc.includes('onClick={() => void submit(s.q)}') &&
+          /A CHIP SENDS · YOUR WALLET SIGNS/.test(askSrc) &&
+          suggCss.includes('.mk-ai__sugg-chip--act {'),
+      )
+    }
   }
 
   // ── ARRIVAL/CORE ──────────────────────────────────────────────────────────
@@ -26045,6 +26356,79 @@ async function main() {
       robinhoodUp ? `robinhood feeds: ${rhBelow} below the cap, ${rhAbove} above` : 'robinhood feed down for a 2-symbol read — chunking unproven this run',
     )
 
+    // ── Quotes: the tape's own window. `5minute&span=day` is the trailing 24
+    // hours, and the 24-hour market prints 08:00Z–23:59Z on WEEKDAYS only, so
+    // that window holds nothing from Saturday ~23:55Z until Monday 08:00Z —
+    // about 32 hours every week, 56 around a Monday holiday. Measured 2026-09-21 07:50Z: all 102 stocks in a scan
+    // were served by Yahoo, whose `last` is Friday's REGULAR close (a
+    // different number from the 24/7 tape the 4663 tokens track), 59 hours
+    // old and read as current — STOCK_TAPE_MAX_AGE_MS is 96h.
+    check(
+      'quotes: the wide retry window is hourly-over-a-week — NOT interval=day (whose close is the regular-session close even under bounds=24_7, i.e. the very number Yahoo serves) and not 5minute (26.8 MiB for a 75-symbol batch vs 2.26 MiB)',
+      RH_NEAR_WINDOW.interval === '5minute' && RH_NEAR_WINDOW.span === 'day' && RH_WIDE_WINDOW.interval === 'hour' && RH_WIDE_WINDOW.span === 'week',
+      `${RH_NEAR_WINDOW.interval}/${RH_NEAR_WINDOW.span} → ${RH_WIDE_WINDOW.interval}/${RH_WIDE_WINDOW.span}`,
+    )
+    const quietIn = (reads: [string, RhRead][], asked: string[]) => quietSymbols(new Map(reads), asked)
+    check(
+      'quotes: only the symbols the near window has no print for go to the retry — a row with a previous close but zero non-interpolated bars is quiet, a row with a print is not, an unanswered symbol is, and the asked order and case are kept',
+      quietIn([['AAPL', { prev: 336.13 }], ['TSLA', { prev: 364.27, last: { price: 369.25, asOf: 1 } }], ['FIX', { prev: 1651.37 }]], ['aapl', 'TSLA', 'FIX', 'ZZZZ']).join() === 'aapl,FIX,ZZZZ' &&
+        quietIn([['AAPL', { prev: 1, last: { price: 2, asOf: 3 } }]], ['AAPL']).length === 0 &&
+        quietIn([], ['AAPL']).join() === 'AAPL',
+      quietIn([['AAPL', { prev: 336.13 }], ['TSLA', { prev: 364.27, last: { price: 369.25, asOf: 1 } }], ['FIX', { prev: 1651.37 }]], ['aapl', 'TSLA', 'FIX', 'ZZZZ']).join(),
+    )
+
+    // Live: read the wide window ourselves, then assert the served quotes
+    // cover exactly what it can see. Discriminates at ANY hour — outside the
+    // trading day every listed stock is recovered by it, and inside one the
+    // thin names are (2026-09-21 08:30Z, mid-session: 7 of 75 recovered, and
+    // main served those 7 from Yahoo — FIX 1651.37 vs the tape's 1640.00).
+    const rhWindow = async (syms: string[], w: { interval: string; span: string }) => {
+      const res = await fetch(`https://api.robinhood.com/marketdata/historicals/?symbols=${syms.join(',')}&interval=${w.interval}&span=${w.span}&bounds=24_7`, {
+        headers: { 'user-agent': 'Mozilla/5.0 (compatible; Pantessa/1.0; +https://www.pantessa.com)', accept: 'application/json' },
+      })
+      const out = new Map<string, { px: number; at: number }>()
+      if (!res.ok) return out
+      const body = (await res.json()) as { results?: { symbol?: string; historicals?: { close_price?: string; interpolated?: boolean; begins_at?: string }[] }[] }
+      for (const r of body.results ?? []) {
+        const real = (r.historicals ?? []).filter((h) => !h.interpolated && Number(h.close_price) > 0)
+        const last = real[real.length - 1]
+        if (r.symbol && last?.begins_at) out.set(r.symbol.toUpperCase(), { px: Number(last.close_price), at: Date.parse(last.begins_at) })
+      }
+      return out
+    }
+    const tapeSet = tapeTickers.slice(0, ROBINHOOD_BATCH_MAX)
+    const [tapeNear, tapeWide, tapeServed] = await Promise.all([rhWindow(tapeSet, RH_NEAR_WINDOW), rhWindow(tapeSet, RH_WIDE_WINDOW), feedsOf(tapeSet)])
+    const servedQ = tapeServed as unknown as Record<string, { feed: string; last: number; asOf: number } | undefined>
+    const recovered = tapeSet.filter((t) => tapeWide.has(t) && !tapeNear.has(t))
+    const wideCovered = tapeSet.filter((t) => tapeWide.has(t))
+    const offTape = wideCovered.filter((t) => servedQ[t]?.feed !== 'robinhood')
+    const tooOld = wideCovered.filter((t) => (servedQ[t]?.asOf ?? 0) < (tapeWide.get(t)?.at ?? 0))
+    check(
+      `tape parity (quotes): every stock the 24/7 tape has a print for is served from the tape, whatever the hour — the trailing-24h window holds nothing from Saturday ~23:55Z until Monday 08:00Z, about 32 hours every week, and a stock quiet in it used to fall to Yahoo's regular-session close`,
+      tapeWide.size === 0 || (offTape.length === 0 && tooOld.length === 0),
+      tapeWide.size === 0
+        ? 'robinhood historicals down for the wide window — recovery unproven this run'
+        : `${wideCovered.length}/${tapeSet.length} on the tape, ${recovered.length} of them quiet in the near window (${recovered.slice(0, 8).join(' ') || 'none — a busy session'})${offTape.length ? `; off tape: ${offTape.slice(0, 6).map((t) => `${t}=${servedQ[t]?.feed ?? 'missing'}`).join(' ')}` : ''}${tooOld.length ? `; stale asOf: ${tooOld.slice(0, 6).join(' ')}` : ''}`,
+    )
+    // The brief's ask, stated as a fact about the two feeds rather than a
+    // clock reading: wherever the tape printed after Yahoo's session close,
+    // the served quote is the tape's later print, not Yahoo's.
+    const yahooCmp = await Promise.all(
+      (recovered.length ? recovered : wideCovered).slice(0, 4).map(async (t) => {
+        const pair = chartPairFor(t)
+        const y = pair ? await fetchYahooQuote(pair).catch(() => null) : null
+        return { t, y, wide: tapeWide.get(t), served: servedQ[t] }
+      }),
+    )
+    const laterThanYahoo = yahooCmp.filter((r) => r.y && r.wide && r.wide.at > r.y.asOf)
+    check(
+      'tape parity (quotes): where the 24/7 tape kept printing after the regular close, the served asOf is the tape\'s print, later than the Yahoo fallback\'s — the two feeds are different prices, not two reads of one',
+      laterThanYahoo.every((r) => r.served?.feed === 'robinhood' && (r.served?.asOf ?? 0) >= (r.wide?.at ?? 0) && (r.served?.asOf ?? 0) > (r.y?.asOf ?? 0)),
+      laterThanYahoo.length === 0
+        ? `no symbol in the sample has a tape print after Yahoo's (${yahooCmp.map((r) => `${r.t} tape=${r.wide ? new Date(r.wide.at).toISOString().slice(5, 16) : '—'} yahoo=${r.y ? new Date(r.y.asOf).toISOString().slice(5, 16) : 'down'}`).join(' ')}) — in-session, or a feed is down`
+        : laterThanYahoo.map((r) => `${r.t} served=${r.served?.feed}@${new Date(r.served?.asOf ?? 0).toISOString().slice(5, 16)} tape=${r.wide!.px}@${new Date(r.wide!.at).toISOString().slice(5, 16)} yahoo=${r.y!.last}@${new Date(r.y!.asOf).toISOString().slice(5, 16)}`).join('  '),
+    )
+
     // ── The routes API compares a stock row with the REAL tape.
     for (const sym of ['AMAT', 'AAPL']) {
       const q = ((await (await fetch(`${BASE}/api/quotes?symbols=${sym}`)).json()) as { quotes: Record<string, { last: number }> }).quotes[sym]
@@ -26703,6 +27087,202 @@ async function main() {
     )
   }
 
+  // ── A job step signed in the Jobs rail moves the money metric (2026-09-18) ─
+  // components/JobDetailOverlay mounted `<JobCard onStepSigned={() => void
+  // loadContext()} />` — it took the signal and threw it away, so a step
+  // signed from the rail's detail card recorded NOTHING: no embed_turns row,
+  // no money moved, no creator earnings, nothing on /activity. Only a step
+  // signed in the chat thread reported. lib/job-step-telemetry now owns the
+  // wire for BOTH lanes plus the double-count fence between them.
+  {
+    const [cardSrc, overlaySrc, chatSrc, teleSrc] = await Promise.all([
+      readFile('components/JobCard.tsx', 'utf8'),
+      readFile('components/JobDetailOverlay.tsx', 'utf8'),
+      readFile('components/ChatInterface.tsx', 'utf8'),
+      readFile('lib/job-step-telemetry.ts', 'utf8'),
+    ])
+
+    // The fence that keeps this fixed: EVERY JobCard mount reports. A mount
+    // whose handler never reaches lib/job-step-telemetry is the bug itself.
+    const mountsIn = (src: string) => [...src.matchAll(/<JobCard[\s\S]{0,2500}?\/>/g)].map((m) => m[0])
+    const mounts = [...mountsIn(chatSrc), ...mountsIn(overlaySrc)]
+    // Every JobCard in the repo is one of these two files — a third mount that
+    // forgets to report is the bug this PR fixes, so the count is pinned too.
+    const walkTsx = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? walkTsx(`${dir}/${d.name}`) : /\.tsx$/.test(d.name) ? [`${dir}/${d.name}`] : []))
+    const jobCardFiles = [...walkTsx('components'), ...walkTsx('app')].filter((f) => /<JobCard[\s>]/.test(readFileSync(f, 'utf8')))
+    const reportsFromLib = (m: string) => /onStepSigned/.test(m) && /jobStepSignedInfo|postJobStepSigned|onStepSigned=\{onStepSigned\}/.test(m)
+    check(
+      'job-step beacon: every JobCard mount in the app reports through lib/job-step-telemetry — no mount may swallow the signal (the rail overlay did)',
+      mounts.length === 3 && mounts.every(reportsFromLib) && !/onStepSigned=\{\(\) =>/.test(overlaySrc) &&
+        jobCardFiles.length === 2 && jobCardFiles.every((f) => /ChatInterface|JobDetailOverlay/.test(f)),
+      `${mounts.length} mounts in ${jobCardFiles.length} files, ${mounts.filter((m) => !reportsFromLib(m)).length} silent`,
+    )
+    check(
+      'job-step beacon: the overlay owns a real reporter (postJobStepSigned with the connected wallet) and still refreshes the position block',
+      /import \{ postJobStepSigned, type JobStepSignal \} from '@\/lib\/job-step-telemetry'/.test(overlaySrc) &&
+        /postJobStepSigned\(info, \{ walletAddress: address \}\)/.test(overlaySrc) &&
+        /const \{ address \} = useAccount\(\)/.test(overlaySrc) &&
+        /void loadContext\(\)/.test(overlaySrc),
+    )
+    check(
+      'job-step beacon: the chat lane stopped spelling the fields inline — it maps through the shared jobStepSignedInfo and claims the fence first',
+      /if \(!claimJobStepReport\(info\)\) return/.test(chatSrc) &&
+        /reportEmbedSigned\(jobStepSignedInfo\(info\)\)/.test(chatSrc) &&
+        !/artifact: 'job-step',\s*\n\s*chain: 'multi'/.test(chatSrc),
+    )
+    // The overlay is first-party BY CONSTRUCTION (it never mounts in an embed
+    // or on /i) — which is why its reporter may hard-code the first-party lane
+    // and why the shared fence can never swallow a host page's `turn` event:
+    // no onEmbedEvent listener exists where the overlay lives.
+    check(
+      'job-step beacon: the overlay only mounts first-party (!embedded && !simple), so its keyless lane is always the right one and no host-page listener can be fenced out',
+      /\{!embedded && !simple && <JobDetailOverlay \/>\}/.test(chatSrc) &&
+        !/onEmbedEvent/.test(overlaySrc) &&
+        /firstParty: true/.test(teleSrc),
+    )
+
+    // JobCard hands back everything the beacon needs — including the receipt
+    // (chain + explorer URL) each sign surface already had and used to drop.
+    check(
+      'job-step beacon: JobCard hands back the full signal — jobId + seq (the fence identity), builder, value, fee tier, and the receipt each sign surface returns',
+      /onStepSigned\?: \(info: JobStepSignal\) => void/.test(cardSrc) &&
+        /receipt\?: \{ chainId\?: number; txUrl\?: string \}/.test(cardSrc) &&
+        /jobId,\n\s*seq,\n\s*builder,/.test(cardSrc) &&
+        // RE-PINNED on the #819 merge: the receipt still LEADS (it is the only
+        // source for an off-chain venue order), but #819's artifact readers are
+        // the fallback, so a caller that passes none still reports a chain.
+        /const chainId = receipt\?\.chainId \?\? jobStepChainId\(stepArtifact\)/.test(cardSrc) &&
+        /txUrl:\s*\n\s*receipt\?\.txUrl \?\?/.test(cardSrc) &&
+        // EVERY sign surface the card embeds feeds its receipt through — all
+        // four call sites pass the argument, none of them drops it.
+        (cardSrc.match(/completeStep\(/g) ?? []).length === 4 &&
+        (cardSrc.match(/\{\s*(?:chainId|txUrl)[:,]/g) ?? []).length === 4,
+      `completeStep calls=${(cardSrc.match(/completeStep\(/g) ?? []).length}, receipts=${(cardSrc.match(/\{\s*(?:chainId|txUrl)[:,]/g) ?? []).length}`,
+    )
+    check(
+      'job-step beacon: the explorer link comes from the chain registry, never a basescan fallback (a 4663 step would link to the wrong explorer)',
+      /const base = chainById\(chainId\)\?\.explorerTx/.test(cardSrc) && !/basescan\.org/.test(cardSrc),
+    )
+
+    // ── the double-count fence ───────────────────────────────────────────
+    // Both JobCards can be mounted over the same job at once (the overlay
+    // renders OVER the chat that holds the job's message), and the beacon is
+    // keyed only by sessionId server-side — a second report is counted twice
+    // as money moved.
+    resetJobStepReports()
+    const JOBSTEP_WALLET = '0x00000000000000000000000000000000000beef1'
+    const sig = (jobId: string, seq: number): JobStepSignal => ({ jobId, seq, builder: 'native-swap', valueUsd: 12.5, feeBps: 50, detail: '0xabc' })
+    const first = claimJobStepReport(sig('job-aaa', 0))
+    const second = claimJobStepReport(sig('job-aaa', 0))
+    const otherStep = claimJobStepReport(sig('job-aaa', 1))
+    const otherJob = claimJobStepReport(sig('job-bbb', 0))
+    check(
+      'job-step beacon (fence): one report per (job, step) — the second card, or a sign button that fires twice, reports nothing; a DIFFERENT step and a different job still report',
+      first === true && second === false && otherStep === true && otherJob === true &&
+        jobStepKey(sig('job-aaa', 0)) === 'job-aaa#0' && jobStepKey(sig('job-aaa', 1)) !== jobStepKey(sig('job-aaa', 0)),
+      `${first}/${second}/${otherStep}/${otherJob}`,
+    )
+
+    // ── the wire ─────────────────────────────────────────────────────────
+    const info = jobStepSignedInfo(sig('job-ccc', 2))
+    check(
+      "job-step beacon (wire): the shared mapping is the one both lanes send — artifact 'job-step', the step's value + fee tier + jobId, and 'multi' as the chain only when the step named none (an off-chain venue order)",
+      info.artifact === 'job-step' && info.chain === 'multi' && info.valueUsd === 12.5 && info.feeBps === 50 &&
+        info.jobId === 'job-ccc' && info.detail === '0xabc',
+      JSON.stringify(info),
+    )
+    // RE-PINNED on the #819 merge. This pin used to assert the OPPOSITE — that
+    // the wire carried the raw builder id, unchanged, "so switching the rail on
+    // can't re-price anything" — and deferred the fix to its own PR because it
+    // moves creator earnings. #819 IS that PR and it is on main now: a step
+    // reports the path of what it ACTUALLY built. So the rule to keep is that
+    // the mapper forwards the RESOLVED path and never substitutes the builder.
+    const builtInfo = jobStepSignedInfo({ ...sig('job-ccc', 2), buildPath: jobStepBuildPath('native-swap', { [STEP_BUILD_PATH_KEY]: 'native-swap-lifi' }) })
+    check(
+      'job-step beacon (wire): the mapper forwards the path the step BUILT and never the raw builder id — a raw id fails the route allowlist and the row lands build_path NULL, which is $0 of creator earnings on a swap that really paid the fee',
+      builtInfo.buildPath === 'native-swap-lifi' && isBuildPath(builtInfo.buildPath) &&
+        // a signal that resolved to nothing reports nothing — never a guess
+        info.buildPath === undefined &&
+        // the substitution that used to live here would fail the allowlist
+        !isBuildPath('native-swap') && !isBuildPath('native-lifi-fund') && isBuildPath('native-job'),
+      `${String(builtInfo.buildPath)} / ${String(info.buildPath)}`,
+    )
+    // The chain label moved into the shared mapper with #819's per-chain read,
+    // so both lanes name the same chain — from the REGISTRY, whose hand-written
+    // predecessor had no Robinhood Chain, the chain most job steps sign on.
+    check(
+      'job-step beacon (wire): the mapper labels the signing chain from the chain registry, so the rail and the chat lane can never disagree about where a step landed',
+      jobStepSignedInfo({ ...sig('job-fff', 0), chainId: 8453 }).chain === 'base' &&
+        jobStepSignedInfo({ ...sig('job-fff', 1), chainId: 4663 }).chain === chainById(4663)?.key &&
+        jobStepSignedInfo({ ...sig('job-fff', 2), chainId: 4663 }).chain !== 'multi',
+      `${jobStepSignedInfo({ ...sig('job-fff', 0), chainId: 8453 }).chain} / ${jobStepSignedInfo({ ...sig('job-fff', 1), chainId: 4663 }).chain}`,
+    )
+    const body = firstPartyJobStepBody(sig('job-ddd', 0), { sessionId: 'harness-jobstep-wire', walletAddress: JOBSTEP_WALLET, page: `${BASE}/chat` })
+    check(
+      'job-step beacon (wire): the first-party body carries the lane marker, the signing wallet and the page, and NEVER free text (the first-party lane keeps chat asks private)',
+      body.firstParty === true && body.outcome === 'signed' && body.artifact === 'job-step' &&
+        body.walletAddress === JOBSTEP_WALLET && body.page === `${BASE}/chat` && body.detail === undefined && body.prompt === undefined,
+      JSON.stringify(body),
+    )
+
+    // ── money follows the receipt (S-2) — what turning the rail on counts ─
+    // A rail-signed row never carries an /i slug (the overlay only mounts off
+    // /i), so its class is 'job' → `attested` → COUNTED with no tx hash
+    // needed. That is what makes this fix actually move the money metric
+    // rather than file uncounted rows.
+    check(
+      "job-step beacon (counting): a slug-less job-step row verifies as 'job' → attested → counted, so a rail-signed step moves money with no hash to prove; 'job-step' is not an EVM artifact class",
+      (await expectedTurnClass({ artifact: 'job-step' })) === 'job' &&
+        (await expectedTurnClass({ artifact: 'tx' })) === 'evm-tx' &&
+        (COUNTED_VERIFICATIONS as readonly string[]).includes('attested'),
+    )
+    // The one money-affecting side effect, pinned so it stays deliberate: on
+    // an /i link the class comes from the LINK's ask, so a job step signed
+    // there is receipt-checked for the first time now that the card forwards
+    // its hash. Hashless rows land 'unverified' (uncounted) today, so the
+    // verdict can only move unverified → verified/mismatch — it can never
+    // un-count a row that counts today.
+    check(
+      "job-step beacon (counting): forwarding the hash can only PROMOTE an /i-linked job step — 'unverified' and 'mismatch' both count nothing, so no row that counts today can stop counting",
+      !(COUNTED_VERIFICATIONS as readonly string[]).includes('unverified') &&
+        !(COUNTED_VERIFICATIONS as readonly string[]).includes('mismatch') &&
+        (COUNTED_VERIFICATIONS as readonly string[]).includes('verified'),
+      JSON.stringify(COUNTED_VERIFICATIONS),
+    )
+
+    // ── live: the route accepts exactly what the overlay sends ───────────
+    const railPost = await fetch(`${BASE}/api/embed/telemetry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(
+        firstPartyJobStepBody(
+          { jobId: 'cmtsqkx0l00074h3p885cmygz', seq: 1, builder: 'native-swap', valueUsd: 4.2, feeBps: 20, chainId: 8453, txUrl: 'https://basescan.org/tx/0x' + 'a'.repeat(64) },
+          { sessionId: 'harness-jobstep-rail', walletAddress: JOBSTEP_WALLET, page: `${BASE}/chat` },
+        ),
+      ),
+    })
+    const railJson = (await railPost.json()) as { ok?: boolean; internal?: boolean; verification?: string }
+    check(
+      "job-step beacon (live): the rail's exact body is accepted by the telemetry route AND lands on a COUNTED verdict — a step signed in the overlay now really moves money; the harness row is stamped internal",
+      railPost.status === 200 && railJson.ok === true && railJson.internal === true &&
+        !!railJson.verification && (COUNTED_VERIFICATIONS as readonly string[]).includes(railJson.verification),
+      `${railPost.status} ${JSON.stringify(railJson)}`,
+    )
+    // Discrimination: the same body WITHOUT the first-party marker (what a
+    // keyless third-party mount is) still records nothing.
+    const railNoLane = await fetch(`${BASE}/api/embed/telemetry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...firstPartyJobStepBody(sig('job-eee', 0), { sessionId: 'harness-jobstep-nolane', page: `${BASE}/chat` }), firstParty: false }),
+    })
+    check(
+      'job-step beacon (live): drop the first-party marker and the same body records nothing (202) — the overlay is accepted because it IS our own surface, not because job-step is special',
+      railNoLane.status === 202,
+      String(railNoLane.status),
+    )
+  }
+
   // ── job-step telemetry: a signed job step reports what it BUILT ─────────
   // Found in prod 2026-09-18: $308.50 of $347.50 of real signed 30-day
   // volume was `job-step` rows with build_path NULL — the beacon sent the
@@ -26801,11 +27381,23 @@ async function main() {
         (runnerSrc.match(/buildPath: asBuildPath\(built\.buildPath\)/g) ?? []).length === 2 &&
         (runnerSrc.match(/buildPath: asBuildPath\(turn\.buildPath\)/g) ?? []).length === 2,
     )
+    // RE-PINNED on the #821 merge: the chat lane no longer spells the beacon
+    // inline — both mounts (the thread and the Jobs rail's overlay, which used
+    // to throw the signal away entirely) map through the SHARED
+    // jobStepSignedInfo, so the fields this pin guards moved into
+    // lib/job-step-telemetry. Same rule, asserted where it now lives: the card
+    // resolves from the artifact, and the mapper forwards the PATH — the one
+    // substitution that wrote 28 NULL rows must appear in neither.
+    const teleWireSrc = await readFile('lib/job-step-telemetry.ts', 'utf8')
     check(
-      'job-step wiring (client): the card resolves path + chain + receipt from the signed step\'s own artifact, and the beacon sends the PATH, never the raw builder id',
+      'job-step wiring (client): the card resolves path + chain + receipt from the signed step\'s own artifact, and the shared beacon mapping both mounts use sends the PATH, never the raw builder id',
       /jobStepBuildPath\(builder, stepArtifact\)/.test(cardSrc) && /jobStepChainId\(stepArtifact\)/.test(cardSrc) &&
-        /buildPath: info\.buildPath,/.test(chatSrc) && !/buildPath: info\.builder/.test(chatSrc) &&
-        /chainId: info\.chainId,/.test(chatSrc) && /artifact: 'job-step'/.test(chatSrc),
+        /buildPath: signal\.buildPath,/.test(teleWireSrc) && /artifact: 'job-step'/.test(teleWireSrc) &&
+        /chainId: signal\.chainId,/.test(teleWireSrc) &&
+        // the substitution itself, banned at both the mapper and the chat lane
+        !/buildPath: signal\.builder/.test(teleWireSrc) && !/buildPath: info\.builder/.test(chatSrc) &&
+        // and the chat lane really does go through the shared mapping
+        /reportEmbedSigned\(jobStepSignedInfo\(info\)\)/.test(chatSrc),
     )
     check(
       'job-step wiring (HL): the bridge deposit and the perp order no longer share one fee-bearing path',
@@ -26837,7 +27429,6 @@ async function main() {
       JSON.stringify(accepted),
     )
   }
-
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }

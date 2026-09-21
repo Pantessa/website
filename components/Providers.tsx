@@ -5,6 +5,7 @@ import { WagmiProvider } from 'wagmi'
 import TrackWallet from '@/components/TrackWallet'
 import AccountSwitchBanner from '@/components/AccountSwitchBanner'
 import SignatureWaitTakeover from '@/components/SignatureWaitTakeover'
+import WalletAppHandoff from '@/components/WalletAppHandoff'
 import CdpOAuthReturn from '@/components/CdpOAuthReturn'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
@@ -51,6 +52,12 @@ export default function Providers({ children }: { children: ReactNode }) {
                 covers the page so an open MetaMask request never reads as a
                 stall (self-suppresses on /embed and /i — /i mounts its own). */}
             <SignatureWaitTakeover />
+            {/* On a phone the wallet lives in another app, and the browser
+                drops the jump to it unless a tap is carrying the page — so a
+                signature that fires from an effect leaves MetaMask sitting on
+                the request with nothing on screen. This is the tap
+                (lib/wallet-handoff; self-suppresses on /embed). */}
+            <WalletAppHandoff />
             {/* Resumes a social (Google/Apple/X) sign-in after the OAuth
                 redirect. CDP-only — it uses CDP hooks. */}
             {cdpEnabled && <CdpOAuthReturn />}

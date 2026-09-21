@@ -6,7 +6,8 @@
 // ends with chips from the biggest movers' own menus. Shared cache keyed on
 // the sorted symbol set only. With no `symbols` prop it reads the rail's
 // active list (useWatchlists) so the rail mounts it with just `onAsk`; a
-// `symbols` prop overrides that read. COMPACT in a rail: collapsed by
+// `symbols` prop overrides that read (it never reads the wallet itself —
+// the rail does that for the page). COMPACT in a rail: collapsed by
 // default to a one-line header + the first sentence, open on click to a
 // bounded body that scrolls inside; remembered per browser.
 
@@ -24,7 +25,10 @@ export const TAPE_OPEN_KEY = 'pantessa.markets.tape'
 export type MorningTapeProps = { symbols?: readonly string[]; onAsk: (ask: string) => void; title?: string }
 
 export default function MorningTape({ symbols: symbolsProp, onAsk, title = 'Morning tape' }: MorningTapeProps) {
-  const wl = useWatchlists()
+  // The rail beside it is the page's one holdings reader; this instance keeps
+  // the lists (fills included, through the hook's announcement) without a
+  // second wallet read or a second reconcile.
+  const wl = useWatchlists({ holdings: false })
   const symbols = useMemo(() => tapeSymbols(symbolsProp ?? wl.active?.symbols ?? []), [symbolsProp, wl.active?.symbols])
   const key = symbols.join(',')
   const [phase, setPhase] = useState<'idle' | 'streaming' | 'done' | 'error'>('idle')

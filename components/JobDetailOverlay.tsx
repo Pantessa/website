@@ -20,6 +20,8 @@ import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import { cadenceLabel, dcaRunChip, type DcaCadence } from '@/lib/dca'
 import JobCard from '@/components/JobCard'
+import { postJobStepSigned, type JobStepSignal } from '@/lib/job-step-telemetry'
+import { useAccount } from 'wagmi'
 
 interface ContextRow {
   label: string
@@ -124,6 +126,22 @@ export default function JobDetailOverlay() {
       setLoading(false)
     }
   }, [jobDetail])
+
+  // The rail's sign surface reports for itself. Before this, the overlay's
+  // onStepSigned took the signal and threw it away, so a step signed here
+  // recorded nothing at all — no embed_turns row, no money moved, no creator
+  // earnings, nothing on /activity — while the exact same step signed in the
+  // thread did. The shared helper owns the wire AND the double-count fence
+  // (the thread's JobCard for this job is mounted behind the overlay).
+  const { address } = useAccount()
+  const onStepSigned = useCallback(
+    (info: JobStepSignal) => {
+      postJobStepSigned(info, { walletAddress: address })
+      // the position block's numbers just changed
+      void loadContext()
+    },
+    [address, loadContext],
+  )
 
   // Fresh snapshot per open (state also resets so a previous job's numbers
   // never flash under a new title).
@@ -232,12 +250,14 @@ export default function JobDetailOverlay() {
 
               {/* the job's own live card — steps, sign buttons, cancel/retry.
                   A signed step refreshes the position block (the numbers just
-                  changed). For a schedule, this is the period's live job. */}
+                  changed) AND reports: this overlay is a real sign surface, so
+                  a step signed here has to move the money metric exactly like
+                  one signed in the thread. */}
               {jobDetail.type === 'job' && (
-                <JobCard jobId={jobDetail.id} onStepSigned={() => void loadContext()} />
+                <JobCard jobId={jobDetail.id} onStepSigned={onStepSigned} />
               )}
               {jobDetail.type === 'dca' && schedule?.liveJobId && (
-                <JobCard jobId={schedule.liveJobId} onStepSigned={() => void loadContext()} />
+                <JobCard jobId={schedule.liveJobId} onStepSigned={onStepSigned} />
               )}
             </div>
           </div>
