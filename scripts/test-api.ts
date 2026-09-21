@@ -110,6 +110,15 @@ import { DEFAULT_TAB, parseTabParam, tabUrl } from '../lib/app-tab-url'
 import { LINKS_STUDIO_HREF } from '../lib/links-href'
 import { formatEarnedUsd, netFeeBpsFor, creatorEarningsUsd, FEE_BEARING_BUILD_PATHS, CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS } from '../lib/fees'
 import { BUILD_PATHS, isBuildPath, venueOfBuildPath } from '../lib/build-path'
+import { netFeeBpsForTurn } from '../lib/fees'
+import {
+  BUILD_PATH_OF_JOB_BUILDER,
+  BUILD_PATH_OF_REFRESH_KIND,
+  STEP_BUILD_PATH_KEY,
+  jobStepBuildPath,
+  jobStepChainId,
+  stampJobStepPath,
+} from '../lib/job-step-telemetry'
 
 /** A venue label is a product name ('uniswap'); a build path is an internal
  *  one ('native-swap-lifi', 'app-mode-swap'). The public /activity payload must
@@ -148,6 +157,7 @@ import { decideManagerMove, stackingRefusal, undecidedProposalFor } from '../lib
 import { markPeriodKey, parseMarkAsk, reviewFlipDecision, tryoutReportCard, PAPER_LABEL, TRYOUT_BANNED_PHRASES } from '../lib/roster-tryouts'
 import { houseManagerRow, resolveHouseManager, HOUSE_MANAGER_ID } from '../lib/roster-managers'
 import { walletLineup, walletLaneHint, walletLaneChips, wcConfigured, WC_APP_METADATA , CDP_INIT_PATIENCE_MS, emailLaneHint, WALLET_LANE_NAMES, type WalletLaneId } from '../lib/wallet-lineup'
+import { walletAppFor, handoffCopy, handoffShownOn, WALLET_APP_SETTLE_MS, requestWalletAppOpen, walletAppOpenSnapshot, clearWalletAppOpen } from '../lib/wallet-handoff'
 import { hasStoredWalletConnection, shouldRerunConnectAsk, connectAskReleased, bootHoldingFor, initialHoldElapsed, CONNECT_ASK_RELEASE_GRACE_MS, CONNECT_ASK_RERUN_WINDOW_MS, WAGMI_STORE_KEY, WAGMI_RECENT_CONNECTOR_KEY } from '../lib/wallet-reconnect'
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
 import { agentHandleFor } from '../lib/agent-record'
@@ -372,7 +382,8 @@ import { chainMentions as arcChainMentions } from '../lib/chain-lexicon'
 import { buildTransferArtifact as arcBuildTransferArtifact } from '../lib/transfer-exec'
 import { ARC_BRIDGE_TOOLS, buildLifiBridgeLeg as arcBuildLifiBridgeLeg } from '../lib/lifi-bridge'
 import { fundSegment as arcFundSegment, LIFI_DESTINATIONS as ARC_LIFI_DESTINATIONS, lifiDestination as arcLifiDestination, isLifiFundedChain as arcIsLifiFundedChain } from '../lib/lifi-destinations'
-import { usdPerToken as arcUsdPerToken } from '../lib/usd-probe'
+import { judgePoolDepth, MAX_PROBE_DECAY_BPS, MIN_DEPTH_QUOTE_UNITS, usdPerToken as arcUsdPerToken } from '../lib/usd-probe'
+import { FEE_TIERS as ARC_FEE_TIERS, QUOTER_V2_ABI as ARC_QUOTER_V2_ABI } from '../lib/uniswap-venue'
 import { classifyDryRunError as arcClassifyDryRunError } from '../lib/dry-run'
 import { alchemyNetworkEnabled as arcAlchemyNetworkEnabled } from '../lib/alchemy'
 import { buildUniswapSwap as arcBuildUniswapSwap } from '../lib/uniswap-venue'
@@ -5460,6 +5471,170 @@ async function main() {
         lanes.every((id) => new RegExp(`\\b${id}:\\s*\\w+WalletMark\\b`).test(markTable)) &&
         /phantomWallet,/.test(wagmi) && /from '@rainbow-me\/rainbowkit\/wallets'/.test(wagmi) &&
         /export function PhantomWalletMark/.test(marks) && /fill="#AB9FF2"/.test(marks)
+      )
+    })(),
+  )
+
+  // ── The wallet APP handoff on mobile (lib/wallet-handoff) ────────────────
+  // Nate, 2026-09-18, on a phone: "when trying to connect to metamask the
+  // second signing screen after connection does not pop up". On mobile the
+  // MetaMask lane is the MetaMask SDK, which brings the app forward by
+  // NAVIGATING to a metamask:// link — and both mobile browsers drop an app
+  // launch that no tap is carrying, which is exactly the SIWE signature
+  // lib/session fires from its post-connect effect. These pin the answer:
+  // the link may only ever be the wallet's, the launch is watched, and a
+  // dropped one becomes a button.
+  console.log('— mobile: the wallet app handoff')
+  check(
+    'wallet handoff: the ONLY links we will navigate to are MetaMask’s own (scheme + universal link) — an off-wallet https URL, a javascript: URL, and a link with whitespace or control characters in it are all refused',
+    walletAppFor('metamask://connect?channelId=abc') === 'MetaMask' &&
+      walletAppFor('METAMASK://connect') === 'MetaMask' &&
+      walletAppFor('https://metamask.app.link/connect?channelId=abc') === 'MetaMask' &&
+      walletAppFor('https://metamask.app.link.evil.com/connect') === null &&
+      walletAppFor('http://metamask.app.link/connect') === null &&
+      walletAppFor('https://pantessa.com') === null &&
+      // eslint-disable-next-line no-script-url
+      walletAppFor('javascript:alert(1)') === null &&
+      walletAppFor('metamask://connect?a=1 b=2') === null &&
+      walletAppFor('metamask://con\nnect') === null &&
+      walletAppFor('') === null &&
+      walletAppFor(null) === null,
+  )
+  check(
+    'wallet handoff: the card names the wallet and says what to do; a second dropped launch stops asking for the same tap and says the app may not be installed',
+    (() => {
+      const first = handoffCopy({ link: 'metamask://x', app: 'MetaMask', tried: false })
+      const again = handoffCopy({ link: 'metamask://x', app: 'MetaMask', tried: true })
+      return (
+        /Open MetaMask/.test(first.title) &&
+        /Open MetaMask/.test(first.cta) &&
+        /tap below/i.test(first.body) &&
+        /Still waiting on MetaMask/.test(again.title) &&
+        /installed/i.test(again.body) &&
+        first.title !== again.title &&
+        first.body !== again.body &&
+        // /embed signs through the host page's own relay — never our card
+        handoffShownOn('/embed') === false &&
+        handoffShownOn('/embed/abc') === false &&
+        handoffShownOn('/chat') === true &&
+        handoffShownOn('/i/abc') === true &&
+        handoffShownOn(null) === true
+      )
+    })(),
+  )
+  {
+    // The behaviour itself, against a stand-in for the two things the holder
+    // reads: whether the page went away, and where it navigated. A launch the
+    // browser honoured hides the page, and NOTHING is shown; a launch it
+    // dropped leaves the page visible, and the button appears with the link
+    // still in hand. Globals are restored before anything else runs.
+    const priorWindow = (globalThis as Record<string, unknown>).window
+    const priorDocument = (globalThis as Record<string, unknown>).document
+    const makeDom = () => {
+      const handlers: Record<string, Set<() => void>> = {}
+      const on = (k: string, f: () => void) => {
+        ;(handlers[k] ??= new Set()).add(f)
+      }
+      const off = (k: string, f: () => void) => handlers[k]?.delete(f)
+      const dom = {
+        navigated: [] as string[],
+        visibility: 'visible',
+        fire(k: string) {
+          for (const f of [...(handlers[k] ?? [])]) f()
+        },
+      }
+      ;(globalThis as Record<string, unknown>).document = {
+        get visibilityState() {
+          return dom.visibility
+        },
+        addEventListener: on,
+        removeEventListener: off,
+        createElement: () => ({ click: () => {}, set href(_v: string) {}, target: '', rel: '' }),
+      }
+      ;(globalThis as Record<string, unknown>).window = {
+        addEventListener: on,
+        removeEventListener: off,
+        location: {
+          set href(v: string) {
+            dom.navigated.push(v)
+          },
+        },
+      }
+      return dom
+    }
+    const settled = () => new Promise((r) => setTimeout(r, WALLET_APP_SETTLE_MS + 150))
+    try {
+      // (a) the launch lands: the page hides, so there is nothing to offer.
+      const landed = makeDom()
+      requestWalletAppOpen('metamask://connect?channelId=landed')
+      const navigatedOnce = landed.navigated.length === 1
+      landed.visibility = 'hidden'
+      landed.fire('visibilitychange')
+      const quietAfterHide = walletAppOpenSnapshot() === null
+      await settled()
+      const stillQuiet = walletAppOpenSnapshot() === null
+      clearWalletAppOpen()
+
+      // (b) the launch is dropped (the effect-fired signature, no activation):
+      // the page never hides, so the card goes up holding the same link.
+      const dropped = makeDom()
+      requestWalletAppOpen('metamask://connect?channelId=dropped')
+      const quietBeforeSettle = walletAppOpenSnapshot() === null
+      await settled()
+      const shown = walletAppOpenSnapshot()
+      // (c) a link that isn't the wallet's never navigates and never shows.
+      const before = dropped.navigated.length
+      requestWalletAppOpen('https://evil.example/steal')
+      const refused = dropped.navigated.length === before && walletAppOpenSnapshot() === shown
+      clearWalletAppOpen()
+      const cleared = walletAppOpenSnapshot() === null
+
+      check(
+        'wallet handoff (behaviour): a launch the browser honours hides the page and shows nothing; a launch it DROPS leaves the page visible and surfaces the card with the same link, untried; a non-wallet link neither navigates nor shows',
+        navigatedOnce &&
+          quietAfterHide &&
+          stillQuiet &&
+          quietBeforeSettle &&
+          !!shown &&
+          shown!.link === 'metamask://connect?channelId=dropped' &&
+          shown!.app === 'MetaMask' &&
+          shown!.tried === false &&
+          refused &&
+          cleared,
+        JSON.stringify({ navigatedOnce, quietAfterHide, stillQuiet, quietBeforeSettle, shown, refused, cleared }),
+      )
+    } finally {
+      clearWalletAppOpen()
+      if (priorWindow === undefined) delete (globalThis as Record<string, unknown>).window
+      else (globalThis as Record<string, unknown>).window = priorWindow
+      if (priorDocument === undefined) delete (globalThis as Record<string, unknown>).document
+      else (globalThis as Record<string, unknown>).document = priorDocument
+    }
+  }
+  check(
+    'wallet handoff (wiring): lib/wagmi hands the MetaMask SDK our openDeeplink (with it set the SDK never navigates itself), Providers mounts the card, and the signature takeover steps aside while a handoff is up',
+    (() => {
+      const strip = (s2: string) => s2.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      const wagmi = strip(readFileSync(pathJoin(process.cwd(), 'lib/wagmi.ts'), 'utf8'))
+      const providers = strip(readFileSync(pathJoin(process.cwd(), 'components/Providers.tsx'), 'utf8'))
+      const takeover = strip(readFileSync(pathJoin(process.cwd(), 'components/SignatureWaitTakeover.tsx'), 'utf8'))
+      const card = strip(readFileSync(pathJoin(process.cwd(), 'components/WalletAppHandoff.tsx'), 'utf8'))
+      return (
+        /openDeeplink\s*(\]|=)/.test(wagmi) &&
+        /requestWalletAppOpen/.test(wagmi) &&
+        /from '@\/lib\/wallet-handoff'/.test(wagmi) &&
+        /<WalletAppHandoff \/>/.test(providers) &&
+        /import WalletAppHandoff from '@\/components\/WalletAppHandoff'/.test(providers) &&
+        /dismissed \|\| handoff\) return null/.test(takeover) &&
+        // the card's button is the tap, and it is never disabled — the whole
+        // bug was a disabled "open the request" button on a page whose wallet
+        // was never brought up
+        /onClick=\{openWalletAppNow\}/.test(card) &&
+        !/disabled/.test(card) &&
+        // and it sits ABOVE RainbowKit's modal (2147483646): RainbowKit's own
+        // mobile "Continue in MetaMask" screen has no retry button, so a card
+        // behind it would be the same dead end with an extra step
+        /zIndex: 2147483647/.test(card)
       )
     })(),
   )
@@ -21918,7 +22093,11 @@ async function main() {
           /const silent = connector\?\.id === CDP_CONNECTOR_ID/.test(waitS) &&
           /return \{ shown: signingIn && \(!silent \|\| late\), silent \}/.test(waitS) &&
           /silent \? 'Signing you in…'/.test(waitS) && /\{!silent && \(/.test(waitS) &&
-          /if \(!wait\.shown \|\| dismissed\) return null/.test(waitS) && /silent=\{wait\.silent\}/.test(waitS) &&
+          // Re-pinned 2026-09-18: a third reason to stand down — on a phone the
+          // handoff card takes over while the wallet app hasn't come forward
+          // (lib/wallet-handoff), because "the request is open in your wallet"
+          // is not true yet and this card's button is disabled meanwhile.
+          /if \(!wait\.shown \|\| dismissed \|\| handoff\) return null/.test(waitS) && /silent=\{wait\.silent\}/.test(waitS) &&
           /sigWait\.shown && !sigDismissed/.test(runtimeS) && /silent=\{sigWait\.silent\}/.test(runtimeS),
         `grace=${grace}`,
       )
@@ -26100,14 +26279,106 @@ async function main() {
     )
     // ── Live, read-only, against the real chain + LiFi (the burner signs nothing) ──
     const arcPk = await readFile('.env.local', 'utf8').then((t) => t.match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null).catch(() => null)
+    // ── The depth fence (lib/usd-probe) ──────────────────────────────────
+    // A quote is only a price when the pool can absorb it. These pins assert
+    // the RULE, never today's market: the first is pure arithmetic, the
+    // second re-derives the rule from live chain state and requires the
+    // probe to agree with it. Arc's WETH pool woke up on 2026-09-18 holding
+    // ~$18 of USDC and answered $18.25 per WETH (marginal ~$2,485) — a pin
+    // written as "WETH is unpriceable" went red on a market move, so this
+    // one says "the probe answers exactly what the fence decides" instead.
+    {
+      const deep = judgePoolDepth(BigInt(2_500_000_000), BigInt(1_250_000_000)) // 0% decay
+      const edgeOk = judgePoolDepth(BigInt(1_900_000_000), BigInt(1_000_000_000)) // 5.00% decay — at the fence
+      const edgeBad = judgePoolDepth(BigInt(1_890_000_000), BigInt(1_000_000_000)) // 5.50% decay — over it
+      const drained = judgePoolDepth(BigInt(18_251_574), BigInt(18_249_000)) // Arc's WETH pool: ~50% decay
+      const dust = judgePoolDepth(BigInt(5), BigInt(2)) // SHIB: −25% "decay" is rounding, not thinness
+      const negative = judgePoolDepth(BigInt(2_010_000_000), BigInt(1_000_000_000)) // half pays worse — clamps to 0
+      const noPool = judgePoolDepth(null, null)
+      const halfDead = judgePoolDepth(BigInt(1_000), null)
+      check(
+        `depth fence (rule): a v3/v4 tier is a PRICE only when one whole token decays ≤ ${MAX_PROBE_DECAY_BPS} bps against twice the half-token quote — a drained pool (~50%) is refused, an exactly-at-the-fence pool passes and one bp over does not, a quote under ${MIN_DEPTH_QUOTE_UNITS} stable units is rounding noise and steps aside rather than accusing a healthy pool, and negative decay clamps to zero`,
+        deep.trusted && deep.decayBps === 0 &&
+          edgeOk.trusted && edgeOk.decayBps === MAX_PROBE_DECAY_BPS &&
+          !edgeBad.trusted && edgeBad.decayBps === 550 &&
+          !drained.trusted && drained.decayBps !== null && drained.decayBps > 4_000 &&
+          dust.trusted && dust.decayBps === null &&
+          negative.trusted && negative.decayBps === 0 &&
+          !noPool.trusted && noPool.decayBps === null &&
+          halfDead.trusted && halfDead.decayBps === null &&
+          MAX_PROBE_DECAY_BPS > 400 && MAX_PROBE_DECAY_BPS < 2_300,
+        JSON.stringify({ deep, edgeOk, edgeBad, drained, dust, negative, noPool, halfDead, MAX_PROBE_DECAY_BPS, MIN_DEPTH_QUOTE_UNITS: String(MIN_DEPTH_QUOTE_UNITS) }),
+      )
+    }
     const btcProbe = await arcUsdPerToken(5042, 'BTC').catch(() => null)
     const eurProbe = await arcUsdPerToken(5042, 'EURC').catch(() => null)
-    const wethProbe = await arcUsdPerToken(5042, 'WETH').catch(() => null)
     check(
-      'arc (live): usdPerToken prices BTC (cirBTC, five figures) and EURC (≈ €1 in USD) on Arc\'s own Uniswap v3 pools; WETH is honestly unpriceable (its pool was empty at launch)',
-      !!btcProbe && btcProbe.usd > 10_000 && btcProbe.usd < 1_000_000 && /v3/.test(btcProbe.via) && !!eurProbe && eurProbe.usd > 0.8 && eurProbe.usd < 1.6 && wethProbe === null,
-      JSON.stringify({ btcProbe, eurProbe, wethProbe }),
+      'arc (live): usdPerToken prices BTC (cirBTC, five figures) and EURC (≈ €1 in USD) on Arc\'s own Uniswap v3 pools',
+      !!btcProbe && btcProbe.usd > 10_000 && btcProbe.usd < 1_000_000 && /v3/.test(btcProbe.via) && !!eurProbe && eurProbe.usd > 0.8 && eurProbe.usd < 1.6,
+      JSON.stringify({ btcProbe, eurProbe }),
     )
+    {
+      // The INVARIANT, checked without the fence's own arithmetic: whatever
+      // usdPerToken prices on Arc must agree with the pool's MARGINAL price
+      // (a 1/1000-size quote, where slippage is negligible), and whatever it
+      // refuses must have earned the refusal — no tier whose full-size quote
+      // is anywhere near its own marginal price. Derived from live chain
+      // state, so a puddle that fills up (or dries out) flips the ANSWER
+      // without flipping the pin; which tiers are thin today is market state
+      // and deliberately not asserted. Independent of judgePoolDepth on
+      // purpose: the fence's arithmetic is pinned purely above, and a pin
+      // that re-used it would move with it under a mutation.
+      const MARGINAL_TOLERANCE = 0.15 // the fence allows ~10% understatement at its limit; 15% leaves headroom
+      const MARGINAL_MIN_UNITS = 1_000 // below this the 1/1000 quote is rounding, not a price
+      const arcStable = primaryStable(5042)!
+      const arcClient = publicClientFor(5042)!
+      const arcQuote = async (tokenIn: string, amountIn: bigint, fee: number): Promise<bigint | null> => {
+        if (amountIn <= BigInt(0)) return null
+        try {
+          const { result } = await arcClient.simulateContract({
+            address: chainById(5042)!.uniswap!.quoterV2,
+            abi: ARC_QUOTER_V2_ABI,
+            functionName: 'quoteExactInputSingle',
+            args: [{ tokenIn: tokenIn as `0x${string}`, tokenOut: arcStable.address, amountIn, fee, sqrtPriceLimitX96: BigInt(0) }],
+          })
+          return result[0]
+        } catch {
+          return null
+        }
+      }
+      const rows: Array<Record<string, unknown>> = []
+      let invariantHolds = true
+      for (const [sym, dec] of [['WETH', 18], ['BTC', 8], ['EURC', 6]] as const) {
+        const addr = (chainById(5042)!.tokens as Record<string, { address: string }>)[sym].address
+        const one = BigInt(10) ** BigInt(dec)
+        const tiers = await Promise.all(
+          ARC_FEE_TIERS.map(async (fee) => {
+            const [full, small] = await Promise.all([arcQuote(addr, one, fee), arcQuote(addr, one / BigInt(1_000), fee)])
+            const fullUsd = full !== null && full > BigInt(0) ? Number(full) / 10 ** arcStable.decimals : null
+            const marginalUsd = small !== null && small >= BigInt(MARGINAL_MIN_UNITS) ? (Number(small) * 1_000) / 10 ** arcStable.decimals : null
+            return { fee, fullUsd, marginalUsd }
+          }),
+        )
+        const got = (await arcUsdPerToken(5042, sym).catch(() => null))?.usd ?? null
+        const marginals = tiers.map((t) => t.marginalUsd).filter((m): m is number => m !== null && m > 0)
+        const bestMarginal = marginals.length ? Math.max(...marginals) : null
+        let ok: boolean
+        if (got !== null) {
+          // Priced → it must be a price, not a drain.
+          ok = bestMarginal === null || Math.abs(got - bestMarginal) / bestMarginal <= MARGINAL_TOLERANCE
+        } else {
+          // Refused → no tier may have been healthy enough to price.
+          ok = tiers.every((t) => t.fullUsd === null || t.marginalUsd === null || Math.abs(t.fullUsd - t.marginalUsd) / t.marginalUsd > MARGINAL_TOLERANCE)
+        }
+        if (!ok) invariantHolds = false
+        rows.push({ sym, got, bestMarginal, ok, tiers })
+      }
+      check(
+        'depth fence (live, Arc): every price usdPerToken returns is within 15% of the pool\'s own marginal price, and every refusal is earned — no tier was healthy enough to price. Checked against fresh 1/1000-size quotes, not against the fence\'s own arithmetic, so it catches a fence that stops fencing: Arc\'s WETH 1% pool answers $18 for one whole WETH against a ~$2,485 marginal, and the unfenced probe hands that $18 to holdings, sizing and spend caps',
+        invariantHolds,
+        JSON.stringify(rows),
+      )
+    }
     if (arcPk) {
       const arcBurner = privateKeyToAccount((arcPk.startsWith('0x') ? arcPk : `0x${arcPk}`) as `0x${string}`)
       let legNote = ''
@@ -26508,7 +26779,11 @@ async function main() {
       /onStepSigned\?: \(info: JobStepSignal\) => void/.test(cardSrc) &&
         /receipt\?: \{ chainId\?: number; txUrl\?: string \}/.test(cardSrc) &&
         /jobId,\n\s*seq,\n\s*builder,/.test(cardSrc) &&
-        /chainId: receipt\?\.chainId/.test(cardSrc) && /txUrl: receipt\?\.txUrl/.test(cardSrc) &&
+        // RE-PINNED on the #819 merge: the receipt still LEADS (it is the only
+        // source for an off-chain venue order), but #819's artifact readers are
+        // the fallback, so a caller that passes none still reports a chain.
+        /const chainId = receipt\?\.chainId \?\? jobStepChainId\(stepArtifact\)/.test(cardSrc) &&
+        /txUrl:\s*\n\s*receipt\?\.txUrl \?\?/.test(cardSrc) &&
         // EVERY sign surface the card embeds feeds its receipt through — all
         // four call sites pass the argument, none of them drops it.
         (cardSrc.match(/completeStep\(/g) ?? []).length === 4 &&
@@ -26542,18 +26817,36 @@ async function main() {
     // ── the wire ─────────────────────────────────────────────────────────
     const info = jobStepSignedInfo(sig('job-ccc', 2))
     check(
-      "job-step beacon (wire): the shared mapping is the one both lanes send — artifact 'job-step', chain 'multi', the step's value + fee tier + jobId, and buildPath still carries the raw builder (unchanged from the chat lane, so switching the rail on can't re-price anything)",
+      "job-step beacon (wire): the shared mapping is the one both lanes send — artifact 'job-step', the step's value + fee tier + jobId, and 'multi' as the chain only when the step named none (an off-chain venue order)",
       info.artifact === 'job-step' && info.chain === 'multi' && info.valueUsd === 12.5 && info.feeBps === 50 &&
-        info.jobId === 'job-ccc' && info.buildPath === 'native-swap' && info.detail === '0xabc',
+        info.jobId === 'job-ccc' && info.detail === '0xabc',
       JSON.stringify(info),
     )
-    // The builder is NOT a BUILD_PATH, so the route drops it and the row books
-    // no fee. That is a real gap and a deliberate NON-change here: it moves
-    // creator earnings, so it lands in its own PR. Pinned so the day someone
-    // fixes it, they have to do it on purpose.
+    // RE-PINNED on the #819 merge. This pin used to assert the OPPOSITE — that
+    // the wire carried the raw builder id, unchanged, "so switching the rail on
+    // can't re-price anything" — and deferred the fix to its own PR because it
+    // moves creator earnings. #819 IS that PR and it is on main now: a step
+    // reports the path of what it ACTUALLY built. So the rule to keep is that
+    // the mapper forwards the RESOLVED path and never substitutes the builder.
+    const builtInfo = jobStepSignedInfo({ ...sig('job-ccc', 2), buildPath: jobStepBuildPath('native-swap', { [STEP_BUILD_PATH_KEY]: 'native-swap-lifi' }) })
     check(
-      'job-step beacon (wire): job builders are not build paths — the route still drops build_path on a job-step row, so this PR changes no fee and no creator claim',
-      isBuildPath('native-job') && !isBuildPath('native-swap') && !isBuildPath('native-lifi-fund') && !isBuildPath(info.buildPath),
+      'job-step beacon (wire): the mapper forwards the path the step BUILT and never the raw builder id — a raw id fails the route allowlist and the row lands build_path NULL, which is $0 of creator earnings on a swap that really paid the fee',
+      builtInfo.buildPath === 'native-swap-lifi' && isBuildPath(builtInfo.buildPath) &&
+        // a signal that resolved to nothing reports nothing — never a guess
+        info.buildPath === undefined &&
+        // the substitution that used to live here would fail the allowlist
+        !isBuildPath('native-swap') && !isBuildPath('native-lifi-fund') && isBuildPath('native-job'),
+      `${String(builtInfo.buildPath)} / ${String(info.buildPath)}`,
+    )
+    // The chain label moved into the shared mapper with #819's per-chain read,
+    // so both lanes name the same chain — from the REGISTRY, whose hand-written
+    // predecessor had no Robinhood Chain, the chain most job steps sign on.
+    check(
+      'job-step beacon (wire): the mapper labels the signing chain from the chain registry, so the rail and the chat lane can never disagree about where a step landed',
+      jobStepSignedInfo({ ...sig('job-fff', 0), chainId: 8453 }).chain === 'base' &&
+        jobStepSignedInfo({ ...sig('job-fff', 1), chainId: 4663 }).chain === chainById(4663)?.key &&
+        jobStepSignedInfo({ ...sig('job-fff', 2), chainId: 4663 }).chain !== 'multi',
+      `${jobStepSignedInfo({ ...sig('job-fff', 0), chainId: 8453 }).chain} / ${jobStepSignedInfo({ ...sig('job-fff', 1), chainId: 4663 }).chain}`,
     )
     const body = firstPartyJobStepBody(sig('job-ddd', 0), { sessionId: 'harness-jobstep-wire', walletAddress: JOBSTEP_WALLET, page: `${BASE}/chat` })
     check(
@@ -26620,7 +26913,140 @@ async function main() {
     )
   }
 
+  // ── job-step telemetry: a signed job step reports what it BUILT ─────────
+  // Found in prod 2026-09-18: $308.50 of $347.50 of real signed 30-day
+  // volume was `job-step` rows with build_path NULL — the beacon sent the
+  // raw job builder id, the telemetry allowlist dropped it, and every fee
+  // reader (lib/fees, the creator studio + claims, the public fee strip,
+  // the admin Growth books) needs a fee-bearing path to price a turn. A
+  // funded link buy earned its creator $0 while the visitor paid 50 bps.
+  {
+    const runnerSrc = await readFile('lib/jobs-runner.ts', 'utf8')
+    const jobsSrc = await readFile('lib/jobs.ts', 'utf8')
+    const cardSrc = await readFile('components/JobCard.tsx', 'utf8')
+    const chatSrc = await readFile('components/ChatInterface.tsx', 'utf8')
 
+    // Every builder the COMPILER can emit for a signable step must resolve
+    // to a path — statically here, or from the artifact the builder's own
+    // build stamps (the two venue-cascade builders + the HL layer, which
+    // names its own path per branch). A new chainable action that forgets
+    // its path writes another NULL row; this is the gate.
+    const CASCADE_BUILDERS = ['native-swap', 'native-lifi-swap', 'native-hl-exec']
+    const compiledBuilders = [...new Set([...jobsSrc.matchAll(/builder: '([a-z0-9-]+)'/g)].map((m) => m[1]))]
+      .filter((b) => b !== 'wait' && b !== 'native-hl-guardian')
+    const unpathed = compiledBuilders.filter((b) => !BUILD_PATH_OF_JOB_BUILDER[b] && !CASCADE_BUILDERS.includes(b))
+    check(
+      'job-step path: every sign builder the jobs compiler emits resolves to a BuildPath — statically, or from the cascade/HL build that names its own',
+      unpathed.length === 0 && compiledBuilders.length >= 12,
+      JSON.stringify({ builders: compiledBuilders.length, unpathed }),
+    )
+    check(
+      'job-step path: every mapped path is a real BuildPath and resolves to a venue (no raw builder id can reach a beacon)',
+      Object.values(BUILD_PATH_OF_JOB_BUILDER).every((p) => (BUILD_PATHS as readonly string[]).includes(p) && !!venueOfBuildPath(p)) &&
+        Object.values(BUILD_PATH_OF_REFRESH_KIND).every((p) => (BUILD_PATHS as readonly string[]).includes(p) && !!venueOfBuildPath(p)),
+    )
+
+    // The ladder: the runner's stamp wins, the txChain refresh recipe is the
+    // legacy/in-flight fallback, the static map is the floor, and an
+    // unknown builder reports NOTHING (never the raw id — that is the bug).
+    const swapArtifact = (kind: string) => ({ txChain: { summary: 's', steps: [], refresh: { kind, stepIndex: 0, params: {} } } })
+    check(
+      'job-step path (ladder): the stamped path wins; else the refresh recipe names the venue (v3 / v4 / LiFi / bridge); else the builder\'s one answer; an unknown builder reports nothing',
+      jobStepBuildPath('native-swap', { ...swapArtifact('uniswap-swap'), [STEP_BUILD_PATH_KEY]: 'native-swap-lifi' }) === 'native-swap-lifi' &&
+        jobStepBuildPath('native-swap', swapArtifact('uniswap-swap')) === 'native-swap-uniswap' &&
+        jobStepBuildPath('native-lifi-swap', swapArtifact('uniswap-v4-swap')) === 'native-swap-uniswap-v4' &&
+        jobStepBuildPath('native-lifi-swap', swapArtifact('lifi-swap')) === 'native-swap-lifi' &&
+        jobStepBuildPath('native-lifi-fund', swapArtifact('lifi-bridge')) === 'native-fund-bridge' &&
+        jobStepBuildPath('native-lifi-fund', null) === 'native-fund-bridge' &&
+        jobStepBuildPath('native-aave-repay', null) === 'native-aave-op' &&
+        jobStepBuildPath('native-swap', null) === undefined &&
+        jobStepBuildPath('native-something-new', { [STEP_BUILD_PATH_KEY]: 'native-something-new' }) === undefined,
+    )
+    check(
+      'job-step path (stamp): the offer keeps the artifact and adds the cascade\'s winner; an unmapped builder is left unstamped rather than guessed',
+      JSON.stringify(stampJobStepPath('native-swap', { txChain: { a: 1 } }, 'native-swap-uniswap-v4')) ===
+        JSON.stringify({ txChain: { a: 1 }, [STEP_BUILD_PATH_KEY]: 'native-swap-uniswap-v4' }) &&
+        (stampJobStepPath('native-lifi-fund', { x: 1 }) as Record<string, unknown>)[STEP_BUILD_PATH_KEY] === 'native-fund-bridge' &&
+        (stampJobStepPath('native-swap', { x: 1 }, 'not-a-path') as Record<string, unknown>)[STEP_BUILD_PATH_KEY] === undefined &&
+        (stampJobStepPath('native-brand-new', { x: 1 }) as Record<string, unknown>)[STEP_BUILD_PATH_KEY] === undefined,
+    )
+
+    // THE money rule: a swap step pays the fee, a leg that MOVES money to
+    // make the next step possible does not (lib/lifi-bridge takes none, and
+    // the runner asks 1Click for no appFees). A stray link-tier stamp on a
+    // fee-free leg must still earn nothing.
+    const feeBearing = (p: string) => (FEE_BEARING_BUILD_PATHS as Set<string>).has(p)
+    check(
+      'job-step fees: swap steps are fee-bearing; funding, bridge, transfer, NFT, lending, staking and HL-deposit legs are not — and a stray 50 bps stamp on a fee-free leg still earns $0',
+      ['native-swap-uniswap', 'native-swap-uniswap-v4', 'native-swap-lifi', 'native-hl-exec'].every(feeBearing) &&
+        ['native-fund-bridge', 'native-cross-chain-leg', 'native-transfer', 'native-nft-buy', 'native-lido', 'native-hl-deposit'].every((p) => !feeBearing(p) && netFeeBpsFor(p) === 0) &&
+        netFeeBpsForTurn('native-fund-bridge', 50) === 50 && creatorEarningsUsd(12.5, feeBearing('native-fund-bridge') ? netFeeBpsForTurn('native-fund-bridge', 50) : 0) === 0 &&
+        creatorEarningsUsd(12, netFeeBpsForTurn('native-swap-uniswap', 50)) === 0.03,
+    )
+    check(
+      'job-step fees: a job cross-chain leg keeps its OWN path — the runner builds it with no appFees, so it must not inherit native-cross-chain\'s fee',
+      BUILD_PATH_OF_JOB_BUILDER['native-cross-chain'] === 'native-cross-chain-leg' &&
+        netFeeBpsFor('native-cross-chain') === CROSS_CHAIN_NET_FEE_BPS && netFeeBpsFor('native-cross-chain-leg') === 0 &&
+        venueOfBuildPath('native-cross-chain-leg') === 'near-intents' &&
+        /DELIBERATELY fee-free/.test(runnerSrc),
+    )
+
+    // The chain the step was signed on — 'multi' was every job row's chain
+    // until now, and /activity resolves a real one through the registry.
+    check(
+      'job-step chain: read from the artifact the step signs (txRequest, hex or decimal; else the first txChain leg); an off-chain order reports none',
+      jobStepChainId({ txRequest: { chainId: 8453 } }) === 8453 &&
+        jobStepChainId({ txRequest: { chainId: '0x2105' } }) === 8453 &&
+        jobStepChainId({ txChain: { steps: [{ tx: {} }, { tx: { chainId: 4663 } }] } }) === 4663 &&
+        jobStepChainId({ orderRequest: { protocol: 'hyperliquid' } }) === undefined &&
+        jobStepChainId(null) === undefined,
+    )
+
+    // The write sites. These three lines are the whole bug: the runner has
+    // to stamp, the card has to read the artifact, and the beacon has to
+    // send the PATH — `buildPath: info.builder` is what wrote 28 NULL rows.
+    check(
+      'job-step wiring (runner): the offer stamps the built path onto the artifact, and both cascade builders + the HL layer forward the path their build named',
+      /artifact: stampJobStepPath\(step\.builder, built\.artifact, built\.buildPath\)/.test(runnerSrc) &&
+        (runnerSrc.match(/buildPath: asBuildPath\(built\.buildPath\)/g) ?? []).length === 2 &&
+        (runnerSrc.match(/buildPath: asBuildPath\(turn\.buildPath\)/g) ?? []).length === 2,
+    )
+    check(
+      'job-step wiring (client): the card resolves path + chain + receipt from the signed step\'s own artifact, and the beacon sends the PATH, never the raw builder id',
+      /jobStepBuildPath\(builder, stepArtifact\)/.test(cardSrc) && /jobStepChainId\(stepArtifact\)/.test(cardSrc) &&
+        /buildPath: info\.buildPath,/.test(chatSrc) && !/buildPath: info\.builder/.test(chatSrc) &&
+        /chainId: info\.chainId,/.test(chatSrc) && /artifact: 'job-step'/.test(chatSrc),
+    )
+    check(
+      'job-step wiring (HL): the bridge deposit and the perp order no longer share one fee-bearing path',
+      /buildPath: 'native-hl-deposit'/.test(await readFile('lib/hyperliquid-exec.ts', 'utf8')) &&
+        feeBearing('native-hl-exec') && !feeBearing('native-hl-deposit'),
+    )
+
+    // Live: the telemetry route's allowlist is what dropped the raw ids —
+    // prove it accepts every path a job step can now report, and still
+    // refuses a raw builder id.
+    const beacon = async (buildPath: string) =>
+      (await fetch(`${BASE}/api/embed/telemetry`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1', referer: BASE },
+        body: JSON.stringify({
+          firstParty: true,
+          sessionId: `harness-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+          page: `${BASE}/chat`,
+          outcome: 'tx-built',
+          artifact: 'job-step',
+          buildPath,
+          valueUsd: 1,
+        }),
+      })).status
+    const accepted = await Promise.all([...new Set(Object.values(BUILD_PATH_OF_JOB_BUILDER)), 'native-swap-uniswap'].map(beacon))
+    check(
+      'job-step path (live): the telemetry route accepts every path a job step reports (the allowlist is where the raw builder ids died)',
+      accepted.every((s) => s === 200),
+      JSON.stringify(accepted),
+    )
+  }
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }

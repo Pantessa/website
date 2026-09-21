@@ -1153,7 +1153,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const chainLabel = (id: unknown): string | undefined => {
     const n = typeof id === 'string' ? parseInt(id, 16) || Number(id) : typeof id === 'number' ? id : NaN
     if (Number.isNaN(n)) return undefined
-    return { 1: 'ethereum', 10: 'optimism', 100: 'gnosis', 5042: 'arc', 8453: 'base', 42161: 'arbitrum' }[n] ?? String(n)
+    // The registry is the single source (lib/chains) — the hand-written map
+    // it replaced had no Robinhood Chain, the chain most job steps sign on.
+    return chainById(n)?.key ?? { 100: 'gnosis' }[n] ?? String(n)
   }
   // The guardrail layer prices every transaction it builds (policy caps are
   // USD) — that notional rides the beacon as valueUsd.
@@ -2102,6 +2104,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                             // keyed only by sessionId server-side — a second
                             // report would count the money twice.
                             if (!claimJobStepReport(info)) return
+                            // The field mapping lives in lib/job-step-telemetry
+                            // so this lane and the rail's keyless one cannot
+                            // drift: same chain label, same BUILT path (never
+                            // the raw builder id — that lands build_path NULL,
+                            // i.e. $0 of creator earnings on a swap that paid).
                             reportEmbedSigned(jobStepSignedInfo(info))
                           }}
                           onSettled={(info) => {

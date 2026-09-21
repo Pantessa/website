@@ -33,10 +33,25 @@ export const BUILD_PATHS = [
   'native-swap-lifi',
   'native-swap-cow',
   'native-cross-chain',
+  // A cross-chain leg INSIDE a job — the same builder, DELIBERATELY fee-free
+  // (lib/jobs-runner asks 1Click for no appFees: "insufficient funds" must
+  // never cost extra to fix). Its own path so the fee map can't claim a fee
+  // the leg never charged.
+  'native-cross-chain-leg',
+  // A LiFi funding leg inside a job (lib/lifi-bridge) — fee-free by the same
+  // rule; the venue is LiFi, the fee is nobody's.
+  'native-fund-bridge',
+  'native-transfer',
   'native-nft-transfer',
   'native-nft-list',
+  'native-nft-buy',
+  'native-lido',
   'native-hl-guardian',
   'native-hl-exec',
+  // The HL bridge-deposit on-ramp: an Arbitrum USDC transfer to Bridge2. It
+  // carries NO builder fee (that rides the perp ORDER), so it can't share
+  // native-hl-exec's fee-bearing path.
+  'native-hl-deposit',
   'native-job',
   'planner',
   'manual',
@@ -78,10 +93,16 @@ export const VENUE_OF_BUILD_PATH: Record<BuildPath, string> = {
   'native-swap-lifi': 'lifi',
   'native-swap-cow': 'cow',
   'native-cross-chain': 'near-intents',
+  'native-cross-chain-leg': 'near-intents',
+  'native-fund-bridge': 'lifi',
+  'native-transfer': 'transfer',
   'native-nft-transfer': 'opensea',
   'native-nft-list': 'opensea',
+  'native-nft-buy': 'opensea',
+  'native-lido': 'lido',
   'native-hl-guardian': 'hyperliquid',
   'native-hl-exec': 'hyperliquid',
+  'native-hl-deposit': 'hyperliquid',
   'native-job': 'jobs',
   planner: 'planner',
   manual: 'manual',

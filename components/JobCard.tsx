@@ -19,7 +19,7 @@ import ShareReceiptButton from '@/components/ShareReceiptButton'
 import { orderRequestOf, txChainOf, txRequestOf } from '@/lib/transaction-layer'
 import { feeBpsOfArtifact } from '@/lib/fees'
 import { chainById } from '@/lib/chains'
-import type { JobStepSignal } from '@/lib/job-step-telemetry'
+import { jobStepBuildPath, jobStepChainId, type JobStepSignal } from '@/lib/job-step-telemetry'
 import { LIVE_JOB_STATUSES, jobStatusWord } from '@/lib/step-status'
 
 interface StepRow {
@@ -66,9 +66,11 @@ export default function JobCard({
    *  auth (no SIWE session in an iframe visitor). Appended as ?t=. */
   token?: string
   /** Telemetry hook — fired once per signed step with everything the `signed`
-   *  beacon needs (lib/job-step-telemetry). Every mount point must report:
-   *  the rail's overlay used to drop this signal, so steps signed there
-   *  recorded no money moved at all. */
+   *  beacon needs (lib/job-step-telemetry): what it BUILT (never the raw
+   *  builder id), the chain it signed on, and the (jobId, seq) identity the
+   *  double-report fence keys on. Every mount point must report: the rail's
+   *  overlay used to drop this signal, so steps signed there recorded no
+   *  money moved at all. */
   onStepSigned?: (info: JobStepSignal) => void
   /** Fired ONCE when the poll first observes a terminal status — the
    *  settlement signal /i's arc and embed hosts read. Also fires on mount
@@ -139,9 +141,20 @@ export default function JobCard({
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ seq, result }),
     }).catch(() => {})
-    // The fee tier read from the signed step's OWN artifact (the shared
-    // lib/fees reader) — job-step beacons price like one-shots (C2b).
+    // What the signed step was, read from its OWN artifact: the fee tier
+    // (the shared lib/fees reader) AND the build path + chain + receipt the
+    // one-shot lanes have always reported. Without the path every job-step
+    // row landed with build_path NULL, so a swap that paid 20/50 bps on
+    // chain counted as volume and earned its link creator nothing
+    // (lib/job-step-telemetry).
     const stepArtifact = job?.steps.find((s) => s.seq === seq)?.artifact
+    // The receipt the sign surface handed back is the truth about WHERE the
+    // step signed — it is the only source for an off-chain venue order
+    // (HL/OpenSea have no EVM chain in the artifact). Fall back to reading
+    // the artifact for any caller that passes none.
+    const chainId = receipt?.chainId ?? jobStepChainId(stepArtifact)
+    const txHash = typeof result.txHash === 'string' ? result.txHash : ''
+    const explorer = chainId ? chainById(chainId)?.explorerTx : undefined
     onStepSigned?.({
       jobId,
       seq,
@@ -149,12 +162,14 @@ export default function JobCard({
       valueUsd,
       detail: String(result.detail ?? result.txHash ?? ''),
       feeBps: feeBpsOfArtifact(stepArtifact),
-      // Job builders aren't BUILD_PATHS, so the route drops this today — sent
-      // anyway, unchanged from what the chat lane has always sent, so the
-      // wire is identical whichever card the user signed in.
-      buildPath: builder,
-      chainId: receipt?.chainId,
-      txUrl: receipt?.txUrl,
+      // What the step BUILT, not the builder id: a raw id fails the telemetry
+      // allowlist and the row lands with build_path NULL, which is $0 of fee
+      // and $0 of creator earnings on a swap that really paid it.
+      buildPath: jobStepBuildPath(builder, stepArtifact),
+      chainId,
+      txUrl:
+        receipt?.txUrl ??
+        (explorer && /^0x[0-9a-fA-F]{64}$/.test(txHash) ? `${explorer}${txHash}` : undefined),
     })
     void load()
   }
