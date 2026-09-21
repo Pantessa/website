@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthAddress } from '@/lib/api-key'
 import { verifyJobToken } from '@/lib/job-token'
-import { getJobWithSteps, retryFailedJob } from '@/lib/jobs-runner'
+import { getJobWithSteps, refreshOfferedStep, retryFailedJob } from '@/lib/jobs-runner'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -19,7 +19,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const tokenOk = !!row && verifyJobToken(id, req.nextUrl.searchParams.get('t'), row.wallet)
   const addr = tokenOk ? row?.wallet : await getAuthAddress(req)
   if (!addr) return NextResponse.json({ error: 'Not signed in.' }, { status: 401 })
-  const res = await retryFailedJob(id, addr)
+  // A job still WAITING on a signature asks for a fresh build of the step it
+  // is offering (the artifact went stale unsigned); a failed job re-arms its
+  // failed step. Both rebuild through the same guarded builder.
+  const res = row?.status === 'waiting_signature' ? await refreshOfferedStep(id, addr) : await retryFailedJob(id, addr)
   if (!res.ok) return NextResponse.json({ error: res.error }, { status: 400 })
   return NextResponse.json({ ok: true })
 }

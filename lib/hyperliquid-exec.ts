@@ -710,7 +710,7 @@ export function guardHlBuilderFeeApproval(action: HlWireApproveBuilderFeeAction,
 export interface HlExecGuardContext {
   markPx: number
   assetIndex: number
-  /** Perp account withdrawable USD — 0/absent blocks opens (no collateral). */
+  /** Collateral available to trade (hlCollateralUsd) — 0/absent blocks opens. */
   withdrawableUsd: number
   positionSzi: number
 }
@@ -762,7 +762,7 @@ export function guardHlExecBuild(intent: HlOrderIntent, action: HlWireOrderActio
     } else {
       const sideWord = intent.isBuy ? 'long' : 'short'
       block('side-as-asked', order.b === intent.isBuy, `Opens the ${sideWord} you asked for.`, 'Order side differs from the ask.')
-      block('has-collateral', ctx.withdrawableUsd > 0, `$${ctx.withdrawableUsd.toFixed(2)} withdrawable on the account.`, 'No withdrawable collateral on the Hyperliquid account — deposit first ("deposit 10 usdc to hyperliquid").')
+      block('has-collateral', ctx.withdrawableUsd > 0, `$${ctx.withdrawableUsd.toFixed(2)} available to trade on the account.`, 'No free collateral on the Hyperliquid account — deposit first ("deposit 10 usdc to hyperliquid").')
       // Margin sufficiency is the venue's final call (leverage settings live
       // there); we surface it rather than double-book it. Explicit leverage
       // tightens the yardstick to the multiple being SET.
@@ -820,9 +820,73 @@ export function hlAgentOf<T extends { slug: string; name: string; endpoint?: str
   return { agent, usable: !!agent?.endpoint }
 }
 
+/** The relay refuses an action whose nonce is older than this (the venue
+ *  would too). */
+export const HL_NONCE_MAX_AGE_MS = 120_000
+/** A sign surface treats a build as stale a little EARLIER, so the wallet
+ *  prompt + relay round-trip still land inside the relay's window. A job
+ *  offers a sign step for 30 minutes; without this the button signs a nonce
+ *  the relay must refuse. */
+export const HL_NONCE_SIGNABLE_MS = 90_000
+export function hlNonceStale(nonce: number, now = Date.now()): boolean {
+  return !(Math.abs(now - nonce) <= HL_NONCE_SIGNABLE_MS)
+}
+
+/**
+ * The collateral an OPEN can actually draw on. `clearinghouseState.withdrawable`
+ * alone is NOT it: on a unified account (and under portfolio margin) the venue
+ * keeps collateral in spot USDC and sweeps the perp ledger down to the margin
+ * in use, so that field reads ~$0 — or a stale figure between sweeps — for a
+ * fully funded account. A build once read $119 and its submit re-guard read
+ * $0 a minute later, refusing a signed order. The venue's own per-asset
+ * `availableToTrade` ([buy, sell]) is right in every mode; free spot USDC
+ * covers reads that have no coin. Takes the best finite figure, never less
+ * than `withdrawable`.
+ */
+export function hlCollateralUsd(input: {
+  perpWithdrawable: number
+  /** activeAssetData.availableToTrade — [buy side, sell side]. */
+  availableToTrade?: readonly (string | number)[] | null
+  /** The order's side; unknown reads the smaller side. */
+  isBuy?: boolean
+  /** userAbstraction — spot USDC backs perps only when unified. */
+  abstraction?: string | null
+  /** Spot USDC total − hold. */
+  spotUsdcFree?: number | null
+}): number {
+  const out = [input.perpWithdrawable]
+  const att = (input.availableToTrade ?? []).map(Number).filter((n) => Number.isFinite(n))
+  if (att.length === 2) out.push(input.isBuy === undefined ? Math.min(att[0], att[1]) : input.isBuy ? att[0] : att[1])
+  if (hlSpotBacksPerps(input.abstraction) && Number.isFinite(input.spotUsdcFree ?? NaN)) out.push(input.spotUsdcFree as number)
+  return Math.max(0, ...out.filter((n) => Number.isFinite(n)))
+}
+
+export function hlSpotBacksPerps(abstraction: string | null | undefined): boolean {
+  return abstraction === 'unifiedAccount' || abstraction === 'portfolioMargin'
+}
+
+/** Coin-less collateral read (the deposit-arrival wait): perp withdrawable,
+ *  plus free spot USDC when the account's mode lets spot back perps. */
+export async function readHlCollateralUsd(wallet: string, isTestnet = false): Promise<number> {
+  const { InfoClient, HttpTransport } = await import('@nktkas/hyperliquid')
+  const info = new InfoClient({ transport: new HttpTransport({ isTestnet }) })
+  const user = wallet as `0x${string}`
+  const [state, abstraction, spot] = await Promise.all([
+    info.clearinghouseState({ user }),
+    info.userAbstraction({ user }).catch(() => null),
+    info.spotClearinghouseState({ user }).catch(() => null),
+  ])
+  const usdc = spot?.balances.find((b) => b.coin === 'USDC')
+  return hlCollateralUsd({
+    perpWithdrawable: Number(state.withdrawable),
+    abstraction: typeof abstraction === 'string' ? abstraction : null,
+    spotUsdcFree: usdc ? Number(usdc.total) - Number(usdc.hold) : null,
+  })
+}
+
 /** Live market + account snapshot for one coin/wallet (meta + mids +
  *  clearinghouse in two round-trips). Throws on unknown coin. */
-export async function fetchHlSnapshot(coin: string, wallet: string | undefined, isTestnet = false): Promise<HlMarketSnapshot & { withdrawableUsd: number }> {
+export async function fetchHlSnapshot(coin: string, wallet: string | undefined, isTestnet = false, isBuy?: boolean): Promise<HlMarketSnapshot & { withdrawableUsd: number }> {
   const { InfoClient, HttpTransport } = await import('@nktkas/hyperliquid')
   const info = new InfoClient({ transport: new HttpTransport({ isTestnet }) })
   const [meta, mids, state, active, approvedFee] = await Promise.all([
@@ -852,7 +916,9 @@ export async function fetchHlSnapshot(coin: string, wallet: string | undefined, 
     maxLeverage: meta.universe[assetIndex].maxLeverage,
     accountLeverage: active?.leverage ? { type: active.leverage.type, value: Number(active.leverage.value) } : null,
     approvedBuilderFeeTenthBps: typeof approvedFee === 'number' && Number.isFinite(approvedFee) ? approvedFee : null,
-    withdrawableUsd: state ? Number(state.withdrawable) : 0,
+    // Collateral available to trade, NOT the raw perp `withdrawable` — see
+    // hlCollateralUsd (unified accounts read ~$0 there while fully funded).
+    withdrawableUsd: state ? hlCollateralUsd({ perpWithdrawable: Number(state.withdrawable), availableToTrade: active?.availableToTrade, isBuy }) : 0,
   }
 }
 
@@ -881,7 +947,7 @@ export interface HlOpenShortfall {
 export async function hlOpenCollateralShortfall(intent: HlOrderIntent, wallet: string): Promise<HlOpenShortfall | null> {
   if (intent.kind !== 'open') return null
   try {
-    const snap = await fetchHlSnapshot(intent.coin, wallet)
+    const snap = await fetchHlSnapshot(intent.coin, wallet, false, intent.isBuy)
     const notionalUsd = intent.notionalUsd ?? (intent.sizeUnits ? intent.sizeUnits * snap.markPx : 0)
     if (!(notionalUsd > 0)) return null
     const lev = intent.leverage ?? 3
@@ -957,7 +1023,7 @@ export async function buildHlExecTurn(
     }
   }
 
-  const snap = await fetchHlSnapshot(intent.coin, walletAddress)
+  const snap = await fetchHlSnapshot(intent.coin, walletAddress, false, intent.kind === 'open' ? intent.isBuy : undefined)
   // Q2 self-heal (HANDOFF-gtm-bulletproof §1.2): before attaching the
   // builder fee, ask the venue whether our treasury can actually RECEIVE it.
   // Confirmed-ineligible → build WITHOUT the fee (traced below) so the
