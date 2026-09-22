@@ -24,6 +24,7 @@
 import { spendPermissionManagerAbi } from '@coinbase/cdp-sdk'
 import { encodeFunctionData, erc20Abi, formatUnits } from 'viem'
 import prisma from '@/lib/db'
+import { buildsNatively } from '@/scripts/ask-ladder'
 import { jobsEnv } from '@/lib/jobs-runner'
 import { chainById, primaryStable, publicClientFor } from '@/lib/chains'
 import { getActiveGrant } from '@/lib/grant-store'
@@ -103,7 +104,47 @@ export interface SpotGuardTurn {
   /** Set when the turn was a manage verb the session may not perform
    *  (lib/chat-mutation-gate) — the reply is the sign-in invitation. */
   signInGate?: import('@/lib/chat-mutation-gate').SignInGate
+  /** What to press when the guard can't be armed. NO-DEAD-ENDS squad.
+   *  Options are ordinary clarify chips (lib/clarify): every `resume` is a
+   *  sentence the native ladder builds, checked below. The alert door rides
+   *  the reply as a markdown link, the same idiom the add-a-dapp doors use —
+   *  a chip kind that opens a URL does not exist and is not worth inventing
+   *  for one refusal. */
+  clarify?: { question: string; options: { label: string; resume: string }[] }
   buildPath: string
+}
+
+/**
+ * What we offer when the stop CANNOT be armed — and today, in production,
+ * that is every single arm ask. Two independent walls: the autopilot rails
+ * need `CDP_SPEND_NETWORK`, and even with them the one-shot Spend Permission
+ * is enforced by the wallet's OWN contract, while every door we ship mints an
+ * EOA (MetaMask, CDP `createOnLogin:'eoa'`, Coinbase `eoaOnly`, Phantom). So
+ * the refusal is the product on this path, and a wall of prose is the whole
+ * experience (QA drive `protect/eth`, 2026-09-21: honest, and still nothing
+ * to press).
+ *
+ * The honest substitute is a PRICE ALERT: `/api/cron/alerts` is live, it
+ * watches every minute, it emails, and it hands the owner the sell when it
+ * fires — the signature stays the gate, which is the only part automation was
+ * ever going to remove. The door is the symbol page, where the alert form
+ * lives.
+ *
+ * Deliberately NOT offered: a CoW limit sell at the stop price. A sell limit
+ * BELOW the market is marketable and fills immediately — it would dump the
+ * user's bag the moment they tapped a button labelled "protection".
+ */
+export function spotGuardFallback(token: string, pct: number, lead: string): SpotGuardTurn {
+  const sym = token.toUpperCase()
+  const options = [{ label: `Sell my ${sym} now`, resume: `Sell all my ${sym}` }].filter((o) => buildsNatively(o.resume))
+  return {
+    reply:
+      `${lead} ` +
+      `Here's what does work today: **[set a ${pct}% price alert on ${sym}](/t/${encodeURIComponent(sym)})** — it's watched every minute, you get the mail, and the sell comes back ready to send (you still sign it, which is the part that was never going away)` +
+      (options.length ? `. Or sell now, if you'd rather not watch it at all.` : `.`),
+    ...(options.length ? { clarify: { question: `What should I do about your ${sym}?`, options } } : {}),
+    buildPath: 'native-spot-guard',
+  }
 }
 
 function randomSalt(): bigint {
@@ -153,7 +194,16 @@ export async function runSpotGuardTurn(
     return { reply: '🛡️ Connect your wallet to arm spot protection — the permission is signed by, and scoped to, your address.', buildPath: 'native-spot-guard' }
   }
   if (!isCdpConfigured() || spendNetwork() !== 'base') {
-    return { reply: '🛡️ Spot protection runs on the autopilot rails, which aren’t provisioned in this environment yet.', buildPath: 'native-spot-guard' }
+    // Was: "…the autopilot rails, which aren't provisioned in this
+    // environment yet" — our infrastructure, described to a stranger, with
+    // nothing to press. Say what we can't do in their terms, then offer the
+    // thing that works.
+    trace({ type: 'note', level: 'warn', label: 'spot guardian: automatic selling is not configured here — answering with the alert door and a sell chip' })
+    return spotGuardFallback(
+      ask.token,
+      ask.triggerMode === 'price_move_pct' ? ask.triggerValue : 5,
+      `🛡️ I can't sell your ${ask.token.toUpperCase()} for you automatically yet — that part isn't switched on.`,
+    )
   }
 
   const chainId = SPOT_GUARD_CHAIN_ID
@@ -187,14 +237,20 @@ export async function runSpotGuardTurn(
   const code = await client.getCode({ address: owner }).catch(() => undefined)
   if (!code || code === '0x') {
     trace({ type: 'note', level: 'warn', label: `spot guardian: ${owner.slice(0, 10)}… has no contract code (EOA) — a Spend Permission it signs could never be spent; refusing by name, nothing armed` })
-    return {
-      reply:
-        `🛡️ **Spot protection needs a smart wallet.** The stop works through a one-shot Spend Permission that your wallet's own contract enforces — that's what keeps it non-custodial (I hold a one-time allowance for exactly the protected amount, never your keys). ` +
+    const pct = ask.triggerMode === 'price_move_pct' ? ask.triggerValue : 5
+    const fallback = spotGuardFallback(
+      sym,
+      pct,
+      `🛡️ **Spot protection needs a smart wallet.** The stop works through a one-shot Spend Permission that your wallet's own contract enforces — that's what keeps it non-custodial (I hold a one-time allowance for exactly the protected amount, never your keys). ` +
         `This wallet is a regular EOA, so there's no contract to enforce it with: an arm here would look armed and could never fire, so nothing was armed. ` +
-        `A Coinbase Smart Wallet can arm this today; EOA support (EIP-7702 upgrades) is on the way.` +
-        (native ? ` If the ${sym} sits on a Hyperliquid perp instead, "protect my ${sym} long with a ${ask.triggerMode === 'price_move_pct' ? ask.triggerValue : 10}% stop" arms the Guardian there.` : ''),
-      buildPath: 'native-spot-guard',
-    }
+        `A Coinbase Smart Wallet can arm this today; EOA support (EIP-7702 upgrades) is on the way.`,
+    )
+    // A perp position on the same coin CAN be watched today — the HL
+    // Guardian has fired in production. Offered as a third chip, never
+    // instead of the alert: it protects a different position.
+    const perpAsk = `protect my ${sym} long with a ${pct}% stop`
+    if (native && fallback.clarify && buildsNatively(perpAsk)) fallback.clarify.options.push({ label: `Protect a ${sym} perp on Hyperliquid instead`, resume: perpAsk })
+    return fallback
   }
 
   // Live balance — the protected amount must exist at arm time.
@@ -485,6 +541,9 @@ export async function buildSpotSell(input: {
           value: input.pulled.toString(),
         }
       : null
+  // No Base token needs an allowance reset (lib/erc20-approval), and
+  // guardSpotSell takes exactly one approval — stop before the pull otherwise.
+  if (built.resetTx) return { ok: false, detail: 'Venue build carried an allowance reset this autopilot does not send. Nothing pulled.' }
   const approveStep: SpotSellStep = built.approveTx
     ? { to: built.approveTx.to, data: built.approveTx.data, value: built.approveTx.value ?? '0' }
     : { to: sellAddr, data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [registryRouter, input.pulled] }), value: '0' }

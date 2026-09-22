@@ -53,6 +53,8 @@ import {
   type BuiltSwap,
   missingSlotChips,
 } from '@/lib/cross-chain-swap'
+import { crossChainFloorBlock, floorBlockFromError, floorRefusalTurn } from '@/lib/venue-floor'
+import { privateLaneClosedTurn, privateLaneOpen, privateRefundCheck, refundDisclosureLine } from '@/lib/private-lane'
 import { CROSS_CHAIN_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS } from '@/lib/fees'
 import { INTENT_SLUG_RE } from '@/lib/intent-links'
 import prismaDb from '@/lib/db'
@@ -64,6 +66,7 @@ import { fenceGuardianCoin } from '@/lib/hl-guardian-fence'
 import { hlPerpUniverse } from '@/lib/hl-universe'
 import { rescueIntent } from '@/lib/intent-rescue'
 import { buildsNatively } from '@/scripts/ask-ladder'
+import { noPoolChips, nothingToSellChips, unpriceableSellChips } from '@/lib/wall-chips'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import { compileJobAsk, stampSwapFeeTier } from '@/lib/jobs'
 import { advanceJob, createJob } from '@/lib/jobs-runner'
@@ -147,7 +150,7 @@ import { parseNftAsk, parseNftListAsk, parseNftMarketAsk, parseNftTransferFollow
 import { chainListSentence, nftGalleryChains, readNftGallery } from '@/lib/nft-gallery'
 import { marketReplyCopy, readNftOffers, readNftWorth } from '@/lib/nft-market'
 import { parseTransferSegment, buildTransferArtifact } from '@/lib/transfer-exec'
-import { buildUniswapSwap, NoV3PoolError } from '@/lib/uniswap-venue'
+import { buildUniswapSwap, NoV3PoolError, v3ApprovalSteps } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/uniswap-v4'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { OffTapeError, TapeUnavailableError } from '@/lib/stock-tape'
@@ -462,7 +465,15 @@ export async function POST(req: NextRequest) {
     if (typeof reqBody.walletAddress === 'string' && isAddress(reqBody.walletAddress)) {
       const body = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
       if (body && (body.txRequest || body.txChain || body.orderRequest)) {
-        const gated = await gateSignablePayload(body, reqBody.walletAddress, { log: (line) => console.warn(line) })
+        const gated = await gateSignablePayload(body, reqBody.walletAddress, {
+          log: (line) => console.warn(line),
+          ask: typeof reqBody.message === 'string' ? reqBody.message : undefined,
+          // A stable shortfall has nothing to buy, so it is answered from the
+          // WALLET: what it holds by name, and the move re-origined (or the
+          // bridge skipped) when the ask was a cross-chain one. Runs only on
+          // the refusal path, where a ~1s scan is worth more than the wall.
+          scan: () => scanFundingSources(reqBody.walletAddress as string).catch(() => null),
+        })
         if (gated.verdict?.kind === 'short') res = NextResponse.json(gated.payload, { status: res.status })
       }
     }
@@ -1464,6 +1475,7 @@ async function handleChatTurn(req: NextRequest) {
         reply: spotTurn.reply,
         ...(spotTurn.spotGuardArm ? { spotGuardArm: spotTurn.spotGuardArm } : {}),
         ...(spotTurn.signInGate ? { signInGate: spotTurn.signInGate } : {}),
+        ...(spotTurn.clarify ? { clarify: spotTurn.clarify } : {}),
         buildPath: spotTurn.buildPath,
       })
     }
@@ -2651,7 +2663,7 @@ async function callAgentTool(endpoint: string, tool: string, args: Record<string
  */
 function composeCrossChainReply(
   params: CrossChainSwapParams,
-  guard: { depositAddress?: string; addressExpires?: string | null; warnings: string[]; feeBps?: number },
+  guard: { depositAddress?: string; addressExpires?: string | null; warnings: string[]; feeBps?: number; refundFee?: string },
   summary: string,
   walletAddress: string,
 ): string {
@@ -2704,7 +2716,7 @@ function composeCrossChainReply(
     '**The path from here**',
     '1. Press **Sign & send deposit** below — it moves exactly the quoted amount to the one-time deposit address.',
     `2. Solvers pick it up and deliver on ${cap(params.destinationChain)} automatically — nothing else to sign.`,
-    '3. If no solver can fill it, the deposit auto-refunds to your wallet.',
+    `3. ${refundDisclosureLine({ ...params, ...(guard.refundFee ? { refundFee: guard.refundFee } : {}) })}`,
   )
   if (!recv) {
     // Parse miss on the MCP summary — keep the original sentence so no
@@ -2714,8 +2726,40 @@ function composeCrossChainReply(
   for (const w of guard.warnings) lines.push('', `⚠️ **Heads up:** ${w}`)
   lines.push('', params.confidential
     ? `Want a different size? Say “make it 2”. Say “make it public” to turn private mode off.`
-    : `Want a different size? Say “make it 2”. Want the route kept off the public record? Flip **Private** on the card, or say “make it private”.`)
+    : privateLaneOpen()
+      ? `Want a different size? Say “make it 2”. Want the route kept off the public record? Flip **Private** on the card, or say “make it private”.`
+      : `Want a different size? Say “make it 2”.`)
   return lines.join('\n')
+}
+
+/**
+ * 1Click's temporary per-chain minimum, answered in our own voice with the
+ * ways forward the wallet can take. Called twice: once from the table
+ * BEFORE the build (no round trip, and the job compiler uses the same
+ * table), and once on the venue's own 400 for anything the table missed.
+ */
+async function crossChainFloorTurn(
+  params: CrossChainSwapParams,
+  block: NonNullable<ReturnType<typeof crossChainFloorBlock>>,
+  walletAddress: string | undefined,
+  trace: (event: unknown) => void,
+) {
+  // Chips come from the wallet's real balances — an offer to move money it
+  // doesn't have is the same dead end one step further on. A failed scan
+  // costs the chips, never the refusal.
+  const scan = walletAddress ? await scanFundingSources(walletAddress).catch(() => null) : null
+  const turn = floorRefusalTurn(params, block, scan?.sources ?? null)
+  trace({
+    type: 'note',
+    level: 'warn',
+    label: `native cross-chain layer REFUSED: the venue's $${block.usd} minimum sits on the ${block.side} end (${block.chain}); offered ${turn.chips.length} chip${turn.chips.length === 1 ? '' : 's'}`,
+  })
+  return NextResponse.json({
+    reply: turn.reply,
+    ...(turn.chips.length ? { clarify: { question: turn.question, options: turn.chips } } : {}),
+    blocked: true,
+    buildPath: 'native-cross-chain',
+  })
 }
 
 async function buildCrossChainSwapTurn(
@@ -2738,6 +2782,25 @@ async function buildCrossChainSwapTurn(
       blocked: true,
     })
   }
+  // Private mode is gated on PROOF, not on the venue's word (lib/private-lane):
+  // 1Click quotes and echoes `confidentiality: basic` happily and then the
+  // swap refunds itself, so the guard's echo check can never catch this one.
+  // While the lane is closed the ask refuses by name and the SAME swap is
+  // offered public as a chip — never a silent downgrade, never a bounce.
+  if (params.confidential && !privateLaneOpen()) {
+    const closed = privateLaneClosedTurn(params)
+    trace({ type: 'note', level: 'warn', label: 'private mode is CLOSED (no confidential fill has ever settled) — refused by name, public swap offered as a chip' })
+    return NextResponse.json({
+      reply: closed.reply,
+      blocked: true,
+      clarify: { question: closed.question, options: closed.options },
+      // The swap being amended stays pending, so "make it public" / "cancel"
+      // still resolve instead of falling to the planner mid-conversation.
+      ...(ctx?.pending?.kind === 'xchain'
+        ? { workingContext: { v: 1 as const, age: 0, ...(ctx.scope ? { scope: ctx.scope } : {}), ...(ctx.offers ? { offers: ctx.offers } : {}), pending: ctx.pending } satisfies WorkingContext }
+        : {}),
+    })
+  }
   if (!walletAddress) {
     trace({ type: 'note', level: 'info', label: 'no wallet connected — asking to connect before building' })
     return NextResponse.json({
@@ -2747,6 +2810,14 @@ async function buildCrossChainSwapTurn(
       ...(originalMessage ? { connectAsk: originalMessage } : {}),
     })
   }
+
+  // The venue's measured per-chain minimum (lib/venue-floor). Refusing here
+  // saves a round trip whose only outcome is a 400, and it is the same table
+  // the job compiler reads — but it only fires when the move can be sized in
+  // dollars, so a move we can't price still goes to the venue and is caught
+  // by the `floorBlockFromError` brace below.
+  const floor = crossChainFloorBlock(params)
+  if (floor) return await crossChainFloorTurn(params, floor, walletAddress, trace)
 
   trace({ type: 'select', service: agent.name, endpoint: 'tools/call build_swap', priceUsd: 0, reason: 'native cross-chain layer — one-time deposit address from the agent, verified by the guard before anything is offered' })
   let built: BuiltSwap
@@ -2770,6 +2841,14 @@ async function buildCrossChainSwapTurn(
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'the build failed'
     trace({ type: 'receipt', receipt: { name: agent.name, endpoint: 'build_swap', priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
+    // "Temporary swap limits: minimum swap amount is $1,000" — the venue's
+    // own 400. It is a refusal with a way forward, not a broken build, so it
+    // never reaches the user as the venue's sentence. The floor comes from
+    // the message (the venue's number, so a moved limit stays truthful);
+    // which END carries it comes from the table, and 'route' when we don't
+    // know. Every other error keeps its raw words.
+    const venueFloor = floorBlockFromError(params, msg)
+    if (venueFloor) return await crossChainFloorTurn(params, venueFloor, walletAddress, trace)
     return NextResponse.json({
       reply: `🔗 Couldn't build that cross-chain swap: ${msg}`,
     })
@@ -2824,11 +2903,17 @@ async function buildCrossChainSwapTurn(
     // (components/PrivateSwapToggle) and sends the amend sentences above.
     txRequest: {
       ...guard.tx,
-      privacy: {
-        confidential: Boolean(params.confidential),
-        ...(params.recipient && params.recipient.toLowerCase() !== walletAddress.toLowerCase() ? { recipient: params.recipient } : {}),
-        canDeliverElsewhere: !isThirdPartyOrigin(contentOrigin),
-      } satisfies SwapPrivacy,
+      // The switch is offered only while the lane is open — a control that
+      // can only refuse is worse than no control (lib/private-lane).
+      ...(privateLaneOpen()
+        ? {
+            privacy: {
+              confidential: Boolean(params.confidential),
+              ...(params.recipient && params.recipient.toLowerCase() !== walletAddress.toLowerCase() ? { recipient: params.recipient } : {}),
+              canDeliverElsewhere: !isThirdPartyOrigin(contentOrigin),
+            } satisfies SwapPrivacy,
+          }
+        : {}),
     },
     guardrails: {
       ok: true,
@@ -2836,9 +2921,18 @@ async function buildCrossChainSwapTurn(
       valueUsd,
       // §E5's renderer prints every warn-level check above the button — the
       // delivery address, in full, is the last thing read before signing.
-      ...(params.recipient && params.recipient.toLowerCase() !== walletAddress.toLowerCase()
-        ? { checks: [{ id: 'recipient', level: 'warn', note: `The payout LEAVES your wallet's control: it is delivered to ${params.recipient} on ${prettyChainWord(params.destinationChain)}. Refunds return to you.` }] }
-        : {}),
+      ...(() => {
+        const checks: Array<{ id: string; level: 'warn'; note: string }> = []
+        if (params.recipient && params.recipient.toLowerCase() !== walletAddress.toLowerCase()) {
+          checks.push({ id: 'recipient', level: 'warn', note: `The payout LEAVES your wallet's control: it is delivered to ${params.recipient} on ${prettyChainWord(params.destinationChain)}. Refunds return to you.` })
+        }
+        // Private mode has its own failure mode and it is not obvious: a
+        // confidential swap that can't be filled refunds on the ORIGIN
+        // chain, so the destination balance simply never moves. Say it in
+        // the last place read before signing.
+        if (params.confidential) checks.push(privateRefundCheck({ ...params, ...(guard.refundFee ? { refundFee: guard.refundFee } : {}) }))
+        return checks.length ? { checks } : {}
+      })(),
     },
     // Which layer built it — echoed on the tx-built/signed telemetry beacons
     // so /dashboard/embeds can break the funnel down per builder (lib/build-path.ts).
@@ -3929,7 +4023,7 @@ async function buildMorphoLendTurn(
       blocked: true,
     })
   }
-  trace({ type: 'status', label: `guard verified every step — ${guard.steps.length === 2 ? 'approve → lend' : 'lend'} card built, awaiting signature` })
+  trace({ type: 'status', label: `guard verified every step — ${guard.steps.length === 3 ? 'reset → approve → lend' : guard.steps.length === 2 ? 'approve → lend' : 'lend'} card built, awaiting signature` })
 
   // 5) Money-moved value + the spend-policy gate at the point of signing.
   const valueUsd = price !== null ? Number(params.amount) * price : morphoStableUsd(token, Number(params.amount))
@@ -4572,8 +4666,12 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
         const amountHuman = probe ? usdToTokenAmount(Number(intent.sellAmountUsd), probe.usd, dec) : null
         if (!amountHuman) {
           trace({ type: 'note', level: 'warn', label: `couldn't price ${sellSym} on ${chain.name} to size a $${intent.sellAmountUsd} ask — asking for a token amount` })
+          // The dollar figure is the only thing that failed: selling the
+          // whole balance needs no price at all.
+          const priceChips = unpriceableSellChips({ symbol: sellSym, chainName: chain.name, usd: Number(intent.sellAmountUsd), verify: buildsNatively })
           return NextResponse.json({
             reply: `🔄 I couldn't price ${sellSym} on ${chain.name} to size a $${intent.sellAmountUsd} swap — say a token amount instead, e.g. “swap 0.01 ${sellSym} for ${buySym}”.`,
+            ...(priceChips.length ? { clarify: { question: `Size it another way?`, options: priceChips } } : {}),
           })
         }
         trace({ type: 'status', label: `native swap layer: $${intent.sellAmountUsd} of ${sellSym} ≈ ${amountHuman} ${sellSym} (priced via ${probe!.via})` })
@@ -4630,8 +4728,14 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
     if (balance <= BigInt(0)) {
       trace({ type: 'status', label: `native swap layer: “all my ${sellSym}” on ${chain.name} is 0 — nothing to sell, no build` })
       const elsewhere = APP_CHAINS.find((c) => c.id !== chainId)?.name ?? 'Ethereum'
+      // You cannot sell what you do not have — but you can buy it, or sell it
+      // where it actually lives. Chips verified against the ladder
+      // (lib/wall-chips): a sell of an unheld token is one of the funded
+      // rows in the prod queue, answered with prose and nothing to press.
+      const noneChips = nothingToSellChips({ symbol: sellSym, chainName: chain.name, usd: intent.sellAmountUsd ? Number(intent.sellAmountUsd) : undefined, verify: buildsNatively })
       return NextResponse.json({
         reply: `🔄 You don't hold any ${sellSym} on ${chain.name} — nothing to sell. (If it's on another chain, name it: “sell all my ${sellSym} on ${elsewhere}”.)`,
+        ...(noneChips.length ? { clarify: { question: `What would you like to do instead?`, options: noneChips } } : {}),
         buildPath: 'native-swap-balance',
       })
     }
@@ -5254,18 +5358,23 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
         // recipe) — prices move while approvals mine.
         const sell = intent.sellToken.toUpperCase()
         const buy = intent.buyToken.toUpperCase()
-        trace({ type: 'status', label: `guardrails passed — approve → swap card built (${intent.sellAmountHuman} ${sell} → ${buy}), awaiting signature` })
+        // A partial allowance on a token whose approve() refuses to change a
+        // live one (Ethereum USDT) puts a reset to zero in front — three steps,
+        // and the re-quote still aims at the last.
+        const approvalSteps = v3ApprovalSteps(uni, sell)
+        const resets = !!uni.resetTx
+        trace({ type: 'status', label: `guardrails passed — ${resets ? 'reset → ' : ''}approve → swap card built (${intent.sellAmountHuman} ${sell} → ${buy}), awaiting signature` })
         return NextResponse.json({
-          reply: `🔏 ${uni.summary}\n🔗 Two steps in the card below — sign the ${sell} approval, and the swap appears automatically once it confirms (re-quoted fresh). Nothing to retype.${warns.length ? `\n${warns.join('\n')}` : ''}`,
+          reply: `🔏 ${uni.summary}\n🔗 ${resets ? `Three steps in the card below — ${sell} won't change an allowance that's already set, so the first step clears your older, smaller one, the second is the ${sell} approval` : `Two steps in the card below — sign the ${sell} approval`}, and the swap appears automatically once it confirms (re-quoted fresh). Nothing to retype.${warns.length ? `\n${warns.join('\n')}` : ''}`,
           txChain: {
             summary: uni.summary,
             steps: [
-              { label: 'approve', title: `Approve ${sell} to Uniswap's SwapRouter02`, tx: uni.approveTx },
+              ...approvalSteps,
               { label: 'swap', title: `Swap ${intent.sellAmountHuman} ${sell} → ${buy}`, tx: uni.swapTx, validUntil: uni.validUntil },
             ],
             refresh: {
               kind: 'uniswap-swap',
-              stepIndex: 1,
+              stepIndex: approvalSteps.length,
               params: { sellToken: intent.sellToken, buyToken: intent.buyToken, amountHuman: intent.sellAmountHuman, chainId: String(chainId), ...(feeBps !== undefined ? { feeBps: String(feeBps) } : {}) },
             },
           },
@@ -5476,8 +5585,15 @@ async function prepareUniswapV4Turn(
     if (err instanceof TapeUnavailableError) return tapeHoldReply(err, trace)
     if (err instanceof NoV4PoolError) {
       trace({ type: 'note', level: 'warn', label: `no v4 pool either — the pair isn't on Uniswap on ${chain.name}` })
+      // "for this amount" is the tell — the pool often exists and is just
+      // too thin for this size, so a smaller one is worth a tap.
+      const buyingHere = !!intent.sellAmountUsd && /^(?:usd[ctgse]?|usdc\.e|dai)$/i.test(intent.sellToken!)
+      const wantSym = (buyingHere ? intent.buyToken! : intent.sellToken!).toUpperCase()
+      const otherSym = (buyingHere ? intent.sellToken! : intent.buyToken!).toUpperCase()
+      const poolChips = noPoolChips({ symbol: wantSym, chainName: chain.name, usd: intent.sellAmountUsd ? Number(intent.sellAmountUsd) : undefined, verify: buildsNatively }, otherSym, buyingHere)
       return NextResponse.json({
         reply: `🔄 No Uniswap v3 or v4 pool on ${chain.name} can fill ${intent.sellToken!.toUpperCase()} → ${intent.buyToken!.toUpperCase()} for this amount.`,
+        ...(poolChips.length ? { clarify: { question: `Try another route?`, options: poolChips } } : {}),
       })
     }
     if (err instanceof GatedV4PoolError) {
@@ -6436,7 +6552,11 @@ export function streamAutoRouter(
       // event carrying a signable is checked against the wallet's balance of
       // what it spends before it reaches the card.
       const sendSignable = async (event: Record<string, unknown>) => {
-        const gated = await gateSignablePayload(event, walletAddress, { log: (line) => console.warn(line) })
+        const gated = await gateSignablePayload(event, walletAddress, {
+          log: (line) => console.warn(line),
+          ask: message,
+          scan: walletAddress ? () => scanFundingSources(walletAddress).catch(() => null) : undefined,
+        })
         if (gated.verdict?.kind === 'short') send({ type: 'note', level: 'warn', label: `affordability gate withheld the ${String(event.buildPath ?? 'planner')} build — ${String(gated.payload.content).slice(0, 160)}` })
         send(gated.payload)
       }

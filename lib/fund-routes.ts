@@ -54,6 +54,7 @@ import {
 } from '@/lib/funding-plan'
 import { originCapUsd, planRobinhoodFundingChips, robinhoodBuyNeedUsd, type FundingOrigin, type FundingShortfall } from '@/lib/lifi-bridge'
 import { fundSegment, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-destinations'
+import { originFundSegment } from '@/lib/lifi-bridge'
 import { LIFI_MAX_QUOTE_SHORTFALL_BPS } from '@/lib/lifi-venue'
 import { FUND_UNREAD_NOTE, GAS_FLOOR_ETH, ROUTE_TICKET_NOTE, SETTLES, SPOT_CHAINS, venueChainLabel, type FundLeg, type FundRoutesState, type RouteQuote } from '@/lib/symbol-venues'
 
@@ -126,8 +127,8 @@ function lifiRow(o: FundingOrigin, needUsd: number, includeGas: boolean, sym: st
     label: `Fund from ${name}`,
     // The chat's own chip sentence (planRobinhoodFundingChips): the order's
     // need, from THIS origin, in the token it holds, then the buy.
-    ask: `${fundSegment(needUsd, o.word, includeGas, o.token)}, then buy ${money(buyUsd)} of ${sym}`,
-    note: `${o.token} on ${name} → USDG${includeGas ? ' + gas' : ''} on Robinhood Chain, then the buy — one signed job.`,
+    ask: `${originFundSegment(o, needUsd, includeGas)}, then buy ${money(buyUsd)} of ${sym}`,
+    note: `${o.token} on ${name} →${o.hop ? ' USDC there, then' : ''} USDG${includeGas ? ' + gas' : ''} on Robinhood Chain, then the buy — one signed job.`,
     // Funding legs are fee-free; the buy step pays the swap tier.
     feeBps: 0,
     quote: { kind: 'none', value: o.usd, label: `${money(o.usd)} ${o.token}`, sub: `in your wallet · moves ~${money(needUsd)}` },
@@ -139,7 +140,7 @@ function lifiRow(o: FundingOrigin, needUsd: number, includeGas: boolean, sym: st
       minOut: `≥ ${100 - LIFI_MAX_QUOTE_SHORTFALL_BPS / 100}% of our own quote`,
       gas: gasLine(o.chainId),
       settles: SETTLES.lifi,
-      signs: `${includeGas ? 'two funding legs' : 'one funding leg'} + a wait + the buy — one job card`,
+      signs: `${o.hop ? 'a swap to USDC, ' : ''}${includeGas ? 'two funding legs' : 'one funding leg'} + a wait + the buy — one job card`,
       note: ROUTE_TICKET_NOTE,
     },
   }
@@ -154,12 +155,12 @@ function lifiLeg(o: FundingOrigin, needUsd: number, includeGas: boolean, buyUsd:
     name,
     token: o.token,
     usd: needUsd,
-    segment: fundSegment(needUsd, o.word, includeGas, o.token),
+    segment: originFundSegment(o, needUsd, includeGas),
     // lib/jobs robinhood-funding: a gas leg, then the USDG leg, then ONE wait.
-    builders: includeGas ? ['native-lifi-fund', 'native-lifi-fund'] : ['native-lifi-fund'],
+    builders: [...(o.hop ? ['native-swap'] : []), ...(includeGas ? ['native-lifi-fund', 'native-lifi-fund'] : ['native-lifi-fund'])],
     waits: 1,
     label: `Fund from ${name}`,
-    hint: `${money(needUsd)} of ${o.token} on ${name} → USDG${includeGas ? ' + gas' : ''} on Robinhood Chain (${includeGas ? 'two legs' : 'one leg'}, a signature each); the job waits for it to land.`,
+    hint: `${money(needUsd)} of ${o.token} on ${name} →${o.hop ? ' USDC there, then' : ''} USDG${includeGas ? ' + gas' : ''} on Robinhood Chain (${(o.hop ? 1 : 0) + (includeGas ? 2 : 1)} legs, a signature each); the job waits for it to land.`,
     forUsd: buyUsd,
     destChainId: ROBINHOOD_CHAIN_ID,
     forBuy: true,

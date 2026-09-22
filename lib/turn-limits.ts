@@ -241,3 +241,32 @@ export async function bumpAndCheckAiKeyWrite(ip: string | null, wallet: string):
     return false
   }
 }
+
+/** A cross-chain sign card watches its own settlement (components/
+ *  XchainSettlement): one poll per 10s while the venue is mid-flight, then
+ *  per 20s, for at most ~45 minutes. That's up to ~360 calls an hour for a
+ *  single swap in a single tab, so the fence sits well above it — it exists
+ *  to stop a loop pointed at the venue through us, not to ration a watcher.
+ *  Own bucket (`x:<hash>`). */
+export const XCHAIN_STATUS_IP_HOURLY_CAP = 900
+
+/** Bump this IP's settlement-watch window; true when it tripped the cap.
+ *  Loopback exempt and fail-open, like every other fence here. */
+export async function bumpAndCheckXchainStatus(ip: string | null): Promise<boolean> {
+  if (!ip) return false
+  const key = `x:${hashIp(ip)}`
+  try {
+    const { default: prisma } = await import('@/lib/db')
+    const windowStart = hourStartUTC()
+    const rows = await prisma.$queryRaw<{ count: number }[]>`
+      INSERT INTO unsigned_turn_windows (key, window_start, count)
+      VALUES (${key}, ${windowStart}, 1)
+      ON CONFLICT (key, window_start)
+      DO UPDATE SET count = unsigned_turn_windows.count + 1
+      RETURNING count
+    `
+    return Number(rows[0]?.count ?? 0) > XCHAIN_STATUS_IP_HOURLY_CAP
+  } catch {
+    return false
+  }
+}

@@ -168,6 +168,15 @@ export function parseCrossChainSwap(rawMessage: string): CrossChainSwapParams | 
   return { ...parsed, ...(privacy.confidential ? { confidential: true as const } : {}), ...(privacy.recipient ? { recipient: privacy.recipient } : {}) }
 }
 
+/** The PUBLIC sentence for a parsed swap — the chip a refusal offers, and
+ *  the one string the private-lane gate hands back. It round-trips this
+ *  file's own grammar (harness-pinned), so the chip is a real ask and not a
+ *  suggested prompt in disguise. Privacy and any delivery address are
+ *  deliberately dropped: that is what makes it the public version. */
+export function crossChainAskSentence(p: CrossChainSwapParams): string {
+  return `Swap ${p.amount} ${p.originToken.toUpperCase()} from ${prettyChainWord(p.originChain)} to ${p.destinationToken.toUpperCase()} on ${prettyChainWord(p.destinationChain)}`
+}
+
 function parseCrossChainCore(rawMessage: string): CrossChainSwapParams | { problem: string; missing?: CrossChainMissing } | null {
   const message = normalizeChainWords(normalizeArrows(rawMessage)).replace(DOLLAR_STABLE_RE, '$1 $2')
   const dollarOther = message.match(DOLLAR_OTHER_RE)
@@ -294,7 +303,15 @@ export interface BuiltAppFee {
 export interface BuiltSwap {
   kind?: string
   appFee?: BuiltAppFee
-  quote?: { sell?: { amountAtoms?: string; token?: string; chain?: string; usd?: string }; receive?: { token?: string; chain?: string }; summary?: string }
+  quote?: {
+    sell?: { amountAtoms?: string; token?: string; chain?: string; usd?: string }
+    receive?: { token?: string; chain?: string }
+    /** What a refund costs, in the origin token, already formatted by the
+     *  MCP ("0.0024 USDC"). Absent on builds from an MCP that predates it —
+     *  the disclosure then names the rule without a number. */
+    originRefundFee?: string
+    summary?: string
+  }
   deposit?: { address?: string; addressExpires?: string | null; deliveredTo?: string; refundsGoTo?: string }
   /** Present only when the venue ECHOED the confidential level we asked for. */
   confidential?: { level?: string; deliversToPayer?: boolean; note?: string }
@@ -329,6 +346,11 @@ export interface GuardResult {
   depositAddress?: string
   summary?: string
   addressExpires?: string | null
+  /** What a refund costs, formatted in the origin token — echoed straight
+   *  from the venue's quote, absent when the MCP doesn't carry it. Said out
+   *  loud before the signature: a refund lands on the ORIGIN chain, so a
+   *  user watching the destination sees a swap that "never arrived". */
+  refundFee?: string
 }
 
 const eqAddr = (a?: string, b?: string): boolean => {
@@ -520,6 +542,7 @@ export function guardCrossChainBuild(
     depositAddress,
     summary: step.summary ?? built.quote?.summary,
     addressExpires: built.deposit?.addressExpires ?? null,
+    ...(built.quote?.originRefundFee ? { refundFee: built.quote.originRefundFee } : {}),
   }
 }
 

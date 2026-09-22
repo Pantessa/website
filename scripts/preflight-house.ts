@@ -35,6 +35,20 @@ const BASE = process.env.BASE ?? 'http://localhost:3481'
  *  strict in the same PR (audit:funding's knownUnnamed discipline). */
 const KNOWN_GAPS: Record<string, string> = {}
 
+/** Does the sign-in gate still have a door? A source read, not a guess: the
+ *  chat surface must take the gate off the message (lib/sign-in-gate
+ *  signInGateOf) AND re-run the held ask (shouldRerunSignInAsk). A payload
+ *  nothing renders is a dead end wearing a key, and that is how it shipped
+ *  from 09-08 to 09-21. */
+function signInGateHasDoor(): boolean {
+  try {
+    const chat = readFileSync('components/ChatInterface.tsx', 'utf8')
+    return chat.includes('signInGateOf(msg.meta)') && chat.includes('shouldRerunSignInAsk(')
+  } catch {
+    return false
+  }
+}
+
 function envLocal(key: string): string | null {
   try {
     return readFileSync('.env.local', 'utf8').match(new RegExp(`^${key}=(.*)$`, 'm'))?.[1]?.trim().replace(/^"|"$/g, '') ?? null
@@ -106,8 +120,23 @@ async function main() {
         'nftMarket',
         'guardrails',
       ].find((k) => body[k] !== undefined && body[k] !== null)
-      ok = res.status === 200 && !!artifact
-      verdict = artifact ? `→ ${artifact}` : `BARE REPLY: ${(body.reply ?? '').slice(0, 140)}`
+      // `signInGate` used to be a THIRD state, and the worst one: the route
+      // asked for a signature it never gave the user a way to provide —
+      // nothing in components/ read the key, so the turn rendered as prose
+      // ("sign in from the account menu, then ask again"). It has a door now
+      // (lib/sign-in-gate, rendered by components/ChatInterface), so it
+      // counts as actionable — but ONLY while that consumer is really there.
+      // `signInGateHasDoor()` reads the source, the way the harness fences
+      // do, so deleting the door can never quietly pass this check again.
+      const gated = !!body.signInGate && signInGateHasDoor()
+      ok = res.status === 200 && (!!artifact || gated)
+      verdict = artifact
+        ? `→ ${artifact}`
+        : gated
+          ? `→ signInGate door (${(body.signInGate as { kind?: string }).kind})`
+          : body.signInGate
+            ? `GATE WITH NO DOOR (signInGate: ${(body.signInGate as { kind?: string }).kind}) — nothing renders it: ${(body.reply ?? '').slice(0, 90)}`
+            : `BARE REPLY: ${(body.reply ?? '').slice(0, 140)}`
     } catch (e) {
       verdict = `ERROR: ${(e as Error).message}`
     }

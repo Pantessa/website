@@ -92,6 +92,10 @@ const KIND_LABEL: Record<string, string> = {
   // any wallet saw it — a real revert, no gas, or (pre-2026-09-08) an RPC
   // hiccup misread as one. had_funds TRUE.
   withheld: 'withheld (dry-run)',
+  // lib/xchain-settlement.ts: the signature landed, the deposit confirmed,
+  // and the VENUE returned the money — a cross-chain swap that never
+  // happened. had_funds TRUE; the money moved and came home.
+  refunded: 'venue refunded',
   // lib/roster-observe.ts (doors run): roster surfaces walling — mandate
   // grammar refusals, hire consent failures, manager proposals hitting
   // bench/cap/fired, decline auth failures. build_path = roster-<surface>.
@@ -192,6 +196,13 @@ export default function FailuresPage() {
             title="Only rows where the artifact was built + guarded and the WALLET refused it (?kind=wallet-refused)"
           >
             wallet refused
+          </button>
+          <button
+            className={`btn btn--sm ${kind === 'refunded' ? 'btn--solid' : ''}`}
+            onClick={() => setKind((k) => (k === 'refunded' ? null : 'refunded'))}
+            title="Only rows where the deposit signed and confirmed and the VENUE refunded it (?kind=refunded)"
+          >
+            refunded
           </button>
           <button
             className={`btn btn--sm ${showInternal ? 'btn--solid' : ''}`}

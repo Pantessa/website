@@ -26,7 +26,8 @@
 //  fails CLOSED. No fallback paths.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { decodeFunctionData, erc20Abi, isAddress } from 'viem'
+import { isAddress } from 'viem'
+import { guardApprovalSteps } from '@/lib/erc20-approval'
 import { chainAlt, normalizeWorth } from '@/lib/chain-lexicon'
 import type { TxChainStep } from '@/lib/transaction-layer'
 
@@ -902,32 +903,22 @@ export function guardMorphoOpBuild(built: MorphoBuiltPlan, exp: MorphoOpGuardExp
     }
   }
 
-  // (f) Every step before the last: a decodable ERC-20 approve of the
-  // expected token, to the Morpho singleton, for exactly the expected
-  // amount (bounded-window for the interest-buffered repay-max approve).
+  // (f) The steps before the last: an ERC-20 approve of the expected token,
+  // to the Morpho singleton, for exactly the expected amount (bounded-window
+  // for the interest-buffered repay-max approve) — behind an allowance reset
+  // to zero ONLY on a token whose approve() needs one (lib/erc20-approval;
+  // Ethereum USDT, whose repay-max buffer is what leaves the dust allowance).
+  // Two live approvals, or a reset on any other token, refuse.
   const approves = steps.slice(0, -1)
   const approveTokenAddr = layout.approveToken === 'loanToken' ? exp.params.loanToken : exp.params.collateralToken
-  approves.forEach((s) => {
-    const tx = s.tx!
-    if (!eqAddr(tx.to, approveTokenAddr)) {
-      reasons.push(`An approval step targets a different contract than the ${layout.noun} token.`)
-      return
-    }
-    try {
-      const decoded = decodeFunctionData({ abi: erc20Abi, data: (tx.data ?? '0x') as `0x${string}` })
-      if (decoded.functionName !== 'approve') {
-        reasons.push(`A pre-step calls "${decoded.functionName}", not approve — refusing.`)
-        return
-      }
-      const [spender, amt] = decoded.args as [string, bigint]
-      if (!eqAddr(spender, exp.morpho)) reasons.push('An approval names a spender that is not the Morpho contract.')
-      if (approveNeed === null) return // amount checks already refused above
-      if (amt < approveNeed.floor) reasons.push(`An approval is for less than the ${layout.noun} amount.`)
-      if (amt > approveNeed.ceiling) reasons.push(`An approval allows more than the ${layout.noun} needs — refusing.`)
-    } catch {
-      reasons.push('Could not decode an approval step — refusing to sign opaque calldata.')
-    }
-  })
+  if (approves.length && approveNeed !== null) {
+    reasons.push(
+      ...guardApprovalSteps(
+        approves.map((s) => s.tx!),
+        { chainId: exp.chainId, token: approveTokenAddr, spender: exp.morpho, floor: approveNeed.floor, ceiling: approveNeed.ceiling, spenderLabel: 'the Morpho contract' },
+      ),
+    )
+  }
 
   if (reasons.length) return { ok: false, reasons, warnings }
   return {

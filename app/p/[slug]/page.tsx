@@ -7,6 +7,8 @@ import RouterTraceLines from '@/components/RouterTraceLines'
 import ChatMarkdown from '@/components/ChatMarkdown'
 import SharedJobLog from '@/components/SharedJobLog'
 import SignedTxLines, { signedTxsOf } from '@/components/SignedTxLines'
+import SettlementLine from '@/components/SettlementLine'
+import { settlementOf, xchainDepositOf } from '@/lib/xchain-settlement'
 import BrandIcon from '@/components/BrandIcon'
 import Footer from '@/components/Footer'
 import { respondingServers } from '@/lib/responding-mcp'
@@ -177,6 +179,17 @@ export default async function SharedChatPage({ params }: Params) {
                   )}
                   {msg.role === 'assistant' && <MessageReceipts meta={msg.meta} />}
                   {msg.role === 'assistant' && signedTxsOf(msg.meta).length > 0 && <SignedTxLines meta={msg.meta} />}
+                  {/* What the VENUE did with a cross-chain deposit, from the
+                      record the live card wrote (meta.settlement) — delivered,
+                      or refunded with the reason. Shown only when we actually
+                      have the verdict; a turn from before we watched settlement
+                      says nothing rather than guessing (lib/xchain-settlement). */}
+                  {msg.role === 'assistant' &&
+                    (() => {
+                      const dep = xchainDepositOf(msg.meta)
+                      const outcome = dep ? settlementOf(msg.meta) : null
+                      return dep && outcome ? <SettlementLine dep={dep} outcome={outcome} /> : null
+                    })()}
                   {job && <SharedJobLog job={job} />}
                   {msg.role === 'assistant' && <RouterTraceLines meta={msg.meta} />}
                 </div>

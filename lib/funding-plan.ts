@@ -29,7 +29,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { erc20Abi, formatEther, formatUnits } from 'viem'
-import { chainById, publicClientFor, primaryStable } from '@/lib/chains'
+import { chainById, publicClientFor, primaryStable, type AppChainToken } from '@/lib/chains'
 import { chainAlt, canonicalChainWord } from '@/lib/chain-lexicon'
 import { ETH_TWO_LEG_HEADROOM_USD, FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, fundingNeedUsd, listWords, planRobinhoodFundingAdvice, readFundingShortfall } from '@/lib/lifi-bridge'
 import { describeInflightDeposit } from '@/lib/inflight-funding'
@@ -52,6 +52,105 @@ export const FUNDING_CHAIN_WORD: Record<number, string> = {
   10: 'Optimism',
 }
 
+/**
+ * Stables BESIDES USDC that the scan reads as funding sources.
+ *
+ * Every prod `ask_failures` row through 2026-09-21 carried the same line —
+ * "$109.5 USDT Ethereum (no funding path yet)" — because the scan read
+ * exactly two tokens, native ETH and USDC. A wallet holding $200 of USDT was
+ * told "I found no movable ETH or USDC" and left. Money the user owns is not
+ * allowed to be invisible, so it is read here.
+ *
+ * `crossChain` is a MEASURED fact, not an aspiration. Probed 2026-09-21
+ * against the live 1Click asset list and dry quotes through the near-intents
+ * MCP (`tokens` + `quote`, which mint no deposit address), $50 → USDC on Base:
+ *
+ *   USDT · Ethereum   asset `USDT`   est 99.98% · min 98.98% · 47s   ✅
+ *   USDT · Optimism   asset `USDT`   est 99.96% · min 98.96% · 39s   ✅
+ *   USDT · Arbitrum   asset `USDT0`  est 99.98% · min 98.98% · 27s   ❌ see below
+ *   DAI  · Ethereum   asset `DAI`    est 99.83% · min 98.84% · 47s   ✅
+ *   USDT · Base, DAI · Base/Arbitrum/Optimism — not 1Click assets     ❌
+ *
+ * Arbitrum's USDT IS routable at the venue, under the symbol `USDT0` — and
+ * `lib/cross-chain-swap`'s token slot accepts no digits, so the chip
+ * "Swap 50 USDT0 from Arbitrum to …" falls to the planner. Until that slot
+ * widens, Arbitrum USDT is same-chain only: it converts where it sits
+ * (Uniswap, no bridge) and never rides a leg it cannot compile.
+ *
+ * A false `crossChain` is never a dead end — the holding is still read,
+ * still funds a destination-chain conversion, and is always NAMED in a
+ * refusal (unroutableSources). It only never rides a bridge.
+ *
+ * Token identity is by CONTRACT: the scan resolves each symbol against
+ * `lib/chains` `tokens`, whose addresses are the canonical issuers'
+ * deployments, and the 1Click asset list returned those same addresses
+ * (Ethereum USDT 0xdac1…1ec7, Arbitrum 0xfd08…cbb9, Optimism 0x94b0…8e58,
+ * Ethereum DAI 0x6b17…1d0f). A chain whose registry lacks the symbol is
+ * silently skipped — never guessed.
+ */
+export interface FundingStable {
+  symbol: string
+  /** Proven to ride a NEAR Intents leg under THIS symbol (see above). */
+  crossChain: boolean
+}
+export const FUNDING_STABLES: Record<number, FundingStable[]> = {
+  1: [
+    { symbol: 'USDT', crossChain: true },
+    { symbol: 'DAI', crossChain: true },
+  ],
+  10: [
+    { symbol: 'USDT', crossChain: true },
+    { symbol: 'DAI', crossChain: false },
+  ],
+  42161: [
+    { symbol: 'USDT', crossChain: false },
+    { symbol: 'DAI', crossChain: false },
+  ],
+  8453: [{ symbol: 'DAI', crossChain: false }],
+}
+
+/** Can this source ride a cross-chain leg of its OWN token? A source that
+ *  sits ON the destination never needs one — it converts through the native
+ *  venue cascade (no bridge, no solver). ETH and USDC ride everywhere the
+ *  scan reads. */
+export const sourceReaches = (s: Pick<FundingSource, 'chainId' | 'crossChain'>, destChainId: number): boolean =>
+  s.chainId === destChainId || s.crossChain !== false
+
+/** Extra dollars a hop plan sells, to cover the stable-to-stable venue spread
+ *  on the conversion leg. 1% is far more than any USDT/DAI ↔ USDC pool
+ *  charges; the surplus lands as the user's own USDC on the origin. */
+export const CONVERT_HOP_BPS = 100
+
+/**
+ * A stable with no cross-chain leg of its own is NOT stuck: it can be
+ * converted where it sits and the USDC bridged — the chat's own same-chain
+ * swap segment followed by its own cross-chain segment, one compiled job,
+ * no new builder and no new guard.
+ *
+ * This is the whole reason a live drive wallet holding $359 of USDT on
+ * Arbitrum read "top up" on five different asks (QA, 2026-09-21): 1Click
+ * lists that token as `USDT0` and our token slot takes no digits (FUND.md
+ * F1), so the direct leg cannot compile — but `Swap 45 USDT for USDC on
+ * Arbitrum, then Swap 44 USDC from Arbitrum to …` compiles today.
+ *
+ * True when the source's chain can do both halves: a native venue to convert
+ * on, and USDC the scan already bridges from there.
+ */
+export const sourceCanHop = (s: Pick<FundingSource, 'chainId' | 'token' | 'hopGas'>): boolean =>
+  s.token.toUpperCase() !== 'USDC' &&
+  s.hopGas !== false &&
+  (FUNDING_SCAN_CHAINS as readonly number[]).includes(s.chainId) &&
+  !!chainById(s.chainId)?.uniswap
+
+/** Can this source fund an action on `destChainId` at all — directly, or via
+ *  the conversion hop? The one predicate the planner asks. */
+export const sourceCanFund = (s: Pick<FundingSource, 'chainId' | 'crossChain' | 'token' | 'hopGas'>, destChainId: number): boolean =>
+  sourceReaches(s, destChainId) || sourceCanHop(s)
+
+/** Does spending this source for `destChainId` need the conversion hop? */
+export const sourceHops = (s: Pick<FundingSource, 'chainId' | 'crossChain' | 'token' | 'hopGas'>, destChainId: number): boolean =>
+  !sourceReaches(s, destChainId) && sourceCanHop(s)
+
 /** Solver-fee headroom on the moved amount (NEAR Intents quotes net of fees). */
 export const FUNDING_MARGIN_BPS = 1_000
 /** Flat headroom for fixed costs (destination delivery gas on mainnet). */
@@ -72,6 +171,11 @@ const DUST_USD = 0.5
 const GAS_RESERVE_ETH: Record<number, number> = { 1: 0.002, 8453: 0.0002, 42161: 0.0002, 10: 0.0002 }
 /** Minimum native ETH a chain needs before an ERC-20 source there is signable. */
 const MIN_GAS_TO_SEND_ETH: Record<number, number> = { 1: 0.001, 8453: 0.00003, 42161: 0.00003, 10: 0.00003 }
+/** …and before it can also CONVERT first: the hop is approve + swap +
+ *  transfer where a direct leg is one transfer, so it needs headroom for
+ *  three. 3× the send floor — a number the chain's own gas market makes
+ *  cheap to clear on an L2, and one no plan may quietly assume. */
+const MIN_GAS_TO_HOP_ETH: Record<number, number> = Object.fromEntries(Object.entries(MIN_GAS_TO_SEND_ETH).map(([k, v]) => [k, v * 3]))
 /** Native ETH the DESTINATION wallet needs to sign the follow-up action
  *  (approve + the op). Below it, the plan adds a gas leg — funds that land
  *  where the wallet can't pay gas are stranded, not delivered (live
@@ -113,18 +217,30 @@ export function destGasLegUsd(chainId: number, nativeEth: number, ethUsd: number
 export const sourceCapUsd = (s: FundingSource, gasIncluded: boolean): number =>
   s.token === 'ETH' && gasIncluded ? Math.max(0, Number((s.usd - (ETH_TWO_LEG_HEADROOM_USD[s.chainId] ?? 1)).toFixed(2))) : s.usd
 
+/** What a source can promise a plan for `destChainId`: its cap, less the
+ *  conversion spread when it has to hop (the hop sells more than it delivers,
+ *  so the deliverable figure is smaller than the row). */
+export const deliverableUsd = (s: FundingSource, destChainId: number, gasIncluded: boolean): number =>
+  sourceHops(s, destChainId)
+    ? Number((sourceCapUsd(s, gasIncluded) / (1 + CONVERT_HOP_BPS / 10_000)).toFixed(2))
+    : sourceCapUsd(s, gasIncluded)
+
 /** What a set of sources can PROMISE for one plan: the best single source,
  *  or the whole set combined (the richest carries the gas leg, so only it
  *  pays the two-leg headroom). Mirrors the two shapes planFundingChips
  *  offers — sizing anything off the raw movable sum re-opens the strand. */
-export function promisableCapacityUsd(sources: FundingSource[], gasIncluded: boolean): number {
+export function promisableCapacityUsd(sources: FundingSource[], gasIncluded: boolean, destChainId?: number): number {
   if (sources.length === 0) return 0
+  // With a destination in hand, a hopping source promises less than its row
+  // (the conversion spread comes off the top). Without one — the legacy
+  // two-argument callers — every source is taken at its cap, as before.
+  const cap = (s: FundingSource, gas: boolean) => (destChainId === undefined ? sourceCapUsd(s, gas) : deliverableUsd(s, destChainId, gas))
   const byUsd = [...sources].sort((a, b) => b.usd - a.usd)
-  const single = Math.max(...byUsd.map((s) => sourceCapUsd(s, gasIncluded)))
+  const single = Math.max(...byUsd.map((s) => cap(s, gasIncluded)))
   // A combined plan only counts legs the combine path would actually emit
   // (≥ MIN_LEG_USD each) — otherwise "Move what I've got (~$18.50)" promises
   // a total its own legs can't deliver.
-  const combined = byUsd.length >= 2 ? byUsd.reduce((a, s, i) => { const cap = sourceCapUsd(s, gasIncluded && i === 0); return a + (i === 0 || cap >= MIN_LEG_USD ? cap : 0) }, 0) : 0
+  const combined = byUsd.length >= 2 ? byUsd.reduce((a, s, i) => { const c = cap(s, gasIncluded && i === 0); return a + (i === 0 || c >= MIN_LEG_USD ? c : 0) }, 0) : 0
   return Number(Math.max(single, combined, 0).toFixed(2))
 }
 
@@ -171,10 +287,20 @@ const isBuyToken = (need: FundingNeed, s: { token: string }): boolean =>
 export interface FundingSource {
   chainId: number
   chainWord: string
-  token: 'ETH' | 'USDC'
+  /** 'ETH', 'USDC', or a FUNDING_STABLES symbol ('USDT', 'DAI'). */
+  token: string
   /** Movable balance (gas reserve already deducted for ETH sources). */
   balance: number
   usd: number
+  /** false = this holding has no cross-chain route it can compile, so it may
+   *  only fund an action on its OWN chain (FUNDING_STABLES). Absent = ETH or
+   *  USDC, which ride everywhere the scan reads. */
+  crossChain?: boolean
+  /** false = its chain holds enough gas to SEND this token but not enough to
+   *  also convert it first (approve + swap + transfer is three transactions,
+   *  a direct leg is one). Such a row is still a source on its own chain;
+   *  it just can't take the conversion hop. */
+  hopGas?: boolean
 }
 
 export interface FundingChip {
@@ -208,7 +334,9 @@ export function fundingPlanUsd(amountHuman: number, tokenUsd: number): number {
  *  so every "Swap 0.016667 ETH from …" amount is sized by this one rule. */
 export function sourceAmountFor(source: FundingSource, usd: number): string {
   const perUsd = source.balance / source.usd
-  const dp = source.token === 'USDC' ? 2 : 6
+  // Stables are dollars (2dp is exact enough for any of them); only ETH
+  // needs the long tail.
+  const dp = source.token.toUpperCase() === 'ETH' ? 6 : 2
   const amt = Math.min(usd * perUsd, source.balance)
   return fmtAmount(amt, dp, amt >= source.balance ? 'down' : 'up')
 }
@@ -230,7 +358,22 @@ export const fundingLegResume = (s: FundingSource, amount: string, need: Funding
  *  first within each group. */
 export function rankFundingSources(need: FundingNeed, sources: FundingSource[]): FundingSource[] {
   const group = (s: FundingSource) =>
-    s.chainId === need.chainId ? -1 : s.token.toUpperCase() === need.token.toUpperCase() ? 0 : s.token === 'USDC' ? 1 : 2
+    s.chainId === need.chainId
+      ? -1
+      : s.token.toUpperCase() === need.token.toUpperCase()
+        ? 0
+        : s.token.toUpperCase() === 'USDC'
+          ? 1
+          : // Any other stable next (a dollar is a dollar, and the leg is
+            // priced in dollars); volatile ETH last, since spending it means
+            // choosing which asset the wallet gives up.
+            s.token.toUpperCase() !== 'ETH'
+            ? // …and a stable that has to convert before it can bridge costs
+              // one extra leg, so it sorts behind one that rides directly.
+              sourceHops(s, need.chainId)
+              ? 3
+              : 2
+            : 4
   return [...sources].sort((a, b) => group(a) - group(b) || b.usd - a.usd)
 }
 
@@ -249,20 +392,35 @@ const gasLegResume = (s: FundingSource, amount: string, need: FundingNeed): stri
  *  compound composer's funding leg (lib/fund-routes coinFundLegs) both build
  *  their segments here, so a leg the composer offers IS the chat's chip. */
 export function fundingLegsFrom(need: FundingNeed, s: FundingSource, tokenUsd: number, gasUsd = 0): string[] | null {
-  if (sourceCapUsd(s, gasUsd > 0) < tokenUsd + gasUsd) return null
+  if (sourceCapUsd(s, gasUsd > 0) < hopCostUsd(s, need.chainId, tokenUsd + gasUsd)) return null
   const segs: string[] = []
+  // A source with no cross-chain leg of its own converts to USDC where it
+  // sits FIRST — once, for the whole plan, not once per leg — and the rest
+  // of the plan spends that USDC exactly as a USDC row would.
+  let src = s
+  if (sourceHops(s, need.chainId)) {
+    const sellUsd = hopCostUsd(s, need.chainId, tokenUsd + gasUsd)
+    if (s.usd < sellUsd) return null
+    segs.push(`Swap ${sourceAmountFor(s, sellUsd)} ${s.token} for USDC on ${s.chainWord}`)
+    src = { chainId: s.chainId, chainWord: s.chainWord, token: 'USDC', balance: tokenUsd + gasUsd, usd: tokenUsd + gasUsd }
+  }
   let spent = 0
   if (gasUsd > 0) {
-    segs.push(gasLegResume(s, sourceAmountFor(s, gasUsd), need))
+    segs.push(gasLegResume(src, sourceAmountFor(src, gasUsd), need))
     spent = gasUsd
   }
   if (tokenUsd > 0) {
     // The token leg's amount comes out of what's left of the source.
-    const remaining: FundingSource = { ...s, balance: s.balance * (1 - spent / s.usd), usd: s.usd - spent }
+    const remaining: FundingSource = { ...src, balance: src.balance * (1 - spent / src.usd), usd: src.usd - spent }
     segs.push(fundingLegResume(remaining, sourceAmountFor(remaining, tokenUsd), need))
   }
   return segs.length > 0 ? segs : null
 }
+
+/** Dollars of `s` a plan for `usd` on `destChainId` actually sells — the
+ *  conversion spread rides on top when the source has to hop. */
+export const hopCostUsd = (s: Pick<FundingSource, 'chainId' | 'crossChain' | 'token' | 'hopGas'>, destChainId: number, usd: number): number =>
+  sourceHops(s, destChainId) ? Number((usd * (1 + CONVERT_HOP_BPS / 10_000)).toFixed(2)) : usd
 
 /**
  * The pure planner: rank the sources and turn a shortfall into chips (or an
@@ -283,9 +441,21 @@ export function plannableSources(need: FundingNeed, sources: FundingSource[]): F
   return rankFundingSources(
     need,
     sources.filter(
-      (s) => s.usd >= DUST_USD && (s.chainId !== need.chainId || s.token.toUpperCase() !== need.token.toUpperCase()) && !isBuyToken(need, s),
+      (s) =>
+        s.usd >= DUST_USD &&
+        (s.chainId !== need.chainId || s.token.toUpperCase() !== need.token.toUpperCase()) &&
+        !isBuyToken(need, s) &&
+        sourceCanFund(s, need.chainId),
     ),
   )
+}
+
+/** Movable holdings that exist, are worth naming, and simply have no route to
+ *  THIS destination (a stable whose chain 1Click doesn't list it on). Never
+ *  planned, always named: an unnamed $200 of USDT next to "I found no movable
+ *  ETH or USDC" is exactly the refusal that sent strangers away. */
+export function unroutableSources(need: FundingNeed, sources: FundingSource[]): FundingSource[] {
+  return sources.filter((s) => s.usd >= DUST_USD && !isBuyToken(need, s) && !sourceCanFund(s, need.chainId)).sort((a, b) => b.usd - a.usd)
 }
 
 export function planFundingChips(need: FundingNeed, needUsd: number, sources: FundingSource[], gasUsd = 0): FundingPlan {
@@ -307,10 +477,10 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
   // "Covers it" means the source's PROMISABLE capacity, not its raw row: an
   // ETH row spending its whole movable balance across a gas leg AND a token
   // leg is a mid-job wall (see sourceCapUsd).
-  const best = ranked.find((s) => sourceCapUsd(s, gasUsd > 0) >= totalNeedUsd)
+  const best = ranked.find((s) => deliverableUsd(s, need.chainId, gasUsd > 0) >= totalNeedUsd)
   const chips: FundingChip[] = []
   if (best) {
-    const bestCap = sourceCapUsd(best, gasUsd > 0)
+    const bestCap = deliverableUsd(best, need.chainId, gasUsd > 0)
     const legs = legsFrom(best, needUsd)!
     chips.push({
       label: `Just enough (~$${usd2(totalNeedUsd)} of ${best.token} on ${best.chainWord})`,
@@ -328,7 +498,7 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
         })
       }
     }
-  } else if (promisableCapacityUsd(ranked, gasUsd > 0) >= totalNeedUsd && ranked.length >= 2) {
+  } else if (promisableCapacityUsd(ranked, gasUsd > 0, need.chainId) >= totalNeedUsd && ranked.length >= 2) {
     // No single source covers it — the richest source carries the gas leg,
     // then legs combine (richest-first) until the token need is covered.
     const byUsd = [...ranked].sort((a, b) => b.usd - a.usd)
@@ -340,7 +510,7 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
       // contributes its promisable capacity; every other source runs a
       // single leg and spends its full row.
       const carriesGas = gasCarried === 0 && gasUsd > 0
-      const spendable = sourceCapUsd(s, carriesGas) - (carriesGas ? gasUsd : 0)
+      const spendable = deliverableUsd(s, need.chainId, carriesGas) - (carriesGas ? gasUsd : 0)
       if (spendable <= 0) continue
       // A leg under the minimum is a leg the solver may refuse — skip the
       // source rather than emit it (mirrors promisableCapacityUsd), and a
@@ -349,7 +519,7 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
       // the destination, the leg fills.
       if (!carriesGas && spendable < MIN_LEG_USD) continue
       const want = Math.max(Math.min(spendable, needUsd - covered), Math.min(MIN_LEG_USD, spendable))
-      const segs = carriesGas ? legsFrom(s, want) : [fundingLegResume(s, sourceAmountFor(s, want), need)]
+      const segs = carriesGas ? legsFrom(s, want) : fundingLegsFrom(need, s, want, 0)
       if (!segs) continue
       legs.push(...segs)
       if (carriesGas) gasCarried = gasUsd
@@ -378,9 +548,21 @@ export function planFundingChips(need: FundingNeed, needUsd: number, sources: Fu
  * ("Your money's already there") and the refusal facts that decide whether a
  * card door rides along, so the copy and the door can't disagree.
  */
+/** Stranded STABLES a dollar of gas would actually turn into funding for THIS
+ *  need: not the token being bought, and with a route to the destination once
+ *  it can sign. (A gas-stranded USDT on Arbitrum can still fund an Arbitrum
+ *  action; it cannot fund a Base one, so unsticking it would not help.) */
+export const rescuableStranded = (need: FundingNeed, stranded: FundingSource[]): FundingSource[] =>
+  stranded
+    // A topup delivers 3× the chain's send floor, which is exactly the hop
+    // floor — so a rescued row can convert as well as transfer. It is judged
+    // as the funded row it is about to become, not the stuck one it is.
+    .map((s) => ({ ...s, hopGas: true }))
+    .filter((s) => s.token.toUpperCase() !== 'ETH' && !isBuyToken(need, s) && sourceCanFund(s, need.chainId))
+
 export function strandedCoversPlan(need: FundingNeed, needUsd: number, stranded: FundingSource[], movableTotalUsd: number): boolean {
-  // USDC the follow-up BUYS is never money for it (FundingNeed.buyToken).
-  const usdcStranded = stranded.filter((s) => s.token === 'USDC' && !isBuyToken(need, s))
+  // Stables the follow-up BUYS are never money for it (FundingNeed.buyToken).
+  const usdcStranded = rescuableStranded(need, stranded)
   if (usdcStranded.length === 0) return false
   const coverableUsd = usdcStranded
     .filter((s) => s.chainId !== need.chainId || s.token.toUpperCase() !== need.token.toUpperCase())
@@ -413,31 +595,62 @@ export function shortRefusalCopy(params: {
    *  Never counted toward the plan, always named: left out, an ETH-only
    *  wallet asking to buy ETH would read "I found no movable ETH or USDC". */
   heldBuy?: FundingSource[]
+  /** Movable stables with no route to THIS destination (unroutableSources).
+   *  Real, signable money that simply cannot bridge from where it sits —
+   *  named with the reason, never silently dropped. */
+  unroutable?: FundingSource[]
+  /** The needed token ALREADY on the destination chain. The caller subtracted
+   *  it from the shortfall, so it is inside the plan's arithmetic — and until
+   *  2026-09-21 it was nowhere in the plan's words: a wallet holding $33 of
+   *  USDC on Ethereum, asking for $50 of UNI there, read a refusal that named
+   *  every chain except the one its money was on. */
+  alreadyThere?: FundingSource[]
 }): string {
-  const { chainsRead, need, needUsd, sourceSummary, stranded, movableTotalUsd, promisableUsd, heldBuy = [] } = params
+  const { chainsRead, need, needUsd, sourceSummary, stranded, movableTotalUsd, promisableUsd, heldBuy = [], unroutable = [], alreadyThere = [] } = params
   const actionLabel = need.actionLabel
   const planLine = `the smallest plan for ${actionLabel} moves ~$${usd2(needUsd)} (solver fees included).`
-  // Stranded splits by token: USDC is unstickable with a gas topup; ETH under
-  // the keep-back IS the (insufficient) gas — name it, never promise it. USDC
-  // the follow-up BUYS isn't stuck money for this plan at all: it's named
-  // with the other holdings of the bought token.
-  const usdcStranded = stranded.filter((s) => s.token === 'USDC' && !isBuyToken(need, s))
-  const ethStranded = stranded.filter((s) => s.token === 'ETH')
+  const destWord = FUNDING_CHAIN_WORD[need.chainId] ?? 'the destination'
+  // What is already where the action runs. Counted against the ask by the
+  // caller, so the plan below is what is STILL missing — said out loud, or
+  // the number looks like it ignored the balance on screen.
+  const alreadyNote =
+    alreadyThere.length > 0
+      ? ` (Already counted against the ask: ${alreadyThere
+          .map((s) => `~$${usd2(Number(s.usd.toFixed(2)))} of ${s.token} on ${s.chainWord}`)
+          .join(', ')} — that's where ${need.actionLabel} runs, so the plan above is only what's still missing.)`
+      : ''
+  // Money that exists and can sign, but has no leg from where it sits to
+  // where the action runs. It gets its own sentence with the one thing that
+  // unlocks it — a chain it CAN move from, or converting it where it is.
+  const noRouteNote =
+    unroutable.length > 0
+      ? ` (Also here, with no bridge from where it sits: ${unroutable
+          .map((s) => `~$${usd2(Number(s.usd.toFixed(2)))} of ${s.token} on ${s.chainWord}`)
+          .join(', ')} — ${[...new Set(unroutable.map((s) => s.token))].join('/')} can only be spent on its own chain today, so swap it to USDC or ETH there first and I'll move that.)`
+      : ''
+  // Stranded splits by token: a stable is unstickable with a gas topup; ETH
+  // under the keep-back IS the (insufficient) gas — name it, never promise
+  // it. A stable the follow-up BUYS isn't stuck money for this plan at all:
+  // it's named with the other holdings of the bought token.
+  const usdcStranded = stranded.filter((s) => s.token.toUpperCase() !== 'ETH' && !isBuyToken(need, s))
+  const ethStranded = stranded.filter((s) => s.token.toUpperCase() === 'ETH')
   const ethNote =
     ethStranded.length > 0
       ? `${ethStranded.map((s) => `~$${usd2(Number(s.usd.toFixed(2)))} of ETH on ${s.chainWord}`).join(', ')} (under what a move from there costs, so it can't help)`
       : ''
-  const buyRows = [...heldBuy, ...stranded.filter((s) => s.token === 'USDC' && isBuyToken(need, s))]
+  const buyRows = [...heldBuy, ...stranded.filter((s) => s.token.toUpperCase() !== 'ETH' && isBuyToken(need, s))]
   const buySummary = buyRows.map((s) => `~$${usd2(Number(s.usd.toFixed(2)))} of ${s.token} on ${s.chainWord}`).join(', ')
   const buySym = (need.buyToken ?? '').toUpperCase()
   // Nothing in the wallet but the token being bought (and gas-sized ETH that
   // can't move anyway): say so plainly. "Top up any of those chains" would
-  // invite more of the same token, and the same round trip.
-  if (buySummary && !sourceSummary && usdcStranded.length === 0) {
+  // invite more of the same token, and the same round trip. Route-less money
+  // elsewhere makes "the only money I can see" false, so that branch stands
+  // down and the general copy names both.
+  if (buySummary && !sourceSummary && usdcStranded.length === 0 && unroutable.length === 0 && alreadyThere.length === 0) {
     return (
       `Across ${chainsRead} the only money I can see is ${buySummary}${ethNote ? `, plus ${ethNote}` : ''} — and ${buySym} is what ${actionLabel} gets you, ` +
       `so there's nothing here to spend on it: converting ${[...new Set(buyRows.map((s) => s.token))].join(' or ')} to ${need.token.toUpperCase()} just to buy it back pays two conversions and ends where it started. ` +
-      `Send ${buySym === 'ETH' ? 'USDC' : 'ETH'} to this wallet on any of those chains and ask again.`
+      `Send ${buySym === 'ETH' ? 'USDC' : 'ETH'} to this wallet on any of those chains and ask again.${alreadyNote}`
     )
   }
   const notCounted = buySummary ? ` (Not counted: ${buySummary} — ${buySym} is what ${actionLabel} gets you.)` : ''
@@ -450,14 +663,20 @@ export function shortRefusalCopy(params: {
     if (seen && typeof promisableUsd === 'number') {
       return (
         `Across ${chainsRead} I can see ${seen} — but funding ${actionLabel} from ETH takes two moves off that one balance ` +
-        `(a little gas for ${FUNDING_CHAIN_WORD[need.chainId] ?? 'the destination'} first, then the ${need.token.toUpperCase()}), and the first move pays its own fee out of the same ETH — ` +
+        `(a little gas for ${destWord} first, then the ${need.token.toUpperCase()}), and the first move pays its own fee out of the same ETH — ` +
         `so I can only safely commit ~$${usd2(promisableUsd)} of it, and ${planLine} ` +
-        `Top up any of those chains — a dollar or two is plenty — and ask again.${notCounted}`
+        `Top up any of those chains — a dollar or two is plenty — and ask again.${notCounted}${noRouteNote}${alreadyNote}`
       )
     }
     return (
-      (seen ? `Across ${chainsRead} I can see ${seen} — ` : `Across ${chainsRead} I found no movable ETH or USDC — `) +
-      `${planLine} Top up any of those chains and ask again.${notCounted}`
+      (seen
+        ? `Across ${chainsRead} I can see ${seen} — `
+        : unroutable.length > 0
+          ? // Money IS here; it just has no bridge. Never "I found no movable
+            // ETH or USDC" over a wallet holding $200 of USDT.
+            `Across ${chainsRead} nothing I can move to ${destWord} — `
+          : `Across ${chainsRead} I found no movable ETH or USDC — `) +
+      `${planLine} Top up any of those chains and ask again.${notCounted}${noRouteNote}${alreadyNote}`
     )
   }
   const strandedSummary = usdcStranded.map((s) => `~$${usd2(Number(s.usd.toFixed(2)))} of ${s.token} on ${s.chainWord}`).join(', ')
@@ -470,12 +689,13 @@ export function shortRefusalCopy(params: {
     // The money EXISTS — only origin gas is missing. Lead with that.
     return (
       `Your money's already there: across ${chainsRead} I can see ${sourceSummary ? `${sourceSummary}, plus ` : ''}${strandedSummary} — enough for ${actionLabel} — ` +
-      `but there's no ETH on ${gasWords} to sign the move with, so it's stuck where it sits. ${rescue}${alsoEth}${notCounted}`
+      `but there's no ETH on ${gasWords} to sign the move with, so it's stuck where it sits. ${rescue}${alsoEth}${notCounted}${noRouteNote}${alreadyNote}`
     )
   }
+  const stuckSyms = [...new Set(usdcStranded.map((s) => s.token))].join('/')
   return (
     `Across ${chainsRead} I can see ${sourceSummary ? `${sourceSummary}, plus ` : ''}${strandedSummary} that can't move without gas ETH on ${gasWords} — ` +
-    `${planLine} Top up any of those chains (and ${gasWords} needs a little ETH before its USDC can move) and ask again.${alsoEth}${notCounted}`
+    `${planLine} Top up any of those chains (and ${gasWords} needs a little ETH before its ${stuckSyms} can move) and ask again.${alsoEth}${notCounted}${noRouteNote}${alreadyNote}`
   )
 }
 
@@ -548,31 +768,41 @@ export function planStrandedRescue(params: {
 }): { chips: FundingChip[]; target: FundingSource; donor: FundingSource; gasLegUsd: number } | null {
   const { need, needUsd, gasUsd, sources, stranded, ethUsd } = params
   if (ethUsd === null || needUsd <= 0) return null
-  // Only USDC stuck on a NON-destination chain is rescuable this way — the
-  // needed token already on the destination was subtracted from the
-  // shortfall, so unsticking it cannot cover the need.
-  // USDC the follow-up BUYS can't be the rescue either: unsticking it only to
-  // convert it and buy it back is the round trip plannableSources refuses.
-  const target = stranded
-    .filter((s) => s.token === 'USDC' && (s.chainId !== need.chainId || need.token.toUpperCase() !== 'USDC') && !isBuyToken(need, s))
+  // Only a stable stuck on a NON-destination chain is rescuable this way —
+  // the needed token already on the destination was subtracted from the
+  // shortfall, so unsticking it cannot cover the need. A stable the follow-up
+  // BUYS can't be the rescue either: unsticking it only to convert it and buy
+  // it back is the round trip plannableSources refuses. And a stable with no
+  // route to the destination (FUNDING_STABLES crossChain false) stays put:
+  // gas would unstick it into a leg that still can't compile.
+  const target = rescuableStranded(need, stranded)
+    .filter((s) => s.chainId !== need.chainId || need.token.toUpperCase() !== s.token.toUpperCase())
     .sort((a, b) => b.usd - a.usd)[0]
   if (!target || target.usd < needUsd + gasUsd) return null
   const gasLegUsd = gasTopupLegUsd(target.chainId, ethUsd)
-  // A chain with stranded USDC has no signable ETH, so every source lives
-  // elsewhere — the richest one that can carry the topup donates. No two-leg
-  // headroom applies here: the donor signs exactly ONE leg (its full row is
-  // the true single-move capacity), and the target's own legs are USDC —
-  // their fees come out of the ETH the topup just delivered, not out of the
-  // balance the second leg sells.
-  const donor = [...sources].sort((a, b) => b.usd - a.usd).find((s) => s.usd >= gasLegUsd)
+  // A chain with stranded money has no signable ETH, so every source lives
+  // elsewhere — the richest one that can REACH it carries the topup. No
+  // two-leg headroom applies here: the donor signs exactly ONE leg (its full
+  // row is the true single-move capacity), and the target's own legs are
+  // stables — their fees come out of the ETH the topup just delivered, not
+  // out of the balance the second leg sells.
+  const donor = [...sources].sort((a, b) => b.usd - a.usd).find((s) => s.usd >= gasLegUsd && sourceReaches(s, target.chainId))
   if (!donor) return null
   const legs: string[] = [`Swap ${sourceAmountFor(donor, gasLegUsd)} ${donor.token} from ${donor.chainWord} to ETH on ${target.chainWord}`]
   let src = target
   if (gasUsd > 0) {
-    legs.push(gasLegResume(src, sourceAmountFor(src, gasUsd), need))
-    src = { ...target, balance: target.balance * (1 - gasUsd / target.usd), usd: target.usd - gasUsd }
+    const gasLegs = fundingLegsFrom({ ...need, token: 'ETH', amountHuman: 0 }, src, 0, gasUsd)
+    if (!gasLegs) return null
+    legs.push(...gasLegs)
+    const spent = hopCostUsd(src, need.chainId, gasUsd)
+    src = { ...target, hopGas: true, balance: target.balance * (1 - spent / target.usd), usd: target.usd - spent }
   }
-  legs.push(fundingLegResume(src, sourceAmountFor(src, needUsd), need))
+  // The target's own legs, conversion hop included when its token has no
+  // cross-chain route of its own (the gas leg above already spent part of
+  // the row, so this builds from what is left).
+  const tail = fundingLegsFrom(need, src, needUsd, 0)
+  if (!tail) return null
+  legs.push(...tail)
   const resume = need.followupResume ? `${legs.join(', then ')}, then ${need.followupResume}` : legs.join(', then ')
   return {
     chips: [
@@ -687,6 +917,10 @@ export interface FundingBalanceRead {
   chainWord: string
   nativeEth: number
   usdcBal: number
+  /** FUNDING_STABLES balances on this chain, in token units. Absent on a
+   *  caller that doesn't read them (lib/wallet-flags builds its reads from a
+   *  wallet view that only carries ETH + USDC) — never inferred. */
+  stables?: { symbol: string; balance: number }[]
 }
 
 /** The pure classification step: raw balances → movable sources + stranded
@@ -698,10 +932,30 @@ export function classifyFundingBalances(reads: FundingBalanceRead[], ethUsd: num
   const sources: FundingSource[] = []
   const stranded: FundingSource[] = []
   for (const r of reads) {
-    if (r.usdcBal > 0 && r.nativeEth >= (MIN_GAS_TO_SEND_ETH[r.chainId] ?? 0.001)) {
+    const canSign = r.nativeEth >= (MIN_GAS_TO_SEND_ETH[r.chainId] ?? 0.001)
+    if (r.usdcBal > 0 && canSign) {
       sources.push({ chainId: r.chainId, chainWord: r.chainWord, token: 'USDC', balance: r.usdcBal, usd: r.usdcBal })
     } else if (r.usdcBal >= DUST_USD) {
       stranded.push({ chainId: r.chainId, chainWord: r.chainWord, token: 'USDC', balance: r.usdcBal, usd: r.usdcBal })
+    }
+    // Other stables the chain holds (USDT, DAI) — same rules as USDC, plus
+    // the measured cross-chain capability of that exact symbol on that exact
+    // chain (FUNDING_STABLES). A stable pegged to the dollar is worth its
+    // balance; none of ours has ever needed a price probe to be honest.
+    for (const st of r.stables ?? []) {
+      const spec = (FUNDING_STABLES[r.chainId] ?? []).find((x) => x.symbol.toUpperCase() === st.symbol.toUpperCase())
+      if (!spec || !(st.balance > 0)) continue
+      const row: FundingSource = {
+        chainId: r.chainId,
+        chainWord: r.chainWord,
+        token: spec.symbol,
+        balance: st.balance,
+        usd: st.balance,
+        crossChain: spec.crossChain,
+        hopGas: r.nativeEth >= (MIN_GAS_TO_HOP_ETH[r.chainId] ?? 0.003),
+      }
+      if (canSign) sources.push(row)
+      else if (st.balance >= DUST_USD) stranded.push(row)
     }
     const movableEth = r.nativeEth - (GAS_RESERVE_ETH[r.chainId] ?? 0.002)
     if (ethUsd !== null && movableEth > 0) {
@@ -730,18 +984,42 @@ export async function scanFundingSources(user: string): Promise<FundingScan> {
       const usdc = chain?.tokens.USDC
       const word = FUNDING_CHAIN_WORD[chainId]
       if (!chain || !client || !usdc) return
+      // The extra stables this chain can actually offer, resolved to a
+      // CONTRACT from the registry — a symbol the registry doesn't carry is
+      // skipped, never guessed at.
+      const extra = (FUNDING_STABLES[chainId] ?? [])
+        .map((spec) => ({ spec, tok: chain.tokens[spec.symbol.toUpperCase()] }))
+        .filter((x): x is { spec: FundingStable; tok: AppChainToken } => !!x.tok)
       const read = () =>
         Promise.all([
           client.getBalance({ address: user as `0x${string}` }),
           client.readContract({ address: usdc.address, abi: erc20Abi, functionName: 'balanceOf', args: [user as `0x${string}`] }),
+          ...extra.map((x) =>
+            client
+              .readContract({ address: x.tok.address, abi: erc20Abi, functionName: 'balanceOf', args: [user as `0x${string}`] })
+              // One stable's read failing must never blank the chain: the
+              // ETH + USDC answer is still true, the extra row just stays
+              // unknown (and unknown is never "you have nothing").
+              .catch(() => null),
+          ),
         ])
       try {
-        const [nativeWei, usdcAtoms] = await read().catch(async () => {
+        const [nativeWei, usdcAtoms, ...extraAtoms] = await read().catch(async () => {
           await sleep(400) // public RPCs rate-limit in bursts — one retry
           return read()
         })
         readChains.push(word)
-        reads.push({ chainId, chainWord: word, nativeEth: Number(formatEther(nativeWei)), usdcBal: Number(formatUnits(usdcAtoms, usdc.decimals)) })
+        const stables = extra
+          .map((x, i) => ({ symbol: x.spec.symbol, atoms: extraAtoms[i] as bigint | null, decimals: x.tok.decimals }))
+          .filter((x) => x.atoms !== null && x.atoms > BigInt(0))
+          .map((x) => ({ symbol: x.symbol, balance: Number(formatUnits(x.atoms as bigint, x.decimals)) }))
+        reads.push({
+          chainId,
+          chainWord: word,
+          nativeEth: Number(formatEther(nativeWei as bigint)),
+          usdcBal: Number(formatUnits(usdcAtoms as bigint, usdc.decimals)),
+          ...(stables.length > 0 ? { stables } : {}),
+        })
       } catch {
         failedChains.push(word)
       }
@@ -913,16 +1191,16 @@ export function decideFundingTurn(params: {
     if (rescue) {
       trace({
         type: 'status',
-        label: `funding layer claimed the turn: ~$${usd2(Number(rescue.target.usd.toFixed(2)))} USDC gas-stranded on ${rescue.target.chainWord} — offering a donor topup via ${rescue.donor.chainWord} (~$${usd2(rescue.gasLegUsd)} gas leg)`,
+        label: `funding layer claimed the turn: ~$${usd2(Number(rescue.target.usd.toFixed(2)))} ${rescue.target.token} gas-stranded on ${rescue.target.chainWord} — offering a donor topup via ${rescue.donor.chainWord} (~$${usd2(rescue.gasLegUsd)} gas leg)`,
       })
       return {
         kind: 'offer',
         turn: {
           reply:
-            `**We can make this happen.** Your ~$${usd2(Number(rescue.target.usd.toFixed(2)))} of USDC on ${rescue.target.chainWord} is real — ${rescue.target.chainWord} just has no ETH to sign the move with. ` +
-            `One job fixes it: a sliver of your ${rescue.donor.chainWord} ${rescue.donor.token} covers ${rescue.target.chainWord} gas, then the USDC moves over${gasUsd > 0 ? `, ${destChainName} gas gets topped up,` : ''}${need.followupResume ? ` and ${need.actionLabel} finishes` : ''} — every step built and guard-checked when it's your turn to sign.` +
+            `**We can make this happen.** Your ~$${usd2(Number(rescue.target.usd.toFixed(2)))} of ${rescue.target.token} on ${rescue.target.chainWord} is real — ${rescue.target.chainWord} just has no ETH to sign the move with. ` +
+            `One job fixes it: a sliver of your ${rescue.donor.chainWord} ${rescue.donor.token} covers ${rescue.target.chainWord} gas, then the ${rescue.target.token} moves over${gasUsd > 0 ? `, ${destChainName} gas gets topped up,` : ''}${need.followupResume ? ` and ${need.actionLabel} finishes` : ''} — every step built and guard-checked when it's your turn to sign.` +
             (need.followupResume ? '' : ` Once it settles, ask again and I'll build ${need.actionLabel} with the funds in place.`),
-          clarify: { question: `Unstick the ${rescue.target.chainWord} USDC?`, options: rescue.chips },
+          clarify: { question: `Unstick the ${rescue.target.chainWord} ${rescue.target.token}?`, options: rescue.chips },
           buildPath: 'native-funding-offer',
         },
       }
@@ -939,7 +1217,7 @@ export function decideFundingTurn(params: {
       // Promisable capacity, not the raw movable sum: a downsized plan sized
       // to an ETH row's whole balance strands at its own second leg exactly
       // like a full-size one.
-      const capacity = promisableCapacityUsd(movable, gasUsd > 0)
+      const capacity = promisableCapacityUsd(movable, gasUsd > 0, need.chainId)
       const downNeedUsd = Math.floor((capacity - gasUsd) * 2) / 2
       if (downNeedUsd >= Math.max(flexMinUsd, FUNDING_MIN_PLAN_USD) && downNeedUsd < needUsd) {
         const downPlan = planFundingChips(need, downNeedUsd, scan.sources, gasUsd)
@@ -995,16 +1273,24 @@ export function decideFundingTurn(params: {
     // Short ONLY because of the ETH two-leg headroom: the wallet's movable
     // total covers the plan on paper, but a gas-included plan can't promise
     // the fee it has to pay first. The copy owes the user that sentence.
-    const promisable = promisableCapacityUsd(plannableSources(need, scan.sources), gasUsd > 0)
+    const promisable = promisableCapacityUsd(plannableSources(need, scan.sources), gasUsd > 0, need.chainId)
     const headroomShort = gasUsd > 0 && plan.totalUsd >= plan.needUsd && promisable < plan.needUsd
     // What the wallet holds of the token being bought: never counted, always named.
     const heldBuy = scan.sources.filter((s) => s.usd >= DUST_USD && isBuyToken(need, s))
+    // Movable money with no leg to this destination — named with its reason.
+    const unroutable = unroutableSources(need, scan.sources)
+    // The needed token already sitting on the destination: excluded from the
+    // plan on purpose (the caller subtracted it), so it must be in the words.
+    const alreadyThere = [...scan.sources, ...scan.stranded].filter(
+      (s) => s.usd >= DUST_USD && s.chainId === need.chainId && s.token.toUpperCase() === need.token.toUpperCase() && !isBuyToken(need, s),
+    )
     trace({
       type: 'note',
       level: 'warn',
       label:
         `funding layer: ${need.actionLabel} needs ~$${plan.needUsd} moved but the wallet holds ~$${plan.totalUsd} movable across ${chainsRead}` +
         (heldBuy.length > 0 ? ` (+ ${heldBuy.map((s) => `$${usd2(Number(s.usd.toFixed(2)))} ${s.token}·${s.chainWord}`).join('/')} not counted — ${need.buyToken?.toUpperCase()} is what ${need.actionLabel} buys)` : '') +
+        (unroutable.length > 0 ? ` (+ ${unroutable.map((s) => `$${usd2(Number(s.usd.toFixed(2)))} ${s.token}·${s.chainWord}`).join('/')} with no cross-chain route to ${destChainName} — named, not planned)` : '') +
         (headroomShort ? ` (only ~$${promisable} of it promisable — a gas-included ETH plan keeps its own leg-1 fee back)` : '') +
         (scan.stranded.length > 0
           ? ` (+ $${usd2(Number(scan.stranded.reduce((a, s) => a + s.usd, 0).toFixed(2)))} gas-stranded/sub-reserve on ${scan.stranded.map((s) => `${s.token}·${s.chainWord}`).join('/')}) — naming it`
@@ -1021,6 +1307,8 @@ export function decideFundingTurn(params: {
         sourceSummary: plan.sourceSummary,
         stranded: scan.stranded,
         movableTotalUsd: plan.totalUsd,
+        unroutable,
+        alreadyThere,
         ...(headroomShort ? { promisableUsd: promisable } : {}),
       }),
       facts: {

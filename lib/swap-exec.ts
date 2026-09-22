@@ -15,7 +15,7 @@ import type { PolicyBlock } from '@/lib/tx-guardrails'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { OffTapeError, TapeUnavailableError } from '@/lib/stock-tape'
 import { ensureTokenList } from '@/lib/token-list'
-import { buildUniswapSwap, NoV3PoolError, type UniswapBuilt } from '@/lib/uniswap-venue'
+import { buildUniswapSwap, NoV3PoolError, v3ApprovalSteps, type UniswapBuilt } from '@/lib/uniswap-venue'
 import { buildUniswapV4Swap, GatedV4PoolError, NoV4PoolError } from '@/lib/uniswap-v4'
 
 export interface GuardedSwapParams {
@@ -131,12 +131,12 @@ async function cascade(paramsIn: GuardedSwapParams, venues: SwapVenues): Promise
   }
   if (uni) {
     if (uni.blocked) return { ok: false, blockKind: 'policy', reasons: blockedOf(uni.guardrails), guardrails: uni.guardrails, policyBlock: uni.guardrails.policyBlock }
-    const steps = uni.approveTx
-      ? [
-          { label: 'approve', title: `Approve ${sell} to Uniswap's SwapRouter02`, tx: uni.approveTx },
-          { label: 'swap', title: `Swap ${amountHuman} ${sell} → ${buy}`, tx: uni.swapTx, validUntil: uni.validUntil },
-        ]
-      : [{ label: 'swap', title: `Swap ${amountHuman} ${sell} → ${buy}`, tx: uni.swapTx, validUntil: uni.validUntil }]
+    // [reset?, approve?, swap] — the refresh recipe below always aims at the
+    // LAST step, however many approvals sit in front of it.
+    const steps = [
+      ...v3ApprovalSteps(uni, sell),
+      { label: 'swap', title: `Swap ${amountHuman} ${sell} → ${buy}`, tx: uni.swapTx, validUntil: uni.validUntil },
+    ]
     return {
       ok: true,
       txChain: { summary: uni.summary, steps, refresh: { kind: 'uniswap-swap', stepIndex: steps.length - 1, params: refreshParams } },

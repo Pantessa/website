@@ -131,18 +131,24 @@ export default function MarketMap({ section = 'all', onOpen, tabs = true, aspect
             const tier = labelTier(c.w, c.h)
             const fs1 = Math.max(9, Math.min(14, Math.min(c.w / 4.6, c.h / 3)))
             return (
-              <g
+              // A REAL link, not a click handler (no-dead-ends round 2).
+              // At ≥1280 the Map is the default view of /markets — a public
+              // front door on purpose (#765) and the page every fresh
+              // sign-in lands on — and it used to ship 238 tiles with ZERO
+              // anchors: nothing to crawl, nothing to middle-click, nothing
+              // without JS. The href is the destination `onOpen` was already
+              // pushing to, so the look and the in-app navigation are
+              // unchanged: a plain click still routes client-side, and
+              // cmd/ctrl/shift/middle-click now do what they do everywhere.
+              <a
                 key={c.symbol}
                 className="mk-map__cell"
-                tabIndex={0}
-                role="button"
+                href={`/t/${encodeURIComponent(c.symbol)}`}
                 aria-label={`${c.symbol} ${c.name} ${c.last != null ? fmtPrice(c.last) : ''} ${fmtPct(c.chgPct)}`}
-                onClick={() => onOpen(c.symbol)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    onOpen(c.symbol)
-                  }
+                onClick={(e) => {
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+                  e.preventDefault()
+                  onOpen(c.symbol)
                 }}
                 onMouseMove={(e) => {
                   const r = wrapRef.current?.getBoundingClientRect()
@@ -163,7 +169,7 @@ export default function MarketMap({ section = 'all', onOpen, tabs = true, aspect
                     {fmtPct(c.chgPct)}
                   </text>
                 ) : null}
-              </g>
+              </a>
             )
           })}
         </svg>

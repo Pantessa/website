@@ -68,6 +68,7 @@ export const NATIVE_TOKEN = '0x0000000000000000000000000000000000000000' as cons
 // safe) and are re-exported here so every existing importer keeps working.
 export { FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, listWords, fundingOriginWords } from '@/lib/funding-origins'
 import { FUNDING_ORIGIN_CHAINS, FUNDING_ORIGIN_WORD, listWords } from '@/lib/funding-origins'
+import { FUNDING_STABLES } from '@/lib/funding-plan'
 /** Bridged-USDC variants the scan ALSO reads, where lib/chains' stables map
  *  knows them. Arbitrum's USDC.e is the one that bites: a wallet holding only
  *  bridged USDC.e read as "no USDC on Arbitrum" (the 2026-07-21 gasless-scan
@@ -939,6 +940,13 @@ export interface FundingOrigin {
    *  planned. False = a named-only row (real money under the floor) that
    *  refusals must mention but no chip may spend. */
   spendable?: boolean
+  /** true = the LiFi leg can't sell this token (only USDC, its registry
+   *  bridged variant and native ETH have measured routes to USDG/Arc USDC),
+   *  so the row converts to USDC on its OWN chain first and the plain funding
+   *  segment spends that. One extra swap the chat already knows how to
+   *  compile — see lib/funding-plan sourceCanHop for the same rule on the
+   *  NEAR-Intents side. */
+  hop?: boolean
 }
 
 /** Chip-label qualifier: "Base" for native USDC, "Arbitrum USDC.e" when the
@@ -950,8 +958,21 @@ const originLabel = (o: FundingOrigin) => (o.token === 'USDC' ? o.word : `${o.wo
  *  an ETH row funding a gas-included segment runs TWO legs off the one
  *  balance and must keep ETH_TWO_LEG_HEADROOM_USD back for leg 1's own
  *  fee + inter-leg drift, or the chip is a mid-job wall. */
-export const originCapUsd = (o: FundingOrigin, gasIncluded: boolean): number =>
-  o.token === 'ETH' && gasIncluded ? Math.max(0, o.usd - (ETH_TWO_LEG_HEADROOM_USD[o.chainId] ?? 1)) : o.usd
+export const originCapUsd = (o: FundingOrigin, gasIncluded: boolean): number => {
+  const cap = o.token === 'ETH' && gasIncluded ? Math.max(0, o.usd - (ETH_TWO_LEG_HEADROOM_USD[o.chainId] ?? 1)) : o.usd
+  // A hop row pays the stable-to-stable venue spread on its conversion leg
+  // before a single dollar reaches the bridge.
+  return o.hop ? Math.floor(cap / (1 + ORIGIN_HOP_BPS / 10_000)) : cap
+}
+
+/** Spread allowance on a hop row's conversion leg (see FundingOrigin.hop).
+ *  Matches lib/funding-plan's CONVERT_HOP_BPS — one number, two planners. */
+export const ORIGIN_HOP_BPS = 100
+
+/** Whole dollars of a hop row the conversion leg actually sells to deliver
+ *  `usd` of USDC (rounded up: the leg must not arrive short). */
+export const originHopSellUsd = (o: FundingOrigin, usd: number): number =>
+  Math.min(o.usd, Math.ceil(usd * (1 + ORIGIN_HOP_BPS / 10_000) * 100) / 100)
 
 export interface FundingShortfall {
   /** Atoms of the DESTINATION's primary stable the wallet holds there (USDG
@@ -1016,11 +1037,20 @@ export async function readFundingShortfall(user: string, destChainId: number = R
       const usdc = chainById(chainId)?.tokens.USDC
       if (!client || !usdc) return
       const alt = fundingAltUsdcFor(chainId)
+      // Stables with no LiFi leg of their own (USDT, DAI) — read here so the
+      // hop can spend them. Resolved to a CONTRACT from the registry; a
+      // symbol the registry doesn't carry is skipped, never guessed. Until
+      // 2026-09-21 a wallet holding $360 of USDT read "no USDC anywhere".
+      const hopTokens = (FUNDING_STABLES[chainId] ?? [])
+        .map((spec) => ({ spec, tok: chainById(chainId)?.tokens[spec.symbol.toUpperCase()] }))
+        .flatMap((x) => (x.tok ? [{ symbol: x.spec.symbol, tok: x.tok }] : []))
       try {
-        const [usdcAtoms, altAtoms, gasWei] = await Promise.all([
+        const [usdcAtoms, altAtoms, gasWei, ...hopAtoms] = await Promise.all([
           client.readContract({ address: usdc.address, abi: erc20Abi, functionName: 'balanceOf', args: [from] }),
           alt ? client.readContract({ address: alt.address, abi: erc20Abi, functionName: 'balanceOf', args: [from] }) : Promise.resolve(BigInt(0)),
           client.getBalance({ address: from }),
+          // One stable's read failing never blanks the chain.
+          ...hopTokens.map((x) => client.readContract({ address: x.tok.address, abi: erc20Abi, functionName: 'balanceOf', args: [from] }).catch(() => null)),
         ])
         const gasEth = Number(formatEther(gasWei))
         const usd = Math.floor(Number(usdcAtoms) / 10 ** usdc.decimals)
@@ -1029,6 +1059,15 @@ export async function readFundingShortfall(user: string, destChainId: number = R
         // row above already carries the chain's donor-gas signal.
         const altUsd = alt ? Math.floor(Number(altAtoms) / 10 ** alt.decimals) : 0
         if (alt && altUsd > 0) allScanned.push({ chainId, word, token: alt.symbol, usd: altUsd, gasEth })
+        // Hop rows: real money, one venue swap away from a leg that exists.
+        // They need gas for approve + swap + approve + bridge, not just the
+        // bridge pair, so they carry their own (higher) signable floor.
+        hopTokens.forEach((x, i) => {
+          const atoms = hopAtoms[i] as bigint | null
+          if (atoms === null) return
+          const usd = Math.floor(Number(atoms) / 10 ** x.tok.decimals)
+          if (usd > 0) allScanned.push({ chainId, word, token: x.symbol, usd, gasEth, hop: true })
+        })
         // ETH as buying power: movable = balance minus the keep-back that
         // keeps the wallet signable after the leg. Real ETH under the floor
         // becomes a NAMED row (spendable: false) — refusals must say it,
@@ -1046,8 +1085,12 @@ export async function readFundingShortfall(user: string, destChainId: number = R
   // Stables lead (dollar-parity legs, no spread), ETH follows; richest
   // first within each group. The chip planner picks the FIRST origin that
   // covers, so a $3 USDC row never forces a combine past a $500 ETH row.
-  allScanned.sort((a, b) => (a.token === 'ETH' ? 1 : 0) - (b.token === 'ETH' ? 1 : 0) || b.usd - a.usd)
-  const signable = (o: FundingOrigin) => o.gasEth >= (ORIGIN_MIN_GAS_ETH[o.chainId] ?? 0.002)
+  const rank = (o: FundingOrigin) => (o.token === 'ETH' ? 2 : o.hop ? 1 : 0)
+  allScanned.sort((a, b) => rank(a) - rank(b) || b.usd - a.usd)
+  const signable = (o: FundingOrigin) =>
+    // A hop row signs approve + swap before the bridge pair, so it needs
+    // more headroom than a row that only transfers.
+    o.gasEth >= (ORIGIN_MIN_GAS_ETH[o.chainId] ?? 0.002) * (o.hop ? 2 : 1)
   const movable = (o: FundingOrigin) => (o.token === 'ETH' ? o.spendable === true : signable(o))
   return {
     usdgAtoms,
@@ -1072,6 +1115,14 @@ export interface RobinhoodFundingChip {
 /** One funding-ask segment: lib/jobs.ts parseRobinhoodFunding's grammar.
  *  A non-USDC token rides the "using usdc.e" clause (before "including gas"). */
 const fundSegment = (usd: number, word: string, gas: boolean, token = 'USDC', dest?: LifiDestination) => destFundSegment(usd, word, gas, token, dest)
+
+/** The funding segment(s) for ONE origin row: the plain one, or — when the
+ *  row's token has no LiFi leg of its own — a same-chain conversion to USDC
+ *  followed by the plain one. Returned joined the way every caller joins. */
+export const originFundSegment = (o: FundingOrigin, usd: number, gas: boolean, dest?: LifiDestination): string =>
+  o.hop
+    ? `Swap ${originHopSellUsd(o, usd)} ${o.token} for USDC on ${o.word}, then ${fundSegment(usd, o.word, gas, 'USDC', dest)}`
+    : fundSegment(usd, o.word, gas, o.token, dest)
 
 /** The gas leg on its own: lib/jobs.ts parseRobinhoodGasFunding's grammar.
  *  Robinhood Chain only — Arc has no separate gas leg. */
@@ -1141,7 +1192,7 @@ export function planRobinhoodFundingChips(params: {
     const atFloor = valueLegUsd(needUsd, gasIncluded) <= MIN_VALUE_LEG_USD
     chips.push({
       label: `${atFloor ? 'Smallest clean move' : 'Just enough'} (~$${needUsd} from ${originLabel(best)})`,
-      resume: withFollowup([fundSegment(needUsd, best.word, gasIncluded, best.token, dest)]),
+      resume: withFollowup([originFundSegment(best, needUsd, gasIncluded, dest)]),
     })
     // Half/all only when they're sensible whole-balance moves — a $15k
     // balance covering a $7 need doesn't get a $7.5k chip (same 10× rule
@@ -1149,10 +1200,10 @@ export function planRobinhoodFundingChips(params: {
     // capacity, never the raw ETH row.
     const sensible = best.usd <= needUsd * 10
     const half = Math.floor(bestCap / 2)
-    if (sensible && half > needUsd && fillableLeg(half, gasIncluded)) chips.push({ label: `Half my ${best.word} ${best.token} ($${half})`, resume: withFollowup([fundSegment(half, best.word, gasIncluded, best.token, dest)]) })
-    if (sensible && bestCap > needUsd && fillableLeg(bestCap, gasIncluded)) chips.push({ label: `All my ${best.word} ${best.token} ($${bestCap})`, resume: withFollowup([fundSegment(bestCap, best.word, gasIncluded, best.token, dest)]) })
+    if (sensible && half > needUsd && fillableLeg(half, gasIncluded)) chips.push({ label: `Half my ${best.word} ${best.token} ($${half})`, resume: withFollowup([originFundSegment(best, half, gasIncluded, dest)]) })
+    if (sensible && bestCap > needUsd && fillableLeg(bestCap, gasIncluded)) chips.push({ label: `All my ${best.word} ${best.token} ($${bestCap})`, resume: withFollowup([originFundSegment(best, bestCap, gasIncluded, dest)]) })
     const alt = origins.find((o) => o !== best && originCapUsd(o, gasIncluded) >= needUsd)
-    if (alt) chips.push({ label: `Use ${originLabel(alt)} instead (~$${needUsd})`, resume: withFollowup([fundSegment(needUsd, alt.word, gasIncluded, alt.token, dest)]) })
+    if (alt) chips.push({ label: `Use ${originLabel(alt)} instead (~$${needUsd})`, resume: withFollowup([originFundSegment(alt, needUsd, gasIncluded, dest)]) })
     return chips.slice(0, 4)
   }
   // The bought token pays the gas leg alone and another origin pays the
@@ -1169,7 +1220,7 @@ export function planRobinhoodFundingChips(params: {
     if (payer && value) {
       chips.push({
         label: `Just enough (~$${valueUsd} from ${originLabel(value)}, gas from ${payer.word} ${payer.token})`,
-        resume: withFollowup([gasSegment(payer.word, payer.token), fundSegment(valueUsd, value.word, false, value.token, dest)]),
+        resume: withFollowup([gasSegment(payer.word, payer.token), originFundSegment(value, valueUsd, false, dest)]),
       })
       return chips
     }
@@ -1194,7 +1245,7 @@ export function planRobinhoodFundingChips(params: {
       // the parity floor on its own — splitting a fillable total into two
       // unfillable halves is the same dead offer, twice.
       if (!fillableLeg(take, first && gasIncluded)) return null
-      segs.push(fundSegment(take, o.word, first && gasIncluded, o.token, dest))
+      segs.push(originFundSegment(o, take, first && gasIncluded, dest))
       words.push(originLabel(o))
       remaining = Number((remaining - take).toFixed(2))
     }
@@ -1374,7 +1425,7 @@ export function planRobinhoodFundingAdvice(params: {
     if (donor) {
       const segs = [
         `swap ${GAS_TOPUP_ETH} ETH from ${donor.word.toLowerCase()} to ${strandedLc}`,
-        fundSegment(needUsd, stranded.word, gasIncluded, stranded.token, dest),
+        originFundSegment(stranded, needUsd, gasIncluded, dest),
       ]
       const resume = followup ? `${segs.join(', then ')}, then ${followup}` : segs.join(', then ')
       return {
@@ -1429,7 +1480,14 @@ export function planRobinhoodFundingAdvice(params: {
   // Derived, never hardcoded: this sentence names every chain we actually
   // looked at, so widening FUNDING_ORIGIN_CHAINS can't leave it claiming we
   // checked three places when we checked four.
-  else parts.push(`no USDC or ETH on ${listWords(FUNDING_ORIGIN_CHAINS.map((c) => FUNDING_ORIGIN_WORD[c]))}`)
+  // Derived from what the scan actually reads (USDC, its bridged variant,
+  // the FUNDING_STABLES hop tokens, native ETH) — a list that named two
+  // tokens while the scan read five would be a smaller lie than the old
+  // "no USDC anywhere", but a lie all the same.
+  else
+    parts.push(
+      `no ${listWords([...new Set(['USDC', ...FUNDING_ORIGIN_CHAINS.flatMap((c) => (FUNDING_STABLES[c] ?? []).map((x) => x.symbol)), 'ETH'])], 'or')} on ${listWords(FUNDING_ORIGIN_CHAINS.map((c) => FUNDING_ORIGIN_WORD[c]))}`,
+    )
   if (scan.failedOrigins.length > 0) parts.push(`couldn't check ${scan.failedOrigins.join(' or ')}`)
   return { kind: 'none', copy: parts.join('; ') }
 }

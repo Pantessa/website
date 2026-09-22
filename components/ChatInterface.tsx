@@ -53,6 +53,8 @@ import { GUEST_TRIAL_LIMIT, bumpGuestTurns, guestTurnsUsed, refundGuestTurn } fr
 import EmptyState from '@/components/chat/EmptyState'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
+import { signInDoorFor, signInElsewhereHref, signInGateLifted, signInGateOf, shouldRerunSignInAsk } from '@/lib/sign-in-gate'
+import { SITE_URL } from '@/lib/site-url'
 import { CONNECT_ASK_RELEASE_GRACE_MS, bootHoldingFor, connectAskReleased, hasStoredWalletConnection, initialHoldElapsed, shouldRerunConnectAsk } from '@/lib/wallet-reconnect'
 import { useHydrated } from '@/lib/use-hydrated'
 import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '@/lib/turn-status'
@@ -62,6 +64,9 @@ import { splashCapable } from '@/lib/splash/types'
 import ShareButton from '@/components/ShareButton'
 import ShareReceiptButton from '@/components/ShareReceiptButton'
 import { signedTxsOf } from '@/components/SignedTxLines'
+import XchainSettlement from '@/components/XchainSettlement'
+import { REFUNDED_KIND, reportWalletRefusal } from '@/lib/wallet-refusal'
+import { claimsSettled, settlementDetailLine, settlementOf, xchainDepositOf } from '@/lib/xchain-settlement'
 import EmbedThisChat from '@/components/EmbedThisChat'
 import ChainPicker from '@/components/ChainPicker'
 import { chainById } from '@/lib/chains'
@@ -177,7 +182,7 @@ function MintLinkTurn({ onMint }: { onMint: () => void }) {
   )
 }
 
-function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown, connectWallet?: unknown, connectAsk?: string, portfolio?: unknown, buildPath?: unknown, jobId?: unknown, guardianPolicyId?: unknown, jobToken?: unknown, nfts?: unknown, nftMarket?: unknown, dcaArm?: unknown, spotGuardArm?: unknown, guardWarnings?: unknown, builtBy?: unknown) {
+function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, voteCandidates?: unknown, routeReport?: unknown, routerTrace?: unknown, voteProposal?: unknown, orderRequest?: unknown, guardrails?: unknown, txRequest?: unknown, workingContext?: unknown, txChain?: unknown, clarify?: unknown, connectWallet?: unknown, connectAsk?: string, portfolio?: unknown, buildPath?: unknown, jobId?: unknown, guardianPolicyId?: unknown, jobToken?: unknown, nfts?: unknown, nftMarket?: unknown, dcaArm?: unknown, spotGuardArm?: unknown, guardWarnings?: unknown, builtBy?: unknown, signInGate?: unknown, signInAsk?: string) {
   const meta: Record<string, unknown> = {}
   if (Array.isArray(receipts) && receipts.length) {
     meta.receipts = receipts
@@ -233,6 +238,15 @@ function buildMeta(receipts: unknown, payer: unknown, voteRequest: unknown, vote
   if (connectWallet === true) {
     meta.connectWallet = true
     if (connectAsk) meta.connectAsk = connectAsk
+  }
+  // A standing-state mutation from a connected-but-not-signed-in wallet
+  // (lib/chat-mutation-gate): the client renders the sign-in door under the
+  // reply and re-runs `signInAsk` the moment the session owns the wallet.
+  // Both halves or neither — a gate with no held ask renders nothing
+  // (lib/sign-in-gate signInGateOf).
+  if (signInGate && typeof signInGate === 'object' && typeof (signInGate as { kind?: unknown }).kind === 'string' && signInAsk) {
+    meta.signInGate = { kind: (signInGate as { kind: string }).kind }
+    meta.signInAsk = signInAsk
   }
   // §E3 passthrough honesty: a planner-sourced signable carries the guard's
   // warnings + the service that built it — the card renders both.
@@ -337,6 +351,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     createChat,
     addMessage,
     recordSignedTxs,
+    recordSettlement,
     railTab,
     setRailTab,
     mainView,
@@ -482,7 +497,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const { address, isConnected, status: walletStatus } = useAccount()
-  const { status: sessionStatus } = useSession()
+  const { status: sessionStatus, address: sessionAddress, connectAndSignIn } = useSession()
   // Loader is the DEFAULT until the wallet conclusively settles (see the
   // boot-hold state above) — 'connecting'/'reconnecting' means the splash may
   // be about to take over.
@@ -1111,7 +1126,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
-          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio, data.buildPath, data.jobId, data.guardianPolicyId, data.jobToken, data.nfts, data.nftMarket, data.dcaArm, data.spotGuardArm, data.guardWarnings, data.builtBy),
+          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio, data.buildPath, data.jobId, data.guardianPolicyId, data.jobToken, data.nfts, data.nftMarket, data.dcaArm, data.spotGuardArm, data.guardWarnings, data.builtBy, data.signInGate, userMsg),
         })
         // A reply that only said "connect your wallet" answered nothing —
         // the guest allowance is for answers, not for doors (QA O-3).
@@ -1380,6 +1395,25 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     void handleSend(ask)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveAddress, currentChat?.messages.length, loading, pendingConnectAsk])
+
+  // The SIGN-IN gate's way back (lib/sign-in-gate): a standing-state mutation
+  // from a connected-but-unsigned wallet answers the gate, the door under the
+  // reply signs in, and the held ask re-runs by itself the moment the session
+  // owns this wallet — whichever lane brought it (the door here, the nav's,
+  // another tab, a Google lane that reloaded the page). Once per reply. The
+  // server re-checks ownership on the new turn, so this can only re-run what
+  // the gate was already asking for.
+  const signInAskConsumed = useRef(new Set<string>())
+  useEffect(() => {
+    if (!currentChat) return
+    const last = currentChat.messages[currentChat.messages.length - 1] ?? null
+    if (!last || signInAskConsumed.current.has(last.id)) return
+    const ask = shouldRerunSignInAsk({ last, sessionAddress, walletAddress: effectiveAddress, loading, now: Date.now() })
+    if (!ask) return
+    signInAskConsumed.current.add(last.id)
+    void handleSend(ask)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionAddress, effectiveAddress, currentChat?.messages.length, loading])
 
   // Host-injected prompt (embed `prompt` message): prefill or send. Keyed on
   // `at` so the same text can be injected twice.
@@ -2137,6 +2171,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                         // card: the Private switch re-asks through the chat's
                         // own amend grammar (one path for a press and a typed ask).
                         const privacy = builtTx ? swapPrivacyOf(msg.meta) : null
+                        // A cross-chain swap is ONE signature and then the
+                        // venue's work: the deposit confirming is the start,
+                        // not the end (lib/xchain-settlement). Once the
+                        // deposit is signed the card watches check_status and
+                        // prints what the venue actually did.
+                        const xdep = builtTx ? xchainDepositOf(msg.meta) : null
+                        const xsigned = xdep ? signedTxsOf(msg.meta) : []
                         return builtTx ? (
                           <div data-tx-card>
                             {external && <ExternalBuildNotice builtBy={external.builtBy} warnings={external.warnings} txs={[builtTx as { to?: string; value?: string; data?: string; chainId?: number }]} />}
@@ -2167,6 +2208,31 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               if (currentChatId) recordSignedTxs(currentChatId, msg.id, [{ hash, chainId, title: builtTx.action ?? 'transaction' }])
                             }}
                           />
+                          {xdep && xsigned.length > 0 && (
+                            <XchainSettlement
+                              dep={xdep}
+                              signedHashes={xsigned.map((t) => t.hash)}
+                              initial={settlementOf(msg.meta)}
+                              onOutcome={(outcome) => {
+                                if (currentChatId) recordSettlement(currentChatId, msg.id, outcome)
+                                if (outcome.status === 'refunded' || outcome.status === 'failed') {
+                                  // The money moved and came home: a queue row
+                                  // of its own, so a refund is never something
+                                  // only one browser ever saw.
+                                  reportWalletRefusal({
+                                    kind: REFUNDED_KIND,
+                                    wallet: address ?? null,
+                                    artifact: 'tx',
+                                    ask: askBefore(i) || (builtTx.action ?? 'cross-chain swap'),
+                                    detail: settlementDetailLine(outcome, xdep),
+                                    buildPath: buildPathOf(msg.meta),
+                                    valueUsd: guardrailUsdOf(msg.meta),
+                                    chainId: builtTx.chainId,
+                                  })
+                                }
+                              }}
+                            />
+                          )}
                           </div>
                         ) : null
                       })()}
@@ -2207,8 +2273,14 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                         (store merges meta.signed locally; the sign buttons above
                         already show the hashes — this row is the share, not a
                         second log). Needs the persisted row id to snapshot from. */}
+                    {/* A cross-chain turn may only claim this once the VENUE
+                        says SUCCESS (lib/xchain-settlement claimsSettled) —
+                        the deposit's own confirmation proved a transfer, not
+                        a swap. A refund renders its own line above instead,
+                        and never offers a receipt that says money moved. */}
                     {msg.role === 'assistant' &&
                       signedTxsOf(msg.meta).length > 0 &&
+                      claimsSettled(msg.meta) &&
                       currentChatId &&
                       msg.dbId && (
                         <div className="mt-2 pt-1.5 border-t border-[var(--line)] flex items-center gap-2">
@@ -2356,6 +2428,64 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                           )
                         })()
                       )}
+                    {/* A standing-state mutation needs SIWE (rule 6 gates
+                        account surfaces, and these four act with no further
+                        signature). The door signs in and the held ask re-runs
+                        by itself — no menu to find, no sentence to retype.
+                        Gone the moment the session owns this wallet. */}
+                    {msg.role === 'assistant' &&
+                      (() => {
+                        const gate = signInGateOf(msg.meta)
+                        if (!gate) return null
+                        if (signInGateLifted({ sessionAddress, walletAddress: effectiveAddress })) return null
+                        const door = signInDoorFor({ embedded, cdpEnabled })
+                        const cls =
+                          'mt-2 inline-flex items-center gap-2 px-4 h-10 rounded-full bg-[color:var(--accent)] text-black text-[13.5px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-60'
+                        const held = (
+                          <p className="mt-1.5 text-[12px] text-[color:var(--muted)]">
+                            {door === 'elsewhere'
+                              ? 'Your ask travels with the link — sign in there and press send.'
+                              : 'Your ask is held — it runs by itself the moment you’re signed in.'}
+                          </p>
+                        )
+                        if (door === 'elsewhere') {
+                          return (
+                            <div>
+                              <a
+                                className={cls}
+                                href={signInElsewhereHref(gate.ask, SITE_URL)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                <Zap className="w-3.5 h-3.5" />
+                                Sign in on Pantessa to continue
+                              </a>
+                              {held}
+                            </div>
+                          )
+                        }
+                        const label = (
+                          <>
+                            <Zap className="w-3.5 h-3.5" />
+                            Sign in to continue
+                          </>
+                        )
+                        return (
+                          <div>
+                            {door === 'unified' ? (
+                              // The unified door — wallet · Google · email
+                              // (rule 6). No `redirectTo`: this page IS the
+                              // flow, so the sign-in stays put (#784).
+                              <CreateAccountButton className={cls} label={label} />
+                            ) : (
+                              <button type="button" className={cls} disabled={loading} onClick={() => connectAndSignIn()}>
+                                {label}
+                              </button>
+                            )}
+                            {held}
+                          </div>
+                        )
+                      })()}
                   </div>
                 </motion.div>
                 </Fragment>
