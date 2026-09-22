@@ -12620,10 +12620,6 @@ async function main() {
       JSON.stringify(ethUnder),
     )
     const emptyAdvice = planRobinhoodFundingAdvice({ scan: { origins: [], gaslessOrigins: [], allScanned: [], failedOrigins: [] }, needUsd: 5, gasIncluded: true, followup: '' })
-    // Re-pinned 2026-09-21: 58ac0141 made the sentence name every token the
-    // scan reads (it said "USDC or ETH" while reading five). The expectation
-    // is spelled out, not rebuilt from FUNDING_STABLES, so a token joining or
-    // leaving the scan is a conscious flip here.
     check(
       'funding advice: an empty wallet names EVERY token the scan reads, on every scanned chain',
       // Re-pinned in round 2: the sentence said "no USDC or ETH" while the
