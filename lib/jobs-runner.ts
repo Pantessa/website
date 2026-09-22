@@ -20,6 +20,7 @@ const RPC_WITHHOLD_MAX = 6
 import prisma from '@/lib/db'
 import { callMcpTool } from '@/lib/mcp-call'
 import { CONFIDENTIAL_LEVEL, crossChainValueUsd, expectedOriginChainId, guardCrossChainBuild, type BuiltSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
+import { floorBlockFromError, floorProblemLine } from '@/lib/venue-floor'
 import { buildHlExecTurn, readHlCollateralUsd, type HlIntent } from '@/lib/hyperliquid-exec'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import type { GuardianArmAsk } from '@/lib/hl-guardian'
@@ -369,6 +370,11 @@ export async function buildSignArtifact(
     // never cost the user extra to fix. A chat-asked bridge pays the venue
     // fee (app/api/chat/route.ts); a job leg does not. The guard below is
     // told to expect NO fee, so an unrequested one refuses the build.
+    // The venue's temporary per-chain minimum. lib/jobs refuses to COMPILE a
+    // leg the table knows is under it, so reaching here means either a job
+    // compiled before the limit existed or a leg we can't price — either way
+    // the card shows our sentence, not the venue's 400. (`floorProblemLine`
+    // reads the floor out of the venue's own message.)
     const raw = (await callMcpTool(NEAR_INTENTS_MCP, 'build_swap', {
       originChain: p.originChain,
       originToken: p.originToken,
@@ -377,7 +383,11 @@ export async function buildSignArtifact(
       amount: p.amount,
       from: wallet,
       ...(p.confidential ? { confidentiality: CONFIDENTIAL_LEVEL } : {}),
-    }, { timeoutMs: 20_000 })) as BuiltSwap
+    }, { timeoutMs: 20_000 }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      const block = floorBlockFromError(p, msg)
+      throw block ? new Error(floorProblemLine(p, block)) : err
+    })) as BuiltSwap
     // A job leg never carries a delivery address (lib/jobs refuses one), so
     // the payout is pinned to the wallet running the job.
     const guard = guardCrossChainBuild(raw, { chainId: expectedOriginChainId(p.originChain), confidential: Boolean(p.confidential), deliverTo: wallet, refundTo: wallet })

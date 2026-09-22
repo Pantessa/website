@@ -168,6 +168,12 @@ export function parseCrossChainSwap(rawMessage: string): CrossChainSwapParams | 
   return { ...parsed, ...(privacy.confidential ? { confidential: true as const } : {}), ...(privacy.recipient ? { recipient: privacy.recipient } : {}) }
 }
 
+/** The ask that rebuilds these params — every chip this layer offers is a
+ *  complete sentence that round-trips `parseCrossChainSwap` (harness-pinned). */
+export function crossChainAskSentence(p: CrossChainSwapParams): string {
+  return `Swap ${p.amount} ${p.originToken.toUpperCase()} from ${prettyChainWord(p.originChain)} to ${p.destinationToken.toUpperCase()} on ${prettyChainWord(p.destinationChain)}`
+}
+
 function parseCrossChainCore(rawMessage: string): CrossChainSwapParams | { problem: string; missing?: CrossChainMissing } | null {
   const message = normalizeChainWords(normalizeArrows(rawMessage)).replace(DOLLAR_STABLE_RE, '$1 $2')
   const dollarOther = message.match(DOLLAR_OTHER_RE)

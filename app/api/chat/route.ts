@@ -53,6 +53,7 @@ import {
   type BuiltSwap,
   missingSlotChips,
 } from '@/lib/cross-chain-swap'
+import { crossChainFloorBlock, floorBlockFromError, floorRefusalTurn } from '@/lib/venue-floor'
 import { CROSS_CHAIN_FEE_BPS, LINK_SWAP_FEE_BPS, TREASURY_ADDRESS } from '@/lib/fees'
 import { INTENT_SLUG_RE } from '@/lib/intent-links'
 import prismaDb from '@/lib/db'
@@ -2728,6 +2729,36 @@ function composeCrossChainReply(
   return lines.join('\n')
 }
 
+/**
+ * 1Click's temporary per-chain minimum, answered in our own voice with the
+ * ways forward the wallet can take. Called twice: once from the table
+ * BEFORE the build (no round trip, and the job compiler uses the same
+ * table), and once on the venue's own 400 for anything the table missed.
+ */
+async function crossChainFloorTurn(
+  params: CrossChainSwapParams,
+  block: NonNullable<ReturnType<typeof crossChainFloorBlock>>,
+  walletAddress: string | undefined,
+  trace: (event: unknown) => void,
+) {
+  // Chips come from the wallet's real balances — an offer to move money it
+  // doesn't have is the same dead end one step further on. A failed scan
+  // costs the chips, never the refusal.
+  const scan = walletAddress ? await scanFundingSources(walletAddress).catch(() => null) : null
+  const turn = floorRefusalTurn(params, block, scan?.sources ?? null)
+  trace({
+    type: 'note',
+    level: 'warn',
+    label: `native cross-chain layer REFUSED: the venue's $${block.usd} minimum sits on the ${block.side} end (${block.chain}); offered ${turn.chips.length} chip${turn.chips.length === 1 ? '' : 's'}`,
+  })
+  return NextResponse.json({
+    reply: turn.reply,
+    ...(turn.chips.length ? { clarify: { question: turn.question, options: turn.chips } } : {}),
+    blocked: true,
+    buildPath: 'native-cross-chain',
+  })
+}
+
 async function buildCrossChainSwapTurn(
   agent: McpServer,
   params: CrossChainSwapParams,
@@ -2758,6 +2789,14 @@ async function buildCrossChainSwapTurn(
     })
   }
 
+  // The venue's measured per-chain minimum (lib/venue-floor). Refusing here
+  // saves a round trip whose only outcome is a 400, and it is the same table
+  // the job compiler reads — but it only fires when the move can be sized in
+  // dollars, so a move we can't price still goes to the venue and is caught
+  // by the `floorBlockFromError` brace below.
+  const floor = crossChainFloorBlock(params)
+  if (floor) return await crossChainFloorTurn(params, floor, walletAddress, trace)
+
   trace({ type: 'select', service: agent.name, endpoint: 'tools/call build_swap', priceUsd: 0, reason: 'native cross-chain layer — one-time deposit address from the agent, verified by the guard before anything is offered' })
   let built: BuiltSwap
   try {
@@ -2780,6 +2819,14 @@ async function buildCrossChainSwapTurn(
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'the build failed'
     trace({ type: 'receipt', receipt: { name: agent.name, endpoint: 'build_swap', priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
+    // "Temporary swap limits: minimum swap amount is $1,000" — the venue's
+    // own 400. It is a refusal with a way forward, not a broken build, so it
+    // never reaches the user as the venue's sentence. The floor comes from
+    // the message (the venue's number, so a moved limit stays truthful);
+    // which END carries it comes from the table, and 'route' when we don't
+    // know. Every other error keeps its raw words.
+    const venueFloor = floorBlockFromError(params, msg)
+    if (venueFloor) return await crossChainFloorTurn(params, venueFloor, walletAddress, trace)
     return NextResponse.json({
       reply: `🔗 Couldn't build that cross-chain swap: ${msg}`,
     })
