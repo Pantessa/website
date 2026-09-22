@@ -30,6 +30,7 @@ import { parseAaveOp, parseAaveSupply, type AaveOpParams, type AaveSupplyParams 
 import { parseMorphoLend, parseMorphoOp } from '@/lib/morpho-supply'
 import { parseCrossChainSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
 import { crossChainFloorBlock, floorProblemLine } from '@/lib/venue-floor'
+import { PRIVATE_LANE_CLOSED_NOTE, privateLaneOpen } from '@/lib/private-lane'
 import { LIFI_DESTINATIONS, type LifiDestination } from '@/lib/lifi-destinations'
 import { chainAlt, canonicalChainWord, normalizeArrows, normalizeChainWords, normalizeWorth } from '@/lib/chain-lexicon'
 import { hlUnsizedChips, parseHlIntent, type HlIntent, type HlOrderIntent } from '@/lib/hyperliquid-exec'
@@ -714,6 +715,10 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
       // before there is a job at all.
       const floor = crossChainFloorBlock(ccp)
       if (floor) return { problem: floorProblemLine(ccp, floor) }
+      // A private leg inside a job bounces exactly like a private single
+      // swap, and the steps after it would sit waiting on a settlement that
+      // never comes (lib/private-lane).
+      if (ccp.confidential && !privateLaneOpen()) return { problem: PRIVATE_LANE_CLOSED_NOTE }
       const title = `${ccp.confidential ? 'Private bridge' : 'Bridge'} ${ccp.amount} ${ccp.originToken.toUpperCase()} (${ccp.originChain}) → ${ccp.destinationToken.toUpperCase()} (${ccp.destinationChain})`
       return {
         steps: [
