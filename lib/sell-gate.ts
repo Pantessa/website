@@ -49,6 +49,19 @@ const TARGET_RES: readonly RegExp[] = [
 ]
 const TRAILING_CHAIN_RE = /\bon\s+([a-z][a-z ]*?)\s*[.!]?\s*$/i
 
+/**
+ * The chain a sentence ends with ("… on Base"), for any grammar — shared
+ * with the venue gate (lib/trade-venue-gate), so one table of chain words
+ * serves both. `named: false` = the sentence names no chain (the layer
+ * infers it); a named chain this table can't read comes back
+ * `{ named: true, chainId: null }`, which every caller treats as unknown.
+ */
+export function chainNamedInAsk(ask: string): { named: boolean; chainId: number | null } {
+  const on = ask.match(TRAILING_CHAIN_RE)
+  if (!on) return { named: false, chainId: null }
+  return { named: true, chainId: CHAIN_WORDS.get(on[1].toLowerCase().replace(/\s+/g, ' ')) ?? null }
+}
+
 /** True when the sentence sells the token itself ("Sell …", "limit order: sell …"). */
 export function isSellAsk(ask: string): boolean {
   return SELL_VERB_RE.test(ask)

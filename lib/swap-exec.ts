@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { chainById } from '@/lib/chains'
+import { resolveToken } from '@/lib/cow'
 import type { PolicyBlock } from '@/lib/tx-guardrails'
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { OffTapeError, TapeUnavailableError } from '@/lib/stock-tape'
@@ -76,11 +77,37 @@ export async function buildGuardedSwap(params: GuardedSwapParams, venues: Partia
   }
 }
 
-async function cascade(params: GuardedSwapParams, venues: SwapVenues): Promise<GuardedSwapResult> {
-  const { sellToken, buyToken, amountHuman, from, chainId } = params
+/** Tickers whose real token on our chains is a wrapped form. Without this,
+ *  "BTC" resolves to nothing on Ethereum and Arbitrum and to a SQUAT on Base
+ *  ("Big Tom Coin", 0x35c8…1a3d, from the dynamic list) — so a chip that says
+ *  BTC could build a swap into something that isn't Bitcoin. The routes API
+ *  already quotes BTC through these forms (app/api/markets/routes tokenOn);
+ *  this is the same fact on the BUILD side, where it decides calldata.
+ *  Nothing else is aliased: a ticker means the ticker. */
+const WRAPPED_FORMS: Readonly<Record<string, readonly string[]>> = { BTC: ['CBBTC', 'WBTC'] }
+
+/** The token a swap of `sym` on this chain actually moves. Falls through to
+ *  the ticker itself when no wrapped form is listed — the builder then refuses
+ *  by name (UnknownTokenError), which is a refusal, never a wrong token. */
+export function canonicalSwapToken(sym: string, chainId: number): string {
+  const forms = WRAPPED_FORMS[sym.trim().toUpperCase()]
+  if (!forms) return sym
+  for (const f of forms) if (resolveToken(f, chainId)) return f
+  return sym
+}
+
+async function cascade(paramsIn: GuardedSwapParams, venues: SwapVenues): Promise<GuardedSwapResult> {
+  const chainId = paramsIn.chainId
   const chain = chainById(chainId)
   if (!chain) return { ok: false, blockKind: 'execution', reasons: `Chain ${chainId} isn't a first-class chain.` }
   await ensureTokenList(chainId)
+  // Wrapped forms resolve only once the chain's list is warm.
+  const params: GuardedSwapParams = {
+    ...paramsIn,
+    sellToken: canonicalSwapToken(paramsIn.sellToken, chainId),
+    buyToken: canonicalSwapToken(paramsIn.buyToken, chainId),
+  }
+  const { sellToken, buyToken, amountHuman, from } = params
   const sell = sellToken.toUpperCase()
   const buy = buyToken.toUpperCase()
   const refreshParams = {

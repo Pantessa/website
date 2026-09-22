@@ -39,6 +39,7 @@ import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/gra
 import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, TREASURY_ADDRESS, swapFeeAtoms } from '@/lib/fees'
 import { approvalTxs, guardApprovalSteps, planApproval } from '@/lib/erc20-approval'
 import { checkFillAgainstTape, startSwapTape } from '@/lib/stock-tape'
+import { UnknownTokenError } from '@/lib/token-list'
 
 /** Uniswap v3 on Base (developers.uniswap.org, verified live by the MCP's
  *  smoke suite 2026-07-02). Kept as the Base constants for existing
@@ -428,8 +429,8 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   const buyIsEth = buysNativeEth(params.buyToken, chainId)
   const sellAddr = resolveToken(params.sellToken, chainId)
   const buyAddr = resolveToken(params.buyToken, chainId)
-  if (!sellAddr) throw new Error(`Unknown sell token on ${chain.name}: ${params.sellToken}`)
-  if (!buyAddr) throw new Error(`Unknown buy token on ${chain.name}: ${params.buyToken}`)
+  if (!sellAddr) throw new UnknownTokenError('sell', params.sellToken, chain.name)
+  if (!buyAddr) throw new UnknownTokenError('buy', params.buyToken, chain.name)
   if (sellAddr === buyAddr) throw new Error('sellToken and buyToken must differ.')
   const sellDec = tokenDecimals(params.sellToken, chainId) ?? 18
   const buyDec = tokenDecimals(params.buyToken, chainId) ?? 18

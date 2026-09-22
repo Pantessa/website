@@ -25,6 +25,9 @@ import { useSession } from '@/lib/session'
 import { AMOUNTS, SIDE_LABEL, STOPS, composeAsk, sideOf, sidesFor, type TradeAsk, type TradeSide } from '@/lib/trade-asks'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
+import { canTradeAsk } from '@/lib/trade-venue-gate'
+import { canFill, noVenueNote } from '@/lib/tradability'
+import { useTradable } from '@/lib/use-tradable'
 
 // The grammar (sides a pair can offer, the sentence per side, the default
 // chip row) lives in lib/trade-asks — pure, shared with the header strip,
@@ -51,7 +54,11 @@ export default function TradeTab({
   const { walletAddress } = useSession()
   const allSides = useMemo(() => sidesFor(pair), [pair])
   const held = useHeld()
-  const sides = useMemo(() => allSides.filter((s) => canSellAsk(composeAsk(pair, s), held)), [allSides, pair, held])
+  const tradable = useTradable()
+  const sides = useMemo(
+    () => allSides.filter((s) => canSellAsk(composeAsk(pair, s), held) && canTradeAsk(composeAsk(pair, s), tradable)),
+    [allSides, pair, held, tradable],
+  )
   // The picked side is kept while Sell is hidden: the panel shows (and sends)
   // the first side the moment the wallet stops holding the token, and Sell
   // comes back picked if a wallet that holds it returns.
@@ -70,6 +77,13 @@ export default function TradeTab({
 
   const name = symbolName(symbol)
   const isPerp = pair.source === 'hyperliquid'
+  // Nothing a venue can fill: the order form and the "Chain it" composer
+  // would both compose an ask that only refuses — and the composer's first
+  // leg would move money onto a chain that can't complete the buy. The panel
+  // says so instead (lib/trade-venue-gate); the chart, the position and the
+  // rest of the page are untouched.
+  const shutSides = useMemo(() => (['buy', 'sell'] as const).filter((sd) => !canFill(tradable[pair.symbol.toUpperCase()], sd)), [tradable, pair.symbol])
+  const noOrder = sides.length === 0
 
   return (
     <div className="mkt-trade mk-trade">
@@ -77,6 +91,15 @@ export default function TradeTab({
       <div className="mk-trade__routes">
         <RouteTable symbol={symbol} pair={pair} onAsk={askText} last={last ?? null} />
       </div>
+      {noOrder ? (
+        <section className="mkt-card mkt-order" aria-label={`Trade ${symbol}`} data-shut={shutSides.join('+') || 'held'}>
+          <header className="mkt-card__head">
+            <h2 className="mkt-card__title">Trade {name}</h2>
+            <span className="mkt-card__eyebrow mono">{shutSides.length > 0 ? 'NO VENUE RIGHT NOW' : 'NOTHING TO SELL'}</span>
+          </header>
+          <p className="mkt-card__note">{shutSides.length > 0 ? noVenueNote(pair.symbol, [...shutSides]) : `Nothing to sell yet — this panel comes back when the wallet holds ${pair.symbol}.`}</p>
+        </section>
+      ) : (
       <section className="mkt-card mkt-order" aria-label={`Trade ${symbol}`}>
         <header className="mkt-card__head">
           <h2 className="mkt-card__title">Trade {name}</h2>
@@ -162,11 +185,13 @@ export default function TradeTab({
               : 'Quote → deterministic build → guardrails → your signature → receipt. The sentence is the whole order form.'}
         </p>
       </section>
-
+      )}
       {/* Buy → stake → protect as ONE signed job (EXEC) */}
-      <div className="mk-trade__compound">
-        <CompoundComposer symbol={symbol} pair={pair} onAsk={askText} />
-      </div>
+      {!shutSides.includes('buy') && (
+        <div className="mk-trade__compound">
+          <CompoundComposer symbol={symbol} pair={pair} onAsk={askText} />
+        </div>
+      )}
       {/* What THIS wallet holds in the symbol across venues (EXEC) */}
       <div className="mk-trade__position">
         <PositionPanel symbol={symbol} pair={pair} address={walletAddress ?? undefined} onAsk={askText} />

@@ -42,6 +42,10 @@
 
 import { chainById, primaryStable } from '@/lib/chains'
 import type { CompiledJob } from '@/lib/jobs'
+import { NoLifiRouteError } from '@/lib/lifi-venue'
+import { OffTapeError, TapeUnavailableError } from '@/lib/stock-tape'
+import { UnknownTokenError } from '@/lib/token-list'
+import { NoV3PoolError } from '@/lib/uniswap-venue'
 import { buildGuardedSwap, type GuardedSwapResult, type SwapVenues } from '@/lib/swap-exec'
 
 /** How long a pre-flight may take before the caller stops waiting on it and
@@ -82,6 +86,32 @@ export function verdictOfSwapResult(r: GuardedSwapResult): VenueFillVerdict {
 }
 
 /**
+ * Pure: what a THROWN cascade error means.
+ *
+ * The cascade returns its refusals — except on a chain that pins no Uniswap
+ * v4 (every chain but Robinhood Chain), where `NoV3PoolError` escapes, and
+ * wherever the chain's token list has no address for the ticker. Both are
+ * definite misses about the VENUE, not outages: MKR has no v3 pool on
+ * Ethereum and is not on Base at all, so a Buy MKR chip on either is a dead
+ * button. Treating them as `unknown` is what made the pre-flight blind to
+ * the whole crypto board.
+ *
+ * Everything else — an RPC that timed out, a rate-limited node, a tape that
+ * is down — stays `unknown` and proceeds. A definite miss is still confirmed
+ * by a second read before it can hide anything (see preflightFundedBuy).
+ */
+export function verdictOfThrow(err: unknown): VenueFillVerdict {
+  if (err instanceof UnknownTokenError) return { kind: 'no-venue', reason: err.message }
+  if (err instanceof NoV3PoolError) return { kind: 'no-venue', reason: err.message }
+  if (err instanceof NoLifiRouteError) return { kind: 'no-venue', reason: err.message }
+  if (err instanceof OffTapeError) return { kind: 'no-venue', reason: err.message }
+  // A stock with no price feed at all is a refusal; a feed that is merely
+  // down is an outage (lib/stock-tape `permanent`).
+  if (err instanceof TapeUnavailableError) return err.permanent ? { kind: 'no-venue', reason: err.message } : { kind: 'unknown', why: err.message }
+  return { kind: 'unknown', why: (err as Error)?.message || 'the venue read failed' }
+}
+
+/**
  * Read-only: does any venue fill this buy? Never throws and never rejects —
  * every failure becomes `unknown`, which every caller treats as "proceed".
  *
@@ -116,7 +146,7 @@ async function onePass(buy: FundedBuy, venues: Partial<SwapVenues>, timeoutMs: n
       }),
     ])
   } catch (err) {
-    return { kind: 'unknown', why: (err as Error).message || 'the venue read failed' }
+    return verdictOfThrow(err)
   } finally {
     if (timer) clearTimeout(timer)
   }

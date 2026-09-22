@@ -46,8 +46,11 @@ import {
   type VenueKind,
 } from '@/lib/symbol-venues'
 import { canSellAsk, isSellAsk } from '@/lib/sell-gate'
+import { canFill, noVenueNote } from '@/lib/tradability'
 import { useHeld } from '@/lib/use-held'
 import './trade.css'
+import { canTradeAsk } from '@/lib/trade-venue-gate'
+import { useTradable } from '@/lib/use-tradable'
 
 export const ROUTE_AMOUNTS = [10, 25, 50, 100, 250] as const
 export const ROUTE_LEVERAGES = [1, 2, 3, 5] as const
@@ -186,7 +189,18 @@ export default function RouteTable({
 
   // The rows this wallet can act on: a sell only where it holds the symbol.
   const held = useHeld()
-  const routes = useMemo(() => (data?.routes ?? []).filter((r) => canSellAsk(r.ask, held)), [data, held])
+  const tradable = useTradable()
+  const routes = useMemo(() => (data?.routes ?? []).filter((r) => canSellAsk(r.ask, held) && canTradeAsk(r.ask, tradable)), [data, held, tradable])
+  // Sides whose every venue has been measured refusing (lib/tradability). A
+  // funding row for a buy nothing can fill is the worst row on the page —
+  // it walks money onto a chain that can't complete the order — so when the
+  // buy is shut, the funding rows and the card go with the chips, and the
+  // table says why instead.
+  const shutSides = useMemo(
+    () => (['buy', 'sell'] as const).filter((side) => !canFill(tradable[pair.symbol.toUpperCase()], side)),
+    [tradable, pair.symbol],
+  )
+  const buyShut = shutSides.includes('buy')
 
   // Does this page fund a buy at all? (A perp chart or a non-EVM home has no
   // spot buy for money to land on — the map lists no funding there.)
@@ -201,10 +215,17 @@ export default function RouteTable({
     return walletFunding.notes
   }, [fundApplies, walletAddress, fundPending, walletFunding])
 
+  const notes = useMemo(
+    () => (shutSides.length > 0 ? [noVenueNote(pair.symbol, shutSides), ...(data?.notes ?? [])] : (data?.notes ?? [])),
+    [shutSides, pair.symbol, data],
+  )
+
   const rows = useMemo(() => {
     // The wallet's own funding rows first, then the card (the public map's
     // only funding row).
-    const list = [...routes.filter((r) => r.venue !== 'card'), ...(walletFunding?.routes ?? []), ...routes.filter((r) => r.venue === 'card')]
+    const list = buyShut
+      ? routes.filter((r) => r.kind !== 'fund')
+      : [...routes.filter((r) => r.venue !== 'card'), ...(walletFunding?.routes ?? []), ...routes.filter((r) => r.venue === 'card')]
     const filtered = filter === 'all' ? list : list.filter((r) => r.kind === filter)
     const groups = new Map<VenueKind, RouteQuote[]>()
     for (const k of VENUE_KIND_ORDER) {
@@ -212,13 +233,13 @@ export default function RouteTable({
       if (g.length) groups.set(k, g)
     }
     // The Fund group stands even with no row in it, to say why.
-    if ((filter === 'all' || filter === 'fund') && !groups.has('fund') && fundNotes.length > 0) groups.set('fund', [])
+    if (!buyShut && (filter === 'all' || filter === 'fund') && !groups.has('fund') && fundNotes.length > 0) groups.set('fund', [])
     return groups
-  }, [routes, filter, walletFunding, fundNotes])
+  }, [routes, filter, walletFunding, fundNotes, buyShut])
 
   const kindsPresent = useMemo(
-    () => VENUE_KIND_ORDER.filter((k) => routes.some((r) => r.kind === k) || (k === 'fund' && ((walletFunding?.routes.length ?? 0) > 0 || fundNotes.length > 0))),
-    [routes, walletFunding, fundNotes],
+    () => VENUE_KIND_ORDER.filter((k) => routes.some((r) => r.kind === k) || (k === 'fund' && !buyShut && ((walletFunding?.routes.length ?? 0) > 0 || fundNotes.length > 0))),
+    [routes, walletFunding, fundNotes, buyShut],
   )
   const hasPerp = routes.some((r) => r.kind === 'perp')
   // A card checkout isn't a dapp; the wallet's funding venues are.
@@ -419,9 +440,9 @@ export default function RouteTable({
               )}
             </div>
           ))}
-          {data.notes.length > 0 && (
-            <ul className="mkt-routes__notes">
-              {data.notes.map((n) => (
+          {notes.length > 0 && (
+            <ul className="mkt-routes__notes" data-shut={shutSides.join('+') || undefined}>
+              {notes.map((n) => (
                 <li key={n} className="mkt-card__note">
                   {n}
                 </li>

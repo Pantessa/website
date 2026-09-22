@@ -52,6 +52,25 @@ const TTL_MS = 24 * 60 * 60 * 1000
  *  Chain doesn't list it" until the process restarted. */
 const PARTIAL_TTL_MS = 60 * 1000
 
+/**
+ * A token the chain's list has no address for — a DEFINITE miss, not an
+ * outage: the symbol is not on that chain (MKR on Base), or is not listed
+ * anywhere we can price it. Typed so the venue pre-flight can tell it from a
+ * transport error and answer "no venue" instead of "couldn't tell"
+ * (lib/venue-preflight verdictOfThrow). The message is unchanged from the
+ * plain Error it replaces, so every caller that only prints it is untouched.
+ */
+export class UnknownTokenError extends Error {
+  constructor(
+    readonly side: 'sell' | 'buy',
+    readonly symbol: string,
+    chainName: string,
+  ) {
+    super(`Unknown ${side} token on ${chainName}: ${symbol}`)
+    this.name = 'UnknownTokenError'
+  }
+}
+
 export interface TokenInfo {
   address: string
   decimals: number

@@ -5982,9 +5982,14 @@
 .sym__act-chip--buy:hover { border-color: var(--accent); filter: brightness(1.06); }
 .sym__act-chip--sell { border-color: color-mix(in srgb, var(--sell) 55%, transparent); color: var(--sell); }
 .sym__act-chip--sell:hover { background: var(--sell); border-color: var(--sell); color: #fff; }
+/* A symbol no venue can fill keeps its page and loses its buttons
+   (lib/trade-venue-gate, 2026-09-22): the strip says why, in the seat the
+   chips had, so the silence never reads as a broken page. */
+.sym__act-shut { margin: 0; max-width: 46ch; text-align: center; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
 @media (max-width: 899px) {
   .sym__act { order: 3; flex-basis: 100%; align-items: flex-start; gap: 0; }
   .sym__act-eyebrow { display: none; }
+  .sym__act-shut { text-align: left; padding-top: 4px; }
   .sym__act-chips { justify-content: flex-start; gap: 8px; }
   .sym__act-chip { min-height: 34px; padding: 0 14px; font-size: 12.5px; }
 }

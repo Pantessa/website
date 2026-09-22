@@ -20,6 +20,8 @@ import { TAPE_FOOTNOTE } from '@/lib/markets-copy'
 import type { ChartPair, ChartTf } from '@/lib/charts'
 import type { AiChip, BriefEvent } from '@/lib/markets-ai'
 import '../ai.css'
+import { canTradeAsk } from '@/lib/trade-venue-gate'
+import { useTradable } from '@/lib/use-tradable'
 
 export type AiBriefProps = { symbol: string; pair: ChartPair; tf?: ChartTf; onAsk: (ask: string) => void }
 
@@ -127,7 +129,8 @@ export default function AiBrief({ symbol, pair, tf = '1h', onAsk }: AiBriefProps
   // The brief is shared across viewers, so its Sell chips are this viewer's
   // call: shown only while the connected wallet holds the token (lib/sell-gate).
   const held = useHeld()
-  const shown = useMemo(() => chips.filter((c) => canSellAsk(c.ask, held)), [chips, held])
+  const tradable = useTradable()
+  const shown = useMemo(() => chips.filter((c) => canSellAsk(c.ask, held) && canTradeAsk(c.ask, tradable)), [chips, held, tradable])
 
   // The ⌘K door's suggestion row shows this brief's chips while the page is
   // up (lib/ask-door askDoorChips merges them on /t/<sym>).

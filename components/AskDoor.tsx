@@ -41,6 +41,8 @@ import { CATALOG } from '@/lib/mcp-data'
 import type { InjectedPrompt } from '@/lib/trade-asks'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
+import { canTradeAsk } from '@/lib/trade-venue-gate'
+import { useTradable } from '@/lib/use-tradable'
 
 // ChatInterface is heavy (wagmi, the store, every card); it loads only when
 // a visitor actually sends something through the door.
@@ -139,7 +141,11 @@ function AskDoorSheet() {
   const briefChips = useAskDoor((s) => s.briefChips)
   // A Sell suggestion only for a wallet that holds the token (lib/sell-gate).
   const held = useHeld()
-  const chips = useMemo(() => askDoorChips(pathname, briefChips).filter((c) => canSellAsk(c.ask, held)), [pathname, briefChips, held])
+  const tradable = useTradable()
+  const chips = useMemo(
+    () => askDoorChips(pathname, briefChips).filter((c) => canSellAsk(c.ask, held) && canTradeAsk(c.ask, tradable)),
+    [pathname, briefChips, held, tradable],
+  )
   const sym = askDoorSymbol(pathname)
   const placeholder = askDoorPlaceholder(pathname)
 

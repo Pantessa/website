@@ -4,6 +4,7 @@ import { parseMarketTab, parseVsParam } from '@/lib/markets'
 import { symbolPageSeo } from '@/lib/markets-seo'
 import Footer from '@/components/Footer'
 import SymbolPage from '@/components/markets/shell/SymbolPage'
+import { readTradability } from '@/lib/tradability-store'
 import MarketsShell from '@/components/markets/shell/MarketsShell'
 
 // /t/<symbol> — THE symbol page (Markets, 2026-09-11): header, the live
@@ -53,6 +54,11 @@ export default async function TokenPage({ params, searchParams }: Params) {
   // HTML matches the URL; the client mirrors changes back (replaceState).
   const vsRaw = typeof sp.vs === 'string' ? sp.vs : ''
   const initialVs = vsRaw ? parseVsParam(`?vs=${encodeURIComponent(vsRaw)}`, norm) : null
+  // Which sides a venue can fill, read server-side so the header's act strip
+  // is right on the FIRST paint: a Buy chip that renders and then vanishes is
+  // worse than one that was never offered (lib/tradability-store; fail-soft
+  // to {}, which offers everything).
+  const tradable = await readTradability()
   // The /markets frame (no .x-main) inside the markets shell (the app spine
   // on the left, no brochure nav): SymbolPage's <main class="sym"> and the
   // side column (ask + account strip over the watchlist rail) are its two
@@ -62,7 +68,7 @@ export default async function TokenPage({ params, searchParams }: Params) {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: seo.jsonLd }} />
       <MarketsShell sym>
-        <SymbolPage symbol={norm} initialTab={initialTab} initialTf={initialTf} initialVs={initialVs} />
+        <SymbolPage symbol={norm} initialTab={initialTab} initialTf={initialTf} initialVs={initialVs} tradable={tradable} />
         <div className="mkt-frame__foot">
           <Footer />
         </div>

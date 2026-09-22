@@ -44,6 +44,8 @@ import MorningTape from '@/components/markets/ai/MorningTape'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
 import { ARRIVAL_APP_HREF, writeArrivalIntent } from '@/lib/arrival-intent'
 import type { TrendingRow } from '@/app/markets/trending'
+import type { TradabilityMap } from '@/lib/tradability'
+import { seedTradable } from '@/lib/tradable-read'
 
 // Rows before "show all" — a folded board leads with the household names.
 const FOLD_AT = 24
@@ -208,7 +210,11 @@ function useRowKeys() {
   }, [])
 }
 
-export default function MarketsIndex({ trending = [] }: { trending?: TrendingRow[] }) {
+export default function MarketsIndex({ trending = [], tradable }: { trending?: TrendingRow[]; /** The measured venue verdicts, read server-side so the index's chips are right on the FIRST paint (lib/tradability-store). */ tradable?: TradabilityMap }) {
+  // Idempotent, and deliberately during render: QuickAct reads the shared
+  // store synchronously, so seeding in an effect would flash a chip the
+  // server already knew nothing can fill.
+  seedTradable(tradable)
   const router = useRouter()
   const pathname = usePathname()
   const sections = useMemo(() => marketSections(), [])

@@ -39,6 +39,8 @@ import ImportModal from './ImportModal'
 import { useAlerts, useQuotes, useWatchlists } from './useWatchlists'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
+import { canTradeAsk } from '@/lib/trade-venue-gate'
+import { useTradable } from '@/lib/use-tradable'
 
 const promptHref = (ask: string) => `/chat?prompt=${encodeURIComponent(ask)}`
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
@@ -77,6 +79,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
   const wl = useWatchlists()
   // A row's "Sell $10" shows only while the connected wallet holds it (lib/sell-gate).
   const walletHeld = useHeld()
+  const tradable = useTradable()
   const alerts = useAlerts(wl.mode === 'authed')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -555,10 +558,14 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                             aria-label={`${sym} actions`}
                           >
                             <li className="wl__popChips">
+                              {/* A row whose venues have all refused keeps its chart and its
+                                  alerts, and loses the buttons (lib/trade-venue-gate). */}
+                              {canTradeAsk(`Buy $10 of ${sym}`, tradable) && (
                               <button type="button" className="wl__chip wl__chip--accent" onClick={() => send(`Buy $10 of ${sym}`, handoffable(sym))} title={sendLabelFor(handoffable(sym))}>
                                 Buy $10
                               </button>
-                              {canSellAsk(`Sell $10 of ${sym}`, walletHeld) && (
+                              )}
+                              {canSellAsk(`Sell $10 of ${sym}`, walletHeld) && canTradeAsk(`Sell $10 of ${sym}`, tradable) && (
                                 <button type="button" className="wl__chip" onClick={() => send(`Sell $10 of ${sym}`, handoffable(sym))} title={sendLabelFor(handoffable(sym))}>
                                   Sell $10
                                 </button>
