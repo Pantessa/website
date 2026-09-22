@@ -439,9 +439,58 @@ const MOCK_WALLET = `(() => {
 
 type Shot = { id: string; ok: boolean; detail: string }
 
+/**
+ * Playwright's types, spelled out locally on purpose.
+ *
+ * `playwright-core` is NOT a dependency of this app: the browser half of this
+ * drive runs only on a dev machine, resolved from the developer's own global
+ * install (see browserWalk's createRequire anchor). A `typeof
+ * import('playwright-core')` here type-checks on that machine and fails
+ * `next build` everywhere else — which is exactly how it broke the Vercel
+ * deploy. These shapes cover only what the walk below actually calls.
+ */
+type PwConsoleMessage = { type(): string; text(): string }
+type PwLocator = {
+  first(): PwLocator
+  locator(selector: string): PwLocator
+  count(): Promise<number>
+  click(opts?: { timeout?: number }): Promise<void>
+  waitFor(opts?: { state?: 'attached' | 'detached' | 'visible' | 'hidden'; timeout?: number }): Promise<void>
+  innerText(): Promise<string>
+  evaluateAll<T>(fn: (els: Element[]) => T): Promise<T>
+}
+type PwPage = {
+  goto(url: string, opts?: { waitUntil?: 'commit' | 'domcontentloaded' | 'load' | 'networkidle' }): Promise<unknown>
+  waitForTimeout(ms: number): Promise<void>
+  locator(selector: string): PwLocator
+  evaluate<T>(fn: () => T): Promise<T>
+  keyboard: { press(key: string): Promise<void> }
+  on(event: 'console', cb: (m: PwConsoleMessage) => void): void
+  on(event: 'pageerror', cb: (e: unknown) => void): void
+}
+type PwContext = {
+  newPage(): Promise<PwPage>
+  addInitScript(script: string): Promise<void>
+  exposeFunction(name: string, fn: (raw: string) => unknown): Promise<void>
+  close(): Promise<void>
+}
+type PwBrowser = {
+  newContext(opts: {
+    viewport: { width: number; height: number }
+    deviceScaleFactor?: number
+    colorScheme?: 'dark' | 'light'
+    isMobile?: boolean
+    hasTouch?: boolean
+  }): Promise<PwContext>
+  close(): Promise<void>
+}
+type PwChromium = {
+  launch(opts: { executablePath?: string; headless?: boolean; args?: string[] }): Promise<PwBrowser>
+}
+
 async function browserWalk(): Promise<number> {
   const require_ = createRequire('/Users/nategeier/anchor.js')
-  const { chromium } = require_('playwright-core') as typeof import('playwright-core')
+  const { chromium } = require_('playwright-core') as { chromium: PwChromium }
   const chrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
   const browser = await chromium.launch({
     executablePath: chrome,
@@ -456,7 +505,7 @@ async function browserWalk(): Promise<number> {
   }
 
   /** Every page in this walk owes the same three things. */
-  async function inspect(page: import('playwright-core').Page, id: string, errs: string[]) {
+  async function inspect(page: PwPage, id: string, errs: string[]) {
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     )
