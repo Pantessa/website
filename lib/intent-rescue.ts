@@ -66,14 +66,20 @@ const CHAIN_WORDS: Record<string, string> = {
 }
 const VERB_FAMILIES: [string, RegExp][] = [
   ['perp', /\b(?:long|short|perps?|perpetuals?|leverag(?:e|ed)|margin|futures)\b/],
+  // A stop / take-profit on something the wallet HOLDS. Kept ahead of `earn`
+  // so "set a 5% stop on my UNI" can never read as a deposit.
+  ['protect', /\bprotect\b|\bstop[\s-]?loss\b|\btake[\s-]?profit\b|\d+(?:\.\d+)?\s*%\s*(?:stop|drop)\b/],
+  // "I need gas on base", "get me some ETH on arbitrum for gas" — a chain
+  // that holds tokens it can't sign with. No amount is ever in the sentence.
+  ['gas', /\bgas\b(?!\s*(?:fee|price|war)s?\b)|\bcan'?t\s+(?:sign|send|transact)\b/],
   ['stake', /\b(?:stak(?:e|ing)|steth|wsteth)\b/],
   ['borrow', /\bborrow\b/],
   ['repay', /\b(?:repay|pay\s+(?:back|off))\b/],
   ['withdraw', /\b(?:withdraw|pull\s+out|take\s+out|unlend)\b/],
-  ['earn', /\b(?:earn|yield|apy|apr|interest|lend|lending|supply|deposit|save|savings|put\b.*\b(?:to\s+work|into|in))\b/],
+  ['earn', /\b(?:earn|yield|apy|apr|interest|lend|lending|supply|deposit|save|savings)\b|\bput\b.*\bto\s+work\b/],
   ['bridge', /\b(?:bridge|move|send|transfer|get)\b.*\b(?:to|onto|over\s+to)\b/],
   ['sell', /\b(?:sell|dump|offload|cash\s+out|exit)\b/],
-  ['buy', /\b(?:buy|purchase|get|grab|acquire|ape|pick\s+up|invest|want|need)\b/],
+  ['buy', /\b(?:buy|purchase|get|grab|acquire|ape|yeet|pick\s+up|invest|want|need)\b/],
   ['swap', /\b(?:swap|convert|trade|exchange|turn)\b/],
 ]
 const STOP = new Set([
@@ -83,18 +89,33 @@ const STOP = new Set([
   'leveraged', 'margin', 'stake', 'staking', 'earn', 'yield', 'apy', 'apr', 'interest', 'lend', 'lending', 'supply', 'deposit', 'borrow', 'repay', 'withdraw', 'bridge',
   'move', 'send', 'transfer', 'put', 'work', 'worth', 'dollars', 'dollar', 'usd', 'bucks', 'stock', 'stocks', 'share', 'shares', 'token', 'tokens', 'coin', 'coins',
   'crypto', 'money', 'funds', 'wallet', 'best', 'rate', 'idle', 'using', 'use', 'via', 'through', 'times', 'x', 'up', 'out', 'over', 'back', 'off', 'pay', 'grab', 'acquire',
-  'invest', 'pick', 'turn', 'save', 'savings', 'hyperliquid', 'hl', 'aave', 'morpho', 'lido', 'uniswap', 'cow', 'cowswap', 'near', 'intents', 'chain', 'robinhood', 'base',
+  'invest', 'pick', 'turn', 'save', 'savings', 'yeet', 'fix', 'issue', 'hyperliquid', 'hl', 'aave', 'morpho', 'lido', 'uniswap', 'cow', 'cowswap', 'near', 'intents', 'chain', 'robinhood', 'base',
+  // Protection / gas vocabulary — never a ticker, and left in the pile it
+  // blocked the "one word nothing else explains" token fallback (a 2026-09-21
+  // sweep fall: "2x long hype $12, 5% stop" had `hype` AND `stop` unexplained).
+  'protect', 'stop', 'loss', 'profit', 'take', 'tp', 'sl', 'set', 'guard', 'guardian', 'watch', 'alert', 'trigger', 'drop', 'drops', 'gas', 'fee', 'fees', 'sign', 'cover',
   'ethereum', 'mainnet', 'arbitrum', 'arb', 'optimism', 'arc', 'futures', 'dump', 'offload', 'cash', 'exit', 'ape', 'some', 'little', 'bit', 'there', 'here', 'just',
 ])
 
 function readSlots(raw: string): Slots {
-  const m = normalizeWorth(raw).toLowerCase().replace(/\s+/g, ' ').trim()
+  // An arrow is how people write "to" when they mean a route
+  // ("transfer 5 usdc base -> arbitrum", live paraphrase sweep 2026-09-21).
+  // Normalised before anything reads a chain slot, so the bridge family and
+  // the `to`/`from` matchers below see an ordinary sentence.
+  const m = normalizeWorth(raw).toLowerCase().replace(/\s*(?:->|-->|=>|→|»)\s*/g, ' to ').replace(/\s+/g, ' ').trim()
   const s: Slots = { venues: new Set(), verbs: new Set() }
   for (const [name, re] of VERB_FAMILIES) if (re.test(m)) s.verbs.add(name)
   for (const v of ['hyperliquid', 'aave', 'morpho', 'lido', 'uniswap', 'robinhood']) if (new RegExp(String.raw`\b${v}\b`).test(m)) s.venues.add(v)
   if (/\bhl\b/.test(m)) s.venues.add('hyperliquid')
+  // "put $10 into AAPL" is a BUY; "put $25 of USDC into Aave" is a deposit.
+  // One phrasing, two meanings — the named venue decides, never a guess.
+  // (It read as `earn` for everything until 2026-09-21, so a stranger buying
+  // a stock was offered "Supply $10 of AAPL to Aave": a chip that parses and
+  // then dies at build, because AAPL is no Aave reserve.)
+  if (/\bput\b.*\b(?:into|in\s+to)\b/.test(m)) s.verbs.add(s.venues.has('aave') || s.venues.has('morpho') ? 'earn' : 'buy')
 
-  const usd = [...m.matchAll(/\$\s?(\d[\d,]*(?:\.\d+)?)/g)].map((d) => Number(d[1].replace(/,/g, '')))
+  // "$20" and "20$" — the trailing form is a real typo, not a curiosity.
+  const usd = [...m.matchAll(/\$\s?(\d[\d,]*(?:\.\d+)?)|(\d[\d,]*(?:\.\d+)?)\s?\$/g)].map((d) => Number((d[1] ?? d[2]).replace(/,/g, '')))
   if (new Set(usd).size === 1 && usd[0] > 0) s.usd = usd[0]
 
   const lev = m.match(/(?<![\w$.])(\d{1,3})\s?x\b/) ?? m.match(/\bx\s?(\d{1,3})\b/) ?? m.match(/\b(\d{1,3})\s+times\b/)
@@ -127,6 +148,17 @@ function readSlots(raw: string): Slots {
   if (unitTok && ok(unitTok[2]) && !/^(?:x|times)$/.test(unitTok[2])) {
     s.token ??= unitTok[2]
     if (s.token === unitTok[2] && s.usd === undefined) s.units = Number(unitTok[1])
+  }
+  // The perp coin sits NEXT TO the side word in most real phrasings, and the
+  // "one word nothing else explains" fallback below can't see it once a
+  // second unexplained word rides along ("…and protect it with a 5% stop"
+  // leaves `protect` and `stop` in the pile). Read the adjacency directly.
+  if (!s.token && s.verbs.has('perp')) {
+    const near =
+      m.match(/\b(?:long|short)\s+(?:on\s+|into\s+)?(?:\$?\d[\d,]*(?:\.\d+)?\s+(?:of\s+)?)?([a-z][a-z0-9.]{1,11})\b/) ??
+      m.match(/\b([a-z][a-z0-9.]{1,11})\s+(?:perp|long|short)\b/) ??
+      m.match(/\b\d{1,3}\s?x\s+([a-z][a-z0-9.]{1,11})\b/)
+    if (ok(near?.[1])) s.token = near![1]
   }
   if (!s.token) {
     const rest = [...new Set((m.match(/\b[a-z][a-z0-9.]{1,11}\b/g) ?? []).filter(ok))]
@@ -183,21 +215,76 @@ function compose(s: Slots): RescueChip[] {
     }
     // Unsized "earn yield on my usdc": the rebalance/briefing layer sizes it.
     if (s.verbs.has('earn') && !a && stable) add('aave', `Supply $25 of ${up(tok)} to Aave`, `Supply $25 of ${up(tok)} to Aave (pick any size)`)
+    // "earn on my ETH" — ETH's yield venue in this fleet is Lido, not a
+    // lending pool, so the lending chips above compose nothing for it.
+    if (s.verbs.has('earn') && ethLike) add('lido', 'Help me stake ETH on Lido', 'Stake ETH on Lido — size it from my balance')
   }
   // Moves between chains — NEAR Intents' grammar.
   if (tok && s.toChain && (s.verbs.has('bridge') || s.fromChain) && s.toChain !== 'robinhood chain') {
     const a = s.units !== undefined ? `${s.units} ${up(tok)}` : s.usd !== undefined && stable ? `${s.usd} ${up(tok)}` : null
     if (a) for (const from of s.fromChain ? [s.fromChain] : ['base', 'ethereum', 'arbitrum', 'optimism'].filter((c) => c !== s.toChain)) add('bridge', `Swap ${a} from ${from} to ${s.toChain}`, `Move ${a} from ${from} to ${s.toChain}`)
   }
+  // Protection on something the wallet HOLDS. The canonical sentence is the
+  // spot guardian's own ("protect my X in my wallet with a N% stop"), so the
+  // net only normalises the wording — the layer owns what it can honestly
+  // promise (lib/spot-guard-exec). `parseSpotGuardArm` is deliberately NOT
+  // widened: routing more asks into a layer is only safe because that layer
+  // now answers with a live alert door and a sell chip instead of a wall.
+  // With no percentage in the sentence we never invent one: offer both.
+  if (tok && !stable && s.verbs.has('protect') && !s.verbs.has('perp') && !s.side) {
+    const pcts = s.protect ? [s.protect.pct] : [5, 10]
+    const kind = s.protect?.kind ?? 'stop'
+    for (const pct of pcts) add('swap', `protect my ${up(tok)} in my wallet with a ${pct}% ${kind}`, `Protect my ${up(tok)} with a ${pct}% ${kind}`)
+  }
+  // A chain that holds tokens but no ETH to sign with. The ask never carries
+  // a size, so the chip proposes the smallest leg worth quoting on that
+  // chain and the swap layer prices it. ASK(FUND): export MIN_GAS_LEG_USD /
+  // gasTopupLegUsd's chain floors so these two can never drift.
+  if (s.verbs.has('gas') && !s.verbs.has('perp')) {
+    const chain = s.onChain ?? s.toChain ?? s.fromChain
+    const stables = tok && stable ? [up(tok)] : ['USDC', 'USDT']
+    if (chain) for (const st of stables) add('swap', `Swap ${chain === 'ethereum' ? 15 : 5} ${st} for ETH on ${chain}`, `Top up gas on ${chain} with ${st}`)
+    // No chain named ("fix my gas issue" — the /wallet button's own words).
+    // The swap layer reads the chain picker, so the sentence needs none, and
+    // guessing one here would be worse than letting the layer decide.
+    else for (const st of stables) add('swap', `Swap 5 ${st} for ETH`, `Top up gas with ${st}`)
+  }
   // Spot — buy / sell by dollars or units. The swap layer finds the chain,
   // the venue and (for a short wallet) the funding plan.
-  if (tok && !s.side && !s.verbs.has('stake') && !lidoNamed) {
+  if (tok && !s.side && !s.verbs.has('stake') && !lidoNamed && !s.verbs.has('protect')) {
     const chain = s.onChain ? ` on ${s.onChain}` : ''
     if (s.verbs.has('sell') && amt(s, tok)) add('swap', `Sell ${amt(s, tok)}${chain}`)
-    else if (s.verbs.has('buy') && s.usd !== undefined && !stable) add('swap', `Buy $${s.usd} of ${up(tok)}${chain}`)
+    // A price with the thing it buys and no verb at all ("$10 of AAPL
+    // please") is a buy — a verb list can never cover "no verb".
+    else if ((s.verbs.has('buy') || s.verbs.size === 0) && s.usd !== undefined && !stable) add('swap', `Buy $${s.usd} of ${up(tok)}${chain}`)
   }
   return out
 }
+
+/**
+ * One probe sentence per verb family. The net is only ever reached through
+ * `moneyShaped` (lib/ask-failure-shape) in the chat route, so a family whose
+ * wording that gate rejects is DEAD CODE in production — which is exactly
+ * what happened to `earn`, `ape` and `put …into` until 2026-09-21. Every
+ * probe must be money-shaped AND produce at least one chip;
+ * scripts/audit-asks.ts pins it, so adding a family without a door fails the
+ * audit instead of falling to the planner on a stranger's phone.
+ */
+export const INTENT_NET_PROBES: { family: string; ask: string }[] = [
+  { family: 'perp', ask: 'go 2x long on $12 of HYPE' },
+  { family: 'protect', ask: 'set a 5% stop on my UNI' },
+  { family: 'gas', ask: 'i need gas on base' },
+  { family: 'stake', ask: 'stake 0.05 ETH' },
+  { family: 'borrow', ask: 'borrow $10 usdc from aave' },
+  { family: 'repay', ask: 'pay back $10 of usdc on aave' },
+  { family: 'withdraw', ask: 'pull out 10 USDC from aave' },
+  { family: 'earn', ask: 'earn yield on my usdc' },
+  { family: 'bridge', ask: 'get 5 USDC over to arbitrum from base' },
+  { family: 'sell', ask: 'cash out $50 of ETH' },
+  { family: 'buy', ask: 'ape $20 into PEPE' },
+  { family: 'put-into', ask: 'put 0.1 eth into lido' },
+  { family: 'verbless', ask: '$10 of AAPL please' },
+]
 
 /**
  * The net. `verify` answers "does the real ladder build this sentence?" —
@@ -212,7 +299,9 @@ export function rescueIntent(message: string, verify: (ask: string) => boolean, 
   const stripped = text.replace(POLITE_RE, '')
   if (QUESTION_RE.test(stripped)) return null
   const slots = readSlots(stripped)
-  if (slots.verbs.size === 0) return null
+  // No verb at all is still an ask when a price names the thing it buys
+  // ("$10 of AAPL please"); compose() reads that shape as a buy.
+  if (slots.verbs.size === 0 && !(slots.usd !== undefined && slots.token)) return null
   const seen = new Set<string>()
   const chips: RescueChip[] = []
   for (const c of compose(slots)) {
@@ -224,7 +313,7 @@ export function rescueIntent(message: string, verify: (ask: string) => boolean, 
   }
   if (!chips.length) return null
   const bits = [
-    slots.side ? `${slots.leverage ? `${slots.leverage}x ` : ''}${slots.side}` : [...slots.verbs][0],
+    slots.side ? `${slots.leverage ? `${slots.leverage}x ` : ''}${slots.side}` : ([...slots.verbs][0] ?? 'buy'),
     slots.usd !== undefined ? `$${slots.usd}` : slots.units !== undefined ? String(slots.units) : null,
     slots.token ? up(slots.token) : null,
   ].filter(Boolean)

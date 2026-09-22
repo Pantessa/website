@@ -35,6 +35,7 @@ import { parseCrossChainSwap } from '../lib/cross-chain-swap'
 import { parseStockListAsk } from '../lib/stock-list'
 import { tokenHome } from '../lib/token-home'
 import { rescueIntent } from '../lib/intent-rescue'
+import { moneyShaped } from '../lib/ask-failure-shape'
 
 export type Kind = 'action' | 'clarify' | 'planner'
 export interface Outcome {
@@ -70,7 +71,11 @@ export function simulateLadder(message: string, opts: LadderOptions = {}): Outco
   // The intent net (lib/intent-rescue) is the route's last gate before the
   // planner: a money ask no grammar read becomes chips, each one a sentence
   // the NATIVE ladder (never the net itself) builds.
-  if (out.kind === 'planner') {
+  // The route reaches the net only through `moneyShaped` (app/api/chat/route.ts
+  // ~2360). The replica skipped that gate until 2026-09-21, so the audit
+  // reported CHIPS for asks production answers with planner prose — "put $10
+  // into AAPL" was the tell ("put" is in no verb list). Model the real door.
+  if (out.kind === 'planner' && moneyShaped(message)) {
     const rescue = rescueIntent(message, buildsNatively)
     if (rescue) out = { gate: 'intent-net', kind: 'clarify', chips: true, note: rescue.chips.map((c) => c.resume).join(' | ') }
   }

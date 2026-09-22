@@ -24,18 +24,10 @@ import prisma from '@/lib/db'
 import { FUNDING_ORIGIN_WORD, readFundingShortfall, type FundingShortfall } from '@/lib/lifi-bridge'
 import { usdPerToken } from '@/lib/usd-probe'
 
-// Verb + evidence-of-money: both required, so "what is a swap?" (no digits,
-// no address) and "tell me a joke" never log. The evidence side accepts
-// amounts, $, addresses/ENS, marketplace URLs, all-sends, and NFT words —
-// the shapes real money asks carry even when no number appears.
-const MONEY_VERB_RE =
-  /\b(?:send|transfer|swap|sell|buy|bridge|stake|unstake|deposit|withdraw|convert|fund|move|need|want|get\s+me|long|short|list|repay|borrow|supply|protect|mint|pay|(?:re)?tile)\b/i
-const MONEY_EVIDENCE_RE = /\d|\$|0x[0-9a-fA-F]{6,}|\.eth\b|\bnft\b|opensea\.io|\b(?:all|everything|max)\b|\busd[cgte]?\b|\beth\b/i
-
-/** Pure: does this message look like it wanted money to move? */
-export function moneyShaped(message: string): boolean {
-  return MONEY_VERB_RE.test(message) && MONEY_EVIDENCE_RE.test(message)
-}
+// The rule itself lives in lib/ask-failure-shape.ts — it is also the intent
+// net's door in the chat route, and the pure audits/ladder replica need it
+// without Prisma or an RPC. Re-exported so there is ONE definition.
+export { moneyShaped } from '@/lib/ask-failure-shape'
 
 export interface TurnClassification {
   /** Non-null = this turn failed; the string is the failure kind. */
