@@ -64,6 +64,9 @@ import { splashCapable } from '@/lib/splash/types'
 import ShareButton from '@/components/ShareButton'
 import ShareReceiptButton from '@/components/ShareReceiptButton'
 import { signedTxsOf } from '@/components/SignedTxLines'
+import XchainSettlement from '@/components/XchainSettlement'
+import { REFUNDED_KIND, reportWalletRefusal } from '@/lib/wallet-refusal'
+import { claimsSettled, settlementDetailLine, settlementOf, xchainDepositOf } from '@/lib/xchain-settlement'
 import EmbedThisChat from '@/components/EmbedThisChat'
 import ChainPicker from '@/components/ChainPicker'
 import { chainById } from '@/lib/chains'
@@ -348,6 +351,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     createChat,
     addMessage,
     recordSignedTxs,
+    recordSettlement,
     railTab,
     setRailTab,
     mainView,
@@ -2167,6 +2171,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                         // card: the Private switch re-asks through the chat's
                         // own amend grammar (one path for a press and a typed ask).
                         const privacy = builtTx ? swapPrivacyOf(msg.meta) : null
+                        // A cross-chain swap is ONE signature and then the
+                        // venue's work: the deposit confirming is the start,
+                        // not the end (lib/xchain-settlement). Once the
+                        // deposit is signed the card watches check_status and
+                        // prints what the venue actually did.
+                        const xdep = builtTx ? xchainDepositOf(msg.meta) : null
+                        const xsigned = xdep ? signedTxsOf(msg.meta) : []
                         return builtTx ? (
                           <div data-tx-card>
                             {external && <ExternalBuildNotice builtBy={external.builtBy} warnings={external.warnings} txs={[builtTx as { to?: string; value?: string; data?: string; chainId?: number }]} />}
@@ -2197,6 +2208,31 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                               if (currentChatId) recordSignedTxs(currentChatId, msg.id, [{ hash, chainId, title: builtTx.action ?? 'transaction' }])
                             }}
                           />
+                          {xdep && xsigned.length > 0 && (
+                            <XchainSettlement
+                              dep={xdep}
+                              signedHashes={xsigned.map((t) => t.hash)}
+                              initial={settlementOf(msg.meta)}
+                              onOutcome={(outcome) => {
+                                if (currentChatId) recordSettlement(currentChatId, msg.id, outcome)
+                                if (outcome.status === 'refunded' || outcome.status === 'failed') {
+                                  // The money moved and came home: a queue row
+                                  // of its own, so a refund is never something
+                                  // only one browser ever saw.
+                                  reportWalletRefusal({
+                                    kind: REFUNDED_KIND,
+                                    wallet: address ?? null,
+                                    artifact: 'tx',
+                                    ask: askBefore(i) || (builtTx.action ?? 'cross-chain swap'),
+                                    detail: settlementDetailLine(outcome, xdep),
+                                    buildPath: buildPathOf(msg.meta),
+                                    valueUsd: guardrailUsdOf(msg.meta),
+                                    chainId: builtTx.chainId,
+                                  })
+                                }
+                              }}
+                            />
+                          )}
                           </div>
                         ) : null
                       })()}
@@ -2237,8 +2273,14 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                         (store merges meta.signed locally; the sign buttons above
                         already show the hashes — this row is the share, not a
                         second log). Needs the persisted row id to snapshot from. */}
+                    {/* A cross-chain turn may only claim this once the VENUE
+                        says SUCCESS (lib/xchain-settlement claimsSettled) —
+                        the deposit's own confirmation proved a transfer, not
+                        a swap. A refund renders its own line above instead,
+                        and never offers a receipt that says money moved. */}
                     {msg.role === 'assistant' &&
                       signedTxsOf(msg.meta).length > 0 &&
+                      claimsSettled(msg.meta) &&
                       currentChatId &&
                       msg.dbId && (
                         <div className="mt-2 pt-1.5 border-t border-[var(--line)] flex items-center gap-2">

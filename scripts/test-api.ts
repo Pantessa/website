@@ -540,6 +540,21 @@ import { missingSlotChips } from '../lib/cross-chain-swap'
 import { crossChainAskSentence } from '../lib/cross-chain-swap'
 import { PRIVATE_LANE_CLOSED_NOTE, privateLaneClosedTurn, privateLaneOpen, privateRefundCheck, refundDisclosureLine } from '../lib/private-lane'
 import { guardNearValueLeg, nearHoodFundingEnabled, NEAR_ORIGIN_WORD, NEAR_STEP_MAX_TTL_SEC, type NearValueLegExpectations } from '../lib/near-fund-leg'
+import {
+  claimsSettled,
+  isTerminal,
+  nextPollDelayMs,
+  parseSwapStatus,
+  refundReasonWords,
+  settlementCopy,
+  settlementDetailLine,
+  settlementOf,
+  SETTLEMENT_FIRST_POLL_MS,
+  SETTLEMENT_SLOW_POLL_MS,
+  SETTLEMENT_FAST_POLLS,
+  xchainDepositOf,
+  type SettlementOutcome,
+} from '../lib/xchain-settlement'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
@@ -28915,6 +28930,244 @@ async function main() {
     check('bridge wall: both affordability gates in the route hand the wallet scan in', (routeSrc.match(/scan: [^\n]*scanFundingSources/g) ?? []).length === 2, 'a gate site lost its scan')
     const mapSrc = readFileSync('components/markets/viz/MarketMap.tsx', 'utf8')
     check('markets map: every tile is a real link (SEO, no-JS, middle-click) — it was a <g> with an onClick', /href=\{`\/t\/\$\{encodeURIComponent\(c\.symbol\)\}`\}/.test(mapSrc) && !/role="button"/.test(mapSrc), 'the map tiles are click-only again')
+  }
+
+
+  // ── Cross-chain settlement: the card stops claiming a swap it never
+  // watched (live 2026-09-22, prod chat /p/vs2fyAlM_3Fl) ───────────────────
+  {
+    console.log('— cross-chain settlement')
+    const DEP = '0x8B3B693660Aa7a8022FA1B2e84dF5822Dc966655'
+    const DEPOSIT_TX = '0xa08695f583347dcc4bd74ce5d18771b4370c947e6b136aa60ef4ccd51e90609b'
+    const REFUND_TX = '0x779b6f8251d18a0af73ab7eb2e3007682d4ab5a494e608daf739ce8a51cdda16'
+    // The venue's ACTUAL answer for that swap, captured verbatim from
+    // near-intents.yeetful.com on 2026-09-22. The card had already said
+    // "signed & settled" over this.
+    const REFUNDED_PAYLOAD = {
+      kind: 'swap_status',
+      depositAddress: DEP,
+      status: 'REFUNDED',
+      terminal: true,
+      explanation: 'The swap did not complete … and the deposit was returned to the refund address on the origin chain.',
+      updatedAt: '2026-09-22T09:12:17.000Z',
+      swap: {
+        deposited: '1.0',
+        swappedIn: null,
+        delivered: null,
+        deliveredUsd: null,
+        actualSlippageBps: null,
+        originTransactions: [{ hash: DEPOSIT_TX, explorer: `https://basescan.org/tx/${DEPOSIT_TX}` }],
+        // Measured: the venue files the REFUND here, with a DESTINATION-chain
+        // explorer link — that hash exists on Base, not Ethereum.
+        destinationTransactions: [{ hash: REFUND_TX, explorer: `https://etherscan.io/tx/${REFUND_TX}` }],
+        refunded: '0.9976',
+        refundReason: 'INTENT_SUBMIT_FAILED',
+      },
+      next_step: 'The origin funds are back in the refund wallet.',
+    }
+    const LANE = { originChain: 'base', destinationChain: 'ethereum' }
+    const dep = xchainDepositOf({
+      workingContext: {
+        v: 1,
+        age: 0,
+        pending: crossChainPending(
+          { amount: '1', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'ethereum' },
+          DEP,
+          'Swap 1 USDC · Base → Ethereum',
+        ),
+      },
+    })
+    check(
+      'xchain settlement: the deposit is read out of the REAL producer (crossChainPending) on the message meta',
+      !!dep && dep.depositAddress === DEP && dep.originChain === 'base' && dep.destinationChain === 'ethereum' && dep.originToken === 'USDC',
+      JSON.stringify(dep),
+    )
+    check(
+      'xchain settlement: a turn with no xchain pending, a bad address, or another kind carries no deposit',
+      xchainDepositOf({ txRequest: { to: DEP } }) === null &&
+        xchainDepositOf({ workingContext: { v: 1, pending: { kind: 'xchain', summary: 's', data: { depositAddress: 'nope', originChain: 'base', destinationChain: 'ethereum' } } } }) === null &&
+        xchainDepositOf({ workingContext: { v: 1, pending: { kind: 'rh-funding', summary: 's', data: { depositAddress: DEP, originChain: 'base', destinationChain: 'ethereum' } } } }) === null,
+    )
+
+    const refunded = parseSwapStatus(REFUNDED_PAYLOAD, LANE, [DEPOSIT_TX])
+    check(
+      'xchain settlement: the live payload that shipped as "signed & settled" reads REFUNDED, terminal, with the amount and the venue\'s reason',
+      refunded.status === 'refunded' && refunded.terminal && refunded.venueStatus === 'REFUNDED' && refunded.refunded === '0.9976' && refunded.refundReason === 'INTENT_SUBMIT_FAILED',
+      JSON.stringify(refunded),
+    )
+    check(
+      'xchain settlement: the refund link is built on the ORIGIN chain — never the venue\'s destination explorer (that hash is on Base)',
+      refunded.txHash === REFUND_TX && refunded.txChain === 'base' && refunded.txUrl === `https://basescan.org/tx/${REFUND_TX}`,
+      JSON.stringify({ hash: refunded.txHash, url: refunded.txUrl }),
+    )
+    check(
+      'xchain settlement: the deposit this browser signed is never reported back as the refund',
+      parseSwapStatus(
+        { ...REFUNDED_PAYLOAD, swap: { ...REFUNDED_PAYLOAD.swap, destinationTransactions: [], originTransactions: [{ hash: DEPOSIT_TX, explorer: '' }] } },
+        LANE,
+        [DEPOSIT_TX],
+      ).txHash === undefined,
+      'the deposit was printed as the refund',
+    )
+
+    const DELIVERY_TX = '0x' + 'a1'.repeat(32)
+    const success = parseSwapStatus(
+      { status: 'SUCCESS', updatedAt: '2026-09-22T09:12:17.000Z', swap: { delivered: '0.9993', destinationTransactions: [{ hash: DELIVERY_TX, explorer: 'https://example.invalid/x' }], originTransactions: [{ hash: DEPOSIT_TX }] } },
+      LANE,
+      [DEPOSIT_TX],
+    )
+    check(
+      'xchain settlement: SUCCESS carries the delivered amount and the DESTINATION-chain delivery link',
+      success.status === 'success' && success.terminal && success.delivered === '0.9993' && success.txChain === 'ethereum' && success.txUrl === `https://etherscan.io/tx/${DELIVERY_TX}`,
+      JSON.stringify(success),
+    )
+    check(
+      'xchain settlement: a non-EVM destination falls back to the venue\'s own delivery link rather than none',
+      parseSwapStatus({ status: 'SUCCESS', swap: { delivered: '5', destinationTransactions: [{ hash: DELIVERY_TX, explorer: 'https://solscan.io/tx/abc' }] } }, { originChain: 'base', destinationChain: 'sol' }, []).txUrl === 'https://solscan.io/tx/abc',
+    )
+    check(
+      'xchain settlement: mid-flight states are never terminal and never a settlement',
+      (['PENDING_DEPOSIT', 'KNOWN_DEPOSIT_TX', 'PROCESSING', 'INCOMPLETE_DEPOSIT'] as const).every((st) => {
+        const o = parseSwapStatus({ status: st, swap: {} }, LANE, [])
+        return !o.terminal && o.status !== 'success'
+      }) && parseSwapStatus({ status: 'PENDING_DEPOSIT', swap: {} }, LANE, []).status === 'awaiting-deposit',
+    )
+    check(
+      'xchain settlement: an unreadable or unrecognized payload is "unknown", never a settlement',
+      parseSwapStatus(null, LANE, []).status === 'unknown' &&
+        parseSwapStatus({ status: 'WAT' }, LANE, []).status === 'unknown' &&
+        !parseSwapStatus({ status: 'WAT' }, LANE, []).terminal,
+    )
+    check('xchain settlement: FAILED is its own terminal state, not a refund claim', parseSwapStatus({ status: 'FAILED', swap: {} }, LANE, []).status === 'failed' && isTerminal('failed'))
+
+    // The gate the whole fix hangs on.
+    const metaOf = (settlement?: unknown) => ({
+      workingContext: { v: 1, age: 0, pending: crossChainPending({ amount: '1', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'ethereum' }, DEP, 's') },
+      signed: [{ hash: DEPOSIT_TX, chainId: 8453 }],
+      ...(settlement ? { settlement } : {}),
+    })
+    check(
+      'xchain settlement: a signed cross-chain deposit does NOT claim settled until the venue says SUCCESS (the bug, pinned)',
+      claimsSettled(metaOf()) === false && claimsSettled(metaOf(refunded)) === false && claimsSettled(metaOf({ status: 'settling', terminal: false })) === false,
+    )
+    check('xchain settlement: the venue saying SUCCESS is what unlocks the claim', claimsSettled(metaOf(success)) === true)
+    check(
+      'xchain settlement: every other signed turn is unchanged — a same-chain swap settles when its own tx confirms',
+      claimsSettled({ signed: [{ hash: DEPOSIT_TX, chainId: 8453 }] }) === true && claimsSettled(undefined) === true,
+    )
+    check(
+      'xchain settlement: the persisted record round-trips through the narrow reader, and junk does not',
+      settlementOf({ settlement: refunded })?.refundReason === 'INTENT_SUBMIT_FAILED' &&
+        settlementOf({ settlement: { status: 'nope' } }) === null &&
+        settlementOf({ settlement: { status: 'success', txUrl: 'javascript:alert(1)' } })?.txUrl === undefined,
+    )
+
+    // Words — what the user actually reads.
+    const refundCopy = settlementCopy(refunded, dep!)
+    check(
+      'xchain settlement: a refund says the amount, the wallet and the ORIGIN chain — and that nothing reached the destination',
+      refundCopy.tone === 'warn' &&
+        refundCopy.line === 'Refunded: 0.9976 USDC came back to your wallet on Base' &&
+        /could not submit the swap/.test(refundCopy.detail ?? '') &&
+        /INTENT_SUBMIT_FAILED/.test(refundCopy.detail ?? '') &&
+        /Nothing reached Ethereum/.test(refundCopy.detail ?? ''),
+      JSON.stringify(refundCopy),
+    )
+    check('xchain settlement: a delivery says what landed and where', settlementCopy(success, dep!).line === 'Delivered 0.9993 USDC on Ethereum' && settlementCopy(success, dep!).tone === 'ok')
+    check(
+      'xchain settlement: mid-flight reads "Still settling" — never "settled", never a delivery claim',
+      (['settling', 'awaiting-deposit', 'unknown'] as const).every((st) => {
+        const c = settlementCopy({ status: st, terminal: false }, dep!)
+        return c.line === 'Still settling' && c.tone === 'muted' && !/delivered|settled/i.test(c.line)
+      }),
+    )
+    check(
+      'xchain settlement: an unmapped refund code still reaches the user verbatim, with no invented meaning',
+      refundReasonWords('WAT_IS_THIS') === null && /WAT_IS_THIS/.test(settlementCopy({ status: 'refunded', terminal: true, refunded: '1', refundReason: 'WAT_IS_THIS' }, dep!).detail ?? ''),
+    )
+    check('xchain settlement: the queue row names the venue status and the outcome in one line', /^REFUNDED: Refunded: 0\.9976 USDC came back/.test(settlementDetailLine(refunded, dep!)))
+    check(
+      'xchain settlement: the poll schedule is 10s then 20s (a swap settles in minutes, not milliseconds)',
+      nextPollDelayMs(0) === SETTLEMENT_FIRST_POLL_MS && nextPollDelayMs(SETTLEMENT_FAST_POLLS) === SETTLEMENT_SLOW_POLL_MS && SETTLEMENT_FIRST_POLL_MS === 10_000 && SETTLEMENT_SLOW_POLL_MS === 20_000,
+    )
+
+    // ── Wiring: the surfaces that used to claim it ─────────────────────────
+    const ciSrc = readFileSync('components/ChatInterface.tsx', 'utf8')
+    check(
+      'xchain settlement: the chat\'s "signed & settled" row is gated on claimsSettled, and the card mounts the watcher',
+      /signedTxsOf\(msg\.meta\)\.length > 0 &&\s*\n\s*claimsSettled\(msg\.meta\) &&/.test(ciSrc) && /<XchainSettlement/.test(ciSrc),
+      'the chat card can claim settlement again',
+    )
+    check(
+      'xchain settlement: a terminal refund is a failures-queue row, not one browser\'s red text',
+      /kind: REFUNDED_KIND/.test(ciSrc) && /reportWalletRefusal\(/.test(ciSrc),
+      'a refund would be invisible outside the tab that saw it',
+    )
+    check(
+      'xchain settlement: the share page renders the venue\'s outcome and the log header stops asserting "settled"',
+      /<SettlementLine/.test(readFileSync('app/p/[slug]/page.tsx', 'utf8')) &&
+        /const settled = claimsSettled\(meta\)/.test(readFileSync('components/SignedTxLines.tsx', 'utf8')),
+    )
+    check(
+      'xchain settlement: a receipt is never minted for a swap the venue didn\'t deliver (fail closed)',
+      /if \(!claimsSettled\(msg\.meta\)\) return null/.test(readFileSync('lib/share-receipts.ts', 'utf8')),
+    )
+
+    // ── The route ─────────────────────────────────────────────────────────
+    const post = (body: unknown) =>
+      fetch(`${BASE}/api/xchain/status`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    check('xchain status route: a malformed deposit address → 400', (await post({ depositAddress: 'nope', originChain: 'base', destinationChain: 'ethereum' })).status === 400)
+    check('xchain status route: both chain words are required → 400', (await post({ depositAddress: DEP })).status === 400)
+    // Live: that deposit address is a permanent public record on the venue.
+    let live: { status?: number; outcome?: SettlementOutcome } = {}
+    for (let i = 0; i < 3 && live.status !== 200; i++) {
+      const res = await post({ depositAddress: DEP, originChain: 'base', destinationChain: 'ethereum', signedHashes: [DEPOSIT_TX] })
+      live = { status: res.status, outcome: ((await res.json().catch(() => ({}))) as { outcome?: SettlementOutcome }).outcome }
+      if (live.status !== 200) await new Promise((r) => setTimeout(r, 1_500))
+    }
+    check(
+      'xchain status route (live): the swap that shipped as settled reads REFUNDED, with the refund linked on Base',
+      live.status === 200 && live.outcome?.status === 'refunded' && live.outcome.txHash === REFUND_TX && live.outcome.txUrl === `https://basescan.org/tx/${REFUND_TX}`,
+      JSON.stringify(live).slice(0, 220),
+    )
+
+    // ── Persistence + the share page, end to end ──────────────────────────
+    const xChat = await (
+      await fetch(`${BASE}/api/chats`, { method: 'POST', headers: CJ, body: JSON.stringify({ title: 'test:api xchain settlement', activeServerIds: [] }) })
+    ).json()
+    await fetch(`${BASE}/api/chats/${xChat.id}/messages`, { method: 'POST', headers: CJ, body: JSON.stringify({ role: 'user', content: 'Swap 1 USDC from base to ethereum' }) })
+    const xMsg = await (
+      await fetch(`${BASE}/api/chats/${xChat.id}/messages`, {
+        method: 'POST',
+        headers: CJ,
+        body: JSON.stringify({
+          role: 'assistant',
+          content: 'Harness cross-chain build.',
+          meta: {
+            txRequest: { to: DEP, data: '0x', value: '1', chainId: 8453, action: 'deposit' },
+            buildPath: 'native-cross-chain',
+            signed: [{ hash: DEPOSIT_TX, chainId: 8453, title: 'deposit' }],
+            workingContext: { v: 1, age: 0, pending: crossChainPending({ amount: '1', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'ethereum' }, DEP, 'Swap 1 USDC · Base → Ethereum') },
+          },
+        }),
+      })
+    ).json()
+    const settleUrl = `${BASE}/api/chats/${xChat.id}/messages/${xMsg.id}/settlement`
+    check('xchain settlement write-back without a session → 401', (await fetch(settleUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ outcome: refunded }) })).status === 401)
+    check('xchain settlement write-back refuses a mid-flight outcome → 400', (await fetch(settleUrl, { method: 'POST', headers: CJ, body: JSON.stringify({ outcome: { status: 'settling', terminal: false } }) })).status === 400)
+    check('xchain settlement write-back refuses junk → 400', (await fetch(settleUrl, { method: 'POST', headers: CJ, body: JSON.stringify({ outcome: { status: 'delivered-probably' } }) })).status === 400)
+    const wrote = await (await fetch(settleUrl, { method: 'POST', headers: CJ, body: JSON.stringify({ outcome: refunded }) })).json()
+    check('xchain settlement write-back records the venue\'s verdict on the message', wrote.settlement?.status === 'refunded' && wrote.settlement?.refundReason === 'INTENT_SUBMIT_FAILED', JSON.stringify(wrote).slice(0, 200))
+    const xShared = await (await fetch(`${BASE}/api/chats/${xChat.id}`, { method: 'PATCH', headers: CJ, body: JSON.stringify({ isPublic: true }) })).json()
+    const xHtml = flat(await (await fetch(`${BASE}/p/${xShared.publicSlug}`)).text())
+    check(
+      'xchain settlement: the SHARE page tells the same story — refunded, on Base, and no "settled" claim anywhere',
+      xHtml.includes('Refunded: 0.9976 USDC came back to your wallet on Base') &&
+        xHtml.includes(`https://basescan.org/tx/${REFUND_TX}`) &&
+        !xHtml.includes('Signed &amp; settled on-chain') &&
+        xHtml.includes('Signed on-chain'),
+      'the share page still claims a settled swap',
+    )
   }
 
 

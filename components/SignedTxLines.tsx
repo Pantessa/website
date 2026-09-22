@@ -6,6 +6,7 @@
 
 import { ExternalLink } from 'lucide-react'
 import { chainById } from '@/lib/chains'
+import { claimsSettled } from '@/lib/xchain-settlement'
 
 export interface SignedTx {
   hash: string
@@ -28,10 +29,15 @@ export function signedTxsOf(meta: unknown): SignedTx[] {
 export default function SignedTxLines({ meta }: { meta: unknown }) {
   const txs = signedTxsOf(meta)
   if (txs.length === 0) return null
+  // A cross-chain deposit confirming proves a TRANSFER, not a swap: this
+  // header may only say "settled" once the venue said SUCCESS
+  // (lib/xchain-settlement claimsSettled). Everything else — a same-chain
+  // swap, a send, a stake — is unchanged.
+  const settled = claimsSettled(meta)
   return (
     <div className="mt-2.5 pt-2 border-t border-[var(--line)] space-y-1">
       <div className="text-[11px] mono text-[color:var(--muted)]">
-        ✍️ Signed &amp; settled on-chain — {txs.length} transaction{txs.length === 1 ? '' : 's'}
+        ✍️ Signed{settled ? ' & settled' : ''} on-chain — {txs.length} transaction{txs.length === 1 ? '' : 's'}
       </div>
       {txs.map((tx) => {
         const chain = chainById(tx.chainId)
