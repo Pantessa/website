@@ -49,6 +49,7 @@ import {
 import { getActiveGrant, recordLedger, spentTodayUsd, spentTotalUsd, toPolicy } from '@/lib/grant-store'
 import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, TREASURY_ADDRESS, swapFeeAtoms } from '@/lib/fees'
 import { checkFillAgainstTape, startSwapTape } from '@/lib/stock-tape'
+import { UnknownTokenError } from '@/lib/token-list'
 
 // Standard v4 fee → tickSpacing pairs (mirrors v3's tier scan; v4 has no
 // enumerable tier list, these are the factory-conventional no-hook keys).
@@ -680,8 +681,8 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
   }
   const sellAddr = resolveToken(params.sellToken, chainId) as `0x${string}` | null
   const buyAddr = resolveToken(params.buyToken, chainId) as `0x${string}` | null
-  if (!sellAddr) throw new Error(`Unknown sell token on ${chain.name}: ${params.sellToken}`)
-  if (!buyAddr) throw new Error(`Unknown buy token on ${chain.name}: ${params.buyToken}`)
+  if (!sellAddr) throw new UnknownTokenError('sell', params.sellToken, chain.name)
+  if (!buyAddr) throw new UnknownTokenError('buy', params.buyToken, chain.name)
   if (sellAddr === buyAddr) throw new Error('sellToken and buyToken must differ.')
   const sellDec = tokenDecimals(params.sellToken, chainId) ?? 18
   const buyDec = tokenDecimals(params.buyToken, chainId) ?? 18

@@ -30,6 +30,8 @@ import ChartSketch from './ChartSketch'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
 import '../comm.css'
+import { canTradeAsk } from '@/lib/trade-venue-gate'
+import { useTradable } from '@/lib/use-tradable'
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
 const hostOf = (url: string) => {
@@ -221,6 +223,7 @@ function PostCard({
   const [note, setNote] = useState<string | null>(null)
   const mine = !!sessionAddress && sessionAddress.toLowerCase() === post.author
   const held = useHeld()
+  const tradable = useTradable()
 
   const loadComments = useCallback(async () => {
     const r = await fetch(`/api/posts/${post.id}`, { cache: 'no-store' })
@@ -291,7 +294,7 @@ function PostCard({
 
   // A post's Sell asks show only to a reader whose wallet holds the token
   // (lib/sell-gate): the author's idea, not the reader's option otherwise.
-  const shownAsks = post.asks.filter((a) => canSellAsk(a, held))
+  const shownAsks = post.asks.filter((a) => canSellAsk(a, held) && canTradeAsk(a, tradable))
   const chip = (ask: string, i: number) =>
     onAsk ? (
       <button key={i} type="button" className="mkp__chip" onClick={() => onAsk(ask)} title="Sends this ask in chat — your wallet signs">

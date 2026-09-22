@@ -1800,3 +1800,29 @@ model TeamMark {
 
   @@map("team_marks")
 }
+
+/// Can a venue actually FILL this symbol on this chain, on this side? One row
+/// per (symbol, chain, side), refreshed by /api/cron/tradability, read by
+/// /api/markets/tradable and by the /markets server render. The verdict comes
+/// from the real cascade (lib/venue-preflight over lib/swap-exec), never from
+/// a bespoke quote ladder, so it cannot drift from what a signature would do.
+/// Absent or stale = unknown, which OFFERS the action (lib/tradability).
+model SymbolTradability {
+  symbol    String
+  chainId   Int      @map("chain_id")
+  /// 'buy' | 'sell'
+  side      String
+  /// 'fillable' | 'no-venue'
+  verdict   String
+  /// The cascade's own words for a refusal — what a surface says in place of
+  /// the chip it dropped.
+  reason    String?
+  /// The order size the verdict was measured at (lib/tradability
+  /// TRADABILITY_PROBE_USD — the smallest chip any surface offers).
+  sizeUsd   Decimal  @map("size_usd") @db.Decimal(12, 2)
+  checkedAt DateTime @default(now()) @map("checked_at") @db.Timestamptz(6)
+
+  @@id([symbol, chainId, side])
+  @@index([checkedAt])
+  @@map("symbol_tradability")
+}

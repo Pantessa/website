@@ -204,3 +204,8 @@
 .mkt-route__more .mkt-route__ticket-note { grid-column: 1 / -1; font-size: 10px; letter-spacing: 0.06em; color: var(--muted-2); }
 .mkt-route__toggle { background: none; border: 0; padding: 0; font: inherit; font-size: 10px; letter-spacing: 0.06em; color: var(--muted-2); cursor: pointer; text-decoration: underline dotted; white-space: nowrap; }
 .mkt-route__toggle:hover { color: var(--accent); }
+
+/* A row whose venues have all refused keeps its seat and loses its buttons
+   (lib/trade-venue-gate, 2026-09-22) — quiet, so the ledger still reads as a
+   ledger, and titled so the reason is one hover away. */
+.mkt-quick__none { font-size: 9px; letter-spacing: 0.12em; color: var(--muted-2); border: 1px dashed var(--line); border-radius: 999px; padding: 2px 7px; white-space: nowrap; cursor: default; }

@@ -59,6 +59,8 @@ import { seriesVar } from '@/lib/markets-look'
 import { VolumeProfile } from './volume-profile'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
+import { canTradeAsk } from '@/lib/trade-venue-gate'
+import { useTradable } from '@/lib/use-tradable'
 
 const POLL_MS: Record<ChartTf, number> = { '15m': 8_000, '1h': 15_000, '4h': 20_000, '1d': 30_000 }
 const POOL_POLL_MS = 30_000
@@ -1092,6 +1094,9 @@ export default function MarketChart({
   // A level's Sell chips ("Sell here", "Sell ETH now") show only while the
   // connected wallet holds the symbol (lib/sell-gate): nothing to sell, no chip.
   const held = useHeld()
+  // …and only while a venue can fill it (lib/trade-venue-gate): a level on a
+  // chart nothing can trade is a note to yourself, not an order.
+  const tradable = useTradable()
   const offersFor = useCallback(
     (line: ChartLine): LineActionOffer[] => {
       if (!pair || last === null) return []
@@ -1101,9 +1106,9 @@ export default function MarketChart({
           : line.kind === 'zone'
             ? composeZoneActions({ symbol: pair.symbol, source: pair.source, p1: line.p1, p2: line.p2, last, usd: actionUsd })
             : []
-      return offers.filter((o) => canSellAsk(o.action.ask, held))
+      return offers.filter((o) => canSellAsk(o.action.ask, held) && canTradeAsk(o.action.ask, tradable))
     },
-    [pair, last, actionUsd, held],
+    [pair, last, actionUsd, held, tradable],
   )
 
   const premium = poolPremiumPct(pool, last)

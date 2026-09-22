@@ -55,13 +55,34 @@ import { useSession } from '@/lib/session'
 import { useSymbolFills } from '@/lib/chart-fills'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
+import { canTradeAsk } from '@/lib/trade-venue-gate'
+import { seedTradable } from '@/lib/tradable-read'
+import type { TradabilityMap } from '@/lib/tradability'
+import { useTradable } from '@/lib/use-tradable'
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
 
 type FsDoc = Document & { webkitExitFullscreen?: () => Promise<void>; webkitFullscreenElement?: Element | null }
 type FsEl = HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> }
 
-export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = null }: { symbol: string; initialTab?: MarketTab; initialTf?: ChartTf; initialVs?: string | null }) {
+export default function SymbolPage({
+  symbol,
+  initialTab,
+  initialTf,
+  initialVs = null,
+  tradable: seeded,
+}: {
+  symbol: string
+  initialTab?: MarketTab
+  initialTf?: ChartTf
+  initialVs?: string | null
+  /** The measured venue verdicts from the server render (lib/tradability-store),
+   *  so the act strip is right on the first paint. */
+  tradable?: TradabilityMap
+}) {
+  // Idempotent, and deliberately during render — the chips below read the
+  // shared store synchronously (lib/tradable-read).
+  seedTradable(seeded)
   const pair = useMemo(() => chartPairFor(symbol), [symbol])
   const sym = pair?.symbol ?? symbol
   const name = symbolName(sym)
@@ -176,6 +197,7 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
   // A chartless token's Sell chip waits on the same rule as every other Sell
   // (lib/sell-gate): the wallet has to hold it.
   const held = useHeld()
+  const tradable = useTradable()
   const fallbackSell = `Sell $50 of ${sym}`
   // What's on screen (VIZ's onViewport, bar open times) — AskChart's context.
   const [viewport, setViewport] = useState<{ from: number; to: number; tf: ChartTf } | null>(null)
@@ -315,10 +337,12 @@ export default function SymbolPage({ symbol, initialTab, initialTf, initialVs = 
                     sentence, guarded, signed only by your wallet.
                   </p>
                   <div className="mkt-chips mt-3 justify-center">
-                    <Link href={promptHref(`Buy $50 of ${sym}`)} className="mkt-chip mkt-chip--buy" onClick={sendOnClick(`Buy $50 of ${sym}`)}>
-                      Buy {sym}
-                    </Link>
-                    {canSellAsk(fallbackSell, held) && (
+                    {canTradeAsk(`Buy $50 of ${sym}`, tradable) && (
+                      <Link href={promptHref(`Buy $50 of ${sym}`)} className="mkt-chip mkt-chip--buy" onClick={sendOnClick(`Buy $50 of ${sym}`)}>
+                        Buy {sym}
+                      </Link>
+                    )}
+                    {canSellAsk(fallbackSell, held) && canTradeAsk(fallbackSell, tradable) && (
                       <Link href={promptHref(fallbackSell)} className="mkt-chip" onClick={sendOnClick(fallbackSell)}>
                         Sell {sym}
                       </Link>

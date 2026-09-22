@@ -52,6 +52,7 @@ import {
   type GuardrailReport,
 } from '@/lib/tx-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, spentTotalUsd, toPolicy } from '@/lib/grant-store'
+import { UnknownTokenError } from '@/lib/token-list'
 
 /** Spend-policy attribution host for LiFi-settled swaps. */
 export const LIFI_POLICY_HOST = 'lifi.yeetful.com'
@@ -413,8 +414,8 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
 
   const sellAddr = resolveToken(params.sellToken, chainId) as `0x${string}` | null
   const buyAddr = resolveToken(params.buyToken, chainId) as `0x${string}` | null
-  if (!sellAddr) throw new Error(`Unknown sell token on ${chain.name}: ${params.sellToken}`)
-  if (!buyAddr) throw new Error(`Unknown buy token on ${chain.name}: ${params.buyToken}`)
+  if (!sellAddr) throw new UnknownTokenError('sell', params.sellToken, chain.name)
+  if (!buyAddr) throw new UnknownTokenError('buy', params.buyToken, chain.name)
   if (sellAddr === buyAddr) throw new Error('sellToken and buyToken must differ.')
   const sellDec = tokenDecimals(params.sellToken, chainId) ?? 18
   const buyDec = tokenDecimals(params.buyToken, chainId) ?? 18

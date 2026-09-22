@@ -3,6 +3,7 @@ import Footer from '@/components/Footer'
 import MarketsIndex from '@/components/markets/shell/MarketsIndex'
 import MarketsShell from '@/components/markets/shell/MarketsShell'
 import { readTrending } from './trending'
+import { readTradability } from '@/lib/tradability-store'
 
 // /markets — the front door to the symbol pages, laid out as a full-screen
 // terminal. The frame is a grid: the market data (MarketsIndex's <main>) and
@@ -29,10 +30,13 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic'
 
 export default async function MarketsPage() {
-  const trending = await readTrending()
+  // Both reads are fail-soft and cached per server: the strip, and which
+  // rows can actually be acted on (lib/tradability-store — an empty answer
+  // offers everything, exactly as before the cache existed).
+  const [trending, tradable] = await Promise.all([readTrending(), readTradability()])
   return (
     <MarketsShell>
-      <MarketsIndex trending={trending} />
+      <MarketsIndex trending={trending} tradable={tradable} />
       <div className="mkt-frame__foot">
         <Footer />
       </div>

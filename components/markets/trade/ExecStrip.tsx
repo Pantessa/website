@@ -22,6 +22,9 @@ import { execAsks, type ExecSide } from '@/lib/trade-asks'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
 import './trade.css'
+import { canTradeAsk, tradeTarget } from '@/lib/trade-venue-gate'
+import { useTradable } from '@/lib/use-tradable'
+import { noVenueNote } from '@/lib/tradability'
 
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
 
@@ -52,7 +55,30 @@ export default function ExecStrip({
   usd?: number
 }) {
   const held = useHeld()
-  const asks = useMemo(() => execAsks(pair, { usd, last: last ?? undefined }).filter((a) => canSellAsk(a.ask, held)), [pair, usd, last, held])
+  const tradable = useTradable()
+  const all = useMemo(() => execAsks(pair, { usd, last: last ?? undefined }), [pair, usd, last])
+  // Two gates, one place: nothing to sell (lib/sell-gate), and nothing that
+  // can fill it (lib/trade-venue-gate). The venue one SAYS SO — a symbol
+  // whose market is shut keeps its page, and the strip explains the silence
+  // instead of rendering nothing (Nate, 2026-09-22).
+  const asks = useMemo(() => all.filter((a) => canSellAsk(a.ask, held) && canTradeAsk(a.ask, tradable)), [all, held, tradable])
+  const shut = useMemo(() => {
+    const sides = new Set<'buy' | 'sell'>()
+    for (const a of all) {
+      if (asks.includes(a)) continue
+      const t = tradeTarget(a.ask)
+      if (t && !canTradeAsk(a.ask, tradable)) sides.add(t.side)
+    }
+    return [...sides]
+  }, [all, asks, tradable])
+  if (asks.length === 0 && shut.length > 0) {
+    return (
+      <div className="sym__act" aria-label={`Act on ${symbol}`} data-acts={0} data-shut={shut.join('+')}>
+        <span className="sym__act-eyebrow mono">ACT ON {pair.symbol} · NO VENUE RIGHT NOW</span>
+        <p className="sym__act-shut">{noVenueNote(pair.symbol, shut)}</p>
+      </div>
+    )
+  }
   if (asks.length === 0) return null
   // A chip is a real link (the /chat prefill: no-JS, a new tab); a plain
   // click sends through the page's act door instead.

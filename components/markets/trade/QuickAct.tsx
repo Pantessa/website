@@ -10,11 +10,27 @@
 import { useMemo, type MouseEvent as ReactMouseEvent } from 'react'
 import type { ChartPair } from '@/lib/charts'
 import { quickActs } from '@/lib/symbol-venues'
+import { canTradeAsk } from '@/lib/trade-venue-gate'
+import { useTradable } from '@/lib/use-tradable'
 import './trade.css'
 
 export default function QuickAct({ symbol, pair, onAsk, className = '' }: { symbol: string; pair: ChartPair; onAsk: (ask: string) => void; className?: string }) {
-  const acts = useMemo(() => quickActs(symbol, pair), [symbol, pair])
-  if (acts.length === 0) return null
+  const tradable = useTradable()
+  // A chip for a symbol no venue can fill is a dead button
+  // (lib/trade-venue-gate). The row KEEPS its chart, its quote and its link —
+  // only the buttons go, and the seat says so rather than sitting blank.
+  const all = useMemo(() => quickActs(symbol, pair), [symbol, pair])
+  const acts = useMemo(() => all.filter((a) => canTradeAsk(a.ask, tradable)), [all, tradable])
+  if (acts.length === 0) {
+    if (all.length === 0) return null
+    return (
+      <span className={`mkt-quick ${className}`} data-acts={0} data-shut="1">
+        <span className="mkt-quick__none mono" title={`No venue can fill ${pair.symbol} right now — the chart stays, the order doesn't.`}>
+          NO VENUE
+        </span>
+      </span>
+    )
+  }
   const fire = (ask: string) => (e: ReactMouseEvent<HTMLButtonElement>) => {
     e.preventDefault()
     e.stopPropagation() // the row itself is a link to /t/<sym>

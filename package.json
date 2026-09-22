@@ -45,7 +45,8 @@
     "db:tag": "tsx scripts/tag-capabilities.ts",
     "db:embed": "tsx scripts/embed-catalog.ts",
     "guard:test": "tsx guard-sdk/run-tests.ts",
-    "guard:sync": "tsx scripts/guard-sync-check.ts"
+    "guard:sync": "tsx scripts/guard-sync-check.ts",
+    "probe:tradable": "tsx scripts/probe-tradable.ts"
   },
   "dependencies": {
     "@coinbase/cdp-core": "^0.0.111",

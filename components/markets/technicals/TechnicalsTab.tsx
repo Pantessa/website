@@ -19,6 +19,8 @@ import { RATING_LABELS, type ChartAction, type Pivots, type Row, type Technicals
 import RatingGauge, { ratingColor } from './RatingGauge'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
+import { canTradeAsk } from '@/lib/trade-venue-gate'
+import { useTradable } from '@/lib/use-tradable'
 
 type Res = TechnicalsApi | TechnicalsRefusal
 const isRefusal = (r: Res): r is TechnicalsRefusal => 'error' in r
@@ -137,7 +139,8 @@ export function VerdictChips({ chips: all, onAsk, compact = false }: { chips: Ch
   // A sell verdict's Sell chips show only to a wallet that holds the symbol
   // (lib/sell-gate); with nothing left to offer, no chip row.
   const held = useHeld()
-  const chips = all.filter((c) => canSellAsk(c.ask, held))
+  const tradable = useTradable()
+  const chips = all.filter((c) => canSellAsk(c.ask, held) && canTradeAsk(c.ask, tradable))
   if (chips.length === 0) return null
   const cls = (kind: ChartAction['kind']) =>
     `rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors [@media(hover:none)]:min-h-10 ${

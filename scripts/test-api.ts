@@ -27158,6 +27158,168 @@ async function main() {
         return sgSellLiteral.test(code) && !code.includes('canSellAsk(')
       })
     check('sell gate (fence): no component under components/ writes a Sell sentence ("Sell $…", "Sell all my …") without canSellAsk', sgFence.length === 0, sgFence.join(', '))
+    // ── VENUE GATE: a chip needs a venue that can fill it ────────────────
+    // (Nate, 2026-09-22, on the /markets row for AMBA: "if there is no way to
+    // swap a token we should not offer a button to do it… I like keeping the
+    // stock so people can follow".) The rule is pure and reads the SENTENCE,
+    // like the sell gate above; the verdicts are MEASURED by the cascade
+    // itself (lib/venue-preflight) and cached (lib/tradability-store).
+    {
+      const { canFill, fillRefusal, noVenueNote, tradeLegsFor, VENUE_STABLE, TRADABILITY_MAX_AGE_MS, TRADABILITY_PROBE_USD } = await import('../lib/tradability')
+      const { canTradeAsk, tradeTarget, fillableSides } = await import('../lib/trade-venue-gate')
+      const { verdictOfThrow } = await import('../lib/venue-preflight')
+      const { canonicalSwapToken } = await import('../lib/swap-exec')
+      const { chartPairFor: vgPair } = await import('../lib/charts')
+      const { APP_CHAINS: VG_CHAINS, primaryStable: vgStable } = await import('../lib/chains')
+
+      // 1. The stable each chain quotes against mirrors the registry — adding
+      // a chain without teaching this map would measure the wrong leg.
+      const vgStableDrift = VG_CHAINS.filter((c) => VENUE_STABLE[c.id] !== vgStable(c.id)?.symbol).map((c) => `${c.name}: map ${VENUE_STABLE[c.id]} vs registry ${vgStable(c.id)?.symbol}`)
+      check('venue gate: lib/tradability VENUE_STABLE names the same stable as the registry on every app chain', vgStableDrift.length === 0, vgStableDrift.join(' | '))
+
+      // 2. The legs a symbol's chips would execute — the exact swaps measured.
+      const legStr = (sym: string) => tradeLegsFor(sym, vgPair(sym)!).map((l) => `${l.sellToken}→${l.buyToken}@${l.chainId}`).sort().join(' ')
+      check(
+        'venue gate: the legs come from the venue map itself — a stock is USDG both ways on 4663, ETH is every spot chain both ways, and a perp chart or a non-EVM home has no swap leg at all (its fences are the venue’s)',
+        legStr('AAPL') === 'AAPL→USDG@4663 USDG→AAPL@4663' &&
+          tradeLegsFor('ETH', vgPair('ETH')!).length === 8 &&
+          tradeLegsFor('ETH', vgPair('ETH')!).every((l) => l.sellToken === 'ETH' || l.buyToken === 'ETH') &&
+          tradeLegsFor('HYPE', vgPair('HYPE')!).length === 0 &&
+          tradeLegsFor('SOL', vgPair('SOL')!).length === 0,
+        `AAPL=${legStr('AAPL')} · ETH=${tradeLegsFor('ETH', vgPair('ETH')!).length} · HYPE=${tradeLegsFor('HYPE', vgPair('HYPE')!).length} · SOL=${tradeLegsFor('SOL', vgPair('SOL')!).length}`,
+      )
+
+      // 3. The verdict rule: only a MEASURED, FRESH refusal hides anything.
+      const nowVg = Date.now()
+      const legAt = (side: 'buy' | 'sell', chainId: number, verdict: 'fillable' | 'no-venue', ageMs = 0) => ({ chainId, side, verdict, reason: 'No Uniswap v3 or v4 pool on Robinhood Chain can fill it.', checkedAt: new Date(nowVg - ageMs).toISOString() }) as const
+      const ambaShut = { symbol: 'AMBA', legs: [legAt('buy', 4663, 'no-venue'), legAt('sell', 4663, 'no-venue')] }
+      const aaplOk = { symbol: 'AAPL', legs: [legAt('buy', 4663, 'fillable'), legAt('sell', 4663, 'fillable')] }
+      const staleShut = { symbol: 'AMBA', legs: [legAt('buy', 4663, 'no-venue', TRADABILITY_MAX_AGE_MS + 1_000)] }
+      const oneChain = { symbol: 'MKR', legs: [legAt('buy', 1, 'no-venue'), legAt('buy', 8453, 'fillable')] }
+      check(
+        'venue gate: unknown offers (no reading, a stale reading, a chain the rule can’t place); a fresh measured refusal hides; one live chain keeps the chainless chip and only the dead chain’s row goes',
+        canFill(null, 'buy') && canFill(undefined, 'buy') && canFill(staleShut, 'buy') &&
+          !canFill(ambaShut, 'buy') && !canFill(ambaShut, 'sell') && canFill(aaplOk, 'buy') &&
+          canFill(oneChain, 'buy') && !canFill(oneChain, 'buy', 1) && canFill(oneChain, 'buy', 8453),
+      )
+      check(
+        'venue gate: fillableSides names what is left, and fillRefusal hands back the cascade’s own words for what is gone',
+        fillableSides(ambaShut).length === 0 && fillableSides(aaplOk).join('+') === 'buy+sell' && fillableSides(null).join('+') === 'buy+sell' &&
+          (fillRefusal(ambaShut, 'buy') ?? '').includes('No Uniswap v3 or v4 pool') && fillRefusal(aaplOk, 'buy') === null,
+      )
+
+      // 4. The sentence rule: what it judges, and what it must never touch.
+      const vgMap = { AMBA: ambaShut, AAPL: aaplOk, MKR: oneChain }
+      const judged = ['Buy $25 of AMBA', 'Buy $50 of AMBA', 'Sell $50 of AMBA', 'Sell all my AMBA for USDG on Robinhood Chain', 'Buy $25 of AMBA with a card', 'Fund robinhood chain with $34 from Optimism, then buy $50 of AMBA']
+      check(
+        'venue gate: every market buy/sell of a shut symbol is hidden — the index chip, the header chip, a sell-all, a CARD buy (it ends in the same swap) and the buy clause of a compound ask',
+        judged.every((a) => !canTradeAsk(a, vgMap)) && judged.every((a) => tradeTarget(a)?.symbol === 'AMBA'),
+        judged.filter((a) => canTradeAsk(a, vgMap)).join(' | '),
+      )
+      const untouched = [
+        'limit order: buy 0.0198 ETH for at most 51.23 USDC on Base', 'limit order: sell 0.0198 AMBA for at least 51.23 USDC on Base',
+        '2x Long $25 of AMBA on Hyperliquid', 'Short $25 of AMBA on Hyperliquid', 'Protect my AMBA in my wallet with a 5% stop',
+        'Stake 0.0104 ETH on Lido', 'Supply $25 of USDC to Aave at the best rate', 'Borrow 25 USDC on Aave',
+        'Swap 20 USDG from robinhood to USDC on base', 'Deposit 20 USDC to Hyperliquid',
+      ]
+      check(
+        'venue gate: a CoW limit order (its own book), a perp, a guardian, a stake, a supply, a borrow, a bridge and an HL deposit are not same-chain swaps — the rule never touches them, whatever the map says',
+        untouched.every((a) => canTradeAsk(a, vgMap)),
+        untouched.filter((a) => !canTradeAsk(a, vgMap)).join(' | '),
+      )
+      check(
+        'venue gate: a chip for a live symbol, a chainless chip whose other chain is alive, and a sentence naming a chain the rule can’t place all still render',
+        canTradeAsk('Buy $25 of AAPL', vgMap) && canTradeAsk('Sell $50 of AAPL', vgMap) && canTradeAsk('Buy $50 of MKR', vgMap) &&
+          !canTradeAsk('Buy $50 of MKR on Ethereum', vgMap) && canTradeAsk('Buy $50 of MKR on Base', vgMap) && canTradeAsk('Buy $50 of MKR on Polygon', vgMap) &&
+          canTradeAsk('Buy $25 of AMBA', null) && canTradeAsk('Buy $25 of AMBA', {}),
+      )
+      check('venue gate: the note a page shows in place of the buttons names the symbol and what is gone, and never claims the chart is gone too', noVenueNote('AMBA', ['buy', 'sell']).includes('buy or sell AMBA') && noVenueNote('AMBA', ['buy', 'sell']).includes('the chart stays'))
+
+      // 5. The measured half: which thrown cascade errors are DEFINITE misses.
+      // Before this, `NoV3PoolError` (rethrown on every chain that pins no v4)
+      // and an unlistable ticker both read as "couldn't tell", which is what
+      // made the pre-flight blind to the whole crypto board.
+      const { NoV3PoolError } = await import('../lib/uniswap-venue')
+      const { NoLifiRouteError } = await import('../lib/lifi-venue')
+      const { UnknownTokenError } = await import('../lib/token-list')
+      const { TapeUnavailableError } = await import('../lib/stock-tape')
+      check(
+        'venue gate (measure): no pool, an unlistable ticker, no LiFi route and a stock with no feed at all are venue misses; a timeout, a rate-limited node and a tape that is merely down stay unknown and OFFER',
+        verdictOfThrow(new NoV3PoolError('No Uniswap v3 pool on Ethereum can fill USDC → MKR for this amount.')).kind === 'no-venue' &&
+          verdictOfThrow(new UnknownTokenError('buy', 'MKR', 'Base')).kind === 'no-venue' &&
+          verdictOfThrow(new NoLifiRouteError('no route')).kind === 'no-venue' &&
+          verdictOfThrow(new TapeUnavailableError('no feed for CASHCAT', 'CASHCAT', 'no-feed', 'no quote from Robinhood or Yahoo')).kind === 'no-venue' &&
+          verdictOfThrow(new TapeUnavailableError('the tape is down', 'AAPL', 'down', 'the tape did not answer')).kind === 'unknown' &&
+          verdictOfThrow(new Error('The request took too long to respond.')).kind === 'unknown' &&
+          verdictOfThrow(new Error('HTTP request failed.')).kind === 'unknown',
+      )
+      check(
+        'venue gate (measure): a refusal is confirmed by a SECOND read — one rate-limited burst on 4663 looks exactly like "no pool" and must not tell anyone a tradable stock is untradeable',
+        (await readFile('lib/venue-preflight.ts', 'utf8')).includes('const second = await onePass'),
+      )
+
+      // 6. "BTC" must buy BTC. Without the canonical form it resolves to
+      // NOTHING on Ethereum and Arbitrum and to a SQUAT on Base ("Big Tom
+      // Coin", 0x35c8…1a3d, from the dynamic list).
+      const { ensureTokenList: vgEnsure } = await import('../lib/token-list')
+      const { resolveToken: vgResolve } = await import('../lib/cow')
+      await Promise.all([vgEnsure(1), vgEnsure(8453), vgEnsure(42161)])
+      check(
+        'venue gate (BTC): the cascade swaps the canonical wrapped form on every chain — cbBTC/WBTC, never the "BTC" the dynamic list hands back (a squat on Base) — and no other ticker is aliased',
+        ['CBBTC', 'WBTC'].includes(canonicalSwapToken('BTC', 8453).toUpperCase()) &&
+          ['CBBTC', 'WBTC'].includes(canonicalSwapToken('BTC', 1).toUpperCase()) &&
+          ['CBBTC', 'WBTC'].includes(canonicalSwapToken('BTC', 42161).toUpperCase()) &&
+          vgResolve(canonicalSwapToken('BTC', 8453), 8453)?.toLowerCase() !== vgResolve('BTC', 8453)?.toLowerCase() &&
+          canonicalSwapToken('ETH', 8453) === 'ETH' && canonicalSwapToken('AAPL', 4663) === 'AAPL' && canonicalSwapToken('USDC', 1) === 'USDC',
+        `base=${canonicalSwapToken('BTC', 8453)} eth=${canonicalSwapToken('BTC', 1)} arb=${canonicalSwapToken('BTC', 42161)}`,
+      )
+
+      // 7. The public read (HTTP): a market fact, no wallet, unknown symbols
+      // simply absent — which every caller reads as "offer it".
+      const vgRes = await fetch(`${BASE}/api/markets/tradable?symbols=AAPL,AMBA,ETH,NOTASYMBOL`)
+      const vgBody = (await vgRes.json()) as { map?: Record<string, { symbol: string; legs: { chainId: number; side: string; verdict: string }[] }> }
+      const vgRows = Object.values(vgBody.map ?? {})
+      check(
+        `GET /api/markets/tradable: public, symbol-filtered, every row a measured (chain, side) verdict from the cascade; an unknown ticker is absent, never a guess (${vgRows.length} symbol${vgRows.length === 1 ? '' : 's'} measured)`,
+        vgRes.status === 200 && !vgBody.map?.NOTASYMBOL &&
+          vgRows.every((r) => r.legs.length > 0 && r.legs.every((l) => (l.side === 'buy' || l.side === 'sell') && (l.verdict === 'fillable' || l.verdict === 'no-venue') && Number.isInteger(l.chainId))),
+      )
+      check('venue gate: the cron that measures is fail-closed like every other cron — no CRON_SECRET, or the wrong one, and it does nothing', (await fetch(`${BASE}/api/cron/tradability`, { headers: { authorization: 'Bearer nope' } })).status === 401)
+      const vgCron = JSON.parse(await readFile('vercel.json', 'utf8')) as { crons: { path: string; schedule: string }[] }
+      check('venue gate: the refresher is scheduled, so a market that reopens gets its buttons back inside the freshness window', vgCron.crons.some((c) => c.path === '/api/cron/tradability') && TRADABILITY_MAX_AGE_MS >= 60 * 60_000 && TRADABILITY_PROBE_USD > 0)
+
+      // 8. The wiring: every surface that offers a Buy or Sell filters through
+      // the rule, and the two boards seed it from the SERVER so a chip never
+      // renders and then vanishes.
+      const vgSurfaces = [
+        'components/markets/trade/QuickAct.tsx', 'components/markets/trade/ExecStrip.tsx', 'components/markets/trade/RouteTable.tsx',
+        'components/markets/tabs/TradeTab.tsx', 'components/markets/chart/MarketChart.tsx', 'components/markets/technicals/TechnicalsTab.tsx',
+        'components/markets/ai/AiBrief.tsx', 'components/markets/ai/MorningTape.tsx', 'components/AskDoor.tsx',
+        'components/markets/watchlist/WatchlistRail.tsx', 'components/markets/community/CommunityTab.tsx', 'components/ChartOverlay.tsx',
+        'components/markets/shell/SymbolPage.tsx',
+      ]
+      const vgUngated: string[] = []
+      for (const f of vgSurfaces) {
+        const code = await readFile(f, 'utf8')
+        if (!code.includes('canTradeAsk(') || !code.includes('useTradable()')) vgUngated.push(f)
+      }
+      check('venue gate (wiring): the index row chips, the header strip, the route table, the Trade panel, chart levels, verdict chips, the AI brief, the morning tape, the ⌘K door, the watchlist row menu, community posts, the chat chart overlay and the chartless fallback each filter through canTradeAsk with useTradable()', vgUngated.length === 0, vgUngated.join(', '))
+      const vgMarketsPage = await readFile('app/markets/page.tsx', 'utf8')
+      const vgSymPage = await readFile('app/t/[symbol]/page.tsx', 'utf8')
+      check(
+        'venue gate (first paint): /markets and /t read the verdicts server-side and seed the shared store, so the chips are right on the first paint instead of appearing and then vanishing',
+        vgMarketsPage.includes('readTradability()') && vgSymPage.includes('readTradability()') &&
+          (await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')).includes('seedTradable(') &&
+          (await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')).includes('seedTradable('),
+      )
+      check(
+        'venue gate: a shut symbol keeps its page and says why — the act strip renders the note in the seat the chips had, and the route table drops the FUNDING rows too (money onto a chain that can’t complete the buy is the worst row on the page)',
+        (await readFile('components/markets/trade/ExecStrip.tsx', 'utf8')).includes('noVenueNote(') &&
+          (await readFile('components/markets/trade/RouteTable.tsx', 'utf8')).includes('buyShut') &&
+          (await readFile('app/x402-design.css', 'utf8')).includes('.sym__act-shut'),
+      )
+    }
+
     const heldPillSrc = await readFile('components/markets/shell/HeldPill.tsx', 'utf8')
     const heldReadSrc = await readFile('lib/held-read.ts', 'utf8')
     const watchHookSrc = await readFile('components/markets/watchlist/useWatchlists.ts', 'utf8')

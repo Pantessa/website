@@ -25,6 +25,8 @@ import { useSession } from '@/lib/session'
 import { AMOUNTS, SIDE_LABEL, STOPS, composeAsk, sideOf, sidesFor, type TradeAsk, type TradeSide } from '@/lib/trade-asks'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
+import { canTradeAsk } from '@/lib/trade-venue-gate'
+import { useTradable } from '@/lib/use-tradable'
 
 // The grammar (sides a pair can offer, the sentence per side, the default
 // chip row) lives in lib/trade-asks — pure, shared with the header strip,
@@ -51,7 +53,11 @@ export default function TradeTab({
   const { walletAddress } = useSession()
   const allSides = useMemo(() => sidesFor(pair), [pair])
   const held = useHeld()
-  const sides = useMemo(() => allSides.filter((s) => canSellAsk(composeAsk(pair, s), held)), [allSides, pair, held])
+  const tradable = useTradable()
+  const sides = useMemo(
+    () => allSides.filter((s) => canSellAsk(composeAsk(pair, s), held) && canTradeAsk(composeAsk(pair, s), tradable)),
+    [allSides, pair, held, tradable],
+  )
   // The picked side is kept while Sell is hidden: the panel shows (and sends)
   // the first side the moment the wallet stops holding the token, and Sell
   // comes back picked if a wallet that holds it returns.

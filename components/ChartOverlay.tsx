@@ -20,6 +20,8 @@ import MarketChart from '@/components/markets/chart/MarketChart'
 import TokenIcon from '@/components/TokenIcon'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
+import { canTradeAsk } from '@/lib/trade-venue-gate'
+import { useTradable } from '@/lib/use-tradable'
 
 export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => void } = {}) {
   const { chartDetail, setChartDetail, setComposerPrefill } = useYeetfulStore()
@@ -54,6 +56,7 @@ export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => vo
   }, [chartDetail, close])
 
   const held = useHeld()
+  const tradable = useTradable()
 
   if (typeof document === 'undefined') return null
 
@@ -129,14 +132,17 @@ export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => vo
 
               {/* act on it — a chip click sends the ask; the wallet signs */}
               <div className="flex flex-wrap items-center gap-1.5 border-t border-[var(--line)] pt-2.5">
+                {/* No venue can fill it, no button (lib/trade-venue-gate). */}
+                {canTradeAsk(`Buy $50 of ${pair.symbol}`, tradable) && (
                 <button
                   onClick={() => act(`Buy $50 of ${pair.symbol}`)}
                   className="rounded-lg border border-[var(--line-2)] px-2.5 py-1.5 text-[11px] font-medium text-[color:var(--accent)] transition-colors hover:bg-white/[0.04] [@media(hover:none)]:min-h-10 [@media(hover:none)]:text-[12px]"
                 >
                   Buy {pair.symbol}
                 </button>
+                )}
                 {/* Nothing to sell, no Sell: only a wallet that holds it (lib/sell-gate). */}
-                {canSellAsk(`Sell $50 of ${pair.symbol}`, held) && (
+                {canSellAsk(`Sell $50 of ${pair.symbol}`, held) && canTradeAsk(`Sell $50 of ${pair.symbol}`, tradable) && (
                   <button
                     onClick={() => act(`Sell $50 of ${pair.symbol}`)}
                     className="rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-[11px] text-[color:var(--muted)] transition-colors hover:text-white [@media(hover:none)]:min-h-10 [@media(hover:none)]:text-[12px]"
