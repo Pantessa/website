@@ -20,6 +20,7 @@ const RPC_WITHHOLD_MAX = 6
 import prisma from '@/lib/db'
 import { callMcpTool } from '@/lib/mcp-call'
 import { CONFIDENTIAL_LEVEL, crossChainValueUsd, expectedOriginChainId, guardCrossChainBuild, type BuiltSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
+import { PRIVATE_LANE_CLOSED_NOTE, privateLaneOpen } from '@/lib/private-lane'
 import { buildHlExecTurn, readHlCollateralUsd, type HlIntent } from '@/lib/hyperliquid-exec'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import type { GuardianArmAsk } from '@/lib/hl-guardian'
@@ -364,6 +365,8 @@ export async function buildSignArtifact(
 ): Promise<{ artifact: Record<string, unknown>; guardReport?: unknown; valueUsd: number | null; buildPath?: BuildPath }> {
   if (builder === 'native-cross-chain') {
     const p = params as unknown as CrossChainSwapParams
+    // A step compiled while the lane was open must not build after it closed.
+    if (p.confidential && !privateLaneOpen()) throw new Error(PRIVATE_LANE_CLOSED_NOTE)
     // DELIBERATELY fee-free: the funding plan compiles its rescue legs as
     // cross-chain steps (lib/funding-plan.ts), and "insufficient funds" must
     // never cost the user extra to fix. A chat-asked bridge pays the venue

@@ -537,6 +537,8 @@ import { answerGateReply, EARN_PER_100_USD } from '../lib/answer-gate-copy'
 import { withInferenceScope, inferenceScope } from '../lib/inference-context'
 import { rescueIntent } from '../lib/intent-rescue'
 import { missingSlotChips } from '../lib/cross-chain-swap'
+import { crossChainAskSentence } from '../lib/cross-chain-swap'
+import { PRIVATE_LANE_CLOSED_NOTE, privateLaneClosedTurn, privateLaneOpen, privateRefundCheck, refundDisclosureLine } from '../lib/private-lane'
 import { guardNearValueLeg, nearHoodFundingEnabled, NEAR_ORIGIN_WORD, NEAR_STEP_MAX_TTL_SEC, type NearValueLegExpectations } from '../lib/near-fund-leg'
 import {
   claimsSettled,
@@ -10428,6 +10430,87 @@ async function main() {
         'private swap fence: an ask naming a delivery address is outbound-to-third-party (links + embeds hold it to prefill), and a job leg refuses one',
         outboundToThirdParty(`swap 5 USDC from base to arbitrum privately, deliver to ${OTHER}`).outbound &&
           !outboundToThirdParty('swap 5 USDC from base to arbitrum privately').outbound,
+      )
+
+      // ── The proof gate (2026-09-22) ────────────────────────────────────
+      // The venue's echo is NOT proof of a fill: 1Click prices and echoes
+      // `basic` for every size and route asked, and both live private swaps
+      // were REFUNDED / INTENT_SUBMIT_FAILED ~55s after the deposit landed.
+      // Until one settles the lane is closed, and it fails CLOSED: only an
+      // explicit `NEAR_PRIVATE_MODE=on` reopens it.
+      check(
+        'private lane: fails CLOSED — absent, empty, "true"/"1"/"yes" and "off" all keep it shut; only an explicit "on" opens it',
+        [undefined, '', 'true', '1', 'yes', 'off', 'enabled', 'ON!'].every((v) => !privateLaneOpen({ NEAR_PRIVATE_MODE: v })) &&
+          ['on', 'ON', ' On '].every((v) => privateLaneOpen({ NEAR_PRIVATE_MODE: v })),
+      )
+      {
+        const priv = { amount: '1', originToken: 'usdc', originChain: 'base', destinationToken: 'usdc', destinationChain: 'ethereum', confidential: true as const, recipient: OTHER }
+        const closed = privateLaneClosedTurn(priv)
+        const roundTrip = parseCrossChainSwap(closed.options[0]) as Record<string, unknown> | null
+        check(
+          'private lane closed: the refusal names the failure and offers the SAME swap public as ONE chip — which round-trips the grammar with the privacy and the delivery address dropped',
+          closed.options.length === 1 &&
+            closed.options[0] === crossChainAskSentence(priv) &&
+            /Private mode isn.t filling/.test(closed.reply) &&
+            /refund/i.test(closed.reply) &&
+            /Base/.test(closed.reply) &&
+            !!roundTrip && !('problem' in roundTrip) &&
+            roundTrip.amount === '1' && roundTrip.originChain === 'base' && roundTrip.destinationChain === 'ethereum' &&
+            !('confidential' in roundTrip) && !('recipient' in roundTrip),
+          JSON.stringify(closed).slice(0, 300),
+        )
+        check(
+          'private lane closed: a job leg refuses by name too — the steps after a private bridge would wait on a settlement that never comes',
+          (() => {
+            const compiled = compileJobAsk('swap 5 USDC from base to arbitrum privately, then send 1 USDC to 0x1848a0A0a0A0A0a0A0a0A0A0a0a0a0a0A0A03c59 on arbitrum')
+            return !!compiled && 'problem' in compiled && compiled.problem.includes(PRIVATE_LANE_CLOSED_NOTE)
+          })(),
+        )
+        check(
+          'private lane closed: the runner refuses a leg compiled while the lane was open (source pin — a persisted job must not build after the flag flips)',
+          /builder === 'native-cross-chain'[\s\S]{0,400}?p\.confidential && !privateLaneOpen\(\)/.test(readFileSync('lib/jobs-runner.ts', 'utf8')),
+        )
+        check(
+          "private lane closed: the sign card's Private switch is not offered — a control that can only refuse is worse than none",
+          /privateLaneOpen\(\)[\s\S]{0,200}?privacy: \{/.test(readFileSync('app/api/chat/route.ts', 'utf8')),
+        )
+      }
+      {
+        // Live: the route refuses the private ask and offers the public one
+        // as a chip — no deposit address is minted, nothing is signable.
+        const pw = privateKeyToAccount(generatePrivateKey()).address
+        const ask = (message: string) =>
+          fetch(`${BASE}/api/chat`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+            body: JSON.stringify({ message, walletAddress: pw, activeServers: [{ slug: 'near-intents-mcp-yeetful' }], history: [] }),
+          }).then((r) => r.json() as Promise<Record<string, unknown>>)
+        const privTurn = await ask('swap 1 USDC from base to USDC on ethereum privately')
+        const opts = (privTurn.clarify as { options?: string[] } | undefined)?.options ?? []
+        check(
+          'private lane closed (route): a private ask is REFUSED before the venue is called — nothing signable, no deposit address, and the public swap is the one chip offered',
+          privTurn.blocked === true && !privTurn.txRequest && !privTurn.txChain &&
+            /Private mode isn.t filling/.test(String(privTurn.reply)) &&
+            opts.length === 1 && opts[0] === 'Swap 1 USDC from Base to USDC on Ethereum',
+          JSON.stringify(privTurn).slice(0, 300),
+        )
+        const pubTurn = await ask('swap 1 USDC from base to USDC on ethereum')
+        check(
+          'private lane closed (route): the PUBLIC swap is untouched — it reaches the venue and the exit gate, never the private refusal',
+          !/Private mode/.test(String(pubTurn.reply)) && pubTurn.blocked !== true,
+          JSON.stringify(pubTurn).slice(0, 300),
+        )
+      }
+      check(
+        'refund disclosure: EVERY cross-chain card says a refund lands on the ORIGIN chain before the signature — with the venue\'s number when the MCP carries it, and the rule alone when it does not',
+        (() => {
+          const withFee = refundDisclosureLine({ originChain: 'base', destinationChain: 'ethereum', refundFee: '0.0024 USDC' })
+          const without = refundDisclosureLine({ originChain: 'base', destinationChain: 'ethereum' })
+          const chk = privateRefundCheck({ originChain: 'base', destinationChain: 'ethereum', refundFee: '0.0024 USDC' })
+          return /refunds itself to this wallet on Base/.test(withFee) && /0\.0024 USDC/.test(withFee) && /nothing lands on Ethereum/.test(withFee) &&
+            /refund fee/.test(without) && !/\(.*\)/.test(without) &&
+            chk.level === 'warn' && chk.id === 'private-refund' && /refunds to this wallet on Base/.test(chk.note) && /Check the origin chain/.test(chk.note)
+        })(),
       )
     }
 
