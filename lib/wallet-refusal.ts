@@ -19,12 +19,20 @@ export const WALLET_REFUSAL_KIND = 'wallet-refused'
  *  back before any wallet saw it — the 2026-09-08 SPY class, which lived only
  *  in one browser's red text until it rode this beacon. */
 export const WITHHELD_KIND = 'withheld'
+/** The venue said no AFTER the signature: a cross-chain deposit that signed,
+ *  confirmed, and then came back as a refund (live 2026-09-22 — 1 USDC Base →
+ *  Ethereum, REFUNDED · INTENT_SUBMIT_FAILED, which the card called "signed &
+ *  settled"). Nobody's wallet refused and nothing was withheld; the money
+ *  moved and came home, so it belongs in the same queue with its own kind.
+ *  See lib/xchain-settlement.ts. */
+export const REFUNDED_KIND = 'refunded'
 
 export type WalletArtifact = 'hl-order' | 'hl-leverage' | 'hl-agent' | 'cow-order' | 'tx' | 'tx-chain' | 'vote' | 'opensea-listing' | 'siwe'
 
 export interface WalletRefusalReport {
-  /** Default `wallet-refused`; `withheld` when the step never reached a wallet. */
-  kind?: typeof WALLET_REFUSAL_KIND | typeof WITHHELD_KIND
+  /** Default `wallet-refused`; `withheld` when the step never reached a
+   *  wallet; `refunded` when the venue returned the money after signing. */
+  kind?: typeof WALLET_REFUSAL_KIND | typeof WITHHELD_KIND | typeof REFUNDED_KIND
   wallet: string | null | undefined
   artifact: WalletArtifact
   /** What the user was signing, in our words (the card's summary line). */
@@ -96,8 +104,11 @@ export function isReportableWalletError(message: string): boolean {
 /** Fire-and-forget beacon; never throws, never blocks the sign flow. */
 export function reportWalletRefusal(report: WalletRefusalReport): void {
   if (typeof window === 'undefined') return
-  // A withheld step carries OUR words, never a human "no" — no rejection gate.
-  if (report.kind !== WITHHELD_KIND && !isReportableWalletError(report.detail)) return
+  // A withheld step, or a venue refund, carries OUR/the venue's words, never
+  // a human "no" — no rejection gate on those.
+  if (report.kind === WALLET_REFUSAL_KIND || !report.kind) {
+    if (!isReportableWalletError(report.detail)) return
+  }
   void fetch('/api/ask-failures/wallet', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

@@ -7,6 +7,7 @@ import { persist } from 'zustand/middleware'
 // this runtime import is not circular.
 import { DEFAULT_CHAT_FLEET_SLUGS } from '@/lib/free-fleet'
 import { isDbChatId } from '@/lib/chat-ids'
+import { isTerminal, type SettlementOutcome } from '@/lib/xchain-settlement'
 
 export interface McpServer {
   id: string
@@ -258,6 +259,11 @@ interface YeetfulStore {
    *  them — locally for the live UI, and onto the DB row (meta.signed) so the
    *  /p share page can show the signing log with explorer links. */
   recordSignedTxs: (chatId: string, messageId: string, txs: SignedTxRecord[]) => void
+  /** Record the VENUE's outcome for a cross-chain swap onto the message that
+   *  built it (meta.settlement) — the deposit confirming is not settlement
+   *  (lib/xchain-settlement.ts). Terminal outcomes only; the share page reads
+   *  the same record, so "settled" is never claimed on a refund. */
+  recordSettlement: (chatId: string, messageId: string, outcome: SettlementOutcome) => void
   updateChatServers: (chatId: string, serverIds: string[]) => void
   deleteChat: (id: string) => void
   // DB sync
@@ -647,6 +653,42 @@ export const useYeetfulStore = create<YeetfulStore>()(
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ txs: stamped }),
+          }).catch(() => {})
+        }
+        post(0)
+      },
+
+      recordSettlement: (chatId, messageId, outcome) => {
+        if (!isTerminal(outcome.status)) return
+        chatId = get().adoptedChatIds[chatId] ?? chatId
+        // Local merge first, like recordSignedTxs — the open transcript stops
+        // claiming "settled" the moment the venue answers, DB write or not.
+        set((s) => ({
+          chats: s.chats.map((c) =>
+            c.id === chatId
+              ? {
+                  ...c,
+                  messages: c.messages.map((m) =>
+                    m.id === messageId ? { ...m, meta: { ...(m.meta as object | undefined), settlement: outcome } } : m,
+                  ),
+                }
+              : c,
+          ),
+        }))
+        if (!get().authedAddress) return
+        const post = (attempt: number) => {
+          const msg = get()
+            .chats.find((c) => c.id === chatId)
+            ?.messages.find((m) => m.id === messageId)
+          const dbId = msg?.dbId
+          if (!dbId) {
+            if (attempt < 5) setTimeout(() => post(attempt + 1), 2000)
+            return
+          }
+          void fetch(`/api/chats/${chatId}/messages/${dbId}/settlement`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ outcome }),
           }).catch(() => {})
         }
         post(0)

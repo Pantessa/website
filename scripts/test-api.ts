@@ -289,7 +289,7 @@ import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '../lib/turn-status'
 import { classifyFundingBalances, decideFundingTurn, destGasLegUsd, detectBalanceShortfall, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingPlanUsd, gasTopupLegUsd, MIN_LEG_USD, planFundingChips, planGasTopup, planStrandedRescue, promisableCapacityUsd, rankFundingSources, shortRefusalCopy, softenClaimedFailureBlock, strandedCoversPlan, type FundingNeed, type FundingSource } from '../lib/funding-plan'
 import { buyDollarsOf, swapBuyFundChip, swapBuyResume, swapShortfallTurn, type SwapShortfallAsk } from '../lib/swap-shortfall'
 import { laneGasFloorPresetUsd, layerCardKind, layerFundChip, layerShortfallTurn, type LayerShortfallAsk } from '../lib/layer-shortfall'
-import { DEST_GAS_FLOOR_ETH } from '../lib/funding-plan'
+import { DEST_GAS_FLOOR_ETH, FUNDING_STABLES } from '../lib/funding-plan'
 import { ETH_TWO_LEG_HEADROOM_USD } from '../lib/lifi-bridge'
 import { compileDcaBuy, dcaRunChip, parseDcaCreate, parseDcaManage, parseDcaRun, periodKeyFor } from '../lib/dca'
 import { briefingNeedsCount, briefingTile, composeBriefingItems, type BriefingInputs, type BriefingPosition } from '../lib/briefing'
@@ -537,13 +537,42 @@ import { answerGateReply, EARN_PER_100_USD } from '../lib/answer-gate-copy'
 import { withInferenceScope, inferenceScope } from '../lib/inference-context'
 import { rescueIntent } from '../lib/intent-rescue'
 import { missingSlotChips } from '../lib/cross-chain-swap'
+import { crossChainAskSentence } from '../lib/cross-chain-swap'
+import { PRIVATE_LANE_CLOSED_NOTE, privateLaneClosedTurn, privateLaneOpen, privateRefundCheck, refundDisclosureLine } from '../lib/private-lane'
 import { guardNearValueLeg, nearHoodFundingEnabled, NEAR_ORIGIN_WORD, NEAR_STEP_MAX_TTL_SEC, type NearValueLegExpectations } from '../lib/near-fund-leg'
+import {
+  claimsSettled,
+  isTerminal,
+  nextPollDelayMs,
+  parseSwapStatus,
+  refundReasonWords,
+  settlementCopy,
+  settlementDetailLine,
+  settlementOf,
+  SETTLEMENT_FIRST_POLL_MS,
+  SETTLEMENT_SLOW_POLL_MS,
+  SETTLEMENT_FAST_POLLS,
+  xchainDepositOf,
+  type SettlementOutcome,
+} from '../lib/xchain-settlement'
 
 const BASE = process.env.BASE ?? 'http://localhost:3000'
 const DOMAIN = new URL(BASE).host
 
 let pass = 0
 let fail = 0
+/** 1Click's asset list, fetched once for the venue-floor pins. null when the
+ *  venue is unreachable — the pins then skip rather than claim anything. */
+let _liveTokens: Array<{ assetId: string; decimals: number; price: number; symbol: string; blockchain: string }> | null | undefined
+async function liveTokens() {
+  if (_liveTokens !== undefined) return _liveTokens
+  try {
+    const r = await fetch('https://1click.chaindefuser.com/v0/tokens')
+    _liveTokens = r.ok ? await r.json() : null
+  } catch { _liveTokens = null }
+  return _liveTokens
+}
+
 function check(name: string, ok: boolean, extra = '') {
   console.log(`  ${ok ? '✅' : '❌'} ${name}${extra ? ` — ${extra}` : ''}`)
   ok ? pass++ : fail++
@@ -10414,6 +10443,87 @@ async function main() {
         outboundToThirdParty(`swap 5 USDC from base to arbitrum privately, deliver to ${OTHER}`).outbound &&
           !outboundToThirdParty('swap 5 USDC from base to arbitrum privately').outbound,
       )
+
+      // ── The proof gate (2026-09-22) ────────────────────────────────────
+      // The venue's echo is NOT proof of a fill: 1Click prices and echoes
+      // `basic` for every size and route asked, and both live private swaps
+      // were REFUNDED / INTENT_SUBMIT_FAILED ~55s after the deposit landed.
+      // Until one settles the lane is closed, and it fails CLOSED: only an
+      // explicit `NEAR_PRIVATE_MODE=on` reopens it.
+      check(
+        'private lane: fails CLOSED — absent, empty, "true"/"1"/"yes" and "off" all keep it shut; only an explicit "on" opens it',
+        [undefined, '', 'true', '1', 'yes', 'off', 'enabled', 'ON!'].every((v) => !privateLaneOpen({ NEAR_PRIVATE_MODE: v })) &&
+          ['on', 'ON', ' On '].every((v) => privateLaneOpen({ NEAR_PRIVATE_MODE: v })),
+      )
+      {
+        const priv = { amount: '1', originToken: 'usdc', originChain: 'base', destinationToken: 'usdc', destinationChain: 'ethereum', confidential: true as const, recipient: OTHER }
+        const closed = privateLaneClosedTurn(priv)
+        const roundTrip = parseCrossChainSwap(closed.options[0]) as Record<string, unknown> | null
+        check(
+          'private lane closed: the refusal names the failure and offers the SAME swap public as ONE chip — which round-trips the grammar with the privacy and the delivery address dropped',
+          closed.options.length === 1 &&
+            closed.options[0] === crossChainAskSentence(priv) &&
+            /Private mode isn.t filling/.test(closed.reply) &&
+            /refund/i.test(closed.reply) &&
+            /Base/.test(closed.reply) &&
+            !!roundTrip && !('problem' in roundTrip) &&
+            roundTrip.amount === '1' && roundTrip.originChain === 'base' && roundTrip.destinationChain === 'ethereum' &&
+            !('confidential' in roundTrip) && !('recipient' in roundTrip),
+          JSON.stringify(closed).slice(0, 300),
+        )
+        check(
+          'private lane closed: a job leg refuses by name too — the steps after a private bridge would wait on a settlement that never comes',
+          (() => {
+            const compiled = compileJobAsk('swap 5 USDC from base to arbitrum privately, then send 1 USDC to 0x1848a0A0a0A0A0a0A0a0A0A0a0a0a0a0A0A03c59 on arbitrum')
+            return !!compiled && 'problem' in compiled && compiled.problem.includes(PRIVATE_LANE_CLOSED_NOTE)
+          })(),
+        )
+        check(
+          'private lane closed: the runner refuses a leg compiled while the lane was open (source pin — a persisted job must not build after the flag flips)',
+          /builder === 'native-cross-chain'[\s\S]{0,400}?p\.confidential && !privateLaneOpen\(\)/.test(readFileSync('lib/jobs-runner.ts', 'utf8')),
+        )
+        check(
+          "private lane closed: the sign card's Private switch is not offered — a control that can only refuse is worse than none",
+          /privateLaneOpen\(\)[\s\S]{0,200}?privacy: \{/.test(readFileSync('app/api/chat/route.ts', 'utf8')),
+        )
+      }
+      {
+        // Live: the route refuses the private ask and offers the public one
+        // as a chip — no deposit address is minted, nothing is signable.
+        const pw = privateKeyToAccount(generatePrivateKey()).address
+        const ask = (message: string) =>
+          fetch(`${BASE}/api/chat`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+            body: JSON.stringify({ message, walletAddress: pw, activeServers: [{ slug: 'near-intents-mcp-yeetful' }], history: [] }),
+          }).then((r) => r.json() as Promise<Record<string, unknown>>)
+        const privTurn = await ask('swap 1 USDC from base to USDC on ethereum privately')
+        const opts = (privTurn.clarify as { options?: string[] } | undefined)?.options ?? []
+        check(
+          'private lane closed (route): a private ask is REFUSED before the venue is called — nothing signable, no deposit address, and the public swap is the one chip offered',
+          privTurn.blocked === true && !privTurn.txRequest && !privTurn.txChain &&
+            /Private mode isn.t filling/.test(String(privTurn.reply)) &&
+            opts.length === 1 && opts[0] === 'Swap 1 USDC from Base to USDC on Ethereum',
+          JSON.stringify(privTurn).slice(0, 300),
+        )
+        const pubTurn = await ask('swap 1 USDC from base to USDC on ethereum')
+        check(
+          'private lane closed (route): the PUBLIC swap is untouched — it reaches the venue and the exit gate, never the private refusal',
+          !/Private mode/.test(String(pubTurn.reply)) && pubTurn.blocked !== true,
+          JSON.stringify(pubTurn).slice(0, 300),
+        )
+      }
+      check(
+        'refund disclosure: EVERY cross-chain card says a refund lands on the ORIGIN chain before the signature — with the venue\'s number when the MCP carries it, and the rule alone when it does not',
+        (() => {
+          const withFee = refundDisclosureLine({ originChain: 'base', destinationChain: 'ethereum', refundFee: '0.0024 USDC' })
+          const without = refundDisclosureLine({ originChain: 'base', destinationChain: 'ethereum' })
+          const chk = privateRefundCheck({ originChain: 'base', destinationChain: 'ethereum', refundFee: '0.0024 USDC' })
+          return /refunds itself to this wallet on Base/.test(withFee) && /0\.0024 USDC/.test(withFee) && /nothing lands on Ethereum/.test(withFee) &&
+            /refund fee/.test(without) && !/\(.*\)/.test(without) &&
+            chk.level === 'warn' && chk.id === 'private-refund' && /refunds to this wallet on Base/.test(chk.note) && /Check the origin chain/.test(chk.note)
+        })(),
+      )
     }
 
     // Wrong recipient (the fabricated-address class of bug) MUST be refused.
@@ -12515,11 +12625,17 @@ async function main() {
     // is spelled out, not rebuilt from FUNDING_STABLES, so a token joining or
     // leaving the scan is a conscious flip here.
     check(
-      'funding advice: an empty wallet names every scanned token on every scanned chain',
+      'funding advice: an empty wallet names EVERY token the scan reads, on every scanned chain',
+      // Re-pinned in round 2: the sentence said "no USDC or ETH" while the
+      // scan had grown to five tokens (#841's FUNDING_STABLES). It derives
+      // from that table now, so this derives from it too — and then checks
+      // the copy really names each one, rather than matching its own template.
       emptyAdvice.kind === 'none' &&
-        emptyAdvice.copy.includes(`no USDC, DAI, USDT, or ETH on ${listWords(FUNDING_ORIGIN_CHAINS.map((c) => FUNDING_ORIGIN_WORD[c]))}`) &&
-        // …and it really does name each one, not just match its own template.
-        (FUNDING_ORIGIN_CHAINS as readonly number[]).every((c) => emptyAdvice.copy.includes(FUNDING_ORIGIN_WORD[c])),
+        emptyAdvice.copy.includes(
+          `no ${listWords([...new Set(['USDC', ...FUNDING_ORIGIN_CHAINS.flatMap((c) => (FUNDING_STABLES[c] ?? []).map((x) => x.symbol)), 'ETH'])], 'or')} on ${listWords(FUNDING_ORIGIN_CHAINS.map((c) => FUNDING_ORIGIN_WORD[c]))}`,
+        ) &&
+        (FUNDING_ORIGIN_CHAINS as readonly number[]).every((c) => emptyAdvice.copy.includes(FUNDING_ORIGIN_WORD[c])) &&
+        (FUNDING_ORIGIN_CHAINS as readonly number[]).every((c) => (FUNDING_STABLES[c] ?? []).every((x) => emptyAdvice.copy.includes(x.symbol))),
       JSON.stringify(emptyAdvice),
     )
 
@@ -22974,7 +23090,11 @@ async function main() {
       )
       check(
         'sign-in lands: no door on a chat, an intent link, the mosaic studio or a markets page computes its landing from window.location while rendering',
-        workDoors.every((s) => !/redirectTo=\{[^}]*window\.location|hereWithQuery|hereHref|const here = [^\n]*window\.location/.test(s)) &&
+        // Word-bounded: an unbounded `hereHref` also matches the tail of
+        // `signInElsewhereHref` (lib/sign-in-gate, round 2), which reads no
+        // location at all. A fence that fires on a substring of an unrelated
+        // name teaches people to rename around it.
+        workDoors.every((s) => !/redirectTo=\{[^}]*window\.location|\bhereWithQuery\b|\bhereHref\b|const here = [^\n]*window\.location/.test(s)) &&
           /<SiteAccount \/>/.test(workDoors[4]),
       )
       check(
@@ -28827,6 +28947,506 @@ async function main() {
       APP_CHAINS.filter((c) => c.uniswapV4).every((c) => !resetChains.has(c.id)) && !resetChains.has(4663) && /USDC, USDC\.e, or ETH only/.test(lifiBridgeSrc),
     )
   }
+
+  // ── NO-DEAD-ENDS ROUND 2 (2026-09-21): the sign-in gate gets its door ────
+  // `signInGate` shipped on 09-08 and NOTHING rendered it until now: the
+  // route asked for a signature it never gave the user a way to provide, on
+  // /i/protected-long — the landing's "Open & protect a position" demo. The
+  // door is lib/sign-in-gate (pure, pinned here) rendered by ChatInterface,
+  // and it HOLDS the ask so nobody retypes a sentence they arrived with.
+  {
+    const { signInGateOf, signInGateLifted, signInDoorFor, signInElsewhereHref, shouldRerunSignInAsk, SIGN_IN_ASK_RERUN_WINDOW_MS } = await import('../lib/sign-in-gate')
+    const { mutationGateReply } = await import('../lib/chat-mutation-gate')
+
+    const gateMeta = { signInGate: { kind: 'guardian-job-step' }, signInAsk: 'Open a 2x long on HYPE and protect it with a 5% stop' }
+    check('sign-in door: a gate reply carries its kind AND the held ask', signInGateOf(gateMeta)?.kind === 'guardian-job-step' && signInGateOf(gateMeta)?.ask === gateMeta.signInAsk, JSON.stringify(signInGateOf(gateMeta)))
+    check('sign-in door: a gate with no held ask renders nothing (both halves or neither)', signInGateOf({ signInGate: { kind: 'guardian-arm' } }) === null && signInGateOf({ signInAsk: 'x' }) === null && signInGateOf(undefined) === null, 'a half-gate rendered')
+
+    const w = '0xAbC0000000000000000000000000000000000001'
+    check('sign-in door: the gate is answered only by a session that OWNS the connected wallet (the server\'s own rule)', signInGateLifted({ sessionAddress: w.toLowerCase(), walletAddress: w }) && !signInGateLifted({ sessionAddress: '0xdead000000000000000000000000000000000002', walletAddress: w }) && !signInGateLifted({ sessionAddress: null, walletAddress: w }), 'ownership read wrong')
+
+    check('sign-in door: /chat and /i get the unified door, a no-CDP build gets the wallet lane, the embed is sent elsewhere', signInDoorFor({ embedded: false, cdpEnabled: true }) === 'unified' && signInDoorFor({ embedded: false, cdpEnabled: false }) === 'wallet' && signInDoorFor({ embedded: true, cdpEnabled: true }) === 'elsewhere', 'door choice wrong')
+
+    const href = signInElsewhereHref('protect my ETH long with a 5% stop', 'https://www.pantessa.com/')
+    check('sign-in door: the embed\'s link carries the ask as a PREFILL — a URL still never fires a turn', href === 'https://www.pantessa.com/chat?prompt=protect%20my%20ETH%20long%20with%20a%205%25%20stop' && !/send=/.test(href), href)
+
+    const msg = (ageMs: number, meta: unknown = gateMeta, role = 'assistant') => ({ role, meta, createdAt: new Date(Date.now() - ageMs).toISOString() })
+    const rerun = (over: Partial<Parameters<typeof shouldRerunSignInAsk>[0]> = {}) =>
+      shouldRerunSignInAsk({ last: msg(1_000), sessionAddress: w.toLowerCase(), walletAddress: w, loading: false, now: Date.now(), ...over })
+    check('sign-in door: the held ask re-runs the moment the session lands, whichever lane brought it', rerun() === gateMeta.signInAsk, String(rerun()))
+    check('sign-in door: it never re-runs for a session that owns a different wallet, mid-turn, or on a stale reply', rerun({ sessionAddress: '0xdead000000000000000000000000000000000002' }) === null && rerun({ loading: true }) === null && rerun({ last: msg(SIGN_IN_ASK_RERUN_WINDOW_MS + 1_000) }) === null && rerun({ last: msg(1_000, { clarify: {} }) }) === null, 'a stale or foreign gate re-ran')
+
+    const gateCopy = mutationGateReply('guardian-job-step')
+    check('sign-in door: the gate copy stops sending people to a menu and stops asking them to retype', !/account menu/i.test(gateCopy) && !/then ask again/i.test(gateCopy) && /signed in as this wallet/.test(gateCopy) && /Nothing was changed/.test(gateCopy), gateCopy.slice(0, 180))
+
+    const chatSrc = readFileSync('components/ChatInterface.tsx', 'utf8')
+    check('sign-in door: the chat surface renders the gate, re-runs the held ask, and passes the route\'s key into the message', chatSrc.includes('signInGateOf(msg.meta)') && chatSrc.includes('shouldRerunSignInAsk(') && chatSrc.includes('data.signInGate'), 'the door is not wired')
+    check('sign-in door: the door is hidden once the session owns the wallet (a lifted gate never keeps asking)', chatSrc.includes('signInGateLifted({ sessionAddress, walletAddress: effectiveAddress })'), 'the door outlives its gate')
+    const preSrc = readFileSync('scripts/preflight-house.ts', 'utf8')
+    check('sign-in door: preflight counts a gate as actionable ONLY while the source really renders it', preSrc.includes('signInGateHasDoor()') && /signInGateOf\(msg\.meta\)/.test(preSrc) && /shouldRerunSignInAsk\(/.test(preSrc), 'the preflight fence would pass with no door')
+  }
+
+  // ── NO-DEAD-ENDS ROUND 2: the bridge-only wall answers from the wallet ───
+  // `Swap 5 USDC from Base to Arbitrum` holding $342 of USDT ON ARBITRUM was
+  // the last chipless wall of round 1: it never named the $342 and carried
+  // nothing to press. lib/bridge-shortfall reads the ask against the wallet.
+  {
+    const { bridgeAlternatives, bridgeCardChip, heldElsewhereLine, MIN_MOVE_USD } = await import('../lib/bridge-shortfall')
+    const { isStableSymbol, bridgeShortfallCopy } = await import('../lib/affordability')
+    const { buildsNatively } = await import('./ask-ladder')
+    const src = (chainWord: string, token: string, usd: number, balance = usd) => ({ chainId: 0, chainWord, token, balance, usd })
+    const ask = { amount: '5', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'arbitrum' }
+    const alt = (sources: ReturnType<typeof src>[], parsed = ask) => bridgeAlternatives({ parsed, sources, verify: buildsNatively })
+
+    // THE ROW: QA's drive wallet, to the character.
+    const usdtArb = alt([src('arbitrum', 'USDT', 342), src('arbitrum', 'ETH', 2.9, 0.00106)])
+    check(
+      'bridge wall: a stranger holding USDT on the chain they asked to bridge TO is offered the venue swap, not a bridge',
+      usdtArb.chips.length > 0 && usdtArb.chips.every((c) => buildsNatively(c.resume)) && usdtArb.chips.some((c) => /^Swap 5 USDT for USDC on arbitrum$/i.test(c.resume)),
+      JSON.stringify(usdtArb.chips),
+    )
+    check(
+      'bridge wall: the same token on another chain re-origins the move',
+      alt([src('ethereum', 'USDC', 400)]).chips.some((c) => /^Swap 5 USDC from ethereum to arbitrum$/i.test(c.resume)),
+      JSON.stringify(alt([src('ethereum', 'USDC', 400)]).chips),
+    )
+    check(
+      'bridge wall: the destination already holding it is SAID, since the cheapest move is the one you skip',
+      alt([src('arbitrum', 'USDC', 400)]).lines.some((l) => /already have what you asked for/i.test(l)),
+      JSON.stringify(alt([src('arbitrum', 'USDC', 400)]).lines),
+    )
+    // THE PARITY RULE — the bug a naive substitution would ship.
+    const ethOnly = alt([src('ethereum', 'ETH', 4_000, 1.25)])
+    check(
+      'bridge wall: an ETH holding is sized in ETH at the scan\'s own price — never "5 ETH" because the ask said "5 USDC"',
+      ethOnly.chips.length === 1 && /^Swap 0\.0015\d* ETH from ethereum to USDC on arbitrum$/.test(ethOnly.chips[0].resume) && buildsNatively(ethOnly.chips[0].resume),
+      JSON.stringify(ethOnly.chips),
+    )
+    const short = alt([src('ethereum', 'USDT', 3)], { ...ask, amount: '40' })
+    check(
+      'bridge wall: a wallet that can\'t cover the whole ask is offered what it HAS, labelled as such',
+      short.chips.length === 1 && /^Swap 3 USDT from ethereum to USDC on arbitrum$/i.test(short.chips[0].resume) && /what you have/i.test(short.chips[0].label),
+      JSON.stringify(short.chips),
+    )
+    check('bridge wall: dust is never offered as a move (a chip that would refuse itself)', alt([src('ethereum', 'USDC', MIN_MOVE_USD - 0.5)]).chips.length === 0, 'dust got a chip')
+
+    check(
+      'bridge wall: the refusal names every holding >= $0.50 and says why a stranded one can\'t move (invariant clause 4)',
+      (() => {
+        const line = heldElsewhereLine({ sources: [src('arbitrum', 'USDT', 342)], stranded: [src('base', 'USDC', 20)], failedChains: [] }) ?? ''
+        return /\$342 of USDT on arbitrum/.test(line) && /\$20\.00 of USDC on base/.test(line) && /no ETH on that chain/i.test(line)
+      })(),
+      String(heldElsewhereLine({ sources: [src('arbitrum', 'USDT', 342)], stranded: [src('base', 'USDC', 20)] })),
+    )
+    check('bridge wall: a scan that could not read a chain says so rather than claiming an empty wallet', /couldn.t read Base/i.test(heldElsewhereLine({ sources: [], stranded: [], failedChains: ['Base'] }) ?? ''), 'a failed read read as "you have nothing"')
+
+    // The empty wallet's door: the card, sized in the token the move moves.
+    // The door reads the environment and fails closed without both keys; this
+    // block is about what an OPEN door offers, so it opens one (no request is
+    // ever made, and the key is never a real one) and puts the env back.
+    const wasOnramp = process.env.ONRAMP_ENABLED
+    const wasStripeCard = process.env.STRIPE_SECRET_KEY
+    process.env.ONRAMP_ENABLED = 'true'
+    if (!process.env.STRIPE_SECRET_KEY) process.env.STRIPE_SECRET_KEY = 'sk_test_bridge_door'
+    const card = bridgeCardChip({ amount: '40', destToken: 'USDC', destChain: 'arbitrum', landsOn: 'ethereum', ethUsd: 3_000, verify: buildsNatively })
+    check(
+      'bridge wall: an empty wallet gets the card door, and its resume moves the landed ETH where the ask said',
+      !!card?.fund && /^Swap 0\.0133 ETH from ethereum to USDC on arbitrum$/.test(card!.resume) && buildsNatively(card!.resume),
+      JSON.stringify(card),
+    )
+    check('bridge wall: no ETH price, no card chip (a move is sized in the token it moves)', bridgeCardChip({ amount: '40', destToken: 'USDC', destChain: 'arbitrum', landsOn: 'ethereum', ethUsd: null, verify: buildsNatively }) === null, 'a chip was composed with no price')
+    const sameLane = bridgeCardChip({ amount: '40', destToken: 'USDC', destChain: 'ethereum', landsOn: 'ethereum', ethUsd: 3_000, verify: buildsNatively })
+    check('bridge wall: when the delivery lands on the destination itself, the resume is the venue swap', !!sameLane?.fund && /^Swap \$40 of ETH for USDC on ethereum$/.test(sameLane!.resume), JSON.stringify(sameLane))
+    check('bridge wall: a closed card door offers no card chip', bridgeCardChip({ amount: '40', destToken: 'USDC', destChain: 'arbitrum', landsOn: 'ethereum', ethUsd: 3_000, verify: buildsNatively, }) !== null && (() => { const off = process.env.ONRAMP_ENABLED; process.env.ONRAMP_ENABLED = 'false'; const shut = bridgeCardChip({ amount: '40', destToken: 'USDC', destChain: 'arbitrum', landsOn: 'ethereum', ethUsd: 3_000, verify: buildsNatively }); process.env.ONRAMP_ENABLED = off; return shut === null })(), 'the door opened with the on-ramp off')
+    if (wasOnramp === undefined) delete process.env.ONRAMP_ENABLED
+    else process.env.ONRAMP_ENABLED = wasOnramp
+    if (wasStripeCard === undefined) delete process.env.STRIPE_SECRET_KEY
+    else process.env.STRIPE_SECRET_KEY = wasStripeCard
+
+    // The gate's own branch: stables only, scan optional, fail soft.
+    check('bridge wall: the stable branch is what routes here — a stock shortfall keeps the buy chip', isStableSymbol('USDT') && isStableSymbol('usdc.e') && !isStableSymbol('AMAT') && !isStableSymbol('ETH'), 'the stable test is wrong')
+    const shortV = { kind: 'short' as const, chainId: 8453, chainName: 'Base', token: '0xusdc', symbol: 'USDC', decimals: 6, held: BigInt(0), needs: BigInt(5_000_000), gas: false }
+    const noScan = await bridgeShortfallCopy('Swap 5 USDC from Base to Arbitrum', shortV, undefined, buildsNatively)
+    check('bridge wall: no scan, no scan-shaped claims — the prose refusal stands exactly as it did', noScan.line === null && noScan.chips.length === 0, JSON.stringify(noScan))
+    const threw = await bridgeShortfallCopy('Swap 5 USDC from Base to Arbitrum', shortV, async () => { throw new Error('rpc down') }, buildsNatively)
+    check('bridge wall: a failed scan never turns into "you have nothing"', threw.line === null && threw.chips.length === 0, JSON.stringify(threw))
+    const live = await bridgeShortfallCopy(
+      'Swap 5 USDC from Base to Arbitrum',
+      shortV,
+      async () => ({ sources: [src('arbitrum', 'USDT', 342)], stranded: [], failedChains: [], ethUsd: 3_000 }),
+      buildsNatively,
+    )
+    check(
+      'bridge wall: the gate\'s stable branch names the money AND carries a chip that builds',
+      /\$342 of USDT on arbitrum/.test(live.line ?? '') && live.chips.length > 0 && live.chips.every((c) => buildsNatively(c.resume)),
+      JSON.stringify(live).slice(0, 220),
+    )
+    const notABridge = await bridgeShortfallCopy(
+      'Sell $50 of AMAT',
+      shortV,
+      async () => ({ sources: [src('arbitrum', 'USDT', 342)], stranded: [], failedChains: [], ethUsd: 3_000 }),
+      buildsNatively,
+    )
+    check('bridge wall: an ask that isn\'t a move still gets its money named, and no bridge chips', /\$342 of USDT/.test(notABridge.line ?? '') && notABridge.chips.length === 0, JSON.stringify(notABridge).slice(0, 200))
+
+    const routeSrc = readFileSync('app/api/chat/route.ts', 'utf8')
+    check('bridge wall: both affordability gates in the route hand the wallet scan in', (routeSrc.match(/scan: [^\n]*scanFundingSources/g) ?? []).length === 2, 'a gate site lost its scan')
+    const mapSrc = readFileSync('components/markets/viz/MarketMap.tsx', 'utf8')
+    check('markets map: every tile is a real link (SEO, no-JS, middle-click) — it was a <g> with an onClick', /href=\{`\/t\/\$\{encodeURIComponent\(c\.symbol\)\}`\}/.test(mapSrc) && !/role="button"/.test(mapSrc), 'the map tiles are click-only again')
+
+    // ── venue floor: 1Click's temporary per-chain minimum ─────────────────
+    // The table in lib/venue-floor is a MEASUREMENT, not a copy of NEAR's
+    // changelog (which lists Optimism and Avalanche, both of which price
+    // fine, and never mentions the destination side, which Polygon and BNB
+    // Chain do fence). These pins go red when a floor lifts, moves, or
+    // appears on a chain we build on — the whole point of measuring.
+    {
+      const { VENUE_FLOORS, floorFor, crossChainFloorBlock, floorBlockFromError, venueFloorFromError, floorRefusalTurn, floorChipAsk, floorProblemLine, moveUsd } = await import('../lib/venue-floor')
+      const { parseCrossChainSwap } = await import('../lib/cross-chain-swap')
+      const cc = (o: string, d: string, amount = '20', token = 'USDC') => ({ amount, originToken: token, originChain: o, destinationToken: token, destinationChain: d })
+
+      // — the pure rules —
+      check('venue floor: a $20 move off Polygon is refused before the venue is asked', crossChainFloorBlock(cc('polygon', 'base'))?.side === 'origin')
+      check('venue floor: the floor is read on the DESTINATION end too (measured, undocumented)', crossChainFloorBlock(cc('base', 'polygon'))?.side === 'destination')
+      check('venue floor: chain aliases resolve — "matic"/"bsc" carry the same floor', crossChainFloorBlock(cc('matic', 'base'))?.chain === 'polygon' && crossChainFloorBlock(cc('base', 'bsc'))?.chain === 'bnb')
+      check('venue floor: a move that CLEARS the floor is not refused', crossChainFloorBlock(cc('polygon', 'base', '2000')) === null)
+      check('venue floor: an unpriceable move is never refused by the table (it goes to the venue)', moveUsd('0.5', 'ETH') === null && crossChainFloorBlock(cc('polygon', 'base', '0.5', 'ETH')) === null)
+      check('venue floor: chains with no measured floor are untouched', ['base', 'ethereum', 'arbitrum', 'optimism', 'avalanche', 'gnosis', 'scroll'].every((c) => crossChainFloorBlock(cc(c, 'base')) === null && crossChainFloorBlock(cc('base', c)) === null))
+
+      // — the belt: the venue's own words become our refusal —
+      check('venue floor: the venue 400 parses, thousands separator and all', venueFloorFromError('Temporary swap limits: minimum swap amount is $1,000') === 1000 && venueFloorFromError('minimum swap amount is $100') === 100)
+      check('venue floor: an unrelated venue error keeps its raw words', venueFloorFromError('No liquidity available') === null && floorBlockFromError(cc('polygon', 'base'), 'No liquidity available') === null)
+      check("venue floor: a floor on a chain the table doesn't know is reported as 'route', never a guessed side", floorBlockFromError(cc('base', 'arbitrum'), 'Temporary swap limits: minimum swap amount is $500')?.side === 'route')
+      check('venue floor: the refusal quotes the VENUE\'s number, not the table\'s', floorBlockFromError(cc('polygon', 'base'), 'Temporary swap limits: minimum swap amount is $2,500')?.usd === 2500)
+
+      // — the chips: complete asks, and only ones the wallet can take —
+      const src = (chainWord: string, token: string, balance: number) => ({ chainWord, token, balance })
+      const originTurn = floorRefusalTurn(cc('polygon', 'ethereum') as never, crossChainFloorBlock(cc('polygon', 'ethereum'))!, [src('polygon', 'USDC', 40), src('base', 'USDC', 55.2), src('bnb', 'USDC', 900)])
+      check('venue floor: an origin-side block offers another chain the wallet holds on', originTurn.chips.length === 1 && originTurn.chips[0].resume.includes('from Base'), JSON.stringify(originTurn.chips))
+      check('venue floor: a chain carrying the SAME floor is never offered as the way out', !originTurn.chips.some((c) => /BNB/i.test(c.resume)))
+      const poor = floorRefusalTurn(cc('polygon', 'base') as never, crossChainFloorBlock(cc('polygon', 'base'))!, [src('polygon', 'USDC', 40)])
+      check('venue floor: "move a bigger amount" is never offered to a wallet that cannot afford it', poor.chips.length === 0 && /Everywhere this wallet holds USDC is out/.test(poor.reply), poor.reply.slice(-140))
+      const rich = floorRefusalTurn(cc('polygon', 'base') as never, crossChainFloorBlock(cc('polygon', 'base'))!, [src('polygon', 'USDC', 4200)])
+      check('venue floor: a wallet that CAN clear the floor is offered the size-up', rich.chips.length === 1 && /^Swap 1000 USDC from Polygon/.test(rich.chips[0].resume), JSON.stringify(rich.chips))
+      check('venue floor: a wallet we never scanned is never told what it does not hold', !/can't see USDC anywhere/.test(floorRefusalTurn(cc('polygon', 'base') as never, crossChainFloorBlock(cc('polygon', 'base'))!, null).reply))
+      // The chip contract: a chip SENDS, so every one must round-trip the grammar.
+      const everyChip = [...originTurn.chips, ...rich.chips].map((c) => c.resume)
+      check('venue floor: every chip round-trips the cross-chain grammar', everyChip.length > 0 && everyChip.every((r) => { const b = parseCrossChainSwap(r); return b !== null && !('problem' in b) }), everyChip.join(' | '))
+      // A chip that dropped "privately" would turn a private ask public (#827).
+      const priv = { ...cc('polygon', 'base'), confidential: true as const }
+      const privBack = parseCrossChainSwap(floorChipAsk(priv as never))
+      check('venue floor: a chip keeps the private clause — it never quietly becomes a public swap', privBack !== null && !('problem' in privBack) && (privBack as { confidential?: true }).confidential === true, floorChipAsk(priv as never))
+      const deliv = { ...cc('polygon', 'base'), recipient: '0x2527D02599Ba641c19FEa793cD0F167589a0f10D' }
+      const delivBack = parseCrossChainSwap(floorChipAsk(deliv as never))
+      check('venue floor: a chip keeps the delivery address', delivBack !== null && !('problem' in delivBack) && (delivBack as { recipient?: string }).recipient === deliv.recipient)
+
+      // — the wiring —
+      const ccRoute = readFileSync('app/api/chat/route.ts', 'utf8')
+      check('venue floor: the chat route refuses from the table BEFORE calling build_swap', /const floor = crossChainFloorBlock\(params\)[\s\S]{0,120}crossChainFloorTurn/.test(ccRoute), 'the pre-flight is gone')
+      check("venue floor: the chat route turns the venue's own 400 into the named refusal", /floorBlockFromError\(params, msg\)/.test(ccRoute) && ccRoute.includes('crossChainFloorTurn(params, venueFloor'), 'the raw venue message is reachable again')
+      const jobsSrc = readFileSync('lib/jobs.ts', 'utf8')
+      check('venue floor: the job compiler refuses a leg the venue would refuse (never strand mid-job)', /crossChainFloorBlock\(ccp\)[\s\S]{0,80}floorProblemLine/.test(jobsSrc), 'a job can compile onto a floored bridge leg again')
+      const { compileJobAsk } = await import('../lib/jobs')
+      const compiled = compileJobAsk('Swap 20 USDC from Polygon to USDC on Base, then supply 20 USDC to Aave')
+      check('venue floor: a compound job carrying a floored leg refuses by name, with the floor in it', Boolean(compiled && 'problem' in compiled && /\$1,000 minimum/.test((compiled as { problem: string }).problem)), JSON.stringify(compiled).slice(0, 180))
+      check('venue floor: the same compound over an unfloored chain still compiles', Boolean((() => { const c = compileJobAsk('Swap 20 USDC from Arbitrum to USDC on Base, then supply 20 USDC to Aave'); return c && !('problem' in c) })()))
+      check('venue floor: the job runner names the floor instead of persisting the venue 400', /floorBlockFromError\(p, msg\)/.test(readFileSync('lib/jobs-runner.ts', 'utf8')))
+      check('venue floor: the compile-time line carries the floor and the size', /\$1,000 minimum/.test(floorProblemLine(cc('polygon', 'base'), crossChainFloorBlock(cc('polygon', 'base'))!)))
+
+      // — LIVE: the table is a measurement, so it must still match the venue —
+      // One dry quote per claim (nothing committed, no deposit address). A
+      // venue wobble retries once; a real disagreement is a RED, which is
+      // exactly how a lifted limit is meant to surface.
+      const oneclick = async (originSlug: string, destSlug: string, usd: number): Promise<{ ok: boolean; floor: number | null; msg: string } | null> => {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const toks = await liveTokens()
+            if (!toks) return null
+            const pickTok = (slug: string) => toks.find((t) => t.blockchain === slug && t.symbol === 'USDC') ?? toks.find((t) => t.blockchain === slug && t.symbol === 'USDT')
+            const o = pickTok(originSlug), d = pickTok(destSlug)
+            if (!o || !d) return null
+            const res = await fetch('https://1click.chaindefuser.com/v0/quote', {
+              method: 'POST', headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                dry: true, swapType: 'EXACT_INPUT', slippageTolerance: 100,
+                originAsset: o.assetId, depositType: 'ORIGIN_CHAIN', destinationAsset: d.assetId,
+                amount: BigInt(Math.round((usd / o.price) * 10 ** o.decimals)).toString(),
+                refundTo: '0x2527D02599Ba641c19FEa793cD0F167589a0f10D', refundType: 'ORIGIN_CHAIN',
+                recipient: '0x2527D02599Ba641c19FEa793cD0F167589a0f10D', recipientType: 'DESTINATION_CHAIN',
+                deadline: new Date(Date.now() + 20 * 60_000).toISOString(), referral: 'yeetful',
+              }),
+            })
+            const text = await res.text()
+            let parsed: unknown
+            try { parsed = JSON.parse(text) } catch { parsed = text }
+            const msg = parsed && typeof parsed === 'object' && 'message' in parsed ? String((parsed as { message: unknown }).message) : ''
+            // A non-floor error (no liquidity, a venue timeout) is not an
+            // answer about floors — retry, then skip rather than lie.
+            if (!res.ok && venueFloorFromError(msg) === null) continue
+            return { ok: res.ok, floor: venueFloorFromError(msg), msg }
+          } catch { /* retry */ }
+        }
+        return null
+      }
+      // Every chain the table FENCES still refuses at $20 and clears above.
+      for (const [word, f] of Object.entries(VENUE_FLOORS)) {
+        const slug = word === 'polygon' ? 'pol' : word === 'bnb' ? 'bsc' : word
+        const under = await oneclick(slug, 'base', 20)
+        if (!under) check(`venue floor (live): ${word} under the floor`, true, 'venue unreachable — skipped, not a claim')
+        else check(`venue floor (live): ${word} still refuses $20 at exactly $${f.usd}`, !under.ok && under.floor === f.usd, `venue said ${under.floor === null ? under.msg.slice(0, 60) : `$${under.floor}`}`)
+        const over = await oneclick(slug, 'base', Math.round(f.usd * 1.05))
+        if (!over) check(`venue floor (live): ${word} above the floor`, true, 'venue unreachable — skipped, not a claim')
+        else check(`venue floor (live): ${word} prices above its floor, so the size-up chip is real`, over.ok, over.msg.slice(0, 70))
+      }
+      // And every chain we BUILD on that the table does NOT fence still
+      // prices $20 — this is the pin that catches a NEW floor appearing.
+      for (const [slug, word] of [['eth', 'ethereum'], ['arb', 'arbitrum'], ['op', 'optimism'], ['avax', 'avalanche'], ['gnosis', 'gnosis'], ['scroll', 'scroll']] as const) {
+        if (floorFor(word, 'origin')) continue
+        const r = await oneclick(slug, 'base', 20)
+        if (!r) { check(`venue floor (live): ${word} unfenced`, true, 'venue unreachable — skipped, not a claim'); continue }
+        check(`venue floor (live): ${word} has no floor, as the table says`, r.ok && r.floor === null, r.floor === null ? r.msg.slice(0, 70) : `venue now floors it at $${r.floor} — measure and add it to VENUE_FLOORS`)
+      }
+    }
+  }
+
+
+  // ── Cross-chain settlement: the card stops claiming a swap it never
+  // watched (live 2026-09-22, prod chat /p/vs2fyAlM_3Fl) ───────────────────
+  {
+    console.log('— cross-chain settlement')
+    const DEP = '0x8B3B693660Aa7a8022FA1B2e84dF5822Dc966655'
+    const DEPOSIT_TX = '0xa08695f583347dcc4bd74ce5d18771b4370c947e6b136aa60ef4ccd51e90609b'
+    const REFUND_TX = '0x779b6f8251d18a0af73ab7eb2e3007682d4ab5a494e608daf739ce8a51cdda16'
+    // The venue's ACTUAL answer for that swap, captured verbatim from
+    // near-intents.yeetful.com on 2026-09-22. The card had already said
+    // "signed & settled" over this.
+    const REFUNDED_PAYLOAD = {
+      kind: 'swap_status',
+      depositAddress: DEP,
+      status: 'REFUNDED',
+      terminal: true,
+      explanation: 'The swap did not complete … and the deposit was returned to the refund address on the origin chain.',
+      updatedAt: '2026-09-22T09:12:17.000Z',
+      swap: {
+        deposited: '1.0',
+        swappedIn: null,
+        delivered: null,
+        deliveredUsd: null,
+        actualSlippageBps: null,
+        originTransactions: [{ hash: DEPOSIT_TX, explorer: `https://basescan.org/tx/${DEPOSIT_TX}` }],
+        // Measured: the venue files the REFUND here, with a DESTINATION-chain
+        // explorer link — that hash exists on Base, not Ethereum.
+        destinationTransactions: [{ hash: REFUND_TX, explorer: `https://etherscan.io/tx/${REFUND_TX}` }],
+        refunded: '0.9976',
+        refundReason: 'INTENT_SUBMIT_FAILED',
+      },
+      next_step: 'The origin funds are back in the refund wallet.',
+    }
+    const LANE = { originChain: 'base', destinationChain: 'ethereum' }
+    const dep = xchainDepositOf({
+      workingContext: {
+        v: 1,
+        age: 0,
+        pending: crossChainPending(
+          { amount: '1', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'ethereum' },
+          DEP,
+          'Swap 1 USDC · Base → Ethereum',
+        ),
+      },
+    })
+    check(
+      'xchain settlement: the deposit is read out of the REAL producer (crossChainPending) on the message meta',
+      !!dep && dep.depositAddress === DEP && dep.originChain === 'base' && dep.destinationChain === 'ethereum' && dep.originToken === 'USDC',
+      JSON.stringify(dep),
+    )
+    check(
+      'xchain settlement: a turn with no xchain pending, a bad address, or another kind carries no deposit',
+      xchainDepositOf({ txRequest: { to: DEP } }) === null &&
+        xchainDepositOf({ workingContext: { v: 1, pending: { kind: 'xchain', summary: 's', data: { depositAddress: 'nope', originChain: 'base', destinationChain: 'ethereum' } } } }) === null &&
+        xchainDepositOf({ workingContext: { v: 1, pending: { kind: 'rh-funding', summary: 's', data: { depositAddress: DEP, originChain: 'base', destinationChain: 'ethereum' } } } }) === null,
+    )
+
+    const refunded = parseSwapStatus(REFUNDED_PAYLOAD, LANE, [DEPOSIT_TX])
+    check(
+      'xchain settlement: the live payload that shipped as "signed & settled" reads REFUNDED, terminal, with the amount and the venue\'s reason',
+      refunded.status === 'refunded' && refunded.terminal && refunded.venueStatus === 'REFUNDED' && refunded.refunded === '0.9976' && refunded.refundReason === 'INTENT_SUBMIT_FAILED',
+      JSON.stringify(refunded),
+    )
+    check(
+      'xchain settlement: the refund link is built on the ORIGIN chain — never the venue\'s destination explorer (that hash is on Base)',
+      refunded.txHash === REFUND_TX && refunded.txChain === 'base' && refunded.txUrl === `https://basescan.org/tx/${REFUND_TX}`,
+      JSON.stringify({ hash: refunded.txHash, url: refunded.txUrl }),
+    )
+    check(
+      'xchain settlement: the deposit this browser signed is never reported back as the refund',
+      parseSwapStatus(
+        { ...REFUNDED_PAYLOAD, swap: { ...REFUNDED_PAYLOAD.swap, destinationTransactions: [], originTransactions: [{ hash: DEPOSIT_TX, explorer: '' }] } },
+        LANE,
+        [DEPOSIT_TX],
+      ).txHash === undefined,
+      'the deposit was printed as the refund',
+    )
+
+    const DELIVERY_TX = '0x' + 'a1'.repeat(32)
+    const success = parseSwapStatus(
+      { status: 'SUCCESS', updatedAt: '2026-09-22T09:12:17.000Z', swap: { delivered: '0.9993', destinationTransactions: [{ hash: DELIVERY_TX, explorer: 'https://example.invalid/x' }], originTransactions: [{ hash: DEPOSIT_TX }] } },
+      LANE,
+      [DEPOSIT_TX],
+    )
+    check(
+      'xchain settlement: SUCCESS carries the delivered amount and the DESTINATION-chain delivery link',
+      success.status === 'success' && success.terminal && success.delivered === '0.9993' && success.txChain === 'ethereum' && success.txUrl === `https://etherscan.io/tx/${DELIVERY_TX}`,
+      JSON.stringify(success),
+    )
+    check(
+      'xchain settlement: a non-EVM destination falls back to the venue\'s own delivery link rather than none',
+      parseSwapStatus({ status: 'SUCCESS', swap: { delivered: '5', destinationTransactions: [{ hash: DELIVERY_TX, explorer: 'https://solscan.io/tx/abc' }] } }, { originChain: 'base', destinationChain: 'sol' }, []).txUrl === 'https://solscan.io/tx/abc',
+    )
+    check(
+      'xchain settlement: mid-flight states are never terminal and never a settlement',
+      (['PENDING_DEPOSIT', 'KNOWN_DEPOSIT_TX', 'PROCESSING', 'INCOMPLETE_DEPOSIT'] as const).every((st) => {
+        const o = parseSwapStatus({ status: st, swap: {} }, LANE, [])
+        return !o.terminal && o.status !== 'success'
+      }) && parseSwapStatus({ status: 'PENDING_DEPOSIT', swap: {} }, LANE, []).status === 'awaiting-deposit',
+    )
+    check(
+      'xchain settlement: an unreadable or unrecognized payload is "unknown", never a settlement',
+      parseSwapStatus(null, LANE, []).status === 'unknown' &&
+        parseSwapStatus({ status: 'WAT' }, LANE, []).status === 'unknown' &&
+        !parseSwapStatus({ status: 'WAT' }, LANE, []).terminal,
+    )
+    check('xchain settlement: FAILED is its own terminal state, not a refund claim', parseSwapStatus({ status: 'FAILED', swap: {} }, LANE, []).status === 'failed' && isTerminal('failed'))
+
+    // The gate the whole fix hangs on.
+    const metaOf = (settlement?: unknown) => ({
+      workingContext: { v: 1, age: 0, pending: crossChainPending({ amount: '1', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'ethereum' }, DEP, 's') },
+      signed: [{ hash: DEPOSIT_TX, chainId: 8453 }],
+      ...(settlement ? { settlement } : {}),
+    })
+    check(
+      'xchain settlement: a signed cross-chain deposit does NOT claim settled until the venue says SUCCESS (the bug, pinned)',
+      claimsSettled(metaOf()) === false && claimsSettled(metaOf(refunded)) === false && claimsSettled(metaOf({ status: 'settling', terminal: false })) === false,
+    )
+    check('xchain settlement: the venue saying SUCCESS is what unlocks the claim', claimsSettled(metaOf(success)) === true)
+    check(
+      'xchain settlement: every other signed turn is unchanged — a same-chain swap settles when its own tx confirms',
+      claimsSettled({ signed: [{ hash: DEPOSIT_TX, chainId: 8453 }] }) === true && claimsSettled(undefined) === true,
+    )
+    check(
+      'xchain settlement: the persisted record round-trips through the narrow reader, and junk does not',
+      settlementOf({ settlement: refunded })?.refundReason === 'INTENT_SUBMIT_FAILED' &&
+        settlementOf({ settlement: { status: 'nope' } }) === null &&
+        settlementOf({ settlement: { status: 'success', txUrl: 'javascript:alert(1)' } })?.txUrl === undefined,
+    )
+
+    // Words — what the user actually reads.
+    const refundCopy = settlementCopy(refunded, dep!)
+    check(
+      'xchain settlement: a refund says the amount, the wallet and the ORIGIN chain — and that nothing reached the destination',
+      refundCopy.tone === 'warn' &&
+        refundCopy.line === 'Refunded: 0.9976 USDC came back to your wallet on Base' &&
+        /could not submit the swap/.test(refundCopy.detail ?? '') &&
+        /INTENT_SUBMIT_FAILED/.test(refundCopy.detail ?? '') &&
+        /Nothing reached Ethereum/.test(refundCopy.detail ?? ''),
+      JSON.stringify(refundCopy),
+    )
+    check('xchain settlement: a delivery says what landed and where', settlementCopy(success, dep!).line === 'Delivered 0.9993 USDC on Ethereum' && settlementCopy(success, dep!).tone === 'ok')
+    check(
+      'xchain settlement: mid-flight reads "Still settling" — never "settled", never a delivery claim',
+      (['settling', 'awaiting-deposit', 'unknown'] as const).every((st) => {
+        const c = settlementCopy({ status: st, terminal: false }, dep!)
+        return c.line === 'Still settling' && c.tone === 'muted' && !/delivered|settled/i.test(c.line)
+      }),
+    )
+    check(
+      'xchain settlement: an unmapped refund code still reaches the user verbatim, with no invented meaning',
+      refundReasonWords('WAT_IS_THIS') === null && /WAT_IS_THIS/.test(settlementCopy({ status: 'refunded', terminal: true, refunded: '1', refundReason: 'WAT_IS_THIS' }, dep!).detail ?? ''),
+    )
+    check('xchain settlement: the queue row names the venue status and the outcome in one line', /^REFUNDED: Refunded: 0\.9976 USDC came back/.test(settlementDetailLine(refunded, dep!)))
+    check(
+      'xchain settlement: the poll schedule is 10s then 20s (a swap settles in minutes, not milliseconds)',
+      nextPollDelayMs(0) === SETTLEMENT_FIRST_POLL_MS && nextPollDelayMs(SETTLEMENT_FAST_POLLS) === SETTLEMENT_SLOW_POLL_MS && SETTLEMENT_FIRST_POLL_MS === 10_000 && SETTLEMENT_SLOW_POLL_MS === 20_000,
+    )
+
+    // ── Wiring: the surfaces that used to claim it ─────────────────────────
+    const ciSrc = readFileSync('components/ChatInterface.tsx', 'utf8')
+    check(
+      'xchain settlement: the chat\'s "signed & settled" row is gated on claimsSettled, and the card mounts the watcher',
+      /signedTxsOf\(msg\.meta\)\.length > 0 &&\s*\n\s*claimsSettled\(msg\.meta\) &&/.test(ciSrc) && /<XchainSettlement/.test(ciSrc),
+      'the chat card can claim settlement again',
+    )
+    check(
+      'xchain settlement: a terminal refund is a failures-queue row, not one browser\'s red text',
+      /kind: REFUNDED_KIND/.test(ciSrc) && /reportWalletRefusal\(/.test(ciSrc),
+      'a refund would be invisible outside the tab that saw it',
+    )
+    check(
+      'xchain settlement: the share page renders the venue\'s outcome and the log header stops asserting "settled"',
+      /<SettlementLine/.test(readFileSync('app/p/[slug]/page.tsx', 'utf8')) &&
+        /const settled = claimsSettled\(meta\)/.test(readFileSync('components/SignedTxLines.tsx', 'utf8')),
+    )
+    check(
+      'xchain settlement: a receipt is never minted for a swap the venue didn\'t deliver (fail closed)',
+      /if \(!claimsSettled\(msg\.meta\)\) return null/.test(readFileSync('lib/share-receipts.ts', 'utf8')),
+    )
+
+    // ── The route ─────────────────────────────────────────────────────────
+    const post = (body: unknown) =>
+      fetch(`${BASE}/api/xchain/status`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    check('xchain status route: a malformed deposit address → 400', (await post({ depositAddress: 'nope', originChain: 'base', destinationChain: 'ethereum' })).status === 400)
+    check('xchain status route: both chain words are required → 400', (await post({ depositAddress: DEP })).status === 400)
+    // Live: that deposit address is a permanent public record on the venue.
+    let live: { status?: number; outcome?: SettlementOutcome } = {}
+    for (let i = 0; i < 3 && live.status !== 200; i++) {
+      const res = await post({ depositAddress: DEP, originChain: 'base', destinationChain: 'ethereum', signedHashes: [DEPOSIT_TX] })
+      live = { status: res.status, outcome: ((await res.json().catch(() => ({}))) as { outcome?: SettlementOutcome }).outcome }
+      if (live.status !== 200) await new Promise((r) => setTimeout(r, 1_500))
+    }
+    check(
+      'xchain status route (live): the swap that shipped as settled reads REFUNDED, with the refund linked on Base',
+      live.status === 200 && live.outcome?.status === 'refunded' && live.outcome.txHash === REFUND_TX && live.outcome.txUrl === `https://basescan.org/tx/${REFUND_TX}`,
+      JSON.stringify(live).slice(0, 220),
+    )
+
+    // ── Persistence + the share page, end to end ──────────────────────────
+    const xChat = await (
+      await fetch(`${BASE}/api/chats`, { method: 'POST', headers: CJ, body: JSON.stringify({ title: 'test:api xchain settlement', activeServerIds: [] }) })
+    ).json()
+    await fetch(`${BASE}/api/chats/${xChat.id}/messages`, { method: 'POST', headers: CJ, body: JSON.stringify({ role: 'user', content: 'Swap 1 USDC from base to ethereum' }) })
+    const xMsg = await (
+      await fetch(`${BASE}/api/chats/${xChat.id}/messages`, {
+        method: 'POST',
+        headers: CJ,
+        body: JSON.stringify({
+          role: 'assistant',
+          content: 'Harness cross-chain build.',
+          meta: {
+            txRequest: { to: DEP, data: '0x', value: '1', chainId: 8453, action: 'deposit' },
+            buildPath: 'native-cross-chain',
+            signed: [{ hash: DEPOSIT_TX, chainId: 8453, title: 'deposit' }],
+            workingContext: { v: 1, age: 0, pending: crossChainPending({ amount: '1', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'ethereum' }, DEP, 'Swap 1 USDC · Base → Ethereum') },
+          },
+        }),
+      })
+    ).json()
+    const settleUrl = `${BASE}/api/chats/${xChat.id}/messages/${xMsg.id}/settlement`
+    check('xchain settlement write-back without a session → 401', (await fetch(settleUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ outcome: refunded }) })).status === 401)
+    check('xchain settlement write-back refuses a mid-flight outcome → 400', (await fetch(settleUrl, { method: 'POST', headers: CJ, body: JSON.stringify({ outcome: { status: 'settling', terminal: false } }) })).status === 400)
+    check('xchain settlement write-back refuses junk → 400', (await fetch(settleUrl, { method: 'POST', headers: CJ, body: JSON.stringify({ outcome: { status: 'delivered-probably' } }) })).status === 400)
+    const wrote = await (await fetch(settleUrl, { method: 'POST', headers: CJ, body: JSON.stringify({ outcome: refunded }) })).json()
+    check('xchain settlement write-back records the venue\'s verdict on the message', wrote.settlement?.status === 'refunded' && wrote.settlement?.refundReason === 'INTENT_SUBMIT_FAILED', JSON.stringify(wrote).slice(0, 200))
+    const xShared = await (await fetch(`${BASE}/api/chats/${xChat.id}`, { method: 'PATCH', headers: CJ, body: JSON.stringify({ isPublic: true }) })).json()
+    const xHtml = flat(await (await fetch(`${BASE}/p/${xShared.publicSlug}`)).text())
+    check(
+      'xchain settlement: the SHARE page tells the same story — refunded, on Base, and no "settled" claim anywhere',
+      xHtml.includes('Refunded: 0.9976 USDC came back to your wallet on Base') &&
+        xHtml.includes(`https://basescan.org/tx/${REFUND_TX}`) &&
+        !xHtml.includes('Signed &amp; settled on-chain') &&
+        xHtml.includes('Signed on-chain'),
+      'the share page still claims a settled swap',
+    )
+  }
+
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)

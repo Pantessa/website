@@ -64,13 +64,15 @@ import {
   type FundingBalanceRead,
   type FundingNeed,
   type FundingRefusalFacts,
+  type FundingScan,
 } from '../lib/funding-plan'
 import { deliveryFundUsd, ONRAMP_DEFAULT_NETWORK, ONRAMP_ETH_PRICE_CEILING_USD, ONRAMP_MAX_USD, ONRAMP_SETTLE_SLACK_USD, planFundUsd } from '../lib/onramp'
 import { buyDollarsOf, swapShortfallTurn, type SwapShortfallAsk } from '../lib/swap-shortfall'
+import { bridgeAlternatives, bridgeCardChip } from '../lib/bridge-shortfall'
 import { laneGasFloorPresetUsd, layerCardKind, layerPlanUsd, layerShortfallTurn, LAYER_SHORTFALL, ONRAMP_LANE_CHAIN_ID, type LayerShortfallAsk } from '../lib/layer-shortfall'
 import { compileJobAsk, parseRobinhoodFunding } from '../lib/jobs'
 import { planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, robinhoodBuyNeedUsd, type FundingOrigin } from '../lib/lifi-bridge'
-import { simulateLadder } from './ask-ladder'
+import { buildsNatively, simulateLadder } from './ask-ladder'
 
 // The card door reads the environment (lib/onramp fails closed without both).
 // The audit is about what an OPEN door offers, so it opens one — no request
@@ -1441,7 +1443,11 @@ interface MatrixNeed {
   destChainId: number
   destToken: string
   /** The refusal's door: the swap card, a layer card, or none of ours. */
-  doorFor: (held: number) => { kind: 'swap'; ask: SwapShortfallAsk } | { kind: 'layer'; ask: LayerShortfallAsk } | { kind: 'none' }
+  doorFor: (held: number) =>
+    | { kind: 'swap'; ask: SwapShortfallAsk }
+    | { kind: 'layer'; ask: LayerShortfallAsk }
+    | { kind: 'bridge'; amount: string; destToken: string; destChain: string }
+    | { kind: 'none' }
 }
 
 function matrixNeeds(): MatrixNeed[] {
@@ -1516,13 +1522,16 @@ function matrixNeeds(): MatrixNeed[] {
     doorFor: () => ({ kind: 'layer', ask: nftAsk(8453, 0.01) }),
   })
   // A token SEND: the generic bridge-only need (no follow-up segment).
+  // It has no action to restate, which is why the funding layer has never
+  // carried its door — but the SURFACE can: lib/bridge-shortfall re-origins
+  // the move onto the chain the card delivers to (no-dead-ends round 2).
   out.push({
     name: 'send 40 USDC on Arbitrum (bridge-only need)',
     ask: 40,
     destChainId: 42161,
     destToken: 'USDC',
     needFor: (held) => ({ chainId: 42161, token: 'USDC', amountHuman: Number((40 - held).toFixed(2)), followupResume: '', actionLabel: 'the send' }),
-    doorFor: () => ({ kind: 'none' }),
+    doorFor: (held) => ({ kind: 'bridge', amount: String(Number((40 - held).toFixed(2))), destToken: 'USDC', destChain: 'arbitrum' }),
   })
   return out
 }
@@ -1542,6 +1551,7 @@ function heldOnDestination(m: MatrixNeed, reads: FundingBalanceRead[]): number {
 function refusalDoor(
   door: ReturnType<MatrixNeed['doorFor']>,
   refusal: { insufficient: string } & FundingRefusalFacts,
+  scan: Pick<FundingScan, 'sources' | 'stranded'>,
 ): { ok: true; via: string } | { ok: false; reply: string } {
   // The money exists and only origin gas is missing — the copy's own next
   // step (a dollar of ETH on the named chain) IS the door.
@@ -1555,6 +1565,21 @@ function refusalDoor(
     const turn = layerShortfallTurn({ ask: door.ask, refusal })
     if (turn.clarify?.options.some((o) => o.fund)) return { ok: true, via: 'layer card chip' }
     return { ok: false, reply: turn.reply }
+  }
+  if (door.kind === 'bridge') {
+    // The SURFACE's door for a bridge-only need (lib/bridge-shortfall, round
+    // 2): the move re-origined onto money the wallet actually holds, or the
+    // venue swap that skips the bridge. Failing that, the card.
+    const alt = bridgeAlternatives({
+      parsed: { amount: door.amount, originToken: door.destToken, originChain: '', destinationToken: door.destToken, destinationChain: door.destChain },
+      sources: scan.sources,
+      stranded: scan.stranded,
+      verify: buildsNatively,
+    })
+    if (alt.chips.length) return { ok: true, via: `bridge alternative (${alt.chips[0].resume})` }
+    const chip = bridgeCardChip({ ...door, landsOn: ONRAMP_DEFAULT_NETWORK, ethUsd: ETH_USD, verify: buildsNatively })
+    if (chip?.fund) return { ok: true, via: 'bridge card chip' }
+    return { ok: false, reply: refusal.insufficient }
   }
   return { ok: false, reply: refusal.insufficient }
 }
@@ -1646,7 +1671,7 @@ for (const shape of SHAPES) {
           flag(`refusal copy never names "${mention}": "${decision.insufficient}"`)
         }
       }
-      const doorOut = refusalDoor(door, refusal)
+      const doorOut = refusalDoor(door, refusal, scan)
       if (!doorOut.ok) {
         const key = `${m.name} · ${refusal.empty ? 'empty wallet' : 'holding money'}`
         // A bridge-only need (no follow-up segment) has no action to restate,
