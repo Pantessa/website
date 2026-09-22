@@ -27318,6 +27318,24 @@ async function main() {
           (await readFile('components/markets/trade/RouteTable.tsx', 'utf8')).includes('buyShut') &&
           (await readFile('app/x402-design.css', 'utf8')).includes('.sym__act-shut'),
       )
+      const vgTradeTab = await readFile('components/markets/tabs/TradeTab.tsx', 'utf8')
+      check(
+        'venue gate: the Trade panel never composes an order for a side with no venue (its side list would be EMPTY and the sentence undefined), and "Chain it" is gone with it — its first leg would bridge money onto a chain that cannot complete the buy',
+        vgTradeTab.includes('const noOrder = sides.length === 0') && vgTradeTab.includes("!shutSides.includes('buy') && (") && vgTradeTab.includes('noVenueNote('),
+      )
+      const vgAmbaTrade = await (await fetch(`${BASE}/t/AMBA?tab=trade`)).text()
+      const vgAaplTrade = await (await fetch(`${BASE}/t/AAPL?tab=trade`)).text()
+      check(
+        'venue gate (served): /t for a shut symbol renders the chart, the name and the reason and NO act chip; the same page for a fillable one is untouched',
+        /data-shut="buy\+sell"/.test(vgAmbaTrade) && vgAmbaTrade.includes('No venue can buy or sell AMBA') && !/sym__act-chip/.test(vgAmbaTrade) && vgAmbaTrade.includes('Ambarella') &&
+          /sym__act-chip/.test(vgAaplTrade) && !/data-shut/.test(vgAaplTrade),
+      )
+      const vgMarketsHtml = await (await fetch(`${BASE}/markets`)).text()
+      check(
+        'venue gate (served): the /markets ledger still lists every symbol — a shut row keeps its link, its name and its quote, and its act seat says NO VENUE instead of offering a button',
+        /data-symbol="AMBA"/.test(vgMarketsHtml) && vgMarketsHtml.includes('/t/AMBA') && /data-symbol="AMBA"[\s\S]{0,900}?mkt-quick__none/.test(vgMarketsHtml) &&
+          /data-symbol="AAPL"[\s\S]{0,900}?mkt-quick__chip/.test(vgMarketsHtml),
+      )
     }
 
     const heldPillSrc = await readFile('components/markets/shell/HeldPill.tsx', 'utf8')
