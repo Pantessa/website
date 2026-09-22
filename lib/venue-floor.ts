@@ -211,7 +211,11 @@ export function floorRefusalTurn(p: CrossChainSwapParams, block: FloorBlock, sou
         : `on this route`
 
   const lines = [
-    `🔗 **${chainWord} has a ${fmtUsd(block.usd)} minimum on this venue right now** — so I built nothing rather than hand you a deposit it will refuse.`,
+    // A 'route' block means the venue refused but the table doesn't name an
+    // end — so the headline names the LIMIT, not a chain we'd be guessing at.
+    block.side === 'route'
+      ? `🔗 **This route has a ${fmtUsd(block.usd)} minimum on this venue right now** — so I built nothing rather than hand you a deposit it will refuse.`
+      : `🔗 **${chainWord} has a ${fmtUsd(block.usd)} minimum on this venue right now** — so I built nothing rather than hand you a deposit it will refuse.`,
     '',
     `NEAR Intents has a temporary limit on swaps ${where}: anything under ${fmtUsd(block.usd)} is rejected when the quote is priced, before there's ever a deposit address. Your ${asked} is under it. Nothing was signed and nothing moved.`,
   ]
