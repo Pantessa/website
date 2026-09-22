@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { bumpAndCheckBrokerCall, clientIpFrom } from '@/lib/turn-limits'
-import { WALLET_REFUSAL_KIND, WITHHELD_KIND, isReportableWalletError } from '@/lib/wallet-refusal'
+import { REFUNDED_KIND, WALLET_REFUSAL_KIND, WITHHELD_KIND, isReportableWalletError } from '@/lib/wallet-refusal'
 import { isInternalRun } from '@/lib/internal-run'
 
 export const runtime = 'nodejs'
@@ -34,7 +34,11 @@ export async function POST(req: NextRequest) {
   // `withheld`: the step never reached a wallet — our own dry-run (or a real
   // on-chain revert) held it back (lib/dry-run). Same queue, its own kind, and
   // no rejection gate: the words are ours, a human never said no.
-  const kind = body.kind === WITHHELD_KIND ? WITHHELD_KIND : WALLET_REFUSAL_KIND
+  // `refunded`: the signature landed, the deposit confirmed, and the VENUE
+  // sent the money back (lib/xchain-settlement). Same queue, its own kind,
+  // and no rejection gate — the words are the venue's.
+  const kind =
+    body.kind === WITHHELD_KIND ? WITHHELD_KIND : body.kind === REFUNDED_KIND ? REFUNDED_KIND : WALLET_REFUSAL_KIND
   if (!artifact || !detail || !ask) return NextResponse.json({ ok: false, dropped: 'shape' }, { status: 202 })
   if (kind === WALLET_REFUSAL_KIND && !isReportableWalletError(detail)) return NextResponse.json({ ok: true, skipped: 'rejection' }, { status: 202 })
   if (await bumpAndCheckBrokerCall(clientIpFrom(req.headers))) return NextResponse.json({ ok: false, dropped: 'rate' }, { status: 202 })
@@ -56,7 +60,9 @@ export async function POST(req: NextRequest) {
         fundsDetail:
           kind === WITHHELD_KIND
             ? `withheld before signing${chainId ? ` · chain ${chainId}` : ''} — the artifact was built and guarded; the dry-run (or the chain) was the wall.`
-            : `wallet refused at signing${connector ? ` · ${connector}` : ''}${chainId ? ` · wallet on chain ${chainId}` : ''} — the artifact was built and guarded; the wallet was the wall.`,
+            : kind === REFUNDED_KIND
+              ? `refunded after signing${chainId ? ` · chain ${chainId}` : ''} — the deposit confirmed on-chain and the venue returned it; nothing reached the destination.`
+              : `wallet refused at signing${connector ? ` · ${connector}` : ''}${chainId ? ` · wallet on chain ${chainId}` : ''} — the artifact was built and guarded; the wallet was the wall.`,
         isInternal: internalRun,
       },
       select: { id: true },
