@@ -541,6 +541,9 @@ export async function buildSpotSell(input: {
           value: input.pulled.toString(),
         }
       : null
+  // No Base token needs an allowance reset (lib/erc20-approval), and
+  // guardSpotSell takes exactly one approval — stop before the pull otherwise.
+  if (built.resetTx) return { ok: false, detail: 'Venue build carried an allowance reset this autopilot does not send. Nothing pulled.' }
   const approveStep: SpotSellStep = built.approveTx
     ? { to: built.approveTx.to, data: built.approveTx.data, value: built.approveTx.value ?? '0' }
     : { to: sellAddr, data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [registryRouter, input.pulled] }), value: '0' }

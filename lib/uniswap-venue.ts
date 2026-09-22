@@ -37,6 +37,7 @@ import {
 } from '@/lib/tx-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, toPolicy } from '@/lib/grant-store'
 import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, TREASURY_ADDRESS, swapFeeAtoms } from '@/lib/fees'
+import { approvalTxs, guardApprovalSteps, planApproval } from '@/lib/erc20-approval'
 import { checkFillAgainstTape, startSwapTape } from '@/lib/stock-tape'
 
 /** Uniswap v3 on Base (developers.uniswap.org, verified live by the MCP's
@@ -211,7 +212,7 @@ const eqAddr = (a: string | undefined, b: string | undefined) => !!a && !!b && a
  * does anything that fails to decode.
  */
 export function guardUniswapV3Build(
-  build: { swapTx: V3Tx; approveTx: V3Tx | null },
+  build: { swapTx: V3Tx; approveTx: V3Tx | null; resetTx?: V3Tx | null },
   exp: V3GuardExpectations,
   nowSec: number = Math.floor(Date.now() / 1000),
 ): V3GuardResult {
@@ -226,25 +227,24 @@ export function guardUniswapV3Build(
     reasons.push("A native-ETH delivery must swap into the chain's wrapped native — refusing.")
   }
 
-  // Approval: ERC-20 sells only, exactly amountIn to the pinned router.
-  const approve = build.approveTx
-  if (approve) {
+  // Approval: ERC-20 sells only, exactly amountIn to the pinned router —
+  // behind an allowance reset ONLY on a token whose approve() needs one
+  // (lib/erc20-approval; Ethereum USDT). A reset with no approval behind it
+  // is no shape at all.
+  if (build.resetTx && !build.approveTx) reasons.push('An allowance reset rides only in front of an approval — refusing the lone step.')
+  const approvalSteps = [build.resetTx, build.approveTx].filter((t): t is V3Tx => !!t)
+  if (approvalSteps.length) {
     if (exp.sellIsEth) reasons.push('A native-ETH sell needs no approval — refusing the extra step.')
-    if (approve.chainId !== exp.chainId) reasons.push(`The approval targets chain ${approve.chainId}, not ${exp.chainId}.`)
-    if (!eqAddr(approve.to, exp.sellToken)) reasons.push('The approval does not target the sell token.')
-    if (BigInt(approve.value || '0') !== zero) reasons.push('The approval must carry zero native value.')
-    try {
-      const dec = decodeFunctionData({ abi: erc20Abi, data: approve.data as `0x${string}` })
-      if (dec.functionName !== 'approve') {
-        reasons.push(`The approval step calls "${dec.functionName}", not approve — refusing.`)
-      } else {
-        const [spender, amount] = dec.args as [string, bigint]
-        if (!eqAddr(spender, exp.swapRouter02)) reasons.push('The approval spender is not the pinned SwapRouter02.')
-        if (amount !== exp.amountIn) reasons.push('The approval is not exactly the swap amount.')
-      }
-    } catch {
-      reasons.push('Could not decode the approval calldata — refusing.')
-    }
+    reasons.push(
+      ...guardApprovalSteps(approvalSteps, {
+        chainId: exp.chainId,
+        token: exp.sellToken,
+        spender: exp.swapRouter02,
+        floor: exp.amountIn,
+        ceiling: exp.amountIn,
+        spenderLabel: 'the pinned SwapRouter02',
+      }),
+    )
   }
 
   const tx = build.swapTx
@@ -383,6 +383,11 @@ export interface UniswapBuilt {
   summary: string
   guardrails: GuardrailReport
   blocked: boolean
+  /** approve(router, 0), sent BEFORE `approveTx` — set only when the wallet
+   *  holds a partial allowance on a token whose approve() refuses a non-zero
+   *  → non-zero change (Ethereum USDT). Every consumer that sends `approveTx`
+   *  must send this first; `v3ApprovalSteps` does it in one place. */
+  resetTx: { to: string; data: string; value: string; chainId: number; action: string } | null
   /** The evm-tx the user broadcasts — approve first when `approveTx` is set. */
   swapTx: { to: string; data: string; value: string; chainId: number; action: string }
   approveTx: { to: string; data: string; value: string; chainId: number; action: string } | null
@@ -525,6 +530,7 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   // Approval: ERC-20 sells need allowance to SwapRouter02; ETH sells don't
   // (the router wraps msg.value).
   let approveTx: UniswapBuilt['approveTx'] = null
+  let resetTx: UniswapBuilt['resetTx'] = null
   let allowanceCheck: GuardrailCheck = { id: 'allowance', level: 'warn', ok: true, note: 'No approval needed (native ETH in).' }
   if (!sellIsEth) {
     const allowance = await client.readContract({
@@ -533,30 +539,26 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
       functionName: 'allowance',
       args: [from, swapRouter02],
     })
-    const ok = allowance >= amountIn
+    const plan = planApproval({ chainId, token: sellAddr, allowance, amount: amountIn })
+    const ok = plan === 'none'
+    const label = tokenLabel(params.sellToken, chainId)
     allowanceCheck = {
       id: 'allowance',
       level: 'warn',
       ok,
       note: ok
         ? 'Uniswap SwapRouter02 allowance is in place.'
-        : `Approve ${tokenLabel(params.sellToken, chainId)} to Uniswap's SwapRouter02 first — the approve transaction is attached.`,
+        : plan === 'reset-then-approve'
+          ? `${label} holds an older, smaller allowance to Uniswap's SwapRouter02, and ${label}'s contract refuses to change a live allowance — a reset to zero and the exact approval are both attached.`
+          : `Approve ${label} to Uniswap's SwapRouter02 first — the approve transaction is attached.`,
     }
-    if (!ok) {
-      approveTx = {
-        to: sellAddr,
-        data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [swapRouter02, amountIn] }),
-        value: '0',
-        chainId,
-        action: 'approve',
-      }
-    }
+    ;({ resetTx, approveTx } = approvalTxs({ chainId, token: sellAddr, spender: swapRouter02, amount: amountIn, plan }))
   }
 
   // ── The guard: decode what we just built; refuse the turn on any mismatch.
   const buyLabel = tokenLabel(params.buyToken, chainId)
   const guard = guardUniswapV3Build(
-    { swapTx, approveTx },
+    { swapTx, approveTx, resetTx },
     {
       chainId,
       swapRouter02,
@@ -625,5 +627,15 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   const feeNote = feeOn ? `, incl. ${feeBps / 100}% Pantessa fee on the output` : ''
   const summary = `Swap ${inHuman} ${tokenLabel(params.sellToken, chainId)} → ~${outHuman} ${buyLabel} via Uniswap v3 on ${chain.name} (${best.fee / 100}bps pool), min received ${minHuman} (${slippageBps}bps slippage${feeNote})`
 
-  return { summary, guardrails, blocked: !guardrails.ok, swapTx, approveTx, minimumOut: minHuman, validUntil: deadline }
+  return { summary, guardrails, blocked: !guardrails.ok, swapTx, approveTx, resetTx, minimumOut: minHuman, validUntil: deadline }
+}
+
+/** The approval step(s) of a built v3 swap as chain steps, in signing order:
+ *  [reset?, approve?]. One place, so no consumer can send the approval and
+ *  drop the reset in front of it. */
+export function v3ApprovalSteps(uni: Pick<UniswapBuilt, 'approveTx' | 'resetTx'>, sellLabel: string): Array<{ label: string; title: string; tx: NonNullable<UniswapBuilt['approveTx']> }> {
+  return [
+    ...(uni.resetTx ? [{ label: 'approve-reset', title: `Clear the old ${sellLabel} allowance (${sellLabel} requires it before a new one)`, tx: uni.resetTx }] : []),
+    ...(uni.approveTx ? [{ label: 'approve', title: `Approve ${sellLabel} to Uniswap's SwapRouter02`, tx: uni.approveTx }] : []),
+  ]
 }

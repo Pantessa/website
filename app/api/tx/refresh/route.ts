@@ -201,6 +201,8 @@ export async function POST(req: NextRequest) {
     if (uni.approveTx) {
       // Allowance still short (approval not confirmed / not indexed yet) —
       // tell the card to wait and retry rather than offering a doomed swap.
+      // (A reset step never arrives without its approval, so this one test
+      // also covers a node still showing the old partial allowance.)
       return NextResponse.json({ pending: true, note: 'allowance not visible on-chain yet' })
     }
     const gate = await dryRunGate(chainId, from, uni.swapTx, 'swap', 'uniswap-swap')

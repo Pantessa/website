@@ -28797,6 +28797,153 @@ async function main() {
     check('no dead ends: no spot-guard reply describes our infrastructure to a stranger ("this environment", "not provisioned")', !/reply:[^\n]*(?:this environment|aren.t provisioned|not provisioned)/i.test(sgSrc), 'an env-shaped sentence is still in a reply')
   }
 
+  // ── ALLOWANCE RESET (2026-09-21, squad finding F3) ────────────────────────
+  // Ethereum USDT's approve() reverts on a non-zero → non-zero change, so a
+  // wallet with a partial allowance got an approve → swap chain whose first
+  // step reverted after the signature. lib/erc20-approval owns the rule for
+  // builders and guards alike; scripts/drive-usdt-approve-fork.ts is the
+  // on-chain proof. These pins hold the three allowance states and the ONE
+  // extra shape the guards may accept.
+  {
+    const { approvalResetRequired, approvalTxs, guardApprovalSteps, planApproval } = await import('../lib/erc20-approval')
+    const { v3ApprovalSteps } = await import('../lib/uniswap-venue')
+    const { buildGuardedSwap: arBuildGuardedSwap } = await import('../lib/swap-exec')
+    const Z = BigInt(0)
+    const USDT_E = chainById(1)!.tokens.USDT.address
+    const USDC_E = chainById(1)!.tokens.USDC.address
+    const ROUTER_E = chainById(1)!.uniswap!.swapRouter02
+    const AR_USER = '0x28C6c06298d514Db089934071355E5743bf21d60'
+    const AR_EVIL = '0x000000000000000000000000000000000000dEaD'
+    const amt = BigInt(54_540_000)
+
+    // The registry set is a measurement (every registry token on every chain,
+    // approve 1 → approve 2 on a fork): adding a token here is a conscious flip.
+    const flagged = APP_CHAINS.flatMap((c) => Object.entries(c.tokens).filter(([, t]) => t.approveReset).map(([sym]) => `${c.id}:${sym}`))
+    check('allowance reset: the registry flags exactly Ethereum USDT', flagged.join(',') === '1:USDT', flagged.join(','))
+    check(
+      'allowance reset: the flag is read by address on its own chain — any casing, never Arbitrum/Optimism USDT, never USDC',
+      approvalResetRequired(1, USDT_E.toLowerCase()) && approvalResetRequired(1, USDT_E.toUpperCase().replace('0X', '0x')) && !approvalResetRequired(42161, chainById(42161)!.tokens.USDT.address) && !approvalResetRequired(10, chainById(10)!.tokens.USDT.address) && !approvalResetRequired(42161, USDT_E) && !approvalResetRequired(1, USDC_E),
+    )
+
+    // The three allowance states.
+    const plan = (token: string, allowance: bigint) => planApproval({ chainId: 1, token, allowance, amount: amt })
+    check('allowance reset: no allowance → one exact approve', plan(USDT_E, Z) === 'approve')
+    check('allowance reset: a partial USDT allowance → reset, then the exact approve', plan(USDT_E, BigInt(10_000_000)) === 'reset-then-approve' && plan(USDT_E, amt - BigInt(1)) === 'reset-then-approve')
+    check('allowance reset: enough allowance → no approval step at all (equal counts as enough)', plan(USDT_E, amt) === 'none' && plan(USDT_E, amt * BigInt(2)) === 'none')
+    check('allowance reset: a partial allowance on an ordinary token stays one approve', plan(USDC_E, BigInt(10_000_000)) === 'approve')
+
+    const txsOf = (p: 'none' | 'approve' | 'reset-then-approve', token = USDT_E, spender: string = ROUTER_E) => approvalTxs({ chainId: 1, token, spender, amount: amt, plan: p })
+    const amountOf = (tx: { data: string } | null) => (tx ? (decodeFunctionData({ abi: erc20Abi, data: tx.data as `0x${string}` }).args as [string, bigint])[1] : null)
+    const both = txsOf('reset-then-approve')
+    check(
+      'allowance reset: the built steps are approve(router, 0) then approve(router, exactly the amount)',
+      amountOf(both.resetTx) === Z && amountOf(both.approveTx) === amt && txsOf('approve').resetTx === null && amountOf(txsOf('approve').approveTx) === amt && txsOf('none').approveTx === null && txsOf('none').resetTx === null,
+    )
+
+    // The v3 guard, on a real fee-on USDT → USDC build shape.
+    const deadline = Math.floor(Date.now() / 1000) + 600
+    const minOut = BigInt(54_000_000)
+    const swapData = encodeFunctionData({
+      abi: SWAP_ROUTER_02_ABI,
+      functionName: 'multicall',
+      args: [
+        BigInt(deadline),
+        [
+          encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'exactInputSingle', args: [{ tokenIn: USDT_E, tokenOut: USDC_E, fee: 100, recipient: ADDRESS_THIS as `0x${string}`, amountIn: amt, amountOutMinimum: minOut, sqrtPriceLimitX96: Z }] }),
+          encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'sweepTokenWithFee', args: [USDC_E, minOut, AR_USER as `0x${string}`, BigInt(SWAP_FEE_BPS), TREASURY_ADDRESS as `0x${string}`] }),
+        ],
+      ],
+    })
+    const swapTx = { to: ROUTER_E as string, data: swapData, value: '0', chainId: 1, action: 'swap' }
+    const exp: V3GuardExpectations = { chainId: 1, swapRouter02: ROUTER_E, sellToken: USDT_E, buyToken: USDC_E, sellIsEth: false, nativeOut: false, amountIn: amt, minOut, poolFee: 100, recipient: AR_USER, deadline, feeBps: SWAP_FEE_BPS }
+    const g = (build: { approveTx: unknown; resetTx?: unknown }, e: V3GuardExpectations = exp) => guardUniswapV3Build({ swapTx, ...(build as { approveTx: null }) }, e)
+    check(
+      'allowance reset (v3 guard): all three states pass — swap alone, approve → swap, reset → approve → swap',
+      g({ approveTx: null }).ok && g({ approveTx: both.approveTx }).ok && g({ approveTx: both.approveTx, resetTx: both.resetTx }).ok,
+      JSON.stringify(g({ approveTx: both.approveTx, resetTx: both.resetTx }).reasons),
+    )
+    const usdcBoth = txsOf('reset-then-approve', USDC_E)
+    const refuses = (name: string, build: { approveTx: unknown; resetTx?: unknown }, re: RegExp) => {
+      const r = g(build)
+      check(`allowance reset (v3 guard): ${name} refuses`, !r.ok && r.reasons.some((x) => re.test(x)), JSON.stringify(r.reasons))
+    }
+    refuses('a reset with no approval behind it', { approveTx: null, resetTx: both.resetTx }, /lone step/)
+    refuses('a bare approve(router, 0) in the approval slot', { approveTx: both.resetTx }, /bare reset/)
+    refuses('two live approvals (the "reset" is non-zero)', { approveTx: both.approveTx, resetTx: txsOf('approve').approveTx }, /not a reset to zero/)
+    refuses('a reset aimed at another spender', { approveTx: both.approveTx, resetTx: txsOf('reset-then-approve', USDT_E, AR_EVIL).resetTx }, /allowance reset spender/)
+    refuses('a reset aimed at another token', { approveTx: both.approveTx, resetTx: txsOf('reset-then-approve', USDC_E).resetTx }, /allowance reset does not target/)
+    refuses('more than the exact amount behind a reset', { approveTx: approvalTxs({ chainId: 1, token: USDT_E, spender: ROUTER_E, amount: amt * BigInt(2), plan: 'approve' }).approveTx, resetTx: both.resetTx }, /more than the amount/)
+    refuses('a reset that carries native value', { approveTx: both.approveTx, resetTx: { ...both.resetTx!, value: '1' } }, /zero native value/)
+    refuses('a "reset" that is really a transfer', { approveTx: both.approveTx, resetTx: { ...both.resetTx!, data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [AR_EVIL as `0x${string}`, amt] }) } }, /not approve/)
+    // The same reset in front of an ordinary token: judged by the shared guard directly.
+    const usdcReasons = guardApprovalSteps([usdcBoth.resetTx!, usdcBoth.approveTx!], { chainId: 1, token: USDC_E, spender: ROUTER_E, floor: amt, ceiling: amt, spenderLabel: 'the router' })
+    check('allowance reset (shared guard): a reset on USDC refuses; the lone USDC approve passes', usdcReasons.some((x) => /requires one/.test(x)) && guardApprovalSteps([usdcBoth.approveTx!], { chainId: 1, token: USDC_E, spender: ROUTER_E, floor: amt, ceiling: amt, spenderLabel: 'the router' }).length === 0, JSON.stringify(usdcReasons))
+    check('allowance reset (shared guard): three approval steps refuse outright', guardApprovalSteps([both.resetTx!, both.resetTx!, both.approveTx!], { chainId: 1, token: USDT_E, spender: ROUTER_E, floor: amt, ceiling: amt, spenderLabel: 'the router' }).length > 0)
+
+    // The card: SendTxChain walks [reset, approve, swap] in order and the
+    // refresh recipe re-quotes the LAST step, however many approvals lead.
+    const stepsOf = v3ApprovalSteps({ approveTx: both.approveTx, resetTx: both.resetTx }, 'USDT')
+    check('allowance reset (card): the reset is its own labeled step, in front of the approval', stepsOf.map((x) => x.label).join('>') === 'approve-reset>approve' && v3ApprovalSteps({ approveTx: both.approveTx, resetTx: null }, 'USDT').length === 1 && v3ApprovalSteps({ approveTx: null, resetTx: null }, 'USDT').length === 0)
+    const okRails = { ok: true, valueUsd: 54.54, checks: [] }
+    const chainFor = async (approveTx: unknown, resetTx: unknown) => {
+      const r = await arBuildGuardedSwap({ sellToken: 'USDT', buyToken: 'USDC', amountHuman: '54.54', from: AR_USER, chainId: 1 }, { v3: async () => ({ summary: 's', guardrails: okRails, blocked: false, swapTx, approveTx, resetTx, minimumOut: '1', validUntil: deadline }) } as never)
+      return r.ok ? { labels: r.txChain.steps.map((x) => x.label).join('>'), at: r.txChain.refresh?.stepIndex, kind: r.txChain.refresh?.kind } : null
+    }
+    const c3 = await chainFor(both.approveTx, both.resetTx)
+    const c2 = await chainFor(both.approveTx, null)
+    const c1 = await chainFor(null, null)
+    check(
+      'allowance reset (card): swap-exec emits reset > approve > swap and the refresh recipe aims at the swap in all three states',
+      c3?.labels === 'approve-reset>approve>swap' && c3.at === 2 && c2?.labels === 'approve>swap' && c2.at === 1 && c1?.labels === 'swap' && c1.at === 0 && c3.kind === 'uniswap-swap',
+      JSON.stringify({ c3, c2, c1 }),
+    )
+    const arChat = readFileSync('app/api/chat/route.ts', 'utf8')
+    const arRefresh = readFileSync('app/api/tx/refresh/route.ts', 'utf8')
+    check(
+      'allowance reset (card): the chat turn rides v3ApprovalSteps and no longer hardcodes the swap at step 1; the refresh route still holds while any approval is owed',
+      /\.\.\.approvalSteps,/.test(arChat) && /stepIndex: approvalSteps\.length/.test(arChat) && !/kind: 'uniswap-swap',\s*stepIndex: 1,/.test(arChat) && /if \(uni\.approveTx\) \{[\s\S]{0,500}pending: true/.test(arRefresh),
+    )
+    const arBuilder = readFileSync('lib/uniswap-venue.ts', 'utf8')
+    check('allowance reset: the v3 builder plans its approval through lib/erc20-approval and encodes no approve of its own', /planApproval\(\{ chainId, token: sellAddr, allowance, amount: amountIn \}\)/.test(arBuilder) && !/functionName: 'approve'/.test(arBuilder))
+    // The autopilots send one approval from the CDP spender; a build that
+    // carries a reset must stop BEFORE the pull rather than drop the step.
+    for (const f of ['lib/dca-auto-exec.ts', 'lib/spot-guard-exec.ts']) {
+      check(`allowance reset: ${f} refuses a build that carries a reset (it would otherwise drop the step)`, /if \(built\.resetTx\) return \{ ok: false/.test(readFileSync(f, 'utf8')))
+    }
+
+    // Morpho: the MCP's steps pass the same strict shape — a reset only for a
+    // reset token, never two live approvals (the old guard passed those).
+    const M = '0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb'
+    const mTuple = { loanToken: USDT_E, collateralToken: chainById(1)!.tokens.WBTC.address, oracle: `0x${'a'.repeat(40)}`, irm: `0x${'b'.repeat(40)}`, lltv: BigInt('860000000000000000') } as const
+    const MP_AR = [{ name: 'loanToken', type: 'address' }, { name: 'collateralToken', type: 'address' }, { name: 'oracle', type: 'address' }, { name: 'irm', type: 'address' }, { name: 'lltv', type: 'uint256' }] as const
+    const SUPPLY_ABI = [{ name: 'supply', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'marketParams', type: 'tuple', components: MP_AR }, { name: 'assets', type: 'uint256' }, { name: 'shares', type: 'uint256' }, { name: 'onBehalf', type: 'address' }, { name: 'data', type: 'bytes' }], outputs: [] }] as const
+    const lend = (t: typeof mTuple | (Omit<typeof mTuple, 'loanToken'> & { loanToken: string })) => encodeFunctionData({ abi: SUPPLY_ABI, functionName: 'supply', args: [t as never, amt, Z, AR_USER as `0x${string}`, '0x'] })
+    const ms = (tx: { to: string; data: string }, label: string) => ({ action: 'send_transaction', label, summary: label, tx: { to: tx.to, data: tx.data, value: '0', chainId: 1 } })
+    const mExp = (loanToken: string): MorphoOpGuardExpectation => ({ op: 'lend', chainId: 1, amount: { kind: 'exact', atoms: amt }, params: { ...mTuple, loanToken }, morpho: M, user: AR_USER })
+    const mUsdt = txsOf('reset-then-approve', USDT_E, M)
+    const mUsdc = txsOf('reset-then-approve', USDC_E, M)
+    const lendUsdt = ms({ to: M, data: lend(mTuple) }, 'lend')
+    const lendUsdc = ms({ to: M, data: lend({ ...mTuple, loanToken: USDC_E }) }, 'lend')
+    const mOk = guardMorphoOpBuild({ steps: [ms(mUsdt.resetTx!, 'reset'), ms(mUsdt.approveTx!, 'approve'), lendUsdt] }, mExp(USDT_E))
+    check('allowance reset (morpho guard): reset → approve → lend passes for a USDT market on Ethereum', mOk.ok && mOk.steps?.length === 3, JSON.stringify(mOk.reasons))
+    check(
+      'allowance reset (morpho guard): the same reset on a USDC market, two live approvals, and a reset-only plan all refuse',
+      !guardMorphoOpBuild({ steps: [ms(mUsdc.resetTx!, 'reset'), ms(mUsdc.approveTx!, 'approve'), lendUsdc] }, mExp(USDC_E)).ok &&
+        !guardMorphoOpBuild({ steps: [ms(mUsdt.approveTx!, 'approve'), ms(mUsdt.approveTx!, 'approve'), lendUsdt] }, mExp(USDT_E)).ok &&
+        !guardMorphoOpBuild({ steps: [ms(mUsdt.resetTx!, 'reset'), lendUsdt] }, mExp(USDT_E)).ok &&
+        guardMorphoOpBuild({ steps: [ms(mUsdc.approveTx!, 'approve'), lendUsdc] }, mExp(USDC_E)).ok,
+    )
+
+    // The builders this PR did NOT change can't meet a reset token today. If
+    // one ever can, this goes red and that builder gets the shared plan.
+    const lifiBridgeSrc = readFileSync('lib/lifi-bridge.ts', 'utf8')
+    const resetChains = new Set(APP_CHAINS.filter((c) => Object.values(c.tokens).some((t) => t.approveReset)).map((c) => c.id))
+    check(
+      'allowance reset (fence): no v4 or LiFi-settlement chain lists a reset token, and the LiFi bridge still sells USDC, USDC.e or ETH only',
+      APP_CHAINS.filter((c) => c.uniswapV4).every((c) => !resetChains.has(c.id)) && !resetChains.has(4663) && /USDC, USDC\.e, or ETH only/.test(lifiBridgeSrc),
+    )
+  }
+
   // ── NO-DEAD-ENDS ROUND 2 (2026-09-21): the sign-in gate gets its door ────
   // `signInGate` shipped on 09-08 and NOTHING rendered it until now: the
   // route asked for a signature it never gave the user a way to provide, on
