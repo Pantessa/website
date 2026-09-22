@@ -17,6 +17,7 @@ import { createHash } from 'node:crypto'
 import { chainById } from '@/lib/chains'
 import { cadenceLabel, type DcaCadence } from '@/lib/dca'
 import { signedTxsOf } from '@/components/SignedTxLines'
+import { claimsSettled } from '@/lib/xchain-settlement'
 import { SITE_URL } from './site-url'
 
 export interface ShareFact {
@@ -195,6 +196,11 @@ export function txShareContent(
   const msg = messages[idx]
   const txs = signedTxsOf(msg.meta)
   if (txs.length === 0) return null
+  // A cross-chain turn whose venue outcome isn't SUCCESS has no receipt to
+  // share — the headline below would read "$1 moved on-chain" over a swap
+  // that was refunded (live 2026-09-22). Fail closed: no verdict, no receipt
+  // (lib/xchain-settlement claimsSettled).
+  if (!claimsSettled(msg.meta)) return null
   const rawAsk = [...messages.slice(0, idx)].reverse().find((m) => m.role === 'user')?.content.trim() ?? null
   // The one verbatim-user-text path — pasted 0x addresses go public here.
   const ask = rawAsk ? maskAddressTokens(rawAsk) : null
