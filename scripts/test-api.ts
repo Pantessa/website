@@ -561,6 +561,18 @@ const DOMAIN = new URL(BASE).host
 
 let pass = 0
 let fail = 0
+/** 1Click's asset list, fetched once for the venue-floor pins. null when the
+ *  venue is unreachable — the pins then skip rather than claim anything. */
+let _liveTokens: Array<{ assetId: string; decimals: number; price: number; symbol: string; blockchain: string }> | null | undefined
+async function liveTokens() {
+  if (_liveTokens !== undefined) return _liveTokens
+  try {
+    const r = await fetch('https://1click.chaindefuser.com/v0/tokens')
+    _liveTokens = r.ok ? await r.json() : null
+  } catch { _liveTokens = null }
+  return _liveTokens
+}
+
 function check(name: string, ok: boolean, extra = '') {
   console.log(`  ${ok ? '✅' : '❌'} ${name}${extra ? ` — ${extra}` : ''}`)
   ok ? pass++ : fail++
@@ -28930,6 +28942,120 @@ async function main() {
     check('bridge wall: both affordability gates in the route hand the wallet scan in', (routeSrc.match(/scan: [^\n]*scanFundingSources/g) ?? []).length === 2, 'a gate site lost its scan')
     const mapSrc = readFileSync('components/markets/viz/MarketMap.tsx', 'utf8')
     check('markets map: every tile is a real link (SEO, no-JS, middle-click) — it was a <g> with an onClick', /href=\{`\/t\/\$\{encodeURIComponent\(c\.symbol\)\}`\}/.test(mapSrc) && !/role="button"/.test(mapSrc), 'the map tiles are click-only again')
+
+    // ── venue floor: 1Click's temporary per-chain minimum ─────────────────
+    // The table in lib/venue-floor is a MEASUREMENT, not a copy of NEAR's
+    // changelog (which lists Optimism and Avalanche, both of which price
+    // fine, and never mentions the destination side, which Polygon and BNB
+    // Chain do fence). These pins go red when a floor lifts, moves, or
+    // appears on a chain we build on — the whole point of measuring.
+    {
+      const { VENUE_FLOORS, floorFor, crossChainFloorBlock, floorBlockFromError, venueFloorFromError, floorRefusalTurn, floorChipAsk, floorProblemLine, moveUsd } = await import('../lib/venue-floor')
+      const { parseCrossChainSwap } = await import('../lib/cross-chain-swap')
+      const cc = (o: string, d: string, amount = '20', token = 'USDC') => ({ amount, originToken: token, originChain: o, destinationToken: token, destinationChain: d })
+
+      // — the pure rules —
+      check('venue floor: a $20 move off Polygon is refused before the venue is asked', crossChainFloorBlock(cc('polygon', 'base'))?.side === 'origin')
+      check('venue floor: the floor is read on the DESTINATION end too (measured, undocumented)', crossChainFloorBlock(cc('base', 'polygon'))?.side === 'destination')
+      check('venue floor: chain aliases resolve — "matic"/"bsc" carry the same floor', crossChainFloorBlock(cc('matic', 'base'))?.chain === 'polygon' && crossChainFloorBlock(cc('base', 'bsc'))?.chain === 'bnb')
+      check('venue floor: a move that CLEARS the floor is not refused', crossChainFloorBlock(cc('polygon', 'base', '2000')) === null)
+      check('venue floor: an unpriceable move is never refused by the table (it goes to the venue)', moveUsd('0.5', 'ETH') === null && crossChainFloorBlock(cc('polygon', 'base', '0.5', 'ETH')) === null)
+      check('venue floor: chains with no measured floor are untouched', ['base', 'ethereum', 'arbitrum', 'optimism', 'avalanche', 'gnosis', 'scroll'].every((c) => crossChainFloorBlock(cc(c, 'base')) === null && crossChainFloorBlock(cc('base', c)) === null))
+
+      // — the belt: the venue's own words become our refusal —
+      check('venue floor: the venue 400 parses, thousands separator and all', venueFloorFromError('Temporary swap limits: minimum swap amount is $1,000') === 1000 && venueFloorFromError('minimum swap amount is $100') === 100)
+      check('venue floor: an unrelated venue error keeps its raw words', venueFloorFromError('No liquidity available') === null && floorBlockFromError(cc('polygon', 'base'), 'No liquidity available') === null)
+      check("venue floor: a floor on a chain the table doesn't know is reported as 'route', never a guessed side", floorBlockFromError(cc('base', 'arbitrum'), 'Temporary swap limits: minimum swap amount is $500')?.side === 'route')
+      check('venue floor: the refusal quotes the VENUE\'s number, not the table\'s', floorBlockFromError(cc('polygon', 'base'), 'Temporary swap limits: minimum swap amount is $2,500')?.usd === 2500)
+
+      // — the chips: complete asks, and only ones the wallet can take —
+      const src = (chainWord: string, token: string, balance: number) => ({ chainWord, token, balance })
+      const originTurn = floorRefusalTurn(cc('polygon', 'ethereum') as never, crossChainFloorBlock(cc('polygon', 'ethereum'))!, [src('polygon', 'USDC', 40), src('base', 'USDC', 55.2), src('bnb', 'USDC', 900)])
+      check('venue floor: an origin-side block offers another chain the wallet holds on', originTurn.chips.length === 1 && originTurn.chips[0].resume.includes('from Base'), JSON.stringify(originTurn.chips))
+      check('venue floor: a chain carrying the SAME floor is never offered as the way out', !originTurn.chips.some((c) => /BNB/i.test(c.resume)))
+      const poor = floorRefusalTurn(cc('polygon', 'base') as never, crossChainFloorBlock(cc('polygon', 'base'))!, [src('polygon', 'USDC', 40)])
+      check('venue floor: "move a bigger amount" is never offered to a wallet that cannot afford it', poor.chips.length === 0 && /Everywhere this wallet holds USDC is out/.test(poor.reply), poor.reply.slice(-140))
+      const rich = floorRefusalTurn(cc('polygon', 'base') as never, crossChainFloorBlock(cc('polygon', 'base'))!, [src('polygon', 'USDC', 4200)])
+      check('venue floor: a wallet that CAN clear the floor is offered the size-up', rich.chips.length === 1 && /^Swap 1000 USDC from Polygon/.test(rich.chips[0].resume), JSON.stringify(rich.chips))
+      check('venue floor: a wallet we never scanned is never told what it does not hold', !/can't see USDC anywhere/.test(floorRefusalTurn(cc('polygon', 'base') as never, crossChainFloorBlock(cc('polygon', 'base'))!, null).reply))
+      // The chip contract: a chip SENDS, so every one must round-trip the grammar.
+      const everyChip = [...originTurn.chips, ...rich.chips].map((c) => c.resume)
+      check('venue floor: every chip round-trips the cross-chain grammar', everyChip.length > 0 && everyChip.every((r) => { const b = parseCrossChainSwap(r); return b !== null && !('problem' in b) }), everyChip.join(' | '))
+      // A chip that dropped "privately" would turn a private ask public (#827).
+      const priv = { ...cc('polygon', 'base'), confidential: true as const }
+      const privBack = parseCrossChainSwap(floorChipAsk(priv as never))
+      check('venue floor: a chip keeps the private clause — it never quietly becomes a public swap', privBack !== null && !('problem' in privBack) && (privBack as { confidential?: true }).confidential === true, floorChipAsk(priv as never))
+      const deliv = { ...cc('polygon', 'base'), recipient: '0x2527D02599Ba641c19FEa793cD0F167589a0f10D' }
+      const delivBack = parseCrossChainSwap(floorChipAsk(deliv as never))
+      check('venue floor: a chip keeps the delivery address', delivBack !== null && !('problem' in delivBack) && (delivBack as { recipient?: string }).recipient === deliv.recipient)
+
+      // — the wiring —
+      const ccRoute = readFileSync('app/api/chat/route.ts', 'utf8')
+      check('venue floor: the chat route refuses from the table BEFORE calling build_swap', /const floor = crossChainFloorBlock\(params\)[\s\S]{0,120}crossChainFloorTurn/.test(ccRoute), 'the pre-flight is gone')
+      check("venue floor: the chat route turns the venue's own 400 into the named refusal", /floorBlockFromError\(params, msg\)/.test(ccRoute) && ccRoute.includes('crossChainFloorTurn(params, venueFloor'), 'the raw venue message is reachable again')
+      const jobsSrc = readFileSync('lib/jobs.ts', 'utf8')
+      check('venue floor: the job compiler refuses a leg the venue would refuse (never strand mid-job)', /crossChainFloorBlock\(ccp\)[\s\S]{0,80}floorProblemLine/.test(jobsSrc), 'a job can compile onto a floored bridge leg again')
+      const { compileJobAsk } = await import('../lib/jobs')
+      const compiled = compileJobAsk('Swap 20 USDC from Polygon to USDC on Base, then supply 20 USDC to Aave')
+      check('venue floor: a compound job carrying a floored leg refuses by name, with the floor in it', Boolean(compiled && 'problem' in compiled && /\$1,000 minimum/.test((compiled as { problem: string }).problem)), JSON.stringify(compiled).slice(0, 180))
+      check('venue floor: the same compound over an unfloored chain still compiles', Boolean((() => { const c = compileJobAsk('Swap 20 USDC from Arbitrum to USDC on Base, then supply 20 USDC to Aave'); return c && !('problem' in c) })()))
+      check('venue floor: the job runner names the floor instead of persisting the venue 400', /floorBlockFromError\(p, msg\)/.test(readFileSync('lib/jobs-runner.ts', 'utf8')))
+      check('venue floor: the compile-time line carries the floor and the size', /\$1,000 minimum/.test(floorProblemLine(cc('polygon', 'base'), crossChainFloorBlock(cc('polygon', 'base'))!)))
+
+      // — LIVE: the table is a measurement, so it must still match the venue —
+      // One dry quote per claim (nothing committed, no deposit address). A
+      // venue wobble retries once; a real disagreement is a RED, which is
+      // exactly how a lifted limit is meant to surface.
+      const oneclick = async (originSlug: string, destSlug: string, usd: number): Promise<{ ok: boolean; floor: number | null; msg: string } | null> => {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const toks = await liveTokens()
+            if (!toks) return null
+            const pickTok = (slug: string) => toks.find((t) => t.blockchain === slug && t.symbol === 'USDC') ?? toks.find((t) => t.blockchain === slug && t.symbol === 'USDT')
+            const o = pickTok(originSlug), d = pickTok(destSlug)
+            if (!o || !d) return null
+            const res = await fetch('https://1click.chaindefuser.com/v0/quote', {
+              method: 'POST', headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                dry: true, swapType: 'EXACT_INPUT', slippageTolerance: 100,
+                originAsset: o.assetId, depositType: 'ORIGIN_CHAIN', destinationAsset: d.assetId,
+                amount: BigInt(Math.round((usd / o.price) * 10 ** o.decimals)).toString(),
+                refundTo: '0x2527D02599Ba641c19FEa793cD0F167589a0f10D', refundType: 'ORIGIN_CHAIN',
+                recipient: '0x2527D02599Ba641c19FEa793cD0F167589a0f10D', recipientType: 'DESTINATION_CHAIN',
+                deadline: new Date(Date.now() + 20 * 60_000).toISOString(), referral: 'yeetful',
+              }),
+            })
+            const text = await res.text()
+            let parsed: unknown
+            try { parsed = JSON.parse(text) } catch { parsed = text }
+            const msg = parsed && typeof parsed === 'object' && 'message' in parsed ? String((parsed as { message: unknown }).message) : ''
+            // A non-floor error (no liquidity, a venue timeout) is not an
+            // answer about floors — retry, then skip rather than lie.
+            if (!res.ok && venueFloorFromError(msg) === null) continue
+            return { ok: res.ok, floor: venueFloorFromError(msg), msg }
+          } catch { /* retry */ }
+        }
+        return null
+      }
+      // Every chain the table FENCES still refuses at $20 and clears above.
+      for (const [word, f] of Object.entries(VENUE_FLOORS)) {
+        const slug = word === 'polygon' ? 'pol' : word === 'bnb' ? 'bsc' : word
+        const under = await oneclick(slug, 'base', 20)
+        if (!under) check(`venue floor (live): ${word} under the floor`, true, 'venue unreachable — skipped, not a claim')
+        else check(`venue floor (live): ${word} still refuses $20 at exactly $${f.usd}`, !under.ok && under.floor === f.usd, `venue said ${under.floor === null ? under.msg.slice(0, 60) : `$${under.floor}`}`)
+        const over = await oneclick(slug, 'base', Math.round(f.usd * 1.05))
+        if (!over) check(`venue floor (live): ${word} above the floor`, true, 'venue unreachable — skipped, not a claim')
+        else check(`venue floor (live): ${word} prices above its floor, so the size-up chip is real`, over.ok, over.msg.slice(0, 70))
+      }
+      // And every chain we BUILD on that the table does NOT fence still
+      // prices $20 — this is the pin that catches a NEW floor appearing.
+      for (const [slug, word] of [['eth', 'ethereum'], ['arb', 'arbitrum'], ['op', 'optimism'], ['avax', 'avalanche'], ['gnosis', 'gnosis'], ['scroll', 'scroll']] as const) {
+        if (floorFor(word, 'origin')) continue
+        const r = await oneclick(slug, 'base', 20)
+        if (!r) { check(`venue floor (live): ${word} unfenced`, true, 'venue unreachable — skipped, not a claim'); continue }
+        check(`venue floor (live): ${word} has no floor, as the table says`, r.ok && r.floor === null, r.floor === null ? r.msg.slice(0, 70) : `venue now floors it at $${r.floor} — measure and add it to VENUE_FLOORS`)
+      }
+    }
   }
 
 

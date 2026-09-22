@@ -29,6 +29,7 @@
 import { parseAaveOp, parseAaveSupply, type AaveOpParams, type AaveSupplyParams } from '@/lib/aave-supply'
 import { parseMorphoLend, parseMorphoOp } from '@/lib/morpho-supply'
 import { parseCrossChainSwap, type CrossChainSwapParams } from '@/lib/cross-chain-swap'
+import { crossChainFloorBlock, floorProblemLine } from '@/lib/venue-floor'
 import { PRIVATE_LANE_CLOSED_NOTE, privateLaneOpen } from '@/lib/private-lane'
 import { LIFI_DESTINATIONS, type LifiDestination } from '@/lib/lifi-destinations'
 import { chainAlt, canonicalChainWord, normalizeArrows, normalizeChainWords, normalizeWorth } from '@/lib/chain-lexicon'
@@ -708,6 +709,12 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
       // A job leg always pays out to the wallet running the job — later steps
       // spend what it delivers. A delivery address belongs on a single swap.
       if (ccp.recipient) return { problem: 'A separate delivery address works on a single swap, not inside a multi-step job — the next step needs the funds in your own wallet. Ask for the private swap on its own.' }
+      // The venue's temporary per-chain minimum (lib/venue-floor). Caught at
+      // COMPILE time: a job that stops dead on its bridge leg has already
+      // signed whatever came before it, so the honest place to refuse is
+      // before there is a job at all.
+      const floor = crossChainFloorBlock(ccp)
+      if (floor) return { problem: floorProblemLine(ccp, floor) }
       // A private leg inside a job bounces exactly like a private single
       // swap, and the steps after it would sit waiting on a settlement that
       // never comes (lib/private-lane).
