@@ -30000,23 +30000,31 @@ async function main() {
         'desk wire: the SDK\'s leg classifier is named for the wire it mirrors, so a reader finds both halves (website legViewOf ↔ sdk legViewOfStep)',
         /export function legViewOf(Step)?\b/.test(sdkSrc) && /export function legViewOf\b/.test(wireSrc),
       )
-      // The result allowlist is the REAL contract for what an agent may send:
-      // a key it accepts but the wire type never names is a value no reader of
-      // the wire knows to produce, and a key the type names but the allowlist
-      // drops is silently thrown away.
-      let driveSrc: string | null = null
-      try { driveSrc = readFileSync('lib/desk-drive.ts', 'utf8') } catch { driveSrc = null }
-      if (driveSrc) {
-        const allow = (driveSrc.match(/RESULT_KEYS[^=]*=\s*(?:new Set\()?\[([^\]]+)\]/)?.[1] ?? '')
+      // The result allowlist is the REAL contract for what an agent may send.
+      // `DESK_LEG_RESULT_KEYS` (the published list) is tied to `DeskLegResult`
+      // at compile time by `satisfies ReadonlyArray<keyof DeskLegResult>`, so
+      // that half polices itself. What nothing ties is the list the ENFORCER
+      // uses — `LEG_RESULT_KEYS` in lib/job-step-money.ts, the shared writer
+      // every completion path runs through. Two lists in two files: a key in
+      // one and not the other is either a value silently dropped or a key no
+      // reader of the wire knows to send.
+      const arrayOf = (src: string, name: string): string[] =>
+        ((src.match(new RegExp(`${name}[^=]*=\\s*(?:new Set\\()?\\[([^\\]]+)\\]`)) ?? [])[1] ?? '')
           .split(',')
           .map((k) => k.trim().replace(/['"`]/g, ''))
           .filter(Boolean)
-        const resultFields = ifaceFields(wireSrc, 'DeskLegResult')
-        gap(
-          'desk wire: every key broker_done accepts in a leg result is named by DeskLegResult, and vice versa (the allowlist IS the contract an agent codes against)',
-          allow.length > 0 && allow.every((k) => resultFields.includes(k)) && resultFields.every((k) => allow.includes(k)),
-          'A9→MCP/SDK',
-          allow.length === 0 ? 'could not read RESULT_KEYS' : `allow-only=[${allow.filter((k) => !resultFields.includes(k)).join(',')}] type-only=[${resultFields.filter((k) => !allow.includes(k)).join(',')}]`,
+      let moneySrc: string | null = null
+      try { moneySrc = readFileSync('lib/job-step-money.ts', 'utf8') } catch { moneySrc = null }
+      if (moneySrc) {
+        const published = arrayOf(wireSrc, 'DESK_LEG_RESULT_KEYS')
+        const enforced = arrayOf(moneySrc, 'LEG_RESULT_KEYS')
+        check(
+          'desk wire: the keys the ENFORCER accepts (lib/job-step-money LEG_RESULT_KEYS — the one writer every completion runs through) are exactly the keys the wire publishes (DESK_LEG_RESULT_KEYS), which `satisfies` already ties to DeskLegResult',
+          published.length > 0 && enforced.length > 0 &&
+            published.every((k) => enforced.includes(k)) && enforced.every((k) => published.includes(k)),
+          published.length === 0 || enforced.length === 0
+            ? `could not read (published ${published.length}, enforced ${enforced.length})`
+            : `published-only=[${published.filter((k) => !enforced.includes(k)).join(',')}] enforced-only=[${enforced.filter((k) => !published.includes(k)).join(',')}]`,
         )
       }
     } else {
@@ -30166,28 +30174,6 @@ async function main() {
         `state=${afterClose?.state}`,
       )
 
-      if (tools.includes('broker_next')) {
-        const foreignNext = await qaCall('broker_next', { intent_id: boundId, agent_key: 'not-the-bound-key' })
-        check(
-          'desk mcp: broker_next refuses a caller whose agent_key is not the one bound at open (C3)',
-          foreignNext.isError && /agent|identity|key/i.test(String(foreignNext.payload)),
-          String(foreignNext.payload).slice(0, 100),
-        )
-        const bareNext = await qaCall('broker_next', { intent_id: boundId })
-        check('desk mcp: broker_next with NO agent_key is refused (the id alone is not the capability)', bareNext.isError)
-        const routeSrc = readFileSync('app/api/broker/[transport]/route.ts', 'utf8')
-        check(
-          'desk mcp: the route header writes down the REVISED trust boundary — signable material now crosses this surface (C3)',
-          /broker_next/.test(routeSrc) && /(trust boundary|same trust|capability token)/i.test(routeSrc.slice(0, 4000)),
-        )
-        check(
-          'desk mcp: broker_next never hands back the job capability token (a leak is 7 days of drive rights)',
-          !/t=\$\{token\}|capabilityToken|jobToken/.test(readFileSync('lib/desk-wire.ts', 'utf8') + routeSrc.replace(/signJobToken\([^)]*\)/g, '')),
-        )
-      } else {
-        gap('desk mcp: broker_next / broker_done exist and are agent_key-gated (C3)', false, 'A3→MCP', 'tools/list has neither')
-      }
-
       // ── 3b. the execute gate (QA F4, shipped round 2) ────────────────────
       // Round 1 these were grep-gaps: does the consent text mention an issuedAt,
       // does the route mention agent_key. Both now ship, so they are behaviour,
@@ -30208,14 +30194,14 @@ async function main() {
         const args: Record<string, unknown> = { intent_id: intentId, wallet_signature: sig, issued_at: issuedAt }
         if (opts.agentKey !== null) args.agent_key = opts.agentKey ?? 'qa-a4-owner'
         const r = await qaCall('broker_execute', args)
-        return { intentId, isError: r.isError, text: String(r.payload) }
+        return { intentId, isError: r.isError, text: String(r.payload), jobId: (r.payload as { jobId?: string } | null)?.jobId ?? '' }
       }
 
       const a4Happy = await a4Execute()
       check(
         'desk execute: the HAPPY path still works over the MCP surface — the right agent_key and a fresh consent compile the intent to a job (the gate DRIVE shipped is reachable through the door MCP owns)',
-        !a4Happy.isError && typeof (a4Happy as unknown as { text: string }).text === 'string' && /"jobId"/.test(a4Happy.text),
-        a4Happy.isError ? a4Happy.text.slice(0, 180) : 'compiled',
+        !a4Happy.isError && !!a4Happy.jobId,
+        a4Happy.isError ? a4Happy.text.slice(0, 180) : `job ${a4Happy.jobId}`,
       )
       if (a4Happy.isError) {
         // Every later pin here would "pass" on the same blanket refusal, which
@@ -30253,6 +30239,58 @@ async function main() {
         /^Issued at: \d{4}-\d{2}-\d{2}T[\d:.]+Z$/m.test(deskExecuteConsentMessage('qaintent01', wA, new Date().toISOString())),
         deskExecuteConsentMessage('qaintent01', wA, new Date().toISOString()).split('\n')[3],
       )
+
+
+      // ── 3c. broker_next / broker_done (C3) ───────────────────────────────
+      // These need an intent that HAS a job: `broker_next` refuses an open
+      // intent for having nothing to drive BEFORE it looks at who is asking,
+      // so probing identity on a job-less intent proves nothing. Round 2's
+      // first cut did exactly that and read as a red.
+      if (tools.includes('broker_next') && !a4Happy.isError) {
+        const driven = a4Happy.intentId
+        const foreignNext = await qaCall('broker_next', { intent_id: driven, agent_key: 'qa-a4-impostor' })
+        check(
+          'desk mcp: broker_next on a LIVE job refuses a caller whose agent_key is not the one bound at open (C3)',
+          foreignNext.isError && /agent|identity|key/i.test(String(foreignNext.payload)),
+          String(foreignNext.payload).slice(0, 110),
+        )
+        const bareNext = await qaCall('broker_next', { intent_id: driven })
+        check(
+          'desk mcp: broker_next with NO agent_key is refused — the intent id alone is not the capability',
+          bareNext.isError,
+          String(bareNext.payload).slice(0, 110),
+        )
+        const foreignDone = await qaCall('broker_done', { intent_id: driven, agent_key: 'qa-a4-impostor', seq: 0, result: { txHash: `0x${'e'.repeat(64)}` } })
+        check(
+          'desk mcp: broker_done refuses a foreign agent_key too — the write half is gated like the read half, so a stray intent id cannot advance someone else\'s job',
+          foreignDone.isError && /agent|identity|key/i.test(String(foreignDone.payload)),
+          String(foreignDone.payload).slice(0, 110),
+        )
+        const ownNext = await qaCall('broker_next', { intent_id: driven, agent_key: 'qa-a4-owner' })
+        check(
+          'desk mcp: the BOUND agent gets its leg (or an honest "waiting") — the gate refuses impostors without refusing the owner',
+          !ownNext.isError && typeof ownNext.payload === 'object' && ownNext.payload !== null,
+          JSON.stringify(ownNext.payload ?? ownNext).slice(0, 140),
+        )
+        const routeSrc = readFileSync('app/api/broker/[transport]/route.ts', 'utf8')
+        check(
+          'desk mcp: the route header writes down the REVISED trust boundary — signable material now crosses this surface (C3 revises M1)',
+          /broker_next/.test(routeSrc) && /(trust boundary|same trust|capability token)/i.test(routeSrc.slice(0, 4000)),
+        )
+        // Decision 5: the capability token RIDES in broker_next's drive.* URLs
+        // on purpose (the same identity received it at execute). What still has
+        // to hold is that it is never STORED — it is re-minted from the intent
+        // row each time, so there is no secret at rest to leak later.
+        const driveSrcForToken = readFileSync('lib/desk-drive.ts', 'utf8')
+        check(
+          'desk mcp: the capability token is re-minted per call, never persisted (decision 5 lets it ride in drive.*, so "no secret at rest" is the property that has to hold)',
+          /signJobToken\(/.test(driveSrcForToken) &&
+            !/token:\s*(row|intent)\.|capabilityToken\s*[:=]\s*(row|intent)\./.test(driveSrcForToken) &&
+            !/token\s*String/.test(readFileSync('prisma/schema.prisma', 'utf8').slice(readFileSync('prisma/schema.prisma', 'utf8').indexOf('model BrokerIntent'), readFileSync('prisma/schema.prisma', 'utf8').indexOf('model BrokerIntent') + 1400)),
+        )
+      } else if (!tools.includes('broker_next')) {
+        gap('desk mcp: broker_next / broker_done exist and are agent_key-gated (C3)', false, 'A3→MCP', 'tools/list has neither')
+      }
 
       // ── 4. the HL batch (C2) — the rule, exercised, not grepped ──────────
       // Round 1 I pinned this by grepping `lib/hl-batch.ts` for a loop over
