@@ -440,7 +440,10 @@ export async function runScenario(browser: PwBrowser, name: (typeof SCENARIOS)[n
       await page.locator('[data-wallet-handoff] button[aria-label="Dismiss"]').first().click()
       const inline = page.locator('[data-sign-open-app="MetaMask"]').first()
       await inline.waitFor({ state: 'visible', timeout: 5000 })
-      check('phone: dismissed → the takeover returns wearing "Open MetaMask" in place of the disabled button, and names the app', (await page.locator('button', { hasText: /^Waiting…$/ }).count()) === 0 && /waiting in MetaMask/.test(await page.locator('text=/waiting in MetaMask/').first().innerText()))
+      // Scoped to the takeover's own card: ChatSignInGate's banner button also
+      // reads "Waiting…" while signingIn, and that one is not the takeover's.
+      const modal = page.locator('h2', { hasText: /Waiting for your signature/ }).locator('..')
+      check('phone: dismissed → the takeover returns wearing "Open MetaMask" in place of the disabled button, and names the app', (await modal.locator('button', { hasText: /^Waiting…$/ }).count()) === 0 && /waiting in MetaMask/.test(await modal.innerText()))
       await page.mouse.move(0, 0)
       await page.screenshot({ path: `${shotsDir}/${name}-2-inline.png` })
       const n1 = launches.length
