@@ -15,10 +15,11 @@
 // eth_sendTransaction, a chain switch, an EIP-712 order. Whatever the SDK
 // asked to open, this is what offers it.
 
-import { useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { usePathname } from 'next/navigation'
-import { X } from 'lucide-react'
+import { Check, X } from 'lucide-react'
 import { MetaMaskWalletMark } from '@/components/wallet-marks'
+import { androidChromeIntent, inAppBrowserOf, inAppEscapeCopy } from '@/lib/inapp-browser'
 import {
   clearWalletAppOpen,
   handoffCopy,
@@ -37,8 +38,34 @@ export default function WalletAppHandoff() {
     walletAppOpenServerSnapshot,
   )
 
+  // The browser this card is in, read once on the client (the card never
+  // renders on the server: nothing is pending there). Inside X's / LinkedIn's
+  // / a bare WKWebView's browser no launch can work, so the card says how to
+  // leave for Safari/Chrome instead of asking for a tap that goes nowhere
+  // (lib/inapp-browser, LINKS lane).
+  const browser = useMemo(() => {
+    if (typeof navigator === 'undefined') return null
+    const b = inAppBrowserOf(navigator.userAgent)
+    return { inApp: b.inApp, canLaunchApps: b.canLaunchApps, escape: inAppEscapeCopy(b), intent: androidChromeIntent(typeof location === 'undefined' ? '' : location.href, b) }
+  }, [])
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const t = setTimeout(() => setCopied(false), 2000)
+    return () => clearTimeout(t)
+  }, [copied])
+
   if (!pending || !handoffShownOn(pathname)) return null
-  const { title, body, cta } = handoffCopy(pending)
+  const { title, body, cta, escape } = handoffCopy(pending, browser)
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(location.href)
+      setCopied(true)
+    } catch {
+      // clipboard blocked: the URL is in the address bar, and the body
+      // already says which menu item to use
+    }
+  }
 
   return (
     <div
@@ -68,16 +95,41 @@ export default function WalletAppHandoff() {
         </div>
         <h2 className="text-[17px] font-semibold text-[color:var(--fg)]">{title}</h2>
         <p className="mt-2 text-[13px] leading-relaxed text-[color:var(--muted)]">{body}</p>
-        <button
-          type="button"
-          onClick={openWalletAppNow}
-          className="btn btn--solid mt-5 inline-flex w-full items-center justify-center gap-2 text-[13px]"
-        >
-          {cta}
-        </button>
-        <p className="mt-3 text-[12px] leading-relaxed text-[color:var(--muted-2)]">
-          Nothing moves until you approve it there.
-        </p>
+        {escape ? (
+          <>
+            {browser?.intent && (
+              <a
+                href={browser.intent}
+                className="btn btn--solid mt-5 inline-flex w-full items-center justify-center gap-2 text-[13px]"
+              >
+                Open in Chrome
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={copyLink}
+              className={`btn ${browser?.intent ? 'mt-2' : 'btn--solid mt-5'} inline-flex w-full items-center justify-center gap-2 text-[13px]`}
+            >
+              {copied ? <><Check className="w-4 h-4" /> Copied</> : cta}
+            </button>
+            <p className="mt-3 break-all text-[12px] leading-relaxed text-[color:var(--muted-2)]">
+              {typeof location === 'undefined' ? '' : location.href}
+            </p>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={openWalletAppNow}
+              className="btn btn--solid mt-5 inline-flex w-full items-center justify-center gap-2 text-[13px]"
+            >
+              {cta}
+            </button>
+            <p className="mt-3 text-[12px] leading-relaxed text-[color:var(--muted-2)]">
+              Nothing moves until you approve it there.
+            </p>
+          </>
+        )}
       </div>
     </div>
   )

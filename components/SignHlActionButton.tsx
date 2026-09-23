@@ -45,8 +45,14 @@ import {
 } from '@/lib/hyperliquid-exec'
 import { reportWalletRefusal, walletErrorWords, type WalletArtifact } from '@/lib/wallet-refusal'
 import { SIGN_CTA_CLASS } from '@/lib/sign-cta'
+import { oneMethodPerTap } from '@/lib/sign-round-trip'
+import { usePlatform } from '@/lib/use-sign-round-trip'
 
 type Status = 'idle' | 'signing' | 'submitting' | 'enabling' | 'refreshing' | 'filled' | 'error'
+
+/** Thrown out of the direct→delegated fallback on a phone once enable-trading
+ *  landed: the card re-armed itself; the caller has nothing to report. */
+class RearmAfterEnable extends Error {}
 type Delegation = 'unknown' | 'active' | 'none'
 
 interface L1Step {
@@ -86,6 +92,12 @@ export default function SignHlActionButton({
   // hit the chain-mismatch wall with no delegation on file.
   const [needsEnable, setNeedsEnable] = useState(false)
   const [viaAgent, setViaAgent] = useState(false)
+  // On a phone the wallet is another app: the enable-trading approval is a
+  // trip to it and back, and the consent that used to follow in the same
+  // gesture would fire with no tap behind it (lib/sign-round-trip). So after
+  // an enable on a phone the card stops, says so, and the next tap signs.
+  const platform = usePlatform()
+  const [enabledNote, setEnabledNote] = useState('')
 
   const isTestnet = order.hl?.isTestnet === true
 
@@ -286,7 +298,10 @@ export default function SignHlActionButton({
       // file → the one-time approval first, in this same gesture.
       const check = await fetch(`/api/hl/delegation?wallet=${address}`, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null)
       if ((check as { active?: boolean } | null)?.active) setDelegation('active')
-      else await enableTrading()
+      else {
+        await enableTrading()
+        if (rearmAfterEnable()) throw new RearmAfterEnable()
+      }
       return submitDelegated(step)
     }
   }
@@ -307,6 +322,16 @@ export default function SignHlActionButton({
     return true
   }
 
+  /** Enable-trading ran inside this tap. On a phone that was the tap's one
+   *  wallet method: re-arm and return true so the caller stops here. */
+  const rearmAfterEnable = (): boolean => {
+    if (!oneMethodPerTap(platform)) return false
+    setStatus('idle')
+    setError('')
+    setEnabledNote('Trading enabled — tap again to sign.')
+    return true
+  }
+
   const signPre = async () => {
     if (!address || !hl.pre) {
       setError(address ? 'Missing leverage step.' : 'Connect your wallet first — it is your Hyperliquid account.')
@@ -314,6 +339,7 @@ export default function SignHlActionButton({
     }
     if (await refreshIfStale(hl.pre.nonce)) return
     setError('')
+    setEnabledNote('')
     const step: L1Step = {
       action: hl.pre.action as HlWireAction,
       nonce: hl.pre.nonce,
@@ -323,11 +349,15 @@ export default function SignHlActionButton({
       failLabel: 'Leverage update failed.',
     }
     try {
-      if (needsEnable) await enableTrading()
+      if (needsEnable) {
+        await enableTrading()
+        if (rearmAfterEnable()) return
+      }
       await runStep(step)
       setPreDone(true)
       setStatus('idle')
     } catch (e) {
+      if (e instanceof RearmAfterEnable) return
       fail(e, 'Leverage update failed.', 'hl-leverage', hlActionSummary(step.action, step.expected))
     }
   }
@@ -339,6 +369,7 @@ export default function SignHlActionButton({
     }
     if (await refreshIfStale(hl.nonce)) return
     setError('')
+    setEnabledNote('')
     const step: L1Step = {
       action: hl.action as HlWireAction,
       nonce: hl.nonce,
@@ -348,7 +379,10 @@ export default function SignHlActionButton({
       failLabel: 'Submit failed.',
     }
     try {
-      if (needsEnable) await enableTrading()
+      if (needsEnable) {
+        await enableTrading()
+        if (rearmAfterEnable()) return
+      }
       const data = (await runStep(step)) as {
         filled?: { totalSz: string; avgPx: string } | null
         valueUsd?: number | null
@@ -363,6 +397,7 @@ export default function SignHlActionButton({
         valueUsd: data.valueUsd ?? null,
       })
     } catch (e) {
+      if (e instanceof RearmAfterEnable) return
       fail(e, 'Order failed.', 'hl-order', hlActionSummary(step.action, step.expected))
     }
   }
@@ -446,6 +481,7 @@ export default function SignHlActionButton({
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : needsEnable ? <ShieldCheck className="w-3.5 h-3.5" /> : <PenLine className="w-3.5 h-3.5" />}
             {buttonLabel}
           </button>
+          {enabledNote && <span className="text-[12px] text-[color:var(--muted)]" data-hl-rearmed="enable">{enabledNote}</span>}
           {error && <span className="text-[12px] text-red-400">{error}</span>}
         </div>
       )}

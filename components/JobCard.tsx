@@ -115,6 +115,23 @@ export default function JobCard({
     }
   }, [load])
 
+  // Back from the wallet app (a phone), or a parked tab: the poll was
+  // throttled while hidden, so read the job the moment the page shows — a
+  // step that settled, expired or was rebuilt while the visitor was away is
+  // on screen before their thumb reaches the button (lib/sign-round-trip).
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void load()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('pageshow', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('pageshow', onVisible)
+    }
+  }, [load])
+
   // Stop polling once terminal — and emit the one-shot settlement signal.
   const settledFired = useRef(false)
   useEffect(() => {
