@@ -179,3 +179,65 @@ export function oauthAllowedIn(b: { inApp: boolean; canLaunchApps: boolean }): b
 export function oauthRefusedCopy(esc: { app: string; where: string; browser: string }): string {
   return `Google won't sign you in inside ${esc.app}'s browser. Open this page in ${esc.browser} (${esc.where}), or use the email code below.`
 }
+
+// ── The armed launch (R2) ─────────────────────────────────────────────────
+//
+// Measured on the tap (relay socket trace, 2026-09-23): TAP → the SDK opens
+// its relay WebSocket (+76ms) → handshake (+410ms) → `join_channel` → ack
+// (+236ms) → the `metamask://` launch at +771ms. The launch is a continuation
+// of a WebSocket message. WebKit's user-gesture propagation (Source/WebCore/
+// dom/UserGestureIndicator.cpp, JSGlobalObject::queueMicrotaskSlow) reaches a
+// microtask only for a token flagged ShouldPropagateToMicroTask, which only
+// fetch / XHR / MediaDevices set; DOMTimers forward for 1s; nothing forwards
+// through a socket callback. So on iOS the SDK's own launch is never
+// user-initiated: it rides the document's external-URL policy at best (Safari
+// on a page the visitor navigated to), and inside any WKWebView it is dropped.
+//
+// The rule: ARM at the door — start the SDK's connection with the launch
+// suppressed and hold the link it builds (channel + key already joined) —
+// then navigate to it SYNCHRONOUSLY inside the MetaMask tap. The SDK's later
+// ask for the same channel is a duplicate and is not navigated again.
+
+/** The SDK's channel id inside a wallet link, or null. Two links with the
+ *  same channel are the same request to the app. */
+export function channelIdOf(link: string): string | null {
+  const m = /[?&]channelId=([A-Za-z0-9-]+)/.exec(link)
+  return m ? m[1] : null
+}
+
+/** How long a launch counts as "just happened" for the SDK's own re-ask of
+ *  the same channel (the ask lands 0.4–1.2s after the tap; a visitor who
+ *  really wants to relaunch taps the card, which is never deduped). */
+export const LAUNCH_DEDUPE_MS = 8_000
+
+export function isDuplicateLaunch(
+  prev: { link: string; at: number } | null,
+  next: string,
+  now: number,
+): boolean {
+  if (!prev) return false
+  if (now - prev.at > LAUNCH_DEDUPE_MS) return false
+  const a = channelIdOf(prev.link)
+  const b = channelIdOf(next)
+  return !!a && a === b
+}
+
+/** RainbowKit's MetaMask row (its own data-testid; the tap the armed launch
+ *  rides). One selector, pinned, so a RainbowKit rename is a red, not a
+ *  silent fall back to the socket-paced launch. */
+export const METAMASK_TAP_SELECTOR = '[data-testid="rk-wallet-option-metaMask"]'
+
+/** Whether the door should arm: a phone that is not a wallet's own browser
+ *  (there the provider is injected and nothing launches). */
+export function shouldArmLaunch(i: { platform: MobilePlatform; walletBrowser: WalletBrowser }): boolean {
+  return i.platform !== 'desktop' && i.walletBrowser === null
+}
+
+/** An armed launch is worth using while its channel is young. The SDK keeps
+ *  a channel for days; a visitor who parked the door for an hour gets a fresh
+ *  one on the tap rather than a stale key. */
+export const ARMED_LINK_MAX_AGE_MS = 10 * 60_000
+
+export function armedLinkUsable(armed: { at: number } | null, now: number): boolean {
+  return !!armed && now - armed.at <= ARMED_LINK_MAX_AGE_MS
+}

@@ -133,6 +133,7 @@ export function handoffShownOn(pathname: string | null | undefined): boolean {
 // ── The holder (browser) ────────────────────────────────────────────────
 
 import { launchDroppedReport, reportWalletRefusal } from '@/lib/wallet-refusal'
+import { armedLinkUsable, isDuplicateLaunch } from '@/lib/mobile-wallet'
 
 type Listener = () => void
 
@@ -143,6 +144,13 @@ let pending: WalletAppOpen | null = null
  *  this to put an "Open MetaMask" button on it (the request is queued in the
  *  wallet the whole time; a tap is all the browser wants). */
 let lastLink: { link: string; app: string } | null = null
+/** The last link actually navigated to, for the SDK's own re-ask of the same
+ *  channel (lib/mobile-wallet isDuplicateLaunch). */
+let lastNavigated: { link: string; at: number } | null = null
+/** The armed launch (R2): the door started the SDK's connection with the
+ *  launch held back; the link waits here for the MetaMask tap. */
+let armed: { link: string; app: string; at: number } | null = null
+let arming = false
 let settleTimer: ReturnType<typeof setTimeout> | null = null
 /** Tears down the watch that is currently running, if any. One at a time:
  *  a second request supersedes the first, and its listeners go with it. */
@@ -181,6 +189,61 @@ export function walletAppOpenServerSnapshot(): WalletAppOpen | null {
   return null
 }
 
+/** The armed link, if the door has one waiting for the tap. */
+export function walletAppArmedSnapshot(): { link: string; app: string; at: number } | null {
+  return armed
+}
+
+/**
+ * The door is about to start the SDK's connection on the visitor's behalf
+ * (lib/wallet-arm): the next link the SDK asks us to open is HELD, not
+ * navigated. A tap later launches it (launchArmedWalletApp).
+ */
+export function armWalletAppOpen(): void {
+  arming = true
+}
+
+/** Whether arming is on or a link is armed — the door asks before starting
+ *  a second SDK connection. */
+export function walletAppArmedOrArming(): boolean {
+  return arming || armed !== null
+}
+
+function markArmed(next: typeof armed) {
+  armed = next
+  if (typeof document !== 'undefined') {
+    if (next) document.documentElement.setAttribute('data-wallet-armed', next.app)
+    else document.documentElement.removeAttribute('data-wallet-armed')
+  }
+  emit()
+}
+
+/**
+ * The tap: navigate to the armed link NOW, synchronously, while the browser
+ * still holds the tap's activation. Returns false when nothing is armed (the
+ * SDK's own socket-paced launch follows as before). Idempotent per link.
+ */
+export function launchArmedWalletApp(): boolean {
+  const now = Date.now()
+  if (!armedLinkUsable(armed, now) || typeof window === 'undefined') {
+    if (armed) markArmed(null)
+    return false
+  }
+  const o: WalletAppOpen = { link: armed!.link, app: armed!.app, tried: false }
+  markArmed(null)
+  lastLink = { link: o.link, app: o.app }
+  lastNavigated = { link: o.link, at: now }
+  setPending(null)
+  try {
+    navigate(o.link)
+  } catch {
+    setPending(o)
+    return true
+  }
+  watchForLaunch(o)
+  return true
+}
+
 /** The visitor dismissed the card. The request is still queued in the wallet,
  *  so the link stays readable (walletAppLastLink) for an inline button. */
 export function clearWalletAppOpen(): void {
@@ -200,6 +263,9 @@ export function clearWalletAppOpen(): void {
  */
 export function walletAppRequestSettled(): void {
   clearWalletAppOpen()
+  lastNavigated = null
+  arming = false
+  if (armed) markArmed(null)
   if (lastLink) {
     lastLink = null
     emit()
@@ -272,9 +338,20 @@ export function requestWalletAppOpen(link: string): void {
   const app = walletAppFor(link)
   if (!app || typeof window === 'undefined') return
   const o: WalletAppOpen = { link: link.trim(), app, tried: false }
+  const now = Date.now()
+  // The door armed: hold this link for the tap instead of navigating.
+  if (arming) {
+    arming = false
+    markArmed({ link: o.link, app, at: now })
+    return
+  }
+  // The SDK asking again for a channel a tap just launched (the armed
+  // launch, or the card's tap): the app already has it. Never navigate twice.
+  if (isDuplicateLaunch(lastNavigated, o.link, now)) return
   // A fresh request supersedes whatever card is up: same wallet, newer request.
   setPending(null)
   lastLink = { link: o.link, app }
+  lastNavigated = { link: o.link, at: now }
   emit()
   try {
     navigate(o.link)
@@ -312,6 +389,7 @@ export function openWalletApp(link?: string): boolean {
   if (!target?.app || typeof window === 'undefined') return false
   const o: WalletAppOpen = { link: target.link, app: target.app, tried: pending?.tried ?? false }
   lastLink = { link: o.link, app: o.app }
+  lastNavigated = { link: o.link, at: Date.now() }
   setPending(null)
   try {
     navigate(o.link)

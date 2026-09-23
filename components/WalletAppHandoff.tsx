@@ -20,10 +20,12 @@ import { usePathname } from 'next/navigation'
 import { Check, X } from 'lucide-react'
 import { MetaMaskWalletMark } from '@/components/wallet-marks'
 import { androidChromeIntent, inAppBrowserOf, inAppEscapeCopy } from '@/lib/inapp-browser'
+import { METAMASK_TAP_SELECTOR } from '@/lib/mobile-wallet'
 import {
   clearWalletAppOpen,
   handoffCopy,
   handoffShownOn,
+  launchArmedWalletApp,
   openWalletAppNow,
   subscribeWalletAppOpen,
   walletAppOpenServerSnapshot,
@@ -49,6 +51,20 @@ export default function WalletAppHandoff() {
     return { inApp: b.inApp, canLaunchApps: b.canLaunchApps, escape: inAppEscapeCopy(b), intent: androidChromeIntent(typeof location === 'undefined' ? '' : location.href, b) }
   }, [])
   const [copied, setCopied] = useState(false)
+  // The armed launch's tap (lib/wallet-arm): the door held the SDK's link;
+  // RainbowKit's MetaMask row is the tap that carries the activation, so the
+  // navigation happens HERE, synchronously, in the capture phase — before
+  // RainbowKit's own click handler awaits anything. No-op when nothing is
+  // armed (the SDK's socket-paced launch follows as before).
+  useEffect(() => {
+    const onTap = (e: MouseEvent) => {
+      const t = e.target as Element | null
+      if (!t?.closest?.(METAMASK_TAP_SELECTOR)) return
+      launchArmedWalletApp()
+    }
+    document.addEventListener('click', onTap, true)
+    return () => document.removeEventListener('click', onTap, true)
+  }, [])
   useEffect(() => {
     if (!copied) return
     const t = setTimeout(() => setCopied(false), 2000)
