@@ -29830,6 +29830,315 @@ async function main() {
   }
 
 
+  // ── agent desk squad: QA ─────────────────────────────────────────────────
+  // The QA lane's pins (squad ~/yeetful/squad-agentdesk-2026-09-23). Two jobs:
+  //   1. keep lib/desk-wire.ts and the SDK's src/desk.ts mirror in sync — the
+  //      wire is named in two repos, so it can drift silently;
+  //   2. drive the adversarial cases of the agent-signed path over HTTP.
+  //
+  // gap(): a pin whose CORRECT behaviour is not shipped yet. It names the Ask
+  // that owns it, counts neither pass nor fail while the gap stands, and turns
+  // into a real ✅ the moment the owning lane closes it. When an Ask lands,
+  // change `gap(` → `check(` so a regression goes RED.
+  console.log('— agent desk (QA)')
+  {
+    let deskGaps = 0
+    const openGaps: string[] = []
+    const gap = (name: string, ok: boolean, ask: string, extra = '') => {
+      if (ok) return check(`${name} [${ask} CLOSED — promote gap() → check()]`, true, extra)
+      deskGaps++
+      openGaps.push(`${ask}: ${name}`)
+      console.log(`  ⚠️  known-gap ${ask} — ${name}${extra ? ` — ${extra}` : ''}`)
+    }
+
+    // ── 1. the leg wire, named in two repos ────────────────────────────────
+    const wireSrc = readFileSync('lib/desk-wire.ts', 'utf8')
+    const WIRE_TYPES = ['DeskLegKind', 'DeskLegView', 'DeskLegResult', 'DeskNext']
+    check(
+      'desk wire: lib/desk-wire.ts exports the four contract names and stays pure (no React, no Prisma, no fetch)',
+      WIRE_TYPES.every((t) => new RegExp(`export (type|interface) ${t}\\b`).test(wireSrc)) &&
+        !/from '@\/lib\/db'|require\(|\bfetch\(|from 'react'/.test(wireSrc),
+      WIRE_TYPES.filter((t) => !new RegExp(`export (type|interface) ${t}\\b`).test(wireSrc)).join(',') || 'all present',
+    )
+    const kindMembers = (wireSrc.match(/export type DeskLegKind = ([^\n]+)/)?.[1] ?? '')
+      .split('|')
+      .map((s) => s.trim().replace(/['"]/g, ''))
+      .filter(Boolean)
+    check(
+      'desk wire: DeskLegKind carries every shape C1/C2 names — tx, txChain, hlAction, hlBatch, wait, unknown',
+      ['tx', 'txChain', 'hlAction', 'hlBatch', 'wait', 'unknown'].every((k) => kindMembers.includes(k)),
+      kindMembers.join('|'),
+    )
+    // The SDK mirror (Pantessa/sdk src/desk.ts) lives outside this repo — the
+    // squad's sibling worktree, or a published checkout. Pin it when present.
+    const sdkPaths = ['../sdk-agent-desk/src/desk.ts', '../sdk/src/desk.ts']
+    const sdkPath = sdkPaths.find((p) => { try { readFileSync(p, 'utf8'); return true } catch { return false } })
+    if (sdkPath) {
+      const sdkSrc = readFileSync(sdkPath, 'utf8')
+      // Cross-repo: a drift here is the SDK lane's to close, and the file is
+      // absent on CI — so it reports as a gap, not as a website red.
+      const sdkMissing = WIRE_TYPES.filter((t) => !new RegExp(`export (type|interface) ${t}\\b`).test(sdkSrc))
+      gap(
+        `desk wire: the SDK mirror (${sdkPath}) exports the same four names`,
+        sdkMissing.length === 0,
+        'SDK-lane',
+        sdkMissing.length ? `missing: ${sdkMissing.join(', ')}` : 'in sync',
+      )
+      const sdkKinds = (sdkSrc.match(/export type DeskLegKind = ([^\n]+)/)?.[1] ?? '')
+        .split('|')
+        .map((s) => s.trim().replace(/['"]/g, ''))
+        .filter(Boolean)
+      check(
+        'desk wire: DeskLegKind members are IDENTICAL in the website and the SDK (order-insensitive)',
+        sdkKinds.length === kindMembers.length && kindMembers.every((k) => sdkKinds.includes(k)),
+        `website=[${kindMembers.join('|')}] sdk=[${sdkKinds.join('|')}]`,
+      )
+      check(
+        'desk wire: the SDK never re-serializes an HL action it was handed (#850 key order) — no JSON.parse(JSON.stringify(action))',
+        !/JSON\.parse\(\s*JSON\.stringify\(/.test(sdkSrc) && !/sortKeys|Object\.keys\([^)]*action[^)]*\)\.sort/.test(sdkSrc),
+      )
+      // F8: the SDK ships its OWN copy of deskExecuteConsentMessage. The desk
+      // RECOVERS the signer from the text it builds itself, so one byte of
+      // drift and every agent's consent recovers to nothing. Adding the
+      // `issuedAt` line of Ask A4 on one side only is exactly that byte.
+      const sdkConsent = sdkSrc.slice(sdkSrc.indexOf('export function deskExecuteConsentMessage'))
+      const sdkConsentBody = sdkConsent.slice(0, sdkConsent.indexOf('\n}'))
+      const wantLines = deskExecuteConsentMessage('<ID>', '<WALLET>').split('\n')
+      const sdkLineCount = (sdkConsentBody.match(/^\s{4}['"`]/gm) ?? []).length
+      check(
+        'desk wire: the SDK\'s copy of the execute consent text is BYTE-identical to the desk\'s (the desk recovers the signer from its OWN text — one byte of drift and every agent\'s consent recovers to nothing)',
+        sdkConsentBody.includes(wantLines[0]) &&
+          sdkConsentBody.includes(wantLines[3]) &&
+          /Intent: \$\{intentId\}/.test(sdkConsentBody) &&
+          /Wallet: \$\{wallet\.toLowerCase\(\)\}/.test(sdkConsentBody) &&
+          sdkLineCount === wantLines.length,
+        `${sdkLineCount} sdk lines vs ${wantLines.length} desk lines`,
+      )
+      check(
+        'desk wire: the SDK\'s leg classifier is named for the wire it mirrors, so a reader finds both halves (website legViewOf ↔ sdk legViewOfStep)',
+        /export function legViewOf(Step)?\b/.test(sdkSrc) && /export function legViewOf\b/.test(wireSrc),
+      )
+    } else {
+      gap('desk wire: the SDK mirror src/desk.ts exists and matches', false, 'SDK-lane', `looked in ${sdkPaths.join(', ')}`)
+    }
+
+    // ── 2. the agent-signed path, adversarially, over HTTP ─────────────────
+    const deskSecret =
+      process.env.SESSION_SECRET ??
+      (await import('node:fs')
+        .then((fs) => fs.readFileSync('.env.local', 'utf8').match(/^SESSION_SECRET=(.+)$/m)?.[1]?.trim())
+        .catch(() => undefined))
+    const canDrive = !!deskSecret && !!process.env.DATABASE_URL
+    if (!canDrive) {
+      console.log('  ⚠️  agent desk (QA): SESSION_SECRET + DATABASE_URL are needed for the adversarial pins — skipped')
+    } else {
+      process.env.SESSION_SECRET = deskSecret
+      const QA_FENCE = `qa-agentdesk-${Date.now()}`
+      const qaJobs: string[] = []
+      /** A job parked exactly where an agent drives it: one OFFERED sign step.
+       *  originEnv is fenced to this run so no runner advances it. */
+      const mkJob = async (wallet: string) => {
+        const job = await prisma.job.create({
+          data: { wallet: wallet.toLowerCase(), title: 'qa desk probe', source: 'broker', status: 'waiting_signature', currentStep: 0, originEnv: QA_FENCE, isInternal: true },
+        })
+        await prisma.jobStep.create({
+          data: { jobId: job.id, seq: 0, kind: 'sign', status: 'offered', builder: 'native-transfer', title: 'qa probe leg', params: {}, artifact: { tx: { to: '0x0000000000000000000000000000000000000001', data: '0x', value: '0', chainId: 8453 } } },
+        })
+        qaJobs.push(job.id)
+        return { id: job.id, wallet: wallet.toLowerCase(), token: signJobToken(job.id, wallet.toLowerCase()) }
+      }
+      const completeWith = async (job: { id: string; token: string }, body: unknown, token = job.token) =>
+        fetch(`${BASE}/api/jobs/${job.id}/complete?t=${token}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+
+      const wA = '0x00000000000000000000000000000000000ade51'
+      const wB = '0x00000000000000000000000000000000000ade52'
+      const jobA = await mkJob(wA)
+      const jobB = await mkJob(wB)
+
+      // A capability token names ONE job and ONE wallet (v2 HMAC).
+      const crossTok = await completeWith(jobB, { seq: 0, result: { txHash: `0x${'a'.repeat(64)}` } }, jobA.token)
+      check(
+        "desk drive: job A's capability token cannot complete job B (the HMAC binds the job id)",
+        crossTok.status === 401,
+        `got ${crossTok.status}`,
+      )
+      const wrongWalletTok = await completeWith(jobA, { seq: 0, result: { txHash: `0x${'a'.repeat(64)}` } }, signJobToken(jobA.id, wB))
+      check(
+        'desk drive: a token minted for another WALLET does not complete this job (the HMAC binds the wallet)',
+        wrongWalletTok.status === 401,
+        `got ${wrongWalletTok.status}`,
+      )
+      const noTok = await fetch(`${BASE}/api/jobs/${jobA.id}/complete`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ seq: 0 }) })
+      check('desk drive: no token and no session → 401 (never an anonymous advance)', noTok.status === 401, `got ${noTok.status}`)
+      const v1Tok = await completeWith(jobA, { seq: 0 }, 'f'.repeat(64))
+      check(
+        'desk drive: a v1 (bare 64-hex) token is DEAD — JOB_TOKEN_V1_SUNSET passed 2026-09-16',
+        v1Tok.status === 401 && JOB_TOKEN_V1_SUNSET < Date.now(),
+        `got ${v1Tok.status}`,
+      )
+
+      // Order is the runner's, not the agent's: only the OFFERED step completes.
+      const outOfSeq = await completeWith(jobA, { seq: 7, result: { txHash: `0x${'b'.repeat(64)}` } })
+      check(
+        'desk drive: completing a leg the runner has not offered is refused (out-of-seq cannot skip a wait)',
+        outOfSeq.status === 400 && /not a sign step|not awaiting/i.test(await outOfSeq.text()),
+        `got ${outOfSeq.status}`,
+      )
+
+      // A fabricated hash. The runner treats completion as advancement (a wait
+      // leg verifies), but the desk log RENDERS this string in an admin
+      // browser — so the shape must be fenced at the door. Ask A2 (DRIVE).
+      const jobJunk = await mkJob(wA)
+      const junk = await completeWith(jobJunk, { seq: 0, result: { txHash: 'javascript:alert(1)', note: '<img src=x onerror=1>' } })
+      const junkRow = await prisma.jobStep.findFirst({ where: { jobId: jobJunk.id, seq: 0 }, select: { result: true, status: true } })
+      const storedJunk = JSON.stringify(junkRow?.result ?? {})
+      gap(
+        'desk drive: a leg result whose txHash is not 0x+64hex is REFUSED (a hostile agent writes what the admin desk log renders)',
+        junk.status === 400 || !/javascript:|onerror/.test(storedJunk),
+        'A2→DRIVE',
+        `status ${junk.status}, stored ${storedJunk.slice(0, 80)}`,
+      )
+
+      // Unbounded jsonb per leg, from an unauthenticated third-party agent.
+      const jobBig = await mkJob(wA)
+      const big = await completeWith(jobBig, { seq: 0, result: { txHash: `0x${'c'.repeat(64)}`, blob: 'x'.repeat(200_000) } })
+      const bigRow = await prisma.jobStep.findFirst({ where: { jobId: jobBig.id, seq: 0 }, select: { result: true } })
+      gap(
+        'desk drive: a leg result is size-capped (~8KB) — an agent cannot write unbounded jsonb per leg',
+        big.status === 400 || JSON.stringify(bigRow?.result ?? {}).length < 16_000,
+        'A2→DRIVE',
+        `status ${big.status}, stored ${JSON.stringify(bigRow?.result ?? {}).length}B`,
+      )
+
+      // The honest half of completion: a well-formed claim advances exactly
+      // once, and a replay of the same seq is refused (atomic claim on
+      // status:'offered').
+      const jobOk = await mkJob(wA)
+      const good = { seq: 0, result: { txHash: `0x${'d'.repeat(64)}`, chainId: 8453 } }
+      const first = await completeWith(jobOk, good)
+      const second = await completeWith(jobOk, good)
+      check(
+        'desk drive: a well-formed completion advances once; the replay is refused (atomic claim on the offered step)',
+        first.status === 200 && second.status === 400,
+        `${first.status} then ${second.status}`,
+      )
+
+      // ── 3. the desk MCP surface ──────────────────────────────────────────
+      const DESK_URL = `${BASE}/api/broker/mcp`
+      let qaRpcId = 0
+      let qaSession: string | null = null
+      const qaRpc = async (method: string, params?: unknown): Promise<any> => {
+        const res = await fetch(DESK_URL, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(qaSession ? { 'mcp-session-id': qaSession } : {}) },
+          body: JSON.stringify({ jsonrpc: '2.0', id: ++qaRpcId, method, params }),
+        })
+        qaSession = res.headers.get('mcp-session-id') ?? qaSession
+        const raw = await res.text()
+        const line = raw.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).find((l) => l.includes(`"id":${qaRpcId}`))
+        return line ? JSON.parse(line).result : undefined
+      }
+      const qaCall = async (name: string, args: Record<string, unknown> = {}) => {
+        const result = await qaRpc('tools/call', { name, arguments: args })
+        const text: string = result?.content?.find((c: any) => c.type === 'text')?.text ?? ''
+        return { isError: !!result?.isError, payload: text && !result?.isError ? JSON.parse(text) : text }
+      }
+      await qaRpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'qa-agentdesk', version: '0' } })
+      await qaRpc('notifications/initialized')
+      const tools: string[] = ((await qaRpc('tools/list'))?.tools ?? []).map((t: any) => t.name)
+
+      // An intent BOUND to an agent identity. Only that agent should be able
+      // to walk away from it — or, once C3 lands, to read its next leg.
+      const boundId = `qa${Math.random().toString(36).slice(2, 10)}`
+      await prisma.brokerIntent.create({
+        data: { id: boundId, ask: 'qa desk probe', wallet: wA, agent: 'qa', agentKey: 'qa-desk-key-owner', state: 'open', plan: {}, isInternal: true },
+      })
+      const foreignClose = await qaCall('broker_close', { intent_id: boundId })
+      const afterClose = await prisma.brokerIntent.findUnique({ where: { id: boundId }, select: { state: true } })
+      gap(
+        'desk mcp: broker_close on an identity-BOUND intent refuses a caller that is not that agent (today: any holder of the id cancels the job and revokes the link)',
+        foreignClose.isError || afterClose?.state === 'open',
+        'A3→MCP',
+        `state=${afterClose?.state}`,
+      )
+
+      if (tools.includes('broker_next')) {
+        const foreignNext = await qaCall('broker_next', { intent_id: boundId, agent_key: 'not-the-bound-key' })
+        check(
+          'desk mcp: broker_next refuses a caller whose agent_key is not the one bound at open (C3)',
+          foreignNext.isError && /agent|identity|key/i.test(String(foreignNext.payload)),
+          String(foreignNext.payload).slice(0, 100),
+        )
+        const bareNext = await qaCall('broker_next', { intent_id: boundId })
+        check('desk mcp: broker_next with NO agent_key is refused (the id alone is not the capability)', bareNext.isError)
+        const routeSrc = readFileSync('app/api/broker/[transport]/route.ts', 'utf8')
+        check(
+          'desk mcp: the route header writes down the REVISED trust boundary — signable material now crosses this surface (C3)',
+          /broker_next/.test(routeSrc) && /(trust boundary|same trust|capability token)/i.test(routeSrc.slice(0, 4000)),
+        )
+        check(
+          'desk mcp: broker_next never hands back the job capability token (a leak is 7 days of drive rights)',
+          !/t=\$\{token\}|capabilityToken|jobToken/.test(readFileSync('lib/desk-wire.ts', 'utf8') + routeSrc.replace(/signJobToken\([^)]*\)/g, '')),
+        )
+      } else {
+        gap('desk mcp: broker_next / broker_done exist and are agent_key-gated (C3)', false, 'A3→MCP', 'tools/list has neither')
+      }
+
+      // The execute consent is a standing bearer credential for its intent:
+      // bound to (intent, wallet) but with NO freshness. Ask A4.
+      const consent = deskExecuteConsentMessage('qaintent01', wA)
+      gap(
+        'desk consent: the execute consent text carries an issuedAt, checked both ways (≤10 min) — an indefinitely-valid signature is a standing credential',
+        /Issued|issuedAt|\d{4}-\d{2}-\d{2}T/.test(consent),
+        'A4→MCP/DRIVE',
+        consent.split('\n')[1],
+      )
+      const brokerRoute = readFileSync('app/api/broker/[transport]/route.ts', 'utf8')
+      const execTool = brokerRoute.slice(brokerRoute.indexOf("'broker_execute'"), brokerRoute.indexOf("'broker_tile'"))
+      gap(
+        "desk consent: broker_execute compares the CALLER's agent_key to the key bound at open (today only the wallet signature gates it)",
+        /agent_key/.test(execTool),
+        'A4→MCP',
+      )
+
+      // ── 4. the HL batch (C2), when DRIVE lands it ────────────────────────
+      let batchSrc: string | null = null
+      try { batchSrc = readFileSync('lib/hl-batch.ts', 'utf8') } catch { batchSrc = null }
+      if (batchSrc) {
+        check(
+          'hl batch: every member is guarded against its OWN live snapshot — the asset-index pin is per action, so one `expected` for N actions erases it',
+          (batchSrc.match(/fetchHlSnapshot|guardHlExecBuild|guardHlLeverageBuild/g) ?? []).length >= 2 && /for \(|\.map\(|\.forEach\(/.test(batchSrc),
+        )
+        check(
+          'hl batch: a member whose action type is not on the allowlist is refused, never relayed',
+          /allow|ALLOWED|includes\(.*type|type === 'order'/.test(batchSrc),
+        )
+        check(
+          'hl batch: every member carries its own nonce and each is age-checked (a batch signed once and submitted slowly goes stale)',
+          /HL_NONCE_MAX_AGE_MS|nonceStale|hlNonceStale/.test(batchSrc),
+        )
+        check(
+          'hl batch: a failed member STOPS the batch and the result names which one (C2)',
+          /break|stop|return .*\bindex\b|failedAt|batch\[/.test(batchSrc),
+        )
+      }
+
+      // Cleanup: the probe rows never outlive the run (they are is_internal,
+      // but the desk log lists internal rows greyed — leave the board clean).
+      await prisma.jobStep.deleteMany({ where: { jobId: { in: qaJobs } } })
+      await prisma.job.deleteMany({ where: { id: { in: qaJobs } } })
+      await prisma.brokerIntent.deleteMany({ where: { id: boundId } })
+      const leftovers = await prisma.job.count({ where: { originEnv: QA_FENCE } })
+      check('desk drive: the QA probe rows are cleaned up (no fixture job survives the run)', leftovers === 0, `${leftovers} left`)
+    }
+
+    if (deskGaps) console.log(`  ⚠️  agent desk (QA): ${deskGaps} known-gap(s) open — ${openGaps.join(' · ')}`)
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }
