@@ -16,6 +16,8 @@ import { Loader2, ArrowLeft, ArrowRight, X, Wallet } from 'lucide-react'
 import { CDP_INIT_PATIENCE_MS, emailLaneHint, walletLaneChips } from '@/lib/wallet-lineup'
 import { analytics } from '@/lib/analytics'
 import { WALLET_MARKS } from '@/components/wallet-marks'
+import { inAppBrowserOf, inAppEscapeCopy } from '@/lib/inapp-browser'
+import { oauthAllowedIn, oauthRefusedCopy } from '@/lib/mobile-wallet'
 import { PantessaMark } from '@/components/Logo'
 import { cn } from '@/lib/utils'
 import { currentAppHref, signInLandingHere, useSession } from '@/lib/session'
@@ -137,6 +139,16 @@ export function CreateAccountModal({
   // connect-only), hand a held action back to its page, and route once the
   // browser comes back. The provider returns to this very page.
   function startOAuth(provider: 'google') {
+    // Inside an app's embedded WebView (X, LinkedIn, a bare WKWebView) Google
+    // refuses OAuth outright (`disallowed_useragent`); the lane would leave
+    // and come back to Google's error page. Say so here, on the door, and
+    // point at the lane that works there (lib/mobile-wallet oauthAllowedIn;
+    // the reading is LINKS's lib/inapp-browser).
+    const browser = inAppBrowserOf(navigator.userAgent)
+    if (!oauthAllowedIn(browser)) {
+      setError(oauthRefusedCopy(inAppEscapeCopy(browser)))
+      return
+    }
     analytics.signInDoor('lane', { lane: provider })
     const intent: OAuthIntent = { redirectTo: landing(), signIn: !walletConnectOnly }
     if (resumeAsk) intent.resumeAsk = resumeAsk
