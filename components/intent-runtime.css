@@ -1,0 +1,44 @@
+/* ── /i on a phone — the link landing as a native screen (2026-09-23) ──
+   Scoped to the runtime root (.yf-runtime) so /chat and /embed keep their
+   look. Below sm the thread reads like an app screen: the reply owns the
+   16px gutter as plain text (no card around a card), the user's ask is one
+   accent bubble, no hover-era icons float over the bubbles, and the account
+   pill in the header stays compact. The rules the harness pins by name are
+   the gutter (data-bubble) and the pill. */
+@media (max-width: 639px) {
+  .yf-runtime {
+    padding-top: env(safe-area-inset-top);
+  }
+  .yf-runtime [data-bubble='assistant'] {
+    background: transparent;
+    border-color: transparent;
+    padding: 0;
+    max-width: 100%;
+  }
+  .yf-runtime [data-bubble='user'] {
+    font-size: 15px;
+    padding: 10px 14px;
+    border-radius: 18px 18px 4px 18px;
+  }
+  .yf-runtime [data-avatar='user'],
+  .yf-runtime [data-turn-tools] {
+    display: none;
+  }
+  .yf-runtime .chat-md {
+    font-size: 15.5px;
+    line-height: 1.55;
+  }
+  .yf-runtime .navacct__pill {
+    padding: 6px 10px;
+    font-size: 12px;
+    max-width: 128px;
+  }
+  .yf-runtime .navacct__addr {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .yf-runtime .navacct__chev {
+    display: none;
+  }
+}

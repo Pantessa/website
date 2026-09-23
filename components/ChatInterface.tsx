@@ -26,7 +26,8 @@ import ArmDcaButton from '@/components/ArmDcaButton'
 import SendTxButton from '@/components/SendTxButton'
 import SendTxChain from '@/components/SendTxChain'
 import SimpleArtifactReply from '@/components/chat/SimpleArtifactReply'
-import { splitSimpleReply } from '@/lib/simple-reply'
+import { splitSimpleReply, splitFundingOfferReply } from '@/lib/simple-reply'
+import SimpleFundingReply from '@/components/chat/SimpleFundingReply'
 import ArrivalBanner, { type ArrivalPhase } from '@/components/arrival/ArrivalBanner'
 import { takeArrivalIntent, type ArrivalIntent } from '@/lib/arrival-intent'
 import { orderRequestOf, txRequestOf, txChainOf } from '@/lib/transaction-layer'
@@ -139,6 +140,7 @@ function CopyTurn({ text, dark }: { text: string; dark?: boolean }) {
           setTimeout(() => setDone(false), 1400)
         })
       }}
+      data-turn-tools
       className={cn(
         'absolute -top-2.5 -right-2.5 w-7 h-7 rounded-full grid place-items-center border backdrop-blur-md',
         'opacity-0 group-hover/bubble:opacity-100 focus-visible:opacity-100 transition-opacity duration-150',
@@ -167,6 +169,7 @@ function MintLinkTurn({ onMint }: { onMint: () => void }) {
       onClick={onMint}
       aria-label="Create an intent link from this ask"
       title="Create an intent link — share this ask as one tap"
+      data-turn-tools
       className={cn(
         'absolute -top-2.5 -right-11 w-7 h-7 rounded-full grid place-items-center border backdrop-blur-md',
         'opacity-0 group-hover/bubble:opacity-100 focus-visible:opacity-100 transition-opacity duration-150',
@@ -1941,6 +1944,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                     return (
                       <div
                         title={responder ? responder.name : undefined}
+                        data-avatar={msg.role}
                         className={cn(
                           'flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center overflow-hidden',
                           msg.role === 'user'
@@ -1961,6 +1965,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
 
                   {/* Bubble */}
                   <div
+                    data-bubble={msg.role}
                     className={cn(
                       // min-w-0: as a flex child next to the avatar the bubble
                       // must be allowed to shrink — at 85vw alone it clipped
@@ -1995,6 +2000,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                           simple && (txChainOf(msg.meta) || txRequestOf(msg.meta) || orderRequestOf(msg.meta))
                             ? splitSimpleReply(msg.content)
                             : null
+                        // The funding-offer turn (a clarify, no artifact yet):
+                        // headline + plan first, the holdings folded (2026-09-23,
+                        // the META screenshot). /i only; the chat prints the
+                        // route's paragraph unchanged.
+                        const fund = simple && !split && clarifyRequestOf(msg.meta) ? splitFundingOfferReply(msg.content) : null
+                        if (fund) return <SimpleFundingReply split={fund} />
                         return split ? <SimpleArtifactReply split={split} /> : <ChatMarkdown content={msg.content} />
                       })()
                     ) : (
@@ -2565,7 +2576,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             onKeyDown={handleKeyDown}
             placeholder={
               simple
-                ? 'Ask a follow-up, or tweak the ask…'
+                ? 'Ask a follow-up…'
                 : autoRouter
                 ? 'Ask anything — Pantessa routes it to the best MCP…'
                 : activeServers.length > 1
@@ -2592,7 +2603,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               'flex-shrink-0 w-11 h-11 md:w-9 md:h-9 rounded-full flex items-center justify-center transition-all duration-200',
               input.trim() && !loading
                 ? 'bg-[color:var(--accent)] text-black hover:brightness-110 scale-100 shadow-[0_0_18px_rgba(52,227,160,0.35)]'
-                : 'bg-[var(--surf-2)] text-[color:var(--muted-2)] cursor-not-allowed scale-95'
+                // Touch: no hover to grow back into, and a 44px target must
+                // stay 44px — the 95% rest state measured 42px on a phone.
+                : 'bg-[var(--surf-2)] text-[color:var(--muted-2)] cursor-not-allowed scale-95 [@media(hover:none)]:scale-100'
             )}
           >
             {loading ? (

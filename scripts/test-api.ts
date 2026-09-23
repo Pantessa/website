@@ -31873,6 +31873,45 @@ async function main() {
     check('mobile links: the /i page reads the request UA on the server and hands the verdict to the runtime (the escape line is in the first HTML, not a client flash)', /headers\(\)\)\.get\('user-agent'\)/.test(pageSrc) && /browser=\{browser\}/.test(pageSrc))
   }
 
+
+  // ── i mobile: the link landing as a native screen (2026-09-23) ──────────
+  // Nate's META screenshot: the funding-offer turn on /i at 390px read as a
+  // cramped desktop page. The pure split (headline + plan first, holdings
+  // folded), the option cards as list cells, the scoped phone rules in the
+  // served CSS, and the composer's placeholder. Drive: scripts/drive-i-mobile.ts.
+  {
+    const SR = await import('../lib/simple-reply')
+    const { FUNDING_OFFER_FIXTURE } = await import('./drive-i-mobile')
+    const fund = SR.splitFundingOfferReply(FUNDING_OFFER_FIXTURE.content)
+    check('i mobile: the funding-offer reply splits — headline, no lead-in, six holdings, the plan starts at "This buy needs"', !!fund && fund.headline === 'We can make this happen.' && fund.before === null && fund.holdings.length === 6 && fund.after.startsWith('This buy needs ~$12 of USDG on Robinhood Chain') && fund.after.endsWith('funds arriving on Robinhood Chain in seconds.'), JSON.stringify(fund && { before: fund.before, after: fund.after.slice(0, 40), n: fund.holdings.length }))
+    check('i mobile: every holding row parses to usd · token · chain, the route\'s words kept verbatim', !!fund && fund.holdings.every((h) => h.usd && h.token && h.chain && h.raw === `${h.usd} of ${h.token} on ${h.chain}`) && fund.holdings[2].usd === '~$1806' && fund.holdings[2].token === 'ETH' && fund.holdings[2].chain === 'Optimism')
+    check('i mobile: the fold label totals the balances and counts the chains', !!fund && fund.holdingsLabel === "You're holding ≈$3,216 across 5 chains", fund?.holdingsLabel)
+    const v1 = SR.splitFundingOfferReply("🌉 **We can make this happen.** USDC doesn't exist on Robinhood Chain — USDG is its dollar — so the USDC has to come from where you actually hold it. You're holding **~$12 of USDC on Base**, so I'll convert $10 of it into USDG and drop in a little ETH for gas (you have none on Robinhood Chain yet), then buy the AAPL. Lands in seconds — one job, you sign each step.")
+    check('i mobile: the converting-from shape keeps its lead-in before the fold and capitalizes the plan after it', !!v1 && v1.before === "USDC doesn't exist on Robinhood Chain — USDG is its dollar — so the USDC has to come from where you actually hold it." && v1.after.startsWith("So I'll convert $10 of it into USDG") && v1.holdingsLabel === "You're holding ≈$12 on Base", JSON.stringify(v1 && { before: v1.before, after: v1.after.slice(0, 30), label: v1.holdingsLabel }))
+    const v2 = SR.splitFundingOfferReply("🌉 **We can make this happen.** You asked for $50 of USDG on Robinhood Chain and you're at ~$1.27 there — but you're holding **~$40 of USDC on Base, ~$60 of ETH on Ethereum**, so I'll convert enough to close the gap (a little ETH for gas included), landing on Robinhood Chain in seconds. One job, you sign each step.")
+    check('i mobile: the acquisition shape drops the "— but you\'re holding" joint from the lead-in', !!v2 && v2.before === "You asked for $50 of USDG on Robinhood Chain and you're at ~$1.27 there" && v2.after.startsWith("So I'll convert enough"), JSON.stringify(v2 && { before: v2.before }))
+    check('i mobile: anything else stays whole — a plain answer, an artifact reply, an offer with no holdings, no markdown left in the split', SR.splitFundingOfferReply('Here is a plain answer.') === null && SR.splitFundingOfferReply('🔏 **Swap 5 USDC** via NEAR Intents') === null && SR.splitFundingOfferReply('🌉 **We can make this happen.** nothing bold here') === null && !!fund && !/\*\*/.test(fund.after + (fund.before ?? '') + fund.headline))
+    // Wiring: /i only (simple + a clarify), never the chat or the embed.
+    const iface = readFileSync('components/ChatInterface.tsx', 'utf8')
+    check('i mobile: the funding split renders only in simple mode with a clarify on the turn, ahead of the artifact split and the markdown', /const fund = simple && !split && clarifyRequestOf\(msg\.meta\) \? splitFundingOfferReply\(msg\.content\) : null\s*\n\s*if \(fund\) return <SimpleFundingReply split=\{fund\} \/>/.test(iface))
+    check('i mobile: the bubbles, avatars and hover-era turn tools carry data hooks for the scoped phone rules', /data-bubble=\{msg\.role\}/.test(iface) && /data-avatar=\{msg\.role\}/.test(iface) && (iface.match(/data-turn-tools/g) ?? []).length === 2)
+    check('i mobile: the /i composer placeholder is short ("Ask a follow-up…") — the long one clipped at "tweak the" on a 173px field', /simple\s*\n?\s*\? 'Ask a follow-up…'/.test(iface) && !/tweak the ask/.test(iface))
+    check('i mobile: the send button keeps its 44px on touch (the 95% rest state measured 42px)', /scale-95 \[@media\(hover:none\)\]:scale-100/.test(iface))
+    const rt = readFileSync('components/IntentRuntime.tsx', 'utf8')
+    check('i mobile: the runtime root wears .yf-runtime and imports its scoped stylesheet; the thread wrapper adds no gutter of its own below sm', /import '\.\/intent-runtime\.css'/.test(rt) && /className="yf-runtime relative h-dvh/.test(rt) && /max-w-3xl w-full mx-auto px-0 sm:px-6 min-h-0/.test(rt))
+    check('i mobile: the header eyebrow keeps only its last segment below sm (the full framing from sm up) and the ask carries data-runtime-ask; the header return button yields to the bottom bar on a phone', /<span className="sm:hidden">\{phone\}<\/span>\s*<span className="max-sm:hidden">\{wide\}<\/span>/.test(rt) && /const phone = brand \? \(brand\.name \?\? brand\.domain \?\? head\) : head\.includes\(' · '\) \? head\.slice\(head\.lastIndexOf\(' · '\) \+ 3\) : head/.test(rt) && /data-runtime-ask/.test(rt) && /text-\[13px\] flex-shrink-0 max-sm:hidden"/.test(rt))
+    check('i mobile: the three bottom bars stack on a phone with full-width 44–48px buttons and safe-area padding', (rt.match(/max-sm:pb-\[max\(0\.(625|75)rem,env\(safe-area-inset-bottom\)\)\]/g) ?? []).length === 3 && (rt.match(/max-sm:flex-col max-sm:items-stretch/g) ?? []).length === 2 && (rt.match(/max-sm:w-full max-sm:(justify-center max-sm:)?min-h-12/g) ?? []).length === 2 && /max-sm:grid max-sm:w-full max-sm:grid-cols-2/.test(rt))
+    const chips = readFileSync('components/ClarifyChips.tsx', 'utf8')
+    check('i mobile: every clarify option is one list cell (data-clarify-option, the shared 56px CELL, a trailing chevron) and the first wears a Best guess pill, not an inline dash', (chips.match(/data-clarify-option/g) ?? []).length === 3 && (chips.match(/className=\{CELL\}/g) ?? []).length === 3 && /min-h-14/.test(chips) && (chips.match(/\{CHEVRON\}/g) ?? []).length === 3 && (chips.match(/<BestGuess \/>/g) ?? []).length === 2 && /data-best-guess/.test(chips) && !/— best guess/.test(chips))
+    check('i mobile: the funding-arrival watcher survived the restyle (the card chip still watches, continues and clears its own wait)', chips.includes('useFundingArrival(') && chips.includes('continueNow(o)') && chips.includes('clearFundWait('))
+    // The scoped rules reach the browser: the served /i stylesheet carries them.
+    const iDoc = await (await fetch(`${BASE}/i/buy-aapl`)).text()
+    const iHrefs = [...iDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
+    const iCss = (await Promise.all(iHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n')
+    check('i mobile: the served /i CSS carries the scoped phone rules (assistant bubble flat + gutterless, user avatar + turn tools hidden, compact account pill)', iHrefs.length > 0 && /\.yf-runtime \[data-bubble=["']?assistant["']?\]\{background:transparent/.test(iCss.replace(/\s*\{\s*/g, '{').replace(/;\s*/g, ';').replace(/:\s+/g, ':')) && /\.yf-runtime \[data-turn-tools\]/.test(iCss) && /\.yf-runtime \.navacct__pill/.test(iCss) && /\.yf-runtime \.navacct__chev\{display:none/.test(iCss.replace(/\s*\{\s*/g, '{')), `${iHrefs.length} stylesheet(s)`)
+    check('i mobile: the phone rules are fenced below sm (a max-width 639px media block), so /i on a desktop keeps the bubble', /@media \(max-width:\s*639px\)\{[^}]*\.yf-runtime/.test(iCss.replace(/\s*\{\s*/g, '{').replace(/\}\s*/g, '}')) || /@media \(max-width:\s*639px\)/.test(iCss))
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }

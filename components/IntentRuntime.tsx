@@ -17,6 +17,7 @@
 // from the MINT-TIME redirect stored on the link row — never from the URL.
 
 import { useEffect, useRef, useState } from 'react'
+import './intent-runtime.css'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
 import { linksStudioHref } from '@/lib/links-href'
@@ -685,7 +686,7 @@ export default function IntentRuntime({
     // keeps Pantessa's bg for legibility; the fade-in meets the splash's
     // fade-out so the handoff reads as one motion, not a hard cut.
     <div
-      className="relative h-dvh flex flex-col overflow-hidden yf-runtime-in"
+      className="yf-runtime relative h-dvh flex flex-col overflow-hidden yf-runtime-in"
       style={brand ? brandThemeStyle({ ...brand, bg: null }) : undefined}
     >
       <style>{'@keyframes yfRuntimeIn { from { opacity: 0 } to { opacity: 1 } } .yf-runtime-in { animation: yfRuntimeIn 0.5s ease-out }'}</style>
@@ -741,11 +742,26 @@ export default function IntentRuntime({
                   {/* The framing has to survive the splash: a visitor spends
                       the whole run under this header, and it read "intent
                       link" on posted calls too. */}
-                  {brand
-                    ? `${brand.name ?? brand.domain} · ${linkEyebrow({ hasCreator, handle: creatorHandle, agent }, '').toLowerCase()} · powered by Pantessa`
-                    : linkEyebrow({ hasCreator, handle: creatorHandle, agent })}
+                  {/* Phones: the tail ("your wallet signs" / "powered by
+                      Pantessa") is what the truncate cut mid-word ("FROM PAN…"),
+                      so it yields to the head there. */}
+                  {(() => {
+                    const head = linkEyebrow({ hasCreator, handle: creatorHandle, agent }, '')
+                    // Beside the account pill a phone has ~180px here, so the
+                    // eyebrow keeps its LAST segment ("from Pantessa", or the
+                    // brand's own name) and the full framing returns from sm up.
+                    const phone = brand ? (brand.name ?? brand.domain ?? head) : head.includes(' · ') ? head.slice(head.lastIndexOf(' · ') + 3) : head
+                    const wide = brand ? `${brand.name ?? brand.domain} · ${head.toLowerCase()} · powered by Pantessa` : `${head} · your wallet signs`
+                    return (
+                      <>
+                        <span className="sm:hidden">{phone}</span>
+                        <span className="max-sm:hidden">{wide}</span>
+                      </>
+                    )
+                  })()}
                 </p>
                 <p
+                  data-runtime-ask
                   // The ask IS the link's identity: beside the account pill at
                   // 375 a one-line truncate left "Swap 1 USDC for ET…". Two
                   // lines on phones, one line from sm up.
@@ -760,7 +776,9 @@ export default function IntentRuntime({
               {signed && returnHref && redirectHost && (
                 <a
                   href={returnHref}
-                  className="btn btn--solid inline-flex items-center gap-1.5 text-[13px] flex-shrink-0"
+                  // The sticky bar at the bottom carries the same door on a
+                  // phone; two of them squeezed the ask out of the header.
+                  className="btn btn--solid inline-flex items-center gap-1.5 text-[13px] flex-shrink-0 max-sm:hidden"
                 >
                   Return to {redirectHost} <ArrowRight className="w-3.5 h-3.5" />
                 </a>
@@ -862,7 +880,9 @@ export default function IntentRuntime({
           </div>
         </div>
       )}
-      <div className="relative flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 min-h-0">
+      {/* Phones: the thread's own 16px padding IS the gutter — this wrapper's
+          added 16px put the reply text 49px in from the edge. */}
+      <div className="relative flex-1 max-w-3xl w-full mx-auto px-0 sm:px-6 min-h-0">
         <ChatInterface simple injectedPrompt={prompt} onEmbedEvent={onTurnEvent} intentLinkSlug={slug} />
       </div>
       {/* Soft floor bloom grounding the docked composer — the stage has a
@@ -878,16 +898,17 @@ export default function IntentRuntime({
       {/* Keep-the-flow-going bar: a turn settled with nothing to sign (the
           no-funds wall, a refusal, a plain answer) — never a dead end. */}
       {flowNudge && !signed && (
-        <div className="relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-2.5">
+        <div className="relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-2.5 max-sm:pb-[max(0.625rem,env(safe-area-inset-bottom))]">
           <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-2">
             <span className="text-[12px] text-[color:var(--muted)]">
               Don&apos;t stop here — the full app scans any wallet, funds shortfalls, and builds the path.
             </span>
-            <div className="flex items-center gap-1.5">
-              <SpineLink href="/chat" className={chipClass}>
+            {/* Phones: two equal cells, 44px tall — the native two-button row. */}
+            <div className="flex items-center gap-1.5 max-sm:grid max-sm:w-full max-sm:grid-cols-2 max-sm:gap-2">
+              <SpineLink href="/chat" className={`${chipClass} max-sm:justify-center max-sm:min-h-11`}>
                 <MessageSquare className="w-4 h-4" /> OPEN THE APP
               </SpineLink>
-              <SignInFlowLink href={mintHref} className={chipClass}>
+              <SignInFlowLink href={mintHref} className={`${chipClass} max-sm:justify-center max-sm:min-h-11`}>
                 <Link2 className="w-4 h-4" /> MAKE YOUR OWN LINK
               </SignInFlowLink>
             </div>
@@ -917,8 +938,8 @@ export default function IntentRuntime({
           live in a local chat; signing in adopts it into the DB
           (session.tsx → adoptLocalChat). */}
       {signed && needsSignIn && (
-        <div className="yenter relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3">
-          <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-3">
+        <div className="yenter relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-3 max-sm:flex-col max-sm:items-stretch">
             <span className="text-[13px] text-[color:var(--muted)]">
               <strong className="text-[color:var(--fg)] font-medium">Optional — </strong>
               you&apos;re done here; the money moved. Sign in only if you want this chat and
@@ -929,7 +950,7 @@ export default function IntentRuntime({
               type="button"
               onClick={() => void signIn()}
               disabled={signingIn}
-              className="btn btn--solid inline-flex items-center gap-1.5 text-[13px] disabled:opacity-60"
+              className="btn btn--solid inline-flex items-center gap-1.5 text-[13px] disabled:opacity-60 max-sm:w-full max-sm:justify-center max-sm:min-h-12"
             >
               <Fingerprint className="w-3.5 h-3.5" /> {signingIn ? 'Waiting…' : 'Sign in & save'}
             </button>
@@ -937,12 +958,12 @@ export default function IntentRuntime({
         </div>
       )}
       {signed && returnHref && redirectHost && (
-        <div className="relative sticky bottom-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3">
-          <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
+        <div className="relative sticky bottom-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="max-w-3xl mx-auto flex items-center justify-between gap-3 max-sm:flex-col max-sm:items-stretch">
             <span className="text-[13px] text-[color:var(--muted)]">
               Signed and receipted — all done here.
             </span>
-            <a href={returnHref} className="btn btn--solid inline-flex items-center gap-1.5 text-[13px]">
+            <a href={returnHref} className="btn btn--solid inline-flex items-center justify-center gap-1.5 text-[13px] max-sm:w-full max-sm:min-h-12">
               Return to {redirectHost} <ExternalLink className="w-3.5 h-3.5" />
             </a>
           </div>
