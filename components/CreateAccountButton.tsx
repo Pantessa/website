@@ -416,11 +416,10 @@ export function CreateAccountModal({
                   <GoogleGlyph /> {p.label}
                 </button>
               ))}
-              {/* The shared refusal line (lib/mobile-wallet oauthRefusedCopy) ends
-                  "use the email code below", and in this layout the email row
-                  LEADS — so the caption states the fact without the direction
-                  and the full line stays on the button's title. Raised to
-                  CONNECT under NEEDS. */}
+              {/* The shared refusal line (lib/mobile-wallet oauthRefusedCopy)
+                  names the email code without a direction — in this layout the
+                  email row LEADS — so the caption states the fact and the full
+                  line stays on the button's title. */}
               {!oauthOk && <p className="ca__lanenote">Google won&rsquo;t sign you in inside {escape.app}&rsquo;s browser.</p>}
             </div>
 
