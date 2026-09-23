@@ -29905,12 +29905,12 @@ async function main() {
       // `issuedAt` line of Ask A4 on one side only is exactly that byte.
       const sdkConsent = sdkSrc.slice(sdkSrc.indexOf('export function deskExecuteConsentMessage'))
       const sdkConsentBody = sdkConsent.slice(0, sdkConsent.indexOf('\n}'))
-      const wantLines = deskExecuteConsentMessage('<ID>', '<WALLET>').split('\n')
+      const wantLines = deskExecuteConsentMessage('<ID>', '<WALLET>', '<ISSUED_AT>').split('\n') // round 2: the text gained `Issued at:`; the last line is still the sentence
       const sdkLineCount = (sdkConsentBody.match(/^\s{4}['"`]/gm) ?? []).length
       check(
         'desk wire: the SDK\'s copy of the execute consent text is BYTE-identical to the desk\'s (the desk recovers the signer from its OWN text — one byte of drift and every agent\'s consent recovers to nothing)',
         sdkConsentBody.includes(wantLines[0]) &&
-          sdkConsentBody.includes(wantLines[3]) &&
+          sdkConsentBody.includes(wantLines[wantLines.length - 1]) &&
           /Intent: \$\{intentId\}/.test(sdkConsentBody) &&
           /Wallet: \$\{wallet\.toLowerCase\(\)\}/.test(sdkConsentBody) &&
           sdkLineCount === wantLines.length,
@@ -30092,7 +30092,7 @@ async function main() {
 
       // The execute consent is a standing bearer credential for its intent:
       // bound to (intent, wallet) but with NO freshness. Ask A4.
-      const consent = deskExecuteConsentMessage('qaintent01', wA)
+      const consent = deskExecuteConsentMessage('qaintent01', wA, new Date().toISOString())
       gap(
         'desk consent: the execute consent text carries an issuedAt, checked both ways (≤10 min) — an indefinitely-valid signature is a standing credential',
         /Issued|issuedAt|\d{4}-\d{2}-\d{2}T/.test(consent),
@@ -30524,8 +30524,9 @@ async function main() {
       else {
         const dIntent = String(dOpen.payload?.intentId ?? '')
         check('desk fixture: the desk opened an internal intent for the harness agent', !dOpen.isError && /^[A-Za-z0-9_-]{6,}$/.test(dIntent), dOpen.text.slice(0, 160))
-        const consent = ['Pantessa agent desk — execute consent', `Intent: ${dIntent}`, `Wallet: ${dAcct.address.toLowerCase()}`, "Signing lets the desk compile this intent into a job owned by this wallet. It moves nothing by itself; every leg still needs this wallet's own signature."].join('\n')
-        const dExec = await dCall('broker_execute', { intent_id: dIntent, wallet_signature: await dAcct.signMessage({ message: consent }) })
+        const dIssuedAt = new Date().toISOString() // round 2 (DRIVE): the consent names the instant it was signed
+        const consent = ['Pantessa agent desk — execute consent', `Intent: ${dIntent}`, `Wallet: ${dAcct.address.toLowerCase()}`, `Issued at: ${dIssuedAt}`, "Signing lets the desk compile this intent into a job owned by this wallet. It moves nothing by itself; every leg still needs this wallet's own signature."].join('\n')
+        const dExec = await dCall('broker_execute', { intent_id: dIntent, wallet_signature: await dAcct.signMessage({ message: consent }), issued_at: dIssuedAt, agent_key: 'ui-harness-desk-key' })
         const dJob = typeof dExec.payload?.jobId === 'string' ? (dExec.payload.jobId as string) : null
         check('desk fixture: broker_execute compiled the sequenced ask into a job the agent drives (or refused by name)', !dExec.isError ? !!dJob : /does not compile|cap|identity|venue|refus/i.test(dExec.text), dExec.text.slice(0, 200))
         const d1 = await dRead('days=7')
