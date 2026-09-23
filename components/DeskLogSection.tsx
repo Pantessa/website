@@ -120,8 +120,8 @@ export function DeskLogSection({ desk, external }: { desk: DeskGrowth | null; ex
               <CardTitle eyebrow={`last ${w}`}>Intents · opened to settled</CardTitle>
               <Funnel f={desk.funnel} prev={desk.funnelPrev} />
               <p className="text-[11px] text-[color:var(--muted-2)] mt-3">
-                By the intent&rsquo;s open time. <em>Executed</em> = the agent consented and the desk compiled a job it drives with its own key.{' '}
-                <em>Signed</em> = the agent posted at least one completed leg (its claim; the runner&rsquo;s wait leg checks the chain).
+                By the intent&rsquo;s open time. <em>Executed</em>{' '}= the agent consented and the desk compiled a job it drives with its own key.{' '}
+                <em>Signed</em>{' '}= the agent posted at least one completed leg (its claim; the runner&rsquo;s wait leg checks the chain).
               </p>
             </Card>
             <Card>

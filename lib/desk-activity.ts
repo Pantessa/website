@@ -15,10 +15,15 @@
 //   · `valueUsd`  — what the agent CLAIMED to have signed: the guard-priced notional of every
 //                   sign step it completed. The runner's next wait leg checks the chain, so a
 //                   lie fails the job one leg later — but until then it is the agent's word.
-//   · `countedUsd` — what the RECEIPT-COUNTED books saw: `embed_turns` rows for the same wallet
-//                   under the REAL_TRAFFIC fence. Today an agent-driven completion writes no
-//                   such row (UI.md Finding 1), so this reads $0 by construction — the gap is
-//                   printed, never hidden.
+//   · `countedUsd` — what the RECEIPT-COUNTED books saw: the `embed_turns` row the server writes
+//                   for that leg (session_id `job-<jobId>-<seq>`, origin_kind job-step, receipt-
+//                   verified — squad round 2, lib/job-step-money), counted only when its
+//                   `verification` counts. A leg with a claim and no counted row is the gap the
+//                   screen prints, never hides; a `mismatch` row is a claim the chain contradicted.
+//
+// Every string an AGENT wrote (the ask, its name, its posted result) is clamped here and rendered
+// as text by React — never as markup, never as an href. A hash becomes a link only when it IS a
+// hash (`^0x[0-9a-f]{64}$`), through the chain registry; anything else stays inert text (QA A1).
 //
 // Pure folds only. The I/O lives in app/api/admin/desk/read.ts; the harness imports this
 // module in-process and pins the folds on fixtures.
@@ -28,6 +33,7 @@ import { feeBpsOfArtifact } from '@/lib/fees'
 import { jobStepBuildPath, jobStepChainId } from '@/lib/job-step-telemetry'
 import { venueOfBuildPath } from '@/lib/build-path'
 import { dailySeries, dayKey, deltaPct, splitOfRow, sumSplit, windowRows, type GrowthDayPoint, type GrowthTurnRow } from '@/lib/admin-growth'
+import { isCountedTurn, isInternalTurn } from '@/lib/value-origin'
 
 /* ── raw rows (what the loader hands the fold; Dates or ISO strings both fine) ───────── */
 
@@ -81,10 +87,16 @@ export interface DeskLinkEventRaw {
   createdAt: Date | string
 }
 
-/** A receipt-counted `embed_turns` row for one of the log's wallets (already fenced). */
+/** The `embed_turns` row the server wrote for one signed job leg (session_id
+ *  `job-<jobId>-<seq>`, origin_kind job-step). NOT pre-fenced: the fold reads `verification`
+ *  and the internal stamp itself, so a mismatch is shown as a mismatch. */
 export interface DeskTurnRaw {
-  walletAddress: string | null
+  sessionId: string
   valueUsd: number | null
+  verification: string | null
+  txUrl: string | null
+  isInternal: boolean
+  origin: string
   createdAt: Date | string
 }
 
@@ -123,6 +135,9 @@ export interface DeskLogEvent {
   /** A claimed leg's fee facts, verbatim, so the Growth series re-runs `splitOfRow` on them. */
   buildPath?: string | null
   feeBps?: number | null
+  /** The receipt verdict the books stamped on this leg's money row (`verified` | `attested` |
+   *  `unverified` | `mismatch` | `dev`), or `none` when no row exists for the claim yet. */
+  receipt?: string
 }
 
 /** Where an intent got to. Each stage implies the ones before it on its path. */
@@ -198,7 +213,7 @@ export interface DeskLogRow {
   /** Agent path: guard-priced notional of every sign step the agent completed (its CLAIM).
    *  Human path: receipt-counted signed link events. */
   valueUsd: number | null
-  /** Receipt-counted `embed_turns` money for this wallet inside the intent's lifetime. */
+  /** Receipt-counted money: the sum of this job's `job-<jobId>-<seq>` rows whose verdict counts. */
   countedUsd: number
   /** Pantessa's net fee the claimed legs' artifacts carried (lib/fees rules). */
   feeUsd: number
@@ -219,6 +234,24 @@ export const DESK_OFFER_TTL_MS = 30 * 60_000
 
 const HASH_RE = /^0x[0-9a-fA-F]{64}$/
 
+/** Caps on agent-written strings at the fold (they also render as React text, never markup). */
+export const DESK_TEXT_CAPS = { ask: 600, agent: 80, detail: 200 } as const
+/** Clamp a string an agent wrote; anything that isn't a string reads as null. */
+export function clampText(v: unknown, max: number): string | null {
+  if (typeof v !== 'string') return null
+  const t = v.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim()
+  if (!t) return null
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t
+}
+
+/** `job-<jobId>-<seq>` → seq, for the row the server writes per signed leg. */
+export function legSeqOfSession(sessionId: string, jobId: string): number | null {
+  const prefix = `job-${jobId}-`
+  if (!sessionId.startsWith(prefix)) return null
+  const rest = sessionId.slice(prefix.length)
+  return /^\d+$/.test(rest) ? Number(rest) : null
+}
+
 /** The tx hash an agent's completion result carries, if any. JobCard posts `{ txHash }`; a
  *  txChain posts the LAST hash; anything hash-shaped under the usual keys counts. Anything
  *  else (an HL fill, a Seaport order) is a venue receipt with no chain hash. */
@@ -237,9 +270,10 @@ export function txHashOf(result: unknown): string | null {
   return null
 }
 
-/** Explorer link from the chain registry — never a hand-typed host. Null off-registry. */
+/** Explorer link from the chain registry — never a hand-typed host, and never for anything
+ *  that is not a 32-byte hash (a `javascript:` claim stays text). Null off-registry. */
 export function explorerTxUrl(chainId: number | null | undefined, hash: string | null | undefined): string | null {
-  if (!chainId || !hash) return null
+  if (!chainId || !hash || !HASH_RE.test(hash)) return null
   const c = chainById(chainId)
   return c ? `${c.explorerTx}${hash}` : null
 }
@@ -273,7 +307,7 @@ function planChosen(plan: unknown): { label: string; at: string | null } | null 
   const p = obj(plan)
   const c = obj(p?.chosen)
   if (!c) return null
-  const label = typeof c.label === 'string' ? c.label : typeof c.optionId === 'string' ? c.optionId : null
+  const label = clampText(c.label, 120) ?? clampText(c.optionId, 64)
   if (!label) return null
   const at = typeof c.at === 'string' && !Number.isNaN(Date.parse(c.at)) ? new Date(c.at).toISOString() : null
   return { label, at }
@@ -294,7 +328,7 @@ export interface DeskFoldInput {
   intent: DeskIntentRaw
   job?: DeskJobRaw | null
   linkEvents?: DeskLinkEventRaw[]
-  /** Receipt-counted signed turns for `intent.wallet` (any time; the fold windows them). */
+  /** The money rows the server wrote for the intent's job (`job-<jobId>-<seq>`), any verdict. */
   turns?: DeskTurnRaw[]
   testers?: ReadonlySet<string>
 }
@@ -308,6 +342,14 @@ export function foldDeskIntent(input: DeskFoldInput): DeskLogRow {
   const team = !!wallet && !!input.testers?.has(wallet)
   const isInternal = intent.isInternal || !!job?.isInternal
   const events: DeskLogEvent[] = []
+  let countedUsd = 0
+  const turnsBySeq = new Map<number, DeskTurnRaw>()
+  if (job) {
+    for (const t of input.turns ?? []) {
+      const seq = legSeqOfSession(t.sessionId, job.id)
+      if (seq != null) turnsBySeq.set(seq, t)
+    }
+  }
 
   events.push({ at: iso(intent.createdAt), kind: 'opened', who: 'desk', detail: planGate(intent.plan) ?? undefined })
   const chosen = planChosen(intent.plan)
@@ -319,14 +361,11 @@ export function foldDeskIntent(input: DeskFoldInput): DeskLogRow {
   let valueUsd: number | null = null
   let feeUsd = 0
   const legRows: GrowthTurnRow[] = []
-  let lifeStart = ms(intent.createdAt)
-  let lifeEnd = Number.POSITIVE_INFINITY
 
   if (job) {
     path = 'agent'
     stage = 'executing'
     const jobAt = iso(job.createdAt)
-    lifeStart = Math.min(lifeStart, ms(job.createdAt))
     // The consent signature is recovered inside broker_execute and never stored; the job
     // cannot exist without it, so its creation IS the consent moment (Finding 3).
     events.push({ at: jobAt, kind: 'consent', who: 'agent', detail: wallet ? `signature recovered from ${wallet.slice(0, 6)}…${wallet.slice(-4)} at execute` : 'signature recovered at execute' })
@@ -348,12 +387,19 @@ export function foldDeskIntent(input: DeskFoldInput): DeskLogRow {
           legRows.push(row)
           valueUsd = (valueUsd ?? 0) + row.usd
           feeUsd += split.feeUsd
+          // The books' own row for this leg, if the server wrote one: its verdict is the
+          // claimed-vs-verified column. Internal money never counts, whatever it says.
+          const turn = turnsBySeq.get(step.seq)
+          const turnInternal = !!turn && isInternalTurn({ origin: turn.origin, isInternal: turn.isInternal })
+          const receipt = turn ? (turn.verification ?? 'none') : 'none'
+          const counted = !!turn && !turnInternal && isCountedTurn({ verification: turn.verification })
+          if (counted) countedUsd += turn.valueUsd ?? 0
           events.push({
             at: iso(step.updatedAt),
             kind: 'claimed',
             who: 'agent',
             seq: step.seq,
-            detail: hash ? step.title : `${step.title} — ${result ? clip(JSON.stringify(result), 80) : 'no receipt in the result'}`,
+            detail: hash ? `${step.title}${receipt === 'mismatch' ? ' — the receipt contradicts this claim' : receipt === 'unverified' ? ' — receipt not verified yet' : ''}` : `${step.title} — ${result ? clip(JSON.stringify(result), 80) : 'no receipt in the result'}`,
             txHash: hash ?? undefined,
             txUrl: explorerTxUrl(chainId, hash) ?? undefined,
             chainId: chainId ?? undefined,
@@ -362,7 +408,11 @@ export function foldDeskIntent(input: DeskFoldInput): DeskLogRow {
             venue,
             buildPath: row.buildPath,
             feeBps: row.feeBps,
+            receipt,
           })
+          if (turn && turn.verification && counted) {
+            events.push({ at: iso(turn.createdAt), kind: 'verified', who: 'runner', seq: step.seq, detail: `receipt ${turn.verification} · booked $${r2(turn.valueUsd ?? 0).toFixed(2)}`, txHash: hash ?? undefined, txUrl: explorerTxUrl(chainId, hash) ?? undefined, chainId: chainId ?? undefined, receipt: turn.verification })
+          }
         } else if (step.status === 'failed') {
           legs.failed += 1
           const why = typeof result?.error === 'string' ? result.error : 'the build refused'
@@ -393,15 +443,12 @@ export function foldDeskIntent(input: DeskFoldInput): DeskLogRow {
     if (legs.signed > 0) stage = 'signed'
     if (job.status === 'done') {
       stage = 'settled'
-      lifeEnd = ms(job.updatedAt) + 60 * 60_000
       events.push({ at: iso(job.updatedAt), kind: 'done', who: 'runner', detail: `job done${job.valueUsd ? ` · $${r2(job.valueUsd).toFixed(2)} moved` : ''}` })
     } else if (job.status === 'failed') {
       stage = 'failed'
-      lifeEnd = ms(job.updatedAt) + 60 * 60_000
       events.push({ at: iso(job.updatedAt), kind: 'failed', who: 'runner', detail: job.failReason ? clip(job.failReason, 200) : 'job failed' })
     } else if (job.status === 'canceled') {
       stage = 'closed'
-      lifeEnd = ms(job.updatedAt)
       events.push({ at: iso(job.updatedAt), kind: 'closed', who: 'desk', detail: 'job canceled' })
     }
   } else if (intent.linkSlug) {
@@ -445,23 +492,15 @@ export function foldDeskIntent(input: DeskFoldInput): DeskLogRow {
     events.push({ at: iso(intent.updatedAt), kind: 'closed', who: 'desk', detail: job ? 'closed' : 'the agent walked away' })
   }
 
-  // Receipt-counted money for this wallet, inside the intent's lifetime.
-  const countedUsd = wallet
-    ? (input.turns ?? []).reduce((s, t) => {
-        if ((t.walletAddress ?? '').toLowerCase() !== wallet) return s
-        const at = ms(t.createdAt)
-        return at >= lifeStart && at <= lifeEnd ? s + (t.valueUsd ?? 0) : s
-      }, 0)
-    : 0
-
+  for (const e of events) if (e.detail != null) e.detail = clampText(e.detail, DESK_TEXT_CAPS.detail) ?? undefined
   const KIND_ORDER: Record<DeskEventKind, number> = { opened: 0, chosen: 1, handoff: 2, consent: 3, compiled: 4, built: 5, claimed: 6, verified: 7, settled: 8, done: 9, failed: 9, closed: 10, refused: 6 }
   events.sort((a, b) => ms(a.at) - ms(b.at) || KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || (a.seq ?? 0) - (b.seq ?? 0))
 
   return {
     intentId: intent.id,
-    agentHandle: intent.agentKeyHash,
-    agentName: intent.agent,
-    ask: intent.ask,
+    agentHandle: clampText(intent.agentKeyHash, 64),
+    agentName: clampText(intent.agent, DESK_TEXT_CAPS.agent),
+    ask: clampText(intent.ask, DESK_TEXT_CAPS.ask) ?? '',
     wallet,
     status: intent.state,
     stage,

@@ -426,7 +426,7 @@ function DeskPage() {
         </div>
       </div>
       <p className="text-sm text-[color:var(--muted)] mb-4">
-        Every intent another agent brought to the desk, newest activity first. <em>Claimed</em> is the agent&rsquo;s word; <em>verified</em> is the runner&rsquo;s read of the chain.
+        Every intent another agent brought to the desk, newest activity first. <em>Claimed</em>{' '}is the agent&rsquo;s word; <em>verified</em>{' '}is the runner&rsquo;s read of the chain.
         Internal rows are our own drills — shown greyed, counted nowhere.
       </p>
 

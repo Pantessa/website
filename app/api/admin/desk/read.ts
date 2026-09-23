@@ -5,7 +5,6 @@
 
 import prisma from '@/lib/db'
 import { TEST_WALLETS } from '@/lib/admin'
-import { REAL_TRAFFIC_WHERE } from '@/lib/value-origin'
 import { foldDeskIntent, sortDeskRows, type DeskIntentRaw, type DeskJobRaw, type DeskLinkEventRaw, type DeskLogRow, type DeskTurnRaw } from '@/lib/desk-activity'
 
 export const DESK_ROW_CAP = 400
@@ -46,7 +45,6 @@ export async function readDeskRows(since: Date): Promise<DeskRead> {
   const page = intents.slice(0, DESK_ROW_CAP)
   const jobIds = page.map((i) => i.jobId).filter((x): x is string => !!x)
   const slugs = page.map((i) => i.linkSlug).filter((x): x is string => !!x)
-  const wallets = [...new Set(page.map((i) => i.wallet?.toLowerCase()).filter((x): x is string => !!x))]
 
   const [jobs, linkEvents, turns] = await Promise.all([
     jobIds.length
@@ -75,13 +73,15 @@ export async function readDeskRows(since: Date): Promise<DeskRead> {
           [] as (DeskLinkEventRaw & { slug: string })[],
         )
       : Promise.resolve([] as (DeskLinkEventRaw & { slug: string })[]),
-    wallets.length
+    // The money rows the server writes per signed leg (squad round 2, lib/job-step-money):
+    // session_id `job-<jobId>-<seq>`. Read ALL verdicts — the fold shows a mismatch as one.
+    jobIds.length
       ? soft(
           'turns',
           failed,
           prisma.embedTurn.findMany({
-            where: { walletAddress: { in: wallets }, outcome: 'signed', valueUsd: { gt: 0 }, createdAt: { gte: since }, sessionId: { not: { startsWith: 'harness-' } }, ...REAL_TRAFFIC_WHERE },
-            select: { walletAddress: true, valueUsd: true, createdAt: true },
+            where: { outcome: 'signed', originKind: 'job-step', OR: jobIds.map((id) => ({ sessionId: { startsWith: `job-${id}-` } })) },
+            select: { sessionId: true, valueUsd: true, verification: true, txUrl: true, isInternal: true, origin: true, createdAt: true },
           }),
           [] as DeskTurnRaw[],
         )
@@ -95,13 +95,14 @@ export async function readDeskRows(since: Date): Promise<DeskRead> {
     list.push(e)
     eventsBySlug.set(e.slug, list)
   }
-  const turnsByWallet = new Map<string, DeskTurnRaw[]>()
+  const turnsByJob = new Map<string, DeskTurnRaw[]>()
   for (const t of turns) {
-    const w = t.walletAddress?.toLowerCase()
-    if (!w) continue
-    const list = turnsByWallet.get(w) ?? []
+    // `job-<jobId>-<seq>`: the id is whatever sits between the prefix and the trailing digits.
+    const jobId = t.sessionId.match(/^job-(.+)-\d+$/)?.[1]
+    if (!jobId) continue
+    const list = turnsByJob.get(jobId) ?? []
     list.push(t)
-    turnsByWallet.set(w, list)
+    turnsByJob.set(jobId, list)
   }
   const testers = new Set(Array.from(TEST_WALLETS).map((w) => w.toLowerCase()))
 
@@ -110,7 +111,7 @@ export async function readDeskRows(since: Date): Promise<DeskRead> {
       intent,
       job: intent.jobId ? jobById.get(intent.jobId) ?? null : null,
       linkEvents: intent.linkSlug ? eventsBySlug.get(intent.linkSlug) ?? [] : [],
-      turns: intent.wallet ? turnsByWallet.get(intent.wallet.toLowerCase()) ?? [] : [],
+      turns: intent.jobId ? turnsByJob.get(intent.jobId) ?? [] : [],
       testers,
     }),
   )
