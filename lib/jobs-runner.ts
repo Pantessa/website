@@ -10,7 +10,7 @@
 import { NEAR_INTENTS_MCP } from '@/lib/near-fund-leg'
 import { rpcHostOf, transientRpcWords } from '@/lib/dry-run'
 import { HttpTransport, InfoClient } from '@nktkas/hyperliquid'
-import { affordabilityRefusal, checkAffordability } from '@/lib/affordability'
+import { affordabilityRefusal, checkAffordability, type BalanceReader } from '@/lib/affordability'
 
 /** How long a withheld (unaffordable) step waits before the runner re-quotes it. */
 const WITHHELD_HOLD_MS = 90_000
@@ -130,7 +130,19 @@ type JobWithSteps = NonNullable<Awaited<ReturnType<typeof getJobWithSteps>>>
  *  again, and a re-ask rebuilds the whole path fresh. */
 export const JOB_MAX_AGE_MS = 7 * 24 * 60 * 60_000
 
-export async function advanceJobs(limit = 20): Promise<{ touched: number; notes: string[] }> {
+/**
+ * Options threaded into an advance. `balanceReader` is the injection seam for
+ * the offer gate's affordability read (lib/alerts-exec `SweepOptions.quotes`
+ * is the idiom): the harness fabricates a wallet's balances with it, and a
+ * THROWING reader is the only way to prove the fail-open posture below —
+ * that an RPC outage offers as before instead of stranding every live job.
+ * Production never passes one; the live RPC reader is the default.
+ */
+export interface AdvanceOptions {
+  balanceReader?: BalanceReader
+}
+
+export async function advanceJobs(limit = 20, opts: AdvanceOptions = {}): Promise<{ touched: number; notes: string[] }> {
   const notes: string[] = []
   const aged = await prisma.job.updateMany({
     where: { status: { in: ['running', 'waiting_settlement', 'waiting_signature'] }, originEnv: jobsEnv(), createdAt: { lt: new Date(Date.now() - JOB_MAX_AGE_MS) } },
@@ -159,7 +171,7 @@ export async function advanceJobs(limit = 20): Promise<{ touched: number; notes:
   const jobs = [...settling, ...signing]
   for (const job of jobs) {
     try {
-      await advanceJob(job)
+      await advanceJob(job, opts)
     } catch (e) {
       notes.push(`${job.id.slice(0, 8)}: ${(e as Error).message}`)
     }
@@ -172,7 +184,7 @@ async function failJob(jobId: string, reason: string): Promise<void> {
 }
 
 /** Advance ONE job as far as it can go without user input this tick. */
-export async function advanceJob(job: JobWithSteps): Promise<void> {
+export async function advanceJob(job: JobWithSteps, opts: AdvanceOptions = {}): Promise<void> {
   for (let hop = 0; hop <= job.steps.length; hop++) {
     const fresh = await getJobWithSteps(job.id)
     if (!fresh || !['running', 'waiting_settlement', 'waiting_signature'].includes(fresh.status)) return
@@ -226,7 +238,15 @@ export async function advanceJob(job: JobWithSteps): Promise<void> {
         // verdict fails the step with the shortfall named (the card says
         // what to send; nothing was offered); an unreadable balance passes
         // (the builder's own guard stood behind the artifact).
-        const verdict = await checkAffordability(fresh.wallet, built.artifact)
+        const verdict = await checkAffordability(fresh.wallet, built.artifact, opts.balanceReader)
+        // FAIL OPEN, OUT LOUD. An unreadable balance is not chain state (the
+        // #721 lesson), so the artifact is offered exactly as it was before
+        // this gate existed — but silently disabling the one thing standing
+        // between a $0 phone visitor and a Sign button is how an outage
+        // becomes invisible. The node's own words go in the log.
+        if (verdict.kind === 'unknown') {
+          console.warn(`[jobs] affordability unverified for step ${step.seq + 1} of ${fresh.id} (${step.builder}): ${verdict.reason} — offering the artifact anyway`)
+        }
         if (verdict.kind === 'short') {
           // WITHHELD, not failed: the step goes back to `pending` carrying the
           // reason (the card prints it under the step), the job stays live,
