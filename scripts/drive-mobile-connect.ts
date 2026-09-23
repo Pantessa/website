@@ -107,10 +107,25 @@ async function tapMetaMaskFromILink(page: PwPage, log: (k: string, t: string) =>
   log('drive', 'wallet lane → RainbowKit list')
   const mm = page.locator(RK_METAMASK).first()
   await mm.waitFor({ state: 'visible', timeout: 15_000 })
+  await waitForArm(page, log)
   const tapAt = Date.now()
   await mm.click()
   log('drive', 'tapped MetaMask')
   return tapAt
+}
+
+/** The door arms the launch on open (lib/wallet-arm): the SDK's link lands
+ *  on <html data-wallet-armed> within ~1s. Wait for it unless the scenario
+ *  wants the fast-tap path. */
+let FAST_TAP = false
+async function waitForArm(page: PwPage, log: (k: string, t: string) => void): Promise<void> {
+  if (FAST_TAP) return
+  const t0 = Date.now()
+  const armed = await page
+    .waitForSelector('html[data-wallet-armed]', { state: 'attached', timeout: 8_000 })
+    .then(() => true)
+    .catch(() => false)
+  log('drive', armed ? `armed after ${Date.now() - t0}ms` : 'NOT armed within 8s')
 }
 
 /** The landing page's Sign in → the door → the wallet lane (connectAndSignIn,
@@ -130,11 +145,16 @@ async function tapMetaMaskFromLanding(page: PwPage, log: (k: string, t: string) 
   log('drive', 'wallet lane → RainbowKit list')
   const mm = page.locator(RK_METAMASK).first()
   await mm.waitFor({ state: 'visible', timeout: 15_000 })
+  await waitForArm(page, log)
   const tapAt = Date.now()
   await mm.click()
   log('drive', 'tapped MetaMask')
   return tapAt
 }
+
+/** The armed launch must fire inside the tap: this many ms after it at most
+ *  (measured ~5–40ms; the socket-paced launch was 390–1800ms). */
+export const ARMED_LAUNCH_MAX_MS = 200
 
 function judgeLaunch(trace: Trace): { ok: boolean; why: string } {
   const first = trace.launches[0]
@@ -150,7 +170,13 @@ function judgeLaunch(trace: Trace): { ok: boolean; why: string } {
   // registered handler" — that is the phone's app opening. A DROPPED first
   // launch means the tap's activation was gone by the time the SDK asked;
   // that is only acceptable when the handoff card went up to carry the tap.
-  if (first.verdict === 'allowed') return { ok: true, why: `one launch, allowed, ${first.dtMs}ms after the tap` }
+  // Armed (the door had time): the launch is the tap's own navigation.
+  const armed = trace.lines.some((l) => /armed after \d+ms/.test(l.text))
+  if (armed && first.dtMs > ARMED_LAUNCH_MAX_MS) return { ok: false, why: `armed, but the launch came ${first.dtMs}ms after the tap (max ${ARMED_LAUNCH_MAX_MS})` }
+  const tapLine = [...trace.lines].reverse().find((l) => /\[spy\] tap rk-wallet-option-metaMask/.test(l.text))
+  const activation = tapLine ? (/active=true/.test(tapLine.text) ? 'activation held' : 'NO activation at the tap') : 'activation unread'
+  if (armed && tapLine && !/active=true/.test(tapLine.text)) return { ok: false, why: `armed, but the tap carried no activation (${tapLine.text})` }
+  if (first.verdict === 'allowed') return { ok: true, why: `one launch, allowed, ${first.dtMs}ms after the tap${armed ? ' (armed, ' + activation + ')' : ' (socket-paced)'}` }
   if (trace.handoffCard?.present) return { ok: true, why: `launch dropped ${first.dtMs}ms after the tap, the handoff card is up` }
   return { ok: false, why: `launch dropped ${first.dtMs}ms after the tap and NO handoff card` }
 }
@@ -195,6 +221,19 @@ export const SCENARIOS: Scenario[] = [
     id: 'i-link',
     claim: 'the /i splash → door → MetaMask tap asks the browser for the wallet app',
     run: tapMetaMaskFromILink,
+    judge: judgeLaunch,
+  },
+  {
+    id: 'i-link-fast-tap',
+    claim: 'a tap that lands before the arm does still gets the SDK’s own (socket-paced) launch, once',
+    run: async (page, log) => {
+      FAST_TAP = true
+      try {
+        return await tapMetaMaskFromILink(page, log)
+      } finally {
+        FAST_TAP = false
+      }
+    },
     judge: judgeLaunch,
   },
   {
@@ -257,6 +296,14 @@ async function runScenario(s: Scenario, browser: PwBrowser): Promise<Trace> {
       if (type === 'pagehide') console.log('[spy] pagehide listener (wallet-handoff watch) ' + act())
       return add(type, ...rest)
     }
+    // The tap itself, stamped INSIDE the page in the capture phase (this
+    // listener is registered before the app's, so it runs first): the launch
+    // offset is measured from here, and the activation read here is the one
+    // the app's synchronous navigation runs under.
+    document.addEventListener('click', (e) => {
+      const el = e.target && e.target.closest && e.target.closest('[data-testid="rk-wallet-option-metaMask"]')
+      if (el) console.log('[spy] tap rk-wallet-option-metaMask ' + act())
+    }, true)
     const click = HTMLAnchorElement.prototype.click
     HTMLAnchorElement.prototype.click = function () {
       console.log('[spy] a.click ' + this.href.slice(0, 80) + ' target=' + this.target + ' ' + act())
@@ -287,7 +334,10 @@ async function runScenario(s: Scenario, browser: PwBrowser): Promise<Trace> {
     failure = String(e).slice(0, 300)
     log('drive.error', failure)
   }
-  const tapT = tapAt ? tapAt - t0 : -1
+  // Prefer the page's own stamp of the tap (the spy's capture-phase click);
+  // Playwright's pre-click timestamp includes its own dispatch latency.
+  const spyTap = [...lines].reverse().find((l) => /\[spy\] tap rk-wallet-option-metaMask/.test(l.text))
+  const tapT = spyTap ? spyTap.t : tapAt ? tapAt - t0 : -1
   const after = lines.filter((l) => l.t >= tapT)
   const launches = after
     .filter((l) => l.kind.startsWith('console'))

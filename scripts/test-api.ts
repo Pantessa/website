@@ -31700,7 +31700,7 @@ async function main() {
           /metaMaskWallet\.useDeeplink = true/.test(wagmi) &&
           /\.openDeeplink =\s*requestWalletAppOpen/.test(wagmi) &&
           /withoutDuplicateMobileLaunch\(metaMaskWallet\(params\)\)/.test(wagmi) &&
-          /metaMask: metaMaskWalletOneLaunch,/.test(wagmi) &&
+          /metaMask: oneLaunchMetaMaskWallet,/.test(wagmi) &&
           !/metaMask: metaMaskWallet,/.test(wagmi) &&
           !/useDeeplink:\s*false/.test(wagmi)
         )
@@ -31811,6 +31811,106 @@ async function main() {
         })(),
       )
     }
+    {
+      // R2 — the ARMED launch. The socket trace put the SDK's launch at
+      // +771ms after the tap, inside a WebSocket ack; WebKit never carries a
+      // gesture into that (propagation is fetch/XHR/MediaDevices-only, timers
+      // 1s). The door arms: the SDK's link is held, the tap navigates to it
+      // synchronously, the SDK's re-ask for the same channel is deduped.
+      const wa = await import('../lib/wallet-arm')
+      check(
+        'mobile connect (arm rules): a channel id is read off a wallet link; the SDK’s re-ask for the same channel within 8s is a duplicate, a different channel or a stale one is not; the door arms on a phone that is not a wallet’s own browser; an armed link is used only while young',
+        mw.channelIdOf('metamask://connect?channelId=1b82-7ed4&v=2&pubkey=02ab') === '1b82-7ed4' &&
+          mw.channelIdOf('metamask://connect?v=2') === null &&
+          mw.isDuplicateLaunch({ link: 'metamask://connect?channelId=a1&v=2', at: 1000 }, 'metamask://connect?redirect=true&channelId=a1&v=2', 1800) &&
+          !mw.isDuplicateLaunch({ link: 'metamask://connect?channelId=a1&v=2', at: 1000 }, 'metamask://connect?channelId=b2&v=2', 1800) &&
+          !mw.isDuplicateLaunch({ link: 'metamask://connect?channelId=a1&v=2', at: 1000 }, 'metamask://connect?channelId=a1&v=2', 1000 + mw.LAUNCH_DEDUPE_MS + 1) &&
+          !mw.isDuplicateLaunch(null, 'metamask://connect?channelId=a1', 1) &&
+          mw.shouldArmLaunch({ platform: 'ios', walletBrowser: null }) &&
+          mw.shouldArmLaunch({ platform: 'android', walletBrowser: null }) &&
+          !mw.shouldArmLaunch({ platform: 'desktop', walletBrowser: null }) &&
+          !mw.shouldArmLaunch({ platform: 'android', walletBrowser: 'metamask' }) &&
+          mw.armedLinkUsable({ at: 1000 }, 1000 + mw.ARMED_LINK_MAX_AGE_MS) &&
+          !mw.armedLinkUsable({ at: 1000 }, 1000 + mw.ARMED_LINK_MAX_AGE_MS + 1) &&
+          !mw.armedLinkUsable(null, 5) &&
+          mw.METAMASK_TAP_SELECTOR === '[data-testid="rk-wallet-option-metaMask"]' &&
+          wa.armHere({ userAgent: IPHONE }, false) && !wa.armHere({ userAgent: DESKTOP, platform: 'MacIntel', maxTouchPoints: 0 }, false) && !wa.armHere({ userAgent: `${ANDROID} MetaMaskMobile` }, true) &&
+          wa.connectorToArm([{ id: 'injected' }, { id: 'metaMaskSDK' }])?.id === 'metaMaskSDK' && wa.connectorToArm([{ id: 'injected' }]) === null,
+      )
+      // The holder: armed → the SDK's ask is HELD (no navigation, html
+      // attribute set) → the tap launches it once → the SDK's re-ask for the
+      // same channel does not navigate again → settled forgets it all.
+      const priorWindow = (globalThis as Record<string, unknown>).window
+      const priorDocument = (globalThis as Record<string, unknown>).document
+      const navigated: string[] = []
+      const attrs: Record<string, string> = {}
+      const handlers: Record<string, Set<() => void>> = {}
+      ;(globalThis as Record<string, unknown>).document = {
+        visibilityState: 'visible',
+        documentElement: { setAttribute: (k: string, v: string) => { attrs[k] = v }, removeAttribute: (k: string) => { delete attrs[k] } },
+        addEventListener: (k: string, f: () => void) => { ;(handlers[k] ??= new Set()).add(f) },
+        removeEventListener: (k: string, f: () => void) => handlers[k]?.delete(f),
+        createElement: () => ({ click: () => {}, set href(_v: string) {}, target: '', rel: '' }),
+      }
+      ;(globalThis as Record<string, unknown>).window = {
+        addEventListener: (k: string, f: () => void) => { ;(handlers[k] ??= new Set()).add(f) },
+        removeEventListener: (k: string, f: () => void) => handlers[k]?.delete(f),
+        location: { set href(v: string) { navigated.push(v) } },
+      }
+      try {
+        wh.walletAppRequestSettled()
+        const nothingArmed = wh.launchArmedWalletApp() === false && navigated.length === 0
+        wh.armWalletAppOpen()
+        const arming = wh.walletAppArmedOrArming()
+        wh.requestWalletAppOpen('metamask://connect?channelId=armed1&v=2&pubkey=02aa')
+        const held = navigated.length === 0 && wh.walletAppArmedSnapshot()?.link === 'metamask://connect?channelId=armed1&v=2&pubkey=02aa' && attrs['data-wallet-armed'] === 'MetaMask' && wh.walletAppOpenSnapshot() === null
+        const launched = wh.launchArmedWalletApp() === true && navigated.length === 1 && navigated[0] === 'metamask://connect?channelId=armed1&v=2&pubkey=02aa' && wh.walletAppArmedSnapshot() === null && !('data-wallet-armed' in attrs)
+        // the SDK's own ask for the same channel, 0.8s later: no second navigation
+        wh.requestWalletAppOpen('metamask://connect?channelId=armed1&v=2&pubkey=02aa')
+        const deduped = navigated.length === 1
+        // a DIFFERENT channel is a new request and navigates
+        wh.requestWalletAppOpen('metamask://connect?channelId=other2&v=2&pubkey=02aa')
+        const other = navigated.length === 2
+        wh.walletAppRequestSettled()
+        const forgotten = !wh.walletAppArmedOrArming() && wh.walletAppLastLink() === null
+        // arming with nothing asked yet: the first ask is held, a second arm is a no-op
+        wh.armWalletAppOpen(); wh.armWalletAppOpen()
+        wh.requestWalletAppOpen('metamask://connect?channelId=armed3&v=2')
+        const heldAgain = navigated.length === 2 && wh.walletAppArmedSnapshot()?.link === 'metamask://connect?channelId=armed3&v=2'
+        wh.walletAppRequestSettled()
+        check(
+          'mobile connect (armed holder): armed → the SDK’s ask is held (no navigation, <html data-wallet-armed>) → the tap launches it once → the SDK’s re-ask for that channel never navigates again, another channel does → settled forgets the arm',
+          nothingArmed && arming && held && launched && deduped && other && forgotten && heldAgain,
+          JSON.stringify({ nothingArmed, arming, held, launched, deduped, other, forgotten, heldAgain, navigated }),
+        )
+      } finally {
+        wh.walletAppRequestSettled()
+        if (priorWindow === undefined) delete (globalThis as Record<string, unknown>).window
+        else (globalThis as Record<string, unknown>).window = priorWindow
+        if (priorDocument === undefined) delete (globalThis as Record<string, unknown>).document
+        else (globalThis as Record<string, unknown>).document = priorDocument
+      }
+      check(
+        'mobile connect (arm wiring): the door arms on mount through armMetaMaskLaunch, the global card navigates to the armed link in a CAPTURE-phase click on RainbowKit’s MetaMask row, and the arm issues the SDK’s own eth_requestAccounts without awaiting it',
+        (() => {
+          const strip = (s2: string) => s2.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+          const door = strip(readFileSync(pathJoin(process.cwd(), 'components/CreateAccountButton.tsx'), 'utf8'))
+          const card = strip(readFileSync(pathJoin(process.cwd(), 'components/WalletAppHandoff.tsx'), 'utf8'))
+          const arm = strip(readFileSync(pathJoin(process.cwd(), 'lib/wallet-arm.ts'), 'utf8'))
+          return (
+            /void armMetaMaskLaunch\(connectors\)/.test(door) &&
+            /document\.addEventListener\('click', onTap, true\)/.test(card) &&
+            /closest\?\.\(METAMASK_TAP_SELECTOR\)/.test(card) &&
+            /launchArmedWalletApp\(\)/.test(card) &&
+            /armWalletAppOpen\(\)\s*provider\.request\(\{ method: 'eth_requestAccounts', params: \[\] \}\)\.catch/.test(arm) &&
+            // SIGN N4: the drive seam — a dispatched pantessa:wallet-app-open reaches the holder through the belt
+            wh.WALLET_APP_OPEN_EVENT === 'pantessa:wallet-app-open' &&
+            /addEventListener\(WALLET_APP_OPEN_EVENT, onAsk\)/.test(card) && /if \(typeof link === 'string'\) requestWalletAppOpen\(link\)/.test(card) &&
+            !/await provider\.request/.test(arm)
+          )
+        })(),
+      )
+    }
     // The drive that measured all of this stays importable for QA's
     // drive:mobile: its scenario list is the contract.
     check(
@@ -31819,7 +31919,8 @@ async function main() {
         const drive = readFileSync(pathJoin(process.cwd(), 'scripts/drive-mobile-connect.ts'), 'utf8')
         return (
           /export const SCENARIOS/.test(drive) &&
-          /id: 'i-link'/.test(drive) && /id: 'i-link-returning'/.test(drive) && /id: 'sign-in'/.test(drive) &&
+          /id: 'i-link'/.test(drive) && /id: 'i-link-returning'/.test(drive) && /id: 'sign-in'/.test(drive) && /id: 'i-link-fast-tap'/.test(drive) &&
+          /ARMED_LAUNCH_MAX_MS = 200/.test(drive) && /armed && first\.dtMs > ARMED_LAUNCH_MAX_MS/.test(drive) &&
           /trace\.launches\.length !== 1 \|\| trace\.rkNavigated/.test(drive) &&
           /readLaunchVerdict/.test(drive)
         )
