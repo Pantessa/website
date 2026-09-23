@@ -146,6 +146,36 @@ async function underBar(page: any, selector: string): Promise<{ exists: boolean;
   }, selector)
 }
 
+/** Scroll to the page's end and ask whether the fixed bottom bar is eating
+ *  the last of the content. A surface that mounts the spine must reserve the
+ *  bar's height; when it does not, the final row/control is permanently
+ *  covered and there is no more page to scroll. */
+async function bottomReserve(page: any): Promise<{ bar: number; covered: number; last: string }> {
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  await page.waitForTimeout(700)
+  return page.evaluate(() => {
+    const bar = document.querySelector('nav[aria-label="Workspace"]') as HTMLElement | null
+    if (!bar) return { bar: 0, covered: 0, last: 'no bar' }
+    const br = bar.getBoundingClientRect()
+    let covered = 0
+    let last = 'none'
+    const nodes = Array.from(document.querySelectorAll('main *, footer *')) as HTMLElement[]
+    for (const n of nodes) {
+      if (n.children.length > 0) continue
+      const t = (n.textContent ?? '').trim()
+      if (!t) continue
+      const r = n.getBoundingClientRect()
+      if (r.height === 0 || r.top > window.innerHeight) continue
+      const over = Math.min(r.bottom, br.bottom) - Math.max(r.top, br.top)
+      if (over > covered) {
+        covered = over
+        last = `${n.tagName.toLowerCase()} "${t.slice(0, 26)}"`
+      }
+    }
+    return { bar: Math.round(br.height), covered: Math.round(covered), last }
+  })
+}
+
 /** Every seat in the spine's phone bar, with the gap between adjacent LABELS.
  *  A gap under 10px is the pinned floor (memory `wallet-page`). */
 async function barSeats(page: any): Promise<{ seats: number; labels: { text: string; left: number; right: number }[]; minGap: number }> {
@@ -618,19 +648,44 @@ const row3: UxScenario = {
     page.on('request', (r: any) => {
       if (r.method() === 'POST' && r.url().includes('/api/chat')) posts.push(r.url())
     })
-    const chip = page.locator('button', { hasText: /^Buy \$/ }).first()
-    if ((await chip.count()) > 0) {
-      await chip.click()
-      await page.waitForTimeout(1500)
-      const door = await page.evaluate(() => !!document.querySelector('.ca__panel') || !!document.querySelector('[data-rk]'))
-      v.push(
-        door && posts.length === 0
-          ? pass(3, 'an act chip opens the connect door and fires no turn', `door open, ${posts.length} POST /api/chat`)
-          : fail(3, 'an act chip opens the connect door and fires no turn', `door=${door} posts=${posts.length}`),
-      )
-      await ctx.shot(page, 3, 'chip-door')
-    } else {
-      v.push(note(3, 'act chip present', 'no "Buy $…" chip rendered at this width'))
+    // Which act chips can a FINGER actually reach here? The board's QuickAct
+    // seat is hover-revealed and `@media (hover: none)` hides it outright, so
+    // on touch the reachable acts are the rail's and the ask bar's.
+    const reach = await page.evaluate(() => {
+      const all = Array.from(document.querySelectorAll('[data-ask]')) as HTMLElement[]
+      const visible = all.filter((e) => {
+        const r = e.getBoundingClientRect()
+        const cs = getComputedStyle(e)
+        return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && Number(cs.opacity) > 0.05 && cs.pointerEvents !== 'none'
+      })
+      return {
+        total: all.length,
+        visible: visible.length,
+        hoverOnly: all.length - visible.length,
+        sample: visible.slice(0, 4).map((e) => e.getAttribute('data-ask') ?? ''),
+        quickHidden: getComputedStyle(document.querySelector('.mk-table__quick') ?? document.createElement('i')).display === 'none',
+      }
+    })
+    v.push(
+      reach.visible > 0
+        ? pass(3, 'a finger can reach an act chip on /markets', `${reach.visible} of ${reach.total} [data-ask] tappable (${reach.sample.join(' · ')}); ${reach.hoverOnly} hover-only`)
+        : fail(3, 'a finger can reach an act chip on /markets', `0 of ${reach.total} [data-ask] tappable — every act here is hover-revealed`),
+    )
+    if (reach.visible > 0) {
+      const chip = page.locator('[data-ask]:visible').first()
+      try {
+        await chip.click({ timeout: 6000 })
+        await page.waitForTimeout(1800)
+        const door = await page.evaluate(() => ({ modal: !!document.querySelector('.ca__panel'), rk: !!document.querySelector('[data-rk] [role="dialog"], [data-rk-dialog]'), path: location.pathname }))
+        v.push(
+          (door.modal || door.rk) && posts.length === 0
+            ? pass(3, 'an act chip opens the connect door and fires no turn', `door open (${door.modal ? 'unified' : 'rainbowkit'}), ${posts.length} POST /api/chat`)
+            : fail(3, 'an act chip opens the connect door and fires no turn', `${JSON.stringify(door)} posts=${posts.length}`),
+        )
+        await ctx.shot(page, 3, 'chip-door')
+      } catch (e) {
+        v.push(fail(3, 'an act chip opens the connect door and fires no turn', `the chip refused the tap: ${(e as Error).message.split('\n')[0]}`))
+      }
     }
     return v
   },
@@ -667,13 +722,17 @@ const row4: UxScenario = {
     v.push(tabs.length > 0 ? note(4, 'symbol tabs', tabs.join(' · ')) : note(4, 'symbol tabs', 'none read'))
 
     const bar = await barRect(page)
-    const lastCard = await underBar(page, '.sym__rail, .mkt-frame__rail, footer')
     v.push(
       bar.found
         ? pass(4, 'the spine bar is present on /t', `${bar.kind} at y ${Math.round(bar.top)} h ${Math.round(bar.height)}`)
         : fail(4, 'the spine bar is present on /t', 'no bottom bar'),
     )
-    v.push(note(4, 'page tail vs the bar', lastCard.detail))
+    const res4 = await bottomReserve(page)
+    v.push(
+      res4.covered <= 2
+        ? pass(4, '/t reserves the bar height at the page end', `bar ${res4.bar}px, nothing covered`)
+        : fail(4, '/t reserves the bar height at the page end', `${res4.covered}px of ${res4.last} sits under the ${res4.bar}px bar with no page left to scroll`),
+    )
 
     await ctx.shot(page, 4, 'symbol')
     return v
@@ -787,10 +846,21 @@ const row6: UxScenario = {
     v.push(splash.cells === 0 ? note(6, 'splash cards', 'none rendered (empty wallet / no scan yet)') : splash.columns <= 1 ? pass(6, 'splash is one column on a phone', `${splash.cells} cells, ${splash.columns} column`) : fail(6, 'splash is one column on a phone', `${splash.cells} cells across ${splash.columns} columns`))
 
     const toolbar = await page.evaluate(() => {
-      const chips = Array.from(document.querySelectorAll('[data-chat-toolbar] button, .chat-toolbar button')) as HTMLElement[]
-      return { chips: chips.length, withText: chips.filter((c) => (c.textContent ?? '').trim().length > 0).length }
+      // Whatever the toolbar is made of, the question is the same: does any
+      // control in the chat's top strip overflow the phone's width?
+      const strip = document.querySelector('header, [class*="toolbar"]') as HTMLElement | null
+      const btns = Array.from((strip ?? document).querySelectorAll('button, a')) as HTMLElement[]
+      const onscreen = btns.filter((b) => { const r = b.getBoundingClientRect(); return r.width > 0 && r.top < 140 })
+      const over = onscreen.filter((b) => b.getBoundingClientRect().right > window.innerWidth + 1)
+      return { strip: !!strip, controls: onscreen.length, overflowing: over.length, labels: onscreen.map((b) => (b.textContent ?? '').trim().slice(0, 14)).slice(0, 8) }
     })
-    v.push(note(6, 'toolbar chips', JSON.stringify(toolbar)))
+    v.push(
+      toolbar.overflowing === 0
+        ? pass(6, 'no chat-chrome control overflows the phone', `${toolbar.controls} controls in the top strip: ${toolbar.labels.join(' · ')}`)
+        : fail(6, 'no chat-chrome control overflows the phone', JSON.stringify(toolbar)),
+    )
+    const res6 = await bottomReserve(page)
+    v.push(note(6, '/chat bottom reserve', `bar ${res6.bar}px, covered ${res6.covered}px (${res6.last})`))
 
     await ctx.shot(page, 6, 'chat')
     return v
@@ -830,9 +900,13 @@ const row7: UxScenario = {
     v.push(shape.chains && shape.chains.marks >= 4 ? pass(7, 'the chain marks row renders', JSON.stringify(shape.chains)) : fail(7, 'the chain marks row renders', JSON.stringify(shape.chains)))
     v.push(shape.doors.length >= 2 ? pass(7, 'the wallet doors are present', shape.doors.join(' · ')) : fail(7, 'the wallet doors are present', JSON.stringify(shape.doors)))
 
-    const tail = await underBar(page, 'main')
-    v.push(note(7, 'page vs bar', tail.detail))
     await ctx.shot(page, 7, 'wallet')
+    const res7 = await bottomReserve(page)
+    v.push(
+      res7.covered <= 2
+        ? pass(7, '/wallet reserves the bar height at the page end', `bar ${res7.bar}px, nothing covered`)
+        : fail(7, '/wallet reserves the bar height at the page end', `${res7.covered}px of ${res7.last} sits under the ${res7.bar}px bar`),
+    )
     return v
   },
 }
@@ -949,13 +1023,47 @@ const row10: UxScenario = {
     }
     const page = await ctx.open({ wallet: true })
     await page.goto(`${ctx.onrampBase}/markets`, { waitUntil: 'domcontentloaded' })
-    await page.waitForTimeout(4000)
-    const fund = await page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll('button, a')).map((b) => (b.textContent ?? '').trim())
-      return btns.filter((t) => /buy (eth|usdc)|card|fund/i.test(t)).slice(0, 6)
+    await page.waitForTimeout(5000)
+    // The card door lives in the rail. On a phone the rail is the last thing
+    // in the frame, so find out how far a finger has to travel to reach it.
+    const where = await page.evaluate(() => {
+      const el = document.querySelector('[data-rail-fund]') as HTMLElement | null
+      if (!el) return { found: false, docH: document.documentElement.scrollHeight, vh: window.innerHeight }
+      const r = el.getBoundingClientRect()
+      return {
+        found: true,
+        phase: el.getAttribute('data-rail-fund'),
+        y: Math.round(r.top + window.scrollY),
+        docH: document.documentElement.scrollHeight,
+        vh: window.innerHeight,
+        screens: Math.round(((r.top + window.scrollY) / window.innerHeight) * 10) / 10,
+      }
     })
-    v.push(fund.length > 0 ? pass(10, 'a card-funding door is offered on the rail', fund.join(' · ')) : note(10, 'a card-funding door is offered on the rail', 'none at this width/wallet'))
-    await ctx.shot(page, 10, 'onramp')
+    v.push(
+      where.found
+        ? where.screens! <= 3
+          ? pass(10, 'the card door is within reach on a phone', `at y ${where.y} = ${where.screens} screens down (doc ${where.docH})`)
+          : fail(10, 'the card door is within reach on a phone', `at y ${where.y} = ${where.screens} screens down (doc ${where.docH}) — a phone visitor never scrolls that far`)
+        : note(10, 'the card door renders', `no [data-rail-fund] — the mock wallet reads as funded, or the rail has not settled (doc ${where.docH})`),
+    )
+    if (where.found) {
+      await page.evaluate(() => document.querySelector('[data-rail-fund]')?.scrollIntoView({ block: 'center' }))
+      await page.waitForTimeout(600)
+      const shape = await page.evaluate(() => {
+        const el = document.querySelector('[data-rail-fund]') as HTMLElement
+        const r = el.getBoundingClientRect()
+        const chips = Array.from(el.querySelectorAll('button')).map((b) => ({ t: (b.textContent ?? '').trim(), h: Math.round(b.getBoundingClientRect().height), right: Math.round(b.getBoundingClientRect().right) }))
+        const bar = document.querySelector('nav[aria-label="Workspace"]') as HTMLElement | null
+        const br = bar?.getBoundingClientRect()
+        return { left: Math.round(r.left), right: Math.round(r.right), vw: window.innerWidth, chips, overBar: br ? Math.max(0, Math.round(r.bottom - br.top)) : 0 }
+      })
+      v.push(
+        shape.right <= shape.vw + 1 && shape.chips.every((c: { h: number; right: number }) => c.h >= 28 && c.right <= shape.vw + 1)
+          ? pass(10, 'the card door fits and its chips are tappable', `${shape.left}..${shape.right} of ${shape.vw}; ${shape.chips.map((c: { t: string; h: number }) => `${c.t} ${c.h}px`).join(' · ')}`)
+          : fail(10, 'the card door fits and its chips are tappable', JSON.stringify(shape)),
+      )
+      await ctx.shot(page, 10, 'onramp')
+    }
     return v
   },
 }
