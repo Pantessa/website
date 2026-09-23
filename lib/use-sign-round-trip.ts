@@ -8,15 +8,13 @@
 //
 // Nothing here fires a wallet method. `reopen()` is the one control the hook
 // offers for an open request the visitor came back to: bring the wallet app
-// forward again (the request is already queued in it). For the MetaMask SDK
-// lane that is a `metamask://` launch through lib/wallet-handoff, which runs
-// inside the tap that pressed the button. Other mobile lanes get the words
-// and no button until the handoff API can replay their last link (SIGN.md
-// NEEDS → CONNECT).
+// forward again — CONNECT's `openWalletApp()` replays the last link the SDK
+// asked for (the request is already queued in the app). `settle()` also tells
+// the holder the request is over (`walletAppRequestSettled`) so the global
+// card and the remembered link clear with it.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useAccount } from 'wagmi'
-import { requestWalletAppOpen } from '@/lib/wallet-handoff'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { openWalletApp, subscribeWalletAppOpen, walletAppLastLink, walletAppRequestSettled } from '@/lib/wallet-handoff'
 import {
   IDLE_TRIP,
   platformOf,
@@ -26,8 +24,14 @@ import {
   type SignRoundTrip,
 } from '@/lib/sign-round-trip'
 
-/** wagmi's id for the MetaMask SDK connector (the phone lane). */
-export const METAMASK_SDK_CONNECTOR_ID = 'metaMaskSDK'
+const noLink = () => null
+
+/** The link the SDK last asked to open, while its request may still be
+ *  waiting in the wallet app (lib/wallet-handoff). Null on a desktop, on a
+ *  non-SDK lane, and once the request settled. */
+export function useWalletAppLastLink(): { link: string; app: string } | null {
+  return useSyncExternalStore(subscribeWalletAppOpen, walletAppLastLink, noLink)
+}
 
 /** The platform, read AFTER mount so a server render never disagrees with
  *  the client (the UA is a browser fact). Desktop until then. */
@@ -51,14 +55,16 @@ export function useSignRoundTrip(): {
   reopen: () => void
 } {
   const platform = usePlatform()
-  const { connector } = useAccount()
+  const last = useWalletAppLastLink()
   const [trip, setTrip] = useState<SignRoundTrip>(IDLE_TRIP)
   const [now, setNow] = useState(() => Date.now())
-  const tripRef = useRef(trip)
-  tripRef.current = trip
 
   const ask = useCallback(() => setTrip((t) => roundTripReduce(t, { type: 'ask', at: Date.now() })), [])
-  const settle = useCallback(() => setTrip((t) => roundTripReduce(t, { type: 'resolved' })), [])
+  const settle = useCallback(() => {
+    setTrip((t) => roundTripReduce(t, { type: 'resolved' }))
+    // The wallet answered (or refused): nothing is waiting in the app.
+    walletAppRequestSettled()
+  }, [])
   const reset = useCallback(() => setTrip(IDLE_TRIP), [])
 
   // Leave / return.
@@ -86,15 +92,12 @@ export function useSignRoundTrip(): {
   }, [live])
 
   const verdict = returnVerdict(trip, now)
-  const isSdkLane = connector?.id === METAMASK_SDK_CONNECTOR_ID
-  const reopenApp = platform === 'phone' && isSdkLane ? 'MetaMask' : null
+  const reopenApp = last?.app ?? null
 
-  // A bare scheme link brings the app forward with its queue intact; the
-  // handoff holder's link belt accepts it. Runs inside the button's tap.
+  // Runs inside the button's tap: the activation the browser held out for.
   const reopen = useCallback(() => {
-    if (!reopenApp) return
-    requestWalletAppOpen('metamask://')
-  }, [reopenApp])
+    openWalletApp()
+  }, [])
 
   return { trip, verdict, platform, reopenApp, ask, settle, reset, reopen }
 }

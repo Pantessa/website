@@ -10,7 +10,10 @@
 
 import { analytics } from '@/lib/analytics'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useSignTypedData, useSwitchChain } from 'wagmi'
+import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi'
+import { oneMethodPerTap } from '@/lib/sign-round-trip'
+import { usePlatform } from '@/lib/use-sign-round-trip'
+import SignatureWaitOpenApp from '@/components/SignatureWaitOpenApp'
 import { Loader2, PenLine, ShieldCheck } from 'lucide-react'
 
 /** JSON-safe typed data as served by GET /api/grants/[id]/signature. */
@@ -53,6 +56,9 @@ export default function SignGrantButton({
 }) {
   const { signTypedDataAsync } = useSignTypedData()
   const { switchChainAsync } = useSwitchChain()
+  const { chain: connectedChain } = useAccount()
+  const platform = usePlatform()
+  const [note, setNote] = useState('')
   const [typedData, setTypedData] = useState<GrantTypedDataJson | null>(null)
   const [signed, setSigned] = useState<boolean | null>(null)
   const [signing, setSigning] = useState(false)
@@ -91,7 +97,16 @@ export default function SignGrantButton({
       // The domain carries chainId — MetaMask refuses typed data whose
       // domain.chainId isn't the wallet's ACTIVE chain, so align first
       // (best-effort; the prompt still fires if the wallet can't switch).
-      await switchChainAsync({ chainId: typedData.domain.chainId }).catch(() => {})
+      // On a phone the switch is a trip to the wallet app and back — its own
+      // tap; the signature is the next one (lib/sign-round-trip).
+      if (connectedChain?.id !== typedData.domain.chainId) {
+        await switchChainAsync({ chainId: typedData.domain.chainId }).catch(() => {})
+        if (oneMethodPerTap(platform)) {
+          setNote('Network switched — tap to sign.')
+          return
+        }
+      }
+      setNote('')
       // wagmi/viem accept the converted payload directly.
       const signature = await signTypedDataAsync(
         toSignable(typedData) as Parameters<typeof signTypedDataAsync>[0],
@@ -142,6 +157,8 @@ export default function SignGrantButton({
         {signing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
         {voided ? 'Re-sign grant' : 'Sign grant'}
       </button>
+      <SignatureWaitOpenApp waiting={signing} />
+      {note && <span className="text-[11px] text-[color:var(--muted)]" data-arm-rearmed="switch">{note}</span>}
       {error && <span className="text-[11px] text-red-400">{error}</span>}
     </span>
   )
