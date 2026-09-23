@@ -18,7 +18,7 @@ import prisma from '@/lib/db'
 import { jobStepBuildPath, jobStepChainId, jobStepSignedInfo } from '@/lib/job-step-telemetry'
 import { feeBpsOfArtifact } from '@/lib/fees'
 import { isBuildPath } from '@/lib/build-path'
-import { COUNTED_VERIFICATIONS, verifyTurnNow } from '@/lib/link-receipt-verify'
+import { COUNTED_VERIFICATIONS, receiptClientFor, verifyTurnNow } from '@/lib/link-receipt-verify'
 import { chainById } from '@/lib/chains'
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.pantessa.com').replace(/\/$/, '')
@@ -33,6 +33,10 @@ export const LEG_RESULT_KEYS = new Set(['txHash', 'txs', 'chainId', 'orderRespon
 export const LEG_TX_HASH_RE = /^0x[0-9a-f]{64}$/
 /** Serialized cap. QA proved a 200,089-byte result stored whole on main. */
 export const LEG_RESULT_MAX_BYTES = 8 * 1024
+/** A chain of more transactions than this is not a leg any builder emits. */
+export const LEG_TXS_MAX = 16
+/** The per-transaction label's cap ("Approve USDC", "Swap"). */
+export const LEG_TX_TITLE_MAX = 80
 
 export type LegResultVerdict = { ok: true; result: Record<string, unknown> } | { ok: false; reason: string }
 
@@ -47,6 +51,23 @@ export function fenceLegResult(raw: unknown): LegResultVerdict {
   if (r.txHash !== undefined && (typeof r.txHash !== 'string' || !LEG_TX_HASH_RE.test(r.txHash))) return { ok: false, reason: 'txHash must be a 0x-prefixed 64-hex lowercase hash' }
   if (r.chainId !== undefined && (typeof r.chainId !== 'number' || !Number.isInteger(r.chainId) || r.chainId <= 0)) return { ok: false, reason: 'chainId must be a positive integer' }
   if (r.batch !== undefined && !Array.isArray(r.batch)) return { ok: false, reason: 'batch must be an array' }
+  // MCP lane: `txs` was the one allowed key nothing looked INSIDE, so an agent
+  // could put anything in it, bounded only by the body cap. The entry shape is
+  // the published DeskLegResult one (lib/desk-wire): hash, chainId, and the
+  // optional per-transaction `title` the browser's JobCard has always sent.
+  if (r.txs !== undefined) {
+    if (!Array.isArray(r.txs)) return { ok: false, reason: 'txs must be an array' }
+    if (r.txs.length > LEG_TXS_MAX) return { ok: false, reason: `txs carries ${r.txs.length} entries; the cap is ${LEG_TXS_MAX}` }
+    for (const [i, e] of r.txs.entries()) {
+      const t = e as { hash?: unknown; chainId?: unknown; title?: unknown } | null
+      if (!t || typeof t !== 'object' || Array.isArray(t)) return { ok: false, reason: `txs[${i}] must be an object` }
+      const extra = Object.keys(t).filter((k) => k !== 'hash' && k !== 'chainId' && k !== 'title')
+      if (extra.length) return { ok: false, reason: `txs[${i}] carries keys the wire does not name: ${extra.slice(0, 3).join(', ')} (allowed: hash, chainId, title)` }
+      if (typeof t.hash !== 'string' || !LEG_TX_HASH_RE.test(t.hash)) return { ok: false, reason: `txs[${i}].hash must be a 0x-prefixed 64-hex lowercase hash` }
+      if (typeof t.chainId !== 'number' || !Number.isInteger(t.chainId) || t.chainId <= 0) return { ok: false, reason: `txs[${i}].chainId must be a positive integer` }
+      if (t.title !== undefined && (typeof t.title !== 'string' || t.title.length > LEG_TX_TITLE_MAX)) return { ok: false, reason: `txs[${i}].title must be a string of at most ${LEG_TX_TITLE_MAX} characters` }
+    }
+  }
   let bytes = 0
   try {
     bytes = Buffer.byteLength(JSON.stringify(r), 'utf8')
@@ -134,6 +155,23 @@ export async function recordJobStepMoney(leg: {
         verification: 'unverified',
       },
     })
+    // MCP lane (agent-desk round 2, found by a live pin): a job step's receipt
+    // class is `job`, and `verifyTurnNow` settles that class **attested** — a
+    // COUNTED verdict — with no chain read at all. Arguable for a browser, where
+    // a human watched a wallet pop. Indefensible for an agent posting JSON: a
+    // fabricated hash books the leg's whole notional as money moved, on
+    // /activity, on Growth and in the fee split. So an EVM leg is checked here
+    // against the one fact a claim cannot forge — the chain's own answer about
+    // who sent that transaction and whether it succeeded.
+    const claim = await claimedLegReceipt(chainId, txHash, leg.wallet)
+    if (claim === 'refuted') {
+      await prisma.embedTurn.update({ where: { id: row.id }, data: { verification: 'mismatch' } }).catch(() => {})
+      return { recorded: false, valueUsd: leg.valueUsd ?? null, verification: 'mismatch', rowId: row.id }
+    }
+    // Unreadable chain: leave it `unverified` (T-R4 — delay, never mint). The
+    // lazy re-check promotes it once the node answers.
+    if (claim === 'unreadable') return { recorded: false, valueUsd: leg.valueUsd ?? null, verification: 'unverified', rowId: row.id }
+
     const verification = await Promise.race([
       verifyTurnNow(row.id, chainId),
       new Promise<'unverified'>((r) => setTimeout(() => r('unverified'), 4000)),
@@ -165,5 +203,43 @@ export async function jobStepMoneyAlreadyBooked(beacon: { jobId: string; seq?: u
     return !!recent
   } catch {
     return false
+  }
+}
+
+/**
+ * What the CHAIN says about the hash a signer claimed for an EVM leg.
+ *
+ *   off-chain  the leg has no EVM chain (a Hyperliquid L1 action, a CoW or
+ *              Seaport order) — there is no receipt, and none is expected
+ *   refuted    no hash at all, or a tx sent by someone else, or one that
+ *              reverted — the claim is false about itself
+ *   unreadable the chain did not answer, or the hash is not mined yet — delay,
+ *              never mint (T-R4)
+ *   ok         a successful transaction from this job's own wallet
+ *
+ * Deliberately NOT a full `decideReceiptVerdict`: a job step writes no
+ * `intent_link_expectations` row, so the to/selector half would have nothing to
+ * match and would fail every leg closed. Sender + status is the part that is
+ * both available and the part a fabricated hash cannot satisfy.
+ */
+async function claimedLegReceipt(chainId: number | undefined, txHash: string | undefined, wallet: string): Promise<'ok' | 'refuted' | 'unreadable' | 'off-chain'> {
+  if (!chainId) return 'off-chain'
+  if (!txHash) return 'refuted'
+  const client = receiptClientFor(chainId)
+  if (!client) return 'unreadable'
+  try {
+    const [tx, receipt] = await Promise.all([
+      client.getTransaction({ hash: txHash as `0x${string}` }).catch(() => null),
+      client.getTransactionReceipt({ hash: txHash as `0x${string}` }).catch(() => null),
+    ])
+    // A hash the chain has never heard of is a claim about nothing — but it
+    // could also be a tx still in the mempool, which is why this only ever
+    // decides between counting NOW and counting on the lazy re-check.
+    if (!tx) return 'unreadable'
+    if (tx.from.toLowerCase() !== wallet.toLowerCase()) return 'refuted'
+    if (!receipt) return 'unreadable'
+    return receipt.status === 'success' ? 'ok' : 'refuted'
+  } catch {
+    return 'unreadable'
   }
 }

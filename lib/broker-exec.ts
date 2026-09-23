@@ -28,6 +28,7 @@ import {
   type BrokerState,
 } from '@/lib/broker'
 import { assertDeskOpen, assertAgentIdentity, assertSenderIdentity, assertUnderDeskCap, cleanAgentKey } from '@/lib/broker-policy'
+import { readVenueFunding } from '@/lib/desk-drive'
 import { outboundToThirdParty } from '@/lib/content-origin'
 import { deniedBrandNameReason, isDeniedBrandName } from '@/lib/brand-denylist'
 import { validateCallbackUrl, mintCallbackSecret, deliverWebhook, notifyEligible } from '@/lib/broker-webhook'
@@ -146,7 +147,12 @@ export async function openIntent(opts: {
   }
 
   const scan = wallet ? await scanFundingSources(wallet).catch(() => null) : null
-  const plan = planIntent(opts.ask, scan)
+  // A venue that holds its own collateral answers the funding question, not
+  // the wallet: a Hyperliquid open on a wallet holding $19 of USDC on Base
+  // read "covered" while the open was short every cent (EXAMPLE lane,
+  // 2026-09-23). Read-only and fail-soft — null means plan from the wallet.
+  const venue = await readVenueFunding(opts.ask, wallet)
+  const plan = planIntent(opts.ask, scan, venue)
 
   // THE ROSTER (R2): the desk derives the hash from the PRESENTED key
   // itself — a hired mandate slot binds the proposal, gates it (cap at
@@ -300,7 +306,8 @@ export async function chooseOption(intentId: string, optionId: string): Promise<
   }
 
   const scan = row.wallet ? await scanFundingSources(row.wallet).catch(() => null) : null
-  const plan = planIntent(opt.resume, scan)
+  const venue = await readVenueFunding(opt.resume, row.wallet)
+  const plan = planIntent(opt.resume, scan, venue)
   await prisma.brokerIntent.update({ where: { id: row.id }, data: { ask: plan.ask, plan: plan as object } })
   const out: OpenResult = {
     intentId: row.id,
@@ -569,6 +576,13 @@ export interface ExecuteResult {
   state: BrokerState
   jobId: string
   steps: { seq: number; kind: string; note: string }[]
+  /** The job's capability token, bare — the SAME grant the `drive` URLs carry,
+   *  handed over once here rather than parsed back out of a URL (EXAMPLE lane,
+   *  2026-09-23). This is the ONLY place the desk emits it: broker_next /
+   *  broker_done answer with credential-free endpoints, because re-minting a
+   *  7-day, cancel-surviving job grant on every leg scales the exposure with
+   *  the number of legs and buys the holder nothing. */
+  token: string
   drive: {
     poll: string
     complete: string
@@ -651,6 +665,7 @@ export async function executeIntent(intentId: string, walletSignature: unknown, 
     intentId: row.id,
     state: 'executing',
     jobId: job.id,
+    token,
     steps: compiled.steps.map((s, i) => ({ seq: i, kind: s.kind, note: s.title })),
     drive: {
       poll: `${SITE}/api/jobs/${job.id}?t=${token}`,

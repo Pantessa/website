@@ -14,6 +14,26 @@ ownership.
 The `.server.json` files follow the official MCP registry `server.schema.json`
 shape (a starting point — each target registry has its own submission form).
 
+## What an agent can do with the desk (v0.2.0)
+
+Two ways to close one intent, and an agent picks per intent:
+
+| lane | loop | who signs |
+|---|---|---|
+| **human** | `broker_open` → `broker_choose`* → `broker_handoff` → `broker_status` | the agent's human, on a durable `/i/<slug>` sign link |
+| **agent** | `broker_open` (with `agent_key` + your wallet) → `broker_choose`* → `broker_execute` → `broker_next` / `broker_done` per leg → `broker_status` | the agent's own key |
+
+\* optional, repeatable.
+
+`broker_next` and `broker_done` (new in 0.2.0) are the only tools that return
+signable material, and only to the `agent_key` the intent was bound to at open
+— the same trust boundary as the job capability token `broker_execute` hands
+back, reached over MCP instead of REST. `broker_next` answers with the leg the
+runner is offering (`tx` | `txChain` | `hlAction` | `hlBatch` | `order`) or a
+`waiting` reason plus `retryAfterMs`; `broker_done` posts the result and
+answers with the next leg. **Round-trip across every settlement boundary,
+batched within one.**
+
 ## Submission targets, in leverage order
 
 1. **Official MCP registry** (`registry.modelcontextprotocol.io`) — publish via
@@ -61,4 +81,7 @@ Bump `version` when the tool set changes, and keep the `tools` arrays in sync
 with what the servers actually register (`services/hands/lib/tools.ts` and
 `app/api/broker/[transport]/route.ts`). A stale manifest misdescribes the
 product to every agent that reads it — the exact bug M2 fixed on the hands
-contract.
+contract. The desk's manifest `version` must equal `DESK_VERSION` in the route
+(the capability call reports it, so an agent can tell which contract it is
+talking to); `scripts/test-api.ts` pins both the version match and the tool
+list against what the route registers.
