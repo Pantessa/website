@@ -96,6 +96,10 @@ const KIND_LABEL: Record<string, string> = {
   // and the VENUE returned the money — a cross-chain swap that never
   // happened. had_funds TRUE; the money moved and came home.
   refunded: 'venue refunded',
+  // lib/wallet-handoff.ts + lib/wallet-refusal.ts launchDroppedReport: a
+  // phone never switched to the wallet app — the request sat queued in an
+  // app nobody opened (mobile-onboarding squad, 2026-09-23). had_funds TRUE.
+  'launch-dropped': 'phone stall (app never opened)',
   // lib/roster-observe.ts (doors run): roster surfaces walling — mandate
   // grammar refusals, hire consent failures, manager proposals hitting
   // bench/cap/fired, decline auth failures. build_path = roster-<surface>.
