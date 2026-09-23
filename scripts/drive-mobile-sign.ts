@@ -27,6 +27,18 @@
 //                        anyway" is the explicit way through.
 //   phone-reload-asked   same, for a tx an earlier visit ASKED and never heard
 //                        back while the wallet's nonce moved on → maybe-broadcast.
+//   phone-sdk-open-app   the SDK asks for the app while a SendTxButton waits
+//                        (CONNECT's seam event stands in for the SDK's ask; the
+//                        launch is dropped headless): the global handoff card
+//                        AND the inline "Open MetaMask" inside the card are up;
+//                        dismiss the global one, tap the inline one → exactly
+//                        one navigation; the request settling clears BOTH.
+//   phone-siwe-open-app  the first signature after connect, end to end: the
+//                        SIWE takeover "Waiting for your signature…" → the SDK's
+//                        ask (seam) → global card → dismiss → the takeover's own
+//                        "Open MetaMask" → one navigation → a REAL throwaway-key
+//                        signature settles the sign-in → session minted, both
+//                        cards gone.
 //   phone-job-return     a REAL two-leg job on the TEST DB (the real /api/chat
 //                        compiles "swap 5 USDC for ETH on base, then swap 3 USDC
 //                        for ETH on base" for the 0x1111… harness wallet; the
@@ -42,7 +54,9 @@
 // send count reaches 2 with no tap) — that is the measurement.
 
 import { createRequire } from 'node:module'
+import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { signOutcomeKey } from '../lib/sign-round-trip'
+import { WALLET_APP_OPEN_EVENT } from '../lib/wallet-handoff'
 
 const BASE = process.env.BASE ?? 'http://localhost:3871'
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -84,6 +98,7 @@ type PwPage = {
 type PwContext = {
   newPage(): Promise<PwPage>
   addInitScript(script: string): Promise<void>
+  exposeFunction(name: string, fn: (raw: string) => unknown): Promise<void>
   close(): Promise<void>
 }
 type PwBrowser = {
@@ -101,8 +116,9 @@ function check(name: string, ok: boolean, extra = '') {
 
 // ── The mock wallet: injected, EIP-6963, connected on load. eth_sendTransaction
 // obeys window.__sendMode ('resolve' | 'hang') and counts every ask.
-const MOCK_WALLET = `(() => {
+const mockWallet = (address: string) => `(() => {
   window.__sendMode = window.__sendMode || 'resolve'
+  window.__siweMode = window.__siweMode || 'reject'
   window.__sends = 0
   window.__switches = 0
   const provider = {
@@ -112,7 +128,7 @@ const MOCK_WALLET = `(() => {
       switch (method) {
         case 'eth_requestAccounts':
         case 'eth_accounts':
-          return ['${WALLET}']
+          return ['${address}']
         case 'eth_chainId':
           return provider._chainId
         case 'wallet_switchEthereumChain':
@@ -121,12 +137,17 @@ const MOCK_WALLET = `(() => {
           return null
         case 'wallet_addEthereumChain':
           return null
-        case 'personal_sign':
+        case 'personal_sign': {
+          // 'hang': the app has it — the drive settles it later with a REAL
+          // signature (window.__pendingSiwe) or a rejection.
+          if (window.__siweMode === 'hang') return new Promise((resolve, reject) => { window.__pendingSiwe = { raw: String(params?.[0] ?? ''), resolve, reject } })
+          throw Object.assign(new Error('User rejected the request.'), { code: 4001 })
+        }
         case 'eth_signTypedData_v4':
           throw Object.assign(new Error('User rejected the request.'), { code: 4001 })
         case 'eth_sendTransaction': {
           window.__sends += 1
-          if (window.__sendMode === 'hang') return new Promise(() => {})
+          if (window.__sendMode === 'hang') return new Promise((resolve) => { window.__pendingSend = { resolve } })
           await new Promise((r) => setTimeout(r, 300))
           return '${HASH}'
         }
@@ -143,6 +164,12 @@ const MOCK_WALLET = `(() => {
   window.ethereum = provider
   try { localStorage.setItem('wagmi.recentConnectorId', '"io.pantessa.signdrive"') } catch {}
 })()`
+const MOCK_WALLET = mockWallet(WALLET)
+
+/** The SDK's ask, from INSIDE the page (CONNECT's seam): the holder navigates
+ *  to the link and watches; headless there is no app, so the page stays and
+ *  the card goes up after WALLET_APP_SETTLE_MS. */
+const SEAM_ASK = `document.dispatchEvent(new CustomEvent(${JSON.stringify(WALLET_APP_OPEN_EVENT)}, { detail: { link: 'metamask://connect?channelId=drive-seam' } }))`
 
 // ── The canned chain: approve → swap on Base. Data is inert; nothing signs it.
 const CHAIN = {
@@ -211,6 +238,11 @@ async function openChatWithChain(ctx: PwContext, sendMode: 'resolve' | 'hang', s
   const page = await ctx.newPage()
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(String(e)))
+  // Every navigation attempt to the wallet app prints one console line in
+  // Chrome (allowed: "Failed to launch … no registered handler"; dropped:
+  // "Not allowed to launch … user gesture") — the count IS the navigations.
+  const launches: string[] = []
+  page.on('console', (m) => { if (/metamask:\/\//.test(m.text())) launches.push(m.text()) })
   // Playwright tries the LAST registered route first: the catch-all RPC
   // handler goes in before the chat fixture, or it swallows /api/chat.
   await page.route('**/*', cannedRpc)
@@ -227,10 +259,10 @@ async function openChatWithChain(ctx: PwContext, sendMode: 'resolve' | 'hang', s
   await box.fill('swap 5 usdc for eth on base')
   await page.keyboard.press('Enter')
   const step1 = page.locator('button', { hasText: /Sign step 1 of 2|Sign & send approve/ }).first()
-  return { page, errors, step1 }
+  return { page, errors, step1, launches }
 }
 
-export const SCENARIOS = ['phone-chain-taps', 'phone-return-reopen', 'desktop-auto-fire', 'phone-reload-signed', 'phone-reload-asked', 'phone-job-return'] as const
+export const SCENARIOS = ['phone-chain-taps', 'phone-return-reopen', 'desktop-auto-fire', 'phone-reload-signed', 'phone-reload-asked', 'phone-job-return', 'phone-sdk-open-app', 'phone-siwe-open-app'] as const
 
 export async function runScenario(browser: PwBrowser, name: (typeof SCENARIOS)[number], devices: Record<string, Record<string, unknown>>, shotsDir: string) {
   console.log(`\n— ${name}`)
@@ -294,6 +326,11 @@ export async function runScenario(browser: PwBrowser, name: (typeof SCENARIOS)[n
       await done.waitFor({ state: 'visible', timeout: 60_000 })
       const sendsEnd = await page.evaluate(() => (window as unknown as { __sends: number }).__sends)
       check(`${phone ? 'phone' : 'desktop'}: the chain completes — "All 2 steps confirmed", exactly 2 asks in total`, sendsEnd === 2, `sends=${sendsEnd}`)
+      // The persisted outcome LINKS reads: step 1's key AND the build's last step's key both `settled` with the hash.
+      const k1 = signOutcomeKey({ wallet: WALLET, chainId: 8453, to: CHAIN.steps[0].tx.to, data: CHAIN.steps[0].tx.data })
+      const k2 = signOutcomeKey({ wallet: WALLET, chainId: 8453, to: CHAIN.steps[1].tx.to, data: CHAIN.steps[1].tx.data })
+      const recs = await page.evaluate((ks) => (ks as string[]).map((k) => { try { return JSON.parse(localStorage.getItem(k) ?? 'null') } catch { return null } }), [k1, k2]) as Array<{ state?: string; hash?: string } | null>
+      check(`${phone ? 'phone' : 'desktop'}: the outcome store reads settled + the hash for step 1 AND for the build's LAST step (what /i's hold reconciles against)`, recs[0]?.state === 'settled' && recs[0]?.hash === HASH && recs[1]?.state === 'settled' && recs[1]?.hash === HASH, JSON.stringify(recs))
       check(`${phone ? 'phone' : 'desktop'}: no page errors`, errors.length === 0, errors.join(' | ').slice(0, 200))
       await page.mouse.move(0, 0)
       await page.screenshot({ path: `${shotsDir}/${name}-3-done.png` })
@@ -343,6 +380,84 @@ export async function runScenario(browser: PwBrowser, name: (typeof SCENARIOS)[n
       await btn.waitFor({ state: 'visible', timeout: 10_000 })
       check('phone: "Sign again anyway" is the explicit way through — the plain button returns, the record is cleared', (await btn.isEnabled()) && (await page.evaluate((k) => localStorage.getItem(k as string), key)) === null)
       check('phone: no page errors', errors.length === 0, errors.join(' | ').slice(0, 200))
+    }
+    if (name === 'phone-sdk-open-app') {
+      const { page, errors, step1, launches } = await openChatWithChain(ctx, 'hang')
+      await step1.waitFor({ state: 'visible', timeout: 30_000 })
+      await step1.click()
+      await page.locator('button', { hasText: /Confirm in your wallet/ }).first().waitFor({ state: 'visible', timeout: 10_000 })
+      check('phone: no "Open MetaMask" anywhere before the SDK asks (no link to open)', (await page.locator('[data-sign-open-app]').count()) === 0 && (await page.locator('[data-wallet-handoff]').count()) === 0)
+      const n0 = launches.length
+      await page.evaluate(new Function(SEAM_ASK) as () => void)
+      const globalCard = page.locator('[data-wallet-handoff="MetaMask"]').first()
+      await globalCard.waitFor({ state: 'visible', timeout: 5000 })
+      const inline = page.locator('[data-sign-open-app="MetaMask"]').first()
+      check('phone: the SDK\'s ask navigated once (dropped headless) and after the settle window the GLOBAL card is up AND the inline "Open MetaMask" sits inside the sign card', launches.length === n0 + 1 && (await inline.count()) === 1, `launches=${launches.length - n0} inline=${await inline.count()}`)
+      await page.mouse.move(0, 0)
+      await page.screenshot({ path: `${shotsDir}/${name}-1-both-cards.png` })
+      await page.locator('[data-wallet-handoff] button[aria-label="Dismiss"]').first().click()
+      await page.waitForTimeout(300)
+      check('phone: dismissing the global card leaves the inline button (the request is still queued in the app)', (await page.locator('[data-wallet-handoff]').count()) === 0 && (await inline.count()) === 1)
+      const n1 = launches.length
+      await inline.click()
+      await page.waitForTimeout(400)
+      check('phone: the inline tap navigates EXACTLY once', launches.length === n1 + 1, `launches=${launches.length - n1}`)
+      await page.mouse.move(0, 0)
+      await page.screenshot({ path: `${shotsDir}/${name}-2-inline.png` })
+      // The app answers: the wallet resolves the hanging request.
+      await page.evaluate((h) => (window as unknown as { __pendingSend?: { resolve: (v: string) => void } }).__pendingSend?.resolve(h as string), HASH)
+      await page.waitForTimeout(2500)
+      check('phone: the request settling clears BOTH the inline button and the global card (walletAppRequestSettled)', (await page.locator('[data-sign-open-app]').count()) === 0 && (await page.locator('[data-wallet-handoff]').count()) === 0)
+      check('phone: the wallet was asked exactly once through all of it', (await page.evaluate(() => (window as unknown as { __sends: number }).__sends)) === 1)
+      check('phone: no page errors', errors.length === 0, errors.join(' | ').slice(0, 200))
+    }
+    if (name === 'phone-siwe-open-app') {
+      const account = privateKeyToAccount(generatePrivateKey())
+      await ctx.exposeFunction('__signDriveSiwe', (raw: string) => account.signMessage({ message: raw.startsWith('0x') ? { raw: raw as `0x${string}` } : raw }))
+      await ctx.addInitScript(`window.__siweMode = 'hang'`)
+      await ctx.addInitScript(mockWallet(account.address))
+      const page = await ctx.newPage()
+      const errors: string[] = []
+      page.on('pageerror', (e) => errors.push(String(e)))
+      const launches: string[] = []
+      page.on('console', (m) => { if (/metamask:\/\//.test(m.text())) launches.push(m.text()) })
+      await page.route('**/*', cannedRpc)
+      await page.goto(`${BASE}/chat`, { waitUntil: 'domcontentloaded' })
+      const short = `${account.address.slice(0, 4)}…${account.address.slice(-4)}`
+      await page.locator(`text=/${short}/i`).first().waitFor({ state: 'visible', timeout: 45_000 })
+      await page.waitForTimeout(800)
+      await page.locator('button', { hasText: /Sign in to keep/ }).first().click()
+      const takeover = page.locator('h2', { hasText: /Waiting for your signature/ }).first()
+      await takeover.waitFor({ state: 'visible', timeout: 10_000 })
+      check('phone: the SIWE takeover is up with the disabled "Waiting…" button (no link yet — nothing to open)', (await page.locator('button', { hasText: /^Waiting…$/ }).count()) === 1 && (await page.locator('[data-sign-open-app]').count()) === 0)
+      const n0 = launches.length
+      await page.evaluate(new Function(SEAM_ASK) as () => void)
+      const globalCard = page.locator('[data-wallet-handoff="MetaMask"]').first()
+      await globalCard.waitFor({ state: 'visible', timeout: 5000 })
+      check('phone: the SDK\'s ask → one navigation, the global card over the takeover (the takeover yields to it)', launches.length === n0 + 1 && (await takeover.count()) === 0)
+      await page.mouse.move(0, 0)
+      await page.screenshot({ path: `${shotsDir}/${name}-1-global.png` })
+      await page.locator('[data-wallet-handoff] button[aria-label="Dismiss"]').first().click()
+      const inline = page.locator('[data-sign-open-app="MetaMask"]').first()
+      await inline.waitFor({ state: 'visible', timeout: 5000 })
+      check('phone: dismissed → the takeover returns wearing "Open MetaMask" in place of the disabled button, and names the app', (await page.locator('button', { hasText: /^Waiting…$/ }).count()) === 0 && /waiting in MetaMask/.test(await page.locator('text=/waiting in MetaMask/').first().innerText()))
+      await page.mouse.move(0, 0)
+      await page.screenshot({ path: `${shotsDir}/${name}-2-inline.png` })
+      const n1 = launches.length
+      await inline.click()
+      await page.waitForTimeout(400)
+      check('phone: the takeover\'s tap navigates EXACTLY once', launches.length === n1 + 1, `launches=${launches.length - n1}`)
+      // The app answers with a REAL signature from the throwaway key.
+      await page.evaluate(async () => {
+        const w = window as unknown as { __pendingSiwe?: { raw: string; resolve: (s: string) => void }; __signDriveSiwe: (raw: string) => Promise<string> }
+        if (w.__pendingSiwe) w.__pendingSiwe.resolve(await w.__signDriveSiwe(w.__pendingSiwe.raw))
+      })
+      await page.waitForTimeout(3000)
+      const me = await page.evaluate(() => fetch('/api/auth/me', { cache: 'no-store' }).then((r) => r.json() as Promise<{ address?: string }>))
+      check('phone: the sign-in settled — a real session for the throwaway wallet, the takeover gone, both cards cleared', me.address === account.address.toLowerCase() && (await takeover.count()) === 0 && (await page.locator('[data-sign-open-app]').count()) === 0 && (await page.locator('[data-wallet-handoff]').count()) === 0, JSON.stringify(me))
+      check('phone: no page errors', errors.length === 0, errors.join(' | ').slice(0, 200))
+      await page.mouse.move(0, 0)
+      await page.screenshot({ path: `${shotsDir}/${name}-3-settled.png` })
     }
     if (name === 'phone-job-return') {
       await ctx.addInitScript(MOCK_WALLET)
