@@ -30371,20 +30371,12 @@ async function main() {
   //      wire is named in two repos, so it can drift silently;
   //   2. drive the adversarial cases of the agent-signed path over HTTP.
   //
-  // gap(): a pin whose CORRECT behaviour is not shipped yet. It names the Ask
-  // that owns it, counts neither pass nor fail while the gap stands, and turns
-  // into a real ✅ the moment the owning lane closes it. When an Ask lands,
-  // change `gap(` → `check(` so a regression goes RED.
+  // Round 1 carried eight `gap()` pins — the correct behaviour named and held
+  // against the lane that owed it, counting neither pass nor fail. Every one of
+  // them closed during round 2, so they are plain `check`s now: what was owed is
+  // shipped, and a regression goes RED rather than quietly back to "known".
   console.log('— agent desk (QA)')
   {
-    let deskGaps = 0
-    const openGaps: string[] = []
-    const gap = (name: string, ok: boolean, ask: string, extra = '') => {
-      if (ok) return check(`${name} [${ask} CLOSED — promote gap() → check()]`, true, extra)
-      deskGaps++
-      openGaps.push(`${ask}: ${name}`)
-      console.log(`  ⚠️  known-gap ${ask} — ${name}${extra ? ` — ${extra}` : ''}`)
-    }
 
     // ── 1. the leg wire, named in TWO repos ────────────────────────────────
     // lib/desk-wire.ts and the SDK's src/desk.ts are the same contract written
@@ -30423,11 +30415,10 @@ async function main() {
       !/from '@\/lib\/db'|require\(|\bfetch\(|from 'react'/.test(wireSrc),
     )
     if (wireStubMissing.length) {
-      gap(
+      check(
         'desk wire: lib/desk-wire.ts is the FILLED contract, not the stub — four types + five timing constants',
         false,
-        'MCP-lane',
-        `still missing: ${wireStubMissing.join(', ')} (every wire pin below is held until it lands)`,
+        `missing: ${wireStubMissing.join(', ')} — the wire went back to a stub, and every pin below it is blind`,
       )
     } else {
     const kindMembers = unionMembers(wireSrc, 'DeskLegKind')
@@ -30461,10 +30452,9 @@ async function main() {
         ...WIRE_TYPES.filter((t) => !new RegExp(`export (type|interface) ${t}\\b`).test(sdkSrc)),
         ...WIRE_CONSTS.filter((c) => !new RegExp(`export const ${c}\\b`).test(sdkSrc)),
       ]
-      gap(
+      check(
         `desk wire: the SDK mirror (${sdkPath}) exports the same four types and five constants`,
         sdkMissing.length === 0,
-        'SDK-lane',
         sdkMissing.length ? `missing: ${sdkMissing.join(', ')}` : 'in sync',
       )
       const sdkKinds = unionMembers(sdkSrc, 'DeskLegKind')
@@ -30481,10 +30471,9 @@ async function main() {
           return { t, a, only }
         })
         .filter((r) => r.only.length > 0 || r.a.length === 0)
-      gap(
+      check(
         'desk wire: DeskLegView, DeskLegResult and DeskNext carry the same FIELDS in both repos (a field only one side knows is a value silently dropped on the way to the signer)',
         fieldDrift.length === 0,
-        'A9→MCP/SDK',
         fieldDrift.flatMap((r) => (r.a.length === 0 ? [`${r.t}: parsed nothing`] : r.only)).join(', ') || 'in sync',
       )
       check(
@@ -30561,7 +30550,7 @@ async function main() {
         )
       }
     } else {
-      gap('desk wire: the SDK mirror src/desk.ts exists and matches', false, 'SDK-lane', `looked in ${sdkPaths.join(', ')}`)
+      console.log(`  ⚠️  desk wire: no SDK checkout at ${sdkPaths.join(' or ')} — the cross-repo pins are unproven on this machine`)
     }
     } // end: the filled wire
 
@@ -30700,10 +30689,9 @@ async function main() {
       })
       const foreignClose = await qaCall('broker_close', { intent_id: boundId })
       const afterClose = await prisma.brokerIntent.findUnique({ where: { id: boundId }, select: { state: true } })
-      gap(
-        'desk mcp: broker_close on an identity-BOUND intent refuses a caller that is not that agent (today: any holder of the id cancels the job and revokes the link)',
+      check(
+        'desk mcp: broker_close on an identity-BOUND intent refuses a caller that is not that agent — a stray intent id cannot cancel someone else\'s job and revoke their link',
         foreignClose.isError || afterClose?.state === 'open',
-        'A3→MCP',
         `state=${afterClose?.state}`,
       )
 
@@ -30822,7 +30810,7 @@ async function main() {
             !/token\s*String/.test(readFileSync('prisma/schema.prisma', 'utf8').slice(readFileSync('prisma/schema.prisma', 'utf8').indexOf('model BrokerIntent'), readFileSync('prisma/schema.prisma', 'utf8').indexOf('model BrokerIntent') + 1400)),
         )
       } else if (!tools.includes('broker_next')) {
-        gap('desk mcp: broker_next / broker_done exist and are agent_key-gated (C3)', false, 'A3→MCP', 'tools/list has neither')
+        check('desk mcp: broker_next / broker_done exist and are agent_key-gated (C3)', false, 'tools/list has neither')
       }
 
       // ── 4. the HL batch (C2) — the rule, exercised, not grepped ──────────
@@ -30916,6 +30904,114 @@ async function main() {
         )
       }
 
+      // ── 5. ONE money writer per signed leg (round-2 decision 1) ──────────
+      // An agent-driven leg used to book $0 — `embed_turns` was written only by
+      // the browser beacon. The write moved into `completeSignStep`, which puts
+      // a money row on a path a third-party agent POSTs to. Two ways that can
+      // go wrong, and they pull in opposite directions: book twice (a batch
+      // re-arm completing at the same seq, or the browser beacon landing after
+      // the REST write) or book a lie (a hash the chain never saw). A writer
+      // that books twice is worse than one that books zero, because zero is
+      // visible on the dashboards and double is not.
+      const moneySessionOf = (jobId: string, seq: number) => `job-${jobId}-${seq}`
+      const moneyRows = (jobId: string, seq: number) =>
+        prisma.embedTurn.findMany({ where: { sessionId: moneySessionOf(jobId, seq) }, select: { id: true, verification: true, valueUsd: true, outcome: true, originKind: true } })
+      /** A fixture leg that looks like a real EVM swap: a chain, a notional. */
+      const mkMoneyJob = async (wallet: string) => {
+        const job = await prisma.job.create({
+          data: { wallet: wallet.toLowerCase(), title: 'qa money probe', source: 'broker', status: 'waiting_signature', currentStep: 0, originEnv: QA_FENCE, isInternal: true },
+        })
+        await prisma.jobStep.create({
+          data: { jobId: job.id, seq: 0, kind: 'sign', status: 'offered', builder: 'native-swap-uniswap', title: 'qa money leg', params: {}, valueUsd: 25, artifact: { txRequest: { to: '0x0000000000000000000000000000000000000001', data: '0x', value: '0', chainId: 8453 } } },
+        })
+        qaJobs.push(job.id)
+        return { id: job.id, wallet: wallet.toLowerCase(), token: signJobToken(job.id, wallet.toLowerCase()) }
+      }
+
+      // M1 — a hash the chain has never seen never counts as money moved.
+      const mFake = await mkMoneyJob(wA)
+      const fakeHash = `0x${'1'.repeat(63)}7`
+      const mFakeRes = await completeWith(mFake, { seq: 0, result: { txHash: fakeHash, chainId: 8453 } })
+      const fakeRows = await moneyRows(mFake.id, 0)
+      check(
+        'desk money: a leg claiming a hash the chain has never seen books a row that is NOT counted — the agent\'s word is not the receipt (MCP finding 4: verifyTurnNow settles a `job` class as `attested` with no chain read, so the writer asks the chain itself)',
+        mFakeRes.status === 200 && fakeRows.length === 1 && !(COUNTED_VERIFICATIONS as readonly string[]).includes(fakeRows[0]?.verification ?? ''),
+        `${fakeRows.length} row(s), verification=${fakeRows[0]?.verification}`,
+      )
+
+      // M2 — a REAL transaction, sent by someone else, is refuted outright.
+      // (Read a recent Base tx rather than hardcoding one that rots; only the
+      // sender matters here, so any mined tx does.)
+      let realHash: string | null = null
+      try {
+        const rpc = async (method: string, params: unknown[]) =>
+          (await (await fetch('https://mainnet.base.org', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })).json()) as { result?: any }
+        const tip = Number((await rpc('eth_blockNumber', []))?.result ?? 0)
+        const blk = (await rpc('eth_getBlockByNumber', [`0x${(tip - 8).toString(16)}`, true]))?.result
+        realHash = (blk?.transactions ?? []).find((t: { hash: string; from: string }) => t && t.from && t.hash)?.hash ?? null
+      } catch { realHash = null }
+      if (realHash) {
+        const mReal = await mkMoneyJob(wB)
+        const mRealRes = await completeWith(mReal, { seq: 0, result: { txHash: realHash, chainId: 8453 } })
+        const realRows = await moneyRows(mReal.id, 0)
+        check(
+          "desk money: a REAL transaction sent by someone else is refuted — the chain's answer about WHO sent it is the fact a claim cannot forge",
+          mRealRes.status === 200 && realRows.length === 1 && realRows[0]?.verification === 'mismatch',
+          `verification=${realRows[0]?.verification} (${realHash.slice(0, 12)}…)`,
+        )
+      } else {
+        console.log('  ⚠️  desk money: the Base RPC did not answer — the foreign-sender pin is unproven this run (environment)')
+      }
+
+      // M3 — a batch that stopped at a failed member books NOTHING, and the
+      // completion that finally succeeds at the SAME seq books exactly one.
+      const mBatch = await mkMoneyJob(wA)
+      const reoffer = await completeWith(mBatch, { seq: 0, result: { batch: [{ ok: true }, { ok: false, error: 'venue rejected' }] } })
+      const afterReoffer = await moneyRows(mBatch.id, 0)
+      const stepAfter = await prisma.jobStep.findFirst({ where: { jobId: mBatch.id, seq: 0 }, select: { status: true } })
+      check(
+        'desk money: a batch completion that stopped at a failed member re-arms the step and books NO money row (the leg has not happened yet)',
+        reoffer.status === 200 && afterReoffer.length === 0 && stepAfter?.status !== 'done',
+        `${afterReoffer.length} row(s), step=${stepAfter?.status}`,
+      )
+      // The runner would rebuild and re-offer; do that part directly so the
+      // second completion lands on the SAME seq, which is the double-book case.
+      await prisma.jobStep.updateMany({ where: { jobId: mBatch.id, seq: 0 }, data: { status: 'offered' } })
+      const done2 = await completeWith(mBatch, { seq: 0, result: { batch: [{ ok: true }, { ok: true }], chainId: 8453 } })
+      const afterDone = await moneyRows(mBatch.id, 0)
+      check(
+        'desk money: the re-offered leg completing at the same seq books EXACTLY ONE row — a re-arm cannot double-book the same leg',
+        done2.status === 200 && afterDone.length === 1,
+        `${afterDone.length} row(s)`,
+      )
+
+      // M4 — the browser beacon for a step the runner already booked is a
+      // no-op, and says so.
+      const beacon = await fetch(`${BASE}/api/embed/telemetry`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' },
+        // The first-party lane the browser JobCard actually uses: keyless,
+        // `firstParty: true`, and an origin that is this deployment's own host.
+        body: JSON.stringify({ firstParty: true, page: `${BASE}/chat`, sessionId: `browser-${mBatch.id}`, outcome: 'signed', artifact: 'job-step', jobId: mBatch.id, seq: 0, valueUsd: 25, chain: 'Base' }),
+      })
+      const beaconBody = (await beacon.json().catch(() => ({}))) as { deduped?: boolean }
+      const afterBeacon = await moneyRows(mBatch.id, 0)
+      check(
+        'desk money: a browser beacon for a step the runner already booked is a NO-OP and says `deduped` — the same leg cannot be counted twice because two surfaces saw it',
+        beacon.status === 200 && beaconBody.deduped === true && afterBeacon.length === 1,
+        `deduped=${beaconBody.deduped}, ${afterBeacon.length} row(s)`,
+      )
+      // M5 — the row is stamped as the job's own internal flag, never the
+      // caller's word: a harness job is internal, so it counts toward nothing.
+      check(
+        'desk money: the row wears the JOB row\'s is_internal and the job-step origin, so an agent cannot talk its way onto the public scoreboard',
+        afterBeacon[0]?.originKind === 'job-step' &&
+          (await prisma.embedTurn.count({ where: { sessionId: moneySessionOf(mBatch.id, 0), isInternal: true } })) === 1,
+        `originKind=${afterBeacon[0]?.originKind}`,
+      )
+      // Cleanup: every money row these probes minted, by this run's job ids.
+      await prisma.embedTurn.deleteMany({ where: { OR: qaJobs.map((id) => ({ sessionId: { startsWith: `job-${id}-` } })) } })
+
       // Cleanup: the probe rows never outlive the run (they are is_internal,
       // but the desk log lists internal rows greyed — leave the board clean).
       await prisma.jobStep.deleteMany({ where: { jobId: { in: qaJobs } } })
@@ -30925,7 +31021,6 @@ async function main() {
       check('desk drive: the QA probe rows are cleaned up (no fixture job survives the run)', leftovers === 0, `${leftovers} left`)
     }
 
-    if (deskGaps) console.log(`  ⚠️  agent desk (QA): ${deskGaps} known-gap(s) open — ${openGaps.join(' · ')}`)
   }
 
   // ── agent desk: DRIVE ──────────────────────────────────────────────────
