@@ -40,6 +40,15 @@
  *    and `x-yf-no-ask-log: 1` on every same-origin request.
  *  - Keep a scenario under ~60s. The runner's per-scenario cap is 120s.
  *
+ * TWO SHAPES. Adapter A (preferred) is the `scenarios` export above. Adapter B
+ * is a lane that already has a STANDALONE drive: export nothing runnable, own
+ * your own `main()`, read `BASE`, `--only=` and `--shots=` from the
+ * environment/argv, and exit non-zero on red. The runner detects the shape,
+ * spawns the file as a child, echoes its output indented and folds its exit
+ * code into the table as one `<lane>/*` verdict — so `npm run drive:mobile`
+ * stays ONE command with ONE exit code either way. Adapter A gets per-scenario
+ * verdict lines and the shared context; B does not.
+ *
  * ONE TRAP, PAID FOR (2026-09-23): `page.waitForFunction` with a STRING that
  * returns a Promise (`"fetch('/api/auth/me').then(...)"`) resolves IMMEDIATELY
  * — the poll sees a truthy Promise object, never the value. My own first

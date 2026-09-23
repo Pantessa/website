@@ -21,6 +21,7 @@
  * money row, referral or creator earning is ever minted by a drive) and
  * `x-yf-no-ask-log: 1` (so a drive never fills /dashboard/failures).
  */
+import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
@@ -57,19 +58,67 @@ const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
 type Verdict = { id: string; profile: ProfileId | '-'; state: 'pass' | 'fail' | 'skip'; ms: number; detail: string }
 
-async function loadLane(lane: string): Promise<{ scenarios: MobileScenario[]; missing: boolean; error?: string }> {
-  const file = join(HERE, `drive-mobile-${lane}.ts`)
-  if (!existsSync(file)) return { scenarios: [], missing: true }
+type Lane = {
+  lane: string
+  /** Contract scenarios the runner drives itself. */
+  scenarios: MobileScenario[]
+  /** A lane that ships its own standalone drive instead (adapter B): the
+   *  runner spawns it, passes BASE + --shots + --only, prints its output and
+   *  folds its exit code into the table. One command, one exit code. */
+  external: boolean
+  /** Optional manifest a standalone drive exports, for the header count. */
+  manifest: number
+  missing: boolean
+  error?: string
+}
+
+function laneFile(lane: string) {
+  return join(HERE, `drive-mobile-${lane}.ts`)
+}
+
+async function loadLane(lane: string): Promise<Lane> {
+  const blank = { lane, scenarios: [], external: false, manifest: 0, missing: false }
+  const file = laneFile(lane)
+  if (!existsSync(file)) return { ...blank, missing: true }
   try {
-    const mod = (await import(pathToFileURL(file).href)) as { scenarios?: unknown; default?: unknown }
+    const mod = (await import(pathToFileURL(file).href)) as Record<string, unknown>
     const list = (mod.scenarios ?? mod.default) as MobileScenario[] | undefined
-    if (!Array.isArray(list)) {
-      return { scenarios: [], missing: false, error: `exports no \`scenarios\` array` }
+    if (Array.isArray(list) && list.every((s) => s && typeof (s as MobileScenario).run === 'function')) {
+      return { ...blank, scenarios: list }
     }
-    return { scenarios: list, missing: false }
+    // Adapter B: no contract scenarios — a standalone drive. Its own manifest
+    // export (any `*_SCENARIOS` array) only feeds the header count.
+    const manifest = Object.entries(mod).find(([k, v]) => /SCENARIOS$/.test(k) && Array.isArray(v))?.[1] as
+      | unknown[]
+      | undefined
+    return { ...blank, external: true, manifest: manifest?.length ?? 0 }
   } catch (e) {
-    return { scenarios: [], missing: false, error: (e as Error).message.split('\n')[0].slice(0, 160) }
+    return { ...blank, error: (e as Error).message.split('\n')[0].slice(0, 160) }
   }
+}
+
+/** Run a lane's standalone drive as a child. Its stdout is echoed indented. */
+function runExternal(lane: string): Promise<{ code: number; lines: number }> {
+  return new Promise((resolve) => {
+    const args = ['tsx', laneFile(lane), `--shots=${join(SHOTS, lane)}`]
+    if (ONLY) args.push(`--only=${ONLY}`)
+    mkdirSync(join(SHOTS, lane), { recursive: true })
+    const child = spawn('npx', args, { env: { ...process.env, BASE }, stdio: ['ignore', 'pipe', 'pipe'] })
+    let lines = 0
+    let buf = ''
+    const pump = (chunk: Buffer) => {
+      buf += chunk.toString()
+      const parts = buf.split('\n')
+      buf = parts.pop() ?? ''
+      for (const l of parts) {
+        lines += 1
+        if (l.trim()) console.log(`     | ${l}`)
+      }
+    }
+    child.stdout.on('data', pump)
+    child.stderr.on('data', pump)
+    child.on('close', (code) => resolve({ code: code ?? 1, lines }))
+  })
 }
 
 async function main() {
@@ -87,8 +136,8 @@ async function main() {
   }
 
   const lanes = (LANE_FILTER ? LANE_FILTER.split(',') : [...LANES]).map((l) => l.trim()).filter(Boolean)
-  const loaded: Array<{ lane: string; scenarios: MobileScenario[]; missing: boolean; error?: string }> = []
-  for (const lane of lanes) loaded.push({ lane, ...(await loadLane(lane)) })
+  const loaded: Lane[] = []
+  for (const lane of lanes) loaded.push(await loadLane(lane))
 
   console.log(`\n  drive:mobile — ${BASE}`)
   for (const l of loaded) {
@@ -96,7 +145,9 @@ async function main() {
       ? 'SKIPPED (no scenario file yet)'
       : l.error
         ? `SKIPPED (${l.error})`
-        : `${l.scenarios.length} scenario(s)`
+        : l.external
+          ? `standalone drive${l.manifest ? ` (${l.manifest} scenario(s) declared)` : ''}`
+          : `${l.scenarios.length} scenario(s)`
     console.log(`   ${l.missing || l.error ? '⏭ ' : '· '}${l.lane.padEnd(8)} ${what}`)
   }
 
@@ -110,6 +161,22 @@ async function main() {
   const seen = new Set<string>()
 
   for (const l of loaded) {
+    if (l.external) {
+      console.log(`  ▶  ${l.lane} — standalone drive`)
+      const started = Date.now()
+      const { code } = await runExternal(l.lane)
+      const ms = Date.now() - started
+      const ok = code === 0
+      verdicts.push({
+        id: `${l.lane}/*`,
+        profile: '-',
+        state: ok ? 'pass' : 'fail',
+        ms,
+        detail: ok ? 'standalone drive green' : `standalone drive exited ${code}`,
+      })
+      console.log(`  ${ok ? '✅' : '❌'} ${l.lane}/* [standalone] ${ms}ms${ok ? '' : ` — exit ${code}`}`)
+      continue
+    }
     for (const scenario of l.scenarios) {
       if (!scenario.id.startsWith(`${l.lane}/`)) {
         verdicts.push({ id: scenario.id, profile: '-', state: 'fail', ms: 0, detail: `id must start with "${l.lane}/"` })
