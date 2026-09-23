@@ -23016,10 +23016,16 @@ async function main() {
         !isMarketsPath('/marketsx') && !isMarketsPath('/t') && !isMarketsPath('/tools') && !isMarketsPath('/') && !isMarketsPath('/chat'),
     )
     check(
+      // Re-pinned 48px → 49px (squad mobile-onboarding, 2026-09-23): the pin
+      // guards "the shell reserves the bottom tab bar", and the bar measures
+      // 49px — 48px of seat plus its own 1px top border — so at 48 the page's
+      // last line sat 1px under it. The guarded behaviour is unchanged and now
+      // exact; the base `grid-template-areas` line is untouched, the phone's
+      // conditional rail order sits after it as its own rule.
       'markets shell CSS: ≤1023px the side column dissolves (display: contents), the strip takes a top grid row, the shell reserves the bottom tab bar and lifts the docked ask pill above it; the tool strip is sticky at the top edge on desktop',
       /\.mkt-shell \{ display: flex; align-items: stretch; min-height: 100dvh; \}/.test(shellCss) &&
         /\.mkt-frame__bar \{\s*position: sticky; top: 0; z-index: 20;/.test(shellCss) &&
-        /@media \(max-width: 1023px\) \{[^@]*\.mkt-frame \{[^}]*grid-template-areas: "top" "main" "rail" "foot";[^@]*\.mkt-frame__side \{ display: contents; \}[^@]*\.mkt-frame__top \{ grid-area: top;[^@]*\.mkt-frame__bar \{ top: var\(--mkt-top-h\); \}[^@]*\.mkt-shell \{ padding-bottom: calc\(48px \+ env\(safe-area-inset-bottom\)\); \}[^@]*:root\[data-spine\] \.askdoor-pill \{ bottom: calc\(64px \+ env\(safe-area-inset-bottom\)\); \}/.test(shellCss),
+        /@media \(max-width: 1023px\) \{[^@]*\.mkt-frame \{[^}]*grid-template-areas: "top" "main" "rail" "foot";[^@]*\.mkt-frame__side \{ display: contents; \}[^@]*\.mkt-frame__top \{ grid-area: top;[^@]*\.mkt-frame__bar \{ top: var\(--mkt-top-h\); \}[^@]*\.mkt-shell \{ padding-bottom: calc\(49px \+ env\(safe-area-inset-bottom\)\); \}[^@]*:root\[data-spine\] \.askdoor-pill \{ bottom: calc\(64px \+ env\(safe-area-inset-bottom\)\); \}/.test(shellCss),
     )
     // The app has no brochure nav for anyone (2026-09-11, Nate: "remove the
     // header in the App if they are not logged in and move the sign in down
@@ -23166,13 +23172,19 @@ async function main() {
           !ae.sameAppHref('/chat?a=1&b=2', '/chat?b=2&a=1') && !ae.sameAppHref('//evil.example/chat', '/chat'),
       )
       check(
+        // The nav's seat gained a `.nav__acct` wrapper (squad
+        // mobile-onboarding, 2026-09-23) so the phone bar can keep it beside
+        // the burger. The property this pin guards is that the brochure nav
+        // names NO landing destination — `<SiteAccount />` still takes no
+        // props, and the `redirectTo`/`SIGN_IN_LANDING` fences below are
+        // unchanged — so the wrapper is allowed and nothing else is.
         "sign-in lands (sources): the door, AuthButton and the account menu read the landing on press (signInLandingHere), the brochure nav names none, the Google return keeps the door's, the session refreshes the page it is already on, and no door lands on /dashboard",
         /const landing = \(\) => redirectTo \?\? signInLandingHere\(\)/.test(doorS) &&
           /const intent: OAuthIntent = \{ redirectTo: landing\(\), signIn: !walletConnectOnly \}/.test(doorS) &&
           /connectAndSignIn\(redirectTo \?\? signInLandingHere\(\)\)/.test(authS) &&
           /connectAndSignIn\(signInLandingHere\(\)\)/.test(acctS) && !/stayHere|window\.location|SIGN_IN_LANDING/.test(acctS) &&
           /const target = intent\?\.redirectTo \|\| signInLandingHere\(\)/.test(oauthS) &&
-          !/signInRedirect|SIGN_IN_LANDING/.test(navS) && /const desktopAccount = <SiteAccount \/>/.test(navS) &&
+          !/signInRedirect|SIGN_IN_LANDING/.test(navS) && /const desktopAccount = (?:<span className="nav__acct">)?<SiteAccount \/>/.test(navS) &&
           /return signInLandingFor\(currentAppHref\(\), homeReturn\)/.test(sessS) &&
           /homeReturn = readSignInReturn\(window\.sessionStorage\.getItem\(SIGN_IN_RETURN_KEY\), Date\.now\(\)\)/.test(sessS) &&
           /if \(sameAppHref\(redirectTo, currentAppHref\(\)\)\) router\.refresh\(\)\s*else router\.push\(redirectTo\)/.test(sessS) &&
