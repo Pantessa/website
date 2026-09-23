@@ -21,11 +21,18 @@
 //                        and the wallet was asked exactly ONCE (no re-send).
 //   desktop-auto-fire    the platform gate discriminates: on a desktop step 2
 //                        still fires on mount (popup follows popup).
+//   phone-reload-signed  the way back was a RELOAD (LINKS's finding): a card
+//                        re-rendered for a tx an earlier visit SIGNED shows the
+//                        resume line and asks the wallet 0 times; "Sign again
+//                        anyway" is the explicit way through.
+//   phone-reload-asked   same, for a tx an earlier visit ASKED and never heard
+//                        back while the wallet's nonce moved on → maybe-broadcast.
 //
 // Against main, phone-chain-taps FAILS (step 2 fires on mount: the mock's
 // send count reaches 2 with no tap) — that is the measurement.
 
 import { createRequire } from 'node:module'
+import { signOutcomeKey } from '../lib/sign-round-trip'
 
 const BASE = process.env.BASE ?? 'http://localhost:3871'
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -36,6 +43,7 @@ const HASH = `0x${'ab'.repeat(32)}`
 // a `typeof import(…)` would break `next build` off this machine).
 type PwLocator = {
   first(): PwLocator
+  locator(selector: string, opts?: { hasText?: string | RegExp }): PwLocator
   count(): Promise<number>
   click(opts?: { timeout?: number }): Promise<void>
   fill(text: string): Promise<void>
@@ -53,7 +61,7 @@ type PwRoute = {
 type PwPage = {
   goto(url: string, opts?: { waitUntil?: 'commit' | 'domcontentloaded' | 'load' | 'networkidle' }): Promise<unknown>
   waitForTimeout(ms: number): Promise<void>
-  locator(selector: string): PwLocator
+  locator(selector: string, opts?: { hasText?: string | RegExp }): PwLocator
   evaluate<T>(fn: (...a: never[]) => T, arg?: unknown): Promise<T>
   route(url: string, handler: (route: PwRoute) => Promise<void> | void): Promise<void>
   keyboard: { press(key: string): Promise<void> }
@@ -185,8 +193,9 @@ const ROUND_TRIP = (awayMs: number) => `(() => {
   setTimeout(() => { set('visible'); window.dispatchEvent(new Event('pageshow')) }, ${awayMs})
 })()`
 
-async function openChatWithChain(ctx: PwContext, sendMode: 'resolve' | 'hang') {
+async function openChatWithChain(ctx: PwContext, sendMode: 'resolve' | 'hang', seed?: string) {
   await ctx.addInitScript(`window.__sendMode = '${sendMode}'`)
+  if (seed) await ctx.addInitScript(seed)
   await ctx.addInitScript(MOCK_WALLET)
   const page = await ctx.newPage()
   const errors: string[] = []
@@ -206,11 +215,11 @@ async function openChatWithChain(ctx: PwContext, sendMode: 'resolve' | 'hang') {
   await page.waitForTimeout(800)
   await box.fill('swap 5 usdc for eth on base')
   await page.keyboard.press('Enter')
-  const step1 = page.locator('button', { hasText: /Sign step 1 of 2|Sign & send approve/ } as unknown as string).first()
+  const step1 = page.locator('button', { hasText: /Sign step 1 of 2|Sign & send approve/ }).first()
   return { page, errors, step1 }
 }
 
-export const SCENARIOS = ['phone-chain-taps', 'phone-return-reopen', 'desktop-auto-fire'] as const
+export const SCENARIOS = ['phone-chain-taps', 'phone-return-reopen', 'desktop-auto-fire', 'phone-reload-signed', 'phone-reload-asked'] as const
 
 export async function runScenario(browser: PwBrowser, name: (typeof SCENARIOS)[number], devices: Record<string, Record<string, unknown>>, shotsDir: string) {
   console.log(`\n— ${name}`)
@@ -219,7 +228,7 @@ export async function runScenario(browser: PwBrowser, name: (typeof SCENARIOS)[n
   try {
     if (name === 'phone-chain-taps' || name === 'desktop-auto-fire') {
       const { page, errors, step1 } = await openChatWithChain(ctx, 'resolve')
-      const stepBtn = page.locator('button', { hasText: /Sign step 1 of 2 — Approve USDC|Sign & send approve/ } as unknown as string).first()
+      const stepBtn = page.locator('button', { hasText: /Sign step 1 of 2 — Approve USDC|Sign & send approve/ }).first()
       try {
         await stepBtn.waitFor({ state: 'visible', timeout: 30_000 })
       } catch (e) {
@@ -246,7 +255,7 @@ export async function runScenario(browser: PwBrowser, name: (typeof SCENARIOS)[n
         console.log('  after click: sends=' + (await page.evaluate(() => (window as unknown as { __sends: number }).__sends)) + ' text=' + (await page.evaluate(() => document.body.innerText.slice(-400)).then((t) => t.replace(/\n/g, ' | '))))
       }
       // Step 1 confirms off the canned receipt; step 2 mounts.
-      const step2 = page.locator('button', { hasText: /Sign step 2 of 2 — Swap USDC → ETH|Sign & send swap|Confirm in your wallet/ } as unknown as string).first()
+      const step2 = page.locator('button', { hasText: /Sign step 2 of 2 — Swap USDC → ETH|Sign & send swap|Confirm in your wallet/ }).first()
       await step2.waitFor({ state: 'visible', timeout: 60_000 })
       await page.waitForTimeout(2500)
       const sends = await page.evaluate(() => (window as unknown as { __sends: number }).__sends)
@@ -279,7 +288,7 @@ export async function runScenario(browser: PwBrowser, name: (typeof SCENARIOS)[n
       const { page, errors, step1 } = await openChatWithChain(ctx, 'hang')
       await step1.waitFor({ state: 'visible', timeout: 30_000 })
       await step1.click()
-      const waiting = page.locator('button', { hasText: /Confirm in your wallet/ } as unknown as string).first()
+      const waiting = page.locator('button', { hasText: /Confirm in your wallet/ }).first()
       await waiting.waitFor({ state: 'visible', timeout: 10_000 })
       check('phone: the tap asks the wallet and the button reads "Confirm in your wallet…" (disabled) while the app has it', !(await waiting.isEnabled()))
       check('phone: no reopen control before the round trip', (await page.locator('[data-sign-return]').count()) === 0)
@@ -297,6 +306,28 @@ export async function runScenario(browser: PwBrowser, name: (typeof SCENARIOS)[n
       check('phone: no page errors', errors.length === 0, errors.join(' | ').slice(0, 200))
       await page.mouse.move(0, 0)
       await page.screenshot({ path: `${shotsDir}/${name}-reopen.png` })
+    }
+    if (name === 'phone-reload-signed' || name === 'phone-reload-asked') {
+      // An earlier visit's outcome for step 1's exact tx, as the reload finds it.
+      const key = signOutcomeKey({ wallet: WALLET, chainId: 8453, to: CHAIN.steps[0].tx.to, data: CHAIN.steps[0].tx.data })
+      const record = name === 'phone-reload-signed'
+        ? { v: 1, key, state: 'settled', askedAt: Date.now() - 60_000, settledAt: Date.now() - 50_000, hash: HASH }
+        : { v: 1, key, state: 'asked', askedAt: Date.now() - 60_000, nonceAtAsk: 0 } // the canned nonce reads 0x1 → advanced
+      const { page, errors } = await openChatWithChain(ctx, 'resolve', `try { localStorage.setItem(${JSON.stringify(key)}, ${JSON.stringify(JSON.stringify(record))}) } catch {}`)
+      const want = name === 'phone-reload-signed' ? 'signed' : 'maybe-broadcast'
+      const resume = page.locator(`[data-sign-resume="${want}"]`).first()
+      await resume.waitFor({ state: 'visible', timeout: 30_000 })
+      const words = await resume.innerText()
+      check(`phone: the reloaded card finds the earlier outcome and shows the ${want} line instead of the button`, want === 'signed' ? /You signed this earlier/.test(words) : /went out after that/.test(words), words)
+      check('phone: the wallet was asked 0 times — nothing re-offered on its own', (await page.evaluate(() => (window as unknown as { __sends: number }).__sends)) === 0)
+      check('phone: no plain step-1 button beside the resume line', (await page.locator('button', { hasText: /Sign step 1 of 2/ }).count()) === 0)
+      await page.mouse.move(0, 0)
+      await page.screenshot({ path: `${shotsDir}/${name}.png` })
+      await resume.locator('button', { hasText: /Sign again anyway/ }).first().click()
+      const btn = page.locator('button', { hasText: /Sign step 1 of 2 — Approve USDC/ }).first()
+      await btn.waitFor({ state: 'visible', timeout: 10_000 })
+      check('phone: "Sign again anyway" is the explicit way through — the plain button returns, the record is cleared', (await btn.isEnabled()) && (await page.evaluate((k) => localStorage.getItem(k as string), key)) === null)
+      check('phone: no page errors', errors.length === 0, errors.join(' | ').slice(0, 200))
     }
   } finally {
     await ctx.close()

@@ -197,3 +197,109 @@ export function reopenCopy(app: string | null | undefined): { line: string; cta:
     cta: `Open ${name}`,
   }
 }
+
+// ── The persisted outcome: a return can be a FULL RELOAD ─────────────────
+//
+// LINKS measured it on the unmodified tree (2026-09-23): on a phone the way
+// back from the wallet app is often a reload — iOS evicts the background
+// tab, in-app browsers reload on return — and React state is gone with it.
+// A card re-rendered from persisted message meta would offer the same tx
+// again, and a visitor who already approved it in the app would sign it
+// twice. So the round trip's OUTCOME lives in storage, keyed by the exact
+// transaction and wallet, for the same window a link run is remembered
+// (lib/intent-link-return LINK_RUN_TTL_MS), and a card reads it on mount
+// before it offers anything.
+
+export const SIGN_OUTCOME_VERSION = 1 as const
+/** Mirrors lib/intent-link-return LINK_RUN_TTL_MS (pinned equal). */
+export const SIGN_OUTCOME_TTL_MS = 30 * 60_000
+export const SIGN_OUTCOME_PREFIX = 'pantessa.sign.v1:'
+
+export type SignOutcome =
+  | { v: 1; key: string; state: 'asked'; askedAt: number; /** the wallet's pending nonce when the request was fired, when the read landed */ nonceAtAsk: number | null }
+  | { v: 1; key: string; state: 'settled'; askedAt: number; settledAt: number; hash: string | null }
+
+type StorageLike = { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void }
+
+/** FNV-1a over a string, as 8 hex chars. Calldata is long; the key is not. */
+function fnv1a(s: string): string {
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h.toString(16).padStart(8, '0')
+}
+
+/** One key per (wallet, chain, to, calldata): the same built transaction
+ *  offered again after a reload lands on the same record. */
+export function signOutcomeKey(i: { wallet: string | null | undefined; chainId: number; to: string; data?: string | null }): string {
+  const wallet = (i.wallet ?? '').toLowerCase()
+  return `${SIGN_OUTCOME_PREFIX}${wallet}:${i.chainId}:${i.to.toLowerCase()}:${fnv1a((i.data ?? '0x').toLowerCase())}`
+}
+
+/** The stored outcome for this key, or null (missing, malformed, wrong
+ *  version, wrong key, older than the TTL, or dated in the future by more
+ *  than a minute). */
+export function readSignOutcome(storage: StorageLike | null | undefined, key: string, now: number): SignOutcome | null {
+  if (!storage) return null
+  try {
+    const raw = storage.getItem(key)
+    if (!raw) return null
+    const o = JSON.parse(raw) as Partial<SignOutcome>
+    if (o?.v !== SIGN_OUTCOME_VERSION || o.key !== key || typeof o.askedAt !== 'number') return null
+    const at = o.state === 'settled' && typeof o.settledAt === 'number' ? o.settledAt : o.askedAt
+    if (now - at > SIGN_OUTCOME_TTL_MS || at - now > 60_000) return null
+    if (o.state === 'asked') return { v: 1, key, state: 'asked', askedAt: o.askedAt, nonceAtAsk: typeof o.nonceAtAsk === 'number' ? o.nonceAtAsk : null }
+    if (o.state === 'settled') return { v: 1, key, state: 'settled', askedAt: o.askedAt, settledAt: typeof o.settledAt === 'number' ? o.settledAt : o.askedAt, hash: typeof o.hash === 'string' ? o.hash : null }
+    return null
+  } catch {
+    return null
+  }
+}
+
+export function writeSignOutcome(storage: StorageLike | null | undefined, outcome: SignOutcome): void {
+  try {
+    storage?.setItem(outcome.key, JSON.stringify(outcome))
+  } catch {
+    /* storage blocked: the card falls back to the in-memory trip */
+  }
+}
+
+export function clearSignOutcome(storage: StorageLike | null | undefined, key: string): void {
+  try {
+    storage?.removeItem(key)
+  } catch {
+    /* nothing to clear */
+  }
+}
+
+/**
+ * What a card does on MOUNT when it finds an outcome for the transaction it
+ * is about to offer:
+ *   · `fresh`           — nothing (or an ask the nonce proves never went out): offer it.
+ *   · `signed`          — the request settled with a hash earlier: never re-offer on its own.
+ *   · `maybe-broadcast` — asked earlier, and a transaction from this wallet went
+ *                         out since (nonce advanced): a human looks before any re-sign.
+ *   · `unknown`         — asked earlier, the nonce read failed: say so, a human decides.
+ */
+export function resumeVerdict(i: { outcome: SignOutcome | null; nonceNow: number | null }): 'fresh' | 'signed' | 'maybe-broadcast' | 'unknown' {
+  const o = i.outcome
+  if (!o) return 'fresh'
+  if (o.state === 'settled') return 'signed'
+  const nonce = resendVerdict({ nonceAtAsk: o.nonceAtAsk, nonceNow: i.nonceNow })
+  if (nonce === 'safe') return 'fresh'
+  return nonce === 'broadcast-seen' ? 'maybe-broadcast' : 'unknown'
+}
+
+/** The words above a card that found an earlier outcome. */
+export function resumeCopy(v: 'signed' | 'maybe-broadcast' | 'unknown'): { line: string; cta: string } {
+  switch (v) {
+    case 'signed':
+      return { line: 'You signed this earlier — it is not offered again on its own.', cta: 'Sign again anyway' }
+    case 'maybe-broadcast':
+      return { line: 'This was sent to your wallet earlier, and a transaction from this wallet went out after that. Check the wallet’s activity before signing again.', cta: 'Sign again anyway' }
+    case 'unknown':
+      return { line: 'This was sent to your wallet earlier and never answered here. Check the wallet before signing again.', cta: 'Sign again anyway' }
+  }
+}

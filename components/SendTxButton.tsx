@@ -23,8 +23,23 @@ import type { EvmTxRequest } from '@/lib/transaction-layer'
 import { chainById } from '@/lib/chains'
 import { reportWalletRefusal, walletErrorWords, type WalletArtifact } from '@/lib/wallet-refusal'
 import { SIGN_CTA_CLASS } from '@/lib/sign-cta'
-import { autoFireAllowed, oneMethodPerTap, reopenCopy } from '@/lib/sign-round-trip'
+import {
+  autoFireAllowed,
+  clearSignOutcome,
+  oneMethodPerTap,
+  readSignOutcome,
+  reopenCopy,
+  resumeCopy,
+  resumeVerdict,
+  signOutcomeKey,
+  writeSignOutcome,
+} from '@/lib/sign-round-trip'
 import { useSignRoundTrip } from '@/lib/use-sign-round-trip'
+
+/** The outcome store. A return from the wallet app can be a full reload
+ *  (LINKS, 2026-09-23), so the round trip's outcome lives here, not in
+ *  React state. localStorage: it survives a tab the OS evicted. */
+const outcomeStore = () => (typeof window === 'undefined' ? null : window.localStorage)
 
 type Status = 'idle' | 'signing' | 'broadcast' | 'confirmed' | 'reverted' | 'error'
 
@@ -89,6 +104,40 @@ export default function SendTxButton({
   const [switchNeeded, setSwitchNeeded] = useState(false)
   // The round trip to the wallet app (phone): asked → in-app → returned.
   const trip = useSignRoundTrip()
+  // What an EARLIER visit did with this exact transaction (signOutcomeKey):
+  // signed it, or asked and never heard back. Read on mount, before this
+  // card offers anything — a card re-rendered after a reload must never
+  // offer a signed tx again on its own (never burn a signature).
+  const outcomeKey = address ? signOutcomeKey({ wallet: address, chainId, to: tx.to, data: tx.data }) : null
+  const [resume, setResume] = useState<'signed' | 'maybe-broadcast' | 'unknown' | null>(null)
+  useEffect(() => {
+    if (!outcomeKey) return
+    const found = readSignOutcome(outcomeStore(), outcomeKey, Date.now())
+    if (!found) return
+    if (found.state === 'settled') {
+      setResume('signed')
+      return
+    }
+    // Asked earlier: the wallet's nonce says whether anything went out since.
+    let alive = true
+    const decide = (nonceNow: number | null) => {
+      if (!alive) return
+      const v = resumeVerdict({ outcome: found, nonceNow })
+      if (v === 'fresh') clearSignOutcome(outcomeStore(), outcomeKey)
+      else setResume(v)
+    }
+    if (!publicClient) decide(null)
+    else {
+      publicClient
+        .getTransactionCount({ address: address as `0x${string}`, blockTag: 'pending' })
+        .then((n) => decide(n))
+        .catch(() => decide(null))
+    }
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outcomeKey])
 
   const chainInfo = chainById(chainId)
   const explorer = chainInfo?.explorerTx ?? TX_EXPLORER[chainId] ?? 'https://basescan.org/tx/'
@@ -154,6 +203,21 @@ export default function SendTxButton({
         await new Promise((r) => setTimeout(r, 750))
       }
       trip.ask()
+      // Remember the ask BEFORE the request leaves (a reload on the way back
+      // must find it), and the wallet's pending nonce beside it — read in
+      // PARALLEL, never awaited ahead of the send: the same-chain path stays
+      // a zero-await straight shot (Coinbase's popup-after-await rule).
+      const askedAt = Date.now()
+      if (outcomeKey) {
+        writeSignOutcome(outcomeStore(), { v: 1, key: outcomeKey, state: 'asked', askedAt, nonceAtAsk: null })
+        publicClient
+          ?.getTransactionCount({ address: address as `0x${string}`, blockTag: 'pending' })
+          .then((n) => {
+            const cur = readSignOutcome(outcomeStore(), outcomeKey, Date.now())
+            if (cur?.state === 'asked' && cur.askedAt === askedAt) writeSignOutcome(outcomeStore(), { ...cur, nonceAtAsk: n })
+          })
+          .catch(() => {})
+      }
       try {
         txHash = await sendTransactionAsync({
           to: tx.to as `0x${string}`,
@@ -164,6 +228,7 @@ export default function SendTxButton({
       } finally {
         trip.settle()
       }
+      if (outcomeKey) writeSignOutcome(outcomeStore(), { v: 1, key: outcomeKey, state: 'settled', askedAt, settledAt: Date.now(), hash: txHash })
       setHash(txHash)
       setStatus('broadcast')
       // Generous window + retries: smart-wallet bundlers (Coinbase) add
@@ -218,6 +283,8 @@ export default function SendTxButton({
       // Only pre-broadcast errors are the wallet's — a revert after a hash
       // is the chain's, and reads as 'reverted' above.
       if (!txHash) {
+        // Nothing went out: the remembered ask would only scare the next visit.
+        if (outcomeKey) clearSignOutcome(outcomeStore(), outcomeKey)
         reportWalletRefusal({
           wallet: address, artifact: refusalArtifact, buildPath: refusalBuildPath,
           connector: connector?.id ?? connector?.name, chainId: connectedChain?.id,
@@ -245,6 +312,11 @@ export default function SendTxButton({
     if (!autoFire || autoFired.current || status !== 'idle') return
     if (!isConnected || !address) return
     if (!autoFireAllowed({ platform: trip.platform, stepIndex: 1, connectorId: connector?.id, connectorName: connector?.name })) return
+    // A remembered outcome for this exact tx (an earlier visit signed it, or
+    // asked and never heard back) is never auto-fired over: the resume line
+    // decides, with the visitor. Read from the store — `resume` is set by
+    // the effect above in the same commit and isn't visible here yet.
+    if (outcomeKey && readSignOutcome(outcomeStore(), outcomeKey, Date.now())) return
     autoFired.current = true
     void send()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -313,6 +385,22 @@ export default function SendTxButton({
               details <ExternalLink className="w-3 h-3" />
             </a>
           )}
+        </div>
+      ) : resume ? (
+        // An earlier visit signed this, or asked and never heard back: say so
+        // and make the re-sign an explicit choice, never the default button.
+        <div className="flex items-center gap-2 flex-wrap text-[12px] text-[color:var(--muted)]" data-sign-resume={resume}>
+          <span>{resumeCopy(resume).line}</span>
+          <button
+            type="button"
+            onClick={() => {
+              if (outcomeKey) clearSignOutcome(outcomeStore(), outcomeKey)
+              setResume(null)
+            }}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--line-2)] px-3 py-1 text-[12px] font-medium text-[color:var(--fg)] [@media(hover:none)]:min-h-10 [@media(hover:none)]:px-4"
+          >
+            {resumeCopy(resume).cta}
+          </button>
         </div>
       ) : (
         <div className="flex items-center gap-2 flex-wrap">
