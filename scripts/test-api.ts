@@ -30772,6 +30772,35 @@ async function main() {
       console.log('  ↳ drive (live) burner checks SKIPPED (no PRIVATE_KEY in .env.local)')
     }
   }
+  // ── agent desk: SDK docs ──────────────────────────────────────────────────
+  // /docs/desk is the agent-signed path's front door. Since the `pantessa/desk`
+  // helper shipped (sdk 1.1.0), the page must SAY the loop is live and show the
+  // call that runs it — the previous copy said "rolling out", which read as
+  // "not yet" to every agent developer who found the page. The squad's
+  // invariant sentence is quoted verbatim so a copy edit can't quietly drop it.
+  {
+    const deskSrc = readFileSync('app/docs/desk/page.tsx', 'utf8')
+    const desk = flat(await (await fetch(`${BASE}/docs/desk`)).text())
+    check(
+      'agent desk docs: the page no longer calls the agent-signed path "rolling out", and says it is live with a proof date',
+      !/rolling out/i.test(deskSrc) && /const PROVEN = 'proven \d{4}-\d{2}-\d{2}'/.test(deskSrc) && /This is live/.test(desk) && /proven \d{4}-\d{2}-\d{2}/.test(desk),
+      'the SSR still reads as "not yet"',
+    )
+    check(
+      'agent desk docs: the invariant sentence is rendered verbatim',
+      desk.includes('Round-trip across every settlement boundary, batched within one.'),
+    )
+    check(
+      'agent desk docs: the snippet shows the SDK call — pantessa/desk, openAndExecute then driveJob, with a named version',
+      /pantessa\/desk/.test(desk) && /openAndExecute/.test(desk) && /driveJob/.test(desk) && /pantessa@1\.1\.0/.test(desk),
+      'the driveJob snippet is missing from the SSR',
+    )
+    check(
+      'agent desk docs: the honest fence survives — no transaction material on the MCP surface, completion is advancement not proof, dryRun is named',
+      /no transaction material/i.test(desk) && /advancement/i.test(desk) && /dryRun/.test(desk) && /fails/.test(desk),
+    )
+  }
+
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)

@@ -5,6 +5,11 @@ import DeskTranscript from '@/components/DeskTranscript'
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'desk')!
 
+// When the agent-signed loop was last driven end to end. The squad coordinator
+// updates this the moment the DRIVE lane's live transcript lands; until then it
+// is the day `driveJob` was built and proven against a running deployment.
+const PROVEN = 'proven 2026-09-23'
+
 export const metadata: Metadata = {
   title: PAGE.seoTitle,
   description: PAGE.description,
@@ -102,12 +107,49 @@ export default function DeskDocsPage() {
 
         <h2>The agent-signed path</h2>
         <p>
-          When your agent holds the funds <em>and</em> the key, <code>broker_execute</code> compiles
-          a sequenced ask (fund → wait for settlement → act) into a job the agent drives leg by leg:
-          it fetches each leg from the job API as the runner builds it (guarded, policy-checked, one
-          at a time), signs and broadcasts with its own key, and posts completion — wait legs verify
-          on-chain arrival before the next leg builds. No transaction material ever travels through
-          the MCP surface.
+          When your agent holds the funds <em>and</em> the key, it does not need a human at all.{' '}
+          <code>broker_execute</code> compiles a sequenced ask (fund → wait for settlement → act)
+          into a <strong>job</strong>{' '}owned by the agent&apos;s own wallet, and hands back the job id
+          plus a capability token. The agent then fetches each leg from the job API as the runner
+          builds it — guarded, policy-checked, one at a time — signs and broadcasts it with its own
+          key, and posts completion. The wait legs verify arrival on-chain before the next leg is
+          built. <strong>Round-trip across every settlement boundary, batched within one.</strong>
+        </p>
+        <p>
+          <strong>This is live</strong> ({PROVEN}), and the SDK is the whole loop in one call —{' '}
+          <code>pantessa@1.1.0</code>, entry point <code>pantessa/desk</code>:
+        </p>
+        <pre className="splash__code mono">{`import { openAndExecute, driveJob } from 'pantessa/desk'
+import { privateKeyToAccount } from 'viem/accounts'
+
+const signer = privateKeyToAccount(process.env.AGENT_KEY as \`0x\${string}\`)
+const base = 'https://www.pantessa.com'
+
+const { jobId, token } = await openAndExecute({
+  base,
+  ask: 'Fund Hyperliquid with $15 from Base, then 2x long $12 of HYPE',
+  signer,
+  agentKey: process.env.DESK_KEY!,
+})
+
+await driveJob({
+  base, jobId, token, signer,
+  rpc: { 8453: process.env.BASE_RPC! },
+  onLeg: (leg) => console.log(\`leg \${leg.seq} · \${leg.kind} · \${leg.summary}\`),
+})`}</pre>
+        <p>
+          <code>driveJob</code>{' '}handles every shape the runner offers so your agent does not have
+          to: one EVM transaction; a transaction chain (approve → swap) where the step carrying a
+          re-quote recipe is rebuilt server-side right before it is signed; a Hyperliquid L1 action,
+          with its one-time builder-fee cap and leverage pre-step; and a <strong>batch</strong>{' '}of
+          those actions — signed in one pass, submitted in order inside a single settlement
+          boundary, stopping at the first refusal so the runner re-offers from exactly there. A leg
+          whose build has aged out is <em>rebuilt, never re-signed</em>. A shape it does not
+          recognize — a CoW or Seaport order, which has its own submit endpoint — fails{' '}
+          <em>closed</em>, by name. And a transaction that reverts is never posted as a completed
+          leg. Pass <code>dryRun: true</code>{' '}to see every leg classified without signing or
+          broadcasting anything — on a wallet that cannot fund a leg it comes back with the
+          guard&apos;s own sentence instead of a stall.
         </p>
         <p>
           Because this path has no human in the loop, it runs under a tighter fence: it requires a
@@ -115,8 +157,10 @@ export default function DeskDocsPage() {
           wallet</em> (<code>wallet_signature</code>{' '}— a personal_sign over the desk&apos;s consent
           text for that intent id + wallet; the desk recovers the signer, so nobody can compile a
           job into a wallet they don&apos;t hold), a per-intent notional cap, and a desk-level kill
-          switch. The agent-signed path is rolling out — the human-handoff loop above is the front
-          door, and it is live today.
+          switch. Completion is <em>advancement, not proof</em> — the runner re-verifies on-chain,
+          so a leg result the chain disagrees with fails the job closed one leg later. And the desk
+          MCP surface itself still carries no transaction material: the signable bytes travel on the
+          job API, over the capability token minted at execute.
         </p>
 
         <h2>What it costs</h2>
