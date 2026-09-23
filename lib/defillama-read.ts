@@ -25,7 +25,14 @@ import {
 export const LLAMA_API = 'https://api.llama.fi'
 const INDEX_TTL_MS = 6 * 60 * 60_000
 const SUBJECT_TTL_MS = 10 * 60_000
+/** A body with a metric that FAILED (not one the subject lacks) is held only
+ *  this long, so a slow upstream read heals on the next visitor instead of
+ *  showing "TVL —" for ten minutes. */
+const DEGRADED_TTL_MS = 45_000
 const FETCH_TIMEOUT_MS = 12_000
+/** `/protocol/<slug>` carries every token breakdown (Uniswap's is ~2MB) and
+ *  routinely takes seconds; it gets its own budget and one retry. */
+const PROTOCOL_TIMEOUT_MS = 30_000
 const INDEX_TIMEOUT_MS = 20_000
 
 type Indexes = { at: number; protocols: LlamaProtocolRow[]; chains: LlamaChainRow[] }
@@ -43,6 +50,15 @@ async function getJson(path: string, timeoutMs = FETCH_TIMEOUT_MS): Promise<unkn
   if (res.status === 404 || res.status === 400) return null
   if (!res.ok) throw new Error(`llama ${res.status} ${path}`)
   return res.json()
+}
+
+/** One retry on a transport failure (a 404 is an answer, not a failure). */
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn()
+  } catch {
+    return fn()
+  }
 }
 
 async function loadIndexes(): Promise<Indexes> {
@@ -95,31 +111,31 @@ const chartOf = (body: unknown): unknown => (body && typeof body === 'object' ? 
 const READERS: Record<LlamaMetricKey, Reader> = {
   async tvl(s) {
     if (s.kind === 'protocol') {
-      const body = (await getJson(`/protocol/${encodeURIComponent(s.slug)}`)) as Record<string, unknown> | null
+      const body = (await withRetry(() => getJson(`/protocol/${encodeURIComponent(s.slug)}`, PROTOCOL_TIMEOUT_MS))) as Record<string, unknown> | null
       const points = parseLlamaChart(body?.tvl)
       const mcap = typeof body?.mcap === 'number' ? body.mcap : null
       const name = typeof body?.name === 'string' ? body.name : undefined
       return { points, extra: { mcap, name } }
     }
-    const body = await getJson(`/v2/historicalChainTvl/${encodeURIComponent(s.slug)}`)
+    const body = await withRetry(() => getJson(`/v2/historicalChainTvl/${encodeURIComponent(s.slug)}`))
     return { points: parseLlamaChart(body) }
   },
   async fees(s) {
     const path = s.kind === 'protocol' ? `/summary/fees/${encodeURIComponent(s.slug)}?dataType=dailyFees` : `/overview/fees/${encodeURIComponent(s.slug)}?excludeTotalDataChartBreakdown=true&dataType=dailyFees`
-    return { points: parseLlamaChart(chartOf(await getJson(path))) }
+    return { points: parseLlamaChart(chartOf(await withRetry(() => getJson(path)))) }
   },
   async revenue(s) {
     const path = s.kind === 'protocol' ? `/summary/fees/${encodeURIComponent(s.slug)}?dataType=dailyRevenue` : `/overview/fees/${encodeURIComponent(s.slug)}?excludeTotalDataChartBreakdown=true&dataType=dailyRevenue`
-    return { points: parseLlamaChart(chartOf(await getJson(path))) }
+    return { points: parseLlamaChart(chartOf(await withRetry(() => getJson(path)))) }
   },
   async holdersRevenue(s) {
     // Chain-level holders revenue is not a DefiLlama series.
     if (s.kind !== 'protocol') return { points: [] }
-    return { points: parseLlamaChart(chartOf(await getJson(`/summary/fees/${encodeURIComponent(s.slug)}?dataType=dailyHoldersRevenue`))) }
+    return { points: parseLlamaChart(chartOf(await withRetry(() => getJson(`/summary/fees/${encodeURIComponent(s.slug)}?dataType=dailyHoldersRevenue`)))) }
   },
   async volume(s) {
     const path = s.kind === 'protocol' ? `/summary/dexs/${encodeURIComponent(s.slug)}` : `/overview/dexs/${encodeURIComponent(s.slug)}?excludeTotalDataChartBreakdown=true`
-    return { points: parseLlamaChart(chartOf(await getJson(path))) }
+    return { points: parseLlamaChart(chartOf(await withRetry(() => getJson(path)))) }
   },
 }
 
@@ -127,6 +143,7 @@ async function compose(symbol: string, subject: LlamaSubject): Promise<LlamaFund
   const results = await Promise.allSettled(LLAMA_METRIC_KEYS.map((k) => READERS[k](subject)))
   const series: LlamaSeries[] = []
   const missing: LlamaMetricKey[] = []
+  const failed: LlamaMetricKey[] = []
   let mcap: number | null = null
   let name = subject.name
   LLAMA_METRIC_KEYS.forEach((key, i) => {
@@ -134,6 +151,10 @@ async function compose(symbol: string, subject: LlamaSubject): Promise<LlamaFund
     const s = r.status === 'fulfilled' ? llamaSeries(key, r.value.points) : null
     if (s) series.push(s)
     else missing.push(key)
+    if (r.status === 'rejected') {
+      failed.push(key)
+      console.warn(`[fundamentals] ${subject.kind} ${subject.slug} ${key}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`)
+    }
     if (r.status === 'fulfilled' && r.value.extra) {
       if (typeof r.value.extra.mcap === 'number') mcap = r.value.extra.mcap
       if (r.value.extra.name) name = r.value.extra.name
@@ -156,6 +177,7 @@ async function compose(symbol: string, subject: LlamaSubject): Promise<LlamaFund
       volume30d: byKey('volume')?.last30d ?? null,
     },
     asOf: new Date().toISOString(),
+    ...(failed.length ? { failed } : {}),
   }
 }
 
@@ -166,7 +188,8 @@ async function compose(symbol: string, subject: LlamaSubject): Promise<LlamaFund
 export async function readLlamaFundamentals(symbolRaw: string): Promise<LlamaFundamentalsApi> {
   const symbol = normalizeLlamaSymbol(symbolRaw)
   const hit = slot.subjects.get(symbol)
-  if (hit && Date.now() - hit.at < SUBJECT_TTL_MS) return { ...hit.body, ...(hit.body.subject ? { cached: true } : {}) }
+  const ttl = hit?.body.subject && hit.body.failed?.length ? DEGRADED_TTL_MS : SUBJECT_TTL_MS
+  if (hit && Date.now() - hit.at < ttl) return { ...hit.body, ...(hit.body.subject ? { cached: true } : {}) }
   let p = slot.inflight.get(symbol)
   if (!p) {
     p = (async (): Promise<LlamaFundamentalsApi> => {
