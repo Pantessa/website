@@ -18,7 +18,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAccount, usePublicClient, useSendTransaction, useSwitchChain } from 'wagmi'
 import { CDP_CONNECTOR_ID } from '@coinbase/cdp-wagmi'
-import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink, XCircle, Smartphone } from 'lucide-react'
+import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink, XCircle } from 'lucide-react'
 import type { EvmTxRequest } from '@/lib/transaction-layer'
 import { chainById } from '@/lib/chains'
 import { reportWalletRefusal, walletErrorWords, type WalletArtifact } from '@/lib/wallet-refusal'
@@ -35,6 +35,7 @@ import {
   writeSignOutcome,
 } from '@/lib/sign-round-trip'
 import { useSignRoundTrip } from '@/lib/use-sign-round-trip'
+import SignatureWaitOpenApp from '@/components/SignatureWaitOpenApp'
 
 /** The outcome store. A return from the wallet app can be a full reload
  *  (LINKS, 2026-09-23), so the round trip's outcome lives here, not in
@@ -421,6 +422,10 @@ export default function SendTxButton({
                     ? `Retry — sign & send ${tx.action ?? 'transaction'}`
                     : ctaLabel ?? `Sign & send ${tx.action ?? 'transaction'}`}
           </button>
+          {/* The request is in the phone's wallet APP (CONNECT's holder has
+              its link): the tap that opens it, beside the waiting button —
+              never a disabled "Confirm in your wallet…" alone (#822). */}
+          <SignatureWaitOpenApp waiting={status === 'signing'} />
           {note && <span className="text-[12px] text-[color:var(--muted)]">{note}</span>}
           {error && <span className="text-[12px] text-[color:var(--fail)]">{error}</span>}
           {/* Back from the app with nothing settled: the request is queued in
@@ -429,15 +434,6 @@ export default function SendTxButton({
           {cameBack && (
             <div className="basis-full flex items-center gap-2 flex-wrap text-[12px] text-[color:var(--muted)]" data-sign-return="offer-reopen">
               <span>{reopen.line}</span>
-              {trip.reopenApp && (
-                <button
-                  type="button"
-                  onClick={trip.reopen}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--line-2)] px-3 py-1 text-[12px] font-medium text-[color:var(--fg)] [@media(hover:none)]:min-h-10 [@media(hover:none)]:px-4"
-                >
-                  <Smartphone className="w-3.5 h-3.5" /> {reopen.cta}
-                </button>
-              )}
             </div>
           )}
         </div>

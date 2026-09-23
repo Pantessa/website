@@ -17,6 +17,7 @@ import { CDP_INIT_PATIENCE_MS, emailLaneHint, walletLaneChips } from '@/lib/wall
 import { analytics } from '@/lib/analytics'
 import { WALLET_MARKS } from '@/components/wallet-marks'
 import { oauthAllowedIn, oauthRefusedCopy } from '@/lib/mobile-wallet'
+import { armMetaMaskLaunch } from '@/lib/wallet-arm'
 import { PantessaMark } from '@/components/Logo'
 import { cn } from '@/lib/utils'
 import { currentAppHref, signInLandingHere, useSession } from '@/lib/session'
@@ -185,6 +186,14 @@ export function CreateAccountModal({
   useEffect(() => {
     analytics.signInDoor('open', { connectOnly: walletConnectOnly === true })
   }, [walletConnectOnly])
+  // On a phone the MetaMask lane is the MetaMask SDK, whose app launch waits
+  // on a relay socket ack (+0.8s after the tap) — a continuation WebKit never
+  // treats as user-initiated. Arm it the moment the door opens: the SDK's
+  // connection starts now with the launch held, and the MetaMask tap then
+  // navigates synchronously to the link it built (lib/wallet-arm).
+  useEffect(() => {
+    void armMetaMaskLaunch(connectors)
+  }, [connectors])
   useEffect(() => {
     if (error) analytics.signInDoor('error', { message: error.slice(0, 120), step })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one row per message, not per step change

@@ -17,6 +17,7 @@ import type { Eip712OrderRequest } from '@/lib/transaction-layer'
 import { reportWalletRefusal, walletErrorWords } from '@/lib/wallet-refusal'
 import { oneMethodPerTap } from '@/lib/sign-round-trip'
 import { usePlatform } from '@/lib/use-sign-round-trip'
+import SignatureWaitOpenApp from '@/components/SignatureWaitOpenApp'
 
 type Status = 'idle' | 'approving' | 'signing' | 'placing' | 'live' | 'error'
 
@@ -223,6 +224,7 @@ export default function SignNftListingButton({
                       ? 'Approve & list on OpenSea'
                       : 'Sign & list on OpenSea'}
           </button>
+          <SignatureWaitOpenApp waiting={status === 'approving' || status === 'signing'} />
           {note && <span className="text-[12px] text-[color:var(--muted)]" data-nft-rearmed="1">{note}</span>}
           {error && <span className="text-[12px] text-red-400">{error}</span>}
         </div>

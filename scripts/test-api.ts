@@ -31578,7 +31578,20 @@ async function main() {
     const jobSrc = fs.readFileSync('components/JobCard.tsx', 'utf8')
     check('mobile sign: JobCard + SendTxChain re-read on visibilitychange/pageshow (the poll and the deadline watch were throttled while the page was hidden)', /visibilitychange/.test(jobSrc) && /pageshow/.test(jobSrc) && /visibilitychange/.test(chainSrc))
     const hookSrc = fs.readFileSync('lib/use-sign-round-trip.ts', 'utf8')
-    check('mobile sign: the hook’s reopen is a bare metamask:// through lib/wallet-handoff (the SDK lane only) — it never calls a wallet method', /requestWalletAppOpen\('metamask:\/\/'\)/.test(hookSrc) && /METAMASK_SDK_CONNECTOR_ID = 'metaMaskSDK'/.test(hookSrc) && !WALLET_METHOD.test(hookSrc))
+    check('mobile sign: the hook’s reopen is CONNECT’s openWalletApp() (the last link the SDK asked for), settle() tells the holder the request is over, and it never calls a wallet method', /openWalletApp\(\)/.test(hookSrc) && /walletAppRequestSettled\(\)/.test(hookSrc) && /useSyncExternalStore\(subscribeWalletAppOpen, walletAppLastLink, noLink\)/.test(hookSrc) && !WALLET_METHOD.test(hookSrc) && !/metamask:\/\//.test(hookSrc))
+    // ── CONNECT's API, consumed (CONNECT.md NEEDS → SIGN): every wait state with an open
+    // SDK request shows a tappable "Open {app}" INSIDE the card; the sign-in ending clears
+    // the holder's link, never just the card.
+    const MW = await import('../lib/mobile-wallet')
+    check('mobile sign: platformOf IS CONNECT’s mobilePlatform folded to phone/desktop (one platform source for the door and the sign surfaces)', /mobilePlatform\(ua\) === 'desktop' \? 'desktop' : 'phone'/.test(fs.readFileSync('lib/sign-round-trip.ts', 'utf8')) && [IPHONE, ANDROID, MAC, MM_INAPP, ''].every((u) => (RT.platformOf(u) === 'phone') === (MW.mobilePlatform(u) !== 'desktop')))
+    const takeoverSrc = fs.readFileSync('components/SignatureWaitTakeover.tsx', 'utf8')
+    check('mobile sign: SignatureWaitTakeover — the sign-in ending calls walletAppRequestSettled (not clearWalletAppOpen), and an open SDK link renders "Open {app}" via openWalletApp() in place of the disabled waiting button', /if \(!signingIn\) \{[^}]*walletAppRequestSettled\(\)/.test(takeoverSrc) && !/clearWalletAppOpen/.test(takeoverSrc) && /openApp=\{last \? \{ app: last\.app, onOpen: \(\) => openWalletApp\(\) \} : null\}/.test(takeoverSrc) && /signingIn && openApp \?/.test(takeoverSrc) && /data-sign-open-app=\{openApp\.app\}/.test(takeoverSrc))
+    const openAppSrc = fs.readFileSync('components/SignatureWaitOpenApp.tsx', 'utf8')
+    check('mobile sign: SignatureWaitOpenApp renders nothing without a link, and its tap is openWalletApp()', /if \(!waiting \|\| !last\) return null/.test(openAppSrc) && /onClick=\{\(\) => openWalletApp\(\)\}/.test(openAppSrc) && /data-sign-open-app=\{last\.app\}/.test(openAppSrc))
+    const armRearms = ['ArmSpotGuardButton', 'ArmDcaButton', 'SignGrantButton'].filter((n) => { const src = fs.readFileSync(`components/${n}.tsx`, 'utf8'); return !(/if \(connectedChain\?\.id !== (offer\.)?typedData\.domain\.chainId\) \{/.test(src) && /if \(oneMethodPerTap\(platform\)\) \{/.test(src) && /Network switched — tap to sign\./.test(src) && /data-arm-rearmed="switch"/.test(src)) })
+    check('mobile sign: Arm Spot Guardian / Arm DCA / Sign grant switch chains only when they differ, and on a phone the switch is its own tap (re-armed by its words)', armRearms.length === 0, armRearms.join(','))
+    const openAppMounts = ['SendTxButton', 'SignHlActionButton', 'SignOrderButton', 'SignNftListingButton', 'ArmSpotGuardButton', 'ArmDcaButton', 'SignGrantButton'].filter((n) => !/<SignatureWaitOpenApp waiting=\{/.test(fs.readFileSync(`components/${n}.tsx`, 'utf8')))
+    check('mobile sign: every sign surface (7) mounts SignatureWaitOpenApp on its waiting state (SendTxChain + JobCard inherit through SendTxButton)', openAppMounts.length === 0, openAppMounts.join(','))
     const rtSrc = fs.readFileSync('lib/sign-round-trip.ts', 'utf8')
     check('mobile sign: lib/sign-round-trip is pure (no react, no window, no wagmi)', !/from 'react'|from 'wagmi'|window\.|document\./.test(rtSrc))
 
@@ -31687,7 +31700,7 @@ async function main() {
           /metaMaskWallet\.useDeeplink = true/.test(wagmi) &&
           /\.openDeeplink =\s*requestWalletAppOpen/.test(wagmi) &&
           /withoutDuplicateMobileLaunch\(metaMaskWallet\(params\)\)/.test(wagmi) &&
-          /metaMask: metaMaskWalletOneLaunch,/.test(wagmi) &&
+          /metaMask: oneLaunchMetaMaskWallet,/.test(wagmi) &&
           !/metaMask: metaMaskWallet,/.test(wagmi) &&
           !/useDeeplink:\s*false/.test(wagmi)
         )
@@ -31798,6 +31811,106 @@ async function main() {
         })(),
       )
     }
+    {
+      // R2 — the ARMED launch. The socket trace put the SDK's launch at
+      // +771ms after the tap, inside a WebSocket ack; WebKit never carries a
+      // gesture into that (propagation is fetch/XHR/MediaDevices-only, timers
+      // 1s). The door arms: the SDK's link is held, the tap navigates to it
+      // synchronously, the SDK's re-ask for the same channel is deduped.
+      const wa = await import('../lib/wallet-arm')
+      check(
+        'mobile connect (arm rules): a channel id is read off a wallet link; the SDK’s re-ask for the same channel within 8s is a duplicate, a different channel or a stale one is not; the door arms on a phone that is not a wallet’s own browser; an armed link is used only while young',
+        mw.channelIdOf('metamask://connect?channelId=1b82-7ed4&v=2&pubkey=02ab') === '1b82-7ed4' &&
+          mw.channelIdOf('metamask://connect?v=2') === null &&
+          mw.isDuplicateLaunch({ link: 'metamask://connect?channelId=a1&v=2', at: 1000 }, 'metamask://connect?redirect=true&channelId=a1&v=2', 1800) &&
+          !mw.isDuplicateLaunch({ link: 'metamask://connect?channelId=a1&v=2', at: 1000 }, 'metamask://connect?channelId=b2&v=2', 1800) &&
+          !mw.isDuplicateLaunch({ link: 'metamask://connect?channelId=a1&v=2', at: 1000 }, 'metamask://connect?channelId=a1&v=2', 1000 + mw.LAUNCH_DEDUPE_MS + 1) &&
+          !mw.isDuplicateLaunch(null, 'metamask://connect?channelId=a1', 1) &&
+          mw.shouldArmLaunch({ platform: 'ios', walletBrowser: null }) &&
+          mw.shouldArmLaunch({ platform: 'android', walletBrowser: null }) &&
+          !mw.shouldArmLaunch({ platform: 'desktop', walletBrowser: null }) &&
+          !mw.shouldArmLaunch({ platform: 'android', walletBrowser: 'metamask' }) &&
+          mw.armedLinkUsable({ at: 1000 }, 1000 + mw.ARMED_LINK_MAX_AGE_MS) &&
+          !mw.armedLinkUsable({ at: 1000 }, 1000 + mw.ARMED_LINK_MAX_AGE_MS + 1) &&
+          !mw.armedLinkUsable(null, 5) &&
+          mw.METAMASK_TAP_SELECTOR === '[data-testid="rk-wallet-option-metaMask"]' &&
+          wa.armHere({ userAgent: IPHONE }, false) && !wa.armHere({ userAgent: DESKTOP, platform: 'MacIntel', maxTouchPoints: 0 }, false) && !wa.armHere({ userAgent: `${ANDROID} MetaMaskMobile` }, true) &&
+          wa.connectorToArm([{ id: 'injected' }, { id: 'metaMaskSDK' }])?.id === 'metaMaskSDK' && wa.connectorToArm([{ id: 'injected' }]) === null,
+      )
+      // The holder: armed → the SDK's ask is HELD (no navigation, html
+      // attribute set) → the tap launches it once → the SDK's re-ask for the
+      // same channel does not navigate again → settled forgets it all.
+      const priorWindow = (globalThis as Record<string, unknown>).window
+      const priorDocument = (globalThis as Record<string, unknown>).document
+      const navigated: string[] = []
+      const attrs: Record<string, string> = {}
+      const handlers: Record<string, Set<() => void>> = {}
+      ;(globalThis as Record<string, unknown>).document = {
+        visibilityState: 'visible',
+        documentElement: { setAttribute: (k: string, v: string) => { attrs[k] = v }, removeAttribute: (k: string) => { delete attrs[k] } },
+        addEventListener: (k: string, f: () => void) => { ;(handlers[k] ??= new Set()).add(f) },
+        removeEventListener: (k: string, f: () => void) => handlers[k]?.delete(f),
+        createElement: () => ({ click: () => {}, set href(_v: string) {}, target: '', rel: '' }),
+      }
+      ;(globalThis as Record<string, unknown>).window = {
+        addEventListener: (k: string, f: () => void) => { ;(handlers[k] ??= new Set()).add(f) },
+        removeEventListener: (k: string, f: () => void) => handlers[k]?.delete(f),
+        location: { set href(v: string) { navigated.push(v) } },
+      }
+      try {
+        wh.walletAppRequestSettled()
+        const nothingArmed = wh.launchArmedWalletApp() === false && navigated.length === 0
+        wh.armWalletAppOpen()
+        const arming = wh.walletAppArmedOrArming()
+        wh.requestWalletAppOpen('metamask://connect?channelId=armed1&v=2&pubkey=02aa')
+        const held = navigated.length === 0 && wh.walletAppArmedSnapshot()?.link === 'metamask://connect?channelId=armed1&v=2&pubkey=02aa' && attrs['data-wallet-armed'] === 'MetaMask' && wh.walletAppOpenSnapshot() === null
+        const launched = wh.launchArmedWalletApp() === true && navigated.length === 1 && navigated[0] === 'metamask://connect?channelId=armed1&v=2&pubkey=02aa' && wh.walletAppArmedSnapshot() === null && !('data-wallet-armed' in attrs)
+        // the SDK's own ask for the same channel, 0.8s later: no second navigation
+        wh.requestWalletAppOpen('metamask://connect?channelId=armed1&v=2&pubkey=02aa')
+        const deduped = navigated.length === 1
+        // a DIFFERENT channel is a new request and navigates
+        wh.requestWalletAppOpen('metamask://connect?channelId=other2&v=2&pubkey=02aa')
+        const other = navigated.length === 2
+        wh.walletAppRequestSettled()
+        const forgotten = !wh.walletAppArmedOrArming() && wh.walletAppLastLink() === null
+        // arming with nothing asked yet: the first ask is held, a second arm is a no-op
+        wh.armWalletAppOpen(); wh.armWalletAppOpen()
+        wh.requestWalletAppOpen('metamask://connect?channelId=armed3&v=2')
+        const heldAgain = navigated.length === 2 && wh.walletAppArmedSnapshot()?.link === 'metamask://connect?channelId=armed3&v=2'
+        wh.walletAppRequestSettled()
+        check(
+          'mobile connect (armed holder): armed → the SDK’s ask is held (no navigation, <html data-wallet-armed>) → the tap launches it once → the SDK’s re-ask for that channel never navigates again, another channel does → settled forgets the arm',
+          nothingArmed && arming && held && launched && deduped && other && forgotten && heldAgain,
+          JSON.stringify({ nothingArmed, arming, held, launched, deduped, other, forgotten, heldAgain, navigated }),
+        )
+      } finally {
+        wh.walletAppRequestSettled()
+        if (priorWindow === undefined) delete (globalThis as Record<string, unknown>).window
+        else (globalThis as Record<string, unknown>).window = priorWindow
+        if (priorDocument === undefined) delete (globalThis as Record<string, unknown>).document
+        else (globalThis as Record<string, unknown>).document = priorDocument
+      }
+      check(
+        'mobile connect (arm wiring): the door arms on mount through armMetaMaskLaunch, the global card navigates to the armed link in a CAPTURE-phase click on RainbowKit’s MetaMask row, and the arm issues the SDK’s own eth_requestAccounts without awaiting it',
+        (() => {
+          const strip = (s2: string) => s2.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+          const door = strip(readFileSync(pathJoin(process.cwd(), 'components/CreateAccountButton.tsx'), 'utf8'))
+          const card = strip(readFileSync(pathJoin(process.cwd(), 'components/WalletAppHandoff.tsx'), 'utf8'))
+          const arm = strip(readFileSync(pathJoin(process.cwd(), 'lib/wallet-arm.ts'), 'utf8'))
+          return (
+            /void armMetaMaskLaunch\(connectors\)/.test(door) &&
+            /document\.addEventListener\('click', onTap, true\)/.test(card) &&
+            /closest\?\.\(METAMASK_TAP_SELECTOR\)/.test(card) &&
+            /launchArmedWalletApp\(\)/.test(card) &&
+            /armWalletAppOpen\(\)\s*provider\.request\(\{ method: 'eth_requestAccounts', params: \[\] \}\)\.catch/.test(arm) &&
+            // SIGN N4: the drive seam — a dispatched pantessa:wallet-app-open reaches the holder through the belt
+            wh.WALLET_APP_OPEN_EVENT === 'pantessa:wallet-app-open' &&
+            /addEventListener\(WALLET_APP_OPEN_EVENT, onAsk\)/.test(card) && /if \(typeof link === 'string'\) requestWalletAppOpen\(link\)/.test(card) &&
+            !/await provider\.request/.test(arm)
+          )
+        })(),
+      )
+    }
     // The drive that measured all of this stays importable for QA's
     // drive:mobile: its scenario list is the contract.
     check(
@@ -31806,7 +31919,8 @@ async function main() {
         const drive = readFileSync(pathJoin(process.cwd(), 'scripts/drive-mobile-connect.ts'), 'utf8')
         return (
           /export const SCENARIOS/.test(drive) &&
-          /id: 'i-link'/.test(drive) && /id: 'i-link-returning'/.test(drive) && /id: 'sign-in'/.test(drive) &&
+          /id: 'i-link'/.test(drive) && /id: 'i-link-returning'/.test(drive) && /id: 'sign-in'/.test(drive) && /id: 'i-link-fast-tap'/.test(drive) &&
+          /ARMED_LAUNCH_MAX_MS = 200/.test(drive) && /armed && first\.dtMs > ARMED_LAUNCH_MAX_MS/.test(drive) &&
           /trace\.launches\.length !== 1 \|\| trace\.rkNavigated/.test(drive) &&
           /readLaunchVerdict/.test(drive)
         )
@@ -31976,6 +32090,119 @@ async function main() {
     check(
       'mobile ux: a phone render of /markets ships the Workspace tab bar and no brochure nav',
       /aria-label="Workspace"/.test(phoneMarkets) && !/class="nav__tabs"/.test(phoneMarkets),
+    )
+  }
+  // ── mobile qa: the gate's own fences (QA lane, mobile-onboarding squad) ──
+  // Appended as ONE block with its own closing brace, per the squad's
+  // shared-tail rule. Constants imported INSIDE the block on purpose.
+  {
+    const { readFileSync: readQa, readdirSync: readQaDir, statSync: statQa } = await import('node:fs')
+    const { join: joinQa } = await import('node:path')
+
+    // Every source file the app or a drive can pull in. A drive script lives
+    // in scripts/, but `next build` type-checks the whole project, so a
+    // static playwright-core import anywhere in here breaks the DEPLOY while
+    // passing tsc on a dev Mac (~/node_modules sits above every worktree and
+    // resolves it). That is exactly how Vercel's preview of #858 failed at
+    // 4fd43c3a. playwright-core is NOT a dependency: the only legal shape is
+    // `createRequire(<anchor>)('playwright-core')` with locally-spelled types.
+    const walkQa = (dir: string, out: string[] = []): string[] => {
+      let entries: string[] = []
+      try { entries = readQaDir(dir) } catch { return out }
+      for (const name of entries) {
+        if (name === 'node_modules' || name === '.next' || name.startsWith('.')) continue
+        const full = joinQa(dir, name)
+        let isDir = false
+        try { isDir = statQa(full).isDirectory() } catch { continue }
+        if (isDir) walkQa(full, out)
+        else if (/\.(ts|tsx)$/.test(name)) out.push(full)
+      }
+      return out
+    }
+    // Comments are allowed to NAME the forbidden shape (this codebase explains
+    // itself), so strip them before matching — otherwise every warning about
+    // the trap trips the fence that enforces it.
+    const stripComments = (src: string) =>
+      src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+    const PW_STATIC = /\bimport\s(?:[^\n;]*?\sfrom\s)?['"]playwright-core['"]/
+    const PW_TYPEOF = /\bimport\(\s*['"]playwright-core['"]\s*\)/
+    const sourceFiles = ['scripts', 'lib', 'components', 'app'].flatMap((d) => walkQa(d))
+    const pwOffenders = sourceFiles.filter((f) => {
+      const src = stripComments(readQa(f, 'utf8'))
+      return PW_STATIC.test(src) || PW_TYPEOF.test(src)
+    })
+    check(
+      `mobile qa: no source file statically imports playwright-core (it is not a dependency — a dev Mac resolves it from ~/node_modules and Vercel does not; use createRequire + locally-spelled types)`,
+      pwOffenders.length === 0,
+      pwOffenders.length ? pwOffenders.slice(0, 4).join(', ') : `${sourceFiles.length} files clean`,
+    )
+
+    // Every mobile drive must actually use the recipe, and must not run itself
+    // on import: `drive:mobile` imports each lane file to read its exports, so
+    // a bare `main()` at the bottom would fire four drives inside one.
+    const driveFiles = sourceFiles.filter((f) => /scripts\/drive-mobile(-[a-z]+)?\.ts$/.test(f))
+    const driveBad = driveFiles.filter((f) => {
+      const src = readQa(f, 'utf8')
+      const needsPw = /chromium|playwright/i.test(stripComments(src))
+      const usesRecipe = /createRequire\(/.test(src) && /require_?\w*\(\s*['"]playwright-core['"]\s*\)/.test(src)
+      const selfRuns = /^\s*main\(\)/m.test(src) && !/process\.argv\[1\]/.test(src)
+      return (needsPw && !usesRecipe) || selfRuns
+    })
+    check(
+      'mobile qa: every scripts/drive-mobile*.ts resolves playwright through createRequire and only drives when run directly (process.argv[1] guard) — QA imports them all',
+      driveFiles.length > 0 && driveBad.length === 0,
+      driveBad.length ? driveBad.join(', ') : `${driveFiles.length} drive file(s)`,
+    )
+
+    // The runner must stay green-able while lanes are still landing: a missing
+    // lane file is SKIPPED, never a crash, and both adapters are honoured.
+    const runnerSrc = readQa('scripts/drive-mobile.ts', 'utf8')
+    check(
+      'mobile qa: drive:mobile skips a lane with no scenario file instead of crashing, folds a standalone drive in by exit code, and exits non-zero on any red',
+      /missing: true/.test(runnerSrc) &&
+        /SKIPPED \(no scenario file yet\)/.test(runnerSrc) &&
+        /runExternal/.test(runnerSrc) &&
+        /process\.exit\(fail\.length \? 1 : 0\)/.test(runnerSrc),
+    )
+
+    // A drive must never mint money, a referral or a failures row on the
+    // shared TEST DB: the runner stamps every same-origin request internal.
+    check(
+      'mobile qa: drive:mobile stamps every request x-yf-internal-run + x-yf-no-ask-log (a drive never mints money, a referral or a /dashboard/failures row)',
+      /'x-yf-internal-run': '1'/.test(runnerSrc) && /'x-yf-no-ask-log': '1'/.test(runnerSrc),
+    )
+
+    // The launch reading is the squad's whole measurement — pin the two words
+    // Chrome uses, and the rule that BLOCKED wins.
+    const RL = await import('./drive-mobile-contract')
+    const blocked = RL.readLaunch([
+      "error: Not allowed to launch 'metamask://connect?channelId=abc' because a user gesture is required.",
+    ])
+    const allowed = RL.readLaunch([
+      "error: Failed to launch 'metamask://connect?channelId=abc' because the scheme does not have a registered handler.",
+    ])
+    const both = RL.readLaunch([
+      "error: Not allowed to launch 'metamask://connect?channelId=abc' because a user gesture is required.",
+      "error: Failed to launch 'metamask://connect?channelId=abc' because the scheme does not have a registered handler.",
+    ])
+    check(
+      'mobile qa: readLaunch reads Chrome verbatim — "a user gesture is required" = blocked, "no registered handler" = allowed, and a dropped launch that logs BOTH still reads blocked',
+      blocked.verdict === 'blocked' &&
+        allowed.verdict === 'allowed' &&
+        both.verdict === 'blocked' &&
+        both.blockedCount === 1 &&
+        both.allowedCount === 1 &&
+        both.links.length === 1 &&
+        RL.readLaunch(['log: hello']).verdict === 'none',
+    )
+
+    // The mobile profiles are UA-first: a desktop UA runs the desktop lane and
+    // proves nothing, so every profile must send a real phone UA.
+    const uaBad = RL.ALL_PROFILES.filter((id) => !/iPhone|Android/.test(RL.PROFILES[id].userAgent))
+    check(
+      'mobile qa: every drive:mobile profile sends a real phone UA (RainbowKit isMobile() and the MetaMask SDK branch on the UA, not the viewport)',
+      uaBad.length === 0 && RL.PROFILES['inapp-dark'].inApp && !RL.PROFILES['iphone-dark'].inApp,
+      uaBad.join(', '),
     )
   }
 
