@@ -31903,6 +31903,9 @@ async function main() {
             /closest\?\.\(METAMASK_TAP_SELECTOR\)/.test(card) &&
             /launchArmedWalletApp\(\)/.test(card) &&
             /armWalletAppOpen\(\)\s*provider\.request\(\{ method: 'eth_requestAccounts', params: \[\] \}\)\.catch/.test(arm) &&
+            // SIGN N4: the drive seam — a dispatched pantessa:wallet-app-open reaches the holder through the belt
+            wh.WALLET_APP_OPEN_EVENT === 'pantessa:wallet-app-open' &&
+            /addEventListener\(WALLET_APP_OPEN_EVENT, onAsk\)/.test(card) && /if \(typeof link === 'string'\) requestWalletAppOpen\(link\)/.test(card) &&
             !/await provider\.request/.test(arm)
           )
         })(),

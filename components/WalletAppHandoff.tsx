@@ -27,6 +27,8 @@ import {
   handoffShownOn,
   launchArmedWalletApp,
   openWalletAppNow,
+  requestWalletAppOpen,
+  WALLET_APP_OPEN_EVENT,
   subscribeWalletAppOpen,
   walletAppOpenServerSnapshot,
   walletAppOpenSnapshot,
@@ -64,6 +66,21 @@ export default function WalletAppHandoff() {
     }
     document.addEventListener('click', onTap, true)
     return () => document.removeEventListener('click', onTap, true)
+  }, [])
+  // The drive seam (SIGN N4): a page can stand in for the SDK's ask with
+  // `document.dispatchEvent(new CustomEvent('pantessa:wallet-app-open',
+  // { detail: { link } }))`. It reaches the same holder through the same
+  // belt (only MetaMask's own links navigate), so a drive can assert the
+  // card, an inline Open-MetaMask button and exactly one navigation without
+  // the SDK's relay in the loop. Any script that could dispatch it could
+  // already assign location.href; the belt is what keeps it wallet-only.
+  useEffect(() => {
+    const onAsk = (e: Event) => {
+      const link = (e as CustomEvent<{ link?: unknown }>).detail?.link
+      if (typeof link === 'string') requestWalletAppOpen(link)
+    }
+    document.addEventListener(WALLET_APP_OPEN_EVENT, onAsk)
+    return () => document.removeEventListener(WALLET_APP_OPEN_EVENT, onAsk)
   }, [])
   useEffect(() => {
     if (!copied) return

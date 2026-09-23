@@ -62,6 +62,11 @@ export function walletAppFor(link: string | null | undefined): string | null {
   return WALLET_APP_LINKS.find(({ test }) => test.test(trimmed))?.app ?? null
 }
 
+/** The DOM event a page may dispatch to stand in for the SDK's ask (the
+ *  drives' seam; components/WalletAppHandoff listens). `detail.link` goes
+ *  through walletAppFor like every other link. */
+export const WALLET_APP_OPEN_EVENT = 'pantessa:wallet-app-open'
+
 /** An open request we are holding: the link, the wallet it names, and whether
  *  the visitor has already tapped once without the app coming up. */
 export type WalletAppOpen = { link: string; app: string; tried: boolean }
