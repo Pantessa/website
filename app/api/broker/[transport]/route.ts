@@ -276,7 +276,8 @@ const handler = createMcpHandler(
         description:
           'The leg loop. Returns the leg the runner is OFFERING on your executed intent — what it does in one sentence, what kind of ' +
           'signature it wants (tx | txChain | hlAction | hlBatch | order), the chain, its notional, how long the material stays signable ' +
-          '(staleAfterMs), and the guarded artifact itself, exactly as built — or `waiting` with a retryAfterMs when there is nothing to ' +
+          '(staleAfterMs), the guarded artifact itself exactly as built, and the credential-free endpoints the rest of the loop uses ' +
+          '(re-quote, Hyperliquid submit, stale-leg rebuild) — or `waiting` with a retryAfterMs when there is nothing to ' +
           'sign yet (a wait leg settling on-chain, or the next leg being built). Sign the artifact AS SERVED and never re-serialize it: a ' +
           'Hyperliquid action is hashed as msgpack and key order is part of that hash. Then call broker_done. Requires the agent_key the ' +
           'intent was opened with — legs are served only to the agent that proved the wallet.',

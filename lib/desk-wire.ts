@@ -67,14 +67,52 @@ export interface DeskLegView {
   staleAfterMs: number | null
 }
 
+/**
+ * What a signer reports back for one leg. THE list — three files used to
+ * carry three ideas of it (QA F9: this type named 4 keys, the SDK 7, the
+ * desk's own allowlist 9, and the admin log read an `explorerUrl` no
+ * published type mentioned). `DESK_LEG_RESULT_KEYS` below is the same list
+ * as data, so the desk's allowlist and the SDK's writer derive from the type
+ * instead of re-typing it.
+ *
+ * Everything here is the signer's CLAIM about its own signature (#824). The
+ * runner treats it as advancement; the wait leg after it, and the receipt
+ * check on the money row, are what make it true.
+ */
 export interface DeskLegResult {
+  /** EVM: the hash — of the LAST transaction for a txChain. */
   txHash?: `0x${string}`
   chainId?: number
-  /** Hyperliquid: the venue's response to the submitted action(s). */
+  /** EVM: every hash the leg produced, when the leg was more than one tx. */
+  txs?: Array<{ hash: string; chainId: number }>
+  /** Hyperliquid / CoW / Seaport: the venue's response to the submitted action. */
   orderResponse?: unknown
-  /** hlBatch: one entry per member, in order; a missing entry = not submitted. */
+  /** Hyperliquid: the fill, when the venue returned one separately. */
+  fill?: unknown
+  /** hlBatch: one entry per SUBMITTED member, in order; a failed member is the
+   *  last entry with `ok: false` and the runner re-offers from it. */
   batch?: Array<{ ok: boolean; orderResponse?: unknown; error?: string }>
+  /** A human line for the card and the desk log, when a hash says nothing. */
+  detail?: string
+  /** The venue's own link for an off-chain order (no EVM explorer exists). */
+  explorerUrl?: string
+  /** The venue's own word for what happened, when it has one. */
+  status?: string
 }
+
+/** {@link DeskLegResult}'s keys, as data. The desk allowlists exactly these
+ *  on `broker_done`; anything else is dropped and named back to the caller. */
+export const DESK_LEG_RESULT_KEYS = [
+  'txHash',
+  'chainId',
+  'txs',
+  'orderResponse',
+  'fill',
+  'batch',
+  'detail',
+  'explorerUrl',
+  'status',
+] as const satisfies ReadonlyArray<keyof DeskLegResult>
 
 export interface DeskNext {
   leg: DeskLegView | null

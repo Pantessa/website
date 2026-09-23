@@ -575,6 +575,13 @@ export interface ExecuteResult {
   state: BrokerState
   jobId: string
   steps: { seq: number; kind: string; note: string }[]
+  /** The job's capability token, bare — the SAME grant the `drive` URLs
+   *  carry, handed over once here rather than parsed back out of a URL
+   *  (EXAMPLE lane, 2026-09-23). This is the ONE place the desk emits it:
+   *  broker_next / broker_done answer with credential-free endpoints, because
+   *  re-minting a 7-day, cancel-surviving job grant on every leg scales the
+   *  exposure with the number of legs and buys the holder nothing. */
+  token: string
   drive: {
     poll: string
     complete: string
@@ -650,6 +657,7 @@ export async function executeIntent(intentId: string, walletSignature: unknown, 
     intentId: row.id,
     state: 'executing',
     jobId: job.id,
+    token,
     steps: compiled.steps.map((s, i) => ({ seq: i, kind: s.kind, note: s.title })),
     drive: {
       poll: `${SITE}/api/jobs/${job.id}?t=${token}`,

@@ -29857,6 +29857,8 @@ async function main() {
       SETTLE_RETRY_MS,
     } = await import('../lib/desk-wire')
     const { sanitizeResult, RESULT_KEYS } = await import('../lib/desk-drive')
+    const { DESK_LEG_RESULT_KEYS } = await import('../lib/desk-wire')
+    const { planIntent: planDeskIntent } = await import('../lib/broker')
     const { HL_NONCE_SIGNABLE_MS } = await import('../lib/hyperliquid-exec')
     const { deskExecuteConsentMessage: deskConsent } = await import('../lib/broker-exec')
     const { generatePrivateKey: genKey, privateKeyToAccount: toAccount } = await import('viem/accounts')
@@ -29995,11 +29997,65 @@ async function main() {
       JSON.stringify({ kept: san.kept, ignored: san.ignored }),
     )
     check(
-      'desk done: the allowlist covers what the browser lane already posts (txHash, txs) and what an off-chain venue answers (orderResponse, batch)',
-      ['txHash', 'txs', 'chainId', 'orderResponse', 'batch'].every((k) => RESULT_KEYS.has(k)),
+      'desk done: the result allowlist IS the published DeskLegResult type (QA F9) — one list, so the wire, the SDK and the desk log cannot each have their own idea of what a signer reports',
+      RESULT_KEYS.size === DESK_LEG_RESULT_KEYS.length && DESK_LEG_RESULT_KEYS.every((k) => RESULT_KEYS.has(k)),
+      JSON.stringify({ type: DESK_LEG_RESULT_KEYS, allow: [...RESULT_KEYS].sort() }),
+    )
+    check(
+      'desk done: that list covers what the browser lane posts (txHash, txs), what an off-chain venue answers (orderResponse, batch, fill) and what the desk log reads (explorerUrl, detail)',
+      ['txHash', 'txs', 'chainId', 'orderResponse', 'batch', 'fill', 'explorerUrl', 'detail', 'status'].every((k) => RESULT_KEYS.has(k)),
     )
     const sanBig = sanitizeResult({ orderResponse: { blob: 'y'.repeat(9000) } })
     check('desk done: an oversized field is refused by name rather than stored (8 KB per field)', sanBig.kept.length === 0 && sanBig.ignored[0]?.includes('too large'))
+
+    // ── the venue answers the funding question, not the wallet ───────
+    // The bug this closes (EXAMPLE lane): the flagship ask on a wallet holding
+    // $19 of USDC on BASE read `covered` — because planIntent compared the ask
+    // to the wallet's movable money, while a Hyperliquid open draws on
+    // collateral the VENUE holds, deposited over Arbitrum. Covered, and short
+    // every cent, and no route offered.
+    const baseUsdcScan = {
+      sources: [{ token: 'USDC', chainId: 8453, chainWord: 'base', usd: 19, balance: 19 }],
+      stranded: [],
+      failedChains: [],
+      nativeEth: {},
+    } as any
+    const hlShort = {
+      venue: 'Hyperliquid',
+      needUsd: 6,
+      heldUsd: 0,
+      onChainUsd: 0,
+      chainId: 42161,
+      token: 'USDC',
+      followupResume: 'deposit 6 USDC to Hyperliquid, then 2x long $12 of HYPE on hyperliquid',
+      actionLabel: 'the order',
+      note: 'Hyperliquid holds $0.00 of collateral for this wallet, and a $12 HYPE open needs $6 deposited over Arbitrum.',
+    }
+    const walletOnly = planDeskIntent('2x long $12 of HYPE on hyperliquid', baseUsdcScan)
+    const venueAware = planDeskIntent('2x long $12 of HYPE on hyperliquid', baseUsdcScan, hlShort)
+    check(
+      'desk funding: WITHOUT the venue read the flagship on $19 of Base USDC reads "covered" — the bug, pinned so it cannot come back quietly',
+      walletOnly.quote.funding?.verdict === 'covered',
+      JSON.stringify(walletOnly.quote.funding),
+    )
+    check(
+      'desk funding: WITH it the same wallet reads SHORT of the DEPOSIT, and every option is a funding route that deposits first and then places the order',
+      venueAware.quote.funding?.verdict === 'short' &&
+        venueAware.quote.venue?.venue === 'Hyperliquid' &&
+        venueAware.options.some((o) => o.kind === 'funding' && /deposit 6 USDC to Hyperliquid/.test(o.resume) && /2x long \$12 of HYPE/.test(o.resume)),
+      JSON.stringify({ funding: venueAware.quote.funding, options: venueAware.options.map((o) => o.resume) }).slice(0, 320),
+    )
+    check(
+      'desk funding: the paragraph names what the VENUE holds and needs — never the wallet total that used to read covered',
+      /Hyperliquid holds \$0\.00 of collateral/.test(venueAware.say) && /short ~\$6 of USDC/.test(venueAware.say),
+      venueAware.say.slice(0, 260),
+    )
+    const venueCovered = planDeskIntent('2x long $12 of HYPE on hyperliquid', baseUsdcScan, { ...hlShort, needUsd: 0, note: 'Hyperliquid already holds the collateral this HYPE open needs.' })
+    check(
+      'desk funding: a wallet whose collateral is already AT the venue reads covered, offers no route, and says so',
+      venueCovered.quote.funding?.verdict === 'covered' && !venueCovered.options.some((o) => o.kind === 'funding') && /already holds the collateral/.test(venueCovered.say),
+      venueCovered.say.slice(0, 200),
+    )
 
     // ── the published contract ───────────────────────────────────────────
     const routeSrc = await readSrc('app/api/broker/[transport]/route.ts', 'utf8')
@@ -30099,14 +30155,25 @@ async function main() {
       const dNext = await dcall('broker_next', { intent_id: dIntent, agent_key: DESK_AGENT_KEY })
       const nxt = dNext.payload?.next
       check(
-        'desk (HTTP): broker_next answers with the job, the agent\'s wallet, a fresh capability token for the REST channel, the how-to, and exactly one of leg / waiting',
+        'desk (HTTP): broker_next answers with the job, the agent\'s wallet, the how-to, the endpoints the rest of the loop uses, and exactly one of leg / waiting',
         !dNext.isError &&
           dNext.payload?.jobId === dExec.payload?.jobId &&
           String(dNext.payload?.wallet).toLowerCase() === dAgent.address.toLowerCase() &&
-          /\/api\/jobs\/.+\?t=v2\./.test(dNext.payload?.drive?.poll ?? '') &&
+          /\/api\/tx\/refresh$/.test(dNext.payload?.endpoints?.refresh ?? '') &&
+          /\/api\/hl\/submit$/.test(dNext.payload?.endpoints?.hlSubmit ?? '') &&
+          /\/retry$/.test(dNext.payload?.endpoints?.retry ?? '') &&
           (dNext.payload?.how?.length ?? 0) >= 5 &&
           !!nxt && (nxt.leg === null) !== (nxt.waiting === null),
-        JSON.stringify({ jobId: dNext.payload?.jobId, waiting: nxt?.waiting, kind: nxt?.leg?.kind }).slice(0, 240),
+        JSON.stringify({ jobId: dNext.payload?.jobId, endpoints: dNext.payload?.endpoints, waiting: nxt?.waiting, kind: nxt?.leg?.kind }).slice(0, 300),
+      )
+      check(
+        'desk (HTTP) SECURITY: broker_execute emits the job capability token ONCE — bare and in its drive URLs — and broker_next never re-mints one (a leaked token reads a job\'s artifacts for 7 days, cancellation included, so the exposure must not scale with legs)',
+        typeof dExec.payload?.token === 'string' &&
+          dExec.payload.token.startsWith('v2.') &&
+          (dExec.payload?.drive?.poll ?? '').includes(dExec.payload.token) &&
+          !/[?&]t=/.test(JSON.stringify(dNext.payload ?? {})) &&
+          !JSON.stringify(dNext.payload ?? {}).includes(dExec.payload.token),
+        JSON.stringify({ tokenShape: String(dExec.payload?.token).slice(0, 8), nextHasToken: JSON.stringify(dNext.payload ?? {}).includes(String(dExec.payload?.token)) }),
       )
       check(
         'desk (HTTP): the how-to tells a signer the two things that actually break a leg — never re-serialize (#850) and staleAfterMs means re-fetch, not sign',
@@ -30128,7 +30195,34 @@ async function main() {
           String(dNotOffered.payload).slice(0, 160),
         )
       }
-      await dcall('broker_close', { intent_id: dIntent })
+      // ── walking away is the opening identity's call (QA F3) ───────
+      const dCloseWrong = await dcall('broker_close', { intent_id: dIntent, agent_key: 'not-the-opening-key' })
+      check(
+        'desk (HTTP) SECURITY: broker_close on an intent opened WITH an identity refuses a stranger by name — an intent id travels in logs, and closing revokes a link and cancels a running job',
+        dCloseWrong.isError && /only that identity can close it/.test(String(dCloseWrong.payload)),
+        String(dCloseWrong.payload).slice(0, 160),
+      )
+      const dCloseRight = await dcall('broker_close', { intent_id: dIntent, agent_key: DESK_AGENT_KEY })
+      check('desk (HTTP): the opening identity closes it', !dCloseRight.isError && dCloseRight.payload?.state === 'closed', String(dCloseRight.payload).slice(0, 120))
+    }
+
+    // ── the chosen option is kept on the plan (UI ask) ────────────
+    {
+      const cOpen = await dcall('broker_open', { ask: 'Buy $15 of AAPL', agent: 'mcp-lane', agent_key: 'mcp-lane-choose-key' })
+      const cId = cOpen.payload?.intentId as string
+      const cChoose = await dcall('broker_choose', { intent_id: cId, option_id: 'proceed' })
+      check(
+        'desk (HTTP): broker_choose KEEPS what was chosen on the plan — the label and the resume that rewrote the ask, plus the running history, so the desk log can say how a quote became a final ask',
+        !cChoose.isError &&
+          cChoose.payload?.plan?.chosen?.optionId === 'proceed' &&
+          typeof cChoose.payload?.plan?.chosen?.resume === 'string' &&
+          typeof cChoose.payload?.plan?.chosen?.at === 'string' &&
+          (cChoose.payload?.plan?.history?.length ?? 0) === 1,
+        JSON.stringify(cChoose.payload?.plan?.chosen ?? cChoose.payload).slice(0, 220),
+      )
+      const cRead = await dcall('broker_status', { intent_id: cId })
+      check('desk (HTTP): and it is PERSISTED, not just echoed', !cRead.isError && !!cId, String(cRead.payload).slice(0, 80))
+      await dcall('broker_close', { intent_id: cId, agent_key: 'mcp-lane-choose-key' })
     }
 
     // ── a REAL offered leg, end to end ───────────────────────────────────
@@ -30185,15 +30279,31 @@ async function main() {
           JSON.stringify({ accepted: lDone.payload?.accepted, next: lDone.payload?.next?.waiting ?? lDone.payload?.next?.leg?.kind }).slice(0, 220),
         )
         check(
-          'desk (HTTP, live) SECURITY: a leg an agent CLAIMS it signed books money as UNVERIFIED and counts nothing — a client\'s claim is evidence about the client; only the chain promotes it',
+          'desk (HTTP, live) SECURITY: a leg an agent CLAIMS it signed with a hash the chain has never seen books money that COUNTS NOTHING — a job step\'s receipt class would otherwise settle `attested` on the reporter\'s word alone',
           !lDone.isError && lDone.payload?.money?.recorded === false && typeof lDone.payload?.money?.verification === 'string',
           JSON.stringify(lDone.payload?.money),
         )
       }
-      await dcall('broker_close', { intent_id: lIntent })
+      await dcall('broker_close', { intent_id: lIntent, agent_key: LIVE_KEY })
+
+      // The venue read, live: the flagship ask on a wallet whose money is on
+      // the WRONG CHAIN. The pure pins above fix the rule; this one proves the
+      // read itself reaches Hyperliquid and Arbitrum without throwing.
+      const vOpen = await dcall('broker_open', { ask: '2x long $12 of HYPE on hyperliquid', wallet: burner.address, agent: 'mcp-lane', agent_key: 'mcp-lane-venue-key' })
+      const vQuote = vOpen.payload?.plan?.quote
+      check(
+        'desk (HTTP, live): the flagship HL open quotes against what HYPERLIQUID holds — short of the Arbitrum deposit with a funding route, or covered because the collateral is already there; never the wallet total',
+        !vOpen.isError &&
+          (!vQuote?.venue ||
+            (vQuote.venue.venue === 'Hyperliquid' &&
+              ((vQuote.funding?.verdict === 'short' && /deposit .* to Hyperliquid/i.test(JSON.stringify(vOpen.payload?.plan?.options ?? []))) ||
+                vQuote.funding?.verdict === 'covered'))),
+        JSON.stringify({ venue: vQuote?.venue, funding: vQuote?.funding, say: vOpen.payload?.plan?.say }).slice(0, 340),
+      )
+      await dcall('broker_close', { intent_id: vOpen.payload?.intentId, agent_key: 'mcp-lane-venue-key' })
     }
 
-    await dcall('broker_close', { intent_id: dOpenOnly.payload?.intentId })
+    await dcall('broker_close', { intent_id: dOpenOnly.payload?.intentId, agent_key: 'mcp-lane-harness-key' })
   }
 
   // ── agent desk squad: QA ─────────────────────────────────────────────────

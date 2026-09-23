@@ -32,10 +32,9 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import prisma from '@/lib/db'
 import { advanceJob, completeSignStep, getJobWithSteps, jobsEnv } from '@/lib/jobs-runner'
-import { signJobToken } from '@/lib/job-token'
 import { assertDeskOpen } from '@/lib/broker-policy'
 import { assertNoTxMaterial } from '@/lib/broker'
-import { deskNextOf, legViewOf, type DeskLegView, type DeskNext } from '@/lib/desk-wire'
+import { DESK_LEG_RESULT_KEYS, deskNextOf, legViewOf, type DeskLegView, type DeskNext } from '@/lib/desk-wire'
 import { recordJobStepMoney, type JobStepMoney } from '@/lib/job-step-money'
 import type { BrokerPlan, VenueFundingRead } from '@/lib/broker'
 import type { HlOrderIntent } from '@/lib/hyperliquid-exec'
@@ -49,10 +48,19 @@ export interface DeskDriveResult {
   /** The wallet that owns every leg — the one the intent proved at execute. */
   wallet: string
   next: DeskNext
-  /** The same Jobs-API grant `broker_execute` returned, minted fresh. An agent
-   *  that would rather drive the REST channel (or hand it to the `pantessa`
-   *  SDK's `driveJob`) never has to re-open the intent to get one. */
-  drive: { poll: string; complete: string; refresh: string; hlSubmit: string }
+  /**
+   * Where the OTHER calls in the loop go — paths only, no credential.
+   *
+   * These used to carry a freshly minted job capability token on every poll.
+   * QA measured what that token actually grants: `verifyJobToken` checks
+   * (jobId, wallet, expiry) and nothing else, so one leaked token reads every
+   * artifact and guard report of that job for seven days — including after
+   * the job is CANCELED. `broker_execute` hands the same identity exactly one
+   * token, once, deliberately (it is the REST channel's whole grant). Minting
+   * a fresh one on every leg only scales the exposure with the number of legs,
+   * and buys an agent that already has one nothing at all.
+   */
+  endpoints: { refresh: string; hlSubmit: string; retry: string }
   how: string[]
   say: string
 }
@@ -119,19 +127,20 @@ async function mustDriveable(intentId: unknown, agentKey: unknown) {
 const HOW = [
   'kind tells you what to sign: tx = one EVM transaction; txChain = N EVM transactions IN ORDER (a step carrying validUntil is re-quoted first via the refresh URL); hlAction/hlBatch = Hyperliquid L1 action(s), EIP-712 domain chainId 1337, POST to hlSubmit; order = an off-chain EIP-712 order (CoW, Seaport) with its own submitUrl.',
   'Sign the artifact EXACTLY as served. Never re-serialize it: a Hyperliquid action is hashed as msgpack and key order is part of the hash, while storage re-sorted it — sign orderRequest.typedData verbatim and post the action back unchanged; the submit relay re-canonicalizes before it hashes (#850).',
-  'staleAfterMs is how long the material stays signable (a Hyperliquid nonce ~90s; deadline calldata to its validUntil; otherwise the runner rebuilds after 30 minutes). At 0, call broker_next again for a fresh build rather than signing what you hold.',
+  'staleAfterMs is how long the material stays signable (a Hyperliquid nonce ~90s; deadline calldata to its validUntil; otherwise the runner rebuilds after 30 minutes). At 0, call broker_next again for a fresh build rather than signing what you hold — or POST endpoints.retry with the job token broker_execute gave you.',
   'Then broker_done(intent_id, seq, result) — it records the leg, rolls the runner forward, and answers with the NEXT leg. One call per leg; no polling loop in between.',
   'waiting means there is nothing to sign: a wait leg is settling on-chain (the runner verifies arrival itself) or the next leg is being built and guard-checked. Sleep retryAfterMs and call broker_next again.',
   'Completion is advancement, not proof. The wait leg after yours reads the chain; a result that claims a hash the chain does not have fails the job closed one leg later.',
 ]
 
-function driveUrls(jobId: string, wallet: string) {
-  const t = signJobToken(jobId, wallet)
+/** Credential-free: an agent still needs to know WHERE a re-quote, an HL
+ *  submission or a stale-leg rebuild goes. The token that authorizes the job
+ *  itself was handed over once, at broker_execute. */
+function deskEndpoints(jobId: string) {
   return {
-    poll: `${SITE}/api/jobs/${jobId}?t=${t}`,
-    complete: `${SITE}/api/jobs/${jobId}/complete?t=${t}`,
     refresh: `${SITE}/api/tx/refresh`,
     hlSubmit: `${SITE}/api/hl/submit`,
+    retry: `${SITE}/api/jobs/${jobId}/retry`,
   }
 }
 
@@ -165,7 +174,7 @@ async function readNext(intentId: string, jobId: string, wallet: string): Promis
     jobId,
     wallet,
     next,
-    drive: driveUrls(jobId, wallet),
+    endpoints: deskEndpoints(jobId),
     how: HOW,
     say: sayFor(next, job.steps.length),
   }
@@ -185,6 +194,7 @@ function sayShape(out: DeskDriveResult): unknown {
     jobId: out.jobId,
     wallet: out.wallet,
     next: { ...out.next, leg: out.next.leg ? { ...legRest, artifact: '<served>' } : null },
+    endpoints: out.endpoints,
     how: out.how,
     say: out.say,
   }
@@ -195,7 +205,7 @@ function sayShape(out: DeskDriveResult): unknown {
 /** What a leg result may carry. An agent-supplied blob lands in `job_steps.result`
  *  and is read by the share receipt and the card, so it is allowlisted rather
  *  than stored whole — an unbounded write is a free row-inflation primitive. */
-export const RESULT_KEYS = new Set(['txHash', 'txs', 'chainId', 'orderResponse', 'batch', 'fill', 'detail', 'explorerUrl', 'status'])
+export const RESULT_KEYS: ReadonlySet<string> = new Set<string>(DESK_LEG_RESULT_KEYS)
 const HASH_RE = /^0x[0-9a-fA-F]{64}$/
 
 export function sanitizeResult(raw: unknown): { result: Record<string, unknown>; kept: string[]; ignored: string[] } {
