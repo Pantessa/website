@@ -30139,6 +30139,164 @@ async function main() {
     if (deskGaps) console.log(`  ⚠️  agent desk (QA): ${deskGaps} known-gap(s) open — ${openGaps.join(' · ')}`)
   }
 
+  // ── agent desk: DRIVE ──────────────────────────────────────────────────
+  // THE BATCH RULE (lib/hl-batch, squad contract C2): a job-borne Hyperliquid
+  // order step carries `orderRequest.batch` = [leverage?, order], every member
+  // an HL L1 action whose typed data re-derives from its own action + nonce;
+  // a member that isn't an HL trade action refuses the whole offer; a
+  // completion whose batch stops at a failed member re-arms the step. Plus
+  // the desk's agent-signed compile (lib/broker-exec compileDeskAsk): the
+  // flagship "2x long $12 of HYPE" is no longer refused as "single-step" —
+  // an unfundable wallet is refused by the collateral it lacks, a lone
+  // action compiles as a one-leg job, and the funded burner gets its batch.
+  console.log('— agent desk: DRIVE')
+  {
+    const { composeHlBatch, guardHlBatch, withHlBatch, batchCompletionVerdict, hlBatchStaleAfterMs, HL_BATCH_MAX_MEMBERS } = await import('../lib/hl-batch')
+    const { hlActionTypedData } = await import('../lib/hyperliquid-exec')
+    // A builder-shaped order request — the exact keys buildHlExecTurn emits — with the leverage pre-step.
+    const dLev = { type: 'updateLeverage', asset: 159, isCross: true, leverage: 2 }
+    const dOrder = { type: 'order', orders: [{ a: 159, b: true, p: '40.5', s: '0.3', r: false, t: { limit: { tif: 'Ioc' } } }], grouping: 'na' }
+    const dN0 = Date.now() - 1
+    const dN1 = dN0 + 1
+    const dReq = {
+      protocol: 'hyperliquid',
+      typedData: hlActionTypedData(dOrder as never, dN1),
+      hl: { action: dOrder, nonce: dN1, isTestnet: false, expected: { coin: 'HYPE', kind: 'open', isBuy: true }, pre: { action: dLev, nonce: dN0, typedData: hlActionTypedData(dLev as never, dN0), expected: { coin: 'HYPE', leverage: 2 } } },
+    }
+    const dBatch = composeHlBatch(dReq)
+    check('drive batch: a leverage pre-step + order compose to [leverage → order] with ascending nonces', dBatch?.length === 2 && dBatch[0].kind === 'leverage' && dBatch[1].kind === 'order' && dBatch[0].nonce < dBatch[1].nonce && dBatch[1].expected.coin === 'HYPE')
+    const dNoPre = composeHlBatch({ ...dReq, hl: { ...dReq.hl, pre: undefined } })
+    check('drive batch: no pre-step → a one-member batch [order]', dNoPre?.length === 1 && dNoPre[0].kind === 'order')
+    const dFee = { ...dReq, hl: { ...dReq.hl, feeApproval: { builder: '0x1', maxFeeRate: '0.1%' } } }
+    check('drive batch: a one-time builder-fee approval riding along → NO batch (the single hl.action path stands)', composeHlBatch(dFee) === null && !('batch' in withHlBatch(dFee)))
+    const dWith = withHlBatch(dReq) as { batch?: unknown[] }
+    const dGuard = guardHlBatch(dWith.batch)
+    check('drive batch: withHlBatch attaches the guarded batch (browser keys hl.pre + hl.action untouched)', Array.isArray(dWith.batch) && dWith.batch.length === 2 && dGuard.ok && (dWith as { hl: { pre?: unknown } }).hl.pre !== undefined)
+    // jsonb re-sorts keys on the way through Postgres — a sorted member still guards (canonical re-derive, #850).
+    const sortKeys = (o: unknown): unknown => Array.isArray(o) ? o.map(sortKeys) : o && typeof o === 'object' ? Object.fromEntries(Object.keys(o as object).sort().map((k) => [k, sortKeys((o as Record<string, unknown>)[k])])) : o
+    const dSorted = (dBatch ?? []).map((m) => ({ ...m, action: sortKeys(m.action) }))
+    check('drive batch: a member whose action came back from jsonb with sorted keys still guards (typed data re-derives canonically)', guardHlBatch(dSorted).ok)
+    const dRefuse = (batch: unknown) => { const g = guardHlBatch(batch); return g.ok ? '' : g.reasons.join(' | ') }
+    const dSend = { kind: 'order', action: { type: 'usdSend', destination: '0x2222222222222222222222222222222222222222', amount: '5', time: dN1 }, nonce: dN1 + 1, typedData: dReq.typedData, expected: { coin: 'HYPE', kind: 'open' } }
+    check('drive batch: a member that is not an HL trade action (usdSend) refuses the whole batch by name', /not a Hyperliquid order or leverage action \(type "usdSend"\)/.test(dRefuse([...(dBatch ?? []), dSend])), dRefuse([...(dBatch ?? []), dSend]))
+    const dTampered = (dBatch ?? []).map((m, i) => (i === 1 ? { ...m, typedData: { ...(m.typedData as object), message: { source: 'a', connectionId: '0x' + 'ab'.repeat(32) } } } : m))
+    check('drive batch: a member whose typed data does not derive from its action + nonce refuses', /does not derive/.test(dRefuse(dTampered)))
+    check('drive batch: an order that is not the last member refuses', /not the last member/.test(dRefuse([...(dBatch ?? [])].reverse())))
+    const dDesc = (dBatch ?? []).map((m, i) => (i === 1 ? { ...m, nonce: dN0 - 5, typedData: hlActionTypedData(dOrder as never, dN0 - 5) } : m))
+    check('drive batch: a nonce that does not ascend refuses', /does not ascend/.test(dRefuse(dDesc)))
+    check('drive batch: empty and over-long batches refuse; the limit is small', /empty/.test(dRefuse([])) && HL_BATCH_MAX_MEMBERS === 3 && /limit is 3/.test(dRefuse([dBatch![0], dBatch![0], dBatch![0], dBatch![0]])))
+    check('drive batch: two orders refuse', /2 orders|not the last member/.test(dRefuse([dBatch![1], dBatch![1]])))
+    check('drive batch: the completion verdict — none for an EVM result, done when every member answered ok, re-offer AT the failed member, re-offer at 0 for an empty batch',
+      batchCompletionVerdict({ txHash: '0x1' }).kind === 'none' &&
+        batchCompletionVerdict({ batch: [{ ok: true }, { ok: true }] }).kind === 'done' &&
+        (() => { const v = batchCompletionVerdict({ batch: [{ ok: true }, { ok: false, error: 'margin' }] }); return v.kind === 'reoffer' && v.failedIndex === 1 && /margin/.test(v.error) })() &&
+        (() => { const v = batchCompletionVerdict({ batch: [] }); return v.kind === 'reoffer' && v.failedIndex === 0 })())
+    check('drive batch: staleness is measured from the FIRST nonce (fresh > 0; 100s old ≤ 0)', hlBatchStaleAfterMs([{ nonce: Date.now() }]) > 80_000 && hlBatchStaleAfterMs([{ nonce: Date.now() - 100_000 }]) <= 0)
+    // The runner's two touch points read the module (source pins — the offer site and the re-arm).
+    const dRunnerSrc = (await import('node:fs')).readFileSync('lib/jobs-runner.ts', 'utf8')
+    check('drive batch: the runner offers HL orders through withHlBatch and re-arms a partial completion through batchCompletionVerdict', /orderRequest: withHlBatch\(turn\.orderRequest\)/.test(dRunnerSrc) && /batchCompletionVerdict\(result\)/.test(dRunnerSrc) && /reoffer: true/.test(dRunnerSrc))
+
+    // ── the drill's DRY path over HTTP: the desk MCP, then the Jobs API ──
+    const DRIVE_MCP = `${BASE}/api/broker/mcp`
+    let driveRpcId = 0
+    let driveSession: string | null = null
+    const driveRpc = async (method: string, params?: unknown): Promise<any> => {
+      const res = await fetch(DRIVE_MCP, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1', ...(driveSession ? { 'mcp-session-id': driveSession } : {}) },
+        body: JSON.stringify({ jsonrpc: '2.0', id: ++driveRpcId, method, params }),
+      })
+      driveSession = res.headers.get('mcp-session-id') ?? driveSession
+      const raw = await res.text()
+      const data = raw.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).find((l) => l.includes(`"id":${driveRpcId}`))
+      return data ? JSON.parse(data).result : undefined
+    }
+    const driveCall = async (name: string, args: Record<string, unknown> = {}) => {
+      const result = await driveRpc('tools/call', { name, arguments: args })
+      const text: string = result?.content?.find((c: any) => c.type === 'text')?.text ?? ''
+      return { isError: !!result?.isError, payload: text && !result?.isError ? JSON.parse(text) : text }
+    }
+    await driveRpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'harness-drive', version: '0' } })
+    await driveRpc('notifications/initialized')
+    const FLAGSHIP = '2x long $12 of HYPE on hyperliquid'
+
+    // The consent text recovers the signer — the desk's wallet proof (pure).
+    const dAgent = privateKeyToAccount(generatePrivateKey())
+    const dOpen = await driveCall('broker_open', { ask: FLAGSHIP, wallet: dAgent.address, agent: 'harness-drive', agent_key: 'harness-drive-key' })
+    const dIntent = dOpen.payload?.intentId as string
+    const dConsent = await dAgent.signMessage({ message: deskExecuteConsentMessage(dIntent, dAgent.address) })
+    check('drive: the execute consent text recovers the agent wallet that signed it', dIntent != null && (await recoverMessageAddress({ message: deskExecuteConsentMessage(dIntent, dAgent.address), signature: dConsent })).toLowerCase() === dAgent.address.toLowerCase())
+    // An unfunded wallet asking the flagship: refused by the COLLATERAL it lacks — never as "single-step".
+    const dExec = await driveCall('broker_execute', { intent_id: dIntent, wallet_signature: dConsent })
+    check('drive: the flagship on an unfunded wallet is refused by the collateral the position needs (reaching Hyperliquid), not as a single-step ask', dExec.isError && /reaching Hyperliquid|can't fund it/i.test(String(dExec.payload)) && !/single-step/i.test(String(dExec.payload)), String(dExec.payload).slice(0, 200))
+    await driveCall('broker_close', { intent_id: dIntent })
+    // A lone non-HL action compiles as a ONE-leg job (the runner withholds the build on the empty wallet; the job exists).
+    const dLone = await driveCall('broker_open', { ask: `send 0.5 USDC on base to 0x2222222222222222222222222222222222222222`, wallet: dAgent.address, agent: 'harness-drive', agent_key: 'harness-drive-key' })
+    const dLoneSig = await dAgent.signMessage({ message: deskExecuteConsentMessage(dLone.payload.intentId, dAgent.address) })
+    const dLoneExec = await driveCall('broker_execute', { intent_id: dLone.payload.intentId, wallet_signature: dLoneSig })
+    check('drive: a lone action compiles to a one-leg agent-owned job (no more "does not compile to a multi-step job")', !dLoneExec.isError && dLoneExec.payload?.steps?.length === 1 && dLoneExec.payload.steps[0].kind === 'sign' && typeof dLoneExec.payload.drive?.poll === 'string', String(dLoneExec.payload).slice(0, 160))
+    if (!dLoneExec.isError) {
+      const dPoll = await fetch(String(dLoneExec.payload.drive.poll).replace(/^https?:\/\/[^/]+/, BASE), { headers: { 'x-yf-internal-run': '1' } })
+      const dJob = (await dPoll.json()) as { job?: { steps?: { builder?: string }[] } }
+      check('drive: the one-leg job polls through the capability token with the transfer builder on its step', dPoll.status === 200 && dJob.job?.steps?.[0]?.builder === 'native-transfer', JSON.stringify(dJob.job?.steps?.[0]?.builder))
+    }
+    await driveCall('broker_close', { intent_id: dLone.payload.intentId })
+
+    // The FUNDED wallet (the house burner, .env.local): the flagship compiles, and the HL
+    // step offers the batch. Live venue reads; skipped without the key.
+    const dKey = (() => { try { return (require('node:fs') as typeof import('node:fs')).readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null } catch { return null } })()
+    if (dKey && /^0x[0-9a-fA-F]{64}$/.test(dKey)) {
+      const burner = privateKeyToAccount(dKey as `0x${string}`)
+      const bOpen = await driveCall('broker_open', { ask: FLAGSHIP, wallet: burner.address, agent: 'harness-drive', agent_key: 'harness-drive-key' })
+      const bIntent = bOpen.payload?.intentId as string
+      const bSig = await burner.signMessage({ message: deskExecuteConsentMessage(bIntent, burner.address) })
+      const bExec = await driveCall('broker_execute', { intent_id: bIntent, wallet_signature: bSig })
+      const bSteps = (bExec.payload?.steps ?? []) as { kind: string; note: string }[]
+      check('drive (live): the flagship on the funded burner compiles — the LAST leg is the 2x long, funded legs (if any) ride in front', !bExec.isError && bSteps.length >= 1 && bSteps[bSteps.length - 1].kind === 'sign' && /2x Long \$12 of HYPE/.test(bSteps[bSteps.length - 1].note), bExec.isError ? String(bExec.payload).slice(0, 200) : `${bSteps.length} legs`)
+      if (!bExec.isError && bSteps.length === 1) {
+        const bPollUrl = String(bExec.payload.drive.poll).replace(/^https?:\/\/[^/]+/, BASE)
+        const bCompleteUrl = String(bExec.payload.drive.complete).replace(/^https?:\/\/[^/]+/, BASE)
+        let bStep: { status: string; artifact?: { orderRequest?: { batch?: unknown[]; hl?: { nonce?: number } } }; result?: { reoffer?: boolean } } | undefined
+        for (let i = 0; i < 12; i++) {
+          const j = (await (await fetch(bPollUrl, { headers: { 'x-yf-internal-run': '1' } })).json()) as { job?: { steps?: typeof bStep[] } }
+          bStep = j.job?.steps?.[0]
+          if (bStep?.status === 'offered') break
+          await new Promise((r) => setTimeout(r, 2500))
+        }
+        const bBatch = bStep?.artifact?.orderRequest?.batch
+        const bGuard = guardHlBatch(bBatch)
+        check('drive (live): the offered HL step carries a guarded batch whose last member is the order and whose nonces are fresh', bStep?.status === 'offered' && Array.isArray(bBatch) && bGuard.ok && (bBatch[bBatch.length - 1] as { kind: string }).kind === 'order' && hlBatchStaleAfterMs(bBatch as { nonce: number }[]) > 0, bStep?.status === 'offered' ? `${bBatch?.length ?? 0} members: ${(bBatch ?? []).map((m) => (m as { kind: string }).kind).join(' → ')}` : `step ${bStep?.status}`)
+        // The relay's step 1, proven without submitting: the agent's signature over each member's
+        // SERVED typed data recovers to the agent — and to the typed data the relay re-derives from
+        // the member's action + nonce (canonical bytes, #850). Nothing is posted to the venue here.
+        if (Array.isArray(bBatch) && bGuard.ok) {
+          let recovered = 0
+          for (const m of bGuard.members) {
+            const sig = await burner.signTypedData(m.typedData as unknown as Parameters<typeof burner.signTypedData>[0])
+            const td = hlActionTypedData(m.action, m.nonce)
+            const who = await recoverTypedDataAddress({ ...td, signature: sig } as unknown as Parameters<typeof recoverTypedDataAddress>[0])
+            if (who.toLowerCase() === burner.address.toLowerCase()) recovered++
+          }
+          check('drive (live): a signature over each served member recovers to the agent against the relay\'s own re-derived typed data (sign what you are handed)', recovered === bGuard.members.length, `${recovered}/${bGuard.members.length}`)
+        }
+        // A completion whose batch stopped at a failed member does NOT finish the step: it re-arms, and the next poll re-offers a FRESH batch.
+        const bNonce = bStep?.artifact?.orderRequest?.hl?.nonce ?? 0
+        const bDone = await fetch(bCompleteUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ seq: 0, result: { batch: [{ ok: false, error: 'harness: the venue refused member 1' }] } }) })
+        let bAgain: typeof bStep
+        for (let i = 0; i < 12; i++) {
+          const j = (await (await fetch(bPollUrl, { headers: { 'x-yf-internal-run': '1' } })).json()) as { job?: { status?: string; steps?: typeof bStep[] } }
+          bAgain = j.job?.steps?.[0]
+          if (bAgain?.status === 'offered' && (bAgain.artifact?.orderRequest?.hl?.nonce ?? 0) > bNonce) break
+          await new Promise((r) => setTimeout(r, 2500))
+        }
+        check('drive (live): a partial batch completion re-arms the step and the runner re-offers the SAME seq with a fresh nonce (never done, never failed)', bDone.status === 200 && bAgain?.status === 'offered' && (bAgain.artifact?.orderRequest?.hl?.nonce ?? 0) > bNonce, `complete ${bDone.status}; step ${bAgain?.status}; nonce ${bAgain?.artifact?.orderRequest?.hl?.nonce} vs ${bNonce}`)
+      }
+      await driveCall('broker_close', { intent_id: bIntent })
+    } else {
+      console.log('  ↳ drive (live) burner checks SKIPPED (no PRIVATE_KEY in .env.local)')
+    }
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }
