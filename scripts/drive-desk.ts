@@ -35,14 +35,21 @@ import { createRequire } from 'node:module'
 const BASE = (process.env.BASE ?? 'http://localhost:3865').replace(/\/$/, '')
 const WANT_SEED = process.argv.includes('--seed')
 
-// The hooks the UI lane renders (QA Ask A7). Kept here as ONE list so a
-// rename shows up as a drive failure, not a silent green.
+// The hooks the UI lane renders. Kept here as ONE list so a rename shows up as
+// a drive failure, not a silent green. (Round 2: these are the UI lane's OWN
+// names, read off the page it shipped — QA's Ask A7 proposed different ones and
+// the page is the truth.)
 const HOOKS = {
-  deskLog: '[data-desk-log]',
-  deskRow: '[data-desk-row]',
-  growthDesk: '[data-growth-desk]',
-  claimed: '[data-desk-claimed]',
-  verified: '[data-desk-verified]',
+  deskPage: '[data-desk-page]',
+  deskRows: '[data-desk-rows]',
+  row: (intentId: string) => `[data-intent="${intentId}"]`,
+  timeline: '[data-desk-timeline]',
+  event: (kind: string) => `[data-event="${kind}"]`,
+  /** The voice pill: whose word an event is. `agent` / `human` = a claim. */
+  voice: (who: string) => `[data-who="${who}"]`,
+  internal: '[data-internal="1"]',
+  growthDesk: '[data-desk-section]',
+  txClaim: '[data-tx]',
 }
 
 function envLocal(key: string): string | undefined {
@@ -367,44 +374,56 @@ async function main() {
     } else {
       await land(page, '/dashboard/admin/desk')
       add('desk log: an ADMIN wallet reaches /dashboard/admin/desk (not bounced home)', page.url().includes('/dashboard/admin/desk'), page.url())
-      const log = page.locator(HOOKS.deskLog)
-      const hasLog = (await log.count()) > 0
-      hasLog
-        ? add('desk log: the log renders its container', true, HOOKS.deskLog)
-        : waits('desk log: the log renders its container', `${HOOKS.deskLog} missing — Ask A7`)
-      const rows = page.locator(HOOKS.deskRow)
+      const hasPage = (await page.locator(HOOKS.deskPage).count()) > 0
+      add('desk log: the page renders (not the not-authorized card, not the load error)', hasPage, hasPage ? HOOKS.deskPage : `${HOOKS.deskPage} missing`)
+      const rows = page.locator(`${HOOKS.deskRows} > li`)
       const n = await rows.count()
+      add('desk log: the log lists brokered intents', n > 0, `${n} rows`)
       if (seeded) {
-        const seenSeed = (await page.locator(`[data-desk-row="${seeded}"]`).count()) > 0
-        seenSeed
-          ? add('desk log: the seeded intent appears as its own row', true, seeded)
-          : n > 0
-            ? add('desk log: rows render (the seeded intent is not among them)', false, `${n} rows, none is ${seeded}`)
-            : waits('desk log: the seeded intent appears as its own row', 'no rows yet — Ask A7')
-      } else if (n > 0) {
-        add('desk log: rows render', true, `${n} rows`)
-      } else {
-        waits('desk log: rows render', 'no rows (run with --seed)')
+        const seedRow = page.locator(HOOKS.row(seeded))
+        const sawSeed = (await seedRow.count()) > 0
+        add('desk log: the intent this drive just opened appears as its own row', sawSeed, sawSeed ? seeded : `${seeded} not among ${n} rows`)
+        if (sawSeed) {
+          add(
+            'desk log: a harness intent is marked INTERNAL, so a drive can never dress itself up as an agent that showed up',
+            (await page.locator(`${HOOKS.row(seeded)}${HOOKS.internal}`).count()) > 0,
+            'data-internal=1',
+          )
+          await seedRow.first().click({ timeout: 4000 }).catch(() => {})
+          await page.waitForTimeout(900)
+          const timeline = page.locator(`${HOOKS.row(seeded)} ${HOOKS.timeline}`)
+          const opened = await page.locator(`${HOOKS.row(seeded)} ${HOOKS.event('opened')}`).count()
+          add(
+            'desk log: the row expands to its timeline, starting at `opened`',
+            (await timeline.count()) > 0 && opened > 0,
+            `timeline=${await timeline.count()} opened=${opened}`,
+          )
+          // QA F1 / Ask A1: an agent's word must never be presented as settled
+          // fact. The UI answers it with a VOICE pill per event — desk / runner
+          // are ours, agent / human are claims, checked by the next wait leg.
+          const voices = await page.evaluate(() =>
+            Array.from(document.querySelectorAll('[data-who]')).map((el) => el.getAttribute('data-who') ?? ''),
+          )
+          add(
+            'desk log: every event says WHOSE word it is — the desk\'s and the runner\'s are ours, the agent\'s is a claim (QA F1: a hostile agent writes what this page renders)',
+            voices.length > 0 && voices.some((v) => v === 'desk' || v === 'runner') && voices.some((v) => v === 'agent' || v === 'human'),
+            `voices: ${[...new Set(voices)].join(', ') || 'none'}`,
+          )
+        }
       }
-      if (n > 0) {
-        await rows.first().click({ timeout: 4000 }).catch(() => {})
-        await page.waitForTimeout(800)
-        const body = await page.locator(HOOKS.deskLog).first().innerText().catch(() => '')
-        add(
-          'desk log: a row expands to its timeline (opened → compiled → … in words)',
-          /opened/i.test(body) && /(compiled|consent|leg)/i.test(body),
-          body.replace(/\s+/g, ' ').slice(0, 120),
-        )
-        const claimed = await page.locator(HOOKS.claimed).count()
-        const verified = await page.locator(HOOKS.verified).count()
-        claimed + verified > 0
-          ? add(
-              'desk log: CLAIMED and VERIFIED are separate marks — an agent\'s word is never shown as settled fact (F1)',
-              claimed > 0 && verified > 0,
-              `claimed=${claimed} verified=${verified}`,
-            )
-          : waits('desk log: CLAIMED and VERIFIED are separate marks (F1)', 'neither hook present — Ask A1')
-      }
+      // Every hash the page shows is a claim an agent POSTed. None of it may
+      // become a live link, and none of it may be malformed.
+      const claims = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('[data-tx]')).map((el) => ({
+          hash: el.getAttribute('data-tx') ?? '',
+          href: el.getAttribute('href') ?? '',
+        })),
+      )
+      add(
+        'desk log: every rendered tx claim is a well-formed hash, and any link built from it is http(s)',
+        claims.every((c) => /^0x[0-9a-fA-F]{64}$/.test(c.hash) && (!c.href || /^https?:\/\//.test(c.href))),
+        `${claims.length} claim(s)${claims.length ? `, first ${claims[0].hash.slice(0, 12)}…` : ''}`,
+      )
       await assertNoHostileLinks(page, 'desk log')
       await inspect(page, 'desk log 1440 dark', errs)
       await ctx.close()
@@ -432,15 +451,17 @@ async function main() {
     await land(page, '/dashboard/admin')
     add('growth: an ADMIN wallet reaches /dashboard/admin', page.url().includes('/dashboard/admin'), page.url())
     const desk = page.locator(HOOKS.growthDesk)
-    if ((await desk.count()) > 0) {
+    const hasDesk = (await desk.count()) > 0
+    if (hasDesk) {
       const text = await desk.first().innerText()
       add(
-        'growth: the Desk section names the agent funnel (agents seen → opened → executed → signed → settled)',
+        'growth: the Desk section names the agent funnel (opened → executed → signed → settled)',
         /agent/i.test(text) && /(opened|executed|signed|settled)/i.test(text),
         text.replace(/\s+/g, ' ').slice(0, 140),
       )
+      add('growth: the Desk section links to the full log', (await page.locator('a[href="/dashboard/admin/desk"]').count()) > 0)
     } else {
-      waits('growth: the Desk section renders', `${HOOKS.growthDesk} missing — Ask A7`)
+      add('growth: the Desk section renders', false, `${HOOKS.growthDesk} missing`)
     }
     await assertNoHostileLinks(page, 'growth')
     await inspect(page, 'growth 1440 dark', errs)
