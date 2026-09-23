@@ -76,6 +76,9 @@ export interface LlamaFundamentals {
   }
   asOf: string
   cached?: boolean
+  /** Metric keys whose upstream read FAILED this time (a timeout, a 5xx) —
+   *  a subset of `missing`, held only briefly so the next read retries. */
+  failed?: LlamaMetricKey[]
 }
 
 export interface LlamaNoSubject {
