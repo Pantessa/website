@@ -5913,6 +5913,13 @@ async function main() {
       walletAppFor('https://pantessa.com') === null &&
       // eslint-disable-next-line no-script-url
       walletAppFor('javascript:alert(1)') === null &&
+      // Only the SDK's connect link is a wallet request: MetaMask's `dapp/`
+      // deeplink opens any site inside the wallet's own browser (QA security
+      // pass, 2026-09-23) and the holder is reachable from a public DOM event.
+      walletAppFor('metamask://dapp/evil.example/drain') === null &&
+      walletAppFor('https://metamask.app.link/dapp/evil.example') === null &&
+      walletAppFor('metamask://connect?channelId=a&v=2') === 'MetaMask' &&
+      walletAppFor('https://metamask.app.link/connect?channelId=a') === 'MetaMask' &&
       walletAppFor('metamask://connect?a=1 b=2') === null &&
       walletAppFor('metamask://con\nnect') === null &&
       walletAppFor('') === null &&

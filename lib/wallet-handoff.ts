@@ -45,9 +45,16 @@ export const WALLET_APP_SETTLE_MS = 1200
 /** Links we will navigate to. The SDK builds the link itself, so this is a
  *  belt on a brace: a navigation is the one thing on this path that can leave
  *  the site, and it may only ever leave for the wallet. */
+//
+//  Only the SDK's CONNECT link passes — `metamask://connect?…` and its universal
+//  twin. MetaMask's other deeplinks are not wallet requests: `metamask://dapp/
+//  <host>` opens an arbitrary site INSIDE the wallet's own browser, the most
+//  trusted surface a phishing page could ask for, and the holder is reachable
+//  from the public `pantessa:wallet-app-open` DOM event (the drives' seam).
+//  Found by the mobile-onboarding squad's security pass (QA, 2026-09-23).
 const WALLET_APP_LINKS: { test: RegExp; app: string }[] = [
-  { test: /^metamask:\/\//i, app: 'MetaMask' },
-  { test: /^https:\/\/metamask\.app\.link\//i, app: 'MetaMask' },
+  { test: /^metamask:\/\/connect(?:\?|$)/i, app: 'MetaMask' },
+  { test: /^https:\/\/metamask\.app\.link\/connect(?:\?|$)/i, app: 'MetaMask' },
 ]
 
 /** Whitespace or a control character anywhere in a link means the SDK didn't
