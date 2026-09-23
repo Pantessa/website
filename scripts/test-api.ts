@@ -31458,6 +31458,125 @@ async function main() {
     }
   }
 
+  // ── mobile sign ── the round trip a signature makes on a phone (mobile-onboarding squad
+  // 2026-09-23, SIGN lane; blackboard ~/yeetful/squad-mobile-2026-09-23/SIGN.md). The rule:
+  // ON A PHONE, ONE WALLET METHOD PER TAP — a method fired from an await after the visitor
+  // came back from the wallet app has no tap behind it and the browser drops the app launch.
+  // Pure pins on lib/sign-round-trip, then the SOURCE fence (no signing component fires a
+  // wallet method from a useEffect except SendTxButton's gated auto-fire), then the beacon.
+  console.log('— mobile sign')
+  {
+    const RT = await import('../lib/sign-round-trip')
+    const HL = await import('../lib/hyperliquid-exec')
+    const WR = await import('../lib/wallet-refusal')
+    const fs = await import('node:fs')
+    const signer = privateKeyToAccount(generatePrivateKey())
+
+    // ── the state machine
+    const T0 = 1_700_000_000_000
+    let t = RT.roundTripReduce(RT.IDLE_TRIP, { type: 'ask', at: T0 })
+    check('mobile sign: ask → asked, stamped', t.state === 'asked' && t.askedAt === T0)
+    const stillHere = RT.roundTripReduce(t, { type: 'visible', at: T0 + 500 })
+    check('mobile sign: a visible before any hidden is the dropped launch — the trip stays asked (the handoff card owns it)', stillHere.state === 'asked' && stillHere.returnedAt === null)
+    t = RT.roundTripReduce(t, { type: 'hidden', at: T0 + 1000 })
+    check('mobile sign: the page hides → in-app', t.state === 'in-app' && t.leftAt === T0 + 1000)
+    t = RT.roundTripReduce(t, { type: 'visible', at: T0 + 20_000 })
+    check('mobile sign: the page comes back with the request open → returned', t.state === 'returned' && t.returnedAt === T0 + 20_000)
+    check('mobile sign: returned + < RETURN_WAIT_MS → waiting; ≥ → offer-reopen (never a re-send)', RT.returnVerdict(t, T0 + 20_000 + RT.RETURN_WAIT_MS - 1) === 'waiting' && RT.returnVerdict(t, T0 + 20_000 + RT.RETURN_WAIT_MS) === 'offer-reopen')
+    const settled = RT.roundTripReduce(t, { type: 'resolved' })
+    check('mobile sign: resolved → settled, verdict none; rejected likewise; idle/settled ignore late events', settled.state === 'settled' && RT.returnVerdict(settled, T0 + 99_999) === 'none' && RT.roundTripReduce(t, { type: 'rejected' }).state === 'settled' && RT.roundTripReduce(RT.IDLE_TRIP, { type: 'hidden', at: T0 }).state === 'idle' && RT.roundTripReduce(settled, { type: 'visible', at: T0 }).state === 'settled')
+    check('mobile sign: a second leave from returned goes back in-app (the visitor opened the app again)', RT.roundTripReduce(t, { type: 'hidden', at: T0 + 30_000 }).state === 'in-app')
+    check('mobile sign: stale from a live state → stale (rebuild, never re-send); reset → idle', RT.roundTripReduce(t, { type: 'stale' }).state === 'stale' && RT.returnVerdict(RT.roundTripReduce(t, { type: 'stale' }), T0 + 99_999) === 'none' && RT.roundTripReduce(t, { type: 'reset' }).state === 'idle')
+    check('mobile sign: RETURN_WAIT_MS is a real wait (≥ 5s) and under a minute', RT.RETURN_WAIT_MS >= 5000 && RT.RETURN_WAIT_MS <= 60_000)
+
+    // ── platform
+    const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+    const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Mobile Safari/537.36'
+    const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36'
+    const MM_INAPP = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MetaMaskMobile'
+    check('mobile sign: platformOf — iPhone, Android, MetaMask in-app browser = phone; Mac = desktop; empty = desktop', RT.platformOf(IPHONE) === 'phone' && RT.platformOf(ANDROID) === 'phone' && RT.platformOf(MM_INAPP) === 'phone' && RT.platformOf(MAC) === 'desktop' && RT.platformOf('') === 'desktop' && RT.platformOf(null) === 'desktop')
+    check('mobile sign: oneMethodPerTap — phone yes, desktop no', RT.oneMethodPerTap('phone') && !RT.oneMethodPerTap('desktop'))
+
+    // ── auto-fire: the decision SendTxChain step N>1 rides
+    check('mobile sign: autoFireAllowed — desktop step 2 fires on mount (popup follows popup)', RT.autoFireAllowed({ platform: 'desktop', stepIndex: 1, connectorId: 'metaMaskSDK' }) === true)
+    check('mobile sign: autoFireAllowed — a PHONE never fires on mount (the launch would be dropped)', RT.autoFireAllowed({ platform: 'phone', stepIndex: 1, connectorId: 'metaMaskSDK' }) === false && RT.autoFireAllowed({ platform: 'phone', stepIndex: 3, connectorId: 'io.rainbow' }) === false)
+    check('mobile sign: autoFireAllowed — Coinbase’s popup wallet never (the #102 lesson), step 0 never, manualSteps never', RT.autoFireAllowed({ platform: 'desktop', stepIndex: 1, connectorId: 'coinbaseWalletSDK', connectorName: 'Coinbase Wallet' }) === false && RT.autoFireAllowed({ platform: 'desktop', stepIndex: 0 }) === false && RT.autoFireAllowed({ platform: 'desktop', stepIndex: 1, manualSteps: true }) === false)
+    const c2 = RT.continueCopy({ stepIndex: 1, total: 2, title: 'Swap USDC → ETH', app: 'MetaMask' })
+    const c1 = RT.continueCopy({ stepIndex: 0, total: 2, title: 'Approve USDC', app: null })
+    check('mobile sign: continueCopy names the step and the app ("Sign step 2 of 2 — …", "opens on your tap")', c2.label === 'Sign step 2 of 2 — Swap USDC → ETH' && /The last step/.test(c2.hint) && /in MetaMask/.test(c2.hint) && /^Sign step 1 of 2/.test(c1.label) && /tap to sign the next step in your wallet/.test(c1.hint) && /opens on your tap/.test(c1.hint))
+
+    // ── staleness: the module's constants are the venue's, pinned equal to their sources
+    check('mobile sign: HL_NONCE_SIGNABLE_MS mirrors lib/hyperliquid-exec; JOB_OFFER_TTL_MS mirrors jobs-runner OFFER_TTL_MS (30 min)', RT.HL_NONCE_SIGNABLE_MS === HL.HL_NONCE_SIGNABLE_MS && RT.JOB_OFFER_TTL_MS === 30 * 60_000 && /const OFFER_TTL_MS = 30 \* 60_000/.test(fs.readFileSync('lib/jobs-runner.ts', 'utf8')))
+    const now = T0
+    check('mobile sign: staleVerdict — an HL nonce past 90s is stale, agrees with hlNonceStale; fresh is null', RT.staleVerdict({ now, hlNonce: now - 91_000 }) === 'hl-nonce' && HL.hlNonceStale(now - 91_000, now) && RT.staleVerdict({ now, hlNonce: now - 60_000 }) === null && !HL.hlNonceStale(now - 60_000, now))
+    check('mobile sign: staleVerdict — a swap deadline inside the 90s lead is stale; a job offer past 30 min is stale; HL beats offer', RT.staleVerdict({ now, validUntil: Math.floor(now / 1000) + 60 }) === 'tx-deadline' && RT.staleVerdict({ now, validUntil: Math.floor(now / 1000) + 600 }) === null && RT.staleVerdict({ now, offeredAt: now - 31 * 60_000 }) === 'job-offer' && RT.staleVerdict({ now, hlNonce: now - 5 * 60_000, offeredAt: now - 31 * 60_000 }) === 'hl-nonce')
+
+    // ── never burn a signature
+    check('mobile sign: resendVerdict — nonce advanced = broadcast-seen; equal = safe; a failed read = unknown (unsafe)', RT.resendVerdict({ nonceAtAsk: 7, nonceNow: 8 }) === 'broadcast-seen' && RT.resendVerdict({ nonceAtAsk: 7, nonceNow: 7 }) === 'safe' && RT.resendVerdict({ nonceAtAsk: 7, nonceNow: null }) === 'unknown' && RT.resendVerdict({ nonceAtAsk: null, nonceNow: 7 }) === 'unknown')
+    check('mobile sign: reopenCopy says the request is queued in the app and nothing is sent twice', /queued there/.test(RT.reopenCopy('MetaMask').line) && /nothing is sent twice/.test(RT.reopenCopy('MetaMask').line) && RT.reopenCopy('MetaMask').cta === 'Open MetaMask' && /your wallet/.test(RT.reopenCopy(null).line))
+
+    // ── SOURCE fence: where wallet methods may fire from
+    const WALLET_METHOD = /\b(signMessageAsync|signTypedDataAsync|sendTransactionAsync|writeContractAsync|switchChainAsync|connectAsync)\s*\(/
+    const effectBodies = (src: string): string[] => {
+      const out: string[] = []
+      let i = src.indexOf('useEffect(')
+      while (i >= 0) {
+        // walk to the matching close of the callback's block
+        const open = src.indexOf('{', i)
+        let depth = 0
+        let j = open
+        for (; j < src.length; j++) {
+          if (src[j] === '{') depth++
+          else if (src[j] === '}') { depth--; if (depth === 0) break }
+        }
+        out.push(src.slice(open, j + 1))
+        i = src.indexOf('useEffect(', j)
+      }
+      return out
+    }
+    const SIGN_SURFACES = ['SendTxButton', 'SendTxChain', 'JobCard', 'JobDetailOverlay', 'SignOrderButton', 'SignHlActionButton', 'SignNftListingButton', 'ClarifyChips', 'ArmSpotGuardButton', 'ArmDcaButton', 'SignGrantButton', 'SignVoteButton', 'VoteChoiceButtons', 'GuardianPanel', 'WalletPanel', 'TeamRailTab', 'IntentRuntime', 'JobsRailTab', 'markets/watchlist/FundWallet', 'FundAccountCard']
+    const effectOffenders: string[] = []
+    for (const name of SIGN_SURFACES) {
+      const src = fs.readFileSync(`components/${name}.tsx`, 'utf8')
+      for (const body of effectBodies(src)) {
+        if (WALLET_METHOD.test(body)) effectOffenders.push(name)
+        // SendTxButton's auto-fire is the ONE effect allowed to reach a wallet method, and
+        // only through the round-trip gate.
+        if (name === 'SendTxButton' && /void send\(\)/.test(body) && !/autoFireAllowed\(/.test(body)) effectOffenders.push('SendTxButton(autoFire ungated)')
+      }
+    }
+    check('mobile sign: SOURCE fence — no signing surface fires a wallet method from a useEffect; SendTxButton’s auto-fire goes through autoFireAllowed', effectOffenders.length === 0, effectOffenders.join(','))
+    const chainSrc = fs.readFileSync('components/SendTxChain.tsx', 'utf8')
+    const btnSrc = fs.readFileSync('components/SendTxButton.tsx', 'utf8')
+    check('mobile sign: SendTxChain decides step N>1’s auto-fire with autoFireAllowed({ platform … stepIndex: i …}) and labels a phone’s step via continueCopy', /autoFire=\{autoFireAllowed\(\{ platform, stepIndex: i/.test(chainSrc) && /ctaLabel=\{oneMethodPerTap\(platform\) \? continueCopy\(/.test(chainSrc) && /data-chain-next=/.test(chainSrc) && !/autoFire=\{i > 0 && !manualSteps\}/.test(chainSrc))
+    check('mobile sign: SendTxButton — a phone’s chain switch re-arms instead of chaining the send; back-from-the-app offers reopen, never a second send', /if \(oneMethodPerTap\(trip\.platform\)\) \{\s*setStatus\('idle'\)/.test(btnSrc) && /trip\.verdict === 'offer-reopen'/.test(btnSrc) && /data-sign-return="offer-reopen"/.test(btnSrc) && !/onClick=\{\(\) => void send\(\)\}[^]*data-sign-return/.test(btnSrc.slice(btnSrc.indexOf('data-sign-return'))))
+    const hlSrc = fs.readFileSync('components/SignHlActionButton.tsx', 'utf8')
+    const nftSrc = fs.readFileSync('components/SignNftListingButton.tsx', 'utf8')
+    const cowSrc = fs.readFileSync('components/SignOrderButton.tsx', 'utf8')
+    check('mobile sign: HL enable-trading, NFT approval and CoW chain switch each re-arm on a phone (oneMethodPerTap) instead of chaining the next method', (hlSrc.match(/rearmAfterEnable\(\)/g)?.length ?? 0) >= 3 && /oneMethodPerTap\(platform\)/.test(hlSrc) && /Approved — tap to sign the listing/.test(nftSrc) && /oneMethodPerTap\(platform\)/.test(nftSrc) && /Network switched — tap to sign the order/.test(cowSrc))
+    check('mobile sign: SignNftListingButton files wallet-refused (it never did) with artifact opensea-listing', /reportWalletRefusal\(\{[^]*artifact: 'opensea-listing'/.test(nftSrc))
+    const onrampSrc = fs.readFileSync('lib/onramp-client.ts', 'utf8')
+    check('mobile sign: the on-ramp consent never pre-opens a blank tab on a phone (the same tab goes to Stripe after the signature)', /platformOf\(navigator\.userAgent\) === 'phone' \? null : window\.open\('', '_blank'\)/.test(onrampSrc) && /else window\.location\.href = data\.url/.test(onrampSrc))
+    const jobSrc = fs.readFileSync('components/JobCard.tsx', 'utf8')
+    check('mobile sign: JobCard + SendTxChain re-read on visibilitychange/pageshow (the poll and the deadline watch were throttled while the page was hidden)', /visibilitychange/.test(jobSrc) && /pageshow/.test(jobSrc) && /visibilitychange/.test(chainSrc))
+    const hookSrc = fs.readFileSync('lib/use-sign-round-trip.ts', 'utf8')
+    check('mobile sign: the hook’s reopen is a bare metamask:// through lib/wallet-handoff (the SDK lane only) — it never calls a wallet method', /requestWalletAppOpen\('metamask:\/\/'\)/.test(hookSrc) && /METAMASK_SDK_CONNECTOR_ID = 'metaMaskSDK'/.test(hookSrc) && !WALLET_METHOD.test(hookSrc))
+    const rtSrc = fs.readFileSync('lib/sign-round-trip.ts', 'utf8')
+    check('mobile sign: lib/sign-round-trip is pure (no react, no window, no wagmi)', !/from 'react'|from 'wagmi'|window\.|document\./.test(rtSrc))
+
+    // ── the beacon: a dropped launch is its own kind, stamped like every harness row
+    const dropped = WR.launchDroppedReport({ wallet: signer.address, link: 'metamask://connect?channelId=abc&comm=socket', app: 'MetaMask', connector: 'metaMaskSDK', chainId: 8453, settleMs: 1200 })
+    check('mobile sign: launchDroppedReport — kind launch-dropped, artifact wallet-app, the scheme without its query, the settle window in words', dropped.kind === 'launch-dropped' && dropped.artifact === 'wallet-app' && dropped.ask === 'open MetaMask (metamask://connect)' && /1200ms/.test(dropped.detail) && /queued in an app the browser never switched to/.test(dropped.detail) && !/channelId/.test(dropped.ask + dropped.detail))
+    const droppedRes = await fetch(`${BASE}/api/ask-failures/wallet`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(dropped) })
+    const droppedBody = (await droppedRes.json()) as { ok?: boolean; kind?: string; internal?: boolean; id?: string }
+    check('mobile sign: the beacon route accepts kind launch-dropped + artifact wallet-app (202, stamped internal, no rejection gate)', droppedRes.status === 202 && droppedBody.ok === true && droppedBody.kind === 'launch-dropped' && droppedBody.internal === true && !!droppedBody.id, JSON.stringify(droppedBody))
+    const consentRes = await fetch(`${BASE}/api/ask-failures/wallet`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ wallet: signer.address, artifact: 'consent', ask: 'fund $25 by card', detail: 'Provided chainId "1" must match the active chainId "8453"' }) })
+    const consentBody = (await consentRes.json()) as { ok?: boolean; kind?: string }
+    check('mobile sign: artifact consent lands as wallet-refused', consentRes.status === 202 && consentBody.ok === true && consentBody.kind === 'wallet-refused')
+    const failuresSrc = fs.readFileSync('app/dashboard/failures/page.tsx', 'utf8')
+    check('mobile sign: /dashboard/failures labels launch-dropped as a phone stall', /'launch-dropped': 'phone stall/.test(failuresSrc))
+  }
+
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
