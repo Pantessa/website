@@ -16,7 +16,6 @@ import { Loader2, ArrowLeft, ArrowRight, X, Wallet } from 'lucide-react'
 import { CDP_INIT_PATIENCE_MS, emailLaneHint, walletLaneChips } from '@/lib/wallet-lineup'
 import { analytics } from '@/lib/analytics'
 import { WALLET_MARKS } from '@/components/wallet-marks'
-import { inAppBrowserOf, inAppEscapeCopy } from '@/lib/inapp-browser'
 import { oauthAllowedIn, oauthRefusedCopy } from '@/lib/mobile-wallet'
 import { PantessaMark } from '@/components/Logo'
 import { cn } from '@/lib/utils'
@@ -162,6 +161,11 @@ export function CreateAccountModal({
   }
 
   const [mounted, setMounted] = useState(false)
+  // The browser this door is being read in, resolved ONCE after mount. Never
+  // at render: the server has no UA, and a value that differs between the two
+  // passes is a hydration mismatch (CONNECT's contract, squad
+  // mobile-onboarding 2026-09-23).
+  const [browser, setBrowser] = useState<InAppBrowser | null>(null)
   const [step, setStep] = useState<Step>('email')
   const [email, setEmail] = useState('')
   const [flowId, setFlowId] = useState('')
@@ -170,7 +174,10 @@ export function CreateAccountModal({
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => setMounted(true), [])
+  useEffect(() => {
+    setMounted(true)
+    setBrowser(inAppBrowserOf(navigator.userAgent))
+  }, [])
 
   // The door's own story, for the journey log (lib/journey.ts): it opened,
   // and anything it told the visitor went wrong. A stranger who backs out
@@ -291,11 +298,14 @@ export function CreateAccountModal({
   // is in the way and how to get out. Nothing is disabled here — CONNECT owns
   // whether a lane fires; this is the layout and the words (squad
   // mobile-onboarding, 2026-09-23).
-  const inApp: InAppBrowser = inAppBrowserOf(typeof navigator === 'undefined' ? '' : navigator.userAgent)
-  // A wallet's OWN browser is the good case: the wallet is injected, signing
-  // happens in-page, and the wallet lane is exactly right there.
-  const walled = inApp.inApp && !inApp.canLaunchApps
-  const escape = inAppEscapeCopy(inApp)
+  // A wallet's OWN browser is the good case (`canLaunchApps`): the wallet is
+  // injected, signing happens in-page, and the wallet lane is exactly right
+  // there. `walled` is the other kind.
+  const walled = !!browser && browser.inApp && !browser.canLaunchApps
+  const escape = inAppEscapeCopy(browser ?? { inApp: false, vendor: null, canLaunchApps: true, walletInjected: false, platform: 'other' })
+  // One reading for the Google lane, shared with the connect behaviour that
+  // refuses the redirect (lib/mobile-wallet oauthAllowedIn).
+  const oauthOk = !browser || oauthAllowedIn(browser)
 
   return createPortal(
     <div className="ca">
@@ -387,8 +397,9 @@ export function CreateAccountModal({
                   className="ca__oauth"
                   onClick={() => startOAuth(p.id)}
                   disabled={!isInitialized}
+                  aria-disabled={!oauthOk || undefined}
                   aria-label={p.label}
-                  title={cdpTimedOut && !isInitialized ? 'Unavailable right now — the sign-in provider is unreachable. Connect a wallet instead.' : p.label}
+                  title={!oauthOk ? oauthRefusedCopy(escape) : cdpTimedOut && !isInitialized ? 'Unavailable right now — the sign-in provider is unreachable. Connect a wallet instead.' : p.label}
                 >
                   {/* Visible label, not glyph-only: with a single provider the
                       icon-row design read as a wide empty button with a "G"
@@ -396,7 +407,12 @@ export function CreateAccountModal({
                   <GoogleGlyph /> {p.label}
                 </button>
               ))}
-              {walled && <p className="ca__lanenote">Google refuses sign-in inside an app&rsquo;s browser.</p>}
+              {/* The shared refusal line (lib/mobile-wallet oauthRefusedCopy) ends
+                  "use the email code below", and in this layout the email row
+                  LEADS — so the caption states the fact without the direction
+                  and the full line stays on the button's title. Raised to
+                  CONNECT under NEEDS. */}
+              {!oauthOk && <p className="ca__lanenote">Google won&rsquo;t sign you in inside {escape.app}&rsquo;s browser.</p>}
             </div>
 
             {/* Lane 3 — email OTP, as ONE row (field + accent submit) rather

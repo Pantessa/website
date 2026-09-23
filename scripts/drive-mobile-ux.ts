@@ -168,10 +168,14 @@ async function bottomReserve(page: any): Promise<{ bar: number; covered: number;
     const br = bar.getBoundingClientRect()
     let covered = 0
     let last = 'none'
-    const nodes = Array.from(document.querySelectorAll('main *, footer *')) as HTMLElement[]
+    // Only CONTROLS count. A decorative glyph under the bar is cosmetic (the
+    // footer's giant absolutely-positioned wordmark bleeds past its own box
+    // and already runs off the viewport); a button under it is a dead tap.
+    const nodes = Array.from(
+      document.querySelectorAll('main a, main button, main input, main select, main textarea, main [role="button"], footer a, footer button'),
+    ) as HTMLElement[]
     for (const n of nodes) {
-      if (n.children.length > 0) continue
-      const t = (n.textContent ?? '').trim()
+      const t = (n.textContent ?? '').trim() || (n.getAttribute('aria-label') ?? '')
       if (!t) continue
       const r = n.getBoundingClientRect()
       if (r.height === 0 || r.top > window.innerHeight) continue
@@ -334,7 +338,7 @@ export type DriveCtx = {
   profile: Profile
   theme: Theme
   /** Open a page in this profile/theme, optionally with the mock wallet. */
-  open(opts?: { wallet?: boolean; init?: string }): Promise<any>
+  open(opts?: { wallet?: boolean | string; init?: string }): Promise<any>
   shot(page: any, row: number | string, extra?: string): Promise<string>
 }
 
@@ -364,7 +368,7 @@ async function makeCtx(browser: any, base: string, onrampBase: string | null, ta
       // document. (Same family as the addInitScript bite in memory
       // `pricing-v2-chart-first`.)
       await c.addInitScript('window.__name = window.__name || function (f) { return f }')
-      if (opts.wallet) await c.addInitScript(mockWalletScript(DRIVE_WALLET))
+      if (opts.wallet) await c.addInitScript(mockWalletScript(typeof opts.wallet === 'string' ? opts.wallet : DRIVE_WALLET))
       if (opts.init) await c.addInitScript(opts.init)
       const p = await c.newPage()
       p.on('pageerror', (e: Error) => {
@@ -602,13 +606,21 @@ const row2: UxScenario = {
   },
 }
 
+/** A guest watchlist in localStorage — the rail's own store (lib/watchlists
+ *  GUEST_LISTS_KEY). Seeding it makes "the rail is carrying something of
+ *  yours" deterministic instead of waiting on a live holdings read. */
+export const GUEST_LIST_SEED = `(() => { try {
+  localStorage.setItem('pantessa.watchlists.v1', JSON.stringify([{ id: 'g_drivelist01', owner: null, name: 'Watching', slug: null, symbols: ['AAPL', 'ETH', 'NVDA'], isPublic: false, createdAt: new Date().toISOString() }]));
+  localStorage.setItem('pantessa.watchlists.active', 'g_drivelist01');
+} catch {} })()`
+
 /** Row 3 — /markets at phone width. */
 const row3: UxScenario = {
   row: 3,
   name: '/markets on a phone',
   async run(ctx) {
     const v: Verdict[] = []
-    const page = await ctx.open()
+    const page = await ctx.open({ init: GUEST_LIST_SEED })
     await page.goto(`${ctx.base}/markets`, { waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(2500)
 
@@ -642,13 +654,30 @@ const row3: UxScenario = {
         : fail(3, 'the Map view never shows on a phone', 'a .mk-map is rendered at phone width'),
     )
 
+    // The rail carries the visitor's own surface (their list, their held
+    // positions, the card-funding door). On a phone it must be within reach,
+    // not past every board — measured in SCREENS, which is what a thumb feels.
     const rail = await page.evaluate(() => {
       const r = document.querySelector('.mkt-frame__rail') as HTMLElement | null
       if (!r) return { found: false }
       const rect = r.getBoundingClientRect()
-      return { found: true, width: Math.round(rect.width), inFlow: getComputedStyle(r).position !== 'fixed', y: Math.round(rect.top + window.scrollY) }
+      const y = Math.round(rect.top + window.scrollY)
+      return {
+        found: true,
+        width: Math.round(rect.width),
+        y,
+        screens: Math.round((y / window.innerHeight) * 10) / 10,
+        docH: document.documentElement.scrollHeight,
+        rows: document.querySelectorAll('.mkt-frame__rail .wl__row').length,
+      }
     })
-    v.push(rail.found ? pass(3, 'watchlist rail reachable in the flow', JSON.stringify(rail)) : fail(3, 'watchlist rail reachable in the flow', 'no .mkt-frame__rail'))
+    v.push(
+      rail.found && rail.rows! > 0 && rail.screens! <= 2
+        ? pass(3, "a carrying rail is within reach on a phone", `${rail.rows} rows at y ${rail.y} = ${rail.screens} screens (doc ${rail.docH})`)
+        : rail.found && rail.rows === 0
+          ? note(3, 'a carrying rail is within reach on a phone', `the rail is empty here (y ${rail.y}); an empty rail stays below the boards on purpose`)
+          : fail(3, 'a carrying rail is within reach on a phone', `${rail.rows} rows at y ${rail.y} = ${rail.screens} screens down (doc ${rail.docH})`),
+    )
 
     await ctx.shot(page, 3, 'markets')
 
@@ -660,8 +689,13 @@ const row3: UxScenario = {
     // Which act chips can a FINGER actually reach here? The board's QuickAct
     // seat is hover-revealed and `@media (hover: none)` hides it outright, so
     // on touch the reachable acts are the rail's and the ask bar's.
-    const reach = await page.evaluate(() => {
-      const all = Array.from(document.querySelectorAll('[data-ask]')) as HTMLElement[]
+    // Act controls wear several classes: `[data-ask]` (the board's QuickAct),
+    // `.wl__chip` (the rail row menu), `.mk-ai__chip` (the ask bar). Count
+    // them all — the question is whether a FINGER reaches one, not which
+    // component shipped it.
+    const ACT_SEL = '[data-ask], .wl__chip, .mk-ai__chip, .mkt-chip, .sym__act-chip'
+    const reach = await page.evaluate((sel: string) => {
+      const all = Array.from(document.querySelectorAll(sel)) as HTMLElement[]
       const visible = all.filter((e) => {
         const r = e.getBoundingClientRect()
         const cs = getComputedStyle(e)
@@ -673,15 +707,56 @@ const row3: UxScenario = {
         hoverOnly: all.length - visible.length,
         sample: visible.slice(0, 4).map((e) => e.getAttribute('data-ask') ?? ''),
         quickHidden: getComputedStyle(document.querySelector('.mk-table__quick') ?? document.createElement('i')).display === 'none',
+        smallest: visible.length ? Math.round(Math.min(...visible.map((e) => e.getBoundingClientRect().height))) : 0,
       }
-    })
+    }, ACT_SEL)
+    // The board's own QuickAct seat is hover-revealed and `@media (hover: none)`
+    // removes it outright — deliberate: a persistent chip would eat the name
+    // cell. So on touch the act lives one tap inside the rail row's menu. The
+    // honest question is "can a finger get to one AT ALL, and in how many
+    // taps", not "is a chip painted".
+    let taps = reach.visible > 0 ? 1 : 0
+    if (reach.visible === 0) {
+      const more = page.locator('.mkt-frame__rail .wl__rowMore').first()
+      if ((await more.count()) > 0) {
+        await more.click({ timeout: 6000 }).catch(() => {})
+        await page.waitForTimeout(500)
+        const after = await page.evaluate((sel: string) => {
+          const vis = (Array.from(document.querySelectorAll(sel)) as HTMLElement[]).filter((e) => {
+            const r = e.getBoundingClientRect()
+            const cs = getComputedStyle(e)
+            return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && Number(cs.opacity) > 0.05 && cs.pointerEvents !== 'none'
+          })
+          return {
+            n: vis.length,
+            sample: vis.slice(0, 3).map((e) => e.getAttribute('data-ask') ?? (e.textContent ?? '').trim()),
+            smallest: vis.length ? Math.round(Math.min(...vis.map((e) => e.getBoundingClientRect().height))) : 0,
+          }
+        }, ACT_SEL)
+        if (after.n > 0) {
+          taps = 2
+          reach.visible = after.n
+          reach.sample = after.sample
+          reach.smallest = after.smallest
+        }
+      }
+    }
     v.push(
-      reach.visible > 0
-        ? pass(3, 'a finger can reach an act chip on /markets', `${reach.visible} of ${reach.total} [data-ask] tappable (${reach.sample.join(' · ')}); ${reach.hoverOnly} hover-only`)
-        : fail(3, 'a finger can reach an act chip on /markets', `0 of ${reach.total} [data-ask] tappable — every act here is hover-revealed`),
+      taps > 0
+        ? pass(3, 'a finger can reach an act chip on /markets', `${taps} tap${taps > 1 ? 's' : ''}: ${reach.visible} act${reach.visible > 1 ? 's' : ''} (${reach.sample.join(' · ')}); the board's ${reach.hoverOnly} hover-only chips stay off touch by design`)
+        : fail(3, 'a finger can reach an act chip on /markets', `no act chip reachable: 0 of ${reach.total} tappable, and the rail's row menu offered none`),
     )
+    if (taps > 0) {
+      v.push(
+        reach.smallest >= 44
+          ? pass(3, 'the reachable act is a 44px target', `smallest ${reach.smallest}px`)
+          : fail(3, 'the reachable act is a 44px target', `smallest ${reach.smallest}px — under the touch floor on the control that starts a purchase`),
+      )
+    }
     if (reach.visible > 0) {
-      const chip = page.locator('[data-ask]:visible').first()
+      // Whatever the reachable act turned out to be: the rail's menu chip
+      // when the board's are hover-only, else a board chip.
+      const chip = taps === 2 ? page.locator('.wl__pop .wl__chip').first() : page.locator('[data-ask]:visible').first()
       try {
         await chip.click({ timeout: 6000 })
         await page.waitForTimeout(1800)
@@ -1030,7 +1105,22 @@ const row10: UxScenario = {
       v.push(note(10, 'card funding', 'skipped — pass --onramp=http://localhost:3876'))
       return v
     }
-    const page = await ctx.open({ wallet: true })
+    // An address that has never held anything: the card door only offers
+    // itself to a wallet that reads empty (lib/watchlists railFundPhase).
+    const EMPTY = '0x000000000000000000000000000000000000dEaD'
+    const page = await ctx.open({ wallet: EMPTY, init: GUEST_LIST_SEED })
+    // The card door is offered off ONE read (GET /api/watchlists/holdings →
+    // { held, empty, cardFunding }). Serving that verdict as a fixture keeps
+    // this a LAYOUT measurement and not a bet on what a live chain scan says
+    // about a throwaway address.
+    await page.route('**/api/watchlists/holdings**', async (route: any) => {
+      if (route.request().method() !== 'GET') return route.continue()
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ address: EMPTY.toLowerCase(), held: [], empty: true, cardFunding: true, failedChains: [] }),
+      })
+    })
     await page.goto(`${ctx.onrampBase}/markets`, { waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(5000)
     // The card door lives in the rail. On a phone the rail is the last thing

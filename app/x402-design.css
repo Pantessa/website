@@ -5980,6 +5980,21 @@
 @media (prefers-reduced-motion: reduce) {
   .wl__brewMark::before, .wl__brewMark svg, .wl__brewBand, :root[data-theme='light'] .wl__brewBand, .wl__quoteBar { animation: none; }
 }
+/* TOUCH TARGETS IN THE RAIL (squad mobile-onboarding, 2026-09-23). On a
+   phone the board rows carry no act chip at all — `.mk-table__quick` is
+   hover-revealed and `@media (hover: none)` removes it, deliberately, so a
+   persistent chip cannot eat the name cell. That makes the rail row's ⋯ menu
+   the ONLY act a finger can reach on /markets, and it was measured at 27px
+   for "Buy $10" and 33px for its menu items — under the 44px floor every
+   touch guideline names, on the one control that starts a purchase.
+   Pointer-coarse only: the mouse keeps its compact rail. */
+@media (pointer: coarse) {
+  .wl__pop .wl__chip,
+  .wl__fundActs .wl__chip { min-height: 44px; padding: 0 16px; font-size: 13px; }
+  .wl__popItem { min-height: 44px; }
+  .wl__icon { width: 40px; height: 40px; }
+  .wl__popChips { gap: 8px; }
+}
 .wl__alerts { border-top: 1px solid var(--line); padding: 2px 0; }
 .wl__alertRow { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 12px; font-size: 12px; }
 .wl__alertLabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
