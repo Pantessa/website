@@ -12,7 +12,9 @@
 import prisma from '@/lib/db'
 import { mintSlug, composeMcps } from '@/lib/intent-links'
 import { scanFundingSources } from '@/lib/funding-plan'
-import { compileJobAsk } from '@/lib/jobs'
+import { compileJobAsk, JOB_SEGMENT_PARSERS, type CompiledJob, type JobSegmentCtx } from '@/lib/jobs'
+import { offerFundingPlan } from '@/lib/funding-plan'
+import { arbitrumUsdcBalance, hlOpenCollateralShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { unfillableFundedBuyReason } from '@/lib/venue-preflight'
 import { advanceJob, createJob, getJobWithSteps, cancelJob } from '@/lib/jobs-runner'
 import { signJobToken } from '@/lib/job-token'
@@ -26,6 +28,7 @@ import {
   type BrokerState,
 } from '@/lib/broker'
 import { assertDeskOpen, assertAgentIdentity, assertSenderIdentity, assertUnderDeskCap, cleanAgentKey } from '@/lib/broker-policy'
+import { readVenueFunding } from '@/lib/desk-drive'
 import { outboundToThirdParty } from '@/lib/content-origin'
 import { deniedBrandNameReason, isDeniedBrandName } from '@/lib/brand-denylist'
 import { validateCallbackUrl, mintCallbackSecret, deliverWebhook, notifyEligible } from '@/lib/broker-webhook'
@@ -36,6 +39,7 @@ import { logRosterRefusalDirect } from '@/lib/roster-observe'
 import { moneyShaped } from '@/lib/ask-failure'
 import { MOSAIC_CHAIN_IDS, composeMosaicAsk, sanitizeMosaicSlices, type MosaicChainWord } from '@/lib/mosaic'
 import { recoverMessageAddress } from 'viem'
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { COUNTED_EVENT_WHERE, COUNTED_TURN_WHERE, reverifyPendingForSlug } from '@/lib/link-receipt-verify'
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.pantessa.com').replace(/\/$/, '')
@@ -143,7 +147,12 @@ export async function openIntent(opts: {
   }
 
   const scan = wallet ? await scanFundingSources(wallet).catch(() => null) : null
-  const plan = planIntent(opts.ask, scan)
+  // A venue that holds its own collateral answers the funding question, not
+  // the wallet: a Hyperliquid open on a wallet holding $19 of USDC on Base
+  // read "covered" while the open was short every cent (EXAMPLE lane,
+  // 2026-09-23). Read-only and fail-soft — null means plan from the wallet.
+  const venue = await readVenueFunding(opts.ask, wallet)
+  const plan = planIntent(opts.ask, scan, venue)
 
   // THE ROSTER (R2): the desk derives the hash from the PRESENTED key
   // itself — a hired mandate slot binds the proposal, gates it (cap at
@@ -297,7 +306,8 @@ export async function chooseOption(intentId: string, optionId: string): Promise<
   }
 
   const scan = row.wallet ? await scanFundingSources(row.wallet).catch(() => null) : null
-  const plan = planIntent(opt.resume, scan)
+  const venue = await readVenueFunding(opt.resume, row.wallet)
+  const plan = planIntent(opt.resume, scan, venue)
   await prisma.brokerIntent.update({ where: { id: row.id }, data: { ask: plan.ask, plan: plan as object } })
   const out: OpenResult = {
     intentId: row.id,
@@ -566,6 +576,13 @@ export interface ExecuteResult {
   state: BrokerState
   jobId: string
   steps: { seq: number; kind: string; note: string }[]
+  /** The job's capability token, bare — the SAME grant the `drive` URLs carry,
+   *  handed over once here rather than parsed back out of a URL (EXAMPLE lane,
+   *  2026-09-23). This is the ONLY place the desk emits it: broker_next /
+   *  broker_done answer with credential-free endpoints, because re-minting a
+   *  7-day, cancel-surviving job grant on every leg scales the exposure with
+   *  the number of legs and buys the holder nothing. */
+  token: string
   drive: {
     poll: string
     complete: string
@@ -587,7 +604,7 @@ export interface ExecuteResult {
  *  so a lying agent fails its own job closed one leg later. Every build
  *  passes the same deterministic builders + fail-closed guards + spend
  *  policy as a human turn. */
-export async function executeIntent(intentId: string, walletSignature: unknown, call?: DeskCallOpts): Promise<ExecuteResult> {
+export async function executeIntent(intentId: string, walletSignature: unknown, call?: DeskCallOpts, proof: DeskExecuteProof = {}): Promise<ExecuteResult> {
   assertDeskOpen()
   const row = await mustIntent(intentId)
   if (row.state !== 'open') throw new Error(`Intent ${intentId} is ${row.state} — execution starts from an open intent.`)
@@ -601,6 +618,13 @@ export async function executeIntent(intentId: string, walletSignature: unknown, 
   // must sit under the desk cap. Human handoff above carries neither gate —
   // a human signature is its own ceiling.
   assertAgentIdentity(row.agentKey)
+  // The CALLER's identity, not just the one the intent was opened with (QA F4): the desk key
+  // presented now must be the key bound at open, compared timing-safe. Anyone holding a stray
+  // consent signature still needs the key that opened the intent.
+  const callerKey = cleanAgentKey(proof.agentKey)
+  if (!callerKey || !row.agentKey || !sameSecret(callerKey, row.agentKey)) {
+    throw new Error('broker_execute needs the agent_key this intent was opened with — pass the same desk identity string you passed to broker_open.')
+  }
   assertUnderDeskCap(askUsd(row.ask))
   // THE ROSTER (R2, T5): a roster-bound intent re-checks its slot at the
   // BUILD gate — a fire that landed after open refuses here, and the slot
@@ -615,17 +639,9 @@ export async function executeIntent(intentId: string, walletSignature: unknown, 
   // path by definition, so it signs the desk's consent text — bound to THIS
   // intent id + wallet — and the desk recovers the signer before any job row
   // exists. Single-use by construction: the intent must still be `open`.
-  await assertWalletProof(row.id, row.wallet, walletSignature)
+  await assertWalletProof(row.id, row.wallet, walletSignature, proof.issuedAt)
 
-  const compiled = compileJobAsk(row.ask)
-  if (!compiled || 'problem' in compiled || 'clarify' in compiled) {
-    const why = compiled && 'problem' in compiled ? compiled.problem : compiled && 'clarify' in compiled ? 'it needs a clarification first' : 'it is a single-step ask'
-    throw new Error(
-      `"${row.ask}" does not compile to a multi-step job (${why}). ` +
-        'The agent-signed path exists for SEQUENCED flows (fund → wait for arrival → act). ' +
-        'For single steps or clarifications, negotiate further or use broker_handoff.',
-    )
-  }
+  const compiled = await compileDeskAsk(row.ask, row.wallet)
 
   // The funding plan's buy, before any leg can move money (see
   // lib/venue-preflight.ts): a desk-driven job strands the employer's
@@ -649,6 +665,7 @@ export async function executeIntent(intentId: string, walletSignature: unknown, 
     intentId: row.id,
     state: 'executing',
     jobId: job.id,
+    token,
     steps: compiled.steps.map((s, i) => ({ seq: i, kind: s.kind, note: s.title })),
     drive: {
       poll: `${SITE}/api/jobs/${job.id}?t=${token}`,
@@ -795,27 +812,59 @@ export async function fireIntentWebhook(
 /** The consent text the agent's wallet signs (personal_sign) to prove it
  *  owns the wallet an agent-signed intent is bound to. Pure + exported so
  *  agents/harnesses build the identical bytes. */
-export function deskExecuteConsentMessage(intentId: string, wallet: string): string {
+export function deskExecuteConsentMessage(intentId: string, wallet: string, issuedAt: string): string {
   return [
     'Pantessa agent desk — execute consent',
     `Intent: ${intentId}`,
     `Wallet: ${wallet.toLowerCase()}`,
+    `Issued at: ${issuedAt}`,
     'Signing lets the desk compile this intent into a job owned by this wallet. It moves nothing by itself; every leg still needs this wallet\'s own signature.',
   ].join('\n')
 }
 
-async function assertWalletProof(intentId: string, wallet: string, signature: unknown): Promise<void> {
+/** Both-ways freshness window on the consent's `issuedAt` (QA F4, the on-ramp consent's rule). */
+export const DESK_CONSENT_WINDOW_MS = 10 * 60_000
+
+/** The caller's proof on the agent-signed path: the consent signature, the ISO instant it names,
+ *  and the desk identity the caller presents (compared timing-safe to the one bound at open). */
+export interface DeskExecuteProof {
+  issuedAt?: unknown
+  agentKey?: unknown
+}
+
+/** Pure: is this `issuedAt` an ISO instant inside the window, both ways? */
+export function deskConsentIssuedAtOk(issuedAt: unknown, now = Date.now()): { ok: true; iso: string } | { ok: false; why: string } {
+  if (typeof issuedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(issuedAt)) {
+    return { ok: false, why: 'issued_at is required — the ISO-8601 UTC instant the consent was signed at (e.g. 2026-09-23T11:02:03.000Z)' }
+  }
+  const t = Date.parse(issuedAt)
+  if (!Number.isFinite(t)) return { ok: false, why: 'issued_at is not a valid instant' }
+  if (t - now > DESK_CONSENT_WINDOW_MS) return { ok: false, why: `issued_at is more than ${DESK_CONSENT_WINDOW_MS / 60_000} minutes in the future` }
+  if (now - t > DESK_CONSENT_WINDOW_MS) return { ok: false, why: `this consent was issued more than ${DESK_CONSENT_WINDOW_MS / 60_000} minutes ago — sign a fresh one` }
+  return { ok: true, iso: issuedAt }
+}
+
+/** Timing-safe equality on two secrets of any length (hash first, so length never leaks). */
+function sameSecret(a: string, b: string): boolean {
+  const ha = createHash('sha256').update(a).digest()
+  const hb = createHash('sha256').update(b).digest()
+  return timingSafeEqual(ha, hb)
+}
+
+async function assertWalletProof(intentId: string, wallet: string, signature: unknown, issuedAt: unknown): Promise<void> {
   const refuse = (why: string): never => {
     throw new Error(
-      `broker_execute needs wallet_signature — ${why}. Sign the exact text of deskExecuteConsentMessage(intent_id, wallet) ` +
-        '(personal_sign / EIP-191) with the wallet you opened the intent for; the desk recovers the signer and refuses any other. ' +
+      `broker_execute needs wallet_signature — ${why}. Sign the exact text of deskExecuteConsentMessage(intent_id, wallet, issued_at) ` +
+        '(personal_sign / EIP-191) with the wallet you opened the intent for, and pass the same issued_at; the desk recovers the signer and refuses any other. ' +
         'For human signing, use broker_handoff — it needs no wallet proof.',
     )
   }
   if (typeof signature !== 'string' || !/^0x[0-9a-fA-F]{130}$/.test(signature)) return refuse('a 65-byte 0x signature over the consent text is required')
+  const fresh = deskConsentIssuedAtOk(issuedAt)
+  if (!fresh.ok) return refuse(fresh.why)
   let signer: string
   try {
-    signer = await recoverMessageAddress({ message: deskExecuteConsentMessage(intentId, wallet), signature: signature as `0x${string}` })
+    signer = await recoverMessageAddress({ message: deskExecuteConsentMessage(intentId, wallet, fresh.iso), signature: signature as `0x${string}` })
   } catch {
     return refuse('the signature does not verify against the consent text')
   }
@@ -852,4 +901,85 @@ async function mustIntent(intentId: string) {
   const row = id ? await prisma.brokerIntent.findUnique({ where: { id } }) : null
   if (!row) throw new Error(`No such intent "${intentId}".`)
   return row
+}
+
+/* ── the agent-signed compile (agent-desk squad, 2026-09-23) ──────────── */
+
+/**
+ * Compile the working ask into the job the agent's key drives. Three shapes,
+ * one rule each:
+ *   · a SEQUENCED ask ("…, then …") compiles exactly as chat does;
+ *   · a LONE action compiles through the same registry entry as a ONE-leg job
+ *     — the desk used to refuse it as "single-step" (DRIVE finding F1: the
+ *     flagship "2x long $12 of HYPE" walled on every wallet), yet a one-leg
+ *     job passes every gate a five-leg one does (affordability, guards, the
+ *     desk cap) and the runner enforces nothing extra for it;
+ *   · a Hyperliquid OPEN the account can't collateralize gets the chat's own
+ *     funded composition (app/api/chat/route.ts hlAutoFundedJobTurn):
+ *     `deposit N USDC to Hyperliquid, then <ask>` with the funding plan's
+ *     first route in front — bridge → wait → deposit → wait → order. An
+ *     unfundable wallet refuses by name with the plan's own words.
+ * Every branch throws the honest reason; nothing is offered here.
+ */
+async function compileDeskAsk(ask: string, wallet: string): Promise<CompiledJob> {
+  const refuse = (why: string): never => {
+    throw new Error(
+      `"${ask}" does not compile to a job (${why}). ` +
+        'The agent-signed path compiles sequenced flows (fund → wait for arrival → act) and lone actions alike. ' +
+        'Negotiate further with broker_choose, or use broker_handoff for a human signature.',
+    )
+  }
+  let compiled = compileJobAsk(ask) ?? compileLoneSegment(ask)
+  if (!compiled) return refuse('no native layer claims it')
+  if ('problem' in compiled) return refuse(compiled.problem)
+  if ('clarify' in compiled) return refuse(`it needs a clarification first: ${compiled.clarify.question}`)
+
+  // An HL open leads the job → does the venue hold the collateral for it?
+  const lead = compiled.steps.find((s) => s.kind === 'sign')
+  const hlOpen = lead?.builder === 'native-hl-exec' && (lead.params as { kind?: unknown }).kind === 'open' ? (lead.params as unknown as HlOrderIntent) : null
+  const alreadyFunded = compiled.steps.some((s) => s.builder === 'native-hl-exec' && (s.params as { kind?: unknown }).kind === 'deposit')
+  if (hlOpen && !alreadyFunded) {
+    const short = await hlOpenCollateralShortfall(hlOpen, wallet)
+    if (short) {
+      const fundedAsk = `deposit ${short.depositUsdc} USDC to Hyperliquid, then ${ask}`
+      const arbUsdc = await arbitrumUsdcBalance(wallet).catch(() => null)
+      if (arbUsdc === null) return refuse('the Arbitrum USDC balance could not be read, so the deposit that funds the position cannot be sized')
+      const usdcShort = Number(Math.max(0, short.depositUsdc - arbUsdc).toFixed(2))
+      const offer = await offerFundingPlan({
+        user: wallet,
+        need: { chainId: 42161, token: 'USDC', amountHuman: usdcShort, followupResume: fundedAsk, actionLabel: 'the Hyperliquid position' },
+        trace: () => {},
+      })
+      if (offer && 'insufficient' in offer) {
+        return refuse(`the position needs ~$${short.depositUsdc} of USDC reaching Hyperliquid and the wallet can't fund it — ${offer.insufficient.replace(/^[^\w]+/, '')}`)
+      }
+      let resume = fundedAsk
+      if (offer) {
+        const first = offer.clarify.options[0]
+        if (!first || /never mind/i.test(first.resume)) return refuse('no funding route covers the collateral the position needs')
+        resume = first.resume
+      } else if (usdcShort > 0) {
+        return refuse(`the position needs ~$${short.depositUsdc} of USDC on Hyperliquid and the funding plan could not be built right now`)
+      }
+      const funded = compileJobAsk(resume)
+      if (!funded || 'problem' in funded || 'clarify' in funded) return refuse(`the funded form "${resume}" did not compile`)
+      compiled = funded
+    }
+  }
+  return compiled
+}
+
+/** A lone action through the jobs registry: the first entry that claims the
+ *  sentence answers (the same claim order compileJobAsk walks). null = no
+ *  chainable action claims it. */
+function compileLoneSegment(ask: string): CompiledJob | { problem: string } | { clarify: { question: string; options: { label: string; resume: string }[] } } | null {
+  const ctx: JobSegmentCtx = { index: 0, fundingSeen: false, nft: null, message: ask }
+  for (const parser of JOB_SEGMENT_PARSERS) {
+    const out = parser.parse(ask, ctx)
+    if (!out) continue
+    if ('problem' in out) return { problem: out.problem }
+    if ('clarify' in out) return { clarify: out.clarify }
+    return { title: out.title, steps: out.steps }
+  }
+  return null
 }

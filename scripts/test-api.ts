@@ -21124,11 +21124,20 @@ async function main() {
     await rpc('notifications/initialized')
 
     const caps = await call('broker_capabilities')
+    // Re-pinned 2026-09-23 (agent-desk squad, MCP lane): `loop` became TWO
+    // named loops when the agent-signed leg path shipped, and the contract's
+    // "never returns calldata" is now scoped to the HUMAN lane — broker_next
+    // serves the guarded leg to the agent that proved the wallet. What this
+    // pin protects is unchanged: the human lane still promises sentences and
+    // links, and the deterministic-builders/only-a-signature-moves-money
+    // contract is still stated in words.
     check(
-      'broker: capabilities carries the contract + loop',
+      'broker: capabilities carries the contract + both loops',
       !caps.isError &&
-        Array.isArray(caps.payload.loop) &&
-        /never returns calldata/i.test(caps.payload.contract ?? ''),
+        Array.isArray(caps.payload.loop?.human) &&
+        Array.isArray(caps.payload.loop?.agent) &&
+        /nothing signable crosses this surface at all/i.test(caps.payload.contract ?? '') &&
+        /deterministic builders write every transaction/i.test(caps.payload.contract ?? ''),
     )
     check(
       'broker M6: capabilities advertises the pricing block (free door in this env)',
@@ -21191,6 +21200,8 @@ async function main() {
       agent_key: 'harness-desk-key',
     })
     const execIntentId = execOpen.payload.intentId as string
+    // Round 2 (agent desk, QA F4): the consent names the instant it was signed and rides with the desk key that opened the intent.
+    const execIssuedAt = new Date().toISOString()
     const noProof = await call('broker_execute', { intent_id: execIntentId })
     check(
       'broker: execute WITHOUT wallet_signature is refused by name (schema) — no job row for an unproven wallet',
@@ -21198,21 +21209,21 @@ async function main() {
       String(noProof.payload).slice(0, 120),
     )
     const impostor = privateKeyToAccount(generatePrivateKey())
-    const impostorSig = await impostor.signMessage({ message: deskExecuteConsentMessage(execIntentId, agentWallet.address) })
-    const wrongWallet = await call('broker_execute', { intent_id: execIntentId, wallet_signature: impostorSig })
+    const impostorSig = await impostor.signMessage({ message: deskExecuteConsentMessage(execIntentId, agentWallet.address, execIssuedAt) })
+    const wrongWallet = await call('broker_execute', { intent_id: execIntentId, wallet_signature: impostorSig, issued_at: execIssuedAt, agent_key: 'harness-desk-key' })
     check(
       "broker: execute with another wallet's signature over the consent text is refused (recovers to a different wallet)",
       wrongWallet.isError && /recovers to/i.test(String(wrongWallet.payload)),
       String(wrongWallet.payload).slice(0, 120),
     )
-    const otherIntentSig = await agentWallet.signMessage({ message: deskExecuteConsentMessage('someotherid', agentWallet.address) })
-    const wrongIntent = await call('broker_execute', { intent_id: execIntentId, wallet_signature: otherIntentSig })
+    const otherIntentSig = await agentWallet.signMessage({ message: deskExecuteConsentMessage('someotherid', agentWallet.address, execIssuedAt) })
+    const wrongIntent = await call('broker_execute', { intent_id: execIntentId, wallet_signature: otherIntentSig, issued_at: execIssuedAt, agent_key: 'harness-desk-key' })
     check(
       'broker: a consent signed for a DIFFERENT intent id does not transfer (bound to intent + wallet)',
       wrongIntent.isError && /recovers to|does not verify/i.test(String(wrongIntent.payload)),
     )
-    const execSig = await agentWallet.signMessage({ message: deskExecuteConsentMessage(execIntentId, agentWallet.address) })
-    const execRes = await call('broker_execute', { intent_id: execIntentId, wallet_signature: execSig })
+    const execSig = await agentWallet.signMessage({ message: deskExecuteConsentMessage(execIntentId, agentWallet.address, execIssuedAt) })
+    const execRes = await call('broker_execute', { intent_id: execIntentId, wallet_signature: execSig, issued_at: execIssuedAt, agent_key: 'harness-desk-key' })
     const drive = execRes.payload?.drive
     check(
       'broker: execute with the wallet\'s own consent signature compiles the sequenced ask to an agent-owned job + drive recipe',
@@ -21225,9 +21236,9 @@ async function main() {
     )
     check(
       'broker: the consent text is intent+wallet bound, human-readable, and carries no hex material',
-      deskExecuteConsentMessage('abc', '0xABCDEF0000000000000000000000000000000001').includes('Intent: abc') &&
-        deskExecuteConsentMessage('abc', '0xABCDEF0000000000000000000000000000000001').includes('Wallet: 0xabcdef0000000000000000000000000000000001') &&
-        !/0x[0-9a-fA-F]{64,}/.test(deskExecuteConsentMessage('abc', agentWallet.address)),
+      deskExecuteConsentMessage('abc', '0xABCDEF0000000000000000000000000000000001', execIssuedAt).includes('Intent: abc') &&
+        deskExecuteConsentMessage('abc', '0xABCDEF0000000000000000000000000000000001', execIssuedAt).includes('Wallet: 0xabcdef0000000000000000000000000000000001') &&
+        !/0x[0-9a-fA-F]{64,}/.test(deskExecuteConsentMessage('abc', agentWallet.address, execIssuedAt)),
     )
     const jobPoll = await fetch((drive.poll as string).replace(/^https?:\/\/[^/]+/, BASE))
     const jobBody = (await jobPoll.json()) as { job?: { steps?: unknown[] } }
@@ -21237,7 +21248,7 @@ async function main() {
     )
 
     const single = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'harness' })
-    const singleExec = await call('broker_execute', { intent_id: single.payload.intentId, wallet_signature: execSig })
+    const singleExec = await call('broker_execute', { intent_id: single.payload.intentId, wallet_signature: execSig, issued_at: execIssuedAt, agent_key: 'harness-desk-key' })
     check(
       'broker: execute refuses single-step and wallet-less intents honestly',
       singleExec.isError && /wallet that will SIGN|does not compile/i.test(String(singleExec.payload)),
@@ -21250,7 +21261,7 @@ async function main() {
       wallet: '0x3333333333333333333333333333333333333333',
       agent: 'harness',
     })
-    const noIdExec = await call('broker_execute', { intent_id: noId.payload.intentId, wallet_signature: execSig })
+    const noIdExec = await call('broker_execute', { intent_id: noId.payload.intentId, wallet_signature: execSig, issued_at: execIssuedAt, agent_key: 'harness-desk-key' })
     check(
       'broker M1: agent-signed execute refuses an intent with no bound identity, by name',
       noIdExec.isError && /bound agent identity|agent_key/i.test(String(noIdExec.payload)),
@@ -21264,12 +21275,12 @@ async function main() {
       agent: 'harness',
       agent_key: 'harness-desk-key',
     })
-    const overCapExec = await call('broker_execute', { intent_id: overCap.payload.intentId, wallet_signature: execSig })
+    const overCapExec = await call('broker_execute', { intent_id: overCap.payload.intentId, wallet_signature: execSig, issued_at: execIssuedAt, agent_key: 'harness-desk-key' })
     check(
       'broker M1: agent-signed execute refuses an intent over the desk cap',
       overCapExec.isError && /desk caps|over/i.test(String(overCapExec.payload)),
     )
-    await call('broker_close', { intent_id: overCap.payload.intentId })
+    await call('broker_close', { intent_id: overCap.payload.intentId, agent_key: 'harness-desk-key' })
 
     // M3 — the webhook opt-in. A private/SSRF callback is refused server-side;
     // a good https one binds and returns the signing secret ONCE.
@@ -21306,7 +21317,7 @@ async function main() {
       'broker M4: an identity whose intents are all internal-run has NO public record (404) — the harness never headlines /agents',
       !recInternal.isError && recInternalPage.status === 404,
     )
-    await call('broker_close', { intent_id: recInternal.payload.intentId })
+    await call('broker_close', { intent_id: recInternal.payload.intentId, agent_key: internalKey })
     // The organic path renders (opt this one call out of the suite stamp).
     const organicKey = `harness-organic-${Date.now()}`
     const recOpen = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'Harness Agent', agent_key: organicKey }, { [ORGANIC_PROBE]: '1' })
@@ -21338,7 +21349,7 @@ async function main() {
         /twitter:card"[^>]+summary_large_image|summary_large_image[^>]+twitter:card/.test(recHtml) &&
         /\/agents\/[0-9a-f]+\/opengraph-image/.test(recHtml),
     )
-    await call('broker_close', { intent_id: recOpen.payload.intentId })
+    await call('broker_close', { intent_id: recOpen.payload.intentId, agent_key: organicKey })
 
     // M5 — the wallet inbox. broker_send addresses an intent to a wallet; it
     // lands in that wallet's /inbox, one tap from the guarded /i runtime.
@@ -21440,7 +21451,7 @@ async function main() {
         !impInbox2.some((i) => /[@\uFF20]/.test(i.from ?? '')),
       `full=${fromOf(impFull)} multi=${fromOf(impMulti)}`,
     )
-    for (const r of [impFull, impMulti]) if (r.payload?.intentId) await call('broker_close', { intent_id: r.payload.intentId })
+    for (const r of [impFull, impMulti]) if (r.payload?.intentId) await call('broker_close', { intent_id: r.payload.intentId, agent_key: 'harness-desk-key' })
     if (impersonate.payload?.intentId) await call('broker_close', { intent_id: impersonate.payload.intentId })
 
     // U2 — the closed-loop receipt seam: the /i page of a desk-bound
@@ -21474,7 +21485,7 @@ async function main() {
       ((await allowed.json()) as { allowed?: boolean }).allowed === true &&
         ((await allowedOther.json()) as { allowed?: boolean }).allowed === false,
     )
-    await call('broker_close', { intent_id: sent.payload.intentId })
+    await call('broker_close', { intent_id: sent.payload.intentId, agent_key: 'harness-desk-key' })
 
     // ── WAVE-2 discovery: opt-in open-slots feed + slot_token targeting ────
     {
@@ -21748,7 +21759,7 @@ async function main() {
           inboxAtt.every((i) => i.slug !== vSlug),
         JSON.stringify({ v: attBody.verification, s: stAtt.payload?.state }),
       )
-      for (const r of [rSent, vSent]) if (r.payload?.intentId) await call('broker_close', { intent_id: r.payload.intentId })
+      for (const r of [rSent, vSent]) if (r.payload?.intentId) await call('broker_close', { intent_id: r.payload.intentId, agent_key: 'harness-desk-key' })
     }
 
     // broker_tile — MOSAIC on the desk: slices in, a kind='mosaic' /i link
@@ -21897,7 +21908,7 @@ async function main() {
         'roster R2: an unhired agent_key does NOT auto-address — plain open, no roster block',
         !un.isError && un.payload?.state === 'open' && un.payload?.roster === undefined,
       )
-      if (un.payload?.intentId) await call('broker_close', { intent_id: un.payload.intentId })
+      if (un.payload?.intentId) await call('broker_close', { intent_id: un.payload.intentId, agent_key: 'never-hired-key' })
 
       // 3 — over-cap at OPEN refuses by name AND benches (cap breach is the
       // only bench trigger).
@@ -22015,7 +22026,7 @@ async function main() {
         threeOk && fourth.isError && /already has 3 undecided proposals/.test(String(fourth.payload)),
         fourth.isError ? String(fourth.payload).slice(0, 100) : 'no refusal',
       )
-      for (const id of budgetProps) await call('broker_close', { intent_id: id })
+      for (const id of budgetProps) await call('broker_close', { intent_id: id, agent_key: rosterAgentKey })
       const overBudget = await call('broker_open', { ask: 'Buy $9 of AAPL', agent_key: rosterAgentKey, wallet: employer2.address })
       const slotAfterBudget = ((await (await fetch(`${BASE}/api/roster?wallet=${employer2.address}`)).json()) as {
         slots?: { id: string; status: string }[]
@@ -22125,7 +22136,7 @@ async function main() {
         ).json()) as { slots?: unknown[] }).slots ?? []
         check(`roster R2: drill rows released for ${acct.address.slice(0, 8)}…`, after.length === 0)
       }
-      if (prop.payload?.intentId) await call('broker_close', { intent_id: prop.payload.intentId })
+      if (prop.payload?.intentId) await call('broker_close', { intent_id: prop.payload.intentId, agent_key: rosterAgentKey })
     }
 
     // The wire-level pin: nothing any MCP call returned carries 0x-prefixed
@@ -22136,7 +22147,7 @@ async function main() {
 
     const closed = await call('broker_close', { intent_id: intentId })
     const closedW = await call('broker_close', { intent_id: weather.payload.intentId })
-    const closedE = await call('broker_close', { intent_id: execOpen.payload.intentId })
+    const closedE = await call('broker_close', { intent_id: execOpen.payload.intentId, agent_key: 'harness-desk-key' })
     const closedS = await call('broker_close', { intent_id: single.payload.intentId })
     const closedT = await call('broker_close', { intent_id: tile.payload.intentId })
     const tileGalleryAfter = (await (await fetch(`${BASE}/api/mosaics?slug=${tileSlug}`)).json()) as { rows?: unknown[] }
@@ -29827,6 +29838,1624 @@ async function main() {
     const tAapl = flat(await (await fetch(`${BASE}/t/AAPL?tab=technicals`)).text())
     check('fundamentals: /t/UNI?tab=technicals server-renders the panel shell (data-fundamentals="UNI", DefiLlama named)', /data-fundamentals="UNI"/.test(tUni) && /DefiLlama/.test(tUni), 'the shell is missing from the SSR')
     check('fundamentals: /t/AAPL?tab=technicals renders NO fundamentals panel (a stock keeps its tape)', /data-technicals="AAPL"/.test(tAapl) && !/data-fundamentals=/.test(tAapl))
+  }
+
+
+  // ── agent desk: MCP ──────────────────────────────────────────────────────
+  // The agent-signed leg loop (squad contract C1/C3). Two halves: the PURE
+  // wire (lib/desk-wire.ts — the one place a raw job step becomes "what do I
+  // sign") and the two tools that serve it over MCP, which are the only tools
+  // on this surface that return signable material and only to the agent_key
+  // the intent was bound to at open.
+  console.log('— agent desk: MCP')
+  {
+    const {
+      legViewOf,
+      deskNextOf,
+      HL_DOMAIN_CHAIN_ID,
+      HL_NONCE_LIFE_MS,
+      LEG_OFFER_TTL_MS,
+      BUILD_RETRY_MS,
+      SETTLE_RETRY_MS,
+    } = await import('../lib/desk-wire')
+    const { RESULT_KEYS } = await import('../lib/desk-drive')
+    const { DESK_LEG_RESULT_KEYS } = await import('../lib/desk-wire')
+    const { fenceLegResult, LEG_RESULT_KEYS } = await import('../lib/job-step-money')
+    const { planIntent: planDeskIntent } = await import('../lib/broker')
+    const { HL_NONCE_SIGNABLE_MS } = await import('../lib/hyperliquid-exec')
+    const { deskExecuteConsentMessage: deskConsent } = await import('../lib/broker-exec')
+    const { generatePrivateKey: genKey, privateKeyToAccount: toAccount } = await import('viem/accounts')
+    const { readFile: readSrc } = await import('node:fs/promises')
+
+    const NOW = 1_800_000_000_000
+    const step = (over: Record<string, unknown>) => ({ seq: 0, kind: 'sign', status: 'offered', builder: 'x', title: 'A leg', updatedAt: new Date(NOW), ...over })
+
+    // ── the constants this wire mirrors, pinned against their real twins ──
+    // The SDK copies these numbers into its own signer; if the runner or the
+    // venue moves one, a mirrored constant silently lies about staleness.
+    const runnerSrc = await readSrc('lib/jobs-runner.ts', 'utf8')
+    const offerTtl = runnerSrc.match(/const OFFER_TTL_MS = ([\d *_]+)\n/)?.[1] ?? ''
+    check(
+      'desk wire: the mirrored constants equal their sources — HL nonce life = HL_NONCE_SIGNABLE_MS, the offer clock = the runner\'s OFFER_TTL_MS, the HL domain is 1337',
+      HL_NONCE_LIFE_MS === HL_NONCE_SIGNABLE_MS &&
+        HL_DOMAIN_CHAIN_ID === 1337 &&
+        // eslint-disable-next-line no-eval
+        LEG_OFFER_TTL_MS === eval(offerTtl),
+      `wire=${HL_NONCE_LIFE_MS}/${LEG_OFFER_TTL_MS} runner="${offerTtl}" hl=${HL_NONCE_SIGNABLE_MS}`,
+    )
+    check(
+      'desk wire: lib/desk-wire.ts imports NOTHING — the SDK mirrors it line for line and the harness loads it bare',
+      !/^\s*import /m.test(await readSrc('lib/desk-wire.ts', 'utf8')),
+    )
+
+    // ── every artifact shape the runner actually writes ──────────────────
+    // buildSignArtifact (lib/jobs-runner.ts) emits exactly three keys:
+    // txRequest, txChain, orderRequest. The squad brief's C1 sketch says
+    // `tx`; both spellings classify, and the runner's spelling is pinned
+    // against the source so a rename cannot pass silently.
+    const builderSrc = runnerSrc.slice(runnerSrc.indexOf('export async function buildSignArtifact'))
+    check(
+      'desk wire: the runner writes txRequest / txChain / orderRequest and nothing else — the keys legViewOf classifies',
+      /artifact: \{ txRequest:/.test(builderSrc) && /artifact: \{ txChain:/.test(builderSrc) && /artifact: \{ orderRequest:/.test(builderSrc) && !/artifact: \{ tx:/.test(builderSrc),
+    )
+
+    const vTx = legViewOf(step({ title: 'Deposit 12 USDC', valueUsd: 12, artifact: { txRequest: { to: '0xaaaa', data: '0xdead', value: '0', chainId: 8453 }, summary: 'Send 12 USDC to the one-time deposit address.', depositAddress: '0xbbbb', addressExpires: new Date(NOW + 300_000).toISOString() } }), NOW)
+    check(
+      'desk wire: a cross-chain deposit reads tx on its own chain, names the expiring address, and goes stale WITH the address',
+      vTx.kind === 'tx' && vTx.chainId === 8453 && vTx.valueUsd === 12 && /deposit address the guard pinned/.test(vTx.summary) && vTx.staleAfterMs === 300_000,
+      JSON.stringify({ k: vTx.kind, c: vTx.chainId, s: vTx.staleAfterMs, sum: vTx.summary }),
+    )
+    // `tx` (the brief's spelling) classifies identically.
+    check('desk wire: the brief\'s `artifact.tx` spelling classifies as tx too', legViewOf(step({ artifact: { tx: { to: '0x1', chainId: 1 } } }), NOW).kind === 'tx')
+
+    const vChain = legViewOf(step({ title: 'Buy $12 of AAPL', valueUsd: 12, artifact: { txChain: { summary: 'Approve USDG, then swap 12 USDG for AAPL.', steps: [{ label: 'approve', title: 'Approve USDG', tx: { to: '0xc0', chainId: 4663 } }, { label: 'swap', title: 'Swap', tx: { to: '0xc1', chainId: 4663 }, validUntil: Math.floor((NOW + 90_000) / 1000) }], refresh: { kind: 'uniswap-swap', stepIndex: 1, params: {} } }, summary: 'Approve USDG, then swap 12 USDG for AAPL.' } }), NOW)
+    check(
+      'desk wire: a txChain names its steps IN ORDER, says a step re-quotes, and takes the SOONEST validUntil as its clock (never offer dead calldata)',
+      vChain.kind === 'txChain' && vChain.chainId === 4663 && /approve → swap/.test(vChain.summary) && /re-quotes/.test(vChain.summary) && vChain.staleAfterMs === 90_000,
+      JSON.stringify({ k: vChain.kind, c: vChain.chainId, s: vChain.staleAfterMs, sum: vChain.summary }),
+    )
+
+    // ── the #850 pin: a jsonb-scrambled HL action survives byte-identical ──
+    // Postgres jsonb SORTS object keys, so the action read back out of
+    // job_steps.artifact is {a,b,p,r,s,t} where the venue serializes
+    // {a,b,p,s,r,t}. That is not this wire's job to fix — the leg's typedData
+    // was built over the CANONICAL hash and the submit relay re-canonicalizes.
+    // What IS this wire's job: never touch the object. Same reference, same
+    // key order, same bytes, out the other side.
+    const scrambledOrder = { a: 5, b: true, p: '0', r: false, s: '1.0', t: { limit: { tif: 'Ioc' } } }
+    const hlAction = { type: 'order', orders: [scrambledOrder], grouping: 'na' }
+    const hlArtifact = { orderRequest: { protocol: 'hyperliquid', typedData: { domain: { chainId: 1337 }, message: { connectionId: '0x' + 'ab'.repeat(32) } }, hl: { action: hlAction, nonce: NOW - 10_000, isTestnet: false, expected: { coin: 'HYPE', kind: 'open', isBuy: true }, pre: { action: { type: 'updateLeverage' }, nonce: NOW - 10_001 } } }, summary: 'Open a 2x long of $12 of HYPE.' }
+    const vHl = legViewOf(step({ title: 'Long HYPE', valueUsd: 12, artifact: hlArtifact }), NOW)
+    const outOrder = ((vHl.artifact as any)?.orderRequest?.hl?.action?.orders ?? [])[0]
+    check(
+      'desk wire (#850): an HL leg hands the action through BY REFERENCE — same object, same scrambled key order, nothing re-serialized',
+      vHl.artifact === hlArtifact && outOrder === scrambledOrder && JSON.stringify(Object.keys(outOrder)) === JSON.stringify(['a', 'b', 'p', 'r', 's', 't']),
+      JSON.stringify(Object.keys(outOrder ?? {})),
+    )
+    check(
+      'desk wire: an HL leg is domain 1337, names its leverage pre-step, and its clock is the NONCE (~90s), not the 30-minute offer',
+      vHl.kind === 'hlAction' && vHl.chainId === HL_DOMAIN_CHAIN_ID && /leverage update signs first/.test(vHl.summary) && vHl.staleAfterMs === HL_NONCE_LIFE_MS - 10_000,
+      JSON.stringify({ k: vHl.kind, c: vHl.chainId, s: vHl.staleAfterMs }),
+    )
+    check(
+      'desk wire: a nonce already past its life reads staleAfterMs 0 — re-fetch, never sign what you hold',
+      legViewOf(step({ artifact: { orderRequest: { protocol: 'hyperliquid', hl: { action: hlAction, nonce: NOW - 200_000 } } } }), NOW).staleAfterMs === 0,
+    )
+
+    // C2: the batch shape DRIVE is landing — members under orderRequest.batch
+    // or orderRequest.hl.batch; the FIRST member's nonce is the shared clock.
+    const vBatch = legViewOf(step({ title: 'Leverage, long, stop', artifact: { orderRequest: { protocol: 'hyperliquid', batch: [{ action: { type: 'updateLeverage' }, nonce: NOW - 5_000 }, { action: hlAction, nonce: NOW - 4_999 }, { action: hlAction, nonce: NOW - 4_998 }], hl: { nonce: NOW - 5_000 } }, summary: 'Set 2x, open the long, arm the stop.' } }), NOW)
+    check(
+      'desk wire (C2): a batched HL leg reads hlBatch, counts its members, and shares the first nonce as its clock',
+      vBatch.kind === 'hlBatch' && /3 Hyperliquid actions signed in one motion/.test(vBatch.summary) && vBatch.staleAfterMs === HL_NONCE_LIFE_MS - 5_000,
+      JSON.stringify({ k: vBatch.kind, s: vBatch.staleAfterMs, sum: vBatch.summary }),
+    )
+
+    // orderRequest is NOT only Hyperliquid: native-nft-list emits a Seaport
+    // order and the generic native turn can emit a CoW one.
+    const vOrder = legViewOf(step({ title: 'List the NFT', artifact: { orderRequest: { protocol: 'opensea', typedData: {}, chainId: 8453, prereqTx: { to: '0xconduit', chainId: 8453 } }, summary: 'List Freek #198 for 0.01 ETH.' } }), NOW)
+    check(
+      'desk wire: a non-HL EIP-712 order (Seaport / CoW) reads `order` on its own chain, names the protocol and its prerequisite approval',
+      vOrder.kind === 'order' && vOrder.chainId === 8453 && /opensea order/.test(vOrder.summary) && /one-time on-chain approval signs first/.test(vOrder.summary),
+      JSON.stringify({ k: vOrder.kind, c: vOrder.chainId, sum: vOrder.summary }),
+    )
+
+    const vWait = legViewOf(step({ kind: 'wait', status: 'running', builder: 'wait', title: 'Funds arrive on Robinhood Chain', artifact: null }), NOW)
+    check(
+      'desk wire: a wait leg carries NO artifact, no chain and no clock — there is nothing to sign and the runner proves arrival itself',
+      vWait.kind === 'wait' && vWait.artifact === null && vWait.chainId === null && vWait.staleAfterMs === null,
+    )
+    check(
+      'desk wire: an unrecognized sign artifact reads `unknown` and SAYS not to sign it — a shape we cannot name is never blind-signed',
+      legViewOf(step({ artifact: { somethingNew: { foo: 1 } } }), NOW).kind === 'unknown' &&
+        /do not sign it/.test(legViewOf(step({ artifact: { somethingNew: {} } }), NOW).summary),
+    )
+    check(
+      'desk wire: with no deadline of its own a leg inherits the runner\'s 30-minute offer clock from updatedAt',
+      legViewOf(step({ artifact: { txRequest: { to: '0x1', chainId: 8453 } }, updatedAt: new Date(NOW - 60_000) }), NOW).staleAfterMs === LEG_OFFER_TTL_MS - 60_000,
+    )
+
+    // ── deskNextOf: exactly one of leg / waiting ─────────────────────────
+    const job = (over: Record<string, unknown>) => ({ status: 'waiting_signature', currentStep: 0, steps: [step({})], ...over }) as any
+    const nOffered = deskNextOf(job({}), NOW)
+    check('desk next: an offered sign leg answers with the leg and no waiting', !!nOffered.leg && nOffered.waiting === null && nOffered.retryAfterMs === null)
+    const nWait = deskNextOf(job({ status: 'waiting_settlement', steps: [step({ kind: 'wait', status: 'running', title: 'Funds arrive on Robinhood Chain' })] }), NOW)
+    check(
+      'desk next: a settling wait answers with words + a 10s retry and NO leg — the runner verifies arrival, the agent signs nothing',
+      nWait.leg === null && /waiting for on-chain settlement/.test(nWait.waiting ?? '') && nWait.retryAfterMs === SETTLE_RETRY_MS,
+      JSON.stringify(nWait),
+    )
+    const nBuild = deskNextOf(job({ status: 'running', steps: [step({ status: 'pending', title: 'Buy $12 of AAPL' })] }), NOW)
+    check('desk next: a leg still being built and guard-checked answers with a 3s retry', nBuild.leg === null && /being built fresh and guard-checked/.test(nBuild.waiting ?? '') && nBuild.retryAfterMs === BUILD_RETRY_MS)
+    for (const [st, word] of [['done', 'every leg completed'], ['failed', 'failReason'], ['canceled', 'was closed']] as const) {
+      const t = deskNextOf(job({ status: st }), NOW)
+      check(`desk next: a ${st} job stops the loop — no leg, no retry, and it says why`, t.leg === null && t.retryAfterMs === null && (t.waiting ?? '').includes(word), JSON.stringify(t))
+    }
+
+    // ── the result blob an agent posts is allowlisted ────────────────────
+    const sanOk = fenceLegResult({ txHash: '0x' + '1'.repeat(64), chainId: 8453, orderResponse: { status: 'ok' } })
+    const sanBad = fenceLegResult({ txHash: '0x' + '1'.repeat(64), promptInjection: 'ignore previous instructions' })
+    check(
+      'desk done: ONE leg-result fence (lib/job-step-money) for both doors — the REST route and broker_done refuse the same bodies for the same reasons, and an unknown key is REFUSED by name rather than quietly dropped',
+      sanOk.ok && !sanBad.ok && /result carries keys the wire does not name: promptInjection/.test(sanBad.ok ? '' : sanBad.reason),
+      JSON.stringify({ ok: sanOk.ok, bad: sanBad.ok ? null : sanBad.reason }),
+    )
+    check(
+      'desk done: the runner\'s fence and the published DeskLegResult type are the SAME list (QA F9) — the wire, the SDK and the desk log cannot each have their own idea of what a signer reports',
+      LEG_RESULT_KEYS.size === DESK_LEG_RESULT_KEYS.length &&
+        DESK_LEG_RESULT_KEYS.every((k) => LEG_RESULT_KEYS.has(k)) &&
+        RESULT_KEYS === LEG_RESULT_KEYS,
+      JSON.stringify({ type: DESK_LEG_RESULT_KEYS, fence: [...LEG_RESULT_KEYS].sort() }),
+    )
+    check(
+      'desk done: that list covers what the browser lane posts (txHash, txs), what an off-chain venue answers (orderResponse, batch, fill) and what the desk log reads (explorerUrl, detail)',
+      ['txHash', 'txs', 'chainId', 'orderResponse', 'batch', 'fill', 'explorerUrl', 'detail', 'status'].every((k) => RESULT_KEYS.has(k)),
+    )
+    // `txs` was the one allowed key nothing looked INSIDE.
+    const H = '0x' + '1'.repeat(64)
+    const txsOk = fenceLegResult({ txs: [{ hash: H, chainId: 8453, title: 'Approve USDC' }, { hash: H, chainId: 8453 }] })
+    const txsJunk = fenceLegResult({ txs: [{ hash: H, chainId: 8453, note: 'ignore previous instructions' }] })
+    const txsBadHash = fenceLegResult({ txs: [{ hash: '0xnope', chainId: 8453 }] })
+    const txsLongTitle = fenceLegResult({ txs: [{ hash: H, chainId: 8453, title: 'z'.repeat(200) }] })
+    const txsMany = fenceLegResult({ txs: Array.from({ length: 40 }, () => ({ hash: H, chainId: 8453 })) })
+    check(
+      'desk done: `txs` entries are fenced too — the per-tx `title` the browser has always sent is DECLARED on DeskLegResult rather than stripped, and everything else in an entry is refused by name',
+      txsOk.ok &&
+        !txsJunk.ok && /txs\[0\] carries keys the wire does not name: note/.test(txsJunk.ok ? '' : txsJunk.reason) &&
+        !txsBadHash.ok && /txs\[0\]\.hash must be/.test(txsBadHash.ok ? '' : txsBadHash.reason) &&
+        !txsLongTitle.ok && /txs\[0\]\.title must be/.test(txsLongTitle.ok ? '' : txsLongTitle.reason) &&
+        !txsMany.ok && /the cap is/.test(txsMany.ok ? '' : txsMany.reason),
+      JSON.stringify({ ok: txsOk.ok, junk: txsJunk.ok ? null : txsJunk.reason, many: txsMany.ok ? null : txsMany.reason }).slice(0, 220),
+    )
+    const sanBig = fenceLegResult({ orderResponse: { blob: 'y'.repeat(9000) } })
+    check('desk done: an oversized body is refused by name rather than stored', !sanBig.ok && /the cap is/.test(sanBig.ok ? '' : sanBig.reason))
+
+    // ── the venue answers the funding question, not the wallet ───────
+    // The bug this closes (EXAMPLE lane): the flagship ask on a wallet holding
+    // $19 of USDC on BASE read `covered` — because planIntent compared the ask
+    // to the wallet's movable money, while a Hyperliquid open draws on
+    // collateral the VENUE holds, deposited over Arbitrum. Covered, and short
+    // every cent, and no route offered.
+    const baseUsdcScan = {
+      sources: [{ token: 'USDC', chainId: 8453, chainWord: 'base', usd: 19, balance: 19 }],
+      stranded: [],
+      failedChains: [],
+      nativeEth: {},
+    } as any
+    const hlShort = {
+      venue: 'Hyperliquid',
+      needUsd: 6,
+      heldUsd: 0,
+      onChainUsd: 0,
+      chainId: 42161,
+      token: 'USDC',
+      followupResume: 'deposit 6 USDC to Hyperliquid, then 2x long $12 of HYPE on hyperliquid',
+      actionLabel: 'the order',
+      note: 'Hyperliquid holds $0.00 of collateral for this wallet, and a $12 HYPE open needs $6 deposited over Arbitrum.',
+    }
+    const walletOnly = planDeskIntent('2x long $12 of HYPE on hyperliquid', baseUsdcScan)
+    const venueAware = planDeskIntent('2x long $12 of HYPE on hyperliquid', baseUsdcScan, hlShort)
+    check(
+      'desk funding: WITHOUT the venue read the flagship on $19 of Base USDC reads "covered" — the bug, pinned so it cannot come back quietly',
+      walletOnly.quote.funding?.verdict === 'covered',
+      JSON.stringify(walletOnly.quote.funding),
+    )
+    check(
+      'desk funding: WITH it the same wallet reads SHORT of the DEPOSIT, and every option is a funding route that deposits first and then places the order',
+      venueAware.quote.funding?.verdict === 'short' &&
+        venueAware.quote.venue?.venue === 'Hyperliquid' &&
+        venueAware.options.some((o) => o.kind === 'funding' && /deposit 6 USDC to Hyperliquid/.test(o.resume) && /2x long \$12 of HYPE/.test(o.resume)),
+      JSON.stringify({ funding: venueAware.quote.funding, options: venueAware.options.map((o) => o.resume) }).slice(0, 320),
+    )
+    check(
+      'desk funding: the paragraph names what the VENUE holds and needs — never the wallet total that used to read covered',
+      /Hyperliquid holds \$0\.00 of collateral/.test(venueAware.say) && /short ~\$6 of USDC/.test(venueAware.say),
+      venueAware.say.slice(0, 260),
+    )
+    const venueCovered = planDeskIntent('2x long $12 of HYPE on hyperliquid', baseUsdcScan, { ...hlShort, needUsd: 0, note: 'Hyperliquid already holds the collateral this HYPE open needs.' })
+    check(
+      'desk funding: a wallet whose collateral is already AT the venue reads covered, offers no route, and says so',
+      venueCovered.quote.funding?.verdict === 'covered' && !venueCovered.options.some((o) => o.kind === 'funding') && /already holds the collateral/.test(venueCovered.say),
+      venueCovered.say.slice(0, 200),
+    )
+
+    // ── the published contract ───────────────────────────────────────────
+    const routeSrc = await readSrc('app/api/broker/[transport]/route.ts', 'utf8')
+    const manifest = JSON.parse(await readSrc('registry/desk.server.json', 'utf8')) as { version: string; tools: string[]; description: string }
+    const deskVersion = routeSrc.match(/export const DESK_VERSION = '([\d.]+)'/)?.[1] ?? ''
+    const registered = [...routeSrc.matchAll(/registerTool\(\s*'([a-z_]+)'/g)].map((m) => m[1])
+    check(
+      'desk registry: the manifest version equals DESK_VERSION and its tool list is EXACTLY what the route registers — a stale manifest misdescribes the product to every agent that reads it',
+      !!deskVersion && manifest.version === deskVersion && registered.length > 0 && [...registered].sort().join(',') === [...manifest.tools].sort().join(','),
+      JSON.stringify({ deskVersion, manifest: manifest.version, registered, tools: manifest.tools }),
+    )
+    check(
+      'desk registry: broker_next + broker_done are registered AND listed',
+      registered.includes('broker_next') && registered.includes('broker_done') && manifest.tools.includes('broker_next') && manifest.tools.includes('broker_done'),
+    )
+    const BATCH_RULE = 'Round-trip across every settlement boundary, batched within one.'
+    check(
+      'desk prose: the batch rule rides verbatim in the capability list, the capability tool\'s own description, the execute description and the manifest',
+      routeSrc.split(BATCH_RULE).length - 1 >= 3 && manifest.description.includes(BATCH_RULE),
+      `route=${routeSrc.split(BATCH_RULE).length - 1} manifest=${manifest.description.includes(BATCH_RULE)}`,
+    )
+    check(
+      'desk prose: M1\'s blanket "no transaction material travels through this MCP surface" is GONE from broker_execute\'s description, and the header explains the revision instead',
+      !/No transaction material travels through this MCP surface/.test(routeSrc) && /consciously REVISED/.test(routeSrc) && /bound identity/i.test(routeSrc),
+    )
+
+    // ── over the wire ────────────────────────────────────────────────────
+    const DESK_URL = `${BASE}/api/broker/mcp`
+    let dRpc = 0
+    let dSession: string | null = null
+    const drpc = async (method: string, params?: unknown): Promise<{ raw: string; result?: any }> => {
+      const res = await fetch(DESK_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1', ...(dSession ? { 'mcp-session-id': dSession } : {}) },
+        body: JSON.stringify({ jsonrpc: '2.0', id: ++dRpc, method, params }),
+      })
+      dSession = res.headers.get('mcp-session-id') ?? dSession
+      const raw = await res.text()
+      const data = raw.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).find((l) => l.includes(`"id":${dRpc}`))
+      return { raw, result: data ? JSON.parse(data).result : undefined }
+    }
+    const dcall = async (name: string, args: Record<string, unknown> = {}) => {
+      const { raw, result } = await drpc('tools/call', { name, arguments: args })
+      const text: string = result?.content?.find((c: any) => c.type === 'text')?.text ?? ''
+      return { raw, isError: !!result?.isError, payload: text && !result?.isError ? JSON.parse(text) : text }
+    }
+    await drpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'harness-mcp-lane', version: '0' } })
+    await drpc('notifications/initialized')
+
+    const dCaps = await dcall('broker_capabilities')
+    check(
+      'desk (HTTP): broker_capabilities reports its contract version, BOTH loops by name, and one line per leg kind — an agent can write its signer from this call alone',
+      !dCaps.isError &&
+        dCaps.payload?.version === deskVersion &&
+        Array.isArray(dCaps.payload?.loop?.human) &&
+        (dCaps.payload?.loop?.agent ?? []).includes('broker_next') &&
+        (dCaps.payload?.loop?.agent ?? []).includes('broker_done') &&
+        ['tx', 'txChain', 'hlAction', 'hlBatch', 'order', 'wait'].every((k) => typeof dCaps.payload?.legKinds?.[k] === 'string'),
+      JSON.stringify({ v: dCaps.payload?.version, loop: dCaps.payload?.loop, kinds: Object.keys(dCaps.payload?.legKinds ?? {}) }),
+    )
+
+    // An intent that never executed has no legs to serve.
+    const dOpenOnly = await dcall('broker_open', { ask: 'Buy $15 of AAPL', agent: 'mcp-lane', agent_key: 'mcp-lane-harness-key' })
+    const dNextNoJob = await dcall('broker_next', { intent_id: dOpenOnly.payload?.intentId, agent_key: 'mcp-lane-harness-key' })
+    check(
+      'desk (HTTP): broker_next on an intent that never executed refuses BY NAME and points at broker_execute — the leg loop starts there',
+      dNextNoJob.isError && /no job to drive/.test(String(dNextNoJob.payload)) && /broker_execute/.test(String(dNextNoJob.payload)),
+      String(dNextNoJob.payload).slice(0, 160),
+    )
+
+    // Now a real executed intent: a throwaway agent key, a sequenced ask, and
+    // the desk's own consent text proving the wallet (the M1 gate).
+    const dAgent = toAccount(genKey())
+    const DESK_AGENT_KEY = `mcp-lane-${Date.now().toString(36)}`
+    const dSeqAsk = `swap 1 USDC for ETH on base, then send 0.5 USDC on base to ${dAgent.address}`
+    const dOpen = await dcall('broker_open', { ask: dSeqAsk, wallet: dAgent.address, agent: 'mcp-lane', agent_key: DESK_AGENT_KEY })
+    const dIntent = dOpen.payload?.intentId as string
+    const dIssuedAt = new Date().toISOString()
+    const dExec = await dcall('broker_execute', { intent_id: dIntent, wallet_signature: await dAgent.signMessage({ message: deskConsent(dIntent, dAgent.address, dIssuedAt) }), issued_at: dIssuedAt, agent_key: DESK_AGENT_KEY })
+    check(
+      'desk (HTTP): a sequenced ask + a proven wallet compiles to a multi-leg job owned by the agent',
+      !dExec.isError && typeof dExec.payload?.jobId === 'string' && (dExec.payload?.steps?.length ?? 0) >= 2,
+      String(dExec.isError ? dExec.payload : dExec.payload?.jobId).slice(0, 200),
+    )
+
+    if (!dExec.isError) {
+      const dNextWrong = await dcall('broker_next', { intent_id: dIntent, agent_key: 'some-other-agents-key' })
+      check(
+        'desk (HTTP) SECURITY: a FOREIGN agent_key is refused by name — legs are served only to the identity that proved the wallet at execute',
+        dNextWrong.isError && /agent_key does not match/.test(String(dNextWrong.payload)),
+        String(dNextWrong.payload).slice(0, 160),
+      )
+      const dDoneWrong = await dcall('broker_done', { intent_id: dIntent, agent_key: 'some-other-agents-key', seq: 0, result: { txHash: '0x' + '9'.repeat(64) } })
+      check('desk (HTTP) SECURITY: broker_done is gated on the same key — a stranger cannot advance another agent\'s job', dDoneWrong.isError && /agent_key does not match/.test(String(dDoneWrong.payload)))
+      // ── the execute proof (QA F4, DRIVE's gate) ─────────────────
+      // The schema is this lane's; the gate is DRIVE's. These pin the SURFACE:
+      // the fields reach the gate at all (zod was stripping them, which refused
+      // every SDK caller), and each one refuses by name.
+      // A WALLET-bearing, still-open intent: executeIntent refuses a walletless
+      // one before it ever reaches the identity gate, so a walletless fixture
+      // would prove nothing (it read green for the wrong reason until the
+      // stranger-key pin went red and said so).
+      const pOpen = await dcall('broker_open', { ask: dSeqAsk, wallet: dAgent.address, agent: 'mcp-lane', agent_key: 'mcp-lane-proof-key' })
+      const pIntent = String(pOpen.payload?.intentId)
+      const dExecWrongKey = await dcall('broker_execute', { intent_id: pIntent, wallet_signature: '0x' + '1'.repeat(130), issued_at: new Date().toISOString(), agent_key: 'a-stranger-key' })
+      check(
+        'desk (HTTP) SECURITY: broker_execute refuses a stranger\'s agent_key BEFORE it ever looks at the wallet signature — holding the intent id must not be enough to execute an intent someone else opened',
+        dExecWrongKey.isError && /agent_key this intent was opened with/.test(String(dExecWrongKey.payload)),
+        String(dExecWrongKey.payload).slice(0, 190),
+      )
+      const staleAt = new Date(Date.now() - 3_600_000).toISOString()
+      const dExecStale = await dcall('broker_execute', {
+        intent_id: pIntent,
+        wallet_signature: await dAgent.signMessage({ message: deskConsent(pIntent, dAgent.address, staleAt) }),
+        issued_at: staleAt,
+        agent_key: 'mcp-lane-proof-key',
+      })
+      check(
+        'desk (HTTP) SECURITY: an hour-old consent is refused on an intent that would otherwise execute — a personal_sign over a fixed text is replayable forever without a window',
+        dExecStale.isError && !/needs the wallet that will SIGN/.test(String(dExecStale.payload)),
+        String(dExecStale.payload).slice(0, 190),
+      )
+      await dcall('broker_close', { intent_id: pIntent, agent_key: 'mcp-lane-proof-key' })
+      check(
+        'desk (HTTP): the schema PASSES issued_at + agent_key through to the gate — zod stripping them refused every SDK caller with "issued_at is required"',
+        !/issued_at is required/i.test(String(dExecWrongKey.payload)) && !/unrecognized|unknown key/i.test(String(dExecStale.payload)),
+        String(dExecStale.payload).slice(0, 120),
+      )
+
+      const dNoKey = await drpc('tools/call', { name: 'broker_next', arguments: { intent_id: dIntent } })
+      check('desk (HTTP) SECURITY: broker_next without an agent_key is refused at the schema — the key is required, not optional', !!dNoKey.result?.isError || !!(dNoKey.result as any)?.error || /required|invalid/i.test(dNoKey.raw))
+
+      const dNext = await dcall('broker_next', { intent_id: dIntent, agent_key: DESK_AGENT_KEY })
+      const nxt = dNext.payload?.next
+      check(
+        'desk (HTTP): broker_next answers with the job, the agent\'s wallet, the how-to, the endpoints the rest of the loop uses, and exactly one of leg / waiting',
+        !dNext.isError &&
+          dNext.payload?.jobId === dExec.payload?.jobId &&
+          String(dNext.payload?.wallet).toLowerCase() === dAgent.address.toLowerCase() &&
+          /\/api\/tx\/refresh$/.test(dNext.payload?.endpoints?.refresh ?? '') &&
+          /\/api\/hl\/submit$/.test(dNext.payload?.endpoints?.hlSubmit ?? '') &&
+          /\/retry$/.test(dNext.payload?.endpoints?.retry ?? '') &&
+          (dNext.payload?.how?.length ?? 0) >= 5 &&
+          !!nxt && (nxt.leg === null) !== (nxt.waiting === null),
+        JSON.stringify({ jobId: dNext.payload?.jobId, endpoints: dNext.payload?.endpoints, waiting: nxt?.waiting, kind: nxt?.leg?.kind }).slice(0, 300),
+      )
+      check(
+        'desk (HTTP) SECURITY: broker_execute emits the job capability token ONCE — bare and in its drive URLs — and broker_next never re-mints one (a leaked token reads a job\'s artifacts for 7 days, cancellation included, so the exposure must not scale with legs)',
+        typeof dExec.payload?.token === 'string' &&
+          dExec.payload.token.startsWith('v2.') &&
+          (dExec.payload?.drive?.poll ?? '').includes(dExec.payload.token) &&
+          !/[?&]t=/.test(JSON.stringify(dNext.payload ?? {})) &&
+          !JSON.stringify(dNext.payload ?? {}).includes(dExec.payload.token),
+        JSON.stringify({ tokenShape: String(dExec.payload?.token).slice(0, 8), nextHasToken: JSON.stringify(dNext.payload ?? {}).includes(String(dExec.payload?.token)) }),
+      )
+      check(
+        'desk (HTTP): the how-to tells a signer the two things that actually break a leg — never re-serialize (#850) and staleAfterMs means re-fetch, not sign',
+        /never re-serialize/i.test((dNext.payload?.how ?? []).join(' ')) && /staleAfterMs/.test((dNext.payload?.how ?? []).join(' ')),
+      )
+      // The negotiation half keeps its mechanical pin: everything that is not
+      // the offered leg is still free of transaction material.
+      const dNegotiation = [dCaps.raw, dOpen.raw, dOpenOnly.raw, dExec.raw, dNextNoJob.raw, dNextWrong.raw].join('\n')
+      check('desk (HTTP): the negotiation half of the surface still carries NO transaction material (64+ hex scan)', !/0x[0-9a-fA-F]{64,}/.test(dNegotiation))
+
+      const dBadSeq = await dcall('broker_done', { intent_id: dIntent, agent_key: DESK_AGENT_KEY, seq: 40, result: {} })
+      check('desk (HTTP): broker_done on a leg the job does not have refuses by name and sends the agent back to broker_next', dBadSeq.isError && /has no leg 40/.test(String(dBadSeq.payload)), String(dBadSeq.payload).slice(0, 160))
+      const notOffered = (dExec.payload?.steps ?? []).find((s: any) => s.seq === 1)
+      if (notOffered) {
+        const dNotOffered = await dcall('broker_done', { intent_id: dIntent, agent_key: DESK_AGENT_KEY, seq: 1, result: { txHash: '0x' + '7'.repeat(64) } })
+        check(
+          'desk (HTTP): a leg that is not OFFERED cannot be completed — an agent cannot skip ahead of the runner\'s order',
+          dNotOffered.isError && /not offered/.test(String(dNotOffered.payload)),
+          String(dNotOffered.payload).slice(0, 160),
+        )
+      }
+      // ── walking away is the opening identity's call (QA F3) ───────
+      const dCloseWrong = await dcall('broker_close', { intent_id: dIntent, agent_key: 'not-the-opening-key' })
+      check(
+        'desk (HTTP) SECURITY: broker_close on an intent opened WITH an identity refuses a stranger by name — an intent id travels in logs, and closing revokes a link and cancels a running job',
+        dCloseWrong.isError && /only that identity can close it/.test(String(dCloseWrong.payload)),
+        String(dCloseWrong.payload).slice(0, 160),
+      )
+      const dCloseRight = await dcall('broker_close', { intent_id: dIntent, agent_key: DESK_AGENT_KEY })
+      check('desk (HTTP): the opening identity closes it', !dCloseRight.isError && dCloseRight.payload?.state === 'closed', String(dCloseRight.payload).slice(0, 120))
+    }
+
+    // ── the chosen option is kept on the plan (UI ask) ────────────
+    {
+      const cOpen = await dcall('broker_open', { ask: 'Buy $15 of AAPL', agent: 'mcp-lane', agent_key: 'mcp-lane-choose-key' })
+      const cId = cOpen.payload?.intentId as string
+      const cChoose = await dcall('broker_choose', { intent_id: cId, option_id: 'proceed' })
+      check(
+        'desk (HTTP): broker_choose KEEPS what was chosen on the plan — the label and the resume that rewrote the ask, plus the running history, so the desk log can say how a quote became a final ask',
+        !cChoose.isError &&
+          cChoose.payload?.plan?.chosen?.optionId === 'proceed' &&
+          typeof cChoose.payload?.plan?.chosen?.resume === 'string' &&
+          typeof cChoose.payload?.plan?.chosen?.at === 'string' &&
+          (cChoose.payload?.plan?.history?.length ?? 0) === 1,
+        JSON.stringify(cChoose.payload?.plan?.chosen ?? cChoose.payload).slice(0, 220),
+      )
+      const cRead = await dcall('broker_status', { intent_id: cId })
+      check('desk (HTTP): and it is PERSISTED, not just echoed', !cRead.isError && !!cId, String(cRead.payload).slice(0, 80))
+      await dcall('broker_close', { intent_id: cId, agent_key: 'mcp-lane-choose-key' })
+    }
+
+    // ── a REAL offered leg, end to end ───────────────────────────────────
+    // The throwaway agent above proves the gate; it can never prove the leg,
+    // because a wallet with nothing in it gets its first build withheld on
+    // affordability (which is the guard posture working). So the house burner
+    // — which is what every other live pin in this file signs with — opens
+    // the same sequenced ask, and the desk serves the artifact the runner
+    // actually built. Nothing is broadcast here: broker_next only READS a
+    // built leg, and the intent is closed (cancelling the job) at the end.
+    if (process.env.PRIVATE_KEY) {
+      const burner = toAccount(process.env.PRIVATE_KEY as `0x${string}`)
+      const LIVE_KEY = `mcp-lane-live-${Date.now().toString(36)}`
+      const liveAsk = `swap 1 USDC for ETH on base, then send 0.5 USDC on base to ${burner.address}`
+      const lOpen = await dcall('broker_open', { ask: liveAsk, wallet: burner.address, agent: 'mcp-lane', agent_key: LIVE_KEY })
+      const lIntent = lOpen.payload?.intentId as string
+      const lIssuedAt = new Date().toISOString()
+      const lExec = await dcall('broker_execute', { intent_id: lIntent, wallet_signature: await burner.signMessage({ message: deskConsent(lIntent, burner.address, lIssuedAt) }), issued_at: lIssuedAt, agent_key: LIVE_KEY })
+      let lLeg: any = null
+      let lNext: any = null
+      for (let i = 0; i < 6 && !lExec.isError; i++) {
+        lNext = await dcall('broker_next', { intent_id: lIntent, agent_key: LIVE_KEY })
+        lLeg = lNext.payload?.next?.leg
+        if (lLeg) break
+        await new Promise((r) => setTimeout(r, 3_500))
+      }
+      check(
+        'desk (HTTP, live): broker_next serves a REAL guarded leg — a same-chain swap arrives as ONE ordered txChain (approve → swap) on Base, priced, with the venue and the slippage bound in its own words',
+        !!lLeg && lLeg.kind === 'txChain' && lLeg.chainId === 8453 && (lLeg.valueUsd ?? 0) > 0 && /approve → swap/.test(lLeg.summary ?? '') && /Uniswap|CoW|LiFi/i.test(lLeg.summary ?? ''),
+        JSON.stringify({ kind: lLeg?.kind, chain: lLeg?.chainId, usd: lLeg?.valueUsd, sum: lLeg?.summary, waiting: lNext?.payload?.next?.waiting }).slice(0, 300),
+      )
+      check(
+        'desk (HTTP, live): the leg\'s deadline is its clock — a built swap goes stale WELL before the runner\'s 30-minute offer window',
+        !!lLeg && typeof lLeg.staleAfterMs === 'number' && lLeg.staleAfterMs > 0 && lLeg.staleAfterMs < LEG_OFFER_TTL_MS,
+        String(lLeg?.staleAfterMs),
+      )
+      // The desk is not a SECOND channel with its own idea of the artifact:
+      // the bytes it serves are the bytes the Jobs API serves for that step.
+      if (lLeg) {
+        const pollUrl = (lExec.payload?.drive?.poll ?? '').replace(/^https?:\/\/[^/]+/, BASE)
+        const { job: restJob } = (await (await fetch(pollUrl)).json()) as { job: { steps: { seq: number; artifact?: unknown }[] } }
+        const restArtifact = restJob?.steps?.find((x) => x.seq === lLeg.seq)?.artifact
+        check(
+          'desk (HTTP, live): the artifact broker_next serves is BYTE-IDENTICAL to the one the Jobs API serves for the same step — one channel, two transports, never two ideas of what you are signing',
+          JSON.stringify(restArtifact) === JSON.stringify(lLeg.artifact),
+          `rest=${JSON.stringify(restArtifact).length}b mcp=${JSON.stringify(lLeg.artifact).length}b`,
+        )
+        // Completion is ADVANCEMENT, not proof. A hash the chain has never
+        // seen still rolls the runner forward (the wait leg after it is what
+        // catches the lie) — but the money row it writes must NOT count.
+        const lDone = await dcall('broker_done', { intent_id: lIntent, agent_key: LIVE_KEY, seq: lLeg.seq, result: { txHash: '0x' + 'c'.repeat(64), chainId: 8453 } })
+        check(
+          'desk (HTTP, live): broker_done records the leg and answers with the NEXT one in the same call — the agent never polls between legs',
+          !lDone.isError && lDone.payload?.accepted?.seq === lLeg.seq && lDone.payload?.accepted?.keys?.includes('txHash') && !!lDone.payload?.next,
+          JSON.stringify({ accepted: lDone.payload?.accepted, next: lDone.payload?.next?.waiting ?? lDone.payload?.next?.leg?.kind }).slice(0, 220),
+        )
+        check(
+          'desk (HTTP, live) SECURITY: a leg an agent CLAIMS it signed with a hash the chain has never seen books money that COUNTS NOTHING — a job step\'s receipt class would otherwise settle `attested` on the reporter\'s word alone',
+          !lDone.isError && lDone.payload?.money?.recorded === false && typeof lDone.payload?.money?.verification === 'string',
+          JSON.stringify(lDone.payload?.money),
+        )
+      }
+      await dcall('broker_close', { intent_id: lIntent, agent_key: LIVE_KEY })
+
+      // The venue read, live: the flagship ask on a wallet whose money is on
+      // the WRONG CHAIN. The pure pins above fix the rule; this one proves the
+      // read itself reaches Hyperliquid and Arbitrum without throwing.
+      const vOpen = await dcall('broker_open', { ask: '2x long $12 of HYPE on hyperliquid', wallet: burner.address, agent: 'mcp-lane', agent_key: 'mcp-lane-venue-key' })
+      const vQuote = vOpen.payload?.plan?.quote
+      check(
+        'desk (HTTP, live): the flagship HL open quotes against what HYPERLIQUID holds — short of the Arbitrum deposit with a funding route, or covered because the collateral is already there; never the wallet total',
+        !vOpen.isError &&
+          (!vQuote?.venue ||
+            (vQuote.venue.venue === 'Hyperliquid' &&
+              ((vQuote.funding?.verdict === 'short' && /deposit .* to Hyperliquid/i.test(JSON.stringify(vOpen.payload?.plan?.options ?? []))) ||
+                vQuote.funding?.verdict === 'covered'))),
+        JSON.stringify({ venue: vQuote?.venue, funding: vQuote?.funding, say: vOpen.payload?.plan?.say }).slice(0, 340),
+      )
+      await dcall('broker_close', { intent_id: vOpen.payload?.intentId, agent_key: 'mcp-lane-venue-key' })
+    }
+
+    await dcall('broker_close', { intent_id: dOpenOnly.payload?.intentId, agent_key: 'mcp-lane-harness-key' })
+  }
+
+  // ── agent desk squad: QA ─────────────────────────────────────────────────
+  // The QA lane's pins (squad ~/yeetful/squad-agentdesk-2026-09-23). Two jobs:
+  //   1. keep lib/desk-wire.ts and the SDK's src/desk.ts mirror in sync — the
+  //      wire is named in two repos, so it can drift silently;
+  //   2. drive the adversarial cases of the agent-signed path over HTTP.
+  //
+  // Round 1 carried eight `gap()` pins — the correct behaviour named and held
+  // against the lane that owed it, counting neither pass nor fail. Every one of
+  // them closed during round 2, so they are plain `check`s now: what was owed is
+  // shipped, and a regression goes RED rather than quietly back to "known".
+  console.log('— agent desk (QA)')
+  {
+
+    // ── 1. the leg wire, named in TWO repos ────────────────────────────────
+    // lib/desk-wire.ts and the SDK's src/desk.ts are the same contract written
+    // twice. Nothing but this pin stops them drifting, and a drift is silent:
+    // the SDK signs the wrong shape, or refuses one the runner offers.
+    const wireSrc = readFileSync('lib/desk-wire.ts', 'utf8')
+    const WIRE_TYPES = ['DeskLegKind', 'DeskLegView', 'DeskLegResult', 'DeskNext']
+    const WIRE_CONSTS = ['HL_DOMAIN_CHAIN_ID', 'HL_NONCE_LIFE_MS', 'LEG_OFFER_TTL_MS', 'BUILD_RETRY_MS', 'SETTLE_RETRY_MS']
+    /** A union written on one line OR one member per line. Reading only the
+     *  first form is how a pin like this goes quietly green on []. */
+    const unionMembers = (src: string, name: string): string[] => {
+      const at = src.indexOf(`export type ${name} =`)
+      if (at < 0) return []
+      const body = src.slice(at, at + 1200).split(/\n\s*\n/)[0]
+      return (body.match(/'[a-zA-Z]+'/g) ?? []).map((m) => m.replace(/'/g, ''))
+    }
+    /** The field names of an exported interface, in source order. */
+    const ifaceFields = (src: string, name: string): string[] => {
+      const at = src.indexOf(`export interface ${name} {`)
+      if (at < 0) return []
+      const body = src.slice(at, src.indexOf('\n}', at))
+      return (body.match(/^\s{2}(\w+)\??:/gm) ?? []).map((m) => m.trim().replace(/\??:$/, ''))
+    }
+    const constValue = (src: string, name: string): string | null =>
+      src.match(new RegExp(`export const ${name} = ([^\\n/]+)`))?.[1]?.trim().replace(/\s/g, '') ?? null
+
+    // The contract stub the lanes were cut against has the types but none of
+    // the constants. Until the MCP lane's filled wire is merged into the
+    // integration branch there is nothing to pin, and pretending otherwise
+    // would either red this PR or — worse — quietly pass on an empty parse.
+    const wireStubMissing = [...WIRE_TYPES, ...WIRE_CONSTS].filter(
+      (t) => !new RegExp(`export (type|interface|const) ${t}\\b`).test(wireSrc),
+    )
+    check(
+      'desk wire: lib/desk-wire.ts stays pure — no React, no Prisma, no fetch (the SDK mirrors it line for line and the harness loads it in a bare node process)',
+      !/from '@\/lib\/db'|require\(|\bfetch\(|from 'react'/.test(wireSrc),
+    )
+    if (wireStubMissing.length) {
+      check(
+        'desk wire: lib/desk-wire.ts is the FILLED contract, not the stub — four types + five timing constants',
+        false,
+        `missing: ${wireStubMissing.join(', ')} — the wire went back to a stub, and every pin below it is blind`,
+      )
+    } else {
+    const kindMembers = unionMembers(wireSrc, 'DeskLegKind')
+    check(
+      'desk wire: DeskLegKind carries every shape the runner can offer — tx, txChain, hlAction, hlBatch, order, wait, unknown (a kind the SDK does not name is a leg it signs blind or refuses)',
+      ['tx', 'txChain', 'hlAction', 'hlBatch', 'order', 'wait', 'unknown'].every((k) => kindMembers.includes(k)) && kindMembers.length === 7,
+      kindMembers.join('|') || 'PARSED NOTHING — the union moved',
+    )
+    // The timing constants are mirrors of real behaviour elsewhere in the app.
+    // A mirror that stops matching is worse than no mirror: the SDK would poll
+    // against a freshness window the runner does not keep.
+    const hlExecSrc = readFileSync('lib/hyperliquid-exec.ts', 'utf8')
+    const runnerSrc = readFileSync('lib/jobs-runner.ts', 'utf8')
+    check(
+      'desk wire: HL_NONCE_LIFE_MS and LEG_OFFER_TTL_MS equal their real twins (hyperliquid-exec HL_NONCE_SIGNABLE_MS, jobs-runner OFFER_TTL_MS) — the wire may not promise a window the runner does not keep',
+      constValue(wireSrc, 'HL_NONCE_LIFE_MS') === constValue(hlExecSrc, 'HL_NONCE_SIGNABLE_MS') &&
+        constValue(wireSrc, 'LEG_OFFER_TTL_MS') === (runnerSrc.match(/const OFFER_TTL_MS = ([^\n/]+)/)?.[1]?.trim().replace(/\s/g, '') ?? null) &&
+        constValue(wireSrc, 'HL_DOMAIN_CHAIN_ID') === '1337',
+      `nonce ${constValue(wireSrc, 'HL_NONCE_LIFE_MS')} vs ${constValue(hlExecSrc, 'HL_NONCE_SIGNABLE_MS')}, offer ${constValue(wireSrc, 'LEG_OFFER_TTL_MS')} vs ${runnerSrc.match(/const OFFER_TTL_MS = ([^\n/]+)/)?.[1]?.trim()}`,
+    )
+
+    // The SDK mirror (Pantessa/sdk src/desk.ts) lives outside this repo — the
+    // squad's sibling worktree, or a published checkout. Pin it when present;
+    // a drift is the SDK lane's to close and the file is absent on CI, so it
+    // reports as a gap rather than as a website red.
+    const sdkPaths = ['../sdk-agent-desk/src/desk.ts', '../sdk/src/desk.ts']
+    const sdkPath = sdkPaths.find((p) => { try { readFileSync(p, 'utf8'); return true } catch { return false } })
+    if (sdkPath) {
+      const sdkSrc = readFileSync(sdkPath, 'utf8')
+      const sdkMissing = [
+        ...WIRE_TYPES.filter((t) => !new RegExp(`export (type|interface) ${t}\\b`).test(sdkSrc)),
+        ...WIRE_CONSTS.filter((c) => !new RegExp(`export const ${c}\\b`).test(sdkSrc)),
+      ]
+      check(
+        `desk wire: the SDK mirror (${sdkPath}) exports the same four types and five constants`,
+        sdkMissing.length === 0,
+        sdkMissing.length ? `missing: ${sdkMissing.join(', ')}` : 'in sync',
+      )
+      const sdkKinds = unionMembers(sdkSrc, 'DeskLegKind')
+      check(
+        'desk wire: DeskLegKind members are IDENTICAL in the website and the SDK, order-insensitive',
+        sdkKinds.length === kindMembers.length && kindMembers.length > 0 && kindMembers.every((k) => sdkKinds.includes(k)),
+        `website=[${kindMembers.join('|')}] sdk=[${sdkKinds.join('|')}]`,
+      )
+      const fieldDrift = (['DeskLegView', 'DeskLegResult', 'DeskNext'] as const)
+        .map((t) => {
+          const a = ifaceFields(wireSrc, t)
+          const b = ifaceFields(sdkSrc, t)
+          const only = [...a.filter((f) => !b.includes(f)).map((f) => `+${t}.${f}`), ...b.filter((f) => !a.includes(f)).map((f) => `-${t}.${f}`)]
+          return { t, a, only }
+        })
+        .filter((r) => r.only.length > 0 || r.a.length === 0)
+      check(
+        'desk wire: DeskLegView, DeskLegResult and DeskNext carry the same FIELDS in both repos (a field only one side knows is a value silently dropped on the way to the signer)',
+        fieldDrift.length === 0,
+        fieldDrift.flatMap((r) => (r.a.length === 0 ? [`${r.t}: parsed nothing`] : r.only)).join(', ') || 'in sync',
+      )
+      check(
+        'desk wire: the SDK never re-serializes an HL action it was handed (#850 key order) — no JSON.parse(JSON.stringify(action))',
+        !/JSON\.parse\(\s*JSON\.stringify\(/.test(sdkSrc) && !/sortKeys|Object\.keys\([^)]*action[^)]*\)\.sort/.test(sdkSrc),
+      )
+      // F8: the SDK ships its OWN copy of deskExecuteConsentMessage, and the
+      // desk RECOVERS the signer from the text IT builds — one byte of drift
+      // and every agent's consent recovers to a different address, which reads
+      // like a wallet bug rather than a version skew. Round 2 added the
+      // `Issued at:` line, and it landed in one repo first by construction.
+      //
+      // Round 1 pinned this by grepping the SDK SOURCE for each line, and it
+      // went red on a difference that does not exist: the desk writes a literal
+      // em dash, the SDK writes `\u2014`. Same bytes at runtime, different
+      // bytes on disk. Source text is the wrong evidence for a question about
+      // what the signer hashes — so import the module and compare the STRINGS.
+      const sdkMod = (await import(`../${sdkPath}`)) as { deskExecuteConsentMessage?: (a: string, b: string, c: string) => string } & Record<string, unknown>
+      const consentCases: Array<[string, string, string]> = [
+        ['abc123', '0xAbCdEf0000000000000000000000000000000001', '2026-09-23T11:22:33.444Z'],
+        ['z', '0x0000000000000000000000000000000000000000', '1970-01-01T00:00:00.000Z'],
+      ]
+      const consentDrift = typeof sdkMod.deskExecuteConsentMessage !== 'function'
+        ? ['the SDK exports no deskExecuteConsentMessage']
+        : consentCases
+            .map(([i, w, t]) => ({ want: deskExecuteConsentMessage(i, w, t), got: sdkMod.deskExecuteConsentMessage!(i, w, t) }))
+            .filter((r) => r.want !== r.got)
+            .map((r) => `desk ${r.want.length}B vs sdk ${r.got.length}B: ${[...r.want].findIndex((c, k) => c !== r.got[k])}`)
+      check(
+        'desk wire: the SDK\'s deskExecuteConsentMessage returns the EXACT string the desk builds, for every field including `Issued at:` (compared at RUNTIME — the desk recovers the signer from its own text, and source bytes are the wrong evidence: the desk writes a literal em dash, the SDK writes \\u2014)',
+        consentDrift.length === 0,
+        consentDrift.join('; ') || `${deskExecuteConsentMessage(...consentCases[0]).length} bytes, identical on ${consentCases.length} inputs`,
+      )
+      // The timing constants are runtime values too — compare the values the
+      // SDK actually exports, not the text it declares them with.
+      const constRuntimeDrift = WIRE_CONSTS.filter((c) => {
+        const mine = ({ HL_DOMAIN_CHAIN_ID: 1337, HL_NONCE_LIFE_MS: 90_000, LEG_OFFER_TTL_MS: 30 * 60_000, BUILD_RETRY_MS: 3_000, SETTLE_RETRY_MS: 10_000 } as Record<string, number>)[c]
+        return sdkMod[c] !== mine
+      })
+      check(
+        'desk wire: every timing constant the SDK exports has the VALUE the desk means (runtime, not the literal it is spelled with)',
+        constRuntimeDrift.length === 0,
+        constRuntimeDrift.map((c) => `${c}=${String(sdkMod[c])}`).join(', ') || WIRE_CONSTS.map((c) => `${c}=${String(sdkMod[c])}`).join(' '),
+      )
+      check(
+        'desk wire: the SDK\'s leg classifier is named for the wire it mirrors, so a reader finds both halves (website legViewOf ↔ sdk legViewOfStep)',
+        /export function legViewOf(Step)?\b/.test(sdkSrc) && /export function legViewOf\b/.test(wireSrc),
+      )
+      // The result allowlist is the REAL contract for what an agent may send.
+      // `DESK_LEG_RESULT_KEYS` (the published list) is tied to `DeskLegResult`
+      // at compile time by `satisfies ReadonlyArray<keyof DeskLegResult>`, so
+      // that half polices itself. What nothing ties is the list the ENFORCER
+      // uses — `LEG_RESULT_KEYS` in lib/job-step-money.ts, the shared writer
+      // every completion path runs through. Two lists in two files: a key in
+      // one and not the other is either a value silently dropped or a key no
+      // reader of the wire knows to send.
+      const arrayOf = (src: string, name: string): string[] =>
+        ((src.match(new RegExp(`${name}[^=]*=\\s*(?:new Set\\()?\\[([^\\]]+)\\]`)) ?? [])[1] ?? '')
+          .split(',')
+          .map((k) => k.trim().replace(/['"`]/g, ''))
+          .filter(Boolean)
+      let moneySrc: string | null = null
+      try { moneySrc = readFileSync('lib/job-step-money.ts', 'utf8') } catch { moneySrc = null }
+      if (moneySrc) {
+        const published = arrayOf(wireSrc, 'DESK_LEG_RESULT_KEYS')
+        const enforced = arrayOf(moneySrc, 'LEG_RESULT_KEYS')
+        check(
+          'desk wire: the keys the ENFORCER accepts (lib/job-step-money LEG_RESULT_KEYS — the one writer every completion runs through) are exactly the keys the wire publishes (DESK_LEG_RESULT_KEYS), which `satisfies` already ties to DeskLegResult',
+          published.length > 0 && enforced.length > 0 &&
+            published.every((k) => enforced.includes(k)) && enforced.every((k) => published.includes(k)),
+          published.length === 0 || enforced.length === 0
+            ? `could not read (published ${published.length}, enforced ${enforced.length})`
+            : `published-only=[${published.filter((k) => !enforced.includes(k)).join(',')}] enforced-only=[${enforced.filter((k) => !published.includes(k)).join(',')}]`,
+        )
+      }
+    } else {
+      console.log(`  ⚠️  desk wire: no SDK checkout at ${sdkPaths.join(' or ')} — the cross-repo pins are unproven on this machine`)
+    }
+    } // end: the filled wire
+
+    // ── 2. the agent-signed path, adversarially, over HTTP ─────────────────
+    const deskSecret =
+      process.env.SESSION_SECRET ??
+      (await import('node:fs')
+        .then((fs) => fs.readFileSync('.env.local', 'utf8').match(/^SESSION_SECRET=(.+)$/m)?.[1]?.trim())
+        .catch(() => undefined))
+    const canDrive = !!deskSecret && !!process.env.DATABASE_URL
+    if (!canDrive) {
+      console.log('  ⚠️  agent desk (QA): SESSION_SECRET + DATABASE_URL are needed for the adversarial pins — skipped')
+    } else {
+      process.env.SESSION_SECRET = deskSecret
+      const QA_FENCE = `qa-agentdesk-${Date.now()}`
+      const qaJobs: string[] = []
+      /** A job parked exactly where an agent drives it: one OFFERED sign step.
+       *  originEnv is fenced to this run so no runner advances it. */
+      const mkJob = async (wallet: string) => {
+        const job = await prisma.job.create({
+          data: { wallet: wallet.toLowerCase(), title: 'qa desk probe', source: 'broker', status: 'waiting_signature', currentStep: 0, originEnv: QA_FENCE, isInternal: true },
+        })
+        await prisma.jobStep.create({
+          data: { jobId: job.id, seq: 0, kind: 'sign', status: 'offered', builder: 'native-transfer', title: 'qa probe leg', params: {}, artifact: { tx: { to: '0x0000000000000000000000000000000000000001', data: '0x', value: '0', chainId: 8453 } } },
+        })
+        qaJobs.push(job.id)
+        return { id: job.id, wallet: wallet.toLowerCase(), token: signJobToken(job.id, wallet.toLowerCase()) }
+      }
+      const completeWith = async (job: { id: string; token: string }, body: unknown, token = job.token) =>
+        fetch(`${BASE}/api/jobs/${job.id}/complete?t=${token}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+
+      const wA = '0x00000000000000000000000000000000000ade51'
+      const wB = '0x00000000000000000000000000000000000ade52'
+      const jobA = await mkJob(wA)
+      const jobB = await mkJob(wB)
+
+      // A capability token names ONE job and ONE wallet (v2 HMAC).
+      const crossTok = await completeWith(jobB, { seq: 0, result: { txHash: `0x${'a'.repeat(64)}` } }, jobA.token)
+      check(
+        "desk drive: job A's capability token cannot complete job B (the HMAC binds the job id)",
+        crossTok.status === 401,
+        `got ${crossTok.status}`,
+      )
+      const wrongWalletTok = await completeWith(jobA, { seq: 0, result: { txHash: `0x${'a'.repeat(64)}` } }, signJobToken(jobA.id, wB))
+      check(
+        'desk drive: a token minted for another WALLET does not complete this job (the HMAC binds the wallet)',
+        wrongWalletTok.status === 401,
+        `got ${wrongWalletTok.status}`,
+      )
+      const noTok = await fetch(`${BASE}/api/jobs/${jobA.id}/complete`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ seq: 0 }) })
+      check('desk drive: no token and no session → 401 (never an anonymous advance)', noTok.status === 401, `got ${noTok.status}`)
+      const v1Tok = await completeWith(jobA, { seq: 0 }, 'f'.repeat(64))
+      check(
+        'desk drive: a v1 (bare 64-hex) token is DEAD — JOB_TOKEN_V1_SUNSET passed 2026-09-16',
+        v1Tok.status === 401 && JOB_TOKEN_V1_SUNSET < Date.now(),
+        `got ${v1Tok.status}`,
+      )
+
+      // Order is the runner's, not the agent's: only the OFFERED step completes.
+      const outOfSeq = await completeWith(jobA, { seq: 7, result: { txHash: `0x${'b'.repeat(64)}` } })
+      check(
+        'desk drive: completing a leg the runner has not offered is refused (out-of-seq cannot skip a wait)',
+        outOfSeq.status === 400 && /not a sign step|not awaiting/i.test(await outOfSeq.text()),
+        `got ${outOfSeq.status}`,
+      )
+
+      // A fabricated hash. The runner treats completion as advancement (a wait
+      // leg verifies), but the desk log RENDERS this string in an admin
+      // browser — so the shape must be fenced at the door. Ask A2 (DRIVE).
+      const jobJunk = await mkJob(wA)
+      const junk = await completeWith(jobJunk, { seq: 0, result: { txHash: 'javascript:alert(1)', note: '<img src=x onerror=1>' } })
+      const junkRow = await prisma.jobStep.findFirst({ where: { jobId: jobJunk.id, seq: 0 }, select: { result: true, status: true } })
+      const storedJunk = JSON.stringify(junkRow?.result ?? {})
+      check(
+        'desk drive: a leg result whose txHash is not 0x+64hex is REFUSED, and none of it is stored (a hostile agent writes what the admin desk log renders — QA F1, fenced by DRIVE round 2)',
+        junk.status === 400 && !/javascript:|onerror/.test(storedJunk),
+        `status ${junk.status}, stored ${storedJunk.slice(0, 80)}`,
+      )
+
+      // Unbounded jsonb per leg, from an unauthenticated third-party agent.
+      const jobBig = await mkJob(wA)
+      const big = await completeWith(jobBig, { seq: 0, result: { txHash: `0x${'c'.repeat(64)}`, blob: 'x'.repeat(200_000) } })
+      const bigRow = await prisma.jobStep.findFirst({ where: { jobId: jobBig.id, seq: 0 }, select: { result: true } })
+      check(
+        'desk drive: a leg result is size-capped — an agent cannot write unbounded jsonb per leg (QA F6)',
+        big.status === 400 && JSON.stringify(bigRow?.result ?? {}).length < 16_000,
+        `status ${big.status}, stored ${JSON.stringify(bigRow?.result ?? {}).length}B`,
+      )
+
+      // The honest half of completion: a well-formed claim advances exactly
+      // once, and a replay of the same seq is refused (atomic claim on
+      // status:'offered').
+      const jobOk = await mkJob(wA)
+      const good = { seq: 0, result: { txHash: `0x${'d'.repeat(64)}`, chainId: 8453 } }
+      const first = await completeWith(jobOk, good)
+      const second = await completeWith(jobOk, good)
+      check(
+        'desk drive: a well-formed completion advances once; the replay is refused (atomic claim on the offered step)',
+        first.status === 200 && second.status === 400,
+        `${first.status} then ${second.status}`,
+      )
+
+      // ── 3. the desk MCP surface ──────────────────────────────────────────
+      const DESK_URL = `${BASE}/api/broker/mcp`
+      let qaRpcId = 0
+      let qaSession: string | null = null
+      const qaRpc = async (method: string, params?: unknown): Promise<any> => {
+        const res = await fetch(DESK_URL, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(qaSession ? { 'mcp-session-id': qaSession } : {}) },
+          body: JSON.stringify({ jsonrpc: '2.0', id: ++qaRpcId, method, params }),
+        })
+        qaSession = res.headers.get('mcp-session-id') ?? qaSession
+        const raw = await res.text()
+        const line = raw.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).find((l) => l.includes(`"id":${qaRpcId}`))
+        return line ? JSON.parse(line).result : undefined
+      }
+      const qaCall = async (name: string, args: Record<string, unknown> = {}) => {
+        const result = await qaRpc('tools/call', { name, arguments: args })
+        const text: string = result?.content?.find((c: any) => c.type === 'text')?.text ?? ''
+        return { isError: !!result?.isError, payload: text && !result?.isError ? JSON.parse(text) : text }
+      }
+      await qaRpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'qa-agentdesk', version: '0' } })
+      await qaRpc('notifications/initialized')
+      const tools: string[] = ((await qaRpc('tools/list'))?.tools ?? []).map((t: any) => t.name)
+
+      // An intent BOUND to an agent identity. Only that agent should be able
+      // to walk away from it — or, once C3 lands, to read its next leg.
+      const boundId = `qa${Math.random().toString(36).slice(2, 10)}`
+      await prisma.brokerIntent.create({
+        data: { id: boundId, ask: 'qa desk probe', wallet: wA, agent: 'qa', agentKey: 'qa-desk-key-owner', state: 'open', plan: {}, isInternal: true },
+      })
+      const foreignClose = await qaCall('broker_close', { intent_id: boundId })
+      const afterClose = await prisma.brokerIntent.findUnique({ where: { id: boundId }, select: { state: true } })
+      check(
+        'desk mcp: broker_close on an identity-BOUND intent refuses a caller that is not that agent — a stray intent id cannot cancel someone else\'s job and revoke their link',
+        foreignClose.isError || afterClose?.state === 'open',
+        `state=${afterClose?.state}`,
+      )
+
+      // ── 3b. the execute gate (QA F4, shipped round 2) ────────────────────
+      // Round 1 these were grep-gaps: does the consent text mention an issuedAt,
+      // does the route mention agent_key. Both now ship, so they are behaviour,
+      // and behaviour is what gets probed. The FIRST pin is the one that
+      // matters most and the one a refusal-only suite can never have: the happy
+      // path must still SUCCEED. A gate that only proves the bad cases refuse
+      // cannot tell "safe" from "broken" — see the integration break it caught.
+      const a4Wallet = privateKeyToAccount(generatePrivateKey())
+      const a4Ask = `swap 1 USDC for ETH on base, then send 0.5 USDC on base to ${a4Wallet.address}`
+      const a4Open = async () => {
+        const o = await qaCall('broker_open', { ask: a4Ask, wallet: a4Wallet.address, agent: 'qa', agent_key: 'qa-a4-owner' })
+        return (o.payload as { intentId?: string })?.intentId ?? ''
+      }
+      const a4Execute = async (opts: { issuedAt?: string; agentKey?: string | null; intentId?: string } = {}) => {
+        const intentId = opts.intentId ?? (await a4Open())
+        const issuedAt = opts.issuedAt ?? new Date().toISOString()
+        const sig = await a4Wallet.signMessage({ message: deskExecuteConsentMessage(intentId, a4Wallet.address, issuedAt) })
+        const args: Record<string, unknown> = { intent_id: intentId, wallet_signature: sig, issued_at: issuedAt }
+        if (opts.agentKey !== null) args.agent_key = opts.agentKey ?? 'qa-a4-owner'
+        const r = await qaCall('broker_execute', args)
+        return { intentId, isError: r.isError, text: String(r.payload), jobId: (r.payload as { jobId?: string } | null)?.jobId ?? '' }
+      }
+
+      const a4Happy = await a4Execute()
+      check(
+        'desk execute: the HAPPY path still works over the MCP surface — the right agent_key and a fresh consent compile the intent to a job (the gate DRIVE shipped is reachable through the door MCP owns)',
+        !a4Happy.isError && !!a4Happy.jobId,
+        a4Happy.isError ? a4Happy.text.slice(0, 180) : `job ${a4Happy.jobId}`,
+      )
+      if (a4Happy.isError) {
+        // Every later pin here would "pass" on the same blanket refusal, which
+        // is passing for the wrong reason. One red per root cause; say what is
+        // unproven rather than banking five greens a broken door hands out.
+        console.log('  ⚠️  desk execute: the freshness and identity pins are UNPROVEN — the door refuses every call, so a refusal proves nothing')
+      } else {
+      const a4Stale = await a4Execute({ issuedAt: new Date(Date.now() - 30 * 60_000).toISOString() })
+      check(
+        'desk execute: a consent signed 30 minutes ago is refused — the signature is no longer a standing credential for its intent',
+        a4Stale.isError && /issued|stale|old|fresh|window/i.test(a4Stale.text),
+        a4Stale.text.slice(0, 150),
+      )
+      const a4Future = await a4Execute({ issuedAt: new Date(Date.now() + 30 * 60_000).toISOString() })
+      check(
+        'desk execute: a consent dated 30 minutes in the FUTURE is refused too — the window is checked BOTH ways (the on-ramp consent rule, #671)',
+        a4Future.isError && /issued|future|ahead|clock|window/i.test(a4Future.text),
+        a4Future.text.slice(0, 150),
+      )
+      const a4Foreign = await a4Execute({ agentKey: 'qa-a4-impostor' })
+      check(
+        "desk execute: a caller presenting a DIFFERENT agent_key is refused even holding a valid consent signature — the caller's identity is compared, not just the intent's",
+        a4Foreign.isError && /agent_key|identity/i.test(a4Foreign.text),
+        a4Foreign.text.slice(0, 150),
+      )
+      const a4None = await a4Execute({ agentKey: null })
+      check(
+        'desk execute: a caller presenting NO agent_key is refused by name',
+        a4None.isError && /agent_key|identity/i.test(a4None.text),
+        a4None.text.slice(0, 150),
+      )
+      }
+      check(
+        'desk execute: the consent text names the instant it was signed, so what the wallet approved is legible to a human reading it back',
+        /^Issued at: \d{4}-\d{2}-\d{2}T[\d:.]+Z$/m.test(deskExecuteConsentMessage('qaintent01', wA, new Date().toISOString())),
+        deskExecuteConsentMessage('qaintent01', wA, new Date().toISOString()).split('\n')[3],
+      )
+
+
+      // ── 3c. broker_next / broker_done (C3) ───────────────────────────────
+      // These need an intent that HAS a job: `broker_next` refuses an open
+      // intent for having nothing to drive BEFORE it looks at who is asking,
+      // so probing identity on a job-less intent proves nothing. Round 2's
+      // first cut did exactly that and read as a red.
+      if (tools.includes('broker_next') && !a4Happy.isError) {
+        const driven = a4Happy.intentId
+        const foreignNext = await qaCall('broker_next', { intent_id: driven, agent_key: 'qa-a4-impostor' })
+        check(
+          'desk mcp: broker_next on a LIVE job refuses a caller whose agent_key is not the one bound at open (C3)',
+          foreignNext.isError && /agent|identity|key/i.test(String(foreignNext.payload)),
+          String(foreignNext.payload).slice(0, 110),
+        )
+        const bareNext = await qaCall('broker_next', { intent_id: driven })
+        check(
+          'desk mcp: broker_next with NO agent_key is refused — the intent id alone is not the capability',
+          bareNext.isError,
+          String(bareNext.payload).slice(0, 110),
+        )
+        const foreignDone = await qaCall('broker_done', { intent_id: driven, agent_key: 'qa-a4-impostor', seq: 0, result: { txHash: `0x${'e'.repeat(64)}` } })
+        check(
+          'desk mcp: broker_done refuses a foreign agent_key too — the write half is gated like the read half, so a stray intent id cannot advance someone else\'s job',
+          foreignDone.isError && /agent|identity|key/i.test(String(foreignDone.payload)),
+          String(foreignDone.payload).slice(0, 110),
+        )
+        const ownNext = await qaCall('broker_next', { intent_id: driven, agent_key: 'qa-a4-owner' })
+        check(
+          'desk mcp: the BOUND agent gets its leg (or an honest "waiting") — the gate refuses impostors without refusing the owner',
+          !ownNext.isError && typeof ownNext.payload === 'object' && ownNext.payload !== null,
+          JSON.stringify(ownNext.payload ?? ownNext).slice(0, 140),
+        )
+        const routeSrc = readFileSync('app/api/broker/[transport]/route.ts', 'utf8')
+        check(
+          'desk mcp: the route header writes down the REVISED trust boundary — signable material now crosses this surface (C3 revises M1)',
+          /broker_next/.test(routeSrc) && /(trust boundary|same trust|capability token)/i.test(routeSrc.slice(0, 4000)),
+        )
+        // Decision 5: the capability token RIDES in broker_next's drive.* URLs
+        // on purpose (the same identity received it at execute). What still has
+        // to hold is that it is never STORED — it is re-minted from the intent
+        // row each time, so there is no secret at rest to leak later.
+        const driveSrcForToken = readFileSync('lib/desk-drive.ts', 'utf8')
+        check(
+          'desk mcp: the capability token is re-minted per call, never persisted (decision 5 lets it ride in drive.*, so "no secret at rest" is the property that has to hold)',
+          /signJobToken\(/.test(driveSrcForToken) &&
+            !/token:\s*(row|intent)\.|capabilityToken\s*[:=]\s*(row|intent)\./.test(driveSrcForToken) &&
+            !/token\s*String/.test(readFileSync('prisma/schema.prisma', 'utf8').slice(readFileSync('prisma/schema.prisma', 'utf8').indexOf('model BrokerIntent'), readFileSync('prisma/schema.prisma', 'utf8').indexOf('model BrokerIntent') + 1400)),
+        )
+      } else if (!tools.includes('broker_next')) {
+        check('desk mcp: broker_next / broker_done exist and are agent_key-gated (C3)', false, 'tools/list has neither')
+      }
+
+      // ── 4. the HL batch (C2) — the rule, exercised, not grepped ──────────
+      // Round 1 I pinned this by grepping `lib/hl-batch.ts` for a loop over
+      // `fetchHlSnapshot`. There is no such loop and there is not meant to be:
+      // **there is no batch endpoint**. Each member is its own
+      // `POST /api/hl/submit` call, so the per-member `expected` → live
+      // snapshot → guard → spend policy → nonce-age chain that F5 asked for is
+      // the route's existing behaviour, N times. What `lib/hl-batch.ts` owes
+      // is the part that route cannot see: that the N calls are the N members
+      // the builder composed, in order, each with ITS own expectation.
+      // So this runs the real guard against real typed data.
+      let batchSrc: string | null = null
+      try { batchSrc = readFileSync('lib/hl-batch.ts', 'utf8') } catch { batchSrc = null }
+      if (batchSrc) {
+        const hlb = await import('../lib/hl-batch')
+        const hlx = await import('../lib/hyperliquid-exec')
+        const mkOrder = (a = 5, nonce = Date.now()) => {
+          const action = hlx.canonicalizeHlAction({
+            type: 'order' as const,
+            orders: [{ a, b: true, p: '30', s: '0.4', r: false, t: { limit: { tif: 'Ioc' as const } } }],
+            grouping: 'na' as const,
+          })
+          return { kind: 'order' as const, action, nonce, typedData: hlx.hlActionTypedData(action, nonce, false) as unknown as Record<string, unknown>, expected: { coin: 'HYPE', kind: 'open' as const, isBuy: true } }
+        }
+        const mkLev = (asset = 5, nonce = Date.now() - 1) => {
+          const action = hlx.canonicalizeHlAction({ type: 'updateLeverage' as const, asset, isCross: true, leverage: 2 })
+          return { kind: 'leverage' as const, action, nonce, typedData: hlx.hlActionTypedData(action, nonce, false) as unknown as Record<string, unknown>, expected: { coin: 'HYPE', leverage: 2 } }
+        }
+        const now = Date.now()
+        const good = [mkLev(5, now - 1), mkOrder(5, now)]
+        const okRes = hlb.guardHlBatch(good)
+        check(
+          'hl batch: the shape the builder composes passes its own guard — leverage then order, ascending nonces, one coin',
+          okRes.ok === true,
+          okRes.ok ? '' : okRes.reasons.join(' | '),
+        )
+        // Each refusal below is the SAME batch with exactly one thing wrong.
+        const refusal = (label: string, mutate: () => unknown[], want: RegExp) => {
+          const r = hlb.guardHlBatch(mutate())
+          check(`hl batch: ${label}`, r.ok === false && want.test((r as { reasons: string[] }).reasons.join(' ')), r.ok ? 'ACCEPTED IT' : (r as { reasons: string[] }).reasons.join(' | ').slice(0, 110))
+        }
+        refusal(
+          'a member that is not an order or a leverage update is refused, never relayed (a withdraw or a transfer riding in a "batch" is the whole worry)',
+          () => [{ ...mkLev(), action: { type: 'withdraw3', destination: '0xattacker', amount: '9999' } }],
+          /not a Hyperliquid order or leverage action/i,
+        )
+        refusal(
+          "a member whose typed data does not derive from ITS OWN action + nonce is refused (the agent must sign the bytes it was handed — #850)",
+          () => { const m = mkOrder(); return [{ ...m, typedData: hlx.hlActionTypedData(hlx.canonicalizeHlAction({ type: 'updateLeverage' as const, asset: 5, isCross: true, leverage: 20 }), m.nonce, false) as unknown as Record<string, unknown> }] },
+          /typed data does not derive/i,
+        )
+        refusal(
+          'a member that names no coin is refused — the coin IS the expectation the submit route reads the live market against',
+          () => { const m = mkOrder(); return [{ ...m, expected: { kind: 'open' as const, isBuy: true } }] },
+          /names no coin/i,
+        )
+        refusal(
+          'two members naming DIFFERENT coins are refused — one batch, one market, so one snapshot answers for all of it',
+          () => [{ ...mkLev(5, now - 1), expected: { coin: 'HYPE', leverage: 2 } }, { ...mkOrder(5, now), expected: { coin: 'BTC', kind: 'open' as const, isBuy: true } }],
+          /names BTC, not HYPE|names HYPE, not BTC/i,
+        )
+        refusal('nonces that do not ascend are refused (the venue takes them in order)', () => [mkLev(5, now), mkOrder(5, now - 1)], /does not ascend/i)
+        refusal('an order that is not the LAST member is refused (nothing may ride behind the fill)', () => [mkOrder(5, now - 1), mkLev(5, now)], /not the last member/i)
+        refusal('two orders in one batch are refused', () => [mkOrder(5, now - 1), mkOrder(5, now)], /at most one|not the last member/i)
+        refusal(`more than ${hlb.HL_BATCH_MAX_MEMBERS} members are refused`, () => [mkLev(5, now - 3), mkLev(5, now - 2), mkLev(5, now - 1), mkOrder(5, now)], /the limit is/i)
+        check(
+          'hl batch: the freshness window is measured from the FIRST (oldest) nonce — member 1 is submitted first, so the oldest nonce is the binding one',
+          hlb.hlBatchStaleAfterMs(good, now) <= hlx.HL_NONCE_SIGNABLE_MS &&
+            hlb.hlBatchStaleAfterMs([{ nonce: now - 1 }, { nonce: now }], now) < hlb.hlBatchStaleAfterMs([{ nonce: now }, { nonce: now }], now) &&
+            hlb.hlBatchStaleAfterMs([{ nonce: now - hlx.HL_NONCE_SIGNABLE_MS - 1 }, { nonce: now }], now) < 0,
+          `${hlb.hlBatchStaleAfterMs(good, now)}ms left on a fresh pair`,
+        )
+        const stopped = hlb.batchCompletionVerdict({ batch: [{ ok: true }, { ok: false, error: 'venue rejected' }] })
+        check(
+          'hl batch: a failed member STOPS the batch and the verdict names WHICH one, so the runner re-offers from it instead of replaying the fill',
+          stopped.kind === 'reoffer' && stopped.failedIndex === 1 && stopped.submitted === 2 &&
+            hlb.batchCompletionVerdict({ batch: [{ ok: true }, { ok: true }] }).kind === 'done' &&
+            hlb.batchCompletionVerdict({ txHash: `0x${'a'.repeat(64)}` }).kind === 'none',
+          JSON.stringify(stopped),
+        )
+        // The claim the ruling rests on: there IS no batch endpoint, so every
+        // member goes through the one route that already guards per action.
+        // ...and the SDK, which is what actually makes those N calls, makes
+        // them ONE PER MEMBER with that member's OWN expectation. DRIVE's F5
+        // ruling rests on this: per-member `expected` / snapshot / guard /
+        // policy / nonce-age are free "by construction" only if the client
+        // never posts a batch as one call.
+        const sdkForBatch = ['../sdk-agent-desk/src/desk.ts', '../sdk/src/desk.ts'].find((f) => { try { readFileSync(f, 'utf8'); return true } catch { return false } })
+        if (sdkForBatch) {
+          const sdkSrc2 = readFileSync(sdkForBatch, 'utf8')
+          const submitAt = sdkSrc2.indexOf('const submitHl = async')
+          const submitFn = submitAt < 0 ? '' : sdkSrc2.slice(submitAt, submitAt + 1100)
+          const batchLeg = sdkSrc2.slice(sdkSrc2.indexOf('const signed: Array<Member'), sdkSrc2.indexOf('const signed: Array<Member') + 900)
+          check(
+            "hl batch: the SDK posts ONE member per /api/hl/submit call, carrying THAT member's own `expected` and nonce — never a batch array, so the route's per-action guard is what runs N times",
+            /expected: member\.expected/.test(submitFn) &&
+              /nonce: member\.nonce/.test(submitFn) &&
+              !/body: JSON\.stringify\(\{[^}]*batch:/.test(submitFn),
+            submitFn.includes('expected: member.expected') ? 'per-member expected' : 'could not read the submit call',
+          )
+          check(
+            'hl batch: the SDK signs EVERY member before submitting any (no wallet prompt between signatures — the nonce window is shared and a pause ages the whole leg out), then submits in order and STOPS at the first refusal',
+            /for \(const m of members\) signed\.push/.test(batchLeg) && /for \(const m of signed\)/.test(batchLeg) && /break/.test(batchLeg),
+            batchLeg ? 'sign-all-then-submit-in-order' : 'could not read the batch leg',
+          )
+        }
+        const apiFiles = readdirSync('app/api/hl')
+        check(
+          'hl batch: there is NO batch submit endpoint — app/api/hl serves submit (+ delegation), so each member rides the route that re-guards against its own expected, its own snapshot, its own nonce age and the spend policy',
+          !apiFiles.some((f) => /batch/i.test(f)) &&
+            apiFiles.includes('submit') &&
+            /HL_NONCE_MAX_AGE_MS/.test(readFileSync('app/api/hl/submit/route.ts', 'utf8')),
+          apiFiles.join(','),
+        )
+      }
+
+      // ── 5. ONE money writer per signed leg (round-2 decision 1) ──────────
+      // An agent-driven leg used to book $0 — `embed_turns` was written only by
+      // the browser beacon. The write moved into `completeSignStep`, which puts
+      // a money row on a path a third-party agent POSTs to. Two ways that can
+      // go wrong, and they pull in opposite directions: book twice (a batch
+      // re-arm completing at the same seq, or the browser beacon landing after
+      // the REST write) or book a lie (a hash the chain never saw). A writer
+      // that books twice is worse than one that books zero, because zero is
+      // visible on the dashboards and double is not.
+      const moneySessionOf = (jobId: string, seq: number) => `job-${jobId}-${seq}`
+      const moneyRows = (jobId: string, seq: number) =>
+        prisma.embedTurn.findMany({ where: { sessionId: moneySessionOf(jobId, seq) }, select: { id: true, verification: true, valueUsd: true, outcome: true, originKind: true } })
+      /** A fixture leg that looks like a real EVM swap: a chain, a notional. */
+      const mkMoneyJob = async (wallet: string) => {
+        const job = await prisma.job.create({
+          data: { wallet: wallet.toLowerCase(), title: 'qa money probe', source: 'broker', status: 'waiting_signature', currentStep: 0, originEnv: QA_FENCE, isInternal: true },
+        })
+        await prisma.jobStep.create({
+          data: { jobId: job.id, seq: 0, kind: 'sign', status: 'offered', builder: 'native-swap-uniswap', title: 'qa money leg', params: {}, valueUsd: 25, artifact: { txRequest: { to: '0x0000000000000000000000000000000000000001', data: '0x', value: '0', chainId: 8453 } } },
+        })
+        qaJobs.push(job.id)
+        return { id: job.id, wallet: wallet.toLowerCase(), token: signJobToken(job.id, wallet.toLowerCase()) }
+      }
+
+      // M1 — a hash the chain has never seen never counts as money moved.
+      const mFake = await mkMoneyJob(wA)
+      const fakeHash = `0x${'1'.repeat(63)}7`
+      const mFakeRes = await completeWith(mFake, { seq: 0, result: { txHash: fakeHash, chainId: 8453 } })
+      const fakeRows = await moneyRows(mFake.id, 0)
+      check(
+        'desk money: a leg claiming a hash the chain has never seen books a row that is NOT counted — the agent\'s word is not the receipt (MCP finding 4: verifyTurnNow settles a `job` class as `attested` with no chain read, so the writer asks the chain itself)',
+        mFakeRes.status === 200 && fakeRows.length === 1 && !(COUNTED_VERIFICATIONS as readonly string[]).includes(fakeRows[0]?.verification ?? ''),
+        `${fakeRows.length} row(s), verification=${fakeRows[0]?.verification}`,
+      )
+
+      // M2 — a REAL transaction, sent by someone else, is refuted outright.
+      // (Read a recent Base tx rather than hardcoding one that rots; only the
+      // sender matters here, so any mined tx does.)
+      let realHash: string | null = null
+      try {
+        const rpc = async (method: string, params: unknown[]) =>
+          (await (await fetch('https://mainnet.base.org', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })).json()) as { result?: any }
+        const tip = Number((await rpc('eth_blockNumber', []))?.result ?? 0)
+        const blk = (await rpc('eth_getBlockByNumber', [`0x${(tip - 8).toString(16)}`, true]))?.result
+        realHash = (blk?.transactions ?? []).find((t: { hash: string; from: string }) => t && t.from && t.hash)?.hash ?? null
+      } catch { realHash = null }
+      if (realHash) {
+        const mReal = await mkMoneyJob(wB)
+        const mRealRes = await completeWith(mReal, { seq: 0, result: { txHash: realHash, chainId: 8453 } })
+        const realRows = await moneyRows(mReal.id, 0)
+        check(
+          "desk money: a REAL transaction sent by someone else is refuted — the chain's answer about WHO sent it is the fact a claim cannot forge",
+          mRealRes.status === 200 && realRows.length === 1 && realRows[0]?.verification === 'mismatch',
+          `verification=${realRows[0]?.verification} (${realHash.slice(0, 12)}…)`,
+        )
+      } else {
+        console.log('  ⚠️  desk money: the Base RPC did not answer — the foreign-sender pin is unproven this run (environment)')
+      }
+
+      // M3 — a batch that stopped at a failed member books NOTHING, and the
+      // completion that finally succeeds at the SAME seq books exactly one.
+      const mBatch = await mkMoneyJob(wA)
+      const reoffer = await completeWith(mBatch, { seq: 0, result: { batch: [{ ok: true }, { ok: false, error: 'venue rejected' }] } })
+      const afterReoffer = await moneyRows(mBatch.id, 0)
+      const stepAfter = await prisma.jobStep.findFirst({ where: { jobId: mBatch.id, seq: 0 }, select: { status: true } })
+      check(
+        'desk money: a batch completion that stopped at a failed member re-arms the step and books NO money row (the leg has not happened yet)',
+        reoffer.status === 200 && afterReoffer.length === 0 && stepAfter?.status !== 'done',
+        `${afterReoffer.length} row(s), step=${stepAfter?.status}`,
+      )
+      // The runner would rebuild and re-offer; do that part directly so the
+      // second completion lands on the SAME seq, which is the double-book case.
+      await prisma.jobStep.updateMany({ where: { jobId: mBatch.id, seq: 0 }, data: { status: 'offered' } })
+      const done2 = await completeWith(mBatch, { seq: 0, result: { batch: [{ ok: true }, { ok: true }], chainId: 8453 } })
+      const afterDone = await moneyRows(mBatch.id, 0)
+      check(
+        'desk money: the re-offered leg completing at the same seq books EXACTLY ONE row — a re-arm cannot double-book the same leg',
+        done2.status === 200 && afterDone.length === 1,
+        `${afterDone.length} row(s)`,
+      )
+
+      // M4 — the browser beacon for a step the runner already booked is a
+      // no-op, and says so.
+      const beacon = await fetch(`${BASE}/api/embed/telemetry`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' },
+        // The first-party lane the browser JobCard actually uses: keyless,
+        // `firstParty: true`, and an origin that is this deployment's own host.
+        body: JSON.stringify({ firstParty: true, page: `${BASE}/chat`, sessionId: `browser-${mBatch.id}`, outcome: 'signed', artifact: 'job-step', jobId: mBatch.id, seq: 0, valueUsd: 25, chain: 'Base' }),
+      })
+      const beaconBody = (await beacon.json().catch(() => ({}))) as { deduped?: boolean }
+      const afterBeacon = await moneyRows(mBatch.id, 0)
+      check(
+        'desk money: a browser beacon for a step the runner already booked is a NO-OP and says `deduped` — the same leg cannot be counted twice because two surfaces saw it',
+        beacon.status === 200 && beaconBody.deduped === true && afterBeacon.length === 1,
+        `deduped=${beaconBody.deduped}, ${afterBeacon.length} row(s)`,
+      )
+      // M5 — the row is stamped as the job's own internal flag, never the
+      // caller's word: a harness job is internal, so it counts toward nothing.
+      check(
+        'desk money: the row wears the JOB row\'s is_internal and the job-step origin, so an agent cannot talk its way onto the public scoreboard',
+        afterBeacon[0]?.originKind === 'job-step' &&
+          (await prisma.embedTurn.count({ where: { sessionId: moneySessionOf(mBatch.id, 0), isInternal: true } })) === 1,
+        `originKind=${afterBeacon[0]?.originKind}`,
+      )
+      // Cleanup: every money row these probes minted, by this run's job ids.
+      await prisma.embedTurn.deleteMany({ where: { OR: qaJobs.map((id) => ({ sessionId: { startsWith: `job-${id}-` } })) } })
+
+      // Cleanup: the probe rows never outlive the run (they are is_internal,
+      // but the desk log lists internal rows greyed — leave the board clean).
+      await prisma.jobStep.deleteMany({ where: { jobId: { in: qaJobs } } })
+      await prisma.job.deleteMany({ where: { id: { in: qaJobs } } })
+      await prisma.brokerIntent.deleteMany({ where: { id: boundId } })
+      const leftovers = await prisma.job.count({ where: { originEnv: QA_FENCE } })
+      check('desk drive: the QA probe rows are cleaned up (no fixture job survives the run)', leftovers === 0, `${leftovers} left`)
+    }
+
+  }
+
+  // ── agent desk: DRIVE ──────────────────────────────────────────────────
+  // THE BATCH RULE (lib/hl-batch, squad contract C2): a job-borne Hyperliquid
+  // order step carries `orderRequest.batch` = [leverage?, order], every member
+  // an HL L1 action whose typed data re-derives from its own action + nonce;
+  // a member that isn't an HL trade action refuses the whole offer; a
+  // completion whose batch stops at a failed member re-arms the step. Plus
+  // the desk's agent-signed compile (lib/broker-exec compileDeskAsk): the
+  // flagship "2x long $12 of HYPE" is no longer refused as "single-step" —
+  // an unfundable wallet is refused by the collateral it lacks, a lone
+  // action compiles as a one-leg job, and the funded burner gets its batch.
+  console.log('— agent desk: DRIVE')
+  {
+    const { composeHlBatch, guardHlBatch, withHlBatch, batchCompletionVerdict, hlBatchStaleAfterMs, HL_BATCH_MAX_MEMBERS, hlCreditSettled, hlCreditArrival, hlCreditMinDelta } = await import('../lib/hl-batch')
+    const { deskConsentIssuedAtOk, DESK_CONSENT_WINDOW_MS } = await import('../lib/broker-exec')
+    const { fenceLegResult, LEG_RESULT_MAX_BYTES, jobStepMoneySessionId } = await import('../lib/job-step-money')
+    const { hlActionTypedData } = await import('../lib/hyperliquid-exec')
+    // A builder-shaped order request — the exact keys buildHlExecTurn emits — with the leverage pre-step.
+    const dLev = { type: 'updateLeverage', asset: 159, isCross: true, leverage: 2 }
+    const dOrder = { type: 'order', orders: [{ a: 159, b: true, p: '40.5', s: '0.3', r: false, t: { limit: { tif: 'Ioc' } } }], grouping: 'na' }
+    const dN0 = Date.now() - 1
+    const dN1 = dN0 + 1
+    const dReq = {
+      protocol: 'hyperliquid',
+      typedData: hlActionTypedData(dOrder as never, dN1),
+      hl: { action: dOrder, nonce: dN1, isTestnet: false, expected: { coin: 'HYPE', kind: 'open', isBuy: true }, pre: { action: dLev, nonce: dN0, typedData: hlActionTypedData(dLev as never, dN0), expected: { coin: 'HYPE', leverage: 2 } } },
+    }
+    const dBatch = composeHlBatch(dReq)
+    check('drive batch: a leverage pre-step + order compose to [leverage → order] with ascending nonces', dBatch?.length === 2 && dBatch[0].kind === 'leverage' && dBatch[1].kind === 'order' && dBatch[0].nonce < dBatch[1].nonce && dBatch[1].expected.coin === 'HYPE')
+    const dNoPre = composeHlBatch({ ...dReq, hl: { ...dReq.hl, pre: undefined } })
+    check('drive batch: no pre-step → a one-member batch [order]', dNoPre?.length === 1 && dNoPre[0].kind === 'order')
+    const dFee = { ...dReq, hl: { ...dReq.hl, feeApproval: { builder: '0x1', maxFeeRate: '0.1%' } } }
+    check('drive batch: a one-time builder-fee approval riding along → NO batch (the single hl.action path stands)', composeHlBatch(dFee) === null && !('batch' in withHlBatch(dFee)))
+    const dWith = withHlBatch(dReq) as { batch?: unknown[] }
+    const dGuard = guardHlBatch(dWith.batch)
+    check('drive batch: withHlBatch attaches the guarded batch (browser keys hl.pre + hl.action untouched)', Array.isArray(dWith.batch) && dWith.batch.length === 2 && dGuard.ok && (dWith as { hl: { pre?: unknown } }).hl.pre !== undefined)
+    // jsonb re-sorts keys on the way through Postgres — a sorted member still guards (canonical re-derive, #850).
+    const sortKeys = (o: unknown): unknown => Array.isArray(o) ? o.map(sortKeys) : o && typeof o === 'object' ? Object.fromEntries(Object.keys(o as object).sort().map((k) => [k, sortKeys((o as Record<string, unknown>)[k])])) : o
+    const dSorted = (dBatch ?? []).map((m) => ({ ...m, action: sortKeys(m.action) }))
+    check('drive batch: a member whose action came back from jsonb with sorted keys still guards (typed data re-derives canonically)', guardHlBatch(dSorted).ok)
+    const dRefuse = (batch: unknown) => { const g = guardHlBatch(batch); return g.ok ? '' : g.reasons.join(' | ') }
+    const dSend = { kind: 'order', action: { type: 'usdSend', destination: '0x2222222222222222222222222222222222222222', amount: '5', time: dN1 }, nonce: dN1 + 1, typedData: dReq.typedData, expected: { coin: 'HYPE', kind: 'open' } }
+    check('drive batch: a member that is not an HL trade action (usdSend) refuses the whole batch by name', /not a Hyperliquid order or leverage action \(type "usdSend"\)/.test(dRefuse([...(dBatch ?? []), dSend])), dRefuse([...(dBatch ?? []), dSend]))
+    const dTampered = (dBatch ?? []).map((m, i) => (i === 1 ? { ...m, typedData: { ...(m.typedData as object), message: { source: 'a', connectionId: '0x' + 'ab'.repeat(32) } } } : m))
+    check('drive batch: a member whose typed data does not derive from its action + nonce refuses', /does not derive/.test(dRefuse(dTampered)))
+    check('drive batch: an order that is not the last member refuses', /not the last member/.test(dRefuse([...(dBatch ?? [])].reverse())))
+    const dDesc = (dBatch ?? []).map((m, i) => (i === 1 ? { ...m, nonce: dN0 - 5, typedData: hlActionTypedData(dOrder as never, dN0 - 5) } : m))
+    check('drive batch: a nonce that does not ascend refuses', /does not ascend/.test(dRefuse(dDesc)))
+    check('drive batch: empty and over-long batches refuse; the limit is small', /empty/.test(dRefuse([])) && HL_BATCH_MAX_MEMBERS === 3 && /limit is 3/.test(dRefuse([dBatch![0], dBatch![0], dBatch![0], dBatch![0]])))
+    check('drive batch: two orders refuse', /2 orders|not the last member/.test(dRefuse([dBatch![1], dBatch![1]])))
+    check('drive batch: the completion verdict — none for an EVM result, done when every member answered ok, re-offer AT the failed member, re-offer at 0 for an empty batch',
+      batchCompletionVerdict({ txHash: '0x1' }).kind === 'none' &&
+        batchCompletionVerdict({ batch: [{ ok: true }, { ok: true }] }).kind === 'done' &&
+        (() => { const v = batchCompletionVerdict({ batch: [{ ok: true }, { ok: false, error: 'margin' }] }); return v.kind === 'reoffer' && v.failedIndex === 1 && /margin/.test(v.error) })() &&
+        (() => { const v = batchCompletionVerdict({ batch: [] }); return v.kind === 'reoffer' && v.failedIndex === 0 })())
+    check('drive batch: staleness is measured from the FIRST nonce (fresh > 0; 100s old ≤ 0)', hlBatchStaleAfterMs([{ nonce: Date.now() }]) > 80_000 && hlBatchStaleAfterMs([{ nonce: Date.now() - 100_000 }]) <= 0)
+    // The runner's two touch points read the module (source pins — the offer site and the re-arm).
+    const dRunnerSrc = (await import('node:fs')).readFileSync('lib/jobs-runner.ts', 'utf8')
+    check('drive batch: the runner offers HL orders through withHlBatch and re-arms a partial completion through batchCompletionVerdict', /orderRequest: withHlBatch\(turn\.orderRequest\)/.test(dRunnerSrc) && /batchCompletionVerdict\(result\)/.test(dRunnerSrc) && /reoffer: true/.test(dRunnerSrc))
+
+    // ── the drill's DRY path over HTTP: the desk MCP, then the Jobs API ──
+    const DRIVE_MCP = `${BASE}/api/broker/mcp`
+    let driveRpcId = 0
+    let driveSession: string | null = null
+    const driveRpc = async (method: string, params?: unknown): Promise<any> => {
+      const res = await fetch(DRIVE_MCP, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1', ...(driveSession ? { 'mcp-session-id': driveSession } : {}) },
+        body: JSON.stringify({ jsonrpc: '2.0', id: ++driveRpcId, method, params }),
+      })
+      driveSession = res.headers.get('mcp-session-id') ?? driveSession
+      const raw = await res.text()
+      const data = raw.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).find((l) => l.includes(`"id":${driveRpcId}`))
+      return data ? JSON.parse(data).result : undefined
+    }
+    const driveCall = async (name: string, args: Record<string, unknown> = {}) => {
+      const result = await driveRpc('tools/call', { name, arguments: args })
+      const text: string = result?.content?.find((c: any) => c.type === 'text')?.text ?? ''
+      return { isError: !!result?.isError, payload: text && !result?.isError ? JSON.parse(text) : text }
+    }
+    await driveRpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'harness-drive', version: '0' } })
+    await driveRpc('notifications/initialized')
+    const FLAGSHIP = '2x long $12 of HYPE on hyperliquid'
+
+    // The consent text recovers the signer — the desk's wallet proof (pure).
+    const dAgent = privateKeyToAccount(generatePrivateKey())
+    const dOpen = await driveCall('broker_open', { ask: FLAGSHIP, wallet: dAgent.address, agent: 'harness-drive', agent_key: 'harness-drive-key' })
+    const dIntent = dOpen.payload?.intentId as string
+    const dIssued = new Date().toISOString()
+    const dConsent = await dAgent.signMessage({ message: deskExecuteConsentMessage(dIntent, dAgent.address, dIssued) })
+    check('drive: the execute consent text recovers the agent wallet that signed it, and names the instant it was issued', dIntent != null && (await recoverMessageAddress({ message: deskExecuteConsentMessage(dIntent, dAgent.address, dIssued), signature: dConsent })).toLowerCase() === dAgent.address.toLowerCase() && deskExecuteConsentMessage(dIntent, dAgent.address, dIssued).includes(`Issued at: ${dIssued}`))
+    // The consent's freshness (QA F4): a both-ways window, pure and over HTTP.
+    check('drive consent: issued_at inside the window is accepted; 11 minutes past, 11 minutes ahead, and a non-ISO string are refused by name',
+      deskConsentIssuedAtOk(dIssued).ok && DESK_CONSENT_WINDOW_MS === 600_000 &&
+        !deskConsentIssuedAtOk(new Date(Date.now() - 11 * 60_000).toISOString()).ok && /more than 10 minutes ago/.test((deskConsentIssuedAtOk(new Date(Date.now() - 11 * 60_000).toISOString()) as { why: string }).why) &&
+        /in the future/.test((deskConsentIssuedAtOk(new Date(Date.now() + 11 * 60_000).toISOString()) as { why: string }).why) &&
+        /issued_at is required/.test((deskConsentIssuedAtOk('yesterday') as { why: string }).why))
+    const dStaleIssued = new Date(Date.now() - 11 * 60_000).toISOString()
+    const dStaleSig = await dAgent.signMessage({ message: deskExecuteConsentMessage(dIntent, dAgent.address, dStaleIssued) })
+    const dStaleExec = await driveCall('broker_execute', { intent_id: dIntent, wallet_signature: dStaleSig, issued_at: dStaleIssued, agent_key: 'harness-drive-key' })
+    check('drive consent (HTTP): a consent issued 11 minutes ago is refused as stale, before any job exists', dStaleExec.isError && /more than 10 minutes ago/.test(String(dStaleExec.payload)), String(dStaleExec.payload).slice(0, 160))
+    const dWrongKey = await driveCall('broker_execute', { intent_id: dIntent, wallet_signature: dConsent, issued_at: dIssued, agent_key: 'someone-elses-key' })
+    check('drive consent (HTTP): a caller presenting a different agent_key than the one that opened the intent is refused by name', dWrongKey.isError && /agent_key this intent was opened with/.test(String(dWrongKey.payload)), String(dWrongKey.payload).slice(0, 160))
+    // An unfunded wallet asking the flagship: refused by the COLLATERAL it lacks — never as "single-step".
+    const dExec = await driveCall('broker_execute', { intent_id: dIntent, wallet_signature: dConsent, issued_at: dIssued, agent_key: 'harness-drive-key' })
+    check('drive: the flagship on an unfunded wallet is refused by the collateral the position needs (reaching Hyperliquid), not as a single-step ask', dExec.isError && /reaching Hyperliquid|can't fund it/i.test(String(dExec.payload)) && !/single-step/i.test(String(dExec.payload)), String(dExec.payload).slice(0, 200))
+    await driveCall('broker_close', { intent_id: dIntent })
+    // A lone non-HL action compiles as a ONE-leg job (the runner withholds the build on the empty wallet; the job exists).
+    const dLone = await driveCall('broker_open', { ask: `send 0.5 USDC on base to 0x2222222222222222222222222222222222222222`, wallet: dAgent.address, agent: 'harness-drive', agent_key: 'harness-drive-key' })
+    const dLoneSig = await dAgent.signMessage({ message: deskExecuteConsentMessage(dLone.payload.intentId, dAgent.address, dIssued) })
+    const dLoneExec = await driveCall('broker_execute', { intent_id: dLone.payload.intentId, wallet_signature: dLoneSig, issued_at: dIssued, agent_key: 'harness-drive-key' })
+    check('drive: a lone action compiles to a one-leg agent-owned job (no more "does not compile to a multi-step job")', !dLoneExec.isError && dLoneExec.payload?.steps?.length === 1 && dLoneExec.payload.steps[0].kind === 'sign' && typeof dLoneExec.payload.drive?.poll === 'string', String(dLoneExec.payload).slice(0, 160))
+    if (!dLoneExec.isError) {
+      const dPoll = await fetch(String(dLoneExec.payload.drive.poll).replace(/^https?:\/\/[^/]+/, BASE), { headers: { 'x-yf-internal-run': '1' } })
+      const dJob = (await dPoll.json()) as { job?: { steps?: { builder?: string }[] } }
+      check('drive: the one-leg job polls through the capability token with the transfer builder on its step', dPoll.status === 200 && dJob.job?.steps?.[0]?.builder === 'native-transfer', JSON.stringify(dJob.job?.steps?.[0]?.builder))
+      // The completion fence (QA A2/F6): refused rather than reshaped, before the step's state is even consulted.
+      const dCompleteUrl = String(dLoneExec.payload.drive.complete).replace(/^https?:\/\/[^/]+/, BASE)
+      const dPost = async (result: unknown) => { const r = await fetch(dCompleteUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ seq: 0, result }) }); return { status: r.status, error: String(((await r.json().catch(() => ({}))) as { error?: string }).error ?? '') } }
+      const dUnknown = await dPost({ txHash: '0x' + 'ab'.repeat(32), evil: 'x' })
+      const dBadHash = await dPost({ txHash: '0xZZ' })
+      const dBig = await dPost({ detail: 'x'.repeat(LEG_RESULT_MAX_BYTES + 1) })
+      const dFine = await dPost({ txHash: '0x' + 'ab'.repeat(32), chainId: 8453 })
+      check('drive fence (HTTP): a result with a key the wire does not name, a malformed txHash, or a body over 8 KB is refused by name (400); a well-formed one reaches the step\'s own state check', dUnknown.status === 400 && /keys the wire does not name: evil/.test(dUnknown.error) && dBadHash.status === 400 && /txHash must be/.test(dBadHash.error) && dBig.status === 400 && /the cap is 8192/.test(dBig.error) && dFine.status === 400 && /not awaiting a signature/.test(dFine.error), `${dUnknown.status} ${dUnknown.error.slice(0, 60)} | ${dBadHash.status} | ${dBig.status} | ${dFine.status} ${dFine.error.slice(0, 40)}`)
+      check('drive fence (pure): an empty result passes; txs/fill/detail/explorerUrl/status/batch/orderResponse are the allowed keys; an uppercase hash is refused (never reshaped)', fenceLegResult(undefined).ok && fenceLegResult({ txs: [], fill: {}, detail: 'x', explorerUrl: 'u', status: 'filled', batch: [], orderResponse: {} }).ok && !fenceLegResult({ txHash: '0x' + 'AB'.repeat(32) }).ok && !fenceLegResult({ batch: 'no' }).ok && !fenceLegResult([]).ok)
+    }
+    // The deposit's credit settles on a DELTA (F5 / round-2 decision 8): a level alone passed for any account already holding collateral.
+    check('drive hl-credit (pure): with a baseline the wait settles only once the collateral ROSE by ≥ min(90%, all-but-$0.50) of the deposit; without one the legacy level rule stands', hlCreditMinDelta(5) === 4.5 && hlCreditSettled(30, hlCreditArrival(25, 5), 4.5) && !hlCreditSettled(26, hlCreditArrival(25, 5), 4.5) && !hlCreditSettled(29.4, hlCreditArrival(25, 5), 4.5) && hlCreditSettled(26, null, 4.5) && !hlCreditSettled(NaN, null, 1) && hlCreditArrival(-3, 5).baselineUsd === 0)
+    check('drive hl-credit (source): the runner records the collateral baseline on the deposit artifact at build and the wait reads it through hlCreditSettled', /hlCreditArrival\(baseline, depositUsd\)/.test(dRunnerSrc) && /hlCreditSettled\(collateral, arrival/.test(dRunnerSrc) && /recordJobStepMoney\(\{/.test(dRunnerSrc) && /fenceLegResult\(result\)/.test(dRunnerSrc))
+    await driveCall('broker_close', { intent_id: dLone.payload.intentId })
+
+    // The FUNDED wallet (the house burner, .env.local): the flagship compiles, and the HL
+    // step offers the batch. Live venue reads; skipped without the key.
+    const dKey = (() => { try { return (require('node:fs') as typeof import('node:fs')).readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null } catch { return null } })()
+    if (dKey && /^0x[0-9a-fA-F]{64}$/.test(dKey)) {
+      const burner = privateKeyToAccount(dKey as `0x${string}`)
+      const bOpen = await driveCall('broker_open', { ask: FLAGSHIP, wallet: burner.address, agent: 'harness-drive', agent_key: 'harness-drive-key' })
+      const bIntent = bOpen.payload?.intentId as string
+      const bSig = await burner.signMessage({ message: deskExecuteConsentMessage(bIntent, burner.address, dIssued) })
+      const bExec = await driveCall('broker_execute', { intent_id: bIntent, wallet_signature: bSig, issued_at: dIssued, agent_key: 'harness-drive-key' })
+      const bSteps = (bExec.payload?.steps ?? []) as { kind: string; note: string }[]
+      check('drive (live): the flagship on the funded burner compiles — the LAST leg is the 2x long, funded legs (if any) ride in front', !bExec.isError && bSteps.length >= 1 && bSteps[bSteps.length - 1].kind === 'sign' && /2x Long \$12 of HYPE/.test(bSteps[bSteps.length - 1].note), bExec.isError ? String(bExec.payload).slice(0, 200) : `${bSteps.length} legs`)
+      if (!bExec.isError && bSteps.length === 1) {
+        const bPollUrl = String(bExec.payload.drive.poll).replace(/^https?:\/\/[^/]+/, BASE)
+        const bCompleteUrl = String(bExec.payload.drive.complete).replace(/^https?:\/\/[^/]+/, BASE)
+        let bStep: { status: string; artifact?: { orderRequest?: { batch?: unknown[]; hl?: { nonce?: number } } }; result?: { reoffer?: boolean } } | undefined
+        for (let i = 0; i < 12; i++) {
+          const j = (await (await fetch(bPollUrl, { headers: { 'x-yf-internal-run': '1' } })).json()) as { job?: { steps?: typeof bStep[] } }
+          bStep = j.job?.steps?.[0]
+          if (bStep?.status === 'offered') break
+          await new Promise((r) => setTimeout(r, 2500))
+        }
+        const bBatch = bStep?.artifact?.orderRequest?.batch
+        const bGuard = guardHlBatch(bBatch)
+        check('drive (live): the offered HL step carries a guarded batch whose last member is the order and whose nonces are fresh', bStep?.status === 'offered' && Array.isArray(bBatch) && bGuard.ok && (bBatch[bBatch.length - 1] as { kind: string }).kind === 'order' && hlBatchStaleAfterMs(bBatch as { nonce: number }[]) > 0, bStep?.status === 'offered' ? `${bBatch?.length ?? 0} members: ${(bBatch ?? []).map((m) => (m as { kind: string }).kind).join(' → ')}` : `step ${bStep?.status}`)
+        // The relay's step 1, proven without submitting: the agent's signature over each member's
+        // SERVED typed data recovers to the agent — and to the typed data the relay re-derives from
+        // the member's action + nonce (canonical bytes, #850). Nothing is posted to the venue here.
+        if (Array.isArray(bBatch) && bGuard.ok) {
+          let recovered = 0
+          for (const m of bGuard.members) {
+            const sig = await burner.signTypedData(m.typedData as unknown as Parameters<typeof burner.signTypedData>[0])
+            const td = hlActionTypedData(m.action, m.nonce)
+            const who = await recoverTypedDataAddress({ ...td, signature: sig } as unknown as Parameters<typeof recoverTypedDataAddress>[0])
+            if (who.toLowerCase() === burner.address.toLowerCase()) recovered++
+          }
+          check('drive (live): a signature over each served member recovers to the agent against the relay\'s own re-derived typed data (sign what you are handed)', recovered === bGuard.members.length, `${recovered}/${bGuard.members.length}`)
+        }
+        // A completion whose batch stopped at a failed member does NOT finish the step: it re-arms, and the next poll re-offers a FRESH batch.
+        const bNonce = bStep?.artifact?.orderRequest?.hl?.nonce ?? 0
+        const bDone = await fetch(bCompleteUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ seq: 0, result: { batch: [{ ok: false, error: 'harness: the venue refused member 1' }] } }) })
+        let bAgain: typeof bStep
+        for (let i = 0; i < 12; i++) {
+          const j = (await (await fetch(bPollUrl, { headers: { 'x-yf-internal-run': '1' } })).json()) as { job?: { status?: string; steps?: typeof bStep[] } }
+          bAgain = j.job?.steps?.[0]
+          if (bAgain?.status === 'offered' && (bAgain.artifact?.orderRequest?.hl?.nonce ?? 0) > bNonce) break
+          await new Promise((r) => setTimeout(r, 2500))
+        }
+        check('drive (live): a partial batch completion re-arms the step and the runner re-offers the SAME seq with a fresh nonce (never done, never failed)', bDone.status === 200 && bAgain?.status === 'offered' && (bAgain.artifact?.orderRequest?.hl?.nonce ?? 0) > bNonce, `complete ${bDone.status}; step ${bAgain?.status}; nonce ${bAgain?.artifact?.orderRequest?.hl?.nonce} vs ${bNonce}`)
+        // ONE money writer (round-2 decision 1): a completion the runner accepts books exactly one
+        // receipt-gated embed_turns row (internal from the JOB row), and the browser's own beacon
+        // for that step is deduped. Nothing is submitted to the venue — this completion is the
+        // agent's word about a batch, exactly what the log shows as "claimed".
+        const bJobId = String(bExec.payload.jobId)
+        const bFinal = await fetch(bCompleteUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ seq: 0, result: { batch: [{ ok: true, orderResponse: { status: 'harness' } }, { ok: true, orderResponse: { status: 'harness' } }] } }) })
+        const bRows = process.env.DATABASE_URL ? await prisma.embedTurn.findMany({ where: { sessionId: jobStepMoneySessionId(bJobId, 0) }, select: { id: true, artifact: true, isInternal: true, walletAddress: true, originKind: true, verification: true, valueUsd: true } }) : null
+        check('drive money (live): a REST /complete the runner accepts writes EXACTLY ONE job-step money row — session_id job-<jobId>-<seq>, origin_kind job-step, is_internal from the job row, the burner as signer, fail-closed verification', bFinal.status === 200 && (bRows === null || (bRows.length === 1 && bRows[0].artifact === 'job-step' && bRows[0].isInternal === true && bRows[0].walletAddress === burner.address.toLowerCase() && bRows[0].originKind === 'job-step' && typeof bRows[0].verification === 'string')), bRows === null ? 'DATABASE_URL absent in the harness process — row check skipped' : `${bRows.length} row(s): ${JSON.stringify(bRows[0] ?? null)}`)
+        const bBeacon = await fetch(`${BASE}/api/embed/telemetry`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ firstParty: true, sessionId: 'harness-drive-beacon-1', page: `${BASE}/chat`, outcome: 'signed', artifact: 'job-step', chain: 'multi', valueUsd: 12, buildPath: 'native-hl-exec', jobId: bJobId, seq: 0, walletAddress: burner.address }) })
+        const bBeaconBody = (await bBeacon.json().catch(() => ({}))) as { ok?: boolean; deduped?: boolean }
+        const bRowsAfter = process.env.DATABASE_URL ? await prisma.embedTurn.count({ where: { OR: [{ sessionId: jobStepMoneySessionId(bJobId, 0) }, { sessionId: 'harness-drive-beacon-1' }] } }) : null
+        check('drive money (live): the browser beacon for the SAME (jobId, seq) after the runner\'s row is answered ok + deduped and writes NOTHING', bBeacon.status === 200 && bBeaconBody.ok === true && bBeaconBody.deduped === true && (bRowsAfter === null || bRowsAfter === 1), `${bBeacon.status} ${JSON.stringify(bBeaconBody)}; rows ${bRowsAfter}`)
+      }
+      await driveCall('broker_close', { intent_id: bIntent })
+    } else {
+      console.log('  ↳ drive (live) burner checks SKIPPED (no PRIVATE_KEY in .env.local)')
+    }
+  }
+  // ── agent desk: SDK docs ──────────────────────────────────────────────────
+  // /docs/desk is the agent-signed path's front door. Since the `pantessa/desk`
+  // helper shipped (sdk 1.1.0), the page must SAY the loop is live and show the
+  // call that runs it — the previous copy said "rolling out", which read as
+  // "not yet" to every agent developer who found the page. The squad's
+  // invariant sentence is quoted verbatim so a copy edit can't quietly drop it.
+  {
+    const deskSrc = readFileSync('app/docs/desk/page.tsx', 'utf8')
+    const desk = flat(await (await fetch(`${BASE}/docs/desk`)).text())
+    check(
+      'agent desk docs: the page no longer calls the agent-signed path "rolling out", and says it is live with a proof date',
+      !/rolling out/i.test(deskSrc) && /const PROVEN = 'proven \d{4}-\d{2}-\d{2}'/.test(deskSrc) && /This is live/.test(desk) && /proven \d{4}-\d{2}-\d{2}/.test(desk),
+      'the SSR still reads as "not yet"',
+    )
+    check(
+      'agent desk docs: the invariant sentence is rendered verbatim',
+      desk.includes('Round-trip across every settlement boundary, batched within one.'),
+    )
+    check(
+      'agent desk docs: the snippet shows the SDK call — pantessa/desk, openAndExecute then driveJob, with a named version',
+      /pantessa\/desk/.test(desk) && /openAndExecute/.test(desk) && /driveJob/.test(desk) && /pantessa@1\.1\.0/.test(desk),
+      'the driveJob snippet is missing from the SSR',
+    )
+    check(
+      'agent desk docs: the honest fence survives — no transaction material on the MCP surface, completion is advancement not proof, dryRun is named',
+      /no transaction material/i.test(desk) && /advancement/i.test(desk) && /dryRun/.test(desk) && /fails/.test(desk),
+    )
+  }
+  // ── agent desk: UI ── the desk log + the Desk section on Growth (squad agent-desk
+  // 2026-09-23, contract C5). Pure folds first (lib/desk-activity, in-process, no DB), then
+  // the route's gate + shape, then one internal intent minted through the REAL desk MCP and
+  // read back: flagged, greyed, counted nowhere.
+  console.log('— agent desk: UI')
+  {
+    const D = await import('../lib/desk-activity')
+    const dFs = await import('node:fs')
+    const T0 = Date.parse('2026-09-23T10:00:00Z')
+    const at = (s: number) => new Date(T0 + s * 1000).toISOString()
+    const swapArtifact = { txChain: { steps: [{ tx: { chainId: 8453 } }], refresh: { kind: 'uniswap-swap', params: { feeBps: '20' } } } }
+    const H = `0x${'ab'.repeat(32)}`
+    const intent = (over: Partial<import('../lib/desk-activity').DeskIntentRaw> = {}): import('../lib/desk-activity').DeskIntentRaw => ({
+      id: 'dsk_fixture01', ask: 'swap 25 USDC for ETH on base, then send 1 USDC on base to 0x1111111111111111111111111111111111111111', wallet: '0xAaAa000000000000000000000000000000000001', agent: 'Fixture Agent',
+      agentKeyHash: 'f1x7ur3agent0001', isInternal: false, state: 'executing', plan: { quote: { gate: 'jobs', kind: 'action' } }, linkSlug: null, jobId: 'job_fixture01', createdAt: at(0), updatedAt: at(1), ...over,
+    })
+    const job = (over: Partial<import('../lib/desk-activity').DeskJobRaw> = {}): import('../lib/desk-activity').DeskJobRaw => ({
+      id: 'job_fixture01', status: 'waiting_signature', valueUsd: null, failReason: null, isInternal: false, createdAt: at(5), updatedAt: at(120),
+      steps: [
+        { seq: 0, kind: 'sign', status: 'done', builder: 'native-swap', title: 'Swap 25 USDC for ETH on Base', artifact: swapArtifact, result: { txHash: H, chainId: 8453 }, valueUsd: 25, expiresAt: null, createdAt: at(5), updatedAt: at(60) },
+        { seq: 1, kind: 'wait', status: 'done', builder: 'wait', title: 'ETH lands on Base', artifact: null, result: { status: 'balance ≥ target' }, valueUsd: null, expiresAt: null, createdAt: at(5), updatedAt: at(90) },
+        { seq: 2, kind: 'sign', status: 'offered', builder: 'native-transfer', title: 'Send 1 USDC on Base', artifact: { txRequest: { chainId: 8453 } }, result: null, valueUsd: 1, expiresAt: at(120 + 1800), createdAt: at(5), updatedAt: at(120) },
+      ],
+      ...over,
+    })
+
+    check('desk fold: txHashOf reads txHash / hash / the last of txHashes, and nothing hash-shaped is a hash', D.txHashOf({ txHash: H }) === H && D.txHashOf({ hash: H }) === H && D.txHashOf({ txHashes: ['0x1', H] }) === H && D.txHashOf({ txHash: '0xdead' }) === null && D.txHashOf({ fill: {} }) === null && D.txHashOf('nope') === null)
+    check('desk fold: explorer links come from the chain registry (Base → basescan, 4663 → blockscout), never off-registry', D.explorerTxUrl(8453, H) === `https://basescan.org/tx/${H}` && /robinhoodchain\.blockscout\.com\/tx\//.test(D.explorerTxUrl(4663, H) ?? '') && D.explorerTxUrl(999_999, H) === null && D.explorerTxUrl(8453, null) === null)
+    check('desk fold: DESK_OFFER_TTL_MS equals the runner\'s OFFER_TTL_MS (the built-time read of an offered step)', new RegExp(`const OFFER_TTL_MS = ${D.DESK_OFFER_TTL_MS / 60_000} \\* 60_000`).test(dFs.readFileSync('lib/jobs-runner.ts', 'utf8')))
+
+    const turn = (over: Partial<import('../lib/desk-activity').DeskTurnRaw> = {}): import('../lib/desk-activity').DeskTurnRaw => ({ sessionId: 'job-job_fixture01-0', valueUsd: 25, verification: 'verified', txUrl: null, isInternal: false, origin: 'https://www.pantessa.com', createdAt: at(61), ...over })
+    const row = D.foldDeskIntent({ intent: intent(), job: job(), turns: [turn()] })
+    const kinds = row.events.map((e) => `${e.kind}:${e.who}`)
+    check(
+      'desk fold: the agent path reads opened → consent → compiled → CLAIMED (agent) → VERIFIED (runner) → built, in time order, and never invents a chosen event',
+      JSON.stringify(kinds) === JSON.stringify(['opened:desk', 'consent:agent', 'compiled:desk', 'claimed:agent', 'verified:runner', 'verified:runner', 'built:runner']),
+      JSON.stringify(kinds),
+    )
+    const claimed = row.events.find((e) => e.kind === 'claimed')!
+    const built = row.events.find((e) => e.kind === 'built')!
+    const verifieds = row.events.filter((e) => e.kind === 'verified')
+    check('desk fold: claimed ≠ verified — the claim is the agent\'s word (who=agent, the posted hash, an explorer link); the books\' receipt row and the wait leg are the runner\'s (who=runner)', claimed.who === 'agent' && claimed.txHash === H && claimed.txUrl === `https://basescan.org/tx/${H}` && claimed.chainId === 8453 && claimed.receipt === 'verified' && verifieds.length === 2 && verifieds.every((e) => e.who === 'runner') && verifieds[0].seq === 0 && /receipt verified · booked \$25\.00/.test(verifieds[0].detail ?? '') && verifieds[1].seq === 1 && !verifieds[1].txHash)
+    check('desk fold: a claimed leg carries its guard-priced notional AND the fee its artifact carried, by the books\' own rule (25 × 20 bps = $0.05, native-swap-uniswap)', claimed.valueUsd === 25 && Math.abs((claimed.feeUsd ?? 0) - 0.05) < 1e-9 && claimed.buildPath === 'native-swap-uniswap' && claimed.feeBps === 20 && claimed.venue === 'uniswap' && Math.abs(row.feeUsd - 0.05) < 1e-9 && row.valueUsd === 25)
+    check('desk fold: an OFFERED step\'s built time is read back off expires_at − the offer TTL, and the row is at stage signed with 1/2 legs signed, 1 verified', built.at === at(120) && built.seq === 2 && row.stage === 'signed' && row.path === 'agent' && row.legs.total === 2 && row.legs.signed === 1 && row.legs.verified === 1 && row.legs.failed === 0)
+    check('desk fold: receipt-counted money is the leg\'s own `job-<jobId>-<seq>` row when its verdict counts; the row says claimed AND counted separately', row.countedUsd === 25 && row.valueUsd === 25 && row.lastAt === at(120))
+    const mismatch = D.foldDeskIntent({ intent: intent(), job: job(), turns: [turn({ verification: 'mismatch' })] })
+    const unverified = D.foldDeskIntent({ intent: intent(), job: job(), turns: [turn({ verification: 'unverified' })] })
+    const noRow = D.foldDeskIntent({ intent: intent(), job: job(), turns: [] })
+    const internalTurn = D.foldDeskIntent({ intent: intent(), job: job(), turns: [turn({ isInternal: true })] })
+    const otherJob = D.foldDeskIntent({ intent: intent(), job: job(), turns: [turn({ sessionId: 'job-job_other-0' })] })
+    const legacy = D.foldDeskIntent({ intent: intent(), job: job(), turns: [turn({ verification: null })] })
+    check('desk fold: a mismatch row counts nothing and says the receipt contradicts the claim; an unverified one waits; no row = $0 counted with receipt none; an internal row never counts; another job\'s row is ignored; a legacy NULL verdict counts (T-R6) but earns no verified event', mismatch.countedUsd === 0 && mismatch.events.find((e) => e.kind === 'claimed')!.receipt === 'mismatch' && /contradicts/.test(mismatch.events.find((e) => e.kind === 'claimed')!.detail ?? '') && !mismatch.events.some((e) => e.kind === 'verified' && e.seq === 0) && unverified.countedUsd === 0 && /not verified yet/.test(unverified.events.find((e) => e.kind === 'claimed')!.detail ?? '') && noRow.countedUsd === 0 && noRow.events.find((e) => e.kind === 'claimed')!.receipt === 'none' && internalTurn.countedUsd === 0 && otherJob.countedUsd === 0 && legacy.countedUsd === 25 && !legacy.events.some((e) => e.kind === 'verified' && e.seq === 0))
+    check('desk fold: legSeqOfSession reads job-<jobId>-<seq> for THIS job only', D.legSeqOfSession('job-job_fixture01-3', 'job_fixture01') === 3 && D.legSeqOfSession('job-job_fixture01-3', 'job_other') === null && D.legSeqOfSession('desk-x-1', 'x') === null && D.legSeqOfSession('harness-job-job_fixture01-1', 'job_fixture01') === null)
+
+    // QA A1 — a hostile agent writes these rows end to end and they land on an ADMIN page.
+    const big = 'A'.repeat(2 * 1024 * 1024)
+    const hostile = D.foldDeskIntent({
+      intent: intent({ ask: `<img src=x onerror=alert(1)> ${big}`, agent: `<script>${big}</script>`, plan: { chosen: { label: big, at: at(2) } } }),
+      job: job({ failReason: big, steps: [{ ...job().steps[0], result: { txHash: 'javascript:alert(1)', note: big } }, { ...job().steps[1], result: { status: big } }, { ...job().steps[2], status: 'failed', result: { error: `javascript:${big}` } }] }),
+    })
+    const hostileClaim = hostile.events.find((e) => e.kind === 'claimed')!
+    check('desk A1: a `javascript:` claim never becomes a hash or an href — it renders as inert text; explorerTxUrl refuses anything that is not a 32-byte hash', hostileClaim.txHash === undefined && hostileClaim.txUrl === undefined && D.txHashOf({ txHash: 'javascript:alert(1)' }) === null && D.explorerTxUrl(8453, 'javascript:alert(1)') === null && D.explorerTxUrl(8453, `${H}00`) === null && D.explorerTxUrl(8453, 'https://evil.example/x') === null)
+    check('desk A1: every agent-written string is clamped at the fold — a 2 MB ask, name, chosen label, result and fail reason all land under the caps, and no event detail exceeds 200 chars', hostile.ask.length <= D.DESK_TEXT_CAPS.ask && (hostile.agentName?.length ?? 0) <= D.DESK_TEXT_CAPS.agent && hostile.events.every((e) => (e.detail?.length ?? 0) <= D.DESK_TEXT_CAPS.detail) && JSON.stringify(hostile).length < 20_000 && hostile.ask.startsWith('<img src=x onerror=alert(1)>'))
+    check('desk A1: clampText strips control characters and refuses non-strings', D.clampText('a\u0000b\u001fc', 10) === 'abc' && D.clampText(123, 10) === null && D.clampText('   ', 10) === null && D.clampText('x'.repeat(11), 10)!.length === 10)
+    const consent = row.events.find((e) => e.kind === 'consent')!
+    check('desk fold: consent has no timestamp of its own — it is the job\'s creation (Finding 3) and says so', consent.at === at(5) && /signature recovered .*at execute/.test(consent.detail ?? '') && row.events.find((e) => e.kind === 'compiled')!.detail === '3-leg job job_fixture01')
+
+    const done = D.foldDeskIntent({ intent: intent(), job: job({ status: 'done', valueUsd: 26, updatedAt: at(200), steps: job().steps.map((s) => (s.seq === 2 ? { ...s, status: 'done', result: { txHash: H.replace(/ab/g, 'cd') }, updatedAt: at(180) } : s)) }) })
+    const failed = D.foldDeskIntent({ intent: intent(), job: job({ status: 'failed', failReason: '"Send 1 USDC on Base": the build refused', updatedAt: at(200), steps: job().steps.map((s) => (s.seq === 2 ? { ...s, status: 'failed', result: { error: 'insufficient USDC' }, updatedAt: at(180) } : s)) }) })
+    const canceled = D.foldDeskIntent({ intent: intent({ state: 'closed' }), job: job({ status: 'canceled', updatedAt: at(200) }) })
+    const declined = D.foldDeskIntent({ intent: intent({ state: 'declined', jobId: null }) })
+    const chosen = D.foldDeskIntent({ intent: intent({ jobId: null, state: 'open', plan: { quote: { gate: 'jobs', kind: 'action' }, chosen: { optionId: 'fund-1', label: 'Fund from Base', at: at(2) } } }) })
+    check('desk fold: a done job settles (done event, $26 moved, 2/2 signed); a failed one fails with the runner\'s reason; a canceled one closes; a declined intent declines', done.stage === 'settled' && done.legs.signed === 2 && done.valueUsd === 26 && /job done · \$26\.00 moved/.test(done.events.at(-1)!.detail ?? '') && failed.stage === 'failed' && failed.legs.failed === 1 && failed.events.at(-1)!.detail === '"Send 1 USDC on Base": the build refused' && canceled.stage === 'closed' && canceled.events.at(-1)!.kind === 'closed' && declined.stage === 'declined' && declined.path === 'none' && declined.events.at(-1)!.kind === 'refused' && declined.events.at(-1)!.who === 'human')
+    check('desk fold: a persisted choice (plan.chosen — the Ask to MCP) reads as a chosen event at its own time; a plan without one gets none', chosen.events.map((e) => e.kind).join(',') === 'opened,chosen' && chosen.events[1].at === at(2) && chosen.events[1].detail === 'Fund from Base' && chosen.stage === 'opened' && !row.events.some((e) => e.kind === 'chosen'))
+
+    const human = D.foldDeskIntent({
+      intent: intent({ jobId: null, state: 'handed_off', linkSlug: 'lnk_fixture', updatedAt: at(3) }),
+      linkEvents: [
+        { kind: 'open', wallet: null, valueUsd: null, txHash: null, chainId: null, verification: null, createdAt: at(10) },
+        { kind: 'connect', wallet: '0xbbbb000000000000000000000000000000000002', valueUsd: null, txHash: null, chainId: null, verification: null, createdAt: at(20) },
+        { kind: 'built', wallet: '0xbbbb000000000000000000000000000000000002', valueUsd: 15, txHash: null, chainId: null, verification: null, createdAt: at(30) },
+        { kind: 'signed', wallet: '0xbbbb000000000000000000000000000000000002', valueUsd: 15, txHash: H, chainId: 8453, verification: 'verified', createdAt: at(40) },
+        { kind: 'signed', wallet: '0xbbbb000000000000000000000000000000000002', valueUsd: 999, txHash: H, chainId: 8453, verification: 'mismatch', createdAt: at(50) },
+      ],
+    })
+    check('desk fold: the human path reads handoff → consent (connect) → built → claimed (human) → verified (the receipt verdict), counts only counted receipts ($15, never the $999 mismatch) and lands at signed', human.path === 'human' && human.stage === 'signed' && human.valueUsd === 15 && human.legs.signed === 2 && human.legs.verified === 1 && human.events.map((e) => e.kind).join(',') === 'opened,handoff,consent,built,claimed,verified,claimed' && human.events.find((e) => e.kind === 'handoff')!.detail === "sign link /i/lnk_fixture minted for the agent's human" && human.events.filter((e) => e.kind === 'claimed').every((e) => e.who === 'human'))
+
+    // The fence: internal rows are folded and flagged, and count NOWHERE.
+    const internalRow = D.foldDeskIntent({ intent: intent({ id: 'dsk_internal', isInternal: true }), job: job() })
+    const teamRow = D.foldDeskIntent({ intent: intent({ id: 'dsk_team', wallet: '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0' }), job: job(), testers: new Set(['0x5eaabd731d2bc0490c2d47e41858e9b0629455a0']) })
+    const jobInternal = D.foldDeskIntent({ intent: intent({ id: 'dsk_jobint' }), job: job({ isInternal: true }) })
+    check('desk fence: an internal intent (or a job stamped internal) stays a row, flagged; countedDeskRows drops it; a team wallet stays unless external', internalRow.isInternal && jobInternal.isInternal && !teamRow.isInternal && teamRow.team && D.countedDeskRows([row, internalRow, teamRow, jobInternal]).length === 2 && D.countedDeskRows([row, internalRow, teamRow], true).length === 1 && D.countedDeskRows([row, internalRow, teamRow], true)[0].intentId === 'dsk_fixture01')
+    const now = T0 + 3 * 86_400_000
+    const g = D.deskGrowthSummary(D.countedDeskRows([row, internalRow, teamRow]), 7, now)
+    const gInt = D.deskGrowthSummary(D.countedDeskRows([internalRow]), 7, now)
+    check('desk growth: agents seen, the opened → executed → signed → settled funnel, claimed money, fee and receipt-counted all fold from the counted rows only (internal alone → zeros everywhere)', g.agents === 1 && g.funnel.opened === 2 && g.funnel.executed === 2 && g.funnel.signed === 2 && g.funnel.settled === 0 && g.moneyUsd === 50 && Math.abs(g.feeUsd - 0.1) < 1e-9 && g.countedUsd === 25 && g.legs === 2 && gInt.agents === 0 && gInt.funnel.opened === 0 && gInt.moneyUsd === 0 && gInt.byAgent.length === 0, JSON.stringify({ g: { ...g, series: undefined }, gInt: { ...gInt, series: undefined } }))
+    check('desk growth: the daily series is dailySeries over the claimed legs (7 dense days, the claim day carries $50, cumulative reads $50 at the end) — the same idiom as the rest of Growth', g.series.length === 7 && g.series.reduce((s, p) => s + p.totalUsd, 0) === 50 && g.series.find((p) => p.day === '2026-09-23')?.totalUsd === 50 && g.series.at(-1)!.cumulativeUsd === 50 && g.series.every((p) => p.standing === p.totalUsd))
+    check('desk growth: money by agent ranks handles biggest first with intents · legs · fee, and deltas read against the previous window (null off a zero base)', g.byAgent[0]?.handle === 'f1x7ur3agent0001' && g.byAgent[0].usd === 50 && g.byAgent[0].intents === 2 && g.byAgent[0].legs === 2 && Math.abs(g.byAgent[0].feeUsd - 0.1) < 1e-9 && g.moneyDelta === null && g.funnelPrev.opened === 0)
+    check('desk filter: by stage, by agent name or handle substring (case-insensitive), and external drops internal + team', D.filterDeskRows([row, internalRow, teamRow, done], { stage: 'settled' }).length === 1 && D.filterDeskRows([row, done], { agent: 'FIXTURE' }).length === 2 && D.filterDeskRows([row], { agent: 'f1x7' }).length === 1 && D.filterDeskRows([row], { agent: 'nobody' }).length === 0 && D.filterDeskRows([row, internalRow, teamRow], { external: true }).length === 1)
+    check('desk sort: newest activity first', D.sortDeskRows([row, done]).map((r) => r.intentId + '@' + r.lastAt)[0] === `dsk_fixture01@${at(200)}`)
+
+    // Wiring pins: session-only gate, the 10s visible poll, the Growth mount, one axis.
+    const deskRouteSrc = dFs.readFileSync('app/api/admin/desk/route.ts', 'utf8')
+    const deskPageSrc = dFs.readFileSync('app/dashboard/admin/desk/page.tsx', 'utf8')
+    const growthRouteSrc2 = dFs.readFileSync('app/api/admin/growth/route.ts', 'utf8')
+    const growthPageSrc2 = dFs.readFileSync('app/dashboard/admin/page.tsx', 'utf8')
+    const deskChartsSrc = dFs.readFileSync('components/DeskLogCharts.tsx', 'utf8')
+    const deskSectionSrc = dFs.readFileSync('components/DeskLogSection.tsx', 'utf8')
+    check('desk wiring: the route answers the admin SESSION only (getSessionAddress, never getAuthAddress — it carries every ask and wallet), and the page polls every 10s while the tab is visible', /getSessionAddress\(\)/.test(deskRouteSrc) && !/getAuthAddress/.test(deskRouteSrc) && /isAdminAddress\(admin\)/.test(deskRouteSrc) && /const REFRESH_MS = 10_000/.test(deskPageSrc) && /document\.visibilityState === 'visible'/.test(deskPageSrc))
+    check('desk wiring: Growth links the log beside User flows, mounts the Desk section, and its API carries `desk` from the SAME loader the desk route reads', growthPageSrc2.includes('href="/dashboard/admin/desk"') && growthPageSrc2.includes('<DeskLogSection desk={data.desk') && growthRouteSrc2.includes("from '@/app/api/admin/desk/read'") && /desk,\n/.test(growthRouteSrc2) && deskRouteSrc.includes("from './read'"))
+    check('desk wiring: the desk chart draws ONE axis (never a dual y-scale), one hue from the markets look tokens; the section imports look.css so the tokens exist on the dashboard', (deskChartsSrc.match(/<YAxis/g) ?? []).length === 1 && !/orientation="right"/.test(deskChartsSrc) && /MK\.seq\[/.test(deskChartsSrc) && deskSectionSrc.includes("import '@/components/markets/look.css'") && /data-desk-section/.test(deskSectionSrc))
+    check('desk wiring: an INTERNAL row is greyed and pilled on the page, every hash renders through the fold\'s explorer link (no hand-typed host), and nothing on the page is dangerouslySetInnerHTML', /data-internal=\{dim/.test(deskPageSrc) && /opacity-55/.test(deskPageSrc) && /href=\{e\.txUrl\}/.test(deskPageSrc) && !/basescan\.org|etherscan\.io/.test(deskPageSrc) && !/dangerouslySetInnerHTML/.test(deskPageSrc) && !/dangerouslySetInnerHTML/.test(deskSectionSrc))
+    const SB = await import('../components/DashboardSidebar')
+    check('desk wiring: the admin rail has a Desk log row under Growth, and only the MOST specific section lights (Desk log, not Growth too)', /href: '\/dashboard\/admin\/desk', label: 'Desk log'/.test(dFs.readFileSync('components/DashboardSidebar.tsx', 'utf8')) && SB.activeSectionHref('/dashboard/admin/desk', '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0') === '/dashboard/admin/desk' && SB.activeSectionHref('/dashboard/admin', '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0') === '/dashboard/admin' && SB.activeSectionHref('/dashboard/admin/flows', '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0') === '/dashboard/admin' && SB.currentSectionLabel('/dashboard/admin/desk', '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0') === 'Desk log')
+
+    // The wire: gate, shape, and one internal intent through the real desk MCP.
+    const dAnon = await fetch(`${BASE}/api/admin/desk`)
+    const dNonAdmin = await fetch(`${BASE}/api/admin/desk`, { headers: C })
+    check('desk route: 401 signed out, 403 for a signed-in non-admin', dAnon.status === 401 && dNonAdmin.status === 403)
+    const dPk = (() => {
+      try {
+        return dFs.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+      } catch {
+        return null
+      }
+    })()
+    if (!dPk) console.log('  desk route (admin): SKIPPED (no PRIVATE_KEY in .env.local)')
+    else {
+      const dAcct = privateKeyToAccount((dPk.startsWith('0x') ? dPk : `0x${dPk}`) as `0x${string}`)
+      const dSession = await signIn(dAcct)
+      const dHead = { cookie: dSession }
+      const dRead = async (q: string) => (await fetch(`${BASE}/api/admin/desk?${q}`, { headers: dHead })).json() as Promise<{ windowDays: number; external: boolean; filters: { stage: string | null }; rows: import('../lib/desk-activity').DeskLogRow[]; summary: import('../lib/desk-activity').DeskGrowth; hidden: { internal: number; team: number }; failed: string[]; total: number }>
+      const d0 = await dRead('days=999&stage=bogus')
+      check('desk route: an admin gets the shape — a bad window falls to 30, a bad stage is ignored, every row folded (events sorted, stage from the enum), nothing failed', d0.windowDays === 30 && d0.filters.stage === null && Array.isArray(d0.rows) && d0.rows.every((r) => (D.DESK_STAGES as readonly string[]).includes(r.stage) && r.events.every((e, i, a) => i === 0 || Date.parse(a[i - 1].at) <= Date.parse(e.at))) && d0.summary.windowDays === 30 && d0.failed.length === 0, JSON.stringify({ failed: d0.failed, n: d0.rows.length }))
+
+      // One internal intent through the real desk MCP (x-yf-internal-run), agent-signed path.
+      const DESK_URL = `${BASE}/api/broker/mcp`
+      let dId = 0
+      let dMcp: string | null = null
+      const dRpc = async (method: string, params?: unknown) => {
+        const res = await fetch(DESK_URL, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1', ...(dMcp ? { 'mcp-session-id': dMcp } : {}) }, body: JSON.stringify({ jsonrpc: '2.0', id: ++dId, method, params }) })
+        dMcp = res.headers.get('mcp-session-id') ?? dMcp
+        const raw = await res.text()
+        const data = raw.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).find((l) => l.includes(`"id":${dId}`))
+        return data ? JSON.parse(data).result : undefined
+      }
+      const dCall = async (name: string, args: Record<string, unknown>) => {
+        const r = await dRpc('tools/call', { name, arguments: args })
+        const text: string = r?.content?.find((c: { type: string; text?: string }) => c.type === 'text')?.text ?? ''
+        return { isError: !!r?.isError, text, payload: text && !r?.isError ? (JSON.parse(text) as Record<string, unknown>) : null }
+      }
+      await dRpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'harness-desk-ui', version: '0' } })
+      await dRpc('notifications/initialized')
+      const dAsk = `swap 1 USDC for ETH on base, then send 0.5 USDC on base to ${dAcct.address}`
+      const dOpen = await dCall('broker_open', { ask: dAsk, agent: 'UI harness agent', agent_key: 'ui-harness-desk-key', wallet: dAcct.address })
+      if (dOpen.isError && /not accepting new intents/.test(dOpen.text)) console.log('  desk route (fixture): SKIPPED (BROKER_DESK_ENABLED is off on the server under test)')
+      else {
+        const dIntent = String(dOpen.payload?.intentId ?? '')
+        check('desk fixture: the desk opened an internal intent for the harness agent', !dOpen.isError && /^[A-Za-z0-9_-]{6,}$/.test(dIntent), dOpen.text.slice(0, 160))
+        const dIssuedAt = new Date().toISOString() // round 2 (DRIVE): the consent names the instant it was signed
+        const consent = ['Pantessa agent desk — execute consent', `Intent: ${dIntent}`, `Wallet: ${dAcct.address.toLowerCase()}`, `Issued at: ${dIssuedAt}`, "Signing lets the desk compile this intent into a job owned by this wallet. It moves nothing by itself; every leg still needs this wallet's own signature."].join('\n')
+        const dExec = await dCall('broker_execute', { intent_id: dIntent, wallet_signature: await dAcct.signMessage({ message: consent }), issued_at: dIssuedAt, agent_key: 'ui-harness-desk-key' })
+        const dJob = typeof dExec.payload?.jobId === 'string' ? (dExec.payload.jobId as string) : null
+        check('desk fixture: broker_execute compiled the sequenced ask into a job the agent drives (or refused by name)', !dExec.isError ? !!dJob : /does not compile|cap|identity|venue|refus/i.test(dExec.text), dExec.text.slice(0, 200))
+        const d1 = await dRead('days=7')
+        const mine = d1.rows.find((r) => r.intentId === dIntent)
+        check('desk route: the harness intent reads back FLAGGED internal, on the agent path, its ask + wallet + handle intact, and counts nowhere (hidden.internal ≥ 1, external=1 drops it)', !!mine && mine.isInternal && mine.ask === dAsk && mine.wallet === dAcct.address.toLowerCase() && !!mine.agentHandle && mine.agentName === 'UI harness agent' && (dJob ? mine.path === 'agent' && mine.jobId === dJob : mine.path === 'none') && d1.hidden.internal >= 1 && !(await dRead('days=7&external=1')).rows.some((r) => r.intentId === dIntent), JSON.stringify(mine ? { ...mine, events: mine.events.length } : null))
+        check('desk route: the window\'s summary is folded from counted rows only — never more opened than the non-internal rows in the window', d1.summary.funnel.opened <= d1.rows.filter((r) => !r.isInternal).length && d1.summary.funnel.executed <= d1.summary.funnel.opened)
+        const byStage = await dRead(`days=7&stage=${mine?.stage ?? 'opened'}`)
+        const byAgent = await dRead('days=7&agent=ui%20harness')
+        check('desk route: ?stage and ?agent filter the rows and leave the summary alone', byStage.rows.every((r) => r.stage === (mine?.stage ?? 'opened')) && byAgent.rows.some((r) => r.intentId === dIntent) && byAgent.rows.every((r) => /ui harness/i.test(r.agentName ?? '')) && byAgent.summary.funnel.opened === d1.summary.funnel.opened)
+        if (dJob) {
+          const dPoll = (await (await fetch(`${BASE}/api/jobs/${dJob}`, { headers: dHead })).json()) as { job?: { steps: { seq: number; status: string; kind: string }[] } }
+          const offered = dPoll.job?.steps.find((s) => s.status === 'offered')
+          const ev = mine?.events.map((e) => e.kind) ?? []
+          check('desk route: the executed intent\'s timeline reads opened → consent → compiled, then the runner\'s own verdict on leg 0 (built while offered, else refused/failed by name — nothing was signed)', ev.slice(0, 3).join(',') === 'opened,consent,compiled' && (offered ? ev.includes('built') : true) && !ev.includes('claimed') && (mine?.legs.signed ?? 1) === 0, JSON.stringify({ ev, leg0: dPoll.job?.steps[0]?.status }))
+        }
+        await dCall('broker_close', { intent_id: dIntent })
+        const gDesk = (await (await fetch(`${BASE}/api/admin/growth?days=7`, { headers: dHead })).json()) as { desk: import('../lib/desk-activity').DeskGrowth | null }
+        const d7 = await dRead('days=7')
+        check('desk on Growth: /api/admin/growth carries the SAME desk summary /api/admin/desk folds for the same window (one loader, two screens)', !!gDesk.desk && gDesk.desk.windowDays === 7 && gDesk.desk.funnel.opened === d7.summary.funnel.opened && gDesk.desk.moneyUsd === d7.summary.moneyUsd && gDesk.desk.agents === d7.summary.agents, JSON.stringify({ g: gDesk.desk?.funnel, d: d7.summary.funnel }))
+      }
+      const dPage = await fetch(`${BASE}/dashboard/admin/desk`, { headers: dHead })
+      check('desk page: /dashboard/admin/desk serves (200) inside the dashboard shell for an admin session', dPage.status === 200 && /dashboard/i.test(await dPage.text()))
+    }
   }
 
 

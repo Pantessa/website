@@ -5,15 +5,54 @@
 // which guarded layer will build it, which dapps ride along, whether the
 // wallet can fund it (real multi-chain scan), and which funding routes
 // exist — every option a resume-sentence that re-enters the same parse
-// ladder human asks use. Close = a durable sign link for the agent's human
-// (connect-to-act; their wallet is the only signer), then broker_status
-// reports the server-truth funnel back so the agent finally learns whether
-// its human signed. The desk NEVER returns transaction material — that is
-// pinned mechanically (assertNoTxMaterial) on every outbound payload.
+// ladder human asks use. It then closes one of two ways.
+//
+// THE HUMAN LANE (default): broker_handoff mints a durable sign link for the
+// agent's human (connect-to-act; their wallet is the only signer), and
+// broker_status reports the server-truth funnel back so the agent finally
+// learns whether its human signed. Nothing signable crosses this lane —
+// pinned mechanically by assertNoTxMaterial on every outbound payload.
+//
+// THE AGENT LANE: broker_execute compiles a SEQUENCED ask into a job owned by
+// the agent's own wallet, and broker_next / broker_done drive it leg by leg.
+//
+// ── M1's rule, consciously REVISED (2026-09-23) ──────────────────────
+// M1 (2026-08-17) wrote "no transaction material travels through this MCP
+// surface", and broker_execute therefore handed back a job id + capability
+// token and sent the agent off to the Jobs API to fetch its own legs.
+//
+// That rule was written for an ANONYMOUS surface — broker_open takes no
+// credential, by design, because negotiation should cost nothing. The execute
+// path is not that surface. It carries three gates the open path does not:
+//   1. a BOUND IDENTITY — execute refuses an intent opened without agent_key;
+//   2. a PROVEN WALLET — the agent personal_signs a consent text naming this
+//      intent id and this wallet; the desk recovers the signer before any job
+//      row exists;
+//   3. a CAPABILITY TOKEN — signJobToken(jobId, wallet), the exact grant the
+//      Jobs API itself accepts, which the desk can mint because it knows both.
+// Under those three the desk surface IS the Jobs API's trust boundary reached
+// over a different transport, and withholding the artifact bought nothing: the
+// same bytes sat one `GET /api/jobs/{id}?t=` away for the same caller. What it
+// cost was real — an LLM-driven agent had to leave the desk mid-intent and
+// learn a second protocol to finish the thing it had just been quoted.
+//
+// So broker_next serves the offered leg and broker_done posts its result,
+// gated on the bound agent_key (timing-safe) and refusing any intent that
+// never executed. Its answer carries a freshly minted job capability token in
+// `drive.*` — deliberately, and reviewed: the SAME identity already received
+// one at broker_execute, so re-minting leaks nothing new, and withholding it
+// would strand an agent that would rather finish over REST (or hand the job
+// to the SDK's driveJob) on a desk that is paused. The safety that actually holds is untouched and is relaxed
+// NOWHERE: deterministic builders write every transaction, every build is
+// guard-checked fail-closed at offer time, and money moves only through a
+// wallet signature. Every payload that is not the offered leg still passes
+// assertNoTxMaterial (lib/desk-drive sayShape), so the negotiation half of the
+// desk keeps its mechanical pin. See lib/desk-drive.ts for the long form.
 import { NextRequest, NextResponse } from 'next/server'
 import { createMcpHandler } from 'mcp-handler'
 import { z } from 'zod'
 import { openIntent, chooseOption, handoffIntent, intentStatus, closeIntent, executeIntent, tileIntent, sendToInbox } from '@/lib/broker-exec'
+import { deskNext, deskDone, chooseWithHistory, assertCloseAllowed } from '@/lib/desk-drive'
 import { clientIpFrom, bumpAndCheckBrokerCall } from '@/lib/turn-limits'
 import { pricingBlock } from '@/lib/broker-pricing'
 import { isInternalRun } from '@/lib/internal-run'
@@ -44,13 +83,33 @@ async function guarded<T>(run: () => Promise<T>) {
   }
 }
 
+/** The desk's own contract version. Bumped whenever the tool set or the
+ *  trust model changes; `registry/desk.server.json` carries the same number,
+ *  and the harness pins the two in sync. 0.2.0 = the agent-signed leg loop
+ *  (broker_next / broker_done). 0.3.0 = a venue-aware funding verdict on
+ *  Hyperliquid opens, the chosen option kept on the plan, and broker_close
+ *  gated on the identity that opened the intent. */
+export const DESK_VERSION = '0.3.0'
+
 const CAPABILITIES = [
   'Buy tokenized stocks (AAPL, TSLA, NVDA…) on Robinhood Chain — with automatic cross-chain funding when the money sits on Base/Ethereum/Arbitrum',
   "Swap tokens (Uniswap v3/v4, CoW incl. MEV-protected + limit orders) — dollar-denominated asks welcome ('swap $5 of ETH')",
   'Protect a Hyperliquid position — stop-loss / take-profit the Guardian watches every minute',
   'Cross-chain moves (NEAR Intents), Robinhood Chain bridging, Aave, Lido staking, NFT transfers + Seaport listings, Snapshot votes',
+  'SIGN IT YOURSELF: if YOUR wallet holds the money and the key, broker_execute compiles the ask into a sequenced job and broker_next / broker_done drive it leg by leg — the desk builds and guards each leg, you sign it with your own key, and it answers with the next one. Round-trip across every settlement boundary, batched within one.',
   'FIND WORK: GET /api/roster/feed lists open mandate slots humans posted (kind, mandate sentence, cap — never their wallet). broker_open with slot_token courts a listing; getting HIRED (their signature) makes your future opens auto-address to their inbox.',
 ]
+
+/** The leg shapes broker_next serves, one line each — an agent should be able
+ *  to write its signer from the capability call alone. */
+const LEG_KINDS = {
+  tx: 'one EVM transaction: { to, data, value, chainId }. Sign, broadcast, report { txHash, chainId }.',
+  txChain: 'N EVM transactions IN ORDER. A step carrying validUntil is re-quoted at the refresh URL before it is signed; report the LAST hash.',
+  hlAction: 'one Hyperliquid L1 action. Sign orderRequest.typedData VERBATIM (EIP-712, domain chainId 1337) and POST the action back UNCHANGED to /api/hl/submit — the venue hashes msgpack, key order is part of the hash, and the relay re-canonicalizes.',
+  hlBatch: 'several Hyperliquid actions on sequential nonces, signed in one motion and submitted in order. A failed member stops the batch and the leg is re-offered from it.',
+  order: 'an off-chain EIP-712 order (CoW swap or limit, Seaport listing) with its own submitUrl. A prereqTx signs first when present.',
+  wait: 'nothing to sign — the runner verifies on-chain arrival itself. Sleep retryAfterMs and call broker_next again.',
+}
 
 const handler = createMcpHandler(
   (server) => {
@@ -59,22 +118,43 @@ const handler = createMcpHandler(
       {
         title: 'The desk, and how to trade with it',
         description:
-          'START HERE. What the guarded transaction layer can compile a plain-English ask into, and the negotiation loop: ' +
-          'broker_open (parse + quote + funding scan) → broker_choose (rewrite the working sentence via offered options) → ' +
+          'START HERE. What the guarded transaction layer can compile a plain-English ask into, and the two ways to close. ' +
+          'HUMAN LANE: broker_open (parse + quote + funding scan) → broker_choose (rewrite the working sentence via offered options) → ' +
           'broker_handoff (mint the sign link for your human) → broker_status (server-truth funnel: opened, connected, built, signed, settled). ' +
-          'Sentences in, sentences and links out — nothing this desk returns can execute by itself.',
+          'AGENT LANE, when YOUR wallet holds the money and the key: broker_open (with agent_key + your wallet) → broker_choose → broker_execute ' +
+          '(prove the wallet with one personal_sign; the ask compiles into a sequenced job) → broker_next / broker_done, leg by leg, → broker_status. ' +
+          'Round-trip across every settlement boundary, batched within one.',
         inputSchema: {},
       },
       async () =>
         guarded(async () => ({
+          version: DESK_VERSION,
           capabilities: CAPABILITIES,
-          loop: ['broker_open', 'broker_choose (optional, repeatable)', 'broker_handoff', 'broker_status'],
-          tools: ['broker_open', 'broker_choose', 'broker_handoff', 'broker_execute', 'broker_send', 'broker_tile', 'broker_status', 'broker_close'],
+          loop: {
+            human: ['broker_open', 'broker_choose (optional, repeatable)', 'broker_handoff', 'broker_status'],
+            agent: ['broker_open', 'broker_choose (optional, repeatable)', 'broker_execute', 'broker_next', 'broker_done', '… repeat next/done per leg …', 'broker_status'],
+          },
+          tools: [
+            'broker_open',
+            'broker_choose',
+            'broker_handoff',
+            'broker_execute',
+            'broker_next',
+            'broker_done',
+            'broker_send',
+            'broker_tile',
+            'broker_status',
+            'broker_close',
+          ],
+          legKinds: LEG_KINDS,
           pricing: pricingBlock(),
           contract:
             'Non-custodial by construction: deterministic builders write every transaction (no model writes calldata), ' +
-            'each build is guard-checked fail-closed and receipted, and the human wallet on the other side of the sign link is the only signer. ' +
-            'The desk never returns calldata, typed data, or deposit addresses to a calling agent.',
+            'each build is guard-checked fail-closed at offer time and receipted, and the only thing that moves money is a wallet signature. ' +
+            'On the HUMAN lane nothing signable crosses this surface at all — the desk returns sentences and links, and the guarded builders ' +
+            'rebuild the ask from scratch on the sign side. On the AGENT lane broker_next serves the leg the runner just built for YOUR OWN proven ' +
+            'wallet, gated on the agent_key the intent was opened with — the same trust boundary as the job capability token broker_execute hands ' +
+            'you, reached over this transport instead of REST. Either way Pantessa never holds a key and never signs for you.',
         })),
     )
 
@@ -139,7 +219,11 @@ const handler = createMcpHandler(
           option_id: z.string().min(1).max(24),
         },
       },
-      async ({ intent_id, option_id }) => guarded(() => chooseOption(intent_id, option_id)),
+      async ({ intent_id, option_id }) =>
+        // The chosen option is KEPT on the plan (plan.chosen + plan.history):
+        // a rewrite with no record of what rewrote it is a quote, a final ask,
+        // and no account of how one became the other.
+        guarded(() => chooseWithHistory(intent_id, option_id, () => chooseOption(intent_id, option_id))),
     )
 
     server.registerTool(
@@ -160,11 +244,12 @@ const handler = createMcpHandler(
         title: 'Execute it yourself (agent-signed, sequenced)',
         description:
           'The x402-payer path: when YOUR wallet holds the funds and the key, the desk compiles the working ask into a multi-leg job ' +
-          'owned by that wallet and returns the job id + capability token + drive recipe. You fetch each leg from the job API as the runner ' +
-          'builds it (guarded, policy-checked, one leg at a time), sign and broadcast it with your own key, and post completion; wait legs verify ' +
-          'on-chain arrival before the next leg builds, so the order stays synced around settlement. Only compiles SEQUENCED flows ' +
+          'owned by that wallet and returns the job id + capability token + drive recipe. Then stay here: broker_next serves each leg as the runner ' +
+          'builds it (guarded, policy-checked, one leg at a time) and broker_done posts what you signed and answers with the next one — the job API ' +
+          'stays available for anything that would rather drive REST. Wait legs verify on-chain arrival before the next leg builds, so the order stays ' +
+          'synced around settlement. Round-trip across every settlement boundary, batched within one. Only compiles SEQUENCED flows ' +
           '(fund → wait → act); the intent must have been opened with your wallet. Completion is advancement, not proof — lying fails the job ' +
-          'closed one leg later. No transaction material travels through this MCP surface. ' +
+          'closed one leg later. '  +
           'wallet_signature PROVES the wallet: personal_sign (EIP-191) over the exact consent text ' +
           '"Pantessa agent desk — execute consent\\nIntent: <intent_id>\\nWallet: <lowercased wallet>\\nSigning lets the desk compile this intent into a job owned by this wallet. It moves nothing by itself; every leg still needs this wallet\'s own signature." ' +
           '— the desk recovers the signer and refuses any wallet but the one the intent was opened for.',
@@ -174,9 +259,75 @@ const handler = createMcpHandler(
             .string()
             .regex(/^0x[0-9a-fA-F]{130}$/)
             .describe('personal_sign over the consent text (see description) by the wallet this intent was opened for.'),
+          issued_at: z
+            .string()
+            .optional()
+            .describe(
+              'The ISO-8601 UTC instant you signed the consent at (new Date().toISOString()). Accepted within 10 minutes ' +
+                'both ways: a consent signature with no window is replayable forever by anyone who sees it. Sign and execute ' +
+                'in one motion.',
+            ),
+          agent_key: z
+            .string()
+            .min(6)
+            .max(80)
+            .optional()
+            .describe(
+              'The SAME desk identity string you passed to broker_open — compared timing-safe. Without it, holding the ' +
+                'intent id is enough to execute an intent someone else opened.',
+            ),
         },
       },
-      async ({ intent_id, wallet_signature }, extra) => guarded(() => executeIntent(intent_id, wallet_signature, callOpts(extra))),
+      async ({ intent_id, wallet_signature, issued_at, agent_key }, extra) =>
+        guarded(() => executeIntent(intent_id, wallet_signature, callOpts(extra), { issuedAt: issued_at, agentKey: agent_key })),
+    )
+
+    // ── the agent-signed leg loop (C3) ────────────────────────────────
+    // These two are the ONLY tools that return signable material, and only for
+    // the agent whose key the intent was bound to at open and whose wallet it
+    // proved at execute. See the header comment for why M1's blanket rule was
+    // revised, and lib/desk-drive.ts for the gate.
+    server.registerTool(
+      'broker_next',
+      {
+        title: 'What do I sign now?',
+        description:
+          'The leg loop. Returns the leg the runner is OFFERING on your executed intent — what it does in one sentence, what kind of ' +
+          'signature it wants (tx | txChain | hlAction | hlBatch | order), the chain, its notional, how long the material stays signable ' +
+          '(staleAfterMs), the guarded artifact itself exactly as built, and the credential-free endpoints the rest of the loop uses ' +
+          '(re-quote, Hyperliquid submit, stale-leg rebuild) — or `waiting` with a retryAfterMs when there is nothing to ' +
+          'sign yet (a wait leg settling on-chain, or the next leg being built). Sign the artifact AS SERVED and never re-serialize it: a ' +
+          'Hyperliquid action is hashed as msgpack and key order is part of that hash. Then call broker_done. Requires the agent_key the ' +
+          'intent was opened with — legs are served only to the agent that proved the wallet.',
+        inputSchema: {
+          intent_id: z.string().min(4).max(24),
+          agent_key: z.string().min(6).max(80).describe('The desk identity this intent was opened with. Legs are served to no one else.'),
+        },
+      },
+      async ({ intent_id, agent_key }) => guarded(() => deskNext(intent_id, agent_key)),
+    )
+
+    server.registerTool(
+      'broker_done',
+      {
+        title: 'I signed that leg — what is next?',
+        description:
+          'Report a signed leg and get the next one in the same call. `seq` is the leg index broker_next handed you; `result` is your ' +
+          'evidence — { txHash, chainId } for an EVM leg (the LAST hash of a txChain), { orderResponse } for a Hyperliquid or off-chain ' +
+          'order, { batch: [{ ok, orderResponse|error }] } for a batch. The runner records it, rolls forward, and the answer is the next ' +
+          'leg (or the wait it is now settling). Completion is ADVANCEMENT, NOT PROOF: the wait leg after yours reads the chain, so a ' +
+          'result claiming a hash the chain does not have fails the job closed one leg later. Requires the intent\u2019s bound agent_key.',
+        inputSchema: {
+          intent_id: z.string().min(4).max(24),
+          agent_key: z.string().min(6).max(80).describe('The desk identity this intent was opened with.'),
+          seq: z.number().int().min(0).max(63).describe('The leg index you signed — the `seq` broker_next served.'),
+          result: z
+            .record(z.unknown())
+            .optional()
+            .describe('Your evidence: txHash / chainId / txs / orderResponse / batch / detail / explorerUrl. Unknown keys are ignored and named back to you.'),
+        },
+      },
+      async ({ intent_id, agent_key, seq, result }, extra) => guarded(() => deskDone(intent_id, agent_key, seq, result ?? {}, callOpts(extra))),
     )
 
     server.registerTool(
@@ -229,11 +380,27 @@ const handler = createMcpHandler(
       {
         title: 'Walk away',
         description:
-          'Close the intent at any stage before a signature: revokes the bound sign link (it refuses new opens and leaves every board). ' +
-          'Signed or settled intents stay as they are.',
-        inputSchema: { intent_id: z.string().min(4).max(24) },
+          'Close the intent at any stage before a signature: revokes the bound sign link (it refuses new opens and leaves every board) ' +
+          'and cancels a job broker_execute compiled. Signed or settled intents stay as they are. If the intent was opened with an ' +
+          'agent_key, pass the SAME one \u2014 an intent id travels in logs, and walking away from someone else\u2019s intent is not yours to do.',
+        inputSchema: {
+          intent_id: z.string().min(4).max(24),
+          agent_key: z
+            .string()
+            .min(6)
+            .max(80)
+            .optional()
+            .describe(
+              'Required when the intent was OPENED with an agent identity: closing revokes the sign link and ' +
+                'cancels a running job, so it is that identity\u2019s call. An intent opened without one needs no key.',
+            ),
+        },
       },
-      async ({ intent_id }) => guarded(() => closeIntent(intent_id)),
+      async ({ intent_id, agent_key }) =>
+        guarded(async () => {
+          await assertCloseAllowed(intent_id, agent_key)
+          return closeIntent(intent_id)
+        }),
     )
 
     server.registerTool(
