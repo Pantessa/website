@@ -459,6 +459,7 @@ import {
   readHlCollateralUsd,
   buildHlDeposit,
   buildHlLeverageAction,
+  canonicalizeHlAction,
   guardHlLeverageBuild,
   hlActionTypedData,
   hlCollateralTargetUsd,
@@ -18537,6 +18538,102 @@ async function main() {
     )
     const td = hlActionTypedData(action, 1752440000000)
     check('hl exec: L1 typed data is the phantom agent over the action hash', td.primaryType === 'Agent' && (td.message as { source: string }).source === 'a' && /^0x[0-9a-f]{64}$/.test((td.message as { connectionId: string }).connectionId))
+
+    // ── The action hash is KEY-ORDER SENSITIVE (live find 2026-09-23) ──────
+    // The venue hashes msgpack, so `{a,b,p,s,r,t}` and `{a,b,p,r,s,t}` are
+    // different actions. Postgres `jsonb` sorts object keys, so every HL
+    // order that round-tripped `job_steps.artifact` was signed over a hash
+    // the venue never computed: HL recovered a phantom address and answered
+    // "User or API Wallet 0x… does not exist", and the card's cure retired
+    // the user's healthy agent on every lap. canonicalizeHlAction puts the
+    // order back at the hash boundary — both sign sites run it, so the
+    // client and the relay converge however either received the action.
+    {
+      const hlNonce = 1752440000000
+      // exactly how Postgres hands the action back: keys sorted bytewise
+      const jsonbRoundTrip = <T,>(v: T): T => {
+        const sort = (x: unknown): unknown =>
+          Array.isArray(x) ? x.map(sort)
+            : x && typeof x === 'object'
+              ? Object.fromEntries(Object.keys(x as object).sort((a, b) => a.length - b.length || (a < b ? -1 : 1)).map((k) => [k, sort((x as Record<string, unknown>)[k])]))
+              : x
+        return sort(v) as T
+      }
+      const scrambled = jsonbRoundTrip(action)
+      check(
+        'hl key order: a jsonb round-trip really does swap s and r (the bug this pins)',
+        JSON.stringify(Object.keys(scrambled.orders[0])) === JSON.stringify(['a', 'b', 'p', 'r', 's', 't']) &&
+          createL1ActionHash({ action: scrambled as never, nonce: hlNonce }) !== createL1ActionHash({ action: action as never, nonce: hlNonce }),
+        JSON.stringify(Object.keys(scrambled.orders[0])),
+      )
+      check(
+        'hl key order: canonicalize restores the venue order, so a scrambled action hashes identically',
+        JSON.stringify(Object.keys(canonicalizeHlAction(scrambled).orders[0])) === JSON.stringify(['a', 'b', 'p', 's', 'r', 't']) &&
+          hlActionTypedData(scrambled, hlNonce).message.connectionId === hlActionTypedData(action, hlNonce).message.connectionId,
+      )
+      check(
+        'hl key order: the consent text binds the SAME hash either way (client and relay converge)',
+        hlConsentMessage({ from: `0x${'11'.repeat(20)}`, action: scrambled, nonce: hlNonce, isTestnet: false, expected: { coin: 'ETH', kind: 'open', isBuy: true } }) ===
+          hlConsentMessage({ from: `0x${'11'.repeat(20)}`, action, nonce: hlNonce, isTestnet: false, expected: { coin: 'ETH', kind: 'open', isBuy: true } }),
+      )
+      const levScrambled = jsonbRoundTrip(buildHlLeverageAction({ kind: 'open', coin: 'ETH', leverage: 2 } as HlOrderIntent, snap))
+      check(
+        'hl key order: leverage actions canonicalize too; nothing is dropped and an unknown shape passes through',
+        JSON.stringify(Object.keys(canonicalizeHlAction(levScrambled))) === JSON.stringify(['type', 'asset', 'isCross', 'leverage']) &&
+          Object.keys(canonicalizeHlAction(action)).length === Object.keys(action).length &&
+          JSON.stringify(canonicalizeHlAction({ type: 'cancel', cancels: [] } as never)) === JSON.stringify({ type: 'cancel', cancels: [] }),
+      )
+      // HL normalizes numeric strings before it hashes, so "50.0" and
+      // "0.2400" break the hash exactly like a swapped key. The formatters
+      // already trim; nothing pinned it until now.
+      check(
+        'hl key order: prices and sizes are venue-normalized — no trailing zero, no trailing dot',
+        [1, 50, 97.3, 0.1, 1234.5, 2.5, 3000].every((n) => {
+          const px = formatPx(n, 2)
+          const sz = formatSz(n, 4)
+          return !/\.$|\.\d*0$/.test(px) && !/\.$|\.\d*0$/.test(sz) && Number(px) > 0 && Number(sz) > 0
+        }),
+        `${formatPx(50, 2)} / ${formatSz(0.24, 4)}`,
+      )
+    }
+
+    // The check that would have caught it: sign each L1 action shape with a
+    // throwaway key and ask the VENUE who it recovered. An unapproved key can
+    // place nothing — the refusal simply names the address HL derived, which
+    // must be the address that signed. A mismatch means our bytes and the
+    // venue's bytes disagree, whatever the guards say.
+    {
+      const recoveredBy = async (act: unknown): Promise<string | null> => {
+        const acct = privateKeyToAccount(generatePrivateKey())
+        const n = Date.now()
+        const typed = hlActionTypedData(act as never, n)
+        const sig = await acct.signTypedData(typed as unknown as Parameters<typeof acct.signTypedData>[0])
+        const r = await fetch('https://api.hyperliquid.xyz/exchange', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: canonicalizeHlAction(act as never), nonce: n, signature: splitSignature(sig) }),
+        })
+        const b = (await r.json().catch(() => null)) as { response?: unknown } | null
+        const msg = typeof b?.response === 'string' ? b.response : ''
+        const named = /0x[0-9a-f]{40}/.exec(msg)?.[0]
+        return named ? `${named === acct.address.toLowerCase()}` : null
+      }
+      try {
+        const [openRec, levRec, scrambledRec] = await Promise.all([
+          recoveredBy(action),
+          recoveredBy(buildHlLeverageAction({ kind: 'open', coin: 'ETH', leverage: 2 } as HlOrderIntent, snap)),
+          recoveredBy(JSON.parse(JSON.stringify({ ...action, orders: [{ a: action.orders[0].a, b: true, p: action.orders[0].p, r: false, s: action.orders[0].s, t: action.orders[0].t }] }))),
+        ])
+        // null = the venue answered something else (outage / wording change):
+        // never redden on that, only on a real disagreement.
+        check(
+          'hl exec (live): Hyperliquid recovers the address that actually signed — order, leverage, and a jsonb-scrambled order alike',
+          [openRec, levRec, scrambledRec].every((v) => v === null || v === 'true'),
+          `order=${openRec} leverage=${levRec} scrambled=${scrambledRec}`,
+        )
+      } catch (e) {
+        check('hl exec (live): Hyperliquid recovers the address that actually signed — order, leverage, and a jsonb-scrambled order alike', true, `venue unreachable: ${(e as Error).message}`)
+      }
+    }
 
     // Builder fee (HANDOFF-yeetcall-gtm C1): rides INSIDE the signed action —
     // recipient and rate are pinned both ways, so the signature can never be
