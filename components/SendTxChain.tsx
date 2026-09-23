@@ -21,7 +21,7 @@ import SendTxButton from '@/components/SendTxButton'
 import { reportWalletRefusal, WITHHELD_KIND } from '@/lib/wallet-refusal'
 import type { TxChainRequest, TxChainStep } from '@/lib/transaction-layer'
 import { chainById } from '@/lib/chains'
-import { autoFireAllowed, continueCopy, oneMethodPerTap } from '@/lib/sign-round-trip'
+import { autoFireAllowed, continueCopy, oneMethodPerTap, readSignOutcome, signOutcomeKey, writeSignOutcome } from '@/lib/sign-round-trip'
 import { usePlatform } from '@/lib/use-sign-round-trip'
 
 // Explorer links come from the app chain registry (lib/chains); this local
@@ -147,6 +147,22 @@ export default function SendTxChain({
     setHashes(all)
     const next = confirmedIndex + 1
     if (next >= steps.length) {
+      // The chain is DONE: say so under the key of the build's ORIGINAL last
+      // step, not only the step that just signed. A refreshable step is
+      // re-quoted at advance time (fresh calldata → a different
+      // signOutcomeKey), so a reader that only knows what the build offered
+      // (/i's came-back hold, lib/intent-link-return, LINKS) would wait
+      // forever on the original key. Each SendTxButton still records its
+      // own (refreshed) tx; this is the chain's word on the artifact.
+      if (address) {
+        const orig = chain.steps[chain.steps.length - 1]?.tx
+        if (orig) {
+          const key = signOutcomeKey({ wallet: address, chainId: orig.chainId ?? 8453, to: orig.to, data: orig.data })
+          const store = typeof window === 'undefined' ? null : window.localStorage
+          const prior = readSignOutcome(store, key, Date.now())
+          writeSignOutcome(store, { v: 1, key, state: 'settled', askedAt: prior?.askedAt ?? Date.now(), settledAt: Date.now(), hash })
+        }
+      }
       setPhase('done')
       onCompleted?.({
         hash,
