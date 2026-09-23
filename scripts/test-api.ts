@@ -21191,6 +21191,8 @@ async function main() {
       agent_key: 'harness-desk-key',
     })
     const execIntentId = execOpen.payload.intentId as string
+    // Round 2 (agent desk, QA F4): the consent names the instant it was signed and rides with the desk key that opened the intent.
+    const execIssuedAt = new Date().toISOString()
     const noProof = await call('broker_execute', { intent_id: execIntentId })
     check(
       'broker: execute WITHOUT wallet_signature is refused by name (schema) — no job row for an unproven wallet',
@@ -21198,21 +21200,21 @@ async function main() {
       String(noProof.payload).slice(0, 120),
     )
     const impostor = privateKeyToAccount(generatePrivateKey())
-    const impostorSig = await impostor.signMessage({ message: deskExecuteConsentMessage(execIntentId, agentWallet.address) })
-    const wrongWallet = await call('broker_execute', { intent_id: execIntentId, wallet_signature: impostorSig })
+    const impostorSig = await impostor.signMessage({ message: deskExecuteConsentMessage(execIntentId, agentWallet.address, execIssuedAt) })
+    const wrongWallet = await call('broker_execute', { intent_id: execIntentId, wallet_signature: impostorSig, issued_at: execIssuedAt, agent_key: 'harness-desk-key' })
     check(
       "broker: execute with another wallet's signature over the consent text is refused (recovers to a different wallet)",
       wrongWallet.isError && /recovers to/i.test(String(wrongWallet.payload)),
       String(wrongWallet.payload).slice(0, 120),
     )
-    const otherIntentSig = await agentWallet.signMessage({ message: deskExecuteConsentMessage('someotherid', agentWallet.address) })
-    const wrongIntent = await call('broker_execute', { intent_id: execIntentId, wallet_signature: otherIntentSig })
+    const otherIntentSig = await agentWallet.signMessage({ message: deskExecuteConsentMessage('someotherid', agentWallet.address, execIssuedAt) })
+    const wrongIntent = await call('broker_execute', { intent_id: execIntentId, wallet_signature: otherIntentSig, issued_at: execIssuedAt, agent_key: 'harness-desk-key' })
     check(
       'broker: a consent signed for a DIFFERENT intent id does not transfer (bound to intent + wallet)',
       wrongIntent.isError && /recovers to|does not verify/i.test(String(wrongIntent.payload)),
     )
-    const execSig = await agentWallet.signMessage({ message: deskExecuteConsentMessage(execIntentId, agentWallet.address) })
-    const execRes = await call('broker_execute', { intent_id: execIntentId, wallet_signature: execSig })
+    const execSig = await agentWallet.signMessage({ message: deskExecuteConsentMessage(execIntentId, agentWallet.address, execIssuedAt) })
+    const execRes = await call('broker_execute', { intent_id: execIntentId, wallet_signature: execSig, issued_at: execIssuedAt, agent_key: 'harness-desk-key' })
     const drive = execRes.payload?.drive
     check(
       'broker: execute with the wallet\'s own consent signature compiles the sequenced ask to an agent-owned job + drive recipe',
@@ -21225,9 +21227,9 @@ async function main() {
     )
     check(
       'broker: the consent text is intent+wallet bound, human-readable, and carries no hex material',
-      deskExecuteConsentMessage('abc', '0xABCDEF0000000000000000000000000000000001').includes('Intent: abc') &&
-        deskExecuteConsentMessage('abc', '0xABCDEF0000000000000000000000000000000001').includes('Wallet: 0xabcdef0000000000000000000000000000000001') &&
-        !/0x[0-9a-fA-F]{64,}/.test(deskExecuteConsentMessage('abc', agentWallet.address)),
+      deskExecuteConsentMessage('abc', '0xABCDEF0000000000000000000000000000000001', execIssuedAt).includes('Intent: abc') &&
+        deskExecuteConsentMessage('abc', '0xABCDEF0000000000000000000000000000000001', execIssuedAt).includes('Wallet: 0xabcdef0000000000000000000000000000000001') &&
+        !/0x[0-9a-fA-F]{64,}/.test(deskExecuteConsentMessage('abc', agentWallet.address, execIssuedAt)),
     )
     const jobPoll = await fetch((drive.poll as string).replace(/^https?:\/\/[^/]+/, BASE))
     const jobBody = (await jobPoll.json()) as { job?: { steps?: unknown[] } }
@@ -21237,7 +21239,7 @@ async function main() {
     )
 
     const single = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'harness' })
-    const singleExec = await call('broker_execute', { intent_id: single.payload.intentId, wallet_signature: execSig })
+    const singleExec = await call('broker_execute', { intent_id: single.payload.intentId, wallet_signature: execSig, issued_at: execIssuedAt, agent_key: 'harness-desk-key' })
     check(
       'broker: execute refuses single-step and wallet-less intents honestly',
       singleExec.isError && /wallet that will SIGN|does not compile/i.test(String(singleExec.payload)),
@@ -21250,7 +21252,7 @@ async function main() {
       wallet: '0x3333333333333333333333333333333333333333',
       agent: 'harness',
     })
-    const noIdExec = await call('broker_execute', { intent_id: noId.payload.intentId, wallet_signature: execSig })
+    const noIdExec = await call('broker_execute', { intent_id: noId.payload.intentId, wallet_signature: execSig, issued_at: execIssuedAt, agent_key: 'harness-desk-key' })
     check(
       'broker M1: agent-signed execute refuses an intent with no bound identity, by name',
       noIdExec.isError && /bound agent identity|agent_key/i.test(String(noIdExec.payload)),
@@ -21264,7 +21266,7 @@ async function main() {
       agent: 'harness',
       agent_key: 'harness-desk-key',
     })
-    const overCapExec = await call('broker_execute', { intent_id: overCap.payload.intentId, wallet_signature: execSig })
+    const overCapExec = await call('broker_execute', { intent_id: overCap.payload.intentId, wallet_signature: execSig, issued_at: execIssuedAt, agent_key: 'harness-desk-key' })
     check(
       'broker M1: agent-signed execute refuses an intent over the desk cap',
       overCapExec.isError && /desk caps|over/i.test(String(overCapExec.payload)),
@@ -30151,7 +30153,9 @@ async function main() {
   // action compiles as a one-leg job, and the funded burner gets its batch.
   console.log('— agent desk: DRIVE')
   {
-    const { composeHlBatch, guardHlBatch, withHlBatch, batchCompletionVerdict, hlBatchStaleAfterMs, HL_BATCH_MAX_MEMBERS } = await import('../lib/hl-batch')
+    const { composeHlBatch, guardHlBatch, withHlBatch, batchCompletionVerdict, hlBatchStaleAfterMs, HL_BATCH_MAX_MEMBERS, hlCreditSettled, hlCreditArrival, hlCreditMinDelta } = await import('../lib/hl-batch')
+    const { deskConsentIssuedAtOk, DESK_CONSENT_WINDOW_MS } = await import('../lib/broker-exec')
+    const { fenceLegResult, LEG_RESULT_MAX_BYTES, jobStepMoneySessionId } = await import('../lib/job-step-money')
     const { hlActionTypedData } = await import('../lib/hyperliquid-exec')
     // A builder-shaped order request — the exact keys buildHlExecTurn emits — with the leverage pre-step.
     const dLev = { type: 'updateLeverage', asset: 159, isCross: true, leverage: 2 }
@@ -30224,22 +30228,47 @@ async function main() {
     const dAgent = privateKeyToAccount(generatePrivateKey())
     const dOpen = await driveCall('broker_open', { ask: FLAGSHIP, wallet: dAgent.address, agent: 'harness-drive', agent_key: 'harness-drive-key' })
     const dIntent = dOpen.payload?.intentId as string
-    const dConsent = await dAgent.signMessage({ message: deskExecuteConsentMessage(dIntent, dAgent.address) })
-    check('drive: the execute consent text recovers the agent wallet that signed it', dIntent != null && (await recoverMessageAddress({ message: deskExecuteConsentMessage(dIntent, dAgent.address), signature: dConsent })).toLowerCase() === dAgent.address.toLowerCase())
+    const dIssued = new Date().toISOString()
+    const dConsent = await dAgent.signMessage({ message: deskExecuteConsentMessage(dIntent, dAgent.address, dIssued) })
+    check('drive: the execute consent text recovers the agent wallet that signed it, and names the instant it was issued', dIntent != null && (await recoverMessageAddress({ message: deskExecuteConsentMessage(dIntent, dAgent.address, dIssued), signature: dConsent })).toLowerCase() === dAgent.address.toLowerCase() && deskExecuteConsentMessage(dIntent, dAgent.address, dIssued).includes(`Issued at: ${dIssued}`))
+    // The consent's freshness (QA F4): a both-ways window, pure and over HTTP.
+    check('drive consent: issued_at inside the window is accepted; 11 minutes past, 11 minutes ahead, and a non-ISO string are refused by name',
+      deskConsentIssuedAtOk(dIssued).ok && DESK_CONSENT_WINDOW_MS === 600_000 &&
+        !deskConsentIssuedAtOk(new Date(Date.now() - 11 * 60_000).toISOString()).ok && /more than 10 minutes ago/.test((deskConsentIssuedAtOk(new Date(Date.now() - 11 * 60_000).toISOString()) as { why: string }).why) &&
+        /in the future/.test((deskConsentIssuedAtOk(new Date(Date.now() + 11 * 60_000).toISOString()) as { why: string }).why) &&
+        /issued_at is required/.test((deskConsentIssuedAtOk('yesterday') as { why: string }).why))
+    const dStaleIssued = new Date(Date.now() - 11 * 60_000).toISOString()
+    const dStaleSig = await dAgent.signMessage({ message: deskExecuteConsentMessage(dIntent, dAgent.address, dStaleIssued) })
+    const dStaleExec = await driveCall('broker_execute', { intent_id: dIntent, wallet_signature: dStaleSig, issued_at: dStaleIssued, agent_key: 'harness-drive-key' })
+    check('drive consent (HTTP): a consent issued 11 minutes ago is refused as stale, before any job exists', dStaleExec.isError && /more than 10 minutes ago/.test(String(dStaleExec.payload)), String(dStaleExec.payload).slice(0, 160))
+    const dWrongKey = await driveCall('broker_execute', { intent_id: dIntent, wallet_signature: dConsent, issued_at: dIssued, agent_key: 'someone-elses-key' })
+    check('drive consent (HTTP): a caller presenting a different agent_key than the one that opened the intent is refused by name', dWrongKey.isError && /agent_key this intent was opened with/.test(String(dWrongKey.payload)), String(dWrongKey.payload).slice(0, 160))
     // An unfunded wallet asking the flagship: refused by the COLLATERAL it lacks — never as "single-step".
-    const dExec = await driveCall('broker_execute', { intent_id: dIntent, wallet_signature: dConsent })
+    const dExec = await driveCall('broker_execute', { intent_id: dIntent, wallet_signature: dConsent, issued_at: dIssued, agent_key: 'harness-drive-key' })
     check('drive: the flagship on an unfunded wallet is refused by the collateral the position needs (reaching Hyperliquid), not as a single-step ask', dExec.isError && /reaching Hyperliquid|can't fund it/i.test(String(dExec.payload)) && !/single-step/i.test(String(dExec.payload)), String(dExec.payload).slice(0, 200))
     await driveCall('broker_close', { intent_id: dIntent })
     // A lone non-HL action compiles as a ONE-leg job (the runner withholds the build on the empty wallet; the job exists).
     const dLone = await driveCall('broker_open', { ask: `send 0.5 USDC on base to 0x2222222222222222222222222222222222222222`, wallet: dAgent.address, agent: 'harness-drive', agent_key: 'harness-drive-key' })
-    const dLoneSig = await dAgent.signMessage({ message: deskExecuteConsentMessage(dLone.payload.intentId, dAgent.address) })
-    const dLoneExec = await driveCall('broker_execute', { intent_id: dLone.payload.intentId, wallet_signature: dLoneSig })
+    const dLoneSig = await dAgent.signMessage({ message: deskExecuteConsentMessage(dLone.payload.intentId, dAgent.address, dIssued) })
+    const dLoneExec = await driveCall('broker_execute', { intent_id: dLone.payload.intentId, wallet_signature: dLoneSig, issued_at: dIssued, agent_key: 'harness-drive-key' })
     check('drive: a lone action compiles to a one-leg agent-owned job (no more "does not compile to a multi-step job")', !dLoneExec.isError && dLoneExec.payload?.steps?.length === 1 && dLoneExec.payload.steps[0].kind === 'sign' && typeof dLoneExec.payload.drive?.poll === 'string', String(dLoneExec.payload).slice(0, 160))
     if (!dLoneExec.isError) {
       const dPoll = await fetch(String(dLoneExec.payload.drive.poll).replace(/^https?:\/\/[^/]+/, BASE), { headers: { 'x-yf-internal-run': '1' } })
       const dJob = (await dPoll.json()) as { job?: { steps?: { builder?: string }[] } }
       check('drive: the one-leg job polls through the capability token with the transfer builder on its step', dPoll.status === 200 && dJob.job?.steps?.[0]?.builder === 'native-transfer', JSON.stringify(dJob.job?.steps?.[0]?.builder))
+      // The completion fence (QA A2/F6): refused rather than reshaped, before the step's state is even consulted.
+      const dCompleteUrl = String(dLoneExec.payload.drive.complete).replace(/^https?:\/\/[^/]+/, BASE)
+      const dPost = async (result: unknown) => { const r = await fetch(dCompleteUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ seq: 0, result }) }); return { status: r.status, error: String(((await r.json().catch(() => ({}))) as { error?: string }).error ?? '') } }
+      const dUnknown = await dPost({ txHash: '0x' + 'ab'.repeat(32), evil: 'x' })
+      const dBadHash = await dPost({ txHash: '0xZZ' })
+      const dBig = await dPost({ detail: 'x'.repeat(LEG_RESULT_MAX_BYTES + 1) })
+      const dFine = await dPost({ txHash: '0x' + 'ab'.repeat(32), chainId: 8453 })
+      check('drive fence (HTTP): a result with a key the wire does not name, a malformed txHash, or a body over 8 KB is refused by name (400); a well-formed one reaches the step\'s own state check', dUnknown.status === 400 && /keys the wire does not name: evil/.test(dUnknown.error) && dBadHash.status === 400 && /txHash must be/.test(dBadHash.error) && dBig.status === 400 && /the cap is 8192/.test(dBig.error) && dFine.status === 400 && /not awaiting a signature/.test(dFine.error), `${dUnknown.status} ${dUnknown.error.slice(0, 60)} | ${dBadHash.status} | ${dBig.status} | ${dFine.status} ${dFine.error.slice(0, 40)}`)
+      check('drive fence (pure): an empty result passes; txs/fill/detail/explorerUrl/status/batch/orderResponse are the allowed keys; an uppercase hash is refused (never reshaped)', fenceLegResult(undefined).ok && fenceLegResult({ txs: [], fill: {}, detail: 'x', explorerUrl: 'u', status: 'filled', batch: [], orderResponse: {} }).ok && !fenceLegResult({ txHash: '0x' + 'AB'.repeat(32) }).ok && !fenceLegResult({ batch: 'no' }).ok && !fenceLegResult([]).ok)
     }
+    // The deposit's credit settles on a DELTA (F5 / round-2 decision 8): a level alone passed for any account already holding collateral.
+    check('drive hl-credit (pure): with a baseline the wait settles only once the collateral ROSE by ≥ min(90%, all-but-$0.50) of the deposit; without one the legacy level rule stands', hlCreditMinDelta(5) === 4.5 && hlCreditSettled(30, hlCreditArrival(25, 5), 4.5) && !hlCreditSettled(26, hlCreditArrival(25, 5), 4.5) && !hlCreditSettled(29.4, hlCreditArrival(25, 5), 4.5) && hlCreditSettled(26, null, 4.5) && !hlCreditSettled(NaN, null, 1) && hlCreditArrival(-3, 5).baselineUsd === 0)
+    check('drive hl-credit (source): the runner records the collateral baseline on the deposit artifact at build and the wait reads it through hlCreditSettled', /hlCreditArrival\(baseline, depositUsd\)/.test(dRunnerSrc) && /hlCreditSettled\(collateral, arrival/.test(dRunnerSrc) && /recordJobStepMoney\(\{/.test(dRunnerSrc) && /fenceLegResult\(result\)/.test(dRunnerSrc))
     await driveCall('broker_close', { intent_id: dLone.payload.intentId })
 
     // The FUNDED wallet (the house burner, .env.local): the flagship compiles, and the HL
@@ -30249,8 +30278,8 @@ async function main() {
       const burner = privateKeyToAccount(dKey as `0x${string}`)
       const bOpen = await driveCall('broker_open', { ask: FLAGSHIP, wallet: burner.address, agent: 'harness-drive', agent_key: 'harness-drive-key' })
       const bIntent = bOpen.payload?.intentId as string
-      const bSig = await burner.signMessage({ message: deskExecuteConsentMessage(bIntent, burner.address) })
-      const bExec = await driveCall('broker_execute', { intent_id: bIntent, wallet_signature: bSig })
+      const bSig = await burner.signMessage({ message: deskExecuteConsentMessage(bIntent, burner.address, dIssued) })
+      const bExec = await driveCall('broker_execute', { intent_id: bIntent, wallet_signature: bSig, issued_at: dIssued, agent_key: 'harness-drive-key' })
       const bSteps = (bExec.payload?.steps ?? []) as { kind: string; note: string }[]
       check('drive (live): the flagship on the funded burner compiles — the LAST leg is the 2x long, funded legs (if any) ride in front', !bExec.isError && bSteps.length >= 1 && bSteps[bSteps.length - 1].kind === 'sign' && /2x Long \$12 of HYPE/.test(bSteps[bSteps.length - 1].note), bExec.isError ? String(bExec.payload).slice(0, 200) : `${bSteps.length} legs`)
       if (!bExec.isError && bSteps.length === 1) {
@@ -30290,6 +30319,18 @@ async function main() {
           await new Promise((r) => setTimeout(r, 2500))
         }
         check('drive (live): a partial batch completion re-arms the step and the runner re-offers the SAME seq with a fresh nonce (never done, never failed)', bDone.status === 200 && bAgain?.status === 'offered' && (bAgain.artifact?.orderRequest?.hl?.nonce ?? 0) > bNonce, `complete ${bDone.status}; step ${bAgain?.status}; nonce ${bAgain?.artifact?.orderRequest?.hl?.nonce} vs ${bNonce}`)
+        // ONE money writer (round-2 decision 1): a completion the runner accepts books exactly one
+        // receipt-gated embed_turns row (internal from the JOB row), and the browser's own beacon
+        // for that step is deduped. Nothing is submitted to the venue — this completion is the
+        // agent's word about a batch, exactly what the log shows as "claimed".
+        const bJobId = String(bExec.payload.jobId)
+        const bFinal = await fetch(bCompleteUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ seq: 0, result: { batch: [{ ok: true, orderResponse: { status: 'harness' } }, { ok: true, orderResponse: { status: 'harness' } }] } }) })
+        const bRows = process.env.DATABASE_URL ? await prisma.embedTurn.findMany({ where: { sessionId: jobStepMoneySessionId(bJobId, 0) }, select: { id: true, artifact: true, isInternal: true, walletAddress: true, originKind: true, verification: true, valueUsd: true } }) : null
+        check('drive money (live): a REST /complete the runner accepts writes EXACTLY ONE job-step money row — session_id job-<jobId>-<seq>, origin_kind job-step, is_internal from the job row, the burner as signer, fail-closed verification', bFinal.status === 200 && (bRows === null || (bRows.length === 1 && bRows[0].artifact === 'job-step' && bRows[0].isInternal === true && bRows[0].walletAddress === burner.address.toLowerCase() && bRows[0].originKind === 'job-step' && typeof bRows[0].verification === 'string')), bRows === null ? 'DATABASE_URL absent in the harness process — row check skipped' : `${bRows.length} row(s): ${JSON.stringify(bRows[0] ?? null)}`)
+        const bBeacon = await fetch(`${BASE}/api/embed/telemetry`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ firstParty: true, sessionId: 'harness-drive-beacon-1', page: `${BASE}/chat`, outcome: 'signed', artifact: 'job-step', chain: 'multi', valueUsd: 12, buildPath: 'native-hl-exec', jobId: bJobId, seq: 0, walletAddress: burner.address }) })
+        const bBeaconBody = (await bBeacon.json().catch(() => ({}))) as { ok?: boolean; deduped?: boolean }
+        const bRowsAfter = process.env.DATABASE_URL ? await prisma.embedTurn.count({ where: { OR: [{ sessionId: jobStepMoneySessionId(bJobId, 0) }, { sessionId: 'harness-drive-beacon-1' }] } }) : null
+        check('drive money (live): the browser beacon for the SAME (jobId, seq) after the runner\'s row is answered ok + deduped and writes NOTHING', bBeacon.status === 200 && bBeaconBody.ok === true && bBeaconBody.deduped === true && (bRowsAfter === null || bRowsAfter === 1), `${bBeacon.status} ${JSON.stringify(bBeaconBody)}; rows ${bRowsAfter}`)
       }
       await driveCall('broker_close', { intent_id: bIntent })
     } else {
