@@ -264,8 +264,10 @@ async function seedIntent(): Promise<string | null> {
   // Execute compiles the job. A throwaway key holds nothing, so the first leg
   // refuses on real balances — which is exactly the row we want in the log:
   // an intent that opened, consented and compiled, and signed nothing.
-  const sig = await agent.signMessage({ message: deskExecuteConsentMessage(intentId, agent.address) })
-  const exec = await call('broker_execute', { intent_id: intentId, wallet_signature: sig })
+  // Round 2 (DRIVE / QA F4): the consent names the instant it was signed and rides with the desk key that opened the intent.
+  const issuedAt = new Date().toISOString()
+  const sig = await agent.signMessage({ message: deskExecuteConsentMessage(intentId, agent.address, issuedAt) })
+  const exec = await call('broker_execute', { intent_id: intentId, wallet_signature: sig, issued_at: issuedAt, agent_key: 'qa-desk-drive-key' })
   console.log(`  · seeded intent ${intentId}${exec.payload?.jobId ? ` → job ${exec.payload.jobId}` : ` (execute: ${String(exec.error).slice(0, 80)})`}`)
   return intentId
 }

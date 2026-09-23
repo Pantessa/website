@@ -35,7 +35,8 @@ import { advanceJob, completeSignStep, getJobWithSteps, jobsEnv } from '@/lib/jo
 import { assertDeskOpen } from '@/lib/broker-policy'
 import { assertNoTxMaterial } from '@/lib/broker'
 import { DESK_LEG_RESULT_KEYS, deskNextOf, legViewOf, type DeskLegView, type DeskNext } from '@/lib/desk-wire'
-import { recordJobStepMoney, type JobStepMoney } from '@/lib/job-step-money'
+import { jobStepMoneySessionId } from '@/lib/job-step-money'
+import { COUNTED_VERIFICATIONS } from '@/lib/link-receipt-verify'
 import type { BrokerPlan, VenueFundingRead } from '@/lib/broker'
 import type { HlOrderIntent } from '@/lib/hyperliquid-exec'
 import type { DeskCallOpts } from '@/lib/broker-exec'
@@ -66,7 +67,7 @@ export interface DeskDriveResult {
 }
 
 export interface DeskDoneResult extends DeskDriveResult {
-  accepted: { seq: number; keptKeys: string[]; ignoredKeys: string[] }
+  accepted: { seq: number; keys: string[] }
   /** Whether the leg's money row could be receipt-verified on the spot
    *  (S-2: a claim is evidence about the claimant — the chain is the proof).
    *  `recorded` stays the wire name the SDK and the harness read; it is
@@ -202,33 +203,11 @@ function sayShape(out: DeskDriveResult): unknown {
 
 /* ── completing a leg ─────────────────────────────────────────────────── */
 
-/** What a leg result may carry. An agent-supplied blob lands in `job_steps.result`
- *  and is read by the share receipt and the card, so it is allowlisted rather
- *  than stored whole — an unbounded write is a free row-inflation primitive. */
-export const RESULT_KEYS: ReadonlySet<string> = new Set<string>(DESK_LEG_RESULT_KEYS)
-const HASH_RE = /^0x[0-9a-fA-F]{64}$/
-
-export function sanitizeResult(raw: unknown): { result: Record<string, unknown>; kept: string[]; ignored: string[] } {
-  const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
-  const result: Record<string, unknown> = {}
-  const kept: string[] = []
-  const ignored: string[] = []
-  for (const [k, v] of Object.entries(src)) {
-    if (!RESULT_KEYS.has(k)) {
-      ignored.push(k)
-      continue
-    }
-    // 8 KB per field: a venue's order response is a few hundred bytes.
-    const size = JSON.stringify(v ?? null)?.length ?? 0
-    if (size > 8192) {
-      ignored.push(`${k} (too large)`)
-      continue
-    }
-    result[k] = v
-    kept.push(k)
-  }
-  return { result, kept, ignored }
-}
+/** The leg-result fence lives in lib/job-step-money (`fenceLegResult`) and runs
+ *  inside `completeSignStep`, so the REST route and this door refuse the same
+ *  bodies for the same reasons — one fence, never two that drift. Re-exported
+ *  so a caller can see the allowed key set without importing the runner. */
+export { LEG_RESULT_KEYS as RESULT_KEYS } from '@/lib/job-step-money'
 
 /** Post a signed leg's evidence and answer with the next one. Rides the SAME
  *  `completeSignStep` the Jobs API `/complete` route calls — one path, so the
@@ -243,7 +222,7 @@ export async function deskDone(
   const row = await mustDriveable(intentId, agentKey)
   if (typeof seq !== 'number' || !Number.isInteger(seq) || seq < 0)
     throw new Error('seq must be the integer index of the leg you signed (the `seq` broker_next handed you).')
-  const { result, kept, ignored } = sanitizeResult(rawResult)
+  const result = rawResult && typeof rawResult === 'object' && !Array.isArray(rawResult) ? (rawResult as Record<string, unknown>) : {}
 
   // Read the step BEFORE completing it: the artifact is what prices the leg
   // and names the venue, and completeSignStep is what advances past it.
@@ -260,49 +239,44 @@ export async function deskDone(
   const done = await completeSignStep(row.jobId!, row.wallet!, seq, result)
   if (!done.ok) throw new Error(`The runner refused leg ${seq}: ${done.error}.`)
 
-  const money = await deskLegMoney({
-    jobId: row.jobId!,
-    wallet: row.wallet!,
-    seq,
-    builder: step.builder,
-    artifact: step.artifact,
-    valueUsd: step.valueUsd,
-    result,
-    internal: call?.internal === true || row.isInternal,
-  })
+  // `completeSignStep` books the money row itself now (lib/job-step-money, one
+  // server-side writer for the browser, the REST route and this door alike), so
+  // this only READS the verdict back for the answer. A second write here would
+  // double-book the leg.
+  const money = await readLegMoney(row.jobId!, seq)
 
   const next = await readNext(row.id, row.jobId!, row.wallet!)
-  return { ...next, accepted: { seq, keptKeys: kept, ignoredKeys: ignored }, money }
+  return { ...next, accepted: { seq, keys: Object.keys(result) }, money }
 }
 
 /* ── money moved ───────────────────────────────────────── */
 
 /**
- * A leg an AGENT signs has to count exactly like a leg a browser signs, and
- * the writer that makes that true is `lib/job-step-money.ts` — shared, so
- * the browser beacon, the Jobs API `/complete` route and this door all book
- * one leg once (squad round-1 ruling: three lanes found the hole
- * independently). It is idempotent on (job, seq), so once
- * `completeSignStep` calls it for every channel this call becomes the no-op
- * that reads back the row it already wrote.
+ * The verdict on the leg's money row, read back for the answer.
+ *
+ * A leg an AGENT signs has to count exactly like a leg a browser signs — three
+ * lanes found independently that it did not, because `embed_turns` was written
+ * only by a client beacon and an agent has no browser. The ruling put ONE
+ * writer in `completeSignStep` (lib/job-step-money), so by the time this runs
+ * the row already exists; the desk's job is to tell the agent what the CHAIN
+ * said about the hash it just claimed, which is the one thing its own report
+ * cannot establish (#824).
  */
-async function deskLegMoney(leg: {
-  jobId: string
-  wallet: string
-  seq: number
-  builder: string
-  artifact: unknown
-  valueUsd: number | null
-  result: Record<string, unknown>
-  internal: boolean
-}): Promise<DeskDoneResult['money']> {
-  const money: JobStepMoney | null = await recordJobStepMoney({
-    job: { id: leg.jobId, wallet: leg.wallet, isInternal: leg.internal },
-    step: { seq: leg.seq, builder: leg.builder, artifact: leg.artifact, valueUsd: leg.valueUsd },
-    result: leg.result,
-    isInternal: leg.internal,
-  })
-  return money ? { recorded: money.counted, valueUsd: money.valueUsd, verification: money.verification } : null
+async function readLegMoney(jobId: string, seq: number): Promise<DeskDoneResult['money']> {
+  try {
+    const row = await prisma.embedTurn.findFirst({
+      where: { sessionId: jobStepMoneySessionId(jobId, seq), artifact: 'job-step', outcome: 'signed' },
+      select: { valueUsd: true, verification: true },
+    })
+    if (!row) return null
+    return {
+      recorded: (COUNTED_VERIFICATIONS as readonly string[]).includes(row.verification ?? ''),
+      valueUsd: row.valueUsd ?? null,
+      verification: row.verification ?? 'unverified',
+    }
+  } catch {
+    return null
+  }
 }
 
 /* ── the venue read (round 2, DRIVE A1) ──────────────────────── */
@@ -427,52 +401,5 @@ export async function assertCloseAllowed(intentId: unknown, agentKey: unknown): 
     throw new Error(
       `Intent ${id} was opened with an agent identity, so only that identity can close it — pass the same agent_key. ` +
         '(An intent opened without one needs no key to close.)',
-    )
-}
-
-/* ── the execute proof (round 2, QA F4) ──────────────────────── */
-
-/** Both sides of the consent replay window (QA F4). */
-export const EXECUTE_ISSUED_AT_WINDOW_MS = 10 * 60_000
-
-/**
- * The two fields that ride beside `wallet_signature` on broker_execute.
- *
- * `agent_key` — the execute path already REQUIRES a bound identity, but it
- * only checked that the intent HAD one: anyone holding the intent id could
- * execute an intent someone else opened. Compared timing-safe here.
- *
- * `issued_at` — a personal_sign consent over a fixed text is replayable
- * forever by anyone who sees it. A window makes it a one-shot in practice
- * (the intent must still be `open`, which is the other half). DRIVE binds the
- * instant INTO the consent text, which makes the window unforgeable; until
- * that lands this enforces the window against the clock, which is already the
- * difference between "a signature from last month works" and "it does not".
- *
- * Both are OPTIONAL at this layer on purpose: the field must stop being
- * stripped by the schema today, and a caller that does not send one is
- * refused by the gates that were already there — never accepted-and-ignored.
- */
-export function assertExecuteProof(
-  boundAgentKey: string | null | undefined,
-  proof: { issuedAt?: unknown; agentKey?: unknown } | undefined,
-  now: number = Date.now(),
-): void {
-  const presented = typeof proof?.agentKey === 'string' ? proof.agentKey.trim() : ''
-  const bound = typeof boundAgentKey === 'string' ? boundAgentKey : ''
-  if (presented && bound && !sameSecret(bound, presented))
-    throw new Error(
-      'agent_key does not match the identity this intent was opened with — the agent-signed path runs only for ' +
-        'the agent that opened it. Re-open the intent with your own agent_key.',
-    )
-  if (proof?.issuedAt === undefined || proof.issuedAt === null || proof.issuedAt === '') return
-  const raw = typeof proof.issuedAt === 'string' ? proof.issuedAt : ''
-  const at = raw ? Date.parse(raw) : NaN
-  if (!Number.isFinite(at))
-    throw new Error('issued_at must be an ISO-8601 UTC instant (e.g. new Date().toISOString()) — the moment you signed the consent.')
-  if (Math.abs(now - at) > EXECUTE_ISSUED_AT_WINDOW_MS)
-    throw new Error(
-      `issued_at is outside the ${Math.round(EXECUTE_ISSUED_AT_WINDOW_MS / 60_000)}-minute window (it reads ${raw}). ` +
-        'Sign the consent and execute in one motion — a consent signature with no window is replayable forever.',
     )
 }

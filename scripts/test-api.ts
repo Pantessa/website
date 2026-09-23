@@ -21200,6 +21200,8 @@ async function main() {
       agent_key: 'harness-desk-key',
     })
     const execIntentId = execOpen.payload.intentId as string
+    // Round 2 (agent desk, QA F4): the consent names the instant it was signed and rides with the desk key that opened the intent.
+    const execIssuedAt = new Date().toISOString()
     const noProof = await call('broker_execute', { intent_id: execIntentId })
     check(
       'broker: execute WITHOUT wallet_signature is refused by name (schema) — no job row for an unproven wallet',
@@ -21207,21 +21209,21 @@ async function main() {
       String(noProof.payload).slice(0, 120),
     )
     const impostor = privateKeyToAccount(generatePrivateKey())
-    const impostorSig = await impostor.signMessage({ message: deskExecuteConsentMessage(execIntentId, agentWallet.address) })
-    const wrongWallet = await call('broker_execute', { intent_id: execIntentId, wallet_signature: impostorSig })
+    const impostorSig = await impostor.signMessage({ message: deskExecuteConsentMessage(execIntentId, agentWallet.address, execIssuedAt) })
+    const wrongWallet = await call('broker_execute', { intent_id: execIntentId, wallet_signature: impostorSig, issued_at: execIssuedAt, agent_key: 'harness-desk-key' })
     check(
       "broker: execute with another wallet's signature over the consent text is refused (recovers to a different wallet)",
       wrongWallet.isError && /recovers to/i.test(String(wrongWallet.payload)),
       String(wrongWallet.payload).slice(0, 120),
     )
-    const otherIntentSig = await agentWallet.signMessage({ message: deskExecuteConsentMessage('someotherid', agentWallet.address) })
-    const wrongIntent = await call('broker_execute', { intent_id: execIntentId, wallet_signature: otherIntentSig })
+    const otherIntentSig = await agentWallet.signMessage({ message: deskExecuteConsentMessage('someotherid', agentWallet.address, execIssuedAt) })
+    const wrongIntent = await call('broker_execute', { intent_id: execIntentId, wallet_signature: otherIntentSig, issued_at: execIssuedAt, agent_key: 'harness-desk-key' })
     check(
       'broker: a consent signed for a DIFFERENT intent id does not transfer (bound to intent + wallet)',
       wrongIntent.isError && /recovers to|does not verify/i.test(String(wrongIntent.payload)),
     )
-    const execSig = await agentWallet.signMessage({ message: deskExecuteConsentMessage(execIntentId, agentWallet.address) })
-    const execRes = await call('broker_execute', { intent_id: execIntentId, wallet_signature: execSig })
+    const execSig = await agentWallet.signMessage({ message: deskExecuteConsentMessage(execIntentId, agentWallet.address, execIssuedAt) })
+    const execRes = await call('broker_execute', { intent_id: execIntentId, wallet_signature: execSig, issued_at: execIssuedAt, agent_key: 'harness-desk-key' })
     const drive = execRes.payload?.drive
     check(
       'broker: execute with the wallet\'s own consent signature compiles the sequenced ask to an agent-owned job + drive recipe',
@@ -21234,9 +21236,9 @@ async function main() {
     )
     check(
       'broker: the consent text is intent+wallet bound, human-readable, and carries no hex material',
-      deskExecuteConsentMessage('abc', '0xABCDEF0000000000000000000000000000000001').includes('Intent: abc') &&
-        deskExecuteConsentMessage('abc', '0xABCDEF0000000000000000000000000000000001').includes('Wallet: 0xabcdef0000000000000000000000000000000001') &&
-        !/0x[0-9a-fA-F]{64,}/.test(deskExecuteConsentMessage('abc', agentWallet.address)),
+      deskExecuteConsentMessage('abc', '0xABCDEF0000000000000000000000000000000001', execIssuedAt).includes('Intent: abc') &&
+        deskExecuteConsentMessage('abc', '0xABCDEF0000000000000000000000000000000001', execIssuedAt).includes('Wallet: 0xabcdef0000000000000000000000000000000001') &&
+        !/0x[0-9a-fA-F]{64,}/.test(deskExecuteConsentMessage('abc', agentWallet.address, execIssuedAt)),
     )
     const jobPoll = await fetch((drive.poll as string).replace(/^https?:\/\/[^/]+/, BASE))
     const jobBody = (await jobPoll.json()) as { job?: { steps?: unknown[] } }
@@ -21246,7 +21248,7 @@ async function main() {
     )
 
     const single = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'harness' })
-    const singleExec = await call('broker_execute', { intent_id: single.payload.intentId, wallet_signature: execSig })
+    const singleExec = await call('broker_execute', { intent_id: single.payload.intentId, wallet_signature: execSig, issued_at: execIssuedAt, agent_key: 'harness-desk-key' })
     check(
       'broker: execute refuses single-step and wallet-less intents honestly',
       singleExec.isError && /wallet that will SIGN|does not compile/i.test(String(singleExec.payload)),
@@ -21259,7 +21261,7 @@ async function main() {
       wallet: '0x3333333333333333333333333333333333333333',
       agent: 'harness',
     })
-    const noIdExec = await call('broker_execute', { intent_id: noId.payload.intentId, wallet_signature: execSig })
+    const noIdExec = await call('broker_execute', { intent_id: noId.payload.intentId, wallet_signature: execSig, issued_at: execIssuedAt, agent_key: 'harness-desk-key' })
     check(
       'broker M1: agent-signed execute refuses an intent with no bound identity, by name',
       noIdExec.isError && /bound agent identity|agent_key/i.test(String(noIdExec.payload)),
@@ -21273,7 +21275,7 @@ async function main() {
       agent: 'harness',
       agent_key: 'harness-desk-key',
     })
-    const overCapExec = await call('broker_execute', { intent_id: overCap.payload.intentId, wallet_signature: execSig })
+    const overCapExec = await call('broker_execute', { intent_id: overCap.payload.intentId, wallet_signature: execSig, issued_at: execIssuedAt, agent_key: 'harness-desk-key' })
     check(
       'broker M1: agent-signed execute refuses an intent over the desk cap',
       overCapExec.isError && /desk caps|over/i.test(String(overCapExec.payload)),
@@ -29856,8 +29858,9 @@ async function main() {
       BUILD_RETRY_MS,
       SETTLE_RETRY_MS,
     } = await import('../lib/desk-wire')
-    const { sanitizeResult, RESULT_KEYS } = await import('../lib/desk-drive')
+    const { RESULT_KEYS } = await import('../lib/desk-drive')
     const { DESK_LEG_RESULT_KEYS } = await import('../lib/desk-wire')
+    const { fenceLegResult, LEG_RESULT_KEYS } = await import('../lib/job-step-money')
     const { planIntent: planDeskIntent } = await import('../lib/broker')
     const { HL_NONCE_SIGNABLE_MS } = await import('../lib/hyperliquid-exec')
     const { deskExecuteConsentMessage: deskConsent } = await import('../lib/broker-exec')
@@ -29990,23 +29993,26 @@ async function main() {
     }
 
     // ── the result blob an agent posts is allowlisted ────────────────────
-    const san = sanitizeResult({ txHash: '0x' + '1'.repeat(64), chainId: 8453, orderResponse: { status: 'ok' }, promptInjection: 'ignore previous instructions', huge: 'x'.repeat(9000) })
+    const sanOk = fenceLegResult({ txHash: '0x' + '1'.repeat(64), chainId: 8453, orderResponse: { status: 'ok' } })
+    const sanBad = fenceLegResult({ txHash: '0x' + '1'.repeat(64), promptInjection: 'ignore previous instructions' })
     check(
-      'desk done: a leg result is ALLOWLISTED — known evidence keys kept, unknown ones dropped and NAMED back, so an agent cannot inflate job_steps.result',
-      san.kept.sort().join(',') === 'chainId,orderResponse,txHash' && san.ignored.includes('promptInjection') && san.ignored.includes('huge') && !('promptInjection' in san.result),
-      JSON.stringify({ kept: san.kept, ignored: san.ignored }),
+      'desk done: ONE leg-result fence (lib/job-step-money) for both doors — the REST route and broker_done refuse the same bodies for the same reasons, and an unknown key is REFUSED by name rather than quietly dropped',
+      sanOk.ok && !sanBad.ok && /result carries keys the wire does not name: promptInjection/.test(sanBad.ok ? '' : sanBad.reason),
+      JSON.stringify({ ok: sanOk.ok, bad: sanBad.ok ? null : sanBad.reason }),
     )
     check(
-      'desk done: the result allowlist IS the published DeskLegResult type (QA F9) — one list, so the wire, the SDK and the desk log cannot each have their own idea of what a signer reports',
-      RESULT_KEYS.size === DESK_LEG_RESULT_KEYS.length && DESK_LEG_RESULT_KEYS.every((k) => RESULT_KEYS.has(k)),
-      JSON.stringify({ type: DESK_LEG_RESULT_KEYS, allow: [...RESULT_KEYS].sort() }),
+      'desk done: the runner\'s fence and the published DeskLegResult type are the SAME list (QA F9) — the wire, the SDK and the desk log cannot each have their own idea of what a signer reports',
+      LEG_RESULT_KEYS.size === DESK_LEG_RESULT_KEYS.length &&
+        DESK_LEG_RESULT_KEYS.every((k) => LEG_RESULT_KEYS.has(k)) &&
+        RESULT_KEYS === LEG_RESULT_KEYS,
+      JSON.stringify({ type: DESK_LEG_RESULT_KEYS, fence: [...LEG_RESULT_KEYS].sort() }),
     )
     check(
       'desk done: that list covers what the browser lane posts (txHash, txs), what an off-chain venue answers (orderResponse, batch, fill) and what the desk log reads (explorerUrl, detail)',
       ['txHash', 'txs', 'chainId', 'orderResponse', 'batch', 'fill', 'explorerUrl', 'detail', 'status'].every((k) => RESULT_KEYS.has(k)),
     )
-    const sanBig = sanitizeResult({ orderResponse: { blob: 'y'.repeat(9000) } })
-    check('desk done: an oversized field is refused by name rather than stored (8 KB per field)', sanBig.kept.length === 0 && sanBig.ignored[0]?.includes('too large'))
+    const sanBig = fenceLegResult({ orderResponse: { blob: 'y'.repeat(9000) } })
+    check('desk done: an oversized body is refused by name rather than stored', !sanBig.ok && /the cap is/.test(sanBig.ok ? '' : sanBig.reason))
 
     // ── the venue answers the funding question, not the wallet ───────
     // The bug this closes (EXAMPLE lane): the flagship ask on a wallet holding
@@ -30133,7 +30139,8 @@ async function main() {
     const dSeqAsk = `swap 1 USDC for ETH on base, then send 0.5 USDC on base to ${dAgent.address}`
     const dOpen = await dcall('broker_open', { ask: dSeqAsk, wallet: dAgent.address, agent: 'mcp-lane', agent_key: DESK_AGENT_KEY })
     const dIntent = dOpen.payload?.intentId as string
-    const dExec = await dcall('broker_execute', { intent_id: dIntent, wallet_signature: await dAgent.signMessage({ message: deskConsent(dIntent, dAgent.address) }), issued_at: new Date().toISOString(), agent_key: DESK_AGENT_KEY })
+    const dIssuedAt = new Date().toISOString()
+    const dExec = await dcall('broker_execute', { intent_id: dIntent, wallet_signature: await dAgent.signMessage({ message: deskConsent(dIntent, dAgent.address, dIssuedAt) }), issued_at: dIssuedAt, agent_key: DESK_AGENT_KEY })
     check(
       'desk (HTTP): a sequenced ask + a proven wallet compiles to a multi-leg job owned by the agent',
       !dExec.isError && typeof dExec.payload?.jobId === 'string' && (dExec.payload?.steps?.length ?? 0) >= 2,
@@ -30149,37 +30156,32 @@ async function main() {
       )
       const dDoneWrong = await dcall('broker_done', { intent_id: dIntent, agent_key: 'some-other-agents-key', seq: 0, result: { txHash: '0x' + '9'.repeat(64) } })
       check('desk (HTTP) SECURITY: broker_done is gated on the same key — a stranger cannot advance another agent\'s job', dDoneWrong.isError && /agent_key does not match/.test(String(dDoneWrong.payload)))
-      // ── the execute proof (QA F4) ────────────────────────────
-      const { assertExecuteProof, EXECUTE_ISSUED_AT_WINDOW_MS } = await import('../lib/desk-drive')
-      const proofAt = Date.now()
-      const iso = (ms: number) => new Date(proofAt + ms).toISOString()
-      const throws = (fn: () => void) => {
-        try { fn(); return '' } catch (e) { return (e as Error).message }
-      }
-      check(
-        'desk execute proof: the caller\'s OWN agent_key is compared timing-safe — holding an intent id must not be enough to execute an intent someone else opened',
-        /does not match the identity this intent was opened with/.test(throws(() => assertExecuteProof('the-real-key', { agentKey: 'a-different-key' }, proofAt))) &&
-          throws(() => assertExecuteProof('the-real-key', { agentKey: 'the-real-key' }, proofAt)) === '',
-      )
-      check(
-        'desk execute proof: issued_at is a REPLAY WINDOW — a consent signed now passes, one from outside ±10 minutes is refused by name, and junk is refused as junk',
-        throws(() => assertExecuteProof('k', { agentKey: 'k', issuedAt: iso(0) }, proofAt)) === '' &&
-          throws(() => assertExecuteProof('k', { agentKey: 'k', issuedAt: iso(-EXECUTE_ISSUED_AT_WINDOW_MS + 5_000) }, proofAt)) === '' &&
-          /outside the 10-minute window/.test(throws(() => assertExecuteProof('k', { agentKey: 'k', issuedAt: iso(-EXECUTE_ISSUED_AT_WINDOW_MS - 1_000) }, proofAt))) &&
-          /outside the 10-minute window/.test(throws(() => assertExecuteProof('k', { agentKey: 'k', issuedAt: iso(EXECUTE_ISSUED_AT_WINDOW_MS + 1_000) }, proofAt))) &&
-          /must be an ISO-8601/.test(throws(() => assertExecuteProof('k', { agentKey: 'k', issuedAt: 'yesterday' }, proofAt))),
-      )
+      // ── the execute proof (QA F4, DRIVE's gate) ─────────────────
+      // The schema is this lane's; the gate is DRIVE's. These pin the SURFACE:
+      // the fields reach the gate at all (zod was stripping them, which refused
+      // every SDK caller), and each one refuses by name.
       const dExecWrongKey = await dcall('broker_execute', { intent_id: dOpenOnly.payload?.intentId, wallet_signature: '0x' + '1'.repeat(130), issued_at: new Date().toISOString(), agent_key: 'a-stranger-key' })
       check(
-        'desk (HTTP) SECURITY: broker_execute refuses a stranger\'s agent_key BEFORE it ever looks at the wallet signature',
-        dExecWrongKey.isError && /agent_key does not match/.test(String(dExecWrongKey.payload)),
+        'desk (HTTP) SECURITY: broker_execute refuses a stranger\'s agent_key BEFORE it ever looks at the wallet signature — holding the intent id must not be enough to execute an intent someone else opened',
+        dExecWrongKey.isError && /agent_key this intent was opened with/.test(String(dExecWrongKey.payload)),
         String(dExecWrongKey.payload).slice(0, 150),
       )
-      const dExecStale = await dcall('broker_execute', { intent_id: dOpenOnly.payload?.intentId, wallet_signature: '0x' + '1'.repeat(130), issued_at: new Date(Date.now() - 3_600_000).toISOString(), agent_key: 'mcp-lane-harness-key' })
+      const staleAt = new Date(Date.now() - 3_600_000).toISOString()
+      const dExecStale = await dcall('broker_execute', {
+        intent_id: dOpenOnly.payload?.intentId,
+        wallet_signature: await dAgent.signMessage({ message: deskConsent(String(dOpenOnly.payload?.intentId), dAgent.address, staleAt) }),
+        issued_at: staleAt,
+        agent_key: 'mcp-lane-harness-key',
+      })
       check(
-        'desk (HTTP) SECURITY: an hour-old consent is refused by the window, not silently accepted',
-        dExecStale.isError && /outside the 10-minute window/.test(String(dExecStale.payload)),
-        String(dExecStale.payload).slice(0, 150),
+        'desk (HTTP) SECURITY: an hour-old consent is refused — a personal_sign over a fixed text is replayable forever without a window',
+        dExecStale.isError,
+        String(dExecStale.payload).slice(0, 170),
+      )
+      check(
+        'desk (HTTP): the schema PASSES issued_at + agent_key through to the gate — zod stripping them refused every SDK caller with "issued_at is required"',
+        !/issued_at is required/i.test(String(dExecWrongKey.payload)) && !/unrecognized|unknown key/i.test(String(dExecStale.payload)),
+        String(dExecStale.payload).slice(0, 120),
       )
 
       const dNoKey = await drpc('tools/call', { name: 'broker_next', arguments: { intent_id: dIntent } })
@@ -30272,7 +30274,8 @@ async function main() {
       const liveAsk = `swap 1 USDC for ETH on base, then send 0.5 USDC on base to ${burner.address}`
       const lOpen = await dcall('broker_open', { ask: liveAsk, wallet: burner.address, agent: 'mcp-lane', agent_key: LIVE_KEY })
       const lIntent = lOpen.payload?.intentId as string
-      const lExec = await dcall('broker_execute', { intent_id: lIntent, wallet_signature: await burner.signMessage({ message: deskConsent(lIntent, burner.address) }), issued_at: new Date().toISOString(), agent_key: LIVE_KEY })
+      const lIssuedAt = new Date().toISOString()
+      const lExec = await dcall('broker_execute', { intent_id: lIntent, wallet_signature: await burner.signMessage({ message: deskConsent(lIntent, burner.address, lIssuedAt) }), issued_at: lIssuedAt, agent_key: LIVE_KEY })
       let lLeg: any = null
       let lNext: any = null
       for (let i = 0; i < 6 && !lExec.isError; i++) {
@@ -30308,7 +30311,7 @@ async function main() {
         const lDone = await dcall('broker_done', { intent_id: lIntent, agent_key: LIVE_KEY, seq: lLeg.seq, result: { txHash: '0x' + 'c'.repeat(64), chainId: 8453 } })
         check(
           'desk (HTTP, live): broker_done records the leg and answers with the NEXT one in the same call — the agent never polls between legs',
-          !lDone.isError && lDone.payload?.accepted?.seq === lLeg.seq && lDone.payload?.accepted?.keptKeys?.includes('txHash') && !!lDone.payload?.next,
+          !lDone.isError && lDone.payload?.accepted?.seq === lLeg.seq && lDone.payload?.accepted?.keys?.includes('txHash') && !!lDone.payload?.next,
           JSON.stringify({ accepted: lDone.payload?.accepted, next: lDone.payload?.next?.waiting ?? lDone.payload?.next?.leg?.kind }).slice(0, 220),
         )
         check(
@@ -30412,12 +30415,12 @@ async function main() {
       // `issuedAt` line of Ask A4 on one side only is exactly that byte.
       const sdkConsent = sdkSrc.slice(sdkSrc.indexOf('export function deskExecuteConsentMessage'))
       const sdkConsentBody = sdkConsent.slice(0, sdkConsent.indexOf('\n}'))
-      const wantLines = deskExecuteConsentMessage('<ID>', '<WALLET>').split('\n')
+      const wantLines = deskExecuteConsentMessage('<ID>', '<WALLET>', '<ISSUED_AT>').split('\n') // round 2: the text gained `Issued at:`; the last line is still the sentence
       const sdkLineCount = (sdkConsentBody.match(/^\s{4}['"`]/gm) ?? []).length
       check(
         'desk wire: the SDK\'s copy of the execute consent text is BYTE-identical to the desk\'s (the desk recovers the signer from its OWN text — one byte of drift and every agent\'s consent recovers to nothing)',
         sdkConsentBody.includes(wantLines[0]) &&
-          sdkConsentBody.includes(wantLines[3]) &&
+          sdkConsentBody.includes(wantLines[wantLines.length - 1]) &&
           /Intent: \$\{intentId\}/.test(sdkConsentBody) &&
           /Wallet: \$\{wallet\.toLowerCase\(\)\}/.test(sdkConsentBody) &&
           sdkLineCount === wantLines.length,
@@ -30599,7 +30602,7 @@ async function main() {
 
       // The execute consent is a standing bearer credential for its intent:
       // bound to (intent, wallet) but with NO freshness. Ask A4.
-      const consent = deskExecuteConsentMessage('qaintent01', wA)
+      const consent = deskExecuteConsentMessage('qaintent01', wA, new Date().toISOString())
       gap(
         'desk consent: the execute consent text carries an issuedAt, checked both ways (≤10 min) — an indefinitely-valid signature is a standing credential',
         /Issued|issuedAt|\d{4}-\d{2}-\d{2}T/.test(consent),
@@ -30660,7 +30663,9 @@ async function main() {
   // action compiles as a one-leg job, and the funded burner gets its batch.
   console.log('— agent desk: DRIVE')
   {
-    const { composeHlBatch, guardHlBatch, withHlBatch, batchCompletionVerdict, hlBatchStaleAfterMs, HL_BATCH_MAX_MEMBERS } = await import('../lib/hl-batch')
+    const { composeHlBatch, guardHlBatch, withHlBatch, batchCompletionVerdict, hlBatchStaleAfterMs, HL_BATCH_MAX_MEMBERS, hlCreditSettled, hlCreditArrival, hlCreditMinDelta } = await import('../lib/hl-batch')
+    const { deskConsentIssuedAtOk, DESK_CONSENT_WINDOW_MS } = await import('../lib/broker-exec')
+    const { fenceLegResult, LEG_RESULT_MAX_BYTES, jobStepMoneySessionId } = await import('../lib/job-step-money')
     const { hlActionTypedData } = await import('../lib/hyperliquid-exec')
     // A builder-shaped order request — the exact keys buildHlExecTurn emits — with the leverage pre-step.
     const dLev = { type: 'updateLeverage', asset: 159, isCross: true, leverage: 2 }
@@ -30733,22 +30738,47 @@ async function main() {
     const dAgent = privateKeyToAccount(generatePrivateKey())
     const dOpen = await driveCall('broker_open', { ask: FLAGSHIP, wallet: dAgent.address, agent: 'harness-drive', agent_key: 'harness-drive-key' })
     const dIntent = dOpen.payload?.intentId as string
-    const dConsent = await dAgent.signMessage({ message: deskExecuteConsentMessage(dIntent, dAgent.address) })
-    check('drive: the execute consent text recovers the agent wallet that signed it', dIntent != null && (await recoverMessageAddress({ message: deskExecuteConsentMessage(dIntent, dAgent.address), signature: dConsent })).toLowerCase() === dAgent.address.toLowerCase())
+    const dIssued = new Date().toISOString()
+    const dConsent = await dAgent.signMessage({ message: deskExecuteConsentMessage(dIntent, dAgent.address, dIssued) })
+    check('drive: the execute consent text recovers the agent wallet that signed it, and names the instant it was issued', dIntent != null && (await recoverMessageAddress({ message: deskExecuteConsentMessage(dIntent, dAgent.address, dIssued), signature: dConsent })).toLowerCase() === dAgent.address.toLowerCase() && deskExecuteConsentMessage(dIntent, dAgent.address, dIssued).includes(`Issued at: ${dIssued}`))
+    // The consent's freshness (QA F4): a both-ways window, pure and over HTTP.
+    check('drive consent: issued_at inside the window is accepted; 11 minutes past, 11 minutes ahead, and a non-ISO string are refused by name',
+      deskConsentIssuedAtOk(dIssued).ok && DESK_CONSENT_WINDOW_MS === 600_000 &&
+        !deskConsentIssuedAtOk(new Date(Date.now() - 11 * 60_000).toISOString()).ok && /more than 10 minutes ago/.test((deskConsentIssuedAtOk(new Date(Date.now() - 11 * 60_000).toISOString()) as { why: string }).why) &&
+        /in the future/.test((deskConsentIssuedAtOk(new Date(Date.now() + 11 * 60_000).toISOString()) as { why: string }).why) &&
+        /issued_at is required/.test((deskConsentIssuedAtOk('yesterday') as { why: string }).why))
+    const dStaleIssued = new Date(Date.now() - 11 * 60_000).toISOString()
+    const dStaleSig = await dAgent.signMessage({ message: deskExecuteConsentMessage(dIntent, dAgent.address, dStaleIssued) })
+    const dStaleExec = await driveCall('broker_execute', { intent_id: dIntent, wallet_signature: dStaleSig, issued_at: dStaleIssued, agent_key: 'harness-drive-key' })
+    check('drive consent (HTTP): a consent issued 11 minutes ago is refused as stale, before any job exists', dStaleExec.isError && /more than 10 minutes ago/.test(String(dStaleExec.payload)), String(dStaleExec.payload).slice(0, 160))
+    const dWrongKey = await driveCall('broker_execute', { intent_id: dIntent, wallet_signature: dConsent, issued_at: dIssued, agent_key: 'someone-elses-key' })
+    check('drive consent (HTTP): a caller presenting a different agent_key than the one that opened the intent is refused by name', dWrongKey.isError && /agent_key this intent was opened with/.test(String(dWrongKey.payload)), String(dWrongKey.payload).slice(0, 160))
     // An unfunded wallet asking the flagship: refused by the COLLATERAL it lacks — never as "single-step".
-    const dExec = await driveCall('broker_execute', { intent_id: dIntent, wallet_signature: dConsent })
+    const dExec = await driveCall('broker_execute', { intent_id: dIntent, wallet_signature: dConsent, issued_at: dIssued, agent_key: 'harness-drive-key' })
     check('drive: the flagship on an unfunded wallet is refused by the collateral the position needs (reaching Hyperliquid), not as a single-step ask', dExec.isError && /reaching Hyperliquid|can't fund it/i.test(String(dExec.payload)) && !/single-step/i.test(String(dExec.payload)), String(dExec.payload).slice(0, 200))
     await driveCall('broker_close', { intent_id: dIntent })
     // A lone non-HL action compiles as a ONE-leg job (the runner withholds the build on the empty wallet; the job exists).
     const dLone = await driveCall('broker_open', { ask: `send 0.5 USDC on base to 0x2222222222222222222222222222222222222222`, wallet: dAgent.address, agent: 'harness-drive', agent_key: 'harness-drive-key' })
-    const dLoneSig = await dAgent.signMessage({ message: deskExecuteConsentMessage(dLone.payload.intentId, dAgent.address) })
-    const dLoneExec = await driveCall('broker_execute', { intent_id: dLone.payload.intentId, wallet_signature: dLoneSig })
+    const dLoneSig = await dAgent.signMessage({ message: deskExecuteConsentMessage(dLone.payload.intentId, dAgent.address, dIssued) })
+    const dLoneExec = await driveCall('broker_execute', { intent_id: dLone.payload.intentId, wallet_signature: dLoneSig, issued_at: dIssued, agent_key: 'harness-drive-key' })
     check('drive: a lone action compiles to a one-leg agent-owned job (no more "does not compile to a multi-step job")', !dLoneExec.isError && dLoneExec.payload?.steps?.length === 1 && dLoneExec.payload.steps[0].kind === 'sign' && typeof dLoneExec.payload.drive?.poll === 'string', String(dLoneExec.payload).slice(0, 160))
     if (!dLoneExec.isError) {
       const dPoll = await fetch(String(dLoneExec.payload.drive.poll).replace(/^https?:\/\/[^/]+/, BASE), { headers: { 'x-yf-internal-run': '1' } })
       const dJob = (await dPoll.json()) as { job?: { steps?: { builder?: string }[] } }
       check('drive: the one-leg job polls through the capability token with the transfer builder on its step', dPoll.status === 200 && dJob.job?.steps?.[0]?.builder === 'native-transfer', JSON.stringify(dJob.job?.steps?.[0]?.builder))
+      // The completion fence (QA A2/F6): refused rather than reshaped, before the step's state is even consulted.
+      const dCompleteUrl = String(dLoneExec.payload.drive.complete).replace(/^https?:\/\/[^/]+/, BASE)
+      const dPost = async (result: unknown) => { const r = await fetch(dCompleteUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ seq: 0, result }) }); return { status: r.status, error: String(((await r.json().catch(() => ({}))) as { error?: string }).error ?? '') } }
+      const dUnknown = await dPost({ txHash: '0x' + 'ab'.repeat(32), evil: 'x' })
+      const dBadHash = await dPost({ txHash: '0xZZ' })
+      const dBig = await dPost({ detail: 'x'.repeat(LEG_RESULT_MAX_BYTES + 1) })
+      const dFine = await dPost({ txHash: '0x' + 'ab'.repeat(32), chainId: 8453 })
+      check('drive fence (HTTP): a result with a key the wire does not name, a malformed txHash, or a body over 8 KB is refused by name (400); a well-formed one reaches the step\'s own state check', dUnknown.status === 400 && /keys the wire does not name: evil/.test(dUnknown.error) && dBadHash.status === 400 && /txHash must be/.test(dBadHash.error) && dBig.status === 400 && /the cap is 8192/.test(dBig.error) && dFine.status === 400 && /not awaiting a signature/.test(dFine.error), `${dUnknown.status} ${dUnknown.error.slice(0, 60)} | ${dBadHash.status} | ${dBig.status} | ${dFine.status} ${dFine.error.slice(0, 40)}`)
+      check('drive fence (pure): an empty result passes; txs/fill/detail/explorerUrl/status/batch/orderResponse are the allowed keys; an uppercase hash is refused (never reshaped)', fenceLegResult(undefined).ok && fenceLegResult({ txs: [], fill: {}, detail: 'x', explorerUrl: 'u', status: 'filled', batch: [], orderResponse: {} }).ok && !fenceLegResult({ txHash: '0x' + 'AB'.repeat(32) }).ok && !fenceLegResult({ batch: 'no' }).ok && !fenceLegResult([]).ok)
     }
+    // The deposit's credit settles on a DELTA (F5 / round-2 decision 8): a level alone passed for any account already holding collateral.
+    check('drive hl-credit (pure): with a baseline the wait settles only once the collateral ROSE by ≥ min(90%, all-but-$0.50) of the deposit; without one the legacy level rule stands', hlCreditMinDelta(5) === 4.5 && hlCreditSettled(30, hlCreditArrival(25, 5), 4.5) && !hlCreditSettled(26, hlCreditArrival(25, 5), 4.5) && !hlCreditSettled(29.4, hlCreditArrival(25, 5), 4.5) && hlCreditSettled(26, null, 4.5) && !hlCreditSettled(NaN, null, 1) && hlCreditArrival(-3, 5).baselineUsd === 0)
+    check('drive hl-credit (source): the runner records the collateral baseline on the deposit artifact at build and the wait reads it through hlCreditSettled', /hlCreditArrival\(baseline, depositUsd\)/.test(dRunnerSrc) && /hlCreditSettled\(collateral, arrival/.test(dRunnerSrc) && /recordJobStepMoney\(\{/.test(dRunnerSrc) && /fenceLegResult\(result\)/.test(dRunnerSrc))
     await driveCall('broker_close', { intent_id: dLone.payload.intentId })
 
     // The FUNDED wallet (the house burner, .env.local): the flagship compiles, and the HL
@@ -30758,8 +30788,8 @@ async function main() {
       const burner = privateKeyToAccount(dKey as `0x${string}`)
       const bOpen = await driveCall('broker_open', { ask: FLAGSHIP, wallet: burner.address, agent: 'harness-drive', agent_key: 'harness-drive-key' })
       const bIntent = bOpen.payload?.intentId as string
-      const bSig = await burner.signMessage({ message: deskExecuteConsentMessage(bIntent, burner.address) })
-      const bExec = await driveCall('broker_execute', { intent_id: bIntent, wallet_signature: bSig })
+      const bSig = await burner.signMessage({ message: deskExecuteConsentMessage(bIntent, burner.address, dIssued) })
+      const bExec = await driveCall('broker_execute', { intent_id: bIntent, wallet_signature: bSig, issued_at: dIssued, agent_key: 'harness-drive-key' })
       const bSteps = (bExec.payload?.steps ?? []) as { kind: string; note: string }[]
       check('drive (live): the flagship on the funded burner compiles — the LAST leg is the 2x long, funded legs (if any) ride in front', !bExec.isError && bSteps.length >= 1 && bSteps[bSteps.length - 1].kind === 'sign' && /2x Long \$12 of HYPE/.test(bSteps[bSteps.length - 1].note), bExec.isError ? String(bExec.payload).slice(0, 200) : `${bSteps.length} legs`)
       if (!bExec.isError && bSteps.length === 1) {
@@ -30799,6 +30829,18 @@ async function main() {
           await new Promise((r) => setTimeout(r, 2500))
         }
         check('drive (live): a partial batch completion re-arms the step and the runner re-offers the SAME seq with a fresh nonce (never done, never failed)', bDone.status === 200 && bAgain?.status === 'offered' && (bAgain.artifact?.orderRequest?.hl?.nonce ?? 0) > bNonce, `complete ${bDone.status}; step ${bAgain?.status}; nonce ${bAgain?.artifact?.orderRequest?.hl?.nonce} vs ${bNonce}`)
+        // ONE money writer (round-2 decision 1): a completion the runner accepts books exactly one
+        // receipt-gated embed_turns row (internal from the JOB row), and the browser's own beacon
+        // for that step is deduped. Nothing is submitted to the venue — this completion is the
+        // agent's word about a batch, exactly what the log shows as "claimed".
+        const bJobId = String(bExec.payload.jobId)
+        const bFinal = await fetch(bCompleteUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ seq: 0, result: { batch: [{ ok: true, orderResponse: { status: 'harness' } }, { ok: true, orderResponse: { status: 'harness' } }] } }) })
+        const bRows = process.env.DATABASE_URL ? await prisma.embedTurn.findMany({ where: { sessionId: jobStepMoneySessionId(bJobId, 0) }, select: { id: true, artifact: true, isInternal: true, walletAddress: true, originKind: true, verification: true, valueUsd: true } }) : null
+        check('drive money (live): a REST /complete the runner accepts writes EXACTLY ONE job-step money row — session_id job-<jobId>-<seq>, origin_kind job-step, is_internal from the job row, the burner as signer, fail-closed verification', bFinal.status === 200 && (bRows === null || (bRows.length === 1 && bRows[0].artifact === 'job-step' && bRows[0].isInternal === true && bRows[0].walletAddress === burner.address.toLowerCase() && bRows[0].originKind === 'job-step' && typeof bRows[0].verification === 'string')), bRows === null ? 'DATABASE_URL absent in the harness process — row check skipped' : `${bRows.length} row(s): ${JSON.stringify(bRows[0] ?? null)}`)
+        const bBeacon = await fetch(`${BASE}/api/embed/telemetry`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ firstParty: true, sessionId: 'harness-drive-beacon-1', page: `${BASE}/chat`, outcome: 'signed', artifact: 'job-step', chain: 'multi', valueUsd: 12, buildPath: 'native-hl-exec', jobId: bJobId, seq: 0, walletAddress: burner.address }) })
+        const bBeaconBody = (await bBeacon.json().catch(() => ({}))) as { ok?: boolean; deduped?: boolean }
+        const bRowsAfter = process.env.DATABASE_URL ? await prisma.embedTurn.count({ where: { OR: [{ sessionId: jobStepMoneySessionId(bJobId, 0) }, { sessionId: 'harness-drive-beacon-1' }] } }) : null
+        check('drive money (live): the browser beacon for the SAME (jobId, seq) after the runner\'s row is answered ok + deduped and writes NOTHING', bBeacon.status === 200 && bBeaconBody.ok === true && bBeaconBody.deduped === true && (bRowsAfter === null || bRowsAfter === 1), `${bBeacon.status} ${JSON.stringify(bBeaconBody)}; rows ${bRowsAfter}`)
       }
       await driveCall('broker_close', { intent_id: bIntent })
     } else {
@@ -30832,6 +30874,192 @@ async function main() {
       'agent desk docs: the honest fence survives — no transaction material on the MCP surface, completion is advancement not proof, dryRun is named',
       /no transaction material/i.test(desk) && /advancement/i.test(desk) && /dryRun/.test(desk) && /fails/.test(desk),
     )
+  }
+  // ── agent desk: UI ── the desk log + the Desk section on Growth (squad agent-desk
+  // 2026-09-23, contract C5). Pure folds first (lib/desk-activity, in-process, no DB), then
+  // the route's gate + shape, then one internal intent minted through the REAL desk MCP and
+  // read back: flagged, greyed, counted nowhere.
+  console.log('— agent desk: UI')
+  {
+    const D = await import('../lib/desk-activity')
+    const dFs = await import('node:fs')
+    const T0 = Date.parse('2026-09-23T10:00:00Z')
+    const at = (s: number) => new Date(T0 + s * 1000).toISOString()
+    const swapArtifact = { txChain: { steps: [{ tx: { chainId: 8453 } }], refresh: { kind: 'uniswap-swap', params: { feeBps: '20' } } } }
+    const H = `0x${'ab'.repeat(32)}`
+    const intent = (over: Partial<import('../lib/desk-activity').DeskIntentRaw> = {}): import('../lib/desk-activity').DeskIntentRaw => ({
+      id: 'dsk_fixture01', ask: 'swap 25 USDC for ETH on base, then send 1 USDC on base to 0x1111111111111111111111111111111111111111', wallet: '0xAaAa000000000000000000000000000000000001', agent: 'Fixture Agent',
+      agentKeyHash: 'f1x7ur3agent0001', isInternal: false, state: 'executing', plan: { quote: { gate: 'jobs', kind: 'action' } }, linkSlug: null, jobId: 'job_fixture01', createdAt: at(0), updatedAt: at(1), ...over,
+    })
+    const job = (over: Partial<import('../lib/desk-activity').DeskJobRaw> = {}): import('../lib/desk-activity').DeskJobRaw => ({
+      id: 'job_fixture01', status: 'waiting_signature', valueUsd: null, failReason: null, isInternal: false, createdAt: at(5), updatedAt: at(120),
+      steps: [
+        { seq: 0, kind: 'sign', status: 'done', builder: 'native-swap', title: 'Swap 25 USDC for ETH on Base', artifact: swapArtifact, result: { txHash: H, chainId: 8453 }, valueUsd: 25, expiresAt: null, createdAt: at(5), updatedAt: at(60) },
+        { seq: 1, kind: 'wait', status: 'done', builder: 'wait', title: 'ETH lands on Base', artifact: null, result: { status: 'balance ≥ target' }, valueUsd: null, expiresAt: null, createdAt: at(5), updatedAt: at(90) },
+        { seq: 2, kind: 'sign', status: 'offered', builder: 'native-transfer', title: 'Send 1 USDC on Base', artifact: { txRequest: { chainId: 8453 } }, result: null, valueUsd: 1, expiresAt: at(120 + 1800), createdAt: at(5), updatedAt: at(120) },
+      ],
+      ...over,
+    })
+
+    check('desk fold: txHashOf reads txHash / hash / the last of txHashes, and nothing hash-shaped is a hash', D.txHashOf({ txHash: H }) === H && D.txHashOf({ hash: H }) === H && D.txHashOf({ txHashes: ['0x1', H] }) === H && D.txHashOf({ txHash: '0xdead' }) === null && D.txHashOf({ fill: {} }) === null && D.txHashOf('nope') === null)
+    check('desk fold: explorer links come from the chain registry (Base → basescan, 4663 → blockscout), never off-registry', D.explorerTxUrl(8453, H) === `https://basescan.org/tx/${H}` && /robinhoodchain\.blockscout\.com\/tx\//.test(D.explorerTxUrl(4663, H) ?? '') && D.explorerTxUrl(999_999, H) === null && D.explorerTxUrl(8453, null) === null)
+    check('desk fold: DESK_OFFER_TTL_MS equals the runner\'s OFFER_TTL_MS (the built-time read of an offered step)', new RegExp(`const OFFER_TTL_MS = ${D.DESK_OFFER_TTL_MS / 60_000} \\* 60_000`).test(dFs.readFileSync('lib/jobs-runner.ts', 'utf8')))
+
+    const turn = (over: Partial<import('../lib/desk-activity').DeskTurnRaw> = {}): import('../lib/desk-activity').DeskTurnRaw => ({ sessionId: 'job-job_fixture01-0', valueUsd: 25, verification: 'verified', txUrl: null, isInternal: false, origin: 'https://www.pantessa.com', createdAt: at(61), ...over })
+    const row = D.foldDeskIntent({ intent: intent(), job: job(), turns: [turn()] })
+    const kinds = row.events.map((e) => `${e.kind}:${e.who}`)
+    check(
+      'desk fold: the agent path reads opened → consent → compiled → CLAIMED (agent) → VERIFIED (runner) → built, in time order, and never invents a chosen event',
+      JSON.stringify(kinds) === JSON.stringify(['opened:desk', 'consent:agent', 'compiled:desk', 'claimed:agent', 'verified:runner', 'verified:runner', 'built:runner']),
+      JSON.stringify(kinds),
+    )
+    const claimed = row.events.find((e) => e.kind === 'claimed')!
+    const built = row.events.find((e) => e.kind === 'built')!
+    const verifieds = row.events.filter((e) => e.kind === 'verified')
+    check('desk fold: claimed ≠ verified — the claim is the agent\'s word (who=agent, the posted hash, an explorer link); the books\' receipt row and the wait leg are the runner\'s (who=runner)', claimed.who === 'agent' && claimed.txHash === H && claimed.txUrl === `https://basescan.org/tx/${H}` && claimed.chainId === 8453 && claimed.receipt === 'verified' && verifieds.length === 2 && verifieds.every((e) => e.who === 'runner') && verifieds[0].seq === 0 && /receipt verified · booked \$25\.00/.test(verifieds[0].detail ?? '') && verifieds[1].seq === 1 && !verifieds[1].txHash)
+    check('desk fold: a claimed leg carries its guard-priced notional AND the fee its artifact carried, by the books\' own rule (25 × 20 bps = $0.05, native-swap-uniswap)', claimed.valueUsd === 25 && Math.abs((claimed.feeUsd ?? 0) - 0.05) < 1e-9 && claimed.buildPath === 'native-swap-uniswap' && claimed.feeBps === 20 && claimed.venue === 'uniswap' && Math.abs(row.feeUsd - 0.05) < 1e-9 && row.valueUsd === 25)
+    check('desk fold: an OFFERED step\'s built time is read back off expires_at − the offer TTL, and the row is at stage signed with 1/2 legs signed, 1 verified', built.at === at(120) && built.seq === 2 && row.stage === 'signed' && row.path === 'agent' && row.legs.total === 2 && row.legs.signed === 1 && row.legs.verified === 1 && row.legs.failed === 0)
+    check('desk fold: receipt-counted money is the leg\'s own `job-<jobId>-<seq>` row when its verdict counts; the row says claimed AND counted separately', row.countedUsd === 25 && row.valueUsd === 25 && row.lastAt === at(120))
+    const mismatch = D.foldDeskIntent({ intent: intent(), job: job(), turns: [turn({ verification: 'mismatch' })] })
+    const unverified = D.foldDeskIntent({ intent: intent(), job: job(), turns: [turn({ verification: 'unverified' })] })
+    const noRow = D.foldDeskIntent({ intent: intent(), job: job(), turns: [] })
+    const internalTurn = D.foldDeskIntent({ intent: intent(), job: job(), turns: [turn({ isInternal: true })] })
+    const otherJob = D.foldDeskIntent({ intent: intent(), job: job(), turns: [turn({ sessionId: 'job-job_other-0' })] })
+    const legacy = D.foldDeskIntent({ intent: intent(), job: job(), turns: [turn({ verification: null })] })
+    check('desk fold: a mismatch row counts nothing and says the receipt contradicts the claim; an unverified one waits; no row = $0 counted with receipt none; an internal row never counts; another job\'s row is ignored; a legacy NULL verdict counts (T-R6) but earns no verified event', mismatch.countedUsd === 0 && mismatch.events.find((e) => e.kind === 'claimed')!.receipt === 'mismatch' && /contradicts/.test(mismatch.events.find((e) => e.kind === 'claimed')!.detail ?? '') && !mismatch.events.some((e) => e.kind === 'verified' && e.seq === 0) && unverified.countedUsd === 0 && /not verified yet/.test(unverified.events.find((e) => e.kind === 'claimed')!.detail ?? '') && noRow.countedUsd === 0 && noRow.events.find((e) => e.kind === 'claimed')!.receipt === 'none' && internalTurn.countedUsd === 0 && otherJob.countedUsd === 0 && legacy.countedUsd === 25 && !legacy.events.some((e) => e.kind === 'verified' && e.seq === 0))
+    check('desk fold: legSeqOfSession reads job-<jobId>-<seq> for THIS job only', D.legSeqOfSession('job-job_fixture01-3', 'job_fixture01') === 3 && D.legSeqOfSession('job-job_fixture01-3', 'job_other') === null && D.legSeqOfSession('desk-x-1', 'x') === null && D.legSeqOfSession('harness-job-job_fixture01-1', 'job_fixture01') === null)
+
+    // QA A1 — a hostile agent writes these rows end to end and they land on an ADMIN page.
+    const big = 'A'.repeat(2 * 1024 * 1024)
+    const hostile = D.foldDeskIntent({
+      intent: intent({ ask: `<img src=x onerror=alert(1)> ${big}`, agent: `<script>${big}</script>`, plan: { chosen: { label: big, at: at(2) } } }),
+      job: job({ failReason: big, steps: [{ ...job().steps[0], result: { txHash: 'javascript:alert(1)', note: big } }, { ...job().steps[1], result: { status: big } }, { ...job().steps[2], status: 'failed', result: { error: `javascript:${big}` } }] }),
+    })
+    const hostileClaim = hostile.events.find((e) => e.kind === 'claimed')!
+    check('desk A1: a `javascript:` claim never becomes a hash or an href — it renders as inert text; explorerTxUrl refuses anything that is not a 32-byte hash', hostileClaim.txHash === undefined && hostileClaim.txUrl === undefined && D.txHashOf({ txHash: 'javascript:alert(1)' }) === null && D.explorerTxUrl(8453, 'javascript:alert(1)') === null && D.explorerTxUrl(8453, `${H}00`) === null && D.explorerTxUrl(8453, 'https://evil.example/x') === null)
+    check('desk A1: every agent-written string is clamped at the fold — a 2 MB ask, name, chosen label, result and fail reason all land under the caps, and no event detail exceeds 200 chars', hostile.ask.length <= D.DESK_TEXT_CAPS.ask && (hostile.agentName?.length ?? 0) <= D.DESK_TEXT_CAPS.agent && hostile.events.every((e) => (e.detail?.length ?? 0) <= D.DESK_TEXT_CAPS.detail) && JSON.stringify(hostile).length < 20_000 && hostile.ask.startsWith('<img src=x onerror=alert(1)>'))
+    check('desk A1: clampText strips control characters and refuses non-strings', D.clampText('a\u0000b\u001fc', 10) === 'abc' && D.clampText(123, 10) === null && D.clampText('   ', 10) === null && D.clampText('x'.repeat(11), 10)!.length === 10)
+    const consent = row.events.find((e) => e.kind === 'consent')!
+    check('desk fold: consent has no timestamp of its own — it is the job\'s creation (Finding 3) and says so', consent.at === at(5) && /signature recovered .*at execute/.test(consent.detail ?? '') && row.events.find((e) => e.kind === 'compiled')!.detail === '3-leg job job_fixture01')
+
+    const done = D.foldDeskIntent({ intent: intent(), job: job({ status: 'done', valueUsd: 26, updatedAt: at(200), steps: job().steps.map((s) => (s.seq === 2 ? { ...s, status: 'done', result: { txHash: H.replace(/ab/g, 'cd') }, updatedAt: at(180) } : s)) }) })
+    const failed = D.foldDeskIntent({ intent: intent(), job: job({ status: 'failed', failReason: '"Send 1 USDC on Base": the build refused', updatedAt: at(200), steps: job().steps.map((s) => (s.seq === 2 ? { ...s, status: 'failed', result: { error: 'insufficient USDC' }, updatedAt: at(180) } : s)) }) })
+    const canceled = D.foldDeskIntent({ intent: intent({ state: 'closed' }), job: job({ status: 'canceled', updatedAt: at(200) }) })
+    const declined = D.foldDeskIntent({ intent: intent({ state: 'declined', jobId: null }) })
+    const chosen = D.foldDeskIntent({ intent: intent({ jobId: null, state: 'open', plan: { quote: { gate: 'jobs', kind: 'action' }, chosen: { optionId: 'fund-1', label: 'Fund from Base', at: at(2) } } }) })
+    check('desk fold: a done job settles (done event, $26 moved, 2/2 signed); a failed one fails with the runner\'s reason; a canceled one closes; a declined intent declines', done.stage === 'settled' && done.legs.signed === 2 && done.valueUsd === 26 && /job done · \$26\.00 moved/.test(done.events.at(-1)!.detail ?? '') && failed.stage === 'failed' && failed.legs.failed === 1 && failed.events.at(-1)!.detail === '"Send 1 USDC on Base": the build refused' && canceled.stage === 'closed' && canceled.events.at(-1)!.kind === 'closed' && declined.stage === 'declined' && declined.path === 'none' && declined.events.at(-1)!.kind === 'refused' && declined.events.at(-1)!.who === 'human')
+    check('desk fold: a persisted choice (plan.chosen — the Ask to MCP) reads as a chosen event at its own time; a plan without one gets none', chosen.events.map((e) => e.kind).join(',') === 'opened,chosen' && chosen.events[1].at === at(2) && chosen.events[1].detail === 'Fund from Base' && chosen.stage === 'opened' && !row.events.some((e) => e.kind === 'chosen'))
+
+    const human = D.foldDeskIntent({
+      intent: intent({ jobId: null, state: 'handed_off', linkSlug: 'lnk_fixture', updatedAt: at(3) }),
+      linkEvents: [
+        { kind: 'open', wallet: null, valueUsd: null, txHash: null, chainId: null, verification: null, createdAt: at(10) },
+        { kind: 'connect', wallet: '0xbbbb000000000000000000000000000000000002', valueUsd: null, txHash: null, chainId: null, verification: null, createdAt: at(20) },
+        { kind: 'built', wallet: '0xbbbb000000000000000000000000000000000002', valueUsd: 15, txHash: null, chainId: null, verification: null, createdAt: at(30) },
+        { kind: 'signed', wallet: '0xbbbb000000000000000000000000000000000002', valueUsd: 15, txHash: H, chainId: 8453, verification: 'verified', createdAt: at(40) },
+        { kind: 'signed', wallet: '0xbbbb000000000000000000000000000000000002', valueUsd: 999, txHash: H, chainId: 8453, verification: 'mismatch', createdAt: at(50) },
+      ],
+    })
+    check('desk fold: the human path reads handoff → consent (connect) → built → claimed (human) → verified (the receipt verdict), counts only counted receipts ($15, never the $999 mismatch) and lands at signed', human.path === 'human' && human.stage === 'signed' && human.valueUsd === 15 && human.legs.signed === 2 && human.legs.verified === 1 && human.events.map((e) => e.kind).join(',') === 'opened,handoff,consent,built,claimed,verified,claimed' && human.events.find((e) => e.kind === 'handoff')!.detail === "sign link /i/lnk_fixture minted for the agent's human" && human.events.filter((e) => e.kind === 'claimed').every((e) => e.who === 'human'))
+
+    // The fence: internal rows are folded and flagged, and count NOWHERE.
+    const internalRow = D.foldDeskIntent({ intent: intent({ id: 'dsk_internal', isInternal: true }), job: job() })
+    const teamRow = D.foldDeskIntent({ intent: intent({ id: 'dsk_team', wallet: '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0' }), job: job(), testers: new Set(['0x5eaabd731d2bc0490c2d47e41858e9b0629455a0']) })
+    const jobInternal = D.foldDeskIntent({ intent: intent({ id: 'dsk_jobint' }), job: job({ isInternal: true }) })
+    check('desk fence: an internal intent (or a job stamped internal) stays a row, flagged; countedDeskRows drops it; a team wallet stays unless external', internalRow.isInternal && jobInternal.isInternal && !teamRow.isInternal && teamRow.team && D.countedDeskRows([row, internalRow, teamRow, jobInternal]).length === 2 && D.countedDeskRows([row, internalRow, teamRow], true).length === 1 && D.countedDeskRows([row, internalRow, teamRow], true)[0].intentId === 'dsk_fixture01')
+    const now = T0 + 3 * 86_400_000
+    const g = D.deskGrowthSummary(D.countedDeskRows([row, internalRow, teamRow]), 7, now)
+    const gInt = D.deskGrowthSummary(D.countedDeskRows([internalRow]), 7, now)
+    check('desk growth: agents seen, the opened → executed → signed → settled funnel, claimed money, fee and receipt-counted all fold from the counted rows only (internal alone → zeros everywhere)', g.agents === 1 && g.funnel.opened === 2 && g.funnel.executed === 2 && g.funnel.signed === 2 && g.funnel.settled === 0 && g.moneyUsd === 50 && Math.abs(g.feeUsd - 0.1) < 1e-9 && g.countedUsd === 25 && g.legs === 2 && gInt.agents === 0 && gInt.funnel.opened === 0 && gInt.moneyUsd === 0 && gInt.byAgent.length === 0, JSON.stringify({ g: { ...g, series: undefined }, gInt: { ...gInt, series: undefined } }))
+    check('desk growth: the daily series is dailySeries over the claimed legs (7 dense days, the claim day carries $50, cumulative reads $50 at the end) — the same idiom as the rest of Growth', g.series.length === 7 && g.series.reduce((s, p) => s + p.totalUsd, 0) === 50 && g.series.find((p) => p.day === '2026-09-23')?.totalUsd === 50 && g.series.at(-1)!.cumulativeUsd === 50 && g.series.every((p) => p.standing === p.totalUsd))
+    check('desk growth: money by agent ranks handles biggest first with intents · legs · fee, and deltas read against the previous window (null off a zero base)', g.byAgent[0]?.handle === 'f1x7ur3agent0001' && g.byAgent[0].usd === 50 && g.byAgent[0].intents === 2 && g.byAgent[0].legs === 2 && Math.abs(g.byAgent[0].feeUsd - 0.1) < 1e-9 && g.moneyDelta === null && g.funnelPrev.opened === 0)
+    check('desk filter: by stage, by agent name or handle substring (case-insensitive), and external drops internal + team', D.filterDeskRows([row, internalRow, teamRow, done], { stage: 'settled' }).length === 1 && D.filterDeskRows([row, done], { agent: 'FIXTURE' }).length === 2 && D.filterDeskRows([row], { agent: 'f1x7' }).length === 1 && D.filterDeskRows([row], { agent: 'nobody' }).length === 0 && D.filterDeskRows([row, internalRow, teamRow], { external: true }).length === 1)
+    check('desk sort: newest activity first', D.sortDeskRows([row, done]).map((r) => r.intentId + '@' + r.lastAt)[0] === `dsk_fixture01@${at(200)}`)
+
+    // Wiring pins: session-only gate, the 10s visible poll, the Growth mount, one axis.
+    const deskRouteSrc = dFs.readFileSync('app/api/admin/desk/route.ts', 'utf8')
+    const deskPageSrc = dFs.readFileSync('app/dashboard/admin/desk/page.tsx', 'utf8')
+    const growthRouteSrc2 = dFs.readFileSync('app/api/admin/growth/route.ts', 'utf8')
+    const growthPageSrc2 = dFs.readFileSync('app/dashboard/admin/page.tsx', 'utf8')
+    const deskChartsSrc = dFs.readFileSync('components/DeskLogCharts.tsx', 'utf8')
+    const deskSectionSrc = dFs.readFileSync('components/DeskLogSection.tsx', 'utf8')
+    check('desk wiring: the route answers the admin SESSION only (getSessionAddress, never getAuthAddress — it carries every ask and wallet), and the page polls every 10s while the tab is visible', /getSessionAddress\(\)/.test(deskRouteSrc) && !/getAuthAddress/.test(deskRouteSrc) && /isAdminAddress\(admin\)/.test(deskRouteSrc) && /const REFRESH_MS = 10_000/.test(deskPageSrc) && /document\.visibilityState === 'visible'/.test(deskPageSrc))
+    check('desk wiring: Growth links the log beside User flows, mounts the Desk section, and its API carries `desk` from the SAME loader the desk route reads', growthPageSrc2.includes('href="/dashboard/admin/desk"') && growthPageSrc2.includes('<DeskLogSection desk={data.desk') && growthRouteSrc2.includes("from '@/app/api/admin/desk/read'") && /desk,\n/.test(growthRouteSrc2) && deskRouteSrc.includes("from './read'"))
+    check('desk wiring: the desk chart draws ONE axis (never a dual y-scale), one hue from the markets look tokens; the section imports look.css so the tokens exist on the dashboard', (deskChartsSrc.match(/<YAxis/g) ?? []).length === 1 && !/orientation="right"/.test(deskChartsSrc) && /MK\.seq\[/.test(deskChartsSrc) && deskSectionSrc.includes("import '@/components/markets/look.css'") && /data-desk-section/.test(deskSectionSrc))
+    check('desk wiring: an INTERNAL row is greyed and pilled on the page, every hash renders through the fold\'s explorer link (no hand-typed host), and nothing on the page is dangerouslySetInnerHTML', /data-internal=\{dim/.test(deskPageSrc) && /opacity-55/.test(deskPageSrc) && /href=\{e\.txUrl\}/.test(deskPageSrc) && !/basescan\.org|etherscan\.io/.test(deskPageSrc) && !/dangerouslySetInnerHTML/.test(deskPageSrc) && !/dangerouslySetInnerHTML/.test(deskSectionSrc))
+    const SB = await import('../components/DashboardSidebar')
+    check('desk wiring: the admin rail has a Desk log row under Growth, and only the MOST specific section lights (Desk log, not Growth too)', /href: '\/dashboard\/admin\/desk', label: 'Desk log'/.test(dFs.readFileSync('components/DashboardSidebar.tsx', 'utf8')) && SB.activeSectionHref('/dashboard/admin/desk', '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0') === '/dashboard/admin/desk' && SB.activeSectionHref('/dashboard/admin', '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0') === '/dashboard/admin' && SB.activeSectionHref('/dashboard/admin/flows', '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0') === '/dashboard/admin' && SB.currentSectionLabel('/dashboard/admin/desk', '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0') === 'Desk log')
+
+    // The wire: gate, shape, and one internal intent through the real desk MCP.
+    const dAnon = await fetch(`${BASE}/api/admin/desk`)
+    const dNonAdmin = await fetch(`${BASE}/api/admin/desk`, { headers: C })
+    check('desk route: 401 signed out, 403 for a signed-in non-admin', dAnon.status === 401 && dNonAdmin.status === 403)
+    const dPk = (() => {
+      try {
+        return dFs.readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null
+      } catch {
+        return null
+      }
+    })()
+    if (!dPk) console.log('  desk route (admin): SKIPPED (no PRIVATE_KEY in .env.local)')
+    else {
+      const dAcct = privateKeyToAccount((dPk.startsWith('0x') ? dPk : `0x${dPk}`) as `0x${string}`)
+      const dSession = await signIn(dAcct)
+      const dHead = { cookie: dSession }
+      const dRead = async (q: string) => (await fetch(`${BASE}/api/admin/desk?${q}`, { headers: dHead })).json() as Promise<{ windowDays: number; external: boolean; filters: { stage: string | null }; rows: import('../lib/desk-activity').DeskLogRow[]; summary: import('../lib/desk-activity').DeskGrowth; hidden: { internal: number; team: number }; failed: string[]; total: number }>
+      const d0 = await dRead('days=999&stage=bogus')
+      check('desk route: an admin gets the shape — a bad window falls to 30, a bad stage is ignored, every row folded (events sorted, stage from the enum), nothing failed', d0.windowDays === 30 && d0.filters.stage === null && Array.isArray(d0.rows) && d0.rows.every((r) => (D.DESK_STAGES as readonly string[]).includes(r.stage) && r.events.every((e, i, a) => i === 0 || Date.parse(a[i - 1].at) <= Date.parse(e.at))) && d0.summary.windowDays === 30 && d0.failed.length === 0, JSON.stringify({ failed: d0.failed, n: d0.rows.length }))
+
+      // One internal intent through the real desk MCP (x-yf-internal-run), agent-signed path.
+      const DESK_URL = `${BASE}/api/broker/mcp`
+      let dId = 0
+      let dMcp: string | null = null
+      const dRpc = async (method: string, params?: unknown) => {
+        const res = await fetch(DESK_URL, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1', ...(dMcp ? { 'mcp-session-id': dMcp } : {}) }, body: JSON.stringify({ jsonrpc: '2.0', id: ++dId, method, params }) })
+        dMcp = res.headers.get('mcp-session-id') ?? dMcp
+        const raw = await res.text()
+        const data = raw.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).find((l) => l.includes(`"id":${dId}`))
+        return data ? JSON.parse(data).result : undefined
+      }
+      const dCall = async (name: string, args: Record<string, unknown>) => {
+        const r = await dRpc('tools/call', { name, arguments: args })
+        const text: string = r?.content?.find((c: { type: string; text?: string }) => c.type === 'text')?.text ?? ''
+        return { isError: !!r?.isError, text, payload: text && !r?.isError ? (JSON.parse(text) as Record<string, unknown>) : null }
+      }
+      await dRpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'harness-desk-ui', version: '0' } })
+      await dRpc('notifications/initialized')
+      const dAsk = `swap 1 USDC for ETH on base, then send 0.5 USDC on base to ${dAcct.address}`
+      const dOpen = await dCall('broker_open', { ask: dAsk, agent: 'UI harness agent', agent_key: 'ui-harness-desk-key', wallet: dAcct.address })
+      if (dOpen.isError && /not accepting new intents/.test(dOpen.text)) console.log('  desk route (fixture): SKIPPED (BROKER_DESK_ENABLED is off on the server under test)')
+      else {
+        const dIntent = String(dOpen.payload?.intentId ?? '')
+        check('desk fixture: the desk opened an internal intent for the harness agent', !dOpen.isError && /^[A-Za-z0-9_-]{6,}$/.test(dIntent), dOpen.text.slice(0, 160))
+        const dIssuedAt = new Date().toISOString() // round 2 (DRIVE): the consent names the instant it was signed
+        const consent = ['Pantessa agent desk — execute consent', `Intent: ${dIntent}`, `Wallet: ${dAcct.address.toLowerCase()}`, `Issued at: ${dIssuedAt}`, "Signing lets the desk compile this intent into a job owned by this wallet. It moves nothing by itself; every leg still needs this wallet's own signature."].join('\n')
+        const dExec = await dCall('broker_execute', { intent_id: dIntent, wallet_signature: await dAcct.signMessage({ message: consent }), issued_at: dIssuedAt, agent_key: 'ui-harness-desk-key' })
+        const dJob = typeof dExec.payload?.jobId === 'string' ? (dExec.payload.jobId as string) : null
+        check('desk fixture: broker_execute compiled the sequenced ask into a job the agent drives (or refused by name)', !dExec.isError ? !!dJob : /does not compile|cap|identity|venue|refus/i.test(dExec.text), dExec.text.slice(0, 200))
+        const d1 = await dRead('days=7')
+        const mine = d1.rows.find((r) => r.intentId === dIntent)
+        check('desk route: the harness intent reads back FLAGGED internal, on the agent path, its ask + wallet + handle intact, and counts nowhere (hidden.internal ≥ 1, external=1 drops it)', !!mine && mine.isInternal && mine.ask === dAsk && mine.wallet === dAcct.address.toLowerCase() && !!mine.agentHandle && mine.agentName === 'UI harness agent' && (dJob ? mine.path === 'agent' && mine.jobId === dJob : mine.path === 'none') && d1.hidden.internal >= 1 && !(await dRead('days=7&external=1')).rows.some((r) => r.intentId === dIntent), JSON.stringify(mine ? { ...mine, events: mine.events.length } : null))
+        check('desk route: the window\'s summary is folded from counted rows only — never more opened than the non-internal rows in the window', d1.summary.funnel.opened <= d1.rows.filter((r) => !r.isInternal).length && d1.summary.funnel.executed <= d1.summary.funnel.opened)
+        const byStage = await dRead(`days=7&stage=${mine?.stage ?? 'opened'}`)
+        const byAgent = await dRead('days=7&agent=ui%20harness')
+        check('desk route: ?stage and ?agent filter the rows and leave the summary alone', byStage.rows.every((r) => r.stage === (mine?.stage ?? 'opened')) && byAgent.rows.some((r) => r.intentId === dIntent) && byAgent.rows.every((r) => /ui harness/i.test(r.agentName ?? '')) && byAgent.summary.funnel.opened === d1.summary.funnel.opened)
+        if (dJob) {
+          const dPoll = (await (await fetch(`${BASE}/api/jobs/${dJob}`, { headers: dHead })).json()) as { job?: { steps: { seq: number; status: string; kind: string }[] } }
+          const offered = dPoll.job?.steps.find((s) => s.status === 'offered')
+          const ev = mine?.events.map((e) => e.kind) ?? []
+          check('desk route: the executed intent\'s timeline reads opened → consent → compiled, then the runner\'s own verdict on leg 0 (built while offered, else refused/failed by name — nothing was signed)', ev.slice(0, 3).join(',') === 'opened,consent,compiled' && (offered ? ev.includes('built') : true) && !ev.includes('claimed') && (mine?.legs.signed ?? 1) === 0, JSON.stringify({ ev, leg0: dPoll.job?.steps[0]?.status }))
+        }
+        await dCall('broker_close', { intent_id: dIntent })
+        const gDesk = (await (await fetch(`${BASE}/api/admin/growth?days=7`, { headers: dHead })).json()) as { desk: import('../lib/desk-activity').DeskGrowth | null }
+        const d7 = await dRead('days=7')
+        check('desk on Growth: /api/admin/growth carries the SAME desk summary /api/admin/desk folds for the same window (one loader, two screens)', !!gDesk.desk && gDesk.desk.windowDays === 7 && gDesk.desk.funnel.opened === d7.summary.funnel.opened && gDesk.desk.moneyUsd === d7.summary.moneyUsd && gDesk.desk.agents === d7.summary.agents, JSON.stringify({ g: gDesk.desk?.funnel, d: d7.summary.funnel }))
+      }
+      const dPage = await fetch(`${BASE}/dashboard/admin/desk`, { headers: dHead })
+      check('desk page: /dashboard/admin/desk serves (200) inside the dashboard shell for an admin session', dPage.status === 200 && /dashboard/i.test(await dPage.text()))
+    }
   }
 
 

@@ -23,7 +23,8 @@ import { CONFIDENTIAL_LEVEL, crossChainValueUsd, expectedOriginChainId, guardCro
 import { floorBlockFromError, floorProblemLine } from '@/lib/venue-floor'
 import { PRIVATE_LANE_CLOSED_NOTE, privateLaneOpen } from '@/lib/private-lane'
 import { buildHlExecTurn, readHlCollateralUsd, type HlIntent } from '@/lib/hyperliquid-exec'
-import { withHlBatch, batchCompletionVerdict } from '@/lib/hl-batch'
+import { withHlBatch, batchCompletionVerdict, hlCreditArrival, hlCreditSettled, type HlCreditArrival } from '@/lib/hl-batch'
+import { fenceLegResult, recordJobStepMoney } from '@/lib/job-step-money'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import type { GuardianArmAsk } from '@/lib/hl-guardian'
 import { LINK_SWAP_FEE_BPS } from '@/lib/fees'
@@ -413,7 +414,16 @@ export async function buildSignArtifact(
     // one pass; the browser JobCard keeps reading hl.pre + hl.action. A composed
     // batch that fails its own guard is a builder bug — refuse the offer.
     if (turn.orderRequest) return { artifact: { orderRequest: withHlBatch(turn.orderRequest) }, guardReport: turn.guardrails, valueUsd: turn.guardrails?.valueUsd ?? null, buildPath: asBuildPath(turn.buildPath) }
-    if (turn.txRequest) return { artifact: { txRequest: turn.txRequest }, guardReport: turn.guardrails, valueUsd: turn.guardrails?.valueUsd ?? null, buildPath: asBuildPath(turn.buildPath) }
+    if (turn.txRequest) {
+      // The deposit's credit is a settlement boundary: record the collateral the account shows
+      // NOW so the `hl-credit` wait settles on the DELTA (lib/hl-batch hlCreditSettled) — a level
+      // alone passed for any account that already held collateral (DRIVE F5). Unreadable → no
+      // baseline → the wait keeps the legacy level rule.
+      const depositUsd = Number((params as { amountUsdc?: unknown }).amountUsdc)
+      const baseline = Number.isFinite(depositUsd) && depositUsd > 0 ? await readHlCollateralUsd(wallet).catch(() => NaN) : NaN
+      const arrival: HlCreditArrival | undefined = Number.isFinite(baseline) ? hlCreditArrival(baseline, depositUsd) : undefined
+      return { artifact: { txRequest: turn.txRequest, ...(arrival ? { arrival } : {}) }, guardReport: turn.guardrails, valueUsd: turn.guardrails?.valueUsd ?? null, buildPath: asBuildPath(turn.buildPath) }
+    }
     throw new Error(turn.reply.replace(/^[^\w]+/, ''))
   }
   if (builder === 'native-lido') {
@@ -695,9 +705,20 @@ async function evaluateWait(
 
   if (pred.kind === 'hl-credit') {
     // Unified accounts sweep a landed deposit into spot USDC, so the perp
-    // `withdrawable` alone would never see it (hlCollateralUsd).
-    const withdrawable = await readHlCollateralUsd(job.wallet)
-    if (withdrawable >= (pred.minUsd ?? 1)) return { done: true, result: { withdrawableUsd: withdrawable } }
+    // `withdrawable` alone would never see it (hlCollateralUsd). Settles on the
+    // DELTA from the baseline the deposit step recorded at build (artifact.arrival,
+    // lib/hl-batch); a job compiled before baselines existed keeps the level rule.
+    const depositStep = [...job.steps].reverse().find((s) => s.seq < seq && s.builder === 'native-hl-exec' && (s.artifact as { arrival?: HlCreditArrival } | null)?.arrival?.kind === 'hl-credit')
+    const arrival = (depositStep?.artifact as { arrival?: HlCreditArrival } | null)?.arrival ?? null
+    let collateral: number
+    try {
+      collateral = await readHlCollateralUsd(job.wallet)
+    } catch {
+      return {} // a venue read that failed is "not yet", never arrival — the timeout still bounds the wait
+    }
+    if (hlCreditSettled(collateral, arrival, pred.minUsd ?? 1)) {
+      return { done: true, result: { withdrawableUsd: collateral, ...(arrival ? { baselineUsd: arrival.baselineUsd, creditedUsd: Number((collateral - arrival.baselineUsd).toFixed(2)) } : {}) } }
+    }
     return {}
   }
 
@@ -716,6 +737,12 @@ export async function completeSignStep(
   if (!job || job.wallet !== wallet.toLowerCase()) return { ok: false, error: 'job not found' }
   const step = job.steps.find((s) => s.seq === seq)
   if (!step || step.kind !== 'sign') return { ok: false, error: 'not a sign step' }
+  // The fence (QA A2/F6, lib/job-step-money): only the keys the wire names, a well-formed hash,
+  // a bounded body — refused rather than reshaped, and the step stays offered. One fence for both
+  // doors (the REST route and the desk's broker_done post through here).
+  const fenced = fenceLegResult(result)
+  if (!fenced.ok) return { ok: false, error: `result refused: ${fenced.reason}` }
+  result = fenced.result
   // THE BATCH RULE (lib/hl-batch, agent-desk C2): a completion whose `result.batch`
   // stops at a failed member does NOT finish the step — it goes back to pending
   // with the partial result kept, and the next build re-offers from the failed
@@ -739,6 +766,19 @@ export async function completeSignStep(
   }
   const claim = await prisma.jobStep.updateMany({ where: { id: step.id, status: 'offered' }, data: { status: 'done', result: result as object } })
   if (claim.count !== 1) return { ok: false, error: 'step is not awaiting a signature' }
+  // ONE server-side money writer (lib/job-step-money, agent-desk round-2 decision 1): every sign
+  // step's money row is booked HERE — browser or agent — receipt-verified, internal from the job
+  // row; the browser beacon for the same step is deduped at the telemetry route. Fail-soft.
+  await recordJobStepMoney({
+    jobId,
+    seq,
+    wallet: job.wallet,
+    builder: step.builder,
+    artifact: step.artifact,
+    valueUsd: step.valueUsd ?? null,
+    result,
+    internal: job.isInternal === true,
+  })
   await prisma.job.update({ where: { id: jobId }, data: { currentStep: seq + 1, status: 'running' } })
   const fresh = await getJobWithSteps(jobId)
   if (fresh) await advanceJob(fresh).catch(() => {})

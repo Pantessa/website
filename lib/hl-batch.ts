@@ -15,6 +15,17 @@
 // never composes an action of its own; it re-derives each member's typed data from its action +
 // nonce and refuses the offer when anything disagrees (jsonb sorts keys, msgpack doesn't — #850).
 // The browser JobCard keeps reading `hl.pre` + `hl.action`; `batch` is additive.
+//
+// PER-MEMBER SAFETY (QA F5, the five requirements): there is NO batch endpoint. Each member is
+// its own `POST /api/hl/submit` call carrying its OWN `expected`, so per member the relay (1)
+// reads the live market for that `expected` and pins the action to it (`asset-pinned`), (2)
+// accepts only the action types it knows (`order` | `updateLeverage`; this guard refuses any
+// other type at OFFER time so an agent never signs one), (3) age-checks that member's own nonce
+// (`HL_NONCE_MAX_AGE_MS` — a batch submitted slowly goes stale mid-flight and stops there),
+// (4) runs the wallet's spend policy + kill switch, and (5) a refused member ends the batch:
+// the completion records exactly which member failed (`result.batch[i].ok === false`) and the
+// runner re-offers from it. Batching changes WHEN the agent signs (one pass), never WHAT is
+// guarded (each action, alone, as today).
 
 import {
   canonicalizeHlAction,
@@ -187,4 +198,38 @@ export function batchCompletionVerdict(result: unknown): HlBatchVerdict {
   const e = entries[failedIndex]
   const error = typeof e?.error === 'string' && e.error ? e.error.slice(0, 300) : `member ${failedIndex + 1} did not answer ok`
   return { kind: 'reoffer', failedIndex, submitted: entries.length, error }
+}
+
+/* ── the settlement boundary before the batch: the deposit's credit ───── */
+
+/** What a Hyperliquid deposit step records at BUILD time so the `hl-credit` wait can settle on a
+ *  DELTA (DRIVE F5 / round-2 decision 8): the collateral the account showed before the deposit,
+ *  and how much must land on top of it. A level alone ("collateral ≥ N") passes for an account
+ *  that already holds collateral before its deposit ever credits. */
+export interface HlCreditArrival {
+  kind: 'hl-credit'
+  /** Collateral (hlCollateralUsd) read right before the deposit was offered. */
+  baselineUsd: number
+  /** The deposit's dollars; the wait settles once ≥ hlCreditMinDelta of it shows on top. */
+  depositUsd: number
+}
+
+/** The tolerance the wait applies: 90% of the deposit, or all but $0.50 — whichever is smaller
+ *  (the bridge's own rounding + a unified account's sweep timing). */
+export function hlCreditMinDelta(depositUsd: number): number {
+  return Math.max(0, Math.min(depositUsd * 0.9, depositUsd - 0.5))
+}
+
+export function hlCreditArrival(baselineUsd: number, depositUsd: number): HlCreditArrival {
+  return { kind: 'hl-credit', baselineUsd: Number.isFinite(baselineUsd) ? Math.max(0, baselineUsd) : 0, depositUsd }
+}
+
+/** Pure verdict. With a baseline: settled when the collateral rose by ≥ the min delta. Without one
+ *  (a job compiled before baselines existed): the legacy level rule against `legacyMinUsd`. */
+export function hlCreditSettled(nowUsd: number, arrival: HlCreditArrival | null | undefined, legacyMinUsd: number): boolean {
+  if (!Number.isFinite(nowUsd)) return false
+  if (arrival && typeof arrival.baselineUsd === 'number' && typeof arrival.depositUsd === 'number') {
+    return nowUsd - arrival.baselineUsd >= hlCreditMinDelta(arrival.depositUsd)
+  }
+  return nowUsd >= legacyMinUsd
 }

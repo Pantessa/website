@@ -20,6 +20,8 @@ import {
   type GrowthSource,
   type GrowthTurnRow,
 } from '@/lib/admin-growth'
+import { countedDeskRows, deskGrowthSummary, type DeskGrowth } from '@/lib/desk-activity'
+import { deskSince, readDeskRows } from '@/app/api/admin/desk/read'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -350,10 +352,22 @@ export async function GET(req: NextRequest) {
   const eng = engagement[0] ?? null
   const funnelOf = (k: string) => linkFunnel.find((f) => f.kind === k) ?? { n: 0, wallets: 0 }
 
+  // The Desk section (squad agent-desk, C5): the same loader /api/admin/desk reads, so the
+  // two screens can never disagree. Fail-soft like every other section.
+  const desk = await soft<DeskGrowth | null>(
+    'desk',
+    (async () => {
+      const read = await readDeskRows(deskSince(days, now))
+      return deskGrowthSummary(countedDeskRows(read.rows, external), days, now)
+    })(),
+    null,
+  )
+
   return NextResponse.json({
     windowDays: days,
     external,
     generatedAt: new Date(now).toISOString(),
+    desk,
     tiles: {
       volumeUsd: r2(cur.volumeUsd),
       volumeDelta: deltaPct(cur.volumeUsd, prev.volumeUsd),

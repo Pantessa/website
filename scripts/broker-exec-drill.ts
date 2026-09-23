@@ -46,6 +46,7 @@ const ASK =
 const OPTION = process.env.OPTION ?? ''
 const MAX_TICKS = Number(process.env.MAX_TICKS ?? '120')
 const INTERNAL_HEADERS = { 'x-yf-internal-run': '1' }
+const AGENT_KEY_ID = process.env.AGENT_KEY_ID ?? 'payer-agent-drill-key'
 
 function say(who: 'desk' | 'agent' | 'jobapi' | 'chain' | 'venue', text: string) {
   const tag =
@@ -176,7 +177,7 @@ async function main() {
       name: 'broker_open',
       // agent_key binds the desk identity (M1); the wallet is PROVEN below by
       // signing the desk's consent text with this same key.
-      arguments: { ask: ASK, wallet: account.address, agent: 'payer-agent', agent_key: 'payer-agent-drill-key' },
+      arguments: { ask: ASK, wallet: account.address, agent: 'payer-agent', agent_key: AGENT_KEY_ID },
     }),
   )
   const intentId = open.intentId as string
@@ -188,9 +189,12 @@ async function main() {
     say('agent', `chose ${OPTION} → working ask "${(open.plan as { ask: string }).ask}"`)
   }
 
-  const walletSignature = await account.signMessage({ message: deskExecuteConsentMessage(intentId, account.address) })
+  // The consent names the instant it was signed (a both-ways 10-minute window) and travels with
+  // the same desk identity that opened the intent.
+  const issuedAt = new Date().toISOString()
+  const walletSignature = await account.signMessage({ message: deskExecuteConsentMessage(intentId, account.address, issuedAt) })
   const exec = parsePayload(
-    await client.callTool({ name: 'broker_execute', arguments: { intent_id: intentId, wallet_signature: walletSignature } }),
+    await client.callTool({ name: 'broker_execute', arguments: { intent_id: intentId, wallet_signature: walletSignature, issued_at: issuedAt, agent_key: AGENT_KEY_ID } }),
   )
   const steps = exec.steps as { seq: number; kind: string; note: string }[]
   say('desk', exec.say as string)
