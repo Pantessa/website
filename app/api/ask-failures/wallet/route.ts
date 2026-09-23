@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { bumpAndCheckBrokerCall, clientIpFrom } from '@/lib/turn-limits'
-import { REFUNDED_KIND, WALLET_REFUSAL_KIND, WITHHELD_KIND, isReportableWalletError } from '@/lib/wallet-refusal'
+import { LAUNCH_DROPPED_KIND, REFUNDED_KIND, WALLET_REFUSAL_KIND, WITHHELD_KIND, isReportableWalletError } from '@/lib/wallet-refusal'
 import { isInternalRun } from '@/lib/internal-run'
 
 export const runtime = 'nodejs'
@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic'
 // x-yf-no-ask-log, and a bad beacon is a 202, never an error.
 
 const cap = (v: unknown, n: number): string | null => (typeof v === 'string' && v.trim() ? v.trim().slice(0, n) : null)
-const ARTIFACTS = new Set(['hl-order', 'hl-leverage', 'hl-agent', 'cow-order', 'tx', 'tx-chain', 'vote', 'opensea-listing', 'siwe'])
+const ARTIFACTS = new Set(['hl-order', 'hl-leverage', 'hl-agent', 'cow-order', 'tx', 'tx-chain', 'vote', 'opensea-listing', 'siwe', 'consent', 'wallet-app'])
 
 export async function POST(req: NextRequest) {
   if (req.headers.get('x-yf-no-ask-log') === '1') {
@@ -37,8 +37,18 @@ export async function POST(req: NextRequest) {
   // `refunded`: the signature landed, the deposit confirmed, and the VENUE
   // sent the money back (lib/xchain-settlement). Same queue, its own kind,
   // and no rejection gate — the words are the venue's.
+  // `launch-dropped`: a phone never switched to the wallet app (lib/wallet-
+  // handoff's watch; lib/wallet-refusal launchDroppedReport). Same queue, its
+  // own kind, no rejection gate — the words are ours, the visitor never saw
+  // a prompt to say no to.
   const kind =
-    body.kind === WITHHELD_KIND ? WITHHELD_KIND : body.kind === REFUNDED_KIND ? REFUNDED_KIND : WALLET_REFUSAL_KIND
+    body.kind === WITHHELD_KIND
+      ? WITHHELD_KIND
+      : body.kind === REFUNDED_KIND
+        ? REFUNDED_KIND
+        : body.kind === LAUNCH_DROPPED_KIND
+          ? LAUNCH_DROPPED_KIND
+          : WALLET_REFUSAL_KIND
   if (!artifact || !detail || !ask) return NextResponse.json({ ok: false, dropped: 'shape' }, { status: 202 })
   if (kind === WALLET_REFUSAL_KIND && !isReportableWalletError(detail)) return NextResponse.json({ ok: true, skipped: 'rejection' }, { status: 202 })
   if (await bumpAndCheckBrokerCall(clientIpFrom(req.headers))) return NextResponse.json({ ok: false, dropped: 'rate' }, { status: 202 })
@@ -62,7 +72,9 @@ export async function POST(req: NextRequest) {
             ? `withheld before signing${chainId ? ` · chain ${chainId}` : ''} — the artifact was built and guarded; the dry-run (or the chain) was the wall.`
             : kind === REFUNDED_KIND
               ? `refunded after signing${chainId ? ` · chain ${chainId}` : ''} — the deposit confirmed on-chain and the venue returned it; nothing reached the destination.`
-              : `wallet refused at signing${connector ? ` · ${connector}` : ''}${chainId ? ` · wallet on chain ${chainId}` : ''} — the artifact was built and guarded; the wallet was the wall.`,
+              : kind === LAUNCH_DROPPED_KIND
+                ? `phone stall${connector ? ` · ${connector}` : ''}${chainId ? ` · wallet on chain ${chainId}` : ''} — the request reached the wallet app's queue; the browser refused to switch to the app (no tap behind the request).`
+                : `wallet refused at signing${connector ? ` · ${connector}` : ''}${chainId ? ` · wallet on chain ${chainId}` : ''} — the artifact was built and guarded; the wallet was the wall.`,
         isInternal: internalRun,
       },
       select: { id: true },

@@ -21,6 +21,8 @@ import SendTxButton from '@/components/SendTxButton'
 import { reportWalletRefusal, WITHHELD_KIND } from '@/lib/wallet-refusal'
 import type { TxChainRequest, TxChainStep } from '@/lib/transaction-layer'
 import { chainById } from '@/lib/chains'
+import { autoFireAllowed, continueCopy, oneMethodPerTap } from '@/lib/sign-round-trip'
+import { usePlatform } from '@/lib/use-sign-round-trip'
 
 // Explorer links come from the app chain registry (lib/chains); this local
 // map only covers non-registry chains the app can still broadcast on.
@@ -45,7 +47,10 @@ export default function SendTxChain({
    * callers can persist the full signing log (job results, message meta). */
   onCompleted?: (info: { hash: string; chainId: number; txs: Array<{ hash: string; chainId: number; title: string }> }) => void
 }) {
-  const { address } = useAccount()
+  const { address, connector } = useAccount()
+  // On a phone the wallet is another app: step N>1 is a TAP, never a
+  // mount-time request (lib/sign-round-trip — the launch would be dropped).
+  const platform = usePlatform()
   const [steps, setSteps] = useState<TxChainStep[]>(chain.steps)
   const [current, setCurrent] = useState(0)
   const [phase, setPhase] = useState<Phase>('sign')
@@ -190,6 +195,19 @@ export default function SendTxChain({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current, currentValidUntil, phase, refreshTick, address])
 
+  // Back from the wallet app (or a parked tab): timers were throttled while
+  // the page was hidden, so re-arm the deadline watch the moment it shows —
+  // a step whose quote died while the visitor was away is re-quoted before
+  // it is offered, never offered dead.
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') setRefreshTick((t) => t + 1)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
   const explorerFor = (step: TxChainStep) => {
     const id = step.tx.chainId ?? 8453
     return chainById(id)?.explorerTx ?? TX_EXPLORER[id] ?? 'https://basescan.org/tx/'
@@ -274,22 +292,29 @@ export default function SendTxChain({
                 <div className="ml-6">
                   {note && <div className="text-[11px] text-[color:var(--muted)] mb-1">{note}</div>}
                   {/* keyed by step so the inner Sign→Broadcast→Confirmed stepper resets per step.
-                      Steps after the first auto-request the wallet signature on mount — the user
-                      already committed by signing step 1; popup follows popup, no button hunt. */}
+                      On a desktop, steps after the first auto-request the wallet signature on
+                      mount — the user already committed by signing step 1; popup follows popup,
+                      no button hunt. On a phone every step is its own tap (the visitor came
+                      back from the wallet app; a mount-time request has no tap behind it and
+                      the browser drops the app launch) — the button says which step it is. */}
                   <SendTxButton
                     key={i}
                     tx={step.tx}
                     summary={step.title}
-                    autoFire={i > 0 && !manualSteps}
+                    autoFire={autoFireAllowed({ platform, stepIndex: i, manualSteps, connectorId: connector?.id, connectorName: connector?.name })}
+                    ctaLabel={oneMethodPerTap(platform) ? continueCopy({ stepIndex: i, total: steps.length, title: step.title, app: connector?.name }).label : undefined}
                     onConfirmed={(hash) => void advance(i, hash)}
                     refusalArtifact="tx-chain"
                     refusalBuildPath={chain.refresh?.kind}
                   />
                   {/* The auto-advance reads as "why twice?" to a first-timer:
-                      say up front that the next popup follows on its own. */}
+                      say up front how the next step arrives — on its own (desktop)
+                      or on the next tap (phone). */}
                   {i < steps.length - 1 && (
-                    <div className="mt-1 text-[11px] text-[color:var(--muted-2)]">
-                      Once this confirms, the next step ({steps[i + 1].title}) opens in your wallet automatically — no button hunt.
+                    <div className="mt-1 text-[11px] text-[color:var(--muted-2)]" data-chain-next={oneMethodPerTap(platform) ? 'tap' : 'auto'}>
+                      {oneMethodPerTap(platform)
+                        ? continueCopy({ stepIndex: i, total: steps.length, title: steps[i + 1].title, app: connector?.name }).hint
+                        : `Once this confirms, the next step (${steps[i + 1].title}) opens in your wallet automatically — no button hunt.`}
                     </div>
                   )}
                 </div>

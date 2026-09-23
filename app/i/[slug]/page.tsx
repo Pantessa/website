@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { headers } from 'next/headers'
 import prisma from '@/lib/db'
 import { brandFromRow } from '@/lib/brand-denylist'
 import { INTENT_SLUG_RE, linkLifecycle, type LinkLifecycle } from '@/lib/intent-links'
@@ -10,6 +11,7 @@ import { notifyEligible } from '@/lib/broker-webhook'
 import { MANDATE_KIND_LABELS, type MandateKind } from '@/lib/roster-client'
 import IntentRuntime from '@/components/IntentRuntime'
 import { getSessionAddress } from '@/lib/auth'
+import { inAppBrowserOf } from '@/lib/inapp-browser'
 
 // /i/<slug> — an intent link's runtime. The link row carries the ASK (a
 // sentence, sanitized at mint) + the composed MCP set + an optional
@@ -154,6 +156,11 @@ export default async function IntentLinkPage({ params }: Params) {
   // Content-origin fence (SECURITY-AUDIT §E5), decided SERVER-SIDE: the row's
   // mint-time stamp OR a fresh read of the phrasing actually shown (legacy
   // rows, A/B variants). A held link PREFILLS — the visitor presses send.
+  // The browser this link opened in (mobile-onboarding squad): a tweet or a
+  // DM opens /i inside the app's OWN browser, where a wallet app can't be
+  // launched at all. Read from the request UA so the escape line is in the
+  // server HTML (the client re-derives the same verdict).
+  const browser = inAppBrowserOf((await headers()).get('user-agent'))
   const shownVerdict = outboundToThirdParty(phrasings[variant])
   const prefillOnly = link.outboundThirdParty || shownVerdict.outbound
   const holdCopy = prefillOnly ? outboundHoldCopy(shownVerdict.outbound ? shownVerdict : { outbound: true, reasons: ['transfer-target'] }) : ''
@@ -175,6 +182,7 @@ export default async function IntentLinkPage({ params }: Params) {
       roster={roster}
       recipient={link.recipient ?? null}
       ownLink={ownLink}
+      browser={browser}
     />
   )
 }

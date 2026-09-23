@@ -14,6 +14,9 @@ import { useState } from 'react'
 import { useAccount, usePublicClient, useSendTransaction, useSignTypedData, useSwitchChain } from 'wagmi'
 import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink } from 'lucide-react'
 import type { Eip712OrderRequest } from '@/lib/transaction-layer'
+import { reportWalletRefusal, walletErrorWords } from '@/lib/wallet-refusal'
+import { oneMethodPerTap } from '@/lib/sign-round-trip'
+import { usePlatform } from '@/lib/use-sign-round-trip'
 
 type Status = 'idle' | 'approving' | 'signing' | 'placing' | 'live' | 'error'
 
@@ -35,7 +38,8 @@ export default function SignNftListingButton({
    *  to the host page as an 'order-signed' event. */
   onPlaced?: (info: { orderUid: string | null; explorerUrl: string | null }) => void
 }) {
-  const { address, isConnected } = useAccount()
+  const { address, isConnected, connector, chain: connectedChain } = useAccount()
+  const platform = usePlatform()
   const { signTypedDataAsync } = useSignTypedData()
   const { sendTransactionAsync } = useSendTransaction()
   const { switchChainAsync } = useSwitchChain()
@@ -44,6 +48,7 @@ export default function SignNftListingButton({
   const [error, setError] = useState('')
   const [openseaUrl, setOpenseaUrl] = useState<string | null>(null)
   const [approved, setApproved] = useState(false)
+  const [note, setNote] = useState('')
 
   // Only OpenSea listings are placeable here; other protocols render nothing
   // rather than offering a button that can't finish.
@@ -72,12 +77,24 @@ export default function SignNftListingButton({
       setError(`Connected wallet ${address.slice(0, 6)}… ≠ listing owner ${offerer.slice(0, 6)}…`)
       return
     }
+    setNote('')
+    // Which wallet method is running, for the refusal row (the wallet's "no"
+    // to an approve is a different wall from its "no" to the typed data).
+    let phase: 'switch' | 'approve' | 'sign' | 'relay' = 'switch'
     try {
       // The domain carries chainId — wallets refuse typed-data signatures on
-      // the wrong network (and report it as "User rejected").
-      await switchChainAsync({ chainId }).catch(() => {})
+      // the wrong network (and report it as "User rejected"). On a phone the
+      // switch is a trip to the wallet app: its own tap.
+      if (connectedChain?.id !== chainId) {
+        await switchChainAsync({ chainId }).catch(() => {})
+        if (oneMethodPerTap(platform)) {
+          setNote('Network switched — tap to continue.')
+          return
+        }
+      }
 
       if (needsApproval && order.prereqTx) {
+        phase = 'approve'
         setStatus('approving')
         const hash = await sendTransactionAsync({
           to: order.prereqTx.to as `0x${string}`,
@@ -87,10 +104,20 @@ export default function SignNftListingButton({
         })
         await publicClient?.waitForTransactionReceipt({ hash })
         setApproved(true)
+        // Phone: the approval was this tap's wallet method; the signature
+        // that used to follow would fire with no tap behind it and the app
+        // launch would be dropped (lib/sign-round-trip). Re-arm.
+        if (oneMethodPerTap(platform)) {
+          setStatus('idle')
+          setNote('Approved — tap to sign the listing.')
+          return
+        }
       }
 
+      phase = 'sign'
       setStatus('signing')
       const signature = await signTypedDataAsync(typedData as unknown as Parameters<typeof signTypedDataAsync>[0])
+      phase = 'relay'
 
       setStatus('placing')
       const res = await fetch(order.submitUrl ?? '/api/opensea/submit', {
@@ -106,7 +133,17 @@ export default function SignNftListingButton({
       setStatus('live')
       onPlaced?.({ orderUid: orderHash, explorerUrl: url })
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Signing failed.'
+      const msg = e instanceof Error ? walletErrorWords(e) : 'Signing failed.'
+      // The WALLET refused a built + guarded approve or listing: a
+      // /dashboard/failures row like every other sign surface files (a human
+      // "no" is dropped inside the beacon). Relay errors are OpenSea's.
+      if (phase === 'approve' || phase === 'sign') {
+        reportWalletRefusal({
+          wallet: address, artifact: 'opensea-listing', buildPath: 'native-nft-list',
+          connector: connector?.id ?? connector?.name, chainId: connectedChain?.id,
+          ask: `${summary ?? 'OpenSea listing'} (${phase})`, detail: msg,
+        })
+      }
       setError(/rejected|denied/i.test(msg) ? 'Rejected in the wallet — nothing was listed. (If you didn’t cancel: check the wallet network.)' : msg)
       setStatus('error')
     }
@@ -186,6 +223,7 @@ export default function SignNftListingButton({
                       ? 'Approve & list on OpenSea'
                       : 'Sign & list on OpenSea'}
           </button>
+          {note && <span className="text-[12px] text-[color:var(--muted)]" data-nft-rearmed="1">{note}</span>}
           {error && <span className="text-[12px] text-red-400">{error}</span>}
         </div>
       )}
