@@ -38,6 +38,7 @@ import { logRosterRefusalDirect } from '@/lib/roster-observe'
 import { moneyShaped } from '@/lib/ask-failure'
 import { MOSAIC_CHAIN_IDS, composeMosaicAsk, sanitizeMosaicSlices, type MosaicChainWord } from '@/lib/mosaic'
 import { recoverMessageAddress } from 'viem'
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { COUNTED_EVENT_WHERE, COUNTED_TURN_WHERE, reverifyPendingForSlug } from '@/lib/link-receipt-verify'
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.pantessa.com').replace(/\/$/, '')
@@ -589,7 +590,7 @@ export interface ExecuteResult {
  *  so a lying agent fails its own job closed one leg later. Every build
  *  passes the same deterministic builders + fail-closed guards + spend
  *  policy as a human turn. */
-export async function executeIntent(intentId: string, walletSignature: unknown, call?: DeskCallOpts): Promise<ExecuteResult> {
+export async function executeIntent(intentId: string, walletSignature: unknown, call?: DeskCallOpts, proof: DeskExecuteProof = {}): Promise<ExecuteResult> {
   assertDeskOpen()
   const row = await mustIntent(intentId)
   if (row.state !== 'open') throw new Error(`Intent ${intentId} is ${row.state} — execution starts from an open intent.`)
@@ -603,6 +604,13 @@ export async function executeIntent(intentId: string, walletSignature: unknown, 
   // must sit under the desk cap. Human handoff above carries neither gate —
   // a human signature is its own ceiling.
   assertAgentIdentity(row.agentKey)
+  // The CALLER's identity, not just the one the intent was opened with (QA F4): the desk key
+  // presented now must be the key bound at open, compared timing-safe. Anyone holding a stray
+  // consent signature still needs the key that opened the intent.
+  const callerKey = cleanAgentKey(proof.agentKey)
+  if (!callerKey || !row.agentKey || !sameSecret(callerKey, row.agentKey)) {
+    throw new Error('broker_execute needs the agent_key this intent was opened with — pass the same desk identity string you passed to broker_open.')
+  }
   assertUnderDeskCap(askUsd(row.ask))
   // THE ROSTER (R2, T5): a roster-bound intent re-checks its slot at the
   // BUILD gate — a fire that landed after open refuses here, and the slot
@@ -617,7 +625,7 @@ export async function executeIntent(intentId: string, walletSignature: unknown, 
   // path by definition, so it signs the desk's consent text — bound to THIS
   // intent id + wallet — and the desk recovers the signer before any job row
   // exists. Single-use by construction: the intent must still be `open`.
-  await assertWalletProof(row.id, row.wallet, walletSignature)
+  await assertWalletProof(row.id, row.wallet, walletSignature, proof.issuedAt)
 
   const compiled = await compileDeskAsk(row.ask, row.wallet)
 
@@ -789,27 +797,59 @@ export async function fireIntentWebhook(
 /** The consent text the agent's wallet signs (personal_sign) to prove it
  *  owns the wallet an agent-signed intent is bound to. Pure + exported so
  *  agents/harnesses build the identical bytes. */
-export function deskExecuteConsentMessage(intentId: string, wallet: string): string {
+export function deskExecuteConsentMessage(intentId: string, wallet: string, issuedAt: string): string {
   return [
     'Pantessa agent desk — execute consent',
     `Intent: ${intentId}`,
     `Wallet: ${wallet.toLowerCase()}`,
+    `Issued at: ${issuedAt}`,
     'Signing lets the desk compile this intent into a job owned by this wallet. It moves nothing by itself; every leg still needs this wallet\'s own signature.',
   ].join('\n')
 }
 
-async function assertWalletProof(intentId: string, wallet: string, signature: unknown): Promise<void> {
+/** Both-ways freshness window on the consent's `issuedAt` (QA F4, the on-ramp consent's rule). */
+export const DESK_CONSENT_WINDOW_MS = 10 * 60_000
+
+/** The caller's proof on the agent-signed path: the consent signature, the ISO instant it names,
+ *  and the desk identity the caller presents (compared timing-safe to the one bound at open). */
+export interface DeskExecuteProof {
+  issuedAt?: unknown
+  agentKey?: unknown
+}
+
+/** Pure: is this `issuedAt` an ISO instant inside the window, both ways? */
+export function deskConsentIssuedAtOk(issuedAt: unknown, now = Date.now()): { ok: true; iso: string } | { ok: false; why: string } {
+  if (typeof issuedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(issuedAt)) {
+    return { ok: false, why: 'issued_at is required — the ISO-8601 UTC instant the consent was signed at (e.g. 2026-09-23T11:02:03.000Z)' }
+  }
+  const t = Date.parse(issuedAt)
+  if (!Number.isFinite(t)) return { ok: false, why: 'issued_at is not a valid instant' }
+  if (t - now > DESK_CONSENT_WINDOW_MS) return { ok: false, why: `issued_at is more than ${DESK_CONSENT_WINDOW_MS / 60_000} minutes in the future` }
+  if (now - t > DESK_CONSENT_WINDOW_MS) return { ok: false, why: `this consent was issued more than ${DESK_CONSENT_WINDOW_MS / 60_000} minutes ago — sign a fresh one` }
+  return { ok: true, iso: issuedAt }
+}
+
+/** Timing-safe equality on two secrets of any length (hash first, so length never leaks). */
+function sameSecret(a: string, b: string): boolean {
+  const ha = createHash('sha256').update(a).digest()
+  const hb = createHash('sha256').update(b).digest()
+  return timingSafeEqual(ha, hb)
+}
+
+async function assertWalletProof(intentId: string, wallet: string, signature: unknown, issuedAt: unknown): Promise<void> {
   const refuse = (why: string): never => {
     throw new Error(
-      `broker_execute needs wallet_signature — ${why}. Sign the exact text of deskExecuteConsentMessage(intent_id, wallet) ` +
-        '(personal_sign / EIP-191) with the wallet you opened the intent for; the desk recovers the signer and refuses any other. ' +
+      `broker_execute needs wallet_signature — ${why}. Sign the exact text of deskExecuteConsentMessage(intent_id, wallet, issued_at) ` +
+        '(personal_sign / EIP-191) with the wallet you opened the intent for, and pass the same issued_at; the desk recovers the signer and refuses any other. ' +
         'For human signing, use broker_handoff — it needs no wallet proof.',
     )
   }
   if (typeof signature !== 'string' || !/^0x[0-9a-fA-F]{130}$/.test(signature)) return refuse('a 65-byte 0x signature over the consent text is required')
+  const fresh = deskConsentIssuedAtOk(issuedAt)
+  if (!fresh.ok) return refuse(fresh.why)
   let signer: string
   try {
-    signer = await recoverMessageAddress({ message: deskExecuteConsentMessage(intentId, wallet), signature: signature as `0x${string}` })
+    signer = await recoverMessageAddress({ message: deskExecuteConsentMessage(intentId, wallet, fresh.iso), signature: signature as `0x${string}` })
   } catch {
     return refuse('the signature does not verify against the consent text')
   }

@@ -5,6 +5,7 @@ import { isBuildPath } from '@/lib/build-path'
 import { INTENT_SLUG_RE } from '@/lib/intent-links'
 import type { OriginKind } from '@/lib/value-origin'
 import { COUNTED_VERIFICATIONS, verifyTurnNow, extractTxHash, chainIdOfTurn } from '@/lib/link-receipt-verify'
+import { jobStepMoneyAlreadyBooked } from '@/lib/job-step-money'
 import { grantEarnedAnswers } from '@/lib/earned-answers'
 import { sanitizeFillSymbols } from '@/lib/fill-symbols'
 import { isIndexSymbol } from '@/lib/viz/flow'
@@ -98,6 +99,12 @@ export async function POST(req: NextRequest) {
   if (artifact === 'job' || artifact === 'job-step') {
     originKind = 'job-step'
     const jobId = typeof body.jobId === 'string' && /^[a-z0-9]{20,32}$/i.test(body.jobId) ? body.jobId : null
+    // ONE money writer for job steps (lib/job-step-money, agent-desk round-2 decision 1): the
+    // runner books a signed step's row at completion, so the browser's own `signed` beacon for
+    // that step is a duplicate — answered as today (echo), written never.
+    if (jobId && artifact === 'job-step' && outcome === 'signed' && (await jobStepMoneyAlreadyBooked({ jobId, seq: body.seq, txUrl: str(body.txUrl, 300) ?? null }))) {
+      return NextResponse.json({ ok: true, deduped: true, ...(internalRun ? { internal: true } : {}) })
+    }
     if (jobId) {
       const job = await prisma.job.findUnique({ where: { id: jobId }, select: { source: true } }).catch(() => null)
       if (job?.source?.startsWith('dca:')) originKind = 'dca-run'
