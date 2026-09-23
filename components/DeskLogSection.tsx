@@ -35,7 +35,7 @@ function Delta({ value }: { value: number | null }) {
 
 function Stat({ label, value, delta, sub, lead }: { label: string; value: string; delta?: number | null; sub?: React.ReactNode; lead?: boolean }) {
   return (
-    <div className={`rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 min-w-0 ${lead ? 'ring-1 ring-[color:var(--accent,#34E0A1)]/30' : ''}`}>
+    <div className={`rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] p-4 min-w-0 ${lead ? 'tint-border-accent-40' : ''}`}>
       <p className="text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mono">{label}</p>
       <p className="flex items-baseline gap-2 flex-wrap mt-1">
         <span className="text-2xl font-semibold text-white tabular-nums break-all">{value}</span>
