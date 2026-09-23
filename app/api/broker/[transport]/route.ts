@@ -38,7 +38,11 @@
 //
 // So broker_next serves the offered leg and broker_done posts its result,
 // gated on the bound agent_key (timing-safe) and refusing any intent that
-// never executed. The safety that actually holds is untouched and is relaxed
+// never executed. Its answer carries a freshly minted job capability token in
+// `drive.*` — deliberately, and reviewed: the SAME identity already received
+// one at broker_execute, so re-minting leaks nothing new, and withholding it
+// would strand an agent that would rather finish over REST (or hand the job
+// to the SDK's driveJob) on a desk that is paused. The safety that actually holds is untouched and is relaxed
 // NOWHERE: deterministic builders write every transaction, every build is
 // guard-checked fail-closed at offer time, and money moves only through a
 // wallet signature. Every payload that is not the offered leg still passes
@@ -48,7 +52,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createMcpHandler } from 'mcp-handler'
 import { z } from 'zod'
 import { openIntent, chooseOption, handoffIntent, intentStatus, closeIntent, executeIntent, tileIntent, sendToInbox } from '@/lib/broker-exec'
-import { deskNext, deskDone } from '@/lib/desk-drive'
+import { deskNext, deskDone, chooseWithHistory, assertCloseAllowed } from '@/lib/desk-drive'
 import { clientIpFrom, bumpAndCheckBrokerCall } from '@/lib/turn-limits'
 import { pricingBlock } from '@/lib/broker-pricing'
 import { isInternalRun } from '@/lib/internal-run'
@@ -82,8 +86,10 @@ async function guarded<T>(run: () => Promise<T>) {
 /** The desk's own contract version. Bumped whenever the tool set or the
  *  trust model changes; `registry/desk.server.json` carries the same number,
  *  and the harness pins the two in sync. 0.2.0 = the agent-signed leg loop
- *  (broker_next / broker_done). */
-export const DESK_VERSION = '0.2.0'
+ *  (broker_next / broker_done). 0.3.0 = a venue-aware funding verdict on
+ *  Hyperliquid opens, the chosen option kept on the plan, and broker_close
+ *  gated on the identity that opened the intent. */
+export const DESK_VERSION = '0.3.0'
 
 const CAPABILITIES = [
   'Buy tokenized stocks (AAPL, TSLA, NVDA…) on Robinhood Chain — with automatic cross-chain funding when the money sits on Base/Ethereum/Arbitrum',
@@ -213,7 +219,11 @@ const handler = createMcpHandler(
           option_id: z.string().min(1).max(24),
         },
       },
-      async ({ intent_id, option_id }) => guarded(() => chooseOption(intent_id, option_id)),
+      async ({ intent_id, option_id }) =>
+        // The chosen option is KEPT on the plan (plan.chosen + plan.history):
+        // a rewrite with no record of what rewrote it is a quote, a final ask,
+        // and no account of how one became the other.
+        guarded(() => chooseWithHistory(intent_id, option_id, () => chooseOption(intent_id, option_id))),
     )
 
     server.registerTool(
@@ -237,7 +247,7 @@ const handler = createMcpHandler(
           'owned by that wallet and returns the job id + capability token + drive recipe. Then stay here: broker_next serves each leg as the runner ' +
           'builds it (guarded, policy-checked, one leg at a time) and broker_done posts what you signed and answers with the next one — the job API ' +
           'stays available for anything that would rather drive REST. Wait legs verify on-chain arrival before the next leg builds, so the order stays ' +
-          'synced around settlement: round-trip across every settlement boundary, batched within one. Only compiles SEQUENCED flows ' +
+          'synced around settlement. Round-trip across every settlement boundary, batched within one. Only compiles SEQUENCED flows ' +
           '(fund → wait → act); the intent must have been opened with your wallet. Completion is advancement, not proof — lying fails the job ' +
           'closed one leg later. '  +
           'wallet_signature PROVES the wallet: personal_sign (EIP-191) over the exact consent text ' +
@@ -351,11 +361,27 @@ const handler = createMcpHandler(
       {
         title: 'Walk away',
         description:
-          'Close the intent at any stage before a signature: revokes the bound sign link (it refuses new opens and leaves every board). ' +
-          'Signed or settled intents stay as they are.',
-        inputSchema: { intent_id: z.string().min(4).max(24) },
+          'Close the intent at any stage before a signature: revokes the bound sign link (it refuses new opens and leaves every board) ' +
+          'and cancels a job broker_execute compiled. Signed or settled intents stay as they are. If the intent was opened with an ' +
+          'agent_key, pass the SAME one \u2014 an intent id travels in logs, and walking away from someone else\u2019s intent is not yours to do.',
+        inputSchema: {
+          intent_id: z.string().min(4).max(24),
+          agent_key: z
+            .string()
+            .min(6)
+            .max(80)
+            .optional()
+            .describe(
+              'Required when the intent was OPENED with an agent identity: closing revokes the sign link and ' +
+                'cancels a running job, so it is that identity\u2019s call. An intent opened without one needs no key.',
+            ),
+        },
       },
-      async ({ intent_id }) => guarded(() => closeIntent(intent_id)),
+      async ({ intent_id, agent_key }) =>
+        guarded(async () => {
+          await assertCloseAllowed(intent_id, agent_key)
+          return closeIntent(intent_id)
+        }),
     )
 
     server.registerTool(

@@ -36,11 +36,9 @@ import { signJobToken } from '@/lib/job-token'
 import { assertDeskOpen } from '@/lib/broker-policy'
 import { assertNoTxMaterial } from '@/lib/broker'
 import { deskNextOf, legViewOf, type DeskLegView, type DeskNext } from '@/lib/desk-wire'
-import { jobStepBuildPath, jobStepChainId, jobStepSignedInfo } from '@/lib/job-step-telemetry'
-import { feeBpsOfArtifact } from '@/lib/fees'
-import { isBuildPath } from '@/lib/build-path'
-import { COUNTED_VERIFICATIONS, verifyTurnNow } from '@/lib/link-receipt-verify'
-import { chainById } from '@/lib/chains'
+import { recordJobStepMoney, type JobStepMoney } from '@/lib/job-step-money'
+import type { BrokerPlan, VenueFundingRead } from '@/lib/broker'
+import type { HlOrderIntent } from '@/lib/hyperliquid-exec'
 import type { DeskCallOpts } from '@/lib/broker-exec'
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.pantessa.com').replace(/\/$/, '')
@@ -62,7 +60,9 @@ export interface DeskDriveResult {
 export interface DeskDoneResult extends DeskDriveResult {
   accepted: { seq: number; keptKeys: string[]; ignoredKeys: string[] }
   /** Whether the leg's money row could be receipt-verified on the spot
-   *  (S-2: a claim is evidence about the claimant — the chain is the proof). */
+   *  (S-2: a claim is evidence about the claimant — the chain is the proof).
+   *  `recorded` stays the wire name the SDK and the harness read; it is
+   *  `counted` from lib/job-step-money. */
   money: { recorded: boolean; valueUsd: number | null; verification: string | null } | null
 }
 
@@ -250,11 +250,10 @@ export async function deskDone(
   const done = await completeSignStep(row.jobId!, row.wallet!, seq, result)
   if (!done.ok) throw new Error(`The runner refused leg ${seq}: ${done.error}.`)
 
-  const money = await recordDeskLegMoney({
+  const money = await deskLegMoney({
     jobId: row.jobId!,
-    seq,
     wallet: row.wallet!,
-    intentId: row.id,
+    seq,
     builder: step.builder,
     artifact: step.artifact,
     valueUsd: step.valueUsd,
@@ -266,91 +265,157 @@ export async function deskDone(
   return { ...next, accepted: { seq, keptKeys: kept, ignoredKeys: ignored }, money }
 }
 
-/* ── money moved ──────────────────────────────────────────────────────── */
+/* ── money moved ───────────────────────────────────────── */
 
 /**
- * A leg an AGENT signs has to count exactly like a leg a browser signs.
- *
- * The money row for a job step is a CLIENT beacon today (JobCard →
- * POST /api/embed/telemetry, lib/job-step-telemetry). An agent driving the
- * desk has no browser, so without this every agent-signed leg would move real
- * money and record nothing: $0 on /activity, $0 on Growth, nothing in the desk
- * log — the exact NULL-build_path class of bug #818 found on job steps, one
- * surface further out. So the desk writes the row itself, from the SAME field
- * mapping the browser lane uses (`jobStepSignedInfo`), and runs the SAME
- * receipt verifier (`verifyTurnNow`): the agent's claimed hash is evidence
- * about the agent, and only the chain promotes the row to counted.
- *
- * Deliberately NOT done here: creator referral claiming and earned-answer
- * grants. Both key off a link slug and a chat pool an agent-signed desk job
- * has neither of.
+ * A leg an AGENT signs has to count exactly like a leg a browser signs, and
+ * the writer that makes that true is `lib/job-step-money.ts` — shared, so
+ * the browser beacon, the Jobs API `/complete` route and this door all book
+ * one leg once (squad round-1 ruling: three lanes found the hole
+ * independently). It is idempotent on (job, seq), so once
+ * `completeSignStep` calls it for every channel this call becomes the no-op
+ * that reads back the row it already wrote.
  */
-async function recordDeskLegMoney(leg: {
+async function deskLegMoney(leg: {
   jobId: string
-  seq: number
   wallet: string
-  intentId: string
+  seq: number
   builder: string
   artifact: unknown
   valueUsd: number | null
   result: Record<string, unknown>
   internal: boolean
 }): Promise<DeskDoneResult['money']> {
+  const money: JobStepMoney | null = await recordJobStepMoney({
+    job: { id: leg.jobId, wallet: leg.wallet, isInternal: leg.internal },
+    step: { seq: leg.seq, builder: leg.builder, artifact: leg.artifact, valueUsd: leg.valueUsd },
+    result: leg.result,
+    isInternal: leg.internal,
+  })
+  return money ? { recorded: money.counted, valueUsd: money.valueUsd, verification: money.verification } : null
+}
+
+/* ── the venue read (round 2, DRIVE A1) ──────────────────────── */
+
+/**
+ * The funding question a VENUE answers, not the wallet.
+ *
+ * `planIntent` reads the wallet's movable money, which is the right answer
+ * for a swap and the WRONG one for a Hyperliquid open: the open draws on
+ * collateral the venue holds, deposited over Arbitrum in USDC. A wallet with
+ * $19 of USDC on Base therefore read `covered` against a $12 flagship ask
+ * while the open was short every cent of it, and the desk offered no route at
+ * all (EXAMPLE lane, 2026-09-23). The read is I/O, so it happens here and the
+ * pure planner takes the answer.
+ *
+ * Null = this ask has no venue collateral question; plan from the wallet as
+ * before. Fail-soft: an unreadable venue must not turn a quote into an error.
+ */
+export async function readVenueFunding(ask: string, wallet: string | null | undefined): Promise<VenueFundingRead | null> {
+  if (!wallet) return null
   try {
-    const buildPath = jobStepBuildPath(leg.builder, leg.artifact)
-    const chainId = jobStepChainId(leg.artifact)
-    const txHash = typeof leg.result.txHash === 'string' && HASH_RE.test(leg.result.txHash) ? leg.result.txHash : undefined
-    const explorer = chainId ? chainById(chainId)?.explorerTx : undefined
-    const info = jobStepSignedInfo({
-      jobId: leg.jobId,
-      seq: leg.seq,
-      builder: leg.builder,
-      valueUsd: leg.valueUsd,
-      feeBps: feeBpsOfArtifact(leg.artifact),
-      buildPath,
-      chainId,
-      txUrl:
-        (typeof leg.result.explorerUrl === 'string' ? leg.result.explorerUrl.slice(0, 300) : undefined) ??
-        (explorer && txHash ? `${explorer}${txHash}` : undefined),
-    })
-    const row = await prisma.embedTurn.create({
-      select: { id: true },
-      data: {
-        embedKeyId: '',
-        ownerAddress: null,
-        origin: SITE,
-        // The desk's own lane marker, and ≥8 chars of [A-Za-z0-9-] like every
-        // other session id. `harness-` when internal so every downstream belt
-        // (not just is_internal) reads the row as ours.
-        sessionId: `${leg.internal ? 'harness-' : ''}desk-${leg.intentId}-${leg.seq}`.slice(0, 64),
-        prompt: '',
-        outcome: 'signed',
-        artifact: 'job-step',
-        chain: info.chain,
-        txUrl: info.txUrl,
-        valueUsd: info.valueUsd,
-        buildPath: isBuildPath(buildPath) ? buildPath : undefined,
-        originKind: 'job-step',
-        walletAddress: leg.wallet.toLowerCase(),
-        feeBps: info.feeBps,
-        isInternal: leg.internal,
-        symbols: [],
-        // Money follows the receipt (S-2): fail closed, then let the chain
-        // promote it.
-        verification: 'unverified',
-      },
-    })
-    const verification = await Promise.race([
-      verifyTurnNow(row.id, chainId),
-      new Promise<'unverified'>((r) => setTimeout(() => r('unverified'), 4000)),
-    ]).catch(() => 'unverified')
+    const { parseHlIntent, hlOpenCollateralShortfall, arbitrumUsdcBalance, ARBITRUM_CHAIN_ID } = await import('@/lib/hyperliquid-exec')
+    const intent = parseHlIntent(ask)
+    if (!intent || intent.kind !== 'open') return null
+    const short = await hlOpenCollateralShortfall(intent as HlOrderIntent, wallet)
+    const coin = (intent as HlOrderIntent).coin
+    if (!short) {
+      // The venue already holds enough for this open — the honest answer is
+      // "covered", and it has nothing to do with what the wallet holds.
+      return {
+        venue: 'Hyperliquid',
+        needUsd: 0,
+        heldUsd: 0,
+        onChainUsd: 0,
+        chainId: ARBITRUM_CHAIN_ID,
+        token: 'USDC',
+        followupResume: ask,
+        actionLabel: 'the order',
+        note: `Hyperliquid already holds the collateral this ${coin} open needs.`,
+      }
+    }
+    const onChainUsd = await arbitrumUsdcBalance(wallet).catch(() => 0)
+    const deposit = short.depositUsdc
     return {
-      recorded: (COUNTED_VERIFICATIONS as readonly string[]).includes(verification),
-      valueUsd: leg.valueUsd ?? null,
-      verification,
+      venue: 'Hyperliquid',
+      needUsd: deposit,
+      heldUsd: Number(short.withdrawableUsd.toFixed(2)),
+      onChainUsd: Number(onChainUsd.toFixed(2)),
+      chainId: ARBITRUM_CHAIN_ID,
+      token: 'USDC',
+      // The resume must round-trip the ladder: the deposit gate and the open
+      // gate both parse, and the jobs compiler joins them into one sequence.
+      followupResume: `deposit ${deposit} USDC to Hyperliquid, then ${ask}`,
+      actionLabel: 'the order',
+      note: `Hyperliquid holds $${short.withdrawableUsd.toFixed(2)} of collateral for this wallet, and a $${short.notionalUsd} ${coin} open needs $${deposit} deposited over Arbitrum.`,
     }
   } catch {
-    // Telemetry never breaks the leg the agent just signed.
     return null
   }
+}
+
+/* ── the negotiation record (round 2, UI ask) ────────────────── */
+
+/**
+ * `broker_choose` REWRITES the working sentence, which is the whole point of
+ * it — and until now it threw away what was chosen. The desk log then had a
+ * quote, a final ask, and no account of how one became the other. So the
+ * chosen option is kept on the plan (`plan.chosen`) with the running list
+ * (`plan.history`), inside the same row the plan already lives in.
+ *
+ * Wraps the choose call rather than living inside it: `lib/broker-exec.ts` is
+ * another lane's file, and the prior plan (which is the only place the chosen
+ * option's own label and resume exist) has to be read BEFORE the rewrite.
+ */
+export async function chooseWithHistory<T extends { plan?: unknown }>(
+  intentId: unknown,
+  optionId: unknown,
+  run: () => Promise<T>,
+): Promise<T> {
+  const id = typeof intentId === 'string' ? intentId.trim() : ''
+  const wanted = typeof optionId === 'string' ? optionId.trim() : ''
+  const before = id ? await prisma.brokerIntent.findUnique({ where: { id }, select: { plan: true } }).catch(() => null) : null
+  const priorPlan = (before?.plan ?? null) as BrokerPlan | null
+  const picked = priorPlan?.options?.find((o) => o.id === wanted) ?? null
+
+  const out = await run()
+  if (!picked) return out
+
+  const entry = { optionId: picked.id, label: picked.label, resume: picked.resume, kind: picked.kind, at: new Date().toISOString() }
+  const history = [...((priorPlan as BrokerPlan & { history?: unknown[] })?.history ?? []), entry].slice(-8)
+  const plan = out.plan && typeof out.plan === 'object' ? (out.plan as Record<string, unknown>) : null
+  if (plan) {
+    plan.chosen = entry
+    plan.history = history
+    // Persist fail-soft: a negotiation record is never worth failing a choose.
+    await prisma.brokerIntent.update({ where: { id }, data: { plan: plan as object } }).catch(() => {})
+  }
+  return out
+}
+
+/* ── walking away (round 2, QA F3) ───────────────────────── */
+
+/**
+ * `broker_close` revokes a sign link and cancels a running job, from an
+ * intent id alone — and an intent id is a short slug that travels in an
+ * agent's own logs. When the intent was opened with an identity, closing it
+ * is that identity's call: a stranger holding the slug must not be able to
+ * cancel a job mid-flight or revoke a link a human is about to sign.
+ *
+ * An intent opened WITHOUT an agent_key (the ordinary human-handoff path,
+ * which needs no identity by design) stays closable exactly as today —
+ * there is no identity to check against, and the alternative would be to
+ * make walking away harder than starting.
+ */
+export async function assertCloseAllowed(intentId: unknown, agentKey: unknown): Promise<void> {
+  const id = typeof intentId === 'string' ? intentId.trim() : ''
+  const row = id ? await prisma.brokerIntent.findUnique({ where: { id }, select: { agentKey: true } }).catch(() => null) : null
+  const bound = typeof row?.agentKey === 'string' ? row.agentKey : ''
+  if (!bound) return
+  const presented = typeof agentKey === 'string' ? agentKey.trim() : ''
+  if (!presented || !sameSecret(bound, presented))
+    throw new Error(
+      `Intent ${id} was opened with an agent identity, so only that identity can close it — pass the same agent_key. ` +
+        '(An intent opened without one needs no key to close.)',
+    )
 }

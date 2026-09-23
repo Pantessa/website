@@ -131,6 +131,26 @@ function txOf(artifact: Record<string, unknown>): Record<string, unknown> | null
   return obj(artifact.txRequest) ?? obj(artifact.tx)
 }
 
+/** One member of a batched Hyperliquid leg (C2, DRIVE #853). Every member is
+ *  signed on its own `typedData` and submitted on its own, in order. */
+export interface HlBatchMemberLike {
+  kind?: string
+  action?: unknown
+  nonce?: number
+  typedData?: unknown
+  expected?: unknown
+}
+
+/** The members of a batched HL leg, in order. `orderRequest.batch` is the
+ *  contract; `orderRequest.hl.batch` is tolerated. Empty = not a batch. */
+function hlBatchOf(order: Record<string, unknown> | null): HlBatchMemberLike[] {
+  if (!order) return []
+  const top = order.batch
+  const nested = obj(order.hl)?.batch
+  const raw = Array.isArray(top) ? top : Array.isArray(nested) ? nested : []
+  return raw.filter((m): m is HlBatchMemberLike => !!obj(m))
+}
+
 function chainOf(artifact: Record<string, unknown> | null, kind: DeskLegKind): number | null {
   if (kind === 'hlAction' || kind === 'hlBatch') return HL_DOMAIN_CHAIN_ID
   if (!artifact) return null
@@ -157,11 +177,14 @@ function kindOf(step: DeskStepLike, artifact: Record<string, unknown> | null): D
   if (order) {
     const protocol = str(order.protocol)?.toLowerCase()
     if (protocol === 'hyperliquid') {
-      // C2: a batched HL leg carries the members under `batch`; one action
-      // stays exactly the shape SignHlActionButton has always signed.
-      const hl = obj(order.hl)
-      const batch = Array.isArray(order.batch) ? order.batch : Array.isArray(hl?.batch) ? (hl!.batch as unknown[]) : null
-      return batch && batch.length > 0 ? 'hlBatch' : 'hlAction'
+      // C2 (DRIVE, #853): a batched HL leg carries its members at the TOP
+      // level of orderRequest as `batch: HlBatchMember[]` — each
+      // { kind: 'leverage' | 'order', action, nonce, typedData, expected },
+      // ≤3, nonces ascending, the `order` member last. `hl.batch` is
+      // tolerated as a nesting some earlier draft used. One action stays
+      // exactly the shape SignHlActionButton has always signed — and a leg
+      // carrying a one-time builder-fee approval is always that single shape.
+      return hlBatchOf(order).length > 0 ? 'hlBatch' : 'hlAction'
     }
     return 'order'
   }
@@ -178,11 +201,12 @@ function staleOf(kind: DeskLegKind, artifact: Record<string, unknown> | null, st
   const clamp = (at: number | null) => (at == null ? null : Math.max(0, at - now))
   if (artifact) {
     if (kind === 'hlAction' || kind === 'hlBatch') {
-      const hl = obj(obj(artifact.orderRequest)?.hl)
-      const nonce = num(hl?.nonce)
-      // A batch runs on sequential nonces from the same mint; the first one
-      // is the clock every member shares.
-      const first = nonce ?? num(obj((Array.isArray(hl?.batch) ? hl!.batch : (obj(artifact.orderRequest)?.batch as unknown[])) ?.[0])?.nonce)
+      const order = obj(artifact.orderRequest)
+      // A batch is minted on ascending nonces in one motion, so the EARLIEST
+      // member is the clock the whole leg shares — the moment it lapses, the
+      // leg is rebuilt (retry), never re-signed.
+      const members = hlBatchOf(order)
+      const first = members.length > 0 ? num(members[0]?.nonce) : num(obj(order?.hl)?.nonce)
       if (first != null) return clamp(first + HL_NONCE_LIFE_MS)
     }
     if (kind === 'txChain') {
@@ -211,6 +235,9 @@ function staleOf(kind: DeskLegKind, artifact: Record<string, unknown> | null, st
  *  runner already stamps — the builder's own `artifact.summary` first, then
  *  the compiled step title — never invented. */
 function summaryOf(kind: DeskLegKind, artifact: Record<string, unknown> | null, step: DeskStepLike): string {
+  // A shape this wire cannot name gets the refusal and NOTHING else: the
+  // step's own title would read like a description of something signable.
+  if (kind === 'unknown') return fallbackSummary(kind)
   const base = (artifact && str(artifact.summary)) ?? str(step.title) ?? fallbackSummary(kind)
   const extras: string[] = []
   if (kind === 'txChain') {
@@ -230,8 +257,9 @@ function summaryOf(kind: DeskLegKind, artifact: Record<string, unknown> | null, 
     if (hl?.pre) extras.push('a guarded leverage update signs first, then the order')
     if (hl?.feeApproval) extras.push('a one-time builder-fee approval signs first')
     if (kind === 'hlBatch') {
-      const batch = Array.isArray(obj(artifact?.orderRequest)?.batch) ? (obj(artifact!.orderRequest)!.batch as unknown[]) : (hl?.batch as unknown[] | undefined)
-      if (Array.isArray(batch)) extras.push(`${batch.length} Hyperliquid actions signed in one motion, submitted in order`)
+      const members = hlBatchOf(obj(artifact?.orderRequest))
+      const named = members.map((m) => str(m.kind) ?? 'action').join(' → ')
+      extras.push(`${members.length} Hyperliquid actions signed in one motion and submitted in order: ${named}; the first failure stops the batch`)
     }
   }
   if (kind === 'order') {
