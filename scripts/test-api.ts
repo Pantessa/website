@@ -24476,7 +24476,8 @@ async function main() {
     const l200 = hexOf(lightBlock, '--chart-ma-200')
     const darkBg = hexOf(rootBlock, '--bg') ?? '#000000'
     const lightBg = hexOf(lightBlock, '--bg') ?? '#ffffff'
-    const chartSrc = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
+    // Re-pinned 2026-09-23 (#848): the theme probe (colorProbe/readTokens) moved to chart-tokens.ts, shared with the Fundamentals panel; the chart's paint sites stay in MarketChart, so the pin reads both.
+    const chartSrc = (await readFile('components/markets/chart/MarketChart.tsx', 'utf8')) + '\n' + (await readFile('components/markets/chart/chart-tokens.ts', 'utf8'))
     check(
       'chart MAs: --chart-ma-50 is a BLUE and --chart-ma-200 a YELLOW in both themes, each ≥3:1 against its own chart background, and the canvas paints the 50 and the 200 with exactly those tokens',
       !!d50 && !!d200 && !!l50 && !!l200 &&
@@ -24721,7 +24722,8 @@ async function main() {
       `feed=${aapl.feed} bars=${aaplBars.length} extended=${extendedBars} maxRegularPerDay=${maxRegular}`,
     )
     // The engine wiring (the pixels are in the PR's browser drive).
-    const sessSrc = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
+    // Re-pinned 2026-09-23 (#848): the theme probe (colorProbe/readTokens) moved to chart-tokens.ts, shared with the Fundamentals panel; the chart's paint sites stay in MarketChart, so the pin reads both.
+    const sessSrc = (await readFile('components/markets/chart/MarketChart.tsx', 'utf8')) + '\n' + (await readFile('components/markets/chart/chart-tokens.ts', 'utf8'))
     const bandsSrc = await readFile('components/markets/chart/session-bands.ts', 'utf8')
     const themeCss = await readFile('app/x402-design.css', 'utf8')
     check(
@@ -25835,7 +25837,8 @@ async function main() {
     )
 
     // The chart engine wiring (the pixels are in the PR's browser drive).
-    const mcSrc = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
+    // Re-pinned 2026-09-23 (#848): the theme probe (colorProbe/readTokens) moved to chart-tokens.ts, shared with the Fundamentals panel; the chart's paint sites stay in MarketChart, so the pin reads both.
+    const mcSrc = (await readFile('components/markets/chart/MarketChart.tsx', 'utf8')) + '\n' + (await readFile('components/markets/chart/chart-tokens.ts', 'utf8'))
     const mountSrc = await readFile('components/markets/chart/ChartMount.tsx', 'utf8')
     const perfSrc = await readFile('components/markets/chart/PerformanceTiles.tsx', 'utf8')
     check(

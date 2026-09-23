@@ -183,7 +183,7 @@ export function llamaDay(ts: number): number {
  *  Two points on one day keep the later one (a same-day TVL re-snapshot). */
 export function parseLlamaChart(raw: unknown): LlamaPoint[] {
   if (!Array.isArray(raw)) return []
-  const byDay = new Map<number, number>()
+  const byDay = new Map<number, { at: number; v: number }>()
   for (const row of raw) {
     let ts: unknown
     let v: unknown
@@ -197,9 +197,11 @@ export function parseLlamaChart(raw: unknown): LlamaPoint[] {
     const n = typeof v === 'string' ? Number(v) : v
     if (typeof t !== 'number' || !Number.isFinite(t) || t <= 0) continue
     if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) continue
-    byDay.set(llamaDay(t), n)
+    const day = llamaDay(t)
+    const held = byDay.get(day)
+    if (!held || t >= held.at) byDay.set(day, { at: t, v: n })
   }
-  return [...byDay.entries()].sort((a, b) => a[0] - b[0])
+  return [...byDay.entries()].map(([day, { v }]) => [day, v] as LlamaPoint).sort((a, b) => a[0] - b[0])
 }
 
 /** The last N daily points summed (flows) — the panel's "30d" figures. */
