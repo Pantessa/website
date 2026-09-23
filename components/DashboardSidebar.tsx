@@ -6,7 +6,7 @@
 
 import Link from 'next/link'
 import { useEffect, useRef } from 'react'
-import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, Building2, LineChart, MessageSquare, BookOpen, AlertTriangle, CreditCard, Globe, Palette, ShieldAlert, ShieldCheck, Users, Landmark, Inbox } from 'lucide-react'
+import { LayoutDashboard, KeyRound, Bot, ToggleRight, Activity, Building2, LineChart, MessageSquare, BookOpen, AlertTriangle, CreditCard, Globe, Palette, ScrollText, ShieldAlert, ShieldCheck, Users, Landmark, Inbox } from 'lucide-react'
 import { isAdminAddress } from '@/lib/admin'
 
 // Links-first order (Nate, 2026-07-22): App rides right under Overview,
@@ -44,6 +44,9 @@ export const DASH_SECTIONS = [
 const ADMIN_SECTIONS = [
   // The go-to-market books (was Adoption) — /dashboard/users redirects here.
   { href: '/dashboard/admin', label: 'Growth', icon: LineChart, exact: false },
+  // The agent desk's log (squad agent-desk 2026-09-23): one row per brokered intent, leg by
+  // leg. Sits under Growth, whose Desk section is the summary of this page.
+  { href: '/dashboard/admin/desk', label: 'Desk log', icon: ScrollText, exact: false },
   { href: '/dashboard/treasury', label: 'Treasury', icon: Landmark, exact: false },
   { href: '/dashboard/failures', label: 'Failures', icon: ShieldAlert, exact: false },
   // The MCP admission queue (lib/mcp-review.ts). Non-admin reviewer wallets
@@ -54,6 +57,16 @@ const ADMIN_SECTIONS = [
 
 export function isSectionActive(pathname: string, href: string, exact: boolean): boolean {
   return exact ? pathname === href : pathname.startsWith(href)
+}
+
+/** The ONE section a path lights: the most specific match, so a child row (Desk log under
+ *  Growth) never lights its parent as well. */
+export function activeSectionHref(pathname: string, address?: string | null): string | null {
+  return (
+    sectionsFor(address)
+      .filter((s) => isSectionActive(pathname, s.href, s.exact))
+      .sort((a, b) => b.href.length - a.href.length)[0]?.href ?? null
+  )
 }
 
 /** All sections visible to this wallet (admin rows appended on the allowlist). */
@@ -94,12 +107,12 @@ export default function DashboardSidebar({
 
   return (
     <nav className="dash__side" aria-label="Dashboard sections" ref={nav}>
-      {sectionsFor(address).map(({ href, label, icon: Icon, exact }) => (
+      {sectionsFor(address).map(({ href, label, icon: Icon }) => (
         <Link
           key={href}
           href={href}
           onClick={onNavigate}
-          className={`dash__link mono ${isSectionActive(pathname, href, exact) ? 'is-on' : ''}`}
+          className={`dash__link mono ${activeSectionHref(pathname, address) === href ? 'is-on' : ''}`}
         >
           <Icon width={15} height={15} />
           {label}

@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowDownRight, ArrowUpRight, Check, Copy, Download, Footprints, Mail, ShieldAlert } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, Check, Copy, Download, Footprints, Mail, ScrollText, ShieldAlert } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import { isAdminAddress } from '@/lib/admin'
 import { formatEarnedUsd } from '@/lib/fees'
@@ -27,6 +27,8 @@ import { ACCOUNT_STAGES, GROWTH_WINDOWS, type AccountStage } from '@/lib/admin-g
 import { Card, CardTitle, SkeletonCard, SkeletonKpi, WalletKindBadge, short, timeAgo } from '@/lib/dashboard-ui'
 import { FeeSplitDaily, MoneyBySource, TradersWeekly } from '@/components/LazyCharts'
 import { SOURCE_LABEL, useSourceColors, type GrowthPoint } from '@/components/GrowthCharts'
+import { DeskLogSection } from '@/components/DeskLogSection'
+import type { DeskGrowth } from '@/lib/desk-activity'
 
 interface FeeSplit {
   volumeUsd: number
@@ -63,6 +65,8 @@ interface Growth {
   windowDays: number
   external: boolean
   generatedAt: string
+  /** The agent desk (lib/desk-activity); null when its tables did not answer. */
+  desk: DeskGrowth | null
   tiles: {
     volumeUsd: number
     volumeDelta: number | null
@@ -434,6 +438,10 @@ export default function AdminPage() {
               person did and where they stopped. */}
           <Link href="/dashboard/admin/flows" className="inline-flex items-center gap-1.5 text-xs text-[color:var(--accent,#34E0A1)] hover:underline whitespace-nowrap">
             <Footprints className="w-3.5 h-3.5" /> User flows
+          </Link>
+          {/* The agent desk's own log: one row per brokered intent, its legs and receipts. */}
+          <Link href="/dashboard/admin/desk" className="inline-flex items-center gap-1.5 text-xs text-[color:var(--accent,#34E0A1)] hover:underline whitespace-nowrap">
+            <ScrollText className="w-3.5 h-3.5" /> Desk log
           </Link>
           <div className="flex rounded-lg border border-[var(--line)] overflow-hidden">
             {GROWTH_WINDOWS.map((d) => (
@@ -1044,6 +1052,9 @@ export default function AdminPage() {
           </Link>
         </div>
       </Card>
+
+      {/* 10 — the agent desk: what other agents asked, executed, signed. */}
+      <DeskLogSection desk={data.desk ?? null} external={external} />
     </div>
   )
 }
