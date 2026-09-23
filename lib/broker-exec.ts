@@ -12,7 +12,9 @@
 import prisma from '@/lib/db'
 import { mintSlug, composeMcps } from '@/lib/intent-links'
 import { scanFundingSources } from '@/lib/funding-plan'
-import { compileJobAsk } from '@/lib/jobs'
+import { compileJobAsk, JOB_SEGMENT_PARSERS, type CompiledJob, type JobSegmentCtx } from '@/lib/jobs'
+import { offerFundingPlan } from '@/lib/funding-plan'
+import { arbitrumUsdcBalance, hlOpenCollateralShortfall, type HlOrderIntent } from '@/lib/hyperliquid-exec'
 import { unfillableFundedBuyReason } from '@/lib/venue-preflight'
 import { advanceJob, createJob, getJobWithSteps, cancelJob } from '@/lib/jobs-runner'
 import { signJobToken } from '@/lib/job-token'
@@ -617,15 +619,7 @@ export async function executeIntent(intentId: string, walletSignature: unknown, 
   // exists. Single-use by construction: the intent must still be `open`.
   await assertWalletProof(row.id, row.wallet, walletSignature)
 
-  const compiled = compileJobAsk(row.ask)
-  if (!compiled || 'problem' in compiled || 'clarify' in compiled) {
-    const why = compiled && 'problem' in compiled ? compiled.problem : compiled && 'clarify' in compiled ? 'it needs a clarification first' : 'it is a single-step ask'
-    throw new Error(
-      `"${row.ask}" does not compile to a multi-step job (${why}). ` +
-        'The agent-signed path exists for SEQUENCED flows (fund → wait for arrival → act). ' +
-        'For single steps or clarifications, negotiate further or use broker_handoff.',
-    )
-  }
+  const compiled = await compileDeskAsk(row.ask, row.wallet)
 
   // The funding plan's buy, before any leg can move money (see
   // lib/venue-preflight.ts): a desk-driven job strands the employer's
@@ -852,4 +846,85 @@ async function mustIntent(intentId: string) {
   const row = id ? await prisma.brokerIntent.findUnique({ where: { id } }) : null
   if (!row) throw new Error(`No such intent "${intentId}".`)
   return row
+}
+
+/* ── the agent-signed compile (agent-desk squad, 2026-09-23) ──────────── */
+
+/**
+ * Compile the working ask into the job the agent's key drives. Three shapes,
+ * one rule each:
+ *   · a SEQUENCED ask ("…, then …") compiles exactly as chat does;
+ *   · a LONE action compiles through the same registry entry as a ONE-leg job
+ *     — the desk used to refuse it as "single-step" (DRIVE finding F1: the
+ *     flagship "2x long $12 of HYPE" walled on every wallet), yet a one-leg
+ *     job passes every gate a five-leg one does (affordability, guards, the
+ *     desk cap) and the runner enforces nothing extra for it;
+ *   · a Hyperliquid OPEN the account can't collateralize gets the chat's own
+ *     funded composition (app/api/chat/route.ts hlAutoFundedJobTurn):
+ *     `deposit N USDC to Hyperliquid, then <ask>` with the funding plan's
+ *     first route in front — bridge → wait → deposit → wait → order. An
+ *     unfundable wallet refuses by name with the plan's own words.
+ * Every branch throws the honest reason; nothing is offered here.
+ */
+async function compileDeskAsk(ask: string, wallet: string): Promise<CompiledJob> {
+  const refuse = (why: string): never => {
+    throw new Error(
+      `"${ask}" does not compile to a job (${why}). ` +
+        'The agent-signed path compiles sequenced flows (fund → wait for arrival → act) and lone actions alike. ' +
+        'Negotiate further with broker_choose, or use broker_handoff for a human signature.',
+    )
+  }
+  let compiled = compileJobAsk(ask) ?? compileLoneSegment(ask)
+  if (!compiled) return refuse('no native layer claims it')
+  if ('problem' in compiled) return refuse(compiled.problem)
+  if ('clarify' in compiled) return refuse(`it needs a clarification first: ${compiled.clarify.question}`)
+
+  // An HL open leads the job → does the venue hold the collateral for it?
+  const lead = compiled.steps.find((s) => s.kind === 'sign')
+  const hlOpen = lead?.builder === 'native-hl-exec' && (lead.params as { kind?: unknown }).kind === 'open' ? (lead.params as unknown as HlOrderIntent) : null
+  const alreadyFunded = compiled.steps.some((s) => s.builder === 'native-hl-exec' && (s.params as { kind?: unknown }).kind === 'deposit')
+  if (hlOpen && !alreadyFunded) {
+    const short = await hlOpenCollateralShortfall(hlOpen, wallet)
+    if (short) {
+      const fundedAsk = `deposit ${short.depositUsdc} USDC to Hyperliquid, then ${ask}`
+      const arbUsdc = await arbitrumUsdcBalance(wallet).catch(() => null)
+      if (arbUsdc === null) return refuse('the Arbitrum USDC balance could not be read, so the deposit that funds the position cannot be sized')
+      const usdcShort = Number(Math.max(0, short.depositUsdc - arbUsdc).toFixed(2))
+      const offer = await offerFundingPlan({
+        user: wallet,
+        need: { chainId: 42161, token: 'USDC', amountHuman: usdcShort, followupResume: fundedAsk, actionLabel: 'the Hyperliquid position' },
+        trace: () => {},
+      })
+      if (offer && 'insufficient' in offer) {
+        return refuse(`the position needs ~$${short.depositUsdc} of USDC reaching Hyperliquid and the wallet can't fund it — ${offer.insufficient.replace(/^[^\w]+/, '')}`)
+      }
+      let resume = fundedAsk
+      if (offer) {
+        const first = offer.clarify.options[0]
+        if (!first || /never mind/i.test(first.resume)) return refuse('no funding route covers the collateral the position needs')
+        resume = first.resume
+      } else if (usdcShort > 0) {
+        return refuse(`the position needs ~$${short.depositUsdc} of USDC on Hyperliquid and the funding plan could not be built right now`)
+      }
+      const funded = compileJobAsk(resume)
+      if (!funded || 'problem' in funded || 'clarify' in funded) return refuse(`the funded form "${resume}" did not compile`)
+      compiled = funded
+    }
+  }
+  return compiled
+}
+
+/** A lone action through the jobs registry: the first entry that claims the
+ *  sentence answers (the same claim order compileJobAsk walks). null = no
+ *  chainable action claims it. */
+function compileLoneSegment(ask: string): CompiledJob | { problem: string } | { clarify: { question: string; options: { label: string; resume: string }[] } } | null {
+  const ctx: JobSegmentCtx = { index: 0, fundingSeen: false, nft: null, message: ask }
+  for (const parser of JOB_SEGMENT_PARSERS) {
+    const out = parser.parse(ask, ctx)
+    if (!out) continue
+    if ('problem' in out) return { problem: out.problem }
+    if ('clarify' in out) return { clarify: out.clarify }
+    return { title: out.title, steps: out.steps }
+  }
+  return null
 }
