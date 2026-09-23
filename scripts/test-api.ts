@@ -31628,6 +31628,64 @@ async function main() {
   }
 
 
+  // ── mobile links: the intent-link path on a PHONE (LINKS lane, mobile-onboarding squad 2026-09-23) ──
+  // The in-app-browser detector, the came-back hold, the simple-reply lead,
+  // and the /i splash's SSR at phone UAs. Drive: scripts/drive-mobile-links.ts.
+  {
+    const IA = await import('../lib/inapp-browser')
+    const LR = await import('../lib/intent-link-return')
+    const SR = await import('../lib/simple-reply')
+    const { MOBILE_UAS } = await import('./drive-mobile-links')
+
+    // The UA table the drive walks is the table the module answers.
+    const table = Object.entries(MOBILE_UAS).map(([id, row]) => ({ id, got: IA.inAppBrowserOf(row.ua), want: row.expect }))
+    check('mobile links: inAppBrowserOf answers the drive\'s UA table (Safari + Chrome + a wallet\'s browser launch; X / LinkedIn / a bare WKWebView / an Android WebView do not)', table.every((t) => t.got.inApp === t.want.inApp && t.got.canLaunchApps === t.want.canLaunchApps), JSON.stringify(table.filter((t) => t.got.inApp !== t.want.inApp || t.got.canLaunchApps !== t.want.canLaunchApps).map((t) => t.id)))
+    const mmUa = MOBILE_UAS['ios-metamask'].ua
+    check('mobile links: a wallet\'s own in-app browser is in-app WITH the wallet injected (nothing to launch; never the escape line)', IA.inAppBrowserOf(mmUa).walletInjected && IA.inAppBrowserOf(mmUa).canLaunchApps && IA.inAppBrowserOf(mmUa).vendor === 'metamask' && !IA.inAppBrowserOf(MOBILE_UAS['ios-x'].ua).walletInjected)
+    check('mobile links: SFSafariViewController / Chrome Custom Tabs carry the system UA and read as the real browser (fail OPEN: nothing, null, an empty string, desktop Chrome → not in-app)', [null, undefined, '', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36', MOBILE_UAS['ios-safari'].ua, MOBILE_UAS['android-chrome'].ua, 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/127.0.0.0 Mobile/15E148 Safari/604.1'].every((ua) => !IA.inAppBrowserOf(ua).inApp && IA.inAppBrowserOf(ua).canLaunchApps))
+    check('mobile links: the vendor is named from the UA token (x / linkedin / facebook / instagram) and a token-less WebView is "webview"', IA.inAppBrowserOf(MOBILE_UAS['ios-x'].ua).vendor === 'x' && IA.inAppBrowserOf(MOBILE_UAS['ios-linkedin'].ua).vendor === 'linkedin' && IA.inAppBrowserOf(MOBILE_UAS['android-fb'].ua).vendor === 'facebook' && IA.inAppBrowserOf('Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 300.0.0.0').vendor === 'instagram' && IA.inAppBrowserOf(MOBILE_UAS['ios-webview'].ua).vendor === 'webview' && IA.inAppBrowserOf(MOBILE_UAS['ios-x'].ua).platform === 'ios' && IA.inAppBrowserOf(MOBILE_UAS['android-fb'].ua).platform === 'android')
+    const xEsc = IA.inAppEscapeCopy(IA.inAppBrowserOf(MOBILE_UAS['ios-x'].ua))
+    const fbEsc = IA.inAppEscapeCopy(IA.inAppBrowserOf(MOBILE_UAS['android-fb'].ua))
+    const wvEsc = IA.inAppEscapeCopy(IA.inAppBrowserOf(MOBILE_UAS['ios-webview'].ua))
+    check('mobile links: the escape copy names the app, its own menu item, and the platform\'s browser (Safari on iOS, Chrome on Android; a nameless webview gets generic words)', xEsc.app === 'X' && /Open in Safari/.test(xEsc.where) && xEsc.browser === 'Safari' && fbEsc.app === 'Facebook' && fbEsc.browser === 'Chrome' && /Open in browser/.test(fbEsc.where) && wvEsc.app === 'this app' && /Safari/.test(wvEsc.where))
+    const fbB = IA.inAppBrowserOf(MOBILE_UAS['android-fb'].ua)
+    const intent = IA.androidChromeIntent('https://www.pantessa.com/i/buy-aapl?x=1', fbB)
+    check('mobile links: the Android Chrome intent link carries host + path + query, the Chrome package and an https fallback; iOS and non-https get null', intent === 'intent://www.pantessa.com/i/buy-aapl?x=1#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=https%3A%2F%2Fwww.pantessa.com%2Fi%2Fbuy-aapl%3Fx%3D1;end' && IA.androidChromeIntent('https://www.pantessa.com/i/x', IA.inAppBrowserOf(MOBILE_UAS['ios-x'].ua)) === null && IA.androidChromeIntent('http://www.pantessa.com/i/x', fbB) === null && IA.androidChromeIntent('not a url', fbB) === null, String(intent))
+    const memStore = () => { const m = new Map<string, string>(); return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) } as unknown as Storage }
+    const throwingWin = { get localStorage(): Storage { throw new Error('SecurityError') }, sessionStorage: memStore() }
+    check('mobile links: safeStorage never throws — a throwing accessor is null, a missing one is null, a working one is handed back, and sessionStorage is reachable on its own', IA.safeStorage(throwingWin) === null && IA.safeStorage(null) === null && IA.safeStorage({}) === null && !!IA.safeStorage({ localStorage: memStore() }) && !!IA.safeStorage(throwingWin, 'session'))
+
+    // The came-back hold.
+    const now = 1_800_000_000_000
+    const st = memStore()
+    LR.writeLinkRun(st, { slug: 'buy-aapl', wallet: '0xABCDEF0000000000000000000000000000000001', outcome: 'built', at: now })
+    const back = LR.readLinkRun(st, 'buy-aapl', now + 5 * 60_000)
+    check('mobile links: a link run round-trips storage (wallet lowercased, outcome kept) under the key pantessa.ilink.run.<slug>', !!back && back.wallet === '0xabcdef0000000000000000000000000000000001' && back.outcome === 'built' && back.at === now && st.getItem(LR.linkRunKey('buy-aapl')) !== null && LR.linkRunKey('x') === 'pantessa.ilink.run.x')
+    check('mobile links: a run is null when expired (> LINK_RUN_TTL_MS), dated in the future, for another slug, malformed, or the wrong version', LR.readLinkRun(st, 'buy-aapl', now + LR.LINK_RUN_TTL_MS + 1) === null && LR.readLinkRun(st, 'buy-aapl', now - 120_000) === null && LR.readLinkRun(st, 'stake-eth', now) === null && (() => { const b = memStore(); b.setItem(LR.linkRunKey('a'), '{not json'); return LR.readLinkRun(b, 'a', now) === null })() && (() => { const b = memStore(); b.setItem(LR.linkRunKey('a'), JSON.stringify({ v: 2, slug: 'a', outcome: 'built', at: now, wallet: null })); return LR.readLinkRun(b, 'a', now) === null })() && LR.readLinkRun(null, 'a', now) === null && LR.LINK_RUN_TTL_MS === 30 * 60 * 1000)
+    const built = { v: 1 as const, slug: 'buy-aapl', wallet: '0xabc', outcome: 'built' as const, at: now }
+    check('mobile links: returnVerdict — no run / expired / a STARTED run (nothing was offered) / another wallet → fresh; built → hold; signed → signed; a wallet-less return is judged on the run', LR.returnVerdict(null, '0xabc', now).kind === 'fresh' && LR.returnVerdict(built, '0xabc', now + LR.LINK_RUN_TTL_MS + 1).kind === 'fresh' && LR.returnVerdict({ ...built, outcome: 'started' }, '0xabc', now).kind === 'fresh' && LR.returnVerdict(built, '0xdef', now).kind === 'fresh' && LR.returnVerdict(built, '0xABC', now).kind === 'hold' && LR.returnVerdict({ ...built, outcome: 'signed' }, '0xabc', now).kind === 'signed' && LR.returnVerdict(built, null, now).kind === 'hold')
+    check('mobile links: a return inside the window is the same visit — open + connect are already posted; a fresh run posts them', LR.beaconsAlreadyPosted({ kind: 'hold', run: built }).join(',') === 'open,connect' && LR.beaconsAlreadyPosted({ kind: 'signed', run: built }).join(',') === 'open,connect' && LR.beaconsAlreadyPosted({ kind: 'fresh' }).length === 0)
+    const holdCopy = LR.returnCopy({ kind: 'hold', run: built }, 'Buy $10 of AAPL', now + 3 * 60_000)
+    const signedCopy = LR.returnCopy({ kind: 'signed', run: { ...built, outcome: 'signed', txUrl: 'https://basescan.org/tx/0xabc' } }, 'Buy $10 of AAPL', now + 60_000)
+    check('mobile links: the came-back card says "Don\'t sign this twice" with the ask and the minutes, offers "it went through" + "build it again"; a signed return carries the receipt and warns that again = twice', /Don.t sign this twice/.test(holdCopy.title) && /"Buy \$10 of AAPL"/.test(holdCopy.body) && /3 minutes ago/.test(holdCopy.body) && /WENT THROUGH/.test(holdCopy.chips.done) && /BUILD IT AGAIN/.test(holdCopy.chips.again) && holdCopy.txUrl === null && /went through/.test(signedCopy.title) && signedCopy.txUrl === 'https://basescan.org/tx/0xabc' && /second time/.test(signedCopy.body) && /a minute ago/.test(signedCopy.body))
+
+    // The simple-reply lead is TEXT: no markdown markers survive.
+    const bold = SR.splitSimpleReply('🔏 **Swap 5 USDC · Base → Arbitrum** via NEAR Intents (1Click), min received 4.98 USDC\n🔗 One deposit; the venue fills on Arbitrum.')
+    check('mobile links: a bold first sentence loses its asterisks in the /i lead and its details (measured at 375: "**Swap 5 USDC · Base → Arbitrum**" printed the stars)', !!bold && !/\*/.test(bold.lead) && bold.lead.startsWith('Swap 5 USDC · Base → Arbitrum') && bold.details.every((d) => !/\*\*/.test(d)) && SR.stripEmphasis('**a** _b_ `c` *d* e**f**') === 'a _b_ c d ef' && SR.stripEmphasis('2 * 3 * 4') === '2 * 3 * 4')
+
+    // The /i splash over HTTP at phone UAs (SSR carries the verdict).
+    const iaGet = async (ua: string) => (await fetch(`${BASE}/i/buy-aapl`, { headers: { 'user-agent': ua, 'x-yf-internal-run': '1' } })).text()
+    const [xHtml, safariHtml, mmHtml, fbHtml] = await Promise.all([iaGet(MOBILE_UAS['ios-x'].ua), iaGet(MOBILE_UAS['ios-safari'].ua), iaGet(MOBILE_UAS['ios-metamask'].ua), iaGet(MOBILE_UAS['android-fb'].ua)])
+    check('mobile links: /i/buy-aapl inside X\'s browser renders the escape card in the server HTML — named vendor, "Open in Safari", the copy button, the door still there', /data-inapp-browser="x"/.test(xHtml) && /Open in Safari/.test(xHtml) && /data-inapp-copy/.test(xHtml) && /Connect &amp; build my path/.test(xHtml))
+    check('mobile links: the same page on iPhone Safari, in MetaMask\'s browser and (for the vendor) inside Facebook Android: no escape card on the launch-capable ones, "facebook" on the WebView', !/data-inapp-browser=/.test(safariHtml) && !/data-inapp-browser=/.test(mmHtml) && /data-inapp-browser="facebook"/.test(fbHtml) && /Open in browser/.test(fbHtml))
+    const cdpOn = /^NEXT_PUBLIC_CDP_PROJECT_ID=.+/m.test((() => { try { return readFileSync('.env.local', 'utf8') } catch { return '' } })())
+    check('mobile links: the splash carries the "No wallet on this phone?" line that opens the SAME unified door (email / Google), whenever the door exists (cdpEnabled)', !cdpOn || (/data-no-wallet-lane/.test(safariHtml) && /Make one with email or Google/.test(safariHtml)), cdpOn ? 'cdp on' : 'cdp off — line not expected')
+    const rtSrc = readFileSync('components/IntentRuntime.tsx', 'utf8')
+    check('mobile links: IntentRuntime never touches window.localStorage bare (safeStorage), holds the injected ask on a came-back verdict, and its "build it again" chip is the send', !/window\.localStorage/.test(rtSrc) && /if \(returned \|\| returnClosed\) return/.test(rtSrc) && /onAgain=\{\(\) => \{[\s\S]*?setPrompt\(\{ text: ask, send: !transferShaped/.test(rtSrc) && /rememberRun\('built'\)/.test(rtSrc) && /rememberRun\('signed'/.test(rtSrc) && /beaconsAlreadyPosted/.test(rtSrc))
+    const pageSrc = readFileSync('app/i/[slug]/page.tsx', 'utf8')
+    check('mobile links: the /i page reads the request UA on the server and hands the verdict to the runtime (the escape line is in the first HTML, not a client flash)', /headers\(\)\)\.get\('user-agent'\)/.test(pageSrc) && /browser=\{browser\}/.test(pageSrc))
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }
