@@ -29940,12 +29940,6 @@ async function main() {
         sdkKinds.length === kindMembers.length && kindMembers.length > 0 && kindMembers.every((k) => sdkKinds.includes(k)),
         `website=[${kindMembers.join('|')}] sdk=[${sdkKinds.join('|')}]`,
       )
-      const constDrift = WIRE_CONSTS.filter((c) => constValue(wireSrc, c) !== constValue(sdkSrc, c))
-      check(
-        'desk wire: every timing constant has the SAME VALUE in both repos (the SDK polls and re-signs on these numbers)',
-        constDrift.length === 0,
-        constDrift.map((c) => `${c}: ${constValue(wireSrc, c)} vs ${constValue(sdkSrc, c)}`).join('; ') || WIRE_CONSTS.map((c) => `${c}=${constValue(wireSrc, c)}`).join(' '),
-      )
       const fieldDrift = (['DeskLegView', 'DeskLegResult', 'DeskNext'] as const)
         .map((t) => {
           const a = ifaceFields(wireSrc, t)
@@ -29964,48 +29958,73 @@ async function main() {
         'desk wire: the SDK never re-serializes an HL action it was handed (#850 key order) — no JSON.parse(JSON.stringify(action))',
         !/JSON\.parse\(\s*JSON\.stringify\(/.test(sdkSrc) && !/sortKeys|Object\.keys\([^)]*action[^)]*\)\.sort/.test(sdkSrc),
       )
-      // F8: the SDK ships its OWN copy of deskExecuteConsentMessage. The desk
-      // RECOVERS the signer from the text it builds itself, so one byte of
-      // drift and every agent's consent recovers to a different address —
-      // which reads like a wallet bug, not a version skew. Round 2 ships the
-      // `Issued at:` line (F4), and it lands in one repo first by construction.
-      const sdkConsent = sdkSrc.slice(sdkSrc.indexOf('export function deskExecuteConsentMessage'))
-      const sdkConsentBody = sdkConsent.slice(0, sdkConsent.indexOf('\n}'))
-      const wantLines = deskExecuteConsentMessage('<ID>', '<WALLET>', '<ISSUED_AT>').split('\n') // round 2: the text gained `Issued at:`; the last line is still the sentence
-      const sdkLineCount = (sdkConsentBody.match(/^\s{4}['"`]/gm) ?? []).length
-      // The sentinels come back LOWERCASED in the wallet line (the text
-      // lowercases it), so this filter has to be case-insensitive — it read
-      // `Wallet: <wallet>` as a constant line and reported a false drift.
-      const constantLines = wantLines.filter((l) => !/<id>|<wallet>/i.test(l))
+      // F8: the SDK ships its OWN copy of deskExecuteConsentMessage, and the
+      // desk RECOVERS the signer from the text IT builds — one byte of drift
+      // and every agent's consent recovers to a different address, which reads
+      // like a wallet bug rather than a version skew. Round 2 added the
+      // `Issued at:` line, and it landed in one repo first by construction.
+      //
+      // Round 1 pinned this by grepping the SDK SOURCE for each line, and it
+      // went red on a difference that does not exist: the desk writes a literal
+      // em dash, the SDK writes `\u2014`. Same bytes at runtime, different
+      // bytes on disk. Source text is the wrong evidence for a question about
+      // what the signer hashes — so import the module and compare the STRINGS.
+      const sdkMod = (await import(`../${sdkPath}`)) as { deskExecuteConsentMessage?: (a: string, b: string, c: string) => string } & Record<string, unknown>
+      const consentCases: Array<[string, string, string]> = [
+        ['abc123', '0xAbCdEf0000000000000000000000000000000001', '2026-09-23T11:22:33.444Z'],
+        ['z', '0x0000000000000000000000000000000000000000', '1970-01-01T00:00:00.000Z'],
+      ]
+      const consentDrift = typeof sdkMod.deskExecuteConsentMessage !== 'function'
+        ? ['the SDK exports no deskExecuteConsentMessage']
+        : consentCases
+            .map(([i, w, t]) => ({ want: deskExecuteConsentMessage(i, w, t), got: sdkMod.deskExecuteConsentMessage!(i, w, t) }))
+            .filter((r) => r.want !== r.got)
+            .map((r) => `desk ${r.want.length}B vs sdk ${r.got.length}B: ${[...r.want].findIndex((c, k) => c !== r.got[k])}`)
       check(
-        'desk wire: the SDK\'s copy of the execute consent text is BYTE-identical to the desk\'s, line count included (the desk recovers the signer from its OWN text — one byte of drift and every agent\'s consent recovers to nothing)',
-        constantLines.every((l) => sdkConsentBody.includes(l)) &&
-          /Intent: \$\{intentId\}/.test(sdkConsentBody) &&
-          /Wallet: \$\{wallet\.toLowerCase\(\)\}/.test(sdkConsentBody) &&
-          sdkLineCount === wantLines.length,
-        `${sdkLineCount} sdk lines vs ${wantLines.length} desk lines${constantLines.filter((l) => !sdkConsentBody.includes(l)).length ? ` · desk-only: ${constantLines.filter((l) => !sdkConsentBody.includes(l)).join(' | ').slice(0, 90)}` : ''}`,
+        'desk wire: the SDK\'s deskExecuteConsentMessage returns the EXACT string the desk builds, for every field including `Issued at:` (compared at RUNTIME — the desk recovers the signer from its own text, and source bytes are the wrong evidence: the desk writes a literal em dash, the SDK writes \\u2014)',
+        consentDrift.length === 0,
+        consentDrift.join('; ') || `${deskExecuteConsentMessage(...consentCases[0]).length} bytes, identical on ${consentCases.length} inputs`,
+      )
+      // The timing constants are runtime values too — compare the values the
+      // SDK actually exports, not the text it declares them with.
+      const constRuntimeDrift = WIRE_CONSTS.filter((c) => {
+        const mine = ({ HL_DOMAIN_CHAIN_ID: 1337, HL_NONCE_LIFE_MS: 90_000, LEG_OFFER_TTL_MS: 30 * 60_000, BUILD_RETRY_MS: 3_000, SETTLE_RETRY_MS: 10_000 } as Record<string, number>)[c]
+        return sdkMod[c] !== mine
+      })
+      check(
+        'desk wire: every timing constant the SDK exports has the VALUE the desk means (runtime, not the literal it is spelled with)',
+        constRuntimeDrift.length === 0,
+        constRuntimeDrift.map((c) => `${c}=${String(sdkMod[c])}`).join(', ') || WIRE_CONSTS.map((c) => `${c}=${String(sdkMod[c])}`).join(' '),
       )
       check(
         'desk wire: the SDK\'s leg classifier is named for the wire it mirrors, so a reader finds both halves (website legViewOf ↔ sdk legViewOfStep)',
         /export function legViewOf(Step)?\b/.test(sdkSrc) && /export function legViewOf\b/.test(wireSrc),
       )
-      // The result allowlist is the REAL contract for what an agent may send:
-      // a key it accepts but the wire type never names is a value no reader of
-      // the wire knows to produce, and a key the type names but the allowlist
-      // drops is silently thrown away.
-      let driveSrc: string | null = null
-      try { driveSrc = readFileSync('lib/desk-drive.ts', 'utf8') } catch { driveSrc = null }
-      if (driveSrc) {
-        const allow = (driveSrc.match(/RESULT_KEYS[^=]*=\s*(?:new Set\()?\[([^\]]+)\]/)?.[1] ?? '')
+      // The result allowlist is the REAL contract for what an agent may send.
+      // `DESK_LEG_RESULT_KEYS` (the published list) is tied to `DeskLegResult`
+      // at compile time by `satisfies ReadonlyArray<keyof DeskLegResult>`, so
+      // that half polices itself. What nothing ties is the list the ENFORCER
+      // uses — `LEG_RESULT_KEYS` in lib/job-step-money.ts, the shared writer
+      // every completion path runs through. Two lists in two files: a key in
+      // one and not the other is either a value silently dropped or a key no
+      // reader of the wire knows to send.
+      const arrayOf = (src: string, name: string): string[] =>
+        ((src.match(new RegExp(`${name}[^=]*=\\s*(?:new Set\\()?\\[([^\\]]+)\\]`)) ?? [])[1] ?? '')
           .split(',')
           .map((k) => k.trim().replace(/['"`]/g, ''))
           .filter(Boolean)
-        const resultFields = ifaceFields(wireSrc, 'DeskLegResult')
-        gap(
-          'desk wire: every key broker_done accepts in a leg result is named by DeskLegResult, and vice versa (the allowlist IS the contract an agent codes against)',
-          allow.length > 0 && allow.every((k) => resultFields.includes(k)) && resultFields.every((k) => allow.includes(k)),
-          'A9→MCP/SDK',
-          allow.length === 0 ? 'could not read RESULT_KEYS' : `allow-only=[${allow.filter((k) => !resultFields.includes(k)).join(',')}] type-only=[${resultFields.filter((k) => !allow.includes(k)).join(',')}]`,
+      let moneySrc: string | null = null
+      try { moneySrc = readFileSync('lib/job-step-money.ts', 'utf8') } catch { moneySrc = null }
+      if (moneySrc) {
+        const published = arrayOf(wireSrc, 'DESK_LEG_RESULT_KEYS')
+        const enforced = arrayOf(moneySrc, 'LEG_RESULT_KEYS')
+        check(
+          'desk wire: the keys the ENFORCER accepts (lib/job-step-money LEG_RESULT_KEYS — the one writer every completion runs through) are exactly the keys the wire publishes (DESK_LEG_RESULT_KEYS), which `satisfies` already ties to DeskLegResult',
+          published.length > 0 && enforced.length > 0 &&
+            published.every((k) => enforced.includes(k)) && enforced.every((k) => published.includes(k)),
+          published.length === 0 || enforced.length === 0
+            ? `could not read (published ${published.length}, enforced ${enforced.length})`
+            : `published-only=[${published.filter((k) => !enforced.includes(k)).join(',')}] enforced-only=[${enforced.filter((k) => !published.includes(k)).join(',')}]`,
         )
       }
     } else {
@@ -30087,10 +30106,9 @@ async function main() {
       const junk = await completeWith(jobJunk, { seq: 0, result: { txHash: 'javascript:alert(1)', note: '<img src=x onerror=1>' } })
       const junkRow = await prisma.jobStep.findFirst({ where: { jobId: jobJunk.id, seq: 0 }, select: { result: true, status: true } })
       const storedJunk = JSON.stringify(junkRow?.result ?? {})
-      gap(
-        'desk drive: a leg result whose txHash is not 0x+64hex is REFUSED (a hostile agent writes what the admin desk log renders)',
-        junk.status === 400 || !/javascript:|onerror/.test(storedJunk),
-        'A2→DRIVE',
+      check(
+        'desk drive: a leg result whose txHash is not 0x+64hex is REFUSED, and none of it is stored (a hostile agent writes what the admin desk log renders — QA F1, fenced by DRIVE round 2)',
+        junk.status === 400 && !/javascript:|onerror/.test(storedJunk),
         `status ${junk.status}, stored ${storedJunk.slice(0, 80)}`,
       )
 
@@ -30098,10 +30116,9 @@ async function main() {
       const jobBig = await mkJob(wA)
       const big = await completeWith(jobBig, { seq: 0, result: { txHash: `0x${'c'.repeat(64)}`, blob: 'x'.repeat(200_000) } })
       const bigRow = await prisma.jobStep.findFirst({ where: { jobId: jobBig.id, seq: 0 }, select: { result: true } })
-      gap(
-        'desk drive: a leg result is size-capped (~8KB) — an agent cannot write unbounded jsonb per leg',
-        big.status === 400 || JSON.stringify(bigRow?.result ?? {}).length < 16_000,
-        'A2→DRIVE',
+      check(
+        'desk drive: a leg result is size-capped — an agent cannot write unbounded jsonb per leg (QA F6)',
+        big.status === 400 && JSON.stringify(bigRow?.result ?? {}).length < 16_000,
         `status ${big.status}, stored ${JSON.stringify(bigRow?.result ?? {}).length}B`,
       )
 
@@ -30157,64 +30174,212 @@ async function main() {
         `state=${afterClose?.state}`,
       )
 
-      if (tools.includes('broker_next')) {
-        const foreignNext = await qaCall('broker_next', { intent_id: boundId, agent_key: 'not-the-bound-key' })
+      // ── 3b. the execute gate (QA F4, shipped round 2) ────────────────────
+      // Round 1 these were grep-gaps: does the consent text mention an issuedAt,
+      // does the route mention agent_key. Both now ship, so they are behaviour,
+      // and behaviour is what gets probed. The FIRST pin is the one that
+      // matters most and the one a refusal-only suite can never have: the happy
+      // path must still SUCCEED. A gate that only proves the bad cases refuse
+      // cannot tell "safe" from "broken" — see the integration break it caught.
+      const a4Wallet = privateKeyToAccount(generatePrivateKey())
+      const a4Ask = `swap 1 USDC for ETH on base, then send 0.5 USDC on base to ${a4Wallet.address}`
+      const a4Open = async () => {
+        const o = await qaCall('broker_open', { ask: a4Ask, wallet: a4Wallet.address, agent: 'qa', agent_key: 'qa-a4-owner' })
+        return (o.payload as { intentId?: string })?.intentId ?? ''
+      }
+      const a4Execute = async (opts: { issuedAt?: string; agentKey?: string | null; intentId?: string } = {}) => {
+        const intentId = opts.intentId ?? (await a4Open())
+        const issuedAt = opts.issuedAt ?? new Date().toISOString()
+        const sig = await a4Wallet.signMessage({ message: deskExecuteConsentMessage(intentId, a4Wallet.address, issuedAt) })
+        const args: Record<string, unknown> = { intent_id: intentId, wallet_signature: sig, issued_at: issuedAt }
+        if (opts.agentKey !== null) args.agent_key = opts.agentKey ?? 'qa-a4-owner'
+        const r = await qaCall('broker_execute', args)
+        return { intentId, isError: r.isError, text: String(r.payload), jobId: (r.payload as { jobId?: string } | null)?.jobId ?? '' }
+      }
+
+      const a4Happy = await a4Execute()
+      check(
+        'desk execute: the HAPPY path still works over the MCP surface — the right agent_key and a fresh consent compile the intent to a job (the gate DRIVE shipped is reachable through the door MCP owns)',
+        !a4Happy.isError && !!a4Happy.jobId,
+        a4Happy.isError ? a4Happy.text.slice(0, 180) : `job ${a4Happy.jobId}`,
+      )
+      if (a4Happy.isError) {
+        // Every later pin here would "pass" on the same blanket refusal, which
+        // is passing for the wrong reason. One red per root cause; say what is
+        // unproven rather than banking five greens a broken door hands out.
+        console.log('  ⚠️  desk execute: the freshness and identity pins are UNPROVEN — the door refuses every call, so a refusal proves nothing')
+      } else {
+      const a4Stale = await a4Execute({ issuedAt: new Date(Date.now() - 30 * 60_000).toISOString() })
+      check(
+        'desk execute: a consent signed 30 minutes ago is refused — the signature is no longer a standing credential for its intent',
+        a4Stale.isError && /issued|stale|old|fresh|window/i.test(a4Stale.text),
+        a4Stale.text.slice(0, 150),
+      )
+      const a4Future = await a4Execute({ issuedAt: new Date(Date.now() + 30 * 60_000).toISOString() })
+      check(
+        'desk execute: a consent dated 30 minutes in the FUTURE is refused too — the window is checked BOTH ways (the on-ramp consent rule, #671)',
+        a4Future.isError && /issued|future|ahead|clock|window/i.test(a4Future.text),
+        a4Future.text.slice(0, 150),
+      )
+      const a4Foreign = await a4Execute({ agentKey: 'qa-a4-impostor' })
+      check(
+        "desk execute: a caller presenting a DIFFERENT agent_key is refused even holding a valid consent signature — the caller's identity is compared, not just the intent's",
+        a4Foreign.isError && /agent_key|identity/i.test(a4Foreign.text),
+        a4Foreign.text.slice(0, 150),
+      )
+      const a4None = await a4Execute({ agentKey: null })
+      check(
+        'desk execute: a caller presenting NO agent_key is refused by name',
+        a4None.isError && /agent_key|identity/i.test(a4None.text),
+        a4None.text.slice(0, 150),
+      )
+      }
+      check(
+        'desk execute: the consent text names the instant it was signed, so what the wallet approved is legible to a human reading it back',
+        /^Issued at: \d{4}-\d{2}-\d{2}T[\d:.]+Z$/m.test(deskExecuteConsentMessage('qaintent01', wA, new Date().toISOString())),
+        deskExecuteConsentMessage('qaintent01', wA, new Date().toISOString()).split('\n')[3],
+      )
+
+
+      // ── 3c. broker_next / broker_done (C3) ───────────────────────────────
+      // These need an intent that HAS a job: `broker_next` refuses an open
+      // intent for having nothing to drive BEFORE it looks at who is asking,
+      // so probing identity on a job-less intent proves nothing. Round 2's
+      // first cut did exactly that and read as a red.
+      if (tools.includes('broker_next') && !a4Happy.isError) {
+        const driven = a4Happy.intentId
+        const foreignNext = await qaCall('broker_next', { intent_id: driven, agent_key: 'qa-a4-impostor' })
         check(
-          'desk mcp: broker_next refuses a caller whose agent_key is not the one bound at open (C3)',
+          'desk mcp: broker_next on a LIVE job refuses a caller whose agent_key is not the one bound at open (C3)',
           foreignNext.isError && /agent|identity|key/i.test(String(foreignNext.payload)),
-          String(foreignNext.payload).slice(0, 100),
+          String(foreignNext.payload).slice(0, 110),
         )
-        const bareNext = await qaCall('broker_next', { intent_id: boundId })
-        check('desk mcp: broker_next with NO agent_key is refused (the id alone is not the capability)', bareNext.isError)
+        const bareNext = await qaCall('broker_next', { intent_id: driven })
+        check(
+          'desk mcp: broker_next with NO agent_key is refused — the intent id alone is not the capability',
+          bareNext.isError,
+          String(bareNext.payload).slice(0, 110),
+        )
+        const foreignDone = await qaCall('broker_done', { intent_id: driven, agent_key: 'qa-a4-impostor', seq: 0, result: { txHash: `0x${'e'.repeat(64)}` } })
+        check(
+          'desk mcp: broker_done refuses a foreign agent_key too — the write half is gated like the read half, so a stray intent id cannot advance someone else\'s job',
+          foreignDone.isError && /agent|identity|key/i.test(String(foreignDone.payload)),
+          String(foreignDone.payload).slice(0, 110),
+        )
+        const ownNext = await qaCall('broker_next', { intent_id: driven, agent_key: 'qa-a4-owner' })
+        check(
+          'desk mcp: the BOUND agent gets its leg (or an honest "waiting") — the gate refuses impostors without refusing the owner',
+          !ownNext.isError && typeof ownNext.payload === 'object' && ownNext.payload !== null,
+          JSON.stringify(ownNext.payload ?? ownNext).slice(0, 140),
+        )
         const routeSrc = readFileSync('app/api/broker/[transport]/route.ts', 'utf8')
         check(
-          'desk mcp: the route header writes down the REVISED trust boundary — signable material now crosses this surface (C3)',
+          'desk mcp: the route header writes down the REVISED trust boundary — signable material now crosses this surface (C3 revises M1)',
           /broker_next/.test(routeSrc) && /(trust boundary|same trust|capability token)/i.test(routeSrc.slice(0, 4000)),
         )
+        // Decision 5: the capability token RIDES in broker_next's drive.* URLs
+        // on purpose (the same identity received it at execute). What still has
+        // to hold is that it is never STORED — it is re-minted from the intent
+        // row each time, so there is no secret at rest to leak later.
+        const driveSrcForToken = readFileSync('lib/desk-drive.ts', 'utf8')
         check(
-          'desk mcp: broker_next never hands back the job capability token (a leak is 7 days of drive rights)',
-          !/t=\$\{token\}|capabilityToken|jobToken/.test(readFileSync('lib/desk-wire.ts', 'utf8') + routeSrc.replace(/signJobToken\([^)]*\)/g, '')),
+          'desk mcp: the capability token is re-minted per call, never persisted (decision 5 lets it ride in drive.*, so "no secret at rest" is the property that has to hold)',
+          /signJobToken\(/.test(driveSrcForToken) &&
+            !/token:\s*(row|intent)\.|capabilityToken\s*[:=]\s*(row|intent)\./.test(driveSrcForToken) &&
+            !/token\s*String/.test(readFileSync('prisma/schema.prisma', 'utf8').slice(readFileSync('prisma/schema.prisma', 'utf8').indexOf('model BrokerIntent'), readFileSync('prisma/schema.prisma', 'utf8').indexOf('model BrokerIntent') + 1400)),
         )
-      } else {
+      } else if (!tools.includes('broker_next')) {
         gap('desk mcp: broker_next / broker_done exist and are agent_key-gated (C3)', false, 'A3→MCP', 'tools/list has neither')
       }
 
-      // The execute consent is a standing bearer credential for its intent:
-      // bound to (intent, wallet) but with NO freshness. Ask A4.
-      const consent = deskExecuteConsentMessage('qaintent01', wA, new Date().toISOString())
-      gap(
-        'desk consent: the execute consent text carries an issuedAt, checked both ways (≤10 min) — an indefinitely-valid signature is a standing credential',
-        /Issued|issuedAt|\d{4}-\d{2}-\d{2}T/.test(consent),
-        'A4→MCP/DRIVE',
-        consent.split('\n')[1],
-      )
-      const brokerRoute = readFileSync('app/api/broker/[transport]/route.ts', 'utf8')
-      const execTool = brokerRoute.slice(brokerRoute.indexOf("'broker_execute'"), brokerRoute.indexOf("'broker_tile'"))
-      gap(
-        "desk consent: broker_execute compares the CALLER's agent_key to the key bound at open (today only the wallet signature gates it)",
-        /agent_key/.test(execTool),
-        'A4→MCP',
-      )
-
-      // ── 4. the HL batch (C2), when DRIVE lands it ────────────────────────
+      // ── 4. the HL batch (C2) — the rule, exercised, not grepped ──────────
+      // Round 1 I pinned this by grepping `lib/hl-batch.ts` for a loop over
+      // `fetchHlSnapshot`. There is no such loop and there is not meant to be:
+      // **there is no batch endpoint**. Each member is its own
+      // `POST /api/hl/submit` call, so the per-member `expected` → live
+      // snapshot → guard → spend policy → nonce-age chain that F5 asked for is
+      // the route's existing behaviour, N times. What `lib/hl-batch.ts` owes
+      // is the part that route cannot see: that the N calls are the N members
+      // the builder composed, in order, each with ITS own expectation.
+      // So this runs the real guard against real typed data.
       let batchSrc: string | null = null
       try { batchSrc = readFileSync('lib/hl-batch.ts', 'utf8') } catch { batchSrc = null }
       if (batchSrc) {
+        const hlb = await import('../lib/hl-batch')
+        const hlx = await import('../lib/hyperliquid-exec')
+        const mkOrder = (a = 5, nonce = Date.now()) => {
+          const action = hlx.canonicalizeHlAction({
+            type: 'order' as const,
+            orders: [{ a, b: true, p: '30', s: '0.4', r: false, t: { limit: { tif: 'Ioc' as const } } }],
+            grouping: 'na' as const,
+          })
+          return { kind: 'order' as const, action, nonce, typedData: hlx.hlActionTypedData(action, nonce, false) as unknown as Record<string, unknown>, expected: { coin: 'HYPE', kind: 'open' as const, isBuy: true } }
+        }
+        const mkLev = (asset = 5, nonce = Date.now() - 1) => {
+          const action = hlx.canonicalizeHlAction({ type: 'updateLeverage' as const, asset, isCross: true, leverage: 2 })
+          return { kind: 'leverage' as const, action, nonce, typedData: hlx.hlActionTypedData(action, nonce, false) as unknown as Record<string, unknown>, expected: { coin: 'HYPE', leverage: 2 } }
+        }
+        const now = Date.now()
+        const good = [mkLev(5, now - 1), mkOrder(5, now)]
+        const okRes = hlb.guardHlBatch(good)
         check(
-          'hl batch: every member is guarded against its OWN live snapshot — the asset-index pin is per action, so one `expected` for N actions erases it',
-          (batchSrc.match(/fetchHlSnapshot|guardHlExecBuild|guardHlLeverageBuild/g) ?? []).length >= 2 && /for \(|\.map\(|\.forEach\(/.test(batchSrc),
+          'hl batch: the shape the builder composes passes its own guard — leverage then order, ascending nonces, one coin',
+          okRes.ok === true,
+          okRes.ok ? '' : okRes.reasons.join(' | '),
         )
-        check(
-          'hl batch: a member whose action type is not on the allowlist is refused, never relayed',
-          /allow|ALLOWED|includes\(.*type|type === 'order'/.test(batchSrc),
+        // Each refusal below is the SAME batch with exactly one thing wrong.
+        const refusal = (label: string, mutate: () => unknown[], want: RegExp) => {
+          const r = hlb.guardHlBatch(mutate())
+          check(`hl batch: ${label}`, r.ok === false && want.test((r as { reasons: string[] }).reasons.join(' ')), r.ok ? 'ACCEPTED IT' : (r as { reasons: string[] }).reasons.join(' | ').slice(0, 110))
+        }
+        refusal(
+          'a member that is not an order or a leverage update is refused, never relayed (a withdraw or a transfer riding in a "batch" is the whole worry)',
+          () => [{ ...mkLev(), action: { type: 'withdraw3', destination: '0xattacker', amount: '9999' } }],
+          /not a Hyperliquid order or leverage action/i,
         )
-        check(
-          'hl batch: every member carries its own nonce and each is age-checked (a batch signed once and submitted slowly goes stale)',
-          /HL_NONCE_MAX_AGE_MS|nonceStale|hlNonceStale/.test(batchSrc),
+        refusal(
+          "a member whose typed data does not derive from ITS OWN action + nonce is refused (the agent must sign the bytes it was handed — #850)",
+          () => { const m = mkOrder(); return [{ ...m, typedData: hlx.hlActionTypedData(hlx.canonicalizeHlAction({ type: 'updateLeverage' as const, asset: 5, isCross: true, leverage: 20 }), m.nonce, false) as unknown as Record<string, unknown> }] },
+          /typed data does not derive/i,
         )
+        refusal(
+          'a member that names no coin is refused — the coin IS the expectation the submit route reads the live market against',
+          () => { const m = mkOrder(); return [{ ...m, expected: { kind: 'open' as const, isBuy: true } }] },
+          /names no coin/i,
+        )
+        refusal(
+          'two members naming DIFFERENT coins are refused — one batch, one market, so one snapshot answers for all of it',
+          () => [{ ...mkLev(5, now - 1), expected: { coin: 'HYPE', leverage: 2 } }, { ...mkOrder(5, now), expected: { coin: 'BTC', kind: 'open' as const, isBuy: true } }],
+          /names BTC, not HYPE|names HYPE, not BTC/i,
+        )
+        refusal('nonces that do not ascend are refused (the venue takes them in order)', () => [mkLev(5, now), mkOrder(5, now - 1)], /does not ascend/i)
+        refusal('an order that is not the LAST member is refused (nothing may ride behind the fill)', () => [mkOrder(5, now - 1), mkLev(5, now)], /not the last member/i)
+        refusal('two orders in one batch are refused', () => [mkOrder(5, now - 1), mkOrder(5, now)], /at most one|not the last member/i)
+        refusal(`more than ${hlb.HL_BATCH_MAX_MEMBERS} members are refused`, () => [mkLev(5, now - 3), mkLev(5, now - 2), mkLev(5, now - 1), mkOrder(5, now)], /the limit is/i)
         check(
-          'hl batch: a failed member STOPS the batch and the result names which one (C2)',
-          /break|stop|return .*\bindex\b|failedAt|batch\[/.test(batchSrc),
+          'hl batch: the freshness window is measured from the FIRST (oldest) nonce — member 1 is submitted first, so the oldest nonce is the binding one',
+          hlb.hlBatchStaleAfterMs(good, now) <= hlx.HL_NONCE_SIGNABLE_MS &&
+            hlb.hlBatchStaleAfterMs([{ nonce: now - 1 }, { nonce: now }], now) < hlb.hlBatchStaleAfterMs([{ nonce: now }, { nonce: now }], now) &&
+            hlb.hlBatchStaleAfterMs([{ nonce: now - hlx.HL_NONCE_SIGNABLE_MS - 1 }, { nonce: now }], now) < 0,
+          `${hlb.hlBatchStaleAfterMs(good, now)}ms left on a fresh pair`,
+        )
+        const stopped = hlb.batchCompletionVerdict({ batch: [{ ok: true }, { ok: false, error: 'venue rejected' }] })
+        check(
+          'hl batch: a failed member STOPS the batch and the verdict names WHICH one, so the runner re-offers from it instead of replaying the fill',
+          stopped.kind === 'reoffer' && stopped.failedIndex === 1 && stopped.submitted === 2 &&
+            hlb.batchCompletionVerdict({ batch: [{ ok: true }, { ok: true }] }).kind === 'done' &&
+            hlb.batchCompletionVerdict({ txHash: `0x${'a'.repeat(64)}` }).kind === 'none',
+          JSON.stringify(stopped),
+        )
+        // The claim the ruling rests on: there IS no batch endpoint, so every
+        // member goes through the one route that already guards per action.
+        const apiFiles = readdirSync('app/api/hl')
+        check(
+          'hl batch: there is NO batch submit endpoint — app/api/hl serves submit (+ delegation), so each member rides the route that re-guards against its own expected, its own snapshot, its own nonce age and the spend policy',
+          !apiFiles.some((f) => /batch/i.test(f)) &&
+            apiFiles.includes('submit') &&
+            /HL_NONCE_MAX_AGE_MS/.test(readFileSync('app/api/hl/submit/route.ts', 'utf8')),
+          apiFiles.join(','),
         )
       }
 
