@@ -23,6 +23,7 @@ import { CONFIDENTIAL_LEVEL, crossChainValueUsd, expectedOriginChainId, guardCro
 import { floorBlockFromError, floorProblemLine } from '@/lib/venue-floor'
 import { PRIVATE_LANE_CLOSED_NOTE, privateLaneOpen } from '@/lib/private-lane'
 import { buildHlExecTurn, readHlCollateralUsd, type HlIntent } from '@/lib/hyperliquid-exec'
+import { withHlBatch, batchCompletionVerdict } from '@/lib/hl-batch'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import type { GuardianArmAsk } from '@/lib/hl-guardian'
 import { LINK_SWAP_FEE_BPS } from '@/lib/fees'
@@ -407,7 +408,11 @@ export async function buildSignArtifact(
     // The layer names its own path per branch: a perp ORDER carries the
     // builder fee, the bridge DEPOSIT carries none — they must not share one
     // fee-bearing path (lib/build-path).
-    if (turn.orderRequest) return { artifact: { orderRequest: turn.orderRequest }, guardReport: turn.guardrails, valueUsd: turn.guardrails?.valueUsd ?? null, buildPath: asBuildPath(turn.buildPath) }
+    // THE BATCH RULE (lib/hl-batch, agent-desk C2): the order request also carries
+    // `batch` = [leverage?, order] so an agent signs everything inside the venue in
+    // one pass; the browser JobCard keeps reading hl.pre + hl.action. A composed
+    // batch that fails its own guard is a builder bug — refuse the offer.
+    if (turn.orderRequest) return { artifact: { orderRequest: withHlBatch(turn.orderRequest) }, guardReport: turn.guardrails, valueUsd: turn.guardrails?.valueUsd ?? null, buildPath: asBuildPath(turn.buildPath) }
     if (turn.txRequest) return { artifact: { txRequest: turn.txRequest }, guardReport: turn.guardrails, valueUsd: turn.guardrails?.valueUsd ?? null, buildPath: asBuildPath(turn.buildPath) }
     throw new Error(turn.reply.replace(/^[^\w]+/, ''))
   }
@@ -711,6 +716,27 @@ export async function completeSignStep(
   if (!job || job.wallet !== wallet.toLowerCase()) return { ok: false, error: 'job not found' }
   const step = job.steps.find((s) => s.seq === seq)
   if (!step || step.kind !== 'sign') return { ok: false, error: 'not a sign step' }
+  // THE BATCH RULE (lib/hl-batch, agent-desk C2): a completion whose `result.batch`
+  // stops at a failed member does NOT finish the step — it goes back to pending
+  // with the partial result kept, and the next build re-offers from the failed
+  // member (a leverage the venue already applied is skipped by the builder). The
+  // members that answered ok are the venue's word, kept on the row for the log.
+  const verdict = batchCompletionVerdict(result)
+  if (verdict.kind === 'reoffer') {
+    const rearm = await prisma.jobStep.updateMany({
+      where: { id: step.id, status: 'offered' },
+      data: {
+        status: 'pending',
+        artifact: undefined,
+        result: { error: `batch stopped at member ${verdict.failedIndex + 1}: ${verdict.error}`, batchPartial: (result as { batch?: unknown }).batch ?? [], reoffer: true } as object,
+      },
+    })
+    if (rearm.count !== 1) return { ok: false, error: 'step is not awaiting a signature' }
+    await prisma.job.update({ where: { id: jobId }, data: { status: 'running' } })
+    const again = await getJobWithSteps(jobId)
+    if (again) await advanceJob(again).catch(() => {})
+    return { ok: true }
+  }
   const claim = await prisma.jobStep.updateMany({ where: { id: step.id, status: 'offered' }, data: { status: 'done', result: result as object } })
   if (claim.count !== 1) return { ok: false, error: 'step is not awaiting a signature' }
   await prisma.job.update({ where: { id: jobId }, data: { currentStep: seq + 1, status: 'running' } })

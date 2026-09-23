@@ -30196,6 +30196,473 @@ async function main() {
     await dcall('broker_close', { intent_id: dOpenOnly.payload?.intentId })
   }
 
+  // ── agent desk squad: QA ─────────────────────────────────────────────────
+  // The QA lane's pins (squad ~/yeetful/squad-agentdesk-2026-09-23). Two jobs:
+  //   1. keep lib/desk-wire.ts and the SDK's src/desk.ts mirror in sync — the
+  //      wire is named in two repos, so it can drift silently;
+  //   2. drive the adversarial cases of the agent-signed path over HTTP.
+  //
+  // gap(): a pin whose CORRECT behaviour is not shipped yet. It names the Ask
+  // that owns it, counts neither pass nor fail while the gap stands, and turns
+  // into a real ✅ the moment the owning lane closes it. When an Ask lands,
+  // change `gap(` → `check(` so a regression goes RED.
+  console.log('— agent desk (QA)')
+  {
+    let deskGaps = 0
+    const openGaps: string[] = []
+    const gap = (name: string, ok: boolean, ask: string, extra = '') => {
+      if (ok) return check(`${name} [${ask} CLOSED — promote gap() → check()]`, true, extra)
+      deskGaps++
+      openGaps.push(`${ask}: ${name}`)
+      console.log(`  ⚠️  known-gap ${ask} — ${name}${extra ? ` — ${extra}` : ''}`)
+    }
+
+    // ── 1. the leg wire, named in two repos ────────────────────────────────
+    const wireSrc = readFileSync('lib/desk-wire.ts', 'utf8')
+    const WIRE_TYPES = ['DeskLegKind', 'DeskLegView', 'DeskLegResult', 'DeskNext']
+    check(
+      'desk wire: lib/desk-wire.ts exports the four contract names and stays pure (no React, no Prisma, no fetch)',
+      WIRE_TYPES.every((t) => new RegExp(`export (type|interface) ${t}\\b`).test(wireSrc)) &&
+        !/from '@\/lib\/db'|require\(|\bfetch\(|from 'react'/.test(wireSrc),
+      WIRE_TYPES.filter((t) => !new RegExp(`export (type|interface) ${t}\\b`).test(wireSrc)).join(',') || 'all present',
+    )
+    const kindMembers = (wireSrc.match(/export type DeskLegKind = ([^\n]+)/)?.[1] ?? '')
+      .split('|')
+      .map((s) => s.trim().replace(/['"]/g, ''))
+      .filter(Boolean)
+    check(
+      'desk wire: DeskLegKind carries every shape C1/C2 names — tx, txChain, hlAction, hlBatch, wait, unknown',
+      ['tx', 'txChain', 'hlAction', 'hlBatch', 'wait', 'unknown'].every((k) => kindMembers.includes(k)),
+      kindMembers.join('|'),
+    )
+    // The SDK mirror (Pantessa/sdk src/desk.ts) lives outside this repo — the
+    // squad's sibling worktree, or a published checkout. Pin it when present.
+    const sdkPaths = ['../sdk-agent-desk/src/desk.ts', '../sdk/src/desk.ts']
+    const sdkPath = sdkPaths.find((p) => { try { readFileSync(p, 'utf8'); return true } catch { return false } })
+    if (sdkPath) {
+      const sdkSrc = readFileSync(sdkPath, 'utf8')
+      // Cross-repo: a drift here is the SDK lane's to close, and the file is
+      // absent on CI — so it reports as a gap, not as a website red.
+      const sdkMissing = WIRE_TYPES.filter((t) => !new RegExp(`export (type|interface) ${t}\\b`).test(sdkSrc))
+      gap(
+        `desk wire: the SDK mirror (${sdkPath}) exports the same four names`,
+        sdkMissing.length === 0,
+        'SDK-lane',
+        sdkMissing.length ? `missing: ${sdkMissing.join(', ')}` : 'in sync',
+      )
+      const sdkKinds = (sdkSrc.match(/export type DeskLegKind = ([^\n]+)/)?.[1] ?? '')
+        .split('|')
+        .map((s) => s.trim().replace(/['"]/g, ''))
+        .filter(Boolean)
+      check(
+        'desk wire: DeskLegKind members are IDENTICAL in the website and the SDK (order-insensitive)',
+        sdkKinds.length === kindMembers.length && kindMembers.every((k) => sdkKinds.includes(k)),
+        `website=[${kindMembers.join('|')}] sdk=[${sdkKinds.join('|')}]`,
+      )
+      check(
+        'desk wire: the SDK never re-serializes an HL action it was handed (#850 key order) — no JSON.parse(JSON.stringify(action))',
+        !/JSON\.parse\(\s*JSON\.stringify\(/.test(sdkSrc) && !/sortKeys|Object\.keys\([^)]*action[^)]*\)\.sort/.test(sdkSrc),
+      )
+      // F8: the SDK ships its OWN copy of deskExecuteConsentMessage. The desk
+      // RECOVERS the signer from the text it builds itself, so one byte of
+      // drift and every agent's consent recovers to nothing. Adding the
+      // `issuedAt` line of Ask A4 on one side only is exactly that byte.
+      const sdkConsent = sdkSrc.slice(sdkSrc.indexOf('export function deskExecuteConsentMessage'))
+      const sdkConsentBody = sdkConsent.slice(0, sdkConsent.indexOf('\n}'))
+      const wantLines = deskExecuteConsentMessage('<ID>', '<WALLET>').split('\n')
+      const sdkLineCount = (sdkConsentBody.match(/^\s{4}['"`]/gm) ?? []).length
+      check(
+        'desk wire: the SDK\'s copy of the execute consent text is BYTE-identical to the desk\'s (the desk recovers the signer from its OWN text — one byte of drift and every agent\'s consent recovers to nothing)',
+        sdkConsentBody.includes(wantLines[0]) &&
+          sdkConsentBody.includes(wantLines[3]) &&
+          /Intent: \$\{intentId\}/.test(sdkConsentBody) &&
+          /Wallet: \$\{wallet\.toLowerCase\(\)\}/.test(sdkConsentBody) &&
+          sdkLineCount === wantLines.length,
+        `${sdkLineCount} sdk lines vs ${wantLines.length} desk lines`,
+      )
+      check(
+        'desk wire: the SDK\'s leg classifier is named for the wire it mirrors, so a reader finds both halves (website legViewOf ↔ sdk legViewOfStep)',
+        /export function legViewOf(Step)?\b/.test(sdkSrc) && /export function legViewOf\b/.test(wireSrc),
+      )
+    } else {
+      gap('desk wire: the SDK mirror src/desk.ts exists and matches', false, 'SDK-lane', `looked in ${sdkPaths.join(', ')}`)
+    }
+
+    // ── 2. the agent-signed path, adversarially, over HTTP ─────────────────
+    const deskSecret =
+      process.env.SESSION_SECRET ??
+      (await import('node:fs')
+        .then((fs) => fs.readFileSync('.env.local', 'utf8').match(/^SESSION_SECRET=(.+)$/m)?.[1]?.trim())
+        .catch(() => undefined))
+    const canDrive = !!deskSecret && !!process.env.DATABASE_URL
+    if (!canDrive) {
+      console.log('  ⚠️  agent desk (QA): SESSION_SECRET + DATABASE_URL are needed for the adversarial pins — skipped')
+    } else {
+      process.env.SESSION_SECRET = deskSecret
+      const QA_FENCE = `qa-agentdesk-${Date.now()}`
+      const qaJobs: string[] = []
+      /** A job parked exactly where an agent drives it: one OFFERED sign step.
+       *  originEnv is fenced to this run so no runner advances it. */
+      const mkJob = async (wallet: string) => {
+        const job = await prisma.job.create({
+          data: { wallet: wallet.toLowerCase(), title: 'qa desk probe', source: 'broker', status: 'waiting_signature', currentStep: 0, originEnv: QA_FENCE, isInternal: true },
+        })
+        await prisma.jobStep.create({
+          data: { jobId: job.id, seq: 0, kind: 'sign', status: 'offered', builder: 'native-transfer', title: 'qa probe leg', params: {}, artifact: { tx: { to: '0x0000000000000000000000000000000000000001', data: '0x', value: '0', chainId: 8453 } } },
+        })
+        qaJobs.push(job.id)
+        return { id: job.id, wallet: wallet.toLowerCase(), token: signJobToken(job.id, wallet.toLowerCase()) }
+      }
+      const completeWith = async (job: { id: string; token: string }, body: unknown, token = job.token) =>
+        fetch(`${BASE}/api/jobs/${job.id}/complete?t=${token}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+
+      const wA = '0x00000000000000000000000000000000000ade51'
+      const wB = '0x00000000000000000000000000000000000ade52'
+      const jobA = await mkJob(wA)
+      const jobB = await mkJob(wB)
+
+      // A capability token names ONE job and ONE wallet (v2 HMAC).
+      const crossTok = await completeWith(jobB, { seq: 0, result: { txHash: `0x${'a'.repeat(64)}` } }, jobA.token)
+      check(
+        "desk drive: job A's capability token cannot complete job B (the HMAC binds the job id)",
+        crossTok.status === 401,
+        `got ${crossTok.status}`,
+      )
+      const wrongWalletTok = await completeWith(jobA, { seq: 0, result: { txHash: `0x${'a'.repeat(64)}` } }, signJobToken(jobA.id, wB))
+      check(
+        'desk drive: a token minted for another WALLET does not complete this job (the HMAC binds the wallet)',
+        wrongWalletTok.status === 401,
+        `got ${wrongWalletTok.status}`,
+      )
+      const noTok = await fetch(`${BASE}/api/jobs/${jobA.id}/complete`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ seq: 0 }) })
+      check('desk drive: no token and no session → 401 (never an anonymous advance)', noTok.status === 401, `got ${noTok.status}`)
+      const v1Tok = await completeWith(jobA, { seq: 0 }, 'f'.repeat(64))
+      check(
+        'desk drive: a v1 (bare 64-hex) token is DEAD — JOB_TOKEN_V1_SUNSET passed 2026-09-16',
+        v1Tok.status === 401 && JOB_TOKEN_V1_SUNSET < Date.now(),
+        `got ${v1Tok.status}`,
+      )
+
+      // Order is the runner's, not the agent's: only the OFFERED step completes.
+      const outOfSeq = await completeWith(jobA, { seq: 7, result: { txHash: `0x${'b'.repeat(64)}` } })
+      check(
+        'desk drive: completing a leg the runner has not offered is refused (out-of-seq cannot skip a wait)',
+        outOfSeq.status === 400 && /not a sign step|not awaiting/i.test(await outOfSeq.text()),
+        `got ${outOfSeq.status}`,
+      )
+
+      // A fabricated hash. The runner treats completion as advancement (a wait
+      // leg verifies), but the desk log RENDERS this string in an admin
+      // browser — so the shape must be fenced at the door. Ask A2 (DRIVE).
+      const jobJunk = await mkJob(wA)
+      const junk = await completeWith(jobJunk, { seq: 0, result: { txHash: 'javascript:alert(1)', note: '<img src=x onerror=1>' } })
+      const junkRow = await prisma.jobStep.findFirst({ where: { jobId: jobJunk.id, seq: 0 }, select: { result: true, status: true } })
+      const storedJunk = JSON.stringify(junkRow?.result ?? {})
+      gap(
+        'desk drive: a leg result whose txHash is not 0x+64hex is REFUSED (a hostile agent writes what the admin desk log renders)',
+        junk.status === 400 || !/javascript:|onerror/.test(storedJunk),
+        'A2→DRIVE',
+        `status ${junk.status}, stored ${storedJunk.slice(0, 80)}`,
+      )
+
+      // Unbounded jsonb per leg, from an unauthenticated third-party agent.
+      const jobBig = await mkJob(wA)
+      const big = await completeWith(jobBig, { seq: 0, result: { txHash: `0x${'c'.repeat(64)}`, blob: 'x'.repeat(200_000) } })
+      const bigRow = await prisma.jobStep.findFirst({ where: { jobId: jobBig.id, seq: 0 }, select: { result: true } })
+      gap(
+        'desk drive: a leg result is size-capped (~8KB) — an agent cannot write unbounded jsonb per leg',
+        big.status === 400 || JSON.stringify(bigRow?.result ?? {}).length < 16_000,
+        'A2→DRIVE',
+        `status ${big.status}, stored ${JSON.stringify(bigRow?.result ?? {}).length}B`,
+      )
+
+      // The honest half of completion: a well-formed claim advances exactly
+      // once, and a replay of the same seq is refused (atomic claim on
+      // status:'offered').
+      const jobOk = await mkJob(wA)
+      const good = { seq: 0, result: { txHash: `0x${'d'.repeat(64)}`, chainId: 8453 } }
+      const first = await completeWith(jobOk, good)
+      const second = await completeWith(jobOk, good)
+      check(
+        'desk drive: a well-formed completion advances once; the replay is refused (atomic claim on the offered step)',
+        first.status === 200 && second.status === 400,
+        `${first.status} then ${second.status}`,
+      )
+
+      // ── 3. the desk MCP surface ──────────────────────────────────────────
+      const DESK_URL = `${BASE}/api/broker/mcp`
+      let qaRpcId = 0
+      let qaSession: string | null = null
+      const qaRpc = async (method: string, params?: unknown): Promise<any> => {
+        const res = await fetch(DESK_URL, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(qaSession ? { 'mcp-session-id': qaSession } : {}) },
+          body: JSON.stringify({ jsonrpc: '2.0', id: ++qaRpcId, method, params }),
+        })
+        qaSession = res.headers.get('mcp-session-id') ?? qaSession
+        const raw = await res.text()
+        const line = raw.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).find((l) => l.includes(`"id":${qaRpcId}`))
+        return line ? JSON.parse(line).result : undefined
+      }
+      const qaCall = async (name: string, args: Record<string, unknown> = {}) => {
+        const result = await qaRpc('tools/call', { name, arguments: args })
+        const text: string = result?.content?.find((c: any) => c.type === 'text')?.text ?? ''
+        return { isError: !!result?.isError, payload: text && !result?.isError ? JSON.parse(text) : text }
+      }
+      await qaRpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'qa-agentdesk', version: '0' } })
+      await qaRpc('notifications/initialized')
+      const tools: string[] = ((await qaRpc('tools/list'))?.tools ?? []).map((t: any) => t.name)
+
+      // An intent BOUND to an agent identity. Only that agent should be able
+      // to walk away from it — or, once C3 lands, to read its next leg.
+      const boundId = `qa${Math.random().toString(36).slice(2, 10)}`
+      await prisma.brokerIntent.create({
+        data: { id: boundId, ask: 'qa desk probe', wallet: wA, agent: 'qa', agentKey: 'qa-desk-key-owner', state: 'open', plan: {}, isInternal: true },
+      })
+      const foreignClose = await qaCall('broker_close', { intent_id: boundId })
+      const afterClose = await prisma.brokerIntent.findUnique({ where: { id: boundId }, select: { state: true } })
+      gap(
+        'desk mcp: broker_close on an identity-BOUND intent refuses a caller that is not that agent (today: any holder of the id cancels the job and revokes the link)',
+        foreignClose.isError || afterClose?.state === 'open',
+        'A3→MCP',
+        `state=${afterClose?.state}`,
+      )
+
+      if (tools.includes('broker_next')) {
+        const foreignNext = await qaCall('broker_next', { intent_id: boundId, agent_key: 'not-the-bound-key' })
+        check(
+          'desk mcp: broker_next refuses a caller whose agent_key is not the one bound at open (C3)',
+          foreignNext.isError && /agent|identity|key/i.test(String(foreignNext.payload)),
+          String(foreignNext.payload).slice(0, 100),
+        )
+        const bareNext = await qaCall('broker_next', { intent_id: boundId })
+        check('desk mcp: broker_next with NO agent_key is refused (the id alone is not the capability)', bareNext.isError)
+        const routeSrc = readFileSync('app/api/broker/[transport]/route.ts', 'utf8')
+        check(
+          'desk mcp: the route header writes down the REVISED trust boundary — signable material now crosses this surface (C3)',
+          /broker_next/.test(routeSrc) && /(trust boundary|same trust|capability token)/i.test(routeSrc.slice(0, 4000)),
+        )
+        check(
+          'desk mcp: broker_next never hands back the job capability token (a leak is 7 days of drive rights)',
+          !/t=\$\{token\}|capabilityToken|jobToken/.test(readFileSync('lib/desk-wire.ts', 'utf8') + routeSrc.replace(/signJobToken\([^)]*\)/g, '')),
+        )
+      } else {
+        gap('desk mcp: broker_next / broker_done exist and are agent_key-gated (C3)', false, 'A3→MCP', 'tools/list has neither')
+      }
+
+      // The execute consent is a standing bearer credential for its intent:
+      // bound to (intent, wallet) but with NO freshness. Ask A4.
+      const consent = deskExecuteConsentMessage('qaintent01', wA)
+      gap(
+        'desk consent: the execute consent text carries an issuedAt, checked both ways (≤10 min) — an indefinitely-valid signature is a standing credential',
+        /Issued|issuedAt|\d{4}-\d{2}-\d{2}T/.test(consent),
+        'A4→MCP/DRIVE',
+        consent.split('\n')[1],
+      )
+      const brokerRoute = readFileSync('app/api/broker/[transport]/route.ts', 'utf8')
+      const execTool = brokerRoute.slice(brokerRoute.indexOf("'broker_execute'"), brokerRoute.indexOf("'broker_tile'"))
+      gap(
+        "desk consent: broker_execute compares the CALLER's agent_key to the key bound at open (today only the wallet signature gates it)",
+        /agent_key/.test(execTool),
+        'A4→MCP',
+      )
+
+      // ── 4. the HL batch (C2), when DRIVE lands it ────────────────────────
+      let batchSrc: string | null = null
+      try { batchSrc = readFileSync('lib/hl-batch.ts', 'utf8') } catch { batchSrc = null }
+      if (batchSrc) {
+        check(
+          'hl batch: every member is guarded against its OWN live snapshot — the asset-index pin is per action, so one `expected` for N actions erases it',
+          (batchSrc.match(/fetchHlSnapshot|guardHlExecBuild|guardHlLeverageBuild/g) ?? []).length >= 2 && /for \(|\.map\(|\.forEach\(/.test(batchSrc),
+        )
+        check(
+          'hl batch: a member whose action type is not on the allowlist is refused, never relayed',
+          /allow|ALLOWED|includes\(.*type|type === 'order'/.test(batchSrc),
+        )
+        check(
+          'hl batch: every member carries its own nonce and each is age-checked (a batch signed once and submitted slowly goes stale)',
+          /HL_NONCE_MAX_AGE_MS|nonceStale|hlNonceStale/.test(batchSrc),
+        )
+        check(
+          'hl batch: a failed member STOPS the batch and the result names which one (C2)',
+          /break|stop|return .*\bindex\b|failedAt|batch\[/.test(batchSrc),
+        )
+      }
+
+      // Cleanup: the probe rows never outlive the run (they are is_internal,
+      // but the desk log lists internal rows greyed — leave the board clean).
+      await prisma.jobStep.deleteMany({ where: { jobId: { in: qaJobs } } })
+      await prisma.job.deleteMany({ where: { id: { in: qaJobs } } })
+      await prisma.brokerIntent.deleteMany({ where: { id: boundId } })
+      const leftovers = await prisma.job.count({ where: { originEnv: QA_FENCE } })
+      check('desk drive: the QA probe rows are cleaned up (no fixture job survives the run)', leftovers === 0, `${leftovers} left`)
+    }
+
+    if (deskGaps) console.log(`  ⚠️  agent desk (QA): ${deskGaps} known-gap(s) open — ${openGaps.join(' · ')}`)
+  }
+
+  // ── agent desk: DRIVE ──────────────────────────────────────────────────
+  // THE BATCH RULE (lib/hl-batch, squad contract C2): a job-borne Hyperliquid
+  // order step carries `orderRequest.batch` = [leverage?, order], every member
+  // an HL L1 action whose typed data re-derives from its own action + nonce;
+  // a member that isn't an HL trade action refuses the whole offer; a
+  // completion whose batch stops at a failed member re-arms the step. Plus
+  // the desk's agent-signed compile (lib/broker-exec compileDeskAsk): the
+  // flagship "2x long $12 of HYPE" is no longer refused as "single-step" —
+  // an unfundable wallet is refused by the collateral it lacks, a lone
+  // action compiles as a one-leg job, and the funded burner gets its batch.
+  console.log('— agent desk: DRIVE')
+  {
+    const { composeHlBatch, guardHlBatch, withHlBatch, batchCompletionVerdict, hlBatchStaleAfterMs, HL_BATCH_MAX_MEMBERS } = await import('../lib/hl-batch')
+    const { hlActionTypedData } = await import('../lib/hyperliquid-exec')
+    // A builder-shaped order request — the exact keys buildHlExecTurn emits — with the leverage pre-step.
+    const dLev = { type: 'updateLeverage', asset: 159, isCross: true, leverage: 2 }
+    const dOrder = { type: 'order', orders: [{ a: 159, b: true, p: '40.5', s: '0.3', r: false, t: { limit: { tif: 'Ioc' } } }], grouping: 'na' }
+    const dN0 = Date.now() - 1
+    const dN1 = dN0 + 1
+    const dReq = {
+      protocol: 'hyperliquid',
+      typedData: hlActionTypedData(dOrder as never, dN1),
+      hl: { action: dOrder, nonce: dN1, isTestnet: false, expected: { coin: 'HYPE', kind: 'open', isBuy: true }, pre: { action: dLev, nonce: dN0, typedData: hlActionTypedData(dLev as never, dN0), expected: { coin: 'HYPE', leverage: 2 } } },
+    }
+    const dBatch = composeHlBatch(dReq)
+    check('drive batch: a leverage pre-step + order compose to [leverage → order] with ascending nonces', dBatch?.length === 2 && dBatch[0].kind === 'leverage' && dBatch[1].kind === 'order' && dBatch[0].nonce < dBatch[1].nonce && dBatch[1].expected.coin === 'HYPE')
+    const dNoPre = composeHlBatch({ ...dReq, hl: { ...dReq.hl, pre: undefined } })
+    check('drive batch: no pre-step → a one-member batch [order]', dNoPre?.length === 1 && dNoPre[0].kind === 'order')
+    const dFee = { ...dReq, hl: { ...dReq.hl, feeApproval: { builder: '0x1', maxFeeRate: '0.1%' } } }
+    check('drive batch: a one-time builder-fee approval riding along → NO batch (the single hl.action path stands)', composeHlBatch(dFee) === null && !('batch' in withHlBatch(dFee)))
+    const dWith = withHlBatch(dReq) as { batch?: unknown[] }
+    const dGuard = guardHlBatch(dWith.batch)
+    check('drive batch: withHlBatch attaches the guarded batch (browser keys hl.pre + hl.action untouched)', Array.isArray(dWith.batch) && dWith.batch.length === 2 && dGuard.ok && (dWith as { hl: { pre?: unknown } }).hl.pre !== undefined)
+    // jsonb re-sorts keys on the way through Postgres — a sorted member still guards (canonical re-derive, #850).
+    const sortKeys = (o: unknown): unknown => Array.isArray(o) ? o.map(sortKeys) : o && typeof o === 'object' ? Object.fromEntries(Object.keys(o as object).sort().map((k) => [k, sortKeys((o as Record<string, unknown>)[k])])) : o
+    const dSorted = (dBatch ?? []).map((m) => ({ ...m, action: sortKeys(m.action) }))
+    check('drive batch: a member whose action came back from jsonb with sorted keys still guards (typed data re-derives canonically)', guardHlBatch(dSorted).ok)
+    const dRefuse = (batch: unknown) => { const g = guardHlBatch(batch); return g.ok ? '' : g.reasons.join(' | ') }
+    const dSend = { kind: 'order', action: { type: 'usdSend', destination: '0x2222222222222222222222222222222222222222', amount: '5', time: dN1 }, nonce: dN1 + 1, typedData: dReq.typedData, expected: { coin: 'HYPE', kind: 'open' } }
+    check('drive batch: a member that is not an HL trade action (usdSend) refuses the whole batch by name', /not a Hyperliquid order or leverage action \(type "usdSend"\)/.test(dRefuse([...(dBatch ?? []), dSend])), dRefuse([...(dBatch ?? []), dSend]))
+    const dTampered = (dBatch ?? []).map((m, i) => (i === 1 ? { ...m, typedData: { ...(m.typedData as object), message: { source: 'a', connectionId: '0x' + 'ab'.repeat(32) } } } : m))
+    check('drive batch: a member whose typed data does not derive from its action + nonce refuses', /does not derive/.test(dRefuse(dTampered)))
+    check('drive batch: an order that is not the last member refuses', /not the last member/.test(dRefuse([...(dBatch ?? [])].reverse())))
+    const dDesc = (dBatch ?? []).map((m, i) => (i === 1 ? { ...m, nonce: dN0 - 5, typedData: hlActionTypedData(dOrder as never, dN0 - 5) } : m))
+    check('drive batch: a nonce that does not ascend refuses', /does not ascend/.test(dRefuse(dDesc)))
+    check('drive batch: empty and over-long batches refuse; the limit is small', /empty/.test(dRefuse([])) && HL_BATCH_MAX_MEMBERS === 3 && /limit is 3/.test(dRefuse([dBatch![0], dBatch![0], dBatch![0], dBatch![0]])))
+    check('drive batch: two orders refuse', /2 orders|not the last member/.test(dRefuse([dBatch![1], dBatch![1]])))
+    check('drive batch: the completion verdict — none for an EVM result, done when every member answered ok, re-offer AT the failed member, re-offer at 0 for an empty batch',
+      batchCompletionVerdict({ txHash: '0x1' }).kind === 'none' &&
+        batchCompletionVerdict({ batch: [{ ok: true }, { ok: true }] }).kind === 'done' &&
+        (() => { const v = batchCompletionVerdict({ batch: [{ ok: true }, { ok: false, error: 'margin' }] }); return v.kind === 'reoffer' && v.failedIndex === 1 && /margin/.test(v.error) })() &&
+        (() => { const v = batchCompletionVerdict({ batch: [] }); return v.kind === 'reoffer' && v.failedIndex === 0 })())
+    check('drive batch: staleness is measured from the FIRST nonce (fresh > 0; 100s old ≤ 0)', hlBatchStaleAfterMs([{ nonce: Date.now() }]) > 80_000 && hlBatchStaleAfterMs([{ nonce: Date.now() - 100_000 }]) <= 0)
+    // The runner's two touch points read the module (source pins — the offer site and the re-arm).
+    const dRunnerSrc = (await import('node:fs')).readFileSync('lib/jobs-runner.ts', 'utf8')
+    check('drive batch: the runner offers HL orders through withHlBatch and re-arms a partial completion through batchCompletionVerdict', /orderRequest: withHlBatch\(turn\.orderRequest\)/.test(dRunnerSrc) && /batchCompletionVerdict\(result\)/.test(dRunnerSrc) && /reoffer: true/.test(dRunnerSrc))
+
+    // ── the drill's DRY path over HTTP: the desk MCP, then the Jobs API ──
+    const DRIVE_MCP = `${BASE}/api/broker/mcp`
+    let driveRpcId = 0
+    let driveSession: string | null = null
+    const driveRpc = async (method: string, params?: unknown): Promise<any> => {
+      const res = await fetch(DRIVE_MCP, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1', ...(driveSession ? { 'mcp-session-id': driveSession } : {}) },
+        body: JSON.stringify({ jsonrpc: '2.0', id: ++driveRpcId, method, params }),
+      })
+      driveSession = res.headers.get('mcp-session-id') ?? driveSession
+      const raw = await res.text()
+      const data = raw.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).find((l) => l.includes(`"id":${driveRpcId}`))
+      return data ? JSON.parse(data).result : undefined
+    }
+    const driveCall = async (name: string, args: Record<string, unknown> = {}) => {
+      const result = await driveRpc('tools/call', { name, arguments: args })
+      const text: string = result?.content?.find((c: any) => c.type === 'text')?.text ?? ''
+      return { isError: !!result?.isError, payload: text && !result?.isError ? JSON.parse(text) : text }
+    }
+    await driveRpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'harness-drive', version: '0' } })
+    await driveRpc('notifications/initialized')
+    const FLAGSHIP = '2x long $12 of HYPE on hyperliquid'
+
+    // The consent text recovers the signer — the desk's wallet proof (pure).
+    const dAgent = privateKeyToAccount(generatePrivateKey())
+    const dOpen = await driveCall('broker_open', { ask: FLAGSHIP, wallet: dAgent.address, agent: 'harness-drive', agent_key: 'harness-drive-key' })
+    const dIntent = dOpen.payload?.intentId as string
+    const dConsent = await dAgent.signMessage({ message: deskExecuteConsentMessage(dIntent, dAgent.address) })
+    check('drive: the execute consent text recovers the agent wallet that signed it', dIntent != null && (await recoverMessageAddress({ message: deskExecuteConsentMessage(dIntent, dAgent.address), signature: dConsent })).toLowerCase() === dAgent.address.toLowerCase())
+    // An unfunded wallet asking the flagship: refused by the COLLATERAL it lacks — never as "single-step".
+    const dExec = await driveCall('broker_execute', { intent_id: dIntent, wallet_signature: dConsent })
+    check('drive: the flagship on an unfunded wallet is refused by the collateral the position needs (reaching Hyperliquid), not as a single-step ask', dExec.isError && /reaching Hyperliquid|can't fund it/i.test(String(dExec.payload)) && !/single-step/i.test(String(dExec.payload)), String(dExec.payload).slice(0, 200))
+    await driveCall('broker_close', { intent_id: dIntent })
+    // A lone non-HL action compiles as a ONE-leg job (the runner withholds the build on the empty wallet; the job exists).
+    const dLone = await driveCall('broker_open', { ask: `send 0.5 USDC on base to 0x2222222222222222222222222222222222222222`, wallet: dAgent.address, agent: 'harness-drive', agent_key: 'harness-drive-key' })
+    const dLoneSig = await dAgent.signMessage({ message: deskExecuteConsentMessage(dLone.payload.intentId, dAgent.address) })
+    const dLoneExec = await driveCall('broker_execute', { intent_id: dLone.payload.intentId, wallet_signature: dLoneSig })
+    check('drive: a lone action compiles to a one-leg agent-owned job (no more "does not compile to a multi-step job")', !dLoneExec.isError && dLoneExec.payload?.steps?.length === 1 && dLoneExec.payload.steps[0].kind === 'sign' && typeof dLoneExec.payload.drive?.poll === 'string', String(dLoneExec.payload).slice(0, 160))
+    if (!dLoneExec.isError) {
+      const dPoll = await fetch(String(dLoneExec.payload.drive.poll).replace(/^https?:\/\/[^/]+/, BASE), { headers: { 'x-yf-internal-run': '1' } })
+      const dJob = (await dPoll.json()) as { job?: { steps?: { builder?: string }[] } }
+      check('drive: the one-leg job polls through the capability token with the transfer builder on its step', dPoll.status === 200 && dJob.job?.steps?.[0]?.builder === 'native-transfer', JSON.stringify(dJob.job?.steps?.[0]?.builder))
+    }
+    await driveCall('broker_close', { intent_id: dLone.payload.intentId })
+
+    // The FUNDED wallet (the house burner, .env.local): the flagship compiles, and the HL
+    // step offers the batch. Live venue reads; skipped without the key.
+    const dKey = (() => { try { return (require('node:fs') as typeof import('node:fs')).readFileSync('.env.local', 'utf8').match(/^PRIVATE_KEY=(.*)$/m)?.[1]?.trim().replace(/^"|"$/g, '') ?? null } catch { return null } })()
+    if (dKey && /^0x[0-9a-fA-F]{64}$/.test(dKey)) {
+      const burner = privateKeyToAccount(dKey as `0x${string}`)
+      const bOpen = await driveCall('broker_open', { ask: FLAGSHIP, wallet: burner.address, agent: 'harness-drive', agent_key: 'harness-drive-key' })
+      const bIntent = bOpen.payload?.intentId as string
+      const bSig = await burner.signMessage({ message: deskExecuteConsentMessage(bIntent, burner.address) })
+      const bExec = await driveCall('broker_execute', { intent_id: bIntent, wallet_signature: bSig })
+      const bSteps = (bExec.payload?.steps ?? []) as { kind: string; note: string }[]
+      check('drive (live): the flagship on the funded burner compiles — the LAST leg is the 2x long, funded legs (if any) ride in front', !bExec.isError && bSteps.length >= 1 && bSteps[bSteps.length - 1].kind === 'sign' && /2x Long \$12 of HYPE/.test(bSteps[bSteps.length - 1].note), bExec.isError ? String(bExec.payload).slice(0, 200) : `${bSteps.length} legs`)
+      if (!bExec.isError && bSteps.length === 1) {
+        const bPollUrl = String(bExec.payload.drive.poll).replace(/^https?:\/\/[^/]+/, BASE)
+        const bCompleteUrl = String(bExec.payload.drive.complete).replace(/^https?:\/\/[^/]+/, BASE)
+        let bStep: { status: string; artifact?: { orderRequest?: { batch?: unknown[]; hl?: { nonce?: number } } }; result?: { reoffer?: boolean } } | undefined
+        for (let i = 0; i < 12; i++) {
+          const j = (await (await fetch(bPollUrl, { headers: { 'x-yf-internal-run': '1' } })).json()) as { job?: { steps?: typeof bStep[] } }
+          bStep = j.job?.steps?.[0]
+          if (bStep?.status === 'offered') break
+          await new Promise((r) => setTimeout(r, 2500))
+        }
+        const bBatch = bStep?.artifact?.orderRequest?.batch
+        const bGuard = guardHlBatch(bBatch)
+        check('drive (live): the offered HL step carries a guarded batch whose last member is the order and whose nonces are fresh', bStep?.status === 'offered' && Array.isArray(bBatch) && bGuard.ok && (bBatch[bBatch.length - 1] as { kind: string }).kind === 'order' && hlBatchStaleAfterMs(bBatch as { nonce: number }[]) > 0, bStep?.status === 'offered' ? `${bBatch?.length ?? 0} members: ${(bBatch ?? []).map((m) => (m as { kind: string }).kind).join(' → ')}` : `step ${bStep?.status}`)
+        // The relay's step 1, proven without submitting: the agent's signature over each member's
+        // SERVED typed data recovers to the agent — and to the typed data the relay re-derives from
+        // the member's action + nonce (canonical bytes, #850). Nothing is posted to the venue here.
+        if (Array.isArray(bBatch) && bGuard.ok) {
+          let recovered = 0
+          for (const m of bGuard.members) {
+            const sig = await burner.signTypedData(m.typedData as unknown as Parameters<typeof burner.signTypedData>[0])
+            const td = hlActionTypedData(m.action, m.nonce)
+            const who = await recoverTypedDataAddress({ ...td, signature: sig } as unknown as Parameters<typeof recoverTypedDataAddress>[0])
+            if (who.toLowerCase() === burner.address.toLowerCase()) recovered++
+          }
+          check('drive (live): a signature over each served member recovers to the agent against the relay\'s own re-derived typed data (sign what you are handed)', recovered === bGuard.members.length, `${recovered}/${bGuard.members.length}`)
+        }
+        // A completion whose batch stopped at a failed member does NOT finish the step: it re-arms, and the next poll re-offers a FRESH batch.
+        const bNonce = bStep?.artifact?.orderRequest?.hl?.nonce ?? 0
+        const bDone = await fetch(bCompleteUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ seq: 0, result: { batch: [{ ok: false, error: 'harness: the venue refused member 1' }] } }) })
+        let bAgain: typeof bStep
+        for (let i = 0; i < 12; i++) {
+          const j = (await (await fetch(bPollUrl, { headers: { 'x-yf-internal-run': '1' } })).json()) as { job?: { status?: string; steps?: typeof bStep[] } }
+          bAgain = j.job?.steps?.[0]
+          if (bAgain?.status === 'offered' && (bAgain.artifact?.orderRequest?.hl?.nonce ?? 0) > bNonce) break
+          await new Promise((r) => setTimeout(r, 2500))
+        }
+        check('drive (live): a partial batch completion re-arms the step and the runner re-offers the SAME seq with a fresh nonce (never done, never failed)', bDone.status === 200 && bAgain?.status === 'offered' && (bAgain.artifact?.orderRequest?.hl?.nonce ?? 0) > bNonce, `complete ${bDone.status}; step ${bAgain?.status}; nonce ${bAgain?.artifact?.orderRequest?.hl?.nonce} vs ${bNonce}`)
+      }
+      await driveCall('broker_close', { intent_id: bIntent })
+    } else {
+      console.log('  ↳ drive (live) burner checks SKIPPED (no PRIVATE_KEY in .env.local)')
+    }
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }
