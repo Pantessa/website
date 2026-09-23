@@ -33,6 +33,10 @@ export const LEG_RESULT_KEYS = new Set(['txHash', 'txs', 'chainId', 'orderRespon
 export const LEG_TX_HASH_RE = /^0x[0-9a-f]{64}$/
 /** Serialized cap. QA proved a 200,089-byte result stored whole on main. */
 export const LEG_RESULT_MAX_BYTES = 8 * 1024
+/** A chain of more transactions than this is not a leg any builder emits. */
+export const LEG_TXS_MAX = 16
+/** The per-transaction label's cap ("Approve USDC", "Swap"). */
+export const LEG_TX_TITLE_MAX = 80
 
 export type LegResultVerdict = { ok: true; result: Record<string, unknown> } | { ok: false; reason: string }
 
@@ -47,6 +51,23 @@ export function fenceLegResult(raw: unknown): LegResultVerdict {
   if (r.txHash !== undefined && (typeof r.txHash !== 'string' || !LEG_TX_HASH_RE.test(r.txHash))) return { ok: false, reason: 'txHash must be a 0x-prefixed 64-hex lowercase hash' }
   if (r.chainId !== undefined && (typeof r.chainId !== 'number' || !Number.isInteger(r.chainId) || r.chainId <= 0)) return { ok: false, reason: 'chainId must be a positive integer' }
   if (r.batch !== undefined && !Array.isArray(r.batch)) return { ok: false, reason: 'batch must be an array' }
+  // MCP lane: `txs` was the one allowed key nothing looked INSIDE, so an agent
+  // could put anything in it, bounded only by the body cap. The entry shape is
+  // the published DeskLegResult one (lib/desk-wire): hash, chainId, and the
+  // optional per-transaction `title` the browser's JobCard has always sent.
+  if (r.txs !== undefined) {
+    if (!Array.isArray(r.txs)) return { ok: false, reason: 'txs must be an array' }
+    if (r.txs.length > LEG_TXS_MAX) return { ok: false, reason: `txs carries ${r.txs.length} entries; the cap is ${LEG_TXS_MAX}` }
+    for (const [i, e] of r.txs.entries()) {
+      const t = e as { hash?: unknown; chainId?: unknown; title?: unknown } | null
+      if (!t || typeof t !== 'object' || Array.isArray(t)) return { ok: false, reason: `txs[${i}] must be an object` }
+      const extra = Object.keys(t).filter((k) => k !== 'hash' && k !== 'chainId' && k !== 'title')
+      if (extra.length) return { ok: false, reason: `txs[${i}] carries keys the wire does not name: ${extra.slice(0, 3).join(', ')} (allowed: hash, chainId, title)` }
+      if (typeof t.hash !== 'string' || !LEG_TX_HASH_RE.test(t.hash)) return { ok: false, reason: `txs[${i}].hash must be a 0x-prefixed 64-hex lowercase hash` }
+      if (typeof t.chainId !== 'number' || !Number.isInteger(t.chainId) || t.chainId <= 0) return { ok: false, reason: `txs[${i}].chainId must be a positive integer` }
+      if (t.title !== undefined && (typeof t.title !== 'string' || t.title.length > LEG_TX_TITLE_MAX)) return { ok: false, reason: `txs[${i}].title must be a string of at most ${LEG_TX_TITLE_MAX} characters` }
+    }
+  }
   let bytes = 0
   try {
     bytes = Buffer.byteLength(JSON.stringify(r), 'utf8')

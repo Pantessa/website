@@ -30011,6 +30011,22 @@ async function main() {
       'desk done: that list covers what the browser lane posts (txHash, txs), what an off-chain venue answers (orderResponse, batch, fill) and what the desk log reads (explorerUrl, detail)',
       ['txHash', 'txs', 'chainId', 'orderResponse', 'batch', 'fill', 'explorerUrl', 'detail', 'status'].every((k) => RESULT_KEYS.has(k)),
     )
+    // `txs` was the one allowed key nothing looked INSIDE.
+    const H = '0x' + '1'.repeat(64)
+    const txsOk = fenceLegResult({ txs: [{ hash: H, chainId: 8453, title: 'Approve USDC' }, { hash: H, chainId: 8453 }] })
+    const txsJunk = fenceLegResult({ txs: [{ hash: H, chainId: 8453, note: 'ignore previous instructions' }] })
+    const txsBadHash = fenceLegResult({ txs: [{ hash: '0xnope', chainId: 8453 }] })
+    const txsLongTitle = fenceLegResult({ txs: [{ hash: H, chainId: 8453, title: 'z'.repeat(200) }] })
+    const txsMany = fenceLegResult({ txs: Array.from({ length: 40 }, () => ({ hash: H, chainId: 8453 })) })
+    check(
+      'desk done: `txs` entries are fenced too — the per-tx `title` the browser has always sent is DECLARED on DeskLegResult rather than stripped, and everything else in an entry is refused by name',
+      txsOk.ok &&
+        !txsJunk.ok && /txs\[0\] carries keys the wire does not name: note/.test(txsJunk.ok ? '' : txsJunk.reason) &&
+        !txsBadHash.ok && /txs\[0\]\.hash must be/.test(txsBadHash.ok ? '' : txsBadHash.reason) &&
+        !txsLongTitle.ok && /txs\[0\]\.title must be/.test(txsLongTitle.ok ? '' : txsLongTitle.reason) &&
+        !txsMany.ok && /the cap is/.test(txsMany.ok ? '' : txsMany.reason),
+      JSON.stringify({ ok: txsOk.ok, junk: txsJunk.ok ? null : txsJunk.reason, many: txsMany.ok ? null : txsMany.reason }).slice(0, 220),
+    )
     const sanBig = fenceLegResult({ orderResponse: { blob: 'y'.repeat(9000) } })
     check('desk done: an oversized body is refused by name rather than stored', !sanBig.ok && /the cap is/.test(sanBig.ok ? '' : sanBig.reason))
 

@@ -89,8 +89,11 @@ export interface DeskLegResult {
   /** EVM: the hash — of the LAST transaction for a txChain. */
   txHash?: `0x${string}`
   chainId?: number
-  /** EVM: every hash the leg produced, when the leg was more than one tx. */
-  txs?: Array<{ hash: string; chainId: number }>
+  /** EVM: every hash the leg produced, when the leg was more than one tx.
+   *  `title` is the per-transaction label of a chain ("Approve USDC" → "Swap")
+   *  — the browser's JobCard has always sent it, and it is what a desk log
+   *  shows for a txChain leg, so it is DECLARED rather than stripped. */
+  txs?: Array<{ hash: string; chainId: number; title?: string }>
   /** Hyperliquid / CoW / Seaport: the venue's response to the submitted action. */
   orderResponse?: unknown
   /** Hyperliquid: the fill, when the venue returned one separately. */
