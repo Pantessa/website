@@ -26,13 +26,24 @@ export const WITHHELD_KIND = 'withheld'
  *  moved and came home, so it belongs in the same queue with its own kind.
  *  See lib/xchain-settlement.ts. */
 export const REFUNDED_KIND = 'refunded'
+/** On a phone the wallet is another app, and the browser refused to switch
+ *  to it (no tap behind the request — the #822 class, lib/wallet-handoff):
+ *  the request is queued in an app nobody opened. Nobody's wallet refused
+ *  and nothing was withheld; the page stalled. Its own kind, so a phone
+ *  stall is a /dashboard/failures row, not silence (mobile-onboarding squad,
+ *  2026-09-23). */
+export const LAUNCH_DROPPED_KIND = 'launch-dropped'
 
-export type WalletArtifact = 'hl-order' | 'hl-leverage' | 'hl-agent' | 'cow-order' | 'tx' | 'tx-chain' | 'vote' | 'opensea-listing' | 'siwe'
+/** `wallet-app` = the app launch itself (a dropped launch names the method it
+ *  carried in `ask`); `consent` = a personal_sign consent (on-ramp, desk,
+ *  roster hire) that is not one of the venue artifacts. */
+export type WalletArtifact = 'hl-order' | 'hl-leverage' | 'hl-agent' | 'cow-order' | 'tx' | 'tx-chain' | 'vote' | 'opensea-listing' | 'siwe' | 'consent' | 'wallet-app'
 
 export interface WalletRefusalReport {
   /** Default `wallet-refused`; `withheld` when the step never reached a
-   *  wallet; `refunded` when the venue returned the money after signing. */
-  kind?: typeof WALLET_REFUSAL_KIND | typeof WITHHELD_KIND | typeof REFUNDED_KIND
+   *  wallet; `refunded` when the venue returned the money after signing;
+   *  `launch-dropped` when the phone never switched to the wallet app. */
+  kind?: typeof WALLET_REFUSAL_KIND | typeof WITHHELD_KIND | typeof REFUNDED_KIND | typeof LAUNCH_DROPPED_KIND
   wallet: string | null | undefined
   artifact: WalletArtifact
   /** What the user was signing, in our words (the card's summary line). */
@@ -99,6 +110,32 @@ export function isReportableWalletError(message: string): boolean {
   const m = message.trim()
   if (!m) return false
   return !/user rejected|user denied|rejected the request|denied|declined|cancell?ed by user|action_rejected/i.test(m)
+}
+
+/** Pure: the row a dropped app launch files. `link` is the SDK's link (its
+ *  scheme names the app; query params are dropped — a channel id is not
+ *  something an admin queue needs). */
+export function launchDroppedReport(i: {
+  wallet: string | null | undefined
+  link: string
+  app: string
+  connector?: string
+  chainId?: number
+  /** How long the page stayed visible after asking (the watch's settle window). */
+  settleMs: number
+  /** Whether the visitor had already tapped the handoff card once. */
+  tried?: boolean
+}): WalletRefusalReport {
+  const scheme = i.link.replace(/[?#].*$/, '').slice(0, 80)
+  return {
+    kind: LAUNCH_DROPPED_KIND,
+    wallet: i.wallet,
+    artifact: 'wallet-app',
+    ask: `open ${i.app} (${scheme})`,
+    detail: `${i.tried ? 'second launch' : 'launch'} dropped: the page was still visible ${i.settleMs}ms after asking for ${i.app} — the request is queued in an app the browser never switched to`,
+    connector: i.connector,
+    chainId: i.chainId,
+  }
 }
 
 /** Fire-and-forget beacon; never throws, never blocks the sign flow. */

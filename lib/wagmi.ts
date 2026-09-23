@@ -13,6 +13,7 @@ import { cdpEmbeddedConnector, cdpEnabled } from '@/lib/cdp-embedded'
 import { hostWalletConnector } from '@/lib/host-wallet'
 import { walletLineup, WC_APP_METADATA, type WalletLaneId } from '@/lib/wallet-lineup'
 import { requestWalletAppOpen } from '@/lib/wallet-handoff'
+import { withoutDuplicateMobileLaunch } from '@/lib/mobile-wallet'
 
 // WalletConnect Cloud project ID — create one at https://cloud.reown.com and
 // add it to .env.local as NEXT_PUBLIC_WC_PROJECT_ID (needed for the
@@ -74,6 +75,33 @@ coinbaseWallet.preference = 'eoaOnly'
  */
 ;(metaMaskWallet as unknown as { openDeeplink: (link: string) => void }).openDeeplink =
   requestWalletAppOpen
+// The link the SDK hands us is the app-scheme one (`metamask://…`), never the
+// https universal link: a universal link navigated by script is not a user
+// navigation, and iOS Safari opens its web fallback instead of the app. wagmi
+// defaults this to true; pinned here so a default flip upstream can't change
+// which link a phone gets (lib/mobile-wallet launchMethodFor).
+metaMaskWallet.useDeeplink = true
+
+/**
+ * ONE navigator on the SDK lane (squad mobile-onboarding, CONNECT, 2026-09-23).
+ *
+ * Measured on the connect tap with a phone UA: the SDK launches the app
+ * (through requestWalletAppOpen), and ~2ms later RainbowKit's own mobile list
+ * navigates to the SAME `metamask://connect?…` link — `metaMaskWallet` hands
+ * it `mobile.getUri: (uri) => uri` on the SDK lane, and its WalletButton
+ * assigns `location.href` to the display_uri after `connect()` starts.
+ * Chrome refuses the second (the first consumed the tap's activation); WebKit
+ * would let it REPLACE the first, mid-flight. And it is a race — its
+ * `once('display_uri')` is attached after an await, so some taps fire it and
+ * some don't. lib/mobile-wallet drops `mobile` on the SDK-lane wallet, and
+ * only there: WalletConnect lanes keep RainbowKit's navigation, which is
+ * their only launch. The `openDeeplink` / `useDeeplink` properties above
+ * stay on the ORIGINAL factory — that is where RainbowKit reads them.
+ */
+const metaMaskWalletOneLaunch: typeof metaMaskWallet = Object.assign(
+  (params: Parameters<typeof metaMaskWallet>[0]) => withoutDuplicateMobileLaunch(metaMaskWallet(params)),
+  {},
+)
 
 // The CDP embedded-wallet connector ("create an account") is appended as a plain
 // wagmi connector, not a RainbowKit modal entry — it's driven by a dedicated CTA
@@ -84,7 +112,7 @@ coinbaseWallet.preference = 'eoaOnly'
 // them — the list type is what matters here.)
 const WALLET_FACTORIES: Record<WalletLaneId, Parameters<typeof connectorsForWallets>[0][number]['wallets'][number]> = {
   injected: injectedWallet,
-  metaMask: metaMaskWallet,
+  metaMask: metaMaskWalletOneLaunch,
   coinbase: coinbaseWallet,
   // Injected-only (namespace `phantom.ethereum`); RainbowKit dedupes it
   // against the EIP-6963 announce by rdns, so an installed Phantom lists once.

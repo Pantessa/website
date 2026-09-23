@@ -17,6 +17,8 @@ import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink } from 'lucide-rea
 import type { Eip712OrderRequest } from '@/lib/transaction-layer'
 import { reportWalletRefusal, walletErrorWords } from '@/lib/wallet-refusal'
 import { SIGN_CTA_CLASS } from '@/lib/sign-cta'
+import { oneMethodPerTap } from '@/lib/sign-round-trip'
+import { usePlatform } from '@/lib/use-sign-round-trip'
 
 type Status = 'idle' | 'signing' | 'placing' | 'open' | 'filled' | 'error'
 
@@ -53,10 +55,12 @@ export default function SignOrderButton({
   onPlaced?: (info: { orderUid: string | null; explorerUrl: string | null }) => void
 }) {
   const { address, isConnected, connector, chain: connectedChain } = useAccount()
+  const platform = usePlatform()
   const { signTypedDataAsync } = useSignTypedData()
   const { switchChainAsync } = useSwitchChain()
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState('')
+  const [note, setNote] = useState('')
   const [explorerUrl, setExplorerUrl] = useState<string | null>(null)
   const [orderUid, setOrderUid] = useState<string | null>(null)
   const [fillTx, setFillTx] = useState<string | null>(null)
@@ -114,13 +118,22 @@ export default function SignOrderButton({
       setError(`Connected wallet ${address.slice(0, 6)}… ≠ order owner ${receiver.slice(0, 6)}…`)
       return
     }
+    setNote('')
     try {
       setStatus('signing')
       // The order's EIP-712 domain carries chainId — Coinbase Wallet refuses
       // typed-data signatures when the active network doesn't match (and
-      // reports it as "User rejected"). No-op when already on Base; same
-      // switch-then-act idiom as LaunchToken/StakeToken.
-      await switchChainAsync({ chainId }).catch(() => {})
+      // reports it as "User rejected"). Only when it differs; on a phone the
+      // switch is a trip to the wallet app and back, so it is its own tap
+      // and the signature is the next one (lib/sign-round-trip).
+      if (connectedChain?.id !== chainId) {
+        await switchChainAsync({ chainId }).catch(() => {})
+        if (oneMethodPerTap(platform)) {
+          setStatus('idle')
+          setNote('Network switched — tap to sign the order.')
+          return
+        }
+      }
       let signature: `0x${string}`
       try {
         signature = await signTypedDataAsync(
@@ -244,6 +257,7 @@ export default function SignOrderButton({
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
             {status === 'signing' ? 'Confirm in your wallet…' : status === 'placing' ? 'Placing order…' : status === 'error' ? 'Retry — sign & place order' : 'Sign & place order'}
           </button>
+          {note && <span className="text-[12px] text-[color:var(--muted)]" data-order-rearmed="switch">{note}</span>}
           {error && <span className="text-[12px] text-red-400">{error}</span>}
         </div>
       )}
