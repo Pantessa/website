@@ -27,6 +27,18 @@ export default function ShareButton({ signInLane = false }: { signInLane?: boole
   const chat = chats.find((c) => c.id === currentChatId)
 
   const [open, setOpen] = useState(false)
+  // Phones: the popover is a 288px panel anchored to the pill's right edge;
+  // once the /i header stopped being crushed the pill sits mid-header and
+  // the panel ran 57px off the left edge at 375 (mobile-onboarding squad,
+  // measured). Below sm it is FIXED under the pill and spans the viewport's
+  // gutters instead of hanging off the anchor.
+  const [phonePos, setPhonePos] = useState<{ top: number } | null>(null)
+  const pillRef = useRef<HTMLButtonElement>(null)
+  const openPopover = () => {
+    const r = pillRef.current?.getBoundingClientRect()
+    setPhonePos(typeof window !== 'undefined' && window.innerWidth < 640 && r ? { top: Math.round(r.bottom + 8) } : null)
+    setOpen((o) => !o)
+  }
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   // Set by the sign-in lane: once the thread is a DB chat under a session,
@@ -106,7 +118,8 @@ export default function ShareButton({ signInLane = false }: { signInLane?: boole
   return (
     <div className="relative flex-shrink-0" ref={popRef}>
       <button
-        onClick={() => setOpen((o) => !o)}
+        ref={pillRef}
+        onClick={openPopover}
         title={isPublic ? 'Shared publicly' : 'Share this chat'}
         aria-label={isPublic ? 'Shared publicly' : 'Share this chat'}
         className={cn(
@@ -123,7 +136,14 @@ export default function ShareButton({ signInLane = false }: { signInLane?: boole
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-72 z-20 rounded-xl border border-[var(--line)] bg-[var(--surf-1)] shadow-xl shadow-black/40 p-3 space-y-3">
+        <div
+          className={cn(
+            'z-20 rounded-xl border border-[var(--line)] bg-[var(--surf-1)] shadow-xl shadow-black/40 p-3 space-y-3',
+            phonePos ? 'fixed left-4 right-4 w-auto' : 'absolute right-0 top-full mt-2 w-72',
+          )}
+          style={phonePos ? { top: phonePos.top } : undefined}
+          data-share-popover
+        >
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-semibold text-white">
