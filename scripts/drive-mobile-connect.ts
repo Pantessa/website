@@ -29,6 +29,7 @@
 import pw from 'playwright-core'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { readLaunchVerdict } from '../lib/mobile-wallet'
 
 const { chromium, devices } = pw
 
@@ -44,9 +45,6 @@ const OUT =
   '/Users/nategeier/yeetful/squad-mobile-2026-09-23/gates/shots/connect'
 const ONLY = argOf('--only')
 
-export const LAUNCH_DROPPED = /Not allowed to launch '([^']+)'.*user gesture is required/
-export const LAUNCH_ALLOWED = /Failed to launch '([^']+)'.*does not have a registered handler/
-
 type Line = { t: number; kind: string; text: string }
 
 export type Trace = {
@@ -55,6 +53,9 @@ export type Trace = {
   tapAt: number | null
   lines: Line[]
   launches: { t: number; verdict: 'dropped' | 'allowed'; link: string; dtMs: number }[]
+  /** RainbowKit wrote WALLETCONNECT_DEEPLINK_CHOICE after the tap = its own
+   *  navigation to the wallet ran (the duplicate). */
+  rkNavigated: boolean
   handoffCard: { present: boolean; title: string | null; cta: string | null; tried: boolean } | null
   rkModal: { open: boolean; text: string }
   verdict: 'green' | 'red'
@@ -120,11 +121,17 @@ function judgeLaunch(trace: Trace): { ok: boolean; why: string } {
   const first = trace.launches[0]
   if (!first) return { ok: false, why: 'no launch attempt reached the browser within the window' }
   if (!/^metamask:\/\//.test(first.link)) return { ok: false, why: `first launch was not the deep link: ${first.link.slice(0, 60)}` }
+  // ONE navigator. Two attempts on one tap is the measured duplicate
+  // (RainbowKit's mobile list beside the SDK's own launch): Chrome refuses
+  // the second, WebKit lets it replace the first mid-flight.
+  if (trace.launches.length !== 1 || trace.rkNavigated) {
+    return { ok: false, why: `${trace.launches.length} launch attempts on one tap${trace.rkNavigated ? ' (RainbowKit navigated too)' : ''}` }
+  }
   // Desktop Chrome has no MetaMask app, so an ALLOWED launch ends at "no
   // registered handler" — that is the phone's app opening. A DROPPED first
   // launch means the tap's activation was gone by the time the SDK asked;
   // that is only acceptable when the handoff card went up to carry the tap.
-  if (first.verdict === 'allowed') return { ok: true, why: `launch allowed ${first.dtMs}ms after the tap` }
+  if (first.verdict === 'allowed') return { ok: true, why: `one launch, allowed, ${first.dtMs}ms after the tap` }
   if (trace.handoffCard?.present) return { ok: true, why: `launch dropped ${first.dtMs}ms after the tap, the handoff card is up` }
   return { ok: false, why: `launch dropped ${first.dtMs}ms after the tap and NO handoff card` }
 }
@@ -212,15 +219,15 @@ async function runScenario(s: Scenario, browser: pw.Browser): Promise<Trace> {
     failure = String(e).slice(0, 300)
     log('drive.error', failure)
   }
-  const launches = lines
+  const tapT = tapAt ? tapAt - t0 : -1
+  const after = lines.filter((l) => l.t >= tapT)
+  const launches = after
     .filter((l) => l.kind.startsWith('console'))
     .flatMap((l) => {
-      const d = LAUNCH_DROPPED.exec(l.text)
-      if (d) return [{ t: l.t, verdict: 'dropped' as const, link: d[1], dtMs: tapAt ? l.t - (tapAt - t0) : -1 }]
-      const a = LAUNCH_ALLOWED.exec(l.text)
-      if (a) return [{ t: l.t, verdict: 'allowed' as const, link: a[1], dtMs: tapAt ? l.t - (tapAt - t0) : -1 }]
-      return []
+      const v = readLaunchVerdict(l.text)
+      return v ? [{ t: l.t, verdict: v.verdict, link: v.link, dtMs: l.t - tapT }] : []
     })
+  const rkNavigated = after.some((l) => /\[spy\] setItem WALLETCONNECT_DEEPLINK_CHOICE/.test(l.text))
   const handoffCard = await page
     .evaluate(() => {
       const el = document.querySelector('[data-wallet-handoff]')
@@ -239,7 +246,7 @@ async function runScenario(s: Scenario, browser: pw.Browser): Promise<Trace> {
   mkdirSync(OUT, { recursive: true })
   await page.mouse.move(1, 1).catch(() => {})
   await page.screenshot({ path: join(OUT, `${s.id}.png`), fullPage: false }).catch(() => {})
-  const partial: Trace = { base: BASE, scenario: s.id, tapAt: tapAt ? tapAt - t0 : null, lines, launches, handoffCard, rkModal, verdict: 'red', why: '' }
+  const partial: Trace = { base: BASE, scenario: s.id, tapAt: tapAt ? tapAt - t0 : null, lines, launches, rkNavigated, handoffCard, rkModal, verdict: 'red', why: '' }
   const j = failure ? { ok: false, why: failure } : s.judge(partial)
   const trace: Trace = { ...partial, verdict: j.ok ? 'green' : 'red', why: j.why }
   writeFileSync(join(OUT, `${s.id}.trace.json`), JSON.stringify(trace, null, 2))

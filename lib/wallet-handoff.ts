@@ -99,6 +99,12 @@ export function handoffShownOn(pathname: string | null | undefined): boolean {
 type Listener = () => void
 
 let pending: WalletAppOpen | null = null
+/** The most recent request the SDK asked us to open — kept after the card
+ *  is dismissed or the page hid, until the surface says its wallet method
+ *  settled. A surface that shows its own "waiting for your wallet" card reads
+ *  this to put an "Open MetaMask" button on it (the request is queued in the
+ *  wallet the whole time; a tap is all the browser wants). */
+let lastLink: { link: string; app: string } | null = null
 let settleTimer: ReturnType<typeof setTimeout> | null = null
 /** Tears down the watch that is currently running, if any. One at a time:
  *  a second request supersedes the first, and its listeners go with it. */
@@ -126,12 +132,19 @@ export function walletAppOpenSnapshot(): WalletAppOpen | null {
   return pending
 }
 
+/** The last link the SDK asked for, if its request may still be waiting in
+ *  the wallet (see lastLink). Same subscription as the card. */
+export function walletAppLastLink(): { link: string; app: string } | null {
+  return lastLink
+}
+
 /** Server render: nothing is pending before the page exists. */
 export function walletAppOpenServerSnapshot(): WalletAppOpen | null {
   return null
 }
 
-/** The visitor dismissed the card, or the round-trip it belonged to ended. */
+/** The visitor dismissed the card. The request is still queued in the wallet,
+ *  so the link stays readable (walletAppLastLink) for an inline button. */
 export function clearWalletAppOpen(): void {
   stopCurrentWatch?.()
   if (settleTimer) {
@@ -139,6 +152,20 @@ export function clearWalletAppOpen(): void {
     settleTimer = null
   }
   setPending(null)
+}
+
+/**
+ * The wallet method the SDK asked us to open FOR has settled — resolved,
+ * rejected, timed out. Nothing is waiting in the wallet any more, so the
+ * card and the remembered link both go. Surfaces call this where their
+ * request's promise settles (SignatureWaitTakeover does on sign-in end).
+ */
+export function walletAppRequestSettled(): void {
+  clearWalletAppOpen()
+  if (lastLink) {
+    lastLink = null
+    emit()
+  }
 }
 
 function navigate(link: string) {
@@ -205,6 +232,8 @@ export function requestWalletAppOpen(link: string): void {
   const o: WalletAppOpen = { link: link.trim(), app, tried: false }
   // A fresh request supersedes whatever card is up: same wallet, newer request.
   setPending(null)
+  lastLink = { link: o.link, app }
+  emit()
   try {
     navigate(o.link)
   } catch {
@@ -227,4 +256,27 @@ export function openWalletAppNow(): void {
     return
   }
   watchForLaunch(next)
+}
+
+/**
+ * Any surface's own button: open the wallet app for the request it is
+ * waiting on — the last one the SDK asked for unless a link is given. Call it
+ * from a tap handler (that is the whole point). Returns false when there is
+ * nothing to open; the same watch as the card follows a real attempt, so a
+ * dropped tap still ends in the card rather than silence.
+ */
+export function openWalletApp(link?: string): boolean {
+  const target = link ? { link: link.trim(), app: walletAppFor(link) } : lastLink
+  if (!target?.app || typeof window === 'undefined') return false
+  const o: WalletAppOpen = { link: target.link, app: target.app, tried: pending?.tried ?? false }
+  lastLink = { link: o.link, app: o.app }
+  setPending(null)
+  try {
+    navigate(o.link)
+  } catch {
+    setPending(o)
+    return true
+  }
+  watchForLaunch(o)
+  return true
 }

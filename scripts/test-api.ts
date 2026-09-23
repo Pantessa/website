@@ -31459,6 +31459,175 @@ async function main() {
   }
 
 
+  // ── mobile connect: the wallet app comes forward on the connect tap ─────
+  // (squad mobile-onboarding 2026-09-23, CONNECT lane.) Nate on a phone: "when
+  // you click metamask the app does not open for connection or signing".
+  // Measured with a phone UA: on the connect tap the MetaMask SDK launched
+  // the app through our openDeeplink AND RainbowKit's mobile list navigated
+  // to the same metamask:// link ~2ms later — Chrome refused the second (the
+  // first consumed the tap's activation), WebKit would let it replace the
+  // first. These pin the pure decisions (lib/mobile-wallet), the wiring that
+  // leaves ONE navigator, and the handoff API the signing surfaces use.
+  {
+    console.log('— mobile connect: one navigator, pinned decisions')
+    const mw = await import('../lib/mobile-wallet')
+    const wh = await import('../lib/wallet-handoff')
+    const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+    const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
+    const IPAD = 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+    const IPADOS = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15'
+    const DESKTOP = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    check(
+      'mobile connect: the platform rule is RainbowKit’s isMobile() made pure — iPhone/iPad/Android are phones, iPadOS wears a Mac UA and is read off touch points, a Mac without touch is desktop',
+      mw.mobilePlatform(IPHONE) === 'ios' &&
+        mw.mobilePlatform(IPAD) === 'ios' &&
+        mw.mobilePlatform(ANDROID) === 'android' &&
+        mw.mobilePlatform(IPADOS, { platform: 'MacIntel', maxTouchPoints: 5 }) === 'ios' &&
+        mw.mobilePlatform(DESKTOP, { platform: 'MacIntel', maxTouchPoints: 0 }) === 'desktop' &&
+        mw.mobilePlatform(null) === 'desktop',
+    )
+    check(
+      'mobile connect: inside MetaMask’s own in-app browser (React Native bridge AND a UA ending MetaMaskMobile) there is no app to launch; either signal alone is somebody else’s WebView',
+      mw.insideWalletBrowser(`${ANDROID} MetaMaskMobile`, true) === 'metamask' &&
+        mw.insideWalletBrowser(`${ANDROID} MetaMaskMobile`, false) === null &&
+        mw.insideWalletBrowser(ANDROID, true) === null &&
+        mw.insideWalletBrowser(null, true) === null,
+    )
+    check(
+      'mobile connect: the MetaMask lane — injected provider → in-page (no launch); a phone without it → the SDK (the app is launched); desktop without it → WalletConnect — and only the SDK lane launches an app',
+      mw.metaMaskLaneFor({ platform: 'ios', injected: true }) === 'injected' &&
+        mw.metaMaskLaneFor({ platform: 'ios', injected: false }) === 'sdk' &&
+        mw.metaMaskLaneFor({ platform: 'android', injected: false }) === 'sdk' &&
+        mw.metaMaskLaneFor({ platform: 'desktop', injected: false }) === 'walletconnect' &&
+        mw.metaMaskLaneFor({ platform: 'desktop', injected: true }) === 'injected' &&
+        mw.launchesWalletApp('sdk') && !mw.launchesWalletApp('injected') && !mw.launchesWalletApp('walletconnect'),
+    )
+    check(
+      'mobile connect: an app-scheme link is a location assignment, the https universal link would be an anchor click (never chosen on mobile web — useDeeplink is pinned), anything else is not a wallet link',
+      mw.launchMethodFor('metamask://connect?channelId=x') === 'assign' &&
+        mw.launchMethodFor('https://metamask.app.link/connect?channelId=x') === 'anchor' &&
+        mw.launchMethodFor('https://pantessa.com') === null,
+    )
+    {
+      // The duplicate at its source: metaMaskWallet hands RainbowKit
+      // `mobile.getUri` on the SDK lane (no qrCode) — dropped; a WalletConnect
+      // wallet carries qrCode AND its own mobile link (rainbow://wc?uri=) —
+      // untouched, RainbowKit's navigation IS that lane's launch.
+      const sdkShape = { id: 'metaMask', mobile: { getUri: (u: string) => u }, createConnector: () => null }
+      const wcShape = { id: 'rainbow', mobile: { getUri: (u: string) => `rainbow://wc?uri=${u}` }, qrCode: { getUri: (u: string) => u } }
+      const bare = { id: 'injected', mobile: undefined }
+      const strippedSdk = mw.withoutDuplicateMobileLaunch(sdkShape)
+      check(
+        'mobile connect: withoutDuplicateMobileLaunch drops RainbowKit’s mobile navigation on the SDK-lane wallet only — the WalletConnect wallet (qrCode + its own mobile link) and a bare injected wallet come back untouched',
+        mw.rainbowKitNavigates(sdkShape) &&
+          !mw.rainbowKitNavigates(strippedSdk) &&
+          strippedSdk.id === 'metaMask' &&
+          strippedSdk.createConnector === sdkShape.createConnector &&
+          mw.withoutDuplicateMobileLaunch(wcShape) === wcShape &&
+          mw.rainbowKitNavigates(wcShape) &&
+          mw.withoutDuplicateMobileLaunch(bare) === bare,
+      )
+    }
+    check(
+      'mobile connect: Chrome’s two launch verdicts parse — "Not allowed to launch … user gesture is required" = dropped, "Failed to launch … does not have a registered handler" = allowed (the app opening on a phone) — and any other line is no verdict',
+      (() => {
+        const d = mw.readLaunchVerdict("Not allowed to launch 'metamask://connect?channelId=a&v=2' because a user gesture is required.")
+        const a = mw.readLaunchVerdict("Failed to launch 'metamask://connect?channelId=a&v=2' because the scheme does not have a registered handler.")
+        return (
+          d?.verdict === 'dropped' && d.link === 'metamask://connect?channelId=a&v=2' &&
+          a?.verdict === 'allowed' && a.link === 'metamask://connect?channelId=a&v=2' &&
+          mw.readLaunchVerdict('Access to XMLHttpRequest at https://x blocked by CORS') === null
+        )
+      })(),
+    )
+    check(
+      'mobile connect (wiring): lib/wagmi keeps openDeeplink + useDeeplink=true on the ORIGINAL metaMaskWallet factory (where RainbowKit reads them) and hands connectorsForWallets the one-launch wrapper through withoutDuplicateMobileLaunch',
+      (() => {
+        const strip = (s2: string) => s2.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+        const wagmi = strip(readFileSync(pathJoin(process.cwd(), 'lib/wagmi.ts'), 'utf8'))
+        return (
+          /from '@\/lib\/mobile-wallet'/.test(wagmi) &&
+          /metaMaskWallet\.useDeeplink = true/.test(wagmi) &&
+          /\.openDeeplink =\s*requestWalletAppOpen/.test(wagmi) &&
+          /withoutDuplicateMobileLaunch\(metaMaskWallet\(params\)\)/.test(wagmi) &&
+          /metaMask: metaMaskWalletOneLaunch,/.test(wagmi) &&
+          !/metaMask: metaMaskWallet,/.test(wagmi) &&
+          !/useDeeplink:\s*false/.test(wagmi)
+        )
+      })(),
+    )
+    {
+      // The handoff API the signing surfaces use (SIGN / LINKS lanes): the
+      // last link the SDK asked for survives a dismissed card, so an inline
+      // "Open MetaMask" button can carry the tap; it is gone once the surface
+      // says its wallet method settled. Stand-in window/document as the
+      // sibling block above does; globals restored after.
+      const priorWindow = (globalThis as Record<string, unknown>).window
+      const priorDocument = (globalThis as Record<string, unknown>).document
+      const navigated: string[] = []
+      const handlers: Record<string, Set<() => void>> = {}
+      ;(globalThis as Record<string, unknown>).document = {
+        visibilityState: 'visible',
+        addEventListener: (k: string, f: () => void) => {
+          ;(handlers[k] ??= new Set()).add(f)
+        },
+        removeEventListener: (k: string, f: () => void) => handlers[k]?.delete(f),
+        createElement: () => ({ click: () => {}, set href(_v: string) {}, target: '', rel: '' }),
+      }
+      ;(globalThis as Record<string, unknown>).window = {
+        addEventListener: (k: string, f: () => void) => {
+          ;(handlers[k] ??= new Set()).add(f)
+        },
+        removeEventListener: (k: string, f: () => void) => handlers[k]?.delete(f),
+        location: {
+          set href(v: string) {
+            navigated.push(v)
+          },
+        },
+      }
+      try {
+        wh.walletAppRequestSettled()
+        const nothingToOpen = wh.openWalletApp() === false && navigated.length === 0
+        wh.requestWalletAppOpen('metamask://connect?channelId=req1&t=d')
+        const remembered = wh.walletAppLastLink()?.link === 'metamask://connect?channelId=req1&t=d'
+        wh.clearWalletAppOpen()
+        const survivesDismiss = wh.walletAppOpenSnapshot() === null && wh.walletAppLastLink()?.app === 'MetaMask'
+        const reopened = wh.openWalletApp() === true && navigated.length === 2 && navigated[1] === 'metamask://connect?channelId=req1&t=d'
+        wh.walletAppRequestSettled()
+        const settled = wh.walletAppLastLink() === null && wh.walletAppOpenSnapshot() === null
+        const explicit = wh.openWalletApp('metamask://connect?channelId=req2') === true && navigated[2] === 'metamask://connect?channelId=req2'
+        const refused = wh.openWalletApp('https://evil.example/x') === false && navigated.length === 3
+        wh.walletAppRequestSettled()
+        check(
+          'mobile connect (handoff API): the last link the SDK asked for survives a dismissed card and reopens on a tap (openWalletApp), an explicit wallet link opens, an off-wallet link is refused, and walletAppRequestSettled forgets everything',
+          nothingToOpen && remembered && survivesDismiss && reopened && settled && explicit && refused,
+          JSON.stringify({ nothingToOpen, remembered, survivesDismiss, reopened, settled, explicit, refused, navigated }),
+        )
+      } finally {
+        wh.walletAppRequestSettled()
+        if (priorWindow === undefined) delete (globalThis as Record<string, unknown>).window
+        else (globalThis as Record<string, unknown>).window = priorWindow
+        if (priorDocument === undefined) delete (globalThis as Record<string, unknown>).document
+        else (globalThis as Record<string, unknown>).document = priorDocument
+      }
+    }
+    // The drive that measured all of this stays importable for QA's
+    // drive:mobile: its scenario list is the contract.
+    check(
+      'mobile connect (drive): scripts/drive-mobile-connect.ts exports SCENARIOS covering the /i link, the returning visitor and the sign-in door, and judges ONE allowed launch per tap',
+      (() => {
+        const drive = readFileSync(pathJoin(process.cwd(), 'scripts/drive-mobile-connect.ts'), 'utf8')
+        return (
+          /export const SCENARIOS/.test(drive) &&
+          /id: 'i-link'/.test(drive) && /id: 'i-link-returning'/.test(drive) && /id: 'sign-in'/.test(drive) &&
+          /trace\.launches\.length !== 1 \|\| trace\.rkNavigated/.test(drive) &&
+          /readLaunchVerdict/.test(drive)
+        )
+      })(),
+    )
+  }
+
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }
