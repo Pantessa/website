@@ -31907,6 +31907,120 @@ async function main() {
     check('mobile links: the /i page reads the request UA on the server and hands the verdict to the runtime (the escape line is in the first HTML, not a client flash)', /headers\(\)\)\.get\('user-agent'\)/.test(pageSrc) && /browser=\{browser\}/.test(pageSrc))
   }
 
+  // ── mobile qa: the gate's own fences (QA lane, mobile-onboarding squad) ──
+  // Appended as ONE block with its own closing brace, per the squad's
+  // shared-tail rule. Constants imported INSIDE the block on purpose.
+  {
+    const { readFileSync: readQa, readdirSync: readQaDir, statSync: statQa } = await import('node:fs')
+    const { join: joinQa } = await import('node:path')
+
+    // Every source file the app or a drive can pull in. A drive script lives
+    // in scripts/, but `next build` type-checks the whole project, so a
+    // static playwright-core import anywhere in here breaks the DEPLOY while
+    // passing tsc on a dev Mac (~/node_modules sits above every worktree and
+    // resolves it). That is exactly how Vercel's preview of #858 failed at
+    // 4fd43c3a. playwright-core is NOT a dependency: the only legal shape is
+    // `createRequire(<anchor>)('playwright-core')` with locally-spelled types.
+    const walkQa = (dir: string, out: string[] = []): string[] => {
+      let entries: string[] = []
+      try { entries = readQaDir(dir) } catch { return out }
+      for (const name of entries) {
+        if (name === 'node_modules' || name === '.next' || name.startsWith('.')) continue
+        const full = joinQa(dir, name)
+        let isDir = false
+        try { isDir = statQa(full).isDirectory() } catch { continue }
+        if (isDir) walkQa(full, out)
+        else if (/\.(ts|tsx)$/.test(name)) out.push(full)
+      }
+      return out
+    }
+    // Comments are allowed to NAME the forbidden shape (this codebase explains
+    // itself), so strip them before matching — otherwise every warning about
+    // the trap trips the fence that enforces it.
+    const stripComments = (src: string) =>
+      src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+    const PW_STATIC = /\bimport\s(?:[^\n;]*?\sfrom\s)?['"]playwright-core['"]/
+    const PW_TYPEOF = /\bimport\(\s*['"]playwright-core['"]\s*\)/
+    const sourceFiles = ['scripts', 'lib', 'components', 'app'].flatMap((d) => walkQa(d))
+    const pwOffenders = sourceFiles.filter((f) => {
+      const src = stripComments(readQa(f, 'utf8'))
+      return PW_STATIC.test(src) || PW_TYPEOF.test(src)
+    })
+    check(
+      `mobile qa: no source file statically imports playwright-core (it is not a dependency — a dev Mac resolves it from ~/node_modules and Vercel does not; use createRequire + locally-spelled types)`,
+      pwOffenders.length === 0,
+      pwOffenders.length ? pwOffenders.slice(0, 4).join(', ') : `${sourceFiles.length} files clean`,
+    )
+
+    // Every mobile drive must actually use the recipe, and must not run itself
+    // on import: `drive:mobile` imports each lane file to read its exports, so
+    // a bare `main()` at the bottom would fire four drives inside one.
+    const driveFiles = sourceFiles.filter((f) => /scripts\/drive-mobile(-[a-z]+)?\.ts$/.test(f))
+    const driveBad = driveFiles.filter((f) => {
+      const src = readQa(f, 'utf8')
+      const needsPw = /chromium|playwright/i.test(stripComments(src))
+      const usesRecipe = /createRequire\(/.test(src) && /require_?\w*\(\s*['"]playwright-core['"]\s*\)/.test(src)
+      const selfRuns = /^\s*main\(\)/m.test(src) && !/process\.argv\[1\]/.test(src)
+      return (needsPw && !usesRecipe) || selfRuns
+    })
+    check(
+      'mobile qa: every scripts/drive-mobile*.ts resolves playwright through createRequire and only drives when run directly (process.argv[1] guard) — QA imports them all',
+      driveFiles.length > 0 && driveBad.length === 0,
+      driveBad.length ? driveBad.join(', ') : `${driveFiles.length} drive file(s)`,
+    )
+
+    // The runner must stay green-able while lanes are still landing: a missing
+    // lane file is SKIPPED, never a crash, and both adapters are honoured.
+    const runnerSrc = readQa('scripts/drive-mobile.ts', 'utf8')
+    check(
+      'mobile qa: drive:mobile skips a lane with no scenario file instead of crashing, folds a standalone drive in by exit code, and exits non-zero on any red',
+      /missing: true/.test(runnerSrc) &&
+        /SKIPPED \(no scenario file yet\)/.test(runnerSrc) &&
+        /runExternal/.test(runnerSrc) &&
+        /process\.exit\(fail\.length \? 1 : 0\)/.test(runnerSrc),
+    )
+
+    // A drive must never mint money, a referral or a failures row on the
+    // shared TEST DB: the runner stamps every same-origin request internal.
+    check(
+      'mobile qa: drive:mobile stamps every request x-yf-internal-run + x-yf-no-ask-log (a drive never mints money, a referral or a /dashboard/failures row)',
+      /'x-yf-internal-run': '1'/.test(runnerSrc) && /'x-yf-no-ask-log': '1'/.test(runnerSrc),
+    )
+
+    // The launch reading is the squad's whole measurement — pin the two words
+    // Chrome uses, and the rule that BLOCKED wins.
+    const RL = await import('./drive-mobile-contract')
+    const blocked = RL.readLaunch([
+      "error: Not allowed to launch 'metamask://connect?channelId=abc' because a user gesture is required.",
+    ])
+    const allowed = RL.readLaunch([
+      "error: Failed to launch 'metamask://connect?channelId=abc' because the scheme does not have a registered handler.",
+    ])
+    const both = RL.readLaunch([
+      "error: Not allowed to launch 'metamask://connect?channelId=abc' because a user gesture is required.",
+      "error: Failed to launch 'metamask://connect?channelId=abc' because the scheme does not have a registered handler.",
+    ])
+    check(
+      'mobile qa: readLaunch reads Chrome verbatim — "a user gesture is required" = blocked, "no registered handler" = allowed, and a dropped launch that logs BOTH still reads blocked',
+      blocked.verdict === 'blocked' &&
+        allowed.verdict === 'allowed' &&
+        both.verdict === 'blocked' &&
+        both.blockedCount === 1 &&
+        both.allowedCount === 1 &&
+        both.links.length === 1 &&
+        RL.readLaunch(['log: hello']).verdict === 'none',
+    )
+
+    // The mobile profiles are UA-first: a desktop UA runs the desktop lane and
+    // proves nothing, so every profile must send a real phone UA.
+    const uaBad = RL.ALL_PROFILES.filter((id) => !/iPhone|Android/.test(RL.PROFILES[id].userAgent))
+    check(
+      'mobile qa: every drive:mobile profile sends a real phone UA (RainbowKit isMobile() and the MetaMask SDK branch on the UA, not the viewport)',
+      uaBad.length === 0 && RL.PROFILES['inapp-dark'].inApp && !RL.PROFILES['iphone-dark'].inApp,
+      uaBad.join(', '),
+    )
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }
