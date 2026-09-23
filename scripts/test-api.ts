@@ -29957,6 +29957,19 @@ async function main() {
         const bBatch = bStep?.artifact?.orderRequest?.batch
         const bGuard = guardHlBatch(bBatch)
         check('drive (live): the offered HL step carries a guarded batch whose last member is the order and whose nonces are fresh', bStep?.status === 'offered' && Array.isArray(bBatch) && bGuard.ok && (bBatch[bBatch.length - 1] as { kind: string }).kind === 'order' && hlBatchStaleAfterMs(bBatch as { nonce: number }[]) > 0, bStep?.status === 'offered' ? `${bBatch?.length ?? 0} members: ${(bBatch ?? []).map((m) => (m as { kind: string }).kind).join(' → ')}` : `step ${bStep?.status}`)
+        // The relay's step 1, proven without submitting: the agent's signature over each member's
+        // SERVED typed data recovers to the agent — and to the typed data the relay re-derives from
+        // the member's action + nonce (canonical bytes, #850). Nothing is posted to the venue here.
+        if (Array.isArray(bBatch) && bGuard.ok) {
+          let recovered = 0
+          for (const m of bGuard.members) {
+            const sig = await burner.signTypedData(m.typedData as unknown as Parameters<typeof burner.signTypedData>[0])
+            const td = hlActionTypedData(m.action, m.nonce)
+            const who = await recoverTypedDataAddress({ domain: td.domain as never, types: td.types as never, primaryType: td.primaryType, message: td.message as never, signature: sig })
+            if (who.toLowerCase() === burner.address.toLowerCase()) recovered++
+          }
+          check('drive (live): a signature over each served member recovers to the agent against the relay\'s own re-derived typed data (sign what you are handed)', recovered === bGuard.members.length, `${recovered}/${bGuard.members.length}`)
+        }
         // A completion whose batch stopped at a failed member does NOT finish the step: it re-arms, and the next poll re-offers a FRESH batch.
         const bNonce = bStep?.artifact?.orderRequest?.hl?.nonce ?? 0
         const bDone = await fetch(bCompleteUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1' }, body: JSON.stringify({ seq: 0, result: { batch: [{ ok: false, error: 'harness: the venue refused member 1' }] } }) })
