@@ -29965,7 +29965,7 @@ async function main() {
           for (const m of bGuard.members) {
             const sig = await burner.signTypedData(m.typedData as unknown as Parameters<typeof burner.signTypedData>[0])
             const td = hlActionTypedData(m.action, m.nonce)
-            const who = await recoverTypedDataAddress({ domain: td.domain as never, types: td.types as never, primaryType: td.primaryType, message: td.message as never, signature: sig })
+            const who = await recoverTypedDataAddress({ ...td, signature: sig } as unknown as Parameters<typeof recoverTypedDataAddress>[0])
             if (who.toLowerCase() === burner.address.toLowerCase()) recovered++
           }
           check('drive (live): a signature over each served member recovers to the agent against the relay\'s own re-derived typed data (sign what you are handed)', recovered === bGuard.members.length, `${recovered}/${bGuard.members.length}`)
