@@ -24476,7 +24476,8 @@ async function main() {
     const l200 = hexOf(lightBlock, '--chart-ma-200')
     const darkBg = hexOf(rootBlock, '--bg') ?? '#000000'
     const lightBg = hexOf(lightBlock, '--bg') ?? '#ffffff'
-    const chartSrc = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
+    // Re-pinned 2026-09-23 (#848): the theme probe (colorProbe/readTokens) moved to chart-tokens.ts, shared with the Fundamentals panel; the chart's paint sites stay in MarketChart, so the pin reads both.
+    const chartSrc = (await readFile('components/markets/chart/MarketChart.tsx', 'utf8')) + '\n' + (await readFile('components/markets/chart/chart-tokens.ts', 'utf8'))
     check(
       'chart MAs: --chart-ma-50 is a BLUE and --chart-ma-200 a YELLOW in both themes, each ≥3:1 against its own chart background, and the canvas paints the 50 and the 200 with exactly those tokens',
       !!d50 && !!d200 && !!l50 && !!l200 &&
@@ -24721,7 +24722,8 @@ async function main() {
       `feed=${aapl.feed} bars=${aaplBars.length} extended=${extendedBars} maxRegularPerDay=${maxRegular}`,
     )
     // The engine wiring (the pixels are in the PR's browser drive).
-    const sessSrc = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
+    // Re-pinned 2026-09-23 (#848): the theme probe (colorProbe/readTokens) moved to chart-tokens.ts, shared with the Fundamentals panel; the chart's paint sites stay in MarketChart, so the pin reads both.
+    const sessSrc = (await readFile('components/markets/chart/MarketChart.tsx', 'utf8')) + '\n' + (await readFile('components/markets/chart/chart-tokens.ts', 'utf8'))
     const bandsSrc = await readFile('components/markets/chart/session-bands.ts', 'utf8')
     const themeCss = await readFile('app/x402-design.css', 'utf8')
     check(
@@ -25835,7 +25837,8 @@ async function main() {
     )
 
     // The chart engine wiring (the pixels are in the PR's browser drive).
-    const mcSrc = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
+    // Re-pinned 2026-09-23 (#848): the theme probe (colorProbe/readTokens) moved to chart-tokens.ts, shared with the Fundamentals panel; the chart's paint sites stay in MarketChart, so the pin reads both.
+    const mcSrc = (await readFile('components/markets/chart/MarketChart.tsx', 'utf8')) + '\n' + (await readFile('components/markets/chart/chart-tokens.ts', 'utf8'))
     const mountSrc = await readFile('components/markets/chart/ChartMount.tsx', 'utf8')
     const perfSrc = await readFile('components/markets/chart/PerformanceTiles.tsx', 'utf8')
     check(
@@ -29621,6 +29624,112 @@ async function main() {
         xHtml.includes('Signed on-chain'),
       'the share page still claims a settled swap',
     )
+  }
+
+  // ── FUNDAMENTALS (2026-09-23): DefiLlama under the Technicals gauges ────
+  // /t/<symbol>'s Technicals tab grows a DefiLlama panel for CRYPTO symbols:
+  // the protocol (or chain) the symbol maps to, its TVL / fees / revenue /
+  // holders revenue / DEX volume as daily series, drawn by the candle chart's
+  // own engine + theme probe. lib/defillama is the pure half (pinned on a
+  // fixture here), lib/defillama-read the I/O, /api/markets/fundamentals the
+  // wire. A stock never gets the panel; a symbol with no DefiLlama page gets
+  // nothing, never a stranger's chart.
+  {
+    const { pickLlamaSubject, llamaProtocolCandidates, parseLlamaChart, sumLastDays, defaultLlamaPicks, togglePick, windowPoints, LLAMA_PROTOCOL_MIN_TVL_USD, LLAMA_METRIC_KEYS } = await import('../lib/defillama')
+    type P = import('../lib/defillama').LlamaProtocolRow
+    type C = import('../lib/defillama').LlamaChainRow
+    const protocols: P[] = [
+      { slug: 'uniswap-v3', name: 'Uniswap V3', symbol: 'UNI', tvl: 1.6e9, category: 'Dexs', parentProtocol: 'parent#uniswap' },
+      { slug: 'uniswap-v2', name: 'Uniswap V2', symbol: 'UNI', tvl: 1.0e9, category: 'Dexs', parentProtocol: 'parent#uniswap' },
+      { slug: 'ethereum-foundation', name: 'Ethereum Foundation', symbol: 'ETH', tvl: 0, category: 'Foundation', parentProtocol: null },
+      { slug: 'solana-farm', name: 'Solana Farm', symbol: 'SOL', tvl: 245, category: 'Dexs', parentProtocol: null },
+      { slug: 'arbitrum-bridge', name: 'Arbitrum Bridge', symbol: 'ARB', tvl: 3.5e9, category: 'Canonical Bridge', parentProtocol: 'parent#arbitrum-foundation' },
+      { slug: 'aave-v3', name: 'Aave V3', symbol: 'AAVE', tvl: 1.8e10, category: 'Lending', parentProtocol: 'parent#aave' },
+      { slug: 'aave-v4', name: 'Aave V4', symbol: 'AAVE', tvl: 6e8, category: 'Lending', parentProtocol: 'parent#aave' },
+      { slug: 'lido', name: 'Lido', symbol: 'LDO', tvl: 2.7e10, category: 'Liquid Staking', parentProtocol: null },
+      { slug: 'hyperliquid-bridge', name: 'Hyperliquid Bridge', symbol: 'HYPE', tvl: 7.5e9, category: 'Bridge', parentProtocol: 'parent#hyperliquid' },
+      { slug: 'hyperliquid-hlp', name: 'Hyperliquid HLP', symbol: 'HYPE', tvl: 1.8e8, category: 'Derivatives', parentProtocol: 'parent#hyperliquid' },
+      { slug: 'some-squat', name: 'Big Tom Coin', symbol: 'BTC', tvl: 12, category: 'Dexs', parentProtocol: null },
+    ]
+    const chains: C[] = [
+      { name: 'Ethereum', tokenSymbol: 'ETH', tvl: 5e10 },
+      { name: 'Solana', tokenSymbol: 'SOL', tvl: 6e9 },
+      { name: 'Arbitrum', tokenSymbol: 'ARB', tvl: 1.4e9 },
+      { name: 'OP Mainnet', tokenSymbol: 'OP', tvl: 4.8e8 },
+      { name: 'Optimism', tokenSymbol: 'OP', tvl: 0 },
+      { name: 'Hyperliquid L1', tokenSymbol: 'HYPE', tvl: 1.3e9 },
+      { name: 'Bitcoin', tokenSymbol: 'BTC', tvl: 4.6e9 },
+    ]
+    const pick = (s: string) => pickLlamaSubject(s, protocols, chains)
+    const uni = pick('UNI')
+    check('fundamentals: UNI → the PARENT protocol slug (uniswap, not uniswap-v3), named without the version, linked to its DefiLlama page', uni?.kind === 'protocol' && uni.slug === 'uniswap' && uni.name === 'Uniswap' && uni.url === 'https://defillama.com/protocol/uniswap' && uni.category === 'Dexs', JSON.stringify(uni))
+    check('fundamentals: a lower-case / dotted symbol resolves the same subject', pick('uni')?.slug === 'uniswap' && pick('$UNI')?.slug === 'uniswap')
+    check('fundamentals: ETH → the Ethereum CHAIN (the foundation row is not a product)', pick('ETH')?.kind === 'chain' && pick('ETH')?.slug === 'Ethereum' && pick('ETH')?.url === 'https://defillama.com/chain/Ethereum', JSON.stringify(pick('ETH')))
+    check(`fundamentals: SOL → the Solana chain — a $245 farm wearing the symbol sits under the $${LLAMA_PROTOCOL_MIN_TVL_USD.toLocaleString()} floor`, pick('SOL')?.kind === 'chain' && pick('SOL')?.slug === 'Solana' && llamaProtocolCandidates('SOL', protocols).length === 0)
+    check('fundamentals: BTC → the Bitcoin chain, never the $12 squat', pick('BTC')?.kind === 'chain' && pick('BTC')?.slug === 'Bitcoin')
+    check('fundamentals: ARB → the Arbitrum chain (a canonical bridge is not the product)', pick('ARB')?.kind === 'chain' && pick('ARB')?.slug === 'Arbitrum')
+    check('fundamentals: OP → "OP Mainnet" (the richer chain row), not the 0-TVL "Optimism" row', pick('OP')?.slug === 'OP Mainnet')
+    check('fundamentals: HYPE → the Hyperliquid PROTOCOL (fees live there), not the "Hyperliquid L1" chain row; its category comes from the richest NON-bridge child', pick('HYPE')?.kind === 'protocol' && pick('HYPE')?.slug === 'hyperliquid' && pick('HYPE')?.category === 'Derivatives', JSON.stringify(pick('HYPE')))
+    check('fundamentals: AAVE ranks its versions by TVL and takes the parent; LDO (no parent) keeps its own slug', pick('AAVE')?.slug === 'aave' && pick('LDO')?.slug === 'lido' && pick('LDO')?.name === 'Lido')
+    check('fundamentals: a stock, a stable and an empty symbol map to NOTHING', pick('AAPL') === null && pick('USDC') === null && pick('') === null)
+
+    const parsed = parseLlamaChart([
+      [1_700_000_000, 10], // 2023-11-14 20:13Z → snaps to that UTC day
+      [1_699_920_000, 5], // same UTC day, earlier → the LATER point wins
+      { date: '1700092800', totalLiquidityUSD: 20 }, // TVL shape, string date
+      { date: 1700179200, tvl: 30 }, // chain-TVL shape
+      ['junk', 1],
+      [1700265600, -4], // negative → dropped
+      [1700352000, Number.NaN],
+      null,
+      [1700438400, '7'], // numeric string value → accepted
+    ])
+    check(
+      'fundamentals: parseLlamaChart takes both wire shapes, snaps to UTC days, keeps the later same-day point, drops junk, sorts',
+      JSON.stringify(parsed) === JSON.stringify([
+        [1699920000, 10],
+        [1700092800, 20],
+        [1700179200, 30],
+        [1700438400, 7],
+      ]),
+      JSON.stringify(parsed),
+    )
+    check('fundamentals: parseLlamaChart of not-an-array is [] (a 404 body never throws)', parseLlamaChart(null).length === 0 && parseLlamaChart({ totalDataChart: 1 }).length === 0)
+    const days = Array.from({ length: 40 }, (_, i) => [1700000000 + i * 86400, 1] as [number, number])
+    check('fundamentals: sumLastDays sums exactly the last N points; empty → null', sumLastDays(days, 30) === 30 && sumLastDays(days, 100) === 40 && sumLastDays([], 30) === null)
+    check('fundamentals: the opening picks are TVL + the richest flow (fees > revenue > volume); one metric when only one exists', JSON.stringify(defaultLlamaPicks(LLAMA_METRIC_KEYS)) === '["tvl","fees"]' && JSON.stringify(defaultLlamaPicks(['tvl', 'volume', 'holdersRevenue'])) === '["tvl","volume"]' && JSON.stringify(defaultLlamaPicks(['revenue'])) === '["revenue"]' && defaultLlamaPicks([]).length === 0)
+    check('fundamentals: togglePick holds two metrics, a third replaces the oldest, and the last one can never be removed', JSON.stringify(togglePick(['tvl', 'fees'], 'volume')) === '["fees","volume"]' && JSON.stringify(togglePick(['tvl', 'fees'], 'fees')) === '["tvl"]' && JSON.stringify(togglePick(['tvl'], 'tvl')) === '["tvl"]' && JSON.stringify(togglePick(['tvl'], 'fees')) === '["tvl","fees"]')
+    const w = windowPoints(days, '3m')
+    check('fundamentals: windowPoints measures back from the LAST point (a lagging feed still opens on a full window); "all" keeps everything', w.length === 40 && windowPoints(days, 'all').length === 40 && windowPoints(Array.from({ length: 800 }, (_, i) => [1600000000 + i * 86400, 1] as [number, number]), '1y').length === 366)
+
+    // The wiring: crypto only, attribution rendered, one theme probe.
+    const techSrc = readFileSync('components/markets/technicals/TechnicalsTab.tsx', 'utf8')
+    const fundSrc = readFileSync('components/markets/technicals/Fundamentals.tsx', 'utf8')
+    const mcSrc = readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')
+    check('fundamentals: TechnicalsTab mounts the panel ONLY for non-Robinhood pairs (a stock has no TVL curve)', /pair\.source !== 'robinhood' && <Fundamentals symbol=\{sym\} \/>/.test(techSrc))
+    check('fundamentals: the panel names DefiLlama with a link in the head AND the foot (attribution is the API\'s condition)', (fundSrc.match(/DefiLlama/g) ?? []).length >= 3 && /rel="noreferrer"/.test(fundSrc) && /Data: <a href=\{data\.subject\.url\}/.test(fundSrc))
+    check('fundamentals: the panel and the candle chart read ONE theme probe (chart-tokens), and the engine\'s logo stays off', /from '@\/components\/markets\/chart\/chart-tokens'/.test(fundSrc) && /from '\.\/chart-tokens'/.test(mcSrc) && !/function readTokens\(/.test(mcSrc) && /attributionLogo: false/.test(fundSrc))
+
+    // The wire, live against DefiLlama (keyless): a protocol, a chain, a stock, junk.
+    const fUni = await fetch(`${BASE}/api/markets/fundamentals?symbol=UNI`)
+    const uniBody = (await fUni.json()) as { subject: { kind: string; slug: string } | null; series: { key: string; points: unknown[]; last30d: number | null }[]; stats: { tvl: number | null; fees30d: number | null }; missing: string[] }
+    const sKeys = (uniBody.series ?? []).map((s) => s.key)
+    check('fundamentals (live): /api/markets/fundamentals?symbol=UNI → 200, the uniswap protocol, TVL + fees + DEX volume with ≥ 365 daily points each', fUni.status === 200 && uniBody.subject?.kind === 'protocol' && uniBody.subject.slug === 'uniswap' && ['tvl', 'fees', 'volume'].every((k) => sKeys.includes(k) && (uniBody.series.find((s) => s.key === k)?.points.length ?? 0) >= 365), JSON.stringify({ status: fUni.status, subject: uniBody.subject, sKeys, lens: uniBody.series?.map((s) => s.points.length) }))
+    check('fundamentals (live): the stats are the series\' own roll-ups — TVL > $100m, fees 30d > $1m — and nothing is missing for Uniswap', (uniBody.stats?.tvl ?? 0) > 1e8 && (uniBody.stats?.fees30d ?? 0) > 1e6 && uniBody.stats.fees30d === uniBody.series.find((s) => s.key === 'fees')?.last30d && (uniBody.missing ?? ['x']).length === 0, JSON.stringify(uniBody.stats))
+    const fUni2 = (await (await fetch(`${BASE}/api/markets/fundamentals?symbol=uni`)).json()) as { cached?: boolean; subject: { slug: string } | null }
+    check('fundamentals (live): the second read is served from the ten-minute cache (case-insensitive symbol)', fUni2.cached === true && fUni2.subject?.slug === 'uniswap')
+    const fEth = (await (await fetch(`${BASE}/api/markets/fundamentals?symbol=ETH`)).json()) as { subject: { kind: string; slug: string } | null; missing: string[] }
+    check('fundamentals (live): ETH → the Ethereum chain; holders revenue is named missing (not a chain-level series)', fEth.subject?.kind === 'chain' && fEth.subject.slug === 'Ethereum' && fEth.missing.includes('holdersRevenue'), JSON.stringify(fEth.subject))
+    const fAapl = await fetch(`${BASE}/api/markets/fundamentals?symbol=AAPL`)
+    const aaplBody = (await fAapl.json()) as { subject: unknown; reason?: string }
+    check('fundamentals (live): AAPL → 200 with subject null and a reason (a stock has no DefiLlama page)', fAapl.status === 200 && aaplBody.subject === null && /no DefiLlama page/.test(aaplBody.reason ?? ''))
+    check('fundamentals: junk symbol → 400', (await fetch(`${BASE}/api/markets/fundamentals?symbol=%40%40`)).status === 400 && (await fetch(`${BASE}/api/markets/fundamentals`)).status === 400)
+
+    // The page: the panel's shell is in the SERVER render of a coin's technicals tab, and absent from a stock's.
+    const tUni = flat(await (await fetch(`${BASE}/t/UNI?tab=technicals`)).text())
+    const tAapl = flat(await (await fetch(`${BASE}/t/AAPL?tab=technicals`)).text())
+    check('fundamentals: /t/UNI?tab=technicals server-renders the panel shell (data-fundamentals="UNI", DefiLlama named)', /data-fundamentals="UNI"/.test(tUni) && /DefiLlama/.test(tUni), 'the shell is missing from the SSR')
+    check('fundamentals: /t/AAPL?tab=technicals renders NO fundamentals panel (a stock keeps its tape)', /data-technicals="AAPL"/.test(tAapl) && !/data-fundamentals=/.test(tAapl))
   }
 
 

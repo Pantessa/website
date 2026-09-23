@@ -21,6 +21,7 @@ import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
 import { useTradable } from '@/lib/use-tradable'
+import Fundamentals from './Fundamentals'
 
 type Res = TechnicalsApi | TechnicalsRefusal
 const isRefusal = (r: Res): r is TechnicalsRefusal => 'error' in r
@@ -317,6 +318,11 @@ export default function TechnicalsTab({
           </p>
         </>
       )}
+
+      {/* Fundamentals (DefiLlama) — crypto only: a tokenized stock's chart is
+          its tape, not a TVL curve. Independent of the technicals read, so a
+          short tape still gets its fundamentals. */}
+      {pair.source !== 'robinhood' && <Fundamentals symbol={sym} />}
     </section>
   )
 }
