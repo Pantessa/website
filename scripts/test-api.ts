@@ -30160,24 +30160,31 @@ async function main() {
       // The schema is this lane's; the gate is DRIVE's. These pin the SURFACE:
       // the fields reach the gate at all (zod was stripping them, which refused
       // every SDK caller), and each one refuses by name.
-      const dExecWrongKey = await dcall('broker_execute', { intent_id: dOpenOnly.payload?.intentId, wallet_signature: '0x' + '1'.repeat(130), issued_at: new Date().toISOString(), agent_key: 'a-stranger-key' })
+      // A WALLET-bearing, still-open intent: executeIntent refuses a walletless
+      // one before it ever reaches the identity gate, so a walletless fixture
+      // would prove nothing (it read green for the wrong reason until the
+      // stranger-key pin went red and said so).
+      const pOpen = await dcall('broker_open', { ask: dSeqAsk, wallet: dAgent.address, agent: 'mcp-lane', agent_key: 'mcp-lane-proof-key' })
+      const pIntent = String(pOpen.payload?.intentId)
+      const dExecWrongKey = await dcall('broker_execute', { intent_id: pIntent, wallet_signature: '0x' + '1'.repeat(130), issued_at: new Date().toISOString(), agent_key: 'a-stranger-key' })
       check(
         'desk (HTTP) SECURITY: broker_execute refuses a stranger\'s agent_key BEFORE it ever looks at the wallet signature — holding the intent id must not be enough to execute an intent someone else opened',
         dExecWrongKey.isError && /agent_key this intent was opened with/.test(String(dExecWrongKey.payload)),
-        String(dExecWrongKey.payload).slice(0, 150),
+        String(dExecWrongKey.payload).slice(0, 190),
       )
       const staleAt = new Date(Date.now() - 3_600_000).toISOString()
       const dExecStale = await dcall('broker_execute', {
-        intent_id: dOpenOnly.payload?.intentId,
-        wallet_signature: await dAgent.signMessage({ message: deskConsent(String(dOpenOnly.payload?.intentId), dAgent.address, staleAt) }),
+        intent_id: pIntent,
+        wallet_signature: await dAgent.signMessage({ message: deskConsent(pIntent, dAgent.address, staleAt) }),
         issued_at: staleAt,
-        agent_key: 'mcp-lane-harness-key',
+        agent_key: 'mcp-lane-proof-key',
       })
       check(
-        'desk (HTTP) SECURITY: an hour-old consent is refused — a personal_sign over a fixed text is replayable forever without a window',
-        dExecStale.isError,
-        String(dExecStale.payload).slice(0, 170),
+        'desk (HTTP) SECURITY: an hour-old consent is refused on an intent that would otherwise execute — a personal_sign over a fixed text is replayable forever without a window',
+        dExecStale.isError && !/needs the wallet that will SIGN/.test(String(dExecStale.payload)),
+        String(dExecStale.payload).slice(0, 190),
       )
+      await dcall('broker_close', { intent_id: pIntent, agent_key: 'mcp-lane-proof-key' })
       check(
         'desk (HTTP): the schema PASSES issued_at + agent_key through to the gate — zod stripping them refused every SDK caller with "issued_at is required"',
         !/issued_at is required/i.test(String(dExecWrongKey.payload)) && !/unrecognized|unknown key/i.test(String(dExecStale.payload)),
@@ -30297,7 +30304,7 @@ async function main() {
       // The desk is not a SECOND channel with its own idea of the artifact:
       // the bytes it serves are the bytes the Jobs API serves for that step.
       if (lLeg) {
-        const pollUrl = (lNext.payload?.drive?.poll ?? '').replace(/^https?:\/\/[^/]+/, BASE)
+        const pollUrl = (lExec.payload?.drive?.poll ?? '').replace(/^https?:\/\/[^/]+/, BASE)
         const { job: restJob } = (await (await fetch(pollUrl)).json()) as { job: { steps: { seq: number; artifact?: unknown }[] } }
         const restArtifact = restJob?.steps?.find((x) => x.seq === lLeg.seq)?.artifact
         check(
