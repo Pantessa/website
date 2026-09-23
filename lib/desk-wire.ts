@@ -34,15 +34,21 @@
 // never re-serialize an artifact on its way to a signer — `legViewOf` hands the runner's
 // object through by REFERENCE for exactly that reason.
 
-/** What kind of signature a leg wants. */
-export type DeskLegKind =
-  | 'tx'        // one EVM transaction
-  | 'txChain'   // N EVM transactions, in order
-  | 'hlAction'  // one Hyperliquid L1 action (EIP-712, domain chainId 1337)
-  | 'hlBatch'   // N Hyperliquid L1 actions signed in one motion (C2)
-  | 'order'     // a non-HL EIP-712 order: CoW swap / limit, Seaport listing
-  | 'wait'      // nothing to sign — the runner verifies settlement on-chain
-  | 'unknown'   // a shape this wire does not name yet: do not sign it blind
+/**
+ * What kind of signature a leg wants.
+ *
+ *   tx        one EVM transaction
+ *   txChain   N EVM transactions, in order
+ *   hlAction  one Hyperliquid L1 action (EIP-712, domain chainId 1337)
+ *   hlBatch   N Hyperliquid L1 actions signed in one motion (C2)
+ *   order     a non-HL EIP-712 order: CoW swap / limit, Seaport listing
+ *   wait      nothing to sign — the runner verifies settlement on-chain
+ *   unknown   a shape this wire does not name yet: do not sign it blind
+ *
+ * ONE LINE on purpose: the SDK mirrors this file and the harness pins the two
+ * in sync by reading the union off the source.
+ */
+export type DeskLegKind = 'tx' | 'txChain' | 'hlAction' | 'hlBatch' | 'order' | 'wait' | 'unknown'
 
 /** The Hyperliquid L1 domain chain id — a venue constant, never a network. */
 export const HL_DOMAIN_CHAIN_ID = 1337

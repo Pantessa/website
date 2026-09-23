@@ -18,7 +18,7 @@ import prisma from '@/lib/db'
 import { jobStepBuildPath, jobStepChainId, jobStepSignedInfo } from '@/lib/job-step-telemetry'
 import { feeBpsOfArtifact } from '@/lib/fees'
 import { isBuildPath } from '@/lib/build-path'
-import { COUNTED_VERIFICATIONS, verifyTurnNow } from '@/lib/link-receipt-verify'
+import { COUNTED_VERIFICATIONS, receiptClientFor, verifyTurnNow } from '@/lib/link-receipt-verify'
 import { chainById } from '@/lib/chains'
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.pantessa.com').replace(/\/$/, '')
@@ -134,6 +134,23 @@ export async function recordJobStepMoney(leg: {
         verification: 'unverified',
       },
     })
+    // MCP lane (agent-desk round 2, found by a live pin): a job step's receipt
+    // class is `job`, and `verifyTurnNow` settles that class **attested** — a
+    // COUNTED verdict — with no chain read at all. Arguable for a browser, where
+    // a human watched a wallet pop. Indefensible for an agent posting JSON: a
+    // fabricated hash books the leg's whole notional as money moved, on
+    // /activity, on Growth and in the fee split. So an EVM leg is checked here
+    // against the one fact a claim cannot forge — the chain's own answer about
+    // who sent that transaction and whether it succeeded.
+    const claim = await claimedLegReceipt(chainId, txHash, leg.wallet)
+    if (claim === 'refuted') {
+      await prisma.embedTurn.update({ where: { id: row.id }, data: { verification: 'mismatch' } }).catch(() => {})
+      return { recorded: false, valueUsd: leg.valueUsd ?? null, verification: 'mismatch', rowId: row.id }
+    }
+    // Unreadable chain: leave it `unverified` (T-R4 — delay, never mint). The
+    // lazy re-check promotes it once the node answers.
+    if (claim === 'unreadable') return { recorded: false, valueUsd: leg.valueUsd ?? null, verification: 'unverified', rowId: row.id }
+
     const verification = await Promise.race([
       verifyTurnNow(row.id, chainId),
       new Promise<'unverified'>((r) => setTimeout(() => r('unverified'), 4000)),
@@ -165,5 +182,43 @@ export async function jobStepMoneyAlreadyBooked(beacon: { jobId: string; seq?: u
     return !!recent
   } catch {
     return false
+  }
+}
+
+/**
+ * What the CHAIN says about the hash a signer claimed for an EVM leg.
+ *
+ *   off-chain  the leg has no EVM chain (a Hyperliquid L1 action, a CoW or
+ *              Seaport order) — there is no receipt, and none is expected
+ *   refuted    no hash at all, or a tx sent by someone else, or one that
+ *              reverted — the claim is false about itself
+ *   unreadable the chain did not answer, or the hash is not mined yet — delay,
+ *              never mint (T-R4)
+ *   ok         a successful transaction from this job's own wallet
+ *
+ * Deliberately NOT a full `decideReceiptVerdict`: a job step writes no
+ * `intent_link_expectations` row, so the to/selector half would have nothing to
+ * match and would fail every leg closed. Sender + status is the part that is
+ * both available and the part a fabricated hash cannot satisfy.
+ */
+async function claimedLegReceipt(chainId: number | undefined, txHash: string | undefined, wallet: string): Promise<'ok' | 'refuted' | 'unreadable' | 'off-chain'> {
+  if (!chainId) return 'off-chain'
+  if (!txHash) return 'refuted'
+  const client = receiptClientFor(chainId)
+  if (!client) return 'unreadable'
+  try {
+    const [tx, receipt] = await Promise.all([
+      client.getTransaction({ hash: txHash as `0x${string}` }).catch(() => null),
+      client.getTransactionReceipt({ hash: txHash as `0x${string}` }).catch(() => null),
+    ])
+    // A hash the chain has never heard of is a claim about nothing — but it
+    // could also be a tx still in the mempool, which is why this only ever
+    // decides between counting NOW and counting on the lazy re-check.
+    if (!tx) return 'unreadable'
+    if (tx.from.toLowerCase() !== wallet.toLowerCase()) return 'refuted'
+    if (!receipt) return 'unreadable'
+    return receipt.status === 'success' ? 'ok' : 'refuted'
+  } catch {
+    return 'unreadable'
   }
 }

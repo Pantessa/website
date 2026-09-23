@@ -102,12 +102,10 @@ async function mustDriveable(intentId: unknown, agentKey: unknown) {
   const id = typeof intentId === 'string' ? intentId.trim() : ''
   const row = id ? await prisma.brokerIntent.findUnique({ where: { id } }) : null
   if (!row) throw new Error(`No such intent "${String(intentId)}".`)
-  if (!row.jobId || !row.wallet)
-    throw new Error(
-      `Intent ${row.id} is ${row.state} — it has no job to drive. The leg loop starts at broker_execute, ` +
-        'which compiles a SEQUENCED ask into a job owned by the wallet the intent was opened for. ' +
-        'A human-handoff intent reports through broker_status instead.',
-    )
+  // AUTHORIZATION BEFORE STATE. The identity is checked first on purpose: a
+  // caller who cannot claim this intent should not learn from the refusal that
+  // it exists, what state it is in, or whether it has a job — an intent id is
+  // a short slug that travels in an agent's own logs.
   const bound = typeof row.agentKey === 'string' ? row.agentKey : ''
   const presented = typeof agentKey === 'string' ? agentKey.trim() : ''
   if (!bound)
@@ -119,6 +117,12 @@ async function mustDriveable(intentId: unknown, agentKey: unknown) {
     throw new Error(
       `agent_key does not match the identity intent ${row.id} was opened with. The legs of an agent-signed ` +
         'job are served only to the agent that proved the wallet at broker_execute.',
+    )
+  if (!row.jobId || !row.wallet)
+    throw new Error(
+      `Intent ${row.id} is ${row.state} — it has no job to drive. The leg loop starts at broker_execute, ` +
+        'which compiles a SEQUENCED ask into a job owned by the wallet the intent was opened for. ' +
+        'A human-handoff intent reports through broker_status instead.',
     )
   return row
 }
