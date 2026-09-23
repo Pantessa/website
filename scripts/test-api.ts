@@ -16681,7 +16681,11 @@ async function main() {
       const noticeSrc = fsS.readFileSync('components/ExternalBuildNotice.tsx', 'utf8')
       check(
         'passthrough honesty: source — planner-sourced chains never auto-fire step 2+ (manualSteps), the card mounts the external-build marker with every `to` in full + the guard warnings',
-        chainSrc.includes('autoFire={i > 0 && !manualSteps}') &&
+        // Re-pinned 2026-09-23 (mobile-onboarding SIGN): the decision moved into
+        // lib/sign-round-trip autoFireAllowed, which still returns false for
+        // manualSteps (asserted below, not just grepped) — the behaviour held.
+        chainSrc.includes('autoFire={autoFireAllowed({ platform, stepIndex: i, manualSteps') &&
+          (await import('../lib/sign-round-trip')).autoFireAllowed({ platform: 'desktop', stepIndex: 1, manualSteps: true }) === false &&
           chatSrc.includes('manualSteps={!!externalChain}') &&
           chatSrc.includes("m.buildPath !== 'planner'") &&
           noticeSrc.includes('data-external-to={t.to') &&
@@ -23412,7 +23416,10 @@ async function main() {
         grace >= 500 && grace <= 2000 &&
           /const silent = connector\?\.id === CDP_CONNECTOR_ID/.test(waitS) &&
           /return \{ shown: signingIn && \(!silent \|\| late\), silent \}/.test(waitS) &&
-          /silent \? 'Signing you in…'/.test(waitS) && /\{!silent && \(/.test(waitS) &&
+          // Re-pinned 2026-09-23 (mobile-onboarding SIGN): the button block gained a
+          // phone branch ("Open {app}" when the SDK's request is queued in the wallet
+          // app); a silent signer still renders NO button on either branch.
+          /silent \? 'Signing you in…'/.test(waitS) && /\{!silent && signingIn && openApp \? \(/.test(waitS) && /\) : !silent \? \(/.test(waitS) && /\) : null\}/.test(waitS) &&
           // Re-pinned 2026-09-18: a third reason to stand down — on a phone the
           // handoff card takes over while the wallet app hasn't come forward
           // (lib/wallet-handoff), because "the request is open in your wallet"
