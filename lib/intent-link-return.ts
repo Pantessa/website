@@ -162,3 +162,23 @@ export function returnCopy(verdict: Exclude<ReturnVerdict, { kind: 'fresh' }>, a
     txUrl: null,
   }
 }
+
+// ── The seam for SIGN's round-trip outcome ──────────────────────────────
+// SIGN's lib/sign-round-trip.ts will one day know how a signature request
+// ended while the page was away (the tx landed / the wallet cancelled). This
+// is the one function that turns that knowledge into the card's next state;
+// IntentRuntime exposes it through `linkReturnSeam` so the coordinator can
+// wire the export in one line. Pure, pinned.
+export type RoundTripOutcome = { kind: 'signed'; txUrl?: string; valueUsd?: number } | { kind: 'cancelled' } | { kind: 'unknown' }
+
+/** The card after SIGN says how the round trip ended: signed → the receipt
+ *  card; cancelled → no card (the ask may run again); unknown → unchanged. */
+export function verdictAfterRoundTrip(current: ReturnVerdict | null, outcome: RoundTripOutcome, now: number): ReturnVerdict | null {
+  if (!current || current.kind === 'fresh') return current
+  if (outcome.kind === 'unknown') return current
+  if (outcome.kind === 'cancelled') return null
+  return {
+    kind: 'signed',
+    run: { ...current.run, outcome: 'signed', at: now, ...(outcome.txUrl ? { txUrl: outcome.txUrl } : {}), ...(outcome.valueUsd !== undefined ? { valueUsd: outcome.valueUsd } : {}) },
+  }
+}

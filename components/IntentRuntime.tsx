@@ -43,9 +43,16 @@ import { CATALOG } from '@/lib/mcp-data'
 import { FREE_FLEET_FALLBACK } from '@/lib/free-fleet'
 import { resolveAppIds } from '@/lib/ask-apps'
 import { androidChromeIntent, inAppEscapeCopy, safeStorage, type InAppBrowser } from '@/lib/inapp-browser'
-import { beaconsAlreadyPosted, readLinkRun, returnCopy, returnVerdict, writeLinkRun, type ReturnVerdict } from '@/lib/intent-link-return'
+import { beaconsAlreadyPosted, readLinkRun, returnCopy, returnVerdict, verdictAfterRoundTrip, writeLinkRun, type ReturnVerdict, type RoundTripOutcome } from '@/lib/intent-link-return'
 
 const STATIC_SERVERS: McpServer[] = [...FREE_FLEET_FALLBACK, ...CATALOG]
+
+/** THE SEAM for SIGN's round-trip outcome (mobile-onboarding squad): when
+ *  lib/sign-round-trip learns how a signature ended while the page was away,
+ *  call `linkReturnSeam.flip(outcome)` and the came-back card follows
+ *  (lib/intent-link-return verdictAfterRoundTrip). Set while a runtime is
+ *  mounted; null otherwise. */
+export const linkReturnSeam: { flip: ((outcome: RoundTripOutcome) => void) | null } = { flip: null }
 
 const CONTRACT = [
   {
@@ -209,6 +216,19 @@ export default function IntentRuntime({
   const [returnClosed, setReturnClosed] = useState(false)
   const rememberRun = (outcome: 'started' | 'built' | 'signed', extra?: { txUrl?: string; valueUsd?: number }) =>
     writeLinkRun(runStore(), { slug, wallet: address ?? null, outcome, at: Date.now(), ...extra })
+  useEffect(() => {
+    linkReturnSeam.flip = (outcome) => {
+      setReturned((prev) => {
+        const next = verdictAfterRoundTrip(prev, outcome, Date.now())
+        if (next?.kind === 'signed') writeLinkRun(runStore(), { ...next.run })
+        return next && next.kind !== 'fresh' ? next : null
+      })
+    }
+    return () => {
+      linkReturnSeam.flip = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   // The post-receipt SIWE round-trip renders the waiting card only for a
   // sign-in the visitor ASKED for (the save bar) — never on arrival.
   useEffect(() => {
@@ -757,10 +777,15 @@ export default function IntentRuntime({
               </div>
             </div>
             <div className="flex items-center gap-1.5 flex-shrink-0">
+              {/* Phones: the sticky bottom bar below carries this same button;
+                  in the header at 375 its 240px crushed the logo, the ask line
+                  and the account pill off the edges (measured, mobile-onboarding
+                  squad: signed-1-receipt.png on the unmodified tree). */}
               {signed && returnHref && redirectHost && (
                 <a
                   href={returnHref}
-                  className="btn btn--solid inline-flex items-center gap-1.5 text-[13px] flex-shrink-0"
+                  className="btn btn--solid inline-flex items-center gap-1.5 text-[13px] flex-shrink-0 max-sm:hidden"
+                  data-return-host-header
                 >
                   Return to {redirectHost} <ArrowRight className="w-3.5 h-3.5" />
                 </a>
@@ -937,7 +962,7 @@ export default function IntentRuntime({
         </div>
       )}
       {signed && returnHref && redirectHost && (
-        <div className="relative sticky bottom-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3">
+        <div className="relative sticky bottom-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3" data-return-host-bar>
           <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
             <span className="text-[13px] text-[color:var(--muted)]">
               Signed and receipted — all done here.
