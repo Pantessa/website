@@ -61,6 +61,44 @@ async function signSiwe(raw: string): Promise<string> {
   return account.signMessage({ message: raw.startsWith('0x') ? { raw: raw as `0x${string}` } : raw })
 }
 
+/** A real SIWE session for the admin wallet, minted through the app's own
+ *  /api/auth door (no forged JWT). The mock wallet stays CONNECTED on the
+ *  same address, so the orphan-session effect never fires and the cookie
+ *  survives (memory: siwe-drive-orphan-session). The dashboard's gate bounces
+ *  a connected-but-unsigned wallet HOME, so signing in through the UI would
+ *  need a detour via a public page first — this is the deterministic door. */
+async function mintSession(): Promise<{ name: string; value: string }> {
+  const pk = envLocal('PRIVATE_KEY')
+  if (!pk) throw new Error('no PRIVATE_KEY in .env.local')
+  const { privateKeyToAccount } = await import('viem/accounts')
+  const { createSiweMessage } = await import('viem/siwe')
+  const account = privateKeyToAccount((pk.startsWith('0x') ? pk : `0x${pk}`) as `0x${string}`)
+  const nonceRes = await fetch(`${BASE}/api/auth/nonce`)
+  const nonceCookie = (nonceRes.headers.getSetCookie?.() ?? [])
+    .map((c) => c.match(/^yf_siwe_nonce=([^;]+)/)?.[1])
+    .find(Boolean)
+  const { nonce } = (await nonceRes.json()) as { nonce: string }
+  const message = createSiweMessage({
+    address: account.address,
+    chainId: 8453,
+    domain: new URL(BASE).host,
+    nonce,
+    uri: BASE,
+    version: '1',
+  })
+  const signature = await account.signMessage({ message })
+  const res = await fetch(`${BASE}/api/auth/verify`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(nonceCookie ? { cookie: `yf_siwe_nonce=${nonceCookie}` } : {}) },
+    body: JSON.stringify({ message, signature }),
+  })
+  const value = (res.headers.getSetCookie?.() ?? [])
+    .map((c) => c.match(/^yf_session=([^;]+)/)?.[1])
+    .find(Boolean)
+  if (!value) throw new Error(`SIWE sign-in failed (${res.status}) — the drive cannot reach an admin page`)
+  return { name: 'yf_session', value }
+}
+
 /** Fail LOUD when the burner is not an admin — a silent redirect to `/` reads
  *  as "the page is missing", and this drive would only ever prove the gate. */
 async function adminAddress(): Promise<string> {
@@ -149,6 +187,7 @@ type PwPage = {
 }
 type PwContext = {
   newPage(): Promise<PwPage>
+  addCookies(cookies: Array<{ name: string; value: string; url: string }>): Promise<void>
   addInitScript(script: string): Promise<void>
   exposeFunction(name: string, fn: (raw: string) => unknown): Promise<void>
   close(): Promise<void>
@@ -236,6 +275,8 @@ async function main() {
   console.log(`\ndesk drive → ${BASE}  (admin ${admin})\n`)
 
   const seeded = WANT_SEED ? await seedIntent() : null
+  const session = await mintSession()
+  console.log(`  · signed in as ${admin} (real SIWE, through /api/auth)\n`)
 
   const require_ = createRequire('/Users/nategeier/anchor.js')
   const { chromium } = require_('playwright-core') as { chromium: PwChromium }
@@ -263,6 +304,7 @@ async function main() {
     await ctx.addInitScript(
       `try { Object.defineProperty(document, 'visibilityState', { get: () => 'visible' }); Object.defineProperty(document, 'hidden', { get: () => false }) } catch {}`,
     )
+    await ctx.addCookies([{ name: session.name, value: session.value, url: BASE }])
     const page = await ctx.newPage()
     const errs: string[] = []
     page.on('console', (m) => m.type() === 'error' && errs.push(m.text()))
@@ -270,26 +312,15 @@ async function main() {
     return { ctx, page, errs }
   }
 
-  /** Sign in through the app's own door, then land on `path`. */
-  async function signInAndOpen(page: PwPage, path: string) {
+  /** Land on `path` already signed in, and say so if the app sent us home. */
+  async function land(page: PwPage, path: string) {
     await page.goto(`${BASE}${path}`, { waitUntil: 'domcontentloaded' })
-    await page.waitForTimeout(1500)
-    // The dashboard bounces a wallet that has not SIWE'd. Press the door the
-    // page itself offers; on a signed-in reload this is a no-op.
-    const door = page.locator('button:has-text("Sign in"), button:has-text("Sign In")').first()
-    if ((await door.count()) > 0) {
-      await door.click({ timeout: 5000 }).catch(() => {})
-      await page.waitForTimeout(2500)
-      const wallet = page.locator('button:has-text("Desk Drive Wallet")').first()
-      if ((await wallet.count()) > 0) {
-        await wallet.click({ timeout: 5000 }).catch(() => {})
-        await page.waitForTimeout(3000)
-      }
-    }
-    if (!page.url().includes(path)) {
-      await page.goto(`${BASE}${path}`, { waitUntil: 'domcontentloaded' })
-    }
     await page.waitForTimeout(2500)
+    if (!page.url().includes(path)) {
+      // One retry: wagmi's reconnect can land a beat after the gate reads.
+      await page.goto(`${BASE}${path}`, { waitUntil: 'domcontentloaded' })
+      await page.waitForTimeout(2500)
+    }
   }
 
   /** The three things every page in this drive owes. */
@@ -332,7 +363,7 @@ async function main() {
       waits('desk log: /dashboard/admin/desk renders', 'route is 404 — the UI lane has not landed it')
       await ctx.close()
     } else {
-      await signInAndOpen(page, '/dashboard/admin/desk')
+      await land(page, '/dashboard/admin/desk')
       add('desk log: an ADMIN wallet reaches /dashboard/admin/desk (not bounced home)', page.url().includes('/dashboard/admin/desk'), page.url())
       const log = page.locator(HOOKS.deskLog)
       const hasLog = (await log.count()) > 0
@@ -386,7 +417,7 @@ async function main() {
       waits('desk log 375 light: renders', 'route is 404')
       await ctx.close()
     } else {
-      await signInAndOpen(page, '/dashboard/admin/desk')
+      await land(page, '/dashboard/admin/desk')
       await assertNoHostileLinks(page, 'desk log 375')
       await inspect(page, 'desk log 375 light', errs)
       await ctx.close()
@@ -396,7 +427,7 @@ async function main() {
   // ── P3 — Growth's Desk section, dark 1440 ────────────────────────────────
   {
     const { ctx, page, errs } = await open({ width: 1440, height: 900, theme: 'dark' })
-    await signInAndOpen(page, '/dashboard/admin')
+    await land(page, '/dashboard/admin')
     add('growth: an ADMIN wallet reaches /dashboard/admin', page.url().includes('/dashboard/admin'), page.url())
     const desk = page.locator(HOOKS.growthDesk)
     if ((await desk.count()) > 0) {
