@@ -98,7 +98,7 @@ metaMaskWallet.useDeeplink = true
  * their only launch. The `openDeeplink` / `useDeeplink` properties above
  * stay on the ORIGINAL factory — that is where RainbowKit reads them.
  */
-const metaMaskWalletOneLaunch: typeof metaMaskWallet = Object.assign(
+const oneLaunchMetaMaskWallet: typeof metaMaskWallet = Object.assign(
   (params: Parameters<typeof metaMaskWallet>[0]) => withoutDuplicateMobileLaunch(metaMaskWallet(params)),
   {},
 )
@@ -112,7 +112,7 @@ const metaMaskWalletOneLaunch: typeof metaMaskWallet = Object.assign(
 // them — the list type is what matters here.)
 const WALLET_FACTORIES: Record<WalletLaneId, Parameters<typeof connectorsForWallets>[0][number]['wallets'][number]> = {
   injected: injectedWallet,
-  metaMask: metaMaskWalletOneLaunch,
+  metaMask: oneLaunchMetaMaskWallet,
   coinbase: coinbaseWallet,
   // Injected-only (namespace `phantom.ethereum`); RainbowKit dedupes it
   // against the EIP-6963 announce by rdns, so an installed Phantom lists once.

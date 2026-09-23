@@ -49,6 +49,10 @@
     "drive:onboarding": "tsx scripts/drive-onboarding.ts",
     "probe:tradable": "tsx scripts/probe-tradable.ts",
     "probe:venue-floors": "tsx scripts/probe-venue-floors.ts",
+    "drive:mobile-connect": "tsx scripts/drive-mobile-connect.ts",
+    "drive:mobile-sign": "tsx scripts/drive-mobile-sign.ts",
+    "drive:mobile-links": "tsx scripts/drive-mobile-links.ts",
+    "drive:mobile": "tsx scripts/drive-mobile.ts",
     "drive:desk": "tsx scripts/drive-desk.ts",
     "drive:i-mobile": "tsx scripts/drive-i-mobile.ts"
   },

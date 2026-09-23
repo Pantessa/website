@@ -44,9 +44,19 @@ import { CATALOG } from '@/lib/mcp-data'
 import { FREE_FLEET_FALLBACK } from '@/lib/free-fleet'
 import { resolveAppIds } from '@/lib/ask-apps'
 import { androidChromeIntent, inAppEscapeCopy, safeStorage, type InAppBrowser } from '@/lib/inapp-browser'
-import { beaconsAlreadyPosted, readLinkRun, returnCopy, returnVerdict, writeLinkRun, type ReturnVerdict } from '@/lib/intent-link-return'
+import { beaconsAlreadyPosted, readLinkRun, reconcileWithSignOutcome, returnCopy, returnVerdict, verdictAfterRoundTrip, writeLinkRun, type ReturnVerdict, type RoundTripOutcome } from '@/lib/intent-link-return'
+import { readSignOutcome, signOutcomeKey } from '@/lib/sign-round-trip'
+import { txChainOf, txRequestOf } from '@/lib/transaction-layer'
+import { chainById } from '@/lib/chains'
 
 const STATIC_SERVERS: McpServer[] = [...FREE_FLEET_FALLBACK, ...CATALOG]
+
+/** THE SEAM for SIGN's round-trip outcome (mobile-onboarding squad): when
+ *  lib/sign-round-trip learns how a signature ended while the page was away,
+ *  call `linkReturnSeam.flip(outcome)` and the came-back card follows
+ *  (lib/intent-link-return verdictAfterRoundTrip). Set while a runtime is
+ *  mounted; null otherwise. */
+export const linkReturnSeam: { flip: ((outcome: RoundTripOutcome) => void) | null } = { flip: null }
 
 const CONTRACT = [
   {
@@ -208,8 +218,45 @@ export default function IntentRuntime({
   const runStore = () => safeStorage(typeof window === 'undefined' ? null : window)
   const [returned, setReturned] = useState<Exclude<ReturnVerdict, { kind: 'fresh' }> | null>(null)
   const [returnClosed, setReturnClosed] = useState(false)
-  const rememberRun = (outcome: 'started' | 'built' | 'signed', extra?: { txUrl?: string; valueUsd?: number }) =>
-    writeLinkRun(runStore(), { slug, wallet: address ?? null, outcome, at: Date.now(), ...extra })
+  const rememberRun = (outcome: 'started' | 'built' | 'signed', extra?: { txUrl?: string; valueUsd?: number; signKey?: string; chainId?: number }) => {
+    // A later state keeps the earlier record's key (the signed beacon has
+    // no tx in hand; the built one did).
+    const prev = readLinkRun(runStore(), slug, Date.now())
+    const carry = prev && prev.wallet === (address ?? '').toLowerCase() ? { ...(prev.signKey ? { signKey: prev.signKey } : {}), ...(prev.chainId ? { chainId: prev.chainId } : {}) } : {}
+    writeLinkRun(runStore(), { slug, wallet: address ?? null, outcome, at: Date.now(), ...carry, ...extra })
+  }
+  /** SIGN's outcome key for the LAST tx the thread's newest build offers —
+   *  read from the store the moment the build lands (the turn event carries
+   *  no tx). Orders have no key. */
+  const lastBuiltTxKey = (): { signKey: string; chainId: number } | null => {
+    if (!address) return null
+    const { chats, currentChatId } = useYeetfulStore.getState()
+    const chat = chats.find((c) => c.id === currentChatId)
+    const msgs = chat?.messages ?? []
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i]
+      if (m.role !== 'assistant') continue
+      const chain = txChainOf(m.meta)
+      const tx = chain ? chain.steps[chain.steps.length - 1]?.tx ?? null : txRequestOf(m.meta)
+      if (!tx?.to) return null
+      const chainId = tx.chainId ?? 8453
+      return { signKey: signOutcomeKey({ wallet: address, chainId, to: tx.to, data: tx.data }), chainId }
+    }
+    return null
+  }
+  useEffect(() => {
+    linkReturnSeam.flip = (outcome) => {
+      setReturned((prev) => {
+        const next = verdictAfterRoundTrip(prev, outcome, Date.now())
+        if (next?.kind === 'signed') writeLinkRun(runStore(), { ...next.run })
+        return next && next.kind !== 'fresh' ? next : null
+      })
+    }
+    return () => {
+      linkReturnSeam.flip = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   // The post-receipt SIWE round-trip renders the waiting card only for a
   // sign-in the visitor ASKED for (the save bar) — never on arrival.
   useEffect(() => {
@@ -311,7 +358,15 @@ export default function IntentRuntime({
     startedFx.current = true
     // Now the wallet is known: hold the ask when THIS wallet was mid-signature
     // or signed here minutes ago; otherwise remember that a run started.
-    const verdict = returnVerdict(readLinkRun(runStore(), slug, Date.now()), address ?? null, Date.now())
+    const raw = returnVerdict(readLinkRun(runStore(), slug, Date.now()), address ?? null, Date.now())
+    // THE WIRE: SIGN recorded how that exact transaction ended while the
+    // page was away (lib/sign-round-trip) — a settled hash flips the hold
+    // straight to the receipt card.
+    const verdict =
+      raw.kind === 'hold' && raw.run.signKey
+        ? reconcileWithSignOutcome(raw, readSignOutcome(runStore(), raw.run.signKey, Date.now()), chainById(raw.run.chainId)?.explorerTx ?? null, Date.now())
+        : raw
+    if (verdict.kind === 'signed' && raw.kind === 'hold') writeLinkRun(runStore(), { ...verdict.run })
     if (verdict.kind !== 'fresh') setReturned(verdict)
     else rememberRun('started')
     postEvent('connect')
@@ -374,7 +429,7 @@ export default function IntentRuntime({
     if (data.outcome === 'tx-built') {
       postEvent('built', { valueUsd })
       setBuilt(true)
-      rememberRun('built')
+      rememberRun('built', lastBuiltTxKey() ?? undefined)
     }
     if (data.outcome === 'signed') {
       postEvent('signed', { valueUsd, txHash, chainId })
@@ -773,12 +828,20 @@ export default function IntentRuntime({
               </div>
             </div>
             <div className="flex items-center gap-1.5 flex-shrink-0">
+              {/* Phones: the sticky bottom bar below carries this same button;
+                  in the header at 375 its 240px crushed the logo, the ask line
+                  and the account pill off the edges (measured, mobile-onboarding
+                  squad: signed-1-receipt.png on the unmodified tree). */}
               {signed && returnHref && redirectHost && (
                 <a
                   href={returnHref}
                   // The sticky bar at the bottom carries the same door on a
                   // phone; two of them squeezed the ask out of the header.
-                  className="btn btn--solid inline-flex items-center gap-1.5 text-[13px] flex-shrink-0 max-sm:hidden"
+                  // `!`: x402-design.css's `.btn { display: inline-flex }` is
+                  // imported after the utilities and wins the cascade over a
+                  // plain max-sm:hidden (measured: the button stayed up).
+                  className="btn btn--solid inline-flex items-center gap-1.5 text-[13px] flex-shrink-0 max-sm:!hidden"
+                  data-return-host-header
                 >
                   Return to {redirectHost} <ArrowRight className="w-3.5 h-3.5" />
                 </a>
@@ -958,7 +1021,7 @@ export default function IntentRuntime({
         </div>
       )}
       {signed && returnHref && redirectHost && (
-        <div className="relative sticky bottom-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <div className="relative sticky bottom-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]" data-return-host-bar>
           <div className="max-w-3xl mx-auto flex items-center justify-between gap-3 max-sm:flex-col max-sm:items-stretch">
             <span className="text-[13px] text-[color:var(--muted)]">
               Signed and receipted — all done here.
