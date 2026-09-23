@@ -17,7 +17,8 @@ import { CDP_INIT_PATIENCE_MS, emailLaneHint, walletLaneChips } from '@/lib/wall
 import { analytics } from '@/lib/analytics'
 import { WALLET_MARKS } from '@/components/wallet-marks'
 import { inAppBrowserOf, inAppEscapeCopy } from '@/lib/inapp-browser'
-import { oauthAllowedIn, oauthRefusedCopy } from '@/lib/mobile-wallet'
+import { isPhone, oauthAllowedIn, oauthRefusedCopy } from '@/lib/mobile-wallet'
+import { warmWalletConnector } from '@/lib/wallet-warm'
 import { PantessaMark } from '@/components/Logo'
 import { cn } from '@/lib/utils'
 import { currentAppHref, signInLandingHere, useSession } from '@/lib/session'
@@ -177,6 +178,17 @@ export function CreateAccountModal({
   useEffect(() => {
     analytics.signInDoor('open', { connectOnly: walletConnectOnly === true })
   }, [walletConnectOnly])
+  // On a phone the MetaMask lane is the MetaMask SDK, which wagmi loads +
+  // initialises lazily on the FIRST connect: the SDK chunk, its init, and the
+  // socket.io handshake to the relay all ran inside the MetaMask tap, and the
+  // app launch waited on them (measured 0.7–1.8s after the tap on a fresh
+  // visitor). Warm it the moment the door opens — the visitor is reading the
+  // lanes — so the tap's own work is the channel JOIN alone (lib/wallet-warm;
+  // pinned offset in the mobile drive).
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !isPhone(navigator.userAgent)) return
+    void warmWalletConnector(connectors)
+  }, [connectors])
   useEffect(() => {
     if (error) analytics.signInDoor('error', { message: error.slice(0, 120), step })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one row per message, not per step change

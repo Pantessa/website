@@ -31700,7 +31700,7 @@ async function main() {
           /metaMaskWallet\.useDeeplink = true/.test(wagmi) &&
           /\.openDeeplink =\s*requestWalletAppOpen/.test(wagmi) &&
           /withoutDuplicateMobileLaunch\(metaMaskWallet\(params\)\)/.test(wagmi) &&
-          /metaMask: metaMaskWalletOneLaunch,/.test(wagmi) &&
+          /metaMask: oneLaunchMetaMaskWallet,/.test(wagmi) &&
           !/metaMask: metaMaskWallet,/.test(wagmi) &&
           !/useDeeplink:\s*false/.test(wagmi)
         )

@@ -132,6 +132,8 @@ export function handoffShownOn(pathname: string | null | undefined): boolean {
 
 // ── The holder (browser) ────────────────────────────────────────────────
 
+import { launchDroppedReport, reportWalletRefusal } from '@/lib/wallet-refusal'
+
 type Listener = () => void
 
 let pending: WalletAppOpen | null = null
@@ -254,6 +256,10 @@ function watchForLaunch(o: WalletAppOpen) {
     stopWatching()
     if (document.visibilityState === 'hidden') return
     setPending(o)
+    // A dropped launch is a /dashboard/failures row (lib/wallet-refusal,
+    // SIGN lane): the wallet we can't name from here, the link's scheme
+    // names the app, the settle window says how long the page stayed.
+    reportWalletRefusal(launchDroppedReport({ wallet: null, link: o.link, app: o.app, settleMs: WALLET_APP_SETTLE_MS, tried: o.tried }))
   }, WALLET_APP_SETTLE_MS)
 }
 
@@ -315,4 +321,10 @@ export function openWalletApp(link?: string): boolean {
   }
   watchForLaunch(o)
   return true
+}
+
+/** SIGN's name for "open the last request again, from a tap" — the same
+ *  call as openWalletApp() with no link. One holder, one behaviour. */
+export function reopenWalletApp(): boolean {
+  return openWalletApp()
 }

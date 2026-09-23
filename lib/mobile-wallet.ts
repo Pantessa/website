@@ -53,6 +53,13 @@ export function mobilePlatform(
   return 'desktop'
 }
 
+/** The two-way reading the sign surfaces use (SIGN's lib/sign-round-trip
+ *  `platformOf` aliases this): on a phone the wallet is another APP, so one
+ *  wallet method per tap and every launch is watched. */
+export function isPhone(ua: string | null | undefined, opts: { maxTouchPoints?: number; platform?: string } = {}): boolean {
+  return mobilePlatform(ua, opts) !== 'desktop'
+}
+
 /**
  * Inside a wallet's OWN in-app browser the provider is injected and there is
  * no app to bring forward — a launch there would be a page navigating to
