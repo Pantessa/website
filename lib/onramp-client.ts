@@ -13,6 +13,7 @@
 
 import type { ClarifyFundAction } from '@/lib/clarify'
 import { onrampConsentMessage, onrampHasLane, onrampUnsellableMessage, type OnrampOffer } from '@/lib/onramp'
+import { platformOf } from '@/lib/sign-round-trip'
 
 export type OnrampStartResult = { ok: true } | { ok: false; error: string }
 
@@ -32,7 +33,13 @@ export async function startOnrampSession(input: {
   signMessage: (args: { message: string }) => Promise<string>
 }): Promise<OnrampStartResult> {
   const { address, fund, signMessage } = input
-  const tab = window.open('', '_blank')
+  // Desktop: open the tab NOW (a popup after an await is blocked) and point
+  // it at Stripe once the session exists. Phone: never — a blank tab takes
+  // the foreground away from THIS page while its wallet request is queued
+  // in another app (lib/sign-round-trip), so the visitor comes back from the
+  // wallet to an empty tab. The signature runs first and the SAME tab goes
+  // to Stripe (the `location.href` branch below).
+  const tab = platformOf(navigator.userAgent) === 'phone' ? null : window.open('', '_blank')
   try {
     // Can this visitor's checkout price the lane? A lane it can't opens onto
     // Stripe's "An unknown error occurred" (a euro buy of USDC, 2026-09-17), so

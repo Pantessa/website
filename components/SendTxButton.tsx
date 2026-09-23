@@ -9,15 +9,22 @@
 // Progress stepper: Sign → Broadcast → Confirmed, with the transaction's
 // block-explorer link live from the moment a hash exists. Confirmation waits
 // on the real receipt — a revert shows as failure with the same link.
+//
+// On a phone the wallet is another app (lib/sign-round-trip): one wallet
+// method per tap — a network switch is its own tap, a chain's step N>1 is a
+// button, never a mount-time request — and a request the visitor came back
+// to without an answer gets "Open MetaMask", never a second send.
 
 import { useEffect, useRef, useState } from 'react'
 import { useAccount, usePublicClient, useSendTransaction, useSwitchChain } from 'wagmi'
 import { CDP_CONNECTOR_ID } from '@coinbase/cdp-wagmi'
-import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink, XCircle } from 'lucide-react'
+import { Loader2, PenLine, CheckCircle2, Circle, ExternalLink, XCircle, Smartphone } from 'lucide-react'
 import type { EvmTxRequest } from '@/lib/transaction-layer'
 import { chainById } from '@/lib/chains'
 import { reportWalletRefusal, walletErrorWords, type WalletArtifact } from '@/lib/wallet-refusal'
 import { SIGN_CTA_CLASS } from '@/lib/sign-cta'
+import { autoFireAllowed, oneMethodPerTap, reopenCopy } from '@/lib/sign-round-trip'
+import { useSignRoundTrip } from '@/lib/use-sign-round-trip'
 
 type Status = 'idle' | 'signing' | 'broadcast' | 'confirmed' | 'reverted' | 'error'
 
@@ -38,6 +45,7 @@ export default function SendTxButton({
   tx,
   summary,
   autoFire = false,
+  ctaLabel,
   onConfirmed,
   refusalArtifact = 'tx',
   refusalBuildPath,
@@ -46,8 +54,14 @@ export default function SendTxButton({
   summary?: string
   /** Request the wallet signature on mount — SendTxChain sets this on steps
    *  after the first so popups follow each other like a sign-in flow, no
-   *  button hunt between steps. The button stays as the retry surface. */
+   *  button hunt between steps. The button stays as the retry surface.
+   *  Honoured only where lib/sign-round-trip autoFireAllowed says so: never
+   *  on a phone (the app launch would be dropped), never for Coinbase's
+   *  popup wallet. */
   autoFire?: boolean
+  /** The idle button's words when the host has better ones than
+   *  "Sign & send <action>" (a chain step: "Sign step 2 of 2 — Swap"). */
+  ctaLabel?: string
   /** Fires once when the receipt lands with status success — SendTxChain
    *  advances the multi-step card on this. */
   onConfirmed?: (hash: string) => void
@@ -68,16 +82,21 @@ export default function SendTxButton({
   const publicClient = usePublicClient({ chainId })
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState('')
+  const [note, setNote] = useState('')
   const [hash, setHash] = useState<string | null>(null)
   // The wallet refused the network switch: the inline line names the chain
   // and the button itself becomes the "switch & retry" — never just red text.
   const [switchNeeded, setSwitchNeeded] = useState(false)
+  // The round trip to the wallet app (phone): asked → in-app → returned.
+  const trip = useSignRoundTrip()
 
   const chainInfo = chainById(chainId)
   const explorer = chainInfo?.explorerTx ?? TX_EXPLORER[chainId] ?? 'https://basescan.org/tx/'
+  const chainName = chainInfo?.name ?? `chain ${chainId}`
 
   const send = async () => {
     setError('')
+    setNote('')
     setSwitchNeeded(false)
     if (!isConnected || !address) {
       setError('Connect your wallet first.')
@@ -92,14 +111,17 @@ export default function SendTxButton({
       // issued after extra awaits).
       if (connectedChain?.id !== chainId) {
         try {
+          trip.ask()
           await switchChainAsync({ chainId })
+          trip.settle()
         } catch (e) {
+          trip.settle()
           // A refused/failed network switch is a wallet wall too (a wallet
           // that can't reach chain 4663, say) — log it; a plain "no" is not.
           reportWalletRefusal({
             wallet: address, artifact: refusalArtifact, buildPath: refusalBuildPath,
             connector: connector?.id ?? connector?.name, chainId: connectedChain?.id,
-            ask: `${summary ?? tx.action ?? 'transaction'} (switch to ${chainInfo?.name ?? `chain ${chainId}`})`,
+            ask: `${summary ?? tx.action ?? 'transaction'} (switch to ${chainName})`,
             detail: walletErrorWords(e),
           })
           // An embedded (Pantessa account) wallet has no network UI: telling
@@ -108,11 +130,20 @@ export default function SendTxButton({
           // when the chain isn't in lib/wallet-chains.ts — i.e. our bug.
           setError(
             connector?.id === CDP_CONNECTOR_ID
-              ? `Your Pantessa account can't sign on ${chainInfo?.name ?? `chain ${chainId}`} yet — that's on us, not you. Retry once; if it walls again, this transaction needs a wallet like MetaMask.`
-              : `This transaction is built for ${chainInfo?.name ?? `chain ${chainId}`} — switch the wallet to it (the button below asks again), then it signs.`,
+              ? `Your Pantessa account can't sign on ${chainName} yet — that's on us, not you. Retry once; if it walls again, this transaction needs a wallet like MetaMask.`
+              : `This transaction is built for ${chainName} — switch the wallet to it (the button below asks again), then it signs.`,
           )
           setSwitchNeeded(connector?.id !== CDP_CONNECTOR_ID)
           setStatus('error')
+          return
+        }
+        // On a phone the switch was a trip to the wallet app and back; the
+        // signature that follows would fire with no tap behind it and the
+        // browser would drop the app launch (lib/sign-round-trip). Re-arm:
+        // the switch is done, the next tap signs.
+        if (oneMethodPerTap(trip.platform)) {
+          setStatus('idle')
+          setNote(`Switched to ${chainName} — tap to sign.`)
           return
         }
         // Let the wallet settle on the new network before the sign sheet
@@ -122,12 +153,17 @@ export default function SendTxButton({
         // on a perfectly good tx (2026-07-15 funding-leg false alarm).
         await new Promise((r) => setTimeout(r, 750))
       }
-      txHash = await sendTransactionAsync({
-        to: tx.to as `0x${string}`,
-        data: (tx.data ?? '0x') as `0x${string}`,
-        value: tx.value ? BigInt(tx.value) : undefined,
-        chainId,
-      })
+      trip.ask()
+      try {
+        txHash = await sendTransactionAsync({
+          to: tx.to as `0x${string}`,
+          data: (tx.data ?? '0x') as `0x${string}`,
+          value: tx.value ? BigInt(tx.value) : undefined,
+          chainId,
+        })
+      } finally {
+        trip.settle()
+      }
       setHash(txHash)
       setStatus('broadcast')
       // Generous window + retries: smart-wallet bundlers (Coinbase) add
@@ -190,7 +226,7 @@ export default function SendTxButton({
       }
       setError(
         /rejected|denied/i.test(msg)
-          ? `Rejected in the wallet — nothing was sent. (If you didn’t cancel: check the wallet is on ${chainInfo?.name ?? `chain ${chainId}`}.)`
+          ? `Rejected in the wallet — nothing was sent. (If you didn’t cancel: check the wallet is on ${chainName}.)`
           : msg,
       )
       setStatus('error')
@@ -199,18 +235,20 @@ export default function SendTxButton({
 
   // Auto-fire: request the signature as soon as the step mounts. Once per
   // mount (a rejection shows the Retry button, it never re-pops on its own).
-  // Coinbase's popup-based wallet is excluded: a request issued outside a
-  // click handler after an await gets its popup blocked and the second
-  // signature dies silently (the #102 lesson) — it keeps the button.
+  // The decision is lib/sign-round-trip autoFireAllowed: never on a phone
+  // (the launch fires with no tap and the browser drops it — the visitor is
+  // left on a disabled button), never for Coinbase's popup wallet (a request
+  // issued outside a click handler after an await gets its popup blocked
+  // and the second signature dies silently — the #102 lesson).
   const autoFired = useRef(false)
   useEffect(() => {
     if (!autoFire || autoFired.current || status !== 'idle') return
     if (!isConnected || !address) return
-    if (/coinbase/i.test(`${connector?.id ?? ''} ${connector?.name ?? ''}`)) return
+    if (!autoFireAllowed({ platform: trip.platform, stepIndex: 1, connectorId: connector?.id, connectorName: connector?.name })) return
     autoFired.current = true
     void send()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoFire, isConnected, address])
+  }, [autoFire, isConnected, address, trip.platform])
 
   const stepState = (step: Status): 'done' | 'active' | 'pending' => {
     if (status === 'confirmed') return 'done'
@@ -224,6 +262,9 @@ export default function SendTxButton({
 
   const inFlight = status === 'signing' || status === 'broadcast'
   const started = status !== 'idle' && status !== 'error'
+  // The visitor came back from the wallet app and the request is still open.
+  const cameBack = status === 'signing' && trip.verdict === 'offer-reopen'
+  const reopen = reopenCopy(trip.reopenApp)
 
   return (
     <div className="mt-2.5 pt-2 border-t border-[var(--line)] space-y-1.5">
@@ -287,12 +328,30 @@ export default function SendTxButton({
               : status === 'broadcast'
                 ? 'Waiting for confirmation…'
                 : status === 'error' && switchNeeded
-                  ? `Switch to ${chainInfo?.name ?? `chain ${chainId}`} & retry`
+                  ? `Switch to ${chainName} & retry`
                   : status === 'error'
                     ? `Retry — sign & send ${tx.action ?? 'transaction'}`
-                    : `Sign & send ${tx.action ?? 'transaction'}`}
+                    : ctaLabel ?? `Sign & send ${tx.action ?? 'transaction'}`}
           </button>
+          {note && <span className="text-[12px] text-[color:var(--muted)]">{note}</span>}
           {error && <span className="text-[12px] text-[color:var(--fail)]">{error}</span>}
+          {/* Back from the app with nothing settled: the request is queued in
+              the wallet, so the ONE honest control is to open the wallet
+              again — a re-send here would be a second signature. */}
+          {cameBack && (
+            <div className="basis-full flex items-center gap-2 flex-wrap text-[12px] text-[color:var(--muted)]" data-sign-return="offer-reopen">
+              <span>{reopen.line}</span>
+              {trip.reopenApp && (
+                <button
+                  type="button"
+                  onClick={trip.reopen}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--line-2)] px-3 py-1 text-[12px] font-medium text-[color:var(--fg)] [@media(hover:none)]:min-h-10 [@media(hover:none)]:px-4"
+                >
+                  <Smartphone className="w-3.5 h-3.5" /> {reopen.cta}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
