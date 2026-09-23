@@ -66,25 +66,61 @@ export function walletAppFor(link: string | null | undefined): string | null {
  *  the visitor has already tapped once without the app coming up. */
 export type WalletAppOpen = { link: string; app: string; tried: boolean }
 
+/** The one thing the card needs to know about the browser it is in: whether
+ *  an app launch can work from here at all (lib/inapp-browser, LINKS lane —
+ *  X's, LinkedIn's and a bare WKWebView's browsers drop `metamask://` and
+ *  render a universal link as a web page). Passed in, never read here: the
+ *  copy stays pure. */
+export type HandoffBrowser = {
+  inApp: boolean
+  canLaunchApps: boolean
+  /** From inAppEscapeCopy: the app's name and where its "open in the real
+   *  browser" item lives. */
+  escape?: { app: string; where: string; browser: string }
+}
+
+export type HandoffCopy = {
+  title: string
+  body: string
+  cta: string
+  /** The tap can never launch the app from this browser: the CTA carries
+   *  the page's link out instead of asking for the same tap again. */
+  escape: boolean
+}
+
 /**
  * What the handoff card says. Split out so the harness pins the words:
  *  · first time — the browser refused the launch silently, so this card is the
  *    first thing the visitor has seen about it. Say what to do.
  *  · after a tap that also didn't land — the wallet probably isn't on this
  *    phone. Say that, instead of asking for the same tap again.
+ *  · inside an app's own browser that can't open wallet apps at all — no tap
+ *    will ever work here; say which menu item leaves for the real browser and
+ *    hand them the link to carry.
  */
-export function handoffCopy(o: WalletAppOpen): { title: string; body: string; cta: string } {
+export function handoffCopy(o: WalletAppOpen, browser?: HandoffBrowser | null): HandoffCopy {
+  if (browser && browser.inApp && !browser.canLaunchApps) {
+    const esc = browser.escape ?? { app: 'this app', where: 'use its menu to open the page in your browser', browser: 'your browser' }
+    return {
+      title: `This browser can't open ${o.app}`,
+      body: `You're inside ${esc.app}'s browser, which never hands a page to a wallet app. Open this page in ${esc.browser} — ${esc.where} — then connect again there.`,
+      cta: 'Copy this page\'s link',
+      escape: true,
+    }
+  }
   if (o.tried) {
     return {
       title: `Still waiting on ${o.app}`,
       body: `${o.app} didn't come up. If it's installed, open it yourself — the request is waiting there, and approving it finishes this.`,
       cta: `Try ${o.app} again`,
+      escape: false,
     }
   }
   return {
     title: `Open ${o.app} to continue`,
     body: `${o.app} has the request. This browser wouldn't switch apps on its own, so tap below — approve it there, then come back.`,
     cta: `Open ${o.app}`,
+    escape: false,
   }
 }
 
@@ -99,6 +135,12 @@ export function handoffShownOn(pathname: string | null | undefined): boolean {
 type Listener = () => void
 
 let pending: WalletAppOpen | null = null
+/** The most recent request the SDK asked us to open — kept after the card
+ *  is dismissed or the page hid, until the surface says its wallet method
+ *  settled. A surface that shows its own "waiting for your wallet" card reads
+ *  this to put an "Open MetaMask" button on it (the request is queued in the
+ *  wallet the whole time; a tap is all the browser wants). */
+let lastLink: { link: string; app: string } | null = null
 let settleTimer: ReturnType<typeof setTimeout> | null = null
 /** Tears down the watch that is currently running, if any. One at a time:
  *  a second request supersedes the first, and its listeners go with it. */
@@ -126,12 +168,19 @@ export function walletAppOpenSnapshot(): WalletAppOpen | null {
   return pending
 }
 
+/** The last link the SDK asked for, if its request may still be waiting in
+ *  the wallet (see lastLink). Same subscription as the card. */
+export function walletAppLastLink(): { link: string; app: string } | null {
+  return lastLink
+}
+
 /** Server render: nothing is pending before the page exists. */
 export function walletAppOpenServerSnapshot(): WalletAppOpen | null {
   return null
 }
 
-/** The visitor dismissed the card, or the round-trip it belonged to ended. */
+/** The visitor dismissed the card. The request is still queued in the wallet,
+ *  so the link stays readable (walletAppLastLink) for an inline button. */
 export function clearWalletAppOpen(): void {
   stopCurrentWatch?.()
   if (settleTimer) {
@@ -139,6 +188,20 @@ export function clearWalletAppOpen(): void {
     settleTimer = null
   }
   setPending(null)
+}
+
+/**
+ * The wallet method the SDK asked us to open FOR has settled — resolved,
+ * rejected, timed out. Nothing is waiting in the wallet any more, so the
+ * card and the remembered link both go. Surfaces call this where their
+ * request's promise settles (SignatureWaitTakeover does on sign-in end).
+ */
+export function walletAppRequestSettled(): void {
+  clearWalletAppOpen()
+  if (lastLink) {
+    lastLink = null
+    emit()
+  }
 }
 
 function navigate(link: string) {
@@ -205,6 +268,8 @@ export function requestWalletAppOpen(link: string): void {
   const o: WalletAppOpen = { link: link.trim(), app, tried: false }
   // A fresh request supersedes whatever card is up: same wallet, newer request.
   setPending(null)
+  lastLink = { link: o.link, app }
+  emit()
   try {
     navigate(o.link)
   } catch {
@@ -227,4 +292,27 @@ export function openWalletAppNow(): void {
     return
   }
   watchForLaunch(next)
+}
+
+/**
+ * Any surface's own button: open the wallet app for the request it is
+ * waiting on — the last one the SDK asked for unless a link is given. Call it
+ * from a tap handler (that is the whole point). Returns false when there is
+ * nothing to open; the same watch as the card follows a real attempt, so a
+ * dropped tap still ends in the card rather than silence.
+ */
+export function openWalletApp(link?: string): boolean {
+  const target = link ? { link: link.trim(), app: walletAppFor(link) } : lastLink
+  if (!target?.app || typeof window === 'undefined') return false
+  const o: WalletAppOpen = { link: target.link, app: target.app, tried: pending?.tried ?? false }
+  lastLink = { link: o.link, app: o.app }
+  setPending(null)
+  try {
+    navigate(o.link)
+  } catch {
+    setPending(o)
+    return true
+  }
+  watchForLaunch(o)
+  return true
 }
