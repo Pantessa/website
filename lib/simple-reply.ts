@@ -40,7 +40,11 @@ export function splitSimpleReply(content: string, chainName?: string | null): Si
   if (!content || !/^\s*🔏/u.test(content)) return null
   const parts = sentences(content)
   if (parts.length === 0) return null
-  const first = parts[0]
+  // The lead is rendered as TEXT, not markdown: a reply whose first sentence
+  // is bold ("**Swap 5 USDC · Base → Arbitrum** · your wallet signs", the
+  // cross-chain card) printed its asterisks on /i (measured at 375,
+  // mobile-onboarding squad). Strip emphasis markers before cutting.
+  const first = stripEmphasis(parts[0])
   // Head = the trade itself: cut at " via " or " on <Chain> via" or the first "(".
   let head = first
   const viaIdx = head.search(/\s+via\s+/i)
@@ -53,5 +57,14 @@ export function splitSimpleReply(content: string, chainName?: string | null): Si
   const chain = chainName ?? first.match(/\s+on\s+([A-Z][\w]*(?:\s[A-Z][\w]*)?)(?=\s+via|\s*\(|,|$)/)?.[1] ?? null
   const fee = first.match(/incl\.\s*([\d.]+%)\s*Pantessa fee/i)?.[1] ?? first.match(/Pantessa fee\s*\(([\d.]+%)\)/i)?.[1] ?? null
   const lead = [head, chain ? `on ${chain}` : null, fee ? `fee ${fee}` : null, 'your wallet signs'].filter(Boolean).join(' · ')
-  return { lead, details: parts }
+  return { lead, details: parts.map(stripEmphasis) }
+}
+
+/** `**bold**`, `__bold__`, `*em*`, `_em_` and inline code ticks → plain text. */
+export function stripEmphasis(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/(^|[^*\w])\*(?!\s)(.+?)(?<!\s)\*(?!\w)/g, '$1$2')
+    .replace(/`([^`]+)`/g, '$1')
 }
