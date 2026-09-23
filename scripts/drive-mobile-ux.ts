@@ -1306,7 +1306,11 @@ async function main() {
     const hit = process.argv.find((a) => a.startsWith(`--${k}=`))
     return hit ? hit.slice(k.length + 3) : d
   }
-  const base = arg('base', 'http://localhost:3873')!
+  // BASE is the squad's convention (drive:mobile spawns every lane drive with
+  // it); --base= still wins for a hand run. Without this the drive silently
+  // pointed at :3873 under the runner and every row died on a refused
+  // connection — while still exiting 0.
+  const base = arg('base', process.env.BASE || 'http://localhost:3873')!
   const onramp = arg('onramp', null as unknown as string) ?? null
   const tag = arg('tag', 'before')!
   const rowsArg = arg('rows')
@@ -1319,7 +1323,9 @@ async function main() {
   process.stdout.write(`\n────────────────────────────────────────\nmobile ux drive (${tag}): ${greens.length} green / ${reds.length} red / ${out.filter((v) => v.note).length} notes\n`)
   for (const r of reds) process.stdout.write(`   ❌ [${r.row}] ${r.check} — ${r.detail}\n`)
   process.stdout.write(`shots: ${UX_SHOT_DIR}\n`)
-  process.exit(0)
+  // A drive that prints reds and exits 0 is worse than no drive: drive:mobile
+  // folds a standalone lane in BY ITS EXIT CODE.
+  process.exit(reds.length ? 1 : 0)
 }
 
 if (process.argv[1]?.includes('drive-mobile-ux')) void main()
