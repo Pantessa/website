@@ -28,7 +28,7 @@ import {
   type BrokerState,
 } from '@/lib/broker'
 import { assertDeskOpen, assertAgentIdentity, assertSenderIdentity, assertUnderDeskCap, cleanAgentKey } from '@/lib/broker-policy'
-import { readVenueFunding } from '@/lib/desk-drive'
+import { assertExecuteProof, readVenueFunding } from '@/lib/desk-drive'
 import { outboundToThirdParty } from '@/lib/content-origin'
 import { deniedBrandNameReason, isDeniedBrandName } from '@/lib/brand-denylist'
 import { validateCallbackUrl, mintCallbackSecret, deliverWebhook, notifyEligible } from '@/lib/broker-webhook'
@@ -603,7 +603,14 @@ export interface ExecuteResult {
  *  so a lying agent fails its own job closed one leg later. Every build
  *  passes the same deterministic builders + fail-closed guards + spend
  *  policy as a human turn. */
-export async function executeIntent(intentId: string, walletSignature: unknown, call?: DeskCallOpts): Promise<ExecuteResult> {
+export async function executeIntent(
+  intentId: string,
+  walletSignature: unknown,
+  call?: DeskCallOpts,
+  /** MCP lane, round 2 (QA F4): the caller's own identity + the instant it
+   *  signed the consent. Enforced by `assertExecuteProof` below. */
+  proof?: { issuedAt?: string; agentKey?: string },
+): Promise<ExecuteResult> {
   assertDeskOpen()
   const row = await mustIntent(intentId)
   if (row.state !== 'open') throw new Error(`Intent ${intentId} is ${row.state} — execution starts from an open intent.`)
@@ -617,6 +624,9 @@ export async function executeIntent(intentId: string, walletSignature: unknown, 
   // must sit under the desk cap. Human handoff above carries neither gate —
   // a human signature is its own ceiling.
   assertAgentIdentity(row.agentKey)
+  // The identity gate above only checked that the intent HAS one. This checks
+  // it is YOURS, and that the consent you are presenting was signed just now.
+  assertExecuteProof(row.agentKey, proof)
   assertUnderDeskCap(askUsd(row.ask))
   // THE ROSTER (R2, T5): a roster-bound intent re-checks its slot at the
   // BUILD gate — a fire that landed after open refuses here, and the slot

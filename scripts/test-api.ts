@@ -30133,7 +30133,7 @@ async function main() {
     const dSeqAsk = `swap 1 USDC for ETH on base, then send 0.5 USDC on base to ${dAgent.address}`
     const dOpen = await dcall('broker_open', { ask: dSeqAsk, wallet: dAgent.address, agent: 'mcp-lane', agent_key: DESK_AGENT_KEY })
     const dIntent = dOpen.payload?.intentId as string
-    const dExec = await dcall('broker_execute', { intent_id: dIntent, wallet_signature: await dAgent.signMessage({ message: deskConsent(dIntent, dAgent.address) }) })
+    const dExec = await dcall('broker_execute', { intent_id: dIntent, wallet_signature: await dAgent.signMessage({ message: deskConsent(dIntent, dAgent.address) }), issued_at: new Date().toISOString(), agent_key: DESK_AGENT_KEY })
     check(
       'desk (HTTP): a sequenced ask + a proven wallet compiles to a multi-leg job owned by the agent',
       !dExec.isError && typeof dExec.payload?.jobId === 'string' && (dExec.payload?.steps?.length ?? 0) >= 2,
@@ -30149,6 +30149,39 @@ async function main() {
       )
       const dDoneWrong = await dcall('broker_done', { intent_id: dIntent, agent_key: 'some-other-agents-key', seq: 0, result: { txHash: '0x' + '9'.repeat(64) } })
       check('desk (HTTP) SECURITY: broker_done is gated on the same key — a stranger cannot advance another agent\'s job', dDoneWrong.isError && /agent_key does not match/.test(String(dDoneWrong.payload)))
+      // ── the execute proof (QA F4) ────────────────────────────
+      const { assertExecuteProof, EXECUTE_ISSUED_AT_WINDOW_MS } = await import('../lib/desk-drive')
+      const proofAt = Date.now()
+      const iso = (ms: number) => new Date(proofAt + ms).toISOString()
+      const throws = (fn: () => void) => {
+        try { fn(); return '' } catch (e) { return (e as Error).message }
+      }
+      check(
+        'desk execute proof: the caller\'s OWN agent_key is compared timing-safe — holding an intent id must not be enough to execute an intent someone else opened',
+        /does not match the identity this intent was opened with/.test(throws(() => assertExecuteProof('the-real-key', { agentKey: 'a-different-key' }, proofAt))) &&
+          throws(() => assertExecuteProof('the-real-key', { agentKey: 'the-real-key' }, proofAt)) === '',
+      )
+      check(
+        'desk execute proof: issued_at is a REPLAY WINDOW — a consent signed now passes, one from outside ±10 minutes is refused by name, and junk is refused as junk',
+        throws(() => assertExecuteProof('k', { agentKey: 'k', issuedAt: iso(0) }, proofAt)) === '' &&
+          throws(() => assertExecuteProof('k', { agentKey: 'k', issuedAt: iso(-EXECUTE_ISSUED_AT_WINDOW_MS + 5_000) }, proofAt)) === '' &&
+          /outside the 10-minute window/.test(throws(() => assertExecuteProof('k', { agentKey: 'k', issuedAt: iso(-EXECUTE_ISSUED_AT_WINDOW_MS - 1_000) }, proofAt))) &&
+          /outside the 10-minute window/.test(throws(() => assertExecuteProof('k', { agentKey: 'k', issuedAt: iso(EXECUTE_ISSUED_AT_WINDOW_MS + 1_000) }, proofAt))) &&
+          /must be an ISO-8601/.test(throws(() => assertExecuteProof('k', { agentKey: 'k', issuedAt: 'yesterday' }, proofAt))),
+      )
+      const dExecWrongKey = await dcall('broker_execute', { intent_id: dOpenOnly.payload?.intentId, wallet_signature: '0x' + '1'.repeat(130), issued_at: new Date().toISOString(), agent_key: 'a-stranger-key' })
+      check(
+        'desk (HTTP) SECURITY: broker_execute refuses a stranger\'s agent_key BEFORE it ever looks at the wallet signature',
+        dExecWrongKey.isError && /agent_key does not match/.test(String(dExecWrongKey.payload)),
+        String(dExecWrongKey.payload).slice(0, 150),
+      )
+      const dExecStale = await dcall('broker_execute', { intent_id: dOpenOnly.payload?.intentId, wallet_signature: '0x' + '1'.repeat(130), issued_at: new Date(Date.now() - 3_600_000).toISOString(), agent_key: 'mcp-lane-harness-key' })
+      check(
+        'desk (HTTP) SECURITY: an hour-old consent is refused by the window, not silently accepted',
+        dExecStale.isError && /outside the 10-minute window/.test(String(dExecStale.payload)),
+        String(dExecStale.payload).slice(0, 150),
+      )
+
       const dNoKey = await drpc('tools/call', { name: 'broker_next', arguments: { intent_id: dIntent } })
       check('desk (HTTP) SECURITY: broker_next without an agent_key is refused at the schema — the key is required, not optional', !!dNoKey.result?.isError || !!(dNoKey.result as any)?.error || /required|invalid/i.test(dNoKey.raw))
 
@@ -30239,7 +30272,7 @@ async function main() {
       const liveAsk = `swap 1 USDC for ETH on base, then send 0.5 USDC on base to ${burner.address}`
       const lOpen = await dcall('broker_open', { ask: liveAsk, wallet: burner.address, agent: 'mcp-lane', agent_key: LIVE_KEY })
       const lIntent = lOpen.payload?.intentId as string
-      const lExec = await dcall('broker_execute', { intent_id: lIntent, wallet_signature: await burner.signMessage({ message: deskConsent(lIntent, burner.address) }) })
+      const lExec = await dcall('broker_execute', { intent_id: lIntent, wallet_signature: await burner.signMessage({ message: deskConsent(lIntent, burner.address) }), issued_at: new Date().toISOString(), agent_key: LIVE_KEY })
       let lLeg: any = null
       let lNext: any = null
       for (let i = 0; i < 6 && !lExec.isError; i++) {

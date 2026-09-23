@@ -259,9 +259,27 @@ const handler = createMcpHandler(
             .string()
             .regex(/^0x[0-9a-fA-F]{130}$/)
             .describe('personal_sign over the consent text (see description) by the wallet this intent was opened for.'),
+          issued_at: z
+            .string()
+            .optional()
+            .describe(
+              'The ISO-8601 UTC instant you signed the consent at (new Date().toISOString()). Accepted within 10 minutes ' +
+                'both ways: a consent signature with no window is replayable forever by anyone who sees it. Sign and execute ' +
+                'in one motion.',
+            ),
+          agent_key: z
+            .string()
+            .min(6)
+            .max(80)
+            .optional()
+            .describe(
+              'The SAME desk identity string you passed to broker_open — compared timing-safe. Without it, holding the ' +
+                'intent id is enough to execute an intent someone else opened.',
+            ),
         },
       },
-      async ({ intent_id, wallet_signature }, extra) => guarded(() => executeIntent(intent_id, wallet_signature, callOpts(extra))),
+      async ({ intent_id, wallet_signature, issued_at, agent_key }, extra) =>
+        guarded(() => executeIntent(intent_id, wallet_signature, callOpts(extra), { issuedAt: issued_at, agentKey: agent_key })),
     )
 
     // ── the agent-signed leg loop (C3) ────────────────────────────────

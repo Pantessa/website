@@ -429,3 +429,50 @@ export async function assertCloseAllowed(intentId: unknown, agentKey: unknown): 
         '(An intent opened without one needs no key to close.)',
     )
 }
+
+/* ── the execute proof (round 2, QA F4) ──────────────────────── */
+
+/** Both sides of the consent replay window (QA F4). */
+export const EXECUTE_ISSUED_AT_WINDOW_MS = 10 * 60_000
+
+/**
+ * The two fields that ride beside `wallet_signature` on broker_execute.
+ *
+ * `agent_key` — the execute path already REQUIRES a bound identity, but it
+ * only checked that the intent HAD one: anyone holding the intent id could
+ * execute an intent someone else opened. Compared timing-safe here.
+ *
+ * `issued_at` — a personal_sign consent over a fixed text is replayable
+ * forever by anyone who sees it. A window makes it a one-shot in practice
+ * (the intent must still be `open`, which is the other half). DRIVE binds the
+ * instant INTO the consent text, which makes the window unforgeable; until
+ * that lands this enforces the window against the clock, which is already the
+ * difference between "a signature from last month works" and "it does not".
+ *
+ * Both are OPTIONAL at this layer on purpose: the field must stop being
+ * stripped by the schema today, and a caller that does not send one is
+ * refused by the gates that were already there — never accepted-and-ignored.
+ */
+export function assertExecuteProof(
+  boundAgentKey: string | null | undefined,
+  proof: { issuedAt?: unknown; agentKey?: unknown } | undefined,
+  now: number = Date.now(),
+): void {
+  const presented = typeof proof?.agentKey === 'string' ? proof.agentKey.trim() : ''
+  const bound = typeof boundAgentKey === 'string' ? boundAgentKey : ''
+  if (presented && bound && !sameSecret(bound, presented))
+    throw new Error(
+      'agent_key does not match the identity this intent was opened with — the agent-signed path runs only for ' +
+        'the agent that opened it. Re-open the intent with your own agent_key.',
+    )
+  if (proof?.issuedAt === undefined || proof.issuedAt === null || proof.issuedAt === '') return
+  const raw = typeof proof.issuedAt === 'string' ? proof.issuedAt : ''
+  const at = raw ? Date.parse(raw) : NaN
+  if (!Number.isFinite(at))
+    throw new Error('issued_at must be an ISO-8601 UTC instant (e.g. new Date().toISOString()) — the moment you signed the consent.')
+  if (Math.abs(now - at) > EXECUTE_ISSUED_AT_WINDOW_MS)
+    throw new Error(
+      `issued_at is outside the ${Math.round(EXECUTE_ISSUED_AT_WINDOW_MS / 60_000)}-minute window (it reads ${raw}). ` +
+        'Sign the consent and execute in one motion — a consent signature with no window is replayable forever.',
+    )
+}
