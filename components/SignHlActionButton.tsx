@@ -47,6 +47,7 @@ import { reportWalletRefusal, walletErrorWords, type WalletArtifact } from '@/li
 import { SIGN_CTA_CLASS } from '@/lib/sign-cta'
 import { oneMethodPerTap } from '@/lib/sign-round-trip'
 import { usePlatform } from '@/lib/use-sign-round-trip'
+import SignatureWaitOpenApp from '@/components/SignatureWaitOpenApp'
 
 type Status = 'idle' | 'signing' | 'submitting' | 'enabling' | 'refreshing' | 'filled' | 'error'
 
@@ -481,6 +482,7 @@ export default function SignHlActionButton({
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : needsEnable ? <ShieldCheck className="w-3.5 h-3.5" /> : <PenLine className="w-3.5 h-3.5" />}
             {buttonLabel}
           </button>
+          <SignatureWaitOpenApp waiting={status === 'signing' || status === 'enabling'} />
           {enabledNote && <span className="text-[12px] text-[color:var(--muted)]" data-hl-rearmed="enable">{enabledNote}</span>}
           {error && <span className="text-[12px] text-red-400">{error}</span>}
         </div>

@@ -28,6 +28,8 @@
 // page WATCHES the round trip so that a request still unsettled after the
 // visitor has come back gets a real control, never a disabled button.
 
+import { mobilePlatform } from '@/lib/mobile-wallet'
+
 export type SignRoundTripState = 'idle' | 'asked' | 'in-app' | 'returned' | 'settled' | 'stale'
 
 export interface SignRoundTrip {
@@ -103,13 +105,12 @@ export function returnVerdict(trip: SignRoundTrip, now: number): 'none' | 'waiti
 
 export type Platform = 'phone' | 'desktop'
 
-/** The same signal RainbowKit's `isMobile()` reads: the UA. A phone is where
- *  the wallet is another app. (CONNECT's lib/mobile-wallet.ts is the
- *  squad's platform source once it lands; this mirrors its UA rule so the
- *  sign surfaces never disagree with the connect door.) */
+/** A phone is where the wallet is another app. ONE source with the connect
+ *  door: CONNECT's lib/mobile-wallet `mobilePlatform` (what RainbowKit's
+ *  `isMobile()` decides from), folded to the two states a signature cares
+ *  about — so the sign surfaces can never disagree with the door. */
 export function platformOf(ua: string | null | undefined): Platform {
-  if (!ua) return 'desktop'
-  return /Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|Opera Mini|IEMobile/i.test(ua) ? 'phone' : 'desktop'
+  return mobilePlatform(ua) === 'desktop' ? 'desktop' : 'phone'
 }
 
 /** ONE WALLET METHOD PER TAP on a phone: the next method after an awaited
