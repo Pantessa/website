@@ -140,7 +140,6 @@ function CopyTurn({ text, dark }: { text: string; dark?: boolean }) {
           setTimeout(() => setDone(false), 1400)
         })
       }}
-      data-turn-tools
       className={cn(
         'absolute -top-2.5 -right-2.5 w-7 h-7 rounded-full grid place-items-center border backdrop-blur-md',
         'opacity-0 group-hover/bubble:opacity-100 focus-visible:opacity-100 transition-opacity duration-150',
@@ -152,6 +151,8 @@ function CopyTurn({ text, dark }: { text: string; dark?: boolean }) {
           ? 'bg-black/70 border-black/30 text-white'
           : 'tint-bg-surf-2-90 border-[var(--line)] text-[color:var(--muted)] hover:text-white',
       )}
+      // /i on a phone hides the hover-era tools (components/intent-runtime.css).
+      data-turn-tools
     >
       {done ? <Check className="w-3.5 h-3.5 text-[color:var(--accent)]" /> : <Copy className="w-3.5 h-3.5" />}
     </button>
@@ -169,7 +170,6 @@ function MintLinkTurn({ onMint }: { onMint: () => void }) {
       onClick={onMint}
       aria-label="Create an intent link from this ask"
       title="Create an intent link — share this ask as one tap"
-      data-turn-tools
       className={cn(
         'absolute -top-2.5 -right-11 w-7 h-7 rounded-full grid place-items-center border backdrop-blur-md',
         'opacity-0 group-hover/bubble:opacity-100 focus-visible:opacity-100 transition-opacity duration-150',
@@ -179,6 +179,7 @@ function MintLinkTurn({ onMint }: { onMint: () => void }) {
         // button, above the bubble's top edge, at a 36px target.
         '[@media(hover:none)]:right-12 [@media(hover:none)]:-top-5 [@media(hover:none)]:w-9 [@media(hover:none)]:h-9',
       )}
+      data-turn-tools
     >
       <Link2 className="w-3.5 h-3.5" />
     </button>
