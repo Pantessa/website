@@ -23,7 +23,7 @@ import { linksStudioHref } from '@/lib/links-href'
 import { useAccount, useSignMessage } from 'wagmi'
 import { declineCard } from '@/lib/decline-client'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { ArrowRight, BellRing, ExternalLink, Fingerprint, Link2, MessageSquare, ReceiptText, ShieldCheck, Zap } from 'lucide-react'
+import { ArrowRight, BellRing, Check, Copy, ExternalLink, Fingerprint, Link2, MessageSquare, ReceiptText, ShieldCheck, Smartphone, Zap } from 'lucide-react'
 import ChatInterface from '@/components/ChatInterface'
 import ChatLoader from '@/components/ChatLoader'
 import { SignatureWaitModal, useSignatureWait } from '@/components/SignatureWaitTakeover'
@@ -42,6 +42,8 @@ import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATALOG } from '@/lib/mcp-data'
 import { FREE_FLEET_FALLBACK } from '@/lib/free-fleet'
 import { resolveAppIds } from '@/lib/ask-apps'
+import { androidChromeIntent, inAppEscapeCopy, safeStorage, type InAppBrowser } from '@/lib/inapp-browser'
+import { beaconsAlreadyPosted, readLinkRun, returnCopy, returnVerdict, writeLinkRun, type ReturnVerdict } from '@/lib/intent-link-return'
 
 const STATIC_SERVERS: McpServer[] = [...FREE_FLEET_FALLBACK, ...CATALOG]
 
@@ -80,6 +82,7 @@ export default function IntentRuntime({
   ownLink = false,
   prefillOnly = false,
   holdCopy = '',
+  browser = null,
 }: {
   slug: string
   ask: string
@@ -120,6 +123,11 @@ export default function IntentRuntime({
    *  PREFILLS and a human presses send. `holdCopy` is the one-line why. */
   prefillOnly?: boolean
   holdCopy?: string
+  /** The browser this link opened in, read by the server from the request
+   *  UA (lib/inapp-browser): inside X / LinkedIn / a bare WebView a wallet
+   *  app cannot be launched, so the splash says how to leave for Safari or
+   *  Chrome instead of offering a tap that stalls. */
+  browser?: InAppBrowser | null
 }) {
   const { address, isConnected, status: walletStatus } = useAccount()
   const { openConnectModal } = useConnectModal()
@@ -178,7 +186,9 @@ export default function IntentRuntime({
   // from wagmi's store, and never applied to the HYDRATION render: the server
   // painted the door, so the client's first render must too (bootHoldingFor).
   const hydrated = useHydrated()
-  const [walletWaitOver, setWalletWaitOver] = useState(() => initialHoldElapsed(typeof window === 'undefined' ? null : window.localStorage))
+  // The storage accessor itself throws in some in-app browsers (iOS with
+  // cross-site tracking prevention, a blocked origin) — never touch it bare.
+  const [walletWaitOver, setWalletWaitOver] = useState(() => initialHoldElapsed(safeStorage(typeof window === 'undefined' ? null : window)))
   useEffect(() => {
     if (walletWaitOver) return
     const t = setTimeout(() => setWalletWaitOver(true), 4000)
@@ -186,6 +196,19 @@ export default function IntentRuntime({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const [prompt, setPrompt] = useState<{ text: string; send: boolean; at: number } | null>(null)
+  // THE WAY BACK (mobile-onboarding squad, 2026-09-23): on a phone the page
+  // usually RELOADS when the visitor returns from the wallet app, and a
+  // reload used to re-run the ask into a fresh thread — a second sign card
+  // for a swap the wallet may just have approved (measured: a second
+  // POST /api/chat + open → connect → built, thread gone). The run this
+  // link offered this wallet is remembered for a short while
+  // (lib/intent-link-return); a return inside that window holds the ask and
+  // says what to do instead. The chips send; nothing fires on its own.
+  const runStore = () => safeStorage(typeof window === 'undefined' ? null : window)
+  const [returned, setReturned] = useState<Exclude<ReturnVerdict, { kind: 'fresh' }> | null>(null)
+  const [returnClosed, setReturnClosed] = useState(false)
+  const rememberRun = (outcome: 'started' | 'built' | 'signed', extra?: { txUrl?: string; valueUsd?: number }) =>
+    writeLinkRun(runStore(), { slug, wallet: address ?? null, outcome, at: Date.now(), ...extra })
   // The post-receipt SIWE round-trip renders the waiting card only for a
   // sign-in the visitor ASKED for (the save bar) — never on arrival.
   useEffect(() => {
@@ -229,6 +252,11 @@ export default function IntentRuntime({
   }
 
   useEffect(() => {
+    // A return inside the run window is the SAME visit: the once-only
+    // beacons were posted the first time (funnel honesty — a phone signer
+    // used to count as two opens and two connects).
+    const early = returnVerdict(readLinkRun(runStore(), slug, Date.now()), null, Date.now())
+    for (const k of beaconsAlreadyPosted(early)) posted.current.add(k)
     postEvent('open')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -280,6 +308,11 @@ export default function IntentRuntime({
   useEffect(() => {
     if (!started || startedFx.current) return
     startedFx.current = true
+    // Now the wallet is known: hold the ask when THIS wallet was mid-signature
+    // or signed here minutes ago; otherwise remember that a run started.
+    const verdict = returnVerdict(readLinkRun(runStore(), slug, Date.now()), address ?? null, Date.now())
+    if (verdict.kind !== 'fresh') setReturned(verdict)
+    else rememberRun('started')
     postEvent('connect')
     // The link runtime is its own thread: never append the ask into whatever
     // chat the visitor happened to have open (same-session nav from /chat
@@ -322,9 +355,11 @@ export default function IntentRuntime({
   useEffect(() => {
     if (!started || blocked || !allowCleared || prompt) return
     if (status === 'loading') return
+    // A held return never auto-fires: its chips are the only way to run.
+    if (returned || returnClosed) return
     setPrompt({ text: ask, send: !transferShaped, at: Date.now() })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [started, blocked, allowCleared, prompt, status])
+  }, [started, blocked, allowCleared, prompt, status, returned, returnClosed])
 
   const onTurnEvent = (name: string, data?: Record<string, unknown>) => {
     if (name !== 'turn' || !data) return
@@ -338,11 +373,13 @@ export default function IntentRuntime({
     if (data.outcome === 'tx-built') {
       postEvent('built', { valueUsd })
       setBuilt(true)
+      rememberRun('built')
     }
     if (data.outcome === 'signed') {
       postEvent('signed', { valueUsd, txHash, chainId })
       setBuilt(true)
       setSigned(true)
+      rememberRun('signed', { ...(typeof data.txUrl === 'string' ? { txUrl: data.txUrl } : {}), ...(valueUsd !== undefined ? { valueUsd } : {}) })
     }
     if (data.outcome === 'settled') {
       setBuilt(true)
@@ -517,6 +554,15 @@ export default function IntentRuntime({
             ))}
           </div>
 
+          {/* IN-APP BROWSER (mobile-onboarding squad): a tweet or a DM opens
+              this page inside the app's own browser, where a wallet app can
+              never be brought forward (measured: the launch is dropped and
+              the handoff card asks for a tap that goes nowhere). Say so
+              first, hand over the URL, and name the app's own way out. The
+              door below still works for the email lane. */}
+          {browser?.inApp && !browser.canLaunchApps && (
+            <InAppEscape browser={browser} />
+          )}
           <div className="mt-10 max-sm:order-1">
             {autoStarting ? (
               <ChatLoader compact lines={['wallet connected — building your path']} />
@@ -554,6 +600,23 @@ export default function IntentRuntime({
                   After you sign, a <strong className="font-medium text-[color:var(--muted)]">Return to {redirectHost}</strong> button brings you back to where you started.
                 </span>
               )}
+            </p>
+          )}
+          {/* NO WALLET ON THIS PHONE (the common phone case): the wallet lane
+              of the door leads to an app-store round trip that ends with
+              nothing. The SAME unified door makes an account with email or
+              Google (rule 6 — one door; its wallet lane still leads inside),
+              and this line tells a stranger the door is for them too. */}
+          {!autoStarting && !walletResolving && !isConnected && cdpEnabled && (
+            <p className="mt-3 text-[12px] text-[color:var(--muted-2)] max-w-md max-sm:order-2" data-no-wallet-lane>
+              <Smartphone className="inline w-3.5 h-3.5 -mt-0.5 mr-1" aria-hidden />
+              No wallet on this phone?{' '}
+              <CreateAccountButton
+                walletConnectOnly
+                className="underline decoration-dotted underline-offset-2 text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors"
+                label="Make one with email or Google"
+              />
+              {' '}— nothing to install, and it signs right here.
             </p>
           )}
           {hasCreator && (
@@ -756,6 +819,27 @@ export default function IntentRuntime({
       {/* One focused reading column — the runtime is a single ask on a
           stage, not a workspace; a 5xl-wide thread scattered the user bubble
           and the reply to opposite edges of big screens. */}
+      {/* THE WAY BACK: this wallet was mid-signature (or signed) here minutes
+          ago and the page reloaded on its way back from the wallet app. The
+          ask is HELD; the two chips are the only way forward, and one of
+          them sends. */}
+      {returned && (
+        <ReturnCard
+          verdict={returned}
+          ask={ask}
+          onDone={() => {
+            setReturnClosed(true)
+            setReturned(null)
+            setFlowNudge(true)
+          }}
+          onAgain={() => {
+            rememberRun('started')
+            setPrompt({ text: ask, send: !transferShaped, at: Date.now() })
+            setReturned(null)
+          }}
+          chipClass={chipClass}
+        />
+      )}
       {transferShaped && !heldTurnSeen && (
         <div className="relative flex-shrink-0 max-w-3xl w-full mx-auto px-4 sm:px-6 pt-4" data-origin-fence="held">
           <div className="yenter rounded-2xl border border-amber-400/40 bg-[color-mix(in_srgb,var(--surf-1)_88%,transparent)] px-4 py-4 sm:px-5 max-sm:max-h-[42dvh] max-sm:overflow-y-auto">
@@ -864,6 +948,117 @@ export default function IntentRuntime({
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/** The in-app browser escape (lib/inapp-browser): who we're inside, how to
+ *  leave, and the URL to carry. iOS gives a page no way to open Safari
+ *  itself; Android's Chrome intent link is offered beside the copy, never
+ *  instead of it (unmeasured on a phone here). */
+function InAppEscape({ browser }: { browser: InAppBrowser }) {
+  const { app, where, browser: target } = inAppEscapeCopy(browser)
+  const [url, setUrl] = useState('')
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    setUrl(window.location.href)
+  }, [])
+  const intent = url ? androidChromeIntent(url, browser) : null
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    } catch {
+      /* clipboard blocked — the URL is on screen to select by hand */
+    }
+  }
+  return (
+    <div
+      className="mt-8 w-full max-w-md text-left rounded-2xl border border-amber-400/40 bg-[var(--surf-1)] px-4 py-4 max-sm:order-1"
+      data-inapp-browser={browser.vendor ?? 'webview'}
+    >
+      <p className="mono text-[11px] uppercase tracking-widest text-amber-400 leading-none">You&apos;re in {app}&apos;s browser</p>
+      <p className="mt-2 text-[15px] leading-snug text-[color:var(--fg)]" style={{ fontFamily: 'var(--font-serif)' }}>
+        Wallet apps can&apos;t open from here.
+      </p>
+      <p className="mt-1.5 text-[12.5px] leading-relaxed text-[color:var(--muted)]">
+        To sign with a wallet, open this page in {target}: {where}. Or copy the link and paste it there.
+      </p>
+      {url && (
+        <p className="mt-2 mono text-[11px] text-[color:var(--muted-2)] break-all select-all" data-inapp-url>
+          {url}
+        </p>
+      )}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => void copy()}
+          className="flex items-center gap-1.5 px-2.5 min-h-10 rounded-lg border border-amber-400/60 bg-amber-400/10 text-[color:var(--fg)] hover:border-amber-400 transition-colors mono text-[11px] font-medium whitespace-nowrap"
+          data-inapp-copy
+        >
+          {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />} {copied ? 'COPIED' : 'COPY THIS LINK'}
+        </button>
+        {intent && (
+          <a
+            href={intent}
+            className="flex items-center gap-1.5 px-2.5 min-h-10 rounded-lg border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)] transition-colors mono text-[11px] font-medium whitespace-nowrap"
+            data-inapp-intent
+          >
+            <ExternalLink className="w-4 h-4" /> OPEN IN CHROME
+          </a>
+        )}
+      </div>
+      <p className="mt-3 text-[11.5px] leading-relaxed text-[color:var(--muted-2)]">
+        No wallet? The door below makes an account with email — that works right here.
+      </p>
+    </div>
+  )
+}
+
+/** The came-back card (lib/intent-link-return returnCopy). */
+function ReturnCard({
+  verdict,
+  ask,
+  onDone,
+  onAgain,
+  chipClass,
+}: {
+  verdict: Exclude<ReturnVerdict, { kind: 'fresh' }>
+  ask: string
+  onDone: () => void
+  onAgain: () => void
+  chipClass: string
+}) {
+  const copy = returnCopy(verdict, ask, Date.now())
+  return (
+    <div className="relative flex-shrink-0 max-w-3xl w-full mx-auto px-4 sm:px-6 pt-4" data-link-return={verdict.kind}>
+      <div className="yenter rounded-2xl border border-amber-400/40 bg-[color-mix(in_srgb,var(--surf-1)_88%,transparent)] px-4 py-4 sm:px-5 max-sm:max-h-[48dvh] max-sm:overflow-y-auto">
+        <p className="mono text-[11px] uppercase tracking-widest text-amber-400 leading-none">{copy.eyebrow}</p>
+        <p className="mt-2 text-[15px] leading-snug text-[color:var(--fg)]" style={{ fontFamily: 'var(--font-serif)' }}>
+          {copy.title}
+        </p>
+        <p className="mt-1.5 text-[12.5px] leading-relaxed text-[color:var(--muted)]">{copy.body}</p>
+        {copy.txUrl && (
+          <a
+            href={copy.txUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-flex items-center gap-1.5 text-[12.5px] text-[color:var(--accent)] underline decoration-dotted underline-offset-2"
+            data-link-return-receipt
+          >
+            <ReceiptText className="w-3.5 h-3.5" /> View the transaction <ExternalLink className="w-3 h-3" />
+          </a>
+        )}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button type="button" onClick={onDone} className={`${chipClass} border-amber-400/60 bg-amber-400/10 text-[color:var(--fg)] hover:border-amber-400`} data-link-return-done>
+            <Check className="w-4 h-4" /> {copy.chips.done}
+          </button>
+          <button type="button" onClick={onAgain} className={chipClass} data-link-return-again>
+            <Zap className="w-4 h-4" /> {copy.chips.again}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
