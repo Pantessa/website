@@ -116,7 +116,12 @@ export default function Navigation() {
   // NavAccount already covers the connect-to-pay case (it offers "Sign in with
   // wallet" + Wallet details while connected-but-not-signed-in), so chat now
   // shows the exact same dropdown as everywhere else.
-  const desktopAccount = <SiteAccount />
+  // The account seat. It stays in the bar on a PHONE too (2026-09-23, the
+  // mobile-onboarding squad): the rest of `.nav__right` collapses into the
+  // burger below 900px, which put the sign-in door two taps deep and left a
+  // connected phone visitor with no account menu at all on a brochure page —
+  // the drawer carries AuthButton + ConnectWallet, never NavAccount.
+  const desktopAccount = <span className="nav__acct"><SiteAccount /></span>
 
   // MOBILE drawer account cluster — the drawer has room, so it stays explicit
   // (Dashboard link + auth + wallet) rather than the collapsed desktop pill.
