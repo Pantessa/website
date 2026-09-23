@@ -39,7 +39,17 @@
  *    row that is not stamped internal. The runner sets `x-yf-internal-run: 1`
  *    and `x-yf-no-ask-log: 1` on every same-origin request.
  *  - Keep a scenario under ~60s. The runner's per-scenario cap is 120s.
+ *
+ * ONE TRAP, PAID FOR (2026-09-23): `page.waitForFunction` with a STRING that
+ * returns a Promise (`"fetch('/api/auth/me').then(...)"`) resolves IMMEDIATELY
+ * — the poll sees a truthy Promise object, never the value. My own first
+ * sign-in pin reported a live session against `{address:null}`. For anything
+ * async, poll from node with `page.evaluate` (which does await), or use
+ * `waitForAuth` / `pollFor` below.
  */
+
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 // ── Playwright types, spelled out locally on purpose ───────────────────────
 // `playwright-core` is NOT a dependency of this app (it resolves from the
@@ -179,7 +189,22 @@ export const DEFAULT_PROFILES: ProfileId[] = ['iphone-dark']
 //     → the navigation was ALLOWED and the app simply isn't on this machine.
 //       On a real phone this is the app opening. This is the GREEN verdict.
 export type LaunchVerdict = 'allowed' | 'blocked' | 'none'
-export type LaunchReading = { verdict: LaunchVerdict; line: string | null; links: string[] }
+export type LaunchReading = {
+  /** BLOCKED wins: a page refused once and allowed later still dropped a tap. */
+  verdict: LaunchVerdict
+  /** The line the verdict came from. */
+  line: string | null
+  blockedLine: string | null
+  allowedLine: string | null
+  /** MEASURED 2026-09-23: ONE dropped launch produces BOTH lines for the same
+   *  link (same channelId) — blocked x1 AND allowed x1. So `allowedCount > 0`
+   *  is NOT success. The reliable reading is `blockedCount === 0`; to prove a
+   *  NEW permitted launch (e.g. after tapping a fallback button), compare
+   *  `allowedCount` before and after. */
+  blockedCount: number
+  allowedCount: number
+  links: string[]
+}
 
 const BLOCKED_RE = /not allowed to launch|because a user gesture is required/i
 const ALLOWED_RE = /does not have a registered handler|failed to launch/i
@@ -191,16 +216,24 @@ export function readLaunch(lines: string[]): LaunchReading {
   const links: string[] = []
   let blocked: string | null = null
   let allowed: string | null = null
+  let blockedCount = 0
+  let allowedCount = 0
   for (const raw of lines) {
     if (!/launch/i.test(raw)) continue
     for (const m of raw.matchAll(LINK_RE)) links.push(m[1])
-    if (BLOCKED_RE.test(raw)) blocked ??= raw
-    else if (ALLOWED_RE.test(raw)) allowed ??= raw
+    if (BLOCKED_RE.test(raw)) {
+      blockedCount += 1
+      blocked ??= raw
+    } else if (ALLOWED_RE.test(raw)) {
+      allowedCount += 1
+      allowed ??= raw
+    }
   }
   const uniq = [...new Set(links)]
-  if (blocked) return { verdict: 'blocked', line: blocked, links: uniq }
-  if (allowed) return { verdict: 'allowed', line: allowed, links: uniq }
-  return { verdict: 'none', line: null, links: uniq }
+  const base = { blockedLine: blocked, allowedLine: allowed, blockedCount, allowedCount, links: uniq }
+  if (blocked) return { verdict: 'blocked' as const, line: blocked, ...base }
+  if (allowed) return { verdict: 'allowed' as const, line: allowed, ...base }
+  return { verdict: 'none' as const, line: null, ...base }
 }
 
 // ── What a scenario is handed ──────────────────────────────────────────────
@@ -263,6 +296,11 @@ export function mockWalletScript(opts: {
   personalSign?: 'sign' | 'reject'
   typedData?: 'sign' | 'reject'
   sendTx?: 'hash' | 'reject'
+  /** Proxy a SIWE `personal_sign` to `window.__driveSignSiwe` (the node-side
+   *  burner). Wire it with `context.exposeFunction('__driveSignSiwe', signSiweWithBurner)`
+   *  and use BURNER_ADDRESS, or the server rejects the recovered signer. A SIWE
+   *  signature moves no money — it IS the ownership proof. */
+  siweBridge?: boolean
   deferMs?: number
   rdns?: string
   name?: string
@@ -273,6 +311,7 @@ export function mockWalletScript(opts: {
     personalSign = 'reject',
     typedData = 'reject',
     sendTx = 'reject',
+    siweBridge = false,
     deferMs = 0,
     rdns = 'io.pantessa.drive',
     name = 'Drive Wallet',
@@ -301,9 +340,15 @@ export function mockWalletScript(opts: {
           return null
         case 'wallet_addEthereumChain':
           return null
-        case 'personal_sign':
+        case 'personal_sign': {
           ${deferMs ? `await hold(${deferMs})` : ''}
+          const raw = String(params?.[0] ?? '')
+          const text = raw.startsWith('0x')
+            ? new TextDecoder().decode(Uint8Array.from((raw.slice(2).match(/../g) || []).map((h) => parseInt(h, 16))))
+            : raw
+          ${siweBridge ? `if (/wants you to sign in/i.test(text)) return await window.__driveSignSiwe(raw)` : ''}
           ${personalSign === 'sign' ? `return ${JSON.stringify(fakeSig)}` : reject}
+        }
         case 'eth_signTypedData_v4':
           ${deferMs ? `await hold(${deferMs})` : ''}
           ${typedData === 'sign' ? `return ${JSON.stringify(fakeSig)}` : reject}
@@ -343,7 +388,94 @@ export const SEL = {
   walletLane: 'button.ca__wallet',
   /** RainbowKit's list entry for the configured MetaMask lane. */
   rkMetaMask: '[data-testid="rk-wallet-option-metaMask"]',
-  /** RainbowKit's list entry for an announced EIP-6963 wallet. */
-  rkInjected: '[data-testid="rk-wallet-option-io.pantessa.drive"]',
+  /** RainbowKit's entry for an announced EIP-6963 wallet.
+   *  MEASURED 2026-09-23: on a MOBILE UA RainbowKit collapses every announced
+   *  EIP-6963 provider into ONE generic "Browser Wallet" row
+   *  (`rk-wallet-option-injected`); only on desktop does it list them by rdns
+   *  (`rk-wallet-option-io.pantessa.drive`). A desktop-shaped selector finds
+   *  NOTHING on a phone, which reads as "the mock never connected". Both
+   *  spellings, always. */
+  rkInjected:
+    '[data-testid="rk-wallet-option-injected"], [data-testid="rk-wallet-option-io.pantessa.drive"]',
   rkModal: '[data-rk]',
 } as const
+
+// ── The burner, for signatures that must actually verify ───────────────────
+// `.env.local`'s PRIVATE_KEY is the house burner — the same wallet the API
+// harness uses. It signs SIWE for real, which is the only way to drive a
+// signed-in surface without forging a session cookie. It never signs a
+// transaction here: no drive moves money.
+
+let envCache: Record<string, string> | null = null
+export function envLocal(key: string): string {
+  if (!envCache) {
+    envCache = {}
+    try {
+      const raw = readFileSync(join(process.cwd(), '.env.local'), 'utf8')
+      for (const line of raw.split('\n')) {
+        const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line)
+        if (m) envCache[m[1]] = m[2].trim().replace(/^["']|["']$/g, '')
+      }
+    } catch {
+      /* no .env.local — callers get '' and decide */
+    }
+  }
+  return envCache[key] ?? ''
+}
+
+function burnerKey(): `0x${string}` {
+  const pk = envLocal('PRIVATE_KEY')
+  if (!pk) throw new Error('no PRIVATE_KEY in .env.local — cannot sign SIWE')
+  return (pk.startsWith('0x') ? pk : `0x${pk}`) as `0x${string}`
+}
+
+/** Expose this to a page as `__driveSignSiwe` alongside `mockWalletScript({ siweBridge: true })`. */
+export async function signSiweWithBurner(raw: string): Promise<string> {
+  const { privateKeyToAccount } = await import('viem/accounts')
+  const account = privateKeyToAccount(burnerKey())
+  return account.signMessage({ message: raw.startsWith('0x') ? { raw: raw as `0x${string}` } : raw })
+}
+
+export async function burnerAddress(): Promise<string> {
+  const { privateKeyToAccount } = await import('viem/accounts')
+  return privateKeyToAccount(burnerKey()).address
+}
+
+// ── Async polling, done right ──────────────────────────────────────────────
+// `page.waitForFunction` with a promise-returning string is a false-green
+// machine (see the header). These poll from node, where `page.evaluate` awaits.
+
+/** Poll `probe` until it returns true, or give up. Returns whether it did. */
+export async function pollFor(
+  page: PwPage,
+  probe: () => Promise<boolean>,
+  opts: { timeout?: number; every?: number } = {},
+): Promise<boolean> {
+  const { timeout = 30_000, every = 750 } = opts
+  const until = Date.now() + timeout
+  for (;;) {
+    if (await probe().catch(() => false)) return true
+    if (Date.now() > until) return false
+    await page.waitForTimeout(every)
+  }
+}
+
+/** The session the SERVER sees, or null. The one honest sign-in verdict. */
+export async function sessionAddress(page: PwPage): Promise<string | null> {
+  const got = await page
+    .evaluate<{ address?: string | null } | null>(`fetch('/api/auth/me').then((r) => r.json()).catch(() => null)`)
+    .catch(() => null)
+  return got?.address ?? null
+}
+
+/** Wait for a real session to land. */
+export async function waitForAuth(page: PwPage, timeout = 30_000): Promise<string | null> {
+  let found: string | null = null
+  await pollFor(page, async () => !!(found = await sessionAddress(page)), { timeout })
+  return found
+}
+
+/** Wait for the page's own text to satisfy a test (a DOM read, always safe). */
+export async function waitForText(page: PwPage, re: RegExp, timeout = 30_000): Promise<boolean> {
+  return pollFor(page, async () => re.test(await page.evaluate<string>(`document.body.innerText`)), { timeout })
+}
