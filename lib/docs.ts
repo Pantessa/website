@@ -187,7 +187,7 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Give your agent hands',
     seoTitle: 'Give your agent hands — the Pantessa desk over MCP',
     description:
-      'Connect any agent to Pantessa over MCP and it can move money safely: it plans in plain sentences, a human (or its own key) signs, and no AI ever writes calldata. The hands MCP for one-shot handoffs, the desk for a negotiation loop that talks back.',
+      'Connect any agent to Pantessa over MCP and it can move money safely: it plans in plain sentences, a human (or its own key) signs, and no AI ever writes calldata. The hands MCP for one-shot handoffs, the desk for a negotiation loop that talks back — and the agent-signed path, where your own key drives a guarded multi-leg job with one call to the pantessa SDK.',
     ready: true,
     door: 'agent',
   },
