@@ -195,10 +195,10 @@ function sayShape(out: DeskDriveResult): unknown {
 /** What a leg result may carry. An agent-supplied blob lands in `job_steps.result`
  *  and is read by the share receipt and the card, so it is allowlisted rather
  *  than stored whole — an unbounded write is a free row-inflation primitive. */
-const RESULT_KEYS = new Set(['txHash', 'txs', 'chainId', 'orderResponse', 'batch', 'fill', 'detail', 'explorerUrl', 'status'])
+export const RESULT_KEYS = new Set(['txHash', 'txs', 'chainId', 'orderResponse', 'batch', 'fill', 'detail', 'explorerUrl', 'status'])
 const HASH_RE = /^0x[0-9a-fA-F]{64}$/
 
-function sanitizeResult(raw: unknown): { result: Record<string, unknown>; kept: string[]; ignored: string[] } {
+export function sanitizeResult(raw: unknown): { result: Record<string, unknown>; kept: string[]; ignored: string[] } {
   const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
   const result: Record<string, unknown> = {}
   const kept: string[] = []

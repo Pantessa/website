@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
   "name": "com.pantessa/desk",
-  "description": "Pantessa's transaction desk, opened to other agents. Open an intent in plain English, negotiate funding routes, hand your human a sign link, and poll back to learn whether they signed. Sentences and links in and out — never calldata. Includes an agent-signed path for sequenced flows the agent drives with its own key under per-intent caps.",
-  "version": "0.1.0",
+  "description": "Pantessa's transaction desk, opened to other agents. Open an intent in plain English, negotiate funding routes, and close it one of two ways: hand your human a sign link and poll back to learn whether they signed, or — when YOUR wallet holds the money and the key — execute it yourself and drive the compiled job leg by leg with broker_next / broker_done, signing each guarded build with your own key. Round-trip across every settlement boundary, batched within one. Pantessa never holds a key and never signs for you.",
+  "version": "0.2.0",
   "homepage": "https://www.pantessa.com/docs/desk",
   "repository": {
     "url": "https://github.com/Pantessa/website",
@@ -21,6 +21,9 @@
     "broker_choose",
     "broker_handoff",
     "broker_execute",
+    "broker_next",
+    "broker_done",
+    "broker_send",
     "broker_tile",
     "broker_status",
     "broker_close"
