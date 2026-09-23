@@ -31611,6 +31611,56 @@ async function main() {
         else (globalThis as Record<string, unknown>).document = priorDocument
       }
     }
+    {
+      // Inside an app's own browser that can't launch wallet apps (X,
+      // LinkedIn, a bare WKWebView — LINKS's lib/inapp-browser verdict) the
+      // card stops asking for a tap that goes nowhere and says which menu
+      // item leaves for the real browser; the door refuses to START Google
+      // there (Google's `disallowed_useragent` policy) and names the email
+      // lane. Normal browsers keep the launch copy byte-for-byte.
+      const ia = await import('../lib/inapp-browser')
+      const xIos = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Twitter for iPhone/10.0'
+      const inX = ia.inAppBrowserOf(xIos)
+      const safari = ia.inAppBrowserOf(IPHONE)
+      const mmBrowser = ia.inAppBrowserOf(`${ANDROID} MetaMaskMobile`)
+      const o = { link: 'metamask://x', app: 'MetaMask', tried: false }
+      const escaped = wh.handoffCopy(o, { ...inX, escape: ia.inAppEscapeCopy(inX) })
+      const plain = wh.handoffCopy(o, { ...safari, escape: ia.inAppEscapeCopy(safari) })
+      const walletOwn = wh.handoffCopy(o, { ...mmBrowser, escape: ia.inAppEscapeCopy(mmBrowser) })
+      check(
+        'mobile connect (in-app browser): inside X’s iOS browser the card says it can’t open MetaMask, names X’s "Open in Safari" item and offers the link instead of a retry; Safari and MetaMask’s own browser keep the launch copy',
+        escaped.escape === true &&
+          /can't open MetaMask/.test(escaped.title) &&
+          /X's browser/.test(escaped.body) && /Open in Safari/.test(escaped.body) &&
+          /Copy this page/.test(escaped.cta) &&
+          plain.escape === false && plain.cta === 'Open MetaMask' && plain.title === wh.handoffCopy(o).title &&
+          walletOwn.escape === false,
+        JSON.stringify({ escaped, inX }),
+      )
+      check(
+        'mobile connect (OAuth): Google may start from Safari, Chrome and a wallet’s own browser, never from an embedded WebView; the refusal names the app, the real browser and the email lane',
+        mw.oauthAllowedIn(safari) && mw.oauthAllowedIn(mmBrowser) && !mw.oauthAllowedIn(inX) &&
+          /Google won't sign you in inside X's browser/.test(mw.oauthRefusedCopy(ia.inAppEscapeCopy(inX))) &&
+          /Safari/.test(mw.oauthRefusedCopy(ia.inAppEscapeCopy(inX))) &&
+          /email code/.test(mw.oauthRefusedCopy(ia.inAppEscapeCopy(inX))),
+      )
+      check(
+        'mobile connect (in-app wiring): the handoff card reads inAppBrowserOf on the client and branches on the copy’s escape flag (Android gets the Chrome intent link, everyone gets the copyable URL); the door’s startOAuth refuses through oauthAllowedIn before any redirect',
+        (() => {
+          const strip = (s2: string) => s2.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+          const card = strip(readFileSync(pathJoin(process.cwd(), 'components/WalletAppHandoff.tsx'), 'utf8'))
+          const door = strip(readFileSync(pathJoin(process.cwd(), 'components/CreateAccountButton.tsx'), 'utf8'))
+          return (
+            /inAppBrowserOf\(navigator\.userAgent\)/.test(card) &&
+            /handoffCopy\(pending, browser\)/.test(card) &&
+            /androidChromeIntent\(/.test(card) &&
+            /\{escape \? \(/.test(card) &&
+            /navigator\.clipboard\.writeText\(location\.href\)/.test(card) &&
+            /function startOAuth\(provider: 'google'\) \{\s*const browser = inAppBrowserOf\(navigator\.userAgent\)\s*if \(!oauthAllowedIn\(browser\)\) \{\s*setError\(oauthRefusedCopy\(inAppEscapeCopy\(browser\)\)\)\s*return\s*\}/.test(door)
+          )
+        })(),
+      )
+    }
     // The drive that measured all of this stays importable for QA's
     // drive:mobile: its scenario list is the contract.
     check(

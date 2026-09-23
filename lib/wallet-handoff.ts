@@ -66,25 +66,61 @@ export function walletAppFor(link: string | null | undefined): string | null {
  *  the visitor has already tapped once without the app coming up. */
 export type WalletAppOpen = { link: string; app: string; tried: boolean }
 
+/** The one thing the card needs to know about the browser it is in: whether
+ *  an app launch can work from here at all (lib/inapp-browser, LINKS lane —
+ *  X's, LinkedIn's and a bare WKWebView's browsers drop `metamask://` and
+ *  render a universal link as a web page). Passed in, never read here: the
+ *  copy stays pure. */
+export type HandoffBrowser = {
+  inApp: boolean
+  canLaunchApps: boolean
+  /** From inAppEscapeCopy: the app's name and where its "open in the real
+   *  browser" item lives. */
+  escape?: { app: string; where: string; browser: string }
+}
+
+export type HandoffCopy = {
+  title: string
+  body: string
+  cta: string
+  /** The tap can never launch the app from this browser: the CTA carries
+   *  the page's link out instead of asking for the same tap again. */
+  escape: boolean
+}
+
 /**
  * What the handoff card says. Split out so the harness pins the words:
  *  · first time — the browser refused the launch silently, so this card is the
  *    first thing the visitor has seen about it. Say what to do.
  *  · after a tap that also didn't land — the wallet probably isn't on this
  *    phone. Say that, instead of asking for the same tap again.
+ *  · inside an app's own browser that can't open wallet apps at all — no tap
+ *    will ever work here; say which menu item leaves for the real browser and
+ *    hand them the link to carry.
  */
-export function handoffCopy(o: WalletAppOpen): { title: string; body: string; cta: string } {
+export function handoffCopy(o: WalletAppOpen, browser?: HandoffBrowser | null): HandoffCopy {
+  if (browser && browser.inApp && !browser.canLaunchApps) {
+    const esc = browser.escape ?? { app: 'this app', where: 'use its menu to open the page in your browser', browser: 'your browser' }
+    return {
+      title: `This browser can't open ${o.app}`,
+      body: `You're inside ${esc.app}'s browser, which never hands a page to a wallet app. Open this page in ${esc.browser} — ${esc.where} — then connect again there.`,
+      cta: 'Copy this page\'s link',
+      escape: true,
+    }
+  }
   if (o.tried) {
     return {
       title: `Still waiting on ${o.app}`,
       body: `${o.app} didn't come up. If it's installed, open it yourself — the request is waiting there, and approving it finishes this.`,
       cta: `Try ${o.app} again`,
+      escape: false,
     }
   }
   return {
     title: `Open ${o.app} to continue`,
     body: `${o.app} has the request. This browser wouldn't switch apps on its own, so tap below — approve it there, then come back.`,
     cta: `Open ${o.app}`,
+    escape: false,
   }
 }
 

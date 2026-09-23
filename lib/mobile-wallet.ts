@@ -153,3 +153,22 @@ export function readLaunchVerdict(consoleLine: string): LaunchVerdict | null {
   if (a) return { verdict: 'allowed', link: a[1] }
   return null
 }
+
+/**
+ * Whether a Google (OAuth) sign-in can START from this browser. Google
+ * refuses OAuth inside embedded WebViews (`disallowed_useragent`, a documented
+ * policy): the lane would leave the page and come back with an error page
+ * from Google. Same verdict as "can this browser launch an app" — a bare
+ * WKWebView / Android `; wv)` WebView is the case; a wallet's own in-app
+ * browser and SFSafariViewController / Custom Tabs (indistinguishable from
+ * the real browser) pass. LINKS's inAppBrowserOf(ua) is the reading.
+ */
+export function oauthAllowedIn(b: { inApp: boolean; canLaunchApps: boolean }): boolean {
+  return !(b.inApp && !b.canLaunchApps)
+}
+
+/** The door's line when it refuses to start Google there (lib/inapp-browser
+ *  inAppEscapeCopy gives the app + the menu item). */
+export function oauthRefusedCopy(esc: { app: string; where: string; browser: string }): string {
+  return `Google won't sign you in inside ${esc.app}'s browser. Open this page in ${esc.browser} (${esc.where}), or use the email code below.`
+}

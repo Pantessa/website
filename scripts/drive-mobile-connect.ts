@@ -70,7 +70,12 @@ export type Scenario = {
   run: (page: pw.Page, log: (kind: string, text: string) => void) => Promise<number>
   /** Judge the trace. */
   judge: (trace: Trace) => { ok: boolean; why: string }
+  /** Context overrides (a different UA, say). */
+  contextOptions?: Record<string, unknown>
 }
+
+/** X's iOS in-app browser: WebKit, no `Safari/` token, X's own suffix. */
+export const X_IOS_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Twitter for iPhone/10.0'
 
 const RK_METAMASK = '[data-testid="rk-wallet-option-metaMask"]'
 
@@ -136,7 +141,42 @@ function judgeLaunch(trace: Trace): { ok: boolean; why: string } {
   return { ok: false, why: `launch dropped ${first.dtMs}ms after the tap and NO handoff card` }
 }
 
+/** The other rows on the mobile list, one fresh context each: what each
+ *  navigates to (or asks the browser to launch) on its tap. Informational —
+ *  its verdict is "the tap produced SOME launch or wallet navigation, or the
+ *  row is absent"; the trace holds the details for the lane file. */
+async function tapOtherLane(page: pw.Page, log: (k: string, t: string) => void, testid: string): Promise<number> {
+  await page.goto(`${BASE}/i/buy-aapl`, { waitUntil: 'domcontentloaded' })
+  const cta = page.getByRole('button', { name: /Connect & build my path/i }).first()
+  await cta.waitFor({ state: 'visible', timeout: 30_000 })
+  await cta.click()
+  const lane = page.getByRole('button', { name: /Connect a wallet/i }).first()
+  await lane.waitFor({ state: 'visible', timeout: 10_000 })
+  await lane.click()
+  const rows = await page.locator('[data-testid^="rk-wallet-option-"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')))
+  log('rk-rows', rows.join(' '))
+  const row = page.locator(`[data-testid="rk-wallet-option-${testid}"]`).first()
+  await row.waitFor({ state: 'visible', timeout: 15_000 })
+  const tapAt = Date.now()
+  await row.click()
+  log('drive', `tapped ${testid}`)
+  return tapAt
+}
+
+function judgeOtherLane(trace: Trace): { ok: boolean; why: string } {
+  const after = trace.lines.filter((l) => trace.tapAt !== null && l.t >= trace.tapAt)
+  const navs = after.filter((l) => l.kind === 'navigated' || /\[spy\] a\.click|\[spy\] setItem WALLETCONNECT_DEEPLINK_CHOICE/.test(l.text)).map((l) => l.text.slice(0, 100))
+  const launches = trace.launches.map((l) => `${l.verdict} +${l.dtMs}ms ${l.link.slice(0, 60)}`)
+  return { ok: true, why: `launches=[${launches.join(' | ')}] navs=[${navs.join(' | ')}]` }
+}
+
 export const SCENARIOS: Scenario[] = [
+  ...(['coinbase', 'rainbow', 'walletConnect'] as const).map((id) => ({
+    id: `lane-${id}`,
+    claim: `what the ${id} row on the mobile list does on its tap (informational)`,
+    run: (page: pw.Page, log: (k: string, t: string) => void) => tapOtherLane(page, log, id),
+    judge: judgeOtherLane,
+  })),
   {
     id: 'i-link',
     claim: 'the /i splash → door → MetaMask tap asks the browser for the wallet app',
@@ -157,6 +197,20 @@ export const SCENARIOS: Scenario[] = [
     judge: judgeLaunch,
   },
   {
+    id: 'i-link-in-x',
+    claim: 'inside X’s in-app browser the card stops asking for a tap and says how to leave for Safari',
+    contextOptions: { userAgent: X_IOS_UA },
+    run: tapMetaMaskFromILink,
+    judge: (trace) => {
+      const c = trace.handoffCard
+      if (!c?.present) return { ok: false, why: 'no card' }
+      if (!/can't open MetaMask/.test(c.title ?? '')) return { ok: false, why: `card title: ${c.title}` }
+      if (!/Copy this page/.test(c.cta ?? '')) return { ok: false, why: `card cta: ${c.cta}` }
+      if (trace.launches.length > 1 || trace.rkNavigated) return { ok: false, why: `${trace.launches.length} launch attempts` }
+      return { ok: true, why: `escape card up: "${c.title}" / "${c.cta}"` }
+    },
+  },
+  {
     id: 'sign-in',
     claim: 'the sign-in door (connect then SIWE) → MetaMask tap asks the browser for the wallet app',
     run: tapMetaMaskFromLanding,
@@ -165,7 +219,7 @@ export const SCENARIOS: Scenario[] = [
 ]
 
 async function runScenario(s: Scenario, browser: pw.Browser): Promise<Trace> {
-  const context = await browser.newContext({ ...devices['iPhone 13'], isMobile: true, hasTouch: true })
+  const context = await browser.newContext({ ...devices['iPhone 13'], isMobile: true, hasTouch: true, ...(s.contextOptions ?? {}) })
   const page = await context.newPage()
   // Spies that tell the two navigators apart without touching
   // window.location (unforgeable): RainbowKit writes its deep-link choice to
