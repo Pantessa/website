@@ -30,14 +30,18 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { usePathname } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import { CDP_CONNECTOR_ID } from '@coinbase/cdp-wagmi'
-import { Loader2, PenLine, X } from 'lucide-react'
+import { Loader2, PenLine, Smartphone, X } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import {
-  clearWalletAppOpen,
+  openWalletApp,
   subscribeWalletAppOpen,
+  walletAppLastLink,
   walletAppOpenServerSnapshot,
   walletAppOpenSnapshot,
+  walletAppRequestSettled,
 } from '@/lib/wallet-handoff'
+
+const noLink = () => null
 
 /** How long a silent signature runs before its card shows. The embedded
  *  wallet's sign-in is three quick round-trips (nonce, CDP's signature,
@@ -64,6 +68,7 @@ export function useSignatureWait(signingIn: boolean): { shown: boolean; silent: 
 export function SignatureWaitModal({
   signingIn,
   silent = false,
+  openApp,
   onOpenRequest,
   onDismiss,
   dismissLabel = 'Dismiss',
@@ -73,6 +78,11 @@ export function SignatureWaitModal({
   /** The embedded wallet is the signer (useSignatureWait): nothing to open,
    *  nothing to approve. */
   silent?: boolean
+  /** On a phone the request is queued in the wallet APP (lib/wallet-handoff
+   *  walletAppLastLink): the waiting button becomes "Open {app}" — a tap
+   *  carries its own activation. The global mount reads the holder; /i's
+   *  own instance passes what it reads. */
+  openApp?: { app: string; onOpen: () => void } | null
   onOpenRequest: () => void
   onDismiss?: () => void
   dismissLabel?: string
@@ -106,11 +116,24 @@ export function SignatureWaitModal({
         <p className="mt-2 text-[13px] leading-relaxed text-[color:var(--muted)]">
           {silent
             ? 'Your Pantessa wallet is signing a one-time message that proves it’s yours. There’s nothing to approve — nothing moves, nothing spends.'
-            : signingIn
-              ? 'The request is open in your wallet — approving it just proves you own this address. Nothing moves, nothing spends.'
-              : 'Your wallet needs to sign one message to finish signing in. It proves ownership — nothing moves, nothing spends.'}
+            : signingIn && openApp
+              ? `The request is waiting in ${openApp.app} — open it and approve there. It just proves you own this address. Nothing moves, nothing spends.`
+              : signingIn
+                ? 'The request is open in your wallet — approving it just proves you own this address. Nothing moves, nothing spends.'
+                : 'Your wallet needs to sign one message to finish signing in. It proves ownership — nothing moves, nothing spends.'}
         </p>
-        {!silent && (
+        {!silent && signingIn && openApp ? (
+          // The phone case: a disabled "Waiting…" here IS the #822 stall. The
+          // request is in the app; the tap that opens it is the whole fix.
+          <button
+            type="button"
+            onClick={openApp.onOpen}
+            data-sign-open-app={openApp.app}
+            className="btn btn--solid mt-5 inline-flex items-center justify-center gap-2 text-[13px]"
+          >
+            <Smartphone className="w-4 h-4" /> Open {openApp.app}
+          </button>
+        ) : !silent ? (
           <button
             type="button"
             onClick={onOpenRequest}
@@ -127,7 +150,7 @@ export function SignatureWaitModal({
               </>
             )}
           </button>
-        )}
+        ) : null}
       </div>
     </div>
   )
@@ -147,15 +170,19 @@ export default function SignatureWaitTakeover() {
     walletAppOpenSnapshot,
     walletAppOpenServerSnapshot,
   )
+  // The link the SDK last asked to open, while its request may still be
+  // waiting in the wallet app: the card's button opens it (a dismissed
+  // handoff card must never strand the queued SIWE).
+  const last = useSyncExternalStore(subscribeWalletAppOpen, walletAppLastLink, noLink)
   // Dismiss hides the card for THIS flight only; the next explicit sign-in
   // click brings it back (signingIn drops when the round-trip settles).
   const [dismissed, setDismissed] = useState(false)
   useEffect(() => {
     if (!signingIn) {
       setDismissed(false)
-      // The sign-in ended — signed, rejected, failed. A handoff card still
-      // pointing at its request is pointing at nothing.
-      clearWalletAppOpen()
+      // The sign-in ended — signed, rejected, failed. Nothing is waiting in
+      // the wallet any more: the handoff card AND the remembered link go.
+      walletAppRequestSettled()
     }
   }, [signingIn])
 
@@ -171,6 +198,7 @@ export default function SignatureWaitTakeover() {
     <SignatureWaitModal
       signingIn
       silent={wait.silent}
+      openApp={last ? { app: last.app, onOpen: () => openWalletApp() } : null}
       onOpenRequest={() => void signIn()}
       onDismiss={() => setDismissed(true)}
     />

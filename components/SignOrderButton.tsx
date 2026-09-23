@@ -19,6 +19,7 @@ import { reportWalletRefusal, walletErrorWords } from '@/lib/wallet-refusal'
 import { SIGN_CTA_CLASS } from '@/lib/sign-cta'
 import { oneMethodPerTap } from '@/lib/sign-round-trip'
 import { usePlatform } from '@/lib/use-sign-round-trip'
+import SignatureWaitOpenApp from '@/components/SignatureWaitOpenApp'
 
 type Status = 'idle' | 'signing' | 'placing' | 'open' | 'filled' | 'error'
 
@@ -257,6 +258,7 @@ export default function SignOrderButton({
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
             {status === 'signing' ? 'Confirm in your wallet…' : status === 'placing' ? 'Placing order…' : status === 'error' ? 'Retry — sign & place order' : 'Sign & place order'}
           </button>
+          <SignatureWaitOpenApp waiting={status === 'signing'} />
           {note && <span className="text-[12px] text-[color:var(--muted)]" data-order-rearmed="switch">{note}</span>}
           {error && <span className="text-[12px] text-red-400">{error}</span>}
         </div>

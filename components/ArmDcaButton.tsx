@@ -7,6 +7,9 @@
 
 import { useState } from 'react'
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi'
+import { oneMethodPerTap } from '@/lib/sign-round-trip'
+import { usePlatform } from '@/lib/use-sign-round-trip'
+import SignatureWaitOpenApp from '@/components/SignatureWaitOpenApp'
 import { CheckCircle2, Loader2, PenLine, ShieldCheck } from 'lucide-react'
 
 export interface DcaArmOfferWire {
@@ -32,9 +35,11 @@ const CADENCE_NOUN: Record<DcaArmOfferWire['enforced']['cadence'], string> = {
 }
 
 export default function ArmDcaButton({ offer }: { offer: DcaArmOfferWire }) {
-  const { address, isConnected } = useAccount()
+  const { address, isConnected, chain: connectedChain } = useAccount()
   const { signTypedDataAsync } = useSignTypedData()
   const { switchChainAsync } = useSwitchChain()
+  const platform = usePlatform()
+  const [note, setNote] = useState('')
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState('')
   const [enforced, setEnforced] = useState<string | null>(null)
@@ -54,7 +59,16 @@ export default function ArmDcaButton({ offer }: { offer: DcaArmOfferWire }) {
     try {
       setStatus('signing')
       // The domain pins Base — same switch-then-act idiom as SignOrderButton.
-      await switchChainAsync({ chainId: offer.typedData.domain.chainId }).catch(() => {})
+      // On a phone the switch is a trip to the wallet app and back — its own
+      // tap; the signature is the next one (lib/sign-round-trip).
+      if (connectedChain?.id !== offer.typedData.domain.chainId) {
+        await switchChainAsync({ chainId: offer.typedData.domain.chainId }).catch(() => {})
+        if (oneMethodPerTap(platform)) {
+          setStatus('idle')
+          setNote('Network switched — tap to sign.')
+          return
+        }
+      }
       const m = offer.typedData.message
       const signature = await signTypedDataAsync({
         domain: {
@@ -124,6 +138,8 @@ export default function ArmDcaButton({ offer }: { offer: DcaArmOfferWire }) {
             {inFlight ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
             {status === 'signing' ? 'Confirm in your wallet…' : status === 'arming' ? 'Arming…' : status === 'error' ? 'Retry — sign & arm autopilot' : 'Sign & arm autopilot'}
           </button>
+          <SignatureWaitOpenApp waiting={status === 'signing'} />
+          {note && <span className="text-[12px] text-[color:var(--muted)]" data-arm-rearmed="switch">{note}</span>}
           {error && <span className="text-[12px] text-red-400">{error}</span>}
         </div>
       )}

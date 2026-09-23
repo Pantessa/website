@@ -27,6 +27,16 @@
 //                        anyway" is the explicit way through.
 //   phone-reload-asked   same, for a tx an earlier visit ASKED and never heard
 //                        back while the wallet's nonce moved on → maybe-broadcast.
+//   phone-job-return     a REAL two-leg job on the TEST DB (the real /api/chat
+//                        compiles "swap 5 USDC for ETH on base, then swap 3 USDC
+//                        for ETH on base" for the 0x1111… harness wallet; the
+//                        runner OFFERS leg 0 as a real guarded approve → swap
+//                        chain): the JobCard renders it, a hide → show round
+//                        trip re-reads the job at once, leg 0's step 1 is a
+//                        labeled tap, and after its (canned) receipt step 2 is
+//                        a TAP too — the wallet asked once, the real
+//                        POST /api/tx/refresh re-quoted step 2 in between. The
+//                        job is canceled after. Nothing is signed for real.
 //
 // Against main, phone-chain-taps FAILS (step 2 fires on mount: the mock's
 // send count reaches 2 with no tap) — that is the measurement.
@@ -67,6 +77,7 @@ type PwPage = {
   keyboard: { press(key: string): Promise<void> }
   on(event: 'console', cb: (m: { type(): string; text(): string }) => void): void
   on(event: 'pageerror', cb: (e: unknown) => void): void
+  on(event: 'request', cb: (r: { url(): string; method(): string }) => void): void
   screenshot(o: { path: string; fullPage?: boolean }): Promise<unknown>
   mouse: { move(x: number, y: number): Promise<void> }
 }
@@ -219,7 +230,7 @@ async function openChatWithChain(ctx: PwContext, sendMode: 'resolve' | 'hang', s
   return { page, errors, step1 }
 }
 
-export const SCENARIOS = ['phone-chain-taps', 'phone-return-reopen', 'desktop-auto-fire', 'phone-reload-signed', 'phone-reload-asked'] as const
+export const SCENARIOS = ['phone-chain-taps', 'phone-return-reopen', 'desktop-auto-fire', 'phone-reload-signed', 'phone-reload-asked', 'phone-job-return'] as const
 
 export async function runScenario(browser: PwBrowser, name: (typeof SCENARIOS)[number], devices: Record<string, Record<string, unknown>>, shotsDir: string) {
   console.log(`\n— ${name}`)
@@ -239,7 +250,11 @@ export async function runScenario(browser: PwBrowser, name: (typeof SCENARIOS)[n
         throw e
       }
       const label1 = await stepBtn.innerText()
-      const next = await page.locator('[data-chain-next]').first().getAttribute('data-chain-next')
+      // On MAIN the attribute does not exist: read it without waiting, so the
+      // same scenario measures main (the check reads red, the sends count below
+      // is the number that matters there).
+      const nextEl = page.locator('[data-chain-next]').first()
+      const next = (await nextEl.count()) ? await nextEl.getAttribute('data-chain-next') : null
       if (phone) {
         check('phone: step 1 is labeled as a step of the chain ("Sign step 1 of 2 — Approve USDC")', /Sign step 1 of 2 — Approve USDC/.test(label1), label1)
         check('phone: the card says the next step opens on the TAP (data-chain-next=tap)', next === 'tap', String(next))
@@ -328,6 +343,49 @@ export async function runScenario(browser: PwBrowser, name: (typeof SCENARIOS)[n
       await btn.waitFor({ state: 'visible', timeout: 10_000 })
       check('phone: "Sign again anyway" is the explicit way through — the plain button returns, the record is cleared', (await btn.isEnabled()) && (await page.evaluate((k) => localStorage.getItem(k as string), key)) === null)
       check('phone: no page errors', errors.length === 0, errors.join(' | ').slice(0, 200))
+    }
+    if (name === 'phone-job-return') {
+      await ctx.addInitScript(MOCK_WALLET)
+      const page = await ctx.newPage()
+      const errors: string[] = []
+      page.on('pageerror', (e) => errors.push(String(e)))
+      const jobGets: string[] = []
+      page.on('request', (r) => { if (/\/api\/jobs\/[^/?]+(\?|$)/.test(r.url()) && r.method() === 'GET') jobGets.push(r.url()) })
+      await page.route('**/*', cannedRpc)
+      await page.goto(`${BASE}/chat`, { waitUntil: 'domcontentloaded' })
+      const box = page.locator('textarea').last()
+      await box.waitFor({ state: 'visible', timeout: 30_000 })
+      await page.locator(`text=/0x11…1111/`).first().waitFor({ state: 'visible', timeout: 45_000 })
+      await page.waitForTimeout(800)
+      await box.fill('swap 5 USDC for ETH on base, then swap 3 USDC for ETH on base')
+      await page.keyboard.press('Enter')
+      // The real route compiles the job; the card polls it.
+      const card = page.locator('text=/Job · \\d\\/2/i').first()
+      await card.waitFor({ state: 'visible', timeout: 90_000 })
+      await page.waitForTimeout(1500)
+      const jobId = jobGets.map((u) => u.match(/\/api\/jobs\/([^/?]+)/)?.[1]).find(Boolean) ?? null
+      check('phone: the real route compiled a 2-leg job on the TEST DB and the JobCard polls it', !!jobId && /Job · \d\/2/i.test(await card.innerText()), `job=${jobId}`)
+      const before = jobGets.length
+      await page.evaluate(new Function(ROUND_TRIP(1500)) as () => void)
+      await page.waitForTimeout(2200)
+      const extra = jobGets.length - before
+      check('phone: coming back from the app re-reads the job at once (≥1 GET inside the 4s poll gap)', extra >= 1, `gets=${extra}`)
+      // Leg 0 is a real guarded approve → swap chain inside the JobCard: on a
+      // phone its steps are taps, and step 2 (re-quoted for real by
+      // POST /api/tx/refresh after the canned approve receipt) never fires on
+      // mount.
+      const step1 = page.locator('button', { hasText: /Sign step 1 of 2 — Approve/ }).first()
+      check('phone: the job\'s offered leg is a labeled step-1 tap ("Sign step 1 of 2 — Approve …") inside the JobCard', (await step1.count()) === 1 && (await step1.isEnabled()))
+      await step1.click()
+      const step2 = page.locator('button', { hasText: /Sign step 2 of 2 — Swap/ }).first()
+      await step2.waitFor({ state: 'visible', timeout: 90_000 })
+      await page.waitForTimeout(2000)
+      const sends = await page.evaluate(() => (window as unknown as { __sends: number }).__sends)
+      check('phone: after the approve\'s receipt, the REAL re-quoted step 2 is a tap, the wallet asked exactly once', sends === 1 && (await step2.isEnabled()), `sends=${sends}`)
+      check('phone: no page errors', errors.length === 0, errors.join(' | ').slice(0, 200))
+      await page.mouse.move(0, 0)
+      await page.screenshot({ path: `${shotsDir}/${name}.png` })
+      if (jobId) await fetch(`${BASE}/api/jobs/${jobId}${(jobGets.find((u) => u.includes(jobId)) ?? '').replace(/^.*\?t=/, '?t=').startsWith('?t=') ? (jobGets.find((u) => u.includes(jobId)) ?? '').slice((jobGets.find((u) => u.includes(jobId)) ?? '').indexOf('?t=')) : ''}`, { method: 'DELETE', headers: { 'x-yf-internal-run': '1' } }).catch(() => {})
     }
   } finally {
     await ctx.close()
