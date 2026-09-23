@@ -57,6 +57,15 @@ export const PROFILES: Record<string, Profile> = {
   small: { id: 'small', width: 375, height: 812, ua: IPHONE_UA },
   android: { id: 'android', width: 360, height: 780, ua: ANDROID_UA },
   wide: { id: 'wide', width: 414, height: 896, ua: IPHONE_UA },
+  // X's built-in browser on an iPhone: a WKWebView with no `Safari/` token.
+  // Google refuses OAuth here and no wallet app can be launched, so the door
+  // has to say so (LINKS's lib/inapp-browser is the reading).
+  xapp: {
+    id: 'xapp',
+    width: 390,
+    height: 844,
+    ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Twitter for iPhone/10.5',
+  },
 }
 
 export type Theme = 'dark' | 'light'
@@ -1100,7 +1109,60 @@ const row11: UxScenario = {
   },
 }
 
-export const MOBILE_UX_SCENARIOS: UxScenario[] = [row1, row2, row3, row4, row5, row6, row7, row8, row9, row10, row11]
+/** Row 2b — the same door inside an app's own browser. Two of its three
+ *  lanes cannot fire there, so the layout must say which one can. */
+const row2b: UxScenario = {
+  row: 2,
+  name: 'the door inside an in-app browser',
+  profiles: ['xapp'],
+  async run(ctx) {
+    const v: Verdict[] = []
+    const page = await ctx.open()
+    await page.goto(`${ctx.base}/markets`, { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(2500)
+    const opened = await page.evaluate(() => {
+      const btn = Array.from(document.querySelectorAll('button')).find((b) => /sign in/i.test(b.textContent ?? ''))
+      if (!btn) return false
+      ;(btn as HTMLElement).click()
+      return true
+    })
+    if (!opened) {
+      v.push(fail(2, 'in-app: the door opens', 'no Sign in control'))
+      return v
+    }
+    await page.waitForTimeout(900)
+    const read = await page.evaluate(() => {
+      const form = document.querySelector('.ca__form') as HTMLElement | null
+      if (!form) return { open: false }
+      const yOf = (sel: string) => {
+        const el = form.querySelector(sel) as HTMLElement | null
+        return el ? Math.round(el.getBoundingClientRect().top) : null
+      }
+      return {
+        open: true,
+        walled: form.classList.contains('ca__form--walled'),
+        note: (form.querySelector('.ca__inapp')?.textContent ?? '').trim().slice(0, 110),
+        laneNotes: Array.from(form.querySelectorAll('.ca__lanenote')).map((n) => (n.textContent ?? '').trim()),
+        emailY: yOf('.ca__emailrow'),
+        googleY: yOf('.ca__providers'),
+        walletY: yOf('.ca__wallet'),
+      }
+    })
+    v.push(read.open && read.walled ? pass(2, 'in-app: the door knows where it is', `note: "${read.note}"`) : fail(2, 'in-app: the door knows where it is', JSON.stringify(read)))
+    if (read.open && read.walled) {
+      v.push(
+        read.emailY! < read.googleY! && read.googleY! < read.walletY!
+          ? pass(2, 'in-app: the lane that works leads', `email y ${read.emailY} · google y ${read.googleY} · wallet y ${read.walletY}`)
+          : fail(2, 'in-app: the lane that works leads', JSON.stringify(read)),
+      )
+      v.push(read.laneNotes.length === 2 ? pass(2, 'in-app: both blocked lanes say why', read.laneNotes.join(' | ')) : fail(2, 'in-app: both blocked lanes say why', JSON.stringify(read.laneNotes)))
+    }
+    await ctx.shot(page, 2, 'door-inapp')
+    return v
+  },
+}
+
+export const MOBILE_UX_SCENARIOS: UxScenario[] = [row1, row2, row2b, row3, row4, row5, row6, row7, row8, row9, row10, row11]
 
 // ── runner ───────────────────────────────────────────────────────────────
 export async function runMobileUx(opts: {

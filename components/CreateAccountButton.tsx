@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils'
 import { currentAppHref, signInLandingHere, useSession } from '@/lib/session'
 import { OAUTH_INTENT_KEY, type OAuthIntent } from '@/components/CdpOAuthReturn'
 import { sameAppHref } from '@/lib/app-entry'
+import { inAppBrowserOf, inAppEscapeCopy, type InAppBrowser } from '@/lib/inapp-browser'
 
 // Social providers via CDP Embedded Wallets. Enable each + set its OAuth client
 // id/secret and redirect URIs in the CDP Portal; the app needs only the project
@@ -270,6 +271,20 @@ export function CreateAccountModal({
 
   if (!mounted) return null
 
+  // Inside an app's own browser (X, LinkedIn, a bare WebView) two of the
+  // three lanes cannot work and the door used to say nothing: Google refuses
+  // OAuth there outright (`disallowed_useragent`, its documented policy) and
+  // no `metamask://` launch can bring a wallet app forward. So the door
+  // re-reads itself: email leads, the other two carry a caption saying what
+  // is in the way and how to get out. Nothing is disabled here — CONNECT owns
+  // whether a lane fires; this is the layout and the words (squad
+  // mobile-onboarding, 2026-09-23).
+  const inApp: InAppBrowser = inAppBrowserOf(typeof navigator === 'undefined' ? '' : navigator.userAgent)
+  // A wallet's OWN browser is the good case: the wallet is injected, signing
+  // happens in-page, and the wallet lane is exactly right there.
+  const walled = inApp.inApp && !inApp.canLaunchApps
+  const escape = inAppEscapeCopy(inApp)
+
   return createPortal(
     <div className="ca">
       <button className="ca__backdrop" aria-label="Close" onClick={onClose} />
@@ -282,7 +297,7 @@ export function CreateAccountModal({
         </button>
 
         {step === 'email' && (
-          <form onSubmit={sendCode}>
+          <form onSubmit={sendCode} className={`ca__form${walled ? ' ca__form--walled' : ''}`}>
             {/* The stone leads. An emerald cut is nested step facets around an
                 open table — the flat plane where a signature lands — which is
                 what this door is, so the mark carries the header instead of a
@@ -299,6 +314,12 @@ export function CreateAccountModal({
             <p className="ca__promise">
               <strong>Your wallet is the only signer.</strong> We never hold your funds or your keys.
             </p>
+            {walled && (
+              <p className="ca__inapp" role="status">
+                You&rsquo;re in {escape.app}&rsquo;s built-in browser, which can&rsquo;t open a wallet app or
+                Google sign-in. Email works here &mdash; or {escape.where} to use the rest.
+              </p>
+            )}
 
             {/* Lane 1 — connect an existing wallet. It wears the accent fill
                 because it IS the product's front door (rule 6: wallet lead).
@@ -336,11 +357,14 @@ export function CreateAccountModal({
                 )
               })}
             </ul>
+            {walled && (
+              <p className="ca__lanenote">Opening a wallet app from here is blocked by {escape.app}.</p>
+            )}
 
             {/* ONE divider, and it names which half is yours — the wallet lane
                 assumes you have one; everything below MAKES you one. Two bare
                 "OR"s read as three competing choices. */}
-            <div className="ca__or"><span />new here?<span /></div>
+            <div className="ca__or"><span />{walled ? 'have a wallet app?' : 'new here?'}<span /></div>
 
             {/* Lane 2 — social sign-in (CDP). Redirects to the provider. */}
             <div className="ca__providers">
@@ -360,6 +384,7 @@ export function CreateAccountModal({
                   <GoogleGlyph /> {p.label}
                 </button>
               ))}
+              {walled && <p className="ca__lanenote">Google refuses sign-in inside an app&rsquo;s browser.</p>}
             </div>
 
             {/* Lane 3 — email OTP, as ONE row (field + accent submit) rather
