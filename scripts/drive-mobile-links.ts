@@ -310,6 +310,7 @@ async function main() {
         await o.ctx.close()
         continue
       }
+      await shot(o.page, `splash-inapp-${ua}`)
       await o.page.locator(SPLASH_CTA).first().click({ timeout: 4000 }).catch(() => {})
       await o.page.waitForTimeout(1500)
       const lanes = await doorLanes(o.page)
