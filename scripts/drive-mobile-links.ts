@@ -537,11 +537,16 @@ async function main() {
         o.chatPosts = 0
         o.beacons.length = 0
         await o.page.reload({ waitUntil: 'domcontentloaded' })
-        await o.page.waitForTimeout(10_000)
+        // Signed in now (the keep): the session hydrates, wagmi reconnects,
+        // the DB chat loads — the card lands once the runtime starts. Wait
+        // for it rather than for a clock.
+        await o.page.locator('[data-link-return]').first().waitFor({ state: 'attached', timeout: 25_000 }).catch(() => {})
+        await o.page.waitForTimeout(1500)
         const card = await o.page.locator('[data-link-return="signed"]').count()
         const rec = await o.page.locator('[data-link-return-receipt]').count()
+        const overlay: string = await o.page.evaluate(`(() => { const el = document.querySelector('.fixed.inset-0, .absolute.inset-0.z-50'); return el ? (el.textContent || '').replace(/\\s+/g, ' ').slice(0, 120) : '' })()`)
         await shot(o.page, 'signed-4-came-back')
-        add('signed/came-back-card', card === 1 && rec === 1 && o.chatPosts === 0, `${card} signed card(s), ${rec} receipt link(s), ${o.chatPosts} POST /api/chat after the reload, beacons ${o.beacons.join(' → ') || 'none'}`)
+        add('signed/came-back-card', card === 1 && rec === 1 && o.chatPosts === 0, `${card} signed card(s), ${rec} receipt link(s), ${o.chatPosts} POST /api/chat after the reload, beacons ${o.beacons.join(' → ') || 'none'}${overlay ? `, overlay: "${overlay}"` : ''}`)
         // THE WIRE to SIGN's outcome: rewind OUR record to 'built' (keep its
         // signKey) — only SIGN's own `settled` record for that transaction
         // can now flip the card to the receipt on the next load.
@@ -557,7 +562,8 @@ async function main() {
         add('signed/run-carries-sign-key', rewound.hadKey && !!rewound.signOutcome && /"state":"settled"/.test(rewound.signOutcome ?? ''), `run.signKey ${rewound.hadKey ? 'present' : 'MISSING'}${rewound.keyPrefixOk ? '' : ' (unexpected prefix)'}; SIGN's record ${rewound.signOutcome ? rewound.signOutcome.slice(0, 90) : 'MISSING'}`)
         o.chatPosts = 0
         await o.page.reload({ waitUntil: 'domcontentloaded' })
-        await o.page.waitForTimeout(10_000)
+        await o.page.locator('[data-link-return]').first().waitFor({ state: 'attached', timeout: 25_000 }).catch(() => {})
+        await o.page.waitForTimeout(1500)
         const flipped = await o.page.locator('[data-link-return="signed"]').count()
         const hold = await o.page.locator('[data-link-return="hold"]').count()
         const recHref = await o.page.locator('[data-link-return-receipt]').first().getAttribute('href').catch(() => null)
