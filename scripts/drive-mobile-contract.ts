@@ -45,7 +45,14 @@
  * your own `main()`, read `BASE`, `--only=` and `--shots=` from the
  * environment/argv, and exit non-zero on red. The runner detects the shape,
  * spawns the file as a child, echoes its output indented and folds its exit
- * code into the table as one `<lane>/*` verdict — so `npm run drive:mobile`
+ * code into the table as one `<lane>/*` verdict. **An adapter-B file MUST
+ * guard its entrypoint** — `if (process.argv[1] && /drive-mobile-<lane>/.test(process.argv[1])) main()`
+ * — because the runner IMPORTS every lane file to read its exports, and a bare
+ * `main()` would fire four drives inside one. It must also resolve playwright
+ * through `createRequire(<anchor>)('playwright-core')`: a static import
+ * type-checks on this Mac (~/node_modules sits above every worktree) and fails
+ * the Vercel build, which is how #858's preview died. Both are fenced in
+ * `test:api` under `mobile qa:` — so `npm run drive:mobile`
  * stays ONE command with ONE exit code either way. Adapter A gets per-scenario
  * verdict lines and the shared context; B does not.
  *
