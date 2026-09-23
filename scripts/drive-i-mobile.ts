@@ -353,7 +353,12 @@ async function main() {
   process.exit(red.length ? 1 : 0)
 }
 
-main().catch((e) => {
-  console.error(e)
-  process.exit(2)
-})
+// Only drive when run directly: the harness imports FUNDING_OFFER_FIXTURE from
+// here (the mobile-onboarding squad's argv guard rule), and a bare main() ran
+// the whole drive inside test:api.
+if (process.argv[1] && /drive-i-mobile/.test(process.argv[1])) {
+  main().catch((e) => {
+    console.error(e)
+    process.exit(2)
+  })
+}
