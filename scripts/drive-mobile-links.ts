@@ -526,7 +526,7 @@ async function main() {
               await sw.click({ timeout: 4000 }).catch(() => {})
               await o.page.waitForTimeout(3000)
             }
-            const pop = await o.page.evaluate(() => { const el = document.querySelector('[role="switch"]')?.closest('div.absolute') as HTMLElement | null; if (!el) return null; const r = el.getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom), text: el.innerText.replace(/\s+/g, ' ').slice(0, 160) } })
+            const pop = await o.page.evaluate(() => { const el = document.querySelector('[data-share-popover]') as HTMLElement | null; if (!el) return null; const r = el.getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom), text: el.innerText.replace(/\s+/g, ' ').slice(0, 160) } })
             await shot(o.page, 'signed-3-share-popover')
             add('signed/share-popover', !!pop && pop.left >= 0 && pop.right <= 375 && /\/p\//.test(pop.text), pop ? `popover ${pop.left}→${pop.right}px × ${pop.top}→${pop.bottom}px: "${pop.text}"` : 'no popover')
             summary['signed/share-popover'] = pop
@@ -542,6 +542,27 @@ async function main() {
         const rec = await o.page.locator('[data-link-return-receipt]').count()
         await shot(o.page, 'signed-4-came-back')
         add('signed/came-back-card', card === 1 && rec === 1 && o.chatPosts === 0, `${card} signed card(s), ${rec} receipt link(s), ${o.chatPosts} POST /api/chat after the reload, beacons ${o.beacons.join(' → ') || 'none'}`)
+        // THE WIRE to SIGN's outcome: rewind OUR record to 'built' (keep its
+        // signKey) — only SIGN's own `settled` record for that transaction
+        // can now flip the card to the receipt on the next load.
+        const rewound: { hadKey: boolean; keyPrefixOk: boolean; signOutcome: string | null } = await o.page.evaluate(`(() => {
+          const k = 'pantessa.ilink.run.mlreturn1'
+          const run = JSON.parse(localStorage.getItem(k) || 'null')
+          if (!run) return { hadKey: false, keyPrefixOk: false, signOutcome: null }
+          const hadKey = typeof run.signKey === 'string' && run.signKey.length > 0
+          run.outcome = 'built'; delete run.txUrl
+          localStorage.setItem(k, JSON.stringify(run))
+          return { hadKey, keyPrefixOk: hadKey && run.signKey.startsWith('pantessa.sign.'), signOutcome: hadKey ? localStorage.getItem(run.signKey) : null }
+        })()`)
+        add('signed/run-carries-sign-key', rewound.hadKey && !!rewound.signOutcome && /"state":"settled"/.test(rewound.signOutcome ?? ''), `run.signKey ${rewound.hadKey ? 'present' : 'MISSING'}${rewound.keyPrefixOk ? '' : ' (unexpected prefix)'}; SIGN's record ${rewound.signOutcome ? rewound.signOutcome.slice(0, 90) : 'MISSING'}`)
+        o.chatPosts = 0
+        await o.page.reload({ waitUntil: 'domcontentloaded' })
+        await o.page.waitForTimeout(10_000)
+        const flipped = await o.page.locator('[data-link-return="signed"]').count()
+        const hold = await o.page.locator('[data-link-return="hold"]').count()
+        const recHref = await o.page.locator('[data-link-return-receipt]').first().getAttribute('href').catch(() => null)
+        await shot(o.page, 'signed-5-seam-flip')
+        add('signed/seam-flips-hold-to-signed', flipped === 1 && hold === 0 && !!recHref && recHref.toLowerCase().includes(FAKE_HASH) && o.chatPosts === 0, `${flipped} signed card(s), ${hold} hold card(s), receipt ${recHref ?? 'none'}, ${o.chatPosts} POST /api/chat`)
       }
     }
     await o.ctx.close()

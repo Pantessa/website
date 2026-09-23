@@ -32,6 +32,11 @@ export type LinkRun = {
   /** The receipt, when the run signed: the explorer URL the beacon carried. */
   txUrl?: string
   valueUsd?: number
+  /** SIGN's outcome key for the LAST transaction the build offered
+   *  (lib/sign-round-trip signOutcomeKey) — a chain is signed when its last
+   *  step settled. Orders (HL / CoW) have no key: the hold card stays. */
+  signKey?: string
+  chainId?: number
 }
 
 /** A run older than this is a visit the person walked away from, not one
@@ -69,6 +74,8 @@ export function readLinkRun(storage: StorageLike | null | undefined, slug: strin
       at: run.at,
       ...(typeof run.txUrl === 'string' && /^https:\/\//.test(run.txUrl) ? { txUrl: run.txUrl } : {}),
       ...(typeof run.valueUsd === 'number' && Number.isFinite(run.valueUsd) ? { valueUsd: run.valueUsd } : {}),
+      ...(typeof run.signKey === 'string' && run.signKey ? { signKey: run.signKey } : {}),
+      ...(typeof run.chainId === 'number' && Number.isFinite(run.chainId) ? { chainId: run.chainId } : {}),
     }
   } catch {
     return null
@@ -181,4 +188,29 @@ export function verdictAfterRoundTrip(current: ReturnVerdict | null, outcome: Ro
     kind: 'signed',
     run: { ...current.run, outcome: 'signed', at: now, ...(outcome.txUrl ? { txUrl: outcome.txUrl } : {}), ...(outcome.valueUsd !== undefined ? { valueUsd: outcome.valueUsd } : {}) },
   }
+}
+
+/** The shape SIGN's readSignOutcome answers (lib/sign-round-trip) — only the
+ *  fields this reconcile reads, so the two modules stay decoupled. */
+export type SignOutcomeLike = { state: 'asked' | 'settled'; hash?: string | null } | null
+
+/**
+ * THE WIRE (coordinator relay, 2026-09-23): a hold verdict whose run carries
+ * SIGN's outcome key is reconciled with what SIGN recorded for that exact
+ * transaction. `settled` with a hash = the wallet signed it while the page was
+ * away → the receipt card, with the explorer link built from the run's chain.
+ * `asked` / null / no key → the hold stands (a human decides). Never flips a
+ * signed card back, never invents a hash.
+ */
+export function reconcileWithSignOutcome(
+  verdict: ReturnVerdict,
+  outcome: SignOutcomeLike,
+  explorerTx: string | null,
+  now: number,
+): ReturnVerdict {
+  if (verdict.kind !== 'hold' || !verdict.run.signKey) return verdict
+  if (!outcome || outcome.state !== 'settled' || !outcome.hash || !/^0x[0-9a-fA-F]{64}$/.test(outcome.hash)) return verdict
+  const txUrl = explorerTx ? `${explorerTx}${outcome.hash}` : undefined
+  const next = verdictAfterRoundTrip(verdict, { kind: 'signed', ...(txUrl ? { txUrl } : {}) }, now)
+  return next ?? verdict
 }

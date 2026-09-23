@@ -43,7 +43,10 @@ import { CATALOG } from '@/lib/mcp-data'
 import { FREE_FLEET_FALLBACK } from '@/lib/free-fleet'
 import { resolveAppIds } from '@/lib/ask-apps'
 import { androidChromeIntent, inAppEscapeCopy, safeStorage, type InAppBrowser } from '@/lib/inapp-browser'
-import { beaconsAlreadyPosted, readLinkRun, returnCopy, returnVerdict, verdictAfterRoundTrip, writeLinkRun, type ReturnVerdict, type RoundTripOutcome } from '@/lib/intent-link-return'
+import { beaconsAlreadyPosted, readLinkRun, reconcileWithSignOutcome, returnCopy, returnVerdict, verdictAfterRoundTrip, writeLinkRun, type ReturnVerdict, type RoundTripOutcome } from '@/lib/intent-link-return'
+import { readSignOutcome, signOutcomeKey } from '@/lib/sign-round-trip'
+import { txChainOf, txRequestOf } from '@/lib/transaction-layer'
+import { chainById } from '@/lib/chains'
 
 const STATIC_SERVERS: McpServer[] = [...FREE_FLEET_FALLBACK, ...CATALOG]
 
@@ -214,8 +217,32 @@ export default function IntentRuntime({
   const runStore = () => safeStorage(typeof window === 'undefined' ? null : window)
   const [returned, setReturned] = useState<Exclude<ReturnVerdict, { kind: 'fresh' }> | null>(null)
   const [returnClosed, setReturnClosed] = useState(false)
-  const rememberRun = (outcome: 'started' | 'built' | 'signed', extra?: { txUrl?: string; valueUsd?: number }) =>
-    writeLinkRun(runStore(), { slug, wallet: address ?? null, outcome, at: Date.now(), ...extra })
+  const rememberRun = (outcome: 'started' | 'built' | 'signed', extra?: { txUrl?: string; valueUsd?: number; signKey?: string; chainId?: number }) => {
+    // A later state keeps the earlier record's key (the signed beacon has
+    // no tx in hand; the built one did).
+    const prev = readLinkRun(runStore(), slug, Date.now())
+    const carry = prev && prev.wallet === (address ?? '').toLowerCase() ? { ...(prev.signKey ? { signKey: prev.signKey } : {}), ...(prev.chainId ? { chainId: prev.chainId } : {}) } : {}
+    writeLinkRun(runStore(), { slug, wallet: address ?? null, outcome, at: Date.now(), ...carry, ...extra })
+  }
+  /** SIGN's outcome key for the LAST tx the thread's newest build offers —
+   *  read from the store the moment the build lands (the turn event carries
+   *  no tx). Orders have no key. */
+  const lastBuiltTxKey = (): { signKey: string; chainId: number } | null => {
+    if (!address) return null
+    const { chats, currentChatId } = useYeetfulStore.getState()
+    const chat = chats.find((c) => c.id === currentChatId)
+    const msgs = chat?.messages ?? []
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i]
+      if (m.role !== 'assistant') continue
+      const chain = txChainOf(m.meta)
+      const tx = chain ? chain.steps[chain.steps.length - 1]?.tx ?? null : txRequestOf(m.meta)
+      if (!tx?.to) return null
+      const chainId = tx.chainId ?? 8453
+      return { signKey: signOutcomeKey({ wallet: address, chainId, to: tx.to, data: tx.data }), chainId }
+    }
+    return null
+  }
   useEffect(() => {
     linkReturnSeam.flip = (outcome) => {
       setReturned((prev) => {
@@ -330,7 +357,15 @@ export default function IntentRuntime({
     startedFx.current = true
     // Now the wallet is known: hold the ask when THIS wallet was mid-signature
     // or signed here minutes ago; otherwise remember that a run started.
-    const verdict = returnVerdict(readLinkRun(runStore(), slug, Date.now()), address ?? null, Date.now())
+    const raw = returnVerdict(readLinkRun(runStore(), slug, Date.now()), address ?? null, Date.now())
+    // THE WIRE: SIGN recorded how that exact transaction ended while the
+    // page was away (lib/sign-round-trip) — a settled hash flips the hold
+    // straight to the receipt card.
+    const verdict =
+      raw.kind === 'hold' && raw.run.signKey
+        ? reconcileWithSignOutcome(raw, readSignOutcome(runStore(), raw.run.signKey, Date.now()), chainById(raw.run.chainId)?.explorerTx ?? null, Date.now())
+        : raw
+    if (verdict.kind === 'signed' && raw.kind === 'hold') writeLinkRun(runStore(), { ...verdict.run })
     if (verdict.kind !== 'fresh') setReturned(verdict)
     else rememberRun('started')
     postEvent('connect')
@@ -393,7 +428,7 @@ export default function IntentRuntime({
     if (data.outcome === 'tx-built') {
       postEvent('built', { valueUsd })
       setBuilt(true)
-      rememberRun('built')
+      rememberRun('built', lastBuiltTxKey() ?? undefined)
     }
     if (data.outcome === 'signed') {
       postEvent('signed', { valueUsd, txHash, chainId })
@@ -784,7 +819,10 @@ export default function IntentRuntime({
               {signed && returnHref && redirectHost && (
                 <a
                   href={returnHref}
-                  className="btn btn--solid inline-flex items-center gap-1.5 text-[13px] flex-shrink-0 max-sm:hidden"
+                  // `!`: x402-design.css's `.btn { display: inline-flex }` is
+                  // imported after the utilities and wins the cascade over a
+                  // plain max-sm:hidden (measured: the button stayed up).
+                  className="btn btn--solid inline-flex items-center gap-1.5 text-[13px] flex-shrink-0 max-sm:!hidden"
                   data-return-host-header
                 >
                   Return to {redirectHost} <ArrowRight className="w-3.5 h-3.5" />
