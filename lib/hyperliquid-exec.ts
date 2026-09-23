@@ -9,10 +9,14 @@
 //  HL orders aren't EVM transactions: they're L1 actions signed as EIP-712
 //  `Agent { source, connectionId }` where connectionId is the msgpack action
 //  hash. The server builds the action deterministically, computes the hash
-//  (via @nktkas/hyperliquid/signing — the same canonicalization the venue
-//  expects), and hands the wallet ONLY the typed data. The submit relay
-//  re-derives everything and re-guards before it ever reaches /exchange —
-//  the signature can't be redirected onto a different action.
+//  (via @nktkas/hyperliquid/signing), and hands the wallet ONLY the typed
+//  data. The submit relay re-derives everything and re-guards before it ever
+//  reaches /exchange — the signature can't be redirected onto a different
+//  action.
+//
+//  That hash is KEY-ORDER SENSITIVE and no wire preserves key order, so
+//  every hash site runs canonicalizeHlAction first — see its comment for the
+//  day a Postgres jsonb round-trip made every job-borne HL order unsignable.
 //
 //  Deposits ARE plain EVM transfers (USDC → the official Bridge2 contract on
 //  Arbitrum), so they reuse the existing SendTx artifact. The bridge address
@@ -516,8 +520,61 @@ export function buildHlOrderAction(
 /** The EIP-712 payload a wallet signs for any HL L1 action: the phantom
  *  agent over the canonical msgpack action hash. Domain chainId 1337 is the
  *  venue's constant, not a network the wallet must be on. */
+/**
+ * The venue hashes the MSGPACK of the action, and msgpack is KEY-ORDER
+ * SENSITIVE: the hash is the venue's hash only when every object's keys sit
+ * in the venue's own schema order. Nothing on the wire preserves that.
+ * Postgres `jsonb` sorts object keys (shortest first, then bytewise), so a
+ * job step's order action came back out of `job_steps.artifact` as
+ * `{a,b,p,r,s,t}` — `s` and `r` swapped — while the venue re-serialized
+ * `{a,b,p,s,r,t}`. We signed a hash the venue never computed, it recovered a
+ * phantom address from our signature, and answered `User or API Wallet 0x…
+ * does not exist` (live 2026-09-23, the 2x HYPE job: EVERY HL order that
+ * round-tripped the database was unsignable, and the card's "enable trading
+ * again" cure retired a perfectly good agent on each lap). The top-level
+ * keys survive by luck — jsonb sorts `type`,`orders`,`grouping` by length
+ * into exactly the schema order — so only the inner order object broke.
+ *
+ * So rebuild the action key-by-key at the HASH BOUNDARY. Both sign sites
+ * (the typed data and the consent text) run it, so the client and the relay
+ * converge on the same bytes however either one received the action.
+ * An action shape we don't build is returned untouched: the guard refuses it
+ * moments later, and a throw here would turn that refusal into a 500.
+ */
+const HL_ACTION_KEY_ORDER: Record<string, readonly string[]> = {
+  order: ['type', 'orders', 'grouping', 'builder'],
+  updateLeverage: ['type', 'asset', 'isCross', 'leverage'],
+}
+/** Key order INSIDE each nested object of an order action. */
+const HL_ORDER_KEY_ORDER = ['a', 'b', 'p', 's', 'r', 't', 'c'] as const
+const HL_BUILDER_KEY_ORDER = ['b', 'f'] as const
+
+function reorder<T extends Record<string, unknown>>(obj: T, keys: readonly string[]): T {
+  const out: Record<string, unknown> = {}
+  for (const k of keys) if (obj[k] !== undefined) out[k] = obj[k]
+  // Anything the venue schema gained since this list was written still rides
+  // along (in its original position) rather than being silently dropped.
+  for (const k of Object.keys(obj)) if (!(k in out) && obj[k] !== undefined) out[k] = obj[k]
+  return out as T
+}
+
+export function canonicalizeHlAction<T extends HlWireAction>(action: T): T {
+  const order = HL_ACTION_KEY_ORDER[(action as { type?: string }).type ?? '']
+  if (!order) return action
+  const top = reorder(action as unknown as Record<string, unknown>, order)
+  if (Array.isArray(top.orders)) {
+    top.orders = (top.orders as Record<string, unknown>[]).map((o) =>
+      o && typeof o === 'object' ? reorder(o, HL_ORDER_KEY_ORDER) : o,
+    )
+  }
+  if (top.builder && typeof top.builder === 'object') {
+    top.builder = reorder(top.builder as Record<string, unknown>, HL_BUILDER_KEY_ORDER)
+  }
+  return top as unknown as T
+}
+
 export function hlActionTypedData(action: HlWireAction, nonce: number, isTestnet = false): Eip712TypedData {
-  const connectionId = createL1ActionHash({ action: action as unknown as Record<string, unknown>, nonce })
+  const connectionId = createL1ActionHash({ action: canonicalizeHlAction(action) as unknown as Record<string, unknown>, nonce })
   return {
     domain: { name: 'Exchange', version: '1', chainId: 1337, verifyingContract: '0x0000000000000000000000000000000000000000' },
     types: { Agent: [{ name: 'source', type: 'string' }, { name: 'connectionId', type: 'bytes32' }] },
@@ -574,7 +631,7 @@ export function hlActionSummary(action: HlWireAction, expected: HlConsentInput['
  * consent binds these bytes and no others.
  */
 export function hlConsentMessage(input: HlConsentInput): string {
-  const connectionId = createL1ActionHash({ action: input.action as unknown as Record<string, unknown>, nonce: input.nonce })
+  const connectionId = createL1ActionHash({ action: canonicalizeHlAction(input.action) as unknown as Record<string, unknown>, nonce: input.nonce })
   return [
     HL_CONSENT_HEADER,
     `Action: ${hlActionSummary(input.action, input.expected)}`,

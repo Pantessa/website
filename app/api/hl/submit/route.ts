@@ -8,6 +8,7 @@ import {
   guardHlExecBuild,
   guardHlLeverageBuild,
   HL_NONCE_MAX_AGE_MS,
+  canonicalizeHlAction,
   hlActionTypedData,
   hlApproveBuilderFeeTypedData,
   hlConsentMessage,
@@ -56,7 +57,16 @@ export async function POST(req: NextRequest) {
     isTestnet?: boolean
     expected?: { coin?: string; kind?: string; isBuy?: boolean; leverage?: number }
   }
-  const { action, nonce, from, expected } = body
+  // Key order is part of the venue's action HASH (msgpack), and a client's
+  // action has usually been through storage on the way here — Postgres jsonb
+  // re-sorts object keys, so a job step's order arrives as {a,b,p,r,s,t}.
+  // Put it back in the venue's schema order BEFORE anything hashes, guards or
+  // relays it. See canonicalizeHlAction (lib/hyperliquid-exec).
+  const action = (body.action ? canonicalizeHlAction(body.action as HlWireAction) : body.action) as
+    | HlWireAction
+    | HlWireApproveBuilderFeeAction
+    | undefined
+  const { nonce, from, expected } = body
   const delegated = body.mode === 'delegated'
   const isFeeApproval = (action as { type?: string } | undefined)?.type === 'approveBuilderFee'
   const proof = delegated ? body.consentSignature : body.signature
@@ -265,11 +275,33 @@ export async function POST(req: NextRequest) {
     | null
   if (!res.ok || venue?.status !== 'ok') {
     const msg = typeof venue?.response === 'string' ? venue.response : `venue rejected the order (HTTP ${res.status})`
-    // The venue no longer recognizes the agent (removed in the HL app, or
-    // never approved): retire the row and hand the client the enable door.
-    if (delegation && /does not exist|not approved|api wallet|agent/i.test(msg)) {
+    // Hyperliquid prints back the address it RECOVERED from our signature.
+    // Two very different failures wear the same words:
+    //   · it names OUR agent  → the approval really is gone (removed in the
+    //     HL app, or expired venue-side ahead of our clock). Retire the row
+    //     and hand the client the enable door.
+    //   · it names ANY OTHER address → the recovery itself is wrong: the
+    //     bytes we hashed are not the bytes the venue hashed. That is our
+    //     bug, never the wallet's — and retiring here destroys a working
+    //     agent and loops the user through "enable trading" forever, one
+    //     wasted wallet signature per lap (live 2026-09-23, the key-order
+    //     bug canonicalizeHlAction now closes). Keep the agent; say so.
+    const unknownSigner = /does not exist|not approved|api wallet|agent/i.test(msg)
+    const named = /0x[0-9a-fA-F]{40}/.exec(msg)?.[0]?.toLowerCase()
+    const namesOurAgent = !named || named === delegation?.agentAddress.toLowerCase()
+    if (delegation && unknownSigner && namesOurAgent) {
       await retireDelegation(delegation.id)
       return NextResponse.json({ error: `${msg} — enable trading again to mint a fresh Pantessa agent.`, code: 'delegation-required' }, { status: 409 })
+    }
+    if (delegation && unknownSigner && named) {
+      console.warn(`[hl/submit] signature recovered to ${named}, not the approved agent ${delegation.agentAddress} — action bytes disagree with the venue`, JSON.stringify(action))
+      return NextResponse.json(
+        {
+          error:
+            'Hyperliquid did not recognize the signature on this order, so nothing was placed. Your Pantessa agent is still approved — this one is ours to fix. Ask again for a fresh build.',
+        },
+        { status: 502 },
+      )
     }
     return NextResponse.json({ error: msg }, { status: 502 })
   }
