@@ -21278,7 +21278,7 @@ async function main() {
       'broker M1: agent-signed execute refuses an intent over the desk cap',
       overCapExec.isError && /desk caps|over/i.test(String(overCapExec.payload)),
     )
-    await call('broker_close', { intent_id: overCap.payload.intentId })
+    await call('broker_close', { intent_id: overCap.payload.intentId, agent_key: 'harness-desk-key' })
 
     // M3 — the webhook opt-in. A private/SSRF callback is refused server-side;
     // a good https one binds and returns the signing secret ONCE.
@@ -21315,7 +21315,7 @@ async function main() {
       'broker M4: an identity whose intents are all internal-run has NO public record (404) — the harness never headlines /agents',
       !recInternal.isError && recInternalPage.status === 404,
     )
-    await call('broker_close', { intent_id: recInternal.payload.intentId })
+    await call('broker_close', { intent_id: recInternal.payload.intentId, agent_key: internalKey })
     // The organic path renders (opt this one call out of the suite stamp).
     const organicKey = `harness-organic-${Date.now()}`
     const recOpen = await call('broker_open', { ask: 'Buy $15 of AAPL', agent: 'Harness Agent', agent_key: organicKey }, { [ORGANIC_PROBE]: '1' })
@@ -21347,7 +21347,7 @@ async function main() {
         /twitter:card"[^>]+summary_large_image|summary_large_image[^>]+twitter:card/.test(recHtml) &&
         /\/agents\/[0-9a-f]+\/opengraph-image/.test(recHtml),
     )
-    await call('broker_close', { intent_id: recOpen.payload.intentId })
+    await call('broker_close', { intent_id: recOpen.payload.intentId, agent_key: organicKey })
 
     // M5 — the wallet inbox. broker_send addresses an intent to a wallet; it
     // lands in that wallet's /inbox, one tap from the guarded /i runtime.
@@ -21449,7 +21449,7 @@ async function main() {
         !impInbox2.some((i) => /[@\uFF20]/.test(i.from ?? '')),
       `full=${fromOf(impFull)} multi=${fromOf(impMulti)}`,
     )
-    for (const r of [impFull, impMulti]) if (r.payload?.intentId) await call('broker_close', { intent_id: r.payload.intentId })
+    for (const r of [impFull, impMulti]) if (r.payload?.intentId) await call('broker_close', { intent_id: r.payload.intentId, agent_key: 'harness-desk-key' })
     if (impersonate.payload?.intentId) await call('broker_close', { intent_id: impersonate.payload.intentId })
 
     // U2 — the closed-loop receipt seam: the /i page of a desk-bound
@@ -21483,7 +21483,7 @@ async function main() {
       ((await allowed.json()) as { allowed?: boolean }).allowed === true &&
         ((await allowedOther.json()) as { allowed?: boolean }).allowed === false,
     )
-    await call('broker_close', { intent_id: sent.payload.intentId })
+    await call('broker_close', { intent_id: sent.payload.intentId, agent_key: 'harness-desk-key' })
 
     // ── WAVE-2 discovery: opt-in open-slots feed + slot_token targeting ────
     {
@@ -21757,7 +21757,7 @@ async function main() {
           inboxAtt.every((i) => i.slug !== vSlug),
         JSON.stringify({ v: attBody.verification, s: stAtt.payload?.state }),
       )
-      for (const r of [rSent, vSent]) if (r.payload?.intentId) await call('broker_close', { intent_id: r.payload.intentId })
+      for (const r of [rSent, vSent]) if (r.payload?.intentId) await call('broker_close', { intent_id: r.payload.intentId, agent_key: 'harness-desk-key' })
     }
 
     // broker_tile — MOSAIC on the desk: slices in, a kind='mosaic' /i link
@@ -21906,7 +21906,7 @@ async function main() {
         'roster R2: an unhired agent_key does NOT auto-address — plain open, no roster block',
         !un.isError && un.payload?.state === 'open' && un.payload?.roster === undefined,
       )
-      if (un.payload?.intentId) await call('broker_close', { intent_id: un.payload.intentId })
+      if (un.payload?.intentId) await call('broker_close', { intent_id: un.payload.intentId, agent_key: 'never-hired-key' })
 
       // 3 — over-cap at OPEN refuses by name AND benches (cap breach is the
       // only bench trigger).
@@ -22024,7 +22024,7 @@ async function main() {
         threeOk && fourth.isError && /already has 3 undecided proposals/.test(String(fourth.payload)),
         fourth.isError ? String(fourth.payload).slice(0, 100) : 'no refusal',
       )
-      for (const id of budgetProps) await call('broker_close', { intent_id: id })
+      for (const id of budgetProps) await call('broker_close', { intent_id: id, agent_key: rosterAgentKey })
       const overBudget = await call('broker_open', { ask: 'Buy $9 of AAPL', agent_key: rosterAgentKey, wallet: employer2.address })
       const slotAfterBudget = ((await (await fetch(`${BASE}/api/roster?wallet=${employer2.address}`)).json()) as {
         slots?: { id: string; status: string }[]
@@ -22134,7 +22134,7 @@ async function main() {
         ).json()) as { slots?: unknown[] }).slots ?? []
         check(`roster R2: drill rows released for ${acct.address.slice(0, 8)}…`, after.length === 0)
       }
-      if (prop.payload?.intentId) await call('broker_close', { intent_id: prop.payload.intentId })
+      if (prop.payload?.intentId) await call('broker_close', { intent_id: prop.payload.intentId, agent_key: rosterAgentKey })
     }
 
     // The wire-level pin: nothing any MCP call returned carries 0x-prefixed
@@ -22145,7 +22145,7 @@ async function main() {
 
     const closed = await call('broker_close', { intent_id: intentId })
     const closedW = await call('broker_close', { intent_id: weather.payload.intentId })
-    const closedE = await call('broker_close', { intent_id: execOpen.payload.intentId })
+    const closedE = await call('broker_close', { intent_id: execOpen.payload.intentId, agent_key: 'harness-desk-key' })
     const closedS = await call('broker_close', { intent_id: single.payload.intentId })
     const closedT = await call('broker_close', { intent_id: tile.payload.intentId })
     const tileGalleryAfter = (await (await fetch(`${BASE}/api/mosaics?slug=${tileSlug}`)).json()) as { rows?: unknown[] }
