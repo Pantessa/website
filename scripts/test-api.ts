@@ -29853,47 +29853,112 @@ async function main() {
       console.log(`  ⚠️  known-gap ${ask} — ${name}${extra ? ` — ${extra}` : ''}`)
     }
 
-    // ── 1. the leg wire, named in two repos ────────────────────────────────
+    // ── 1. the leg wire, named in TWO repos ────────────────────────────────
+    // lib/desk-wire.ts and the SDK's src/desk.ts are the same contract written
+    // twice. Nothing but this pin stops them drifting, and a drift is silent:
+    // the SDK signs the wrong shape, or refuses one the runner offers.
     const wireSrc = readFileSync('lib/desk-wire.ts', 'utf8')
     const WIRE_TYPES = ['DeskLegKind', 'DeskLegView', 'DeskLegResult', 'DeskNext']
-    check(
-      'desk wire: lib/desk-wire.ts exports the four contract names and stays pure (no React, no Prisma, no fetch)',
-      WIRE_TYPES.every((t) => new RegExp(`export (type|interface) ${t}\\b`).test(wireSrc)) &&
-        !/from '@\/lib\/db'|require\(|\bfetch\(|from 'react'/.test(wireSrc),
-      WIRE_TYPES.filter((t) => !new RegExp(`export (type|interface) ${t}\\b`).test(wireSrc)).join(',') || 'all present',
+    const WIRE_CONSTS = ['HL_DOMAIN_CHAIN_ID', 'HL_NONCE_LIFE_MS', 'LEG_OFFER_TTL_MS', 'BUILD_RETRY_MS', 'SETTLE_RETRY_MS']
+    /** A union written on one line OR one member per line. Reading only the
+     *  first form is how a pin like this goes quietly green on []. */
+    const unionMembers = (src: string, name: string): string[] => {
+      const at = src.indexOf(`export type ${name} =`)
+      if (at < 0) return []
+      const body = src.slice(at, at + 1200).split(/\n\s*\n/)[0]
+      return (body.match(/'[a-zA-Z]+'/g) ?? []).map((m) => m.replace(/'/g, ''))
+    }
+    /** The field names of an exported interface, in source order. */
+    const ifaceFields = (src: string, name: string): string[] => {
+      const at = src.indexOf(`export interface ${name} {`)
+      if (at < 0) return []
+      const body = src.slice(at, src.indexOf('\n}', at))
+      return (body.match(/^\s{2}(\w+)\??:/gm) ?? []).map((m) => m.trim().replace(/\??:$/, ''))
+    }
+    const constValue = (src: string, name: string): string | null =>
+      src.match(new RegExp(`export const ${name} = ([^\\n/]+)`))?.[1]?.trim().replace(/\s/g, '') ?? null
+
+    // The contract stub the lanes were cut against has the types but none of
+    // the constants. Until the MCP lane's filled wire is merged into the
+    // integration branch there is nothing to pin, and pretending otherwise
+    // would either red this PR or — worse — quietly pass on an empty parse.
+    const wireStubMissing = [...WIRE_TYPES, ...WIRE_CONSTS].filter(
+      (t) => !new RegExp(`export (type|interface|const) ${t}\\b`).test(wireSrc),
     )
-    const kindMembers = (wireSrc.match(/export type DeskLegKind = ([^\n]+)/)?.[1] ?? '')
-      .split('|')
-      .map((s) => s.trim().replace(/['"]/g, ''))
-      .filter(Boolean)
     check(
-      'desk wire: DeskLegKind carries every shape C1/C2 names — tx, txChain, hlAction, hlBatch, wait, unknown',
-      ['tx', 'txChain', 'hlAction', 'hlBatch', 'wait', 'unknown'].every((k) => kindMembers.includes(k)),
-      kindMembers.join('|'),
+      'desk wire: lib/desk-wire.ts stays pure — no React, no Prisma, no fetch (the SDK mirrors it line for line and the harness loads it in a bare node process)',
+      !/from '@\/lib\/db'|require\(|\bfetch\(|from 'react'/.test(wireSrc),
     )
+    if (wireStubMissing.length) {
+      gap(
+        'desk wire: lib/desk-wire.ts is the FILLED contract, not the stub — four types + five timing constants',
+        false,
+        'MCP-lane',
+        `still missing: ${wireStubMissing.join(', ')} (every wire pin below is held until it lands)`,
+      )
+    } else {
+    const kindMembers = unionMembers(wireSrc, 'DeskLegKind')
+    check(
+      'desk wire: DeskLegKind carries every shape the runner can offer — tx, txChain, hlAction, hlBatch, order, wait, unknown (a kind the SDK does not name is a leg it signs blind or refuses)',
+      ['tx', 'txChain', 'hlAction', 'hlBatch', 'order', 'wait', 'unknown'].every((k) => kindMembers.includes(k)) && kindMembers.length === 7,
+      kindMembers.join('|') || 'PARSED NOTHING — the union moved',
+    )
+    // The timing constants are mirrors of real behaviour elsewhere in the app.
+    // A mirror that stops matching is worse than no mirror: the SDK would poll
+    // against a freshness window the runner does not keep.
+    const hlExecSrc = readFileSync('lib/hyperliquid-exec.ts', 'utf8')
+    const runnerSrc = readFileSync('lib/jobs-runner.ts', 'utf8')
+    check(
+      'desk wire: HL_NONCE_LIFE_MS and LEG_OFFER_TTL_MS equal their real twins (hyperliquid-exec HL_NONCE_SIGNABLE_MS, jobs-runner OFFER_TTL_MS) — the wire may not promise a window the runner does not keep',
+      constValue(wireSrc, 'HL_NONCE_LIFE_MS') === constValue(hlExecSrc, 'HL_NONCE_SIGNABLE_MS') &&
+        constValue(wireSrc, 'LEG_OFFER_TTL_MS') === (runnerSrc.match(/const OFFER_TTL_MS = ([^\n/]+)/)?.[1]?.trim().replace(/\s/g, '') ?? null) &&
+        constValue(wireSrc, 'HL_DOMAIN_CHAIN_ID') === '1337',
+      `nonce ${constValue(wireSrc, 'HL_NONCE_LIFE_MS')} vs ${constValue(hlExecSrc, 'HL_NONCE_SIGNABLE_MS')}, offer ${constValue(wireSrc, 'LEG_OFFER_TTL_MS')} vs ${runnerSrc.match(/const OFFER_TTL_MS = ([^\n/]+)/)?.[1]?.trim()}`,
+    )
+
     // The SDK mirror (Pantessa/sdk src/desk.ts) lives outside this repo — the
-    // squad's sibling worktree, or a published checkout. Pin it when present.
+    // squad's sibling worktree, or a published checkout. Pin it when present;
+    // a drift is the SDK lane's to close and the file is absent on CI, so it
+    // reports as a gap rather than as a website red.
     const sdkPaths = ['../sdk-agent-desk/src/desk.ts', '../sdk/src/desk.ts']
     const sdkPath = sdkPaths.find((p) => { try { readFileSync(p, 'utf8'); return true } catch { return false } })
     if (sdkPath) {
       const sdkSrc = readFileSync(sdkPath, 'utf8')
-      // Cross-repo: a drift here is the SDK lane's to close, and the file is
-      // absent on CI — so it reports as a gap, not as a website red.
-      const sdkMissing = WIRE_TYPES.filter((t) => !new RegExp(`export (type|interface) ${t}\\b`).test(sdkSrc))
+      const sdkMissing = [
+        ...WIRE_TYPES.filter((t) => !new RegExp(`export (type|interface) ${t}\\b`).test(sdkSrc)),
+        ...WIRE_CONSTS.filter((c) => !new RegExp(`export const ${c}\\b`).test(sdkSrc)),
+      ]
       gap(
-        `desk wire: the SDK mirror (${sdkPath}) exports the same four names`,
+        `desk wire: the SDK mirror (${sdkPath}) exports the same four types and five constants`,
         sdkMissing.length === 0,
         'SDK-lane',
         sdkMissing.length ? `missing: ${sdkMissing.join(', ')}` : 'in sync',
       )
-      const sdkKinds = (sdkSrc.match(/export type DeskLegKind = ([^\n]+)/)?.[1] ?? '')
-        .split('|')
-        .map((s) => s.trim().replace(/['"]/g, ''))
-        .filter(Boolean)
+      const sdkKinds = unionMembers(sdkSrc, 'DeskLegKind')
       check(
-        'desk wire: DeskLegKind members are IDENTICAL in the website and the SDK (order-insensitive)',
-        sdkKinds.length === kindMembers.length && kindMembers.every((k) => sdkKinds.includes(k)),
+        'desk wire: DeskLegKind members are IDENTICAL in the website and the SDK, order-insensitive',
+        sdkKinds.length === kindMembers.length && kindMembers.length > 0 && kindMembers.every((k) => sdkKinds.includes(k)),
         `website=[${kindMembers.join('|')}] sdk=[${sdkKinds.join('|')}]`,
+      )
+      const constDrift = WIRE_CONSTS.filter((c) => constValue(wireSrc, c) !== constValue(sdkSrc, c))
+      check(
+        'desk wire: every timing constant has the SAME VALUE in both repos (the SDK polls and re-signs on these numbers)',
+        constDrift.length === 0,
+        constDrift.map((c) => `${c}: ${constValue(wireSrc, c)} vs ${constValue(sdkSrc, c)}`).join('; ') || WIRE_CONSTS.map((c) => `${c}=${constValue(wireSrc, c)}`).join(' '),
+      )
+      const fieldDrift = (['DeskLegView', 'DeskLegResult', 'DeskNext'] as const)
+        .map((t) => {
+          const a = ifaceFields(wireSrc, t)
+          const b = ifaceFields(sdkSrc, t)
+          const only = [...a.filter((f) => !b.includes(f)).map((f) => `+${t}.${f}`), ...b.filter((f) => !a.includes(f)).map((f) => `-${t}.${f}`)]
+          return { t, a, only }
+        })
+        .filter((r) => r.only.length > 0 || r.a.length === 0)
+      gap(
+        'desk wire: DeskLegView, DeskLegResult and DeskNext carry the same FIELDS in both repos (a field only one side knows is a value silently dropped on the way to the signer)',
+        fieldDrift.length === 0,
+        'A9→MCP/SDK',
+        fieldDrift.flatMap((r) => (r.a.length === 0 ? [`${r.t}: parsed nothing`] : r.only)).join(', ') || 'in sync',
       )
       check(
         'desk wire: the SDK never re-serializes an HL action it was handed (#850 key order) — no JSON.parse(JSON.stringify(action))',
@@ -29901,28 +29966,52 @@ async function main() {
       )
       // F8: the SDK ships its OWN copy of deskExecuteConsentMessage. The desk
       // RECOVERS the signer from the text it builds itself, so one byte of
-      // drift and every agent's consent recovers to nothing. Adding the
-      // `issuedAt` line of Ask A4 on one side only is exactly that byte.
+      // drift and every agent's consent recovers to a different address —
+      // which reads like a wallet bug, not a version skew. Round 2 ships the
+      // `Issued at:` line (F4), and it lands in one repo first by construction.
       const sdkConsent = sdkSrc.slice(sdkSrc.indexOf('export function deskExecuteConsentMessage'))
       const sdkConsentBody = sdkConsent.slice(0, sdkConsent.indexOf('\n}'))
       const wantLines = deskExecuteConsentMessage('<ID>', '<WALLET>', '<ISSUED_AT>').split('\n') // round 2: the text gained `Issued at:`; the last line is still the sentence
       const sdkLineCount = (sdkConsentBody.match(/^\s{4}['"`]/gm) ?? []).length
+      // The sentinels come back LOWERCASED in the wallet line (the text
+      // lowercases it), so this filter has to be case-insensitive — it read
+      // `Wallet: <wallet>` as a constant line and reported a false drift.
+      const constantLines = wantLines.filter((l) => !/<id>|<wallet>/i.test(l))
       check(
-        'desk wire: the SDK\'s copy of the execute consent text is BYTE-identical to the desk\'s (the desk recovers the signer from its OWN text — one byte of drift and every agent\'s consent recovers to nothing)',
-        sdkConsentBody.includes(wantLines[0]) &&
-          sdkConsentBody.includes(wantLines[wantLines.length - 1]) &&
+        'desk wire: the SDK\'s copy of the execute consent text is BYTE-identical to the desk\'s, line count included (the desk recovers the signer from its OWN text — one byte of drift and every agent\'s consent recovers to nothing)',
+        constantLines.every((l) => sdkConsentBody.includes(l)) &&
           /Intent: \$\{intentId\}/.test(sdkConsentBody) &&
           /Wallet: \$\{wallet\.toLowerCase\(\)\}/.test(sdkConsentBody) &&
           sdkLineCount === wantLines.length,
-        `${sdkLineCount} sdk lines vs ${wantLines.length} desk lines`,
+        `${sdkLineCount} sdk lines vs ${wantLines.length} desk lines${constantLines.filter((l) => !sdkConsentBody.includes(l)).length ? ` · desk-only: ${constantLines.filter((l) => !sdkConsentBody.includes(l)).join(' | ').slice(0, 90)}` : ''}`,
       )
       check(
         'desk wire: the SDK\'s leg classifier is named for the wire it mirrors, so a reader finds both halves (website legViewOf ↔ sdk legViewOfStep)',
         /export function legViewOf(Step)?\b/.test(sdkSrc) && /export function legViewOf\b/.test(wireSrc),
       )
+      // The result allowlist is the REAL contract for what an agent may send:
+      // a key it accepts but the wire type never names is a value no reader of
+      // the wire knows to produce, and a key the type names but the allowlist
+      // drops is silently thrown away.
+      let driveSrc: string | null = null
+      try { driveSrc = readFileSync('lib/desk-drive.ts', 'utf8') } catch { driveSrc = null }
+      if (driveSrc) {
+        const allow = (driveSrc.match(/RESULT_KEYS[^=]*=\s*(?:new Set\()?\[([^\]]+)\]/)?.[1] ?? '')
+          .split(',')
+          .map((k) => k.trim().replace(/['"`]/g, ''))
+          .filter(Boolean)
+        const resultFields = ifaceFields(wireSrc, 'DeskLegResult')
+        gap(
+          'desk wire: every key broker_done accepts in a leg result is named by DeskLegResult, and vice versa (the allowlist IS the contract an agent codes against)',
+          allow.length > 0 && allow.every((k) => resultFields.includes(k)) && resultFields.every((k) => allow.includes(k)),
+          'A9→MCP/SDK',
+          allow.length === 0 ? 'could not read RESULT_KEYS' : `allow-only=[${allow.filter((k) => !resultFields.includes(k)).join(',')}] type-only=[${resultFields.filter((k) => !allow.includes(k)).join(',')}]`,
+        )
+      }
     } else {
       gap('desk wire: the SDK mirror src/desk.ts exists and matches', false, 'SDK-lane', `looked in ${sdkPaths.join(', ')}`)
     }
+    } // end: the filled wire
 
     // ── 2. the agent-signed path, adversarially, over HTTP ─────────────────
     const deskSecret =
