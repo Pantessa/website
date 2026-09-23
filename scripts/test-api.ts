@@ -30894,6 +30894,30 @@ async function main() {
         )
         // The claim the ruling rests on: there IS no batch endpoint, so every
         // member goes through the one route that already guards per action.
+        // ...and the SDK, which is what actually makes those N calls, makes
+        // them ONE PER MEMBER with that member's OWN expectation. DRIVE's F5
+        // ruling rests on this: per-member `expected` / snapshot / guard /
+        // policy / nonce-age are free "by construction" only if the client
+        // never posts a batch as one call.
+        const sdkForBatch = ['../sdk-agent-desk/src/desk.ts', '../sdk/src/desk.ts'].find((f) => { try { readFileSync(f, 'utf8'); return true } catch { return false } })
+        if (sdkForBatch) {
+          const sdkSrc2 = readFileSync(sdkForBatch, 'utf8')
+          const submitAt = sdkSrc2.indexOf('const submitHl = async')
+          const submitFn = submitAt < 0 ? '' : sdkSrc2.slice(submitAt, submitAt + 1100)
+          const batchLeg = sdkSrc2.slice(sdkSrc2.indexOf('const signed: Array<Member'), sdkSrc2.indexOf('const signed: Array<Member') + 900)
+          check(
+            "hl batch: the SDK posts ONE member per /api/hl/submit call, carrying THAT member's own `expected` and nonce — never a batch array, so the route's per-action guard is what runs N times",
+            /expected: member\.expected/.test(submitFn) &&
+              /nonce: member\.nonce/.test(submitFn) &&
+              !/body: JSON\.stringify\(\{[^}]*batch:/.test(submitFn),
+            submitFn.includes('expected: member.expected') ? 'per-member expected' : 'could not read the submit call',
+          )
+          check(
+            'hl batch: the SDK signs EVERY member before submitting any (no wallet prompt between signatures — the nonce window is shared and a pause ages the whole leg out), then submits in order and STOPS at the first refusal',
+            /for \(const m of members\) signed\.push/.test(batchLeg) && /for \(const m of signed\)/.test(batchLeg) && /break/.test(batchLeg),
+            batchLeg ? 'sign-all-then-submit-in-order' : 'could not read the batch leg',
+          )
+        }
         const apiFiles = readdirSync('app/api/hl')
         check(
           'hl batch: there is NO batch submit endpoint — app/api/hl serves submit (+ delegation), so each member rides the route that re-guards against its own expected, its own snapshot, its own nonce age and the spend policy',
