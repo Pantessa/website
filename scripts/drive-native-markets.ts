@@ -675,8 +675,11 @@ async function brochureFoot(engine: Engine, pathname: string) {
   try {
     await page.goto(`${BASE}${pathname}`, { waitUntil: 'load', timeout: 60_000 })
     await page.waitForTimeout(800)
-    await page.evaluate(`(${SCROLLER_JS}).scrollTo({ top: 1e7, behavior: 'instant' })`)
-    await page.waitForTimeout(300)
+    // A long page (the landing) keeps settling after a jump to its end: wait
+    // until its height holds for two reads, re-landing on the end each time
+    // (one run caught the landing mid-settle, the toggle 100px lower).
+    await page.evaluate(`(async () => { const sc = ${SCROLLER_JS}; let last = -1; for (let i = 0; i < 12; i++) { sc.scrollTo({ top: 1e7, behavior: 'instant' }); await new Promise((r) => setTimeout(r, 250)); if (sc.scrollHeight === last) break; last = sc.scrollHeight } })()`)
+    await page.waitForTimeout(200)
     const r = await page.evaluate(`(() => {
       const pill = document.querySelector('[data-ask-door="pill"]')
       const pr = pill && pill.getClientRects().length ? pill.getBoundingClientRect() : null
