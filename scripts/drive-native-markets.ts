@@ -351,6 +351,35 @@ async function symbolRows(engine: Engine, sym: string) {
   }
 }
 
+// ── Row 5 on /t's Trade tab: the route table + the order card ───────────────
+async function tradeRows(engine: Engine) {
+  const { browser, page } = await newPage(engine)
+  try {
+    await openSymbol(page, 'ETH', 'trade')
+    await page.waitForSelector('.mkt-route__chip', { timeout: 20_000 }).catch(() => {})
+    await page.waitForTimeout(500)
+    const q = async (sel: string) => {
+      const xs = await sizes(page, sel)
+      return { n: xs.length, h: minOf(xs, 'h'), w: minOf(xs, 'w') }
+    }
+    const t = {
+      filters: await q('.mkt-routes__filter'),
+      chips: await q('.mkt-route__chip'),
+      presets: await q('.mkt-order__preset'),
+      custom: await q('.mkt-order__custom'),
+      sides: await q('.mkt-order__side'),
+      send: await q('.mkt-order__send'),
+      overview: await q('.mkt-chip'),
+    }
+    record[`${engine}.trade`] = t
+    const line = Object.entries(t).map(([k, v]) => `${k} ${v.n ? `${v.h}px (${v.n})` : 'none'}`).join(' · ')
+    if (MEASURE_ONLY || TAG === 'before') note(5, `${engine} /t/ETH Trade tab`, line)
+    else judge(5, `${engine} /t/ETH Trade tab: route filters, route chips, order presets, the amount field, Buy/Sell and Send ≥44px tall`, Object.values(t).every((v) => !v.n || v.h >= 44), line)
+  } finally {
+    await browser.close()
+  }
+}
+
 // ── Row 3 proof: real synthetic touch gestures over the chart (Chrome) ─────
 async function chartGestures(sym: string) {
   const { browser, page } = await newPage('chrome-pixel7')
@@ -661,6 +690,7 @@ async function main() {
   if (ROWS.has(1) || ROWS.has(3) || ROWS.has(5)) {
     for (const s of ['AAPL', 'ETH']) await symbolRows('chrome-iphone375', s)
     await symbolRows('chrome-pixel7', 'ETH')
+    await tradeRows('chrome-iphone375')
   }
   if (ROWS.has(3)) await chartGestures('ETH')
   if (ROWS.has(4)) {

@@ -33143,6 +33143,7 @@ async function main() {
       '.wl__rowMain { min-height: 48px; }',
       '.wl__rowMore { opacity: 1; }',
       '.wl__icon { width: 44px; height: 44px; }',
+      '.mkt-routes__filter, .mkt-route__chip, .mkt-order__preset, .mkt-order__custom, .mkt-order__side, .mkt-order__send, .mkt-chip { min-height: 44px; }',
     ]
     const nmMissing = nm44.filter((r) => !nmTouch.includes(r))
     check(

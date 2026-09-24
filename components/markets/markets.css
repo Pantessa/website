@@ -254,6 +254,9 @@ button.mk-held:hover { border-color: var(--accent); }
   .sym .mkt-tool { width: 44px; height: 44px; }
   .sym__tab { min-height: 44px; }
   .mk-askdock__bar { min-height: 48px; }
+  /* The Trade tab: route filters 28 · route chips 32 · order presets and the
+     amount field 34 · Buy/Sell 38 · Send 40 on main — and the Overview chips. */
+  .mkt-routes__filter, .mkt-route__chip, .mkt-order__preset, .mkt-order__custom, .mkt-order__side, .mkt-order__send, .mkt-chip { min-height: 44px; }
   .wl__rowMain { min-height: 48px; }
   .wl__rowMore { opacity: 1; }
   .wl__icon { width: 44px; height: 44px; }
