@@ -110,3 +110,39 @@ export function shouldDismissDrag(delta: number, velocityPxPerMs: number, panelS
  *  frame (no z-index needed), modals cover the page, a sheet covers modals,
  *  the sign-in door covers everything. */
 export const Z = { askPill: 35, spineBar: 50, askDoor: 60, modal: 70, dashDrawer: 80, sheet: 90, banner: 90, door: 100 } as const
+
+// ── SHELL round 2 (2026-09-24): what a URL change does to the screen's scroll.
+
+/** The last history operation that CHANGED THE PATHNAME, as the scroll
+ *  memory saw it (components/mobile/PhoneShellMount). `null` = a pathname
+ *  change the wrappers never saw (installed late, a hard navigation). */
+export type HistoryOp = 'pop' | 'push' | 'replace' | null
+
+/** What the screen's scroll does when the pathname changes:
+ *  - `pop` (back/forward): restore the remembered position;
+ *  - `push` (any pushState — Next's router.push included) or an unseen change:
+ *    land at the top, even when the DOM is reused (/t/AAPL → /t/TSLA);
+ *  - `replace` NEVER resets: `window.history.replaceState` is UI state catching
+ *    the URL up — the chat's /chat → /chat/<id> after its first turn (CHAT's
+ *    finding, round 2), `syncTabParam`, a wallet-restore — and `router.replace`
+ *    swaps the screen under the same entry. The same screen is still on the
+ *    page, so its scroll stays. A replace that wants the top calls
+ *    scrollAppToTop() itself. */
+export function scrollKindFor(lastOp: HistoryOp): 'restore' | 'top' | 'keep' {
+  if (lastOp === 'pop') return 'restore'
+  if (lastOp === 'replace') return 'keep'
+  return 'top'
+}
+
+/** Does a pushState/replaceState `url` argument change the pathname the
+ *  screen shows? A query-only change (`?tab=links`), a hash, a state-only
+ *  call (no url) and a same-path URL do not — the screen stays, and so must
+ *  its scroll. Resolved the way the browser resolves it (against `base`). */
+export function historyUrlChangesPath(currentPathname: string, url: string | URL | null | undefined, base: string): boolean {
+  if (url == null || url === '') return false
+  try {
+    return new URL(String(url), base).pathname !== currentPathname
+  } catch {
+    return false
+  }
+}

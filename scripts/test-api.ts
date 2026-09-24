@@ -33850,6 +33850,19 @@ async function main() {
     const kbSrc = await readSrc('components/mobile/useSoftKeyboard.ts')
     check('native shell: useSoftKeyboard pans the page back (window.scrollTo(0, 0)) only after a keyboard that WAS up closes, and only in the phone posture — a desktop blur must never scroll the page to the top',
       /const wasOpen = last\.open/.test(kbSrc) && /if \(wasOpen && !last\.open\) settle\(\)/.test(kbSrc) && /const settle = \(\) => \{\s*if \(!isPhoneViewport\(\)\) return/.test(kbSrc) && /keyboardState\(window\.innerHeight, vv\.height, vv\.offsetTop\)/.test(kbSrc))
+    // Round 2: what a URL change does to the screen's scroll. A REPLACE never
+    // resets (the chat's /chat → /chat/<id> catch-up after its first turn is a
+    // replaceState and used to scroll the thread to 0 — CHAT's finding).
+    check('native shell: scrollKindFor — pop restores, push (and an unseen change) lands at the top, replace KEEPS the scroll',
+      PS.scrollKindFor('pop') === 'restore' && PS.scrollKindFor('push') === 'top' && PS.scrollKindFor(null) === 'top' && PS.scrollKindFor('replace') === 'keep')
+    check('native shell: historyUrlChangesPath counts only a pathname change — a query-only (?tab=), a hash, a state-only call and a same-path URL do not; relative and absolute URLs resolve like the browser',
+      PS.historyUrlChangesPath('/chat', '/chat/abc', 'http://localhost/chat') === true && PS.historyUrlChangesPath('/chat', '/chat?tab=links', 'http://localhost/chat') === false && PS.historyUrlChangesPath('/t/AAPL', '#trade', 'http://localhost/t/AAPL') === false &&
+        PS.historyUrlChangesPath('/t/AAPL', null, 'http://localhost/t/AAPL') === false && PS.historyUrlChangesPath('/t/AAPL', undefined, 'http://localhost/t/AAPL') === false && PS.historyUrlChangesPath('/t/AAPL', '', 'http://localhost/t/AAPL') === false &&
+        PS.historyUrlChangesPath('/t/AAPL', '/t/TSLA', 'http://localhost/t/AAPL') === true && PS.historyUrlChangesPath('/t/AAPL', 'http://localhost/t/TSLA?x=1', 'http://localhost/t/AAPL') === true && PS.historyUrlChangesPath('/t/AAPL', 'TSLA', 'http://localhost/t/AAPL') === true && PS.historyUrlChangesPath('/t/AAPL', 'http://[', 'http://localhost/t/AAPL') === false)
+    const mountSrc = await readSrc('components/mobile/PhoneShellMount.tsx')
+    check('native shell: ScrollMemory wraps pushState/replaceState by METHOD (marking only pathname-changing calls), watches popstate for a pathname change, and decides through scrollKindFor — a replace leaves the scroller alone',
+      /h\.pushState = pushWrapped/.test(mountSrc) && /h\.replaceState = replaceWrapped/.test(mountSrc) && /mark\('push', url\)/.test(mountSrc) && /mark\('replace', url\)/.test(mountSrc) && /historyUrlChangesPath\(window\.location\.pathname, url, window\.location\.href\)/.test(mountSrc) &&
+        /if \(window\.location\.pathname !== seenPath\.current\) lastOp\.current = 'pop'/.test(mountSrc) && /how = scrollKindFor\(lastOp\.current\)/.test(mountSrc) && /if \(how === 'keep'\) \{\s*\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*writeMemory\(scrollMemoryKey\(location\.pathname, location\.search\), appScrollTop\(\)\)\s*return\s*\}/.test(mountSrc) && /if \(h\.pushState === pushWrapped\) h\.pushState = origPush/.test(mountSrc) && /window\.addEventListener\(SHEET_PUSH_AS_REPLACE_EVENT, onPushAsReplace\)/.test(mountSrc))
     check('native shell: lib/app-scroller keeps the stubbed exports and adds scrollAppToTop / appScrollDepthPct / appScrollExtent / hasAppScroller (NAV\'s tap-the-lit-tab and the journey depth read these)',
       ['getAppScroller', 'appScrollTop', 'scrollAppTo', 'onAppScroll', 'scrollAppToTop', 'appScrollDepthPct', 'appScrollExtent', 'hasAppScroller'].every((k) => typeof (AS as Record<string, unknown>)[k] === 'function'))
 
@@ -33883,13 +33896,19 @@ async function main() {
     }
     check('native shell: the served CSS carries the frame — below lg html:has([data-app-frame]) is height 100% + overflow hidden + no overscroll, its body clips, the frame is a 100dvh column, the scroller is flex 1 / min-height 0 / overflow-y auto / overscroll contain (matched as declaration SETS: Lightning reorders + collapses)',
       phoneBlocks > 0 && ruleWith(nsCss, 'html:has([data-app-frame])', ['height:100%', 'overflow:hidden', 'overscroll-behavior:none']) &&
-        ruleWith(nsCss, 'html:has([data-app-frame]) body', ['height:100%', 'min-height:0', 'overflow:clip', 'overscroll-behavior:none']) &&
+        ruleWith(nsCss, 'html:has([data-app-frame]) body', ['height:100%', 'min-height:0', 'overflow:clip', 'overscroll-behavior:none', 'display:flex', 'flex-direction:column']) &&
+        ruleWith(nsCss, 'html:has([data-app-frame]) body > *', ['flex-shrink:0']) && ruleWith(nsCss, 'html:has([data-app-frame]) body > [data-app-frame]', ['flex-shrink:1', 'min-height:0']) && ruleWith(nsCss, 'html:has([data-app-frame]) body > :has(> [data-app-frame])', ['flex-shrink:1', 'min-height:0']) &&
         ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame][data-app-frame]', ['display:flex', 'flex-direction:column', 'height:100dvh', 'min-height:0', 'max-height:none', 'padding:env(safe-area-inset-top)env(safe-area-inset-right)0env(safe-area-inset-left)', 'overflow:hidden', 'overscroll-behavior:none']) &&
         ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame] [data-app-scroll][data-app-scroll]', ['flex:auto|flex:1 1auto|flex:11auto', 'min-height:0', 'max-height:none', 'overflow:clipauto|overflow-y:auto', 'overscroll-behavior-y:contain']),
       `${nsHrefs.length} stylesheets, ${phoneBlocks} phone blocks`)
     check('native shell: the served CSS pins the bar IN FLOW as the frame\'s last row (`[data-app-frame] > [data-spine-bar]` static, order 999) with the fixed-bar belt for a bar that is not a direct child',
       ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame] > [data-spine-bar][data-spine-bar]', ['position:static', 'order:999', 'flex:none|flex:0 0auto|flex:00auto', 'width:auto', 'inset:auto']) &&
         ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame][data-app-frame]:has([data-spine-bar]):not(:has(> [data-spine-bar]))', ['padding-bottom:calc(var(--spine-bar-h,49px)+env(safe-area-inset-bottom))']))
+    // Round 2: overscroll, pinned on its own so a pull past either end never
+    // drags the page or the bar (the coordinator's ask; declaration SETS).
+    check('native shell: overscroll — below lg html:has([data-app-frame]) and its body are overscroll-behavior none, the frame is none, the scroller is overscroll-behavior-y contain',
+      ruleWith(nsCss, 'html:has([data-app-frame])', ['overscroll-behavior:none']) && ruleWith(nsCss, 'html:has([data-app-frame]) body', ['overscroll-behavior:none']) &&
+        ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame][data-app-frame]', ['overscroll-behavior:none']) && ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame] [data-app-scroll][data-app-scroll]', ['overscroll-behavior-y:contain']))
     check('native shell: the served CSS shrinks the frame onto the keyboard (html[data-keyboard] → 100dvh − --kb-inset) and hides the bar while it is up',
       ruleWith(nsCss, 'html[data-keyboard]:has([data-app-frame]) body [data-app-frame][data-app-frame]', ['height:calc(100dvh-var(--kb-inset,0px))']) &&
         ruleWith(nsCss, 'html[data-keyboard]:has([data-app-frame]) body [data-app-frame] [data-spine-bar][data-spine-bar]', ['display:none']))
@@ -33935,10 +33954,13 @@ async function main() {
     check('native shell: native-shell.css never sets transform / filter / backdrop-filter / perspective / contain / container-type / will-change on the frame or the scroller (a fixed full-screen chart inside the scroller must stay fixed to the viewport)',
       !/\[data-app-(frame|scroll)\][^{]*\{[^}]*(transform|filter|perspective|contain:|container-type|will-change)/.test(nativeSrc))
 
-    // The Sheet's history coordinator (lib/sheet-history): THE HANDOFF RACE.
-    // One tap closes sheet A and opens sheet B in the same commit; a naive
-    // history.back() from A pops B's fresh entry and B closes a frame after
-    // it opens (PAGES measured it). Driven here over a fake history.
+    // The Sheet's history coordinator (lib/sheet-history), driven over a fake
+    // history that mimics the browser: Next's patched pushState stamps __NA +
+    // the tree onto a plain state; a traversal (go) lands in a LATER task
+    // than the timer that asked for it (`tick()` runs the macrotasks,
+    // `advance(ms)` the timers, `land()` the traversals, `userBack()` is the
+    // back gesture). The cases: THE HANDOFF (PAGES), CLOSE UNDER (PAGES), the
+    // link inside a sheet (MARKETS/the coordinator), in-flight opens, unload.
     {
       const SH = await import('../lib/sheet-history')
       type Entry = Record<string, unknown>
@@ -33946,84 +33968,212 @@ async function main() {
         const entries: Entry[] = [{ __NA: true, tree: 't0' }]
         let pos = 0
         let pop: (() => void) | null = null
-        // The fake mimics the browser: Next's patched pushState stamps __NA + the
-        // tree onto a plain state; a traversal (back) lands in a LATER task than
-        // the timer that asked for it — `tick()` runs the timers, `land()` the
-        // traversals, so an open between the two is the real in-flight window.
         const later: (() => void)[] = []
+        let waits: { at: number; cb: () => void }[] = []
         const traversals: (() => void)[] = []
+        let clock = 0
+        let nav = false
+        let unload = false
         const host: import('../lib/sheet-history').SheetHistoryHost = {
           state: () => entries[pos],
           push: (st) => { entries.splice(pos + 1); entries.push({ __NA: true, tree: entries[pos].tree, ...st }); pos = entries.length - 1 },
           replace: (st) => { entries[pos] = st },
-          back: () => { traversals.push(() => { pos = Math.max(0, pos - 1); pop?.() }) },
+          go: (n) => { traversals.push(() => { pos = Math.max(0, pos - n); pop?.() }) },
           onPop: (cb) => { pop = cb },
           later: (cb) => { later.push(cb) },
+          wait: (ms, cb) => { waits.push({ at: clock + ms, cb }) },
+          navigating: () => nav,
+          unloading: () => unload,
+          now: () => clock,
         }
         const tick = () => { while (later.length) later.shift()!() }
         const land = () => { while (traversals.length) traversals.shift()!() }
-        return { h: SH.createSheetHistory(host), entries: () => entries.slice(0, pos + 1), tick, land, host }
+        const advance = (ms: number) => { clock += ms; for (;;) { const due = waits.filter((w) => w.at <= clock).sort((a, b) => a.at - b.at); if (!due.length) break; waits = waits.filter((w) => w.at > clock); for (const w of due) w.cb() } }
+        const userBack = () => { pos = Math.max(0, pos - 1); pop?.() }
+        const h = SH.createSheetHistory(host)
+        // Next's HistoryUpdater push, as the browser host wires it: the
+        // coordinator may turn it into a replace (rule 2).
+        const nextPush = (url: string, tree: string) => { const st = { __NA: true, tree, url }; if (h.interceptPush(st, url, 'http://localhost/origin')) host.replace(st); else host.push(st) }
+        return { h, entries: () => entries.slice(0, pos + 1), tick, land, advance, userBack, host, nextPush, setNav: (v: boolean) => { nav = v }, setUnload: (v: boolean) => { unload = v }, pending: () => waits.length }
       }
-      // A: open → close by a tap → the entry is popped on the next tick, one popstate, nothing else.
+      // 1. A sheet owns one entry; a tap-close pops it on the next tick (never synchronously); the swallowed popstate never calls onBack.
       {
-        const { h, entries, tick, land } = mk()
+        const { h, entries, tick, land, advance } = mk()
         const backs: string[] = []
         h.opened({ key: 'A', onBack: () => backs.push('A') })
         const afterOpen = entries().length
         h.closed('A', 'other')
-        const beforeTick = entries().length
-        tick(); land()
-        check('native shell: sheet history — a sheet owns one entry {sheet:key}; closing it by a tap pops that entry on the NEXT tick (not synchronously), and the swallowed popstate never calls onBack', afterOpen === 2 && beforeTick === 2 && entries().length === 1 && backs.length === 0 && (entries()[0] as { __NA?: boolean }).__NA === true, JSON.stringify({ afterOpen, beforeTick, after: entries().length, backs }))
+        tick(); advance(SH.SHEET_QUIET_MS - 1); land()
+        const beforeQuiet = entries().length
+        advance(1); land()
+        check('native shell: sheet history — a sheet owns one entry {sheet:key}; closing it by a tap consumes that entry after the QUIET window (1.5s; never synchronously, never on a tick), and the swallowed popstate never calls onBack', afterOpen === 2 && beforeQuiet === 2 && entries().length === 1 && backs.length === 0 && (entries()[0] as { __NA?: boolean }).__NA === true && SH.SHEET_QUIET_MS === 1500, JSON.stringify({ afterOpen, beforeQuiet, after: entries().length, backs }))
       }
-      // The race: A closes and B opens in the same commit → B TAKES OVER A's entry (replaceState keeps Next's fields), the queued pop is cancelled, back closes B.
+      // 2. THE HANDOFF: A closes and B opens in one commit → B takes over A's entry (still __NA); back closes B, not A.
       {
-        const { h, entries, tick, land, host } = mk()
+        const { h, entries, tick, land, advance, userBack } = mk()
         const backs: string[] = []
         h.opened({ key: 'A', onBack: () => backs.push('A') })
         h.closed('A', 'other')
         h.opened({ key: 'B', onBack: () => backs.push('B') })
         const top = entries()[entries().length - 1] as { sheet?: string; __NA?: boolean }
         const len = entries().length
-        tick(); land()
+        tick(); advance(4000); land()
         const lenAfterTick = entries().length
         const dbg = h.debug()
-        // the real back gesture
-        host.back(); land()
+        userBack()
         check('native shell: sheet history — THE HANDOFF: A closes and B opens in one commit → B takes over A\'s entry (still __NA), the pending pop is cancelled (2 entries before and after the tick), and the back gesture closes B, not A', len === 2 && top.sheet === 'B' && top.__NA === true && lenAfterTick === 2 && dbg.pendingBack === null && dbg.stack.join() === 'B' && backs.join() === 'B' && entries().length === 1, JSON.stringify({ len, top, lenAfterTick, dbg, backs, after: entries().length }))
       }
-      // A sheet that opens while a pop is IN FLIGHT waits for that popstate, then claims its own entry.
+      // 3. A sheet opening while our pop is IN FLIGHT waits for that popstate, then claims its own entry.
       {
-        const { h, entries, tick, land } = mk()
+        const { h, entries, tick, land, advance } = mk()
         const backs: string[] = []
         h.opened({ key: 'A', onBack: () => backs.push('A') })
         h.closed('A', 'other')
-        // the tick fires the back() (queued), and B opens before the popstate lands
-        tick() // runs the pending-back timer → host.back() queues the traversal
+        tick(); advance(SH.SHEET_QUIET_MS) // the quiet window passes → the traversal is queued
         const inFlight = h.debug().backInFlight
         h.opened({ key: 'B', onBack: () => backs.push('B') })
         const deferred = h.debug().deferred
-        land() // the traversal lands: A's entry popped, then B claims its own
+        land() // the traversal lands: A's entry gone, then B claims its own
         const dbg = h.debug()
-        check('native shell: sheet history — a sheet opening while a pop is in flight defers until that popstate, then pushes its own entry (one entry for B, B on the stack, no onBack fired)', inFlight === 'A' && deferred === 'B' && dbg.backInFlight === null && dbg.deferred === null && dbg.stack.join() === 'B' && entries().length === 2 && (entries()[1] as { sheet?: string }).sheet === 'B' && backs.length === 0, JSON.stringify({ inFlight, deferred, dbg, entries: entries(), backs }))
+        check('native shell: sheet history — a sheet opening while a pop is in flight defers until that popstate, then pushes its own entry (one entry for B, B on the stack, no onBack fired)', inFlight === 1 && deferred === 'B' && dbg.backInFlight === 0 && dbg.deferred === null && dbg.stack.join() === 'B' && entries().length === 2 && (entries()[1] as { sheet?: string }).sheet === 'B' && backs.length === 0, JSON.stringify({ inFlight, deferred, dbg, entries: entries(), backs }))
       }
-      // The page moved on (a link inside the sheet pushed a new URL) → the entry is LEFT, never popped (that would undo the navigation).
+      // 4. The page moved on before the tick (a link in the sheet pushed a new URL): the entry is LEFT, never popped — and a later back that lands on that stale entry skips it.
       {
-        const { h, entries, tick, land, host } = mk()
+        const { h, entries, tick, land, advance, host, userBack } = mk()
         h.opened({ key: 'A', onBack: () => {} })
         h.closed('A', 'other')
-        host.push({ __NA: true, tree: 'new-page' })
-        tick(); land()
-        check('native shell: sheet history — if the page navigated before the tick, the closed sheet\'s entry stays behind rather than popping the new page', entries().length === 3 && (entries()[2] as { tree?: string }).tree === 'new-page' && h.debug().backInFlight === null)
+        host.push({ __NA: true, tree: 'new-page' }) // a push that bypassed interceptPush (a raw one)
+        tick(); advance(4000); land()
+        const left = entries().length === 3 && (entries()[2] as { tree?: string }).tree === 'new-page' && h.debug().backInFlight === 0
+        userBack() // from the new page onto A's stale entry → the coordinator skips it
+        land()
+        check('native shell: sheet history — if the page navigated before the tick, the closed sheet\'s entry stays behind rather than popping the new page; a later back that lands on that stale sheet entry is skipped with one more traversal (no dead press)', left && entries().length === 1 && (entries()[0] as { tree?: string }).tree === 't0', JSON.stringify({ left, entries: entries() }))
       }
-      // Stacked sheets: B over A → back closes B, then A.
+      // 5. Stacked sheets: B over A → back closes B, then A.
       {
-        const { h, entries, land, host } = mk()
+        const { h, entries, land, userBack } = mk()
         const backs: string[] = []
         h.opened({ key: 'A', onBack: () => backs.push('A') })
         h.opened({ key: 'B', onBack: () => backs.push('B') })
-        host.back(); land()
-        host.back(); land()
+        userBack(); land()
+        userBack(); land()
         check('native shell: sheet history — two open sheets are two entries; back closes the top one, then the next', backs.join() === 'B,A' && entries().length === 1)
+      }
+      // 6. CLOSE UNDER: A closes one render after B opened (B pushed while A was open). A's entry is DEAD below B's; B's tap-close pops both; no dead press.
+      {
+        const { h, entries, tick, land, advance } = mk()
+        const backs: string[] = []
+        h.opened({ key: 'A', onBack: () => backs.push('A') })
+        h.opened({ key: 'B', onBack: () => backs.push('B') })
+        h.closed('A', 'other') // under B
+        const dbg = h.debug()
+        h.closed('B', 'other')
+        tick(); advance(4000); land()
+        check('native shell: sheet history — CLOSE UNDER: A closing under B leaves a DEAD entry (stack B, dead A; history 3 entries); B\'s tap-close then pops 1 + the dead count → back to the page\'s own entry, no onBack', dbg.stack.join() === 'B' && dbg.dead.join() === 'A' && entries().length === 1 && backs.length === 0, JSON.stringify({ dbg, entries: entries().length, backs }))
+      }
+      // 6b. CLOSE UNDER, then the user's back: B closes, the back LANDS on A's dead entry → skipped with one more traversal.
+      {
+        const { h, entries, land, userBack } = mk()
+        const backs: string[] = []
+        h.opened({ key: 'A', onBack: () => backs.push('A') })
+        h.opened({ key: 'B', onBack: () => backs.push('B') })
+        h.closed('A', 'other')
+        userBack() // pops B's entry: B closes; we sit on A's dead entry
+        const mid = h.debug()
+        land() // the coordinator's extra traversal lands
+        check('native shell: sheet history — CLOSE UNDER + back: the back closes B and lands on A\'s dead entry, which the coordinator skips (one traversal in flight, then the page\'s own entry)', backs.join() === 'B' && mid.backInFlight === 1 && entries().length === 1 && h.debug().dead.length === 0, JSON.stringify({ backs, mid, entries: entries().length }))
+      }
+      // 7. THE LINK INSIDE A SHEET: the row's tap closes the sheet and starts a navigation; the pop WAITS while a navigation may be under way (rule 1), and Next's push TAKES OVER the pending entry as a replace (rule 2): [pre][target], no stale step.
+      {
+        const { h, entries, tick, land, advance, setNav, pending, nextPush, userBack } = mk()
+        h.opened({ key: 'A', onBack: () => {} })
+        setNav(true) // a tap on a row inside the sheet
+        h.closed('A', 'other')
+        tick() // the grace tick: navigating → wait, no traversal
+        const waiting = pending() > 0 && h.debug().backInFlight === 0 && h.debug().pendingBack === 'A'
+        advance(300) // the RSC fetch takes 300ms …
+        const stillWaiting = h.debug().backInFlight === 0 && entries().length === 2
+        nextPush('/docs', 'docs') // … then Next pushes the target → a replace
+        const afterPush = { len: entries().length, top: entries()[entries().length - 1] as { tree?: string; sheet?: string }, dbg: h.debug() }
+        advance(400); land()
+        userBack(); land() // ONE back → the page's own entry
+        check('native shell: sheet history — THE LINK INSIDE A SHEET: the pending pop waits while Next fetches (300ms, no traversal) and Next\'s push takes the pending entry over as a REPLACE: history [pre, /docs] with no stale step, nothing pending, and ONE back returns to the origin', waiting && stillWaiting && afterPush.len === 2 && afterPush.top.tree === 'docs' && afterPush.top.sheet === undefined && afterPush.dbg.pendingBack === null && afterPush.dbg.stack.length === 0 && entries().length === 1 && (entries()[0] as { tree?: string }).tree === 't0', JSON.stringify({ waiting, stillWaiting, afterPush, after: entries().length }))
+      }
+      // 7c. QA's exact trace: the push lands 4ms after the close (a prefetched RSC payload) — no bounce: the entry is taken over, no traversal ever queued.
+      {
+        const { h, entries, tick, land, advance, setNav, nextPush } = mk()
+        h.opened({ key: 'more', onBack: () => {} })
+        setNav(true)
+        h.closed('more', 'other')
+        nextPush('/docs', 'docs') // 4ms later, before any tick
+        tick(); advance(3000); land()
+        check('native shell: sheet history — QA\'s bounce trace (push 4ms after the close, prefetched): the push takes the entry over, no traversal is ever queued, /docs stays', entries().length === 2 && (entries()[1] as { tree?: string }).tree === 'docs' && h.debug().backInFlight === 0 && h.debug().pendingBack === null, JSON.stringify({ entries: entries(), dbg: h.debug() }))
+      }
+      // 7e. A sheet that closes on the ROUTE CHANGE (PAGES' brochure menu): Next pushes while the sheet is still open → the entry is taken over; the later close finds nothing pending; ONE back → the origin.
+      {
+        const { h, entries, tick, land, advance, nextPush, userBack } = mk()
+        h.opened({ key: 'nav', onBack: () => {} })
+        nextPush('/pricing', 'pricing') // the Link navigates; the sheet is still open
+        const afterPush = { len: entries().length, top: (entries()[1] as { tree?: string }).tree, dbg: h.debug() }
+        h.closed('nav', 'other') // the route-change effect closes it
+        tick(); advance(3000); land()
+        userBack(); land()
+        check('native shell: sheet history — a sheet still OPEN when Next pushes (it closes on the route change): the push takes its entry over ([pre, /pricing], stack empty), the later close pops nothing, ONE back returns to the origin', afterPush.len === 2 && afterPush.top === 'pricing' && afterPush.dbg.stack.length === 0 && h.debug().pendingBack === null && h.debug().backInFlight === 0 && entries().length === 1 && (entries()[0] as { tree?: string }).tree === 't0', JSON.stringify({ afterPush, after: entries() }))
+      }
+      // 7f. THE SIWE SHAPE (the coordinator's addendum): NO tap — the takeover's cover flips off as lib/session lands router.push(redirectTo) 40ms later. No traversal is ever in flight; the push takes the entry over.
+      {
+        const { h, entries, tick, land, advance, nextPush, userBack } = mk()
+        h.opened({ key: 'sigwait', onBack: () => {} })
+        h.closed('sigwait', 'other') // covering → false, no tap anywhere
+        tick(); advance(40)
+        const noTraversal = h.debug().backInFlight === 0 && h.debug().pendingBack === 'sigwait'
+        nextPush('/chat/abc', 'chat') // the redirect lands
+        advance(4000); land()
+        const clean = entries().length === 2 && (entries()[1] as { tree?: string }).tree === 'chat' && h.debug().pendingBack === null && h.debug().backInFlight === 0
+        userBack(); land()
+        check('native shell: sheet history — THE SIWE SHAPE: a tap-less close queues NO traversal; a router.push 40ms later takes the entry over ([pre, /chat/abc]); ONE back returns to the origin', noTraversal && clean && entries().length === 1, JSON.stringify({ noTraversal, clean, after: entries() }))
+      }
+      // 7g. A user's back INSIDE the quiet window pops the dead-pending entry itself: no onBack on the closed sheet, nothing pending after, no double traversal.
+      {
+        const { h, entries, tick, land, advance, userBack } = mk()
+        const backs: string[] = []
+        h.opened({ key: 'A', onBack: () => backs.push('A') })
+        h.closed('A', 'other')
+        tick(); advance(200)
+        userBack(); land()
+        const afterBack = { len: entries().length, dbg: h.debug(), backs: backs.slice() }
+        advance(4000); land()
+        check('native shell: sheet history — a back pressed inside the quiet window pops the dead-pending entry (the page\'s own entry, same URL): no onBack on the closed sheet, nothing pending, no second traversal later', afterBack.len === 1 && afterBack.backs.length === 0 && afterBack.dbg.pendingBack === null && afterBack.dbg.backInFlight === 0 && entries().length === 1, JSON.stringify({ afterBack, after: entries().length }))
+      }
+      // 7d. Our OWN sheet push is never converted, and a push with no sheet entry current is a plain push.
+      {
+        const { h, entries, nextPush } = mk()
+        nextPush('/x', 'x')
+        const plain = entries().length === 2
+        h.opened({ key: 'A', onBack: () => {} })
+        const own = !h.interceptPush({ sheet: 'B' }, 'http://localhost/origin', 'http://localhost/origin')
+        check('native shell: sheet history — interceptPush never converts a push with no sheet entry current, nor a sheet\'s own push (data.sheet), nor a same-URL push', plain && own && !h.interceptPush(null, 'http://localhost/origin', 'http://localhost/origin') && entries().length === 3)
+      }
+      // 7b. A tap that never navigated: the wait expires (SHEET_NAV_WAIT_MS) and the pop fires.
+      {
+        const { h, entries, tick, land, advance, setNav } = mk()
+        h.opened({ key: 'A', onBack: () => {} })
+        setNav(true)
+        h.closed('A', 'other')
+        tick()
+        advance(SH.SHEET_QUIET_MS + SH.SHEET_NAV_WAIT_MS - 100)
+        const before = entries().length
+        advance(400); land()
+        check('native shell: sheet history — a tap that never navigated: after the quiet window + SHEET_NAV_WAIT_MS the pop fires anyway', before === 2 && entries().length === 1 && SH.SHEET_NAV_WAIT_MS === 2000 && SH.SHEET_TAP_NAV_MS === 1500, JSON.stringify({ before, after: entries().length }))
+      }
+      // 8. Unloading: a hard navigation started → no pop ever fires into it.
+      {
+        const { h, entries, tick, land, advance, setUnload } = mk()
+        h.opened({ key: 'A', onBack: () => {} })
+        h.closed('A', 'other')
+        setUnload(true)
+        tick(); advance(4000); land()
+        check('native shell: sheet history — once the page is unloading a pending pop is cancelled (never traverse under a hard navigation)', entries().length === 2 && h.debug().pendingBack === null && h.debug().backInFlight === 0)
       }
     }
 
@@ -34033,8 +34183,12 @@ async function main() {
     // has none of it yet).
     const sheetSrc = await readSrc('components/mobile/Sheet.tsx')
     const sheetCss = await readSrc('components/mobile/mobile.css')
-    check('native shell: Sheet keeps the contract props and adds the dismiss REASON to onClose (scrim · escape · button · swipe · back); every dismissal path names its reason',
-      /onClose: \(reason\?: SheetCloseReason\) => void/.test(sheetSrc) && /'scrim' \| 'escape' \| 'button' \| 'swipe' \| 'back'/.test(sheetSrc) && ["dismiss('scrim')", "dismissRef.current('escape')", "dismiss('button')", "dismiss('swipe')", "dismissRef.current('back')"].every((d) => sheetSrc.includes(d)) &&
+    // Re-pinned (round 2): since 1b the swipe and the back live in the hooks
+    // (useSwipeToClose names 'swipe', useBackToClose names 'back'); the Sheet
+    // itself names scrim / escape / button. NAV caught the stale grep.
+    check('native shell: Sheet keeps the contract props and adds the dismiss REASON to onClose (scrim · escape · button in Sheet.tsx; swipe in useSwipeToClose; back in useBackToClose); every dismissal path names its reason',
+      /onClose: \(reason\?: SheetCloseReason\) => void/.test(sheetSrc) && /'scrim' \| 'escape' \| 'button' \| 'swipe' \| 'back'/.test(sheetSrc) && ["dismiss('scrim')", "dismissRef.current('escape')", "dismiss('button')"].every((d) => sheetSrc.includes(d)) &&
+        /onCloseRef\.current\('swipe'\)/.test(await readSrc('components/mobile/useSwipeToClose.ts')) && /onCloseRef\.current\('back'\)/.test(await readSrc('components/mobile/useBackToClose.ts')) &&
         ['open', 'onClose', 'title', 'ariaLabel', 'side', 'size', 'footer', 'children', 'className', 'id'].every((k) => new RegExp(`^  ${k}\\??:`, 'm').test(sheetSrc)))
     // The two behaviors are HOOKS (the coordinator's ask: the sign-in door and
     // ChatSignInGate cannot be Sheets but need the same back gesture + swipe
@@ -34045,12 +34199,18 @@ async function main() {
     check('native shell: useBackToClose(open, onClose, key) owns the history entry THROUGH lib/sheet-history (opened while open on a phone, released on the effect cleanup, onClose(\'back\') when the entry is popped) and the browser host is the only pushState/replaceState/back in the tree',
       /export function useBackToClose\(open: boolean, onClose: \(reason: 'back'\) => void, key: string\)/.test(backHook) && /sheetHistory\(\)\.opened\(\{/.test(backHook) && /sheetHistory\(\)\.closed\(key, 'other'\)/.test(backHook) && /onCloseRef\.current\('back'\)/.test(backHook) && /if \(!open \|\| !isPhoneViewport\(\)\) return/.test(backHook) &&
         !/history\.(pushState|replaceState|back)\(/.test(code(sheetSrc)) && !/history\.(pushState|replaceState|back)\(/.test(code(backHook)) &&
-        /window\.history\.pushState\(s, '', window\.location\.href\)/.test(shSrc) && /window\.history\.replaceState\(s, '', window\.location\.href\)/.test(shSrc) && /window\.history\.back\(\)/.test(shSrc))
+        /window\.history\.pushState\(s, '', window\.location\.href\)/.test(shSrc) && /window\.history\.replaceState\(s, '', window\.location\.href\)/.test(shSrc) && /window\.history\.go\(-n\)/.test(shSrc) && !/history\.back\(/.test(code(shSrc)))
+    check('native shell: useSwipeToClose never steals a press that starts on a control inside its handle (the head\'s close X, a link in a title): onPointerDown bails on INTERACTIVE targets BEFORE capturing the pointer — every titled Sheet\'s X was dead until this (CHAT measured it)',
+      /export const INTERACTIVE = 'button, a, input, textarea, select, label, summary, \[role="button"\], \[role="switch"\], \[role="link"\], \[role="menuitem"\], \[contenteditable="true"\]'/.test(swipeHook) &&
+        /if \(e\.target instanceof Element && e\.target\.closest\(INTERACTIVE\)\) return\s*(?:\/\/[^\n]*\n\s*)*const p = axis\(e\)/.test(swipeHook) && swipeHook.indexOf('closest(INTERACTIVE)') < swipeHook.indexOf('setPointerCapture'))
     check('native shell: useSwipeToClose(panelRef, onClose, side) is the one drag — pointer events (touch + mouse, button 0), the panel follows, shouldDismissDrag decides, the exit starts from --sheet-from on the panel, phone posture only',
       /export function useSwipeToClose\(panelRef: RefObject<HTMLElement \| null>, onClose: \(reason: 'swipe'\) => void, side: 'bottom' \| 'left' = 'bottom'\)/.test(swipeHook) && /shouldDismissDrag\(delta, d\.v, size\)/.test(swipeHook) && /panel\.style\.setProperty\('--sheet-from', /.test(swipeHook) && /if \(e\.pointerType === 'mouse' && e\.button !== 0\) return/.test(swipeHook) && /if \(!isPhoneViewport\(\) \|\| !panelRef\.current\) return/.test(swipeHook) && /onPointerCancel: end/.test(swipeHook))
     check('native shell: the Sheet wears both hooks (useBackToClose(open, dismiss, historyKey); useSwipeToClose(panelRef, dismiss, side) spread on the grabber and the head), traps Tab, locks the document\'s scroll while open and returns focus to the opener',
       /useBackToClose\(open, dismiss, historyKey\)/.test(sheetSrc) && /const \{ handleProps: dragHandlers \} = useSwipeToClose\(panelRef, dismiss, side\)/.test(sheetSrc) && /className="sheet__grabber" aria-hidden \{\.\.\.dragHandlers\}/.test(sheetSrc) && /className="sheet__head" \{\.\.\.dragHandlers\}/.test(sheetSrc) &&
         /const trapTab = \(e: KeyboardEvent\)/.test(sheetSrc) && /html\.style\.overflow = 'hidden'/.test(sheetSrc) && /opener\?\.focus\?\.\(\{ preventScroll: true \}\)/.test(sheetSrc) && !/shouldDismissDrag|sheetHistory\(\)/.test(code(sheetSrc)))
+    check('native shell: a bottom sheet pads the landscape notch (env(safe-area-inset-left/right)) and, on a landscape phone, may take everything above the status bar',
+      /\.sheet\[data-side='bottom'\] \.sheet__panel \{[^}]*padding: 0 env\(safe-area-inset-right\) env\(safe-area-inset-bottom\) env\(safe-area-inset-left\);/.test(sheetCss) &&
+        /@media \(max-width: 1023px\) and \(orientation: landscape\) and \(max-height: 480px\) \{\s*\.sheet\[data-side='bottom'\] \.sheet__panel \{ max-height: calc\(100dvh - max\(12px, env\(safe-area-inset-top\)\)\); \}/.test(sheetCss))
     check('native shell: mobile.css animates enter and exit (the exit from wherever a drag left the panel), stills everything under prefers-reduced-motion, and lifts a bottom sheet onto the keyboard once for every consumer',
       /\.sheet\[data-phase='open'\]\[data-side='bottom'\] \.sheet__panel \{ animation: sheet-up/.test(sheetCss) && /\.sheet\[data-phase='closing'\]\[data-side='bottom'\] \.sheet__panel \{ animation: sheet-down/.test(sheetCss) && /@keyframes sheet-down \{ from \{ transform: translateY\(var\(--sheet-from, 0px\)\); \}/.test(sheetCss) &&
         /@media \(prefers-reduced-motion: reduce\) \{\s*\.sheet \.sheet__scrim, \.sheet \.sheet__panel \{ animation: none !important/.test(sheetCss) &&
