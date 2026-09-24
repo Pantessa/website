@@ -657,6 +657,14 @@ async function runSheetCase(page: Pw, ctx: Pw, c: SheetCase, errs: string[], P: 
         note(P, `sheet:${c.id}`, 'reopens after a scrim-close', await open())
         await page.keyboard.press('Escape')
         note(P, `sheet:${c.id}`, 'Escape dismisses it', await gone(c.id))
+        // The head's close X: a REAL click (the press starts on the button inside the drag handle).
+        await page.waitForTimeout(300)
+        note(P, `sheet:${c.id}`, 'reopens after an Escape-close', await open())
+        const x = await page.$(`${sheetSel(c.id)} .sheet__close`)
+        if (x) {
+          await x.click()
+          note(P, `sheet:${c.id}`, 'a real click on the head\'s close X dismisses it (the drag handle never steals the press)', await gone(c.id))
+        } else note(P, `sheet:${c.id}`, 'the sheet has a close X (a titled sheet)', c.id === 'ask', 'no .sheet__close — an untitled sheet')
         const end = await state()
         note(P, `sheet:${c.id}`, 'after five open/close rounds the URL is unchanged and the page never reloaded', end.url === start.url && end.nav === 1 && end.mark === 1, JSON.stringify(end))
         // 5. THE HANDOFF (account → wallet): one tap closes A and opens B; B stays; back closes B.

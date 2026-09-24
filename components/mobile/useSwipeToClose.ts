@@ -17,6 +17,9 @@
 import { useRef, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { isPhoneViewport, shouldDismissDrag } from '@/lib/phone-shell'
 
+/** Controls a drag must never steal a press from. */
+export const INTERACTIVE = 'button, a, input, textarea, select, label, summary, [role="button"], [role="switch"], [role="link"], [role="menuitem"], [contenteditable="true"]'
+
 export type SwipeHandleProps = {
   onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void
   onPointerMove: (e: ReactPointerEvent<HTMLElement>) => void
@@ -34,6 +37,11 @@ export function useSwipeToClose(panelRef: RefObject<HTMLElement | null>, onClose
   const onPointerDown = (e: ReactPointerEvent<HTMLElement>) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return
     if (!isPhoneViewport() || !panelRef.current) return
+    // A press that starts on a control INSIDE the handle (the head's close X,
+    // a link in a title) is that control's, never a drag: capturing the
+    // pointer here retargeted the pointerup to the head and the X's click
+    // never fired — every titled Sheet's X was dead (CHAT measured it).
+    if (e.target instanceof Element && e.target.closest(INTERACTIVE)) return
     const p = axis(e)
     drag.current = { id: e.pointerId, start: p, last: p, lastT: performance.now(), v: 0 }
     try {
