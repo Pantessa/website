@@ -50,7 +50,17 @@
   display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; column-gap: 12px; row-gap: 6px; align-items: center;
   padding: 14px 0; border-bottom: 1px solid var(--line); min-width: 0;
 }
-.mkt-route.is-best { background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 10%, transparent), transparent 60%); }
+/* A highlighted row (best out, your drawn line) paints its wash edge to edge
+   of the card, not from the logo: the ::before reaches back through the
+   card's side padding (--mkt-card-px) while the row's content, rules and
+   subgrid tracks stay where they are. isolation keeps the wash (z -1) above
+   the card's own background and under the row's content. */
+.mkt-route.is-best, .mkt-route--level { position: relative; isolation: isolate; }
+.mkt-route.is-best::before, .mkt-route--level::before {
+  content: ''; position: absolute; z-index: -1; pointer-events: none;
+  inset: 0 calc(-1 * var(--mkt-card-px, 0px));
+  background: linear-gradient(90deg, color-mix(in oklab, var(--accent) var(--route-wash, 10%), transparent), transparent 60%);
+}
 .mkt-route__mark { grid-column: 1; grid-row: 1 / span 3; align-self: start; width: 26px; height: 26px; display: inline-grid; place-items: center; border-radius: 8px; background: var(--surf-2, var(--surf-1)); color: var(--fg); overflow: hidden; }
 .mkt-route__lettermark { font-size: 9px; letter-spacing: 0.06em; color: var(--muted); }
 .mkt-route__venue { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -179,7 +189,7 @@
 /* Your-line rows lead their group: they take the list's top rule and the
    venue list under them drops its own (two rules 2px apart read as a seam). */
 .mkt-routes__list--level + .mkt-routes__list { border-top: 0; }
-.mkt-route--level { background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 7%, transparent), transparent 55%); }
+.mkt-route--level { --route-wash: 7%; }
 
 /* ── Fund: the wallet's own chains, then the card; a line for the rest ──── */
 /* A wallet with no chain that can fund the order has no rows here — the

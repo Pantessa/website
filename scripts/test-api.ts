@@ -25809,6 +25809,18 @@ async function main() {
         !/\.mkt-route \{[^}]*grid-template-columns:[^};]*\bauto\b[^};]*\bauto\b/.test(tradeCss),
       `520:${cqBlock(520).length} 800:${cqBlock(800).length}`,
     )
+    // A highlighted row's wash runs edge to edge of the card (2026-09-24): it
+    // was the row's own background, so it started at the logo, 16px in from
+    // the card's side. The ::before reaches back through the card's padding by
+    // the card's own variable, never a copied number.
+    const designCss = (await readFile('app/x402-design.css', 'utf8')).replace(/\s+/g, ' ')
+    check(
+      'MK2/EXEC route table: the best-out and your-line washes bleed to the card edges — a ::before inset by -var(--mkt-card-px), the variable the .mkt-card padding itself reads, and no row paints its own background',
+      /\.mkt-card \{[^}]*--mkt-card-px: \d+px;[^}]*padding: \d+px var\(--mkt-card-px\);/.test(designCss) &&
+        /\.mkt-route\.is-best::before, \.mkt-route--level::before \{[^}]*inset: 0 calc\(-1 \* var\(--mkt-card-px, 0px\)\);/.test(tradeCss) &&
+        /\.mkt-route\.is-best, \.mkt-route--level \{[^}]*isolation: isolate;/.test(tradeCss) &&
+        !/\.mkt-route(\.is-best|--level) \{[^}]*background:/.test(tradeCss),
+    )
   }
 
   // ── MK2/MARKETS ──────────────────────────────────────────────────────────

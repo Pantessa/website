@@ -5446,7 +5446,9 @@
 .mkt-chg--flat { color: var(--muted-2); }
 
 /* cards (rail, tabs) */
-.mkt-card { border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); padding: 14px 16px; }
+/* --mkt-card-px is the side padding; a row highlight inside a card reads it
+   to bleed to the card's edges (RouteTable's best/your-line rows). */
+.mkt-card { --mkt-card-px: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); padding: 14px var(--mkt-card-px); }
 .mkt-card--coming { border-style: dashed; }
 .mkt-card__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .mkt-card__title { font-size: 14px; font-weight: 600; color: var(--fg); }
