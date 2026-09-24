@@ -421,6 +421,16 @@ interface HlPosition {
   leverage?: { value?: number }
 }
 
+/** A perp size in the venue's own units: whole coins keep their integer,
+ *  fractions keep up to 4 significant places and drop trailing zeros
+ *  (0.13 HYPE, 1651 SYRUP, 0.0004 ETH). */
+function fmtHlSize(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0'
+  if (n >= 1000) return n.toLocaleString('en-US', { maximumFractionDigits: 0 })
+  if (n >= 1) return n.toLocaleString('en-US', { maximumFractionDigits: 2 })
+  return n.toLocaleString('en-US', { maximumSignificantDigits: 4 })
+}
+
 const hyperliquidSource: SplashSource = {
   id: 'hyperliquid',
   match: (s) => /hyperliquid/i.test(`${s.slug} ${s.name}`),
@@ -447,10 +457,18 @@ const hyperliquidSource: SplashSource = {
       const size = Number(p.szi ?? 0)
       const pnl = Number(p.unrealizedPnl ?? 0)
       const lev = p.leverage?.value
+      // The row's figure is what the position IS WORTH (the venue's own
+      // positionValue, notional) and how much of the coin that is — a $12
+      // long used to read as "−$0.01 PnL" and nothing else, so the person who
+      // just opened it asked where their $12 went. PnL keeps the tone and
+      // moves into the sub line beside entry and liq.
+      const valueUsd = Math.abs(Number(p.positionValue ?? 0))
+      const pnlText = `${pnl >= 0 ? '+' : '−'}$${Math.abs(pnl).toFixed(2)} PnL`
+      const sizeText = size !== 0 && p.coin ? `${fmtHlSize(Math.abs(size))} ${p.coin}` : null
       return {
         label: `${p.coin} ${size >= 0 ? 'long' : 'short'}${lev ? ` ${lev}x` : ''}`,
-        value: `${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toFixed(2)} PnL`,
-        sub: `entry $${p.entryPx ?? '—'}${p.liquidationPx ? ` · liq $${p.liquidationPx}` : ''}`,
+        value: valueUsd > 0 ? `$${valueUsd.toFixed(2)}${sizeText ? ` · ${sizeText}` : ''}` : sizeText ?? pnlText,
+        sub: [valueUsd > 0 || sizeText ? pnlText : null, `entry $${p.entryPx ?? '—'}`, p.liquidationPx ? `liq $${p.liquidationPx}` : null].filter(Boolean).join(' · '),
         tone: pnl >= 0 ? ('pos' as const) : ('neg' as const),
         chartSymbol: p.coin ?? null,
       }
