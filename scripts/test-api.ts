@@ -23263,7 +23263,9 @@ async function main() {
     for (const [route, html] of [['/markets', mkHtml], ['/t/AAPL', tAapl]] as const) {
       check(
         `${route}: the markets shell — app spine (column + bar) with the MARKETS seat lit, NO brochure nav, the strip (Ask ⌘K rail trigger) above the watchlist inside the side column`,
-        /<div class="mkt-shell"><aside[^>]*aria-label="Workspace"/.test(html) &&
+        // Re-pinned (squad mobile-native, 2026-09-24, SHELL): the shell is the
+        // phone frame now, so its opening tag carries data-app-frame="".
+        /<div class="mkt-shell"(?: data-app-frame="")?><aside[^>]*aria-label="Workspace"/.test(html) &&
           (html.match(/aria-label="Workspace"/g) ?? []).length === 2 &&
           (html.match(/aria-label="MARKETS" aria-current="page"/g) ?? []).length === 2 &&
           !/<header class="nav/.test(html) && !html.includes('nav__tabs') && !html.includes('data-ask-door="nav"') &&
@@ -32580,7 +32582,7 @@ async function main() {
     //    flow — the scroller ends where the bar begins, so no 48/49px
     //    constant can go stale again. The served CSS must carry NO
     //    `.mkt-shell{padding-bottom…}` and MUST carry the in-flow bar rule.
-    check('mobile ux: the markets shell no longer reserves the spine bar (the phone frame carries it in flow: `[data-app-frame] > [data-spine-bar]` static, order 999)', !/\.mkt-shell\{padding-bottom:/.test(uxCss.replace(/\s+/g, '')) && /\[data-app-frame\]>\[data-spine-bar\]\[data-spine-bar\]\{position:static;order:999/.test(uxCss.replace(/\s+/g, '')))
+    check('mobile ux: the markets shell no longer reserves the spine bar (the phone frame carries it in flow: `[data-app-frame] > [data-spine-bar]` static, order 999)', !/\.mkt-shell\{padding-bottom:/.test(uxCss.replace(/\s+/g, '')) && (() => { const m = /\[data-app-frame\]>\[data-spine-bar\]\[data-spine-bar\]\{([^}]*)\}/.exec(uxCss.replace(/\s+/g, '')); const d = new Set((m?.[1] ?? '').split(';')); return d.has('position:static') && d.has('order:999') })())
     // 5. THE PHONE NAV KEEPS ITS ACCOUNT SEAT. `.nav__right > :not(.nav__burger)`
     //    hid it below 900px, which put the landing's only door two taps deep
     //    (burger → drawer → Sign in) and left a connected phone visitor with no
@@ -33040,6 +33042,175 @@ async function main() {
     )
   }
 
+  // ── native markets (squad mobile-native, 2026-09-24; MARKETS lane) ─────────
+  // Nate's screenshot 1: iPhone Safari on /markets, the "Ask" pill floating
+  // over the DOT row's 24h cell. Measured on main (MARKETS.md F1–F10, drive
+  // scripts/drive-native-markets.ts): the pill covered 91×38px of that cell,
+  // a touch swipe up over the /t chart moved the page 0px, a pinch zoomed the
+  // PAGE ×2.2 instead of the chart, rows were 42px, three inputs were under
+  // 16px (iOS zooms on focus). These pins hold the rules; the drive holds the
+  // pixels. Every rule is phone- or touch-scoped: desktop is unchanged.
+  {
+    const nmDesign = await readFile('app/x402-design.css', 'utf8')
+    const nmMk = await readFile('components/markets/markets.css', 'utf8')
+    const nmDoor = await readFile('components/AskDoor.tsx', 'utf8')
+    const nmChart = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
+    const nmAlert = await readFile('components/markets/watchlist/AlertForm.tsx', 'utf8')
+    const nmImport = await readFile('components/markets/watchlist/ImportModal.tsx', 'utf8')
+    const nmFlat = (css: string) => css.replace(/\s+/g, ' ')
+    // Negative greps read CODE: comments name the old forms on purpose.
+    const nmCode = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    const nmBlocks = (css: string, head: string) => {
+      // Every block opened by `head`, balanced-brace read (the sheets nest
+      // one level at most).
+      const out: string[] = []
+      let at = css.indexOf(head)
+      while (at >= 0) {
+        let depth = 0
+        let i = css.indexOf('{', at)
+        const start = i
+        for (; i < css.length; i++) {
+          if (css[i] === '{') depth++
+          else if (css[i] === '}' && --depth === 0) break
+        }
+        out.push(css.slice(start, i + 1))
+        at = css.indexOf(head, i)
+      }
+      return out.join('\n')
+    }
+
+    // 1. The pill never covers the data: on a phone it steps aside wherever the
+    //    top bar carries the door, as a DESCENDANT match (the pill's parent is
+    //    the layout's providers <div> — a `> .askdoor-pill` child match never
+    //    fires, which is why the old body reserve never applied: F10).
+    const nmPhoneDoor = nmBlocks(nmDesign, '@media (max-width: 1023px) {\n  body:has([data-ask-door="rail"])')
+    check(
+      'native markets: below lg the floating Ask pill steps aside on any screen whose top bar carries the door ([data-ask-door="rail"]), matched as a descendant (its parent is a <div>, never <body>)',
+      /body:has\(\[data-ask-door="rail"\]\) \.askdoor-pill \{ display: none; \}/.test(nmPhoneDoor) && !/body:has\(\[data-ask-door="rail"\]\) > \.askdoor-pill/.test(nmDesign.replace(/\/\*[\s\S]*?\*\//g, '')),
+    )
+    // Comments name the old selectors on purpose; the checks read the code.
+    const nmDesignCode = nmDesign.replace(/\/\*[\s\S]*?\*\//g, '')
+    check(
+      'native markets: the pill\'s page-foot reserve finally applies — a descendant match (the old `body:has(> .askdoor-pill)` never fired), on brochure pages only (never an app frame, never a screen whose top bar carries the door, never under the landing\'s own CTA bar)',
+      !/body:has\(> \.askdoor-pill\)/.test(nmDesignCode) && !/> \.askdoor-pill/.test(nmDesignCode) &&
+        (nmDesignCode.match(/:root:not\(\[data-mcta="show"\]\) body:not\(:has\(\[data-app-frame\], \[data-ask-door="rail"\]\)\):has\(\.askdoor-pill\) \{ padding-bottom: calc\((?:72|64)px \+ env\(safe-area-inset-bottom\)\); \}/g) ?? []).length === 2,
+    )
+    check(
+      'native markets: the pill steps aside while the landing\'s MobileCtaBar (it carries its own Ask) is up — html[data-mcta="show"]',
+      /:root\[data-mcta="show"\] \.askdoor-pill \{ display: none; \}/.test(nmDesignCode),
+    )
+    check(
+      'native markets: the markets top strip\'s Ask is the phone\'s ask field — the rail trigger carries the page\'s placeholder, and below lg it fills the strip at 44px with the word "Ask" folded',
+      /variant === 'rail' && \(\s*<span className="mkt-frame__askhint" aria-hidden="true">\s*\{askDoorPlaceholder\(pathname\)\}/.test(nmDoor) &&
+        /\.mkt-frame__askhint \{ display: none; \}/.test(nmMk) &&
+        /\.mkt-frame__top \.mkt-frame__ask \{ flex: 1 1 auto; min-width: 0; height: 44px;/.test(nmMk) &&
+        /\.mkt-frame__top \.mkt-frame__askword \{ display: none; \}/.test(nmMk),
+    )
+    const nmMarketsHtml = flat(await (await fetch(`${BASE}/markets`)).text())
+    const nmEthHtml = flat(await (await fetch(`${BASE}/t/ETH`)).text())
+    check(
+      'native markets (served): /markets and /t/ETH ship the strip\'s ask field with the page\'s own placeholder (the house line / "Ask anything about ETH"), and the pill is still in the HTML for wider screens',
+      /data-ask-door="rail"[\s\S]{0,4000}class="mkt-frame__askhint"[^>]*>Ask Pantessa — swaps, stocks, stop-losses, anything…</.test(nmMarketsHtml) &&
+        /data-ask-door="rail"[\s\S]{0,4000}class="mkt-frame__askhint"[^>]*>Ask anything about ETH/.test(nmEthHtml) &&
+        nmEthHtml.includes('data-ask-door="pill"'),
+    )
+    const nmHrefs = [...new Set([...nmEthHtml.matchAll(/href="(\/_next\/static\/[^"]+\.css)"/g)].map((m) => m[1]))]
+    const nmServed = (await Promise.all(nmHrefs.map(async (h) => (await fetch(`${BASE}${h}`)).text()))).join('\n').replace(/\s+/g, '')
+    check(
+      'native markets (served): the built /t stylesheets carry the step-aside, the chart\'s touch-action and the 16px field floor',
+      nmHrefs.length > 0 &&
+        /body:has\(\[data-ask-door="?rail"?\]\)\.askdoor-pill\{display:none\}/.test(nmServed) &&
+        /\.mkt-chart__engine\{[^}]*touch-action:pan-y/.test(nmServed) &&
+        /font-size:max\(16px,1em\)/.test(nmServed),
+      `${nmHrefs.length} stylesheets`,
+    )
+
+    // 2. The chart shares the screen's scroll on a touch screen: a vertical
+    //    swipe is the page's (the engine never claims it, the browser scrolls
+    //    natively), horizontal pans, pinch zooms the chart and never the page.
+    check(
+      'native markets: MarketChart never claims a vertical touch drag (handleScroll.vertTouchDrag: false) and keeps horizontal pan + pinch (no option turns them off)',
+      /handleScroll: \{ vertTouchDrag: false \}/.test(nmChart) && !/vertTouchDrag: true/.test(nmCode(nmChart)) && !/horzTouchDrag: false/.test(nmCode(nmChart)) && !/pinch: false/.test(nmCode(nmChart)),
+    )
+    check(
+      'native markets: the engine is touch-action: pan-y (the page scrolls vertically, a pinch never zooms the page), and the full-screen control is 44×44 on touch',
+      /\.mkt-chart__engine \{ position: absolute; inset: 0; touch-action: pan-y; \}/.test(nmDesign) &&
+        /@media \(hover: none\) \{ \.tchart__fs \{ width: 44px; height: 44px; \} \}/.test(nmDesign),
+    )
+
+    // 3. A thumb's targets and a touch screen's press feedback, all under
+    //    (hover: none) — desktop keeps its compact terminal.
+    const nmTouch = nmFlat(nmBlocks(nmMk, '@media (hover: none) {'))
+    const nm44 = [
+      '.mk-table__link, .mk-trend__row { min-height: 48px; }',
+      '.mk-table__sort { min-height: 44px;',
+      '.mkt-sec__more { min-height: 44px;',
+      '.mkt-frame__tab { min-height: 44px; }',
+      '.mk-view__btn { height: 44px;',
+      '.mk-earn__chip { min-height: 44px;',
+      '.sym__act-chip { min-height: 44px; }',
+      '.sym .tok__tfbtn { min-height: 44px; min-width: 44px; }',
+      '.sym .mkt-ind { min-height: 44px; }',
+      '.sym .mkt-tool { width: 44px; height: 44px; }',
+      '.sym__tab { min-height: 44px; }',
+      '.wl__rowMain { min-height: 48px; }',
+      '.wl__rowMore { opacity: 1; }',
+      '.wl__icon { width: 44px; height: 44px; }',
+      '.mkt-routes__filter, .mkt-route__chip, .mkt-order__preset, .mkt-order__custom, .mkt-order__side, .mkt-order__send, .mkt-chip { min-height: 44px; }',
+    ]
+    const nmMissing = nm44.filter((r) => !nmTouch.includes(r))
+    check(
+      'native markets: under (hover: none) every ledger/trending/rail row is 48px, every sort head, tab, chip, timeframe, overlay, tool and rail icon ≥44px, and the rail\'s ⋯ is fully visible (no hover to reveal it)',
+      nmMissing.length === 0 && /\.mk-table__row:active, \.mk-trend__row:active, \.wl__row:active \{ background:/.test(nmTouch),
+      nmMissing.join(' | '),
+    )
+    check(
+      'native markets: no field on a markets surface zooms the page on focus — every input/textarea/select in the frame and the rail\'s sheets is ≥16px on touch or below lg',
+      /@media \(hover: none\), \(max-width: 1023px\) \{\s*\.mkt-frame :is\(input, textarea, select\),\s*\[data-sheet\^="wl-"\] :is\(input, textarea, select\) \{ font-size: max\(16px, 1em\); \}/.test(nmMk) &&
+        /\.askdoor-sheet \.askdoor__input \{ font-size: max\(16px, 1em\); \}/.test(nmDesign),
+    )
+    check(
+      'native markets: on a phone the /t plot keeps 260px however its controls wrap, those controls take two rows (timeframes + live/full screen, then overlays beside the tools), and the act strip is one sideways row',
+      /\.sym \.tchart:not\(\.tchart--expanded\) \.mkt-chart__canvas \{ flex: 0 0 auto; height: 260px; \}/.test(nmMk) &&
+        /\.sym \.mkt-chart__bar > \.mkt-chart__ind \{ order: 3; flex: 1 1 calc\(100% - 200px\); \}/.test(nmMk) &&
+        /\.sym \.mkt-chart__tools > \.mkt-tool:first-child \{ display: none; \}/.test(nmMk) &&
+        /\.sym__act-chips \{\s*align-self: stretch; min-width: 0; flex-wrap: nowrap;[^}]*overflow-x: auto;/.test(nmMk),
+    )
+    check(
+      'native markets: on a phone the /markets board tabs are a sticky segmented bar under the top strip (the tool strip\'s box dissolves, so the search and Map · List scroll away), and a board tab lands its section under both',
+      /\.mkt-frame__bar \{ display: contents; \}/.test(nmMk) &&
+        /\.mkt-frame__bar > \.mkt-frame__tabs \{\s*position: sticky; top: var\(--mkt-top-h, 52px\); z-index: 20;/.test(nmMk) &&
+        /\.mkt-sec \{ scroll-margin-top: calc\(var\(--mkt-top-h, 52px\) \+ 60px\); \}/.test(nmMk),
+    )
+    const nmSym = await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')
+    check(
+      'native markets: a /t tab switch made while the strip is stuck scrolls the app scroller by the strip\'s UNSTUCK place (its parent\'s top) — scrollIntoView on a stuck sticky is a no-op — and the rail + footer never anchor the scroll (a short loading tab once threw the page 5,521px to the footer)',
+      /const natural = main\.getBoundingClientRect\(\)\.top\s*\n\s*if \(natural < stuckAt - 1\) scrollAppTo\(appScrollTop\(\) \+ natural - stuckAt\)/.test(nmSym) &&
+        !/el\.scrollIntoView\(\{ block: 'start' \}\)/.test(nmCode(nmSym)) &&
+        /\.mkt-frame__rail, \.mkt-frame__foot \{ overflow-anchor: none; \}/.test(nmMk),
+    )
+    check(
+      'native markets: below lg the /t section tabs stick under the top strip (scroll-margin lands a switch there)',
+      /\.sym__tabs \{ position: sticky; top: var\(--mkt-top-h, 52px\); z-index: 19; background: var\(--bg\); scroll-margin-top: var\(--mkt-top-h, 52px\); \}/.test(nmMk),
+    )
+
+    // 4. The panels are THE Sheet: the ask door below lg (its posture read
+    //    once per opening, so a tablet rotating mid-run never remounts the
+    //    runtime), AlertForm + ImportModal at every width.
+    check(
+      'native markets: the ask door renders through components/mobile/Sheet on a phone (id ask, full size once live) with the posture read once per opening; the desktop ⌘K palette stays',
+      /import Sheet from '@\/components\/mobile\/Sheet'/.test(nmDoor) &&
+        /if \(!open\) postureRef\.current = null\s*\n\s*else if \(mounted && postureRef\.current === null\) postureRef\.current = isPhoneViewport\(\)/.test(nmDoor) &&
+        /<Sheet\s+open\s+onClose=\{closeDoor\}\s+id="ask"\s+size=\{live \? 'full' : 'auto'\}/.test(nmDoor) &&
+        /className=\{`askdoor \$\{live \? 'askdoor--live' : ''\}`\}/.test(nmDoor),
+    )
+    check(
+      'native markets: AlertForm and ImportModal are THE Sheet (ids wl-alert, wl-import) — no hand-made scrim or portal left, so Escape, a swipe and the back gesture close them too',
+      /<Sheet\s+open=\{open\}\s+onClose=\{onClose\}\s+id="wl-alert"/.test(nmAlert) && /<Sheet\s+open=\{open\}\s+onClose=\{close\}\s+id="wl-import"/.test(nmImport) &&
+        ![nmAlert, nmImport].some((src) => /createPortal|wl__scrim/.test(nmCode(src))),
+    )
+  }
+
   // ── NATIVE PAGES (squad mobile-native, 2026-09-24) ─────────────────────
   // Nate: "if a nav drawer is open and a user taps outside it should close
   // the drawer … it needs to feel like a native mobile app". The PAGES lane:
@@ -33391,6 +33562,9 @@ async function main() {
     const { readFile: readSrcFile } = await import('node:fs/promises')
     const readSrc = (p: string) => readSrcFile(new URL(`../${p}`, import.meta.url), 'utf8')
     const flatCss = (css: string) => css.replace(/\s+/g, '')
+    /** Source with its comments stripped: a negative match must read CODE, not
+     *  a comment that names the very thing it forbids (PAGES caught two). */
+    const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1').replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
     const designSrc = await readSrc('app/x402-design.css')
 
     // The contract is pure: nothing touches the DOM at import time.
@@ -33404,6 +33578,9 @@ async function main() {
     check('native shell: shouldDismissDrag — a quarter of the panel (min 80px) or a ≥0.5px/ms flick that moved ≥24px dismisses; a drag the wrong way or a slow short one never does',
       PS.shouldDismissDrag(80, 0, 200) === true && PS.shouldDismissDrag(79, 0, 200) === false && PS.shouldDismissDrag(120, 0, 600) === false && PS.shouldDismissDrag(150, 0, 600) === true &&
         PS.shouldDismissDrag(30, 0.6, 600) === true && PS.shouldDismissDrag(20, 2, 600) === false && PS.shouldDismissDrag(-100, 5, 200) === false && PS.shouldDismissDrag(0, 5, 200) === false && PS.SHEET_DISMISS_MIN_PX === 80 && PS.SHEET_DISMISS_VELOCITY === 0.5)
+    const kbSrc = await readSrc('components/mobile/useSoftKeyboard.ts')
+    check('native shell: useSoftKeyboard pans the page back (window.scrollTo(0, 0)) only after a keyboard that WAS up closes, and only in the phone posture — a desktop blur must never scroll the page to the top',
+      /const wasOpen = last\.open/.test(kbSrc) && /if \(wasOpen && !last\.open\) settle\(\)/.test(kbSrc) && /const settle = \(\) => \{\s*if \(!isPhoneViewport\(\)\) return/.test(kbSrc) && /keyboardState\(window\.innerHeight, vv\.height, vv\.offsetTop\)/.test(kbSrc))
     check('native shell: lib/app-scroller keeps the stubbed exports and adds scrollAppToTop / appScrollDepthPct / appScrollExtent / hasAppScroller (NAV\'s tap-the-lit-tab and the journey depth read these)',
       ['getAppScroller', 'appScrollTop', 'scrollAppTo', 'onAppScroll', 'scrollAppToTop', 'appScrollDepthPct', 'appScrollExtent', 'hasAppScroller'].every((k) => typeof (AS as Record<string, unknown>)[k] === 'function'))
 
@@ -33413,18 +33590,44 @@ async function main() {
     const nsHrefs = [...nsDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
     const nsCss = flatCss((await Promise.all(nsHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n'))
     const phoneBlocks = [...nsCss.matchAll(/@media\(max-width:1023px\)\{/g)].length
-    check('native shell: the served CSS carries the frame — below lg html:has([data-app-frame]) is height 100% + overflow hidden + no overscroll, its body clips, the frame is a 100dvh column, the scroller is flex 1 / min-height 0 / overflow-y auto / overscroll contain',
-      phoneBlocks > 0 && /html:has\(\[data-app-frame\]\)\{height:100%;overflow:hidden;overscroll-behavior:none\}/.test(nsCss) && /html:has\(\[data-app-frame\]\)body\{height:100%;min-height:0;overflow:clip;overscroll-behavior:none\}/.test(nsCss) &&
-        /html:has\(\[data-app-frame\]\)body\[data-app-frame\]\[data-app-frame\]\{display:flex;flex-direction:column;height:100vh;height:100dvh;min-height:0;max-height:none;padding:env\(safe-area-inset-top\)env\(safe-area-inset-right\)0env\(safe-area-inset-left\);overflow:hidden;overscroll-behavior:none\}/.test(nsCss) &&
-        /html:has\(\[data-app-frame\]\)body\[data-app-frame\]\[data-app-scroll\]\[data-app-scroll\]\{flex:1 1auto;min-height:0;max-height:none;overflow-y:auto;overflow-x:clip;overscroll-behavior-y:contain/.test(nsCss),
+    /** The served rule for EXACTLY this (whitespace-flattened) selector, as a
+     *  declaration set: Lightning CSS reorders declarations and collapses
+     *  shorthands (`flex:1 1 auto` → `flex:auto`, `overflow-x:clip;overflow-y:
+     *  auto` → `overflow:clip auto`, a `100vh` fallback under `100dvh` is
+     *  dropped), so a pin reads the SET, and each expected declaration may
+     *  name its collapsed alternatives with `|`. */
+    const ruleWith = (css: string, selector: string, decls: string[]): boolean => {
+      const sel = selector.replace(/\s+/g, '')
+      let from = 0
+      while (from < css.length) {
+        const i = css.indexOf(`${sel}{`, from)
+        if (i < 0) return false
+        const before = i === 0 ? '' : css[i - 1]
+        if (before === '' || before === '}' || before === '{' || before === ';') {
+          const body = css.slice(i + sel.length + 1, css.indexOf('}', i))
+          const have = new Set(body.split(';').filter(Boolean))
+          if (decls.every((d) => d.split('|').some((alt) => have.has(alt)))) return true
+        }
+        from = i + sel.length + 1
+      }
+      return false
+    }
+    check('native shell: the served CSS carries the frame — below lg html:has([data-app-frame]) is height 100% + overflow hidden + no overscroll, its body clips, the frame is a 100dvh column, the scroller is flex 1 / min-height 0 / overflow-y auto / overscroll contain (matched as declaration SETS: Lightning reorders + collapses)',
+      phoneBlocks > 0 && ruleWith(nsCss, 'html:has([data-app-frame])', ['height:100%', 'overflow:hidden', 'overscroll-behavior:none']) &&
+        ruleWith(nsCss, 'html:has([data-app-frame]) body', ['height:100%', 'min-height:0', 'overflow:clip', 'overscroll-behavior:none']) &&
+        ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame][data-app-frame]', ['display:flex', 'flex-direction:column', 'height:100dvh', 'min-height:0', 'max-height:none', 'padding:env(safe-area-inset-top)env(safe-area-inset-right)0env(safe-area-inset-left)', 'overflow:hidden', 'overscroll-behavior:none']) &&
+        ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame] [data-app-scroll][data-app-scroll]', ['flex:auto|flex:1 1auto|flex:11auto', 'min-height:0', 'max-height:none', 'overflow:clipauto|overflow-y:auto', 'overscroll-behavior-y:contain']),
       `${nsHrefs.length} stylesheets, ${phoneBlocks} phone blocks`)
     check('native shell: the served CSS pins the bar IN FLOW as the frame\'s last row (`[data-app-frame] > [data-spine-bar]` static, order 999) with the fixed-bar belt for a bar that is not a direct child',
-      /html:has\(\[data-app-frame\]\)body\[data-app-frame\]>\[data-spine-bar\]\[data-spine-bar\]\{position:static;order:999;flex:00auto;width:auto;inset:auto\}/.test(nsCss) && /html:has\(\[data-app-frame\]\)body\[data-app-frame\]\[data-app-frame\]:has\(\[data-spine-bar\]\):not\(:has\(>\[data-spine-bar\]\)\)\{padding-bottom:calc\(var\(--spine-bar-h,49px\)\+env\(safe-area-inset-bottom\)\)\}/.test(nsCss))
+      ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame] > [data-spine-bar][data-spine-bar]', ['position:static', 'order:999', 'flex:none|flex:0 0auto|flex:00auto', 'width:auto', 'inset:auto']) &&
+        ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame][data-app-frame]:has([data-spine-bar]):not(:has(> [data-spine-bar]))', ['padding-bottom:calc(var(--spine-bar-h,49px)+env(safe-area-inset-bottom))']))
     check('native shell: the served CSS shrinks the frame onto the keyboard (html[data-keyboard] → 100dvh − --kb-inset) and hides the bar while it is up',
-      /html\[data-keyboard\]:has\(\[data-app-frame\]\)body\[data-app-frame\]\[data-app-frame\]\{height:calc\(100vh-var\(--kb-inset,0px\)\);height:calc\(100dvh-var\(--kb-inset,0px\)\)\}/.test(nsCss) && /html\[data-keyboard\]:has\(\[data-app-frame\]\)body\[data-app-frame\]\[data-spine-bar\]\[data-spine-bar\]\{display:none\}/.test(nsCss))
+      ruleWith(nsCss, 'html[data-keyboard]:has([data-app-frame]) body [data-app-frame][data-app-frame]', ['height:calc(100dvh-var(--kb-inset,0px))']) &&
+        ruleWith(nsCss, 'html[data-keyboard]:has([data-app-frame]) body [data-app-frame] [data-spine-bar][data-spine-bar]', ['display:none']))
     check('native shell: the served CSS keeps every text input in a frame or a sheet at ≥16px below lg (no iOS focus zoom) and puts touch-action: manipulation on everything a hand presses',
-      /\[data-app-frame\]input:not\(\[type=checkbox\]\)[^{]*\[data-app-frame\]select,\[data-app-frame\]textarea,\.sheetinput[^{]*\{font-size:max\(16px,1em\)\}/.test(nsCss) && /a,button,\[role=button\],\[role=tab\],\[role=menuitem\],input,select,textarea,label,summary\{touch-action:manipulation\}/.test(nsCss) &&
-        /\[data-spine-bar\],\.sheet__head,\.sheet__grabber,\.sheet__foot\{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none\}/.test(nsCss))
+      /\[data-app-frame\]input:not\(\[type=checkbox\]\)[^{]*\[data-app-frame\]select,\[data-app-frame\]textarea,\.sheetinput[^{]*\.sheettextarea\{font-size:max\(16px,1em\)\}/.test(nsCss) &&
+        ruleWith(nsCss, 'a, button, [role=button], [role=tab], [role=menuitem], input, select, textarea, label, summary', ['touch-action:manipulation']) &&
+        ruleWith(nsCss, '[data-spine-bar], .sheet__head, .sheet__grabber, .sheet__foot', ['user-select:none', '-webkit-touch-callout:none']))
     const layoutSrc = await readSrc('app/layout.tsx')
     check('native shell: app/layout.tsx imports native-shell.css after x402-design.css and mounts PhoneShellMount once (keyboard + scroll memory + theme-color belt)',
       layoutSrc.indexOf("import './x402-design.css'") < layoutSrc.indexOf("import './native-shell.css'") && (layoutSrc.match(/<PhoneShellMount \/>/g) ?? []).length === 1 && /import PhoneShellMount from '@\/components\/mobile\/PhoneShellMount'/.test(layoutSrc))
@@ -33450,9 +33653,9 @@ async function main() {
     // The hand reserves are gone from every file SHELL owns.
     const journeySrc = await readSrc('components/JourneyTracker.tsx')
     check('native shell: the hand reserves SHELL owned are deleted — no `.mkt-shell { padding-bottom`, no `:root[data-spine] .dash__main` reserve, no `:root[data-spine] .dashask` lift, no max-lg:pb on the /wallet wrapper',
-      !/\.mkt-shell \{ padding-bottom/.test(designSrc) && !/:root\[data-spine\] \.dash__main/.test(designSrc) && !/:root\[data-spine\] \.dashask/.test(designSrc) && !/max-lg:pb-/.test(await readSrc('app/wallet/page.tsx')))
+      !/\.mkt-shell \{ padding-bottom/.test(code(designSrc)) && !/:root\[data-spine\] \.dash__main/.test(code(designSrc)) && !/:root\[data-spine\] \.dashask/.test(code(designSrc)) && !/max-lg:pb-/.test(code(await readSrc('app/wallet/page.tsx'))))
     check('native shell: JourneyTracker reads the scroll depth through lib/app-scroller (onAppScroll + appScrollDepthPct), never window.scrollY — on a phone the document never scrolls',
-      /appScrollDepthPct\(\)/.test(journeySrc) && /onAppScroll\(onScroll\)/.test(journeySrc) && !/window\.scrollY/.test(journeySrc))
+      /appScrollDepthPct\(\)/.test(journeySrc) && /onAppScroll\(onScroll\)/.test(journeySrc) && !/window\.scrollY/.test(code(journeySrc)))
 
     // The frame never makes a containing block: MARKETS' full-screen chart
     // (`.tchart--expanded`, position: fixed inside .mkt-frame) would be
@@ -33463,6 +33666,98 @@ async function main() {
     check('native shell: native-shell.css never sets transform / filter / backdrop-filter / perspective / contain / container-type / will-change on the frame or the scroller (a fixed full-screen chart inside the scroller must stay fixed to the viewport)',
       !/\[data-app-(frame|scroll)\][^{]*\{[^}]*(transform|filter|perspective|contain:|container-type|will-change)/.test(nativeSrc))
 
+    // The Sheet's history coordinator (lib/sheet-history): THE HANDOFF RACE.
+    // One tap closes sheet A and opens sheet B in the same commit; a naive
+    // history.back() from A pops B's fresh entry and B closes a frame after
+    // it opens (PAGES measured it). Driven here over a fake history.
+    {
+      const SH = await import('../lib/sheet-history')
+      type Entry = Record<string, unknown>
+      const mk = () => {
+        const entries: Entry[] = [{ __NA: true, tree: 't0' }]
+        let pos = 0
+        let pop: (() => void) | null = null
+        // The fake mimics the browser: Next's patched pushState stamps __NA + the
+        // tree onto a plain state; a traversal (back) lands in a LATER task than
+        // the timer that asked for it — `tick()` runs the timers, `land()` the
+        // traversals, so an open between the two is the real in-flight window.
+        const later: (() => void)[] = []
+        const traversals: (() => void)[] = []
+        const host: import('../lib/sheet-history').SheetHistoryHost = {
+          state: () => entries[pos],
+          push: (st) => { entries.splice(pos + 1); entries.push({ __NA: true, tree: entries[pos].tree, ...st }); pos = entries.length - 1 },
+          replace: (st) => { entries[pos] = st },
+          back: () => { traversals.push(() => { pos = Math.max(0, pos - 1); pop?.() }) },
+          onPop: (cb) => { pop = cb },
+          later: (cb) => { later.push(cb) },
+        }
+        const tick = () => { while (later.length) later.shift()!() }
+        const land = () => { while (traversals.length) traversals.shift()!() }
+        return { h: SH.createSheetHistory(host), entries: () => entries.slice(0, pos + 1), tick, land, host }
+      }
+      // A: open → close by a tap → the entry is popped on the next tick, one popstate, nothing else.
+      {
+        const { h, entries, tick, land } = mk()
+        const backs: string[] = []
+        h.opened({ key: 'A', onBack: () => backs.push('A') })
+        const afterOpen = entries().length
+        h.closed('A', 'other')
+        const beforeTick = entries().length
+        tick(); land()
+        check('native shell: sheet history — a sheet owns one entry {sheet:key}; closing it by a tap pops that entry on the NEXT tick (not synchronously), and the swallowed popstate never calls onBack', afterOpen === 2 && beforeTick === 2 && entries().length === 1 && backs.length === 0 && (entries()[0] as { __NA?: boolean }).__NA === true, JSON.stringify({ afterOpen, beforeTick, after: entries().length, backs }))
+      }
+      // The race: A closes and B opens in the same commit → B TAKES OVER A's entry (replaceState keeps Next's fields), the queued pop is cancelled, back closes B.
+      {
+        const { h, entries, tick, land, host } = mk()
+        const backs: string[] = []
+        h.opened({ key: 'A', onBack: () => backs.push('A') })
+        h.closed('A', 'other')
+        h.opened({ key: 'B', onBack: () => backs.push('B') })
+        const top = entries()[entries().length - 1] as { sheet?: string; __NA?: boolean }
+        const len = entries().length
+        tick(); land()
+        const lenAfterTick = entries().length
+        const dbg = h.debug()
+        // the real back gesture
+        host.back(); land()
+        check('native shell: sheet history — THE HANDOFF: A closes and B opens in one commit → B takes over A\'s entry (still __NA), the pending pop is cancelled (2 entries before and after the tick), and the back gesture closes B, not A', len === 2 && top.sheet === 'B' && top.__NA === true && lenAfterTick === 2 && dbg.pendingBack === null && dbg.stack.join() === 'B' && backs.join() === 'B' && entries().length === 1, JSON.stringify({ len, top, lenAfterTick, dbg, backs, after: entries().length }))
+      }
+      // A sheet that opens while a pop is IN FLIGHT waits for that popstate, then claims its own entry.
+      {
+        const { h, entries, tick, land } = mk()
+        const backs: string[] = []
+        h.opened({ key: 'A', onBack: () => backs.push('A') })
+        h.closed('A', 'other')
+        // the tick fires the back() (queued), and B opens before the popstate lands
+        tick() // runs the pending-back timer → host.back() queues the traversal
+        const inFlight = h.debug().backInFlight
+        h.opened({ key: 'B', onBack: () => backs.push('B') })
+        const deferred = h.debug().deferred
+        land() // the traversal lands: A's entry popped, then B claims its own
+        const dbg = h.debug()
+        check('native shell: sheet history — a sheet opening while a pop is in flight defers until that popstate, then pushes its own entry (one entry for B, B on the stack, no onBack fired)', inFlight === 'A' && deferred === 'B' && dbg.backInFlight === null && dbg.deferred === null && dbg.stack.join() === 'B' && entries().length === 2 && (entries()[1] as { sheet?: string }).sheet === 'B' && backs.length === 0, JSON.stringify({ inFlight, deferred, dbg, entries: entries(), backs }))
+      }
+      // The page moved on (a link inside the sheet pushed a new URL) → the entry is LEFT, never popped (that would undo the navigation).
+      {
+        const { h, entries, tick, land, host } = mk()
+        h.opened({ key: 'A', onBack: () => {} })
+        h.closed('A', 'other')
+        host.push({ __NA: true, tree: 'new-page' })
+        tick(); land()
+        check('native shell: sheet history — if the page navigated before the tick, the closed sheet\'s entry stays behind rather than popping the new page', entries().length === 3 && (entries()[2] as { tree?: string }).tree === 'new-page' && h.debug().backInFlight === null)
+      }
+      // Stacked sheets: B over A → back closes B, then A.
+      {
+        const { h, entries, land, host } = mk()
+        const backs: string[] = []
+        h.opened({ key: 'A', onBack: () => backs.push('A') })
+        h.opened({ key: 'B', onBack: () => backs.push('B') })
+        host.back(); land()
+        host.back(); land()
+        check('native shell: sheet history — two open sheets are two entries; back closes the top one, then the next', backs.join() === 'B,A' && entries().length === 1)
+      }
+    }
+
     // The Sheet (D3): the dismissals, the back gesture done Next's way, the
     // trap, the motion, the keyboard lift — pinned at the source (nothing
     // mounts a Sheet until the other lanes' round lands, so the served CSS
@@ -33472,10 +33767,21 @@ async function main() {
     check('native shell: Sheet keeps the contract props and adds the dismiss REASON to onClose (scrim · escape · button · swipe · back); every dismissal path names its reason',
       /onClose: \(reason\?: SheetCloseReason\) => void/.test(sheetSrc) && /'scrim' \| 'escape' \| 'button' \| 'swipe' \| 'back'/.test(sheetSrc) && ["dismiss('scrim')", "dismissRef.current('escape')", "dismiss('button')", "dismiss('swipe')", "dismissRef.current('back')"].every((d) => sheetSrc.includes(d)) &&
         ['open', 'onClose', 'title', 'ariaLabel', 'side', 'size', 'footer', 'children', 'className', 'id'].every((k) => new RegExp(`^  ${k}\\??:`, 'm').test(sheetSrc)))
-    check('native shell: the back gesture pushes ONE marked entry ({ sheet: key }, which Next\'s patched pushState stamps with __NA — a state without it would RELOAD on popstate), closes on popstate, and consumes the entry on any other dismissal only while history.state.sheet is still ours',
-      /window\.history\.pushState\(\{ sheet: historyKey \}, '', window\.location\.href\)/.test(sheetSrc) && /window\.addEventListener\('popstate', onPop\)/.test(sheetSrc) && (sheetSrc.match(/st\.sheet === historyKey\) window\.history\.back\(\)/g) ?? []).length === 2 && /if \(isPhoneViewport\(\)\)/.test(sheetSrc))
-    check('native shell: the Sheet traps Tab inside the panel, locks the document\'s scroll while open, returns focus to the opener, and decides a swipe with lib/phone-shell shouldDismissDrag from the grabber or the head',
-      /const trapTab = \(e: KeyboardEvent\)/.test(sheetSrc) && /html\.style\.overflow = 'hidden'/.test(sheetSrc) && /opener\?\.focus\?\.\(\{ preventScroll: true \}\)/.test(sheetSrc) && /shouldDismissDrag\(delta, d\.v, size\)/.test(sheetSrc) && /className="sheet__grabber" aria-hidden \{\.\.\.dragHandlers\}/.test(sheetSrc) && /className="sheet__head" \{\.\.\.dragHandlers\}/.test(sheetSrc))
+    // The two behaviors are HOOKS (the coordinator's ask: the sign-in door and
+    // ChatSignInGate cannot be Sheets but need the same back gesture + swipe
+    // from ONE implementation) and the Sheet wears them.
+    const backHook = await readSrc('components/mobile/useBackToClose.ts')
+    const swipeHook = await readSrc('components/mobile/useSwipeToClose.ts')
+    const shSrc = await readSrc('lib/sheet-history.ts')
+    check('native shell: useBackToClose(open, onClose, key) owns the history entry THROUGH lib/sheet-history (opened while open on a phone, released on the effect cleanup, onClose(\'back\') when the entry is popped) and the browser host is the only pushState/replaceState/back in the tree',
+      /export function useBackToClose\(open: boolean, onClose: \(reason: 'back'\) => void, key: string\)/.test(backHook) && /sheetHistory\(\)\.opened\(\{/.test(backHook) && /sheetHistory\(\)\.closed\(key, 'other'\)/.test(backHook) && /onCloseRef\.current\('back'\)/.test(backHook) && /if \(!open \|\| !isPhoneViewport\(\)\) return/.test(backHook) &&
+        !/history\.(pushState|replaceState|back)\(/.test(code(sheetSrc)) && !/history\.(pushState|replaceState|back)\(/.test(code(backHook)) &&
+        /window\.history\.pushState\(s, '', window\.location\.href\)/.test(shSrc) && /window\.history\.replaceState\(s, '', window\.location\.href\)/.test(shSrc) && /window\.history\.back\(\)/.test(shSrc))
+    check('native shell: useSwipeToClose(panelRef, onClose, side) is the one drag — pointer events (touch + mouse, button 0), the panel follows, shouldDismissDrag decides, the exit starts from --sheet-from on the panel, phone posture only',
+      /export function useSwipeToClose\(panelRef: RefObject<HTMLElement \| null>, onClose: \(reason: 'swipe'\) => void, side: 'bottom' \| 'left' = 'bottom'\)/.test(swipeHook) && /shouldDismissDrag\(delta, d\.v, size\)/.test(swipeHook) && /panel\.style\.setProperty\('--sheet-from', /.test(swipeHook) && /if \(e\.pointerType === 'mouse' && e\.button !== 0\) return/.test(swipeHook) && /if \(!isPhoneViewport\(\) \|\| !panelRef\.current\) return/.test(swipeHook) && /onPointerCancel: end/.test(swipeHook))
+    check('native shell: the Sheet wears both hooks (useBackToClose(open, dismiss, historyKey); useSwipeToClose(panelRef, dismiss, side) spread on the grabber and the head), traps Tab, locks the document\'s scroll while open and returns focus to the opener',
+      /useBackToClose\(open, dismiss, historyKey\)/.test(sheetSrc) && /const \{ handleProps: dragHandlers \} = useSwipeToClose\(panelRef, dismiss, side\)/.test(sheetSrc) && /className="sheet__grabber" aria-hidden \{\.\.\.dragHandlers\}/.test(sheetSrc) && /className="sheet__head" \{\.\.\.dragHandlers\}/.test(sheetSrc) &&
+        /const trapTab = \(e: KeyboardEvent\)/.test(sheetSrc) && /html\.style\.overflow = 'hidden'/.test(sheetSrc) && /opener\?\.focus\?\.\(\{ preventScroll: true \}\)/.test(sheetSrc) && !/shouldDismissDrag|sheetHistory\(\)/.test(code(sheetSrc)))
     check('native shell: mobile.css animates enter and exit (the exit from wherever a drag left the panel), stills everything under prefers-reduced-motion, and lifts a bottom sheet onto the keyboard once for every consumer',
       /\.sheet\[data-phase='open'\]\[data-side='bottom'\] \.sheet__panel \{ animation: sheet-up/.test(sheetCss) && /\.sheet\[data-phase='closing'\]\[data-side='bottom'\] \.sheet__panel \{ animation: sheet-down/.test(sheetCss) && /@keyframes sheet-down \{ from \{ transform: translateY\(var\(--sheet-from, 0px\)\); \}/.test(sheetCss) &&
         /@media \(prefers-reduced-motion: reduce\) \{\s*\.sheet \.sheet__scrim, \.sheet \.sheet__panel \{ animation: none !important/.test(sheetCss) &&
@@ -33492,7 +33798,7 @@ async function main() {
     const rootHtml = await (await fetch(`${BASE}/`, { headers: { 'x-yf-internal-run': '1' } })).text()
     check('native shell: the root HTML links the manifest, declares the standalone metas (mobile-web-app-capable — Next 16 renders the standard name for appleWebApp.capable — title, black-translucent), and ships the OS-preference theme-color pair as the pre-JS fallback',
       /<link rel="manifest" href="\/manifest\.webmanifest"/.test(rootHtml) && /<meta name="mobile-web-app-capable" content="yes"/.test(rootHtml) && /<meta name="apple-mobile-web-app-title" content="Pantessa"/.test(rootHtml) && /<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/.test(rootHtml) &&
-        /<meta name="theme-color" media="\(prefers-color-scheme: light\)" content="#fdfdfc"/.test(rootHtml) && /<meta name="theme-color" media="\(prefers-color-scheme: dark\)" content="#000000"/.test(rootHtml))
+        /<meta name="theme-color"(?=[^>]*media="\(prefers-color-scheme: light\)")(?=[^>]*content="#fdfdfc")/.test(rootHtml) && /<meta name="theme-color"(?=[^>]*media="\(prefers-color-scheme: dark\)")(?=[^>]*content="#000000")/.test(rootHtml))
     check('native shell: the theme bootstrap writes a media-less theme-color meta FIRST in <head> and re-writes it on every data-theme change (the observer), from the same two colors', /meta\[name="theme-color"\]:not\(\[media\]\)/.test(rootHtml) && /document\.head\.insertBefore\(m,document\.head\.firstChild\)/.test(rootHtml) && /t==='light'\?'#fdfdfc':'#000000'/.test(rootHtml) && /new MutationObserver\(apply\)/.test(rootHtml))
   }
 

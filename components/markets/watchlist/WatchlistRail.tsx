@@ -308,7 +308,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
           )}
         </div>
         <div className="wl__headActs">
-          <button type="button" className="wl__icon" title="Import from TradingView" aria-label="Import from TradingView" onClick={() => setImportOpen(true)}>
+          <button type="button" className="wl__icon" title="Import from TradingView" aria-label="Import from TradingView" data-sheet-open="wl-import" onClick={() => setImportOpen(true)}>
             <ClipboardPaste className="h-3.5 w-3.5" />
           </button>
           <div className="wl__menuWrap">
@@ -577,6 +577,7 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                                   type="button"
                                   role="menuitem"
                                   className="wl__popItem"
+                                  data-sheet-open="wl-alert"
                                   onClick={() => {
                                     setRowMenu(null)
                                     setAlertFor(sym)
