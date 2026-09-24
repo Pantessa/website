@@ -74,7 +74,10 @@ import { isWalletPath, WALLET_PAGE_HREF } from '@/lib/wallet-page'
 import { walletDisplayName } from '@/lib/wallet-identity'
 import { useAnnouncedWalletName } from '@/lib/use-wallet-name'
 import TokenIcon from '@/components/TokenIcon'
+import Sheet from '@/components/mobile/Sheet'
+import { isPhoneViewport } from '@/lib/phone-shell'
 import { cn } from '@/lib/utils'
+import './wallet-phone.css'
 
 const CDP_CONNECTOR = 'cdp-embedded-wallet'
 /** Opening amount for a card top-up from the panel. A suggestion Stripe lets
@@ -806,7 +809,7 @@ export function WalletDetails({
 
   if (!page) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4" data-wallet-window="modal">
         {addressRow}
         {totalRow}
         {waitBanner}
@@ -823,7 +826,7 @@ export function WalletDetails({
   // The page: what you hold on the left, what you can do and what happened on
   // the right. Below lg the columns stack in the modal's order.
   return (
-    <div data-wallet-layout="page" className="grid items-start gap-x-10 gap-y-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]">
+    <div data-wallet-layout="page" data-wallet-window="page" className="grid items-start gap-x-10 gap-y-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]">
       <div className="min-w-0 space-y-5">
         {addressRow}
         <div>
@@ -869,6 +872,37 @@ export default function WalletPanel({
 
   if (typeof document === 'undefined') return null
 
+  // On a phone the window is the ONE Sheet, full height (squad mobile-native,
+  // 2026-09-24): it rises from the bottom and closes on a tap outside, a
+  // swipe, Escape and the back gesture like every other panel there. The
+  // desktop keeps its dialog. Read while rendering, which only ever happens in
+  // the browser (the SSR pass returns above); the sheet stays mounted closed
+  // so its exit can play.
+  if (isPhoneViewport()) {
+    return (
+      <Sheet open={open && !!address} onClose={onClose} title={kind.label} id="wallet" size="full" className="walletsheet">
+        {address && (
+          <div className="px-4 pb-6">
+            <div className="flex items-center gap-3 pb-3">
+              <span className="mono min-w-0 flex-1 truncate text-[11px] text-[color:var(--muted-2)]">{kind.sub}</span>
+              {!isWalletPath(pathname ?? '') && (
+                <Link
+                  href={WALLET_PAGE_HREF}
+                  onClick={onClose}
+                  className="inline-flex min-h-[44px] flex-shrink-0 items-center gap-1.5 rounded-lg px-2 text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)]"
+                >
+                  <Maximize2 className="h-3.5 w-3.5" />
+                  Open as a page
+                </Link>
+              )}
+            </div>
+            <WalletDetails address={address} layout="modal" onLeave={onClose} onWalletSettings={onWalletSettings} />
+          </div>
+        )}
+      </Sheet>
+    )
+  }
+
   return createPortal(
     <AnimatePresence>
       {open && address && (
@@ -877,6 +911,7 @@ export default function WalletPanel({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/60 backdrop-blur-sm p-4 pt-[6vh]"
+          data-sheet="wallet"
           onClick={onClose}
         >
           <motion.div

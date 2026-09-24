@@ -645,7 +645,9 @@ export default function AdminPage() {
       <Card className="mt-3">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <CardTitle eyebrow="Email + Google accounts · native wallet connections">Everyone who showed up ({accounts.length})</CardTitle>
-          <div className="flex items-center gap-2">
+          {/* Wraps on a phone: the filter + Copy emails + CSV row ran 92px past
+              a 375px screen, so CSV was unreachable (squad mobile-native). */}
+          <div className="flex flex-wrap items-center gap-2">
             {/* An account is one lane in, not the only one — a native wallet
                 never signs up, it just starts acting. Both are people; the
                 only difference is whether there's an email to reach out on. */}

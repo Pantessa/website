@@ -127,7 +127,7 @@ export default async function SharedChatPage({ params }: Params) {
               href={shareHref}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--fg)] text-xs font-semibold hover:bg-[var(--surf-2)] transition-colors"
+              className="hit-44 flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--fg)] text-xs font-semibold hover:bg-[var(--surf-2)] transition-colors"
               title="Share this chat on X — the post opens pre-written with this chat's ask"
             >
               <XMark />
@@ -135,7 +135,7 @@ export default async function SharedChatPage({ params }: Params) {
             </a>
             <SpineLink
               href={tryHref}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white text-zinc-950 text-xs font-semibold hover:bg-zinc-200 transition-colors"
+              className="hit-44 flex items-center gap-2 px-3 py-1.5 rounded-full bg-white text-zinc-950 text-xs font-semibold hover:bg-zinc-200 transition-colors"
               title="Open Pantessa chat with these agents enabled and this chat's opening ask ready to run"
             >
               <YeetfulMark size={13} />
