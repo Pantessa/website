@@ -38,6 +38,8 @@ const arg = (name: string) => ARGS.find((a) => a.startsWith(`--${name}=`))?.slic
 const MODE = (arg('mode') || 'after') as 'before' | 'after'
 const OUT = arg('out')
 const BASELINE = arg('baseline')
+/** --just-inputs: only the input-size read per surface (no frame probe). */
+const JUST_INPUTS = ARGS.includes('--just-inputs')
 const SHOTS = arg('shots')
 const ONLY = arg('only') ? arg('only').split(',') : []
 const ENGINES = arg('engines') ? arg('engines').split(',') : ['webkit', 'chrome']
@@ -222,6 +224,18 @@ async function runProfile(profile: Profile, session: string | null, burner: stri
           }
         }
         const key = `${profile.id}:${surface.id}`
+        if (profile.phone && JUST_INPUTS) {
+          record[key] = {}
+          const READ = `(() => Array.from(document.querySelectorAll('[data-app-frame] input, [data-app-frame] textarea, [data-app-frame] select')).filter((el) => !['checkbox','radio','range','file','color','hidden'].includes(el.type || '')).map((el) => ({ label: (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.name || el.tagName.toLowerCase()).slice(0, 40), fontSize: getComputedStyle(el).fontSize, rect: (() => { const r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)] })() })))()`
+          const TOGGLE = `((on) => { let hit = 0; for (const ss of Array.from(document.styleSheets)) { let rules; try { rules = ss.cssRules } catch { continue } for (const r of Array.from(rules)) { const walk = (rule) => { if (rule.cssRules) Array.from(rule.cssRules).forEach(walk); if (rule.selectorText && /\\[data-app-frame\\] input/.test(rule.selectorText) && rule.style && (on || rule.style.fontSize)) { hit++; if (on) rule.style.setProperty('font-size', 'max(16px, 1em)'); else rule.style.removeProperty('font-size') } }; walk(r) } } return hit })`
+          const hit = (await page.evaluate(`(${TOGGLE})(false)`)) as number
+          const before = (await page.evaluate(READ)) as { label: string; fontSize: string; rect: number[] }[]
+          await page.evaluate(`(${TOGGLE})(true)`)
+          const after = (await page.evaluate(READ)) as { label: string; fontSize: string; rect: number[] }[]
+          const moved = after.map((i, n) => { const b = before[n]; return b && (b.rect[0] !== i.rect[0] || b.rect[1] !== i.rect[1] || b.fontSize !== i.fontSize) ? `${i.label}: ${b.fontSize} ${b.rect[0]}×${b.rect[1]} → ${i.fontSize} ${i.rect[0]}×${i.rect[1]}` : null }).filter(Boolean)
+          note(profile.id, surface.id, `inputs (rule ${hit > 0 ? 'found' : 'MISSING'}): ${after.length}; changed by the ≥16px rule: ${moved.length}`, hit > 0, moved.join(' · ') || after.map((i) => `${i.label} ${i.fontSize} ${i.rect[0]}×${i.rect[1]}`).join(' · '))
+          continue
+        }
         if (profile.phone) {
           const m = (await page.evaluate(`(${PROBE})(${JSON.stringify({ frameSel: surface.frame, scrollerSel: surface.scroller, stickySel: surface.sticky, positions: ['top', 'mid', 'end'] })})`)) as Record<string, unknown> & { steps: Record<string, unknown>[]; docScrollTest: Record<string, unknown> }
           record[key] = m
@@ -253,19 +267,25 @@ async function runProfile(profile: Profile, session: string | null, burner: stri
             if (pr && br0) note(profile.id, surface.id, 'the ask pill floats above the bar, never over it', pr.bottom <= br0.top + 1, `pill bottom ${pr.bottom}, bar top ${br0.top}`)
           }
           // Inputs: every text field inside the frame, its font size (iOS zooms
-          // under 16px) — recorded BEFORE, asserted AFTER, and the drive lists
-          // any whose box moved so the lane file can name what the rule shifted.
-          const inputs = (await page.evaluate(`(() => Array.from(document.querySelectorAll('[data-app-frame] input, [data-app-frame] textarea, [data-app-frame] select')).filter((el) => !['checkbox','radio','range','file','color','hidden'].includes(el.type || '')).map((el) => ({ tag: el.tagName.toLowerCase(), type: el.type || '', label: (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.name || '').slice(0, 40), fontSize: getComputedStyle(el).fontSize, rect: (() => { const r = el.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)] })() })))()`)) as { tag: string; type: string; label: string; fontSize: string; rect: number[] }[]
+          // under 16px). The BEFORE size is read on this same build with the
+          // frame's own ≥16px rule switched OFF (a same-origin stylesheet rule
+          // can be edited in place), then the rule goes back on and the AFTER
+          // size is read, so the drive lists exactly which boxes the rule grew.
+          const READ_INPUTS = `(() => Array.from(document.querySelectorAll('[data-app-frame] input, [data-app-frame] textarea, [data-app-frame] select')).filter((el) => !['checkbox','radio','range','file','color','hidden'].includes(el.type || '')).map((el) => ({ tag: el.tagName.toLowerCase(), type: el.type || '', label: (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.name || '').slice(0, 40), fontSize: getComputedStyle(el).fontSize, rect: (() => { const r = el.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)] })() })))()`
+          const TOGGLE_RULE = `((on) => { let hit = 0; for (const ss of Array.from(document.styleSheets)) { let rules; try { rules = ss.cssRules } catch { continue } for (const r of Array.from(rules)) { const walk = (rule) => { if (rule.cssRules) Array.from(rule.cssRules).forEach(walk); if (rule.selectorText && /\\[data-app-frame\\] input/.test(rule.selectorText) && rule.style && (on || rule.style.fontSize)) { hit++; if (on) rule.style.setProperty('font-size', 'max(16px, 1em)'); else rule.style.removeProperty('font-size') } }; walk(r) } } return hit })`
+          type InputRead = { tag: string; type: string; label: string; fontSize: string; rect: number[] }
+          const ruleOff = (await page.evaluate(`(${TOGGLE_RULE})(false)`)) as number
+          const inputsBefore = (await page.evaluate(READ_INPUTS)) as InputRead[]
+          await page.evaluate(`(${TOGGLE_RULE})(true)`)
+          const inputs = (await page.evaluate(READ_INPUTS)) as InputRead[]
           ;(record[key] as Record<string, unknown>).inputs = inputs
+          ;(record[key] as Record<string, unknown>).inputsBefore = inputsBefore
           if (MODE === 'before') note(profile.id, surface.id, `inputs: ${inputs.length} (${inputs.map((i) => `${i.label || i.tag} ${i.fontSize} ${i.rect[2]}×${i.rect[3]}`).join(' · ')})`, true)
           else {
             const small = inputs.filter((i) => parseFloat(i.fontSize) < 16)
             note(profile.id, surface.id, 'every text input inside the frame is ≥16px (no iOS focus zoom)', small.length === 0, small.map((i) => `${i.label || i.tag} ${i.fontSize}`).join(' · ') || `${inputs.length} inputs`)
-            const base = BASELINE ? (JSON.parse(readFileSync(BASELINE, 'utf8')) as Record<string, { inputs?: typeof inputs }>)[key]?.inputs : undefined
-            if (base) {
-              const moved = inputs.map((i) => { const b = base.find((x) => x.label === i.label && x.tag === i.tag); return b && (b.rect[2] !== i.rect[2] || b.rect[3] !== i.rect[3]) ? `${i.label || i.tag} ${b.rect[2]}×${b.rect[3]} → ${i.rect[2]}×${i.rect[3]} (${b.fontSize} → ${i.fontSize})` : null }).filter(Boolean)
-              note(profile.id, surface.id, `inputs whose box changed vs BEFORE (listed, not failed): ${moved.length}`, true, moved.join(' · '))
-            }
+            const moved = inputs.map((i, n) => { const b = inputsBefore[n]; return b && (b.rect[2] !== i.rect[2] || b.rect[3] !== i.rect[3] || b.fontSize !== i.fontSize) ? `${i.label || i.tag}: ${b.fontSize} ${b.rect[2]}×${b.rect[3]} → ${i.fontSize} ${i.rect[2]}×${i.rect[3]}` : null }).filter(Boolean)
+            note(profile.id, surface.id, `inputs the ≥16px rule changed (rule found ${ruleOff > 0 ? 'yes' : 'NO'}; listed, not failed): ${moved.length}`, ruleOff > 0, moved.join(' · ') || 'none moved')
           }
           if (MODE === 'after' && surface.id === 't') {
             // MARKETS' fence: the scroller and every ancestor up to the frame must
