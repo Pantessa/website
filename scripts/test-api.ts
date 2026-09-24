@@ -33131,12 +33131,19 @@ async function main() {
     const nnStore = await readFile(new URL('../lib/store.ts', import.meta.url), 'utf8')
     const nnLinksTab = await readFile(new URL('../components/LinksRailTab.tsx', import.meta.url), 'utf8')
     const nnTabs = await Promise.all(['AppsRailTab', 'ChatsRailTab', 'JobsRailTab', 'LinksRailTab', 'TeamRailTab'].map((f) => readFile(new URL(`../components/${f}.tsx`, import.meta.url), 'utf8')))
+    // Negative greps read CODE, never a comment that names the retired thing
+    // (the coordinator's pin lesson, 2026-09-24): strip // and /* */ first.
+    const nnCode = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    const nnSpineCode = nnCode(nnSpine)
+    const nnRailCode = nnCode(nnRail)
+    const nnWsCode = nnCode(nnWs)
+    const nnLinksTabCode = nnCode(nnLinksTab)
     check(
       'native nav: AppSpine executes lib/phone-nav on a phone (pickPhone → phoneTap; the lit seat = seatForScreen; MORE = moreLit) and never sets the retired overlay flag',
       /const pickPhone = \(seat: PhoneSeat\) => \{\s*const action = phoneTap\(\{ surface, screen: phoneScreen, seat, pathname \}\)/.test(nnSpine) &&
         /const selected = !offChat && seatForScreen\(phoneScreen\) === tab/.test(nnSpine) &&
         /const moreLit = moreLitFor\(surface, phoneScreen\)/.test(nnSpine) &&
-        !/setMobileMcpRailOpen/.test(nnSpine) && !/pickMobile/.test(nnSpine) &&
+        !/setMobileMcpRailOpen/.test(nnSpineCode) && !/pickMobile/.test(nnSpineCode) &&
         /case 'top':\s*scrollAppToTop\('smooth'\)/.test(nnSpine) &&
         /syncTabParam\(urlTab, \{ explicit: isNarrow \}\)/.test(nnSpine) &&
         /if \(phone\) setPhoneScreen\(ARRIVAL_SCREEN\)/.test(nnSpine) && /setPhoneScreen\(phoneScreenFromSearch\(search\)\)/.test(nnSpine),
@@ -33146,7 +33153,7 @@ async function main() {
       /<Sheet id="more" open=\{moreOpen\} onClose=\{\(\) => setMoreOpen\(false\)\} title="More"/.test(nnSpine) &&
         // Every sheet's labeled opener wears data-sheet-open=<id> = the Sheet's id (the squad drive's contract).
         /aria-label="More"\s+aria-haspopup="dialog"\s+aria-expanded=\{moreOpen\}\s+data-sheet-open="more"/.test(nnSpine) &&
-        !/data-spine-more/.test(nnSpine) && !/addEventListener\('pointerdown'/.test(nnSpine) &&
+        !/data-spine-more/.test(nnSpineCode) && !/addEventListener\('pointerdown'/.test(nnSpineCode) &&
         /href="\/docs" role="menuitem"/.test(nnSpine) && /href="\/dashboard"\s+role="menuitem"/.test(nnSpine),
     )
     check(
@@ -33157,7 +33164,7 @@ async function main() {
     )
     check(
       'native nav: the phone overlay drawer is retired — ChatRail renders nothing below lg, carries no overlay posture and no mobile flag; the desktop drawer renders the same extracted bodies (AppsRailTab, ChatsRailTab)',
-      /if \(!mounted \|\| isMobile\) return null/.test(nnRail) && !/max-lg:absolute/.test(nnRail) && !/mobileMcpRailOpen/.test(nnRail) &&
+      /if \(!mounted \|\| isMobile\) return null/.test(nnRail) && !/max-lg:absolute/.test(nnRailCode) && !/mobileMcpRailOpen/.test(nnRailCode) &&
         /<AppsRailTab \/>/.test(nnRail) && /<ChatsRailTab \/>/.test(nnRail) && /<JobsRailTab \/>/.test(nnRail) && /<LinksRailTab \/>/.test(nnRail) && /<TeamRailTab \/>/.test(nnRail),
     )
     check(
@@ -33166,7 +33173,7 @@ async function main() {
     )
     check(
       'native nav: ChatWorkspace is the phone frame (data-app-frame), mounts the screen BEFORE ChatInterface so its scroller is the first data-app-scroll, makes the conversation inert under a screen, and belts the retired flag + the desktop "show the studio" pair into screens',
-      /<div data-app-frame="" className=\{`relative flex \$\{chrome/.test(nnWs) && !/max-lg:pb-\[calc\(48px/.test(nnWs) &&
+      /<div data-app-frame="" className=\{`relative flex \$\{chrome/.test(nnWs) && !/max-lg:pb-\[calc\(48px/.test(nnWsCode) &&
         nnWs.indexOf('<PhoneScreens screen={phoneScreen} />') < nnWs.indexOf('<ChatInterface injectedPrompt={urlPrompt} />') &&
         /inert=\{screenUp \|\| undefined\} aria-hidden=\{screenUp \|\| undefined\}/.test(nnWs) &&
         /if \(!isNarrow \|\| !mobileMcpRailOpen\) return\s*setMobileMcpRailOpen\(false\)\s*setPhoneScreen\(screenForTab\(railTab\)\)/.test(nnWs) &&
@@ -33198,7 +33205,7 @@ async function main() {
       'native nav: the store owns ONE "take me to my links" (openLinksStudio: the LINKS screen on a phone, the LINKS main view at lg+), phoneScreen stays session-only, and the rail seat uses it instead of the desktop pair',
       /openLinksStudio: \(\) => \(isPhoneViewport\(\) \? set\(\{ phoneScreen: 'links' \}\) : set\(\{ railTab: 'links', mainView: 'links' \}\)\)/.test(nnStore) &&
         !/partialize: \(state\) => \(\{[^}]*phoneScreen/.test(nnStore) &&
-        /const toStudio = onStudio \?\? openLinksStudio/.test(nnLinksTab) && !/setMainView/.test(nnLinksTab),
+        /const toStudio = onStudio \?\? openLinksStudio/.test(nnLinksTab) && !/setMainView/.test(nnLinksTabCode),
     )
     // The server render: the frame attribute rides the workspace root, the
     // bar's seats wear the anatomy, MORE is a dialog trigger, and no drawer
