@@ -318,10 +318,14 @@ button.mk-held:hover { border-color: var(--accent); }
   .sym .mkt-chart__bar { gap: 8px; }
   .sym .mkt-chart__bar > .tok__tf { order: 1; }
   .sym .mkt-chart__bar > .mkt-chart__right { order: 2; }
-  /* basis = the row minus the tools group (5 × 44 + its frame ≈ 226) and a
-     gap: too wide for row 1's leftovers (it squeezed into ~50px there), so it
-     wraps to row 2 and sits beside the tools. */
-  .sym .mkt-chart__bar > .mkt-chart__ind { order: 3; flex: 1 1 calc(100% - 240px); }
+  /* basis = the row minus the tools group and a gap: too wide for row 1's
+     leftovers (it squeezed into ~50px there), so it wraps to row 2 and sits
+     beside the tools. Four tools, not five: the Select arrow is the "stop
+     drawing" button, and on a phone tapping the lit tool again already does
+     that (MarketChart toggles it), so it goes; 4 × 44 + the group's frame is
+     188px and the overlays keep ~133px at 375 to scroll in. */
+  .sym .mkt-chart__tools > .mkt-tool:first-child { display: none; }
+  .sym .mkt-chart__bar > .mkt-chart__ind { order: 3; flex: 1 1 calc(100% - 200px); }
   .sym .mkt-chart__bar > .mkt-chart__tools { order: 4; }
   /* The act strip is ONE row that scrolls sideways (the overlays idiom): six
      chips wrapped to three rows and pushed the chart half a screen down. The
