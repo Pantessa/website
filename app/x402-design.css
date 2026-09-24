@@ -473,6 +473,8 @@
   .mcta { gap: 10px; }
   .mcta .mcta__go { flex: 1; min-width: 0; }
   .mcta .mcta__ask { flex: 0 0 auto; gap: 8px; padding: 0 18px; background: color-mix(in srgb, var(--bg) 70%, transparent); }
+  /* 640 = lib/cta-bar CTA_BAR_MAX_PX: the bar's `data-mcta` flag is set only
+     where this query draws it (pinned equal). */
   @media (max-width: 640px) { .mcta { display: flex; } }
 
   /* live runner HUD — bottom-right glass card (hidden ≤1080px) */

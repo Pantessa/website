@@ -21,13 +21,26 @@ import { useEffect, useState } from 'react'
 import SpineLink from '@/components/SpineLink'
 import { PantessaMark } from '@/components/Logo'
 import { appScrollTop, onAppScroll } from '@/lib/app-scroller'
-import { ctaBarInitial, ctaBarStep, type CtaBarState } from '@/lib/cta-bar'
+import { CTA_BAR_MQ, ctaBarInitial, ctaBarOnScreen, ctaBarStep, type CtaBarState } from '@/lib/cta-bar'
 import { useAskDoor } from '@/lib/ask-door'
 
 export default function MobileCtaBar() {
   const [state, setState] = useState<CtaBarState>(() => ctaBarInitial(0))
   const openDoor = useAskDoor((s) => s.openDoor)
-  const show = state.shown
+  // Whether this viewport draws the bar at all (the CSS's own media query,
+  // one constant). Re-read on a change: a rotate crosses 640px.
+  const [fits, setFits] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia(CTA_BAR_MQ)
+    const read = () => setFits(mq.matches)
+    read()
+    mq.addEventListener('change', read)
+    return () => mq.removeEventListener('change', read)
+  }, [])
+  // On screen = the scroll state says show AND the bar is drawn here. The
+  // `data-mcta` flag the ask pill steps aside for says exactly this, or a
+  // landscape phone scrolled up lost both the bar and the pill.
+  const show = ctaBarOnScreen(state.shown, fits)
 
   useEffect(() => {
     setState(ctaBarInitial(appScrollTop()))
