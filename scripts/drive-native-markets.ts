@@ -859,41 +859,64 @@ async function brochureFoot(engine: Engine, pathname: string) {
 }
 
 // ── Row 8: no horizontal scroll, 360–414 + 844×390, dark + light ──────────
+//    With QA's watch-only wallet CONNECTED (round 4): a holding wallet adds the
+//    YOU HOLD pill to the /t header, and a stranger's run never saw the +8/+9px
+//    it pushed COMPARE past the edge. Each page loads once per theme at 375,
+//    waits for the holdings pill (the read lands a few seconds in), then
+//    RESIZES through the sizes the way a rotation does (QA's sequence). The
+//    mock refuses every signature: nothing is signed.
+const WATCH_ADDRESS = '0x5EaaBd731d2Bc0490C2D47e41858e9b0629455a0'
 async function overflowRows() {
-  const widths: [number, number][] = [
-    [360, 780],
+  const sizesSeq: [number, number][] = [
     [375, 812],
+    [360, 780],
     [390, 844],
     [414, 896],
     [844, 390],
+    [375, 812],
   ]
   const pages = ['/markets', '/t/AAPL', '/t/ETH', '/t/HYPE']
   const fails: string[] = []
   let n = 0
   for (const theme of ['dark', 'light'] as const) {
-    const { browser, context } = await newPage('chrome-pixel7', { theme })
+    const browser = await pw.chromium.launch({ channel: 'chrome' })
     try {
-      for (const [w, h] of widths) {
-        const page = await context.newPage()
-        await page.setViewportSize({ width: w, height: h })
-        for (const p of pages) {
-          await page.goto(`${BASE}${p}`, { waitUntil: 'load', timeout: 60_000 })
-          await page.waitForTimeout(p === '/markets' ? 700 : 1100)
+      const { defaultBrowserType: _ignored, ...device } = pw.devices['iPhone 13']
+      const context = await browser.newContext({ ...device, viewport: { width: 375, height: 812 }, colorScheme: theme })
+      await context.route(`${BASE}/**`, (route: any) => route.continue({ headers: { ...route.request().headers(), 'x-yf-internal-run': '1' } }))
+      await context.addInitScript(`try { localStorage.setItem('yf-theme', ${JSON.stringify(theme)}); localStorage.setItem('wagmi.recentConnectorId', '"injected"') } catch {}`)
+      await context.addInitScript(MOCK_WALLET_JS(WATCH_ADDRESS))
+      const page = await context.newPage()
+      for (const p of pages) {
+        await page.setViewportSize({ width: 375, height: 812 })
+        await page.goto(`${BASE}${p}`, { waitUntil: 'load', timeout: 60_000 })
+        if (p.startsWith('/t/')) {
+          await page.waitForSelector('.sym__chart canvas', { timeout: 30_000 }).catch(() => {})
+          // The holdings read decides whether YOU HOLD renders (AAPL + ETH do
+          // for this wallet); give it time to land before measuring.
+          if (p !== '/t/HYPE') await page.waitForSelector('.mk-held', { timeout: 12_000 }).catch(() => {})
+        }
+        await page.waitForTimeout(900)
+        for (const [w, h] of sizesSeq) {
+          await page.setViewportSize({ width: w, height: h })
+          await page.waitForTimeout(450)
           const m = await docMetrics(page)
-          // The widest offender, when there is one (a node wider than the page).
-          const wide = await page.evaluate(`(() => { let best = null; const iw = document.documentElement.clientWidth; for (const e of document.querySelectorAll('body *')) { const r = e.getBoundingClientRect(); if (r.width && r.right > iw + 1) { const cs = getComputedStyle(e); if (cs.position === 'fixed') continue; let p = e.parentElement, clipped = false; while (p) { const o = getComputedStyle(p).overflowX; if (o === 'hidden' || o === 'clip' || o === 'auto' || o === 'scroll') { clipped = true; break } p = p.parentElement } if (!clipped && (!best || r.right > best.right)) best = { right: Math.round(r.right), cls: (e.className || e.tagName).toString().slice(0, 40) } } } return best })()`)
+          const held = await page.evaluate(`!!document.querySelector('.mk-held')`)
           n++
           const ok = m.sw <= m.cw && m.scSW <= m.scCW
-          if (!ok) fails.push(`${theme} ${w}×${h} ${p}: doc ${m.sw}/${m.cw} scroller ${m.scSW}/${m.scCW}${wide ? ` (${wide.cls} → ${wide.right})` : ''}`)
+          if (!ok) {
+            const wide = await page.evaluate(`(() => { const sc = ${SCROLLER_JS}; const edge = sc === document.scrollingElement ? document.documentElement.clientWidth : sc.getBoundingClientRect().right; let best = null; for (const e of sc.querySelectorAll('*')) { const r = e.getBoundingClientRect(); if (!r.width || r.right <= edge + 0.5) continue; let q = e.parentElement, clipped = false; while (q && q !== sc) { if (getComputedStyle(q).overflowX !== 'visible') { clipped = true; break } q = q.parentElement } if (!clipped && (!best || r.right > best.right)) best = { right: Math.round(r.right - edge), cls: (e.tagName.toLowerCase() + '.' + String(e.className).split(' ')[0]).slice(0, 40) } } return best })()`)
+            fails.push(`${theme} ${w}×${h} ${p}${held ? ' (holding)' : ''}: doc ${m.sw}/${m.cw} scroller ${m.scSW}/${m.scCW}${wide ? ` (${wide.cls} +${wide.right})` : ''}`)
+          }
         }
-        await page.close()
       }
+      await context.close()
     } finally {
       await browser.close()
     }
   }
   record.overflow = { n, fails }
-  judge(8, `no horizontal scroll on ${pages.length} pages × ${widths.length} sizes × 2 themes`, fails.length === 0, fails.length ? fails.slice(0, 6).join(' | ') : `${n}/${n} clean`)
+  judge(8, `no horizontal scroll with a holding wallet connected: ${pages.length} pages × ${sizesSeq.length} sizes (a load, then rotations) × 2 themes`, fails.length === 0, fails.length ? fails.slice(0, 6).join(' | ') : `${n}/${n} clean`)
 }
 
 async function main() {

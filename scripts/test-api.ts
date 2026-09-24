@@ -33341,7 +33341,11 @@ async function main() {
       'native markets (round 2): on a phone the /t header leads with the price and the chart — one title line (the venue chip ellipsizes), one meta line (the session ellipsizes), no "24H RANGE" caption, a tighter rhythm; the act chips snap to a chip\'s edge; the header pills keep a 44px hit area',
       /\.mkt-frame--sym \.sym__head \{ padding: 10px 0 8px; row-gap: 8px; \}/.test(nmMk) &&
         /\.sym__head--mk2 \.sym__titlerow \{ flex-wrap: nowrap; \}/.test(nmMk) &&
-        /\.sym__head--mk2 \.sym__session \{ display: block; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; \}/.test(nmMk) &&
+        /\.sym__head--mk2 \.sym__session \{ display: block; flex: 1 1 7rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; \}/.test(nmMk) &&
+        // Round 4: the meta line WRAPS (nowrap pushed COMPARE off a 375 screen once
+        // a holding wallet added YOU HOLD: +8/+9px, +23/+24 at 360).
+        /\.sym__head--mk2 \.sym__meta \{ flex-wrap: wrap; row-gap: 6px; margin-top: 6px; \}/.test(nmMk) && !/\.sym__meta \{ flex-wrap: nowrap/.test(nmCode(nmMk)) &&
+        /\.sym__head--mk2 \.mk-held__amt \{ display: none; \}/.test(nmMk) &&
         /\.sym__head--mk2 \.mk-range__k \{ display: none; \}/.test(nmMk) &&
         /\.sym__act-chips \{ scroll-snap-type: x proximity; \}/.test(nmMk) && /\.sym__act-chip \{ flex-shrink: 0; scroll-snap-align: start; \}/.test(nmMk) &&
         /\.mk-vs__open::after, \.mk-vs__x::after, button\.mk-held::after \{ content: ''; position: absolute; inset: -9px -4px; \}/.test(nmMk),
