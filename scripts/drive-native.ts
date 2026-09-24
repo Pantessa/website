@@ -701,7 +701,10 @@ async function load(o: Opened, s: Surface): Promise<void> {
     return
   }
   await page.waitForLoadState('load', { timeout: 20_000 }).catch(() => {})
-  const until = Date.now() + 20_000
+  // The account flips to connected ~10s after load headless (wagmi's store has
+  // the connection at ~1s; the UI follows the app's own connector probe), and
+  // up to ~20s+ when the drive's pool and CHAT's child share the CPU.
+  const until = Date.now() + 32_000
   // RainbowKit shows an ENS-less account as "0x5E…55a0": the first four and
   // the last four characters are on screen once the wallet reconnected.
   const prefix = o.address ? o.address.slice(0, 4).toLowerCase() : null
@@ -1241,7 +1244,11 @@ async function tapFirst(page: Pw, selectors: string[]): Promise<boolean> {
     const n = await loc.count().catch(() => 0)
     for (let i = 0; i < n; i++) {
       const el = loc.nth(i)
-      if (await el.isVisible().catch(() => false)) {
+      // Playwright's isVisible() counts an opacity:0 element as visible (a
+      // closed dropdown kept in the DOM — the account menu's "Wallet details"
+      // measured exactly that); the in-page check walks opacity up the tree.
+      const shown = (await el.isVisible().catch(() => false)) && (await el.evaluate((e: Element) => (window as unknown as { __nq?: { vis(x: Element): boolean } }).__nq?.vis(e) ?? true).catch(() => false))
+      if (shown) {
         await el.tap({ timeout: 5_000 }).catch(async () => el.click({ timeout: 5_000 }).catch(() => {}))
         return true
       }
@@ -1267,11 +1274,11 @@ const TRIGGERS: Trigger[] = [
     surface: S_MARKETS,
     auth: 'wallet',
     open: async (p) => {
-      if (await tapFirst(p, ['[data-sheet-open="wallet"]'])) return true
-      // The item lives INSIDE the account sheet (PAGES R1: data-sheet-open="wallet").
+      // The item lives INSIDE the account sheet (PAGES R1: data-sheet-open="wallet"),
+      // so the account sheet opens first, then the item in it hands off.
       if (!(await tapFirst(p, ['[data-sheet-open="account"]', '.navacct__pill']))) return false
-      await sleep(600)
-      return tapFirst(p, ['[data-sheet-open="wallet"]', '[role=menuitem]:has-text("Wallet details")', 'button:has-text("Wallet details")', 'a:has-text("Wallet details")'])
+      await sleep(700)
+      return tapFirst(p, ['[data-sheet="account"] [data-sheet-open="wallet"]', '[data-sheet] [data-sheet-open="wallet"]', '[role=menuitem]:has-text("Wallet details")', 'button:has-text("Wallet details")'])
     },
   },
   { id: 'sign-in door', surface: S_MARKETS, auth: 'none', open: (p) => tapFirst(p, ['[data-sheet-open="door"]', 'button:has-text("Sign in")', 'a:has-text("Sign in")']) },
