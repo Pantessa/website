@@ -545,6 +545,15 @@ export default function MarketChart({
       timeScale: { borderColor: alpha(tokens.line, 0.6), timeVisible: tf !== '1d', secondsVisible: false, rightOffset: RIGHT_OFFSET, rightBarStaysOnScroll: true },
       localization: { priceFormatter: (p: number) => fmtPrice(p) },
       handleScale: { axisPressedMouseMove: true },
+      // A touch screen shares its scroll with the chart (squad mobile-native,
+      // 2026-09-24): a vertical swipe is the SCREEN's, a horizontal one pans
+      // the bars, a pinch zooms them. The engine's default claimed every
+      // vertical drag and called preventDefault, so on a phone the chart was
+      // a 300px dead zone for scrolling (a CDP touch swipe moved the page
+      // 0px). `.mkt-chart__engine`'s `touch-action: pan-y` (x402-design.css)
+      // is the other half: the browser scrolls natively and never takes a
+      // pinch for a page zoom. Mouse input is unaffected.
+      handleScroll: { vertTouchDrag: false },
     })
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: tokens.up,

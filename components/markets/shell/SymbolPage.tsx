@@ -55,6 +55,7 @@ import { useSession } from '@/lib/session'
 import { useSymbolFills, type FillMarker } from '@/lib/chart-fills'
 import { fillFromSigned, mergeFills, type SignedEvent } from '@/lib/ask-chart-thread'
 import { useAskDoor } from '@/lib/ask-door'
+import { appScrollTop, scrollAppTo } from '@/lib/app-scroller'
 import type { AskChartIncoming } from '@/components/markets/ai/AskChart'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
@@ -422,6 +423,22 @@ export default function SymbolPage({
                   if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
                   e.preventDefault()
                   setTab(t.tab)
+                  // On a phone the strip sticks under the top bar (markets.css):
+                  // a switch made while it's stuck lands the new tab at its own
+                  // top, the way a native tab strip does, instead of mid-body.
+                  // scrollIntoView on a STUCK sticky is a no-op (its box already
+                  // sits at the line), so scroll by where the strip would be
+                  // unstuck: the top of its parent (.sym__main).
+                  requestAnimationFrame(() => {
+                    const el = tabsRef.current
+                    const main = el?.parentElement
+                    if (!el || !main) return
+                    const cs = getComputedStyle(el)
+                    if (cs.position !== 'sticky') return
+                    const stuckAt = parseFloat(cs.top) || 0
+                    const natural = main.getBoundingClientRect().top
+                    if (natural < stuckAt - 1) scrollAppTo(appScrollTop() + natural - stuckAt)
+                  })
                 }}
                 data-tab={t.tab}
               >
