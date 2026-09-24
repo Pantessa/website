@@ -44,7 +44,7 @@ const arg = (k: string, d = '') => process.argv.find((a) => a.startsWith(`--${k}
 const BASE = arg('base', process.env.BASE ?? 'http://localhost:3894').replace(/\/$/, '')
 const TAG = arg('tag', 'run')
 const ROWS = new Set(
-  arg('rows', '1,2,3,4,5,6,7,8')
+  arg('rows', '1,2,3,4,5,6,7,8,9')
     .split(',')
     .map((s) => Number(s.trim()))
     .filter(Boolean),
@@ -313,7 +313,7 @@ async function symbolRows(engine: Engine, sym: string) {
   const { browser, page } = await newPage(engine)
   try {
     await openSymbol(page, sym)
-    const head = await page.evaluate(`(() => { const r = (s) => { const e = document.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height } }; return { head: r('.sym__head'), name: r('.sym__name'), last: r('.sym__last'), chart: r('.sym .tchart'), tabs: r('.sym__tabs'), ask: r('.mk-askdock__bar'), top: r('.mkt-frame__top'), plot: r('.sym .mkt-chart__canvas'), bar: r('.sym .mkt-chart__bar') } })()`)
+    const head = await page.evaluate(`(() => { const r = (s) => { const e = document.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height } }; return { head: r('.sym__head'), name: r('.sym__name'), last: r('.sym__last'), chart: r('.sym .tchart'), tabs: r('.sym__tabs'), ask: r('.mk-askdock__bar'), top: r('.mkt-frame__top'), plot: r('.sym .mkt-chart__canvas'), bar: r('.sym .mkt-chart__bar'), ind: r('.sym .mkt-chart__ind'), tools: r('.sym .mkt-chart__tools') } })()`)
     const chips = await sizes(page, '.sym__act-chip')
     const fs = await sizes(page, '.tchart__fs')
     const tf = await sizes(page, '.sym .tok__tfbtn')
@@ -339,6 +339,7 @@ async function symbolRows(engine: Engine, sym: string) {
       judge(3, `${engine} /t/${sym}: the full-screen control is ≥44px`, !!fs[0] && fs[0].w >= 44 && fs[0].h >= 44, fs[0] ? `${fs[0].w}×${fs[0].h}` : 'none')
       // Two rows: 44 (timeframes) + 8 + 50 (the tools group's own 2px pad +
       // 1px border around 44px tools). A stock's pool pill adds a 44px row.
+      judge(3, `${engine} /t/${sym}: the overlays share a row with the drawing tools and get ≥100px to scroll in`, !!head.ind && !!head.tools && Math.abs(head.ind.y - head.tools.y) <= 4 && head.ind.w >= 100, `overlays ${rectOf(head.ind)} · tools ${rectOf(head.tools)}`)
       judge(3, `${engine} /t/${sym}: the plot keeps ≥240px on a phone and its controls take two rows (a stock's pool pill adds one)`, !!head.plot && head.plot.h >= 240 && !!head.bar && head.bar.h <= (sym === 'AAPL' ? 44 + 8 + 44 + 8 + 50 : 44 + 8 + 50) + 1, `plot ${rectOf(head.plot)} · controls ${rectOf(head.bar)}`)
       judge(5, `${engine} /t/${sym}: act chips, timeframes, overlays, tools and section tabs ≥44px tall`, [minOf(chips, 'h'), minOf(tf, 'h'), minOf(ind, 'h'), minOf(tools, 'h'), minOf(tabs, 'h')].every((h) => Number.isNaN(h) || h >= 44), line)
     }
@@ -487,6 +488,37 @@ async function sheetRows(engine: Engine) {
     else judge(7, `${engine} ImportModal is the Sheet on a phone: fields ≥16px, Escape closes`, !!impRes && impRes.kind === 'Sheet' && (impRes.fieldFonts ?? []).every((f: number) => f >= 16) && impRes.escape, il)
   } finally {
     await browser.close()
+  }
+}
+
+// ── Row 9: the pictures, dark + light at 375 (the numbers are the proof) ───
+async function shots() {
+  for (const theme of ['dark', 'light'] as const) {
+    const { browser, page } = await newPage('chrome-iphone375', { theme, seedList: true })
+    try {
+      mkdirSync(MARKETS_SHOT_DIR, { recursive: true })
+      const snap = async (name: string) => {
+        await page.mouse.move(1, 1)
+        await page.waitForTimeout(250)
+        await page.screenshot({ path: path.join(MARKETS_SHOT_DIR, `${TAG}-shot-${theme}-${name}.png`) })
+      }
+      await openMarkets(page)
+      await snap('markets-top')
+      await page.evaluate(`document.querySelector('#crypto') && document.querySelector('#crypto').scrollIntoView()`)
+      await page.waitForTimeout(300)
+      await snap('markets-crypto')
+      await page.locator('[data-ask-door="rail"]').first().click()
+      await page.waitForTimeout(500)
+      await snap('markets-askdoor')
+      await page.keyboard.press('Escape')
+      await openSymbol(page, 'ETH')
+      await snap('t-ETH-top')
+      await page.evaluate(`document.querySelector('.sym__chart').scrollIntoView({ block: 'start' })`)
+      await page.waitForTimeout(300)
+      await snap('t-ETH-chart')
+    } finally {
+      await browser.close()
+    }
   }
 }
 
@@ -640,6 +672,7 @@ async function main() {
     await sheetRows('chrome-pixel7')
   }
   if (ROWS.has(8)) await overflowRows()
+  if (ROWS.has(9)) await shots()
   mkdirSync(MARKETS_SHOT_DIR, { recursive: true })
   writeFileSync(path.join(MARKETS_SHOT_DIR, `${TAG}-numbers.json`), JSON.stringify({ at: new Date().toISOString(), base: BASE, record, verdicts }, null, 2))
   const judged = verdicts.filter((v) => !v.note)

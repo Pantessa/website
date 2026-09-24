@@ -33158,7 +33158,7 @@ async function main() {
     check(
       'native markets: on a phone the /t plot keeps 260px however its controls wrap, those controls take two rows (timeframes + live/full screen, then overlays beside the tools), and the act strip is one sideways row',
       /\.sym \.tchart:not\(\.tchart--expanded\) \.mkt-chart__canvas \{ flex: 0 0 auto; height: 260px; \}/.test(nmMk) &&
-        /\.sym \.mkt-chart__bar > \.mkt-chart__ind \{ order: 3; flex: 1 1 0; \}/.test(nmMk) &&
+        /\.sym \.mkt-chart__bar > \.mkt-chart__ind \{ order: 3; flex: 1 1 calc\(100% - 240px\); \}/.test(nmMk) &&
         /\.sym__act-chips \{\s*align-self: stretch; min-width: 0; flex-wrap: nowrap;[^}]*overflow-x: auto;/.test(nmMk),
     )
     check(

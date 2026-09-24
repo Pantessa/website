@@ -188,6 +188,9 @@ function AskDoorSheet() {
   )
   const sym = askDoorSymbol(pathname)
   const placeholder = askDoorPlaceholder(pathname)
+  // The phone Sheet's one-row composer is ~240px wide: the long placeholder
+  // wrapped to a clipped second line there. A short one fits.
+  const phonePlaceholder = sym ? `Ask about ${sym}…` : 'Ask Pantessa anything…'
 
   // ⌘K / Ctrl+K toggles; Esc closes the idle sheet (a live runtime keeps its
   // build — close it with the button so a stray Esc never loses a sign card).
@@ -331,7 +334,7 @@ function AskDoorSheet() {
               send(draft)
             }
           }}
-          placeholder={placeholder}
+          placeholder={postureRef.current ? phonePlaceholder : placeholder}
           aria-label="Ask Pantessa"
           rows={1}
           className="askdoor__input"
