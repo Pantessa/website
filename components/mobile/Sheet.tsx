@@ -18,22 +18,25 @@
 // At lg and up a bottom sheet renders as a centered dialog, so a modal can
 // adopt it on every breakpoint without a second component.
 //
-// The back gesture: on a phone, an open sheet owns ONE history entry marked
-// `{ sheet: <key> }` (Next's patched pushState copies its own `__NA` + tree
-// into that object, so a popstate onto the previous entry is a same-URL
-// restore, never a reload — a state WITHOUT `__NA` would reload; read
-// lib/app-tab-url.ts). Back pops it and closes the sheet on the same page.
+// The back gesture and the swipe are HOOKS (components/mobile/useBackToClose,
+// useSwipeToClose), so an overlay that cannot be a Sheet (the sign-in door,
+// ChatSignInGate) wears the same two behaviors from the same implementation.
+// On a phone an open sheet owns ONE history entry marked `{ sheet: <key> }`
+// (Next's patched pushState copies its own `__NA` + tree into that object,
+// so a popstate onto the previous entry is a same-URL restore, never a
+// reload — a state WITHOUT `__NA` would reload; read lib/app-tab-url.ts).
 // The entry's life — and the HANDOFF race, where one tap closes sheet A and
 // opens sheet B in the same commit — is lib/sheet-history's job: a closing
 // sheet's entry is popped on the next tick unless the next sheet takes it
 // over, so a chain of handoffs is one entry and back closes what is open.
 
-import { useEffect, useId, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { SHEET_MOTION_MS, isPhoneViewport, shouldDismissDrag } from '@/lib/phone-shell'
-import { sheetHistory } from '@/lib/sheet-history'
+import { SHEET_MOTION_MS } from '@/lib/phone-shell'
+import { useBackToClose } from './useBackToClose'
+import { useSwipeToClose } from './useSwipeToClose'
 import './mobile.css'
 
 /** Why a sheet closed. `back` is the phone's back gesture, `swipe` a drag
@@ -88,7 +91,6 @@ export default function Sheet({
 }: SheetProps) {
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
-  const rootRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
   const historyKey = `sheet:${id ?? titleId}`
@@ -114,25 +116,19 @@ export default function Sheet({
     return () => window.clearTimeout(t)
   }, [phase])
 
-  // ── The history entry (phone only), owned through lib/sheet-history so a
-  // handoff between two sheets shares one entry and back closes the top one.
-  const ownedRef = useRef(false)
-  const dismiss = (reason: SheetCloseReason) => {
-    if (ownedRef.current) {
-      ownedRef.current = false
-      try {
-        sheetHistory().closed(historyKey, reason === 'back' ? 'back' : 'other')
-      } catch {
-        /* a sandboxed history: the entry stays, harmless */
-      }
-    }
-    closeRef.current(reason)
-  }
+  const dismiss = (reason: SheetCloseReason) => closeRef.current(reason)
   const dismissRef = useRef(dismiss)
   dismissRef.current = dismiss
 
-  // ── Open-time wiring: focus in, Escape, the tab trap, the scroll lock, the
-  // history entry; focus out and the entry's consumption on close.
+  // ── The back gesture (phone only): one history entry through lib/sheet-
+  // history, so a handoff between two sheets shares one entry and back
+  // closes the top one. Released on the effect's cleanup when `open` flips.
+  useBackToClose(open, dismiss, historyKey)
+  // ── Swipe to dismiss on the grabber and the head; the panel follows.
+  const { handleProps: dragHandlers } = useSwipeToClose(panelRef, dismiss, side)
+
+  // ── Open-time wiring: focus in, Escape, the tab trap, the scroll lock;
+  // focus out on close.
   useEffect(() => {
     if (!open) return
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -177,104 +173,18 @@ export default function Sheet({
     const html = document.documentElement
     const prevOverflow = html.style.overflow
     html.style.overflow = 'hidden'
-    // The back gesture (phone only): claim an entry; the coordinator calls
-    // us back when the entry is popped.
-    if (isPhoneViewport()) {
-      try {
-        sheetHistory().opened({
-          key: historyKey,
-          onBack: () => {
-            ownedRef.current = false
-            dismissRef.current('back')
-          },
-        })
-        ownedRef.current = true
-      } catch {
-        ownedRef.current = false
-      }
-    }
     return () => {
       cancelAnimationFrame(raf)
       document.removeEventListener('keydown', onKey)
       html.style.overflow = prevOverflow
-      // Closed by the owner (open → false) without one of our dismissals, or
-      // unmounted while open: release the entry (popped on the next tick
-      // unless another sheet takes it over; never if the page moved on).
-      if (ownedRef.current) {
-        ownedRef.current = false
-        try {
-          sheetHistory().closed(historyKey, 'other')
-        } catch {
-          /* leave the entry */
-        }
-      }
       opener?.focus?.({ preventScroll: true })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
-
-  // ── Swipe to dismiss: a pointer drag on the grabber or the head. The panel
-  // follows the finger; on release lib/phone-shell decides (distance or
-  // flick), and the exit motion starts from where the finger left it.
-  const drag = useRef<{ id: number; start: number; last: number; lastT: number; v: number } | null>(null)
-  const axis = (e: ReactPointerEvent) => (side === 'bottom' ? e.clientY : e.clientX)
-  const toward = (from: number, to: number) => (side === 'bottom' ? to - from : from - to) // positive = toward dismiss
-  const onDragStart = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return
-    if (!isPhoneViewport()) return
-    const p = axis(e)
-    drag.current = { id: e.pointerId, start: p, last: p, lastT: performance.now(), v: 0 }
-    e.currentTarget.setPointerCapture(e.pointerId)
-    const panel = panelRef.current
-    if (panel) panel.style.transition = 'none'
-  }
-  const onDragMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const d = drag.current
-    if (!d || d.id !== e.pointerId) return
-    const p = axis(e)
-    const now = performance.now()
-    const inst = toward(d.last, p) / Math.max(1, now - d.lastT)
-    d.v = d.v * 0.6 + inst * 0.4
-    d.last = p
-    d.lastT = now
-    const shown = Math.max(0, toward(d.start, p))
-    const panel = panelRef.current
-    if (panel) panel.style.transform = side === 'bottom' ? `translateY(${shown}px)` : `translateX(${-shown}px)`
-    rootRef.current?.style.setProperty('--sheet-drag', String(shown))
-  }
-  const onDragEnd = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const d = drag.current
-    if (!d || d.id !== e.pointerId) return
-    drag.current = null
-    const panel = panelRef.current
-    if (!panel) return
-    const delta = toward(d.start, axis(e))
-    const size = side === 'bottom' ? panel.offsetHeight : panel.offsetWidth
-    if (e.type !== 'pointercancel' && shouldDismissDrag(delta, d.v, size)) {
-      rootRef.current?.style.setProperty('--sheet-from', `${Math.max(0, delta)}px`)
-      panel.style.transform = ''
-      panel.style.transition = ''
-      dismiss('swipe')
-      return
-    }
-    panel.style.transition = `transform 180ms cubic-bezier(.32,.72,0,1)`
-    panel.style.transform = ''
-    rootRef.current?.style.setProperty('--sheet-drag', '0')
-    window.setTimeout(() => {
-      if (panelRef.current) panelRef.current.style.transition = ''
-    }, 200)
-  }
-  const dragHandlers = {
-    onPointerDown: onDragStart,
-    onPointerMove: onDragMove,
-    onPointerUp: onDragEnd,
-    onPointerCancel: onDragEnd,
-  }
 
   if (!mounted || phase === 'closed') return null
 
   return createPortal(
-    <div ref={rootRef} className="sheet" data-sheet={id} data-side={side} data-size={size} data-phase={phase}>
+    <div className="sheet" data-sheet={id} data-side={side} data-size={size} data-phase={phase}>
       <div className="sheet__scrim" aria-hidden onClick={() => dismiss('scrim')} />
       <div
         ref={panelRef}
