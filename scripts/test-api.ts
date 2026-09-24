@@ -33089,6 +33089,33 @@ async function main() {
         nq.TOP_BAR_DOORS.some((d) => d.door === 'history' && d.expect.screen === 'history') &&
         nq.TOP_BAR_DOORS.some((d) => d.door === 'apps' && d.expect.tab === 'mcps'),
     )
+    // The drive judges tabs against lib/phone-nav phoneTap (NAV's contract);
+    // its static tables are the fallback for a tree without it. Pin that they
+    // AGREE, seat by seat and sequence by sequence, so neither drifts alone.
+    {
+      const pn = await import('../lib/phone-nav')
+      const agree = (a: { path: string; tab: string | null; screen: unknown; lit: string; sheet?: boolean }, b: typeof a) =>
+        a.path === b.path && (a.tab ?? null) === (b.tab ?? null) && JSON.stringify(a.screen) === JSON.stringify(b.screen) && a.lit === b.lit && !!a.sheet === !!b.sheet
+      const off: string[] = []
+      for (const [origin, table] of [['/chat', nq.D2_FROM_CHAT], ['/markets', nq.D2_FROM_MARKETS]] as const) {
+        const from = { surface: origin === '/chat' ? 'chat' : 'markets', screen: 'chat', pathname: origin } as const
+        for (const [seat, want] of Object.entries(table)) {
+          const got = nq.expectFromPhoneTap(pn as never, from, seat).expect
+          if (!agree(want, got)) off.push(`${origin} ${seat}: table ${JSON.stringify(want)} vs phoneTap ${JSON.stringify(got)}`)
+        }
+      }
+      for (const q of nq.D2_SEQUENCES) {
+        let st: { surface: 'chat' | 'markets' | 'wallet' | 'dashboard'; screen: string; pathname: string } = { surface: 'chat', screen: 'chat', pathname: '/chat' }
+        let got = q.expect
+        for (const seat of q.taps) {
+          const r = nq.expectFromPhoneTap(pn as never, st, seat)
+          got = r.expect
+          st = r.next
+        }
+        if (!agree(q.expect, got)) off.push(`${q.name}: table ${JSON.stringify(q.expect)} vs phoneTap ${JSON.stringify(got)}`)
+      }
+      check('native qa: the drive\'s fallback D2 tables agree with lib/phone-nav phoneTap for every seat from /chat and /markets and every sequence (the tabs rows are judged by phoneTap)', off.length === 0, off.slice(0, 2).join(' | '))
+    }
     const app = nq.SURFACES.filter((x) => x.kind === 'app').map((x) => x.path)
     check(
       'native qa: every framed surface of README invariant 1 is driven (/chat, its four tabs, /markets, /t/AAPL, /t/ETH, /wallet, /dashboard, /i/<slug>) plus the brochure pages',
