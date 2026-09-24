@@ -61,7 +61,7 @@ export default function EmptyState({
     // guestBannerPad is retired below lg (squad mobile-native): the guest
     // banner sits IN FLOW above the composer there, so nothing floats over
     // the empty state; at lg+ the scroller's own pb-32 reserves it.
-    <div className="flex flex-col items-center justify-center flex-1 text-center py-20">
+    <div data-empty-state="" className="flex flex-col items-center justify-center flex-1 text-center py-20">
       <div className="w-16 h-16 rounded-2xl tint-bg-accent-15 border tint-border-accent-50 flex items-center justify-center mb-6">
         <Sparkles className="w-8 h-8" style={{ color: 'var(--accent)' }} />
       </div>

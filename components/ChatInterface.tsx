@@ -1022,12 +1022,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         pinnedRef.current = true
         return
       }
-      if (performance.now() - userAt < 1000) {
-        pinnedRef.current = false
-        return
-      }
-      // Not the reader: a pinned thread holds its ground.
-      if (pinnedRef.current && hasThreadRef.current) scroller.scrollTop = scroller.scrollHeight
+      // Only the reader lets go. A scroll nobody's finger made (anchoring,
+      // a route's scroll memory) leaves the pin as it was — the next growth
+      // re-pins through the ResizeObserver — and is never fought: a
+      // scrollIntoView, a focus moving up the thread (keyboard, VoiceOver)
+      // or find-in-page lands where it asked to (round 2: snapping back broke
+      // the mint verb's scroll-into-view on the first bubble).
+      if (performance.now() - userAt < 1000) pinnedRef.current = false
     }
     scroller.addEventListener('scroll', onScroll, { passive: true })
     scroller.addEventListener('wheel', markUser, { passive: true })

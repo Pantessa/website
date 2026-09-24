@@ -34088,6 +34088,8 @@ async function main() {
       /@media \(hover: none\) and \(max-width: 1023px\) \{[\s\S]*?:is\(\[data-splash-hero\], \[data-splash-card\]\) button\.rounded-full \{\s*min-height: 44px;[\s\S]*?\[data-splash-card\] button\[aria-expanded\] \{ min-height: 44px; \}[\s\S]*?\[data-turn-tools\]::after \{\s*content: '';\s*position: absolute;\s*inset: -4px;/.test(barCss))
     check('native chat r2: the composer grows with what is typed on a phone (up to its max-h-40, then it scrolls), its mic + send ride the bottom line, and the pill is a rounded rect whose one-line radius is the old capsule',
       /t\.style\.height = 'auto'\s*\n\s*t\.style\.height = `\$\{Math\.min\(t\.scrollHeight, 160\)\}px`/.test(ci) && /if \(!isNarrow \|\| embedded\) \{\s*t\.style\.height = ''/.test(ci) && /'max-lg:py-1 max-lg:items-end max-lg:rounded-\[26px\]'/.test(ci) && /max-h-40 overflow-y-auto leading-6 max-lg:py-2\.5/.test(ci))
+    check('native chat r2: only the reader releases the pin, and a scroll nobody\'s finger made is never fought (snapping back broke scroll-into-view, a focus moving up the thread, find-in-page) — the one scroll write in the pin is the ResizeObserver\'s re-pin',
+      /if \(performance\.now\(\) - userAt < 1000\) pinnedRef\.current = false\n\s*\}/.test(ci) && (ciCode.match(/scroller\.scrollTop = scroller\.scrollHeight/g) ?? []).length === 1)
     check('native chat r2: keys typed into a field never count as the reader scrolling (a space or an arrow in the composer used to arm the pin\'s release)',
       /if \(el && \(el\.isContentEditable \|\| \/\^\(INPUT\|TEXTAREA\|SELECT\)\$\/\.test\(el\.tagName\)\)\) return/.test(ci))
     const rt2 = rf('components/IntentRuntime.tsx', 'utf8')

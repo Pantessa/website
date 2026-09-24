@@ -168,6 +168,24 @@
     font-size: 12.5px;
   }
   .yf-chat [data-splash-card] button[aria-expanded] { min-height: 44px; }
+  /* The cards' links: the info chip, activity rows and a row's info glyph
+     are 44px; the card's header link (the app's name, 20px) keeps its look
+     under a 44px hit area so the card's layout never moves. */
+  .yf-chat [data-splash-card] a.rounded-full {
+    min-height: 44px;
+    padding-left: 14px;
+    padding-right: 14px;
+    font-size: 12.5px;
+  }
+  .yf-chat [data-splash-card] a[href]:not(.rounded-full):not(:has(> h3)) { min-height: 44px; }
+  .yf-chat [data-splash-card] a:has(> h3) { position: relative; }
+  .yf-chat [data-splash-card] a:has(> h3)::before {
+    content: '';
+    position: absolute;
+    inset: -12px -4px;
+  }
+  /* The empty state's buttons (the example chips, the sample receipt). */
+  .yf-chat [data-empty-state] button { min-height: 44px; }
   .yf-chat [data-turn-tools]::after {
     content: '';
     position: absolute;
