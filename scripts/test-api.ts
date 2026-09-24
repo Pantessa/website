@@ -33985,14 +33985,25 @@ async function main() {
         tick(); advance(3000); land()
         check('native shell: sheet history — QA\'s bounce trace (push 4ms after the close, prefetched): the push takes the entry over, no traversal is ever queued, /docs stays', entries().length === 2 && (entries()[1] as { tree?: string }).tree === 'docs' && h.debug().backInFlight === 0 && h.debug().pendingBack === null, JSON.stringify({ entries: entries(), dbg: h.debug() }))
       }
-      // 7d. Our OWN sheet push is never converted, and a push with no pending entry is a plain push.
+      // 7e. A sheet that closes on the ROUTE CHANGE (PAGES' brochure menu): Next pushes while the sheet is still open → the entry is taken over; the later close finds nothing pending; ONE back → the origin.
+      {
+        const { h, entries, tick, land, advance, nextPush, userBack } = mk()
+        h.opened({ key: 'nav', onBack: () => {} })
+        nextPush('/pricing', 'pricing') // the Link navigates; the sheet is still open
+        const afterPush = { len: entries().length, top: (entries()[1] as { tree?: string }).tree, dbg: h.debug() }
+        h.closed('nav', 'other') // the route-change effect closes it
+        tick(); advance(3000); land()
+        userBack(); land()
+        check('native shell: sheet history — a sheet still OPEN when Next pushes (it closes on the route change): the push takes its entry over ([pre, /pricing], stack empty), the later close pops nothing, ONE back returns to the origin', afterPush.len === 2 && afterPush.top === 'pricing' && afterPush.dbg.stack.length === 0 && h.debug().pendingBack === null && h.debug().backInFlight === 0 && entries().length === 1 && (entries()[0] as { tree?: string }).tree === 't0', JSON.stringify({ afterPush, after: entries() }))
+      }
+      // 7d. Our OWN sheet push is never converted, and a push with no sheet entry current is a plain push.
       {
         const { h, entries, nextPush } = mk()
         nextPush('/x', 'x')
         const plain = entries().length === 2
         h.opened({ key: 'A', onBack: () => {} })
         const own = !h.interceptPush({ sheet: 'B' }, 'http://localhost/origin', 'http://localhost/origin')
-        check('native shell: sheet history — interceptPush never converts a push with nothing pending, nor a sheet\'s own push (data.sheet), nor a same-URL push', plain && own && !h.interceptPush(null, 'http://localhost/origin', 'http://localhost/origin') && entries().length === 3)
+        check('native shell: sheet history — interceptPush never converts a push with no sheet entry current, nor a sheet\'s own push (data.sheet), nor a same-URL push', plain && own && !h.interceptPush(null, 'http://localhost/origin', 'http://localhost/origin') && entries().length === 3)
       }
       // 7b. A tap that never navigated: the wait expires (SHEET_NAV_WAIT_MS) and the pop fires.
       {

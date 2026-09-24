@@ -27,11 +27,12 @@
 //        link/button/menu item inside a dialog marks SHEET_TAP_NAV_MS; polled
 //        every NAV_POLL_MS up to SHEET_NAV_WAIT_MS), and is cancelled when the
 //        page is unloading (a hard navigation);
-//     2. a push that arrives while the closed sheet's entry is still pending
-//        is turned into a REPLACE (`interceptPush`, wired into pushState by the
-//        browser host): the sheet's entry BECOMES the target — history reads
-//        [.., /markets, /docs], no stale step, nothing to pop under, and it
-//        holds for a Link and for a router.push alike.
+//     2. a push that arrives while the CURRENT entry is a sheet entry of ours
+//        — pending, or still open (a sheet that closes on the route change) —
+//        is turned into a REPLACE (`interceptPush`, wired into pushState by
+//        the browser host): the sheet's entry BECOMES the target — history
+//        reads [.., /markets, /docs], no stale step, nothing to pop under,
+//        and it holds for a Link and for a router.push alike.
 //   A stale sheet entry left behind by any other path is skipped when a
 //   later back lands on it.
 //
@@ -199,9 +200,14 @@ export function createSheetHistory(host: SheetHistoryHost): SheetHistory {
       claim(o)
     },
     interceptPush(data, url, currentHref) {
-      if (!pendingBack) return false
       if (data && typeof data === 'object' && typeof (data as { sheet?: unknown }).sheet === 'string') return false
-      if (sheetOf(host.state()) !== pendingBack) return false
+      // Only while the CURRENT entry is a sheet entry — pending (the row that
+      // closed the sheet), still open (a sheet that closes on the route
+      // change, PAGES' brochure menu), or stale (left by an older page). A
+      // sheet entry is always a same-URL duplicate of the page's own entry,
+      // so replacing it with the target IS "pop the sheet, then push".
+      const cur = sheetOf(host.state())
+      if (!cur) return false
       if (url == null || url === '') return false
       let target: URL
       try {
@@ -212,9 +218,8 @@ export function createSheetHistory(host: SheetHistoryHost): SheetHistory {
       const here = new URL(currentHref)
       if (target.pathname === here.pathname && target.search === here.search) return false
       // The navigation takes the entry over: it is the page's own from here.
-      const key = pendingBack
-      pendingBack = null
-      const i = entries.findIndex((e) => e.key === key)
+      if (pendingBack === cur) pendingBack = null
+      const i = entries.findIndex((e) => e.key === cur)
       if (i >= 0) entries.splice(i)
       return true
     },
