@@ -152,3 +152,44 @@
     line-height: 1.55;
   }
 }
+
+/* ── Touch targets in the conversation (squad mobile-native, CHAT r2) ─────
+   Measured at 360×740: the splash's chips were 24px tall, its rows ~26px,
+   the briefing's primary "Protect spot" 22px; the per-bubble copy / mint
+   tools 36px. A finger gets 44px — on touch only, so a desktop keeps its
+   compact look; the tools keep their 36px LOOK and gain a transparent 44px
+   hit area (they sit above the bubble's edge, so a bigger box would cover
+   the text). */
+@media (hover: none) and (max-width: 1023px) {
+  .yf-chat :is([data-splash-hero], [data-splash-card]) button.rounded-full {
+    min-height: 44px;
+    padding-left: 14px;
+    padding-right: 14px;
+    font-size: 12.5px;
+  }
+  .yf-chat [data-splash-card] button[aria-expanded] { min-height: 44px; }
+  /* The cards' links: the info chip, activity rows and a row's info glyph
+     are 44px; the card's header link (the app's name, 20px) keeps its look
+     under a 44px hit area so the card's layout never moves. */
+  .yf-chat [data-splash-card] a.rounded-full {
+    min-height: 44px;
+    padding-left: 14px;
+    padding-right: 14px;
+    font-size: 12.5px;
+  }
+  .yf-chat [data-splash-card] a[href]:not(.rounded-full):not(:has(> h3)) { min-height: 44px; }
+  .yf-chat [data-splash-card] a:has(> h3) { position: relative; }
+  .yf-chat [data-splash-card] a:has(> h3)::before {
+    content: '';
+    position: absolute;
+    inset: -12px -4px;
+  }
+  /* The empty state's buttons (the example chips, the sample receipt). */
+  .yf-chat [data-empty-state] button { min-height: 44px; }
+  .yf-chat [data-turn-tools]::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 999px;
+  }
+}

@@ -42,3 +42,15 @@
     display: none;
   }
 }
+
+/* ── While typing on a phone (squad mobile-native, 2026-09-24, CHAT r2) ──
+   The soft keyboard is up (SHELL's html[data-keyboard]): the runtime's
+   bottom bars (the keep-going nudge, the closed-loop note, the save bar, the
+   return bar) step aside the way a native tab bar does, so the composer sits
+   right on the keyboard and the thread keeps the room. They come back the
+   moment the keyboard goes down. */
+@media (max-width: 1023px) {
+  html[data-keyboard] .yf-runtime [data-runtime-bar] {
+    display: none;
+  }
+}

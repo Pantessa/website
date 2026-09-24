@@ -44,7 +44,7 @@ const arg = (k: string, d = '') => process.argv.find((a) => a.startsWith(`--${k}
 const BASE = arg('base', process.env.BASE ?? 'http://localhost:3894').replace(/\/$/, '')
 const TAG = arg('tag', 'run')
 const ROWS = new Set(
-  arg('rows', '1,2,3,4,5,6,7,8,9')
+  arg('rows', '1,2,3,4,5,6,7,8,9,10,11,12')
     .split(',')
     .map((s) => Number(s.trim()))
     .filter(Boolean),
@@ -487,6 +487,7 @@ async function sheetRows(engine: Engine) {
 
     // Row 7: the rail's dialogs (ImportModal from the head; AlertForm needs
     // an account, so its sheet is proven by source pins + the harness).
+    await page.waitForTimeout(600) // the Sheet pops its history entry a tick after closing
     await page.goto(`${BASE}/markets`, { waitUntil: 'load' })
     await page.waitForSelector('.wl__row', { timeout: 15_000 }).catch(() => {})
     const imp = page.locator('.wl__head [aria-label="Import from TradingView"]').first()
@@ -540,6 +541,7 @@ async function shots() {
       await page.waitForTimeout(500)
       await snap('markets-askdoor')
       await page.keyboard.press('Escape')
+      await page.waitForTimeout(600) // the Sheet pops its history entry a tick after closing
       await openSymbol(page, 'ETH')
       await snap('t-ETH-top')
       await page.evaluate(`document.querySelector('.sym__chart').scrollIntoView({ block: 'start' })`)
@@ -548,6 +550,180 @@ async function shots() {
     } finally {
       await browser.close()
     }
+  }
+}
+
+// ── Round 3 · row 12: the rail trigger renders right on its own ────────────
+//    PAGES found /wallet's header Ask showing its 353px placeholder hint at
+//    every width (the hide lived only in markets.css, which only the markets
+//    shell loads). Measure every door trigger on /wallet and /dashboard at 1440
+//    and 375: width, the hint hidden, no sideways page. /wallet acts on a
+//    connected wallet alone; /dashboard needs a session, so this signs in with
+//    a THROWAWAY key generated here and discarded (it holds nothing; never the
+//    .env.local burner). The mock wallet at that address refuses every other
+//    signature.
+const MOCK_WALLET_JS = (addr: string) => `(() => {
+  const ADDR = ${JSON.stringify(addr)}
+  const provider = {
+    isMetaMask: false, _chainId: '0x2105',
+    async request({ method, params }) {
+      switch (method) {
+        case 'eth_requestAccounts': case 'eth_accounts': return [ADDR]
+        case 'eth_chainId': return provider._chainId
+        case 'wallet_switchEthereumChain': provider._chainId = params[0].chainId; return null
+        case 'wallet_addEthereumChain': return null
+        case 'personal_sign': case 'eth_signTypedData_v4': case 'eth_sendTransaction':
+          throw Object.assign(new Error('User rejected the request.'), { code: 4001 })
+        default: return null
+      }
+    },
+    on() {}, removeListener() {},
+  }
+  const info = { uuid: 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff', name: 'Drive Wallet', icon: 'data:image/svg+xml;base64,PHN2Zy8+', rdns: 'io.pantessa.drive.markets' }
+  const announce = () => window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail: Object.freeze({ info, provider }) }))
+  window.addEventListener('eip6963:requestProvider', announce)
+  announce()
+  window.ethereum = provider
+})()`
+
+async function throwawaySession(): Promise<{ address: string; session: string | null }> {
+  const { generatePrivateKey, privateKeyToAccount } = await import('viem/accounts')
+  const { createSiweMessage } = await import('viem/siwe')
+  const account = privateKeyToAccount(generatePrivateKey())
+  const nonceRes = await fetch(`${BASE}/api/auth/nonce`, { headers: { 'x-yf-internal-run': '1' } })
+  const nonceCookie = (nonceRes.headers.getSetCookie?.() ?? []).map((c) => c.match(/^yf_siwe_nonce=([^;]+)/)?.[0]).find(Boolean)
+  const { nonce } = (await nonceRes.json()) as { nonce: string }
+  const message = createSiweMessage({ address: account.address, chainId: 8453, domain: new URL(BASE).host, nonce, uri: BASE, version: '1' })
+  const signature = await account.signMessage({ message })
+  const res = await fetch(`${BASE}/api/auth/verify`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1', ...(nonceCookie ? { cookie: nonceCookie } : {}) },
+    body: JSON.stringify({ message, signature }),
+  })
+  const session = (res.headers.getSetCookie?.() ?? []).map((c) => c.match(/^yf_session=([^;]+)/)?.[1]).find(Boolean) ?? null
+  return { address: account.address, session }
+}
+
+const DOOR_PROBE = `(() => {
+  const doors = [...document.querySelectorAll('[data-ask-door]')].map((e) => {
+    const r = e.getBoundingClientRect(); const cs = getComputedStyle(e)
+    const hint = e.querySelector('.mkt-frame__askhint')
+    const hintShown = !!hint && getComputedStyle(hint).display !== 'none' && hint.getBoundingClientRect().width > 0
+    const kbd = e.querySelector('.nav__ask-kbd')
+    return { v: e.dataset.askDoor, shown: cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 0, w: Math.round(r.width), h: Math.round(r.height), right: Math.round(r.right), hintShown, kbd: !!kbd && getComputedStyle(kbd).display !== 'none' }
+  })
+  const d = document.scrollingElement; const s = document.querySelector('[data-app-scroll]')
+  // The global rule on its own: strip PAGES' header wrapper (its own hide
+  // rule keys on it) and read the hint again, then put the wrapper back.
+  let bare = null
+  const wrap = document.querySelector('.wallethead__ask')
+  const hint = wrap && wrap.querySelector('.mkt-frame__askhint')
+  if (wrap && hint) {
+    wrap.classList.remove('wallethead__ask')
+    bare = getComputedStyle(hint).display
+    wrap.classList.add('wallethead__ask')
+  }
+  return { path: location.pathname, doors, bare, hints: [...document.querySelectorAll('.mkt-frame__askhint')].filter((h) => getComputedStyle(h).display !== 'none' && h.getBoundingClientRect().width > 0).length, over: Math.max(d.scrollWidth - d.clientWidth, s ? s.scrollWidth - s.clientWidth : 0), iw: innerWidth }
+})()`
+
+async function railTriggerRows() {
+  const auth = await throwawaySession().catch(() => ({ address: '', session: null as string | null }))
+  record['r3.session'] = { ok: !!auth.session }
+  for (const [w, h] of [
+    [1440, 900],
+    [375, 812],
+  ] as [number, number][]) {
+    const phone = w < 1024
+    const browser = await pw.chromium.launch({ channel: 'chrome' })
+    try {
+      const { defaultBrowserType: _ignored, ...device } = pw.devices['iPhone 13 Mini']
+      const ctx = await browser.newContext(phone ? { ...device, viewport: { width: w, height: h } } : { viewport: { width: w, height: h } })
+      await ctx.route(`${BASE}/**`, (route: any) => route.continue({ headers: { ...route.request().headers(), 'x-yf-internal-run': '1' } }))
+      if (auth.address) await ctx.addInitScript(MOCK_WALLET_JS(auth.address))
+      await ctx.addInitScript(`try { localStorage.setItem('wagmi.recentConnectorId', '"injected"') } catch {}`)
+      if (auth.session) await ctx.addCookies([{ name: 'yf_session', value: auth.session, domain: new URL(BASE).hostname, path: '/' }])
+      const page = await ctx.newPage()
+      for (const p of ['/wallet', '/dashboard']) {
+        await page.goto(`${BASE}${p}`, { waitUntil: 'load', timeout: 60_000 })
+        // The pages wait for wagmi to restore the wallet (and the dashboard for
+        // the session) before they render their header.
+        await page.waitForFunction(`location.pathname !== ${JSON.stringify(p)} || document.querySelector('[data-ask-door="rail"], .dash, [data-wallet-window]')`, null, { timeout: 25_000 }).catch(() => {})
+        await page.waitForTimeout(1500)
+        const r = await page.evaluate(DOOR_PROBE)
+        record[`r3.${w}x${h}${p}`] = r
+        const rail = r.doors.find((x: any) => x.v === 'rail')
+        const line = `${w}×${h} ${p} (landed on ${r.path}): ${r.doors.map((x: any) => `${x.v} ${x.shown ? `${x.w}×${x.h}${x.hintShown ? ' HINT SHOWN' : ''}${x.kbd ? ' ⌘K' : ''}` : 'hidden'}`).join(' · ') || 'no door'} · visible hints ${r.hints}${r.bare !== null ? ` · hint without the page's wrapper: ${r.bare}` : ''} · sideways ${r.over}px`
+        if (MEASURE_ONLY || TAG === 'before') note(12, `${p} door triggers`, line)
+        else {
+          const onPage = r.path === p
+          const railOk = !rail || !rail.shown || (!rail.hintShown && rail.w <= 140 && rail.right <= r.iw && (!phone || (rail.h >= 44 && !rail.kbd)))
+          judge(12, `${w}×${h} ${p}: every door trigger renders on its own — no hint (even without the page's own wrapper rule), a compact rail Ask (≤140px, on screen${phone ? ', 44px, no ⌘K' : ''}), no sideways page`, onPage && r.hints === 0 && (r.bare === null || r.bare === 'none') && railOk && r.over <= 0 && (p !== '/wallet' || (!!rail && rail.shown)), line)
+        }
+      }
+      await ctx.close()
+    } finally {
+      await browser.close()
+    }
+  }
+}
+
+// ── Round 2 · row 10: the /t header leads with the price and the chart ─────
+//    (coordinator R2-1: the chart's top in the first ~40% of the screen, one
+//    row of act chips that snaps, nothing clipped mid-label).
+async function headerRows() {
+  const sizes2: [number, number][] = [
+    [360, 780],
+    [375, 812],
+    [414, 896],
+    [375, 629],
+  ]
+  for (const [w, h] of sizes2) {
+    const { browser, page } = await newPage('chrome-iphone375', { width: w, height: h })
+    try {
+      for (const sym of ['ETH', 'AAPL', 'HYPE']) {
+        await openSymbol(page, sym)
+        const r = await page.evaluate(`(() => {
+          const chart = document.querySelector('.sym__chart').getBoundingClientRect()
+          const head = document.querySelector('.sym__head').getBoundingClientRect()
+          const chips = [...document.querySelectorAll('.sym__act-chip')]
+          const tops = new Set(chips.map((c) => Math.round(c.getBoundingClientRect().top)))
+          const row = document.querySelector('.sym__act-chips')
+          return { chartTop: Math.round(chart.top), pct: Math.round((chart.top / innerHeight) * 1000) / 10, head: Math.round(head.height), chips: chips.length, rows: tops.size, chipH: chips.length ? Math.min(...chips.map((c) => Math.round(c.getBoundingClientRect().height))) : null, clipped: chips.filter((c) => c.scrollWidth > c.clientWidth + 1).length, snap: row ? getComputedStyle(row).scrollSnapType : null, align: chips[0] ? getComputedStyle(chips[0]).scrollSnapAlign : null, sw: document.scrollingElement.scrollWidth, cw: document.scrollingElement.clientWidth }
+        })()`)
+        record[`r2.header.${w}x${h}.${sym}`] = r
+        const line = `${w}×${h} /t/${sym}: header ${r.head}px · chart top ${r.chartTop}px = ${r.pct}% · ${r.chips} chips in ${r.rows} row(s), ${r.chipH}px, ${r.clipped} clipped · snap ${r.snap} / ${r.align}`
+        const limit = 40
+        if (MEASURE_ONLY || TAG === 'before') note(10, `header`, line)
+        else judge(10, `${w}×${h} /t/${sym}: the chart starts in the first ${limit}% of the screen, one 44px row of act chips that snaps, no label clipped, no sideways page`, r.pct <= limit && (r.chips === 0 || (r.rows === 1 && r.chipH >= 44 && r.clipped === 0 && /x/.test(String(r.snap)) && /start/.test(String(r.align)))) && r.sw <= r.cw, line)
+      }
+    } finally {
+      await browser.close()
+    }
+  }
+}
+
+// ── Round 2 · row 11: a landscape phone keeps room for the rows ───────────
+async function landscapeRows() {
+  const { browser, page } = await newPage('chrome-pixel7', { width: 844, height: 390 })
+  try {
+    for (const p of ['/markets', '/t/ETH']) {
+      if (p === '/markets') await openMarkets(page, p)
+      else await openSymbol(page, 'ETH')
+      await scrollTo(page, 1500)
+      const r = await page.evaluate(`(() => {
+        // A box that has dissolved (display: contents) reads 0×0: skip it.
+        const rr = (s) => { const e = document.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return b.height ? [Math.round(b.top), Math.round(b.bottom)] : null }
+        const top = rr('.mkt-frame__top'), bar = rr('[data-spine-bar]'), strip = rr('.mkt-frame__bar'), mtabs = rr('.mkt-frame__tabs'), stabs = rr('.sym__tabs')
+        const stuck = [top, strip, mtabs, stabs].filter((x) => x && x[0] <= 60).map((x) => x[1])
+        return { ih: innerHeight, top, mtabs, stabs, bar, content: bar ? bar[0] - Math.max(0, ...stuck) : null }
+      })()`)
+      record[`r2.landscape${p}`] = r
+      const line = `844×390 ${p}: stuck chrome ends at ${r.bar && r.content !== null ? r.bar[0] - r.content : '?'} · bar from ${r.bar?.[0]} · content ${r.content}px`
+      if (MEASURE_ONLY || TAG === 'before') note(11, 'landscape', line)
+      else judge(11, `844×390 ${p}: the strip + tabs + bar leave ≥200px of content`, (r.content ?? 0) >= 200, line)
+    }
+  } finally {
+    await browser.close()
   }
 }
 
@@ -613,8 +789,11 @@ async function brochureFoot(engine: Engine, pathname: string) {
   try {
     await page.goto(`${BASE}${pathname}`, { waitUntil: 'load', timeout: 60_000 })
     await page.waitForTimeout(800)
-    await page.evaluate(`(${SCROLLER_JS}).scrollTo({ top: 1e7, behavior: 'instant' })`)
-    await page.waitForTimeout(300)
+    // A long page (the landing) keeps settling after a jump to its end: wait
+    // until its height holds for two reads, re-landing on the end each time
+    // (one run caught the landing mid-settle, the toggle 100px lower).
+    await page.evaluate(`(async () => { const sc = ${SCROLLER_JS}; let last = -1; for (let i = 0; i < 12; i++) { sc.scrollTo({ top: 1e7, behavior: 'instant' }); await new Promise((r) => setTimeout(r, 250)); if (sc.scrollHeight === last) break; last = sc.scrollHeight } })()`)
+    await page.waitForTimeout(200)
     const r = await page.evaluate(`(() => {
       const pill = document.querySelector('[data-ask-door="pill"]')
       const pr = pill && pill.getClientRects().length ? pill.getBoundingClientRect() : null
@@ -632,7 +811,45 @@ async function brochureFoot(engine: Engine, pathname: string) {
       }
       return { pill: { x: pr.x, y: pr.y, w: pr.width, h: pr.height }, pad, hits }
     })()`)
-    record[`${engine}.brochure${pathname}`] = r
+    // The FAB behaviour on the way down (QA's positions are a downward sweep):
+    // at every mid-page step the pill is away, or nothing is under it.
+    await page.evaluate(`(${SCROLLER_JS}).scrollTo({ top: 0, behavior: 'instant' })`)
+    await page.waitForTimeout(200)
+    const sweep = await page.evaluate(`(async () => {
+      const sc = ${SCROLLER_JS}
+      const max = sc.scrollHeight - sc.clientHeight
+      const out = []
+      for (let i = 1; i <= 12; i++) {
+        sc.scrollTo({ top: Math.round((max * i) / 13), behavior: 'instant' })
+        await new Promise((r) => setTimeout(r, 120))
+        const pill = document.querySelector('[data-ask-door="pill"]')
+        const shown = !!pill && getComputedStyle(pill).display !== 'none'
+        let under = 0
+        if (shown) {
+          const pr = pill.getBoundingClientRect()
+          for (const el of document.querySelectorAll('main a, main p, main button, main li, main h2, main h3, footer a, footer p')) {
+            if (el.closest('[aria-hidden="true"]')) continue
+            const b = el.getBoundingClientRect()
+            if (Math.min(b.right, pr.right) > Math.max(b.left, pr.left) && Math.min(b.bottom, pr.bottom) > Math.max(b.top, pr.top)) under++
+          }
+        }
+        out.push({ shown, under })
+      }
+      sc.scrollTo({ top: max, behavior: 'instant' })
+      await new Promise((r) => setTimeout(r, 150))
+      const atEnd = getComputedStyle(document.querySelector('[data-ask-door="pill"]')).display !== 'none'
+      sc.scrollTo({ top: max - 400, behavior: 'instant' })
+      await new Promise((r) => setTimeout(r, 150))
+      // On the landing a scroll up raises the CTA bar, which carries its own Ask
+      // and sends the pill away (html[data-mcta="show"]): that counts as back.
+      const afterUp = getComputedStyle(document.querySelector('[data-ask-door="pill"]')).display !== 'none' || document.documentElement.dataset.mcta === 'show'
+      return { steps: out, atEnd, afterUp }
+    })()`)
+    const covered = sweep.steps.filter((s: any) => s.shown && s.under > 0).length
+    const fl = `${pathname} downward sweep: pill shown at ${sweep.steps.filter((s: any) => s.shown).length}/12 steps, over text at ${covered}/12 · at the end: ${sweep.atEnd ? 'shown' : 'away'} · after a scroll up: ${sweep.afterUp ? 'shown' : 'away'}`
+    if (MEASURE_ONLY || TAG === 'before') note(2, `${engine} brochure FAB`, fl)
+    else judge(2, `${engine} ${pathname}: the pill is a native FAB — never over text on the way down, back at the page end and on a scroll up`, covered === 0 && sweep.atEnd && sweep.afterUp, fl)
+    record[`${engine}.brochure${pathname}`] = { ...r, sweep }
     const line = `${pathname} scrolled to the end: body reserve ${r.pad}px · pill ${rectOf(r.pill)} over ${r.hits.length ? r.hits.slice(0, 4).join(', ') : 'nothing'}`
     if (MEASURE_ONLY || TAG === 'before') note(2, `${engine} brochure foot`, line)
     else judge(2, `${engine} ${pathname}: at the page's end the last line clears the pill (the reserve applies)`, !r.pill || (r.pad >= 60 && r.hits.length === 0), line)
@@ -685,7 +902,7 @@ async function main() {
     await marketsRows('chrome-iphone375')
     await marketsRows('chrome-pixel7')
     await railRows('chrome-iphone375')
-    await brochureFoot('chrome-iphone375', '/pricing')
+    for (const bp of ['/', '/pricing', '/docs']) await brochureFoot('chrome-iphone375', bp)
   }
   if (ROWS.has(1) || ROWS.has(3) || ROWS.has(5)) {
     for (const s of ['AAPL', 'ETH']) await symbolRows('chrome-iphone375', s)
@@ -703,6 +920,9 @@ async function main() {
   }
   if (ROWS.has(8)) await overflowRows()
   if (ROWS.has(9)) await shots()
+  if (ROWS.has(10)) await headerRows()
+  if (ROWS.has(11)) await landscapeRows()
+  if (ROWS.has(12)) await railTriggerRows()
   mkdirSync(MARKETS_SHOT_DIR, { recursive: true })
   writeFileSync(path.join(MARKETS_SHOT_DIR, `${TAG}-numbers.json`), JSON.stringify({ at: new Date().toISOString(), base: BASE, record, verdicts }, null, 2))
   const judged = verdicts.filter((v) => !v.note)

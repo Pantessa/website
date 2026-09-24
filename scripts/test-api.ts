@@ -4338,7 +4338,9 @@ async function main() {
       check('mobile: the phone apps door (the top bar) is ≥44px tall', /data-phone-open="apps"/.test(phoneBarSrc) && /\.chat-phonebar__head \{[^}]*min-height: 44px/.test(phoneBarCss) && /<ChatPhoneBar /.test(chatIface))
       const linksTab = await readFile(new URL('../components/LinksRailTab.tsx', import.meta.url), 'utf8')
       check('mobile: the journey-strip dismiss is a 40px target', /Dismiss the getting-started journey"[\s\S]{0,120}h-10 w-10/.test(linksTab))
-      check('mobile: example chips are ≥40px tall below lg', /max-lg:min-h-10 max-lg:px-4 rounded-full/.test(emptyState))
+      // Re-pinned 2026-09-24 (squad mobile-native, CHAT r2): 40 → 44px, the
+      // squad's touch floor (README invariant 3).
+      check('mobile: example chips are ≥44px tall below lg', /max-lg:min-h-11 max-lg:px-4 rounded-full/.test(emptyState))
       const embedChat = await readFile(new URL('../components/EmbedChat.tsx', import.meta.url), 'utf8')
       check('mobile: the embed Fullscreen button is a 40px target below lg', /Fullscreen'\}[\s\S]{0,400}max-lg:w-10 max-lg:h-10/.test(embedChat))
       check('mobile: .btn--sm exists with a touch floor', /\.btn--sm \{ padding/.test(designCss) && /@media \(hover: none\) \{\s*\.btn--sm \{ min-height: 36px/.test(designCss))
@@ -4394,14 +4396,17 @@ async function main() {
           /<span className="flex flex-1 items-center gap-2 min-w-0">[\s\S]{0,400}min-w-0 truncate max-sm:hidden">\{job\.title\}/.test(jobCard) &&
           /<span className="sm:hidden basis-full pl-6 text-\[12\.5px\] leading-snug line-clamp-2">\{job\.title\}<\/span>/.test(jobCard),
       )
-      check('mobile: JobCard cancel is a 40px touch target', /void cancel\(\)\} className="[^"]*\[@media\(hover:none\)\]:min-h-10/.test(jobCard))
+      // Re-pinned 2026-09-24 (squad mobile-native, CHAT r2): 40 → 44px.
+      check('mobile: JobCard cancel is a 44px touch target', /void cancel\(\)\} className="[^"]*\[@media\(hover:none\)\]:min-h-11/.test(jobCard))
       // Overlay chrome: the 28px close (and chart external) buttons are 40px
       // on touch; the chart's act chips are 12px and 40px tall.
       const touch10 = /\[@media\(hover:none\)\]:h-10 \[@media\(hover:none\)\]:w-10/
       check('mobile: overlay close buttons (chart / job detail / request-MCP) are 40px on touch', touch10.test(chartOverlay) && touch10.test(jobOverlay) && touch10.test(addMcp))
       // Buy + Sell (the DCA chip left 2026-09-16)
       check('mobile: chart overlay act chips are ≥40px and 12px on touch', (chartOverlay.match(/\[@media\(hover:none\)\]:min-h-10 \[@media\(hover:none\)\]:text-\[12px\]/g) ?? []).length === 2)
-      check('mobile: the sign-in door dismiss is a 40px touch target', /@media \(hover: none\) \{ \.ca__close \{ width: 40px; height: 40px;/.test(designCss))
+      // Re-pinned by the mobile-native squad (2026-09-24, PAGES): the door's
+      // dismiss grew from 40px to the 44px floor every phone target now meets.
+      check('mobile: the sign-in door dismiss is a 44px touch target', /@media \(hover: none\) \{ \.ca__close \{ width: 44px; height: 44px;/.test(designCss))
       // The toolbar working-set door beside chain picker + Share + pill was
       // ~30px wide at 375 and ellipsized to "Sn…" — phones show the count.
       // Found by the AFTER sweep: the holdings-row chart button was 24×24 on
@@ -23613,7 +23618,13 @@ async function main() {
           (symS.match(/onClick=\{sendOnClick\(/g) ?? []).length === 2 && /\{door\}/.test(symS) &&
           /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} last=\{stats\?\.last \?\? null\} \/>/.test(symS) &&
           /else prefillAct\(ask\)/.test(railS) && /\{prefillDoor\}/.test(railS) && !/else router\.push\(promptHref\(ask\)\)/.test(railS) &&
-          (spineS.match(/if \(openDoorFor\(href\)\) return/g) ?? []).length === 2 &&
+          // Re-pinned by the mobile-native squad (2026-09-24, NAV): the phone
+          // posture executes lib/phone-nav (pickPhone), so the door call is
+          // ONE per posture — pickDesktop's `href` and pickPhone's
+          // `action.href` — and each door announces its aim (data-spine-door-to).
+          (spineS.match(/if \(openDoorFor\(href\)\) return/g) ?? []).length === 1 &&
+          (spineS.match(/if \(openDoorFor\(action\.href\)\) return/g) ?? []).length === 1 &&
+          /\{doorTo && <span hidden data-spine-door-to=\{doorTo\} \/>\}/.test(spineS) &&
           (spineS.match(/<SpineLink\b/g) ?? []).length === 5 &&
           // MORE's Settings: the menu unmounts as it closes, so its door is the spine's
           /if \(plain && openDoorFor\('\/dashboard'\)\) e\.preventDefault\(\)/.test(spineS) &&
@@ -32489,7 +32500,10 @@ async function main() {
     check('mobile links: reconcileWithSignOutcome — a settled hash flips the hold to signed with the explorer receipt; asked / null / a bad hash / no key / a signed verdict pass through untouched', rec.kind === 'signed' && rec.run.txUrl === `https://basescan.org/tx/${settled.hash}` && rec.run.at === now + 5 && LR.reconcileWithSignOutcome(holdK, { state: 'asked' }, 'https://basescan.org/tx/', now) === holdK && LR.reconcileWithSignOutcome(holdK, null, 'x', now) === holdK && LR.reconcileWithSignOutcome(holdK, { state: 'settled', hash: 'nope' }, 'x', now) === holdK && LR.reconcileWithSignOutcome({ kind: 'hold', run: built }, settled, 'x', now).kind === 'hold' && LR.reconcileWithSignOutcome({ kind: 'signed', run: built }, settled, 'x', now).kind === 'signed' && (() => { const r = LR.reconcileWithSignOutcome(holdK, settled, null, now); return r.kind === 'signed' && r.run.txUrl === undefined })())
     check('mobile links: IntentRuntime reads SIGN\'s outcome for the run\'s key on return (readSignOutcome → reconcileWithSignOutcome) and stamps the LAST built tx\'s key at tx-built (txChainOf last step / txRequestOf)', /readSignOutcome\(runStore\(\), raw\.run\.signKey/.test(rtSrc) && /reconcileWithSignOutcome\(raw,/.test(rtSrc) && /chain\.steps\[chain\.steps\.length - 1\]\?\.tx/.test(rtSrc) && /rememberRun\('built', lastBuiltTxKey\(\)/.test(rtSrc))
     const shareSrc = readFileSync('components/ShareButton.tsx', 'utf8')
-    check('mobile links: the Share popover is FIXED across the phone\'s gutters below sm (measured: anchored to the pill it ran 57px off the left edge at 375) and stays anchored on wider screens', /phonePos \? 'fixed left-4 right-4 w-auto' : 'absolute right-0 top-full mt-2 w-72'/.test(shareSrc) && /window\.innerWidth < 640/.test(shareSrc) && /data-share-popover/.test(shareSrc))
+    // Re-pinned 2026-09-24 (squad mobile-native, CHAT r2): below lg the share
+    // controls are the ONE Sheet (full-width by construction, 52px rows), not
+    // a fixed panel; lg+ keeps the popover anchored to the pill.
+    check('mobile links: the Share controls are a Sheet below lg (never off the screen\'s edge — the anchored popover ran 57px off the left at 375) and stay an anchored popover at lg+', /<Sheet open=\{open\} onClose=\{\(\) => setOpen\(false\)\} id="share"/.test(shareSrc) && /\{open && !phone && \(/.test(shareSrc) && /absolute right-0 top-full mt-2 w-72/.test(shareSrc) && /data-share-popover/.test(shareSrc) && /data-sheet-open="share"/.test(shareSrc))
     const pageSrc = readFileSync('app/i/[slug]/page.tsx', 'utf8')
     check('mobile links: the /i page reads the request UA on the server and hands the verdict to the runtime (the escape line is in the first HTML, not a client flash)', /headers\(\)\)\.get\('user-agent'\)/.test(pageSrc) && /browser=\{browser\}/.test(pageSrc))
   }
@@ -33084,13 +33098,27 @@ async function main() {
       /state: 'SKIP'/.test(nqSrc) && /npx playwright install webkit/.test(nqSrc) && /existsSync\(exe\)/.test(nqSrc),
     )
     check(
-      'native qa: the coordinator\'s R1 rulings hold in the drive — a landscape bar seat ≥32px tall is a DECISION row (never a FAIL; iOS\'s own landscape tab bar is 32pt), the chat list is judged as the history SCREEN (no chats sheet row), and CHAT\'s standalone drive is folded in line by line',
+      'native qa: the coordinator\'s rulings hold in the drive — a landscape bar seat ≥32px tall is a DECISION row (iOS\'s own landscape tab bar is 32pt), an inline link inside running text is a DECISION row (WCAG 2.5.8\'s inline exception; standalone links and buttons still need 44), the chat list is judged as the history SCREEN (no chats sheet row), and CHAT\'s standalone drive is folded in line by line',
       /const seatCall = small\.filter\(\(c\) => landscape && c\.seat && c\.h >= 32\)/.test(nqSrc) &&
-        /state: rest\.length \? 'FAIL' : seatCall\.length \? 'DECISION' : 'PASS'/.test(nqSrc) &&
+        /state: rest\.length \? 'FAIL' : calls\.length \? 'DECISION' : 'PASS'/.test(nqSrc) &&
         !/id: 'chat list'/.test(nqCode) &&
+        /const inlineCall = small\.filter\(\(c\) => c\.inline && !seatCall\.includes\(c\)\)/.test(nqSrc) &&
+        /return words\.trim\(\)\.split\(\/\\s\+\/\)\.filter\(Boolean\)\.length >= 2/.test(nqSrc) &&
         /spawn\('npx', \['tsx', file, '--phase=after'/.test(nqSrc),
     )
+    check(
+      'native qa: a link INSIDE a sheet navigates and lands — MORE → Docs, MORE → Settings, the brochure menu → Pricing, the account menu → Dashboard, each with the RSC fetch held 300ms, judged on landing, on no bounce after it, and on the sheet being closed',
+      /rscDelayMs && \(req\.headers\(\)\['rsc'\] === '1' \|\| url\.searchParams\.has\('_rsc'\)\)/.test(nqSrc) &&
+        /const RSC_DELAY_MS = Number\(arg\('rsc-delay'\) \|\| 300\)/.test(nqSrc) &&
+        /const o = await openCtx\(run, \{ size, theme: 'dark', auth: c\.auth, session, rscDelayMs: RSC_DELAY_MS \}\)/.test(nqSrc) &&
+        /bounced after landing/.test(nqSrc) && /the navigation was aborted/.test(nqSrc),
+    )
     const nq = (await import('./drive-native')) as typeof import('./drive-native')
+    check(
+      'native qa: the four sheet-link cases are the coordinator\'s (a doc page, the dashboard behind SIWE, a brochure page, the dashboard from the account sheet)',
+      JSON.stringify(nq.SHEET_LINKS.map((c) => [c.id, c.sheet, c.href, c.auth])) ===
+        JSON.stringify([['MORE → Docs', 'more', '/docs', 'wallet'], ['MORE → Settings', 'more', '/dashboard', 'siwe'], ['brochure menu → Pricing', 'nav', '/pricing', 'none'], ['account menu → Dashboard', 'account', '/dashboard', 'siwe']]),
+    )
     check(
       'native qa: drive:native measures the eleven checks of QA.md, in order',
       JSON.stringify(nq.CHECKS) === JSON.stringify(['frame', 'bar', 'tabs', 'sheets', 'targets', 'inputs', 'overflow', 'keyboard', 'themecolor', 'manifest', 'desktop']),
@@ -33166,6 +33194,7 @@ async function main() {
     const nmFlat = (css: string) => css.replace(/\s+/g, ' ')
     // Negative greps read CODE: comments name the old forms on purpose.
     const nmCode = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    const nmDesignNoComments = nmDesign.replace(/\/\*[\s\S]*?\*\//g, '')
     const nmBlocks = (css: string, head: string) => {
       // Every block opened by `head`, balanced-brace read (the sheets nest
       // one level at most).
@@ -33208,7 +33237,7 @@ async function main() {
     check(
       'native markets: the markets top strip\'s Ask is the phone\'s ask field — the rail trigger carries the page\'s placeholder, and below lg it fills the strip at 44px with the word "Ask" folded',
       /variant === 'rail' && \(\s*<span className="mkt-frame__askhint" aria-hidden="true">\s*\{askDoorPlaceholder\(pathname\)\}/.test(nmDoor) &&
-        /\.mkt-frame__askhint \{ display: none; \}/.test(nmMk) &&
+        /\.mkt-frame__askhint \{ display: none; \}/.test(nmDesignNoComments) && !/^\.mkt-frame__askhint \{ display: none; \}/m.test(nmMk) &&
         /\.mkt-frame__top \.mkt-frame__ask \{ flex: 1 1 auto; min-width: 0; height: 44px;/.test(nmMk) &&
         /\.mkt-frame__top \.mkt-frame__askword \{ display: none; \}/.test(nmMk),
     )
@@ -33273,7 +33302,7 @@ async function main() {
     check(
       'native markets: no field on a markets surface zooms the page on focus — every input/textarea/select in the frame and the rail\'s sheets is ≥16px on touch or below lg',
       /@media \(hover: none\), \(max-width: 1023px\) \{\s*\.mkt-frame :is\(input, textarea, select\),\s*\[data-sheet\^="wl-"\] :is\(input, textarea, select\) \{ font-size: max\(16px, 1em\); \}/.test(nmMk) &&
-        /\.askdoor-sheet \.askdoor__input \{ font-size: max\(16px, 1em\); \}/.test(nmDesign),
+        /\.askdoor-sheet \.askdoor__input \{ font-size: max\(16px, 1em\);/.test(nmDesign),
     )
     check(
       'native markets: on a phone the /t plot keeps 260px however its controls wrap, those controls take two rows (timeframes + live/full screen, then overlays beside the tools), and the act strip is one sideways row',
@@ -33294,6 +33323,55 @@ async function main() {
       /const natural = main\.getBoundingClientRect\(\)\.top\s*\n\s*if \(natural < stuckAt - 1\) scrollAppTo\(appScrollTop\(\) \+ natural - stuckAt\)/.test(nmSym) &&
         !/el\.scrollIntoView\(\{ block: 'start' \}\)/.test(nmCode(nmSym)) &&
         /\.mkt-frame__rail, \.mkt-frame__foot \{ overflow-anchor: none; \}/.test(nmMk),
+    )
+    // Round 3: the rail trigger renders right wherever AskDoor renders.
+    const nmWalletHtml = await (await fetch(`${BASE}/wallet`)).text()
+    const nmWalletHrefs = [...new Set([...nmWalletHtml.matchAll(/href="(\/_next\/static\/[^"]+\.css)"/g)].map((m) => m[1]))]
+    const nmWalletCss = (await Promise.all(nmWalletHrefs.map(async (h) => (await fetch(`${BASE}${h}`)).text()))).join('\n').replace(/\s+/g, '')
+    check(
+      'native markets (round 3): the rail trigger renders right on its own — its hint is hidden in the GLOBAL askdoor CSS (it lived only in markets.css, so /wallet showed the 353px hint at every width), no ⌘K on a phone, a 44px target on touch; /wallet\'s served CSS carries the hide',
+      /\.mkt-frame__askhint \{ display: none; \}\s*\n@media \(max-width: 1023px\) \{ \[data-ask-door="rail"\] \.nav__ask-kbd \{ display: none; \} \}\s*\n@media \(hover: none\) \{ \[data-ask-door="rail"\] \{ min-height: 44px; \} \}/.test(nmDesign) &&
+        nmWalletHrefs.length > 0 && nmWalletCss.includes('.mkt-frame__askhint{display:none}') && /\[data-ask-door="?rail"?\]\.nav__ask-kbd\{display:none\}/.test(nmWalletCss),
+      `${nmWalletHrefs.length} stylesheets`,
+    )
+    // Round 2 (coordinator R2-1 + R2-3).
+    check(
+      'native markets (round 2): on a phone the /t header leads with the price and the chart — one title line (the venue chip ellipsizes), one meta line (the session ellipsizes), no "24H RANGE" caption, a tighter rhythm; the act chips snap to a chip\'s edge; the header pills keep a 44px hit area',
+      /\.mkt-frame--sym \.sym__head \{ padding: 10px 0 8px; row-gap: 8px; \}/.test(nmMk) &&
+        /\.sym__head--mk2 \.sym__titlerow \{ flex-wrap: nowrap; \}/.test(nmMk) &&
+        /\.sym__head--mk2 \.sym__session \{ display: block; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; \}/.test(nmMk) &&
+        /\.sym__head--mk2 \.mk-range__k \{ display: none; \}/.test(nmMk) &&
+        /\.sym__act-chips \{ scroll-snap-type: x proximity; \}/.test(nmMk) && /\.sym__act-chip \{ flex-shrink: 0; scroll-snap-align: start; \}/.test(nmMk) &&
+        /\.mk-vs__open::after, \.mk-vs__x::after, button\.mk-held::after \{ content: ''; position: absolute; inset: -9px -4px; \}/.test(nmMk),
+    )
+    {
+      // The pill as a native FAB on a document-scrolling page (round 2): PAGES'
+      // CTA-bar rule (lib/cta-bar) for direction + jitter + anchor, no hero band,
+      // at rest at the top and the page end.
+      const { askPillStep: step, askPillInitial: initial } = await import('../lib/ask-door')
+      const top = initial(0, 5000)
+      const down = step(top, 400, 5000)
+      const up = step(down, 300, 5000)
+      const jitter = step(up, 305, 5000)
+      const down2 = step(jitter, 2600, 5000)
+      const end = step(down2, 4999, 5000)
+      const mid = initial(1800, 5000)
+      const doorCss = nmFlat(nmDesignCode)
+      check(
+        'native markets (round 2): the brochure pill is a native FAB — shown at rest at the top, away while the reader scrolls DOWN, back on a scroll UP, a jitter under 6px changes nothing, shown at the page end; a restored mid-page arrival starts away; the CSS hides an away pill on a phone only (the reserve never flickers)',
+        top.shown && !down.shown && up.shown && jitter === up && !down2.shown && end.shown && !mid.shown &&
+          /@media \(max-width: 1023px\) \{ body:has\(\[data-ask-door="rail"\]\) \.askdoor-pill \{ display: none; \} \.askdoor-pill\[data-away\] \{ display: none; \} \}/.test(doorCss) &&
+          /import \{ ctaBarStep, type CtaBarState \} from '@\/lib\/cta-bar'/.test(await readFile('lib/ask-door.ts', 'utf8')),
+        JSON.stringify({ top, down, up, jitter, down2, end, mid }),
+      )
+      check(
+        'native markets (round 2): the ask field inside the phone Sheet is a 44px target (it measured 243×37)',
+        /\.askdoor-sheet \.askdoor__input \{ font-size: max\(16px, 1em\); min-height: 44px; padding: 10px 0; \}/.test(nmDesign),
+      )
+    }
+    check(
+      'native markets (round 2): a landscape phone gets the phone tool strip (only the board tabs stick) — the whole strip stuck left 166px of rows at 844×390',
+      /@media \(max-width: 640px\), \(max-width: 1023px\) and \(max-height: 500px\) \{\s*\.mkt-frame__bar \{ display: contents; \}/.test(nmMk),
     )
     check(
       'native markets: below lg the /t section tabs stick under the top strip (scroll-margin lands a switch there)',
@@ -33409,6 +33487,22 @@ async function main() {
         /data-sheet-open="nav"/.test(navSrcNP) && /data-sheet-open="door"/.test(navSrcNP) && /data-sheet-open="dashnav"/.test(dashNavSrcNP),
     )
 
+    // Round 2 (after SHELL's sheet-history coordinator, lib/sheet-history).
+    check(
+      'native pages: account → Wallet details is a plain handoff (closeNow + setWalletOpen in one tap; the wallet sheet takes over the account sheet\'s history entry): no TEMP wait left in NavAccount',
+      /closeNow\(\)\s*setWalletOpen\(true\)/.test(acctSrcNP) && !/afterSheetHistory|TEMP until/.test(acctSrcNP),
+    )
+    check(
+      'native pages: the menu\'s Ask row closes the menu in the SAME click that opens the ask door, so the door takes over the menu\'s entry (a later close left a dead entry: history 3→5→5, back stayed on the page)',
+      /const onMenuClick = \(e: React\.MouseEvent\) => \{[\s\S]{0,160}closest\?\.\('\[data-ask-door\]'\)\) \{\s*setOpen\(false\)/.test(navSrcNP) && /onClick=\{onMenuClick\}/.test(navSrcNP),
+    )
+    check(
+      'native pages: the door closes on the back gesture and a swipe (useBackToClose \'door\' + useSwipeToClose on its panel); the ONLY drag surface is the grab band, never a field',
+      /useBackToClose\(true, \(\) => onClose\(\), 'door'\)/.test(doorSrcNP) && /useSwipeToClose\(panelRef, \(\) => onClose\(\), 'bottom'\)/.test(doorSrcNP) &&
+        /<div className="ca__grab" data-swipe-handle aria-hidden \{\.\.\.handleProps\} \/>/.test(doorSrcNP) && (doorSrcNP.match(/\{\.\.\.handleProps\}/g) ?? []).length === 1 &&
+        /<div ref=\{panelRef\} className="ca__panel"/.test(doorSrcNP),
+    )
+
     // 3. The served CSS (the build is the proof the rules reach a phone).
     const npDoc = await (await fetch(`${BASE}/`)).text()
     const npHrefs = [...npDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
@@ -33442,6 +33536,27 @@ async function main() {
       ['.navacct__pill:before', '.hit-44:before'].every((sel) => ruleWith(below1023, sel, ['content:""', 'position:absolute', 'inset:-8px-3px'])) &&
         ruleWith(npCss, '.navacct--sheet.navacct__item', ['min-height:48px']),
     )
+    check(
+      'native pages: the door\'s grab band is a phone-only 44px absolute strip with touch-action none (no layout: the keyboard-up fit is untouched), and the panel\'s rise no longer fills forward (a `both` fill kept transform:none over the drag)',
+      ruleWith(npCss, '.ca__grab', ['display:none']) && ruleWith(below1023, '.ca__grab', ['display:block', 'position:absolute', 'top:0', 'left:0', 'right:0', 'height:44px', 'touch-action:none', 'cursor:grab']) &&
+        (() => {
+          // The minifier writes the animation name LAST (".28s cubic-bezier(…) backwards ca-rise"), so read the rule, not an order.
+          const rise = [...npCss.matchAll(/\.ca__panel\{([^}]*)\}/g)].map((m) => m[1]).find((b) => /ca-rise/.test(b)) ?? ''
+          return /backwards/.test(rise) && !/both/.test(rise)
+        })(),
+    )
+    const below600 = phoneBlock(npCss, 600)
+    check(
+      'native pages: the brochure\'s standalone controls are 44px on a phone in the SERVED CSS: footer links as 44px rows (BEFORE 19px), socials and the theme toggle 44px (36/30), the logos 44px (30), the docs door CTAs, EMBED DOCS, TRY IT LIVE, the explainer link, the hero\'s Do it for real; the footer groups pair up below 600px so the 44px rows don\'t stack a longer footer',
+      ruleWith(below1023, '.footer__grouplinks', ['gap:0']) && ruleWith(below1023, '.footer__grouplinksa', ['display:inline-flex', 'align-items:center', 'min-height:44px']) &&
+        ruleWith(below1023, '.footer__social', ['width:44px', 'height:44px']) && ruleWith(below1023, '.themetog__opt', ['width:44px', 'height:44px']) && ruleWith(below1023, '.logo', ['min-height:44px']) &&
+        ruleWith(below1023, '.splash__morea', ['min-height:44px']) && ruleWith(below1023, '.liveex__docs', ['min-height:44px']) && ruleWith(below1023, '.edemo__live', ['min-height:44px']) &&
+        ruleWith(below1023, '.film__capa', ['min-height:44px']) && ruleWith(below1023, '.lh__doit.btn', ['min-height:44px']) &&
+        ruleWith(below600, '.footer__cols', ['grid-template-columns:1fr1fr']) &&
+        // the landing's CTA rows and bands (36–43px), the compare link (20px), the door's Terms/Privacy (14px: a hit area, same look)
+        ['.lh__ctas.btn', '.mkt__ctas.btn', '.liveex__ctas.btn', '.lvb__compoundbtn', '.splash__ctas.btn'].every((sel) => ruleWith(below1023, sel, ['min-height:44px'])) &&
+        ruleWith(below1023, '.mkt__more', ['min-height:44px']) && ruleWith(below1023, '.ca__consenta:before', ['content:""', 'position:absolute', 'inset:-15px-4px']),
+    )
     const wDoc = await (await fetch(`${BASE}/wallet`)).text()
     const wHrefs = [...wDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
     const wCss = (await Promise.all(wHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n').replace(/\s+/g, '')
@@ -33451,6 +33566,10 @@ async function main() {
         ruleWith(phoneBlock(wCss, 1023), '[data-wallet-window][data-wallet-field]:is(button,a[href]):after', ['content:""', 'position:absolute', 'inset:-12px-6px']) &&
         /data-wallet-window="modal"/.test(walletSrcNP) && /data-wallet-window="page"/.test(walletSrcNP),
       `${wHrefs.length} stylesheet(s)`,
+    )
+    check(
+      'native pages: the /wallet header\'s Ask stays a compact pill at every width: its placeholder hint is hidden in the wrapper (markets.css, which hides it elsewhere, never loads on /wallet: the hint drew 353px and pushed Switch off a 375px screen)',
+      ruleWith(wCss, '.wallethead__ask.mkt-frame__askhint', ['display:none']),
     )
   }
 
@@ -34190,6 +34309,43 @@ async function main() {
     check('native chat: the served CSS carries the phone bar\'s 44px head, the flat Messages-style reply below sm (.yf-chat), and the sign CTA\'s generated phone classes',
       /\.chat-phonebar__head\{[^}]*min-height:44px/.test(flat) && /\.yf-chat \[data-bubble=["']?assistant["']?\]\{[^}]*background(?:-color)?:(?:transparent|0 0|none|#0000)/.test(flat) && /max-sm\\:min-h-12/.test(chatCss) && /max-sm\\:rounded-xl/.test(chatCss) && /max-lg\\:min-h-11/.test(chatCss),
       `${chatHrefs.length} stylesheet(s)`)
+    // ── round 2 (the 360×740 card pass, the keyboard for real, the rest of
+    // the chat-surface overlays) ─────────────────────────────────────────
+    const hero = rf('components/splash/Hero.tsx', 'utf8')
+    check('native chat r2: the splash briefing rows wrap below lg (at 360 "$4.89 ETH on Ethereum · under the gas floor" was cut to "under …") and every briefing action is a 44px target on touch (rows, chips, the primary "Protect spot" was 22px)',
+      (hero.match(/truncate max-lg:whitespace-normal/g) ?? []).length === 3 && /\[@media\(hover:none\)\]:min-h-11 \$\{acts\.length/.test(hero) &&
+        (hero.match(/\[@media\(hover:none\)\]:min-h-11 \[@media\(hover:none\)\]:px-(?:4|3\.5)/g) ?? []).length === 2)
+    check('native chat r2: chat-phone.css gives the splash cards\' chips and rows and the per-bubble tools a 44px touch target (the tools keep their 36px look under a transparent ::after hit area)',
+      /@media \(hover: none\) and \(max-width: 1023px\) \{[\s\S]*?:is\(\[data-splash-hero\], \[data-splash-card\]\) button\.rounded-full \{\s*min-height: 44px;[\s\S]*?\[data-splash-card\] button\[aria-expanded\] \{ min-height: 44px; \}[\s\S]*?\[data-turn-tools\]::after \{\s*content: '';\s*position: absolute;\s*inset: -4px;/.test(barCss))
+    check('native chat r2: the composer grows with what is typed on a phone (up to its max-h-40, then it scrolls), its mic + send ride the bottom line, and the pill is a rounded rect whose one-line radius is the old capsule',
+      /t\.style\.height = 'auto'\s*\n\s*t\.style\.height = `\$\{Math\.min\(t\.scrollHeight, 160\)\}px`/.test(ci) && /if \(!isNarrow \|\| embedded\) \{\s*t\.style\.height = ''/.test(ci) && /'max-lg:py-1 max-lg:items-end max-lg:rounded-\[26px\]'/.test(ci) && /max-h-40 overflow-y-auto leading-6 max-lg:py-2\.5/.test(ci))
+    check('native chat r2: only the reader releases the pin, and a scroll nobody\'s finger made is never fought (snapping back broke scroll-into-view, a focus moving up the thread, find-in-page) — the one scroll write in the pin is the ResizeObserver\'s re-pin',
+      /if \(performance\.now\(\) - userAt < 1000\) pinnedRef\.current = false\n\s*\}/.test(ci) && (ciCode.match(/scroller\.scrollTop = scroller\.scrollHeight/g) ?? []).length === 1)
+    check('native chat r2: keys typed into a field never count as the reader scrolling (a space or an arrow in the composer used to arm the pin\'s release)',
+      /if \(el && \(el\.isContentEditable \|\| \/\^\(INPUT\|TEXTAREA\|SELECT\)\$\/\.test\(el\.tagName\)\)\) return/.test(ci))
+    const rt2 = rf('components/IntentRuntime.tsx', 'utf8')
+    const rtCss = rf('components/intent-runtime.css', 'utf8')
+    check('native chat r2: /i\'s four bottom bars step aside while the soft keyboard is up (html[data-keyboard], phone only) — the composer sits on the keyboard the way the tab bar steps aside',
+      (rt2.match(/data-runtime-bar=""/g) ?? []).length === 4 && /@media \(max-width: 1023px\) \{\s*html\[data-keyboard\] \.yf-runtime \[data-runtime-bar\] \{\s*display: none;/.test(rtCss))
+    check('native chat r2: the signature-wait cards close on the back gesture and stay on the page (/i\'s own instance and the global one), through SHELL\'s useBackToClose',
+      /useBackToClose\(sigWait\.shown && !sigDismissed, \(\) => setSigDismissed\(true\), 'sigwait-i'\)/.test(rt2) && /useBackToClose\(covering, \(\) => setDismissed\(true\), 'sigwait'\)/.test(rf('components/SignatureWaitTakeover.tsx', 'utf8')))
+    const chainSrc = rf('components/ChainPicker.tsx', 'utf8')
+    const shareSrc2 = rf('components/ShareButton.tsx', 'utf8')
+    const engineSrc = rf('components/RouterEngineWindow.tsx', 'utf8')
+    check('native chat r2: the chain picker and the share controls in the top bar are Sheets on a phone (ids chain · share, data-sheet-open on their openers, 52px rows, the desktop dropdowns unchanged and their outside-click handlers desktop-only)',
+      /<Sheet open=\{open\} onClose=\{\(\) => setOpen\(false\)\} id="chain"/.test(chainSrc) && /data-sheet-open="chain"/.test(chainSrc) && /min-h-\[52px\]/.test(chainSrc) && /\{open && !phone && \(/.test(chainSrc) && /if \(!open \|\| phone\) return/.test(chainSrc) &&
+        /id="share"/.test(shareSrc2) && /data-sheet-open="share"/.test(shareSrc2) && /role="switch"/.test(shareSrc2) && /if \(!open \|\| phone\) return/.test(shareSrc2))
+    check('native chat r2: the routing engine never opens by itself on a phone (its flag is persisted from the desktop column) — only after it was seen closed this session, as the Sheet; the scrim-only phone drawer is gone',
+      /if \(!engineWindowOpen\) setArmed\(true\)/.test(engineSrc) && /<Sheet open=\{armed && engineWindowOpen\} onClose=\{close\} id="engine"/.test(engineSrc) && !/lg:hidden fixed inset-0 z-50 flex/.test(engineSrc))
+    check('native chat r2: the whole composer pill is the field — a tap on its padding (not a button) focuses the textarea — and the textarea itself is 44px tall on a phone (QA measured 213×24)',
+      /if \(!\(e\.target as HTMLElement\)\.closest\('button, textarea, a'\)\) textareaRef\.current\?\.focus\(\)/.test(ci) && /data-composer-pill=""/.test(ci))
+    check('native chat r2: /i\'s home mark is a 44px target on a phone in its 32px footprint (QA measured 32×32)', /w-8 h-8 max-lg:w-11 max-lg:h-11 max-lg:-m-1\.5 rounded-lg/.test(rt2))
+    const rtDoc = await (await fetch(`${BASE}/i/buy-aapl`)).text()
+    const rtHrefs = [...rtDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
+    const rtServed = (await Promise.all(rtHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n').replace(/\s*\{\s*/g, '{').replace(/;\s*/g, ';').replace(/:\s+/g, ':')
+    check('native chat r2: the served CSS carries the keyboard step-aside for /i\'s bars and the conversation\'s 44px touch rules',
+      /html\[data-keyboard\] \.yf-runtime \[data-runtime-bar\]\{display:none/.test(rtServed) && /\[data-turn-tools\]:{1,2}after\{[^}]*inset:-4px/.test(flat) && /button\.rounded-full\{[^}]*min-height:44px/.test(flat),
+      `${rtHrefs.length} /i stylesheet(s)`)
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)

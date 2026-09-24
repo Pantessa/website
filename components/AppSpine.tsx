@@ -696,6 +696,10 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           </Link>
         </div>
       </Sheet>
+      {/* Where the open door leads, readable by a drive (the modal keeps its
+          redirectTo to itself): the squad's proof that a signed-out visitor's
+          seat tap opens the door AIMED at that seat's target. */}
+      {doorTo && <span hidden data-spine-door-to={doorTo} />}
       {doorTo && <CreateAccountModal onClose={() => setDoorTo(null)} redirectTo={doorTo} />}
     </>
   )

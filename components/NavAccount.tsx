@@ -19,23 +19,6 @@ import { signInLandingHere, useSession } from '@/lib/session'
 import { isPublicAppPath } from '@/lib/app-entry'
 import { isPhoneViewport } from '@/lib/phone-shell'
 
-// TEMP until Sheet handoff fix (SHELL): see the "Wallet details" row.
-/** Run `fn` once a closing sheet's history entry has been consumed: on the
- *  popstate its `history.back()` fires, or after a beat when there was no
- *  entry to consume (a sandboxed history, a desktop posture). */
-function afterSheetHistory(fn: () => void) {
-  let done = false
-  const go = () => {
-    if (done) return
-    done = true
-    window.removeEventListener('popstate', go)
-    window.clearTimeout(timer)
-    fn()
-  }
-  window.addEventListener('popstate', go)
-  const timer = window.setTimeout(go, 350)
-}
-
 /**
  * Consolidated account control for the brochure (non-chat) surface.
  *
@@ -164,16 +147,12 @@ export default function NavAccount() {
                 className="navacct__item"
                 data-sheet-open="wallet"
                 onClick={() => {
+                  // One tap closes the account sheet and opens the wallet
+                  // sheet in the same commit: the wallet sheet takes over the
+                  // account sheet's history entry (lib/sheet-history), so back
+                  // closes it and the page stays.
                   closeNow()
-                  // TEMP until Sheet handoff fix (SHELL): from the phone sheet
-                  // the wallet sheet waits for the account sheet's history
-                  // entry to be consumed (its close queues a history.back()
-                  // that would otherwise pop the wallet sheet's fresh entry;
-                  // measured: it closed a frame after opening). Once the Sheet
-                  // hands the entry over itself, this is just
-                  // `setWalletOpen(true)` and afterSheetHistory goes.
-                  if (asSheet) afterSheetHistory(() => setWalletOpen(true))
-                  else setWalletOpen(true)
+                  setWalletOpen(true)
                 }}
               >
                 <Wallet width={15} height={15} strokeWidth={2.25} />
