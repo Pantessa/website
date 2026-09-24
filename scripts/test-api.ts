@@ -33490,11 +33490,10 @@ async function main() {
       nnTabs.every((src) => /!flat && 'flex-1 overflow-y-auto'/.test(src)),
     )
     check(
-      'native nav: ChatWorkspace is the phone frame (data-app-frame), mounts the screen BEFORE ChatInterface so its scroller is the first data-app-scroll, makes the conversation inert under a screen, and belts the retired flag + the desktop "show the studio" pair into screens',
+      'native nav: ChatWorkspace is the phone frame (data-app-frame), mounts the screen BEFORE ChatInterface so its scroller is the first data-app-scroll, makes the conversation inert under a screen, and belts the desktop "show the studio" pair into the LINKS screen',
       /<div data-app-frame="" className=\{`relative flex \$\{chrome/.test(nnWs) && !/max-lg:pb-\[calc\(48px/.test(nnWsCode) &&
         nnWs.indexOf('<PhoneScreens screen={phoneScreen} />') < nnWs.indexOf('<ChatInterface injectedPrompt={urlPrompt} />') &&
         /inert=\{screenUp \|\| undefined\} aria-hidden=\{screenUp \|\| undefined\}/.test(nnWs) &&
-        /if \(!isNarrow \|\| !mobileMcpRailOpen\) return\s*setMobileMcpRailOpen\(false\)\s*setPhoneScreen\(screenForTab\(railTab\)\)/.test(nnWs) &&
         /if \(!isNarrow \|\| mainView !== 'links' \|\| railTab !== 'links'\) return\s*setMainView\('chat'\)\s*setPhoneScreen\('links'\)/.test(nnWs),
     )
     check(
@@ -33516,8 +33515,49 @@ async function main() {
         /case 'history':[\s\S]*?<ChatsRailTab flat onNavigate=\{toChat\} \/>/.test(nnScreens) &&
         /aria-label="Your list"\s+aria-haspopup="dialog"\s+aria-expanded=\{listOpen\}\s+data-sheet-open="links"/.test(nnScreens) &&
         /<Sheet id="links" open=\{listOpen\}/.test(nnScreens) &&
-        /<LinksRailTab flat onMint=\{\(\) => landOn\('\.linkstudio__mint'\)\} onPage=\{\(\) => landOn\('\.linkstudio__page'\)\} onStudio=\{\(\) => landOn\('\.linkstudio'\)\} \/>/.test(nnScreens) &&
+        /<LinksRailTab flat journey=\{false\} onMint=\{\(\) => landOn\('\.linkstudio__mint'\)\} onPage=\{\(\) => landOn\('\.linkstudio__page'\)\} onStudio=\{\(\) => landOn\('\.linkstudio'\)\} \/>/.test(nnScreens) &&
         /<LinksWorkspace \/>/.test(nnScreens),
+    )
+    // Round 2: the retired overlay flag is GONE — from the store, and from
+    // every file that used to read it (ChatInterface's openRail, the phone
+    // top bar and MintLinkModal all ask for a screen now). Code, not comments.
+    const nnChatIface = nnCode(await readFile(new URL('../components/ChatInterface.tsx', import.meta.url), 'utf8'))
+    const nnMint = nnCode(await readFile(new URL('../components/MintLinkModal.tsx', import.meta.url), 'utf8'))
+    check(
+      'native nav: mobileMcpRailOpen / setMobileMcpRailOpen no longer exist — not in the store, not in ChatWorkspace, AppSpine, ChatRail, ChatInterface or MintLinkModal — and every caller asks for a screen (openRail → setPhoneScreen(screenForTab), MintLinkModal → openLinksStudio)',
+      [nnCode(nnStore), nnWsCode, nnSpineCode, nnRailCode, nnChatIface, nnMint].every((src) => !/mobileMcpRailOpen|setMobileMcpRailOpen/.test(src)) &&
+        /setPhoneScreen\(screenForTab\(tab\)\)/.test(nnChatIface) && /openLinksStudio\(\)/.test(nnMint),
+    )
+    // Round 2: my openers of CHAT's sheets name them (data-sheet-open ⇄ the
+    // Sheet's id): jobs + schedule rows → job, "Name your page" → creator
+    // (only when it opens the modal — on the phone's list sheet it lands on
+    // the studio's panel), "Add your own MCP" → addmcp.
+    const nnJobsTab = await readFile(new URL('../components/JobsRailTab.tsx', import.meta.url), 'utf8')
+    const nnAppsTab = await readFile(new URL('../components/AppsRailTab.tsx', import.meta.url), 'utf8')
+    check(
+      'native nav: the openers of CHAT\'s sheets name them — JobsRailTab job + schedule rows data-sheet-open="job", LinksRailTab "Name your page" data-sheet-open="creator" (undefined when onPage lands on the studio), AppsRailTab "Add your own MCP" data-sheet-open="addmcp" — matching the ids CHAT\'s Sheets carry',
+      (nnJobsTab.match(/data-sheet-open="job"/g) ?? []).length === 2 &&
+        /data-sheet-open=\{onPage \? undefined : 'creator'\}/.test(nnLinksTab) &&
+        /onClick=\{\(\) => setAddOpen\(true\)\}\s*data-sheet-open="addmcp"/.test(nnAppsTab) &&
+        /<Sheet[^>]*id="creator"/.test(await readFile(new URL('../components/CreatorPageModal.tsx', import.meta.url), 'utf8')) &&
+        /id="addmcp"/.test(await readFile(new URL('../components/AddMcpModal.tsx', import.meta.url), 'utf8')) &&
+        /id="job"/.test(await readFile(new URL('../components/JobDetailOverlay.tsx', import.meta.url), 'utf8')),
+    )
+    // Round 2: the keyboard keeps the focused field on a screen visible, the
+    // first-payout journey sits inline on the phone studio (and not again in
+    // its list sheet), and the sheet's sign-in link is a 44px target.
+    check(
+      'native nav: a phone screen brings the focused field into view when the keyboard rises (useSoftKeyboard → scrollIntoView inside its own scroller)',
+      /const \{ open: keyboardOpen \} = useSoftKeyboard\(\)/.test(nnScreen) && /if \(!keyboardOpen\) return[\s\S]{0,400}active\.scrollIntoView\(\{ block: 'nearest' \}\)/.test(nnScreen),
+    )
+    check(
+      'native nav: the first-payout journey is INLINE on the phone LINKS studio (StudioJourney → the exported JourneyStrip, signed-in only, the shared status + dismiss key, actions landing on the studio) and the "Your list" sheet skips it (journey={false})',
+      /export function JourneyStrip\(/.test(nnLinksTab) && /journey && status && !journeyDismissed/.test(nnLinksTab) &&
+        /function StudioJourney\(/.test(nnScreens) && /<StudioJourney landOn=\{landOn\} \/>\s*<LinksWorkspace \/>/.test(nnScreens) &&
+        /onMint=\{\(\) => landOn\('\.linkstudio__mint'\)\}/.test(nnScreens) && /onStudio=\{\(\) => landOn\('\.linkfunnel, \.linkstudio'\)\}/.test(nnScreens) &&
+        /dismissOnboarding\(\)/.test(nnScreens) && /useLinksChanged\(refresh\)/.test(nnScreens) &&
+        /<LinksRailTab flat journey=\{false\}/.test(nnScreens) &&
+        /props\.flat && 'inline-flex min-h-\[44px\] items-center px-4 text-\[13px\]'/.test(nnLinksTab),
     )
     check(
       'native nav: the store owns ONE "take me to my links" (openLinksStudio: the LINKS screen on a phone, the LINKS main view at lg+), phoneScreen stays session-only, and the rail seat uses it instead of the desktop pair',
