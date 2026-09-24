@@ -1,0 +1,107 @@
+/* The phone overlay primitive's styles (components/mobile/Sheet.tsx).
+   SHELL owns this file. Baseline from the coordinator's contract commit
+   (squad mobile-native, 2026-09-24); SHELL round 1 adds motion, drag and
+   the history integration. Tokens only: both themes come free. */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 90; /* over the phone bar (50) and the modals (70) */
+  display: flex;
+}
+.sheet[data-side='bottom'] { align-items: flex-end; justify-content: center; }
+.sheet[data-side='left'] { align-items: stretch; justify-content: flex-start; }
+
+.sheet__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.5);
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sheet__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg);
+  color: var(--fg);
+  outline: none;
+  box-shadow: 0 -12px 40px rgb(0 0 0 / 0.35);
+}
+.sheet[data-side='bottom'] .sheet__panel {
+  width: 100%;
+  max-height: calc(100dvh - max(24px, env(safe-area-inset-top)));
+  border-top: 1px solid var(--line-2);
+  border-radius: 16px 16px 0 0;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.sheet[data-side='bottom'][data-size='full'] .sheet__panel {
+  height: calc(100dvh - max(24px, env(safe-area-inset-top)));
+}
+.sheet[data-side='left'] .sheet__panel {
+  width: min(86vw, 360px);
+  height: 100%;
+  border-right: 1px solid var(--line-2);
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.sheet__grabber {
+  flex-shrink: 0;
+  width: 36px;
+  height: 5px;
+  margin: 8px auto 2px;
+  border-radius: 3px;
+  background: var(--line-2);
+}
+.sheet__head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 16px;
+}
+.sheet__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sheet__close {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  color: var(--muted);
+}
+.sheet__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.sheet__foot {
+  flex-shrink: 0;
+  border-top: 1px solid var(--line);
+  padding: 12px 16px;
+}
+
+@media (min-width: 1024px) {
+  .sheet[data-side='bottom'] { align-items: center; }
+  .sheet[data-side='bottom'] .sheet__panel {
+    width: min(560px, calc(100vw - 48px));
+    max-height: min(80vh, 720px);
+    border: 1px solid var(--line-2);
+    border-radius: 16px;
+    padding-bottom: 0;
+  }
+  .sheet[data-side='bottom'][data-size='full'] .sheet__panel { height: min(80vh, 720px); }
+  .sheet__grabber { display: none; }
+}

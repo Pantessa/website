@@ -157,6 +157,10 @@ function fromApiChat(c: ApiChat, existing?: Chat): Chat {
 /** The rail/drawer destinations — shared by the drawer itself, the spine's
  *  tab icons, and the toolbar's mobile reopen chips. */
 export type RailTab = 'mcps' | 'chats' | 'jobs' | 'links' | 'team'
+/** What the /chat main area shows in the phone posture (lib/phone-shell).
+ *  'chat' is the conversation and 'history' the chat list, both under the
+ *  CHATS seat; the rest are those destinations given the whole screen. */
+export type PhoneScreen = 'chat' | 'history' | 'apps' | 'jobs' | 'links' | 'team'
 
 interface YeetfulStore {
   // MCP Servers
@@ -296,6 +300,15 @@ interface YeetfulStore {
    *  Session-only, never persisted: a reload always leads with the chat. */
   mainView: 'chat' | 'links'
   setMainView: (view: 'chat' | 'links') => void
+  /** Below lg a tab is a PLACE, never an overlay drawer (squad
+   *  mobile-native, 2026-09-24, Nate: "when you click a bottom nav the drawer
+   *  pops out automatically but does not feel like the right flow"). This is
+   *  what the /chat main area shows on a phone: the conversation, the chat
+   *  list, or one destination given the whole screen. NAV owns the semantics;
+   *  at lg and up nothing reads it (the desktop drawer is unchanged).
+   *  Session-only, never persisted: a reload leads with the conversation. */
+  phoneScreen: PhoneScreen
+  setPhoneScreen: (screen: PhoneScreen) => void
   /** A prompt a rail row wants in the composer (e.g. a due recurring buy's
    *  run chip). Prefill only — the user always sends it themselves. NOT
    *  persisted: it's a one-shot handoff, consumed (and cleared) by the chat. */
@@ -888,6 +901,8 @@ export const useYeetfulStore = create<YeetfulStore>()(
       setRailTab: (tab) => set({ railTab: tab }),
       mainView: 'chat',
       setMainView: (view) => set({ mainView: view }),
+      phoneScreen: 'chat',
+      setPhoneScreen: (screen) => set({ phoneScreen: screen }),
       composerPrefill: null,
       setComposerPrefill: (prompt) => set({ composerPrefill: prompt }),
       composerSend: null,

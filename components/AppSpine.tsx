@@ -543,6 +543,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           stay reachable while it's open; modals (z-70) still cover it. The
           surface shells reserve its height (see max-lg paddings). ── */}
       <nav
+        data-spine-bar=""
         className="lg:hidden fixed inset-x-0 bottom-0 z-50 flex items-stretch border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur-md pb-[env(safe-area-inset-bottom)]"
         aria-label="Workspace"
       >
