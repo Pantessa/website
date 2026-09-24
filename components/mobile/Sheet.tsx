@@ -18,21 +18,22 @@
 // At lg and up a bottom sheet renders as a centered dialog, so a modal can
 // adopt it on every breakpoint without a second component.
 //
-// The back gesture: on a phone, opening pushes ONE history entry marked
-// `{ sheet: <id> }` (Next's patched pushState copies its own `__NA` + tree
+// The back gesture: on a phone, an open sheet owns ONE history entry marked
+// `{ sheet: <key> }` (Next's patched pushState copies its own `__NA` + tree
 // into that object, so a popstate onto the previous entry is a same-URL
 // restore, never a reload — a state WITHOUT `__NA` would reload; read
-// lib/app-tab-url.ts). Back pops it and closes the sheet on the same page;
-// any other dismissal consumes the entry with history.back() while
-// `history.state.sheet` is still ours, so the back button never has a
-// dead press. A consumer that closes the sheet and navigates in the same
-// handler is fine: our back() is queued before its push commits.
+// lib/app-tab-url.ts). Back pops it and closes the sheet on the same page.
+// The entry's life — and the HANDOFF race, where one tap closes sheet A and
+// opens sheet B in the same commit — is lib/sheet-history's job: a closing
+// sheet's entry is popped on the next tick unless the next sheet takes it
+// over, so a chain of handoffs is one entry and back closes what is open.
 
 import { useEffect, useId, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SHEET_MOTION_MS, isPhoneViewport, shouldDismissDrag } from '@/lib/phone-shell'
+import { sheetHistory } from '@/lib/sheet-history'
 import './mobile.css'
 
 /** Why a sheet closed. `back` is the phone's back gesture, `swipe` a drag
@@ -113,15 +114,14 @@ export default function Sheet({
     return () => window.clearTimeout(t)
   }, [phase])
 
-  // ── The history entry (phone only). Ours while `history.state.sheet` is
-  // this sheet's key.
-  const pushedRef = useRef(false)
+  // ── The history entry (phone only), owned through lib/sheet-history so a
+  // handoff between two sheets shares one entry and back closes the top one.
+  const ownedRef = useRef(false)
   const dismiss = (reason: SheetCloseReason) => {
-    if (reason !== 'back' && pushedRef.current) {
-      pushedRef.current = false
+    if (ownedRef.current) {
+      ownedRef.current = false
       try {
-        const st = window.history.state as { sheet?: string } | null
-        if (st && st.sheet === historyKey) window.history.back()
+        sheetHistory().closed(historyKey, reason === 'back' ? 'back' : 'other')
       } catch {
         /* a sandboxed history: the entry stays, harmless */
       }
@@ -177,34 +177,33 @@ export default function Sheet({
     const html = document.documentElement
     const prevOverflow = html.style.overflow
     html.style.overflow = 'hidden'
-    // The back gesture (phone only).
+    // The back gesture (phone only): claim an entry; the coordinator calls
+    // us back when the entry is popped.
     if (isPhoneViewport()) {
       try {
-        window.history.pushState({ sheet: historyKey }, '', window.location.href)
-        pushedRef.current = true
+        sheetHistory().opened({
+          key: historyKey,
+          onBack: () => {
+            ownedRef.current = false
+            dismissRef.current('back')
+          },
+        })
+        ownedRef.current = true
       } catch {
-        pushedRef.current = false
+        ownedRef.current = false
       }
     }
-    const onPop = () => {
-      if (!pushedRef.current) return
-      pushedRef.current = false
-      dismissRef.current('back')
-    }
-    window.addEventListener('popstate', onPop)
     return () => {
       cancelAnimationFrame(raf)
       document.removeEventListener('keydown', onKey)
-      window.removeEventListener('popstate', onPop)
       html.style.overflow = prevOverflow
-      // Closed by the owner (open → false) without one of our dismissals:
-      // consume our entry if it is still the current one, never if the page
-      // has moved on (a link inside the sheet already pushed a new URL).
-      if (pushedRef.current) {
-        pushedRef.current = false
+      // Closed by the owner (open → false) without one of our dismissals, or
+      // unmounted while open: release the entry (popped on the next tick
+      // unless another sheet takes it over; never if the page moved on).
+      if (ownedRef.current) {
+        ownedRef.current = false
         try {
-          const st = window.history.state as { sheet?: string } | null
-          if (st && st.sheet === historyKey) window.history.back()
+          sheetHistory().closed(historyKey, 'other')
         } catch {
           /* leave the entry */
         }
