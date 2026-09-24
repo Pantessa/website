@@ -7,13 +7,15 @@ import {
   walletConnectWallet,
   injectedWallet,
 } from '@rainbow-me/rainbowkit/wallets'
-import { createConfig } from 'wagmi'
+import { createConnector, createConfig } from 'wagmi'
+import { injected } from 'wagmi/connectors'
 import { WALLET_CHAINS, walletTransports } from '@/lib/wallet-chains'
 import { cdpEmbeddedConnector, cdpEnabled } from '@/lib/cdp-embedded'
 import { hostWalletConnector } from '@/lib/host-wallet'
 import { walletLineup, WC_APP_METADATA, type WalletLaneId } from '@/lib/wallet-lineup'
 import { requestWalletAppOpen } from '@/lib/wallet-handoff'
 import { withoutDuplicateMobileLaunch } from '@/lib/mobile-wallet'
+import { phantomTarget } from '@/lib/phantom-lane'
 
 // WalletConnect Cloud project ID — create one at https://cloud.reown.com and
 // add it to .env.local as NEXT_PUBLIC_WC_PROJECT_ID (needed for the
@@ -103,6 +105,39 @@ const oneLaunchMetaMaskWallet: typeof metaMaskWallet = Object.assign(
   {},
 )
 
+/**
+ * PHANTOM SIGNS FOR PHANTOM, nobody else (Nate, 2026-09-24).
+ *
+ * RainbowKit's `phantomWallet` resolves its provider through
+ * `getInjectedConnector({ namespace: 'phantom.ethereum' })`, which falls back
+ * to `window.ethereum` when that namespace is absent — so on a MetaMask
+ * machine with no Phantom the lane WAS MetaMask, under the id `phantom` and
+ * the name `Phantom`. The modal calls `connectToWallet` even for a row it is
+ * about to answer with "Install Phantom", so a click opened MetaMask's
+ * approval, and every load after that reconnected the session under the wrong
+ * wallet's name — the Wallet page header included.
+ *
+ * Everything else about the lane is RainbowKit's (icon, rdns dedupe,
+ * `installed`, the install instructions); only the connector's target is
+ * ours, and it reads Phantom's own namespace at call time, so a late-injecting
+ * Phantom still lands. lib/phantom-lane holds the pure half.
+ */
+const phantomOwnProviderWallet: typeof phantomWallet = (...args) => {
+  const wallet = phantomWallet(...args)
+  return {
+    ...wallet,
+    createConnector: (walletDetails) =>
+      createConnector((config) => ({
+        // `provider` is typed `unknown` in the pure module (it must not depend
+        // on wagmi to stay harness-pinnable); wagmi wants its EIP-1193 shape.
+        ...injected({
+          target: () => phantomTarget(typeof window === 'undefined' ? undefined : window),
+        } as unknown as Parameters<typeof injected>[0])(config),
+        ...walletDetails,
+      })),
+  }
+}
+
 // The CDP embedded-wallet connector ("create an account") is appended as a plain
 // wagmi connector, not a RainbowKit modal entry — it's driven by a dedicated CTA
 // (see lib/cdp-embedded.ts). Only included when NEXT_PUBLIC_CDP_PROJECT_ID is set.
@@ -116,7 +151,8 @@ const WALLET_FACTORIES: Record<WalletLaneId, Parameters<typeof connectorsForWall
   coinbase: coinbaseWallet,
   // Injected-only (namespace `phantom.ethereum`); RainbowKit dedupes it
   // against the EIP-6963 announce by rdns, so an installed Phantom lists once.
-  phantom: phantomWallet,
+  // Wrapped so the lane can only ever bind to Phantom — see above.
+  phantom: phantomOwnProviderWallet,
   rainbow: rainbowWallet,
   walletConnect: walletConnectWallet,
 }

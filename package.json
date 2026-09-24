@@ -18,6 +18,7 @@
     "mcp:lint": "tsx scripts/mcp-lint.ts",
     "audit:asks": "tsx scripts/audit-asks.ts",
     "audit:funding": "tsx scripts/audit-funding.ts",
+    "probe:phantom-lane": "tsx scripts/probe-phantom-lane.ts",
     "probe:lifi-leg": "tsx scripts/probe-lifi-leg.ts",
     "preflight:house": "tsx scripts/preflight-house.ts",
     "manager:once": "tsx scripts/house-manager.ts",
