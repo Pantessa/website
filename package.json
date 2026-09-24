@@ -58,7 +58,8 @@
     "drive:desk": "tsx scripts/drive-desk.ts",
     "drive:growth-people": "tsx scripts/drive-growth-people.ts",
     "drive:i-mobile": "tsx scripts/drive-i-mobile.ts",
-    "drive:ask-chart": "tsx scripts/drive-ask-chart.ts"
+    "drive:ask-chart": "tsx scripts/drive-ask-chart.ts",
+    "drive:native": "tsx scripts/drive-native.ts"
   },
   "dependencies": {
     "@coinbase/cdp-core": "^0.0.111",

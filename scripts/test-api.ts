@@ -33042,6 +33042,112 @@ async function main() {
     )
   }
 
+  // ── native qa: the mobile-native squad's instrument (QA lane, 2026-09-24) ──
+  // Appended as ONE block with its own closing brace (the squad's shared-tail
+  // rule); everything it needs is imported INSIDE it. It pins `npm run
+  // drive:native` itself: a gate that can run its drive inside the harness,
+  // fire a live money turn, sign with the funded burner, or exit 0 on a red
+  // is worse than no gate.
+  {
+    const { readFileSync: readNq } = await import('node:fs')
+    const nqSrc = readNq('scripts/drive-native.ts', 'utf8')
+    // Positive fences read the RAW source (a comment stripper can eat code: a
+    // glob like '**' + '/*' opens a "comment"); only the negatives read code
+    // with comments removed, so a comment may NAME what the code must not do.
+    const nqCode = nqSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+    check(
+      'native qa: drive:native resolves playwright through createRequire (never a static import — it is not a dependency) and only drives when run directly; the harness imports it',
+      /createRequire\(ANCHOR\)\('playwright-core'\)/.test(nqSrc) &&
+        /if \(process\.argv\[1\] && \/drive-native/.test(nqSrc) &&
+        !/^import[^\n]*from ['"]playwright-core['"]/m.test(nqSrc) &&
+        // no column-0 call: the only main() is the guarded one
+        !/^(?:void )?main\(\)/m.test(nqCode),
+    )
+    check(
+      'native qa: drive:native exits 1 on any FAIL (a drive that prints ❌ and exits 0 proved nothing) and 2 when nothing is serving',
+      /process\.exit\(fail \? 1 : 0\)/.test(nqSrc) && /process\.exit\(2\)/.test(nqSrc),
+    )
+    check(
+      'native qa: drive:native never fires a live chat turn (every POST /api/chat is fulfilled from a fixture — /i auto-runs its ask on connect) and stamps every same-origin request x-yf-internal-run + x-yf-no-ask-log',
+      /req\.method\(\) === 'POST' && \/\^\\\/api\\\/chat\\\/\?\$\/\.test\(url\.pathname\)/.test(nqSrc) &&
+        /route\.fulfill\(\{ status: 200, contentType: 'application\/json', body: JSON\.stringify\(CHAT_FIXTURE\)/.test(nqSrc) &&
+        /'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1'/.test(nqSrc),
+    )
+    check(
+      'native qa: the mock wallet refuses every signature and transaction, and the dashboard SIWE is a THROWAWAY key (generatePrivateKey) — drive:native never reads PRIVATE_KEY',
+      /generatePrivateKey\(\)/.test(nqSrc) &&
+        !/PRIVATE_KEY/.test(nqSrc) &&
+        /case 'personal_sign': case 'eth_sign': case 'eth_signTypedData_v4': case 'eth_sendTransaction': case 'wallet_sendCalls':\s*window\.__nqRefused/.test(nqSrc),
+    )
+    check(
+      'native qa: a missing WebKit build is a SKIP row that names the owner step, never a hang and never a silent pass',
+      /state: 'SKIP'/.test(nqSrc) && /npx playwright install webkit/.test(nqSrc) && /existsSync\(exe\)/.test(nqSrc),
+    )
+    check(
+      'native qa: the coordinator\'s R1 rulings hold in the drive — a landscape bar seat ≥32px tall is a DECISION row (never a FAIL; iOS\'s own landscape tab bar is 32pt), the chat list is judged as the history SCREEN (no chats sheet row), and CHAT\'s standalone drive is folded in line by line',
+      /const seatCall = small\.filter\(\(c\) => landscape && c\.seat && c\.h >= 32\)/.test(nqSrc) &&
+        /state: rest\.length \? 'FAIL' : seatCall\.length \? 'DECISION' : 'PASS'/.test(nqSrc) &&
+        !/id: 'chat list'/.test(nqCode) &&
+        /spawn\('npx', \['tsx', file, '--phase=after'/.test(nqSrc),
+    )
+    const nq = (await import('./drive-native')) as typeof import('./drive-native')
+    check(
+      'native qa: drive:native measures the eleven checks of QA.md, in order',
+      JSON.stringify(nq.CHECKS) === JSON.stringify(['frame', 'bar', 'tabs', 'sheets', 'targets', 'inputs', 'overflow', 'keyboard', 'themecolor', 'manifest', 'desktop']),
+      nq.CHECKS.join(','),
+    )
+    // D2 (README): a tab is a PLACE. The drive's expectations are the
+    // contract NAV builds against — pinned so neither side drifts silently.
+    const chatT = nq.D2_FROM_CHAT
+    check(
+      'native qa: D2 as the drive reads it — APPS/JOBS/LINKS/TEAM name themselves in ?tab= (mcps/jobs/links/team) with their screen, CHATS in a conversation opens the list (history), MORE is a Sheet, MARKETS/WALLET are routes',
+      chatT.APPS.tab === 'mcps' && chatT.APPS.screen === 'apps' &&
+        chatT.JOBS.tab === 'jobs' && chatT.LINKS.tab === 'links' && chatT.TEAM.screen === 'team' &&
+        chatT.CHATS.screen === 'history' && chatT.CHATS.lit === 'CHATS' &&
+        chatT.More.sheet === true && chatT.MARKETS.path === '/markets' && chatT.WALLET.path === '/wallet' &&
+        nq.D2_SEQUENCES.some((q) => q.taps.join(',') === 'APPS,CHATS' && q.expect.screen === 'chat' && q.expect.tab === '') &&
+        nq.TOP_BAR_DOORS.some((d) => d.door === 'history' && d.expect.screen === 'history') &&
+        nq.TOP_BAR_DOORS.some((d) => d.door === 'apps' && d.expect.tab === 'mcps'),
+    )
+    // The drive judges tabs against lib/phone-nav phoneTap (NAV's contract);
+    // its static tables are the fallback for a tree without it. Pin that they
+    // AGREE, seat by seat and sequence by sequence, so neither drifts alone.
+    {
+      const pn = await import('../lib/phone-nav')
+      const agree = (a: { path: string; tab: string | null; screen: unknown; lit: string; sheet?: boolean }, b: typeof a) =>
+        a.path === b.path && (a.tab ?? null) === (b.tab ?? null) && JSON.stringify(a.screen) === JSON.stringify(b.screen) && a.lit === b.lit && !!a.sheet === !!b.sheet
+      const off: string[] = []
+      for (const [origin, table] of [['/chat', nq.D2_FROM_CHAT], ['/markets', nq.D2_FROM_MARKETS]] as const) {
+        const from = { surface: origin === '/chat' ? 'chat' : 'markets', screen: 'chat', pathname: origin } as const
+        for (const [seat, want] of Object.entries(table)) {
+          const got = nq.expectFromPhoneTap(pn as never, from, seat).expect
+          if (!agree(want, got)) off.push(`${origin} ${seat}: table ${JSON.stringify(want)} vs phoneTap ${JSON.stringify(got)}`)
+        }
+      }
+      for (const q of nq.D2_SEQUENCES) {
+        let st: { surface: 'chat' | 'markets' | 'wallet' | 'dashboard'; screen: string; pathname: string } = { surface: 'chat', screen: 'chat', pathname: '/chat' }
+        let got = q.expect
+        for (const seat of q.taps) {
+          const r = nq.expectFromPhoneTap(pn as never, st, seat)
+          got = r.expect
+          st = r.next
+        }
+        if (!agree(q.expect, got)) off.push(`${q.name}: table ${JSON.stringify(q.expect)} vs phoneTap ${JSON.stringify(got)}`)
+      }
+      check('native qa: the drive\'s fallback D2 tables agree with lib/phone-nav phoneTap for every seat from /chat and /markets and every sequence (the tabs rows are judged by phoneTap)', off.length === 0, off.slice(0, 2).join(' | '))
+    }
+    const app = nq.SURFACES.filter((x) => x.kind === 'app').map((x) => x.path)
+    check(
+      'native qa: every framed surface of README invariant 1 is driven (/chat, its four tabs, /markets, /t/AAPL, /t/ETH, /wallet, /dashboard, /i/<slug>) plus the brochure pages',
+      ['/chat', '/chat?tab=mcps', '/chat?tab=jobs', '/chat?tab=links', '/chat?tab=chats', '/markets', '/t/AAPL', '/t/ETH', '/wallet', '/dashboard'].every((p) => app.includes(p)) &&
+        app.some((p) => p.startsWith('/i/')) &&
+        ['/', '/pricing', '/docs'].every((p) => nq.SURFACES.some((x) => x.path === p && x.kind === 'brochure')),
+      app.join(' '),
+    )
+    const pkg = JSON.parse(readNq('package.json', 'utf8')) as { scripts: Record<string, string> }
+    check('native qa: `npm run drive:native` is wired', pkg.scripts['drive:native'] === 'tsx scripts/drive-native.ts', pkg.scripts['drive:native'] ?? 'missing')
+  }
+
   // ── native markets (squad mobile-native, 2026-09-24; MARKETS lane) ─────────
   // Nate's screenshot 1: iPhone Safari on /markets, the "Ask" pill floating
   // over the DOT row's 24h cell. Measured on main (MARKETS.md F1–F10, drive
@@ -33490,11 +33596,10 @@ async function main() {
       nnTabs.every((src) => /!flat && 'flex-1 overflow-y-auto'/.test(src)),
     )
     check(
-      'native nav: ChatWorkspace is the phone frame (data-app-frame), mounts the screen BEFORE ChatInterface so its scroller is the first data-app-scroll, makes the conversation inert under a screen, and belts the retired flag + the desktop "show the studio" pair into screens',
+      'native nav: ChatWorkspace is the phone frame (data-app-frame), mounts the screen BEFORE ChatInterface so its scroller is the first data-app-scroll, makes the conversation inert under a screen, and belts the desktop "show the studio" pair into the LINKS screen',
       /<div data-app-frame="" className=\{`relative flex \$\{chrome/.test(nnWs) && !/max-lg:pb-\[calc\(48px/.test(nnWsCode) &&
         nnWs.indexOf('<PhoneScreens screen={phoneScreen} />') < nnWs.indexOf('<ChatInterface injectedPrompt={urlPrompt} />') &&
         /inert=\{screenUp \|\| undefined\} aria-hidden=\{screenUp \|\| undefined\}/.test(nnWs) &&
-        /if \(!isNarrow \|\| !mobileMcpRailOpen\) return\s*setMobileMcpRailOpen\(false\)\s*setPhoneScreen\(screenForTab\(railTab\)\)/.test(nnWs) &&
         /if \(!isNarrow \|\| mainView !== 'links' \|\| railTab !== 'links'\) return\s*setMainView\('chat'\)\s*setPhoneScreen\('links'\)/.test(nnWs),
     )
     check(
@@ -33516,8 +33621,49 @@ async function main() {
         /case 'history':[\s\S]*?<ChatsRailTab flat onNavigate=\{toChat\} \/>/.test(nnScreens) &&
         /aria-label="Your list"\s+aria-haspopup="dialog"\s+aria-expanded=\{listOpen\}\s+data-sheet-open="links"/.test(nnScreens) &&
         /<Sheet id="links" open=\{listOpen\}/.test(nnScreens) &&
-        /<LinksRailTab flat onMint=\{\(\) => landOn\('\.linkstudio__mint'\)\} onPage=\{\(\) => landOn\('\.linkstudio__page'\)\} onStudio=\{\(\) => landOn\('\.linkstudio'\)\} \/>/.test(nnScreens) &&
+        /<LinksRailTab flat journey=\{false\} onMint=\{\(\) => landOn\('\.linkstudio__mint'\)\} onPage=\{\(\) => landOn\('\.linkstudio__page'\)\} onStudio=\{\(\) => landOn\('\.linkstudio'\)\} \/>/.test(nnScreens) &&
         /<LinksWorkspace \/>/.test(nnScreens),
+    )
+    // Round 2: the retired overlay flag is GONE — from the store, and from
+    // every file that used to read it (ChatInterface's openRail, the phone
+    // top bar and MintLinkModal all ask for a screen now). Code, not comments.
+    const nnChatIface = nnCode(await readFile(new URL('../components/ChatInterface.tsx', import.meta.url), 'utf8'))
+    const nnMint = nnCode(await readFile(new URL('../components/MintLinkModal.tsx', import.meta.url), 'utf8'))
+    check(
+      'native nav: mobileMcpRailOpen / setMobileMcpRailOpen no longer exist — not in the store, not in ChatWorkspace, AppSpine, ChatRail, ChatInterface or MintLinkModal — and every caller asks for a screen (openRail → setPhoneScreen(screenForTab), MintLinkModal → openLinksStudio)',
+      [nnCode(nnStore), nnWsCode, nnSpineCode, nnRailCode, nnChatIface, nnMint].every((src) => !/mobileMcpRailOpen|setMobileMcpRailOpen/.test(src)) &&
+        /setPhoneScreen\(screenForTab\(tab\)\)/.test(nnChatIface) && /openLinksStudio\(\)/.test(nnMint),
+    )
+    // Round 2: my openers of CHAT's sheets name them (data-sheet-open ⇄ the
+    // Sheet's id): jobs + schedule rows → job, "Name your page" → creator
+    // (only when it opens the modal — on the phone's list sheet it lands on
+    // the studio's panel), "Add your own MCP" → addmcp.
+    const nnJobsTab = await readFile(new URL('../components/JobsRailTab.tsx', import.meta.url), 'utf8')
+    const nnAppsTab = await readFile(new URL('../components/AppsRailTab.tsx', import.meta.url), 'utf8')
+    check(
+      'native nav: the openers of CHAT\'s sheets name them — JobsRailTab job + schedule rows data-sheet-open="job", LinksRailTab "Name your page" data-sheet-open="creator" (undefined when onPage lands on the studio), AppsRailTab "Add your own MCP" data-sheet-open="addmcp" — matching the ids CHAT\'s Sheets carry',
+      (nnJobsTab.match(/data-sheet-open="job"/g) ?? []).length === 2 &&
+        /data-sheet-open=\{onPage \? undefined : 'creator'\}/.test(nnLinksTab) &&
+        /onClick=\{\(\) => setAddOpen\(true\)\}\s*data-sheet-open="addmcp"/.test(nnAppsTab) &&
+        /<Sheet[^>]*id="creator"/.test(await readFile(new URL('../components/CreatorPageModal.tsx', import.meta.url), 'utf8')) &&
+        /id="addmcp"/.test(await readFile(new URL('../components/AddMcpModal.tsx', import.meta.url), 'utf8')) &&
+        /id="job"/.test(await readFile(new URL('../components/JobDetailOverlay.tsx', import.meta.url), 'utf8')),
+    )
+    // Round 2: the keyboard keeps the focused field on a screen visible, the
+    // first-payout journey sits inline on the phone studio (and not again in
+    // its list sheet), and the sheet's sign-in link is a 44px target.
+    check(
+      'native nav: a phone screen brings the focused field into view when the keyboard rises (useSoftKeyboard → scrollIntoView inside its own scroller)',
+      /const \{ open: keyboardOpen \} = useSoftKeyboard\(\)/.test(nnScreen) && /if \(!keyboardOpen\) return[\s\S]{0,400}active\.scrollIntoView\(\{ block: 'nearest' \}\)/.test(nnScreen),
+    )
+    check(
+      'native nav: the first-payout journey is INLINE on the phone LINKS studio (StudioJourney → the exported JourneyStrip, signed-in only, the shared status + dismiss key, actions landing on the studio) and the "Your list" sheet skips it (journey={false})',
+      /export function JourneyStrip\(/.test(nnLinksTab) && /journey && status && !journeyDismissed/.test(nnLinksTab) &&
+        /function StudioJourney\(/.test(nnScreens) && /<StudioJourney landOn=\{landOn\} \/>\s*<LinksWorkspace \/>/.test(nnScreens) &&
+        /onMint=\{\(\) => landOn\('\.linkstudio__mint'\)\}/.test(nnScreens) && /onStudio=\{\(\) => landOn\('\.linkfunnel, \.linkstudio'\)\}/.test(nnScreens) &&
+        /dismissOnboarding\(\)/.test(nnScreens) && /useLinksChanged\(refresh\)/.test(nnScreens) &&
+        /<LinksRailTab flat journey=\{false\}/.test(nnScreens) &&
+        /props\.flat && 'inline-flex min-h-\[44px\] items-center px-4 text-\[13px\]'/.test(nnLinksTab),
     )
     check(
       'native nav: the store owns ONE "take me to my links" (openLinksStudio: the LINKS screen on a phone, the LINKS main view at lg+), phoneScreen stays session-only, and the rail seat uses it instead of the desktop pair',
