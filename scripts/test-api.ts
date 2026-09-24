@@ -23267,16 +23267,17 @@ async function main() {
         !isMarketsPath('/marketsx') && !isMarketsPath('/t') && !isMarketsPath('/tools') && !isMarketsPath('/') && !isMarketsPath('/chat'),
     )
     check(
-      // Re-pinned 48px → 49px (squad mobile-onboarding, 2026-09-23): the pin
-      // guards "the shell reserves the bottom tab bar", and the bar measures
-      // 49px — 48px of seat plus its own 1px top border — so at 48 the page's
-      // last line sat 1px under it. The guarded behaviour is unchanged and now
-      // exact; the base `grid-template-areas` line is untouched, the phone's
-      // conditional rail order sits after it as its own rule.
-      'markets shell CSS: ≤1023px the side column dissolves (display: contents), the strip takes a top grid row, the shell reserves the bottom tab bar and lifts the docked ask pill above it; the tool strip is sticky at the top edge on desktop',
+      // Re-pinned (squad mobile-native, 2026-09-24, SHELL): the shell no
+      // longer RESERVES the bottom tab bar — below lg it is a phone frame
+      // (app/native-shell.css) whose last row IS the bar, in flow, so the
+      // 49px hand reserve (re-pinned 48 → 49 by the mobile-onboarding squad
+      // the day before) is gone and pinned ABSENT by the `native shell:`
+      // block. The strip / side-column / ask-pill rules are unchanged.
+      'markets shell CSS: ≤1023px the side column dissolves (display: contents), the strip takes a top grid row, the docked ask pill lifts above the tab bar; the tool strip is sticky at the top edge on desktop; NO bar reserve on .mkt-shell (the phone frame carries the bar in flow)',
       /\.mkt-shell \{ display: flex; align-items: stretch; min-height: 100dvh; \}/.test(shellCss) &&
         /\.mkt-frame__bar \{\s*position: sticky; top: 0; z-index: 20;/.test(shellCss) &&
-        /@media \(max-width: 1023px\) \{[^@]*\.mkt-frame \{[^}]*grid-template-areas: "top" "main" "rail" "foot";[^@]*\.mkt-frame__side \{ display: contents; \}[^@]*\.mkt-frame__top \{ grid-area: top;[^@]*\.mkt-frame__bar \{ top: var\(--mkt-top-h\); \}[^@]*\.mkt-shell \{ padding-bottom: calc\(49px \+ env\(safe-area-inset-bottom\)\); \}[^@]*:root\[data-spine\] \.askdoor-pill \{ bottom: calc\(64px \+ env\(safe-area-inset-bottom\)\); \}/.test(shellCss),
+        /@media \(max-width: 1023px\) \{[^@]*\.mkt-frame \{[^}]*grid-template-areas: "top" "main" "rail" "foot";[^@]*\.mkt-frame__side \{ display: contents; \}[^@]*\.mkt-frame__top \{ grid-area: top;[^@]*\.mkt-frame__bar \{ top: var\(--mkt-top-h\); \}[^@]*:root\[data-spine\] \.askdoor-pill \{ bottom: calc\(64px \+ env\(safe-area-inset-bottom\)\); \}/.test(shellCss) &&
+        !/\.mkt-shell \{ padding-bottom/.test(shellCss),
     )
     // The app has no brochure nav for anyone (2026-09-11, Nate: "remove the
     // header in the App if they are not logged in and move the sign in down
@@ -32556,9 +32557,13 @@ async function main() {
         /\.mkt-frame:not\(\.mkt-frame--sym\):has\(\.mkt-frame__rail \.wl__row\)/.test(uxCss) &&
         /grid-template-areas:"top"\s*"rail"\s*"main"\s*"foot"/.test(uxCss),
     )
-    // 4. The shell reserves the phone bar's REAL height: 48px of seat plus its
-    //    1px top border. At 48 the page's last line sat 1px under it.
-    check('mobile ux: the markets shell reserves the spine bar at its measured 49px', /\.mkt-shell\{padding-bottom:calc\(49px \+ env\(safe-area-inset-bottom\)\)\}/.test(uxCss.replace(/\s+/g, ' ')) || /padding-bottom:calc\(49px\+env\(safe-area-inset-bottom\)\)/.test(uxCss))
+    // 4. Re-pinned (squad mobile-native, 2026-09-24, SHELL): the shell no
+    //    longer reserves the phone bar's height at all. Below lg it is a
+    //    phone frame (app/native-shell.css) whose LAST ROW is the bar, in
+    //    flow — the scroller ends where the bar begins, so no 48/49px
+    //    constant can go stale again. The served CSS must carry NO
+    //    `.mkt-shell{padding-bottom…}` and MUST carry the in-flow bar rule.
+    check('mobile ux: the markets shell no longer reserves the spine bar (the phone frame carries it in flow: `[data-app-frame] > [data-spine-bar]` static, order 999)', !/\.mkt-shell\{padding-bottom:/.test(uxCss.replace(/\s+/g, '')) && /\[data-app-frame\]>\[data-spine-bar\]\[data-spine-bar\]\{position:static;order:999/.test(uxCss.replace(/\s+/g, '')))
     // 5. THE PHONE NAV KEEPS ITS ACCOUNT SEAT. `.nav__right > :not(.nav__burger)`
     //    hid it below 900px, which put the landing's only door two taps deep
     //    (burger → drawer → Sign in) and left a connected phone visitor with no
@@ -33149,6 +33154,125 @@ async function main() {
         /data-wallet-window="modal"/.test(walletSrcNP) && /data-wallet-window="page"/.test(walletSrcNP),
       `${wHrefs.length} stylesheet(s)`,
     )
+  }
+
+  // ── native shell: the phone frame (squad mobile-native, 2026-09-24, SHELL lane) ──
+  // Invariant 1: on a phone the spine's tab bar never moves, because the
+  // document never scrolls. The GEOMETRY is proved by
+  // `npx tsx scripts/drive-native-shell.ts` in a real Chrome (an iPhone UA
+  // and a Pixel 7 at 360–412, plus 1440/1024 unchanged); these pins hold the
+  // CONTRACT that geometry rests on — the pure decisions, the served CSS, the
+  // server-rendered attributes, the deleted hand reserves, the manifest — so
+  // an edit that quietly removes one goes red here instead of on Nate's phone.
+  {
+    const PS = await import('../lib/phone-shell')
+    const AS = await import('../lib/app-scroller')
+    const { readFile: readSrcFile } = await import('node:fs/promises')
+    const readSrc = (p: string) => readSrcFile(new URL(`../${p}`, import.meta.url), 'utf8')
+    const flatCss = (css: string) => css.replace(/\s+/g, '')
+    const designSrc = await readSrc('app/x402-design.css')
+
+    // The contract is pure: nothing touches the DOM at import time.
+    check('native shell: the attribute contract + the phone media query are the same names every lane builds against', PS.FRAME_ATTR === 'data-app-frame' && PS.SCROLL_ATTR === 'data-app-scroll' && PS.BAR_ATTR === 'data-spine-bar' && PS.PHONE_MQ === '(max-width: 1023px)' && PS.PHONE_MAX_PX === 1023 && PS.SPINE_BAR_PX === 49 && PS.KEYBOARD_ATTR === 'data-keyboard' && PS.KB_INSET_VAR === '--kb-inset')
+    check('native shell: keyboardInset is the layout height minus the visual height minus the pan, floored at 0 and rounded; keyboardState opens at KEYBOARD_MIN_PX (120) and reads 0 below it (a toolbar move is never a keyboard)',
+      PS.keyboardInset(844, 844, 0) === 0 && PS.keyboardInset(844, 532, 0) === 312 && PS.keyboardInset(844, 532, 40) === 272 && PS.keyboardInset(844, 900, 0) === 0 && PS.keyboardInset(844, 531.6, 0) === 312 &&
+        PS.keyboardState(844, 532, 0).open === true && PS.keyboardState(844, 532, 0).inset === 312 && PS.keyboardState(844, 780, 0).open === false && PS.keyboardState(844, 780, 0).inset === 0 && PS.keyboardState(844, 724, 0).open === true && PS.keyboardState(844, 725, 0).open === false)
+    check('native shell: scrollMemoryKey is path + search (never the hash), one namespace, a bare "?" dropped',
+      PS.scrollMemoryKey('/markets', '') === 'pantessa.scroll.v1:/markets' && PS.scrollMemoryKey('/chat', '?tab=links') === 'pantessa.scroll.v1:/chat?tab=links' && PS.scrollMemoryKey('/chat', 'tab=jobs') === 'pantessa.scroll.v1:/chat?tab=jobs' && PS.scrollMemoryKey('/t/AAPL', '?') === 'pantessa.scroll.v1:/t/AAPL' && PS.scrollMemoryKey('/t/AAPL', '?tab=trade') !== PS.scrollMemoryKey('/t/AAPL', ''))
+    check('native shell: themeColorFor follows the SITE theme and equals the served --bg per theme (dark #000000, light #fdfdfc — x402-design.css, not the old #09090b claim)', PS.themeColorFor('light') === '#fdfdfc' && PS.themeColorFor('dark') === '#000000' && PS.themeColorFor(undefined) === '#000000' && PS.themeColorFor(null) === '#000000' && PS.THEME_COLORS.dark === '#000000' && PS.THEME_COLORS.light === '#fdfdfc' && /^\s*--bg: #000000;/m.test(designSrc) && /^\s*--bg: #fdfdfc;/m.test(designSrc))
+    check('native shell: shouldDismissDrag — a quarter of the panel (min 80px) or a ≥0.5px/ms flick that moved ≥24px dismisses; a drag the wrong way or a slow short one never does',
+      PS.shouldDismissDrag(80, 0, 200) === true && PS.shouldDismissDrag(79, 0, 200) === false && PS.shouldDismissDrag(120, 0, 600) === false && PS.shouldDismissDrag(150, 0, 600) === true &&
+        PS.shouldDismissDrag(30, 0.6, 600) === true && PS.shouldDismissDrag(20, 2, 600) === false && PS.shouldDismissDrag(-100, 5, 200) === false && PS.shouldDismissDrag(0, 5, 200) === false && PS.SHEET_DISMISS_MIN_PX === 80 && PS.SHEET_DISMISS_VELOCITY === 0.5)
+    check('native shell: lib/app-scroller keeps the stubbed exports and adds scrollAppToTop / appScrollDepthPct / appScrollExtent / hasAppScroller (NAV\'s tap-the-lit-tab and the journey depth read these)',
+      ['getAppScroller', 'appScrollTop', 'scrollAppTo', 'onAppScroll', 'scrollAppToTop', 'appScrollDepthPct', 'appScrollExtent', 'hasAppScroller'].every((k) => typeof (AS as Record<string, unknown>)[k] === 'function'))
+
+    // The served stylesheet, not the source (the token-tint lesson, #792):
+    // the frame rules must reach a phone's browser from /markets.
+    const nsDoc = await (await fetch(`${BASE}/markets`, { headers: { 'x-yf-internal-run': '1' } })).text()
+    const nsHrefs = [...nsDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
+    const nsCss = flatCss((await Promise.all(nsHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n'))
+    const phoneBlocks = [...nsCss.matchAll(/@media\(max-width:1023px\)\{/g)].length
+    check('native shell: the served CSS carries the frame — below lg html:has([data-app-frame]) is height 100% + overflow hidden + no overscroll, its body clips, the frame is a 100dvh column, the scroller is flex 1 / min-height 0 / overflow-y auto / overscroll contain',
+      phoneBlocks > 0 && /html:has\(\[data-app-frame\]\)\{height:100%;overflow:hidden;overscroll-behavior:none\}/.test(nsCss) && /html:has\(\[data-app-frame\]\)body\{height:100%;min-height:0;overflow:clip;overscroll-behavior:none\}/.test(nsCss) &&
+        /html:has\(\[data-app-frame\]\)body\[data-app-frame\]\[data-app-frame\]\{display:flex;flex-direction:column;height:100vh;height:100dvh;min-height:0;max-height:none;padding:env\(safe-area-inset-top\)env\(safe-area-inset-right\)0env\(safe-area-inset-left\);overflow:hidden;overscroll-behavior:none\}/.test(nsCss) &&
+        /html:has\(\[data-app-frame\]\)body\[data-app-frame\]\[data-app-scroll\]\[data-app-scroll\]\{flex:1 1auto;min-height:0;max-height:none;overflow-y:auto;overflow-x:clip;overscroll-behavior-y:contain/.test(nsCss),
+      `${nsHrefs.length} stylesheets, ${phoneBlocks} phone blocks`)
+    check('native shell: the served CSS pins the bar IN FLOW as the frame\'s last row (`[data-app-frame] > [data-spine-bar]` static, order 999) with the fixed-bar belt for a bar that is not a direct child',
+      /html:has\(\[data-app-frame\]\)body\[data-app-frame\]>\[data-spine-bar\]\[data-spine-bar\]\{position:static;order:999;flex:00auto;width:auto;inset:auto\}/.test(nsCss) && /html:has\(\[data-app-frame\]\)body\[data-app-frame\]\[data-app-frame\]:has\(\[data-spine-bar\]\):not\(:has\(>\[data-spine-bar\]\)\)\{padding-bottom:calc\(var\(--spine-bar-h,49px\)\+env\(safe-area-inset-bottom\)\)\}/.test(nsCss))
+    check('native shell: the served CSS shrinks the frame onto the keyboard (html[data-keyboard] → 100dvh − --kb-inset) and hides the bar while it is up',
+      /html\[data-keyboard\]:has\(\[data-app-frame\]\)body\[data-app-frame\]\[data-app-frame\]\{height:calc\(100vh-var\(--kb-inset,0px\)\);height:calc\(100dvh-var\(--kb-inset,0px\)\)\}/.test(nsCss) && /html\[data-keyboard\]:has\(\[data-app-frame\]\)body\[data-app-frame\]\[data-spine-bar\]\[data-spine-bar\]\{display:none\}/.test(nsCss))
+    check('native shell: the served CSS keeps every text input in a frame or a sheet at ≥16px below lg (no iOS focus zoom) and puts touch-action: manipulation on everything a hand presses',
+      /\[data-app-frame\]input:not\(\[type=checkbox\]\)[^{]*\[data-app-frame\]select,\[data-app-frame\]textarea,\.sheetinput[^{]*\{font-size:max\(16px,1em\)\}/.test(nsCss) && /a,button,\[role=button\],\[role=tab\],\[role=menuitem\],input,select,textarea,label,summary\{touch-action:manipulation\}/.test(nsCss) &&
+        /\[data-spine-bar\],\.sheet__head,\.sheet__grabber,\.sheet__foot\{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none\}/.test(nsCss))
+    const layoutSrc = await readSrc('app/layout.tsx')
+    check('native shell: app/layout.tsx imports native-shell.css after x402-design.css and mounts PhoneShellMount once (keyboard + scroll memory + theme-color belt)',
+      layoutSrc.indexOf("import './x402-design.css'") < layoutSrc.indexOf("import './native-shell.css'") && (layoutSrc.match(/<PhoneShellMount \/>/g) ?? []).length === 1 && /import PhoneShellMount from '@\/components\/mobile\/PhoneShellMount'/.test(layoutSrc))
+
+    // The server-rendered attributes: the frame + its scroller, and the bar
+    // as a DIRECT child of the frame (the in-flow rule keys on `>`).
+    const tHtml = await (await fetch(`${BASE}/t/AAPL`, { headers: { 'x-yf-internal-run': '1' } })).text()
+    const wHtml = await (await fetch(`${BASE}/wallet`, { headers: { 'x-yf-internal-run': '1' } })).text()
+    const frameWithBarAndScroller = (html: string, open: RegExp, scroller: RegExp) => {
+      const m = open.exec(html)
+      if (!m) return false
+      const after = html.slice(m.index + m[0].length)
+      const asideEnd = after.indexOf('</aside>')
+      if (asideEnd < 0) return false
+      return /^<nav data-spine-bar=""/.test(after.slice(asideEnd + '</aside>'.length)) && scroller.test(after)
+    }
+    check('native shell: /markets renders <div class="mkt-shell" data-app-frame> with the spine bar as its direct child and .mkt-frame as its data-app-scroll scroller', frameWithBarAndScroller(nsDoc, /<div class="mkt-shell" data-app-frame="">(?=<aside)/, /<div class="mkt-frame" data-app-scroll="">/))
+    check('native shell: /t/AAPL renders the same frame with .mkt-frame.mkt-frame--sym as the scroller', frameWithBarAndScroller(tHtml, /<div class="mkt-shell" data-app-frame="">(?=<aside)/, /<div class="mkt-frame mkt-frame--sym" data-app-scroll="">/))
+    check('native shell: /wallet renders the frame on its wrapper (no max-lg bottom reserve, lg:min-h-dvh only) with the bar a direct child and a flex column scroller around WalletPage', frameWithBarAndScroller(wHtml, /<div data-shell="wallet" class="flex items-stretch lg:min-h-dvh" data-app-frame="">(?=<aside)/, /<div class="flex flex-1 min-w-0 flex-col" data-app-scroll="">/) && !/max-lg:pb-\[/.test(wHtml.slice(0, wHtml.indexOf('data-app-scroll') + 40)))
+    const dashLayout = await readSrc('app/dashboard/layout.tsx')
+    check('native shell: the dashboard layout (client-only, so a source pin) puts the frame on .dashshell and the scroller on .dash', /<div className="dashshell" \{\.\.\.frame\}>/.test(dashLayout) && /<div className="dash" \{\.\.\.scroll\}>/.test(dashLayout) && /const frame = \{ \[FRAME_ATTR\]: '' \}/.test(dashLayout) && /const scroll = \{ \[SCROLL_ATTR\]: '' \}/.test(dashLayout))
+
+    // The hand reserves are gone from every file SHELL owns.
+    const journeySrc = await readSrc('components/JourneyTracker.tsx')
+    check('native shell: the hand reserves SHELL owned are deleted — no `.mkt-shell { padding-bottom`, no `:root[data-spine] .dash__main` reserve, no `:root[data-spine] .dashask` lift, no max-lg:pb on the /wallet wrapper',
+      !/\.mkt-shell \{ padding-bottom/.test(designSrc) && !/:root\[data-spine\] \.dash__main/.test(designSrc) && !/:root\[data-spine\] \.dashask/.test(designSrc) && !/max-lg:pb-/.test(await readSrc('app/wallet/page.tsx')))
+    check('native shell: JourneyTracker reads the scroll depth through lib/app-scroller (onAppScroll + appScrollDepthPct), never window.scrollY — on a phone the document never scrolls',
+      /appScrollDepthPct\(\)/.test(journeySrc) && /onAppScroll\(onScroll\)/.test(journeySrc) && !/window\.scrollY/.test(journeySrc))
+
+    // The frame never makes a containing block: MARKETS' full-screen chart
+    // (`.tchart--expanded`, position: fixed inside .mkt-frame) would be
+    // trapped by a transform / filter / contain / container-type on the
+    // scroller chain. The drive checks the computed chain; this fences the
+    // sheet SHELL owns.
+    const nativeSrc = await readSrc('app/native-shell.css')
+    check('native shell: native-shell.css never sets transform / filter / backdrop-filter / perspective / contain / container-type / will-change on the frame or the scroller (a fixed full-screen chart inside the scroller must stay fixed to the viewport)',
+      !/\[data-app-(frame|scroll)\][^{]*\{[^}]*(transform|filter|perspective|contain:|container-type|will-change)/.test(nativeSrc))
+
+    // The Sheet (D3): the dismissals, the back gesture done Next's way, the
+    // trap, the motion, the keyboard lift — pinned at the source (nothing
+    // mounts a Sheet until the other lanes' round lands, so the served CSS
+    // has none of it yet).
+    const sheetSrc = await readSrc('components/mobile/Sheet.tsx')
+    const sheetCss = await readSrc('components/mobile/mobile.css')
+    check('native shell: Sheet keeps the contract props and adds the dismiss REASON to onClose (scrim · escape · button · swipe · back); every dismissal path names its reason',
+      /onClose: \(reason\?: SheetCloseReason\) => void/.test(sheetSrc) && /'scrim' \| 'escape' \| 'button' \| 'swipe' \| 'back'/.test(sheetSrc) && ["dismiss('scrim')", "dismissRef.current('escape')", "dismiss('button')", "dismiss('swipe')", "dismissRef.current('back')"].every((d) => sheetSrc.includes(d)) &&
+        ['open', 'onClose', 'title', 'ariaLabel', 'side', 'size', 'footer', 'children', 'className', 'id'].every((k) => new RegExp(`^  ${k}\\??:`, 'm').test(sheetSrc)))
+    check('native shell: the back gesture pushes ONE marked entry ({ sheet: key }, which Next\'s patched pushState stamps with __NA — a state without it would RELOAD on popstate), closes on popstate, and consumes the entry on any other dismissal only while history.state.sheet is still ours',
+      /window\.history\.pushState\(\{ sheet: historyKey \}, '', window\.location\.href\)/.test(sheetSrc) && /window\.addEventListener\('popstate', onPop\)/.test(sheetSrc) && (sheetSrc.match(/st\.sheet === historyKey\) window\.history\.back\(\)/g) ?? []).length === 2 && /if \(isPhoneViewport\(\)\)/.test(sheetSrc))
+    check('native shell: the Sheet traps Tab inside the panel, locks the document\'s scroll while open, returns focus to the opener, and decides a swipe with lib/phone-shell shouldDismissDrag from the grabber or the head',
+      /const trapTab = \(e: KeyboardEvent\)/.test(sheetSrc) && /html\.style\.overflow = 'hidden'/.test(sheetSrc) && /opener\?\.focus\?\.\(\{ preventScroll: true \}\)/.test(sheetSrc) && /shouldDismissDrag\(delta, d\.v, size\)/.test(sheetSrc) && /className="sheet__grabber" aria-hidden \{\.\.\.dragHandlers\}/.test(sheetSrc) && /className="sheet__head" \{\.\.\.dragHandlers\}/.test(sheetSrc))
+    check('native shell: mobile.css animates enter and exit (the exit from wherever a drag left the panel), stills everything under prefers-reduced-motion, and lifts a bottom sheet onto the keyboard once for every consumer',
+      /\.sheet\[data-phase='open'\]\[data-side='bottom'\] \.sheet__panel \{ animation: sheet-up/.test(sheetCss) && /\.sheet\[data-phase='closing'\]\[data-side='bottom'\] \.sheet__panel \{ animation: sheet-down/.test(sheetCss) && /@keyframes sheet-down \{ from \{ transform: translateY\(var\(--sheet-from, 0px\)\); \}/.test(sheetCss) &&
+        /@media \(prefers-reduced-motion: reduce\) \{\s*\.sheet \.sheet__scrim, \.sheet \.sheet__panel \{ animation: none !important/.test(sheetCss) &&
+        /html\[data-keyboard\] \.sheet\[data-side='bottom'\] \.sheet__panel \{\s*margin-bottom: var\(--kb-inset, 0px\);\s*max-height: calc\(100dvh - var\(--kb-inset, 0px\) - max\(24px, env\(safe-area-inset-top\)\)\);/.test(sheetCss) && /z-index: 90;/.test(sheetCss))
+
+    // Add to Home Screen: the manifest, its icons, the Apple metas and the
+    // theme-color that follows the site theme.
+    const mf = await fetch(`${BASE}/manifest.webmanifest`)
+    const mfJson = mf.ok ? ((await mf.json()) as { display?: string; start_url?: string; icons?: { src: string; sizes: string; purpose?: string }[]; theme_color?: string; background_color?: string; name?: string }) : null
+    check('native shell: /manifest.webmanifest serves display standalone, start_url /markets, the Emerald Cut 192 + 512 (any) + 512 maskable icons, and the dark theme/background colors', mf.ok && !!mfJson && mfJson.display === 'standalone' && mfJson.start_url === '/markets' && mfJson.name === 'Pantessa' && mfJson.theme_color === '#000000' && mfJson.background_color === '#000000' &&
+      (mfJson.icons ?? []).some((i) => i.sizes === '192x192' && i.purpose === 'any') && (mfJson.icons ?? []).some((i) => i.sizes === '512x512' && i.purpose === 'any') && (mfJson.icons ?? []).some((i) => i.sizes === '512x512' && i.purpose === 'maskable'), `${mf.status}`)
+    const iconChecks = await Promise.all((mfJson?.icons ?? []).map(async (i) => { const r = await fetch(`${BASE}${i.src}`); return r.ok && (r.headers.get('content-type') ?? '').includes('image/png') }))
+    check('native shell: every manifest icon serves as image/png', iconChecks.length === 3 && iconChecks.every(Boolean))
+    const rootHtml = await (await fetch(`${BASE}/`, { headers: { 'x-yf-internal-run': '1' } })).text()
+    check('native shell: the root HTML links the manifest, declares the standalone metas (mobile-web-app-capable — Next 16 renders the standard name for appleWebApp.capable — title, black-translucent), and ships the OS-preference theme-color pair as the pre-JS fallback',
+      /<link rel="manifest" href="\/manifest\.webmanifest"/.test(rootHtml) && /<meta name="mobile-web-app-capable" content="yes"/.test(rootHtml) && /<meta name="apple-mobile-web-app-title" content="Pantessa"/.test(rootHtml) && /<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/.test(rootHtml) &&
+        /<meta name="theme-color" media="\(prefers-color-scheme: light\)" content="#fdfdfc"/.test(rootHtml) && /<meta name="theme-color" media="\(prefers-color-scheme: dark\)" content="#000000"/.test(rootHtml))
+    check('native shell: the theme bootstrap writes a media-less theme-color meta FIRST in <head> and re-writes it on every data-theme change (the observer), from the same two colors', /meta\[name="theme-color"\]:not\(\[media\]\)/.test(rootHtml) && /document\.head\.insertBefore\(m,document\.head\.firstChild\)/.test(rootHtml) && /t==='light'\?'#fdfdfc':'#000000'/.test(rootHtml) && /new MutationObserver\(apply\)/.test(rootHtml))
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)

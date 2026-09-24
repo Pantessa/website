@@ -119,7 +119,7 @@ export default function WalletPage() {
   const showDoor = hydrated && !address && !holding
 
   return (
-    <main className="flex-1 min-w-0 px-4 sm:px-8 lg:px-12 pt-5 sm:pt-8 pb-28">
+    <main className="flex-1 min-w-0 px-4 sm:px-8 lg:px-12 pt-5 sm:pt-8 pb-10 lg:pb-28">
       <div className="mx-auto w-full max-w-[1180px]">
         <header className="flex items-center justify-between gap-4 pb-5 mb-6 border-b border-[var(--line)]">
           <div className="flex items-center gap-3 min-w-0">

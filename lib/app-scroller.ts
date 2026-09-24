@@ -52,3 +52,36 @@ export function onAppScroll(cb: () => void): () => void {
   document.addEventListener('scroll', handler, { capture: true, passive: true })
   return () => document.removeEventListener('scroll', handler, { capture: true })
 }
+
+// ── SHELL round 1 additions (2026-09-24): ADD only.
+
+/** The current screen's scroll extent: how far it can scroll and how tall
+ *  the visible part is, in either posture. */
+export function appScrollExtent(): { scrollTop: number; scrollHeight: number; clientHeight: number } {
+  const el = scrollerElement()
+  if (el) return { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }
+  if (typeof document === 'undefined') return { scrollTop: 0, scrollHeight: 0, clientHeight: 0 }
+  const doc = document.documentElement
+  return { scrollTop: window.scrollY, scrollHeight: doc.scrollHeight, clientHeight: window.innerHeight }
+}
+
+/** How far down the screen has been scrolled, 0–100 (the journey log's depth). */
+export function appScrollDepthPct(): number {
+  const { scrollTop, scrollHeight, clientHeight } = appScrollExtent()
+  const full = scrollHeight - clientHeight
+  return full > 0 ? Math.min(100, (scrollTop / full) * 100) : 0
+}
+
+/** Back to the top of the current screen (NAV's "tap the lit tab"). Smooth
+ *  unless the visitor asked for reduced motion. */
+export function scrollAppToTop(behavior?: ScrollBehavior): void {
+  if (typeof window === 'undefined') return
+  const reduce = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  scrollAppTo(0, behavior ?? (reduce ? 'auto' : 'smooth'))
+}
+
+/** True when the frame's scroller is live (a phone posture with a framed
+ *  surface mounted); false when the window is the scroller. */
+export function hasAppScroller(): boolean {
+  return scrollerElement() !== null
+}
