@@ -5,7 +5,7 @@ import { guardWarnLines } from '@/lib/content-origin'
 import ExternalBuildNotice from '@/components/ExternalBuildNotice'
 import { analytics } from '@/lib/analytics'
 import { feeBpsOfArtifact } from '@/lib/fees'
-import { Fragment, useState, useRef, useEffect, useLayoutEffect, useSyncExternalStore } from 'react'
+import { Fragment, useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Zap, Check, Loader2, Bot, User, PanelRight, Copy, Link2 } from 'lucide-react'
 import { usePathname, useRouter } from 'next/navigation'
@@ -992,6 +992,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       if (pinnedRef.current && hasThreadRef.current) scroller.scrollTop = scroller.scrollHeight
     })
     ro.observe(thread)
+    // The scroller itself resizing (the frame shrinking onto the soft
+    // keyboard, a banner coming or going) keeps the newest turn in view too,
+    // the way Messages does when the keyboard opens.
+    ro.observe(scroller)
     const onScroll = () => {
       pinnedRef.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80
     }
@@ -1003,21 +1007,40 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   }, [])
 
   // The composer rides the soft keyboard (squad mobile-native, CHAT row 3).
-  // Measured, never assumed: where the composer's bottom sits with no lift,
-  // against the visible bottom (layout height − the covered pixels). Below lg
-  // only; the embed's host page and the /t ticket (no composer) are left be.
+  // Inside a FRAME (/chat, /i) the frame itself shrinks onto the keyboard
+  // (SHELL's html[data-keyboard] + --kb-inset, applied in an effect after
+  // paint), so the composer is already there and this lift measures 0. It is
+  // the belt for a surface the frame doesn't cover. Measured, never assumed —
+  // and only AFTER the frame has had its frame (two rAFs) and again whenever
+  // the surface resizes, so the two answers can never add up to a double lift.
+  const rootRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
   const [kbLift, setKbLift] = useState(0)
   const kbLiftRef = useRef(0)
   kbLiftRef.current = kbLift
-  useLayoutEffect(() => {
-    const el = composerRef.current
-    if (!el || !isNarrow || embedded || docked || !keyboard.open) {
+  useEffect(() => {
+    if (!isNarrow || embedded || docked || !keyboard.open) {
       setKbLift(0)
       return
     }
-    const bottom = el.getBoundingClientRect().bottom + kbLiftRef.current
-    setKbLift(keyboardLift(bottom, window.innerHeight, keyboard.inset))
+    const measure = () => {
+      const el = composerRef.current
+      if (!el) return
+      const bottom = el.getBoundingClientRect().bottom + kbLiftRef.current
+      setKbLift(keyboardLift(bottom, window.innerHeight, keyboard.inset))
+    }
+    let raf2 = 0
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(measure)
+    })
+    const root = rootRef.current
+    const ro = root ? new ResizeObserver(measure) : null
+    if (root && ro) ro.observe(root)
+    return () => {
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
+      ro?.disconnect()
+    }
   }, [keyboard.open, keyboard.inset, isNarrow, embedded, docked])
   // A lift re-pins the newest turn (the spacer grows the thread; the
   // ResizeObserver above does the rest while the pin holds).
@@ -1815,7 +1838,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   }
 
   return (
-    <div className={cn('relative flex flex-col h-full', firstParty && 'yf-chat')}>
+    <div ref={rootRef} className={cn('relative flex flex-col h-full', firstParty && 'yf-chat')}>
       {/* The conversation's top bar on a PHONE (squad mobile-native): the way
           to the chat list, the title over the apps count, chain, share, the
           account door — one 52px row, 44px targets (components/chat/
@@ -2795,7 +2818,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             aria-label="Send"
             data-composer-send=""
             className={cn(
-              'flex-shrink-0 w-11 h-11 md:w-9 md:h-9 rounded-full flex items-center justify-center transition-all duration-200',
+              // Touch keeps 44px at every width: a landscape phone is ≥md
+              // (844px) and measured 36×36 (squad mobile-native, CHAT).
+              'flex-shrink-0 w-11 h-11 md:w-9 md:h-9 [@media(hover:none)]:w-11 [@media(hover:none)]:h-11 rounded-full flex items-center justify-center transition-all duration-200',
               input.trim() && !loading
                 ? 'bg-[color:var(--accent)] text-black hover:brightness-110 scale-100 shadow-[0_0_18px_rgba(52,227,160,0.35)]'
                 // Touch: no hover to grow back into, and a 44px target must
