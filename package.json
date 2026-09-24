@@ -54,7 +54,8 @@
     "drive:mobile-sign": "tsx scripts/drive-mobile-sign.ts",
     "drive:mobile-links": "tsx scripts/drive-mobile-links.ts",
     "drive:mobile": "tsx scripts/drive-mobile.ts",
-    "drive:desk": "tsx scripts/drive-desk.ts"
+    "drive:desk": "tsx scripts/drive-desk.ts",
+    "drive:growth-people": "tsx scripts/drive-growth-people.ts"
   },
   "dependencies": {
     "@coinbase/cdp-core": "^0.0.111",

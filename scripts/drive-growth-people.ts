@@ -1,12 +1,25 @@
-// Drive: the Growth page's people table — both lanes, the filter, the path.
+// Drive: the Growth page's people table, in a real browser.
+//
+// The harness pins the rules (lib/admin-growth's merge, the live payload, the
+// page source). This proves the screen: that the wallet lane actually shows
+// up, that the all/email/wallet filter moves the rows AND the stage tiles,
+// and that a person who traded still shows the path they were trying — the
+// case the TEST DB has no row for, so it's injected into the payload.
+//
+//   npm run build && npx next start -p 3852
+//   BASE=http://localhost:3852 npm run drive:growth-people
+//
+// Needs PRIVATE_KEY in .env.local (an admin wallet) — it signs a real SIWE.
 import { privateKeyToAccount } from 'viem/accounts'
 import { createSiweMessage } from 'viem/siwe'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import pw from 'playwright-core'
 const { chromium } = pw
 
 const BASE = process.env.BASE ?? 'http://localhost:3852'
-const SHOTS = process.env.SHOTS!
+const SHOTS = process.env.SHOTS ?? mkdtempSync(join(tmpdir(), 'growth-people-'))
 let pass = 0, fail = 0
 const check = (name: string, ok: boolean, detail = '') => {
   console.log(`${ok ? '✅' : '❌'} ${name}${detail ? ` — ${detail}` : ''}`)
@@ -200,7 +213,8 @@ async function main() {
   await ctx.close()
 
   await browser.close()
-  console.log(`\n${pass} passed, ${fail} failed`)
+  console.log(`\nshots: ${SHOTS}`)
+  console.log(`${pass} passed, ${fail} failed`)
   process.exit(fail === 0 ? 0 : 1)
 }
 
