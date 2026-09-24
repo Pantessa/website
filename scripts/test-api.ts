@@ -33018,6 +33018,73 @@ async function main() {
     )
   }
 
+  // ── native qa: the mobile-native squad's instrument (QA lane, 2026-09-24) ──
+  // Appended as ONE block with its own closing brace (the squad's shared-tail
+  // rule); everything it needs is imported INSIDE it. It pins `npm run
+  // drive:native` itself: a gate that can run its drive inside the harness,
+  // fire a live money turn, sign with the funded burner, or exit 0 on a red
+  // is worse than no gate.
+  {
+    const { readFileSync: readNq } = await import('node:fs')
+    const nqSrc = readNq('scripts/drive-native.ts', 'utf8')
+    const nqCode = nqSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+    check(
+      'native qa: drive:native resolves playwright through createRequire (never a static import — it is not a dependency) and only drives when run directly; the harness imports it',
+      /createRequire\(/.test(nqCode) &&
+        /createRequire\(ANCHOR\)\('playwright-core'\)/.test(nqCode) &&
+        /if \(process\.argv\[1\] && \/drive-native/.test(nqCode) &&
+        // no column-0 call: the only main() is the guarded one
+        !/^(?:void )?main\(\)/m.test(nqCode),
+    )
+    check(
+      'native qa: drive:native exits 1 on any FAIL (a drive that prints ❌ and exits 0 proved nothing) and 2 when nothing is serving',
+      /process\.exit\(fail \? 1 : 0\)/.test(nqCode) && /process\.exit\(2\)/.test(nqCode),
+    )
+    check(
+      'native qa: drive:native never fires a live chat turn (every POST /api/chat is fulfilled from a fixture — /i auto-runs its ask on connect) and stamps every same-origin request x-yf-internal-run + x-yf-no-ask-log',
+      /req\.method\(\) === 'POST' && \/\^\\\/api\\\/chat\\\/\?\$\/\.test\(url\.pathname\)/.test(nqCode) &&
+        /route\.fulfill\(\{ status: 200, contentType: 'application\/json', body: JSON\.stringify\(CHAT_FIXTURE\)/.test(nqCode) &&
+        /'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1'/.test(nqCode),
+    )
+    check(
+      'native qa: the mock wallet refuses every signature and transaction, and the dashboard SIWE is a THROWAWAY key (generatePrivateKey) — drive:native never reads PRIVATE_KEY',
+      /generatePrivateKey\(\)/.test(nqCode) &&
+        !/PRIVATE_KEY/.test(nqCode) &&
+        /case 'personal_sign': case 'eth_sign': case 'eth_signTypedData_v4': case 'eth_sendTransaction': case 'wallet_sendCalls':\s*window\.__nqRefused/.test(nqCode),
+    )
+    check(
+      'native qa: a missing WebKit build is a SKIP row that names the owner step, never a hang and never a silent pass',
+      /state: 'SKIP'/.test(nqCode) && /npx playwright install webkit/.test(nqSrc) && /existsSync\(exe\)/.test(nqCode),
+    )
+    const nq = (await import('./drive-native')) as typeof import('./drive-native')
+    check(
+      'native qa: drive:native measures the eleven checks of QA.md, in order',
+      JSON.stringify(nq.CHECKS) === JSON.stringify(['frame', 'bar', 'tabs', 'sheets', 'targets', 'inputs', 'overflow', 'keyboard', 'themecolor', 'manifest', 'desktop']),
+      nq.CHECKS.join(','),
+    )
+    // D2 (README): a tab is a PLACE. The drive's expectations are the
+    // contract NAV builds against — pinned so neither side drifts silently.
+    const chatT = nq.D2_FROM_CHAT
+    check(
+      'native qa: D2 as the drive reads it — APPS/JOBS/LINKS/TEAM name themselves in ?tab= (mcps/jobs/links/team) with their screen, CHATS in a conversation opens the list (history), MORE is a Sheet, MARKETS/WALLET are routes',
+      chatT.APPS.tab === 'mcps' && chatT.APPS.screen === 'apps' &&
+        chatT.JOBS.tab === 'jobs' && chatT.LINKS.tab === 'links' && chatT.TEAM.screen === 'team' &&
+        chatT.CHATS.screen === 'history' && chatT.CHATS.lit === 'CHATS' &&
+        chatT.More.sheet === true && chatT.MARKETS.path === '/markets' && chatT.WALLET.path === '/wallet' &&
+        nq.D2_SEQUENCES.some((q) => q.taps.join(',') === 'APPS,CHATS' && q.expect.screen === 'chat' && q.expect.tab === ''),
+    )
+    const app = nq.SURFACES.filter((x) => x.kind === 'app').map((x) => x.path)
+    check(
+      'native qa: every framed surface of README invariant 1 is driven (/chat, its four tabs, /markets, /t/AAPL, /t/ETH, /wallet, /dashboard, /i/<slug>) plus the brochure pages',
+      ['/chat', '/chat?tab=mcps', '/chat?tab=jobs', '/chat?tab=links', '/chat?tab=chats', '/markets', '/t/AAPL', '/t/ETH', '/wallet', '/dashboard'].every((p) => app.includes(p)) &&
+        app.some((p) => p.startsWith('/i/')) &&
+        ['/', '/pricing', '/docs'].every((p) => nq.SURFACES.some((x) => x.path === p && x.kind === 'brochure')),
+      app.join(' '),
+    )
+    const pkg = JSON.parse(readNq('package.json', 'utf8')) as { scripts: Record<string, string> }
+    check('native qa: `npm run drive:native` is wired', pkg.scripts['drive:native'] === 'tsx scripts/drive-native.ts', pkg.scripts['drive:native'] ?? 'missing')
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }
