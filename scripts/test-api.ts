@@ -16685,7 +16685,11 @@ async function main() {
       const noticeSrc = fsS.readFileSync('components/ExternalBuildNotice.tsx', 'utf8')
       check(
         'passthrough honesty: source — planner-sourced chains never auto-fire step 2+ (manualSteps), the card mounts the external-build marker with every `to` in full + the guard warnings',
-        chainSrc.includes('autoFire={i > 0 && !manualSteps}') &&
+        // Re-pinned 2026-09-23 (mobile-onboarding SIGN): the decision moved into
+        // lib/sign-round-trip autoFireAllowed, which still returns false for
+        // manualSteps (asserted below, not just grepped) — the behaviour held.
+        chainSrc.includes('autoFire={autoFireAllowed({ platform, stepIndex: i, manualSteps') &&
+          (await import('../lib/sign-round-trip')).autoFireAllowed({ platform: 'desktop', stepIndex: 1, manualSteps: true }) === false &&
           chatSrc.includes('manualSteps={!!externalChain}') &&
           chatSrc.includes("m.buildPath !== 'planner'") &&
           noticeSrc.includes('data-external-to={t.to') &&
@@ -23416,7 +23420,10 @@ async function main() {
         grace >= 500 && grace <= 2000 &&
           /const silent = connector\?\.id === CDP_CONNECTOR_ID/.test(waitS) &&
           /return \{ shown: signingIn && \(!silent \|\| late\), silent \}/.test(waitS) &&
-          /silent \? 'Signing you in…'/.test(waitS) && /\{!silent && \(/.test(waitS) &&
+          // Re-pinned 2026-09-23 (mobile-onboarding SIGN): the button block gained a
+          // phone branch ("Open {app}" when the SDK's request is queued in the wallet
+          // app); a silent signer still renders NO button on either branch.
+          /silent \? 'Signing you in…'/.test(waitS) && /\{!silent && signingIn && openApp \? \(/.test(waitS) && /\) : !silent \? \(/.test(waitS) && /\) : null\}/.test(waitS) &&
           // Re-pinned 2026-09-18: a third reason to stand down — on a phone the
           // handoff card takes over while the wallet app hasn't come forward
           // (lib/wallet-handoff), because "the request is open in your wallet"
@@ -31571,6 +31578,9 @@ async function main() {
     const btnSrc = fs.readFileSync('components/SendTxButton.tsx', 'utf8')
     check('mobile sign: SendTxChain decides step N>1’s auto-fire with autoFireAllowed({ platform … stepIndex: i …}) and labels a phone’s step via continueCopy', /autoFire=\{autoFireAllowed\(\{ platform, stepIndex: i/.test(chainSrc) && /ctaLabel=\{oneMethodPerTap\(platform\) \? continueCopy\(/.test(chainSrc) && /data-chain-next=/.test(chainSrc) && !/autoFire=\{i > 0 && !manualSteps\}/.test(chainSrc))
     check('mobile sign: SendTxButton — the outcome is READ on mount before the card offers, WRITTEN as asked before the request leaves (nonce in parallel, never awaited ahead of the send), settled on the hash, cleared on a pre-broadcast error, and never auto-fired over', /readSignOutcome\(outcomeStore\(\), outcomeKey, Date\.now\(\)\)/.test(btnSrc) && /state: 'asked', askedAt, nonceAtAsk: null/.test(btnSrc) && btnSrc.indexOf("state: 'asked'") < btnSrc.indexOf('await sendTransactionAsync') && !/await publicClient\s*\??\.getTransactionCount/.test(btnSrc) && /state: 'settled', askedAt, settledAt: Date\.now\(\), hash: txHash/.test(btnSrc) && /if \(!txHash\) \{\s*\/\/[^\n]*\n\s*if \(outcomeKey\) clearSignOutcome/.test(btnSrc) && /data-sign-resume=\{resume\}/.test(btnSrc) && /if \(outcomeKey && readSignOutcome\(outcomeStore\(\), outcomeKey, Date\.now\(\)\)\) return\s*\n\s*autoFired\.current = true/.test(btnSrc))
+    // LINKS reads the build's ORIGINAL last-step key (lib/intent-link-return): a re-quoted
+    // step has new calldata, so the chain itself writes `settled` under the original key.
+    check('mobile sign: SendTxChain writes `settled` (with the final hash) under the ORIGINAL last step’s key when the chain completes — chain.steps (the build), never the refreshed state', /if \(next >= steps\.length\) \{[^]*?const orig = chain\.steps\[chain\.steps\.length - 1\]\?\.tx[^]*?signOutcomeKey\(\{ wallet: address, chainId: orig\.chainId \?\? 8453, to: orig\.to, data: orig\.data \}\)[^]*?state: 'settled'[^]*?hash \}\)[^]*?setPhase\('done'\)/.test(chainSrc) && !/const orig = steps\[/.test(chainSrc))
     check('mobile sign: SendTxButton — a phone’s chain switch re-arms instead of chaining the send; back-from-the-app offers reopen, never a second send', /if \(oneMethodPerTap\(trip\.platform\)\) \{\s*setStatus\('idle'\)/.test(btnSrc) && /trip\.verdict === 'offer-reopen'/.test(btnSrc) && /data-sign-return="offer-reopen"/.test(btnSrc) && !/onClick=\{\(\) => void send\(\)\}[^]*data-sign-return/.test(btnSrc.slice(btnSrc.indexOf('data-sign-return'))))
     const hlSrc = fs.readFileSync('components/SignHlActionButton.tsx', 'utf8')
     const nftSrc = fs.readFileSync('components/SignNftListingButton.tsx', 'utf8')
@@ -31602,6 +31612,12 @@ async function main() {
     // ── the beacon: a dropped launch is its own kind, stamped like every harness row
     const dropped = WR.launchDroppedReport({ wallet: signer.address, link: 'metamask://connect?channelId=abc&comm=socket', app: 'MetaMask', connector: 'metaMaskSDK', chainId: 8453, settleMs: 1200 })
     check('mobile sign: launchDroppedReport — kind launch-dropped, artifact wallet-app, the scheme without its query, the settle window in words', dropped.kind === 'launch-dropped' && dropped.artifact === 'wallet-app' && dropped.ask === 'open MetaMask (metamask://connect)' && /1200ms/.test(dropped.detail) && /queued in an app the browser never switched to/.test(dropped.detail) && !/channelId/.test(dropped.ask + dropped.detail))
+    // N2 (CONNECT r2): the holder's settle timer FILES the drop — the fire site, by source, on
+    // the exact line that also puts the card up; the row it produces is the HTTP pin below.
+    const holderSrc = fs.readFileSync('lib/wallet-handoff.ts', 'utf8')
+    const settleBody = holderSrc.slice(holderSrc.indexOf('settleTimer = setTimeout('), holderSrc.indexOf('}, WALLET_APP_SETTLE_MS)'))
+    check('mobile sign: lib/wallet-handoff fires the launch-dropped beacon from the settle timer, after the card goes up, with the settle window and the tried flag (N2 landed)', /setPending\(o\)/.test(settleBody) && settleBody.indexOf('setPending(o)') < settleBody.indexOf('reportWalletRefusal(launchDroppedReport(') && /launchDroppedReport\(\{ wallet: null, link: o\.link, app: o\.app, settleMs: WALLET_APP_SETTLE_MS, tried: o\.tried \}\)/.test(settleBody) && /^import \{ launchDroppedReport, reportWalletRefusal \} from '@\/lib\/wallet-refusal'/m.test(holderSrc))
+    check('mobile sign: the seam CONNECT exposed for the drives is one DOM event (WALLET_APP_OPEN_EVENT) and the API names SIGN consumes exist (openWalletApp / reopenWalletApp / walletAppLastLink / walletAppRequestSettled)', /export const WALLET_APP_OPEN_EVENT = 'pantessa:wallet-app-open'/.test(holderSrc) && ['openWalletApp', 'reopenWalletApp', 'walletAppLastLink', 'walletAppRequestSettled'].every((n) => new RegExp(`export function ${n}\\(`).test(holderSrc)))
     const droppedRes = await fetch(`${BASE}/api/ask-failures/wallet`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(dropped) })
     const droppedBody = (await droppedRes.json()) as { ok?: boolean; kind?: string; internal?: boolean; id?: string }
     check('mobile sign: the beacon route accepts kind launch-dropped + artifact wallet-app (202, stamped internal, no rejection gate)', droppedRes.status === 202 && droppedBody.ok === true && droppedBody.kind === 'launch-dropped' && droppedBody.internal === true && !!droppedBody.id, JSON.stringify(droppedBody))
