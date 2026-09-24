@@ -258,6 +258,11 @@ button.mk-held:hover { border-color: var(--accent); }
      amount field 34 · Buy/Sell 38 · Send 40 on main — and the Overview chips. */
   .mkt-routes__filter, .mkt-route__chip, .mkt-order__preset, .mkt-order__custom, .mkt-order__side, .mkt-order__send, .mkt-chip { min-height: 44px; }
   .wl__rowMain { min-height: 48px; }
+  /* The header's YOU HOLD + COMPARE pills keep their 26px look on the meta
+     line and gain an invisible 44px hit area (a pseudo-element hit-tests as
+     its button). */
+  .mk-vs__open, .mk-vs__x, button.mk-held { position: relative; }
+  .mk-vs__open::after, .mk-vs__x::after, button.mk-held::after { content: ''; position: absolute; inset: -9px -4px; }
   .wl__rowMore { opacity: 1; }
   .wl__icon { width: 44px; height: 44px; }
   .wl__pickBtn { min-height: 44px; }
@@ -291,12 +296,14 @@ button.mk-held:hover { border-color: var(--accent); }
    to: the card grows around a 260px canvas instead of the canvas shrinking to
    what a fixed-height card leaves (≈150px at 375 on main). Full screen (the
    expanded class rides the native API too) keeps the takeover's own layout. */
-@media (max-width: 640px) {
-  /* The tool strip on a phone: the search and Map · List scroll away with the
-     page and the board tabs stick under the top strip, a native segmented
-     bar (the whole strip stuck was ~170px of chrome at 44px targets, which is
-     why it went static here). The strip's box dissolves (display: contents),
-     so the tabs' sticky range is the whole data column, not the strip. */
+/* The tool strip on a phone: the search and Map · List scroll away with the
+   page and the board tabs stick under the top strip, a native segmented bar
+   (the whole strip stuck was ~170px of chrome at 44px targets, which is why
+   it went static here). The strip's box dissolves (display: contents), so the
+   tabs' sticky range is the whole data column, not the strip. A LANDSCAPE
+   phone (844×390) gets the same: the whole strip stuck left 166px of rows
+   between it and the tab bar (round 2). */
+@media (max-width: 640px), (max-width: 1023px) and (max-height: 500px) {
   .mkt-frame__bar { display: contents; }
   .mkt-frame__bar > .mkt-search { display: block; max-width: none; margin-top: 14px; }
   .mkt-frame__bar > .mk-view { margin-top: 10px; }
@@ -309,6 +316,24 @@ button.mk-held:hover { border-color: var(--accent); }
   .mkt-frame__bar > .mkt-frame__tabs::-webkit-scrollbar { display: none; }
   /* A board tab lands its section under the strip + the stuck tabs. */
   .mkt-sec { scroll-margin-top: calc(var(--mkt-top-h, 52px) + 60px); }
+}
+@media (max-width: 640px) {
+  /* The /t header leads with the price and the chart (round 2, F9: the chart
+     started at 48–56% of a 375×629 screen; a long venue chip and session line
+     wrapped the identity block to 101–126px). One title line, one meta line
+     (the session ellipsizes, the pills keep their seats), no "24H RANGE"
+     caption, tighter rhythm. */
+  .mkt-frame--sym .sym__head { padding: 10px 0 8px; row-gap: 8px; }
+  .sym__head--mk2 .sym__titlerow { flex-wrap: nowrap; }
+  .sym__head--mk2 .sym__name { flex: 0 1 auto; min-width: 0; }
+  .sym__head--mk2 .sym__sym { flex: 0 0 auto; }
+  .sym__head--mk2 .sym__venue { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .sym__head--mk2 .sym__meta { flex-wrap: nowrap; margin-top: 6px; }
+  .sym__head--mk2 .sym__session { display: block; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sym__head--mk2 .sym__session .mk-dot { vertical-align: middle; margin-right: 6px; }
+  .sym__head--mk2 .sym__meta > :not(.sym__session) { flex: 0 0 auto; }
+  .sym__head--mk2 .mk-range { margin-top: 4px; }
+  .sym__head--mk2 .mk-range__k { display: none; }
   .sym .tchart:not(.tchart--expanded) { height: auto; }
   .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas { flex: 0 0 auto; height: 260px; }
   /* Its controls in two rows, not four (44px each at a thumb's size): the
@@ -339,7 +364,10 @@ button.mk-held:hover { border-color: var(--accent); }
   }
   .sym__act-chips::-webkit-scrollbar { display: none; }
   .sym__act-chips::after { content: ''; flex: 0 0 16px; }
-  .sym__act-chip { flex-shrink: 0; }
+  /* It rests on a chip's edge, never mid-label (proximity: the row's end
+     stays reachable). */
+  .sym__act-chips { scroll-snap-type: x proximity; }
+  .sym__act-chip { flex-shrink: 0; scroll-snap-align: start; }
 }
 
 /* The rail's dialogs are THE Sheet (components/mobile/Sheet, ids wl-import +

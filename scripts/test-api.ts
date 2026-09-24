@@ -33279,7 +33279,7 @@ async function main() {
     check(
       'native markets: no field on a markets surface zooms the page on focus — every input/textarea/select in the frame and the rail\'s sheets is ≥16px on touch or below lg',
       /@media \(hover: none\), \(max-width: 1023px\) \{\s*\.mkt-frame :is\(input, textarea, select\),\s*\[data-sheet\^="wl-"\] :is\(input, textarea, select\) \{ font-size: max\(16px, 1em\); \}/.test(nmMk) &&
-        /\.askdoor-sheet \.askdoor__input \{ font-size: max\(16px, 1em\); \}/.test(nmDesign),
+        /\.askdoor-sheet \.askdoor__input \{ font-size: max\(16px, 1em\);/.test(nmDesign),
     )
     check(
       'native markets: on a phone the /t plot keeps 260px however its controls wrap, those controls take two rows (timeframes + live/full screen, then overlays beside the tools), and the act strip is one sideways row',
@@ -33300,6 +33300,45 @@ async function main() {
       /const natural = main\.getBoundingClientRect\(\)\.top\s*\n\s*if \(natural < stuckAt - 1\) scrollAppTo\(appScrollTop\(\) \+ natural - stuckAt\)/.test(nmSym) &&
         !/el\.scrollIntoView\(\{ block: 'start' \}\)/.test(nmCode(nmSym)) &&
         /\.mkt-frame__rail, \.mkt-frame__foot \{ overflow-anchor: none; \}/.test(nmMk),
+    )
+    // Round 2 (coordinator R2-1 + R2-3).
+    check(
+      'native markets (round 2): on a phone the /t header leads with the price and the chart — one title line (the venue chip ellipsizes), one meta line (the session ellipsizes), no "24H RANGE" caption, a tighter rhythm; the act chips snap to a chip\'s edge; the header pills keep a 44px hit area',
+      /\.mkt-frame--sym \.sym__head \{ padding: 10px 0 8px; row-gap: 8px; \}/.test(nmMk) &&
+        /\.sym__head--mk2 \.sym__titlerow \{ flex-wrap: nowrap; \}/.test(nmMk) &&
+        /\.sym__head--mk2 \.sym__session \{ display: block; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; \}/.test(nmMk) &&
+        /\.sym__head--mk2 \.mk-range__k \{ display: none; \}/.test(nmMk) &&
+        /\.sym__act-chips \{ scroll-snap-type: x proximity; \}/.test(nmMk) && /\.sym__act-chip \{ flex-shrink: 0; scroll-snap-align: start; \}/.test(nmMk) &&
+        /\.mk-vs__open::after, \.mk-vs__x::after, button\.mk-held::after \{ content: ''; position: absolute; inset: -9px -4px; \}/.test(nmMk),
+    )
+    {
+      // The pill as a native FAB on a document-scrolling page (round 2): PAGES'
+      // CTA-bar rule (lib/cta-bar) for direction + jitter + anchor, no hero band,
+      // at rest at the top and the page end.
+      const { askPillStep: step, askPillInitial: initial } = await import('../lib/ask-door')
+      const top = initial(0, 5000)
+      const down = step(top, 400, 5000)
+      const up = step(down, 300, 5000)
+      const jitter = step(up, 305, 5000)
+      const down2 = step(jitter, 2600, 5000)
+      const end = step(down2, 4999, 5000)
+      const mid = initial(1800, 5000)
+      const doorCss = nmFlat(nmDesignCode)
+      check(
+        'native markets (round 2): the brochure pill is a native FAB — shown at rest at the top, away while the reader scrolls DOWN, back on a scroll UP, a jitter under 6px changes nothing, shown at the page end; a restored mid-page arrival starts away; the CSS hides an away pill on a phone only (the reserve never flickers)',
+        top.shown && !down.shown && up.shown && jitter === up && !down2.shown && end.shown && !mid.shown &&
+          /@media \(max-width: 1023px\) \{ body:has\(\[data-ask-door="rail"\]\) \.askdoor-pill \{ display: none; \} \.askdoor-pill\[data-away\] \{ display: none; \} \}/.test(doorCss) &&
+          /import \{ ctaBarStep, type CtaBarState \} from '@\/lib\/cta-bar'/.test(await readFile('lib/ask-door.ts', 'utf8')),
+        JSON.stringify({ top, down, up, jitter, down2, end, mid }),
+      )
+      check(
+        'native markets (round 2): the ask field inside the phone Sheet is a 44px target (it measured 243×37)',
+        /\.askdoor-sheet \.askdoor__input \{ font-size: max\(16px, 1em\); min-height: 44px; padding: 10px 0; \}/.test(nmDesign),
+      )
+    }
+    check(
+      'native markets (round 2): a landscape phone gets the phone tool strip (only the board tabs stick) — the whole strip stuck left 166px of rows at 844×390',
+      /@media \(max-width: 640px\), \(max-width: 1023px\) and \(max-height: 500px\) \{\s*\.mkt-frame__bar \{ display: contents; \}/.test(nmMk),
     )
     check(
       'native markets: below lg the /t section tabs stick under the top strip (scroll-margin lands a switch there)',
