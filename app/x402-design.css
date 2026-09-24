@@ -300,6 +300,10 @@
   /* The "More" destinations pair up: a menu that fills the screen leaves no
      scrim to tap (it measured 614 of 667px as one column). */
   .navsheet__tabs > .drawer__sub { grid-column: auto; padding-left: 16px; }
+  /* Exact 48px rows and a tight group label: the sheet leaves a real band of
+     scrim above it to tap (it measured 608 of 667px with the drag grabber). */
+  .navsheet__tabs .nav__tab { padding: 12px 16px; min-height: 48px; }
+  .navsheet__tabs .drawer__group { padding: 10px 16px 4px; }
   .navsheet .sheet__foot .nav__dash { width: 100%; justify-content: center; min-height: 48px; font-size: 16px; }
   .navsheet .navsheet__signin { background: var(--accent); color: var(--ink); border-color: transparent; }
   .navsheet .navsheet__signin:hover { filter: brightness(1.06); background: var(--accent); }
@@ -1498,6 +1502,14 @@
   .orgsw__go:disabled { opacity: .5; }
   /* Mobile: the vertical rail is replaced by a compact bar + hamburger drawer
      (DashboardMobileNav) — no more horizontal-scroll section row. */
+  /* Inside the phone frame (below lg) `.dashshell` is a flex COLUMN, and
+     `.dash`'s `margin: 0 auto` then turns off cross-axis stretch: `.dash`
+     sized to its content (766px on /dashboard, 626px on /guardian at 375)
+     and the frame clipped the rest out of reach ("Dismiss welcome" at
+     x 709). Full width, no auto margins. */
+  @media (max-width: 1023px) {
+    .dash { margin: 0; width: 100%; min-width: 0; }
+  }
   @media (max-width: 900px) {
     /* Block, not a one-column grid: a grid item's containing block is its
        grid AREA, so a sticky `.dashnav` in row 1 could never leave row 1. */

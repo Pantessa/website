@@ -33140,6 +33140,10 @@ async function main() {
         ruleWith(below900, '.dashask', ['display:none']) && !/\.dashnav__bar\{[^}]*position:sticky/.test(npCss),
     )
     check(
+      'native pages: inside the phone frame `.dash` spans the frame below lg (margin 0, width 100%, min-width 0). In the frame\'s flex COLUMN its `margin: 0 auto` turned off stretch: `.dash` sized to its content (766px on /dashboard at 375) and the frame clipped "Dismiss welcome" to x 709',
+      ruleWith(below1023, '.dash', ['margin:0', 'width:100%', 'min-width:0']),
+    )
+    check(
       'native pages: the account pill and the Sign in pill keep their looks and gain a 44px+ hit area below lg (BEFORE: 35px and 28px); the account sheet\'s rows are 48px (BEFORE: 38px)',
       ['.navacct__pill:before', '.hit-44:before'].every((sel) => ruleWith(below1023, sel, ['content:""', 'position:absolute', 'inset:-8px-3px'])) &&
         ruleWith(npCss, '.navacct--sheet.navacct__item', ['min-height:48px']),
