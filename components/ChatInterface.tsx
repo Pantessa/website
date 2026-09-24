@@ -997,13 +997,48 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     // keyboard, a banner coming or going) keeps the newest turn in view too,
     // the way Messages does when the keyboard opens.
     ro.observe(scroller)
+    // Only the READER releases the pin. The browser scrolls this element by
+    // itself too — scroll anchoring nudges scrollTop when content lands above
+    // the anchor (a splash batch minting mid-conversation: +76px measured,
+    // with the page growing 501px), and SHELL's route memory lands a URL
+    // change at the top — and each of those fires a scroll event. Read as the
+    // reader, the pin let go and the JobCard landed 685px below the fold
+    // (squad mobile-native, CHAT F8). A wheel, a touch, a pointer on the
+    // scrollbar or a scrolling key within the last second is the reader;
+    // reaching the end re-arms the pin whoever scrolled.
+    let userAt = 0
+    const markUser = () => {
+      userAt = performance.now()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (/^(PageUp|PageDown|Home|End|ArrowUp|ArrowDown| )$/.test(e.key)) markUser()
+    }
     const onScroll = () => {
-      pinnedRef.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80
+      const nearEnd = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80
+      if (nearEnd) {
+        pinnedRef.current = true
+        return
+      }
+      if (performance.now() - userAt < 1000) {
+        pinnedRef.current = false
+        return
+      }
+      // Not the reader: a pinned thread holds its ground.
+      if (pinnedRef.current && hasThreadRef.current) scroller.scrollTop = scroller.scrollHeight
     }
     scroller.addEventListener('scroll', onScroll, { passive: true })
+    scroller.addEventListener('wheel', markUser, { passive: true })
+    scroller.addEventListener('touchmove', markUser, { passive: true })
+    scroller.addEventListener('pointerdown', markUser, { passive: true })
+    // Scrolling keys land on whatever has focus, not on the scroller.
+    window.addEventListener('keydown', onKey)
     return () => {
       ro.disconnect()
       scroller.removeEventListener('scroll', onScroll)
+      scroller.removeEventListener('wheel', markUser)
+      scroller.removeEventListener('touchmove', markUser)
+      scroller.removeEventListener('pointerdown', markUser)
+      window.removeEventListener('keydown', onKey)
     }
   }, [])
 

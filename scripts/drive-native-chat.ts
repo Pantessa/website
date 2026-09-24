@@ -584,9 +584,9 @@ async function desktopPass(browser: Pw) {
   await page.waitForTimeout(1500)
   const d = await page.evaluate(`(() => {
     ${HELPERS}
-    const tb = document.querySelector('main > div > div.border-b')
-    const phoneBar = document.querySelector('[data-chat-topbar]')
     const workingSet = document.querySelector('main button[title^="Your working set"]')
+    const tb = workingSet ? workingSet.closest('div.border-b') : null
+    const phoneBar = document.querySelector('[data-chat-topbar]')
     return {
       toolbar: box(tb), phoneBarVisible: !!phoneBar && visible(phoneBar),
       workingSet: workingSet ? { text: workingSet.textContent.trim().slice(0, 60), ...box(workingSet) } : null,
