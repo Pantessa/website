@@ -576,7 +576,7 @@ async function headerRows() {
         })()`)
         record[`r2.header.${w}x${h}.${sym}`] = r
         const line = `${w}×${h} /t/${sym}: header ${r.head}px · chart top ${r.chartTop}px = ${r.pct}% · ${r.chips} chips in ${r.rows} row(s), ${r.chipH}px, ${r.clipped} clipped · snap ${r.snap} / ${r.align}`
-        const limit = h <= 700 ? 42 : 40
+        const limit = 40
         if (MEASURE_ONLY || TAG === 'before') note(10, `header`, line)
         else judge(10, `${w}×${h} /t/${sym}: the chart starts in the first ${limit}% of the screen, one 44px row of act chips that snaps, no label clipped, no sideways page`, r.pct <= limit && (r.chips === 0 || (r.rows === 1 && r.chipH >= 44 && r.clipped === 0 && /x/.test(String(r.snap)) && /start/.test(String(r.align)))) && r.sw <= r.cw, line)
       }

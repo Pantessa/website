@@ -323,7 +323,7 @@ button.mk-held:hover { border-color: var(--accent); }
      wrapped the identity block to 101–126px). One title line, one meta line
      (the session ellipsizes, the pills keep their seats), no "24H RANGE"
      caption, tighter rhythm. */
-  .mkt-frame--sym .sym__head { padding: 12px 0 10px; row-gap: 10px; }
+  .mkt-frame--sym .sym__head { padding: 10px 0 8px; row-gap: 8px; }
   .sym__head--mk2 .sym__titlerow { flex-wrap: nowrap; }
   .sym__head--mk2 .sym__name { flex: 0 1 auto; min-width: 0; }
   .sym__head--mk2 .sym__sym { flex: 0 0 auto; }

@@ -33179,7 +33179,7 @@ async function main() {
     // Round 2 (coordinator R2-1 + R2-3).
     check(
       'native markets (round 2): on a phone the /t header leads with the price and the chart — one title line (the venue chip ellipsizes), one meta line (the session ellipsizes), no "24H RANGE" caption, a tighter rhythm; the act chips snap to a chip\'s edge; the header pills keep a 44px hit area',
-      /\.mkt-frame--sym \.sym__head \{ padding: 12px 0 10px; row-gap: 10px; \}/.test(nmMk) &&
+      /\.mkt-frame--sym \.sym__head \{ padding: 10px 0 8px; row-gap: 8px; \}/.test(nmMk) &&
         /\.sym__head--mk2 \.sym__titlerow \{ flex-wrap: nowrap; \}/.test(nmMk) &&
         /\.sym__head--mk2 \.sym__session \{ display: block; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; \}/.test(nmMk) &&
         /\.sym__head--mk2 \.mk-range__k \{ display: none; \}/.test(nmMk) &&
