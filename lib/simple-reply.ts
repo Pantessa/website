@@ -68,3 +68,93 @@ export function stripEmphasis(text: string): string {
     .replace(/(^|[^*\w])\*(?!\s)(.+?)(?<!\s)\*(?!\w)/g, '$1$2')
     .replace(/`([^`]+)`/g, '$1')
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+//  The funding-offer turn on /i — "We can make this happen." (2026-09-23).
+//
+//  The route answers a short wallet with ONE paragraph: the headline, the
+//  wallet's every balance in bold, then the plan, then the clarify chips.
+//  On a phone that paragraph was the screen (Nate's META screenshot: six
+//  holdings and the plan in one 11-line block above the cards). /i leads
+//  with the headline and the PLAN, and folds the holdings behind one tap —
+//  the words are the route's own, re-ordered, never rewritten. Pure so the
+//  harness pins it; null → render the content unchanged.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface FundingHolding {
+  /** "~$1806" as the route printed it (null when the row didn't parse). */
+  usd: string | null
+  token: string | null
+  chain: string | null
+  /** The route's own words for this row, always. */
+  raw: string
+}
+
+export interface FundingOfferSplit {
+  /** "We can make this happen." */
+  headline: string
+  /** The sentence(s) before the holdings clause, if any ("You asked for …"). */
+  before: string | null
+  holdings: FundingHolding[]
+  /** "You're holding ≈$3,216 across 5 chains" — the fold's label. */
+  holdingsLabel: string
+  /** The plan, from the holdings clause on ("This buy needs …"). */
+  after: string
+}
+
+const OFFER_HEAD = /^\s*🌉\s*\*\*([^*]+)\*\*\s*([\s\S]*)$/u
+const HOLDING_ROW = /^(~?\$[\d,.]+[kKmM]?)\s+of\s+([A-Za-z0-9.]+)\s+on\s+(.+)$/
+
+function holdingOf(raw: string): FundingHolding {
+  const m = raw.trim().match(HOLDING_ROW)
+  return m ? { usd: m[1], token: m[2], chain: m[3].trim(), raw: raw.trim() } : { usd: null, token: null, chain: null, raw: raw.trim() }
+}
+
+function usdOf(usd: string | null): number | null {
+  if (!usd) return null
+  const m = usd.match(/([\d,.]+)([kKmM]?)/)
+  if (!m) return null
+  const n = parseFloat(m[1].replace(/,/g, ''))
+  if (!Number.isFinite(n)) return null
+  return m[2].toLowerCase() === 'k' ? n * 1e3 : m[2].toLowerCase() === 'm' ? n * 1e6 : n
+}
+
+export function fundingHoldingsLabel(holdings: FundingHolding[]): string {
+  const n = holdings.length
+  const rows = n === 1 ? '1 balance' : `${n} balances`
+  const chains = new Set(holdings.map((h) => h.chain).filter(Boolean)).size
+  const usd = holdings.map((h) => usdOf(h.usd))
+  const total = usd.every((u) => u !== null) ? usd.reduce((a, b) => (a ?? 0) + (b ?? 0), 0) : null
+  const money = total === null ? rows : `≈$${Math.round(total).toLocaleString('en-US')}`
+  const where = chains > 1 ? ` across ${chains} chains` : chains === 1 ? ` on ${holdings[0].chain}` : ''
+  return `You're holding ${money}${where}`
+}
+
+export function splitFundingOfferReply(content: string): FundingOfferSplit | null {
+  const m = content.match(OFFER_HEAD)
+  if (!m) return null
+  const headline = m[1].trim()
+  const rest = m[2]
+  const h = rest.match(/\*\*([^*]+)\*\*/)
+  if (!h || h.index === undefined) return null
+  const holdings = h[1].split(/,\s*(?=~?\$)/).map(holdingOf).filter((r) => r.raw)
+  if (holdings.length === 0) return null
+  // The clause that introduced the list ("You're holding", "— but you're
+  // holding") is the fold's label now; whatever came before it stays.
+  const before =
+    rest
+      .slice(0, h.index)
+      .replace(/\s*[—–-]?\s*(?:but\s+)?you'?re\s+holding\s*$/i, '')
+      .replace(/\*\*/g, '')
+      .trim() || null
+  // The plan picks up after the list: strip the joining punctuation and
+  // start the sentence properly.
+  let after = rest
+    .slice(h.index + h[0].length)
+    .replace(/\*\*/g, '')
+    .replace(/^[\s,;:—–-]+/, '')
+    .trim()
+  if (!after) return null
+  after = after.charAt(0).toUpperCase() + after.slice(1)
+  return { headline, before, holdings, holdingsLabel: fundingHoldingsLabel(holdings), after }
+}

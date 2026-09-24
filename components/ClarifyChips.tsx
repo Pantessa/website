@@ -52,12 +52,12 @@ function PathStrip({ path }: { path: FundingPath }) {
             </span>
           )}
           {n.kind === 'chain' ? (
-            <span className="flex flex-col rounded-md border border-[var(--line)] bg-[var(--surf-1)] px-2 py-1 leading-tight">
-              <span className="text-[11px] font-medium text-[color:var(--fg)]">{n.title}</span>
-              {n.detail && <span className="text-[10px] text-[color:var(--muted)]">{n.detail}</span>}
+            <span className="flex flex-col rounded-lg bg-[var(--surf-2)] px-2 py-1 leading-tight">
+              <span className="text-[11.5px] font-medium text-[color:var(--fg)]">{n.title}</span>
+              {n.detail && <span className="text-[10.5px] text-[color:var(--muted)]">{n.detail}</span>}
             </span>
           ) : (
-            <span className="rounded-md border border-[var(--accent)] px-2 py-1 text-[11px] font-medium leading-tight text-[color:var(--accent)]">
+            <span className="rounded-lg tint-bg-accent-10 px-2 py-1 text-[11.5px] font-medium leading-tight text-[color:var(--accent)]">
               {n.title}
             </span>
           )}
@@ -66,6 +66,24 @@ function PathStrip({ path }: { path: FundingPath }) {
     </span>
   )
 }
+
+/** Every option is one list cell (2026-09-23, the /i phone pass): a
+ *  full-width card, a 56px tap target, the label wrapping below lg instead
+ *  of cutting mid-sentence, a chevron on the right (native list grammar),
+ *  and the first option's "best guess" as a pill beside the label rather
+ *  than an inline dash. Shared by the three option kinds so they line up. */
+const CELL =
+  'group flex w-full items-center gap-3 text-left rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-3.5 py-3 min-h-14 hover:border-[var(--line-2)] active:scale-[0.99] disabled:opacity-50 transition-[border-color,transform] duration-150'
+
+function BestGuess() {
+  return (
+    <span data-best-guess className="mono flex-shrink-0 rounded-full tint-bg-accent-15 px-1.5 py-0.5 text-[9.5px] uppercase tracking-wider text-[color:var(--accent)]">
+      Best guess
+    </span>
+  )
+}
+
+const CHEVRON = <ChevronRight className="w-4 h-4 flex-shrink-0 text-[color:var(--muted-2)] group-hover:text-[color:var(--fg)] transition-colors" />
 
 export default function ClarifyChips({
   clarify,
@@ -190,12 +208,12 @@ export default function ClarifyChips({
   }
 
   return (
-    <div className="mt-2.5 pt-2 border-t border-[var(--line)] space-y-1.5">
-      <div className="flex items-center gap-1.5 text-[12px] text-[color:var(--muted)]">
-        <HelpCircle className="w-3.5 h-3.5 flex-shrink-0" />
-        <span className="text-[color:var(--fg)]">{clarify.question}</span>
+    <div data-clarify className="mt-3 pt-3 border-t border-[var(--line)] space-y-2">
+      <div className="flex items-center gap-1.5 text-[13px] font-medium text-[color:var(--fg)]">
+        <HelpCircle className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--muted)]" />
+        <span>{clarify.question}</span>
       </div>
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-2">
         {clarify.options.map((o, i) => {
           if (o.fund) {
             const busy = funding === i
@@ -231,24 +249,26 @@ export default function ClarifyChips({
                 )}
                 {!(waiting && (fired || completes)) && (
                 <button
+                  data-clarify-option
                   onClick={() => (waiting ? continueNow(o) : void startFunding(o, i))}
                   disabled={disabled || busy}
                   title={completes ? `Buy ${o.fund.asset} with a card or bank — it lands in this wallet on ${chainName}` : waiting ? o.resume : `Add funds, then: ${o.resume}`}
-                  className="group flex items-center gap-2 w-full text-left text-[12px] px-3 py-2 max-lg:min-h-10 rounded-lg border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] disabled:opacity-50 transition-colors"
+                  className={CELL}
                 >
                   {busy || (waiting && watch.status === 'watching') ? (
-                    <Loader2 className="w-3.5 h-3.5 flex-shrink-0 animate-spin text-[color:var(--muted-2)]" />
+                    <Loader2 className="w-4 h-4 flex-shrink-0 animate-spin text-[color:var(--muted-2)]" />
                   ) : (
-                    <CreditCard className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--accent)]" />
+                    <CreditCard className="w-4 h-4 flex-shrink-0 text-[color:var(--accent)]" />
                   )}
                   {/* The label IS the money ("Add $25 with card or bank → buy
                       $10 of AAPL"): at 375 a one-line truncate cut it to
                       "buy $10 o…". Wrap below lg like the other chips. */}
-                  <span className="min-w-0 flex-1 truncate max-lg:whitespace-normal">
+                  <span className="min-w-0 flex-1 truncate max-lg:whitespace-normal text-[14px] leading-snug">
                     <span className="text-[color:var(--fg)] font-medium">
                       {arrived ? 'Keep going now' : waiting ? 'Funded it — pick up where I left off' : o.label}
                     </span>
                   </span>
+                  {CHEVRON}
                 </button>
                 )}
                 {waiting && !arrived && !fired && (
@@ -274,42 +294,49 @@ export default function ClarifyChips({
             return (
               <button
                 key={`${o.label}-${i}`}
+                data-clarify-option
                 onClick={() => onPick(o.resume)}
                 disabled={disabled}
                 title={o.resume}
-                className="group flex flex-col gap-1.5 text-left text-[12px] px-3 py-2.5 rounded-lg border border-[var(--line)] hover:border-[var(--line-2)] disabled:opacity-50 transition-colors"
+                className={CELL}
               >
-                <span className="flex items-center gap-2">
-                  <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--muted-2)]" />
+                <span className="min-w-0 flex-1 flex flex-col gap-2">
+                  {/* The pill sits ABOVE the label as an eyebrow: beside it,
+                      it pushed "Just enough (~$11.5 from Ethereum)" onto two
+                      lines at 375. */}
+                  {i === 0 && <span className="flex"><BestGuess /></span>}
                   {/* Wrap below lg: the option names the money ("Just
                       enough (~$10 from Base)") and truncated at 375. */}
-                  <span className="min-w-0 flex-1 truncate max-lg:whitespace-normal">
+                  <span className="min-w-0 flex-1 truncate max-lg:whitespace-normal text-[14px] leading-snug">
                     <span className="text-[color:var(--fg)] font-medium">{o.label}</span>
-                    {i === 0 && <span className="text-[color:var(--muted-2)]"> — best guess</span>}
                   </span>
+                  <PathStrip path={path} />
                 </span>
-                <PathStrip path={path} />
+                {CHEVRON}
               </button>
             )
           }
           return (
             <button
               key={`${o.label}-${i}`}
+              data-clarify-option
               onClick={() => onPick(o.resume)}
               disabled={disabled}
               title={o.resume}
-              className="group flex items-center gap-2 text-left text-[12px] px-3 py-2 max-lg:min-h-10 rounded-lg border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] disabled:opacity-50 transition-colors"
+              className={CELL}
             >
-              <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--muted-2)] group-hover:text-white" />
-              <span className="min-w-0 flex-1 truncate max-lg:whitespace-normal">
-                <span className="text-[color:var(--fg)] font-medium">{o.label}</span>
-                {i === 0 && <span className="text-[color:var(--muted-2)]"> — best guess</span>}
+              <span className="min-w-0 flex-1 flex flex-col gap-1">
+                {i === 0 && <span className="flex"><BestGuess /></span>}
+                <span className="min-w-0 flex-1 truncate max-lg:whitespace-normal text-[14px] leading-snug">
+                  <span className="text-[color:var(--fg)] font-medium">{o.label}</span>
+                </span>
               </span>
+              {CHEVRON}
             </button>
           )
         })}
       </div>
-      {error && <div className="text-[11px] text-[color:var(--sell)]">{error}</div>}
+      {error && <div className="text-[12px] text-[color:var(--sell)]">{error}</div>}
     </div>
   )
 }
