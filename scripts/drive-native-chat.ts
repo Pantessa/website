@@ -43,6 +43,10 @@ const KB = 300 // the soft keyboard's covered pixels in the keyboard pass
 type Pw = any
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+// A public wallet with real on-chain history (vitalik.eth): its splash has an
+// attention row and cards to audit. Read-only scans; nothing is signed.
+const RICH_ADDR = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+const mockWalletFor = (addr: string) => MOCK_WALLET.replace(`const ADDR = '${ADDR}'`, `const ADDR = '${addr}'`)
 const MOCK_WALLET = `(() => {
   const ADDR = '${ADDR}'
   const provider = {
@@ -196,7 +200,7 @@ const CONTEXTS: Ctx[] = [
 
 type Opened = { ctx: Pw; page: Pw; errs: string[]; chatPosts: number; jobGets: number }
 
-async function open(browser: Pw, devices: Pw, c: Ctx, { wallet = true }: { wallet?: boolean } = {}): Promise<Opened> {
+async function open(browser: Pw, devices: Pw, c: Ctx, { wallet = true, address = ADDR }: { wallet?: boolean; address?: string } = {}): Promise<Opened> {
   const dev = devices[c.device] ?? {}
   const ctx = await browser.newContext({
     ...dev,
@@ -208,7 +212,7 @@ async function open(browser: Pw, devices: Pw, c: Ctx, { wallet = true }: { walle
     colorScheme: c.theme,
     extraHTTPHeaders: { 'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1' },
   })
-  if (wallet) await ctx.addInitScript(MOCK_WALLET)
+  if (wallet) await ctx.addInitScript(address === ADDR ? MOCK_WALLET : mockWalletFor(address))
   const page = await ctx.newPage()
   const out: Opened = { ctx, page, errs: [], chatPosts: 0, jobGets: 0 }
   page.on('console', (m: Pw) => { if (m.type() === 'error') out.errs.push(m.text()) })
@@ -675,6 +679,27 @@ async function chatPass(browser: Pw, devices: Pw, c: Ctx) {
     note(`${c.id}/overlay-chart`, chart)
     add(`${c.id}/chart-sheet`, !!chart.opened && chart.sheet === 'chart' && !!chart.scrimCloses && !!chart.escCloses && !!chart.backCloses, JSON.stringify(chart))
     add(`${c.id}/chart-no-turn`, o.chatPosts === before, `${o.chatPosts - before} POST(s) for the chart ask`)
+    // Round 2: the chain picker in the top bar is a Sheet on a phone.
+    if (phone) {
+      const chain = await overlayPass(page, `${c.id}-overlay-chain`, async () => {
+        await page.locator('[data-chat-topbar] [data-sheet-open="chain"]').first().click({ timeout: 3000 }).catch(() => {})
+      }, '[data-sheet="chain"] [role="dialog"]')
+      note(`${c.id}/overlay-chain`, chain)
+      add(`${c.id}/chain-sheet`, !!chain.opened && chain.sheet === 'chain' && !!chain.scrimCloses && !!chain.escCloses && !!chain.backCloses, JSON.stringify(chain))
+      // A pick lands and closes: Base, then back to all chains.
+      await page.locator('[data-chat-topbar] [data-sheet-open="chain"]').first().click({ timeout: 3000 }).catch(() => {})
+      await page.waitForTimeout(500)
+      const rows = await page.evaluate(`Array.from(document.querySelectorAll('[data-sheet="chain"] [role="option"]')).map((b) => Math.round(b.getBoundingClientRect().height))`)
+      await page.locator('[data-sheet="chain"] [role="option"]:has-text("Base")').first().click({ timeout: 3000 }).catch(() => {})
+      await page.waitForTimeout(500)
+      const picked = await page.evaluate(`({ open: !!document.querySelector('[data-sheet="chain"] [role="dialog"]'), label: document.querySelector('[data-chat-topbar] [data-sheet-open="chain"]')?.getAttribute('aria-label') })`)
+      add(`${c.id}/chain-pick`, !picked.open && /Base/.test(picked.label ?? '') && (rows as number[]).length > 1 && (rows as number[]).every((h) => h >= 44), `rows ${(rows as number[]).join('/')}px; after picking Base the sheet is ${picked.open ? 'OPEN' : 'closed'} and the chip says "${picked.label}"`)
+      // Put it back on all chains so later passes build as before.
+      await page.locator('[data-chat-topbar] [data-sheet-open="chain"]').first().click({ timeout: 3000 }).catch(() => {})
+      await page.waitForTimeout(400)
+      await page.locator('[data-sheet="chain"] [role="option"]').first().click({ timeout: 3000 }).catch(() => {})
+      await page.waitForTimeout(300)
+    }
   }
   const errs = realErrors(o.errs)
   add(`${c.id}/console`, errs.length === 0, errs[0]?.slice(0, 200) ?? 'clean')
@@ -756,6 +781,60 @@ async function intentPass(browser: Pw, devices: Pw, c: Ctx) {
   await o.ctx.close()
 }
 
+/** The sign-in gate on a phone, measured on the integrated frame (NAV's
+ *  question: does the banner still add 48px for a bar that is now in flow,
+ *  and does the trial-exhausted takeover cover the bar?).
+ *  - banner: a connected-not-signed wallet → the one-row banner sits between
+ *    the thread and the composer, the composer above the bar;
+ *  - takeover: a remembered-but-absent wallet with the guest trial spent →
+ *    the takeover shows for the beat before the signed-out gate sends the
+ *    visitor home; it covers the conversation and the bar stays tappable. */
+async function gatePass(browser: Pw, devices: Pw, c: Ctx) {
+  console.log(`\n═══ gate · ${c.id} ═══`)
+  {
+    const o = await open(browser, devices, c)
+    await o.page.goto(`${BASE}/chat`, { waitUntil: 'domcontentloaded' })
+    await waitConnected(o.page)
+    await o.page.locator('[data-gate-banner]').first().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {})
+    const g = await o.page.evaluate(`(() => {
+      ${HELPERS}
+      const banner = document.querySelector('[data-gate-banner]')
+      const b = bar()
+      const pill = ta() ? ta().parentElement.getBoundingClientRect() : null
+      const legacy = Array.from(document.querySelectorAll('div')).filter((d) => String(d.className).includes('max-lg:bottom-[calc(7.25rem+48px') && d.getBoundingClientRect().height > 0).length
+      return { banner: box(banner), phoneSeat: banner ? banner.getAttribute('data-gate-banner') === 'phone' : null, composer: pill ? { y: Math.round(pill.top), b: Math.round(pill.bottom) } : null, bar: box(b), legacy }
+    })()`)
+    note(`${c.id}/gate-banner`, g)
+    add(`${c.id}/gate-banner-no-bar-math`, !!g.banner && g.phoneSeat === true && g.legacy === 0 && !!g.composer && !!g.bar && g.banner.b <= g.composer.y + 1 && g.composer.b <= g.bar.y + 1,
+      `banner ${g.banner?.y}–${g.banner?.b} (${g.banner?.h}px, phone seat: ${g.phoneSeat}) · composer ${g.composer?.y}–${g.composer?.b} · bar top ${g.bar?.y} · legacy offset banners rendered: ${g.legacy}`)
+    await shot(o.page, `${c.id}-gate-banner`)
+    await o.ctx.close()
+  }
+  {
+    const o = await open(browser, devices, c, { wallet: false })
+    await o.ctx.addInitScript(`try { localStorage.setItem('wagmi.recentConnectorId', '"injected"'); sessionStorage.setItem('yf_guest_turns', '5') } catch {}`)
+    await o.page.goto(`${BASE}/chat`, { waitUntil: 'domcontentloaded' })
+    const up = await o.page.locator('[data-gate-takeover]').first().waitFor({ state: 'visible', timeout: 12_000 }).then(() => true).catch(() => false)
+    if (!up) {
+      note(`${c.id}/gate-takeover`, `no takeover frame before the signed-out gate sent the visitor to ${o.page.url()}`)
+      add(`${c.id}/gate-takeover-leaves-bar`, true, `unreachable on /chat: a visitor with no wallet is sent home (${new URL(o.page.url()).pathname}) before the guest trial can run out here`)
+    } else {
+      const t = await o.page.evaluate(`(() => {
+        ${HELPERS}
+        const tk = document.querySelector('[data-gate-takeover]')
+        const b = bar()
+        const br = b ? b.getBoundingClientRect() : null
+        const hit = br ? document.elementFromPoint(br.left + br.width / 2, br.top + br.height / 2) : null
+        return { takeover: box(tk), bar: box(b), barHit: !!b && !!hit && b.contains(hit), inConversation: !!tk && !!tk.closest('[data-chat-gate-root]') }
+      })()`)
+      note(`${c.id}/gate-takeover`, t)
+      add(`${c.id}/gate-takeover-leaves-bar`, !!t.takeover && !!t.bar && t.takeover.b <= t.bar.y + 1 && t.barHit && t.inConversation, `takeover ${t.takeover?.y}–${t.takeover?.b}, bar top ${t.bar?.y}, a tap on the bar hits the bar: ${t.barHit}, inside the conversation: ${t.inConversation}`)
+      await shot(o.page, `${c.id}-gate-takeover`)
+    }
+    await o.ctx.close()
+  }
+}
+
 /** Round 2: the 360×740 card pass — every card a person reads or taps in
  *  the conversation, audited at a small phone: nothing spills past its
  *  card or the screen, no text is cut mid-word, and every action is a
@@ -793,23 +872,35 @@ async function cardsPass(browser: Pw, devices: Pw, c: Ctx) {
   const connected = await waitConnected(page)
   add(`${c.id}/cards-connected`, connected)
   if (!connected) { await o.ctx.close(); return }
-  await page.locator('[data-splash-hero], [data-splash-card]').first().waitFor({ state: 'attached', timeout: 45_000 }).catch(() => {})
-  // Let every card's scan settle (a pending card says "Scanning your wallet…").
-  for (let i = 0; i < 30; i++) {
-    const pending = await page.evaluate(`document.body.innerText.includes('Scanning your wallet')`).catch(() => false)
-    if (!pending) break
-    await page.waitForTimeout(1000)
+  const splashAudit = async (pg: Pw, tag: string) => {
+    await pg.locator('[data-splash-hero], [data-splash-card]').first().waitFor({ state: 'attached', timeout: 45_000 }).catch(() => {})
+    // Let every card's scan settle (a pending card says "Scanning your wallet…").
+    for (let i = 0; i < 30; i++) {
+      const pending = await pg.evaluate(`document.body.innerText.includes('Scanning your wallet')`).catch(() => false)
+      if (!pending) break
+      await pg.waitForTimeout(1000)
+    }
+    await pg.waitForTimeout(800)
+    // Open the first briefing row and the first card row that carry actions,
+    // so their chips count too.
+    await pg.evaluate(`(() => { for (const sel of ['[data-splash-hero] [data-splash-calm] button[aria-expanded="false"]', '[data-splash-card] button[aria-expanded="false"]']) { const b = document.querySelector(sel); if (b) b.click() } })()`)
+    await pg.waitForTimeout(500)
+    const cards = await pg.evaluate(`(() => { ${HELPERS} return Array.from(document.querySelectorAll('[data-splash-card]')).map((el) => ({ slug: el.getAttribute('data-splash-card'), ...audit(el) })) })()`) as Array<{ slug: string; spill: unknown[]; clipped: unknown[]; actions: Array<{ text: string; w: number; h: number; primary: boolean }>; overflowX: number }>
+    const hero = await pg.evaluate(`(() => { ${HELPERS} return audit(document.querySelector('[data-splash-hero]')) })()`)
+    add(`${c.id}/${tag}`, cards.length > 0 || !!hero, `hero ${hero ? 'up' : 'missing'}, ${cards.length} card(s): ${cards.map((x) => x.slug).join(', ')}`)
+    if (hero) verdict(`${tag}-hero`, hero)
+    for (const k of cards) verdict(`${tag}-${k.slug}`, k)
+    await shot(pg, `${c.id}-${tag}`)
   }
-  await page.waitForTimeout(800)
-  const cards = await page.evaluate(`(() => { ${HELPERS} return Array.from(document.querySelectorAll('[data-splash-card]')).map((el) => ({ slug: el.getAttribute('data-splash-card'), ...audit(el) })) })()`) as Array<{ slug: string; spill: unknown[]; clipped: unknown[]; actions: Array<{ text: string; w: number; h: number; primary: boolean }>; overflowX: number }>
-  // Open the first briefing row that carries actions, so its chips count too.
-  await page.evaluate(`(() => { const b = document.querySelector('[data-splash-hero] [data-splash-calm] button[aria-expanded="false"]'); if (b) b.click() })()`)
-  await page.waitForTimeout(400)
-  const hero = await page.evaluate(`(() => { ${HELPERS} return audit(document.querySelector('[data-splash-hero]')) })()`)
-  add(`${c.id}/splash`, cards.length > 0 || !!hero, `hero ${hero ? 'up' : 'missing'}, ${cards.length} card(s): ${cards.map((x) => x.slug).join(', ')}`)
-  if (hero) verdict('splash-hero', hero)
-  for (const k of cards) verdict(`splash-${k.slug}`, k)
-  await shot(page, `${c.id}-splash`)
+  await splashAudit(page, 'splash')
+  // The same audit on a wallet with history: an attention row + cards.
+  {
+    const r = await open(browser, devices, c, { address: RICH_ADDR })
+    await r.page.goto(`${BASE}/chat`, { waitUntil: 'domcontentloaded' })
+    if (await waitConnected(r.page)) await splashAudit(r.page, 'splash-rich')
+    else add(`${c.id}/splash-rich`, false, 'the rich wallet did not connect')
+    await r.ctx.close()
+  }
 
   // 3. The card shapes a conversation produces.
   const lastAssistant = `(() => { ${HELPERS} const b = Array.from(document.querySelectorAll('[data-bubble="assistant"]')); return audit(b[b.length - 1] || null) })()`
@@ -880,6 +971,7 @@ async function main() {
       continue
     }
     if (!SKIP.includes('chat')) await chatPass(b, devices, c)
+    if (!SKIP.includes('gate') && (c.id === 'iphone-375' || c.id === 'pixel-360')) await gatePass(b, devices, c)
     if (!SKIP.includes('addmcp') && (c.id === 'iphone-375' || c.id === 'pixel-360')) await addMcpPass(b, devices, c)
     if (!SKIP.includes('i') && (c.id === 'iphone-375' || c.id === 'pixel-375')) await intentPass(b, devices, c)
   }

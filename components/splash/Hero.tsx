@@ -112,7 +112,7 @@ export function SplashHero({
                     className="mono flex items-baseline justify-between gap-3 rounded-lg border border-dashed px-3 py-1.5 text-[11px]"
                     style={{ borderColor: 'color-mix(in srgb, var(--accent) 35%, transparent)', color: 'var(--accent)' }}
                   >
-                    <span className="truncate">✓ {r.label}</span>
+                    <span className="truncate max-lg:whitespace-normal">✓ {r.label}</span>
                     <span className="shrink-0 tabular-nums">{r.value}</span>
                   </li>
                 ))}
@@ -139,11 +139,14 @@ export function SplashHero({
                         type="button"
                         onClick={() => acts.length && setOpen(expanded ? null : id)}
                         aria-expanded={acts.length ? expanded : undefined}
-                        className={`flex w-full items-center gap-3 py-2 text-left ${acts.length ? 'cursor-pointer' : 'cursor-default'}`}
+                        // A phone (squad mobile-native, CHAT r2): the row is a
+                        // 44px target and its words wrap — at 360 "$4.89 ETH on
+                        // Ethereum · under the gas floor" was cut to "under …".
+                        className={`flex w-full items-center gap-3 py-2 text-left [@media(hover:none)]:min-h-11 ${acts.length ? 'cursor-pointer' : 'cursor-default'}`}
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-xs font-medium text-white">{r.label}</div>
-                          {r.sub && <div className="truncate text-[10px] text-[color:var(--muted-2)]">{r.sub}</div>}
+                          <div className="truncate max-lg:whitespace-normal text-xs font-medium text-white">{r.label}</div>
+                          {r.sub && <div className="truncate max-lg:whitespace-normal text-[10px] text-[color:var(--muted-2)]">{r.sub}</div>}
                         </div>
                         <Sparkline symbol={sparkSymbolFor(r)} width={64} height={20} className="hidden sm:block" />
                         {r.value && (
@@ -211,7 +214,7 @@ function AttentionRow({ row, slug, onPick }: { row: StatRow; slug: string; onPic
                 type="button"
                 title={primary.prompt}
                 onClick={() => onPick(primary.prompt, slug)}
-                className="rounded-full px-3 py-1 text-[11px] font-semibold transition-opacity hover:opacity-90"
+                className="rounded-full px-3 py-1 text-[11px] font-semibold transition-opacity hover:opacity-90 [@media(hover:none)]:min-h-11 [@media(hover:none)]:px-4 [@media(hover:none)]:text-[13px]"
                 style={{ background: 'var(--accent)', color: 'var(--ink)' }}
               >
                 {primary.label}
@@ -236,7 +239,7 @@ function Chips({ actions, chart, slug, onPick }: { actions: SuggestedPrompt[]; c
           type="button"
           title={a.prompt}
           onClick={() => onPick(a.prompt, slug)}
-          className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white"
+          className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[color:var(--muted)] transition-colors hover:border-[var(--line-2)] hover:bg-white/5 hover:text-white [@media(hover:none)]:min-h-11 [@media(hover:none)]:px-3.5 [@media(hover:none)]:text-[12.5px]"
         >
           {a.label}
         </button>

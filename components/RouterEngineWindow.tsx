@@ -1,10 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Terminal, X, PanelRightOpen, Copy, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore, type RouterTraceEvent } from '@/lib/store'
 import RouteTraceTerminal from '@/components/RouteTraceTerminal'
+import Sheet from '@/components/mobile/Sheet'
+import { usePhonePosture } from '@/components/chat/usePhonePosture'
 
 /**
  * The routing engine window — a terminal-style panel that renders the router's
@@ -17,6 +19,17 @@ import RouteTraceTerminal from '@/components/RouteTraceTerminal'
  */
 export default function RouterEngineWindow() {
   const { autoRouter, routerTrace, engineWindowOpen, setEngineWindowOpen } = useYeetfulStore()
+  // A phone never opens the engine by itself (squad mobile-native, CHAT r2):
+  // engineWindowOpen is PERSISTED — the desktop column's preference — and
+  // the first manual turn's trace used to pop a scrim-only drawer over the
+  // conversation for anyone who once left it open on a laptop. On a phone
+  // it shows only after it was seen closed in this session (i.e. opened by a
+  // tap here), as the ONE Sheet: a tap outside, a swipe, Escape or back.
+  const phone = usePhonePosture()
+  const [armed, setArmed] = useState(false)
+  useEffect(() => {
+    if (!engineWindowOpen) setArmed(true)
+  }, [engineWindowOpen])
 
   // Present when Auto Router is on, OR when a manual turn has produced trace.
   if (!autoRouter && routerTrace.length === 0) return null
@@ -51,14 +64,13 @@ export default function RouterEngineWindow() {
         )}
       </aside>
 
-      {/* Mobile: a right-hand drawer overlay when open (no rail eating width). */}
-      {engineWindowOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 flex">
-          <div className="flex-1 bg-black/60" onClick={close} aria-hidden />
-          <div className="w-[86vw] max-w-[360px] bg-[var(--bg)] border-l border-[var(--line)] flex flex-col">
+      {/* A phone: the Sheet, only once opened here (see `armed`). */}
+      {phone && (
+        <Sheet open={armed && engineWindowOpen} onClose={close} id="engine" ariaLabel="Routing engine" size="full">
+          <div className="flex h-full min-h-[60vh] flex-col">
             <EnginePanel trace={routerTrace} onClose={close} />
           </div>
-        </div>
+        </Sheet>
       )}
     </>
   )

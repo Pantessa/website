@@ -26,7 +26,7 @@ function ExampleGallery({ onPick }: { onPick: (prompt: string, slug?: string) =>
             type="button"
             onClick={() => onPick(ex.prompt, ex.slug)}
             title={ex.prompt}
-            className="group flex items-center gap-1.5 text-xs px-3 py-1.5 max-lg:min-h-10 max-lg:px-4 rounded-full border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:tint-border-accent-45 hover:bg-white/5 transition-colors"
+            className="group flex items-center gap-1.5 text-xs px-3 py-1.5 max-lg:min-h-11 max-lg:px-4 rounded-full border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:tint-border-accent-45 hover:bg-white/5 transition-colors"
           >
             <Send className="w-3 h-3 text-[color:var(--muted-2)] group-hover:text-[color:var(--accent)] transition-colors" />
             {ex.label}
