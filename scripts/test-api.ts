@@ -23615,7 +23615,13 @@ async function main() {
           (symS.match(/onClick=\{sendOnClick\(/g) ?? []).length === 2 && /\{door\}/.test(symS) &&
           /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} last=\{stats\?\.last \?\? null\} \/>/.test(symS) &&
           /else prefillAct\(ask\)/.test(railS) && /\{prefillDoor\}/.test(railS) && !/else router\.push\(promptHref\(ask\)\)/.test(railS) &&
-          (spineS.match(/if \(openDoorFor\(href\)\) return/g) ?? []).length === 2 &&
+          // Re-pinned by the mobile-native squad (2026-09-24, NAV): the phone
+          // posture executes lib/phone-nav (pickPhone), so the door call is
+          // ONE per posture — pickDesktop's `href` and pickPhone's
+          // `action.href` — and each door announces its aim (data-spine-door-to).
+          (spineS.match(/if \(openDoorFor\(href\)\) return/g) ?? []).length === 1 &&
+          (spineS.match(/if \(openDoorFor\(action\.href\)\) return/g) ?? []).length === 1 &&
+          /\{doorTo && <span hidden data-spine-door-to=\{doorTo\} \/>\}/.test(spineS) &&
           (spineS.match(/<SpineLink\b/g) ?? []).length === 5 &&
           // MORE's Settings: the menu unmounts as it closes, so its door is the spine's
           /if \(plain && openDoorFor\('\/dashboard'\)\) e\.preventDefault\(\)/.test(spineS) &&
