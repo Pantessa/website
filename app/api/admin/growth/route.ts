@@ -8,17 +8,20 @@ import { COUNTED_EVENT_SQL } from '@/lib/link-receipt-verify'
 import { isCdpListingConfigured, listCdpEndUsers, type CdpEndUser } from '@/lib/cdp'
 import {
   GROWTH_WINDOWS,
-  accountStage,
+  NO_ACTIVITY,
   dailySeries,
   dayKey,
   deltaPct,
   earningsByCreator,
   feesByVenue,
+  mergePeople,
   sourceMix,
   sumSplit,
   windowRows,
   type GrowthSource,
   type GrowthTurnRow,
+  type PersonActivity,
+  type WalletArrival,
 } from '@/lib/admin-growth'
 import { countedDeskRows, deskGrowthSummary, type DeskGrowth } from '@/lib/desk-activity'
 import { deskSince, readDeskRows } from '@/app/api/admin/desk/read'
@@ -50,6 +53,8 @@ const SIGNED = Prisma.raw(
 const COUNTED_EVENT = Prisma.raw(COUNTED_EVENT_SQL)
 /** Every arrival table has carried `is_internal` since #650 (2026-08-18). */
 const INTERNAL_STAMP_SINCE = Date.parse('2026-08-19T00:00:00Z')
+/** The people list is capped; it reads newest-seen first. */
+const ARRIVAL_LIMIT = 600
 const r2 = (n: number) => Math.round(n * 100) / 100
 const r4 = (n: number) => Math.round(n * 1e4) / 1e4
 
@@ -76,7 +81,7 @@ export async function GET(req: NextRequest) {
   const since = new Date(now - (days - 1) * 86_400_000)
   since.setUTCHours(0, 0, 0, 0)
 
-  const [turnRows, traderRows, weeklyRows, creatorRows, claimRows, engagement, topWatched, topTraded, linkFunnel, subscribers, alertEmails, failures, cdp] =
+  const [turnRows, traderRows, weeklyRows, creatorRows, claimRows, engagement, topWatched, topTraded, linkFunnel, subscribers, alertEmails, failures, cdp, arrivals] =
     await Promise.all([
       // THE money query. `creator` = who is owed half the fee: the link's
       // creator, else (no link on the turn) whoever first referred the wallet.
@@ -214,6 +219,49 @@ export async function GET(req: NextRequest) {
         FROM ask_failures WHERE NOT is_internal AND created_at >= ${since} GROUP BY 1 ORDER BY 2 DESC
       `), []),
       loadCdp(),
+      // Everyone a native wallet lane brought in. Nobody signs up with
+      // MetaMask or Phantom — they connect and start acting — so our own
+      // arrival tables are the only record they exist, and the first/last
+      // sighting across them is their whole account history.
+      //
+      // The legacy-harness fence is the creators list's, for the same reason:
+      // every pre-stamp test:api run minted links and working sets from
+      // throwaway wallets, and the backfill is still an owner step. A wallet
+      // from that era shows only with something the harness never had — real
+      // fenced money, or a claimed page.
+      soft('arrivals', prisma.$queryRaw<ArrivalRow[]>(Prisma.sql`
+        WITH seen AS (
+          SELECT lower(owner_address) AS w, min(created_at) AS f, max(updated_at) AS l
+            FROM chats WHERE NOT is_internal AND owner_address <> '' GROUP BY 1
+          UNION ALL
+          SELECT lower(owner_address), min(created_at), max(updated_at)
+            FROM wallet_working_sets WHERE NOT is_internal GROUP BY 1
+          UNION ALL
+          SELECT lower(owner), min(created_at), max(updated_at)
+            FROM watchlists WHERE NOT is_internal GROUP BY 1
+          UNION ALL
+          SELECT lower(creator), min(created_at), max(created_at)
+            FROM intent_links WHERE creator IS NOT NULL AND NOT is_internal GROUP BY 1
+          UNION ALL
+          SELECT lower(wallet_address), min(created_at), max(created_at)
+            FROM embed_turns WHERE wallet_address IS NOT NULL AND ${REAL} GROUP BY 1
+          UNION ALL
+          SELECT lower(wallet), min(created_at), max(created_at)
+            FROM ask_failures WHERE wallet IS NOT NULL AND NOT is_internal GROUP BY 1
+        ), money AS (
+          SELECT DISTINCT wallet_address AS w FROM (${SIGNED}) t WHERE t.wallet_address IS NOT NULL
+        ), handles AS (
+          SELECT DISTINCT creator AS w FROM creator_handles
+        ), agg AS (
+          SELECT w AS wallet, min(f) AS first_at, max(l) AS last_at
+          FROM seen WHERE w LIKE '0x%' GROUP BY 1
+        )
+        SELECT a.wallet, a.first_at, a.last_at FROM agg a
+        WHERE a.first_at >= ${new Date(INTERNAL_STAMP_SINCE)}
+           OR a.wallet IN (SELECT w FROM money)
+           OR a.wallet IN (SELECT w FROM handles)
+        ORDER BY a.last_at DESC LIMIT ${ARRIVAL_LIMIT}
+      `), []),
     ])
 
   // ── Money ────────────────────────────────────────────────────────────────
@@ -290,61 +338,113 @@ export async function GET(req: NextRequest) {
     .sort((a, b) => b.volumeUsd - a.volumeUsd || b.signs - a.signs || b.opens - a.opens)
   const claimTotals = [...claimsBy.values()].reduce((s, c) => ({ requested: s.requested + c.requested, paid: s.paid + c.paid }), { requested: 0, paid: 0 })
 
-  // ── Accounts (Coinbase) joined to what each wallet did here ──────────────
-  const accountWallets = cdp.users.flatMap((u) => u.wallets)
-  const activity = accountWallets.length
+  // ── People: everyone who showed up, both lanes ───────────────────────────
+  // Coinbase holds the email + Google accounts; a native wallet has no
+  // account at all. Both are people. One activity read covers every wallet on
+  // the page, and lib/admin-growth joins the two lanes into one list.
+  const accountWallets = cdp.users.flatMap((u) => u.wallets.map((w) => w.toLowerCase()))
+  const walletUniverse = [...new Set([...accountWallets, ...arrivals.map((a) => a.wallet.toLowerCase())])]
+  // Pre-aggregated per table and joined, not nine correlated subqueries per
+  // row: this list is hundreds of wallets now, not the nine CDP accounts.
+  const activity = walletUniverse.length
     ? await soft('accountActivity', prisma.$queryRaw<AccountActivityRow[]>(Prisma.sql`
-        WITH w AS (SELECT unnest(${accountWallets}::text[]) AS a)
+        WITH w AS (SELECT unnest(${walletUniverse}::text[]) AS a),
+        -- An ask = a message the person sent, or a walled money ask. First-party
+        -- chat only beacons built/signed turns, so embed_turns alone reads as
+        -- "never asked" for someone with a dozen chats (the arc counts the same way).
+        msgs AS (
+          SELECT lower(c.owner_address) AS a,
+                 count(*) FILTER (WHERE m.role = 'user')::int AS turns,
+                 count(*) FILTER (WHERE m.meta ?| array['txRequest', 'txChain', 'orderRequest', 'jobId', 'guardianPolicyId', 'dcaScheduleId'])::int AS built
+          FROM messages m JOIN chats c ON c.id = m.chat_id
+          WHERE lower(c.owner_address) = ANY(${walletUniverse}::text[])
+          GROUP BY 1
+        ),
+        -- The last thing they typed, and the last ask that walled. Whichever
+        -- is newer is the path they tried; both fenced, because a drill's wall
+        -- is not a person's attempt.
+        last_msg AS (
+          SELECT DISTINCT ON (lower(c.owner_address)) lower(c.owner_address) AS a,
+                 left(m.content, 200) AS text, m.created_at AS at
+          FROM messages m JOIN chats c ON c.id = m.chat_id
+          WHERE m.role = 'user' AND NOT c.is_internal AND lower(c.owner_address) = ANY(${walletUniverse}::text[])
+          ORDER BY 1, m.created_at DESC
+        ),
+        walls AS (
+          SELECT lower(f.wallet) AS a, count(*)::int AS n FROM ask_failures f
+          WHERE lower(f.wallet) = ANY(${walletUniverse}::text[]) AND NOT f.is_internal GROUP BY 1
+        ),
+        last_wall AS (
+          SELECT DISTINCT ON (lower(f.wallet)) lower(f.wallet) AS a,
+                 left(f.prompt, 200) AS text, f.created_at AS at
+          FROM ask_failures f
+          WHERE lower(f.wallet) = ANY(${walletUniverse}::text[]) AND NOT f.is_internal
+          ORDER BY 1, f.created_at DESC
+        ),
+        et AS (
+          SELECT t.wallet_address AS a,
+                 count(*) FILTER (WHERE NOT t.is_internal AND t.outcome IN ('tx-built', 'signed'))::int AS built,
+                 count(*) FILTER (WHERE t.outcome = 'signed' AND t.value_usd > 0 AND ${REAL})::int AS signed,
+                 coalesce(sum(t.value_usd) FILTER (WHERE t.outcome = 'signed' AND t.value_usd > 0 AND ${REAL}), 0)::float AS usd,
+                 max(t.created_at) AS last_turn
+          FROM embed_turns t WHERE t.wallet_address = ANY(${walletUniverse}::text[]) GROUP BY 1
+        ),
+        ch AS (
+          SELECT lower(owner_address) AS a, count(*)::int AS n FROM chats
+          WHERE lower(owner_address) = ANY(${walletUniverse}::text[]) GROUP BY 1
+        ),
+        lk AS (
+          SELECT creator AS a, count(*)::int AS n FROM intent_links
+          WHERE creator = ANY(${walletUniverse}::text[]) AND NOT is_internal GROUP BY 1
+        ),
+        wl AS (
+          SELECT l.owner AS a, count(*)::int AS n FROM watchlist_items i JOIN watchlists l ON l.id = i.watchlist_id
+          WHERE l.owner = ANY(${walletUniverse}::text[]) GROUP BY 1
+        )
         SELECT w.a AS wallet,
-          -- An ask = a message the person sent, or a walled money ask. First-party
-          -- chat only beacons built/signed turns, so embed_turns alone reads as
-          -- "never asked" for someone with a dozen chats (the arc counts the same way).
-          (SELECT count(*)::int FROM messages m JOIN chats c ON c.id = m.chat_id
-             WHERE lower(c.owner_address) = w.a AND m.role = 'user')
-            + (SELECT count(*)::int FROM ask_failures f WHERE lower(f.wallet) = w.a AND NOT f.is_internal) AS turns,
-          (SELECT count(*)::int FROM embed_turns t WHERE t.wallet_address = w.a AND NOT t.is_internal AND t.outcome IN ('tx-built', 'signed'))
-            + (SELECT count(*)::int FROM messages m JOIN chats c ON c.id = m.chat_id
-                 WHERE lower(c.owner_address) = w.a
-                   AND m.meta ?| array['txRequest', 'txChain', 'orderRequest', 'jobId', 'guardianPolicyId', 'dcaScheduleId']) AS built,
-          (SELECT count(*)::int FROM embed_turns t WHERE t.wallet_address = w.a AND t.outcome = 'signed' AND t.value_usd > 0 AND ${REAL}) AS signed,
-          (SELECT coalesce(sum(t.value_usd), 0)::float FROM embed_turns t WHERE t.wallet_address = w.a AND t.outcome = 'signed' AND t.value_usd > 0 AND ${REAL}) AS usd,
-          (SELECT max(t.created_at) FROM embed_turns t WHERE t.wallet_address = w.a) AS last_turn,
-          (SELECT count(*)::int FROM chats c WHERE lower(c.owner_address) = w.a) AS chats,
-          (SELECT count(*)::int FROM intent_links l WHERE l.creator = w.a AND NOT l.is_internal) AS links,
-          (SELECT count(*)::int FROM watchlist_items i JOIN watchlists wl ON wl.id = i.watchlist_id WHERE wl.owner = w.a) AS watching,
-          (SELECT prompt FROM ask_failures f WHERE lower(f.wallet) = w.a ORDER BY f.created_at DESC LIMIT 1) AS last_wall
+               coalesce(msgs.turns, 0) + coalesce(walls.n, 0) AS turns,
+               coalesce(et.built, 0) + coalesce(msgs.built, 0) AS built,
+               coalesce(et.signed, 0) AS signed,
+               coalesce(et.usd, 0)::float AS usd,
+               et.last_turn,
+               coalesce(ch.n, 0) AS chats,
+               coalesce(lk.n, 0) AS links,
+               coalesce(wl.n, 0) AS watching,
+               last_msg.text AS last_msg, last_msg.at AS last_msg_at,
+               last_wall.text AS last_wall, last_wall.at AS last_wall_at
         FROM w
+        LEFT JOIN msgs ON msgs.a = w.a
+        LEFT JOIN last_msg ON last_msg.a = w.a
+        LEFT JOIN walls ON walls.a = w.a
+        LEFT JOIN last_wall ON last_wall.a = w.a
+        LEFT JOIN et ON et.a = w.a
+        LEFT JOIN ch ON ch.a = w.a
+        LEFT JOIN lk ON lk.a = w.a
+        LEFT JOIN wl ON wl.a = w.a
       `), [])
     : []
-  const actBy = new Map(activity.map((a) => [a.wallet, a]))
-  const accounts = cdp.users.map((u) => {
-    const acts = u.wallets.map((w) => actBy.get(w)).filter((a): a is AccountActivityRow => !!a)
-    const sum = (k: 'turns' | 'built' | 'signed' | 'usd' | 'chats' | 'links' | 'watching') => acts.reduce((s, a) => s + a[k], 0)
-    const lastTurn = acts.map((a) => a.last_turn?.getTime() ?? 0).reduce((m, t) => Math.max(m, t), 0)
-    const a = { turns: sum('turns'), built: sum('built'), signed: sum('signed') }
-    return {
-      email: u.email,
-      name: u.name,
-      method: u.method,
-      wallet: u.wallets[0] ?? null,
-      test: u.wallets.some((w) => isTestWallet(w)),
-      createdAt: u.createdAt,
-      lastSignInAt: u.lastAuthenticatedAt,
-      lastTurnAt: lastTurn ? new Date(lastTurn).toISOString() : null,
-      ...a,
-      usd: r2(sum('usd')),
-      chats: sum('chats'),
-      links: sum('links'),
-      watching: sum('watching'),
-      lastWall: acts.find((x) => x.last_wall)?.last_wall ?? null,
-      stage: accountStage(a),
-    }
-  })
+  const actBy = new Map<string, PersonActivity>(activity.map((a) => [a.wallet, activityOf(a)]))
+  const people = mergePeople(
+    cdp.users.map((u) => ({
+      email: u.email, name: u.name, method: u.method, wallets: u.wallets,
+      createdAt: u.createdAt, lastAuthenticatedAt: u.lastAuthenticatedAt,
+    })),
+    arrivals.map<WalletArrival>((a) => ({
+      wallet: a.wallet, firstAt: a.first_at.toISOString(), lastAt: a.last_at.toISOString(),
+    })),
+    (w) => actBy.get(w),
+    isTestWallet,
+  ).map((p) => ({ ...p, usd: r2(p.usd) }))
+  const accounts = people
   const shownAccounts = external ? accounts.filter((a) => !a.test) : accounts
+  // The signups tile and the series line stay what they always were — people
+  // who made an ACCOUNT — so the number keeps its meaning now that the table
+  // below it also lists wallets that never signed up for anything.
+  const signedUpAccounts = shownAccounts.filter((a) => !!a.email)
   const inWin = (iso: string) => Date.parse(iso) >= winStart
   const inPrev = (iso: string) => Date.parse(iso) >= prevStart && Date.parse(iso) < winStart
   const signupsDaily = new Map<string, number>()
-  for (const a of shownAccounts) if (inWin(a.createdAt)) signupsDaily.set(a.createdAt.slice(0, 10), (signupsDaily.get(a.createdAt.slice(0, 10)) ?? 0) + 1)
+  for (const a of signedUpAccounts) if (inWin(a.createdAt)) signupsDaily.set(a.createdAt.slice(0, 10), (signupsDaily.get(a.createdAt.slice(0, 10)) ?? 0) + 1)
 
   const emailByWallet = new Map<string, string>()
   for (const u of cdp.users) if (u.email) for (const w of u.wallets) emailByWallet.set(w, u.email)
@@ -388,9 +488,13 @@ export async function GET(req: NextRequest) {
       repeatTraders,
       teamUsd: r2(teamUsd),
       anonymousUsd: r2(anonUsd),
-      signups: shownAccounts.filter((a) => inWin(a.createdAt)).length,
-      signupsDelta: deltaPct(shownAccounts.filter((a) => inWin(a.createdAt)).length, shownAccounts.filter((a) => inPrev(a.createdAt)).length),
-      accountsAllTime: shownAccounts.length,
+      signups: signedUpAccounts.filter((a) => inWin(a.createdAt)).length,
+      signupsDelta: deltaPct(signedUpAccounts.filter((a) => inWin(a.createdAt)).length, signedUpAccounts.filter((a) => inPrev(a.createdAt)).length),
+      accountsAllTime: signedUpAccounts.length,
+      // Everyone, both lanes — the table's own headline.
+      peopleAllTime: shownAccounts.length,
+      newPeople: shownAccounts.filter((a) => inWin(a.createdAt)).length,
+      walletOnlyAllTime: shownAccounts.filter((a) => !a.email).length,
     },
     series: dailySeries(rows, days, now).map((p) => ({
       ...p,
@@ -426,7 +530,7 @@ export async function GET(req: NextRequest) {
       signed: funnelOf('signed').n,
       signers: funnelOf('signed').wallets,
     },
-    accounts: { ok: cdp.ok, reason: cdp.reason, rows: shownAccounts },
+    accounts: { ok: cdp.ok, reason: cdp.reason, truncated: arrivals.length >= ARRIVAL_LIMIT, rows: shownAccounts },
     subscribers: subscribers.map((s) => ({ email: s.email, status: s.status, createdAt: s.created_at.toISOString() })),
     alertEmails: alertEmails.map((a) => ({ email: a.email, owner: a.owner, alerts: a.n, lastAt: a.last_at.toISOString() })),
     engagement: eng,
@@ -434,6 +538,31 @@ export async function GET(req: NextRequest) {
     topTraded: topTraded.map((t) => ({ ...t, usd: r2(t.usd) })),
     failures: failures.map((f) => ({ kind: f.kind, n: f.n, funded: f.funded, fundsUsd: r2(f.funds_usd) })),
   })
+}
+
+/** One wallet's row as the page reads it. The path they tried is the newest
+ *  of what they typed and what walled — a trader has one too, which is the
+ *  point: every person shows what they were trying to do. */
+function activityOf(a: AccountActivityRow): PersonActivity {
+  const msgAt = a.last_msg_at?.getTime() ?? 0
+  const wallAt = a.last_wall_at?.getTime() ?? 0
+  const walled = wallAt > 0 && wallAt >= msgAt
+  const text = (walled ? a.last_wall : a.last_msg) ?? null
+  const at = walled ? a.last_wall_at : a.last_msg_at
+  return {
+    ...NO_ACTIVITY,
+    turns: a.turns,
+    built: a.built,
+    signed: a.signed,
+    usd: a.usd,
+    chats: a.chats,
+    links: a.links,
+    watching: a.watching,
+    lastTurnAt: a.last_turn?.toISOString() ?? null,
+    lastAsk: text,
+    lastAskAt: at?.toISOString() ?? null,
+    lastAskWalled: !!text && walled,
+  }
 }
 
 async function loadCdp(): Promise<{ ok: boolean; reason: string | null; users: CdpEndUser[] }> {
@@ -500,5 +629,13 @@ interface AccountActivityRow {
   chats: number
   links: number
   watching: number
+  last_msg: string | null
+  last_msg_at: Date | null
   last_wall: string | null
+  last_wall_at: Date | null
+}
+interface ArrivalRow {
+  wallet: string
+  first_at: Date
+  last_at: Date
 }

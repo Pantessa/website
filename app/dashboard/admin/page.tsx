@@ -9,8 +9,9 @@
 //
 //   1. How much money is moving, and from where (links · app · embeds · standing)?
 //   2. What did it earn, and how does that split — Pantessa vs link creators?
-//   3. Who signed up (the Coinbase accounts, with their email) and how far did
-//      each one get?
+//   3. Who showed up — the Coinbase accounts with their email AND the native
+//      wallet connections that never signed up for anything — how far did each
+//      one get, and what were they trying to do?
 //   4. Is it compounding — traders coming back, creators converting, the
 //      strangers' arc?
 //
@@ -23,7 +24,7 @@ import { ArrowDownRight, ArrowUpRight, Check, Copy, Download, Footprints, Mail, 
 import { useSession } from '@/lib/session'
 import { isAdminAddress } from '@/lib/admin'
 import { formatEarnedUsd } from '@/lib/fees'
-import { ACCOUNT_STAGES, GROWTH_WINDOWS, type AccountStage } from '@/lib/admin-growth'
+import { ACCOUNT_STAGES, GROWTH_WINDOWS, PEOPLE_FILTERS, filterPeople, peopleCounts, type AccountStage, type PeopleFilter } from '@/lib/admin-growth'
 import { Card, CardTitle, SkeletonCard, SkeletonKpi, WalletKindBadge, short, timeAgo } from '@/lib/dashboard-ui'
 import { FeeSplitDaily, MoneyBySource, TradersWeekly } from '@/components/LazyCharts'
 import { SOURCE_LABEL, useSourceColors, type GrowthPoint } from '@/components/GrowthCharts'
@@ -42,14 +43,20 @@ interface VenueRow extends FeeSplit {
   venue: string
   effectiveBps: number | null
 }
+/** One person, however they arrived: an email/Google account, or a native
+ *  wallet that never signed up for anything. */
 interface Account {
+  key: string
   email: string | null
   name: string | null
+  /** 'email' | 'google' — or 'wallet' for a native connection. */
   method: string
   wallet: string | null
+  wallets: string[]
   test: boolean
   createdAt: string
   lastSignInAt: string | null
+  lastSeenAt: string | null
   lastTurnAt: string | null
   turns: number
   built: number
@@ -58,7 +65,10 @@ interface Account {
   chats: number
   links: number
   watching: number
-  lastWall: string | null
+  /** The path they tried: the last thing they asked for, walled or not. */
+  lastAsk: string | null
+  lastAskAt: string | null
+  lastAskWalled: boolean
   stage: AccountStage
 }
 interface Growth {
@@ -90,6 +100,9 @@ interface Growth {
     signups: number
     signupsDelta: number | null
     accountsAllTime: number
+    peopleAllTime: number
+    newPeople: number
+    walletOnlyAllTime: number
   }
   series: GrowthPoint[]
   sources: { source: string; usd: number; trades: number }[]
@@ -134,7 +147,7 @@ interface Growth {
   }[]
   creatorCount: number
   linkFunnel: { opens: number; connects: number; built: number; signed: number; signers: number }
-  accounts: { ok: boolean; reason: string | null; rows: Account[] }
+  accounts: { ok: boolean; reason: string | null; truncated: boolean; rows: Account[] }
   subscribers: { email: string; status: string; createdAt: string }[]
   alertEmails: { email: string; owner: string; alerts: number; lastAt: string }[]
   engagement: Record<string, number> | null
@@ -185,6 +198,12 @@ const STAGE_STOP: Record<AccountStage, string> = {
   asked: 'Asked, nothing built',
   built: 'Built, never signed',
   traded: 'Traded',
+}
+const WHO_LABEL: Record<PeopleFilter, string> = { all: 'All', email: 'With email', wallet: 'Wallet only' }
+const WHO_HELP: Record<PeopleFilter, string> = {
+  all: 'Everyone who showed up — accounts and native wallet connections',
+  email: 'Email + Google accounts: someone we can reach out to',
+  wallet: 'MetaMask, Phantom, Coinbase Wallet and friends — no account, no email',
 }
 const VENUE_LABEL: Record<string, string> = {
   uniswap: 'Uniswap',
@@ -335,6 +354,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [who, setWho] = useState<PeopleFilter>('all')
   const S = useSourceColors()
 
   const load = useCallback(async () => {
@@ -365,11 +385,14 @@ export default function AdminPage() {
     else setLoading(false)
   }, [address, load])
 
+  /** The people the filter is showing, and how far each of them got. */
+  const shown = useMemo(() => filterPeople(data?.accounts.rows ?? [], who), [data, who])
+  const whoCounts = useMemo(() => peopleCounts(data?.accounts.rows ?? []), [data])
   const stageCounts = useMemo(() => {
     const c: Record<AccountStage, number> = { 'signed-up': 0, asked: 0, built: 0, traded: 0 }
-    for (const a of data?.accounts.rows ?? []) c[a.stage]++
+    for (const a of shown) c[a.stage]++
     return c
-  }, [data])
+  }, [shown])
 
   if (address && !isAdminAddress(address)) {
     return (
@@ -420,7 +443,7 @@ export default function AdminPage() {
   const t = data.tiles
   const e = data.engagement
   const w = `${data.windowDays}d`
-  const accounts = data.accounts.rows
+  const accounts = shown
   const emails = accounts.map((a) => a.email).filter((x): x is string => !!x)
   const sourceTotal = data.sources.reduce((s, x) => s + x.usd, 0)
   const feeRows = data.fees[feeScope]
@@ -618,11 +641,27 @@ export default function AdminPage() {
         )}
       </Card>
 
-      {/* 4 — who signed up */}
+      {/* 4 — who showed up: accounts and wallets, one list */}
       <Card className="mt-3">
         <div className="flex items-start justify-between gap-3 flex-wrap">
-          <CardTitle eyebrow="Coinbase embedded wallets · email + Google">Accounts ({accounts.length})</CardTitle>
+          <CardTitle eyebrow="Email + Google accounts · native wallet connections">Everyone who showed up ({accounts.length})</CardTitle>
           <div className="flex items-center gap-2">
+            {/* An account is one lane in, not the only one — a native wallet
+                never signs up, it just starts acting. Both are people; the
+                only difference is whether there's an email to reach out on. */}
+            <div className="flex rounded-lg border border-[var(--line)] overflow-hidden shrink-0">
+              {PEOPLE_FILTERS.map((k) => (
+                <button
+                  key={k}
+                  onClick={() => setWho(k)}
+                  aria-pressed={who === k}
+                  title={WHO_HELP[k]}
+                  className={`px-2.5 py-1 text-[11px] mono transition-colors ${who === k ? 'bg-[var(--surf-2,rgba(255,255,255,0.06))] text-white' : 'text-[color:var(--muted)] hover:text-white'}`}
+                >
+                  {WHO_LABEL[k]} <span className="tabular-nums opacity-60">{whoCounts[k]}</span>
+                </button>
+              ))}
+            </div>
             <button
               className={BTN}
               disabled={emails.length === 0}
@@ -640,9 +679,9 @@ export default function AdminPage() {
               disabled={accounts.length === 0}
               onClick={() =>
                 downloadCsv(
-                  'accounts',
-                  ['email', 'name', 'method', 'wallet', 'kind', 'stage', 'created_at', 'last_sign_in', 'asks', 'trades', 'moved_usd', 'links', 'watching', 'last_wall'],
-                  accounts.map((a) => [a.email, a.name, a.method, a.wallet, a.test ? 'tester' : 'wild', a.stage, a.createdAt, a.lastSignInAt, a.turns, a.signed, a.usd, a.links, a.watching, a.lastWall]),
+                  `people-${who}`,
+                  ['email', 'name', 'method', 'wallet', 'kind', 'stage', 'joined', 'last_sign_in', 'last_seen', 'asks', 'trades', 'moved_usd', 'links', 'watching', 'last_ask', 'last_ask_walled'],
+                  accounts.map((a) => [a.email, a.name, a.method, a.wallet, a.test ? 'tester' : 'wild', a.stage, a.createdAt, a.lastSignInAt, a.lastSeenAt, a.turns, a.signed, a.usd, a.links, a.watching, a.lastAsk, a.lastAskWalled ? 'walled' : '']),
                 )
               }
             >
@@ -650,13 +689,16 @@ export default function AdminPage() {
             </button>
           </div>
         </div>
-        {!data.accounts.ok ? (
-          <p className="text-xs text-[color:var(--muted-2)] py-4">
+        {!data.accounts.ok && (
+          <p className="text-xs text-[color:var(--muted-2)] mt-2 mb-1">
             Couldn&rsquo;t read the account list from Coinbase: {data.accounts.reason} The emails live at Coinbase, not in our
-            database, so this section is empty until it answers.
+            database, so only wallet connections are listed until it answers.
           </p>
-        ) : accounts.length === 0 ? (
-          <p className="text-xs text-[color:var(--muted-2)] py-4">No email or Google accounts yet.</p>
+        )}
+        {accounts.length === 0 ? (
+          <p className="text-xs text-[color:var(--muted-2)] py-4">
+            {who === 'email' ? 'No email or Google accounts yet.' : who === 'wallet' ? 'No native wallet connections yet.' : 'Nobody has shown up yet.'}
+          </p>
         ) : (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
@@ -676,10 +718,10 @@ export default function AdminPage() {
               <table className="w-full text-sm min-w-[860px]">
                 <thead>
                   <tr className={THEAD}>
-                    <th className={TH}>Email</th>
+                    <th className={TH}>Who</th>
                     <th className={TH}>Wallet</th>
                     <th className={TH}>Joined</th>
-                    <th className={TH}>Last sign-in</th>
+                    <th className={TH}>Last seen</th>
                     <th className={TH}>Got to</th>
                     <th className={`${TH} text-right`}>Asks</th>
                     <th className={`${TH} text-right`}>Trades</th>
@@ -689,13 +731,21 @@ export default function AdminPage() {
                 </thead>
                 <tbody className="text-[color:var(--muted)]">
                   {accounts.map((a) => (
-                    <tr key={`${a.email}-${a.wallet}`} className="border-t border-[var(--line)] align-top">
+                    <tr key={a.key} className="border-t border-[var(--line)] align-top">
                       <td className="py-2 pr-3 text-white">
-                        <span className="break-all">{a.email ?? <span className="text-[color:var(--muted-2)]">no email on file</span>}</span>
+                        <span className="break-all">
+                          {a.email ?? <span className="text-[color:var(--muted-2)]">wallet only — no email</span>}
+                        </span>
                         <span className="ml-2 text-[10px] mono uppercase tracking-wide text-[color:var(--muted-2)]">{a.method}</span>
-                        {a.lastWall && a.stage !== 'traded' && (
-                          <span className="block text-[11px] text-[color:var(--muted-2)] mt-0.5 max-w-[340px] truncate" title={a.lastWall}>
-                            last wall: “{a.lastWall}”
+                        {/* The path they tried, for everyone — a trader was reaching for
+                            something too, and it's the line that says what this person
+                            came here to do. */}
+                        {a.lastAsk && (
+                          <span
+                            className="block text-[11px] text-[color:var(--muted-2)] mt-0.5 max-w-[340px] truncate"
+                            title={`${a.lastAskWalled ? 'Walled' : 'Asked'}${a.lastAskAt ? ` ${timeAgo(a.lastAskAt)}` : ''}: ${a.lastAsk}`}
+                          >
+                            {a.lastAskWalled ? 'last wall' : 'last ask'}: “{a.lastAsk}”
                           </span>
                         )}
                       </td>
@@ -709,8 +759,17 @@ export default function AdminPage() {
                         )}
                         <WalletKindBadge test={a.test} />
                       </td>
-                      <td className="py-2 pr-3 whitespace-nowrap">{timeAgo(a.createdAt)}</td>
-                      <td className="py-2 pr-3 whitespace-nowrap">{a.lastSignInAt ? timeAgo(a.lastSignInAt) : '—'}</td>
+                      <td className="py-2 pr-3 whitespace-nowrap" title={a.email ? 'Signed up' : 'First time we saw this wallet'}>
+                        {timeAgo(a.createdAt)}
+                      </td>
+                      {/* An account signs in; a wallet just reappears. One column, and
+                          the tooltip says which one this was. */}
+                      <td
+                        className="py-2 pr-3 whitespace-nowrap"
+                        title={a.lastSignInAt ? 'Last sign-in' : a.lastSeenAt ? 'Last activity — a wallet never signs in' : ''}
+                      >
+                        {a.lastSeenAt ? timeAgo(a.lastSeenAt) : '—'}
+                      </td>
                       <td className="py-2 pr-3">
                         <StageChip stage={a.stage} />
                       </td>
@@ -735,8 +794,10 @@ export default function AdminPage() {
               </table>
             </div>
             <p className="text-[11px] text-[color:var(--muted-2)] mt-2">
-              Read live from Coinbase. Wallet-only users (MetaMask, Phantom, Coinbase Wallet) have no email and show up under
-              Traders and the arc below.
+              Accounts and their emails are read live from Coinbase. Wallet-only rows are native connections (MetaMask,
+              Phantom, Coinbase Wallet, WalletConnect) — nobody signs up with those, so they’re everyone our own tables have
+              seen act: a chat, an app set, a watchlist, a minted link, a signed turn, or a walled ask.
+              {data.accounts.truncated && ' Capped at the 600 most recently seen.'}
             </p>
           </>
         )}
