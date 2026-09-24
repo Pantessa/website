@@ -28,6 +28,8 @@ import { useHydrated } from '@/lib/use-hydrated'
 import { bootHoldingFor, initialHoldElapsed } from '@/lib/wallet-reconnect'
 import { APP_CHAINS } from '@/lib/chains'
 import { WALLET_PAGE_HREF } from '@/lib/wallet-page'
+import { AskDoorTrigger } from '@/components/AskDoor'
+import './wallet-phone.css'
 
 /** "Base, Ethereum, Arbitrum, Optimism and Robinhood Chain" — the chains
  *  /api/wallet reads, in registry order. */
@@ -138,20 +140,29 @@ export default function WalletPage() {
               (measured ~9s with the WalletConnect lane lit), so the button
               is there from the first frame and waits, disabled, rather than
               popping in late. */}
-          {showDetails && (
-            <button
-              type="button"
-              onClick={openAccountModal}
-              disabled={!openAccountModal}
-              title="Switch wallet or disconnect"
-              aria-label="Switch wallet or disconnect"
-              data-wallet-switch
-              className="flex-shrink-0 inline-flex items-center justify-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-3 py-1.5 max-lg:min-h-11 max-lg:min-w-11 text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)] disabled:opacity-50 disabled:pointer-events-none transition-colors"
-            >
-              <Settings2 className="w-3.5 h-3.5" />
-              <span className="max-sm:hidden">Switch or disconnect</span>
-            </button>
-          )}
+          {/* The page's own Ask, in the header like the markets strip's (squad
+              mobile-native, 2026-09-24): a screen whose top bar carries the
+              door drops the floating pill, which otherwise sat over the
+              holdings on a phone (MARKETS' rule keys on data-ask-door="rail"). */}
+          <div className="wallethead__acts flex flex-shrink-0 items-center gap-2">
+            <span className="wallethead__ask">
+              <AskDoorTrigger variant="rail" />
+            </span>
+            {showDetails && (
+              <button
+                type="button"
+                onClick={openAccountModal}
+                disabled={!openAccountModal}
+                title="Switch wallet or disconnect"
+                aria-label="Switch wallet or disconnect"
+                data-wallet-switch
+                className="flex-shrink-0 inline-flex items-center justify-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-3 py-1.5 max-lg:min-h-11 max-lg:min-w-11 text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)] disabled:opacity-50 disabled:pointer-events-none transition-colors"
+              >
+                <Settings2 className="w-3.5 h-3.5" />
+                <span className="max-sm:hidden">Switch or disconnect</span>
+              </button>
+            )}
+          </div>
         </header>
 
         {showDetails && address ? (

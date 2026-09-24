@@ -23,3 +23,10 @@
     inset: -12px -6px;
   }
 }
+
+/* The /wallet header's Ask (AskDoorTrigger variant "rail", MARKETS' export):
+   a 44px target on a phone, and no ⌘K hint where there is no keyboard. */
+@media (max-width: 1023px) {
+  .wallethead__ask .nav__ask { height: 44px; padding: 0 14px 0 10px; }
+  .wallethead__ask .nav__ask-kbd { display: none; }
+}

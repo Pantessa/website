@@ -281,8 +281,8 @@
   .navacct--sheet .navacct__head { padding: 4px 10px 12px; }
   .navacct--sheet .navacct__item { min-height: 48px; padding: 12px 12px; font-size: 15px; }
   @media (max-width: 1023px) {
-    .navacct__pill { position: relative; }
-    .navacct__pill::before { content: ''; position: absolute; inset: -5px -3px; }
+    .navacct__pill, .signin-hit { position: relative; }
+    .navacct__pill::before, .signin-hit::before { content: ''; position: absolute; inset: -8px -3px; }
   }
 
   /* ── DRAWER GROUPING (mobile) ────────────────────── */
@@ -293,7 +293,11 @@
   .drawer__tabs .drawer__sub { padding-left: 28px; }
   /* The phone menu as the ONE Sheet (components/mobile/Sheet, squad
      mobile-native 2026-09-24): the drawer's rows, inside the sheet body. */
-  .navsheet__tabs { padding: 2px 12px 12px; }
+  .navsheet__tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 2px 12px 12px; }
+  .navsheet__tabs > * { grid-column: 1 / -1; }
+  /* The "More" destinations pair up: a menu that fills the screen leaves no
+     scrim to tap (it measured 614 of 667px as one column). */
+  .navsheet__tabs > .drawer__sub { grid-column: auto; padding-left: 16px; }
   .navsheet .sheet__foot .nav__dash { width: 100%; justify-content: center; min-height: 48px; font-size: 16px; }
   .navsheet .navsheet__signin { background: var(--accent); color: var(--ink); border-color: transparent; }
   .navsheet .navsheet__signin:hover { filter: brightness(1.06); background: var(--accent); }

@@ -33078,7 +33078,7 @@ async function main() {
     const dashAcctSrcNP = npCode('components/DashboardAccount.tsx')
     check(
       'native pages: the brochure phone menu is the Sheet (id site-nav), closes when the ask door opens (the door is z 60 under the sheet\'s 90), and hands sign-in to a door at the nav\'s level (a door inside the sheet would unmount with it)',
-      /<Sheet\s[^>]*id="site-nav"/.test(navSrcNP) && !/drawer__backdrop|createPortal/.test(navSrcNP) &&
+      /<Sheet[\s\S]{0,400}?id="site-nav"/.test(navSrcNP) && !/drawer__backdrop|createPortal/.test(navSrcNP) &&
         /const askOpen = useAskDoor\(\(s\) => s\.open\)/.test(navSrcNP) && /if \(askOpen\) setOpen\(false\)/.test(navSrcNP) &&
         /\{doorOpen && cdpEnabled && <CreateAccountModal onClose=\{\(\) => setDoorOpen\(false\)\} \/>\}/.test(navSrcNP),
     )
@@ -33095,7 +33095,7 @@ async function main() {
     )
     check(
       'native pages: the dashboard\'s phone chrome is ONE bar (the section switcher → the Sheet id dash-sections, and Ask → the site-wide door); no hand-portaled drawer',
-      /<Sheet\s[^>]*id="dash-sections"/.test(dashNavSrcNP) && /data-dash-sections/.test(dashNavSrcNP) && /onClick=\{\(\) => openDoor\(\)\}/.test(dashNavSrcNP) &&
+      /<Sheet[\s\S]{0,400}?id="dash-sections"/.test(dashNavSrcNP) && /data-dash-sections/.test(dashNavSrcNP) && /onClick=\{\(\) => openDoor\(\)\}/.test(dashNavSrcNP) &&
         !/createPortal|dashnav__drawer|dashnav__burger/.test(dashNavSrcNP),
     )
 
@@ -33103,6 +33103,11 @@ async function main() {
     const npDoc = await (await fetch(`${BASE}/`)).text()
     const npHrefs = [...npDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
     const npCss = (await Promise.all(npHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n').replace(/\s+/g, '')
+    // The minifier reorders declarations and groups selectors, so a rule is
+    // found by its selector (split on top-level commas only: `:is(a,b)` is
+    // one selector) and its declarations as a set.
+    const ruleWith = (css: string, sel: string, decls: string[]) =>
+      [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].some((m) => m[1].split(/,(?![^(]*\))/).includes(sel) && decls.every((d) => m[2].split(';').includes(d)))
     const phoneBlock = (css: string, max: number) => [...css.matchAll(new RegExp(`@media\\(max-width:${max}px\\)\\{((?:[^{}]*\\{[^{}]*\\})*)\\}`, 'g'))].map((m) => m[1]).join('')
     const below1023 = phoneBlock(npCss, 1023)
     const below900 = phoneBlock(npCss, 900)
@@ -33115,20 +33120,21 @@ async function main() {
     )
     check(
       'native pages: the dashboard bar sticks for real (BEFORE: sticky top 64px inside a wrapper its own height, so 600px down it sat at top −600): `.dash` is block below 900px (a grid item is stuck in its grid AREA), `.dashnav` is the sticky at top 0, and the docked ask bar steps aside there',
-      /\.dash\{display:block;/.test(below900) && /\.dashnav\{display:block;position:sticky;top:0;/.test(below900) && /\.dashask\{display:none\}/.test(below900) &&
-        !/\.dashnav__bar\{[^}]*position:sticky/.test(npCss),
+      ruleWith(below900, '.dash', ['display:block']) && ruleWith(below900, '.dashnav', ['display:block', 'position:sticky', 'top:0']) &&
+        ruleWith(below900, '.dashask', ['display:none']) && !/\.dashnav__bar\{[^}]*position:sticky/.test(npCss),
     )
     check(
-      'native pages: the account pill keeps its look and gains a 44px hit area below lg (BEFORE: 35px); the menu sheet\'s rows are 48px (BEFORE: 38px)',
-      /\.navacct__pill:before\{content:"";position:absolute;inset:-5px-3px\}|\.navacct__pill::before\{content:"";position:absolute;inset:-5px-3px\}/.test(below1023) &&
-        /\.navacct--sheet\.navacct__item\{min-height:48px/.test(npCss),
+      'native pages: the account pill and the Sign in pill keep their looks and gain a 44px+ hit area below lg (BEFORE: 35px and 28px); the account sheet\'s rows are 48px (BEFORE: 38px)',
+      ['.navacct__pill:before', '.signin-hit:before'].every((sel) => ruleWith(below1023, sel, ['content:""', 'position:absolute', 'inset:-8px-3px'])) &&
+        ruleWith(npCss, '.navacct--sheet.navacct__item', ['min-height:48px']),
     )
     const wDoc = await (await fetch(`${BASE}/wallet`)).text()
     const wHrefs = [...wDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
     const wCss = (await Promise.all(wHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n').replace(/\s+/g, '')
     check(
       'native pages: every control in the wallet window is a 44px target below lg (BEFORE: switch 38×26, copy 30px, "updated" 17px, a flag\'s fix 25px), a Max-in-a-field keeps its chip look with an invisible 44px hit area',
-      /\[data-wallet-window\]:is\(button,a\[href\]\)\{min-height:44px;/.test(phoneBlock(wCss, 1023)) && /\[data-wallet-field\]:is\(button,a\[href\]\)(?::|::)after\{content:"";position:absolute;inset:-12px-6px\}/.test(phoneBlock(wCss, 1023)) &&
+      ruleWith(phoneBlock(wCss, 1023), '[data-wallet-window]:is(button,a[href])', ['min-height:44px']) &&
+        ruleWith(phoneBlock(wCss, 1023), '[data-wallet-window][data-wallet-field]:is(button,a[href]):after', ['content:""', 'position:absolute', 'inset:-12px-6px']) &&
         /data-wallet-window="modal"/.test(walletSrcNP) && /data-wallet-window="page"/.test(walletSrcNP),
       `${wHrefs.length} stylesheet(s)`,
     )
