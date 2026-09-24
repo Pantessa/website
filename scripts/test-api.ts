@@ -33027,34 +33027,37 @@ async function main() {
   {
     const { readFileSync: readNq } = await import('node:fs')
     const nqSrc = readNq('scripts/drive-native.ts', 'utf8')
+    // Positive fences read the RAW source (a comment stripper can eat code: a
+    // glob like '**' + '/*' opens a "comment"); only the negatives read code
+    // with comments removed, so a comment may NAME what the code must not do.
     const nqCode = nqSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
     check(
       'native qa: drive:native resolves playwright through createRequire (never a static import — it is not a dependency) and only drives when run directly; the harness imports it',
-      /createRequire\(/.test(nqCode) &&
-        /createRequire\(ANCHOR\)\('playwright-core'\)/.test(nqCode) &&
-        /if \(process\.argv\[1\] && \/drive-native/.test(nqCode) &&
+      /createRequire\(ANCHOR\)\('playwright-core'\)/.test(nqSrc) &&
+        /if \(process\.argv\[1\] && \/drive-native/.test(nqSrc) &&
+        !/^import[^\n]*from ['"]playwright-core['"]/m.test(nqSrc) &&
         // no column-0 call: the only main() is the guarded one
         !/^(?:void )?main\(\)/m.test(nqCode),
     )
     check(
       'native qa: drive:native exits 1 on any FAIL (a drive that prints ❌ and exits 0 proved nothing) and 2 when nothing is serving',
-      /process\.exit\(fail \? 1 : 0\)/.test(nqCode) && /process\.exit\(2\)/.test(nqCode),
+      /process\.exit\(fail \? 1 : 0\)/.test(nqSrc) && /process\.exit\(2\)/.test(nqSrc),
     )
     check(
       'native qa: drive:native never fires a live chat turn (every POST /api/chat is fulfilled from a fixture — /i auto-runs its ask on connect) and stamps every same-origin request x-yf-internal-run + x-yf-no-ask-log',
-      /req\.method\(\) === 'POST' && \/\^\\\/api\\\/chat\\\/\?\$\/\.test\(url\.pathname\)/.test(nqCode) &&
-        /route\.fulfill\(\{ status: 200, contentType: 'application\/json', body: JSON\.stringify\(CHAT_FIXTURE\)/.test(nqCode) &&
-        /'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1'/.test(nqCode),
+      /req\.method\(\) === 'POST' && \/\^\\\/api\\\/chat\\\/\?\$\/\.test\(url\.pathname\)/.test(nqSrc) &&
+        /route\.fulfill\(\{ status: 200, contentType: 'application\/json', body: JSON\.stringify\(CHAT_FIXTURE\)/.test(nqSrc) &&
+        /'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1'/.test(nqSrc),
     )
     check(
       'native qa: the mock wallet refuses every signature and transaction, and the dashboard SIWE is a THROWAWAY key (generatePrivateKey) — drive:native never reads PRIVATE_KEY',
-      /generatePrivateKey\(\)/.test(nqCode) &&
-        !/PRIVATE_KEY/.test(nqCode) &&
-        /case 'personal_sign': case 'eth_sign': case 'eth_signTypedData_v4': case 'eth_sendTransaction': case 'wallet_sendCalls':\s*window\.__nqRefused/.test(nqCode),
+      /generatePrivateKey\(\)/.test(nqSrc) &&
+        !/PRIVATE_KEY/.test(nqSrc) &&
+        /case 'personal_sign': case 'eth_sign': case 'eth_signTypedData_v4': case 'eth_sendTransaction': case 'wallet_sendCalls':\s*window\.__nqRefused/.test(nqSrc),
     )
     check(
       'native qa: a missing WebKit build is a SKIP row that names the owner step, never a hang and never a silent pass',
-      /state: 'SKIP'/.test(nqCode) && /npx playwright install webkit/.test(nqSrc) && /existsSync\(exe\)/.test(nqCode),
+      /state: 'SKIP'/.test(nqSrc) && /npx playwright install webkit/.test(nqSrc) && /existsSync\(exe\)/.test(nqSrc),
     )
     const nq = (await import('./drive-native')) as typeof import('./drive-native')
     check(
@@ -33071,7 +33074,9 @@ async function main() {
         chatT.JOBS.tab === 'jobs' && chatT.LINKS.tab === 'links' && chatT.TEAM.screen === 'team' &&
         chatT.CHATS.screen === 'history' && chatT.CHATS.lit === 'CHATS' &&
         chatT.More.sheet === true && chatT.MARKETS.path === '/markets' && chatT.WALLET.path === '/wallet' &&
-        nq.D2_SEQUENCES.some((q) => q.taps.join(',') === 'APPS,CHATS' && q.expect.screen === 'chat' && q.expect.tab === ''),
+        nq.D2_SEQUENCES.some((q) => q.taps.join(',') === 'APPS,CHATS' && q.expect.screen === 'chat' && q.expect.tab === '') &&
+        nq.TOP_BAR_DOORS.some((d) => d.door === 'history' && d.expect.screen === 'history') &&
+        nq.TOP_BAR_DOORS.some((d) => d.door === 'apps' && d.expect.tab === 'mcps'),
     )
     const app = nq.SURFACES.filter((x) => x.kind === 'app').map((x) => x.path)
     check(

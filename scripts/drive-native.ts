@@ -345,6 +345,25 @@ const PAGE_LIB = String.raw`(() => {
       await scrollTo(S, 0)
       return out
     },
+    /** The Ask pill over the whole scroll: every ~0.8 screen, top to end. */
+    async pillSweep() {
+      const pill = document.querySelector('[data-ask-door="pill"]')
+      if (!pill || !vis(pill)) return null
+      const S = screenScroller().el
+      const max = Math.max(0, S.scrollHeight - S.clientHeight)
+      const step = Math.max(200, Math.round(S.clientHeight * 0.8))
+      const hits = []
+      let n = 0
+      for (let y = 0; ; y = Math.min(max, y + step)) {
+        await scrollTo(S, y)
+        n++
+        // a field under the pill counts too (its placeholder is not a text node)
+        if (vis(pill)) { const u = [...under(pill), ...contentUnder(pill)]; if (u.length) hits.push({ y, what: u.slice(0, 2) }) }
+        if (y >= max || n >= 14) break
+      }
+      await scrollTo(S, 0)
+      return { positions: n, covered: hits.length, first: hits[0] || null, rect: R(pill.getBoundingClientRect()) }
+    },
     /** Overflow offenders: the widest things past the right edge. */
     wideOffenders() {
       const out = []
@@ -609,7 +628,9 @@ async function openCtx(run: Run, o: { size: Size; theme: Theme; auth: Auth; sess
   if (address) await ctx.addInitScript(mockWallet(address))
   const opened: Opened = { ctx, page: null, chatPosts: 0, errors: [], address, ready: '' }
   const origin = new URL(BASE).origin
-  await ctx.route('**/*', async (route: Pw) => {
+  // Every request (a RegExp, not the '**' glob: a slash-star in code reads as a
+  // comment opener to the harness's source fences).
+  await ctx.route(/.*/, async (route: Pw) => {
     const req = route.request()
     let url: URL
     try {
@@ -794,16 +815,15 @@ async function layoutAt(run: Run, o: Opened, s: Surface, size: Size, theme: Them
           detail: reasons.join('; '),
         })
       }
-      const pills = pos.filter((p) => p.pill)
-      if (pills.length) {
-        const covered = pills.filter((p) => p.pill!.under.length)
+      const sweep = await evalNq<{ positions: number; covered: number; first: { y: number; what: string[] } | null } | null>(o.page, 'window.__nq.pillSweep()')
+      if (sweep && !(sweep as unknown as { __error?: string }).__error) {
         record({
           ...b,
           check: 'bar',
           item: 'ask pill',
-          state: covered.length ? 'FAIL' : 'PASS',
-          value: `content under the pill ${pills.map((p) => p.pill!.under.length).join('/')} (top/mid/end)`,
-          detail: covered.length ? `covers: ${covered[0].pill!.under.slice(0, 3).join('; ')} (${covered[0].name})` : '',
+          state: sweep.covered ? 'FAIL' : 'PASS',
+          value: `covers content at ${sweep.covered}/${sweep.positions} scroll positions`,
+          detail: sweep.first ? `e.g. at y=${sweep.first.y}: ${sweep.first.what.join('; ')}` : '',
         })
       }
     }
@@ -1010,6 +1030,34 @@ async function tabsAtRest(run: Run) {
   }
 }
 
+/** CHAT's conversation top bar: labeled doors into the phone screens
+ *  (`data-phone-open="history" | "apps"`), judged exactly like a seat tap. */
+export const TOP_BAR_DOORS: { door: string; expect: Expect }[] = [
+  { door: 'history', expect: { path: '/chat', tab: 'chats', screen: 'history', lit: 'CHATS' } },
+  { door: 'apps', expect: { path: '/chat', tab: 'mcps', screen: 'apps', lit: 'APPS' } },
+]
+
+async function topBarDoorJob(run: Run, d: (typeof TOP_BAR_DOORS)[number]) {
+  const size = PHONE_SIZES[0]
+  const chat = SURFACES[0]
+  const o = await openCtx(run, { size, theme: 'dark', auth: 'wallet' })
+  const b = { ...base(run, size, 'dark', chat), check: 'tabs' as CheckId, item: `top bar → ${d.door}` }
+  try {
+    await load(o, chat)
+    const tapped = await tapFirst(o.page, [`[data-phone-open="${d.door}"]`])
+    if (!tapped) {
+      record({ ...b, state: 'FAIL', value: 'not present', detail: `no visible [data-phone-open="${d.door}"] in the conversation's top bar` })
+      return
+    }
+    await sleep(1400)
+    const st = await readTapState(o.page)
+    const j = judgeTap(st, d.expect)
+    record({ ...b, state: j.ok ? 'PASS' : 'FAIL', value: `→ ${st.url} · lit ${st.lit.join(',') || 'none'} · screen ${st.screen ?? '∅'}`, detail: j.reasons.join('; ') })
+  } finally {
+    await o.ctx.close().catch(() => {})
+  }
+}
+
 async function tabsSequence(run: Run, seq: (typeof D2_SEQUENCES)[number]) {
   const size = PHONE_SIZES[0]
   const chat = SURFACES[0]
@@ -1079,7 +1127,7 @@ const TRIGGERS: Trigger[] = [
   { id: 'brochure menu', surface: S_LANDING, auth: 'none', open: (p) => tapFirst(p, ['[data-sheet-open="nav"]', 'button[aria-label="Open menu"]']) },
   { id: 'dashboard menu', surface: S_DASH, auth: 'siwe', open: (p) => tapFirst(p, ['[data-sheet-open="dashnav"]', 'button[aria-label="Open menu"]']) },
   { id: 'links list', surface: S_LINKS, auth: 'wallet', open: (p) => tapFirst(p, ['[data-sheet-open="links"]']) },
-  { id: 'chat list', surface: S_CHAT, auth: 'wallet', open: (p) => tapFirst(p, ['[data-sheet-open="chats"]', '[data-phone-open="history"]']) },
+  { id: 'chat list', surface: S_CHAT, auth: 'wallet', open: (p) => tapFirst(p, ['[data-sheet-open="chats"]']) },
 ]
 
 async function dismissBy(o: Opened, how: 'outside' | 'escape' | 'swipe' | 'back'): Promise<{ closed: boolean; stayed: boolean; note: string }> {
@@ -1583,15 +1631,22 @@ async function main() {
       for (const [seat, ex] of Object.entries(D2_FROM_CHAT)) add('tabs', `tabs ${run.profile} /chat ${seat}`, () => tabsJob(run, S_CHAT, seat, ex))
       for (const [seat, ex] of Object.entries(D2_FROM_MARKETS)) add('tabs', `tabs ${run.profile} /markets ${seat}`, () => tabsJob(run, S_MARKETS, seat, ex))
       for (const seq of D2_SEQUENCES) add('tabs', `tabs ${run.profile} ${seq.name}`, () => tabsSequence(run, seq))
+      for (const d of TOP_BAR_DOORS) add('tabs', `tabs ${run.profile} top bar ${d.door}`, () => topBarDoorJob(run, d))
     }
   }
   if (wantCheck('sheets')) {
     for (const run of runs) {
       for (const t of TRIGGERS) add('sheets', `sheet ${run.profile} ${t.id}`, async () => sheetJob(run, t, t.auth === 'siwe' ? await siwe() : null))
-      for (const s of [S_CHAT, S_MARKETS, SURFACES.find((x) => x.path === '/t/AAPL')!, SURFACES.find((x) => x.path === '/wallet')!, S_LINKS]) {
+      // Where the lanes said their Sheets live (coordinator, R1): NAV more/links/
+      // chats · MARKETS ask/wl-alert/wl-import · PAGES account/wallet/door/nav/
+      // dashnav · CHAT mint/chart/job/addmcp/creator. The known ones have their
+      // own trigger above; the rest are found by their data-sheet-open.
+      for (const path of ['/chat', '/chat?tab=mcps', '/chat?tab=links', '/chat?tab=jobs', '/markets', '/t/AAPL', '/wallet', `/i/${HOUSE_SLUG}`, '/dashboard']) {
+        const s = SURFACES.find((x) => x.path === path)!
         add('sheets', `sheets discovered ${run.profile} ${s.path}`, async () => {
-          const found = await discoveredSheets(run, s, null)
-          for (const t of found) await sheetJob(run, t, null)
+          const session = s.auth === 'siwe' ? await siwe() : null
+          const found = await discoveredSheets(run, s, session)
+          for (const t of found) await sheetJob(run, t, s.auth === 'siwe' ? await siwe() : null)
         })
       }
     }
