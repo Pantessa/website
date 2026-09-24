@@ -25932,7 +25932,9 @@ async function main() {
         (mkHtml.match(/data-seat="QuickAct"/g) ?? []).length >= 24 &&
         (await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')).includes('<Board key={s.id} section={s} onAsk={indexAct} />') &&
         /\.mk-table__row:hover \.mk-table__quick, \.mk-table__row:focus-within \.mk-table__quick \{ opacity: 1; pointer-events: auto; \}/.test(await readFile('components/markets/markets.css', 'utf8')) &&
-        symSrc2.includes('const fills = useSymbolFills(sym, walletAddress)') && /<ChartMount [^>]*fills=\{fills\}/.test(symSrc2),
+        // Re-pinned 2026-09-24: the engine's fills are the wallet's read MERGED
+        // with the ones Ask the chart's ticket just signed (lib/ask-chart-thread).
+        symSrc2.includes('const serverFills = useSymbolFills(sym, walletAddress)') && symSrc2.includes('const fills = useMemo(() => mergeFills(serverFills, localFills), [serverFills, localFills])') && /<ChartMount [^>]*fills=\{fills\}/.test(symSrc2),
     )
     // The one stylesheet import + the slot card rule (QA's request: whoever
     // owns a class ships its rule).
@@ -28793,7 +28795,9 @@ async function main() {
         !/analytics\.exampleRun\(prompt, false\)/.test(chatSrcF) &&
         /const sendFromOverlay = \(prompt: string\) => runExample\(prompt\)/.test(chatSrcF) &&
         /onPick=\{\(resume\) => sendChip\(resume\)\}/.test(chatSrcF) &&
-        /if \(embedded\) void handleSend\(injectedPrompt\.text\)\s*\n\s*else sendChip\(injectedPrompt\.text\)/.test(chatSrcF) &&
+        // (2026-09-24: an injected prompt carries the apps its gate needs — the
+        // ⌘K door's `mcps`, docked into /t's Ask the chart ticket.)
+        /if \(embedded\) void handleSend\(injectedPrompt\.text\)\s*\n\s*else sendChip\(injectedPrompt\.text, injectedPrompt\.mcps \?\? \[\]\)/.test(chatSrcF) &&
         /\} else parkAsk\(injectedPrompt\.text\)/.test(chatSrcF) &&
         /if \(text && text === parked && !loading && !pendingPayment\) \{\s*\n\s*parkedAskRef\.current = null\s*\n\s*setInput\(''\)\s*\n\s*sendChip\(text\)/.test(chatSrcF) &&
         (chatSrcF.match(/sendComposer\(\)/g) ?? []).length === 2 && !/onClick=\{\(\) => void handleSend\(\)\}/.test(chatSrcF) &&
@@ -28819,7 +28823,8 @@ async function main() {
       /if \(linkSetActive\) setLinkServerIds\(next\)\s*\n\s*else setActiveServerIds\(next\)/.test(chatSrcF) &&
         /missing\.length > 0 && chipSend\.rounds < APP_SEND_ROUNDS/.test(chatSrcF) && /const APP_SEND_ROUNDS = \d+/.test(chatSrcF) &&
         /if \(!chipSend \|\| servers\.length > 0 \|\| directoryAskedRef\.current\) return/.test(chatSrcF) &&
-        /setChipSend\(null\)\s*\n\s*fireChip\(chipSend\.text\)/.test(chatSrcF),
+        // (Stale on main since #878 put the addedApps hand-off between the two.)
+        /setChipSend\(null\)\s*\n\s*addedForSendRef\.current = chipSend\.added\s*\n\s*fireChip\(chipSend\.text\)/.test(chatSrcF),
     )
     const [wsSrcF, irSrcF, doorSrcF] = await Promise.all(['components/ChatWorkspace.tsx', 'components/IntentRuntime.tsx', 'components/AskDoor.tsx'].map((f) => readFile(f, 'utf8')))
     check(
