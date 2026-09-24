@@ -4396,7 +4396,9 @@ async function main() {
       check('mobile: overlay close buttons (chart / job detail / request-MCP) are 40px on touch', touch10.test(chartOverlay) && touch10.test(jobOverlay) && touch10.test(addMcp))
       // Buy + Sell (the DCA chip left 2026-09-16)
       check('mobile: chart overlay act chips are ≥40px and 12px on touch', (chartOverlay.match(/\[@media\(hover:none\)\]:min-h-10 \[@media\(hover:none\)\]:text-\[12px\]/g) ?? []).length === 2)
-      check('mobile: the sign-in door dismiss is a 40px touch target', /@media \(hover: none\) \{ \.ca__close \{ width: 40px; height: 40px;/.test(designCss))
+      // Re-pinned by the mobile-native squad (2026-09-24, PAGES): the door's
+      // dismiss grew from 40px to the 44px floor every phone target now meets.
+      check('mobile: the sign-in door dismiss is a 44px touch target', /@media \(hover: none\) \{ \.ca__close \{ width: 44px; height: 44px;/.test(designCss))
       // The toolbar working-set door beside chain picker + Share + pill was
       // ~30px wide at 375 and ellipsized to "Sn…" — phones show the count.
       // Found by the AFTER sweep: the holdings-row chart button was 24×24 on
@@ -33292,6 +33294,22 @@ async function main() {
         /data-sheet-open="nav"/.test(navSrcNP) && /data-sheet-open="door"/.test(navSrcNP) && /data-sheet-open="dashnav"/.test(dashNavSrcNP),
     )
 
+    // Round 2 (after SHELL's sheet-history coordinator, lib/sheet-history).
+    check(
+      'native pages: account → Wallet details is a plain handoff (closeNow + setWalletOpen in one tap; the wallet sheet takes over the account sheet\'s history entry): no TEMP wait left in NavAccount',
+      /closeNow\(\)\s*setWalletOpen\(true\)/.test(acctSrcNP) && !/afterSheetHistory|TEMP until/.test(acctSrcNP),
+    )
+    check(
+      'native pages: the menu\'s Ask row closes the menu in the SAME click that opens the ask door, so the door takes over the menu\'s entry (a later close left a dead entry: history 3→5→5, back stayed on the page)',
+      /const onMenuClick = \(e: React\.MouseEvent\) => \{[\s\S]{0,160}closest\?\.\('\[data-ask-door\]'\)\) \{\s*setOpen\(false\)/.test(navSrcNP) && /onClick=\{onMenuClick\}/.test(navSrcNP),
+    )
+    check(
+      'native pages: the door closes on the back gesture and a swipe (useBackToClose \'door\' + useSwipeToClose on its panel); the ONLY drag surface is the grab band, never a field',
+      /useBackToClose\(true, \(\) => onClose\(\), 'door'\)/.test(doorSrcNP) && /useSwipeToClose\(panelRef, \(\) => onClose\(\), 'bottom'\)/.test(doorSrcNP) &&
+        /<div className="ca__grab" data-swipe-handle aria-hidden \{\.\.\.handleProps\} \/>/.test(doorSrcNP) && (doorSrcNP.match(/\{\.\.\.handleProps\}/g) ?? []).length === 1 &&
+        /<div ref=\{panelRef\} className="ca__panel"/.test(doorSrcNP),
+    )
+
     // 3. The served CSS (the build is the proof the rules reach a phone).
     const npDoc = await (await fetch(`${BASE}/`)).text()
     const npHrefs = [...npDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
@@ -33325,6 +33343,27 @@ async function main() {
       ['.navacct__pill:before', '.hit-44:before'].every((sel) => ruleWith(below1023, sel, ['content:""', 'position:absolute', 'inset:-8px-3px'])) &&
         ruleWith(npCss, '.navacct--sheet.navacct__item', ['min-height:48px']),
     )
+    check(
+      'native pages: the door\'s grab band is a phone-only 44px absolute strip with touch-action none (no layout: the keyboard-up fit is untouched), and the panel\'s rise no longer fills forward (a `both` fill kept transform:none over the drag)',
+      ruleWith(npCss, '.ca__grab', ['display:none']) && ruleWith(below1023, '.ca__grab', ['display:block', 'position:absolute', 'top:0', 'left:0', 'right:0', 'height:44px', 'touch-action:none', 'cursor:grab']) &&
+        (() => {
+          // The minifier writes the animation name LAST (".28s cubic-bezier(…) backwards ca-rise"), so read the rule, not an order.
+          const rise = [...npCss.matchAll(/\.ca__panel\{([^}]*)\}/g)].map((m) => m[1]).find((b) => /ca-rise/.test(b)) ?? ''
+          return /backwards/.test(rise) && !/both/.test(rise)
+        })(),
+    )
+    const below600 = phoneBlock(npCss, 600)
+    check(
+      'native pages: the brochure\'s standalone controls are 44px on a phone in the SERVED CSS: footer links as 44px rows (BEFORE 19px), socials and the theme toggle 44px (36/30), the logos 44px (30), the docs door CTAs, EMBED DOCS, TRY IT LIVE, the explainer link, the hero\'s Do it for real; the footer groups pair up below 600px so the 44px rows don\'t stack a longer footer',
+      ruleWith(below1023, '.footer__grouplinks', ['gap:0']) && ruleWith(below1023, '.footer__grouplinksa', ['display:inline-flex', 'align-items:center', 'min-height:44px']) &&
+        ruleWith(below1023, '.footer__social', ['width:44px', 'height:44px']) && ruleWith(below1023, '.themetog__opt', ['width:44px', 'height:44px']) && ruleWith(below1023, '.logo', ['min-height:44px']) &&
+        ruleWith(below1023, '.splash__morea', ['min-height:44px']) && ruleWith(below1023, '.liveex__docs', ['min-height:44px']) && ruleWith(below1023, '.edemo__live', ['min-height:44px']) &&
+        ruleWith(below1023, '.film__capa', ['min-height:44px']) && ruleWith(below1023, '.lh__doit.btn', ['min-height:44px']) &&
+        ruleWith(below600, '.footer__cols', ['grid-template-columns:1fr1fr']) &&
+        // the landing's CTA rows and bands (36–43px), the compare link (20px), the door's Terms/Privacy (14px: a hit area, same look)
+        ['.lh__ctas.btn', '.mkt__ctas.btn', '.liveex__ctas.btn', '.lvb__compoundbtn', '.splash__ctas.btn'].every((sel) => ruleWith(below1023, sel, ['min-height:44px'])) &&
+        ruleWith(below1023, '.mkt__more', ['min-height:44px']) && ruleWith(below1023, '.ca__consenta:before', ['content:""', 'position:absolute', 'inset:-15px-4px']),
+    )
     const wDoc = await (await fetch(`${BASE}/wallet`)).text()
     const wHrefs = [...wDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
     const wCss = (await Promise.all(wHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n').replace(/\s+/g, '')
@@ -33334,6 +33373,10 @@ async function main() {
         ruleWith(phoneBlock(wCss, 1023), '[data-wallet-window][data-wallet-field]:is(button,a[href]):after', ['content:""', 'position:absolute', 'inset:-12px-6px']) &&
         /data-wallet-window="modal"/.test(walletSrcNP) && /data-wallet-window="page"/.test(walletSrcNP),
       `${wHrefs.length} stylesheet(s)`,
+    )
+    check(
+      'native pages: the /wallet header\'s Ask stays a compact pill at every width: its placeholder hint is hidden in the wrapper (markets.css, which hides it elsewhere, never loads on /wallet: the hint drew 353px and pushed Switch off a 375px screen)',
+      ruleWith(wCss, '.wallethead__ask.mkt-frame__askhint', ['display:none']),
     )
   }
 
