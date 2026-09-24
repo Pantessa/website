@@ -24,6 +24,8 @@ import { currentAppHref, signInLandingHere, useSession } from '@/lib/session'
 import { OAUTH_INTENT_KEY, type OAuthIntent } from '@/components/CdpOAuthReturn'
 import { sameAppHref } from '@/lib/app-entry'
 import { inAppBrowserOf, inAppEscapeCopy, type InAppBrowser } from '@/lib/inapp-browser'
+import { useBackToClose } from '@/components/mobile/useBackToClose'
+import { useSwipeToClose } from '@/components/mobile/useSwipeToClose'
 
 // Social providers via CDP Embedded Wallets. Enable each + set its OAuth client
 // id/secret and redirect URIs in the CDP Portal; the app needs only the project
@@ -174,6 +176,16 @@ export function CreateAccountModal({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  // On a phone the door closes the ways every sheet does (squad
+  // mobile-native, 2026-09-24): the back gesture (one history entry, shared
+  // with the Sheet's coordinator, so a handoff INTO the door, like the menu
+  // sheet's Sign in, takes over that sheet's entry) and a swipe down on the
+  // grab band at its top. The band is the only drag surface: the fields and
+  // lanes scroll and type, never dismiss. The door isn't a Sheet: its
+  // keyboard-up fit (squad mobile-onboarding) is its own layout.
+  const panelRef = useRef<HTMLDivElement>(null)
+  useBackToClose(true, () => onClose(), 'door')
+  const { handleProps } = useSwipeToClose(panelRef, () => onClose(), 'bottom')
 
   useEffect(() => {
     setMounted(true)
@@ -322,7 +334,11 @@ export function CreateAccountModal({
       {/* The stone's light — behind the panel, unclipped, so the door reads as
           lit from within rather than pasted onto black. */}
       <div className="ca__glow" aria-hidden="true" />
-      <div className="ca__panel" role="dialog" aria-modal="true" aria-label="Sign in or create an account">
+      <div ref={panelRef} className="ca__panel" role="dialog" aria-modal="true" aria-label="Sign in or create an account">
+        {/* The swipe handle: a 44px band over the panel's top padding (no
+            layout, so the keyboard-up fit is untouched), phone only. It sits
+            before the close button, which paints over it. */}
+        <div className="ca__grab" data-swipe-handle aria-hidden {...handleProps} />
         <button className="ca__close" aria-label="Dismiss" onClick={onClose}>
           <X width={16} height={16} />
         </button>

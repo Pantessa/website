@@ -205,7 +205,7 @@ export default async function SharedChatPage({ params }: Params) {
           </p>
           <SpineLink
             href={tryHref}
-            className="flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--accent)] text-black text-sm font-semibold hover:opacity-90 transition-opacity"
+            className="flex items-center gap-2 px-4 py-2 max-lg:min-h-11 rounded-full bg-[var(--accent)] text-black text-sm font-semibold hover:opacity-90 transition-opacity"
           >
             <YeetfulMark size={13} />
             <span>{display.length > 0 ? 'Run this chat yourself' : 'Try Pantessa'}</span>

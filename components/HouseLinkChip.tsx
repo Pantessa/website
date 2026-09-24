@@ -18,7 +18,7 @@ export default function HouseLinkChip({ link }: { link: HouseLink }) {
   return (
     <Link
       href={`/i/${link.slug}`}
-      className="group flex items-center gap-2.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] pl-2.5 pr-4 py-1.5 hover:border-[var(--accent)] transition-colors"
+      className="group flex items-center gap-2.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] pl-2.5 pr-4 py-1.5 max-lg:min-h-11 hover:border-[var(--accent)] transition-colors"
       title={marks.length ? `${link.label} · via ${marks.map((m) => m.name).join(' + ')}` : link.label}
     >
       {marks.length > 0 && (

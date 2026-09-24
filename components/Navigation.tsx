@@ -45,8 +45,19 @@ export default function Navigation() {
   // The sheet's "Sign in" hands off to the door at THIS level: a door opened
   // from inside the sheet would unmount with it.
   const [doorOpen, setDoorOpen] = useState(false)
-  const closeOnSamePage = (e: React.MouseEvent) => {
-    const a = (e.target as HTMLElement).closest?.('a[href]') as HTMLAnchorElement | null
+  // A tap inside the menu. The Ask row closes the menu in the SAME click that
+  // opens the ask door, so the door takes over the menu's history entry
+  // (lib/sheet-history). Closed a commit later (the askOpen effect above), the
+  // menu's entry stayed behind under the door's, and the first back press
+  // after closing the door did nothing (measured: history 3→5→5, back stayed
+  // on the page). A link to the page you're on closes it too.
+  const onMenuClick = (e: React.MouseEvent) => {
+    const t = e.target as HTMLElement
+    if (t.closest?.('[data-ask-door]')) {
+      setOpen(false)
+      return
+    }
+    const a = t.closest?.('a[href]') as HTMLAnchorElement | null
     if (a && new URL(a.href, window.location.href).pathname === window.location.pathname) setOpen(false)
   }
 
@@ -265,7 +276,7 @@ export default function Navigation() {
             )
           }
         >
-          <nav className="drawer__tabs navsheet__tabs" aria-label="Site" onClick={closeOnSamePage}>
+          <nav className="drawer__tabs navsheet__tabs" aria-label="Site" onClick={onMenuClick}>
             {drawerTabs}
           </nav>
         </Sheet>
