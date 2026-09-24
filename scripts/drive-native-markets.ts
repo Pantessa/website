@@ -44,7 +44,7 @@ const arg = (k: string, d = '') => process.argv.find((a) => a.startsWith(`--${k}
 const BASE = arg('base', process.env.BASE ?? 'http://localhost:3894').replace(/\/$/, '')
 const TAG = arg('tag', 'run')
 const ROWS = new Set(
-  arg('rows', '1,2,3,4,5,6,7,8,9,10,11')
+  arg('rows', '1,2,3,4,5,6,7,8,9,10,11,12')
     .split(',')
     .map((s) => Number(s.trim()))
     .filter(Boolean),
@@ -553,6 +553,120 @@ async function shots() {
   }
 }
 
+// ── Round 3 · row 12: the rail trigger renders right on its own ────────────
+//    PAGES found /wallet's header Ask showing its 353px placeholder hint at
+//    every width (the hide lived only in markets.css, which only the markets
+//    shell loads). Measure every door trigger on /wallet and /dashboard at 1440
+//    and 375: width, the hint hidden, no sideways page. /wallet acts on a
+//    connected wallet alone; /dashboard needs a session, so this signs in with
+//    a THROWAWAY key generated here and discarded (it holds nothing; never the
+//    .env.local burner). The mock wallet at that address refuses every other
+//    signature.
+const MOCK_WALLET_JS = (addr: string) => `(() => {
+  const ADDR = ${JSON.stringify(addr)}
+  const provider = {
+    isMetaMask: false, _chainId: '0x2105',
+    async request({ method, params }) {
+      switch (method) {
+        case 'eth_requestAccounts': case 'eth_accounts': return [ADDR]
+        case 'eth_chainId': return provider._chainId
+        case 'wallet_switchEthereumChain': provider._chainId = params[0].chainId; return null
+        case 'wallet_addEthereumChain': return null
+        case 'personal_sign': case 'eth_signTypedData_v4': case 'eth_sendTransaction':
+          throw Object.assign(new Error('User rejected the request.'), { code: 4001 })
+        default: return null
+      }
+    },
+    on() {}, removeListener() {},
+  }
+  const info = { uuid: 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff', name: 'Drive Wallet', icon: 'data:image/svg+xml;base64,PHN2Zy8+', rdns: 'io.pantessa.drive.markets' }
+  const announce = () => window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail: Object.freeze({ info, provider }) }))
+  window.addEventListener('eip6963:requestProvider', announce)
+  announce()
+  window.ethereum = provider
+})()`
+
+async function throwawaySession(): Promise<{ address: string; session: string | null }> {
+  const { generatePrivateKey, privateKeyToAccount } = await import('viem/accounts')
+  const { createSiweMessage } = await import('viem/siwe')
+  const account = privateKeyToAccount(generatePrivateKey())
+  const nonceRes = await fetch(`${BASE}/api/auth/nonce`, { headers: { 'x-yf-internal-run': '1' } })
+  const nonceCookie = (nonceRes.headers.getSetCookie?.() ?? []).map((c) => c.match(/^yf_siwe_nonce=([^;]+)/)?.[0]).find(Boolean)
+  const { nonce } = (await nonceRes.json()) as { nonce: string }
+  const message = createSiweMessage({ address: account.address, chainId: 8453, domain: new URL(BASE).host, nonce, uri: BASE, version: '1' })
+  const signature = await account.signMessage({ message })
+  const res = await fetch(`${BASE}/api/auth/verify`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1', ...(nonceCookie ? { cookie: nonceCookie } : {}) },
+    body: JSON.stringify({ message, signature }),
+  })
+  const session = (res.headers.getSetCookie?.() ?? []).map((c) => c.match(/^yf_session=([^;]+)/)?.[1]).find(Boolean) ?? null
+  return { address: account.address, session }
+}
+
+const DOOR_PROBE = `(() => {
+  const doors = [...document.querySelectorAll('[data-ask-door]')].map((e) => {
+    const r = e.getBoundingClientRect(); const cs = getComputedStyle(e)
+    const hint = e.querySelector('.mkt-frame__askhint')
+    const hintShown = !!hint && getComputedStyle(hint).display !== 'none' && hint.getBoundingClientRect().width > 0
+    const kbd = e.querySelector('.nav__ask-kbd')
+    return { v: e.dataset.askDoor, shown: cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 0, w: Math.round(r.width), h: Math.round(r.height), right: Math.round(r.right), hintShown, kbd: !!kbd && getComputedStyle(kbd).display !== 'none' }
+  })
+  const d = document.scrollingElement; const s = document.querySelector('[data-app-scroll]')
+  // The global rule on its own: strip PAGES' header wrapper (its own hide
+  // rule keys on it) and read the hint again, then put the wrapper back.
+  let bare = null
+  const wrap = document.querySelector('.wallethead__ask')
+  const hint = wrap && wrap.querySelector('.mkt-frame__askhint')
+  if (wrap && hint) {
+    wrap.classList.remove('wallethead__ask')
+    bare = getComputedStyle(hint).display
+    wrap.classList.add('wallethead__ask')
+  }
+  return { path: location.pathname, doors, bare, hints: [...document.querySelectorAll('.mkt-frame__askhint')].filter((h) => getComputedStyle(h).display !== 'none' && h.getBoundingClientRect().width > 0).length, over: Math.max(d.scrollWidth - d.clientWidth, s ? s.scrollWidth - s.clientWidth : 0), iw: innerWidth }
+})()`
+
+async function railTriggerRows() {
+  const auth = await throwawaySession().catch(() => ({ address: '', session: null as string | null }))
+  record['r3.session'] = { ok: !!auth.session }
+  for (const [w, h] of [
+    [1440, 900],
+    [375, 812],
+  ] as [number, number][]) {
+    const phone = w < 1024
+    const browser = await pw.chromium.launch({ channel: 'chrome' })
+    try {
+      const { defaultBrowserType: _ignored, ...device } = pw.devices['iPhone 13 Mini']
+      const ctx = await browser.newContext(phone ? { ...device, viewport: { width: w, height: h } } : { viewport: { width: w, height: h } })
+      await ctx.route(`${BASE}/**`, (route: any) => route.continue({ headers: { ...route.request().headers(), 'x-yf-internal-run': '1' } }))
+      if (auth.address) await ctx.addInitScript(MOCK_WALLET_JS(auth.address))
+      await ctx.addInitScript(`try { localStorage.setItem('wagmi.recentConnectorId', '"injected"') } catch {}`)
+      if (auth.session) await ctx.addCookies([{ name: 'yf_session', value: auth.session, domain: new URL(BASE).hostname, path: '/' }])
+      const page = await ctx.newPage()
+      for (const p of ['/wallet', '/dashboard']) {
+        await page.goto(`${BASE}${p}`, { waitUntil: 'load', timeout: 60_000 })
+        // The pages wait for wagmi to restore the wallet (and the dashboard for
+        // the session) before they render their header.
+        await page.waitForFunction(`location.pathname !== ${JSON.stringify(p)} || document.querySelector('[data-ask-door="rail"], .dash, [data-wallet-window]')`, null, { timeout: 25_000 }).catch(() => {})
+        await page.waitForTimeout(1500)
+        const r = await page.evaluate(DOOR_PROBE)
+        record[`r3.${w}x${h}${p}`] = r
+        const rail = r.doors.find((x: any) => x.v === 'rail')
+        const line = `${w}×${h} ${p} (landed on ${r.path}): ${r.doors.map((x: any) => `${x.v} ${x.shown ? `${x.w}×${x.h}${x.hintShown ? ' HINT SHOWN' : ''}${x.kbd ? ' ⌘K' : ''}` : 'hidden'}`).join(' · ') || 'no door'} · visible hints ${r.hints}${r.bare !== null ? ` · hint without the page's wrapper: ${r.bare}` : ''} · sideways ${r.over}px`
+        if (MEASURE_ONLY || TAG === 'before') note(12, `${p} door triggers`, line)
+        else {
+          const onPage = r.path === p
+          const railOk = !rail || !rail.shown || (!rail.hintShown && rail.w <= 140 && rail.right <= r.iw && (!phone || (rail.h >= 44 && !rail.kbd)))
+          judge(12, `${w}×${h} ${p}: every door trigger renders on its own — no hint (even without the page's own wrapper rule), a compact rail Ask (≤140px, on screen${phone ? ', 44px, no ⌘K' : ''}), no sideways page`, onPage && r.hints === 0 && (r.bare === null || r.bare === 'none') && railOk && r.over <= 0 && (p !== '/wallet' || (!!rail && rail.shown)), line)
+        }
+      }
+      await ctx.close()
+    } finally {
+      await browser.close()
+    }
+  }
+}
+
 // ── Round 2 · row 10: the /t header leads with the price and the chart ─────
 //    (coordinator R2-1: the chart's top in the first ~40% of the screen, one
 //    row of act chips that snaps, nothing clipped mid-label).
@@ -808,6 +922,7 @@ async function main() {
   if (ROWS.has(9)) await shots()
   if (ROWS.has(10)) await headerRows()
   if (ROWS.has(11)) await landscapeRows()
+  if (ROWS.has(12)) await railTriggerRows()
   mkdirSync(MARKETS_SHOT_DIR, { recursive: true })
   writeFileSync(path.join(MARKETS_SHOT_DIR, `${TAG}-numbers.json`), JSON.stringify({ at: new Date().toISOString(), base: BASE, record, verdicts }, null, 2))
   const judged = verdicts.filter((v) => !v.note)
