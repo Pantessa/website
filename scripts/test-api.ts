@@ -4419,7 +4419,9 @@ async function main() {
       const appMode = await readFile(new URL('../components/AppModeWorkspace.tsx', import.meta.url), 'utf8')
       check('mobile: the holdings-row chart button is a 40px target on touch', /live chart`\}[\s\S]{0,300}\[@media\(hover:none\)\]:h-10 \[@media\(hover:none\)\]:w-10 \[@media\(hover:none\)\]:-my-2/.test(chartBtn))
       check('mobile: chart timeframe chips have a 36px touch floor', /@media \(hover: none\) \{ \.tok__tfbtn \{ min-height: 36px/.test(designCss))
-      check('mobile: the request-MCP submit is 40px on touch', /'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors \[@media\(hover:none\)\]:min-h-10'/.test(addMcp))
+      // Re-pinned 2026-09-24 (squad mobile-native, CHAT r3): still 40px on a
+      // touch desktop; below lg it is the sheet's full-width 48px button.
+      check('mobile: the request-MCP submit is 40px on touch, a full-width 48px button below lg', /'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors \[@media\(hover:none\)\]:min-h-10 max-lg:w-full max-lg:!min-h-12 max-lg:justify-center max-lg:text-\[14px\]'/.test(addMcp))
       check('mobile: the sign-in gate CTAs are ≥40px below lg (all three)', (gate.match(/px-3 py-1\.5 max-lg:min-h-10 max-lg:px-4 rounded-full bg-\[var\(--accent\)\]/g) ?? []).length === 3)
       check('mobile: Share is icon-only below sm with an aria-label and a 40px target', /aria-label=\{isPublic \? 'Shared publicly' : 'Share this chat'\}/.test(shareBtn) && /max-lg:min-h-10 max-lg:px-3 rounded-lg border text-\[11px\]/.test(shareBtn) && /whitespace-nowrap max-sm:hidden">\{isPublic \? 'Shared' : 'Share'\}/.test(shareBtn))
       const splashDash = await readFile(new URL('../components/SplashDashboard.tsx', import.meta.url), 'utf8')
@@ -34325,7 +34327,7 @@ async function main() {
     check('native chat r2: chat-phone.css gives the splash cards\' chips and rows and the per-bubble tools a 44px touch target (the tools keep their 36px look under a transparent ::after hit area)',
       /@media \(hover: none\) and \(max-width: 1023px\) \{[\s\S]*?:is\(\[data-splash-hero\], \[data-splash-card\]\) button\.rounded-full \{\s*min-height: 44px;[\s\S]*?\[data-splash-card\] button\[aria-expanded\] \{ min-height: 44px; \}[\s\S]*?\[data-turn-tools\]::after \{\s*content: '';\s*position: absolute;\s*inset: -4px;/.test(barCss))
     check('native chat r2: the composer grows with what is typed on a phone (up to its max-h-40, then it scrolls), its mic + send ride the bottom line, and the pill is a rounded rect whose one-line radius is the old capsule',
-      /t\.style\.height = 'auto'\s*\n\s*t\.style\.height = `\$\{Math\.min\(t\.scrollHeight, 160\)\}px`/.test(ci) && /if \(!isNarrow \|\| embedded\) \{\s*t\.style\.height = ''/.test(ci) && /'max-lg:py-1 max-lg:items-end max-lg:rounded-\[26px\]'/.test(ci) && /max-h-40 overflow-y-auto leading-6 max-lg:py-2\.5/.test(ci))
+      /t\.style\.height = 'auto'[\s\S]{0,260}const cap = parseFloat\(getComputedStyle\(t\)\.maxHeight\) \|\| 160\s*\n\s*t\.style\.height = `\$\{Math\.min\(t\.scrollHeight, cap\)\}px`/.test(ci) && /if \(!isNarrow \|\| embedded\) \{\s*t\.style\.height = ''/.test(ci) && /'max-lg:py-1 max-lg:items-end max-lg:rounded-\[26px\]'/.test(ci) && /max-h-40 overflow-y-auto leading-6 max-lg:py-2\.5/.test(ci))
     check('native chat r2: only the reader releases the pin, and a scroll nobody\'s finger made is never fought (snapping back broke scroll-into-view, a focus moving up the thread, find-in-page) — the one scroll write in the pin is the ResizeObserver\'s re-pin',
       /if \(performance\.now\(\) - userAt < 1000\) pinnedRef\.current = false\n\s*\}/.test(ci) && (ciCode.match(/scroller\.scrollTop = scroller\.scrollHeight/g) ?? []).length === 1)
     check('native chat r2: keys typed into a field never count as the reader scrolling (a space or an arrow in the composer used to arm the pin\'s release)',
@@ -34347,6 +34349,12 @@ async function main() {
     check('native chat r2: the whole composer pill is the field — a tap on its padding (not a button) focuses the textarea — and the textarea itself is 44px tall on a phone (QA measured 213×24)',
       /if \(!\(e\.target as HTMLElement\)\.closest\('button, textarea, a'\)\) textareaRef\.current\?\.focus\(\)/.test(ci) && /data-composer-pill=""/.test(ci))
     check('native chat r2: /i\'s home mark is a 44px target on a phone in its 32px footprint (QA measured 32×32)', /w-8 h-8 max-lg:w-11 max-lg:h-11 max-lg:-m-1\.5 rounded-lg/.test(rt2))
+    check('native chat r3: on a short landscape phone (≤480px tall) the top bar is one 44px row, the guest banner steps aside, the composer tightens and grows to 2 lines at most — portrait is untouched (SHELL measured 165px of thread at 844×390)',
+      /@media \(max-width: 1023px\) and \(max-height: 480px\) \{\s*\.chat-phonebar \{ min-height: 44px; \}\s*\.chat-phonebar__head \{ flex-direction: row;[\s\S]*?\[data-chat-gate-banner-slot\] \{ display: none; \}[\s\S]*?\[data-composer-input\]\[data-composer-input\] \{ max-height: 68px; \}/.test(barCss))
+    const addMcpSrc = rf('components/AddMcpModal.tsx', 'utf8')
+    check('native chat r3: in the request-MCP sheet the guest "Connect & sign in" link keeps its look under a 44px hit area, and "Request review" / "Done" are full-width 48px buttons below lg (QA measured 90×18 and 143×40)',
+      /max-lg:relative max-lg:before:absolute max-lg:before:content-\[''\] max-lg:before:-inset-x-1 max-lg:before:-inset-y-\[13px\]/.test(addMcpSrc) &&
+        (addMcpSrc.match(/max-lg:w-full max-lg:!?min-h-12 max-lg:justify-center max-lg:text-\[14px\]/g) ?? []).length === 2 && /max-lg:!min-h-12/.test(addMcpSrc) && /<div className="flex-1 max-lg:hidden" \/>/.test(addMcpSrc))
     const rtDoc = await (await fetch(`${BASE}/i/buy-aapl`)).text()
     const rtHrefs = [...rtDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
     const rtServed = (await Promise.all(rtHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n').replace(/\s*\{\s*/g, '{').replace(/;\s*/g, ';').replace(/:\s+/g, ':')
