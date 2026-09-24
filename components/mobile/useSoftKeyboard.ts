@@ -17,7 +17,7 @@
 // document that never scrolls has nowhere else to be.
 
 import { useEffect, useState } from 'react'
-import { keyboardState } from '@/lib/phone-shell'
+import { isPhoneViewport, keyboardState } from '@/lib/phone-shell'
 
 export function useSoftKeyboard(): { open: boolean; inset: number } {
   const [state, setState] = useState<{ open: boolean; inset: number }>({ open: false, inset: 0 })
@@ -38,6 +38,7 @@ export function useSoftKeyboard(): { open: boolean; inset: number } {
     let t1 = 0
     let t2 = 0
     const settle = () => {
+      if (!isPhoneViewport()) return
       const back = () => {
         if ((window.visualViewport?.offsetTop ?? 0) > 0 || window.scrollY > 0) window.scrollTo(0, 0)
       }
@@ -48,10 +49,13 @@ export function useSoftKeyboard(): { open: boolean; inset: number } {
     }
     const onFocusOut = () => {
       // The field is gone; if nothing else takes focus the keyboard is
-      // closing. Read again after the browser has moved the viewport.
+      // closing. Read again after the browser has moved the viewport — and
+      // pan back ONLY if a keyboard was up (on a desktop every blur lands
+      // here with no keyboard; scrolling that page to 0 would be a bug).
+      const wasOpen = last.open
       window.setTimeout(() => {
         read()
-        if (!last.open) settle()
+        if (wasOpen && !last.open) settle()
       }, 80)
     }
     read()
