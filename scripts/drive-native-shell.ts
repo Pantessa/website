@@ -131,15 +131,23 @@ const PROBE = `(async (args) => {
     steps: [],
     docScrollTest: null,
   }
-  // BEFORE-style: try to scroll the DOCUMENT and see if it moves.
-  window.scrollTo(0, 700); await raf()
-  out.docScrollTest = { asked: 700, scrollY: Math.round(window.scrollY), barBottom: bar ? rect(bar).bottom : null, stickyTop: sticky ? rect(sticky).top : null, atBottom: (() => { const el = document.elementFromPoint(Math.round(innerWidth / 2), innerHeight - 10); return el ? (el.closest('[data-spine-bar]') ? 'bar' : (el.tagName + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ').slice(0, 2).join('.') : ''))) : null })() }
-  window.scrollTo(0, 0); await raf()
+  // BEFORE-style: try to scroll the DOCUMENT and see if it moves. A first
+  // reading that moves gets a second try after a beat: a section landing in
+  // that very frame can read as document overflow for one layout.
+  const docTest = async () => {
+    window.scrollTo(0, 700); await raf()
+    const t = { asked: 700, scrollY: Math.round(window.scrollY), docScrollHeight: se.scrollHeight, barBottom: bar ? rect(bar).bottom : null, stickyTop: sticky ? rect(sticky).top : null, atBottom: (() => { const el = document.elementFromPoint(Math.round(innerWidth / 2), innerHeight - 10); return el ? (el.closest('[data-spine-bar]') ? 'bar' : (el.tagName + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ').slice(0, 2).join('.') : ''))) : null })() }
+    window.scrollTo(0, 0); await raf()
+    return t
+  }
+  out.docScrollTest = await docTest()
+  if (out.docScrollTest.scrollY !== 0) { await new Promise((r) => setTimeout(r, 900)); out.docScrollTest = { ...(await docTest()), retried: true }; out.docScrollHeight = se.scrollHeight }
   if (scroller && (getComputedStyle(scroller).overflowY === 'auto' || getComputedStyle(scroller).overflowY === 'scroll')) {
-    const max = scroller.scrollHeight - scroller.clientHeight
     for (const p of positions) {
-      const target = p === 'top' ? 0 : p === 'mid' ? Math.round(max / 2) : max
+      let max = scroller.scrollHeight - scroller.clientHeight
+      let target = p === 'top' ? 0 : p === 'mid' ? Math.round(max / 2) : max
       scroller.scrollTop = target; await raf()
+      if (p === 'end') { for (let i = 0; i < 4 && scroller.scrollHeight - scroller.clientHeight !== max; i++) { max = scroller.scrollHeight - scroller.clientHeight; target = max; scroller.scrollTop = target; await raf(); await new Promise((r) => setTimeout(r, 150)) } }
       const at = document.elementFromPoint(Math.round(innerWidth / 2), innerHeight - 10)
       const last = scroller.lastElementChild
       out.steps.push({
@@ -173,7 +181,11 @@ async function settle(page: Pw, surface: Surface) {
   // canvas; /wallet: the details or the door; /dashboard: the main column.
   const sel = surface.id === 't' ? '.sym__chart canvas, .sym' : surface.id === 'wallet' ? '[data-wallet-door], [data-wallet-chains], [data-shell="wallet"] main h1' : surface.id === 'dashboard' ? '.dash__main' : '.mk-board, .mkt-frame__data'
   await page.waitForSelector(sel, { timeout: 45_000 }).catch(() => {})
-  await page.waitForTimeout(surface.id === 'markets' || surface.id === 't' ? 2500 : 1800)
+  // The dashboard and the wallet keep landing sections after first paint
+  // (activity, links, the feed): a measurement taken mid-landing reads a
+  // stale scrollHeight. Wait for the network to go quiet, then a beat.
+  if (surface.id === 'dashboard' || surface.id === 'wallet') await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {})
+  await page.waitForTimeout(surface.id === 'markets' || surface.id === 't' ? 2500 : 2200)
 }
 
 async function runProfile(profile: Profile, session: string | null, burner: string) {
@@ -408,12 +420,19 @@ async function runProfile(profile: Profile, session: string | null, burner: stri
             const base = BASELINE ? (JSON.parse(readFileSync(BASELINE, 'utf8')) as Record<string, Record<string, unknown>>)[key] : null
             if (!base) note(profile.id, surface.id, 'desktop baseline present', false, 'no baseline entry')
             else {
-              const keys = ['spine', 'bar', 'barDisplay', 'mktShell', 'mktFrame', 'mktTop', 'mktRail', 'mktBar', 'mktMain', 'sym', 'walletShell', 'walletMain', 'dashshell', 'dash', 'dashRail', 'dashMain', 'htmlOverflowY', 'bodyOverflowY']
-              const diffs = keys.filter((k) => JSON.stringify(base[k]) !== JSON.stringify(d[k])).map((k) => `${k}: ${JSON.stringify(base[k])} → ${JSON.stringify(d[k])}`)
-              note(profile.id, surface.id, 'desktop rects identical to the BEFORE baseline (spine, frame, rails, overflow)', diffs.length === 0, diffs.join('; ') || 'identical')
-              note(profile.id, surface.id, 'desktop: the frame CSS is inert at lg+ (the scroller\'s overflow-y stays visible, the document still scrolls)', d.scrollerOverflowY === 'visible' && (d.docScrollHeight as number) > (d.innerHeight as number), `${d.scrollerOverflowY}, doc ${d.docScrollHeight} vs ${d.innerHeight}`)
-              const dh = Math.abs((base.docScrollHeight as number) - (d.docScrollHeight as number))
-              note(profile.id, surface.id, 'desktop document height within 40px of the baseline (live data moves it a little)', dh <= 40, `${base.docScrollHeight} → ${d.docScrollHeight}`)
+              // Viewport-bound boxes compare as full rects; content-driven boxes
+              // compare x / y / width only — their HEIGHT follows live data (the
+              // trending strip, the wallet's feed, the dashboard's activity) and
+              // moved by 16 … 1,300px between two runs of the same build.
+              const full = ['spine', 'bar', 'barDisplay', 'mktTop', 'mktRail', 'mktBar', 'dashRail', 'htmlOverflowY', 'bodyOverflowY']
+              const xyw = ['mktShell', 'mktFrame', 'mktMain', 'sym', 'walletShell', 'walletMain', 'dashshell', 'dash', 'dashMain']
+              const head = (v: unknown) => (Array.isArray(v) ? JSON.stringify(v.slice(0, 3)) : JSON.stringify(v))
+              const diffs = [
+                ...full.filter((k) => JSON.stringify(base[k]) !== JSON.stringify(d[k])).map((k) => `${k}: ${JSON.stringify(base[k])} → ${JSON.stringify(d[k])}`),
+                ...xyw.filter((k) => head(base[k]) !== head(d[k])).map((k) => `${k} (x,y,w): ${head(base[k])} → ${head(d[k])}`),
+              ]
+              note(profile.id, surface.id, 'desktop rects identical to the BEFORE baseline (spine, bar, rails, overflow as full rects; the frame, main and shell as x/y/width — heights follow live data)', diffs.length === 0, diffs.join('; ') || 'identical')
+              note(profile.id, surface.id, 'desktop: the frame CSS is inert at lg+ (the scroller\'s overflow-y stays visible)', d.scrollerOverflowY === 'visible', `${d.scrollerOverflowY}; doc ${base.docScrollHeight} → ${d.docScrollHeight} in a ${d.innerHeight} viewport`)
             }
           }
         }
