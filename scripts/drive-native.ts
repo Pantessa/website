@@ -407,6 +407,18 @@ const PAGE_LIB = String.raw`(() => {
       if (!root) return []
       return [...root.querySelectorAll(FIELDS)].filter(vis).map((el) => ({ what: label(el), tag: el.tagName.toLowerCase(), fs: parseFloat(getComputedStyle(el).fontSize) }))
     },
+    /** A link INSIDE running text (WCAG 2.5.8's inline exception; coordinator
+     *  R2 ruling): an inline <a> whose parent carries words of its own. */
+    inlineLink(el) {
+      if (el.tagName !== 'A') return false
+      const d = getComputedStyle(el).display
+      if (d !== 'inline' && d !== 'contents') return false
+      const p = el.parentElement
+      if (!p) return false
+      let words = ''
+      for (const n of p.childNodes) if (n !== el && n.nodeType === 3) words += n.nodeValue
+      return words.trim().split(/\s+/).filter(Boolean).length >= 2
+    },
     /** A control's hit area: its box, or 21px each side of its center landing on it. */
     hit(el) {
       const r = el.getBoundingClientRect()
@@ -433,7 +445,7 @@ const PAGE_LIB = String.raw`(() => {
         if (seen.has(el)) continue
         seen.add(el)
         const h = window.__nq.hit(el)
-        const entry = { what: label(el), w: h.w, h: h.h, ok: h.ok, seat: !!el.closest(BAR) }
+        const entry = { what: label(el), w: h.w, h: h.h, ok: h.ok, seat: !!el.closest(BAR), inline: window.__nq.inlineLink(el) }
         let isChrome
         if (scope) isChrome = true
         else if (S !== document.scrollingElement) isChrome = !S.contains(el)
@@ -638,7 +650,7 @@ function deviceFor(profile: ProfileId): Record<string, unknown> {
  *  FULFILLED from the fixture (a drive never fires a live turn), and every
  *  same-origin request wears x-yf-internal-run + x-yf-no-ask-log. Used for
  *  the drive's own contexts AND the lane drives it folds in. */
-async function guardContext(ctx: Pw, onChatPost: () => void = () => {}) {
+async function guardContext(ctx: Pw, onChatPost: () => void = () => {}, rscDelayMs = 0) {
   const origin = new URL(BASE).origin
   // Every request (a RegExp, not the '**' glob: a slash-star in code reads as a
   // comment opener to the harness's source fences).
@@ -655,11 +667,15 @@ async function guardContext(ctx: Pw, onChatPost: () => void = () => {}) {
       onChatPost()
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(CHAT_FIXTURE) }).catch(() => {})
     }
+    // A slow network for the App Router's RSC fetches (a client navigation):
+    // the link-in-a-sheet row needs the fetch to still be in flight when the
+    // sheet's deferred history pop runs.
+    if (rscDelayMs && (req.headers()['rsc'] === '1' || url.searchParams.has('_rsc'))) await new Promise((r) => setTimeout(r, rscDelayMs))
     return route.continue({ headers: { ...req.headers(), 'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1' } }).catch(() => {})
   })
 }
 
-async function openCtx(run: Run, o: { size: Size; theme: Theme; auth: Auth; session?: { address: string; cookie: string } | null; os?: Theme }): Promise<Opened> {
+async function openCtx(run: Run, o: { size: Size; theme: Theme; auth: Auth; session?: { address: string; cookie: string } | null; os?: Theme; rscDelayMs?: number }): Promise<Opened> {
   const ctx = await run.browser.newContext({
     ...run.device,
     viewport: { width: o.size.width, height: o.size.height },
@@ -676,7 +692,7 @@ async function openCtx(run: Run, o: { size: Size; theme: Theme; auth: Auth; sess
   }
   if (address) await ctx.addInitScript(mockWallet(address))
   const opened: Opened = { ctx, page: null, chatPosts: 0, errors: [], address, ready: '' }
-  await guardContext(ctx, () => (opened.chatPosts += 1))
+  await guardContext(ctx, () => (opened.chatPosts += 1), o.rscDelayMs ?? 0)
   const page = await ctx.newPage()
   page.on('pageerror', (e: unknown) => opened.errors.push(String(e).split('\n')[0].slice(0, 160)))
   opened.page = page
@@ -697,7 +713,10 @@ async function load(o: Opened, s: Surface): Promise<void> {
     return
   }
   await page.waitForLoadState('load', { timeout: 20_000 }).catch(() => {})
-  const until = Date.now() + 20_000
+  // The account flips to connected ~10s after load headless (wagmi's store has
+  // the connection at ~1s; the UI follows the app's own connector probe), and
+  // up to ~20s+ when the drive's pool and CHAT's child share the CPU.
+  const until = Date.now() + 32_000
   // RainbowKit shows an ENS-less account as "0x5E…55a0": the first four and
   // the last four characters are on screen once the wallet reconnected.
   const prefix = o.address ? o.address.slice(0, 4).toLowerCase() : null
@@ -895,7 +914,7 @@ async function layoutAt(run: Run, o: Opened, s: Surface, size: Size, theme: Them
   }
   // 5 · targets (chrome = verdict; content = info)
   if (wantCheck('targets')) {
-    const t = await evalNq<{ chrome: { what: string; w: number; h: number; ok: boolean; seat: boolean }[]; content: { what: string; w: number; h: number; ok: boolean }[] }>(o.page, 'window.__nq.targets()')
+    const t = await evalNq<{ chrome: { what: string; w: number; h: number; ok: boolean; seat: boolean; inline: boolean }[]; content: { what: string; w: number; h: number; ok: boolean }[] }>(o.page, 'window.__nq.targets()')
     if (t && !(t as unknown as { __error?: string }).__error) {
       const small = t.chrome.filter((c) => !c.ok)
       const contentSmall = t.content.filter((c) => !c.ok)
@@ -904,14 +923,18 @@ async function layoutAt(run: Run, o: Opened, s: Surface, size: Size, theme: Them
       // not a FAIL. Any other small chrome control still fails the row.
       const landscape = size.width > size.height
       const seatCall = small.filter((c) => landscape && c.seat && c.h >= 32)
-      const rest = small.filter((c) => !seatCall.includes(c))
+      // RULING (coordinator, R2): a link inside running text is exempt (WCAG
+      // 2.5.8's inline exception); standalone links and buttons still need 44.
+      const inlineCall = small.filter((c) => c.inline && !seatCall.includes(c))
+      const rest = small.filter((c) => !seatCall.includes(c) && !inlineCall.includes(c))
+      const calls = [...seatCall, ...inlineCall]
       record({
         ...b,
         check: 'targets',
         item: 'chrome',
-        state: rest.length ? 'FAIL' : seatCall.length ? 'DECISION' : 'PASS',
-        value: `${small.length}/${t.chrome.length} chrome controls under 44px${seatCall.length ? ` (${seatCall.length} landscape bar seats ${seatCall[0].w}×${seatCall[0].h}: a decision)` : ''} · content ${contentSmall.length}/${t.content.length} (info)`,
-        detail: (rest.length ? rest : seatCall).slice(0, 4).map((c) => `"${c.what}" ${c.w}×${c.h}`).join(', '),
+        state: rest.length ? 'FAIL' : calls.length ? 'DECISION' : 'PASS',
+        value: `${small.length}/${t.chrome.length} chrome controls under 44px${seatCall.length ? ` (${seatCall.length} landscape bar seats ${seatCall[0].w}×${seatCall[0].h}: a decision)` : ''}${inlineCall.length ? ` (${inlineCall.length} inline link(s) in running text: a decision)` : ''} · content ${contentSmall.length}/${t.content.length} (info)`,
+        detail: (rest.length ? rest : calls).slice(0, 4).map((c) => `"${c.what}" ${c.w}×${c.h}`).join(', '),
       })
     }
   }
@@ -1237,7 +1260,11 @@ async function tapFirst(page: Pw, selectors: string[]): Promise<boolean> {
     const n = await loc.count().catch(() => 0)
     for (let i = 0; i < n; i++) {
       const el = loc.nth(i)
-      if (await el.isVisible().catch(() => false)) {
+      // Playwright's isVisible() counts an opacity:0 element as visible (a
+      // closed dropdown kept in the DOM — the account menu's "Wallet details"
+      // measured exactly that); the in-page check walks opacity up the tree.
+      const shown = (await el.isVisible().catch(() => false)) && (await el.evaluate((e: Element) => (window as unknown as { __nq?: { vis(x: Element): boolean } }).__nq?.vis(e) ?? true).catch(() => false))
+      if (shown) {
         await el.tap({ timeout: 5_000 }).catch(async () => el.click({ timeout: 5_000 }).catch(() => {}))
         return true
       }
@@ -1263,10 +1290,11 @@ const TRIGGERS: Trigger[] = [
     surface: S_MARKETS,
     auth: 'wallet',
     open: async (p) => {
-      if (await tapFirst(p, ['[data-sheet-open="wallet"]'])) return true
-      if (!(await tapFirst(p, ['.navacct__pill']))) return false
-      await sleep(500)
-      return tapFirst(p, ['[role=menuitem]:has-text("Wallet details")', 'button:has-text("Wallet details")'])
+      // The item lives INSIDE the account sheet (PAGES R1: data-sheet-open="wallet"),
+      // so the account sheet opens first, then the item in it hands off.
+      if (!(await tapFirst(p, ['[data-sheet-open="account"]', '.navacct__pill']))) return false
+      await sleep(700)
+      return tapFirst(p, ['[data-sheet="account"] [data-sheet-open="wallet"]', '[data-sheet] [data-sheet-open="wallet"]', '[role=menuitem]:has-text("Wallet details")', 'button:has-text("Wallet details")'])
     },
   },
   { id: 'sign-in door', surface: S_MARKETS, auth: 'none', open: (p) => tapFirst(p, ['[data-sheet-open="door"]', 'button:has-text("Sign in")', 'a:has-text("Sign in")']) },
@@ -1351,10 +1379,20 @@ async function sheetJob(run: Run, t: Trigger, session: { address: string; cookie
     await shot(o, `${run.profile}-sheet-${t.id}`)
     // Controls + fields inside the open panel (checks 5 and 6).
     if (wantCheck('targets')) {
-      const tg = (await o.page.evaluate(`window.__nq.targets('[data-nq-panel]')`).catch(() => null)) as { chrome: { what: string; w: number; h: number; ok: boolean }[] } | null
+      const tg = (await o.page.evaluate(`window.__nq.targets('[data-nq-panel]')`).catch(() => null)) as { chrome: { what: string; w: number; h: number; ok: boolean; inline: boolean }[] } | null
       if (tg) {
         const small = tg.chrome.filter((c) => !c.ok)
-        record({ ...b, check: 'targets', item: `sheet: ${t.id}`, state: small.length ? 'FAIL' : 'PASS', value: `${small.length}/${tg.chrome.length} controls under 44px`, detail: small.slice(0, 4).map((c) => `"${c.what}" ${c.w}×${c.h}`).join(', ') })
+        // RULING (coordinator, R2): an inline link in running text is exempt.
+        const inlineCall = small.filter((c) => c.inline)
+        const rest = small.filter((c) => !c.inline)
+        record({
+          ...b,
+          check: 'targets',
+          item: `sheet: ${t.id}`,
+          state: rest.length ? 'FAIL' : inlineCall.length ? 'DECISION' : 'PASS',
+          value: `${small.length}/${tg.chrome.length} controls under 44px${inlineCall.length ? ` (${inlineCall.length} inline link(s) in running text: a decision)` : ''}`,
+          detail: (rest.length ? rest : inlineCall).slice(0, 4).map((c) => `"${c.what}" ${c.w}×${c.h}`).join(', '),
+        })
       }
     }
     if (wantCheck('inputs')) {
@@ -1396,6 +1434,95 @@ async function sheetJob(run: Run, t: Trigger, session: { address: string; cookie
       state: failed.length || first.kind !== 'sheet' ? 'FAIL' : 'PASS',
       value: `${first.kind === 'sheet' ? `Sheet "${first.id}"` : `legacy ${first.id}`} · closes on ${results.filter((r) => r.ok).map((r) => r.how).join('+') || 'nothing'}`,
       detail: [first.kind !== 'sheet' ? 'not the Sheet primitive' : '', ...failed.map((r) => `${r.how}: ${r.note}`)].filter(Boolean).join('; '),
+    })
+  } finally {
+    await o.ctx.close().catch(() => {})
+  }
+}
+
+/** An in-app LINK inside a sheet navigates and LANDS (coordinator, R1→R2):
+ *  the sheet's deferred history pop must neither abort the navigation nor
+ *  bounce it back. RSC fetches are held 300ms so the pop races a navigation
+ *  that is still in flight. */
+/** The RSC hold for the sheet-link row (`--rsc-delay=0` isolates the race). */
+const RSC_DELAY_MS = Number(arg('rsc-delay') || 300)
+export type SheetLink = { id: string; surface: Surface; auth: Auth; sheet: string; href: string; open(page: Pw): Promise<boolean> }
+export const SHEET_LINKS: SheetLink[] = [
+  { id: 'MORE → Docs', surface: S_CHAT, auth: 'wallet', sheet: 'more', href: '/docs', open: (p) => tapFirst(p, ['[data-sheet-open="more"]', '[data-spine-bar] [aria-label="More"]']) },
+  { id: 'MORE → Settings', surface: S_CHAT, auth: 'siwe', sheet: 'more', href: '/dashboard', open: (p) => tapFirst(p, ['[data-sheet-open="more"]', '[data-spine-bar] [aria-label="More"]']) },
+  { id: 'brochure menu → Pricing', surface: S_LANDING, auth: 'none', sheet: 'nav', href: '/pricing', open: (p) => tapFirst(p, ['[data-sheet-open="nav"]', 'button[aria-label="Open menu"]']) },
+  { id: 'account menu → Dashboard', surface: S_MARKETS, auth: 'siwe', sheet: 'account', href: '/dashboard', open: (p) => tapFirst(p, ['[data-sheet-open="account"]', '.navacct__pill']) },
+]
+
+async function sheetLinkJob(run: Run, c: SheetLink, session: { address: string; cookie: string } | null) {
+  const size = PHONE_SIZES[0]
+  const o = await openCtx(run, { size, theme: 'dark', auth: c.auth, session, rscDelayMs: RSC_DELAY_MS })
+  const b = { ...base(run, size, 'dark', c.surface), check: 'sheets' as CheckId, item: `link: ${c.id}` }
+  try {
+    await load(o, c.surface)
+    if (!(await c.open(o.page))) {
+      record({ ...b, state: 'FAIL', value: 'not present', detail: `no trigger for the ${c.sheet} sheet on ${c.surface.path} (${o.ready})` })
+      return
+    }
+    await sleep(900)
+    const panel = (await o.page.evaluate('window.__nq.openPanel()').catch(() => null)) as { kind: string; id: string } | null
+    const link = o.page.locator(`[data-nq-panel] a[href="${c.href}"]`).first()
+    if (!panel || !(await link.count().catch(() => 0))) {
+      record({ ...b, state: 'FAIL', value: 'not present', detail: panel ? `the ${panel.kind} "${panel.id}" has no a[href="${c.href}"]` : 'no panel opened' })
+      return
+    }
+    await o.page.evaluate('window.__nqMark = 1').catch(() => {})
+    // Every main-frame URL change, same-document ones included: a landing that
+    // lasts 36ms (MEASURED: /docs, then a deferred history.back() popped it)
+    // is invisible to a poll.
+    const navTrail: string[] = []
+    const onNav = (f: Pw) => {
+      if (f === o.page.mainFrame()) {
+        try {
+          navTrail.push(new URL(f.url()).pathname)
+        } catch {
+          /* about:blank */
+        }
+      }
+    }
+    o.page.on('framenavigated', onNav)
+    const t0 = Date.now()
+    await link.tap({ timeout: 5_000 }).catch(async () => link.click({ timeout: 5_000 }).catch(() => {}))
+    let landedAt = -1
+    const trail: string[] = []
+    while (Date.now() - t0 < 8_000) {
+      const path = (await o.page.evaluate('location.pathname').catch(() => '')) as string
+      if (path && trail[trail.length - 1] !== path) trail.push(path)
+      if (path === c.href) {
+        landedAt = Date.now() - t0
+        break
+      }
+      await sleep(120)
+    }
+    // A bounce is a deferred pop that fires AFTER the landing: hold and look again.
+    const bounce: string[] = []
+    const holdUntil = Date.now() + 1_600
+    while (landedAt >= 0 && Date.now() < holdUntil) {
+      const path = (await o.page.evaluate('location.pathname').catch(() => '')) as string
+      if (path && path !== c.href && !bounce.includes(path)) bounce.push(path)
+      await sleep(150)
+    }
+    const after = (await o.page
+      .evaluate(`(() => ({ path: location.pathname, soft: window.__nqMark === 1, sheetOpen: [...document.querySelectorAll('[data-sheet]')].some((s) => window.__nq && window.__nq.vis(s.querySelector('[role=dialog]') || s)) }))()`)
+      .catch(() => ({ path: '?', soft: false, sheetOpen: false }))) as { path: string; soft: boolean; sheetOpen: boolean }
+    o.page.off?.('framenavigated', onNav)
+    const reasons: string[] = []
+    const touched = navTrail.includes(c.href)
+    if (landedAt < 0 && touched) reasons.push(`landed on ${c.href}, then bounced: ${navTrail.join(' → ')} — a deferred history pop undid the navigation`)
+    else if (landedAt < 0) reasons.push(`never landed on ${c.href} in 8s (path trail ${trail.join(' → ')}) — the navigation was aborted`)
+    if (bounce.length) reasons.push(`bounced after landing: ${c.href} → ${bounce.join(' → ')}`)
+    if (after.path !== c.href && landedAt >= 0 && !bounce.length) reasons.push(`ended on ${after.path}`)
+    if (after.sheetOpen) reasons.push('a sheet is still open on the destination')
+    record({
+      ...b,
+      state: reasons.length ? 'FAIL' : 'PASS',
+      value: `→ ${after.path}${landedAt >= 0 ? ` in ${landedAt}ms` : ''} · ${after.soft ? 'soft (client) navigation' : 'HARD reload'} · RSC +${RSC_DELAY_MS}ms`,
+      detail: reasons.join('; '),
     })
   } finally {
     await o.ctx.close().catch(() => {})
@@ -1904,6 +2031,9 @@ async function main() {
       }
     }
   }
+  if (wantCheck('sheets')) {
+    for (const run of runs) for (const c of SHEET_LINKS) add('sheets', `sheet link ${run.profile} ${c.id}`, async () => sheetLinkJob(run, c, c.auth === 'siwe' ? await siwe() : null))
+  }
   if (wantCheck('keyboard')) {
     for (const run of runs) for (const s of [S_CHAT, SURFACES.find((x) => x.path.startsWith('/i/'))!]) add('keyboard', `keyboard ${run.profile} ${s.path}`, () => keyboardJob(run, s))
   }
@@ -1927,7 +2057,9 @@ async function main() {
   if (!list('checks').length && !QUICK && existsSync(join(SCRIPTS_DIR, 'drive-native-chat.ts')) && !flag('no-chat')) add('frame', 'chat drive', () => chatDriveJob())
   const started = Date.now()
   if (wantCheck('manifest')) await manifestCheck()
-  await pool(jobs, WORKERS)
+  // --jobs=<substring>: only the jobs whose label contains it (iteration aid).
+  const jobFilter = arg('jobs')
+  await pool(jobFilter ? jobs.filter((j) => j.label.includes(jobFilter)) : jobs, WORKERS)
   await chrome.close().catch(() => {})
   for (const r of runs) if (r.engine === 'webkit') await r.browser.close().catch(() => {})
 
