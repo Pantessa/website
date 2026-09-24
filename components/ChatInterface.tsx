@@ -359,7 +359,7 @@ interface ChatInterfaceProps {
   onEmbedEvent?: (name: string, data?: Record<string, unknown>) => void
   /** Host-injected prompt (embed contract v1 `prompt` message): prefill the
    *  input, or send immediately when `send`. `at` disambiguates repeats. */
-  injectedPrompt?: { text: string; send: boolean; at: number } | null
+  injectedPrompt?: { text: string; send: boolean; at: number; /** Apps the ask's gate needs on (a wallet flag's bridge leg → NEAR Intents); they ride the chip send. */ mcps?: string[] } | null
   /** Public embed key (`yfe_…`) from the embed params — rides every
    *  /api/chat body so house-model credits bill the KEY OWNER's plan and the
    *  turn counts toward that site's embed stats. */
@@ -381,9 +381,15 @@ interface ChatInterfaceProps {
    *  carries share + onward paths. Unlike `embedded`, the first-party
    *  /api/chat body (SIWE session, intent-link attribution) is unchanged. */
   simple?: boolean
+  /** Docked (with `simple`): the runtime is an order ticket inside another
+   *  surface's conversation — /t's Ask the chart. It renders no composer of
+   *  its own; the host's composer feeds it through `injectedPrompt`, so the
+   *  page keeps ONE place to type. Every card, chip and connect door inside
+   *  the thread still works. */
+  docked?: boolean
 }
 
-export default function ChatInterface({ embedded = false, contextAddress, onEmbedEvent, injectedPrompt, embedKey, embedOrigin, embedSession, intentLinkSlug, simple = false }: ChatInterfaceProps = {}) {
+export default function ChatInterface({ embedded = false, contextAddress, onEmbedEvent, injectedPrompt, embedKey, embedOrigin, embedSession, intentLinkSlug, simple = false, docked = false }: ChatInterfaceProps = {}) {
   const {
     servers,
     setServers,
@@ -1393,7 +1399,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const reportEmbedSigned = (info: { artifact: string; chain?: string; chainId?: number; txUrl?: string; detail?: string; valueUsd?: number; buildPath?: string; feeBps?: number; jobId?: string; symbols?: string[] }) => {
     // txUrl + chainId ride the turn event so /i's signed beacon can carry
     // the tx hash for on-chain receipt verification (2026-09-01).
-    onEmbedEvent?.('turn', { outcome: 'signed', artifact: info.artifact, valueUsd: info.valueUsd, txUrl: info.txUrl, chainId: info.chainId })
+    // A first-party host (the /t order ticket) also hears which venue built
+    // it and the side-tagged symbols, so it can paint the fill on its chart
+    // before the fills read catches up. The embed's host contract is unchanged.
+    onEmbedEvent?.('turn', { outcome: 'signed', artifact: info.artifact, valueUsd: info.valueUsd, txUrl: info.txUrl, chainId: info.chainId, ...(embedded ? {} : { buildPath: info.buildPath, symbols: info.symbols }) })
     postEmbedTelemetry({ outcome: 'signed', ...info })
   }
 
@@ -1525,7 +1534,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     // link's ask. The embed's host prompt runs on the host's own set.
     if (injectedPrompt.send) {
       if (embedded) void handleSend(injectedPrompt.text)
-      else sendChip(injectedPrompt.text)
+      else sendChip(injectedPrompt.text, injectedPrompt.mcps ?? [])
     } else parkAsk(injectedPrompt.text)
   }, [injectedPrompt]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2671,7 +2680,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           float it as a free-standing pill: no full-width border-t (the pill
           itself is the boundary; the rule read as a stray line) and the
           keyboard hint only fades in once the composer has focus. The embed
-          keeps the bordered treatment — hosts' look stays put. */}
+          keeps the bordered treatment — hosts' look stays put. A docked
+          ticket has none: its host's composer is the one place to type. */}
+      {!docked && (
       <div
         className={cn(
           'flex-shrink-0 p-4 max-lg:pb-[max(1rem,env(safe-area-inset-bottom))]',
@@ -2751,6 +2762,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               : 'Enter to send · Shift+Enter for newline'}
         </p>
       </div>
+      )}
     </div>
   )
 }

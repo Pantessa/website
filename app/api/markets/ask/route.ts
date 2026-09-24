@@ -19,7 +19,11 @@ import {
   parseDrawAsk,
   parseModelAnswer,
   parseOverlayAsk,
+  modelProse,
   positionFallback,
+  relayShortcut,
+  shapeAskHistory,
+  shapeAskOrder,
   venueWordsFor,
   type AskAnswer,
   type AskContext,
@@ -43,14 +47,21 @@ export const dynamic = 'force-dynamic'
 // is on screen, and the wallet's position in the symbol go in; ONE typed
 // answer comes out, decided SERVER-SIDE:
 //   chart  — a ChartState the client applies through onChartState
-//   act    — a chip the user clicks to SEND (never auto-sent); the sentence
-//            passed fenceAsk + the ladder replica
+//   act    — a complete ask the panel BUILDS in its order ticket (the /i
+//            runtime, docked); the wallet signature is the gate. The
+//            sentence passed fenceAsk + the ladder replica. `typed` = the
+//            user's own words already were the ask; otherwise the panel
+//            prints the model's reading above the build.
 //   alert  — the rule the existing /api/alerts stores, previewed for a
 //            confirm click (SIWE-gated there, as today)
 //   answer — prose (and, for "show me the 200 SMA", the overlay ids)
-// Plain-English alerts, drawings, overlay toggles and complete asks are
-// decided WITHOUT a model (deterministic grammars in lib/markets-ai); the
-// model only gets the rest, and its JSON is re-validated on every kind.
+//   relay  — the message answers the order ticket, not the chart: the panel
+//            forwards the user's own words to it. Only while `order.live`.
+// Plain-English alerts, drawings, overlay toggles, complete asks and plain
+// replies to the ticket are decided WITHOUT a model (deterministic grammars
+// in lib/markets-ai); the model only gets the rest, with the panel's last
+// exchanges and the ticket's state as DATA, and its JSON is re-validated on
+// every kind. An answer that won't parse prints as prose, never as JSON.
 // `kind: 'explain'` is the one-sentence candle / verdict explainer, cached
 // by (symbol, tf, bar time).
 
@@ -69,6 +80,11 @@ const Body = z.object({
    *  the explain cache is shared per (symbol, tf, bar, verdict), so one
    *  visitor's words must never reach the sentence everyone reads (QA-2). */
   verdict: z.enum(['strong_sell', 'sell', 'neutral', 'buy', 'strong_buy']).optional(),
+  /** The panel's last exchanges and the order ticket beside it (DATA for
+   *  the model; lib/markets-ai shapeAskHistory / shapeAskOrder cap and clean
+   *  every line — a malformed one is dropped, never a 400). */
+  history: z.array(z.unknown()).max(40).optional(),
+  order: z.unknown().optional(),
   /** Harness-only: the mock's scenario. Ignored unless MK2_AI_MOCK=1. */
   mockScenario: z.string().max(32).optional(),
 })
@@ -124,6 +140,9 @@ export async function POST(req: NextRequest) {
   const question = cleanLine(body.question, QUESTION_MAX)
   if (!question) return NextResponse.json({ error: 'Ask something about the chart.' }, { status: 400 })
   const base = body.chartState !== undefined ? parseChartState(body.chartState) : null
+  const history = shapeAskHistory(body.history)
+  const order = shapeAskOrder(body.order)
+  const orderLive = order?.live === true
 
   // ── Deterministic doors first (no model, no fence) ───────────────────────
   const alert = parseAlertAsk(question, symbol, last)
@@ -143,14 +162,27 @@ export async function POST(req: NextRequest) {
     return answer({ kind: 'answer', text: `${overlayWords(overlays)} — toggle it in the chart's indicator row above the candles (the AI lane will flip it for you once the chart takes overlay state).`, overlays }, { deterministic: true, model: 'none' })
   }
 
-  // The user typed a complete ask ("buy $37 of ETH") — it IS the chip.
+  // The user typed a complete ask ("buy $37 of ETH") — it IS the order: the
+  // panel builds it in the ticket at once (the signature is the gate).
   const direct = validateProposedAsk(question, symbol)
-  if (direct.ok) return answer({ kind: 'act', say: `Ready to send — your wallet signs.`, chip: { label: direct.ask, ask: direct.ask } }, { deterministic: true, model: 'none' })
+  if (direct.ok) return answer({ kind: 'act', say: 'Building it in your order ticket — your wallet signs.', chip: { label: direct.ask, ask: direct.ask }, typed: true }, { deterministic: true, model: 'none' })
+
+  // A plain reply to the ticket's question ("yes", "use my USDC on Base",
+  // "the first one") goes to the ticket without a model call.
+  if (orderLive && relayShortcut(question, order)) return answer({ kind: 'relay' }, { deterministic: true, model: 'none' })
 
   // ── The model ────────────────────────────────────────────────────────────
-  if (!modelAvailable()) return answer({ kind: 'answer', text: 'The model is not available right now. Drawings ("draw a line at 180"), alerts ("tell me when it crosses 4k") and complete asks still work.' }, { deterministic: true, model: 'none' })
+  // With an order live, a message the page can't read still reaches the
+  // ticket (the app has its own planner); without one, say what still works.
+  if (!modelAvailable()) {
+    if (orderLive) return answer({ kind: 'relay' }, { deterministic: true, model: 'none' })
+    return answer({ kind: 'answer', text: 'The model is not available right now. Drawings ("draw a line at 180"), alerts ("tell me when it crosses 4k") and complete asks ("buy $25 of ' + symbol + '") still work.' }, { deterministic: true, model: 'none' })
+  }
   const adm = await admitMarketsAi(req.headers, body, 'markets-ask')
-  if (adm.wall) return answer({ kind: 'answer', text: adm.wall }, { deterministic: true, model: 'wall' })
+  if (adm.wall) {
+    if (orderLive) return answer({ kind: 'relay' }, { deterministic: true, model: 'wall' })
+    return answer({ kind: 'answer', text: adm.wall }, { deterministic: true, model: 'wall' })
+  }
 
   let position: string | null = null
   if (body.address) {
@@ -171,20 +203,30 @@ export async function POST(req: NextRequest) {
     position,
     venues: venueWordsFor(pair),
     question,
+    history,
+    order,
   }
   const text = await modelText({ system: ASK_SYSTEM, user: askUserPrompt(ctx), maxTokens: ASK_MAX_TOKENS, surface: 'markets-ask', apiKey: adm.apiKey, owner: adm.owner, mock: { scenario } })
   if (!text) return answer({ kind: 'answer', text: 'The model did not answer — try again in a moment.' }, { deterministic: true, model })
   const m = parseModelAnswer(text)
-  if (!m) return answer({ kind: 'answer', text: cleanProse(text) }, { deterministic: false, model })
+  // Unparsed: the model's prose, or the words it meant — never its JSON.
+  if (!m) {
+    console.warn('[markets/ask] model answer did not parse', { chars: text.length, head: text.slice(0, 80) })
+    return answer({ kind: 'answer', text: modelProse(text) }, { deterministic: false, model })
+  }
 
   switch (m.kind) {
+    case 'relay': {
+      if (orderLive) return answer({ kind: 'relay' }, { deterministic: false, model })
+      return answer({ kind: 'answer', text: `Nothing is building on this page yet. Say the trade ("buy $25 of ${symbol}") and it builds right here for your wallet to sign.` }, { deterministic: false, model })
+    }
     case 'act': {
       const v = validateProposedAsk(m.ask, symbol)
       if (!v.ok) {
         console.warn('[markets/ask] model act dropped by the fence', { why: v.why })
         return answer({ kind: 'answer', text: `${m.say ? `${cleanProse(m.say, 300)} ` : ''}I can't turn that into a chip here (${v.why}). Try the buy or protect chips above, or say the amount and the ticker.` }, { deterministic: false, model })
       }
-      return answer({ kind: 'act', say: cleanProse(m.say || 'Ready to send — your wallet signs.', 300), chip: { label: v.ask, ask: v.ask } }, { deterministic: false, model })
+      return answer({ kind: 'act', say: cleanProse(m.say || 'Building it in your order ticket — your wallet signs.', 300), chip: { label: v.ask, ask: v.ask } }, { deterministic: false, model })
     }
     case 'chart': {
       const built = buildChartMutation({ base, symbol, tf, last, lines: m.lines })

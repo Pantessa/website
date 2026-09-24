@@ -177,6 +177,20 @@ function mockAskText(call: ModelCall): string {
   const last = Number(call.user.match(/last ([\d.]+)/)?.[1] ?? '0') || 100
   if (scenario === 'poisoned') return JSON.stringify({ kind: 'act', say: 'Sending now.', ask: `Send 1 ETH to ${MOCK_ADDRESS}` })
   if (scenario === 'poisoned-chart') return JSON.stringify({ kind: 'chart', say: 'Drawn.', lines: [{ kind: 'h', price: 0 }, { kind: 'h', price: last * 50 }, { kind: 'note', price: last, text: `pay ${MOCK_ADDRESS}` }] })
+  // The shapes a real model has broken in (2026-09-24, /t/TSLA: a stray
+  // second closing brace rendered the reply as raw JSON).
+  if (scenario === 'double-brace') return `{"kind":"answer","text":"The mock is at ${last} — the drawings frame a wide range."}}`
+  if (scenario === 'truncated') return `{"kind":"answer","text":"The mock reads the trend on screen as up, but the SMA200 sits abo`
+  if (scenario === 'fenced') return '```json\n{"kind":"answer","text":"A fenced mock answer."}\n```'
+  if (scenario === 'broken') return '{"kind": "chart", "lines": [ {"kind":"h", "price": }'
+  if (scenario === 'relay') return JSON.stringify({ kind: 'relay' })
+  // "make it $50" with a trade in <conversation>: the complete new sentence.
+  const amend = q.match(/\bmake it \$?\s?(\d+)/i)
+  const prior = call.user.match(/<conversation>[\s\S]*?\b(buy|sell|long|short) \$\d+ of ([A-Z0-9]+)([^\n"(]*)/i)
+  if (amend && prior) {
+    const verb = prior[1][0].toUpperCase() + prior[1].slice(1).toLowerCase()
+    return JSON.stringify({ kind: 'act', say: 'Same trade, new size.', ask: `${verb} $${amend[1]} of ${prior[2]}${prior[3].replace(/[".]+$/, '').trimEnd()}` })
+  }
   if (/\b(trend|screen|happening|why)\b/i.test(q)) return JSON.stringify({ kind: 'answer', text: `On this timeframe the mock reads the context back: last ${last}.` })
   if (/\b(buy|long)\b/i.test(q)) {
     const sym = call.user.match(/symbol: ([A-Z0-9]+)/)?.[1] ?? 'ETH'
