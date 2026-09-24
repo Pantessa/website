@@ -317,7 +317,8 @@ export default function JobsRailTab({
           }
         }}
         title="Open this recurring buy — what it's bought, your position, this period's state"
-        className="group px-2.5 py-2 rounded-xl hover:bg-[var(--surf-1)] transition-colors cursor-pointer"
+        data-sheet-open="job"
+        className={cn('group px-2.5 py-2 rounded-xl hover:bg-[var(--surf-1)] transition-colors cursor-pointer', flat && 'min-h-[48px] active:bg-[var(--surf-1)]')}
       >
         <div className="flex items-center gap-2">
           <CalendarClock className="w-3.5 h-3.5 flex-shrink-0 text-[color:var(--muted)]" aria-hidden />
@@ -365,7 +366,8 @@ export default function JobsRailTab({
           }
         }}
         title="Open this job — your live position around it, every step, anything it needs from you"
-        className="px-2.5 py-2 rounded-xl hover:bg-[var(--surf-1)] transition-colors cursor-pointer"
+        data-sheet-open="job"
+        className={cn('px-2.5 py-2 rounded-xl hover:bg-[var(--surf-1)] transition-colors cursor-pointer', flat && 'min-h-[48px] active:bg-[var(--surf-1)]')}
       >
         <div className="flex items-center gap-2">
           {jobDot(j.status)}
