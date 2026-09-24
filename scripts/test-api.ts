@@ -33090,7 +33090,18 @@ async function main() {
         !/id: 'chat list'/.test(nqCode) &&
         /spawn\('npx', \['tsx', file, '--phase=after'/.test(nqSrc),
     )
+    check(
+      'native qa: a link INSIDE a sheet navigates and lands — MORE → Docs, MORE → Settings, the brochure menu → Pricing, the account menu → Dashboard, each with the RSC fetch held 300ms, judged on landing, on no bounce after it, and on the sheet being closed',
+      /rscDelayMs && \(req\.headers\(\)\['rsc'\] === '1' \|\| url\.searchParams\.has\('_rsc'\)\)/.test(nqSrc) &&
+        /const o = await openCtx\(run, \{ size, theme: 'dark', auth: c\.auth, session, rscDelayMs: 300 \}\)/.test(nqSrc) &&
+        /bounced after landing/.test(nqSrc) && /the navigation was aborted/.test(nqSrc),
+    )
     const nq = (await import('./drive-native')) as typeof import('./drive-native')
+    check(
+      'native qa: the four sheet-link cases are the coordinator\'s (a doc page, the dashboard behind SIWE, a brochure page, the dashboard from the account sheet)',
+      JSON.stringify(nq.SHEET_LINKS.map((c) => [c.id, c.sheet, c.href, c.auth])) ===
+        JSON.stringify([['MORE → Docs', 'more', '/docs', 'wallet'], ['MORE → Settings', 'more', '/dashboard', 'siwe'], ['brochure menu → Pricing', 'nav', '/pricing', 'none'], ['account menu → Dashboard', 'account', '/dashboard', 'siwe']]),
+    )
     check(
       'native qa: drive:native measures the eleven checks of QA.md, in order',
       JSON.stringify(nq.CHECKS) === JSON.stringify(['frame', 'bar', 'tabs', 'sheets', 'targets', 'inputs', 'overflow', 'keyboard', 'themecolor', 'manifest', 'desktop']),

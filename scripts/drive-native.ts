@@ -638,7 +638,7 @@ function deviceFor(profile: ProfileId): Record<string, unknown> {
  *  FULFILLED from the fixture (a drive never fires a live turn), and every
  *  same-origin request wears x-yf-internal-run + x-yf-no-ask-log. Used for
  *  the drive's own contexts AND the lane drives it folds in. */
-async function guardContext(ctx: Pw, onChatPost: () => void = () => {}) {
+async function guardContext(ctx: Pw, onChatPost: () => void = () => {}, rscDelayMs = 0) {
   const origin = new URL(BASE).origin
   // Every request (a RegExp, not the '**' glob: a slash-star in code reads as a
   // comment opener to the harness's source fences).
@@ -655,11 +655,15 @@ async function guardContext(ctx: Pw, onChatPost: () => void = () => {}) {
       onChatPost()
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(CHAT_FIXTURE) }).catch(() => {})
     }
+    // A slow network for the App Router's RSC fetches (a client navigation):
+    // the link-in-a-sheet row needs the fetch to still be in flight when the
+    // sheet's deferred history pop runs.
+    if (rscDelayMs && (req.headers()['rsc'] === '1' || url.searchParams.has('_rsc'))) await new Promise((r) => setTimeout(r, rscDelayMs))
     return route.continue({ headers: { ...req.headers(), 'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1' } }).catch(() => {})
   })
 }
 
-async function openCtx(run: Run, o: { size: Size; theme: Theme; auth: Auth; session?: { address: string; cookie: string } | null; os?: Theme }): Promise<Opened> {
+async function openCtx(run: Run, o: { size: Size; theme: Theme; auth: Auth; session?: { address: string; cookie: string } | null; os?: Theme; rscDelayMs?: number }): Promise<Opened> {
   const ctx = await run.browser.newContext({
     ...run.device,
     viewport: { width: o.size.width, height: o.size.height },
@@ -676,7 +680,7 @@ async function openCtx(run: Run, o: { size: Size; theme: Theme; auth: Auth; sess
   }
   if (address) await ctx.addInitScript(mockWallet(address))
   const opened: Opened = { ctx, page: null, chatPosts: 0, errors: [], address, ready: '' }
-  await guardContext(ctx, () => (opened.chatPosts += 1))
+  await guardContext(ctx, () => (opened.chatPosts += 1), o.rscDelayMs ?? 0)
   const page = await ctx.newPage()
   page.on('pageerror', (e: unknown) => opened.errors.push(String(e).split('\n')[0].slice(0, 160)))
   opened.page = page
@@ -1403,6 +1407,76 @@ async function sheetJob(run: Run, t: Trigger, session: { address: string; cookie
   }
 }
 
+/** An in-app LINK inside a sheet navigates and LANDS (coordinator, R1→R2):
+ *  the sheet's deferred history pop must neither abort the navigation nor
+ *  bounce it back. RSC fetches are held 300ms so the pop races a navigation
+ *  that is still in flight. */
+export type SheetLink = { id: string; surface: Surface; auth: Auth; sheet: string; href: string; open(page: Pw): Promise<boolean> }
+export const SHEET_LINKS: SheetLink[] = [
+  { id: 'MORE → Docs', surface: S_CHAT, auth: 'wallet', sheet: 'more', href: '/docs', open: (p) => tapFirst(p, ['[data-sheet-open="more"]', '[data-spine-bar] [aria-label="More"]']) },
+  { id: 'MORE → Settings', surface: S_CHAT, auth: 'siwe', sheet: 'more', href: '/dashboard', open: (p) => tapFirst(p, ['[data-sheet-open="more"]', '[data-spine-bar] [aria-label="More"]']) },
+  { id: 'brochure menu → Pricing', surface: S_LANDING, auth: 'none', sheet: 'nav', href: '/pricing', open: (p) => tapFirst(p, ['[data-sheet-open="nav"]', 'button[aria-label="Open menu"]']) },
+  { id: 'account menu → Dashboard', surface: S_MARKETS, auth: 'siwe', sheet: 'account', href: '/dashboard', open: (p) => tapFirst(p, ['[data-sheet-open="account"]', '.navacct__pill']) },
+]
+
+async function sheetLinkJob(run: Run, c: SheetLink, session: { address: string; cookie: string } | null) {
+  const size = PHONE_SIZES[0]
+  const o = await openCtx(run, { size, theme: 'dark', auth: c.auth, session, rscDelayMs: 300 })
+  const b = { ...base(run, size, 'dark', c.surface), check: 'sheets' as CheckId, item: `link: ${c.id}` }
+  try {
+    await load(o, c.surface)
+    if (!(await c.open(o.page))) {
+      record({ ...b, state: 'FAIL', value: 'not present', detail: `no trigger for the ${c.sheet} sheet on ${c.surface.path} (${o.ready})` })
+      return
+    }
+    await sleep(900)
+    const panel = (await o.page.evaluate('window.__nq.openPanel()').catch(() => null)) as { kind: string; id: string } | null
+    const link = o.page.locator(`[data-nq-panel] a[href="${c.href}"]`).first()
+    if (!panel || !(await link.count().catch(() => 0))) {
+      record({ ...b, state: 'FAIL', value: 'not present', detail: panel ? `the ${panel.kind} "${panel.id}" has no a[href="${c.href}"]` : 'no panel opened' })
+      return
+    }
+    await o.page.evaluate('window.__nqMark = 1').catch(() => {})
+    const t0 = Date.now()
+    await link.tap({ timeout: 5_000 }).catch(async () => link.click({ timeout: 5_000 }).catch(() => {}))
+    let landedAt = -1
+    const trail: string[] = []
+    while (Date.now() - t0 < 8_000) {
+      const path = (await o.page.evaluate('location.pathname').catch(() => '')) as string
+      if (path && trail[trail.length - 1] !== path) trail.push(path)
+      if (path === c.href) {
+        landedAt = Date.now() - t0
+        break
+      }
+      await sleep(120)
+    }
+    // A bounce is a deferred pop that fires AFTER the landing: hold and look again.
+    const bounce: string[] = []
+    const holdUntil = Date.now() + 1_600
+    while (Date.now() < holdUntil) {
+      const path = (await o.page.evaluate('location.pathname').catch(() => '')) as string
+      if (path && path !== c.href && !bounce.includes(path)) bounce.push(path)
+      await sleep(150)
+    }
+    const after = (await o.page
+      .evaluate(`(() => ({ path: location.pathname, soft: window.__nqMark === 1, sheetOpen: [...document.querySelectorAll('[data-sheet]')].some((s) => window.__nq && window.__nq.vis(s.querySelector('[role=dialog]') || s)) }))()`)
+      .catch(() => ({ path: '?', soft: false, sheetOpen: false }))) as { path: string; soft: boolean; sheetOpen: boolean }
+    const reasons: string[] = []
+    if (landedAt < 0) reasons.push(`never landed on ${c.href} in 8s (path trail ${trail.join(' → ')}) — the navigation was aborted`)
+    if (bounce.length) reasons.push(`bounced after landing: ${c.href} → ${bounce.join(' → ')}`)
+    if (after.path !== c.href && landedAt >= 0 && !bounce.length) reasons.push(`ended on ${after.path}`)
+    if (after.sheetOpen) reasons.push('a sheet is still open on the destination')
+    record({
+      ...b,
+      state: reasons.length ? 'FAIL' : 'PASS',
+      value: `→ ${after.path}${landedAt >= 0 ? ` in ${landedAt}ms` : ''} · ${after.soft ? 'soft (client) navigation' : 'HARD reload'} · RSC +300ms`,
+      detail: reasons.join('; '),
+    })
+  } finally {
+    await o.ctx.close().catch(() => {})
+  }
+}
+
 /** Every labeled tap a lane marked `data-sheet-open` on a surface. */
 async function discoveredSheets(run: Run, s: Surface, session: { address: string; cookie: string } | null): Promise<Trigger[]> {
   const o = await openCtx(run, { size: PHONE_SIZES[0], theme: 'dark', auth: s.auth, session })
@@ -1905,6 +1979,9 @@ async function main() {
       }
     }
   }
+  if (wantCheck('sheets')) {
+    for (const run of runs) for (const c of SHEET_LINKS) add('sheets', `sheet link ${run.profile} ${c.id}`, async () => sheetLinkJob(run, c, c.auth === 'siwe' ? await siwe() : null))
+  }
   if (wantCheck('keyboard')) {
     for (const run of runs) for (const s of [S_CHAT, SURFACES.find((x) => x.path.startsWith('/i/'))!]) add('keyboard', `keyboard ${run.profile} ${s.path}`, () => keyboardJob(run, s))
   }
@@ -1928,7 +2005,9 @@ async function main() {
   if (!list('checks').length && !QUICK && existsSync(join(SCRIPTS_DIR, 'drive-native-chat.ts')) && !flag('no-chat')) add('frame', 'chat drive', () => chatDriveJob())
   const started = Date.now()
   if (wantCheck('manifest')) await manifestCheck()
-  await pool(jobs, WORKERS)
+  // --jobs=<substring>: only the jobs whose label contains it (iteration aid).
+  const jobFilter = arg('jobs')
+  await pool(jobFilter ? jobs.filter((j) => j.label.includes(jobFilter)) : jobs, WORKERS)
   await chrome.close().catch(() => {})
   for (const r of runs) if (r.engine === 'webkit') await r.browser.close().catch(() => {})
 
