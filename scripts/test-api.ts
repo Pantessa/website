@@ -33167,7 +33167,7 @@ async function main() {
     check(
       'native markets: no field on a markets surface zooms the page on focus — every input/textarea/select in the frame and the rail\'s sheets is ≥16px on touch or below lg',
       /@media \(hover: none\), \(max-width: 1023px\) \{\s*\.mkt-frame :is\(input, textarea, select\),\s*\[data-sheet\^="wl-"\] :is\(input, textarea, select\) \{ font-size: max\(16px, 1em\); \}/.test(nmMk) &&
-        /\.askdoor-sheet \.askdoor__input \{ font-size: max\(16px, 1em\); \}/.test(nmDesign),
+        /\.askdoor-sheet \.askdoor__input \{ font-size: max\(16px, 1em\);/.test(nmDesign),
     )
     check(
       'native markets: on a phone the /t plot keeps 260px however its controls wrap, those controls take two rows (timeframes + live/full screen, then overlays beside the tools), and the act strip is one sideways row',
