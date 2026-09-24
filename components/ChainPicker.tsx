@@ -15,6 +15,8 @@ import { Check, ChevronDown, Globe } from 'lucide-react'
 import { APP_CHAINS, chainById } from '@/lib/chains'
 import { getChainMark } from '@/components/chain-marks'
 import { useYeetfulStore } from '@/lib/store'
+import Sheet from '@/components/mobile/Sheet'
+import { usePhonePosture } from '@/components/chat/usePhonePosture'
 
 export default function ChainPicker() {
   const selectedChainId = useYeetfulStore((s) => s.selectedChainId)
@@ -23,11 +25,16 @@ export default function ChainPicker() {
   const { switchChainAsync } = useSwitchChain()
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+  // A phone gets the ONE Sheet (squad mobile-native, CHAT r2): the chain list
+  // as a native picker — 52px rows, closed by a tap outside, a swipe, Escape
+  // or back. The desktop dropdown below is unchanged.
+  const phone = usePhonePosture()
 
   // Close on outside click / Escape — same lightweight idiom as the other
-  // toolbar popovers.
+  // toolbar popovers (desktop; the Sheet owns a phone's dismissals, and its
+  // portal is outside rootRef, so this handler would close it on every tap).
   useEffect(() => {
-    if (!open) return
+    if (!open || phone) return
     const onDown = (e: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false)
     }
@@ -40,7 +47,7 @@ export default function ChainPicker() {
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
     }
-  }, [open])
+  }, [open, phone])
 
   const selected = chainById(selectedChainId)
   const SelectedMark = selected ? getChainMark(selected.key) : null
@@ -59,8 +66,9 @@ export default function ChainPicker() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-haspopup="listbox"
+        aria-haspopup={phone ? 'dialog' : 'listbox'}
         aria-expanded={open}
+        data-sheet-open="chain"
         aria-label={selected ? `Chain: ${selected.name}` : 'Chain: all supported chains'}
         title={selected ? `Cards and swaps scoped to ${selected.name}` : 'Pick a chain to scope cards and swaps'}
         className={
@@ -77,7 +85,37 @@ export default function ChainPicker() {
         <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      {open && (
+      {phone && (
+        <Sheet open={open} onClose={() => setOpen(false)} id="chain" title="Chain for cards & swaps">
+          <div role="listbox" aria-label="Chain for cards and swaps" className="pb-2" data-chain-sheet>
+            {[{ id: null as number | null, name: 'All supported chains', key: null as string | null, color: '' }, ...APP_CHAINS.map((c) => ({ id: c.id as number | null, name: c.name, key: c.key as string | null, color: c.color }))].map((c) => {
+              const Mark = c.key ? getChainMark(c.key) : null
+              const active = c.id === null ? !selected : selected?.id === c.id
+              return (
+                <button
+                  key={c.id ?? 'all'}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => pick(c.id)}
+                  className="flex w-full min-h-[52px] items-center gap-3 px-4 text-left text-[15px] text-[color:var(--fg)] active:bg-[var(--surf-1)]"
+                >
+                  {c.id === null ? (
+                    <Globe className="w-[22px] h-[22px] text-[color:var(--muted-2)]" />
+                  ) : Mark ? (
+                    <Mark size={22} />
+                  ) : (
+                    <span className="w-[22px] h-[22px] rounded-full" style={{ background: c.color }} />
+                  )}
+                  <span className="flex-1">{c.name}</span>
+                  {active && <Check className="w-4 h-4 text-[color:var(--accent)]" />}
+                </button>
+              )
+            })}
+          </div>
+        </Sheet>
+      )}
+      {open && !phone && (
         <div
           role="listbox"
           className="absolute right-0 top-full mt-2 w-60 max-w-[calc(100vw-24px)] z-20 rounded-xl border border-[var(--line)] bg-[var(--surf-1)] shadow-xl shadow-black/40 overflow-hidden"

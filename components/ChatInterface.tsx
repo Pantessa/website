@@ -1011,6 +1011,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       userAt = performance.now()
     }
     const onKey = (e: KeyboardEvent) => {
+      // Keys typed into a field (the composer) never scroll the thread.
+      const el = e.target as HTMLElement | null
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return
       if (/^(PageUp|PageDown|Home|End|ArrowUp|ArrowDown| )$/.test(e.key)) markUser()
     }
     const onScroll = () => {
@@ -1019,12 +1022,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         pinnedRef.current = true
         return
       }
-      if (performance.now() - userAt < 1000) {
-        pinnedRef.current = false
-        return
-      }
-      // Not the reader: a pinned thread holds its ground.
-      if (pinnedRef.current && hasThreadRef.current) scroller.scrollTop = scroller.scrollHeight
+      // Only the reader lets go. A scroll nobody's finger made (anchoring,
+      // a route's scroll memory) leaves the pin as it was — the next growth
+      // re-pins through the ResizeObserver — and is never fought: a
+      // scrollIntoView, a focus moving up the thread (keyboard, VoiceOver)
+      // or find-in-page lands where it asked to (round 2: snapping back broke
+      // the mint verb's scroll-into-view on the first bubble).
+      if (performance.now() - userAt < 1000) pinnedRef.current = false
     }
     scroller.addEventListener('scroll', onScroll, { passive: true })
     scroller.addEventListener('wheel', markUser, { passive: true })
@@ -1078,6 +1082,22 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       ro?.disconnect()
     }
   }, [keyboard.open, keyboard.inset, isNarrow, embedded, docked])
+  // The field grows with what's typed on a phone (squad mobile-native, CHAT
+  // round 2): a one-line field scrolled a 70-character ask out of sight while
+  // it was being written. Up to its max-h-40 (~6 lines), then it scrolls.
+  // The pill growing shrinks the thread; the pin's ResizeObserver on the
+  // scroller keeps the newest turn right above it (drive: kb-typing-no-jump).
+  useEffect(() => {
+    const t = textareaRef.current
+    if (!t) return
+    if (!isNarrow || embedded) {
+      t.style.height = ''
+      return
+    }
+    t.style.height = 'auto'
+    t.style.height = `${Math.min(t.scrollHeight, 160)}px`
+  }, [input, isNarrow, embedded])
+
   // A lift re-pins the newest turn (the spacer grows the thread; the
   // ResizeObserver above does the rest while the pin holds).
   useEffect(() => {
@@ -2821,11 +2841,23 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         style={kbLift > 0 ? { transform: `translateY(-${kbLift}px)` } : undefined}
       >
         <div
+          // The whole pill is the field (squad mobile-native, CHAT r2; QA: a
+          // tap on the pill's padding landed outside the 24px textarea and did
+          // nothing). A tap anywhere that isn't a button focuses the textarea
+          // inside the tap's own gesture, so a phone's keyboard opens.
+          onClick={(e) => {
+            if (!(e.target as HTMLElement).closest('button, textarea, a')) textareaRef.current?.focus()
+          }}
+          data-composer-pill=""
           className={cn(
             'flex items-center gap-3 py-2 pl-4 pr-2 rounded-full border border-[var(--line)] bg-[color-mix(in_srgb,var(--surf-1)_85%,transparent)] backdrop-blur-md transition-[border-color,box-shadow] duration-200 focus-within:tint-border-accent-45 focus-within:shadow-[0_0_0_4px_rgba(52,227,160,0.07),0_0_24px_rgba(52,227,160,0.06)]',
             !embedded && 'shadow-[0_10px_36px_-14px_rgba(0,0,0,0.55)]',
             // A phone: the 44px send sets the pill's height — no extra air.
-            !embedded && 'max-lg:py-1',
+            // The field grows with what's typed (up to ~6 lines, the way
+            // Messages does), so the mic and send sit on the bottom line and
+            // the pill becomes a rounded rect — at one line its 26px radius is
+            // exactly the capsule it was.
+            !embedded && 'max-lg:py-1 max-lg:items-end max-lg:rounded-[26px]',
           )}
         >
           <textarea
@@ -2850,7 +2882,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                     : 'Type a message…'
             }
             rows={1}
-            className="flex-1 self-center bg-transparent text-sm max-lg:text-base text-white placeholder:text-[color:var(--muted-2)] resize-none border-0 focus:outline-none focus-visible:outline-none max-h-40 overflow-y-auto leading-6"
+            data-composer-input=""
+            className="flex-1 self-center bg-transparent text-sm max-lg:text-base text-white placeholder:text-[color:var(--muted-2)] resize-none border-0 focus:outline-none focus-visible:outline-none max-h-40 overflow-y-auto leading-6 max-lg:py-2.5"
             style={{ minHeight: '24px', outline: 'none', boxShadow: 'none' }}
           />
           <VoiceButton

@@ -32,6 +32,7 @@ import { useAccount } from 'wagmi'
 import { CDP_CONNECTOR_ID } from '@coinbase/cdp-wagmi'
 import { Loader2, PenLine, Smartphone, X } from 'lucide-react'
 import { useSession } from '@/lib/session'
+import { useBackToClose } from '@/components/mobile/useBackToClose'
 import {
   openWalletApp,
   subscribeWalletAppOpen,
@@ -185,6 +186,13 @@ export default function SignatureWaitTakeover() {
       walletAppRequestSettled()
     }
   }, [signingIn])
+
+  // The back gesture closes the card and stays on the page, like its own
+  // dismiss (squad mobile-native, 2026-09-24): on a phone the person comes
+  // back from the wallet app and swipes back; leaving the page mid-sign-in
+  // would strand the chat they were keeping. Phone posture only (the hook).
+  const covering = wait.shown && !dismissed && !handoff && !pathname?.startsWith('/embed') && !(pathname === '/i' || !!pathname?.startsWith('/i/'))
+  useBackToClose(covering, () => setDismissed(true), 'sigwait')
 
   // /embed signs through the host page's wallet relay — not our surface to
   // cover. /i mounts its own instance inside its full-viewport shell (same

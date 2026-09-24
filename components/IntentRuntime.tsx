@@ -28,6 +28,7 @@ import { ArrowRight, BellRing, Check, Copy, ExternalLink, Fingerprint, Link2, Me
 import ChatInterface from '@/components/ChatInterface'
 import ChatLoader from '@/components/ChatLoader'
 import { SignatureWaitModal, useSignatureWait } from '@/components/SignatureWaitTakeover'
+import { useBackToClose } from '@/components/mobile/useBackToClose'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import NavAccount from '@/components/NavAccount'
 import ShareButton from '@/components/ShareButton'
@@ -183,6 +184,9 @@ export default function IntentRuntime({
   // An email or Google account's save-bar sign-in is silent: its card waits a
   // beat and says it's signing them in (useSignatureWait).
   const sigWait = useSignatureWait(signingIn)
+  // The back gesture closes the wait card and stays on /i (squad
+  // mobile-native, CHAT r2) — the same as its "Continue without signing in".
+  useBackToClose(sigWait.shown && !sigDismissed, () => setSigDismissed(true), 'sigwait-i')
   // wagmi sits in 'reconnecting' until every connector settles; a relay that
   // never answers (offline WalletConnect/CDP init) left the splash on
   // "checking for a connected wallet" with NO door forever. After a beat the
@@ -787,7 +791,9 @@ export default function IntentRuntime({
                 href="/"
                 title="Pantessa home"
                 aria-label="Pantessa home"
-                className="flex-shrink-0 grid place-items-center w-8 h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
+                // A phone: a 44px target in the same 32px footprint (the
+                // negative margin keeps the header's layout; QA measured 32×32).
+                className="flex-shrink-0 grid place-items-center w-8 h-8 max-lg:w-11 max-lg:h-11 max-lg:-m-1.5 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
               >
                 <YeetfulMark size={15} />
               </Link>
@@ -967,7 +973,7 @@ export default function IntentRuntime({
       {/* Keep-the-flow-going bar: a turn settled with nothing to sign (the
           no-funds wall, a refusal, a plain answer) — never a dead end. */}
       {flowNudge && !signed && (
-        <div className="relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-2.5 max-sm:pb-[max(0.625rem,env(safe-area-inset-bottom))]">
+        <div data-runtime-bar="" className="relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-2.5 max-sm:pb-[max(0.625rem,env(safe-area-inset-bottom))]">
           <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-2">
             <span className="text-[12px] text-[color:var(--muted)]">
               Don&apos;t stop here — the full app scans any wallet, funds shortfalls, and builds the path.
@@ -989,7 +995,7 @@ export default function IntentRuntime({
           fired at the signed event; feed = broker_status server truth. The
           invisible back-and-forth, made visible at the aha moment. */}
       {signed && notify && (
-        <div className="yenter relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-2.5">
+        <div data-runtime-bar="" className="yenter relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-2.5">
           <div className="max-w-3xl mx-auto flex items-center gap-2.5">
             <BellRing className="w-4 h-4 flex-shrink-0 text-[color:var(--accent)]" />
             <span className="text-[13px] text-[color:var(--muted)]">
@@ -1007,7 +1013,7 @@ export default function IntentRuntime({
           live in a local chat; signing in adopts it into the DB
           (session.tsx → adoptLocalChat). */}
       {signed && needsSignIn && (
-        <div className="yenter relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <div data-runtime-bar="" className="yenter relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-3 max-sm:flex-col max-sm:items-stretch">
             <span className="text-[13px] text-[color:var(--muted)]">
               <strong className="text-[color:var(--fg)] font-medium">Optional — </strong>
@@ -1027,7 +1033,7 @@ export default function IntentRuntime({
         </div>
       )}
       {signed && returnHref && redirectHost && (
-        <div className="relative sticky bottom-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]" data-return-host-bar>
+        <div data-runtime-bar="" className="relative sticky bottom-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]" data-return-host-bar>
           <div className="max-w-3xl mx-auto flex items-center justify-between gap-3 max-sm:flex-col max-sm:items-stretch">
             <span className="text-[13px] text-[color:var(--muted)]">
               Signed and receipted — all done here.
