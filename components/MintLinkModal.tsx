@@ -39,7 +39,7 @@ export default function MintLinkModal({
 }) {
   const [minted, setMinted] = useState<Minted | null>(null)
   const [copied, setCopied] = useState(false)
-  const { setMainView, setRailTab, setPhoneScreen } = useYeetfulStore()
+  const { openLinksStudio } = useYeetfulStore()
   // A phone gets the ONE Sheet (squad mobile-native, README D3): the same
   // content, closed by a tap outside, a swipe, Escape or back. At lg+ the
   // modal below is unchanged.
@@ -96,14 +96,11 @@ export default function MintLinkModal({
             <button
               type="button"
               onClick={() => {
-                // The board is AND-ed with the rail tab (linksMode),
-                // so both have to move — opened from a chat bubble
-                // the rail sits on MCPs, and mainView alone left this
-                // button doing nothing.
-                setRailTab('links')
-                setMainView('links')
-                // A phone: the LINKS screen is the funnel (README D2).
-                if (phone) setPhoneScreen('links')
+                // The links studio in either posture (NAV's store action):
+                // the LINKS screen on a phone, the drawer's tab + the board
+                // at lg+ (the board is AND-ed with the rail tab — mainView
+                // alone left this button doing nothing).
+                openLinksStudio()
                 close()
               }}
               className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"

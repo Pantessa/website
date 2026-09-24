@@ -6,18 +6,10 @@
 // by itself. ChatInterface renders these; the harness pins them here without
 // a DOM.
 
-import type { PhoneScreen, RailTab } from '@/lib/store'
+import type { PhoneScreen } from '@/lib/store'
 
-/** The rail tab a toolbar door names → the phone SCREEN that destination is
- *  below lg (README D2: a tab is a place, never a pop-up). The drawer is the
- *  desktop's; a phone never opens it. */
-export const PHONE_SCREEN_FOR_RAIL_TAB: Record<RailTab, PhoneScreen> = {
-  mcps: 'apps',
-  chats: 'history',
-  jobs: 'jobs',
-  links: 'links',
-  team: 'team',
-}
+// A toolbar door's rail tab → the phone SCREEN is NAV's decision
+// (lib/phone-nav screenForTab); ChatInterface calls it directly.
 
 /** What the top bar's apps door says: the working set as a COUNT, in the
  *  word the spine's seat uses ("APPS"). */

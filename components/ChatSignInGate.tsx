@@ -1,12 +1,14 @@
 'use client'
 
-import { useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
+import { createPortal } from 'react-dom'
 import { LogIn, Loader2, Sparkles } from 'lucide-react'
 import { signInLandingHere, useSession } from '@/lib/session'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { GUEST_TRIAL_LIMIT, guestTurnsUsed, subscribeGuestTrial } from '@/lib/guest-trial'
 import { useSoftKeyboard } from '@/components/mobile/useSoftKeyboard'
+import { usePhonePosture } from '@/components/chat/usePhonePosture'
 
 /**
  * The chat's sign-in surface. It used to be a full-screen scrim that demanded
@@ -35,6 +37,26 @@ export default function ChatSignInGate() {
   // tab bar: the person is typing, and the composer rides the keyboard over
   // the space the banner would float in (squad mobile-native, CHAT row 3).
   const keyboard = useSoftKeyboard()
+  // On a phone the gate lives INSIDE the conversation (squad mobile-native):
+  // the banner in ChatInterface's in-flow seat right above the composer, the
+  // takeover over the conversation only — the tab bar is the frame's in-flow
+  // last row now, and a native app never traps you behind a sheet you can't
+  // leave (MARKETS, WALLET and the rest stay one tap away). At lg+ nothing
+  // changes: the banner floats over the thread as before.
+  const phone = usePhonePosture()
+  const [seats, setSeats] = useState<{ banner: HTMLElement | null; root: HTMLElement | null }>({ banner: null, root: null })
+  useEffect(() => {
+    if (!phone) {
+      setSeats({ banner: null, root: null })
+      return
+    }
+    // ChatInterface renders before this gate in the same workspace, so its
+    // seats exist by the time this effect runs (a route change remounts both).
+    setSeats({
+      banner: document.querySelector<HTMLElement>('[data-chat-gate-banner-slot]'),
+      root: document.querySelector<HTMLElement>('[data-chat-gate-root]'),
+    })
+  }, [phone, status])
 
   // Only guests see any of this. During `loading` we stay out of the way to
   // avoid a flash before the session cookie hydrates; `authed` needs no gate.
@@ -77,8 +99,8 @@ export default function ChatSignInGate() {
 
   // ── Trial exhausted: the one place the blocking scrim remains ────────────
   if (exhausted) {
-    return (
-      <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm px-6">
+    const takeover = (
+      <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm px-6" data-gate-takeover="">
         <div className="max-w-md text-center">
           <p className="text-xs font-medium uppercase tracking-[0.2em] text-[color:var(--muted-2)]">Guest run complete</p>
           <h2 className="mt-3 text-4xl sm:text-5xl leading-tight text-white" style={{ fontFamily: 'var(--font-serif)' }}>
@@ -93,10 +115,58 @@ export default function ChatSignInGate() {
         </div>
       </div>
     )
+    // A phone: over the conversation only, never the tab bar.
+    return phone && seats.root ? createPortal(takeover, seats.root) : takeover
   }
 
   // ── Non-blocking banner: guests keep the whole chat interactive ──────────
   if (keyboard.open) return null
+  // A phone: one compact row in the conversation's own seat above the
+  // composer — never over the newest card, no bar arithmetic. The words are
+  // the short form of the desktop banner's promise.
+  if (phone && seats.banner) {
+    const rowBtn =
+      'flex-shrink-0 inline-flex items-center justify-center gap-1.5 min-h-11 px-4 rounded-full bg-[var(--accent)] text-black text-[13px] font-semibold disabled:opacity-60'
+    return createPortal(
+      <div className="mx-3 mb-1 flex items-center gap-3 rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] pl-3.5 pr-1.5 py-1.5" data-gate-banner="phone">
+        <p className="flex-1 min-w-0 text-[12.5px] leading-snug text-[color:var(--muted)]">
+          {awaitingSignature ? (
+            <>
+              <span className="text-[color:var(--fg)] font-medium">Keep this chat?</span> One signature, nothing moves.
+            </>
+          ) : (
+            <>
+              <span className="text-[color:var(--fg)] font-medium">No wallet needed to ask.</span>{' '}
+              {turnsUsed > 0 ? `${turnsLeft} guest ask${turnsLeft === 1 ? '' : 's'} left.` : `${GUEST_TRIAL_LIMIT} free asks.`}
+            </>
+          )}
+        </p>
+        {awaitingSignature ? (
+          <button type="button" onClick={() => signIn(signInLandingHere())} disabled={signingIn} className={rowBtn}>
+            {signingIn ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2.5} /> : <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} />}
+            <span>{signingIn ? 'Waiting…' : 'Sign in'}</span>
+          </button>
+        ) : cdpEnabled ? (
+          <CreateAccountButton
+            className={rowBtn}
+            label={
+              <>
+                <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} />
+                <span>Connect</span>
+              </>
+            }
+            walletConnectOnly
+          />
+        ) : (
+          <button type="button" onClick={() => connectAndSignIn(signInLandingHere())} disabled={signingIn} className={rowBtn}>
+            {signingIn ? <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2.5} /> : <LogIn className="w-3.5 h-3.5" strokeWidth={2.5} />}
+            <span>{signingIn ? 'Signing in…' : 'Connect'}</span>
+          </button>
+        )}
+      </div>,
+      seats.banner,
+    )
+  }
   return (
     // bottom-28 clears the composer on desktop; below lg the shell adds the
     // 48px bottom tab bar (+ safe area) under the composer, so the banner

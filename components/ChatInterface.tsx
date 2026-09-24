@@ -90,7 +90,8 @@ import { respondingServers } from '@/lib/responding-mcp'
 import ChatPhoneBar from '@/components/chat/ChatPhoneBar'
 import { usePhonePosture } from '@/components/chat/usePhonePosture'
 import { useSoftKeyboard } from '@/components/mobile/useSoftKeyboard'
-import { PHONE_SCREEN_FOR_RAIL_TAB, keyboardLift, threadOwnsAppScroll } from '@/lib/chat-phone'
+import { keyboardLift, threadOwnsAppScroll } from '@/lib/chat-phone'
+import { screenForTab } from '@/lib/phone-nav'
 import { SCROLL_ATTR } from '@/lib/phone-shell'
 
 // Typed-data signing request shipped from the server for the wallet to sign.
@@ -447,7 +448,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const isNarrow = usePhonePosture()
   const openRail = (tab: 'mcps' | 'chats' | 'jobs' | 'links') => {
     if (isNarrow) {
-      setPhoneScreen(PHONE_SCREEN_FOR_RAIL_TAB[tab])
+      setPhoneScreen(screenForTab(tab))
       return
     }
     setRailTab(tab)
@@ -1838,7 +1839,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   }
 
   return (
-    <div ref={rootRef} className={cn('relative flex flex-col h-full', firstParty && 'yf-chat')}>
+    <div ref={rootRef} className={cn('relative flex flex-col h-full', firstParty && 'yf-chat')} {...(firstParty ? { 'data-chat-gate-root': '' } : {})}>
       {/* The conversation's top bar on a PHONE (squad mobile-native): the way
           to the chat list, the title over the apps count, chain, share, the
           account door — one 52px row, 44px targets (components/chat/
@@ -1967,7 +1968,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           // mobile-native, F1): a document that scrolls is exactly what
           // collapses Safari's toolbar and floats the tab bar.
           'relative flex-1 overflow-y-auto px-4 py-6',
-          !embedded && !simple && sessionStatus === 'guest' && 'pb-32 max-lg:pb-48',
+          // lg+ only: below lg the banner is in flow above the composer.
+          !embedded && !simple && sessionStatus === 'guest' && 'lg:pb-32',
         )}
       >
         {/* Inner thread wrapper: the stick-to-bottom ResizeObserver watches
@@ -2753,6 +2755,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         </div>
       </div>
 
+      {/* The guest banner's phone seat (ChatSignInGate portals into it below
+          lg): IN FLOW between the thread and the composer, so it can never
+          sit over the newest card or the composer, and needs no bar math
+          (squad mobile-native — the old absolute offset counted a fixed tab
+          bar that is now the frame's in-flow last row). */}
+      {firstParty && <div data-chat-gate-banner-slot="" className="flex-shrink-0 lg:hidden" />}
       {/* Input area — the command bar. First-party chat and the /i runtime
           float it as a free-standing pill: no full-width border-t (the pill
           itself is the boundary; the rule read as a stray line) and the

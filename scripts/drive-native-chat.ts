@@ -427,6 +427,26 @@ async function chatPass(browser: Pw, devices: Pw, c: Ctx) {
   add(`${c.id}/cards-fit`, !!th.chainCard && !th.chainCard.over && !!th.jobCard && !th.jobCard.over && th.overflowX <= 0, `chain card ${th.chainCard?.w}${th.chainCard?.over ? ' OVER' : ''}, job card ${th.jobCard?.w}${th.jobCard?.over ? ' OVER' : ''}, page overflow ${th.overflowX}px`)
   await shot(page, `${c.id}-chat-thread`)
 
+  // ── the newest turn is in view (the stick-to-bottom pin held through the
+  // job card loading), and the guest banner sits in its own seat ──
+  const pin = await page.evaluate(`(() => {
+    ${HELPERS}
+    const t = thread()
+    const banner = document.querySelector('[data-gate-banner]')
+    const pill = ta() ? ta().parentElement.getBoundingClientRect() : null
+    const tr = t ? t.getBoundingClientRect() : null
+    const br = banner ? banner.getBoundingClientRect() : null
+    return {
+      gapToEnd: t ? Math.round(t.scrollHeight - t.scrollTop - t.clientHeight) : null,
+      banner: br ? { y: Math.round(br.y), b: Math.round(br.bottom), h: Math.round(br.height), phone: banner.getAttribute('data-gate-banner') === 'phone' } : null,
+      threadBottom: tr ? Math.round(tr.bottom) : null,
+      composerTop: pill ? Math.round(pill.top) : null,
+    }
+  })()`)
+  note(`${c.id}/pin`, pin)
+  add(`${c.id}/newest-turn-in-view`, pin.gapToEnd !== null && pin.gapToEnd <= 2, `${pin.gapToEnd}px from the end of the thread`)
+  if (phone && pin.banner) add(`${c.id}/banner-in-its-seat`, pin.banner.phone && pin.threadBottom !== null && pin.composerTop !== null && pin.banner.y >= pin.threadBottom - 1 && pin.banner.b <= pin.composerTop + 1, `banner ${pin.banner.y}–${pin.banner.b} (${pin.banner.h}px) · thread ends ${pin.threadBottom} · composer starts ${pin.composerTop}`)
+
   // ── the thread is the one scroller; the document never scrolls ──
   const scroll = await page.evaluate(`(() => {
     ${HELPERS}
