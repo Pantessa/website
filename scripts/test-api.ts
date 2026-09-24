@@ -32411,6 +32411,147 @@ async function main() {
     )
   }
 
+  // ── Spend retarget + measured swap gas floor (2026-09-24) ──────────────
+  // "I want to buy $2 worth of uni" from 0.00257 ETH + 1.83 USDC on Ethereum
+  // and nothing on Base: the swap defaulted to Base, the funding layer priced
+  // a bridge, the reply said "~$1.55 of ETH" over a wallet showing $6.95, and
+  // the card door was the only way forward. Three rules, each pinned:
+  //   1. lib/swap-spend-retarget — a buy that pinned no chain follows the
+  //      money and is BUILT where the wallet can pay, in the same turn.
+  //   2. lib/gas-floor — the swap gate's gas keep-back is measured from live
+  //      fees, clamped between the send floor and the old static floor.
+  //   3. lib/funding-plan sourceWords — an ETH source names the whole
+  //      balance and what the keep-back leaves ("~$6.95 … (~$1.54 movable…)").
+  {
+    const SR = await import('../lib/swap-spend-retarget')
+    const GF = await import('../lib/gas-floor')
+    const FP = await import('../lib/funding-plan')
+    const SI = await import('../lib/swap-intent')
+    const CH = await import('../lib/chains')
+    const ethUsd = 2704
+    const nateReads = [
+      { chainId: 8453, chainWord: 'Base', nativeEth: 0, usdcBal: 0 },
+      { chainId: 42161, chainWord: 'Arbitrum', nativeEth: 0, usdcBal: 0 },
+      { chainId: 10, chainWord: 'Optimism', nativeEth: 0, usdcBal: 0 },
+      { chainId: 1, chainWord: 'Ethereum', nativeEth: 0.00257, usdcBal: 1.83 },
+    ]
+    const cls = FP.classifyFundingBalances(nateReads, ethUsd)
+    const ethRow = cls.sources.find((r) => r.token === 'ETH')
+    check(
+      'spend retarget: the funding scan\'s ETH source carries the WHOLE balance (heldUsd) beside the movable share, and sourceWords names both — the $6.95 wallet no longer reads "~$1.55 of ETH"',
+      !!ethRow && Math.abs((ethRow.heldUsd ?? 0) - 6.95) < 0.01 && Math.abs(ethRow.usd - 1.54) < 0.01 &&
+        FP.sourceWords(ethRow) === '~$6.95 of ETH on Ethereum (~$1.54 movable after the gas keep-back)' &&
+        FP.sourceWords({ chainId: 8453, chainWord: 'Base', token: 'USDC', balance: 5, usd: 5 }) === '~$5 of USDC on Base' &&
+        // a fixture row without heldUsd, and an ETH row whose keep-back is under $0.50, keep the plain form
+        FP.sourceWords({ chainId: 1, chainWord: 'Ethereum', token: 'ETH', balance: 1, usd: 2704 }) === '~$2,704 of ETH on Ethereum' &&
+        FP.sourceWords({ chainId: 8453, chainWord: 'Base', token: 'ETH', balance: 0.01, usd: 27.04, heldUsd: 27.3 }) === '~$27.04 of ETH on Base',
+      ethRow ? FP.sourceWords(ethRow) : 'no ETH row',
+    )
+    const feesNow = (id: number) => ({ baseFeeWei: BigInt(id === 1 ? 140_000_000 : 30_000_000), tipWei: BigInt(id === 1 ? 500_000_000 : 1_000_000) })
+    check(
+      'gas floor: gasFloorFromFees prices 300k gas at 2×base+tip ×1.5 and clamps to [send floor, static floor] — mainnet at 0.64 gwei → the 0.001 send floor (was 0.003 static, 23× the cost); mainnet at 30 gwei → capped at 0.003; a null read → the static floor; Base → its send floor',
+      GF.gasFloorFromFees(1, feesNow(1)) === FP.MIN_GAS_TO_SEND_ETH[1] &&
+        GF.gasFloorFromFees(1, { baseFeeWei: BigInt(30e9), tipWei: BigInt(2e9) }) === FP.DEST_GAS_FLOOR_ETH[1] &&
+        GF.gasFloorFromFees(1, null) === FP.DEST_GAS_FLOOR_ETH[1] &&
+        GF.gasFloorFromFees(8453, feesNow(8453)) === FP.MIN_GAS_TO_SEND_ETH[8453] &&
+        // a mid-range read lands strictly between the bounds
+        (() => {
+          const f = GF.gasFloorFromFees(1, { baseFeeWei: BigInt(2e9), tipWei: BigInt(1e9) })
+          return f > FP.MIN_GAS_TO_SEND_ETH[1] && f < FP.DEST_GAS_FLOOR_ETH[1] && Math.abs(f - 5e9 * 300_000 * 1.5 / 1e18) < 1e-9
+        })(),
+    )
+    const liveFloor = await GF.liveSwapGasFloorEth(8453)
+    check(
+      'gas floor (live): liveSwapGasFloorEth(Base) reads eth_feeHistory and answers a floor inside the bounds — a failed read would answer the static floor, never zero',
+      liveFloor.floorEth >= FP.MIN_GAS_TO_SEND_ETH[8453] && liveFloor.floorEth <= FP.DEST_GAS_FLOOR_ETH[8453] && (liveFloor.measured || liveFloor.floorEth === FP.DEST_GAS_FLOOR_ETH[8453]),
+      JSON.stringify(liveFloor),
+    )
+    const scan = { ...cls, ethUsd, nativeEth: Object.fromEntries(nateReads.map((r) => [r.chainId, r.nativeEth])) }
+    const facts = nateReads.map((r) => ({ chainId: r.chainId, chainWord: r.chainWord, chainName: r.chainWord, buyListed: r.chainId !== 10, gasFloorEth: GF.gasFloorFromFees(r.chainId, feesNow(r.chainId)) }))
+    const picks = SR.planSpendRetarget({ buyToken: 'UNI', dollars: 2, chainId: 8453 }, scan, facts)
+    check(
+      'spend retarget: the screenshot wallet (0.00257 ETH + $1.83 USDC on Ethereum, nothing else) asking $2 of UNI on Base → ONE candidate, the ETH lane on Ethereum ("swap $2 worth of ETH for UNI on Ethereum"); the $1.83 USDC is under the buy and never offered',
+      picks.length === 1 && picks[0].lane === 'eth' && picks[0].chainId === 1 && picks[0].resume === 'swap $2 worth of ETH for UNI on Ethereum' && /\$6\.95 of ETH on Ethereum/.test(picks[0].reason),
+      JSON.stringify(picks),
+    )
+    const scan2 = {
+      ...FP.classifyFundingBalances(
+        [
+          { chainId: 8453, chainWord: 'Base', nativeEth: 0.001, usdcBal: 0, stables: [{ symbol: 'DAI', balance: 20 }] },
+          { chainId: 42161, chainWord: 'Arbitrum', nativeEth: 0.01, usdcBal: 50, stables: [{ symbol: 'USDT', balance: 900 }] }, // USDT richer, USDC still first
+          { chainId: 10, chainWord: 'Optimism', nativeEth: 0, usdcBal: 500 }, // no gas: can't sign a swap
+        ],
+        ethUsd,
+      ),
+      ethUsd,
+      nativeEth: { 8453: 0.001, 42161: 0.01, 10: 0 },
+    }
+    const facts2 = [
+      { chainId: 8453, chainWord: 'Base', chainName: 'Base', buyListed: true, gasFloorEth: 0.0002 },
+      { chainId: 42161, chainWord: 'Arbitrum', chainName: 'Arbitrum', buyListed: true, gasFloorEth: 0.0002 },
+      { chainId: 10, chainWord: 'Optimism', chainName: 'Optimism', buyListed: true, gasFloorEth: 0.0002 },
+      { chainId: 1, chainWord: 'Ethereum', chainName: 'Ethereum', buyListed: true, gasFloorEth: 0.001 }, // unread: no nativeEth → never a candidate
+    ]
+    const picks2 = SR.planSpendRetarget({ buyToken: 'UNI', dollars: 2, chainId: 8453 }, scan2, facts2)
+    check(
+      'spend retarget: ranking = the ask\'s own chain first (a spend-token change is the smaller surprise), stables before ETH, USDC before a richer USDT (#843\'s reset dance), larger balance next; a gasless chain and an unread chain are never candidates',
+      picks2.map((p) => p.resume).join(' | ') === 'swap 2 DAI for UNI on Base | swap $2 worth of ETH for UNI on Base | buy $2 of UNI on Arbitrum | swap 2 USDT for UNI on Arbitrum | swap $2 worth of ETH for UNI on Arbitrum',
+      picks2.map((p) => p.resume).join(' | '),
+    )
+    check(
+      'spend retarget: every candidate resume is a sentence the swap parser accepts, naming its chain (the chip-send contract) — and a buy OF ETH/WETH never gets the ETH lane (#803\'s round trip), an unlisted buy token never gets a chain, a zero-dollar ask gets nothing',
+      [...picks, ...picks2].every((p) => {
+        const i = SI.parseSwapIntent(p.resume)
+        return i.isSwap && !i.problem && i.buyToken?.toUpperCase() === 'UNI' && CH.chainNamedIn(p.resume)?.id === p.chainId && (p.lane === 'eth' ? i.sellToken === 'ETH' && i.sellAmountUsd === '2' : true)
+      }) &&
+        SR.planSpendRetarget({ buyToken: 'ETH', dollars: 2, chainId: 8453 }, scan, facts).length === 0 &&
+        SR.planSpendRetarget({ buyToken: 'WETH', dollars: 2, chainId: 8453 }, scan, facts).length === 0 &&
+        SR.planSpendRetarget({ buyToken: 'UNI', dollars: 2, chainId: 8453 }, scan, facts.map((f) => ({ ...f, buyListed: false }))).length === 0 &&
+        SR.planSpendRetarget({ buyToken: 'UNI', dollars: 0, chainId: 8453 }, scan, facts).length === 0,
+    )
+    check(
+      'spend retarget: the note says what changed and why, and offers the way back ("Say the chain")',
+      /named no chain/.test(SR.spendRetargetNote({ buyToken: 'UNI', dollars: 2, fromChainName: 'Base', fromToken: 'USDC', pick: picks[0], built: true })) &&
+        /so I built the buy there: on Ethereum, paid with ETH\. Say the chain/.test(SR.spendRetargetNote({ buyToken: 'UNI', dollars: 2, fromChainName: 'Base', fromToken: 'USDC', pick: picks[0], built: true })) &&
+        /so I tried the buy there instead/.test(SR.spendRetargetNote({ buyToken: 'UNI', dollars: 2, fromChainName: 'Base', fromToken: 'USDC', pick: picks[0], built: false })) &&
+        /paid with DAI instead of USDC/.test(SR.spendRetargetNote({ buyToken: 'UNI', dollars: 2, fromChainName: 'Base', fromToken: 'USDC', pick: picks2[0], built: true })),
+    )
+
+    // The route, live and read-only: a public wallet rich in mainnet ETH
+    // (the Ethereum Foundation's EOA — ~$3 of USDC on Base, ~5,700 ETH on
+    // Ethereum) asks for $10 of UNI with NO chain named and NO picker. Main
+    // walled this at Base's USDC and priced a bridge; now it builds on
+    // Ethereum from what the wallet holds there. Nothing is signed.
+    const EF = '0xde0B295669a9FD93d5F28D9Ec85E40f4cb697BAe'
+    const swapChat = async (extra: Record<string, unknown>) =>
+      (await (
+        await fetch(`${BASE}/api/chat`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ message: 'I want to buy $10 worth of uni', walletAddress: EF, activeServers: [{ slug: 'uniswap-free' }], history: [], ...extra }),
+        })
+      ).json()) as { reply?: string; buildPath?: string; txChain?: unknown; txRequest?: unknown; order?: unknown; clarify?: unknown; spendRetarget?: { fromChainId: number; toChainId: number; lane: string; token: string; resume: string; built: boolean } }
+    const free = await swapChat({})
+    check(
+      'spend retarget (route, live): "I want to buy $10 worth of uni" with no chain named and no picker, from a wallet short on Base but rich on Ethereum → rebuilt on Ethereum in the same turn (a real artifact, unsigned), the reply opening with the retarget note',
+      !!free.spendRetarget && free.spendRetarget.fromChainId === 8453 && free.spendRetarget.toChainId === 1 && free.spendRetarget.built === true &&
+        !!(free.txChain || free.txRequest || free.order) && /^🧭 You asked for \$10 of UNI and named no chain/.test(String(free.reply)),
+      JSON.stringify({ spendRetarget: free.spendRetarget, buildPath: free.buildPath, reply: String(free.reply).slice(0, 200) }),
+    )
+    const pinned = await swapChat({ selectedChainId: 8453 })
+    check(
+      'spend retarget (route, live): the SAME ask with the picker on Base never wanders — the swap stays on Base and answers the funding path (an offer or the honest refusal), with no retarget',
+      !pinned.spendRetarget && !(pinned.txChain || pinned.txRequest || pinned.order) && (pinned.buildPath === 'native-swap-short' || !!pinned.clarify || /🌉/.test(String(pinned.reply))),
+      JSON.stringify({ buildPath: pinned.buildPath, reply: String(pinned.reply).slice(0, 160) }),
+    )
+    const named = await swapChat({ message: 'buy $10 of UNI on base' })
+    check(
+      'spend retarget (route, live): a chain NAMED in the sentence never wanders either',
+      !named.spendRetarget && !(named.txChain || named.txRequest || named.order),
+      JSON.stringify({ buildPath: named.buildPath, reply: String(named.reply).slice(0, 160) }),
+    )
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }

@@ -38,7 +38,7 @@ import {
   type LidoPositionPayload,
   type LidoStakeParams,
 } from '@/lib/lido-stake'
-import { DEST_GAS_FLOOR_ETH, FUNDING_CHAIN_WORD, fundingFallbackForFailures, offerFundingPlan, scanFundingSources, softenClaimedFailureBlock, type FundingRefusalFacts } from '@/lib/funding-plan'
+import { DEST_GAS_FLOOR_ETH, FUNDING_CHAIN_WORD, FUNDING_SCAN_CHAINS, fundingFallbackForFailures, offerFundingPlan, scanFundingSources, softenClaimedFailureBlock, type FundingRefusalFacts } from '@/lib/funding-plan'
 import {
   parseCrossChainSwap,
   parseCrossChainFollowUp,
@@ -155,7 +155,9 @@ import { buildUniswapV4Swap, NoV4PoolError, GatedV4PoolError } from '@/lib/unisw
 import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { OffTapeError, TapeUnavailableError } from '@/lib/stock-tape'
 import { fundChipFor, ONRAMP_NETWORK_LABEL } from '@/lib/onramp'
-import { swapShortfallTurn } from '@/lib/swap-shortfall'
+import { swapShortfallTurn, buyDollarsOf } from '@/lib/swap-shortfall'
+import { planSpendRetarget, spendRetargetNote } from '@/lib/swap-spend-retarget'
+import { liveSwapGasFloorEth } from '@/lib/gas-floor'
 import { cardBuyTurn, type CardBuyAsk } from '@/lib/card-buy'
 import { layerCardDoorCopy, layerFundChip, layerShortfallTurn, type LayerShortfallAsk, type LayerShortfallTurn } from '@/lib/layer-shortfall'
 import { fundingOriginWords } from '@/lib/funding-origins'
@@ -2312,7 +2314,10 @@ async function handleChatTurn(req: NextRequest) {
           : 'swap ask (pair not fully parsed yet)'
         const chainVia = buildChain.id !== targetChain.id ? 'stock list, inferred' : namedNative ? 'named in the message' : pickerChain ? 'from the chain picker' : 'default'
         nativeTrace({ type: 'status', label: `native swap layer claimed the turn: ${pair} on ${venue === 'uniswap' ? 'Uniswap' : 'CoW'} (${buildChain.name}, ${chainVia}) — planner bypassed` })
-        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, buildChain.id, swapFeeBps, contentOrigin)
+        // A spend the wallet can't cover may follow the money ONLY when the
+        // ask pinned no chain: nothing named, nothing picked, nothing inferred.
+        const allowRetarget = !namedNative && !pickerChain && buildChain.id === targetChain.id && swapIntent.mode !== 'limit'
+        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, buildChain.id, swapFeeBps, contentOrigin, { allowRetarget })
       }
       // crossChain + a usable cross-chain agent → build it NATIVELY (deterministic
       // build_swap + guardrails + Sign button), never via the planner/house
@@ -4444,7 +4449,14 @@ function isExactRobinhoodStock(symbol: string): boolean {
  * line, so every venue's artifact (CoW order, v3/v4 chain, LiFi chain)
  * quotes the exact number the user is about to sign — one site, not five.
  */
-async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext, trace: (event: unknown) => void = () => {}, chainId: number = DEFAULT_CHAIN_ID, feeBps?: number, origin: ContentOrigin = 'first-party') {
+/** Options a caller passes through to the swap layer's core.
+ *  allowRetarget: the ask pinned NO chain (nothing in the sentence, nothing in
+ *  the picker), so a spend the wallet can't cover on the default chain may be
+ *  re-aimed at where the wallet can pay (lib/swap-spend-retarget). Default
+ *  false: reruns, follow-ups and named chains never wander. */
+type SwapTurnOpts = { allowRetarget?: boolean }
+
+async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext, trace: (event: unknown) => void = () => {}, chainId: number = DEFAULT_CHAIN_ID, feeBps?: number, origin: ContentOrigin = 'first-party', opts: SwapTurnOpts = {}) {
   // Content-origin fence (SECURITY-AUDIT §C3/E5): a swap whose token slot is
   // a raw contract address, authored by a link or an embed host, is a
   // transfer wearing a swap verb — refused by name before any venue runs.
@@ -4454,7 +4466,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
     return NextResponse.json({ reply: rawRefusal, blocked: true, buildPath: venue === 'cow' ? 'native-swap-cow' : 'native-swap-uniswap', originFence: 'raw-address-token' })
   }
   const sized: { note: string | null } = { note: null }
-  const res = await prepareSwapTurnCore(intent, walletAddress, venue, ctx, trace, chainId, feeBps, sized)
+  const res = await prepareSwapTurnCore(intent, walletAddress, venue, ctx, trace, chainId, feeBps, sized, opts)
   if (!sized.note) return res
   const body = (await res.json().catch(() => null)) as Record<string, unknown> | null
   if (!body) return res
@@ -4466,7 +4478,7 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
   return NextResponse.json(body, { status: res.status })
 }
 
-async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext, trace: (event: unknown) => void = () => {}, chainId: number = DEFAULT_CHAIN_ID, feeBps?: number, sized: { note: string | null } = { note: null }) {
+async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext, trace: (event: unknown) => void = () => {}, chainId: number = DEFAULT_CHAIN_ID, feeBps?: number, sized: { note: string | null } = { note: null }, opts: SwapTurnOpts = {}): Promise<NextResponse> {
   const chain = chainById(chainId) ?? chainById(DEFAULT_CHAIN_ID)!
   chainId = chain.id
   // Warm the chain's dynamic token map (official Uniswap list) so UNI/AAVE/
@@ -5177,13 +5189,18 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
       const sellAddr = isEthSell ? null : resolveToken(intent.sellToken, chainId)
       const client = publicClientFor(chainId)
       if (client && (isEthSell || sellAddr)) {
+        // The gas a swap must leave behind, MEASURED from the chain's fees
+        // (lib/gas-floor): the static DEST_GAS_FLOOR_ETH was 23× mainnet's
+        // real cost and walled a wallet holding $6.95 of ETH from a $2 buy.
+        const gasFloorLive = await liveSwapGasFloorEth(chainId)
+        if (gasFloorLive.measured) trace({ type: 'note', level: 'info', label: `native swap layer: ${chain.name} swap gas floor measured at ${gasFloorLive.floorEth.toFixed(6)} ETH from live fees (static ${DEST_GAS_FLOOR_ETH[chainId] ?? 0.0002})` })
         const balanceAtoms = isEthSell
           ? await client.getBalance({ address: walletAddress as `0x${string}` })
           : await client.readContract({ address: sellAddr as `0x${string}`, abi: erc20Abi, functionName: 'balanceOf', args: [walletAddress as `0x${string}`] })
         const held = Number(balanceAtoms) / 10 ** sellDec
         const heldWord = held.toFixed(6).replace(/\.?0+$/, '') || '0'
         // An ETH sell must also leave gas for the swap itself.
-        const needTotal = Number(intent.sellAmountHuman) + (isEthSell ? (DEST_GAS_FLOOR_ETH[chainId] ?? 0.0002) : 0)
+        const needTotal = Number(intent.sellAmountHuman) + (isEthSell ? gasFloorLive.floorEth : 0)
         // A whole-holding sell was sized off THIS balance a moment ago (the
         // ETH floor already subtracted) — a float epsilon must never turn it
         // into a phantom shortfall offer.
@@ -5195,6 +5212,51 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
           // Spending a stable is a BUY ("Buy $50 of ETH" spends USDC): every
           // line of the funding answer names it that way, not "the swap".
           const sellIsStable = !!sellAddr && chain.stables[sellAddr.toLowerCase()] !== undefined
+          // Before moving money: can the wallet already PAY for this buy from
+          // where its money sits? Only when the ask pinned no chain
+          // (lib/swap-spend-retarget). "buy $2 of UNI" defaulted to Base and
+          // its spend to USDC there; the wallet held $6.95 of ETH on
+          // Ethereum, where UNI lives — a one-swap answer the funding layer
+          // priced as a bridge and walled (2026-09-24).
+          const buyDollars = buyDollarsOf({ sellIsStable, sellAmountUsd: intent.sellAmountUsd, sellAmountHuman: intent.sellAmountHuman })
+          if (opts.allowRetarget && buyDollars !== null && intent.mode !== 'limit') {
+            const scan = await scanFundingSources(walletAddress).catch(() => null)
+            if (scan) {
+              const chainIds = FUNDING_SCAN_CHAINS.filter((id) => scan.readChains.includes(FUNDING_CHAIN_WORD[id]))
+              await Promise.all(chainIds.map((id) => ensureTokenList(id).catch(() => {})))
+              const floors = await Promise.all(chainIds.map((id) => liveSwapGasFloorEth(id)))
+              const facts = chainIds.map((id, i) => ({
+                chainId: id,
+                chainWord: FUNDING_CHAIN_WORD[id],
+                chainName: chainById(id)?.name ?? FUNDING_CHAIN_WORD[id],
+                buyListed: !!resolveToken(buySym, id),
+                gasFloorEth: floors[i].floorEth,
+              }))
+              const picks = planSpendRetarget({ buyToken: buySym, dollars: buyDollars, chainId }, scan, facts)
+              const pick = picks[0]
+              const intent2 = pick ? parseSwapIntent(pick.resume) : null
+              const chain2 = pick ? chainById(pick.chainId) : null
+              if (pick && intent2 && !intent2.problem && intent2.buyToken && chain2) {
+                // The ETH lane builds on Uniswap (a CoW order would want WETH);
+                // a chain with no CoW book builds on Uniswap; otherwise the
+                // venue the set picked stands.
+                const venue2: 'uniswap' | 'cow' = pick.lane === 'eth' || !chain2.cow ? 'uniswap' : venue
+                trace({
+                  type: 'status',
+                  label: `spend retarget: ${sellSym} short on ${chain.name} (holds ${heldWord}) but ${pick.reason} — rebuilding as “${pick.resume}” on ${venue2 === 'uniswap' ? 'Uniswap' : 'CoW'} (${picks.length} candidate${picks.length === 1 ? '' : 's'}: ${picks.map((p) => `${p.token}@${p.chainWord}`).join(', ')})`,
+                })
+                const inner = await prepareSwapTurnCore(intent2, walletAddress, venue2, ctx, trace, chain2.id, feeBps, sized, { allowRetarget: false })
+                const body = (await inner.json().catch(() => null)) as Record<string, unknown> | null
+                if (!body) return inner
+                const built = !!(body.txChain || body.order || body.txRequest)
+                const note = spendRetargetNote({ buyToken: buySym, dollars: buyDollars, fromChainName: chain.name, fromToken: sellSym, pick, built })
+                if (typeof body.reply === 'string') body.reply = `${note}\n\n${body.reply}`
+                body.spendRetarget = { fromChainId: chainId, fromToken: sellSym, toChainId: chain2.id, lane: pick.lane, token: pick.token, resume: pick.resume, built }
+                return NextResponse.json(body, { status: inner.status })
+              }
+              trace({ type: 'note', level: 'info', label: `spend retarget: no chain where the wallet can pay $${buyDollars} of ${buySym} outright (read ${scan.readChains.join(', ')}) — asking the funding layer` })
+            }
+          }
           const offer = await offerFundingPlan({
             user: walletAddress,
             need: {
@@ -5254,7 +5316,7 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
           // another chain, the stranded-USDC rescue, or the honest naming),
           // never a chain the wallet cannot sign.
           const gasWei = await client.getBalance({ address: walletAddress as `0x${string}` })
-          const gasFloor = DEST_GAS_FLOOR_ETH[chainId] ?? 0.0002
+          const gasFloor = gasFloorLive.floorEth
           const gasHeld = Number(gasWei) / 1e18
           // A CoW order is gasless ONLY once the VaultRelayer allowance is in
           // place — with it, a zero-ETH wallet can still sign and settle; without

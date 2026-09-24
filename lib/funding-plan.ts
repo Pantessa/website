@@ -170,7 +170,7 @@ const DUST_USD = 0.5
  *  an "all my ETH" leg must never strand the wallet gasless mid-plan. */
 const GAS_RESERVE_ETH: Record<number, number> = { 1: 0.002, 8453: 0.0002, 42161: 0.0002, 10: 0.0002 }
 /** Minimum native ETH a chain needs before an ERC-20 source there is signable. */
-const MIN_GAS_TO_SEND_ETH: Record<number, number> = { 1: 0.001, 8453: 0.00003, 42161: 0.00003, 10: 0.00003 }
+export const MIN_GAS_TO_SEND_ETH: Record<number, number> = { 1: 0.001, 8453: 0.00003, 42161: 0.00003, 10: 0.00003 }
 /** …and before it can also CONVERT first: the hop is approve + swap +
  *  transfer where a direct leg is one transfer, so it needs headroom for
  *  three. 3× the send floor — a number the chain's own gas market makes
@@ -292,6 +292,12 @@ export interface FundingSource {
   /** Movable balance (gas reserve already deducted for ETH sources). */
   balance: number
   usd: number
+  /** ETH sources only: the WHOLE balance's dollars, keep-back included. The
+   *  summary names both — "~$1.55 of ETH" over a wallet showing $6.95 read
+   *  as a wrong balance (2026-09-24, "buy $2 of UNI" with 0.00257 ETH on
+   *  Ethereum); the number was right for what it measured, but nobody was
+   *  told what it measured. Absent on fixtures and non-ETH rows. */
+  heldUsd?: number
   /** false = this holding has no cross-chain route it can compile, so it may
    *  only fund an action on its OWN chain (FUNDING_STABLES). Absent = ETH or
    *  USDC, which ride everywhere the scan reads. */
@@ -458,14 +464,22 @@ export function unroutableSources(need: FundingNeed, sources: FundingSource[]): 
   return sources.filter((s) => s.usd >= DUST_USD && !isBuyToken(need, s) && !sourceCanFund(s, need.chainId)).sort((a, b) => b.usd - a.usd)
 }
 
+/** One source as the copy names it. An ETH row whose keep-back ate a visible
+ *  share of the balance says so: the wallet on screen shows the whole
+ *  balance, and a smaller number with no reason reads as a misread. */
+export function sourceWords(s: FundingSource): string {
+  const movable = `~$${usd2(Number(s.usd.toFixed(2)))}`
+  if (s.token.toUpperCase() === 'ETH' && typeof s.heldUsd === 'number' && s.heldUsd - s.usd >= 0.5) {
+    return `~$${usd2(Number(s.heldUsd.toFixed(2)))} of ETH on ${s.chainWord} (${movable} movable after the gas keep-back)`
+  }
+  return `${movable} of ${s.token} on ${s.chainWord}`
+}
+
 export function planFundingChips(need: FundingNeed, needUsd: number, sources: FundingSource[], gasUsd = 0): FundingPlan {
   // Nothing to move at all — never emit a zero-amount leg.
   if (needUsd + gasUsd <= 0) return { kind: 'short', needUsd: 0, totalUsd: 0, sourceSummary: '' }
   const ranked = plannableSources(need, sources)
-  const sourceSummary = ranked
-    .slice(0, 4)
-    .map((s) => `~$${usd2(Number(s.usd.toFixed(2)))} of ${s.token} on ${s.chainWord}`)
-    .join(', ')
+  const sourceSummary = ranked.slice(0, 4).map(sourceWords).join(', ')
   const totalUsd = Number(ranked.reduce((a, s) => a + s.usd, 0).toFixed(2))
   const totalNeedUsd = Number((needUsd + gasUsd).toFixed(2))
 
@@ -959,7 +973,7 @@ export function classifyFundingBalances(reads: FundingBalanceRead[], ethUsd: num
     }
     const movableEth = r.nativeEth - (GAS_RESERVE_ETH[r.chainId] ?? 0.002)
     if (ethUsd !== null && movableEth > 0) {
-      sources.push({ chainId: r.chainId, chainWord: r.chainWord, token: 'ETH', balance: movableEth, usd: movableEth * ethUsd })
+      sources.push({ chainId: r.chainId, chainWord: r.chainWord, token: 'ETH', balance: movableEth, usd: movableEth * ethUsd, heldUsd: r.nativeEth * ethUsd })
     } else if (ethUsd !== null && r.nativeEth * ethUsd >= DUST_USD) {
       // Sub-reserve ETH: real money that can't clear the chain's keep-back —
       // never plannable, but a refusal must name it ($2 on mainnet answered
