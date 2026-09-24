@@ -20,6 +20,7 @@
 
 import { useEffect, useRef, type ReactNode } from 'react'
 import type { PhoneScreen as PhoneScreenName } from '@/lib/store'
+import { useSoftKeyboard } from '@/components/mobile/useSoftKeyboard'
 
 // Scroll position remembered per screen (invariant 3): a screen unmounts
 // when you leave it and comes back where you left it, the way a native tab
@@ -39,6 +40,18 @@ export default function PhoneScreen({
   children: ReactNode
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null)
+  // The soft keyboard shrinks the frame onto it (app/native-shell.css) — a
+  // field focused low on this screen would end up under the keyboard's
+  // edge. Bring it into the scroller's view the moment the keyboard is up.
+  const { open: keyboardOpen } = useSoftKeyboard()
+  useEffect(() => {
+    if (!keyboardOpen) return
+    const el = scrollerRef.current
+    const active = document.activeElement
+    if (!el || !(active instanceof HTMLElement) || !el.contains(active)) return
+    const raf = requestAnimationFrame(() => active.scrollIntoView({ block: 'nearest' }))
+    return () => cancelAnimationFrame(raf)
+  }, [keyboardOpen])
   useEffect(() => {
     const el = scrollerRef.current
     if (!el) return

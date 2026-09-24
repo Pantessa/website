@@ -203,6 +203,7 @@ export default function AppsRailTab({
         <button
           type="button"
           onClick={() => setAddOpen(true)}
+          data-sheet-open="addmcp"
           className={cn(
             'mt-1.5 w-full flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--line-2)] px-2 py-2 text-[11px] font-medium text-[color:var(--muted)] hover:text-white hover:border-[var(--muted-2)] hover:bg-white/[0.03] transition-colors',
             flat && 'min-h-[44px] text-[13px]',

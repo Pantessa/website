@@ -21,6 +21,7 @@ import { chartPairFor, normalizeChartSymbol, parseChartAsk } from '@/lib/charts'
 import { parseMarketsNavAsk } from '@/lib/markets'
 import { EXAMPLE_PROMPTS } from '@/lib/examples'
 import { tradeAsks } from '@/lib/trade-asks'
+import { ctaBarStep, type CtaBarState } from '@/lib/cta-bar'
 
 /** A page that hosts its own ask composer takes the door (see `dock`). */
 export type AskDock = (draft: string | undefined, opts?: { send?: boolean; mcps?: string[] }) => void
@@ -148,4 +149,25 @@ export function askDoorChips(pathname: string, brief?: { symbol: string; chips: 
 export function askDoorPlaceholder(pathname: string): string {
   const sym = askDoorSymbol(pathname)
   return sym ? `Ask anything about ${sym} — buy it, protect it, chart it…` : 'Ask Pantessa — swaps, stocks, stop-losses, anything…'
+}
+
+// ── The pill as a native FAB on a document-scrolling page (squad
+// mobile-native, 2026-09-24, round 2). On a brochure page the pill is the
+// phone's only visible Ask (the nav's lives in its drawer), and QA measured it
+// over text at 10 of 14 scroll positions on /. A native FAB steps away while
+// you read DOWN and comes back when you scroll UP, and it rests at the top
+// (arrival) and at the page end (the page-foot reserve keeps the last line
+// clear there). The direction, jitter and anchor are PAGES' landing CTA-bar
+// rule (lib/cta-bar), reused, with no hero band. Pure: the harness pins it.
+
+/** The pill's state after the page scrolled to `y`, of `maxY` scrollable px. */
+export function askPillStep(prev: CtaBarState, y: number, maxY: number): CtaBarState {
+  if (y <= 2 || y >= maxY - 2) return { shown: true, anchorY: y }
+  return ctaBarStep(prev, y, 0)
+}
+
+/** On arrival: shown at the top or the end, away anywhere else (a restored
+ *  scroll lands mid-page; the next scroll up brings it back). */
+export function askPillInitial(y: number, maxY: number): CtaBarState {
+  return { shown: y <= 2 || y >= maxY - 2, anchorY: y }
 }
