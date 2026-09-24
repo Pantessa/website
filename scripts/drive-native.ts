@@ -794,7 +794,12 @@ async function layoutAt(run: Run, o: Opened, s: Surface, size: Size, theme: Them
       const p0 = pos[0]
       record({ ...b, check: 'frame', item: '', state: 'N/A', value: `document ${p0.docScrollHeight}/${f.vh}`, detail: 'brochure page: not framed by design (README invariant 1 lists app surfaces)' })
     } else {
-      const docScrolls = pos.some((p) => p.docScrollHeight > f.vh + 1 || p.docScrollTop !== 0)
+      // A document that is tall only at the FIRST read and fits at the middle
+      // and end reads is a load transient (a late CSS chunk; the integrated
+      // /dashboard held 1005px for ~250ms) — noted, not failed.
+      const tallAt = pos.filter((p) => p.docScrollHeight > f.vh + 1 || p.docScrollTop !== 0)
+      const transient = tallAt.length === 1 && tallAt[0] === pos[0] && pos.length > 1
+      const docScrolls = tallAt.length > 0 && !transient
       const maxDocTop = Math.max(...pos.map((p) => p.docScrollTop))
       const reasons: string[] = []
       if (docScrolls) reasons.push(`the DOCUMENT scrolls (scrollHeight ${Math.max(...pos.map((p) => p.docScrollHeight))} > innerHeight ${f.vh}; scrollTop reached ${maxDocTop}${f.tall?.length ? `; past the bottom: ${f.tall.join(', ')}` : ''})`)
@@ -806,15 +811,16 @@ async function layoutAt(run: Run, o: Opened, s: Surface, size: Size, theme: Them
         check: 'frame',
         item: '',
         state: reasons.length ? 'FAIL' : 'PASS',
-        value: `doc ${pos[0].docScrollHeight}/${f.vh} · top max ${maxDocTop} · scroller ${f.how}`,
-        detail: reasons.join('; '),
+        value: `doc ${pos[pos.length - 1].docScrollHeight}/${f.vh} · top max ${maxDocTop} · scroller ${f.how}`,
+        detail: [transient ? `transient: the document read ${pos[0].docScrollHeight}px at load, then ${pos[1].docScrollHeight}px` : '', ...reasons].filter(Boolean).join('; '),
       })
     }
   }
   // 2 · bar (+ the Ask pill)
   if (wantCheck('bar')) {
     const chromes = pos.flatMap((p) => p.chrome.map((c) => ({ ...c, at: p.name })))
-    const docScrolls = pos.some((p) => p.docScrollHeight > f.vh + 1)
+    const tallPos = pos.filter((p) => p.docScrollHeight > f.vh + 1)
+    const docScrolls = tallPos.length > 0 && !(tallPos.length === 1 && tallPos[0] === pos[0] && pos.length > 1)
     if (s.kind === 'brochure') {
       const fixedBottom = [...new Set(chromes.map((c) => c.kind))]
       const drift = docScrolls && fixedBottom.length > 0
@@ -1606,7 +1612,12 @@ async function desktopJob(run: Run, d: (typeof DESKTOP_SURFACES)[number], sessio
       const moved = dims.filter((dm) => Math.abs(r0[dm] - r1[dm]) > 1)
       if (moved.length) diffs.push(`${k}: ${moved.map((dm) => `${dm} ${r0[dm]}→${r1[dm]}`).join(' ')}`)
     }
-    if (want.docScrolls !== got.docScrolls) diffs.push(`document ${want.docScrolls ? 'scrolled' : 'was still'} on main, now ${got.docScrolls ? 'scrolls' : 'still'}`)
+    // Whether the document scrolls at desktop is compared only where main's
+    // content was clearly taller or shorter than the screen: /wallet's main is
+    // ~900px on a 900px screen and tips either way with its holdings.
+    const content = Object.entries(want.rects).find(([k, r]) => (k === 'main' || k === 'frame' || k === 'sym') && r)?.[1]
+    const borderline = !!content && Math.abs(content.h - DESKTOP.height) <= DESKTOP.height * 0.1
+    if (want.docScrolls !== got.docScrolls && !borderline) diffs.push(`document ${want.docScrolls ? 'scrolled' : 'was still'} on main, now ${got.docScrolls ? 'scrolls' : 'still'}`)
     record({ ...b, state: diffs.length ? 'FAIL' : 'PASS', value: diffs.length ? `${diffs.length} part(s) moved` : `${Object.keys(want.rects).length} parts unchanged`, detail: diffs.join('; ') })
   } finally {
     await o.ctx.close().catch(() => {})
