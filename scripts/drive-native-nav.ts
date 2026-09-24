@@ -395,6 +395,137 @@ const rowContract: NavScenario = {
     v.push(rA2.screen?.name === 'apps' ? pass('contract', 'tapping the lit APPS seat stays on APPS', rA2.screen.name) : fail('contract', 'tapping the lit APPS seat stays on APPS', JSON.stringify(rA2.screen)))
     v.push(scrolled <= 0 || (rA2.appScrollTop ?? 1) === 0 ? pass('contract', 'tapping the lit seat scrolls its screen to the top', `scrolled ${scrolled} → ${rA2.appScrollTop}`) : fail('contract', 'tapping the lit seat scrolls its screen to the top', `scrolled ${scrolled} → ${rA2.appScrollTop}`))
 
+    // The scroller handover (round 2): exactly ONE [data-app-scroll] at every
+    // step, the thread's in the conversation and the screen's while one
+    // shows, and the thread keeps its scroll position across a visit.
+    const scrollers = () =>
+      page.evaluate(() => {
+        const all = Array.from(document.querySelectorAll<HTMLElement>('[data-app-scroll]'))
+        const el = all[0]
+        const owner = !el ? 'none' : el.closest('[data-phone-panel]') ? `panel:${el.closest('[data-phone-panel]')!.getAttribute('data-phone-panel')}` : el.closest('main') ? 'thread' : 'other'
+        return { count: all.length, owner, scrollTop: el ? el.scrollTop : -1, scrollable: el ? el.scrollHeight > el.clientHeight + 1 : false }
+      })
+    await tapSeat(page, 'CHATS')
+    await wait(500)
+    const s0 = await scrollers()
+    v.push(s0.count === 1 && s0.owner === 'thread' ? pass('contract', 'handover: in the conversation the thread is the ONE [data-app-scroll]', JSON.stringify(s0)) : fail('contract', 'handover: in the conversation the thread is the ONE [data-app-scroll]', JSON.stringify(s0)))
+    const threadLeft = await page.evaluate(() => {
+      const t = document.querySelector('[data-app-scroll]') as HTMLElement | null
+      if (!t || t.scrollHeight <= t.clientHeight + 1) return -1
+      t.scrollTop = Math.min(160, t.scrollHeight - t.clientHeight)
+      return t.scrollTop
+    })
+    await wait(300)
+    await tapSeat(page, 'APPS')
+    await wait(600)
+    const s1 = await scrollers()
+    v.push(s1.count === 1 && s1.owner === 'panel:apps' ? pass('contract', 'handover: on APPS the screen is the ONE [data-app-scroll] (the thread gave it up)', JSON.stringify(s1)) : fail('contract', 'handover: on APPS the screen is the ONE [data-app-scroll] (the thread gave it up)', JSON.stringify(s1)))
+    await tapSeat(page, 'CHATS')
+    await wait(600)
+    const s2 = await scrollers()
+    v.push(s2.count === 1 && s2.owner === 'thread' ? pass('contract', 'handover: back in the conversation the thread is the ONE [data-app-scroll] again', JSON.stringify(s2)) : fail('contract', 'handover: back in the conversation the thread is the ONE [data-app-scroll] again', JSON.stringify(s2)))
+    if (threadLeft > 0) {
+      v.push(Math.abs(s2.scrollTop - threadLeft) <= 4 ? pass('contract', 'handover: the thread keeps its scroll position across a visit to APPS', `left at ${threadLeft}, back at ${s2.scrollTop}`) : fail('contract', 'handover: the thread keeps its scroll position across a visit to APPS', `left at ${threadLeft}, back at ${s2.scrollTop}`))
+    } else {
+      v.push(note('contract', 'handover: the thread was not scrollable in this state (no cards yet), position retention not measured', JSON.stringify(s0)))
+    }
+
+    // The keyboard with a screen up: a field on the LINKS screen (the mint
+    // composer; TEAM's mandate box as the fallback), the keyboard faked the
+    // way SHELL reads it (visualViewport.height shrinks, resize fires): the
+    // bar steps aside, the frame shrinks onto the keyboard, the field stays
+    // visible above it.
+    await tapSeat(page, 'LINKS')
+    await wait(1200)
+    let field = page.locator('[data-phone-panel="links"] textarea, [data-phone-panel="links"] input[type="text"], [data-phone-panel="links"] input:not([type])').first()
+    let fieldWhere = 'links'
+    if ((await field.count()) === 0) {
+      await tapSeat(page, 'More')
+      await wait(400)
+      await page.locator('.sheet[data-sheet="more"] [role="menuitem"]').filter({ hasText: 'Team' }).first().tap()
+      await wait(1200)
+      field = page.locator('[data-phone-panel="team"] textarea').first()
+      fieldWhere = 'team'
+    }
+    if ((await field.count()) > 0) {
+      await field.first().scrollIntoViewIfNeeded()
+      await field.first().focus()
+      await wait(200)
+      const kb = await page.evaluate(() => {
+        const vv = window.visualViewport
+        if (!vv) return null
+        const KB = 300
+        Object.defineProperty(vv, 'height', { get: () => window.innerHeight - KB, configurable: true })
+        Object.defineProperty(vv, 'offsetTop', { get: () => 0, configurable: true })
+        vv.dispatchEvent(new Event('resize'))
+        return KB
+      })
+      await wait(500)
+      const up = await page.evaluate(() => {
+        const bar = document.querySelector('nav[data-spine-bar]') as HTMLElement | null
+        const frame = document.querySelector('[data-app-frame]') as HTMLElement | null
+        const active = document.activeElement as HTMLElement | null
+        const ar = active?.getBoundingClientRect()
+        return {
+          keyboardAttr: document.documentElement.getAttribute('data-keyboard'),
+          inset: getComputedStyle(document.documentElement).getPropertyValue('--kb-inset').trim(),
+          barDisplay: bar ? getComputedStyle(bar).display : 'none',
+          barH: bar ? bar.getBoundingClientRect().height : 0,
+          frameH: frame ? Math.round(frame.getBoundingClientRect().height) : -1,
+          innerHeight: window.innerHeight,
+          activeTag: active?.tagName ?? 'none',
+          fieldTop: ar ? Math.round(ar.top) : -1,
+          fieldBottom: ar ? Math.round(ar.bottom) : -1,
+        }
+      })
+      const visibleAbove = up.innerHeight - (kb ?? 300)
+      v.push(up.keyboardAttr === '1' && up.barDisplay === 'none' ? pass('contract', `keyboard up on the ${fieldWhere} screen: html[data-keyboard], the bar steps aside`, JSON.stringify(up)) : fail('contract', `keyboard up on the ${fieldWhere} screen: html[data-keyboard], the bar steps aside`, JSON.stringify(up)))
+      v.push(up.frameH === visibleAbove ? pass('contract', 'keyboard up: the frame shrinks onto the keyboard', `frame ${up.frameH} = ${up.innerHeight} − ${kb}`) : fail('contract', 'keyboard up: the frame shrinks onto the keyboard', JSON.stringify(up)))
+      v.push(up.fieldTop >= 0 && up.fieldBottom <= visibleAbove && /TEXTAREA|INPUT/.test(up.activeTag) ? pass('contract', 'keyboard up: the focused field stays visible above the keyboard', `field ${up.fieldTop}–${up.fieldBottom} within 0–${visibleAbove}`) : fail('contract', 'keyboard up: the focused field stays visible above the keyboard', JSON.stringify(up)))
+      // Keyboard away: the bar comes back.
+      await page.evaluate(() => {
+        const vv = window.visualViewport
+        if (!vv) return
+        Object.defineProperty(vv, 'height', { get: () => window.innerHeight, configurable: true })
+        vv.dispatchEvent(new Event('resize'))
+      })
+      await wait(500)
+      const down = await page.evaluate(() => {
+        const bar = document.querySelector('nav[data-spine-bar]') as HTMLElement | null
+        return { keyboardAttr: document.documentElement.getAttribute('data-keyboard'), barBottom: bar ? Math.round(bar.getBoundingClientRect().bottom) : -1, innerHeight: window.innerHeight }
+      })
+      v.push(down.keyboardAttr === null && down.barBottom === down.innerHeight ? pass('contract', 'keyboard away: the bar is back on the bottom', JSON.stringify(down)) : fail('contract', 'keyboard away: the bar is back on the bottom', JSON.stringify(down)))
+      await page.keyboard.press('Escape').catch(() => {})
+    } else {
+      v.push(fail('contract', 'keyboard: a field to focus on the LINKS or TEAM screen', 'none found'))
+    }
+    if (fieldWhere === 'team') {
+      await tapSeat(page, 'CHATS')
+      await wait(400)
+    }
+    await tapSeat(page, 'APPS')
+    await wait(600)
+    // The APPS screen's "Add your own MCP" opens CHAT's Sheet by the id it
+    // names (data-sheet-open="addmcp" ⇄ data-sheet="addmcp"), and a tap
+    // outside closes it.
+    const addBtn = page.locator('[data-phone-panel="apps"] [data-sheet-open="addmcp"]').first()
+    if ((await addBtn.count()) > 0) {
+      await addBtn.scrollIntoViewIfNeeded()
+      await addBtn.tap()
+      await wait(500)
+      const sheet = await page.locator('.sheet[data-sheet="addmcp"]').count()
+      v.push(sheet > 0 ? pass('contract', 'APPS: "Add your own MCP" (data-sheet-open="addmcp") opens the Sheet with that id', 'ok') : fail('contract', 'APPS: "Add your own MCP" (data-sheet-open="addmcp") opens the Sheet with that id', `${sheet} sheets`))
+      await page.keyboard.press('Escape')
+      await wait(500)
+      v.push((await page.locator('.sheet[data-sheet="addmcp"]').count()) === 0 ? pass('contract', 'APPS: Escape closes the add-MCP sheet', 'closed') : fail('contract', 'APPS: Escape closes the add-MCP sheet', 'still open'))
+    } else {
+      v.push(fail('contract', 'APPS: "Add your own MCP" carries data-sheet-open="addmcp"', 'missing'))
+    }
+    await page.evaluate(() => {
+      const s = document.querySelector('[data-app-scroll]') as HTMLElement | null
+      if (s) s.scrollTop = 0
+    })
+
     // Scroll memory: leave APPS scrolled, come back, land where you were.
     const left = await page.evaluate(() => {
       const s = document.querySelector('[data-app-scroll]') as HTMLElement | null
@@ -451,6 +582,13 @@ const rowContract: NavScenario = {
       const sheetUp = await page.locator('.sheet[data-sheet="links"]').count()
       v.push(sheetUp > 0 && rS.scrim ? pass('contract', 'LINKS: "Your list" opens the list as a Sheet with a scrim', 'ok') : fail('contract', 'LINKS: "Your list" opens the list as a Sheet with a scrim', JSON.stringify({ sheetUp, scrim: rS.scrim })))
       await ctx.shot(page, 'sheet-links-list')
+      const signInSize = await page.evaluate(() => {
+        const b = Array.from(document.querySelectorAll<HTMLElement>('.sheet[data-sheet="links"] button')).find((x) => /Sign in to mint links/.test(x.textContent ?? ''))
+        if (!b) return null
+        const r = b.getBoundingClientRect()
+        return { w: Math.round(r.width), h: Math.round(r.height) }
+      })
+      if (signInSize) v.push(signInSize.h >= 44 ? pass('contract', 'links list sheet: "Sign in to mint links" is a ≥44px target', `${signInSize.w}×${signInSize.h}`) : fail('contract', 'links list sheet: "Sign in to mint links" is a ≥44px target', `${signInSize.w}×${signInSize.h}`))
       await tapOutside(page)
       await wait(500)
       const gone = (await page.locator('.sheet[data-sheet="links"]').count()) === 0

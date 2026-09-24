@@ -34,7 +34,7 @@ const CTA_CLASS =
  *  newest link) instead of routing through the dashboard. Same status + same
  *  dismiss key as the dashboard checklist: done anywhere is done everywhere,
  *  dismissed anywhere is dismissed everywhere. */
-function JourneyStrip({
+export function JourneyStrip({
   status,
   live,
   onMint,
@@ -132,7 +132,7 @@ function JourneyStrip({
   )
 }
 
-function SignedInLinks({ activeSlugs, flat, onMint, onPage, onStudio }: { activeSlugs: string[] } & LinksRailTabProps) {
+function SignedInLinks({ activeSlugs, flat, onMint, onPage, onStudio, journey = true }: { activeSlugs: string[] } & LinksRailTabProps) {
   const { openLinksStudio } = useYeetfulStore()
   // On the phone the studio is the screen this list sits over (a Sheet), and
   // it already holds the mint stage and the page panel: the sheet's actions
@@ -188,7 +188,7 @@ function SignedInLinks({ activeSlugs, flat, onMint, onPage, onStudio }: { active
         </button>
       </div>
 
-      {status && !journeyDismissed && (
+      {journey && status && !journeyDismissed && (
         <JourneyStrip
           status={status}
           live={live}
@@ -304,6 +304,10 @@ function SignedInLinks({ activeSlugs, flat, onMint, onPage, onStudio }: { active
           <button
             type="button"
             onClick={openPage}
+            // The creator-page Sheet (CHAT's CreatorPageModal, id "creator")
+            // opens from here in the drawer; on the phone the list's action
+            // lands on the studio's own page panel instead, so no sheet opens.
+            data-sheet-open={onPage ? undefined : 'creator'}
             className={cn('block w-full text-left text-[11px] text-[color:var(--muted)] hover:text-white transition-colors', flat && 'min-h-[44px] text-[12px]')}
             title="Claim /l/your-name — every link you mint on one shareable page"
           >
@@ -358,6 +362,9 @@ export type LinksRailTabProps = {
   onMint?: () => void
   onPage?: () => void
   onStudio?: () => void
+  /** Show the first-payout journey strip (default). The phone studio screen
+   *  renders it inline itself (components/phone), so its list sheet skips it. */
+  journey?: boolean
 }
 
 export default function LinksRailTab(props: LinksRailTabProps = {}) {
@@ -383,7 +390,12 @@ export default function LinksRailTab(props: LinksRailTabProps = {}) {
             <button
               onClick={() => signIn()}
               disabled={signingIn}
-              className="text-xs font-semibold text-white underline underline-offset-2 hover:text-zinc-300 disabled:opacity-60"
+              className={cn(
+                'text-xs font-semibold text-white underline underline-offset-2 hover:text-zinc-300 disabled:opacity-60',
+                // A thumb needs a target: on the phone's list sheet the link
+                // was 113×16 (QA's integrated drive, 2026-09-24).
+                props.flat && 'inline-flex min-h-[44px] items-center px-4 text-[13px]',
+              )}
             >
               {signingIn ? 'Signing in…' : 'Sign in to mint links'}
             </button>
