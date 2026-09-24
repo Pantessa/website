@@ -6134,13 +6134,17 @@
    ([data-app-frame], a document that never scrolls) must not grow a padded
    body, and a screen whose top bar carries the door ([data-ask-door="rail"])
    hides the pill on a phone. Both markers ship in the server HTML. */
-body:not(:has([data-app-frame], [data-ask-door="rail"])):has(.askdoor-pill) { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+/* The landing's MobileCtaBar carries its own Ask and sets
+   html[data-mcta="show"] while it's up: the pill would sit under it (PAGES
+   measured a 46px overlap), so it steps aside, and its reserve with it. */
+:root[data-mcta="show"] .askdoor-pill { display: none; }
+:root:not([data-mcta="show"]) body:not(:has([data-app-frame], [data-ask-door="rail"])):has(.askdoor-pill) { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
 @media (max-width: 640px) {
   .askdoor-pill { left: auto; right: 16px; transform: none; width: auto; height: 46px; padding: 0 16px 0 8px; gap: 8px; }
   .askdoor-pill:hover { transform: translateY(-1px); }
   .askdoor-pill__text, .askdoor-pill__kbd, .askdoor-pill__mic { display: none; }
   .askdoor-pill__short { display: inline; }
-  body:not(:has([data-app-frame], [data-ask-door="rail"])):has(.askdoor-pill) { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+  :root:not([data-mcta="show"]) body:not(:has([data-app-frame], [data-ask-door="rail"])):has(.askdoor-pill) { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
 }
 
 /* the sheet */

@@ -33060,12 +33060,18 @@ async function main() {
     const nmPhoneDoor = nmBlocks(nmDesign, '@media (max-width: 1023px) {\n  body:has([data-ask-door="rail"])')
     check(
       'native markets: below lg the floating Ask pill steps aside on any screen whose top bar carries the door ([data-ask-door="rail"]), matched as a descendant (its parent is a <div>, never <body>)',
-      /body:has\(\[data-ask-door="rail"\]\) \.askdoor-pill \{ display: none; \}/.test(nmPhoneDoor) && !/body:has\(\[data-ask-door="rail"\]\) > \.askdoor-pill/.test(nmDesign),
+      /body:has\(\[data-ask-door="rail"\]\) \.askdoor-pill \{ display: none; \}/.test(nmPhoneDoor) && !/body:has\(\[data-ask-door="rail"\]\) > \.askdoor-pill/.test(nmDesign.replace(/\/\*[\s\S]*?\*\//g, '')),
+    )
+    // Comments name the old selectors on purpose; the checks read the code.
+    const nmDesignCode = nmDesign.replace(/\/\*[\s\S]*?\*\//g, '')
+    check(
+      'native markets: the pill\'s page-foot reserve finally applies — a descendant match (the old `body:has(> .askdoor-pill)` never fired), on brochure pages only (never an app frame, never a screen whose top bar carries the door, never under the landing\'s own CTA bar)',
+      !/body:has\(> \.askdoor-pill\)/.test(nmDesignCode) && !/> \.askdoor-pill/.test(nmDesignCode) &&
+        (nmDesignCode.match(/:root:not\(\[data-mcta="show"\]\) body:not\(:has\(\[data-app-frame\], \[data-ask-door="rail"\]\)\):has\(\.askdoor-pill\) \{ padding-bottom: calc\((?:72|64)px \+ env\(safe-area-inset-bottom\)\); \}/g) ?? []).length === 2,
     )
     check(
-      'native markets: the pill\'s page-foot reserve finally applies — a descendant match (the old `body:has(> .askdoor-pill)` never fired), on brochure pages only (never an app frame, never a screen whose top bar carries the door)',
-      !/body:has\(> \.askdoor-pill\)/.test(nmDesign) &&
-        (nmDesign.match(/body:not\(:has\(\[data-app-frame\], \[data-ask-door="rail"\]\)\):has\(\.askdoor-pill\) \{ padding-bottom: calc\((?:72|64)px \+ env\(safe-area-inset-bottom\)\); \}/g) ?? []).length === 2,
+      'native markets: the pill steps aside while the landing\'s MobileCtaBar (it carries its own Ask) is up — html[data-mcta="show"]',
+      /:root\[data-mcta="show"\] \.askdoor-pill \{ display: none; \}/.test(nmDesignCode),
     )
     check(
       'native markets: the markets top strip\'s Ask is the phone\'s ask field — the rail trigger carries the page\'s placeholder, and below lg it fills the strip at 44px with the word "Ask" folded',
