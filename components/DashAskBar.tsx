@@ -29,7 +29,7 @@ export default function DashAskBar() {
           }}
           placeholder="Ask Pantessa — swaps, stocks, stop-losses, anything…"
           aria-label="Ask Pantessa — lands in chat with the ask ready"
-          className="flex-1 bg-transparent text-sm text-white placeholder:text-[color:var(--muted-2)] border-0 focus:outline-none"
+          className="flex-1 min-w-0 bg-transparent text-sm max-lg:text-[16px] text-white placeholder:text-[color:var(--muted-2)] border-0 focus:outline-none"
         />
         <button
           onClick={go}

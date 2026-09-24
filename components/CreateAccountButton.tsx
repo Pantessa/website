@@ -92,7 +92,7 @@ export default function CreateAccountButton({
   }
   return (
     <>
-      <button type="button" className={className} style={style} onClick={() => setOpen(true)}>
+      <button type="button" className={className} style={style} onClick={() => setOpen(true)} data-sheet-open="door">
         {label}
       </button>
       {open && (
@@ -317,7 +317,7 @@ export function CreateAccountModal({
   const oauthOk = !browser || oauthAllowedIn(browser)
 
   return createPortal(
-    <div className="ca">
+    <div className="ca" data-sheet="door">
       <button className="ca__backdrop" aria-label="Close" onClick={onClose} />
       {/* The stone's light — behind the panel, unclipped, so the door reads as
           lit from within rather than pasted onto black. */}

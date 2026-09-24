@@ -250,7 +250,7 @@ export default function WalletSendForm({
         <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,160px)_1fr] gap-2">
           <label className="block">
             <span className="text-[10.5px] uppercase tracking-[0.14em] text-[color:var(--muted-2)]">Amount</span>
-            <span className="mt-1 flex items-center rounded-lg border border-[var(--line)] bg-[var(--bg)] focus-within:border-[var(--line-2)]">
+            <span data-wallet-field className="mt-1 flex items-center rounded-lg border border-[var(--line)] bg-[var(--bg)] focus-within:border-[var(--line-2)]">
               <input
                 type="text"
                 inputMode="decimal"
@@ -260,7 +260,7 @@ export default function WalletSendForm({
                 aria-label="Amount"
                 aria-invalid={problem?.field === 'amount' || undefined}
                 disabled={phase === 'building'}
-                className={cn('min-w-0 flex-1 bg-transparent px-2.5 py-1.5 mono text-[13px] text-[color:var(--fg)] outline-none placeholder:text-[color:var(--muted-2)]', all && 'text-[color:var(--muted)]')}
+                className={cn('min-w-0 flex-1 bg-transparent px-2.5 py-1.5 mono text-[13px] max-lg:text-[16px] text-[color:var(--fg)] outline-none placeholder:text-[color:var(--muted-2)]', all && 'text-[color:var(--muted)]')}
               />
               <span className="pr-1.5 text-[11px] text-[color:var(--muted)]">{holding?.symbol}</span>
               <button
@@ -289,7 +289,7 @@ export default function WalletSendForm({
               autoComplete="off"
               spellCheck={false}
               disabled={phase === 'building'}
-              className="mt-1 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 mono text-[13px] text-[color:var(--fg)] outline-none focus:border-[var(--line-2)] placeholder:text-[color:var(--muted-2)]"
+              className="mt-1 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 mono text-[13px] max-lg:text-[16px] text-[color:var(--fg)] outline-none focus:border-[var(--line-2)] placeholder:text-[color:var(--muted-2)]"
             />
             <span className="mt-1 block text-[10.5px] text-[color:var(--muted-2)]">same address on every chain · transfers are irreversible</span>
           </label>
