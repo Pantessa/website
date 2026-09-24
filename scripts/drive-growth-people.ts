@@ -15,8 +15,15 @@ import { createSiweMessage } from 'viem/siwe'
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import pw from 'playwright-core'
-const { chromium } = pw
+import { createRequire } from 'node:module'
+
+// playwright-core resolves from ~/node_modules (the resolver walks up from the
+// worktree) and is CommonJS, so it is required, not imported: a bare `import`
+// type-checks on a dev Mac and breaks the Vercel build, which has no such
+// package to walk up to.
+const req = createRequire(join(process.cwd(), 'anchor.js'))
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const { chromium }: any = req('playwright-core')
 
 const BASE = process.env.BASE ?? 'http://localhost:3852'
 const SHOTS = process.env.SHOTS ?? mkdtempSync(join(tmpdir(), 'growth-people-'))
@@ -81,7 +88,7 @@ async function main() {
     await ctx.addInitScript(mockWallet(address))
     const page = await ctx.newPage()
     const errors: string[] = []
-    page.on('pageerror', (e) => errors.push(e.message))
+    page.on('pageerror', (e: { message: string }) => errors.push(e.message))
 
     await page.goto(`${BASE}/dashboard/admin`, { waitUntil: 'domcontentloaded' })
     await page.waitForSelector('text=Everyone who showed up', { timeout: 45_000 })
@@ -93,7 +100,7 @@ async function main() {
     const chipTexts = await chips.allInnerTexts()
     if (mode === 'dark') {
       check('filter: three chips with counts', chipTexts.length === 3, chipTexts.join(' | '))
-      const nums = chipTexts.map((t) => Number(t.match(/(\d+)\s*$/)?.[1] ?? -1))
+      const nums = chipTexts.map((t: string) => Number(t.match(/(\d+)\s*$/)?.[1] ?? -1))
       check('filter: All = With email + Wallet only', nums[0] === nums[1] + nums[2], chipTexts.join(' | '))
       check('filter: there ARE wallet-only people (the whole point)', nums[2] > 0, `wallet-only=${nums[2]}`)
 
@@ -169,7 +176,7 @@ async function main() {
     const c = await browser.newContext({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 2, colorScheme: 'dark' })
     await c.addCookies([{ name: 'yf_session', value: session, domain: 'localhost', path: '/' }])
     await c.addInitScript(mockWallet(address))
-    await c.route('**/api/admin/growth*', async (route) => {
+    await c.route('**/api/admin/growth*', async (route: any) => {
       const res = await route.fetch()
       const body = await res.json()
       body.accounts.rows.unshift({
