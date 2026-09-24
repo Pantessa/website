@@ -40,3 +40,19 @@ export function ctaBarStep(prev: CtaBarState, y: number, viewH: number): CtaBarS
 export function ctaBarInitial(y: number): CtaBarState {
   return { shown: false, anchorY: y }
 }
+
+/** The bar exists only at or below this width: x402-design.css draws `.mcta`
+ *  inside `@media (max-width: 640px)` and nowhere else (the harness pins the
+ *  CSS literal to this constant, so the two can't drift). */
+export const CTA_BAR_MAX_PX = 640
+export const CTA_BAR_MQ = `(max-width: ${CTA_BAR_MAX_PX}px)`
+
+/** Whether the bar is actually on screen: its scroll state says show AND the
+ *  viewport is one it renders in (`fits` = CTA_BAR_MQ matches). This, not
+ *  the scroll state, is what `html[data-mcta]` says, because the floating
+ *  Ask pill steps aside for it: at 844×390 (a landscape phone) the scroll
+ *  state said show over a bar that wasn't drawn, and the landing had no Ask
+ *  at all. */
+export function ctaBarOnScreen(shown: boolean, fits: boolean): boolean {
+  return shown && fits
+}
