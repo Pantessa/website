@@ -33361,48 +33361,54 @@ async function main() {
         const entries: Entry[] = [{ __NA: true, tree: 't0' }]
         let pos = 0
         let pop: (() => void) | null = null
+        // The fake mimics the browser: Next's patched pushState stamps __NA + the
+        // tree onto a plain state; a traversal (back) lands in a LATER task than
+        // the timer that asked for it — `tick()` runs the timers, `land()` the
+        // traversals, so an open between the two is the real in-flight window.
         const later: (() => void)[] = []
+        const traversals: (() => void)[] = []
         const host: import('../lib/sheet-history').SheetHistoryHost = {
           state: () => entries[pos],
-          push: (st) => { entries.splice(pos + 1); entries.push(st); pos = entries.length - 1 },
+          push: (st) => { entries.splice(pos + 1); entries.push({ __NA: true, tree: entries[pos].tree, ...st }); pos = entries.length - 1 },
           replace: (st) => { entries[pos] = st },
-          back: () => { later.push(() => { pos = Math.max(0, pos - 1); pop?.() }) },
+          back: () => { traversals.push(() => { pos = Math.max(0, pos - 1); pop?.() }) },
           onPop: (cb) => { pop = cb },
           later: (cb) => { later.push(cb) },
         }
         const tick = () => { while (later.length) later.shift()!() }
-        return { h: SH.createSheetHistory(host), entries: () => entries.slice(0, pos + 1), tick, host }
+        const land = () => { while (traversals.length) traversals.shift()!() }
+        return { h: SH.createSheetHistory(host), entries: () => entries.slice(0, pos + 1), tick, land, host }
       }
       // A: open → close by a tap → the entry is popped on the next tick, one popstate, nothing else.
       {
-        const { h, entries, tick } = mk()
+        const { h, entries, tick, land } = mk()
         const backs: string[] = []
         h.opened({ key: 'A', onBack: () => backs.push('A') })
         const afterOpen = entries().length
         h.closed('A', 'other')
         const beforeTick = entries().length
-        tick()
+        tick(); land()
         check('native shell: sheet history — a sheet owns one entry {sheet:key}; closing it by a tap pops that entry on the NEXT tick (not synchronously), and the swallowed popstate never calls onBack', afterOpen === 2 && beforeTick === 2 && entries().length === 1 && backs.length === 0 && (entries()[0] as { __NA?: boolean }).__NA === true, JSON.stringify({ afterOpen, beforeTick, after: entries().length, backs }))
       }
       // The race: A closes and B opens in the same commit → B TAKES OVER A's entry (replaceState keeps Next's fields), the queued pop is cancelled, back closes B.
       {
-        const { h, entries, tick, host } = mk()
+        const { h, entries, tick, land, host } = mk()
         const backs: string[] = []
         h.opened({ key: 'A', onBack: () => backs.push('A') })
         h.closed('A', 'other')
         h.opened({ key: 'B', onBack: () => backs.push('B') })
         const top = entries()[entries().length - 1] as { sheet?: string; __NA?: boolean }
         const len = entries().length
-        tick()
+        tick(); land()
         const lenAfterTick = entries().length
         const dbg = h.debug()
         // the real back gesture
-        host.back(); tick()
+        host.back(); land()
         check('native shell: sheet history — THE HANDOFF: A closes and B opens in one commit → B takes over A\'s entry (still __NA), the pending pop is cancelled (2 entries before and after the tick), and the back gesture closes B, not A', len === 2 && top.sheet === 'B' && top.__NA === true && lenAfterTick === 2 && dbg.pendingBack === null && dbg.stack.join() === 'B' && backs.join() === 'B' && entries().length === 1, JSON.stringify({ len, top, lenAfterTick, dbg, backs, after: entries().length }))
       }
       // A sheet that opens while a pop is IN FLIGHT waits for that popstate, then claims its own entry.
       {
-        const { h, entries, tick, host } = mk()
+        const { h, entries, tick, land } = mk()
         const backs: string[] = []
         h.opened({ key: 'A', onBack: () => backs.push('A') })
         h.closed('A', 'other')
@@ -33411,27 +33417,27 @@ async function main() {
         const inFlight = h.debug().backInFlight
         h.opened({ key: 'B', onBack: () => backs.push('B') })
         const deferred = h.debug().deferred
-        tick() // the traversal lands: A's entry popped, then B claims its own
+        land() // the traversal lands: A's entry popped, then B claims its own
         const dbg = h.debug()
         check('native shell: sheet history — a sheet opening while a pop is in flight defers until that popstate, then pushes its own entry (one entry for B, B on the stack, no onBack fired)', inFlight === 'A' && deferred === 'B' && dbg.backInFlight === null && dbg.deferred === null && dbg.stack.join() === 'B' && entries().length === 2 && (entries()[1] as { sheet?: string }).sheet === 'B' && backs.length === 0, JSON.stringify({ inFlight, deferred, dbg, entries: entries(), backs }))
       }
       // The page moved on (a link inside the sheet pushed a new URL) → the entry is LEFT, never popped (that would undo the navigation).
       {
-        const { h, entries, tick, host } = mk()
+        const { h, entries, tick, land, host } = mk()
         h.opened({ key: 'A', onBack: () => {} })
         h.closed('A', 'other')
         host.push({ __NA: true, tree: 'new-page' })
-        tick()
+        tick(); land()
         check('native shell: sheet history — if the page navigated before the tick, the closed sheet\'s entry stays behind rather than popping the new page', entries().length === 3 && (entries()[2] as { tree?: string }).tree === 'new-page' && h.debug().backInFlight === null)
       }
       // Stacked sheets: B over A → back closes B, then A.
       {
-        const { h, entries, tick, host } = mk()
+        const { h, entries, land, host } = mk()
         const backs: string[] = []
         h.opened({ key: 'A', onBack: () => backs.push('A') })
         h.opened({ key: 'B', onBack: () => backs.push('B') })
-        host.back(); tick()
-        host.back(); tick()
+        host.back(); land()
+        host.back(); land()
         check('native shell: sheet history — two open sheets are two entries; back closes the top one, then the next', backs.join() === 'B,A' && entries().length === 1)
       }
     }
