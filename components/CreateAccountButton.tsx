@@ -16,7 +16,6 @@ import { Loader2, ArrowLeft, ArrowRight, X, Wallet } from 'lucide-react'
 import { CDP_INIT_PATIENCE_MS, emailLaneHint, walletLaneChips } from '@/lib/wallet-lineup'
 import { analytics } from '@/lib/analytics'
 import { WALLET_MARKS } from '@/components/wallet-marks'
-import { inAppBrowserOf, inAppEscapeCopy } from '@/lib/inapp-browser'
 import { oauthAllowedIn, oauthRefusedCopy } from '@/lib/mobile-wallet'
 import { armMetaMaskLaunch } from '@/lib/wallet-arm'
 import { PantessaMark } from '@/components/Logo'
@@ -24,6 +23,7 @@ import { cn } from '@/lib/utils'
 import { currentAppHref, signInLandingHere, useSession } from '@/lib/session'
 import { OAUTH_INTENT_KEY, type OAuthIntent } from '@/components/CdpOAuthReturn'
 import { sameAppHref } from '@/lib/app-entry'
+import { inAppBrowserOf, inAppEscapeCopy, type InAppBrowser } from '@/lib/inapp-browser'
 
 // Social providers via CDP Embedded Wallets. Enable each + set its OAuth client
 // id/secret and redirect URIs in the CDP Portal; the app needs only the project
@@ -162,6 +162,11 @@ export function CreateAccountModal({
   }
 
   const [mounted, setMounted] = useState(false)
+  // The browser this door is being read in, resolved ONCE after mount. Never
+  // at render: the server has no UA, and a value that differs between the two
+  // passes is a hydration mismatch (CONNECT's contract, squad
+  // mobile-onboarding 2026-09-23).
+  const [browser, setBrowser] = useState<InAppBrowser | null>(null)
   const [step, setStep] = useState<Step>('email')
   const [email, setEmail] = useState('')
   const [flowId, setFlowId] = useState('')
@@ -170,7 +175,10 @@ export function CreateAccountModal({
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => setMounted(true), [])
+  useEffect(() => {
+    setMounted(true)
+    setBrowser(inAppBrowserOf(navigator.userAgent))
+  }, [])
 
   // The door's own story, for the journey log (lib/journey.ts): it opened,
   // and anything it told the visitor went wrong. A stranger who backs out
@@ -291,6 +299,23 @@ export function CreateAccountModal({
 
   if (!mounted) return null
 
+  // Inside an app's own browser (X, LinkedIn, a bare WebView) two of the
+  // three lanes cannot work and the door used to say nothing: Google refuses
+  // OAuth there outright (`disallowed_useragent`, its documented policy) and
+  // no `metamask://` launch can bring a wallet app forward. So the door
+  // re-reads itself: email leads, the other two carry a caption saying what
+  // is in the way and how to get out. Nothing is disabled here — CONNECT owns
+  // whether a lane fires; this is the layout and the words (squad
+  // mobile-onboarding, 2026-09-23).
+  // A wallet's OWN browser is the good case (`canLaunchApps`): the wallet is
+  // injected, signing happens in-page, and the wallet lane is exactly right
+  // there. `walled` is the other kind.
+  const walled = !!browser && browser.inApp && !browser.canLaunchApps
+  const escape = inAppEscapeCopy(browser ?? { inApp: false, vendor: null, canLaunchApps: true, walletInjected: false, platform: 'other' })
+  // One reading for the Google lane, shared with the connect behaviour that
+  // refuses the redirect (lib/mobile-wallet oauthAllowedIn).
+  const oauthOk = !browser || oauthAllowedIn(browser)
+
   return createPortal(
     <div className="ca">
       <button className="ca__backdrop" aria-label="Close" onClick={onClose} />
@@ -303,7 +328,7 @@ export function CreateAccountModal({
         </button>
 
         {step === 'email' && (
-          <form onSubmit={sendCode}>
+          <form onSubmit={sendCode} className={`ca__form${walled ? ' ca__form--walled' : ''}`}>
             {/* The stone leads. An emerald cut is nested step facets around an
                 open table — the flat plane where a signature lands — which is
                 what this door is, so the mark carries the header instead of a
@@ -320,6 +345,12 @@ export function CreateAccountModal({
             <p className="ca__promise">
               <strong>Your wallet is the only signer.</strong> We never hold your funds or your keys.
             </p>
+            {walled && (
+              <p className="ca__inapp" role="status">
+                You&rsquo;re in {escape.app}&rsquo;s built-in browser, which can&rsquo;t open a wallet app or
+                Google sign-in. Email works here &mdash; or {escape.where} to use the rest.
+              </p>
+            )}
 
             {/* Lane 1 — connect an existing wallet. It wears the accent fill
                 because it IS the product's front door (rule 6: wallet lead).
@@ -357,11 +388,14 @@ export function CreateAccountModal({
                 )
               })}
             </ul>
+            {walled && (
+              <p className="ca__lanenote">Opening a wallet app from here is blocked by {escape.app}.</p>
+            )}
 
             {/* ONE divider, and it names which half is yours — the wallet lane
                 assumes you have one; everything below MAKES you one. Two bare
                 "OR"s read as three competing choices. */}
-            <div className="ca__or"><span />new here?<span /></div>
+            <div className="ca__or"><span />{walled ? 'have a wallet app?' : 'new here?'}<span /></div>
 
             {/* Lane 2 — social sign-in (CDP). Redirects to the provider. */}
             <div className="ca__providers">
@@ -372,8 +406,9 @@ export function CreateAccountModal({
                   className="ca__oauth"
                   onClick={() => startOAuth(p.id)}
                   disabled={!isInitialized}
+                  aria-disabled={!oauthOk || undefined}
                   aria-label={p.label}
-                  title={cdpTimedOut && !isInitialized ? 'Unavailable right now — the sign-in provider is unreachable. Connect a wallet instead.' : p.label}
+                  title={!oauthOk ? oauthRefusedCopy(escape) : cdpTimedOut && !isInitialized ? 'Unavailable right now — the sign-in provider is unreachable. Connect a wallet instead.' : p.label}
                 >
                   {/* Visible label, not glyph-only: with a single provider the
                       icon-row design read as a wide empty button with a "G"
@@ -381,6 +416,11 @@ export function CreateAccountModal({
                   <GoogleGlyph /> {p.label}
                 </button>
               ))}
+              {/* The shared refusal line (lib/mobile-wallet oauthRefusedCopy)
+                  names the email code without a direction — in this layout the
+                  email row LEADS — so the caption states the fact and the full
+                  line stays on the button's title. */}
+              {!oauthOk && <p className="ca__lanenote">Google won&rsquo;t sign you in inside {escape.app}&rsquo;s browser.</p>}
             </div>
 
             {/* Lane 3 — email OTP, as ONE row (field + accent submit) rather
