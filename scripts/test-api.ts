@@ -33018,6 +33018,147 @@ async function main() {
     )
   }
 
+  // ── native markets (squad mobile-native, 2026-09-24; MARKETS lane) ─────────
+  // Nate's screenshot 1: iPhone Safari on /markets, the "Ask" pill floating
+  // over the DOT row's 24h cell. Measured on main (MARKETS.md F1–F10, drive
+  // scripts/drive-native-markets.ts): the pill covered 91×38px of that cell,
+  // a touch swipe up over the /t chart moved the page 0px, a pinch zoomed the
+  // PAGE ×2.2 instead of the chart, rows were 42px, three inputs were under
+  // 16px (iOS zooms on focus). These pins hold the rules; the drive holds the
+  // pixels. Every rule is phone- or touch-scoped: desktop is unchanged.
+  {
+    const nmDesign = await readFile('app/x402-design.css', 'utf8')
+    const nmMk = await readFile('components/markets/markets.css', 'utf8')
+    const nmDoor = await readFile('components/AskDoor.tsx', 'utf8')
+    const nmChart = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
+    const nmAlert = await readFile('components/markets/watchlist/AlertForm.tsx', 'utf8')
+    const nmImport = await readFile('components/markets/watchlist/ImportModal.tsx', 'utf8')
+    const nmFlat = (css: string) => css.replace(/\s+/g, ' ')
+    const nmBlocks = (css: string, head: string) => {
+      // Every block opened by `head`, balanced-brace read (the sheets nest
+      // one level at most).
+      const out: string[] = []
+      let at = css.indexOf(head)
+      while (at >= 0) {
+        let depth = 0
+        let i = css.indexOf('{', at)
+        const start = i
+        for (; i < css.length; i++) {
+          if (css[i] === '{') depth++
+          else if (css[i] === '}' && --depth === 0) break
+        }
+        out.push(css.slice(start, i + 1))
+        at = css.indexOf(head, i)
+      }
+      return out.join('\n')
+    }
+
+    // 1. The pill never covers the data: on a phone it steps aside wherever the
+    //    top bar carries the door, as a DESCENDANT match (the pill's parent is
+    //    the layout's providers <div> — a `> .askdoor-pill` child match never
+    //    fires, which is why the old body reserve never applied: F10).
+    const nmPhoneDoor = nmBlocks(nmDesign, '@media (max-width: 1023px) {\n  body:has([data-ask-door="rail"])')
+    check(
+      'native markets: below lg the floating Ask pill steps aside on any screen whose top bar carries the door ([data-ask-door="rail"]), matched as a descendant (its parent is a <div>, never <body>)',
+      /body:has\(\[data-ask-door="rail"\]\) \.askdoor-pill \{ display: none; \}/.test(nmPhoneDoor) && !/body:has\(\[data-ask-door="rail"\]\) > \.askdoor-pill/.test(nmDesign),
+    )
+    check(
+      'native markets: the markets top strip\'s Ask is the phone\'s ask field — the rail trigger carries the page\'s placeholder, and below lg it fills the strip at 44px with the word "Ask" folded',
+      /variant === 'rail' && \(\s*<span className="mkt-frame__askhint" aria-hidden="true">\s*\{askDoorPlaceholder\(pathname\)\}/.test(nmDoor) &&
+        /\.mkt-frame__askhint \{ display: none; \}/.test(nmMk) &&
+        /\.mkt-frame__top \.mkt-frame__ask \{ flex: 1 1 auto; min-width: 0; height: 44px;/.test(nmMk) &&
+        /\.mkt-frame__top \.mkt-frame__askword \{ display: none; \}/.test(nmMk),
+    )
+    const nmMarketsHtml = flat(await (await fetch(`${BASE}/markets`)).text())
+    const nmEthHtml = flat(await (await fetch(`${BASE}/t/ETH`)).text())
+    check(
+      'native markets (served): /markets and /t/ETH ship the strip\'s ask field with the page\'s own placeholder (the house line / "Ask anything about ETH"), and the pill is still in the HTML for wider screens',
+      /data-ask-door="rail"[\s\S]{0,4000}class="mkt-frame__askhint"[^>]*>Ask Pantessa — swaps, stocks, stop-losses, anything…</.test(nmMarketsHtml) &&
+        /data-ask-door="rail"[\s\S]{0,4000}class="mkt-frame__askhint"[^>]*>Ask anything about ETH/.test(nmEthHtml) &&
+        nmEthHtml.includes('data-ask-door="pill"'),
+    )
+    const nmHrefs = [...new Set([...nmEthHtml.matchAll(/href="(\/_next\/static\/[^"]+\.css)"/g)].map((m) => m[1]))]
+    const nmServed = (await Promise.all(nmHrefs.map(async (h) => (await fetch(`${BASE}${h}`)).text()))).join('\n').replace(/\s+/g, '')
+    check(
+      'native markets (served): the built /t stylesheets carry the step-aside, the chart\'s touch-action and the 16px field floor',
+      nmHrefs.length > 0 &&
+        /body:has\(\[data-ask-door="?rail"?\]\)\.askdoor-pill\{display:none\}/.test(nmServed) &&
+        /\.mkt-chart__engine\{[^}]*touch-action:pan-y/.test(nmServed) &&
+        /font-size:max\(16px,1em\)/.test(nmServed),
+      `${nmHrefs.length} stylesheets`,
+    )
+
+    // 2. The chart shares the screen's scroll on a touch screen: a vertical
+    //    swipe is the page's (the engine never claims it, the browser scrolls
+    //    natively), horizontal pans, pinch zooms the chart and never the page.
+    check(
+      'native markets: MarketChart never claims a vertical touch drag (handleScroll.vertTouchDrag: false) and keeps horizontal pan + pinch (no option turns them off)',
+      /handleScroll: \{ vertTouchDrag: false \}/.test(nmChart) && !/vertTouchDrag: true/.test(nmChart) && !/horzTouchDrag: false/.test(nmChart) && !/pinch: false/.test(nmChart),
+    )
+    check(
+      'native markets: the engine is touch-action: pan-y (the page scrolls vertically, a pinch never zooms the page), and the full-screen control is 44×44 on touch',
+      /\.mkt-chart__engine \{ position: absolute; inset: 0; touch-action: pan-y; \}/.test(nmDesign) &&
+        /@media \(hover: none\) \{ \.tchart__fs \{ width: 44px; height: 44px; \} \}/.test(nmDesign),
+    )
+
+    // 3. A thumb's targets and a touch screen's press feedback, all under
+    //    (hover: none) — desktop keeps its compact terminal.
+    const nmTouch = nmFlat(nmBlocks(nmMk, '@media (hover: none) {'))
+    const nm44 = [
+      '.mk-table__link, .mk-trend__row { min-height: 48px; }',
+      '.mk-table__sort { min-height: 44px;',
+      '.mkt-sec__more { min-height: 44px;',
+      '.mkt-frame__tab { min-height: 44px; }',
+      '.mk-view__btn { height: 44px;',
+      '.mk-earn__chip { min-height: 44px;',
+      '.sym__act-chip { min-height: 44px; }',
+      '.sym .tok__tfbtn { min-height: 44px; min-width: 44px; }',
+      '.sym .mkt-ind { min-height: 44px; }',
+      '.sym .mkt-tool { width: 44px; height: 44px; }',
+      '.sym__tab { min-height: 44px; }',
+      '.wl__rowMain { min-height: 48px; }',
+      '.wl__rowMore { opacity: 1; }',
+      '.wl__icon { width: 44px; height: 44px; }',
+    ]
+    const nmMissing = nm44.filter((r) => !nmTouch.includes(r))
+    check(
+      'native markets: under (hover: none) every ledger/trending/rail row is 48px, every sort head, tab, chip, timeframe, overlay, tool and rail icon ≥44px, and the rail\'s ⋯ is fully visible (no hover to reveal it)',
+      nmMissing.length === 0 && /\.mk-table__row:active, \.mk-trend__row:active, \.wl__row:active \{ background:/.test(nmTouch),
+      nmMissing.join(' | '),
+    )
+    check(
+      'native markets: no field on a markets surface zooms the page on focus — every input/textarea/select in the frame and the rail\'s sheets is ≥16px on touch or below lg',
+      /@media \(hover: none\), \(max-width: 1023px\) \{\s*\.mkt-frame :is\(input, textarea, select\),\s*\[data-sheet\^="wl-"\] :is\(input, textarea, select\) \{ font-size: max\(16px, 1em\); \}/.test(nmMk) &&
+        /\.askdoor-sheet \.askdoor__input \{ font-size: max\(16px, 1em\); \}/.test(nmDesign),
+    )
+    check(
+      'native markets: on a phone the /t plot keeps 260px however its controls wrap, those controls take two rows (timeframes + live/full screen, then overlays beside the tools), and the act strip is one sideways row',
+      /\.sym \.tchart:not\(\.tchart--expanded\) \.mkt-chart__canvas \{ flex: 0 0 auto; height: 260px; \}/.test(nmMk) &&
+        /\.sym \.mkt-chart__bar > \.mkt-chart__ind \{ order: 3; flex: 1 1 0; \}/.test(nmMk) &&
+        /\.sym__act-chips \{\s*align-self: stretch; min-width: 0; flex-wrap: nowrap;[^}]*overflow-x: auto;/.test(nmMk),
+    )
+    check(
+      'native markets: below lg the /t section tabs stick under the top strip (scroll-margin lands a switch there)',
+      /\.sym__tabs \{ position: sticky; top: var\(--mkt-top-h, 52px\); z-index: 19; background: var\(--bg\); scroll-margin-top: var\(--mkt-top-h, 52px\); \}/.test(nmMk),
+    )
+
+    // 4. The panels are THE Sheet: the ask door below lg (its posture read
+    //    once per opening, so a tablet rotating mid-run never remounts the
+    //    runtime), AlertForm + ImportModal at every width.
+    check(
+      'native markets: the ask door renders through components/mobile/Sheet on a phone (id ask-door, full size once live) with the posture read once per opening; the desktop ⌘K palette stays',
+      /import Sheet from '@\/components\/mobile\/Sheet'/.test(nmDoor) &&
+        /if \(!open\) postureRef\.current = null\s*\n\s*else if \(mounted && postureRef\.current === null\) postureRef\.current = isPhoneViewport\(\)/.test(nmDoor) &&
+        /<Sheet\s+open\s+onClose=\{closeDoor\}\s+id="ask-door"\s+size=\{live \? 'full' : 'auto'\}/.test(nmDoor) &&
+        /className=\{`askdoor \$\{live \? 'askdoor--live' : ''\}`\}/.test(nmDoor),
+    )
+    check(
+      'native markets: AlertForm and ImportModal are THE Sheet (ids wl-alert, wl-import) — no hand-made scrim or portal left, so Escape, a swipe and the back gesture close them too',
+      /<Sheet\s+open=\{open\}\s+onClose=\{onClose\}\s+id="wl-alert"/.test(nmAlert) && /<Sheet\s+open=\{open\}\s+onClose=\{close\}\s+id="wl-import"/.test(nmImport) &&
+        ![nmAlert, nmImport].some((src) => /createPortal|wl__scrim/.test(src)),
+    )
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }

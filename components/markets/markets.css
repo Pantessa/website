@@ -281,6 +281,15 @@ button.mk-held:hover { border-color: var(--accent); }
 @media (max-width: 640px) {
   .sym .tchart:not(.tchart--expanded) { height: auto; }
   .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas { flex: 0 0 auto; height: 260px; }
+  /* Its controls in two rows, not four (44px each at a thumb's size): the
+     timeframes with the live badge + full screen on the right, then the
+     overlays (their own sideways scroller) beside the drawing tools. A stock's
+     pool pill makes the right cluster wide enough to take its own row. */
+  .sym .mkt-chart__bar { gap: 8px; }
+  .sym .mkt-chart__bar > .tok__tf { order: 1; }
+  .sym .mkt-chart__bar > .mkt-chart__right { order: 2; }
+  .sym .mkt-chart__bar > .mkt-chart__ind { order: 3; flex: 1 1 0; }
+  .sym .mkt-chart__bar > .mkt-chart__tools { order: 4; }
   /* The act strip is ONE row that scrolls sideways (the overlays idiom): six
      chips wrapped to three rows and pushed the chart half a screen down. The
      row bleeds to the screen edges; its right edge fades so "more this way"

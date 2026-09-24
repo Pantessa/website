@@ -6186,18 +6186,14 @@ body:has(> .askdoor-pill) { padding-bottom: calc(72px + env(safe-area-inset-bott
    drive measured 91×38px of it), and the markets top strip already carried
    an "Ask" — two doors on one screen, one of them over the data. Below lg:
    - a screen whose top bar carries the door ([data-ask-door="rail"], the
-     markets strip) never renders the pill, and drops the body reserve the
-     pill needed;
-   - on any framed phone surface ([data-app-frame], SHELL's non-scrolling
-     document) the reserve goes too: a padded body would make the document
-     scroll again, and the document scrolling is what drags the bar in
-     Safari;
+     markets strip) never shows the pill. The pill's parent is the layout's
+     providers <div>, never <body> itself, so this is a DESCENDANT match (and
+     the `body:has(> .askdoor-pill)` reserve above has never matched: no
+     page has ever carried it — MARKETS.md F10);
    - the door itself is THE Sheet (AskDoor → components/mobile/Sheet,
      data-sheet="ask-door"); these rules dress its content only. */
 @media (max-width: 1023px) {
-  body:has([data-ask-door="rail"]) > .askdoor-pill { display: none; }
-  body:has(> .askdoor-pill):has([data-ask-door="rail"]),
-  body:has(> .askdoor-pill):has([data-app-frame]) { padding-bottom: 0; }
+  body:has([data-ask-door="rail"]) .askdoor-pill { display: none; }
 }
 .askdoor__sheettitle { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .askdoor__sheetask { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-chat-display); }

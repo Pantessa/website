@@ -313,7 +313,7 @@ async function symbolRows(engine: Engine, sym: string) {
   const { browser, page } = await newPage(engine)
   try {
     await openSymbol(page, sym)
-    const head = await page.evaluate(`(() => { const r = (s) => { const e = document.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height } }; return { head: r('.sym__head'), name: r('.sym__name'), last: r('.sym__last'), chart: r('.sym .tchart'), tabs: r('.sym__tabs'), ask: r('.mk-askdock__bar'), top: r('.mkt-frame__top') } })()`)
+    const head = await page.evaluate(`(() => { const r = (s) => { const e = document.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height } }; return { head: r('.sym__head'), name: r('.sym__name'), last: r('.sym__last'), chart: r('.sym .tchart'), tabs: r('.sym__tabs'), ask: r('.mk-askdock__bar'), top: r('.mkt-frame__top'), plot: r('.sym .mkt-chart__canvas'), bar: r('.sym .mkt-chart__bar') } })()`)
     const chips = await sizes(page, '.sym__act-chip')
     const fs = await sizes(page, '.tchart__fs')
     const tf = await sizes(page, '.sym .tok__tfbtn')
@@ -329,7 +329,7 @@ async function symbolRows(engine: Engine, sym: string) {
       return { found: true, canvasTa, handleScroll: o.handleScroll, pinch: o.handleScale && o.handleScale.pinch }
     })()`)
     record[`${engine}.${sym}.head`] = { head, chips, fs, tf, ind, tools, tabs, touch }
-    const line = `head ${rectOf(head.head)} · title ${rectOf(head.name)} · price ${rectOf(head.last)} · chart ${rectOf(head.chart)} · tabs ${rectOf(head.tabs)} · act chips ${minOf(chips, 'w')}×${minOf(chips, 'h')} (${chips.length}) · full-screen ${fs[0] ? `${fs[0].w}×${fs[0].h}` : 'none'} · tf ${minOf(tf, 'h')} · overlays ${minOf(ind, 'h')} · tools ${minOf(tools, 'h')} · section tabs ${minOf(tabs, 'w')}×${minOf(tabs, 'h')} · Ask-the-chart bar ${rectOf(head.ask)}`
+    const line = `head ${rectOf(head.head)} · title ${rectOf(head.name)} · price ${rectOf(head.last)} · chart ${rectOf(head.chart)} (plot ${rectOf(head.plot)}, controls ${rectOf(head.bar)}) · tabs ${rectOf(head.tabs)} · act chips ${minOf(chips, 'w')}×${minOf(chips, 'h')} (${chips.length}) · full-screen ${fs[0] ? `${fs[0].w}×${fs[0].h}` : 'none'} · tf ${minOf(tf, 'h')} · overlays ${minOf(ind, 'h')} · tools ${minOf(tools, 'h')} · section tabs ${minOf(tabs, 'w')}×${minOf(tabs, 'h')} · Ask-the-chart bar ${rectOf(head.ask)}`
     note(1, `${engine} /t/${sym}`, line)
     const hs = touch.handleScroll ?? {}
     const tl = `canvas touch-action ${touch.canvasTa} · vertTouchDrag ${hs.vertTouchDrag} · horzTouchDrag ${hs.horzTouchDrag} · pinch ${touch.pinch} (chart found: ${touch.found})`
@@ -337,6 +337,7 @@ async function symbolRows(engine: Engine, sym: string) {
     else {
       judge(3, `${engine} /t/${sym}: a phone chart hands vertical swipes to the screen (vertTouchDrag off, touch-action pan-y) and keeps pan + pinch`, touch.found && hs.vertTouchDrag === false && hs.horzTouchDrag === true && touch.pinch === true && touch.canvasTa === 'pan-y', tl)
       judge(3, `${engine} /t/${sym}: the full-screen control is ≥44px`, !!fs[0] && fs[0].w >= 44 && fs[0].h >= 44, fs[0] ? `${fs[0].w}×${fs[0].h}` : 'none')
+      judge(3, `${engine} /t/${sym}: the plot keeps ≥240px on a phone and its controls take ≤2 rows (≤ 44·2 + 8, a stock's pool pill may add one)`, !!head.plot && head.plot.h >= 240 && !!head.bar && head.bar.h <= (sym === 'AAPL' ? 44 * 3 + 16 : 44 * 2 + 8) + 1, `plot ${rectOf(head.plot)} · controls ${rectOf(head.bar)}`)
       judge(5, `${engine} /t/${sym}: act chips, timeframes, overlays, tools and section tabs ≥44px tall`, [minOf(chips, 'h'), minOf(tf, 'h'), minOf(ind, 'h'), minOf(tools, 'h'), minOf(tabs, 'h')].every((h) => Number.isNaN(h) || h >= 44), line)
     }
     await page.mouse.move(1, 1)
