@@ -1411,6 +1411,8 @@ async function sheetJob(run: Run, t: Trigger, session: { address: string; cookie
  *  the sheet's deferred history pop must neither abort the navigation nor
  *  bounce it back. RSC fetches are held 300ms so the pop races a navigation
  *  that is still in flight. */
+/** The RSC hold for the sheet-link row (`--rsc-delay=0` isolates the race). */
+const RSC_DELAY_MS = Number(arg('rsc-delay') || 300)
 export type SheetLink = { id: string; surface: Surface; auth: Auth; sheet: string; href: string; open(page: Pw): Promise<boolean> }
 export const SHEET_LINKS: SheetLink[] = [
   { id: 'MORE → Docs', surface: S_CHAT, auth: 'wallet', sheet: 'more', href: '/docs', open: (p) => tapFirst(p, ['[data-sheet-open="more"]', '[data-spine-bar] [aria-label="More"]']) },
@@ -1421,7 +1423,7 @@ export const SHEET_LINKS: SheetLink[] = [
 
 async function sheetLinkJob(run: Run, c: SheetLink, session: { address: string; cookie: string } | null) {
   const size = PHONE_SIZES[0]
-  const o = await openCtx(run, { size, theme: 'dark', auth: c.auth, session, rscDelayMs: 300 })
+  const o = await openCtx(run, { size, theme: 'dark', auth: c.auth, session, rscDelayMs: RSC_DELAY_MS })
   const b = { ...base(run, size, 'dark', c.surface), check: 'sheets' as CheckId, item: `link: ${c.id}` }
   try {
     await load(o, c.surface)
@@ -1437,6 +1439,20 @@ async function sheetLinkJob(run: Run, c: SheetLink, session: { address: string; 
       return
     }
     await o.page.evaluate('window.__nqMark = 1').catch(() => {})
+    // Every main-frame URL change, same-document ones included: a landing that
+    // lasts 36ms (MEASURED: /docs, then a deferred history.back() popped it)
+    // is invisible to a poll.
+    const navTrail: string[] = []
+    const onNav = (f: Pw) => {
+      if (f === o.page.mainFrame()) {
+        try {
+          navTrail.push(new URL(f.url()).pathname)
+        } catch {
+          /* about:blank */
+        }
+      }
+    }
+    o.page.on('framenavigated', onNav)
     const t0 = Date.now()
     await link.tap({ timeout: 5_000 }).catch(async () => link.click({ timeout: 5_000 }).catch(() => {}))
     let landedAt = -1
@@ -1453,7 +1469,7 @@ async function sheetLinkJob(run: Run, c: SheetLink, session: { address: string; 
     // A bounce is a deferred pop that fires AFTER the landing: hold and look again.
     const bounce: string[] = []
     const holdUntil = Date.now() + 1_600
-    while (Date.now() < holdUntil) {
+    while (landedAt >= 0 && Date.now() < holdUntil) {
       const path = (await o.page.evaluate('location.pathname').catch(() => '')) as string
       if (path && path !== c.href && !bounce.includes(path)) bounce.push(path)
       await sleep(150)
@@ -1461,15 +1477,18 @@ async function sheetLinkJob(run: Run, c: SheetLink, session: { address: string; 
     const after = (await o.page
       .evaluate(`(() => ({ path: location.pathname, soft: window.__nqMark === 1, sheetOpen: [...document.querySelectorAll('[data-sheet]')].some((s) => window.__nq && window.__nq.vis(s.querySelector('[role=dialog]') || s)) }))()`)
       .catch(() => ({ path: '?', soft: false, sheetOpen: false }))) as { path: string; soft: boolean; sheetOpen: boolean }
+    o.page.off?.('framenavigated', onNav)
     const reasons: string[] = []
-    if (landedAt < 0) reasons.push(`never landed on ${c.href} in 8s (path trail ${trail.join(' → ')}) — the navigation was aborted`)
+    const touched = navTrail.includes(c.href)
+    if (landedAt < 0 && touched) reasons.push(`landed on ${c.href}, then bounced: ${navTrail.join(' → ')} — a deferred history pop undid the navigation`)
+    else if (landedAt < 0) reasons.push(`never landed on ${c.href} in 8s (path trail ${trail.join(' → ')}) — the navigation was aborted`)
     if (bounce.length) reasons.push(`bounced after landing: ${c.href} → ${bounce.join(' → ')}`)
     if (after.path !== c.href && landedAt >= 0 && !bounce.length) reasons.push(`ended on ${after.path}`)
     if (after.sheetOpen) reasons.push('a sheet is still open on the destination')
     record({
       ...b,
       state: reasons.length ? 'FAIL' : 'PASS',
-      value: `→ ${after.path}${landedAt >= 0 ? ` in ${landedAt}ms` : ''} · ${after.soft ? 'soft (client) navigation' : 'HARD reload'} · RSC +300ms`,
+      value: `→ ${after.path}${landedAt >= 0 ? ` in ${landedAt}ms` : ''} · ${after.soft ? 'soft (client) navigation' : 'HARD reload'} · RSC +${RSC_DELAY_MS}ms`,
       detail: reasons.join('; '),
     })
   } finally {

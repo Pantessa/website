@@ -33095,7 +33095,8 @@ async function main() {
     check(
       'native qa: a link INSIDE a sheet navigates and lands — MORE → Docs, MORE → Settings, the brochure menu → Pricing, the account menu → Dashboard, each with the RSC fetch held 300ms, judged on landing, on no bounce after it, and on the sheet being closed',
       /rscDelayMs && \(req\.headers\(\)\['rsc'\] === '1' \|\| url\.searchParams\.has\('_rsc'\)\)/.test(nqSrc) &&
-        /const o = await openCtx\(run, \{ size, theme: 'dark', auth: c\.auth, session, rscDelayMs: 300 \}\)/.test(nqSrc) &&
+        /const RSC_DELAY_MS = Number\(arg\('rsc-delay'\) \|\| 300\)/.test(nqSrc) &&
+        /const o = await openCtx\(run, \{ size, theme: 'dark', auth: c\.auth, session, rscDelayMs: RSC_DELAY_MS \}\)/.test(nqSrc) &&
         /bounced after landing/.test(nqSrc) && /the navigation was aborted/.test(nqSrc),
     )
     const nq = (await import('./drive-native')) as typeof import('./drive-native')
