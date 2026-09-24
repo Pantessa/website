@@ -486,7 +486,7 @@ export function MintLinkForm({
           onChange={(e) => setSendTo(e.target.value)}
           placeholder="0x… or @handle"
           spellCheck={false}
-          className="mt-1.5 w-full max-w-md rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+          className="mt-1.5 w-full max-w-md rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
         />
       </div>
 
@@ -510,7 +510,7 @@ export function MintLinkForm({
             value={redirectUrl}
             onChange={(e) => setRedirectUrl(e.target.value)}
             placeholder="https://yoursite.com/thanks"
-            className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+            className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
           />
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -521,7 +521,7 @@ export function MintLinkForm({
                 type="datetime-local"
                 value={expiresAt}
                 onChange={(e) => setExpiresAt(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+                className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
               />
             </div>
             <div>
@@ -534,7 +534,7 @@ export function MintLinkForm({
                 value={maxSigns}
                 onChange={(e) => setMaxSigns(e.target.value)}
                 placeholder="e.g. 1000"
-                className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+                className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
               />
             </div>
           </div>
@@ -546,7 +546,7 @@ export function MintLinkForm({
             onChange={(e) => setAllowText(e.target.value)}
             placeholder="0x…"
             rows={2}
-            className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm mono text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+            className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] mono text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
           />
         </div>
       )}
