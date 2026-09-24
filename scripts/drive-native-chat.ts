@@ -882,10 +882,14 @@ async function cardsPass(browser: Pw, devices: Pw, c: Ctx) {
   const o = await open(browser, devices, c)
   const { page } = o
   await page.goto(`${BASE}/chat`, { waitUntil: 'domcontentloaded' })
-  const emptyUp = await page.locator('h3:has-text("Say what should happen")').first().waitFor({ state: 'visible', timeout: 25_000 }).then(() => true).catch(() => false)
-  if (emptyUp) {
-    const a = await page.evaluate(`(() => { ${HELPERS} const h = Array.from(document.querySelectorAll('h3')).find((x) => /Say what should happen/.test(x.textContent || '')); return audit(h ? h.parentElement : null) })()`)
-    verdict('empty-state', a)
+  // The state is transient (the splash replaces it once the wallet settles),
+  // so the wait and the audit happen in ONE page task: no gap for the swap.
+  const emptyAudit = await page
+    .waitForFunction(`(() => { ${HELPERS} const h = Array.from(document.querySelectorAll('h3')).find((x) => /Say what should happen/.test(x.textContent || '') && x.getBoundingClientRect().height > 0); return h ? audit(h.parentElement) : null })()`, null, { timeout: 25_000, polling: 100 })
+    .then((hdl: Pw) => hdl.jsonValue())
+    .catch(() => null)
+  if (emptyAudit) {
+    verdict('empty-state', emptyAudit)
     await shot(page, `${c.id}-empty-state`)
   } else note(`${c.id}/empty-state`, 'went straight to the splash (no empty-state frame)')
 
