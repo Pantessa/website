@@ -734,7 +734,7 @@ export default function AdminPage() {
                     <tr key={a.key} className="border-t border-[var(--line)] align-top">
                       <td className="py-2 pr-3 text-white">
                         <span className="break-all">
-                          {a.email ?? <span className="text-[color:var(--muted-2)]">wallet only — no email</span>}
+                          {a.email ?? <span className="text-[color:var(--muted-2)]">no email</span>}
                         </span>
                         <span className="ml-2 text-[10px] mono uppercase tracking-wide text-[color:var(--muted-2)]">{a.method}</span>
                         {/* The path they tried, for everyone — a trader was reaching for
@@ -742,7 +742,7 @@ export default function AdminPage() {
                             came here to do. */}
                         {a.lastAsk && (
                           <span
-                            className="block text-[11px] text-[color:var(--muted-2)] mt-0.5 max-w-[340px] truncate"
+                            className="block text-[11px] text-[color:var(--muted-2)] mt-0.5 max-w-[296px] truncate"
                             title={`${a.lastAskWalled ? 'Walled' : 'Asked'}${a.lastAskAt ? ` ${timeAgo(a.lastAskAt)}` : ''}: ${a.lastAsk}`}
                           >
                             {a.lastAskWalled ? 'last wall' : 'last ask'}: “{a.lastAsk}”

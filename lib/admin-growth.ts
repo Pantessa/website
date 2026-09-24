@@ -254,6 +254,10 @@ export const NO_ACTIVITY: PersonActivity = {
 
 /** A Coinbase embedded-wallet account: the only place an email and a wallet meet. */
 export interface AccountSource {
+  /** Coinbase's own id. The row key, because an email does NOT identify an
+   *  account: the same address can hold both an email and a Google account,
+   *  and they are two people-shaped rows with two wallets. */
+  id: string
   email: string | null
   name: string | null
   method: string
@@ -270,7 +274,7 @@ export interface WalletArrival {
 }
 
 export interface Person extends PersonActivity {
-  /** Stable row key: the account's email, else the wallet. */
+  /** Unique per row: the account's id, else the wallet. Never the email. */
   key: string
   email: string | null
   name: string | null
@@ -345,7 +349,7 @@ export function mergePeople(
     const a = sumActivity(wallets.map(act))
     const seen = maxIso(u.lastAuthenticatedAt, a.lastTurnAt, a.lastAskAt, ...wallets.map((w) => arrivalOf.get(w)?.lastAt))
     return {
-      key: u.email ?? wallets[0] ?? u.createdAt,
+      key: u.id,
       email: u.email,
       name: u.name,
       method: u.method,

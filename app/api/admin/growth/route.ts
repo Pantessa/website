@@ -426,7 +426,7 @@ export async function GET(req: NextRequest) {
   const actBy = new Map<string, PersonActivity>(activity.map((a) => [a.wallet, activityOf(a)]))
   const people = mergePeople(
     cdp.users.map((u) => ({
-      email: u.email, name: u.name, method: u.method, wallets: u.wallets,
+      id: u.userId, email: u.email, name: u.name, method: u.method, wallets: u.wallets,
       createdAt: u.createdAt, lastAuthenticatedAt: u.lastAuthenticatedAt,
     })),
     arrivals.map<WalletArrival>((a) => ({
