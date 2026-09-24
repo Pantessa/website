@@ -419,7 +419,10 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
           <button
             type="button"
             onClick={() => connectAndSignIn()}
-            className="text-[color:var(--accent)] hover:underline font-medium"
+            // A text link inside the hint: on a phone it keeps its look under
+            // a 44px hit area (squad mobile-native, CHAT r3 — QA measured 90×18).
+            className="text-[color:var(--accent)] hover:underline font-medium max-lg:relative max-lg:before:absolute max-lg:before:content-[''] max-lg:before:-inset-x-1 max-lg:before:-inset-y-[13px]"
+            data-hit-44=""
           >
             Connect &amp; sign in
           </button>
@@ -431,14 +434,16 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
     )}
     </>
   )
+  // On a phone the footer's action is THE button of the sheet: full width,
+  // 48px (squad mobile-native, CHAT r3 — QA measured "Request review" 143×40).
   const footer = (
     <>
-      <div className="flex-1" />
+      <div className="flex-1 max-lg:hidden" />
       {submitted ? (
         <button
           type="button"
           onClick={onClose}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-white text-zinc-950 hover:bg-zinc-200 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-white text-zinc-950 hover:bg-zinc-200 transition-colors max-lg:w-full max-lg:min-h-12 max-lg:justify-center max-lg:text-[14px]"
         >
           Done
         </button>
@@ -448,7 +453,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
         onClick={submit}
         disabled={!canSubmit}
         className={cn(
-          'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors [@media(hover:none)]:min-h-10',
+          'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors [@media(hover:none)]:min-h-10 max-lg:w-full max-lg:min-h-12 max-lg:justify-center max-lg:text-[14px]',
           canSubmit
             ? 'bg-white text-zinc-950 hover:bg-zinc-200'
             : 'bg-[var(--surf-2)] text-[color:var(--muted-2)] cursor-not-allowed',

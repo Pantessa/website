@@ -4419,7 +4419,9 @@ async function main() {
       const appMode = await readFile(new URL('../components/AppModeWorkspace.tsx', import.meta.url), 'utf8')
       check('mobile: the holdings-row chart button is a 40px target on touch', /live chart`\}[\s\S]{0,300}\[@media\(hover:none\)\]:h-10 \[@media\(hover:none\)\]:w-10 \[@media\(hover:none\)\]:-my-2/.test(chartBtn))
       check('mobile: chart timeframe chips have a 36px touch floor', /@media \(hover: none\) \{ \.tok__tfbtn \{ min-height: 36px/.test(designCss))
-      check('mobile: the request-MCP submit is 40px on touch', /'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors \[@media\(hover:none\)\]:min-h-10'/.test(addMcp))
+      // Re-pinned 2026-09-24 (squad mobile-native, CHAT r3): still 40px on a
+      // touch desktop; below lg it is the sheet's full-width 48px button.
+      check('mobile: the request-MCP submit is 40px on touch, a full-width 48px button below lg', /'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors \[@media\(hover:none\)\]:min-h-10 max-lg:w-full max-lg:min-h-12 max-lg:justify-center max-lg:text-\[14px\]'/.test(addMcp))
       check('mobile: the sign-in gate CTAs are ≥40px below lg (all three)', (gate.match(/px-3 py-1\.5 max-lg:min-h-10 max-lg:px-4 rounded-full bg-\[var\(--accent\)\]/g) ?? []).length === 3)
       check('mobile: Share is icon-only below sm with an aria-label and a 40px target', /aria-label=\{isPublic \? 'Shared publicly' : 'Share this chat'\}/.test(shareBtn) && /max-lg:min-h-10 max-lg:px-3 rounded-lg border text-\[11px\]/.test(shareBtn) && /whitespace-nowrap max-sm:hidden">\{isPublic \? 'Shared' : 'Share'\}/.test(shareBtn))
       const splashDash = await readFile(new URL('../components/SplashDashboard.tsx', import.meta.url), 'utf8')
@@ -34169,6 +34171,10 @@ async function main() {
     check('native chat r2: the whole composer pill is the field — a tap on its padding (not a button) focuses the textarea — and the textarea itself is 44px tall on a phone (QA measured 213×24)',
       /if \(!\(e\.target as HTMLElement\)\.closest\('button, textarea, a'\)\) textareaRef\.current\?\.focus\(\)/.test(ci) && /data-composer-pill=""/.test(ci))
     check('native chat r2: /i\'s home mark is a 44px target on a phone in its 32px footprint (QA measured 32×32)', /w-8 h-8 max-lg:w-11 max-lg:h-11 max-lg:-m-1\.5 rounded-lg/.test(rt2))
+    const addMcpSrc = rf('components/AddMcpModal.tsx', 'utf8')
+    check('native chat r3: in the request-MCP sheet the guest "Connect & sign in" link keeps its look under a 44px hit area, and "Request review" / "Done" are full-width 48px buttons below lg (QA measured 90×18 and 143×40)',
+      /max-lg:relative max-lg:before:absolute max-lg:before:content-\[''\] max-lg:before:-inset-x-1 max-lg:before:-inset-y-\[13px\]/.test(addMcpSrc) &&
+        (addMcpSrc.match(/max-lg:w-full max-lg:min-h-12 max-lg:justify-center max-lg:text-\[14px\]/g) ?? []).length === 2 && /<div className="flex-1 max-lg:hidden" \/>/.test(addMcpSrc))
     const rtDoc = await (await fetch(`${BASE}/i/buy-aapl`)).text()
     const rtHrefs = [...rtDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
     const rtServed = (await Promise.all(rtHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n').replace(/\s*\{\s*/g, '{').replace(/;\s*/g, ';').replace(/:\s+/g, ':')

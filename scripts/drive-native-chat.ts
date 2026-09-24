@@ -740,6 +740,24 @@ async function addMcpPass(browser: Pw, devices: Pw, c: Ctx) {
   }, '[role="dialog"][aria-label="Request an MCP"], [data-sheet="addmcp"] [role="dialog"]')
   note(`${c.id}/overlay-addmcp`, r)
   add(`${c.id}/addmcp-sheet`, !!r.opened && r.sheet === 'addmcp' && !!r.scrimCloses && !!r.escCloses && !!r.backCloses, JSON.stringify(r))
+  // Round 3 (QA): the sheet's own targets — "Request review" is THE button
+  // (full width, 44–48px), the guest "Connect & sign in" link a 44px hit area.
+  if ((await o.page.locator('[data-sheet="addmcp"] [role="dialog"]').count()) === 0) await reopen()
+  await o.page.waitForTimeout(600)
+  const t = await o.page.evaluate(`(() => {
+    ${HELPERS}
+    const d = document.querySelector('[data-sheet="addmcp"] [role="dialog"]')
+    if (!d) return null
+    const review = Array.from(d.querySelectorAll('button')).find((b) => /Request review|Done/.test(b.textContent || ''))
+    const link = Array.from(d.querySelectorAll('button')).find((b) => /Connect & sign in/.test(b.textContent || ''))
+    const hit = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); const ps = getComputedStyle(el, '::before'); const px = (v) => (v && v.endsWith('px') ? parseFloat(v) : 0); const on = ps.content !== 'none' && ps.position === 'absolute'; return { w: Math.round(r.width + (on ? -px(ps.left) - px(ps.right) : 0)), h: Math.round(r.height + (on ? -px(ps.top) - px(ps.bottom) : 0)), boxH: Math.round(r.height) } }
+    const pr = d.getBoundingClientRect()
+    return { review: review ? { ...box(review), panelW: Math.round(pr.width) } : null, link: hit(link) }
+  })()`)
+  note(`${c.id}/addmcp-targets`, t)
+  add(`${c.id}/addmcp-review-48`, !!t?.review && t.review.h >= 44 && t.review.h <= 52 && t.review.w >= t.review.panelW - 48, `"Request review" ${t?.review?.w}×${t?.review?.h} in a ${t?.review?.panelW}px sheet`)
+  add(`${c.id}/addmcp-signin-hit-44`, !t?.link || (t.link.h >= 44 && t.link.w >= 44), t?.link ? `"Connect & sign in" ${t.link.w}×${t.link.h} hit area (${t.link.boxH}px box)` : 'no guest hint (a session is on)')
+  await shot(o.page, `${c.id}-addmcp-targets`)
   await o.ctx.close()
 }
 
@@ -855,6 +873,129 @@ async function gatePass(browser: Pw, devices: Pw, c: Ctx) {
     }
     await o.ctx.close()
   }
+}
+
+// Round 3: a persisted conversation with a signed, settled swap — the only
+// place the receipt's "mint as link" renders (a DB chat row + meta.signed).
+// Served by route interception: /api/auth/me answers the drive wallet, the
+// chat list + the chat come from this fixture, and every chat write is
+// swallowed. No signature, no session cookie, no DB row.
+const MINT_CHAT_ID = 'cdrivemintchat0000000001'
+const MINT_CHAT = (() => {
+  const at = new Date().toISOString()
+  return {
+    id: MINT_CHAT_ID,
+    title: 'Swap 5 USDC for ETH on Base',
+    activeServerIds: [],
+    createdAt: at,
+    updatedAt: at,
+    messages: [
+      { id: 'cdrivemintmsg00000000001', role: 'user', content: 'Swap 5 USDC for ETH on Base', createdAt: at },
+      {
+        id: 'cdrivemintmsg00000000002',
+        role: 'assistant',
+        content: SWAP_REPLY.reply,
+        meta: { txChain: TX_CHAIN, buildPath: 'native-swap-uniswap', signed: [{ hash: '0x' + 'cd'.repeat(32), chainId: 8453, title: 'Swap USDC → ETH' }] },
+        createdAt: at,
+      },
+    ],
+  }
+})()
+
+/** Every way a sheet closes, one open at a time: a tap on the scrim, Escape,
+ *  its close button, the back gesture (stays on the page), a swipe down on
+ *  its grabber. */
+async function sheetDismissals(page: Pw, id: string, openIt: () => Promise<void>) {
+  const sel = `[data-sheet="${id}"] [role="dialog"]`
+  const isOpen = async () => (await page.locator(sel).count()) > 0
+  const opened = async () => {
+    if (!(await isOpen())) await openIt()
+    await page.locator(sel).first().waitFor({ state: 'visible', timeout: 4000 }).catch(() => {})
+    await page.waitForTimeout(450)
+    return isOpen()
+  }
+  const vp = await page.viewportSize()
+  const out: Record<string, boolean | string> = {}
+  out.opens = await opened()
+  // scrim
+  await page.mouse.click(Math.round(vp.width / 2), 10)
+  await page.waitForTimeout(500)
+  out.scrim = !(await isOpen())
+  // Escape
+  if (await opened()) {
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(500)
+    out.escape = !(await isOpen())
+  }
+  // the close button
+  if (await opened()) {
+    await page.locator(`${sel} button[aria-label="Close"]`).first().click({ timeout: 2000 }).catch(() => {})
+    await page.waitForTimeout(500)
+    out.button = !(await isOpen())
+  }
+  // back: closes, stays
+  if (await opened()) {
+    const url = page.url()
+    await page.goBack({ timeout: 3000 }).catch(() => {})
+    await page.waitForTimeout(700)
+    out.back = !(await isOpen()) && page.url() === url
+    if (page.url() !== url) out.backLeftFor = page.url()
+  }
+  // swipe down on the grabber
+  if (await opened()) {
+    const g = await page.evaluate(`(() => { const e = document.querySelector('[data-sheet="${id}"] .sheet__grabber') || document.querySelector('[data-sheet="${id}"] .sheet__head'); if (!e) return null; const r = e.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) } })()`)
+    if (g) {
+      await page.mouse.move(g.x, g.y)
+      await page.mouse.down()
+      for (let k = 1; k <= 12; k++) {
+        await page.mouse.move(g.x, g.y + k * 28)
+        await page.waitForTimeout(16)
+      }
+      await page.mouse.up()
+      await page.waitForTimeout(700)
+      out.swipe = !(await isOpen())
+    } else out.swipe = 'no grabber'
+  }
+  return out
+}
+
+async function mintPass(browser: Pw, devices: Pw, c: Ctx) {
+  console.log(`\n═══ mint · ${c.id} (a persisted chat with a settled receipt) ═══`)
+  const o = await open(browser, devices, c)
+  const { page, ctx } = o
+  await ctx.route(/\/api\/auth\/me(\?|$)/, (r: Pw) => r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address: ADDR.toLowerCase() }) }))
+  await ctx.route(/\/api\/chats(\/[^?]*)?(\?.*)?$/, (r: Pw) => {
+    const url = new URL(r.request().url())
+    const m = r.request().method()
+    if (m === 'GET' && url.pathname === '/api/chats') return r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify([{ ...MINT_CHAT, messages: undefined }]) })
+    if (m === 'GET' && url.pathname === `/api/chats/${MINT_CHAT_ID}`) return r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify(MINT_CHAT) })
+    // Every write (messages, working set, public flag) is swallowed.
+    return r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: '{}' })
+  })
+  await page.goto(`${BASE}/chat/${MINT_CHAT_ID}`, { waitUntil: 'domcontentloaded' })
+  await waitConnected(page)
+  const receiptUp = await page.locator('button:has-text("mint as link")').first().waitFor({ state: 'visible', timeout: 25_000 }).then(() => true).catch(() => false)
+  add(`${c.id}/mint-receipt-chip`, receiptUp, receiptUp ? 'the settled receipt offers "mint as link"' : 'no receipt chip rendered')
+  await shot(page, `${c.id}-mint-receipt`)
+  const fromBubble = await sheetDismissals(page, 'mint', async () => {
+    await page.locator('[data-bubble="user"] button[aria-label="Create an intent link from this ask"]').first().click({ timeout: 3000, force: true }).catch(() => {})
+  })
+  note(`${c.id}/mint-from-bubble`, fromBubble)
+  add(`${c.id}/mint-from-bubble`, fromBubble.opens === true && fromBubble.scrim === true && fromBubble.escape === true && fromBubble.button === true && fromBubble.back === true && fromBubble.swipe === true, JSON.stringify(fromBubble))
+  const fromReceipt = await sheetDismissals(page, 'mint', async () => {
+    await page.locator('button:has-text("mint as link")').first().click({ timeout: 3000 }).catch(() => {})
+  })
+  note(`${c.id}/mint-from-receipt`, fromReceipt)
+  add(`${c.id}/mint-from-receipt`, fromReceipt.opens === true && fromReceipt.scrim === true && fromReceipt.escape === true && fromReceipt.button === true && fromReceipt.back === true && fromReceipt.swipe === true, JSON.stringify(fromReceipt))
+  // The sheet carries the ask it was opened from.
+  await page.locator('button:has-text("mint as link")').first().click({ timeout: 3000 }).catch(() => {})
+  await page.waitForTimeout(600)
+  const prefilled = await page.evaluate(`(() => { const d = document.querySelector('[data-sheet="mint"] [role="dialog"]'); if (!d) return null; const f = d.querySelector('textarea, input[type="text"]'); return f ? f.value : null })()`)
+  add(`${c.id}/mint-prefilled`, typeof prefilled === 'string' && /Swap 5 USDC for ETH on Base/.test(prefilled), `the sheet's ask: "${prefilled}"`)
+  await shot(page, `${c.id}-mint-sheet`)
+  const errs = realErrors(o.errs)
+  add(`${c.id}/mint-console`, errs.length === 0, errs[0]?.slice(0, 200) ?? 'clean')
+  await o.ctx.close()
 }
 
 /** Round 2: the 360×740 card pass — every card a person reads or taps in
@@ -998,6 +1139,7 @@ async function main() {
     }
     if (!SKIP.includes('chat')) await chatPass(b, devices, c)
     if (!SKIP.includes('gate') && (c.id === 'iphone-375' || c.id === 'pixel-360')) await gatePass(b, devices, c)
+    if (!SKIP.includes('mint') && (c.id === 'iphone-375' || c.id === 'pixel-360')) await mintPass(b, devices, c)
     if (!SKIP.includes('addmcp') && (c.id === 'iphone-375' || c.id === 'pixel-360')) await addMcpPass(b, devices, c)
     if (!SKIP.includes('i') && (c.id === 'iphone-375' || c.id === 'pixel-375')) await intentPass(b, devices, c)
   }
