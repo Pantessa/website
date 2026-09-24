@@ -193,6 +193,7 @@ const CONTEXTS: Ctx[] = [
   { id: 'pixel-360', engine: 'chrome', device: 'Pixel 7', width: 360, height: 780, theme: 'dark' },
   { id: 'iphone-390-light', engine: 'chrome', device: 'iPhone 13', width: 390, height: 844, theme: 'light' },
   { id: 'pixel-landscape', engine: 'chrome', device: 'Pixel 7', width: 844, height: 390, theme: 'dark' },
+  { id: 'pixel-landscape-740', engine: 'chrome', device: 'Pixel 7', width: 740, height: 360, theme: 'dark' },
   // Round 2: the card pass (the coordinator's 360×740).
   { id: 'pixel-360x740', engine: 'chrome', device: 'Pixel 7', width: 360, height: 740, theme: 'dark' },
   { id: 'iphone-360x740-light', engine: 'chrome', device: 'iPhone 13', width: 360, height: 740, theme: 'light' },
@@ -571,6 +572,20 @@ async function chatPass(browser: Pw, devices: Pw, c: Ctx) {
   add(`${c.id}/send-44`, !!empty.send && empty.send.w >= 44 && empty.send.h >= 44, `send ${empty.send?.w}×${empty.send?.h}`)
   if (phone && empty.bar) add(`${c.id}/composer-above-bar`, !!empty.composerPill && empty.composerPill.b <= empty.bar.y + 1, `composer bottom ${empty.composerPill?.b} · bar top ${empty.bar.y}`)
   add(`${c.id}/no-h-scroll`, empty.doc.overflowX <= 0, `${empty.doc.overflowX}px`)
+  // Round 3 (SHELL's landscape measure): on a short phone the conversation
+  // keeps ≥200px of thread between the top bar, the composer and the bar.
+  const room = async () => page.evaluate(`(() => {
+    ${HELPERS}
+    const t = thread(), tb = topbar(), b = bar(), pill = ta() ? ta().closest('[data-composer]') : null
+    const banner = document.querySelector('[data-gate-banner]')
+    const h = (el) => (el && visible(el) ? Math.round(el.getBoundingClientRect().height) : 0)
+    return { thread: t ? Math.round(t.clientHeight) : null, topbar: h(tb), composer: h(pill), bar: h(b), banner: h(banner) }
+  })()`)
+  if (phone && c.height <= 480) {
+    const r0 = await room()
+    note(`${c.id}/room-empty`, r0)
+    add(`${c.id}/landscape-room`, r0.thread !== null && r0.thread >= 200 && r0.topbar <= 45, `thread ${r0.thread}px · top bar ${r0.topbar} · composer ${r0.composer} · banner ${r0.banner} · tab bar ${r0.bar}`)
+  }
   add(`${c.id}/one-app-scroller`, empty.appScroll === 1 && empty.threadIsAppScroll, `${empty.appScroll} [data-app-scroll], thread carries it: ${empty.threadIsAppScroll}`)
 
   // ── the Chats door does not pop a drawer ──
