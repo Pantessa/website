@@ -131,7 +131,7 @@ export default async function StorefrontPage({ params }: Params) {
             )}
             <a
               href="/"
-              className="ml-auto inline-flex items-center gap-1.5 mono text-[10.5px] uppercase tracking-widest text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors"
+              className="ml-auto inline-flex items-center max-lg:min-h-11 gap-1.5 mono text-[10.5px] uppercase tracking-widest text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors"
               title="Non-custodial intent links — the visitor's wallet is the only signer"
             >
               Powered by <YeetfulMark size={12} /> Pantessa
