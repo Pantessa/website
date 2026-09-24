@@ -273,6 +273,19 @@
   .navacct__item--danger:hover { background: color-mix(in oklch, var(--sell) 14%, transparent); color: var(--sell); }
   .navacct__item--danger:hover svg { color: var(--sell); }
   .navacct__sep { display: block; height: 1px; margin: 6px 6px; background: var(--line); }
+  /* On a phone the menu is a Sheet (NavAccount, squad mobile-native
+     2026-09-24): thumb-sized rows. The pill keeps its 35px look and gains a
+     44px hit area, so the three bars it sits in (brochure, markets strip,
+     chat toolbar) keep their height. */
+  .navacct__sheetmenu { padding: 2px 10px 10px; }
+  .navacct--sheet .navacct__head { padding: 4px 10px 12px; }
+  .navacct--sheet .navacct__item { min-height: 48px; padding: 12px 12px; font-size: 15px; }
+  /* `.hit-44`: the same invisible 44px hit area for any compact control
+     that sits in a bar or a header (the Sign in pill, /p's header CTAs). */
+  @media (max-width: 1023px) {
+    .navacct__pill, .hit-44 { position: relative; }
+    .navacct__pill::before, .hit-44::before { content: ''; position: absolute; inset: -8px -3px; }
+  }
 
   /* ── DRAWER GROUPING (mobile) ────────────────────── */
   .drawer__group {
@@ -280,6 +293,20 @@
     font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-2);
   }
   .drawer__tabs .drawer__sub { padding-left: 28px; }
+  /* The phone menu as the ONE Sheet (components/mobile/Sheet, squad
+     mobile-native 2026-09-24): the drawer's rows, inside the sheet body. */
+  .navsheet__tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 2px 12px 12px; }
+  .navsheet__tabs > * { grid-column: 1 / -1; }
+  /* The "More" destinations pair up: a menu that fills the screen leaves no
+     scrim to tap (it measured 614 of 667px as one column). */
+  .navsheet__tabs > .drawer__sub { grid-column: auto; padding-left: 16px; }
+  /* Exact 48px rows and a tight group label: the sheet leaves a real band of
+     scrim above it to tap (it measured 608 of 667px with the drag grabber). */
+  .navsheet__tabs .nav__tab { padding: 12px 16px; min-height: 48px; }
+  .navsheet__tabs .drawer__group { padding: 10px 16px 4px; }
+  .navsheet .sheet__foot .nav__dash { width: 100%; justify-content: center; min-height: 48px; font-size: 16px; }
+  .navsheet .navsheet__signin { background: var(--accent); color: var(--ink); border-color: transparent; }
+  .navsheet .navsheet__signin:hover { filter: brightness(1.06); background: var(--accent); }
 
   @media (prefers-reduced-motion: reduce) {
     .navacct__menu, .navacct__chev {
@@ -440,7 +467,12 @@
     transform: translateY(130%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .mcta.is-show { transform: none; }
-  .mcta .btn { width: 100%; justify-content: center; height: 52px; border-radius: 12px; font-size: 16px; }
+  .mcta .btn { justify-content: center; height: 52px; border-radius: 12px; font-size: 16px; }
+  /* Open Markets leads; Ask sits beside it, since the bar covers the floating
+     Ask pill's corner while it's up (squad mobile-native, 2026-09-24). */
+  .mcta { gap: 10px; }
+  .mcta .mcta__go { flex: 1; min-width: 0; }
+  .mcta .mcta__ask { flex: 0 0 auto; gap: 8px; padding: 0 18px; background: color-mix(in srgb, var(--bg) 70%, transparent); }
   @media (max-width: 640px) { .mcta { display: flex; } }
 
   /* live runner HUD — bottom-right glass card (hidden ≤1080px) */
@@ -1310,33 +1342,55 @@
   .dashacct__item--danger { color: #f87171; }
   .dashacct__item--danger:hover { background: rgba(248,113,113,.12); color: #fca5a5; }
 
-  /* ── DASHBOARD MOBILE NAV (bar + hamburger drawer) ── */
+  /* ── DASHBOARD PHONE CHROME (squad mobile-native, 2026-09-24) ──
+     ONE top bar: the section you're in (the button that opens the sections
+     Sheet) + Ask (the site-wide ask door). The sticky moved from the bar to
+     `.dashnav`, whose containing block is the whole `.dash` (block below
+     900px): the bar used to be `sticky; top: 64px` inside a wrapper exactly
+     its own height, so it never stuck and scrolled away with the page. */
   .dashnav { display: none; }        /* desktop: rail owns navigation */
   .dashnav__bar {
-    position: sticky; top: 64px; z-index: 30;
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 10px 0; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(10px);
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    min-height: 60px; padding: 8px 18px;
+    /* Opaque: at 88% the page's headings read through the bar as it
+       scrolled under (the drive's mid-scroll shot). */
+    background: var(--bg);
     border-bottom: 1px solid var(--line);
   }
-  .dashnav__crumb { font-size: 14px; font-weight: 600; color: var(--fg); }
-  .dashnav__burger {
-    display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px;
-    border: 1px solid var(--line); border-radius: 10px; background: var(--surf-1);
-    color: var(--fg); font-size: 12.5px; font-weight: 600;
+  .dashnav__switch {
+    flex: 1; min-width: 0; min-height: 44px;
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px;
+    padding: 2px 8px 2px 0; border-radius: 10px; text-align: left; color: var(--fg);
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
   }
-  .dashnav__burger:hover { border-color: var(--line-2); background: var(--surf-2); }
-  .dashnav__drawer { position: fixed; inset: 0; z-index: 80; }
-  .dashnav__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.6); backdrop-filter: blur(2px); border: 0; }
-  .dashnav__panel {
-    position: absolute; top: 0; right: 0; bottom: 0; width: min(300px, 86vw);
-    display: flex; flex-direction: column; gap: 14px; padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
-    background: var(--bg); border-left: 1px solid var(--line); overflow-y: auto;
+  .dashnav__switch:active { opacity: .72; }
+  .dashnav__eyebrow { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); }
+  .dashnav__crumb { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; font-size: 16px; font-weight: 600; color: var(--fg); }
+  .dashnav__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dashnav__chev { flex-shrink: 0; color: var(--muted); }
+  .dashnav__ask {
+    flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px;
+    min-height: 44px; padding: 0 16px 0 12px; border-radius: 999px;
+    border: 1px solid var(--line-2); background: color-mix(in srgb, var(--surf-1) 80%, transparent);
+    color: var(--fg); font-size: 14px; font-weight: 600;
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
   }
-  .dashnav__panel .dash__side { flex-direction: column; }
-  .dashnav__panel .dashacct { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); }
-  /* In the drawer the switcher is full-width (not the rail's fixed pill). */
-  .dashnav__panel .orgsw { padding: 0; width: auto; }
-  .dashnav__panel .orgsw__menu { left: 0; right: 0; width: auto; }
+  .dashnav__ask:active { background: var(--surf-2); }
+  /* The sections Sheet: the org switcher, every section as a 48px row, and
+     the account pinned in the sheet's foot. */
+  .dashsheet__body { display: flex; flex-direction: column; gap: 12px; padding: 2px 12px 12px; }
+  .dashsheet .dash__side { flex-direction: column; }
+  .dashsheet .dash__link { min-height: 48px; font-size: 14px; }
+  .dashsheet .orgsw { padding: 0; width: auto; }
+  .dashsheet .orgsw__menu { left: 0; right: 0; width: auto; }
+  /* Every field on every dashboard page is ≥16px on a phone: iOS zooms the
+     page into a smaller one on focus (12–14px here before). */
+  @media (max-width: 1023px) {
+    .dash__main input:not([type=checkbox]):not([type=radio]):not([type=range]),
+    .dash__main select,
+    .dash__main textarea,
+    .dashsheet input { font-size: 16px; }
+  }
   .dash__link {
     display: flex; align-items: center; gap: 10px;
     padding: 10px 12px; border-radius: 10px; font-size: 13px;
@@ -1448,10 +1502,23 @@
   .orgsw__go:disabled { opacity: .5; }
   /* Mobile: the vertical rail is replaced by a compact bar + hamburger drawer
      (DashboardMobileNav) — no more horizontal-scroll section row. */
+  /* Inside the phone frame (below lg) `.dashshell` is a flex COLUMN, and
+     `.dash`'s `margin: 0 auto` then turns off cross-axis stretch: `.dash`
+     sized to its content (766px on /dashboard, 626px on /guardian at 375)
+     and the frame clipped the rest out of reach ("Dismiss welcome" at
+     x 709). Full width, no auto margins. */
+  @media (max-width: 1023px) {
+    .dash { margin: 0; width: 100%; min-width: 0; }
+  }
   @media (max-width: 900px) {
-    .dash { grid-template-columns: 1fr; gap: 0; padding: 0 18px; }
+    /* Block, not a one-column grid: a grid item's containing block is its
+       grid AREA, so a sticky `.dashnav` in row 1 could never leave row 1. */
+    .dash { display: block; padding: 0 18px; }
     .dash__rail { display: none; }
-    .dashnav { display: block; }
+    .dashnav { display: block; position: sticky; top: 0; z-index: 30; margin: 0 -18px; }
+    /* The bar's Ask is the ask here: the docked ask bar steps aside, so a
+       phone gets one bar at the top and the tab bar at the bottom. */
+    .dashask { display: none; }
   }
 
   /* ── DOCS (full-width shell) ─────────────────────── */
@@ -2467,6 +2534,10 @@
   .ca__input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent); }
   .ca__input--otp { font-family: 'Geist Mono', ui-monospace, monospace; letter-spacing: .38em; text-indent: .38em; text-align: center; font-size: 22px; padding: 15px 14px; }
   .ca__input--spaced { margin-top: 20px; }
+  /* iOS zooms the page into any field under 16px when it's focused, and the
+     door is a phone's first screen: the email field is 16px below lg (the
+     OTP field is already 22px). Squad mobile-native, 2026-09-24. */
+  @media (max-width: 1023px) { .ca__input:not(.ca__input--otp) { font-size: 16px; } }
   /* The stone breathes while the embedded wallet is provisioned — a wait with
      a heartbeat reads as working; a bare spinner reads as stalled. */
   .ca__gem--pulse { animation: ca-breathe 2.2s ease-in-out infinite; }
@@ -2947,6 +3018,12 @@
   .pricing__toggle { display: inline-flex; padding: 3px; border-radius: 999px; border: 1px solid var(--line); background: var(--surf-2); flex-shrink: 0; }
   .pricing__toggle button { font: inherit; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; padding: 5px 11px; border-radius: 999px; color: var(--muted-2); background: transparent; border: 0; cursor: pointer; }
   .pricing__toggle button.is-on { background: var(--fg); color: var(--bg); }
+  /* A 26px segment on a phone: the 44px comes from an invisible hit area
+     (squad mobile-native, 2026-09-24); the pill keeps its look. */
+  @media (max-width: 1023px) {
+    .pricing__toggle button { position: relative; }
+    .pricing__toggle button::before { content: ''; position: absolute; inset: -9px 0; }
+  }
   .pricing__toggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .pricing__save { font-size: 11px; letter-spacing: .06em; color: var(--accent); padding: 3px 8px; border-radius: 999px; border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent); }
   .pricing__h2 { margin-top: 44px; font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(1.5rem, 2.4vw, 2rem); letter-spacing: -.012em; color: var(--fg); text-wrap: balance; }
@@ -3552,6 +3629,8 @@
     color: var(--fg); outline: none; transition: border-color .2s, box-shadow .2s;
   }
   .sud__input::placeholder { color: var(--muted-2); }
+  /* No iOS focus zoom on a phone (squad mobile-native, 2026-09-24). */
+  @media (max-width: 1023px) { .sud__input { font-size: 16px; } }
   .sud__input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent); }
   .sud__row .btn { width: 100%; justify-content: center; height: 46px; border-radius: 12px; }
   .sud__fine { margin-top: 12px; font-size: 10.5px; letter-spacing: .06em; color: var(--muted-2); }
