@@ -33176,6 +33176,20 @@ async function main() {
         !/el\.scrollIntoView\(\{ block: 'start' \}\)/.test(nmCode(nmSym)) &&
         /\.mkt-frame__rail, \.mkt-frame__foot \{ overflow-anchor: none; \}/.test(nmMk),
     )
+    // Round 2 (coordinator R2-1 + R2-3).
+    check(
+      'native markets (round 2): on a phone the /t header leads with the price and the chart — one title line (the venue chip ellipsizes), one meta line (the session ellipsizes), no "24H RANGE" caption, a tighter rhythm; the act chips snap to a chip\'s edge; the header pills keep a 44px hit area',
+      /\.mkt-frame--sym \.sym__head \{ padding: 12px 0 10px; row-gap: 10px; \}/.test(nmMk) &&
+        /\.sym__head--mk2 \.sym__titlerow \{ flex-wrap: nowrap; \}/.test(nmMk) &&
+        /\.sym__head--mk2 \.sym__session \{ display: block; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; \}/.test(nmMk) &&
+        /\.sym__head--mk2 \.mk-range__k \{ display: none; \}/.test(nmMk) &&
+        /\.sym__act-chips \{ scroll-snap-type: x proximity; \}/.test(nmMk) && /\.sym__act-chip \{ flex-shrink: 0; scroll-snap-align: start; \}/.test(nmMk) &&
+        /\.mk-vs__open::after, \.mk-vs__x::after, button\.mk-held::after \{ content: ''; position: absolute; inset: -9px -4px; \}/.test(nmMk),
+    )
+    check(
+      'native markets (round 2): a landscape phone gets the phone tool strip (only the board tabs stick) — the whole strip stuck left 166px of rows at 844×390',
+      /@media \(max-width: 640px\), \(max-width: 1023px\) and \(max-height: 500px\) \{\s*\.mkt-frame__bar \{ display: contents; \}/.test(nmMk),
+    )
     check(
       'native markets: below lg the /t section tabs stick under the top strip (scroll-margin lands a switch there)',
       /\.sym__tabs \{ position: sticky; top: var\(--mkt-top-h, 52px\); z-index: 19; background: var\(--bg\); scroll-margin-top: var\(--mkt-top-h, 52px\); \}/.test(nmMk),
