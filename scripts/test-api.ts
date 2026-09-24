@@ -33442,10 +33442,16 @@ async function main() {
         CTA.ctaBarStep({ shown: true, anchorY: 1500 }, 1504, H).shown === true && CTA.ctaBarStep({ shown: true, anchorY: 1500 }, 1504, H).anchorY === 1500,
       JSON.stringify(slowSteps),
     )
+    check(
+      'native pages: html[data-mcta] means the bar is ON SCREEN: the scroll state says show AND the viewport draws the bar (CTA_BAR_MQ = the CSS\'s own 640px query). At 844×390 a scroll-up used to set it over an undrawn bar, and the ask pill stepped aside for nothing (no Ask on the landing)',
+      CTA.CTA_BAR_MAX_PX === 640 && CTA.CTA_BAR_MQ === '(max-width: 640px)' &&
+        CTA.ctaBarOnScreen(true, true) === true && CTA.ctaBarOnScreen(true, false) === false && CTA.ctaBarOnScreen(false, true) === false && CTA.ctaBarOnScreen(false, false) === false,
+    )
     const mctaSrc = npCode('components/MobileCtaBar.tsx')
     check(
       'native pages: MobileCtaBar reads scroll through lib/app-scroller and decides with lib/cta-bar (never window.scrollY), and carries Ask beside Open Markets',
       /onAppScroll\(/.test(mctaSrc) && /ctaBarStep\(prev, appScrollTop\(\), window\.innerHeight\)/.test(mctaSrc) && !/window\.scrollY/.test(mctaSrc) &&
+        /window\.matchMedia\(CTA_BAR_MQ\)/.test(mctaSrc) && /mq\.addEventListener\('change', read\)/.test(mctaSrc) && /const show = ctaBarOnScreen\(state\.shown, fits\)/.test(mctaSrc) &&
         /<SpineLink href="\/markets"/.test(mctaSrc) && /openDoor\(\)/.test(mctaSrc) && /root\.dataset\.mcta = 'show'/.test(mctaSrc),
     )
 
@@ -33550,6 +33556,10 @@ async function main() {
           const rise = [...npCss.matchAll(/\.ca__panel\{([^}]*)\}/g)].map((m) => m[1]).find((b) => /ca-rise/.test(b)) ?? ''
           return /backwards/.test(rise) && !/both/.test(rise)
         })(),
+    )
+    check(
+      'native pages: the served CSS draws the CTA bar ONLY inside the media query lib/cta-bar names (the 640 in x402-design.css and CTA_BAR_MAX_PX are one number)',
+      ruleWith(phoneBlock(npCss, CTA.CTA_BAR_MAX_PX), '.mcta', ['display:flex']) && ruleWith(npCss, '.mcta', ['display:none']),
     )
     const below600 = phoneBlock(npCss, 600)
     check(
