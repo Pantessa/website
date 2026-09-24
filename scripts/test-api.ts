@@ -33581,6 +33581,19 @@ async function main() {
     const kbSrc = await readSrc('components/mobile/useSoftKeyboard.ts')
     check('native shell: useSoftKeyboard pans the page back (window.scrollTo(0, 0)) only after a keyboard that WAS up closes, and only in the phone posture — a desktop blur must never scroll the page to the top',
       /const wasOpen = last\.open/.test(kbSrc) && /if \(wasOpen && !last\.open\) settle\(\)/.test(kbSrc) && /const settle = \(\) => \{\s*if \(!isPhoneViewport\(\)\) return/.test(kbSrc) && /keyboardState\(window\.innerHeight, vv\.height, vv\.offsetTop\)/.test(kbSrc))
+    // Round 2: what a URL change does to the screen's scroll. A REPLACE never
+    // resets (the chat's /chat → /chat/<id> catch-up after its first turn is a
+    // replaceState and used to scroll the thread to 0 — CHAT's finding).
+    check('native shell: scrollKindFor — pop restores, push (and an unseen change) lands at the top, replace KEEPS the scroll',
+      PS.scrollKindFor('pop') === 'restore' && PS.scrollKindFor('push') === 'top' && PS.scrollKindFor(null) === 'top' && PS.scrollKindFor('replace') === 'keep')
+    check('native shell: historyUrlChangesPath counts only a pathname change — a query-only (?tab=), a hash, a state-only call and a same-path URL do not; relative and absolute URLs resolve like the browser',
+      PS.historyUrlChangesPath('/chat', '/chat/abc', 'http://localhost/chat') === true && PS.historyUrlChangesPath('/chat', '/chat?tab=links', 'http://localhost/chat') === false && PS.historyUrlChangesPath('/t/AAPL', '#trade', 'http://localhost/t/AAPL') === false &&
+        PS.historyUrlChangesPath('/t/AAPL', null, 'http://localhost/t/AAPL') === false && PS.historyUrlChangesPath('/t/AAPL', undefined, 'http://localhost/t/AAPL') === false && PS.historyUrlChangesPath('/t/AAPL', '', 'http://localhost/t/AAPL') === false &&
+        PS.historyUrlChangesPath('/t/AAPL', '/t/TSLA', 'http://localhost/t/AAPL') === true && PS.historyUrlChangesPath('/t/AAPL', 'http://localhost/t/TSLA?x=1', 'http://localhost/t/AAPL') === true && PS.historyUrlChangesPath('/t/AAPL', 'TSLA', 'http://localhost/t/AAPL') === true && PS.historyUrlChangesPath('/t/AAPL', '::bad', 'http://localhost/t/AAPL') === false)
+    const mountSrc = await readSrc('components/mobile/PhoneShellMount.tsx')
+    check('native shell: ScrollMemory wraps pushState/replaceState by METHOD (marking only pathname-changing calls), watches popstate for a pathname change, and decides through scrollKindFor — a replace leaves the scroller alone',
+      /h\.pushState = pushWrapped/.test(mountSrc) && /h\.replaceState = replaceWrapped/.test(mountSrc) && /mark\('push', url\)/.test(mountSrc) && /mark\('replace', url\)/.test(mountSrc) && /historyUrlChangesPath\(window\.location\.pathname, url, window\.location\.href\)/.test(mountSrc) &&
+        /if \(window\.location\.pathname !== seenPath\.current\) lastOp\.current = 'pop'/.test(mountSrc) && /how = scrollKindFor\(lastOp\.current\)/.test(mountSrc) && /if \(how === 'keep'\) return/.test(mountSrc) && /if \(h\.pushState === pushWrapped\) h\.pushState = origPush/.test(mountSrc))
     check('native shell: lib/app-scroller keeps the stubbed exports and adds scrollAppToTop / appScrollDepthPct / appScrollExtent / hasAppScroller (NAV\'s tap-the-lit-tab and the journey depth read these)',
       ['getAppScroller', 'appScrollTop', 'scrollAppTo', 'onAppScroll', 'scrollAppToTop', 'appScrollDepthPct', 'appScrollExtent', 'hasAppScroller'].every((k) => typeof (AS as Record<string, unknown>)[k] === 'function'))
 
@@ -33614,13 +33627,19 @@ async function main() {
     }
     check('native shell: the served CSS carries the frame — below lg html:has([data-app-frame]) is height 100% + overflow hidden + no overscroll, its body clips, the frame is a 100dvh column, the scroller is flex 1 / min-height 0 / overflow-y auto / overscroll contain (matched as declaration SETS: Lightning reorders + collapses)',
       phoneBlocks > 0 && ruleWith(nsCss, 'html:has([data-app-frame])', ['height:100%', 'overflow:hidden', 'overscroll-behavior:none']) &&
-        ruleWith(nsCss, 'html:has([data-app-frame]) body', ['height:100%', 'min-height:0', 'overflow:clip', 'overscroll-behavior:none']) &&
+        ruleWith(nsCss, 'html:has([data-app-frame]) body', ['height:100%', 'min-height:0', 'overflow:clip', 'overscroll-behavior:none', 'display:flex', 'flex-direction:column']) &&
+        ruleWith(nsCss, 'html:has([data-app-frame]) body > *', ['flex-shrink:0']) && ruleWith(nsCss, 'html:has([data-app-frame]) body > [data-app-frame], html:has([data-app-frame]) body > :has(> [data-app-frame])', ['flex-shrink:1', 'min-height:0']) &&
         ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame][data-app-frame]', ['display:flex', 'flex-direction:column', 'height:100dvh', 'min-height:0', 'max-height:none', 'padding:env(safe-area-inset-top)env(safe-area-inset-right)0env(safe-area-inset-left)', 'overflow:hidden', 'overscroll-behavior:none']) &&
         ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame] [data-app-scroll][data-app-scroll]', ['flex:auto|flex:1 1auto|flex:11auto', 'min-height:0', 'max-height:none', 'overflow:clipauto|overflow-y:auto', 'overscroll-behavior-y:contain']),
       `${nsHrefs.length} stylesheets, ${phoneBlocks} phone blocks`)
     check('native shell: the served CSS pins the bar IN FLOW as the frame\'s last row (`[data-app-frame] > [data-spine-bar]` static, order 999) with the fixed-bar belt for a bar that is not a direct child',
       ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame] > [data-spine-bar][data-spine-bar]', ['position:static', 'order:999', 'flex:none|flex:0 0auto|flex:00auto', 'width:auto', 'inset:auto']) &&
         ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame][data-app-frame]:has([data-spine-bar]):not(:has(> [data-spine-bar]))', ['padding-bottom:calc(var(--spine-bar-h,49px)+env(safe-area-inset-bottom))']))
+    // Round 2: overscroll, pinned on its own so a pull past either end never
+    // drags the page or the bar (the coordinator's ask; declaration SETS).
+    check('native shell: overscroll — below lg html:has([data-app-frame]) and its body are overscroll-behavior none, the frame is none, the scroller is overscroll-behavior-y contain',
+      ruleWith(nsCss, 'html:has([data-app-frame])', ['overscroll-behavior:none']) && ruleWith(nsCss, 'html:has([data-app-frame]) body', ['overscroll-behavior:none']) &&
+        ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame][data-app-frame]', ['overscroll-behavior:none']) && ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame] [data-app-scroll][data-app-scroll]', ['overscroll-behavior-y:contain']))
     check('native shell: the served CSS shrinks the frame onto the keyboard (html[data-keyboard] → 100dvh − --kb-inset) and hides the bar while it is up',
       ruleWith(nsCss, 'html[data-keyboard]:has([data-app-frame]) body [data-app-frame][data-app-frame]', ['height:calc(100dvh-var(--kb-inset,0px))']) &&
         ruleWith(nsCss, 'html[data-keyboard]:has([data-app-frame]) body [data-app-frame] [data-spine-bar][data-spine-bar]', ['display:none']))
@@ -33764,8 +33783,12 @@ async function main() {
     // has none of it yet).
     const sheetSrc = await readSrc('components/mobile/Sheet.tsx')
     const sheetCss = await readSrc('components/mobile/mobile.css')
-    check('native shell: Sheet keeps the contract props and adds the dismiss REASON to onClose (scrim · escape · button · swipe · back); every dismissal path names its reason',
-      /onClose: \(reason\?: SheetCloseReason\) => void/.test(sheetSrc) && /'scrim' \| 'escape' \| 'button' \| 'swipe' \| 'back'/.test(sheetSrc) && ["dismiss('scrim')", "dismissRef.current('escape')", "dismiss('button')", "dismiss('swipe')", "dismissRef.current('back')"].every((d) => sheetSrc.includes(d)) &&
+    // Re-pinned (round 2): since 1b the swipe and the back live in the hooks
+    // (useSwipeToClose names 'swipe', useBackToClose names 'back'); the Sheet
+    // itself names scrim / escape / button. NAV caught the stale grep.
+    check('native shell: Sheet keeps the contract props and adds the dismiss REASON to onClose (scrim · escape · button in Sheet.tsx; swipe in useSwipeToClose; back in useBackToClose); every dismissal path names its reason',
+      /onClose: \(reason\?: SheetCloseReason\) => void/.test(sheetSrc) && /'scrim' \| 'escape' \| 'button' \| 'swipe' \| 'back'/.test(sheetSrc) && ["dismiss('scrim')", "dismissRef.current('escape')", "dismiss('button')"].every((d) => sheetSrc.includes(d)) &&
+        /onCloseRef\.current\('swipe'\)/.test(await readSrc('components/mobile/useSwipeToClose.ts')) && /onCloseRef\.current\('back'\)/.test(await readSrc('components/mobile/useBackToClose.ts')) &&
         ['open', 'onClose', 'title', 'ariaLabel', 'side', 'size', 'footer', 'children', 'className', 'id'].every((k) => new RegExp(`^  ${k}\\??:`, 'm').test(sheetSrc)))
     // The two behaviors are HOOKS (the coordinator's ask: the sign-in door and
     // ChatSignInGate cannot be Sheets but need the same back gesture + swipe
@@ -33782,6 +33805,9 @@ async function main() {
     check('native shell: the Sheet wears both hooks (useBackToClose(open, dismiss, historyKey); useSwipeToClose(panelRef, dismiss, side) spread on the grabber and the head), traps Tab, locks the document\'s scroll while open and returns focus to the opener',
       /useBackToClose\(open, dismiss, historyKey\)/.test(sheetSrc) && /const \{ handleProps: dragHandlers \} = useSwipeToClose\(panelRef, dismiss, side\)/.test(sheetSrc) && /className="sheet__grabber" aria-hidden \{\.\.\.dragHandlers\}/.test(sheetSrc) && /className="sheet__head" \{\.\.\.dragHandlers\}/.test(sheetSrc) &&
         /const trapTab = \(e: KeyboardEvent\)/.test(sheetSrc) && /html\.style\.overflow = 'hidden'/.test(sheetSrc) && /opener\?\.focus\?\.\(\{ preventScroll: true \}\)/.test(sheetSrc) && !/shouldDismissDrag|sheetHistory\(\)/.test(code(sheetSrc)))
+    check('native shell: a bottom sheet pads the landscape notch (env(safe-area-inset-left/right)) and, on a landscape phone, may take everything above the status bar',
+      /\.sheet\[data-side='bottom'\] \.sheet__panel \{[^}]*padding: 0 env\(safe-area-inset-right\) env\(safe-area-inset-bottom\) env\(safe-area-inset-left\);/.test(sheetCss) &&
+        /@media \(max-width: 1023px\) and \(orientation: landscape\) and \(max-height: 480px\) \{\s*\.sheet\[data-side='bottom'\] \.sheet__panel \{ max-height: calc\(100dvh - max\(12px, env\(safe-area-inset-top\)\)\); \}/.test(sheetCss))
     check('native shell: mobile.css animates enter and exit (the exit from wherever a drag left the panel), stills everything under prefers-reduced-motion, and lifts a bottom sheet onto the keyboard once for every consumer',
       /\.sheet\[data-phase='open'\]\[data-side='bottom'\] \.sheet__panel \{ animation: sheet-up/.test(sheetCss) && /\.sheet\[data-phase='closing'\]\[data-side='bottom'\] \.sheet__panel \{ animation: sheet-down/.test(sheetCss) && /@keyframes sheet-down \{ from \{ transform: translateY\(var\(--sheet-from, 0px\)\); \}/.test(sheetCss) &&
         /@media \(prefers-reduced-motion: reduce\) \{\s*\.sheet \.sheet__scrim, \.sheet \.sheet__panel \{ animation: none !important/.test(sheetCss) &&
