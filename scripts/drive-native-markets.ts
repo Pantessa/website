@@ -487,6 +487,7 @@ async function sheetRows(engine: Engine) {
 
     // Row 7: the rail's dialogs (ImportModal from the head; AlertForm needs
     // an account, so its sheet is proven by source pins + the harness).
+    await page.waitForTimeout(600) // the Sheet pops its history entry a tick after closing
     await page.goto(`${BASE}/markets`, { waitUntil: 'load' })
     await page.waitForSelector('.wl__row', { timeout: 15_000 }).catch(() => {})
     const imp = page.locator('.wl__head [aria-label="Import from TradingView"]').first()
@@ -540,6 +541,7 @@ async function shots() {
       await page.waitForTimeout(500)
       await snap('markets-askdoor')
       await page.keyboard.press('Escape')
+      await page.waitForTimeout(600) // the Sheet pops its history entry a tick after closing
       await openSymbol(page, 'ETH')
       await snap('t-ETH-top')
       await page.evaluate(`document.querySelector('.sym__chart').scrollIntoView({ block: 'start' })`)
@@ -692,7 +694,45 @@ async function brochureFoot(engine: Engine, pathname: string) {
       }
       return { pill: { x: pr.x, y: pr.y, w: pr.width, h: pr.height }, pad, hits }
     })()`)
-    record[`${engine}.brochure${pathname}`] = r
+    // The FAB behaviour on the way down (QA's positions are a downward sweep):
+    // at every mid-page step the pill is away, or nothing is under it.
+    await page.evaluate(`(${SCROLLER_JS}).scrollTo({ top: 0, behavior: 'instant' })`)
+    await page.waitForTimeout(200)
+    const sweep = await page.evaluate(`(async () => {
+      const sc = ${SCROLLER_JS}
+      const max = sc.scrollHeight - sc.clientHeight
+      const out = []
+      for (let i = 1; i <= 12; i++) {
+        sc.scrollTo({ top: Math.round((max * i) / 13), behavior: 'instant' })
+        await new Promise((r) => setTimeout(r, 120))
+        const pill = document.querySelector('[data-ask-door="pill"]')
+        const shown = !!pill && getComputedStyle(pill).display !== 'none'
+        let under = 0
+        if (shown) {
+          const pr = pill.getBoundingClientRect()
+          for (const el of document.querySelectorAll('main a, main p, main button, main li, main h2, main h3, footer a, footer p')) {
+            if (el.closest('[aria-hidden="true"]')) continue
+            const b = el.getBoundingClientRect()
+            if (Math.min(b.right, pr.right) > Math.max(b.left, pr.left) && Math.min(b.bottom, pr.bottom) > Math.max(b.top, pr.top)) under++
+          }
+        }
+        out.push({ shown, under })
+      }
+      sc.scrollTo({ top: max, behavior: 'instant' })
+      await new Promise((r) => setTimeout(r, 150))
+      const atEnd = getComputedStyle(document.querySelector('[data-ask-door="pill"]')).display !== 'none'
+      sc.scrollTo({ top: max - 400, behavior: 'instant' })
+      await new Promise((r) => setTimeout(r, 150))
+      // On the landing a scroll up raises the CTA bar, which carries its own Ask
+      // and sends the pill away (html[data-mcta="show"]): that counts as back.
+      const afterUp = getComputedStyle(document.querySelector('[data-ask-door="pill"]')).display !== 'none' || document.documentElement.dataset.mcta === 'show'
+      return { steps: out, atEnd, afterUp }
+    })()`)
+    const covered = sweep.steps.filter((s: any) => s.shown && s.under > 0).length
+    const fl = `${pathname} downward sweep: pill shown at ${sweep.steps.filter((s: any) => s.shown).length}/12 steps, over text at ${covered}/12 · at the end: ${sweep.atEnd ? 'shown' : 'away'} · after a scroll up: ${sweep.afterUp ? 'shown' : 'away'}`
+    if (MEASURE_ONLY || TAG === 'before') note(2, `${engine} brochure FAB`, fl)
+    else judge(2, `${engine} ${pathname}: the pill is a native FAB — never over text on the way down, back at the page end and on a scroll up`, covered === 0 && sweep.atEnd && sweep.afterUp, fl)
+    record[`${engine}.brochure${pathname}`] = { ...r, sweep }
     const line = `${pathname} scrolled to the end: body reserve ${r.pad}px · pill ${rectOf(r.pill)} over ${r.hits.length ? r.hits.slice(0, 4).join(', ') : 'nothing'}`
     if (MEASURE_ONLY || TAG === 'before') note(2, `${engine} brochure foot`, line)
     else judge(2, `${engine} ${pathname}: at the page's end the last line clears the pill (the reserve applies)`, !r.pill || (r.pad >= 60 && r.hits.length === 0), line)
@@ -745,7 +785,7 @@ async function main() {
     await marketsRows('chrome-iphone375')
     await marketsRows('chrome-pixel7')
     await railRows('chrome-iphone375')
-    await brochureFoot('chrome-iphone375', '/pricing')
+    for (const bp of ['/', '/pricing', '/docs']) await brochureFoot('chrome-iphone375', bp)
   }
   if (ROWS.has(1) || ROWS.has(3) || ROWS.has(5)) {
     for (const s of ['AAPL', 'ETH']) await symbolRows('chrome-iphone375', s)

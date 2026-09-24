@@ -34,7 +34,9 @@ import VoiceButton from '@/components/VoiceButton'
 import Sheet from '@/components/mobile/Sheet'
 import { PHONE_MQ, isPhoneViewport } from '@/lib/phone-shell'
 import { analytics } from '@/lib/analytics'
-import { askDoorChips, askDoorHidden, askDoorNav, askDoorPillHidden, askDoorPlaceholder, askDoorSymbol, useAskDoor } from '@/lib/ask-door'
+import { askDoorChips, askDoorHidden, askDoorNav, askDoorPillHidden, askDoorPlaceholder, askDoorSymbol, askPillInitial, askPillStep, useAskDoor } from '@/lib/ask-door'
+import type { CtaBarState } from '@/lib/cta-bar'
+import { appScrollTop, getAppScroller, onAppScroll } from '@/lib/app-scroller'
 import { normalizeSpokenAsk } from '@/lib/voice-ask'
 import { useYeetfulStore, type McpServer } from '@/lib/store'
 import { FREE_FLEET_FALLBACK } from '@/lib/free-fleet'
@@ -116,12 +118,25 @@ export function AskDoorTrigger({ variant = 'nav' }: { variant?: 'nav' | 'drawer'
   )
 }
 
-/** The docked pill — a composer-shaped invitation at the bottom of the page. */
+/** The docked pill — a composer-shaped invitation at the bottom of the page.
+ *  Below lg it behaves like a native FAB (lib/ask-door askPillStep): away while
+ *  the reader scrolls down, back on a scroll up, at rest at the top and the
+ *  page end. `data-away` hides it (x402-design.css, phone only), so the page's
+ *  foot reserve (`body:has(.askdoor-pill)`) never flickers. */
 function AskDoorPill() {
   const pathname = usePathname()
   const open = useAskDoor((s) => s.open)
   const openDoor = useAskDoor((s) => s.openDoor)
   const opener = useDoorSheetOpener()
+  const [fab, setFab] = useState<CtaBarState>({ shown: true, anchorY: 0 })
+  useEffect(() => {
+    const maxY = () => {
+      const sc = getAppScroller()
+      return sc instanceof HTMLElement ? sc.scrollHeight - sc.clientHeight : (document.scrollingElement?.scrollHeight ?? 0) - window.innerHeight
+    }
+    setFab(askPillInitial(appScrollTop(), maxY()))
+    return onAppScroll(() => setFab((prev) => askPillStep(prev, appScrollTop(), maxY())))
+  }, [pathname])
   if (askDoorPillHidden(pathname) || open) return null
   return (
     <button
@@ -131,6 +146,7 @@ function AskDoorPill() {
       aria-label="Ask Pantessa"
       title="Ask Pantessa — one sentence, guarded build, your wallet signs"
       data-ask-door="pill"
+      data-away={fab.shown ? undefined : ''}
       {...opener}
     >
       <span className="askdoor-pill__mark" aria-hidden="true">
