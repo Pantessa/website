@@ -236,7 +236,7 @@ export default function JobDetailOverlay() {
       <Sheet
         open={!!jobDetail}
         onClose={close}
-        id="job-detail"
+        id="job"
         ariaLabel={jobDetail?.type === 'dca' ? 'Recurring buy details' : 'Job details'}
         title={
           jobDetail ? (

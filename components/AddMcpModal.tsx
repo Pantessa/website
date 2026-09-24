@@ -471,7 +471,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
       <Sheet
         open={open}
         onClose={onClose}
-        id="add-mcp"
+        id="addmcp"
         title="Request an MCP"
         footer={<div className="flex items-center gap-3">{footer}</div>}
       >

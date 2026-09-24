@@ -134,7 +134,7 @@ export default function MintLinkModal({
 
   if (phone) {
     return (
-      <Sheet open={open} onClose={close} title="Mint an intent link" id="mint-link" ariaLabel="Mint an intent link">
+      <Sheet open={open} onClose={close} title="Mint an intent link" id="mint" ariaLabel="Mint an intent link">
         <div className="px-4 pb-4 pt-1">
           <p className="mono text-[11px] text-[color:var(--muted-2)] mb-3">one sentence · anyone who opens it can act on it</p>
           {content}

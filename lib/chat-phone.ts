@@ -49,13 +49,13 @@ export function keyboardLift(untransformedBottom: number, layoutHeight: number, 
 
 /** Whether the conversation's thread is THE scroller of the screen
  *  (lib/phone-shell SCROLL_ATTR): only ONE element may carry it. First-party
- *  /chat carries it while its conversation shows (always at lg+, where no
- *  phone screen exists; below lg only in 'chat' — NAV's screens take it when
- *  they show). /i carries it (the runtime is its own frame). The embed (an
- *  iframe on someone else's page) and the /t docked ticket (MARKETS' frame
- *  owns that page's scroller) never do. */
-export function threadOwnsAppScroll(o: { embedded: boolean; docked: boolean; simple: boolean; phone: boolean; phoneScreen: PhoneScreen }): boolean {
+ *  /chat carries it while its conversation shows (`phoneScreen === 'chat'` —
+ *  NAV's handover: its screens carry it otherwise, and at lg+ nothing moves
+ *  phoneScreen off 'chat'). /i carries it (the runtime is its own frame). The
+ *  embed (an iframe on someone else's page) and the /t docked ticket
+ *  (MARKETS' frame owns that page's scroller) never do. */
+export function threadOwnsAppScroll(o: { embedded: boolean; docked: boolean; simple: boolean; phoneScreen: PhoneScreen }): boolean {
   if (o.embedded || o.docked) return false
   if (o.simple) return true
-  return !o.phone || o.phoneScreen === 'chat'
+  return o.phoneScreen === 'chat'
 }

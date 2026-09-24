@@ -34,7 +34,7 @@ export default function ChatPhoneBar({ title, appCount, showAccount }: { title: 
     <div data-chat-topbar="" className="chat-phonebar lg:hidden">
       <button
         type="button"
-        data-phone-to-history=""
+        data-phone-open="history"
         onClick={() => setPhoneScreen('history')}
         aria-label="Chats: your conversations"
         className="chat-phonebar__back"
@@ -44,7 +44,7 @@ export default function ChatPhoneBar({ title, appCount, showAccount }: { title: 
       </button>
       <button
         type="button"
-        data-phone-to-apps=""
+        data-phone-open="apps"
         onClick={() => setPhoneScreen('apps')}
         aria-label={`${name}. ${apps} in this chat: open your apps`}
         className="chat-phonebar__head"

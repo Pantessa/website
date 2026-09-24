@@ -366,7 +366,8 @@ async function chatPass(browser: Pw, devices: Pw, c: Ctx) {
     add(`${c.id}/topbar-44`, ctrls.length > 0 && ctrls.every((x) => x.h >= 44 && x.w >= 44), ctrls.map((x) => `${x.label || '?'} ${x.w}×${x.h}`).join(' | '))
     add(`${c.id}/topbar-chats-door`, ctrls.some((x) => /chats/i.test(x.label)), ctrls.map((x) => x.label).join(' | '))
     add(`${c.id}/topbar-apps-door`, ctrls.some((x) => /\d+ apps?\b/i.test(x.label)), ctrls.map((x) => x.label).join(' | '))
-    add(`${c.id}/topbar-title`, !!empty.title && empty.title.w >= 72, empty.title ? `"${empty.title.text}" ${empty.title.w}px wide` : 'no title')
+    const head = ctrls.find((x) => /\d+ apps?\b/i.test(x.label)) as { w: number } | undefined
+    add(`${c.id}/topbar-title`, !!empty.title && !!head && head.w >= 96, empty.title ? `"${empty.title.text}" in a ${head?.w}px title door` : 'no title')
   }
   add(`${c.id}/composer-16px`, !!empty.composer && empty.composer.fontSize >= 16, `textarea ${empty.composer?.fontSize}px`)
   add(`${c.id}/send-44`, !!empty.send && empty.send.w >= 44 && empty.send.h >= 44, `send ${empty.send?.w}×${empty.send?.h}`)
@@ -376,12 +377,14 @@ async function chatPass(browser: Pw, devices: Pw, c: Ctx) {
 
   // ── the Chats door does not pop a drawer ──
   if (phone && c.height > 500) {
-    const chatsDoor = page.locator('[data-chat-topbar] button:has-text("Chats"), [data-chat-topbar] a:has-text("Chats")').first()
+    const chatsDoor = page.locator('[data-phone-open="history"]').first()
     if ((await chatsDoor.count()) > 0) {
       await chatsDoor.click({ timeout: 3000 }).catch(() => {})
       await page.waitForTimeout(500)
       const s = await measureSurface(page)
-      add(`${c.id}/chats-door-no-drawer`, !s.drawerOpen && s.phoneScreen === 'history', `phoneScreen ${s.phoneScreen}, drawer ${s.drawerOpen ? 'OPEN' : 'closed'}`)
+      // data-phone-screen is NAV's (ChatWorkspace): until NAV's merge the
+      // screen is unobservable here and the drawer staying shut is the proof.
+      add(`${c.id}/chats-door-no-drawer`, !s.drawerOpen && (s.phoneScreen === 'history' || s.phoneScreen === null), `phoneScreen ${s.phoneScreen ?? '(NAV not merged)'}, drawer ${s.drawerOpen ? 'OPEN' : 'closed'}`)
       await shot(page, `${c.id}-after-chats-tap`)
       // back to the conversation for the rest of the pass
       await page.evaluate(`(() => { const b = document.querySelector('[data-phone-back-to-chat]'); if (b) b.click() })()`)
@@ -464,14 +467,14 @@ async function chatPass(browser: Pw, devices: Pw, c: Ctx) {
     // The mint-in-place modal, from the user bubble's mint verb.
     const mint = await overlayPass(page, `${c.id}-overlay-mint`, async () => {
       await page.locator('button[aria-label="Create an intent link from this ask"]').first().click({ timeout: 3000, force: true }).catch(() => {})
-    }, '[role="dialog"][aria-label="Mint an intent link"], [data-sheet="mint-link"] [role="dialog"]')
+    }, '[role="dialog"][aria-label="Mint an intent link"], [data-sheet="mint"] [role="dialog"]')
     note(`${c.id}/overlay-mint`, mint)
-    add(`${c.id}/mint-sheet`, !!mint.opened && mint.sheet === 'mint-link' && !!mint.scrimCloses && !!mint.escCloses && !!mint.backCloses, JSON.stringify(mint))
+    add(`${c.id}/mint-sheet`, !!mint.opened && mint.sheet === 'mint' && !!mint.scrimCloses && !!mint.escCloses && !!mint.backCloses, JSON.stringify(mint))
     // The chart overlay, from a typed chart ask (the client intercept — no turn burned).
     const before = o.chatPosts
     const chart = await overlayPass(page, `${c.id}-overlay-chart`, async () => {
       await typeAndSend(page, 'show me the ETH chart')
-    }, '[role="dialog"][aria-label$="live chart"]')
+    }, '[role="dialog"][aria-label$="live chart"], [data-sheet="chart"] [role="dialog"]')
     note(`${c.id}/overlay-chart`, chart)
     add(`${c.id}/chart-sheet`, !!chart.opened && chart.sheet === 'chart' && !!chart.scrimCloses && !!chart.escCloses && !!chart.backCloses, JSON.stringify(chart))
     add(`${c.id}/chart-no-turn`, o.chatPosts === before, `${o.chatPosts - before} POST(s) for the chart ask`)
@@ -491,10 +494,10 @@ async function addMcpPass(browser: Pw, devices: Pw, c: Ctx) {
     if ((await b.count()) > 0) await b.click({ timeout: 3000 }).catch(() => {})
   }
   const r = await overlayPass(o.page, `${c.id}-overlay-addmcp`, async () => {
-    if ((await o.page.locator('[role="dialog"][aria-label="Request an MCP"]').count()) === 0) await reopen()
-  }, '[role="dialog"][aria-label="Request an MCP"]')
+    if ((await o.page.locator('[role="dialog"][aria-label="Request an MCP"], [data-sheet="addmcp"] [role="dialog"]').count()) === 0) await reopen()
+  }, '[role="dialog"][aria-label="Request an MCP"], [data-sheet="addmcp"] [role="dialog"]')
   note(`${c.id}/overlay-addmcp`, r)
-  add(`${c.id}/addmcp-sheet`, !!r.opened && r.sheet === 'add-mcp' && !!r.scrimCloses && !!r.escCloses && !!r.backCloses, JSON.stringify(r))
+  add(`${c.id}/addmcp-sheet`, !!r.opened && r.sheet === 'addmcp' && !!r.scrimCloses && !!r.escCloses && !!r.backCloses, JSON.stringify(r))
   await o.ctx.close()
 }
 

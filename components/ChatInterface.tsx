@@ -227,6 +227,7 @@ function MintLinkTurn({ onMint }: { onMint: () => void }) {
         '[@media(hover:none)]:right-12 [@media(hover:none)]:-top-5 [@media(hover:none)]:w-9 [@media(hover:none)]:h-9',
       )}
       data-turn-tools
+      data-sheet-open="mint"
     >
       <Link2 className="w-3.5 h-3.5" />
     </button>
@@ -445,16 +446,19 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // (The running-work badge poll lives on the spine now — the ONE instance.)
   const isNarrow = usePhonePosture()
   const openRail = (tab: 'mcps' | 'chats' | 'jobs' | 'links') => {
+    if (isNarrow) {
+      setPhoneScreen(PHONE_SCREEN_FOR_RAIL_TAB[tab])
+      return
+    }
     setRailTab(tab)
-    if (isNarrow) setPhoneScreen(PHONE_SCREEN_FOR_RAIL_TAB[tab])
-    else setMcpRailOpen(true)
+    setMcpRailOpen(true)
   }
   // First-party /chat (not the embed, not /i, not the /t ticket) — the surface
   // that owns the phone top bar and the Messages-style conversation below sm.
   const firstParty = !embedded && !simple && !docked
   // The ONE scroller of the screen (lib/phone-shell SCROLL_ATTR): this thread
   // while the conversation shows; NAV's phone screens carry it otherwise.
-  const ownsAppScroll = threadOwnsAppScroll({ embedded, docked, simple, phone: isNarrow, phoneScreen })
+  const ownsAppScroll = threadOwnsAppScroll({ embedded, docked, simple, phoneScreen })
   // The soft keyboard (a phone): the composer rides on top of it.
   const keyboard = useSoftKeyboard()
 
@@ -1811,11 +1815,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   }
 
   return (
-    <div
-      className={cn('relative flex flex-col h-full', firstParty && 'yf-chat')}
-      // Which /chat screen a phone shows (NAV's phoneScreen) — drives read it.
-      data-phone-screen={firstParty ? phoneScreen : undefined}
-    >
+    <div className={cn('relative flex flex-col h-full', firstParty && 'yf-chat')}>
       {/* The conversation's top bar on a PHONE (squad mobile-native): the way
           to the chat list, the title over the apps count, chain, share, the
           account door — one 52px row, 44px targets (components/chat/
@@ -2484,6 +2484,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                                   }
                                   title="Mint this ask as an intent link — one tap for anyone you share it with"
                                   className="inline-flex items-center gap-1 text-[10.5px] mono text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors"
+                                  data-sheet-open="mint"
                                 >
                                   <Link2 className="w-3 h-3" aria-hidden />
                                   mint as link

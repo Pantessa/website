@@ -26,7 +26,7 @@ export default function CreatorPageModal({ open, onClose }: { open: boolean; onC
 
   if (phone) {
     return (
-      <Sheet open={open} onClose={onClose} id="creator-page" title="Your creator page" size="full">
+      <Sheet open={open} onClose={onClose} id="creator" title="Your creator page" size="full">
         <div className="px-4 pb-4 pt-1">
           <p className="mono text-[11px] text-[color:var(--muted-2)] mb-3">/l/your-name · every link you mint on one shareable page · brand it with one paste</p>
           <CreatorPagePanel />
