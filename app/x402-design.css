@@ -280,9 +280,11 @@
   .navacct__sheetmenu { padding: 2px 10px 10px; }
   .navacct--sheet .navacct__head { padding: 4px 10px 12px; }
   .navacct--sheet .navacct__item { min-height: 48px; padding: 12px 12px; font-size: 15px; }
+  /* `.hit-44`: the same invisible 44px hit area for any compact control
+     that sits in a bar or a header (the Sign in pill, /p's header CTAs). */
   @media (max-width: 1023px) {
-    .navacct__pill, .signin-hit { position: relative; }
-    .navacct__pill::before, .signin-hit::before { content: ''; position: absolute; inset: -8px -3px; }
+    .navacct__pill, .hit-44 { position: relative; }
+    .navacct__pill::before, .hit-44::before { content: ''; position: absolute; inset: -8px -3px; }
   }
 
   /* ── DRAWER GROUPING (mobile) ────────────────────── */
@@ -1347,8 +1349,9 @@
   .dashnav__bar {
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
     min-height: 60px; padding: 8px 18px;
-    background: color-mix(in srgb, var(--bg) 88%, transparent);
-    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    /* Opaque: at 88% the page's headings read through the bar as it
+       scrolled under (the drive's mid-scroll shot). */
+    background: var(--bg);
     border-bottom: 1px solid var(--line);
   }
   .dashnav__switch {
@@ -3004,6 +3007,12 @@
   .pricing__toggle { display: inline-flex; padding: 3px; border-radius: 999px; border: 1px solid var(--line); background: var(--surf-2); flex-shrink: 0; }
   .pricing__toggle button { font: inherit; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; padding: 5px 11px; border-radius: 999px; color: var(--muted-2); background: transparent; border: 0; cursor: pointer; }
   .pricing__toggle button.is-on { background: var(--fg); color: var(--bg); }
+  /* A 26px segment on a phone: the 44px comes from an invisible hit area
+     (squad mobile-native, 2026-09-24); the pill keeps its look. */
+  @media (max-width: 1023px) {
+    .pricing__toggle button { position: relative; }
+    .pricing__toggle button::before { content: ''; position: absolute; inset: -9px 0; }
+  }
   .pricing__toggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .pricing__save { font-size: 11px; letter-spacing: .06em; color: var(--accent); padding: 3px 8px; border-radius: 999px; border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent); }
   .pricing__h2 { margin-top: 44px; font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(1.5rem, 2.4vw, 2rem); letter-spacing: -.012em; color: var(--fg); text-wrap: balance; }

@@ -219,6 +219,7 @@ export default function Navigation() {
           {!inDashboard && (
             <button
               className="nav__burger"
+              data-sheet-open="nav"
               aria-label={open ? 'Close menu' : 'Open menu'}
               aria-expanded={open}
               onClick={() => setOpen((o) => !o)}
@@ -240,13 +241,14 @@ export default function Navigation() {
           open={open}
           onClose={() => setOpen(false)}
           title="Menu"
-          id="site-nav"
+          id="nav"
           className="navsheet"
           footer={
             disconnected ? (
               cdpEnabled ? (
                 <button
                   type="button"
+                  data-sheet-open="door"
                   className="nav__dash navsheet__signin"
                   onClick={() => {
                     setOpen(false)

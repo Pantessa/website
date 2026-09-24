@@ -145,6 +145,7 @@ export default function NavAccount() {
                 type="button"
                 role="menuitem"
                 className="navacct__item"
+                data-sheet-open="wallet"
                 onClick={() => {
                   closeNow()
                   setWalletOpen(true)
@@ -190,6 +191,7 @@ export default function NavAccount() {
               aria-haspopup="true"
               aria-expanded={open}
               onClick={toggle}
+              data-sheet-open="account"
             >
               <span className={`navacct__dot ${authed ? 'is-authed' : ''}`} aria-hidden />
               <span className="navacct__addr mono">{label}</span>

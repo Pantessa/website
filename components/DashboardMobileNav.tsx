@@ -46,6 +46,7 @@ export default function DashboardMobileNav({ pathname, address }: { pathname: st
           aria-label={`Dashboard sections, now on ${label}`}
           onClick={() => setOpen(true)}
           data-dash-sections
+          data-sheet-open="dashnav"
         >
           <span className="dashnav__eyebrow mono">Dashboard</span>
           <span className="dashnav__crumb">
@@ -63,7 +64,7 @@ export default function DashboardMobileNav({ pathname, address }: { pathname: st
         open={open}
         onClose={() => setOpen(false)}
         title="Dashboard"
-        id="dash-sections"
+        id="dashnav"
         className="dashsheet"
         footer={<DashboardAccount address={address} />}
       >

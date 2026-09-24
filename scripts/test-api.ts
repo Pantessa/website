@@ -33077,8 +33077,8 @@ async function main() {
     const dashNavSrcNP = npCode('components/DashboardMobileNav.tsx')
     const dashAcctSrcNP = npCode('components/DashboardAccount.tsx')
     check(
-      'native pages: the brochure phone menu is the Sheet (id site-nav), closes when the ask door opens (the door is z 60 under the sheet\'s 90), and hands sign-in to a door at the nav\'s level (a door inside the sheet would unmount with it)',
-      /<Sheet[\s\S]{0,400}?id="site-nav"/.test(navSrcNP) && !/drawer__backdrop|createPortal/.test(navSrcNP) &&
+      'native pages: the brochure phone menu is the Sheet (id nav; the burger carries data-sheet-open="nav"), closes when the ask door opens (the door is z 60 under the sheet\'s 90), and hands sign-in to a door at the nav\'s level (a door inside the sheet would unmount with it)',
+      /<Sheet[\s\S]{0,400}?id="nav"/.test(navSrcNP) && /data-sheet-open="nav"/.test(navSrcNP) && !/drawer__backdrop|createPortal/.test(navSrcNP) &&
         /const askOpen = useAskDoor\(\(s\) => s\.open\)/.test(navSrcNP) && /if \(askOpen\) setOpen\(false\)/.test(navSrcNP) &&
         /\{doorOpen && cdpEnabled && <CreateAccountModal onClose=\{\(\) => setDoorOpen\(false\)\} \/>\}/.test(navSrcNP),
     )
@@ -33094,9 +33094,20 @@ async function main() {
         /role="dialog"\s+aria-label="Your wallet"/.test(walletSrcNP),
     )
     check(
-      'native pages: the dashboard\'s phone chrome is ONE bar (the section switcher → the Sheet id dash-sections, and Ask → the site-wide door); no hand-portaled drawer',
-      /<Sheet[\s\S]{0,400}?id="dash-sections"/.test(dashNavSrcNP) && /data-dash-sections/.test(dashNavSrcNP) && /onClick=\{\(\) => openDoor\(\)\}/.test(dashNavSrcNP) &&
+      'native pages: the dashboard\'s phone chrome is ONE bar (the section switcher → the Sheet id dashnav, and Ask → the site-wide door); no hand-portaled drawer',
+      /<Sheet[\s\S]{0,400}?id="dashnav"/.test(dashNavSrcNP) && /data-sheet-open="dashnav"/.test(dashNavSrcNP) && /onClick=\{\(\) => openDoor\(\)\}/.test(dashNavSrcNP) &&
         !/createPortal|dashnav__drawer|dashnav__burger/.test(dashNavSrcNP),
+    )
+
+    // drive:native's contract (QA): every opener says which sheet it opens
+    // (`data-sheet-open`) and every overlay answers to the same id.
+    const doorSrcNP = npCode('components/CreateAccountButton.tsx')
+    check(
+      'native pages: every PAGES opener carries data-sheet-open and its overlay the same id: account (the pill), wallet (both "Wallet details", both frames), door (every door trigger + the .ca root), nav (the burger), dashnav (the section switcher)',
+      /data-sheet-open="account"/.test(acctSrcNP) && /data-sheet-open="wallet"/.test(acctSrcNP) && /data-sheet-open="wallet"/.test(dashAcctSrcNP) &&
+        /id="wallet" size="full"/.test(walletSrcNP) && /data-sheet="wallet"/.test(walletSrcNP) &&
+        /onClick=\{\(\) => setOpen\(true\)\} data-sheet-open="door"/.test(doorSrcNP) && /<div className="ca" data-sheet="door">/.test(doorSrcNP) &&
+        /data-sheet-open="nav"/.test(navSrcNP) && /data-sheet-open="door"/.test(navSrcNP) && /data-sheet-open="dashnav"/.test(dashNavSrcNP),
     )
 
     // 3. The served CSS (the build is the proof the rules reach a phone).
@@ -33125,7 +33136,7 @@ async function main() {
     )
     check(
       'native pages: the account pill and the Sign in pill keep their looks and gain a 44px+ hit area below lg (BEFORE: 35px and 28px); the account sheet\'s rows are 48px (BEFORE: 38px)',
-      ['.navacct__pill:before', '.signin-hit:before'].every((sel) => ruleWith(below1023, sel, ['content:""', 'position:absolute', 'inset:-8px-3px'])) &&
+      ['.navacct__pill:before', '.hit-44:before'].every((sel) => ruleWith(below1023, sel, ['content:""', 'position:absolute', 'inset:-8px-3px'])) &&
         ruleWith(npCss, '.navacct--sheet.navacct__item', ['min-height:48px']),
     )
     const wDoc = await (await fetch(`${BASE}/wallet`)).text()

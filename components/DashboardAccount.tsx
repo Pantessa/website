@@ -52,6 +52,7 @@ export default function DashboardAccount({ address }: { address: string }) {
                   type="button"
                   role="menuitem"
                   className="dashacct__item"
+                  data-sheet-open="wallet"
                   onClick={() => {
                     closeNow()
                     setWalletOpen(true)
