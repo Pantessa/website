@@ -146,7 +146,7 @@ export default function WalletPage() {
               title="Switch wallet or disconnect"
               aria-label="Switch wallet or disconnect"
               data-wallet-switch
-              className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-3 py-1.5 text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)] disabled:opacity-50 disabled:pointer-events-none transition-colors"
+              className="flex-shrink-0 inline-flex items-center justify-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-3 py-1.5 max-lg:min-h-11 max-lg:min-w-11 text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)] disabled:opacity-50 disabled:pointer-events-none transition-colors"
             >
               <Settings2 className="w-3.5 h-3.5" />
               <span className="max-sm:hidden">Switch or disconnect</span>

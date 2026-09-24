@@ -27,14 +27,17 @@ export default function DashboardAccount({ address }: { address: string }) {
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeNow()
-    const onDown = (e: MouseEvent) => {
+    // `pointerdown`, not `mousedown`: iOS sends mouse events only for a tap
+    // on something "clickable", so a tap on the page around the menu never
+    // closed it (squad mobile-native, 2026-09-24).
+    const onDown = (e: PointerEvent) => {
       if (!wrap.current?.contains(e.target as Node)) closeNow()
     }
     document.addEventListener('keydown', onKey)
-    document.addEventListener('mousedown', onDown)
+    document.addEventListener('pointerdown', onDown)
     return () => {
       document.removeEventListener('keydown', onKey)
-      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('pointerdown', onDown)
     }
   }, [open, closeNow])
 

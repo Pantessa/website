@@ -33018,6 +33018,122 @@ async function main() {
     )
   }
 
+  // ── NATIVE PAGES (squad mobile-native, 2026-09-24) ─────────────────────
+  // Nate: "if a nav drawer is open and a user taps outside it should close
+  // the drawer … it needs to feel like a native mobile app". The PAGES lane:
+  // the wallet window, the dashboard, the brochure and the door on a phone.
+  // Every phone overlay here is the ONE Sheet (components/mobile/Sheet), the
+  // dashboard is one top bar + the tab bar, every field is ≥16px below lg
+  // (iOS zooms a smaller one on focus), and the landing's CTA bar only rises
+  // while Safari's toolbar is expanded (scrolling up).
+  {
+    const npFs = await import('node:fs')
+    const npCode = (path: string) => npFs.readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    const CTA = await import('../lib/cta-bar')
+
+    // 1. The landing's CTA bar (a DOCUMENT-scrolling page, where iOS 26
+    //    Safari's collapsing toolbar strands a bottom-fixed bar ~70px up).
+    //    BEFORE: shown past the hero whichever way you scrolled, and over the
+    //    floating Ask pill.
+    const H = 667
+    let st = CTA.ctaBarInitial(0)
+    const steps: Array<[number, boolean]> = []
+    for (const y of [200, 600, 900, 1400, 1300, 1296, 1291, 1600, 1500, 380]) {
+      st = CTA.ctaBarStep(st, y, H)
+      steps.push([y, st.shown])
+    }
+    check(
+      'native pages: the CTA bar hides above the hero, hides scrolling DOWN past it (the toolbar collapsing), rises scrolling UP (the toolbar back), and goes away again at the hero',
+      JSON.stringify(steps.map(([, s]) => s)) === JSON.stringify([false, false, false, false, true, true, true, false, true, false]),
+      JSON.stringify(steps),
+    )
+    let slow = { shown: false, anchorY: 2000 }
+    const slowSteps: boolean[] = []
+    for (const y of [1997, 1995, 1993]) {
+      slow = CTA.ctaBarStep(slow, y, H)
+      slowSteps.push(slow.shown)
+    }
+    check(
+      'native pages: a slow scroll counts: 2–3px events add up against the last decision (a 6px move is a direction, a resting finger is not)',
+      JSON.stringify(slowSteps) === JSON.stringify([false, false, true]) &&
+        CTA.ctaBarStep({ shown: true, anchorY: 1500 }, 1504, H).shown === true && CTA.ctaBarStep({ shown: true, anchorY: 1500 }, 1504, H).anchorY === 1500,
+      JSON.stringify(slowSteps),
+    )
+    const mctaSrc = npCode('components/MobileCtaBar.tsx')
+    check(
+      'native pages: MobileCtaBar reads scroll through lib/app-scroller and decides with lib/cta-bar (never window.scrollY), and carries Ask beside Open Markets',
+      /onAppScroll\(/.test(mctaSrc) && /ctaBarStep\(prev, appScrollTop\(\), window\.innerHeight\)/.test(mctaSrc) && !/window\.scrollY/.test(mctaSrc) &&
+        /<SpineLink href="\/markets"/.test(mctaSrc) && /openDoor\(\)/.test(mctaSrc) && /root\.dataset\.mcta = 'show'/.test(mctaSrc),
+    )
+
+    // 2. Every phone overlay PAGES owns is the ONE Sheet (tap outside, swipe,
+    //    Escape, back and its trigger close it: the Sheet's own). BEFORE: a
+    //    hand-portaled drawer (brochure menu, dashboard sections), a dropdown
+    //    (account) and a 77%-of-the-screen dialog (wallet), none of which the
+    //    back gesture closed (it left the page).
+    const navSrcNP = npCode('components/Navigation.tsx')
+    const acctSrcNP = npCode('components/NavAccount.tsx')
+    const walletSrcNP = npCode('components/WalletPanel.tsx')
+    const dashNavSrcNP = npCode('components/DashboardMobileNav.tsx')
+    const dashAcctSrcNP = npCode('components/DashboardAccount.tsx')
+    check(
+      'native pages: the brochure phone menu is the Sheet (id site-nav), closes when the ask door opens (the door is z 60 under the sheet\'s 90), and hands sign-in to a door at the nav\'s level (a door inside the sheet would unmount with it)',
+      /<Sheet\s[^>]*id="site-nav"/.test(navSrcNP) && !/drawer__backdrop|createPortal/.test(navSrcNP) &&
+        /const askOpen = useAskDoor\(\(s\) => s\.open\)/.test(navSrcNP) && /if \(askOpen\) setOpen\(false\)/.test(navSrcNP) &&
+        /\{doorOpen && cdpEnabled && <CreateAccountModal onClose=\{\(\) => setDoorOpen\(false\)\} \/>\}/.test(navSrcNP),
+    )
+    check(
+      'native pages: the account menu is a Sheet (id account) on a phone, decided ON PRESS (isPhoneViewport in the toggle, never at render), the dropdown at lg+; both menus close on pointerdown (iOS sends mousedown only for "clickable" targets)',
+      /<Sheet open=\{open && asSheet\}[^>]*id="account"/.test(acctSrcNP) && /setAsSheet\(isPhoneViewport\(\)\)/.test(acctSrcNP) &&
+        /addEventListener\('pointerdown', onDown\)/.test(acctSrcNP) && !/'mousedown'/.test(acctSrcNP) &&
+        /addEventListener\('pointerdown', onDown\)/.test(dashAcctSrcNP) && !/'mousedown'/.test(dashAcctSrcNP),
+    )
+    check(
+      'native pages: the Wallet-details window is a FULL Sheet (id wallet) on a phone, mounted closed so its exit can play; the lg+ dialog is unchanged',
+      /if \(isPhoneViewport\(\)\) \{\s*return \(\s*<Sheet open=\{open && !!address\}[^>]*id="wallet" size="full"/.test(walletSrcNP) &&
+        /role="dialog"\s+aria-label="Your wallet"/.test(walletSrcNP),
+    )
+    check(
+      'native pages: the dashboard\'s phone chrome is ONE bar (the section switcher → the Sheet id dash-sections, and Ask → the site-wide door); no hand-portaled drawer',
+      /<Sheet\s[^>]*id="dash-sections"/.test(dashNavSrcNP) && /data-dash-sections/.test(dashNavSrcNP) && /onClick=\{\(\) => openDoor\(\)\}/.test(dashNavSrcNP) &&
+        !/createPortal|dashnav__drawer|dashnav__burger/.test(dashNavSrcNP),
+    )
+
+    // 3. The served CSS (the build is the proof the rules reach a phone).
+    const npDoc = await (await fetch(`${BASE}/`)).text()
+    const npHrefs = [...npDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
+    const npCss = (await Promise.all(npHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n').replace(/\s+/g, '')
+    const phoneBlock = (css: string, max: number) => [...css.matchAll(new RegExp(`@media\\(max-width:${max}px\\)\\{((?:[^{}]*\\{[^{}]*\\})*)\\}`, 'g'))].map((m) => m[1]).join('')
+    const below1023 = phoneBlock(npCss, 1023)
+    const below900 = phoneBlock(npCss, 900)
+    check(
+      'native pages: every field PAGES owns is ≥16px below lg in the SERVED CSS: the door\'s email (the OTP stays 22px), StayUpToDate\'s email, every dashboard field (BEFORE: 14.5 / 13.5 / 12–14px)',
+      /\.ca__input:not\(\.ca__input--otp\)\{font-size:16px\}/.test(below1023) && /\.sud__input\{font-size:16px\}/.test(below1023) &&
+        /\.dash__maininput:not\(\[type=checkbox\]\):not\(\[type=radio\]\):not\(\[type=range\]\),\.dash__mainselect,\.dash__maintextarea,\.dashsheetinput\{font-size:16px\}/.test(below1023) &&
+        /\.ca__input--otp\{[^}]*font-size:22px/.test(npCss),
+      `${npHrefs.length} stylesheet(s)`,
+    )
+    check(
+      'native pages: the dashboard bar sticks for real (BEFORE: sticky top 64px inside a wrapper its own height, so 600px down it sat at top −600): `.dash` is block below 900px (a grid item is stuck in its grid AREA), `.dashnav` is the sticky at top 0, and the docked ask bar steps aside there',
+      /\.dash\{display:block;/.test(below900) && /\.dashnav\{display:block;position:sticky;top:0;/.test(below900) && /\.dashask\{display:none\}/.test(below900) &&
+        !/\.dashnav__bar\{[^}]*position:sticky/.test(npCss),
+    )
+    check(
+      'native pages: the account pill keeps its look and gains a 44px hit area below lg (BEFORE: 35px); the menu sheet\'s rows are 48px (BEFORE: 38px)',
+      /\.navacct__pill:before\{content:"";position:absolute;inset:-5px-3px\}|\.navacct__pill::before\{content:"";position:absolute;inset:-5px-3px\}/.test(below1023) &&
+        /\.navacct--sheet\.navacct__item\{min-height:48px/.test(npCss),
+    )
+    const wDoc = await (await fetch(`${BASE}/wallet`)).text()
+    const wHrefs = [...wDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
+    const wCss = (await Promise.all(wHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n').replace(/\s+/g, '')
+    check(
+      'native pages: every control in the wallet window is a 44px target below lg (BEFORE: switch 38×26, copy 30px, "updated" 17px, a flag\'s fix 25px), a Max-in-a-field keeps its chip look with an invisible 44px hit area',
+      /\[data-wallet-window\]:is\(button,a\[href\]\)\{min-height:44px;/.test(phoneBlock(wCss, 1023)) && /\[data-wallet-field\]:is\(button,a\[href\]\)(?::|::)after\{content:"";position:absolute;inset:-12px-6px\}/.test(phoneBlock(wCss, 1023)) &&
+        /data-wallet-window="modal"/.test(walletSrcNP) && /data-wallet-window="page"/.test(walletSrcNP),
+      `${wHrefs.length} stylesheet(s)`,
+    )
+  }
+
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
 }
