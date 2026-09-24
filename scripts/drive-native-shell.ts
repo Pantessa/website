@@ -691,12 +691,17 @@ async function runSheetCase(page: Pw, ctx: Pw, c: SheetCase, errs: string[], P: 
 // The coordinator's history pop is deferred; a pop under an in-flight Next
 // navigation could abort it or bounce the visitor. The network is throttled
 // (300ms latency) so the RSC fetch is slow, the way a phone's is.
-type LinkCase = { id: string; path: string; opener: string; link: string; target: string; needsSession?: boolean; needsWallet?: boolean; settle?: string }
+type LinkCase = { id: string; path: string; opener: string; link: string; target: string; needsSession?: boolean; needsWallet?: boolean; settle?: string; scrimFirst?: boolean }
 const SHEET_LINKS: LinkCase[] = [
   { id: 'more→docs', path: '/markets', opener: '[data-sheet-open="more"]', link: '[data-sheet="more"] a[href="/docs"]', target: '/docs', settle: '.mk-board, .mkt-frame__data' },
   { id: 'more→settings', path: '/markets', opener: '[data-sheet-open="more"]', link: '[data-sheet="more"] a[href="/dashboard"]', target: '/dashboard', needsSession: true, needsWallet: true, settle: '.mk-board, .mkt-frame__data' },
   { id: 'nav→pricing', path: '/', opener: '[data-sheet-open="nav"]', link: '[data-sheet="nav"] a[href="/pricing"]', target: '/pricing', settle: 'header.nav, .nav' },
   { id: 'account→dashboard', path: '/markets', opener: '[data-sheet-open="account"]', link: '[data-sheet="account"] a[href="/dashboard"]', target: '/dashboard', needsSession: true, needsWallet: true, settle: '.mk-board, .mkt-frame__data' },
+  // The tap-less close (the SIWE shape, a handler's setOpen(false); router.push):
+  // the sheet closes with NO tap inside a dialog (the scrim), and a Next
+  // navigation starts right after from OUTSIDE it (the WALLET seat). No
+  // grace can apply; only the quiet window + rule 2 keep it clean.
+  { id: 'more→scrim→wallet-seat', path: '/markets', opener: '[data-sheet-open="more"]', link: '[data-spine-bar] a[href="/wallet"]', target: '/wallet', needsWallet: true, settle: '.mk-board, .mkt-frame__data', scrimFirst: true },
 ]
 async function runSheetLinks(session: string | null, burner: string) {
   const browser: Pw = await chromium.launch({ executablePath: CHROME, headless: true })
@@ -732,9 +737,15 @@ async function runSheetLinks(session: string | null, burner: string) {
         for (let i = 0; i < 20; i++) { if (await page.evaluate(`(() => { const s = document.querySelector('${c.opener.replace(/^\[data-sheet-open="([^"]+)"\]$/, '[data-sheet="$1"]')}'); return !!s && s.getAttribute('data-phase') === 'open' })()`)) { opened = true; break }; await page.waitForTimeout(100) }
         await page.waitForTimeout(400)
         note(P, `sheetlink:${c.id}`, 'the sheet opens (network throttled to 300ms latency from here)', opened)
+        if (c.scrimFirst) {
+          // Close by the scrim, then start the navigation at once (the next
+          // task): the shape of a cover flipping off as a redirect lands.
+          await page.evaluate(`(() => { const s = document.querySelector('${c.opener.replace(/^\[data-sheet-open="([^"]+)"\]$/, '[data-sheet="$1"]')} .sheet__scrim'); if (s) s.click() })()`)
+        }
         const link = await page.$(c.link)
-        if (!link) { note(P, `sheetlink:${c.id}`, `the row ${c.link} is in the sheet`, false, 'not found'); continue }
-        await link.click()
+        if (!link) { note(P, `sheetlink:${c.id}`, `the row ${c.link} is ${c.scrimFirst ? 'on the page' : 'in the sheet'}`, false, 'not found'); continue }
+        if (c.scrimFirst) await page.evaluate(`(() => { const a = document.querySelector('${c.link}'); if (a) a.click() })()`)
+        else await link.click()
         let landed = false
         for (let i = 0; i < 60; i++) { if ((await state()).path === c.target) { landed = true; break }; await page.waitForTimeout(100) }
         const t1 = await state()

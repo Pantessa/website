@@ -36,6 +36,18 @@
 //   A stale sheet entry left behind by any other path is skipped when a
 //   later back lands on it.
 //
+//   NO EAGER TRAVERSAL (the coordinator's addendum): a close with no tap at
+//   all — a SIWE round trip landing while the takeover's cover flips off, a
+//   handler's `setOpen(false); router.push(…)` — has no grace to lean on, and
+//   a traversal already in flight (~36ms) would still pop the push that
+//   follows. So a non-back close never pops at once: its entry goes DEAD-
+//   PENDING and is consumed after SHEET_QUIET_MS (1.5s; extended while a tap
+//   says a navigation may follow). Inside that window rule 2 turns any push
+//   into a clean replace, and a user's back pops the dead entry itself (no
+//   onBack on a closed sheet). The residual: a back pressed within 1.5s of
+//   closing a sheet lands on the page's own entry — same URL, nothing
+//   visible. Recorded.
+//
 //   IN FLIGHT: a sheet opening while our own pop is travelling waits for that
 //   popstate, then claims an entry of its own. Our own pops are swallowed;
 //   any other popstate closes the sheet on top of the stack.
@@ -66,7 +78,11 @@ export type SheetHistoryHost = {
   now(): number
 }
 
-/** How long a pending pop keeps waiting while a navigation may be under way. */
+/** A closed sheet's entry is consumed after this quiet window (a navigation
+ *  that follows the close lands inside it and takes the entry over instead). */
+export const SHEET_QUIET_MS = 1500
+/** How long a pending pop keeps waiting, past the quiet window, while a
+ *  navigation may be under way. */
 export const SHEET_NAV_WAIT_MS = 2000
 /** An in-sheet tap counts as "a navigation may follow" for this long. */
 export const SHEET_TAP_NAV_MS = 1500
@@ -145,6 +161,7 @@ export function createSheetHistory(host: SheetHistoryHost): SheetHistory {
         return
       }
       const t = entries.pop()
+      if (t && pendingBack === t.key) pendingBack = null
       if (!t) {
         // Nothing of ours is open, yet the entry we landed on wears a sheet
         // marker: a STALE sheet entry (one a navigation left behind — the
@@ -164,30 +181,30 @@ export function createSheetHistory(host: SheetHistoryHost): SheetHistory {
   const schedulePop = (key: string) => {
     const started = host.now()
     const attempt = () => {
-      if (pendingBack !== key) return // taken over, or superseded
+      if (pendingBack !== key) return // taken over, superseded, or already popped by the user
       if (host.unloading()) {
         pendingBack = null
         return
       }
       // Only while our entry is still the current one: if the page moved on
-      // (a link inside the sheet pushed a new URL), the entry stays behind as
-      // a harmless same-URL step rather than undoing the navigation.
+      // (a navigation took the entry over, or pushed above it), there is
+      // nothing of ours to pop.
       if (sheetOf(host.state()) !== key) {
         pendingBack = null
         const i = entries.findIndex((e) => e.key === key)
         if (i >= 0) entries.splice(i)
         return
       }
-      if (host.navigating() && host.now() - started < SHEET_NAV_WAIT_MS) {
+      if (host.navigating() && host.now() - started < SHEET_QUIET_MS + SHEET_NAV_WAIT_MS) {
         host.wait(NAV_POLL_MS, attempt)
         return
       }
       pendingBack = null
       const t = top()
       if (!t || t.key !== key) return
-      travel(1 + deadBelowTop())
+      travel(trailingDead())
     }
-    host.later(attempt)
+    host.wait(SHEET_QUIET_MS, attempt)
   }
 
   return {
@@ -231,12 +248,11 @@ export function createSheetHistory(host: SheetHistoryHost): SheetHistory {
       const i = entries.findIndex((e) => e.key === key)
       if (i < 0) return
       if (reason === 'back') return // the browser already popped it (onPop)
-      if (i < entries.length - 1) {
-        // Closed UNDER another sheet: its entry stays, dead, until the top
-        // sheet's pop takes it along (or a back lands on it).
-        entries[i] = { key, owner: null }
-        return
-      }
+      // Its entry is dead from here: under another sheet it stays until the
+      // top's pop takes it along (or a back lands on it); on top it is
+      // consumed after the quiet window, unless a navigation takes it over.
+      entries[i] = { key, owner: null }
+      if (i < entries.length - 1) return
       pendingBack = key
       schedulePop(key)
     },

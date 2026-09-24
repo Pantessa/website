@@ -33875,25 +33875,26 @@ async function main() {
       }
       // 1. A sheet owns one entry; a tap-close pops it on the next tick (never synchronously); the swallowed popstate never calls onBack.
       {
-        const { h, entries, tick, land } = mk()
+        const { h, entries, tick, land, advance } = mk()
         const backs: string[] = []
         h.opened({ key: 'A', onBack: () => backs.push('A') })
         const afterOpen = entries().length
         h.closed('A', 'other')
-        const beforeTick = entries().length
-        tick(); land()
-        check('native shell: sheet history — a sheet owns one entry {sheet:key}; closing it by a tap pops that entry on the NEXT tick (not synchronously), and the swallowed popstate never calls onBack', afterOpen === 2 && beforeTick === 2 && entries().length === 1 && backs.length === 0 && (entries()[0] as { __NA?: boolean }).__NA === true, JSON.stringify({ afterOpen, beforeTick, after: entries().length, backs }))
+        tick(); advance(SH.SHEET_QUIET_MS - 1); land()
+        const beforeQuiet = entries().length
+        advance(1); land()
+        check('native shell: sheet history — a sheet owns one entry {sheet:key}; closing it by a tap consumes that entry after the QUIET window (1.5s; never synchronously, never on a tick), and the swallowed popstate never calls onBack', afterOpen === 2 && beforeQuiet === 2 && entries().length === 1 && backs.length === 0 && (entries()[0] as { __NA?: boolean }).__NA === true && SH.SHEET_QUIET_MS === 1500, JSON.stringify({ afterOpen, beforeQuiet, after: entries().length, backs }))
       }
       // 2. THE HANDOFF: A closes and B opens in one commit → B takes over A's entry (still __NA); back closes B, not A.
       {
-        const { h, entries, tick, land, userBack } = mk()
+        const { h, entries, tick, land, advance, userBack } = mk()
         const backs: string[] = []
         h.opened({ key: 'A', onBack: () => backs.push('A') })
         h.closed('A', 'other')
         h.opened({ key: 'B', onBack: () => backs.push('B') })
         const top = entries()[entries().length - 1] as { sheet?: string; __NA?: boolean }
         const len = entries().length
-        tick(); land()
+        tick(); advance(4000); land()
         const lenAfterTick = entries().length
         const dbg = h.debug()
         userBack()
@@ -33901,11 +33902,11 @@ async function main() {
       }
       // 3. A sheet opening while our pop is IN FLIGHT waits for that popstate, then claims its own entry.
       {
-        const { h, entries, tick, land } = mk()
+        const { h, entries, tick, land, advance } = mk()
         const backs: string[] = []
         h.opened({ key: 'A', onBack: () => backs.push('A') })
         h.closed('A', 'other')
-        tick() // the timer fires → the traversal is queued
+        tick(); advance(SH.SHEET_QUIET_MS) // the quiet window passes → the traversal is queued
         const inFlight = h.debug().backInFlight
         h.opened({ key: 'B', onBack: () => backs.push('B') })
         const deferred = h.debug().deferred
@@ -33915,11 +33916,11 @@ async function main() {
       }
       // 4. The page moved on before the tick (a link in the sheet pushed a new URL): the entry is LEFT, never popped — and a later back that lands on that stale entry skips it.
       {
-        const { h, entries, tick, land, host, userBack } = mk()
+        const { h, entries, tick, land, advance, host, userBack } = mk()
         h.opened({ key: 'A', onBack: () => {} })
         h.closed('A', 'other')
-        host.push({ __NA: true, tree: 'new-page' })
-        tick(); land()
+        host.push({ __NA: true, tree: 'new-page' }) // a push that bypassed interceptPush (a raw one)
+        tick(); advance(4000); land()
         const left = entries().length === 3 && (entries()[2] as { tree?: string }).tree === 'new-page' && h.debug().backInFlight === 0
         userBack() // from the new page onto A's stale entry → the coordinator skips it
         land()
@@ -33937,14 +33938,14 @@ async function main() {
       }
       // 6. CLOSE UNDER: A closes one render after B opened (B pushed while A was open). A's entry is DEAD below B's; B's tap-close pops both; no dead press.
       {
-        const { h, entries, tick, land } = mk()
+        const { h, entries, tick, land, advance } = mk()
         const backs: string[] = []
         h.opened({ key: 'A', onBack: () => backs.push('A') })
         h.opened({ key: 'B', onBack: () => backs.push('B') })
         h.closed('A', 'other') // under B
         const dbg = h.debug()
         h.closed('B', 'other')
-        tick(); land()
+        tick(); advance(4000); land()
         check('native shell: sheet history — CLOSE UNDER: A closing under B leaves a DEAD entry (stack B, dead A; history 3 entries); B\'s tap-close then pops 1 + the dead count → back to the page\'s own entry, no onBack', dbg.stack.join() === 'B' && dbg.dead.join() === 'A' && entries().length === 1 && backs.length === 0, JSON.stringify({ dbg, entries: entries().length, backs }))
       }
       // 6b. CLOSE UNDER, then the user's back: B closes, the back LANDS on A's dead entry → skipped with one more traversal.
@@ -33996,6 +33997,31 @@ async function main() {
         userBack(); land()
         check('native shell: sheet history — a sheet still OPEN when Next pushes (it closes on the route change): the push takes its entry over ([pre, /pricing], stack empty), the later close pops nothing, ONE back returns to the origin', afterPush.len === 2 && afterPush.top === 'pricing' && afterPush.dbg.stack.length === 0 && h.debug().pendingBack === null && h.debug().backInFlight === 0 && entries().length === 1 && (entries()[0] as { tree?: string }).tree === 't0', JSON.stringify({ afterPush, after: entries() }))
       }
+      // 7f. THE SIWE SHAPE (the coordinator's addendum): NO tap — the takeover's cover flips off as lib/session lands router.push(redirectTo) 40ms later. No traversal is ever in flight; the push takes the entry over.
+      {
+        const { h, entries, tick, land, advance, nextPush, userBack } = mk()
+        h.opened({ key: 'sigwait', onBack: () => {} })
+        h.closed('sigwait', 'other') // covering → false, no tap anywhere
+        tick(); advance(40)
+        const noTraversal = h.debug().backInFlight === 0 && h.debug().pendingBack === 'sigwait'
+        nextPush('/chat/abc', 'chat') // the redirect lands
+        advance(4000); land()
+        const clean = entries().length === 2 && (entries()[1] as { tree?: string }).tree === 'chat' && h.debug().pendingBack === null && h.debug().backInFlight === 0
+        userBack(); land()
+        check('native shell: sheet history — THE SIWE SHAPE: a tap-less close queues NO traversal; a router.push 40ms later takes the entry over ([pre, /chat/abc]); ONE back returns to the origin', noTraversal && clean && entries().length === 1, JSON.stringify({ noTraversal, clean, after: entries() }))
+      }
+      // 7g. A user's back INSIDE the quiet window pops the dead-pending entry itself: no onBack on the closed sheet, nothing pending after, no double traversal.
+      {
+        const { h, entries, tick, land, advance, userBack } = mk()
+        const backs: string[] = []
+        h.opened({ key: 'A', onBack: () => backs.push('A') })
+        h.closed('A', 'other')
+        tick(); advance(200)
+        userBack(); land()
+        const afterBack = { len: entries().length, dbg: h.debug(), backs: backs.slice() }
+        advance(4000); land()
+        check('native shell: sheet history — a back pressed inside the quiet window pops the dead-pending entry (the page\'s own entry, same URL): no onBack on the closed sheet, nothing pending, no second traversal later', afterBack.len === 1 && afterBack.backs.length === 0 && afterBack.dbg.pendingBack === null && afterBack.dbg.backInFlight === 0 && entries().length === 1, JSON.stringify({ afterBack, after: entries().length }))
+      }
       // 7d. Our OWN sheet push is never converted, and a push with no sheet entry current is a plain push.
       {
         const { h, entries, nextPush } = mk()
@@ -34012,18 +34038,18 @@ async function main() {
         setNav(true)
         h.closed('A', 'other')
         tick()
-        advance(SH.SHEET_NAV_WAIT_MS - 100)
+        advance(SH.SHEET_QUIET_MS + SH.SHEET_NAV_WAIT_MS - 100)
         const before = entries().length
         advance(400); land()
-        check('native shell: sheet history — a tap that never navigated: after SHEET_NAV_WAIT_MS the pop fires anyway', before === 2 && entries().length === 1 && SH.SHEET_NAV_WAIT_MS === 2000 && SH.SHEET_TAP_NAV_MS === 1500, JSON.stringify({ before, after: entries().length }))
+        check('native shell: sheet history — a tap that never navigated: after the quiet window + SHEET_NAV_WAIT_MS the pop fires anyway', before === 2 && entries().length === 1 && SH.SHEET_NAV_WAIT_MS === 2000 && SH.SHEET_TAP_NAV_MS === 1500, JSON.stringify({ before, after: entries().length }))
       }
       // 8. Unloading: a hard navigation started → no pop ever fires into it.
       {
-        const { h, entries, tick, land, setUnload } = mk()
+        const { h, entries, tick, land, advance, setUnload } = mk()
         h.opened({ key: 'A', onBack: () => {} })
         h.closed('A', 'other')
         setUnload(true)
-        tick(); land()
+        tick(); advance(4000); land()
         check('native shell: sheet history — once the page is unloading a pending pop is cancelled (never traverse under a hard navigation)', entries().length === 2 && h.debug().pendingBack === null && h.debug().backInFlight === 0)
       }
     }
