@@ -42,6 +42,8 @@ export default function SpineLink({ href, onClick: onClickProp, ...rest }: Props
   return (
     <>
       <Link href={href} {...rest} onClick={onClick} />
+      {/* Where the open door leads, readable by a drive (squad mobile-native). */}
+      {doorOpen && <span hidden data-spine-door-to={href} />}
       {doorOpen && <CreateAccountModal onClose={() => setDoorOpen(false)} redirectTo={href} />}
     </>
   )
