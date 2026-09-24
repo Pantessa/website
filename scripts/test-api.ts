@@ -33083,6 +33083,13 @@ async function main() {
       'native qa: a missing WebKit build is a SKIP row that names the owner step, never a hang and never a silent pass',
       /state: 'SKIP'/.test(nqSrc) && /npx playwright install webkit/.test(nqSrc) && /existsSync\(exe\)/.test(nqSrc),
     )
+    check(
+      'native qa: the coordinator\'s R1 rulings hold in the drive — a landscape bar seat ≥32px tall is a DECISION row (never a FAIL; iOS\'s own landscape tab bar is 32pt), the chat list is judged as the history SCREEN (no chats sheet row), and CHAT\'s standalone drive is folded in line by line',
+      /const seatCall = small\.filter\(\(c\) => landscape && c\.seat && c\.h >= 32\)/.test(nqSrc) &&
+        /state: rest\.length \? 'FAIL' : seatCall\.length \? 'DECISION' : 'PASS'/.test(nqSrc) &&
+        !/id: 'chat list'/.test(nqCode) &&
+        /spawn\('npx', \['tsx', file, '--phase=after'/.test(nqSrc),
+    )
     const nq = (await import('./drive-native')) as typeof import('./drive-native')
     check(
       'native qa: drive:native measures the eleven checks of QA.md, in order',

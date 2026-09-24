@@ -86,7 +86,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { execSync } from 'node:child_process'
+import { execSync, spawn } from 'node:child_process'
 
 // ── Playwright, resolved at RUN time (never a static import: it is not a
 // dependency, and a static import breaks the Vercel build — the #858 bite).
@@ -175,7 +175,9 @@ const PHONE_SIZES: Size[] = [
 const DESKTOP: Size = { id: '1440x900', width: 1440, height: 900 }
 
 // ── Results ────────────────────────────────────────────────────────────────
-export type State = 'PASS' | 'FAIL' | 'SKIP' | 'N/A'
+/** DECISION = measured, and ruled by the coordinator a call for Nate rather
+ *  than a defect (e.g. the 40px landscape bar); never counted as a FAIL. */
+export type State = 'PASS' | 'FAIL' | 'SKIP' | 'N/A' | 'DECISION'
 export type Row = {
   check: CheckId
   engine: EngineId
@@ -193,7 +195,7 @@ export type Row = {
 const rows: Row[] = []
 function record(r: Row) {
   rows.push(r)
-  const mark = r.state === 'PASS' ? '✅' : r.state === 'FAIL' ? '❌' : r.state === 'SKIP' ? '⏭ ' : '· '
+  const mark = r.state === 'PASS' ? '✅' : r.state === 'FAIL' ? '❌' : r.state === 'SKIP' ? '⏭ ' : r.state === 'DECISION' ? '⚖ ' : '· '
   const where = [r.engine, r.profile, r.size, r.theme, r.surface, r.item].filter((x) => x && x !== '-').join(' ')
   console.log(`  ${mark} ${r.check.padEnd(10)} ${where} — ${r.value}${r.detail ? ` · ${r.detail}` : ''}`)
 }
@@ -431,7 +433,7 @@ const PAGE_LIB = String.raw`(() => {
         if (seen.has(el)) continue
         seen.add(el)
         const h = window.__nq.hit(el)
-        const entry = { what: label(el), w: h.w, h: h.h, ok: h.ok }
+        const entry = { what: label(el), w: h.w, h: h.h, ok: h.ok, seat: !!el.closest(BAR) }
         let isChrome
         if (scope) isChrome = true
         else if (S !== document.scrollingElement) isChrome = !S.contains(el)
@@ -893,17 +895,23 @@ async function layoutAt(run: Run, o: Opened, s: Surface, size: Size, theme: Them
   }
   // 5 · targets (chrome = verdict; content = info)
   if (wantCheck('targets')) {
-    const t = await evalNq<{ chrome: { what: string; w: number; h: number; ok: boolean }[]; content: { what: string; w: number; h: number; ok: boolean }[] }>(o.page, 'window.__nq.targets()')
+    const t = await evalNq<{ chrome: { what: string; w: number; h: number; ok: boolean; seat: boolean }[]; content: { what: string; w: number; h: number; ok: boolean }[] }>(o.page, 'window.__nq.targets()')
     if (t && !(t as unknown as { __error?: string }).__error) {
       const small = t.chrome.filter((c) => !c.ok)
       const contentSmall = t.content.filter((c) => !c.ok)
+      // RULING (coordinator, R1): in landscape the bar's compact seats (≥32px
+      // tall — iOS's own landscape tab bar is 32pt) are a DECISION for Nate,
+      // not a FAIL. Any other small chrome control still fails the row.
+      const landscape = size.width > size.height
+      const seatCall = small.filter((c) => landscape && c.seat && c.h >= 32)
+      const rest = small.filter((c) => !seatCall.includes(c))
       record({
         ...b,
         check: 'targets',
         item: 'chrome',
-        state: small.length ? 'FAIL' : 'PASS',
-        value: `${small.length}/${t.chrome.length} chrome controls under 44px · content ${contentSmall.length}/${t.content.length} (info)`,
-        detail: small.slice(0, 4).map((c) => `"${c.what}" ${c.w}×${c.h}`).join(', '),
+        state: rest.length ? 'FAIL' : seatCall.length ? 'DECISION' : 'PASS',
+        value: `${small.length}/${t.chrome.length} chrome controls under 44px${seatCall.length ? ` (${seatCall.length} landscape bar seats ${seatCall[0].w}×${seatCall[0].h}: a decision)` : ''} · content ${contentSmall.length}/${t.content.length} (info)`,
+        detail: (rest.length ? rest : seatCall).slice(0, 4).map((c) => `"${c.what}" ${c.w}×${c.h}`).join(', '),
       })
     }
   }
@@ -1265,7 +1273,8 @@ const TRIGGERS: Trigger[] = [
   { id: 'brochure menu', surface: S_LANDING, auth: 'none', open: (p) => tapFirst(p, ['[data-sheet-open="nav"]', 'button[aria-label="Open menu"]']) },
   { id: 'dashboard menu', surface: S_DASH, auth: 'siwe', open: (p) => tapFirst(p, ['[data-sheet-open="dashnav"]', 'button[aria-label="Open menu"]']) },
   { id: 'links list', surface: S_LINKS, auth: 'wallet', open: (p) => tapFirst(p, ['[data-sheet-open="links"]']) },
-  { id: 'chat list', surface: S_CHAT, auth: 'wallet', open: (p) => tapFirst(p, ['[data-sheet-open="chats"]']) },
+  // (The chat list is the history SCREEN, not a Sheet — coordinator R1 ruling;
+  // the tabs rows judge it. No 'chats' sheet row.)
 ]
 
 async function dismissBy(o: Opened, how: 'outside' | 'escape' | 'swipe' | 'back'): Promise<{ closed: boolean; stayed: boolean; note: string }> {
@@ -1624,6 +1633,60 @@ async function desktopJob(run: Run, d: (typeof DESKTOP_SURFACES)[number], sessio
   }
 }
 
+// ── CHAT's drive, folded in (coordinator R1) ───────────────────────────────
+// scripts/drive-native-chat.ts is a standalone drive (its own main, argv
+// guard, contexts and fixtures; read-only, /api/chat answered from fixtures).
+// drive:native runs it as a child against the same BASE and folds every
+// verdict line (`✅ <ctx>/<id> — detail`) into a row under the check it
+// measures. A child that prints ❌ and exits 0 still reads red, line by line.
+const CHAT_ID_CHECK: [RegExp, CheckId][] = [
+  [/^desktop\//, 'desktop'],
+  [/composer-16px/, 'inputs'],
+  [/rides-keyboard|composer-returns/, 'keyboard'],
+  [/document-never-scrolls|one-app-scroller|i-frame-attrs|i-bottom-flush/, 'frame'],
+  [/composer-above-bar|banner-in-its-seat/, 'bar'],
+  [/-44$|sign-buttons-full-width/, 'targets'],
+  [/no-h-scroll|-fit$|topbar-no-overflow/, 'overflow'],
+  [/-door|topbar-exists|topbar-title/, 'tabs'],
+  [/-sheet$/, 'sheets'],
+]
+async function chatDriveJob() {
+  const file = join(SCRIPTS_DIR, 'drive-native-chat.ts')
+  const shots = join(OUT_DIR, 'shots', 'qa', TAG, 'chat')
+  mkdirSync(shots, { recursive: true })
+  const out = await new Promise<{ code: number; text: string }>((resolve) => {
+    const child = spawn('npx', ['tsx', file, '--phase=after', `--shots=${shots}`], { env: { ...process.env, BASE }, stdio: ['ignore', 'pipe', 'pipe'] })
+    let text = ''
+    child.stdout.on('data', (b: Buffer) => (text += b.toString()))
+    child.stderr.on('data', (b: Buffer) => (text += b.toString()))
+    child.on('close', (code) => resolve({ code: code ?? 1, text }))
+  })
+  let n = 0
+  for (const line of out.text.split('\n')) {
+    const m = /^\s*(✅|❌) (\S+)(?: — (.*))?$/.exec(line)
+    if (!m) continue
+    n += 1
+    const id = m[2]
+    const ctxId = id.split('/')[0]
+    const check = CHAT_ID_CHECK.find(([re]) => re.test(id))?.[1] ?? 'frame'
+    record({
+      check,
+      engine: 'chrome',
+      profile: /pixel/.test(ctxId) ? 'pixel' : /iphone/.test(ctxId) ? 'iphone' : ctxId === 'desktop' ? 'desktop' : '-',
+      size: /-(\d{3})$/.exec(ctxId)?.[1] ?? '-',
+      theme: /light/.test(ctxId) ? 'light' : 'dark',
+      surface: /\/i-/.test(id) ? `/i/${HOUSE_SLUG}` : '/chat',
+      item: `chat: ${id}`,
+      state: m[1] === '✅' ? 'PASS' : 'FAIL',
+      value: (m[3] ?? '').slice(0, 220),
+      detail: '',
+    })
+  }
+  if (!n || out.code !== 0 && !/❌/.test(out.text)) {
+    record({ check: 'frame', engine: 'chrome', profile: '-', size: '-', theme: '-', surface: '/chat', item: 'chat: the CHAT drive', state: 'FAIL', value: `exit ${out.code}, ${n} verdict line(s)`, detail: out.text.split('\n').filter(Boolean).slice(-3).join(' | ').slice(0, 220) })
+  }
+}
+
 // ── The pool ───────────────────────────────────────────────────────────────
 type Job = { check: CheckId; label: string; run: () => Promise<void> }
 async function pool(jobs: Job[], n: number) {
@@ -1652,17 +1715,17 @@ function markdown(meta: Record<string, unknown>): string {
   md.push('')
   md.push(`- base: \`${BASE}\` · commit \`${meta.sha}\` · ${meta.at}`)
   md.push(`- engines: ${meta.engines}`)
-  md.push(`- rows: ${rows.length} · **PASS ${rows.filter((r) => r.state === 'PASS').length} · FAIL ${rows.filter((r) => r.state === 'FAIL').length}** · SKIP ${rows.filter((r) => r.state === 'SKIP').length} · N/A ${rows.filter((r) => r.state === 'N/A').length}`)
+  md.push(`- rows: ${rows.length} · **PASS ${rows.filter((r) => r.state === 'PASS').length} · FAIL ${rows.filter((r) => r.state === 'FAIL').length}** · DECISION ${rows.filter((r) => r.state === 'DECISION').length} · SKIP ${rows.filter((r) => r.state === 'SKIP').length} · N/A ${rows.filter((r) => r.state === 'N/A').length}`)
   md.push('')
   md.push('## By check')
   md.push('')
-  md.push('| # | check | PASS | FAIL | SKIP/N/A | the first red, with its number |')
-  md.push('|---|---|---:|---:|---:|---|')
+  md.push('| # | check | PASS | FAIL | DECISION | SKIP/N/A | the first red, with its number |')
+  md.push('|---|---|---:|---:|---:|---:|---|')
   CHECKS.forEach((c, i) => {
     const rs = rows.filter((r) => r.check === c)
     const f = rs.find((r) => r.state === 'FAIL')
     const cell = (s: string) => s.replace(/\|/g, '\\|')
-    md.push(`| ${i + 1} | ${c} | ${rs.filter((r) => r.state === 'PASS').length} | ${rs.filter((r) => r.state === 'FAIL').length} | ${rs.filter((r) => r.state === 'SKIP' || r.state === 'N/A').length} | ${f ? cell(`${[f.profile, f.size, f.theme, f.surface, f.item].filter((x) => x && x !== '-').join(' ')}: ${f.value}${f.detail ? ` — ${f.detail}` : ''}`).slice(0, 260) : '—'} |`)
+    md.push(`| ${i + 1} | ${c} | ${rs.filter((r) => r.state === 'PASS').length} | ${rs.filter((r) => r.state === 'FAIL').length} | ${rs.filter((r) => r.state === 'DECISION').length} | ${rs.filter((r) => r.state === 'SKIP' || r.state === 'N/A').length} | ${f ? cell(`${[f.profile, f.size, f.theme, f.surface, f.item].filter((x) => x && x !== '-').join(' ')}: ${f.value}${f.detail ? ` — ${f.detail}` : ''}`).slice(0, 260) : '—'} |`)
   })
   md.push('')
   md.push('## By surface (layout checks, every size, profile and theme)')
@@ -1860,6 +1923,8 @@ async function main() {
     for (const d of DESKTOP_SURFACES) add('desktop', `desktop ${d.path}`, async () => desktopJob(desktopRun, d, d.auth === 'siwe' ? await siwe() : null, baseline, capture))
   }
 
+  // CHAT's own drive (a standalone file), when it is on this tree.
+  if (!list('checks').length && !QUICK && existsSync(join(SCRIPTS_DIR, 'drive-native-chat.ts')) && !flag('no-chat')) add('frame', 'chat drive', () => chatDriveJob())
   const started = Date.now()
   if (wantCheck('manifest')) await manifestCheck()
   await pool(jobs, WORKERS)
@@ -1889,7 +1954,7 @@ async function main() {
   const pass = rows.filter((r) => r.state === 'PASS').length
   const fail = rows.filter((r) => r.state === 'FAIL').length
   const skip = rows.filter((r) => r.state === 'SKIP').length
-  console.log(`\n  ${pass} passed · ${fail} failed · ${skip} skipped · ${rows.filter((r) => r.state === 'N/A').length} n/a · ${meta.seconds}s`)
+  console.log(`\n  ${pass} passed · ${fail} failed · ${rows.filter((r) => r.state === 'DECISION').length} decision · ${skip} skipped · ${rows.filter((r) => r.state === 'N/A').length} n/a · ${meta.seconds}s`)
   console.log(`  → ${join(OUT_DIR, `${TAG}.md`)}\n`)
   process.exit(fail ? 1 : 0)
 }
