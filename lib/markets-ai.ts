@@ -132,19 +132,21 @@ export function cleanContextLine(s: unknown, max: number): string {
     .slice(0, max)
 }
 
-/** The wire's history, shaped: last ASK_HISTORY_MAX lines, known roles only,
- *  empty lines dropped. Never throws — a malformed history is no history. */
+/** The wire's history, shaped: the newest ASK_HISTORY_MAX well-formed lines,
+ *  known roles only. Never throws — a malformed history is no history. */
 export function shapeAskHistory(raw: unknown): AskHistoryLine[] {
   if (!Array.isArray(raw)) return []
   const out: AskHistoryLine[] = []
-  for (const r of raw.slice(-ASK_HISTORY_MAX)) {
+  // Drop the malformed ones FIRST, then keep the newest: junk never takes a
+  // slot a real line would have had. (The route caps the array at 40.)
+  for (const r of raw.slice(-64)) {
     if (!r || typeof r !== 'object') continue
     const role = (r as { role?: unknown }).role
     if (role !== 'user' && role !== 'page') continue
     const text = cleanContextLine((r as { text?: unknown }).text, ASK_HISTORY_LINE_MAX)
     if (text) out.push({ role, text })
   }
-  return out
+  return out.slice(-ASK_HISTORY_MAX)
 }
 
 /** The wire's ticket summary, shaped. `live` is only true with a run in it. */
