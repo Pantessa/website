@@ -26,7 +26,7 @@ function ExampleGallery({ onPick }: { onPick: (prompt: string, slug?: string) =>
             type="button"
             onClick={() => onPick(ex.prompt, ex.slug)}
             title={ex.prompt}
-            className="group flex items-center gap-1.5 text-xs px-3 py-1.5 max-lg:min-h-10 max-lg:px-4 rounded-full border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:tint-border-accent-45 hover:bg-white/5 transition-colors"
+            className="group flex items-center gap-1.5 text-xs px-3 py-1.5 max-lg:min-h-11 max-lg:px-4 rounded-full border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:tint-border-accent-45 hover:bg-white/5 transition-colors"
           >
             <Send className="w-3 h-3 text-[color:var(--muted-2)] group-hover:text-[color:var(--accent)] transition-colors" />
             {ex.label}
@@ -61,7 +61,7 @@ export default function EmptyState({
     // guestBannerPad is retired below lg (squad mobile-native): the guest
     // banner sits IN FLOW above the composer there, so nothing floats over
     // the empty state; at lg+ the scroller's own pb-32 reserves it.
-    <div className="flex flex-col items-center justify-center flex-1 text-center py-20">
+    <div data-empty-state="" className="flex flex-col items-center justify-center flex-1 text-center py-20">
       <div className="w-16 h-16 rounded-2xl tint-bg-accent-15 border tint-border-accent-50 flex items-center justify-center mb-6">
         <Sparkles className="w-8 h-8" style={{ color: 'var(--accent)' }} />
       </div>

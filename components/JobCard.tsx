@@ -420,7 +420,7 @@ export default function JobCard({
               </span>
             )}
             {ACTIVE.has(job.status) && (
-              <button onClick={() => void cancel()} className="text-[11px] mono text-[color:var(--muted-2)] hover:text-[color:var(--fail)] transition-colors [@media(hover:none)]:min-h-10 [@media(hover:none)]:px-3 [@media(hover:none)]:-mr-3 [@media(hover:none)]:text-[12px]">
+              <button onClick={() => void cancel()} className="text-[11px] mono text-[color:var(--muted-2)] hover:text-[color:var(--fail)] transition-colors [@media(hover:none)]:min-h-11 [@media(hover:none)]:px-3 [@media(hover:none)]:-mr-3 [@media(hover:none)]:text-[12px]">
                 cancel
               </button>
             )}

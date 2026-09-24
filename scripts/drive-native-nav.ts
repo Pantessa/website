@@ -722,7 +722,97 @@ const rowDesktop: NavScenario = {
   },
 }
 
-export const NATIVE_NAV_SCENARIOS: NavScenario[] = [rowMatrix, rowContract, rowDesktop]
+/** Signed out on the public /markets (no wallet, no session): every seat into
+ *  the signed-in app opens the unified sign-in door AIMED at that seat's
+ *  target, in both postures, and never bounces the visitor home. The
+ *  desktop column and the phone bar each route through ONE openDoorFor. */
+const rowDoor: NavScenario = {
+  row: 'door',
+  name: 'signed out on /markets: every seat into the app opens the door, aimed, in both postures',
+  async run(ctx) {
+    const v: Verdict[] = []
+    const readDoor = (page: any) =>
+      page.evaluate(() => ({
+        path: location.pathname + location.search,
+        door: document.querySelectorAll('[data-sheet="door"]').length,
+        aim: (document.querySelector('[data-spine-door-to]') as HTMLElement | null)?.getAttribute('data-spine-door-to') ?? null,
+      }))
+    const openMarkets = async (desktop: boolean) => {
+      const page = await ctx.open({ wallet: false, desktop })
+      await page.goto(`${ctx.base}/markets`, { waitUntil: 'domcontentloaded' })
+      await page.waitForFunction(() => !!document.querySelector('nav[data-spine-bar], aside[aria-label="Workspace"]'), { timeout: 15_000 }).catch(() => {})
+      // The session settles to guest and wagmi to disconnected (no remembered
+      // wallet): the spine now knows this visitor is signed out.
+      await wait(3_000)
+      return page
+    }
+    const judge = (posture: string, label: string, href: string, r: { path: string; door: number; aim: string | null }) =>
+      v.push(
+        r.path === '/markets' && r.door > 0 && r.aim === href
+          ? pass('door', `${posture}: ${label} opens the door aimed at ${href}, stays on /markets`, JSON.stringify(r))
+          : fail('door', `${posture}: ${label} opens the door aimed at ${href}, stays on /markets`, JSON.stringify(r)),
+      )
+    // 1440: the column's seats (the desktop drawer tabs use the desktop tab
+    // grammar: APPS is the default and writes a bare /chat).
+    for (const [label, href] of [
+      ['APPS', '/chat'],
+      ['JOBS', '/chat?tab=jobs'],
+      ['LINKS', '/chat?tab=links'],
+      ['CHATS', '/chat?tab=chats'],
+      ['WALLET', '/wallet'],
+      ['Settings', '/dashboard'],
+    ] as const) {
+      const page = await openMarkets(true)
+      await page.locator(`aside[aria-label="Workspace"] [aria-label="${label}"]`).first().click()
+      await wait(900)
+      judge('1440 column', label, href, await readDoor(page))
+      if (label === 'APPS') await ctx.shot(page, 'door-desktop-apps')
+      await page.context().close()
+    }
+    // 375: the bar's seats (the phone grammar names APPS explicitly).
+    for (const [label, href] of [
+      ['APPS', '/chat?tab=mcps'],
+      ['JOBS', '/chat?tab=jobs'],
+      ['LINKS', '/chat?tab=links'],
+      ['CHATS', '/chat?tab=chats'],
+      ['WALLET', '/wallet'],
+    ] as const) {
+      const page = await openMarkets(false)
+      await tapSeat(page, label)
+      await wait(900)
+      judge(`${ctx.profile.width} bar`, label, href, await readDoor(page))
+      if (label === 'APPS') await ctx.shot(page, 'door-phone-apps')
+      await page.context().close()
+    }
+    // 375: the seats behind MORE (Settings, and Team while the roster is on).
+    for (const [item, href] of [
+      ['Settings', '/dashboard'],
+      ['Team', '/chat?tab=team'],
+    ] as const) {
+      const page = await openMarkets(false)
+      if (!(await tapSeat(page, 'More'))) {
+        v.push(note('door', `MORE is not on this bar (≥sm) — ${item} skipped`, 'skipped'))
+        await page.context().close()
+        continue
+      }
+      await wait(500)
+      const entry = page.locator('.sheet[data-sheet="more"] [role="menuitem"]').filter({ hasText: item }).first()
+      if ((await entry.count()) === 0) {
+        v.push(note('door', `MORE has no ${item} entry in this build`, 'skipped'))
+        await page.context().close()
+        continue
+      }
+      await entry.tap()
+      await wait(900)
+      const r = await readDoor(page)
+      judge(`${ctx.profile.width} MORE`, item, href, r)
+      await page.context().close()
+    }
+    return v
+  },
+}
+
+export const NATIVE_NAV_SCENARIOS: NavScenario[] = [rowMatrix, rowContract, rowDesktop, rowDoor]
 
 // ── runner ───────────────────────────────────────────────────────────────
 function arg(name: string, dflt: string): string {
@@ -733,7 +823,7 @@ function arg(name: string, dflt: string): string {
 export async function main(): Promise<number> {
   const base = arg('base', 'http://localhost:3892')
   const tag = arg('tag', 'run')
-  const rows = arg('rows', 'matrix,contract,desktop').split(',')
+  const rows = arg('rows', 'matrix,contract,desktop,door').split(',')
   const profiles = arg('profiles', 'small,pixel').split(',')
   const themes = arg('themes', 'dark').split(',') as Array<'dark' | 'light'>
   const chrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -746,7 +836,7 @@ export async function main(): Promise<number> {
         if (!profile) throw new Error(`unknown profile ${pid}`)
         for (const sc of NATIVE_NAV_SCENARIOS) {
           if (!rows.includes(sc.row)) continue
-          if (sc.row === 'desktop' && pid !== profiles[0]) continue
+          if ((sc.row === 'desktop' || sc.row === 'door') && pid !== profiles[0]) continue
           const ctx = await makeCtx(browser, base, tag, profile, theme)
           console.log(`\n── ${sc.row} · ${sc.name} · ${profile.id} ${profile.width}×${profile.height} · ${theme}`)
           try {

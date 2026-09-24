@@ -216,10 +216,10 @@ button.mk-held:hover { border-color: var(--accent); }
    screen (hover: none), so the desktop terminal is byte-identical. */
 
 /* The top strip's Ask IS the phone's ask field: it fills the bar with the
-   page's own placeholder (AskDoorTrigger rail → .mkt-frame__askhint). The
-   floating pill steps aside on this surface (x402-design.css, the askdoor
-   section), so the door never covers a row. */
-.mkt-frame__askhint { display: none; }
+   page's own placeholder (AskDoorTrigger rail → .mkt-frame__askhint, hidden by
+   default in x402-design.css's askdoor section so a rail trigger renders
+   right on any page). The floating pill steps aside on this surface, so the
+   door never covers a row. */
 @media (max-width: 1023px) {
   .mkt-frame__top .mkt-frame__ask { flex: 1 1 auto; min-width: 0; height: 44px; justify-content: flex-start; gap: 10px; padding: 0 16px 0 10px; }
   .mkt-frame__top .mkt-frame__askword { display: none; }
