@@ -2252,7 +2252,19 @@
     .nav__tabs { display: none; }
     .nav__burger { display: inline-flex; }
     /* the drawer carries auth/wallet on mobile — slim the bar itself */
-    .nav__right > :not(.nav__burger) { display: none; }
+    /* The bar slims to the burger — EXCEPT the account seat. Measured
+       (squad mobile-onboarding, 2026-09-23): with everything but the burger
+       hidden, the only sign-in door on the landing was two taps deep (burger
+       → drawer → Sign in), and a CONNECTED phone visitor had no account menu
+       at all on a brochure page, because the drawer carries AuthButton +
+       ConnectWallet and never NavAccount. Keeping SiteAccount in the bar
+       makes the door one tap and gives the phone the same account control
+       every other surface has. The pill is ~85px; logo + pill + burger fit
+       360px with room (measured below). */
+    .nav__right > :not(.nav__burger):not(.nav__acct) { display: none; }
+    .nav__right { gap: 8px; }
+    .nav__acct { min-width: 0; }
+    .nav__acct .navacct__addr { max-width: 9ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     /* footer: brand spans the top row, the three groups sit below it */
     .footer__cols { grid-template-columns: 1fr 1fr; }
     .footer__brand { grid-column: 1 / -1; max-width: 52ch; }
@@ -2307,9 +2319,25 @@
      Every color is a token or a color-mix off one, so the paper theme is a
      flip — only the bloom's alpha is re-pinned (emerald light on white
      needs a fraction of the strength it needs on black). */
-  .ca { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 20px; }
+  /* The door is centred, and it SCROLLS when it cannot be. Measured on a
+     phone with the keyboard up (squad mobile-onboarding, 2026-09-23): the
+     visual viewport drops to ~508px on a 390 and ~444px on a 360, the panel
+     stays 544–550px, and a centred grid item clips EQUALLY at both ends — 21,
+     34 and 50px off the top AND the bottom at 390/375/360 — taking the
+     dismiss control with it while `overflow-y: visible` gave nothing to
+     scroll. `safe center` centres while it fits and falls back to start when
+     it does not, so the top is never cut; `overflow-y: auto` reaches the
+     rest. Both are needed: `safe` alone loses the bottom. */
+  .ca {
+    position: fixed; inset: 0; z-index: 200;
+    display: grid; justify-items: center; align-items: safe center;
+    overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+    padding: max(20px, env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom));
+  }
+  /* Fixed, not absolute: the panel scrolls inside .ca now, and a backdrop
+     that scrolled with it would leave the page bare at the ends. */
   .ca__backdrop {
-    position: absolute; inset: 0; border: none; cursor: pointer;
+    position: fixed; inset: 0; border: none; cursor: pointer;
     background: radial-gradient(120% 90% at 50% 40%, rgba(0,0,0,.5) 0%, rgba(0,0,0,.82) 100%);
     backdrop-filter: blur(6px) saturate(.75);
     animation: ca-veil .22s ease-out;
@@ -2317,7 +2345,7 @@
   /* The stone's light. Sits behind the panel, unclipped, so the door reads
      as lit from within rather than pasted onto black. */
   .ca__glow {
-    position: absolute; left: 50%; top: 50%; translate: -50% -50%;
+    position: fixed; left: 50%; top: 50%; translate: -50% -50%;
     width: min(620px, 100vw); height: min(700px, 100vh); pointer-events: none;
     background:
       /* the crown catching light, right behind the stone */
@@ -2466,6 +2494,35 @@
   .ca__consent { margin-top: 18px; padding-top: 14px; border-top: 1px solid color-mix(in oklch, var(--line) 60%, transparent); font-size: 11px; line-height: 1.5; color: var(--muted-2); text-align: center; }
   .ca__consent a { color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
   .ca__consent a:hover { color: var(--fg); }
+  /* In an app's own browser the lanes are re-ordered so the one that WORKS
+     leads. Flex + `order` rather than a second JSX tree: the door's markup
+     stays one thing to read, and off the walled case the source order is the
+     rendered order. */
+  .ca__form { display: flex; flex-direction: column; }
+  .ca__form--walled > .ca__crest { order: 1; }
+  .ca__form--walled > .ca__title { order: 2; }
+  .ca__form--walled > .ca__promise { order: 3; }
+  .ca__form--walled > .ca__inapp { order: 4; }
+  .ca__form--walled > .ca__emailrow { order: 5; margin-top: 18px; }
+  .ca__form--walled > .ca__error { order: 6; }
+  .ca__form--walled > .ca__fine { order: 7; }
+  .ca__form--walled > .ca__or { order: 8; }
+  .ca__form--walled > .ca__providers { order: 9; }
+  .ca__form--walled > .ca__wallet { order: 10; margin-top: 9px; }
+  .ca__form--walled > .ca__lanes { order: 11; }
+  .ca__form--walled > .ca__lanenote { order: 11; }
+  .ca__form--walled > .ca__consent { order: 12; }
+  /* The two lanes that cannot fire here read as quieted, never as broken:
+     the visitor is told what is in the way, in the app's own words. */
+  .ca__form--walled > .ca__wallet { background: color-mix(in oklch, var(--accent) 22%, transparent); color: var(--fg); box-shadow: none; }
+  .ca__inapp {
+    margin: 10px auto 0; max-width: 34ch; text-align: center;
+    font-size: 12px; line-height: 1.5; color: var(--fg);
+    background: color-mix(in oklch, var(--accent) 9%, transparent);
+    border: 1px solid color-mix(in oklch, var(--accent) 26%, transparent);
+    border-radius: 10px; padding: 9px 11px;
+  }
+  .ca__lanenote { margin-top: 7px; font-size: 11px; line-height: 1.45; color: var(--muted-2); text-align: center; }
   .ca__back { display: inline-flex; align-items: center; gap: 5px; margin-bottom: 12px; font-size: 12.5px; color: var(--muted); }
   .ca__back:hover { color: var(--fg); }
   .ca__resend { width: 100%; margin-top: 10px; font-size: 12.5px; color: var(--muted); }
@@ -2491,6 +2548,23 @@
   @media (max-width: 380px) {
     .ca__panel { padding: 26px 18px 18px; }
     .ca__lane { font-size: 10px; padding: 3px 7px; }
+  }
+  /* A SHORT viewport is the phone keyboard, not a small phone: the door has
+     to give back ~80px so it still fits whole rather than relying on the
+     scroll above. Every saving is vertical air, never a target's size — the
+     crest shrinks, the rhythm tightens, the buttons keep their 44px+. */
+  @media (max-height: 640px) {
+    .ca { padding-top: max(12px, env(safe-area-inset-top)); padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+    .ca__panel { padding: 20px 20px 14px; }
+    .ca__gem { width: 44px; height: 44px; }
+    .ca__crest { margin-bottom: 8px; }
+    .ca__title { font-size: 19px; }
+    .ca__promise { margin-top: 6px; }
+    .ca__wallet--lead { margin-top: 12px; }
+    .ca__lanes { margin-top: 10px; }
+    .ca__or { margin: 14px 0 10px; }
+    .ca__consent { margin-top: 12px; padding-top: 10px; }
+    .ca__fine { margin-top: 8px; }
   }
 
   /* Keyboard focus — accent rings on the custom-styled interactive controls.
@@ -5465,13 +5539,33 @@
      the fixed bottom tab bar here: the shell reserves its height, and the
      docked ask pill lifts above it. */
   .mkt-frame { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "main" "rail" "foot"; --mkt-pad-r: var(--mkt-pad-l); }
+  /* …EXCEPT when the rail is carrying the visitor's OWN surface. Measured on
+     a 390px phone (squad mobile-onboarding, 2026-09-23): the index's rail
+     landed at y 5461 of a 7292px document — fourteen screens below the fold,
+     under every board and above a 1508px footer. That is where the watchlist,
+     the held positions and the card-funding door (FundWallet) live, so on a
+     phone a connected visitor could not reach any of them.
+     A stranger loses nothing by seeing the boards first, so the swap is
+     conditional on the rail actually holding something personal: a fund door
+     or at least one watched row. The symbol page keeps its order — there the
+     rail is an About card and the chart must lead. */
+  .mkt-frame:not(.mkt-frame--sym):has(.mkt-frame__rail [data-rail-fund]),
+  .mkt-frame:not(.mkt-frame--sym):has(.mkt-frame__rail .wl__row) {
+    grid-template-areas: "top" "rail" "main" "foot";
+  }
+  .mkt-frame:not(.mkt-frame--sym):has(.mkt-frame__rail [data-rail-fund]) .mkt-frame__rail,
+  .mkt-frame:not(.mkt-frame--sym):has(.mkt-frame__rail .wl__row) .mkt-frame__rail {
+    margin-top: 12px;
+  }
   .mkt-frame__side { display: contents; }
   .mkt-frame__top { grid-area: top; border-left: 0; }
   .mkt-frame__top .nav__ask-kbd { display: none; } /* no ⌘K on a phone */
   .mkt-frame__bar { top: var(--mkt-top-h); }
   .mkt-frame__main { padding-bottom: 28px; }
   .mkt-frame__rail { grid-area: rail; position: static; height: auto; margin: 0 var(--mkt-pad-l); border: 1px solid var(--line); border-radius: 14px; }
-  .mkt-shell { padding-bottom: calc(48px + env(safe-area-inset-bottom)); }
+  /* The spine's phone bar measures 49px (48px of seat + its 1px top border),
+     so a 48px reserve left the page's last line 1px under it. */
+  .mkt-shell { padding-bottom: calc(49px + env(safe-area-inset-bottom)); }
   :root[data-spine] .askdoor-pill { bottom: calc(64px + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 640px) {
@@ -5885,6 +5979,21 @@
 @keyframes wl-brew-band-light { 0%, 70%, 100% { opacity: .62; } 30% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .wl__brewMark::before, .wl__brewMark svg, .wl__brewBand, :root[data-theme='light'] .wl__brewBand, .wl__quoteBar { animation: none; }
+}
+/* TOUCH TARGETS IN THE RAIL (squad mobile-onboarding, 2026-09-23). On a
+   phone the board rows carry no act chip at all — `.mk-table__quick` is
+   hover-revealed and `@media (hover: none)` removes it, deliberately, so a
+   persistent chip cannot eat the name cell. That makes the rail row's ⋯ menu
+   the ONLY act a finger can reach on /markets, and it was measured at 27px
+   for "Buy $10" and 33px for its menu items — under the 44px floor every
+   touch guideline names, on the one control that starts a purchase.
+   Pointer-coarse only: the mouse keeps its compact rail. */
+@media (pointer: coarse) {
+  .wl__pop .wl__chip,
+  .wl__fundActs .wl__chip { min-height: 44px; padding: 0 16px; font-size: 13px; }
+  .wl__popItem { min-height: 44px; }
+  .wl__icon { width: 40px; height: 40px; }
+  .wl__popChips { gap: 8px; }
 }
 .wl__alerts { border-top: 1px solid var(--line); padding: 2px 0; }
 .wl__alertRow { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 12px; font-size: 12px; }

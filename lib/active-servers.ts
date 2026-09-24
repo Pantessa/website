@@ -30,14 +30,17 @@ export interface ResolvedActiveServers {
   dropped: string[]
   /** Off-directory rows kept verbatim under the direct-traffic exception. */
   keptUnresolved: string[]
+  /** The live directory this resolution read (approved rows only) — handed
+   *  on so the route's apps-follow-the-ask belt never loads it twice. */
+  catalog: McpServer[]
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 
 export async function resolveActiveServers(raw: unknown, headers: Headers): Promise<ResolvedActiveServers> {
   const rows = Array.isArray(raw) ? raw.filter(isRecord) : []
-  if (rows.length === 0) return { servers: [], dropped: [], keptUnresolved: [] }
   const catalog = await loadCatalog()
+  if (rows.length === 0) return { servers: [], dropped: [], keptUnresolved: [], catalog }
   const bySlug = new Map(catalog.map((s) => [s.slug, s]))
   const byId = new Map(catalog.map((s) => [s.id, s]))
   const direct = clientIpFrom(headers) === null
@@ -65,5 +68,5 @@ export async function resolveActiveServers(raw: unknown, headers: Headers): Prom
       dropped.push(label)
     }
   }
-  return { servers, dropped, keptUnresolved }
+  return { servers, dropped, keptUnresolved, catalog }
 }

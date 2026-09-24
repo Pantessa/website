@@ -57,6 +57,15 @@ export const PROFILES: Record<string, Profile> = {
   small: { id: 'small', width: 375, height: 812, ua: IPHONE_UA },
   android: { id: 'android', width: 360, height: 780, ua: ANDROID_UA },
   wide: { id: 'wide', width: 414, height: 896, ua: IPHONE_UA },
+  // X's built-in browser on an iPhone: a WKWebView with no `Safari/` token.
+  // Google refuses OAuth here and no wallet app can be launched, so the door
+  // has to say so (LINKS's lib/inapp-browser is the reading).
+  xapp: {
+    id: 'xapp',
+    width: 390,
+    height: 844,
+    ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Twitter for iPhone/10.5',
+  },
 }
 
 export type Theme = 'dark' | 'light'
@@ -144,6 +153,40 @@ async function underBar(page: any, selector: string): Promise<{ exists: boolean;
       detail: `el ${Math.round(er.top)}..${Math.round(er.bottom)} bar ${Math.round(br.top)} z ${zOf(el)}/${zOf(bar)}`,
     }
   }, selector)
+}
+
+/** Scroll to the page's end and ask whether the fixed bottom bar is eating
+ *  the last of the content. A surface that mounts the spine must reserve the
+ *  bar's height; when it does not, the final row/control is permanently
+ *  covered and there is no more page to scroll. */
+async function bottomReserve(page: any): Promise<{ bar: number; covered: number; last: string }> {
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  await page.waitForTimeout(700)
+  return page.evaluate(() => {
+    const bar = document.querySelector('nav[aria-label="Workspace"]') as HTMLElement | null
+    if (!bar) return { bar: 0, covered: 0, last: 'no bar' }
+    const br = bar.getBoundingClientRect()
+    let covered = 0
+    let last = 'none'
+    // Only CONTROLS count. A decorative glyph under the bar is cosmetic (the
+    // footer's giant absolutely-positioned wordmark bleeds past its own box
+    // and already runs off the viewport); a button under it is a dead tap.
+    const nodes = Array.from(
+      document.querySelectorAll('main a, main button, main input, main select, main textarea, main [role="button"], footer a, footer button'),
+    ) as HTMLElement[]
+    for (const n of nodes) {
+      const t = (n.textContent ?? '').trim() || (n.getAttribute('aria-label') ?? '')
+      if (!t) continue
+      const r = n.getBoundingClientRect()
+      if (r.height === 0 || r.top > window.innerHeight) continue
+      const over = Math.min(r.bottom, br.bottom) - Math.max(r.top, br.top)
+      if (over > covered) {
+        covered = over
+        last = `${n.tagName.toLowerCase()} "${t.slice(0, 26)}"`
+      }
+    }
+    return { bar: Math.round(br.height), covered: Math.round(covered), last }
+  })
 }
 
 /** Every seat in the spine's phone bar, with the gap between adjacent LABELS.
@@ -295,7 +338,7 @@ export type DriveCtx = {
   profile: Profile
   theme: Theme
   /** Open a page in this profile/theme, optionally with the mock wallet. */
-  open(opts?: { wallet?: boolean; init?: string }): Promise<any>
+  open(opts?: { wallet?: boolean | string; init?: string }): Promise<any>
   shot(page: any, row: number | string, extra?: string): Promise<string>
 }
 
@@ -325,7 +368,7 @@ async function makeCtx(browser: any, base: string, onrampBase: string | null, ta
       // document. (Same family as the addInitScript bite in memory
       // `pricing-v2-chart-first`.)
       await c.addInitScript('window.__name = window.__name || function (f) { return f }')
-      if (opts.wallet) await c.addInitScript(mockWalletScript(DRIVE_WALLET))
+      if (opts.wallet) await c.addInitScript(mockWalletScript(typeof opts.wallet === 'string' ? opts.wallet : DRIVE_WALLET))
       if (opts.init) await c.addInitScript(opts.init)
       const p = await c.newPage()
       p.on('pageerror', (e: Error) => {
@@ -563,13 +606,21 @@ const row2: UxScenario = {
   },
 }
 
+/** A guest watchlist in localStorage — the rail's own store (lib/watchlists
+ *  GUEST_LISTS_KEY). Seeding it makes "the rail is carrying something of
+ *  yours" deterministic instead of waiting on a live holdings read. */
+export const GUEST_LIST_SEED = `(() => { try {
+  localStorage.setItem('pantessa.watchlists.v1', JSON.stringify([{ id: 'g_drivelist01', owner: null, name: 'Watching', slug: null, symbols: ['AAPL', 'ETH', 'NVDA'], isPublic: false, createdAt: new Date().toISOString() }]));
+  localStorage.setItem('pantessa.watchlists.active', 'g_drivelist01');
+} catch {} })()`
+
 /** Row 3 — /markets at phone width. */
 const row3: UxScenario = {
   row: 3,
   name: '/markets on a phone',
   async run(ctx) {
     const v: Verdict[] = []
-    const page = await ctx.open()
+    const page = await ctx.open({ init: GUEST_LIST_SEED })
     await page.goto(`${ctx.base}/markets`, { waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(2500)
 
@@ -603,13 +654,30 @@ const row3: UxScenario = {
         : fail(3, 'the Map view never shows on a phone', 'a .mk-map is rendered at phone width'),
     )
 
+    // The rail carries the visitor's own surface (their list, their held
+    // positions, the card-funding door). On a phone it must be within reach,
+    // not past every board — measured in SCREENS, which is what a thumb feels.
     const rail = await page.evaluate(() => {
       const r = document.querySelector('.mkt-frame__rail') as HTMLElement | null
       if (!r) return { found: false }
       const rect = r.getBoundingClientRect()
-      return { found: true, width: Math.round(rect.width), inFlow: getComputedStyle(r).position !== 'fixed', y: Math.round(rect.top + window.scrollY) }
+      const y = Math.round(rect.top + window.scrollY)
+      return {
+        found: true,
+        width: Math.round(rect.width),
+        y,
+        screens: Math.round((y / window.innerHeight) * 10) / 10,
+        docH: document.documentElement.scrollHeight,
+        rows: document.querySelectorAll('.mkt-frame__rail .wl__row').length,
+      }
     })
-    v.push(rail.found ? pass(3, 'watchlist rail reachable in the flow', JSON.stringify(rail)) : fail(3, 'watchlist rail reachable in the flow', 'no .mkt-frame__rail'))
+    v.push(
+      rail.found && rail.rows! > 0 && rail.screens! <= 2
+        ? pass(3, "a carrying rail is within reach on a phone", `${rail.rows} rows at y ${rail.y} = ${rail.screens} screens (doc ${rail.docH})`)
+        : rail.found && rail.rows === 0
+          ? note(3, 'a carrying rail is within reach on a phone', `the rail is empty here (y ${rail.y}); an empty rail stays below the boards on purpose`)
+          : fail(3, 'a carrying rail is within reach on a phone', `${rail.rows} rows at y ${rail.y} = ${rail.screens} screens down (doc ${rail.docH})`),
+    )
 
     await ctx.shot(page, 3, 'markets')
 
@@ -618,19 +686,90 @@ const row3: UxScenario = {
     page.on('request', (r: any) => {
       if (r.method() === 'POST' && r.url().includes('/api/chat')) posts.push(r.url())
     })
-    const chip = page.locator('button', { hasText: /^Buy \$/ }).first()
-    if ((await chip.count()) > 0) {
-      await chip.click()
-      await page.waitForTimeout(1500)
-      const door = await page.evaluate(() => !!document.querySelector('.ca__panel') || !!document.querySelector('[data-rk]'))
+    // Which act chips can a FINGER actually reach here? The board's QuickAct
+    // seat is hover-revealed and `@media (hover: none)` hides it outright, so
+    // on touch the reachable acts are the rail's and the ask bar's.
+    // Act controls wear several classes: `[data-ask]` (the board's QuickAct),
+    // `.wl__chip` (the rail row menu), `.mk-ai__chip` (the ask bar). Count
+    // them all — the question is whether a FINGER reaches one, not which
+    // component shipped it.
+    const ACT_SEL = '[data-ask], .wl__chip, .mk-ai__chip, .mkt-chip, .sym__act-chip'
+    const reach = await page.evaluate((sel: string) => {
+      const all = Array.from(document.querySelectorAll(sel)) as HTMLElement[]
+      const visible = all.filter((e) => {
+        const r = e.getBoundingClientRect()
+        const cs = getComputedStyle(e)
+        return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && Number(cs.opacity) > 0.05 && cs.pointerEvents !== 'none'
+      })
+      return {
+        total: all.length,
+        visible: visible.length,
+        hoverOnly: all.length - visible.length,
+        sample: visible.slice(0, 4).map((e) => e.getAttribute('data-ask') ?? ''),
+        quickHidden: getComputedStyle(document.querySelector('.mk-table__quick') ?? document.createElement('i')).display === 'none',
+        smallest: visible.length ? Math.round(Math.min(...visible.map((e) => e.getBoundingClientRect().height))) : 0,
+      }
+    }, ACT_SEL)
+    // The board's own QuickAct seat is hover-revealed and `@media (hover: none)`
+    // removes it outright — deliberate: a persistent chip would eat the name
+    // cell. So on touch the act lives one tap inside the rail row's menu. The
+    // honest question is "can a finger get to one AT ALL, and in how many
+    // taps", not "is a chip painted".
+    let taps = reach.visible > 0 ? 1 : 0
+    if (reach.visible === 0) {
+      const more = page.locator('.mkt-frame__rail .wl__rowMore').first()
+      if ((await more.count()) > 0) {
+        await more.click({ timeout: 6000 }).catch(() => {})
+        await page.waitForTimeout(500)
+        const after = await page.evaluate((sel: string) => {
+          const vis = (Array.from(document.querySelectorAll(sel)) as HTMLElement[]).filter((e) => {
+            const r = e.getBoundingClientRect()
+            const cs = getComputedStyle(e)
+            return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && Number(cs.opacity) > 0.05 && cs.pointerEvents !== 'none'
+          })
+          return {
+            n: vis.length,
+            sample: vis.slice(0, 3).map((e) => e.getAttribute('data-ask') ?? (e.textContent ?? '').trim()),
+            smallest: vis.length ? Math.round(Math.min(...vis.map((e) => e.getBoundingClientRect().height))) : 0,
+          }
+        }, ACT_SEL)
+        if (after.n > 0) {
+          taps = 2
+          reach.visible = after.n
+          reach.sample = after.sample
+          reach.smallest = after.smallest
+        }
+      }
+    }
+    v.push(
+      taps > 0
+        ? pass(3, 'a finger can reach an act chip on /markets', `${taps} tap${taps > 1 ? 's' : ''}: ${reach.visible} act${reach.visible > 1 ? 's' : ''} (${reach.sample.join(' · ')}); the board's ${reach.hoverOnly} hover-only chips stay off touch by design`)
+        : fail(3, 'a finger can reach an act chip on /markets', `no act chip reachable: 0 of ${reach.total} tappable, and the rail's row menu offered none`),
+    )
+    if (taps > 0) {
       v.push(
-        door && posts.length === 0
-          ? pass(3, 'an act chip opens the connect door and fires no turn', `door open, ${posts.length} POST /api/chat`)
-          : fail(3, 'an act chip opens the connect door and fires no turn', `door=${door} posts=${posts.length}`),
+        reach.smallest >= 44
+          ? pass(3, 'the reachable act is a 44px target', `smallest ${reach.smallest}px`)
+          : fail(3, 'the reachable act is a 44px target', `smallest ${reach.smallest}px — under the touch floor on the control that starts a purchase`),
       )
-      await ctx.shot(page, 3, 'chip-door')
-    } else {
-      v.push(note(3, 'act chip present', 'no "Buy $…" chip rendered at this width'))
+    }
+    if (reach.visible > 0) {
+      // Whatever the reachable act turned out to be: the rail's menu chip
+      // when the board's are hover-only, else a board chip.
+      const chip = taps === 2 ? page.locator('.wl__pop .wl__chip').first() : page.locator('[data-ask]:visible').first()
+      try {
+        await chip.click({ timeout: 6000 })
+        await page.waitForTimeout(1800)
+        const door = await page.evaluate(() => ({ modal: !!document.querySelector('.ca__panel'), rk: !!document.querySelector('[data-rk] [role="dialog"], [data-rk-dialog]'), path: location.pathname }))
+        v.push(
+          (door.modal || door.rk) && posts.length === 0
+            ? pass(3, 'an act chip opens the connect door and fires no turn', `door open (${door.modal ? 'unified' : 'rainbowkit'}), ${posts.length} POST /api/chat`)
+            : fail(3, 'an act chip opens the connect door and fires no turn', `${JSON.stringify(door)} posts=${posts.length}`),
+        )
+        await ctx.shot(page, 3, 'chip-door')
+      } catch (e) {
+        v.push(fail(3, 'an act chip opens the connect door and fires no turn', `the chip refused the tap: ${(e as Error).message.split('\n')[0]}`))
+      }
     }
     return v
   },
@@ -667,13 +806,17 @@ const row4: UxScenario = {
     v.push(tabs.length > 0 ? note(4, 'symbol tabs', tabs.join(' · ')) : note(4, 'symbol tabs', 'none read'))
 
     const bar = await barRect(page)
-    const lastCard = await underBar(page, '.sym__rail, .mkt-frame__rail, footer')
     v.push(
       bar.found
         ? pass(4, 'the spine bar is present on /t', `${bar.kind} at y ${Math.round(bar.top)} h ${Math.round(bar.height)}`)
         : fail(4, 'the spine bar is present on /t', 'no bottom bar'),
     )
-    v.push(note(4, 'page tail vs the bar', lastCard.detail))
+    const res4 = await bottomReserve(page)
+    v.push(
+      res4.covered <= 2
+        ? pass(4, '/t reserves the bar height at the page end', `bar ${res4.bar}px, nothing covered`)
+        : fail(4, '/t reserves the bar height at the page end', `${res4.covered}px of ${res4.last} sits under the ${res4.bar}px bar with no page left to scroll`),
+    )
 
     await ctx.shot(page, 4, 'symbol')
     return v
@@ -787,10 +930,21 @@ const row6: UxScenario = {
     v.push(splash.cells === 0 ? note(6, 'splash cards', 'none rendered (empty wallet / no scan yet)') : splash.columns <= 1 ? pass(6, 'splash is one column on a phone', `${splash.cells} cells, ${splash.columns} column`) : fail(6, 'splash is one column on a phone', `${splash.cells} cells across ${splash.columns} columns`))
 
     const toolbar = await page.evaluate(() => {
-      const chips = Array.from(document.querySelectorAll('[data-chat-toolbar] button, .chat-toolbar button')) as HTMLElement[]
-      return { chips: chips.length, withText: chips.filter((c) => (c.textContent ?? '').trim().length > 0).length }
+      // Whatever the toolbar is made of, the question is the same: does any
+      // control in the chat's top strip overflow the phone's width?
+      const strip = document.querySelector('header, [class*="toolbar"]') as HTMLElement | null
+      const btns = Array.from((strip ?? document).querySelectorAll('button, a')) as HTMLElement[]
+      const onscreen = btns.filter((b) => { const r = b.getBoundingClientRect(); return r.width > 0 && r.top < 140 })
+      const over = onscreen.filter((b) => b.getBoundingClientRect().right > window.innerWidth + 1)
+      return { strip: !!strip, controls: onscreen.length, overflowing: over.length, labels: onscreen.map((b) => (b.textContent ?? '').trim().slice(0, 14)).slice(0, 8) }
     })
-    v.push(note(6, 'toolbar chips', JSON.stringify(toolbar)))
+    v.push(
+      toolbar.overflowing === 0
+        ? pass(6, 'no chat-chrome control overflows the phone', `${toolbar.controls} controls in the top strip: ${toolbar.labels.join(' · ')}`)
+        : fail(6, 'no chat-chrome control overflows the phone', JSON.stringify(toolbar)),
+    )
+    const res6 = await bottomReserve(page)
+    v.push(note(6, '/chat bottom reserve', `bar ${res6.bar}px, covered ${res6.covered}px (${res6.last})`))
 
     await ctx.shot(page, 6, 'chat')
     return v
@@ -830,9 +984,13 @@ const row7: UxScenario = {
     v.push(shape.chains && shape.chains.marks >= 4 ? pass(7, 'the chain marks row renders', JSON.stringify(shape.chains)) : fail(7, 'the chain marks row renders', JSON.stringify(shape.chains)))
     v.push(shape.doors.length >= 2 ? pass(7, 'the wallet doors are present', shape.doors.join(' · ')) : fail(7, 'the wallet doors are present', JSON.stringify(shape.doors)))
 
-    const tail = await underBar(page, 'main')
-    v.push(note(7, 'page vs bar', tail.detail))
     await ctx.shot(page, 7, 'wallet')
+    const res7 = await bottomReserve(page)
+    v.push(
+      res7.covered <= 2
+        ? pass(7, '/wallet reserves the bar height at the page end', `bar ${res7.bar}px, nothing covered`)
+        : fail(7, '/wallet reserves the bar height at the page end', `${res7.covered}px of ${res7.last} sits under the ${res7.bar}px bar`),
+    )
     return v
   },
 }
@@ -947,15 +1105,64 @@ const row10: UxScenario = {
       v.push(note(10, 'card funding', 'skipped — pass --onramp=http://localhost:3876'))
       return v
     }
-    const page = await ctx.open({ wallet: true })
-    await page.goto(`${ctx.onrampBase}/markets`, { waitUntil: 'domcontentloaded' })
-    await page.waitForTimeout(4000)
-    const fund = await page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll('button, a')).map((b) => (b.textContent ?? '').trim())
-      return btns.filter((t) => /buy (eth|usdc)|card|fund/i.test(t)).slice(0, 6)
+    // An address that has never held anything: the card door only offers
+    // itself to a wallet that reads empty (lib/watchlists railFundPhase).
+    const EMPTY = '0x000000000000000000000000000000000000dEaD'
+    const page = await ctx.open({ wallet: EMPTY, init: GUEST_LIST_SEED })
+    // The card door is offered off ONE read (GET /api/watchlists/holdings →
+    // { held, empty, cardFunding }). Serving that verdict as a fixture keeps
+    // this a LAYOUT measurement and not a bet on what a live chain scan says
+    // about a throwaway address.
+    await page.route('**/api/watchlists/holdings**', async (route: any) => {
+      if (route.request().method() !== 'GET') return route.continue()
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ address: EMPTY.toLowerCase(), held: [], empty: true, cardFunding: true, failedChains: [] }),
+      })
     })
-    v.push(fund.length > 0 ? pass(10, 'a card-funding door is offered on the rail', fund.join(' · ')) : note(10, 'a card-funding door is offered on the rail', 'none at this width/wallet'))
-    await ctx.shot(page, 10, 'onramp')
+    await page.goto(`${ctx.onrampBase}/markets`, { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(5000)
+    // The card door lives in the rail. On a phone the rail is the last thing
+    // in the frame, so find out how far a finger has to travel to reach it.
+    const where = await page.evaluate(() => {
+      const el = document.querySelector('[data-rail-fund]') as HTMLElement | null
+      if (!el) return { found: false, docH: document.documentElement.scrollHeight, vh: window.innerHeight }
+      const r = el.getBoundingClientRect()
+      return {
+        found: true,
+        phase: el.getAttribute('data-rail-fund'),
+        y: Math.round(r.top + window.scrollY),
+        docH: document.documentElement.scrollHeight,
+        vh: window.innerHeight,
+        screens: Math.round(((r.top + window.scrollY) / window.innerHeight) * 10) / 10,
+      }
+    })
+    v.push(
+      where.found
+        ? where.screens! <= 3
+          ? pass(10, 'the card door is within reach on a phone', `at y ${where.y} = ${where.screens} screens down (doc ${where.docH})`)
+          : fail(10, 'the card door is within reach on a phone', `at y ${where.y} = ${where.screens} screens down (doc ${where.docH}) — a phone visitor never scrolls that far`)
+        : note(10, 'the card door renders', `no [data-rail-fund] — the mock wallet reads as funded, or the rail has not settled (doc ${where.docH})`),
+    )
+    if (where.found) {
+      await page.evaluate(() => document.querySelector('[data-rail-fund]')?.scrollIntoView({ block: 'center' }))
+      await page.waitForTimeout(600)
+      const shape = await page.evaluate(() => {
+        const el = document.querySelector('[data-rail-fund]') as HTMLElement
+        const r = el.getBoundingClientRect()
+        const chips = Array.from(el.querySelectorAll('button')).map((b) => ({ t: (b.textContent ?? '').trim(), h: Math.round(b.getBoundingClientRect().height), right: Math.round(b.getBoundingClientRect().right) }))
+        const bar = document.querySelector('nav[aria-label="Workspace"]') as HTMLElement | null
+        const br = bar?.getBoundingClientRect()
+        return { left: Math.round(r.left), right: Math.round(r.right), vw: window.innerWidth, chips, overBar: br ? Math.max(0, Math.round(r.bottom - br.top)) : 0 }
+      })
+      v.push(
+        shape.right <= shape.vw + 1 && shape.chips.every((c: { h: number; right: number }) => c.h >= 28 && c.right <= shape.vw + 1)
+          ? pass(10, 'the card door fits and its chips are tappable', `${shape.left}..${shape.right} of ${shape.vw}; ${shape.chips.map((c: { t: string; h: number }) => `${c.t} ${c.h}px`).join(' · ')}`)
+          : fail(10, 'the card door fits and its chips are tappable', JSON.stringify(shape)),
+      )
+      await ctx.shot(page, 10, 'onramp')
+    }
     return v
   },
 }
@@ -992,7 +1199,60 @@ const row11: UxScenario = {
   },
 }
 
-export const MOBILE_UX_SCENARIOS: UxScenario[] = [row1, row2, row3, row4, row5, row6, row7, row8, row9, row10, row11]
+/** Row 2b — the same door inside an app's own browser. Two of its three
+ *  lanes cannot fire there, so the layout must say which one can. */
+const row2b: UxScenario = {
+  row: 2,
+  name: 'the door inside an in-app browser',
+  profiles: ['xapp'],
+  async run(ctx) {
+    const v: Verdict[] = []
+    const page = await ctx.open()
+    await page.goto(`${ctx.base}/markets`, { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(2500)
+    const opened = await page.evaluate(() => {
+      const btn = Array.from(document.querySelectorAll('button')).find((b) => /sign in/i.test(b.textContent ?? ''))
+      if (!btn) return false
+      ;(btn as HTMLElement).click()
+      return true
+    })
+    if (!opened) {
+      v.push(fail(2, 'in-app: the door opens', 'no Sign in control'))
+      return v
+    }
+    await page.waitForTimeout(900)
+    const read = await page.evaluate(() => {
+      const form = document.querySelector('.ca__form') as HTMLElement | null
+      if (!form) return { open: false }
+      const yOf = (sel: string) => {
+        const el = form.querySelector(sel) as HTMLElement | null
+        return el ? Math.round(el.getBoundingClientRect().top) : null
+      }
+      return {
+        open: true,
+        walled: form.classList.contains('ca__form--walled'),
+        note: (form.querySelector('.ca__inapp')?.textContent ?? '').trim().slice(0, 110),
+        laneNotes: Array.from(form.querySelectorAll('.ca__lanenote')).map((n) => (n.textContent ?? '').trim()),
+        emailY: yOf('.ca__emailrow'),
+        googleY: yOf('.ca__providers'),
+        walletY: yOf('.ca__wallet'),
+      }
+    })
+    v.push(read.open && read.walled ? pass(2, 'in-app: the door knows where it is', `note: "${read.note}"`) : fail(2, 'in-app: the door knows where it is', JSON.stringify(read)))
+    if (read.open && read.walled) {
+      v.push(
+        read.emailY! < read.googleY! && read.googleY! < read.walletY!
+          ? pass(2, 'in-app: the lane that works leads', `email y ${read.emailY} · google y ${read.googleY} · wallet y ${read.walletY}`)
+          : fail(2, 'in-app: the lane that works leads', JSON.stringify(read)),
+      )
+      v.push(read.laneNotes.length === 2 ? pass(2, 'in-app: both blocked lanes say why', read.laneNotes.join(' | ')) : fail(2, 'in-app: both blocked lanes say why', JSON.stringify(read.laneNotes)))
+    }
+    await ctx.shot(page, 2, 'door-inapp')
+    return v
+  },
+}
+
+export const MOBILE_UX_SCENARIOS: UxScenario[] = [row1, row2, row2b, row3, row4, row5, row6, row7, row8, row9, row10, row11]
 
 // ── runner ───────────────────────────────────────────────────────────────
 export async function runMobileUx(opts: {
@@ -1046,7 +1306,11 @@ async function main() {
     const hit = process.argv.find((a) => a.startsWith(`--${k}=`))
     return hit ? hit.slice(k.length + 3) : d
   }
-  const base = arg('base', 'http://localhost:3873')!
+  // BASE is the squad's convention (drive:mobile spawns every lane drive with
+  // it); --base= still wins for a hand run. Without this the drive silently
+  // pointed at :3873 under the runner and every row died on a refused
+  // connection — while still exiting 0.
+  const base = arg('base', process.env.BASE || 'http://localhost:3873')!
   const onramp = arg('onramp', null as unknown as string) ?? null
   const tag = arg('tag', 'before')!
   const rowsArg = arg('rows')
@@ -1059,7 +1323,9 @@ async function main() {
   process.stdout.write(`\n────────────────────────────────────────\nmobile ux drive (${tag}): ${greens.length} green / ${reds.length} red / ${out.filter((v) => v.note).length} notes\n`)
   for (const r of reds) process.stdout.write(`   ❌ [${r.row}] ${r.check} — ${r.detail}\n`)
   process.stdout.write(`shots: ${UX_SHOT_DIR}\n`)
-  process.exit(0)
+  // A drive that prints reds and exits 0 is worse than no drive: drive:mobile
+  // folds a standalone lane in BY ITS EXIT CODE.
+  process.exit(reds.length ? 1 : 0)
 }
 
 if (process.argv[1]?.includes('drive-mobile-ux')) void main()

@@ -197,3 +197,203 @@ export function accountStage(a: { turns: number; built: number; signed: number }
   if (a.turns > 0) return 'asked'
   return 'signed-up'
 }
+
+// ── People: everyone who showed up, however they arrived ────────────────────
+//
+// An account is one lane in, not the only one. Coinbase holds the email +
+// Google accounts (and their embedded wallets); a native wallet — MetaMask,
+// Phantom, Coinbase Wallet, WalletConnect — never signs up at all, it just
+// starts acting, and our own arrival tables are the only record it exists.
+// Both are people, so both belong in one list, and the only honest difference
+// between them is whether we have an email to reach out on.
+//
+// The merge is pure so the harness pins it without a database: the route does
+// the reading (CDP + the arrival union + one activity query), this does the
+// joining, and the page only filters and draws.
+
+/** How someone arrived. 'wallet' = no account; we met them mid-action. */
+export const PERSON_METHODS = ['email', 'google', 'wallet'] as const
+
+/** The Accounts table's filter. `email` = reachable (an account with an
+ *  address on file); `wallet` = native connections, nobody to email. */
+export const PEOPLE_FILTERS = ['all', 'email', 'wallet'] as const
+export type PeopleFilter = (typeof PEOPLE_FILTERS)[number]
+
+export function matchesPeopleFilter(p: { email: string | null }, f: PeopleFilter): boolean {
+  if (f === 'email') return !!p.email
+  if (f === 'wallet') return !p.email
+  return true
+}
+
+export function filterPeople<T extends { email: string | null }>(people: T[], f: PeopleFilter): T[] {
+  return people.filter((p) => matchesPeopleFilter(p, f))
+}
+
+/** What one wallet did here. Summed across a person's wallets. */
+export interface PersonActivity {
+  turns: number
+  built: number
+  signed: number
+  usd: number
+  chats: number
+  links: number
+  watching: number
+  lastTurnAt: string | null
+  /** The last thing they asked for, in their words — a walled ask or a plain
+   *  one, whichever came last. The path they tried. */
+  lastAsk: string | null
+  lastAskAt: string | null
+  /** True when that last ask is the one that walled. */
+  lastAskWalled: boolean
+}
+
+export const NO_ACTIVITY: PersonActivity = {
+  turns: 0, built: 0, signed: 0, usd: 0, chats: 0, links: 0, watching: 0,
+  lastTurnAt: null, lastAsk: null, lastAskAt: null, lastAskWalled: false,
+}
+
+/** A Coinbase embedded-wallet account: the only place an email and a wallet meet. */
+export interface AccountSource {
+  /** Coinbase's own id. The row key, because an email does NOT identify an
+   *  account: the same address can hold both an email and a Google account,
+   *  and they are two people-shaped rows with two wallets. */
+  id: string
+  email: string | null
+  name: string | null
+  method: string
+  wallets: string[]
+  createdAt: string
+  lastAuthenticatedAt: string | null
+}
+
+/** A wallet our own tables have seen — first and last sighting. */
+export interface WalletArrival {
+  wallet: string
+  firstAt: string
+  lastAt: string
+}
+
+export interface Person extends PersonActivity {
+  /** Unique per row: the account's id, else the wallet. Never the email. */
+  key: string
+  email: string | null
+  name: string | null
+  method: string
+  wallet: string | null
+  wallets: string[]
+  test: boolean
+  /** Account sign-up for an account; first sighting for a native wallet. */
+  createdAt: string
+  /** Only an account can sign in; a wallet just reappears. */
+  lastSignInAt: string | null
+  /** The last time we saw them at all, whichever lane it came through. */
+  lastSeenAt: string | null
+  stage: AccountStage
+}
+
+const maxIso = (...xs: (string | null | undefined)[]): string | null => {
+  let best: string | null = null
+  for (const x of xs) {
+    if (!x) continue
+    const t = Date.parse(x)
+    if (!Number.isFinite(t)) continue
+    if (best === null || t > Date.parse(best)) best = x
+  }
+  return best
+}
+
+function sumActivity(acts: PersonActivity[]): PersonActivity {
+  const out: PersonActivity = { ...NO_ACTIVITY }
+  for (const a of acts) {
+    out.turns += a.turns
+    out.built += a.built
+    out.signed += a.signed
+    out.usd += a.usd
+    out.chats += a.chats
+    out.links += a.links
+    out.watching += a.watching
+    out.lastTurnAt = maxIso(out.lastTurnAt, a.lastTurnAt)
+    // The newest ask wins, and it brings its own walled/not with it.
+    if (a.lastAsk && (!out.lastAskAt || (a.lastAskAt && Date.parse(a.lastAskAt) > Date.parse(out.lastAskAt)))) {
+      out.lastAsk = a.lastAsk
+      out.lastAskAt = a.lastAskAt
+      out.lastAskWalled = a.lastAskWalled
+    }
+  }
+  return out
+}
+
+/**
+ * One list of people from the two lanes.
+ *
+ * A wallet an account already owns is that account's, never a second person —
+ * so an embedded wallet that also shows up in our arrival tables is counted
+ * once, under the email. Everything left over is a native connection.
+ */
+export function mergePeople(
+  accounts: AccountSource[],
+  arrivals: WalletArrival[],
+  activityOf: (wallet: string) => PersonActivity | undefined,
+  isTester: (wallet: string) => boolean,
+): Person[] {
+  const claimed = new Set<string>()
+  for (const a of accounts) for (const w of a.wallets) claimed.add(w.toLowerCase())
+
+  const arrivalOf = new Map<string, WalletArrival>()
+  for (const a of arrivals) arrivalOf.set(a.wallet.toLowerCase(), a)
+
+  const act = (w: string) => activityOf(w.toLowerCase()) ?? NO_ACTIVITY
+
+  const fromAccounts: Person[] = accounts.map((u) => {
+    const wallets = u.wallets.map((w) => w.toLowerCase())
+    const a = sumActivity(wallets.map(act))
+    const seen = maxIso(u.lastAuthenticatedAt, a.lastTurnAt, a.lastAskAt, ...wallets.map((w) => arrivalOf.get(w)?.lastAt))
+    return {
+      key: u.id,
+      email: u.email,
+      name: u.name,
+      method: u.method,
+      wallet: wallets[0] ?? null,
+      wallets,
+      test: wallets.some(isTester),
+      createdAt: u.createdAt,
+      lastSignInAt: u.lastAuthenticatedAt,
+      lastSeenAt: seen,
+      ...a,
+      stage: accountStage(a),
+    }
+  })
+
+  const fromWallets: Person[] = arrivals
+    .filter((w) => !claimed.has(w.wallet.toLowerCase()))
+    .map((w) => {
+      const wallet = w.wallet.toLowerCase()
+      const a = act(wallet)
+      return {
+        key: wallet,
+        email: null,
+        name: null,
+        method: 'wallet',
+        wallet,
+        wallets: [wallet],
+        test: isTester(wallet),
+        createdAt: w.firstAt,
+        lastSignInAt: null,
+        lastSeenAt: maxIso(w.lastAt, a.lastTurnAt, a.lastAskAt),
+        ...a,
+        stage: accountStage(a),
+      }
+    })
+
+  // Newest first, the way the account list already read.
+  return [...fromAccounts, ...fromWallets].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+}
+
+/** How many people each filter would show — the chip counts. */
+export function peopleCounts(people: { email: string | null }[]): Record<PeopleFilter, number> {
+  return {
+    all: people.length,
+    email: people.filter((p) => !!p.email).length,
+    wallet: people.filter((p) => !p.email).length,
+  }
+}

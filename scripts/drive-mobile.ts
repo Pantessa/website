@@ -98,7 +98,7 @@ async function loadLane(lane: string): Promise<Lane> {
 }
 
 /** Run a lane's standalone drive as a child. Its stdout is echoed indented. */
-function runExternal(lane: string): Promise<{ code: number; lines: number }> {
+function runExternal(lane: string): Promise<{ code: number; lines: number; text: string }> {
   return new Promise((resolve) => {
     const args = ['tsx', laneFile(lane), `--shots=${join(SHOTS, lane)}`]
     if (ONLY) args.push(`--only=${ONLY}`)
@@ -106,7 +106,9 @@ function runExternal(lane: string): Promise<{ code: number; lines: number }> {
     const child = spawn('npx', args, { env: { ...process.env, BASE }, stdio: ['ignore', 'pipe', 'pipe'] })
     let lines = 0
     let buf = ''
+    let text = ''
     const pump = (chunk: Buffer) => {
+      text += chunk.toString()
       buf += chunk.toString()
       const parts = buf.split('\n')
       buf = parts.pop() ?? ''
@@ -117,7 +119,7 @@ function runExternal(lane: string): Promise<{ code: number; lines: number }> {
     }
     child.stdout.on('data', pump)
     child.stderr.on('data', pump)
-    child.on('close', (code) => resolve({ code: code ?? 1, lines }))
+    child.on('close', (code) => resolve({ code: code ?? 1, lines, text }))
   })
 }
 
@@ -164,17 +166,29 @@ async function main() {
     if (l.external) {
       console.log(`  ▶  ${l.lane} — standalone drive`)
       const started = Date.now()
-      const { code } = await runExternal(l.lane)
+      const { code, text } = await runExternal(l.lane)
       const ms = Date.now() - started
-      const ok = code === 0
+      // BELT: a standalone drive that prints reds and exits 0 is the worst
+      // kind of green (MEASURED 2026-09-23 — UX's drive pointed at its own
+      // hardcoded port under the runner, failed every row and exited 0, and
+      // this gate reported it passing). Read the output too.
+      const redLines = (text.match(/❌/g) ?? []).length
+      const saysRed = /\b([1-9]\d*) (red|failed|finding)/.test(text)
+      const ok = code === 0 && redLines === 0 && !saysRed
       verdicts.push({
         id: `${l.lane}/*`,
         profile: '-',
         state: ok ? 'pass' : 'fail',
         ms,
-        detail: ok ? 'standalone drive green' : `standalone drive exited ${code}`,
+        detail: ok
+          ? 'standalone drive green'
+          : code === 0
+            ? `standalone drive exited 0 but printed ${redLines} red line(s) — its own exit code lies`
+            : `standalone drive exited ${code}`,
       })
-      console.log(`  ${ok ? '✅' : '❌'} ${l.lane}/* [standalone] ${ms}ms${ok ? '' : ` — exit ${code}`}`)
+      console.log(
+        `  ${ok ? '✅' : '❌'} ${l.lane}/* [standalone] ${ms}ms${ok ? '' : ` — exit ${code}, ${redLines} red line(s)`}`,
+      )
       continue
     }
     for (const scenario of l.scenarios) {

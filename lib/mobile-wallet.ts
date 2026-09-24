@@ -177,7 +177,7 @@ export function oauthAllowedIn(b: { inApp: boolean; canLaunchApps: boolean }): b
 /** The door's line when it refuses to start Google there (lib/inapp-browser
  *  inAppEscapeCopy gives the app + the menu item). */
 export function oauthRefusedCopy(esc: { app: string; where: string; browser: string }): string {
-  return `Google won't sign you in inside ${esc.app}'s browser. Open this page in ${esc.browser} (${esc.where}), or use the email code below.`
+  return `Google won't sign you in inside ${esc.app}'s browser. Open this page in ${esc.browser} (${esc.where}), or sign in with the email code instead.`
 }
 
 // ── The armed launch (R2) ─────────────────────────────────────────────────

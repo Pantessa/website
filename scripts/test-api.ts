@@ -5913,6 +5913,13 @@ async function main() {
       walletAppFor('https://pantessa.com') === null &&
       // eslint-disable-next-line no-script-url
       walletAppFor('javascript:alert(1)') === null &&
+      // Only the SDK's connect link is a wallet request: MetaMask's `dapp/`
+      // deeplink opens any site inside the wallet's own browser (QA security
+      // pass, 2026-09-23) and the holder is reachable from a public DOM event.
+      walletAppFor('metamask://dapp/evil.example/drain') === null &&
+      walletAppFor('https://metamask.app.link/dapp/evil.example') === null &&
+      walletAppFor('metamask://connect?channelId=a&v=2') === 'MetaMask' &&
+      walletAppFor('https://metamask.app.link/connect?channelId=a') === 'MetaMask' &&
       walletAppFor('metamask://connect?a=1 b=2') === null &&
       walletAppFor('metamask://con\nnect') === null &&
       walletAppFor('') === null &&
@@ -6928,26 +6935,39 @@ async function main() {
   // Lido" with a stake.lido.fi walkthrough — the conversion handed away.
   // Without the venue MCP in the set, the native layers answer with the
   // add-the-dapp deep link (prefill, never auto-send). Pre-planner, cheap.
+  // Re-pinned 2026-09-24 (apps follow the ask): the door is the EMBED turn's
+  // answer (host-owned set); a typed first-party ask on an empty set gets
+  // the app from the route's belt and the lane claims it (addedMcps).
   const lidoDoor = await fetch(`${BASE}/api/chat`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ message: 'Stake 0.05 ETH with Lido', activeServers: [], history: [] }),
+    body: JSON.stringify({ message: 'Stake 0.05 ETH with Lido', activeServers: [], history: [], embedOrigin: 'https://harness-door.invalid' }),
   })
-  const lidoDoorBody = (await lidoDoor.json()) as { reply?: string }
+  const lidoDoorBody = (await lidoDoor.json()) as { reply?: string; addedMcps?: unknown }
   check(
-    'missing-mcp door: a Lido stake ask without the Lido MCP gets the add-Lido deep link, never a DIY how-to',
+    'missing-mcp door: a Lido stake ask without the Lido MCP on an EMBED turn gets the add-Lido deep link, never a DIY how-to',
     lidoDoor.status === 200 &&
       /mcps=lido-free/.test(lidoDoorBody.reply ?? '') &&
-      !/stake\.lido\.fi/i.test(lidoDoorBody.reply ?? ''),
+      !/stake\.lido\.fi/i.test(lidoDoorBody.reply ?? '') && !lidoDoorBody.addedMcps,
+  )
+  const lidoBelt = (await (await fetch(`${BASE}/api/chat`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({ message: 'Stake 0.05 ETH with Lido', activeServers: [], history: [] }),
+  })).json()) as { reply?: string; door?: unknown; addedMcps?: { slug: string }[] }
+  check(
+    'missing-mcp belt: the same Lido ask typed first-party gets Lido from the belt — the stake lane answers (🌊), no door, addedMcps names it',
+    !lidoBelt.door && /^🌊/.test(lidoBelt.reply ?? '') && !/mcps=lido-free/.test(lidoBelt.reply ?? '') && !!lidoBelt.addedMcps?.some((a) => /lido/.test(a.slug)),
+    JSON.stringify(lidoBelt).slice(0, 200),
   )
   const hlDoor = await fetch(`${BASE}/api/chat`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ message: 'Long $12 of HYPE on Hyperliquid', activeServers: [], history: [] }),
+    body: JSON.stringify({ message: 'Long $12 of HYPE on Hyperliquid', activeServers: [], history: [], embedOrigin: 'https://harness-door.invalid' }),
   })
   const hlDoorBody = (await hlDoor.json()) as { reply?: string }
   check(
-    'missing-mcp door: an HL order ask without the Hyperliquid MCP gets the add door',
+    'missing-mcp door: an HL order ask without the Hyperliquid MCP on an EMBED turn gets the add door',
     hlDoor.status === 200 && /mcps=hyperliquid-free/.test(hlDoorBody.reply ?? ''),
   )
 
@@ -7699,6 +7719,74 @@ async function main() {
         G.accountStage({ turns: 3, built: 1, signed: 0 }) === 'built' && G.accountStage({ turns: 1, built: 1, signed: 2 }) === 'traded',
     )
 
+    // People: the two lanes in one list. A native wallet never signs up, so
+    // the arrival tables are its whole account history — and a wallet an
+    // account already owns must never read as a second person.
+    const act = (o: Partial<import('../lib/admin-growth').PersonActivity>) => ({ ...G.NO_ACTIVITY, ...o })
+    const gAcct = {
+      id: 'u1', email: 'a@b.com', name: null, method: 'google',
+      wallets: ['0xaa', '0xab'], createdAt: '2026-09-01T00:00:00.000Z', lastAuthenticatedAt: '2026-09-20T00:00:00.000Z',
+    }
+    const gActs = new Map<string, import('../lib/admin-growth').PersonActivity>([
+      ['0xaa', act({ turns: 2, chats: 1, lastAsk: 'Buy $10 of ETH', lastAskAt: '2026-09-10T00:00:00.000Z', lastAskWalled: true })],
+      ['0xab', act({ turns: 1, built: 1, signed: 1, usd: 25, lastAsk: 'Buy $25 of AAPL', lastAskAt: '2026-09-19T00:00:00.000Z' })],
+      ['0xcc', act({ turns: 4, lastAsk: 'Supply $25 of USDT to Aave', lastAskAt: '2026-09-21T00:00:00.000Z', lastAskWalled: true })],
+    ])
+    const gPeople = G.mergePeople(
+      [gAcct],
+      // 0xab is the account's own second wallet: an arrival for it is the
+      // same person, not a new one.
+      [
+        { wallet: '0xcc', firstAt: '2026-09-15T00:00:00.000Z', lastAt: '2026-09-21T00:00:00.000Z' },
+        { wallet: '0xab', firstAt: '2026-09-02T00:00:00.000Z', lastAt: '2026-09-19T00:00:00.000Z' },
+      ],
+      (w) => gActs.get(w),
+      (w) => w === '0xcc',
+    )
+    const gAcctRow = gPeople.find((x) => x.email === 'a@b.com')!
+    const gWalletRow = gPeople.find((x) => x.wallet === '0xcc')!
+    check(
+      'growth people: an account’s own wallets fold into one row — never a second person — and its activity sums across them',
+      gPeople.length === 2 && gAcctRow.wallets.length === 2 && gAcctRow.turns === 3 && gAcctRow.signed === 1 && gAcctRow.usd === 25 &&
+        gAcctRow.stage === 'traded' && gAcctRow.method === 'google',
+      JSON.stringify(gPeople.map((x) => ({ k: x.key, m: x.method, t: x.turns }))),
+    )
+    check(
+      'growth people: a native wallet is a person with no email, joined the first time we saw it, and never claims a sign-in',
+      gWalletRow.email === null && gWalletRow.method === 'wallet' && gWalletRow.lastSignInAt === null &&
+        gWalletRow.createdAt === '2026-09-15T00:00:00.000Z' && gWalletRow.test === true && gWalletRow.stage === 'asked',
+    )
+    check(
+      'growth people: the path they tried is the NEWEST ask across a person’s wallets, carrying its own walled/not — a trader has one too',
+      gAcctRow.lastAsk === 'Buy $25 of AAPL' && gAcctRow.lastAskWalled === false && gWalletRow.lastAskWalled === true,
+    )
+    check(
+      'growth people: last seen takes the latest of a sign-in, a turn and an arrival',
+      gAcctRow.lastSeenAt === '2026-09-20T00:00:00.000Z' && gWalletRow.lastSeenAt === '2026-09-21T00:00:00.000Z',
+    )
+    // Found in the browser, on Nate's own row: the same address holds BOTH an
+    // email and a Google account, so an email-keyed row collided and React
+    // left orphan rows behind on every filter change. The id is the key.
+    const gTwin = G.mergePeople(
+      [gAcct, { ...gAcct, id: 'u2', method: 'email', wallets: ['0xba'] }],
+      [],
+      () => undefined,
+      () => false,
+    )
+    check(
+      'growth people: one email on two accounts is two rows with two keys — an email does not identify an account',
+      gTwin.length === 2 && new Set(gTwin.map((x) => x.key)).size === 2 &&
+        gTwin.map((x) => x.method).sort().join(',') === 'email,google',
+      JSON.stringify(gTwin.map((x) => x.key)),
+    )
+    check(
+      'growth people: the filter splits on the email, and the chip counts sum to everyone',
+      G.matchesPeopleFilter(gAcctRow, 'email') && !G.matchesPeopleFilter(gAcctRow, 'wallet') &&
+        G.matchesPeopleFilter(gWalletRow, 'wallet') && !G.matchesPeopleFilter(gWalletRow, 'email') &&
+        G.filterPeople(gPeople, 'all').length === 2 && G.filterPeople(gPeople, 'email').length === 1 &&
+        (() => { const c = G.peopleCounts(gPeople); return c.all === 2 && c.email === 1 && c.wallet === 1 && c.email + c.wallet === c.all })(),
+    )
+
     // The live read, as a real admin (the .env.local burner is an owner wallet).
     const gFs = await import('node:fs')
     const gPk = (() => {
@@ -7733,6 +7821,36 @@ async function main() {
         (g.accounts.rows as { stage: string }[]).every((a) => ['signed-up', 'asked', 'built', 'traded'].includes(a.stage)) &&
           (g.traders as { email: string | null; wallet: string }[]).every((t) => t.email === null || (g.accounts.rows as { email: string | null }[]).some((a) => a.email === t.email) || !g.external),
       )
+      // The people list is both lanes: an account has an email and a method
+      // that is not 'wallet'; a native connection has neither an email nor a
+      // sign-in, because nobody signs up with MetaMask.
+      type GPerson = { key: string; email: string | null; method: string; wallet: string | null; lastSignInAt: string | null; lastAsk: string | null; lastAskWalled: boolean; stage: string }
+      const gRows = g.accounts.rows as GPerson[]
+      check(
+        'growth people: one row per person, keyed and de-duplicated, every method a known lane',
+        new Set(gRows.map((a) => a.key)).size === gRows.length &&
+          gRows.every((a) => ['email', 'google', 'wallet'].includes(a.method)) &&
+          new Set(gRows.filter((a) => a.wallet).map((a) => a.wallet)).size === gRows.filter((a) => a.wallet).length,
+        JSON.stringify(gRows.slice(0, 3).map((a) => ({ m: a.method, e: !!a.email }))),
+      )
+      check(
+        'growth people: the wallet lane carries no email and never claims a sign-in; an account row always has both a method and an email',
+        gRows.filter((a) => a.method === 'wallet').every((a) => a.email === null && a.lastSignInAt === null && !!a.wallet) &&
+          gRows.filter((a) => a.method !== 'wallet').every((a) => a.email !== null),
+      )
+      check(
+        'growth people: the counts add up — the signups tile stays on ACCOUNTS while the table lists everyone',
+        g.tiles.peopleAllTime === gRows.length &&
+          g.tiles.accountsAllTime === gRows.filter((a) => !!a.email).length &&
+          g.tiles.walletOnlyAllTime === gRows.filter((a) => !a.email).length &&
+          g.tiles.accountsAllTime + g.tiles.walletOnlyAllTime === g.tiles.peopleAllTime &&
+          g.tiles.accountsAllTime <= g.tiles.peopleAllTime,
+        JSON.stringify(g.tiles),
+      )
+      check(
+        'growth people: a row that shows a path shows which kind it was, and a walled one is never blank',
+        gRows.every((a) => (a.lastAsk === null ? a.lastAskWalled === false : typeof a.lastAskWalled === 'boolean' && a.lastAsk.length > 0)),
+      )
       const gExt = await (await fetch(`${BASE}/api/admin/growth?days=7&external=1`, { headers: { cookie: gSession } })).json()
       const gBad = await (await fetch(`${BASE}/api/admin/growth?days=999`, { headers: { cookie: gSession } })).json()
       check(
@@ -7747,6 +7865,16 @@ async function main() {
     check(
       'growth: the admin rail says Growth, and the page reads the growth API (the x402-era overview is off it)',
       /href: '\/dashboard\/admin', label: 'Growth'/.test(sidebarSrc) && growthPageSrc.includes('/api/admin/growth') && !growthPageSrc.includes('/api/admin/overview'),
+    )
+    check(
+      'growth: the people table draws the all/email/wallet filter from the one list of filters, and the stage tiles count what the filter shows',
+      growthPageSrc.includes('PEOPLE_FILTERS.map') && growthPageSrc.includes('filterPeople(') && growthPageSrc.includes('peopleCounts(') &&
+        /for \(const a of shown\) c\[a\.stage\]\+\+/.test(growthPageSrc) && growthPageSrc.includes('const accounts = shown'),
+    )
+    check(
+      'growth: the path they tried renders for EVERY person — no stage gate on it, and it says whether it walled',
+      growthPageSrc.includes('{a.lastAsk && (') && !/a\.lastAsk && a\.stage/.test(growthPageSrc) && !growthPageSrc.includes('a.lastWall') &&
+        growthPageSrc.includes("a.lastAskWalled ? 'last wall' : 'last ask'"),
     )
   }
 
@@ -8523,7 +8651,11 @@ async function main() {
         check(
           'affordability gate: wired at the JSON exit (POST wrapper), the SSE artifact sites (sendSignable ×6) and the jobs runner’s offer',
           /const gated = await gateSignablePayload\(body, reqBody\.walletAddress/.test(routeSrc) && (routeSrc.match(/await sendSignable\(/g)?.length ?? 0) >= 6 && !/\bsend\(\{ type: 'reply'[^\n]*(?:txRequest|txChain|orderRequest): decision\.artifact/.test(routeSrc) &&
-            /const verdict = await checkAffordability\(fresh\.wallet, built\.artifact\)/.test(runnerSrc),
+            // Re-pinned 2026-09-23 (mobile squad F9): the offer gate now takes the
+            // harness's balance reader through `AdvanceOptions` so the fail-open
+            // posture is provable. This grep only says the LINE is there — the
+            // BEHAVIOUR (withheld vs offered) is pinned in the `mobile f9:` block.
+            /const verdict = await checkAffordability\(fresh\.wallet, built\.artifact, opts\.balanceReader\)/.test(runnerSrc),
         )
       }
 
@@ -13500,15 +13632,28 @@ async function main() {
     check('morpho jobs: a venue-less lend segment never compiles as Morpho', !!mweak && 'problem' in mweak && /step 2/i.test(mweak.problem))
 
     // The door: a full grammar match without the agent answers the add-the-
-    // dapp deep link (prefill, never auto-send) — never the planner.
+    // dapp deep link (prefill, never auto-send) — never the planner. Re-pinned
+    // 2026-09-24 (apps follow the ask): a first-party TYPED ask now gets the
+    // app from the route's belt and the lane claims it; the door is what an
+    // EMBED turn (host-owned set) still meets.
     const morphoDoor = await fetch(`${BASE}/api/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+      body: JSON.stringify({ message: 'lend 20 USDC on morpho', activeServers: [], embedOrigin: 'https://harness-door.invalid' }),
+    }).then((r) => r.json())
+    check(
+      'morpho door: a lone lend without the agent on an EMBED turn deep-links the add with the ask ready',
+      typeof morphoDoor.reply === 'string' && morphoDoor.reply.includes('Add Morpho with this ask ready](/chat?mcps=morpho-free&prompt=') && !morphoDoor.addedMcps,
+      JSON.stringify(morphoDoor).slice(0, 220),
+    )
+    const morphoBelt = await fetch(`${BASE}/api/chat`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
       body: JSON.stringify({ message: 'lend 20 USDC on morpho', activeServers: [] }),
     }).then((r) => r.json())
     check(
-      'morpho door: a lone lend without the agent deep-links the add with the ask ready',
-      typeof morphoDoor.reply === 'string' && morphoDoor.reply.includes('Add Morpho with this ask ready](/chat?mcps=morpho-free&prompt='),
-      JSON.stringify(morphoDoor).slice(0, 220),
+      'morpho belt: the same lone lend TYPED first-party gets Morpho from the route\'s belt — the lane claims it, no door, and the reply echoes addedMcps',
+      !morphoBelt.door && !/with this ask ready/.test(String(morphoBelt.reply)) && /^🏦/.test(String(morphoBelt.reply)) &&
+        Array.isArray(morphoBelt.addedMcps) && morphoBelt.addedMcps.some((a: { slug: string }) => /morpho/.test(a.slug)),
+      JSON.stringify(morphoBelt).slice(0, 220),
     )
     const morphoLadder = await fetch(`${BASE}/api/chat`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
@@ -16325,12 +16470,14 @@ async function main() {
       ladderMisses.join(' || '),
     )
 
+    // Re-pinned 2026-09-24 (apps follow the ask): the door is the EMBED
+    // turn's answer; a typed first-party ask gets the app from the belt.
     const aaveDoor = await fetch(`${BASE}/api/chat`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
-      body: JSON.stringify({ message: 'supply 20 USDC to aave', activeServers: [] }),
+      body: JSON.stringify({ message: 'supply 20 USDC to aave', activeServers: [], embedOrigin: 'https://harness-door.invalid' }),
     }).then((r) => r.json())
     check(
-      'aave door: a lone supply without the agent deep-links the add with the ask ready',
+      'aave door: a lone supply without the agent on an EMBED turn deep-links the add with the ask ready',
       typeof aaveDoor.reply === 'string' && aaveDoor.reply.includes('Add Aave with this ask ready](/chat?mcps=aave-free&prompt='),
       JSON.stringify(aaveDoor).slice(0, 220),
     )
@@ -16344,10 +16491,10 @@ async function main() {
     // planner (guardian did) or refuse without the add link (cross-chain did).
     const guardianDoor = await fetch(`${BASE}/api/chat`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
-      body: JSON.stringify({ message: 'protect my ETH long with a 5% stop', activeServers: [] }),
+      body: JSON.stringify({ message: 'protect my ETH long with a 5% stop', activeServers: [], embedOrigin: 'https://harness-door.invalid' }),
     }).then((r) => r.json())
     check(
-      'guardian door: an arm ask without the HL agent answers the door (never the planner)',
+      'guardian door: an arm ask without the HL agent on an EMBED turn answers the door (never the planner)',
       typeof guardianDoor.reply === 'string' && guardianDoor.reply.includes('Add Hyperliquid with this ask ready](/chat?mcps=hyperliquid-free&prompt='),
       JSON.stringify(guardianDoor).slice(0, 220),
     )
@@ -16681,7 +16828,11 @@ async function main() {
       const noticeSrc = fsS.readFileSync('components/ExternalBuildNotice.tsx', 'utf8')
       check(
         'passthrough honesty: source — planner-sourced chains never auto-fire step 2+ (manualSteps), the card mounts the external-build marker with every `to` in full + the guard warnings',
-        chainSrc.includes('autoFire={i > 0 && !manualSteps}') &&
+        // Re-pinned 2026-09-23 (mobile-onboarding SIGN): the decision moved into
+        // lib/sign-round-trip autoFireAllowed, which still returns false for
+        // manualSteps (asserted below, not just grepped) — the behaviour held.
+        chainSrc.includes('autoFire={autoFireAllowed({ platform, stepIndex: i, manualSteps') &&
+          (await import('../lib/sign-round-trip')).autoFireAllowed({ platform: 'desktop', stepIndex: 1, manualSteps: true }) === false &&
           chatSrc.includes('manualSteps={!!externalChain}') &&
           chatSrc.includes("m.buildPath !== 'planner'") &&
           noticeSrc.includes('data-external-to={t.to') &&
@@ -16774,12 +16925,15 @@ async function main() {
       )
     }
 
+    // Re-pinned 2026-09-24 (apps follow the ask): an EMBED turn keeps the
+    // door; a typed first-party one gets NEAR from the belt (proven in the
+    // "apps follow the ask (route)" block).
     const ccDoor = await fetch(`${BASE}/api/chat`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
-      body: JSON.stringify({ message: 'swap 5 USDC from base to polygon', activeServers: [], walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' }),
+      body: JSON.stringify({ message: 'swap 5 USDC from base to polygon', activeServers: [], walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045', embedOrigin: 'https://harness-door.invalid' }),
     }).then((r) => r.json())
     check(
-      'cross-chain door: no NEAR agent → the refusal carries the add-with-ask deep link',
+      'cross-chain door: no NEAR agent on an EMBED turn → the refusal carries the add-with-ask deep link',
       typeof ccDoor.reply === 'string' && ccDoor.reply.includes('Add NEAR Intents with this ask ready](/chat?mcps=near-intents-mcp-yeetful&prompt='),
       JSON.stringify(ccDoor).slice(0, 220),
     )
@@ -17832,19 +17986,23 @@ async function main() {
       // add-the-dapp door without NEAR Intents, and the cross-chain lane
       // claims it with the apps the chip send turns on.
       const { DEFAULT_CHAT_FLEET_SLUGS: defaultSet } = await import('../lib/free-fleet')
-      const moveTurn = async (slugs: readonly string[]) =>
+      const moveTurn = async (slugs: readonly string[], extra: Record<string, unknown> = {}) =>
         (await (await fetch(`${BASE}/api/chat`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
-          body: JSON.stringify({ message: 'Swap 0.014286 ETH from Arbitrum to ETH on Base', activeServers: slugs.map((slug) => ({ slug })), history: [] }),
-        })).json()) as { reply?: string; door?: { mcps?: string } }
-      const moveBare = await moveTurn(defaultSet)
+          body: JSON.stringify({ message: 'Swap 0.014286 ETH from Arbitrum to ETH on Base', activeServers: slugs.map((slug) => ({ slug })), history: [], ...extra }),
+        })).json()) as { reply?: string; door?: { mcps?: string }; addedMcps?: { slug: string }[] }
+      // Re-pinned 2026-09-24 (apps follow the ask): the door is the EMBED
+      // turn's; a typed first-party move gets NEAR Intents from the belt.
+      const moveBare = await moveTurn(defaultSet, { embedOrigin: 'https://harness-door.invalid' })
+      const moveBelt = await moveTurn(defaultSet)
       const moveLit = await moveTurn([...new Set([...defaultSet, ...moveApps('Swap 0.014286 ETH from Arbitrum to ETH on Base')])])
       check(
-        'funding round trip (route): the move chip in the default chat set answers the NEAR Intents door, and the cross-chain lane claims it once the chip\'s apps are on',
-        /Add NEAR Intents with this ask ready/.test(String(moveBare.reply)) && moveBare.door?.mcps === 'near-intents-mcp-yeetful' &&
-          !moveLit.door && /^🔗/.test(String(moveLit.reply)) && !/with this ask ready/.test(String(moveLit.reply)),
-        `bare=${String(moveBare.reply).slice(0, 80)} lit=${String(moveLit.reply).slice(0, 120)}`,
+        'funding round trip (route): the move in the default chat set answers the NEAR Intents door on an EMBED turn, gets NEAR from the belt when typed first-party, and the cross-chain lane claims it once the chip\'s apps are on',
+        /Add NEAR Intents with this ask ready/.test(String(moveBare.reply)) && moveBare.door?.mcps === 'near-intents-mcp-yeetful' && !moveBare.addedMcps &&
+          !moveBelt.door && /^🔗/.test(String(moveBelt.reply)) && !!moveBelt.addedMcps?.some((a) => /near/.test(a.slug)) &&
+          !moveLit.door && /^🔗/.test(String(moveLit.reply)) && !/with this ask ready/.test(String(moveLit.reply)) && !moveLit.addedMcps,
+        `bare=${String(moveBare.reply).slice(0, 80)} belt=${String(moveBelt.reply).slice(0, 80)} lit=${String(moveLit.reply).slice(0, 120)}`,
       )
     }
   }
@@ -18461,12 +18619,26 @@ async function main() {
       )
       const unsizedDoor = await fetch(`${BASE}/api/chat`, {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+        body: JSON.stringify({ message: 'I want to buy some HYPE and 2x long', activeServers: [], history: [], embedOrigin: 'https://harness-door.invalid' }),
+      }).then((r) => r.json() as Promise<Record<string, unknown>>)
+      check(
+        'hl unsized (route): without the Hyperliquid MCP the flagship ask on an EMBED turn gets the add door with the ask ready',
+        /Add Hyperliquid with this ask ready\]\(\/chat\?mcps=hyperliquid-free&prompt=/.test(String(unsizedDoor.reply)) && classifyTurn(unsizedDoor).kind === null,
+        JSON.stringify(unsizedDoor).slice(0, 300),
+      )
+      // Apps follow the ask (2026-09-24): the same flagship ask TYPED
+      // first-party on an empty set gets Hyperliquid from the route's belt
+      // and the HL lane answers its size chips — no door, no planner.
+      const unsizedBelt = await fetch(`${BASE}/api/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
         body: JSON.stringify({ message: 'I want to buy some HYPE and 2x long', activeServers: [], history: [] }),
       }).then((r) => r.json() as Promise<Record<string, unknown>>)
       check(
-        'hl unsized (route): without the Hyperliquid MCP the flagship ask gets the add door with the ask ready',
-        /Add Hyperliquid with this ask ready\]\(\/chat\?mcps=hyperliquid-free&prompt=/.test(String(unsizedDoor.reply)) && classifyTurn(unsizedDoor).kind === null,
-        JSON.stringify(unsizedDoor).slice(0, 300),
+        'hl unsized (route): the flagship ask typed first-party on an EMPTY set gets Hyperliquid from the belt (addedMcps) and the HL lane answers — never the door',
+        hlRow
+          ? unsizedBelt.buildPath === 'native-hl-exec' && !unsizedBelt.door && Array.isArray(unsizedBelt.addedMcps) && (unsizedBelt.addedMcps as { slug: string }[]).some((a) => /hyperliquid/.test(a.slug))
+          : /mcps=hyperliquid-free/.test(String(unsizedBelt.reply)),
+        JSON.stringify(unsizedBelt).slice(0, 300),
       )
     }
 
@@ -23016,10 +23188,16 @@ async function main() {
         !isMarketsPath('/marketsx') && !isMarketsPath('/t') && !isMarketsPath('/tools') && !isMarketsPath('/') && !isMarketsPath('/chat'),
     )
     check(
+      // Re-pinned 48px → 49px (squad mobile-onboarding, 2026-09-23): the pin
+      // guards "the shell reserves the bottom tab bar", and the bar measures
+      // 49px — 48px of seat plus its own 1px top border — so at 48 the page's
+      // last line sat 1px under it. The guarded behaviour is unchanged and now
+      // exact; the base `grid-template-areas` line is untouched, the phone's
+      // conditional rail order sits after it as its own rule.
       'markets shell CSS: ≤1023px the side column dissolves (display: contents), the strip takes a top grid row, the shell reserves the bottom tab bar and lifts the docked ask pill above it; the tool strip is sticky at the top edge on desktop',
       /\.mkt-shell \{ display: flex; align-items: stretch; min-height: 100dvh; \}/.test(shellCss) &&
         /\.mkt-frame__bar \{\s*position: sticky; top: 0; z-index: 20;/.test(shellCss) &&
-        /@media \(max-width: 1023px\) \{[^@]*\.mkt-frame \{[^}]*grid-template-areas: "top" "main" "rail" "foot";[^@]*\.mkt-frame__side \{ display: contents; \}[^@]*\.mkt-frame__top \{ grid-area: top;[^@]*\.mkt-frame__bar \{ top: var\(--mkt-top-h\); \}[^@]*\.mkt-shell \{ padding-bottom: calc\(48px \+ env\(safe-area-inset-bottom\)\); \}[^@]*:root\[data-spine\] \.askdoor-pill \{ bottom: calc\(64px \+ env\(safe-area-inset-bottom\)\); \}/.test(shellCss),
+        /@media \(max-width: 1023px\) \{[^@]*\.mkt-frame \{[^}]*grid-template-areas: "top" "main" "rail" "foot";[^@]*\.mkt-frame__side \{ display: contents; \}[^@]*\.mkt-frame__top \{ grid-area: top;[^@]*\.mkt-frame__bar \{ top: var\(--mkt-top-h\); \}[^@]*\.mkt-shell \{ padding-bottom: calc\(49px \+ env\(safe-area-inset-bottom\)\); \}[^@]*:root\[data-spine\] \.askdoor-pill \{ bottom: calc\(64px \+ env\(safe-area-inset-bottom\)\); \}/.test(shellCss),
     )
     // The app has no brochure nav for anyone (2026-09-11, Nate: "remove the
     // header in the App if they are not logged in and move the sign in down
@@ -23166,13 +23344,19 @@ async function main() {
           !ae.sameAppHref('/chat?a=1&b=2', '/chat?b=2&a=1') && !ae.sameAppHref('//evil.example/chat', '/chat'),
       )
       check(
+        // The nav's seat gained a `.nav__acct` wrapper (squad
+        // mobile-onboarding, 2026-09-23) so the phone bar can keep it beside
+        // the burger. The property this pin guards is that the brochure nav
+        // names NO landing destination — `<SiteAccount />` still takes no
+        // props, and the `redirectTo`/`SIGN_IN_LANDING` fences below are
+        // unchanged — so the wrapper is allowed and nothing else is.
         "sign-in lands (sources): the door, AuthButton and the account menu read the landing on press (signInLandingHere), the brochure nav names none, the Google return keeps the door's, the session refreshes the page it is already on, and no door lands on /dashboard",
         /const landing = \(\) => redirectTo \?\? signInLandingHere\(\)/.test(doorS) &&
           /const intent: OAuthIntent = \{ redirectTo: landing\(\), signIn: !walletConnectOnly \}/.test(doorS) &&
           /connectAndSignIn\(redirectTo \?\? signInLandingHere\(\)\)/.test(authS) &&
           /connectAndSignIn\(signInLandingHere\(\)\)/.test(acctS) && !/stayHere|window\.location|SIGN_IN_LANDING/.test(acctS) &&
           /const target = intent\?\.redirectTo \|\| signInLandingHere\(\)/.test(oauthS) &&
-          !/signInRedirect|SIGN_IN_LANDING/.test(navS) && /const desktopAccount = <SiteAccount \/>/.test(navS) &&
+          !/signInRedirect|SIGN_IN_LANDING/.test(navS) && /const desktopAccount = (?:<span className="nav__acct">)?<SiteAccount \/>/.test(navS) &&
           /return signInLandingFor\(currentAppHref\(\), homeReturn\)/.test(sessS) &&
           /homeReturn = readSignInReturn\(window\.sessionStorage\.getItem\(SIGN_IN_RETURN_KEY\), Date\.now\(\)\)/.test(sessS) &&
           /if \(sameAppHref\(redirectTo, currentAppHref\(\)\)\) router\.refresh\(\)\s*else router\.push\(redirectTo\)/.test(sessS) &&
@@ -23412,7 +23596,10 @@ async function main() {
         grace >= 500 && grace <= 2000 &&
           /const silent = connector\?\.id === CDP_CONNECTOR_ID/.test(waitS) &&
           /return \{ shown: signingIn && \(!silent \|\| late\), silent \}/.test(waitS) &&
-          /silent \? 'Signing you in…'/.test(waitS) && /\{!silent && \(/.test(waitS) &&
+          // Re-pinned 2026-09-23 (mobile-onboarding SIGN): the button block gained a
+          // phone branch ("Open {app}" when the SDK's request is queued in the wallet
+          // app); a silent signer still renders NO button on either branch.
+          /silent \? 'Signing you in…'/.test(waitS) && /\{!silent && signingIn && openApp \? \(/.test(waitS) && /\) : !silent \? \(/.test(waitS) && /\) : null\}/.test(waitS) &&
           // Re-pinned 2026-09-18: a third reason to stand down — on a phone the
           // handoff card takes over while the wallet app hasn't come forward
           // (lib/wallet-handoff), because "the request is open in your wallet"
@@ -28400,26 +28587,96 @@ async function main() {
     ]
     const laneMiss: string[] = []
     for (const [ask, lane] of laneAsks) {
-      const turn = async (rows: DirRow[]) =>
+      const turn = async (rows: DirRow[], extra: Record<string, unknown> = {}) =>
         (await (await fetch(`${BASE}/api/chat`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
-          body: JSON.stringify({ message: ask, activeServers: rows, activeServerIds: rows.map((r) => r.id), history: [] }),
-        })).json()) as { reply?: string; door?: { mcps?: string } }
-      const bare = await turn([])
+          body: JSON.stringify({ message: ask, activeServers: rows, activeServerIds: rows.map((r) => r.id), history: [], ...extra }),
+        })).json()) as { reply?: string; door?: { mcps?: string }; addedMcps?: { id: string; slug: string; name: string }[] }
+      // Re-pinned 2026-09-24 (apps follow the ask): an EMBED turn on an empty
+      // set still meets the door; a typed FIRST-PARTY turn on an empty set
+      // gets its app from the route's belt and the lane claims it.
+      const bare = await turn([], { embedOrigin: 'https://harness-door.invalid' })
+      const belt = await turn([])
       const lit = await turn(rowsFor(liveDir, askApps.askAppSlugs(ask)))
       const doorSlug = bare.door?.mcps ?? ''
       // The door's own link slug must light a row the gate reads, on prod's spelling too.
       const doorWorks = !!doorSlug && Object.values(APP_DETECT).some((d) => d.ok(rowsFor(liveDir, [doorSlug])) && d.ok(rowsFor(prodDir, [doorSlug])))
-      const bareIsDoor = /with this ask ready/.test(String(bare.reply)) && doorWorks
-      const litClaims = !lit.door && !/with this ask ready/.test(String(lit.reply)) && lane.test(String(lit.reply))
-      if (!bareIsDoor || !litClaims) laneMiss.push(`${ask}: bare=${bareIsDoor ? 'door' : String(bare.reply).slice(0, 60)} lit=${String(lit.reply).slice(0, 80)}`)
+      const bareIsDoor = /with this ask ready/.test(String(bare.reply)) && doorWorks && !bare.addedMcps
+      // The belt's added rows are the ones the door would have asked for.
+      const beltRows = (belt.addedMcps ?? []).map((a) => liveDir.find((r) => r.id === a.id)).filter((r): r is DirRow => !!r)
+      const beltClaims = !belt.door && !/with this ask ready/.test(String(belt.reply)) && lane.test(String(belt.reply)) && beltRows.length > 0 && Object.values(APP_DETECT).some((d) => d.ok(beltRows))
+      const litClaims = !lit.door && !/with this ask ready/.test(String(lit.reply)) && lane.test(String(lit.reply)) && !lit.addedMcps
+      if (!bareIsDoor || !beltClaims || !litClaims) laneMiss.push(`${ask}: bare=${bareIsDoor ? 'door' : String(bare.reply).slice(0, 60)} belt=${beltClaims ? 'claims' : `${String(belt.reply).slice(0, 60)} added=${JSON.stringify(belt.addedMcps?.map((a) => a.slug))}`} lit=${String(lit.reply).slice(0, 80)}`)
     }
     check(
-      'apps follow the ask (route): each lane (Aave supply + borrow · Hyperliquid order + guardian · Lido · Morpho · a cross-chain swap) answers the add-the-dapp door on an EMPTY set — whose link slug now lights the right row on prod\'s spelling too — and CLAIMS the turn once the set carries the apps its chip lights',
+      'apps follow the ask (route): each lane (Aave supply + borrow · Hyperliquid order + guardian · Lido · Morpho · a cross-chain swap) answers the add-the-dapp door on an EMPTY set for an EMBED turn — whose link slug lights the right row on prod\'s spelling too — gets its app from the belt (addedMcps, a row the lane\'s own detector reads) on a typed first-party turn, and CLAIMS the turn outright once the set carries the apps its chip lights',
       laneMiss.length === 0,
       laneMiss.join(' | '),
     )
+
+    // ── The typed rule + the first-party fence (2026-09-24) ──
+    check(
+      'apps follow the ask (typed): a typed money ask composes its first-party apps — a stock buy lights Robinhood Chain and NOT NEAR Intents, a cross-chain move lights NEAR, a read ("how long does a bridge take") and a question ("what is a stock?") light nothing, and the typed set is always a subset of the chip set',
+      JSON.stringify(askApps.typedAskAppSlugs('I want to buy $10 worth of apple stock')) === '["robinhood-free"]' &&
+        askApps.typedAskAppSlugs('Swap 25 USDC from Ethereum to ETH on Base').includes('near-intents-mcp-yeetful') &&
+        askApps.typedAskAppSlugs('how long does a bridge take').length === 0 &&
+        askApps.typedAskAppSlugs('what is a stock?').length === 0 &&
+        askApps.typedAskAppSlugs('Supply $25 of USDC to Aave').includes('aave') && !askApps.typedAskAppSlugs('Supply $25 of USDC to Aave').includes('near-intents-mcp-yeetful') &&
+        [fiveRuleAsk, morphoAsk, 'Buy $10 of AAPL', 'Sell $50 of ETH'].every((a) => askApps.typedAskAppSlugs(a).every((slug) => askApps.askAppSlugs(a).includes(slug))),
+      JSON.stringify({ stock: askApps.typedAskAppSlugs('I want to buy $10 worth of apple stock'), move: askApps.typedAskAppSlugs('Swap 25 USDC from Ethereum to ETH on Base'), read: askApps.typedAskAppSlugs('how long does a bridge take') }),
+    )
+    {
+      const mk = (id: string, slug: string, name: string, gated: boolean): DirRow => ({ id, slug, name, gated, endpoint: `https://${slug}.invalid/mcp` })
+      const fenceCatalog: DirRow[] = [
+        mk('c-aave', 'aave', 'Aave', false),
+        mk('c-custom', 'custom-aave-helper', 'Aave Helper (custom)', false),
+        mk('c-paid', 'aave-pro-x402', 'Aave Pro', true),
+        mk('c-rh', 'robinhood-free', 'Robinhood Chain (Free)', false),
+        mk('c-wallet', 'yeetful-tool-wallet', 'Pantessa Wallet', false),
+      ]
+      const noFirstParty = fenceCatalog.filter((r) => r.id !== 'c-aave')
+      check(
+        'apps follow the ask (fence): the belt adds only FIRST-PARTY free rows — with the fleet\'s Aave row missing, a custom row that merely says "Aave" and a paid lookalike are never added; nothing is added twice or when the set already carries the row',
+        JSON.stringify(askApps.followAskApps('Supply $25 of USDC to Aave', [], fenceCatalog).map((r) => r.id)) === '["c-aave"]' &&
+          askApps.followAskApps('Supply $25 of USDC to Aave', [], noFirstParty).length === 0 &&
+          askApps.followAskApps('Supply $25 of USDC to Aave', [fenceCatalog[0]], fenceCatalog).length === 0 &&
+          askApps.followAskApps('what is aave?', [], fenceCatalog).length === 0 &&
+          !askApps.isFirstPartyApp(fenceCatalog[1]) && !askApps.isFirstPartyApp(fenceCatalog[2]) && askApps.isFirstPartyApp(fenceCatalog[3]) && askApps.isFirstPartyApp(fenceCatalog[4]),
+        JSON.stringify(askApps.followAskApps('Supply $25 of USDC to Aave', [], fenceCatalog).map((r) => r.id)),
+      )
+    }
+    {
+      // The stock ask that started this (Nate, 2026-09-24): typed, no
+      // Robinhood app in the set. The swap layer never needed the app — it
+      // infers Robinhood Chain from the stock list — and the belt adds it
+      // anyway so the splash card and the MCP's own reads follow.
+      const stockTurn = await fetch(`${BASE}/api/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+        body: JSON.stringify({ message: 'I want to buy $10 worth of apple stock', activeServers: [], history: [] }),
+      }).then((r) => r.json() as Promise<Record<string, unknown>>)
+      check(
+        'apps follow the ask (route): "I want to buy $10 worth of apple stock" typed on an EMPTY set is claimed by the native swap layer (no door, no planner) and the belt echoes Robinhood Chain in addedMcps',
+        !stockTurn.door && !/with this ask ready/.test(String(stockTurn.reply)) && /Connect your wallet to swap/.test(String(stockTurn.reply)) &&
+          Array.isArray(stockTurn.addedMcps) && (stockTurn.addedMcps as { slug: string }[]).some((a) => a.slug === 'robinhood-free'),
+        JSON.stringify(stockTurn).slice(0, 260),
+      )
+      // The unsized cousin fell to the planner: no digit, no $, no ticker.
+      // `stock`/`shares` count as money evidence now and the intent net
+      // offers the sized buys — each a sentence the swap layer builds.
+      const unsizedStock = await fetch(`${BASE}/api/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+        body: JSON.stringify({ message: 'I want to buy some apple shares', activeServers: [], history: [] }),
+      }).then((r) => r.json() as Promise<Record<string, unknown>>)
+      const unsizedOpts = ((unsizedStock.clarify as { options?: { label: string; resume: string }[] } | undefined)?.options ?? [])
+      check(
+        'apps follow the ask (route): "I want to buy some apple shares" (unsized, no ticker) is money-shaped now and the intent net answers three sized buys the swap layer builds — never the planner',
+        moneyShaped('I want to buy some apple shares') && !moneyShaped('what is a stock?') &&
+          unsizedStock.buildPath === 'native-intent-net' && unsizedOpts.length === 3 && unsizedOpts.every((o) => /^Buy \$(10|25|50) of APPLE$/.test(o.resume)) &&
+          simulateLadder('I want to buy some apple shares').kind === 'clarify' && simulateLadder('buy tesla stock').gate === 'intent-net' && simulateLadder('sell my apple shares').gate === 'intent-net',
+        JSON.stringify({ shape: moneyShaped('I want to buy some apple shares'), turn: JSON.stringify(unsizedStock).slice(0, 200) }),
+      )
+    }
 
     // The send paths: every chip goes through the one chip send.
     const chatSrcF = await readFile('components/ChatInterface.tsx', 'utf8')
@@ -28434,7 +28691,21 @@ async function main() {
         /if \(text && text === parked && !loading && !pendingPayment\) \{\s*\n\s*parkedAskRef\.current = null\s*\n\s*setInput\(''\)\s*\n\s*sendChip\(text\)/.test(chatSrcF) &&
         (chatSrcF.match(/sendComposer\(\)/g) ?? []).length === 2 && !/onClick=\{\(\) => void handleSend\(\)\}/.test(chatSrcF) &&
         /if \(embedded \|\| parseChartAsk\(prompt\)\?\.pair \|\| \(!simple && parseMarketsNavAsk\(prompt\)\)\) \{/.test(chatSrcF) &&
-        /const want = \[\.\.\.new Set\(\[\.\.\.slugs, \.\.\.askAppSlugs\(prompt\)\]\)\]/.test(chatSrcF),
+        /const want = opts\.typed \? typedAskAppSlugs\(prompt\) : \[\.\.\.new Set\(\[\.\.\.slugs, \.\.\.askAppSlugs\(prompt\)\]\)\]/.test(chatSrcF),
+    )
+    const routeSrcF = await readFile('app/api/chat/route.ts', 'utf8')
+    check(
+      'apps follow the ask (source, typed): the composer\'s typed send lights its first-party apps before it fires (typedAskAppSlugs → sendChip typed) except in the embed, the apps a send turned on ride the user bubble (meta.addedApps) and the belt\'s addedMcps are synced into the rail + chat under the reply, with an Undo line — and the route\'s belt runs after the content-origin read, never on an embed turn, echoed through lib/turn-scope in the POST wrapper',
+      /if \(text && !loading && !pendingPayment && !embedded && typedAskAppSlugs\(text\)\.length > 0\) \{\s*\n\s*setInput\(''\)\s*\n\s*sendChip\(text, \[\], \{ typed: true \}\)/.test(chatSrcF) &&
+        /addedForSendRef\.current = chipSend\.added\s*\n\s*fireChip\(chipSend\.text\)/.test(chatSrcF) &&
+        /addMessage\(chatId, \{ role: 'user', content: userMsg, \.\.\.\(addedApps\.length \? \{ meta: \{ addedApps \} \} : \{\}\) \}\)/.test(chatSrcF) &&
+        /const echoed = !embedded \? syncEchoedApps\(data\.addedMcps\) : \[\]/.test(chatSrcF) &&
+        /function AddedAppsLine\(/.test(chatSrcF) && /onUndo=\{embedded \? undefined : \(\) => undoAddedApps\(msg\.id, addedAppsOf\(msg\.meta\)\)\}/.test(chatSrcF) &&
+        (() => {
+          const i = routeSrcF.indexOf("const contentOrigin = contentOriginOf({ intentLinkSlug: turnLinkSlug, embedKey: body.embedKey, embedOrigin })")
+          const j = routeSrcF.indexOf("if (contentOrigin !== 'embed') {\n      const followed = followAskApps(message, activeServers, resolvedSet.catalog)")
+          return i > 0 && j > i && j - i < 1200 && /const turn = await withTurnScope\(\(\) => handleChatTurn\(/.test(routeSrcF) && /withAddedApps\(turn\.result, turn\.scope\.addedApps\)/.test(routeSrcF)
+        })(),
     )
     check(
       'apps follow the ask (source): the chip send waits for the LIVE set to carry the apps (the request body reads it), keeps an /i link\'s set marked as the link\'s, re-adds after a load re-seeds the set at most APP_SEND_ROUNDS times and then sends anyway, and loads the directory once where the page never did (/t, the ask door)',
@@ -31567,6 +31838,9 @@ async function main() {
     const btnSrc = fs.readFileSync('components/SendTxButton.tsx', 'utf8')
     check('mobile sign: SendTxChain decides step N>1’s auto-fire with autoFireAllowed({ platform … stepIndex: i …}) and labels a phone’s step via continueCopy', /autoFire=\{autoFireAllowed\(\{ platform, stepIndex: i/.test(chainSrc) && /ctaLabel=\{oneMethodPerTap\(platform\) \? continueCopy\(/.test(chainSrc) && /data-chain-next=/.test(chainSrc) && !/autoFire=\{i > 0 && !manualSteps\}/.test(chainSrc))
     check('mobile sign: SendTxButton — the outcome is READ on mount before the card offers, WRITTEN as asked before the request leaves (nonce in parallel, never awaited ahead of the send), settled on the hash, cleared on a pre-broadcast error, and never auto-fired over', /readSignOutcome\(outcomeStore\(\), outcomeKey, Date\.now\(\)\)/.test(btnSrc) && /state: 'asked', askedAt, nonceAtAsk: null/.test(btnSrc) && btnSrc.indexOf("state: 'asked'") < btnSrc.indexOf('await sendTransactionAsync') && !/await publicClient\s*\??\.getTransactionCount/.test(btnSrc) && /state: 'settled', askedAt, settledAt: Date\.now\(\), hash: txHash/.test(btnSrc) && /if \(!txHash\) \{\s*\/\/[^\n]*\n\s*if \(outcomeKey\) clearSignOutcome/.test(btnSrc) && /data-sign-resume=\{resume\}/.test(btnSrc) && /if \(outcomeKey && readSignOutcome\(outcomeStore\(\), outcomeKey, Date\.now\(\)\)\) return\s*\n\s*autoFired\.current = true/.test(btnSrc))
+    // LINKS reads the build's ORIGINAL last-step key (lib/intent-link-return): a re-quoted
+    // step has new calldata, so the chain itself writes `settled` under the original key.
+    check('mobile sign: SendTxChain writes `settled` (with the final hash) under the ORIGINAL last step’s key when the chain completes — chain.steps (the build), never the refreshed state', /if \(next >= steps\.length\) \{[^]*?const orig = chain\.steps\[chain\.steps\.length - 1\]\?\.tx[^]*?signOutcomeKey\(\{ wallet: address, chainId: orig\.chainId \?\? 8453, to: orig\.to, data: orig\.data \}\)[^]*?state: 'settled'[^]*?hash \}\)[^]*?setPhase\('done'\)/.test(chainSrc) && !/const orig = steps\[/.test(chainSrc))
     check('mobile sign: SendTxButton — a phone’s chain switch re-arms instead of chaining the send; back-from-the-app offers reopen, never a second send', /if \(oneMethodPerTap\(trip\.platform\)\) \{\s*setStatus\('idle'\)/.test(btnSrc) && /trip\.verdict === 'offer-reopen'/.test(btnSrc) && /data-sign-return="offer-reopen"/.test(btnSrc) && !/onClick=\{\(\) => void send\(\)\}[^]*data-sign-return/.test(btnSrc.slice(btnSrc.indexOf('data-sign-return'))))
     const hlSrc = fs.readFileSync('components/SignHlActionButton.tsx', 'utf8')
     const nftSrc = fs.readFileSync('components/SignNftListingButton.tsx', 'utf8')
@@ -31598,6 +31872,12 @@ async function main() {
     // ── the beacon: a dropped launch is its own kind, stamped like every harness row
     const dropped = WR.launchDroppedReport({ wallet: signer.address, link: 'metamask://connect?channelId=abc&comm=socket', app: 'MetaMask', connector: 'metaMaskSDK', chainId: 8453, settleMs: 1200 })
     check('mobile sign: launchDroppedReport — kind launch-dropped, artifact wallet-app, the scheme without its query, the settle window in words', dropped.kind === 'launch-dropped' && dropped.artifact === 'wallet-app' && dropped.ask === 'open MetaMask (metamask://connect)' && /1200ms/.test(dropped.detail) && /queued in an app the browser never switched to/.test(dropped.detail) && !/channelId/.test(dropped.ask + dropped.detail))
+    // N2 (CONNECT r2): the holder's settle timer FILES the drop — the fire site, by source, on
+    // the exact line that also puts the card up; the row it produces is the HTTP pin below.
+    const holderSrc = fs.readFileSync('lib/wallet-handoff.ts', 'utf8')
+    const settleBody = holderSrc.slice(holderSrc.indexOf('settleTimer = setTimeout('), holderSrc.indexOf('}, WALLET_APP_SETTLE_MS)'))
+    check('mobile sign: lib/wallet-handoff fires the launch-dropped beacon from the settle timer, after the card goes up, with the settle window and the tried flag (N2 landed)', /setPending\(o\)/.test(settleBody) && settleBody.indexOf('setPending(o)') < settleBody.indexOf('reportWalletRefusal(launchDroppedReport(') && /launchDroppedReport\(\{ wallet: null, link: o\.link, app: o\.app, settleMs: WALLET_APP_SETTLE_MS, tried: o\.tried \}\)/.test(settleBody) && /^import \{ launchDroppedReport, reportWalletRefusal \} from '@\/lib\/wallet-refusal'/m.test(holderSrc))
+    check('mobile sign: the seam CONNECT exposed for the drives is one DOM event (WALLET_APP_OPEN_EVENT) and the API names SIGN consumes exist (openWalletApp / reopenWalletApp / walletAppLastLink / walletAppRequestSettled)', /export const WALLET_APP_OPEN_EVENT = 'pantessa:wallet-app-open'/.test(holderSrc) && ['openWalletApp', 'reopenWalletApp', 'walletAppLastLink', 'walletAppRequestSettled'].every((n) => new RegExp(`export function ${n}\\(`).test(holderSrc)))
     const droppedRes = await fetch(`${BASE}/api/ask-failures/wallet`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(dropped) })
     const droppedBody = (await droppedRes.json()) as { ok?: boolean; kind?: string; internal?: boolean; id?: string }
     check('mobile sign: the beacon route accepts kind launch-dropped + artifact wallet-app (202, stamped internal, no rejection gate)', droppedRes.status === 202 && droppedBody.ok === true && droppedBody.kind === 'launch-dropped' && droppedBody.internal === true && !!droppedBody.id, JSON.stringify(droppedBody))
@@ -32047,6 +32327,249 @@ async function main() {
     check('i mobile: the phone rules are fenced below sm (a max-width 639px media block), so /i on a desktop keeps the bubble', /@media \(max-width:\s*639px\)\{[^}]*\.yf-runtime/.test(iCss.replace(/\s*\{\s*/g, '{').replace(/\}\s*/g, '}')) || /@media \(max-width:\s*639px\)/.test(iCss))
   }
 
+  // ── mobile ux: the rest of onboarding on a phone (squad mobile-onboarding,
+  // 2026-09-23). The geometry is proved by `npm run drive:mobile` in a real
+  // Chrome; these pins hold the DECISIONS that geometry rests on, so a later
+  // edit that quietly removes one goes red here instead of on someone's phone.
+  {
+    const { inAppBrowserOf, inAppEscapeCopy } = await import('../lib/inapp-browser')
+    const { oauthAllowedIn } = await import('../lib/mobile-wallet')
+
+    // The served stylesheet, not the source: a rule Tailwind or the build
+    // never emitted paints nothing (the token-tint lesson, #792).
+    const uxDoc = await (await fetch(`${BASE}/markets`, { headers: { 'x-yf-internal-run': '1' } })).text()
+    const uxHrefs = [...uxDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
+    const uxCss = (await Promise.all(uxHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n')
+
+    // 1. THE DOOR SCROLLS. A fixed grid centred with `place-items: center` and
+    //    `overflow-y: visible` clips a too-tall panel at BOTH ends and offers
+    //    nothing to scroll: measured 21px top AND bottom at 390, 34 at 375, 50
+    //    at 360 once the phone keyboard takes ~336px — the dismiss went with
+    //    it. `safe center` centres while it fits and starts when it does not;
+    //    `overflow-y: auto` reaches the rest. Both, or the bottom is lost.
+    check(
+      'mobile ux: the sign-in door can scroll and never centre-clips — .ca is overflow-y:auto + align-items:safe center',
+      /\.ca\{[^}]*overflow-y:auto/.test(uxCss) && /\.ca\{[^}]*place-items:safe center/.test(uxCss),
+      `${uxHrefs.length} stylesheets`,
+    )
+    // 2. …and gives back vertical air on a SHORT viewport, which is what the
+    //    keyboard makes — never by shrinking a target, only the space between.
+    check(
+      'mobile ux: a short viewport (the keyboard) tightens the door instead of clipping it',
+      /@media \(max-height:640px\)/.test(uxCss) && /@media \(max-height:640px\)\{[^@]*\.ca__gem\{width:44px/.test(uxCss),
+    )
+    // 3. THE RAIL COMES UP when it is carrying the visitor's own surface. On a
+    //    390px phone the index rail measured y 5461 of a 7292px document —
+    //    the watchlist, the held positions and the card-funding door, under
+    //    every board. A stranger's empty rail still sits below them, and the
+    //    symbol page never swaps (there the chart leads).
+    check(
+      'mobile ux: on a phone a rail carrying a fund door or a watched row is ordered above the boards',
+      /@media \(max-width:1023px\)/.test(uxCss) &&
+        /\.mkt-frame:not\(\.mkt-frame--sym\):has\(\.mkt-frame__rail \[data-rail-fund\]\)/.test(uxCss) &&
+        /\.mkt-frame:not\(\.mkt-frame--sym\):has\(\.mkt-frame__rail \.wl__row\)/.test(uxCss) &&
+        /grid-template-areas:"top"\s*"rail"\s*"main"\s*"foot"/.test(uxCss),
+    )
+    // 4. The shell reserves the phone bar's REAL height: 48px of seat plus its
+    //    1px top border. At 48 the page's last line sat 1px under it.
+    check('mobile ux: the markets shell reserves the spine bar at its measured 49px', /\.mkt-shell\{padding-bottom:calc\(49px \+ env\(safe-area-inset-bottom\)\)\}/.test(uxCss.replace(/\s+/g, ' ')) || /padding-bottom:calc\(49px\+env\(safe-area-inset-bottom\)\)/.test(uxCss))
+    // 5. THE PHONE NAV KEEPS ITS ACCOUNT SEAT. `.nav__right > :not(.nav__burger)`
+    //    hid it below 900px, which put the landing's only door two taps deep
+    //    (burger → drawer → Sign in) and left a connected phone visitor with no
+    //    account menu at all on a brochure page — the drawer carries AuthButton
+    //    + ConnectWallet, never NavAccount.
+    check(
+      'mobile ux: the phone nav bar keeps the account seat beside the burger',
+      /\.nav__right>:not\(\.nav__burger\):not\(\.nav__acct\)\{display:none\}/.test(uxCss.replace(/\s+/g, '')),
+    )
+    const navSrc = readFileSync('components/Navigation.tsx', 'utf8')
+    check('mobile ux: …and it is the SAME SiteAccount the desktop bar renders (rule 6 — one door, never a second)', /className="nav__acct"><SiteAccount \/><\/span>/.test(navSrc.replace(/\s+/g, ' ')))
+    // 6. TOUCH TARGETS. The board rows carry no act chip on touch by design
+    //    (`.mk-table__quick` is hover-revealed and `@media (hover: none)`
+    //    removes it), so the rail row's menu is the ONLY act a finger reaches
+    //    on /markets — and it measured 27px for "Buy $10", 33px for its menu
+    //    items, 24px for the card door's chips. 44px is the floor, and only on
+    //    a coarse pointer: the mouse keeps its compact rail.
+    check(
+      'mobile ux: on a touch pointer every act the rail offers is a 44px target',
+      /@media \(pointer:\s*coarse\)/.test(uxCss) &&
+        /\.wl__pop \.wl__chip,\s*\.wl__fundActs \.wl__chip\{min-height:44px/.test(uxCss) &&
+        /\.wl__popItem\{min-height:44px\}/.test(uxCss),
+    )
+    check('mobile ux: the board row keeps its hover-only act seat off touch (a persistent chip would eat the name cell)', /@media \(hover:\s*none\)\{\.mk-table__quick\{display:none\}/.test(uxCss))
+
+    // 7. THE DOOR INSIDE AN APP'S OWN BROWSER. Two of its three lanes cannot
+    //    fire there — Google refuses OAuth by documented policy and no wallet
+    //    app can be launched — so the layout leads with the one that works and
+    //    captions the other two. The reading is LINKS's lib/inapp-browser; the
+    //    refusal is CONNECT's lib/mobile-wallet; this lane owns the words and
+    //    the order, and the three must agree on the same UA.
+    const X_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Twitter for iPhone/10.5'
+    const SAFARI_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1'
+    const MM_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) MetaMaskMobile Mobile/15E148'
+    const walledOf = (ua: string) => { const b = inAppBrowserOf(ua); return b.inApp && !b.canLaunchApps }
+    check(
+      'mobile ux: the door re-orders itself in X\'s browser, stays normal in Safari, and stays normal in MetaMask\'s (a wallet browser is the GOOD case)',
+      walledOf(X_UA) && !walledOf(SAFARI_UA) && !walledOf(MM_UA) && !oauthAllowedIn(inAppBrowserOf(X_UA)) && oauthAllowedIn(inAppBrowserOf(SAFARI_UA)),
+    )
+    check('mobile ux: the walled door names the app the visitor is actually in, not "this app"', inAppEscapeCopy(inAppBrowserOf(X_UA)).app === 'X' && /Safari/.test(inAppEscapeCopy(inAppBrowserOf(X_UA)).where))
+    const doorSrc = readFileSync('components/CreateAccountButton.tsx', 'utf8')
+    check(
+      'mobile ux: the door reads the UA ONCE after mount, never at render (the server has no UA — a per-pass difference is a hydration mismatch)',
+      /setBrowser\(inAppBrowserOf\(navigator\.userAgent\)\)/.test(doorSrc) && !/const \w+: ?InAppBrowser = inAppBrowserOf\(/.test(doorSrc),
+    )
+    check(
+      'mobile ux: in the walled door the lane that works LEADS, and both blocked lanes carry a caption',
+      /ca__form--walled/.test(doorSrc) && /\.ca__form--walled>\.ca__emailrow\{order:5/.test(uxCss.replace(/\s+/g, '')) && /ca__lanenote/.test(doorSrc) && /aria-disabled=\{!oauthOk \|\| undefined\}/.test(doorSrc),
+    )
+
+    // 8. SSR: a phone-UA render of the app surfaces already carries the tab
+    //    bar and no brochure nav — the phone's navigation is not a client
+    //    afterthought.
+    const phoneMarkets = await (await fetch(`${BASE}/markets`, { headers: { 'user-agent': SAFARI_UA, 'x-yf-internal-run': '1' } })).text()
+    check(
+      'mobile ux: a phone render of /markets ships the Workspace tab bar and no brochure nav',
+      /aria-label="Workspace"/.test(phoneMarkets) && !/class="nav__tabs"/.test(phoneMarkets),
+    )
+  }
+
+  // ── mobile f9: the jobs runner NEVER offers a leg a wallet can't cover ──
+  //
+  // The mobile squad's SIGN lane filed F9: "the runner OFFERS leg 0 of a
+  // compiled job to a $0 wallet". Measured here, the premise is false —
+  // website#725's affordability choke point IS wired at the runner's offer
+  // (lib/jobs-runner, `checkAffordability(fresh.wallet, built.artifact, …)`),
+  // and F9's "empty" harness wallet 0x1111…1111 actually holds 276.66 USDC
+  // and 0.354 ETH on Base, so offering leg 0 to it was correct.
+  //
+  // What was missing is this block. Until now the runner's offer gate was
+  // covered by ONE source grep — which passes even if the `if (verdict.kind
+  // === 'short')` body is deleted. These checks drive the real thing: a
+  // two-leg swap job (F9's exact ask) compiled for a genuinely empty wallet,
+  // advanced through `advanceJobs`, and read back off the row.
+  //
+  // The invariant, in one line: a phone visitor with $0 never sees a Sign
+  // button — and an RPC outage never strands a live job instead.
+  {
+    console.log('— mobile f9 (jobs runner offer gate)')
+    if (!process.env.DATABASE_URL) {
+      check('mobile f9: skipped — no DATABASE_URL for the harness process', true)
+    } else {
+      const { advanceJobs } = await import('../lib/jobs-runner')
+      const { rpcBalanceReader } = await import('../lib/affordability')
+      const F9_FENCE = `f9-offer-${Date.now()}`
+      const prevEnv = process.env.VERCEL_ENV
+      const EMPTY_WALLET = '0x00000000000000000000000000000000000000f9'
+      const USDC_BASE_ADDR = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+      // F9's exact ask, compiled: "swap 5 USDC for ETH on base, then swap 3
+      // USDC for ETH on base".
+      const f9Steps = [
+        { seq: 0, kind: 'sign', builder: 'native-swap', title: 'Swap 5 USDC for ETH', status: 'pending', params: { sellToken: 'USDC', buyToken: 'ETH', amountHuman: '5', chainId: 8453 } },
+        { seq: 1, kind: 'sign', builder: 'native-swap', title: 'Swap 3 USDC for ETH', status: 'pending', params: { sellToken: 'USDC', buyToken: 'ETH', amountHuman: '3', chainId: 8453 } },
+      ]
+      const makeF9Job = (wallet: string) =>
+        prisma.job.create({
+          data: { wallet: wallet.toLowerCase(), title: 'f9 offer gate', source: 'drill', status: 'running', currentStep: 0, originEnv: F9_FENCE, isInternal: true, steps: { create: f9Steps } },
+        })
+      const readF9 = (id: string) => prisma.job.findUnique({ where: { id }, include: { steps: { orderBy: { seq: 'asc' } } } })
+      const madeF9: string[] = []
+      process.env.VERCEL_ENV = F9_FENCE
+      try {
+        // 1. The empty wallet: leg 0 is WITHHELD, by name.
+        const emptyJob = await makeF9Job(EMPTY_WALLET)
+        madeF9.push(emptyJob.id)
+        await advanceJobs(5)
+        const afterEmpty = await readF9(emptyJob.id)
+        const leg0 = afterEmpty?.steps[0]
+        const leg0Err = String((leg0?.result as { error?: unknown } | null)?.error ?? '')
+        check(
+          'mobile f9: a $0 wallet’s first swap leg is NEVER offered — no artifact, the job stays running (a phone visitor sees no Sign button)',
+          leg0?.status === 'pending' && !leg0?.artifact && (leg0?.result as { withheld?: unknown } | null)?.withheld === true && afterEmpty?.status === 'running' && afterEmpty?.steps[1]?.status === 'pending',
+          JSON.stringify({ job: afterEmpty?.status, step0: leg0?.status, artifact: !!leg0?.artifact }),
+        )
+        check(
+          'mobile f9: the withheld reason names the HOLDING against the NEED and the chain (never a bare "step failed")',
+          /Nothing to sign yet/.test(leg0Err) && /spend 5 USDC/.test(leg0Err) && /holds 0 USDC/.test(leg0Err) && /Base/.test(leg0Err),
+          leg0Err.slice(0, 200),
+        )
+        // 2. The JobCard polls every few seconds and each poll advances the
+        //    job inline: no number of polls may wear the gate down.
+        await advanceJobs(5)
+        await advanceJobs(5)
+        const afterPolls = await readF9(emptyJob.id)
+        check(
+          'mobile f9: repeated advances inside the hold-down never turn a withheld leg into an offer (the card can poll all it likes)',
+          afterPolls?.steps[0]?.status === 'pending' && !afterPolls?.steps[0]?.artifact && afterPolls?.status === 'running',
+          JSON.stringify({ job: afterPolls?.status, step0: afterPolls?.steps[0]?.status }),
+        )
+        // 3. Past the hold-down the step REBUILDS and is re-checked — the
+        //    re-offer path is the same gated build, so it withholds again
+        //    while the wallet is still empty.
+        const leg0Id = leg0?.id as string
+        // The hold-down is read off `updatedAt`; backdating it is how the
+        // drill reaches the next rebuild without sleeping 90 seconds.
+        const pastHoldDown = () => prisma.jobStep.update({ where: { id: leg0Id }, data: { updatedAt: new Date(Date.now() - 10 * 60_000) } })
+        await pastHoldDown()
+        await advanceJobs(5)
+        const afterHold = await readF9(emptyJob.id)
+        check(
+          'mobile f9: past the hold-down the leg is rebuilt and re-checked — still withheld, still no artifact (the re-offer path runs the same gate)',
+          afterHold?.steps[0]?.status === 'pending' && !afterHold?.steps[0]?.artifact && /holds 0 USDC/.test(String((afterHold?.steps[0]?.result as { error?: unknown } | null)?.error ?? '')),
+          JSON.stringify({ step0: afterHold?.steps[0]?.status, artifact: !!afterHold?.steps[0]?.artifact }),
+        )
+        // 4. FAIL OPEN. An RPC that can't answer must not strand every live
+        //    job: the same empty wallet is offered when the read THROWS.
+        //    Injected through the runner's own seam (AdvanceOptions), never a
+        //    global — a throwing reader is the only way to prove the posture.
+        const throwingReader = {
+          async native() { throw new Error('rpc down (f9 drill)') },
+          async erc20(): Promise<{ balance: bigint; decimals: number; symbol: string }> { throw new Error('rpc down (f9 drill)') },
+        }
+        await pastHoldDown()
+        await advanceJobs(5, { balanceReader: throwingReader })
+        const afterOutage = await readF9(emptyJob.id)
+        check(
+          'mobile f9: a balance read that THROWS fails OPEN — the leg is offered exactly as before the gate existed (an outage must not strand every live job)',
+          afterOutage?.steps[0]?.status === 'offered' && !!afterOutage?.steps[0]?.artifact && afterOutage?.status === 'waiting_signature',
+          JSON.stringify({ job: afterOutage?.status, step0: afterOutage?.steps[0]?.status, artifact: !!afterOutage?.steps[0]?.artifact }),
+        )
+        // 5. The other half of the invariant: a wallet that CAN cover the leg
+        //    is offered. The burner in .env.local holds Base USDC — read
+        //    only, nothing is ever signed here.
+        const burnerPk = (process.env.PRIVATE_KEY ?? '').trim()
+        const burner = burnerPk ? privateKeyToAccount((burnerPk.startsWith('0x') ? burnerPk : `0x${burnerPk}`) as `0x${string}`).address : null
+        const burnerUsdc = burner ? await rpcBalanceReader.erc20(8453, USDC_BASE_ADDR, burner).then((r) => r.balance).catch(() => BigInt(0)) : BigInt(0)
+        if (!burner || burnerUsdc < BigInt(6_000_000)) {
+          check('mobile f9: funded half skipped — the Base burner is drained (needs ≥6 USDC to prove the offer)', true, burner ? `${burner} holds ${burnerUsdc} USDC atoms` : 'no PRIVATE_KEY')
+        } else {
+          const fundedJob = await makeF9Job(burner)
+          madeF9.push(fundedJob.id)
+          await advanceJobs(5)
+          const afterFunded = await readF9(fundedJob.id)
+          check(
+            'mobile f9: the SAME job for a wallet that can cover leg 0 IS offered — the gate withholds the unaffordable, never the affordable',
+            afterFunded?.steps[0]?.status === 'offered' && !!afterFunded?.steps[0]?.artifact && afterFunded?.status === 'waiting_signature' && afterFunded?.steps[1]?.status === 'pending',
+            JSON.stringify({ job: afterFunded?.status, step0: afterFunded?.steps[0]?.status, artifact: !!afterFunded?.steps[0]?.artifact }),
+          )
+        }
+        // 6. The seam is a seam, not a back door: production passes none, so
+        //    the live RPC reader is what the cron and every route use.
+        const runnerF9Src = readFileSync('lib/jobs-runner.ts', 'utf8')
+        check(
+          'mobile f9: the offer gate takes the reader from AdvanceOptions (default = the live RPC reader) and an unverified verdict is LOGGED, never silent',
+          /export interface AdvanceOptions/.test(runnerF9Src) &&
+            /advanceJob\(job: JobWithSteps, opts: AdvanceOptions = \{\}\)/.test(runnerF9Src) &&
+            /checkAffordability\(fresh\.wallet, built\.artifact, opts\.balanceReader\)/.test(runnerF9Src) &&
+            /verdict\.kind === 'unknown'[\s\S]{0,240}console\.warn\([\s\S]{0,200}affordability unverified/.test(runnerF9Src) &&
+            !/advanceJobs?\([^)]*balanceReader/.test(readFileSync('app/api/cron/jobs/route.ts', 'utf8')),
+        )
+      } finally {
+        process.env.VERCEL_ENV = prevEnv
+        for (const id of madeF9) await prisma.job.delete({ where: { id } }).catch(() => {})
+      }
+    }
+  }
+
   // ── mobile qa: the gate's own fences (QA lane, mobile-onboarding squad) ──
   // Appended as ONE block with its own closing brace, per the squad's
   // shared-tail rule. Constants imported INSIDE the block on purpose.
@@ -32098,13 +32621,20 @@ async function main() {
     const driveFiles = sourceFiles.filter((f) => /scripts\/drive-mobile(-[a-z]+)?\.ts$/.test(f))
     const driveBad = driveFiles.filter((f) => {
       const src = readQa(f, 'utf8')
-      const needsPw = /chromium|playwright/i.test(stripComments(src))
-      const usesRecipe = /createRequire\(/.test(src) && /require_?\w*\(\s*['"]playwright-core['"]\s*\)/.test(src)
-      const selfRuns = /^\s*main\(\)/m.test(src) && !/process\.argv\[1\]/.test(src)
-      return (needsPw && !usesRecipe) || selfRuns
+      const stripped = stripComments(src)
+      // Only a file that actually LAUNCHES a browser owes the recipe — the
+      // contract module carries playwright TYPES and nothing else. The
+      // require identifier is whatever the lane named it (`req`, `require_`).
+      const launches = /\.launch\(/.test(stripped)
+      const usesRecipe = /createRequire\(/.test(src) && /\w+\(\s*['"]playwright-core['"]\s*\)/.test(stripped)
+      // Lane files are IMPORTED by the runner to read their exports, so they
+      // must not drive on import. The runner itself IS the entrypoint.
+      const isLane = /drive-mobile-[a-z]+\.ts$/.test(f)
+      const selfRuns = isLane && /^\s*(?:void )?main\(\)/m.test(stripped) && !/process\.argv\[1\]/.test(stripped)
+      return (launches && !usesRecipe) || selfRuns
     })
     check(
-      'mobile qa: every scripts/drive-mobile*.ts resolves playwright through createRequire and only drives when run directly (process.argv[1] guard) — QA imports them all',
+      'mobile qa: every scripts/drive-mobile*.ts that launches a browser resolves playwright through createRequire, and every LANE file only drives when run directly (process.argv[1] guard) — QA imports them all',
       driveFiles.length > 0 && driveBad.length === 0,
       driveBad.length ? driveBad.join(', ') : `${driveFiles.length} drive file(s)`,
     )
