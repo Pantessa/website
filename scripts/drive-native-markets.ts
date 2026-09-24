@@ -88,7 +88,7 @@ async function newPage(engine: Engine, opts: { width?: number; height?: number; 
   await context.route(`${BASE}/**`, (route: any) => route.continue({ headers: { ...route.request().headers(), 'x-yf-internal-run': '1' } }))
   const theme = opts.theme ?? 'dark'
   await context.addInitScript(
-    `try { localStorage.setItem('theme', ${JSON.stringify(theme)}); ${opts.seedList ? `localStorage.setItem('pantessa.watchlists.v1', ${JSON.stringify(GUEST_LIST)});` : ''} } catch {}`,
+    `try { localStorage.setItem('yf-theme', ${JSON.stringify(theme)}); ${opts.seedList ? `localStorage.setItem('pantessa.watchlists.v1', ${JSON.stringify(GUEST_LIST)});` : ''} } catch {}`,
   )
   const page = await context.newPage()
   return { browser, context, page }
@@ -449,7 +449,8 @@ async function sheetRows(engine: Engine) {
     if (MEASURE_ONLY || TAG === 'before') note(6, `${engine} the ask door on a phone`, line)
     else {
       judge(6, `${engine} the ask door is the Sheet on a phone, input ≥16px, flush to the bottom`, !!door && door.kind === 'Sheet' && (door.inputFont ?? 0) >= 16 && Math.abs(door.bottom - door.ih) <= 1, line)
-      judge(6, `${engine} the ask door closes on Escape, a tap outside and the back gesture (and stays on the page)`, dismiss.escape && dismiss.scrim && dismiss.back, line)
+      judge(6, `${engine} the ask door closes on Escape and a tap outside`, dismiss.escape && dismiss.scrim, line)
+      judge(6, `${engine} the back gesture closes the ask door and stays on the page (SHELL's Sheet internals)`, dismiss.back, line)
     }
 
     // Row 7: the rail's dialogs (ImportModal from the head; AlertForm needs
@@ -482,6 +483,40 @@ async function sheetRows(engine: Engine) {
     const il = impRes ? `${impRes.kind} ${rectOf(impRes.rect)} bottom ${impRes.bottom}/${impRes.ih} · fields ${impRes.fieldFonts?.join(',')}px · Escape closes ${impRes.escape}` : 'no import button'
     if (MEASURE_ONLY || TAG === 'before') note(7, `${engine} ImportModal on a phone`, il)
     else judge(7, `${engine} ImportModal is the Sheet on a phone: fields ≥16px, Escape closes`, !!impRes && impRes.kind === 'Sheet' && (impRes.fieldFonts ?? []).every((f: number) => f >= 16) && impRes.escape, il)
+  } finally {
+    await browser.close()
+  }
+}
+
+// ── Row 2 (brochure): the pill's page-foot reserve lets the last line clear
+//    it. The reserve never applied before this squad (MARKETS.md F10). ─────────
+async function brochureFoot(engine: Engine, pathname: string) {
+  const { browser, page } = await newPage(engine)
+  try {
+    await page.goto(`${BASE}${pathname}`, { waitUntil: 'load', timeout: 60_000 })
+    await page.waitForTimeout(800)
+    await page.evaluate(`(${SCROLLER_JS}).scrollTo({ top: 1e7, behavior: 'instant' })`)
+    await page.waitForTimeout(300)
+    const r = await page.evaluate(`(() => {
+      const pill = document.querySelector('[data-ask-door="pill"]')
+      const pr = pill && pill.getClientRects().length ? pill.getBoundingClientRect() : null
+      const pad = parseFloat(getComputedStyle(document.body).paddingBottom)
+      if (!pr) return { pill: null, pad, hits: [] }
+      const hits = []
+      for (const el of document.querySelectorAll('footer a, footer p, footer button, footer span, footer li, main a, main p, main button')) {
+        if (el.children.length && el.tagName !== 'A' && el.tagName !== 'BUTTON') continue
+        const b = el.getBoundingClientRect()
+        if (!b.width || !b.height) continue
+        const w = Math.min(b.right, pr.right) - Math.max(b.left, pr.left)
+        const h = Math.min(b.bottom, pr.bottom) - Math.max(b.top, pr.top)
+        if (w > 0 && h > 0) hits.push((el.textContent || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 24) + ' ' + Math.round(w) + '×' + Math.round(h))
+      }
+      return { pill: { x: pr.x, y: pr.y, w: pr.width, h: pr.height }, pad, hits }
+    })()`)
+    record[`${engine}.brochure${pathname}`] = r
+    const line = `${pathname} scrolled to the end: body reserve ${r.pad}px · pill ${rectOf(r.pill)} over ${r.hits.length ? r.hits.slice(0, 4).join(', ') : 'nothing'}`
+    if (MEASURE_ONLY || TAG === 'before') note(2, `${engine} brochure foot`, line)
+    else judge(2, `${engine} ${pathname}: at the page's end the last line clears the pill (the reserve applies)`, !r.pill || (r.pad >= 60 && r.hits.length === 0), line)
   } finally {
     await browser.close()
   }
@@ -531,6 +566,7 @@ async function main() {
     await marketsRows('chrome-iphone375')
     await marketsRows('chrome-pixel7')
     await railRows('chrome-iphone375')
+    await brochureFoot('chrome-iphone375', '/pricing')
   }
   if (ROWS.has(1) || ROWS.has(3) || ROWS.has(5)) {
     for (const s of ['AAPL', 'ETH']) await symbolRows('chrome-iphone375', s)

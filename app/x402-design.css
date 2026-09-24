@@ -6127,14 +6127,20 @@
 .askdoor-pill__short { display: none; font-size: 14px; font-weight: 600; color: var(--fg); }
 .askdoor-pill__mic { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 999px; color: var(--muted-2); border: 1px solid var(--line); flex-shrink: 0; }
 .askdoor-pill__kbd { font-size: 10px; line-height: 1.4; color: var(--muted-2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; margin-right: 4px; flex-shrink: 0; }
-/* the pill floats over the page foot — give the last line room to clear it */
-body:has(> .askdoor-pill) { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+/* the pill floats over the page foot — give the last line room to clear it.
+   A DESCENDANT match: the pill's parent is the layout's providers <div>, so the
+   old `body:has(> .askdoor-pill)` never matched and no page ever reserved the
+   room (squad mobile-native, MARKETS.md F10). Brochure pages only: an app frame
+   ([data-app-frame], a document that never scrolls) must not grow a padded
+   body, and a screen whose top bar carries the door ([data-ask-door="rail"])
+   hides the pill on a phone. Both markers ship in the server HTML. */
+body:not(:has([data-app-frame], [data-ask-door="rail"])):has(.askdoor-pill) { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
 @media (max-width: 640px) {
   .askdoor-pill { left: auto; right: 16px; transform: none; width: auto; height: 46px; padding: 0 16px 0 8px; gap: 8px; }
   .askdoor-pill:hover { transform: translateY(-1px); }
   .askdoor-pill__text, .askdoor-pill__kbd, .askdoor-pill__mic { display: none; }
   .askdoor-pill__short { display: inline; }
-  body:has(> .askdoor-pill) { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+  body:not(:has([data-app-frame], [data-ask-door="rail"])):has(.askdoor-pill) { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
 }
 
 /* the sheet */
@@ -6187,9 +6193,8 @@ body:has(> .askdoor-pill) { padding-bottom: calc(72px + env(safe-area-inset-bott
    an "Ask" — two doors on one screen, one of them over the data. Below lg:
    - a screen whose top bar carries the door ([data-ask-door="rail"], the
      markets strip) never shows the pill. The pill's parent is the layout's
-     providers <div>, never <body> itself, so this is a DESCENDANT match (and
-     the `body:has(> .askdoor-pill)` reserve above has never matched: no
-     page has ever carried it — MARKETS.md F10);
+     providers <div>, never <body> itself, so this is a DESCENDANT match (the
+     page-foot reserve above is one too, since this squad: MARKETS.md F10);
    - the door itself is THE Sheet (AskDoor → components/mobile/Sheet,
      data-sheet="ask-door"); these rules dress its content only. */
 @media (max-width: 1023px) {

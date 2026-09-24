@@ -33063,6 +33063,11 @@ async function main() {
       /body:has\(\[data-ask-door="rail"\]\) \.askdoor-pill \{ display: none; \}/.test(nmPhoneDoor) && !/body:has\(\[data-ask-door="rail"\]\) > \.askdoor-pill/.test(nmDesign),
     )
     check(
+      'native markets: the pill\'s page-foot reserve finally applies — a descendant match (the old `body:has(> .askdoor-pill)` never fired), on brochure pages only (never an app frame, never a screen whose top bar carries the door)',
+      !/body:has\(> \.askdoor-pill\)/.test(nmDesign) &&
+        (nmDesign.match(/body:not\(:has\(\[data-app-frame\], \[data-ask-door="rail"\]\)\):has\(\.askdoor-pill\) \{ padding-bottom: calc\((?:72|64)px \+ env\(safe-area-inset-bottom\)\); \}/g) ?? []).length === 2,
+    )
+    check(
       'native markets: the markets top strip\'s Ask is the phone\'s ask field — the rail trigger carries the page\'s placeholder, and below lg it fills the strip at 44px with the word "Ask" folded',
       /variant === 'rail' && \(\s*<span className="mkt-frame__askhint" aria-hidden="true">\s*\{askDoorPlaceholder\(pathname\)\}/.test(nmDoor) &&
         /\.mkt-frame__askhint \{ display: none; \}/.test(nmMk) &&
