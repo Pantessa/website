@@ -8523,7 +8523,11 @@ async function main() {
         check(
           'affordability gate: wired at the JSON exit (POST wrapper), the SSE artifact sites (sendSignable ×6) and the jobs runner’s offer',
           /const gated = await gateSignablePayload\(body, reqBody\.walletAddress/.test(routeSrc) && (routeSrc.match(/await sendSignable\(/g)?.length ?? 0) >= 6 && !/\bsend\(\{ type: 'reply'[^\n]*(?:txRequest|txChain|orderRequest): decision\.artifact/.test(routeSrc) &&
-            /const verdict = await checkAffordability\(fresh\.wallet, built\.artifact\)/.test(runnerSrc),
+            // Re-pinned 2026-09-23 (mobile squad F9): the offer gate now takes the
+            // harness's balance reader through `AdvanceOptions` so the fail-open
+            // posture is provable. This grep only says the LINE is there — the
+            // BEHAVIOUR (withheld vs offered) is pinned in the `mobile f9:` block.
+            /const verdict = await checkAffordability\(fresh\.wallet, built\.artifact, opts\.balanceReader\)/.test(runnerSrc),
         )
       }
 
@@ -32022,6 +32026,143 @@ async function main() {
     check('mobile links: the Share popover is FIXED across the phone\'s gutters below sm (measured: anchored to the pill it ran 57px off the left edge at 375) and stays anchored on wider screens', /phonePos \? 'fixed left-4 right-4 w-auto' : 'absolute right-0 top-full mt-2 w-72'/.test(shareSrc) && /window\.innerWidth < 640/.test(shareSrc) && /data-share-popover/.test(shareSrc))
     const pageSrc = readFileSync('app/i/[slug]/page.tsx', 'utf8')
     check('mobile links: the /i page reads the request UA on the server and hands the verdict to the runtime (the escape line is in the first HTML, not a client flash)', /headers\(\)\)\.get\('user-agent'\)/.test(pageSrc) && /browser=\{browser\}/.test(pageSrc))
+  }
+
+  // ── mobile f9: the jobs runner NEVER offers a leg a wallet can't cover ──
+  //
+  // The mobile squad's SIGN lane filed F9: "the runner OFFERS leg 0 of a
+  // compiled job to a $0 wallet". Measured here, the premise is false —
+  // website#725's affordability choke point IS wired at the runner's offer
+  // (lib/jobs-runner, `checkAffordability(fresh.wallet, built.artifact, …)`),
+  // and F9's "empty" harness wallet 0x1111…1111 actually holds 276.66 USDC
+  // and 0.354 ETH on Base, so offering leg 0 to it was correct.
+  //
+  // What was missing is this block. Until now the runner's offer gate was
+  // covered by ONE source grep — which passes even if the `if (verdict.kind
+  // === 'short')` body is deleted. These checks drive the real thing: a
+  // two-leg swap job (F9's exact ask) compiled for a genuinely empty wallet,
+  // advanced through `advanceJobs`, and read back off the row.
+  //
+  // The invariant, in one line: a phone visitor with $0 never sees a Sign
+  // button — and an RPC outage never strands a live job instead.
+  {
+    console.log('— mobile f9 (jobs runner offer gate)')
+    if (!process.env.DATABASE_URL) {
+      check('mobile f9: skipped — no DATABASE_URL for the harness process', true)
+    } else {
+      const { advanceJobs } = await import('../lib/jobs-runner')
+      const { rpcBalanceReader } = await import('../lib/affordability')
+      const F9_FENCE = `f9-offer-${Date.now()}`
+      const prevEnv = process.env.VERCEL_ENV
+      const EMPTY_WALLET = '0x00000000000000000000000000000000000000f9'
+      const USDC_BASE_ADDR = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+      // F9's exact ask, compiled: "swap 5 USDC for ETH on base, then swap 3
+      // USDC for ETH on base".
+      const f9Steps = [
+        { seq: 0, kind: 'sign', builder: 'native-swap', title: 'Swap 5 USDC for ETH', status: 'pending', params: { sellToken: 'USDC', buyToken: 'ETH', amountHuman: '5', chainId: 8453 } },
+        { seq: 1, kind: 'sign', builder: 'native-swap', title: 'Swap 3 USDC for ETH', status: 'pending', params: { sellToken: 'USDC', buyToken: 'ETH', amountHuman: '3', chainId: 8453 } },
+      ]
+      const makeF9Job = (wallet: string) =>
+        prisma.job.create({
+          data: { wallet: wallet.toLowerCase(), title: 'f9 offer gate', source: 'drill', status: 'running', currentStep: 0, originEnv: F9_FENCE, isInternal: true, steps: { create: f9Steps } },
+        })
+      const readF9 = (id: string) => prisma.job.findUnique({ where: { id }, include: { steps: { orderBy: { seq: 'asc' } } } })
+      const madeF9: string[] = []
+      process.env.VERCEL_ENV = F9_FENCE
+      try {
+        // 1. The empty wallet: leg 0 is WITHHELD, by name.
+        const emptyJob = await makeF9Job(EMPTY_WALLET)
+        madeF9.push(emptyJob.id)
+        await advanceJobs(5)
+        const afterEmpty = await readF9(emptyJob.id)
+        const leg0 = afterEmpty?.steps[0]
+        const leg0Err = String((leg0?.result as { error?: unknown } | null)?.error ?? '')
+        check(
+          'mobile f9: a $0 wallet’s first swap leg is NEVER offered — no artifact, the job stays running (a phone visitor sees no Sign button)',
+          leg0?.status === 'pending' && !leg0?.artifact && (leg0?.result as { withheld?: unknown } | null)?.withheld === true && afterEmpty?.status === 'running' && afterEmpty?.steps[1]?.status === 'pending',
+          JSON.stringify({ job: afterEmpty?.status, step0: leg0?.status, artifact: !!leg0?.artifact }),
+        )
+        check(
+          'mobile f9: the withheld reason names the HOLDING against the NEED and the chain (never a bare "step failed")',
+          /Nothing to sign yet/.test(leg0Err) && /spend 5 USDC/.test(leg0Err) && /holds 0 USDC/.test(leg0Err) && /Base/.test(leg0Err),
+          leg0Err.slice(0, 200),
+        )
+        // 2. The JobCard polls every few seconds and each poll advances the
+        //    job inline: no number of polls may wear the gate down.
+        await advanceJobs(5)
+        await advanceJobs(5)
+        const afterPolls = await readF9(emptyJob.id)
+        check(
+          'mobile f9: repeated advances inside the hold-down never turn a withheld leg into an offer (the card can poll all it likes)',
+          afterPolls?.steps[0]?.status === 'pending' && !afterPolls?.steps[0]?.artifact && afterPolls?.status === 'running',
+          JSON.stringify({ job: afterPolls?.status, step0: afterPolls?.steps[0]?.status }),
+        )
+        // 3. Past the hold-down the step REBUILDS and is re-checked — the
+        //    re-offer path is the same gated build, so it withholds again
+        //    while the wallet is still empty.
+        const leg0Id = leg0?.id as string
+        // The hold-down is read off `updatedAt`; backdating it is how the
+        // drill reaches the next rebuild without sleeping 90 seconds.
+        const pastHoldDown = () => prisma.jobStep.update({ where: { id: leg0Id }, data: { updatedAt: new Date(Date.now() - 10 * 60_000) } })
+        await pastHoldDown()
+        await advanceJobs(5)
+        const afterHold = await readF9(emptyJob.id)
+        check(
+          'mobile f9: past the hold-down the leg is rebuilt and re-checked — still withheld, still no artifact (the re-offer path runs the same gate)',
+          afterHold?.steps[0]?.status === 'pending' && !afterHold?.steps[0]?.artifact && /holds 0 USDC/.test(String((afterHold?.steps[0]?.result as { error?: unknown } | null)?.error ?? '')),
+          JSON.stringify({ step0: afterHold?.steps[0]?.status, artifact: !!afterHold?.steps[0]?.artifact }),
+        )
+        // 4. FAIL OPEN. An RPC that can't answer must not strand every live
+        //    job: the same empty wallet is offered when the read THROWS.
+        //    Injected through the runner's own seam (AdvanceOptions), never a
+        //    global — a throwing reader is the only way to prove the posture.
+        const throwingReader = {
+          async native() { throw new Error('rpc down (f9 drill)') },
+          async erc20(): Promise<{ balance: bigint; decimals: number; symbol: string }> { throw new Error('rpc down (f9 drill)') },
+        }
+        await pastHoldDown()
+        await advanceJobs(5, { balanceReader: throwingReader })
+        const afterOutage = await readF9(emptyJob.id)
+        check(
+          'mobile f9: a balance read that THROWS fails OPEN — the leg is offered exactly as before the gate existed (an outage must not strand every live job)',
+          afterOutage?.steps[0]?.status === 'offered' && !!afterOutage?.steps[0]?.artifact && afterOutage?.status === 'waiting_signature',
+          JSON.stringify({ job: afterOutage?.status, step0: afterOutage?.steps[0]?.status, artifact: !!afterOutage?.steps[0]?.artifact }),
+        )
+        // 5. The other half of the invariant: a wallet that CAN cover the leg
+        //    is offered. The burner in .env.local holds Base USDC — read
+        //    only, nothing is ever signed here.
+        const burnerPk = (process.env.PRIVATE_KEY ?? '').trim()
+        const burner = burnerPk ? privateKeyToAccount((burnerPk.startsWith('0x') ? burnerPk : `0x${burnerPk}`) as `0x${string}`).address : null
+        const burnerUsdc = burner ? await rpcBalanceReader.erc20(8453, USDC_BASE_ADDR, burner).then((r) => r.balance).catch(() => BigInt(0)) : BigInt(0)
+        if (!burner || burnerUsdc < BigInt(6_000_000)) {
+          check('mobile f9: funded half skipped — the Base burner is drained (needs ≥6 USDC to prove the offer)', true, burner ? `${burner} holds ${burnerUsdc} USDC atoms` : 'no PRIVATE_KEY')
+        } else {
+          const fundedJob = await makeF9Job(burner)
+          madeF9.push(fundedJob.id)
+          await advanceJobs(5)
+          const afterFunded = await readF9(fundedJob.id)
+          check(
+            'mobile f9: the SAME job for a wallet that can cover leg 0 IS offered — the gate withholds the unaffordable, never the affordable',
+            afterFunded?.steps[0]?.status === 'offered' && !!afterFunded?.steps[0]?.artifact && afterFunded?.status === 'waiting_signature' && afterFunded?.steps[1]?.status === 'pending',
+            JSON.stringify({ job: afterFunded?.status, step0: afterFunded?.steps[0]?.status, artifact: !!afterFunded?.steps[0]?.artifact }),
+          )
+        }
+        // 6. The seam is a seam, not a back door: production passes none, so
+        //    the live RPC reader is what the cron and every route use.
+        const runnerF9Src = readFileSync('lib/jobs-runner.ts', 'utf8')
+        check(
+          'mobile f9: the offer gate takes the reader from AdvanceOptions (default = the live RPC reader) and an unverified verdict is LOGGED, never silent',
+          /export interface AdvanceOptions/.test(runnerF9Src) &&
+            /advanceJob\(job: JobWithSteps, opts: AdvanceOptions = \{\}\)/.test(runnerF9Src) &&
+            /checkAffordability\(fresh\.wallet, built\.artifact, opts\.balanceReader\)/.test(runnerF9Src) &&
+            /verdict\.kind === 'unknown'[\s\S]{0,240}console\.warn\([\s\S]{0,200}affordability unverified/.test(runnerF9Src) &&
+            !/advanceJobs?\([^)]*balanceReader/.test(readFileSync('app/api/cron/jobs/route.ts', 'utf8')),
+        )
+      } finally {
+        process.env.VERCEL_ENV = prevEnv
+        for (const id of madeF9) await prisma.job.delete({ where: { id } }).catch(() => {})
+      }
+    }
   }
 
   // ── mobile qa: the gate's own fences (QA lane, mobile-onboarding squad) ──
