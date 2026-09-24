@@ -5913,6 +5913,13 @@ async function main() {
       walletAppFor('https://pantessa.com') === null &&
       // eslint-disable-next-line no-script-url
       walletAppFor('javascript:alert(1)') === null &&
+      // Only the SDK's connect link is a wallet request: MetaMask's `dapp/`
+      // deeplink opens any site inside the wallet's own browser (QA security
+      // pass, 2026-09-23) and the holder is reachable from a public DOM event.
+      walletAppFor('metamask://dapp/evil.example/drain') === null &&
+      walletAppFor('https://metamask.app.link/dapp/evil.example') === null &&
+      walletAppFor('metamask://connect?channelId=a&v=2') === 'MetaMask' &&
+      walletAppFor('https://metamask.app.link/connect?channelId=a') === 'MetaMask' &&
       walletAppFor('metamask://connect?a=1 b=2') === null &&
       walletAppFor('metamask://con\nnect') === null &&
       walletAppFor('') === null &&
@@ -32334,13 +32341,20 @@ async function main() {
     const driveFiles = sourceFiles.filter((f) => /scripts\/drive-mobile(-[a-z]+)?\.ts$/.test(f))
     const driveBad = driveFiles.filter((f) => {
       const src = readQa(f, 'utf8')
-      const needsPw = /chromium|playwright/i.test(stripComments(src))
-      const usesRecipe = /createRequire\(/.test(src) && /require_?\w*\(\s*['"]playwright-core['"]\s*\)/.test(src)
-      const selfRuns = /^\s*main\(\)/m.test(src) && !/process\.argv\[1\]/.test(src)
-      return (needsPw && !usesRecipe) || selfRuns
+      const stripped = stripComments(src)
+      // Only a file that actually LAUNCHES a browser owes the recipe — the
+      // contract module carries playwright TYPES and nothing else. The
+      // require identifier is whatever the lane named it (`req`, `require_`).
+      const launches = /\.launch\(/.test(stripped)
+      const usesRecipe = /createRequire\(/.test(src) && /\w+\(\s*['"]playwright-core['"]\s*\)/.test(stripped)
+      // Lane files are IMPORTED by the runner to read their exports, so they
+      // must not drive on import. The runner itself IS the entrypoint.
+      const isLane = /drive-mobile-[a-z]+\.ts$/.test(f)
+      const selfRuns = isLane && /^\s*(?:void )?main\(\)/m.test(stripped) && !/process\.argv\[1\]/.test(stripped)
+      return (launches && !usesRecipe) || selfRuns
     })
     check(
-      'mobile qa: every scripts/drive-mobile*.ts resolves playwright through createRequire and only drives when run directly (process.argv[1] guard) — QA imports them all',
+      'mobile qa: every scripts/drive-mobile*.ts that launches a browser resolves playwright through createRequire, and every LANE file only drives when run directly (process.argv[1] guard) — QA imports them all',
       driveFiles.length > 0 && driveBad.length === 0,
       driveBad.length ? driveBad.join(', ') : `${driveFiles.length} drive file(s)`,
     )
