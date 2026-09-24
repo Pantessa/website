@@ -345,9 +345,12 @@ export function PositionsViz({ viz }: { viz: Extract<TileViz, { kind: 'positions
                 style={up ? { left: '50%', width: `${w}%`, background: 'var(--accent)' } : { right: '50%', width: `${w}%`, background: 'var(--sell)' }}
               />
             </div>
-            <span className="w-16 shrink-0 text-right text-[11px] tabular-nums" style={{ color: up ? 'var(--accent)' : 'var(--sell)' }}>
-              {up ? '+' : '−'}
-              {fmtUsd(Math.abs(p.pnlUsd))}
+            <span className="flex w-[4.75rem] shrink-0 flex-col items-end text-right leading-tight tabular-nums">
+              <span className="text-[11px] font-medium text-white" title="position value (notional)">{fmtUsd(p.valueUsd)}</span>
+              <span className="text-[10px]" style={{ color: up ? 'var(--accent)' : 'var(--sell)' }} title="unrealized PnL">
+                {up ? '+' : '−'}
+                {fmtUsd(Math.abs(p.pnlUsd))}
+              </span>
             </span>
             <span className="mono hidden w-24 shrink-0 text-right text-[10px] tabular-nums sm:inline" style={{ color: liqTone }} title="distance from mark to liquidation price">
               {liq == null ? 'no liq px' : `liq ${liq.toFixed(1)}% away`}

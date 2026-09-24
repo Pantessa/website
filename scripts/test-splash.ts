@@ -149,8 +149,8 @@ async function run() {
         accountValueUsd: '250.10',
         withdrawableUsd: '100',
         positions: [
-          { coin: 'HYPE', szi: '10', unrealizedPnl: '12.5', leverage: { value: 2 }, entryPx: '38.2', liquidationPx: '20.1' },
-          { coin: 'ETH', szi: '-0.1', unrealizedPnl: '-3.1', entryPx: '3500' },
+          { coin: 'HYPE', szi: '10', unrealizedPnl: '12.5', leverage: { value: 2 }, entryPx: '38.2', liquidationPx: '20.1', positionValue: '402.5' },
+          { coin: 'ETH', szi: '-0.1', unrealizedPnl: '-3.1', entryPx: '3500', positionValue: '-346.9' },
         ],
       },
     })
@@ -160,6 +160,17 @@ async function run() {
     // symbol names its coin so the client can offer the chart.
     check('every position row carries its coin as chartSymbol', tile.rows.length === 2 && tile.rows[0].chartSymbol === 'HYPE' && tile.rows[1].chartSymbol === 'ETH')
     check('long/short labels intact', /HYPE long 2x/.test(tile.rows[0].label) && /ETH short/.test(tile.rows[1].label))
+    // The figure is what the position is WORTH and how much coin that is —
+    // the venue's notional, never a second price feed. A $12 long once read
+    // as "−$0.01 PnL" and nothing else.
+    check('a position row leads with its value and size', tile.rows[0].value === '$402.50 · 10 HYPE' && tile.rows[1].value === '$346.90 · 0.1 ETH')
+    check('PnL moves into the sub line, tone still keyed on it', /^\+\$12\.50 PnL · entry \$38\.2 · liq \$20\.1$/.test(tile.rows[0].sub ?? "") && tile.rows[0].tone === 'pos' && /^−\$3\.10 PnL · entry \$3500$/.test(tile.rows[1].sub ?? "") && tile.rows[1].tone === 'neg')
+    // The real shape from the venue: 0.13 HYPE at $11.98 notional.
+    const small = (await hl.build(async () => ({ perp: { accountValueUsd: '118.34', positions: [{ coin: 'HYPE', szi: '0.13', unrealizedPnl: '-0.0095', leverage: { value: 2 }, entryPx: '92.305', positionValue: '11.98' }] } }), ADDR, srv('hyperliquid-free', 'Hyperliquid (Free)'))) as RowsTile
+    check('a $12 long reads as $11.98 · 0.13 HYPE', small.rows[0].value === '$11.98 · 0.13 HYPE' && small.rows[0].sub === '−$0.01 PnL · entry $92.305')
+    // A position the venue sent without a notional still says its size.
+    const sized = (await hl.build(async () => ({ perp: { accountValueUsd: '50', positions: [{ coin: 'SYRUP', szi: '1651', unrealizedPnl: '104.05', leverage: { value: 3 }, entryPx: '0.14175' }] } }), ADDR, srv('hyperliquid-free', 'Hyperliquid (Free)'))) as RowsTile
+    check('no notional → the size alone leads', sized.rows[0].value === '1,651 SYRUP' && /^\+\$104\.05 PnL/.test(sized.rows[0].sub ?? ""))
   }
 
   console.log('splash sources — hyperliquid (idle collateral offers the open)')
