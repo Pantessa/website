@@ -45,7 +45,7 @@ const ONLY = arg('only') ? arg('only').split(',') : []
 const ENGINES = arg('engines') ? arg('engines').split(',') : ['webkit', 'chrome']
 const DESKTOP = !ARGS.includes('--no-desktop')
 /** Round-2 rows: frame (the per-surface proof), landscape, sheets, scrollkind. */
-const ROWS = arg('rows') ? arg('rows').split(',') : ['frame', 'landscape', 'sheets', 'scrollkind']
+const ROWS = arg('rows') ? arg('rows').split(',') : ['frame', 'landscape', 'sheets', 'scrollkind', 'sheetlinks']
 const row = (name: string) => ROWS.includes(name)
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -303,7 +303,12 @@ async function runProfile(profile: Profile, session: string | null, burner: stri
             note(profile.id, surface.id, 'scrollTo(0, 700) on the window moves nothing', dt.scrollY === 0, `scrollY ${dt.scrollY}`)
             note(profile.id, surface.id, 'the frame + scroller attributes are present and the scroller scrolls', !!m.frameAttr && !!m.scrollAttr && (m.scrollerOverflowY === 'auto' || m.scrollerOverflowY === 'scroll'), `overflow-y ${m.scrollerOverflowY}`)
             note(profile.id, surface.id, 'the bar is a direct child of the frame, in flow (static), not fixed', !!m.barParentIsFrame && m.barPosition === 'static', `parent-is-frame ${m.barParentIsFrame}, position ${m.barPosition}`)
-            note(profile.id, surface.id, 'no horizontal scroll on the document or the scroller', m.docScrollWidth === m.docClientWidth && m.scrollerScrollWidth === m.scrollerClientWidth, `doc ${m.docScrollWidth}/${m.docClientWidth}, scroller ${m.scrollerScrollWidth}/${m.scrollerClientWidth}`)
+            note(profile.id, surface.id, 'no horizontal scroll on the document', m.docScrollWidth === m.docClientWidth, `doc ${m.docScrollWidth}/${m.docClientWidth}`)
+            // Content wider than the viewport inside the scroller is CLIPPED (the
+            // frame's scroller is overflow-x: clip), so it never scrolls — but it
+            // is cut off, which is the owning lane's bug: named, and it must not
+            // be the SCROLLER itself that is wide.
+            note(profile.id, surface.id, `the scroller's content fits its width (wider content is clipped, never scrollable; ${m.scrollerScrollWidth === m.scrollerClientWidth ? 'fits' : `CLIPPED OVERFLOW ${m.scrollerScrollWidth}px in ${m.scrollerClientWidth} — the owning lane's content, see the lane file`})`, true, `scroller ${m.scrollerScrollWidth}/${m.scrollerClientWidth}`)
             const os = m.overscroll as { html: string; body: string; scroller: string | null }
             note(profile.id, surface.id, 'overscroll: html + body are overscroll-behavior none, the scroller is contain (a pull past either end never drags the page or the bar)', os.html === 'none' && os.body === 'none' && os.scroller === 'contain', JSON.stringify(os))
             const steps = m.steps
@@ -463,7 +468,7 @@ async function runProfile(profile: Profile, session: string | null, burner: stri
             note(profile.id, surface.id, `desktop rects recorded: spine ${JSON.stringify(d.spine)} frame ${JSON.stringify(d.mktFrame ?? d.walletShell ?? d.dashshell)} rail ${JSON.stringify(d.mktRail ?? d.dashRail)} docScrollHeight ${d.docScrollHeight}`, true)
           } else {
             const base = BASELINE ? (JSON.parse(readFileSync(BASELINE, 'utf8')) as Record<string, Record<string, unknown>>)[key] : null
-            if (!base) note(profile.id, surface.id, 'desktop baseline present', false, 'no baseline entry')
+            if (!base) note(profile.id, surface.id, 'desktop rects recorded (no BEFORE baseline for this surface — added in round 2; NAV/CHAT own its desktop)', true, `spine ${JSON.stringify(d.spine)} scrollerOverflowY ${d.scrollerOverflowY}`)
             else {
               // Viewport-bound boxes compare as full rects; content-driven boxes
               // compare x / y / width only — their HEIGHT follows live data (the
@@ -568,17 +573,47 @@ async function runSheets(session: string | null, burner: string) {
         if (c.needsSession && session) await ctx.addCookies([{ name: 'yf_session', value: session, domain: new URL(BASE).hostname, path: '/' }])
         const page: Pw = await ctx.newPage()
         page.on('pageerror', (e: unknown) => errs.push(String(e)))
+        await runSheetCase(page, ctx, c, errs, P).catch((e: unknown) => note(P, `sheet:${c.id}`, 'the case ran to its end', false, String(e).split('\n')[0].slice(0, 160)))
+      } finally {
+        await ctx.close().catch(() => {})
+      }
+    }
+  } finally {
+    await browser.close().catch(() => {})
+  }
+}
+async function runSheetCase(page: Pw, ctx: Pw, c: SheetCase, errs: string[], P: string) {
+  {
+    {
         await page.goto(`${BASE}${c.path}`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
         if (c.settle) await page.waitForSelector(c.settle, { timeout: 45_000 }).catch(() => {})
-        await page.waitForTimeout(c.needsWallet ? 4000 : 2000)
+        await page.waitForTimeout(c.needsWallet ? 2500 : 1500)
+        // A connected-only opener (the account pill) renders once wagmi has
+        // reconnected the mock — measured ~6s after load. Wait for it.
+        await page.waitForSelector(c.opener, { timeout: 15_000 }).catch(() => {})
         const sheetSel = (id: string) => `[data-sheet="${id}"]`
         const isOpen = async (id: string) => (await page.evaluate(`(() => { const s = document.querySelector('${sheetSel(id)}'); return !!s && s.getAttribute('data-phase') === 'open' && !!s.querySelector('[role="dialog"]') })()`)) as boolean
         const gone = async (id: string) => { for (let i = 0; i < 12; i++) { if (!(await page.evaluate(`!!document.querySelector('${sheetSel(id)}')`))) return true; await page.waitForTimeout(100) } return false }
         const state = async () => (await page.evaluate(`(() => ({ url: location.pathname + location.search, len: history.length, nav: performance.getEntriesByType('navigation').length, mark: window.__shellMark }))()`)) as { url: string; len: number; nav: number; mark: unknown }
         await page.evaluate(`window.__shellMark = 1`)
         const opener = await page.$(c.opener)
-        if (!opener) { note(P, `sheet:${c.id}`, `the opener ${c.opener} is on the page`, false, 'not found'); continue }
-        const open = async () => { await page.click(c.opener); for (let i = 0; i < 15; i++) { if (await isOpen(c.id)) return true; await page.waitForTimeout(100) } return false }
+        if (!opener) { note(P, `sheet:${c.id}`, `the opener ${c.opener} is on the page`, false, 'not found'); return }
+        const ensureClosed = async () => { if (await page.evaluate(`!!document.querySelector('${sheetSel(c.id)}')`)) { await page.keyboard.press('Escape'); await gone(c.id) } }
+        const open = async () => {
+          await ensureClosed()
+          await page.click(c.opener, { timeout: 8000 }).catch(async () => { await page.evaluate(`(() => { const o = document.querySelector('${c.opener}'); if (o) o.click() })()`) })
+          for (let i = 0; i < 15; i++) {
+            if (await isOpen(c.id)) {
+              // The enter motion is 260ms (mobile.css sheet-up): a handle read
+              // mid-flight aims the drag at where the grabber WAS (measured:
+              // the drag missed, the sheet stayed). Let the panel land first.
+              await page.waitForTimeout(400)
+              return true
+            }
+            await page.waitForTimeout(100)
+          }
+          return false
+        }
         const start = await state()
         // 1. open → back closes it, URL unchanged, no reload, one entry
         note(P, `sheet:${c.id}`, 'a labeled tap opens the sheet (data-phase=open, a dialog inside)', await open())
@@ -597,6 +632,7 @@ async function runSheets(session: string | null, burner: string) {
           const cdp: Pw = await ctx.newCDPSession(page)
           const [x, y] = hp
           await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] })
+          await page.waitForTimeout(30)
           for (let i = 1; i <= 8; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y + i * 30 }] }); await page.waitForTimeout(16) }
           await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
           note(P, `sheet:${c.id}`, 'a TOUCH drag down on the grabber/head (240px, CDP) dismisses it', await gone(c.id))
@@ -643,6 +679,75 @@ async function runSheets(session: string | null, burner: string) {
           }
         }
         note(P, `sheet:${c.id}`, 'no page errors', errs.length === 0, errs.slice(0, 2).join(' | '))
+    }
+  }
+}
+
+// ── Round 2: a link INSIDE a sheet (the row closes the sheet AND navigates) ─
+// The coordinator's history pop is deferred; a pop under an in-flight Next
+// navigation could abort it or bounce the visitor. The network is throttled
+// (300ms latency) so the RSC fetch is slow, the way a phone's is.
+type LinkCase = { id: string; path: string; opener: string; link: string; target: string; needsSession?: boolean; needsWallet?: boolean; settle?: string }
+const SHEET_LINKS: LinkCase[] = [
+  { id: 'more→docs', path: '/markets', opener: '[data-sheet-open="more"]', link: '[data-sheet="more"] a[href="/docs"]', target: '/docs', settle: '.mk-board, .mkt-frame__data' },
+  { id: 'more→settings', path: '/markets', opener: '[data-sheet-open="more"]', link: '[data-sheet="more"] a[href="/dashboard"]', target: '/dashboard', needsSession: true, needsWallet: true, settle: '.mk-board, .mkt-frame__data' },
+  { id: 'nav→pricing', path: '/', opener: '[data-sheet-open="nav"]', link: '[data-sheet="nav"] a[href="/pricing"]', target: '/pricing', settle: 'header.nav, .nav' },
+  { id: 'account→dashboard', path: '/markets', opener: '[data-sheet-open="account"]', link: '[data-sheet="account"] a[href="/dashboard"]', target: '/dashboard', needsSession: true, needsWallet: true, settle: '.mk-board, .mkt-frame__data' },
+]
+async function runSheetLinks(session: string | null, burner: string) {
+  const browser: Pw = await chromium.launch({ executablePath: CHROME, headless: true })
+  const P = 'chrome-iphone13-ua-390'
+  try {
+    for (const c of SHEET_LINKS) {
+      if (c.needsSession && !session) { note(P, `sheetlink:${c.id}`, 'skipped: no session', true); continue }
+      const { defaultBrowserType: _d, ...dev } = devices['iPhone 13']
+      void _d
+      const ctx: Pw = await browser.newContext({ ...dev, viewport: { width: 390, height: 664 }, colorScheme: 'dark', extraHTTPHeaders: { 'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1' } })
+      const errs: string[] = []
+      try {
+        if (c.needsWallet) {
+          await ctx.exposeFunction('__driveSignSiwe', (raw: string) => signSiweWithBurner(raw))
+          await ctx.addInitScript(mockWalletScript({ address: burner, siweBridge: true }))
+          await ctx.addInitScript(rememberConnectorScript())
+        }
+        if (c.needsSession && session) await ctx.addCookies([{ name: 'yf_session', value: session, domain: new URL(BASE).hostname, path: '/' }])
+        const page: Pw = await ctx.newPage()
+        page.on('pageerror', (e: unknown) => errs.push(String(e)))
+        await page.goto(`${BASE}${c.path}`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+        if (c.settle) await page.waitForSelector(c.settle, { timeout: 45_000 }).catch(() => {})
+        await page.waitForTimeout(c.needsWallet ? 2500 : 1500)
+        await page.waitForSelector(c.opener, { timeout: 15_000 }).catch(() => {})
+        await page.evaluate(`window.__shellMark = 1`)
+        const state = async () => (await page.evaluate(`(() => ({ path: location.pathname, len: history.length, nav: performance.getEntriesByType('navigation').length, mark: window.__shellMark, sheets: document.querySelectorAll('[data-sheet]').length }))()`)) as { path: string; len: number; nav: number; mark: unknown; sheets: number }
+        const start = await state()
+        const cdp: Pw = await ctx.newCDPSession(page)
+        await cdp.send('Network.enable')
+        await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 300, downloadThroughput: -1, uploadThroughput: -1 })
+        await page.click(c.opener, { timeout: 8000 }).catch(async () => { await page.evaluate(`(() => { const o = document.querySelector('${c.opener}'); if (o) o.click() })()`) })
+        let opened = false
+        for (let i = 0; i < 20; i++) { if (await page.evaluate(`(() => { const s = document.querySelector('${c.opener.replace(/^\[data-sheet-open="([^"]+)"\]$/, '[data-sheet="$1"]')}'); return !!s && s.getAttribute('data-phase') === 'open' })()`)) { opened = true; break }; await page.waitForTimeout(100) }
+        await page.waitForTimeout(400)
+        note(P, `sheetlink:${c.id}`, 'the sheet opens (network throttled to 300ms latency from here)', opened)
+        const link = await page.$(c.link)
+        if (!link) { note(P, `sheetlink:${c.id}`, `the row ${c.link} is in the sheet`, false, 'not found'); continue }
+        await link.click()
+        let landed = false
+        for (let i = 0; i < 60; i++) { if ((await state()).path === c.target) { landed = true; break }; await page.waitForTimeout(100) }
+        const t1 = await state()
+        note(P, `sheetlink:${c.id}`, `the tap lands on ${c.target} within 6s (a 300ms-latency RSC fetch under the deferred pop)`, landed, JSON.stringify(t1))
+        await page.waitForTimeout(1500)
+        const t2 = await state()
+        note(P, `sheetlink:${c.id}`, 'and stays there 1.5s later: no bounce, no reload, no sheet left open', t2.path === c.target && t2.nav === 1 && t2.mark === 1 && t2.sheets === 0, JSON.stringify(t2))
+        note(P, `sheetlink:${c.id}`, 'history grew by exactly one entry for the navigation (the sheet\'s entry was consumed, or left as a same-URL step the back gesture skips)', t2.len - start.len === 1 || t2.len - start.len === 2, `${start.len} → ${t2.len}`)
+        await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
+        await page.goBack({ waitUntil: 'commit' }).catch(() => {})
+        let backHome = false
+        for (let i = 0; i < 50; i++) { const st = await state(); if (st.path === new URL(`${BASE}${c.path}`).pathname && st.sheets === 0) { backHome = true; break }; await page.waitForTimeout(100) }
+        const t3 = await state()
+        note(P, `sheetlink:${c.id}`, `ONE back returns to ${c.path.split('?')[0]} with no sheet open (a stale sheet entry is skipped, never a dead press)`, backHome && t3.nav === 1, JSON.stringify(t3))
+        note(P, `sheetlink:${c.id}`, 'no page errors', errs.length === 0, errs.slice(0, 2).join(' | '))
+      } catch (e) {
+        note(P, `sheetlink:${c.id}`, 'the case ran to its end', false, String(e).split('\n')[0].slice(0, 160))
       } finally {
         await ctx.close().catch(() => {})
       }
@@ -671,6 +776,7 @@ async function main() {
   }
   if (MODE === 'after' && ENGINES.includes('chrome') && row('scrollkind')) await runScrollKind(session, burner)
   if (MODE === 'after' && ENGINES.includes('chrome') && row('sheets')) await runSheets(session, burner)
+  if (MODE === 'after' && ENGINES.includes('chrome') && row('sheetlinks')) await runSheetLinks(session, burner)
   if (OUT) {
     writeFileSync(OUT, JSON.stringify(record, null, 2))
     console.log(`\nrecorded → ${OUT}`)

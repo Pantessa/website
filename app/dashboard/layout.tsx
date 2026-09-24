@@ -63,9 +63,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     router.replace('/')
   }, [signedOut, pathname, router])
 
-  // Nothing to render until we know the user is authed: null through the
-  // loading phase, and through the brief tick before the redirect above lands.
-  if (!mounted || !address) return null
+  // Nothing to render until we know the user is authed: through the loading
+  // phase, and through the brief tick before the redirect above lands. On a
+  // phone the FRAME renders at once (an empty one), so the document never has
+  // a moment without the frame's rules while the wallet/session settle (QA saw
+  // a transient scrolling document on the dashboard once; the content still
+  // waits, so nothing of the dashboard shows before auth is known).
+  if (!mounted || !address) return <div className="dashshell" {...{ [FRAME_ATTR]: '' }} />
 
   // Below lg the shell is a PHONE FRAME (squad mobile-native, 2026-09-24;
   // app/native-shell.css): .dashshell is the frame, .dash is its ONE scroller

@@ -138,7 +138,14 @@ function ScrollMemory() {
     lastOp.current = null
     seenPath.current = pathname
     if (!hasAppScroller()) return
-    if (how === 'keep') return
+    if (how === 'keep') {
+      // The screen stays where it is — and the position it holds becomes the
+      // NEW path's memory at once (the scroll happened under the old URL, so
+      // nothing had been written for this one; a later back/forward onto
+      // this entry restores it).
+      writeMemory(scrollMemoryKey(location.pathname, location.search), appScrollTop())
+      return
+    }
     if (how === 'top') {
       // A new screen starts at its top (the DOM may be reused: /t/AAPL → /t/TSLA).
       scrollAppTo(0, 'auto')
