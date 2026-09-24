@@ -39,7 +39,7 @@ export const PHONE_SCREEN_TITLES: Record<Exclude<PhoneScreenName, 'chat'>, strin
 
 /** Scroll the LINKS screen to one of the studio's own stages. */
 function scrollStudioTo(selector: string) {
-  const el = document.querySelector<HTMLElement>(`[data-phone-screen="links"] ${selector}`)
+  const el = document.querySelector<HTMLElement>(`[data-phone-panel="links"] ${selector}`)
   el?.scrollIntoView({ block: 'start', behavior: 'smooth' })
 }
 
@@ -62,6 +62,7 @@ function LinksScreen() {
           aria-label="Your list"
           aria-haspopup="dialog"
           aria-expanded={listOpen}
+          data-sheet-open="links"
           title="Your links at a glance — mint, the first-payout checklist, copy a link, your page"
           className="flex-shrink-0 flex items-center gap-1.5 min-h-[44px] px-3 rounded-xl text-[12px] font-medium text-[color:var(--accent)] active:bg-[var(--surf-1)] transition-colors select-none"
         >
@@ -71,7 +72,7 @@ function LinksScreen() {
       }
     >
       <LinksWorkspace />
-      <Sheet id="links-list" open={listOpen} onClose={() => setListOpen(false)} title="Your links" size="auto">
+      <Sheet id="links" open={listOpen} onClose={() => setListOpen(false)} title="Your links" size="auto">
         <div className="flex flex-col pb-2">
           <LinksRailTab flat onMint={() => landOn('.linkstudio__mint')} onPage={() => landOn('.linkstudio__page')} onStudio={() => landOn('.linkstudio')} />
         </div>

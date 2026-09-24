@@ -33135,7 +33135,8 @@ async function main() {
     check(
       'native nav: MORE is a Sheet (id "more", aria-haspopup="dialog") holding Team (roster on), Docs and Settings — no popover, no outside-pointer listener',
       /<Sheet id="more" open=\{moreOpen\} onClose=\{\(\) => setMoreOpen\(false\)\} title="More"/.test(nnSpine) &&
-        /aria-label="More"\s+aria-haspopup="dialog"/.test(nnSpine) &&
+        // Every sheet's labeled opener wears data-sheet-open=<id> = the Sheet's id (the squad drive's contract).
+        /aria-label="More"\s+aria-haspopup="dialog"\s+aria-expanded=\{moreOpen\}\s+data-sheet-open="more"/.test(nnSpine) &&
         !/data-spine-more/.test(nnSpine) && !/addEventListener\('pointerdown'/.test(nnSpine) &&
         /href="\/docs" role="menuitem"/.test(nnSpine) && /href="\/dashboard"\s+role="menuitem"/.test(nnSpine),
     )
@@ -33163,8 +33164,11 @@ async function main() {
         /if \(!isNarrow \|\| mainView !== 'links' \|\| railTab !== 'links'\) return\s*setMainView\('chat'\)\s*setPhoneScreen\('links'\)/.test(nnWs),
     )
     check(
-      'native nav: a phone screen names itself (data-phone-screen), carries the frame scroller (data-app-scroll) and sits above the guest banner and below the bar (z-45)',
-      /<section data-phone-screen=\{name\} aria-label=\{title\} className="absolute inset-0 z-\[45\] flex flex-col bg-\[var\(--bg\)\]">/.test(nnScreen) &&
+      'native nav: the main area names its screen (main[data-phone-screen]), a screen panel names itself (data-phone-panel), carries the frame scroller (data-app-scroll) and sits above the guest banner and below the bar (z-45)',
+      /<section data-phone-panel=\{name\} aria-label=\{title\} className="absolute inset-0 z-\[45\] flex flex-col bg-\[var\(--bg\)\]">/.test(nnScreen) &&
+        // The main area names its screen in EVERY state (the squad drive's
+        // contract: main[data-phone-screen="chat|history|apps|jobs|links|team"]).
+        /<main className="relative flex-1 min-w-0 min-h-0 flex flex-col" data-phone-screen=\{isNarrow \? phoneScreen : undefined\}>/.test(nnWs) &&
         /<div ref=\{scrollerRef\} data-app-scroll="" className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain/.test(nnScreen) &&
         // Scroll position remembered per screen (invariant 3): the scroller's
         // offset is saved on unmount and restored on the next mount.
@@ -33176,8 +33180,8 @@ async function main() {
         /case 'jobs':[\s\S]*?<JobsRailTab flat onNavigate=\{toChat\} \/>/.test(nnScreens) &&
         /case 'team':[\s\S]*?<TeamRailTab flat \/>/.test(nnScreens) &&
         /case 'history':[\s\S]*?<ChatsRailTab flat onNavigate=\{toChat\} \/>/.test(nnScreens) &&
-        /aria-label="Your list"\s+aria-haspopup="dialog"/.test(nnScreens) &&
-        /<Sheet id="links-list" open=\{listOpen\}/.test(nnScreens) &&
+        /aria-label="Your list"\s+aria-haspopup="dialog"\s+aria-expanded=\{listOpen\}\s+data-sheet-open="links"/.test(nnScreens) &&
+        /<Sheet id="links" open=\{listOpen\}/.test(nnScreens) &&
         /<LinksRailTab flat onMint=\{\(\) => landOn\('\.linkstudio__mint'\)\} onPage=\{\(\) => landOn\('\.linkstudio__page'\)\} onStudio=\{\(\) => landOn\('\.linkstudio'\)\} \/>/.test(nnScreens) &&
         /<LinksWorkspace \/>/.test(nnScreens),
     )

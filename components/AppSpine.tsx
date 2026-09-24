@@ -636,6 +636,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             aria-label="More"
             aria-haspopup="dialog"
             aria-expanded={moreOpen}
+            data-sheet-open="more"
             className={cn(PHONE_SEAT, moreLit || moreOpen ? 'text-white' : 'text-[color:var(--muted)]')}
           >
             {moreLit && (

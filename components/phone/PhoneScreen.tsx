@@ -2,7 +2,9 @@
 
 // ONE phone screen (squad mobile-native, 2026-09-24): a destination given the
 // whole /chat main area below lg — a header naming the place, then the
-// screen's ONE scroller. It lies OVER the conversation (absolute, opaque)
+// screen's ONE scroller. The panel carries `data-phone-panel=<name>`; the
+// main area itself carries `data-phone-screen=<name>` (ChatWorkspace), the
+// squad's drive contract, in every state including the conversation. It lies OVER the conversation (absolute, opaque)
 // rather than replacing it, so the conversation keeps its state, its
 // in-flight turn and its scroll position while you visit APPS or JOBS; the
 // conversation underneath is made inert by ChatWorkspace.
@@ -40,24 +42,26 @@ export default function PhoneScreen({
   useEffect(() => {
     const el = scrollerRef.current
     if (!el) return
+    // Remember as you scroll, never at unmount: by the time a passive
+    // cleanup runs the node is detached and reads scrollTop 0.
+    const remember = () => SCROLL_MEMORY.set(name, el.scrollTop)
+    el.addEventListener('scroll', remember, { passive: true })
     const saved = SCROLL_MEMORY.get(name) ?? 0
+    let raf = 0
     if (saved > 0) {
       el.scrollTop = saved
       // Lists arrive a beat later than the frame: land once more after paint.
-      const raf = requestAnimationFrame(() => {
+      raf = requestAnimationFrame(() => {
         if (el.scrollTop === 0) el.scrollTop = saved
       })
-      return () => {
-        cancelAnimationFrame(raf)
-        SCROLL_MEMORY.set(name, el.scrollTop)
-      }
     }
     return () => {
-      SCROLL_MEMORY.set(name, el.scrollTop)
+      cancelAnimationFrame(raf)
+      el.removeEventListener('scroll', remember)
     }
   }, [name])
   return (
-    <section data-phone-screen={name} aria-label={title} className="absolute inset-0 z-[45] flex flex-col bg-[var(--bg)]">
+    <section data-phone-panel={name} aria-label={title} className="absolute inset-0 z-[45] flex flex-col bg-[var(--bg)]">
       <header className="flex-shrink-0 flex items-center gap-2 pl-4 pr-2 min-h-12 border-b border-[var(--line)]">
         <h1 className="flex-1 min-w-0 mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] truncate">{title}</h1>
         {action}

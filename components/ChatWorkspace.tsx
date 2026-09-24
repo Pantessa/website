@@ -269,8 +269,10 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
         <ChatRail />
       </div>
       {/* min-h-0: inside the phone frame (a 100dvh column) this is the flex
-          child that holds the ONE scroller, so it must be allowed to shrink. */}
-      <main className="relative flex-1 min-w-0 min-h-0 flex flex-col">
+          child that holds the ONE scroller, so it must be allowed to shrink.
+          data-phone-screen names what the main area shows below lg (the
+          squad's drive contract: chat | history | apps | jobs | links | team). */}
+      <main className="relative flex-1 min-w-0 min-h-0 flex flex-col" data-phone-screen={isNarrow ? phoneScreen : undefined}>
         {/* The phone screen showing over the conversation. It mounts BEFORE
             ChatInterface so its scroller is the first `data-app-scroll` on
             the page while it shows (lib/app-scroller). */}

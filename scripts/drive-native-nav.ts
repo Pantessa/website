@@ -102,8 +102,10 @@ type BarRead = {
   bar: { top: number; bottom: number; height: number; innerHeight: number } | null
   /** The phone overlay drawer (main's ChatRail posture below lg). */
   drawer: { x: number; y: number; w: number; h: number; pct: number } | null
-  /** The phone screen (the branch's [data-phone-screen]). */
+  /** The phone screen panel (the branch's [data-phone-panel]). */
   screen: { name: string; x: number; y: number; w: number; h: number; pct: number } | null
+  /** What /chat's main area says it shows (main[data-phone-screen]). */
+  mainScreen: string | null
   /** The MORE popover (main) or the MORE sheet (branch). */
   more: 'popover' | 'sheet' | null
   scrim: boolean
@@ -128,7 +130,7 @@ async function readBar(page: any): Promise<BarRead> {
     const br = bar?.getBoundingClientRect()
     const drawerEl = Array.from(document.querySelectorAll<HTMLElement>('aside')).find((a) => /max-lg:absolute/.test(a.className) && a.getBoundingClientRect().width > 8) ?? null
     const dr = drawerEl?.getBoundingClientRect()
-    const screenEl = document.querySelector('[data-phone-screen]') as HTMLElement | null
+    const screenEl = document.querySelector('[data-phone-panel]') as HTMLElement | null
     const sr = screenEl?.getBoundingClientRect()
     const more = document.querySelector('[data-spine-more]') ? 'popover' : document.querySelector('.sheet[data-sheet="more"]') ? 'sheet' : null
     const scrim = !!document.querySelector('.sheet__scrim')
@@ -136,7 +138,7 @@ async function readBar(page: any): Promise<BarRead> {
     const describe = (el: HTMLElement | null) => {
       if (!el) return 'nothing'
       const tag = el.tagName.toLowerCase()
-      const id = el.getAttribute('data-phone-screen') ? `[data-phone-screen=${el.getAttribute('data-phone-screen')}]` : el.className && typeof el.className === 'string' ? '.' + el.className.split(/\s+/).slice(0, 2).join('.') : ''
+      const id = el.getAttribute('data-phone-panel') ? `[data-phone-panel=${el.getAttribute('data-phone-panel')}]` : el.className && typeof el.className === 'string' ? '.' + el.className.split(/\s+/).slice(0, 2).join('.') : ''
       const inDrawer = drawerEl?.contains(el) ? ' (in drawer)' : ''
       const inScreen = screenEl?.contains(el) ? ' (in screen)' : ''
       const inScrim = el.classList.contains('sheet__scrim') ? ' (scrim)' : ''
@@ -150,7 +152,8 @@ async function readBar(page: any): Promise<BarRead> {
       lit,
       bar: br ? { top: Math.round(br.top), bottom: Math.round(br.bottom), height: Math.round(br.height), innerHeight: vh } : null,
       drawer: dr ? { x: Math.round(dr.left), y: Math.round(dr.top), w: Math.round(dr.width), h: Math.round(dr.height), pct: pctOf(dr) } : null,
-      screen: sr && screenEl ? { name: screenEl.getAttribute('data-phone-screen') ?? '?', x: Math.round(sr.left), y: Math.round(sr.top), w: Math.round(sr.width), h: Math.round(sr.height), pct: pctOf(sr) } : null,
+      screen: sr && screenEl ? { name: screenEl.getAttribute('data-phone-panel') ?? '?', x: Math.round(sr.left), y: Math.round(sr.top), w: Math.round(sr.width), h: Math.round(sr.height), pct: pctOf(sr) } : null,
+      mainScreen: (document.querySelector('main[data-phone-screen]') as HTMLElement | null)?.getAttribute('data-phone-screen') ?? null,
       more,
       scrim,
       outsideHits: describe(hit),
@@ -325,6 +328,7 @@ const rowContract: NavScenario = {
     const page = await openChat(ctx)
     const r0 = await readBar(page)
     v.push(r0.lit.length === 1 && r0.lit[0] === 'CHATS' ? pass('contract', 'in a conversation the CHATS seat is lit', r0.lit.join(',')) : fail('contract', 'in a conversation the CHATS seat is lit', `lit=[${r0.lit.join(',')}]`))
+    v.push(r0.mainScreen === 'chat' ? pass('contract', 'the main area names its screen in the conversation (main[data-phone-screen="chat"])', String(r0.mainScreen)) : fail('contract', 'the main area names its screen in the conversation (main[data-phone-screen="chat"])', String(r0.mainScreen)))
     v.push(r0.drawer === null && r0.screen === null ? pass('contract', 'at rest nothing covers the conversation', 'no drawer, no screen') : fail('contract', 'at rest nothing covers the conversation', JSON.stringify({ drawer: r0.drawer, screen: r0.screen })))
     v.push(r0.bar && r0.bar.height >= 44 ? pass('contract', 'the bar is ≥44px tall', `${r0.bar.height}px`) : fail('contract', 'the bar is ≥44px tall', JSON.stringify(r0.bar)))
     const seatSizes: Array<{ label: string; w: number; h: number; font: number }> = await page.evaluate(() =>
@@ -347,11 +351,12 @@ const rowContract: NavScenario = {
     const rA = await readBar(page)
     v.push(rA.screen?.name === 'apps' && rA.screen.w >= ctx.profile.width - 1 ? pass('contract', 'APPS is a full-width screen', `${rA.screen.w}×${rA.screen.h} = ${rA.screen.pct}%`) : fail('contract', 'APPS is a full-width screen', JSON.stringify(rA.screen)))
     v.push(rA.lit.join(',') === 'APPS' ? pass('contract', 'APPS lights its seat', rA.lit.join(',')) : fail('contract', 'APPS lights its seat', `lit=[${rA.lit.join(',')}]`))
+    v.push(rA.mainScreen === 'apps' ? pass('contract', 'the main area names the APPS screen (main[data-phone-screen="apps"])', String(rA.mainScreen)) : fail('contract', 'the main area names the APPS screen (main[data-phone-screen="apps"])', String(rA.mainScreen)))
     v.push(/tab=mcps/.test(rA.url) ? pass('contract', 'the URL names the APPS screen (?tab=mcps)', rA.url) : fail('contract', 'the URL names the APPS screen (?tab=mcps)', rA.url))
     v.push(!rA.scrim && !rA.drawer ? pass('contract', 'no scrim, no drawer: a place, not a pop-up', 'ok') : fail('contract', 'no scrim, no drawer: a place, not a pop-up', JSON.stringify({ scrim: rA.scrim, drawer: rA.drawer })))
     await ctx.shot(page, 'screen-apps')
     // The apps list is there.
-    const appsRows = await page.locator('[data-phone-screen="apps"] [role="button"]').count()
+    const appsRows = await page.locator('[data-phone-panel="apps"] [role="button"]').count()
     v.push(appsRows > 0 ? pass('contract', 'the APPS screen lists the MCPs', `${appsRows} rows`) : fail('contract', 'the APPS screen lists the MCPs', `${appsRows} rows`))
     // Tap the lit seat at the top → stays, scrolls to top (scroll first).
     const scrolled = await page.evaluate(() => {
@@ -366,6 +371,19 @@ const rowContract: NavScenario = {
     v.push(rA2.screen?.name === 'apps' ? pass('contract', 'tapping the lit APPS seat stays on APPS', rA2.screen.name) : fail('contract', 'tapping the lit APPS seat stays on APPS', JSON.stringify(rA2.screen)))
     v.push(scrolled <= 0 || (rA2.appScrollTop ?? 1) === 0 ? pass('contract', 'tapping the lit seat scrolls its screen to the top', `scrolled ${scrolled} → ${rA2.appScrollTop}`) : fail('contract', 'tapping the lit seat scrolls its screen to the top', `scrolled ${scrolled} → ${rA2.appScrollTop}`))
 
+    // Scroll memory: leave APPS scrolled, come back, land where you were.
+    const left = await page.evaluate(() => {
+      const s = document.querySelector('[data-app-scroll]') as HTMLElement | null
+      if (!s) return -1
+      s.scrollTop = 150
+      return s.scrollTop
+    })
+    await tapSeat(page, 'CHATS')
+    await wait(500)
+    await tapSeat(page, 'APPS')
+    await wait(700)
+    const back = (await readBar(page)).appScrollTop ?? -1
+    v.push(left <= 0 || Math.abs(back - left) <= 4 ? pass('contract', 'a screen remembers its scroll position across a leave + return', `left at ${left}, back at ${back}`) : fail('contract', 'a screen remembers its scroll position across a leave + return', `left at ${left}, back at ${back}`))
     // CHATS from APPS → back to the conversation (no history list).
     await tapSeat(page, 'CHATS')
     await wait(600)
@@ -377,7 +395,7 @@ const rowContract: NavScenario = {
     const rH = await readBar(page)
     v.push(rH.screen?.name === 'history' && rH.lit.join(',') === 'CHATS' && /tab=chats/.test(rH.url) ? pass('contract', 'CHATS in the conversation shows the chat list ("New chat" first), CHATS stays lit, ?tab=chats', rH.url) : fail('contract', 'CHATS in the conversation shows the chat list', JSON.stringify({ screen: rH.screen, lit: rH.lit, url: rH.url })))
     const newChatFirst = await page.evaluate(() => {
-      const s = document.querySelector('[data-phone-screen="history"]')
+      const s = document.querySelector('[data-phone-panel="history"]')
       const first = s?.querySelector('button, [role="button"]') as HTMLElement | null
       return first?.textContent?.trim() ?? ''
     })
@@ -401,17 +419,17 @@ const rowContract: NavScenario = {
     }
     // LINKS: the list is one labeled tap away, as a Sheet with a scrim that
     // closes on a tap outside.
-    const listBtn = page.locator('[data-phone-screen="links"] button[aria-label="Your list"]').first()
+    const listBtn = page.locator('[data-phone-panel="links"] button[aria-label="Your list"][data-sheet-open="links"]').first()
     if ((await listBtn.count()) > 0) {
       await listBtn.tap()
       await wait(500)
       const rS = await readBar(page)
-      const sheetUp = await page.locator('.sheet[data-sheet="links-list"]').count()
+      const sheetUp = await page.locator('.sheet[data-sheet="links"]').count()
       v.push(sheetUp > 0 && rS.scrim ? pass('contract', 'LINKS: "Your list" opens the list as a Sheet with a scrim', 'ok') : fail('contract', 'LINKS: "Your list" opens the list as a Sheet with a scrim', JSON.stringify({ sheetUp, scrim: rS.scrim })))
       await ctx.shot(page, 'sheet-links-list')
       await tapOutside(page)
       await wait(500)
-      const gone = (await page.locator('.sheet[data-sheet="links-list"]').count()) === 0
+      const gone = (await page.locator('.sheet[data-sheet="links"]').count()) === 0
       v.push(gone ? pass('contract', 'LINKS list sheet: a tap outside closes it', 'closed') : fail('contract', 'LINKS list sheet: a tap outside closes it', 'still open'))
     } else {
       v.push(fail('contract', 'LINKS: "Your list" button exists on the screen', 'missing'))
@@ -511,7 +529,7 @@ const rowDesktop: NavScenario = {
         const drawer = Array.from(document.querySelectorAll<HTMLElement>('aside')).find((a) => a !== col && a.getBoundingClientRect().width > 8) ?? null
         const heading = drawer?.querySelector('span.mono')?.textContent?.trim() ?? ''
         const bar = document.querySelector('nav[data-spine-bar]') as HTMLElement | null
-        const screen = document.querySelector('[data-phone-screen]')
+        const screen = document.querySelector('[data-phone-panel], main[data-phone-screen]')
         return { lit, drawerW: drawer ? Math.round(drawer.getBoundingClientRect().width) : 0, heading, barVisible: !!bar && bar.getBoundingClientRect().height > 0, screen: !!screen, url: location.pathname + location.search }
       })
     const r0 = await read()
