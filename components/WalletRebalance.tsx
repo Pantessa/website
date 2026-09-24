@@ -277,7 +277,7 @@ export default function WalletRebalance({
                 onChange={(e) => setToken(r.id, e.target.value)}
                 placeholder="TOKEN"
                 aria-label="Token symbol"
-                className="mono w-24 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2 py-1 text-[12px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+                className="mono w-24 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2 py-1 text-[12px] max-lg:text-[16px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
               />
               <input
                 value={r.pct}
@@ -288,7 +288,7 @@ export default function WalletRebalance({
                 step="any"
                 placeholder="%"
                 aria-label="Percent"
-                className="mono w-16 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2 py-1 text-[12px] text-[color:var(--fg)] tabular-nums focus:outline-none focus:border-[var(--accent)]"
+                className="mono w-16 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2 py-1 text-[12px] max-lg:text-[16px] text-[color:var(--fg)] tabular-nums focus:outline-none focus:border-[var(--accent)]"
               />
               <span className="mono text-[11px] text-[color:var(--muted-2)]">%</span>
               <button
