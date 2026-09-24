@@ -1095,7 +1095,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       return
     }
     t.style.height = 'auto'
-    t.style.height = `${Math.min(t.scrollHeight, 160)}px`
+    // The cap is the field's own CSS max-height: max-h-40 (~6 lines), or
+    // 2 lines on a short landscape phone (chat-phone.css).
+    const cap = parseFloat(getComputedStyle(t).maxHeight) || 160
+    t.style.height = `${Math.min(t.scrollHeight, cap)}px`
   }, [input, isNarrow, embedded])
 
   // A lift re-pins the newest turn (the spacer grows the thread; the

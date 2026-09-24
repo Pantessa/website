@@ -36,7 +36,18 @@
     min-height: 0;
     overflow: clip;
     overscroll-behavior: none;
+    /* The belt (SHELL round 2): body is a column flex box, so a stray IN-FLOW
+       sibling of the frame (QA measured a 396px document in a 390px
+       landscape viewport on one integration tree — 6px of something outside
+       the scroller) is absorbed by the frame shrinking (it is min-height 0,
+       overflow hidden) instead of growing the document. Portals are fixed
+       and unaffected; the frame keeps its 100dvh where nothing strays. */
+    display: flex;
+    flex-direction: column;
   }
+  html:has([data-app-frame]) body > * { flex-shrink: 0; }
+  html:has([data-app-frame]) body > [data-app-frame],
+  html:has([data-app-frame]) body > :has(> [data-app-frame]) { flex-shrink: 1; min-height: 0; }
 
   /* The frame: a column exactly as tall as the visible viewport. `dvh`
      follows Safari's toolbar (which never collapses here, so it is also

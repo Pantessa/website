@@ -193,3 +193,20 @@
     border-radius: 999px;
   }
 }
+
+/* ── A short phone (landscape) — squad mobile-native, CHAT r3 ─────────────
+   SHELL measured 165px of thread at 844×390 (135px at 740×360): a 52px top
+   bar, the guest banner (62), the composer (70) and a 41px tab bar left the
+   conversation a strip. Below 480px of height: the top bar is one 44px row
+   (the title and the apps count side by side), the guest banner steps aside
+   (signing in stays one tap away behind the account door), the composer's
+   padding tightens and it grows to 2 lines at most. Portrait is untouched. */
+@media (max-width: 1023px) and (max-height: 480px) {
+  .chat-phonebar { min-height: 44px; }
+  .chat-phonebar__head { flex-direction: row; gap: 8px; padding-top: 0; padding-bottom: 0; }
+  .chat-phonebar__title { min-width: 0; }
+  .chat-phonebar__apps { margin-top: 0; flex-shrink: 0; }
+  [data-chat-gate-banner-slot] { display: none; }
+  .yf-chat [data-composer] { padding-top: 6px; padding-bottom: 6px; }
+  [data-composer-input][data-composer-input] { max-height: 68px; }
+}

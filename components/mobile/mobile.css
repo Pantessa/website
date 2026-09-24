@@ -45,7 +45,10 @@
   max-height: calc(100dvh - max(24px, env(safe-area-inset-top)));
   border-top: 1px solid var(--line-2);
   border-radius: 16px 16px 0 0;
-  padding-bottom: env(safe-area-inset-bottom);
+  /* The side insets are the landscape notch (44px on a notched iPhone): the
+     panel spans the whole width, its content stays clear of the sensor
+     housing (SHELL round 2). */
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 .sheet[data-side='bottom'][data-size='full'] .sheet__panel {
   height: calc(100dvh - max(24px, env(safe-area-inset-top)));
@@ -67,6 +70,13 @@ html[data-keyboard] .sheet[data-side='bottom'] .sheet__panel {
   margin-bottom: var(--kb-inset, 0px);
   max-height: calc(100dvh - var(--kb-inset, 0px) - max(24px, env(safe-area-inset-top)));
   padding-bottom: 0;
+}
+/* Landscape on a phone (NAV's 40px seat row is the bar's own posture): a
+   bottom sheet may take everything above the status bar, so a short
+   viewport still leaves a usable panel. */
+@media (max-width: 1023px) and (orientation: landscape) and (max-height: 480px) {
+  .sheet[data-side='bottom'] .sheet__panel { max-height: calc(100dvh - max(12px, env(safe-area-inset-top))); }
+  .sheet[data-side='bottom'][data-size='full'] .sheet__panel { height: calc(100dvh - max(12px, env(safe-area-inset-top))); }
 }
 html[data-keyboard] .sheet[data-side='bottom'][data-size='full'] .sheet__panel {
   height: calc(100dvh - var(--kb-inset, 0px) - max(24px, env(safe-area-inset-top)));

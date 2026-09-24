@@ -12,7 +12,13 @@
 //      an inner scroller gets nothing, and a same-segment push (/t/AAPL →
 //      /t/TSLA re-renders the same DOM) would even keep the old position. So:
 //      a push lands at the top, back/forward and a reload restore what was
-//      remembered for that path + search (sessionStorage, per tab).
+//      remembered for that path + search (sessionStorage, per tab), and a
+//      REPLACE keeps the scroll (lib/phone-shell scrollKindFor: the chat's
+//      /chat → /chat/<id> catch-up after its first turn is a replaceState, and
+//      it used to read as a push and scroll the thread to 0 — CHAT's finding).
+//      The kind is read off history itself: pushState / replaceState are
+//      wrapped (by METHOD, whichever side of Next's own patch we land on —
+//      only calls that change the pathname count) and popstate is watched.
 //   3. `theme-color` follows the SITE theme: the head's meta is written by
 //      THEME_BOOTSTRAP (app/layout.tsx) before first paint and on every
 //      data-theme change; this mount only asserts it exists after hydration
@@ -21,7 +27,8 @@
 import { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import { appScrollTop, hasAppScroller, scrollAppTo } from '@/lib/app-scroller'
-import { KB_INSET_VAR, KEYBOARD_ATTR, scrollMemoryKey, themeColorFor } from '@/lib/phone-shell'
+import { KB_INSET_VAR, KEYBOARD_ATTR, historyUrlChangesPath, scrollKindFor, scrollMemoryKey, themeColorFor, type HistoryOp } from '@/lib/phone-shell'
+import { SHEET_PUSH_AS_REPLACE_EVENT } from '@/lib/sheet-history'
 import { useSoftKeyboard } from './useSoftKeyboard'
 
 function KeyboardReflector() {
@@ -64,13 +71,39 @@ function writeMemory(key: string, top: number) {
 
 function ScrollMemory() {
   const pathname = usePathname()
-  // 'pop' from the moment popstate fires until the next route effect runs.
-  const kind = useRef<'push' | 'pop' | 'reload'>('push')
+  // The last pathname-changing history op since the last route effect.
+  const lastOp = useRef<HistoryOp>(null)
+  // The pathname the screen showed at the last route effect.
+  const seenPath = useRef<string | null>(null)
   const first = useRef(true)
 
   useEffect(() => {
+    seenPath.current ??= window.location.pathname
+    const h = window.history
+    const origPush = h.pushState
+    const origReplace = h.replaceState
+    const mark = (op: HistoryOp, url: string | URL | null | undefined) => {
+      if (historyUrlChangesPath(window.location.pathname, url, window.location.href)) lastOp.current = op
+    }
+    const pushWrapped = function (this: History, data: unknown, unused: string, url?: string | URL | null) {
+      mark('push', url)
+      return origPush.call(this, data, unused, url)
+    }
+    const replaceWrapped = function (this: History, data: unknown, unused: string, url?: string | URL | null) {
+      mark('replace', url)
+      return origReplace.call(this, data, unused, url)
+    }
+    h.pushState = pushWrapped
+    h.replaceState = replaceWrapped
+    // A navigation that took over a closed sheet's history entry was
+    // performed as a replaceState (lib/sheet-history rule 2): still a PUSH
+    // to the screen — it lands at its top.
+    const onPushAsReplace = (e: Event) => mark('push', (e as CustomEvent<{ url: string | null }>).detail?.url)
+    window.addEventListener(SHEET_PUSH_AS_REPLACE_EVENT, onPushAsReplace)
     const onPop = () => {
-      kind.current = 'pop'
+      // The URL has already moved when popstate fires; a same-path pop (a
+      // sheet's history entry) is no screen change.
+      if (window.location.pathname !== seenPath.current) lastOp.current = 'pop'
     }
     window.addEventListener('popstate', onPop)
     // Record the live position of the frame's scroller, per screen. The
@@ -87,7 +120,11 @@ function ScrollMemory() {
     }
     document.addEventListener('scroll', onScroll, { capture: true, passive: true })
     return () => {
+      // Unwrap only if nobody wrapped over us since.
+      if (h.pushState === pushWrapped) h.pushState = origPush
+      if (h.replaceState === replaceWrapped) h.replaceState = origReplace
       window.removeEventListener('popstate', onPop)
+      window.removeEventListener(SHEET_PUSH_AS_REPLACE_EVENT, onPushAsReplace)
       document.removeEventListener('scroll', onScroll, { capture: true })
       if (raf) cancelAnimationFrame(raf)
     }
@@ -95,15 +132,28 @@ function ScrollMemory() {
 
   useEffect(() => {
     if (!pathname) return
+    let how: 'restore' | 'top' | 'keep'
     if (first.current) {
       first.current = false
+      // The first paint: a reload or a back/forward arrival restores; a fresh
+      // load is already at the top.
       const nav = performance.getEntriesByType?.('navigation')?.[0] as PerformanceNavigationTiming | undefined
-      if (nav && (nav.type === 'reload' || nav.type === 'back_forward')) kind.current = 'reload'
+      how = nav && (nav.type === 'reload' || nav.type === 'back_forward') ? 'restore' : 'keep'
+    } else {
+      how = scrollKindFor(lastOp.current)
     }
-    const how = kind.current
-    kind.current = 'push'
+    lastOp.current = null
+    seenPath.current = pathname
     if (!hasAppScroller()) return
-    if (how === 'push') {
+    if (how === 'keep') {
+      // The screen stays where it is — and the position it holds becomes the
+      // NEW path's memory at once (the scroll happened under the old URL, so
+      // nothing had been written for this one; a later back/forward onto
+      // this entry restores it).
+      writeMemory(scrollMemoryKey(location.pathname, location.search), appScrollTop())
+      return
+    }
+    if (how === 'top') {
       // A new screen starts at its top (the DOM may be reused: /t/AAPL → /t/TSLA).
       scrollAppTo(0, 'auto')
       return
