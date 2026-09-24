@@ -53,7 +53,7 @@ import { isPublicAppPath } from '@/lib/app-entry'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { DEFAULT_TAB, parseTabParam, syncTabParam, tabUrl } from '@/lib/app-tab-url'
 import { PHONE_MQ } from '@/lib/phone-shell'
-import { scrollAppTo } from '@/lib/app-scroller'
+import { scrollAppToTop } from '@/lib/app-scroller'
 import { ARRIVAL_SCREEN, moreLit as moreLitFor, phoneScreenFromSearch, phoneTap, seatForScreen, tabForScreen, type PhoneSeat } from '@/lib/phone-nav'
 import { useYeetfulStore, type RailTab } from '@/lib/store'
 import Sheet from '@/components/mobile/Sheet'
@@ -350,7 +350,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         setMoreOpen(true)
         return
       case 'top':
-        scrollAppTo(0, 'smooth')
+        scrollAppToTop('smooth')
         return
       case 'screen':
         setPhoneScreen(action.screen)
@@ -372,7 +372,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
     if (!window.matchMedia(PHONE_MQ).matches) return
     if (phoneTap({ surface, screen: phoneScreen, seat, pathname }).kind !== 'top') return
     e.preventDefault()
-    scrollAppTo(0, 'smooth')
+    scrollAppToTop('smooth')
   }
 
   const jobsBadge = badgeCount > 0 && (

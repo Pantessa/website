@@ -331,6 +331,30 @@ const rowContract: NavScenario = {
     v.push(r0.mainScreen === 'chat' ? pass('contract', 'the main area names its screen in the conversation (main[data-phone-screen="chat"])', String(r0.mainScreen)) : fail('contract', 'the main area names its screen in the conversation (main[data-phone-screen="chat"])', String(r0.mainScreen)))
     v.push(r0.drawer === null && r0.screen === null ? pass('contract', 'at rest nothing covers the conversation', 'no drawer, no screen') : fail('contract', 'at rest nothing covers the conversation', JSON.stringify({ drawer: r0.drawer, screen: r0.screen })))
     v.push(r0.bar && r0.bar.height >= 44 ? pass('contract', 'the bar is ≥44px tall', `${r0.bar.height}px`) : fail('contract', 'the bar is ≥44px tall', JSON.stringify(r0.bar)))
+    // Inside SHELL's frame the bar is the frame's last row: flush with the
+    // viewport's bottom, nothing under it, the composer above it, and the
+    // document itself never scrolls.
+    const frame = await page.evaluate(() => {
+      const bar = document.querySelector('nav[data-spine-bar]') as HTMLElement | null
+      const br = bar?.getBoundingClientRect()
+      const hit = document.elementFromPoint(Math.round(window.innerWidth / 2), window.innerHeight - 10)
+      const composer = document.querySelector('main textarea') as HTMLElement | null
+      const cr = composer?.getBoundingClientRect()
+      const se = document.scrollingElement as HTMLElement
+      return {
+        framed: !!document.querySelector('[data-app-frame]'),
+        barBottom: br ? Math.round(br.bottom) : -1,
+        innerHeight: window.innerHeight,
+        barPosition: bar ? getComputedStyle(bar).position : '',
+        hitInBar: !!bar && !!hit && bar.contains(hit),
+        composerBottom: cr ? Math.round(cr.bottom) : -1,
+        barTop: br ? Math.round(br.top) : -1,
+        docScrollHeight: se.scrollHeight,
+      }
+    })
+    v.push(frame.framed && frame.barBottom === frame.innerHeight && frame.hitInBar ? pass('contract', 'frame: the bar is flush with the viewport bottom and owns the bottom pixels', `bar bottom ${frame.barBottom}/${frame.innerHeight}, position ${frame.barPosition}`) : fail('contract', 'frame: the bar is flush with the viewport bottom and owns the bottom pixels', JSON.stringify(frame)))
+    v.push(frame.composerBottom > 0 && frame.composerBottom <= frame.barTop ? pass('contract', 'frame: the composer sits above the bar (no hand reserve needed)', `composer bottom ${frame.composerBottom} ≤ bar top ${frame.barTop}`) : fail('contract', 'frame: the composer sits above the bar (no hand reserve needed)', JSON.stringify(frame)))
+    v.push(frame.docScrollHeight <= frame.innerHeight + 1 ? pass('contract', 'frame: the document never scrolls on /chat', `${frame.docScrollHeight} ≤ ${frame.innerHeight}`) : fail('contract', 'frame: the document never scrolls on /chat', JSON.stringify(frame)))
     const seatSizes: Array<{ label: string; w: number; h: number; font: number }> = await page.evaluate(() =>
       Array.from(document.querySelectorAll<HTMLElement>('nav[data-spine-bar] a[aria-label], nav[data-spine-bar] button[aria-label]'))
         .filter((s) => s.getBoundingClientRect().width > 0)

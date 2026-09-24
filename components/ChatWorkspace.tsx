@@ -251,12 +251,14 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
   }, [screenUp])
 
   return (
-    // max-lg pb reserves the fixed bottom bar's height (48px + safe area) so
-    // the composer never hides behind it. `data-app-frame` is the phone
-    // frame contract (lib/phone-shell): below lg this is the viewport-sized
-    // frame whose ONE scroller carries `data-app-scroll` — the conversation's
-    // thread (ChatInterface) or the screen showing over it.
-    <div data-app-frame="" className={`relative flex max-lg:pb-[calc(48px+env(safe-area-inset-bottom))] ${chrome ? 'h-dvh' : 'h-[calc(100dvh-4rem)]'}`}>
+    // `data-app-frame` is the phone frame contract (lib/phone-shell,
+    // app/native-shell.css): below lg this is the viewport-sized column whose
+    // ONE scroller carries `data-app-scroll` — the conversation's thread
+    // (ChatInterface) or the screen showing over it — and whose LAST ROW is
+    // the spine's tab bar, in flow (AppSpine must stay a direct child). The
+    // old hand reserve for a fixed bar (max-lg:pb-[48px+safe area]) is gone:
+    // the scroller's bottom edge IS the bar's top edge.
+    <div data-app-frame="" className={`relative flex ${chrome ? 'h-dvh' : 'h-[calc(100dvh-4rem)]'}`}>
       {/* The spine (desktop): brand seat + workspace destinations + the way
           out to the dashboard. Mounted by the SHELL, not ChatInterface, so
           /embed and /i can never inherit it. */}
