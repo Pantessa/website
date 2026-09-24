@@ -6,6 +6,7 @@ import { signInLandingHere, useSession } from '@/lib/session'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { GUEST_TRIAL_LIMIT, guestTurnsUsed, subscribeGuestTrial } from '@/lib/guest-trial'
+import { useSoftKeyboard } from '@/components/mobile/useSoftKeyboard'
 
 /**
  * The chat's sign-in surface. It used to be a full-screen scrim that demanded
@@ -30,6 +31,10 @@ import { GUEST_TRIAL_LIMIT, guestTurnsUsed, subscribeGuestTrial } from '@/lib/gu
 export default function ChatSignInGate() {
   const { status, signingIn, needsSignIn, signIn, connectAndSignIn } = useSession()
   const turnsUsed = useSyncExternalStore(subscribeGuestTrial, guestTurnsUsed, () => 0)
+  // While the soft keyboard is up (a phone), the banner steps aside with the
+  // tab bar: the person is typing, and the composer rides the keyboard over
+  // the space the banner would float in (squad mobile-native, CHAT row 3).
+  const keyboard = useSoftKeyboard()
 
   // Only guests see any of this. During `loading` we stay out of the way to
   // avoid a flash before the session cookie hydrates; `authed` needs no gate.
@@ -91,6 +96,7 @@ export default function ChatSignInGate() {
   }
 
   // ── Non-blocking banner: guests keep the whole chat interactive ──────────
+  if (keyboard.open) return null
   return (
     // bottom-28 clears the composer on desktop; below lg the shell adds the
     // 48px bottom tab bar (+ safe area) under the composer, so the banner

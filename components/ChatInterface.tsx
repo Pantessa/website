@@ -5,7 +5,7 @@ import { guardWarnLines } from '@/lib/content-origin'
 import ExternalBuildNotice from '@/components/ExternalBuildNotice'
 import { analytics } from '@/lib/analytics'
 import { feeBpsOfArtifact } from '@/lib/fees'
-import { Fragment, useState, useRef, useEffect, useSyncExternalStore } from 'react'
+import { Fragment, useState, useRef, useEffect, useLayoutEffect, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Zap, Check, Loader2, Bot, User, PanelRight, Copy, Link2 } from 'lucide-react'
 import { usePathname, useRouter } from 'next/navigation'
@@ -82,13 +82,16 @@ import { parseMarketsNavAsk } from '@/lib/markets'
 import { normalizeSpokenAsk } from '@/lib/voice-ask'
 import MintLinkModal from '@/components/MintLinkModal'
 import ArmSpotGuardButton from '@/components/ArmSpotGuardButton'
-import Link from 'next/link'
 import SiteAccount from '@/components/SiteAccount'
-import { YeetfulMark } from '@/components/Logo'
 import { useAppShellMode } from '@/components/AppShell'
 import ChatMarkdown from '@/components/ChatMarkdown'
 import BrandIcon from '@/components/BrandIcon'
 import { respondingServers } from '@/lib/responding-mcp'
+import ChatPhoneBar from '@/components/chat/ChatPhoneBar'
+import { usePhonePosture } from '@/components/chat/usePhonePosture'
+import { useSoftKeyboard } from '@/components/mobile/useSoftKeyboard'
+import { PHONE_SCREEN_FOR_RAIL_TAB, keyboardLift, threadOwnsAppScroll } from '@/lib/chat-phone'
+import { SCROLL_ATTR } from '@/lib/phone-shell'
 
 // Typed-data signing request shipped from the server for the wallet to sign.
 interface SigningRequest {
@@ -423,8 +426,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     setEngineWindowOpen,
     mcpRailOpen,
     setMcpRailOpen,
-    mobileMcpRailOpen,
-    setMobileMcpRailOpen,
+    phoneScreen,
+    setPhoneScreen,
     selectedChainId,
     workspaceMode,
     setWorkspaceMode,
@@ -435,21 +438,25 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   const { chrome: appChrome } = useAppShellMode()
   const showAppChrome = appChrome && !embedded
 
-  // The breakpoint decides WHICH drawer-open flag a toolbar door drives:
-  // desktop's persisted preference vs the mobile overlay's transient flag.
+  // The breakpoint decides what a toolbar door DOES: at lg+ it opens the
+  // desktop drawer on that tab; below lg the destination is a phone SCREEN
+  // (squad mobile-native, README D2: a tab is a place, never a pop-up — the
+  // 248px overlay drawer with no scrim is retired on a phone).
   // (The running-work badge poll lives on the spine now — the ONE instance.)
-  const [isNarrow, setIsNarrow] = useState(false)
-  useEffect(() => {
-    const mql = window.matchMedia('(max-width: 1023px)')
-    const on = (e: MediaQueryListEvent) => setIsNarrow(e.matches)
-    setIsNarrow(mql.matches)
-    mql.addEventListener('change', on)
-    return () => mql.removeEventListener('change', on)
-  }, [])
+  const isNarrow = usePhonePosture()
   const openRail = (tab: 'mcps' | 'chats' | 'jobs' | 'links') => {
     setRailTab(tab)
-    isNarrow ? setMobileMcpRailOpen(true) : setMcpRailOpen(true)
+    if (isNarrow) setPhoneScreen(PHONE_SCREEN_FOR_RAIL_TAB[tab])
+    else setMcpRailOpen(true)
   }
+  // First-party /chat (not the embed, not /i, not the /t ticket) — the surface
+  // that owns the phone top bar and the Messages-style conversation below sm.
+  const firstParty = !embedded && !simple && !docked
+  // The ONE scroller of the screen (lib/phone-shell SCROLL_ATTR): this thread
+  // while the conversation shows; NAV's phone screens carry it otherwise.
+  const ownsAppScroll = threadOwnsAppScroll({ embedded, docked, simple, phone: isNarrow, phoneScreen })
+  // The soft keyboard (a phone): the composer rides on top of it.
+  const keyboard = useSoftKeyboard()
 
   // The in-app mint moment: a user-bubble hover icon or a receipt's "mint as
   // link" opens the SAME MintLinkForm the dashboard composes, prefilled with
@@ -475,6 +482,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     if (!composerPrefill) return
     parkAsk(composerPrefill)
     setComposerPrefill(null)
+    // A phone: the composer lives on the conversation — a verb tapped on
+    // another screen (JOBS, a job's sheet) brings the conversation forward.
+    if (isNarrow && !embedded && !simple && useYeetfulStore.getState().phoneScreen !== 'chat') setPhoneScreen('chat')
     textareaRef.current?.focus()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [composerPrefill, setComposerPrefill])
@@ -988,6 +998,31 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     }
   }, [])
 
+  // The composer rides the soft keyboard (squad mobile-native, CHAT row 3).
+  // Measured, never assumed: where the composer's bottom sits with no lift,
+  // against the visible bottom (layout height − the covered pixels). Below lg
+  // only; the embed's host page and the /t ticket (no composer) are left be.
+  const composerRef = useRef<HTMLDivElement>(null)
+  const [kbLift, setKbLift] = useState(0)
+  const kbLiftRef = useRef(0)
+  kbLiftRef.current = kbLift
+  useLayoutEffect(() => {
+    const el = composerRef.current
+    if (!el || !isNarrow || embedded || docked || !keyboard.open) {
+      setKbLift(0)
+      return
+    }
+    const bottom = el.getBoundingClientRect().bottom + kbLiftRef.current
+    setKbLift(keyboardLift(bottom, window.innerHeight, keyboard.inset))
+  }, [keyboard.open, keyboard.inset, isNarrow, embedded, docked])
+  // A lift re-pins the newest turn (the spacer grows the thread; the
+  // ResizeObserver above does the rest while the pin holds).
+  useEffect(() => {
+    if (kbLift <= 0 || !hasThreadRef.current || !pinnedRef.current) return
+    const el = scrollerRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [kbLift])
+
   // View flips between the thread and the links board reuse ONE scroller:
   // the board reads top-down (start at 0), and coming back to a
   // conversation re-pins to the newest turn instead of stranding the reader
@@ -1096,6 +1131,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     // the main screen to the conversation — the reply must never stream
     // invisibly behind the board.
     if (mainView === 'links') setMainView('chat')
+    // Same on a phone: a send from another screen (a rail verb, a chip) shows
+    // the conversation — the reply never streams behind a screen.
+    if (isNarrow && !embedded && !simple && phoneScreen !== 'chat') setPhoneScreen('chat')
 
     let chatId = currentChatId
     // Guest dead-id guard: a guest's chats are ephemeral (local only), so a
@@ -1773,24 +1811,27 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   }
 
   return (
-    <div className="relative flex flex-col h-full">
+    <div
+      className={cn('relative flex flex-col h-full', firstParty && 'yf-chat')}
+      // Which /chat screen a phone shows (NAV's phoneScreen) — drives read it.
+      data-phone-screen={firstParty ? phoneScreen : undefined}
+    >
+      {/* The conversation's top bar on a PHONE (squad mobile-native): the way
+          to the chat list, the title over the apps count, chain, share, the
+          account door — one 52px row, 44px targets (components/chat/
+          ChatPhoneBar). Below lg only; the toolbar under it is the desktop's. */}
+      {firstParty && (
+        <ChatPhoneBar title={currentChat?.title} appCount={activeServers.length} showAccount={showAppChrome} />
+      )}
       {/* Toolbar: the rail reopen chips + view toggle + chain picker. Hidden
           in the embed — EmbedChat renders its own slim header — and in simple
-          mode, where IntentRuntime's own header carries the ask. */}
+          mode, where IntentRuntime's own header carries the ask. At lg+ only:
+          a phone gets ChatPhoneBar above. */}
       {!embedded && !simple && (
-      <div className="flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] flex items-center gap-2">
-        {/* Home mark — MOBILE only now: on desktop the spine's brand seat +
-            SETTINGS item carry both directions permanently. */}
-        {showAppChrome && (
-          <Link
-            href="/dashboard"
-            aria-label="Pantessa settings — creator page, keys, billing"
-            title="Pantessa settings — creator page, keys, billing"
-            className="lg:hidden flex-shrink-0 grid place-items-center w-10 h-10 md:w-8 md:h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
-          >
-            <YeetfulMark size={17} />
-          </Link>
-        )}
+      <div className="max-lg:hidden flex-shrink-0 px-3 py-2.5 border-b border-[var(--line)] flex items-center gap-2">
+        {/* The home mark (phone-only → /dashboard) retired with this row's
+            phone posture (squad mobile-native): the spine's SETTINGS seat
+            carries the way to the dashboard on every breakpoint. */}
         {/* NEW + the four reopen chips are GONE from the toolbar on every
             breakpoint — the spine column owns them ≥lg and the bottom bar
             owns them below (the old chip row was the mobile header's
@@ -1811,13 +1852,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
               <button
                 onClick={() => openRail('mcps')}
                 title="Your working set — click to edit"
-                className="text-[11px] text-[color:var(--muted-2)] truncate pl-1 text-left hover:text-white transition-colors max-lg:min-h-10 max-lg:max-w-full"
+                className="text-[11px] text-[color:var(--muted-2)] truncate pl-1 text-left hover:text-white transition-colors"
               >
-                {/* At 375 the chain picker + Share + account pill leave this
-                    door ~30px: the joined names ellipsized to "Sn…". On phones
-                    it names the COUNT (the spine's APPS tab lists them). */}
-                <span className="max-sm:hidden">{activeServers.map((s) => cleanServerName(s.name)).join(' · ')}</span>
-                <span className="sm:hidden whitespace-nowrap">{activeServers.length} MCP{activeServers.length === 1 ? '' : 's'}</span>
+                {/* Desktop only now: a phone names the COUNT on its own top
+                    bar ("4 apps", ChatPhoneBar) and opens the APPS screen. */}
+                {activeServers.map((s) => cleanServerName(s.name)).join(' · ')}
               </button>
             )
           )}
@@ -1887,6 +1926,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           pill to flip back. Never in the embed (v2 seam). */}
       <div
         ref={scrollerRef}
+        // The ONE scroller of this screen on a phone (lib/phone-shell): the
+        // frame never scrolls the document, this does.
+        {...(ownsAppScroll ? { [SCROLL_ATTR]: '' } : {})}
         // The guest banner (ChatSignInGate) floats over the bottom of this
         // scroller, and the stick-to-bottom pin lands the newest card exactly
         // there: on 2026-09-08 a connected-not-signed visitor's "Sign & send
@@ -1894,7 +1936,14 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         // height while it's up (first-party only; below lg it rides 48px
         // higher over the tab bar — same numbers as EmptyState's pad).
         className={cn(
-          'flex-1 overflow-y-auto px-4 py-6',
+          // `relative`: the thread is the containing block of everything in
+          // it. Without it an absolute descendant whose nearest positioned
+          // ancestor sits OUTSIDE the scroller escapes the scroller's clip —
+          // ChatLoader's sr-only line did, at its static position deep in the
+          // thread, and grew the DOCUMENT to 1299px at 812 (squad
+          // mobile-native, F1): a document that scrolls is exactly what
+          // collapses Safari's toolbar and floats the tab bar.
+          'relative flex-1 overflow-y-auto px-4 py-6',
           !embedded && !simple && sessionStatus === 'guest' && 'pb-32 max-lg:pb-48',
         )}
       >
@@ -2673,6 +2722,10 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           {/* end of the chat face — the linksMode ternary's else branch */}
           </>
         )}
+        {/* While the soft keyboard is up the composer rides on it (kbLift
+            below); this spacer keeps the newest turn above the lifted
+            composer, and its growth re-pins the stick-to-bottom scroll. */}
+        {kbLift > 0 && <div aria-hidden data-keyboard-spacer style={{ height: kbLift, flexShrink: 0 }} />}
         </div>
       </div>
 
@@ -2684,15 +2737,28 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           ticket has none: its host's composer is the one place to type. */}
       {!docked && (
       <div
+        ref={composerRef}
+        data-composer=""
         className={cn(
           'flex-shrink-0 p-4 max-lg:pb-[max(1rem,env(safe-area-inset-bottom))]',
           embedded ? 'border-t border-[var(--line)]' : 'group/composer pb-5',
+          // A phone: the composer sits flush on the tab bar (which owns the
+          // home-indicator inset below it) with Messages' tight padding.
+          firstParty && 'max-lg:px-3 max-lg:pt-2 max-lg:pb-2',
+          simple && 'max-lg:pt-2',
+          kbLift > 0 && 'relative z-30',
         )}
+        // Rides the soft keyboard (a phone): lifted by exactly the pixels the
+        // keyboard covers below it. A frame that already shrank for the
+        // keyboard (SHELL's --kb-inset) measures 0 here, never twice.
+        style={kbLift > 0 ? { transform: `translateY(-${kbLift}px)` } : undefined}
       >
         <div
           className={cn(
             'flex items-center gap-3 py-2 pl-4 pr-2 rounded-full border border-[var(--line)] bg-[color-mix(in_srgb,var(--surf-1)_85%,transparent)] backdrop-blur-md transition-[border-color,box-shadow] duration-200 focus-within:tint-border-accent-45 focus-within:shadow-[0_0_0_4px_rgba(52,227,160,0.07),0_0_24px_rgba(52,227,160,0.06)]',
             !embedded && 'shadow-[0_10px_36px_-14px_rgba(0,0,0,0.55)]',
+            // A phone: the 44px send sets the pill's height — no extra air.
+            !embedded && 'max-lg:py-1',
           )}
         >
           <textarea
@@ -2725,6 +2791,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           <button
             onClick={() => sendComposer()}
             disabled={!input.trim() || loading || !!pendingPayment}
+            aria-label="Send"
+            data-composer-send=""
             className={cn(
               'flex-shrink-0 w-11 h-11 md:w-9 md:h-9 rounded-full flex items-center justify-center transition-all duration-200',
               input.trim() && !loading

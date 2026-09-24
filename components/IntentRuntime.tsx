@@ -742,6 +742,12 @@ export default function IntentRuntime({
     // fade-out so the handoff reads as one motion, not a hard cut.
     <div
       className="yf-runtime relative h-dvh flex flex-col overflow-hidden yf-runtime-in"
+      // THE FRAME (squad mobile-native, README D1): the runtime owns the
+      // viewport and never scrolls the document; its ONE scroller is the
+      // thread inside ChatInterface (data-app-scroll). The three bottom bars
+      // below are flex rows of this frame, so they sit on its bottom edge in
+      // every Safari toolbar state.
+      data-app-frame=""
       style={brand ? brandThemeStyle({ ...brand, bg: null }) : undefined}
     >
       <style>{'@keyframes yfRuntimeIn { from { opacity: 0 } to { opacity: 1 } } .yf-runtime-in { animation: yfRuntimeIn 0.5s ease-out }'}</style>
