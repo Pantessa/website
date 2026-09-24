@@ -50,7 +50,12 @@ const STATUS_TONES: Record<Slot['status'], string> = {
   fired: 'text-[color:var(--muted-2)] line-through',
 }
 
-export default function TeamRailTab() {
+export default function TeamRailTab({
+  /** The parent scrolls (the phone's TEAM screen): lay the body out flat. */
+  flat,
+}: {
+  flat?: boolean
+} = {}) {
   const { address } = useAccount()
   const { signMessageAsync } = useSignMessage()
 
@@ -321,7 +326,7 @@ export default function TeamRailTab() {
 
   if (!address) {
     return (
-      <div className="flex-1 overflow-y-auto px-2 py-3 space-y-2">
+      <div className={cn('px-2 py-3 space-y-2', !flat && 'flex-1 overflow-y-auto')}>
         <p className="px-1.5 text-xs text-[color:var(--muted-2)]">
           Connect your wallet to build its staff — mandate slots live on the wallet, not an account.
         </p>
@@ -331,7 +336,7 @@ export default function TeamRailTab() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-2">
+    <div className={cn('px-2 pb-3 space-y-2', !flat && 'flex-1 overflow-y-auto')}>
       {/* ── The mandate composer ── */}
       <div className="px-1 pt-1 space-y-1.5">
         <textarea

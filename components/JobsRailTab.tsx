@@ -80,7 +80,19 @@ function guardLabel(g: RunningGuard): string {
   return `${kind} · ${g.coin} ${g.side}`
 }
 
-export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
+export default function JobsRailTab({
+  /** The parent scrolls (the phone's JOBS screen): lay the list out flat. */
+  flat,
+  /** Called right before a row NAVIGATES (a prefill into the composer, an
+   *  inbox card's /i page, the Guardian dashboard) — the phone screen returns
+   *  to the conversation on it. Opening a job's detail card is not a
+   *  navigation: the card opens over the list, and closing it lands back. */
+  onNavigate,
+}: {
+  flat?: boolean
+  onNavigate?: () => void
+}) {
+  const onAct = onNavigate
   const router = useRouter()
   const { setComposerPrefill, setJobDetail } = useYeetfulStore()
   const { jobs, schedules, guards, inbox, signedOut, loaded, refresh } = useRunningWork(true)
@@ -115,7 +127,6 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
   // The row body opens the detail card (position, PnL, pending signatures).
   const openDetail = (detail: { type: 'job' | 'dca'; id: string }) => {
     setJobDetail(detail)
-    onAct?.()
   }
 
   if (!loaded) {
@@ -192,7 +203,7 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
 
   if (signedOut) {
     return (
-      <div className="flex-1 overflow-y-auto px-2 pb-3">
+      <div className={cn('px-2 pb-3', !flat && 'flex-1 overflow-y-auto')}>
         <InboxSection />
         <p className="px-3 py-6 text-center text-xs text-[color:var(--muted-2)]">
           Sign in with your wallet to see the jobs and recurring buys armed on it.
@@ -387,7 +398,7 @@ export default function JobsRailTab({ onAct }: { onAct?: () => void }) {
   const activeFirst = [...jobs].sort((a, b) => Number(LIVE_JOB_STATUS.has(b.status)) - Number(LIVE_JOB_STATUS.has(a.status)))
 
   return (
-    <div className="flex-1 overflow-y-auto px-2 pb-3">
+    <div className={cn('px-2 pb-3', !flat && 'flex-1 overflow-y-auto')}>
       <InboxSection />
       {guards.length > 0 && (
         <>
