@@ -207,6 +207,8 @@ import { routeMessage, selectInferenceProvider, compactForSynthesis, dedupePlann
 import { buildSignableArtifact } from '@/lib/transaction-layer'
 import { guardPlannerArtifact } from '@/lib/planner-artifact-guard'
 import { resolveActiveServers } from '@/lib/active-servers'
+import { followAskApps } from '@/lib/ask-apps'
+import { noteAddedApps, withTurnScope } from '@/lib/turn-scope'
 import { portfolioFromToolResult, type PortfolioDisplay } from '@/lib/portfolio-display'
 import { parseClarify, type ClarifyRequest } from '@/lib/clarify'
 import type { EntityRef } from '@/lib/working-context'
@@ -434,6 +436,16 @@ async function planSmartPicks(
  * response is sent. Streaming turns and phase-2 executes pass through
  * untouched; a logging crash never breaks a chat turn.
  */
+/** Merge the apps the belt turned on into the turn's JSON reply (a stream
+ *  or a non-JSON reply passes through untouched). lib/turn-scope. */
+async function withAddedApps(res: Response, added: { id: string; slug: string; name: string }[] | undefined): Promise<Response> {
+  if (!added || added.length === 0) return res
+  if (!res.headers.get('content-type')?.includes('application/json')) return res
+  const body = (await res.clone().json().catch(() => null)) as Record<string, unknown> | null
+  if (!body) return res
+  return NextResponse.json({ ...body, addedMcps: added }, { status: res.status })
+}
+
 export async function POST(req: NextRequest) {
   let raw = ''
   try {
@@ -444,7 +456,8 @@ export async function POST(req: NextRequest) {
   // The journey log stamps the ask when it arrived and the reply when it was
   // ready, not when after() got round to writing them.
   const turnStartedAt = Date.now()
-  let res = await fenceConnectAsk(await handleChatTurn(new NextRequest(req.nextUrl, { method: 'POST', headers: req.headers, body: raw })), raw)
+  const turn = await withTurnScope(() => handleChatTurn(new NextRequest(req.nextUrl, { method: 'POST', headers: req.headers, body: raw })))
+  let res = await fenceConnectAsk(await withAddedApps(turn.result, turn.scope.addedApps), raw)
   const turnFinishedAt = Date.now()
   try {
     if (!raw || !res.headers.get('content-type')?.includes('application/json')) {
@@ -673,6 +686,26 @@ async function handleChatTurn(req: NextRequest) {
     // intent link or an embed host carries a stranger's sentence. A few
     // builds harden on that origin alone (lib/content-origin).
     const contentOrigin = contentOriginOf({ intentLinkSlug: turnLinkSlug, embedKey: body.embedKey, embedOrigin })
+    // ── Apps follow the ask (2026-09-24). A typed money ask arriving without
+    //    the first-party app its sentence needs used to meet the add-the-dapp
+    //    door below ("it just needs the Aave dapp … then press send again").
+    //    The client adds those apps before it sends now (typedAskAppSlugs);
+    //    this is the belt for a client that didn't (an older bundle, the API,
+    //    a chip composed on a page with no directory): the same rule, the
+    //    same first-party fence, resolved against the directory this request
+    //    already loaded. The row joins `activeServers` for THIS turn — every
+    //    door site reads its agent from there — and the reply echoes
+    //    `addedMcps` (lib/turn-scope → the POST wrapper) so the rail lights
+    //    up and the user can undo it. Never on an embed: the host owns that
+    //    set (mountPantessaChat `mcps`), and it is capped at four.
+    if (contentOrigin !== 'embed') {
+      const followed = followAskApps(message, activeServers, resolvedSet.catalog)
+      if (followed.length > 0) {
+        activeServers.push(...followed)
+        noteAddedApps(followed)
+        nativeTrace({ type: 'status', label: `apps follow the ask: added ${followed.map((r) => r.name).join(' + ')} to this turn's set — the sentence composes ${followed.length === 1 ? 'it' : 'them'} (typed ask, first-party free app${followed.length === 1 ? '' : 's'}; the reply carries addedMcps)` })
+      }
+    }
     if (embedOrigin) {
       void recordEmbedSighting({
         embedKeyId: embedBill?.id ?? '',

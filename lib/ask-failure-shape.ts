@@ -26,7 +26,11 @@
 // scripts/audit-asks.ts now pins one probe sentence per family.
 const MONEY_VERB_RE =
   /\b(?:send|transfer|swap|sell|buy|bridge|stake|unstake|deposit|withdraw|convert|fund|move|need|want|get\s+me|long|short|list|repay|borrow|supply|protect|mint|pay|(?:re)?tile)\b|\b(?:earn|yield|apy|apr|interest|lend|lending|save|savings)\b|\b(?:ape|yeet|grab|acquire|purchase|invest|pick\s+up|dump|offload|exit|unlend|trade|exchange)\b|\bcash\s+out\b|\b(?:pull|take)\s+out\b|\btop\s+up\b|\bstop[\s-]?loss\b|\btake[\s-]?profit\b|\d+(?:\.\d+)?\s*%\s*(?:stop|drop)\b|\bput\b.*\b(?:into|in\s+to)\b|\bget\b.*\b(?:over\s+to|onto|to)\b/i
-const MONEY_EVIDENCE_RE = /\d|\$|0x[0-9a-fA-F]{6,}|\.eth\b|\bnft\b|opensea\.io|\b(?:all|everything|max)\b|\busd[cgte]?\b|\beth\b|\bgas\b/i
+// `stock`/`share(s)` count as evidence (2026-09-24): "I want to buy some
+// apple shares" is a money ask with no digit, no $ and no ticker — it fell
+// to the planner while "buy $10 of apple stock" built. With the word in,
+// the intent net reads the unsized buy and offers sized chips.
+const MONEY_EVIDENCE_RE = /\d|\$|0x[0-9a-fA-F]{6,}|\.eth\b|\bnft\b|opensea\.io|\b(?:all|everything|max)\b|\busd[cgte]?\b|\beth\b|\bgas\b|\b(?:stocks?|shares?)\b/i
 
 // A price with the thing it buys and no verb at all — "$10 of AAPL please",
 // "20 bucks of ETH". Real, and common enough that the funded prod queue shows
