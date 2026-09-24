@@ -20,13 +20,17 @@
  *                scrolls; one inner [data-app-scroll] does (top → middle → end)
  *   2 bar        the bottom chrome sits on the viewport's bottom edge at every
  *                scroll position, a tap 10px above the edge lands in the bar,
- *                and nothing interactive sits under the bar or the Ask pill
+ *                and nothing sits under the bar; the Ask pill is judged as a
+ *                FAB — on the way down, at the end, after a scroll up (what
+ *                it covers at rest on a brochure page is a DECISION)
  *   3 tabs       a tab is a PLACE: each seat, tapped on /chat and from
  *                /markets, lights itself, names itself in the URL and shows
  *                its screen — and no drawer pops out
- *   4 sheets     every secondary panel closes on a tap outside, Escape, a
- *                swipe and the back gesture (the page stays); nothing opens on
- *                its own on load
+ *   4 sheets     every secondary panel closes five ways — a real tap on its
+ *                close control (the Sheet's X, or the lane's own), a tap
+ *                outside, Escape, a swipe and the back gesture (the page
+ *                stays); nothing opens on its own on load; a link inside a
+ *                sheet navigates and lands
  *   5 targets    chrome controls (the bar, top bars, anything that doesn't
  *                scroll, every sheet's controls) have a ≥44×44 hit area
  *   6 inputs     every input/textarea/select is ≥16px (no iOS focus zoom)
@@ -260,7 +264,7 @@ const PAGE_LIB = String.raw`(() => {
       if (!vis(el) || getComputedStyle(el).pointerEvents === 'none') continue
       const k = clipped(el); if (!k) continue
       const ix = Math.min(k.x2, c.right) - Math.max(k.x1, c.left), iy = Math.min(k.y2, c.bottom) - Math.max(k.y1, c.top)
-      if (ix > 2 && iy > 2) out.push(label(el) + ' (' + Math.round(iy) + 'px)')
+      if (ix > 2 && iy > 2) out.push(label(el) + ' ' + Math.round(ix) + '×' + Math.round(iy))
     }
     return [...new Set(out)]
   }
@@ -280,7 +284,7 @@ const PAGE_LIB = String.raw`(() => {
       if (!vis(el)) continue
       const k = clipped(el); if (!k) continue
       const ix = Math.min(k.x2, c.right) - Math.max(k.x1, c.left), iy = Math.min(k.y2, c.bottom) - Math.max(k.y1, c.top)
-      if (ix > 2 && iy > 2) out.push(text.replace(/\s+/g, ' ').slice(0, 24) + ' (' + Math.round(iy) + 'px)')
+      if (ix > 2 && iy > 2) out.push('"' + text.replace(/\s+/g, ' ').slice(0, 24) + '" ' + Math.round(ix) + '×' + Math.round(iy))
     }
     return [...new Set(out)]
   }
@@ -369,24 +373,43 @@ const PAGE_LIB = String.raw`(() => {
       }
       return out
     },
-    /** The Ask pill over the whole scroll: every ~0.8 screen, top to end. */
+    /** The Ask pill judged as a native FAB (coordinator R2 ruling, MARKETS
+     *  decision 8): at REST at the top, on the way DOWN (every ~0.8 screen), at
+     *  the page END, and after a scroll UP (0.6 screen back from the end).
+     *  Each phase reports whether the pill is on screen and what it covers
+     *  (w×h of each covered box). Null when the page never shows a pill. */
     async pillSweep() {
       const pill = document.querySelector('[data-ask-door="pill"]')
-      if (!pill || !vis(pill)) return null
+      if (!pill) return null
       const S = screenScroller().el
+      const shown = () => {
+        if (!vis(pill)) return false
+        const r = pill.getBoundingClientRect()
+        return r.bottom > 0 && r.top < innerHeight
+      }
+      const covers = () => (shown() ? [...new Set([...under(pill), ...contentUnder(pill)])] : [])
+      // The landing's CTA bar carries the pill's job while it's up
+      // (html[data-mcta="show"], its own "Ask Pantessa"): the pill steps aside
+      // for it, so an Ask on screen is either the pill or the bar's.
+      const standIn = () => {
+        if (document.documentElement.dataset.mcta !== 'show') return false
+        const ask = document.querySelector('[data-mcta-bar] [aria-label="Ask Pantessa"]')
+        if (!ask || !vis(ask)) return false
+        const r = ask.getBoundingClientRect()
+        return r.bottom > 0 && r.top < innerHeight
+      }
+      const settle = () => new Promise((r) => setTimeout(r, 140))
+      const at = async (y) => { await scrollTo(S, y); await settle(); return { y: Math.round(S === document.scrollingElement ? scrollY : S.scrollTop), shown: shown(), covers: covers(), standIn: standIn() } }
+      const rest = await at(0)
       const max = Math.max(0, S.scrollHeight - S.clientHeight)
       const step = Math.max(200, Math.round(S.clientHeight * 0.8))
-      const hits = []
-      let n = 0
-      for (let y = 0; ; y = Math.min(max, y + step)) {
-        await scrollTo(S, y)
-        n++
-        // a field under the pill counts too (its placeholder is not a text node)
-        if (vis(pill)) { const u = [...under(pill), ...contentUnder(pill)]; if (u.length) hits.push({ y, what: u.slice(0, 2) }) }
-        if (y >= max || n >= 14) break
-      }
+      const down = []
+      for (let y = step; y < max - 2 && down.length < 14; y += step) down.push(await at(y))
+      const end = await at(max)
+      const up = await at(Math.max(0, max - Math.round(S.clientHeight * 0.6)))
       await scrollTo(S, 0)
-      return { positions: n, covered: hits.length, first: hits[0] || null, rect: R(pill.getBoundingClientRect()) }
+      if (![rest, end, up, ...down].some((p) => p.shown)) return null
+      return { rest, down, end, up, max, rect: R(pill.getBoundingClientRect()) }
     },
     /** Overflow offenders: the widest things past the right edge. */
     wideOffenders() {
@@ -522,6 +545,26 @@ const PAGE_LIB = String.raw`(() => {
         if (t && !(p && (p === t || p.contains(t)))) return { x: Math.round(x), y: Math.round(y), what: label(t) }
       }
       return null
+    },
+    /** The open panel's close control (coordinator R2): the Sheet's own X
+     *  (.sheet__close, rendered with a title) first; else the lane's own
+     *  close control (data-sheet-close, or an aria-label / text reading
+     *  Close / Dismiss / Done / Cancel). Its centre, and what a finger at that
+     *  centre would actually hit. */
+    closeControl() {
+      const p = document.querySelector('[data-nq-panel]')
+      if (!p) return null
+      const host = p.closest('[data-sheet]') || p
+      const onScreen = (el) => { if (!vis(el)) return false; const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth }
+      const pick = (els, kind) => { for (const el of els) if (onScreen(el)) return { el, kind }; return null }
+      const byLabel = [...p.querySelectorAll('button[aria-label],[role=button][aria-label],a[aria-label]')].filter((el) => /^(close|dismiss|done|cancel)\b/i.test(el.getAttribute('aria-label') || ''))
+      const byText = [...p.querySelectorAll('button')].filter((el) => /^(close|done|cancel)$/i.test((el.textContent || '').trim()))
+      const hit = pick(host.querySelectorAll('.sheet__close'), 'the Sheet X') || pick(p.querySelectorAll('[data-sheet-close]'), "the lane's close") || pick(byLabel, "the lane's close") || pick(byText, "the lane's close")
+      if (!hit) return null
+      const r = hit.el.getBoundingClientRect()
+      const x = Math.round(r.left + r.width / 2), y = Math.round(r.top + r.height / 2)
+      const t = document.elementFromPoint(x, y)
+      return { x, y, label: label(hit.el), kind: hit.kind, covered: t && !(t === hit.el || hit.el.contains(t)) ? label(t) : null }
     },
     /** Where a swipe starts: the grabber, else the panel's top edge. */
     grabPoint() {
@@ -887,17 +930,35 @@ async function layoutAt(run: Run, o: Opened, s: Surface, size: Size, theme: Them
       }
     }
   }
-  // 2b · the Ask pill, on every surface that shows it (brochure pages too)
+  // 2b · the Ask pill, judged as a native FAB wherever a page shows it.
+  // RULING (coordinator, R2; MARKETS decision 8): on a brochure page the pill
+  // is judged on the way DOWN, at the page END and after a scroll UP; what it
+  // covers at REST at the top is a DECISION (it's the only visible Ask there
+  // at arrival), recorded with the covered boxes. On any other surface a pill
+  // covering content anywhere is a FAIL.
   if (wantCheck('bar')) {
-    const sweep = await evalNq<{ positions: number; covered: number; first: { y: number; what: string[] } | null } | null>(o.page, 'window.__nq.pillSweep()')
-    if (sweep && !(sweep as unknown as { __error?: string }).__error) {
+    type Phase = { y: number; shown: boolean; covers: string[]; standIn: boolean }
+    const fab = await evalNq<{ rest: Phase; down: Phase[]; end: Phase; up: Phase; max: number } | null>(o.page, 'window.__nq.pillSweep()')
+    if (fab && !(fab as unknown as { __error?: string }).__error) {
+      const brochure = s.kind === 'brochure'
+      const downCovered = fab.down.filter((p) => p.covers.length)
+      const reasons: string[] = []
+      if (downCovered.length) reasons.push(`covers content on the way DOWN at ${downCovered.length}/${fab.down.length} positions (y=${downCovered[0].y}: ${downCovered[0].covers.slice(0, 2).join(', ')})`)
+      if (fab.end.covers.length) reasons.push(`covers content at the page END (y=${fab.end.y}): ${fab.end.covers.slice(0, 2).join(', ')}`)
+      if (!fab.up.shown && !fab.up.standIn && fab.max > 2) reasons.push(`no Ask comes back on a scroll UP (y=${fab.up.y}): neither the pill nor the landing CTA bar's Ask`)
+      if (!brochure && fab.rest.covers.length) reasons.push(`covers content at rest: ${fab.rest.covers.slice(0, 2).join(', ')}`)
+      const restCall = brochure && fab.rest.covers.length > 0
       record({
         ...b,
         check: 'bar',
         item: 'ask pill',
-        state: sweep.covered ? 'FAIL' : 'PASS',
-        value: `covers content at ${sweep.covered}/${sweep.positions} scroll positions`,
-        detail: sweep.first ? `e.g. at y=${sweep.first.y}: ${sweep.first.what.join('; ')}` : '',
+        state: reasons.length ? 'FAIL' : restCall ? 'DECISION' : 'PASS',
+        value:
+          `rest ${fab.rest.shown ? `shown, covers ${fab.rest.covers.length}` : 'away'} · ` +
+          `down ${fab.down.filter((p) => p.shown).length}/${fab.down.length} shown, ${downCovered.length} covering · ` +
+          `end ${fab.end.shown ? 'shown' : 'away'}, covers ${fab.end.covers.length} · ` +
+          `up ${fab.up.shown ? `returns (covers ${fab.up.covers.length}, info)` : fab.up.standIn ? 'the CTA bar\'s Ask stands in' : 'STAYS AWAY'}`,
+        detail: reasons.length ? reasons.join('; ') : restCall ? `at rest (a decision) covers ${fab.rest.covers.join(', ')}` : '',
       })
     }
   }
@@ -1305,11 +1366,32 @@ const TRIGGERS: Trigger[] = [
   // the tabs rows judge it. No 'chats' sheet row.)
 ]
 
-async function dismissBy(o: Opened, how: 'outside' | 'escape' | 'swipe' | 'back'): Promise<{ closed: boolean; stayed: boolean; note: string }> {
+/** The five ways a sheet must close. 'close' (coordinator R2) is REAL input on
+ *  the close control, twice: a trusted TOUCH tap at its centre, then (the
+ *  sheet reopened) a trusted MOUSE click there. CHAT found every titled Sheet's
+ *  X dead on c33a88f4: useSwipeToClose captured the pointer on the whole head,
+ *  X included, so the click never reached the button, while scrim, Escape,
+ *  swipe and back all passed. MEASURED on 42531a46: Chrome's touch tap still
+ *  closes it (a tap's click is hit-tested at the finger, not retargeted to the
+ *  capture), the mouse click does not (a captured pointerup retargets the
+ *  click to the head). The mouse path is real in the phone posture too (an
+ *  iPad with a trackpad below lg), and it is the one Chrome can see; WebKit's
+ *  touch semantics can't be driven here, so both must close. */
+export const DISMISSALS = ['close', 'outside', 'escape', 'swipe', 'back'] as const
+type Dismissal = (typeof DISMISSALS)[number]
+type Step = Dismissal | 'close:tap' | 'close:click'
+
+async function dismissBy(o: Opened, how: Step): Promise<{ closed: boolean; stayed: boolean; note: string }> {
   const { page } = o
   const before = (await page.evaluate('location.href').catch(() => '')) as string
   let note = ''
-  if (how === 'outside') {
+  if (how === 'close' || how === 'close:tap' || how === 'close:click') {
+    const c = (await page.evaluate('window.__nq.closeControl()').catch(() => null)) as { x: number; y: number; label: string; kind: string; covered: string | null } | null
+    if (!c) return { closed: false, stayed: true, note: 'not present: no close control in the panel (no .sheet__close, no Close/Dismiss/Done control)' }
+    note = `${c.kind} "${c.label}" at ${c.x},${c.y}${c.covered ? ` (a finger there lands on "${c.covered}")` : ''}`
+    if (how === 'close:click') await page.mouse.click(c.x, c.y).catch(() => {})
+    else await page.touchscreen.tap(c.x, c.y).catch(async () => page.mouse.click(c.x, c.y).catch(() => {}))
+  } else if (how === 'outside') {
     const pt = (await page.evaluate('window.__nq.outsidePoint()').catch(() => null)) as { x: number; y: number; what: string } | null
     if (!pt) return { closed: false, stayed: true, note: 'no point outside the panel (it covers the whole screen)' }
     note = `tapped "${pt.what}" at ${pt.x},${pt.y}`
@@ -1403,7 +1485,8 @@ async function sheetJob(run: Run, t: Trigger, session: { address: string; cookie
       }
     }
     const results: { how: string; ok: boolean; note: string }[] = []
-    for (const how of ['outside', 'escape', 'swipe', 'back'] as const) {
+    const steps: Step[] = DISMISSALS.flatMap((d): Step[] => (d === 'close' ? ['close:tap', 'close:click'] : [d]))
+    for (const how of steps) {
       if (!(await o.page.evaluate('window.__nq.panelOpen()').catch(() => false))) {
         const again = await opened()
         if (!again) {
@@ -1427,6 +1510,15 @@ async function sheetJob(run: Run, t: Trigger, session: { address: string; cookie
         }
         if (await o.page.evaluate('window.__nq.panelOpen()').catch(() => false)) await load(o, t.surface)
       }
+    }
+    const tap = results.find((r) => r.how === 'close:tap')
+    const click = results.find((r) => r.how === 'close:click')
+    if (tap || click) {
+      const ok = !!tap?.ok && !!click?.ok
+      const where = (tap?.note || click?.note || '').replace(/^stayed open \(|\)$/g, '')
+      const parts = [`touch tap ${tap?.ok ? '✓' : '✗'}`, `mouse click ${click?.ok ? '✓' : '✗'}`].join(' · ')
+      results.splice(results.indexOf(tap ?? click!), 0, { how: 'close', ok, note: ok ? '' : `${parts} — ${where}` })
+      for (const r of [tap, click]) if (r) results.splice(results.indexOf(r), 1)
     }
     const failed = results.filter((r) => !r.ok)
     record({
@@ -1866,12 +1958,36 @@ function markdown(meta: Record<string, unknown>): string {
       if (!rs.length) return '·'
       const fails = rs.filter((r) => r.state === 'FAIL')
       if (rs.every((r) => r.state === 'N/A' || r.state === 'SKIP')) return 'n/a'
-      if (!fails.length) return `✅ ${rs.length}`
+      const calls = rs.filter((r) => r.state === 'DECISION').length
+      if (!fails.length) return `✅ ${rs.length - calls}${calls ? ` · ⚖ ${calls}` : ''}`
       return `❌ ${fails.length}/${rs.length} ${fails[0].value}`.replace(/\|/g, '\\|').slice(0, 90)
     })
     md.push(`| \`${s.path}\` | ${cells.join(' | ')} |`)
   }
   md.push('')
+  // Every DECISION row stays VISIBLE (coordinator R2: e.g. the landing's Ask
+  // pill at rest over the hero chart's toggles at 390×844): grouped by surface
+  // and item, each distinct measurement with the sizes and profiles it held at.
+  const decisions = rows.filter((r) => r.state === 'DECISION')
+  if (decisions.length) {
+    md.push('## Decisions (measured, ruled calls for Nate — never counted as FAIL)')
+    md.push('')
+    const groups = new Map<string, Row[]>()
+    for (const r of decisions) {
+      const k = `${r.check}|${r.surface}|${r.item}`
+      groups.set(k, [...(groups.get(k) ?? []), r])
+    }
+    for (const [k, rs] of groups) {
+      const [check, surface, item] = k.split('|')
+      const byWhat = new Map<string, string[]>()
+      for (const r of rs) {
+        const what = (r.detail || r.value).replace(/\|/g, '\\|')
+        byWhat.set(what, [...(byWhat.get(what) ?? []), `${r.size} ${r.profile}${r.theme === 'light' ? ' light' : ''}`])
+      }
+      md.push(`- **${check} \`${surface}\` ${item}** — ${[...byWhat].map(([what, where]) => `${where.join(', ')}: ${what}`).join(' · ')}`.slice(0, 1400))
+    }
+    md.push('')
+  }
   md.push('## Interactions (375×812 dark)')
   md.push('')
   md.push('| check | profile | surface | item | state | value | detail |')

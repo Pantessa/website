@@ -33113,6 +33113,22 @@ async function main() {
         /const o = await openCtx\(run, \{ size, theme: 'dark', auth: c\.auth, session, rscDelayMs: RSC_DELAY_MS \}\)/.test(nqSrc) &&
         /bounced after landing/.test(nqSrc) && /the navigation was aborted/.test(nqSrc),
     )
+    check(
+      'native qa: the sheets check closes every panel FIVE ways — a REAL tap (a trusted touch at its centre) on the close control first (the Sheet\'s .sheet__close, else the lane\'s own Close/Dismiss/Done), then outside, Escape, swipe and back; a panel with no close control reads "not present"',
+      /export const DISMISSALS = \['close', 'outside', 'escape', 'swipe', 'back'\] as const/.test(nqSrc) &&
+        /for \(const how of DISMISSALS\)/.test(nqSrc) &&
+        /pick\(host\.querySelectorAll\('\.sheet__close'\), 'the Sheet X'\)/.test(nqSrc) &&
+        /await page\.touchscreen\.tap\(c\.x, c\.y\)/.test(nqSrc) &&
+        /not present: no close control in the panel/.test(nqSrc),
+    )
+    check(
+      'native qa: the Ask pill is judged as a FAB (coordinator R2, MARKETS decision 8) — on the way DOWN, at the page END and on a scroll UP; what it covers at REST on a brochure page is a DECISION, anywhere else a FAIL; every DECISION row is listed in the table',
+      /const restCall = brochure && fab\.rest\.covers\.length > 0/.test(nqSrc) &&
+        /state: reasons\.length \? 'FAIL' : restCall \? 'DECISION' : 'PASS'/.test(nqSrc) &&
+        /covers content on the way DOWN/.test(nqSrc) && /covers content at the page END/.test(nqSrc) && /no Ask comes back on a scroll UP/.test(nqSrc) &&
+        /document\.documentElement\.dataset\.mcta !== 'show'/.test(nqSrc) &&
+        /## Decisions \(measured, ruled calls for Nate/.test(nqSrc),
+    )
     const nq = (await import('./drive-native')) as typeof import('./drive-native')
     check(
       'native qa: the four sheet-link cases are the coordinator\'s (a doc page, the dashboard behind SIWE, a brochure page, the dashboard from the account sheet)',
@@ -33121,7 +33137,8 @@ async function main() {
     )
     check(
       'native qa: drive:native measures the eleven checks of QA.md, in order',
-      JSON.stringify(nq.CHECKS) === JSON.stringify(['frame', 'bar', 'tabs', 'sheets', 'targets', 'inputs', 'overflow', 'keyboard', 'themecolor', 'manifest', 'desktop']),
+      JSON.stringify(nq.CHECKS) === JSON.stringify(['frame', 'bar', 'tabs', 'sheets', 'targets', 'inputs', 'overflow', 'keyboard', 'themecolor', 'manifest', 'desktop']) &&
+        JSON.stringify(nq.DISMISSALS) === JSON.stringify(['close', 'outside', 'escape', 'swipe', 'back']),
       nq.CHECKS.join(','),
     )
     // D2 (README): a tab is a PLACE. The drive's expectations are the
