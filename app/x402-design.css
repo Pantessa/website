@@ -1249,12 +1249,11 @@
   @media (min-width: 1024px) {
     :root[data-spine] .apprail__reopen { left: 72px; }
   }
-  /* Below lg the spine is a FIXED bottom bar — dashboard pages reserve its
-     height, and the ask-from-anywhere pill rides just above it. */
-  @media (max-width: 1023px) {
-    :root[data-spine] .dash__main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
-    :root[data-spine] .dashask { bottom: calc(60px + env(safe-area-inset-bottom)); }
-  }
+  /* Below lg the dashboard is a PHONE FRAME (squad mobile-native, 2026-09-24,
+     app/native-shell.css): the spine's tab bar is the frame's last row, in
+     flow, and .dash is the one scroller — so .dash__main needs no bar reserve
+     and .dashask's sticky `bottom: 20px` is measured from the bar's top edge.
+     The 96px / 60px hand reserves that lived here are gone on purpose. */
 
   .dash {
     /* Portal surfaces use the full viewport (D3) — gutters, no maxw cap. */
@@ -5311,8 +5310,9 @@
    .dashshell holds it beside the dashboard — a flex row, the spine sticky +
    viewport-tall (AppSpine's own classes), the frame taking the rest. There
    is no brochure nav on this surface (Navigation → isMarketsPath), so every
-   sticky offset below starts at the viewport's top edge. Below lg the spine
-   is the fixed bottom tab bar (48px + safe area): the shell reserves it. */
+   sticky offset below starts at the viewport's top edge. Below lg the shell
+   is a PHONE FRAME (app/native-shell.css, squad mobile-native 2026-09-24):
+   the spine's tab bar is its last row, in flow, and .mkt-frame scrolls. */
 .mkt-shell { display: flex; align-items: stretch; min-height: 100dvh; }
 .mkt-shell > .mkt-frame { flex: 1 1 auto; min-width: 0; }
 .mkt-frame {
@@ -5563,9 +5563,10 @@
   .mkt-frame__bar { top: var(--mkt-top-h); }
   .mkt-frame__main { padding-bottom: 28px; }
   .mkt-frame__rail { grid-area: rail; position: static; height: auto; margin: 0 var(--mkt-pad-l); border: 1px solid var(--line); border-radius: 14px; }
-  /* The spine's phone bar measures 49px (48px of seat + its 1px top border),
-     so a 48px reserve left the page's last line 1px under it. */
-  .mkt-shell { padding-bottom: calc(49px + env(safe-area-inset-bottom)); }
+  /* No bar reserve here any more (squad mobile-native, 2026-09-24): below lg
+     .mkt-shell is a PHONE FRAME (app/native-shell.css) whose last row is the
+     spine's tab bar, in flow — the scroller ends where the bar begins. The
+     ask pill still floats over the viewport, so it keeps its lift. */
   :root[data-spine] .askdoor-pill { bottom: calc(64px + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 640px) {

@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react'
 import { PanelLeftClose } from 'lucide-react'
 import { rememberSignInReturn, signedOutJustNow, useSession } from '@/lib/session'
 import { useAppSidebar } from '@/lib/app-sidebar'
+import { FRAME_ATTR, SCROLL_ATTR } from '@/lib/phone-shell'
 import AppSpine from '@/components/AppSpine'
 import DashAskBar from '@/components/DashAskBar'
 import DashboardSidebar from '@/components/DashboardSidebar'
@@ -66,12 +67,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // loading phase, and through the brief tick before the redirect above lands.
   if (!mounted || !address) return null
 
+  // Below lg the shell is a PHONE FRAME (squad mobile-native, 2026-09-24;
+  // app/native-shell.css): .dashshell is the frame, .dash is its ONE scroller
+  // (the sticky section bar and the sticky-bottom ask bar stick to it), and
+  // the spine's tab bar is the frame's last row, in flow. The hand reserves
+  // (`:root[data-spine] .dash__main` 96px, `.dashask` 60px) are gone: the
+  // scroller ends where the bar begins, and .dashask's own `bottom: 20px` is
+  // measured from there.
+  const frame = { [FRAME_ATTR]: '' }
+  const scroll = { [SCROLL_ATTR]: '' }
   return (
-    <div className="dashshell">
+    <div className="dashshell" {...frame}>
       {/* The shared spine — same component chat mounts, dashboard flavor:
           tab icons are shortcuts into chat, SETTINGS wears the active state. */}
       <AppSpine surface="dashboard" />
-      <div className="dash">
+      <div className="dash" {...scroll}>
         {/* Desktop: persistent left rail — sections up top, account pinned to
             the bottom (wallet + sign out). Hidden below 900px. */}
         <aside className="dash__rail">
