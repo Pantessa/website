@@ -2836,7 +2836,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             placeholder={
               simple
                 ? 'Ask a follow-up…'
-                : autoRouter
+                : // A phone: "Ask your 4 agents anything…" wrapped in the
+                  // 190px field at 360 and showed only "anything…" (the
+                  // #872 /i lesson, now on /chat — squad mobile-native).
+                  isNarrow && !embedded
+                  ? 'Ask anything…'
+                  : autoRouter
                 ? 'Ask anything — Pantessa routes it to the best MCP…'
                 : activeServers.length > 1
                   ? `Ask your ${activeServers.length} agents anything…`
