@@ -789,7 +789,7 @@ async function runSheetLinks(session: string | null, burner: string) {
 //      the cover flips off — the SIWE shape, end to end
 //   3. Share opened FROM the AskDoor sheet (a sheet over a sheet): back closes
 //      Share and keeps the door; back again closes the door
-async function runComposites(burner: string) {
+async function runComposites(burner: string, session: string | null) {
   const browser: Pw = await chromium.launch({ executablePath: CHROME, headless: true })
   const P = 'chrome-iphone13-ua-390'
   const state = async (page: Pw) => (await page.evaluate(`(() => ({ path: location.pathname, len: history.length, nav: performance.getEntriesByType('navigation').length, mark: window.__shellMark, sheets: Array.from(document.querySelectorAll('[data-sheet]')).map((s) => s.getAttribute('data-sheet') + ':' + s.getAttribute('data-phase')), door: !!document.querySelector('.ca__panel[role="dialog"]'), sigwait: !!document.querySelector('[data-sigwait], .sigwait, [data-signature-wait]') }))()`)) as { path: string; len: number; nav: number; mark: unknown; sheets: string[]; door: boolean; sigwait: boolean }
@@ -897,9 +897,14 @@ async function runComposites(burner: string) {
         await ctx.close().catch(() => {})
       }
     }
-    // 3. SHEET OVER SHEET — Share opened from the AskDoor sheet (a live thread makes the Share pill appear).
+    // 3. SHEET OVER SHEET — Share opened from the AskDoor sheet. Share hides on a
+    //    LOCAL thread (a connect-only wallet's), so the visitor is signed in
+    //    (the burner's SIWE cookie + the same mock wallet); the door's live
+    //    header then carries Share. The mint sheet (also a Sheet opened from
+    //    inside the door) is the fallback over-sheet when Share is absent.
     {
       const ctx = await ctxFor(true, false)
+      if (session) await ctx.addCookies([{ name: 'yf_session', value: session, domain: new URL(BASE).hostname, path: '/' }])
       const errs: string[] = []
       try {
         const page: Pw = await ctx.newPage()
@@ -914,25 +919,26 @@ async function runComposites(burner: string) {
         for (let i = 0; i < 20; i++) { if ((await state(page)).sheets.includes('ask:open')) { askOpen = true; break }; await page.waitForTimeout(100) }
         await page.waitForTimeout(400)
         note(P, 'share', 'the ask door opens as a sheet', askOpen)
+        let over = 'share'
         let share = await page.$('[data-sheet="ask"] [data-sheet-open="share"]')
         if (!share) {
           // Share rides the LIVE header: one harmless turn makes it live.
           const ta = await page.$('[data-sheet="ask"] textarea')
           if (ta) { await ta.click(); await page.keyboard.type('hello'); await page.keyboard.press('Enter') }
-          for (let i = 0; i < 100; i++) { share = await page.$('[data-sheet="ask"] [data-sheet-open="share"]'); if (share) break; await page.waitForTimeout(300) }
+          for (let i = 0; i < 120; i++) { share = await page.$('[data-sheet="ask"] [data-sheet-open="share"]'); if (share) break; await page.waitForTimeout(300); if (i > 70) { const m = await page.$('[data-sheet="ask"] [data-sheet-open="mint"]'); if (m) { share = m; over = 'mint'; break } } }
         }
-        note(P, 'share', 'the Share pill is in the ask door\'s header (a live thread)', !!share)
+        note(P, 'share', `an over-sheet opener is in the ask door's live header (${over}${over === 'mint' ? ' — Share needs a DB-backed thread; the mint sheet stands in' : ''})`, !!share)
         if (share) {
           const s1 = await state(page)
           await share.click()
           let both = false
-          for (let i = 0; i < 20; i++) { const st = await state(page); if (st.sheets.includes('share:open') && st.sheets.some((x) => x.startsWith('ask:'))) { both = true; break }; await page.waitForTimeout(100) }
+          for (let i = 0; i < 20; i++) { const st = await state(page); if (st.sheets.includes(`${over}:open`) && st.sheets.some((x) => x.startsWith('ask:'))) { both = true; break }; await page.waitForTimeout(100) }
           const s2 = await state(page)
-          note(P, 'share', 'Share opens OVER the ask door: two sheets, two history entries', both && s2.len === s1.len + 1, JSON.stringify({ sheets: s2.sheets, len: `${s1.len} → ${s2.len}` }))
+          note(P, 'share', `${over} opens OVER the ask door: two sheets, two history entries`, both && s2.len === s1.len + 1, JSON.stringify({ sheets: s2.sheets, len: `${s1.len} → ${s2.len}` }))
           await page.goBack({ waitUntil: 'commit' }).catch(() => {})
           let shareGone = false
-          for (let i = 0; i < 20; i++) { const st = await state(page); if (!st.sheets.some((x) => x.startsWith('share:')) && st.sheets.includes('ask:open')) { shareGone = true; break }; await page.waitForTimeout(100) }
-          note(P, 'share', 'the back gesture closes Share and KEEPS the ask door open', shareGone, JSON.stringify(await state(page)))
+          for (let i = 0; i < 20; i++) { const st = await state(page); if (!st.sheets.some((x) => x.startsWith(`${over}:`)) && st.sheets.includes('ask:open')) { shareGone = true; break }; await page.waitForTimeout(100) }
+          note(P, 'share', `the back gesture closes ${over} and KEEPS the ask door open`, shareGone, JSON.stringify(await state(page)))
           await page.goBack({ waitUntil: 'commit' }).catch(() => {})
           let askGone = false
           for (let i = 0; i < 20; i++) { const st = await state(page); if (st.sheets.length === 0) { askGone = true; break }; await page.waitForTimeout(100) }
@@ -971,7 +977,7 @@ async function main() {
   if (MODE === 'after' && ENGINES.includes('chrome') && row('scrollkind')) await runScrollKind(session, burner)
   if (MODE === 'after' && ENGINES.includes('chrome') && row('sheets')) await runSheets(session, burner)
   if (MODE === 'after' && ENGINES.includes('chrome') && row('sheetlinks')) await runSheetLinks(session, burner)
-  if (MODE === 'after' && ENGINES.includes('chrome') && row('composites')) await runComposites(burner)
+  if (MODE === 'after' && ENGINES.includes('chrome') && row('composites')) await runComposites(burner, session)
   if (OUT) {
     writeFileSync(OUT, JSON.stringify(record, null, 2))
     console.log(`\nrecorded → ${OUT}`)
