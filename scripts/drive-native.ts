@@ -1626,7 +1626,18 @@ async function discoveredSheets(run: Run, s: Surface, session: { address: string
   const o = await openCtx(run, { size: PHONE_SIZES[0], theme: 'dark', auth: s.auth, session })
   try {
     await load(o, s)
-    const ids = (await o.page.evaluate(`[...document.querySelectorAll('[data-sheet-open]')].filter(e => window.__nq.vis(e)).map(e => e.getAttribute('data-sheet-open'))`).catch(() => [])) as string[]
+    // Only a trigger a finger can reach: its centre must hit-test to it. A
+    // phone screen covers the conversation's top bar (MEASURED on 9f37a93b:
+    // /chat?tab=mcps's chain trigger sits under the APPS screen's header), and
+    // a covered trigger is not a door anybody can open.
+    const ids = (await o.page
+      .evaluate(`[...document.querySelectorAll('[data-sheet-open]')].filter((e) => {
+        if (!window.__nq.vis(e)) return false
+        const b = e.getBoundingClientRect()
+        const t = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)
+        return !!t && (t === e || e.contains(t))
+      }).map((e) => e.getAttribute('data-sheet-open'))`)
+      .catch(() => [])) as string[]
     return [...new Set(ids)]
       .filter((id) => !['more', 'ask', 'account', 'wallet', 'door', 'nav', 'dashnav', 'links', 'chats'].includes(id))
       .map((id) => ({ id: `${id} (discovered)`, surface: s, auth: s.auth, open: (p: Pw) => tapFirst(p, [`[data-sheet-open="${id}"]`]) }))
