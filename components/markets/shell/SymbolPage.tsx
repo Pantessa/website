@@ -52,7 +52,10 @@ import { sideOf, type TradeAsk } from '@/lib/trade-asks'
 import { ARRIVAL_APP_HREF, writeArrivalIntent } from '@/lib/arrival-intent'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
 import { useSession } from '@/lib/session'
-import { useSymbolFills } from '@/lib/chart-fills'
+import { useSymbolFills, type FillMarker } from '@/lib/chart-fills'
+import { fillFromSigned, mergeFills, type SignedEvent } from '@/lib/ask-chart-thread'
+import { useAskDoor } from '@/lib/ask-door'
+import type { AskChartIncoming } from '@/components/markets/ai/AskChart'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
@@ -136,6 +139,27 @@ export default function SymbolPage({
       /* default open */
     }
   }, [])
+  // The page's ⌘K door docks in Ask the chart (lib/ask-door `dock`): the pill,
+  // ⌘K and the rail's Ask focus this panel's composer — unfolding it — and a
+  // complete ask handed to the door (a wallet flag's fix) builds in its order
+  // ticket. One conversation per symbol page, never a second chat runtime in
+  // a sheet over it. A page with no chart keeps the sheet.
+  const askDockRef = useRef<HTMLElement | null>(null)
+  const [doorAsk, setDoorAsk] = useState<AskChartIncoming | null>(null)
+  const hasPair = !!pair
+  useEffect(() => {
+    if (!hasPair) return
+    const { setDock } = useAskDoor.getState()
+    setDock((draft, opts) => {
+      setAskOpen(true)
+      setDoorAsk({ text: (draft ?? '').trim(), send: !!opts?.send, ...(opts?.mcps?.length ? { mcps: opts.mcps } : {}), at: Date.now() })
+      requestAnimationFrame(() => {
+        const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+        askDockRef.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' })
+      })
+    })
+    return () => useAskDoor.getState().setDock(null)
+  }, [hasPair])
   const toggleAsk = useCallback(() => {
     setAskOpen((o) => {
       try {
@@ -193,7 +217,20 @@ export default function SymbolPage({
   // The connected wallet's own fills on this symbol (VIZ's glyphs + receipt
   // legend under the chart). Public by address; no wallet → no read.
   const { walletAddress } = useSession()
-  const fills = useSymbolFills(sym, walletAddress)
+  const serverFills = useSymbolFills(sym, walletAddress)
+  // A trade signed in Ask the chart's order ticket paints on this chart at
+  // once; the fills read (cached 60s per wallet) takes over when it lists
+  // the same transaction (lib/ask-chart-thread mergeFills).
+  const [localFills, setLocalFills] = useState<FillMarker[]>([])
+  useEffect(() => setLocalFills([]), [sym, walletAddress])
+  const fills = useMemo(() => mergeFills(serverFills, localFills), [serverFills, localFills])
+  const onTicketSigned = useCallback(
+    (ev: SignedEvent) => {
+      const f = fillFromSigned(sym, ev, Date.now())
+      if (f) setLocalFills((xs) => (xs.some((x) => x.id === f.id) ? xs : [...xs, f]))
+    },
+    [sym],
+  )
   // A chartless token's Sell chip waits on the same rule as every other Sell
   // (lib/sell-gate): the wallet has to hold it.
   const held = useHeld()
@@ -356,15 +393,15 @@ export default function SymbolPage({
 
         {/* ── Ask the chart (AI's AskChart slot), docked under the chart ── */}
         {pair && (
-          <section className={`mk-askdock${askOpen ? ' is-open' : ''}`} data-askchart={askOpen ? 'open' : 'closed'} aria-label="Ask about this chart">
+          <section ref={askDockRef} className={`mk-askdock${askOpen ? ' is-open' : ''}`} data-askchart={askOpen ? 'open' : 'closed'} aria-label="Ask about this chart">
             <button type="button" className="mk-askdock__bar" onClick={toggleAsk} aria-expanded={askOpen}>
               <span className="mk-askdock__k mono">ASK THE CHART</span>
-              <span className="mk-askdock__hint">{askOpen ? 'What is on screen is the context.' : `Ask about ${sym} — the visible bars, your lines, the venues.`}</span>
+              <span className="mk-askdock__hint">{askOpen ? 'What is on screen is the context — and a trade builds right here.' : `Ask about ${sym}, or say a trade — it builds right here for your wallet to sign.`}</span>
               {askOpen ? <ChevronUp className="mk-askdock__icon" aria-hidden /> : <ChevronDown className="mk-askdock__icon" aria-hidden />}
             </button>
             {askOpen && (
               <div className="mk-askdock__body">
-                <AskChart symbol={sym} pair={pair} chartState={chartState ?? undefined} visible={viewport ? { from: viewport.from, to: viewport.to } : undefined} onAsk={act} onChartState={setLoadedState} />
+                <AskChart symbol={sym} pair={pair} chartState={chartState ?? undefined} visible={viewport ? { from: viewport.from, to: viewport.to } : undefined} onAsk={act} onChartState={setLoadedState} incoming={doorAsk} onSigned={onTicketSigned} />
               </div>
             )}
           </section>

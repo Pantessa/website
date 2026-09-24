@@ -16,8 +16,10 @@ import { COUNTED_TURN_WHERE } from '@/lib/value-origin'
 import { chartPairFor } from '@/lib/charts'
 import { chainById, chainByKey, sanitizeChainId } from '@/lib/chains'
 import type { FillMarker, FillsResponse } from '@/lib/chart-fills'
+import { venueOfBuild } from '@/lib/viz/venue-of-build'
 
 export type { FillMarker, FillsResponse }
+export { venueOfBuild }
 
 export const FILLS_TTL_MS = 60_000
 export const FILLS_CACHE_MAX = 512
@@ -25,22 +27,6 @@ const TAKE = 200
 
 const cache = new Map<string, { at: number; body: FillsResponse }>()
 const inflight = new Map<string, Promise<FillsResponse>>()
-
-/** Which venue a build path / builder names, and its stable series entity. */
-export function venueOfBuild(build: string | null | undefined): { venue: string; venueId: string } {
-  const b = (build ?? '').toLowerCase()
-  if (b.includes('uniswap-v4') || b.includes('v4')) return { venue: 'Uniswap v4', venueId: 'uniswap' }
-  if (b.includes('uniswap')) return { venue: 'Uniswap v3', venueId: 'uniswap' }
-  if (b.includes('lifi')) return { venue: 'LiFi', venueId: 'lifi' }
-  if (b.includes('cow')) return { venue: 'CoW', venueId: 'cow' }
-  if (b.includes('hl') || b.includes('hyperliquid')) return { venue: 'Hyperliquid', venueId: 'hyperliquid' }
-  if (b.includes('cross-chain') || b.includes('near')) return { venue: 'NEAR Intents', venueId: 'near' }
-  if (b.includes('aave')) return { venue: 'Aave', venueId: 'aave' }
-  if (b.includes('lido')) return { venue: 'Lido', venueId: 'lido' }
-  if (b.includes('morpho')) return { venue: 'Morpho', venueId: 'morpho' }
-  if (b.includes('transfer') || b.includes('send')) return { venue: 'Transfer', venueId: 'wallet' }
-  return { venue: 'Pantessa', venueId: 'wallet' }
-}
 
 /** buy | sell from the ask's own words; a sale/short/close/exit is a sell. */
 export function sideOf(text: string): 'buy' | 'sell' {

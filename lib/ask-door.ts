@@ -22,6 +22,9 @@ import { parseMarketsNavAsk } from '@/lib/markets'
 import { EXAMPLE_PROMPTS } from '@/lib/examples'
 import { tradeAsks } from '@/lib/trade-asks'
 
+/** A page that hosts its own ask composer takes the door (see `dock`). */
+export type AskDock = (draft: string | undefined, opts?: { send?: boolean; mcps?: string[] }) => void
+
 export interface AskDoorChip {
   label: string
   ask: string
@@ -50,23 +53,39 @@ interface AskDoorState {
    *  on. The door's suggestion row merges them in on /t/<sym>. */
   briefChips: { symbol: string; chips: AskDoorChip[] } | null
   setBriefChips: (v: { symbol: string; chips: AskDoorChip[] } | null) => void
+  /** A page with its own conversation (2026-09-24: /t/<sym>'s Ask the chart,
+   *  which builds trades in an order ticket beside it) takes the door while
+   *  it is mounted: ⌘K, the pill, the rail's Ask and every `openDoor` call
+   *  land THERE — a draft focuses its composer, a `send` runs in its ticket.
+   *  One conversation per page, and never two chat runtimes sharing the
+   *  store's current chat. Cleared on unmount; the sheet is the door again. */
+  dock: AskDock | null
+  setDock: (dock: AskDock | null) => void
 }
 
-export const useAskDoor = create<AskDoorState>()((set) => ({
+export const useAskDoor = create<AskDoorState>()((set, get) => ({
   open: false,
   draft: '',
   fire: null,
-  openDoor: (draft, opts) =>
+  openDoor: (draft, opts) => {
+    const dock = get().dock
+    if (dock) {
+      dock(draft, opts)
+      return
+    }
     set((s) =>
       opts?.send && typeof draft === 'string' && draft.trim()
         ? { open: true, draft: '', fire: { text: draft.trim(), at: Date.now(), ...(opts.mcps?.length ? { mcps: opts.mcps } : {}) } }
         : { open: true, draft: typeof draft === 'string' ? draft : s.draft },
-    ),
+    )
+  },
   closeDoor: () => set({ open: false }),
   setDraft: (draft) => set({ draft }),
   takeFire: () => set({ fire: null }),
   briefChips: null,
   setBriefChips: (briefChips) => set({ briefChips }),
+  dock: null,
+  setDock: (dock) => set({ dock }),
 }))
 
 /** Routes the door never renders on: the chat IS the composer, the embed and
