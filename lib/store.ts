@@ -1,6 +1,7 @@
 'use client'
 
 import { analytics } from '@/lib/analytics'
+import { isPhoneViewport } from '@/lib/phone-shell'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 // Type-only the other way (free-fleet imports `type McpServer` from here), so
@@ -309,6 +310,11 @@ interface YeetfulStore {
    *  Session-only, never persisted: a reload leads with the conversation. */
   phoneScreen: PhoneScreen
   setPhoneScreen: (screen: PhoneScreen) => void
+  /** Show the links studio the way the posture allows (lib/phone-nav): the
+   *  LINKS screen on a phone, the LINKS main view (beside the drawer) at lg
+   *  and up. The one call for "take me to my links" from anywhere in the
+   *  chat surface — a mint receipt, the rail's journey strip. */
+  openLinksStudio: () => void
   /** A prompt a rail row wants in the composer (e.g. a due recurring buy's
    *  run chip). Prefill only — the user always sends it themselves. NOT
    *  persisted: it's a one-shot handoff, consumed (and cleared) by the chat. */
@@ -903,6 +909,7 @@ export const useYeetfulStore = create<YeetfulStore>()(
       setMainView: (view) => set({ mainView: view }),
       phoneScreen: 'chat',
       setPhoneScreen: (screen) => set({ phoneScreen: screen }),
+      openLinksStudio: () => (isPhoneViewport() ? set({ phoneScreen: 'links' }) : set({ railTab: 'links', mainView: 'links' })),
       composerPrefill: null,
       setComposerPrefill: (prompt) => set({ composerPrefill: prompt }),
       composerSend: null,

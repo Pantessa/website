@@ -26,6 +26,14 @@ const TABS: RailTab[] = ['mcps', 'chats', 'jobs', 'links', 'team']
  *  every shared chat link. */
 export const DEFAULT_TAB: RailTab = 'mcps'
 
+export type TabUrlOptions = {
+  /** Write the default tab too. On a phone the APPS screen is a distinct
+   *  place (squad mobile-native, 2026-09-24, lib/phone-nav): a reload on it
+   *  must come back to APPS, so its URL names it. The desktop drawer keeps
+   *  the bare form. */
+  explicit?: boolean
+}
+
 /** Read the destination out of a location.search string. Unknown names (a
  *  typo, a retired tab) resolve to null — the spine keeps its default rather
  *  than showing an empty drawer. */
@@ -37,9 +45,9 @@ export function parseTabParam(search: string): RailTab | null {
 /** The URL for a destination, preserving the path and every OTHER param —
  *  the mint handoff (?ask=&mcps=), ?prompt=, ?mode=app all survive a tab
  *  change. `null` (and the default tab) drop the param entirely. */
-export function tabUrl(tab: RailTab | null, pathname: string, search: string): string {
+export function tabUrl(tab: RailTab | null, pathname: string, search: string, opts: TabUrlOptions = {}): string {
   const params = new URLSearchParams(search)
-  if (!tab || tab === DEFAULT_TAB) params.delete(TAB_PARAM)
+  if (!tab || (tab === DEFAULT_TAB && !opts.explicit)) params.delete(TAB_PARAM)
   else params.set(TAB_PARAM, tab)
   const q = params.toString()
   return q ? `${pathname}?${q}` : pathname
@@ -58,10 +66,10 @@ export function tabUrl(tab: RailTab | null, pathname: string, search: string): s
  *  BYPASSES that whenever the state it's handed already carries Next's
  *  markers (`__NA`/`_N`). Passing window.history.state back would take the
  *  bypass and leave usePathname/useSearchParams reading a stale URL. */
-export function syncTabParam(tab: RailTab | null): void {
+export function syncTabParam(tab: RailTab | null, opts: TabUrlOptions = {}): void {
   if (typeof window === 'undefined') return
   const { pathname, search } = window.location
-  const next = tabUrl(tab, pathname, search)
+  const next = tabUrl(tab, pathname, search, opts)
   if (next === `${pathname}${search}`) return
   window.history.replaceState(null, '', next)
 }
