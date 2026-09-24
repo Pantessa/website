@@ -32,7 +32,7 @@ import { PantessaMark } from '@/components/Logo'
 import ShareButton from '@/components/ShareButton'
 import VoiceButton from '@/components/VoiceButton'
 import Sheet from '@/components/mobile/Sheet'
-import { isPhoneViewport } from '@/lib/phone-shell'
+import { PHONE_MQ, isPhoneViewport } from '@/lib/phone-shell'
 import { analytics } from '@/lib/analytics'
 import { askDoorChips, askDoorHidden, askDoorNav, askDoorPillHidden, askDoorPlaceholder, askDoorSymbol, useAskDoor } from '@/lib/ask-door'
 import { normalizeSpokenAsk } from '@/lib/voice-ask'
@@ -52,6 +52,30 @@ const ChatInterface = dynamic(() => import('@/components/ChatInterface'), { ssr:
 
 const isMac = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
+/** The phone posture, live (false on the server and until the first client
+ *  read, so the server HTML never guesses). */
+function usePhonePosture(): boolean {
+  const [phone, setPhone] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia(PHONE_MQ)
+    const on = () => setPhone(mq.matches)
+    on()
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  return phone
+}
+
+/** QA's drive contract (squad mobile-native): a labeled tap that opens THE
+ *  Sheet wears `data-sheet-open="<the Sheet's id>"`. The door is a Sheet only
+ *  on a phone and only when no page has docked it (on /t it lands in Ask the
+ *  chart instead), so the attribute is there exactly then. */
+function useDoorSheetOpener(): { 'data-sheet-open'?: 'ask' } {
+  const phone = usePhonePosture()
+  const docked = useAskDoor((s) => !!s.dock)
+  return phone && !docked ? { 'data-sheet-open': 'ask' } : {}
+}
+
 /** The nav / drawer / markets-rail trigger. Renders nothing where the door
  *  is hidden. `rail` is the nav pill docked in the markets watchlist column
  *  (the strip above the watchlist — the brochure nav is gone there). On a
@@ -62,6 +86,7 @@ const isMac = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(n
 export function AskDoorTrigger({ variant = 'nav' }: { variant?: 'nav' | 'drawer' | 'rail' }) {
   const pathname = usePathname()
   const openDoor = useAskDoor((s) => s.openDoor)
+  const opener = useDoorSheetOpener()
   if (askDoorHidden(pathname)) return null
   return (
     <button
@@ -71,6 +96,7 @@ export function AskDoorTrigger({ variant = 'nav' }: { variant?: 'nav' | 'drawer'
       aria-label="Ask Pantessa"
       title="Ask Pantessa — one sentence, guarded build, your wallet signs (⌘K)"
       data-ask-door={variant}
+      {...opener}
     >
       <span className="nav__ask-mark" aria-hidden="true">
         <PantessaMark size={16} />
@@ -95,6 +121,7 @@ function AskDoorPill() {
   const pathname = usePathname()
   const open = useAskDoor((s) => s.open)
   const openDoor = useAskDoor((s) => s.openDoor)
+  const opener = useDoorSheetOpener()
   if (askDoorPillHidden(pathname) || open) return null
   return (
     <button
@@ -104,6 +131,7 @@ function AskDoorPill() {
       aria-label="Ask Pantessa"
       title="Ask Pantessa — one sentence, guarded build, your wallet signs"
       data-ask-door="pill"
+      {...opener}
     >
       <span className="askdoor-pill__mark" aria-hidden="true">
         <PantessaMark size={22} />
@@ -344,7 +372,7 @@ function AskDoorSheet() {
       <Sheet
         open
         onClose={closeDoor}
-        id="ask-door"
+        id="ask"
         size={live ? 'full' : 'auto'}
         className={live ? 'askdoor-sheet askdoor-sheet--live' : 'askdoor-sheet'}
         title={

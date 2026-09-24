@@ -414,14 +414,14 @@ async function sheetRows(engine: Engine) {
     await trig.click()
     await page.waitForTimeout(400)
     const door = await page.evaluate(`(() => {
-      const panel = document.querySelector('[data-sheet="ask-door"] .sheet__panel') || document.querySelector('.askdoor__sheet')
+      const panel = document.querySelector('[data-sheet="ask"] .sheet__panel') || document.querySelector('.askdoor__sheet')
       const input = document.querySelector('.askdoor__input')
       if (!panel) return null
       const r = panel.getBoundingClientRect()
       return { kind: panel.classList.contains('sheet__panel') ? 'Sheet' : 'askdoor', rect: { x: r.x, y: r.y, w: r.width, h: r.height }, bottom: r.bottom, ih: innerHeight, inputFont: input ? parseFloat(getComputedStyle(input).fontSize) : null, grabber: !!panel.querySelector('.sheet__grabber'), focused: document.activeElement === input }
     })()`)
     const dismiss: Record<string, boolean> = {}
-    const isOpen = () => page.evaluate(`!!(document.querySelector('[data-sheet="ask-door"]') || document.querySelector('[data-ask-door="sheet"]'))`)
+    const isOpen = () => page.evaluate(`!!(document.querySelector('[data-sheet="ask"]') || document.querySelector('[data-ask-door="sheet"]'))`)
     // Escape.
     await page.keyboard.press('Escape')
     await page.waitForTimeout(300)
@@ -483,6 +483,52 @@ async function sheetRows(engine: Engine) {
     const il = impRes ? `${impRes.kind} ${rectOf(impRes.rect)} bottom ${impRes.bottom}/${impRes.ih} · fields ${impRes.fieldFonts?.join(',')}px · Escape closes ${impRes.escape}` : 'no import button'
     if (MEASURE_ONLY || TAG === 'before') note(7, `${engine} ImportModal on a phone`, il)
     else judge(7, `${engine} ImportModal is the Sheet on a phone: fields ≥16px, Escape closes`, !!impRes && impRes.kind === 'Sheet' && (impRes.fieldFonts ?? []).every((f: number) => f >= 16) && impRes.escape, il)
+  } finally {
+    await browser.close()
+  }
+}
+
+// ── Row 4: what sticks, by rect top after a scroll (document or frame) ─────
+async function stickyRows(engine: Engine) {
+  const { browser, page } = await newPage(engine)
+  try {
+    await openMarkets(page)
+    const read = () =>
+      page.evaluate(`(() => { const t = (s) => { const e = document.querySelector(s); return e ? Math.round(e.getBoundingClientRect().top * 10) / 10 : null }; const h = (s) => { const e = document.querySelector(s); return e ? Math.round(e.getBoundingClientRect().height) : null }; return { top: t('.mkt-frame__top'), topH: h('.mkt-frame__top'), tabs: t('.mkt-frame__tabs'), search: t('.mkt-search'), sc: (${SCROLLER_JS}).scrollTop } })()`)
+    const at0 = await read()
+    await scrollTo(page, 900)
+    const at900 = await read()
+    await scrollTo(page, 3200)
+    const at3200 = await read()
+    // Tap a board tab while the strip is stuck: the board lands under it.
+    await page.locator('.mkt-frame__tab[href="#crypto"]').first().click()
+    await page.waitForTimeout(900)
+    const crypto = await page.evaluate(`(() => { const s = document.querySelector('#crypto'); const t = document.querySelector('.mkt-frame__tabs'); return { sec: Math.round(s.getBoundingClientRect().top), tabsBottom: Math.round(t.getBoundingClientRect().bottom) } })()`)
+    record[`${engine}.sticky.markets`] = { at0, at900, at3200, crypto }
+    const stuck = (r: any) => r.top === 0 && r.tabs !== null && Math.abs(r.tabs - (r.topH ?? 52)) <= 1
+    const line = `top strip ${at0.top}→${at900.top}→${at3200.top} · board tabs ${at0.tabs}→${at900.tabs}→${at3200.tabs} (strip ${at0.topH}px) · search ${at0.search}→${at900.search} · Crypto tapped: section top ${crypto.sec} vs tabs bottom ${crypto.tabsBottom}`
+    if (MEASURE_ONLY || TAG === 'before') note(4, `${engine} /markets sticky`, line)
+    else {
+      judge(4, `${engine} /markets: the top strip and the board tabs stick (strip at 0, tabs right under it) at 900 and 3200px`, stuck(at900) && stuck(at3200), line)
+      judge(4, `${engine} /markets: tapping a board tab lands its section just under the stuck tabs (not under them)`, crypto.sec >= crypto.tabsBottom - 1 && crypto.sec <= crypto.tabsBottom + 40, line)
+    }
+
+    await openSymbol(page, 'ETH')
+    const readSym = () =>
+      page.evaluate(`(() => { const t = (s) => { const e = document.querySelector(s); return e ? Math.round(e.getBoundingClientRect().top * 10) / 10 : null }; return { top: t('.mkt-frame__top'), tabs: t('.sym__tabs'), body: t('.sym__body') } })()`)
+    const s0 = await readSym()
+    await scrollTo(page, 1400)
+    const s1 = await readSym()
+    await page.locator('.sym__tab[data-tab="news"]').first().click()
+    await page.waitForTimeout(700)
+    const s2 = await readSym()
+    record[`${engine}.sticky.t`] = { s0, s1, s2 }
+    const sl = `top strip ${s0.top}→${s1.top} · section tabs ${s0.tabs}→${s1.tabs} · after a News tap while stuck: tabs ${s2.tabs}, body ${s2.body}`
+    if (MEASURE_ONLY || TAG === 'before') note(4, `${engine} /t/ETH sticky`, sl)
+    else {
+      judge(4, `${engine} /t/ETH: the section tabs stick right under the top strip after a scroll`, s1.top === 0 && s1.tabs !== null && Math.abs(s1.tabs - 52) <= 1, sl)
+      judge(4, `${engine} /t/ETH: a tab switch made while stuck lands the new tab at its top (the body starts under the tabs)`, s2.tabs !== null && s2.body !== null && Math.abs(s2.tabs - 52) <= 1 && s2.body - s2.tabs <= 60, sl)
+    }
   } finally {
     await browser.close()
   }
@@ -573,6 +619,10 @@ async function main() {
     await symbolRows('chrome-pixel7', 'ETH')
   }
   if (ROWS.has(3)) await chartGestures('ETH')
+  if (ROWS.has(4)) {
+    await stickyRows('chrome-iphone375')
+    await stickyRows('chrome-pixel7')
+  }
   if (ROWS.has(6) || ROWS.has(7)) {
     await sheetRows('chrome-iphone375')
     await sheetRows('chrome-pixel7')

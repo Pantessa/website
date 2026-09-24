@@ -33149,6 +33149,12 @@ async function main() {
         /\.sym__act-chips \{\s*align-self: stretch; min-width: 0; flex-wrap: nowrap;[^}]*overflow-x: auto;/.test(nmMk),
     )
     check(
+      'native markets: on a phone the /markets board tabs are a sticky segmented bar under the top strip (the tool strip\'s box dissolves, so the search and Map · List scroll away), and a board tab lands its section under both',
+      /\.mkt-frame__bar \{ display: contents; \}/.test(nmMk) &&
+        /\.mkt-frame__bar > \.mkt-frame__tabs \{\s*position: sticky; top: var\(--mkt-top-h, 52px\); z-index: 20;/.test(nmMk) &&
+        /\.mkt-sec \{ scroll-margin-top: calc\(var\(--mkt-top-h, 52px\) \+ 60px\); \}/.test(nmMk),
+    )
+    check(
       'native markets: below lg the /t section tabs stick under the top strip (scroll-margin lands a switch there)',
       /\.sym__tabs \{ position: sticky; top: var\(--mkt-top-h, 52px\); z-index: 19; background: var\(--bg\); scroll-margin-top: var\(--mkt-top-h, 52px\); \}/.test(nmMk),
     )
@@ -33157,10 +33163,10 @@ async function main() {
     //    once per opening, so a tablet rotating mid-run never remounts the
     //    runtime), AlertForm + ImportModal at every width.
     check(
-      'native markets: the ask door renders through components/mobile/Sheet on a phone (id ask-door, full size once live) with the posture read once per opening; the desktop ⌘K palette stays',
+      'native markets: the ask door renders through components/mobile/Sheet on a phone (id ask, full size once live) with the posture read once per opening; the desktop ⌘K palette stays',
       /import Sheet from '@\/components\/mobile\/Sheet'/.test(nmDoor) &&
         /if \(!open\) postureRef\.current = null\s*\n\s*else if \(mounted && postureRef\.current === null\) postureRef\.current = isPhoneViewport\(\)/.test(nmDoor) &&
-        /<Sheet\s+open\s+onClose=\{closeDoor\}\s+id="ask-door"\s+size=\{live \? 'full' : 'auto'\}/.test(nmDoor) &&
+        /<Sheet\s+open\s+onClose=\{closeDoor\}\s+id="ask"\s+size=\{live \? 'full' : 'auto'\}/.test(nmDoor) &&
         /className=\{`askdoor \$\{live \? 'askdoor--live' : ''\}`\}/.test(nmDoor),
     )
     check(

@@ -235,6 +235,7 @@ button.mk-held:hover { border-color: var(--accent); }
    honour it). The rail's ⋯ is fully visible: there is no hover to reveal it. */
 @media (hover: none) {
   .mk-table__link, .mk-trend__row { min-height: 48px; }
+  .mkt-search__box { height: 44px; }
   .mk-table__sortbar { padding-block: 0; }
   .mk-table__sort { min-height: 44px; padding-inline: 10px; }
   .mkt-sec__more { min-height: 44px; padding-inline: 18px; }
@@ -279,6 +280,23 @@ button.mk-held:hover { border-color: var(--accent); }
    what a fixed-height card leaves (≈150px at 375 on main). Full screen (the
    expanded class rides the native API too) keeps the takeover's own layout. */
 @media (max-width: 640px) {
+  /* The tool strip on a phone: the search and Map · List scroll away with the
+     page and the board tabs stick under the top strip, a native segmented
+     bar (the whole strip stuck was ~170px of chrome at 44px targets, which is
+     why it went static here). The strip's box dissolves (display: contents),
+     so the tabs' sticky range is the whole data column, not the strip. */
+  .mkt-frame__bar { display: contents; }
+  .mkt-frame__bar > .mkt-search { display: block; max-width: none; margin-top: 14px; }
+  .mkt-frame__bar > .mk-view { margin-top: 10px; }
+  .mkt-frame__bar > .mkt-frame__tabs {
+    position: sticky; top: var(--mkt-top-h, 52px); z-index: 20;
+    margin: 10px calc(-1 * var(--mkt-pad-l, 16px)) 0; padding: 4px var(--mkt-pad-l, 16px);
+    background: var(--bg); border-bottom: 1px solid var(--line);
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .mkt-frame__bar > .mkt-frame__tabs::-webkit-scrollbar { display: none; }
+  /* A board tab lands its section under the strip + the stuck tabs. */
+  .mkt-sec { scroll-margin-top: calc(var(--mkt-top-h, 52px) + 60px); }
   .sym .tchart:not(.tchart--expanded) { height: auto; }
   .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas { flex: 0 0 auto; height: 260px; }
   /* Its controls in two rows, not four (44px each at a thumb's size): the
