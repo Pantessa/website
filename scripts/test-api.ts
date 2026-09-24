@@ -16692,7 +16692,11 @@ async function main() {
       const noticeSrc = fsS.readFileSync('components/ExternalBuildNotice.tsx', 'utf8')
       check(
         'passthrough honesty: source — planner-sourced chains never auto-fire step 2+ (manualSteps), the card mounts the external-build marker with every `to` in full + the guard warnings',
-        chainSrc.includes('autoFire={i > 0 && !manualSteps}') &&
+        // Re-pinned 2026-09-23 (mobile-onboarding SIGN): the decision moved into
+        // lib/sign-round-trip autoFireAllowed, which still returns false for
+        // manualSteps (asserted below, not just grepped) — the behaviour held.
+        chainSrc.includes('autoFire={autoFireAllowed({ platform, stepIndex: i, manualSteps') &&
+          (await import('../lib/sign-round-trip')).autoFireAllowed({ platform: 'desktop', stepIndex: 1, manualSteps: true }) === false &&
           chatSrc.includes('manualSteps={!!externalChain}') &&
           chatSrc.includes("m.buildPath !== 'planner'") &&
           noticeSrc.includes('data-external-to={t.to') &&
@@ -23027,10 +23031,16 @@ async function main() {
         !isMarketsPath('/marketsx') && !isMarketsPath('/t') && !isMarketsPath('/tools') && !isMarketsPath('/') && !isMarketsPath('/chat'),
     )
     check(
+      // Re-pinned 48px → 49px (squad mobile-onboarding, 2026-09-23): the pin
+      // guards "the shell reserves the bottom tab bar", and the bar measures
+      // 49px — 48px of seat plus its own 1px top border — so at 48 the page's
+      // last line sat 1px under it. The guarded behaviour is unchanged and now
+      // exact; the base `grid-template-areas` line is untouched, the phone's
+      // conditional rail order sits after it as its own rule.
       'markets shell CSS: ≤1023px the side column dissolves (display: contents), the strip takes a top grid row, the shell reserves the bottom tab bar and lifts the docked ask pill above it; the tool strip is sticky at the top edge on desktop',
       /\.mkt-shell \{ display: flex; align-items: stretch; min-height: 100dvh; \}/.test(shellCss) &&
         /\.mkt-frame__bar \{\s*position: sticky; top: 0; z-index: 20;/.test(shellCss) &&
-        /@media \(max-width: 1023px\) \{[^@]*\.mkt-frame \{[^}]*grid-template-areas: "top" "main" "rail" "foot";[^@]*\.mkt-frame__side \{ display: contents; \}[^@]*\.mkt-frame__top \{ grid-area: top;[^@]*\.mkt-frame__bar \{ top: var\(--mkt-top-h\); \}[^@]*\.mkt-shell \{ padding-bottom: calc\(48px \+ env\(safe-area-inset-bottom\)\); \}[^@]*:root\[data-spine\] \.askdoor-pill \{ bottom: calc\(64px \+ env\(safe-area-inset-bottom\)\); \}/.test(shellCss),
+        /@media \(max-width: 1023px\) \{[^@]*\.mkt-frame \{[^}]*grid-template-areas: "top" "main" "rail" "foot";[^@]*\.mkt-frame__side \{ display: contents; \}[^@]*\.mkt-frame__top \{ grid-area: top;[^@]*\.mkt-frame__bar \{ top: var\(--mkt-top-h\); \}[^@]*\.mkt-shell \{ padding-bottom: calc\(49px \+ env\(safe-area-inset-bottom\)\); \}[^@]*:root\[data-spine\] \.askdoor-pill \{ bottom: calc\(64px \+ env\(safe-area-inset-bottom\)\); \}/.test(shellCss),
     )
     // The app has no brochure nav for anyone (2026-09-11, Nate: "remove the
     // header in the App if they are not logged in and move the sign in down
@@ -23177,13 +23187,19 @@ async function main() {
           !ae.sameAppHref('/chat?a=1&b=2', '/chat?b=2&a=1') && !ae.sameAppHref('//evil.example/chat', '/chat'),
       )
       check(
+        // The nav's seat gained a `.nav__acct` wrapper (squad
+        // mobile-onboarding, 2026-09-23) so the phone bar can keep it beside
+        // the burger. The property this pin guards is that the brochure nav
+        // names NO landing destination — `<SiteAccount />` still takes no
+        // props, and the `redirectTo`/`SIGN_IN_LANDING` fences below are
+        // unchanged — so the wrapper is allowed and nothing else is.
         "sign-in lands (sources): the door, AuthButton and the account menu read the landing on press (signInLandingHere), the brochure nav names none, the Google return keeps the door's, the session refreshes the page it is already on, and no door lands on /dashboard",
         /const landing = \(\) => redirectTo \?\? signInLandingHere\(\)/.test(doorS) &&
           /const intent: OAuthIntent = \{ redirectTo: landing\(\), signIn: !walletConnectOnly \}/.test(doorS) &&
           /connectAndSignIn\(redirectTo \?\? signInLandingHere\(\)\)/.test(authS) &&
           /connectAndSignIn\(signInLandingHere\(\)\)/.test(acctS) && !/stayHere|window\.location|SIGN_IN_LANDING/.test(acctS) &&
           /const target = intent\?\.redirectTo \|\| signInLandingHere\(\)/.test(oauthS) &&
-          !/signInRedirect|SIGN_IN_LANDING/.test(navS) && /const desktopAccount = <SiteAccount \/>/.test(navS) &&
+          !/signInRedirect|SIGN_IN_LANDING/.test(navS) && /const desktopAccount = (?:<span className="nav__acct">)?<SiteAccount \/>/.test(navS) &&
           /return signInLandingFor\(currentAppHref\(\), homeReturn\)/.test(sessS) &&
           /homeReturn = readSignInReturn\(window\.sessionStorage\.getItem\(SIGN_IN_RETURN_KEY\), Date\.now\(\)\)/.test(sessS) &&
           /if \(sameAppHref\(redirectTo, currentAppHref\(\)\)\) router\.refresh\(\)\s*else router\.push\(redirectTo\)/.test(sessS) &&
@@ -23423,7 +23439,10 @@ async function main() {
         grace >= 500 && grace <= 2000 &&
           /const silent = connector\?\.id === CDP_CONNECTOR_ID/.test(waitS) &&
           /return \{ shown: signingIn && \(!silent \|\| late\), silent \}/.test(waitS) &&
-          /silent \? 'Signing you in…'/.test(waitS) && /\{!silent && \(/.test(waitS) &&
+          // Re-pinned 2026-09-23 (mobile-onboarding SIGN): the button block gained a
+          // phone branch ("Open {app}" when the SDK's request is queued in the wallet
+          // app); a silent signer still renders NO button on either branch.
+          /silent \? 'Signing you in…'/.test(waitS) && /\{!silent && signingIn && openApp \? \(/.test(waitS) && /\) : !silent \? \(/.test(waitS) && /\) : null\}/.test(waitS) &&
           // Re-pinned 2026-09-18: a third reason to stand down — on a phone the
           // handoff card takes over while the wallet app hasn't come forward
           // (lib/wallet-handoff), because "the request is open in your wallet"
@@ -32028,6 +32047,112 @@ async function main() {
     check('mobile links: the /i page reads the request UA on the server and hands the verdict to the runtime (the escape line is in the first HTML, not a client flash)', /headers\(\)\)\.get\('user-agent'\)/.test(pageSrc) && /browser=\{browser\}/.test(pageSrc))
   }
 
+  // ── mobile ux: the rest of onboarding on a phone (squad mobile-onboarding,
+  // 2026-09-23). The geometry is proved by `npm run drive:mobile` in a real
+  // Chrome; these pins hold the DECISIONS that geometry rests on, so a later
+  // edit that quietly removes one goes red here instead of on someone's phone.
+  {
+    const { inAppBrowserOf, inAppEscapeCopy } = await import('../lib/inapp-browser')
+    const { oauthAllowedIn } = await import('../lib/mobile-wallet')
+
+    // The served stylesheet, not the source: a rule Tailwind or the build
+    // never emitted paints nothing (the token-tint lesson, #792).
+    const uxDoc = await (await fetch(`${BASE}/markets`, { headers: { 'x-yf-internal-run': '1' } })).text()
+    const uxHrefs = [...uxDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
+    const uxCss = (await Promise.all(uxHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n')
+
+    // 1. THE DOOR SCROLLS. A fixed grid centred with `place-items: center` and
+    //    `overflow-y: visible` clips a too-tall panel at BOTH ends and offers
+    //    nothing to scroll: measured 21px top AND bottom at 390, 34 at 375, 50
+    //    at 360 once the phone keyboard takes ~336px — the dismiss went with
+    //    it. `safe center` centres while it fits and starts when it does not;
+    //    `overflow-y: auto` reaches the rest. Both, or the bottom is lost.
+    check(
+      'mobile ux: the sign-in door can scroll and never centre-clips — .ca is overflow-y:auto + align-items:safe center',
+      /\.ca\{[^}]*overflow-y:auto/.test(uxCss) && /\.ca\{[^}]*place-items:safe center/.test(uxCss),
+      `${uxHrefs.length} stylesheets`,
+    )
+    // 2. …and gives back vertical air on a SHORT viewport, which is what the
+    //    keyboard makes — never by shrinking a target, only the space between.
+    check(
+      'mobile ux: a short viewport (the keyboard) tightens the door instead of clipping it',
+      /@media \(max-height:640px\)/.test(uxCss) && /@media \(max-height:640px\)\{[^@]*\.ca__gem\{width:44px/.test(uxCss),
+    )
+    // 3. THE RAIL COMES UP when it is carrying the visitor's own surface. On a
+    //    390px phone the index rail measured y 5461 of a 7292px document —
+    //    the watchlist, the held positions and the card-funding door, under
+    //    every board. A stranger's empty rail still sits below them, and the
+    //    symbol page never swaps (there the chart leads).
+    check(
+      'mobile ux: on a phone a rail carrying a fund door or a watched row is ordered above the boards',
+      /@media \(max-width:1023px\)/.test(uxCss) &&
+        /\.mkt-frame:not\(\.mkt-frame--sym\):has\(\.mkt-frame__rail \[data-rail-fund\]\)/.test(uxCss) &&
+        /\.mkt-frame:not\(\.mkt-frame--sym\):has\(\.mkt-frame__rail \.wl__row\)/.test(uxCss) &&
+        /grid-template-areas:"top"\s*"rail"\s*"main"\s*"foot"/.test(uxCss),
+    )
+    // 4. The shell reserves the phone bar's REAL height: 48px of seat plus its
+    //    1px top border. At 48 the page's last line sat 1px under it.
+    check('mobile ux: the markets shell reserves the spine bar at its measured 49px', /\.mkt-shell\{padding-bottom:calc\(49px \+ env\(safe-area-inset-bottom\)\)\}/.test(uxCss.replace(/\s+/g, ' ')) || /padding-bottom:calc\(49px\+env\(safe-area-inset-bottom\)\)/.test(uxCss))
+    // 5. THE PHONE NAV KEEPS ITS ACCOUNT SEAT. `.nav__right > :not(.nav__burger)`
+    //    hid it below 900px, which put the landing's only door two taps deep
+    //    (burger → drawer → Sign in) and left a connected phone visitor with no
+    //    account menu at all on a brochure page — the drawer carries AuthButton
+    //    + ConnectWallet, never NavAccount.
+    check(
+      'mobile ux: the phone nav bar keeps the account seat beside the burger',
+      /\.nav__right>:not\(\.nav__burger\):not\(\.nav__acct\)\{display:none\}/.test(uxCss.replace(/\s+/g, '')),
+    )
+    const navSrc = readFileSync('components/Navigation.tsx', 'utf8')
+    check('mobile ux: …and it is the SAME SiteAccount the desktop bar renders (rule 6 — one door, never a second)', /className="nav__acct"><SiteAccount \/><\/span>/.test(navSrc.replace(/\s+/g, ' ')))
+    // 6. TOUCH TARGETS. The board rows carry no act chip on touch by design
+    //    (`.mk-table__quick` is hover-revealed and `@media (hover: none)`
+    //    removes it), so the rail row's menu is the ONLY act a finger reaches
+    //    on /markets — and it measured 27px for "Buy $10", 33px for its menu
+    //    items, 24px for the card door's chips. 44px is the floor, and only on
+    //    a coarse pointer: the mouse keeps its compact rail.
+    check(
+      'mobile ux: on a touch pointer every act the rail offers is a 44px target',
+      /@media \(pointer:\s*coarse\)/.test(uxCss) &&
+        /\.wl__pop \.wl__chip,\s*\.wl__fundActs \.wl__chip\{min-height:44px/.test(uxCss) &&
+        /\.wl__popItem\{min-height:44px\}/.test(uxCss),
+    )
+    check('mobile ux: the board row keeps its hover-only act seat off touch (a persistent chip would eat the name cell)', /@media \(hover:\s*none\)\{\.mk-table__quick\{display:none\}/.test(uxCss))
+
+    // 7. THE DOOR INSIDE AN APP'S OWN BROWSER. Two of its three lanes cannot
+    //    fire there — Google refuses OAuth by documented policy and no wallet
+    //    app can be launched — so the layout leads with the one that works and
+    //    captions the other two. The reading is LINKS's lib/inapp-browser; the
+    //    refusal is CONNECT's lib/mobile-wallet; this lane owns the words and
+    //    the order, and the three must agree on the same UA.
+    const X_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Twitter for iPhone/10.5'
+    const SAFARI_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1'
+    const MM_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) MetaMaskMobile Mobile/15E148'
+    const walledOf = (ua: string) => { const b = inAppBrowserOf(ua); return b.inApp && !b.canLaunchApps }
+    check(
+      'mobile ux: the door re-orders itself in X\'s browser, stays normal in Safari, and stays normal in MetaMask\'s (a wallet browser is the GOOD case)',
+      walledOf(X_UA) && !walledOf(SAFARI_UA) && !walledOf(MM_UA) && !oauthAllowedIn(inAppBrowserOf(X_UA)) && oauthAllowedIn(inAppBrowserOf(SAFARI_UA)),
+    )
+    check('mobile ux: the walled door names the app the visitor is actually in, not "this app"', inAppEscapeCopy(inAppBrowserOf(X_UA)).app === 'X' && /Safari/.test(inAppEscapeCopy(inAppBrowserOf(X_UA)).where))
+    const doorSrc = readFileSync('components/CreateAccountButton.tsx', 'utf8')
+    check(
+      'mobile ux: the door reads the UA ONCE after mount, never at render (the server has no UA — a per-pass difference is a hydration mismatch)',
+      /setBrowser\(inAppBrowserOf\(navigator\.userAgent\)\)/.test(doorSrc) && !/const \w+: ?InAppBrowser = inAppBrowserOf\(/.test(doorSrc),
+    )
+    check(
+      'mobile ux: in the walled door the lane that works LEADS, and both blocked lanes carry a caption',
+      /ca__form--walled/.test(doorSrc) && /\.ca__form--walled>\.ca__emailrow\{order:5/.test(uxCss.replace(/\s+/g, '')) && /ca__lanenote/.test(doorSrc) && /aria-disabled=\{!oauthOk \|\| undefined\}/.test(doorSrc),
+    )
+
+    // 8. SSR: a phone-UA render of the app surfaces already carries the tab
+    //    bar and no brochure nav — the phone's navigation is not a client
+    //    afterthought.
+    const phoneMarkets = await (await fetch(`${BASE}/markets`, { headers: { 'user-agent': SAFARI_UA, 'x-yf-internal-run': '1' } })).text()
+    check(
+      'mobile ux: a phone render of /markets ships the Workspace tab bar and no brochure nav',
+      /aria-label="Workspace"/.test(phoneMarkets) && !/class="nav__tabs"/.test(phoneMarkets),
+    )
+  }
+
   // ── mobile f9: the jobs runner NEVER offers a leg a wallet can't cover ──
   //
   // The mobile squad's SIGN lane filed F9: "the runner OFFERS leg 0 of a
@@ -32165,111 +32290,6 @@ async function main() {
     }
   }
 
-  // ── mobile ux: the rest of onboarding on a phone (squad mobile-onboarding,
-  // 2026-09-23). The geometry is proved by `npm run drive:mobile` in a real
-  // Chrome; these pins hold the DECISIONS that geometry rests on, so a later
-  // edit that quietly removes one goes red here instead of on someone's phone.
-  {
-    const { inAppBrowserOf, inAppEscapeCopy } = await import('../lib/inapp-browser')
-    const { oauthAllowedIn } = await import('../lib/mobile-wallet')
-
-    // The served stylesheet, not the source: a rule Tailwind or the build
-    // never emitted paints nothing (the token-tint lesson, #792).
-    const uxDoc = await (await fetch(`${BASE}/markets`, { headers: { 'x-yf-internal-run': '1' } })).text()
-    const uxHrefs = [...uxDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
-    const uxCss = (await Promise.all(uxHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n')
-
-    // 1. THE DOOR SCROLLS. A fixed grid centred with `place-items: center` and
-    //    `overflow-y: visible` clips a too-tall panel at BOTH ends and offers
-    //    nothing to scroll: measured 21px top AND bottom at 390, 34 at 375, 50
-    //    at 360 once the phone keyboard takes ~336px — the dismiss went with
-    //    it. `safe center` centres while it fits and starts when it does not;
-    //    `overflow-y: auto` reaches the rest. Both, or the bottom is lost.
-    check(
-      'mobile ux: the sign-in door can scroll and never centre-clips — .ca is overflow-y:auto + align-items:safe center',
-      /\.ca\{[^}]*overflow-y:auto/.test(uxCss) && /\.ca\{[^}]*place-items:safe center/.test(uxCss),
-      `${uxHrefs.length} stylesheets`,
-    )
-    // 2. …and gives back vertical air on a SHORT viewport, which is what the
-    //    keyboard makes — never by shrinking a target, only the space between.
-    check(
-      'mobile ux: a short viewport (the keyboard) tightens the door instead of clipping it',
-      /@media \(max-height:640px\)/.test(uxCss) && /@media \(max-height:640px\)\{[^@]*\.ca__gem\{width:44px/.test(uxCss),
-    )
-    // 3. THE RAIL COMES UP when it is carrying the visitor's own surface. On a
-    //    390px phone the index rail measured y 5461 of a 7292px document —
-    //    the watchlist, the held positions and the card-funding door, under
-    //    every board. A stranger's empty rail still sits below them, and the
-    //    symbol page never swaps (there the chart leads).
-    check(
-      'mobile ux: on a phone a rail carrying a fund door or a watched row is ordered above the boards',
-      /@media \(max-width:1023px\)/.test(uxCss) &&
-        /\.mkt-frame:not\(\.mkt-frame--sym\):has\(\.mkt-frame__rail \[data-rail-fund\]\)/.test(uxCss) &&
-        /\.mkt-frame:not\(\.mkt-frame--sym\):has\(\.mkt-frame__rail \.wl__row\)/.test(uxCss) &&
-        /grid-template-areas:"top"\s*"rail"\s*"main"\s*"foot"/.test(uxCss),
-    )
-    // 4. The shell reserves the phone bar's REAL height: 48px of seat plus its
-    //    1px top border. At 48 the page's last line sat 1px under it.
-    check('mobile ux: the markets shell reserves the spine bar at its measured 49px', /\.mkt-shell\{padding-bottom:calc\(49px \+ env\(safe-area-inset-bottom\)\)\}/.test(uxCss.replace(/\s+/g, ' ')) || /padding-bottom:calc\(49px\+env\(safe-area-inset-bottom\)\)/.test(uxCss))
-    // 5. THE PHONE NAV KEEPS ITS ACCOUNT SEAT. `.nav__right > :not(.nav__burger)`
-    //    hid it below 900px, which put the landing's only door two taps deep
-    //    (burger → drawer → Sign in) and left a connected phone visitor with no
-    //    account menu at all on a brochure page — the drawer carries AuthButton
-    //    + ConnectWallet, never NavAccount.
-    check(
-      'mobile ux: the phone nav bar keeps the account seat beside the burger',
-      /\.nav__right>:not\(\.nav__burger\):not\(\.nav__acct\)\{display:none\}/.test(uxCss.replace(/\s+/g, '')),
-    )
-    const navSrc = readFileSync('components/Navigation.tsx', 'utf8')
-    check('mobile ux: …and it is the SAME SiteAccount the desktop bar renders (rule 6 — one door, never a second)', /className="nav__acct"><SiteAccount \/><\/span>/.test(navSrc.replace(/\s+/g, ' ')))
-    // 6. TOUCH TARGETS. The board rows carry no act chip on touch by design
-    //    (`.mk-table__quick` is hover-revealed and `@media (hover: none)`
-    //    removes it), so the rail row's menu is the ONLY act a finger reaches
-    //    on /markets — and it measured 27px for "Buy $10", 33px for its menu
-    //    items, 24px for the card door's chips. 44px is the floor, and only on
-    //    a coarse pointer: the mouse keeps its compact rail.
-    check(
-      'mobile ux: on a touch pointer every act the rail offers is a 44px target',
-      /@media \(pointer:\s*coarse\)/.test(uxCss) &&
-        /\.wl__pop \.wl__chip,\s*\.wl__fundActs \.wl__chip\{min-height:44px/.test(uxCss) &&
-        /\.wl__popItem\{min-height:44px\}/.test(uxCss),
-    )
-    check('mobile ux: the board row keeps its hover-only act seat off touch (a persistent chip would eat the name cell)', /@media \(hover:\s*none\)\{\.mk-table__quick\{display:none\}/.test(uxCss))
-
-    // 7. THE DOOR INSIDE AN APP'S OWN BROWSER. Two of its three lanes cannot
-    //    fire there — Google refuses OAuth by documented policy and no wallet
-    //    app can be launched — so the layout leads with the one that works and
-    //    captions the other two. The reading is LINKS's lib/inapp-browser; the
-    //    refusal is CONNECT's lib/mobile-wallet; this lane owns the words and
-    //    the order, and the three must agree on the same UA.
-    const X_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Twitter for iPhone/10.5'
-    const SAFARI_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1'
-    const MM_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) MetaMaskMobile Mobile/15E148'
-    const walledOf = (ua: string) => { const b = inAppBrowserOf(ua); return b.inApp && !b.canLaunchApps }
-    check(
-      'mobile ux: the door re-orders itself in X\'s browser, stays normal in Safari, and stays normal in MetaMask\'s (a wallet browser is the GOOD case)',
-      walledOf(X_UA) && !walledOf(SAFARI_UA) && !walledOf(MM_UA) && !oauthAllowedIn(inAppBrowserOf(X_UA)) && oauthAllowedIn(inAppBrowserOf(SAFARI_UA)),
-    )
-    check('mobile ux: the walled door names the app the visitor is actually in, not "this app"', inAppEscapeCopy(inAppBrowserOf(X_UA)).app === 'X' && /Safari/.test(inAppEscapeCopy(inAppBrowserOf(X_UA)).where))
-    const doorSrc = readFileSync('components/CreateAccountButton.tsx', 'utf8')
-    check(
-      'mobile ux: the door reads the UA ONCE after mount, never at render (the server has no UA — a per-pass difference is a hydration mismatch)',
-      /setBrowser\(inAppBrowserOf\(navigator\.userAgent\)\)/.test(doorSrc) && !/const \w+: ?InAppBrowser = inAppBrowserOf\(/.test(doorSrc),
-    )
-    check(
-      'mobile ux: in the walled door the lane that works LEADS, and both blocked lanes carry a caption',
-      /ca__form--walled/.test(doorSrc) && /\.ca__form--walled>\.ca__emailrow\{order:5/.test(uxCss.replace(/\s+/g, '')) && /ca__lanenote/.test(doorSrc) && /aria-disabled=\{!oauthOk \|\| undefined\}/.test(doorSrc),
-    )
-
-    // 8. SSR: a phone-UA render of the app surfaces already carries the tab
-    //    bar and no brochure nav — the phone's navigation is not a client
-    //    afterthought.
-    const phoneMarkets = await (await fetch(`${BASE}/markets`, { headers: { 'user-agent': SAFARI_UA, 'x-yf-internal-run': '1' } })).text()
-    check(
-      'mobile ux: a phone render of /markets ships the Workspace tab bar and no brochure nav',
-      /aria-label="Workspace"/.test(phoneMarkets) && !/class="nav__tabs"/.test(phoneMarkets),
-    )
-  }
   // ── mobile qa: the gate's own fences (QA lane, mobile-onboarding squad) ──
   // Appended as ONE block with its own closing brace, per the squad's
   // shared-tail rule. Constants imported INSIDE the block on purpose.
