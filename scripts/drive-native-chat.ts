@@ -548,6 +548,26 @@ async function chatPass(browser: Pw, devices: Pw, c: Ctx) {
     add(`${c.id}/topbar-title`, !!empty.title && !!head && head.w >= 96, empty.title ? `"${empty.title.text}" in a ${head?.w}px title door` : 'no title')
   }
   add(`${c.id}/composer-16px`, !!empty.composer && empty.composer.fontSize >= 16, `textarea ${empty.composer?.fontSize}px`)
+  if (phone) {
+    // QA r1: the field was a 24px line inside a 52px pill. The field is 44px
+    // now, and a tap on the pill's own padding focuses it.
+    const tap = await page.evaluate(`(() => {
+      ${HELPERS}
+      const t = ta()
+      if (!t) return null
+      t.blur()
+      const pill = t.parentElement.getBoundingClientRect()
+      const x = Math.round(pill.left + 6), y = Math.round(pill.top + pill.height / 2)
+      return { x, y, taH: Math.round(t.getBoundingClientRect().height) }
+    })()`)
+    if (tap) {
+      await page.mouse.click(tap.x, tap.y)
+      await page.waitForTimeout(200)
+      const focused = await page.evaluate(`(() => { ${HELPERS} return document.activeElement === ta() })()`)
+      add(`${c.id}/composer-field-44`, tap.taH >= 44 && focused, `textarea ${tap.taH}px tall; a tap on the pill's padding at (${tap.x},${tap.y}) focused it: ${focused}`)
+      await page.evaluate(`(() => { ${HELPERS} ta()?.blur() })()`)
+    }
+  }
   add(`${c.id}/send-44`, !!empty.send && empty.send.w >= 44 && empty.send.h >= 44, `send ${empty.send?.w}×${empty.send?.h}`)
   if (phone && empty.bar) add(`${c.id}/composer-above-bar`, !!empty.composerPill && empty.composerPill.b <= empty.bar.y + 1, `composer bottom ${empty.composerPill?.b} · bar top ${empty.bar.y}`)
   add(`${c.id}/no-h-scroll`, empty.doc.overflowX <= 0, `${empty.doc.overflowX}px`)
@@ -768,6 +788,8 @@ async function intentPass(browser: Pw, devices: Pw, c: Ctx) {
     add(`${c.id}/i-frame-attrs`, f.frame && f.scrollers === 1 && f.scrollerInFrame, `frame ${f.frame}, ${f.scrollers} scroller(s), in frame ${f.scrollerInFrame}`)
     add(`${c.id}/i-document-never-scrolls`, f.docScrollTop === 0 && f.docScrollH <= f.vh + 1 && f.overflowX <= 0, `document ${f.docScrollH}/${f.vh}, scrollTop ${f.docScrollTop}, overflowX ${f.overflowX}`)
     add(`${c.id}/i-bottom-flush`, f.rtBottom === f.vh, `runtime bottom ${f.rtBottom} vs ${f.vh}`)
+    const home = await page.evaluate(`(() => { const a = document.querySelector('.yf-runtime header a[aria-label="Pantessa home"]'); if (!a) return null; const r = a.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) } })()`)
+    add(`${c.id}/i-home-44`, !!home && home.w >= 44 && home.h >= 44, `home mark ${home?.w}×${home?.h}`)
     await shot(page, `${c.id}-i-runtime`)
     // The composer on the keyboard, for real, on /i too (the runtime is its
     // own frame; SHELL's CSS shrinks it onto the keyboard).

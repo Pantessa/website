@@ -2840,6 +2840,14 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         style={kbLift > 0 ? { transform: `translateY(-${kbLift}px)` } : undefined}
       >
         <div
+          // The whole pill is the field (squad mobile-native, CHAT r2; QA: a
+          // tap on the pill's padding landed outside the 24px textarea and did
+          // nothing). A tap anywhere that isn't a button focuses the textarea
+          // inside the tap's own gesture, so a phone's keyboard opens.
+          onClick={(e) => {
+            if (!(e.target as HTMLElement).closest('button, textarea, a')) textareaRef.current?.focus()
+          }}
+          data-composer-pill=""
           className={cn(
             'flex items-center gap-3 py-2 pl-4 pr-2 rounded-full border border-[var(--line)] bg-[color-mix(in_srgb,var(--surf-1)_85%,transparent)] backdrop-blur-md transition-[border-color,box-shadow] duration-200 focus-within:tint-border-accent-45 focus-within:shadow-[0_0_0_4px_rgba(52,227,160,0.07),0_0_24px_rgba(52,227,160,0.06)]',
             !embedded && 'shadow-[0_10px_36px_-14px_rgba(0,0,0,0.55)]',

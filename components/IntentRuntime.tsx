@@ -791,7 +791,9 @@ export default function IntentRuntime({
                 href="/"
                 title="Pantessa home"
                 aria-label="Pantessa home"
-                className="flex-shrink-0 grid place-items-center w-8 h-8 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
+                // A phone: a 44px target in the same 32px footprint (the
+                // negative margin keeps the header's layout; QA measured 32×32).
+                className="flex-shrink-0 grid place-items-center w-8 h-8 max-lg:w-11 max-lg:h-11 max-lg:-m-1.5 rounded-lg text-white hover:bg-[var(--surf-1)] transition-colors"
               >
                 <YeetfulMark size={15} />
               </Link>

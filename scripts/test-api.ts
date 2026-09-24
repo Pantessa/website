@@ -34065,6 +34065,9 @@ async function main() {
         /id="share"/.test(shareSrc2) && /data-sheet-open="share"/.test(shareSrc2) && /role="switch"/.test(shareSrc2) && /if \(!open \|\| phone\) return/.test(shareSrc2))
     check('native chat r2: the routing engine never opens by itself on a phone (its flag is persisted from the desktop column) — only after it was seen closed this session, as the Sheet; the scrim-only phone drawer is gone',
       /if \(!engineWindowOpen\) setArmed\(true\)/.test(engineSrc) && /<Sheet open=\{armed && engineWindowOpen\} onClose=\{close\} id="engine"/.test(engineSrc) && !/lg:hidden fixed inset-0 z-50 flex/.test(engineSrc))
+    check('native chat r2: the whole composer pill is the field — a tap on its padding (not a button) focuses the textarea — and the textarea itself is 44px tall on a phone (QA measured 213×24)',
+      /if \(!\(e\.target as HTMLElement\)\.closest\('button, textarea, a'\)\) textareaRef\.current\?\.focus\(\)/.test(ci) && /data-composer-pill=""/.test(ci))
+    check('native chat r2: /i\'s home mark is a 44px target on a phone in its 32px footprint (QA measured 32×32)', /w-8 h-8 max-lg:w-11 max-lg:h-11 max-lg:-m-1\.5 rounded-lg/.test(rt2))
     const rtDoc = await (await fetch(`${BASE}/i/buy-aapl`)).text()
     const rtHrefs = [...rtDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
     const rtServed = (await Promise.all(rtHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n').replace(/\s*\{\s*/g, '{').replace(/;\s*/g, ';').replace(/:\s+/g, ':')
