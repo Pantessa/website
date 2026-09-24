@@ -43,7 +43,7 @@ import PaymentConfirm from '@/components/PaymentConfirm'
 import { voteRequestOf, voteCandidatesOf, voteProposalOf } from '@/lib/snapshot-vote'
 import { clarifyRequestOf } from '@/lib/clarify'
 import { useYeetfulStore, type McpServer, type RouterTraceEvent } from '@/lib/store'
-import { askAppSlugs, missingAppIds } from '@/lib/ask-apps'
+import { askAppSlugs, missingAppIds, typedAskAppSlugs } from '@/lib/ask-apps'
 import { FREE_FLEET_FALLBACK } from '@/lib/free-fleet'
 import { CATALOG } from '@/lib/mcp-data'
 import { useSession } from '@/lib/session'
@@ -124,6 +124,50 @@ const APP_SEND_ROUNDS = 4
 
 /** Build the assistant message meta from receipts + an optional vote request /
  *  ambiguous-proposal candidates. */
+/** An app a send turned on for its ask (the user bubble's meta, or the
+ *  reply's when the route's belt did it). */
+interface AddedApp {
+  id: string
+  slug: string
+  name: string
+}
+function addedAppsOf(meta: unknown): AddedApp[] {
+  const raw = meta && typeof meta === 'object' ? (meta as { addedApps?: unknown }).addedApps : undefined
+  if (!Array.isArray(raw)) return []
+  return raw.filter((r): r is AddedApp => !!r && typeof r === 'object' && typeof (r as AddedApp).id === 'string' && typeof (r as AddedApp).name === 'string')
+}
+
+/** "Added Robinhood Chain for this ask · Undo" — the one line that tells a
+ *  visitor the rail followed their sentence (2026-09-24). Marks from the
+ *  directory when it's loaded; names alone when it isn't. */
+function AddedAppsLine({ apps, servers, align, undone, onUndo }: { apps: AddedApp[]; servers: McpServer[]; align: 'start' | 'end'; undone: boolean; onUndo?: () => void }) {
+  return (
+    <div
+      data-added-apps={apps.map((a) => a.slug).join(' ')}
+      className={cn('flex items-center gap-2 text-[11px] text-[color:var(--muted)] -mt-1', align === 'end' ? 'justify-end pr-11' : 'pl-11 max-sm:pl-0')}
+    >
+      <span className="flex items-center -space-x-1">
+        {apps.slice(0, 4).map((a) => {
+          const row = servers.find((s) => s.id === a.id)
+          return row ? (
+            <span key={a.id} className="w-4 h-4 rounded-full overflow-hidden bg-[var(--surf-2)] ring-1 ring-[var(--bg)] flex items-center justify-center">
+              <BrandIcon server={row} size={10} />
+            </span>
+          ) : null
+        })}
+      </span>
+      <span>
+        {undone ? 'Removed' : 'Added'} <span className="text-[color:var(--fg)]">{apps.map((a) => cleanServerName(a.name)).join(' + ')}</span> {undone ? 'again' : 'for this ask'}
+      </span>
+      {onUndo && !undone && (
+        <button type="button" onClick={onUndo} className="underline decoration-dotted underline-offset-2 hover:text-[color:var(--fg)]">
+          Undo
+        </button>
+      )}
+    </div>
+  )
+}
+
 /** Hover copy affordance on every turn — appears top-right of the bubble,
  * flashes a check on success. Flat, no chrome until you want it. */
 function CopyTurn({ text, dark }: { text: string; dark?: boolean }) {
@@ -677,7 +721,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // its DB copy) is absorbed by re-adding, up to APP_SEND_ROUNDS; past that
   // the ask sends anyway and the route names what's missing — a definitive
   // settle, never a hostage ask ([[chat-id-load-race]]).
-  const [chipSend, setChipSend] = useState<{ text: string; slugs: string[]; rounds: number } | null>(null)
+  const [chipSend, setChipSend] = useState<{ text: string; slugs: string[]; rounds: number; added: string[] } | null>(null)
+  // The directory ids a send turned on before it fired — handleSend stamps
+  // them on the user bubble (meta.addedApps) so the thread says so and the
+  // line under it offers the undo. Consumed once per send.
+  const addedForSendRef = useRef<string[]>([])
   const fireChip = (prompt: string) => {
     // Mid-turn the ask lands in the composer instead, so it's never silently
     // dropped (handleSend no-ops while loading) — and still sends as a chip.
@@ -688,19 +736,53 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     }
     void handleSend(prompt)
   }
-  const sendChip = (prompt: string, slugs: readonly string[] = []) => {
+  /** Directory rows for ids a send turned on → the bubble's `addedApps`. */
+  const appsAdded = (ids: readonly string[]): AddedApp[] =>
+    ids.map((id) => servers.find((r) => r.id === id)).filter((r): r is McpServer => !!r).map((r) => ({ id: r.id, slug: r.slug, name: r.name }))
+  /** The belt's `addedMcps` → on in the rail + on the chat; returns what was new here. */
+  const syncEchoedApps = (raw: unknown): AddedApp[] => {
+    if (!Array.isArray(raw)) return []
+    const rows = raw.filter((r): r is AddedApp => !!r && typeof r === 'object' && typeof (r as AddedApp).id === 'string' && typeof (r as AddedApp).name === 'string' && typeof (r as AddedApp).slug === 'string')
+    const live = useYeetfulStore.getState()
+    const fresh = rows.filter((r) => !live.activeServerIds.includes(r.id) && (live.servers.length === 0 || live.servers.some((s) => s.id === r.id)))
+    if (fresh.length === 0) return []
+    const next = [...live.activeServerIds, ...fresh.map((r) => r.id)]
+    if (live.linkSetActive) setLinkServerIds(next)
+    else setActiveServerIds(next)
+    noteChipApps(fresh.map((r) => r.id))
+    if (currentChatId) updateChatServers(currentChatId, next)
+    return fresh
+  }
+  // Undo for the "Added X for this ask" line: the row goes back off, on the
+  // rail and on the chat. Remembered per bubble so the line reads "Removed".
+  const [undoneApps, setUndoneApps] = useState<Set<string>>(() => new Set())
+  const undoAddedApps = (msgId: string, apps: readonly AddedApp[]) => {
+    const live = useYeetfulStore.getState()
+    const drop = new Set(apps.map((a) => a.id))
+    const next = live.activeServerIds.filter((id) => !drop.has(id))
+    if (live.linkSetActive) setLinkServerIds(next)
+    else setActiveServerIds(next)
+    if (currentChatId) updateChatServers(currentChatId, next)
+    setUndoneApps((u) => new Set([...u, msgId]))
+  }
+  // `typed` = the composer's own sentence (2026-09-24): it takes the
+  // narrower typed rule (money-shaped asks only, NEAR only for a cross-chain
+  // move — lib/ask-apps typedAskAppSlugs) instead of a chip's full compose,
+  // and lights the first-party apps the sentence needs before it sends. The
+  // route's belt covers anything this misses and echoes `addedMcps`.
+  const sendChip = (prompt: string, slugs: readonly string[] = [], opts: { typed?: boolean } = {}) => {
     // A chart ask opens the overlay and a markets ask navigates: reads that
     // need no dapp (handleSend owns both).
     if (embedded || parseChartAsk(prompt)?.pair || (!simple && parseMarketsNavAsk(prompt))) {
       fireChip(prompt)
       return
     }
-    const want = [...new Set([...slugs, ...askAppSlugs(prompt)])]
-    if (servers.length > 0 && missingAppIds(want, servers, activeServerIds).length === 0) {
+    const want = opts.typed ? typedAskAppSlugs(prompt) : [...new Set([...slugs, ...askAppSlugs(prompt)])]
+    if (want.length === 0 || (servers.length > 0 && missingAppIds(want, servers, activeServerIds).length === 0)) {
       fireChip(prompt)
       return
     }
-    setChipSend({ text: prompt, slugs: want, rounds: 0 })
+    setChipSend({ text: prompt, slugs: want, rounds: 0, added: [] })
   }
   useEffect(() => {
     if (!chipSend || servers.length === 0) return
@@ -712,10 +794,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       else setActiveServerIds(next)
       noteChipApps(missing)
       if (currentChatId) updateChatServers(currentChatId, next)
-      setChipSend({ ...chipSend, rounds: chipSend.rounds + 1 })
+      setChipSend({ ...chipSend, rounds: chipSend.rounds + 1, added: [...new Set([...chipSend.added, ...missing])] })
       return
     }
     setChipSend(null)
+    addedForSendRef.current = chipSend.added
     fireChip(chipSend.text)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chipSend, servers, activeServerIds])
@@ -1037,7 +1120,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     if (typeof textOverride !== 'string') setInput('')
     setLoading(true)
 
-    addMessage(chatId, { role: 'user', content: userMsg })
+    // The apps this send turned on (the chip/typed send effect above) ride
+    // on the user bubble: "Added Robinhood Chain for this ask · Undo".
+    const addedApps = appsAdded(addedForSendRef.current)
+    addedForSendRef.current = []
+    addMessage(chatId, { role: 'user', content: userMsg, ...(addedApps.length ? { meta: { addedApps } } : {}) })
 
     try {
       // ── Auto-Router: stream the engine's reasoning + answer (no manual
@@ -1123,10 +1210,19 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         setPendingPayment({ userMsg, chatId, data, history, workingContext })
       } else {
         trackPaidReceipts(data.receipts)
+        // The route's belt turned on apps this send hadn't (lib/turn-scope
+        // `addedMcps`): light them in the rail, keep them on the chat, and
+        // say so under the reply — the same line the pre-send path writes
+        // under the ask. Never in the embed (the host's set; the route never
+        // adds there either).
+        const echoed = !embedded ? syncEchoedApps(data.addedMcps) : []
         addMessage(chatId, {
           role: 'assistant',
           content: data.reply || data.error || 'No response.',
-          meta: buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio, data.buildPath, data.jobId, data.guardianPolicyId, data.jobToken, data.nfts, data.nftMarket, data.dcaArm, data.spotGuardArm, data.guardWarnings, data.builtBy, data.signInGate, userMsg),
+          meta: {
+            ...buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio, data.buildPath, data.jobId, data.guardianPolicyId, data.jobToken, data.nfts, data.nftMarket, data.dcaArm, data.spotGuardArm, data.guardWarnings, data.builtBy, data.signInGate, userMsg),
+            ...(echoed.length ? { addedApps: echoed } : {}),
+          },
         })
         // A reply that only said "connect your wallet" answered nothing —
         // the guest allowance is for answers, not for doors (QA O-3).
@@ -1644,6 +1740,15 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       return
     }
     if (text && !loading && !pendingPayment) parkedAskRef.current = null
+    // A typed money ask lights the first-party apps its sentence needs
+    // before it sends (typedAskAppSlugs) — the rail is a record, not a
+    // prerequisite. Reads and non-money asks compose nothing and send as
+    // before; the embed keeps its host's set.
+    if (text && !loading && !pendingPayment && !embedded && typedAskAppSlugs(text).length > 0) {
+      setInput('')
+      sendChip(text, [], { typed: true })
+      return
+    }
     void handleSend()
   }
 
@@ -2488,6 +2593,15 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                       })()}
                   </div>
                 </motion.div>
+                {addedAppsOf(msg.meta).length > 0 && (
+                  <AddedAppsLine
+                    apps={addedAppsOf(msg.meta)}
+                    servers={servers}
+                    align={msg.role === 'user' ? 'end' : 'start'}
+                    undone={undoneApps.has(msg.id)}
+                    onUndo={embedded ? undefined : () => undoAddedApps(msg.id, addedAppsOf(msg.meta))}
+                  />
+                )}
                 </Fragment>
               ))}
             </AnimatePresence>

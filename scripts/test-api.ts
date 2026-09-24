@@ -6935,26 +6935,39 @@ async function main() {
   // Lido" with a stake.lido.fi walkthrough — the conversion handed away.
   // Without the venue MCP in the set, the native layers answer with the
   // add-the-dapp deep link (prefill, never auto-send). Pre-planner, cheap.
+  // Re-pinned 2026-09-24 (apps follow the ask): the door is the EMBED turn's
+  // answer (host-owned set); a typed first-party ask on an empty set gets
+  // the app from the route's belt and the lane claims it (addedMcps).
   const lidoDoor = await fetch(`${BASE}/api/chat`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ message: 'Stake 0.05 ETH with Lido', activeServers: [], history: [] }),
+    body: JSON.stringify({ message: 'Stake 0.05 ETH with Lido', activeServers: [], history: [], embedOrigin: 'https://harness-door.invalid' }),
   })
-  const lidoDoorBody = (await lidoDoor.json()) as { reply?: string }
+  const lidoDoorBody = (await lidoDoor.json()) as { reply?: string; addedMcps?: unknown }
   check(
-    'missing-mcp door: a Lido stake ask without the Lido MCP gets the add-Lido deep link, never a DIY how-to',
+    'missing-mcp door: a Lido stake ask without the Lido MCP on an EMBED turn gets the add-Lido deep link, never a DIY how-to',
     lidoDoor.status === 200 &&
       /mcps=lido-free/.test(lidoDoorBody.reply ?? '') &&
-      !/stake\.lido\.fi/i.test(lidoDoorBody.reply ?? ''),
+      !/stake\.lido\.fi/i.test(lidoDoorBody.reply ?? '') && !lidoDoorBody.addedMcps,
+  )
+  const lidoBelt = (await (await fetch(`${BASE}/api/chat`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+    body: JSON.stringify({ message: 'Stake 0.05 ETH with Lido', activeServers: [], history: [] }),
+  })).json()) as { reply?: string; door?: unknown; addedMcps?: { slug: string }[] }
+  check(
+    'missing-mcp belt: the same Lido ask typed first-party gets Lido from the belt — the stake lane answers (🌊), no door, addedMcps names it',
+    !lidoBelt.door && /^🌊/.test(lidoBelt.reply ?? '') && !/mcps=lido-free/.test(lidoBelt.reply ?? '') && !!lidoBelt.addedMcps?.some((a) => /lido/.test(a.slug)),
+    JSON.stringify(lidoBelt).slice(0, 200),
   )
   const hlDoor = await fetch(`${BASE}/api/chat`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ message: 'Long $12 of HYPE on Hyperliquid', activeServers: [], history: [] }),
+    body: JSON.stringify({ message: 'Long $12 of HYPE on Hyperliquid', activeServers: [], history: [], embedOrigin: 'https://harness-door.invalid' }),
   })
   const hlDoorBody = (await hlDoor.json()) as { reply?: string }
   check(
-    'missing-mcp door: an HL order ask without the Hyperliquid MCP gets the add door',
+    'missing-mcp door: an HL order ask without the Hyperliquid MCP on an EMBED turn gets the add door',
     hlDoor.status === 200 && /mcps=hyperliquid-free/.test(hlDoorBody.reply ?? ''),
   )
 
@@ -13511,15 +13524,28 @@ async function main() {
     check('morpho jobs: a venue-less lend segment never compiles as Morpho', !!mweak && 'problem' in mweak && /step 2/i.test(mweak.problem))
 
     // The door: a full grammar match without the agent answers the add-the-
-    // dapp deep link (prefill, never auto-send) — never the planner.
+    // dapp deep link (prefill, never auto-send) — never the planner. Re-pinned
+    // 2026-09-24 (apps follow the ask): a first-party TYPED ask now gets the
+    // app from the route's belt and the lane claims it; the door is what an
+    // EMBED turn (host-owned set) still meets.
     const morphoDoor = await fetch(`${BASE}/api/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+      body: JSON.stringify({ message: 'lend 20 USDC on morpho', activeServers: [], embedOrigin: 'https://harness-door.invalid' }),
+    }).then((r) => r.json())
+    check(
+      'morpho door: a lone lend without the agent on an EMBED turn deep-links the add with the ask ready',
+      typeof morphoDoor.reply === 'string' && morphoDoor.reply.includes('Add Morpho with this ask ready](/chat?mcps=morpho-free&prompt=') && !morphoDoor.addedMcps,
+      JSON.stringify(morphoDoor).slice(0, 220),
+    )
+    const morphoBelt = await fetch(`${BASE}/api/chat`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
       body: JSON.stringify({ message: 'lend 20 USDC on morpho', activeServers: [] }),
     }).then((r) => r.json())
     check(
-      'morpho door: a lone lend without the agent deep-links the add with the ask ready',
-      typeof morphoDoor.reply === 'string' && morphoDoor.reply.includes('Add Morpho with this ask ready](/chat?mcps=morpho-free&prompt='),
-      JSON.stringify(morphoDoor).slice(0, 220),
+      'morpho belt: the same lone lend TYPED first-party gets Morpho from the route\'s belt — the lane claims it, no door, and the reply echoes addedMcps',
+      !morphoBelt.door && !/with this ask ready/.test(String(morphoBelt.reply)) && /^🏦/.test(String(morphoBelt.reply)) &&
+        Array.isArray(morphoBelt.addedMcps) && morphoBelt.addedMcps.some((a: { slug: string }) => /morpho/.test(a.slug)),
+      JSON.stringify(morphoBelt).slice(0, 220),
     )
     const morphoLadder = await fetch(`${BASE}/api/chat`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
@@ -16336,12 +16362,14 @@ async function main() {
       ladderMisses.join(' || '),
     )
 
+    // Re-pinned 2026-09-24 (apps follow the ask): the door is the EMBED
+    // turn's answer; a typed first-party ask gets the app from the belt.
     const aaveDoor = await fetch(`${BASE}/api/chat`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
-      body: JSON.stringify({ message: 'supply 20 USDC to aave', activeServers: [] }),
+      body: JSON.stringify({ message: 'supply 20 USDC to aave', activeServers: [], embedOrigin: 'https://harness-door.invalid' }),
     }).then((r) => r.json())
     check(
-      'aave door: a lone supply without the agent deep-links the add with the ask ready',
+      'aave door: a lone supply without the agent on an EMBED turn deep-links the add with the ask ready',
       typeof aaveDoor.reply === 'string' && aaveDoor.reply.includes('Add Aave with this ask ready](/chat?mcps=aave-free&prompt='),
       JSON.stringify(aaveDoor).slice(0, 220),
     )
@@ -16355,10 +16383,10 @@ async function main() {
     // planner (guardian did) or refuse without the add link (cross-chain did).
     const guardianDoor = await fetch(`${BASE}/api/chat`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
-      body: JSON.stringify({ message: 'protect my ETH long with a 5% stop', activeServers: [] }),
+      body: JSON.stringify({ message: 'protect my ETH long with a 5% stop', activeServers: [], embedOrigin: 'https://harness-door.invalid' }),
     }).then((r) => r.json())
     check(
-      'guardian door: an arm ask without the HL agent answers the door (never the planner)',
+      'guardian door: an arm ask without the HL agent on an EMBED turn answers the door (never the planner)',
       typeof guardianDoor.reply === 'string' && guardianDoor.reply.includes('Add Hyperliquid with this ask ready](/chat?mcps=hyperliquid-free&prompt='),
       JSON.stringify(guardianDoor).slice(0, 220),
     )
@@ -16789,12 +16817,15 @@ async function main() {
       )
     }
 
+    // Re-pinned 2026-09-24 (apps follow the ask): an EMBED turn keeps the
+    // door; a typed first-party one gets NEAR from the belt (proven in the
+    // "apps follow the ask (route)" block).
     const ccDoor = await fetch(`${BASE}/api/chat`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
-      body: JSON.stringify({ message: 'swap 5 USDC from base to polygon', activeServers: [], walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' }),
+      body: JSON.stringify({ message: 'swap 5 USDC from base to polygon', activeServers: [], walletAddress: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045', embedOrigin: 'https://harness-door.invalid' }),
     }).then((r) => r.json())
     check(
-      'cross-chain door: no NEAR agent → the refusal carries the add-with-ask deep link',
+      'cross-chain door: no NEAR agent on an EMBED turn → the refusal carries the add-with-ask deep link',
       typeof ccDoor.reply === 'string' && ccDoor.reply.includes('Add NEAR Intents with this ask ready](/chat?mcps=near-intents-mcp-yeetful&prompt='),
       JSON.stringify(ccDoor).slice(0, 220),
     )
@@ -17847,19 +17878,23 @@ async function main() {
       // add-the-dapp door without NEAR Intents, and the cross-chain lane
       // claims it with the apps the chip send turns on.
       const { DEFAULT_CHAT_FLEET_SLUGS: defaultSet } = await import('../lib/free-fleet')
-      const moveTurn = async (slugs: readonly string[]) =>
+      const moveTurn = async (slugs: readonly string[], extra: Record<string, unknown> = {}) =>
         (await (await fetch(`${BASE}/api/chat`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
-          body: JSON.stringify({ message: 'Swap 0.014286 ETH from Arbitrum to ETH on Base', activeServers: slugs.map((slug) => ({ slug })), history: [] }),
-        })).json()) as { reply?: string; door?: { mcps?: string } }
-      const moveBare = await moveTurn(defaultSet)
+          body: JSON.stringify({ message: 'Swap 0.014286 ETH from Arbitrum to ETH on Base', activeServers: slugs.map((slug) => ({ slug })), history: [], ...extra }),
+        })).json()) as { reply?: string; door?: { mcps?: string }; addedMcps?: { slug: string }[] }
+      // Re-pinned 2026-09-24 (apps follow the ask): the door is the EMBED
+      // turn's; a typed first-party move gets NEAR Intents from the belt.
+      const moveBare = await moveTurn(defaultSet, { embedOrigin: 'https://harness-door.invalid' })
+      const moveBelt = await moveTurn(defaultSet)
       const moveLit = await moveTurn([...new Set([...defaultSet, ...moveApps('Swap 0.014286 ETH from Arbitrum to ETH on Base')])])
       check(
-        'funding round trip (route): the move chip in the default chat set answers the NEAR Intents door, and the cross-chain lane claims it once the chip\'s apps are on',
-        /Add NEAR Intents with this ask ready/.test(String(moveBare.reply)) && moveBare.door?.mcps === 'near-intents-mcp-yeetful' &&
-          !moveLit.door && /^🔗/.test(String(moveLit.reply)) && !/with this ask ready/.test(String(moveLit.reply)),
-        `bare=${String(moveBare.reply).slice(0, 80)} lit=${String(moveLit.reply).slice(0, 120)}`,
+        'funding round trip (route): the move in the default chat set answers the NEAR Intents door on an EMBED turn, gets NEAR from the belt when typed first-party, and the cross-chain lane claims it once the chip\'s apps are on',
+        /Add NEAR Intents with this ask ready/.test(String(moveBare.reply)) && moveBare.door?.mcps === 'near-intents-mcp-yeetful' && !moveBare.addedMcps &&
+          !moveBelt.door && /^🔗/.test(String(moveBelt.reply)) && !!moveBelt.addedMcps?.some((a) => /near/.test(a.slug)) &&
+          !moveLit.door && /^🔗/.test(String(moveLit.reply)) && !/with this ask ready/.test(String(moveLit.reply)) && !moveLit.addedMcps,
+        `bare=${String(moveBare.reply).slice(0, 80)} belt=${String(moveBelt.reply).slice(0, 80)} lit=${String(moveLit.reply).slice(0, 120)}`,
       )
     }
   }
@@ -18476,12 +18511,26 @@ async function main() {
       )
       const unsizedDoor = await fetch(`${BASE}/api/chat`, {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+        body: JSON.stringify({ message: 'I want to buy some HYPE and 2x long', activeServers: [], history: [], embedOrigin: 'https://harness-door.invalid' }),
+      }).then((r) => r.json() as Promise<Record<string, unknown>>)
+      check(
+        'hl unsized (route): without the Hyperliquid MCP the flagship ask on an EMBED turn gets the add door with the ask ready',
+        /Add Hyperliquid with this ask ready\]\(\/chat\?mcps=hyperliquid-free&prompt=/.test(String(unsizedDoor.reply)) && classifyTurn(unsizedDoor).kind === null,
+        JSON.stringify(unsizedDoor).slice(0, 300),
+      )
+      // Apps follow the ask (2026-09-24): the same flagship ask TYPED
+      // first-party on an empty set gets Hyperliquid from the route's belt
+      // and the HL lane answers its size chips — no door, no planner.
+      const unsizedBelt = await fetch(`${BASE}/api/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
         body: JSON.stringify({ message: 'I want to buy some HYPE and 2x long', activeServers: [], history: [] }),
       }).then((r) => r.json() as Promise<Record<string, unknown>>)
       check(
-        'hl unsized (route): without the Hyperliquid MCP the flagship ask gets the add door with the ask ready',
-        /Add Hyperliquid with this ask ready\]\(\/chat\?mcps=hyperliquid-free&prompt=/.test(String(unsizedDoor.reply)) && classifyTurn(unsizedDoor).kind === null,
-        JSON.stringify(unsizedDoor).slice(0, 300),
+        'hl unsized (route): the flagship ask typed first-party on an EMPTY set gets Hyperliquid from the belt (addedMcps) and the HL lane answers — never the door',
+        hlRow
+          ? unsizedBelt.buildPath === 'native-hl-exec' && !unsizedBelt.door && Array.isArray(unsizedBelt.addedMcps) && (unsizedBelt.addedMcps as { slug: string }[]).some((a) => /hyperliquid/.test(a.slug))
+          : /mcps=hyperliquid-free/.test(String(unsizedBelt.reply)),
+        JSON.stringify(unsizedBelt).slice(0, 300),
       )
     }
 
@@ -28430,26 +28479,96 @@ async function main() {
     ]
     const laneMiss: string[] = []
     for (const [ask, lane] of laneAsks) {
-      const turn = async (rows: DirRow[]) =>
+      const turn = async (rows: DirRow[], extra: Record<string, unknown> = {}) =>
         (await (await fetch(`${BASE}/api/chat`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
-          body: JSON.stringify({ message: ask, activeServers: rows, activeServerIds: rows.map((r) => r.id), history: [] }),
-        })).json()) as { reply?: string; door?: { mcps?: string } }
-      const bare = await turn([])
+          body: JSON.stringify({ message: ask, activeServers: rows, activeServerIds: rows.map((r) => r.id), history: [], ...extra }),
+        })).json()) as { reply?: string; door?: { mcps?: string }; addedMcps?: { id: string; slug: string; name: string }[] }
+      // Re-pinned 2026-09-24 (apps follow the ask): an EMBED turn on an empty
+      // set still meets the door; a typed FIRST-PARTY turn on an empty set
+      // gets its app from the route's belt and the lane claims it.
+      const bare = await turn([], { embedOrigin: 'https://harness-door.invalid' })
+      const belt = await turn([])
       const lit = await turn(rowsFor(liveDir, askApps.askAppSlugs(ask)))
       const doorSlug = bare.door?.mcps ?? ''
       // The door's own link slug must light a row the gate reads, on prod's spelling too.
       const doorWorks = !!doorSlug && Object.values(APP_DETECT).some((d) => d.ok(rowsFor(liveDir, [doorSlug])) && d.ok(rowsFor(prodDir, [doorSlug])))
-      const bareIsDoor = /with this ask ready/.test(String(bare.reply)) && doorWorks
-      const litClaims = !lit.door && !/with this ask ready/.test(String(lit.reply)) && lane.test(String(lit.reply))
-      if (!bareIsDoor || !litClaims) laneMiss.push(`${ask}: bare=${bareIsDoor ? 'door' : String(bare.reply).slice(0, 60)} lit=${String(lit.reply).slice(0, 80)}`)
+      const bareIsDoor = /with this ask ready/.test(String(bare.reply)) && doorWorks && !bare.addedMcps
+      // The belt's added rows are the ones the door would have asked for.
+      const beltRows = (belt.addedMcps ?? []).map((a) => liveDir.find((r) => r.id === a.id)).filter((r): r is DirRow => !!r)
+      const beltClaims = !belt.door && !/with this ask ready/.test(String(belt.reply)) && lane.test(String(belt.reply)) && beltRows.length > 0 && Object.values(APP_DETECT).some((d) => d.ok(beltRows))
+      const litClaims = !lit.door && !/with this ask ready/.test(String(lit.reply)) && lane.test(String(lit.reply)) && !lit.addedMcps
+      if (!bareIsDoor || !beltClaims || !litClaims) laneMiss.push(`${ask}: bare=${bareIsDoor ? 'door' : String(bare.reply).slice(0, 60)} belt=${beltClaims ? 'claims' : `${String(belt.reply).slice(0, 60)} added=${JSON.stringify(belt.addedMcps?.map((a) => a.slug))}`} lit=${String(lit.reply).slice(0, 80)}`)
     }
     check(
-      'apps follow the ask (route): each lane (Aave supply + borrow · Hyperliquid order + guardian · Lido · Morpho · a cross-chain swap) answers the add-the-dapp door on an EMPTY set — whose link slug now lights the right row on prod\'s spelling too — and CLAIMS the turn once the set carries the apps its chip lights',
+      'apps follow the ask (route): each lane (Aave supply + borrow · Hyperliquid order + guardian · Lido · Morpho · a cross-chain swap) answers the add-the-dapp door on an EMPTY set for an EMBED turn — whose link slug lights the right row on prod\'s spelling too — gets its app from the belt (addedMcps, a row the lane\'s own detector reads) on a typed first-party turn, and CLAIMS the turn outright once the set carries the apps its chip lights',
       laneMiss.length === 0,
       laneMiss.join(' | '),
     )
+
+    // ── The typed rule + the first-party fence (2026-09-24) ──
+    check(
+      'apps follow the ask (typed): a typed money ask composes its first-party apps — a stock buy lights Robinhood Chain and NOT NEAR Intents, a cross-chain move lights NEAR, a read ("how long does a bridge take") and a question ("what is a stock?") light nothing, and the typed set is always a subset of the chip set',
+      JSON.stringify(askApps.typedAskAppSlugs('I want to buy $10 worth of apple stock')) === '["robinhood-free"]' &&
+        askApps.typedAskAppSlugs('Swap 25 USDC from Ethereum to ETH on Base').includes('near-intents-mcp-yeetful') &&
+        askApps.typedAskAppSlugs('how long does a bridge take').length === 0 &&
+        askApps.typedAskAppSlugs('what is a stock?').length === 0 &&
+        askApps.typedAskAppSlugs('Supply $25 of USDC to Aave').includes('aave') && !askApps.typedAskAppSlugs('Supply $25 of USDC to Aave').includes('near-intents-mcp-yeetful') &&
+        [fiveRuleAsk, morphoAsk, 'Buy $10 of AAPL', 'Sell $50 of ETH'].every((a) => askApps.typedAskAppSlugs(a).every((slug) => askApps.askAppSlugs(a).includes(slug))),
+      JSON.stringify({ stock: askApps.typedAskAppSlugs('I want to buy $10 worth of apple stock'), move: askApps.typedAskAppSlugs('Swap 25 USDC from Ethereum to ETH on Base'), read: askApps.typedAskAppSlugs('how long does a bridge take') }),
+    )
+    {
+      const mk = (id: string, slug: string, name: string, gated: boolean): DirRow => ({ id, slug, name, gated, endpoint: `https://${slug}.invalid/mcp` })
+      const fenceCatalog: DirRow[] = [
+        mk('c-aave', 'aave', 'Aave', false),
+        mk('c-custom', 'custom-aave-helper', 'Aave Helper (custom)', false),
+        mk('c-paid', 'aave-pro-x402', 'Aave Pro', true),
+        mk('c-rh', 'robinhood-free', 'Robinhood Chain (Free)', false),
+        mk('c-wallet', 'yeetful-tool-wallet', 'Pantessa Wallet', false),
+      ]
+      const noFirstParty = fenceCatalog.filter((r) => r.id !== 'c-aave')
+      check(
+        'apps follow the ask (fence): the belt adds only FIRST-PARTY free rows — with the fleet\'s Aave row missing, a custom row that merely says "Aave" and a paid lookalike are never added; nothing is added twice or when the set already carries the row',
+        JSON.stringify(askApps.followAskApps('Supply $25 of USDC to Aave', [], fenceCatalog).map((r) => r.id)) === '["c-aave"]' &&
+          askApps.followAskApps('Supply $25 of USDC to Aave', [], noFirstParty).length === 0 &&
+          askApps.followAskApps('Supply $25 of USDC to Aave', [fenceCatalog[0]], fenceCatalog).length === 0 &&
+          askApps.followAskApps('what is aave?', [], fenceCatalog).length === 0 &&
+          !askApps.isFirstPartyApp(fenceCatalog[1]) && !askApps.isFirstPartyApp(fenceCatalog[2]) && askApps.isFirstPartyApp(fenceCatalog[3]) && askApps.isFirstPartyApp(fenceCatalog[4]),
+        JSON.stringify(askApps.followAskApps('Supply $25 of USDC to Aave', [], fenceCatalog).map((r) => r.id)),
+      )
+    }
+    {
+      // The stock ask that started this (Nate, 2026-09-24): typed, no
+      // Robinhood app in the set. The swap layer never needed the app — it
+      // infers Robinhood Chain from the stock list — and the belt adds it
+      // anyway so the splash card and the MCP's own reads follow.
+      const stockTurn = await fetch(`${BASE}/api/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+        body: JSON.stringify({ message: 'I want to buy $10 worth of apple stock', activeServers: [], history: [] }),
+      }).then((r) => r.json() as Promise<Record<string, unknown>>)
+      check(
+        'apps follow the ask (route): "I want to buy $10 worth of apple stock" typed on an EMPTY set is claimed by the native swap layer (no door, no planner) and the belt echoes Robinhood Chain in addedMcps',
+        !stockTurn.door && !/with this ask ready/.test(String(stockTurn.reply)) && /Connect your wallet to swap/.test(String(stockTurn.reply)) &&
+          Array.isArray(stockTurn.addedMcps) && (stockTurn.addedMcps as { slug: string }[]).some((a) => a.slug === 'robinhood-free'),
+        JSON.stringify(stockTurn).slice(0, 260),
+      )
+      // The unsized cousin fell to the planner: no digit, no $, no ticker.
+      // `stock`/`shares` count as money evidence now and the intent net
+      // offers the sized buys — each a sentence the swap layer builds.
+      const unsizedStock = await fetch(`${BASE}/api/chat`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+        body: JSON.stringify({ message: 'I want to buy some apple shares', activeServers: [], history: [] }),
+      }).then((r) => r.json() as Promise<Record<string, unknown>>)
+      const unsizedOpts = ((unsizedStock.clarify as { options?: { label: string; resume: string }[] } | undefined)?.options ?? [])
+      check(
+        'apps follow the ask (route): "I want to buy some apple shares" (unsized, no ticker) is money-shaped now and the intent net answers three sized buys the swap layer builds — never the planner',
+        moneyShaped('I want to buy some apple shares') && !moneyShaped('what is a stock?') &&
+          unsizedStock.buildPath === 'native-intent-net' && unsizedOpts.length === 3 && unsizedOpts.every((o) => /^Buy \$(10|25|50) of APPLE$/.test(o.resume)) &&
+          simulateLadder('I want to buy some apple shares').kind === 'clarify' && simulateLadder('buy tesla stock').gate === 'intent-net' && simulateLadder('sell my apple shares').gate === 'intent-net',
+        JSON.stringify({ shape: moneyShaped('I want to buy some apple shares'), turn: JSON.stringify(unsizedStock).slice(0, 200) }),
+      )
+    }
 
     // The send paths: every chip goes through the one chip send.
     const chatSrcF = await readFile('components/ChatInterface.tsx', 'utf8')
@@ -28464,7 +28583,21 @@ async function main() {
         /if \(text && text === parked && !loading && !pendingPayment\) \{\s*\n\s*parkedAskRef\.current = null\s*\n\s*setInput\(''\)\s*\n\s*sendChip\(text\)/.test(chatSrcF) &&
         (chatSrcF.match(/sendComposer\(\)/g) ?? []).length === 2 && !/onClick=\{\(\) => void handleSend\(\)\}/.test(chatSrcF) &&
         /if \(embedded \|\| parseChartAsk\(prompt\)\?\.pair \|\| \(!simple && parseMarketsNavAsk\(prompt\)\)\) \{/.test(chatSrcF) &&
-        /const want = \[\.\.\.new Set\(\[\.\.\.slugs, \.\.\.askAppSlugs\(prompt\)\]\)\]/.test(chatSrcF),
+        /const want = opts\.typed \? typedAskAppSlugs\(prompt\) : \[\.\.\.new Set\(\[\.\.\.slugs, \.\.\.askAppSlugs\(prompt\)\]\)\]/.test(chatSrcF),
+    )
+    const routeSrcF = await readFile('app/api/chat/route.ts', 'utf8')
+    check(
+      'apps follow the ask (source, typed): the composer\'s typed send lights its first-party apps before it fires (typedAskAppSlugs → sendChip typed) except in the embed, the apps a send turned on ride the user bubble (meta.addedApps) and the belt\'s addedMcps are synced into the rail + chat under the reply, with an Undo line — and the route\'s belt runs after the content-origin read, never on an embed turn, echoed through lib/turn-scope in the POST wrapper',
+      /if \(text && !loading && !pendingPayment && !embedded && typedAskAppSlugs\(text\)\.length > 0\) \{\s*\n\s*setInput\(''\)\s*\n\s*sendChip\(text, \[\], \{ typed: true \}\)/.test(chatSrcF) &&
+        /addedForSendRef\.current = chipSend\.added\s*\n\s*fireChip\(chipSend\.text\)/.test(chatSrcF) &&
+        /addMessage\(chatId, \{ role: 'user', content: userMsg, \.\.\.\(addedApps\.length \? \{ meta: \{ addedApps \} \} : \{\}\) \}\)/.test(chatSrcF) &&
+        /const echoed = !embedded \? syncEchoedApps\(data\.addedMcps\) : \[\]/.test(chatSrcF) &&
+        /function AddedAppsLine\(/.test(chatSrcF) && /onUndo=\{embedded \? undefined : \(\) => undoAddedApps\(msg\.id, addedAppsOf\(msg\.meta\)\)\}/.test(chatSrcF) &&
+        (() => {
+          const i = routeSrcF.indexOf("const contentOrigin = contentOriginOf({ intentLinkSlug: turnLinkSlug, embedKey: body.embedKey, embedOrigin })")
+          const j = routeSrcF.indexOf("if (contentOrigin !== 'embed') {\n      const followed = followAskApps(message, activeServers, resolvedSet.catalog)")
+          return i > 0 && j > i && j - i < 1200 && /const turn = await withTurnScope\(\(\) => handleChatTurn\(/.test(routeSrcF) && /withAddedApps\(turn\.result, turn\.scope\.addedApps\)/.test(routeSrcF)
+        })(),
     )
     check(
       'apps follow the ask (source): the chip send waits for the LIVE set to carry the apps (the request body reads it), keeps an /i link\'s set marked as the link\'s, re-adds after a load re-seeds the set at most APP_SEND_ROUNDS times and then sends anyway, and loads the directory once where the page never did (/t, the ask door)',

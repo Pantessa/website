@@ -257,9 +257,21 @@ function compose(s: Slots): RescueChip[] {
     // A price with the thing it buys and no verb at all ("$10 of AAPL
     // please") is a buy — a verb list can never cover "no verb".
     else if ((s.verbs.has('buy') || s.verbs.size === 0) && s.usd !== undefined && !stable) add('swap', `Buy $${s.usd} of ${up(tok)}${chain}`)
+    // An UNSIZED buy ("I want to buy some apple shares", "buy tesla stock"):
+    // the swap grammar sizes buys by what you spend, so the net offers the
+    // same preset dollars the swap layer's own clarify does — each a
+    // complete ask the ladder builds (2026-09-24; it fell to the planner).
+    else if (s.verbs.has('buy') && s.usd === undefined && s.units === undefined && !stable && !s.verbs.has('swap') && !s.verbs.has('sell') && !s.verbs.has('bridge'))
+      for (const usd of UNSIZED_BUY_USD) add('swap', `Buy $${usd} of ${up(tok)}${chain}`)
+    // An unsized sell of something held ("sell my apple shares") is the
+    // swap layer's whole-holding sell; `verify` keeps it only if it builds.
+    else if (s.verbs.has('sell') && s.usd === undefined && s.units === undefined && !stable) add('swap', `Sell all my ${up(tok)}${chain}`)
   }
   return out
 }
+
+/** The sizes an unsized buy is offered at — the hero's own $10 first. */
+export const UNSIZED_BUY_USD = [10, 25, 50] as const
 
 /**
  * One probe sentence per verb family. The net is only ever reached through
@@ -284,6 +296,7 @@ export const INTENT_NET_PROBES: { family: string; ask: string }[] = [
   { family: 'buy', ask: 'ape $20 into PEPE' },
   { family: 'put-into', ask: 'put 0.1 eth into lido' },
   { family: 'verbless', ask: '$10 of AAPL please' },
+  { family: 'unsized-buy', ask: 'I want to buy some apple shares' },
 ]
 
 /**
