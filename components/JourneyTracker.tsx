@@ -17,6 +17,7 @@ import { usePathname } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import { isAdminAddress } from '@/lib/admin'
 import { flushJourney, journeyOff, labelOfClick, markTeamBrowser, observeFetch, setJourneyWallet, shouldLogScriptError, trackJourney } from '@/lib/journey'
+import { appScrollDepthPct, onAppScroll } from '@/lib/app-scroller'
 import { useSession } from '@/lib/session'
 
 const MAX_ERRORS_PER_LOAD = 8
@@ -96,9 +97,10 @@ export default function JourneyTracker() {
         ticking = false
         const p = page.current
         if (!p) return
-        const doc = document.documentElement
-        const full = doc.scrollHeight - window.innerHeight
-        const pct = full > 0 ? Math.min(100, (window.scrollY / full) * 100) : 0
+        // The screen's own scroller: the window on desktop, the frame's
+        // inner scroller on a phone (lib/app-scroller; the document never
+        // scrolls there, so window.scrollY would read a lifelong 0).
+        const pct = appScrollDepthPct()
         if (pct > p.scroll) p.scroll = pct
       })
     }
@@ -145,7 +147,6 @@ export default function JourneyTracker() {
       report(r instanceof Error ? `${r.name}: ${r.message}` : typeof r === 'string' ? r : 'Unhandled promise rejection')
     }
 
-    const passive = { passive: true } as const
     // Once per page, not once per load: pointermove fires by the hundred, and
     // one is all a page needs. addEventListener ignores a duplicate, so
     // re-arming a listener that has not fired yet is harmless.
@@ -156,14 +157,14 @@ export default function JourneyTracker() {
     }
     armInput.current = arm
     arm()
-    window.addEventListener('scroll', onScroll, passive)
+    const offScroll = onAppScroll(onScroll)
     document.addEventListener('click', onClick, { capture: true, passive: true })
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('pagehide', onPageHide)
     window.addEventListener('error', onError)
     window.addEventListener('unhandledrejection', onRejection)
     return () => {
-      window.removeEventListener('scroll', onScroll)
+      offScroll()
       window.removeEventListener('pointermove', touch)
       window.removeEventListener('touchstart', touch)
       window.removeEventListener('keydown', touch)

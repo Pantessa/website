@@ -337,7 +337,9 @@ async function symbolRows(engine: Engine, sym: string) {
     else {
       judge(3, `${engine} /t/${sym}: a phone chart hands vertical swipes to the screen (vertTouchDrag off, touch-action pan-y) and keeps pan + pinch`, touch.found && hs.vertTouchDrag === false && hs.horzTouchDrag === true && touch.pinch === true && touch.canvasTa === 'pan-y', tl)
       judge(3, `${engine} /t/${sym}: the full-screen control is ≥44px`, !!fs[0] && fs[0].w >= 44 && fs[0].h >= 44, fs[0] ? `${fs[0].w}×${fs[0].h}` : 'none')
-      judge(3, `${engine} /t/${sym}: the plot keeps ≥240px on a phone and its controls take ≤2 rows (≤ 44·2 + 8, a stock's pool pill may add one)`, !!head.plot && head.plot.h >= 240 && !!head.bar && head.bar.h <= (sym === 'AAPL' ? 44 * 3 + 16 : 44 * 2 + 8) + 1, `plot ${rectOf(head.plot)} · controls ${rectOf(head.bar)}`)
+      // Two rows: 44 (timeframes) + 8 + 50 (the tools group's own 2px pad +
+      // 1px border around 44px tools). A stock's pool pill adds a 44px row.
+      judge(3, `${engine} /t/${sym}: the plot keeps ≥240px on a phone and its controls take two rows (a stock's pool pill adds one)`, !!head.plot && head.plot.h >= 240 && !!head.bar && head.bar.h <= (sym === 'AAPL' ? 44 + 8 + 44 + 8 + 50 : 44 + 8 + 50) + 1, `plot ${rectOf(head.plot)} · controls ${rectOf(head.bar)}`)
       judge(5, `${engine} /t/${sym}: act chips, timeframes, overlays, tools and section tabs ≥44px tall`, [minOf(chips, 'h'), minOf(tf, 'h'), minOf(ind, 'h'), minOf(tools, 'h'), minOf(tabs, 'h')].every((h) => Number.isNaN(h) || h >= 44), line)
     }
     await page.mouse.move(1, 1)
@@ -504,7 +506,11 @@ async function stickyRows(engine: Engine) {
     await page.locator('.mkt-frame__tab[href="#crypto"]').first().click()
     await page.waitForTimeout(900)
     const crypto = await page.evaluate(`(() => { const s = document.querySelector('#crypto'); const t = document.querySelector('.mkt-frame__tabs'); return { sec: Math.round(s.getBoundingClientRect().top), tabsBottom: Math.round(t.getBoundingClientRect().bottom) } })()`)
-    record[`${engine}.sticky.markets`] = { at0, at900, at3200, crypto }
+    const frame = await page.evaluate(`(() => { const d = document.scrollingElement; const sc = ${SCROLLER_JS}; const bar = document.querySelector('[data-spine-bar]'); const b = bar ? bar.getBoundingClientRect() : null; const s = sc.getBoundingClientRect(); const hit = document.elementFromPoint(innerWidth / 2, innerHeight - 10); return { docST: d.scrollTop, docSH: d.scrollHeight, ih: innerHeight, scroller: sc === d ? 'document' : String(sc.className).split(' ')[0], scBottom: Math.round(s.bottom), barTop: b ? Math.round(b.top) : null, barBottom: b ? Math.round(b.bottom) : null, inBar: !!(bar && hit && bar.contains(hit)) } })()`)
+    record[`${engine}.sticky.markets`] = { at0, at900, at3200, crypto, frame }
+    const fl = `document scrollTop ${frame.docST} · scrollHeight ${frame.docSH}/${frame.ih} · scroller ${frame.scroller} ends at ${frame.scBottom} · bar ${frame.barTop}–${frame.barBottom} · bottom 10px is the bar: ${frame.inBar}`
+    if (MEASURE_ONLY || TAG === 'before') note(4, `${engine} /markets frame`, fl)
+    else judge(4, `${engine} /markets: the document never scrolls (the frame's scroller is .mkt-frame) and the scroller ends where the bar starts, so no row can pass under it`, frame.docST === 0 && frame.docSH <= frame.ih + 1 && frame.scroller === 'mkt-frame' && frame.barTop !== null && frame.scBottom <= frame.barTop + 1 && frame.barBottom === frame.ih && frame.inBar, fl)
     const stuck = (r: any) => r.top === 0 && r.tabs !== null && Math.abs(r.tabs - (r.topH ?? 52)) <= 1
     const line = `top strip ${at0.top}→${at900.top}→${at3200.top} · board tabs ${at0.tabs}→${at900.tabs}→${at3200.tabs} (strip ${at0.topH}px) · search ${at0.search}→${at900.search} · Crypto tapped: section top ${crypto.sec} vs tabs bottom ${crypto.tabsBottom}`
     if (MEASURE_ONLY || TAG === 'before') note(4, `${engine} /markets sticky`, line)
@@ -551,6 +557,7 @@ async function brochureFoot(engine: Engine, pathname: string) {
       const hits = []
       for (const el of document.querySelectorAll('footer a, footer p, footer button, footer span, footer li, main a, main p, main button')) {
         if (el.children.length && el.tagName !== 'A' && el.tagName !== 'BUTTON') continue
+        if (el.closest('[aria-hidden="true"]')) continue // decorative (the footer's giant wordmark)
         const b = el.getBoundingClientRect()
         if (!b.width || !b.height) continue
         const w = Math.min(b.right, pr.right) - Math.max(b.left, pr.left)

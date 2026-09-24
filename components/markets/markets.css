@@ -254,6 +254,10 @@ button.mk-held:hover { border-color: var(--accent); }
   .wl__icon { width: 44px; height: 44px; }
   .wl__pickBtn { min-height: 44px; }
   .wl__addHere, .wl__chip { min-height: 44px; }
+  /* The rail's sheets (AlertForm, ImportModal): every button and field a thumb
+     uses inside the open sheet, 44px (their desktop modal was 26–32px). */
+  [data-sheet^="wl-"] :is(.wl__btn, .wl__segBtn, .wl__input) { min-height: 44px; }
+  [data-sheet^="wl-"] :is(.wl__btn, .wl__segBtn) { padding-inline: 16px; }
   .mk-table__row:active, .mk-trend__row:active, .wl__row:active { background: color-mix(in srgb, var(--fg) 9%, transparent); }
   .mkt-frame__tab:active, .mk-table__sort:active, .mkt-sec__more:active, .mk-view__btn:active, .mk-earn__chip:active,
   .sym__tab:active, .sym__act-chip:active, .mkt-chip:active, .sym .tok__tfbtn:active, .sym .mkt-ind:active, .sym .mkt-tool:active {
