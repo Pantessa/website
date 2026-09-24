@@ -45,7 +45,7 @@ const ONLY = arg('only') ? arg('only').split(',') : []
 const ENGINES = arg('engines') ? arg('engines').split(',') : ['webkit', 'chrome']
 const DESKTOP = !ARGS.includes('--no-desktop')
 /** Round-2 rows: frame (the per-surface proof), landscape, sheets, scrollkind. */
-const ROWS = arg('rows') ? arg('rows').split(',') : ['frame', 'landscape', 'sheets', 'scrollkind', 'sheetlinks']
+const ROWS = arg('rows') ? arg('rows').split(',') : ['frame', 'landscape', 'sheets', 'scrollkind', 'sheetlinks', 'composites']
 const row = (name: string) => ROWS.includes(name)
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -553,6 +553,7 @@ const SHEETS: SheetCase[] = [
   { id: 'account', path: '/markets', opener: '[data-sheet-open="account"]', needsWallet: true, settle: '.mk-board, .mkt-frame__data', handoff: { opener: '[data-sheet-open="wallet"]', to: 'wallet' } },
   { id: 'dashnav', path: '/dashboard', opener: '[data-sheet-open="dashnav"]', needsSession: true, needsWallet: true, settle: '.dash__main' },
   { id: 'links', path: '/chat?tab=links', opener: '[data-sheet-open="links"]', needsWallet: true, settle: '[data-phone-screen]' },
+  { id: 'chain', path: '/chat', opener: '[data-sheet-open="chain"]', needsWallet: true, settle: '[data-app-scroll]' },
 ]
 async function runSheets(session: string | null, burner: string) {
   const browser: Pw = await chromium.launch({ executablePath: CHROME, headless: true })
@@ -772,6 +773,176 @@ async function runSheetLinks(session: string | null, burner: string) {
   }
 }
 
+// ── Round 2, the coordinator's three composites on the REAL consumers ──────
+//   1. the door's back (PAGES: useBackToClose 'door' on the sign-in door)
+//   2. a SIWE success while the sigwait card covers (CHAT: useBackToClose
+//      'sigwait'): from the landing, the door → the wallet lane → the mock
+//      connects and signs SIWE → the landing's sign-in pushes /markets while
+//      the cover flips off — the SIWE shape, end to end
+//   3. Share opened FROM the AskDoor sheet (a sheet over a sheet): back closes
+//      Share and keeps the door; back again closes the door
+async function runComposites(burner: string) {
+  const browser: Pw = await chromium.launch({ executablePath: CHROME, headless: true })
+  const P = 'chrome-iphone13-ua-390'
+  const state = async (page: Pw) => (await page.evaluate(`(() => ({ path: location.pathname, len: history.length, nav: performance.getEntriesByType('navigation').length, mark: window.__shellMark, sheets: Array.from(document.querySelectorAll('[data-sheet]')).map((s) => s.getAttribute('data-sheet') + ':' + s.getAttribute('data-phase')), door: !!document.querySelector('.ca__panel[role="dialog"]'), sigwait: !!document.querySelector('[data-sigwait], .sigwait, [data-signature-wait]') }))()`)) as { path: string; len: number; nav: number; mark: unknown; sheets: string[]; door: boolean; sigwait: boolean }
+  const ctxFor = async (wallet: boolean, siwe: boolean) => {
+    const { defaultBrowserType: _d, ...dev } = devices['iPhone 13']
+    void _d
+    const ctx: Pw = await browser.newContext({ ...dev, viewport: { width: 390, height: 664 }, colorScheme: 'dark', extraHTTPHeaders: { 'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1' } })
+    if (wallet) {
+      await ctx.exposeFunction('__driveSignSiwe', (raw: string) => signSiweWithBurner(raw))
+      await ctx.addInitScript(mockWalletScript({ address: burner, siweBridge: siwe }))
+      if (!siwe) await ctx.addInitScript(rememberConnectorScript())
+    }
+    return ctx
+  }
+  try {
+    // 1. THE DOOR'S BACK — a stranger on /markets opens the sign-in door from the top strip.
+    {
+      const ctx = await ctxFor(false, false)
+      const errs: string[] = []
+      try {
+        const page: Pw = await ctx.newPage()
+        page.on('pageerror', (e: unknown) => errs.push(String(e)))
+        await page.goto(`${BASE}/markets`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+        await page.waitForSelector('.mk-board, .mkt-frame__data', { timeout: 45_000 }).catch(() => {})
+        await page.waitForTimeout(1500)
+        await page.evaluate(`window.__shellMark = 1`)
+        const s0 = await state(page)
+        await page.click('[data-sheet-open="door"]', { timeout: 10_000 }).catch(async () => { await page.evaluate(`(() => { const o = document.querySelector('[data-sheet-open="door"]'); if (o) o.click() })()`) })
+        let doorOpen = false
+        for (let i = 0; i < 20; i++) { if ((await state(page)).door) { doorOpen = true; break }; await page.waitForTimeout(100) }
+        const s1 = await state(page)
+        note(P, 'door', 'the sign-in door opens from the top strip and owns ONE history entry (URL unchanged)', doorOpen && s1.len === s0.len + 1 && s1.path === s0.path, JSON.stringify({ doorOpen, len: `${s0.len} → ${s1.len}` }))
+        await page.goBack({ waitUntil: 'commit' }).catch(() => {})
+        let doorGone = false
+        for (let i = 0; i < 20; i++) { if (!(await state(page)).door) { doorGone = true; break }; await page.waitForTimeout(100) }
+        const s2 = await state(page)
+        note(P, 'door', 'the back gesture closes the door and stays on /markets (no reload)', doorGone && s2.path === '/markets' && s2.nav === 1 && s2.mark === 1, JSON.stringify(s2))
+        await page.click('[data-sheet-open="door"]', { timeout: 10_000 }).catch(() => {})
+        let reopened = false
+        for (let i = 0; i < 20; i++) { if ((await state(page)).door) { reopened = true; break }; await page.waitForTimeout(100) }
+        note(P, 'door', 'the door reopens after a back-close', reopened)
+        // the grab handle (PAGES wired useSwipeToClose): a touch drag down dismisses
+        const h = (await page.evaluate(`(() => { const g = document.querySelector('.ca__grab'); if (!g) return null; const b = g.getBoundingClientRect(); return [Math.round(b.left + b.width / 2), Math.round(b.top + b.height / 2)] })()`)) as number[] | null
+        if (h) {
+          const cdp: Pw = await ctx.newCDPSession(page)
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: h[0], y: h[1] }] })
+          await page.waitForTimeout(30)
+          for (let i = 1; i <= 8; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: h[0], y: h[1] + i * 30 }] }); await page.waitForTimeout(16) }
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+          let swiped = false
+          for (let i = 0; i < 15; i++) { if (!(await state(page)).door) { swiped = true; break }; await page.waitForTimeout(100) }
+          note(P, 'door', 'a TOUCH drag down on the door\'s grab handle dismisses it (useSwipeToClose on a bespoke overlay)', swiped)
+          await cdp.detach().catch(() => {})
+        } else note(P, 'door', 'the door has a grab handle (.ca__grab)', false)
+        note(P, 'door', 'no page errors', errs.length === 0, errs.slice(0, 2).join(' | '))
+      } catch (e) {
+        note(P, 'door', 'the case ran to its end', false, String(e).split('\n')[0].slice(0, 160))
+      } finally {
+        await ctx.close().catch(() => {})
+      }
+    }
+    // 2. SIWE SUCCESS WHILE THE SIGWAIT CARD COVERS — the landing's door, the wallet lane, the mock signs, /markets lands.
+    {
+      const ctx = await ctxFor(true, true)
+      const errs: string[] = []
+      try {
+        const page: Pw = await ctx.newPage()
+        page.on('pageerror', (e: unknown) => errs.push(String(e)))
+        await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+        await page.waitForSelector('[data-sheet-open="door"], [data-sheet-open="nav"]', { timeout: 45_000 }).catch(() => {})
+        await page.waitForTimeout(1500)
+        await page.evaluate(`window.__shellMark = 1`)
+        const s0 = await state(page)
+        // the landing's phone door: a visible sign-in opener, else via the nav sheet
+        const direct = await page.$('[data-sheet-open="door"]:not([hidden])')
+        if (!direct) {
+          await page.click('[data-sheet-open="nav"]', { timeout: 10_000 }).catch(() => {})
+          await page.waitForTimeout(500)
+        }
+        await page.click('[data-sheet-open="door"]', { timeout: 10_000 }).catch(async () => { await page.evaluate(`(() => { const o = document.querySelector('[data-sheet-open="door"]'); if (o) o.click() })()`) })
+        let doorOpen = false
+        for (let i = 0; i < 20; i++) { if ((await state(page)).door) { doorOpen = true; break }; await page.waitForTimeout(100) }
+        note(P, 'sigwait', 'the landing\'s door opens', doorOpen, JSON.stringify(await state(page)))
+        await page.click('button.ca__wallet', { timeout: 10_000 }).catch(() => {})
+        await page.waitForTimeout(800)
+        const rk = await page.$('[data-testid="rk-wallet-option-injected"], [data-testid="rk-wallet-option-io.pantessa.drive"]')
+        if (rk) await rk.click()
+        // the mock connects, the door SIWEs (the mock's bridge signs with the burner), the sigwait card covers, the session lands → /markets
+        let landed = false
+        for (let i = 0; i < 150; i++) { if ((await state(page)).path === '/markets') { landed = true; break }; await page.waitForTimeout(200) }
+        const s1 = await state(page)
+        note(P, 'sigwait', 'the wallet lane → connect → SIWE (the burner signs) → the landing\'s sign-in lands on /markets within 30s', landed, JSON.stringify(s1))
+        await page.waitForTimeout(2000)
+        const s2 = await state(page)
+        note(P, 'sigwait', 'and stays on /markets 2s later: no bounce, no reload, no door or sheet left open (the sigwait cover flipped off under the push — the SIWE shape)', s2.path === '/markets' && s2.nav === 1 && s2.mark === 1 && !s2.door && s2.sheets.length === 0, JSON.stringify(s2))
+        note(P, 'sigwait', 'history grew by at most one entry for the whole door → cover → /markets chain', s2.len - s0.len <= 1, `${s0.len} → ${s2.len}`)
+        await page.goBack({ waitUntil: 'commit' }).catch(() => {})
+        let home = false
+        for (let i = 0; i < 40; i++) { const st = await state(page); if (st.path === '/' && !st.door && st.sheets.length === 0) { home = true; break }; await page.waitForTimeout(100) }
+        note(P, 'sigwait', 'ONE back returns to the landing with no door and no sheet (no dead entry from the chain)', home, JSON.stringify(await state(page)))
+        note(P, 'sigwait', 'no page errors', errs.filter((e) => !/User rejected|4001/.test(e)).length === 0, errs.slice(0, 2).join(' | '))
+      } catch (e) {
+        note(P, 'sigwait', 'the case ran to its end', false, String(e).split('\n')[0].slice(0, 160))
+      } finally {
+        await ctx.close().catch(() => {})
+      }
+    }
+    // 3. SHEET OVER SHEET — Share opened from the AskDoor sheet (a live thread makes the Share pill appear).
+    {
+      const ctx = await ctxFor(true, false)
+      const errs: string[] = []
+      try {
+        const page: Pw = await ctx.newPage()
+        page.on('pageerror', (e: unknown) => errs.push(String(e)))
+        await page.goto(`${BASE}/markets`, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+        await page.waitForSelector('.mk-board, .mkt-frame__data', { timeout: 45_000 }).catch(() => {})
+        await page.waitForTimeout(2500)
+        await page.evaluate(`window.__shellMark = 1`)
+        const s0 = await state(page)
+        await page.click('[data-sheet-open="ask"]', { timeout: 10_000 }).catch(() => {})
+        let askOpen = false
+        for (let i = 0; i < 20; i++) { if ((await state(page)).sheets.includes('ask:open')) { askOpen = true; break }; await page.waitForTimeout(100) }
+        await page.waitForTimeout(400)
+        note(P, 'share', 'the ask door opens as a sheet', askOpen)
+        let share = await page.$('[data-sheet="ask"] [data-sheet-open="share"]')
+        if (!share) {
+          // Share rides the LIVE header: one harmless turn makes it live.
+          const ta = await page.$('[data-sheet="ask"] textarea')
+          if (ta) { await ta.click(); await page.keyboard.type('hello'); await page.keyboard.press('Enter') }
+          for (let i = 0; i < 100; i++) { share = await page.$('[data-sheet="ask"] [data-sheet-open="share"]'); if (share) break; await page.waitForTimeout(300) }
+        }
+        note(P, 'share', 'the Share pill is in the ask door\'s header (a live thread)', !!share)
+        if (share) {
+          const s1 = await state(page)
+          await share.click()
+          let both = false
+          for (let i = 0; i < 20; i++) { const st = await state(page); if (st.sheets.includes('share:open') && st.sheets.some((x) => x.startsWith('ask:'))) { both = true; break }; await page.waitForTimeout(100) }
+          const s2 = await state(page)
+          note(P, 'share', 'Share opens OVER the ask door: two sheets, two history entries', both && s2.len === s1.len + 1, JSON.stringify({ sheets: s2.sheets, len: `${s1.len} → ${s2.len}` }))
+          await page.goBack({ waitUntil: 'commit' }).catch(() => {})
+          let shareGone = false
+          for (let i = 0; i < 20; i++) { const st = await state(page); if (!st.sheets.some((x) => x.startsWith('share:')) && st.sheets.includes('ask:open')) { shareGone = true; break }; await page.waitForTimeout(100) }
+          note(P, 'share', 'the back gesture closes Share and KEEPS the ask door open', shareGone, JSON.stringify(await state(page)))
+          await page.goBack({ waitUntil: 'commit' }).catch(() => {})
+          let askGone = false
+          for (let i = 0; i < 20; i++) { const st = await state(page); if (st.sheets.length === 0) { askGone = true; break }; await page.waitForTimeout(100) }
+          const s3 = await state(page)
+          note(P, 'share', 'a second back closes the ask door; URL unchanged, no reload', askGone && s3.path === s0.path && s3.nav === 1 && s3.mark === 1, JSON.stringify(s3))
+        }
+        note(P, 'share', 'no page errors', errs.filter((e) => !/User rejected|4001/.test(e)).length === 0, errs.slice(0, 2).join(' | '))
+      } catch (e) {
+        note(P, 'share', 'the case ran to its end', false, String(e).split('\n')[0].slice(0, 160))
+      } finally {
+        await ctx.close().catch(() => {})
+      }
+    }
+  } finally {
+    await browser.close().catch(() => {})
+  }
+}
+
 async function main() {
   const burner = await burnerAddress()
   let session: string | null = null
@@ -792,6 +963,7 @@ async function main() {
   if (MODE === 'after' && ENGINES.includes('chrome') && row('scrollkind')) await runScrollKind(session, burner)
   if (MODE === 'after' && ENGINES.includes('chrome') && row('sheets')) await runSheets(session, burner)
   if (MODE === 'after' && ENGINES.includes('chrome') && row('sheetlinks')) await runSheetLinks(session, burner)
+  if (MODE === 'after' && ENGINES.includes('chrome') && row('composites')) await runComposites(burner)
   if (OUT) {
     writeFileSync(OUT, JSON.stringify(record, null, 2))
     console.log(`\nrecorded → ${OUT}`)
