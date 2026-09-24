@@ -1,13 +1,22 @@
 /* The phone overlay primitive's styles (components/mobile/Sheet.tsx).
    SHELL owns this file. Baseline from the coordinator's contract commit
-   (squad mobile-native, 2026-09-24); SHELL round 1 adds motion, drag and
-   the history integration. Tokens only: both themes come free. */
+   (squad mobile-native, 2026-09-24); SHELL round 1 added motion, the drag,
+   the keyboard lift and the z-index note. Tokens only: both themes come
+   free.
+
+   z-index scale (lib/phone-shell Z): the ask pill 35 · the spine bar sits
+   IN the frame (no z) · the ask door 60 · modals 70 · the dashboard drawer
+   80 · a sheet 90 (over every modal, so a modal can open one) · the
+   account-switch banner 90 · the sign-in door 100. */
 
 .sheet {
   position: fixed;
   inset: 0;
-  z-index: 90; /* over the phone bar (50) and the modals (70) */
+  z-index: 90;
   display: flex;
+  /* The drag: the scrim fades with the panel's travel (0 → 1 of its size). */
+  --sheet-drag: 0;
+  --sheet-from: 0px;
 }
 .sheet[data-side='bottom'] { align-items: flex-end; justify-content: center; }
 .sheet[data-side='left'] { align-items: stretch; justify-content: flex-start; }
@@ -29,6 +38,7 @@
   color: var(--fg);
   outline: none;
   box-shadow: 0 -12px 40px rgb(0 0 0 / 0.35);
+  will-change: transform;
 }
 .sheet[data-side='bottom'] .sheet__panel {
   width: 100%;
@@ -45,13 +55,40 @@
   height: 100%;
   border-right: 1px solid var(--line-2);
   padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) env(safe-area-inset-left);
+  box-shadow: 12px 0 40px rgb(0 0 0 / 0.35);
 }
 
+/* A bottom sheet with a field in it sits ON the keyboard (MARKETS' ask
+   door, the alert and import sheets; CHAT's modals): the frame's keyboard
+   reflector sets html[data-keyboard] + --kb-inset (lib/phone-shell), and the
+   panel lifts by that much, its ceiling lowered the same. Once, here, so no
+   lane adds its own lift. */
+html[data-keyboard] .sheet[data-side='bottom'] .sheet__panel {
+  margin-bottom: var(--kb-inset, 0px);
+  max-height: calc(100dvh - var(--kb-inset, 0px) - max(24px, env(safe-area-inset-top)));
+  padding-bottom: 0;
+}
+html[data-keyboard] .sheet[data-side='bottom'][data-size='full'] .sheet__panel {
+  height: calc(100dvh - var(--kb-inset, 0px) - max(24px, env(safe-area-inset-top)));
+}
+
+/* The grabber is the drag handle: a 44px-tall hit area drawing a 36×5 pill. */
 .sheet__grabber {
   flex-shrink: 0;
+  position: relative;
+  height: 24px;
+  margin: 0;
+  cursor: grab;
+  touch-action: none;
+}
+.sheet__grabber::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 9px;
   width: 36px;
   height: 5px;
-  margin: 8px auto 2px;
+  margin-left: -18px;
   border-radius: 3px;
   background: var(--line-2);
 }
@@ -61,6 +98,7 @@
   align-items: center;
   gap: 8px;
   padding: 6px 6px 6px 16px;
+  touch-action: none; /* the head drags the sheet; the body pans */
 }
 .sheet__title {
   flex: 1;
@@ -80,17 +118,38 @@
   border-radius: 999px;
   color: var(--muted);
 }
+.sheet__close:active { background: color-mix(in srgb, var(--fg) 8%, transparent); }
 .sheet__body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 .sheet__foot {
   flex-shrink: 0;
   border-top: 1px solid var(--line);
   padding: 12px 16px;
+}
+
+/* ── Motion: in from the edge, out the way it came (from wherever a drag
+   left it). The scrim fades. Reduced motion: no animation at all. ── */
+.sheet[data-phase='open'] .sheet__scrim { animation: sheet-scrim-in 220ms ease-out both; }
+.sheet[data-phase='open'][data-side='bottom'] .sheet__panel { animation: sheet-up 260ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+.sheet[data-phase='open'][data-side='left'] .sheet__panel { animation: sheet-right 260ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+.sheet[data-phase='closing'] { pointer-events: none; }
+.sheet[data-phase='closing'] .sheet__scrim { animation: sheet-scrim-out 200ms ease-in both; }
+.sheet[data-phase='closing'][data-side='bottom'] .sheet__panel { animation: sheet-down 200ms ease-in both; }
+.sheet[data-phase='closing'][data-side='left'] .sheet__panel { animation: sheet-left 200ms ease-in both; }
+@keyframes sheet-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sheet-scrim-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes sheet-up { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes sheet-down { from { transform: translateY(var(--sheet-from, 0px)); } to { transform: translateY(100%); } }
+@keyframes sheet-right { from { transform: translateX(-100%); } to { transform: none; } }
+@keyframes sheet-left { from { transform: translateX(calc(-1 * var(--sheet-from, 0px))); } to { transform: translateX(-100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .sheet .sheet__scrim, .sheet .sheet__panel { animation: none !important; transition: none !important; }
 }
 
 @media (min-width: 1024px) {
@@ -101,7 +160,13 @@
     border: 1px solid var(--line-2);
     border-radius: 16px;
     padding-bottom: 0;
+    box-shadow: 0 24px 64px rgb(0 0 0 / 0.45);
   }
   .sheet[data-side='bottom'][data-size='full'] .sheet__panel { height: min(80vh, 720px); }
   .sheet__grabber { display: none; }
+  /* The dialog posture fades and settles instead of sliding from an edge. */
+  .sheet[data-phase='open'][data-side='bottom'] .sheet__panel { animation: sheet-dialog-in 200ms ease-out both; }
+  .sheet[data-phase='closing'][data-side='bottom'] .sheet__panel { animation: sheet-dialog-out 160ms ease-in both; }
 }
+@keyframes sheet-dialog-in { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes sheet-dialog-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(8px) scale(0.99); } }
