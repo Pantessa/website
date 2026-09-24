@@ -204,3 +204,101 @@ button.mk-held:hover { border-color: var(--accent); }
   .mk-session__sep { display: none; }
   .mk-session__v { font-size: 10px; }
 }
+
+/* ── Native on a phone (squad mobile-native, 2026-09-24) ─────────────────────
+   Nate: "it needs to feel like a native mobile app when accessed from
+   mobile". Measured on main at 375 (MARKETS.md F1–F9): the Ask pill floated
+   over the DOT row's 24h cell, ledger rows were 42px, the sort heads 24px,
+   the timeframes 36, the rail's ⋯ sat at 55% opacity, three inputs were
+   under 16px (iOS zooms the page on focus), and the /t act chips wrapped to
+   three rows so the chart started half a screen down. Everything here is
+   scoped to a phone (≤1023px, the spine's bottom-bar posture) or to a touch
+   screen (hover: none), so the desktop terminal is byte-identical. */
+
+/* The top strip's Ask IS the phone's ask field: it fills the bar with the
+   page's own placeholder (AskDoorTrigger rail → .mkt-frame__askhint). The
+   floating pill steps aside on this surface (x402-design.css, the askdoor
+   section), so the door never covers a row. */
+.mkt-frame__askhint { display: none; }
+@media (max-width: 1023px) {
+  .mkt-frame__top .mkt-frame__ask { flex: 1 1 auto; min-width: 0; height: 44px; justify-content: flex-start; gap: 10px; padding: 0 16px 0 10px; }
+  .mkt-frame__top .mkt-frame__askword { display: none; }
+  .mkt-frame__top .mkt-frame__askhint { display: block; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-size: 14px; font-weight: 400; color: var(--muted); }
+  .mkt-frame__top .mkt-frame__acct { flex: 0 0 auto; }
+  /* The section tabs stick under the top strip while the tab's body scrolls
+     (the native tab strip); scroll-margin lands a tab switch under the strip. */
+  .sym__tabs { position: sticky; top: var(--mkt-top-h, 52px); z-index: 19; background: var(--bg); scroll-margin-top: var(--mkt-top-h, 52px); }
+}
+
+/* Every control a thumb uses is ≥44px, and a row or chip answers the press
+   before the page moves (`:active` — React's root touch listener makes iOS
+   honour it). The rail's ⋯ is fully visible: there is no hover to reveal it. */
+@media (hover: none) {
+  .mk-table__link, .mk-trend__row { min-height: 48px; }
+  .mk-table__sortbar { padding-block: 0; }
+  .mk-table__sort { min-height: 44px; padding-inline: 10px; }
+  .mkt-sec__more { min-height: 44px; padding-inline: 18px; }
+  .mkt-frame__tab { min-height: 44px; }
+  .mk-view__btn { height: 44px; padding-inline: 14px; }
+  .mk-earn__chip { min-height: 44px; padding-inline: 14px; font-size: 12px; }
+  .mk-earn__act .mkt-chip, .mk-earn__go { min-height: 44px; }
+  .sym__act-chip { min-height: 44px; }
+  .sym .tok__tfbtn { min-height: 44px; min-width: 44px; }
+  .sym .mkt-ind { min-height: 44px; }
+  .sym .mkt-tool { width: 44px; height: 44px; }
+  .sym__tab { min-height: 44px; }
+  .mk-askdock__bar { min-height: 48px; }
+  .wl__rowMain { min-height: 48px; }
+  .wl__rowMore { opacity: 1; }
+  .wl__icon { width: 44px; height: 44px; }
+  .wl__pickBtn { min-height: 44px; }
+  .wl__addHere, .wl__chip { min-height: 44px; }
+  .mk-table__row:active, .mk-trend__row:active, .wl__row:active { background: color-mix(in srgb, var(--fg) 9%, transparent); }
+  .mkt-frame__tab:active, .mk-table__sort:active, .mkt-sec__more:active, .mk-view__btn:active, .mk-earn__chip:active,
+  .sym__tab:active, .sym__act-chip:active, .mkt-chip:active, .sym .tok__tfbtn:active, .sym .mkt-ind:active, .sym .mkt-tool:active {
+    transform: scale(0.97);
+  }
+}
+@media (hover: none) and (prefers-reduced-motion: reduce) {
+  .mkt-frame__tab:active, .mk-table__sort:active, .mkt-sec__more:active, .mk-view__btn:active, .mk-earn__chip:active,
+  .sym__tab:active, .sym__act-chip:active, .mkt-chip:active, .sym .tok__tfbtn:active, .sym .mkt-ind:active, .sym .mkt-tool:active {
+    transform: none;
+  }
+}
+
+/* No field on a markets surface zooms the page on focus (iOS zooms any input
+   under 16px): the ticker search, the rail's add box, the compare box, the
+   order card's amount, Ask the chart, a post, a note, and the rail's sheets. */
+@media (hover: none), (max-width: 1023px) {
+  .mkt-frame :is(input, textarea, select),
+  [data-sheet^="wl-"] :is(input, textarea, select) { font-size: max(16px, 1em); }
+}
+
+/* The plot keeps its height on a phone however many rows its controls wrap
+   to: the card grows around a 260px canvas instead of the canvas shrinking to
+   what a fixed-height card leaves (≈150px at 375 on main). Full screen (the
+   expanded class rides the native API too) keeps the takeover's own layout. */
+@media (max-width: 640px) {
+  .sym .tchart:not(.tchart--expanded) { height: auto; }
+  .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas { flex: 0 0 auto; height: 260px; }
+  /* The act strip is ONE row that scrolls sideways (the overlays idiom): six
+     chips wrapped to three rows and pushed the chart half a screen down. The
+     row bleeds to the screen edges; its right edge fades so "more this way"
+     reads at any width. */
+  .sym__act-chips {
+    align-self: stretch; min-width: 0; flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+    margin-inline: calc(-1 * var(--sym-gutter, 12px)); padding-inline: var(--sym-gutter, 12px); scroll-padding-inline: var(--sym-gutter, 12px);
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+  .sym__act-chips::-webkit-scrollbar { display: none; }
+  .sym__act-chips::after { content: ''; flex: 0 0 16px; }
+  .sym__act-chip { flex-shrink: 0; }
+}
+
+/* The rail's dialogs are THE Sheet (components/mobile/Sheet, ids wl-import +
+   wl-alert): its body scrolls, so the old modal body's own cap goes. */
+[data-sheet^="wl-"] .wl__modalBody { max-height: none; overflow: visible; }
+.wl__sheetTitle { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.wl__sheetTitleText { display: flex; flex-direction: column; min-width: 0; }
+.wl__sheetTitleText > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

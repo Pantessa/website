@@ -11,8 +11,8 @@
 //                         watches the price; our cron never touches it.
 
 import { useMemo, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { Bell, X } from 'lucide-react'
+import { Bell } from 'lucide-react'
+import Sheet from '@/components/mobile/Sheet'
 import { chartPairFor } from '@/lib/charts'
 import { alertActionChips, alertLabel, fmtQuotePrice, type AlertCondition, type AlertRule } from '@/lib/watchlists'
 
@@ -43,8 +43,7 @@ export default function AlertForm({
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const body = useMemo(() => (typeof document === 'undefined' ? null : document.body), [])
-  if (!open || !body) return null
+  if (!open) return null
 
   const numeric = condition === 'pct_move' ? Number(pct) : Number(value)
   const rule: AlertRule = { symbol, condition, value: Number.isFinite(numeric) ? numeric : 0, basePrice: condition === 'pct_move' ? last : null }
@@ -73,21 +72,27 @@ export default function AlertForm({
     }
   }
 
-  return createPortal(
-    <div className="wl__scrim" onClick={onClose}>
-      <div role="dialog" aria-label={`Alert on ${symbol}`} className="wl__modal" onClick={(e) => e.stopPropagation()}>
-        <div className="wl__modalHead">
+  // THE Sheet (squad mobile-native, 2026-09-24): a bottom sheet on a phone,
+  // the centered dialog at lg+, closed by a tap outside, a swipe down, the
+  // back gesture, Escape and its X.
+  return (
+    <Sheet
+      open={open}
+      onClose={onClose}
+      id="wl-alert"
+      ariaLabel={`Alert on ${symbol}`}
+      title={
+        <span className="wl__sheetTitle">
           <span className="wl__modalIcon">
             <Bell className="h-4 w-4" strokeWidth={2.25} />
           </span>
-          <div className="min-w-0 flex-1">
-            <div className="wl__modalTitle">Alert on {symbol}</div>
-            <div className="wl__modalSub mono">{last ? `last $${fmtQuotePrice(last)} · ` : ''}unlimited alerts · free</div>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="wl__x">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+          <span className="wl__sheetTitleText">
+            <span className="wl__modalTitle">Alert on {symbol}</span>
+            <span className="wl__modalSub mono">{last ? `last $${fmtQuotePrice(last)} · ` : ''}unlimited alerts · free</span>
+          </span>
+        </span>
+      }
+    >
         <div className="wl__modalBody">
           <div className="wl__field">
             <label className="wl__label">When {symbol}</label>
@@ -154,8 +159,6 @@ export default function AlertForm({
             </button>
           </div>
         </div>
-      </div>
-    </div>,
-    body,
+    </Sheet>
   )
 }

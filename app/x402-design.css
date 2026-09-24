@@ -1127,6 +1127,8 @@
     color: var(--muted); border: 1px solid transparent; transition: color .15s, background .15s, border-color .15s;
   }
   .tchart__fs:hover { color: var(--fg); background: var(--surf-1); border-color: var(--line); }
+  /* A thumb needs 44×44 (squad mobile-native, 2026-09-24: it measured 28×28). */
+  @media (hover: none) { .tchart__fs { width: 44px; height: 44px; } }
   @media (max-width: 720px) {
     .tchart { height: calc(100dvh - 56px); }
     .tchart__acts { margin-left: 0; width: 100%; }
@@ -5629,7 +5631,7 @@
 .mkt-chart__hint { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); margin: -2px 0 0; }
 .mkt-chart__canvas { position: relative; width: 100%; min-width: 0; overflow: hidden; border-radius: 10px; }
 .mkt-chart__canvas.is-drawing { cursor: crosshair; }
-.mkt-chart__engine { position: absolute; inset: 0; }
+.mkt-chart__engine { position: absolute; inset: 0; touch-action: pan-y; } /* the page scrolls vertically; pan + pinch are the chart's (MarketChart: vertTouchDrag off) */
 .mkt-chart__empty { position: absolute; inset: 0; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 10px; pointer-events: none; }
 .mkt-chart__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
 .mkt-attrib { color: var(--muted-2); text-decoration: none; border-bottom: 1px solid transparent; transition: color .15s, border-color .15s; }
@@ -6178,3 +6180,36 @@ body:has(> .askdoor-pill) { padding-bottom: calc(72px + env(safe-area-inset-bott
 }
 @keyframes askdoorup { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .askdoor__sheet, .askdoor__backdrop { animation: none; } }
+
+/* ── The ask door on a phone (squad mobile-native, 2026-09-24) ─────────────
+   Nate's screenshot 1: the floating pill sat on the DOT row's 24h cell (a
+   drive measured 91×38px of it), and the markets top strip already carried
+   an "Ask" — two doors on one screen, one of them over the data. Below lg:
+   - a screen whose top bar carries the door ([data-ask-door="rail"], the
+     markets strip) never renders the pill, and drops the body reserve the
+     pill needed;
+   - on any framed phone surface ([data-app-frame], SHELL's non-scrolling
+     document) the reserve goes too: a padded body would make the document
+     scroll again, and the document scrolling is what drags the bar in
+     Safari;
+   - the door itself is THE Sheet (AskDoor → components/mobile/Sheet,
+     data-sheet="ask-door"); these rules dress its content only. */
+@media (max-width: 1023px) {
+  body:has([data-ask-door="rail"]) > .askdoor-pill { display: none; }
+  body:has(> .askdoor-pill):has([data-ask-door="rail"]),
+  body:has(> .askdoor-pill):has([data-app-frame]) { padding-bottom: 0; }
+}
+.askdoor__sheettitle { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.askdoor__sheetask { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-chat-display); }
+.askdoor__sheetbody { display: flex; flex-direction: column; min-height: 0; }
+.askdoor-sheet .askdoor__composer { padding: 4px 12px 8px 16px; }
+.askdoor-sheet .askdoor__input { font-size: max(16px, 1em); }
+.askdoor-sheet .askdoor__send { width: 44px; height: 44px; }
+.askdoor-sheet .askdoor__chips { gap: 8px; padding: 4px 16px 14px; }
+.askdoor-sheet .askdoor__chip { min-height: 44px; padding: 0 14px; font-size: 13.5px; }
+.askdoor__sheetfoot { margin: 0; font-size: 9.5px; letter-spacing: 0.14em; line-height: 1.5; color: var(--muted-2); }
+.askdoor__sheetbar { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 0 12px 8px; border-bottom: 1px solid var(--line); }
+/* Live, the runtime owns the whole panel: the Sheet's body stops scrolling
+   and the thread (ChatInterface simple) scrolls itself. */
+.askdoor-sheet--live .sheet__body { display: flex; flex-direction: column; overflow: hidden; }
+.askdoor-sheet--live .askdoor__sheetbody { flex: 1 1 auto; }

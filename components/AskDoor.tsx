@@ -31,6 +31,8 @@ import { ArrowUp, ArrowUpRight, Mic, X } from 'lucide-react'
 import { PantessaMark } from '@/components/Logo'
 import ShareButton from '@/components/ShareButton'
 import VoiceButton from '@/components/VoiceButton'
+import Sheet from '@/components/mobile/Sheet'
+import { isPhoneViewport } from '@/lib/phone-shell'
 import { analytics } from '@/lib/analytics'
 import { askDoorChips, askDoorHidden, askDoorNav, askDoorPillHidden, askDoorPlaceholder, askDoorSymbol, useAskDoor } from '@/lib/ask-door'
 import { normalizeSpokenAsk } from '@/lib/voice-ask'
@@ -52,7 +54,11 @@ const isMac = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(n
 
 /** The nav / drawer / markets-rail trigger. Renders nothing where the door
  *  is hidden. `rail` is the nav pill docked in the markets watchlist column
- *  (the strip above the watchlist — the brochure nav is gone there). */
+ *  (the strip above the watchlist — the brochure nav is gone there). On a
+ *  phone the rail trigger IS the screen's ask field (squad mobile-native,
+ *  2026-09-24): it fills the top bar with the page's own placeholder, and the
+ *  floating pill steps aside wherever one is on the page (x402-design.css,
+ *  `body:has([data-ask-door="rail"])`), so the door never covers the data. */
 export function AskDoorTrigger({ variant = 'nav' }: { variant?: 'nav' | 'drawer' | 'rail' }) {
   const pathname = usePathname()
   const openDoor = useAskDoor((s) => s.openDoor)
@@ -69,7 +75,12 @@ export function AskDoorTrigger({ variant = 'nav' }: { variant?: 'nav' | 'drawer'
       <span className="nav__ask-mark" aria-hidden="true">
         <PantessaMark size={16} />
       </span>
-      <span>Ask</span>
+      <span className={variant === 'rail' ? 'mkt-frame__askword' : undefined}>Ask</span>
+      {variant === 'rail' && (
+        <span className="mkt-frame__askhint" aria-hidden="true">
+          {askDoorPlaceholder(pathname)}
+        </span>
+      )}
       {variant !== 'drawer' && (
         <kbd className="nav__ask-kbd mono" aria-hidden="true">
           ⌘K
@@ -137,6 +148,7 @@ function AskDoorSheet() {
   const [prompt, setPrompt] = useState<InjectedPrompt | null>(null)
   const [voiceLive, setVoiceLive] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const postureRef = useRef<boolean | null>(null)
   const hidden = askDoorHidden(pathname)
   const briefChips = useAskDoor((s) => s.briefChips)
   // A Sell suggestion only for a wallet that holds the token (lib/sell-gate).
@@ -259,10 +271,108 @@ function AskDoorSheet() {
     send(fire.text)
   }, [open, fire, hidden, takeFire, send, servers, activeServerIds, setActiveServerIds, walletAddress, walletStatus, holdTick])
 
+  // The posture is read once per opening (squad mobile-native, 2026-09-24):
+  // a phone gets THE Sheet (components/mobile/Sheet — a tap outside, a swipe
+  // down, the back gesture, Escape and its close button all dismiss it, the
+  // way every phone panel closes), a desktop keeps the ⌘K palette. A tablet
+  // rotating across lg mid-run keeps the posture it opened in: switching
+  // would remount the runtime and drop a sign card. Idempotent in render.
+  if (!open) postureRef.current = null
+  else if (mounted && postureRef.current === null) postureRef.current = isPhoneViewport()
+
   if (!mounted || hidden || !open) return null
 
   const live = !!prompt
   const appHref = draft.trim() ? `/chat?prompt=${encodeURIComponent(draft.trim())}` : '/chat'
+
+  const runtime = live ? (
+    <div className="askdoor__runtime">
+      <ChatInterface simple injectedPrompt={prompt} />
+    </div>
+  ) : null
+  const composer = (
+    <>
+      <div className={`askdoor__composer ${voiceLive ? 'is-listening' : ''}`}>
+        <textarea
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault()
+              send(draft)
+            }
+          }}
+          placeholder={placeholder}
+          aria-label="Ask Pantessa"
+          rows={1}
+          className="askdoor__input"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <VoiceButton
+          onInterim={(t) => setDraft(t)}
+          onFinal={(t) => {
+            setVoiceLive(false)
+            send(t)
+          }}
+          onCancel={() => setVoiceLive(false)}
+          onStateChange={(s) => setVoiceLive(s === 'listening')}
+        />
+        <button
+          type="button"
+          className={`askdoor__send ${draft.trim() ? 'is-ready' : ''}`}
+          onClick={() => send(draft)}
+          disabled={!draft.trim()}
+          aria-label="Send"
+        >
+          <ArrowUp className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="askdoor__chips" aria-label="Try one">
+        {chips.map((c) => (
+          <button key={c.label} type="button" className="askdoor__chip" onClick={() => send(c.ask)} title={c.ask}>
+            {c.label}
+          </button>
+        ))}
+      </div>
+    </>
+  )
+
+  if (postureRef.current) {
+    return (
+      <Sheet
+        open
+        onClose={closeDoor}
+        id="ask-door"
+        size={live ? 'full' : 'auto'}
+        className={live ? 'askdoor-sheet askdoor-sheet--live' : 'askdoor-sheet'}
+        title={
+          <span className="askdoor__sheettitle">
+            <PantessaMark size={18} />
+            <span className="askdoor__sheetask">{live ? prompt.text : sym ? `Act on ${sym}` : 'Ask Pantessa'}</span>
+          </span>
+        }
+        footer={live ? undefined : <p className="askdoor__sheetfoot mono">ONE SENTENCE · GUARDED BUILD · NOTHING MOVES UNTIL YOU SIGN</p>}
+      >
+        <div className="askdoor__sheetbody" data-ask-door="sheet" data-live={live ? '1' : '0'}>
+          {live ? (
+            <>
+              <div className="askdoor__sheetbar">
+                <ShareButton signInLane />
+                <SpineLink href={appHref} className="askdoor__app" title="Open the full app">
+                  Open the app <ArrowUpRight className="h-3.5 w-3.5" />
+                </SpineLink>
+              </div>
+              {runtime}
+            </>
+          ) : (
+            composer
+          )}
+        </div>
+      </Sheet>
+    )
+  }
 
   return createPortal(
     <div className={`askdoor ${live ? 'askdoor--live' : ''}`} data-ask-door="sheet" data-live={live ? '1' : '0'}>
@@ -296,55 +406,10 @@ function AskDoorSheet() {
         </header>
 
         {live ? (
-          <div className="askdoor__runtime">
-            <ChatInterface simple injectedPrompt={prompt} />
-          </div>
+          runtime
         ) : (
           <>
-            <div className={`askdoor__composer ${voiceLive ? 'is-listening' : ''}`}>
-              <textarea
-                ref={inputRef}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                    e.preventDefault()
-                    send(draft)
-                  }
-                }}
-                placeholder={placeholder}
-                aria-label="Ask Pantessa"
-                rows={1}
-                className="askdoor__input"
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <VoiceButton
-                onInterim={(t) => setDraft(t)}
-                onFinal={(t) => {
-                  setVoiceLive(false)
-                  send(t)
-                }}
-                onCancel={() => setVoiceLive(false)}
-                onStateChange={(s) => setVoiceLive(s === 'listening')}
-              />
-              <button
-                type="button"
-                className={`askdoor__send ${draft.trim() ? 'is-ready' : ''}`}
-                onClick={() => send(draft)}
-                disabled={!draft.trim()}
-                aria-label="Send"
-              >
-                <ArrowUp className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="askdoor__chips" aria-label="Try one">
-              {chips.map((c) => (
-                <button key={c.label} type="button" className="askdoor__chip" onClick={() => send(c.ask)} title={c.ask}>
-                  {c.label}
-                </button>
-              ))}
-            </div>
+            {composer}
             <p className="askdoor__foot mono">
               ONE SENTENCE · GUARDED BUILD · NOTHING MOVES UNTIL YOU SIGN
               <span className="askdoor__foot-kbd">

@@ -422,6 +422,16 @@ export default function SymbolPage({
                   if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
                   e.preventDefault()
                   setTab(t.tab)
+                  // On a phone the strip sticks under the top bar (markets.css):
+                  // a switch made while it's stuck lands the new tab at its own
+                  // top, the way a native tab strip does, instead of mid-body.
+                  requestAnimationFrame(() => {
+                    const el = tabsRef.current
+                    if (!el) return
+                    const cs = getComputedStyle(el)
+                    if (cs.position !== 'sticky') return
+                    if (el.getBoundingClientRect().top <= (parseFloat(cs.top) || 0) + 1) el.scrollIntoView({ block: 'start' })
+                  })
                 }}
                 data-tab={t.tab}
               >

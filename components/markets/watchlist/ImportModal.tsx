@@ -7,10 +7,10 @@
 // (BUSINESS-MODEL-chart-first §5.2). The parse is /api/watchlists/import
 // (pure, no auth) so a guest previews before keeping anything.
 
-import { useMemo, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { ClipboardPaste, X } from 'lucide-react'
+import { useState } from 'react'
+import { ClipboardPaste } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
+import Sheet from '@/components/mobile/Sheet'
 import type { WatchlistSection } from '@/lib/watchlists'
 
 interface Parsed {
@@ -41,9 +41,8 @@ export default function ImportModal({
   const [parsed, setParsed] = useState<Parsed | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const body = useMemo(() => (typeof document === 'undefined' ? null : document.body), [])
 
-  if (!open || !body) return null
+  if (!open) return null
 
   const parse = async () => {
     setBusy(true)
@@ -70,21 +69,27 @@ export default function ImportModal({
     onClose()
   }
 
-  return createPortal(
-    <div className="wl__scrim" onClick={close}>
-      <div role="dialog" aria-label="Import from TradingView" className="wl__modal" onClick={(e) => e.stopPropagation()}>
-        <div className="wl__modalHead">
+  // THE Sheet (squad mobile-native, 2026-09-24): a bottom sheet on a phone,
+  // the centered dialog at lg+, closed by a tap outside, a swipe down, the
+  // back gesture, Escape (it didn't close on Escape before) and its X.
+  return (
+    <Sheet
+      open={open}
+      onClose={close}
+      id="wl-import"
+      ariaLabel="Import from TradingView"
+      title={
+        <span className="wl__sheetTitle">
           <span className="wl__modalIcon">
             <ClipboardPaste className="h-4 w-4" strokeWidth={2.25} />
           </span>
-          <div className="min-w-0 flex-1">
-            <div className="wl__modalTitle">Import a TradingView watchlist</div>
-            <div className="wl__modalSub mono">paste the export · what charts here lights up</div>
-          </div>
-          <button type="button" onClick={close} aria-label="Close" className="wl__x">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+          <span className="wl__sheetTitleText">
+            <span className="wl__modalTitle">Import a TradingView watchlist</span>
+            <span className="wl__modalSub mono">paste the export · what charts here lights up</span>
+          </span>
+        </span>
+      }
+    >
         <div className="wl__modalBody">
           {!parsed && (
             <>
@@ -186,8 +191,6 @@ export default function ImportModal({
             </>
           )}
         </div>
-      </div>
-    </div>,
-    body,
+    </Sheet>
   )
 }
