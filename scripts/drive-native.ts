@@ -1264,9 +1264,10 @@ const TRIGGERS: Trigger[] = [
     auth: 'wallet',
     open: async (p) => {
       if (await tapFirst(p, ['[data-sheet-open="wallet"]'])) return true
-      if (!(await tapFirst(p, ['.navacct__pill']))) return false
-      await sleep(500)
-      return tapFirst(p, ['[role=menuitem]:has-text("Wallet details")', 'button:has-text("Wallet details")'])
+      // The item lives INSIDE the account sheet (PAGES R1: data-sheet-open="wallet").
+      if (!(await tapFirst(p, ['[data-sheet-open="account"]', '.navacct__pill']))) return false
+      await sleep(600)
+      return tapFirst(p, ['[data-sheet-open="wallet"]', '[role=menuitem]:has-text("Wallet details")', 'button:has-text("Wallet details")', 'a:has-text("Wallet details")'])
     },
   },
   { id: 'sign-in door', surface: S_MARKETS, auth: 'none', open: (p) => tapFirst(p, ['[data-sheet-open="door"]', 'button:has-text("Sign in")', 'a:has-text("Sign in")']) },
