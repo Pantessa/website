@@ -33180,6 +33180,7 @@ async function main() {
     const nmFlat = (css: string) => css.replace(/\s+/g, ' ')
     // Negative greps read CODE: comments name the old forms on purpose.
     const nmCode = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    const nmDesignNoComments = nmDesign.replace(/\/\*[\s\S]*?\*\//g, '')
     const nmBlocks = (css: string, head: string) => {
       // Every block opened by `head`, balanced-brace read (the sheets nest
       // one level at most).
@@ -33222,7 +33223,7 @@ async function main() {
     check(
       'native markets: the markets top strip\'s Ask is the phone\'s ask field — the rail trigger carries the page\'s placeholder, and below lg it fills the strip at 44px with the word "Ask" folded',
       /variant === 'rail' && \(\s*<span className="mkt-frame__askhint" aria-hidden="true">\s*\{askDoorPlaceholder\(pathname\)\}/.test(nmDoor) &&
-        /\.mkt-frame__askhint \{ display: none; \}/.test(nmMk) &&
+        /\.mkt-frame__askhint \{ display: none; \}/.test(nmDesignNoComments) && !/^\.mkt-frame__askhint \{ display: none; \}/m.test(nmMk) &&
         /\.mkt-frame__top \.mkt-frame__ask \{ flex: 1 1 auto; min-width: 0; height: 44px;/.test(nmMk) &&
         /\.mkt-frame__top \.mkt-frame__askword \{ display: none; \}/.test(nmMk),
     )
@@ -33308,6 +33309,16 @@ async function main() {
       /const natural = main\.getBoundingClientRect\(\)\.top\s*\n\s*if \(natural < stuckAt - 1\) scrollAppTo\(appScrollTop\(\) \+ natural - stuckAt\)/.test(nmSym) &&
         !/el\.scrollIntoView\(\{ block: 'start' \}\)/.test(nmCode(nmSym)) &&
         /\.mkt-frame__rail, \.mkt-frame__foot \{ overflow-anchor: none; \}/.test(nmMk),
+    )
+    // Round 3: the rail trigger renders right wherever AskDoor renders.
+    const nmWalletHtml = await (await fetch(`${BASE}/wallet`)).text()
+    const nmWalletHrefs = [...new Set([...nmWalletHtml.matchAll(/href="(\/_next\/static\/[^"]+\.css)"/g)].map((m) => m[1]))]
+    const nmWalletCss = (await Promise.all(nmWalletHrefs.map(async (h) => (await fetch(`${BASE}${h}`)).text()))).join('\n').replace(/\s+/g, '')
+    check(
+      'native markets (round 3): the rail trigger renders right on its own — its hint is hidden in the GLOBAL askdoor CSS (it lived only in markets.css, so /wallet showed the 353px hint at every width), no ⌘K on a phone, a 44px target on touch; /wallet\'s served CSS carries the hide',
+      /\.mkt-frame__askhint \{ display: none; \}\s*\n@media \(max-width: 1023px\) \{ \[data-ask-door="rail"\] \.nav__ask-kbd \{ display: none; \} \}\s*\n@media \(hover: none\) \{ \[data-ask-door="rail"\] \{ min-height: 44px; \} \}/.test(nmDesign) &&
+        nmWalletHrefs.length > 0 && nmWalletCss.includes('.mkt-frame__askhint{display:none}') && /\[data-ask-door="?rail"?\]\.nav__ask-kbd\{display:none\}/.test(nmWalletCss),
+      `${nmWalletHrefs.length} stylesheets`,
     )
     // Round 2 (coordinator R2-1 + R2-3).
     check(

@@ -6344,6 +6344,18 @@
      page end (AskDoorPill → lib/ask-door askPillStep). */
   .askdoor-pill[data-away] { display: none; }
 }
+/* The rail trigger on its own (squad mobile-native, round 3). AskDoorTrigger
+   "rail" renders wherever a screen's top bar carries the door: the markets
+   strip AND /wallet's header (PAGES). Its placeholder hint was hidden only in
+   components/markets/markets.css, which only the markets shell loads, so on
+   /wallet the 353px hint rendered inside the button at EVERY width (PAGES
+   measured the button at 440px, pushing Switch off a 375 screen). The base
+   lives here, with the door, wherever AskDoor renders: the hint hidden, no ⌘K
+   on a phone, a 44px target on touch. The markets strip's own phone form
+   (the full-width ask field) stays in markets.css, scoped to .mkt-frame__top. */
+.mkt-frame__askhint { display: none; }
+@media (max-width: 1023px) { [data-ask-door="rail"] .nav__ask-kbd { display: none; } }
+@media (hover: none) { [data-ask-door="rail"] { min-height: 44px; } }
 .askdoor__sheettitle { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .askdoor__sheetask { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-chat-display); }
 .askdoor__sheetbody { display: flex; flex-direction: column; min-height: 0; }
