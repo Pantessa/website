@@ -663,6 +663,10 @@ async function runSheetCase(page: Pw, ctx: Pw, c: SheetCase, errs: string[], P: 
           await page.waitForTimeout(300)
           const s0 = await state()
           note(P, `sheet:${c.id}`, 'handoff: A opens', await open())
+          // history.length after A's open: a push over a truncated forward
+          // entry (left by the rounds above) keeps the length, so the chain's
+          // "one entry" is measured from HERE — B must not add a second.
+          const lenA = (await state()).len
           const ho = await page.$(c.handoff.opener)
           if (!ho) note(P, `sheet:${c.id}`, `handoff: the row ${c.handoff.opener} is in sheet A`, false)
           else {
@@ -671,7 +675,7 @@ async function runSheetCase(page: Pw, ctx: Pw, c: SheetCase, errs: string[], P: 
             const bOpen = await isOpen(c.handoff.to)
             const aGone = !(await page.evaluate(`!!document.querySelector('${sheetSel(c.id)}')`))
             const mid = await state()
-            note(P, `sheet:${c.id}`, `handoff: 500ms after the tap, B (${c.handoff.to}) is open and A is gone; the chain holds ONE history entry`, bOpen && aGone && mid.len === s0.len + 1 && mid.url === s0.url, JSON.stringify({ bOpen, aGone, len: `${s0.len} → ${mid.len}` }))
+            note(P, `sheet:${c.id}`, `handoff: 500ms after the tap, B (${c.handoff.to}) is open and A is gone; the chain holds ONE history entry (B took over A's)`, bOpen && aGone && mid.len === lenA && mid.len <= s0.len + 1 && mid.url === s0.url, JSON.stringify({ bOpen, aGone, len: `${s0.len} → A ${lenA} → B ${mid.len}` }))
             await page.goBack({ waitUntil: 'commit' }).catch(() => {})
             const bGone = await gone(c.handoff.to)
             const fin = await state()
@@ -738,7 +742,7 @@ async function runSheetLinks(session: string | null, burner: string) {
         await page.waitForTimeout(1500)
         const t2 = await state()
         note(P, `sheetlink:${c.id}`, 'and stays there 1.5s later: no bounce, no reload, no sheet left open', t2.path === c.target && t2.nav === 1 && t2.mark === 1 && t2.sheets === 0, JSON.stringify(t2))
-        note(P, `sheetlink:${c.id}`, 'history grew by exactly one entry for the navigation (the sheet\'s entry was consumed, or left as a same-URL step the back gesture skips)', t2.len - start.len === 1 || t2.len - start.len === 2, `${start.len} → ${t2.len}`)
+        note(P, `sheetlink:${c.id}`, 'history grew by EXACTLY one entry for the navigation: the sheet\'s entry was taken over (a push performed as a replace), no stale step', t2.len - start.len === 1, `${start.len} → ${t2.len}`)
         await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
         await page.goBack({ waitUntil: 'commit' }).catch(() => {})
         let backHome = false

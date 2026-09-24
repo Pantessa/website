@@ -33867,7 +33867,11 @@ async function main() {
         const land = () => { while (traversals.length) traversals.shift()!() }
         const advance = (ms: number) => { clock += ms; for (;;) { const due = waits.filter((w) => w.at <= clock).sort((a, b) => a.at - b.at); if (!due.length) break; waits = waits.filter((w) => w.at > clock); for (const w of due) w.cb() } }
         const userBack = () => { pos = Math.max(0, pos - 1); pop?.() }
-        return { h: SH.createSheetHistory(host), entries: () => entries.slice(0, pos + 1), tick, land, advance, userBack, host, setNav: (v: boolean) => { nav = v }, setUnload: (v: boolean) => { unload = v }, pending: () => waits.length }
+        const h = SH.createSheetHistory(host)
+        // Next's HistoryUpdater push, as the browser host wires it: the
+        // coordinator may turn it into a replace (rule 2).
+        const nextPush = (url: string, tree: string) => { const st = { __NA: true, tree, url }; if (h.interceptPush(st, url, 'http://localhost/origin')) host.replace(st); else host.push(st) }
+        return { h, entries: () => entries.slice(0, pos + 1), tick, land, advance, userBack, host, nextPush, setNav: (v: boolean) => { nav = v }, setUnload: (v: boolean) => { unload = v }, pending: () => waits.length }
       }
       // 1. A sheet owns one entry; a tap-close pops it on the next tick (never synchronously); the swallowed popstate never calls onBack.
       {
@@ -33955,9 +33959,9 @@ async function main() {
         land() // the coordinator's extra traversal lands
         check('native shell: sheet history — CLOSE UNDER + back: the back closes B and lands on A\'s dead entry, which the coordinator skips (one traversal in flight, then the page\'s own entry)', backs.join() === 'B' && mid.backInFlight === 1 && entries().length === 1 && h.debug().dead.length === 0, JSON.stringify({ backs, mid, entries: entries().length }))
       }
-      // 7. THE LINK INSIDE A SHEET: the row's tap closes the sheet and starts a navigation; the pop WAITS while a navigation may be under way, then skips once the page moved on.
+      // 7. THE LINK INSIDE A SHEET: the row's tap closes the sheet and starts a navigation; the pop WAITS while a navigation may be under way (rule 1), and Next's push TAKES OVER the pending entry as a replace (rule 2): [pre][target], no stale step.
       {
-        const { h, entries, tick, land, advance, host, setNav, pending } = mk()
+        const { h, entries, tick, land, advance, setNav, pending, nextPush, userBack } = mk()
         h.opened({ key: 'A', onBack: () => {} })
         setNav(true) // a tap on a row inside the sheet
         h.closed('A', 'other')
@@ -33965,9 +33969,30 @@ async function main() {
         const waiting = pending() > 0 && h.debug().backInFlight === 0 && h.debug().pendingBack === 'A'
         advance(300) // the RSC fetch takes 300ms …
         const stillWaiting = h.debug().backInFlight === 0 && entries().length === 2
-        host.push({ __NA: true, tree: 'target' }) // … then Next pushes the target
-        advance(200); land()
-        check('native shell: sheet history — a tap inside the sheet marks a navigation: the pending pop waits (no traversal for 300ms while Next fetches) and is skipped once the target is pushed — the navigation is never popped under', waiting && stillWaiting && entries().length === 3 && (entries()[2] as { tree?: string }).tree === 'target' && h.debug().backInFlight === 0 && h.debug().pendingBack === null, JSON.stringify({ waiting, stillWaiting, entries: entries().length, dbg: h.debug() }))
+        nextPush('/docs', 'docs') // … then Next pushes the target → a replace
+        const afterPush = { len: entries().length, top: entries()[entries().length - 1] as { tree?: string; sheet?: string }, dbg: h.debug() }
+        advance(400); land()
+        userBack(); land() // ONE back → the page's own entry
+        check('native shell: sheet history — THE LINK INSIDE A SHEET: the pending pop waits while Next fetches (300ms, no traversal) and Next\'s push takes the pending entry over as a REPLACE: history [pre, /docs] with no stale step, nothing pending, and ONE back returns to the origin', waiting && stillWaiting && afterPush.len === 2 && afterPush.top.tree === 'docs' && afterPush.top.sheet === undefined && afterPush.dbg.pendingBack === null && afterPush.dbg.stack.length === 0 && entries().length === 1 && (entries()[0] as { tree?: string }).tree === 't0', JSON.stringify({ waiting, stillWaiting, afterPush, after: entries().length }))
+      }
+      // 7c. QA's exact trace: the push lands 4ms after the close (a prefetched RSC payload) — no bounce: the entry is taken over, no traversal ever queued.
+      {
+        const { h, entries, tick, land, advance, setNav, nextPush } = mk()
+        h.opened({ key: 'more', onBack: () => {} })
+        setNav(true)
+        h.closed('more', 'other')
+        nextPush('/docs', 'docs') // 4ms later, before any tick
+        tick(); advance(3000); land()
+        check('native shell: sheet history — QA\'s bounce trace (push 4ms after the close, prefetched): the push takes the entry over, no traversal is ever queued, /docs stays', entries().length === 2 && (entries()[1] as { tree?: string }).tree === 'docs' && h.debug().backInFlight === 0 && h.debug().pendingBack === null, JSON.stringify({ entries: entries(), dbg: h.debug() }))
+      }
+      // 7d. Our OWN sheet push is never converted, and a push with no pending entry is a plain push.
+      {
+        const { h, entries, nextPush } = mk()
+        nextPush('/x', 'x')
+        const plain = entries().length === 2
+        h.opened({ key: 'A', onBack: () => {} })
+        const own = !h.interceptPush({ sheet: 'B' }, 'http://localhost/origin', 'http://localhost/origin')
+        check('native shell: sheet history — interceptPush never converts a push with nothing pending, nor a sheet\'s own push (data.sheet), nor a same-URL push', plain && own && !h.interceptPush(null, 'http://localhost/origin', 'http://localhost/origin') && entries().length === 3)
       }
       // 7b. A tap that never navigated: the wait expires (SHEET_NAV_WAIT_MS) and the pop fires.
       {

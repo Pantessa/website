@@ -18,14 +18,22 @@
 //   entries beneath it; when a user's back lands ON a dead entry, one more
 //   pop skips it. No dead press of the back button.
 //
-//   THE LINK INSIDE A SHEET (MARKETS/the coordinator): a row closes the sheet
+//   THE LINK INSIDE A SHEET (QA's trace, 42531a46): a row closes the sheet
 //   AND starts a Next navigation (MORE → Docs, the account menu → Dashboard).
-//   Next pushes only after its RSC fetch (50–300ms; more on a slow network),
-//   and a pop fired before that would traverse under the navigation. So a
-//   pending pop waits: a grace tick, then, while an in-sheet tap is recent or
-//   a navigation is under way, up to SHEET_NAV_WAIT_MS — and it is skipped
-//   outright once the entry is no longer ours (the page moved on) or the
-//   page is unloading.
+//   Next pushes when its RSC payload is in — 4ms later when prefetched, 50–
+//   300ms on a phone — and a back() already travelling then pops the NEW
+//   entry: /docs, then /docs → /chat 36ms later. Two rules, together:
+//     1. a pending pop WAITS while a navigation may be under way (a tap on a
+//        link/button/menu item inside a dialog marks SHEET_TAP_NAV_MS; polled
+//        every NAV_POLL_MS up to SHEET_NAV_WAIT_MS), and is cancelled when the
+//        page is unloading (a hard navigation);
+//     2. a push that arrives while the closed sheet's entry is still pending
+//        is turned into a REPLACE (`interceptPush`, wired into pushState by the
+//        browser host): the sheet's entry BECOMES the target — history reads
+//        [.., /markets, /docs], no stale step, nothing to pop under, and it
+//        holds for a Link and for a router.push alike.
+//   A stale sheet entry left behind by any other path is skipped when a
+//   later back lands on it.
 //
 //   IN FLIGHT: a sheet opening while our own pop is travelling waits for that
 //   popstate, then claims an entry of its own. Our own pops are swallowed;
@@ -68,6 +76,11 @@ type Entry = { key: string; owner: SheetOwner | null }
 export type SheetHistory = {
   opened(owner: SheetOwner): void
   closed(key: string, reason: 'back' | 'other'): void
+  /** Asked by the host before EVERY pushState: true = perform it as a
+   *  replaceState instead (a navigation landing on a closed sheet's pending
+   *  entry takes that entry over). Our own sheet pushes (`data.sheet`) and
+   *  same-URL pushes are never converted. */
+  interceptPush(data: unknown, url: string | URL | null | undefined, currentHref: string): boolean
   debug(): { stack: string[]; dead: string[]; pendingBack: string | null; backInFlight: number; deferred: string | null }
 }
 
@@ -185,6 +198,26 @@ export function createSheetHistory(host: SheetHistoryHost): SheetHistory {
       }
       claim(o)
     },
+    interceptPush(data, url, currentHref) {
+      if (!pendingBack) return false
+      if (data && typeof data === 'object' && typeof (data as { sheet?: unknown }).sheet === 'string') return false
+      if (sheetOf(host.state()) !== pendingBack) return false
+      if (url == null || url === '') return false
+      let target: URL
+      try {
+        target = new URL(String(url), currentHref)
+      } catch {
+        return false
+      }
+      const here = new URL(currentHref)
+      if (target.pathname === here.pathname && target.search === here.search) return false
+      // The navigation takes the entry over: it is the page's own from here.
+      const key = pendingBack
+      pendingBack = null
+      const i = entries.findIndex((e) => e.key === key)
+      if (i >= 0) entries.splice(i)
+      return true
+    },
     closed(key, reason) {
       if (deferred?.key === key) {
         deferred = null
@@ -215,25 +248,43 @@ export function createSheetHistory(host: SheetHistoryHost): SheetHistory {
 }
 
 // ── The browser host ───────────────────────────────────────────────────────
+/** Dispatched on window when a pushState was performed as a replaceState
+ *  (rule 2 above), so the scroll memory still reads it as a PUSH (a new
+ *  screen lands at its top). detail: { url }. */
+export const SHEET_PUSH_AS_REPLACE_EVENT = 'pantessa:history-push-as-replace'
+
 let lastTap = 0
 let leaving = false
 let armed = false
 function armBrowserSignals() {
   if (armed || typeof window === 'undefined') return
   armed = true
-  // A tap on a link, button or menu item INSIDE a sheet's panel may start a
-  // navigation (the scrim and the close button never do).
+  // A tap on a link, button or menu item INSIDE any open dialog (a Sheet's
+  // panel, the sign-in door) may start a navigation; the scrim and the close
+  // button never do.
   document.addEventListener(
     'click',
     (e) => {
       const t = e.target
       if (!(t instanceof Element)) return
-      if (!t.closest('.sheet__panel')) return
+      if (!t.closest('[role="dialog"]')) return
       if (t.closest('.sheet__close')) return
       if (t.closest('a[href], button, [role="menuitem"], [role="button"]')) lastTap = Date.now()
     },
     true,
   )
+  // Rule 2: a push landing on a closed sheet's pending entry is a replace.
+  // Wrapped by METHOD on whichever side of Next's own patch we land (Next
+  // passes its __NA state straight through either way).
+  const h = window.history
+  const origPush = h.pushState
+  h.pushState = function pushState(this: History, data: unknown, unused: string, url?: string | URL | null) {
+    if (browserInstance && browserInstance.interceptPush(data, url, window.location.href)) {
+      window.dispatchEvent(new CustomEvent(SHEET_PUSH_AS_REPLACE_EVENT, { detail: { url: url == null ? null : String(url) } }))
+      return h.replaceState.call(this, data as never, unused, url)
+    }
+    return origPush.call(this, data as never, unused, url)
+  }
   window.addEventListener('beforeunload', () => {
     leaving = true
   })

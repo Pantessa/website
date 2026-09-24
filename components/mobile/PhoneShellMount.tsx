@@ -28,6 +28,7 @@ import { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import { appScrollTop, hasAppScroller, scrollAppTo } from '@/lib/app-scroller'
 import { KB_INSET_VAR, KEYBOARD_ATTR, historyUrlChangesPath, scrollKindFor, scrollMemoryKey, themeColorFor, type HistoryOp } from '@/lib/phone-shell'
+import { SHEET_PUSH_AS_REPLACE_EVENT } from '@/lib/sheet-history'
 import { useSoftKeyboard } from './useSoftKeyboard'
 
 function KeyboardReflector() {
@@ -94,6 +95,11 @@ function ScrollMemory() {
     }
     h.pushState = pushWrapped
     h.replaceState = replaceWrapped
+    // A navigation that took over a closed sheet's history entry was
+    // performed as a replaceState (lib/sheet-history rule 2): still a PUSH
+    // to the screen — it lands at its top.
+    const onPushAsReplace = (e: Event) => mark('push', (e as CustomEvent<{ url: string | null }>).detail?.url)
+    window.addEventListener(SHEET_PUSH_AS_REPLACE_EVENT, onPushAsReplace)
     const onPop = () => {
       // The URL has already moved when popstate fires; a same-path pop (a
       // sheet's history entry) is no screen change.
@@ -118,6 +124,7 @@ function ScrollMemory() {
       if (h.pushState === pushWrapped) h.pushState = origPush
       if (h.replaceState === replaceWrapped) h.replaceState = origReplace
       window.removeEventListener('popstate', onPop)
+      window.removeEventListener(SHEET_PUSH_AS_REPLACE_EVENT, onPushAsReplace)
       document.removeEventListener('scroll', onScroll, { capture: true })
       if (raf) cancelAnimationFrame(raf)
     }
