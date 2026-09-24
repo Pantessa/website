@@ -328,8 +328,14 @@ button.mk-held:hover { border-color: var(--accent); }
   .sym__head--mk2 .sym__name { flex: 0 1 auto; min-width: 0; }
   .sym__head--mk2 .sym__sym { flex: 0 0 auto; }
   .sym__head--mk2 .sym__venue { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .sym__head--mk2 .sym__meta { flex-wrap: nowrap; margin-top: 6px; }
-  .sym__head--mk2 .sym__session { display: block; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The meta line WRAPS (round 4): nowrap pushed COMPARE past the screen edge
+     when a holding wallet adds YOU HOLD (QA: /t/AAPL +8px, /t/ETH +9px at 375,
+     +23/+24 at 360). The session line's 7rem basis keeps the common case one
+     line (session + COMPARE); a holder's pill is the value only here (the
+     amount rides its title, the Trade tab and the rail). */
+  .sym__head--mk2 .sym__meta { flex-wrap: wrap; row-gap: 6px; margin-top: 6px; }
+  .sym__head--mk2 .sym__session { display: block; flex: 1 1 7rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sym__head--mk2 .mk-held__amt { display: none; }
   .sym__head--mk2 .sym__session .mk-dot { vertical-align: middle; margin-right: 6px; }
   .sym__head--mk2 .sym__meta > :not(.sym__session) { flex: 0 0 auto; }
   .sym__head--mk2 .mk-range { margin-top: 4px; }
