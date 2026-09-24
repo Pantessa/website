@@ -7706,6 +7706,74 @@ async function main() {
         G.accountStage({ turns: 3, built: 1, signed: 0 }) === 'built' && G.accountStage({ turns: 1, built: 1, signed: 2 }) === 'traded',
     )
 
+    // People: the two lanes in one list. A native wallet never signs up, so
+    // the arrival tables are its whole account history — and a wallet an
+    // account already owns must never read as a second person.
+    const act = (o: Partial<import('../lib/admin-growth').PersonActivity>) => ({ ...G.NO_ACTIVITY, ...o })
+    const gAcct = {
+      id: 'u1', email: 'a@b.com', name: null, method: 'google',
+      wallets: ['0xaa', '0xab'], createdAt: '2026-09-01T00:00:00.000Z', lastAuthenticatedAt: '2026-09-20T00:00:00.000Z',
+    }
+    const gActs = new Map<string, import('../lib/admin-growth').PersonActivity>([
+      ['0xaa', act({ turns: 2, chats: 1, lastAsk: 'Buy $10 of ETH', lastAskAt: '2026-09-10T00:00:00.000Z', lastAskWalled: true })],
+      ['0xab', act({ turns: 1, built: 1, signed: 1, usd: 25, lastAsk: 'Buy $25 of AAPL', lastAskAt: '2026-09-19T00:00:00.000Z' })],
+      ['0xcc', act({ turns: 4, lastAsk: 'Supply $25 of USDT to Aave', lastAskAt: '2026-09-21T00:00:00.000Z', lastAskWalled: true })],
+    ])
+    const gPeople = G.mergePeople(
+      [gAcct],
+      // 0xab is the account's own second wallet: an arrival for it is the
+      // same person, not a new one.
+      [
+        { wallet: '0xcc', firstAt: '2026-09-15T00:00:00.000Z', lastAt: '2026-09-21T00:00:00.000Z' },
+        { wallet: '0xab', firstAt: '2026-09-02T00:00:00.000Z', lastAt: '2026-09-19T00:00:00.000Z' },
+      ],
+      (w) => gActs.get(w),
+      (w) => w === '0xcc',
+    )
+    const gAcctRow = gPeople.find((x) => x.email === 'a@b.com')!
+    const gWalletRow = gPeople.find((x) => x.wallet === '0xcc')!
+    check(
+      'growth people: an account’s own wallets fold into one row — never a second person — and its activity sums across them',
+      gPeople.length === 2 && gAcctRow.wallets.length === 2 && gAcctRow.turns === 3 && gAcctRow.signed === 1 && gAcctRow.usd === 25 &&
+        gAcctRow.stage === 'traded' && gAcctRow.method === 'google',
+      JSON.stringify(gPeople.map((x) => ({ k: x.key, m: x.method, t: x.turns }))),
+    )
+    check(
+      'growth people: a native wallet is a person with no email, joined the first time we saw it, and never claims a sign-in',
+      gWalletRow.email === null && gWalletRow.method === 'wallet' && gWalletRow.lastSignInAt === null &&
+        gWalletRow.createdAt === '2026-09-15T00:00:00.000Z' && gWalletRow.test === true && gWalletRow.stage === 'asked',
+    )
+    check(
+      'growth people: the path they tried is the NEWEST ask across a person’s wallets, carrying its own walled/not — a trader has one too',
+      gAcctRow.lastAsk === 'Buy $25 of AAPL' && gAcctRow.lastAskWalled === false && gWalletRow.lastAskWalled === true,
+    )
+    check(
+      'growth people: last seen takes the latest of a sign-in, a turn and an arrival',
+      gAcctRow.lastSeenAt === '2026-09-20T00:00:00.000Z' && gWalletRow.lastSeenAt === '2026-09-21T00:00:00.000Z',
+    )
+    // Found in the browser, on Nate's own row: the same address holds BOTH an
+    // email and a Google account, so an email-keyed row collided and React
+    // left orphan rows behind on every filter change. The id is the key.
+    const gTwin = G.mergePeople(
+      [gAcct, { ...gAcct, id: 'u2', method: 'email', wallets: ['0xba'] }],
+      [],
+      () => undefined,
+      () => false,
+    )
+    check(
+      'growth people: one email on two accounts is two rows with two keys — an email does not identify an account',
+      gTwin.length === 2 && new Set(gTwin.map((x) => x.key)).size === 2 &&
+        gTwin.map((x) => x.method).sort().join(',') === 'email,google',
+      JSON.stringify(gTwin.map((x) => x.key)),
+    )
+    check(
+      'growth people: the filter splits on the email, and the chip counts sum to everyone',
+      G.matchesPeopleFilter(gAcctRow, 'email') && !G.matchesPeopleFilter(gAcctRow, 'wallet') &&
+        G.matchesPeopleFilter(gWalletRow, 'wallet') && !G.matchesPeopleFilter(gWalletRow, 'email') &&
+        G.filterPeople(gPeople, 'all').length === 2 && G.filterPeople(gPeople, 'email').length === 1 &&
+        (() => { const c = G.peopleCounts(gPeople); return c.all === 2 && c.email === 1 && c.wallet === 1 && c.email + c.wallet === c.all })(),
+    )
+
     // The live read, as a real admin (the .env.local burner is an owner wallet).
     const gFs = await import('node:fs')
     const gPk = (() => {
@@ -7740,6 +7808,36 @@ async function main() {
         (g.accounts.rows as { stage: string }[]).every((a) => ['signed-up', 'asked', 'built', 'traded'].includes(a.stage)) &&
           (g.traders as { email: string | null; wallet: string }[]).every((t) => t.email === null || (g.accounts.rows as { email: string | null }[]).some((a) => a.email === t.email) || !g.external),
       )
+      // The people list is both lanes: an account has an email and a method
+      // that is not 'wallet'; a native connection has neither an email nor a
+      // sign-in, because nobody signs up with MetaMask.
+      type GPerson = { key: string; email: string | null; method: string; wallet: string | null; lastSignInAt: string | null; lastAsk: string | null; lastAskWalled: boolean; stage: string }
+      const gRows = g.accounts.rows as GPerson[]
+      check(
+        'growth people: one row per person, keyed and de-duplicated, every method a known lane',
+        new Set(gRows.map((a) => a.key)).size === gRows.length &&
+          gRows.every((a) => ['email', 'google', 'wallet'].includes(a.method)) &&
+          new Set(gRows.filter((a) => a.wallet).map((a) => a.wallet)).size === gRows.filter((a) => a.wallet).length,
+        JSON.stringify(gRows.slice(0, 3).map((a) => ({ m: a.method, e: !!a.email }))),
+      )
+      check(
+        'growth people: the wallet lane carries no email and never claims a sign-in; an account row always has both a method and an email',
+        gRows.filter((a) => a.method === 'wallet').every((a) => a.email === null && a.lastSignInAt === null && !!a.wallet) &&
+          gRows.filter((a) => a.method !== 'wallet').every((a) => a.email !== null),
+      )
+      check(
+        'growth people: the counts add up — the signups tile stays on ACCOUNTS while the table lists everyone',
+        g.tiles.peopleAllTime === gRows.length &&
+          g.tiles.accountsAllTime === gRows.filter((a) => !!a.email).length &&
+          g.tiles.walletOnlyAllTime === gRows.filter((a) => !a.email).length &&
+          g.tiles.accountsAllTime + g.tiles.walletOnlyAllTime === g.tiles.peopleAllTime &&
+          g.tiles.accountsAllTime <= g.tiles.peopleAllTime,
+        JSON.stringify(g.tiles),
+      )
+      check(
+        'growth people: a row that shows a path shows which kind it was, and a walled one is never blank',
+        gRows.every((a) => (a.lastAsk === null ? a.lastAskWalled === false : typeof a.lastAskWalled === 'boolean' && a.lastAsk.length > 0)),
+      )
       const gExt = await (await fetch(`${BASE}/api/admin/growth?days=7&external=1`, { headers: { cookie: gSession } })).json()
       const gBad = await (await fetch(`${BASE}/api/admin/growth?days=999`, { headers: { cookie: gSession } })).json()
       check(
@@ -7754,6 +7852,16 @@ async function main() {
     check(
       'growth: the admin rail says Growth, and the page reads the growth API (the x402-era overview is off it)',
       /href: '\/dashboard\/admin', label: 'Growth'/.test(sidebarSrc) && growthPageSrc.includes('/api/admin/growth') && !growthPageSrc.includes('/api/admin/overview'),
+    )
+    check(
+      'growth: the people table draws the all/email/wallet filter from the one list of filters, and the stage tiles count what the filter shows',
+      growthPageSrc.includes('PEOPLE_FILTERS.map') && growthPageSrc.includes('filterPeople(') && growthPageSrc.includes('peopleCounts(') &&
+        /for \(const a of shown\) c\[a\.stage\]\+\+/.test(growthPageSrc) && growthPageSrc.includes('const accounts = shown'),
+    )
+    check(
+      'growth: the path they tried renders for EVERY person — no stage gate on it, and it says whether it walled',
+      growthPageSrc.includes('{a.lastAsk && (') && !/a\.lastAsk && a\.stage/.test(growthPageSrc) && !growthPageSrc.includes('a.lastWall') &&
+        growthPageSrc.includes("a.lastAskWalled ? 'last wall' : 'last ask'"),
     )
   }
 
