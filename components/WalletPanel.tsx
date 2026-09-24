@@ -71,6 +71,8 @@ import { timeAgo } from '@/lib/dashboard-ui'
 import { APP_CHAINS } from '@/lib/chains'
 import type { WalletChainView, WalletView } from '@/lib/wallet-view'
 import { isWalletPath, WALLET_PAGE_HREF } from '@/lib/wallet-page'
+import { walletDisplayName } from '@/lib/wallet-identity'
+import { useAnnouncedWalletName } from '@/lib/use-wallet-name'
 import TokenIcon from '@/components/TokenIcon'
 import { cn } from '@/lib/utils'
 
@@ -98,11 +100,23 @@ const fmtBal = (s: string) => {
   return n.toPrecision(3).replace(/\.?0+$/, '')
 }
 
-/** Which wallet this is, in words: the header of either frame. */
-export function walletKind(connectorId: string | undefined, connectorName: string | undefined): { label: string; sub: string } {
+/** Which wallet this is, in words: the header of either frame.
+ *
+ *  `announcedName` is what the connected provider says it is over EIP-6963
+ *  (lib/wallet-identity). It only ever replaces a CATEGORY name — the
+ *  catch-all injected lane used to greet a returning MetaMask user as
+ *  "Browser Wallet", which is the same sentence that once said "Phantom"
+ *  over a MetaMask session. This screen names the wallet holding the money;
+ *  it should say what the wallet says. */
+export function walletKind(
+  connectorId: string | undefined,
+  connectorName: string | undefined,
+  announcedName?: string | undefined,
+): { label: string; sub: string } {
   if (connectorId === CDP_CONNECTOR) return { label: 'Pantessa wallet', sub: 'created with your email · keys stay with you' }
   if (connectorId === 'yeetful-host-wallet') return { label: 'Host page wallet', sub: 'the wallet the embedding site connected' }
-  return { label: connectorName || 'Connected wallet', sub: 'your own wallet, signing in-page' }
+  const named = walletDisplayName(connectorId, connectorName, announcedName)
+  return { label: named || 'Connected wallet', sub: 'your own wallet, signing in-page' }
 }
 
 function GasBadge({ gas }: { gas: WalletChainView['gas'] }) {
@@ -850,7 +864,8 @@ export default function WalletPanel({
     return () => document.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
-  const kind = walletKind(connector?.id, connector?.name)
+  const announcedName = useAnnouncedWalletName()
+  const kind = walletKind(connector?.id, connector?.name, announcedName)
 
   if (typeof document === 'undefined') return null
 

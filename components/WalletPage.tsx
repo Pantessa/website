@@ -20,6 +20,7 @@ import { useAccount } from 'wagmi'
 import { useAccountModal } from '@rainbow-me/rainbowkit'
 import { ArrowRight, Settings2, Wallet } from 'lucide-react'
 import { WalletDetails, walletKind } from '@/components/WalletPanel'
+import { useAnnouncedWalletName } from '@/lib/use-wallet-name'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import AuthButton from '@/components/AuthButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
@@ -110,7 +111,8 @@ export default function WalletPage() {
   }, [])
   const holding = bootHoldingFor({ hydrated, walletStatus, holdElapsed })
 
-  const kind = walletKind(connector?.id, connector?.name)
+  const announcedName = useAnnouncedWalletName()
+  const kind = walletKind(connector?.id, connector?.name, announcedName)
   const showDetails = hydrated && !!address
   const showDoor = hydrated && !address && !holding
 

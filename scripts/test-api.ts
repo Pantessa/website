@@ -157,6 +157,8 @@ import { decideManagerMove, stackingRefusal, undecidedProposalFor } from '../lib
 import { markPeriodKey, parseMarkAsk, reviewFlipDecision, tryoutReportCard, PAPER_LABEL, TRYOUT_BANNED_PHRASES } from '../lib/roster-tryouts'
 import { houseManagerRow, resolveHouseManager, HOUSE_MANAGER_ID } from '../lib/roster-managers'
 import { walletLineup, walletLaneHint, walletLaneChips, wcConfigured, WC_APP_METADATA , CDP_INIT_PATIENCE_MS, emailLaneHint, WALLET_LANE_NAMES, type WalletLaneId } from '../lib/wallet-lineup'
+import { phantomProvider, phantomTarget } from '../lib/phantom-lane'
+import { announcedNameFor, laneIsGeneric, walletDisplayName } from '../lib/wallet-identity'
 import { walletAppFor, handoffCopy, handoffShownOn, WALLET_APP_SETTLE_MS, requestWalletAppOpen, walletAppOpenSnapshot, clearWalletAppOpen } from '../lib/wallet-handoff'
 import { hasStoredWalletConnection, shouldRerunConnectAsk, connectAskReleased, bootHoldingFor, initialHoldElapsed, CONNECT_ASK_RELEASE_GRACE_MS, CONNECT_ASK_RERUN_WINDOW_MS, WAGMI_STORE_KEY, WAGMI_RECENT_CONNECTOR_KEY } from '../lib/wallet-reconnect'
 import { buildDelivery, mintCallbackSecret, notifyEligible, signWebhook, validateCallbackUrl } from '../lib/broker-webhook'
@@ -5803,6 +5805,83 @@ async function main() {
         lanes.every((id) => new RegExp(`\\b${id}:\\s*\\w+WalletMark\\b`).test(markTable)) &&
         /phantomWallet,/.test(wagmi) && /from '@rainbow-me\/rainbowkit\/wallets'/.test(wagmi) &&
         /export function PhantomWalletMark/.test(marks) && /fill="#AB9FF2"/.test(marks)
+      )
+    })(),
+  )
+
+  // ── The Phantom lane binds to Phantom (2026-09-24) ──────────────────────
+  // Found live: a visitor connected through MetaMask and the Wallet page said
+  // "Phantom". RainbowKit's phantomWallet resolves `phantom.ethereum` and
+  // FALLS BACK to `window.ethereum`, so on a MetaMask machine the lane was
+  // MetaMask under Phantom's name — and the modal fires `connectToWallet`
+  // even for the row it is about to answer with "Install Phantom".
+  // `npm run probe:phantom-lane` proves it against the real packages (it
+  // needs a `window` global, which is why it runs out-of-process); these pin
+  // the rule and the wiring.
+  check(
+    'phantom lane: the provider is Phantom’s OWN namespace or nothing — never window.ethereum, never providers[0]',
+    (() => {
+      const mm = { __tag: 'MM', isMetaMask: true }
+      const ph = { __tag: 'PH' }
+      // MetaMask injected, no Phantom: the lane has nothing to connect.
+      const metaMaskOnly = { ethereum: mm, providers: [mm] }
+      // Phantom injected: exactly Phantom's provider, even beside MetaMask.
+      const both = { ethereum: mm, phantom: { ethereum: ph } }
+      return (
+        phantomProvider(metaMaskOnly) === undefined &&
+        phantomProvider({ ethereum: mm }) === undefined &&
+        phantomProvider(undefined) === undefined &&
+        phantomProvider({}) === undefined &&
+        phantomProvider(both) === ph &&
+        phantomProvider({ phantom: {} }) === undefined &&
+        // the target keeps Phantom's identity in both worlds, so a refusal is
+        // still Phantom's refusal and never borrows another wallet's name
+        phantomTarget(metaMaskOnly).id === 'phantom' &&
+        phantomTarget(metaMaskOnly).name === 'Phantom' &&
+        phantomTarget(metaMaskOnly).provider === undefined &&
+        phantomTarget(both).provider === ph
+      )
+    })(),
+  )
+  check(
+    'wallet name: the header takes the wallet’s OWN announced name over a category lane, and never over a branded one',
+    (() => {
+      const mm = { __tag: 'MM' }
+      const other = { __tag: 'OTHER' }
+      const announced = [{ name: 'MetaMask', rdns: 'io.metamask', provider: mm }]
+      return (
+        announcedNameFor(announced, mm) === 'MetaMask' &&
+        announcedNameFor(announced, other) === undefined &&
+        announcedNameFor(announced, undefined) === undefined &&
+        announcedNameFor([], mm) === undefined &&
+        announcedNameFor([{ name: '  ', provider: mm }], mm) === undefined &&
+        // category lanes get renamed…
+        laneIsGeneric('injected', 'Browser Wallet') &&
+        laneIsGeneric(undefined, 'Injected') &&
+        laneIsGeneric('metaMask', 'MetaMask') &&
+        walletDisplayName('injected', 'Browser Wallet', 'MetaMask') === 'MetaMask' &&
+        // …branded ones never do: a lane that says Phantom must BE Phantom
+        !laneIsGeneric('phantom', 'Phantom') &&
+        !laneIsGeneric('coinbaseWalletSDK', 'Coinbase Wallet') &&
+        walletDisplayName('phantom', 'Phantom', 'MetaMask') === 'Phantom' &&
+        // and with nothing announced the lane keeps its own name
+        walletDisplayName('injected', 'Browser Wallet', undefined) === 'Browser Wallet'
+      )
+    })(),
+  )
+  check(
+    'phantom lane: lib/wagmi wraps RainbowKit’s factory with our own target — the raw phantomWallet is never the lane',
+    (() => {
+      const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      const wagmi = strip(readFileSync(pathJoin(process.cwd(), 'lib/wagmi.ts'), 'utf8'))
+      const factories = wagmi.slice(wagmi.indexOf('const WALLET_FACTORIES'), wagmi.indexOf('const connectors'))
+      return (
+        // the lane is the wrapper, not the import
+        /\bphantom:\s*phantomOwnProviderWallet\b/.test(factories) &&
+        !/\bphantom:\s*phantomWallet\b/.test(factories) &&
+        // and the wrapper's connector reads our target
+        /phantomTarget\(/.test(wagmi) &&
+        /from '@\/lib\/phantom-lane'/.test(wagmi)
       )
     })(),
   )
