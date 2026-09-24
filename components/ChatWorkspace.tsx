@@ -12,7 +12,6 @@ import PhoneScreens from '@/components/phone/PhoneScreens'
 import { useAppShellMode } from '@/components/AppShell'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { PHONE_MQ } from '@/lib/phone-shell'
-import { screenForTab } from '@/lib/phone-nav'
 import { CATALOG } from '@/lib/mcp-data'
 import { FREE_FLEET_FALLBACK, DEFAULT_CHAT_FLEET_SLUGS } from '@/lib/free-fleet'
 import { resolveAppIds } from '@/lib/ask-apps'
@@ -45,8 +44,6 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
     railTab,
     mainView,
     setMainView,
-    mobileMcpRailOpen,
-    setMobileMcpRailOpen,
   } = useYeetfulStore()
   const { address } = useAccount()
   const router = useRouter()
@@ -222,20 +219,14 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
     return () => mql.removeEventListener('change', on)
   }, [])
 
-  // Belts: the desktop-shaped requests other surfaces still make become the
-  // phone's screens here, so nothing can open a drawer over the page below
-  // lg. (1) `mobileMcpRailOpen` — the retired overlay flag, which the chat
-  // toolbar's working-set door still sets until CHAT switches it to
-  // setPhoneScreen('apps') — turns into the screen for its tab and is put
-  // back to false. (2) "Show the links studio" written as the desktop pair
-  // (railTab + mainView 'links', the mint receipt's door) becomes the LINKS
-  // screen; mainView goes back to 'chat' so ChatInterface never renders the
-  // board under the screen.
-  useEffect(() => {
-    if (!isNarrow || !mobileMcpRailOpen) return
-    setMobileMcpRailOpen(false)
-    setPhoneScreen(screenForTab(railTab))
-  }, [isNarrow, mobileMcpRailOpen, railTab, setMobileMcpRailOpen, setPhoneScreen])
+  // Belt: "show the links studio" written as the desktop pair (railTab +
+  // mainView 'links' — what a window resized down from the desktop drawer
+  // carries) becomes the LINKS screen; mainView goes back to 'chat' so
+  // ChatInterface never renders the board under the screen. (The retired
+  // overlay flag `mobileMcpRailOpen` is gone from the store since round 2:
+  // every caller asks for a screen — ChatInterface's openRail, the phone top
+  // bar's doors, MintLinkModal's openLinksStudio — so nothing can open a
+  // drawer over the page below lg.)
   useEffect(() => {
     if (!isNarrow || mainView !== 'links' || railTab !== 'links') return
     setMainView('chat')

@@ -348,10 +348,6 @@ interface YeetfulStore {
    *  kept so existing clients don't lose their preference. */
   mcpRailOpen: boolean
   setMcpRailOpen: (open: boolean) => void
-  /** Phone-overlay visibility for the rail — intentionally NOT persisted, so
-   *  a phone visit can never collapse the desktop rail preference. */
-  mobileMcpRailOpen: boolean
-  setMobileMcpRailOpen: (open: boolean) => void
 }
 
 const localId = () => Math.random().toString(36).slice(2)
@@ -922,8 +918,6 @@ export const useYeetfulStore = create<YeetfulStore>()(
       setChartDetail: (detail) => set({ chartDetail: detail }),
       mcpRailOpen: true,
       setMcpRailOpen: (open) => set({ mcpRailOpen: open }),
-      mobileMcpRailOpen: false,
-      setMobileMcpRailOpen: (open) => set({ mobileMcpRailOpen: open }),
     }),
     {
       name: 'yeetful-store',

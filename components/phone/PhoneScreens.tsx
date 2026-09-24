@@ -8,23 +8,32 @@
 //
 // LINKS is the studio (name your page, mint, earnings, the funnel table;
 // LinksWorkspace — the public board for a visitor with no session). The
-// rail's quick list (Mint a link, the first-payout checklist, your links
-// with opens/signed to copy, your page) is ONE LABELED TAP away — "Your
-// list" in the header opens it as a Sheet with a scrim, closed by default,
-// closed by a tap outside — instead of the 248px drawer that used to pop
-// over half the studio with no way to dismiss it. Its Mint / Name-your-page
-// actions land on the studio itself (the sheet closes, the screen scrolls
-// to the mint stage or the page panel): the studio already holds both.
+// first-payout journey ("First link → first payout 4/5") sits INLINE at the
+// top of the studio (round 2): the card Nate saw was inside the drawer he
+// disliked, but the card itself is onboarding, not the problem, and on a
+// screen it needs no pop-up to be seen (dismissible, as before). The rail's
+// quick list (Mint a link, your links with opens/signed to copy, your page)
+// is ONE LABELED TAP away — "Your list" in the header opens it as a Sheet
+// with a scrim, closed by default, closed by a tap outside — instead of the
+// 248px drawer that used to pop over half the studio with no way to dismiss
+// it. Its Mint / Name-your-page actions land on the studio itself (the
+// sheet closes, the screen scrolls to the mint stage or the page panel):
+// the studio already holds both.
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ListChecks } from 'lucide-react'
 import { useYeetfulStore, type PhoneScreen as PhoneScreenName } from '@/lib/store'
+import { useSession } from '@/lib/session'
+import { useIntentLinks } from '@/lib/intent-links-ui'
+import { useLinksChanged } from '@/lib/links-changed'
+import { dismissOnboarding, onboardingDismissed, useOnboardingStatus } from '@/lib/onboarding'
+import { absoluteUrl } from '@/lib/site-url'
 import PhoneScreen from '@/components/phone/PhoneScreen'
 import Sheet from '@/components/mobile/Sheet'
 import AppsRailTab from '@/components/AppsRailTab'
 import ChatsRailTab from '@/components/ChatsRailTab'
 import JobsRailTab from '@/components/JobsRailTab'
-import LinksRailTab from '@/components/LinksRailTab'
+import LinksRailTab, { JourneyStrip } from '@/components/LinksRailTab'
 import TeamRailTab from '@/components/TeamRailTab'
 import LinksWorkspace from '@/components/LinksWorkspace'
 
@@ -37,16 +46,58 @@ export const PHONE_SCREEN_TITLES: Record<Exclude<PhoneScreenName, 'chat'>, strin
   history: 'Chats',
 }
 
-/** Scroll the LINKS screen to one of the studio's own stages. */
+/** Scroll the LINKS screen to one of the studio's own stages (a comma list
+ *  is a preference order: the first that exists wins). */
 function scrollStudioTo(selector: string) {
-  const el = document.querySelector<HTMLElement>(`[data-phone-panel="links"] ${selector}`)
+  const el = selector
+    .split(',')
+    .map((s) => document.querySelector<HTMLElement>(`[data-phone-panel="links"] ${s.trim()}`))
+    .find((x): x is HTMLElement => !!x)
   el?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+}
+
+/** The first-payout journey, inline on the phone studio. Signed-in only
+ *  (the studio is), the same status + dismiss key as the rail's strip and the
+ *  dashboard checklist: done anywhere is done everywhere. Its actions land on
+ *  the studio's own stages. */
+function StudioJourney({ landOn }: { landOn: (selector: string) => void }) {
+  const { address } = useSession()
+  const { status, refresh } = useOnboardingStatus()
+  const { links } = useIntentLinks()
+  const [dismissed, setDismissed] = useState(true)
+  const [copied, setCopied] = useState(false)
+  useEffect(() => setDismissed(onboardingDismissed()), [])
+  useLinksChanged(refresh)
+  const live = links ?? []
+  if (!address || !status || dismissed) return null
+  return (
+    <div data-studio-journey="" className="px-1 pt-3">
+      <JourneyStrip
+        status={status}
+        live={live}
+        onMint={() => landOn('.linkstudio__mint')}
+        onCopyNewest={() => {
+          if (!live[0]) return
+          void navigator.clipboard.writeText(absoluteUrl(`/i/${live[0].slug}`)).then(() => {
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1500)
+          })
+        }}
+        copiedNewest={copied}
+        onDismiss={() => {
+          dismissOnboarding()
+          setDismissed(true)
+        }}
+        onStudio={() => landOn('.linkfunnel, .linkstudio')}
+      />
+    </div>
+  )
 }
 
 function LinksScreen() {
   const [listOpen, setListOpen] = useState(false)
-  // Close the sheet, then land on the studio's stage after the sheet's DOM
-  // has gone (the next frame) so nothing scrolls under a scrim.
+  // Close the sheet (if it is up), then land on the studio's stage after the
+  // sheet's DOM has gone (the next frame) so nothing scrolls under a scrim.
   const landOn = (selector: string) => {
     setListOpen(false)
     requestAnimationFrame(() => scrollStudioTo(selector))
@@ -71,10 +122,11 @@ function LinksScreen() {
         </button>
       }
     >
+      <StudioJourney landOn={landOn} />
       <LinksWorkspace />
       <Sheet id="links" open={listOpen} onClose={() => setListOpen(false)} title="Your links" size="auto">
         <div className="flex flex-col pb-2">
-          <LinksRailTab flat onMint={() => landOn('.linkstudio__mint')} onPage={() => landOn('.linkstudio__page')} onStudio={() => landOn('.linkstudio')} />
+          <LinksRailTab flat journey={false} onMint={() => landOn('.linkstudio__mint')} onPage={() => landOn('.linkstudio__page')} onStudio={() => landOn('.linkstudio')} />
         </div>
       </Sheet>
     </PhoneScreen>
