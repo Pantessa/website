@@ -33165,7 +33165,10 @@ async function main() {
     check(
       'native nav: a phone screen names itself (data-phone-screen), carries the frame scroller (data-app-scroll) and sits above the guest banner and below the bar (z-45)',
       /<section data-phone-screen=\{name\} aria-label=\{title\} className="absolute inset-0 z-\[45\] flex flex-col bg-\[var\(--bg\)\]">/.test(nnScreen) &&
-        /<div data-app-scroll="" className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain/.test(nnScreen),
+        /<div ref=\{scrollerRef\} data-app-scroll="" className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain/.test(nnScreen) &&
+        // Scroll position remembered per screen (invariant 3): the scroller's
+        // offset is saved on unmount and restored on the next mount.
+        /SCROLL_MEMORY\.set\(name, el\.scrollTop\)/.test(nnScreen) && /const saved = SCROLL_MEMORY\.get\(name\) \?\? 0/.test(nnScreen),
     )
     check(
       'native nav: the screens — APPS, JOBS, TEAM, HISTORY render the extracted bodies flat; a navigation from JOBS/HISTORY returns to the conversation; LINKS is the studio with "Your list" (aria-haspopup="dialog") opening the rail list as a Sheet whose Mint / Name-your-page land ON the studio',

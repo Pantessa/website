@@ -262,12 +262,15 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
           /embed and /i can never inherit it. */}
       <AppSpine />
       {/* The drawer (lg and up): the spine's contextual panel — working set,
-          running work, links, history. Below lg it renders nothing: the same
-          bodies are the phone screens below. */}
-      <div className="relative flex-shrink-0">
+          running work, links, history. Below lg it renders nothing (the same
+          bodies are the phone screens below), and its wrapper leaves the
+          frame's column so nothing in-flow stacks above the content. */}
+      <div className="relative flex-shrink-0 max-lg:hidden">
         <ChatRail />
       </div>
-      <main className="relative flex-1 min-w-0 flex flex-col">
+      {/* min-h-0: inside the phone frame (a 100dvh column) this is the flex
+          child that holds the ONE scroller, so it must be allowed to shrink. */}
+      <main className="relative flex-1 min-w-0 min-h-0 flex flex-col">
         {/* The phone screen showing over the conversation. It mounts BEFORE
             ChatInterface so its scroller is the first `data-app-scroll` on
             the page while it shows (lib/app-scroller). */}

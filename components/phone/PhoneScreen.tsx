@@ -16,8 +16,13 @@
 // z-index: above the guest banner (40) and below the tab bar (50), the
 // modals (70) and the sheets (90).
 
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import type { PhoneScreen as PhoneScreenName } from '@/lib/store'
+
+// Scroll position remembered per screen (invariant 3): a screen unmounts
+// when you leave it and comes back where you left it, the way a native tab
+// keeps its stack. Session memory, keyed by the screen's name.
+const SCROLL_MEMORY = new Map<string, number>()
 
 export default function PhoneScreen({
   name,
@@ -31,13 +36,33 @@ export default function PhoneScreen({
   action?: ReactNode
   children: ReactNode
 }) {
+  const scrollerRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = scrollerRef.current
+    if (!el) return
+    const saved = SCROLL_MEMORY.get(name) ?? 0
+    if (saved > 0) {
+      el.scrollTop = saved
+      // Lists arrive a beat later than the frame: land once more after paint.
+      const raf = requestAnimationFrame(() => {
+        if (el.scrollTop === 0) el.scrollTop = saved
+      })
+      return () => {
+        cancelAnimationFrame(raf)
+        SCROLL_MEMORY.set(name, el.scrollTop)
+      }
+    }
+    return () => {
+      SCROLL_MEMORY.set(name, el.scrollTop)
+    }
+  }, [name])
   return (
     <section data-phone-screen={name} aria-label={title} className="absolute inset-0 z-[45] flex flex-col bg-[var(--bg)]">
       <header className="flex-shrink-0 flex items-center gap-2 pl-4 pr-2 min-h-12 border-b border-[var(--line)]">
         <h1 className="flex-1 min-w-0 mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] truncate">{title}</h1>
         {action}
       </header>
-      <div data-app-scroll="" className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain flex flex-col [-webkit-overflow-scrolling:touch]">
+      <div ref={scrollerRef} data-app-scroll="" className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain flex flex-col [-webkit-overflow-scrolling:touch]">
         {children}
       </div>
     </section>
