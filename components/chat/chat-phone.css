@@ -105,8 +105,10 @@
   }
   .chat-phonebar__acct .navacct__addr,
   .chat-phonebar__acct .navacct__chev { display: none; }
-  /* A person glyph (lucide "user") drawn in the pill's own ink. */
-  .chat-phonebar__acct .navacct__pill::before {
+  /* A person glyph (lucide "user") drawn in the pill's own ink. ::after, not
+     ::before — PAGES' invisible 44px hit area owns the pill's ::before below
+     lg (x402-design.css .navacct__pill::before); this pill already IS 44px. */
+  .chat-phonebar__acct .navacct__pill::after {
     content: '';
     width: 18px;
     height: 18px;
