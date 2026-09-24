@@ -11051,7 +11051,9 @@ async function main() {
           /<a [^>]*aria-label="Settings" class="relative flex-1[^"]*max-sm:hidden[^"]*" href="\/dashboard"/.test(wpChat) &&
           /<a [^>]*aria-label="WALLET" class="relative flex-1 min-h-\[48px\](?![^"]*max-sm:hidden)[^"]*" href="\/wallet"/.test(wpChat) &&
           (!wpChat.includes('aria-label="TEAM"') || /<button [^>]*aria-label="TEAM"[^>]*class="relative flex-1[^"]*max-sm:hidden/.test(wpChat)) &&
-          /<div class="relative flex-1 flex sm:hidden"><button [^>]*aria-label="More"[^>]*aria-haspopup="menu"[^>]*aria-expanded="false"/.test(wpChat) &&
+          // Re-pinned by the mobile-native squad (2026-09-24, NAV): MORE opens a
+        // Sheet (aria-haspopup="dialog"), not a popover menu.
+        /<div class="relative flex-1 flex sm:hidden"><button [^>]*aria-label="More"[^>]*aria-haspopup="dialog"[^>]*aria-expanded="false"/.test(wpChat) &&
           /href="\/docs" role="menuitem"/.test(wpSpine) && /href="\/dashboard"\s+role="menuitem"/.test(wpSpine),
       )
       check(
@@ -33015,6 +33017,193 @@ async function main() {
       'spend retarget (route, live): a chain NAMED in the sentence never wanders either',
       !named.spendRetarget && !(named.txChain || named.txRequest || named.order),
       JSON.stringify({ buildPath: named.buildPath, reply: String(named.reply).slice(0, 160) }),
+    )
+  }
+
+
+  // ── NATIVE NAV: a tab is a place, never a pop-up (squad mobile-native,
+  // 2026-09-24, NAV lane; Nate: "when you click a bottom nav the drawer pops
+  // out automatically but does not feel like the right flow, if a nav
+  // drawer is open and a user taps outside it should close the drawer, by
+  // default should be closed with easy way to access the info"). Below lg
+  // the spine's seats are places: APPS / JOBS / LINKS / TEAM show their
+  // screen over the conversation (lib/phone-nav decides, components/phone
+  // renders), CHATS is the conversation's seat, MORE is a Sheet, and the
+  // 248px overlay drawer is retired. Measured before/after in
+  // scripts/drive-native-nav.ts; these pin the rule and the wiring.
+  {
+    const PN = await import('../lib/phone-nav')
+    const AT = await import('../lib/app-tab-url')
+    const SCREENS = ['chat', 'history', 'apps', 'jobs', 'links', 'team'] as const
+    const SEATS = ['markets', 'mcps', 'jobs', 'links', 'wallet', 'team', 'chats', 'docs', 'settings', 'more'] as const
+    const SURFACES = ['chat', 'markets', 'wallet', 'dashboard'] as const
+    check(
+      'native nav: the ?tab= grammar and the phone screens are one bijection (mcps↔apps, chats↔history, the rest by name; the conversation writes no tab)',
+      PN.screenForTab('mcps') === 'apps' && PN.screenForTab('chats') === 'history' && PN.screenForTab('jobs') === 'jobs' && PN.screenForTab('links') === 'links' && PN.screenForTab('team') === 'team' &&
+        (['mcps', 'chats', 'jobs', 'links', 'team'] as const).every((t) => PN.tabForScreen(PN.screenForTab(t)) === t) &&
+        PN.tabForScreen('chat') === null &&
+        PN.phoneScreenFromSearch('') === 'chat' && PN.phoneScreenFromSearch('?tab=mcps') === 'apps' && PN.phoneScreenFromSearch('?tab=chats') === 'history' && PN.phoneScreenFromSearch('?tab=nope') === 'chat' && PN.phoneScreenFromSearch('?ask=x') === 'chat',
+    )
+    check(
+      'native nav: a phone URL names APPS explicitly (/chat?tab=mcps — a reload must come back to APPS), the conversation stays bare, other params survive; the desktop tabUrl still drops the default',
+      PN.phoneTabUrl('apps', '/chat', '') === '/chat?tab=mcps' &&
+        PN.phoneTabUrl('chat', '/chat', '?tab=jobs') === '/chat' &&
+        PN.phoneTabUrl('history', '/chat/abc', '?ask=x') === '/chat/abc?ask=x&tab=chats' &&
+        AT.tabUrl(AT.DEFAULT_TAB, '/chat', '') === '/chat' &&
+        AT.tabUrl(AT.DEFAULT_TAB, '/chat', '', { explicit: true }) === '/chat?tab=mcps',
+    )
+    check(
+      'native nav: the lit seat — CHATS in the conversation AND on the chat list, each screen its own seat, MARKETS/WALLET/SETTINGS on their pages; MORE lights only for TEAM and SETTINGS',
+      PN.litSeat('chat', 'chat') === 'chats' && PN.litSeat('chat', 'history') === 'chats' && PN.litSeat('chat', 'apps') === 'mcps' && PN.litSeat('chat', 'jobs') === 'jobs' && PN.litSeat('chat', 'links') === 'links' && PN.litSeat('chat', 'team') === 'team' &&
+        PN.litSeat('markets', 'chat') === 'markets' && PN.litSeat('wallet', 'apps') === 'wallet' && PN.litSeat('dashboard', 'chat') === 'settings' &&
+        PN.moreLit('chat', 'team') && PN.moreLit('dashboard', 'chat') && !PN.moreLit('chat', 'chat') && !PN.moreLit('chat', 'apps') && !PN.moreLit('markets', 'chat') && !PN.moreLit('wallet', 'chat'),
+    )
+    const tap = (surface: (typeof SURFACES)[number], screen: (typeof SCREENS)[number], seat: (typeof SEATS)[number], pathname = surface === 'chat' ? '/chat' : `/${surface}`) =>
+      PN.phoneTap({ surface, screen, seat, pathname })
+    check(
+      'native nav: on /chat a screen seat shows its screen from anywhere else, and tapped on its own screen scrolls to the top (never a drawer, never a navigation)',
+      (['mcps', 'jobs', 'links', 'team'] as const).every((seat) => {
+        const target = PN.screenForTab(seat)
+        return SCREENS.every((screen) => {
+          const a = tap('chat', screen, seat)
+          return screen === target ? a.kind === 'top' : a.kind === 'screen' && a.screen === target
+        })
+      }),
+    )
+    check(
+      "native nav: CHATS is the conversation's seat — in the conversation it shows the chat list, on the list it pops back to the conversation, from APPS/JOBS/LINKS/TEAM it returns to the conversation you were in",
+      tap('chat', 'chat', 'chats').kind === 'screen' && (tap('chat', 'chat', 'chats') as { screen: string }).screen === 'history' &&
+        tap('chat', 'history', 'chats').kind === 'screen' && (tap('chat', 'history', 'chats') as { screen: string }).screen === 'chat' &&
+        (['apps', 'jobs', 'links', 'team'] as const).every((screen) => tap('chat', screen, 'chats').kind === 'screen' && (tap('chat', screen, 'chats') as { screen: string }).screen === 'chat'),
+    )
+    check(
+      'native nav: off /chat every screen seat navigates INTO /chat with its screen named in the URL (APPS → /chat?tab=mcps, CHATS → the list), never an open drawer',
+      (['markets', 'wallet', 'dashboard'] as const).every((surface) =>
+        (['mcps', 'jobs', 'links', 'team', 'chats'] as const).every((seat) => {
+          const a = tap(surface, 'chat', seat)
+          return a.kind === 'navigate' && a.href === `/chat?tab=${seat}` && a.screen === PN.screenForTab(seat)
+        }),
+      ),
+    )
+    check(
+      'native nav: the page seats — MARKETS/WALLET/DOCS/SETTINGS navigate from elsewhere, scroll to the top on their own root page, and pop to the root from deeper (/t/AAPL → /markets, /dashboard/keys → /dashboard); MORE is the sheet',
+      tap('chat', 'chat', 'markets').kind === 'navigate' && (tap('chat', 'chat', 'markets') as { href: string }).href === '/markets' &&
+        tap('markets', 'chat', 'markets', '/markets').kind === 'top' && tap('markets', 'chat', 'markets', '/markets/').kind === 'top' &&
+        tap('markets', 'chat', 'markets', '/t/AAPL').kind === 'navigate' && (tap('markets', 'chat', 'markets', '/t/AAPL') as { href: string }).href === '/markets' &&
+        tap('wallet', 'chat', 'wallet', '/wallet').kind === 'top' && (tap('chat', 'apps', 'wallet') as { href: string }).href === '/wallet' &&
+        (tap('chat', 'chat', 'docs') as { href: string }).href === '/docs' &&
+        tap('dashboard', 'chat', 'settings', '/dashboard').kind === 'top' && (tap('dashboard', 'chat', 'settings', '/dashboard/keys') as { href: string }).href === '/dashboard' &&
+        (tap('chat', 'chat', 'settings') as { href: string }).href === '/dashboard' &&
+        SURFACES.every((surface) => tap(surface, 'chat', 'more').kind === 'sheet'),
+    )
+    check(
+      'native nav: every surface × screen × seat resolves to one of the four actions, a screen action only ever fires on /chat, and a navigation only ever names a real page',
+      SURFACES.every((surface) =>
+        SCREENS.every((screen) =>
+          SEATS.every((seat) => {
+            const a = tap(surface, screen, seat)
+            if (!['screen', 'top', 'navigate', 'sheet'].includes(a.kind)) return false
+            if (a.kind === 'screen' && surface !== 'chat') return false
+            if (a.kind === 'navigate' && !/^\/(chat(\?tab=[a-z]+)?|markets|wallet|docs|dashboard)$/.test(a.href)) return false
+            return true
+          }),
+        ),
+      ),
+    )
+    // The wiring: the spine executes phone-nav, the bar seats are ≥48px with
+    // press feedback and a landscape posture, the overlay drawer is gone,
+    // the screens carry the frame's scroller, and the belts translate the
+    // desktop-shaped requests other files still make.
+    const nnSpine = await readFile(new URL('../components/AppSpine.tsx', import.meta.url), 'utf8')
+    const nnRail = await readFile(new URL('../components/ChatRail.tsx', import.meta.url), 'utf8')
+    const nnWs = await readFile(new URL('../components/ChatWorkspace.tsx', import.meta.url), 'utf8')
+    const nnScreen = await readFile(new URL('../components/phone/PhoneScreen.tsx', import.meta.url), 'utf8')
+    const nnScreens = await readFile(new URL('../components/phone/PhoneScreens.tsx', import.meta.url), 'utf8')
+    const nnStore = await readFile(new URL('../lib/store.ts', import.meta.url), 'utf8')
+    const nnLinksTab = await readFile(new URL('../components/LinksRailTab.tsx', import.meta.url), 'utf8')
+    const nnTabs = await Promise.all(['AppsRailTab', 'ChatsRailTab', 'JobsRailTab', 'LinksRailTab', 'TeamRailTab'].map((f) => readFile(new URL(`../components/${f}.tsx`, import.meta.url), 'utf8')))
+    check(
+      'native nav: AppSpine executes lib/phone-nav on a phone (pickPhone → phoneTap; the lit seat = seatForScreen; MORE = moreLit) and never sets the retired overlay flag',
+      /const pickPhone = \(seat: PhoneSeat\) => \{\s*const action = phoneTap\(\{ surface, screen: phoneScreen, seat, pathname \}\)/.test(nnSpine) &&
+        /const selected = !offChat && seatForScreen\(phoneScreen\) === tab/.test(nnSpine) &&
+        /const moreLit = moreLitFor\(surface, phoneScreen\)/.test(nnSpine) &&
+        !/setMobileMcpRailOpen/.test(nnSpine) && !/pickMobile/.test(nnSpine) &&
+        /case 'top':\s*scrollAppTo\(0, 'smooth'\)/.test(nnSpine) &&
+        /syncTabParam\(urlTab, \{ explicit: isNarrow \}\)/.test(nnSpine) &&
+        /if \(phone\) setPhoneScreen\(ARRIVAL_SCREEN\)/.test(nnSpine) && /setPhoneScreen\(phoneScreenFromSearch\(search\)\)/.test(nnSpine),
+    )
+    check(
+      'native nav: MORE is a Sheet (id "more", aria-haspopup="dialog") holding Team (roster on), Docs and Settings — no popover, no outside-pointer listener',
+      /<Sheet id="more" open=\{moreOpen\} onClose=\{\(\) => setMoreOpen\(false\)\} title="More"/.test(nnSpine) &&
+        /aria-label="More"\s+aria-haspopup="dialog"/.test(nnSpine) &&
+        !/data-spine-more/.test(nnSpine) && !/addEventListener\('pointerdown'/.test(nnSpine) &&
+        /href="\/docs" role="menuitem"/.test(nnSpine) && /href="\/dashboard"\s+role="menuitem"/.test(nnSpine),
+    )
+    check(
+      'native nav: every phone seat is one anatomy — ≥48px, press feedback (active:bg), select-none, touch-manipulation, and a compact landscape posture (40px, icon beside label)',
+      /const PHONE_SEAT =\s*'relative flex-1 min-h-\[48px\] flex flex-col items-center justify-center gap-0\.5 select-none touch-manipulation transition-colors active:bg-\[var\(--surf-1\)\] \[@media\(orientation:landscape\)_and_\(max-height:480px\)\]:min-h-\[40px\] \[@media\(orientation:landscape\)_and_\(max-height:480px\)\]:flex-row/.test(nnSpine) &&
+        (nnSpine.match(/PHONE_SEAT/g) ?? []).length >= 7 &&
+        /onClick=\{pageSeatClick\('markets'\)\}/.test(nnSpine) && /onClick=\{pageSeatClick\('wallet'\)\}/.test(nnSpine) && /onClick=\{pageSeatClick\('settings'\)\}/.test(nnSpine),
+    )
+    check(
+      'native nav: the phone overlay drawer is retired — ChatRail renders nothing below lg, carries no overlay posture and no mobile flag; the desktop drawer renders the same extracted bodies (AppsRailTab, ChatsRailTab)',
+      /if \(!mounted \|\| isMobile\) return null/.test(nnRail) && !/max-lg:absolute/.test(nnRail) && !/mobileMcpRailOpen/.test(nnRail) &&
+        /<AppsRailTab \/>/.test(nnRail) && /<ChatsRailTab \/>/.test(nnRail) && /<JobsRailTab \/>/.test(nnRail) && /<LinksRailTab \/>/.test(nnRail) && /<TeamRailTab \/>/.test(nnRail),
+    )
+    check(
+      'native nav: every rail body lays flat on the phone (the screen scrolls, `!flat && flex-1 overflow-y-auto` in all five) — one component per destination for both postures',
+      nnTabs.every((src) => /!flat && 'flex-1 overflow-y-auto'/.test(src)),
+    )
+    check(
+      'native nav: ChatWorkspace is the phone frame (data-app-frame), mounts the screen BEFORE ChatInterface so its scroller is the first data-app-scroll, makes the conversation inert under a screen, and belts the retired flag + the desktop "show the studio" pair into screens',
+      /<div data-app-frame="" className=\{`relative flex max-lg:pb-/.test(nnWs) &&
+        nnWs.indexOf('<PhoneScreens screen={phoneScreen} />') < nnWs.indexOf('<ChatInterface injectedPrompt={urlPrompt} />') &&
+        /inert=\{screenUp \|\| undefined\} aria-hidden=\{screenUp \|\| undefined\}/.test(nnWs) &&
+        /if \(!isNarrow \|\| !mobileMcpRailOpen\) return\s*setMobileMcpRailOpen\(false\)\s*setPhoneScreen\(screenForTab\(railTab\)\)/.test(nnWs) &&
+        /if \(!isNarrow \|\| mainView !== 'links' \|\| railTab !== 'links'\) return\s*setMainView\('chat'\)\s*setPhoneScreen\('links'\)/.test(nnWs),
+    )
+    check(
+      'native nav: a phone screen names itself (data-phone-screen), carries the frame scroller (data-app-scroll) and sits above the guest banner and below the bar (z-45)',
+      /<section data-phone-screen=\{name\} aria-label=\{title\} className="absolute inset-0 z-\[45\] flex flex-col bg-\[var\(--bg\)\]">/.test(nnScreen) &&
+        /<div data-app-scroll="" className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain/.test(nnScreen),
+    )
+    check(
+      'native nav: the screens — APPS, JOBS, TEAM, HISTORY render the extracted bodies flat; a navigation from JOBS/HISTORY returns to the conversation; LINKS is the studio with "Your list" (aria-haspopup="dialog") opening the rail list as a Sheet whose Mint / Name-your-page land ON the studio',
+      /case 'apps':[\s\S]*?<AppsRailTab flat \/>/.test(nnScreens) &&
+        /case 'jobs':[\s\S]*?<JobsRailTab flat onNavigate=\{toChat\} \/>/.test(nnScreens) &&
+        /case 'team':[\s\S]*?<TeamRailTab flat \/>/.test(nnScreens) &&
+        /case 'history':[\s\S]*?<ChatsRailTab flat onNavigate=\{toChat\} \/>/.test(nnScreens) &&
+        /aria-label="Your list"\s+aria-haspopup="dialog"/.test(nnScreens) &&
+        /<Sheet id="links-list" open=\{listOpen\}/.test(nnScreens) &&
+        /<LinksRailTab flat onMint=\{\(\) => landOn\('\.linkstudio__mint'\)\} onPage=\{\(\) => landOn\('\.linkstudio__page'\)\} onStudio=\{\(\) => landOn\('\.linkstudio'\)\} \/>/.test(nnScreens) &&
+        /<LinksWorkspace \/>/.test(nnScreens),
+    )
+    check(
+      'native nav: the store owns ONE "take me to my links" (openLinksStudio: the LINKS screen on a phone, the LINKS main view at lg+), phoneScreen stays session-only, and the rail seat uses it instead of the desktop pair',
+      /openLinksStudio: \(\) => \(isPhoneViewport\(\) \? set\(\{ phoneScreen: 'links' \}\) : set\(\{ railTab: 'links', mainView: 'links' \}\)\)/.test(nnStore) &&
+        !/partialize: \(state\) => \(\{[^}]*phoneScreen/.test(nnStore) &&
+        /const toStudio = onStudio \?\? openLinksStudio/.test(nnLinksTab) && !/setMainView/.test(nnLinksTab),
+    )
+    // The server render: the frame attribute rides the workspace root, the
+    // bar's seats wear the anatomy, MORE is a dialog trigger, and no drawer
+    // and no screen is in the HTML (screens are client-side places).
+    const nnChatHtml = flat(await (await fetch(`${BASE}/chat`)).text())
+    const nnMarketsHtml = flat(await (await fetch(`${BASE}/markets`)).text())
+    const nnBar = (h: string) => h.match(/<nav data-spine-bar="" [^>]*aria-label="Workspace"[\s\S]*?<\/nav>/)?.[0] ?? ''
+    check(
+      'native nav (SSR): /chat and /markets ship the frame attribute on the chat root, a bar whose every seat is ≥48px with press feedback, a MORE seat that opens a dialog, no overlay drawer and no screen in the HTML',
+      /<div data-app-frame="" class="relative flex max-lg:pb-\[calc\(48px\+env\(safe-area-inset-bottom\)\)\] h-dvh"/.test(nnChatHtml) &&
+        [nnChatHtml, nnMarketsHtml].every((h) => {
+          const bar = nnBar(h)
+          const seats = bar.match(/<(?:a|button) [^>]*aria-label="[^"]+"[^>]*>/g) ?? []
+          return (
+            seats.length >= 8 &&
+            seats.every((tag) => /class="relative flex-1 min-h-\[48px\][^"]*select-none touch-manipulation[^"]*active:bg-\[var\(--surf-1\)\]/.test(tag)) &&
+            /aria-label="More"[^>]*aria-haspopup="dialog"[^>]*aria-expanded="false"/.test(bar) &&
+            !/data-spine-more/.test(h) && !/max-lg:absolute/.test(h) && !/data-phone-screen/.test(h)
+          )
+        }),
+      `chat seats=${(nnBar(nnChatHtml).match(/aria-label="/g) ?? []).length} markets seats=${(nnBar(nnMarketsHtml).match(/aria-label="/g) ?? []).length}`,
     )
   }
 

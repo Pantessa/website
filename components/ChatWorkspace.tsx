@@ -8,8 +8,11 @@ import ChatRail from '@/components/ChatRail'
 import AppSpine from '@/components/AppSpine'
 import ChatSignInGate from '@/components/ChatSignInGate'
 import RouterEngineWindow from '@/components/RouterEngineWindow'
+import PhoneScreens from '@/components/phone/PhoneScreens'
 import { useAppShellMode } from '@/components/AppShell'
 import { useYeetfulStore, McpServer } from '@/lib/store'
+import { PHONE_MQ } from '@/lib/phone-shell'
+import { screenForTab } from '@/lib/phone-nav'
 import { CATALOG } from '@/lib/mcp-data'
 import { FREE_FLEET_FALLBACK, DEFAULT_CHAT_FLEET_SLUGS } from '@/lib/free-fleet'
 import { resolveAppIds } from '@/lib/ask-apps'
@@ -24,8 +27,27 @@ const STATIC_SERVERS: McpServer[] = [...FREE_FLEET_FALLBACK, ...CATALOG]
  * restore its active agents; the bare /chat route is a fresh "new chat" surface.
  */
 export default function ChatWorkspace({ chatId }: { chatId?: string }) {
-  const { servers, setServers, setCurrentChatId, loadChat, setActiveServerIds, activeServerIds, walletSets, saveWalletSet, authedAddress, loadWalletSet, linkSetActive, clearActiveServers } =
-    useYeetfulStore()
+  const {
+    servers,
+    setServers,
+    setCurrentChatId,
+    loadChat,
+    setActiveServerIds,
+    activeServerIds,
+    walletSets,
+    saveWalletSet,
+    authedAddress,
+    loadWalletSet,
+    linkSetActive,
+    clearActiveServers,
+    phoneScreen,
+    setPhoneScreen,
+    railTab,
+    mainView,
+    setMainView,
+    mobileMcpRailOpen,
+    setMobileMcpRailOpen,
+  } = useYeetfulStore()
   const { address } = useAccount()
   const router = useRouter()
 
@@ -186,21 +208,75 @@ export default function ChatWorkspace({ chatId }: { chatId?: string }) {
   // the whole viewport.
   const { chrome } = useAppShellMode()
 
+  // THE PHONE POSTURE (squad mobile-native, 2026-09-24). Below lg a tab is a
+  // place: the store's phoneScreen says what the main area shows, and the
+  // screens (components/phone) lie over the conversation. Read after mount —
+  // the breakpoint is unknowable server-side, and the server render is the
+  // conversation in both postures.
+  const [isNarrow, setIsNarrow] = useState(false)
+  useEffect(() => {
+    const mql = window.matchMedia(PHONE_MQ)
+    const on = (e: MediaQueryListEvent) => setIsNarrow(e.matches)
+    setIsNarrow(mql.matches)
+    mql.addEventListener('change', on)
+    return () => mql.removeEventListener('change', on)
+  }, [])
+
+  // Belts: the desktop-shaped requests other surfaces still make become the
+  // phone's screens here, so nothing can open a drawer over the page below
+  // lg. (1) `mobileMcpRailOpen` — the retired overlay flag, which the chat
+  // toolbar's working-set door still sets until CHAT switches it to
+  // setPhoneScreen('apps') — turns into the screen for its tab and is put
+  // back to false. (2) "Show the links studio" written as the desktop pair
+  // (railTab + mainView 'links', the mint receipt's door) becomes the LINKS
+  // screen; mainView goes back to 'chat' so ChatInterface never renders the
+  // board under the screen.
+  useEffect(() => {
+    if (!isNarrow || !mobileMcpRailOpen) return
+    setMobileMcpRailOpen(false)
+    setPhoneScreen(screenForTab(railTab))
+  }, [isNarrow, mobileMcpRailOpen, railTab, setMobileMcpRailOpen, setPhoneScreen])
+  useEffect(() => {
+    if (!isNarrow || mainView !== 'links' || railTab !== 'links') return
+    setMainView('chat')
+    setPhoneScreen('links')
+  }, [isNarrow, mainView, railTab, setMainView, setPhoneScreen])
+
+  const screenUp = isNarrow && phoneScreen !== 'chat'
+  // A screen rising over the composer takes the keyboard with it.
+  useEffect(() => {
+    if (!screenUp) return
+    const el = document.activeElement
+    if (el instanceof HTMLElement && el !== document.body) el.blur()
+  }, [screenUp])
+
   return (
     // max-lg pb reserves the fixed bottom bar's height (48px + safe area) so
-    // the composer never hides behind it.
-    <div className={`relative flex max-lg:pb-[calc(48px+env(safe-area-inset-bottom))] ${chrome ? 'h-dvh' : 'h-[calc(100dvh-4rem)]'}`}>
+    // the composer never hides behind it. `data-app-frame` is the phone
+    // frame contract (lib/phone-shell): below lg this is the viewport-sized
+    // frame whose ONE scroller carries `data-app-scroll` — the conversation's
+    // thread (ChatInterface) or the screen showing over it.
+    <div data-app-frame="" className={`relative flex max-lg:pb-[calc(48px+env(safe-area-inset-bottom))] ${chrome ? 'h-dvh' : 'h-[calc(100dvh-4rem)]'}`}>
       {/* The spine (desktop): brand seat + workspace destinations + the way
           out to the dashboard. Mounted by the SHELL, not ChatInterface, so
           /embed and /i can never inherit it. */}
       <AppSpine />
-      {/* The drawer: the spine's contextual panel — working set, running
-          work, links, history. */}
+      {/* The drawer (lg and up): the spine's contextual panel — working set,
+          running work, links, history. Below lg it renders nothing: the same
+          bodies are the phone screens below. */}
       <div className="relative flex-shrink-0">
         <ChatRail />
       </div>
-      <main className="flex-1 min-w-0 flex flex-col">
-        <ChatInterface injectedPrompt={urlPrompt} />
+      <main className="relative flex-1 min-w-0 flex flex-col">
+        {/* The phone screen showing over the conversation. It mounts BEFORE
+            ChatInterface so its scroller is the first `data-app-scroll` on
+            the page while it shows (lib/app-scroller). */}
+        {screenUp && <PhoneScreens screen={phoneScreen} />}
+        {/* The conversation keeps its state under a screen; inert so nothing
+            behind the screen can take a tap or the focus. */}
+        <div className="flex-1 min-h-0 flex flex-col" inert={screenUp || undefined} aria-hidden={screenUp || undefined}>
+          <ChatInterface injectedPrompt={urlPrompt} />
+        </div>
       </main>
       <RouterEngineWindow />
       <ChatSignInGate />
