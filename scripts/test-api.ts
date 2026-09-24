@@ -33039,6 +33039,8 @@ async function main() {
     const nmAlert = await readFile('components/markets/watchlist/AlertForm.tsx', 'utf8')
     const nmImport = await readFile('components/markets/watchlist/ImportModal.tsx', 'utf8')
     const nmFlat = (css: string) => css.replace(/\s+/g, ' ')
+    // Negative greps read CODE: comments name the old forms on purpose.
+    const nmCode = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
     const nmBlocks = (css: string, head: string) => {
       // Every block opened by `head`, balanced-brace read (the sheets nest
       // one level at most).
@@ -33109,7 +33111,7 @@ async function main() {
     //    natively), horizontal pans, pinch zooms the chart and never the page.
     check(
       'native markets: MarketChart never claims a vertical touch drag (handleScroll.vertTouchDrag: false) and keeps horizontal pan + pinch (no option turns them off)',
-      /handleScroll: \{ vertTouchDrag: false \}/.test(nmChart) && !/vertTouchDrag: true/.test(nmChart) && !/horzTouchDrag: false/.test(nmChart) && !/pinch: false/.test(nmChart),
+      /handleScroll: \{ vertTouchDrag: false \}/.test(nmChart) && !/vertTouchDrag: true/.test(nmCode(nmChart)) && !/horzTouchDrag: false/.test(nmCode(nmChart)) && !/pinch: false/.test(nmCode(nmChart)),
     )
     check(
       'native markets: the engine is touch-action: pan-y (the page scrolls vertically, a pinch never zooms the page), and the full-screen control is 44×44 on touch',
@@ -33159,6 +33161,13 @@ async function main() {
         /\.mkt-frame__bar > \.mkt-frame__tabs \{\s*position: sticky; top: var\(--mkt-top-h, 52px\); z-index: 20;/.test(nmMk) &&
         /\.mkt-sec \{ scroll-margin-top: calc\(var\(--mkt-top-h, 52px\) \+ 60px\); \}/.test(nmMk),
     )
+    const nmSym = await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')
+    check(
+      'native markets: a /t tab switch made while the strip is stuck scrolls the app scroller by the strip\'s UNSTUCK place (its parent\'s top) — scrollIntoView on a stuck sticky is a no-op — and the rail + footer never anchor the scroll (a short loading tab once threw the page 5,521px to the footer)',
+      /const natural = main\.getBoundingClientRect\(\)\.top\s*\n\s*if \(natural < stuckAt - 1\) scrollAppTo\(appScrollTop\(\) \+ natural - stuckAt\)/.test(nmSym) &&
+        !/el\.scrollIntoView\(\{ block: 'start' \}\)/.test(nmCode(nmSym)) &&
+        /\.mkt-frame__rail, \.mkt-frame__foot \{ overflow-anchor: none; \}/.test(nmMk),
+    )
     check(
       'native markets: below lg the /t section tabs stick under the top strip (scroll-margin lands a switch there)',
       /\.sym__tabs \{ position: sticky; top: var\(--mkt-top-h, 52px\); z-index: 19; background: var\(--bg\); scroll-margin-top: var\(--mkt-top-h, 52px\); \}/.test(nmMk),
@@ -33177,7 +33186,7 @@ async function main() {
     check(
       'native markets: AlertForm and ImportModal are THE Sheet (ids wl-alert, wl-import) — no hand-made scrim or portal left, so Escape, a swipe and the back gesture close them too',
       /<Sheet\s+open=\{open\}\s+onClose=\{onClose\}\s+id="wl-alert"/.test(nmAlert) && /<Sheet\s+open=\{open\}\s+onClose=\{close\}\s+id="wl-import"/.test(nmImport) &&
-        ![nmAlert, nmImport].some((src) => /createPortal|wl__scrim/.test(src)),
+        ![nmAlert, nmImport].some((src) => /createPortal|wl__scrim/.test(nmCode(src))),
     )
   }
 

@@ -228,6 +228,11 @@ button.mk-held:hover { border-color: var(--accent); }
   /* The section tabs stick under the top strip while the tab's body scrolls
      (the native tab strip); scroll-margin lands a tab switch under the strip. */
   .sym__tabs { position: sticky; top: var(--mkt-top-h, 52px); z-index: 19; background: var(--bg); scroll-margin-top: var(--mkt-top-h, 52px); }
+  /* The rail card and the footer sit under a tab's body on a phone. When a
+     short tab (a loading News list) left them on screen, the browser anchored
+     the scroll to them, and the tab's growth then threw the page 5,521px down
+     to the footer (drive, /t/ETH). They never anchor: the tab's own rows do. */
+  .mkt-frame__rail, .mkt-frame__foot { overflow-anchor: none; }
 }
 
 /* Every control a thumb uses is ≥44px, and a row or chip answers the press

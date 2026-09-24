@@ -526,14 +526,19 @@ async function stickyRows(engine: Engine) {
     await scrollTo(page, 1400)
     const s1 = await readSym()
     await page.locator('.sym__tab[data-tab="news"]').first().click()
-    await page.waitForTimeout(700)
+    await page.waitForTimeout(300)
     const s2 = await readSym()
-    record[`${engine}.sticky.t`] = { s0, s1, s2 }
-    const sl = `top strip ${s0.top}→${s1.top} · section tabs ${s0.tabs}→${s1.tabs} · after a News tap while stuck: tabs ${s2.tabs}, body ${s2.body}`
+    // …and after the tab's content lands (News loads; a short tab once let the
+    // footer anchor the scroll and the page jumped to the bottom).
+    await page.waitForTimeout(1800)
+    const s3 = await readSym()
+    record[`${engine}.sticky.t`] = { s0, s1, s2, s3 }
+    const sl = `top strip ${s0.top}→${s1.top} · section tabs ${s0.tabs}→${s1.tabs} · after a News tap while stuck: tabs ${s2.tabs}, body ${s2.body} · once loaded: tabs ${s3.tabs}, body ${s3.body}`
     if (MEASURE_ONLY || TAG === 'before') note(4, `${engine} /t/ETH sticky`, sl)
     else {
       judge(4, `${engine} /t/ETH: the section tabs stick right under the top strip after a scroll`, s1.top === 0 && s1.tabs !== null && Math.abs(s1.tabs - 52) <= 1, sl)
-      judge(4, `${engine} /t/ETH: a tab switch made while stuck lands the new tab at its top (the body starts under the tabs)`, s2.tabs !== null && s2.body !== null && Math.abs(s2.tabs - 52) <= 1 && s2.body - s2.tabs <= 60, sl)
+      const under = (r: any) => r.tabs !== null && r.body !== null && Math.abs(r.tabs - 52) <= 1 && r.body - r.tabs >= 30 && r.body - r.tabs <= 60
+      judge(4, `${engine} /t/ETH: a tab switch made while stuck lands the new tab at its top (its body starts right under the tabs), and stays there once the tab's content loads`, under(s2) && under(s3), sl)
     }
   } finally {
     await browser.close()
