@@ -132,8 +132,14 @@ function JourneyStrip({
   )
 }
 
-function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
-  const { setMainView } = useYeetfulStore()
+function SignedInLinks({ activeSlugs, flat, onMint, onPage, onStudio }: { activeSlugs: string[] } & LinksRailTabProps) {
+  const { openLinksStudio } = useYeetfulStore()
+  // On the phone the studio is the screen this list sits over (a Sheet), and
+  // it already holds the mint stage and the page panel: the sheet's actions
+  // land THERE instead of opening a second modal over the sheet.
+  const openMint = onMint ?? (() => setMintOpen(true))
+  const openPage = onPage ?? (() => setPageOpen(true))
+  const toStudio = onStudio ?? openLinksStudio
   const { links, earnings, reload, updatedAt } = useIntentLinks()
   const { status, refresh: refreshStatus } = useOnboardingStatus()
   const [journeyDismissed, setJourneyDismissed] = useState(true)
@@ -171,8 +177,11 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
     <>
       <div className="px-3 pb-2">
         <button
-          onClick={() => setMintOpen(true)}
-          className="w-full flex items-center gap-2 px-3 py-2 min-h-[44px] md:min-h-0 rounded-xl bg-[var(--surf-2)] border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-all text-sm font-medium"
+          onClick={openMint}
+          className={cn(
+            'w-full flex items-center gap-2 px-3 py-2 min-h-[44px] md:min-h-0 rounded-xl bg-[var(--surf-2)] border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-all text-sm font-medium',
+            flat && 'min-h-[48px] md:min-h-[48px] active:bg-[var(--surf-1)]',
+          )}
         >
           <Plus className="w-4 h-4" />
           Mint a link
@@ -183,18 +192,18 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
         <JourneyStrip
           status={status}
           live={live}
-          onMint={() => setMintOpen(true)}
+          onMint={openMint}
           onCopyNewest={() => live[0] && copy(live[0].slug)}
           copiedNewest={!!live[0] && copied === live[0].slug}
           onDismiss={() => {
             dismissOnboarding()
             setJourneyDismissed(true)
           }}
-          onStudio={() => setMainView('links')}
+          onStudio={toStudio}
         />
       )}
 
-      <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-1">
+      <div className={cn('px-2 pb-3 space-y-1', !flat && 'flex-1 overflow-y-auto')}>
         {links === null && (
           <p className="px-2 py-4 text-[11px] text-[color:var(--muted-2)]">Loading your links…</p>
         )}
@@ -217,7 +226,10 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
               }
             }}
             title="Copy the link"
-            className="group w-full px-2.5 py-2 rounded-xl cursor-pointer transition-all text-left text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-1)]"
+            className={cn(
+              'group w-full px-2.5 py-2 rounded-xl cursor-pointer transition-all text-left text-[color:var(--muted)] hover:text-white hover:bg-[var(--surf-1)]',
+              flat && 'min-h-[48px] active:bg-[var(--surf-1)]',
+            )}
           >
             <span className="flex items-center gap-1.5">
               <span className="mono text-[12px] text-[color:var(--accent)] truncate">/i/{l.slug}</span>
@@ -237,7 +249,7 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
               {copied === l.slug ? (
                 <Check className="w-3 h-3 flex-shrink-0 text-[color:var(--accent)]" />
               ) : (
-                <Copy className="w-3 h-3 flex-shrink-0 opacity-0 group-hover:opacity-70 transition-opacity" />
+                <Copy className={cn('w-3 h-3 flex-shrink-0 transition-opacity', flat ? 'opacity-60' : 'opacity-0 group-hover:opacity-70')} />
               )}
               {/* Open the live page — hover affordance; stopPropagation so
                   the row click stays "copy". */}
@@ -248,7 +260,10 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
                 onClick={(e) => e.stopPropagation()}
                 aria-label={`Open /i/${l.slug}`}
                 title="Open the link"
-                className="ml-auto flex-shrink-0 w-5 h-5 grid place-items-center rounded-md text-[color:var(--muted-2)] opacity-0 group-hover:opacity-100 hover:text-white hover:bg-white/5 transition-all"
+                className={cn(
+                  'ml-auto flex-shrink-0 grid place-items-center rounded-md text-[color:var(--muted-2)] hover:text-white hover:bg-white/5 transition-all',
+                  flat ? 'w-10 h-10 -my-2 opacity-70' : 'w-5 h-5 opacity-0 group-hover:opacity-100',
+                )}
               >
                 <ExternalLink className="w-3 h-3" />
               </a>
@@ -288,8 +303,8 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
           // preview), not a navigation away from the conversation.
           <button
             type="button"
-            onClick={() => setPageOpen(true)}
-            className="block w-full text-left text-[11px] text-[color:var(--muted)] hover:text-white transition-colors"
+            onClick={openPage}
+            className={cn('block w-full text-left text-[11px] text-[color:var(--muted)] hover:text-white transition-colors', flat && 'min-h-[44px] text-[12px]')}
             title="Claim /l/your-name — every link you mint on one shareable page"
           >
             Name your page → one branded page for every link
@@ -301,8 +316,8 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
         <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
           <button
             type="button"
-            onClick={() => setMainView('links')}
-            className="flex-1 min-w-[9rem] text-left text-[10px] text-[color:var(--muted-2)] hover:text-[color:var(--muted)] transition-colors"
+            onClick={toStudio}
+            className={cn('flex-1 min-w-[9rem] text-left text-[10px] text-[color:var(--muted-2)] hover:text-[color:var(--muted)] transition-colors', flat && 'min-h-[44px] text-[12px]')}
           >
             Funnels, branding{earnings && earnings.totalEarnedUsd > 0 ? ', earnings' : ''} → your links
           </button>
@@ -333,7 +348,19 @@ function SignedInLinks({ activeSlugs }: { activeSlugs: string[] }) {
   )
 }
 
-export default function LinksRailTab() {
+export type LinksRailTabProps = {
+  /** The parent scrolls (the phone's list sheet): lay the list out flat and
+   *  keep the touch affordances visible. */
+  flat?: boolean
+  /** Phone overrides (components/phone): "Mint a link" and "Name your page"
+   *  land on the studio screen instead of opening a modal over the sheet;
+   *  "open the funnel" / "your links" go to the studio the same way. */
+  onMint?: () => void
+  onPage?: () => void
+  onStudio?: () => void
+}
+
+export default function LinksRailTab(props: LinksRailTabProps = {}) {
   const { servers, activeServerIds } = useYeetfulStore()
   const { address, needsSignIn, signIn, signingIn } = useSession()
 
@@ -345,7 +372,7 @@ export default function LinksRailTab() {
 
   if (!address) {
     return (
-      <div className="flex-1 overflow-y-auto px-2 pb-3">
+      <div className={cn('px-2 pb-3', !props.flat && 'flex-1 overflow-y-auto')}>
         <div className="text-center py-6 px-3 space-y-3">
           <p className="text-xs text-[color:var(--muted-2)]">
             {needsSignIn
@@ -366,5 +393,5 @@ export default function LinksRailTab() {
     )
   }
 
-  return <SignedInLinks activeSlugs={activeSlugs} />
+  return <SignedInLinks activeSlugs={activeSlugs} {...props} />
 }
