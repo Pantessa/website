@@ -453,7 +453,7 @@ export default function AddMcpModal({ open, onClose }: { open: boolean; onClose:
         onClick={submit}
         disabled={!canSubmit}
         className={cn(
-          'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors [@media(hover:none)]:min-h-10 max-lg:w-full max-lg:min-h-12 max-lg:justify-center max-lg:text-[14px]',
+          'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors [@media(hover:none)]:min-h-10 max-lg:w-full max-lg:!min-h-12 max-lg:justify-center max-lg:text-[14px]',
           canSubmit
             ? 'bg-white text-zinc-950 hover:bg-zinc-200'
             : 'bg-[var(--surf-2)] text-[color:var(--muted-2)] cursor-not-allowed',
