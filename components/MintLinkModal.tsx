@@ -14,6 +14,8 @@ import { Check, Copy, Link2, X } from 'lucide-react'
 import { MintLinkForm } from '@/components/MintLinkForm'
 import { useYeetfulStore } from '@/lib/store'
 import { absoluteUrl } from '@/lib/site-url'
+import Sheet from '@/components/mobile/Sheet'
+import { usePhonePosture } from '@/components/chat/usePhonePosture'
 
 interface Minted {
   slug: string
@@ -37,7 +39,11 @@ export default function MintLinkModal({
 }) {
   const [minted, setMinted] = useState<Minted | null>(null)
   const [copied, setCopied] = useState(false)
-  const { setMainView, setRailTab } = useYeetfulStore()
+  const { openLinksStudio } = useYeetfulStore()
+  // A phone gets the ONE Sheet (squad mobile-native, README D3): the same
+  // content, closed by a tap outside, a swipe, Escape or back. At lg+ the
+  // modal below is unchanged.
+  const phone = usePhonePosture()
 
   const close = () => {
     setMinted(null)
@@ -57,6 +63,82 @@ export default function MintLinkModal({
     return document.body
   }, [])
   if (!body) return null
+
+  const content = (
+    <>
+      {minted ? (
+        // The share moment — the link exists; make sharing it one tap.
+        <div className="space-y-3">
+          <p className="text-[13px] text-[color:var(--muted)]">
+            Minted. Anyone who opens it connects a wallet and the path builds itself:
+          </p>
+          <div className="rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-3.5 py-3">
+            <button
+              type="button"
+              onClick={() => copyUrl(minted)}
+              title="Copy the link"
+              className="inline-flex items-center gap-1.5 mono text-[13px] text-[color:var(--accent)] hover:underline"
+            >
+              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              {minted.url}
+            </button>
+            <p className="mt-1 text-[12px] text-[color:var(--muted)] truncate">&ldquo;{minted.ask}&rdquo;</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <a
+              href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${minted.ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(absoluteUrl(minted.url))}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"
+            >
+              tweet it
+            </a>
+            <button
+              type="button"
+              onClick={() => {
+                // The links studio in either posture (NAV's store action):
+                // the LINKS screen on a phone, the drawer's tab + the board
+                // at lg+ (the board is AND-ed with the rail tab — mainView
+                // alone left this button doing nothing).
+                openLinksStudio()
+                close()
+              }}
+              className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"
+            >
+              watch the funnel
+            </button>
+            <button
+              type="button"
+              onClick={() => setMinted(null)}
+              className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"
+            >
+              mint another
+            </button>
+          </div>
+        </div>
+      ) : (
+        <MintLinkForm
+          initialAsk={initialAsk}
+          initialMcps={initialMcps}
+          onMinted={(link) => {
+            setMinted(link)
+            onMinted?.()
+          }}
+        />
+      )}
+    </>
+  )
+
+  if (phone) {
+    return (
+      <Sheet open={open} onClose={close} title="Mint an intent link" id="mint" ariaLabel="Mint an intent link">
+        <div className="px-4 pb-4 pt-1">
+          <p className="mono text-[11px] text-[color:var(--muted-2)] mb-3">one sentence · anyone who opens it can act on it</p>
+          {content}
+        </div>
+      </Sheet>
+    )
+  }
 
   return createPortal(
     <AnimatePresence>
@@ -97,67 +179,7 @@ export default function MintLinkModal({
             </div>
 
             <div className="max-h-[68vh] overflow-y-auto px-5 py-4">
-              {minted ? (
-                // The share moment — the link exists; make sharing it one tap.
-                <div className="space-y-3">
-                  <p className="text-[13px] text-[color:var(--muted)]">
-                    Minted. Anyone who opens it connects a wallet and the path builds itself:
-                  </p>
-                  <div className="rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-3.5 py-3">
-                    <button
-                      type="button"
-                      onClick={() => copyUrl(minted)}
-                      title="Copy the link"
-                      className="inline-flex items-center gap-1.5 mono text-[13px] text-[color:var(--accent)] hover:underline"
-                    >
-                      {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                      {minted.url}
-                    </button>
-                    <p className="mt-1 text-[12px] text-[color:var(--muted)] truncate">&ldquo;{minted.ask}&rdquo;</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                    <a
-                      href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${minted.ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(absoluteUrl(minted.url))}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"
-                    >
-                      tweet it
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        // The board is AND-ed with the rail tab (linksMode),
-                        // so both have to move — opened from a chat bubble
-                        // the rail sits on MCPs, and mainView alone left this
-                        // button doing nothing.
-                        setRailTab('links')
-                        setMainView('links')
-                        close()
-                      }}
-                      className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"
-                    >
-                      watch the funnel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMinted(null)}
-                      className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"
-                    >
-                      mint another
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <MintLinkForm
-                  initialAsk={initialAsk}
-                  initialMcps={initialMcps}
-                  onMinted={(link) => {
-                    setMinted(link)
-                    onMinted?.()
-                  }}
-                />
-              )}
+              {content}
             </div>
           </motion.div>
         </motion.div>

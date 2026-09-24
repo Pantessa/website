@@ -1,0 +1,154 @@
+/* ── The conversation on a phone (squad mobile-native, 2026-09-24) ─────────
+   CHAT lane. Everything here is below lg (the phone posture, lib/phone-shell
+   PHONE_MQ) and scoped to the chat's own hooks, so /chat on a desktop, the
+   embed and /i keep their look. Tokens only: both themes come free.
+
+   1. The top bar (ChatPhoneBar): one 52px row, every target ≥44px.
+   2. The account door compacts to a 44px avatar inside the bar (SiteAccount
+      stays the one door; PAGES owns its internals — this only re-lays it out
+      in this row).
+   3. The conversation reads like Messages below sm: the reply is plain text
+      on the screen's own 16px gutter (the #872 /i rule, now on /chat too),
+      the user's ask is one accent bubble, no avatar of your own. */
+
+.chat-phonebar { display: none; }
+
+@media (max-width: 1023px) {
+  .chat-phonebar {
+    position: relative;
+    z-index: 30; /* its popovers (chain list, share, account menu) sit over the thread */
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-height: 52px;
+    padding: env(safe-area-inset-top) max(6px, env(safe-area-inset-right)) 0 max(4px, env(safe-area-inset-left));
+    border-bottom: 1px solid var(--line);
+    background: var(--bg);
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .chat-phonebar button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+
+  .chat-phonebar__back {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 8px 0 6px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--accent);
+  }
+  .chat-phonebar__back:active { background: var(--surf-1); }
+
+  .chat-phonebar__head {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 2px 4px;
+    border-radius: 10px;
+    text-align: center;
+  }
+  .chat-phonebar__head:active { background: var(--surf-1); }
+  .chat-phonebar__title {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--fg);
+  }
+  .chat-phonebar__apps {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 1px;
+    font-size: 12px;
+    line-height: 1.2;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  /* The chain picker + Share + the account: 44px targets in this row. */
+  .chat-phonebar__chain,
+  .chat-phonebar__share,
+  .chat-phonebar__acct { flex-shrink: 0; display: flex; align-items: center; }
+  .chat-phonebar__chain button[aria-haspopup],
+  .chat-phonebar__share > div > button {
+    min-height: 44px;
+    min-width: 44px;
+    justify-content: center;
+    border-color: transparent;
+    background: transparent;
+  }
+  .chat-phonebar__acct { margin-left: 2px; }
+  /* NavAccount's not-ready placeholder is a fixed 120px box (inline style). */
+  .chat-phonebar__acct > div[aria-hidden] { width: 44px !important; }
+  .chat-phonebar__acct .navacct__pill {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    gap: 0;
+    justify-content: center;
+  }
+  .chat-phonebar__acct .navacct__addr,
+  .chat-phonebar__acct .navacct__chev { display: none; }
+  /* A person glyph (lucide "user") drawn in the pill's own ink. ::after, not
+     ::before — PAGES' invisible 44px hit area owns the pill's ::before below
+     lg (x402-design.css .navacct__pill::before); this pill already IS 44px. */
+  .chat-phonebar__acct .navacct__pill::after {
+    content: '';
+    width: 18px;
+    height: 18px;
+    background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  /* The pill is its own 44px target here: PAGES' hit-area overhang would
+     reach into the Share button beside it. */
+  .chat-phonebar__acct .navacct__pill::before { inset: 0; }
+  /* The session dot rides the avatar's corner as a status badge. */
+  .chat-phonebar__acct .navacct__dot {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    width: 8px;
+    height: 8px;
+    box-shadow: 0 0 0 2px var(--bg);
+  }
+  .chat-phonebar__acct .navacct__dot.is-authed { box-shadow: 0 0 0 2px var(--bg); }
+  .chat-phonebar__acct .navacct__menu { right: 0; }
+}
+
+/* ── The conversation below sm: Messages, not cards ────────────────────── */
+@media (max-width: 639px) {
+  .yf-chat [data-bubble='assistant'] {
+    background: transparent;
+    border-color: transparent;
+    padding-left: 0;
+    padding-right: 0;
+    max-width: 100%;
+  }
+  .yf-chat [data-bubble='user'] {
+    font-size: 15px;
+    padding: 10px 14px;
+    border-radius: 18px 18px 4px 18px;
+  }
+  .yf-chat [data-avatar='user'] { display: none; }
+  .yf-chat .chat-md {
+    font-size: 15.5px;
+    line-height: 1.55;
+  }
+}
