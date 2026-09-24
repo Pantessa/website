@@ -33042,6 +33042,112 @@ async function main() {
     )
   }
 
+  // ── native qa: the mobile-native squad's instrument (QA lane, 2026-09-24) ──
+  // Appended as ONE block with its own closing brace (the squad's shared-tail
+  // rule); everything it needs is imported INSIDE it. It pins `npm run
+  // drive:native` itself: a gate that can run its drive inside the harness,
+  // fire a live money turn, sign with the funded burner, or exit 0 on a red
+  // is worse than no gate.
+  {
+    const { readFileSync: readNq } = await import('node:fs')
+    const nqSrc = readNq('scripts/drive-native.ts', 'utf8')
+    // Positive fences read the RAW source (a comment stripper can eat code: a
+    // glob like '**' + '/*' opens a "comment"); only the negatives read code
+    // with comments removed, so a comment may NAME what the code must not do.
+    const nqCode = nqSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+    check(
+      'native qa: drive:native resolves playwright through createRequire (never a static import — it is not a dependency) and only drives when run directly; the harness imports it',
+      /createRequire\(ANCHOR\)\('playwright-core'\)/.test(nqSrc) &&
+        /if \(process\.argv\[1\] && \/drive-native/.test(nqSrc) &&
+        !/^import[^\n]*from ['"]playwright-core['"]/m.test(nqSrc) &&
+        // no column-0 call: the only main() is the guarded one
+        !/^(?:void )?main\(\)/m.test(nqCode),
+    )
+    check(
+      'native qa: drive:native exits 1 on any FAIL (a drive that prints ❌ and exits 0 proved nothing) and 2 when nothing is serving',
+      /process\.exit\(fail \? 1 : 0\)/.test(nqSrc) && /process\.exit\(2\)/.test(nqSrc),
+    )
+    check(
+      'native qa: drive:native never fires a live chat turn (every POST /api/chat is fulfilled from a fixture — /i auto-runs its ask on connect) and stamps every same-origin request x-yf-internal-run + x-yf-no-ask-log',
+      /req\.method\(\) === 'POST' && \/\^\\\/api\\\/chat\\\/\?\$\/\.test\(url\.pathname\)/.test(nqSrc) &&
+        /route\.fulfill\(\{ status: 200, contentType: 'application\/json', body: JSON\.stringify\(CHAT_FIXTURE\)/.test(nqSrc) &&
+        /'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1'/.test(nqSrc),
+    )
+    check(
+      'native qa: the mock wallet refuses every signature and transaction, and the dashboard SIWE is a THROWAWAY key (generatePrivateKey) — drive:native never reads PRIVATE_KEY',
+      /generatePrivateKey\(\)/.test(nqSrc) &&
+        !/PRIVATE_KEY/.test(nqSrc) &&
+        /case 'personal_sign': case 'eth_sign': case 'eth_signTypedData_v4': case 'eth_sendTransaction': case 'wallet_sendCalls':\s*window\.__nqRefused/.test(nqSrc),
+    )
+    check(
+      'native qa: a missing WebKit build is a SKIP row that names the owner step, never a hang and never a silent pass',
+      /state: 'SKIP'/.test(nqSrc) && /npx playwright install webkit/.test(nqSrc) && /existsSync\(exe\)/.test(nqSrc),
+    )
+    check(
+      'native qa: the coordinator\'s R1 rulings hold in the drive — a landscape bar seat ≥32px tall is a DECISION row (never a FAIL; iOS\'s own landscape tab bar is 32pt), the chat list is judged as the history SCREEN (no chats sheet row), and CHAT\'s standalone drive is folded in line by line',
+      /const seatCall = small\.filter\(\(c\) => landscape && c\.seat && c\.h >= 32\)/.test(nqSrc) &&
+        /state: rest\.length \? 'FAIL' : seatCall\.length \? 'DECISION' : 'PASS'/.test(nqSrc) &&
+        !/id: 'chat list'/.test(nqCode) &&
+        /spawn\('npx', \['tsx', file, '--phase=after'/.test(nqSrc),
+    )
+    const nq = (await import('./drive-native')) as typeof import('./drive-native')
+    check(
+      'native qa: drive:native measures the eleven checks of QA.md, in order',
+      JSON.stringify(nq.CHECKS) === JSON.stringify(['frame', 'bar', 'tabs', 'sheets', 'targets', 'inputs', 'overflow', 'keyboard', 'themecolor', 'manifest', 'desktop']),
+      nq.CHECKS.join(','),
+    )
+    // D2 (README): a tab is a PLACE. The drive's expectations are the
+    // contract NAV builds against — pinned so neither side drifts silently.
+    const chatT = nq.D2_FROM_CHAT
+    check(
+      'native qa: D2 as the drive reads it — APPS/JOBS/LINKS/TEAM name themselves in ?tab= (mcps/jobs/links/team) with their screen, CHATS in a conversation opens the list (history), MORE is a Sheet, MARKETS/WALLET are routes',
+      chatT.APPS.tab === 'mcps' && chatT.APPS.screen === 'apps' &&
+        chatT.JOBS.tab === 'jobs' && chatT.LINKS.tab === 'links' && chatT.TEAM.screen === 'team' &&
+        chatT.CHATS.screen === 'history' && chatT.CHATS.lit === 'CHATS' &&
+        chatT.More.sheet === true && chatT.MARKETS.path === '/markets' && chatT.WALLET.path === '/wallet' &&
+        nq.D2_SEQUENCES.some((q) => q.taps.join(',') === 'APPS,CHATS' && q.expect.screen === 'chat' && q.expect.tab === '') &&
+        nq.TOP_BAR_DOORS.some((d) => d.door === 'history' && d.expect.screen === 'history') &&
+        nq.TOP_BAR_DOORS.some((d) => d.door === 'apps' && d.expect.tab === 'mcps'),
+    )
+    // The drive judges tabs against lib/phone-nav phoneTap (NAV's contract);
+    // its static tables are the fallback for a tree without it. Pin that they
+    // AGREE, seat by seat and sequence by sequence, so neither drifts alone.
+    {
+      const pn = await import('../lib/phone-nav')
+      const agree = (a: { path: string; tab: string | null; screen: unknown; lit: string; sheet?: boolean }, b: typeof a) =>
+        a.path === b.path && (a.tab ?? null) === (b.tab ?? null) && JSON.stringify(a.screen) === JSON.stringify(b.screen) && a.lit === b.lit && !!a.sheet === !!b.sheet
+      const off: string[] = []
+      for (const [origin, table] of [['/chat', nq.D2_FROM_CHAT], ['/markets', nq.D2_FROM_MARKETS]] as const) {
+        const from = { surface: origin === '/chat' ? 'chat' : 'markets', screen: 'chat', pathname: origin } as const
+        for (const [seat, want] of Object.entries(table)) {
+          const got = nq.expectFromPhoneTap(pn as never, from, seat).expect
+          if (!agree(want, got)) off.push(`${origin} ${seat}: table ${JSON.stringify(want)} vs phoneTap ${JSON.stringify(got)}`)
+        }
+      }
+      for (const q of nq.D2_SEQUENCES) {
+        let st: { surface: 'chat' | 'markets' | 'wallet' | 'dashboard'; screen: string; pathname: string } = { surface: 'chat', screen: 'chat', pathname: '/chat' }
+        let got = q.expect
+        for (const seat of q.taps) {
+          const r = nq.expectFromPhoneTap(pn as never, st, seat)
+          got = r.expect
+          st = r.next
+        }
+        if (!agree(q.expect, got)) off.push(`${q.name}: table ${JSON.stringify(q.expect)} vs phoneTap ${JSON.stringify(got)}`)
+      }
+      check('native qa: the drive\'s fallback D2 tables agree with lib/phone-nav phoneTap for every seat from /chat and /markets and every sequence (the tabs rows are judged by phoneTap)', off.length === 0, off.slice(0, 2).join(' | '))
+    }
+    const app = nq.SURFACES.filter((x) => x.kind === 'app').map((x) => x.path)
+    check(
+      'native qa: every framed surface of README invariant 1 is driven (/chat, its four tabs, /markets, /t/AAPL, /t/ETH, /wallet, /dashboard, /i/<slug>) plus the brochure pages',
+      ['/chat', '/chat?tab=mcps', '/chat?tab=jobs', '/chat?tab=links', '/chat?tab=chats', '/markets', '/t/AAPL', '/t/ETH', '/wallet', '/dashboard'].every((p) => app.includes(p)) &&
+        app.some((p) => p.startsWith('/i/')) &&
+        ['/', '/pricing', '/docs'].every((p) => nq.SURFACES.some((x) => x.path === p && x.kind === 'brochure')),
+      app.join(' '),
+    )
+    const pkg = JSON.parse(readNq('package.json', 'utf8')) as { scripts: Record<string, string> }
+    check('native qa: `npm run drive:native` is wired', pkg.scripts['drive:native'] === 'tsx scripts/drive-native.ts', pkg.scripts['drive:native'] ?? 'missing')
+  }
+
   // ── native markets (squad mobile-native, 2026-09-24; MARKETS lane) ─────────
   // Nate's screenshot 1: iPhone Safari on /markets, the "Ask" pill floating
   // over the DOT row's 24h cell. Measured on main (MARKETS.md F1–F10, drive
@@ -33167,7 +33273,7 @@ async function main() {
     check(
       'native markets: no field on a markets surface zooms the page on focus — every input/textarea/select in the frame and the rail\'s sheets is ≥16px on touch or below lg',
       /@media \(hover: none\), \(max-width: 1023px\) \{\s*\.mkt-frame :is\(input, textarea, select\),\s*\[data-sheet\^="wl-"\] :is\(input, textarea, select\) \{ font-size: max\(16px, 1em\); \}/.test(nmMk) &&
-        /\.askdoor-sheet \.askdoor__input \{ font-size: max\(16px, 1em\); \}/.test(nmDesign),
+        /\.askdoor-sheet \.askdoor__input \{ font-size: max\(16px, 1em\);/.test(nmDesign),
     )
     check(
       'native markets: on a phone the /t plot keeps 260px however its controls wrap, those controls take two rows (timeframes + live/full screen, then overlays beside the tools), and the act strip is one sideways row',
@@ -33188,6 +33294,45 @@ async function main() {
       /const natural = main\.getBoundingClientRect\(\)\.top\s*\n\s*if \(natural < stuckAt - 1\) scrollAppTo\(appScrollTop\(\) \+ natural - stuckAt\)/.test(nmSym) &&
         !/el\.scrollIntoView\(\{ block: 'start' \}\)/.test(nmCode(nmSym)) &&
         /\.mkt-frame__rail, \.mkt-frame__foot \{ overflow-anchor: none; \}/.test(nmMk),
+    )
+    // Round 2 (coordinator R2-1 + R2-3).
+    check(
+      'native markets (round 2): on a phone the /t header leads with the price and the chart — one title line (the venue chip ellipsizes), one meta line (the session ellipsizes), no "24H RANGE" caption, a tighter rhythm; the act chips snap to a chip\'s edge; the header pills keep a 44px hit area',
+      /\.mkt-frame--sym \.sym__head \{ padding: 10px 0 8px; row-gap: 8px; \}/.test(nmMk) &&
+        /\.sym__head--mk2 \.sym__titlerow \{ flex-wrap: nowrap; \}/.test(nmMk) &&
+        /\.sym__head--mk2 \.sym__session \{ display: block; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; \}/.test(nmMk) &&
+        /\.sym__head--mk2 \.mk-range__k \{ display: none; \}/.test(nmMk) &&
+        /\.sym__act-chips \{ scroll-snap-type: x proximity; \}/.test(nmMk) && /\.sym__act-chip \{ flex-shrink: 0; scroll-snap-align: start; \}/.test(nmMk) &&
+        /\.mk-vs__open::after, \.mk-vs__x::after, button\.mk-held::after \{ content: ''; position: absolute; inset: -9px -4px; \}/.test(nmMk),
+    )
+    {
+      // The pill as a native FAB on a document-scrolling page (round 2): PAGES'
+      // CTA-bar rule (lib/cta-bar) for direction + jitter + anchor, no hero band,
+      // at rest at the top and the page end.
+      const { askPillStep: step, askPillInitial: initial } = await import('../lib/ask-door')
+      const top = initial(0, 5000)
+      const down = step(top, 400, 5000)
+      const up = step(down, 300, 5000)
+      const jitter = step(up, 305, 5000)
+      const down2 = step(jitter, 2600, 5000)
+      const end = step(down2, 4999, 5000)
+      const mid = initial(1800, 5000)
+      const doorCss = nmFlat(nmDesignCode)
+      check(
+        'native markets (round 2): the brochure pill is a native FAB — shown at rest at the top, away while the reader scrolls DOWN, back on a scroll UP, a jitter under 6px changes nothing, shown at the page end; a restored mid-page arrival starts away; the CSS hides an away pill on a phone only (the reserve never flickers)',
+        top.shown && !down.shown && up.shown && jitter === up && !down2.shown && end.shown && !mid.shown &&
+          /@media \(max-width: 1023px\) \{ body:has\(\[data-ask-door="rail"\]\) \.askdoor-pill \{ display: none; \} \.askdoor-pill\[data-away\] \{ display: none; \} \}/.test(doorCss) &&
+          /import \{ ctaBarStep, type CtaBarState \} from '@\/lib\/cta-bar'/.test(await readFile('lib/ask-door.ts', 'utf8')),
+        JSON.stringify({ top, down, up, jitter, down2, end, mid }),
+      )
+      check(
+        'native markets (round 2): the ask field inside the phone Sheet is a 44px target (it measured 243×37)',
+        /\.askdoor-sheet \.askdoor__input \{ font-size: max\(16px, 1em\); min-height: 44px; padding: 10px 0; \}/.test(nmDesign),
+      )
+    }
+    check(
+      'native markets (round 2): a landscape phone gets the phone tool strip (only the board tabs stick) — the whole strip stuck left 166px of rows at 844×390',
+      /@media \(max-width: 640px\), \(max-width: 1023px\) and \(max-height: 500px\) \{\s*\.mkt-frame__bar \{ display: contents; \}/.test(nmMk),
     )
     check(
       'native markets: below lg the /t section tabs stick under the top strip (scroll-margin lands a switch there)',

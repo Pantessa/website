@@ -6283,12 +6283,17 @@
      data-sheet="ask"); these rules dress its content only. */
 @media (max-width: 1023px) {
   body:has([data-ask-door="rail"]) .askdoor-pill { display: none; }
+  /* On a document-scrolling page the pill is a native FAB (round 2; QA
+     measured it over text at 10 of 14 scroll positions on /): away while
+     the reader scrolls down, back on a scroll up, at rest at the top and the
+     page end (AskDoorPill → lib/ask-door askPillStep). */
+  .askdoor-pill[data-away] { display: none; }
 }
 .askdoor__sheettitle { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .askdoor__sheetask { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-chat-display); }
 .askdoor__sheetbody { display: flex; flex-direction: column; min-height: 0; }
 .askdoor-sheet .askdoor__composer { padding: 4px 12px 8px 16px; }
-.askdoor-sheet .askdoor__input { font-size: max(16px, 1em); }
+.askdoor-sheet .askdoor__input { font-size: max(16px, 1em); min-height: 44px; padding: 10px 0; } /* a 44px field (it measured 243×37) */
 .askdoor-sheet .askdoor__send { width: 44px; height: 44px; }
 /* The mic is 44px only under md (VoiceButton's own w-11/md:w-9): a landscape
    phone is wider than md and got 36px. In the phone Sheet it's always 44. */
