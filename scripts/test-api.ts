@@ -33086,10 +33086,12 @@ async function main() {
       /state: 'SKIP'/.test(nqSrc) && /npx playwright install webkit/.test(nqSrc) && /existsSync\(exe\)/.test(nqSrc),
     )
     check(
-      'native qa: the coordinator\'s R1 rulings hold in the drive — a landscape bar seat ≥32px tall is a DECISION row (never a FAIL; iOS\'s own landscape tab bar is 32pt), the chat list is judged as the history SCREEN (no chats sheet row), and CHAT\'s standalone drive is folded in line by line',
+      'native qa: the coordinator\'s rulings hold in the drive — a landscape bar seat ≥32px tall is a DECISION row (iOS\'s own landscape tab bar is 32pt), an inline link inside running text is a DECISION row (WCAG 2.5.8\'s inline exception; standalone links and buttons still need 44), the chat list is judged as the history SCREEN (no chats sheet row), and CHAT\'s standalone drive is folded in line by line',
       /const seatCall = small\.filter\(\(c\) => landscape && c\.seat && c\.h >= 32\)/.test(nqSrc) &&
-        /state: rest\.length \? 'FAIL' : seatCall\.length \? 'DECISION' : 'PASS'/.test(nqSrc) &&
+        /state: rest\.length \? 'FAIL' : calls\.length \? 'DECISION' : 'PASS'/.test(nqSrc) &&
         !/id: 'chat list'/.test(nqCode) &&
+        /const inlineCall = small\.filter\(\(c\) => c\.inline && !seatCall\.includes\(c\)\)/.test(nqSrc) &&
+        /return words\.trim\(\)\.split\(\/\\s\+\/\)\.filter\(Boolean\)\.length >= 2/.test(nqSrc) &&
         /spawn\('npx', \['tsx', file, '--phase=after'/.test(nqSrc),
     )
     check(

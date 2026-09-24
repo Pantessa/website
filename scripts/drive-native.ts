@@ -407,6 +407,18 @@ const PAGE_LIB = String.raw`(() => {
       if (!root) return []
       return [...root.querySelectorAll(FIELDS)].filter(vis).map((el) => ({ what: label(el), tag: el.tagName.toLowerCase(), fs: parseFloat(getComputedStyle(el).fontSize) }))
     },
+    /** A link INSIDE running text (WCAG 2.5.8's inline exception; coordinator
+     *  R2 ruling): an inline <a> whose parent carries words of its own. */
+    inlineLink(el) {
+      if (el.tagName !== 'A') return false
+      const d = getComputedStyle(el).display
+      if (d !== 'inline' && d !== 'contents') return false
+      const p = el.parentElement
+      if (!p) return false
+      let words = ''
+      for (const n of p.childNodes) if (n !== el && n.nodeType === 3) words += n.nodeValue
+      return words.trim().split(/\s+/).filter(Boolean).length >= 2
+    },
     /** A control's hit area: its box, or 21px each side of its center landing on it. */
     hit(el) {
       const r = el.getBoundingClientRect()
@@ -433,7 +445,7 @@ const PAGE_LIB = String.raw`(() => {
         if (seen.has(el)) continue
         seen.add(el)
         const h = window.__nq.hit(el)
-        const entry = { what: label(el), w: h.w, h: h.h, ok: h.ok, seat: !!el.closest(BAR) }
+        const entry = { what: label(el), w: h.w, h: h.h, ok: h.ok, seat: !!el.closest(BAR), inline: window.__nq.inlineLink(el) }
         let isChrome
         if (scope) isChrome = true
         else if (S !== document.scrollingElement) isChrome = !S.contains(el)
@@ -902,7 +914,7 @@ async function layoutAt(run: Run, o: Opened, s: Surface, size: Size, theme: Them
   }
   // 5 · targets (chrome = verdict; content = info)
   if (wantCheck('targets')) {
-    const t = await evalNq<{ chrome: { what: string; w: number; h: number; ok: boolean; seat: boolean }[]; content: { what: string; w: number; h: number; ok: boolean }[] }>(o.page, 'window.__nq.targets()')
+    const t = await evalNq<{ chrome: { what: string; w: number; h: number; ok: boolean; seat: boolean; inline: boolean }[]; content: { what: string; w: number; h: number; ok: boolean }[] }>(o.page, 'window.__nq.targets()')
     if (t && !(t as unknown as { __error?: string }).__error) {
       const small = t.chrome.filter((c) => !c.ok)
       const contentSmall = t.content.filter((c) => !c.ok)
@@ -911,14 +923,18 @@ async function layoutAt(run: Run, o: Opened, s: Surface, size: Size, theme: Them
       // not a FAIL. Any other small chrome control still fails the row.
       const landscape = size.width > size.height
       const seatCall = small.filter((c) => landscape && c.seat && c.h >= 32)
-      const rest = small.filter((c) => !seatCall.includes(c))
+      // RULING (coordinator, R2): a link inside running text is exempt (WCAG
+      // 2.5.8's inline exception); standalone links and buttons still need 44.
+      const inlineCall = small.filter((c) => c.inline && !seatCall.includes(c))
+      const rest = small.filter((c) => !seatCall.includes(c) && !inlineCall.includes(c))
+      const calls = [...seatCall, ...inlineCall]
       record({
         ...b,
         check: 'targets',
         item: 'chrome',
-        state: rest.length ? 'FAIL' : seatCall.length ? 'DECISION' : 'PASS',
-        value: `${small.length}/${t.chrome.length} chrome controls under 44px${seatCall.length ? ` (${seatCall.length} landscape bar seats ${seatCall[0].w}×${seatCall[0].h}: a decision)` : ''} · content ${contentSmall.length}/${t.content.length} (info)`,
-        detail: (rest.length ? rest : seatCall).slice(0, 4).map((c) => `"${c.what}" ${c.w}×${c.h}`).join(', '),
+        state: rest.length ? 'FAIL' : calls.length ? 'DECISION' : 'PASS',
+        value: `${small.length}/${t.chrome.length} chrome controls under 44px${seatCall.length ? ` (${seatCall.length} landscape bar seats ${seatCall[0].w}×${seatCall[0].h}: a decision)` : ''}${inlineCall.length ? ` (${inlineCall.length} inline link(s) in running text: a decision)` : ''} · content ${contentSmall.length}/${t.content.length} (info)`,
+        detail: (rest.length ? rest : calls).slice(0, 4).map((c) => `"${c.what}" ${c.w}×${c.h}`).join(', '),
       })
     }
   }
@@ -1363,10 +1379,20 @@ async function sheetJob(run: Run, t: Trigger, session: { address: string; cookie
     await shot(o, `${run.profile}-sheet-${t.id}`)
     // Controls + fields inside the open panel (checks 5 and 6).
     if (wantCheck('targets')) {
-      const tg = (await o.page.evaluate(`window.__nq.targets('[data-nq-panel]')`).catch(() => null)) as { chrome: { what: string; w: number; h: number; ok: boolean }[] } | null
+      const tg = (await o.page.evaluate(`window.__nq.targets('[data-nq-panel]')`).catch(() => null)) as { chrome: { what: string; w: number; h: number; ok: boolean; inline: boolean }[] } | null
       if (tg) {
         const small = tg.chrome.filter((c) => !c.ok)
-        record({ ...b, check: 'targets', item: `sheet: ${t.id}`, state: small.length ? 'FAIL' : 'PASS', value: `${small.length}/${tg.chrome.length} controls under 44px`, detail: small.slice(0, 4).map((c) => `"${c.what}" ${c.w}×${c.h}`).join(', ') })
+        // RULING (coordinator, R2): an inline link in running text is exempt.
+        const inlineCall = small.filter((c) => c.inline)
+        const rest = small.filter((c) => !c.inline)
+        record({
+          ...b,
+          check: 'targets',
+          item: `sheet: ${t.id}`,
+          state: rest.length ? 'FAIL' : inlineCall.length ? 'DECISION' : 'PASS',
+          value: `${small.length}/${tg.chrome.length} controls under 44px${inlineCall.length ? ` (${inlineCall.length} inline link(s) in running text: a decision)` : ''}`,
+          detail: (rest.length ? rest : inlineCall).slice(0, 4).map((c) => `"${c.what}" ${c.w}×${c.h}`).join(', '),
+        })
       }
     }
     if (wantCheck('inputs')) {
