@@ -22,6 +22,8 @@ import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
 import { useTradable } from '@/lib/use-tradable'
+import Sheet from '@/components/mobile/Sheet'
+import { usePhonePosture } from '@/components/chat/usePhonePosture'
 
 export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => void } = {}) {
   const { chartDetail, setChartDetail, setComposerPrefill } = useYeetfulStore()
@@ -57,6 +59,10 @@ export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => vo
 
   const held = useHeld()
   const tradable = useTradable()
+  // A phone gets the ONE Sheet (squad mobile-native, README D3): the chart,
+  // its price and its act chips, closed by a tap outside, a swipe on the
+  // grabber, Escape or back. At lg+ the overlay below is unchanged.
+  const phone = usePhonePosture()
 
   if (typeof document === 'undefined') return null
 
@@ -69,6 +75,78 @@ export default function ChartOverlay({ onAsk }: { onAsk?: (prompt: string) => vo
   const chg = stats?.changePct24h ?? null
   const chgClass = chg === null ? 'tok__chg--flat' : chg > 0 ? 'tok__chg--up' : chg < 0 ? 'tok__chg--down' : 'tok__chg--flat'
   const chgLabel = chg === null ? '24h —' : `${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg).toFixed(2)}% 24h`
+
+  const canBuy = !!pair && canTradeAsk(`Buy $50 of ${pair.symbol}`, tradable)
+  const canSell = !!pair && canSellAsk(`Sell $50 of ${pair.symbol}`, held) && canTradeAsk(`Sell $50 of ${pair.symbol}`, tradable)
+
+  if (phone) {
+    return (
+      <Sheet
+        open={!!chartDetail && !!pair}
+        onClose={close}
+        id="chart"
+        ariaLabel={pair ? `${pair.label} live chart` : 'Live chart'}
+        title={
+          pair ? (
+            <span className="inline-flex items-center gap-2 min-w-0">
+              <TokenIcon symbol={pair.symbol} size={22} {...markWhere} />
+              <span className="truncate">{pair.label}</span>
+              <span className="mono text-[10px] font-normal uppercase tracking-wider text-[color:var(--muted-2)]">{feedLabel}</span>
+            </span>
+          ) : null
+        }
+        footer={
+          pair && (canBuy || canSell) ? (
+            <div className="grid grid-cols-2 gap-2">
+              {canBuy && (
+                <button
+                  type="button"
+                  onClick={() => act(`Buy $50 of ${pair.symbol}`)}
+                  className={`min-h-12 rounded-xl bg-[var(--accent)] text-[15px] font-semibold text-black ${canSell ? '' : 'col-span-2'}`}
+                >
+                  Buy {pair.symbol}
+                </button>
+              )}
+              {canSell && (
+                <button
+                  type="button"
+                  onClick={() => act(`Sell $50 of ${pair.symbol}`)}
+                  className={`min-h-12 rounded-xl border border-[var(--line-2)] text-[15px] font-medium text-[color:var(--fg)] ${canBuy ? '' : 'col-span-2'}`}
+                >
+                  Sell {pair.symbol}
+                </button>
+              )}
+            </div>
+          ) : undefined
+        }
+      >
+        {pair && (
+          <div className="px-4 pb-3" data-chart-sheet-body>
+            <div className="flex items-center justify-between gap-3 pb-2">
+              {stats?.last != null ? (
+                <span>
+                  <span className="mono text-[17px] font-semibold tabular-nums">${fmtPrice(stats.last)}</span>
+                  <span className={`tok__chg ml-2 !text-[12px] ${chgClass}`}>{chgLabel}</span>
+                </span>
+              ) : (
+                <span className="mono text-[12px] text-[color:var(--muted-2)]">Loading the price…</span>
+              )}
+              <a
+                href={`/t/${pair.symbol}`}
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-[13px] text-[color:var(--muted)]"
+              >
+                Full chart <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            </div>
+            {/* The engine, sized for a phone: drawings on a level still SEND
+                their ask through act() (chip-send contract). */}
+            <MarketChart symbol={pair.symbol} height={300} onStats={setStats} onAsk={act} />
+            <p className="mono mt-2 text-[10px] uppercase tracking-widest text-[color:var(--muted-2)]">sends the ask · your wallet signs</p>
+          </div>
+        )}
+      </Sheet>
+    )
+  }
 
   // Entrance ONLY — an exit animation strands the invisible backdrop over the
   // whole page when rAF starves (busy real tabs, not just headless: the App

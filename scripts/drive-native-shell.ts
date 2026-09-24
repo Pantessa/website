@@ -38,6 +38,8 @@ const arg = (name: string) => ARGS.find((a) => a.startsWith(`--${name}=`))?.slic
 const MODE = (arg('mode') || 'after') as 'before' | 'after'
 const OUT = arg('out')
 const BASELINE = arg('baseline')
+/** --just-inputs: only the input-size read per surface (no frame probe). */
+const JUST_INPUTS = ARGS.includes('--just-inputs')
 const SHOTS = arg('shots')
 const ONLY = arg('only') ? arg('only').split(',') : []
 const ENGINES = arg('engines') ? arg('engines').split(',') : ['webkit', 'chrome']
@@ -129,15 +131,23 @@ const PROBE = `(async (args) => {
     steps: [],
     docScrollTest: null,
   }
-  // BEFORE-style: try to scroll the DOCUMENT and see if it moves.
-  window.scrollTo(0, 700); await raf()
-  out.docScrollTest = { asked: 700, scrollY: Math.round(window.scrollY), barBottom: bar ? rect(bar).bottom : null, stickyTop: sticky ? rect(sticky).top : null, atBottom: (() => { const el = document.elementFromPoint(Math.round(innerWidth / 2), innerHeight - 10); return el ? (el.closest('[data-spine-bar]') ? 'bar' : (el.tagName + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ').slice(0, 2).join('.') : ''))) : null })() }
-  window.scrollTo(0, 0); await raf()
+  // BEFORE-style: try to scroll the DOCUMENT and see if it moves. A first
+  // reading that moves gets a second try after a beat: a section landing in
+  // that very frame can read as document overflow for one layout.
+  const docTest = async () => {
+    window.scrollTo(0, 700); await raf()
+    const t = { asked: 700, scrollY: Math.round(window.scrollY), docScrollHeight: se.scrollHeight, barBottom: bar ? rect(bar).bottom : null, stickyTop: sticky ? rect(sticky).top : null, atBottom: (() => { const el = document.elementFromPoint(Math.round(innerWidth / 2), innerHeight - 10); return el ? (el.closest('[data-spine-bar]') ? 'bar' : (el.tagName + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ').slice(0, 2).join('.') : ''))) : null })() }
+    window.scrollTo(0, 0); await raf()
+    return t
+  }
+  out.docScrollTest = await docTest()
+  if (out.docScrollTest.scrollY !== 0) { await new Promise((r) => setTimeout(r, 900)); out.docScrollTest = { ...(await docTest()), retried: true }; out.docScrollHeight = se.scrollHeight }
   if (scroller && (getComputedStyle(scroller).overflowY === 'auto' || getComputedStyle(scroller).overflowY === 'scroll')) {
-    const max = scroller.scrollHeight - scroller.clientHeight
     for (const p of positions) {
-      const target = p === 'top' ? 0 : p === 'mid' ? Math.round(max / 2) : max
+      let max = scroller.scrollHeight - scroller.clientHeight
+      let target = p === 'top' ? 0 : p === 'mid' ? Math.round(max / 2) : max
       scroller.scrollTop = target; await raf()
+      if (p === 'end') { for (let i = 0; i < 4 && scroller.scrollHeight - scroller.clientHeight !== max; i++) { max = scroller.scrollHeight - scroller.clientHeight; target = max; scroller.scrollTop = target; await raf(); await new Promise((r) => setTimeout(r, 150)) } }
       const at = document.elementFromPoint(Math.round(innerWidth / 2), innerHeight - 10)
       const last = scroller.lastElementChild
       out.steps.push({
@@ -171,7 +181,11 @@ async function settle(page: Pw, surface: Surface) {
   // canvas; /wallet: the details or the door; /dashboard: the main column.
   const sel = surface.id === 't' ? '.sym__chart canvas, .sym' : surface.id === 'wallet' ? '[data-wallet-door], [data-wallet-chains], [data-shell="wallet"] main h1' : surface.id === 'dashboard' ? '.dash__main' : '.mk-board, .mkt-frame__data'
   await page.waitForSelector(sel, { timeout: 45_000 }).catch(() => {})
-  await page.waitForTimeout(surface.id === 'markets' || surface.id === 't' ? 2500 : 1800)
+  // The dashboard and the wallet keep landing sections after first paint
+  // (activity, links, the feed): a measurement taken mid-landing reads a
+  // stale scrollHeight. Wait for the network to go quiet, then a beat.
+  if (surface.id === 'dashboard' || surface.id === 'wallet') await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {})
+  await page.waitForTimeout(surface.id === 'markets' || surface.id === 't' ? 2500 : 2200)
 }
 
 async function runProfile(profile: Profile, session: string | null, burner: string) {
@@ -222,6 +236,18 @@ async function runProfile(profile: Profile, session: string | null, burner: stri
           }
         }
         const key = `${profile.id}:${surface.id}`
+        if (profile.phone && JUST_INPUTS) {
+          record[key] = {}
+          const READ = `(() => Array.from(document.querySelectorAll('[data-app-frame] input, [data-app-frame] textarea, [data-app-frame] select')).filter((el) => !['checkbox','radio','range','file','color','hidden'].includes(el.type || '')).map((el) => ({ label: (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.name || el.tagName.toLowerCase()).slice(0, 40), fontSize: getComputedStyle(el).fontSize, rect: (() => { const r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)] })() })))()`
+          const TOGGLE = `((on) => { let hit = 0; for (const ss of Array.from(document.styleSheets)) { let rules; try { rules = ss.cssRules } catch { continue } for (const r of Array.from(rules)) { const walk = (rule) => { if (rule.cssRules) Array.from(rule.cssRules).forEach(walk); if (rule.selectorText && /\\[data-app-frame\\] input/.test(rule.selectorText) && rule.style && (on || rule.style.fontSize)) { hit++; if (on) rule.style.setProperty('font-size', 'max(16px, 1em)'); else rule.style.removeProperty('font-size') } }; walk(r) } } return hit })`
+          const hit = (await page.evaluate(`(${TOGGLE})(false)`)) as number
+          const before = (await page.evaluate(READ)) as { label: string; fontSize: string; rect: number[] }[]
+          await page.evaluate(`(${TOGGLE})(true)`)
+          const after = (await page.evaluate(READ)) as { label: string; fontSize: string; rect: number[] }[]
+          const moved = after.map((i, n) => { const b = before[n]; return b && (b.rect[0] !== i.rect[0] || b.rect[1] !== i.rect[1] || b.fontSize !== i.fontSize) ? `${i.label}: ${b.fontSize} ${b.rect[0]}×${b.rect[1]} → ${i.fontSize} ${i.rect[0]}×${i.rect[1]}` : null }).filter(Boolean)
+          note(profile.id, surface.id, `inputs (rule ${hit > 0 ? 'found' : 'MISSING'}): ${after.length}; changed by the ≥16px rule: ${moved.length}`, hit > 0, moved.join(' · ') || after.map((i) => `${i.label} ${i.fontSize} ${i.rect[0]}×${i.rect[1]}`).join(' · '))
+          continue
+        }
         if (profile.phone) {
           const m = (await page.evaluate(`(${PROBE})(${JSON.stringify({ frameSel: surface.frame, scrollerSel: surface.scroller, stickySel: surface.sticky, positions: ['top', 'mid', 'end'] })})`)) as Record<string, unknown> & { steps: Record<string, unknown>[]; docScrollTest: Record<string, unknown> }
           record[key] = m
@@ -253,19 +279,25 @@ async function runProfile(profile: Profile, session: string | null, burner: stri
             if (pr && br0) note(profile.id, surface.id, 'the ask pill floats above the bar, never over it', pr.bottom <= br0.top + 1, `pill bottom ${pr.bottom}, bar top ${br0.top}`)
           }
           // Inputs: every text field inside the frame, its font size (iOS zooms
-          // under 16px) — recorded BEFORE, asserted AFTER, and the drive lists
-          // any whose box moved so the lane file can name what the rule shifted.
-          const inputs = (await page.evaluate(`(() => Array.from(document.querySelectorAll('[data-app-frame] input, [data-app-frame] textarea, [data-app-frame] select')).filter((el) => !['checkbox','radio','range','file','color','hidden'].includes(el.type || '')).map((el) => ({ tag: el.tagName.toLowerCase(), type: el.type || '', label: (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.name || '').slice(0, 40), fontSize: getComputedStyle(el).fontSize, rect: (() => { const r = el.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)] })() })))()`)) as { tag: string; type: string; label: string; fontSize: string; rect: number[] }[]
+          // under 16px). The BEFORE size is read on this same build with the
+          // frame's own ≥16px rule switched OFF (a same-origin stylesheet rule
+          // can be edited in place), then the rule goes back on and the AFTER
+          // size is read, so the drive lists exactly which boxes the rule grew.
+          const READ_INPUTS = `(() => Array.from(document.querySelectorAll('[data-app-frame] input, [data-app-frame] textarea, [data-app-frame] select')).filter((el) => !['checkbox','radio','range','file','color','hidden'].includes(el.type || '')).map((el) => ({ tag: el.tagName.toLowerCase(), type: el.type || '', label: (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.name || '').slice(0, 40), fontSize: getComputedStyle(el).fontSize, rect: (() => { const r = el.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)] })() })))()`
+          const TOGGLE_RULE = `((on) => { let hit = 0; for (const ss of Array.from(document.styleSheets)) { let rules; try { rules = ss.cssRules } catch { continue } for (const r of Array.from(rules)) { const walk = (rule) => { if (rule.cssRules) Array.from(rule.cssRules).forEach(walk); if (rule.selectorText && /\\[data-app-frame\\] input/.test(rule.selectorText) && rule.style && (on || rule.style.fontSize)) { hit++; if (on) rule.style.setProperty('font-size', 'max(16px, 1em)'); else rule.style.removeProperty('font-size') } }; walk(r) } } return hit })`
+          type InputRead = { tag: string; type: string; label: string; fontSize: string; rect: number[] }
+          const ruleOff = (await page.evaluate(`(${TOGGLE_RULE})(false)`)) as number
+          const inputsBefore = (await page.evaluate(READ_INPUTS)) as InputRead[]
+          await page.evaluate(`(${TOGGLE_RULE})(true)`)
+          const inputs = (await page.evaluate(READ_INPUTS)) as InputRead[]
           ;(record[key] as Record<string, unknown>).inputs = inputs
+          ;(record[key] as Record<string, unknown>).inputsBefore = inputsBefore
           if (MODE === 'before') note(profile.id, surface.id, `inputs: ${inputs.length} (${inputs.map((i) => `${i.label || i.tag} ${i.fontSize} ${i.rect[2]}×${i.rect[3]}`).join(' · ')})`, true)
           else {
             const small = inputs.filter((i) => parseFloat(i.fontSize) < 16)
             note(profile.id, surface.id, 'every text input inside the frame is ≥16px (no iOS focus zoom)', small.length === 0, small.map((i) => `${i.label || i.tag} ${i.fontSize}`).join(' · ') || `${inputs.length} inputs`)
-            const base = BASELINE ? (JSON.parse(readFileSync(BASELINE, 'utf8')) as Record<string, { inputs?: typeof inputs }>)[key]?.inputs : undefined
-            if (base) {
-              const moved = inputs.map((i) => { const b = base.find((x) => x.label === i.label && x.tag === i.tag); return b && (b.rect[2] !== i.rect[2] || b.rect[3] !== i.rect[3]) ? `${i.label || i.tag} ${b.rect[2]}×${b.rect[3]} → ${i.rect[2]}×${i.rect[3]} (${b.fontSize} → ${i.fontSize})` : null }).filter(Boolean)
-              note(profile.id, surface.id, `inputs whose box changed vs BEFORE (listed, not failed): ${moved.length}`, true, moved.join(' · '))
-            }
+            const moved = inputs.map((i, n) => { const b = inputsBefore[n]; return b && (b.rect[2] !== i.rect[2] || b.rect[3] !== i.rect[3] || b.fontSize !== i.fontSize) ? `${i.label || i.tag}: ${b.fontSize} ${b.rect[2]}×${b.rect[3]} → ${i.fontSize} ${i.rect[2]}×${i.rect[3]}` : null }).filter(Boolean)
+            note(profile.id, surface.id, `inputs the ≥16px rule changed (rule found ${ruleOff > 0 ? 'yes' : 'NO'}; listed, not failed): ${moved.length}`, ruleOff > 0, moved.join(' · ') || 'none moved')
           }
           if (MODE === 'after' && surface.id === 't') {
             // MARKETS' fence: the scroller and every ancestor up to the frame must
@@ -388,12 +420,19 @@ async function runProfile(profile: Profile, session: string | null, burner: stri
             const base = BASELINE ? (JSON.parse(readFileSync(BASELINE, 'utf8')) as Record<string, Record<string, unknown>>)[key] : null
             if (!base) note(profile.id, surface.id, 'desktop baseline present', false, 'no baseline entry')
             else {
-              const keys = ['spine', 'bar', 'barDisplay', 'mktShell', 'mktFrame', 'mktTop', 'mktRail', 'mktBar', 'mktMain', 'sym', 'walletShell', 'walletMain', 'dashshell', 'dash', 'dashRail', 'dashMain', 'htmlOverflowY', 'bodyOverflowY']
-              const diffs = keys.filter((k) => JSON.stringify(base[k]) !== JSON.stringify(d[k])).map((k) => `${k}: ${JSON.stringify(base[k])} → ${JSON.stringify(d[k])}`)
-              note(profile.id, surface.id, 'desktop rects identical to the BEFORE baseline (spine, frame, rails, overflow)', diffs.length === 0, diffs.join('; ') || 'identical')
-              note(profile.id, surface.id, 'desktop: the frame CSS is inert at lg+ (the scroller\'s overflow-y stays visible, the document still scrolls)', d.scrollerOverflowY === 'visible' && (d.docScrollHeight as number) > (d.innerHeight as number), `${d.scrollerOverflowY}, doc ${d.docScrollHeight} vs ${d.innerHeight}`)
-              const dh = Math.abs((base.docScrollHeight as number) - (d.docScrollHeight as number))
-              note(profile.id, surface.id, 'desktop document height within 40px of the baseline (live data moves it a little)', dh <= 40, `${base.docScrollHeight} → ${d.docScrollHeight}`)
+              // Viewport-bound boxes compare as full rects; content-driven boxes
+              // compare x / y / width only — their HEIGHT follows live data (the
+              // trending strip, the wallet's feed, the dashboard's activity) and
+              // moved by 16 … 1,300px between two runs of the same build.
+              const full = ['spine', 'bar', 'barDisplay', 'mktTop', 'mktRail', 'mktBar', 'dashRail', 'htmlOverflowY', 'bodyOverflowY']
+              const xyw = ['mktShell', 'mktFrame', 'mktMain', 'sym', 'walletShell', 'walletMain', 'dashshell', 'dash', 'dashMain']
+              const head = (v: unknown) => (Array.isArray(v) ? JSON.stringify(v.slice(0, 3)) : JSON.stringify(v))
+              const diffs = [
+                ...full.filter((k) => JSON.stringify(base[k]) !== JSON.stringify(d[k])).map((k) => `${k}: ${JSON.stringify(base[k])} → ${JSON.stringify(d[k])}`),
+                ...xyw.filter((k) => head(base[k]) !== head(d[k])).map((k) => `${k} (x,y,w): ${head(base[k])} → ${head(d[k])}`),
+              ]
+              note(profile.id, surface.id, 'desktop rects identical to the BEFORE baseline (spine, bar, rails, overflow as full rects; the frame, main and shell as x/y/width — heights follow live data)', diffs.length === 0, diffs.join('; ') || 'identical')
+              note(profile.id, surface.id, 'desktop: the frame CSS is inert at lg+ (the scroller\'s overflow-y stays visible)', d.scrollerOverflowY === 'visible', `${d.scrollerOverflowY}; doc ${base.docScrollHeight} → ${d.docScrollHeight} in a ${d.innerHeight} viewport`)
             }
           }
         }

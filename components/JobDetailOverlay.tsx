@@ -22,6 +22,8 @@ import { cadenceLabel, dcaRunChip, type DcaCadence } from '@/lib/dca'
 import JobCard from '@/components/JobCard'
 import { postJobStepSigned, type JobStepSignal } from '@/lib/job-step-telemetry'
 import { useAccount } from 'wagmi'
+import Sheet from '@/components/mobile/Sheet'
+import { usePhonePosture } from '@/components/chat/usePhonePosture'
 
 interface ContextRow {
   label: string
@@ -98,6 +100,10 @@ export default function JobDetailOverlay() {
   const [error, setError] = useState('')
 
   const close = useCallback(() => setJobDetail(null), [setJobDetail])
+  // A phone gets the ONE Sheet (squad mobile-native, README D3): the position,
+  // the schedule verbs and the job's own sign card, closed by a tap outside, a
+  // swipe, Escape or back. At lg+ the overlay below is unchanged.
+  const phone = usePhonePosture()
 
   // A schedule action lands in the composer — never auto-sends.
   const prefill = (prompt: string) => {
@@ -164,6 +170,91 @@ export default function JobDetailOverlay() {
   if (typeof document === 'undefined') return null
 
   const chip = schedule ? dcaRunChip({ id: schedule.id, buyUsd: schedule.buyUsd, buyToken: schedule.buyToken, cadence: schedule.cadence }) : null
+  const body = !jobDetail ? null : (
+    <div className="px-4 py-3 space-y-3">
+      {error && <p className="text-[12px] text-[color:var(--muted-2)]">{error}</p>}
+      <ContextBlock context={context} loading={loading} />
+
+      {/* schedule actions — the rail's prefill contract */}
+      {jobDetail.type === 'dca' && schedule && (
+        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+          {schedule.status === 'active' && schedule.period === 'due' && chip && (
+            <button
+              onClick={() => prefill(chip.prompt)}
+              className="px-2.5 py-1.5 rounded-lg border border-[var(--line-2)] text-[11px] font-medium text-[color:var(--accent)] hover:bg-white/[0.04] transition-colors"
+            >
+              {chip.label}
+            </button>
+          )}
+          {schedule.status === 'active' ? (
+            <button
+              onClick={() => prefill(`pause my ${schedule.buyToken} dca`)}
+              className="px-2.5 py-1.5 rounded-lg border border-[var(--line)] text-[11px] text-[color:var(--muted)] hover:text-white transition-colors"
+            >
+              Pause
+            </button>
+          ) : (
+            <button
+              onClick={() => prefill(`resume my ${schedule.buyToken} dca`)}
+              className="px-2.5 py-1.5 rounded-lg border border-[var(--line)] text-[11px] text-[color:var(--muted)] hover:text-white transition-colors"
+            >
+              Resume
+            </button>
+          )}
+          <button
+            onClick={() => prefill(`cancel my ${schedule.buyToken} dca`)}
+            className="px-2.5 py-1.5 rounded-lg border border-[var(--line)] text-[11px] text-[color:var(--muted)] hover:text-red-400 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* the job's own live card — steps, sign buttons, cancel/retry.
+          A signed step refreshes the position block (the numbers just
+          changed) AND reports: this overlay is a real sign surface, so
+          a step signed here has to move the money metric exactly like
+          one signed in the thread. */}
+      {jobDetail.type === 'job' && (
+        <JobCard jobId={jobDetail.id} onStepSigned={onStepSigned} />
+      )}
+      {jobDetail.type === 'dca' && schedule?.liveJobId && (
+        <JobCard jobId={schedule.liveJobId} onStepSigned={onStepSigned} />
+      )}
+    </div>
+  )
+  const title = jobDetail
+    ? jobDetail.type === 'dca'
+      ? schedule
+        ? `$${schedule.buyUsd} → ${schedule.buyToken} ${cadenceLabel(schedule.cadence)} on ${schedule.chainName}`
+        : 'Recurring buy'
+      : 'Job'
+    : ''
+
+  if (phone) {
+    return (
+      <Sheet
+        open={!!jobDetail}
+        onClose={close}
+        id="job"
+        ariaLabel={jobDetail?.type === 'dca' ? 'Recurring buy details' : 'Job details'}
+        title={
+          jobDetail ? (
+            <span className="inline-flex items-center gap-2 min-w-0">
+              {jobDetail.type === 'dca' ? (
+                <CalendarClock className="w-4 h-4 flex-shrink-0 text-[color:var(--muted)]" aria-hidden />
+              ) : (
+                <ListChecks className="w-4 h-4 flex-shrink-0 text-[color:var(--muted)]" aria-hidden />
+              )}
+              <span className="truncate">{title}</span>
+            </span>
+          ) : null
+        }
+      >
+        <div className="pb-2">{body}</div>
+      </Sheet>
+    )
+  }
 
   // Entrance ONLY — an exit animation strands the invisible backdrop over the
   // whole page when rAF starves (busy real tabs, not just headless: the App
@@ -193,13 +284,7 @@ export default function JobDetailOverlay() {
               ) : (
                 <ListChecks className="w-4 h-4 text-[color:var(--muted)]" aria-hidden />
               )}
-              <span className="flex-1 text-[13px] font-medium truncate">
-                {jobDetail.type === 'dca'
-                  ? schedule
-                    ? `$${schedule.buyUsd} → ${schedule.buyToken} ${cadenceLabel(schedule.cadence)} on ${schedule.chainName}`
-                    : 'Recurring buy'
-                  : 'Job'}
-              </span>
+              <span className="flex-1 text-[13px] font-medium truncate">{title}</span>
               <button
                 onClick={close}
                 aria-label="Close"
@@ -209,57 +294,7 @@ export default function JobDetailOverlay() {
               </button>
             </div>
 
-            <div className="px-4 py-3 space-y-3">
-              {error && <p className="text-[12px] text-[color:var(--muted-2)]">{error}</p>}
-              <ContextBlock context={context} loading={loading} />
-
-              {/* schedule actions — the rail's prefill contract */}
-              {jobDetail.type === 'dca' && schedule && (
-                <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  {schedule.status === 'active' && schedule.period === 'due' && chip && (
-                    <button
-                      onClick={() => prefill(chip.prompt)}
-                      className="px-2.5 py-1.5 rounded-lg border border-[var(--line-2)] text-[11px] font-medium text-[color:var(--accent)] hover:bg-white/[0.04] transition-colors"
-                    >
-                      {chip.label}
-                    </button>
-                  )}
-                  {schedule.status === 'active' ? (
-                    <button
-                      onClick={() => prefill(`pause my ${schedule.buyToken} dca`)}
-                      className="px-2.5 py-1.5 rounded-lg border border-[var(--line)] text-[11px] text-[color:var(--muted)] hover:text-white transition-colors"
-                    >
-                      Pause
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => prefill(`resume my ${schedule.buyToken} dca`)}
-                      className="px-2.5 py-1.5 rounded-lg border border-[var(--line)] text-[11px] text-[color:var(--muted)] hover:text-white transition-colors"
-                    >
-                      Resume
-                    </button>
-                  )}
-                  <button
-                    onClick={() => prefill(`cancel my ${schedule.buyToken} dca`)}
-                    className="px-2.5 py-1.5 rounded-lg border border-[var(--line)] text-[11px] text-[color:var(--muted)] hover:text-red-400 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
-
-              {/* the job's own live card — steps, sign buttons, cancel/retry.
-                  A signed step refreshes the position block (the numbers just
-                  changed) AND reports: this overlay is a real sign surface, so
-                  a step signed here has to move the money metric exactly like
-                  one signed in the thread. */}
-              {jobDetail.type === 'job' && (
-                <JobCard jobId={jobDetail.id} onStepSigned={onStepSigned} />
-              )}
-              {jobDetail.type === 'dca' && schedule?.liveJobId && (
-                <JobCard jobId={schedule.liveJobId} onStepSigned={onStepSigned} />
-              )}
-            </div>
+            {body}
           </div>
         </motion.div>
       )}

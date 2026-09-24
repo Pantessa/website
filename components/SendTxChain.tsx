@@ -305,7 +305,10 @@ export default function SendTxChain({
                 </div>
               )}
               {isCurrent && phase === 'sign' && (
-                <div className="ml-6">
+                // Below sm the step's sign button spans the card (the step
+                // title above still names it): a full-width 48px primary, not
+                // a pill indented under the icon column (squad mobile-native).
+                <div className="ml-6 max-sm:ml-0">
                   {note && <div className="text-[11px] text-[color:var(--muted)] mb-1">{note}</div>}
                   {/* keyed by step so the inner Sign→Broadcast→Confirmed stepper resets per step.
                       On a desktop, steps after the first auto-request the wallet signature on

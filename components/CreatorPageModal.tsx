@@ -11,13 +11,29 @@ import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Sparkles, X } from 'lucide-react'
 import { CreatorPagePanel } from '@/components/CreatorPagePanel'
+import Sheet from '@/components/mobile/Sheet'
+import { usePhonePosture } from '@/components/chat/usePhonePosture'
 
 export default function CreatorPageModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const body = useMemo(() => {
     if (typeof document === 'undefined') return null
     return document.body
   }, [])
+  // A phone gets the ONE Sheet (squad mobile-native, README D3): the same
+  // panel, closed by a tap outside, a swipe, Escape or back.
+  const phone = usePhonePosture()
   if (!body) return null
+
+  if (phone) {
+    return (
+      <Sheet open={open} onClose={onClose} id="creator" title="Your creator page" size="full">
+        <div className="px-4 pb-4 pt-1">
+          <p className="mono text-[11px] text-[color:var(--muted-2)] mb-3">/l/your-name · every link you mint on one shareable page · brand it with one paste</p>
+          <CreatorPagePanel />
+        </div>
+      </Sheet>
+    )
+  }
 
   return createPortal(
     <AnimatePresence>
