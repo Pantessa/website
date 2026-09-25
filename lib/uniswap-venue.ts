@@ -601,7 +601,15 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
       ? recipientCheck(from, from)
       : { id: 'recipient', level: 'block', ok: true, note: `Proceeds pinned to ${recipient} (recipient override — re-verified by the caller's independent guard).` }
   const checks: GuardrailCheck[] = [recipCheck, validityCheck(deadline), allowanceCheck, calldataCheck, feeCheck, ...(tapeCheck ? [tapeCheck] : [])]
-  const valueUsd = stableUsd(chainId, sellAddr, amountIn) ?? stableUsd(chainId, buyAddr, best.amountOut)
+  // A stable side at face value, else the probe (ETH for UNI is still money).
+  // lib/usd-probe imports this module, so it loads here, lazily: the static
+  // import stays one-way while both modules initialise.
+  const { swapValueUsd } = await import('@/lib/usd-probe')
+  const valueUsd = await swapValueUsd(
+    chainId,
+    { token: params.sellToken, address: sellAddr, atoms: amountIn, decimals: sellDec },
+    { token: params.buyToken, address: buyAddr, atoms: best.amountOut, decimals: buyDec },
+  )
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0
