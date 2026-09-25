@@ -690,11 +690,6 @@ async function handleChatTurn(req: NextRequest) {
     // intent link or an embed host carries a stranger's sentence. A few
     // builds harden on that origin alone (lib/content-origin).
     const contentOrigin = contentOriginOf({ intentLinkSlug: turnLinkSlug, embedKey: body.embedKey, embedOrigin })
-    // A job compiled on this turn remembers where its ask arrived, so every
-    // step it signs later — minutes later, from the Jobs rail — is credited to
-    // this surface in the Growth books (lib/admin-growth growthSourceOf). The
-    // slug only when the link checked out above (live, not revoked).
-    const jobBirth: JobBirth = { surface: contentOrigin, ...(swapFeeBps !== undefined && turnLinkSlug ? { intentLinkSlug: turnLinkSlug } : {}) }
     // ── Apps follow the ask (2026-09-24). A typed money ask arriving without
     //    the first-party app its sentence needs used to meet the add-the-dapp
     //    door below ("it just needs the Aave dapp … then press send again").
@@ -1175,6 +1170,12 @@ async function handleChatTurn(req: NextRequest) {
     // cascade + guardrails as any swap), confirm-mode only.
     const dcaTurn = await runDcaTurn(message, walletAddress, selectedChainId, nativeTrace, internalRun, walletProven)
     if (dcaTurn) return NextResponse.json(dcaTurn)
+
+    // A job compiled on this turn remembers where its ask arrived, so every
+    // step it signs later — minutes later, from the Jobs rail — is credited to
+    // this surface in the Growth books (lib/admin-growth growthSourceOf). The
+    // slug only when the link checked out (live, not revoked: swapFeeBps).
+    const jobBirth: JobBirth = { surface: contentOrigin, ...(swapFeeBps !== undefined && turnLinkSlug ? { intentLinkSlug: turnLinkSlug } : {}) }
 
     // Multi-step JOBS — a compound ask ("bridge …, then deposit …, then long
     // …, then protect it") compiles into a FIXED sequence of guarded steps
