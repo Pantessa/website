@@ -69,7 +69,7 @@ import { buildsNatively } from '@/scripts/ask-ladder'
 import { noPoolChips, nothingToSellChips, unpriceableSellChips } from '@/lib/wall-chips'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import { compileJobAsk, stampSwapFeeTier } from '@/lib/jobs'
-import { advanceJob, createJob } from '@/lib/jobs-runner'
+import { advanceJob, createJob, type JobBirth } from '@/lib/jobs-runner'
 import { signJobToken } from '@/lib/job-token'
 import { runDcaTurn } from '@/lib/dca-exec'
 import { parseRebalanceAsk } from '@/lib/rebalance'
@@ -263,6 +263,8 @@ async function hlAutoFundedJobTurn(
   linkFeeBps?: number,
   /** Our own harness/drill turn (lib/internal-run.ts) — stamps the job. */
   internalRun = false,
+  /** Where the ask arrived (lib/jobs-runner JobBirth) — stamps the job. */
+  birth: JobBirth = {},
 ): Promise<NextResponse | null> {
   const fundedAsk = `deposit ${short.depositUsdc} USDC to Hyperliquid, then ${message.trim()}`
   const arbUsdc = await arbitrumUsdcBalance(walletAddress).catch(() => null)
@@ -327,7 +329,7 @@ async function hlAutoFundedJobTurn(
     nativeTrace({ type: 'note', level: 'warn', label: `hl auto-fund: venue pre-flight refuses the funded job — ${hlUnfillable.slice(0, 160)}` })
     return NextResponse.json({ reply: `🛑 ${hlUnfillable}`, buildPath: 'native-job' })
   }
-  const job = await createJob(walletAddress, stampSwapFeeTier(compiled, linkFeeBps), 'chat', { internal: internalRun })
+  const job = await createJob(walletAddress, stampSwapFeeTier(compiled, linkFeeBps), 'chat', { internal: internalRun, ...birth })
   await advanceJob(job).catch(() => {})
   const gasLegNote = /\b(?:to|for) eth on arbitrum\b/i.test(resume) ? ' (plus a little Arbitrum ETH so the deposit can pay its own gas)' : ''
   return NextResponse.json({
@@ -688,6 +690,11 @@ async function handleChatTurn(req: NextRequest) {
     // intent link or an embed host carries a stranger's sentence. A few
     // builds harden on that origin alone (lib/content-origin).
     const contentOrigin = contentOriginOf({ intentLinkSlug: turnLinkSlug, embedKey: body.embedKey, embedOrigin })
+    // A job compiled on this turn remembers where its ask arrived, so every
+    // step it signs later — minutes later, from the Jobs rail — is credited to
+    // this surface in the Growth books (lib/admin-growth growthSourceOf). The
+    // slug only when the link checked out above (live, not revoked).
+    const jobBirth: JobBirth = { surface: contentOrigin, ...(swapFeeBps !== undefined && turnLinkSlug ? { intentLinkSlug: turnLinkSlug } : {}) }
     // ── Apps follow the ask (2026-09-24). A typed money ask arriving without
     //    the first-party app its sentence needs used to meet the add-the-dapp
     //    door below ("it just needs the Aave dapp … then press send again").
@@ -1222,7 +1229,7 @@ async function handleChatTurn(req: NextRequest) {
       if (leadStep?.builder === 'native-hl-exec' && (leadStep.params as { kind?: string }).kind === 'open') {
         const short = await hlOpenCollateralShortfall(leadStep.params as unknown as HlOrderIntent, walletAddress)
         if (short) {
-          const autoTurn = await hlAutoFundedJobTurn(short, leadStep.params as unknown as HlOrderIntent, message, walletAddress, nativeTrace, swapFeeBps, internalRun)
+          const autoTurn = await hlAutoFundedJobTurn(short, leadStep.params as unknown as HlOrderIntent, message, walletAddress, nativeTrace, swapFeeBps, internalRun, jobBirth)
           if (autoTurn) return autoTurn
           // No plan available (scan/price down) — fall through to the job;
           // the step's own guard explains itself if it can't build.
@@ -1243,7 +1250,7 @@ async function handleChatTurn(req: NextRequest) {
       // C2b closes over jobs: a link-priced turn's compiled swaps carry the
       // same tier its one-shot would (stamped into step params; the runner
       // re-validates against the canonical tier before building).
-      const job = await createJob(walletAddress, stampSwapFeeTier(jobAsk, swapFeeBps), 'chat', { internal: internalRun })
+      const job = await createJob(walletAddress, stampSwapFeeTier(jobAsk, swapFeeBps), 'chat', { internal: internalRun, ...jobBirth })
       // Kick the first step inline so the card opens with something to sign.
       await advanceJob(job).catch(() => {})
       return NextResponse.json({
@@ -1477,7 +1484,7 @@ async function handleChatTurn(req: NextRequest) {
           connectWallet: true,
         })
       }
-      const mosaicTurn = await mosaicTurnFor(mosaicAsk, walletAddress, nativeTrace, swapFeeBps, internalRun)
+      const mosaicTurn = await mosaicTurnFor(mosaicAsk, walletAddress, nativeTrace, swapFeeBps, internalRun, jobBirth)
       return NextResponse.json(mosaicTurn)
     }
 
@@ -1715,7 +1722,7 @@ async function handleChatTurn(req: NextRequest) {
         if (hlIntent.kind === 'open' && walletAddress) {
           const short = await hlOpenCollateralShortfall(hlIntent, walletAddress)
           if (short) {
-            const autoTurn = await hlAutoFundedJobTurn(short, hlIntent, message, walletAddress, nativeTrace, swapFeeBps, internalRun)
+            const autoTurn = await hlAutoFundedJobTurn(short, hlIntent, message, walletAddress, nativeTrace, swapFeeBps, internalRun, jobBirth)
             if (autoTurn) return autoTurn
           }
         }

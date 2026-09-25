@@ -7764,7 +7764,7 @@ async function main() {
     const mixed = [
       row({}),
       row({ source: 'link', feeBps: LINK_SWAP_FEE_BPS, creator: '0xc', usd: 40, n: 2 }),
-      row({ source: 'standing', buildPath: null, usd: 12 }),
+      row({ source: 'auto', buildPath: null, usd: 12 }),
       row({ day: '2026-09-10', buildPath: 'native-cross-chain', usd: 7 }),
       row({ day: '2026-08-01', usd: 1000, n: 5 }),
     ]
@@ -7781,7 +7781,7 @@ async function main() {
     check(
       'growth math: the daily series is dense, stacks to each day’s total, and its cumulative line carries pre-window money',
       series.length === 7 && series[0].day === '2026-09-12' && last.day === '2026-09-18' &&
-        series.every((p) => near(p.link + p.chat + p.embed + p.standing, p.totalUsd)) &&
+        series.every((p) => near(p.link + p.chat + p.embed + p.auto, p.totalUsd)) &&
         near(last.cumulativeUsd, total.volumeUsd) && near(last.cumulativeFeeUsd, total.feeUsd) && near(series[0].cumulativeUsd, 1007),
     )
     const win = G.windowRows(mixed, 7, now)
@@ -7797,6 +7797,146 @@ async function main() {
       G.accountStage({ turns: 0, built: 0, signed: 0 }) === 'signed-up' && G.accountStage({ turns: 3, built: 0, signed: 0 }) === 'asked' &&
         G.accountStage({ turns: 3, built: 1, signed: 0 }) === 'built' && G.accountStage({ turns: 1, built: 1, signed: 2 }) === 'traded',
     )
+
+    // Where a signed dollar is credited (lib/admin-growth growthSourceOf). A
+    // job is one ask, so its steps count where it was asked; only money nobody
+    // asked for on a page (a DCA run, an agent's job) is "Schedules & agents".
+    // 2026-09-25: an AAPL buy asked in /chat read as "Standing (jobs · DCA)",
+    // and so did $224.50 of the month's link money.
+    type SourceInput = import('../lib/admin-growth').GrowthSourceInput
+    const srcOf = (o: Partial<SourceInput>) => G.growthSourceOf({ intentLinkSlug: null, originKind: 'chat', embedKeyId: '', job: null, ...o })
+    const jobOf = (o: Partial<NonNullable<SourceInput['job']>>) => ({ source: 'chat', surface: null, intentLinkSlug: null, ...o })
+    const SOURCE_CASES: [string, Partial<SourceInput>, string][] = [
+      ['a chat turn', {}, 'chat'],
+      ['a one-shot on an /i link', { intentLinkSlug: 'ztpgdwdd' }, 'link'],
+      ['a step the browser wrote for a link job (the slug rides the row)', { originKind: 'job-step', intentLinkSlug: '8chpvmy5' }, 'link'],
+      ['a step the runner wrote for a job asked in /chat', { originKind: 'job-step', job: jobOf({ surface: 'first-party' }) }, 'chat'],
+      ['a step the runner wrote for a job asked on a link', { originKind: 'job-step', job: jobOf({ surface: 'link', intentLinkSlug: 'ztpgdwdd' }) }, 'link'],
+      ['a step the runner wrote for a job asked inside an embed', { originKind: 'job-step', job: jobOf({ surface: 'embed' }) }, 'embed'],
+      ['an embed turn', { originKind: 'embed', embedKeyId: 'k1' }, 'embed'],
+      ['a DCA run the beacon stamped', { originKind: 'dca-run' }, 'auto'],
+      ['a step the runner wrote for a DCA schedule', { originKind: 'job-step', job: jobOf({ source: 'dca:cmsched0000000000000001' }) }, 'auto'],
+      ['a job an agent opened at the desk', { originKind: 'job-step', job: jobOf({ source: 'broker' }) }, 'auto'],
+      ['a job opened through the Jobs API', { originKind: 'job-step', job: jobOf({ source: 'api' }) }, 'auto'],
+      ['a step of a job made before jobs knew their surface', { originKind: 'job-step', job: jobOf({}) }, 'chat'],
+      ['a legacy job step with no job on record', { originKind: null }, 'chat'],
+    ]
+    const srcMiss = SOURCE_CASES.filter(([, i, want]) => srcOf(i) !== want).map(([n, i]) => `${n} → ${srcOf(i)}`)
+    check(
+      'growth source: a job’s steps count where it was asked (chat, link, embed); only a schedule’s run or an agent’s job is "Schedules & agents"',
+      srcMiss.length === 0,
+      srcMiss.join(' · '),
+    )
+    if (process.env.DATABASE_URL) {
+      // The SQL the books run, over the same cases: VALUES rows, and a CTE
+      // named `jobs` that stands in for the table. Reads nothing, writes nothing.
+      const lit = (v: string | null | undefined) => (v == null ? 'NULL::text' : `'${v.replace(/'/g, "''")}'`)
+      const fixtureJobId = (k: number) => `jobfixture${String(k).padStart(4, '0')}`
+      const tRows = SOURCE_CASES.map(
+        ([, i], k) =>
+          `(${k}, ${lit(i.intentLinkSlug ?? null)}, ${lit(i.originKind === undefined ? 'chat' : i.originKind)}, ${lit(i.embedKeyId ?? '')}, ${lit(i.job ? `job-${fixtureJobId(k)}-0` : `fixture-session-${k}`)})`,
+      )
+      const jRows = SOURCE_CASES.flatMap(([, i], k) => (i.job ? [`(${lit(fixtureJobId(k))}, ${lit(i.job.source)}, ${lit(i.job.surface)}, ${lit(i.job.intentLinkSlug)})`] : []))
+      const got = await prisma.$queryRawUnsafe<{ k: number; source: string }[]>(
+        `WITH jobs(id, source, surface, intent_link_slug) AS (VALUES ${jRows.join(', ')}),
+              t(k, intent_link_slug, origin_kind, embed_key_id, session_id) AS (VALUES ${tRows.join(', ')})
+         SELECT t.k, ${G.GROWTH_SOURCE_SQL} AS source FROM t ${G.GROWTH_JOB_JOIN_SQL} ORDER BY t.k`,
+      )
+      const sqlMiss = got.filter((r) => r.source !== srcOf(SOURCE_CASES[r.k][1])).map((r) => `${SOURCE_CASES[r.k][0]}: sql says ${r.source}`)
+      check('growth source: the SQL the books run agrees with growthSourceOf on every case', got.length === SOURCE_CASES.length && sqlMiss.length === 0, sqlMiss.join(' · '))
+    } else {
+      check('growth source: SQL lockstep skipped — no DATABASE_URL for the harness process', true)
+    }
+    const growthRouteSrc = (await import('node:fs')).readFileSync('app/api/admin/growth/route.ts', 'utf8')
+    check(
+      'growth source: the money query runs the shared rule and job join, and no longer files a job step as standing ahead of its link',
+      growthRouteSrc.includes('Prisma.raw(GROWTH_SOURCE_SQL)') && growthRouteSrc.includes('Prisma.raw(GROWTH_JOB_JOIN_SQL)') && !/THEN 'standing'/.test(growthRouteSrc),
+    )
+    // The chat route stamps each job with where it was asked: /chat, a live /i
+    // link (with its slug; 'dca-eth' is the always-live house fixture), or an
+    // embed host. Jobs are canceled after; 0x1111… is nobody's rail.
+    if (process.env.DATABASE_URL) {
+      const birthJob = (extra: Record<string, unknown>) =>
+        fetch(`${BASE}/api/chat`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-yf-no-ask-log': '1' },
+          body: JSON.stringify({ message: 'swap 5 USDC for ETH on base, then swap 3 USDC for ETH on base', activeServers: [], walletAddress: '0x1111111111111111111111111111111111111111', ...extra }),
+        }).then((r) => r.json() as Promise<{ jobId?: string; jobToken?: string }>)
+      const appJob = await birthJob({})
+      const linkJob = await birthJob({ intentLinkSlug: 'dca-eth' })
+      const embedJob = await birthJob({ embedOrigin: 'https://growth-host.example' })
+      const born = await prisma.job.findMany({
+        where: { id: { in: [appJob, linkJob, embedJob].map((j) => j.jobId ?? '').filter(Boolean) } },
+        select: { id: true, surface: true, intentLinkSlug: true },
+      })
+      const bornOf = (j: { jobId?: string }) => born.find((r) => r.id === j.jobId)
+      check(
+        'growth source: the chat route stamps each job with where it was asked (/chat → first-party, a live /i link → link + slug, an embed host → embed)',
+        bornOf(appJob)?.surface === 'first-party' && bornOf(appJob)?.intentLinkSlug === null &&
+          bornOf(linkJob)?.surface === 'link' && bornOf(linkJob)?.intentLinkSlug === 'dca-eth' &&
+          bornOf(embedJob)?.surface === 'embed' && bornOf(embedJob)?.intentLinkSlug === null,
+        JSON.stringify({ appJob: appJob.jobId ?? appJob, linkJob: linkJob.jobId ?? linkJob, embedJob: embedJob.jobId ?? embedJob, born }).slice(0, 400),
+      )
+      for (const j of [appJob, linkJob, embedJob]) {
+        if (j.jobId) await fetch(`${BASE}/api/jobs/${j.jobId}?t=${encodeURIComponent(j.jobToken ?? '')}`, { method: 'DELETE' }).catch(() => {})
+      }
+    } else {
+      check('growth source: job birth round-trip skipped — no DATABASE_URL for the harness process', true)
+    }
+
+    // Money moved: a swap with no stable side is still money (lib/usd-probe
+    // swapValueUsd). 2026-09-25: a $12 UNI buy paid in ETH built with
+    // valueUsd null, so it booked $0 and no trade.
+    {
+      const { swapValueUsd } = await import('../lib/usd-probe')
+      const [usdcAddr, usdcDec] = Object.entries(chainById(8453)!.stables)[0]
+      const usdc12 = { token: 'USDC', address: usdcAddr, atoms: BigInt(12 * 10 ** usdcDec), decimals: usdcDec }
+      const eth = { token: 'ETH', address: '0x4200000000000000000000000000000000000006', atoms: BigInt('4000000000000000'), decimals: 18 }
+      const uni = { token: 'UNI', address: '0xc3de830ea07524a0761646a6a4e4be0e114a3c83', atoms: BigInt('1290000000000000000'), decimals: 18 }
+      let probed = 0
+      const ethAt3000 = async (_chainId: number, token: string) => {
+        probed++
+        return token === 'ETH' ? { usd: 3000, via: 'fixture' } : null
+      }
+      const faceSell = await swapValueUsd(8453, usdc12, uni, ethAt3000)
+      const faceBuy = await swapValueUsd(8453, eth, usdc12, ethAt3000)
+      const probedBeforeFace = probed
+      const sellPriced = await swapValueUsd(8453, eth, uni, ethAt3000)
+      const buyPriced = await swapValueUsd(8453, uni, eth, ethAt3000)
+      const neither = await swapValueUsd(8453, uni, { ...uni, token: 'DEGEN' }, async () => null)
+      const thrown = await swapValueUsd(8453, eth, uni, async () => {
+        throw new Error('rpc down')
+      })
+      check(
+        'swap value: a stable side counts at face value with no probe; with none, the sell side is priced, then the buy side; no honest price → null, and a probe error never throws',
+        faceSell === 12 && faceBuy === 12 && probedBeforeFace === 0 && Math.abs((sellPriced ?? 0) - 12) < 1e-9 && Math.abs((buyPriced ?? 0) - 12) < 1e-9 && neither === null && thrown === null,
+        JSON.stringify({ faceSell, faceBuy, probedBeforeFace, sellPriced, buyPriced, neither, thrown }),
+      )
+      if (process.env.DATABASE_URL) {
+        // The real v3 builder, read-only, on the 09-25 shape: ETH → UNI on
+        // Ethereum. Its valueUsd is the sold ETH at the probe's price.
+        let live: { valueUsd: number | null; policyNote: string } | null = null
+        let liveErr = ''
+        for (let attempt = 0; attempt < 2 && !live; attempt++) {
+          try {
+            await ensureTokenList(1)
+            const built = await arcBuildUniswapSwap({ sellToken: 'ETH', buyToken: 'UNI', amountHuman: '0.004446', from: '0x1111111111111111111111111111111111111111', chainId: 1 })
+            live = { valueUsd: built.guardrails.valueUsd, policyNote: built.guardrails.checks.find((c) => c.id === 'policy')?.note ?? '' }
+          } catch (e) {
+            liveErr = e instanceof Error ? e.message.split('\n')[0] : String(e)
+          }
+        }
+        const ethProbe = await arcUsdPerToken(1, 'ETH').catch(() => null)
+        const want = ethProbe ? 0.004446 * ethProbe.usd : null
+        check(
+          'swap value (live): an ETH → UNI buy on Ethereum through the real v3 builder carries the sold ETH’s dollars — never "No priceable leg"',
+          !!live && live.valueUsd != null && want != null && Math.abs(live.valueUsd - want) / want < 0.03 && !/No priceable leg/.test(live.policyNote),
+          JSON.stringify({ live, want, liveErr }).slice(0, 300),
+        )
+      } else {
+        check('swap value (live): v3 build skipped — no DATABASE_URL for the harness process', true)
+      }
+    }
 
     // People: the two lanes in one list. A native wallet never signs up, so
     // the arrival tables are its whole account history — and a wallet an
@@ -31841,7 +31981,7 @@ async function main() {
     const g = D.deskGrowthSummary(D.countedDeskRows([row, internalRow, teamRow]), 7, now)
     const gInt = D.deskGrowthSummary(D.countedDeskRows([internalRow]), 7, now)
     check('desk growth: agents seen, the opened → executed → signed → settled funnel, claimed money, fee and receipt-counted all fold from the counted rows only (internal alone → zeros everywhere)', g.agents === 1 && g.funnel.opened === 2 && g.funnel.executed === 2 && g.funnel.signed === 2 && g.funnel.settled === 0 && g.moneyUsd === 50 && Math.abs(g.feeUsd - 0.1) < 1e-9 && g.countedUsd === 25 && g.legs === 2 && gInt.agents === 0 && gInt.funnel.opened === 0 && gInt.moneyUsd === 0 && gInt.byAgent.length === 0, JSON.stringify({ g: { ...g, series: undefined }, gInt: { ...gInt, series: undefined } }))
-    check('desk growth: the daily series is dailySeries over the claimed legs (7 dense days, the claim day carries $50, cumulative reads $50 at the end) — the same idiom as the rest of Growth', g.series.length === 7 && g.series.reduce((s, p) => s + p.totalUsd, 0) === 50 && g.series.find((p) => p.day === '2026-09-23')?.totalUsd === 50 && g.series.at(-1)!.cumulativeUsd === 50 && g.series.every((p) => p.standing === p.totalUsd))
+    check('desk growth: the daily series is dailySeries over the claimed legs (7 dense days, the claim day carries $50, cumulative reads $50 at the end) — the same idiom as the rest of Growth', g.series.length === 7 && g.series.reduce((s, p) => s + p.totalUsd, 0) === 50 && g.series.find((p) => p.day === '2026-09-23')?.totalUsd === 50 && g.series.at(-1)!.cumulativeUsd === 50 && g.series.every((p) => p.auto === p.totalUsd))
     check('desk growth: money by agent ranks handles biggest first with intents · legs · fee, and deltas read against the previous window (null off a zero base)', g.byAgent[0]?.handle === 'f1x7ur3agent0001' && g.byAgent[0].usd === 50 && g.byAgent[0].intents === 2 && g.byAgent[0].legs === 2 && Math.abs(g.byAgent[0].feeUsd - 0.1) < 1e-9 && g.moneyDelta === null && g.funnelPrev.opened === 0)
     check('desk filter: by stage, by agent name or handle substring (case-insensitive), and external drops internal + team', D.filterDeskRows([row, internalRow, teamRow, done], { stage: 'settled' }).length === 1 && D.filterDeskRows([row, done], { agent: 'FIXTURE' }).length === 2 && D.filterDeskRows([row], { agent: 'f1x7' }).length === 1 && D.filterDeskRows([row], { agent: 'nobody' }).length === 0 && D.filterDeskRows([row, internalRow, teamRow], { external: true }).length === 1)
     check('desk sort: newest activity first', D.sortDeskRows([row, done]).map((r) => r.intentId + '@' + r.lastAt)[0] === `dsk_fixture01@${at(200)}`)

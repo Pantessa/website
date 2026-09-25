@@ -3,10 +3,12 @@ import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
 import { getAuthAddress } from '@/lib/api-key'
 import { isAdminAddress, isTestWallet, TEST_WALLETS } from '@/lib/admin'
-import { REAL_TRAFFIC_SQL, STANDING_TURN_SQL } from '@/lib/value-origin'
+import { REAL_TRAFFIC_SQL } from '@/lib/value-origin'
 import { COUNTED_EVENT_SQL } from '@/lib/link-receipt-verify'
 import { isCdpListingConfigured, listCdpEndUsers, type CdpEndUser } from '@/lib/cdp'
 import {
+  GROWTH_JOB_JOIN_SQL,
+  GROWTH_SOURCE_SQL,
   GROWTH_WINDOWS,
   NO_ACTIVITY,
   dailySeries,
@@ -47,9 +49,13 @@ const REAL = Prisma.raw(`session_id NOT LIKE 'harness-%' AND ${REAL_TRAFFIC_SQL}
 // Real signed money, as a subquery: the fence's column names are unqualified,
 // so it has to run before anything with its own `is_internal` is joined on.
 const SIGNED = Prisma.raw(
-  `SELECT *, ${STANDING_TURN_SQL} AS standing FROM embed_turns
+  `SELECT * FROM embed_turns
    WHERE outcome = 'signed' AND value_usd > 0 AND session_id NOT LIKE 'harness-%' AND ${REAL_TRAFFIC_SQL}`,
 )
+/** Where each signed dollar was asked for (lib/admin-growth growthSourceOf):
+ *  a job's steps join their job, so they land on the surface it was asked on. */
+const SOURCE = Prisma.raw(GROWTH_SOURCE_SQL)
+const JOB_JOIN = Prisma.raw(GROWTH_JOB_JOIN_SQL)
 const COUNTED_EVENT = Prisma.raw(COUNTED_EVENT_SQL)
 /** Every arrival table has carried `is_internal` since #650 (2026-08-18). */
 const INTERNAL_STAMP_SINCE = Date.parse('2026-08-19T00:00:00Z')
@@ -85,18 +91,19 @@ export async function GET(req: NextRequest) {
     await Promise.all([
       // THE money query. `creator` = who is owed half the fee: the link's
       // creator, else (no link on the turn) whoever first referred the wallet.
+      // It reads the ROW's own link, never the job's: a step the runner wrote
+      // carries none, the creator routes pay nothing on it, and the books
+      // show what is owed, not what should be.
       soft('turns', prisma.$queryRaw<TurnRow[]>(Prisma.sql`
         SELECT to_char(date_trunc('day', t.created_at), 'YYYY-MM-DD') AS day,
-               CASE WHEN t.standing THEN 'standing'
-                    WHEN t.intent_link_slug IS NOT NULL THEN 'link'
-                    WHEN t.origin_kind = 'embed' OR t.embed_key_id <> '' THEN 'embed'
-                    ELSE 'chat' END AS source,
+               ${SOURCE} AS source,
                t.build_path, t.fee_bps,
                CASE WHEN t.intent_link_slug IS NOT NULL THEN il.creator ELSE rw.creator END AS creator,
                coalesce(t.wallet_address = ANY(${testers}), false) AS tester,
                (t.wallet_address IS NULL) AS anonymous,
                sum(t.value_usd)::float AS usd, count(*)::int AS n
         FROM (${SIGNED}) t
+        ${JOB_JOIN}
         LEFT JOIN intent_links il ON il.id = t.intent_link_slug
         LEFT JOIN referred_wallets rw ON rw.wallet = t.wallet_address
         GROUP BY 1, 2, 3, 4, 5, 6, 7

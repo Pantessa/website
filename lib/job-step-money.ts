@@ -109,6 +109,8 @@ export async function recordJobStepMoney(leg: {
   result: Record<string, unknown>
   /** From the JOB row (jobs.is_internal), never the caller's word. */
   internal: boolean
+  /** The JOB row's source: a `dca:<id>` job's step is a schedule's run. */
+  source?: string | null
 }): Promise<JobStepMoneyResult | null> {
   try {
     const sessionId = jobStepMoneySessionId(leg.jobId, leg.seq)
@@ -146,7 +148,9 @@ export async function recordJobStepMoney(leg: {
         txUrl: info.txUrl,
         valueUsd: info.valueUsd,
         buildPath: isBuildPath(buildPath) ? buildPath : undefined,
-        originKind: 'job-step',
+        // The telemetry route's rule, kept now that this is the writer: a DCA
+        // schedule's step is a run the schedule fired (lib/value-origin).
+        originKind: leg.source?.startsWith('dca:') ? 'dca-run' : 'job-step',
         walletAddress: leg.wallet.toLowerCase(),
         feeBps: info.feeBps,
         isInternal: leg.internal,
