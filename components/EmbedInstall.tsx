@@ -83,7 +83,7 @@ export default function EmbedInstall({
           className={cn(
             'flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors',
             'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/15',
-            compact ? 'flex-1 px-2.5 py-1.5 text-[11px]' : 'px-3.5 py-2 text-[12.5px]'
+            compact ? 'flex-1 px-2.5 py-1.5 text-[11px] max-lg:min-h-11' : 'px-3.5 py-2 text-[12.5px] max-lg:min-h-11'
           )}
         >
           {copied === 'prompt' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
@@ -93,7 +93,7 @@ export default function EmbedInstall({
           onClick={() => copy('snippet')}
           className={cn(
             'flex items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surf-2)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors',
-            compact ? 'px-2.5 py-1.5 text-[11px]' : 'px-3.5 py-2 text-[12.5px]'
+            compact ? 'px-2.5 py-1.5 text-[11px] max-lg:min-h-11' : 'px-3.5 py-2 text-[12.5px] max-lg:min-h-11'
           )}
         >
           {copied === 'snippet' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}

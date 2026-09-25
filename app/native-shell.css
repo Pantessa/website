@@ -1,0 +1,144 @@
+/* ── THE PHONE FRAME (squad mobile-native, 2026-09-24; SHELL owns this file) ──
+   Nate: "it needs to feel like a native mobile app when accessed from mobile."
+
+   Below lg (1023px, lib/phone-shell PHONE_MQ) every app surface is a FRAME:
+   the outermost wrapper carries data-app-frame, the ONE element that scrolls
+   carries data-app-scroll, and the spine's phone tab bar (data-spine-bar) is
+   the frame's LAST ROW, in flow. The document itself never scrolls.
+
+   Why: iOS 26 Safari collapses its toolbar when the DOCUMENT scrolls, and a
+   fixed or sticky bar anchored to the bottom then stays where the toolbar
+   used to be — ~70px up, with rows scrolling under it (Nate's /markets
+   screenshot; Apple forums 801028 / 800798). A document that never scrolls
+   never collapses the toolbar, so the bar has nowhere to drift. And a bar in
+   flow needs no hand-measured reserve: the scroller's bottom edge IS the
+   bar's top edge, so nothing can pass under it and no 48/49/96px constant
+   can go stale again (the mobile-onboarding squad found a 1px one on 09-23).
+
+   Contract (lib/phone-shell.ts): a lane puts FRAME_ATTR on its wrapper and
+   SCROLL_ATTR on its scroller, deletes its own bottom reserve, and makes the
+   bar (AppSpine) a direct child of the frame. Everything here is fenced
+   inside the phone media query, so lg+ renders exactly as before. */
+
+@media (max-width: 1023px) {
+  /* The document: viewport-sized, never scrolling, never rubber-banding.
+     html's overflow propagates to the viewport, so html itself does not
+     become a scroll container; body keeps clipping (never `hidden` on
+     x — see the sticky-dead lesson in x402-design.css) and gets no
+     overflow of its own because the frame is exactly the viewport. */
+  html:has([data-app-frame]) {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  html:has([data-app-frame]) body {
+    height: 100%;
+    min-height: 0;
+    overflow: clip;
+    overscroll-behavior: none;
+    /* The belt (SHELL round 2): body is a column flex box, so a stray IN-FLOW
+       sibling of the frame (QA measured a 396px document in a 390px
+       landscape viewport on one integration tree — 6px of something outside
+       the scroller) is absorbed by the frame shrinking (it is min-height 0,
+       overflow hidden) instead of growing the document. Portals are fixed
+       and unaffected; the frame keeps its 100dvh where nothing strays. */
+    display: flex;
+    flex-direction: column;
+  }
+  html:has([data-app-frame]) body > * { flex-shrink: 0; }
+  html:has([data-app-frame]) body > [data-app-frame],
+  html:has([data-app-frame]) body > :has(> [data-app-frame]) { flex-shrink: 1; min-height: 0; }
+
+  /* The frame: a column exactly as tall as the visible viewport. `dvh`
+     follows Safari's toolbar (which never collapses here, so it is also
+     the small viewport); the keyboard is subtracted below. Safe areas
+     on the top and sides (standalone + landscape); the bar carries the
+     bottom one itself.
+     SPECIFICITY: a surface's own sizing can reach (0,3,0) — `:root[data-
+     app-shell] .dash { min-height: 100vh }` is one (`:root` counts as a
+     class), and it kept the dashboard's scroller viewport-tall with the bar
+     pushed out of the frame (measured 2026-09-24). The attribute is
+     repeated on purpose: `[data-app-frame][data-app-frame]` puts the frame
+     at (0,3,2) and the scroller at (0,4,2), above any surface rule. A new
+     surface rule stronger than that breaks the frame; the drive catches it. */
+  html:has([data-app-frame]) body [data-app-frame][data-app-frame] {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    max-height: none;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  /* The ONE scroller. Contains its own overscroll so a pull at either end
+     never chains to the document (no page bounce, no Android
+     pull-to-refresh mid-list). */
+  html:has([data-app-frame]) body [data-app-frame] [data-app-scroll][data-app-scroll] {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+    overflow-x: clip;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  html:has([data-app-frame]) body [data-app-frame] [data-app-scroll][data-app-scroll]::-webkit-scrollbar { display: none; }
+
+  /* THE BAR, IN FLOW: the frame's last row. AppSpine still ships its
+     `fixed inset-x-0 bottom-0` classes (NAV's file); inside a frame those
+     yield to this. `order` beats the DOM order (AppSpine renders before the
+     content). Its own pb-[env(safe-area-inset-bottom)] stays: that is the
+     home-indicator clearance. */
+  html:has([data-app-frame]) body [data-app-frame] > [data-spine-bar][data-spine-bar] {
+    position: static;
+    order: 999;
+    flex: 0 0 auto;
+    width: auto;
+    inset: auto;
+  }
+  /* The belt for a bar that is NOT a direct child (a surface that nests
+     AppSpine deeper): it stays fixed over the viewport and the frame
+     reserves its measured height. The drive pins that this never fires on
+     a shipped surface. */
+  html:has([data-app-frame]) body [data-app-frame][data-app-frame]:has([data-spine-bar]):not(:has(> [data-spine-bar])) {
+    padding-bottom: calc(var(--spine-bar-h, 49px) + env(safe-area-inset-bottom));
+  }
+
+  /* The soft keyboard (components/mobile/PhoneShellMount → useSoftKeyboard):
+     html[data-keyboard] + --kb-inset are the covered pixels. The frame
+     shrinks onto the keyboard so a screen's bottom (the composer) sits on
+     it, and the bar steps aside — a native tab bar does the same. */
+  html[data-keyboard]:has([data-app-frame]) body [data-app-frame][data-app-frame] {
+    height: calc(100vh - var(--kb-inset, 0px));
+    height: calc(100dvh - var(--kb-inset, 0px));
+  }
+  html[data-keyboard]:has([data-app-frame]) body [data-app-frame][data-app-frame]:has([data-spine-bar]):not(:has(> [data-spine-bar])) { padding-bottom: 0; }
+  html[data-keyboard]:has([data-app-frame]) body [data-app-frame] [data-spine-bar][data-spine-bar] { display: none; }
+
+  /* Inputs at or above 16px inside a frame or a sheet: iOS zooms the page
+     on focus for anything smaller, and a zoomed page is the one thing a
+     native app never does. `max(16px, 1em)` keeps a larger inherited size.
+     Check boxes, radios, ranges and file pickers have no text to zoom. */
+  [data-app-frame] input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']),
+  [data-app-frame] select,
+  [data-app-frame] textarea,
+  .sheet input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']),
+  .sheet select,
+  .sheet textarea {
+    font-size: max(16px, 1em);
+  }
+}
+
+/* ── Touch, everywhere (a hand behaves the same at any width) ──────────── */
+/* No 300ms double-tap-zoom delay on anything a hand presses; pan and pinch
+   stay. The tap highlight is already off (x402-design.css html rule). */
+a, button, [role='button'], [role='tab'], [role='menuitem'], input, select, textarea, label, summary { touch-action: manipulation; }
+/* Chrome that a finger holds: no text selection, no iOS callout sheet. */
+[data-spine-bar], .sheet__head, .sheet__grabber, .sheet__foot { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+/* Press feedback on the bar's seats (a native tab dims under the finger). */
+@media (hover: none) {
+  [data-spine-bar] > a:active, [data-spine-bar] > button:active, [data-spine-bar] > div > button:active { opacity: 0.6; transition: opacity 0s; }
+}

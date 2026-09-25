@@ -273,6 +273,19 @@
   .navacct__item--danger:hover { background: color-mix(in oklch, var(--sell) 14%, transparent); color: var(--sell); }
   .navacct__item--danger:hover svg { color: var(--sell); }
   .navacct__sep { display: block; height: 1px; margin: 6px 6px; background: var(--line); }
+  /* On a phone the menu is a Sheet (NavAccount, squad mobile-native
+     2026-09-24): thumb-sized rows. The pill keeps its 35px look and gains a
+     44px hit area, so the three bars it sits in (brochure, markets strip,
+     chat toolbar) keep their height. */
+  .navacct__sheetmenu { padding: 2px 10px 10px; }
+  .navacct--sheet .navacct__head { padding: 4px 10px 12px; }
+  .navacct--sheet .navacct__item { min-height: 48px; padding: 12px 12px; font-size: 15px; }
+  /* `.hit-44`: the same invisible 44px hit area for any compact control
+     that sits in a bar or a header (the Sign in pill, /p's header CTAs). */
+  @media (max-width: 1023px) {
+    .navacct__pill, .hit-44 { position: relative; }
+    .navacct__pill::before, .hit-44::before { content: ''; position: absolute; inset: -8px -3px; }
+  }
 
   /* ── DRAWER GROUPING (mobile) ────────────────────── */
   .drawer__group {
@@ -280,6 +293,20 @@
     font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-2);
   }
   .drawer__tabs .drawer__sub { padding-left: 28px; }
+  /* The phone menu as the ONE Sheet (components/mobile/Sheet, squad
+     mobile-native 2026-09-24): the drawer's rows, inside the sheet body. */
+  .navsheet__tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 2px 12px 12px; }
+  .navsheet__tabs > * { grid-column: 1 / -1; }
+  /* The "More" destinations pair up: a menu that fills the screen leaves no
+     scrim to tap (it measured 614 of 667px as one column). */
+  .navsheet__tabs > .drawer__sub { grid-column: auto; padding-left: 16px; }
+  /* Exact 48px rows and a tight group label: the sheet leaves a real band of
+     scrim above it to tap (it measured 608 of 667px with the drag grabber). */
+  .navsheet__tabs .nav__tab { padding: 12px 16px; min-height: 48px; }
+  .navsheet__tabs .drawer__group { padding: 10px 16px 4px; }
+  .navsheet .sheet__foot .nav__dash { width: 100%; justify-content: center; min-height: 48px; font-size: 16px; }
+  .navsheet .navsheet__signin { background: var(--accent); color: var(--ink); border-color: transparent; }
+  .navsheet .navsheet__signin:hover { filter: brightness(1.06); background: var(--accent); }
 
   @media (prefers-reduced-motion: reduce) {
     .navacct__menu, .navacct__chev {
@@ -440,7 +467,14 @@
     transform: translateY(130%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .mcta.is-show { transform: none; }
-  .mcta .btn { width: 100%; justify-content: center; height: 52px; border-radius: 12px; font-size: 16px; }
+  .mcta .btn { justify-content: center; height: 52px; border-radius: 12px; font-size: 16px; }
+  /* Open Markets leads; Ask sits beside it, since the bar covers the floating
+     Ask pill's corner while it's up (squad mobile-native, 2026-09-24). */
+  .mcta { gap: 10px; }
+  .mcta .mcta__go { flex: 1; min-width: 0; }
+  .mcta .mcta__ask { flex: 0 0 auto; gap: 8px; padding: 0 18px; background: color-mix(in srgb, var(--bg) 70%, transparent); }
+  /* 640 = lib/cta-bar CTA_BAR_MAX_PX: the bar's `data-mcta` flag is set only
+     where this query draws it (pinned equal). */
   @media (max-width: 640px) { .mcta { display: flex; } }
 
   /* live runner HUD — bottom-right glass card (hidden ≤1080px) */
@@ -1127,6 +1161,8 @@
     color: var(--muted); border: 1px solid transparent; transition: color .15s, background .15s, border-color .15s;
   }
   .tchart__fs:hover { color: var(--fg); background: var(--surf-1); border-color: var(--line); }
+  /* A thumb needs 44×44 (squad mobile-native, 2026-09-24: it measured 28×28). */
+  @media (hover: none) { .tchart__fs { width: 44px; height: 44px; } }
   @media (max-width: 720px) {
     .tchart { height: calc(100dvh - 56px); }
     .tchart__acts { margin-left: 0; width: 100%; }
@@ -1249,12 +1285,11 @@
   @media (min-width: 1024px) {
     :root[data-spine] .apprail__reopen { left: 72px; }
   }
-  /* Below lg the spine is a FIXED bottom bar — dashboard pages reserve its
-     height, and the ask-from-anywhere pill rides just above it. */
-  @media (max-width: 1023px) {
-    :root[data-spine] .dash__main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
-    :root[data-spine] .dashask { bottom: calc(60px + env(safe-area-inset-bottom)); }
-  }
+  /* Below lg the dashboard is a PHONE FRAME (squad mobile-native, 2026-09-24,
+     app/native-shell.css): the spine's tab bar is the frame's last row, in
+     flow, and .dash is the one scroller — so .dash__main needs no bar reserve
+     and .dashask's sticky `bottom: 20px` is measured from the bar's top edge.
+     The 96px / 60px hand reserves that lived here are gone on purpose. */
 
   .dash {
     /* Portal surfaces use the full viewport (D3) — gutters, no maxw cap. */
@@ -1311,33 +1346,55 @@
   .dashacct__item--danger { color: #f87171; }
   .dashacct__item--danger:hover { background: rgba(248,113,113,.12); color: #fca5a5; }
 
-  /* ── DASHBOARD MOBILE NAV (bar + hamburger drawer) ── */
+  /* ── DASHBOARD PHONE CHROME (squad mobile-native, 2026-09-24) ──
+     ONE top bar: the section you're in (the button that opens the sections
+     Sheet) + Ask (the site-wide ask door). The sticky moved from the bar to
+     `.dashnav`, whose containing block is the whole `.dash` (block below
+     900px): the bar used to be `sticky; top: 64px` inside a wrapper exactly
+     its own height, so it never stuck and scrolled away with the page. */
   .dashnav { display: none; }        /* desktop: rail owns navigation */
   .dashnav__bar {
-    position: sticky; top: 64px; z-index: 30;
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 10px 0; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(10px);
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    min-height: 60px; padding: 8px 18px;
+    /* Opaque: at 88% the page's headings read through the bar as it
+       scrolled under (the drive's mid-scroll shot). */
+    background: var(--bg);
     border-bottom: 1px solid var(--line);
   }
-  .dashnav__crumb { font-size: 14px; font-weight: 600; color: var(--fg); }
-  .dashnav__burger {
-    display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px;
-    border: 1px solid var(--line); border-radius: 10px; background: var(--surf-1);
-    color: var(--fg); font-size: 12.5px; font-weight: 600;
+  .dashnav__switch {
+    flex: 1; min-width: 0; min-height: 44px;
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px;
+    padding: 2px 8px 2px 0; border-radius: 10px; text-align: left; color: var(--fg);
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
   }
-  .dashnav__burger:hover { border-color: var(--line-2); background: var(--surf-2); }
-  .dashnav__drawer { position: fixed; inset: 0; z-index: 80; }
-  .dashnav__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.6); backdrop-filter: blur(2px); border: 0; }
-  .dashnav__panel {
-    position: absolute; top: 0; right: 0; bottom: 0; width: min(300px, 86vw);
-    display: flex; flex-direction: column; gap: 14px; padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
-    background: var(--bg); border-left: 1px solid var(--line); overflow-y: auto;
+  .dashnav__switch:active { opacity: .72; }
+  .dashnav__eyebrow { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); }
+  .dashnav__crumb { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; font-size: 16px; font-weight: 600; color: var(--fg); }
+  .dashnav__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dashnav__chev { flex-shrink: 0; color: var(--muted); }
+  .dashnav__ask {
+    flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px;
+    min-height: 44px; padding: 0 16px 0 12px; border-radius: 999px;
+    border: 1px solid var(--line-2); background: color-mix(in srgb, var(--surf-1) 80%, transparent);
+    color: var(--fg); font-size: 14px; font-weight: 600;
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
   }
-  .dashnav__panel .dash__side { flex-direction: column; }
-  .dashnav__panel .dashacct { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); }
-  /* In the drawer the switcher is full-width (not the rail's fixed pill). */
-  .dashnav__panel .orgsw { padding: 0; width: auto; }
-  .dashnav__panel .orgsw__menu { left: 0; right: 0; width: auto; }
+  .dashnav__ask:active { background: var(--surf-2); }
+  /* The sections Sheet: the org switcher, every section as a 48px row, and
+     the account pinned in the sheet's foot. */
+  .dashsheet__body { display: flex; flex-direction: column; gap: 12px; padding: 2px 12px 12px; }
+  .dashsheet .dash__side { flex-direction: column; }
+  .dashsheet .dash__link { min-height: 48px; font-size: 14px; }
+  .dashsheet .orgsw { padding: 0; width: auto; }
+  .dashsheet .orgsw__menu { left: 0; right: 0; width: auto; }
+  /* Every field on every dashboard page is ≥16px on a phone: iOS zooms the
+     page into a smaller one on focus (12–14px here before). */
+  @media (max-width: 1023px) {
+    .dash__main input:not([type=checkbox]):not([type=radio]):not([type=range]),
+    .dash__main select,
+    .dash__main textarea,
+    .dashsheet input { font-size: 16px; }
+  }
   .dash__link {
     display: flex; align-items: center; gap: 10px;
     padding: 10px 12px; border-radius: 10px; font-size: 13px;
@@ -1449,10 +1506,23 @@
   .orgsw__go:disabled { opacity: .5; }
   /* Mobile: the vertical rail is replaced by a compact bar + hamburger drawer
      (DashboardMobileNav) — no more horizontal-scroll section row. */
+  /* Inside the phone frame (below lg) `.dashshell` is a flex COLUMN, and
+     `.dash`'s `margin: 0 auto` then turns off cross-axis stretch: `.dash`
+     sized to its content (766px on /dashboard, 626px on /guardian at 375)
+     and the frame clipped the rest out of reach ("Dismiss welcome" at
+     x 709). Full width, no auto margins. */
+  @media (max-width: 1023px) {
+    .dash { margin: 0; width: 100%; min-width: 0; }
+  }
   @media (max-width: 900px) {
-    .dash { grid-template-columns: 1fr; gap: 0; padding: 0 18px; }
+    /* Block, not a one-column grid: a grid item's containing block is its
+       grid AREA, so a sticky `.dashnav` in row 1 could never leave row 1. */
+    .dash { display: block; padding: 0 18px; }
     .dash__rail { display: none; }
-    .dashnav { display: block; }
+    .dashnav { display: block; position: sticky; top: 0; z-index: 30; margin: 0 -18px; }
+    /* The bar's Ask is the ask here: the docked ask bar steps aside, so a
+       phone gets one bar at the top and the tab bar at the bottom. */
+    .dashask { display: none; }
   }
 
   /* ── DOCS (full-width shell) ─────────────────────── */
@@ -2305,6 +2375,33 @@
     .ep { padding: 14px; }
     .ep__price { font-size: 11.5px; }
   }
+  /* ── BROCHURE TARGETS ON A PHONE (squad mobile-native, 2026-09-24) ──
+     Every standalone control a thumb taps is 44px tall below lg. Measured
+     at 375 before: footer links 19px (21 a page), socials 36px, the theme
+     toggle's options 30px, the logos 30px, the docs door CTAs 20px, "EMBED
+     DOCS" 17px, "TRY IT LIVE" 26px, the mint stage's "choose" 26px, the
+     hero's "Do it for real" 36px. Links inside running prose keep their
+     line (WCAG 2.5.8's inline exception): only standalone controls grow. */
+  @media (max-width: 1023px) {
+    .footer__grouplinks { gap: 0; }
+    .footer__grouplinks a { display: inline-flex; align-items: center; min-height: 44px; }
+    .footer__social { width: 44px; height: 44px; }
+    .logo { min-height: 44px; }
+    .splash__more a { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; }
+    .liveex__docs { display: inline-flex; align-items: center; min-height: 44px; }
+    .edemo__live { min-height: 44px; }
+    .film__cap a { display: inline-flex; align-items: center; min-height: 44px; }
+    .lh__doit .btn { min-height: 44px; }
+    .mintstage__edit { position: relative; }
+    .mintstage__edit::before { content: ''; position: absolute; inset: -9px -4px; }
+  }
+  /* 44px link rows would stack a long footer in one column: the groups pair
+     up on a phone instead (the brand line spans both), so it stays as tall
+     as it was. */
+  @media (max-width: 600px) {
+    .footer__cols { grid-template-columns: 1fr 1fr; gap: 28px 16px; }
+    .footer__brand { grid-column: 1 / -1; }
+  }
 
   /* ── The door ────────────────────────────────────────────────────────
      Unified sign-in modal (wallet lead · Google · email OTP — rule 6).
@@ -2366,7 +2463,19 @@
       0 32px 70px -12px rgba(0,0,0,.62),
       0 0 0 1px color-mix(in oklch, var(--accent) 7%, transparent),
       inset 0 1px 0 color-mix(in oklch, var(--fg) 7%, transparent);
-    animation: ca-rise .28s cubic-bezier(.16,1,.3,1) both;
+    /* `backwards`, not `both`: a fill that outlives the rise keeps
+       `transform: none` applied and overrides the swipe's inline transform
+       (the panel would not follow the finger). Same look. */
+    animation: ca-rise .28s cubic-bezier(.16,1,.3,1) backwards;
+  }
+  /* The swipe handle (phone only): a 44px band over the panel's top padding,
+     absolutely placed so the keyboard-up fit keeps its exact layout, with a
+     grabber pill drawn in it. touch-action: none lets the drag reach the
+     page instead of scrolling the door. */
+  .ca__grab { display: none; }
+  @media (max-width: 1023px) {
+    .ca__grab { display: block; position: absolute; top: 0; left: 0; right: 0; height: 44px; touch-action: none; cursor: grab; }
+    .ca__grab::before { content: ''; position: absolute; top: 8px; left: 50%; width: 36px; height: 5px; margin-left: -18px; border-radius: 3px; background: var(--line-2); }
   }
   /* The faceted top edge — a facet catching light across the crown. */
   .ca__panel::before {
@@ -2380,7 +2489,8 @@
   }
   .ca__close:hover { background: var(--surf-2); color: var(--fg); }
   /* Touch: the dismiss is a 40px target (30px is the mouse size). */
-  @media (hover: none) { .ca__close { width: 40px; height: 40px; top: 8px; right: 8px; } }
+  /* 44px on a touch screen (squad mobile-native, 2026-09-24; was 40). */
+  @media (hover: none) { .ca__close { width: 44px; height: 44px; top: 6px; right: 6px; } }
 
   /* Header — the stone, the name, the promise. */
   .ca__crest { display: grid; place-items: center; margin-bottom: 15px; }
@@ -2468,6 +2578,10 @@
   .ca__input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent); }
   .ca__input--otp { font-family: 'Geist Mono', ui-monospace, monospace; letter-spacing: .38em; text-indent: .38em; text-align: center; font-size: 22px; padding: 15px 14px; }
   .ca__input--spaced { margin-top: 20px; }
+  /* iOS zooms the page into any field under 16px when it's focused, and the
+     door is a phone's first screen: the email field is 16px below lg (the
+     OTP field is already 22px). Squad mobile-native, 2026-09-24. */
+  @media (max-width: 1023px) { .ca__input:not(.ca__input--otp) { font-size: 16px; } }
   /* The stone breathes while the embedded wallet is provisioned — a wait with
      a heartbeat reads as working; a bare spinner reads as stalled. */
   .ca__gem--pulse { animation: ca-breathe 2.2s ease-in-out infinite; }
@@ -2494,6 +2608,12 @@
   .ca__consent { margin-top: 18px; padding-top: 14px; border-top: 1px solid color-mix(in oklch, var(--line) 60%, transparent); font-size: 11px; line-height: 1.5; color: var(--muted-2); text-align: center; }
   .ca__consent a { color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
   .ca__consent a:hover { color: var(--fg); }
+  /* Terms / Privacy are 14px lines at the door's foot: a 44px hit area on a
+     phone, the look unchanged (squad mobile-native, 2026-09-24). */
+  @media (max-width: 1023px) {
+    .ca__consent a { position: relative; }
+    .ca__consent a::before { content: ''; position: absolute; inset: -15px -4px; }
+  }
   /* In an app's own browser the lanes are re-ordered so the one that WORKS
      leads. Flex + `order` rather than a second JSX tree: the door's markup
      stays one thing to read, and off the walled case the source order is the
@@ -2948,6 +3068,12 @@
   .pricing__toggle { display: inline-flex; padding: 3px; border-radius: 999px; border: 1px solid var(--line); background: var(--surf-2); flex-shrink: 0; }
   .pricing__toggle button { font: inherit; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; padding: 5px 11px; border-radius: 999px; color: var(--muted-2); background: transparent; border: 0; cursor: pointer; }
   .pricing__toggle button.is-on { background: var(--fg); color: var(--bg); }
+  /* A 26px segment on a phone: the 44px comes from an invisible hit area
+     (squad mobile-native, 2026-09-24); the pill keeps its look. */
+  @media (max-width: 1023px) {
+    .pricing__toggle button { position: relative; }
+    .pricing__toggle button::before { content: ''; position: absolute; inset: -9px 0; }
+  }
   .pricing__toggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .pricing__save { font-size: 11px; letter-spacing: .06em; color: var(--accent); padding: 3px 8px; border-radius: 999px; border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent); }
   .pricing__h2 { margin-top: 44px; font-family: var(--font-serif); font-weight: 500; font-optical-sizing: auto; font-size: clamp(1.5rem, 2.4vw, 2rem); letter-spacing: -.012em; color: var(--fg); text-wrap: balance; }
@@ -3553,6 +3679,8 @@
     color: var(--fg); outline: none; transition: border-color .2s, box-shadow .2s;
   }
   .sud__input::placeholder { color: var(--muted-2); }
+  /* No iOS focus zoom on a phone (squad mobile-native, 2026-09-24). */
+  @media (max-width: 1023px) { .sud__input { font-size: 16px; } }
   .sud__input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent); }
   .sud__row .btn { width: 100%; justify-content: center; height: 46px; border-radius: 12px; }
   .sud__fine { margin-top: 12px; font-size: 10.5px; letter-spacing: .06em; color: var(--muted-2); }
@@ -5276,6 +5404,15 @@
 @media (hover: none) {
   .btn--sm { min-height: 36px; padding-inline: 12px; }
 }
+/* The brochure's buttons on a phone are 44px (squad mobile-native,
+   2026-09-24): the landing's CTA rows and bands measured 36–43px. Scoped to
+   the brochure's own rows, not every .btn (other surfaces' buttons are their
+   lanes'). After .btn--sm's 36px floor and the base rules, so these win. */
+@media (max-width: 1023px) {
+  .lh__ctas .btn, .mkt__ctas .btn, .liveex__ctas .btn, .lvb__compoundbtn, .splash__ctas .btn { min-height: 44px; }
+  .mkt__more { min-height: 44px; }
+  .themetog__opt { width: 44px; height: 44px; }
+}
 
 /* ── The voice door (components/VoiceButton) ─────────────────────────────
    A listening mic breathes: a soft ring that grows and fades from the
@@ -5311,8 +5448,9 @@
    .dashshell holds it beside the dashboard — a flex row, the spine sticky +
    viewport-tall (AppSpine's own classes), the frame taking the rest. There
    is no brochure nav on this surface (Navigation → isMarketsPath), so every
-   sticky offset below starts at the viewport's top edge. Below lg the spine
-   is the fixed bottom tab bar (48px + safe area): the shell reserves it. */
+   sticky offset below starts at the viewport's top edge. Below lg the shell
+   is a PHONE FRAME (app/native-shell.css, squad mobile-native 2026-09-24):
+   the spine's tab bar is its last row, in flow, and .mkt-frame scrolls. */
 .mkt-shell { display: flex; align-items: stretch; min-height: 100dvh; }
 .mkt-shell > .mkt-frame { flex: 1 1 auto; min-width: 0; }
 .mkt-frame {
@@ -5565,9 +5703,10 @@
   .mkt-frame__bar { top: var(--mkt-top-h); }
   .mkt-frame__main { padding-bottom: 28px; }
   .mkt-frame__rail { grid-area: rail; position: static; height: auto; margin: 0 var(--mkt-pad-l); border: 1px solid var(--line); border-radius: 14px; }
-  /* The spine's phone bar measures 49px (48px of seat + its 1px top border),
-     so a 48px reserve left the page's last line 1px under it. */
-  .mkt-shell { padding-bottom: calc(49px + env(safe-area-inset-bottom)); }
+  /* No bar reserve here any more (squad mobile-native, 2026-09-24): below lg
+     .mkt-shell is a PHONE FRAME (app/native-shell.css) whose last row is the
+     spine's tab bar, in flow — the scroller ends where the bar begins. The
+     ask pill still floats over the viewport, so it keeps its lift. */
   :root[data-spine] .askdoor-pill { bottom: calc(64px + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 640px) {
@@ -5631,7 +5770,7 @@
 .mkt-chart__hint { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); margin: -2px 0 0; }
 .mkt-chart__canvas { position: relative; width: 100%; min-width: 0; overflow: hidden; border-radius: 10px; }
 .mkt-chart__canvas.is-drawing { cursor: crosshair; }
-.mkt-chart__engine { position: absolute; inset: 0; }
+.mkt-chart__engine { position: absolute; inset: 0; touch-action: pan-y; } /* the page scrolls vertically; pan + pinch are the chart's (MarketChart: vertTouchDrag off) */
 .mkt-chart__empty { position: absolute; inset: 0; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 10px; pointer-events: none; }
 .mkt-chart__foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
 .mkt-attrib { color: var(--muted-2); text-decoration: none; border-bottom: 1px solid transparent; transition: color .15s, border-color .15s; }
@@ -6127,14 +6266,24 @@
 .askdoor-pill__short { display: none; font-size: 14px; font-weight: 600; color: var(--fg); }
 .askdoor-pill__mic { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 999px; color: var(--muted-2); border: 1px solid var(--line); flex-shrink: 0; }
 .askdoor-pill__kbd { font-size: 10px; line-height: 1.4; color: var(--muted-2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; margin-right: 4px; flex-shrink: 0; }
-/* the pill floats over the page foot — give the last line room to clear it */
-body:has(> .askdoor-pill) { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+/* the pill floats over the page foot — give the last line room to clear it.
+   A DESCENDANT match: the pill's parent is the layout's providers <div>, so the
+   old `body:has(> .askdoor-pill)` never matched and no page ever reserved the
+   room (squad mobile-native, MARKETS.md F10). Brochure pages only: an app frame
+   ([data-app-frame], a document that never scrolls) must not grow a padded
+   body, and a screen whose top bar carries the door ([data-ask-door="rail"])
+   hides the pill on a phone. Both markers ship in the server HTML. */
+/* The landing's MobileCtaBar carries its own Ask and sets
+   html[data-mcta="show"] while it's up: the pill would sit under it (PAGES
+   measured a 46px overlap), so it steps aside, and its reserve with it. */
+:root[data-mcta="show"] .askdoor-pill { display: none; }
+:root:not([data-mcta="show"]) body:not(:has([data-app-frame], [data-ask-door="rail"])):has(.askdoor-pill) { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
 @media (max-width: 640px) {
   .askdoor-pill { left: auto; right: 16px; transform: none; width: auto; height: 46px; padding: 0 16px 0 8px; gap: 8px; }
   .askdoor-pill:hover { transform: translateY(-1px); }
   .askdoor-pill__text, .askdoor-pill__kbd, .askdoor-pill__mic { display: none; }
   .askdoor-pill__short { display: inline; }
-  body:has(> .askdoor-pill) { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+  :root:not([data-mcta="show"]) body:not(:has([data-app-frame], [data-ask-door="rail"])):has(.askdoor-pill) { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
 }
 
 /* the sheet */
@@ -6180,3 +6329,51 @@ body:has(> .askdoor-pill) { padding-bottom: calc(72px + env(safe-area-inset-bott
 }
 @keyframes askdoorup { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .askdoor__sheet, .askdoor__backdrop { animation: none; } }
+
+/* ── The ask door on a phone (squad mobile-native, 2026-09-24) ─────────────
+   Nate's screenshot 1: the floating pill sat on the DOT row's 24h cell (a
+   drive measured 91×38px of it), and the markets top strip already carried
+   an "Ask" — two doors on one screen, one of them over the data. Below lg:
+   - a screen whose top bar carries the door ([data-ask-door="rail"], the
+     markets strip) never shows the pill. The pill's parent is the layout's
+     providers <div>, never <body> itself, so this is a DESCENDANT match (the
+     page-foot reserve above is one too, since this squad: MARKETS.md F10);
+   - the door itself is THE Sheet (AskDoor → components/mobile/Sheet,
+     data-sheet="ask"); these rules dress its content only. */
+@media (max-width: 1023px) {
+  body:has([data-ask-door="rail"]) .askdoor-pill { display: none; }
+  /* On a document-scrolling page the pill is a native FAB (round 2; QA
+     measured it over text at 10 of 14 scroll positions on /): away while
+     the reader scrolls down, back on a scroll up, at rest at the top and the
+     page end (AskDoorPill → lib/ask-door askPillStep). */
+  .askdoor-pill[data-away] { display: none; }
+}
+/* The rail trigger on its own (squad mobile-native, round 3). AskDoorTrigger
+   "rail" renders wherever a screen's top bar carries the door: the markets
+   strip AND /wallet's header (PAGES). Its placeholder hint was hidden only in
+   components/markets/markets.css, which only the markets shell loads, so on
+   /wallet the 353px hint rendered inside the button at EVERY width (PAGES
+   measured the button at 440px, pushing Switch off a 375 screen). The base
+   lives here, with the door, wherever AskDoor renders: the hint hidden, no ⌘K
+   on a phone, a 44px target on touch. The markets strip's own phone form
+   (the full-width ask field) stays in markets.css, scoped to .mkt-frame__top. */
+.mkt-frame__askhint { display: none; }
+@media (max-width: 1023px) { [data-ask-door="rail"] .nav__ask-kbd { display: none; } }
+@media (hover: none) { [data-ask-door="rail"] { min-height: 44px; } }
+.askdoor__sheettitle { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.askdoor__sheetask { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-chat-display); }
+.askdoor__sheetbody { display: flex; flex-direction: column; min-height: 0; }
+.askdoor-sheet .askdoor__composer { padding: 4px 12px 8px 16px; }
+.askdoor-sheet .askdoor__input { font-size: max(16px, 1em); min-height: 44px; padding: 10px 0; } /* a 44px field (it measured 243×37) */
+.askdoor-sheet .askdoor__send { width: 44px; height: 44px; }
+/* The mic is 44px only under md (VoiceButton's own w-11/md:w-9): a landscape
+   phone is wider than md and got 36px. In the phone Sheet it's always 44. */
+@media (hover: none) { .askdoor-sheet button[data-voice-state] { width: 44px; height: 44px; } }
+.askdoor-sheet .askdoor__chips { gap: 8px; padding: 4px 16px 14px; }
+.askdoor-sheet .askdoor__chip { min-height: 44px; padding: 0 14px; font-size: 13.5px; }
+.askdoor__sheetfoot { margin: 0; font-size: 9.5px; letter-spacing: 0.14em; line-height: 1.5; color: var(--muted-2); }
+.askdoor__sheetbar { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 0 12px 8px; border-bottom: 1px solid var(--line); }
+/* Live, the runtime owns the whole panel: the Sheet's body stops scrolling
+   and the thread (ChatInterface simple) scrolls itself. */
+.askdoor-sheet--live .sheet__body { display: flex; flex-direction: column; overflow: hidden; }
+.askdoor-sheet--live .askdoor__sheetbody { flex: 1 1 auto; }

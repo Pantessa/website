@@ -49,7 +49,7 @@ export default function SignedTxLines({ meta }: { meta: unknown }) {
               href={`${chain?.explorerTx ?? 'https://basescan.org/tx/'}${tx.hash}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-shrink-0 inline-flex items-center gap-1 underline decoration-dotted underline-offset-2 hover:text-[color:var(--fg)] transition-colors"
+              className="flex-shrink-0 inline-flex items-center max-lg:min-h-11 gap-1 underline decoration-dotted underline-offset-2 hover:text-[color:var(--fg)] transition-colors"
               title={`View on ${chain?.name ?? 'the block explorer'}`}
             >
               {tx.hash.slice(0, 10)}…{tx.hash.slice(-6)}

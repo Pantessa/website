@@ -23,9 +23,20 @@
 // active state. The WALLET page (/wallet, 2026-09-11) is the same shape: its
 // seat sits right under LINKS in both postures and lights on its own page.
 //
-// Click grammar: a tab icon opens the drawer on that tab; clicking the tab
-// you're already looking at collapses the drawer. From the dashboard a tab
-// icon is a shortcut INTO chat, landing with that drawer tab open.
+// Click grammar (lg and up): a tab icon opens the drawer on that tab;
+// clicking the tab you're already looking at collapses the drawer. From the
+// dashboard a tab icon is a shortcut INTO chat, landing with that drawer tab
+// open.
+//
+// Below lg A TAB IS A PLACE, NEVER A POP-UP (squad mobile-native,
+// 2026-09-24, Nate: "when you click a bottom nav the drawer pops out
+// automatically but does not feel like the right flow"). lib/phone-nav
+// decides what every tap does: APPS / JOBS / LINKS / TEAM show their screen
+// over the conversation (store.phoneScreen, components/phone), CHATS is the
+// conversation's own seat (lit in a conversation; tapped there it shows the
+// chat list), the lit seat tapped again scrolls its screen to the top, MORE
+// is a Sheet (scrim, Escape, swipe), and off /chat a seat navigates in with
+// its screen showing. No drawer opens on a phone, ever.
 //
 // The destination lives in the URL (`?tab=<name>`, lib/app-tab-url): the
 // spine reads it on arrival and mirrors every change back, so a reload keeps
@@ -33,7 +44,7 @@
 // linkable. Mirroring uses replaceState — the back button stays the way OFF
 // the page, not a tab-undo.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState, useRef, type MouseEvent } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { BookOpen, Boxes, CandlestickChart, Ellipsis, Link2, ListChecks, MessageSquare, Settings, Users, Wallet } from 'lucide-react'
@@ -41,7 +52,11 @@ import { cn } from '@/lib/utils'
 import { isPublicAppPath } from '@/lib/app-entry'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { DEFAULT_TAB, parseTabParam, syncTabParam, tabUrl } from '@/lib/app-tab-url'
+import { PHONE_MQ } from '@/lib/phone-shell'
+import { scrollAppToTop } from '@/lib/app-scroller'
+import { ARRIVAL_SCREEN, moreLit as moreLitFor, phoneScreenFromSearch, phoneTap, seatForScreen, tabForScreen, type PhoneSeat } from '@/lib/phone-nav'
 import { useYeetfulStore, type RailTab } from '@/lib/store'
+import Sheet from '@/components/mobile/Sheet'
 import { rememberSignInReturn, signedOutJustNow, useSession } from '@/lib/session'
 import { useRunningWork } from '@/lib/use-running-work'
 import { rosterEnabledClient } from '@/lib/roster-client'
@@ -79,16 +94,7 @@ const WALLET_TITLE = 'Wallet — balances on every chain, gas, send and receive'
 
 export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'dashboard' | 'markets' | 'wallet' }) {
   const router = useRouter()
-  const {
-    railTab,
-    setRailTab,
-    mainView,
-    setMainView,
-    mcpRailOpen,
-    setMcpRailOpen,
-    mobileMcpRailOpen,
-    setMobileMcpRailOpen,
-  } = useYeetfulStore()
+  const { railTab, setRailTab, mainView, setMainView, mcpRailOpen, setMcpRailOpen, phoneScreen, setPhoneScreen } = useYeetfulStore()
   const onDashboard = surface === 'dashboard'
   const onMarkets = surface === 'markets'
   const onWallet = surface === 'wallet'
@@ -150,12 +156,12 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // page has no work to show, and every read would answer 401.
   const { badgeCount } = useRunningWork(!signedOut)
 
-  // Which posture is live — the URL names one destination, but the two
-  // drawers are separate flags (desktop persists its open state, the mobile
-  // overlay never does), so the mirror below has to know which one counts.
+  // Which posture is live — the URL names one destination, but the desktop
+  // drawer (persisted open state) and the phone's screen are separate
+  // state, so the mirror below has to know which one counts.
   const [isNarrow, setIsNarrow] = useState(false)
   useEffect(() => {
-    const mql = window.matchMedia('(max-width: 1023px)')
+    const mql = window.matchMedia(PHONE_MQ)
     const on = (e: MediaQueryListEvent) => setIsNarrow(e.matches)
     setIsNarrow(mql.matches)
     mql.addEventListener('change', on)
@@ -167,21 +173,10 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // into DOCS. Below sm the bar keeps MARKETS through CHATS and folds TEAM
   // (while the roster is on), DOCS and SETTINGS behind MORE, the tab bar's
   // standard answer. From sm up every seat has room and MORE goes away.
+  // MORE is a Sheet (components/mobile/Sheet): closed by default, opened by
+  // its seat, closed by a tap outside (the scrim), Escape, its close button,
+  // its own seat, and (SHELL) a swipe down or the back gesture.
   const [moreOpen, setMoreOpen] = useState(false)
-  const moreRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!moreOpen) return
-    const onDown = (e: PointerEvent) => {
-      if (!moreRef.current?.contains(e.target as Node)) setMoreOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMoreOpen(false)
-    document.addEventListener('pointerdown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [moreOpen])
 
   // URL → spine. `?tab=<name>` (lib/app-tab-url) opens the drawer on that
   // destination: it's how a reload comes back to where you were, how
@@ -195,23 +190,34 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
     (search: string, { resetWhenAbsent }: { resetWhenAbsent: boolean }): RailTab | null => {
       const tab = parseTabParam(search)
       const known = tab && TABS.some((t) => t.tab === tab) ? tab : null
+      const phone = window.matchMedia(PHONE_MQ).matches
       if (!known) {
         // Back/forward off a destination returns to the resting spine; on
-        // ARRIVAL we leave the store alone, so a tab picked before the
-        // navigation (the dashboard's shortcut into chat) survives the hop.
+        // ARRIVAL we leave the desktop store alone, so a tab picked before
+        // the navigation (the dashboard's shortcut into chat) survives the
+        // hop. The phone is stricter: a /chat URL that names no screen IS
+        // the conversation (lib/phone-nav ARRIVAL_SCREEN) — every off-chat
+        // seat that wants a screen writes it into the URL, so a bare
+        // arrival never inherits the screen a previous visit left open.
         if (resetWhenAbsent) {
           setRailTab(DEFAULT_TAB)
           setMainView('chat')
         }
+        if (phone) setPhoneScreen(ARRIVAL_SCREEN)
         return null
+      }
+      if (phone) {
+        // The screen, never the desktop pair: mainView 'links' would render
+        // the board under the screen (ChatInterface's linksMode).
+        setPhoneScreen(phoneScreenFromSearch(search))
+        return known
       }
       setRailTab(known)
       setMainView(known === 'links' ? 'links' : 'chat')
-      if (window.matchMedia('(max-width: 1023px)').matches) setMobileMcpRailOpen(true)
-      else setMcpRailOpen(true)
+      setMcpRailOpen(true)
       return known
     },
-    [setRailTab, setMainView, setMcpRailOpen, setMobileMcpRailOpen],
+    [setRailTab, setMainView, setMcpRailOpen, setPhoneScreen],
   )
 
   const deepLinkedRef = useRef(false)
@@ -277,15 +283,21 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   // gesture (clicking the tab you're on) is also the way back.
   const mainViewFor = (tab: RailTab): 'chat' | 'links' => (tab === 'links' ? 'links' : 'chat')
 
-  // Spine → URL. The destination the address bar should name: the lit tab
-  // while the drawer is open, and LINKS whenever the board owns the main
-  // screen (on phones it shows with the overlay closed). A collapsed drawer
-  // on the default tab is just the conversation, so the param comes off —
-  // /chat and /chat?tab=mcps restore identically, and shared chat links stay
-  // clean.
-  const drawerOpen = isNarrow ? mobileMcpRailOpen : mcpRailOpen
-  const urlTab: RailTab | null =
-    mainView === 'links' && railTab === 'links' ? 'links' : drawerOpen ? railTab : null
+  // Spine → URL. The destination the address bar should name. Desktop: the
+  // lit tab while the drawer is open, and LINKS whenever the board owns the
+  // main screen; a collapsed drawer on the default tab is just the
+  // conversation, so the param comes off — /chat and /chat?tab=mcps restore
+  // identically, and shared chat links stay clean. Phone: the screen
+  // (lib/phone-nav), written explicitly even for APPS — it is a distinct
+  // place there, and a reload on it must come back to it; the conversation
+  // writes none.
+  const urlTab: RailTab | null = isNarrow
+    ? tabForScreen(phoneScreen)
+    : mainView === 'links' && railTab === 'links'
+      ? 'links'
+      : mcpRailOpen
+        ? railTab
+        : null
 
   // Every setRailTab in the app funnels through this one write — the spine's
   // clicks, the auto-flip to Jobs when a turn births a standing intent, the
@@ -299,8 +311,8 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
       mirroredRef.current = true
       return
     }
-    syncTabParam(urlTab)
-  }, [urlTab, offChat])
+    syncTabParam(urlTab, { explicit: isNarrow })
+  }, [urlTab, offChat, isNarrow])
 
   // Desktop: the drawer is the in-flow panel (persisted open state).
   const pickDesktop = (tab: RailTab) => {
@@ -330,30 +342,37 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
     }
   }
 
-  // Mobile: the drawer is a transient overlay (never persisted).
-  const pickMobile = (tab: RailTab) => {
-    if (offChat) {
-      const href = tabUrl(tab, '/chat', '')
-      if (openDoorFor(href)) return
-      setRailTab(tab)
-      setMainView(mainViewFor(tab))
-      setMobileMcpRailOpen(true)
-      router.push(href)
-      return
+  // Phone: a tab is a place. lib/phone-nav decides; this executes.
+  const pickPhone = (seat: PhoneSeat) => {
+    const action = phoneTap({ surface, screen: phoneScreen, seat, pathname })
+    switch (action.kind) {
+      case 'sheet':
+        setMoreOpen(true)
+        return
+      case 'top':
+        scrollAppToTop('smooth')
+        return
+      case 'screen':
+        setPhoneScreen(action.screen)
+        return
+      case 'navigate':
+        if (openDoorFor(action.href)) return
+        // The arriving /chat shows the screen at once; the URL names it too,
+        // so a reload agrees.
+        if (action.href.startsWith('/chat')) setPhoneScreen(action.screen ?? ARRIVAL_SCREEN)
+        router.push(action.href)
+        return
     }
-    if (railTab === tab && mobileMcpRailOpen) {
-      if (tab === 'links' && mainView !== 'links') {
-        setMainView('links')
-        setMobileMcpRailOpen(false) // reveal the board — the overlay covers it on phones
-      } else {
-        setMobileMcpRailOpen(false)
-        setMainView('chat')
-      }
-    } else {
-      setRailTab(tab)
-      setMainView(mainViewFor(tab))
-      setMobileMcpRailOpen(true)
-    }
+  }
+  // The page seats stay links (a real href for crawlers, the harness and a
+  // long-press); a tap on the LIT one at its root scrolls to the top instead
+  // of re-navigating.
+  const pageSeatClick = (seat: PhoneSeat) => (e: MouseEvent<HTMLAnchorElement>) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+    if (!window.matchMedia(PHONE_MQ).matches) return
+    if (phoneTap({ surface, screen: phoneScreen, seat, pathname }).kind !== 'top') return
+    e.preventDefault()
+    scrollAppToTop('smooth')
   }
 
   const jobsBadge = badgeCount > 0 && (
@@ -392,17 +411,23 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
     )
   }
 
+  // ONE seat anatomy for the bar (every seat is a ≥48px target with press
+  // feedback; a landscape phone gets the compact row posture: 40px seats,
+  // icon beside label).
+  const PHONE_SEAT =
+    'relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 select-none touch-manipulation transition-colors active:bg-[var(--surf-1)] [@media(orientation:landscape)_and_(max-height:480px)]:min-h-[40px] [@media(orientation:landscape)_and_(max-height:480px)]:flex-row [@media(orientation:landscape)_and_(max-height:480px)]:gap-1.5'
   const mobileTab = ({ tab, label, title, Icon }: SpineTab) => {
-    const selected = !offChat && railTab === tab && mobileMcpRailOpen
+    // Lit = this seat's place is showing (CHATS: the conversation or its list).
+    const selected = !offChat && seatForScreen(phoneScreen) === tab
     return (
       <button
         key={tab}
-        onClick={() => pickMobile(tab)}
+        onClick={() => pickPhone(tab)}
         title={title}
         aria-label={label}
         aria-pressed={selected}
         className={cn(
-          'relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 transition-colors',
+          PHONE_SEAT,
           // Folded behind MORE below sm (the capacity note above).
           PHONE_MORE_TABS.has(tab) && 'max-sm:hidden',
           selected ? 'text-white' : 'text-[color:var(--muted)]',
@@ -421,11 +446,11 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
   }
 
   // What MORE holds on a phone, and whether it wears the "you are here" tick
-  // (the settings page, or the TEAM drawer open over the chat).
+  // (the settings page, or the TEAM screen showing over the chat).
   const moreTab = TABS.find((t) => PHONE_MORE_TABS.has(t.tab))
-  const moreLit = onDashboard || (!offChat && !!moreTab && railTab === moreTab.tab && mobileMcpRailOpen)
+  const moreLit = moreLitFor(surface, phoneScreen)
   const moreItem =
-    'flex w-full items-center gap-3 rounded-lg px-3 py-2 min-h-[44px] text-left text-[color:var(--muted)] hover:bg-[var(--surf-2)] hover:text-[color:var(--fg)] transition-colors'
+    'flex w-full items-center gap-3 rounded-xl px-3 py-2 min-h-[52px] text-left text-[color:var(--muted)] hover:bg-[var(--surf-2)] hover:text-[color:var(--fg)] active:bg-[var(--surf-1)] transition-colors select-none'
 
   return (
     <>
@@ -539,10 +564,11 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         </SpineLink>
       </aside>
 
-      {/* ── Mobile: the bar. Fixed above the overlay drawer (z-40) so tabs
-          stay reachable while it's open; modals (z-70) still cover it. The
-          surface shells reserve its height (see max-lg paddings). ── */}
+      {/* ── Phone: the bar. Fixed over the phone screens (z-45) so the seats
+          stay reachable; modals (z-70) and sheets (z-90) cover it. The
+          surface shells reserve its height (the frame, lib/phone-shell). ── */}
       <nav
+        data-spine-bar=""
         className="lg:hidden fixed inset-x-0 bottom-0 z-50 flex items-stretch border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur-md pb-[env(safe-area-inset-bottom)]"
         aria-label="Workspace"
       >
@@ -551,10 +577,8 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           title="Markets — stocks 24/7, spot, perps; the chart that executes"
           aria-label="MARKETS"
           aria-current={onMarkets ? 'page' : undefined}
-          className={cn(
-            'relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 transition-colors',
-            onMarkets ? 'text-white' : 'text-[color:var(--muted)]',
-          )}
+          onClick={pageSeatClick('markets')}
+          className={cn(PHONE_SEAT, onMarkets ? 'text-white' : 'text-[color:var(--muted)]')}
         >
           {onMarkets && (
             <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
@@ -568,10 +592,8 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           title={WALLET_TITLE}
           aria-label="WALLET"
           aria-current={onWallet ? 'page' : undefined}
-          className={cn(
-            'relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 transition-colors',
-            onWallet ? 'text-white' : 'text-[color:var(--muted)]',
-          )}
+          onClick={pageSeatClick('wallet')}
+          className={cn(PHONE_SEAT, onWallet ? 'text-white' : 'text-[color:var(--muted)]')}
         >
           {onWallet && (
             <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
@@ -584,7 +606,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           href="/docs"
           title="Docs — how Pantessa builds, guards and signs"
           aria-label="DOCS"
-          className="relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 text-[color:var(--muted)] transition-colors max-sm:hidden"
+          className={cn(PHONE_SEAT, 'text-[color:var(--muted)] max-sm:hidden')}
         >
           <BookOpen className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">DOCS</span>
@@ -593,10 +615,8 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           href="/dashboard"
           title="Settings — creator page, keys, billing, account"
           aria-label="Settings"
-          className={cn(
-            'relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 transition-colors max-sm:hidden',
-            onDashboard ? 'text-white' : 'text-[color:var(--muted)]',
-          )}
+          onClick={pageSeatClick('settings')}
+          className={cn(PHONE_SEAT, 'max-sm:hidden', onDashboard ? 'text-white' : 'text-[color:var(--muted)]')}
         >
           {onDashboard && (
             <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
@@ -605,20 +625,19 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           <span className="mono text-[10px] font-medium tracking-wide">SETTINGS</span>
         </SpineLink>
         {/* MORE — phones only (below sm). TEAM, DOCS and SETTINGS ride here
-            so the seats before it keep legible labels at 375px. The menu
-            mounts on open, like every menu in the app. */}
-        <div ref={moreRef} className="relative flex-1 flex sm:hidden">
+            so the seats before it keep legible labels at 375px. It opens a
+            Sheet (D3): a scrim closes it, so does Escape, a swipe, the back
+            gesture and this seat again. */}
+        <div className="relative flex-1 flex sm:hidden">
           <button
             type="button"
             onClick={() => setMoreOpen((o) => !o)}
             title="More — docs and settings"
             aria-label="More"
-            aria-haspopup="menu"
+            aria-haspopup="dialog"
             aria-expanded={moreOpen}
-            className={cn(
-              'relative flex-1 min-h-[48px] flex flex-col items-center justify-center gap-0.5 transition-colors',
-              moreLit || moreOpen ? 'text-white' : 'text-[color:var(--muted)]',
-            )}
+            data-sheet-open="more"
+            className={cn(PHONE_SEAT, moreLit || moreOpen ? 'text-white' : 'text-[color:var(--muted)]')}
           >
             {moreLit && (
               <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
@@ -626,61 +645,61 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             <Ellipsis className="w-[18px] h-[18px]" />
             <span className="mono text-[10px] font-medium tracking-wide">MORE</span>
           </button>
-          {moreOpen && (
-            <div
-              role="menu"
-              aria-label="More destinations"
-              data-spine-more
-              className="absolute bottom-full right-1.5 mb-2 w-60 rounded-xl border border-[var(--line-2)] bg-[var(--bg)] p-1 shadow-[0_16px_40px_rgba(0,0,0,0.35)]"
-            >
-              {moreTab && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMoreOpen(false)
-                    pickMobile(moreTab.tab)
-                  }}
-                  className={moreItem}
-                >
-                  <moreTab.Icon className="w-[18px] h-[18px] flex-shrink-0" />
-                  <span className="min-w-0">
-                    <span className="block text-[13px] font-medium text-[color:var(--fg)]">Team</span>
-                    <span className="block text-[11px] truncate">Your wallet&rsquo;s staff</span>
-                  </span>
-                </button>
-              )}
-              <Link href="/docs" role="menuitem" onClick={() => setMoreOpen(false)} className={moreItem}>
-                <BookOpen className="w-[18px] h-[18px] flex-shrink-0" />
-                <span className="min-w-0">
-                  <span className="block text-[13px] font-medium text-[color:var(--fg)]">Docs</span>
-                  <span className="block text-[11px] truncate">How Pantessa builds, guards and signs</span>
-                </span>
-              </Link>
-              <Link
-                href="/dashboard"
-                role="menuitem"
-                aria-current={onDashboard ? 'page' : undefined}
-                onClick={(e) => {
-                  setMoreOpen(false)
-                  // The menu unmounts as it closes, so a door can't live in
-                  // it (a SpineLink's would go with it): a signed-out visitor
-                  // gets the spine's own door.
-                  const plain = e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey
-                  if (plain && openDoorFor('/dashboard')) e.preventDefault()
-                }}
-                className={moreItem}
-              >
-                <Settings className="w-[18px] h-[18px] flex-shrink-0" />
-                <span className="min-w-0">
-                  <span className="block text-[13px] font-medium text-[color:var(--fg)]">Settings</span>
-                  <span className="block text-[11px] truncate">Creator page, keys, billing, account</span>
-                </span>
-              </Link>
-            </div>
-          )}
         </div>
       </nav>
+      <Sheet id="more" open={moreOpen} onClose={() => setMoreOpen(false)} title="More" size="auto">
+        <div role="menu" aria-label="More destinations" className="p-2 pb-3">
+          {moreTab && (
+            <button
+              type="button"
+              role="menuitem"
+              aria-current={!offChat && phoneScreen === 'team' ? 'page' : undefined}
+              onClick={() => {
+                setMoreOpen(false)
+                pickPhone(moreTab.tab)
+              }}
+              className={moreItem}
+            >
+              <moreTab.Icon className="w-[18px] h-[18px] flex-shrink-0" />
+              <span className="min-w-0">
+                <span className="block text-[15px] font-medium text-[color:var(--fg)]">Team</span>
+                <span className="block text-[12px] truncate">Your wallet&rsquo;s staff</span>
+              </span>
+            </button>
+          )}
+          <Link href="/docs" role="menuitem" onClick={() => setMoreOpen(false)} className={moreItem}>
+            <BookOpen className="w-[18px] h-[18px] flex-shrink-0" />
+            <span className="min-w-0">
+              <span className="block text-[15px] font-medium text-[color:var(--fg)]">Docs</span>
+              <span className="block text-[12px] truncate">How Pantessa builds, guards and signs</span>
+            </span>
+          </Link>
+          <Link
+            href="/dashboard"
+            role="menuitem"
+            aria-current={onDashboard ? 'page' : undefined}
+            onClick={(e) => {
+              setMoreOpen(false)
+              // The sheet unmounts as it closes, so a door can't live in it
+              // (a SpineLink's would go with it): a signed-out visitor gets
+              // the spine's own door.
+              const plain = e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey
+              if (plain && openDoorFor('/dashboard')) e.preventDefault()
+            }}
+            className={moreItem}
+          >
+            <Settings className="w-[18px] h-[18px] flex-shrink-0" />
+            <span className="min-w-0">
+              <span className="block text-[15px] font-medium text-[color:var(--fg)]">Settings</span>
+              <span className="block text-[12px] truncate">Creator page, keys, billing, account</span>
+            </span>
+          </Link>
+        </div>
+      </Sheet>
+      {/* Where the open door leads, readable by a drive (the modal keeps its
+          redirectTo to itself): the squad's proof that a signed-out visitor's
+          seat tap opens the door AIMED at that seat's target. */}
+      {doorTo && <span hidden data-spine-door-to={doorTo} />}
       {doorTo && <CreateAccountModal onClose={() => setDoorTo(null)} redirectTo={doorTo} />}
     </>
   )

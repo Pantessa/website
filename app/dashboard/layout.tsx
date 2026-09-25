@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react'
 import { PanelLeftClose } from 'lucide-react'
 import { rememberSignInReturn, signedOutJustNow, useSession } from '@/lib/session'
 import { useAppSidebar } from '@/lib/app-sidebar'
+import { FRAME_ATTR, SCROLL_ATTR } from '@/lib/phone-shell'
 import AppSpine from '@/components/AppSpine'
 import DashAskBar from '@/components/DashAskBar'
 import DashboardSidebar from '@/components/DashboardSidebar'
@@ -62,16 +63,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     router.replace('/')
   }, [signedOut, pathname, router])
 
-  // Nothing to render until we know the user is authed: null through the
-  // loading phase, and through the brief tick before the redirect above lands.
-  if (!mounted || !address) return null
+  // Nothing to render until we know the user is authed: through the loading
+  // phase, and through the brief tick before the redirect above lands. On a
+  // phone the FRAME renders at once (an empty one), so the document never has
+  // a moment without the frame's rules while the wallet/session settle (QA saw
+  // a transient scrolling document on the dashboard once; the content still
+  // waits, so nothing of the dashboard shows before auth is known).
+  if (!mounted || !address) return <div className="dashshell" {...{ [FRAME_ATTR]: '' }} />
 
+  // Below lg the shell is a PHONE FRAME (squad mobile-native, 2026-09-24;
+  // app/native-shell.css): .dashshell is the frame, .dash is its ONE scroller
+  // (the sticky section bar and the sticky-bottom ask bar stick to it), and
+  // the spine's tab bar is the frame's last row, in flow. The hand reserves
+  // (`:root[data-spine] .dash__main` 96px, `.dashask` 60px) are gone: the
+  // scroller ends where the bar begins, and .dashask's own `bottom: 20px` is
+  // measured from there.
+  const frame = { [FRAME_ATTR]: '' }
+  const scroll = { [SCROLL_ATTR]: '' }
   return (
-    <div className="dashshell">
+    <div className="dashshell" {...frame}>
       {/* The shared spine — same component chat mounts, dashboard flavor:
           tab icons are shortcuts into chat, SETTINGS wears the active state. */}
       <AppSpine surface="dashboard" />
-      <div className="dash">
+      <div className="dash" {...scroll}>
         {/* Desktop: persistent left rail — sections up top, account pinned to
             the bottom (wallet + sign out). Hidden below 900px. */}
         <aside className="dash__rail">

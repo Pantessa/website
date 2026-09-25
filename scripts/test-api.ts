@@ -4330,10 +4330,17 @@ async function main() {
       // Touch targets: the toolbar working-set door (was 17px tall), the
       // journey dismiss (16×16), the example chips (28px), the embed's
       // Fullscreen (24×24) and the undefined .btn--sm all get a ≥36px floor.
-      check('mobile: the toolbar working-set door is ≥40px tall on phones', /openRail\('mcps'\)[\s\S]{0,300}max-lg:min-h-10/.test(chatIface))
+      // Re-pinned 2026-09-24 (squad mobile-native, CHAT): the toolbar is lg+
+      // only now — a phone's apps door is the top bar's title/apps target
+      // (components/chat/ChatPhoneBar), 44px by chat-phone.css.
+      const phoneBarSrc = await readFile(new URL('../components/chat/ChatPhoneBar.tsx', import.meta.url), 'utf8')
+      const phoneBarCss = await readFile(new URL('../components/chat/chat-phone.css', import.meta.url), 'utf8')
+      check('mobile: the phone apps door (the top bar) is ≥44px tall', /data-phone-open="apps"/.test(phoneBarSrc) && /\.chat-phonebar__head \{[^}]*min-height: 44px/.test(phoneBarCss) && /<ChatPhoneBar /.test(chatIface))
       const linksTab = await readFile(new URL('../components/LinksRailTab.tsx', import.meta.url), 'utf8')
       check('mobile: the journey-strip dismiss is a 40px target', /Dismiss the getting-started journey"[\s\S]{0,120}h-10 w-10/.test(linksTab))
-      check('mobile: example chips are ≥40px tall below lg', /max-lg:min-h-10 max-lg:px-4 rounded-full/.test(emptyState))
+      // Re-pinned 2026-09-24 (squad mobile-native, CHAT r2): 40 → 44px, the
+      // squad's touch floor (README invariant 3).
+      check('mobile: example chips are ≥44px tall below lg', /max-lg:min-h-11 max-lg:px-4 rounded-full/.test(emptyState))
       const embedChat = await readFile(new URL('../components/EmbedChat.tsx', import.meta.url), 'utf8')
       check('mobile: the embed Fullscreen button is a 40px target below lg', /Fullscreen'\}[\s\S]{0,400}max-lg:w-10 max-lg:h-10/.test(embedChat))
       check('mobile: .btn--sm exists with a touch floor', /\.btn--sm \{ padding/.test(designCss) && /@media \(hover: none\) \{\s*\.btn--sm \{ min-height: 36px/.test(designCss))
@@ -4389,14 +4396,17 @@ async function main() {
           /<span className="flex flex-1 items-center gap-2 min-w-0">[\s\S]{0,400}min-w-0 truncate max-sm:hidden">\{job\.title\}/.test(jobCard) &&
           /<span className="sm:hidden basis-full pl-6 text-\[12\.5px\] leading-snug line-clamp-2">\{job\.title\}<\/span>/.test(jobCard),
       )
-      check('mobile: JobCard cancel is a 40px touch target', /void cancel\(\)\} className="[^"]*\[@media\(hover:none\)\]:min-h-10/.test(jobCard))
+      // Re-pinned 2026-09-24 (squad mobile-native, CHAT r2): 40 → 44px.
+      check('mobile: JobCard cancel is a 44px touch target', /void cancel\(\)\} className="[^"]*\[@media\(hover:none\)\]:min-h-11/.test(jobCard))
       // Overlay chrome: the 28px close (and chart external) buttons are 40px
       // on touch; the chart's act chips are 12px and 40px tall.
       const touch10 = /\[@media\(hover:none\)\]:h-10 \[@media\(hover:none\)\]:w-10/
       check('mobile: overlay close buttons (chart / job detail / request-MCP) are 40px on touch', touch10.test(chartOverlay) && touch10.test(jobOverlay) && touch10.test(addMcp))
       // Buy + Sell (the DCA chip left 2026-09-16)
       check('mobile: chart overlay act chips are ≥40px and 12px on touch', (chartOverlay.match(/\[@media\(hover:none\)\]:min-h-10 \[@media\(hover:none\)\]:text-\[12px\]/g) ?? []).length === 2)
-      check('mobile: the sign-in door dismiss is a 40px touch target', /@media \(hover: none\) \{ \.ca__close \{ width: 40px; height: 40px;/.test(designCss))
+      // Re-pinned by the mobile-native squad (2026-09-24, PAGES): the door's
+      // dismiss grew from 40px to the 44px floor every phone target now meets.
+      check('mobile: the sign-in door dismiss is a 44px touch target', /@media \(hover: none\) \{ \.ca__close \{ width: 44px; height: 44px;/.test(designCss))
       // The toolbar working-set door beside chain picker + Share + pill was
       // ~30px wide at 375 and ellipsized to "Sn…" — phones show the count.
       // Found by the AFTER sweep: the holdings-row chart button was 24×24 on
@@ -4409,14 +4419,22 @@ async function main() {
       const appMode = await readFile(new URL('../components/AppModeWorkspace.tsx', import.meta.url), 'utf8')
       check('mobile: the holdings-row chart button is a 40px target on touch', /live chart`\}[\s\S]{0,300}\[@media\(hover:none\)\]:h-10 \[@media\(hover:none\)\]:w-10 \[@media\(hover:none\)\]:-my-2/.test(chartBtn))
       check('mobile: chart timeframe chips have a 36px touch floor', /@media \(hover: none\) \{ \.tok__tfbtn \{ min-height: 36px/.test(designCss))
-      check('mobile: the request-MCP submit is 40px on touch', /'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors \[@media\(hover:none\)\]:min-h-10'/.test(addMcp))
+      // Re-pinned 2026-09-24 (squad mobile-native, CHAT r3): still 40px on a
+      // touch desktop; below lg it is the sheet's full-width 48px button.
+      check('mobile: the request-MCP submit is 40px on touch, a full-width 48px button below lg', /'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors \[@media\(hover:none\)\]:min-h-10 max-lg:w-full max-lg:!min-h-12 max-lg:justify-center max-lg:text-\[14px\]'/.test(addMcp))
       check('mobile: the sign-in gate CTAs are ≥40px below lg (all three)', (gate.match(/px-3 py-1\.5 max-lg:min-h-10 max-lg:px-4 rounded-full bg-\[var\(--accent\)\]/g) ?? []).length === 3)
       check('mobile: Share is icon-only below sm with an aria-label and a 40px target', /aria-label=\{isPublic \? 'Shared publicly' : 'Share this chat'\}/.test(shareBtn) && /max-lg:min-h-10 max-lg:px-3 rounded-lg border text-\[11px\]/.test(shareBtn) && /whitespace-nowrap max-sm:hidden">\{isPublic \? 'Shared' : 'Share'\}/.test(shareBtn))
       const splashDash = await readFile(new URL('../components/SplashDashboard.tsx', import.meta.url), 'utf8')
       check('mobile: briefing tile rows wrap below lg, never ellipsize the amount (splash + app mode)', /truncate max-lg:whitespace-normal font-medium text-white">\{r\.label\}/.test(appMode) && /truncate max-lg:whitespace-normal font-medium text-white">\{r\.label\}/.test(splashDash))
+      // Re-pinned 2026-09-24 (squad mobile-native, CHAT): a phone names the
+      // COUNT on its top bar ("4 apps", lib/chat-phone appsDoorLabel); the
+      // lg+ toolbar keeps the joined names.
       check(
-        'mobile: the toolbar working-set door names the MCP count on phones',
-        /<span className="max-sm:hidden">\{activeServers\.map\(\(s\) => cleanServerName\(s\.name\)\)\.join\(' · '\)\}<\/span>\s*<span className="sm:hidden whitespace-nowrap">\{activeServers\.length\} MCP\{activeServers\.length === 1 \? '' : 's'\}<\/span>/.test(chatIface),
+        'mobile: the phone top bar names the app count ("N apps") and the lg+ toolbar keeps the joined names',
+        /appsDoorLabel\(appCount\)/.test(await readFile(new URL('../components/chat/ChatPhoneBar.tsx', import.meta.url), 'utf8')) &&
+          /appCount=\{activeServers\.length\}/.test(chatIface) &&
+          /\{activeServers\.map\(\(s\) => cleanServerName\(s\.name\)\)\.join\(' · '\)\}/.test(chatIface) &&
+          /max-lg:hidden flex-shrink-0 px-3 py-2\.5 border-b/.test(chatIface),
       )
       // Round 3 — the pixel pass over the squad's new cards at 375. The
       // external-build notice read "Built by Uniswap (Free)— an external tool"
@@ -11051,7 +11069,9 @@ async function main() {
           /<a [^>]*aria-label="Settings" class="relative flex-1[^"]*max-sm:hidden[^"]*" href="\/dashboard"/.test(wpChat) &&
           /<a [^>]*aria-label="WALLET" class="relative flex-1 min-h-\[48px\](?![^"]*max-sm:hidden)[^"]*" href="\/wallet"/.test(wpChat) &&
           (!wpChat.includes('aria-label="TEAM"') || /<button [^>]*aria-label="TEAM"[^>]*class="relative flex-1[^"]*max-sm:hidden/.test(wpChat)) &&
-          /<div class="relative flex-1 flex sm:hidden"><button [^>]*aria-label="More"[^>]*aria-haspopup="menu"[^>]*aria-expanded="false"/.test(wpChat) &&
+          // Re-pinned by the mobile-native squad (2026-09-24, NAV): MORE opens a
+        // Sheet (aria-haspopup="dialog"), not a popover menu.
+        /<div class="relative flex-1 flex sm:hidden"><button [^>]*aria-label="More"[^>]*aria-haspopup="dialog"[^>]*aria-expanded="false"/.test(wpChat) &&
           /href="\/docs" role="menuitem"/.test(wpSpine) && /href="\/dashboard"\s+role="menuitem"/.test(wpSpine),
       )
       check(
@@ -23250,7 +23270,9 @@ async function main() {
     for (const [route, html] of [['/markets', mkHtml], ['/t/AAPL', tAapl]] as const) {
       check(
         `${route}: the markets shell — app spine (column + bar) with the MARKETS seat lit, NO brochure nav, the strip (Ask ⌘K rail trigger) above the watchlist inside the side column`,
-        /<div class="mkt-shell"><aside[^>]*aria-label="Workspace"/.test(html) &&
+        // Re-pinned (squad mobile-native, 2026-09-24, SHELL): the shell is the
+        // phone frame now, so its opening tag carries data-app-frame="".
+        /<div class="mkt-shell"(?: data-app-frame="")?><aside[^>]*aria-label="Workspace"/.test(html) &&
           (html.match(/aria-label="Workspace"/g) ?? []).length === 2 &&
           (html.match(/aria-label="MARKETS" aria-current="page"/g) ?? []).length === 2 &&
           !/<header class="nav/.test(html) && !html.includes('nav__tabs') && !html.includes('data-ask-door="nav"') &&
@@ -23267,16 +23289,17 @@ async function main() {
         !isMarketsPath('/marketsx') && !isMarketsPath('/t') && !isMarketsPath('/tools') && !isMarketsPath('/') && !isMarketsPath('/chat'),
     )
     check(
-      // Re-pinned 48px → 49px (squad mobile-onboarding, 2026-09-23): the pin
-      // guards "the shell reserves the bottom tab bar", and the bar measures
-      // 49px — 48px of seat plus its own 1px top border — so at 48 the page's
-      // last line sat 1px under it. The guarded behaviour is unchanged and now
-      // exact; the base `grid-template-areas` line is untouched, the phone's
-      // conditional rail order sits after it as its own rule.
-      'markets shell CSS: ≤1023px the side column dissolves (display: contents), the strip takes a top grid row, the shell reserves the bottom tab bar and lifts the docked ask pill above it; the tool strip is sticky at the top edge on desktop',
+      // Re-pinned (squad mobile-native, 2026-09-24, SHELL): the shell no
+      // longer RESERVES the bottom tab bar — below lg it is a phone frame
+      // (app/native-shell.css) whose last row IS the bar, in flow, so the
+      // 49px hand reserve (re-pinned 48 → 49 by the mobile-onboarding squad
+      // the day before) is gone and pinned ABSENT by the `native shell:`
+      // block. The strip / side-column / ask-pill rules are unchanged.
+      'markets shell CSS: ≤1023px the side column dissolves (display: contents), the strip takes a top grid row, the docked ask pill lifts above the tab bar; the tool strip is sticky at the top edge on desktop; NO bar reserve on .mkt-shell (the phone frame carries the bar in flow)',
       /\.mkt-shell \{ display: flex; align-items: stretch; min-height: 100dvh; \}/.test(shellCss) &&
         /\.mkt-frame__bar \{\s*position: sticky; top: 0; z-index: 20;/.test(shellCss) &&
-        /@media \(max-width: 1023px\) \{[^@]*\.mkt-frame \{[^}]*grid-template-areas: "top" "main" "rail" "foot";[^@]*\.mkt-frame__side \{ display: contents; \}[^@]*\.mkt-frame__top \{ grid-area: top;[^@]*\.mkt-frame__bar \{ top: var\(--mkt-top-h\); \}[^@]*\.mkt-shell \{ padding-bottom: calc\(49px \+ env\(safe-area-inset-bottom\)\); \}[^@]*:root\[data-spine\] \.askdoor-pill \{ bottom: calc\(64px \+ env\(safe-area-inset-bottom\)\); \}/.test(shellCss),
+        /@media \(max-width: 1023px\) \{[^@]*\.mkt-frame \{[^}]*grid-template-areas: "top" "main" "rail" "foot";[^@]*\.mkt-frame__side \{ display: contents; \}[^@]*\.mkt-frame__top \{ grid-area: top;[^@]*\.mkt-frame__bar \{ top: var\(--mkt-top-h\); \}[^@]*:root\[data-spine\] \.askdoor-pill \{ bottom: calc\(64px \+ env\(safe-area-inset-bottom\)\); \}/.test(shellCss) &&
+        !/\.mkt-shell \{ padding-bottom/.test(shellCss),
     )
     // The app has no brochure nav for anyone (2026-09-11, Nate: "remove the
     // header in the App if they are not logged in and move the sign in down
@@ -23292,7 +23315,11 @@ async function main() {
     check(
       'app shell: /chat ships with NO brochure nav (server render), the h-dvh workspace, and the toolbar sign-in seat beside Embed (SiteAccount, not NavAccount); /docs keeps its nav for a guest',
       !/<header class="nav/.test(chatHtml) && !chatHtml.includes('nav__tabs') &&
-        /class="relative flex max-lg:pb-\[calc\(48px\+env\(safe-area-inset-bottom\)\)\] h-dvh"/.test(chatHtml) &&
+        // Re-pinned by the mobile-native squad (2026-09-24, NAV): the workspace
+        // root is the phone FRAME (data-app-frame, lib/phone-shell) and the
+        // hand reserve for the tab bar is gone — the bar is the frame's last
+        // row in flow (app/native-shell.css), so nothing can pass under it.
+        /<div data-app-frame="" class="relative flex h-dvh"/.test(chatHtml) &&
         !chatHtml.includes('h-[calc(100dvh-4rem)]') &&
         // Re-pinned 2026-09-16: the seat names no destination (a sign-in stays
         // in this chat, read on press, lib/app-entry signInLandingFor).
@@ -23593,7 +23620,13 @@ async function main() {
           (symS.match(/onClick=\{sendOnClick\(/g) ?? []).length === 2 && /\{door\}/.test(symS) &&
           /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} last=\{stats\?\.last \?\? null\} \/>/.test(symS) &&
           /else prefillAct\(ask\)/.test(railS) && /\{prefillDoor\}/.test(railS) && !/else router\.push\(promptHref\(ask\)\)/.test(railS) &&
-          (spineS.match(/if \(openDoorFor\(href\)\) return/g) ?? []).length === 2 &&
+          // Re-pinned by the mobile-native squad (2026-09-24, NAV): the phone
+          // posture executes lib/phone-nav (pickPhone), so the door call is
+          // ONE per posture — pickDesktop's `href` and pickPhone's
+          // `action.href` — and each door announces its aim (data-spine-door-to).
+          (spineS.match(/if \(openDoorFor\(href\)\) return/g) ?? []).length === 1 &&
+          (spineS.match(/if \(openDoorFor\(action\.href\)\) return/g) ?? []).length === 1 &&
+          /\{doorTo && <span hidden data-spine-door-to=\{doorTo\} \/>\}/.test(spineS) &&
           (spineS.match(/<SpineLink\b/g) ?? []).length === 5 &&
           // MORE's Settings: the menu unmounts as it closes, so its door is the spine's
           /if \(plain && openDoorFor\('\/dashboard'\)\) e\.preventDefault\(\)/.test(spineS) &&
@@ -32486,7 +32519,10 @@ async function main() {
     check('mobile links: reconcileWithSignOutcome — a settled hash flips the hold to signed with the explorer receipt; asked / null / a bad hash / no key / a signed verdict pass through untouched', rec.kind === 'signed' && rec.run.txUrl === `https://basescan.org/tx/${settled.hash}` && rec.run.at === now + 5 && LR.reconcileWithSignOutcome(holdK, { state: 'asked' }, 'https://basescan.org/tx/', now) === holdK && LR.reconcileWithSignOutcome(holdK, null, 'x', now) === holdK && LR.reconcileWithSignOutcome(holdK, { state: 'settled', hash: 'nope' }, 'x', now) === holdK && LR.reconcileWithSignOutcome({ kind: 'hold', run: built }, settled, 'x', now).kind === 'hold' && LR.reconcileWithSignOutcome({ kind: 'signed', run: built }, settled, 'x', now).kind === 'signed' && (() => { const r = LR.reconcileWithSignOutcome(holdK, settled, null, now); return r.kind === 'signed' && r.run.txUrl === undefined })())
     check('mobile links: IntentRuntime reads SIGN\'s outcome for the run\'s key on return (readSignOutcome → reconcileWithSignOutcome) and stamps the LAST built tx\'s key at tx-built (txChainOf last step / txRequestOf)', /readSignOutcome\(runStore\(\), raw\.run\.signKey/.test(rtSrc) && /reconcileWithSignOutcome\(raw,/.test(rtSrc) && /chain\.steps\[chain\.steps\.length - 1\]\?\.tx/.test(rtSrc) && /rememberRun\('built', lastBuiltTxKey\(\)/.test(rtSrc))
     const shareSrc = readFileSync('components/ShareButton.tsx', 'utf8')
-    check('mobile links: the Share popover is FIXED across the phone\'s gutters below sm (measured: anchored to the pill it ran 57px off the left edge at 375) and stays anchored on wider screens', /phonePos \? 'fixed left-4 right-4 w-auto' : 'absolute right-0 top-full mt-2 w-72'/.test(shareSrc) && /window\.innerWidth < 640/.test(shareSrc) && /data-share-popover/.test(shareSrc))
+    // Re-pinned 2026-09-24 (squad mobile-native, CHAT r2): below lg the share
+    // controls are the ONE Sheet (full-width by construction, 52px rows), not
+    // a fixed panel; lg+ keeps the popover anchored to the pill.
+    check('mobile links: the Share controls are a Sheet below lg (never off the screen\'s edge — the anchored popover ran 57px off the left at 375) and stay an anchored popover at lg+', /<Sheet open=\{open\} onClose=\{\(\) => setOpen\(false\)\} id="share"/.test(shareSrc) && /\{open && !phone && \(/.test(shareSrc) && /absolute right-0 top-full mt-2 w-72/.test(shareSrc) && /data-share-popover/.test(shareSrc) && /data-sheet-open="share"/.test(shareSrc))
     const pageSrc = readFileSync('app/i/[slug]/page.tsx', 'utf8')
     check('mobile links: the /i page reads the request UA on the server and hands the verdict to the runtime (the escape line is in the first HTML, not a client flash)', /headers\(\)\)\.get\('user-agent'\)/.test(pageSrc) && /browser=\{browser\}/.test(pageSrc))
   }
@@ -32573,9 +32609,13 @@ async function main() {
         /\.mkt-frame:not\(\.mkt-frame--sym\):has\(\.mkt-frame__rail \.wl__row\)/.test(uxCss) &&
         /grid-template-areas:"top"\s*"rail"\s*"main"\s*"foot"/.test(uxCss),
     )
-    // 4. The shell reserves the phone bar's REAL height: 48px of seat plus its
-    //    1px top border. At 48 the page's last line sat 1px under it.
-    check('mobile ux: the markets shell reserves the spine bar at its measured 49px', /\.mkt-shell\{padding-bottom:calc\(49px \+ env\(safe-area-inset-bottom\)\)\}/.test(uxCss.replace(/\s+/g, ' ')) || /padding-bottom:calc\(49px\+env\(safe-area-inset-bottom\)\)/.test(uxCss))
+    // 4. Re-pinned (squad mobile-native, 2026-09-24, SHELL): the shell no
+    //    longer reserves the phone bar's height at all. Below lg it is a
+    //    phone frame (app/native-shell.css) whose LAST ROW is the bar, in
+    //    flow — the scroller ends where the bar begins, so no 48/49px
+    //    constant can go stale again. The served CSS must carry NO
+    //    `.mkt-shell{padding-bottom…}` and MUST carry the in-flow bar rule.
+    check('mobile ux: the markets shell no longer reserves the spine bar (the phone frame carries it in flow: `[data-app-frame] > [data-spine-bar]` static, order 999)', !/\.mkt-shell\{padding-bottom:/.test(uxCss.replace(/\s+/g, '')) && (() => { const m = /\[data-app-frame\]>\[data-spine-bar\]\[data-spine-bar\]\{([^}]*)\}/.exec(uxCss.replace(/\s+/g, '')); const d = new Set((m?.[1] ?? '').split(';')); return d.has('position:static') && d.has('order:999') })())
     // 5. THE PHONE NAV KEEPS ITS ACCOUNT SEAT. `.nav__right > :not(.nav__burger)`
     //    hid it below 900px, which put the landing's only door two taps deep
     //    (burger → drawer → Sign in) and left a connected phone visitor with no
@@ -33033,6 +33073,1321 @@ async function main() {
       !named.spendRetarget && !(named.txChain || named.txRequest || named.order),
       JSON.stringify({ buildPath: named.buildPath, reply: String(named.reply).slice(0, 160) }),
     )
+  }
+
+  // ── native qa: the mobile-native squad's instrument (QA lane, 2026-09-24) ──
+  // Appended as ONE block with its own closing brace (the squad's shared-tail
+  // rule); everything it needs is imported INSIDE it. It pins `npm run
+  // drive:native` itself: a gate that can run its drive inside the harness,
+  // fire a live money turn, sign with the funded burner, or exit 0 on a red
+  // is worse than no gate.
+  {
+    const { readFileSync: readNq } = await import('node:fs')
+    const nqSrc = readNq('scripts/drive-native.ts', 'utf8')
+    // Positive fences read the RAW source (a comment stripper can eat code: a
+    // glob like '**' + '/*' opens a "comment"); only the negatives read code
+    // with comments removed, so a comment may NAME what the code must not do.
+    const nqCode = nqSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+    check(
+      'native qa: drive:native resolves playwright through createRequire (never a static import — it is not a dependency) and only drives when run directly; the harness imports it',
+      /createRequire\(ANCHOR\)\('playwright-core'\)/.test(nqSrc) &&
+        /if \(process\.argv\[1\] && \/drive-native/.test(nqSrc) &&
+        !/^import[^\n]*from ['"]playwright-core['"]/m.test(nqSrc) &&
+        // no column-0 call: the only main() is the guarded one
+        !/^(?:void )?main\(\)/m.test(nqCode),
+    )
+    check(
+      'native qa: drive:native exits 1 on any FAIL (a drive that prints ❌ and exits 0 proved nothing) and 2 when nothing is serving',
+      /process\.exit\(fail \? 1 : 0\)/.test(nqSrc) && /process\.exit\(2\)/.test(nqSrc),
+    )
+    check(
+      'native qa: drive:native never fires a live chat turn (every POST /api/chat is fulfilled from a fixture — /i auto-runs its ask on connect) and stamps every same-origin request x-yf-internal-run + x-yf-no-ask-log',
+      /req\.method\(\) === 'POST' && \/\^\\\/api\\\/chat\\\/\?\$\/\.test\(url\.pathname\)/.test(nqSrc) &&
+        /route\.fulfill\(\{ status: 200, contentType: 'application\/json', body: JSON\.stringify\(CHAT_FIXTURE\)/.test(nqSrc) &&
+        /'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1'/.test(nqSrc),
+    )
+    check(
+      'native qa: the mock wallet refuses every signature and transaction, and the dashboard SIWE is a THROWAWAY key (generatePrivateKey) — drive:native never reads PRIVATE_KEY',
+      /generatePrivateKey\(\)/.test(nqSrc) &&
+        !/PRIVATE_KEY/.test(nqSrc) &&
+        /case 'personal_sign': case 'eth_sign': case 'eth_signTypedData_v4': case 'eth_sendTransaction': case 'wallet_sendCalls':\s*window\.__nqRefused/.test(nqSrc),
+    )
+    check(
+      'native qa: a missing WebKit build is a SKIP row that names the owner step, never a hang and never a silent pass',
+      /state: 'SKIP'/.test(nqSrc) && /npx playwright install webkit/.test(nqSrc) && /existsSync\(exe\)/.test(nqSrc),
+    )
+    check(
+      'native qa: the coordinator\'s rulings hold in the drive — a landscape bar seat ≥32px tall is a DECISION row (iOS\'s own landscape tab bar is 32pt), an inline link inside running text is a DECISION row (WCAG 2.5.8\'s inline exception; standalone links and buttons still need 44), the chat list is judged as the history SCREEN (no chats sheet row), and CHAT\'s standalone drive is folded in line by line',
+      /const seatCall = small\.filter\(\(c\) => landscape && c\.seat && c\.h >= 32\)/.test(nqSrc) &&
+        /state: rest\.length \? 'FAIL' : calls\.length \? 'DECISION' : 'PASS'/.test(nqSrc) &&
+        !/id: 'chat list'/.test(nqCode) &&
+        /const inlineCall = small\.filter\(\(c\) => c\.inline && !seatCall\.includes\(c\)\)/.test(nqSrc) &&
+        /return words\.trim\(\)\.split\(\/\\s\+\/\)\.filter\(Boolean\)\.length >= 2/.test(nqSrc) &&
+        /spawn\('npx', \['tsx', file, '--phase=after'/.test(nqSrc),
+    )
+    check(
+      'native qa: a link INSIDE a sheet navigates and lands — MORE → Docs, MORE → Settings, the brochure menu → Pricing, the account menu → Dashboard, each with the RSC fetch held 300ms, judged on landing, on no bounce after it, and on the sheet being closed',
+      /rscDelayMs && \(req\.headers\(\)\['rsc'\] === '1' \|\| url\.searchParams\.has\('_rsc'\)\)/.test(nqSrc) &&
+        /const RSC_DELAY_MS = Number\(arg\('rsc-delay'\) \|\| 300\)/.test(nqSrc) &&
+        /const o = await openCtx\(run, \{ size, theme: 'dark', auth: c\.auth, session, rscDelayMs: RSC_DELAY_MS \}\)/.test(nqSrc) &&
+        /bounced after landing/.test(nqSrc) && /the navigation was aborted/.test(nqSrc),
+    )
+    const nq = (await import('./drive-native')) as typeof import('./drive-native')
+    check(
+      'native qa: the four sheet-link cases are the coordinator\'s (a doc page, the dashboard behind SIWE, a brochure page, the dashboard from the account sheet)',
+      JSON.stringify(nq.SHEET_LINKS.map((c) => [c.id, c.sheet, c.href, c.auth])) ===
+        JSON.stringify([['MORE → Docs', 'more', '/docs', 'wallet'], ['MORE → Settings', 'more', '/dashboard', 'siwe'], ['brochure menu → Pricing', 'nav', '/pricing', 'none'], ['account menu → Dashboard', 'account', '/dashboard', 'siwe']]),
+    )
+    check(
+      'native qa: drive:native measures the eleven checks of QA.md, in order',
+      JSON.stringify(nq.CHECKS) === JSON.stringify(['frame', 'bar', 'tabs', 'sheets', 'targets', 'inputs', 'overflow', 'keyboard', 'themecolor', 'manifest', 'desktop']),
+      nq.CHECKS.join(','),
+    )
+    // D2 (README): a tab is a PLACE. The drive's expectations are the
+    // contract NAV builds against — pinned so neither side drifts silently.
+    const chatT = nq.D2_FROM_CHAT
+    check(
+      'native qa: D2 as the drive reads it — APPS/JOBS/LINKS/TEAM name themselves in ?tab= (mcps/jobs/links/team) with their screen, CHATS in a conversation opens the list (history), MORE is a Sheet, MARKETS/WALLET are routes',
+      chatT.APPS.tab === 'mcps' && chatT.APPS.screen === 'apps' &&
+        chatT.JOBS.tab === 'jobs' && chatT.LINKS.tab === 'links' && chatT.TEAM.screen === 'team' &&
+        chatT.CHATS.screen === 'history' && chatT.CHATS.lit === 'CHATS' &&
+        chatT.More.sheet === true && chatT.MARKETS.path === '/markets' && chatT.WALLET.path === '/wallet' &&
+        nq.D2_SEQUENCES.some((q) => q.taps.join(',') === 'APPS,CHATS' && q.expect.screen === 'chat' && q.expect.tab === '') &&
+        nq.TOP_BAR_DOORS.some((d) => d.door === 'history' && d.expect.screen === 'history') &&
+        nq.TOP_BAR_DOORS.some((d) => d.door === 'apps' && d.expect.tab === 'mcps'),
+    )
+    // The drive judges tabs against lib/phone-nav phoneTap (NAV's contract);
+    // its static tables are the fallback for a tree without it. Pin that they
+    // AGREE, seat by seat and sequence by sequence, so neither drifts alone.
+    {
+      const pn = await import('../lib/phone-nav')
+      const agree = (a: { path: string; tab: string | null; screen: unknown; lit: string; sheet?: boolean }, b: typeof a) =>
+        a.path === b.path && (a.tab ?? null) === (b.tab ?? null) && JSON.stringify(a.screen) === JSON.stringify(b.screen) && a.lit === b.lit && !!a.sheet === !!b.sheet
+      const off: string[] = []
+      for (const [origin, table] of [['/chat', nq.D2_FROM_CHAT], ['/markets', nq.D2_FROM_MARKETS]] as const) {
+        const from = { surface: origin === '/chat' ? 'chat' : 'markets', screen: 'chat', pathname: origin } as const
+        for (const [seat, want] of Object.entries(table)) {
+          const got = nq.expectFromPhoneTap(pn as never, from, seat).expect
+          if (!agree(want, got)) off.push(`${origin} ${seat}: table ${JSON.stringify(want)} vs phoneTap ${JSON.stringify(got)}`)
+        }
+      }
+      for (const q of nq.D2_SEQUENCES) {
+        let st: { surface: 'chat' | 'markets' | 'wallet' | 'dashboard'; screen: string; pathname: string } = { surface: 'chat', screen: 'chat', pathname: '/chat' }
+        let got = q.expect
+        for (const seat of q.taps) {
+          const r = nq.expectFromPhoneTap(pn as never, st, seat)
+          got = r.expect
+          st = r.next
+        }
+        if (!agree(q.expect, got)) off.push(`${q.name}: table ${JSON.stringify(q.expect)} vs phoneTap ${JSON.stringify(got)}`)
+      }
+      check('native qa: the drive\'s fallback D2 tables agree with lib/phone-nav phoneTap for every seat from /chat and /markets and every sequence (the tabs rows are judged by phoneTap)', off.length === 0, off.slice(0, 2).join(' | '))
+    }
+    const app = nq.SURFACES.filter((x) => x.kind === 'app').map((x) => x.path)
+    check(
+      'native qa: every framed surface of README invariant 1 is driven (/chat, its four tabs, /markets, /t/AAPL, /t/ETH, /wallet, /dashboard, /i/<slug>) plus the brochure pages',
+      ['/chat', '/chat?tab=mcps', '/chat?tab=jobs', '/chat?tab=links', '/chat?tab=chats', '/markets', '/t/AAPL', '/t/ETH', '/wallet', '/dashboard'].every((p) => app.includes(p)) &&
+        app.some((p) => p.startsWith('/i/')) &&
+        ['/', '/pricing', '/docs'].every((p) => nq.SURFACES.some((x) => x.path === p && x.kind === 'brochure')),
+      app.join(' '),
+    )
+    const pkg = JSON.parse(readNq('package.json', 'utf8')) as { scripts: Record<string, string> }
+    check('native qa: `npm run drive:native` is wired', pkg.scripts['drive:native'] === 'tsx scripts/drive-native.ts', pkg.scripts['drive:native'] ?? 'missing')
+  }
+
+  // ── native markets (squad mobile-native, 2026-09-24; MARKETS lane) ─────────
+  // Nate's screenshot 1: iPhone Safari on /markets, the "Ask" pill floating
+  // over the DOT row's 24h cell. Measured on main (MARKETS.md F1–F10, drive
+  // scripts/drive-native-markets.ts): the pill covered 91×38px of that cell,
+  // a touch swipe up over the /t chart moved the page 0px, a pinch zoomed the
+  // PAGE ×2.2 instead of the chart, rows were 42px, three inputs were under
+  // 16px (iOS zooms on focus). These pins hold the rules; the drive holds the
+  // pixels. Every rule is phone- or touch-scoped: desktop is unchanged.
+  {
+    const nmDesign = await readFile('app/x402-design.css', 'utf8')
+    const nmMk = await readFile('components/markets/markets.css', 'utf8')
+    const nmDoor = await readFile('components/AskDoor.tsx', 'utf8')
+    const nmChart = await readFile('components/markets/chart/MarketChart.tsx', 'utf8')
+    const nmAlert = await readFile('components/markets/watchlist/AlertForm.tsx', 'utf8')
+    const nmImport = await readFile('components/markets/watchlist/ImportModal.tsx', 'utf8')
+    const nmFlat = (css: string) => css.replace(/\s+/g, ' ')
+    // Negative greps read CODE: comments name the old forms on purpose.
+    const nmCode = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    const nmDesignNoComments = nmDesign.replace(/\/\*[\s\S]*?\*\//g, '')
+    const nmBlocks = (css: string, head: string) => {
+      // Every block opened by `head`, balanced-brace read (the sheets nest
+      // one level at most).
+      const out: string[] = []
+      let at = css.indexOf(head)
+      while (at >= 0) {
+        let depth = 0
+        let i = css.indexOf('{', at)
+        const start = i
+        for (; i < css.length; i++) {
+          if (css[i] === '{') depth++
+          else if (css[i] === '}' && --depth === 0) break
+        }
+        out.push(css.slice(start, i + 1))
+        at = css.indexOf(head, i)
+      }
+      return out.join('\n')
+    }
+
+    // 1. The pill never covers the data: on a phone it steps aside wherever the
+    //    top bar carries the door, as a DESCENDANT match (the pill's parent is
+    //    the layout's providers <div> — a `> .askdoor-pill` child match never
+    //    fires, which is why the old body reserve never applied: F10).
+    const nmPhoneDoor = nmBlocks(nmDesign, '@media (max-width: 1023px) {\n  body:has([data-ask-door="rail"])')
+    check(
+      'native markets: below lg the floating Ask pill steps aside on any screen whose top bar carries the door ([data-ask-door="rail"]), matched as a descendant (its parent is a <div>, never <body>)',
+      /body:has\(\[data-ask-door="rail"\]\) \.askdoor-pill \{ display: none; \}/.test(nmPhoneDoor) && !/body:has\(\[data-ask-door="rail"\]\) > \.askdoor-pill/.test(nmDesign.replace(/\/\*[\s\S]*?\*\//g, '')),
+    )
+    // Comments name the old selectors on purpose; the checks read the code.
+    const nmDesignCode = nmDesign.replace(/\/\*[\s\S]*?\*\//g, '')
+    check(
+      'native markets: the pill\'s page-foot reserve finally applies — a descendant match (the old `body:has(> .askdoor-pill)` never fired), on brochure pages only (never an app frame, never a screen whose top bar carries the door, never under the landing\'s own CTA bar)',
+      !/body:has\(> \.askdoor-pill\)/.test(nmDesignCode) && !/> \.askdoor-pill/.test(nmDesignCode) &&
+        (nmDesignCode.match(/:root:not\(\[data-mcta="show"\]\) body:not\(:has\(\[data-app-frame\], \[data-ask-door="rail"\]\)\):has\(\.askdoor-pill\) \{ padding-bottom: calc\((?:72|64)px \+ env\(safe-area-inset-bottom\)\); \}/g) ?? []).length === 2,
+    )
+    check(
+      'native markets: the pill steps aside while the landing\'s MobileCtaBar (it carries its own Ask) is up — html[data-mcta="show"]',
+      /:root\[data-mcta="show"\] \.askdoor-pill \{ display: none; \}/.test(nmDesignCode),
+    )
+    check(
+      'native markets: the markets top strip\'s Ask is the phone\'s ask field — the rail trigger carries the page\'s placeholder, and below lg it fills the strip at 44px with the word "Ask" folded',
+      /variant === 'rail' && \(\s*<span className="mkt-frame__askhint" aria-hidden="true">\s*\{askDoorPlaceholder\(pathname\)\}/.test(nmDoor) &&
+        /\.mkt-frame__askhint \{ display: none; \}/.test(nmDesignNoComments) && !/^\.mkt-frame__askhint \{ display: none; \}/m.test(nmMk) &&
+        /\.mkt-frame__top \.mkt-frame__ask \{ flex: 1 1 auto; min-width: 0; height: 44px;/.test(nmMk) &&
+        /\.mkt-frame__top \.mkt-frame__askword \{ display: none; \}/.test(nmMk),
+    )
+    const nmMarketsHtml = flat(await (await fetch(`${BASE}/markets`)).text())
+    const nmEthHtml = flat(await (await fetch(`${BASE}/t/ETH`)).text())
+    check(
+      'native markets (served): /markets and /t/ETH ship the strip\'s ask field with the page\'s own placeholder (the house line / "Ask anything about ETH"), and the pill is still in the HTML for wider screens',
+      /data-ask-door="rail"[\s\S]{0,4000}class="mkt-frame__askhint"[^>]*>Ask Pantessa — swaps, stocks, stop-losses, anything…</.test(nmMarketsHtml) &&
+        /data-ask-door="rail"[\s\S]{0,4000}class="mkt-frame__askhint"[^>]*>Ask anything about ETH/.test(nmEthHtml) &&
+        nmEthHtml.includes('data-ask-door="pill"'),
+    )
+    const nmHrefs = [...new Set([...nmEthHtml.matchAll(/href="(\/_next\/static\/[^"]+\.css)"/g)].map((m) => m[1]))]
+    const nmServed = (await Promise.all(nmHrefs.map(async (h) => (await fetch(`${BASE}${h}`)).text()))).join('\n').replace(/\s+/g, '')
+    check(
+      'native markets (served): the built /t stylesheets carry the step-aside, the chart\'s touch-action and the 16px field floor',
+      nmHrefs.length > 0 &&
+        /body:has\(\[data-ask-door="?rail"?\]\)\.askdoor-pill\{display:none\}/.test(nmServed) &&
+        /\.mkt-chart__engine\{[^}]*touch-action:pan-y/.test(nmServed) &&
+        /font-size:max\(16px,1em\)/.test(nmServed),
+      `${nmHrefs.length} stylesheets`,
+    )
+
+    // 2. The chart shares the screen's scroll on a touch screen: a vertical
+    //    swipe is the page's (the engine never claims it, the browser scrolls
+    //    natively), horizontal pans, pinch zooms the chart and never the page.
+    check(
+      'native markets: MarketChart never claims a vertical touch drag (handleScroll.vertTouchDrag: false) and keeps horizontal pan + pinch (no option turns them off)',
+      /handleScroll: \{ vertTouchDrag: false \}/.test(nmChart) && !/vertTouchDrag: true/.test(nmCode(nmChart)) && !/horzTouchDrag: false/.test(nmCode(nmChart)) && !/pinch: false/.test(nmCode(nmChart)),
+    )
+    check(
+      'native markets: the engine is touch-action: pan-y (the page scrolls vertically, a pinch never zooms the page), and the full-screen control is 44×44 on touch',
+      /\.mkt-chart__engine \{ position: absolute; inset: 0; touch-action: pan-y; \}/.test(nmDesign) &&
+        /@media \(hover: none\) \{ \.tchart__fs \{ width: 44px; height: 44px; \} \}/.test(nmDesign),
+    )
+
+    // 3. A thumb's targets and a touch screen's press feedback, all under
+    //    (hover: none) — desktop keeps its compact terminal.
+    const nmTouch = nmFlat(nmBlocks(nmMk, '@media (hover: none) {'))
+    const nm44 = [
+      '.mk-table__link, .mk-trend__row { min-height: 48px; }',
+      '.mk-table__sort { min-height: 44px;',
+      '.mkt-sec__more { min-height: 44px;',
+      '.mkt-frame__tab { min-height: 44px; }',
+      '.mk-view__btn { height: 44px;',
+      '.mk-earn__chip { min-height: 44px;',
+      '.sym__act-chip { min-height: 44px; }',
+      '.sym .tok__tfbtn { min-height: 44px; min-width: 44px; }',
+      '.sym .mkt-ind { min-height: 44px; }',
+      '.sym .mkt-tool { width: 44px; height: 44px; }',
+      '.sym__tab { min-height: 44px; }',
+      '.wl__rowMain { min-height: 48px; }',
+      '.wl__rowMore { opacity: 1; }',
+      '.wl__icon { width: 44px; height: 44px; }',
+      '.mkt-routes__filter, .mkt-route__chip, .mkt-order__preset, .mkt-order__custom, .mkt-order__side, .mkt-order__send, .mkt-chip { min-height: 44px; }',
+    ]
+    const nmMissing = nm44.filter((r) => !nmTouch.includes(r))
+    check(
+      'native markets: under (hover: none) every ledger/trending/rail row is 48px, every sort head, tab, chip, timeframe, overlay, tool and rail icon ≥44px, and the rail\'s ⋯ is fully visible (no hover to reveal it)',
+      nmMissing.length === 0 && /\.mk-table__row:active, \.mk-trend__row:active, \.wl__row:active \{ background:/.test(nmTouch),
+      nmMissing.join(' | '),
+    )
+    check(
+      'native markets: no field on a markets surface zooms the page on focus — every input/textarea/select in the frame and the rail\'s sheets is ≥16px on touch or below lg',
+      /@media \(hover: none\), \(max-width: 1023px\) \{\s*\.mkt-frame :is\(input, textarea, select\),\s*\[data-sheet\^="wl-"\] :is\(input, textarea, select\) \{ font-size: max\(16px, 1em\); \}/.test(nmMk) &&
+        /\.askdoor-sheet \.askdoor__input \{ font-size: max\(16px, 1em\);/.test(nmDesign),
+    )
+    check(
+      'native markets: on a phone the /t plot keeps 260px however its controls wrap, those controls take two rows (timeframes + live/full screen, then overlays beside the tools), and the act strip is one sideways row',
+      /\.sym \.tchart:not\(\.tchart--expanded\) \.mkt-chart__canvas \{ flex: 0 0 auto; height: 260px; \}/.test(nmMk) &&
+        /\.sym \.mkt-chart__bar > \.mkt-chart__ind \{ order: 3; flex: 1 1 calc\(100% - 200px\); \}/.test(nmMk) &&
+        /\.sym \.mkt-chart__tools > \.mkt-tool:first-child \{ display: none; \}/.test(nmMk) &&
+        /\.sym__act-chips \{\s*align-self: stretch; min-width: 0; flex-wrap: nowrap;[^}]*overflow-x: auto;/.test(nmMk),
+    )
+    check(
+      'native markets: on a phone the /markets board tabs are a sticky segmented bar under the top strip (the tool strip\'s box dissolves, so the search and Map · List scroll away), and a board tab lands its section under both',
+      /\.mkt-frame__bar \{ display: contents; \}/.test(nmMk) &&
+        /\.mkt-frame__bar > \.mkt-frame__tabs \{\s*position: sticky; top: var\(--mkt-top-h, 52px\); z-index: 20;/.test(nmMk) &&
+        /\.mkt-sec \{ scroll-margin-top: calc\(var\(--mkt-top-h, 52px\) \+ 60px\); \}/.test(nmMk),
+    )
+    const nmSym = await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')
+    check(
+      'native markets: a /t tab switch made while the strip is stuck scrolls the app scroller by the strip\'s UNSTUCK place (its parent\'s top) — scrollIntoView on a stuck sticky is a no-op — and the rail + footer never anchor the scroll (a short loading tab once threw the page 5,521px to the footer)',
+      /const natural = main\.getBoundingClientRect\(\)\.top\s*\n\s*if \(natural < stuckAt - 1\) scrollAppTo\(appScrollTop\(\) \+ natural - stuckAt\)/.test(nmSym) &&
+        !/el\.scrollIntoView\(\{ block: 'start' \}\)/.test(nmCode(nmSym)) &&
+        /\.mkt-frame__rail, \.mkt-frame__foot \{ overflow-anchor: none; \}/.test(nmMk),
+    )
+    // Round 3: the rail trigger renders right wherever AskDoor renders.
+    const nmWalletHtml = await (await fetch(`${BASE}/wallet`)).text()
+    const nmWalletHrefs = [...new Set([...nmWalletHtml.matchAll(/href="(\/_next\/static\/[^"]+\.css)"/g)].map((m) => m[1]))]
+    const nmWalletCss = (await Promise.all(nmWalletHrefs.map(async (h) => (await fetch(`${BASE}${h}`)).text()))).join('\n').replace(/\s+/g, '')
+    check(
+      'native markets (round 3): the rail trigger renders right on its own — its hint is hidden in the GLOBAL askdoor CSS (it lived only in markets.css, so /wallet showed the 353px hint at every width), no ⌘K on a phone, a 44px target on touch; /wallet\'s served CSS carries the hide',
+      /\.mkt-frame__askhint \{ display: none; \}\s*\n@media \(max-width: 1023px\) \{ \[data-ask-door="rail"\] \.nav__ask-kbd \{ display: none; \} \}\s*\n@media \(hover: none\) \{ \[data-ask-door="rail"\] \{ min-height: 44px; \} \}/.test(nmDesign) &&
+        nmWalletHrefs.length > 0 && nmWalletCss.includes('.mkt-frame__askhint{display:none}') && /\[data-ask-door="?rail"?\]\.nav__ask-kbd\{display:none\}/.test(nmWalletCss),
+      `${nmWalletHrefs.length} stylesheets`,
+    )
+    // Round 2 (coordinator R2-1 + R2-3).
+    check(
+      'native markets (round 2): on a phone the /t header leads with the price and the chart — one title line (the venue chip ellipsizes), one meta line (the session ellipsizes), no "24H RANGE" caption, a tighter rhythm; the act chips snap to a chip\'s edge; the header pills keep a 44px hit area',
+      /\.mkt-frame--sym \.sym__head \{ padding: 10px 0 8px; row-gap: 8px; \}/.test(nmMk) &&
+        /\.sym__head--mk2 \.sym__titlerow \{ flex-wrap: nowrap; \}/.test(nmMk) &&
+        /\.sym__head--mk2 \.sym__session \{ display: block; flex: 1 1 7rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; \}/.test(nmMk) &&
+        // Round 4: the meta line WRAPS (nowrap pushed COMPARE off a 375 screen once
+        // a holding wallet added YOU HOLD: +8/+9px, +23/+24 at 360).
+        /\.sym__head--mk2 \.sym__meta \{ flex-wrap: wrap; row-gap: 6px; margin-top: 6px; \}/.test(nmMk) && !/\.sym__meta \{ flex-wrap: nowrap/.test(nmCode(nmMk)) &&
+        /\.sym__head--mk2 \.mk-held__amt \{ display: none; \}/.test(nmMk) &&
+        /\.sym__head--mk2 \.mk-range__k \{ display: none; \}/.test(nmMk) &&
+        /\.sym__act-chips \{ scroll-snap-type: x proximity; \}/.test(nmMk) && /\.sym__act-chip \{ flex-shrink: 0; scroll-snap-align: start; \}/.test(nmMk) &&
+        /\.mk-vs__open::after, \.mk-vs__x::after, button\.mk-held::after \{ content: ''; position: absolute; inset: -9px -4px; \}/.test(nmMk),
+    )
+    {
+      // The pill as a native FAB on a document-scrolling page (round 2): PAGES'
+      // CTA-bar rule (lib/cta-bar) for direction + jitter + anchor, no hero band,
+      // at rest at the top and the page end.
+      const { askPillStep: step, askPillInitial: initial } = await import('../lib/ask-door')
+      const top = initial(0, 5000)
+      const down = step(top, 400, 5000)
+      const up = step(down, 300, 5000)
+      const jitter = step(up, 305, 5000)
+      const down2 = step(jitter, 2600, 5000)
+      const end = step(down2, 4999, 5000)
+      const mid = initial(1800, 5000)
+      const doorCss = nmFlat(nmDesignCode)
+      check(
+        'native markets (round 2): the brochure pill is a native FAB — shown at rest at the top, away while the reader scrolls DOWN, back on a scroll UP, a jitter under 6px changes nothing, shown at the page end; a restored mid-page arrival starts away; the CSS hides an away pill on a phone only (the reserve never flickers)',
+        top.shown && !down.shown && up.shown && jitter === up && !down2.shown && end.shown && !mid.shown &&
+          /@media \(max-width: 1023px\) \{ body:has\(\[data-ask-door="rail"\]\) \.askdoor-pill \{ display: none; \} \.askdoor-pill\[data-away\] \{ display: none; \} \}/.test(doorCss) &&
+          /import \{ ctaBarStep, type CtaBarState \} from '@\/lib\/cta-bar'/.test(await readFile('lib/ask-door.ts', 'utf8')),
+        JSON.stringify({ top, down, up, jitter, down2, end, mid }),
+      )
+      check(
+        'native markets (round 2): the ask field inside the phone Sheet is a 44px target (it measured 243×37)',
+        /\.askdoor-sheet \.askdoor__input \{ font-size: max\(16px, 1em\); min-height: 44px; padding: 10px 0; \}/.test(nmDesign),
+      )
+    }
+    check(
+      'native markets (round 2): a landscape phone gets the phone tool strip (only the board tabs stick) — the whole strip stuck left 166px of rows at 844×390',
+      /@media \(max-width: 640px\), \(max-width: 1023px\) and \(max-height: 500px\) \{\s*\.mkt-frame__bar \{ display: contents; \}/.test(nmMk),
+    )
+    check(
+      'native markets: below lg the /t section tabs stick under the top strip (scroll-margin lands a switch there)',
+      /\.sym__tabs \{ position: sticky; top: var\(--mkt-top-h, 52px\); z-index: 19; background: var\(--bg\); scroll-margin-top: var\(--mkt-top-h, 52px\); \}/.test(nmMk),
+    )
+
+    // 4. The panels are THE Sheet: the ask door below lg (its posture read
+    //    once per opening, so a tablet rotating mid-run never remounts the
+    //    runtime), AlertForm + ImportModal at every width.
+    check(
+      'native markets: the ask door renders through components/mobile/Sheet on a phone (id ask, full size once live) with the posture read once per opening; the desktop ⌘K palette stays',
+      /import Sheet from '@\/components\/mobile\/Sheet'/.test(nmDoor) &&
+        /if \(!open\) postureRef\.current = null\s*\n\s*else if \(mounted && postureRef\.current === null\) postureRef\.current = isPhoneViewport\(\)/.test(nmDoor) &&
+        /<Sheet\s+open\s+onClose=\{closeDoor\}\s+id="ask"\s+size=\{live \? 'full' : 'auto'\}/.test(nmDoor) &&
+        /className=\{`askdoor \$\{live \? 'askdoor--live' : ''\}`\}/.test(nmDoor),
+    )
+    check(
+      'native markets: AlertForm and ImportModal are THE Sheet (ids wl-alert, wl-import) — no hand-made scrim or portal left, so Escape, a swipe and the back gesture close them too',
+      /<Sheet\s+open=\{open\}\s+onClose=\{onClose\}\s+id="wl-alert"/.test(nmAlert) && /<Sheet\s+open=\{open\}\s+onClose=\{close\}\s+id="wl-import"/.test(nmImport) &&
+        ![nmAlert, nmImport].some((src) => /createPortal|wl__scrim/.test(nmCode(src))),
+    )
+  }
+
+  // ── NATIVE PAGES (squad mobile-native, 2026-09-24) ─────────────────────
+  // Nate: "if a nav drawer is open and a user taps outside it should close
+  // the drawer … it needs to feel like a native mobile app". The PAGES lane:
+  // the wallet window, the dashboard, the brochure and the door on a phone.
+  // Every phone overlay here is the ONE Sheet (components/mobile/Sheet), the
+  // dashboard is one top bar + the tab bar, every field is ≥16px below lg
+  // (iOS zooms a smaller one on focus), and the landing's CTA bar only rises
+  // while Safari's toolbar is expanded (scrolling up).
+  {
+    const npFs = await import('node:fs')
+    const npCode = (path: string) => npFs.readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    const CTA = await import('../lib/cta-bar')
+
+    // 1. The landing's CTA bar (a DOCUMENT-scrolling page, where iOS 26
+    //    Safari's collapsing toolbar strands a bottom-fixed bar ~70px up).
+    //    BEFORE: shown past the hero whichever way you scrolled, and over the
+    //    floating Ask pill.
+    const H = 667
+    let st = CTA.ctaBarInitial(0)
+    const steps: Array<[number, boolean]> = []
+    for (const y of [200, 600, 900, 1400, 1300, 1296, 1291, 1600, 1500, 380]) {
+      st = CTA.ctaBarStep(st, y, H)
+      steps.push([y, st.shown])
+    }
+    check(
+      'native pages: the CTA bar hides above the hero, hides scrolling DOWN past it (the toolbar collapsing), rises scrolling UP (the toolbar back), and goes away again at the hero',
+      JSON.stringify(steps.map(([, s]) => s)) === JSON.stringify([false, false, false, false, true, true, true, false, true, false]),
+      JSON.stringify(steps),
+    )
+    let slow = { shown: false, anchorY: 2000 }
+    const slowSteps: boolean[] = []
+    for (const y of [1997, 1995, 1993]) {
+      slow = CTA.ctaBarStep(slow, y, H)
+      slowSteps.push(slow.shown)
+    }
+    check(
+      'native pages: a slow scroll counts: 2–3px events add up against the last decision (a 6px move is a direction, a resting finger is not)',
+      JSON.stringify(slowSteps) === JSON.stringify([false, false, true]) &&
+        CTA.ctaBarStep({ shown: true, anchorY: 1500 }, 1504, H).shown === true && CTA.ctaBarStep({ shown: true, anchorY: 1500 }, 1504, H).anchorY === 1500,
+      JSON.stringify(slowSteps),
+    )
+    check(
+      'native pages: html[data-mcta] means the bar is ON SCREEN: the scroll state says show AND the viewport draws the bar (CTA_BAR_MQ = the CSS\'s own 640px query). At 844×390 a scroll-up used to set it over an undrawn bar, and the ask pill stepped aside for nothing (no Ask on the landing)',
+      CTA.CTA_BAR_MAX_PX === 640 && CTA.CTA_BAR_MQ === '(max-width: 640px)' &&
+        CTA.ctaBarOnScreen(true, true) === true && CTA.ctaBarOnScreen(true, false) === false && CTA.ctaBarOnScreen(false, true) === false && CTA.ctaBarOnScreen(false, false) === false,
+    )
+    const mctaSrc = npCode('components/MobileCtaBar.tsx')
+    check(
+      'native pages: MobileCtaBar reads scroll through lib/app-scroller and decides with lib/cta-bar (never window.scrollY), and carries Ask beside Open Markets',
+      /onAppScroll\(/.test(mctaSrc) && /ctaBarStep\(prev, appScrollTop\(\), window\.innerHeight\)/.test(mctaSrc) && !/window\.scrollY/.test(mctaSrc) &&
+        /window\.matchMedia\(CTA_BAR_MQ\)/.test(mctaSrc) && /mq\.addEventListener\('change', read\)/.test(mctaSrc) && /const show = ctaBarOnScreen\(state\.shown, fits\)/.test(mctaSrc) &&
+        /<SpineLink href="\/markets"/.test(mctaSrc) && /openDoor\(\)/.test(mctaSrc) && /root\.dataset\.mcta = 'show'/.test(mctaSrc),
+    )
+
+    // 2. Every phone overlay PAGES owns is the ONE Sheet (tap outside, swipe,
+    //    Escape, back and its trigger close it: the Sheet's own). BEFORE: a
+    //    hand-portaled drawer (brochure menu, dashboard sections), a dropdown
+    //    (account) and a 77%-of-the-screen dialog (wallet), none of which the
+    //    back gesture closed (it left the page).
+    const navSrcNP = npCode('components/Navigation.tsx')
+    const acctSrcNP = npCode('components/NavAccount.tsx')
+    const walletSrcNP = npCode('components/WalletPanel.tsx')
+    const dashNavSrcNP = npCode('components/DashboardMobileNav.tsx')
+    const dashAcctSrcNP = npCode('components/DashboardAccount.tsx')
+    check(
+      'native pages: the brochure phone menu is the Sheet (id nav; the burger carries data-sheet-open="nav"), closes when the ask door opens (the door is z 60 under the sheet\'s 90), and hands sign-in to a door at the nav\'s level (a door inside the sheet would unmount with it)',
+      /<Sheet[\s\S]{0,400}?id="nav"/.test(navSrcNP) && /data-sheet-open="nav"/.test(navSrcNP) && !/drawer__backdrop|createPortal/.test(navSrcNP) &&
+        /const askOpen = useAskDoor\(\(s\) => s\.open\)/.test(navSrcNP) && /if \(askOpen\) setOpen\(false\)/.test(navSrcNP) &&
+        /\{doorOpen && cdpEnabled && <CreateAccountModal onClose=\{\(\) => setDoorOpen\(false\)\} \/>\}/.test(navSrcNP),
+    )
+    check(
+      'native pages: the account menu is a Sheet (id account) on a phone, decided ON PRESS (isPhoneViewport in the toggle, never at render), the dropdown at lg+; both menus close on pointerdown (iOS sends mousedown only for "clickable" targets)',
+      /<Sheet open=\{open && asSheet\}[^>]*id="account"/.test(acctSrcNP) && /setAsSheet\(isPhoneViewport\(\)\)/.test(acctSrcNP) &&
+        /addEventListener\('pointerdown', onDown\)/.test(acctSrcNP) && !/'mousedown'/.test(acctSrcNP) &&
+        /addEventListener\('pointerdown', onDown\)/.test(dashAcctSrcNP) && !/'mousedown'/.test(dashAcctSrcNP),
+    )
+    check(
+      'native pages: the Wallet-details window is a FULL Sheet (id wallet) on a phone, mounted closed so its exit can play; the lg+ dialog is unchanged',
+      /if \(isPhoneViewport\(\)\) \{\s*return \(\s*<Sheet open=\{open && !!address\}[^>]*id="wallet" size="full"/.test(walletSrcNP) &&
+        /role="dialog"\s+aria-label="Your wallet"/.test(walletSrcNP),
+    )
+    check(
+      'native pages: the dashboard\'s phone chrome is ONE bar (the section switcher → the Sheet id dashnav, and Ask → the site-wide door); no hand-portaled drawer',
+      /<Sheet[\s\S]{0,400}?id="dashnav"/.test(dashNavSrcNP) && /data-sheet-open="dashnav"/.test(dashNavSrcNP) && /onClick=\{\(\) => openDoor\(\)\}/.test(dashNavSrcNP) &&
+        !/createPortal|dashnav__drawer|dashnav__burger/.test(dashNavSrcNP),
+    )
+
+    // drive:native's contract (QA): every opener says which sheet it opens
+    // (`data-sheet-open`) and every overlay answers to the same id.
+    const doorSrcNP = npCode('components/CreateAccountButton.tsx')
+    check(
+      'native pages: every PAGES opener carries data-sheet-open and its overlay the same id: account (the pill), wallet (both "Wallet details", both frames), door (every door trigger + the .ca root), nav (the burger), dashnav (the section switcher)',
+      /data-sheet-open="account"/.test(acctSrcNP) && /data-sheet-open="wallet"/.test(acctSrcNP) && /data-sheet-open="wallet"/.test(dashAcctSrcNP) &&
+        /id="wallet" size="full"/.test(walletSrcNP) && /data-sheet="wallet"/.test(walletSrcNP) &&
+        /onClick=\{\(\) => setOpen\(true\)\} data-sheet-open="door"/.test(doorSrcNP) && /<div className="ca" data-sheet="door">/.test(doorSrcNP) &&
+        /data-sheet-open="nav"/.test(navSrcNP) && /data-sheet-open="door"/.test(navSrcNP) && /data-sheet-open="dashnav"/.test(dashNavSrcNP),
+    )
+
+    // Round 2 (after SHELL's sheet-history coordinator, lib/sheet-history).
+    check(
+      'native pages: account → Wallet details is a plain handoff (closeNow + setWalletOpen in one tap; the wallet sheet takes over the account sheet\'s history entry): no TEMP wait left in NavAccount',
+      /closeNow\(\)\s*setWalletOpen\(true\)/.test(acctSrcNP) && !/afterSheetHistory|TEMP until/.test(acctSrcNP),
+    )
+    check(
+      'native pages: the menu\'s Ask row closes the menu in the SAME click that opens the ask door, so the door takes over the menu\'s entry (a later close left a dead entry: history 3→5→5, back stayed on the page)',
+      /const onMenuClick = \(e: React\.MouseEvent\) => \{[\s\S]{0,160}closest\?\.\('\[data-ask-door\]'\)\) \{\s*setOpen\(false\)/.test(navSrcNP) && /onClick=\{onMenuClick\}/.test(navSrcNP),
+    )
+    check(
+      'native pages: the door closes on the back gesture and a swipe (useBackToClose \'door\' + useSwipeToClose on its panel); the ONLY drag surface is the grab band, never a field',
+      /useBackToClose\(true, \(\) => onClose\(\), 'door'\)/.test(doorSrcNP) && /useSwipeToClose\(panelRef, \(\) => onClose\(\), 'bottom'\)/.test(doorSrcNP) &&
+        /<div className="ca__grab" data-swipe-handle aria-hidden \{\.\.\.handleProps\} \/>/.test(doorSrcNP) && (doorSrcNP.match(/\{\.\.\.handleProps\}/g) ?? []).length === 1 &&
+        /<div ref=\{panelRef\} className="ca__panel"/.test(doorSrcNP),
+    )
+
+    // 3. The served CSS (the build is the proof the rules reach a phone).
+    const npDoc = await (await fetch(`${BASE}/`)).text()
+    const npHrefs = [...npDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
+    const npCss = (await Promise.all(npHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n').replace(/\s+/g, '')
+    // The minifier reorders declarations and groups selectors, so a rule is
+    // found by its selector (split on top-level commas only: `:is(a,b)` is
+    // one selector) and its declarations as a set.
+    const ruleWith = (css: string, sel: string, decls: string[]) =>
+      [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].some((m) => m[1].split(/,(?![^(]*\))/).includes(sel) && decls.every((d) => m[2].split(';').includes(d)))
+    const phoneBlock = (css: string, max: number) => [...css.matchAll(new RegExp(`@media\\(max-width:${max}px\\)\\{((?:[^{}]*\\{[^{}]*\\})*)\\}`, 'g'))].map((m) => m[1]).join('')
+    const below1023 = phoneBlock(npCss, 1023)
+    const below900 = phoneBlock(npCss, 900)
+    check(
+      'native pages: every field PAGES owns is ≥16px below lg in the SERVED CSS: the door\'s email (the OTP stays 22px), StayUpToDate\'s email, every dashboard field (BEFORE: 14.5 / 13.5 / 12–14px)',
+      /\.ca__input:not\(\.ca__input--otp\)\{font-size:16px\}/.test(below1023) && /\.sud__input\{font-size:16px\}/.test(below1023) &&
+        /\.dash__maininput:not\(\[type=checkbox\]\):not\(\[type=radio\]\):not\(\[type=range\]\),\.dash__mainselect,\.dash__maintextarea,\.dashsheetinput\{font-size:16px\}/.test(below1023) &&
+        /\.ca__input--otp\{[^}]*font-size:22px/.test(npCss),
+      `${npHrefs.length} stylesheet(s)`,
+    )
+    check(
+      'native pages: the dashboard bar sticks for real (BEFORE: sticky top 64px inside a wrapper its own height, so 600px down it sat at top −600): `.dash` is block below 900px (a grid item is stuck in its grid AREA), `.dashnav` is the sticky at top 0, and the docked ask bar steps aside there',
+      ruleWith(below900, '.dash', ['display:block']) && ruleWith(below900, '.dashnav', ['display:block', 'position:sticky', 'top:0']) &&
+        ruleWith(below900, '.dashask', ['display:none']) && !/\.dashnav__bar\{[^}]*position:sticky/.test(npCss),
+    )
+    check(
+      'native pages: inside the phone frame `.dash` spans the frame below lg (margin 0, width 100%, min-width 0). In the frame\'s flex COLUMN its `margin: 0 auto` turned off stretch: `.dash` sized to its content (766px on /dashboard at 375) and the frame clipped "Dismiss welcome" to x 709',
+      ruleWith(below1023, '.dash', ['margin:0', 'width:100%', 'min-width:0']),
+    )
+    check(
+      'native pages: the account pill and the Sign in pill keep their looks and gain a 44px+ hit area below lg (BEFORE: 35px and 28px); the account sheet\'s rows are 48px (BEFORE: 38px)',
+      ['.navacct__pill:before', '.hit-44:before'].every((sel) => ruleWith(below1023, sel, ['content:""', 'position:absolute', 'inset:-8px-3px'])) &&
+        ruleWith(npCss, '.navacct--sheet.navacct__item', ['min-height:48px']),
+    )
+    check(
+      'native pages: the door\'s grab band is a phone-only 44px absolute strip with touch-action none (no layout: the keyboard-up fit is untouched), and the panel\'s rise no longer fills forward (a `both` fill kept transform:none over the drag)',
+      ruleWith(npCss, '.ca__grab', ['display:none']) && ruleWith(below1023, '.ca__grab', ['display:block', 'position:absolute', 'top:0', 'left:0', 'right:0', 'height:44px', 'touch-action:none', 'cursor:grab']) &&
+        (() => {
+          // The minifier writes the animation name LAST (".28s cubic-bezier(…) backwards ca-rise"), so read the rule, not an order.
+          const rise = [...npCss.matchAll(/\.ca__panel\{([^}]*)\}/g)].map((m) => m[1]).find((b) => /ca-rise/.test(b)) ?? ''
+          return /backwards/.test(rise) && !/both/.test(rise)
+        })(),
+    )
+    check(
+      'native pages: the served CSS draws the CTA bar ONLY inside the media query lib/cta-bar names (the 640 in x402-design.css and CTA_BAR_MAX_PX are one number)',
+      ruleWith(phoneBlock(npCss, CTA.CTA_BAR_MAX_PX), '.mcta', ['display:flex']) && ruleWith(npCss, '.mcta', ['display:none']),
+    )
+    const below600 = phoneBlock(npCss, 600)
+    check(
+      'native pages: the brochure\'s standalone controls are 44px on a phone in the SERVED CSS: footer links as 44px rows (BEFORE 19px), socials and the theme toggle 44px (36/30), the logos 44px (30), the docs door CTAs, EMBED DOCS, TRY IT LIVE, the explainer link, the hero\'s Do it for real; the footer groups pair up below 600px so the 44px rows don\'t stack a longer footer',
+      ruleWith(below1023, '.footer__grouplinks', ['gap:0']) && ruleWith(below1023, '.footer__grouplinksa', ['display:inline-flex', 'align-items:center', 'min-height:44px']) &&
+        ruleWith(below1023, '.footer__social', ['width:44px', 'height:44px']) && ruleWith(below1023, '.themetog__opt', ['width:44px', 'height:44px']) && ruleWith(below1023, '.logo', ['min-height:44px']) &&
+        ruleWith(below1023, '.splash__morea', ['min-height:44px']) && ruleWith(below1023, '.liveex__docs', ['min-height:44px']) && ruleWith(below1023, '.edemo__live', ['min-height:44px']) &&
+        ruleWith(below1023, '.film__capa', ['min-height:44px']) && ruleWith(below1023, '.lh__doit.btn', ['min-height:44px']) &&
+        ruleWith(below600, '.footer__cols', ['grid-template-columns:1fr1fr']) &&
+        // the landing's CTA rows and bands (36–43px), the compare link (20px), the door's Terms/Privacy (14px: a hit area, same look)
+        ['.lh__ctas.btn', '.mkt__ctas.btn', '.liveex__ctas.btn', '.lvb__compoundbtn', '.splash__ctas.btn'].every((sel) => ruleWith(below1023, sel, ['min-height:44px'])) &&
+        ruleWith(below1023, '.mkt__more', ['min-height:44px']) && ruleWith(below1023, '.ca__consenta:before', ['content:""', 'position:absolute', 'inset:-15px-4px']),
+    )
+    const wDoc = await (await fetch(`${BASE}/wallet`)).text()
+    const wHrefs = [...wDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
+    const wCss = (await Promise.all(wHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n').replace(/\s+/g, '')
+    check(
+      'native pages: every control in the wallet window is a 44px target below lg (BEFORE: switch 38×26, copy 30px, "updated" 17px, a flag\'s fix 25px), a Max-in-a-field keeps its chip look with an invisible 44px hit area',
+      ruleWith(phoneBlock(wCss, 1023), '[data-wallet-window]:is(button,a[href])', ['min-height:44px']) &&
+        ruleWith(phoneBlock(wCss, 1023), '[data-wallet-window][data-wallet-field]:is(button,a[href]):after', ['content:""', 'position:absolute', 'inset:-12px-6px']) &&
+        /data-wallet-window="modal"/.test(walletSrcNP) && /data-wallet-window="page"/.test(walletSrcNP),
+      `${wHrefs.length} stylesheet(s)`,
+    )
+    check(
+      'native pages: the /wallet header\'s Ask stays a compact pill at every width: its placeholder hint is hidden in the wrapper (markets.css, which hides it elsewhere, never loads on /wallet: the hint drew 353px and pushed Switch off a 375px screen)',
+      ruleWith(wCss, '.wallethead__ask.mkt-frame__askhint', ['display:none']),
+    )
+  }
+
+  // ── NATIVE NAV: a tab is a place, never a pop-up (squad mobile-native,
+  // 2026-09-24, NAV lane; Nate: "when you click a bottom nav the drawer pops
+  // out automatically but does not feel like the right flow, if a nav
+  // drawer is open and a user taps outside it should close the drawer, by
+  // default should be closed with easy way to access the info"). Below lg
+  // the spine's seats are places: APPS / JOBS / LINKS / TEAM show their
+  // screen over the conversation (lib/phone-nav decides, components/phone
+  // renders), CHATS is the conversation's seat, MORE is a Sheet, and the
+  // 248px overlay drawer is retired. Measured before/after in
+  // scripts/drive-native-nav.ts; these pin the rule and the wiring.
+  {
+    const PN = await import('../lib/phone-nav')
+    const AT = await import('../lib/app-tab-url')
+    const SCREENS = ['chat', 'history', 'apps', 'jobs', 'links', 'team'] as const
+    const SEATS = ['markets', 'mcps', 'jobs', 'links', 'wallet', 'team', 'chats', 'docs', 'settings', 'more'] as const
+    const SURFACES = ['chat', 'markets', 'wallet', 'dashboard'] as const
+    check(
+      'native nav: the ?tab= grammar and the phone screens are one bijection (mcps↔apps, chats↔history, the rest by name; the conversation writes no tab)',
+      PN.screenForTab('mcps') === 'apps' && PN.screenForTab('chats') === 'history' && PN.screenForTab('jobs') === 'jobs' && PN.screenForTab('links') === 'links' && PN.screenForTab('team') === 'team' &&
+        (['mcps', 'chats', 'jobs', 'links', 'team'] as const).every((t) => PN.tabForScreen(PN.screenForTab(t)) === t) &&
+        PN.tabForScreen('chat') === null &&
+        PN.phoneScreenFromSearch('') === 'chat' && PN.phoneScreenFromSearch('?tab=mcps') === 'apps' && PN.phoneScreenFromSearch('?tab=chats') === 'history' && PN.phoneScreenFromSearch('?tab=nope') === 'chat' && PN.phoneScreenFromSearch('?ask=x') === 'chat',
+    )
+    check(
+      'native nav: a phone URL names APPS explicitly (/chat?tab=mcps — a reload must come back to APPS), the conversation stays bare, other params survive; the desktop tabUrl still drops the default',
+      PN.phoneTabUrl('apps', '/chat', '') === '/chat?tab=mcps' &&
+        PN.phoneTabUrl('chat', '/chat', '?tab=jobs') === '/chat' &&
+        PN.phoneTabUrl('history', '/chat/abc', '?ask=x') === '/chat/abc?ask=x&tab=chats' &&
+        AT.tabUrl(AT.DEFAULT_TAB, '/chat', '') === '/chat' &&
+        AT.tabUrl(AT.DEFAULT_TAB, '/chat', '', { explicit: true }) === '/chat?tab=mcps',
+    )
+    check(
+      'native nav: the lit seat — CHATS in the conversation AND on the chat list, each screen its own seat, MARKETS/WALLET/SETTINGS on their pages; MORE lights only for TEAM and SETTINGS',
+      PN.litSeat('chat', 'chat') === 'chats' && PN.litSeat('chat', 'history') === 'chats' && PN.litSeat('chat', 'apps') === 'mcps' && PN.litSeat('chat', 'jobs') === 'jobs' && PN.litSeat('chat', 'links') === 'links' && PN.litSeat('chat', 'team') === 'team' &&
+        PN.litSeat('markets', 'chat') === 'markets' && PN.litSeat('wallet', 'apps') === 'wallet' && PN.litSeat('dashboard', 'chat') === 'settings' &&
+        PN.moreLit('chat', 'team') && PN.moreLit('dashboard', 'chat') && !PN.moreLit('chat', 'chat') && !PN.moreLit('chat', 'apps') && !PN.moreLit('markets', 'chat') && !PN.moreLit('wallet', 'chat'),
+    )
+    const tap = (surface: (typeof SURFACES)[number], screen: (typeof SCREENS)[number], seat: (typeof SEATS)[number], pathname = surface === 'chat' ? '/chat' : `/${surface}`) =>
+      PN.phoneTap({ surface, screen, seat, pathname })
+    check(
+      'native nav: on /chat a screen seat shows its screen from anywhere else, and tapped on its own screen scrolls to the top (never a drawer, never a navigation)',
+      (['mcps', 'jobs', 'links', 'team'] as const).every((seat) => {
+        const target = PN.screenForTab(seat)
+        return SCREENS.every((screen) => {
+          const a = tap('chat', screen, seat)
+          return screen === target ? a.kind === 'top' : a.kind === 'screen' && a.screen === target
+        })
+      }),
+    )
+    check(
+      "native nav: CHATS is the conversation's seat — in the conversation it shows the chat list, on the list it pops back to the conversation, from APPS/JOBS/LINKS/TEAM it returns to the conversation you were in",
+      tap('chat', 'chat', 'chats').kind === 'screen' && (tap('chat', 'chat', 'chats') as { screen: string }).screen === 'history' &&
+        tap('chat', 'history', 'chats').kind === 'screen' && (tap('chat', 'history', 'chats') as { screen: string }).screen === 'chat' &&
+        (['apps', 'jobs', 'links', 'team'] as const).every((screen) => tap('chat', screen, 'chats').kind === 'screen' && (tap('chat', screen, 'chats') as { screen: string }).screen === 'chat'),
+    )
+    check(
+      'native nav: off /chat every screen seat navigates INTO /chat with its screen named in the URL (APPS → /chat?tab=mcps, CHATS → the list), never an open drawer',
+      (['markets', 'wallet', 'dashboard'] as const).every((surface) =>
+        (['mcps', 'jobs', 'links', 'team', 'chats'] as const).every((seat) => {
+          const a = tap(surface, 'chat', seat)
+          return a.kind === 'navigate' && a.href === `/chat?tab=${seat}` && a.screen === PN.screenForTab(seat)
+        }),
+      ),
+    )
+    check(
+      'native nav: the page seats — MARKETS/WALLET/DOCS/SETTINGS navigate from elsewhere, scroll to the top on their own root page, and pop to the root from deeper (/t/AAPL → /markets, /dashboard/keys → /dashboard); MORE is the sheet',
+      tap('chat', 'chat', 'markets').kind === 'navigate' && (tap('chat', 'chat', 'markets') as { href: string }).href === '/markets' &&
+        tap('markets', 'chat', 'markets', '/markets').kind === 'top' && tap('markets', 'chat', 'markets', '/markets/').kind === 'top' &&
+        tap('markets', 'chat', 'markets', '/t/AAPL').kind === 'navigate' && (tap('markets', 'chat', 'markets', '/t/AAPL') as { href: string }).href === '/markets' &&
+        tap('wallet', 'chat', 'wallet', '/wallet').kind === 'top' && (tap('chat', 'apps', 'wallet') as { href: string }).href === '/wallet' &&
+        (tap('chat', 'chat', 'docs') as { href: string }).href === '/docs' &&
+        tap('dashboard', 'chat', 'settings', '/dashboard').kind === 'top' && (tap('dashboard', 'chat', 'settings', '/dashboard/keys') as { href: string }).href === '/dashboard' &&
+        (tap('chat', 'chat', 'settings') as { href: string }).href === '/dashboard' &&
+        SURFACES.every((surface) => tap(surface, 'chat', 'more').kind === 'sheet'),
+    )
+    check(
+      'native nav: every surface × screen × seat resolves to one of the four actions, a screen action only ever fires on /chat, and a navigation only ever names a real page',
+      SURFACES.every((surface) =>
+        SCREENS.every((screen) =>
+          SEATS.every((seat) => {
+            const a = tap(surface, screen, seat)
+            if (!['screen', 'top', 'navigate', 'sheet'].includes(a.kind)) return false
+            if (a.kind === 'screen' && surface !== 'chat') return false
+            if (a.kind === 'navigate' && !/^\/(chat(\?tab=[a-z]+)?|markets|wallet|docs|dashboard)$/.test(a.href)) return false
+            return true
+          }),
+        ),
+      ),
+    )
+    // The wiring: the spine executes phone-nav, the bar seats are ≥48px with
+    // press feedback and a landscape posture, the overlay drawer is gone,
+    // the screens carry the frame's scroller, and the belts translate the
+    // desktop-shaped requests other files still make.
+    const nnSpine = await readFile(new URL('../components/AppSpine.tsx', import.meta.url), 'utf8')
+    const nnRail = await readFile(new URL('../components/ChatRail.tsx', import.meta.url), 'utf8')
+    const nnWs = await readFile(new URL('../components/ChatWorkspace.tsx', import.meta.url), 'utf8')
+    const nnScreen = await readFile(new URL('../components/phone/PhoneScreen.tsx', import.meta.url), 'utf8')
+    const nnScreens = await readFile(new URL('../components/phone/PhoneScreens.tsx', import.meta.url), 'utf8')
+    const nnStore = await readFile(new URL('../lib/store.ts', import.meta.url), 'utf8')
+    const nnLinksTab = await readFile(new URL('../components/LinksRailTab.tsx', import.meta.url), 'utf8')
+    const nnTabs = await Promise.all(['AppsRailTab', 'ChatsRailTab', 'JobsRailTab', 'LinksRailTab', 'TeamRailTab'].map((f) => readFile(new URL(`../components/${f}.tsx`, import.meta.url), 'utf8')))
+    // Negative greps read CODE, never a comment that names the retired thing
+    // (the coordinator's pin lesson, 2026-09-24): strip // and /* */ first.
+    const nnCode = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    const nnSpineCode = nnCode(nnSpine)
+    const nnRailCode = nnCode(nnRail)
+    const nnWsCode = nnCode(nnWs)
+    const nnLinksTabCode = nnCode(nnLinksTab)
+    check(
+      'native nav: AppSpine executes lib/phone-nav on a phone (pickPhone → phoneTap; the lit seat = seatForScreen; MORE = moreLit) and never sets the retired overlay flag',
+      /const pickPhone = \(seat: PhoneSeat\) => \{\s*const action = phoneTap\(\{ surface, screen: phoneScreen, seat, pathname \}\)/.test(nnSpine) &&
+        /const selected = !offChat && seatForScreen\(phoneScreen\) === tab/.test(nnSpine) &&
+        /const moreLit = moreLitFor\(surface, phoneScreen\)/.test(nnSpine) &&
+        !/setMobileMcpRailOpen/.test(nnSpineCode) && !/pickMobile/.test(nnSpineCode) &&
+        /case 'top':\s*scrollAppToTop\('smooth'\)/.test(nnSpine) &&
+        /syncTabParam\(urlTab, \{ explicit: isNarrow \}\)/.test(nnSpine) &&
+        /if \(phone\) setPhoneScreen\(ARRIVAL_SCREEN\)/.test(nnSpine) && /setPhoneScreen\(phoneScreenFromSearch\(search\)\)/.test(nnSpine),
+    )
+    check(
+      'native nav: MORE is a Sheet (id "more", aria-haspopup="dialog") holding Team (roster on), Docs and Settings — no popover, no outside-pointer listener',
+      /<Sheet id="more" open=\{moreOpen\} onClose=\{\(\) => setMoreOpen\(false\)\} title="More"/.test(nnSpine) &&
+        // Every sheet's labeled opener wears data-sheet-open=<id> = the Sheet's id (the squad drive's contract).
+        /aria-label="More"\s+aria-haspopup="dialog"\s+aria-expanded=\{moreOpen\}\s+data-sheet-open="more"/.test(nnSpine) &&
+        !/data-spine-more/.test(nnSpineCode) && !/addEventListener\('pointerdown'/.test(nnSpineCode) &&
+        /href="\/docs" role="menuitem"/.test(nnSpine) && /href="\/dashboard"\s+role="menuitem"/.test(nnSpine),
+    )
+    check(
+      'native nav: every phone seat is one anatomy — ≥48px, press feedback (active:bg), select-none, touch-manipulation, and a compact landscape posture (40px, icon beside label)',
+      /const PHONE_SEAT =\s*'relative flex-1 min-h-\[48px\] flex flex-col items-center justify-center gap-0\.5 select-none touch-manipulation transition-colors active:bg-\[var\(--surf-1\)\] \[@media\(orientation:landscape\)_and_\(max-height:480px\)\]:min-h-\[40px\] \[@media\(orientation:landscape\)_and_\(max-height:480px\)\]:flex-row/.test(nnSpine) &&
+        (nnSpine.match(/PHONE_SEAT/g) ?? []).length >= 7 &&
+        /onClick=\{pageSeatClick\('markets'\)\}/.test(nnSpine) && /onClick=\{pageSeatClick\('wallet'\)\}/.test(nnSpine) && /onClick=\{pageSeatClick\('settings'\)\}/.test(nnSpine),
+    )
+    check(
+      'native nav: the phone overlay drawer is retired — ChatRail renders nothing below lg, carries no overlay posture and no mobile flag; the desktop drawer renders the same extracted bodies (AppsRailTab, ChatsRailTab)',
+      /if \(!mounted \|\| isMobile\) return null/.test(nnRail) && !/max-lg:absolute/.test(nnRailCode) && !/mobileMcpRailOpen/.test(nnRailCode) &&
+        /<AppsRailTab \/>/.test(nnRail) && /<ChatsRailTab \/>/.test(nnRail) && /<JobsRailTab \/>/.test(nnRail) && /<LinksRailTab \/>/.test(nnRail) && /<TeamRailTab \/>/.test(nnRail),
+    )
+    check(
+      'native nav: every rail body lays flat on the phone (the screen scrolls, `!flat && flex-1 overflow-y-auto` in all five) — one component per destination for both postures',
+      nnTabs.every((src) => /!flat && 'flex-1 overflow-y-auto'/.test(src)),
+    )
+    check(
+      'native nav: ChatWorkspace is the phone frame (data-app-frame), mounts the screen BEFORE ChatInterface so its scroller is the first data-app-scroll, makes the conversation inert under a screen, and belts the desktop "show the studio" pair into the LINKS screen',
+      /<div data-app-frame="" className=\{`relative flex \$\{chrome/.test(nnWs) && !/max-lg:pb-\[calc\(48px/.test(nnWsCode) &&
+        nnWs.indexOf('<PhoneScreens screen={phoneScreen} />') < nnWs.indexOf('<ChatInterface injectedPrompt={urlPrompt} />') &&
+        /inert=\{screenUp \|\| undefined\} aria-hidden=\{screenUp \|\| undefined\}/.test(nnWs) &&
+        /if \(!isNarrow \|\| mainView !== 'links' \|\| railTab !== 'links'\) return\s*setMainView\('chat'\)\s*setPhoneScreen\('links'\)/.test(nnWs),
+    )
+    check(
+      'native nav: the main area names its screen (main[data-phone-screen]), a screen panel names itself (data-phone-panel), carries the frame scroller (data-app-scroll) and sits above the guest banner and below the bar (z-45)',
+      /<section data-phone-panel=\{name\} aria-label=\{title\} className="absolute inset-0 z-\[45\] flex flex-col bg-\[var\(--bg\)\]">/.test(nnScreen) &&
+        // The main area names its screen in EVERY state (the squad drive's
+        // contract: main[data-phone-screen="chat|history|apps|jobs|links|team"]).
+        /<main className="relative flex-1 min-w-0 min-h-0 flex flex-col" data-phone-screen=\{isNarrow \? phoneScreen : undefined\}>/.test(nnWs) &&
+        /<div ref=\{scrollerRef\} data-app-scroll="" className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain/.test(nnScreen) &&
+        // Scroll position remembered per screen (invariant 3): the scroller's
+        // offset is saved on unmount and restored on the next mount.
+        /SCROLL_MEMORY\.set\(name, el\.scrollTop\)/.test(nnScreen) && /const saved = SCROLL_MEMORY\.get\(name\) \?\? 0/.test(nnScreen),
+    )
+    check(
+      'native nav: the screens — APPS, JOBS, TEAM, HISTORY render the extracted bodies flat; a navigation from JOBS/HISTORY returns to the conversation; LINKS is the studio with "Your list" (aria-haspopup="dialog") opening the rail list as a Sheet whose Mint / Name-your-page land ON the studio',
+      /case 'apps':[\s\S]*?<AppsRailTab flat \/>/.test(nnScreens) &&
+        /case 'jobs':[\s\S]*?<JobsRailTab flat onNavigate=\{toChat\} \/>/.test(nnScreens) &&
+        /case 'team':[\s\S]*?<TeamRailTab flat \/>/.test(nnScreens) &&
+        /case 'history':[\s\S]*?<ChatsRailTab flat onNavigate=\{toChat\} \/>/.test(nnScreens) &&
+        /aria-label="Your list"\s+aria-haspopup="dialog"\s+aria-expanded=\{listOpen\}\s+data-sheet-open="links"/.test(nnScreens) &&
+        /<Sheet id="links" open=\{listOpen\}/.test(nnScreens) &&
+        /<LinksRailTab flat journey=\{false\} onMint=\{\(\) => landOn\('\.linkstudio__mint'\)\} onPage=\{\(\) => landOn\('\.linkstudio__page'\)\} onStudio=\{\(\) => landOn\('\.linkstudio'\)\} \/>/.test(nnScreens) &&
+        /<LinksWorkspace \/>/.test(nnScreens),
+    )
+    // Round 2: the retired overlay flag is GONE — from the store, and from
+    // every file that used to read it (ChatInterface's openRail, the phone
+    // top bar and MintLinkModal all ask for a screen now). Code, not comments.
+    const nnChatIface = nnCode(await readFile(new URL('../components/ChatInterface.tsx', import.meta.url), 'utf8'))
+    const nnMint = nnCode(await readFile(new URL('../components/MintLinkModal.tsx', import.meta.url), 'utf8'))
+    check(
+      'native nav: mobileMcpRailOpen / setMobileMcpRailOpen no longer exist — not in the store, not in ChatWorkspace, AppSpine, ChatRail, ChatInterface or MintLinkModal — and every caller asks for a screen (openRail → setPhoneScreen(screenForTab), MintLinkModal → openLinksStudio)',
+      [nnCode(nnStore), nnWsCode, nnSpineCode, nnRailCode, nnChatIface, nnMint].every((src) => !/mobileMcpRailOpen|setMobileMcpRailOpen/.test(src)) &&
+        /setPhoneScreen\(screenForTab\(tab\)\)/.test(nnChatIface) && /openLinksStudio\(\)/.test(nnMint),
+    )
+    // Round 2: my openers of CHAT's sheets name them (data-sheet-open ⇄ the
+    // Sheet's id): jobs + schedule rows → job, "Name your page" → creator
+    // (only when it opens the modal — on the phone's list sheet it lands on
+    // the studio's panel), "Add your own MCP" → addmcp.
+    const nnJobsTab = await readFile(new URL('../components/JobsRailTab.tsx', import.meta.url), 'utf8')
+    const nnAppsTab = await readFile(new URL('../components/AppsRailTab.tsx', import.meta.url), 'utf8')
+    check(
+      'native nav: the openers of CHAT\'s sheets name them — JobsRailTab job + schedule rows data-sheet-open="job", LinksRailTab "Name your page" data-sheet-open="creator" (undefined when onPage lands on the studio), AppsRailTab "Add your own MCP" data-sheet-open="addmcp" — matching the ids CHAT\'s Sheets carry',
+      (nnJobsTab.match(/data-sheet-open="job"/g) ?? []).length === 2 &&
+        /data-sheet-open=\{onPage \? undefined : 'creator'\}/.test(nnLinksTab) &&
+        /onClick=\{\(\) => setAddOpen\(true\)\}\s*data-sheet-open="addmcp"/.test(nnAppsTab) &&
+        /<Sheet[^>]*id="creator"/.test(await readFile(new URL('../components/CreatorPageModal.tsx', import.meta.url), 'utf8')) &&
+        /id="addmcp"/.test(await readFile(new URL('../components/AddMcpModal.tsx', import.meta.url), 'utf8')) &&
+        /id="job"/.test(await readFile(new URL('../components/JobDetailOverlay.tsx', import.meta.url), 'utf8')),
+    )
+    // Round 2: the keyboard keeps the focused field on a screen visible, the
+    // first-payout journey sits inline on the phone studio (and not again in
+    // its list sheet), and the sheet's sign-in link is a 44px target.
+    check(
+      'native nav: a phone screen brings the focused field into view when the keyboard rises (useSoftKeyboard → scrollIntoView inside its own scroller)',
+      /const \{ open: keyboardOpen \} = useSoftKeyboard\(\)/.test(nnScreen) && /if \(!keyboardOpen\) return[\s\S]{0,400}active\.scrollIntoView\(\{ block: 'nearest' \}\)/.test(nnScreen),
+    )
+    check(
+      'native nav: the first-payout journey is INLINE on the phone LINKS studio (StudioJourney → the exported JourneyStrip, signed-in only, the shared status + dismiss key, actions landing on the studio) and the "Your list" sheet skips it (journey={false})',
+      /export function JourneyStrip\(/.test(nnLinksTab) && /journey && status && !journeyDismissed/.test(nnLinksTab) &&
+        /function StudioJourney\(/.test(nnScreens) && /<StudioJourney landOn=\{landOn\} \/>\s*<LinksWorkspace \/>/.test(nnScreens) &&
+        /onMint=\{\(\) => landOn\('\.linkstudio__mint'\)\}/.test(nnScreens) && /onStudio=\{\(\) => landOn\('\.linkfunnel, \.linkstudio'\)\}/.test(nnScreens) &&
+        /dismissOnboarding\(\)/.test(nnScreens) && /useLinksChanged\(refresh\)/.test(nnScreens) &&
+        /<LinksRailTab flat journey=\{false\}/.test(nnScreens) &&
+        /props\.flat && 'inline-flex min-h-\[44px\] items-center px-4 text-\[13px\]'/.test(nnLinksTab),
+    )
+    check(
+      'native nav: the store owns ONE "take me to my links" (openLinksStudio: the LINKS screen on a phone, the LINKS main view at lg+), phoneScreen stays session-only, and the rail seat uses it instead of the desktop pair',
+      /openLinksStudio: \(\) => \(isPhoneViewport\(\) \? set\(\{ phoneScreen: 'links' \}\) : set\(\{ railTab: 'links', mainView: 'links' \}\)\)/.test(nnStore) &&
+        !/partialize: \(state\) => \(\{[^}]*phoneScreen/.test(nnStore) &&
+        /const toStudio = onStudio \?\? openLinksStudio/.test(nnLinksTab) && !/setMainView/.test(nnLinksTabCode),
+    )
+    // The server render: the frame attribute rides the workspace root, the
+    // bar's seats wear the anatomy, MORE is a dialog trigger, and no drawer
+    // and no screen is in the HTML (screens are client-side places).
+    const nnChatHtml = flat(await (await fetch(`${BASE}/chat`)).text())
+    const nnMarketsHtml = flat(await (await fetch(`${BASE}/markets`)).text())
+    const nnBar = (h: string) => h.match(/<nav data-spine-bar="" [^>]*aria-label="Workspace"[\s\S]*?<\/nav>/)?.[0] ?? ''
+    check(
+      'native nav (SSR): /chat and /markets ship the frame attribute on the chat root, a bar whose every seat is ≥48px with press feedback, a MORE seat that opens a dialog, no overlay drawer and no screen in the HTML',
+      /<div data-app-frame="" class="relative flex h-dvh"/.test(nnChatHtml) &&
+        [nnChatHtml, nnMarketsHtml].every((h) => {
+          const bar = nnBar(h)
+          const seats = bar.match(/<(?:a|button) [^>]*aria-label="[^"]+"[^>]*>/g) ?? []
+          return (
+            seats.length >= 8 &&
+            seats.every((tag) => /class="relative flex-1 min-h-\[48px\][^"]*select-none touch-manipulation[^"]*active:bg-\[var\(--surf-1\)\]/.test(tag)) &&
+            /aria-label="More"[^>]*aria-haspopup="dialog"[^>]*aria-expanded="false"/.test(bar) &&
+            !/data-spine-more/.test(h) && !/max-lg:absolute/.test(h) && !/data-phone-screen/.test(h)
+          )
+        }),
+      `chat seats=${(nnBar(nnChatHtml).match(/aria-label="/g) ?? []).length} markets seats=${(nnBar(nnMarketsHtml).match(/aria-label="/g) ?? []).length}`,
+    )
+  }
+
+  // ── native shell: the phone frame (squad mobile-native, 2026-09-24, SHELL lane) ──
+  // Invariant 1: on a phone the spine's tab bar never moves, because the
+  // document never scrolls. The GEOMETRY is proved by
+  // `npx tsx scripts/drive-native-shell.ts` in a real Chrome (an iPhone UA
+  // and a Pixel 7 at 360–412, plus 1440/1024 unchanged); these pins hold the
+  // CONTRACT that geometry rests on — the pure decisions, the served CSS, the
+  // server-rendered attributes, the deleted hand reserves, the manifest — so
+  // an edit that quietly removes one goes red here instead of on Nate's phone.
+  {
+    const PS = await import('../lib/phone-shell')
+    const AS = await import('../lib/app-scroller')
+    const { readFile: readSrcFile } = await import('node:fs/promises')
+    const readSrc = (p: string) => readSrcFile(new URL(`../${p}`, import.meta.url), 'utf8')
+    const flatCss = (css: string) => css.replace(/\s+/g, '')
+    /** Source with its comments stripped: a negative match must read CODE, not
+     *  a comment that names the very thing it forbids (PAGES caught two). */
+    const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1').replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    const designSrc = await readSrc('app/x402-design.css')
+
+    // The contract is pure: nothing touches the DOM at import time.
+    check('native shell: the attribute contract + the phone media query are the same names every lane builds against', PS.FRAME_ATTR === 'data-app-frame' && PS.SCROLL_ATTR === 'data-app-scroll' && PS.BAR_ATTR === 'data-spine-bar' && PS.PHONE_MQ === '(max-width: 1023px)' && PS.PHONE_MAX_PX === 1023 && PS.SPINE_BAR_PX === 49 && PS.KEYBOARD_ATTR === 'data-keyboard' && PS.KB_INSET_VAR === '--kb-inset')
+    check('native shell: keyboardInset is the layout height minus the visual height minus the pan, floored at 0 and rounded; keyboardState opens at KEYBOARD_MIN_PX (120) and reads 0 below it (a toolbar move is never a keyboard)',
+      PS.keyboardInset(844, 844, 0) === 0 && PS.keyboardInset(844, 532, 0) === 312 && PS.keyboardInset(844, 532, 40) === 272 && PS.keyboardInset(844, 900, 0) === 0 && PS.keyboardInset(844, 531.6, 0) === 312 &&
+        PS.keyboardState(844, 532, 0).open === true && PS.keyboardState(844, 532, 0).inset === 312 && PS.keyboardState(844, 780, 0).open === false && PS.keyboardState(844, 780, 0).inset === 0 && PS.keyboardState(844, 724, 0).open === true && PS.keyboardState(844, 725, 0).open === false)
+    check('native shell: scrollMemoryKey is path + search (never the hash), one namespace, a bare "?" dropped',
+      PS.scrollMemoryKey('/markets', '') === 'pantessa.scroll.v1:/markets' && PS.scrollMemoryKey('/chat', '?tab=links') === 'pantessa.scroll.v1:/chat?tab=links' && PS.scrollMemoryKey('/chat', 'tab=jobs') === 'pantessa.scroll.v1:/chat?tab=jobs' && PS.scrollMemoryKey('/t/AAPL', '?') === 'pantessa.scroll.v1:/t/AAPL' && PS.scrollMemoryKey('/t/AAPL', '?tab=trade') !== PS.scrollMemoryKey('/t/AAPL', ''))
+    check('native shell: themeColorFor follows the SITE theme and equals the served --bg per theme (dark #000000, light #fdfdfc — x402-design.css, not the old #09090b claim)', PS.themeColorFor('light') === '#fdfdfc' && PS.themeColorFor('dark') === '#000000' && PS.themeColorFor(undefined) === '#000000' && PS.themeColorFor(null) === '#000000' && PS.THEME_COLORS.dark === '#000000' && PS.THEME_COLORS.light === '#fdfdfc' && /^\s*--bg: #000000;/m.test(designSrc) && /^\s*--bg: #fdfdfc;/m.test(designSrc))
+    check('native shell: shouldDismissDrag — a quarter of the panel (min 80px) or a ≥0.5px/ms flick that moved ≥24px dismisses; a drag the wrong way or a slow short one never does',
+      PS.shouldDismissDrag(80, 0, 200) === true && PS.shouldDismissDrag(79, 0, 200) === false && PS.shouldDismissDrag(120, 0, 600) === false && PS.shouldDismissDrag(150, 0, 600) === true &&
+        PS.shouldDismissDrag(30, 0.6, 600) === true && PS.shouldDismissDrag(20, 2, 600) === false && PS.shouldDismissDrag(-100, 5, 200) === false && PS.shouldDismissDrag(0, 5, 200) === false && PS.SHEET_DISMISS_MIN_PX === 80 && PS.SHEET_DISMISS_VELOCITY === 0.5)
+    const kbSrc = await readSrc('components/mobile/useSoftKeyboard.ts')
+    check('native shell: useSoftKeyboard pans the page back (window.scrollTo(0, 0)) only after a keyboard that WAS up closes, and only in the phone posture — a desktop blur must never scroll the page to the top',
+      /const wasOpen = last\.open/.test(kbSrc) && /if \(wasOpen && !last\.open\) settle\(\)/.test(kbSrc) && /const settle = \(\) => \{\s*if \(!isPhoneViewport\(\)\) return/.test(kbSrc) && /keyboardState\(window\.innerHeight, vv\.height, vv\.offsetTop\)/.test(kbSrc))
+    // Round 2: what a URL change does to the screen's scroll. A REPLACE never
+    // resets (the chat's /chat → /chat/<id> catch-up after its first turn is a
+    // replaceState and used to scroll the thread to 0 — CHAT's finding).
+    check('native shell: scrollKindFor — pop restores, push (and an unseen change) lands at the top, replace KEEPS the scroll',
+      PS.scrollKindFor('pop') === 'restore' && PS.scrollKindFor('push') === 'top' && PS.scrollKindFor(null) === 'top' && PS.scrollKindFor('replace') === 'keep')
+    check('native shell: historyUrlChangesPath counts only a pathname change — a query-only (?tab=), a hash, a state-only call and a same-path URL do not; relative and absolute URLs resolve like the browser',
+      PS.historyUrlChangesPath('/chat', '/chat/abc', 'http://localhost/chat') === true && PS.historyUrlChangesPath('/chat', '/chat?tab=links', 'http://localhost/chat') === false && PS.historyUrlChangesPath('/t/AAPL', '#trade', 'http://localhost/t/AAPL') === false &&
+        PS.historyUrlChangesPath('/t/AAPL', null, 'http://localhost/t/AAPL') === false && PS.historyUrlChangesPath('/t/AAPL', undefined, 'http://localhost/t/AAPL') === false && PS.historyUrlChangesPath('/t/AAPL', '', 'http://localhost/t/AAPL') === false &&
+        PS.historyUrlChangesPath('/t/AAPL', '/t/TSLA', 'http://localhost/t/AAPL') === true && PS.historyUrlChangesPath('/t/AAPL', 'http://localhost/t/TSLA?x=1', 'http://localhost/t/AAPL') === true && PS.historyUrlChangesPath('/t/AAPL', 'TSLA', 'http://localhost/t/AAPL') === true && PS.historyUrlChangesPath('/t/AAPL', 'http://[', 'http://localhost/t/AAPL') === false)
+    const mountSrc = await readSrc('components/mobile/PhoneShellMount.tsx')
+    check('native shell: ScrollMemory wraps pushState/replaceState by METHOD (marking only pathname-changing calls), watches popstate for a pathname change, and decides through scrollKindFor — a replace leaves the scroller alone',
+      /h\.pushState = pushWrapped/.test(mountSrc) && /h\.replaceState = replaceWrapped/.test(mountSrc) && /mark\('push', url\)/.test(mountSrc) && /mark\('replace', url\)/.test(mountSrc) && /historyUrlChangesPath\(window\.location\.pathname, url, window\.location\.href\)/.test(mountSrc) &&
+        /if \(window\.location\.pathname !== seenPath\.current\) lastOp\.current = 'pop'/.test(mountSrc) && /how = scrollKindFor\(lastOp\.current\)/.test(mountSrc) && /if \(how === 'keep'\) \{\s*\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*writeMemory\(scrollMemoryKey\(location\.pathname, location\.search\), appScrollTop\(\)\)\s*return\s*\}/.test(mountSrc) && /if \(h\.pushState === pushWrapped\) h\.pushState = origPush/.test(mountSrc) && /window\.addEventListener\(SHEET_PUSH_AS_REPLACE_EVENT, onPushAsReplace\)/.test(mountSrc))
+    check('native shell: lib/app-scroller keeps the stubbed exports and adds scrollAppToTop / appScrollDepthPct / appScrollExtent / hasAppScroller (NAV\'s tap-the-lit-tab and the journey depth read these)',
+      ['getAppScroller', 'appScrollTop', 'scrollAppTo', 'onAppScroll', 'scrollAppToTop', 'appScrollDepthPct', 'appScrollExtent', 'hasAppScroller'].every((k) => typeof (AS as Record<string, unknown>)[k] === 'function'))
+
+    // The served stylesheet, not the source (the token-tint lesson, #792):
+    // the frame rules must reach a phone's browser from /markets.
+    const nsDoc = await (await fetch(`${BASE}/markets`, { headers: { 'x-yf-internal-run': '1' } })).text()
+    const nsHrefs = [...nsDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
+    const nsCss = flatCss((await Promise.all(nsHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n'))
+    const phoneBlocks = [...nsCss.matchAll(/@media\(max-width:1023px\)\{/g)].length
+    /** The served rule for EXACTLY this (whitespace-flattened) selector, as a
+     *  declaration set: Lightning CSS reorders declarations and collapses
+     *  shorthands (`flex:1 1 auto` → `flex:auto`, `overflow-x:clip;overflow-y:
+     *  auto` → `overflow:clip auto`, a `100vh` fallback under `100dvh` is
+     *  dropped), so a pin reads the SET, and each expected declaration may
+     *  name its collapsed alternatives with `|`. */
+    const ruleWith = (css: string, selector: string, decls: string[]): boolean => {
+      const sel = selector.replace(/\s+/g, '')
+      let from = 0
+      while (from < css.length) {
+        const i = css.indexOf(`${sel}{`, from)
+        if (i < 0) return false
+        const before = i === 0 ? '' : css[i - 1]
+        if (before === '' || before === '}' || before === '{' || before === ';') {
+          const body = css.slice(i + sel.length + 1, css.indexOf('}', i))
+          const have = new Set(body.split(';').filter(Boolean))
+          if (decls.every((d) => d.split('|').some((alt) => have.has(alt)))) return true
+        }
+        from = i + sel.length + 1
+      }
+      return false
+    }
+    check('native shell: the served CSS carries the frame — below lg html:has([data-app-frame]) is height 100% + overflow hidden + no overscroll, its body clips, the frame is a 100dvh column, the scroller is flex 1 / min-height 0 / overflow-y auto / overscroll contain (matched as declaration SETS: Lightning reorders + collapses)',
+      phoneBlocks > 0 && ruleWith(nsCss, 'html:has([data-app-frame])', ['height:100%', 'overflow:hidden', 'overscroll-behavior:none']) &&
+        ruleWith(nsCss, 'html:has([data-app-frame]) body', ['height:100%', 'min-height:0', 'overflow:clip', 'overscroll-behavior:none', 'display:flex', 'flex-direction:column']) &&
+        ruleWith(nsCss, 'html:has([data-app-frame]) body > *', ['flex-shrink:0']) && ruleWith(nsCss, 'html:has([data-app-frame]) body > [data-app-frame]', ['flex-shrink:1', 'min-height:0']) && ruleWith(nsCss, 'html:has([data-app-frame]) body > :has(> [data-app-frame])', ['flex-shrink:1', 'min-height:0']) &&
+        ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame][data-app-frame]', ['display:flex', 'flex-direction:column', 'height:100dvh', 'min-height:0', 'max-height:none', 'padding:env(safe-area-inset-top)env(safe-area-inset-right)0env(safe-area-inset-left)', 'overflow:hidden', 'overscroll-behavior:none']) &&
+        ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame] [data-app-scroll][data-app-scroll]', ['flex:auto|flex:1 1auto|flex:11auto', 'min-height:0', 'max-height:none', 'overflow:clipauto|overflow-y:auto', 'overscroll-behavior-y:contain']),
+      `${nsHrefs.length} stylesheets, ${phoneBlocks} phone blocks`)
+    check('native shell: the served CSS pins the bar IN FLOW as the frame\'s last row (`[data-app-frame] > [data-spine-bar]` static, order 999) with the fixed-bar belt for a bar that is not a direct child',
+      ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame] > [data-spine-bar][data-spine-bar]', ['position:static', 'order:999', 'flex:none|flex:0 0auto|flex:00auto', 'width:auto', 'inset:auto']) &&
+        ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame][data-app-frame]:has([data-spine-bar]):not(:has(> [data-spine-bar]))', ['padding-bottom:calc(var(--spine-bar-h,49px)+env(safe-area-inset-bottom))']))
+    // Round 2: overscroll, pinned on its own so a pull past either end never
+    // drags the page or the bar (the coordinator's ask; declaration SETS).
+    check('native shell: overscroll — below lg html:has([data-app-frame]) and its body are overscroll-behavior none, the frame is none, the scroller is overscroll-behavior-y contain',
+      ruleWith(nsCss, 'html:has([data-app-frame])', ['overscroll-behavior:none']) && ruleWith(nsCss, 'html:has([data-app-frame]) body', ['overscroll-behavior:none']) &&
+        ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame][data-app-frame]', ['overscroll-behavior:none']) && ruleWith(nsCss, 'html:has([data-app-frame]) body [data-app-frame] [data-app-scroll][data-app-scroll]', ['overscroll-behavior-y:contain']))
+    check('native shell: the served CSS shrinks the frame onto the keyboard (html[data-keyboard] → 100dvh − --kb-inset) and hides the bar while it is up',
+      ruleWith(nsCss, 'html[data-keyboard]:has([data-app-frame]) body [data-app-frame][data-app-frame]', ['height:calc(100dvh-var(--kb-inset,0px))']) &&
+        ruleWith(nsCss, 'html[data-keyboard]:has([data-app-frame]) body [data-app-frame] [data-spine-bar][data-spine-bar]', ['display:none']))
+    check('native shell: the served CSS keeps every text input in a frame or a sheet at ≥16px below lg (no iOS focus zoom) and puts touch-action: manipulation on everything a hand presses',
+      /\[data-app-frame\]input:not\(\[type=checkbox\]\)[^{]*\[data-app-frame\]select,\[data-app-frame\]textarea,\.sheetinput[^{]*\.sheettextarea\{font-size:max\(16px,1em\)\}/.test(nsCss) &&
+        ruleWith(nsCss, 'a, button, [role=button], [role=tab], [role=menuitem], input, select, textarea, label, summary', ['touch-action:manipulation']) &&
+        ruleWith(nsCss, '[data-spine-bar], .sheet__head, .sheet__grabber, .sheet__foot', ['user-select:none', '-webkit-touch-callout:none']))
+    const layoutSrc = await readSrc('app/layout.tsx')
+    check('native shell: app/layout.tsx imports native-shell.css after x402-design.css and mounts PhoneShellMount once (keyboard + scroll memory + theme-color belt)',
+      layoutSrc.indexOf("import './x402-design.css'") < layoutSrc.indexOf("import './native-shell.css'") && (layoutSrc.match(/<PhoneShellMount \/>/g) ?? []).length === 1 && /import PhoneShellMount from '@\/components\/mobile\/PhoneShellMount'/.test(layoutSrc))
+
+    // The server-rendered attributes: the frame + its scroller, and the bar
+    // as a DIRECT child of the frame (the in-flow rule keys on `>`).
+    const tHtml = await (await fetch(`${BASE}/t/AAPL`, { headers: { 'x-yf-internal-run': '1' } })).text()
+    const wHtml = await (await fetch(`${BASE}/wallet`, { headers: { 'x-yf-internal-run': '1' } })).text()
+    const frameWithBarAndScroller = (html: string, open: RegExp, scroller: RegExp) => {
+      const m = open.exec(html)
+      if (!m) return false
+      const after = html.slice(m.index + m[0].length)
+      const asideEnd = after.indexOf('</aside>')
+      if (asideEnd < 0) return false
+      return /^<nav data-spine-bar=""/.test(after.slice(asideEnd + '</aside>'.length)) && scroller.test(after)
+    }
+    check('native shell: /markets renders <div class="mkt-shell" data-app-frame> with the spine bar as its direct child and .mkt-frame as its data-app-scroll scroller', frameWithBarAndScroller(nsDoc, /<div class="mkt-shell" data-app-frame="">(?=<aside)/, /<div class="mkt-frame" data-app-scroll="">/))
+    check('native shell: /t/AAPL renders the same frame with .mkt-frame.mkt-frame--sym as the scroller', frameWithBarAndScroller(tHtml, /<div class="mkt-shell" data-app-frame="">(?=<aside)/, /<div class="mkt-frame mkt-frame--sym" data-app-scroll="">/))
+    check('native shell: /wallet renders the frame on its wrapper (no max-lg bottom reserve, lg:min-h-dvh only) with the bar a direct child and a flex column scroller around WalletPage', frameWithBarAndScroller(wHtml, /<div data-shell="wallet" class="flex items-stretch lg:min-h-dvh" data-app-frame="">(?=<aside)/, /<div class="flex flex-1 min-w-0 flex-col" data-app-scroll="">/) && !/max-lg:pb-\[/.test(wHtml.slice(0, wHtml.indexOf('data-app-scroll') + 40)))
+    const dashLayout = await readSrc('app/dashboard/layout.tsx')
+    check('native shell: the dashboard layout (client-only, so a source pin) puts the frame on .dashshell and the scroller on .dash', /<div className="dashshell" \{\.\.\.frame\}>/.test(dashLayout) && /<div className="dash" \{\.\.\.scroll\}>/.test(dashLayout) && /const frame = \{ \[FRAME_ATTR\]: '' \}/.test(dashLayout) && /const scroll = \{ \[SCROLL_ATTR\]: '' \}/.test(dashLayout))
+
+    // The hand reserves are gone from every file SHELL owns.
+    const journeySrc = await readSrc('components/JourneyTracker.tsx')
+    check('native shell: the hand reserves SHELL owned are deleted — no `.mkt-shell { padding-bottom`, no `:root[data-spine] .dash__main` reserve, no `:root[data-spine] .dashask` lift, no max-lg:pb on the /wallet wrapper',
+      !/\.mkt-shell \{ padding-bottom/.test(code(designSrc)) && !/:root\[data-spine\] \.dash__main/.test(code(designSrc)) && !/:root\[data-spine\] \.dashask/.test(code(designSrc)) && !/max-lg:pb-/.test(code(await readSrc('app/wallet/page.tsx'))))
+    check('native shell: JourneyTracker reads the scroll depth through lib/app-scroller (onAppScroll + appScrollDepthPct), never window.scrollY — on a phone the document never scrolls',
+      /appScrollDepthPct\(\)/.test(journeySrc) && /onAppScroll\(onScroll\)/.test(journeySrc) && !/window\.scrollY/.test(code(journeySrc)))
+
+    // The frame never makes a containing block: MARKETS' full-screen chart
+    // (`.tchart--expanded`, position: fixed inside .mkt-frame) would be
+    // trapped by a transform / filter / contain / container-type on the
+    // scroller chain. The drive checks the computed chain; this fences the
+    // sheet SHELL owns.
+    const nativeSrc = await readSrc('app/native-shell.css')
+    check('native shell: native-shell.css never sets transform / filter / backdrop-filter / perspective / contain / container-type / will-change on the frame or the scroller (a fixed full-screen chart inside the scroller must stay fixed to the viewport)',
+      !/\[data-app-(frame|scroll)\][^{]*\{[^}]*(transform|filter|perspective|contain:|container-type|will-change)/.test(nativeSrc))
+
+    // The Sheet's history coordinator (lib/sheet-history), driven over a fake
+    // history that mimics the browser: Next's patched pushState stamps __NA +
+    // the tree onto a plain state; a traversal (go) lands in a LATER task
+    // than the timer that asked for it (`tick()` runs the macrotasks,
+    // `advance(ms)` the timers, `land()` the traversals, `userBack()` is the
+    // back gesture). The cases: THE HANDOFF (PAGES), CLOSE UNDER (PAGES), the
+    // link inside a sheet (MARKETS/the coordinator), in-flight opens, unload.
+    {
+      const SH = await import('../lib/sheet-history')
+      type Entry = Record<string, unknown>
+      const mk = () => {
+        const entries: Entry[] = [{ __NA: true, tree: 't0' }]
+        let pos = 0
+        let pop: (() => void) | null = null
+        const later: (() => void)[] = []
+        let waits: { at: number; cb: () => void }[] = []
+        const traversals: (() => void)[] = []
+        let clock = 0
+        let nav = false
+        let unload = false
+        const host: import('../lib/sheet-history').SheetHistoryHost = {
+          state: () => entries[pos],
+          push: (st) => { entries.splice(pos + 1); entries.push({ __NA: true, tree: entries[pos].tree, ...st }); pos = entries.length - 1 },
+          replace: (st) => { entries[pos] = st },
+          go: (n) => { traversals.push(() => { pos = Math.max(0, pos - n); pop?.() }) },
+          onPop: (cb) => { pop = cb },
+          later: (cb) => { later.push(cb) },
+          wait: (ms, cb) => { waits.push({ at: clock + ms, cb }) },
+          navigating: () => nav,
+          unloading: () => unload,
+          now: () => clock,
+        }
+        const tick = () => { while (later.length) later.shift()!() }
+        const land = () => { while (traversals.length) traversals.shift()!() }
+        const advance = (ms: number) => { clock += ms; for (;;) { const due = waits.filter((w) => w.at <= clock).sort((a, b) => a.at - b.at); if (!due.length) break; waits = waits.filter((w) => w.at > clock); for (const w of due) w.cb() } }
+        const userBack = () => { pos = Math.max(0, pos - 1); pop?.() }
+        const h = SH.createSheetHistory(host)
+        // Next's HistoryUpdater push, as the browser host wires it: the
+        // coordinator may turn it into a replace (rule 2).
+        const nextPush = (url: string, tree: string) => { const st = { __NA: true, tree, url }; if (h.interceptPush(st, url, 'http://localhost/origin')) host.replace(st); else host.push(st) }
+        return { h, entries: () => entries.slice(0, pos + 1), tick, land, advance, userBack, host, nextPush, setNav: (v: boolean) => { nav = v }, setUnload: (v: boolean) => { unload = v }, pending: () => waits.length }
+      }
+      // 1. A sheet owns one entry; a tap-close pops it on the next tick (never synchronously); the swallowed popstate never calls onBack.
+      {
+        const { h, entries, tick, land, advance } = mk()
+        const backs: string[] = []
+        h.opened({ key: 'A', onBack: () => backs.push('A') })
+        const afterOpen = entries().length
+        h.closed('A', 'other')
+        tick(); advance(SH.SHEET_QUIET_MS - 1); land()
+        const beforeQuiet = entries().length
+        advance(1); land()
+        check('native shell: sheet history — a sheet owns one entry {sheet:key}; closing it by a tap consumes that entry after the QUIET window (1.5s; never synchronously, never on a tick), and the swallowed popstate never calls onBack', afterOpen === 2 && beforeQuiet === 2 && entries().length === 1 && backs.length === 0 && (entries()[0] as { __NA?: boolean }).__NA === true && SH.SHEET_QUIET_MS === 1500, JSON.stringify({ afterOpen, beforeQuiet, after: entries().length, backs }))
+      }
+      // 2. THE HANDOFF: A closes and B opens in one commit → B takes over A's entry (still __NA); back closes B, not A.
+      {
+        const { h, entries, tick, land, advance, userBack } = mk()
+        const backs: string[] = []
+        h.opened({ key: 'A', onBack: () => backs.push('A') })
+        h.closed('A', 'other')
+        h.opened({ key: 'B', onBack: () => backs.push('B') })
+        const top = entries()[entries().length - 1] as { sheet?: string; __NA?: boolean }
+        const len = entries().length
+        tick(); advance(4000); land()
+        const lenAfterTick = entries().length
+        const dbg = h.debug()
+        userBack()
+        check('native shell: sheet history — THE HANDOFF: A closes and B opens in one commit → B takes over A\'s entry (still __NA), the pending pop is cancelled (2 entries before and after the tick), and the back gesture closes B, not A', len === 2 && top.sheet === 'B' && top.__NA === true && lenAfterTick === 2 && dbg.pendingBack === null && dbg.stack.join() === 'B' && backs.join() === 'B' && entries().length === 1, JSON.stringify({ len, top, lenAfterTick, dbg, backs, after: entries().length }))
+      }
+      // 3. A sheet opening while our pop is IN FLIGHT waits for that popstate, then claims its own entry.
+      {
+        const { h, entries, tick, land, advance } = mk()
+        const backs: string[] = []
+        h.opened({ key: 'A', onBack: () => backs.push('A') })
+        h.closed('A', 'other')
+        tick(); advance(SH.SHEET_QUIET_MS) // the quiet window passes → the traversal is queued
+        const inFlight = h.debug().backInFlight
+        h.opened({ key: 'B', onBack: () => backs.push('B') })
+        const deferred = h.debug().deferred
+        land() // the traversal lands: A's entry gone, then B claims its own
+        const dbg = h.debug()
+        check('native shell: sheet history — a sheet opening while a pop is in flight defers until that popstate, then pushes its own entry (one entry for B, B on the stack, no onBack fired)', inFlight === 1 && deferred === 'B' && dbg.backInFlight === 0 && dbg.deferred === null && dbg.stack.join() === 'B' && entries().length === 2 && (entries()[1] as { sheet?: string }).sheet === 'B' && backs.length === 0, JSON.stringify({ inFlight, deferred, dbg, entries: entries(), backs }))
+      }
+      // 4. The page moved on before the tick (a link in the sheet pushed a new URL): the entry is LEFT, never popped — and a later back that lands on that stale entry skips it.
+      {
+        const { h, entries, tick, land, advance, host, userBack } = mk()
+        h.opened({ key: 'A', onBack: () => {} })
+        h.closed('A', 'other')
+        host.push({ __NA: true, tree: 'new-page' }) // a push that bypassed interceptPush (a raw one)
+        tick(); advance(4000); land()
+        const left = entries().length === 3 && (entries()[2] as { tree?: string }).tree === 'new-page' && h.debug().backInFlight === 0
+        userBack() // from the new page onto A's stale entry → the coordinator skips it
+        land()
+        check('native shell: sheet history — if the page navigated before the tick, the closed sheet\'s entry stays behind rather than popping the new page; a later back that lands on that stale sheet entry is skipped with one more traversal (no dead press)', left && entries().length === 1 && (entries()[0] as { tree?: string }).tree === 't0', JSON.stringify({ left, entries: entries() }))
+      }
+      // 5. Stacked sheets: B over A → back closes B, then A.
+      {
+        const { h, entries, land, userBack } = mk()
+        const backs: string[] = []
+        h.opened({ key: 'A', onBack: () => backs.push('A') })
+        h.opened({ key: 'B', onBack: () => backs.push('B') })
+        userBack(); land()
+        userBack(); land()
+        check('native shell: sheet history — two open sheets are two entries; back closes the top one, then the next', backs.join() === 'B,A' && entries().length === 1)
+      }
+      // 6. CLOSE UNDER: A closes one render after B opened (B pushed while A was open). A's entry is DEAD below B's; B's tap-close pops both; no dead press.
+      {
+        const { h, entries, tick, land, advance } = mk()
+        const backs: string[] = []
+        h.opened({ key: 'A', onBack: () => backs.push('A') })
+        h.opened({ key: 'B', onBack: () => backs.push('B') })
+        h.closed('A', 'other') // under B
+        const dbg = h.debug()
+        h.closed('B', 'other')
+        tick(); advance(4000); land()
+        check('native shell: sheet history — CLOSE UNDER: A closing under B leaves a DEAD entry (stack B, dead A; history 3 entries); B\'s tap-close then pops 1 + the dead count → back to the page\'s own entry, no onBack', dbg.stack.join() === 'B' && dbg.dead.join() === 'A' && entries().length === 1 && backs.length === 0, JSON.stringify({ dbg, entries: entries().length, backs }))
+      }
+      // 6b. CLOSE UNDER, then the user's back: B closes, the back LANDS on A's dead entry → skipped with one more traversal.
+      {
+        const { h, entries, land, userBack } = mk()
+        const backs: string[] = []
+        h.opened({ key: 'A', onBack: () => backs.push('A') })
+        h.opened({ key: 'B', onBack: () => backs.push('B') })
+        h.closed('A', 'other')
+        userBack() // pops B's entry: B closes; we sit on A's dead entry
+        const mid = h.debug()
+        land() // the coordinator's extra traversal lands
+        check('native shell: sheet history — CLOSE UNDER + back: the back closes B and lands on A\'s dead entry, which the coordinator skips (one traversal in flight, then the page\'s own entry)', backs.join() === 'B' && mid.backInFlight === 1 && entries().length === 1 && h.debug().dead.length === 0, JSON.stringify({ backs, mid, entries: entries().length }))
+      }
+      // 7. THE LINK INSIDE A SHEET: the row's tap closes the sheet and starts a navigation; the pop WAITS while a navigation may be under way (rule 1), and Next's push TAKES OVER the pending entry as a replace (rule 2): [pre][target], no stale step.
+      {
+        const { h, entries, tick, land, advance, setNav, pending, nextPush, userBack } = mk()
+        h.opened({ key: 'A', onBack: () => {} })
+        setNav(true) // a tap on a row inside the sheet
+        h.closed('A', 'other')
+        tick() // the grace tick: navigating → wait, no traversal
+        const waiting = pending() > 0 && h.debug().backInFlight === 0 && h.debug().pendingBack === 'A'
+        advance(300) // the RSC fetch takes 300ms …
+        const stillWaiting = h.debug().backInFlight === 0 && entries().length === 2
+        nextPush('/docs', 'docs') // … then Next pushes the target → a replace
+        const afterPush = { len: entries().length, top: entries()[entries().length - 1] as { tree?: string; sheet?: string }, dbg: h.debug() }
+        advance(400); land()
+        userBack(); land() // ONE back → the page's own entry
+        check('native shell: sheet history — THE LINK INSIDE A SHEET: the pending pop waits while Next fetches (300ms, no traversal) and Next\'s push takes the pending entry over as a REPLACE: history [pre, /docs] with no stale step, nothing pending, and ONE back returns to the origin', waiting && stillWaiting && afterPush.len === 2 && afterPush.top.tree === 'docs' && afterPush.top.sheet === undefined && afterPush.dbg.pendingBack === null && afterPush.dbg.stack.length === 0 && entries().length === 1 && (entries()[0] as { tree?: string }).tree === 't0', JSON.stringify({ waiting, stillWaiting, afterPush, after: entries().length }))
+      }
+      // 7c. QA's exact trace: the push lands 4ms after the close (a prefetched RSC payload) — no bounce: the entry is taken over, no traversal ever queued.
+      {
+        const { h, entries, tick, land, advance, setNav, nextPush } = mk()
+        h.opened({ key: 'more', onBack: () => {} })
+        setNav(true)
+        h.closed('more', 'other')
+        nextPush('/docs', 'docs') // 4ms later, before any tick
+        tick(); advance(3000); land()
+        check('native shell: sheet history — QA\'s bounce trace (push 4ms after the close, prefetched): the push takes the entry over, no traversal is ever queued, /docs stays', entries().length === 2 && (entries()[1] as { tree?: string }).tree === 'docs' && h.debug().backInFlight === 0 && h.debug().pendingBack === null, JSON.stringify({ entries: entries(), dbg: h.debug() }))
+      }
+      // 7e. A sheet that closes on the ROUTE CHANGE (PAGES' brochure menu): Next pushes while the sheet is still open → the entry is taken over; the later close finds nothing pending; ONE back → the origin.
+      {
+        const { h, entries, tick, land, advance, nextPush, userBack } = mk()
+        h.opened({ key: 'nav', onBack: () => {} })
+        nextPush('/pricing', 'pricing') // the Link navigates; the sheet is still open
+        const afterPush = { len: entries().length, top: (entries()[1] as { tree?: string }).tree, dbg: h.debug() }
+        h.closed('nav', 'other') // the route-change effect closes it
+        tick(); advance(3000); land()
+        userBack(); land()
+        check('native shell: sheet history — a sheet still OPEN when Next pushes (it closes on the route change): the push takes its entry over ([pre, /pricing], stack empty), the later close pops nothing, ONE back returns to the origin', afterPush.len === 2 && afterPush.top === 'pricing' && afterPush.dbg.stack.length === 0 && h.debug().pendingBack === null && h.debug().backInFlight === 0 && entries().length === 1 && (entries()[0] as { tree?: string }).tree === 't0', JSON.stringify({ afterPush, after: entries() }))
+      }
+      // 7f. THE SIWE SHAPE (the coordinator's addendum): NO tap — the takeover's cover flips off as lib/session lands router.push(redirectTo) 40ms later. No traversal is ever in flight; the push takes the entry over.
+      {
+        const { h, entries, tick, land, advance, nextPush, userBack } = mk()
+        h.opened({ key: 'sigwait', onBack: () => {} })
+        h.closed('sigwait', 'other') // covering → false, no tap anywhere
+        tick(); advance(40)
+        const noTraversal = h.debug().backInFlight === 0 && h.debug().pendingBack === 'sigwait'
+        nextPush('/chat/abc', 'chat') // the redirect lands
+        advance(4000); land()
+        const clean = entries().length === 2 && (entries()[1] as { tree?: string }).tree === 'chat' && h.debug().pendingBack === null && h.debug().backInFlight === 0
+        userBack(); land()
+        check('native shell: sheet history — THE SIWE SHAPE: a tap-less close queues NO traversal; a router.push 40ms later takes the entry over ([pre, /chat/abc]); ONE back returns to the origin', noTraversal && clean && entries().length === 1, JSON.stringify({ noTraversal, clean, after: entries() }))
+      }
+      // 7g. A user's back INSIDE the quiet window pops the dead-pending entry itself: no onBack on the closed sheet, nothing pending after, no double traversal.
+      {
+        const { h, entries, tick, land, advance, userBack } = mk()
+        const backs: string[] = []
+        h.opened({ key: 'A', onBack: () => backs.push('A') })
+        h.closed('A', 'other')
+        tick(); advance(200)
+        userBack(); land()
+        const afterBack = { len: entries().length, dbg: h.debug(), backs: backs.slice() }
+        advance(4000); land()
+        check('native shell: sheet history — a back pressed inside the quiet window pops the dead-pending entry (the page\'s own entry, same URL): no onBack on the closed sheet, nothing pending, no second traversal later', afterBack.len === 1 && afterBack.backs.length === 0 && afterBack.dbg.pendingBack === null && afterBack.dbg.backInFlight === 0 && entries().length === 1, JSON.stringify({ afterBack, after: entries().length }))
+      }
+      // 7d. Our OWN sheet push is never converted, and a push with no sheet entry current is a plain push.
+      {
+        const { h, entries, nextPush } = mk()
+        nextPush('/x', 'x')
+        const plain = entries().length === 2
+        h.opened({ key: 'A', onBack: () => {} })
+        const own = !h.interceptPush({ sheet: 'B' }, 'http://localhost/origin', 'http://localhost/origin')
+        check('native shell: sheet history — interceptPush never converts a push with no sheet entry current, nor a sheet\'s own push (data.sheet), nor a same-URL push', plain && own && !h.interceptPush(null, 'http://localhost/origin', 'http://localhost/origin') && entries().length === 3)
+      }
+      // 7b. A tap that never navigated: the wait expires (SHEET_NAV_WAIT_MS) and the pop fires.
+      {
+        const { h, entries, tick, land, advance, setNav } = mk()
+        h.opened({ key: 'A', onBack: () => {} })
+        setNav(true)
+        h.closed('A', 'other')
+        tick()
+        advance(SH.SHEET_QUIET_MS + SH.SHEET_NAV_WAIT_MS - 100)
+        const before = entries().length
+        advance(400); land()
+        check('native shell: sheet history — a tap that never navigated: after the quiet window + SHEET_NAV_WAIT_MS the pop fires anyway', before === 2 && entries().length === 1 && SH.SHEET_NAV_WAIT_MS === 2000 && SH.SHEET_TAP_NAV_MS === 1500, JSON.stringify({ before, after: entries().length }))
+      }
+      // 8. Unloading: a hard navigation started → no pop ever fires into it.
+      {
+        const { h, entries, tick, land, advance, setUnload } = mk()
+        h.opened({ key: 'A', onBack: () => {} })
+        h.closed('A', 'other')
+        setUnload(true)
+        tick(); advance(4000); land()
+        check('native shell: sheet history — once the page is unloading a pending pop is cancelled (never traverse under a hard navigation)', entries().length === 2 && h.debug().pendingBack === null && h.debug().backInFlight === 0)
+      }
+    }
+
+    // The Sheet (D3): the dismissals, the back gesture done Next's way, the
+    // trap, the motion, the keyboard lift — pinned at the source (nothing
+    // mounts a Sheet until the other lanes' round lands, so the served CSS
+    // has none of it yet).
+    const sheetSrc = await readSrc('components/mobile/Sheet.tsx')
+    const sheetCss = await readSrc('components/mobile/mobile.css')
+    // Re-pinned (round 2): since 1b the swipe and the back live in the hooks
+    // (useSwipeToClose names 'swipe', useBackToClose names 'back'); the Sheet
+    // itself names scrim / escape / button. NAV caught the stale grep.
+    check('native shell: Sheet keeps the contract props and adds the dismiss REASON to onClose (scrim · escape · button in Sheet.tsx; swipe in useSwipeToClose; back in useBackToClose); every dismissal path names its reason',
+      /onClose: \(reason\?: SheetCloseReason\) => void/.test(sheetSrc) && /'scrim' \| 'escape' \| 'button' \| 'swipe' \| 'back'/.test(sheetSrc) && ["dismiss('scrim')", "dismissRef.current('escape')", "dismiss('button')"].every((d) => sheetSrc.includes(d)) &&
+        /onCloseRef\.current\('swipe'\)/.test(await readSrc('components/mobile/useSwipeToClose.ts')) && /onCloseRef\.current\('back'\)/.test(await readSrc('components/mobile/useBackToClose.ts')) &&
+        ['open', 'onClose', 'title', 'ariaLabel', 'side', 'size', 'footer', 'children', 'className', 'id'].every((k) => new RegExp(`^  ${k}\\??:`, 'm').test(sheetSrc)))
+    // The two behaviors are HOOKS (the coordinator's ask: the sign-in door and
+    // ChatSignInGate cannot be Sheets but need the same back gesture + swipe
+    // from ONE implementation) and the Sheet wears them.
+    const backHook = await readSrc('components/mobile/useBackToClose.ts')
+    const swipeHook = await readSrc('components/mobile/useSwipeToClose.ts')
+    const shSrc = await readSrc('lib/sheet-history.ts')
+    check('native shell: useBackToClose(open, onClose, key) owns the history entry THROUGH lib/sheet-history (opened while open on a phone, released on the effect cleanup, onClose(\'back\') when the entry is popped) and the browser host is the only pushState/replaceState/back in the tree',
+      /export function useBackToClose\(open: boolean, onClose: \(reason: 'back'\) => void, key: string\)/.test(backHook) && /sheetHistory\(\)\.opened\(\{/.test(backHook) && /sheetHistory\(\)\.closed\(key, 'other'\)/.test(backHook) && /onCloseRef\.current\('back'\)/.test(backHook) && /if \(!open \|\| !isPhoneViewport\(\)\) return/.test(backHook) &&
+        !/history\.(pushState|replaceState|back)\(/.test(code(sheetSrc)) && !/history\.(pushState|replaceState|back)\(/.test(code(backHook)) &&
+        /window\.history\.pushState\(s, '', window\.location\.href\)/.test(shSrc) && /window\.history\.replaceState\(s, '', window\.location\.href\)/.test(shSrc) && /window\.history\.go\(-n\)/.test(shSrc) && !/history\.back\(/.test(code(shSrc)))
+    check('native shell: useSwipeToClose never steals a press that starts on a control inside its handle (the head\'s close X, a link in a title): onPointerDown bails on INTERACTIVE targets BEFORE capturing the pointer — every titled Sheet\'s X was dead until this (CHAT measured it)',
+      /export const INTERACTIVE = 'button, a, input, textarea, select, label, summary, \[role="button"\], \[role="switch"\], \[role="link"\], \[role="menuitem"\], \[contenteditable="true"\]'/.test(swipeHook) &&
+        /if \(e\.target instanceof Element && e\.target\.closest\(INTERACTIVE\)\) return\s*(?:\/\/[^\n]*\n\s*)*const p = axis\(e\)/.test(swipeHook) && swipeHook.indexOf('closest(INTERACTIVE)') < swipeHook.indexOf('setPointerCapture'))
+    check('native shell: useSwipeToClose(panelRef, onClose, side) is the one drag — pointer events (touch + mouse, button 0), the panel follows, shouldDismissDrag decides, the exit starts from --sheet-from on the panel, phone posture only',
+      /export function useSwipeToClose\(panelRef: RefObject<HTMLElement \| null>, onClose: \(reason: 'swipe'\) => void, side: 'bottom' \| 'left' = 'bottom'\)/.test(swipeHook) && /shouldDismissDrag\(delta, d\.v, size\)/.test(swipeHook) && /panel\.style\.setProperty\('--sheet-from', /.test(swipeHook) && /if \(e\.pointerType === 'mouse' && e\.button !== 0\) return/.test(swipeHook) && /if \(!isPhoneViewport\(\) \|\| !panelRef\.current\) return/.test(swipeHook) && /onPointerCancel: end/.test(swipeHook))
+    check('native shell: the Sheet wears both hooks (useBackToClose(open, dismiss, historyKey); useSwipeToClose(panelRef, dismiss, side) spread on the grabber and the head), traps Tab, locks the document\'s scroll while open and returns focus to the opener',
+      /useBackToClose\(open, dismiss, historyKey\)/.test(sheetSrc) && /const \{ handleProps: dragHandlers \} = useSwipeToClose\(panelRef, dismiss, side\)/.test(sheetSrc) && /className="sheet__grabber" aria-hidden \{\.\.\.dragHandlers\}/.test(sheetSrc) && /className="sheet__head" \{\.\.\.dragHandlers\}/.test(sheetSrc) &&
+        /const trapTab = \(e: KeyboardEvent\)/.test(sheetSrc) && /html\.style\.overflow = 'hidden'/.test(sheetSrc) && /opener\?\.focus\?\.\(\{ preventScroll: true \}\)/.test(sheetSrc) && !/shouldDismissDrag|sheetHistory\(\)/.test(code(sheetSrc)))
+    check('native shell: a bottom sheet pads the landscape notch (env(safe-area-inset-left/right)) and, on a landscape phone, may take everything above the status bar',
+      /\.sheet\[data-side='bottom'\] \.sheet__panel \{[^}]*padding: 0 env\(safe-area-inset-right\) env\(safe-area-inset-bottom\) env\(safe-area-inset-left\);/.test(sheetCss) &&
+        /@media \(max-width: 1023px\) and \(orientation: landscape\) and \(max-height: 480px\) \{\s*\.sheet\[data-side='bottom'\] \.sheet__panel \{ max-height: calc\(100dvh - max\(12px, env\(safe-area-inset-top\)\)\); \}/.test(sheetCss))
+    check('native shell: mobile.css animates enter and exit (the exit from wherever a drag left the panel), stills everything under prefers-reduced-motion, and lifts a bottom sheet onto the keyboard once for every consumer',
+      /\.sheet\[data-phase='open'\]\[data-side='bottom'\] \.sheet__panel \{ animation: sheet-up/.test(sheetCss) && /\.sheet\[data-phase='closing'\]\[data-side='bottom'\] \.sheet__panel \{ animation: sheet-down/.test(sheetCss) && /@keyframes sheet-down \{ from \{ transform: translateY\(var\(--sheet-from, 0px\)\); \}/.test(sheetCss) &&
+        /@media \(prefers-reduced-motion: reduce\) \{\s*\.sheet \.sheet__scrim, \.sheet \.sheet__panel \{ animation: none !important/.test(sheetCss) &&
+        /html\[data-keyboard\] \.sheet\[data-side='bottom'\] \.sheet__panel \{\s*margin-bottom: var\(--kb-inset, 0px\);\s*max-height: calc\(100dvh - var\(--kb-inset, 0px\) - max\(24px, env\(safe-area-inset-top\)\)\);/.test(sheetCss) && /z-index: 90;/.test(sheetCss))
+
+    // Add to Home Screen: the manifest, its icons, the Apple metas and the
+    // theme-color that follows the site theme.
+    const mf = await fetch(`${BASE}/manifest.webmanifest`)
+    const mfJson = mf.ok ? ((await mf.json()) as { display?: string; start_url?: string; icons?: { src: string; sizes: string; purpose?: string }[]; theme_color?: string; background_color?: string; name?: string }) : null
+    check('native shell: /manifest.webmanifest serves display standalone, start_url /markets, the Emerald Cut 192 + 512 (any) + 512 maskable icons, and the dark theme/background colors', mf.ok && !!mfJson && mfJson.display === 'standalone' && mfJson.start_url === '/markets' && mfJson.name === 'Pantessa' && mfJson.theme_color === '#000000' && mfJson.background_color === '#000000' &&
+      (mfJson.icons ?? []).some((i) => i.sizes === '192x192' && i.purpose === 'any') && (mfJson.icons ?? []).some((i) => i.sizes === '512x512' && i.purpose === 'any') && (mfJson.icons ?? []).some((i) => i.sizes === '512x512' && i.purpose === 'maskable'), `${mf.status}`)
+    const iconChecks = await Promise.all((mfJson?.icons ?? []).map(async (i) => { const r = await fetch(`${BASE}${i.src}`); return r.ok && (r.headers.get('content-type') ?? '').includes('image/png') }))
+    check('native shell: every manifest icon serves as image/png', iconChecks.length === 3 && iconChecks.every(Boolean))
+    const rootHtml = await (await fetch(`${BASE}/`, { headers: { 'x-yf-internal-run': '1' } })).text()
+    check('native shell: the root HTML links the manifest, declares the standalone metas (mobile-web-app-capable — Next 16 renders the standard name for appleWebApp.capable — title, black-translucent), and ships the OS-preference theme-color pair as the pre-JS fallback',
+      /<link rel="manifest" href="\/manifest\.webmanifest"/.test(rootHtml) && /<meta name="mobile-web-app-capable" content="yes"/.test(rootHtml) && /<meta name="apple-mobile-web-app-title" content="Pantessa"/.test(rootHtml) && /<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/.test(rootHtml) &&
+        /<meta name="theme-color"(?=[^>]*media="\(prefers-color-scheme: light\)")(?=[^>]*content="#fdfdfc")/.test(rootHtml) && /<meta name="theme-color"(?=[^>]*media="\(prefers-color-scheme: dark\)")(?=[^>]*content="#000000")/.test(rootHtml))
+    check('native shell: the theme bootstrap writes a media-less theme-color meta FIRST in <head> and re-writes it on every data-theme change (the observer), from the same two colors', /meta\[name="theme-color"\]:not\(\[media\]\)/.test(rootHtml) && /document\.head\.insertBefore\(m,document\.head\.firstChild\)/.test(rootHtml) && /t==='light'\?'#fdfdfc':'#000000'/.test(rootHtml) && /new MutationObserver\(apply\)/.test(rootHtml))
+  }
+
+  // ── native chat: the conversation + /i on a phone (squad mobile-native, 2026-09-24, CHAT lane) ──
+  // Nate: "it needs to feel like a native mobile app when accessed from
+  // mobile." The conversation reads like Messages: a top bar with the way to
+  // the chat list, the title over the apps count and the account door; a
+  // composer that rides the soft keyboard; no overlay drawer popping on a
+  // phone; every chat-surface overlay the ONE Sheet; the thread the screen's
+  // ONE scroller (and a containing block — F1: an sr-only loader line escaped
+  // it and grew the /chat document to 1299px at 812). Drive:
+  // scripts/drive-native-chat.ts (BEFORE 39/82 → AFTER in the lane file).
+  {
+    const CP = await import('../lib/chat-phone')
+    const { readFileSync: rf } = await import('node:fs')
+    const PN = await import('../lib/phone-nav')
+    check('native chat: a toolbar door names a phone SCREEN through NAV\'s screenForTab, never the drawer (mcps→apps, chats→history)',
+      PN.screenForTab('mcps') === 'apps' && PN.screenForTab('chats') === 'history' && PN.screenForTab('jobs') === 'jobs' && PN.screenForTab('links') === 'links')
+    check('native chat: the apps door counts in the seat\'s own word ("4 apps", "1 app", "No apps") and the title falls back to "New chat"',
+      CP.appsDoorLabel(4) === '4 apps' && CP.appsDoorLabel(1) === '1 app' && CP.appsDoorLabel(0) === 'No apps' && CP.phoneChatTitle(null) === 'New chat' && CP.phoneChatTitle('  ') === 'New chat' && CP.phoneChatTitle('Swap 5 USDC for ETH') === 'Swap 5 USDC for ETH')
+    check('native chat: keyboardLift is the composer\'s overhang below the visible bottom — 0 with no keyboard, 0 when a frame already shrank onto it (never a double lift), rounded',
+      CP.keyboardLift(748, 812, 0) === 0 && CP.keyboardLift(748, 812, 300) === 236 && CP.keyboardLift(504, 812, 300) === 0 && CP.keyboardLift(512.6, 812, 300) === 1 && CP.keyboardLift(748, 812, -5) === 0)
+    check('native chat: exactly one scroller — /chat\'s thread only in the conversation (NAV\'s screens take it otherwise), /i always, never the embed or the /t ticket',
+      CP.threadOwnsAppScroll({ embedded: false, docked: false, simple: false, phoneScreen: 'chat' }) === true &&
+        CP.threadOwnsAppScroll({ embedded: false, docked: false, simple: false, phoneScreen: 'apps' }) === false &&
+        CP.threadOwnsAppScroll({ embedded: false, docked: false, simple: false, phoneScreen: 'history' }) === false &&
+        CP.threadOwnsAppScroll({ embedded: false, docked: false, simple: true, phoneScreen: 'chat' }) === true &&
+        CP.threadOwnsAppScroll({ embedded: true, docked: false, simple: false, phoneScreen: 'chat' }) === false &&
+        CP.threadOwnsAppScroll({ embedded: false, docked: true, simple: true, phoneScreen: 'chat' }) === false)
+    const ci = rf('components/ChatInterface.tsx', 'utf8')
+    // Negative greps read CODE, never comments (an explanatory comment that
+    // names the retired thing would match).
+    const noComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/^\s*\/\/.*$/gm, '')
+    const ciCode = noComments(ci)
+    const bar = rf('components/chat/ChatPhoneBar.tsx', 'utf8')
+    const barCss = rf('components/chat/chat-phone.css', 'utf8')
+    check('native chat: ChatInterface never opens the phone overlay drawer — openRail below lg sets the phone screen and returns; the drawer flag is gone from the file',
+      !/setMobileMcpRailOpen/.test(ciCode) && /if \(isNarrow\) \{\s*setPhoneScreen\(screenForTab\(tab\)\)\s*return\s*\}/.test(ci) && /import \{ screenForTab \} from '@\/lib\/phone-nav'/.test(ci))
+    check('native chat: the thread is a containing block (`relative`, F1) and wears data-app-scroll only while it owns the screen; ChatInterface renders no data-phone-screen of its own (NAV\'s ChatWorkspace does)',
+      /'relative flex-1 overflow-y-auto px-4 py-6'/.test(ci) && /\{\.\.\.\(ownsAppScroll \? \{ \[SCROLL_ATTR\]: '' \} : \{\}\)\}/.test(ci) && !/data-phone-screen=/.test(ciCode))
+    check('native chat: the phone top bar mounts for first-party /chat only (not /embed, /i or the /t ticket) and the desktop toolbar is lg+',
+      /const firstParty = !embedded && !simple && !docked/.test(ci) && /\{firstParty && \(\s*<ChatPhoneBar title=\{currentChat\?\.title\} appCount=\{activeServers\.length\} showAccount=\{showAppChrome\} \/>/.test(ci) && /className="max-lg:hidden flex-shrink-0 px-3 py-2\.5 border-b/.test(ci))
+    check('native chat: the top bar\'s doors are labeled and land on the screens (data-phone-open="history" → setPhoneScreen(\'history\'), "apps" → setPhoneScreen(\'apps\')), with the site\'s one account door',
+      /data-phone-open="history"\s*onClick=\{\(\) => setPhoneScreen\('history'\)\}/.test(bar) && /data-phone-open="apps"\s*onClick=\{\(\) => setPhoneScreen\('apps'\)\}/.test(bar) && /<span>Chats<\/span>/.test(bar) && /<SiteAccount \/>/.test(bar) && /data-chat-topbar=""/.test(bar))
+    check('native chat: chat-phone.css keeps every top-bar target at 44px (the doors, chain, share, the compacted account avatar) inside the phone media query, and the bar is display:none at lg+',
+      /^\.chat-phonebar \{ display: none; \}/m.test(barCss) && /@media \(max-width: 1023px\) \{/.test(barCss) && (barCss.match(/min-height: 44px;/g) ?? []).length >= 3 && /\.chat-phonebar__acct \.navacct__pill \{[^}]*width: 44px;[^}]*height: 44px;/.test(barCss))
+    check('native chat: a send or a prefill tapped on another phone screen brings the conversation forward (the reply never streams behind a screen)',
+      /if \(isNarrow && !embedded && !simple && phoneScreen !== 'chat'\) setPhoneScreen\('chat'\)/.test(ci) && /if \(isNarrow && !embedded && !simple && useYeetfulStore\.getState\(\)\.phoneScreen !== 'chat'\) setPhoneScreen\('chat'\)/.test(ci))
+    check('native chat: the composer rides the soft keyboard — measured two frames AFTER the change and on every resize (so SHELL\'s shrinking frame and this lift never add up), transformed by the lift, with a spacer that keeps the newest turn above it',
+      /import \{ useSoftKeyboard \} from '@\/components\/mobile\/useSoftKeyboard'/.test(ci) && /requestAnimationFrame\(\(\) => \{\s*raf2 = requestAnimationFrame\(measure\)/.test(ci) && /new ResizeObserver\(measure\)/.test(ci) && /transform: `translateY\(-\$\{kbLift\}px\)`/.test(ci) && /data-keyboard-spacer/.test(ci) && !/useLayoutEffect/.test(ciCode))
+    check('native chat: the stick-to-bottom pin also watches the scroller itself, so the frame shrinking onto the keyboard keeps the newest turn in view',
+      /ro\.observe\(thread\)\s*\n(?:\s*\/\/[^\n]*\n)*\s*ro\.observe\(scroller\)/.test(ci))
+    const gate = rf('components/ChatSignInGate.tsx', 'utf8')
+    check('native chat: the guest banner steps aside while the soft keyboard is up', /const keyboard = useSoftKeyboard\(\)/.test(gate) && /if \(keyboard\.open\) return null/.test(gate))
+    // Every chat-surface overlay is the ONE Sheet on a phone, with the id the
+    // squad's drive discovers (drive:native: data-sheet-open=<id> on the opener).
+    const sheets: Array<[string, string]> = [['components/MintLinkModal.tsx', 'mint'], ['components/ChartOverlay.tsx', 'chart'], ['components/JobDetailOverlay.tsx', 'job'], ['components/AddMcpModal.tsx', 'addmcp'], ['components/CreatorPageModal.tsx', 'creator']]
+    const sheetMiss = sheets.filter(([f, id]) => {
+      const src = rf(f, 'utf8')
+      return !(/import Sheet from '@\/components\/mobile\/Sheet'/.test(src) && /const phone = usePhonePosture\(\)/.test(src) && /if \(phone\) \{/.test(src) && new RegExp(`<Sheet[\\s\\S]{0,400}id="${id}"`).test(src) && /return createPortal\(/.test(src))
+    })
+    check('native chat: MintLinkModal, ChartOverlay, JobDetailOverlay, AddMcpModal and CreatorPageModal render the Sheet below lg (ids mint · chart · job · addmcp · creator) and keep their lg+ modal', sheetMiss.length === 0, sheetMiss.map(([f]) => f).join(', ') || 'all five')
+    check('native chat: both mint openers in the conversation wear data-sheet-open="mint" (the per-bubble verb and the receipt chip)', (ci.match(/data-sheet-open="mint"/g) ?? []).length === 2)
+    const mintSrc = rf('components/MintLinkModal.tsx', 'utf8')
+    check('native chat: "watch the funnel" in the mint sheet opens the links studio through NAV\'s openLinksStudio (the LINKS screen on a phone, the drawer + board at lg+)', /openLinksStudio\(\)\s*\n\s*close\(\)/.test(mintSrc) && !/setMainView\('links'\)/.test(mintSrc))
+    const rtSrc = rf('components/IntentRuntime.tsx', 'utf8')
+    check('native chat: /i is a frame — the runtime root wears data-app-frame beside its .yf-runtime class (the thread is its one scroller)', /className="yf-runtime relative h-dvh flex flex-col overflow-hidden yf-runtime-in"[\s\S]{0,700}data-app-frame=""/.test(rtSrc))
+    // The sign card's primary button: a lib/ string is never generated by
+    // Tailwind (content globs: pages/ components/ app/) — the phone classes
+    // live in components/sign-cta.ts now and lib/sign-cta re-exports them.
+    const ctaSrc = rf('components/sign-cta.ts', 'utf8')
+    const twSrc = rf('tailwind.config.ts', 'utf8')
+    const { SIGN_CTA_CLASS } = await import('../lib/sign-cta')
+    check('native chat: the sign CTA is full-width and 48px below sm (44px sm→lg), its wrapped label centered, defined where Tailwind scans it',
+      /max-sm:w-full/.test(SIGN_CTA_CLASS) && /max-sm:min-h-12/.test(SIGN_CTA_CLASS) && /max-lg:min-h-11/.test(SIGN_CTA_CLASS) && /max-sm:text-center/.test(SIGN_CTA_CLASS) && ctaSrc.includes(SIGN_CTA_CLASS) && !/'\.\/lib\//.test(twSrc))
+    check('native chat: SendTxChain\'s current sign button spans the card below sm (no icon-column indent)', /<div className="ml-6 max-sm:ml-0">/.test(rf('components/SendTxChain.tsx', 'utf8')))
+    // Served: the phone bar is in /chat's server HTML and its rules + the sign
+    // CTA's phone classes reach the browser.
+    const chatDoc = await (await fetch(`${BASE}/chat`, { headers: { 'x-yf-internal-run': '1' } })).text()
+    check('native chat: /chat\'s server HTML carries the phone top bar (both doors, "New chat") and exactly one data-app-scroll (the thread)',
+      /data-chat-topbar/.test(chatDoc) && /data-phone-open="history"/.test(chatDoc) && /data-phone-open="apps"/.test(chatDoc) && /chat-phonebar__title">New chat</.test(chatDoc) && (chatDoc.match(/data-app-scroll=""/g) ?? []).length === 1,
+      `${(chatDoc.match(/data-app-scroll=""/g) ?? []).length} scroller(s)`)
+    const chatHrefs = [...chatDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
+    const chatCss = (await Promise.all(chatHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n')
+    const flat = chatCss.replace(/\s*\{\s*/g, '{').replace(/;\s*/g, ';').replace(/:\s+/g, ':')
+    check('native chat: the served CSS carries the phone bar\'s 44px head, the flat Messages-style reply below sm (.yf-chat), and the sign CTA\'s generated phone classes',
+      /\.chat-phonebar__head\{[^}]*min-height:44px/.test(flat) && /\.yf-chat \[data-bubble=["']?assistant["']?\]\{[^}]*background(?:-color)?:(?:transparent|0 0|none|#0000)/.test(flat) && /max-sm\\:min-h-12/.test(chatCss) && /max-sm\\:rounded-xl/.test(chatCss) && /max-lg\\:min-h-11/.test(chatCss),
+      `${chatHrefs.length} stylesheet(s)`)
+    // ── round 2 (the 360×740 card pass, the keyboard for real, the rest of
+    // the chat-surface overlays) ─────────────────────────────────────────
+    const hero = rf('components/splash/Hero.tsx', 'utf8')
+    check('native chat r2: the splash briefing rows wrap below lg (at 360 "$4.89 ETH on Ethereum · under the gas floor" was cut to "under …") and every briefing action is a 44px target on touch (rows, chips, the primary "Protect spot" was 22px)',
+      (hero.match(/truncate max-lg:whitespace-normal/g) ?? []).length === 3 && /\[@media\(hover:none\)\]:min-h-11 \$\{acts\.length/.test(hero) &&
+        (hero.match(/\[@media\(hover:none\)\]:min-h-11 \[@media\(hover:none\)\]:px-(?:4|3\.5)/g) ?? []).length === 2)
+    check('native chat r2: chat-phone.css gives the splash cards\' chips and rows and the per-bubble tools a 44px touch target (the tools keep their 36px look under a transparent ::after hit area)',
+      /@media \(hover: none\) and \(max-width: 1023px\) \{[\s\S]*?:is\(\[data-splash-hero\], \[data-splash-card\]\) button\.rounded-full \{\s*min-height: 44px;[\s\S]*?\[data-splash-card\] button\[aria-expanded\] \{ min-height: 44px; \}[\s\S]*?\[data-turn-tools\]::after \{\s*content: '';\s*position: absolute;\s*inset: -4px;/.test(barCss))
+    check('native chat r2: the composer grows with what is typed on a phone (up to its max-h-40, then it scrolls), its mic + send ride the bottom line, and the pill is a rounded rect whose one-line radius is the old capsule',
+      /t\.style\.height = 'auto'[\s\S]{0,260}const cap = parseFloat\(getComputedStyle\(t\)\.maxHeight\) \|\| 160\s*\n\s*t\.style\.height = `\$\{Math\.min\(t\.scrollHeight, cap\)\}px`/.test(ci) && /if \(!isNarrow \|\| embedded\) \{\s*t\.style\.height = ''/.test(ci) && /'max-lg:py-1 max-lg:items-end max-lg:rounded-\[26px\]'/.test(ci) && /max-h-40 overflow-y-auto leading-6 max-lg:py-2\.5/.test(ci))
+    check('native chat r2: only the reader releases the pin, and a scroll nobody\'s finger made is never fought (snapping back broke scroll-into-view, a focus moving up the thread, find-in-page) — the one scroll write in the pin is the ResizeObserver\'s re-pin',
+      /if \(performance\.now\(\) - userAt < 1000\) pinnedRef\.current = false\n\s*\}/.test(ci) && (ciCode.match(/scroller\.scrollTop = scroller\.scrollHeight/g) ?? []).length === 1)
+    check('native chat r2: keys typed into a field never count as the reader scrolling (a space or an arrow in the composer used to arm the pin\'s release)',
+      /if \(el && \(el\.isContentEditable \|\| \/\^\(INPUT\|TEXTAREA\|SELECT\)\$\/\.test\(el\.tagName\)\)\) return/.test(ci))
+    const rt2 = rf('components/IntentRuntime.tsx', 'utf8')
+    const rtCss = rf('components/intent-runtime.css', 'utf8')
+    check('native chat r2: /i\'s four bottom bars step aside while the soft keyboard is up (html[data-keyboard], phone only) — the composer sits on the keyboard the way the tab bar steps aside',
+      (rt2.match(/data-runtime-bar=""/g) ?? []).length === 4 && /@media \(max-width: 1023px\) \{\s*html\[data-keyboard\] \.yf-runtime \[data-runtime-bar\] \{\s*display: none;/.test(rtCss))
+    check('native chat r2: the signature-wait cards close on the back gesture and stay on the page (/i\'s own instance and the global one), through SHELL\'s useBackToClose',
+      /useBackToClose\(sigWait\.shown && !sigDismissed, \(\) => setSigDismissed\(true\), 'sigwait-i'\)/.test(rt2) && /useBackToClose\(covering, \(\) => setDismissed\(true\), 'sigwait'\)/.test(rf('components/SignatureWaitTakeover.tsx', 'utf8')))
+    const chainSrc = rf('components/ChainPicker.tsx', 'utf8')
+    const shareSrc2 = rf('components/ShareButton.tsx', 'utf8')
+    const engineSrc = rf('components/RouterEngineWindow.tsx', 'utf8')
+    check('native chat r2: the chain picker and the share controls in the top bar are Sheets on a phone (ids chain · share, data-sheet-open on their openers, 52px rows, the desktop dropdowns unchanged and their outside-click handlers desktop-only)',
+      /<Sheet open=\{open\} onClose=\{\(\) => setOpen\(false\)\} id="chain"/.test(chainSrc) && /data-sheet-open="chain"/.test(chainSrc) && /min-h-\[52px\]/.test(chainSrc) && /\{open && !phone && \(/.test(chainSrc) && /if \(!open \|\| phone\) return/.test(chainSrc) &&
+        /id="share"/.test(shareSrc2) && /data-sheet-open="share"/.test(shareSrc2) && /role="switch"/.test(shareSrc2) && /if \(!open \|\| phone\) return/.test(shareSrc2))
+    check('native chat r2: the routing engine never opens by itself on a phone (its flag is persisted from the desktop column) — only after it was seen closed this session, as the Sheet; the scrim-only phone drawer is gone',
+      /if \(!engineWindowOpen\) setArmed\(true\)/.test(engineSrc) && /<Sheet open=\{armed && engineWindowOpen\} onClose=\{close\} id="engine"/.test(engineSrc) && !/lg:hidden fixed inset-0 z-50 flex/.test(engineSrc))
+    check('native chat r2: the whole composer pill is the field — a tap on its padding (not a button) focuses the textarea — and the textarea itself is 44px tall on a phone (QA measured 213×24)',
+      /if \(!\(e\.target as HTMLElement\)\.closest\('button, textarea, a'\)\) textareaRef\.current\?\.focus\(\)/.test(ci) && /data-composer-pill=""/.test(ci))
+    check('native chat r2: /i\'s home mark is a 44px target on a phone in its 32px footprint (QA measured 32×32)', /w-8 h-8 max-lg:w-11 max-lg:h-11 max-lg:-m-1\.5 rounded-lg/.test(rt2))
+    check('native chat r3: on a short landscape phone (≤480px tall) the top bar is one 44px row, the guest banner steps aside, the composer tightens and grows to 2 lines at most — portrait is untouched (SHELL measured 165px of thread at 844×390)',
+      /@media \(max-width: 1023px\) and \(max-height: 480px\) \{\s*\.chat-phonebar \{ min-height: 44px; \}\s*\.chat-phonebar__head \{ flex-direction: row;[\s\S]*?\[data-chat-gate-banner-slot\] \{ display: none; \}[\s\S]*?\[data-composer-input\]\[data-composer-input\] \{ max-height: 68px; \}/.test(barCss))
+    const addMcpSrc = rf('components/AddMcpModal.tsx', 'utf8')
+    check('native chat r3: in the request-MCP sheet the guest "Connect & sign in" link keeps its look under a 44px hit area, and "Request review" / "Done" are full-width 48px buttons below lg (QA measured 90×18 and 143×40)',
+      /max-lg:relative max-lg:before:absolute max-lg:before:content-\[''\] max-lg:before:-inset-x-1 max-lg:before:-inset-y-\[13px\]/.test(addMcpSrc) &&
+        (addMcpSrc.match(/max-lg:w-full max-lg:!?min-h-12 max-lg:justify-center max-lg:text-\[14px\]/g) ?? []).length === 2 && /max-lg:!min-h-12/.test(addMcpSrc) && /<div className="flex-1 max-lg:hidden" \/>/.test(addMcpSrc))
+    const rtDoc = await (await fetch(`${BASE}/i/buy-aapl`)).text()
+    const rtHrefs = [...rtDoc.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+\.css[^"]*)"/g)].map((m) => m[1])
+    const rtServed = (await Promise.all(rtHrefs.map((h) => fetch(h.startsWith('http') ? h : `${BASE}${h}`).then((r) => r.text()).catch(() => '')))).join('\n').replace(/\s*\{\s*/g, '{').replace(/;\s*/g, ';').replace(/:\s+/g, ':')
+    check('native chat r2: the served CSS carries the keyboard step-aside for /i\'s bars and the conversation\'s 44px touch rules',
+      /html\[data-keyboard\] \.yf-runtime \[data-runtime-bar\]\{display:none/.test(rtServed) && /\[data-turn-tools\]:{1,2}after\{[^}]*inset:-4px/.test(flat) && /button\.rounded-full\{[^}]*min-height:44px/.test(flat),
+      `${rtHrefs.length} /i stylesheet(s)`)
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)

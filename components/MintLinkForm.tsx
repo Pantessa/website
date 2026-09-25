@@ -419,7 +419,7 @@ export function MintLinkForm({
                 setManualMcps(null)
                 askRef.current?.focus()
               }}
-              className="px-2.5 py-1 rounded-full border border-[var(--line)] text-[12px] text-[color:var(--muted)] hover:border-[var(--accent)] hover:text-[color:var(--fg)] transition-colors"
+              className="px-2.5 py-1 max-lg:min-h-11 max-lg:px-3.5 rounded-full border border-[var(--line)] text-[12px] text-[color:var(--muted)] hover:border-[var(--accent)] hover:text-[color:var(--fg)] transition-colors"
             >
               {s}
             </button>
@@ -486,7 +486,7 @@ export function MintLinkForm({
           onChange={(e) => setSendTo(e.target.value)}
           placeholder="0x… or @handle"
           spellCheck={false}
-          className="mt-1.5 w-full max-w-md rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+          className="mt-1.5 w-full max-w-md max-lg:min-h-11 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
         />
       </div>
 
@@ -496,7 +496,7 @@ export function MintLinkForm({
         type="button"
         onClick={() => setFinePrintOpen((o) => !o)}
         aria-expanded={finePrintOpen}
-        className="mt-4 inline-flex items-center gap-1.5 mono text-[11px] uppercase tracking-wider text-left text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors"
+        className="mt-4 max-lg:mt-2 inline-flex items-center max-lg:min-h-11 gap-1.5 mono text-[11px] uppercase tracking-wider text-left text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors"
       >
         <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform${finePrintOpen ? ' rotate-180' : ''}`} />
         Fine print — return URL · expiry · sign cap · allowlist
@@ -510,7 +510,7 @@ export function MintLinkForm({
             value={redirectUrl}
             onChange={(e) => setRedirectUrl(e.target.value)}
             placeholder="https://yoursite.com/thanks"
-            className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+            className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
           />
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -521,7 +521,7 @@ export function MintLinkForm({
                 type="datetime-local"
                 value={expiresAt}
                 onChange={(e) => setExpiresAt(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+                className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
               />
             </div>
             <div>
@@ -534,7 +534,7 @@ export function MintLinkForm({
                 value={maxSigns}
                 onChange={(e) => setMaxSigns(e.target.value)}
                 placeholder="e.g. 1000"
-                className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+                className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
               />
             </div>
           </div>
@@ -546,7 +546,7 @@ export function MintLinkForm({
             onChange={(e) => setAllowText(e.target.value)}
             placeholder="0x…"
             rows={2}
-            className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm mono text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
+            className="mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm max-lg:text-[16px] mono text-[color:var(--fg)] focus:outline-none focus:border-[var(--accent)]"
           />
         </div>
       )}

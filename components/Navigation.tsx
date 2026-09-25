@@ -3,20 +3,20 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { useAccount } from 'wagmi'
 import { useSession } from '@/lib/session'
 import { isWalletPath } from '@/lib/wallet-page'
 import { Menu, X } from 'lucide-react'
-import ConnectWallet from '@/components/ConnectWallet'
 import AuthButton from '@/components/AuthButton'
-import CreateAccountButton from '@/components/CreateAccountButton'
+import CreateAccountButton, { CreateAccountModal } from '@/components/CreateAccountButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { YeetfulMark } from '@/components/Logo'
 import { AskDoorTrigger } from '@/components/AskDoor'
 import { isMarketsPath } from '@/lib/markets'
 import SiteAccount, { signInLabel, signInPill } from '@/components/SiteAccount'
 import SpineLink from '@/components/SpineLink'
+import Sheet from '@/components/mobile/Sheet'
+import { useAskDoor } from '@/lib/ask-door'
 
 export default function Navigation() {
   const pathname = usePathname()
@@ -31,22 +31,35 @@ export default function Navigation() {
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
-  // Mobile drawer: closes on navigation (pathname change), Escape, and
-  // backdrop tap; locks body scroll while open.
+  // The phone menu is the ONE Sheet (squad mobile-native, 2026-09-24): it
+  // closes on a tap outside, Escape, its close button, a swipe and the back
+  // gesture (the Sheet's own), on navigation (pathname change), on a tap of
+  // the page you're already on, and the moment the ask door opens (its Ask
+  // row): the door is z 60 and the sheet z 90, so it would open underneath.
   const [open, setOpen] = useState(false)
   useEffect(() => setOpen(false), [pathname])
+  const askOpen = useAskDoor((s) => s.open)
   useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
+    if (askOpen) setOpen(false)
+  }, [askOpen])
+  // The sheet's "Sign in" hands off to the door at THIS level: a door opened
+  // from inside the sheet would unmount with it.
+  const [doorOpen, setDoorOpen] = useState(false)
+  // A tap inside the menu. The Ask row closes the menu in the SAME click that
+  // opens the ask door, so the door takes over the menu's history entry
+  // (lib/sheet-history). Closed a commit later (the askOpen effect above), the
+  // menu's entry stayed behind under the door's, and the first back press
+  // after closing the door did nothing (measured: history 3→5→5, back stayed
+  // on the page). A link to the page you're on closes it too.
+  const onMenuClick = (e: React.MouseEvent) => {
+    const t = e.target as HTMLElement
+    if (t.closest?.('[data-ask-door]')) {
+      setOpen(false)
+      return
     }
-    document.addEventListener('keydown', onKey)
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = ''
-    }
-  }, [open])
+    const a = t.closest?.('a[href]') as HTMLAnchorElement | null
+    if (a && new URL(a.href, window.location.href).pathname === window.location.pathname) setOpen(false)
+  }
 
   // Stripe-style portal split: the marketing shell (brochure tabs) lives on
   // yeetful.com; once inside /dashboard the top nav drops the brochure tabs —
@@ -122,17 +135,6 @@ export default function Navigation() {
   // connected phone visitor with no account menu at all on a brochure page —
   // the drawer carries AuthButton + ConnectWallet, never NavAccount.
   const desktopAccount = <span className="nav__acct"><SiteAccount /></span>
-
-  // MOBILE drawer account cluster — the drawer has room, so it stays explicit
-  // (Dashboard link + auth + wallet) rather than the collapsed desktop pill.
-  const drawerAccount = disconnected ? (
-    disconnectedCta
-  ) : (
-    <>
-      <AuthButton />
-      {isConnected && <ConnectWallet />}
-    </>
-  )
 
   const dashboardCta = showDashboardCta ? (
     <Link href="/dashboard" className="nav__dash">
@@ -228,6 +230,7 @@ export default function Navigation() {
           {!inDashboard && (
             <button
               className="nav__burger"
+              data-sheet-open="nav"
               aria-label={open ? 'Close menu' : 'Open menu'}
               aria-expanded={open}
               onClick={() => setOpen((o) => !o)}
@@ -238,25 +241,47 @@ export default function Navigation() {
         </div>
       </div>
 
-      {/* Mobile drawer — portaled to <body>: the nav's backdrop-filter makes
-          the sticky header the containing block for fixed descendants, which
-          would trap the drawer inside the 64px bar. */}
-      {open &&
-        mounted &&
-        !inDashboard &&
-        createPortal(
-          <div className="drawer">
-            <button className="drawer__backdrop" aria-label="Close menu" onClick={() => setOpen(false)} />
-            <div className="drawer__panel" role="dialog" aria-label="Navigation">
-              <nav className="drawer__tabs">{drawerTabs}</nav>
-              <div className="drawer__foot">
-                {dashboardCta}
-                {drawerAccount}
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
+      {/* The phone menu: the Sheet (it portals to <body> itself, so the
+          nav's backdrop-filter can't trap it inside the 64px bar). The
+          account seat stays in the bar on a phone (SiteAccount), so the
+          sheet's foot carries only the way into the app for a connected
+          visitor: a second account control here would open its own modals
+          under a sheet that is about to close. */}
+      {mounted && !inDashboard && (
+        <Sheet
+          open={open}
+          onClose={() => setOpen(false)}
+          title="Menu"
+          id="nav"
+          className="navsheet"
+          footer={
+            disconnected ? (
+              cdpEnabled ? (
+                <button
+                  type="button"
+                  data-sheet-open="door"
+                  className="nav__dash navsheet__signin"
+                  onClick={() => {
+                    setOpen(false)
+                    setDoorOpen(true)
+                  }}
+                >
+                  {signInLabel}
+                </button>
+              ) : (
+                disconnectedCta
+              )
+            ) : (
+              dashboardCta ?? undefined
+            )
+          }
+        >
+          <nav className="drawer__tabs navsheet__tabs" aria-label="Site" onClick={onMenuClick}>
+            {drawerTabs}
+          </nav>
+        </Sheet>
+      )}
+      {doorOpen && cdpEnabled && <CreateAccountModal onClose={() => setDoorOpen(false)} />}
     </header>
   )
 }

@@ -1,0 +1,37 @@
+/* The wallet window on a phone (components/WalletPanel.tsx, squad
+   mobile-native 2026-09-24): every control is a thumb target. Before this
+   the switch/disconnect button was 38×26, the copy-address pill 30px tall,
+   "updated 1s ago" 17px, a flag's fix 25px and the Send form's chips ~26px.
+   The floor is min-height, so a control that is already taller keeps its
+   size, and a pill's text stays the size it was. */
+@media (max-width: 1023px) {
+  [data-wallet-window] :is(button, a[href]) {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+  /* A control INSIDE a field row (the amount's Max toggle) keeps its small
+     chip look and gets the 44px through an invisible hit area; the field
+     row itself is 44px tall. */
+  [data-wallet-window] [data-wallet-field] { min-height: 44px; }
+  [data-wallet-window] [data-wallet-field] :is(button, a[href]) {
+    min-height: 0;
+    position: relative;
+  }
+  [data-wallet-window] [data-wallet-field] :is(button, a[href])::after {
+    content: '';
+    position: absolute;
+    inset: -12px -6px;
+  }
+}
+
+/* The /wallet header's Ask (AskDoorTrigger variant "rail", MARKETS' export).
+   Its placeholder hint is hidden only by components/markets/markets.css,
+   which /wallet never loads: here it rendered 353px wide, the Ask button
+   grew to 440px and pushed Switch off a 375px screen (l=480). A compact
+   "Ask" pill in this header at every width. */
+.wallethead__ask .mkt-frame__askhint { display: none; }
+/* On a phone: a 44px target, and no ⌘K hint where there is no keyboard. */
+@media (max-width: 1023px) {
+  .wallethead__ask .nav__ask { height: 44px; padding: 0 14px 0 10px; }
+  .wallethead__ask .nav__ask-kbd { display: none; }
+}

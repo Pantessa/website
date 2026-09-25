@@ -127,7 +127,7 @@ export default async function SharedChatPage({ params }: Params) {
               href={shareHref}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--fg)] text-xs font-semibold hover:bg-[var(--surf-2)] transition-colors"
+              className="hit-44 flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--fg)] text-xs font-semibold hover:bg-[var(--surf-2)] transition-colors"
               title="Share this chat on X — the post opens pre-written with this chat's ask"
             >
               <XMark />
@@ -135,7 +135,7 @@ export default async function SharedChatPage({ params }: Params) {
             </a>
             <SpineLink
               href={tryHref}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white text-zinc-950 text-xs font-semibold hover:bg-zinc-200 transition-colors"
+              className="hit-44 flex items-center gap-2 px-3 py-1.5 rounded-full bg-white text-zinc-950 text-xs font-semibold hover:bg-zinc-200 transition-colors"
               title="Open Pantessa chat with these agents enabled and this chat's opening ask ready to run"
             >
               <YeetfulMark size={13} />
@@ -205,7 +205,7 @@ export default async function SharedChatPage({ params }: Params) {
           </p>
           <SpineLink
             href={tryHref}
-            className="flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--accent)] text-black text-sm font-semibold hover:opacity-90 transition-opacity"
+            className="flex items-center gap-2 px-4 py-2 max-lg:min-h-11 rounded-full bg-[var(--accent)] text-black text-sm font-semibold hover:opacity-90 transition-opacity"
           >
             <YeetfulMark size={13} />
             <span>{display.length > 0 ? 'Run this chat yourself' : 'Try Pantessa'}</span>
