@@ -14,10 +14,59 @@
 import { CREATOR_FEE_SPLIT, FEE_BEARING_BUILD_PATHS, netFeeBpsForTurn } from './fees'
 import { UNATTRIBUTED_VENUE, venueOfBuildPath } from './build-path'
 
-export const GROWTH_SOURCES = ['link', 'chat', 'embed', 'standing'] as const
+export const GROWTH_SOURCES = ['link', 'chat', 'embed', 'auto'] as const
 export type GrowthSource = (typeof GROWTH_SOURCES)[number]
 
 export const GROWTH_WINDOWS = [7, 30, 90] as const
+
+/** A signed row as the source rule reads it, plus its job when it is a job step. */
+export interface GrowthSourceInput {
+  intentLinkSlug: string | null
+  originKind: string | null
+  embedKeyId: string | null
+  job: { source: string | null; surface: string | null; intentLinkSlug: string | null } | null
+}
+
+/**
+ * The surface a signed dollar is credited to: where somebody asked for it.
+ *
+ * A job is one ask compiled into steps, so every step belongs to the surface
+ * the job was asked on. A funded buy asked in /chat is App chat money through
+ * all three of its signatures; the same buy from an /i link is Links money.
+ * `auto` is money nobody asked for on a page: a DCA schedule's run, or a job
+ * an agent opened through the desk or the Jobs API.
+ *
+ * Until 2026-09-25 every job step was filed as "Standing (jobs · DCA)", and
+ * that check ran before the link check. Over the 30 days to that date, all
+ * $346.98 of job-step money read as Standing, $224.50 of it asked on an /i
+ * link. Found on Nate's AAPL buy from /chat, which the chart showed as DCA.
+ *
+ * A step written by the browser beacon (before 2026-09-23) carries its link
+ * slug or embed key itself. One written by the runner (lib/job-step-money)
+ * carries neither, so its job is joined through the `job-<id>-<seq>` session
+ * the runner stamps. Mirrored in SQL by {@link GROWTH_SOURCE_SQL}; the harness
+ * pins the two in lockstep.
+ */
+export function growthSourceOf(t: GrowthSourceInput): GrowthSource {
+  const job = t.job
+  if (t.intentLinkSlug != null || job?.intentLinkSlug != null || job?.surface === 'link') return 'link'
+  if (t.originKind === 'embed' || !!t.embedKeyId || job?.surface === 'embed') return 'embed'
+  const source = job?.source ?? ''
+  if (t.originKind === 'dca-run' || source.startsWith('dca:') || source === 'broker' || source === 'api') return 'auto'
+  return 'chat'
+}
+
+/** The job a signed row belongs to, as `j`: the runner's money writer stamps
+ *  the session `job-<id>-<seq>` (lib/job-step-money). Anything else joins nothing. */
+export const GROWTH_JOB_JOIN_SQL = `LEFT JOIN jobs j ON j.id = substring(t.session_id from '^job-([a-z0-9]+)-[0-9]+$')`
+
+/** SQL mirror of {@link growthSourceOf} over `t` (embed_turns) and `j`
+ *  ({@link GROWTH_JOB_JOIN_SQL}). */
+export const GROWTH_SOURCE_SQL = `CASE
+  WHEN t.intent_link_slug IS NOT NULL OR j.intent_link_slug IS NOT NULL OR j.surface = 'link' THEN 'link'
+  WHEN t.origin_kind = 'embed' OR t.embed_key_id <> '' OR j.surface = 'embed' THEN 'embed'
+  WHEN t.origin_kind = 'dca-run' OR j.source LIKE 'dca:%' OR j.source IN ('broker', 'api') THEN 'auto'
+  ELSE 'chat' END`
 
 /** One grouped row of real, receipt-counted signed turns. */
 export interface GrowthTurnRow {
@@ -124,7 +173,7 @@ export interface GrowthDayPoint {
   link: number
   chat: number
   embed: number
-  standing: number
+  auto: number
   totalUsd: number
   cumulativeUsd: number
   pantessaUsd: number
@@ -145,7 +194,7 @@ export function dailySeries(rows: GrowthTurnRow[], days: number, now: number): G
   for (let i = days - 1; i >= 0; i--) {
     const day = dayKey(now, i)
     const p: GrowthDayPoint = {
-      day, link: 0, chat: 0, embed: 0, standing: 0,
+      day, link: 0, chat: 0, embed: 0, auto: 0,
       totalUsd: 0, cumulativeUsd: 0, pantessaUsd: 0, creatorUsd: 0, cumulativeFeeUsd: 0, trades: 0,
     }
     for (const r of rows) {

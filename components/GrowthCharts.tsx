@@ -7,20 +7,21 @@
 import { Bar, BarChart, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import { useChartColors, useSiteTheme } from '@/components/chart-theme'
+import { GROWTH_SOURCES } from '@/lib/admin-growth'
 
 export const SOURCE_LABEL: Record<string, string> = {
   link: 'Links',
   chat: 'App chat',
   embed: 'Embeds',
-  standing: 'Standing (jobs · DCA)',
+  auto: 'Schedules & agents',
 }
 
 /** Source inks, tuned per theme for contrast on the card surface. */
 export function useSourceColors(): Record<string, string> {
   const light = useSiteTheme()
   return light
-    ? { link: '#0e8f62', chat: '#3b6fd4', embed: '#8a5bd6', standing: '#b7791f' }
-    : { link: '#34E0A1', chat: '#6AA8FF', embed: '#B69CFF', standing: '#F5C46B' }
+    ? { link: '#0e8f62', chat: '#3b6fd4', embed: '#8a5bd6', auto: '#b7791f' }
+    : { link: '#34E0A1', chat: '#6AA8FF', embed: '#B69CFF', auto: '#F5C46B' }
 }
 
 function dayLabel(iso: string): string {
@@ -56,7 +57,7 @@ export interface GrowthPoint {
   link: number
   chat: number
   embed: number
-  standing: number
+  auto: number
   totalUsd: number
   cumulativeUsd: number
   pantessaUsd: number
@@ -84,7 +85,7 @@ export function MoneyBySource({ series }: { series: GrowthPoint[] }) {
           labelFormatter={(l) => new Date(`${String(l).slice(0, 10)}T00:00:00Z`).toUTCString().slice(0, 16)}
           formatter={(value, name) => [`$${Number(value).toFixed(2)}`, name === 'cumulativeUsd' ? 'All-time total' : SOURCE_LABEL[String(name)] ?? String(name)]}
         />
-        {(['link', 'chat', 'embed', 'standing'] as const).map((k, i, a) => (
+        {GROWTH_SOURCES.map((k, i, a) => (
           <Bar key={k} yAxisId="d" dataKey={k} stackId="usd" fill={S[k]} fillOpacity={0.85} barSize={barSize} radius={i === a.length - 1 ? [3, 3, 0, 0] : 0} />
         ))}
         <Line yAxisId="c" type="monotone" dataKey="cumulativeUsd" stroke={C.ink} strokeOpacity={0.65} strokeWidth={2} dot={false} />

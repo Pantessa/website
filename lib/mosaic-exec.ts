@@ -12,7 +12,7 @@
 
 import { alchemyEnabled, getMultichainPortfolio } from './alchemy'
 import { compileJobAsk, stampSwapFeeTier } from './jobs'
-import { createJob, advanceJob } from './jobs-runner'
+import { createJob, advanceJob, type JobBirth } from './jobs-runner'
 import { signJobToken } from './job-token'
 import { ensureTokenList, dynamicTokenBySymbol } from './token-list'
 import {
@@ -64,6 +64,8 @@ export async function mosaicTurnFor(
   swapFeeBps?: number,
   /** Our own harness/drill turn (lib/internal-run.ts) — stamps the job. */
   internalRun = false,
+  /** Where the ask arrived (lib/jobs-runner JobBirth) — stamps the job. */
+  birth: JobBirth = {},
 ): Promise<MosaicTurn> {
   if (!alchemyEnabled()) {
     return {
@@ -197,7 +199,7 @@ export async function mosaicTurnFor(
   }
 
   const titled = { ...compiled, title: `Tile the wallet on ${chainLabel} (${plan.legs.length} legs)` }
-  const job = await createJob(wallet, stampSwapFeeTier(titled, swapFeeBps ?? 0), 'chat', { internal: internalRun })
+  const job = await createJob(wallet, stampSwapFeeTier(titled, swapFeeBps ?? 0), 'chat', { internal: internalRun, ...birth })
   await advanceJob(job).catch(() => {})
 
   trace?.({

@@ -29,7 +29,7 @@ import { classifyDryRunError } from '@/lib/dry-run'
 import { resolveToken, tokenDecimals, tokenLabel } from '@/lib/cow'
 import { STOCK_TAPE_CHAIN_ID, stockTapeFor, swapLegOf } from '@/lib/stock-tape'
 import { ensureTokenList } from '@/lib/token-list'
-import { FEE_TIERS, QUOTER_V2_ABI } from '@/lib/uniswap-venue'
+import { FEE_TIERS, QUOTER_V2_ABI, stableUsd } from '@/lib/uniswap-venue'
 import { quoteV4BestOut } from '@/lib/uniswap-v4'
 
 export interface UsdProbe {
@@ -216,4 +216,47 @@ export function usdToTokenAmount(usd: number, usdPerWhole: number, maxDecimals: 
   if (!Number.isFinite(raw) || raw <= 0) return null
   const s = raw.toFixed(Math.min(maxDecimals, 8)).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
   return Number(s) > 0 ? s : null
+}
+
+/** One side of a built swap, for {@link swapValueUsd}. */
+export interface SwapSideAmount {
+  /** The token as the build named it (a symbol or an address): what the probe resolves. */
+  token: string
+  /** Its resolved address on the chain, for the stable face-value check. */
+  address: string
+  atoms: bigint
+  decimals: number
+}
+
+/**
+ * A built swap's value in dollars. This is the number the spend policy checks
+ * and the money-moved metric books. A dollar-stable side counts at face value,
+ * sell side first because the outflow is the notional. With no stable side,
+ * the sell side is priced with the depth-fenced probe above, then the buy
+ * side. Null only when neither side has an honest price.
+ *
+ * Why (2026-09-25): every venue valued a swap by its stable side alone, so
+ * ETH for UNI built with `valueUsd: null`. The policy gate read it as
+ * unpriceable, and the signed turn booked $0 of money moved and no trade.
+ * #874 made that the common shape: a buy that names no chain now pays with
+ * the ETH the wallet holds. The first real one, a $12 UNI buy paid in ETH on
+ * Ethereum, never reached the Growth page.
+ *
+ * `price` is injectable only so the harness can pin the rule without an RPC.
+ */
+export async function swapValueUsd(
+  chainId: number,
+  sell: SwapSideAmount,
+  buy: SwapSideAmount,
+  price: (chainId: number, token: string) => Promise<UsdProbe | null> = usdPerToken,
+): Promise<number | null> {
+  const atFace = stableUsd(chainId, sell.address, sell.atoms) ?? stableUsd(chainId, buy.address, buy.atoms)
+  if (atFace !== null) return atFace
+  for (const side of [sell, buy]) {
+    const units = Number(side.atoms) / 10 ** side.decimals
+    if (!Number.isFinite(units) || units <= 0) continue
+    const probe = await price(chainId, side.token).catch(() => null)
+    if (probe && Number.isFinite(probe.usd) && probe.usd > 0) return units * probe.usd
+  }
+  return null
 }

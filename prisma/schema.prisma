@@ -1024,7 +1024,7 @@ model Job {
   id          String   @id @default(cuid())
   wallet      String // lowercased owner (SIWE-verified at creation)
   title       String // human summary of the whole job
-  source      String   @default("chat") // chat | api
+  source      String   @default("chat") // chat | api | broker | dca:<scheduleId>
   status      String   @default("running") // running | waiting_signature | waiting_settlement | paused | done | failed | canceled
   currentStep Int      @default(0) @map("current_step")
   /// Shared-DB env fence (the guardian lesson): only the creating env's
@@ -1035,6 +1035,13 @@ model Job {
   isInternal  Boolean  @default(false) @map("is_internal")
   valueUsd    Float?   @map("value_usd") // rollup of step notionals (money moved)
   failReason  String?  @map("fail_reason")
+  /// Where the person who asked for this job was (lib/content-origin:
+  /// first-party | link | embed). The Growth books credit every step of the
+  /// job to it. NULL before 2026-09-25, and for jobs nobody asked for on a
+  /// page (dca:*, broker, api).
+  surface        String?
+  /// The live intent link the ask rode (validated in the chat route).
+  intentLinkSlug String?  @map("intent_link_slug")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 

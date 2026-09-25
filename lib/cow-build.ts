@@ -12,6 +12,7 @@ import {
   cowOrderAction,
   describeCowOrder,
   applySlippage,
+  tokenDecimals,
   type CowQuoteResult,
 } from '@/lib/cow'
 import { buildSignableArtifact, type SignableArtifact } from '@/lib/transaction-layer'
@@ -25,6 +26,7 @@ import {
   type GuardrailReport,
 } from '@/lib/cow-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, spentTotalUsd, toPolicy } from '@/lib/grant-store'
+import { swapValueUsd } from '@/lib/usd-probe'
 
 export interface GuardrailedOrderParams {
   mode: 'swap' | 'limit'
@@ -86,7 +88,20 @@ export async function buildGuardrailedOrder(params: GuardrailedOrderParams): Pro
 
   const checks = pureChecks(quote, params.from)
   checks.push(...(await chainChecks(quote, params.from)))
-  const valueUsd = orderValueUsd(quote.order, chainId)
+  // A stable side at face value; a pair with none (ETH for UNI) is priced by
+  // the probe rather than left unpriced (lib/usd-probe swapValueUsd).
+  const valueUsd =
+    orderValueUsd(quote.order, chainId) ??
+    (await swapValueUsd(
+      chainId,
+      {
+        token: params.sellToken,
+        address: quote.order.sellToken,
+        atoms: BigInt(quote.order.sellAmount) + BigInt(quote.order.feeAmount || '0'),
+        decimals: tokenDecimals(params.sellToken, chainId) ?? 18,
+      },
+      { token: params.buyToken, address: quote.order.buyToken, atoms: BigInt(quote.order.buyAmount), decimals: tokenDecimals(params.buyToken, chainId) ?? 18 },
+    ))
   const grant = await getActiveGrant(params.from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0

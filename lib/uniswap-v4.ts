@@ -37,7 +37,7 @@
 import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeFunctionData, erc20Abi } from 'viem'
 import { buysNativeEth, chainById, publicClientFor } from '@/lib/chains'
 import { resolveToken, tokenDecimals, tokenLabel, humanToAtoms, formatAtoms } from '@/lib/cow'
-import { stableUsd, UNISWAP_POLICY_HOST } from '@/lib/uniswap-venue'
+import { UNISWAP_POLICY_HOST } from '@/lib/uniswap-venue'
 import {
   buildReport,
   policyCheck,
@@ -866,7 +866,14 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
 
   // ── Cross-app guardrails: identical gate to v3, same policy host. ─────────
   const checks: GuardrailCheck[] = [recipientCheck(from, from), validityCheck(deadline), allowanceCheck, calldataCheck, feeCheck, ...(tapeCheck ? [tapeCheck] : [])]
-  const valueUsd = stableUsd(chainId, sellAddr, amountIn) ?? stableUsd(chainId, buyAddr, best.amountOut)
+  // Same valuation as v3 (lib/usd-probe swapValueUsd), loaded lazily for the
+  // same reason: usd-probe imports this module for its v4 quote.
+  const { swapValueUsd } = await import('@/lib/usd-probe')
+  const valueUsd = await swapValueUsd(
+    chainId,
+    { token: params.sellToken, address: sellAddr, atoms: amountIn, decimals: sellDec },
+    { token: params.buyToken, address: buyAddr, atoms: best.amountOut, decimals: buyDec },
+  )
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0

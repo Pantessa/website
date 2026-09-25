@@ -39,7 +39,7 @@ import { decodeFunctionData, encodeFunctionData, erc20Abi } from 'viem'
 import { buysNativeEth, chainById, publicClientFor } from '@/lib/chains'
 import { dryRunTx, isAllowanceLag } from '@/lib/dry-run'
 import { resolveToken, tokenDecimals, tokenLabel, humanToAtoms, formatAtoms } from '@/lib/cow'
-import { stableUsd } from '@/lib/uniswap-venue'
+import { swapValueUsd } from '@/lib/usd-probe'
 import { quoteV4BestOut } from '@/lib/uniswap-v4'
 import { SWAP_FEE_BPS, TREASURY_ADDRESS, swapFeeAtoms } from '@/lib/fees'
 import { checkFillAgainstTape, fillDeviationPct, startSwapTape, STOCK_TAPE_BOUND_PCT } from '@/lib/stock-tape'
@@ -621,7 +621,11 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
 
   // ── Cross-app guardrails: same policy gate as every native venue. ─────────
   const checks: GuardrailCheck[] = [recipientCheck(quote.action.toAddress ?? '', from), validityCheck(validUntil), allowanceCheck, feeCheck, priceCheck, ...(tapeCheck ? [tapeCheck] : []), venueCheck, simCheck]
-  const valueUsd = stableUsd(chainId, sellAddr, totalAtoms) ?? stableUsd(chainId, buyAddr, toAmount)
+  const valueUsd = await swapValueUsd(
+    chainId,
+    { token: params.sellToken, address: sellAddr, atoms: totalAtoms, decimals: sellDec },
+    { token: params.buyToken, address: buyAddr, atoms: toAmount, decimals: buyDec },
+  )
   const grant = await getActiveGrant(from.toLowerCase())
   const policy = grant ? toPolicy(grant) : null
   const spentToday = grant ? await spentTodayUsd(grant.id) : 0

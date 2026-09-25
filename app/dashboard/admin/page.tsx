@@ -7,7 +7,7 @@
 // toggles, embedders); the company now earns a take rate on signed trades, so
 // this page answers four questions in order:
 //
-//   1. How much money is moving, and from where (links · app · embeds · standing)?
+//   1. How much money is moving, and from where (links · app · embeds · schedules & agents)?
 //   2. What did it earn, and how does that split — Pantessa vs link creators?
 //   3. Who showed up — the Coinbase accounts with their email AND the native
 //      wallet connections that never signed up for anything — how far did each
@@ -547,9 +547,9 @@ export default function AdminPage() {
           ))}
         </div>
         <p className="text-[11px] text-[color:var(--muted-2)] mt-3">
-          Bars are daily signed dollars; the line is the all-time total. <em>Links</em> = signed on an /i link.{' '}
-          <em>App chat</em> = /chat, /markets and /t. <em>Standing</em> = job steps and DCA runs, money that moved after the
-          first signature.
+          Bars are daily signed dollars; the line is the all-time total. Money counts where it was asked for, and a job&rsquo;s
+          later steps count with it: <em>Links</em> = asked on an /i link. <em>App chat</em> = /chat, /markets and /t.{' '}
+          <em>Schedules &amp; agents</em>{' '}= DCA runs and jobs an agent opened, money nobody asked for on a page.
         </p>
       </Card>
 

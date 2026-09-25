@@ -293,7 +293,7 @@ export function legTurnRow(step: Pick<DeskStepRaw, 'builder' | 'artifact' | 'val
   const buildPath = jobStepBuildPath(step.builder, step.artifact) ?? null
   return {
     day: iso(step.updatedAt).slice(0, 10),
-    source: 'standing',
+    source: 'auto',
     buildPath,
     feeBps: feeBpsOfArtifact(step.artifact) ?? null,
     creator: null,
@@ -560,7 +560,7 @@ export function deskLegRows(rows: DeskLogRow[]): GrowthTurnRow[] {
     for (const e of r.events) {
       if (e.kind !== 'claimed') continue
       const usd = e.valueUsd && e.valueUsd > 0 ? e.valueUsd : 0
-      out.push({ day: e.at.slice(0, 10), source: 'standing', buildPath: e.buildPath ?? null, feeBps: e.feeBps ?? null, creator: null, tester: r.team, usd, n: 1 })
+      out.push({ day: e.at.slice(0, 10), source: 'auto', buildPath: e.buildPath ?? null, feeBps: e.feeBps ?? null, creator: null, tester: r.team, usd, n: 1 })
     }
   }
   return out

@@ -29,6 +29,7 @@ import { armGuardianPolicy } from '@/lib/hl-guardian-store'
 import type { GuardianArmAsk } from '@/lib/hl-guardian'
 import { LINK_SWAP_FEE_BPS } from '@/lib/fees'
 import type { CompiledJob } from '@/lib/jobs'
+import type { ContentOrigin } from '@/lib/content-origin'
 import {
   guardLidoStakeBuild,
   suggestedStakeEth,
@@ -84,10 +85,19 @@ const OFFER_TTL_MS = 30 * 60_000
 /** A wait that hasn't settled in this long fails the job (refunds surface). */
 const WAIT_TIMEOUT_MS = 45 * 60_000
 
+/** Where a person asked for a job: the chat turn's surface, and the live
+ *  intent link it rode. Every step the job signs later is credited to that
+ *  surface in the Growth books (lib/admin-growth growthSourceOf); the money
+ *  row the runner writes per step (lib/job-step-money) carries neither. */
+export interface JobBirth {
+  surface?: ContentOrigin
+  intentLinkSlug?: string
+}
+
 /** Create a job. `opts.internal` stamps `jobs.is_internal` (lib/internal-run.ts):
  *  our own harness/drill runs create REAL jobs rows for throwaway wallets,
  *  and the GTM arc must never read one as an arrival, a build, or a sign. */
-export async function createJob(wallet: string, compiled: CompiledJob, source = 'chat', opts?: { internal?: boolean }) {
+export async function createJob(wallet: string, compiled: CompiledJob, source = 'chat', opts?: { internal?: boolean } & JobBirth) {
   const job = await prisma.job.create({
     data: {
       wallet: wallet.toLowerCase(),
@@ -95,6 +105,8 @@ export async function createJob(wallet: string, compiled: CompiledJob, source = 
       source,
       originEnv: jobsEnv(),
       isInternal: opts?.internal === true,
+      surface: opts?.surface ?? null,
+      intentLinkSlug: opts?.intentLinkSlug ?? null,
       steps: {
         create: compiled.steps.map((s, i) => ({
           seq: i,
@@ -798,6 +810,7 @@ export async function completeSignStep(
     valueUsd: step.valueUsd ?? null,
     result,
     internal: job.isInternal === true,
+    source: job.source,
   })
   await prisma.job.update({ where: { id: jobId }, data: { currentStep: seq + 1, status: 'running' } })
   const fresh = await getJobWithSteps(jobId)
