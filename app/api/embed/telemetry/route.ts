@@ -1,3 +1,4 @@
+import { recordCreatorPaidOnchain } from '@/lib/creator-paid'
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { resolveEmbedKey, sightingOrigin } from '@/lib/embed-key'
@@ -233,6 +234,20 @@ export async function POST(req: NextRequest) {
           claimedUsd,
           linkTier: !!intentLinkSlug,
         }),
+        new Promise<number>((r) => setTimeout(() => r(0), 4000)),
+      ]).catch(() => 0)
+    }
+  }
+
+  // A swap that paid its link creator INSIDE the transaction (lib/creator-split)
+  // is booked as an already-paid claim, read from the receipt — or the claim
+  // ledger would pay the same share again. Verified rows only.
+  if (verification === 'verified' && walletAddress && !internalRun) {
+    const txHash = extractTxHash(str(body.txUrl, 300))
+    const chainId = chainIdOfTurn({ chain: str(body.chain, 40), txUrl: str(body.txUrl, 300) }, body.chainId)
+    if (txHash && chainId) {
+      await Promise.race([
+        recordCreatorPaidOnchain({ intentLinkSlug: intentLinkSlug ?? null, wallet: walletAddress, chainId, txHash }),
         new Promise<number>((r) => setTimeout(() => r(0), 4000)),
       ]).catch(() => 0)
     }

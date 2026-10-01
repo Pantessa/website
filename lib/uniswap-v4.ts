@@ -48,6 +48,7 @@ import {
 } from '@/lib/tx-guardrails'
 import { getActiveGrant, recordLedger, spentTodayUsd, spentTotalUsd, toPolicy } from '@/lib/grant-store'
 import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, TREASURY_ADDRESS, swapFeeAtoms } from '@/lib/fees'
+import { creatorBpsFor, payableCreator, stableSideOf, type CreatorPaid } from '@/lib/creator-split'
 import { checkFillAgainstTape, startSwapTape } from '@/lib/stock-tape'
 import { UnknownTokenError } from '@/lib/token-list'
 
@@ -94,6 +95,9 @@ const V4_ACTIONS_FEE = `0x${[ACTION_SWAP_EXACT_IN_SINGLE, ACTION_SETTLE_ALL, ACT
 const UR_COMMANDS = `0x${hexByte(UR_COMMAND_V4_SWAP)}` as `0x${string}`
 /** Fee-on command list: V4_SWAP, then the router-native output split. */
 const UR_COMMANDS_FEE = `0x${[UR_COMMAND_V4_SWAP, UR_COMMAND_PAY_PORTION, UR_COMMAND_SWEEP].map(hexByte).join('')}` as `0x${string}`
+/** Fee-on WITH a creator share (lib/creator-split, stable-out swaps only):
+ *  the creator's PAY_PORTION leads, the treasury's takes the rest of the tier. */
+const UR_COMMANDS_FEE_CREATOR = `0x${[UR_COMMAND_V4_SWAP, UR_COMMAND_PAY_PORTION, UR_COMMAND_PAY_PORTION, UR_COMMAND_SWEEP].map(hexByte).join('')}` as `0x${string}`
 
 const UINT128_MAX = (BigInt(1) << BigInt(128)) - BigInt(1)
 const UINT160_MAX = (BigInt(1) << BigInt(160)) - BigInt(1)
@@ -246,6 +250,20 @@ export interface V4SwapPlan {
   /** Pantessa fee in bps (lib/fees.ts tiers). 0/omitted = the classic
    *  fee-free encoding, byte-identical to the pre-fee builder. */
   feeBps?: number
+  /** The link creator paid inside the swap, in the OUTPUT token (the builder
+   *  sets it only when the output is a registry stable). `feeBps` stays the
+   *  whole tier; the treasury's portion carries feeBps − creator.bps. */
+  creator?: { address: string; bps: number }
+}
+
+/** What the output split pays, in order. The second PAY_PORTION reads the
+ *  router's balance AFTER the creator's, so the treasury's bips apply to the
+ *  remainder and SWEEP's minimum is taken after both. Pure, shared by the
+ *  encoder and the guard. */
+function v4OutputSplit(minOut: bigint, feeBps: number, creator?: { bps: number }): { treasuryBps: number; sweepMin: bigint } {
+  const afterCreator = minOut - (creator ? swapFeeAtoms(minOut, creator.bps) : BigInt(0))
+  const treasuryBps = feeBps - (creator?.bps ?? 0)
+  return { treasuryBps, sweepMin: afterCreator - swapFeeAtoms(afterCreator, treasuryBps) }
 }
 
 /** Encode the ONE Universal Router call. Fee off: V4_SWAP → swap, settle,
@@ -284,15 +302,27 @@ export function encodeV4SwapCalldata(plan: V4SwapPlan): `0x${string}` {
     })
   }
   const feeBps = plan.feeBps as number
+  const split = v4OutputSplit(plan.minOut, feeBps, plan.creator)
   const payPortionInput = encodeAbiParameters(
     [...ADDRESS_ADDRESS_UINT_PARAMS],
-    [currencyOut, TREASURY_ADDRESS, BigInt(feeBps)],
+    [currencyOut, TREASURY_ADDRESS, BigInt(split.treasuryBps)],
   )
   // The user's minimum, post-fee — SWEEP reverts below it (InsufficientToken).
   const sweepInput = encodeAbiParameters(
     [...ADDRESS_ADDRESS_UINT_PARAMS],
-    [currencyOut, SENTINEL_MSG_SENDER, plan.minOut - swapFeeAtoms(plan.minOut, feeBps)],
+    [currencyOut, SENTINEL_MSG_SENDER, split.sweepMin],
   )
+  if (plan.creator) {
+    const creatorInput = encodeAbiParameters(
+      [...ADDRESS_ADDRESS_UINT_PARAMS],
+      [currencyOut, plan.creator.address as `0x${string}`, BigInt(plan.creator.bps)],
+    )
+    return encodeFunctionData({
+      abi: UNIVERSAL_ROUTER_ABI,
+      functionName: 'execute',
+      args: [UR_COMMANDS_FEE_CREATOR, [v4Input, creatorInput, payPortionInput, sweepInput], BigInt(plan.deadline)],
+    })
+  }
   return encodeFunctionData({
     abi: UNIVERSAL_ROUTER_ABI,
     functionName: 'execute',
@@ -327,6 +357,9 @@ export interface V4GuardExpectations {
    *  SWEEP shape is REQUIRED, the recipient must be the pinned treasury,
    *  and the rate must sit in the canonical two-tier family. */
   feeBps?: number
+  /** The link creator paid inside this swap (output side only), or absent.
+   *  `payer` is the wallet the SWEEP pays: the creator must not be it. */
+  creator?: { address: string; bps: number; payer: string }
 }
 
 export interface V4GuardResult {
@@ -407,24 +440,47 @@ export function guardUniswapV4Build(steps: V4BuiltStep[], exp: V4GuardExpectatio
   try {
     const dec = decodeFunctionData({ abi: UNIVERSAL_ROUTER_ABI, data: tx.data as `0x${string}` })
     const [commands, inputs, deadline] = dec.args as [`0x${string}`, readonly `0x${string}`[], bigint]
-    if (commands.toLowerCase() !== (feeOn ? UR_COMMANDS_FEE : UR_COMMANDS)) {
+    const cr = exp.creator
+    if (cr) {
+      if (!feeOn) reasons.push('A creator share rides only on a fee-bearing swap — refusing.')
+      if (cr.bps <= 0 || cr.bps !== creatorBpsFor(feeBps)) reasons.push(`The creator share (${cr.bps}bps) is not half of the ${feeBps}bps tier — refusing.`)
+      if (payableCreator(cr.address, cr.payer, [exp.universalRouter, exp.permit2]) !== cr.address.toLowerCase()) reasons.push('The creator address is not a distinct, payable party — refusing.')
+      if (stableSideOf(exp.chainId, exp.sellToken, exp.buyToken) !== 'out') reasons.push('The creator share is not in a stable output — refusing.')
+    }
+    const wantCommands = feeOn ? (cr ? UR_COMMANDS_FEE_CREATOR : UR_COMMANDS_FEE) : UR_COMMANDS
+    const wantInputs = feeOn ? (cr ? 4 : 3) : 1
+    if (commands.toLowerCase() !== wantCommands) {
       reasons.push(
         feeOn
-          ? `Router commands are ${commands}, not V4_SWAP→PAY_PORTION→SWEEP — refusing.`
+          ? `Router commands are ${commands}, not V4_SWAP→${cr ? 'PAY_PORTION→' : ''}PAY_PORTION→SWEEP — refusing.`
           : `Router commands are ${commands}, not the single V4_SWAP — refusing.`,
       )
     }
-    if (inputs.length !== (feeOn ? 3 : 1)) reasons.push(`Expected ${feeOn ? 3 : 1} router input(s), got ${inputs.length}.`)
+    if (inputs.length !== wantInputs) reasons.push(`Expected ${wantInputs} router input(s), got ${inputs.length}.`)
     if (deadline <= BigInt(Math.floor(Date.now() / 1000))) reasons.push('The swap deadline is already in the past.')
-    if (feeOn && inputs.length === 3) {
+    const split = v4OutputSplit(exp.minOut, feeBps, cr)
+    if (feeOn && cr && inputs.length === 4) {
+      // The creator's PAY_PORTION: the output token, the resolved creator,
+      // exactly half the tier.
+      try {
+        const [cToken, cRecipient, cBips] = decodeAbiParameters([...ADDRESS_ADDRESS_UINT_PARAMS], inputs[1]) as [string, string, bigint]
+        if (!eqAddr(cToken, exp.buyToken)) reasons.push('The creator PAY_PORTION is for a different token than the buy token.')
+        if (!eqAddr(cRecipient, cr.address)) reasons.push('The creator PAY_PORTION does not pay the resolved creator — refusing.')
+        if (cBips !== BigInt(cr.bps)) reasons.push(`The creator PAY_PORTION bips (${cBips}) is not the creator's share (${cr.bps}).`)
+      } catch {
+        reasons.push('Could not decode the creator PAY_PORTION input — refusing.')
+      }
+    }
+    if (feeOn && inputs.length === wantInputs) {
+      const feeAt = cr ? 2 : 1
       // PAY_PORTION(token, recipient, bips): the output token, the PINNED
       // treasury (compared against lib/fees' own constant, never a caller
       // field), exactly the priced tier.
       try {
-        const [pToken, pRecipient, pBips] = decodeAbiParameters([...ADDRESS_ADDRESS_UINT_PARAMS], inputs[1]) as [string, string, bigint]
+        const [pToken, pRecipient, pBips] = decodeAbiParameters([...ADDRESS_ADDRESS_UINT_PARAMS], inputs[feeAt]) as [string, string, bigint]
         if (!eqAddr(pToken, exp.buyToken)) reasons.push('PAY_PORTION is for a different token than the buy token.')
         if (!eqAddr(pRecipient, TREASURY_ADDRESS)) reasons.push('The fee recipient is not the Pantessa treasury — refusing.')
-        if (pBips !== BigInt(feeBps)) reasons.push(`PAY_PORTION bips (${pBips}) is not the priced fee (${feeBps}).`)
+        if (pBips !== BigInt(split.treasuryBps)) reasons.push(`PAY_PORTION bips (${pBips}) is not the treasury's share (${split.treasuryBps}).`)
       } catch {
         reasons.push('Could not decode the PAY_PORTION input — refusing.')
       }
@@ -432,10 +488,10 @@ export function guardUniswapV4Build(steps: V4BuiltStep[], exp: V4GuardExpectatio
       // SENDER sentinel — the payer by construction — with the post-fee
       // minimum enforced on-chain.
       try {
-        const [sToken, sRecipient, sMin] = decodeAbiParameters([...ADDRESS_ADDRESS_UINT_PARAMS], inputs[2]) as [string, string, bigint]
+        const [sToken, sRecipient, sMin] = decodeAbiParameters([...ADDRESS_ADDRESS_UINT_PARAMS], inputs[feeAt + 1]) as [string, string, bigint]
         if (!eqAddr(sToken, exp.buyToken)) reasons.push('SWEEP is for a different token than the buy token.')
         if (!eqAddr(sRecipient, SENTINEL_MSG_SENDER)) reasons.push('SWEEP does not pay the transaction sender — refusing.')
-        if (sMin !== exp.minOut - swapFeeAtoms(exp.minOut, feeBps)) reasons.push('The SWEEP minimum is not the post-fee quoted bound.')
+        if (sMin !== split.sweepMin) reasons.push('The SWEEP minimum is not the post-fee quoted bound.')
       } catch {
         reasons.push('Could not decode the SWEEP input — refusing.')
       }
@@ -631,6 +687,10 @@ export interface UniswapV4SwapParams {
    *  Universal Router's PAY_PORTION/SWEEP split and must ride the refresh
    *  recipe too so a re-quote keeps the tier. 0 = fee off. */
   feeBps?: number
+  /** The link creator this wallet's swap pays, ALREADY RESOLVED SERVER-SIDE
+   *  (lib/creator-split). Paid inside the swap only when the OUTPUT is a
+   *  registry stable (a sell); a stable-in v4 swap keeps the ledger. */
+  creator?: string | null
 }
 
 export interface UniswapV4Built {
@@ -641,6 +701,8 @@ export interface UniswapV4Built {
   steps: V4BuiltStep[]
   minimumOut: string
   poolFee: number
+  /** Set when this swap pays its link creator on-chain. */
+  creatorPaid?: CreatorPaid
 }
 
 /**
@@ -749,8 +811,14 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
   // take-all build.
   const feeBps = params.feeBps ?? SWAP_FEE_BPS
   const feeOn = feeBps > 0
-  const feeAtomsOnMin = feeOn ? swapFeeAtoms(minOut, feeBps) : BigInt(0)
-  const minOutAfterFee = minOut - feeAtomsOnMin
+  // The creator's half, in the stable the swap pays out (lib/creator-split).
+  let creatorPaid: CreatorPaid | undefined
+  {
+    const address = feeOn ? payableCreator(params.creator, from, [v4.universalRouter, v4.permit2]) : null
+    const bps = creatorBpsFor(feeBps)
+    if (address && bps > 0 && stableSideOf(chainId, sellAddr, buyAddr) === 'out') creatorPaid = { address, bps, side: 'out' }
+  }
+  const minOutAfterFee = feeOn ? v4OutputSplit(minOut, feeBps, creatorPaid).sweepMin : minOut
 
   // Quoting is NOT executing: Robinhood's tokenized-stock pools price fine on
   // the Quoter but a direct Universal Router swap bare-reverts (their stock
@@ -815,7 +883,7 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
     title: `Swap ${params.amountHuman} ${sellLabel} → ${buyLabel}`,
     tx: {
       to: v4.universalRouter,
-      data: encodeV4SwapCalldata({ poolKey, zeroForOne, amountIn, minOut, deadline, feeBps: feeOn ? feeBps : 0 }),
+      data: encodeV4SwapCalldata({ poolKey, zeroForOne, amountIn, minOut, deadline, feeBps: feeOn ? feeBps : 0, ...(creatorPaid ? { creator: creatorPaid } : {}) }),
       value: '0',
       chainId,
       action: 'swap',
@@ -836,6 +904,7 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
     poolKey,
     permit2Expiration,
     feeBps: feeOn ? feeBps : 0,
+    ...(creatorPaid ? { creator: { address: creatorPaid.address, bps: creatorPaid.bps, payer: from } } : {}),
   })
   const calldataCheck: GuardrailCheck = {
     id: 'calldata',
@@ -897,8 +966,8 @@ export async function buildUniswapV4Swap(params: UniswapV4SwapParams): Promise<U
   // Honest minimum: what the USER receives after the treasury split, not the
   // pool-level bound (v3's convention).
   const minHuman = formatAtoms(minOutAfterFee.toString(), buyDec)
-  const feeNote = feeOn ? `, incl. ${feeBps / 100}% Pantessa fee on the output` : ''
+  const feeNote = feeOn ? (creatorPaid ? `, incl. ${feeBps / 100}% Pantessa fee, half paid to the link's creator` : `, incl. ${feeBps / 100}% Pantessa fee on the output`) : ''
   const summary = `Swap ${formatAtoms(amountIn.toString(), sellDec)} ${sellLabel} → ~${outHuman} ${buyLabel} via Uniswap v4 on ${chain.name} (${best.fee / 100}bps pool), min received ${minHuman} (${slippageBps}bps slippage${feeNote})`
 
-  return { summary, guardrails, blocked: !guardrails.ok, steps, minimumOut: minHuman, poolFee: best.fee }
+  return { summary, guardrails, blocked: !guardrails.ok, steps, minimumOut: minHuman, poolFee: best.fee, ...(creatorPaid ? { creatorPaid } : {}) }
 }

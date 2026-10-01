@@ -44,6 +44,7 @@ export function LinkEarningsPanel({
         <dl className="flex flex-wrap items-start gap-x-10 gap-y-4">
           <Figure label="Earned" value={formatEarnedUsd(earnings.totalEarnedUsd)} tone="accent" />
           <Figure label="Claimable" value={formatEarnedUsd(earnings.claimableUsd)} />
+          {(earnings.paidOnchainUsd ?? 0) > 0 && <Figure label="Paid in the swap" value={formatEarnedUsd(earnings.paidOnchainUsd ?? 0)} />}
           <Figure label="Claimed" value={`$${earnings.claimedUsd.toFixed(2)}`} tone="muted" />
           {referred > 0 && (
             <Figure
@@ -109,8 +110,10 @@ export function LinkEarningsPanel({
       <p className="mt-3 max-w-[900px] text-[11px] leading-relaxed text-[color:var(--muted-2)]">
         Half of Pantessa&apos;s venue fee on swaps and stock buys — from your links, and from
         every later fee-bearing trade by wallets your links first brought (lifetime, first
-        touch). Sales, transfers, stakes, and bridges are always fee-free. Paid as USDC on
-        Base from ${earnings.minClaimUsd}.
+        touch). Sales, transfers, stakes, and bridges are always fee-free. On a Uniswap swap
+        with a dollar side, your half lands in your wallet inside the trade itself, in that
+        stablecoin, on the chain it traded on. Everything else is paid as USDC on Base from
+        ${earnings.minClaimUsd}.
         {/* The honest zero: money moved, none of it through a fee-bearing
             venue. Without this line the panel just reads $0.00. */}
         {earnings.totalSignedUsd > 0 && earnings.totalFeeBearingUsd <= 0 && (

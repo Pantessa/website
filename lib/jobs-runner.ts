@@ -494,13 +494,13 @@ export async function buildSignArtifact(
     // the exact builders + guardrails chat and the swap panel use). Built
     // fresh at offer time: after a funding leg settles, the balance the
     // venue simulation checks is the real, funded one.
-    const p = params as { sellToken: string; buyToken: string; amountHuman: string; chainId: number; feeBps?: number }
+    const p = params as { sellToken: string; buyToken: string; amountHuman: string; chainId: number; feeBps?: number; linkSlug?: string }
     // Only the canonical link tier rides through (stamped server-side at
     // compile when the turn carried a live link slug — lib/jobs
     // stampSwapFeeTier); anything else falls OPEN to the base rate, the same
     // posture as the slug validation in chat POST.
     const feeBps = Number(p.feeBps) === LINK_SWAP_FEE_BPS ? LINK_SWAP_FEE_BPS : undefined
-    const built = await buildGuardedSwap({ sellToken: p.sellToken, buyToken: p.buyToken, amountHuman: p.amountHuman, from: wallet, chainId: Number(p.chainId), feeBps })
+    const built = await buildGuardedSwap({ sellToken: p.sellToken, buyToken: p.buyToken, amountHuman: p.amountHuman, from: wallet, chainId: Number(p.chainId), feeBps, linkSlug: typeof p.linkSlug === 'string' ? p.linkSlug : undefined })
     if (!built.ok) throwRefusal(built.reasons, built.guardrails)
     return {
       artifact: { txChain: built.txChain, summary: built.summary },
@@ -590,7 +590,7 @@ export async function buildSignArtifact(
     // SHARED venue cascade (v3 → v4 → LiFi), not LiFi directly — the stocks
     // trade on seeded v3 pools now, and a pinned LiFi fill reverted live
     // under its own quote (InsufficientAmountOut) where v3 filled fine.
-    const p = params as { buyUsd: number; buyToken: string; chainId?: number; feeBps?: number }
+    const p = params as { buyUsd: number; buyToken: string; chainId?: number; feeBps?: number; linkSlug?: string }
     const chainId = Number(p.chainId ?? ROBINHOOD_CHAIN_ID)
     const client = publicClientFor(chainId)
     const stable = primaryStable(chainId)
@@ -604,7 +604,7 @@ export async function buildSignArtifact(
     const amountHuman = Math.min(buyUsd, Math.floor(balanceUsd * 100) / 100).toFixed(2)
     await ensureTokenList(chainId) // AAPL/TSLA/… resolve from the official list
     const feeBps = Number(p.feeBps) === LINK_SWAP_FEE_BPS ? LINK_SWAP_FEE_BPS : undefined
-    const built = await buildGuardedSwap({ sellToken: stable.symbol, buyToken: p.buyToken, amountHuman, from: wallet, chainId, feeBps })
+    const built = await buildGuardedSwap({ sellToken: stable.symbol, buyToken: p.buyToken, amountHuman, from: wallet, chainId, feeBps, linkSlug: typeof p.linkSlug === 'string' ? p.linkSlug : undefined })
     if (!built.ok) throwRefusal(built.reasons, built.guardrails)
     return {
       artifact: { txChain: built.txChain, summary: built.summary },

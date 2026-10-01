@@ -264,6 +264,21 @@ export default function CreatorEarningsDocsPage() {
           on, and the same source feeds <Link href="/activity">/activity</Link>.
         </p>
 
+        <h2>Paid inside the swap</h2>
+        <p>
+          On a Uniswap swap with a dollar side, your half never waits for a claim. The router
+          pays it to your wallet in the same transaction, in the stablecoin being traded, on
+          the chain it traded on. A buy with USDC pays you USDC out of the input; a sale into
+          USDC or USDG pays you out of the proceeds. You can read the payment in the
+          transaction itself, and your dashboard lists it as{' '}
+          <strong>paid in the swap</strong>.
+        </p>
+        <p>
+          Everything else still accrues to the ledger below: CoW orders, cross-chain swaps,
+          Hyperliquid perps, the LiFi stock fallback, and pairs with no stablecoin on either
+          side.
+        </p>
+
         <h2>Claims</h2>
         <p>
           Your dashboard shows <strong>earned · claimed · claimable</strong>. Claims open at{' '}

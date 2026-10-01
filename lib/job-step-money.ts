@@ -20,6 +20,7 @@ import { feeBpsOfArtifact } from '@/lib/fees'
 import { isBuildPath } from '@/lib/build-path'
 import { COUNTED_VERIFICATIONS, receiptClientFor, verifyTurnNow } from '@/lib/link-receipt-verify'
 import { chainById } from '@/lib/chains'
+import { recordCreatorPaidOnchain } from '@/lib/creator-paid'
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.pantessa.com').replace(/\/$/, '')
 
@@ -180,6 +181,15 @@ export async function recordJobStepMoney(leg: {
       verifyTurnNow(row.id, chainId),
       new Promise<'unverified'>((r) => setTimeout(() => r('unverified'), 4000)),
     ]).catch(() => 'unverified')
+    // A swap step that paid a creator inside the transaction is booked as an
+    // already-paid claim (lib/creator-paid) — same rule as the browser beacon.
+    // `claim` above already proved the hash is this wallet's successful tx.
+    if ((COUNTED_VERIFICATIONS as readonly string[]).includes(verification) && !leg.internal && chainId && txHash) {
+      await Promise.race([
+        recordCreatorPaidOnchain({ intentLinkSlug: null, wallet: leg.wallet, chainId, txHash }),
+        new Promise<number>((r) => setTimeout(() => r(0), 4000)),
+      ]).catch(() => 0)
+    }
     return { recorded: (COUNTED_VERIFICATIONS as readonly string[]).includes(verification), valueUsd: leg.valueUsd ?? null, verification, rowId: row.id }
   } catch {
     return null

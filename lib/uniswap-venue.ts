@@ -40,6 +40,7 @@ import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS, TREASURY_ADDRESS, swapFeeAtoms } from 
 import { approvalTxs, guardApprovalSteps, planApproval } from '@/lib/erc20-approval'
 import { checkFillAgainstTape, startSwapTape } from '@/lib/stock-tape'
 import { UnknownTokenError } from '@/lib/token-list'
+import { creatorBpsFor, payableCreator, stableSideOf, type CreatorPaid } from '@/lib/creator-split'
 
 /** Uniswap v3 on Base (developers.uniswap.org, verified live by the MCP's
  *  smoke suite 2026-07-02). Kept as the Base constants for existing
@@ -147,6 +148,32 @@ export const SWAP_ROUTER_02_ABI = [
     ],
     outputs: [],
   },
+  // The creator's share on a stable-IN swap (lib/creator-split): the router
+  // pulls the cut from the payer (PeripheryPaymentsExtended.pull — covered
+  // by the same exact-amount approval the swap uses) and sweepToken hands
+  // the router's balance of it to the creator. Verified in every registry
+  // router's bytecode 2026-10-01.
+  {
+    name: 'pull',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [
+      { name: 'token', type: 'address' },
+      { name: 'value', type: 'uint256' },
+    ],
+    outputs: [],
+  },
+  {
+    name: 'sweepToken',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [
+      { name: 'token', type: 'address' },
+      { name: 'amountMinimum', type: 'uint256' },
+      { name: 'recipient', type: 'address' },
+    ],
+    outputs: [],
+  },
   // Fee off: the same unwrap, no split.
   {
     name: 'unwrapWETH9',
@@ -191,6 +218,10 @@ export interface V3GuardExpectations {
    *  one accepted. Positive = the split is REQUIRED, paid to the pinned
    *  treasury, at a canonical tier. */
   feeBps: number
+  /** The link creator paid inside this swap (lib/creator-split), or absent.
+   *  `feeBps` stays the WHOLE tier the user pays; the treasury's leg carries
+   *  feeBps − creator.bps. The address is the server-resolved creator. */
+  creator?: CreatorPaid
 }
 
 export interface V3GuardResult {
@@ -211,6 +242,13 @@ const eqAddr = (a: string | undefined, b: string | undefined) => !!a && !!b && a
  * A sweep on an ETH buy delivers WETH; an unwrap on a WETH buy delivers the
  * wrong asset (or strands a non-WETH output on the router). Both refuse, as
  * does anything that fails to decode.
+ *
+ * With a creator share (exp.creator) the shape grows by exactly the creator's
+ * leg, on the pair's stable side, and nothing else is accepted:
+ *   stable in   → [pull(sell, cut), sweepToken(sell, cut → creator), swap(amountIn − cut) → router, payout]
+ *   stable out  → [swap → router, sweepTokenWithFee(buy → the ROUTER, creator.bps → creator), sweepTokenWithFee(buy → recipient, treasury)]
+ * The creator must be a distinct party (never the recipient, the treasury or
+ * the router), at exactly half the tier, and never on a recipient override.
  */
 export function guardUniswapV3Build(
   build: { swapTx: V3Tx; approveTx: V3Tx | null; resetTx?: V3Tx | null },
@@ -224,6 +262,23 @@ export function guardUniswapV3Build(
     reasons.push(`Fee rate ${exp.feeBps}bps is outside the canonical tiers — refusing.`)
   }
   const chain = chainById(exp.chainId)
+  const cr = exp.creator
+  let creatorCut = zero
+  if (cr) {
+    if (!feeOn) reasons.push('A creator share rides only on a fee-bearing swap — refusing.')
+    if (cr.bps <= 0 || cr.bps !== creatorBpsFor(exp.feeBps)) reasons.push(`The creator share (${cr.bps}bps) is not half of the ${exp.feeBps}bps tier — refusing.`)
+    if (payableCreator(cr.address, exp.recipient, [exp.swapRouter02]) !== cr.address.toLowerCase()) {
+      reasons.push('The creator address is not a distinct, payable party — refusing.')
+    }
+    if (stableSideOf(exp.chainId, exp.sellToken, exp.buyToken, exp.nativeOut) !== cr.side) reasons.push('The creator share is not on the stable side of this pair — refusing.')
+    if (cr.side === 'in') {
+      if (exp.sellIsEth) reasons.push('A native-ETH sell cannot carry an input-side creator share — refusing.')
+      creatorCut = swapFeeAtoms(exp.amountIn, cr.bps)
+      if (creatorCut <= zero) reasons.push('The creator share rounds to nothing at this size — it must not ride.')
+    }
+  }
+  const treasuryBps = exp.feeBps - (cr ? cr.bps : 0)
+  const swapIn = exp.amountIn - creatorCut
   if (exp.nativeOut && !eqAddr(exp.buyToken, chain?.wrappedNative)) {
     reasons.push("A native-ETH delivery must swap into the chain's wrapped native — refusing.")
   }
@@ -271,14 +326,55 @@ export function guardUniswapV3Build(
     if (deadline !== BigInt(exp.deadline)) reasons.push('The multicall deadline is not the one we stamped.')
     if (deadline <= BigInt(nowSec)) reasons.push('The swap deadline is already in the past.')
     const routerHolds = exp.nativeOut || feeOn
-    const wantCalls = routerHolds ? 2 : 1
+    const wantCalls = (routerHolds ? 2 : 1) + (cr ? (cr.side === 'in' ? 2 : 1) : 0)
     if (calls.length !== wantCalls) {
-      reasons.push(`Expected ${wantCalls} router call(s) (${routerHolds ? 'swap → router, then the payout' : 'the swap alone'}), got ${calls.length}.`)
+      reasons.push(`Expected ${wantCalls} router call(s) (${routerHolds ? 'swap → router, then the payout' : 'the swap alone'}${cr ? ', plus the creator share' : ''}), got ${calls.length}.`)
+      // A different call count is a different transaction: nothing below can
+      // be read against the right slot.
+      return { ok: false, reasons }
     }
+    // Where each leg sits. Stable-in puts the creator's two calls in front.
+    const swapAt = cr?.side === 'in' ? 2 : 0
+    const payoutAt = calls.length - 1
 
-    const swap = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[0] })
+    if (cr?.side === 'in') {
+      const pull = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[0] })
+      if (pull.functionName !== 'pull') reasons.push(`The first router call is "${pull.functionName}", not the creator pull — refusing.`)
+      else {
+        const [token, value] = pull.args as readonly [string, bigint]
+        if (!eqAddr(token, exp.sellToken)) reasons.push('The creator pull is not in the sold stable — refusing.')
+        if (value !== creatorCut) reasons.push('The creator pull is not exactly the creator share.')
+      }
+      const hand = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[1] })
+      if (hand.functionName !== 'sweepToken') reasons.push(`The second router call is "${hand.functionName}", not the creator payout — refusing.`)
+      else {
+        const [token, min, to] = hand.args as readonly [string, bigint, string]
+        if (!eqAddr(token, exp.sellToken)) reasons.push('The creator payout is not in the sold stable — refusing.')
+        if (min !== creatorCut) reasons.push('The creator payout minimum is not the creator share.')
+        if (!eqAddr(to, cr.address)) reasons.push('The creator payout does not go to the resolved creator — refusing.')
+      }
+    }
+    if (cr?.side === 'out') {
+      const leg = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[1] })
+      if (leg.functionName !== 'sweepTokenWithFee') reasons.push(`The creator leg calls "${leg.functionName}", not sweepTokenWithFee — refusing.`)
+      else {
+        const [token, min, to, bips, feeTo] = leg.args as readonly [string, bigint, string, bigint, string]
+        if (!eqAddr(token, exp.buyToken)) reasons.push('The creator leg is for a different token than the buy token.')
+        if (min !== exp.minOut) reasons.push('The creator leg minimum is not the quoted bound.')
+        // The remainder must stay ON the router for the treasury/recipient
+        // sweep behind it — any other address here walks off with the output.
+        if (!eqAddr(to, exp.swapRouter02)) reasons.push('The creator leg does not leave the remainder on the router — refusing.')
+        if (bips !== BigInt(cr.bps)) reasons.push(`The creator leg pays ${bips}bps, not the creator's ${cr.bps}.`)
+        if (!eqAddr(feeTo, cr.address)) reasons.push('The creator leg does not pay the resolved creator — refusing.')
+      }
+    }
+    // The bound the LAST payout enforces: the pool bound, less what the
+    // creator leg already took from the router on a stable-out swap.
+    const payoutMin = cr?.side === 'out' ? exp.minOut - swapFeeAtoms(exp.minOut, cr.bps) : exp.minOut
+
+    const swap = decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[swapAt] })
     if (swap.functionName !== 'exactInputSingle') {
-      reasons.push(`The first router call is "${swap.functionName}", not exactInputSingle — refusing.`)
+      reasons.push(`Router call ${swapAt + 1} is "${swap.functionName}", not exactInputSingle — refusing.`)
     } else {
       const p = (swap.args as readonly unknown[])[0] as {
         tokenIn: string
@@ -292,7 +388,7 @@ export function guardUniswapV3Build(
       if (!eqAddr(p.tokenIn, exp.sellToken)) reasons.push('The swap does not sell the asked token.')
       if (!eqAddr(p.tokenOut, exp.buyToken)) reasons.push('The swap does not buy the asked token.')
       if (Number(p.fee) !== exp.poolFee || !(FEE_TIERS as readonly number[]).includes(Number(p.fee))) reasons.push('The pool fee tier is not the quoted one.')
-      if (p.amountIn !== exp.amountIn) reasons.push('The swap amountIn is not exactly the asked amount.')
+      if (p.amountIn !== swapIn) reasons.push(cr?.side === 'in' ? 'The swap amountIn is not the asked amount less the creator share.' : 'The swap amountIn is not exactly the asked amount.')
       if (p.amountOutMinimum !== exp.minOut) reasons.push('The swap minimum-out is not the quoted bound.')
       if (p.sqrtPriceLimitX96 !== zero) reasons.push('Unexpected price limit on the swap — refusing.')
       if (routerHolds) {
@@ -302,7 +398,7 @@ export function guardUniswapV3Build(
       }
     }
 
-    const payout = calls[1] ? decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[1] }) : null
+    const payout = routerHolds && payoutAt > swapAt ? decodeFunctionData({ abi: SWAP_ROUTER_02_ABI, data: calls[payoutAt] }) : null
     if (payout && routerHolds) {
       const name = payout.functionName
       if (exp.nativeOut) {
@@ -315,7 +411,7 @@ export function guardUniswapV3Build(
           if (min !== exp.minOut) reasons.push('The unwrap minimum is not the quoted bound.')
           if (!eqAddr(to, exp.recipient)) reasons.push('The unwrap does not pay the intended recipient — refusing.')
           if (feeOn) {
-            if (bips !== BigInt(exp.feeBps)) reasons.push(`The unwrap fee (${bips}bps) is not the priced fee (${exp.feeBps}).`)
+            if (bips !== BigInt(treasuryBps)) reasons.push(`The unwrap fee (${bips}bps) is not the treasury's share (${treasuryBps}).`)
             if (!eqAddr(feeTo, TREASURY_ADDRESS)) reasons.push('The fee recipient is not the Pantessa treasury — refusing.')
           }
         }
@@ -326,9 +422,9 @@ export function guardUniswapV3Build(
       } else {
         const [token, min, to, bips, feeTo] = payout.args as readonly [string, bigint, string, bigint, string]
         if (!eqAddr(token, exp.buyToken)) reasons.push('The sweep is for a different token than the buy token.')
-        if (min !== exp.minOut) reasons.push('The sweep minimum is not the quoted bound.')
+        if (min !== payoutMin) reasons.push('The sweep minimum is not the quoted bound.')
         if (!eqAddr(to, exp.recipient)) reasons.push('The sweep does not pay the intended recipient — refusing.')
-        if (bips !== BigInt(exp.feeBps)) reasons.push(`The sweep fee (${bips}bps) is not the priced fee (${exp.feeBps}).`)
+        if (bips !== BigInt(treasuryBps)) reasons.push(`The sweep fee (${bips}bps) is not the treasury's share (${treasuryBps}).`)
         if (!eqAddr(feeTo, TREASURY_ADDRESS)) reasons.push('The fee recipient is not the Pantessa treasury — refusing.')
       }
     }
@@ -378,6 +474,12 @@ export interface UniswapSwapParams {
    *  LINK_SWAP_FEE_BPS). Rides the sweepTokenWithFee split — and must ride
    *  the refresh recipe too, or a re-quote silently reprices to the base. */
   feeBps?: number
+  /** The link creator this wallet's swap pays, ALREADY RESOLVED SERVER-SIDE
+   *  (lib/creator-split resolveCreatorPayout — never a client value). When
+   *  the pair has a stable side, half the fee is paid to this address inside
+   *  the swap; otherwise it is ignored and the ledger decides. Never set by
+   *  the autopilot executors (their guards pin the two-call shape). */
+  creator?: string | null
 }
 
 export interface UniswapBuilt {
@@ -396,6 +498,8 @@ export interface UniswapBuilt {
   /** Unix seconds the swap calldata dies (the multicall deadline) — rides
    *  into TxChainStep.validUntil so the card re-quotes before it lapses. */
   validUntil: number
+  /** Set when this swap pays its link creator on-chain. */
+  creatorPaid?: CreatorPaid
 }
 
 /**
@@ -437,6 +541,21 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   const atoms = humanToAtoms(params.amountHuman, sellDec)
   if (!atoms) throw new Error(`Couldn't read the amount "${params.amountHuman}" (${sellDec} decimals max).`)
   const amountIn = BigInt(atoms)
+  // The creator's share (lib/creator-split). Decided BEFORE the quote: on a
+  // stable-in swap the pool only ever sees the input less the creator's cut.
+  const feeBps = params.feeBps ?? SWAP_FEE_BPS
+  const feeOn = feeBps > 0
+  let creatorPaid: CreatorPaid | undefined
+  {
+    const address = feeOn && recipient.toLowerCase() === from.toLowerCase() ? payableCreator(params.creator, from, [swapRouter02]) : null
+    const side = address ? stableSideOf(chainId, sellAddr, buyAddr, buyIsEth) : null
+    const bps = creatorBpsFor(feeBps)
+    // A cut that rounds to zero atoms pays nobody: keep the classic shape.
+    if (address && side && bps > 0 && (side === 'out' || (!sellIsEth && swapFeeAtoms(amountIn, bps) > BigInt(0)))) creatorPaid = { address, bps, side }
+  }
+  const creatorCutIn = creatorPaid?.side === 'in' ? swapFeeAtoms(amountIn, creatorPaid.bps) : BigInt(0)
+  const swapIn = amountIn - creatorCutIn
+  const treasuryBps = feeBps - (creatorPaid?.bps ?? 0)
   // A Robinhood Chain stock swap is checked against the tape once the quote
   // lands (lib/stock-tape); the read starts now so it rides alongside.
   const tapeRead = startSwapTape({ chainId, sellToken: params.sellToken, buyToken: params.buyToken })
@@ -449,7 +568,7 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
           address: quoterV2,
           abi: QUOTER_V2_ABI,
           functionName: 'quoteExactInputSingle',
-          args: [{ tokenIn: sellAddr as `0x${string}`, tokenOut: buyAddr as `0x${string}`, amountIn, fee, sqrtPriceLimitX96: BigInt(0) }],
+          args: [{ tokenIn: sellAddr as `0x${string}`, tokenOut: buyAddr as `0x${string}`, amountIn: swapIn, fee, sqrtPriceLimitX96: BigInt(0) }],
         })
         return { fee, amountOut: result[0] }
       } catch {
@@ -468,7 +587,7 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   // pool far from the stock's tape would still build a "guarded" swap that
   // loses the money. Off tape → OffTapeError, and the cascade tries the
   // chain's own venue; no tape → TapeUnavailableError (fail closed).
-  const tapeCheck = checkFillAgainstTape(await tapeRead, "Robinhood Chain's Uniswap v3 pool", amountIn, best.amountOut)
+  const tapeCheck = checkFillAgainstTape(await tapeRead, "Robinhood Chain's Uniswap v3 pool", swapIn, best.amountOut)
   const minOut = (best.amountOut * BigInt(10_000 - slippageBps)) / BigInt(10_000)
   const deadline = Math.floor(Date.now() / 1000) + deadlineSec
 
@@ -477,10 +596,12 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   // ETH) splits it user/treasury in the SAME multicall. Fee off (bps 0) → the
   // classic direct-to-payer build, except native ETH, which the router must
   // still hold to unwrap.
-  const feeBps = params.feeBps ?? SWAP_FEE_BPS
-  const feeOn = feeBps > 0
-  const feeAtomsOnMin = feeOn ? swapFeeAtoms(minOut, feeBps) : BigInt(0)
-  const minOutAfterFee = minOut - feeAtomsOnMin
+  // With a creator share the treasury's leg carries the REST of the tier
+  // (treasuryBps); the creator's half leaves on the stable side.
+  const creatorOutOnMin = creatorPaid?.side === 'out' ? swapFeeAtoms(minOut, creatorPaid.bps) : BigInt(0)
+  const payoutMin = minOut - creatorOutOnMin
+  const feeAtomsOnMin = feeOn ? swapFeeAtoms(payoutMin, treasuryBps) : BigInt(0)
+  const minOutAfterFee = payoutMin - feeAtomsOnMin
   const routerHolds = feeOn || buyIsEth
 
   const swapCall = encodeFunctionData({
@@ -495,19 +616,41 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
         // unwrap). Otherwise straight to the intended receiver (the payer
         // unless overridden).
         recipient: routerHolds ? ADDRESS_THIS : recipient,
-        amountIn,
+        amountIn: swapIn,
         amountOutMinimum: minOut,
         sqrtPriceLimitX96: BigInt(0),
       },
     ],
   })
-  const calls: `0x${string}`[] = [swapCall]
+  const calls: `0x${string}`[] = []
+  if (creatorPaid?.side === 'in') {
+    // Stable in: the router pulls the creator's cut from the payer and hands
+    // it straight over. The approval below still covers exactly amountIn
+    // (cut + swap), so nothing extra is ever approved.
+    calls.push(
+      encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'pull', args: [sellAddr as `0x${string}`, creatorCutIn] }),
+      encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'sweepToken', args: [sellAddr as `0x${string}`, creatorCutIn, creatorPaid.address as `0x${string}`] }),
+    )
+  }
+  calls.push(swapCall)
+  if (creatorPaid?.side === 'out') {
+    // Stable out: the creator's bps leave the router first; the remainder is
+    // sent to the router ITSELF so the treasury/recipient sweep behind it
+    // splits what is left.
+    calls.push(
+      encodeFunctionData({
+        abi: SWAP_ROUTER_02_ABI,
+        functionName: 'sweepTokenWithFee',
+        args: [buyAddr as `0x${string}`, minOut, swapRouter02 as `0x${string}`, BigInt(creatorPaid.bps), creatorPaid.address as `0x${string}`],
+      }),
+    )
+  }
   if (buyIsEth) {
     // amountMinimum is checked against the router's pre-fee WETH balance —
     // the same bound the sweep takes.
     calls.push(
       feeOn
-        ? encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'unwrapWETH9WithFee', args: [minOut, recipient, BigInt(feeBps), TREASURY_ADDRESS] })
+        ? encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'unwrapWETH9WithFee', args: [minOut, recipient, BigInt(treasuryBps), TREASURY_ADDRESS] })
         : encodeFunctionData({ abi: SWAP_ROUTER_02_ABI, functionName: 'unwrapWETH9', args: [minOut, recipient] }),
     )
   } else if (feeOn) {
@@ -515,7 +658,7 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
       encodeFunctionData({
         abi: SWAP_ROUTER_02_ABI,
         functionName: 'sweepTokenWithFee',
-        args: [buyAddr as `0x${string}`, minOut, recipient, BigInt(feeBps), TREASURY_ADDRESS],
+        args: [buyAddr as `0x${string}`, payoutMin, recipient, BigInt(treasuryBps), TREASURY_ADDRESS],
       }),
     )
   }
@@ -573,6 +716,7 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
       recipient,
       deadline,
       feeBps: feeOn ? feeBps : 0,
+      ...(creatorPaid ? { creator: creatorPaid } : {}),
     },
   )
   const calldataCheck: GuardrailCheck = {
@@ -580,7 +724,7 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
     level: 'block',
     ok: guard.ok,
     note: guard.ok
-      ? `Calldata verified: SwapRouter02 ${swapRouter02.slice(0, 8)}…, exactly ${formatAtoms(amountIn.toString(), sellDec)} ${tokenLabel(params.sellToken, chainId)} in, ${buyIsEth ? 'native ETH (unwrapped by the router)' : buyLabel} out to ${recipient.toLowerCase() === from.toLowerCase() ? 'the payer' : 'the pinned recipient'}${feeOn ? ' minus the treasury split' : ''}.`
+      ? `Calldata verified: SwapRouter02 ${swapRouter02.slice(0, 8)}…, exactly ${formatAtoms(amountIn.toString(), sellDec)} ${tokenLabel(params.sellToken, chainId)} in, ${buyIsEth ? 'native ETH (unwrapped by the router)' : buyLabel} out to ${recipient.toLowerCase() === from.toLowerCase() ? 'the payer' : 'the pinned recipient'}${feeOn ? (creatorPaid ? ' minus the treasury and creator split' : ' minus the treasury split') : ''}.`
       : `Build failed verification: ${guard.reasons.join(' ')}`,
   }
 
@@ -589,7 +733,9 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
     id: 'fee',
     level: 'warn',
     ok: true,
-    note: feeOn
+    note: creatorPaid
+      ? `Pantessa fee: ${feeBps / 100}% in total. Half (${creatorPaid.bps / 100}%) is paid to the link's creator ${creatorPaid.address.slice(0, 6)}…${creatorPaid.address.slice(-4)} in ${tokenLabel(creatorPaid.side === 'in' ? params.sellToken : params.buyToken, chainId)} inside this transaction; the other half goes to the Pantessa treasury from the output. Both are visible in the multicall, and the minimum received is shown after both.`
+      : feeOn
       ? `Pantessa fee: ${feeBps / 100}% of the output, split by the router's own ${buyIsEth ? 'unwrapWETH9WithFee' : 'sweepTokenWithFee'} to the Pantessa treasury — visible in the multicall, minimum received shown post-fee.`
       : 'No Pantessa fee on this swap.',
   }
@@ -633,10 +779,10 @@ export async function buildUniswapSwap(params: UniswapSwapParams): Promise<Unisw
   // Honest minimum: what the USER receives after the treasury sweep, not the
   // pool-level bound.
   const minHuman = formatAtoms(minOutAfterFee.toString(), buyDec)
-  const feeNote = feeOn ? `, incl. ${feeBps / 100}% Pantessa fee on the output` : ''
+  const feeNote = feeOn ? (creatorPaid ? `, incl. ${feeBps / 100}% Pantessa fee, half paid to the link's creator` : `, incl. ${feeBps / 100}% Pantessa fee on the output`) : ''
   const summary = `Swap ${inHuman} ${tokenLabel(params.sellToken, chainId)} → ~${outHuman} ${buyLabel} via Uniswap v3 on ${chain.name} (${best.fee / 100}bps pool), min received ${minHuman} (${slippageBps}bps slippage${feeNote})`
 
-  return { summary, guardrails, blocked: !guardrails.ok, swapTx, approveTx, resetTx, minimumOut: minHuman, validUntil: deadline }
+  return { summary, guardrails, blocked: !guardrails.ok, swapTx, approveTx, resetTx, minimumOut: minHuman, validUntil: deadline, ...(creatorPaid ? { creatorPaid } : {}) }
 }
 
 /** The approval step(s) of a built v3 swap as chain steps, in signing order:
