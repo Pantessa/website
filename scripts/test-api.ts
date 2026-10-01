@@ -365,6 +365,7 @@ import {
 } from '../lib/dca-auto'
 import { buildAutoBuy } from '../lib/dca-auto-exec'
 import { ADDRESS_THIS, NoV3PoolError, SWAP_ROUTER_02_ABI, guardUniswapV3Build, type V3GuardExpectations } from '../lib/uniswap-venue'
+import { creatorSplitPins } from './creator-split-pins'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
   VIA_RE,
@@ -34529,6 +34530,10 @@ async function main() {
       /html\[data-keyboard\] \.yf-runtime \[data-runtime-bar\]\{display:none/.test(rtServed) && /\[data-turn-tools\]:{1,2}after\{[^}]*inset:-4px/.test(flat) && /button\.rounded-full\{[^}]*min-height:44px/.test(flat),
       `${rtHrefs.length} /i stylesheet(s)`)
   }
+
+  // The creator share paid inside a swap (2026-10-01): pure pins over the
+  // v3 + v4 guards and the on-chain payout record.
+  creatorSplitPins(check)
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)

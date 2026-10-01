@@ -19,6 +19,8 @@ import { ensureTokenList } from '@/lib/token-list'
 import { sanitizeChainId, publicClientFor, chainById, DEFAULT_CHAIN_ID } from '@/lib/chains'
 import { dryRunTx, isAllowanceLag } from '@/lib/dry-run'
 import { LINK_SWAP_FEE_BPS, SWAP_FEE_BPS } from '@/lib/fees'
+import { resolveCreatorPayout } from '@/lib/creator-split'
+import { INTENT_SLUG_RE } from '@/lib/intent-links'
 
 /** Dry-run the rebuilt tx before offering it. A tx that reverts at
  *  estimation must NEVER reach the wallet: MetaMask's estimate fails too and
@@ -87,6 +89,10 @@ export async function POST(req: NextRequest) {
   if (feeBps === null) {
     return NextResponse.json({ error: 'unknown fee tier' }, { status: 400 })
   }
+  // The link the original build was born on. Only a LOOKUP KEY: who gets the
+  // creator's half is re-read from the database (lib/creator-split), never
+  // taken from the recipe. A malformed slug is simply no slug.
+  const linkSlug = typeof body.linkSlug === 'string' && INTENT_SLUG_RE.test(body.linkSlug) ? body.linkSlug : undefined
 
   // Funding-bridge legs (the Robinhood funding job) refresh from their own
   // recipe shape: {leg, usd} — the builder re-quotes the cross-chain route,
@@ -181,7 +187,7 @@ export async function POST(req: NextRequest) {
     if (body.kind === 'uniswap-v4-swap') {
       // v4 chains re-quote the FINAL step; the builder re-reads both Permit2
       // hops, so "approvals not visible yet" comes back as pending → retry.
-      const v4 = await buildUniswapV4Swap({ sellToken, buyToken, amountHuman, from, chainId, feeBps })
+      const v4 = await buildUniswapV4Swap({ sellToken, buyToken, amountHuman, from, chainId, feeBps, creator: await resolveCreatorPayout({ wallet: from, linkSlug }) })
       if (v4.blocked) {
         const reasons = v4.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
         return NextResponse.json({ blocked: true, blockKind: 'policy', reasons: reasons || 'a safety check failed', guardrails: v4.guardrails })
@@ -193,7 +199,7 @@ export async function POST(req: NextRequest) {
       if (gate) return gate
       return NextResponse.json({ tx: v4.steps[0].tx, summary: v4.summary, guardrails: v4.guardrails, validUntil: v4.steps[0].validUntil ?? null })
     }
-    const uni = await buildUniswapSwap({ sellToken, buyToken, amountHuman, from, chainId, feeBps })
+    const uni = await buildUniswapSwap({ sellToken, buyToken, amountHuman, from, chainId, feeBps, creator: await resolveCreatorPayout({ wallet: from, linkSlug }) })
     if (uni.blocked) {
       const reasons = uni.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
       return NextResponse.json({ blocked: true, blockKind: 'policy', reasons: reasons || 'a safety check failed', guardrails: uni.guardrails })

@@ -75,11 +75,15 @@ export interface CompiledJob {
  * tier; the runner re-validates the stamped value against the canonical
  * tier before building. No feeBps → the compiled job unchanged.
  */
-export function stampSwapFeeTier(compiled: CompiledJob, feeBps: number | undefined): CompiledJob {
+export function stampSwapFeeTier(compiled: CompiledJob, feeBps: number | undefined, linkSlug?: string): CompiledJob {
   if (!feeBps) return compiled
+  // The slug rides beside the tier so the runner can pay the link's creator
+  // inside the swap (lib/creator-split); the runner re-resolves the creator
+  // from the DB at build time, the slug is only the lookup key.
+  const stamp = { feeBps, ...(linkSlug ? { linkSlug } : {}) }
   return {
     ...compiled,
-    steps: compiled.steps.map((s) => (s.builder === 'native-swap' || s.builder === 'native-lifi-swap' ? { ...s, params: { ...s.params, feeBps } } : s)),
+    steps: compiled.steps.map((s) => (s.builder === 'native-swap' || s.builder === 'native-lifi-swap' ? { ...s, params: { ...s.params, ...stamp } } : s)),
   }
 }
 

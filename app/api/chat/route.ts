@@ -210,7 +210,9 @@ import { buildSignableArtifact } from '@/lib/transaction-layer'
 import { guardPlannerArtifact } from '@/lib/planner-artifact-guard'
 import { resolveActiveServers } from '@/lib/active-servers'
 import { followAskApps } from '@/lib/ask-apps'
-import { noteAddedApps, withTurnScope } from '@/lib/turn-scope'
+import { noteAddedApps, noteLinkSlug, turnScope, withTurnScope } from '@/lib/turn-scope'
+import { resolveCreatorPayout } from '@/lib/creator-split'
+import { creatorStamp } from '@/lib/swap-exec'
 import { portfolioFromToolResult, type PortfolioDisplay } from '@/lib/portfolio-display'
 import { parseClarify, type ClarifyRequest } from '@/lib/clarify'
 import type { EntityRef } from '@/lib/working-context'
@@ -329,7 +331,7 @@ async function hlAutoFundedJobTurn(
     nativeTrace({ type: 'note', level: 'warn', label: `hl auto-fund: venue pre-flight refuses the funded job — ${hlUnfillable.slice(0, 160)}` })
     return NextResponse.json({ reply: `🛑 ${hlUnfillable}`, buildPath: 'native-job' })
   }
-  const job = await createJob(walletAddress, stampSwapFeeTier(compiled, linkFeeBps), 'chat', { internal: internalRun, ...birth })
+  const job = await createJob(walletAddress, stampSwapFeeTier(compiled, linkFeeBps, turnScope()?.linkSlug), 'chat', { internal: internalRun, ...birth })
   await advanceJob(job).catch(() => {})
   const gasLegNote = /\b(?:to|for) eth on arbitrum\b/i.test(resume) ? ' (plus a little Arbitrum ETH so the deposit can pay its own gas)' : ''
   return NextResponse.json({
@@ -611,7 +613,11 @@ async function handleChatTurn(req: NextRequest) {
       const link = await prismaDb.intentLink
         .findUnique({ where: { id: turnLinkSlug }, select: { revoked: true } })
         .catch(() => null)
-      if (link && !link.revoked) swapFeeBps = LINK_SWAP_FEE_BPS
+      if (link && !link.revoked) {
+        swapFeeBps = LINK_SWAP_FEE_BPS
+        // The builders pay this link's creator inside the swap (lib/creator-split).
+        noteLinkSlug(turnLinkSlug)
+      }
     }
     // The working set is resolved SERVER-SIDE: the client names slugs, the
     // directory supplies endpoint/callable/protocol/price, and only live
@@ -1251,7 +1257,7 @@ async function handleChatTurn(req: NextRequest) {
       // C2b closes over jobs: a link-priced turn's compiled swaps carry the
       // same tier its one-shot would (stamped into step params; the runner
       // re-validates against the canonical tier before building).
-      const job = await createJob(walletAddress, stampSwapFeeTier(jobAsk, swapFeeBps), 'chat', { internal: internalRun, ...jobBirth })
+      const job = await createJob(walletAddress, stampSwapFeeTier(jobAsk, swapFeeBps, turnScope()?.linkSlug), 'chat', { internal: internalRun, ...jobBirth })
       // Kick the first step inline so the card opens with something to sign.
       await advanceJob(job).catch(() => {})
       return NextResponse.json({
@@ -5442,6 +5448,9 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
         from: walletAddress,
         chainId,
         feeBps,
+        // The creator's half, paid in the swap when the pair has a stable
+        // side — resolved from the link row or the wallet's referral.
+        creator: await resolveCreatorPayout({ wallet: walletAddress, linkSlug: turnScope()?.linkSlug }),
       })
       if (uni.blocked) {
         const reasons = uni.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
@@ -5478,7 +5487,7 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
             refresh: {
               kind: 'uniswap-swap',
               stepIndex: approvalSteps.length,
-              params: { sellToken: intent.sellToken, buyToken: intent.buyToken, amountHuman: intent.sellAmountHuman, chainId: String(chainId), ...(feeBps !== undefined ? { feeBps: String(feeBps) } : {}) },
+              params: { sellToken: intent.sellToken, buyToken: intent.buyToken, amountHuman: intent.sellAmountHuman, chainId: String(chainId), ...(feeBps !== undefined ? { feeBps: String(feeBps) } : {}), ...(turnScope()?.linkSlug ? { linkSlug: turnScope()!.linkSlug! } : {}), ...creatorStamp(uni.creatorPaid) },
             },
           },
           buildPath: 'native-swap-uniswap',
@@ -5503,7 +5512,7 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
           refresh: {
             kind: 'uniswap-swap',
             stepIndex: 0,
-            params: { sellToken: intent.sellToken, buyToken: intent.buyToken, amountHuman: intent.sellAmountHuman, chainId: String(chainId), ...(feeBps !== undefined ? { feeBps: String(feeBps) } : {}) },
+            params: { sellToken: intent.sellToken, buyToken: intent.buyToken, amountHuman: intent.sellAmountHuman, chainId: String(chainId), ...(feeBps !== undefined ? { feeBps: String(feeBps) } : {}), ...(turnScope()?.linkSlug ? { linkSlug: turnScope()!.linkSlug! } : {}), ...creatorStamp(uni.creatorPaid) },
           },
         },
         buildPath: 'native-swap-uniswap',
@@ -5633,6 +5642,7 @@ async function prepareUniswapV4Turn(
       from: walletAddress,
       chainId,
       feeBps,
+      creator: await resolveCreatorPayout({ wallet: walletAddress, linkSlug: turnScope()?.linkSlug }),
     })
     if (uni.blocked) {
       const reasons = uni.guardrails.checks.filter((c) => !c.ok && c.level === 'block').map((c) => c.note).join(' ')
@@ -5671,7 +5681,7 @@ async function prepareUniswapV4Turn(
           stepIndex: uni.steps.length - 1,
           // feeBps rides the recipe (C2b): the re-quote keeps the tier, and
           // the client's telemetry stamp reads the tier from HERE.
-          params: { sellToken: intent.sellToken!, buyToken: intent.buyToken!, amountHuman: intent.sellAmountHuman!, chainId: String(chainId), ...(feeBps !== undefined ? { feeBps: String(feeBps) } : {}) },
+          params: { sellToken: intent.sellToken!, buyToken: intent.buyToken!, amountHuman: intent.sellAmountHuman!, chainId: String(chainId), ...(feeBps !== undefined ? { feeBps: String(feeBps) } : {}), ...(turnScope()?.linkSlug ? { linkSlug: turnScope()!.linkSlug! } : {}), ...creatorStamp(uni.creatorPaid) },
         },
       },
       buildPath: 'native-swap-uniswap-v4',

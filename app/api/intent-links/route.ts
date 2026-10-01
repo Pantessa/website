@@ -1,3 +1,4 @@
+import { ONCHAIN_CLAIM_PREFIX } from '@/lib/creator-paid'
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/db'
@@ -367,6 +368,13 @@ export async function GET(req: NextRequest) {
     _sum: { amountUsd: true },
   })
   const claimedUsd = claims._sum.amountUsd ?? 0
+  // The part of that already paid INSIDE swaps (lib/creator-paid): it landed
+  // in the creator's wallet when the trade filled, nothing was claimed.
+  const onchain = await prisma.intentLinkClaim.aggregate({
+    where: { creator, status: 'paid', id: { startsWith: ONCHAIN_CLAIM_PREFIX } },
+    _sum: { amountUsd: true },
+  })
+  const paidOnchainUsd = onchain._sum.amountUsd ?? 0
 
   return NextResponse.json({
     links: listed.map((l) => ({
@@ -388,7 +396,9 @@ export async function GET(req: NextRequest) {
       totalEarnedUsd,
       totalSignedUsd,
       totalFeeBearingUsd,
-      claimedUsd,
+      // "Claimed" is what the creator asked for; on-chain payouts are their own figure.
+      claimedUsd: Math.max(0, claimedUsd - paidOnchainUsd),
+      paidOnchainUsd,
       claimableUsd: Math.max(0, totalEarnedUsd - claimedUsd),
       minClaimUsd: 10,
       // The lifetime rail: wallets first-touched by this creator's links +

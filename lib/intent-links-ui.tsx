@@ -45,6 +45,8 @@ export interface Earnings {
   /** The slice that took a fee-bearing route — the earnings base. */
   totalFeeBearingUsd: number
   claimedUsd: number
+  /** Creator shares already paid inside swaps (lib/creator-paid). */
+  paidOnchainUsd?: number
   claimableUsd: number
   minClaimUsd: number
   /** Lifetime referral rail (C2): wallets first-touched by these links, and

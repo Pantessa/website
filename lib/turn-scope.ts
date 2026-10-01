@@ -20,6 +20,10 @@ export interface AddedApp {
 export interface TurnScope {
   /** First-party apps the belt added to this turn's set (route order). */
   addedApps?: AddedApp[]
+  /** The LIVE intent link this turn was born on (validated in POST). The
+   *  swap builders read it to pay the link's creator inside the swap
+   *  (lib/creator-split) without threading a slug through every call. */
+  linkSlug?: string
 }
 
 const als = new AsyncLocalStorage<TurnScope>()
@@ -33,6 +37,12 @@ export async function withTurnScope<T>(fn: () => Promise<T>): Promise<{ result: 
 
 export function turnScope(): TurnScope | undefined {
   return als.getStore()
+}
+
+/** Record the turn's live link slug (POST, after the DB validated it). */
+export function noteLinkSlug(slug: string): void {
+  const s = als.getStore()
+  if (s) s.linkSlug = slug
 }
 
 /** Record the apps the belt turned on for this turn (idempotent by id). */

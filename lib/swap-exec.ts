@@ -16,6 +16,7 @@ import { buildLifiSwap, NoLifiRouteError } from '@/lib/lifi-venue'
 import { OffTapeError, TapeUnavailableError } from '@/lib/stock-tape'
 import { ensureTokenList } from '@/lib/token-list'
 import { buildUniswapSwap, NoV3PoolError, v3ApprovalSteps, type UniswapBuilt } from '@/lib/uniswap-venue'
+import { resolveCreatorPayout } from '@/lib/creator-split'
 import { buildUniswapV4Swap, GatedV4PoolError, NoV4PoolError } from '@/lib/uniswap-v4'
 
 export interface GuardedSwapParams {
@@ -29,6 +30,11 @@ export interface GuardedSwapParams {
    *  LINK_SWAP_FEE_BPS). Threads to the v3 AND v4 builds AND the refresh
    *  recipe so re-quotes keep the tier. LiFi keeps its own fee step. */
   feeBps?: number
+  /** The live link the swap was born on, when there is one. With it (or
+   *  with the wallet's first-touch referral alone) the v3 build pays the
+   *  creator's half of the fee inside the swap — lib/creator-split resolves
+   *  WHO from the database, the slug is only the lookup key. */
+  linkSlug?: string
 }
 
 export type GuardedSwapResult =
@@ -96,6 +102,12 @@ export function canonicalSwapToken(sym: string, chainId: number): string {
   return sym
 }
 
+/** The recipe's record of an on-chain creator payment — what the money row
+ *  reads (lib/fees creatorPaidBpsOfArtifact) so the ledger never pays the
+ *  same share twice. A stamp only: the refresh route re-resolves the creator
+ *  itself and ignores this value. */
+export const creatorStamp = (paid: { bps: number } | undefined): Record<string, string> => (paid ? { creatorBps: String(paid.bps) } : {})
+
 async function cascade(paramsIn: GuardedSwapParams, venues: SwapVenues): Promise<GuardedSwapResult> {
   const chainId = paramsIn.chainId
   const chain = chainById(chainId)
@@ -116,7 +128,10 @@ async function cascade(paramsIn: GuardedSwapParams, venues: SwapVenues): Promise
     amountHuman,
     chainId: String(chainId),
     ...(params.feeBps !== undefined ? { feeBps: String(params.feeBps) } : {}),
+    ...(params.linkSlug ? { linkSlug: params.linkSlug } : {}),
   }
+  // Who the creator's half goes to, if anyone (null → the classic build).
+  const creator = await resolveCreatorPayout({ wallet: from, linkSlug: params.linkSlug })
   // The first venue whose fill sat off the stock's tape — it leads the
   // refusal if nothing further down the cascade fills near the tape.
   let offTape: OffTapeError | null = null
@@ -124,7 +139,7 @@ async function cascade(paramsIn: GuardedSwapParams, venues: SwapVenues): Promise
   // ── Uniswap v3 (the default venue on every first-class chain) ────────────
   let uni: UniswapBuilt | null = null
   try {
-    uni = await venues.v3({ sellToken, buyToken, amountHuman, from, chainId, feeBps: params.feeBps })
+    uni = await venues.v3({ sellToken, buyToken, amountHuman, from, chainId, feeBps: params.feeBps, creator })
   } catch (err) {
     if (err instanceof OffTapeError) offTape = err
     else if (!(err instanceof NoV3PoolError && chain.uniswapV4)) throw err
@@ -139,7 +154,7 @@ async function cascade(paramsIn: GuardedSwapParams, venues: SwapVenues): Promise
     ]
     return {
       ok: true,
-      txChain: { summary: uni.summary, steps, refresh: { kind: 'uniswap-swap', stepIndex: steps.length - 1, params: refreshParams } },
+      txChain: { summary: uni.summary, steps, refresh: { kind: 'uniswap-swap', stepIndex: steps.length - 1, params: { ...refreshParams, ...creatorStamp(uni.creatorPaid) } } },
       buildPath: 'native-swap-uniswap',
       summary: uni.summary,
       guardrails: uni.guardrails,
@@ -149,11 +164,11 @@ async function cascade(paramsIn: GuardedSwapParams, venues: SwapVenues): Promise
   // ── v4 fallback (chain pins it; tokenized-stock pools live there) ────────
   if (chain.uniswapV4) {
     try {
-      const v4 = await venues.v4({ sellToken, buyToken, amountHuman, from, chainId, feeBps: params.feeBps })
+      const v4 = await venues.v4({ sellToken, buyToken, amountHuman, from, chainId, feeBps: params.feeBps, creator })
       if (v4.blocked) return { ok: false, blockKind: 'policy', reasons: blockedOf(v4.guardrails), guardrails: v4.guardrails, policyBlock: v4.guardrails.policyBlock }
       return {
         ok: true,
-        txChain: { summary: v4.summary, steps: v4.steps, refresh: { kind: 'uniswap-v4-swap', stepIndex: v4.steps.length - 1, params: refreshParams } },
+        txChain: { summary: v4.summary, steps: v4.steps, refresh: { kind: 'uniswap-v4-swap', stepIndex: v4.steps.length - 1, params: { ...refreshParams, ...creatorStamp(v4.creatorPaid) } } },
         buildPath: 'native-swap-uniswap-v4',
         summary: v4.summary,
         guardrails: v4.guardrails,
