@@ -16,7 +16,7 @@ export default function SampleCallDemo() {
       <button
         type="button"
         onClick={() => setShown(true)}
-        className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg border border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white transition-colors"
+        className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium px-3 py-2 max-lg:min-h-10 rounded-lg border border-solid border-[var(--line-2)] text-[color:var(--muted)] hover:text-white hover:border-white transition-colors"
       >
         <Play className="w-3.5 h-3.5" />
         See a sample receipt (demo)

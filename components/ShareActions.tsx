@@ -54,7 +54,7 @@ export function useShareVia(): string | null {
 }
 
 const BTN =
-  'inline-flex items-center justify-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-3.5 min-h-9 [@media(hover:none)]:min-h-11 text-[12.5px] font-semibold text-[color:var(--fg)] whitespace-nowrap transition-colors hover:border-[var(--line-2)] hover:bg-[var(--surf-2)]'
+  'inline-flex items-center justify-center gap-1.5 rounded-full border border-solid border-[var(--line)] bg-[var(--surf-1)] px-3.5 min-h-9 [@media(hover:none)]:min-h-11 text-[12.5px] font-semibold text-[color:var(--fg)] whitespace-nowrap transition-colors hover:border-[var(--line-2)] hover:bg-[var(--surf-2)]'
 const BTN_LEAD = 'border-transparent bg-[var(--accent)] text-black hover:bg-[var(--accent)] hover:opacity-90'
 
 export interface ShareActionsProps {

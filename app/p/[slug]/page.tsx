@@ -89,13 +89,13 @@ export default async function SharedChatPage({ params }: Params) {
     <>
       <div className="min-h-[calc(100vh-4rem)] max-w-3xl mx-auto px-4 py-8">
         {/* Header */}
-        <div className="flex items-center justify-between gap-4 pb-5 mb-6 border-b border-[var(--line)]">
+        <div className="flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-stretch max-sm:gap-3 pb-5 mb-6 border-b border-[var(--line)]">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-[11px] text-emerald-400/90 mb-1">
               <Globe className="w-3.5 h-3.5" />
               <span className="mono uppercase tracking-wide">Shared chat · read-only</span>
             </div>
-            <h1 className="text-lg font-semibold text-white truncate">{chat.title}</h1>
+            <h1 className="text-lg font-semibold text-white truncate max-sm:whitespace-normal max-sm:line-clamp-3 max-sm:[overflow-wrap:anywhere]">{chat.title}</h1>
             {display.length > 0 && (
               <div className="flex items-center gap-2 mt-2 flex-wrap">
                 <span className="text-[11px] text-[color:var(--muted-2)] mono uppercase tracking-wide">
