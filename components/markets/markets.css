@@ -395,6 +395,16 @@ button.mk-held:hover { border-color: var(--accent); }
   .sym .mkt-chart__bar > .mkt-chart__ind { order: 5; }
   .sym .mkt-chart__bar > .mkt-chart__tools { order: 6; }
   .sym .mkt-chart__bar > .mkt-view { order: 1; }
+  /* With the view switch on row 1 (timeframes + switch + full screen), Share
+     no longer fits there: it rides the status line's right end instead of
+     wrapping the row and pushing the chart down another 44px. */
+  .sym .mkt-chart__bar:has(> .mkt-view) > .mkt-chart__right > .tchart__fs { margin-left: auto; }
+  .sym .mkt-chart__bar:has(> .mkt-view) > .mkt-chart__right > .mkt-sharebtn { order: 4; margin-left: 8px; }
+  .sym .mkt-chart__bar:has(> .mkt-view) > .mkt-chart__right:not(:has(.mkt-pool)) > :not(.mkt-sharebtn):not(.tchart__fs) { flex-basis: calc(100% - 94px); }
+  /* The timeframes give up the few pixels the switch needs (four 44px buttons
+     + the switch + full screen is 5px wider than a 329px bar). */
+  .sym .mkt-chart__bar:has(> .mkt-view) > .tok__tf { flex: 1 1 0; min-width: 0; }
+  .sym .mkt-chart__bar:has(> .mkt-view) > .tok__tf > .tok__tfbtn { flex: 1 1 0; min-width: 36px; padding-inline: 0; }
   /* basis = the row minus the tools group and a gap: too wide for row 1's
      leftovers (it squeezed into ~50px there), so it wraps to row 2 and sits
      beside the tools. Four tools, not five: the Select arrow is the "stop

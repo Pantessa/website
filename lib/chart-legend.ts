@@ -154,3 +154,22 @@ export function zoomedFrom(from: number, to: number, factor: number, minBars = 1
   const span = Math.max(minBars, (to - from) * factor)
   return to - span
 }
+
+/** The pointer to the "+" on the price axis shows until the "+" has been used
+ *  once in this browser. Kept here, not in the chart: the chart itself
+ *  remembers nothing between visits (its view always opens on candles). */
+const PLUS_HINT_KEY = 'pantessa.chart.plus'
+export function plusHintSeen(): boolean {
+  try {
+    return window.localStorage.getItem(PLUS_HINT_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+export function markPlusHintSeen(): void {
+  try {
+    window.localStorage.setItem(PLUS_HINT_KEY, '1')
+  } catch {
+    /* no storage: the hint shows again next visit */
+  }
+}

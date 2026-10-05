@@ -62,7 +62,7 @@ import { useChartHover } from '@/lib/markets-ai-hover'
 import { seriesVar } from '@/lib/markets-look'
 import { VolumeProfile } from './volume-profile'
 import ChartLegend from './ChartLegend'
-import { awayFromLive, chartKey, tidyPrice, zoomedFrom } from '@/lib/chart-legend'
+import { awayFromLive, chartKey, markPlusHintSeen, plusHintSeen, tidyPrice, zoomedFrom } from '@/lib/chart-legend'
 import BattleField from './BattleField'
 import { FIELD_MAX_BARS } from '@/lib/battlefield'
 import { canSellAsk } from '@/lib/sell-gate'
@@ -1052,11 +1052,7 @@ export default function MarketChart({
   // The pointer to the "+": shown until it has been used once in this browser.
   useEffect(() => {
     if (!tools) return
-    try {
-      if (window.localStorage.getItem('pantessa.chart.plus') === '1') return
-    } catch {
-      /* no storage: show it */
-    }
+    if (plusHintSeen()) return
     const touch = window.matchMedia?.('(hover: none)').matches
     setPlusHint(touch ? 'tap a price, then + to put an order there' : 'point at a price, then + to put an order there')
   }, [tools])
@@ -1068,11 +1064,7 @@ export default function MarketChart({
     setSelectedId(id)
     plusRef.current?.classList.remove('is-on')
     setPlusHint(null)
-    try {
-      window.localStorage.setItem('pantessa.chart.plus', '1')
-    } catch {
-      /* fine */
-    }
+    markPlusHintSeen()
   }, [edit])
 
   // ── Geometry for the drawing layer (one object per tick) ──────────────────
