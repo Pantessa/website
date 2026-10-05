@@ -26,6 +26,7 @@ import type { ChartPair } from '@/lib/charts'
 import type { ChartState } from '@/lib/chart-state'
 import type { PublicComment, PublicPost, PostSort } from '@/lib/chart-posts'
 import { ageLabel } from '@/lib/news-shared'
+import { callPath, callTweetHref } from '@/lib/chart-calls'
 import ChartSketch from './ChartSketch'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
@@ -360,6 +361,17 @@ function PostCard({
             <button type="button" onClick={() => void fork()} disabled={!!busy || !sessionAddress} title={sessionAddress ? 'Fork: a new post with these lines, credited to this one' : 'Sign in to fork'}>
               <GitFork className="inline h-3 w-3" aria-hidden /> {busy === 'fork' ? 'Forking…' : 'Copy these lines to my chart'}
             </button>
+          )}
+          {/* The call's own page: time and price stamped, the author's verified trades (/c/<id>). */}
+          {post.kind === 'idea' && post.chartState && (
+            <Link href={callPath(post.id)} className="mkp__link" title="This post as a stamped call: the time, the price then, verified trades">
+              <ExternalLink className="inline h-3 w-3" aria-hidden /> Call page
+            </Link>
+          )}
+          {mine && post.kind === 'idea' && post.chartState && (
+            <a href={callTweetHref({ id: post.id, symbol: post.symbol, title: post.title })} className="mkp__link" target="_blank" rel="noopener noreferrer">
+              Post on X
+            </a>
           )}
           {mine && !post.linkSlug && post.asks.length > 0 && (
             <button type="button" onClick={() => void mintLink()} disabled={!!busy} title="Mint the first action as an intent link">
