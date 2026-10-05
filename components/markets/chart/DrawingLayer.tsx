@@ -270,9 +270,14 @@ export default function DrawingLayer({ geom, lines, selectedId, onSelect, onChan
   // Below the line when there is room under it, above it otherwise — and
   // never taller than the space it has (the canvas clips; a popover whose
   // head is cut off can't be closed or labelled).
+  // On a phone's plot (260px tall) "the space it has" on one side of the line
+  // was ~130px: one offer and a scrollbar. There the popover takes the whole
+  // plot, edge to edge; the level stays in its head ("level · $204.93").
   const popStyle: CSSProperties | null =
     popY === null
       ? null
+      : width < 480
+        ? { left: 8, right: 8, top: 8, width: 'auto', maxHeight: Math.max(120, height - 16) }
       : popY > height * 0.55
         ? { left: 12, top: 8, maxHeight: Math.max(120, popY - 18) }
         : { left: 12, top: popY + 10, maxHeight: Math.max(120, height - popY - 18) }
