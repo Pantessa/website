@@ -5894,6 +5894,10 @@
 .callpg__proof li a:hover { color: var(--fg); }
 .callpg__muted { margin: 0; font-size: 13px; line-height: 1.5; color: var(--muted-2); }
 .callpg__actions, .callpg__share { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.callpg__thread { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; }
+.callpg__thread h2 { margin: 0; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-2); font-weight: 500; }
+.callpg__thread .mkp__comment { margin: 0; overflow-wrap: anywhere; }
+.callpg__age { margin: 0 8px 0 6px; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); }
 .callpg__fine { margin: 0; font-size: 9.5px; line-height: 1.7; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); }
 
 /* the level popover — the chips that turn a line into an order */

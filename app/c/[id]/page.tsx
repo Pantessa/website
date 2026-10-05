@@ -5,6 +5,7 @@ import { ExternalLink, ShieldCheck } from 'lucide-react'
 import Footer from '@/components/Footer'
 import CallChart from '@/components/markets/call/CallChart'
 import CallShareRow from '@/components/markets/call/CallShareRow'
+import CallComments from '@/components/markets/call/CallComments'
 import { readCall } from '@/lib/chart-calls-read'
 import { STAMP_FRAMES, callTweetHref, callUrl, fillTiming, fillWords, fmtCallPrice, fmtCallTime, fmtMove, fmtSpan } from '@/lib/chart-calls'
 import { symbolName } from '@/lib/markets-seo'
@@ -151,6 +152,9 @@ export default async function CallPage({ params }: Params) {
           </Link>
           <CallShareRow tweetHref={callTweetHref({ id: post.id, symbol: post.symbol, title: post.title, verified: heldAtCall })} url={callUrl(post.id)} />
         </div>
+
+        {/* the conversation: the link on X lands here, so this is where people answer the idea */}
+        <CallComments postId={post.id} initial={post.commentList} />
 
         <p className="callpg__fine mono">
           how this is stamped · the time is the moment our server stored the post · the price is our own tape, never a number the author typed · the lines cannot be edited after posting · a trade shows only when the chain confirms its transaction, sender and target

@@ -6,7 +6,7 @@ import type { Candle } from '../lib/charts'
 import { parseChartState, type ChartLine, type ChartState } from '../lib/chart-state'
 import { dragLine, emptyUndo, nearestOhlc, recordUndo, redo, trendReadout, undo, zoneReadout, type DrawSpace } from '../lib/chart-draw'
 import { shareFileName, shotTimeLabel, watermarkUrl } from '../lib/chart-share'
-import { callCardSvg, callTweetHref, chartTweetHref, fillTiming, fillWords, fmtCallTime, fmtMove, fmtSpan, movePct, stampFromBars } from '../lib/chart-calls'
+import { autoCallTitle, callCardSvg, callTweetHref, chartTweetHref, fillTiming, fillWords, fmtCallTime, fmtMove, fmtSpan, movePct, stampFromBars } from '../lib/chart-calls'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -76,10 +76,15 @@ export function chartCallsPins(check: Check): void {
 
   check('call: a verified fill reads as side, dollars, venue and chain', fillWords({ side: 'buy', usd: 25, venue: 'Uniswap v3', chain: 'Base' }, 'ETH') === 'Bought $25.00 of ETH · Uniswap v3 · Base' && fillWords({ side: 'sell', usd: null, venue: 'CoW', chain: null }, 'AAPL') === 'Sold of AAPL · CoW' && fillWords({ side: 'buy', usd: 1234.5, venue: 'v', chain: null }, 'X') === 'Bought $1,235 of X · v')
 
+  check('call: a one-press share is titled from the first thing its author labelled, else its line count, always within the post door\'s 3 to 120 characters',
+    autoCallTitle('UNI', '1D', [{ id: 'a', kind: 'h', price: 3.27 }, { id: 'b', kind: 'trend', t1: 1, p1: 1, t2: 2, p2: 2, label: 'yeet line' }]) === 'UNI 1D: yeet line' && autoCallTitle('ETH', '4H', [note]) === 'ETH 4H: here' && autoCallTitle('ETH', '1D', [{ id: 'a', kind: 'h', price: 1 }]) === 'ETH 1D: 1 line on the chart' && autoCallTitle('ETH', '1D', [{ id: 'a', kind: 'h', price: 1, label: 'x'.repeat(80) }, zone]).length <= 120 && autoCallTitle('E', '1D', []).length >= 3)
+
   const tweet = new URL(callTweetHref({ id: 'abc123def4', symbol: 'AAPL', title: 'Breakout over 340', verified: true }))
   const plain = new URL(chartTweetHref('ETH', '1D'))
   check('call: the post on X is a cashtag, the claim, our handle and the call\'s own page; a plain chart share links the symbol page',
-    tweet.origin === 'https://twitter.com' && tweet.searchParams.get('text')!.startsWith('$AAPL — Breakout over 340') && /position verified on-chain on @askPantessa/.test(tweet.searchParams.get('text')!) && /\/c\/abc123def4$/.test(tweet.searchParams.get('url')!) && /\/t\/ETH$/.test(plain.searchParams.get('url')!) && !/verified/.test(new URL(callTweetHref({ id: 'x', symbol: 'ETH', title: 't' })).searchParams.get('text')!))
+    tweet.origin === 'https://twitter.com' && tweet.searchParams.get('text')!.startsWith('$AAPL — Breakout over 340') && /position verified on-chain/.test(tweet.searchParams.get('text')!) && /@askPantessa:$/.test(tweet.searchParams.get('text')!) && !/#/.test(tweet.searchParams.get('text')!) && /\/c\/abc123def4$/.test(tweet.searchParams.get('url')!) && /\/t\/ETH$/.test(plain.searchParams.get('url')!) && !/verified/.test(new URL(callTweetHref({ id: 'x', symbol: 'ETH', title: 't' })).searchParams.get('text')!))
+  const auto = new URL(callTweetHref({ id: 'abc123def4', symbol: 'UNI', title: 'UNI 1D: yeet line' })).searchParams.get('text')!
+  check('call: the post on X opens with the cashtag exactly once (a title that already leads with the ticker is not given it twice), and never with a mention', auto.startsWith('$UNI 1D: yeet line') && (auto.match(/\$UNI/g) ?? []).length === 1 && !/^@/.test(auto) && new URL(chartTweetHref('ETH', '1D')).searchParams.get('text')!.startsWith('$ETH '))
   check('call: a long claim is cut to fit the post, never the link', new URL(callTweetHref({ id: 'abc123def4', symbol: 'AAPL', title: 'x'.repeat(400) })).searchParams.get('text')!.length < 280)
 
   const daily: Candle[] = Array.from({ length: 80 }, (_, i) => ({ t: i * 86400, o: 100 + i, h: 103 + i, l: 98 + i, c: 101 + i, v: 1 }))

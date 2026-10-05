@@ -34,7 +34,7 @@ export default async function Image({ params }: Params) {
   const post = call?.post
   const title = post ? (post.title.length > 96 ? `${post.title.slice(0, 95)}…` : post.title) : 'This call is not available'
   const moveColor = call?.move == null ? pal.muted : call.move >= 0 ? UP : DOWN
-  const chart = callCardSvg(call?.daily ?? [], post?.chartState ?? null, post?.createdAt ?? 0, {
+  const chart = callCardSvg(call?.tape ?? [], post?.chartState ?? null, post?.createdAt ?? 0, {
     width: 1072,
     height: 232,
     up: UP,
@@ -43,7 +43,7 @@ export default async function Image({ params }: Params) {
     ink: '#f2f5f3',
     accent: UP,
     sell: DOWN,
-    count: 70,
+    count: 110,
   })
   const pills = [
     'Time + price stamped',

@@ -11,8 +11,12 @@
 //     and shows the author's verified fills. X cannot take an image from a
 //     link, so the post on X carries the call's page and X draws its card.
 //
-// Publishing is a write, so it is its own press; "Post on X" is then a plain
-// link (a window opened after an await is a blocked popup in Safari).
+// "Post on X" from a signed-in wallet IS the publish: one press posts the
+// lines, then opens X on the post's own page, so the card X draws shows the
+// lines and the link lands where people can reply. The tab is opened inside
+// the click and pointed at X once the post exists (a window opened after an
+// await is a blocked popup in Safari). The picture is put on the clipboard on
+// the same press, for anyone who wants the full-size image in the post too.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Copy, Download, ExternalLink, Share2, X } from 'lucide-react'
@@ -21,7 +25,7 @@ import { useSession } from '@/lib/session'
 import { CHART_TFS, type ChartTf } from '@/lib/charts'
 import type { ChartLine, ChartState } from '@/lib/chart-state'
 import { canvasToBlob, shareFileName } from '@/lib/chart-share'
-import { callTweetHref, callUrl, chartTweetHref, fmtCallTime } from '@/lib/chart-calls'
+import { autoCallTitle, callTweetHref, callUrl, chartTweetHref, fmtCallTime } from '@/lib/chart-calls'
 
 export interface ChartShareProps {
   symbol: string
@@ -128,7 +132,7 @@ export default function ChartShare({ symbol, tf, lines, capture, onClose }: Char
     }
   }, [])
 
-  const publish = async () => {
+  const publish = async (as: string): Promise<{ id: string; createdAt: number; title: string } | null> => {
     setBusy(true)
     setErr(null)
     try {
@@ -136,15 +140,43 @@ export default function ChartShare({ symbol, tf, lines, capture, onClose }: Char
       const r = await fetch('/api/posts', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ symbol, kind: 'idea', title: title.trim(), body: '', chartState, mint: hasAction }),
+        body: JSON.stringify({ symbol, kind: 'idea', title: as, body: '', chartState, mint: hasAction }),
       })
       const d = (await r.json()) as { error?: string; post?: { id: string; createdAt: number; title: string } }
       if (!r.ok || !d.post) throw new Error(d.error ?? `Could not publish (${r.status}).`)
-      setCall({ id: d.post.id, createdAt: d.post.createdAt, title: d.post.title })
+      const made = { id: d.post.id, createdAt: d.post.createdAt, title: d.post.title }
+      setCall(made)
+      return made
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not publish.')
+      return null
     } finally {
       setBusy(false)
+    }
+  }
+
+  /** One press: post the lines, then X opens on the post's own page. */
+  const postOnX = async () => {
+    const tab = window.open('', '_blank')
+    if (blob) {
+      try {
+        void navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).catch(() => {})
+      } catch {
+        /* no image clipboard here — the card carries the lines */
+      }
+    }
+    const made = await publish(title.trim().length >= 3 ? title.trim() : autoCallTitle(symbol, tfLabel, lines))
+    if (!made) {
+      tab?.close()
+      return
+    }
+    const href = callTweetHref({ id: made.id, symbol, title: made.title })
+    if (tab) {
+      tab.opener = null
+      tab.location.href = href
+      setNote('Posted. The picture is on your clipboard too, if you want it in the post.')
+    } else {
+      setNote('Posted. Your browser blocked the new tab: use "Post the call on X" below.')
     }
   }
 
@@ -183,12 +215,20 @@ export default function ChartShare({ symbol, tf, lines, capture, onClose }: Char
               <Share2 className="h-3.5 w-3.5" aria-hidden /> Share…
             </button>
           )}
-          {!call && (
-            <a className="mkt-share__btn" href={chartTweetHref(symbol, tfLabel)} target="_blank" rel="noopener noreferrer" title="Opens X with a link to this chart — paste the copied image in">
-              <XMark /> Post on X
-            </a>
-          )}
+          {!call &&
+            (canPublish && session.address ? (
+              <button type="button" className="mkt-share__btn mkt-share__btn--go" onClick={() => void postOnX()} disabled={busy} title="Posts these lines, then opens X on the post's page: the card shows your lines and people can reply there">
+                <XMark /> {busy ? 'Posting…' : 'Post on X'}
+              </button>
+            ) : (
+              <a className="mkt-share__btn" href={chartTweetHref(symbol, tfLabel)} target="_blank" rel="noopener noreferrer" title="Opens X with a link to this chart">
+                <XMark /> Post on X
+              </a>
+            ))}
         </div>
+        {!call && canPublish && !session.address && (
+          <p className="mkt-share__note">Signed out, the post on X links the plain {symbol} chart. Sign in below and it links your lines instead: the card on X shows them, and people can reply on the page.</p>
+        )}
         {note && <p className="mkt-share__note">{note}</p>}
 
         {/* the call: time + price stamped, position verified */}
@@ -215,9 +255,9 @@ export default function ChartShare({ symbol, tf, lines, capture, onClose }: Char
             </>
           ) : (
             <>
-              <span className="mono mkt-share__eyebrow">Make it a call</span>
+              <span className="mono mkt-share__eyebrow">Say what it is (optional)</span>
               <p className="mkt-share__lede">
-                Publish these lines and the call gets a public page that stamps the time and the price, and shows the trades your wallet made on {symbol} that the chain confirms. It cannot be edited afterwards.
+                Posting gives these lines a public page: the time and the price are stamped, the trades your wallet made on {symbol} that the chain confirms are shown, and anyone can reply. It cannot be edited afterwards. Leave the line blank and Post on X names it from your first label.
               </p>
               {!canPublish ? (
                 <p className="mkt-share__note">Draw a level, a zone or a trend line first — a call is the lines.</p>
@@ -226,17 +266,17 @@ export default function ChartShare({ symbol, tf, lines, capture, onClose }: Char
                   className="mkt-share__form"
                   onSubmit={(e) => {
                     e.preventDefault()
-                    if (!busy && title.trim().length >= 3) void publish()
+                    if (!busy && title.trim().length >= 3) void publish(title.trim())
                   }}
                 >
                   <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} placeholder={`Your call on ${symbol} — one line`} aria-label="Your call, one line" />
                   <button type="submit" className="mkt-share__btn mkt-share__btn--go" disabled={busy || title.trim().length < 3}>
-                    {busy ? 'Stamping…' : 'Stamp the call'}
+                    {busy ? 'Posting…' : 'Post without X'}
                   </button>
                 </form>
               ) : (
                 // Rule 6: the unified door, and no redirect — the chart stays put.
-                <CreateAccountButton className="mkt-share__btn mkt-share__btn--go" label="Sign in to stamp a call" />
+                <CreateAccountButton className="mkt-share__btn mkt-share__btn--go" label="Sign in to post your lines" />
               )}
               {hasAction && canPublish && session.address && <p className="mkt-share__note">The first order on your lines is minted as a link: readers can take the trade, and the creator share is yours.</p>}
               {err && <p className="mkt-share__note mkt-share__note--err">{err}</p>}
