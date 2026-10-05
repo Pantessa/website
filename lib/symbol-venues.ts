@@ -144,12 +144,14 @@ const DEFAULT_SPOT_CHAINS = [1, 8453]
  *  asks it (lib/venue-capability aaveCapability: an active row with this
  *  exact symbol and canSupply true). UNI, LDO, CRV, MKR and SNX were here on
  *  a guess and have no v4 reserve; AAVE has one but its sentence ("… of AAVE
- *  to Aave") falls to the planner. ETH and BTC are listed only in wrapped
- *  form (WETH · WBTC · cbBTC) and the layer does not wrap, so "Supply $50 of
- *  ETH to Aave" refuses too — they come back when a wrap step exists.
+ *  to Aave") falls to the planner. ETH supplies into the WETH reserve: the
+ *  layer wraps native ETH first (lib/aave-exec, a two-signature job), and
+ *  the verdict reads the WETH row (lib/weth-wrap aaveReserveSymbolFor). BTC
+ *  stays off: Aave lists WBTC and cbBTC, two different tokens, and "BTC"
+ *  names neither, so nothing aliases it.
  *  The harness holds this list to the live one, and the cron re-measures it
  *  (lib/tradability-store refreshListings), so a delisting hides the chip. */
-const AAVE_RESERVE_COLD = new Set(['LINK'])
+const AAVE_RESERVE_COLD = new Set(['LINK', 'ETH'])
 
 /** Hyperliquid perps we list cold when the pair isn't already an HL chart
  *  (kPEPE / kSHIB casing is deliberately left out). Held to the venue's live
@@ -658,7 +660,13 @@ export function composeCompound(symbol: string, pair: ChartPair, kinds: Compound
       )
     }
     if (want.has('supply') && hasAaveReserveCold(sym)) {
-      legs.push({ kind: 'supply', label: 'Supply it on Aave', segment: `supply $${usd} of ${sym} to Aave`, builders: ['native-aave-supply'], hint: 'Aave v4 on Ethereum — priced at build from the reserve; refuses by name if the balance is short.' })
+      // ETH supplies into the WETH reserve: the segment compiles a wrap step
+      // ahead of the supply (lib/jobs aave-supply), so the leg names both.
+      legs.push(
+        sym === 'ETH'
+          ? { kind: 'supply', label: 'Wrap and supply it on Aave', segment: `supply $${usd} of ETH to Aave`, builders: ['native-weth-wrap', 'native-aave-supply'], hint: 'Aave v4 on Ethereum takes WETH: the ETH is wrapped first (exact amount, gas kept back), then supplied once the wrap confirms.' }
+          : { kind: 'supply', label: 'Supply it on Aave', segment: `supply $${usd} of ${sym} to Aave`, builders: ['native-aave-supply'], hint: 'Aave v4 on Ethereum — priced at build from the reserve; refuses by name if the balance is short.' },
+      )
     }
   }
 

@@ -19,6 +19,8 @@ import { canTradeAsk, tradeRefusal } from '../lib/trade-venue-gate'
 import { TRADABILITY_MAX_AGE_MS, type SymbolTradability, type TradabilityMap } from '../lib/tradability'
 import { aaveCapability, aaveRefusal, canRunVenueAsk, capabilityLegsFor, capabilityTarget, perpCapability, perpRefusal, type ReserveListing } from '../lib/venue-capability'
 import { markGuardable } from '../lib/watchlist-holdings'
+import { compileJobAsk } from '../lib/jobs'
+import { aaveReserveSymbolFor, buildWethWrapTx, guardWethWrap, planWethWrap, WETH_DEPOSIT_SELECTOR, wrapGasReserveWei } from '../lib/weth-wrap'
 import type { HeldSymbol } from '../lib/watchlists'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
@@ -44,9 +46,11 @@ export function actionGatePins(check: Check): void {
 
   // ── 1. The verdict is the builder's own question ─────────────────────────
   check(
-    'action gate: the Aave verdict asks what the supply layer asks — an ACTIVE row with the exact symbol and canSupply true. LINK and cbBTC are in; UNI is not listed; ETH and BTC are not either (the list says WETH · WBTC and the layer does not alias); canSupply false, active false and active unsaid are all a no',
+    'action gate: the Aave verdict asks what the supply layer asks — an ACTIVE row for the reserve the builder resolves, canSupply true. LINK and cbBTC are in; UNI is not listed; ETH reads the WETH row (the layer wraps it, RE-PINNED 2026-10-05 from "ETH is out"); BTC stays out (WBTC and cbBTC are different tokens and nothing aliases them); canSupply false, active false and active unsaid are all a no',
     aaveCapability(RESERVES, 'LINK').supply && aaveCapability(RESERVES, 'link').collateral && aaveCapability(RESERVES, 'CBBTC').supply && aaveCapability(RESERVES, 'WETH').supply &&
-      !aaveCapability(RESERVES, 'UNI').supply && !aaveCapability(RESERVES, 'ETH').supply && !aaveCapability(RESERVES, 'BTC').supply &&
+      aaveCapability(RESERVES, 'ETH').supply && aaveCapability(RESERVES, 'eth').collateral && !aaveCapability(RESERVES.filter((r) => r.asset?.symbol !== 'WETH'), 'ETH').supply &&
+      aaveReserveSymbolFor('eth') === 'WETH' && aaveReserveSymbolFor('BTC') === 'BTC' && aaveReserveSymbolFor('LINK') === 'LINK' &&
+      !aaveCapability(RESERVES, 'UNI').supply && !aaveCapability(RESERVES, 'BTC').supply &&
       !aaveCapability(RESERVES, 'RSETH').supply && !aaveCapability(RESERVES, 'LUSD').supply && !aaveCapability(RESERVES, 'GHO').supply &&
       aaveCapability(RESERVES, 'USDG').supply && !aaveCapability(RESERVES, 'USDG').collateral && !aaveCapability([], 'LINK').supply,
   )
@@ -102,19 +106,22 @@ export function actionGatePins(check: Check): void {
   // ── 4. What gets measured, and what the cold lists offer ─────────────────
   const legsOf = (s: string) => capabilityLegsFor(s, chartPairFor(s)!).map((l) => `${l.side}@${l.chainId}`).sort().join(' ')
   check(
-    'action gate: the measured legs come from the venue map itself — LINK needs a supplyable reserve, collateral and a live perp; UNI and ETH a live perp only; an HL chart its own perp; a stock nothing',
-    legsOf('LINK') === 'collateral@1 perp@1337 supply@1' && legsOf('UNI') === 'perp@1337' && legsOf('ETH') === 'perp@1337' && legsOf('HYPE') === 'perp@1337' && legsOf('AAPL') === '',
-    `LINK=${legsOf('LINK')} · UNI=${legsOf('UNI')} · ETH=${legsOf('ETH')} · HYPE=${legsOf('HYPE')} · AAPL=${legsOf('AAPL')}`,
+    'action gate: the measured legs come from the venue map itself — LINK and ETH (via the WETH reserve, RE-PINNED 2026-10-05) need a supplyable reserve, collateral and a live perp; UNI and BTC a live perp only; an HL chart its own perp; a stock nothing',
+    legsOf('LINK') === 'collateral@1 perp@1337 supply@1' && legsOf('UNI') === 'perp@1337' && legsOf('ETH') === 'collateral@1 perp@1337 supply@1' && legsOf('BTC') === 'perp@1337' && legsOf('HYPE') === 'perp@1337' && legsOf('AAPL') === '',
+    `LINK=${legsOf('LINK')} · UNI=${legsOf('UNI')} · ETH=${legsOf('ETH')} · BTC=${legsOf('BTC')} · HYPE=${legsOf('HYPE')} · AAPL=${legsOf('AAPL')}`,
   )
   const uniPair = chartPairFor('UNI')!
   const ethPair = chartPairFor('ETH')!
+  const btcPair = chartPairFor('BTC')!
   const uniAsks = [...execAsks(uniPair, { usd: 50, last: 8 }).map((a) => a.ask), ...venuesFor('UNI', uniPair, { last: 8 }).map((r) => r.ask)]
   const ethAsks = [...execAsks(ethPair, { usd: 50, last: 2500 }).map((a) => a.ask), ...venuesFor('ETH', ethPair, { last: 2500 }).map((r) => r.ask)]
+  const btcAsks = [...execAsks(btcPair, { usd: 50, last: 60000 }).map((a) => a.ask), ...venuesFor('BTC', btcPair, { last: 60000 }).map((r) => r.ask)]
   check(
-    'action gate: /t/UNI and /t/ETH compose no Aave chip, row or compound leg at all (UNI has no v4 reserve; ETH is listed as WETH and nothing wraps) — and MKR composes no Hyperliquid chip',
-    !uniAsks.some((a) => /aave/i.test(a)) && !ethAsks.some((a) => /aave/i.test(a)) && !compoundLegKindsFor('UNI', uniPair).includes('supply') && !compoundLegKindsFor('ETH', ethPair).includes('supply') &&
+    'action gate: /t/UNI and /t/BTC compose no Aave chip, row or compound leg at all (UNI has no v4 reserve; BTC names neither WBTC nor cbBTC) — /t/ETH composes "Supply $50 of ETH to Aave" again (the layer wraps; RE-PINNED 2026-10-05) and its compound leg names the wrap — and MKR composes no Hyperliquid chip',
+    !uniAsks.some((a) => /aave/i.test(a)) && !btcAsks.some((a) => /supply/i.test(a) && /aave/i.test(a)) && !compoundLegKindsFor('UNI', uniPair).includes('supply') && !compoundLegKindsFor('BTC', btcPair).includes('supply') &&
+      ethAsks.includes('Supply $50 of ETH to Aave') && compoundLegKindsFor('ETH', ethPair).includes('supply') &&
       !venuesFor('MKR', chartPairFor('MKR')!, { last: 1500 }).some((r) => r.venue === 'hyperliquid'),
-    uniAsks.filter((a) => /aave/i.test(a)).join(' | '),
+    [...uniAsks, ...btcAsks].filter((a) => /aave/i.test(a)).join(' | ') + ` · ETH: ${ethAsks.filter((a) => /aave/i.test(a)).join(' | ')}`,
   )
   const earn = aaveRows([
     { spoke: 'Main', asset: { symbol: 'WETH' }, canSupply: true, active: true, supplyApyPct: 2.1 },
@@ -123,9 +130,45 @@ export function actionGatePins(check: Check): void {
     { spoke: 'Main', asset: { symbol: 'rsETH' }, canSupply: true, supplyApyPct: 3 },
   ] as never)
   check(
-    'action gate (earn): a row whose sentence cannot run keeps its rate and loses its chip — WETH (shown as ETH; no wrap step) and AAVE (the venue word twice) — LINK asks as named, and a row that never says it is active is not a row',
-    earn.length === 3 && earn.find((r) => r.asset === 'ETH')?.askFor(25) === null && earn.find((r) => r.asset === 'AAVE')?.askFor(25) === null && earn.find((r) => r.asset === 'LINK')?.askFor(25) === 'Supply $25 of LINK to Aave',
+    'action gate (earn): a row whose sentence cannot run keeps its rate and loses its chip — AAVE (the venue word twice) — the WETH row asks in ETH, what people hold, and the layer wraps it (RE-PINNED 2026-10-05); LINK asks as named, and a row that never says it is active is not a row',
+    earn.length === 3 && earn.find((r) => r.asset === 'ETH')?.askFor(25) === 'Supply $25 of ETH to Aave' && earn.find((r) => r.asset === 'AAVE')?.askFor(25) === null && earn.find((r) => r.asset === 'LINK')?.askFor(25) === 'Supply $25 of LINK to Aave',
     JSON.stringify(earn.map((r) => [r.asset, r.askFor(25)])),
+  )
+
+  // ── 4b. The ETH wrap ahead of an Aave supply ─────────────────────────────
+  const E = BigInt(10) ** BigInt(18)
+  const milli = (n: number) => (E * BigInt(n)) / BigInt(1000)
+  const reserve = wrapGasReserveWei(1)
+  const cover = planWethWrap({ chainId: 1, needWei: milli(20), ethWei: milli(5), wethWei: milli(20) })
+  const part = planWethWrap({ chainId: 1, needWei: milli(20), ethWei: milli(30), wethWei: milli(5) })
+  const full = planWethWrap({ chainId: 1, needWei: milli(20), ethWei: milli(30), wethWei: BigInt(0) })
+  const edge = planWethWrap({ chainId: 1, needWei: milli(20), ethWei: milli(20) + reserve - BigInt(1), wethWei: BigInt(0) })
+  const exact = planWethWrap({ chainId: 1, needWei: milli(20), ethWei: milli(20) + reserve, wethWei: BigInt(0) })
+  check(
+    'action gate (wrap): the plan wraps only the shortfall over WETH already held, wraps nothing when WETH covers it, and refuses by name when ETH cannot cover the wrap plus the 0.002 ETH mainnet gas reserve (one wei short refuses, exact passes)',
+    reserve === milli(2) && cover.kind === 'covered' && part.kind === 'wrap' && part.wrapWei === milli(15) && full.kind === 'wrap' && full.wrapWei === milli(20) &&
+      edge.kind === 'short' && /gas/.test(edge.problem) && exact.kind === 'wrap',
+    JSON.stringify([cover, part, full, edge, exact], (_k, v) => (typeof v === 'bigint' ? v.toString() : v)),
+  )
+  const wrapTx = buildWethWrapTx(1, milli(20))!
+  const weth1 = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+  const g = (tx: Record<string, unknown>) => guardWethWrap(tx, { chainId: 1, wrapWei: milli(20) }).ok
+  check(
+    'action gate (wrap): the call is mainnet WETH deposit() with exactly the planned value; the guard refuses another target, a lookalike address, any other calldata (even deposit plus a trailing argument), a different value, zero, another chain, and a chain whose native is not ETH',
+    wrapTx.to.toLowerCase() === weth1.toLowerCase() && wrapTx.data === WETH_DEPOSIT_SELECTOR && wrapTx.value === milli(20).toString() && wrapTx.chainId === 1 && g({ ...wrapTx }) &&
+      !g({ ...wrapTx, to: '0x4200000000000000000000000000000000000006' }) && !g({ ...wrapTx, to: weth1.replace(/2$/, '3') }) &&
+      !g({ ...wrapTx, data: '0x2e1a7d4d' }) && !g({ ...wrapTx, data: `${WETH_DEPOSIT_SELECTOR}${'0'.repeat(64)}` }) && !g({ ...wrapTx, value: milli(21).toString() }) && !g({ ...wrapTx, value: '0' }) &&
+      !g({ ...wrapTx, chainId: 8453 }) && buildWethWrapTx(5042, milli(1)) === null && buildWethWrapTx(1, BigInt(0)) === null,
+  )
+  const lone = compileJobAsk('supply 0.02 ETH to aave')
+  const compound = compileJobAsk('swap 50 USDC for ETH on ethereum, then supply 0.02 ETH to aave')
+  const compoundUsd = compileJobAsk('swap 50 USDC for ETH on ethereum, then supply $40 of ETH to Aave')
+  const linkJob = compileJobAsk('swap 50 USDC for LINK on ethereum, then supply $40 of LINK to Aave')
+  const builders = (j: typeof lone) => (j && 'steps' in j ? j.steps.map((s) => s.builder).join(' ') : JSON.stringify(j))
+  check(
+    'action gate (wrap): a lone ETH supply is the chat turn’s (it plans against live balances), while a compound one compiles the wrap step ahead of the supply — unit and dollar sized — and a LINK supply carries no wrap',
+    lone === null && builders(compound) === 'native-swap native-weth-wrap native-aave-supply' && builders(compoundUsd) === 'native-swap native-weth-wrap native-aave-supply' && builders(linkJob) === 'native-swap native-aave-supply',
+    `${builders(compound)} · ${builders(compoundUsd)} · ${builders(linkJob)}`,
   )
 
   // ── 5. A spot stop needs a holding it can guard ──────────────────────────

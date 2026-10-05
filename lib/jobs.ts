@@ -846,8 +846,20 @@ export const JOB_SEGMENT_PARSERS: JobSegmentParser[] = [
       if (!aaveSup || 'problem' in aaveSup || !aaveSup.explicitAave || aaveSup.weak) return null
       if (aaveSup.otherChain) return { problem: `Aave v4 builds run on Ethereum — I can't supply on ${aaveSup.otherChain}.` }
       const title = `Supply ${aaveSup.amountIsUsd ? `$${aaveSup.amount} of ` : `${aaveSup.amount} `}${aaveSup.token.toUpperCase()} to Aave v4${aaveSup.bestRate ? ' (best rate)' : ''}`
+      // Aave v4 lists WETH, not native ETH: an ETH supply wraps first, and the
+      // supply step builds after the wrap confirms (lib/aave-exec). The wrap
+      // step plans against the wallet's balances at offer time.
+      const sizing = {
+        amount: aaveSup.amount,
+        ...(aaveSup.amountIsUsd ? { amountIsUsd: true } : {}),
+        ...(aaveSup.bestRate ? { bestRate: true } : {}),
+      }
+      const wrap: CompiledStep[] =
+        aaveSup.token.toUpperCase() === 'ETH'
+          ? [{ kind: 'sign', builder: 'native-weth-wrap', title: `Wrap ${aaveSup.amountIsUsd ? `$${aaveSup.amount} of ETH` : `${aaveSup.amount} ETH`} into WETH`, params: sizing }]
+          : []
       return {
-        steps: [{
+        steps: [...wrap, {
           kind: 'sign',
           builder: 'native-aave-supply',
           title,

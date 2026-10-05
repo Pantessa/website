@@ -25329,11 +25329,11 @@ async function main() {
     // funding rows — those are per wallet (lib/fund-routes, pinned below) —
     // and exactly one card row when the on-ramp door is open.
     check(
-      'MK2/EXEC venue map: ETH lists spot on Base/Ethereum/Arbitrum/Optimism, CoW limits only where a book exists (never Optimism or 4663), a leveraged perp + Guardian stop, Lido stake, the Spot Guardian on Base — NO per-chain funding row (funding is per wallet), no DCA row (2026-09-16), and NO Aave row: the reserve takes WETH and the layer does not wrap, so "Supply $50 of ETH to Aave" could only refuse (RE-PINNED 2026-10-05); LINK, which Aave lists as named, carries the supply + USDC borrow rows',
+      'MK2/EXEC venue map: ETH lists spot on Base/Ethereum/Arbitrum/Optimism, CoW limits only where a book exists (never Optimism or 4663), a leveraged perp + Guardian stop, Lido stake, the Spot Guardian on Base — NO per-chain funding row (funding is per wallet), no DCA row (2026-09-16), and the Aave supply + USDC borrow rows again: the reserve takes WETH and the layer now wraps the ETH first (RE-PINNED 2026-10-05, twice — off in #903, back with the wrap); LINK, which Aave lists as named, carries the same two rows',
       new Set(eth.filter((r) => r.kind === 'spot').map((r) => r.chainId)).size === 4 &&
         eth.filter((r) => r.kind === 'limit').every((r) => [8453, 1, 42161].includes(r.chainId)) && eth.some((r) => r.kind === 'limit') &&
         eth.some((r) => r.kind === 'perp' && r.ask.startsWith('2x Long')) && eth.some((r) => r.kind === 'protect' && r.venue === 'hyperliquid' && r.needs === 'position') &&
-        !eth.some((r) => r.kind === 'lend') && link.some((r) => r.kind === 'lend' && /^Supply \$\d+ of LINK to Aave$/.test(r.ask)) && link.some((r) => r.kind === 'lend' && /^Borrow \d+ USDC from Aave$/.test(r.ask)) &&
+        eth.some((r) => r.kind === 'lend' && /^Supply \$\d+ of ETH to Aave$/.test(r.ask)) && eth.some((r) => r.kind === 'lend' && /^Borrow \d+ USDC from Aave$/.test(r.ask)) && link.some((r) => r.kind === 'lend' && /^Supply \$\d+ of LINK to Aave$/.test(r.ask)) && link.some((r) => r.kind === 'lend' && /^Borrow \d+ USDC from Aave$/.test(r.ask)) &&
         eth.some((r) => r.kind === 'stake' && r.ask === 'Stake 0.02 ETH on Lido' && r.chainId === 1) && !eth.some((r) => /\bdca\b|weekly/i.test(`${r.id} ${r.label} ${r.ask}`)) &&
         eth.some((r) => r.kind === 'protect' && r.venue === 'pantessa' && r.chainId === 8453) && eth.filter((r) => r.kind === 'fund').length === 0,
       `${eth.length} rows: ${[...kinds(eth)].join(',')}`,
@@ -25389,8 +25389,8 @@ async function main() {
     // exports MARKETS + the ask door import.
     const ethExec = mk2ExecAsks(ethPair, { usd: 50, last: 2500 })
     check(
-      'MK2/EXEC ExecStrip: ETH offers Buy · Sell · Long · Short · Stake · Protect (no Supply: Aave takes WETH, RE-PINNED 2026-10-05), LINK adds Supply, a stock Buy · Sell, an HL chart Long · Short · Protect, SOL Long · Short (no DCA chip, 2026-09-16) — and every chip lands native',
-      mk2ExecSidesFor(ethPair).join() === ['buy', 'sell', 'long', 'short', 'stake', 'protect'].join() && mk2ExecSidesFor(linkPair).join() === ['buy', 'sell', 'long', 'short', 'supply', 'protect'].join() &&
+      'MK2/EXEC ExecStrip: ETH offers Buy · Sell · Long · Short · Stake · Supply · Protect (Supply wraps the ETH into Aave\'s WETH reserve, RE-PINNED 2026-10-05), LINK adds Supply, a stock Buy · Sell, an HL chart Long · Short · Protect, SOL Long · Short (no DCA chip, 2026-09-16) — and every chip lands native',
+      mk2ExecSidesFor(ethPair).join() === ['buy', 'sell', 'long', 'short', 'stake', 'supply', 'protect'].join() && mk2ExecSidesFor(linkPair).join() === ['buy', 'sell', 'long', 'short', 'supply', 'protect'].join() &&
         mk2ExecSidesFor(aaplPair).join() === ['buy', 'sell'].join() && mk2ExecSidesFor(hypePair).join() === ['long', 'short', 'protect'].join() &&
         mk2ExecSidesFor(solPair).join() === ['long', 'short'].join() &&
         [...ethExec, ...mk2ExecAsks(aaplPair), ...mk2ExecAsks(hypePair), ...mk2ExecAsks(solPair)].every((a) => simulateLadder(a.ask).kind === 'action'),
@@ -25770,7 +25770,7 @@ async function main() {
     const cases: [string, Mk2LegKind[], Parameters<typeof mk2ComposeCompound>[3]][] = [
       ['ETH', ['buy', 'stake'], {}], ['ETH', ['fund', 'buy', 'stake'], { chainId: 8453, fund: coinLeg('ETH', 50, 8453, true, 10) }],
       ['ETH', ['deposit', 'long', 'protect'], { leverage: 2 }], ['ETH', ['short', 'protect'], { leverage: 3 }], ['ETH', ['fund', 'buy', 'stake'], { usd: 100, fund: coinLeg('ETH', 100, 1, true, 10) }],
-      ['LINK', ['buy', 'supply'], {}], ['LINK', ['fund', 'buy'], { chainId: 8453, fund: coinLeg('LINK', 50, 8453, true, 42161) }], ['LINK', ['fund', 'buy'], { chainId: 42161, fund: coinLeg('LINK', 50, 42161, true, 10) }],
+      ['LINK', ['buy', 'supply'], {}], ['ETH', ['buy', 'supply'], {}], ['LINK', ['fund', 'buy'], { chainId: 8453, fund: coinLeg('LINK', 50, 8453, true, 42161) }], ['LINK', ['fund', 'buy'], { chainId: 42161, fund: coinLeg('LINK', 50, 42161, true, 10) }],
       ['LINK', ['fund', 'supply'], { fund: coinLeg('LINK', 50, 1, false, 10) }], ['LINK', ['fund', 'buy'], { chainId: 8453, fund: coinLeg('LINK', 50, 8453, true, 10, legScanGasOnly) }],
       ['BTC', ['deposit', 'short'], {}], ['SOL', ['deposit', 'long', 'protect'], { leverage: 5 }], ['HYPE', ['long', 'protect'], {}],
       ['AAPL', ['fund', 'buy'], { fund: stockLeg(50, 8453) }], ['AAPL', ['fund', 'buy'], { usd: 100, fund: stockLeg(100, 42161) }], ['AAPL', ['fund', 'buy'], { usd: 25, fund: stockLeg(25, 8453, true) }],
@@ -27696,9 +27696,9 @@ async function main() {
     const usdc = aave.find((r) => r.asset === 'USDC')!
     const eth = aave.find((r) => r.asset === 'ETH')!
     check(
-      'earn: Aave rows group spokes per asset — USDC shows the best spoke rate (11.38, Ethena) with the summed supplied USD parsed from dollar strings, its ask says "at the best rate" only when >1 spoke lists it, WETH is shown as ETH with its rate and NO chip (the layer has no wrap step — "Supply $100 of ETH to Aave" refused, RE-PINNED 2026-10-05), and unsupplyable/inactive reserves never become rows',
+      'earn: Aave rows group spokes per asset — USDC shows the best spoke rate (11.38, Ethena) with the summed supplied USD parsed from dollar strings, its ask says "at the best rate" only when >1 spoke lists it, WETH is shown as ETH with its rate and a chip in ETH, what people hold (the layer wraps it first; RE-PINNED 2026-10-05, twice), and unsupplyable/inactive reserves never become rows',
       aave.length === 2 && usdc.apyPct === 11.38 && usdc.tvlUsd === 1_500_000.5 && usdc.askFor(25) === 'Supply $25 of USDC to Aave at the best rate' && /Ethena/.test(usdc.detail) &&
-        eth.apyPct === 2.13 && eth.askFor(100) === null && eth.tvlUsd === 89_106_473.29,
+        eth.apyPct === 2.13 && eth.askFor(100) === 'Supply $100 of ETH to Aave' && eth.tvlUsd === 89_106_473.29,
       JSON.stringify(aave.map((r) => [r.asset, r.apyPct, r.tvlUsd, r.askFor(25)])),
     )
     const lidoPriced = earnLidoRow(2.27, 2.6e10, 2500)
