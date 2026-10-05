@@ -1106,6 +1106,24 @@ export default function MarketChart({
     [pair, last, actionUsd, held, tradable],
   )
 
+  // The lit averages' values for the on-plot readout: each reads at the bar
+  // the readout is on, in the color its line draws with.
+  const legendLines = useMemo(() => {
+    if (!lineSrc.length) return []
+    const rolling: [OverlayKey, () => LinePoint[]][] = [
+      ['sma20', () => sma(lineSrc, 20)],
+      ['sma50', () => sma(lineSrc, 50)],
+      ['sma200', () => sma(lineSrc, 200)],
+      ['ema20', () => ema(lineSrc, 20)],
+    ]
+    return rolling
+      .filter(([key]) => overlays.has(key))
+      .map(([key, points]) => {
+        const spec = OVERLAYS.find((o) => o.key === key)
+        return { key, label: spec?.label ?? key, swatch: spec?.swatch ?? 'currentColor', at: new Map(points().map((pt) => [pt.t, pt.v])) }
+      })
+  }, [lineSrc, overlays])
+
   const premium = poolPremiumPct(pool, last)
   const feedLabel = data?.feed ?? pair?.source ?? ''
 
@@ -1221,7 +1239,7 @@ export default function MarketChart({
         }}
       >
         <div ref={wrapRef} className="mkt-chart__engine" />
-        {candles.length > 0 && tool === 'none' && !noteDraft && <ChartLegend symbol={pair.symbol} tf={tf} bars={bars} hint={tools && !selectedId ? plusHint : null} />}
+        {candles.length > 0 && tool === 'none' && !noteDraft && <ChartLegend symbol={pair.symbol} tf={tf} bars={bars} lines={legendLines} hint={tools && !selectedId ? plusHint : null} />}
         {tools && tool === 'none' && !noteDraft && !selectedId && (
           <button ref={plusRef} type="button" className="mkt-plus" data-draw-handle aria-label="Put a level at this price" onClick={dropLevel}>
             <Plus className="h-3.5 w-3.5" />

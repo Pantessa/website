@@ -6,6 +6,9 @@
 // (lib/markets-ai-hover), so a crosshair move re-renders these few spans and
 // never the chart around them. The numbers are lib/chart-legend's (pinned).
 //
+// A second line reads the lit moving averages at the same bar, each wearing
+// its line's color (desktop only: a phone keeps one line over the plot).
+//
 // Pointer-transparent: the chart keeps every gesture.
 
 import { useMemo } from 'react'
@@ -14,7 +17,15 @@ import type { Candle, ChartTf } from '@/lib/charts'
 import { fmtLegendPct, fmtLegendTime, fmtLegendVol, legendOf } from '@/lib/chart-legend'
 import { useChartHover } from '@/lib/markets-ai-hover'
 
-export default function ChartLegend({ symbol, tf, bars, hint }: { symbol: string; tf: ChartTf; bars: readonly Candle[]; hint?: string | null }) {
+export interface LegendLine {
+  key: string
+  label: string
+  /** The CSS color the line draws with (OVERLAYS.swatch). */
+  swatch: string
+  at: Map<number, number | null>
+}
+
+export default function ChartLegend({ symbol, tf, bars, lines, hint }: { symbol: string; tf: ChartTf; bars: readonly Candle[]; lines?: LegendLine[]; hint?: string | null }) {
   const hoverT = useChartHover((s) => (s.symbol === symbol && s.bar ? s.bar.t : null))
   const read = useMemo(() => legendOf(bars, hoverT), [bars, hoverT])
   if (!read) return null
@@ -40,6 +51,20 @@ export default function ChartLegend({ symbol, tf, bars, hint }: { symbol: string
           </span>
         )}
       </div>
+      {lines && lines.length > 0 && (
+        <div className="mkt-legend__row mkt-legend__lines">
+          {lines.map((ln) => {
+            const v = ln.at.get(read.t)
+            return (
+              <span key={ln.key} className="mkt-legend__line">
+                <i style={{ background: ln.swatch }} />
+                <span className="mkt-legend__k">{ln.label}</span>
+                {v === null || v === undefined ? '—' : fmtPrice(v)}
+              </span>
+            )
+          })}
+        </div>
+      )}
       {hint && hoverT === null ? <div className="mkt-legend__hint">{hint}</div> : null}
     </div>
   )

@@ -5802,8 +5802,10 @@
 .mkt-legend--down .mkt-legend__cell:not(.mkt-legend__vol), .mkt-legend--down .mkt-legend__chg { color: var(--sell); }
 .mkt-legend__vol { color: var(--muted); }
 .mkt-legend__hint { margin-top: 2px; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); width: fit-content; background: color-mix(in oklch, var(--bg) 72%, transparent); border-radius: 3px; }
+.mkt-legend__lines { color: var(--muted); font-size: 10px; }
+.mkt-legend__line i { display: inline-block; width: 8px; height: 3px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
 /* A phone keeps the readout to ONE line over the plot: the four prices and the move (the bar's date and volume are the axis's and the histogram's). */
-@media (max-width: 480px) { .mkt-legend { font-size: 10px; max-width: calc(100% - 66px); } .mkt-legend__row { column-gap: 6px; flex-wrap: nowrap; white-space: nowrap; } .mkt-legend__when, .mkt-legend__vol { display: none; } }
+@media (max-width: 480px) { .mkt-legend { font-size: 10px; max-width: calc(100% - 66px); } .mkt-legend__row { column-gap: 6px; flex-wrap: nowrap; white-space: nowrap; } .mkt-legend__when, .mkt-legend__vol, .mkt-legend__lines { display: none; } }
 /* The "+" on the price axis: follows the crosshair (MarketChart writes left/top), one press puts a level there. */
 .mkt-plus {
   position: absolute; z-index: 4; display: none; place-items: center; width: 22px; height: 22px; border-radius: 6px;
@@ -5813,8 +5815,8 @@
 .mkt-plus:hover { filter: brightness(1.08); }
 /* a thumb's target without a bigger square on the plot */
 @media (hover: none) { .mkt-plus::after { content: ''; position: absolute; inset: -11px; } }
-/* Undo / redo / clear, over the plot's top right (clear of the price axis). */
-.mkt-chart__edit { position: absolute; z-index: 4; top: 6px; right: 70px; background: color-mix(in oklch, var(--surf-1) 88%, transparent); }
+/* Undo / redo / clear, over the plot's bottom left: the volume strip, clear of the readout (top left), the last-price and pool labels (top right) and Live (bottom right). */
+.mkt-chart__edit { position: absolute; z-index: 4; left: 8px; bottom: 34px; background: color-mix(in oklch, var(--surf-1) 88%, transparent); }
 /* markets.css drops the bar's Select arrow (its first tool) on a phone; this group's first tool is Undo. */
 .sym .mkt-chart__tools.mkt-chart__edit > .mkt-tool:first-child { display: grid; }
 /* Back to the newest bar, once it has left the view. */
