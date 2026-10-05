@@ -165,7 +165,7 @@ export async function POST(req: NextRequest) {
         resolve(entry)
       } catch (e) {
         reject(e)
-        c.enqueue(line({ type: 'error', reason: 'The model did not finish the brief — try again.' }))
+        c.enqueue(line({ type: 'error', reason: 'The model did not finish the brief.' }))
       }
       c.enqueue(line({ type: 'done' }))
       c.close()
