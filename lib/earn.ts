@@ -142,12 +142,12 @@ export function aaveRows(reserves: readonly AaveReserveRow[]): EarnRow[] {
       best: false,
       // No chip where the sentence can't run (2026-10-05 — every chip is one
       // the venue can execute). The row keeps its rate either way.
-      // • WETH: people hold ETH, the reserve takes WETH, and the layer has no
-      //   wrap step — "Supply $25 of ETH to Aave" answered "ETH isn't an
-      //   active, supplyable reserve" from this very row.
+      // • WETH: the chip names ETH, what people hold. The supply layer wraps
+      //   it into this reserve first (lib/aave-exec), or supplies WETH the
+      //   wallet already holds.
       // • AAVE: "… of AAVE to Aave" reads as the venue word twice and falls
       //   to the planner (probed through the ladder).
-      askFor: (usd) => (sym === 'WETH' || sym === 'AAVE' ? null : `Supply ${fmtUsdAmount(usd)} of ${sym} to Aave${multi ? ' at the best rate' : ''}`),
+      askFor: (usd) => (sym === 'AAVE' ? null : `Supply ${fmtUsdAmount(usd)} of ${asset} to Aave${multi ? ' at the best rate' : ''}`),
     })
   }
   return rows

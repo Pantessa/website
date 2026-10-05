@@ -28,9 +28,13 @@ import {
   type AavePortfolioBorrowRow,
   type AaveReserveRow,
   type AaveSupplyParams,
+  type PickedReserve,
 } from '@/lib/aave-supply'
+import { erc20Abi, formatEther, getAddress } from 'viem'
+import { chainById, publicClientFor } from '@/lib/chains'
 import { humanToAtoms } from '@/lib/cow'
 import { callMcpTool } from '@/lib/mcp-call'
+import { aaveReserveSymbolFor, buildWethWrapTx, guardWethWrap, planWethWrap, wrapGasReserveWei, type WrapPlan } from '@/lib/weth-wrap'
 
 export const AAVE_MCP = 'https://aave-mcp.yeetful.com/mcp'
 
@@ -56,20 +60,135 @@ async function readReserves(token: string): Promise<AaveReserveRow[]> {
   return res?.reserves ?? []
 }
 
+// ── ETH supplies ride a wrap ───────────────────────────────────────────────
+// Aave v4 on Ethereum lists WETH, not native ETH, and the agent's build_supply
+// checks the WETH balance at build time. So "supply $50 of ETH to Aave" is two
+// signatures: a guarded WETH.deposit{value} first, then the ordinary WETH
+// approve + supply, built only once the wrap has confirmed (a job step is
+// completed on its receipt, so the next build sees the wrapped balance).
+// The reserve is read as WETH and must BE the registry's wrappedNative: we
+// wrap into that contract, so a reserve listing any other "WETH" refuses.
+// BTC is deliberately NOT aliased: Aave lists WBTC and cbBTC, two different
+// tokens with different custodians, and "BTC" names neither.
+
+export interface EthSupplyPlan {
+  picked: PickedReserve
+  /** Resolved human WETH amount the supply moves. */
+  amount: string
+  needWei: bigint
+  ethWei: bigint
+  wethWei: bigint
+  plan: WrapPlan
+}
+
+async function readEthAndWeth(wallet: string): Promise<{ ethWei: bigint; wethWei: bigint }> {
+  const client = publicClientFor(1)
+  const weth = chainById(1)?.wrappedNative
+  if (!client || !weth) throw new Error('No Ethereum RPC configured — cannot read the ETH and WETH balances.')
+  const [ethWei, wethWei] = await Promise.all([
+    client.getBalance({ address: wallet as `0x${string}` }),
+    client.readContract({ address: weth, abi: erc20Abi, functionName: 'balanceOf', args: [wallet as `0x${string}`] }),
+  ])
+  return { ethWei, wethWei }
+}
+
+/**
+ * Resolve an ETH supply against the WETH reserve and the wallet's live
+ * balances: which pool, how much WETH, and how much ETH to wrap first (none
+ * when the wallet already holds the WETH). Returns `{problem}` with the
+ * honest reason; throws only on transport failures.
+ */
+export async function planEthSupply(
+  wallet: string,
+  params: { amount: string; amountIsUsd?: boolean; bestRate?: boolean },
+  rows?: AaveReserveRow[],
+): Promise<EthSupplyPlan | { problem: string }> {
+  const picked = pickSupplyReserve(rows ?? (await readReserves('WETH')), 'WETH', { bestRate: params.bestRate === true })
+  if (!picked) return { problem: "WETH isn't an active, supplyable Aave v4 reserve on Ethereum right now, so there's nowhere to put the ETH." }
+  const weth = chainById(1)?.wrappedNative
+  if (!weth || getAddress(picked.currency) !== getAddress(weth)) {
+    return { problem: `Aave's WETH reserve (${picked.currency}) isn't the WETH contract we wrap into (${weth ?? 'unknown'}) — refusing to wrap.` }
+  }
+  const resolved = resolveSupplyAmount({ amount: params.amount, token: 'WETH', ...(params.amountIsUsd ? { amountIsUsd: true } : {}) }, picked)
+  if ('problem' in resolved) return { problem: resolved.problem.replace(/\bWETH\b/g, 'ETH') }
+  const atoms = humanToAtoms(resolved.amount, picked.decimals)
+  if (!atoms) return { problem: `“${resolved.amount}” has more decimal places than ETH supports.` }
+  const needWei = BigInt(atoms)
+  const { ethWei, wethWei } = await readEthAndWeth(wallet)
+  return { picked, amount: resolved.amount, needWei, ethWei, wethWei, plan: planWethWrap({ chainId: 1, needWei, ethWei, wethWei }) }
+}
+
+/**
+ * The wrap as a job step. `wrapWei` (set by the chat turn, which planned
+ * against live balances) is wrapped as-is; a compound job compiled without a
+ * wallet carries the ask instead and plans here. Either way the ETH balance
+ * is re-read at offer time and the call is re-verified by the guard.
+ */
+export async function buildWethWrapArtifact(
+  wallet: string,
+  params: { wrapWei?: string; amount?: string; amountIsUsd?: boolean; bestRate?: boolean },
+): Promise<{ artifact: Record<string, unknown>; guardReport: { ok: true; warnings: string[]; valueUsd: null } }> {
+  let wrapWei: bigint
+  if (params.wrapWei) {
+    wrapWei = BigInt(params.wrapWei)
+    const { ethWei } = await readEthAndWeth(wallet)
+    const reserve = wrapGasReserveWei(1)
+    if (ethWei < wrapWei + reserve) {
+      throw new Error(`The wallet holds ${formatEther(ethWei)} ETH on Ethereum; wrapping ${formatEther(wrapWei)} ETH and keeping ~${formatEther(reserve)} ETH for gas needs more. Nothing was built.`)
+    }
+  } else {
+    const planned = await planEthSupply(wallet, { amount: params.amount ?? '', amountIsUsd: params.amountIsUsd, bestRate: params.bestRate })
+    if ('problem' in planned) throw new Error(planned.problem)
+    if (planned.plan.kind === 'short') throw new Error(planned.plan.problem)
+    if (planned.plan.kind === 'covered') {
+      throw new Error(`The wallet already holds ${formatEther(planned.wethWei)} WETH, enough for the supply — nothing to wrap. Cancel this job and ask “supply ${planned.amount} WETH to Aave”.`)
+    }
+    wrapWei = planned.plan.wrapWei
+  }
+  const tx = buildWethWrapTx(1, wrapWei)
+  if (!tx) throw new Error('Could not build the WETH wrap on Ethereum.')
+  const guard = guardWethWrap(tx, { chainId: 1, wrapWei })
+  if (!guard.ok) throw new Error(guard.reasons.join(' '))
+  const summary = `Wrap ${formatEther(wrapWei)} ETH into WETH on Ethereum`
+  // A wrap moves no money anywhere (ETH → the same value of WETH in the same
+  // wallet), so it books nothing; the supply step carries the value.
+  return { artifact: { txRequest: tx as unknown as Record<string, unknown>, summary }, guardReport: { ok: true, warnings: [], valueUsd: null } }
+}
+
 /** Supply as a job step: reserves → build_supply → guard. Throws honestly. */
 export async function buildAaveSupplyArtifact(
   wallet: string,
   params: { token: string; amount: string; amountIsUsd?: boolean; bestRate?: boolean },
 ): Promise<AaveArtifactBuilt> {
-  const token = params.token.toUpperCase()
+  const asked = params.token.toUpperCase()
+  // An ETH supply supplies the WETH its wrap step just made (see above).
+  const token = aaveReserveSymbolFor(asked)
   const picked = pickSupplyReserve(await readReserves(token), token, { bestRate: params.bestRate === true })
   if (!picked) throw new Error(`${token} isn't an active, supplyable Aave v4 reserve on Ethereum right now.`)
   // Dollar asks price from the reserve's own pool totals (stables are 1:1).
   const resolved = resolveSupplyAmount({ amount: params.amount, token, ...(params.amountIsUsd ? { amountIsUsd: true } : {}) }, picked)
   if ('problem' in resolved) throw new Error(resolved.problem)
   params = { ...params, amount: resolved.amount }
-  const atoms = humanToAtoms(params.amount, picked.decimals)
+  let atoms = humanToAtoms(params.amount, picked.decimals)
   if (!atoms) throw new Error(`“${params.amount}” has more decimal places than ${token} supports (${picked.decimals}).`)
+  if (asked === 'ETH') {
+    const weth = chainById(1)?.wrappedNative
+    if (!weth || getAddress(picked.currency) !== getAddress(weth)) {
+      throw new Error(`Aave's WETH reserve (${picked.currency}) isn't the WETH contract the wrap made — refusing to supply.`)
+    }
+    // A dollar ask re-prices here, a minute after the wrap priced it. A price
+    // drift of up to 3% supplies what the wrap made; more than that is not
+    // drift, and the build refuses rather than guess.
+    const { wethWei } = await readEthAndWeth(wallet)
+    const need = BigInt(atoms)
+    if (wethWei < need) {
+      if (wethWei * BigInt(100) < need * BigInt(97)) {
+        throw new Error(`The wallet holds ${formatEther(wethWei)} WETH, short of the ${formatEther(need)} WETH this supply needs — the wrap step may not have confirmed yet.`)
+      }
+      atoms = wethWei.toString()
+      params = { ...params, amount: formatEther(wethWei) }
+    }
+  }
 
   const built = (await callMcpTool(AAVE_MCP, 'build_supply', {
     spokeAddress: picked.spokeAddress,

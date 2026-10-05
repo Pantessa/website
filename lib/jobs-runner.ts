@@ -40,7 +40,7 @@ import {
 } from '@/lib/lido-stake'
 import { publicClientFor, primaryStable } from '@/lib/chains'
 import { erc20Abi, formatEther } from 'viem'
-import { buildAaveRepayArtifact, buildAaveSupplyArtifact } from '@/lib/aave-exec'
+import { buildAaveRepayArtifact, buildAaveSupplyArtifact, buildWethWrapArtifact } from '@/lib/aave-exec'
 import { buildMorphoLendArtifact, buildMorphoRepayArtifact } from '@/lib/morpho-exec'
 import type { MorphoChainId } from '@/lib/morpho-supply'
 import { buildGuardedSwap } from '@/lib/swap-exec'
@@ -511,6 +511,15 @@ export async function buildSignArtifact(
       // that carries the 20/50 bps fee (lib/job-step-telemetry).
       buildPath: asBuildPath(built.buildPath),
     }
+  }
+  if (builder === 'native-weth-wrap') {
+    // The ETH → WETH wrap ahead of an Aave supply of ETH (lib/aave-exec):
+    // registry-addressed, deposit() only, the exact planned value, the gas
+    // reserve kept back. Completes on its receipt, so the supply step after
+    // it builds against the wrapped balance.
+    const p = params as { wrapWei?: string; amount?: string; amountIsUsd?: boolean; bestRate?: boolean }
+    const built = await buildWethWrapArtifact(wallet, p)
+    return { artifact: built.artifact, guardReport: built.guardReport, valueUsd: null }
   }
   if (builder === 'native-aave-supply' || builder === 'native-aave-repay') {
     // Aave steps ride the same fail-closed recipe chat uses (lib/aave-exec):

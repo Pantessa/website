@@ -29,6 +29,7 @@ import type { ChartPair } from '@/lib/charts'
 import { AAVE_CHAIN_ID, HL_SIGNING_CHAIN_ID, venuesFor } from '@/lib/symbol-venues'
 import { canFill, fillRefusal, type CapabilitySideKey, type TradabilityMap } from '@/lib/tradability'
 import { normalizeWatchSymbol } from '@/lib/watchlists'
+import { aaveReserveSymbolFor } from '@/lib/weth-wrap'
 
 /** One thing a venue has to list for a symbol's chips to run. */
 export interface CapabilityLeg {
@@ -67,11 +68,13 @@ export interface ReserveListing {
 /**
  * What Aave lists for a token, asked exactly as the supply layer asks it
  * (lib/aave-supply pickSupplyReserve): an ACTIVE row whose symbol is the
- * token the sentence names, with `canSupply` true. No aliasing — "ETH" is
- * not "WETH" to the builder, so it is not here either.
+ * reserve the builder resolves for the token the sentence names, with
+ * `canSupply` true. The builder wraps ETH into WETH first, so "ETH" reads the
+ * WETH row (lib/weth-wrap aaveReserveSymbolFor, the one mapping both use).
+ * Nothing else is aliased: "BTC" is neither WBTC nor cbBTC to the builder.
  */
 export function aaveCapability(reserves: readonly ReserveListing[], token: string): { supply: boolean; collateral: boolean } {
-  const sym = token.toUpperCase()
+  const sym = aaveReserveSymbolFor(token)
   const rows = reserves.filter((r) => r.active === true && (r.asset?.symbol ?? '').toUpperCase() === sym && r.canSupply === true)
   return { supply: rows.length > 0, collateral: rows.some((r) => r.canUseAsCollateral === true) }
 }
