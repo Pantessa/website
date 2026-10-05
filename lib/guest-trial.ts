@@ -11,6 +11,11 @@
 
 export const GUEST_TRIAL_LIMIT = 5
 
+/** What a guest out of free asks reads on a surface with no sign-in gate
+ *  (the ask door's sheet, /i). A connected wallet is enough to keep asking:
+ *  the trial only meters visitors with no wallet at all. */
+export const GUEST_WALL_COPY = `That was your ${GUEST_TRIAL_LIMIT} free asks without a wallet. Connect one to keep going: it is free, and nothing moves until you sign.`
+
 const KEY = 'yf_guest_turns'
 const EVT = 'yf-guest-turn'
 

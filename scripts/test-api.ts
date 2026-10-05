@@ -25449,7 +25449,7 @@ async function main() {
     check(
       'MK2/EXEC QuickAct: ETH = Buy $25 · Long 2x; a stock = Buy $25 on 4663 (never a perp); SOL = Long 2x · Short 2x (never a spot buy of a squat); no DCA chip (2026-09-16); every chip lands native; QuickAct.tsx stops the row link and sends through onAsk',
       qaEth.map((a) => a.label).join() === 'Buy $25,Long 2x' && qaEth[1].ask === '2x Long $25 of ETH on Hyperliquid' &&
-        qaAapl.map((a) => a.label).join() === 'Buy $25 on 4663' && qaAapl[0].ask === 'Buy $25 of AAPL' &&
+        qaAapl.map((a) => a.label).join() === 'Buy $25' && qaAapl[0].ask === 'Buy $25 of AAPL' &&
         qaSol.map((a) => a.label).join() === 'Long 2x,Short 2x' &&
         [...qaEth, ...qaAapl, ...qaSol, ...mk2QuickActs('HYPE', hypePair), ...mk2QuickActs('LINK', linkPair)].every((a) => simulateLadder(a.ask).kind === 'action') &&
         (await readFile('components/markets/trade/QuickAct.tsx', 'utf8')).includes('e.stopPropagation()') && (await readFile('components/markets/trade/QuickAct.tsx', 'utf8')).includes('onAsk(ask)'),

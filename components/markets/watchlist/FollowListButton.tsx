@@ -4,6 +4,7 @@
 // /api/watchlists/fork copies it into your lists with fork_of set; a guest
 // gets the unified sign-in door (rule 6) landing back on this page.
 
+import { notAnswering, shownError } from '@/lib/fetch-words'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import CreateAccountButton from '@/components/CreateAccountButton'
@@ -29,12 +30,12 @@ export default function FollowListButton({ slug, owner }: { slug: string; owner:
           setState('busy')
           try {
             const res = await fetch('/api/watchlists/fork', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slug }) })
-            const j = (await res.json()) as { error?: string }
-            if (!res.ok) throw new Error(j.error ?? `HTTP ${res.status}`)
+            const j = (await res.json().catch(() => ({}))) as { error?: string }
+            if (!res.ok) throw new Error(j.error ?? notAnswering('Following'))
             setState('done')
             router.refresh()
           } catch (e) {
-            setError((e as Error).message)
+            setError(shownError(e, 'Following'))
             setState('error')
           }
         }}

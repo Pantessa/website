@@ -10,6 +10,7 @@
 //                         NOW by name, instead of an alert. The venue
 //                         watches the price; our cron never touches it.
 
+import { shownError } from '@/lib/fetch-words'
 import { useMemo, useState } from 'react'
 import { Bell } from 'lucide-react'
 import Sheet from '@/components/mobile/Sheet'
@@ -66,7 +67,7 @@ export default function AlertForm({
       })
       onClose()
     } catch (e) {
-      setError((e as Error).message)
+      setError(shownError(e, 'Alerts', 'Nothing was saved; try again in a moment.'))
     } finally {
       setBusy(false)
     }

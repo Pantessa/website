@@ -9,6 +9,7 @@
 
 import { chartPairFor, parseChartAsk, type Candle, type ChartPair, type ChartSource } from '@/lib/charts'
 import { ROBINHOOD_TICKERS, ROBINHOOD_TICKER_NAMES } from '@/lib/robinhood-tickers'
+import { APP_CHAINS } from '@/lib/chains'
 
 // ── Sections ────────────────────────────────────────────────────────────────
 
@@ -143,6 +144,26 @@ export function symbolName(symbol: string): string {
   const pair = chartPairFor(symbol)
   const sym = pair?.symbol ?? symbol.toUpperCase()
   return ROBINHOOD_TICKER_NAMES[sym] ?? COIN_NAMES[sym] ?? sym
+}
+
+/** What /t/<symbol> can honestly say about a symbol with no chart.
+ *   charted  - a candle feed exists (the normal page)
+ *   listed   - no feed, but a token we know by name: a stablecoin or
+ *              wrapped token in the chain registry, a Robinhood Chain
+ *              listing without a tape. Tradable in chat; the page says so.
+ *   unknown  - nothing we know by that name (a typo, a guess, a ticker we
+ *              don't carry). The page must NOT offer "Buy NOTREAL" or
+ *              promise that trading it in chat works: the chip would end in
+ *              a refusal. It sends the visitor to search instead.
+ *  Pure and client-safe; pinned in scripts/gtm-onboard-pins.ts. */
+export type SymbolStanding = 'charted' | 'listed' | 'unknown'
+const REGISTRY_SYMBOLS: ReadonlySet<string> = new Set(APP_CHAINS.flatMap((c) => Object.keys(c.tokens).map((k) => k.toUpperCase())))
+export function symbolStanding(symbol: string): SymbolStanding {
+  if (chartPairFor(symbol)) return 'charted'
+  const sym = symbol.trim().toUpperCase()
+  if (!sym) return 'unknown'
+  if (ROBINHOOD_TICKER_NAMES[sym] || COIN_NAMES[sym] || REGISTRY_SYMBOLS.has(sym)) return 'listed'
+  return 'unknown'
 }
 
 // ── Venue + session ─────────────────────────────────────────────────────────
