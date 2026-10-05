@@ -136,8 +136,11 @@ export default function ShareActions({ post, variant = 'row', label = 'Share', l
           {copied ? <Check className="h-3.5 w-3.5" aria-hidden /> : <Share2 className="h-3.5 w-3.5" aria-hidden />}
           <span>{copied ? 'Link copied' : label}</span>
         </button>
-        {open && !native && (
-          <div role="menu" className="absolute right-0 top-full z-30 mt-2 flex min-w-[168px] flex-col gap-1 rounded-xl border border-[var(--line)] bg-[var(--surf-1)] p-1.5 shadow-xl shadow-black/30">
+        {/* Always in the markup (hidden until opened) where there is no share
+            sheet: the post's link is in the server HTML, for a reader with no
+            script and for the pins that look for it. */}
+        {!native && (
+          <div role="menu" hidden={!open} className="absolute right-0 top-full z-30 mt-2 min-w-[168px] flex-col gap-1 rounded-xl [&:not([hidden])]:flex border border-[var(--line)] bg-[var(--surf-1)] p-1.5 shadow-xl shadow-black/30">
             <button
               type="button"
               role="menuitem"
