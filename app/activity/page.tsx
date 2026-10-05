@@ -8,6 +8,7 @@ import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import LiveRoutingFeed from '@/components/LiveRoutingFeed'
 import { LinksDaily } from '@/components/LazyCharts'
 import { linksBoard, feeSummary, linkDailySeries } from '@/lib/links-board'
+import { SITE_CARD } from '@/lib/og-defaults'
 
 // Public system overview — the whole money story on one page: every dollar
 // the system moved (swaps, lending, staking, cross-chain, votes + x402
@@ -25,10 +26,17 @@ export const metadata: Metadata = {
   description:
     'The Pantessa system, live: notional USD moved through signed transactions across every venue — swaps, lending, staking, cross-chain — plus the intent-links board and the fees the link economy pays creators.',
   openGraph: {
+    images: SITE_CARD,
     title: 'Pantessa network activity',
     description:
       'Money moved through the whole system, live — per-venue flow, the intent-links board, and where the fees go.',
     type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Pantessa network activity',
+    description: 'Money moved through the whole system, live — per-venue flow, the intent-links board, and where the fees go.',
+    images: SITE_CARD,
   },
 }
 

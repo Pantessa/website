@@ -150,7 +150,7 @@ export default async function CallPage({ params }: Params) {
           <Link href={`/t/${post.symbol}?tab=community`} className="mkt-share__btn">
             Open the {post.symbol} chart
           </Link>
-          <CallShareRow tweetHref={callTweetHref({ id: post.id, symbol: post.symbol, title: post.title, verified: heldAtCall })} url={callUrl(post.id)} />
+          <CallShareRow tweetHref={callTweetHref({ id: post.id, symbol: post.symbol, title: post.title, verified: heldAtCall })} url={callUrl(post.id)} title={`$${post.symbol}: ${post.title}`} />
         </div>
 
         {/* the conversation: the link on X lands here, so this is where people answer the idea */}

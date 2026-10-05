@@ -7,8 +7,9 @@ import { brandFromRow } from '@/lib/brand-denylist'
 import { getSessionAddress } from '@/lib/auth'
 import { brandCtaStyle, brandThemeStyle } from '@/lib/brand-theme'
 import Footer from '@/components/Footer'
+import ShareActions from '@/components/ShareActions'
+import { creatorPagePost, postHref } from '@/lib/share-posts'
 import { YeetfulMark } from '@/components/Logo'
-import { absoluteUrl } from '@/lib/site-url'
 import { REAL_TRAFFIC_WHERE } from '@/lib/value-origin'
 
 // /l/<handle> — a creator's storefront: their active intent links as one
@@ -104,8 +105,8 @@ export default async function StorefrontPage({ params }: Params) {
   // color runs edge to edge without touching layout.
   const themeStyle = brandThemeStyle(brand, { fullBleed: true })
 
-  const pageUrl = absoluteUrl(`/l/${store.handle}`)
-  const tweetHref = `https://twitter.com/intent/tweet?text=${encodeURIComponent(`Links that move money — @${store.handle}`)}&url=${encodeURIComponent(pageUrl)}`
+  const sharePost = creatorPagePost(store.handle, brand?.name ?? null)
+  const tweetHref = postHref(sharePost)
 
   return (
     <>
@@ -222,9 +223,7 @@ export default async function StorefrontPage({ params }: Params) {
             <Link href="/links" className="btn btn--ghost text-[13px]">
               The leaderboard
             </Link>
-            <a href={tweetHref} target="_blank" rel="noopener noreferrer" className="btn btn--ghost text-[13px]">
-              Share on 𝕏
-            </a>
+            <ShareActions post={sharePost} variant="pill" label="Share this page" surface="l" />
           </div>
           <p className="mono text-[11px] text-[color:var(--muted-2)] mt-6">
             Every link opens with an explicit Connect &amp; build step — nothing runs, nothing

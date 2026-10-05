@@ -14,6 +14,7 @@ import {
   UNLIMITED_LINE,
 } from '@/lib/markets-copy'
 import { SWAP_FEE_PCT } from '@/lib/fees'
+import { SITE_CARD } from '@/lib/og-defaults'
 
 // Markets — what the chart can do, said for a user. Every ask on this page is
 // a prefill (?prompt= never auto-sends — the #493 doctrine); in the app the
@@ -30,7 +31,8 @@ export const metadata: Metadata = {
   title: PAGE.seoTitle,
   description: PAGE.description,
   alternates: { canonical: docsUrl(PAGE.slug) },
-  openGraph: { title: PAGE.seoTitle, description: PAGE.description, url: docsUrl(PAGE.slug), type: 'article' },
+  openGraph: { images: SITE_CARD, title: PAGE.seoTitle, description: PAGE.description, url: docsUrl(PAGE.slug), type: 'article' },
+  twitter: { card: 'summary_large_image', title: PAGE.seoTitle, description: PAGE.description, images: SITE_CARD },
 }
 
 export default function MarketsDocsPage() {

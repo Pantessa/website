@@ -2555,6 +2555,20 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                         the deposit's own confirmation proved a transfer, not
                         a swap. A refund renders its own line above instead,
                         and never offers a receipt that says money moved. */}
+                    {/* A connect-only wallet's thread has no row yet, so there
+                        is no receipt to mint: offer the one signature that
+                        keeps the chat, after which this row becomes the real
+                        share (GTM share lane; "sign in to keep"). */}
+                    {msg.role === 'assistant' &&
+                      signedTxsOf(msg.meta).length > 0 &&
+                      claimsSettled(msg.meta) &&
+                      !msg.dbId &&
+                      !embedded && (
+                        <div className="mt-2 pt-1.5 border-t border-[var(--line)] flex items-center gap-2" data-signed-share="sign-in">
+                          <span className="text-[10.5px] mono text-[color:var(--muted-2)]">✍️ signed &amp; settled</span>
+                          <ShareReceiptButton kind="tx" signInFirst />
+                        </div>
+                      )}
                     {msg.role === 'assistant' &&
                       signedTxsOf(msg.meta).length > 0 &&
                       claimsSettled(msg.meta) &&

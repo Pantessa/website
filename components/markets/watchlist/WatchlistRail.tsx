@@ -41,6 +41,8 @@ import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
 import { useTradable } from '@/lib/use-tradable'
+import { useShareVia } from '@/components/ShareActions'
+import { listPost, withVia } from '@/lib/share-posts'
 
 const promptHref = (ask: string) => `/chat?prompt=${encodeURIComponent(ask)}`
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
@@ -221,19 +223,38 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
     [ensureList, wl],
   )
 
-  const share = useCallback(async () => {
-    if (!active || wl.mode !== 'authed') return
-    const slug = await wl.setPublic(active.id, true)
-    if (slug) {
-      const url = `${window.location.origin}/lists/${slug}`
+  // Hand a public list's link on: the phone's share sheet where there is one
+  // (with the pre-written words and the sharer's id on the link), else the
+  // clipboard. A sheet the browser refuses (the tap's activation can lapse
+  // while the list is being made public) falls back to the copy.
+  const shareVia = useShareVia()
+  const passOn = useCallback(
+    async (slug: string, name: string, symbols: string[]) => {
+      const post = listPost({ slug, name, symbols })
+      const url = withVia(`${window.location.origin}/lists/${slug}`, shareVia)
+      if (typeof navigator.share === 'function') {
+        try {
+          await navigator.share({ title: post.title, text: post.text, url })
+          return
+        } catch (e) {
+          if ((e as { name?: string })?.name === 'AbortError') return
+        }
+      }
       try {
         await navigator.clipboard.writeText(url)
         toast('Public link copied', 'success')
       } catch {
         toast(url, 'info')
       }
-    }
-  }, [active, wl, toast])
+    },
+    [shareVia, toast],
+  )
+
+  const share = useCallback(async () => {
+    if (!active || wl.mode !== 'authed') return
+    const slug = await wl.setPublic(active.id, true)
+    if (slug) await passOn(slug, active.name, active.symbols)
+  }, [active, wl, passOn])
 
   // What the rows area waits on (lib/watchlists railBrewPhase): the lists, or
   // the wallet check that can still fill an empty first list. No rows show
@@ -354,13 +375,11 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                       className="wl__popItem"
                       onClick={async () => {
                         setMenuOpen(false)
-                        if (active.isPublic && active.slug) {
-                          await navigator.clipboard.writeText(`${window.location.origin}/lists/${active.slug}`).catch(() => {})
-                          toast('Public link copied', 'success')
-                        } else await share()
+                        if (active.isPublic && active.slug) await passOn(active.slug, active.name, active.symbols)
+                        else await share()
                       }}
                     >
-                      <Link2 className="h-3.5 w-3.5" /> {active.isPublic ? 'Copy public link' : 'Share as a public list'}
+                      <Link2 className="h-3.5 w-3.5" /> {active.isPublic ? 'Share the public link' : 'Share as a public list'}
                     </button>
                   ) : (
                     <CreateAccountButton className="wl__popItem wl__popItem--door" label="Sign in to share this list" redirectTo={redirectTo} />

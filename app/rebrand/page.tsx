@@ -3,6 +3,7 @@ import Link from 'next/link'
 import Footer from '@/components/Footer'
 import { SITE } from '@/lib/docs'
 import { X_MENTION, X_PROFILE_URL } from '@/lib/social'
+import { SITE_CARD } from '@/lib/og-defaults'
 
 /** /rebrand — the public record of the Yeetful → Pantessa rename.
  * Trust surface: dated, factual, zero marketing. It exists so that
@@ -19,8 +20,8 @@ export const metadata: Metadata = {
   title: `${TITLE} — Pantessa`,
   description: DESCRIPTION,
   alternates: { canonical: `${SITE}/rebrand` },
-  openGraph: { title: TITLE, description: DESCRIPTION, url: `${SITE}/rebrand`, type: 'website' },
-  twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION },
+  openGraph: { images: SITE_CARD, title: TITLE, description: DESCRIPTION, url: `${SITE}/rebrand`, type: 'website' },
+  twitter: { images: SITE_CARD, card: 'summary_large_image', title: TITLE, description: DESCRIPTION },
 }
 
 const ext = { target: '_blank', rel: 'noopener noreferrer' } as const

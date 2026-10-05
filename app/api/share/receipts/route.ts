@@ -8,6 +8,7 @@ import {
   spotGuardShareContent,
   jobShareContent,
   txShareContent,
+  receiptPost,
   receiptTweetHref,
   shareReceiptUrl,
   viaIdOf,
@@ -141,6 +142,8 @@ export async function POST(req: NextRequest) {
       headline: receipt.headline,
       standing: receipt.standing,
       tweetHref: receiptTweetHref({ id: receipt.id, headline: receipt.headline, ask: receipt.ask, standing: receipt.standing, via }),
+      // The pre-written post without its link, for the device's share sheet.
+      text: receiptPost({ id: receipt.id, headline: receipt.headline, ask: receipt.ask, standing: receipt.standing, via }).text,
     },
     { status: existing ? 200 : 201 },
   )

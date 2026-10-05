@@ -33,6 +33,8 @@ import { absoluteUrl } from '@/lib/site-url'
 import { LINKS_STUDIO_HREF, linksStudioHref } from '@/lib/links-href'
 import { LINK_FEE_PCT } from '@/lib/fees'
 import { notifyLinksChanged } from '@/lib/links-changed'
+import { intentLinkPostAt } from '@/lib/share-posts'
+import ShareActions from '@/components/ShareActions'
 
 /** The vendored brand glyph for a mintable MCP, sized for a card pill.
  *  Marks render in `currentColor`, so they inherit the pill's ink. */
@@ -257,15 +259,8 @@ export function MintLinkForm({
               : 'Anyone who opens it connects a wallet and the path builds itself.'}
           </p>
         </div>
+        <ShareActions post={intentLinkPostAt(minted.ask, minted.url)} lead surface="mint" className="mt-3" />
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-          <a
-            href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${minted.ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(absoluteUrl(minted.url))}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"
-          >
-            tweet it
-          </a>
           <Link
             href={LINKS_STUDIO_HREF}
             className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"

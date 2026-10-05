@@ -8,6 +8,9 @@ import { chartPairFor } from '@/lib/charts'
 import { readQuotes } from '@/lib/quotes'
 import { fmtQuotePrice, sectionedRows, symbolName } from '@/lib/watchlists'
 import { publicWatchlistBySlug } from '@/lib/watchlists-store'
+import ShareActions from '@/components/ShareActions'
+import { listPost } from '@/lib/share-posts'
+import { absoluteUrl } from '@/lib/site-url'
 
 // /lists/<slug> — a shared watchlist as a social object (BUSINESS-MODEL
 // §4: shareable, followable, forkable, free). Server-rendered with live
@@ -24,18 +27,24 @@ type Params = { params: Promise<{ slug: string }> }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params
-  const list = await publicWatchlistBySlug(slug)
+  const list = await publicWatchlistBySlug(slug).catch(() => null)
   if (!list) return { title: 'List not found — Pantessa' }
   const title = `${list.name} — a Pantessa watchlist`
   const description = `${list.symbols.length} symbols: ${list.symbols.slice(0, 8).join(', ')}${list.symbols.length > 8 ? '…' : ''}. Live quotes, and every row trades from one sentence — your wallet signs.`
-  return { title, description, openGraph: { title, description } }
+  return {
+    title,
+    description,
+    alternates: { canonical: absoluteUrl(`/lists/${list.slug ?? slug}`) },
+    openGraph: { title, description, url: absoluteUrl(`/lists/${list.slug ?? slug}`), type: 'website' },
+    twitter: { card: 'summary_large_image', title, description },
+  }
 }
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 
 export default async function PublicListPage({ params }: Params) {
   const { slug } = await params
-  const list = await publicWatchlistBySlug(slug)
+  const list = await publicWatchlistBySlug(slug).catch(() => null)
   if (!list) notFound()
   const { quotes } = await readQuotes(list.symbols).catch(() => ({ quotes: {} as Record<string, never> }))
   const groups = sectionedRows(list)
@@ -49,7 +58,9 @@ export default async function PublicListPage({ params }: Params) {
             <span className="mono">{list.symbols.length} symbols</span>
             <span className="mono">{list.followers} following</span>
             <span className="mono" title={list.owner ?? ''}>by {list.owner ? short(list.owner) : 'guest'}</span>
-            <span className="ml-auto">
+            <span className="ml-auto flex flex-wrap items-center justify-end gap-2">
+              {/* Pass it on: the phone's share sheet, or copy / the pre-written post. */}
+              <ShareActions post={listPost({ slug: list.slug ?? slug, name: list.name, symbols: list.symbols })} variant="pill" surface="lists" />
               <FollowListButton slug={slug} owner={list.owner ?? ''} />
             </span>
           </div>

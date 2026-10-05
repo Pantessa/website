@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import RosterTranscript from '@/components/RosterTranscript'
 import { rosterEnabled } from '@/lib/league'
+import { SITE_CARD } from '@/lib/og-defaults'
 
 // /docs/roster — the Roster explained through its own proof session (wave 2,
 // visuals). The RosterTranscript strip IS the doc: the QA DEMO-PROOF run
@@ -19,7 +20,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const title = 'The Roster — hire agents for your money'
   const description =
     'How a mandate becomes a hire, a proposal, and a signature — the whole Roster loop replayed from a real proof session. Non-custodial: agents propose, your wallet holds the only pen.'
-  return { title, description, openGraph: { title, description, type: 'article' } }
+  return { title, description, openGraph: { images: SITE_CARD, title, description, type: 'article' }, twitter: { card: 'summary_large_image', title, description, images: SITE_CARD } }
 }
 
 export default async function RosterDocsPage() {
