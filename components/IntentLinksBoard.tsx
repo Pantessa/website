@@ -42,7 +42,7 @@ export default function IntentLinksBoard({ board }: { board: LinksBoard }) {
             role="tab"
             aria-selected={tab === t.key}
             onClick={() => setTab(t.key)}
-            className={`mono text-[11px] uppercase tracking-wider px-3 py-1.5 rounded-full border transition-colors ${
+            className={`mono text-[11px] uppercase tracking-wider px-3 py-1.5 rounded-full border border-solid transition-colors ${
               tab === t.key
                 ? 'border-[var(--accent)] text-[color:var(--accent)] bg-[var(--surf-1)]'
                 : 'border-[var(--line)] text-[color:var(--muted-2)] hover:text-[color:var(--fg)]'

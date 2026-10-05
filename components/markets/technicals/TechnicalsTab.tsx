@@ -276,7 +276,7 @@ export default function TechnicalsTab({
         <div className="mt-6 rounded-xl border border-[var(--line)] px-4 py-6 text-center" data-technicals-refusal={refusal.error}>
           <p className="text-[13px] text-[color:var(--fg)]">{refusal.reason}</p>
           {refusal.error !== 'no chart source' && (
-            <button type="button" onClick={() => setTick((t) => t + 1)} className="mt-3 rounded-lg border border-[var(--line-2)] px-3 py-1.5 text-[12px] text-[color:var(--fg)]">
+            <button type="button" onClick={() => setTick((t) => t + 1)} className="mt-3 rounded-lg border border-solid border-[var(--line-2)] px-3 py-1.5 text-[12px] text-[color:var(--fg)]">
               Try again
             </button>
           )}

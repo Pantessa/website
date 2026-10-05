@@ -1114,7 +1114,7 @@ function InAppEscape({ browser }: { browser: InAppBrowser }) {
         <button
           type="button"
           onClick={() => void copy()}
-          className="flex items-center gap-1.5 px-2.5 min-h-10 rounded-lg border border-amber-400/60 bg-amber-400/10 text-[color:var(--fg)] hover:border-amber-400 transition-colors mono text-[11px] font-medium whitespace-nowrap"
+          className="flex items-center gap-1.5 px-2.5 min-h-10 rounded-lg border border-solid border-amber-400/60 bg-amber-400/10 text-[color:var(--fg)] hover:border-amber-400 transition-colors mono text-[11px] font-medium whitespace-nowrap"
           data-inapp-copy
         >
           {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />} {copied ? 'COPIED' : 'COPY THIS LINK'}

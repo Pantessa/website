@@ -2667,7 +2667,8 @@
   :root[data-theme='light'] .ca__gem { filter: drop-shadow(0 3px 10px color-mix(in oklch, var(--accent) 26%, transparent)); }
   @media (max-width: 380px) {
     .ca__panel { padding: 26px 18px 18px; }
-    .ca__lane { font-size: 10px; padding: 3px 7px; }
+    /* (.ca__lane's old text-chip padding lived here: on a 26px logo tile it
+       pushed every mark 7px right and 3px down, cropping it under 380px.) */
   }
   /* A SHORT viewport is the phone keyboard, not a small phone: the door has
      to give back ~80px so it still fits whole rather than relying on the
