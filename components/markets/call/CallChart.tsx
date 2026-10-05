@@ -17,7 +17,9 @@ const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt
 export default function CallChart({ symbol, state, fills, callT, callLabel }: { symbol: string; state: ChartState | null; fills: FillMarker[]; callT: number; callLabel: string }) {
   const markers = useMemo(() => [{ t: callT, label: callLabel }], [callT, callLabel])
   return (
-    <div className="tchart callpg__chart">
+    // Not `.tchart`: that class is the full-viewport chart shell (height: 100dvh − nav),
+    // and on this page it left a screen of empty space under a 420px chart.
+    <div className="callpg__chart">
       <MarketChart symbol={symbol} height={420} state={state} defaultTf={state?.tf} tools={false} fills={fills} markers={markers} askHref={promptHref} defaultOverlays={DEFAULT_SYMBOL_OVERLAYS} />
     </div>
   )

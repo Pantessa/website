@@ -5868,7 +5868,7 @@
 @media (hover: none) { .mkt-share__form input { min-height: 44px; font-size: 16px; } }
 
 /* /c/<id> — a call: the stamp, the chart, the proof */
-.callpg { width: min(980px, 100%); margin: 0 auto; padding: 28px 16px 56px; display: flex; flex-direction: column; gap: 16px; }
+.callpg { width: min(980px, 100%); margin: 0 auto; padding: 28px 16px 104px; /* the bottom clears the floating ask pill, so it never sits on the reply box */ display: flex; flex-direction: column; gap: 16px; }
 .callpg__kicker { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
 .callpg__kicker a { color: var(--muted); border-bottom: 1px solid var(--line); }
 .callpg__kicker a:hover { color: var(--fg); }
