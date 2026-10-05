@@ -109,7 +109,10 @@ export function aaveRows(reserves: readonly AaveReserveRow[]): EarnRow[] {
   const byAsset = new Map<string, AaveReserveRow[]>()
   for (const r of reserves) {
     const sym = r.asset?.symbol?.toUpperCase()
-    if (!sym || r.active === false || r.canSupply === false) continue
+    // The supply layer's own test (lib/aave-supply pickSupplyReserve): an
+    // ACTIVE row with canSupply true. A row that leaves either unsaid is one
+    // the build would refuse, so it is not a row here.
+    if (!sym || r.active !== true || r.canSupply !== true) continue
     if (typeof r.supplyApyPct !== 'number') continue
     const list = byAsset.get(sym) ?? []
     list.push(r)
@@ -124,7 +127,6 @@ export function aaveRows(reserves: readonly AaveReserveRow[]): EarnRow[] {
     }, null)
     const multi = list.length > 1
     const asset = sym === 'WETH' ? 'ETH' : sym
-    const askAsset = sym === 'WETH' ? 'ETH' : sym // the parser resolves ETH → WETH on Aave (AAVE_ALIASES)
     rows.push({
       id: `aave:1:${sym}`,
       venue: 'aave',
@@ -138,10 +140,14 @@ export function aaveRows(reserves: readonly AaveReserveRow[]): EarnRow[] {
       tvlUsd: tvl,
       detail: multi ? `${list.length} spokes · best on ${best.spoke ?? 'a spoke'}` : `${best.spoke ?? 'Main'} spoke`,
       best: false,
-      // The AAVE token itself: "Supply $25 of AAVE to Aave" reads as the venue
-      // word twice and falls to the planner (probed through the ladder) — the
-      // row shows its rate, the chip is omitted rather than sent to freelance.
-      askFor: (usd) => (sym === 'AAVE' ? null : `Supply ${fmtUsdAmount(usd)} of ${askAsset} to Aave${multi ? ' at the best rate' : ''}`),
+      // No chip where the sentence can't run (2026-10-05 — every chip is one
+      // the venue can execute). The row keeps its rate either way.
+      // • WETH: the chip names ETH, what people hold. The supply layer wraps
+      //   it into this reserve first (lib/aave-exec), or supplies WETH the
+      //   wallet already holds.
+      // • AAVE: "… of AAVE to Aave" reads as the venue word twice and falls
+      //   to the planner (probed through the ladder).
+      askFor: (usd) => (sym === 'AAVE' ? null : `Supply ${fmtUsdAmount(usd)} of ${asset} to Aave${multi ? ' at the best rate' : ''}`),
     })
   }
   return rows

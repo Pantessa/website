@@ -371,7 +371,7 @@ export default function SymbolPage({
         <div ref={shellRef} className={expanded ? 'tchart sym__chart tchart--expanded' : 'tchart sym__chart'}>
           <div className="tchart__canvas">
             {pair ? (
-              <ChartMount symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} onViewport={setViewport} compare={vs} fills={fills} />
+              <ChartMount symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} onViewport={setViewport} compare={vs} fills={fills} battlefield />
             ) : unknown ? (
               <div className="flex flex-1 items-center justify-center">
                 <div className="mkt-card max-w-md text-center" data-standing="unknown">

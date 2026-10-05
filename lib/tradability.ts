@@ -46,6 +46,14 @@ export const VENUE_STABLE: Readonly<Record<number, string>> = {
 
 export type TradeSideKey = 'buy' | 'sell'
 
+/** What a venue has to LIST for a non-swap chip to run (lib/venue-capability):
+ *  an Aave reserve that takes the token as a supply, one that counts it as
+ *  collateral, a live Hyperliquid perp. Measured from the venue's own list
+ *  and cached in the same rows as the swap legs. */
+export type CapabilitySideKey = 'supply' | 'collateral' | 'perp'
+export type LegSide = TradeSideKey | CapabilitySideKey
+export const LEG_SIDES: readonly LegSide[] = ['buy', 'sell', 'supply', 'collateral', 'perp']
+
 /** One swap a Buy/Sell chip would execute: the exact leg lib/swap-exec is
  *  asked for when the sentence is sent. */
 export interface TradeLeg {
@@ -90,7 +98,7 @@ export type LegVerdict = 'fillable' | 'no-venue'
 /** One measured leg, as the cache stores and the API serves it. */
 export interface TradableLeg {
   chainId: number
-  side: TradeSideKey
+  side: LegSide
   verdict: LegVerdict
   /** The cascade's own words for a refusal — what the UI says instead of a chip. */
   reason?: string
@@ -124,7 +132,7 @@ function fresh(leg: TradableLeg, now: number): boolean {
  * `chainId` narrows it to one chain (a "Buy on Base" row); omitted asks
  * whether ANY chain can fill it (a chip that names no chain).
  */
-export function canFill(t: SymbolTradability | null | undefined, side: TradeSideKey, chainId?: number | null, now = Date.now()): boolean {
+export function canFill(t: SymbolTradability | null | undefined, side: LegSide, chainId?: number | null, now = Date.now()): boolean {
   if (!t) return true
   const legs = t.legs.filter((l) => l.side === side && (chainId == null || l.chainId === chainId) && fresh(l, now))
   if (legs.length === 0) return true
@@ -133,7 +141,7 @@ export function canFill(t: SymbolTradability | null | undefined, side: TradeSide
 
 /** The refusal to SAY where a chip used to be — the cascade's own words for
  *  the most recently measured miss, or null when nothing is known to refuse. */
-export function fillRefusal(t: SymbolTradability | null | undefined, side: TradeSideKey, chainId?: number | null, now = Date.now()): string | null {
+export function fillRefusal(t: SymbolTradability | null | undefined, side: LegSide, chainId?: number | null, now = Date.now()): string | null {
   if (canFill(t, side, chainId, now)) return null
   const miss = t!.legs
     .filter((l) => l.side === side && (chainId == null || l.chainId === chainId) && l.verdict === 'no-venue' && fresh(l, now))

@@ -394,6 +394,7 @@ button.mk-held:hover { border-color: var(--accent); }
   .sym .mkt-chart__bar > .mkt-chart__right:not(:has(.mkt-pool)) > :not(.mkt-sharebtn):not(.tchart__fs) { flex-basis: 100%; }
   .sym .mkt-chart__bar > .mkt-chart__ind { order: 5; }
   .sym .mkt-chart__bar > .mkt-chart__tools { order: 6; }
+  .sym .mkt-chart__bar > .mkt-view { order: 1; }
   /* basis = the row minus the tools group and a gap: too wide for row 1's
      leftovers (it squeezed into ~50px there), so it wraps to row 2 and sits
      beside the tools. Four tools, not five: the Select arrow is the "stop

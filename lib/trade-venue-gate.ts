@@ -20,8 +20,11 @@
 //    cascade builds. Judged;
 //  • a CoW LIMIT order — a different venue with its own book, and a resting
 //    order is not a dead click. Left alone;
-//  • a perp Long/Short, a stake, a supply, a borrow, a guardian, a bridge —
-//    not swaps. Each carries its own venue fence. Left alone;
+//  • a perp Long/Short, a Guardian on a perp, an Aave supply — not swaps,
+//    but each needs its venue to LIST the token. Judged against the venue's
+//    own list (lib/venue-capability), in the same breath, so every surface
+//    that asks this rule gets both;
+//  • a stake, a borrow, a bridge — nothing here to measure. Left alone;
 //  • a card buy ("… with a card") — it ends in the same swap, so an
 //    unfillable symbol must not take someone through a checkout first.
 //    Judged, on the buy it funds.
@@ -32,6 +35,7 @@
 
 import { chainNamedInAsk, isSellAsk } from '@/lib/sell-gate'
 import { canFill, fillRefusal, type SymbolTradability, type TradabilityMap, type TradeSideKey } from '@/lib/tradability'
+import { canRunVenueAsk, venueAskRefusal } from '@/lib/venue-capability'
 import { normalizeWatchSymbol } from '@/lib/watchlists'
 
 const SYM = String.raw`\$?([A-Za-z][A-Za-z0-9]{0,11})\b`
@@ -103,12 +107,14 @@ function sellSymbol(ask: string): string | null {
 }
 
 /**
- * Show this chip? Anything that isn't a market buy or sell: yes. A buy or a
- * sell: only unless every venue that could fill it has been measured
- * refusing, recently. Unknown — no reading, a stale one, a chain the rule
- * can't place — is a yes.
+ * Show this chip? A buy or a sell: unless every venue that could fill it has
+ * been measured refusing, recently. A supply or a perp: unless its venue has
+ * been measured not listing the token (lib/venue-capability). Anything else:
+ * yes. Unknown — no reading, a stale one, a chain the rule can't place — is
+ * a yes.
  */
 export function canTradeAsk(ask: string, tradable: TradabilityMap | null | undefined, now = Date.now()): boolean {
+  if (!canRunVenueAsk(ask, tradable, now)) return false
   const t = tradeTarget(ask)
   if (!t || !tradable) return true
   if (t.unreadableChain) return true
@@ -118,6 +124,8 @@ export function canTradeAsk(ask: string, tradable: TradabilityMap | null | undef
 /** The cascade's own words for why a chip is missing, or null when nothing
  *  is known to refuse. What a surface says in place of the button. */
 export function tradeRefusal(ask: string, tradable: TradabilityMap | null | undefined, now = Date.now()): string | null {
+  const listing = venueAskRefusal(ask, tradable, now)
+  if (listing) return listing
   const t = tradeTarget(ask)
   if (!t || !tradable || t.unreadableChain) return null
   return fillRefusal(tradable[t.symbol], t.side, t.chainId, now)

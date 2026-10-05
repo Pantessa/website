@@ -1,0 +1,87 @@
+/* The battlefield view (BattleField.tsx): a canvas for the field, DOM for the
+   words over it. Inks are the chart's own tokens, so both themes follow. */
+.bf { position: absolute; inset: 0; z-index: 6; overflow: hidden; border-radius: 10px; background: var(--bg); cursor: crosshair; user-select: none; -webkit-user-select: none; touch-action: pan-y; }
+.bf__canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.bf__empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-2); }
+
+/* The tear-off calendar. */
+.bf__date { position: absolute; top: 10px; left: 12px; display: flex; align-items: center; gap: 10px; pointer-events: none; }
+.bf__cal {
+  display: grid; justify-items: center; width: 52px; overflow: hidden; border-radius: 8px; border: 1px solid var(--line);
+  background: color-mix(in oklch, var(--surf-1) 92%, transparent); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+  transform-origin: 50% 0; animation: bf-flip 0.28s ease-out;
+}
+.bf__cal-m { width: 100%; padding: 2px 0 1px; text-align: center; font-size: 9px; font-weight: 600; letter-spacing: 0.16em; color: var(--ink, #04140c); background: var(--mk-down, var(--sell)); }
+.bf__cal-d { font-family: 'Fraunces', Georgia, serif; font-size: 24px; font-weight: 600; line-height: 1.1; color: var(--fg); font-variant-numeric: tabular-nums; }
+.bf__cal-y { padding-bottom: 3px; font-size: 8.5px; letter-spacing: 0.08em; color: var(--muted-2); white-space: nowrap; }
+@keyframes bf-flip { from { transform: perspective(240px) rotateX(-70deg); opacity: 0.3; } to { transform: none; opacity: 1; } }
+.bf__day { display: grid; gap: 2px; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg); text-shadow: 0 1px 6px var(--bg); }
+.bf__day i { font-style: normal; color: var(--muted-2); }
+.bf__day-sub { font-size: 9px; color: var(--muted-2); }
+
+/* Who is winning. */
+.bf__press { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: grid; justify-items: center; gap: 3px; max-width: 46%; text-align: center; pointer-events: none; text-shadow: 0 1px 6px var(--bg); }
+.bf__press-k { font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-2); }
+.bf__press-v { font-family: 'Fraunces', Georgia, serif; font-size: 17px; font-weight: 600; line-height: 1.15; color: var(--fg); }
+.bf__press--bulls .bf__press-v { color: var(--mk-up, var(--accent)); }
+.bf__press--bears .bf__press-v { color: var(--mk-down, var(--sell)); }
+.bf__meter { position: relative; width: 150px; height: 5px; border-radius: 3px; overflow: hidden; background: var(--mk-down, var(--sell)); pointer-events: auto; }
+.bf__meter i { position: absolute; inset: 0 auto 0 0; width: var(--bf-share, 50%); background: var(--mk-up, var(--accent)); border-right: 2px solid var(--bg); transition: width 0.3s; }
+.bf__press-l { font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted); }
+
+/* A bar's battle report. */
+.bf__tip {
+  position: absolute; z-index: 2; display: grid; gap: 3px; width: 260px; padding: 9px 11px; border-radius: 10px; pointer-events: none;
+  border: 1px solid var(--line-2, var(--line)); background: color-mix(in oklch, var(--surf-1) 94%, transparent); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  font-size: 11.5px; line-height: 1.35; color: var(--muted);
+}
+.bf__tip strong { font-size: 12.5px; font-weight: 600; color: var(--fg); }
+.bf__tip--bulls strong { color: var(--mk-up, var(--accent)); }
+.bf__tip--bears strong { color: var(--mk-down, var(--sell)); }
+.bf__tip-k, .bf__tip-h { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
+.bf__tip-h { margin-top: 2px; }
+
+/* Replay + scrub. */
+.bf__ctl { position: absolute; left: 12px; bottom: 6px; display: flex; align-items: center; gap: 8px; width: min(360px, calc(100% - 96px)); padding: 4px 6px; border-radius: 999px; border: 1px solid var(--line); background: color-mix(in oklch, var(--surf-1) 90%, transparent); cursor: default; }
+.bf__play { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 10px; border-radius: 999px; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink, #04140c); background: var(--accent); white-space: nowrap; }
+.bf__play:hover { filter: brightness(1.08); }
+.bf__scrub { flex: 1 1 auto; min-width: 0; height: 18px; accent-color: var(--accent); cursor: pointer; }
+.bf__live { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 999px; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
+.bf__live i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted-2); }
+.bf__live.is-live { color: var(--fg); }
+.bf__live.is-live i { background: var(--accent); animation: bf-pulse 1.6s ease-in-out infinite; }
+.bf__live:hover { color: var(--fg); }
+@keyframes bf-pulse { 50% { opacity: 0.35; } }
+
+.bf__legend { position: absolute; left: calc(min(360px, 100% - 96px) + 28px); bottom: 15px; right: 12px; display: flex; flex-wrap: nowrap; gap: 4px 14px; margin: 0; overflow: hidden; white-space: nowrap; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); pointer-events: none; }
+.bf__legend span { display: inline-flex; align-items: center; gap: 5px; }
+.bf__sw { width: 9px; height: 9px; border-radius: 2px; }
+.bf__sw--up { background: color-mix(in oklch, var(--mk-up, var(--accent)) 45%, var(--bg)); }
+.bf__sw--down { background: color-mix(in oklch, var(--mk-down, var(--sell)) 45%, var(--bg)); }
+.bf__sw--50 { height: 3px; background: var(--chart-ma-50); }
+.bf__sw--200 { height: 3px; background: var(--chart-ma-200); }
+
+/* The view switch in the chart's toolbar. */
+.mkt-view { display: flex; gap: 2px; border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
+.mkt-view__btn { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: 7px; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); transition: color .15s, background .15s; white-space: nowrap; }
+.mkt-view__btn:hover { color: var(--fg); background: var(--surf-1); }
+.mkt-view__btn.is-active { color: var(--ink); background: var(--accent); }
+@media (hover: none) { .mkt-view__btn { height: 36px; padding: 0 12px; } .bf__play, .bf__live { height: 32px; } }
+
+@media (max-width: 640px) {
+  .bf__cal { width: 44px; }
+  .bf__cal-d { font-size: 19px; }
+  .bf__day { font-size: 10px; }
+  .bf__day-sub { display: none; }
+  .bf__press { left: auto; right: 10px; transform: none; justify-items: end; text-align: right; max-width: 52%; }
+  .bf__press-v { font-size: 14px; }
+  .bf__press-l { display: none; }
+  .bf__meter { width: 96px; }
+  .bf__legend { display: none; }
+  .bf__ctl { width: calc(100% - 24px); }
+  .bf__tip { width: 220px; font-size: 11px; }
+  .mkt-view__btn span { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bf__cal, .bf__live.is-live i { animation: none; }
+}

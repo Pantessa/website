@@ -8,6 +8,7 @@ import { poolPriceFor, poolSellPriceFor, type PoolPrice } from '@/lib/pool-price
 import { fmtTapeGap, stockTapeFor, STOCK_TAPE_BOUND_PCT, type TapePrice } from '@/lib/stock-tape'
 import { callMcpTool } from '@/lib/mcp-call'
 import { AAVE_MCP } from '@/lib/aave-exec'
+import { aaveCapability } from '@/lib/venue-capability'
 import { LIDO_MCP } from '@/lib/lido-stake'
 import { hlInfo } from '@/lib/hl-guardian-store'
 import { CROSS_CHAIN_FEE_BPS, HL_BUILDER_FEE_TENTH_BPS, SWAP_FEE_BPS } from '@/lib/fees'
@@ -139,7 +140,7 @@ async function hlContext(sym: string): Promise<HlCtx | null> {
 
 /** Aave lists the wrapped form (WETH, WBTC) — the reserve read asks for both. */
 const AAVE_ALIASES: Record<string, string[]> = { ETH: ['WETH', 'ETH'], BTC: ['WBTC', 'CBBTC', 'BTC'] }
-async function aaveApy(sym: string): Promise<{ supplyApyPct: number | null; borrowApyPct: number | null }> {
+async function aaveApy(sym: string): Promise<{ supplyApyPct: number | null; borrowApyPct: number | null; listing: { supply: boolean; collateral: boolean } }> {
   const res = (await callMcpTool(AAVE_MCP, 'reserves', { symbols: AAVE_ALIASES[sym] ?? [sym], chainId: 1 }, { timeoutMs: PROVIDER_TIMEOUT_MS })) as { reserves?: AaveReserveRow[] }
   let supply: number | null = null
   let borrow: number | null = null
@@ -148,7 +149,9 @@ async function aaveApy(sym: string): Promise<{ supplyApyPct: number | null; borr
     if (r.canSupply !== false && typeof r.supplyApyPct === 'number' && (supply === null || r.supplyApyPct > supply)) supply = r.supplyApyPct
     if (r.canBorrow !== false && typeof r.borrowApyPct === 'number' && (borrow === null || r.borrowApyPct < borrow)) borrow = r.borrowApyPct
   }
-  return { supplyApyPct: supply, borrowApyPct: borrow }
+  // What the supply layer would find for this exact token (no aliasing — the
+  // builder does none): the rows below are dropped when the answer is no.
+  return { supplyApyPct: supply, borrowApyPct: borrow, listing: aaveCapability(res?.reserves ?? [], sym) }
 }
 
 async function lidoApr(): Promise<number | null> {
@@ -332,6 +335,12 @@ async function compose(sym: string, amount: number, lastIn: number | null, lever
       routes = venuesFor(sym, pair, { usd: amount, last, leverage, card })
     }
   }
+
+  // A lend row only when Aave answered that it LISTS the token that way: the
+  // supply row needs a supplyable reserve, the borrow row needs the token to
+  // count as collateral (its sentence names the loan, so no chip-side rule
+  // can read it — lib/venue-capability). An unanswered read keeps the rows.
+  if (aave) routes = routes.filter((r) => r.kind !== 'lend' || (r.side === 'sell' ? aave.listing.collateral : aave.listing.supply))
 
   const quoted: RouteQuote[] = routes.map((r) => {
     const feeBps = feeBpsOf(r.fee)

@@ -41,7 +41,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
-import { ChevronsRight, Eraser, Minus, MousePointer2, Plus, RectangleHorizontal, Redo2, Share2, StickyNote, TrendingUp, Undo2 } from 'lucide-react'
+import { ChartCandlestick, ChevronsRight, Eraser, Minus, MousePointer2, Plus, RectangleHorizontal, Redo2, Share2, StickyNote, Swords, TrendingUp, Undo2 } from 'lucide-react'
 import { CHART_TFS, DEFAULT_CHART_TF, chartPairFor, type Candle, type ChartTf } from '@/lib/charts'
 import { newLineId, serializeChartState, type ChartLine, type ChartState } from '@/lib/chart-state'
 import { composeLineActions, composeZoneActions, missingActionNote, type LineActionOffer } from '@/lib/chart-actions'
@@ -63,6 +63,8 @@ import { seriesVar } from '@/lib/markets-look'
 import { VolumeProfile } from './volume-profile'
 import ChartLegend from './ChartLegend'
 import { awayFromLive, chartKey, tidyPrice, zoomedFrom } from '@/lib/chart-legend'
+import BattleField from './BattleField'
+import { FIELD_MAX_BARS } from '@/lib/battlefield'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
@@ -141,6 +143,9 @@ export interface MarketChartProps {
    *  pointer-transparent: the chart keeps its gestures. The landing's
    *  rehearsal strip rides here. */
   overlay?: ReactNode
+  /** Offer the Battlefield view beside the candles (the symbol page). The
+   *  candles are always the view a chart opens on. */
+  battlefield?: boolean
 }
 
 interface CandlesResponse {
@@ -237,6 +242,7 @@ export default function MarketChart({
   compare,
   fills,
   overlay,
+  battlefield = false,
 }: MarketChartProps) {
   const fill = heightProp === 'fill'
   const pair = useMemo(() => chartPairFor(symbol), [symbol])
@@ -256,6 +262,11 @@ export default function MarketChart({
   const [geomTick, setGeomTick] = useState(0)
   const [pool, setPool] = useState<PoolPrice | null>(null)
   const [noteDraft, setNoteDraft] = useState<{ t: number; price: number; text: string } | null>(null)
+  // The second view (BattleField): the same bars as a tabletop field. Never
+  // remembered: every chart opens on its candles.
+  const [view, setView] = useState<'candles' | 'field'>('candles')
+  // The first bar the field shows: the left edge of the candles' view at the switch.
+  const [fieldFrom, setFieldFrom] = useState<number | null>(null)
 
   // The newest bar has left the view: the plot offers a way back ("Live").
   const [away, setAway] = useState(false)
@@ -724,7 +735,39 @@ export default function MarketChart({
 
   useEffect(() => {
     chartRef.current?.applyOptions({ timeScale: { timeVisible: tf !== '1d' } })
+    // Another frame's bars sit at other times: the field opens on its live window.
+    setFieldFrom(null)
   }, [tf])
+
+  // The battlefield's bars: what the candles showed at the switch, through the
+  // newest bar (so the live front keeps moving), capped at FIELD_MAX_BARS.
+  const fieldOn = battlefield && view === 'field'
+  const fieldBars = useMemo<Candle[]>(() => {
+    if (!fieldOn || !bars.length || data?.tf !== tf || data.symbol !== pair?.symbol) return []
+    const from = fieldFrom ?? candles[0]?.t ?? bars[0].t
+    const shown = bars.filter((b) => b.t >= from)
+    return (shown.length >= 12 ? shown : bars.slice(-Math.min(bars.length, 180))).slice(-FIELD_MAX_BARS)
+  }, [fieldOn, bars, candles, fieldFrom, data?.tf, data?.symbol, pair?.symbol, tf])
+  const fieldSma = useMemo(() => {
+    const onField = (period: number, on: boolean): (number | null)[] | null => {
+      if (!on || !fieldBars.length) return null
+      const at = new Map(sma(lineSrc, period).map((p) => [p.t, p.v]))
+      return fieldBars.map((b) => at.get(b.t) ?? null)
+    }
+    return { s50: onField(50, overlays.has('sma50')), s200: onField(200, overlays.has('sma200')) }
+  }, [fieldBars, lineSrc, overlays])
+  const switchView = useCallback((next: 'candles' | 'field') => {
+    if (next === 'field') {
+      const range = chartRef.current?.timeScale().getVisibleLogicalRange()
+      const held = barsRef.current
+      const first = range && held.length ? held[Math.max(0, Math.min(held.length - 1, Math.floor(range.from as number)))] : null
+      setFieldFrom(first?.t ?? null)
+      setTool('none')
+      setNoteDraft(null)
+      setSelectedId(null)
+    }
+    setView(next)
+  }, [])
 
   // Parent-announced layout change (expand/collapse).
   useEffect(() => {
@@ -1164,8 +1207,21 @@ export default function MarketChart({
             </button>
           ))}
         </div>
+        {battlefield && (
+          <div className="mkt-view" role="group" aria-label="Chart view">
+            <button type="button" className={`mkt-view__btn mono${view === 'candles' ? ' is-active' : ''}`} aria-pressed={view === 'candles'} title="Candles" onClick={() => switchView('candles')}>
+              <ChartCandlestick className="h-3.5 w-3.5" />
+              <span>Candles</span>
+            </button>
+            <button type="button" className={`mkt-view__btn mono${view === 'field' ? ' is-active' : ''}`} aria-pressed={view === 'field'} title="Battlefield — the same bars as a field: buyers hold the ground under the price, sellers the ground over it" onClick={() => switchView('field')}>
+              <Swords className="h-3.5 w-3.5" />
+              <span>Battlefield</span>
+            </button>
+          </div>
+        )}
         <div className="mkt-chart__ind" role="group" aria-label="Overlays">
-          {OVERLAYS.filter((o) => o.key !== 'vwap' || hasVolume(candles)).map((o) => (
+          {/* On the field only the two slow averages draw (the river and the road). */}
+          {OVERLAYS.filter((o) => (fieldOn ? o.key === 'sma50' || o.key === 'sma200' : o.key !== 'vwap' || hasVolume(candles))).map((o) => (
             <button
               key={o.key}
               type="button"
@@ -1187,7 +1243,7 @@ export default function MarketChart({
             </button>
           ))}
         </div>
-        {tools && (
+        {tools && !fieldOn && (
           <div className="mkt-chart__tools" role="group" aria-label="Drawing tools">
             {toolBtn('none', MousePointer2, 'Select')}
             {toolBtn('h', Minus, 'Horizontal level — click a price')}
@@ -1239,8 +1295,8 @@ export default function MarketChart({
         }}
       >
         <div ref={wrapRef} className="mkt-chart__engine" />
-        {candles.length > 0 && tool === 'none' && !noteDraft && <ChartLegend symbol={pair.symbol} tf={tf} bars={bars} lines={legendLines} hint={tools && !selectedId ? plusHint : null} />}
-        {tools && tool === 'none' && !noteDraft && !selectedId && (
+        {candles.length > 0 && tool === 'none' && !noteDraft && !fieldOn && <ChartLegend symbol={pair.symbol} tf={tf} bars={bars} lines={legendLines} hint={tools && !selectedId ? plusHint : null} />}
+        {tools && tool === 'none' && !noteDraft && !selectedId && !fieldOn && (
           <button ref={plusRef} type="button" className="mkt-plus" data-draw-handle aria-label="Put a level at this price" onClick={dropLevel}>
             <Plus className="h-3.5 w-3.5" />
           </button>
@@ -1248,7 +1304,7 @@ export default function MarketChart({
         {/* Undo, redo and clear float over the plot. In the bar above they
             widened the tools group the moment a first drawing landed, the bar
             wrapped, and the canvas (with the level just placed) jumped down a row. */}
-        {tools && (undoStacks.past.length > 0 || undoStacks.future.length > 0 || lines.length > 0) && (
+        {tools && !fieldOn && (undoStacks.past.length > 0 || undoStacks.future.length > 0 || lines.length > 0) && (
           <div className="mkt-chart__tools mkt-chart__edit" role="group" aria-label="Edit drawings">
             {(undoStacks.past.length > 0 || undoStacks.future.length > 0) && (
               <>
@@ -1276,13 +1332,13 @@ export default function MarketChart({
             )}
           </div>
         )}
-        {away && candles.length > 0 && (
+        {away && candles.length > 0 && !fieldOn && (
           <button type="button" className="mkt-live mono" title="Back to the newest bar (L)" onClick={goLive}>
             Live <ChevronsRight className="h-3 w-3" />
           </button>
         )}
         {/* Over the plot, never above it: a hint that pushed the canvas down moved the bars under the cursor. */}
-        {tool !== 'none' && (
+        {tool !== 'none' && !fieldOn && (
           <p className="mkt-chart__hint mono">
             {tool === 'h' && 'click a price to place a level — it can carry an order'}
             {tool === 'zone' && 'drag across the range — or click its two edges'}
@@ -1304,7 +1360,8 @@ export default function MarketChart({
             )}
           </div>
         )}
-        <DrawingLayer
+        {fieldOn && tokens && <BattleField symbol={pair.symbol} tf={tf} bars={fieldBars} tokens={tokens} lines={lines} fills={fills} sma50={fieldSma.s50} sma200={fieldSma.s200} />}
+        {!fieldOn && <DrawingLayer
           geom={geom}
           lines={lines}
           selectedId={selectedId}
@@ -1320,9 +1377,9 @@ export default function MarketChart({
           onAct={onAsk}
           askHref={askHref}
           readOnly={!tools}
-        />
+        />}
         {overlay}
-        {noteDraft && (
+        {noteDraft && !fieldOn && (
           <form
             className="mkt-pop mkt-pop--note"
             style={{ left: 12, top: 12 }}
