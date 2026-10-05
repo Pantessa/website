@@ -259,7 +259,7 @@ export default function TechnicalsTab({
               role="tab"
               aria-selected={tf === t.key}
               onClick={() => setTf(t.key)}
-              className={`mono rounded-md px-2.5 py-1 text-[11px] uppercase tracking-wider transition-colors ${
+              className={`mono rounded-md px-2.5 py-1 text-[11px] uppercase tracking-wider transition-colors max-lg:min-h-11 max-lg:min-w-11 ${
                 tf === t.key ? 'bg-[var(--surf-2)] text-[color:var(--fg)]' : 'text-[color:var(--muted)] hover:text-[color:var(--fg)]'
               }`}
             >
