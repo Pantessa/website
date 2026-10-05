@@ -41,7 +41,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
-import { Eraser, Minus, MousePointer2, RectangleHorizontal, StickyNote, TrendingUp } from 'lucide-react'
+import { Eraser, Minus, MousePointer2, RectangleHorizontal, Redo2, Share2, StickyNote, TrendingUp, Undo2 } from 'lucide-react'
 import { CHART_TFS, DEFAULT_CHART_TF, chartPairFor, type Candle, type ChartTf } from '@/lib/charts'
 import { newLineId, serializeChartState, type ChartLine, type ChartState } from '@/lib/chart-state'
 import { composeLineActions, composeZoneActions, missingActionNote, type LineActionOffer } from '@/lib/chart-actions'
@@ -53,6 +53,9 @@ import { fmtPrice, type ChartStats } from '@/components/CandleChart'
 import '@/components/markets/look.css'
 import { readTokens, type Tokens } from './chart-tokens'
 import DrawingLayer, { type ChartGeom, type DrawTool } from './DrawingLayer'
+import ChartShare from './ChartShare'
+import { emptyUndo, nearestOhlc, recordUndo, redo as redoLines, undo as undoLines, type UndoStacks } from '@/lib/chart-draw'
+import { composeShareImage } from '@/lib/chart-share'
 import { SessionBands } from './session-bands'
 import { fillLabel, type FillMarker } from '@/lib/chart-fills'
 import { useChartHover } from '@/lib/markets-ai-hover'
@@ -238,8 +241,9 @@ export default function MarketChart({
   const [lines, setLines] = useState<ChartLine[]>(state?.lines ?? [])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [tool, setTool] = useState<DrawTool>('none')
-  const [pending, setPending] = useState<{ tool: DrawTool; price: number; t: number } | null>(null)
-  const [hover, setHover] = useState<{ x: number; y: number; price: number | null; t: number | null } | null>(null)
+  // Undo: every finished edit records the lines it replaced; a drag records once.
+  const [undoStacks, setUndoStacks] = useState<UndoStacks>(emptyUndo)
+  const [shareOpen, setShareOpen] = useState(false)
   const [geomTick, setGeomTick] = useState(0)
   const [pool, setPool] = useState<PoolPrice | null>(null)
   const [noteDraft, setNoteDraft] = useState<{ t: number; price: number; text: string } | null>(null)
@@ -261,10 +265,26 @@ export default function MarketChart({
   const barsRef = useRef<Candle[]>([])
   const onStatsRef = useRef(onStats)
   onStatsRef.current = onStats
-  const toolRef = useRef(tool)
-  toolRef.current = tool
-  const pendingRef = useRef(pending)
-  pendingRef.current = pending
+  const linesRef = useRef(lines)
+  linesRef.current = lines
+  const undoRef = useRef(undoStacks)
+  undoRef.current = undoStacks
+  const markUndo = useCallback(() => setUndoStacks((u) => recordUndo(u, linesRef.current)), [])
+  /** A finished edit: remember what it replaced, then apply it. */
+  const edit = useCallback(
+    (next: ChartLine[]) => {
+      markUndo()
+      setLines(next)
+    },
+    [markUndo],
+  )
+  const stepUndo = useCallback((dir: 'undo' | 'redo') => {
+    const r = dir === 'undo' ? undoLines(undoRef.current, linesRef.current) : redoLines(undoRef.current, linesRef.current)
+    if (!r) return
+    setUndoStacks(r.stacks)
+    setLines(r.lines)
+    setSelectedId(null)
+  }, [])
   const lastEmittedRef = useRef<string | null>(null)
   const lastAppliedRef = useRef<string | null>(state ? serializeChartState(state) : null)
   const markersRef = useRef(markers)
@@ -606,14 +626,10 @@ export default function MarketChart({
     }
     const onMove = (p: MouseEventParams<Time>) => {
       if (!p.point) {
-        setHover(null)
         reportHoverBar(null)
         return
       }
-      const price = candleSeries.coordinateToPrice(p.point.y)
       const logical = chart.timeScale().coordinateToLogical(p.point.x)
-      const t = logical === null ? null : logicalToTime(barsRef.current, logical as number)
-      setHover({ x: p.point.x, y: p.point.y, price: price === null ? null : Number(price), t })
       reportHoverBar(logical === null ? null : (logical as number))
     }
     chart.subscribeCrosshairMove(onMove)
@@ -627,44 +643,8 @@ export default function MarketChart({
           return
         }
       }
-      const t0 = toolRef.current
-      if (t0 === 'none' || !p.point) return
-      const priceRaw = candleSeries.coordinateToPrice(p.point.y)
-      if (priceRaw === null) return
-      const price = Number(priceRaw)
-      if (!(price > 0)) return
-      const logical = chart.timeScale().coordinateToLogical(p.point.x)
-      const t = logical === null ? (barsRef.current.at(-1)?.t ?? Math.floor(Date.now() / 1000)) : (logicalToTime(barsRef.current, logical as number) ?? Math.floor(Date.now() / 1000))
-      if (t0 === 'h') {
-        const id = newLineId('h')
-        setLines((cur) => [...cur, { id, kind: 'h', price }])
-        setSelectedId(id)
-        setTool('none')
-        return
-      }
-      if (t0 === 'note') {
-        setNoteDraft({ t, price, text: '' })
-        setTool('none')
-        return
-      }
-      const pend = pendingRef.current
-      if (!pend || pend.tool !== t0) {
-        setPending({ tool: t0, price, t })
-        return
-      }
-      if (t0 === 'zone') {
-        if (price === pend.price) return
-        const id = newLineId('z')
-        setLines((cur) => [...cur, { id, kind: 'zone', p1: pend.price, p2: price }])
-        setSelectedId(id)
-      } else if (t0 === 'trend') {
-        if (t === pend.t && price === pend.price) return
-        const id = newLineId('t')
-        setLines((cur) => [...cur, { id, kind: 'trend', t1: pend.t, p1: pend.price, t2: t, p2: price }])
-        setSelectedId(id)
-      }
-      setPending(null)
-      setTool('none')
+      // Placing a drawing is the drawing layer's (its capture surface takes
+      // the plot while a tool is armed), so a click here is only ever a marker.
     }
     chart.subscribeClick(onClick)
 
@@ -944,18 +924,22 @@ export default function MarketChart({
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
       if (e.key === 'Escape') {
         if (noteDraft) setNoteDraft(null)
-        else if (pending) setPending(null)
+        else if (shareOpen) setShareOpen(false)
         else if (tool !== 'none') setTool('none')
         else if (selectedId) setSelectedId(null)
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId && tools) {
-        setLines((cur) => cur.filter((l) => l.id !== selectedId))
+        edit(linesRef.current.filter((l) => l.id !== selectedId))
         setSelectedId(null)
+      }
+      if (tools && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        stepUndo(e.shiftKey ? 'redo' : 'undo')
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [noteDraft, pending, tool, selectedId, tools])
+  }, [noteDraft, shareOpen, tool, selectedId, tools, edit, stepUndo])
 
   // ── Geometry for the drawing layer (one object per tick) ──────────────────
   const geom = useMemo<ChartGeom | null>(() => {
@@ -974,6 +958,27 @@ export default function MarketChart({
         const y = cs.priceToCoordinate(p)
         return y === null ? null : Number(y)
       },
+      barSec: FRAME_SEC[tf],
+      yToPrice: (y) => {
+        const p = cs.coordinateToPrice(y)
+        return p === null ? null : Number(p)
+      },
+      // The engine answers a pixel with a whole bar index, so a point's time
+      // is always a bar's open: a line drawn here lands on bars.
+      xToTime: (x) => {
+        const l = chart.timeScale().coordinateToLogical(x)
+        return l === null ? null : logicalToTime(bars, l as number)
+      },
+      snap: (x, y) => {
+        const l = chart.timeScale().coordinateToLogical(x)
+        const bar = l === null ? undefined : bars[Math.round(l as number)]
+        if (!bar) return null
+        const price = nearestOhlc(bar, y, (p) => {
+          const py = cs.priceToCoordinate(p)
+          return py === null ? null : Number(py)
+        })
+        return price === null ? null : { t: bar.t, price }
+      },
       timeToX: (t) => {
         const l = timeToLogical(bars, t)
         if (l === null) return null
@@ -988,7 +993,7 @@ export default function MarketChart({
         return x0 === null || x1 === null ? null : Number(x0) + (Number(x1) - Number(x0)) * (l - i)
       },
     }
-  }, [geomTick, bars])
+  }, [geomTick, bars, tf])
 
   // A level's Sell chips ("Sell here", "Sell ETH now") show only while the
   // connected wallet holds the symbol (lib/sell-gate): nothing to sell, no chip.
@@ -1030,8 +1035,8 @@ export default function MarketChart({
       title={title}
       aria-label={title}
       onClick={() => {
-        setPending(null)
         setNoteDraft(null)
+        setSelectedId(null)
         setTool(tool === key ? 'none' : key)
       }}
     >
@@ -1077,9 +1082,19 @@ export default function MarketChart({
           <div className="mkt-chart__tools" role="group" aria-label="Drawing tools">
             {toolBtn('none', MousePointer2, 'Select')}
             {toolBtn('h', Minus, 'Horizontal level — click a price')}
-            {toolBtn('zone', RectangleHorizontal, 'Zone — click two prices')}
-            {toolBtn('trend', TrendingUp, 'Trend line — click two points')}
+            {toolBtn('zone', RectangleHorizontal, 'Zone — drag across a price range')}
+            {toolBtn('trend', TrendingUp, 'Trend line — drag from one point to another')}
             {toolBtn('note', StickyNote, 'Note — click where you noticed it')}
+            {(undoStacks.past.length > 0 || undoStacks.future.length > 0) && (
+              <>
+                <button type="button" className="mkt-tool" title="Undo (⌘Z)" aria-label="Undo" disabled={undoStacks.past.length === 0} onClick={() => stepUndo('undo')}>
+                  <Undo2 className="h-3.5 w-3.5" />
+                </button>
+                <button type="button" className="mkt-tool" title="Redo (⇧⌘Z)" aria-label="Redo" disabled={undoStacks.future.length === 0} onClick={() => stepUndo('redo')}>
+                  <Redo2 className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
             {lines.length > 0 && (
               <button
                 type="button"
@@ -1087,7 +1102,7 @@ export default function MarketChart({
                 title="Clear drawings"
                 aria-label="Clear drawings"
                 onClick={() => {
-                  setLines([])
+                  edit([])
                   setSelectedId(null)
                 }}
               >
@@ -1112,23 +1127,28 @@ export default function MarketChart({
               </>
             )}
           </span>
+          {tools && candles.length > 0 && (
+            <button type="button" className="mkt-sharebtn mono" aria-haspopup="dialog" aria-expanded={shareOpen} title="Share this chart — image, link, or a stamped call on X" onClick={() => setShareOpen(true)}>
+              <Share2 className="h-3 w-3" /> Share
+            </button>
+          )}
           {controlsRight}
         </span>
       </div>
 
-      {tool !== 'none' && (
-        <p className="mkt-chart__hint mono">
-          {tool === 'h' && 'click a price to place a level — it can carry an order'}
-          {tool === 'zone' && (pending ? 'click the other edge of the zone' : 'click the first edge of the zone')}
-          {tool === 'trend' && (pending ? 'click the second point' : 'click the first point')}
-          {tool === 'note' && 'click where you noticed it'}
-          {' · esc cancels'}
-        </p>
-      )}
-
       {/* Canvas: the engine owns the bars; the SVG layer owns the drawings. */}
       <div className={`mkt-chart__canvas${tool !== 'none' ? ' is-drawing' : ''}${fill ? ' min-h-0 flex-1' : ''}`} style={fill ? undefined : { height: heightProp }}>
         <div ref={wrapRef} className="mkt-chart__engine" />
+        {/* Over the plot, never above it: a hint that pushed the canvas down moved the bars under the cursor. */}
+        {tool !== 'none' && (
+          <p className="mkt-chart__hint mono">
+            {tool === 'h' && 'click a price to place a level — it can carry an order'}
+            {tool === 'zone' && 'drag across the range — or click its two edges'}
+            {tool === 'trend' && 'drag from the first point to the second — or click both · ends snap to the bar'}
+            {tool === 'note' && 'click where you noticed it'}
+            {' · esc cancels'}
+          </p>
+        )}
         {candles.length === 0 && (
           <div className="mkt-chart__empty">
             <span className="text-[12px] text-[color:var(--muted-2)]">{data?.error ? 'Chart feed unavailable — retrying.' : 'Loading candles…'}</span>
@@ -1139,14 +1159,17 @@ export default function MarketChart({
           lines={lines}
           selectedId={selectedId}
           onSelect={setSelectedId}
-          onChange={setLines}
+          onChange={edit}
+          onDragStart={markUndo}
+          onDrag={setLines}
+          tool={tools ? tool : 'none'}
+          onToolDone={() => setTool('none')}
+          onNote={(at) => setNoteDraft({ ...at, text: '' })}
           offersFor={offersFor}
           missingNote={missingActionNote(pair.symbol, pair.source)}
           onAct={onAsk}
           askHref={askHref}
           readOnly={!tools}
-          pending={pending}
-          hover={hover}
         />
         {overlay}
         {noteDraft && (
@@ -1158,7 +1181,7 @@ export default function MarketChart({
               const text = noteDraft.text.trim().slice(0, 280)
               if (!text) return
               const id = newLineId('n')
-              setLines((cur) => [...cur, { id, kind: 'note', t: noteDraft.t, price: noteDraft.price, text }])
+              edit([...linesRef.current, { id, kind: 'note', t: noteDraft.t, price: noteDraft.price, text }])
               setNoteDraft(null)
             }}
           >
@@ -1212,6 +1235,32 @@ export default function MarketChart({
             </li>
           ))}
         </ul>
+      )}
+
+      {shareOpen && (
+        <ChartShare
+          symbol={pair.symbol}
+          tf={tf}
+          lines={lines}
+          onClose={() => setShareOpen(false)}
+          capture={async () => {
+            const chart = chartRef.current
+            if (!chart || !geom || !tokens) return null
+            return composeShareImage({
+              shot: chart.takeScreenshot(),
+              cssWidth: geom.width,
+              cssHeight: geom.height,
+              geom,
+              lines,
+              symbol: pair.symbol,
+              label: pair.label,
+              tfLabel: CHART_TFS.find((t) => t.key === tf)?.label ?? tf,
+              last,
+              changePct: data?.changePct24h ?? null,
+              tokens,
+            })
+          }}
+        />
       )}
 
       {/* Attribution — the engine's license wants TradingView's NOTICE line and

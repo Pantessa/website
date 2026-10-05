@@ -59,12 +59,14 @@ function explorerTx(chainId: number | null, hash: string | null): string | null 
   return b ? `${b}${hash}` : null
 }
 
-async function readTurns(symbol: string, address: string): Promise<FillMarker[]> {
+async function readTurns(symbol: string, address: string, verifiedOnly = false): Promise<FillMarker[]> {
   const rows = await prisma.embedTurn.findMany({
     where: {
       AND: [
         { outcome: 'signed', walletAddress: address, isInternal: false },
-        COUNTED_TURN_WHERE,
+        // A public call page shows only what the chain confirmed (the
+        // receipt verdict 'verified', with the transaction to prove it).
+        verifiedOnly ? { verification: 'verified', txUrl: { not: null } } : COUNTED_TURN_WHERE,
         { OR: [{ symbols: { hasSome: [`buy:${symbol}`, `sell:${symbol}`] } }, { prompt: { contains: symbol, mode: 'insensitive' } }, { detail: { contains: symbol, mode: 'insensitive' } }] },
       ],
     },
@@ -130,4 +132,18 @@ export async function readFills(symbolRaw: string, addressRaw: string, now = Dat
   } finally {
     inflight.delete(key)
   }
+}
+
+/**
+ * The wallet's receipt-VERIFIED fills on a symbol, oldest first — what a
+ * public call page may show as proof (lib/chart-calls). Stricter than
+ * `readFills`: only embed_turns rows whose transaction the chain confirmed
+ * (`verification = 'verified'`) and that carry the explorer link; attested
+ * job steps, legacy unchecked rows and internal rows never appear. Uncached:
+ * the page that calls it is itself read per request.
+ */
+export async function readVerifiedFills(symbolRaw: string, addressRaw: string): Promise<FillMarker[]> {
+  const symbol = chartPairFor(symbolRaw)?.symbol ?? symbolRaw.toUpperCase()
+  const fills = await readTurns(symbol, addressRaw.toLowerCase(), true)
+  return fills.sort((a, b) => a.t - b.t)
 }
