@@ -139,19 +139,30 @@ const SPOT_CHAIN_HINTS: Record<string, number[]> = {
 }
 const DEFAULT_SPOT_CHAINS = [1, 8453]
 
-/** Aave v4 mainnet reserves we list cold (the routes API reads the live
- *  reserve list; a token that isn't there answers "—" and the supply layer
- *  refuses by name at build). */
-const AAVE_RESERVE_COLD = new Set(['ETH', 'BTC', 'LINK', 'AAVE', 'UNI', 'LDO', 'CRV', 'MKR', 'SNX'])
+/** Tokens whose "Supply on Aave" chip runs as composed — MEASURED against
+ *  Aave v4's own reserve list (2026-10-05), asked the way the supply layer
+ *  asks it (lib/venue-capability aaveCapability: an active row with this
+ *  exact symbol and canSupply true). UNI, LDO, CRV, MKR and SNX were here on
+ *  a guess and have no v4 reserve; AAVE has one but its sentence ("… of AAVE
+ *  to Aave") falls to the planner. ETH and BTC are listed only in wrapped
+ *  form (WETH · WBTC · cbBTC) and the layer does not wrap, so "Supply $50 of
+ *  ETH to Aave" refuses too — they come back when a wrap step exists.
+ *  The harness holds this list to the live one, and the cron re-measures it
+ *  (lib/tradability-store refreshListings), so a delisting hides the chip. */
+const AAVE_RESERVE_COLD = new Set(['LINK'])
 
 /** Hyperliquid perps we list cold when the pair isn't already an HL chart
- *  (the live universe — lib/hl-universe — refines this server-side; kPEPE /
- *  kSHIB casing is deliberately left out of the cold set). */
+ *  (kPEPE / kSHIB casing is deliberately left out). Held to the venue's live
+ *  universe the same way: MKR was delisted and left this list 2026-10-05. */
 const HL_PERP_COLD = new Set([
   'ETH', 'BTC', 'SOL', 'DOGE', 'XRP', 'ADA', 'AVAX', 'DOT', 'ATOM', 'NEAR', 'LINK', 'UNI', 'AAVE', 'LDO', 'CRV',
-  'ARB', 'OP', 'SUI', 'APT', 'INJ', 'TIA', 'FIL', 'ONDO', 'ENA', 'WLD', 'JTO', 'JUP', 'EIGEN', 'MKR', 'COMP', 'SNX',
+  'ARB', 'OP', 'SUI', 'APT', 'INJ', 'TIA', 'FIL', 'ONDO', 'ENA', 'WLD', 'JTO', 'JUP', 'EIGEN', 'COMP', 'SNX',
   'HYPE', 'SYRUP', 'FARTCOIN',
 ])
+
+/** Every symbol either cold list offers a chip for (the harness walks them). */
+export const COLD_AAVE_SUPPLY: readonly string[] = [...AAVE_RESERVE_COLD]
+export const COLD_HL_PERPS: readonly string[] = [...HL_PERP_COLD]
 
 export const hasPerpCold = (symbol: string): boolean => HL_PERP_COLD.has(symbol.toUpperCase())
 export const hasAaveReserveCold = (symbol: string): boolean => AAVE_RESERVE_COLD.has(symbol.toUpperCase())
@@ -365,8 +376,8 @@ export function missingVenueNotes(symbol: string, pair: ChartPair): string[] {
     notes.push(`${sym} lives on ${home} — Pantessa opens Hyperliquid perps on it; a spot buy here could only ever buy a Base look-alike.`)
     return notes
   }
-  if (!hasPerpCold(sym) && pair.source !== 'hyperliquid') notes.push(`No Hyperliquid perp listed for ${sym} in the cold map — the live universe check may add one.`)
-  if (!hasAaveReserveCold(sym)) notes.push(`${sym} isn’t an Aave v4 reserve we list — supply and borrow are off.`)
+  if (!hasPerpCold(sym) && pair.source !== 'hyperliquid') notes.push(`Hyperliquid has no live ${sym} perp we offer — long and short are off.`)
+  if (!hasAaveReserveCold(sym)) notes.push(`Aave v4 has no ${sym} reserve this page can supply into — supply and borrow are off.`)
   if (sym !== 'ETH') notes.push('Lido stakes ETH only.')
   return notes
 }

@@ -375,6 +375,11 @@ export interface HeldSymbol {
   /** The same chains by id, in the same order — what a per-chain Sell row
    *  checks (lib/sell-gate). */
   chainIds: number[]
+  /** The Spot Guardian can arm a stop on this holding: it sits on Base AND
+   *  the wallet is a smart wallet there (a Spend Permission an EOA signs can
+   *  never be spent — lib/spot-guard-exec). Absent = it can't, or nobody
+   *  could tell; the "Protect with a stop" chip waits on a yes. */
+  guardable?: true
 }
 
 export interface HeldAutofillPlan {
