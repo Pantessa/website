@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
+import { SITE_CARD } from '@/lib/og-defaults'
 
 // The native transaction layer — the doctrine (models never write calldata)
 // and the venue-by-venue guard table. This page is the moat, written down.
@@ -11,7 +12,8 @@ export const metadata: Metadata = {
   title: PAGE.seoTitle,
   description: PAGE.description,
   alternates: { canonical: docsUrl(PAGE.slug) },
-  openGraph: { title: PAGE.seoTitle, description: PAGE.description, url: docsUrl(PAGE.slug), type: 'article' },
+  openGraph: { images: SITE_CARD, title: PAGE.seoTitle, description: PAGE.description, url: docsUrl(PAGE.slug), type: 'article' },
+  twitter: { card: 'summary_large_image', title: PAGE.seoTitle, description: PAGE.description, images: SITE_CARD },
 }
 
 const VENUES = [

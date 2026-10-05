@@ -21,6 +21,8 @@ import './intent-runtime.css'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
 import { linksStudioHref } from '@/lib/links-href'
+import ShareActions from '@/components/ShareActions'
+import { intentLinkPost } from '@/lib/share-posts'
 import { useAccount, useSignMessage } from 'wagmi'
 import { declineCard } from '@/lib/decline-client'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
@@ -679,6 +681,15 @@ export default function IntentRuntime({
               {' '}— nothing to install, and it signs right here.
             </p>
           )}
+          {/* Pass it on (GTM share lane): a link is made to travel, and the
+              person holding it is the likeliest to know who wants it. One tap
+              opens the phone's share sheet; elsewhere copy / the pre-written
+              post. The link is unchanged, so its creator keeps the credit. */}
+          {!autoStarting && !walletResolving && !recipient && !restricted && (
+            <div className="mt-6 max-sm:order-3" data-link-share="splash">
+              <ShareActions post={intentLinkPost({ slug, ask })} variant="pill" label="Send this link to someone" surface="i-splash" />
+            </div>
+          )}
           {hasCreator && (
             // The disclosure badge (C3): the counter-position to undisclosed
             // KOL shilling — a paid call says it's paid, and says the WHOLE
@@ -994,6 +1005,19 @@ export default function IntentRuntime({
           sender), and the signature just reached them. Push = the M3 webhook
           fired at the signed event; feed = broker_status server truth. The
           invisible back-and-forth, made visible at the aha moment. */}
+      {/* The share moment: the trade is signed and the feeling is fresh. The
+          link that did it is one tap from the next person (an addressed or
+          allowlisted link is somebody's private errand; it is not offered). */}
+      {signed && !recipient && !restricted && (
+        <div data-runtime-bar="" data-link-share="signed" className="yenter relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-2.5">
+          <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[13px] text-[color:var(--muted)]">
+              <strong className="text-[color:var(--fg)] font-medium">Signed.</strong> Know someone who wants the same trade? This link does it for them too.
+            </span>
+            <ShareActions post={intentLinkPost({ slug, ask })} variant="pill" label="Share this link" lead surface="i-signed" />
+          </div>
+        </div>
+      )}
       {signed && notify && (
         <div data-runtime-bar="" className="yenter relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-2.5">
           <div className="max-w-3xl mx-auto flex items-center gap-2.5">

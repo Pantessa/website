@@ -5,6 +5,7 @@ import EmbedDemo from '@/components/EmbedDemo'
 import EmbedInstall from '@/components/EmbedInstall'
 import { DOCS_PAGES, DOORS, docsJsonLd, docsUrl, doorPages } from '@/lib/docs'
 import { LINK_FEE_PCT } from '@/lib/fees'
+import { SITE_CARD } from '@/lib/og-defaults'
 
 // The /docs landing — told story-first: Pantessa is the non-custodial back
 // office for autonomous money, and the docs open three doors for three
@@ -19,7 +20,8 @@ export const metadata: Metadata = {
   title: PAGE.seoTitle,
   description: PAGE.description,
   alternates: { canonical: docsUrl('') },
-  openGraph: { title: PAGE.seoTitle, description: PAGE.description, url: docsUrl(''), type: 'website' },
+  openGraph: { images: SITE_CARD, title: PAGE.seoTitle, description: PAGE.description, url: docsUrl(''), type: 'website' },
+  twitter: { card: 'summary_large_image', title: PAGE.seoTitle, description: PAGE.description, images: SITE_CARD },
 }
 
 // The three doors — the landing's primary navigation. Each leads with its

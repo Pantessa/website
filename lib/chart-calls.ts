@@ -153,9 +153,9 @@ export function callTweetHref(call: { id: string; symbol: string; title: string;
 }
 
 /** A plain chart share (no call published): the symbol page is the link. */
-export function chartTweetHref(symbol: string, tfLabel: string): string {
+export function chartTweetHref(symbol: string, tfLabel: string, url: string = absoluteUrl(`/t/${symbol}`)): string {
   const text = `$${symbol} ${tfLabel} chart. Draw on it, trade from it, via ${X_MENTION}:`
-  return `https://twitter.com/intent/tweet?${new URLSearchParams({ text, url: absoluteUrl(`/t/${symbol}`) }).toString()}`
+  return `https://twitter.com/intent/tweet?${new URLSearchParams({ text, url }).toString()}`
 }
 
 // ── the social card's chart (one SVG string; satori draws it as an <img>) ───

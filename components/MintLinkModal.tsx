@@ -16,6 +16,8 @@ import { useYeetfulStore } from '@/lib/store'
 import { absoluteUrl } from '@/lib/site-url'
 import Sheet from '@/components/mobile/Sheet'
 import { usePhonePosture } from '@/components/chat/usePhonePosture'
+import { intentLinkPostAt } from '@/lib/share-posts'
+import ShareActions from '@/components/ShareActions'
 
 interface Minted {
   slug: string
@@ -84,15 +86,8 @@ export default function MintLinkModal({
             </button>
             <p className="mt-1 text-[12px] text-[color:var(--muted)] truncate">&ldquo;{minted.ask}&rdquo;</p>
           </div>
+          <ShareActions post={intentLinkPostAt(minted.ask, minted.url)} lead surface="mint" className="mt-3" />
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <a
-              href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${minted.ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(absoluteUrl(minted.url))}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"
-            >
-              tweet it
-            </a>
             <button
               type="button"
               onClick={() => {

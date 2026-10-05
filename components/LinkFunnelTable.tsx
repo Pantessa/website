@@ -15,6 +15,7 @@ import type { LinkRow } from '@/lib/intent-links-ui'
 import { absoluteUrl } from '@/lib/site-url'
 import { linkLifecycle } from '@/lib/intent-links'
 import { notifyLinksChanged } from '@/lib/links-changed'
+import { intentLinkXHref } from '@/lib/share-posts'
 
 export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChanged?: () => void }) {
   const [copied, setCopied] = useState<string | null>(null)
@@ -138,7 +139,7 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
               <td className="linkfunnel__num py-3 text-right whitespace-nowrap">
                 {state === 'live' && (
                 <a
-                  href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${l.ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(absoluteUrl(`/i/${l.slug}`))}`}
+                  href={intentLinkXHref(l.ask, `/i/${l.slug}`)}
                   target="_blank"
                   rel="noopener noreferrer"
                   title="Tweet this link — the card wears your brand"

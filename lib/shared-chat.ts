@@ -10,6 +10,7 @@ import { SITE_URL } from '@/lib/site-url'
 import type { McpServer } from '@/lib/store'
 import { receiptsOf } from '@/lib/responding-mcp'
 import { viaIdOf } from '@/lib/share-receipts'
+import { quoteForPost, xIntentHref, type SharePost } from '@/lib/share-posts'
 import type { SharedJob } from '@/components/SharedJobLog'
 
 export async function getSharedChat(slug: string) {
@@ -141,21 +142,22 @@ const TWEET_PROMPT_MAX = 180
  * ?prompt= handoff, an over-long ask is truncated here rather than dropped:
  * a tweet with most of the sentence still sells the page.
  */
-export function shareTweetHrefOf(slug: string, messages: Array<{ role: string; content: string }>, via?: string): string {
+export function sharePostOf(slug: string, title: string, messages: Array<{ role: string; content: string }>, via?: string): SharePost {
   const raw = messages.find((m) => m.role === 'user')?.content.trim()
-  const ask = raw
-    ? raw.length > TWEET_PROMPT_MAX
-      ? `${raw.slice(0, TWEET_PROMPT_MAX - 1).trimEnd()}…`
-      : raw
-    : null
+  // Quoted, cut to the budget, and anything address-shaped masked: a post is
+  // a wider room than the page the owner chose to share.
+  const ask = raw ? quoteForPost(raw, TWEET_PROMPT_MAX) : null
   const text = ask
     ? `Lazy transactions are here!\n\n"${ask}" on ${X_MENTION}`
     : `Lazy transactions are here! Watch a real guarded run on ${X_MENTION}`
-  const site = SITE_URL
   // The shared URL carries the sharer's short id so arrivals attribute back
   // to the share (the id is a one-way hash — never the wallet).
-  const params = new URLSearchParams({ text, url: `${site}/p/${slug}${via ? `?via=${via}` : ''}` })
-  return `https://twitter.com/intent/tweet?${params.toString()}`
+  return { url: `${SITE_URL}/p/${slug}${via ? `?via=${via}` : ''}`, title, text }
+}
+
+export function shareTweetHrefOf(slug: string, messages: Array<{ role: string; content: string }>, via?: string): string {
+  const post = sharePostOf(slug, '', messages, via)
+  return xIntentHref(post.text, post.url)
 }
 
 /**

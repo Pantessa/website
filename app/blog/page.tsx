@@ -10,6 +10,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 import { SITE_URL as SITE } from '@/lib/site-url'
+import { SITE_CARD } from '@/lib/og-defaults'
 
 export const metadata: Metadata = {
   title: 'Blog — Pantessa',
@@ -17,12 +18,14 @@ export const metadata: Metadata = {
     'Notes from the agent-payments control plane: spend-controlled x402, agent expense accounts, and what our autopilot ships.',
   alternates: { canonical: `${SITE}/blog` },
   openGraph: {
+    images: SITE_CARD,
     type: 'website',
     title: 'Blog — Pantessa',
     description: 'Notes from the agent-payments control plane.',
     url: `${SITE}/blog`,
     siteName: 'Pantessa',
   },
+  twitter: { card: 'summary_large_image', title: 'Blog — Pantessa', description: 'Notes from the agent-payments control plane.', images: SITE_CARD },
 }
 
 async function getPosts() {
