@@ -72,13 +72,20 @@ export interface FieldScale {
   vOf: (price: number) => number
 }
 
-/** The price scale: every wick on the field plus a margin, never below zero. */
-export function fieldScale(bars: Candle[]): FieldScale {
+/** The price scale: every wick on the field plus a margin, never below zero.
+ *  `include` stretches it to hold prices off the tape (a liquidation cluster
+ *  ahead, a player's line). */
+export function fieldScale(bars: Candle[], include: number[] = []): FieldScale {
   let lo = Infinity
   let hi = -Infinity
   for (const b of bars) {
     if (b.l < lo) lo = b.l
     if (b.h > hi) hi = b.h
+  }
+  for (const p of include) {
+    if (!Number.isFinite(p) || p <= 0) continue
+    if (p < lo) lo = p
+    if (p > hi) hi = p
   }
   if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
     lo = 0
@@ -305,3 +312,7 @@ export function fieldHash(n: number, salt = 0): number {
 
 /** The most bars the field draws: past it, the newest ones. */
 export const FIELD_MAX_BARS = 400
+
+/** Empty slots past the newest bar: the ground ahead, where the liquidation
+ *  clusters and a player's lines are drawn before price gets there. */
+export const fieldAhead = (bars: number): number => Math.max(6, Math.round(bars * 0.1))

@@ -1193,7 +1193,7 @@ export default function MarketChart({
       </div>
 
       {/* Canvas: the engine owns the bars; the SVG layer owns the drawings. */}
-      <div className={`mkt-chart__canvas${tool !== 'none' ? ' is-drawing' : ''}${fill ? ' min-h-0 flex-1' : ''}`} style={fill ? undefined : { height: heightProp }}>
+      <div className={`mkt-chart__canvas${tool !== 'none' ? ' is-drawing' : ''}${fieldOn ? ' is-field' : ''}${fill ? ' min-h-0 flex-1' : ''}`} style={fill ? undefined : { height: heightProp }}>
         <div ref={wrapRef} className="mkt-chart__engine" />
         {/* Over the plot, never above it: a hint that pushed the canvas down moved the bars under the cursor. */}
         {tool !== 'none' && !fieldOn && (
@@ -1210,7 +1210,7 @@ export default function MarketChart({
             <span className="text-[12px] text-[color:var(--muted-2)]">{data?.error ? 'Chart feed unavailable — retrying.' : 'Loading candles…'}</span>
           </div>
         )}
-        {fieldOn && tokens && <BattleField symbol={pair.symbol} tf={tf} bars={fieldBars} tokens={tokens} lines={lines} fills={fills} sma50={fieldSma.s50} sma200={fieldSma.s200} />}
+        {fieldOn && tokens && <BattleField symbol={pair.symbol} pair={pair} onAsk={onAsk} canAsk={(ask) => canTradeAsk(ask, tradable)} tf={tf} bars={fieldBars} tokens={tokens} lines={lines} fills={fills} sma50={fieldSma.s50} sma200={fieldSma.s200} />}
         {!fieldOn && <DrawingLayer
           geom={geom}
           lines={lines}

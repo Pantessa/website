@@ -20,7 +20,7 @@
 .bf__day-sub { font-size: 9px; color: var(--muted-2); }
 
 /* Who is winning. */
-.bf__press { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: grid; justify-items: center; gap: 3px; max-width: 46%; text-align: center; pointer-events: none; text-shadow: 0 1px 6px var(--bg); }
+.bf__press { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); display: grid; justify-items: center; gap: 2px; max-width: 56%; text-align: center; pointer-events: none; text-shadow: 0 1px 6px var(--bg); }
 .bf__press-k { font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-2); }
 .bf__press-v { font-family: 'Fraunces', Georgia, serif; font-size: 17px; font-weight: 600; line-height: 1.15; color: var(--fg); }
 .bf__press--bulls .bf__press-v { color: var(--mk-up, var(--accent)); }
@@ -28,6 +28,7 @@
 .bf__meter { position: relative; width: 150px; height: 5px; border-radius: 3px; overflow: hidden; background: var(--mk-down, var(--sell)); pointer-events: auto; }
 .bf__meter i { position: absolute; inset: 0 auto 0 0; width: var(--bf-share, 50%); background: var(--mk-up, var(--accent)); border-right: 2px solid var(--bg); transition: width 0.3s; }
 .bf__press-l { font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted); }
+.bf__press-l2 { color: var(--muted-2); }
 
 /* A bar's battle report. */
 .bf__tip {
@@ -41,8 +42,10 @@
 .bf__tip-k, .bf__tip-h { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-2); }
 .bf__tip-h { margin-top: 2px; }
 
-/* Replay + scrub. */
-.bf__ctl { position: absolute; left: 12px; bottom: 6px; display: flex; align-items: center; gap: 8px; width: min(360px, calc(100% - 96px)); padding: 4px 6px; border-radius: 999px; border: 1px solid var(--line); background: color-mix(in oklch, var(--surf-1) 90%, transparent); cursor: default; }
+/* The strip under the field: replay + legend, then the player. */
+.bf__strip { position: absolute; left: 12px; right: 12px; bottom: 6px; display: grid; gap: 5px; cursor: default; }
+.bf__row { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.bf__ctl { flex: 0 1 360px; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 6px; border-radius: 999px; border: 1px solid var(--line); background: color-mix(in oklch, var(--surf-1) 90%, transparent); }
 .bf__play { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 10px; border-radius: 999px; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink, #04140c); background: var(--accent); white-space: nowrap; }
 .bf__play:hover { filter: brightness(1.08); }
 .bf__scrub { flex: 1 1 auto; min-width: 0; height: 18px; accent-color: var(--accent); cursor: pointer; }
@@ -53,13 +56,34 @@
 .bf__live:hover { color: var(--fg); }
 @keyframes bf-pulse { 50% { opacity: 0.35; } }
 
-.bf__legend { position: absolute; left: calc(min(360px, 100% - 96px) + 28px); bottom: 15px; right: 12px; display: flex; flex-wrap: nowrap; gap: 4px 14px; margin: 0; overflow: hidden; white-space: nowrap; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); pointer-events: none; }
+.bf__legend { flex: 1 1 0; display: flex; flex-wrap: nowrap; gap: 4px 14px; margin: 0; min-width: 0; overflow: hidden; white-space: nowrap; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); }
 .bf__legend span { display: inline-flex; align-items: center; gap: 5px; }
 .bf__sw { width: 9px; height: 9px; border-radius: 2px; }
 .bf__sw--up { background: color-mix(in oklch, var(--mk-up, var(--accent)) 45%, var(--bg)); }
 .bf__sw--down { background: color-mix(in oklch, var(--mk-down, var(--sell)) 45%, var(--bg)); }
+.bf__sw--fuel { background: #ffb648; }
 .bf__sw--50 { height: 3px; background: var(--chart-ma-50); }
 .bf__sw--200 { height: 3px; background: var(--chart-ma-200); }
+
+/* The player row. */
+.bf__player { display: flex; align-items: center; gap: 6px; min-width: 0; height: 30px; padding: 0 8px; border-radius: 10px; border: 1px dashed var(--line-2, var(--line)); background: color-mix(in oklch, var(--surf-1) 86%, transparent); white-space: nowrap; overflow: hidden; }
+.bf__player-k { font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-2); }
+.bf__player-note { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); overflow: hidden; text-overflow: ellipsis; }
+.bf__player-stats { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 10.5px; color: var(--muted); }
+.bf__player-stats i { font-style: normal; color: var(--muted-2); }
+.bf__player-stats b { font-weight: 600; }
+.bf__player-stats .is-up { color: var(--mk-up, var(--accent)); }
+.bf__player-stats .is-down { color: var(--mk-down, var(--sell)); }
+.bf__chip { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg); background: var(--bg); flex: 0 0 auto; }
+button.bf__chip:hover { border-color: var(--line-2, var(--fg)); }
+.bf__chip--long { color: var(--ink, #04140c); background: var(--mk-up, var(--accent)); border-color: transparent; }
+.bf__chip--short { color: #fff; background: var(--mk-down, var(--sell)); border-color: transparent; }
+.bf__chip--x { padding: 0 7px; color: var(--muted-2); }
+.bf__chip.is-on { border-color: var(--accent); color: var(--accent); }
+.bf__open { display: inline-flex; align-items: center; height: 22px; padding: 0 10px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--ink, #04140c); background: var(--accent); flex: 0 0 auto; }
+.bf__open:hover { filter: brightness(1.08); }
+.bf.is-placing { cursor: copy; }
+@media (hover: none) { .bf__chip, .bf__open { height: 30px; } .bf__player { height: 38px; } }
 
 /* The view switch in the chart's toolbar. */
 .mkt-view { display: flex; gap: 2px; border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
@@ -78,7 +102,11 @@
   .bf__press-l { display: none; }
   .bf__meter { width: 96px; }
   .bf__legend { display: none; }
-  .bf__ctl { width: calc(100% - 24px); }
+  .bf__ctl { flex-basis: 100%; }
+  .bf__player-k, .bf__player-note, .bf__player-wide, .bf__press-l2 { display: none; }
+  .bf__player-stats { font-size: 10px; }
+  .bf__player-stats i, .bf__chip--move { display: none; }
+  .bf__press { max-width: 58%; }
   .bf__tip { width: 220px; font-size: 11px; }
   .mkt-view__btn span { display: none; }
 }

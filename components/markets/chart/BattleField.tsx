@@ -20,7 +20,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Pause, Play } from 'lucide-react'
-import type { Candle, ChartTf } from '@/lib/charts'
+import { useAccount } from 'wagmi'
+import type { Candle, ChartPair, ChartTf } from '@/lib/charts'
 import type { ChartLine } from '@/lib/chart-state'
 import type { FillMarker } from '@/lib/chart-fills'
 import { FRAME_SEC } from '@/lib/chart-sessions'
@@ -37,15 +38,44 @@ import {
   pressureLine,
   timeBands,
   troopCounts,
+  fieldAhead,
   type FieldBox,
   type Season,
 } from '@/lib/battlefield'
+import {
+  PLAYER_LEVERAGES,
+  PLAYER_SIZES,
+  crowdRead,
+  fmtUsdShort,
+  fuelBeforePlayer,
+  fuelWithin,
+  fundingLine,
+  liqBuckets,
+  liquidationMap,
+  oiAtBars,
+  parsePlayer,
+  playerState,
+  type DerivsBody,
+  type LiqBucket,
+  type LiqHit,
+  type Player,
+  type PlayerState,
+} from '@/lib/derivs'
+import { composeExecAsk } from '@/lib/trade-asks'
+import { hasPerpCold } from '@/lib/symbol-venues'
+import type { PerpPosition } from '@/lib/symbol-position'
 import { fmtPrice } from '@/components/CandleChart'
 import type { Tokens } from './chart-tokens'
 import './battlefield.css'
 
 export interface BattleFieldProps {
   symbol: string
+  /** The chart's pair: positioning is read for coins and perps, never a tokenized stock. */
+  pair: ChartPair
+  /** Sends an order sentence (the chart's chip-send path). Absent → the player stays a what-if. */
+  onAsk?: (ask: string) => void
+  /** The chart's venue gates: may this sentence be offered? */
+  canAsk?: (ask: string) => boolean
   tf: ChartTf
   /** The bars on the field, oldest first. Empty while a frame loads. */
   bars: Candle[]
@@ -61,7 +91,19 @@ const FONT = "'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace"
 const TILT_MS = 900
 const REPLAY_MS = 11_000
 /** The strip under the field that the replay controls and the legend sit on. */
-const CTL_STRIP = 40
+const CTL_STRIP = 76
+/** Liquidation fuel on the board: one ink for both sides, its place says whose. */
+const FUEL = '#ffb648'
+const PLAYER_KEY = 'pantessa.bf.player.v1'
+
+/** A what-if position. `entry` null = at market: it rides the front until moved. */
+interface StoredPlayer {
+  side: 'long' | 'short'
+  leverage: number
+  usd: number
+  entry: number | null
+}
+type BoardPlayer = Player & { live: boolean; atMarket: boolean }
 /** Season inks for the forest and each month's ground: the calendar you can see. */
 const SEASON_INK: Record<Season, { tree: string; ground: string; alpha: number }> = {
   winter: { tree: '#dce9f5', ground: '#cfe3ff', alpha: 0.075 },
@@ -88,7 +130,7 @@ interface Tree {
   season: Season
 }
 
-export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sma50, sma200 }: BattleFieldProps) {
+export default function BattleField({ symbol, pair, onAsk, canAsk, tf, bars, tokens, lines, fills, sma50, sma200 }: BattleFieldProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 })
@@ -97,7 +139,7 @@ export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sm
   const [live, setLive] = useState(true)
   const [tipIdx, setTipIdx] = useState(Math.max(0, n - 1))
   const [playing, setPlaying] = useState(false)
-  const [hover, setHover] = useState<{ idx: number; x: number; y: number } | null>(null)
+  const [hover, setHover] = useState<{ idx: number; x: number; y: number; price: number } | null>(null)
   const tipRef = useRef(Math.max(0, n - 1))
   const hoverRef = useRef<number | null>(null)
   hoverRef.current = hover?.idx ?? null
@@ -125,10 +167,142 @@ export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sm
     return () => ro.disconnect()
   }, [])
 
+  // ── Positioning: the perp market's longs and shorts (lib/derivs) ─────────
+  const [derivs, setDerivs] = useState<DerivsBody | null>(null)
+  useEffect(() => {
+    setDerivs(null)
+    if (pair.source === 'robinhood') return
+    let alive = true
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/markets/derivs?symbol=${encodeURIComponent(symbol)}&tf=${tf}`, { cache: 'no-store' })
+        const body = (await res.json()) as DerivsBody
+        if (alive && res.ok && Array.isArray(body.oi)) setDerivs(body)
+      } catch {
+        /* the field draws without positioning */
+      }
+    }
+    void load()
+    const timer = setInterval(() => void load(), 60_000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [symbol, tf, pair.source])
+
+  // The player: a what-if you drop on the board (kept per symbol in this
+  // browser), or your real Hyperliquid position when the wallet has one.
+  const { address } = useAccount()
+  const [stored, setStored] = useState<StoredPlayer | null>(null)
+  const [placing, setPlacing] = useState(false)
+  const [livePos, setLivePos] = useState<PerpPosition | null>(null)
+  useEffect(() => {
+    setPlacing(false)
+    try {
+      const all = JSON.parse(localStorage.getItem(PLAYER_KEY) ?? '{}') as Record<string, unknown>
+      const raw = all[symbol] as Record<string, unknown> | undefined
+      const ok = raw ? parsePlayer({ ...raw, entry: raw.entry ?? 1 }) : null
+      setStored(ok && raw ? { side: ok.side, leverage: ok.leverage, usd: ok.usd, entry: typeof raw.entry === 'number' ? ok.entry : null } : null)
+    } catch {
+      setStored(null)
+    }
+  }, [symbol])
+  const savePlayer = useCallback(
+    (next: StoredPlayer | null) => {
+      setStored(next)
+      try {
+        const all = JSON.parse(localStorage.getItem(PLAYER_KEY) ?? '{}') as Record<string, unknown>
+        if (next) all[symbol] = next
+        else delete all[symbol]
+        localStorage.setItem(PLAYER_KEY, JSON.stringify(all))
+      } catch {
+        /* a private window keeps the player for this visit only */
+      }
+    },
+    [symbol],
+  )
+  useEffect(() => {
+    setLivePos(null)
+    if (!address || pair.source === 'robinhood') return
+    let alive = true
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/markets/position?symbol=${encodeURIComponent(symbol)}&address=${address}`, { cache: 'no-store' })
+        const body = (await res.json()) as { perp?: PerpPosition | null }
+        if (alive) setLivePos(res.ok && body.perp && body.perp.entryPx > 0 ? body.perp : null)
+      } catch {
+        /* no live position shown */
+      }
+    }
+    void load()
+    const timer = setInterval(() => void load(), 60_000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [address, symbol, pair.source])
+
+  const tipAt = Math.max(0, Math.min(tipIdx, n - 1))
+  const tipClose = n ? bars[tipAt].c : 0
+  const maxLev = derivs?.hl?.maxLeverage ?? 10
+  // The liquidation map (an ESTIMATE): the live one frames the scale, the tip's one is drawn.
+  const liveMap = useMemo(() => (derivs && derivs.oi.length > 1 && n > 1 ? liquidationMap(bars, derivs.oi, derivs.oiUnit) : null), [bars, derivs, n])
+  const tipMap = useMemo(() => (!liveMap || !derivs ? null : tipAt >= n - 1 ? liveMap : liquidationMap(bars, derivs.oi, derivs.oiUnit, tipAt)), [liveMap, derivs, bars, tipAt, n])
+  const buckets = useMemo<LiqBucket[]>(() => (tipMap && tipClose > 0 ? liqBuckets(tipMap.alive, tipClose) : []), [tipMap, tipClose])
+  const hits = useMemo<LiqHit[]>(() => (tipMap ? [...tipMap.hits].sort((a, b) => b.usd - a.usd).slice(0, 12) : []), [tipMap])
+
+  const player = useMemo<BoardPlayer | null>(() => {
+    if (livePos) return { side: livePos.side, entry: livePos.entryPx, leverage: Math.max(1, livePos.leverage), usd: Math.abs(livePos.valueUsd), live: true, atMarket: false }
+    if (!stored || !(tipClose > 0)) return null
+    return { side: stored.side, entry: stored.entry ?? tipClose, leverage: stored.leverage, usd: stored.usd, live: false, atMarket: stored.entry === null }
+  }, [livePos, stored, tipClose])
+  const pstate = useMemo<PlayerState | null>(() => {
+    if (!player) return null
+    const st = playerState(player, tipClose, maxLev)
+    // A real position carries the venue's own liquidation price.
+    return player.live && livePos?.liquidationPx ? { ...st, liq: livePos.liquidationPx, toLiqPct: (Math.abs(tipClose - livePos.liquidationPx) / tipClose) * 100, pnlUsd: tipAt >= n - 1 ? livePos.pnlUsd : st.pnlUsd } : st
+  }, [player, tipClose, maxLev, livePos, tipAt, n])
+  const firstToBreak = player && pstate ? fuelBeforePlayer(buckets, player, tipClose, pstate.liq) : 0
+
+  // What the board says about positioning at the tip.
+  const intel = useMemo(() => {
+    if (!derivs || n < 2) return null
+    const tEnd = bars[tipAt].t + FRAME_SEC[tf]
+    let longShare: number | null = null
+    for (const r of derivs.ratio) {
+      if (r.t > tEnd) break
+      longShare = r.long
+    }
+    const at = oiAtBars(bars, derivs.oi)
+    const a = at[Math.max(0, tipAt - 19)]
+    const z = at[tipAt + 1] ?? at[tipAt]
+    const oiChangePct = a && z ? ((z - a) / a) * 100 : null
+    const oiUsd = z ? (derivs.oiUnit === 'coin' ? z * tipClose : z) : null
+    const fuel = fuelWithin(buckets, tipClose, 10)
+    const read = crowdRead({ longShare, funding8h: tipAt >= n - 1 ? derivs.funding8h : null, oiChangePct, priceChangePct: pressureAt(bars, tipAt)?.movePct ?? null, fuelAbove: fuel.above, fuelBelow: fuel.below })
+    return { longShare, oiChangePct, oiUsd, fuel, read }
+  }, [derivs, bars, n, tipAt, tf, buckets, tipClose])
+
+  // Prices the scale must hold besides the tape: the big clusters near the
+  // price and the player's two lines.
+  const include = useMemo(() => {
+    const last = n ? bars[n - 1].c : 0
+    if (!(last > 0)) return []
+    const out: number[] = []
+    const liveBuckets = liveMap ? liqBuckets(liveMap.alive, last) : []
+    const top = liveBuckets.reduce((m, b) => Math.max(m, b.usd), 0)
+    for (const b of liveBuckets) if (b.usd >= top * 0.2 && Math.abs(b.price / last - 1) <= 0.22) out.push(b.price)
+    if (player && pstate) for (const p of [player.entry, pstate.liq]) if (p > last * 0.4 && p < last * 1.8) out.push(p)
+    return out
+    // The player's lines move the scale only when the player's shape changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveMap, n, bars, player?.side, player?.leverage, player?.atMarket ? 0 : player?.entry, player?.live])
+
   // ── The scene: everything that only changes when the bars do ────────────
   const scene = useMemo(() => {
     if (n < 2) return null
-    const scale = fieldScale(bars)
+    const scale = fieldScale(bars, include)
+    const slots = n + fieldAhead(n)
     const bands = timeBands(bars, tf)
     let volMax = 0
     for (const b of bars) if (b.v > volMax) volMax = b.v
@@ -137,9 +311,9 @@ export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sm
     const trees: Tree[] = []
     const want = Math.max(50, Math.min(150, Math.round(n * 0.6)))
     for (let i = 0; i < want * 2 && trees.length < want; i++) {
-      const u = fieldHash(i, 1)
+      const u = (fieldHash(i, 1) * n) / slots
       const v = 0.03 + fieldHash(i, 2) * 0.94
-      const idx = Math.min(n - 1, Math.floor(u * n))
+      const idx = Math.min(n - 1, Math.floor(u * slots))
       const b = bars[idx]
       // The fighting clears the ground: nothing grows inside a bar's range.
       if (v > scale.vOf(b.l) - 0.03 && v < scale.vOf(b.h) + 0.03) continue
@@ -147,11 +321,12 @@ export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sm
       trees.push({ u, v, size: 0.7 + fieldHash(i, 3) * 0.7, idx, bull: v < scale.vOf(b.c), season: band?.season ?? 'summer' })
     }
     trees.sort((a, b) => b.v - a.v)
-    return { scale, bands, volMax, order, trees, byMonth: tf === '1d' || tf === '4h' }
-  }, [bars, n, tf])
+    return { scale, bands, volMax, order, trees, slots, byMonth: tf === '1d' || tf === '4h' }
+  }, [bars, n, tf, include])
 
-  const sceneRef = useRef({ scene, bars, tokens, lines, fills, sma50, sma200, size, tf, symbol })
-  sceneRef.current = { scene, bars, tokens, lines, fills, sma50, sma200, size, tf, symbol }
+  const board = { buckets, hits, player, pstate, firstToBreak, longShare: intel?.longShare ?? null, placing }
+  const sceneRef = useRef({ scene, bars, tokens, lines, fills, sma50, sma200, size, tf, symbol, board })
+  sceneRef.current = { scene, bars, tokens, lines, fills, sma50, sma200, size, tf, symbol, board }
 
   const box = useCallback((w: number, h: number): FieldBox => ({ left: 12, top: 6, width: Math.max(40, w - 12 - 58), height: Math.max(40, h - 6 - CTL_STRIP) }), [])
   const tiltAt = useCallback(
@@ -167,7 +342,7 @@ export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sm
   const draw = useCallback(
     (now: number) => {
       const canvas = canvasRef.current
-      const { scene: sc, bars: bs, tokens: tk, lines: ls, fills: fl, sma50: s50, sma200: s200, size: sz, tf: frame } = sceneRef.current
+      const { scene: sc, bars: bs, tokens: tk, lines: ls, fills: fl, sma50: s50, sma200: s200, size: sz, tf: frame, board: bd } = sceneRef.current
       if (!canvas || sz.w < 40 || sz.h < 40) return
       const dpr = Math.min(2, window.devicePixelRatio || 1)
       if (canvas.width !== Math.round(sz.w * dpr) || canvas.height !== Math.round(sz.h * dpr)) {
@@ -189,8 +364,9 @@ export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sm
       const { vOf } = sc.scale
       const tipF = Math.max(0, Math.min(count - 1, tipRef.current))
       const tipI = Math.floor(tipF)
-      const uEnd = (tipI + 1) / count
-      const uc = (i: number) => (i + 0.5) / count
+      const slots = sc.slots
+      const uEnd = (tipI + 1) / slots
+      const uc = (i: number) => (i + 0.5) / slots
       const poly = (pts: { x: number; y: number }[]) => {
         ctx.beginPath()
         pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)))
@@ -241,8 +417,8 @@ export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sm
       ctx.clip()
       // The calendar on the ground: alternate bands, each month in its season.
       sc.bands.forEach((band, j) => {
-        const u0 = band.from / count
-        const u1 = Math.min(uEnd, (band.to + 1) / count)
+        const u0 = band.from / slots
+        const u1 = Math.min(uEnd, (band.to + 1) / slots)
         if (u0 >= uEnd) return
         poly([P(u0, 0), P(u1, 0), P(u1, 1), P(u0, 1)])
         if (sc.byMonth) {
@@ -277,9 +453,27 @@ export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sm
         ctx.lineWidth = 1
         ctx.stroke()
       }
+      // Liquidation fuel (estimated, lib/derivs): where leveraged longs (under
+      // the price) and shorts (over it) get closed out. A faint trail back to
+      // the bars the positions opened on, the fuel itself on the ground ahead.
+      let fuelMax = 0
+      for (const b of bd.buckets) if (b.usd > fuelMax) fuelMax = b.usd
+      const fuelHalf = ((bs[tipI].c * 0.015) / (sc.scale.hi - sc.scale.lo)) * 0.42
+      for (const b of bd.buckets) {
+        const v = vOf(b.price)
+        const k = fuelMax > 0 ? b.usd / fuelMax : 0
+        if (v <= 0.005 || v >= 0.995 || k < 0.05) continue
+        const uFrom = Math.min(uEnd, (b.from + 0.5) / slots)
+        poly([P(uFrom, v - fuelHalf), P(uEnd, v - fuelHalf), P(uEnd, v + fuelHalf), P(uFrom, v + fuelHalf)])
+        ctx.fillStyle = rgba(FUEL, 0.03 + 0.1 * k)
+        ctx.fill()
+        poly([P(uEnd, v - fuelHalf), P(1, v - fuelHalf), P(1, v + fuelHalf), P(uEnd, v + fuelHalf)])
+        ctx.fillStyle = rgba(FUEL, 0.1 + 0.45 * k)
+        ctx.fill()
+      }
       // Drawn zones and trend lines lie on the ground.
       const barSec = FRAME_SEC[frame]
-      const uOfT = (time: number) => ((time - bs[0].t) / barSec + 0.5) / count
+      const uOfT = (time: number) => ((time - bs[0].t) / barSec + 0.5) / slots
       for (const l of ls) {
         if (l.kind === 'zone') {
           const v1 = vOf(Math.min(l.p1, l.p2))
@@ -387,7 +581,7 @@ export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sm
 
       // Units mass where the front is (lib/battlefield: the trailing stretch's force share).
       const press = pressureAt(bs, tipI)
-      const troops = troopCounts(press?.bullShare ?? 0.5, Math.max(10, Math.min(44, count * 0.2)))
+      const troops = troopCounts(bd.longShare ?? press?.bullShare ?? 0.5, Math.max(10, Math.min(44, count * 0.2)))
       const reach = Math.max(6, Math.round(count * 0.12))
       const unit = (j: number, bull: boolean) => {
         const salt = bull ? 11 : 23
@@ -398,7 +592,7 @@ export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sm
         const frontV = vOf(bs[idx].c)
         const dir = bull ? 1 : -1
         const v = Math.max(0.01, Math.min(0.99, frontV - dir * (0.035 + r2 * 0.11) + Math.sin(t / 900 + r3 * 6.28) * 0.004))
-        const u = (idx + 0.15 + 0.7 * r3) / count
+        const u = (idx + 0.15 + 0.7 * r3) / slots
         const p = P(u, v)
         const k = Math.max(0.55, p.s) * (sz.w < 520 ? 0.8 : 1)
         const ink = bull ? tk.up : tk.down
@@ -460,8 +654,8 @@ export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sm
         const up = b.c >= b.o
         const va = vOf(Math.min(b.o, b.c))
         const vb = Math.max(vOf(Math.max(b.o, b.c)), va + 0.004)
-        const u0 = (i + 0.16) / count
-        const u1 = (i + 0.84) / count
+        const u0 = (i + 0.16) / slots
+        const u1 = (i + 0.84) / slots
         // The newest block rises as the replay reaches it.
         const grow = i === tipI && tipF < count - 1 ? Math.max(0.15, tipF - tipI) : 1
         const tall = (sc.volMax > 0 ? 3 + 46 * Math.sqrt(b.v / sc.volMax) : 9) * tilt * grow * (sz.h < 320 ? 0.7 : 1)
@@ -491,6 +685,107 @@ export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sm
       }
 
       for (let j = 0; j < troops.bulls; j++) unit(j, true)
+
+      // Where a cluster already went off: the bar whose range reached it.
+      const hitMax = bd.hits.reduce((m, h) => Math.max(m, h.usd), 0)
+      for (const h of bd.hits) {
+        if (h.at > tipI || hitMax <= 0) continue
+        const v = vOf(h.price)
+        if (v <= 0 || v >= 1) continue
+        const p = P(uc(h.at), v)
+        const r = (3 + 7 * Math.sqrt(h.usd / hitMax)) * Math.max(0.6, p.s)
+        ctx.strokeStyle = rgba(FUEL, 0.9)
+        ctx.lineWidth = 1.2
+        for (let a = 0; a < 8; a++) {
+          const ang = (a * Math.PI) / 4 + 0.3
+          ctx.beginPath()
+          ctx.moveTo(p.x + Math.cos(ang) * r * 0.35, p.y + Math.sin(ang) * r * 0.25)
+          ctx.lineTo(p.x + Math.cos(ang) * r, p.y + Math.sin(ang) * r * 0.7)
+          ctx.stroke()
+        }
+      }
+      // Powder kegs on the ground ahead: more barrels, more dollars waiting there.
+      const ahead0 = uEnd
+      const loudest: Partial<Record<'long' | 'short', LiqBucket>> = {}
+      const kegged = new Set([...bd.buckets].sort((a, b) => b.usd - a.usd).slice(0, 6))
+      for (const b of bd.buckets) {
+        const v = vOf(b.price)
+        const k = fuelMax > 0 ? b.usd / fuelMax : 0
+        if (v <= 0.01 || v >= 0.99 || !kegged.has(b)) continue
+        const inPlay = b.side === 'short' ? b.price > bs[tipI].c : b.price < bs[tipI].c
+        if (inPlay && (!loudest[b.side] || b.usd > loudest[b.side]!.usd)) loudest[b.side] = b
+        const kegs = 1 + Math.round(k * 3)
+        for (let q = 0; q < kegs; q++) {
+          const p = P(ahead0 + ((q + 1) * (1 - ahead0)) / (kegs + 1), v)
+          const w = 3.2 * Math.max(0.6, p.s)
+          const hgt = 8 * Math.max(0.6, p.s) * (0.35 + 0.65 * tilt)
+          ctx.fillStyle = mix(FUEL, tk.bg, 0.45)
+          ctx.fillRect(p.x - w, p.y - hgt, w * 2, hgt)
+          ctx.fillStyle = FUEL
+          ctx.fillRect(p.x - w, p.y - hgt, w * 2, 1.6)
+          ctx.fillRect(p.x - w, p.y - hgt * 0.5, w * 2, 1)
+        }
+      }
+      for (const side of ['short', 'long'] as const) {
+        const b = loudest[side]
+        if (!b) continue
+        const e = P(1, vOf(b.price))
+        text(`${side === 'short' ? 'SHORTS' : 'LONGS'} BREAK · ~${fmtUsdShort(b.usd)} · ${fmtPrice(b.price)}`, e.x - 8, e.y - 11, FUEL, { size: 9, align: 'right', plate: true })
+      }
+
+      // The player: one position, its entry and the line where it breaks.
+      const pl = bd.player
+      const ps = bd.pstate
+      if (pl && ps) {
+        const ve = vOf(pl.entry)
+        const vl = vOf(ps.liq)
+        if (ve > 0 && ve < 1) {
+          const a = P(0, ve)
+          const b = P(1, ve)
+          ctx.beginPath()
+          ctx.moveTo(a.x, a.y)
+          ctx.lineTo(b.x, b.y)
+          ctx.setLineDash([6, 5])
+          ctx.strokeStyle = rgba(tk.accent, 0.7)
+          ctx.lineWidth = 1.2
+          ctx.stroke()
+          ctx.setLineDash([])
+        }
+        if (vl > 0 && vl < 1) {
+          const a = P(0, vl)
+          const b = P(1, vl)
+          const hgt = 12 * tilt
+          poly([a, b, { x: b.x, y: b.y - hgt * b.s }, { x: a.x, y: a.y - hgt * a.s }])
+          ctx.fillStyle = rgba(tk.down, 0.3)
+          ctx.fill()
+          ctx.beginPath()
+          ctx.moveTo(a.x, a.y - hgt * a.s)
+          ctx.lineTo(b.x, b.y - hgt * b.s)
+          ctx.strokeStyle = tk.down
+          ctx.lineWidth = 1.4
+          ctx.stroke()
+          text(`YOUR ${pl.side.toUpperCase()} BREAKS ~${fmtPrice(ps.liq)}`, a.x + 6, a.y - hgt * a.s - 8, tk.fg, { size: 9, plate: true })
+        }
+        if (ve > 0 && ve < 1) {
+          const p = P(ahead0 + (1 - ahead0) * 0.4, ve)
+          const k = Math.max(0.7, p.s) * 1.5
+          const dir = pl.side === 'long' ? 1 : -1
+          ctx.fillStyle = mix(tk.accent, tk.bg, 0.55)
+          ctx.fillRect(p.x - 6 * k, p.y - 3 * k, 12 * k, 4 * k)
+          ctx.fillStyle = tk.accent
+          ctx.fillRect(p.x - 5 * k, p.y - 6 * k, 10 * k, 4 * k)
+          ctx.fillRect(p.x - 2.2 * k, p.y - 9 * k, 4.4 * k, 3.4 * k)
+          ctx.beginPath()
+          ctx.moveTo(p.x, p.y - 7.5 * k)
+          ctx.lineTo(p.x, p.y - 7.5 * k - dir * 7 * k)
+          ctx.strokeStyle = tk.accent
+          ctx.lineWidth = 1.6 * k
+          ctx.stroke()
+          const won = ps.pnlUsd >= 0
+          const pnl = pl.atMarket ? '' : ` ${won ? '+' : '\u2212'}$${Math.abs(ps.pnlUsd).toFixed(2)}`
+          text(`YOU · ${pl.live ? 'LIVE ' : ''}${pl.side.toUpperCase()} ${pl.leverage}x${pnl}`, p.x, p.y - 9 * k - 12, pl.atMarket ? tk.fg : won ? tk.up : tk.down, { size: 9, align: 'center', bold: true, plate: true })
+        }
+      }
 
       // Walls: the levels you drew, standing across the whole field.
       for (const l of ls) {
@@ -593,7 +888,7 @@ export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sm
       ctx.setLineDash([])
       let lastSignX = -Infinity
       sc.bands.forEach((band) => {
-        const u0 = band.from / count
+        const u0 = band.from / slots
         const post = P(u0, -0.012)
         const postTop = post.y - 9 * tilt
         if (band.from > 0) {
@@ -604,9 +899,9 @@ export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sm
           ctx.lineWidth = 1
           ctx.stroke()
         }
-        const c = P((band.from + band.to + 1) / 2 / count, mid)
+        const c = P((band.from + band.to + 1) / 2 / slots, mid)
         ctx.font = `600 10px ${FONT}`
-        const room = P((band.to + 1) / count, mid).x - P(u0, mid).x
+        const room = P((band.to + 1) / slots, mid).x - P(u0, mid).x
         const glyph = sc.byMonth ? 14 : 0
         // A narrow band drops the year ("JAN 2026" → "JAN") before it drops its sign.
         const label = [band.label, band.label.split(' ')[0]].find((s) => ctx.measureText(s).width + glyph + 10 <= room)
@@ -674,16 +969,18 @@ export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sm
 
   // ── Pointer: a bar's report on hover, a jump in time on click ───────────
   const barAt = useCallback(
-    (clientX: number, clientY: number): { idx: number; x: number; y: number } | null => {
+    (clientX: number, clientY: number): { idx: number; x: number; y: number; price: number } | null => {
       const el = wrapRef.current
-      if (!el || n < 2) return null
+      const sc = sceneRef.current.scene
+      if (!el || n < 2 || !sc) return null
       const r = el.getBoundingClientRect()
       const x = clientX - r.left
       const y = clientY - r.top
       const { unproject } = fieldProjector(box(r.width, r.height), tiltAt(performance.now()))
       const g = unproject(x, y)
       if (g.u < 0 || g.u >= 1 || g.v < ROAD_V - 0.02 || g.v > 1.04) return null
-      return { idx: Math.min(n - 1, Math.floor(g.u * n)), x, y }
+      // Past the newest bar is the ground ahead: it reads as the newest bar.
+      return { idx: Math.min(n - 1, Math.floor(g.u * sc.slots)), x, y, price: sc.scale.lo + Math.max(0, Math.min(1, g.v)) * (sc.scale.hi - sc.scale.lo) }
     },
     [box, n, tiltAt],
   )
@@ -730,20 +1027,39 @@ export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sm
   const hoverDate = hoverBar ? fieldDate(hoverBar.t, tf) : null
   const stance = press?.side === 'bulls' ? 'Bulls advancing' : press?.side === 'bears' ? 'Bears advancing' : 'Stalemate'
   const share = Math.round((press?.bullShare ?? 0.5) * 100)
+  const crowd = intel && intel.longShare !== null ? intel : null
+  const longPct = crowd ? Math.round(crowd.longShare! * 100) : 0
+  const atLive = tipAt >= n - 1
+  // The order the player stands for: offered only while it is an at-market
+  // what-if on a coin Hyperliquid lists, at a leverage the venue allows.
+  const perpOk = pair.source === 'hyperliquid' || hasPerpCold(pair.symbol)
+  const openAsk = (() => {
+    if (!onAsk || !stored || livePos || stored.entry !== null || !perpOk || stored.leverage > maxLev || !atLive) return null
+    const ask = composeExecAsk(pair, stored.side, { usd: stored.usd, leverage: stored.leverage })
+    return ask && (canAsk ? canAsk(ask) : true) ? ask : null
+  })()
+  const levs = PLAYER_LEVERAGES.filter((l) => l <= maxLev)
+  const cycle = <T,>(list: T[], cur: T): T => list[(Math.max(0, list.indexOf(cur)) + 1) % list.length]
+  const addPlayer = (side: 'long' | 'short') => savePlayer({ side, leverage: levs.includes(3) ? 3 : levs[0] ?? 1, usd: 25, entry: null })
 
   return (
     <div
       ref={wrapRef}
-      className={`bf${playing ? ' is-playing' : ''}`}
+      className={`bf${playing ? ' is-playing' : ''}${placing ? ' is-placing' : ''}`}
       onPointerMove={(e) => {
-        if ((e.target as HTMLElement).closest('.bf__ctl')) return setHover(null)
+        if ((e.target as HTMLElement).closest('.bf__strip')) return setHover(null)
         setHover(barAt(e.clientX, e.clientY))
       }}
       onPointerLeave={() => setHover(null)}
       onClick={(e) => {
-        if ((e.target as HTMLElement).closest('.bf__ctl')) return
+        if ((e.target as HTMLElement).closest('.bf__strip')) return
         const hit = barAt(e.clientX, e.clientY)
-        if (hit) jump(hit.idx)
+        if (!hit) return
+        // Placing: the click is the player's entry price. Otherwise it moves the front.
+        if (placing && stored) {
+          savePlayer({ ...stored, entry: Number(hit.price.toPrecision(5)) })
+          setPlacing(false)
+        } else jump(hit.idx)
       }}
     >
       <canvas
@@ -769,16 +1085,37 @@ export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sm
         </div>
       </div>
 
-      {/* Who is winning the trailing stretch. */}
-      {press && (
-        <div className={`bf__press bf__press--${press.side}`}>
-          <span className="bf__press-k mono">Market pressure</span>
-          <span className="bf__press-v">{stance}</span>
-          <span className="bf__meter" style={{ '--bf-share': `${share}%` } as CSSProperties} title={`${share}% of the stretch's volume traded on up bars`}>
+      {/* Longs vs shorts when an exchange publishes it; the tape's own pressure otherwise. */}
+      {crowd ? (
+        <div className={`bf__press bf__press--${crowd.read.lean === 'up' ? 'bulls' : crowd.read.lean === 'down' ? 'bears' : 'stalemate'}`}>
+          <span className="bf__press-k mono">Longs vs shorts · {derivs?.source} accounts</span>
+          <span className="bf__press-v">{crowd.read.headline}</span>
+          <span className="bf__meter" style={{ '--bf-share': `${longPct}%` } as CSSProperties} title={`${longPct}% of accounts with a position are net long (${derivs?.source})`}>
             <i />
           </span>
-          <span className="bf__press-l mono">{pressureLine(press)}</span>
+          <span className="bf__press-l mono">
+            {longPct}% long · {100 - longPct}% short
+            {atLive && derivs?.funding8h != null ? ` · funding ${fundingLine(derivs.funding8h)}` : ''}
+          </span>
+          {crowd.oiUsd != null || crowd.read.flow ? (
+            <span className="bf__press-l bf__press-l2 mono">
+              {crowd.oiUsd != null ? `open interest ${fmtUsdShort(crowd.oiUsd)}${crowd.oiChangePct != null ? ` (${crowd.oiChangePct >= 0 ? '+' : '\u2212'}${Math.abs(crowd.oiChangePct).toFixed(1)}% / 20 bars)` : ''}` : ''}
+              {crowd.oiUsd != null && crowd.read.flow ? ' · ' : ''}
+              {crowd.read.flow ? crowd.read.flow.split(': ')[1] : ''}
+            </span>
+          ) : null}
         </div>
+      ) : (
+        press && (
+          <div className={`bf__press bf__press--${press.side}`}>
+            <span className="bf__press-k mono">Market pressure</span>
+            <span className="bf__press-v">{stance}</span>
+            <span className="bf__meter" style={{ '--bf-share': `${share}%` } as CSSProperties} title={`${share}% of the stretch's volume traded on up bars`}>
+              <i />
+            </span>
+            <span className="bf__press-l mono">{pressureLine(press)}</span>
+          </div>
+        )
       )}
 
       {report && hover && hoverDate && (
@@ -795,38 +1132,89 @@ export default function BattleField({ symbol, tf, bars, tokens, lines, fills, sm
           {report.lines.map((l) => (
             <span key={l}>{l}</span>
           ))}
-          <span className="bf__tip-h mono">click to move the front here</span>
+          <span className="bf__tip-h mono">{placing ? `click to set your entry at ${fmtPrice(hover.price)}` : 'click to move the front here'}</span>
         </div>
       )}
 
-      <div className="bf__ctl">
-        <button type="button" className="bf__play" onClick={replay} aria-label={playing ? 'Pause the replay' : 'Replay the campaign'} title={playing ? 'Pause' : 'Replay the campaign from the first bar'}>
-          {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-          <span className="mono">{playing ? 'Pause' : 'Replay'}</span>
-        </button>
-        <input
-          className="bf__scrub"
-          type="range"
-          min={0}
-          max={n - 1}
-          step={1}
-          value={Math.min(tipIdx, n - 1)}
-          aria-label="Move the front through time"
-          aria-valuetext={`${date.month} ${date.day}, ${date.year}${date.time ? ` ${date.time}` : ''}`}
-          onChange={(e) => jump(Number(e.target.value))}
-        />
-        <button type="button" className={`bf__live mono${live && !playing ? ' is-live' : ''}`} onClick={() => jump(n - 1)} title="Back to the newest bar">
-          <i aria-hidden="true" /> Live
-        </button>
-      </div>
+      <div className="bf__strip">
+        <div className="bf__row">
+          <div className="bf__ctl">
+            <button type="button" className="bf__play" onClick={replay} aria-label={playing ? 'Pause the replay' : 'Replay the campaign'} title={playing ? 'Pause' : 'Replay the campaign from the first bar'}>
+              {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+              <span className="mono">{playing ? 'Pause' : 'Replay'}</span>
+            </button>
+            <input
+              className="bf__scrub"
+              type="range"
+              min={0}
+              max={n - 1}
+              step={1}
+              value={Math.min(tipIdx, n - 1)}
+              aria-label="Move the front through time"
+              aria-valuetext={`${date.month} ${date.day}, ${date.year}${date.time ? ` ${date.time}` : ''}`}
+              onChange={(e) => jump(Number(e.target.value))}
+            />
+            <button type="button" className={`bf__live mono${live && !playing ? ' is-live' : ''}`} onClick={() => jump(n - 1)} title="Back to the newest bar">
+              <i aria-hidden="true" /> Live
+            </button>
+          </div>
+          <p className="bf__legend mono">
+            <span><i className="bf__sw bf__sw--up" />{crowd ? 'longs' : 'buyers'}</span>
+            <span><i className="bf__sw bf__sw--down" />{crowd ? 'shorts' : 'sellers'}</span>
+            {buckets.length && intel ? <span title="Estimated from open interest that appeared on each bar, across 5x to 50x. Where the fuel probably is, not where price will go."><i className="bf__sw bf__sw--fuel" />est. liquidations within 10%: {fmtUsdShort(intel.fuel.above)} shorts above · {fmtUsdShort(intel.fuel.below)} longs below</span> : null}
+            {buckets.length ? null : <span>block height = volume</span>}
+            {sma50 ? <span><i className="bf__sw bf__sw--50" />SMA 50</span> : null}
+            {sma200 ? <span><i className="bf__sw bf__sw--200" />SMA 200</span> : null}
+          </p>
+        </div>
 
-      <p className="bf__legend mono">
-        <span><i className="bf__sw bf__sw--up" />ground buyers hold</span>
-        <span><i className="bf__sw bf__sw--down" />ground sellers hold</span>
-        <span>block height = volume</span>
-        {sma50 ? <span><i className="bf__sw bf__sw--50" />SMA 50</span> : null}
-        {sma200 ? <span><i className="bf__sw bf__sw--200" />SMA 200</span> : null}
-      </p>
+        {/* The player: a position on the board. A what-if until its order is opened. */}
+        {pair.source !== 'robinhood' && (
+          <div className="bf__player">
+            {!player || !pstate ? (
+              <>
+                <span className="bf__player-k mono">Put a position on the board</span>
+                <button type="button" className="bf__chip bf__chip--long mono" onClick={() => addPlayer('long')}>+ Long</button>
+                <button type="button" className="bf__chip bf__chip--short mono" onClick={() => addPlayer('short')}>+ Short</button>
+                <span className="bf__player-note mono">see where it breaks before you open it</span>
+              </>
+            ) : (
+              <>
+                <span className="bf__player-k mono">{player.live ? 'Your position' : 'You'}</span>
+                {player.live || !stored ? (
+                  <span className={`bf__chip bf__chip--${player.side} mono`}>{player.side} {player.leverage}x · ${Math.round(player.usd)}</span>
+                ) : (
+                  <>
+                    <button type="button" className={`bf__chip bf__chip--${stored.side} mono`} title="Switch side" onClick={() => savePlayer({ ...stored, side: stored.side === 'long' ? 'short' : 'long' })}>{stored.side}</button>
+                    <button type="button" className="bf__chip mono" title="Leverage (tap to change)" onClick={() => savePlayer({ ...stored, leverage: cycle(levs, stored.leverage) })}>{stored.leverage}x</button>
+                    <button type="button" className="bf__chip mono" title="Position size (tap to change)" onClick={() => savePlayer({ ...stored, usd: cycle(PLAYER_SIZES, stored.usd) })}>${stored.usd}</button>
+                  </>
+                )}
+                <span className="bf__player-stats mono">
+                  <span className="bf__player-wide">entry {fmtPrice(player.entry)} · </span>
+                  {pstate.liquidated ? <b className="is-down">liquidated</b> : <>breaks ~{fmtPrice(pstate.liq)} <i>({pstate.toLiqPct.toFixed(1)}% away)</i></>}
+                  {firstToBreak > 0 && !pstate.liquidated ? <span className="bf__player-wide"> · est. {fmtUsdShort(firstToBreak)} of other {player.side}s break first</span> : null}
+                  {!player.atMarket ? <> · <b className={pstate.pnlUsd >= 0 ? 'is-up' : 'is-down'}>{pstate.pnlUsd >= 0 ? '+' : '\u2212'}${Math.abs(pstate.pnlUsd).toFixed(2)}</b></> : null}
+                </span>
+                {!player.live && stored && (
+                  <button type="button" className={`bf__chip bf__chip--move mono${placing ? ' is-on' : ''}`} onClick={() => (stored.entry !== null && !placing ? savePlayer({ ...stored, entry: null }) : setPlacing((v) => !v))} title={stored.entry !== null ? 'Put the entry back at the market price' : 'Click the board to try another entry price'}>
+                    {placing ? 'click the board…' : stored.entry !== null ? 'at market' : 'move entry'}
+                  </button>
+                )}
+                {openAsk && onAsk && (
+                  <button type="button" className="bf__open" onClick={() => onAsk(openAsk)} title={openAsk}>Open<span className="bf__player-wide">&nbsp;on Hyperliquid</span></button>
+                )}
+                {player.live && onAsk && atLive && (
+                  <button type="button" className="bf__chip mono" onClick={() => onAsk(`Close my ${pair.symbol} ${player.side} on Hyperliquid`)}>Close</button>
+                )}
+                {!player.live && (
+                  <button type="button" className="bf__chip bf__chip--x mono" aria-label="Take the player off the board" onClick={() => { savePlayer(null); setPlacing(false) }}>×</button>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
