@@ -15,7 +15,7 @@ export default function NotFound() {
     'inline-flex items-center gap-2 px-4 min-h-[44px] rounded-full border border-[var(--line)] bg-[var(--surf-1)] text-[13px] font-medium text-[color:var(--fg)] hover:border-[var(--accent)] transition-colors'
   return (
     <main className="x-main">
-      <div className="max-w-xl mx-auto px-4 py-24">
+      <div className="max-w-xl mx-auto px-4 max-sm:px-0 py-24 max-sm:py-14">
         <div className="flex items-center gap-2 mb-8">
           <PantessaMark size={15} />
           <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">404 · not found</span>
