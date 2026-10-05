@@ -83,6 +83,23 @@
      360px; a third line is the fallback below that, never an ellipsis. */
   .lh__rcptask { font-size: 11px; -webkit-line-clamp: 3; }
   .lh__rcptstamp { display: none; }
+  /* The hero chart is a rehearsal, and on a phone its controls stood four
+     rows deep (timeframes, overlays, drawing tools, live + Share): the plot
+     began 930px down a 375x812 screen, under a headline that promises a
+     chart. The overlays and the drawing tools live on /t (one tap away, the
+     CTA above); here the bar is one row (timeframes, Share) over the status
+     line, and the plot begins ~110px higher. */
+  .lh__quiet { row-gap: 6px; }
+  /* The two CTAs stacked at their own widths (153 and 216px): one column,
+     one width. */
+  .lh__ctas > * { flex: 1 1 100%; justify-content: center; }
+  .lh__chart .mkt-chart__ind, .lh__chart .mkt-chart__tools { display: none; }
+  .lh__chart .mkt-chart__bar { row-gap: 0; }
+  .lh__chart .mkt-chart__right { display: contents; }
+  .lh__chart .mkt-chart__right > .mkt-sharebtn { order: 2; margin-left: auto; }
+  .lh__chart .mkt-chart__right > :not(.mkt-sharebtn) { order: 4; }
+  .lh__chart .mkt-chart__right > :not(.mkt-sharebtn):not(.mkt-pool) { flex: 1 1 0; min-width: 0; }
+  .lh__chart .mkt-chart__bar::before { content: ''; order: 3; flex: 0 0 100%; height: 6px; }
 }
 
 /* ── Every dapp, one chart ─────────────────────────────────────────────── */
@@ -120,6 +137,17 @@
   .lvb__orbit { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .lvb__core { grid-column: 1 / 3; grid-row: 1; }
 }
+@media (max-width: 520px) {
+  /* Two columns leave a card ~150px: "Hyperliq…", "CoW S…" and "Robinho…"
+     were cut beside their kind tag (5 of 8 names at 375, all 8 at 320). The
+     kind becomes the card's eyebrow and the name gets the whole line. */
+  .lvb__vhead { flex-wrap: wrap; row-gap: 8px; }
+  .lvb__vkind { order: -1; flex: 0 0 100%; margin-left: 0; }
+  .lvb__vname { flex: 1 1 0; min-width: 0; white-space: normal; overflow: visible; line-height: 1.2; }
+  /* and the live figure steps down: at 18px mono a quote wrapped to four
+     lines in a 118px column. */
+  .lvb__vstat { font-size: 14px; line-height: 1.35; }
+}
 
 /* ── Market map teaser ─────────────────────────────────────────────────── */
 .lmap { padding: clamp(48px, 7vh, 80px) 0; max-width: 1220px; margin: 0 auto; }
@@ -139,7 +167,11 @@
 .lhon__stat { display: flex; flex-direction: column; gap: 4px; }
 .lhon__v { font-size: clamp(22px, 2.2vw, 30px); color: var(--fg); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
 .lhon__k { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted-2); }
-@media (max-width: 900px) { .lhon__in { grid-template-columns: repeat(2, minmax(0, 1fr)); } .lhon__lead { grid-column: 1 / 3; } }
+/* The lead's WRAPPER is the grid item (the old rule spanned the <p> inside
+   it, which is not one): on a phone the claim sat in one of two columns,
+   ~130px wide. And the ledger-unavailable line spans 4 inline, which grew a
+   2-column grid to 4: it takes the full row instead. */
+@media (max-width: 900px) { .lhon__in { grid-template-columns: repeat(2, minmax(0, 1fr)); } .lhon__in > :first-child { grid-column: 1 / -1; } .lhon__in > .lhon__stat[style] { grid-column: 1 / -1 !important; } }
 
 /* ── Compare band (their meters vs ours) ───────────────────────────────── */
 .lcmp__meters { margin: clamp(32px, 5vh, 48px) auto 0; max-width: 1080px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }

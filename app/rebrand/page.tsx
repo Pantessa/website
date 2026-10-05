@@ -30,7 +30,7 @@ export default function RebrandPage() {
   return (
     <>
       <main className="x-main">
-        <section className="max-w-2xl mx-auto px-4 py-16">
+        <section className="max-w-2xl mx-auto px-4 max-sm:px-0 py-16 max-sm:py-10">
           <div className="flex items-center gap-2 mb-6">
             <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
               Company record · Updated August 11, 2026

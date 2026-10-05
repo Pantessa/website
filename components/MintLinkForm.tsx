@@ -414,7 +414,7 @@ export function MintLinkForm({
                 setManualMcps(null)
                 askRef.current?.focus()
               }}
-              className="px-2.5 py-1 max-lg:min-h-11 max-lg:px-3.5 rounded-full border border-[var(--line)] text-[12px] text-[color:var(--muted)] hover:border-[var(--accent)] hover:text-[color:var(--fg)] transition-colors"
+              className="px-2.5 py-1 max-lg:min-h-11 max-lg:px-3.5 rounded-full max-sm:rounded-2xl max-sm:py-2 text-left border border-solid border-[var(--line)] text-[12px] text-[color:var(--muted)] hover:border-[var(--accent)] hover:text-[color:var(--fg)] transition-colors"
             >
               {s}
             </button>
