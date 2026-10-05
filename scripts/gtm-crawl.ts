@@ -54,10 +54,25 @@ export const RAW: string[] = [
 ]
 const VIEWPORTS = [{ width: 375, height: 812 }, { width: 1440, height: 900 }]
 
+/** Not product signal: request interception (needed for the internal-run
+ *  header) makes Chrome refuse cross-origin fonts / CDP / WalletConnect config
+ *  (control run without interception: none of these), a local build has no
+ *  Vercel insights and a placeholder CDP project. Counted separately. */
+const NOISE = /fonts\.gstatic|api\.cdp\.coinbase|cca-lite\.coinbase|web3modal|_vercel\/insights|YOUR_CDP_PROJECT|Cross-Origin-Opener-Policy|^Failed to load resource: net::ERR_FAILED$|ERR_ABORTED/
+
 type Row = {
   route: string; width: number; status: number | null; overflow: number
   consoleErrors: string[]; pageErrors: string[]; failedRequests: string[]
   yeetful: string[]; badImages: string[]
+}
+
+/** The internal-run header rides first-party requests only: on a cross-origin
+ *  request it forces a CORS preflight that fonts/CDP refuse (a crawl artifact). */
+async function newCtx(browser: any, vp: { width: number; height: number }) {
+  const ctx = await browser.newContext({ viewport: vp, isMobile: vp.width < 768 })
+  await ctx.route((u: URL) => u.origin === new URL(BASE).origin, (r: any) =>
+    r.continue({ headers: { ...r.request().headers(), 'x-yf-internal-run': '1' } }))
+  return ctx
 }
 
 async function main() {
@@ -67,20 +82,20 @@ async function main() {
   const links = new Set<string>()
   const routes = ONLY ?? ROUTES
   for (const vp of VIEWPORTS) {
-    let ctx = await browser.newContext({ viewport: vp, extraHTTPHeaders: headers, isMobile: vp.width < 768 })
+    let ctx = await newCtx(browser, vp)
     for (const route of routes) {
       if (!browser.isConnected()) browser = await pw.chromium.launch({ executablePath: CHROME, headless: true })
       let page: any
       try { page = await ctx.newPage() } catch {
-        ctx = await browser.newContext({ viewport: vp, extraHTTPHeaders: headers, isMobile: vp.width < 768 })
+        ctx = await newCtx(browser, vp)
         page = await ctx.newPage()
       }
       if (process.env.VERBOSE) console.error('..', vp.width, route)
       const row: Row = { route, width: vp.width, status: null, overflow: 0, consoleErrors: [], pageErrors: [], failedRequests: [], yeetful: [], badImages: [] }
-      page.on('console', (m: any) => { if (m.type() === 'error') row.consoleErrors.push(m.text().slice(0, 200)) })
+      page.on('console', (m: any) => { if (m.type() === 'error' && !NOISE.test(m.text())) row.consoleErrors.push(m.text().slice(0, 200)) })
       page.on('pageerror', (e: any) => row.pageErrors.push(String(e.message).slice(0, 200)))
-      page.on('requestfailed', (r: any) => { if (!/_rsc=|google|youtube|analytics/.test(r.url())) row.failedRequests.push(`FAIL ${r.url().slice(0, 140)} ${r.failure()?.errorText ?? ''}`) })
-      page.on('response', (r: any) => { if (r.status() >= 400 && r.url() !== BASE + route) row.failedRequests.push(`${r.status()} ${r.request().method()} ${r.url().replace(BASE, '').slice(0, 140)}`) })
+      page.on('requestfailed', (r: any) => { const t = `FAIL ${r.url().slice(0, 140)} ${r.failure()?.errorText ?? ''}`; if (!/_rsc=|youtube/.test(r.url()) && !NOISE.test(t)) row.failedRequests.push(t) })
+      page.on('response', (r: any) => { if (r.status() >= 400 && r.url() !== BASE + route && !NOISE.test(r.url())) row.failedRequests.push(`${r.status()} ${r.request().method()} ${r.url().replace(BASE, '').slice(0, 140)}`) })
       try {
         const res = await page.goto(BASE + route, { waitUntil: 'load', timeout: 45000 })
         row.status = res?.status() ?? null
