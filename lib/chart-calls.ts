@@ -116,22 +116,45 @@ export function fillWords(f: { side: 'buy' | 'sell'; usd: number | null; venue: 
   return `${f.side === 'buy' ? 'Bought' : 'Sold'}${amt} of ${symbol} · ${f.venue}${f.chain ? ` · ${f.chain}` : ''}`
 }
 
+/**
+ * The title a chart is posted under when its author pressed "Post on X"
+ * without typing one: the symbol, the frame, and the first thing they
+ * labelled (a line's label, else a note's words), else the line count.
+ * Always 3–120 characters — the post door's own rule.
+ */
+export function autoCallTitle(symbol: string, tfLabel: string, lines: ChartLine[]): string {
+  const named = lines.map((l) => (l.kind === 'note' ? l.text : l.label)).find((t): t is string => !!t && t.trim().length > 0)
+  const tail = named ? named.trim() : `${lines.length} line${lines.length === 1 ? '' : 's'} on the chart`
+  return `${symbol} ${tfLabel}: ${tail}`.slice(0, 120)
+}
+
 /** The public address of a call. */
 export const callPath = (id: string) => `/c/${id}`
 export const callUrl = (id: string) => absoluteUrl(callPath(id))
 
 const TWEET_TITLE_MAX = 180
 
-/** The post that goes on X for a stamped call: cashtag, the claim, the page. */
+/**
+ * The post that goes on X for a stamped call. Shaped on purpose:
+ *   · the cashtag leads, once: it files the post under the ticker's stream.
+ *     Never an @mention first — X treats a post that opens with one as a
+ *     reply and shows it to far fewer people.
+ *   · the author's own claim is the first line; our words are one short
+ *     line under it, and no hashtags (they read as spam and add nothing a
+ *     cashtag does not).
+ *   · one link, last, so X draws the call's card under the text.
+ */
 export function callTweetHref(call: { id: string; symbol: string; title: string; verified?: boolean }): string {
   const title = call.title.length > TWEET_TITLE_MAX ? `${call.title.slice(0, TWEET_TITLE_MAX - 1).trimEnd()}…` : call.title
-  const text = `$${call.symbol} — ${title}\n\nTime and price stamped${call.verified ? ', position verified on-chain' : ''} on ${X_MENTION}:`
+  // A title that already opens with the ticker ("UNI 1D: …") is not given it twice.
+  const lead = new RegExp(`^\\$?${call.symbol}\\b`, 'i').test(title) ? `$${title.replace(/^\$/, '')}` : `$${call.symbol} — ${title}`
+  const text = `${lead}\n\nTime and price stamped${call.verified ? ', position verified on-chain' : ''}. Reply on the chart, via ${X_MENTION}:`
   return `https://twitter.com/intent/tweet?${new URLSearchParams({ text, url: callUrl(call.id) }).toString()}`
 }
 
 /** A plain chart share (no call published): the symbol page is the link. */
 export function chartTweetHref(symbol: string, tfLabel: string): string {
-  const text = `$${symbol} · ${tfLabel} — charted on ${X_MENTION}, where the chart is the order ticket:`
+  const text = `$${symbol} ${tfLabel} chart. Draw on it, trade from it, via ${X_MENTION}:`
   return `https://twitter.com/intent/tweet?${new URLSearchParams({ text, url: absoluteUrl(`/t/${symbol}`) }).toString()}`
 }
 

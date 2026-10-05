@@ -19,6 +19,9 @@ export interface CallView {
   last: number | null
   feed: ChartFeed | null
   daily: Candle[]
+  /** The tape on the frame the lines were drawn on (the card draws these, so a
+   *  trend line lands on the bars its author put it on). Falls back to daily. */
+  tape: Candle[]
   /** % move from the stamp to the last price. */
   move: number | null
   /** The author's receipt-verified fills on this symbol, oldest first. */
@@ -45,9 +48,11 @@ async function readStamp(symbol: string, callT: number): Promise<CallStamp | nul
 export async function readCall(id: string): Promise<CallView | null> {
   const post = await getPost(id).catch(() => null)
   if (!post || post.kind !== 'idea') return null
-  const [stamp, live, fillsRead] = await Promise.all([
+  const tf = post.chartState?.tf ?? '1d'
+  const [stamp, live, framed, fillsRead] = await Promise.all([
     readStamp(post.symbol, post.createdAt),
     loadCandleSeries(post.symbol, '1d').catch(() => null),
+    tf === '1d' ? Promise.resolve(null) : loadCandleSeries(post.symbol, tf).catch(() => null),
     readVerifiedFills(post.symbol, post.author).catch(() => [] as FillMarker[]),
   ])
   const daily = live?.series.candles ?? []
@@ -61,6 +66,7 @@ export async function readCall(id: string): Promise<CallView | null> {
     last,
     feed: live?.series.feed ?? null,
     daily,
+    tape: framed?.series.candles.length ? framed.series.candles : daily,
     move: stamp && last !== null ? movePct(stamp.price, last) : null,
     fills,
     heldAtCall: fills.some((f) => f.side === 'buy' && f.t <= post.createdAt),
