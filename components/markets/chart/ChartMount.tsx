@@ -70,6 +70,8 @@ export interface ChartMountProps {
   fills?: FillMarker[]
   /** Drawn over the plot above the time axis (MarketChart `overlay`). */
   overlay?: ReactNode
+  /** Offer the Battlefield view beside the candles (MarketChart `battlefield`). */
+  battlefield?: boolean
 }
 
 export default function ChartMount({
@@ -87,6 +89,7 @@ export default function ChartMount({
   compare,
   fills,
   overlay,
+  battlefield,
 }: ChartMountProps) {
   const [drawings, setDrawings] = useState<ChartState | null>(null)
   // News-on-bars: the News tab toggles markers into COMM's session store;
@@ -134,6 +137,7 @@ export default function ChartMount({
       compare={compare}
       fills={fills}
       overlay={overlay}
+      battlefield={battlefield}
     />
   )
 }
