@@ -20,6 +20,15 @@
 //  • unknown holdings (no wallet, still reading, a failed read), a sell whose
 //    token can't be read and a chain the rule can't name all fail CLOSED:
 //    no Sell until the wallet is known to hold it.
+//
+//  A SPOT STOP needs something it can guard (2026-10-05, Nate: "if we show
+//  an action … make sure it's possible for any button"). "Protect my UNI in
+//  my wallet with a 5% stop" arms a one-shot Spend Permission on Base that
+//  only a smart wallet's own contract can enforce, over a token the wallet
+//  holds there — for anyone else the arm path can only refuse. So the same
+//  holdings read answers it: the chip renders when the holding is marked
+//  `guardable` (lib/watchlist-holdings: on Base, wallet has code on Base),
+//  and fails closed like a Sell. A Guardian stop on a PERP is not this rule.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { ROBINHOOD_CHAIN_ID, SPOT_CHAINS } from '@/lib/symbol-venues'
@@ -90,12 +99,31 @@ export function sellTarget(ask: string): { symbol: string; chainId: number | nul
   return chainId === undefined ? null : { symbol, chainId }
 }
 
+const SPOT_STOP_RE = new RegExp(String.raw`^\s*protect\s+(?:the\s+|my\s+)?(?:${UNITS}\s+)?(?:spot\s+)?${SYM}`, 'i')
+const SPOT_MARKER_RE = /\bspot\b|\bin\s+my\s+wallet\b|\bon\s+base\b/i
+const PERP_WORDS_RE = /\b(?:long|short|perp(?:s|etual)?|position|hyperliquid|hl)\b/i
+
 /**
- * Show this chip? Anything that isn't a sell: yes. A sell: only when the
- * wallet holds the token (on the chain the sentence names, if it names one).
- * `held` null = unknown, which is a no.
+ * The token a spot stop would guard ("Protect my UNI in my wallet with a 5%
+ * stop", "Protect my spot ETH …", "protect my ETH on base …"), or null for
+ * anything else — a Guardian stop on a perp names its side or its venue and
+ * is not a spot stop (the same split lib/spot-guard parseSpotGuardArm makes).
+ */
+export function spotStopTarget(ask: string): string | null {
+  if (!SPOT_MARKER_RE.test(ask) || PERP_WORDS_RE.test(ask)) return null
+  const m = ask.match(SPOT_STOP_RE)
+  return m ? normalizeWatchSymbol(m[1]) : null
+}
+
+/**
+ * Show this chip? A sell: only when the wallet holds the token (on the chain
+ * the sentence names, if it names one). A spot stop: only when the wallet
+ * holds the token somewhere the Spot Guardian can arm it. Anything else:
+ * yes. `held` null = unknown, which is a no for both.
  */
 export function canSellAsk(ask: string, held: readonly HeldSymbol[] | null | undefined): boolean {
+  const guarded = spotStopTarget(ask)
+  if (guarded) return !!held?.some((x) => x.symbol === guarded && x.amount > 0 && x.guardable === true)
   if (!isSellAsk(ask)) return true
   const target = sellTarget(ask)
   if (!target || !held) return false

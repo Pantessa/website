@@ -36,7 +36,15 @@ import {
   type FundLegsResponse,
   type FundRoutesState,
 } from '@/lib/symbol-venues'
+import { canTradeAsk } from '@/lib/trade-venue-gate'
+import { useTradable } from '@/lib/use-tradable'
 import './trade.css'
+
+/** The sentence whose venue listing a leg kind stands on (lib/venue-capability
+ *  reads it): a supply leg needs the Aave reserve, every Hyperliquid leg
+ *  needs the live perp. Other kinds need no listing. */
+const listingAskFor = (kind: CompoundLegKind, sym: string): string | null =>
+  kind === 'supply' ? `supply $50 of ${sym} to Aave` : kind === 'deposit' || kind === 'long' || kind === 'short' || kind === 'protect' ? `Long $50 of ${sym} on Hyperliquid` : null
 
 const LEG_LABEL: Record<CompoundLegKind, string> = {
   fund: 'Bridge in',
@@ -56,9 +64,20 @@ const LEVS = [1, 2, 3, 5] as const
 type FundView = 'off' | 'no-wallet' | 'pending' | FundRoutesState
 
 export default function CompoundComposer({ symbol, pair, onAsk }: { symbol: string; pair: ChartPair; onAsk: (ask: string) => void }) {
-  const available = useMemo(() => compoundLegKindsFor(symbol, pair), [symbol, pair])
-  const presets = useMemo(() => compoundPresets(symbol, pair), [symbol, pair])
-  const [kinds, setKinds] = useState<CompoundLegKind[]>(() => presets[0]?.kinds ?? available.slice(0, 2))
+  // A leg whose venue has been measured NOT listing the token is not offered
+  // (the same rule every chip asks); the picked legs follow, so a preset can
+  // never carry a leg the job would refuse.
+  const tradable = useTradable()
+  const available = useMemo(
+    () => compoundLegKindsFor(symbol, pair).filter((k) => {
+      const ask = listingAskFor(k, pair.symbol)
+      return !ask || canTradeAsk(ask, tradable)
+    }),
+    [symbol, pair, tradable],
+  )
+  const presets = useMemo(() => compoundPresets(symbol, pair).filter((p) => p.kinds.every((k) => available.includes(k))), [symbol, pair, available])
+  const [picked, setKinds] = useState<CompoundLegKind[]>(() => presets[0]?.kinds ?? available.slice(0, 2))
+  const kinds = useMemo(() => picked.filter((k) => available.includes(k)), [picked, available])
   const [usd, setUsd] = useState<number>(50)
   const [leverage, setLeverage] = useState<number>(1)
   const [originChainId, setOriginChainId] = useState<number | undefined>(undefined)

@@ -16,7 +16,7 @@
 // not a holding, and an unpriced curated row still counts (a stock bought a
 // minute ago that the quoter hasn't priced is real).
 
-import { APP_CHAINS, chainById } from '@/lib/chains'
+import { APP_CHAINS, chainById, publicClientFor } from '@/lib/chains'
 import { chartPairFor } from '@/lib/charts'
 import { dynamicTokenByAddress, ensureTokenList } from '@/lib/token-list'
 import { STOCK_CHAIN_ID, getWalletViewCached, robinhoodStockTokens, type WalletChainView } from '@/lib/wallet-view'
@@ -130,9 +130,43 @@ export async function readHeldSymbols(
   address: `0x${string}`,
   opts: { fresh?: boolean } = {},
 ): Promise<{ held: HeldSymbol[]; empty: boolean; failedChains: string[]; cached: boolean }> {
-  const [{ view, cached }] = await Promise.all([
+  const both = await Promise.all([
     getWalletViewCached(address, opts),
+    isSmartWalletOnBase(address),
     Promise.all(APP_CHAINS.map((c) => ensureTokenList(c.id).catch(() => {}))),
   ])
-  return { held: heldWatchSymbols(view.chains), empty: walletLooksEmpty(view), failedChains: view.failedChains, cached }
+  const [{ view, cached }, smart] = both
+  return { held: markGuardable(heldWatchSymbols(view.chains), smart), empty: walletLooksEmpty(view), failedChains: view.failedChains, cached }
+}
+
+/** The chain the Spot Guardian runs on (lib/spot-guard-exec SPOT_GUARD_CHAIN_ID). */
+const GUARD_CHAIN_ID = 8453
+
+/** Stamp the holdings a spot stop can actually be armed on: on Base, in a
+ *  smart wallet. Pure — the harness passes the wallet kind. */
+export function markGuardable(held: HeldSymbol[], smartWallet: boolean): HeldSymbol[] {
+  if (!smartWallet) return held
+  return held.map((h) => (h.amount > 0 && h.chainIds.includes(GUARD_CHAIN_ID) ? { ...h, guardable: true as const } : h))
+}
+
+/** Is the wallet a contract on Base — the arm path's own test (getCode), so
+ *  the chip and the arm can't disagree. A wallet's kind changes about never:
+ *  a yes is kept for the life of the server, a no for ten minutes (a smart
+ *  wallet deploys on first use), and an unreadable answer is a no that is
+ *  asked again next time. */
+const smartSeen = new Map<string, { smart: boolean; at: number }>()
+const NOT_SMART_TTL_MS = 10 * 60_000
+async function isSmartWalletOnBase(address: `0x${string}`): Promise<boolean> {
+  const key = address.toLowerCase()
+  const hit = smartSeen.get(key)
+  if (hit && (hit.smart || Date.now() - hit.at < NOT_SMART_TTL_MS)) return hit.smart
+  try {
+    const code = await publicClientFor(GUARD_CHAIN_ID)?.getCode({ address })
+    const smart = !!code && code !== '0x'
+    if (smartSeen.size > 5_000) smartSeen.clear()
+    smartSeen.set(key, { smart, at: Date.now() })
+    return smart
+  } catch {
+    return false
+  }
 }

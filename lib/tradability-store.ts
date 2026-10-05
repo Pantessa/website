@@ -21,10 +21,16 @@ import prisma from '@/lib/db'
 import { chartPairFor } from '@/lib/charts'
 import { marketSections } from '@/lib/markets'
 import { preflightFundedBuy } from '@/lib/venue-preflight'
+import { callMcpTool } from '@/lib/mcp-call'
+import { AAVE_MCP } from '@/lib/aave-exec'
+import { hlPerpUniverse } from '@/lib/hl-universe'
+import { aaveCapability, aaveRefusal, capabilityLegsFor, perpCapability, perpRefusal, type CapabilityLeg, type ReserveListing } from '@/lib/venue-capability'
 import {
+  LEG_SIDES,
   TRADABILITY_MAX_AGE_MS,
   TRADABILITY_PROBE_USD,
   tradeLegsFor,
+  type LegSide,
   type LegVerdict,
   type SymbolTradability,
   type TradabilityMap,
@@ -71,10 +77,10 @@ async function readUncached(): Promise<TradabilityMap> {
     })
     const map: Record<string, SymbolTradability> = {}
     for (const r of rows) {
-      if (r.side !== 'buy' && r.side !== 'sell') continue
+      if (!(LEG_SIDES as readonly string[]).includes(r.side)) continue
       if (r.verdict !== 'fillable' && r.verdict !== 'no-venue') continue
       const t = (map[r.symbol] ??= { symbol: r.symbol, legs: [] })
-      t.legs.push({ chainId: r.chainId, side: r.side, verdict: r.verdict as LegVerdict, reason: r.reason ?? undefined, checkedAt: r.checkedAt.toISOString() })
+      t.legs.push({ chainId: r.chainId, side: r.side as LegSide, verdict: r.verdict as LegVerdict, reason: r.reason ?? undefined, checkedAt: r.checkedAt.toISOString() })
     }
     return map
   } catch {
@@ -92,6 +98,8 @@ export interface TradabilityRefresh {
   /** Legs still waiting for their turn when the budget ran out. */
   left: number
   ms: number
+  /** The venue LISTINGS pass (Aave reserves, the Hyperliquid universe). */
+  listings?: ListingRefresh
 }
 
 /**
@@ -116,6 +124,9 @@ export async function refreshTradability(opts: { budgetMs?: number; concurrency?
   const queue = [...legs].sort((a, b) => (known.get(keyOf(a)) ?? 0) - (known.get(keyOf(b)) ?? 0))
 
   const out: TradabilityRefresh = { read: 0, fillable: 0, noVenue: 0, unknown: 0, left: 0, ms: 0 }
+  // The listings first: two venue reads cover every supply and perp chip on
+  // the board, so they never wait behind 480 swap quotes.
+  if (!opts.legs) out.listings = await refreshListings({ known })
   await Promise.all(
     Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
       for (;;) {
@@ -140,9 +151,88 @@ export async function refreshTradability(opts: { budgetMs?: number; concurrency?
   return out
 }
 
-const keyOf = (l: TradeLeg) => `${l.symbol}:${l.chainId}:${l.side}`
+const keyOf = (l: Pick<TradeLeg, 'symbol' | 'chainId'> & { side: LegSide }) => `${l.symbol}:${l.chainId}:${l.side}`
 
-async function writeLeg(leg: TradeLeg, verdict: LegVerdict, reason: string | null): Promise<void> {
+// ── Listings: what each venue's own list says about the board's chips ──────
+
+/** Every venue listing the board's own non-swap chips depend on. */
+export function boardCapabilityLegs(): CapabilityLeg[] {
+  const out: CapabilityLeg[] = []
+  for (const section of marketSections()) {
+    for (const row of section.rows) {
+      const pair = chartPairFor(row.symbol)
+      if (pair) out.push(...capabilityLegsFor(row.symbol, pair))
+    }
+  }
+  return out
+}
+
+/** A listing moves when a venue lists or delists a market — days, not
+ *  minutes — so one pass an hour is plenty, and a leg nobody has measured
+ *  yet is measured on the very next pass. */
+const LISTINGS_EVERY_MS = 30 * 60_000
+const LISTINGS_TIMEOUT_MS = 8_000
+
+export interface ListingRefresh {
+  read: number
+  listed: number
+  notListed: number
+  /** Venues whose list could not be read — their legs keep their last verdict. */
+  failed: string[]
+  skipped?: true
+}
+
+/**
+ * Read Aave's reserve list and Hyperliquid's perp universe once each and
+ * write a verdict for every board leg that depends on them. A venue that
+ * doesn't answer writes NOTHING (never a guess): its legs go stale and their
+ * chips come back, exactly like an unread swap leg.
+ */
+export async function refreshListings(opts: { known?: Map<string, number>; force?: boolean } = {}): Promise<ListingRefresh> {
+  const legs = boardCapabilityLegs()
+  const out: ListingRefresh = { read: 0, listed: 0, notListed: 0, failed: [] }
+  const now = Date.now()
+  if (!opts.force && opts.known && legs.every((l) => now - (opts.known!.get(keyOf(l)) ?? 0) < LISTINGS_EVERY_MS)) return { ...out, skipped: true }
+
+  const wantAave = legs.some((l) => l.side !== 'perp')
+  const wantHl = legs.some((l) => l.side === 'perp')
+  const [aaveR, hl] = await Promise.all([
+    wantAave
+      ? (callMcpTool(AAVE_MCP, 'reserves', { chainId: 1 }, { timeoutMs: LISTINGS_TIMEOUT_MS }) as Promise<{ reserves?: ReserveListing[] }>).then(
+          // An empty list is a broken read, not a venue with nothing listed.
+          (r) => (Array.isArray(r?.reserves) && r.reserves.length > 0 ? r.reserves : null),
+          () => null,
+        )
+      : null,
+    wantHl ? hlPerpUniverse().catch(() => null) : null,
+  ])
+  if (wantAave && !aaveR) out.failed.push('aave')
+  if (wantHl && !hl) out.failed.push('hyperliquid')
+
+  const writes: Promise<void>[] = []
+  for (const leg of legs) {
+    let ok: boolean
+    let reason: string
+    if (leg.side === 'perp') {
+      if (!hl) continue
+      ok = perpCapability(hl, leg.symbol)
+      reason = perpRefusal(leg.symbol)
+    } else {
+      if (!aaveR) continue
+      ok = aaveCapability(aaveR, leg.symbol)[leg.side]
+      reason = aaveRefusal(leg.symbol, leg.side)
+    }
+    out.read++
+    if (ok) out.listed++
+    else out.notListed++
+    writes.push(writeLeg(leg, ok ? 'fillable' : 'no-venue', ok ? null : reason))
+  }
+  await Promise.all(writes)
+  forgetTradability()
+  return out
+}
+
+async function writeLeg(leg: Pick<TradeLeg, 'symbol' | 'chainId'> & { side: LegSide }, verdict: LegVerdict, reason: string | null): Promise<void> {
   const data = { verdict, reason, sizeUsd: TRADABILITY_PROBE_USD, checkedAt: new Date() }
   try {
     await prisma.symbolTradability.upsert({
