@@ -367,6 +367,7 @@ import { buildAutoBuy } from '../lib/dca-auto-exec'
 import { ADDRESS_THIS, NoV3PoolError, SWAP_ROUTER_02_ABI, guardUniswapV3Build, type V3GuardExpectations } from '../lib/uniswap-venue'
 import { creatorSplitPins } from './creator-split-pins'
 import { actionGateLivePins, actionGatePins } from './action-gate-pins'
+import { chartCallsPins } from './chart-calls-pins'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
   VIA_RE,
@@ -34537,6 +34538,8 @@ async function main() {
   creatorSplitPins(check)
   actionGatePins(check)
   await actionGateLivePins(check)
+  // Drawing gestures, the share picture's words, a stamped call (pure).
+  chartCallsPins(check)
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
