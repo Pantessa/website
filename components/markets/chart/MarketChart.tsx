@@ -41,7 +41,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
-import { ChartCandlestick, Eraser, Minus, MousePointer2, RectangleHorizontal, Redo2, Share2, StickyNote, Swords, TrendingUp, Undo2 } from 'lucide-react'
+import { ChartCandlestick, ChevronsRight, Eraser, Minus, MousePointer2, Plus, RectangleHorizontal, Redo2, Share2, StickyNote, Swords, TrendingUp, Undo2 } from 'lucide-react'
 import { CHART_TFS, DEFAULT_CHART_TF, chartPairFor, type Candle, type ChartTf } from '@/lib/charts'
 import { newLineId, serializeChartState, type ChartLine, type ChartState } from '@/lib/chart-state'
 import { composeLineActions, composeZoneActions, missingActionNote, type LineActionOffer } from '@/lib/chart-actions'
@@ -61,6 +61,8 @@ import { fillLabel, type FillMarker } from '@/lib/chart-fills'
 import { useChartHover } from '@/lib/markets-ai-hover'
 import { seriesVar } from '@/lib/markets-look'
 import { VolumeProfile } from './volume-profile'
+import ChartLegend from './ChartLegend'
+import { awayFromLive, chartKey, markPlusHintSeen, plusHintSeen, tidyPrice, zoomedFrom } from '@/lib/chart-legend'
 import BattleField from './BattleField'
 import { FIELD_MAX_BARS } from '@/lib/battlefield'
 import { canSellAsk } from '@/lib/sell-gate'
@@ -84,6 +86,13 @@ const WARMUP_RETRY_MS = 60_000
 const PAGE_RETRY_MS = 5_000
 /** The right margin, in bars, between the latest candle and the price scale. */
 const RIGHT_OFFSET = 4
+// The loading state: ghost bars on a fixed walk ([height %, top %]), so the
+// plot has its shape before the first candle (never a line of text in a box).
+const SKELETON_BARS: [number, number][] = Array.from({ length: 36 }, (_, i) => {
+  const drift = 46 - 26 * Math.sin(i / 5.2) - i * 0.35
+  const wobble = 7 * Math.sin(i * 1.9) + 4 * Math.cos(i * 0.7)
+  return [Math.round(9 + 7 * Math.abs(Math.sin(i * 2.3))), Math.round(Math.max(6, Math.min(74, drift + wobble)))]
+})
 /** A stock's extended-hours candles draw at this share of the up/down color:
  *  present and readable, a step behind the regular session's. */
 const QUIET_CANDLE_ALPHA = 0.5
@@ -258,6 +267,17 @@ export default function MarketChart({
   const [view, setView] = useState<'candles' | 'field'>('candles')
   // The first bar the field shows: the left edge of the candles' view at the switch.
   const [fieldFrom, setFieldFrom] = useState<number | null>(null)
+
+  // The newest bar has left the view: the plot offers a way back ("Live").
+  const [away, setAway] = useState(false)
+  // The "+" on the price axis follows the crosshair. Its place and price are
+  // written straight to the DOM (a pointer move must not re-render the chart).
+  const plusRef = useRef<HTMLButtonElement | null>(null)
+  const plusPriceRef = useRef<number | null>(null)
+  // Keys act on the chart the pointer is over (or the one holding focus).
+  const overRef = useRef(false)
+  // The one-line pointer to the "+" shows until it has been used once.
+  const [plusHint, setPlusHint] = useState<string | null>(null)
 
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -614,9 +634,12 @@ export default function MarketChart({
 
     const bump = () => setGeomTick((n) => n + 1)
     // Every range change repaints the drawings and runs the viewport guard.
+    const hidePlus = () => plusRef.current?.classList.remove('is-on')
     const onRange = () => {
       bump()
       requestGuard()
+      const view = chart.timeScale().getVisibleLogicalRange()
+      setAway(awayFromLive(view ? (view.to as number) : null, drawnRef.current))
     }
     chart.timeScale().subscribeVisibleLogicalRangeChange(onRange)
     const ro = new ResizeObserver(bump)
@@ -637,11 +660,26 @@ export default function MarketChart({
     }
     const onMove = (p: MouseEventParams<Time>) => {
       if (!p.point) {
+        // The "+" stays where it was: the pointer left the canvas FOR it (the
+        // button sits over the plot). The canvas's own pointerleave hides it.
         reportHoverBar(null)
         return
       }
       const logical = chart.timeScale().coordinateToLogical(p.point.x)
       reportHoverBar(logical === null ? null : (logical as number))
+      const plus = plusRef.current
+      if (plus) {
+        const plotW = chart.timeScale().width()
+        const price = p.point.x <= plotW ? tidyPrice(candleSeries.coordinateToPrice(p.point.y)) : null
+        plusPriceRef.current = price
+        if (price === null) hidePlus()
+        else {
+          plus.style.left = `${Math.max(0, plotW - 26)}px`
+          plus.style.top = `${Math.round(p.point.y) - 11}px`
+          plus.title = `Put a level at $${fmtPrice(price)}: an order, a stop or a note`
+          plus.classList.add('is-on')
+        }
+      }
     }
     chart.subscribeCrosshairMove(onMove)
 
@@ -984,6 +1022,51 @@ export default function MarketChart({
     return () => window.removeEventListener('keydown', onKey)
   }, [noteDraft, shareOpen, tool, selectedId, tools, edit, stepUndo])
 
+  const goLive = useCallback(() => chartRef.current?.timeScale().scrollToRealTime(), [])
+
+  // Keys over the chart (lib/chart-legend chartKey): 1-4 pick the frame, the
+  // left and right arrows walk the bars, + and - zoom about the right edge, L
+  // or End returns to the newest bar. Only while the pointer is over this
+  // chart (or it holds focus), never while typing, never with a modifier.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!overRef.current || e.defaultPrevented) return
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return
+      const chart = chartRef.current
+      if (!chart) return
+      const ts = chart.timeScale()
+      const view = ts.getVisibleLogicalRange()
+      const act = chartKey(e, CHART_TFS.map((t) => t.key), view ? (view.to as number) - (view.from as number) : 0)
+      if (!act) return
+      e.preventDefault()
+      if (act.kind === 'tf') setTf(act.tf)
+      else if (act.kind === 'live') ts.scrollToRealTime()
+      else if (act.kind === 'pan') ts.scrollToPosition(ts.scrollPosition() + act.bars, false)
+      else if (act.kind === 'zoom' && view) ts.setVisibleLogicalRange({ from: zoomedFrom(view.from as number, view.to as number, act.factor) as Logical, to: view.to })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // The pointer to the "+": shown until it has been used once in this browser.
+  useEffect(() => {
+    if (!tools) return
+    if (plusHintSeen()) return
+    const touch = window.matchMedia?.('(hover: none)').matches
+    setPlusHint(touch ? 'tap a price, then + to put an order there' : 'point at a price, then + to put an order there')
+  }, [tools])
+  const dropLevel = useCallback(() => {
+    const price = plusPriceRef.current
+    if (price === null) return
+    const id = newLineId('h')
+    edit([...linesRef.current, { id, kind: 'h', price }])
+    setSelectedId(id)
+    plusRef.current?.classList.remove('is-on')
+    setPlusHint(null)
+    markPlusHintSeen()
+  }, [edit])
+
   // ── Geometry for the drawing layer (one object per tick) ──────────────────
   const geom = useMemo<ChartGeom | null>(() => {
     void geomTick
@@ -1058,6 +1141,24 @@ export default function MarketChart({
     [pair, last, actionUsd, held, tradable],
   )
 
+  // The lit averages' values for the on-plot readout: each reads at the bar
+  // the readout is on, in the color its line draws with.
+  const legendLines = useMemo(() => {
+    if (!lineSrc.length) return []
+    const rolling: [OverlayKey, () => LinePoint[]][] = [
+      ['sma20', () => sma(lineSrc, 20)],
+      ['sma50', () => sma(lineSrc, 50)],
+      ['sma200', () => sma(lineSrc, 200)],
+      ['ema20', () => ema(lineSrc, 20)],
+    ]
+    return rolling
+      .filter(([key]) => overlays.has(key))
+      .map(([key, points]) => {
+        const spec = OVERLAYS.find((o) => o.key === key)
+        return { key, label: spec?.label ?? key, swatch: spec?.swatch ?? 'currentColor', at: new Map(points().map((pt) => [pt.t, pt.v])) }
+      })
+  }, [lineSrc, overlays])
+
   const premium = poolPremiumPct(pool, last)
   const feedLabel = data?.feed ?? pair?.source ?? ''
 
@@ -1092,8 +1193,8 @@ export default function MarketChart({
       {/* Row 1: timeframes · overlays · tools · live badge */}
       <div className="mkt-chart__bar">
         <div className="tok__tf">
-          {CHART_TFS.map((t) => (
-            <button key={t.key} type="button" className={`tok__tfbtn mono${tf === t.key ? ' is-active' : ''}`} aria-pressed={tf === t.key} onClick={() => setTf(t.key)}>
+          {CHART_TFS.map((t, i) => (
+            <button key={t.key} type="button" className={`tok__tfbtn mono${tf === t.key ? ' is-active' : ''}`} aria-pressed={tf === t.key} title={`${t.label} bars (press ${i + 1} over the chart)`} onClick={() => setTf(t.key)}>
               {t.label}
             </button>
           ))}
@@ -1141,30 +1242,6 @@ export default function MarketChart({
             {toolBtn('zone', RectangleHorizontal, 'Zone — drag across a price range')}
             {toolBtn('trend', TrendingUp, 'Trend line — drag from one point to another')}
             {toolBtn('note', StickyNote, 'Note — click where you noticed it')}
-            {(undoStacks.past.length > 0 || undoStacks.future.length > 0) && (
-              <>
-                <button type="button" className="mkt-tool" title="Undo (⌘Z)" aria-label="Undo" disabled={undoStacks.past.length === 0} onClick={() => stepUndo('undo')}>
-                  <Undo2 className="h-3.5 w-3.5" />
-                </button>
-                <button type="button" className="mkt-tool" title="Redo (⇧⌘Z)" aria-label="Redo" disabled={undoStacks.future.length === 0} onClick={() => stepUndo('redo')}>
-                  <Redo2 className="h-3.5 w-3.5" />
-                </button>
-              </>
-            )}
-            {lines.length > 0 && (
-              <button
-                type="button"
-                className="mkt-tool"
-                title="Clear drawings"
-                aria-label="Clear drawings"
-                onClick={() => {
-                  edit([])
-                  setSelectedId(null)
-                }}
-              >
-                <Eraser className="h-3.5 w-3.5" />
-              </button>
-            )}
           </div>
         )}
         <span className="mkt-chart__right">
@@ -1193,8 +1270,65 @@ export default function MarketChart({
       </div>
 
       {/* Canvas: the engine owns the bars; the SVG layer owns the drawings. */}
-      <div className={`mkt-chart__canvas${tool !== 'none' ? ' is-drawing' : ''}${fill ? ' min-h-0 flex-1' : ''}`} style={fill ? undefined : { height: heightProp }}>
+      <div
+        className={`mkt-chart__canvas${tool !== 'none' ? ' is-drawing' : ''}${fill ? ' min-h-0 flex-1' : ''}`}
+        style={fill ? undefined : { height: heightProp }}
+        onPointerEnter={() => {
+          overRef.current = true
+        }}
+        onPointerLeave={(e) => {
+          // A finger lifting is not the pointer leaving: the "+" stays at the tapped price.
+          if (e.pointerType === 'touch') return
+          overRef.current = false
+          plusRef.current?.classList.remove('is-on')
+        }}
+        onPointerDown={() => {
+          overRef.current = true
+        }}
+      >
         <div ref={wrapRef} className="mkt-chart__engine" />
+        {candles.length > 0 && tool === 'none' && !noteDraft && !fieldOn && <ChartLegend symbol={pair.symbol} tf={tf} bars={bars} lines={legendLines} hint={tools && !selectedId ? plusHint : null} />}
+        {tools && tool === 'none' && !noteDraft && !selectedId && !fieldOn && (
+          <button ref={plusRef} type="button" className="mkt-plus" data-draw-handle aria-label="Put a level at this price" onClick={dropLevel}>
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {/* Undo, redo and clear float over the plot. In the bar above they
+            widened the tools group the moment a first drawing landed, the bar
+            wrapped, and the canvas (with the level just placed) jumped down a row. */}
+        {tools && !fieldOn && (undoStacks.past.length > 0 || undoStacks.future.length > 0 || lines.length > 0) && (
+          <div className="mkt-chart__tools mkt-chart__edit" role="group" aria-label="Edit drawings">
+            {(undoStacks.past.length > 0 || undoStacks.future.length > 0) && (
+              <>
+                <button type="button" className="mkt-tool" title="Undo (⌘Z)" aria-label="Undo" disabled={undoStacks.past.length === 0} onClick={() => stepUndo('undo')}>
+                  <Undo2 className="h-3.5 w-3.5" />
+                </button>
+                <button type="button" className="mkt-tool" title="Redo (⇧⌘Z)" aria-label="Redo" disabled={undoStacks.future.length === 0} onClick={() => stepUndo('redo')}>
+                  <Redo2 className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
+            {lines.length > 0 && (
+              <button
+                type="button"
+                className="mkt-tool"
+                title="Clear drawings"
+                aria-label="Clear drawings"
+                onClick={() => {
+                  edit([])
+                  setSelectedId(null)
+                }}
+              >
+                <Eraser className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+        {away && candles.length > 0 && !fieldOn && (
+          <button type="button" className="mkt-live mono" title="Back to the newest bar (L)" onClick={goLive}>
+            Live <ChevronsRight className="h-3 w-3" />
+          </button>
+        )}
         {/* Over the plot, never above it: a hint that pushed the canvas down moved the bars under the cursor. */}
         {tool !== 'none' && !fieldOn && (
           <p className="mkt-chart__hint mono">
@@ -1206,8 +1340,16 @@ export default function MarketChart({
           </p>
         )}
         {candles.length === 0 && (
-          <div className="mkt-chart__empty">
-            <span className="text-[12px] text-[color:var(--muted-2)]">{data?.error ? 'Chart feed unavailable — retrying.' : 'Loading candles…'}</span>
+          <div className={`mkt-chart__empty${data?.error ? '' : ' is-loading'}`} role="status" aria-label={data?.error ? undefined : 'Loading candles'}>
+            {data?.error ? (
+              <span className="text-[12px] text-[color:var(--muted-2)]">Chart feed unavailable — retrying.</span>
+            ) : (
+              <span className="mkt-skel" aria-hidden="true">
+                {SKELETON_BARS.map((b, i) => (
+                  <i key={i} style={{ '--sk-h': `${b[0]}%`, '--sk-y': `${b[1]}%`, '--sk-i': i } as CSSProperties} />
+                ))}
+              </span>
+            )}
           </div>
         )}
         {fieldOn && tokens && <BattleField symbol={pair.symbol} tf={tf} bars={fieldBars} tokens={tokens} lines={lines} fills={fills} sma50={fieldSma.s50} sma200={fieldSma.s200} />}

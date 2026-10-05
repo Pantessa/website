@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
   const stripe = getStripe()
   if (!stripe) {
     return NextResponse.json(
-      { error: 'Billing isn’t live yet — STRIPE_SECRET_KEY is not configured on this deployment.' },
+      { error: 'Billing is not open yet. Write to hello@yeetful.com and we will sort it out by hand.', detail: 'STRIPE_SECRET_KEY is not configured on this deployment.' },
       { status: 503 },
     )
   }

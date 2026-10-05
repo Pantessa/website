@@ -68,7 +68,7 @@ export default function TickerSearch({ rows, autoFocus = false }: { rows: Market
               <span className="mkt-search__hint">{s.name}</span>
             </button>
           ))}
-          {!resolved && suggestions.length === 0 && <p className="mkt-search__none">No chart for &ldquo;{q.trim()}&rdquo; yet.</p>}
+          {!resolved && suggestions.length === 0 && <p className="mkt-search__none">No chart for &ldquo;{q.trim()}&rdquo; yet. Try a ticker (AAPL, ETH) or a company name.</p>}
         </div>
       )}
     </form>

@@ -248,3 +248,44 @@ export function pendingSignInStep(s: {
   if (s.signingIn) return s.callerWaits ? 'wait' : 'drop'
   return 'sign'
 }
+
+/**
+ * May this browser read the session-keyed lists (jobs, schedules,
+ * protections)? Only with a session cookie. A stranger and a
+ * connected-not-signed-in wallet both answer 401 there, and a poll that
+ * 401s paints the console red on every public page that mounts the spine.
+ * 'loading' is not a yes: wait for the session to answer.
+ */
+export function sessionReadsAllowed(sessionStatus: SessionStatus): boolean {
+  return sessionStatus === 'authed'
+}
+
+// ── Sent home: say why ──────────────────────────────────────────────────────
+// A stranger who opens /chat?prompt=Buy%20%2450%20of%20AAPL (a shared link, a
+// bookmark, a docs example) is sent to the landing page by the signed-out
+// gate. The way back is remembered, but the landing said nothing: the visitor
+// asked for one page and silently got another. The landing reads this and
+// puts up one line with the door (components/SentHomeNotice).
+
+export interface SentHomeNotice {
+  /** What they were after, in a few words. */
+  what: string
+  /** The ask their link carried, when it carried one (shown in quotes). */
+  ask: string | null
+}
+
+/** The notice for a remembered way back, or null when there is none. Pure. */
+export function sentHomeNotice(homeReturn: string | null): SentHomeNotice | null {
+  if (!homeReturn || !homeReturn.startsWith('/')) return null
+  const [path, query = ''] = homeReturn.split('?')
+  let ask: string | null = null
+  try {
+    const raw = new URLSearchParams(query).get('prompt')
+    const one = raw ? raw.replace(/\s+/g, ' ').trim() : ''
+    if (one) ask = one.length > 120 ? `${one.slice(0, 117)}...` : one
+  } catch {
+    ask = null
+  }
+  const what = path.startsWith('/wallet') ? 'your wallet page' : path.startsWith('/dashboard') ? 'your dashboard' : ask ? 'that ask' : 'the app'
+  return { what, ask }
+}

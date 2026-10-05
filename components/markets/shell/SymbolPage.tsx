@@ -29,6 +29,7 @@ import {
   rangePosition,
   sessionState,
   symbolName,
+  symbolStanding,
   syncMarketTab,
   syncVsParam,
   venueLabel,
@@ -64,6 +65,8 @@ import { seedTradable } from '@/lib/tradable-read'
 import type { TradabilityMap } from '@/lib/tradability'
 import { useTradable } from '@/lib/use-tradable'
 
+/** Where an unknown /t/<symbol> points: one of each family. */
+const UNKNOWN_SYMBOL_PICKS = ['AAPL', 'ETH', 'HYPE'] as const
 const promptHref = (prompt: string) => `/chat?prompt=${encodeURIComponent(prompt)}`
 
 type FsDoc = Document & { webkitExitFullscreen?: () => Promise<void>; webkitFullscreenElement?: Element | null }
@@ -148,6 +151,9 @@ export default function SymbolPage({
   const askDockRef = useRef<HTMLElement | null>(null)
   const [doorAsk, setDoorAsk] = useState<AskChartIncoming | null>(null)
   const hasPair = !!pair
+  // No chart AND no token by that name (a typo, a ticker we don't carry):
+  // the page offers search, never a Buy chip that would end in a refusal.
+  const unknown = symbolStanding(sym) === 'unknown'
   useEffect(() => {
     if (!hasPair) return
     const { setDock } = useAskDoor.getState()
@@ -316,12 +322,12 @@ export default function SymbolPage({
               <div className="sym__titlerow">
                 <h1 className="sym__name truncate">{name}</h1>
                 <span className="sym__sym mono">{sym}</span>
-                <span className="sym__venue mono">{venueLabel(pair)}</span>
+                <span className="sym__venue mono">{unknown ? 'Not listed' : venueLabel(pair)}</span>
               </div>
               <div className="sym__meta">
                 <p className="sym__session mono" data-tape={session.tape ? (session.tape.open ? 'open' : 'closed') : 'none'}>
                   <span className={`mk-dot${session.tape ? (session.tape.open ? ' mk-dot--open' : ' mk-dot--closed') : ' mk-dot--always'}`} aria-hidden />
-                  {session.line}
+                  {unknown ? 'Not a ticker we carry' : session.line}
                 </p>
                 {pair && <HeldPill symbol={sym} last={stats?.last ?? null} onClick={() => setTab('trade')} />}
                 {pair && <CompareControl symbol={sym} vs={vs} onChange={setVs} />}
@@ -338,7 +344,7 @@ export default function SymbolPage({
             ) : pair ? (
               <span className="sym__feed mono">loading {feedLabel} candles…</span>
             ) : (
-              <span className="sym__feed mono">No live chart yet</span>
+              <span className="sym__feed mono">{unknown ? 'Not listed' : 'No live chart yet'}</span>
             )}
             {pair && day && rangeAt !== null && (
               <div className="mk-range" data-range-at={rangeAt.toFixed(3)} title={`24h range: $${fmtQuotePrice(day.low)} – $${fmtQuotePrice(day.high)}`}>
@@ -366,6 +372,26 @@ export default function SymbolPage({
           <div className="tchart__canvas">
             {pair ? (
               <ChartMount symbol={sym} height="fill" onStats={setStats} controlsRight={expandButton} resizeKey={expanded} onAsk={onChartAsk} state={loadedState} onStateChange={setChartState} onViewport={setViewport} compare={vs} fills={fills} battlefield />
+            ) : unknown ? (
+              <div className="flex flex-1 items-center justify-center">
+                <div className="mkt-card max-w-md text-center" data-standing="unknown">
+                  <p className="mkt-card__title">We don&rsquo;t list {sym || 'that symbol'}.</p>
+                  <p className="mkt-card__note">
+                    Nothing here trades under that ticker. Check the spelling, or search by company or coin name: stocks, coins and perps are all on
+                    the markets page.
+                  </p>
+                  <div className="mkt-chips mt-3 justify-center">
+                    <Link href="/markets" className="mkt-chip mkt-chip--buy">
+                      Search markets
+                    </Link>
+                    {UNKNOWN_SYMBOL_PICKS.map((s) => (
+                      <Link key={s} href={`/t/${s}`} className="mkt-chip">
+                        {s}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              </div>
             ) : (
               <div className="flex flex-1 items-center justify-center">
                 <div className="mkt-card max-w-md text-center">
@@ -410,7 +436,7 @@ export default function SymbolPage({
 
         {/* ── Tabs ── */}
         <div className="sym__main">
-          <nav ref={tabsRef} className="sym__tabs" role="tablist" aria-label="Symbol sections">
+          <nav ref={tabsRef} className="sym__tabs" role="tablist" aria-label="Symbol sections" style={unknown ? { display: 'none' } : undefined}>
             {MARKET_TABS.map((t) => (
               <a
                 key={t.tab}
@@ -459,7 +485,7 @@ export default function SymbolPage({
               ) : (
                 <TradeTab symbol={sym} pair={pair} onAsk={onAsk} onAskText={act} last={stats?.last ?? null} />
               )
-            ) : (
+            ) : unknown ? null : (
               <section className="mkt-card">
                 <p className="mkt-card__title">Not charted yet.</p>
                 <p className="mkt-card__note">The tabs light up once {sym} has a candle feed. Trading it in chat works today.</p>
@@ -471,8 +497,8 @@ export default function SymbolPage({
 
       {/* ── Rail: the /markets watchlist, then the symbol card pinned under it ── */}
       <MarketsSide label="Watchlist and symbol details">
-        <WatchlistSlot current={sym} onAsk={onChartAsk} />
-        <SymbolCardSlot symbol={sym} pair={pair} feed={feed} />
+        <WatchlistSlot current={unknown ? undefined : sym} onAsk={onChartAsk} />
+        {unknown ? null : <SymbolCardSlot symbol={sym} pair={pair} feed={feed} />}
       </MarketsSide>
       {door}
     </>

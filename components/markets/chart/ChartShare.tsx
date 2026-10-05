@@ -19,13 +19,19 @@
 // the same press, for anyone who wants the full-size image in the post too.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Check, Copy, Download, ExternalLink, Share2, X } from 'lucide-react'
+import { Check, Copy, Download, ExternalLink, Link2, Share2, X } from 'lucide-react'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { useSession } from '@/lib/session'
-import { CHART_TFS, type ChartTf } from '@/lib/charts'
+import Link from 'next/link'
+import { CHART_TFS, chartPairFor, type ChartTf } from '@/lib/charts'
+import { execAsks } from '@/lib/trade-asks'
+import { linksStudioHref } from '@/lib/links-href'
 import type { ChartLine, ChartState } from '@/lib/chart-state'
 import { canvasToBlob, shareFileName } from '@/lib/chart-share'
 import { autoCallTitle, callTweetHref, callUrl, chartTweetHref, fmtCallTime } from '@/lib/chart-calls'
+import { useShareVia } from '@/components/ShareActions'
+import { withVia } from '@/lib/share-posts'
+import { absoluteUrl } from '@/lib/site-url'
 
 export interface ChartShareProps {
   symbol: string
@@ -114,14 +120,29 @@ export default function ChartShare({ symbol, tf, lines, capture, onClose }: Char
     setNote('Saved.')
   }, [preview, fileName])
 
+  // The plain chart's own address: the frame rides along, and the sharer's id
+  // when a wallet is connected (a one-way hash, never the address).
+  const via = useShareVia()
+  const chartUrl = withVia(absoluteUrl(`/t/${symbol}${tf === '1d' ? '' : `?tf=${tf}`}`), via)
+  // A browser with a share sheet that cannot take a file (desktop Safari,
+  // Firefox on Android) still shares the link.
+  const [canShareLink, setCanShareLink] = useState(false)
+  useEffect(() => {
+    setCanShareLink(typeof navigator !== 'undefined' && typeof navigator.share === 'function')
+  }, [])
+
   const nativeShare = useCallback(async () => {
-    if (!file) return
+    const link = call ? callUrl(call.id) : chartUrl
+    const words = call ? `$${symbol} — ${call.title}` : `$${symbol} · ${tfLabel} on Pantessa`
     try {
-      await navigator.share({ files: [file], title: `${symbol} · ${tfLabel}`, text: call ? `$${symbol} — ${call.title} ${callUrl(call.id)}` : `$${symbol} · ${tfLabel} on Pantessa` })
+      // With a picture the link goes in the text (most targets drop `url`
+      // when files are attached); without one it is the share itself.
+      if (file && canNativeShare) await navigator.share({ files: [file], title: `${symbol} · ${tfLabel}`, text: `${words} ${link}` })
+      else await navigator.share({ title: `${symbol} · ${tfLabel}`, text: words, url: link })
     } catch {
       /* dismissed */
     }
-  }, [file, symbol, tfLabel, call])
+  }, [file, canNativeShare, symbol, tfLabel, call, chartUrl])
 
   const copyLink = useCallback(async (url: string) => {
     try {
@@ -181,6 +202,11 @@ export default function ChartShare({ symbol, tf, lines, capture, onClose }: Char
   }
 
   const canPublish = lines.length > 0
+  const earnAsk = useMemo(() => {
+    const pair = chartPairFor(symbol)
+    return pair ? (execAsks(pair, { usd: 25 }).find((a) => a.tone === 'buy')?.ask ?? null) : null
+  }, [symbol])
+  const earnHref = earnAsk ? linksStudioHref({ ask: earnAsk }) : null
 
   return (
     <div className="mkt-share" role="dialog" aria-modal="true" aria-label={`Share the ${symbol} chart`} onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -210,7 +236,7 @@ export default function ChartShare({ symbol, tf, lines, capture, onClose }: Char
           <button type="button" className="mkt-share__btn" onClick={save} disabled={!preview}>
             <Download className="h-3.5 w-3.5" aria-hidden /> Save PNG
           </button>
-          {canNativeShare && (
+          {(canNativeShare || canShareLink) && (
             <button type="button" className="mkt-share__btn" onClick={() => void nativeShare()}>
               <Share2 className="h-3.5 w-3.5" aria-hidden /> Share…
             </button>
@@ -221,15 +247,33 @@ export default function ChartShare({ symbol, tf, lines, capture, onClose }: Char
                 <XMark /> {busy ? 'Posting…' : 'Post on X'}
               </button>
             ) : (
-              <a className="mkt-share__btn" href={chartTweetHref(symbol, tfLabel)} target="_blank" rel="noopener noreferrer" title="Opens X with a link to this chart">
+              <a className="mkt-share__btn" href={chartTweetHref(symbol, tfLabel, chartUrl)} target="_blank" rel="noopener noreferrer" title="Opens X with a link to this chart">
                 <XMark /> Post on X
               </a>
             ))}
+          {!call && (
+            <button type="button" className="mkt-share__btn" onClick={() => void copyLink(chartUrl)} title="The link to this chart, on this timeframe">
+              <Link2 className="h-3.5 w-3.5" aria-hidden /> Copy link
+            </button>
+          )}
         </div>
         {!call && canPublish && !session.address && (
           <p className="mkt-share__note">Signed out, the post on X links the plain {symbol} chart. Sign in below and it links your lines instead: the card on X shows them, and people can reply on the page.</p>
         )}
         {note && <p className="mkt-share__note">{note}</p>}
+        {/* The share that pays: a plain chart link earns its sharer nothing; an
+            intent link pays its creator half the fee on every trade it brings
+            (first touch, for life). One tap to the mint, with this symbol's
+            own lead ask ready (the header strip's grammar, never a template). */}
+        {earnHref && (
+          <p className="mkt-share__note" data-share-earn>
+            Want to earn on it?{' '}
+            <Link href={earnHref} className="underline decoration-dotted underline-offset-2">
+              Make &ldquo;{earnAsk}&rdquo; a link
+            </Link>
+            : you get half the fee on every trade it brings.
+          </p>
+        )}
 
         {/* the call: time + price stamped, position verified */}
         <div className="mkt-share__call">

@@ -6,6 +6,7 @@ import { SectionHead } from '@/components/board-ui'
 import { computeReputation } from '@/lib/reputation'
 import { getHealthByService } from '@/lib/health'
 import ReputationBoard, { type ReputationRowData } from '@/components/ReputationBoard'
+import { SITE_CARD } from '@/lib/og-defaults'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -14,7 +15,7 @@ export const metadata: Metadata = {
   title: 'Benchmarks · Pantessa',
   description:
     'Every x402 MCP on the network, graded A–F from real paid calls — reliability, liveness, speed, adoption, value and user ratings, blended into one earned score.',
-  openGraph: {
+  openGraph: { images: SITE_CARD,
     title: 'Benchmarks — Pantessa',
     description: 'The x402 MCP reputation ranking, graded on real calls.',
     type: 'website',

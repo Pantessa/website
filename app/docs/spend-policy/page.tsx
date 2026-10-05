@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
+import { SITE_CARD } from '@/lib/og-defaults'
 
 // Spend policy — rewritten 2026-07-20 for the open-by-default model
 // (website#467/#469/#474): agents ON, ['*'] allowlist, $200/$200 caps,
@@ -13,7 +14,8 @@ export const metadata: Metadata = {
   title: PAGE.seoTitle,
   description: PAGE.description,
   alternates: { canonical: docsUrl(PAGE.slug) },
-  openGraph: { title: PAGE.seoTitle, description: PAGE.description, url: docsUrl(PAGE.slug), type: 'article' },
+  openGraph: { images: SITE_CARD, title: PAGE.seoTitle, description: PAGE.description, url: docsUrl(PAGE.slug), type: 'article' },
+  twitter: { card: 'summary_large_image', title: PAGE.seoTitle, description: PAGE.description, images: SITE_CARD },
 }
 
 export default function SpendPolicyPage() {

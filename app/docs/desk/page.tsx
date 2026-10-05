@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import DeskTranscript from '@/components/DeskTranscript'
+import { SITE_CARD } from '@/lib/og-defaults'
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'desk')!
 
@@ -14,7 +15,8 @@ export const metadata: Metadata = {
   title: PAGE.seoTitle,
   description: PAGE.description,
   alternates: { canonical: docsUrl(PAGE.slug) },
-  openGraph: { title: PAGE.seoTitle, description: PAGE.description, url: docsUrl(PAGE.slug), type: 'article' },
+  openGraph: { images: SITE_CARD, title: PAGE.seoTitle, description: PAGE.description, url: docsUrl(PAGE.slug), type: 'article' },
+  twitter: { card: 'summary_large_image', title: PAGE.seoTitle, description: PAGE.description, images: SITE_CARD },
 }
 
 export default function DeskDocsPage() {

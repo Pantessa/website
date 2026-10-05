@@ -27,6 +27,7 @@
 // The mic is the existing VoiceButton; a spoken message is normalized and
 // submitted like a typed one. The page's ⌘K door docks here (lib/ask-door).
 
+import { notAnswering, shownError } from '@/lib/fetch-words'
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
@@ -309,7 +310,7 @@ export default function AskChart({ symbol, pair, chartState, visible, onChartSta
         })
         const j = (await res.json().catch(() => ({}))) as Reply | { error?: string }
         if (!res.ok || !('kind' in j)) {
-          patchTurn(id, (t) => ({ ...t, error: (j as { error?: string }).error ?? `HTTP ${res.status}` }))
+          patchTurn(id, (t) => ({ ...t, error: (j as { error?: string }).error ?? notAnswering('The chart assistant', 'Ask again in a moment; the header chips still trade.') }))
           return
         }
         const reply = j
@@ -329,7 +330,7 @@ export default function AskChart({ symbol, pair, chartState, visible, onChartSta
         if (reply.kind === 'act') build(id, reply.chip.ask, !reply.typed)
       } catch (e) {
         if ((e as Error).name === 'AbortError') return
-        patchTurn(id, (t) => ({ ...t, error: (e as Error).message }))
+        patchTurn(id, (t) => ({ ...t, error: shownError(e, 'The chart assistant') }))
       } finally {
         if (abortRef.current === ctrl) setBusy(false)
       }
@@ -346,9 +347,9 @@ export default function AskChart({ symbol, pair, chartState, visible, onChartSta
       const res = await fetch('/api/markets/ask', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ symbol: pair.symbol, tf: chartState?.tf, kind: 'explain', bar: explainBar }) })
       const j = (await res.json().catch(() => ({}))) as Reply | { error?: string }
       if ('kind' in j) patchTurn(id, (t) => ({ ...t, reply: j }))
-      else patchTurn(id, (t) => ({ ...t, error: (j as { error?: string }).error ?? `HTTP ${res.status}` }))
+      else patchTurn(id, (t) => ({ ...t, error: (j as { error?: string }).error ?? notAnswering('The chart assistant') }))
     } catch (e) {
-      patchTurn(id, (t) => ({ ...t, error: (e as Error).message }))
+      patchTurn(id, (t) => ({ ...t, error: shownError(e, 'The chart assistant') }))
     } finally {
       setBusy(false)
     }
@@ -410,10 +411,10 @@ export default function AskChart({ symbol, pair, chartState, visible, onChartSta
         body: JSON.stringify({ symbol: reply.rule.symbol, condition: reply.rule.condition, value: reply.rule.value, basePrice: reply.rule.basePrice ?? null, actionAsk: reply.actionAsk ?? null }),
       })
       const j = (await res.json().catch(() => ({}))) as { error?: string }
-      if (!res.ok) throw new Error(j.error ?? `HTTP ${res.status}`)
+      if (!res.ok) throw new Error(j.error ?? notAnswering('Alerts', 'Nothing was saved; try again in a moment.'))
       setAlerts((a) => ({ ...a, [turnId]: { state: 'saved' } }))
     } catch (e) {
-      setAlerts((a) => ({ ...a, [turnId]: { state: 'error', err: (e as Error).message } }))
+      setAlerts((a) => ({ ...a, [turnId]: { state: 'error', err: shownError(e, 'Alerts', 'Nothing was saved; try again in a moment.') } }))
     }
   }
 

@@ -19,6 +19,7 @@ import { cadenceLabel, type DcaCadence } from '@/lib/dca'
 import { signedTxsOf } from '@/components/SignedTxLines'
 import { claimsSettled } from '@/lib/xchain-settlement'
 import { SITE_URL } from './site-url'
+import { quoteForPost, xIntentHref, type SharePost } from './share-posts'
 
 export interface ShareFact {
   label: string
@@ -262,6 +263,22 @@ const TWEET_ASK_MAX = 160
  * unattended — that's the screenshot the product is FOR; attended receipts
  * lead with the ask that became a guarded, signed transaction.
  */
+export function receiptPost(receipt: {
+  id: string
+  headline: string
+  ask: string | null
+  standing: boolean
+  via: string
+}): SharePost {
+  const ask = receipt.ask ? quoteForPost(receipt.ask, TWEET_ASK_MAX) : null
+  const text = receipt.standing
+    ? `${receipt.headline} — set up in one sentence on ${X_MENTION}. It runs whether I'm at the keyboard or not. Receipt:`
+    : ask
+      ? `"${ask}" → built, guarded, signed on ${X_MENTION}. Receipt:`
+      : `${receipt.headline} — built, guarded, signed on ${X_MENTION}. Receipt:`
+  return { url: shareReceiptUrl(receipt.id, receipt.via), title: receipt.headline, text }
+}
+
 export function receiptTweetHref(receipt: {
   id: string
   headline: string
@@ -269,17 +286,8 @@ export function receiptTweetHref(receipt: {
   standing: boolean
   via: string
 }): string {
-  const ask =
-    receipt.ask && receipt.ask.length > TWEET_ASK_MAX
-      ? `${receipt.ask.slice(0, TWEET_ASK_MAX - 1).trimEnd()}…`
-      : receipt.ask
-  const text = receipt.standing
-    ? `${receipt.headline} — set up in one sentence on ${X_MENTION}. It runs whether I'm at the keyboard or not. Receipt:`
-    : ask
-      ? `"${ask}" → built, guarded, signed on ${X_MENTION}. Receipt:`
-      : `${receipt.headline} — built, guarded, signed on ${X_MENTION}. Receipt:`
-  const params = new URLSearchParams({ text, url: shareReceiptUrl(receipt.id, receipt.via) })
-  return `https://twitter.com/intent/tweet?${params.toString()}`
+  const post = receiptPost(receipt)
+  return xIntentHref(post.text, post.url)
 }
 
 

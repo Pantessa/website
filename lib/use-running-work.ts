@@ -10,6 +10,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAccount } from 'wagmi'
 import { LIVE_JOB_STATUSES } from '@/lib/step-status'
+import { useSession } from '@/lib/session'
+import { sessionReadsAllowed } from '@/lib/app-entry'
 
 export interface RunningJob {
   id: string
@@ -78,9 +80,27 @@ export function useRunningWork(enabled: boolean, intervalMs = 15_000) {
   // rides connect-to-act (#553): you see what's addressed to you on connect
   // alone, and the signature stays the only gate.
   const { address } = useAccount()
+  // Jobs, schedules and protections are read with the session cookie. A
+  // visitor without one (a stranger, or a wallet that connected and never
+  // signed in, which is the normal state under connect-to-act) would get a
+  // 401 from each on every poll: three red console lines every 15 seconds.
+  // So those reads wait for a session; the inbox needs only the address.
+  const { status } = useSession()
 
   const refresh = useCallback(async () => {
+    if (status === 'loading') return
     try {
+      if (!sessionReadsAllowed(status)) {
+        const ir = address ? await fetch(`/api/inbox?wallet=${address}`, { cache: 'no-store' }) : null
+        if (ir?.ok) setInbox(((await ir.json()) as { items: InboxIntent[] }).items ?? [])
+        else if (!address) setInbox([])
+        setJobs([])
+        setSchedules([])
+        setGuards([])
+        setSignedOut(true)
+        setLoaded(true)
+        return
+      }
       const [jr, sr, gr, ir] = await Promise.all([
         fetch('/api/jobs', { cache: 'no-store' }),
         fetch('/api/dca', { cache: 'no-store' }),
@@ -102,7 +122,7 @@ export function useRunningWork(enabled: boolean, intervalMs = 15_000) {
     } catch {
       /* transient miss — keep the last state */
     }
-  }, [address])
+  }, [address, status])
 
   useEffect(() => {
     if (!enabled) return

@@ -14,7 +14,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { PantessaMark } from '@/components/Logo'
 import { useCreatorPage } from '@/lib/creator-page'
-import { absoluteUrl } from '@/lib/site-url'
+import { creatorPageXHref } from '@/lib/share-posts'
 
 /** The /l share card before the page exists — a picture of
  *  app/l/[handle]/opengraph-image.tsx in its house look (.pagestage), with
@@ -155,7 +155,7 @@ export function CreatorPagePanel({
                 /l/{myHandle}
               </a>
               <a
-                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Links that move money — @${myHandle}`)}&url=${encodeURIComponent(absoluteUrl(`/l/${myHandle}`))}`}
+                href={creatorPageXHref(myHandle)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mono text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] underline"

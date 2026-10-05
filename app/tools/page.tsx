@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Footer from '@/components/Footer'
 import ThinkingToolsBoard from '@/components/ThinkingToolsBoard'
+import { SITE_CARD } from '@/lib/og-defaults'
 
 // The thinking tools, visualized — the reasoning layer between a message and
 // a settled call (board card B4). Server shell owns SEO; the board polls
@@ -10,7 +11,7 @@ export const metadata: Metadata = {
   title: 'The thinking tools — watch the router decide · Pantessa',
   description:
     'The reasoning tools inside the Pantessa Reason Router: which MCP answers, which endpoint runs, what gets resolved, what gets stopped — live, named, and learning from settled receipts.',
-  openGraph: {
+  openGraph: { images: SITE_CARD,
     title: 'Pantessa thinking tools',
     description:
       'Which MCP answers, which endpoint runs, what gets stopped — the router’s decisions, live and named.',
