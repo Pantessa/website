@@ -798,7 +798,7 @@ export function quickActs(symbol: string, pair: ChartPair): QuickAct[] {
   const spot = pick('spot', 'buy')
   const long = pick('perp', 'buy')
   const short = pick('perp', 'sell')
-  if (stock) out.push({ label: `Buy $${QUICK_ACT_USD} on 4663`, ask: stock.ask, tone: 'buy' })
+  if (stock) out.push({ label: `Buy $${QUICK_ACT_USD}`, ask: stock.ask, tone: 'buy' })
   else if (spot) out.push({ label: `Buy $${QUICK_ACT_USD}`, ask: spot.ask, tone: 'buy' })
   if (long) out.push({ label: `Long 2x`, ask: long.ask, tone: spot || stock ? 'neutral' : 'buy' })
   if (!spot && !stock && short) out.push({ label: `Short 2x`, ask: short.ask, tone: 'sell' })

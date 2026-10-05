@@ -16,6 +16,7 @@
 //     ChartState (SHELL/CHART pass it; null hides the checkbox)
 // Every author is a wallet or a claimed @handle; every string is a text node.
 
+import { shownError } from '@/lib/fetch-words'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
@@ -68,11 +69,11 @@ export default function CommunityTab({ symbol, pair, chartState = null, onAsk, o
     setErr(null)
     try {
       const r = await fetch(`/api/posts?symbol=${encodeURIComponent(sym)}&sort=${sort}&limit=30`, { cache: 'no-store' })
-      const d = (await r.json()) as { posts?: PublicPost[]; error?: string }
-      if (!r.ok) throw new Error(d.error ?? `posts ${r.status}`)
+      const d = (await r.json().catch(() => ({}))) as { posts?: PublicPost[]; error?: string }
+      if (!r.ok) throw new Error(d.error ?? 'The ideas board is not answering right now. The chart and the other tabs still work.')
       setPosts(d.posts ?? [])
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'The board is unavailable right now.')
+      setErr(shownError(e, 'The ideas board', 'The chart and the other tabs still work.'))
     }
   }, [sym, sort])
 
@@ -108,7 +109,14 @@ export default function CommunityTab({ symbol, pair, chartState = null, onAsk, o
         </div>
       </div>
 
-      {err && <p className="mkc__err">{err}</p>}
+      {err && (
+        <p className="mkc__err">
+          {err}{' '}
+          <button type="button" className="underline underline-offset-2" onClick={() => void load()}>
+            Try again
+          </button>
+        </p>
+      )}
       {posts && ideas.length === 0 && !err && (
         <div className="mkc__empty">
           No ideas on {sym} yet. The first post here is a chart with a line on it — and a line can carry the trade.
@@ -150,14 +158,14 @@ function Composer({ symbol, chartState, onPosted }: { symbol: string; chartState
           ...(attachable && attach ? { chartState, mint: mint && hasAction } : {}),
         }),
       })
-      const d = (await r.json()) as { error?: string; mintError?: string; link?: { url: string } }
-      if (!r.ok) throw new Error(d.error ?? `post ${r.status}`)
+      const d = (await r.json().catch(() => ({}))) as { error?: string; mintError?: string; link?: { url: string } }
+      if (!r.ok) throw new Error(d.error ?? 'That did not post. Nothing was lost: try again in a moment.')
       setTitle('')
       setBody('')
       setMsg(d.link ? `Posted — and minted as ${d.link.url}.` : d.mintError ? `Posted. Link not minted: ${d.mintError}` : 'Posted.')
       await onPosted()
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : 'Could not post.')
+      setMsg(shownError(e, 'The ideas board'))
     } finally {
       setBusy(false)
     }
@@ -228,7 +236,7 @@ function PostCard({
 
   const loadComments = useCallback(async () => {
     const r = await fetch(`/api/posts/${post.id}`, { cache: 'no-store' })
-    const d = (await r.json()) as { post?: PublicPost & { commentList: PublicComment[] } }
+    const d = (await r.json().catch(() => ({}))) as { post?: PublicPost & { commentList: PublicComment[] } }
     setComments(d.post?.commentList ?? [])
   }, [post.id])
 
@@ -243,13 +251,13 @@ function PostCard({
     setNote(null)
     try {
       const r = await fetch(`/api/posts/${post.id}/comments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ body: reply }) })
-      const d = (await r.json()) as { error?: string }
-      if (!r.ok) throw new Error(d.error ?? `comment ${r.status}`)
+      const d = (await r.json().catch(() => ({}))) as { error?: string }
+      if (!r.ok) throw new Error(d.error ?? 'That comment did not send. Try again in a moment.')
       setReply('')
       await loadComments()
       await onChanged()
     } catch (e) {
-      setNote(e instanceof Error ? e.message : 'Could not comment.')
+      setNote(shownError(e, 'The ideas board'))
     } finally {
       setBusy(null)
     }
@@ -265,13 +273,13 @@ function PostCard({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ symbol: post.symbol, kind: 'idea', title: `Fork of ${post.title}`.slice(0, 120), body: '', forkOf: post.id }),
       })
-      const d = (await r.json()) as { error?: string }
-      if (!r.ok) throw new Error(d.error ?? `fork ${r.status}`)
+      const d = (await r.json().catch(() => ({}))) as { error?: string }
+      if (!r.ok) throw new Error(d.error ?? 'The fork did not post. Try again in a moment.')
       onLoadChart?.(post.chartState)
       setNote(onLoadChart ? 'Copied to your chart and posted as a fork.' : 'Posted as a fork — open the chart to edit the lines.')
       await onChanged()
     } catch (e) {
-      setNote(e instanceof Error ? e.message : 'Could not fork.')
+      setNote(shownError(e, 'The ideas board'))
     } finally {
       setBusy(null)
     }
@@ -282,12 +290,12 @@ function PostCard({
     setNote(null)
     try {
       const r = await fetch(`/api/posts/${post.id}/mint`, { method: 'POST' })
-      const d = (await r.json()) as { error?: string; url?: string }
-      if (!r.ok) throw new Error(d.error ?? `mint ${r.status}`)
+      const d = (await r.json().catch(() => ({}))) as { error?: string; url?: string }
+      if (!r.ok) throw new Error(d.error ?? 'The link did not mint. Try again in a moment.')
       setNote(`Minted ${d.url ?? ''} — readers can execute it now.`)
       await onChanged()
     } catch (e) {
-      setNote(e instanceof Error ? e.message : 'Could not mint.')
+      setNote(shownError(e, 'The link mint'))
     } finally {
       setBusy(null)
     }

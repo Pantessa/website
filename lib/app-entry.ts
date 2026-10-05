@@ -248,3 +248,14 @@ export function pendingSignInStep(s: {
   if (s.signingIn) return s.callerWaits ? 'wait' : 'drop'
   return 'sign'
 }
+
+/**
+ * May this browser read the session-keyed lists (jobs, schedules,
+ * protections)? Only with a session cookie. A stranger and a
+ * connected-not-signed-in wallet both answer 401 there, and a poll that
+ * 401s paints the console red on every public page that mounts the spine.
+ * 'loading' is not a yes: wait for the session to answer.
+ */
+export function sessionReadsAllowed(sessionStatus: SessionStatus): boolean {
+  return sessionStatus === 'authed'
+}

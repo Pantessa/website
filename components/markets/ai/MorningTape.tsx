@@ -11,6 +11,7 @@
 // default to a one-line header + the first sentence, open on click to a
 // bounded body that scrolls inside; remembered per browser.
 
+import { notAnswering, shownError } from '@/lib/fetch-words'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, Newspaper, RefreshCw } from 'lucide-react'
 import { useWatchlists } from '@/components/markets/watchlist/useWatchlists'
@@ -86,7 +87,7 @@ export default function MorningTape({ symbols: symbolsProp, onAsk, title = 'Morn
         const res = await fetch('/api/markets/brief', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ part: 'tape', symbols: key.split(',') }), signal: ctrl.signal })
         if (!res.ok || !res.body) {
           const j = (await res.json().catch(() => ({}))) as { error?: string }
-          throw new Error(j.error ?? `HTTP ${res.status}`)
+          throw new Error(j.error ?? notAnswering('The morning tape'))
         }
         const reader = res.body.getReader()
         const dec = new TextDecoder()
@@ -115,7 +116,7 @@ export default function MorningTape({ symbols: symbolsProp, onAsk, title = 'Morn
         setPhase('done')
       } catch (e) {
         if ((e as Error).name === 'AbortError') return
-        setError((e as Error).message)
+        setError(shownError(e, 'The morning tape'))
         setPhase('error')
       }
     })()

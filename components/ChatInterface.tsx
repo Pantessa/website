@@ -50,7 +50,7 @@ import { CATALOG } from '@/lib/mcp-data'
 import { useSession } from '@/lib/session'
 import { latestWorkingContext, type WorkingContext } from '@/lib/working-context'
 import { EXAMPLE_PROMPTS, TRY_PROMPTS } from '@/lib/examples'
-import { GUEST_TRIAL_LIMIT, bumpGuestTurns, guestTurnsUsed, refundGuestTurn } from '@/lib/guest-trial'
+import { GUEST_TRIAL_LIMIT, GUEST_WALL_COPY, bumpGuestTurns, guestTurnsUsed, refundGuestTurn } from '@/lib/guest-trial'
 import EmptyState from '@/components/chat/EmptyState'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
@@ -1204,7 +1204,19 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     // the same counter and swaps its banner for the scrim at zero.
     const guestTrialTurn = !embedded && sessionStatus === 'guest' && !effectiveAddress
     if (guestTrialTurn) {
-      if (guestTurnsUsed() >= GUEST_TRIAL_LIMIT) return // scrim is up — belt & suspenders
+      if (guestTurnsUsed() >= GUEST_TRIAL_LIMIT) {
+        // On /chat the sign-in gate's scrim is already up. The simple
+        // runtimes (the ask door's sheet, /i) mount no gate, so this used
+        // to be a send button that did nothing. Say why, and offer the door;
+        // the typed ask stays in the composer.
+        if (simple) {
+          setGuestWall(true)
+          // An ask handed in (the ask door's own composer, a chip) never
+          // touched this composer: put it there so it isn't lost.
+          if (typeof textOverride === 'string' && !input.trim()) setInput(raw)
+        }
+        return
+      }
       bumpGuestTurns()
     }
     analytics.chatMessage(activeServers.length, isConnected)
@@ -1558,6 +1570,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // nothing is still trying; a short grace covers door→list handoff.
   const [connectDoorOpen, setConnectDoorOpen] = useState(false)
   const [connectMissed, setConnectMissed] = useState(false)
+  // A walletless guest out of free asks pressed send on a surface with no
+  // sign-in gate (see the guest trial lane in handleSend).
+  const [guestWall, setGuestWall] = useState(false)
+  useEffect(() => {
+    if (guestWall && (effectiveAddress || sessionStatus === 'authed')) setGuestWall(false)
+  }, [guestWall, effectiveAddress, sessionStatus])
   const [handshakeInFlight, setHandshakeInFlight] = useState(false)
   useEffect(() => {
     const released = connectAskReleased({
@@ -2919,6 +2937,18 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             )}
           </button>
         </div>
+        {guestWall && (
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-center text-[12.5px] text-[color:var(--muted)]" role="status" data-guest-wall>
+            <span>{GUEST_WALL_COPY}</span>
+            {cdpEnabled ? (
+              <CreateAccountButton className="btn btn--solid" label="Connect a wallet" walletConnectOnly />
+            ) : (
+              <button type="button" className="btn btn--solid" onClick={() => connectAndSignIn()}>
+                Connect a wallet
+              </button>
+            )}
+          </div>
+        )}
         <p
           className={cn(
             'text-[11px] text-[color:var(--muted-2)] mt-2 text-center mono',

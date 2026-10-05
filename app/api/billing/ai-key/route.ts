@@ -27,7 +27,7 @@ export const dynamic = 'force-dynamic'
 
 const off = () =>
   NextResponse.json(
-    { error: 'Bring-your-own-key isn’t switched on for this deployment yet (BYOK_KEY_SECRET is not set).' },
+    { error: 'Bring-your-own-key is not switched on yet. Your free daily answers and the paid plan work today.', detail: 'BYOK_KEY_SECRET is not set.' },
     { status: 503 },
   )
 

@@ -65,6 +65,7 @@ import { fenceGuardianCoin } from '@/lib/hl-guardian-fence'
 
 import { hlPerpUniverse } from '@/lib/hl-universe'
 import { rescueIntent } from '@/lib/intent-rescue'
+import { HOUSE_UNAVAILABLE_REPLY } from '@/lib/fetch-words'
 import { buildsNatively } from '@/scripts/ask-ladder'
 import { noPoolChips, nothingToSellChips, unpriceableSellChips } from '@/lib/wall-chips'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
@@ -5188,7 +5189,20 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
                   options: [rhFundChip, { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }],
                 },
               }
-            : {}),
+            : {
+                // No card door (closed, or the plan is past one checkout):
+                // the reply used to end on homework with nothing to press.
+                // "check again" is the pending funding's own recheck verb
+                // (lib/lifi-bridge parseRhFundingFollowUp), so the chip
+                // re-runs the scan and picks the buy up where it stopped.
+                clarify: {
+                  question: 'Topped up?',
+                  options: [
+                    { label: 'I added funds: check again', resume: 'check again' },
+                    { label: 'Not now', resume: 'Never mind — leave my funds where they are.' },
+                  ],
+                },
+              }),
           workingContext: pendingFunding,
         })
       } else if (acquiring && !convertingFrom) {
@@ -7206,7 +7220,10 @@ function houseUnavailableReason(): string {
       ? 'your own API key is rate-limited right now (429) — try again in a minute, or remove the key in Settings to use your included answers'
       : `your own API key was refused (${failed.status}) — check it in Settings → Your AI key`
   }
-  return 'house synthesis unavailable (ANTHROPIC_API_KEY missing or the API call failed)'
+  // This sentence IS the reply a visitor reads (the thrown message becomes
+  // the turn), so it names no env var. The log line keeps the diagnosis.
+  console.warn('[chat] house synthesis unavailable (ANTHROPIC_API_KEY missing or the API call failed)')
+  return HOUSE_UNAVAILABLE_REPLY
 }
 
 /**

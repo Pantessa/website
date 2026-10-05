@@ -10,6 +10,7 @@
 // address-keyed call adds "your position" underneath. Footer: the tape
 // footnote + who wrote it.
 
+import { shownError } from '@/lib/fetch-words'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw, Sparkles } from 'lucide-react'
 import { useSession } from '@/lib/session'
@@ -56,11 +57,13 @@ export default function AiBrief({ symbol, pair, tf = '1h', onAsk }: AiBriefProps
         })
         if (!res.ok || !res.body) {
           const j = (await res.json().catch(() => ({}))) as { error?: string }
-          throw new Error(j.error ?? `HTTP ${res.status}`)
+          // Never a bare status code: a stranger can't act on "HTTP 502".
+          throw new Error(j.error ?? 'The brief is not answering right now. The chart and the numbers below are live.')
         }
         const reader = res.body.getReader()
         const dec = new TextDecoder()
         let buf = ''
+        let failed = false
         for (;;) {
           const { value, done } = await reader.read()
           if (done) break
@@ -79,13 +82,18 @@ export default function AiBrief({ symbol, pair, tf = '1h', onAsk }: AiBriefProps
             if (ev.type === 'meta') setMeta({ cached: ev.cached, asOf: ev.asOf, model: ev.model, feed: ev.feed })
             else if (ev.type === 'text') setText((t) => t + ev.text)
             else if (ev.type === 'chips') setChips(ev.chips)
-            else if (ev.type === 'error') setError(ev.reason)
+            else if (ev.type === 'error') {
+              failed = true
+              setError(ev.reason)
+            }
           }
         }
-        setPhase('done')
+        // A stream that ended on an error is not a written brief: the
+        // eyebrow must not say JUST WRITTEN over "did not finish".
+        setPhase(failed ? 'error' : 'done')
       } catch (e) {
         if ((e as Error).name === 'AbortError') return
-        setError((e as Error).message)
+        setError(shownError(e, 'The brief', 'The chart and the numbers below are live.'))
         setPhase('error')
       }
     },
@@ -175,7 +183,14 @@ export default function AiBrief({ symbol, pair, tf = '1h', onAsk }: AiBriefProps
             <span className="mk-ai__caret" aria-hidden />
           </p>
         ) : null}
-        {error ? <p className="mk-ai__err">{error}</p> : null}
+        {error ? (
+          <p className="mk-ai__err">
+            {error}{' '}
+            <button type="button" className="mk-ai__retry" onClick={() => setNonce((n) => n + 1)}>
+              Try again
+            </button>
+          </p>
+        ) : null}
       </div>
 
       {shown.length ? (

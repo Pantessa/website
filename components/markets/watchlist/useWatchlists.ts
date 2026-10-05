@@ -24,6 +24,7 @@
 // page is open. The autofill used to run once per mount, so a buy made in
 // another tab waited for the next navigation.
 
+import { notAnswering, shownError } from '@/lib/fetch-words'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSession } from '@/lib/session'
 import {
@@ -53,7 +54,7 @@ const ACTIVE_KEY = 'pantessa.watchlists.active'
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { ...init, headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) } })
   const body = (await res.json().catch(() => ({}))) as T & { error?: string }
-  if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`)
+  if (!res.ok) throw new Error(body?.error ?? notAnswering('Your watchlist'))
   return body
 }
 
@@ -264,7 +265,7 @@ export function useWatchlists(opts: WatchlistsOptions = {}): WatchlistsApi {
         writeHeldLedger({ seen: ledger.seen, auto: [], pending: [] })
       } catch (e) {
         adoptingFor.current = null
-        setError((e as Error).message)
+        setError(shownError(e, 'Your watchlist'))
       }
     }
     try {
@@ -272,7 +273,7 @@ export function useWatchlists(opts: WatchlistsOptions = {}): WatchlistsApi {
       update(() => rows)
       setError(null)
     } catch (e) {
-      setError((e as Error).message)
+      setError(shownError(e, 'Your watchlist'))
     }
     setLoadedKey(modeKey)
   }, [authed, address, modeKey, update])
@@ -478,7 +479,7 @@ export function useWatchlists(opts: WatchlistsOptions = {}): WatchlistsApi {
       setError(null)
       return r
     } catch (e) {
-      setError((e as Error).message)
+      setError(shownError(e, 'Your watchlist'))
       return null
     } finally {
       setBusy(false)
@@ -711,7 +712,7 @@ export function useAlerts(enabled: boolean, intervalMs = 30_000): AlertsApi {
       setNotifications(n.notifications)
       setError(null)
     } catch (e) {
-      setError((e as Error).message)
+      setError(shownError(e, 'Your watchlist'))
     }
     setReady(true)
   }, [enabled])
@@ -733,7 +734,7 @@ export function useAlerts(enabled: boolean, intervalMs = 30_000): AlertsApi {
         setError(null)
         return alert
       } catch (e) {
-        setError((e as Error).message)
+        setError(shownError(e, 'Your watchlist'))
         return null
       }
     },
@@ -745,7 +746,7 @@ export function useAlerts(enabled: boolean, intervalMs = 30_000): AlertsApi {
       const { alert } = await api<{ alert: AlertShape }>('/api/alerts', { method: 'PATCH', body: JSON.stringify({ id, op }) })
       setAlerts((prev) => prev.map((a) => (a.id === id ? alert : a)))
     } catch (e) {
-      setError((e as Error).message)
+      setError(shownError(e, 'Your watchlist'))
     }
   }, [])
 
@@ -754,7 +755,7 @@ export function useAlerts(enabled: boolean, intervalMs = 30_000): AlertsApi {
       await api('/api/alerts', { method: 'DELETE', body: JSON.stringify({ id }) })
       setAlerts((prev) => prev.filter((a) => a.id !== id))
     } catch (e) {
-      setError((e as Error).message)
+      setError(shownError(e, 'Your watchlist'))
     }
   }, [])
 
