@@ -53,3 +53,13 @@ export const PAGE_ERROR_COPY = {
   retry: 'Try again',
   refLabel: 'Reference',
 } as const
+
+/** The chat bubble for a turn whose request failed in the browser. The
+ *  error's own words are kept when they were written for a person; a fetch
+ *  failure or a parser exception becomes one plain line. */
+export function turnFailedReply(msg: string): string {
+  const m = msg.trim()
+  return m && !leaksPlumbing(m)
+    ? `⚠️ Failed to complete the request. ${m}`
+    : '⚠️ That did not go through: the request never got an answer. Nothing was built or signed. Try it again in a moment.'
+}

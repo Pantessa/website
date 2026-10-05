@@ -6,8 +6,8 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { sessionReadsAllowed } from '../lib/app-entry'
-import { HOUSE_UNAVAILABLE_REPLY, PAGE_ERROR_COPY, leaksPlumbing, notAnswering, shownError } from '../lib/fetch-words'
+import { readSignInReturn, sentHomeNotice, sessionReadsAllowed, signInReturnRecord } from '../lib/app-entry'
+import { HOUSE_UNAVAILABLE_REPLY, PAGE_ERROR_COPY, leaksPlumbing, notAnswering, shownError, turnFailedReply } from '../lib/fetch-words'
 import { GUEST_TRIAL_LIMIT, GUEST_WALL_COPY } from '../lib/guest-trial'
 import { symbolStanding } from '../lib/markets'
 import { symbolPageSeo } from '../lib/markets-seo'
@@ -70,6 +70,11 @@ check('polls: only an authed session reads jobs/schedules/protections', sessionR
   check('words: the chat route answers with the reply constant', /return HOUSE_UNAVAILABLE_REPLY/.test(code('app/api/chat/route.ts')) && !/return 'house synthesis unavailable/.test(code('app/api/chat/route.ts')))
 }
 
+{
+  check('words: a failed chat turn never shows a parser or fetch exception', ['Failed to fetch', 'Unexpected end of JSON input', ''].every((m) => !leaksPlumbing(turnFailedReply(m)) && /Nothing was built or signed/.test(turnFailedReply(m))))
+  check('words: a failed chat turn keeps a reason written for a person', turnFailedReply('The wallet is on another chain.').endsWith('The wallet is on another chain.'))
+}
+
 // ── A brief that ended on an error is not "JUST WRITTEN" ────────────────────
 {
   const brief = code('components/markets/ai/AiBrief.tsx')
@@ -125,6 +130,22 @@ check('polls: only an authed session reads jobs/schedules/protections', sessionR
   const route = code('app/api/chat/route.ts')
   check('funding refusal: the chip is the pending funding\'s own recheck verb', parseRhFundingFollowUp('check again')?.kind === 'recheck', JSON.stringify(parseRhFundingFollowUp('check again')))
   check('funding refusal: with no card door the reply still carries a recheck chip', /label: 'I added funds: check again', resume: 'check again'/.test(route))
+}
+
+// ── Sent home from the app: the landing says why ────────────────────────────
+{
+  const now = 1_800_000_000_000
+  const viaGate = (here: string) => sentHomeNotice(readSignInReturn(signInReturnRecord(here, now), now + 1000))
+  const ask = viaGate('/chat?prompt=Buy%20%2450%20of%20AAPL')
+  check('sent home: a prompt link names its ask', ask?.ask === 'Buy $50 of AAPL' && ask.what === 'that ask', JSON.stringify(ask))
+  check('sent home: /wallet and the dashboard are named', viaGate('/wallet')?.what === 'your wallet page' && viaGate('/dashboard/links')?.what === 'your dashboard')
+  check('sent home: a bare /chat is "the app"', viaGate('/chat')?.what === 'the app' && viaGate('/chat')?.ask === null)
+  check('sent home: nothing remembered, nothing said', sentHomeNotice(null) === null && sentHomeNotice('https://evil.example/chat') === null)
+  check('sent home: a stale record says nothing', sentHomeNotice(readSignInReturn(signInReturnRecord('/chat', now), now + 31 * 60_000)) === null)
+  const long = viaGate(`/chat?prompt=${encodeURIComponent('x'.repeat(300))}`)
+  check('sent home: a long ask is cut, on one line', (long?.ask?.length ?? 999) <= 120)
+  check('sent home: the landing mounts the notice', /<SentHomeNotice \/>/.test(code('app/page.tsx')))
+  check('sent home: the door passes no destination of its own', !/redirectTo/.test(code('components/SentHomeNotice.tsx')))
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

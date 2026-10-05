@@ -1,5 +1,6 @@
 'use client'
 
+import { turnFailedReply } from '@/lib/fetch-words'
 import { fillSymbolsOf } from '@/lib/fill-symbols'
 import { guardWarnLines } from '@/lib/content-origin'
 import ExternalBuildNotice from '@/components/ExternalBuildNotice'
@@ -1392,7 +1393,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         role: 'assistant',
         content: /rejected|denied|User rejected/i.test(msg)
           ? '🚫 Payment signature rejected — nothing was charged.'
-          : '⚠️ Failed to complete the request. ' + (msg || 'Try again.'),
+          : turnFailedReply(msg),
       })
       reportEmbedTurn(userMsg, null, msg || 'request failed')
     } finally {
@@ -1868,7 +1869,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         role: 'assistant',
         content: /rejected|denied|User rejected/i.test(msg)
           ? '🚫 Payment signature rejected — nothing was charged.'
-          : '⚠️ Failed to complete the request. ' + (msg || 'Try again.'),
+          : turnFailedReply(msg),
       })
     } finally {
       setLoading(false)
