@@ -28,13 +28,14 @@ import { askAppSlugs } from '@/lib/ask-apps'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
 import { useTradable } from '@/lib/use-tradable'
-import { FOLLOW_USD, fmtAxisClock, fmtAxisUsd, fmtPrice, fmtUsd, niceCeil, type TapeFill, type TapeMarket } from '@/lib/tape'
+import { FOLLOW_USD, fmtAxisClock, fmtAxisUsd, fmtPrice, fmtUsd, niceCeil, tapeMarket, type TapeFill, type TapeMarket } from '@/lib/tape'
 import { connectHlTape, readTapeUniverse, type FeedStatus, type HlTapeHandle } from '@/lib/tape-feed'
 import {
   PULSE_FALLBACK_MARKETS,
   PULSE_FLUSH_MS,
   PULSE_KEEP_MS,
-  PULSE_LIVE_HREF,
+  PULSE_PICK_KEY,
+  PULSE_PICK_RE,
   PULSE_TILE_WINDOW_SEC,
   PULSE_UNIVERSE_TIMEOUT_MS,
   PULSE_VIEW_LINKS,
@@ -43,6 +44,8 @@ import {
   PULSE_WINDOW_SEC,
   mergePulseFills,
   pulseBars,
+  pulseLiveHref,
+  pulsePick,
   pulseMarketsFrom,
   pulseNoChipWords,
   pulseStatusWords,
@@ -71,6 +74,26 @@ export default function PulseSlot() {
   // tab opened in the background never opens the stream before it is seen.
   const [vis, setVis] = useState<PulseVisibility | null>(null)
   const [hover, setHover] = useState<number | null>(null)
+  // The token the band reads (lib/pulse pulsePick): null = every book. The
+  // remembered pick is read after mount so the server and first paint agree.
+  const [pickRaw, setPickRaw] = useState<string | null>(null)
+  useEffect(() => {
+    // A phone hides the chip row (the 160px budget), so it never wears a
+    // remembered pick it could not see or clear.
+    if (!window.matchMedia('(min-width: 641px)').matches) return
+    try {
+      const m = window.localStorage.getItem(PULSE_PICK_KEY)
+      if (m && PULSE_PICK_RE.test(m)) setPickRaw(m)
+    } catch {}
+  }, [])
+  const choose = useCallback((m: string | null) => {
+    setPickRaw(m)
+    setHover(null)
+    try {
+      if (m) window.localStorage.setItem(PULSE_PICK_KEY, m)
+      else window.localStorage.removeItem(PULSE_PICK_KEY)
+    } catch {}
+  }, [])
   const bufRef = useRef<TapeFill[]>([])
   const flushRef = useRef<number | null>(null)
   const handleRef = useRef<HlTapeHandle | null>(null)
@@ -171,9 +194,10 @@ export default function PulseSlot() {
   const { act, door } = useConnectToAct({ run, redirectFor: promptHref })
 
   const chipOk = useCallback((ask: string) => canTradeAsk(ask, tradable), [tradable])
-  const bars = useMemo(() => pulseBars(fills, now), [fills, now])
-  const tiles = useMemo(() => pulseTiles(fills, now, chipOk), [fills, now, chipOk])
-  const have = fills.length > 0
+  const pick = pulsePick(pickRaw, markets)
+  const bars = useMemo(() => pulseBars(fills, now, undefined, pick), [fills, now, pick])
+  const tiles = useMemo(() => pulseTiles(fills, now, chipOk, pick), [fills, now, chipOk, pick])
+  const have = pick ? fills.some((f) => f.market === pick) : fills.length > 0
   const max = useMemo(() => niceCeil(Math.max(0, ...bars.map((b) => b.total))), [bars])
   const hidden = vis !== null && !vis.visible
   const live = status === 'live'
@@ -207,16 +231,30 @@ export default function PulseSlot() {
               </Link>
             ))}
           </nav>
-          <Link href={PULSE_LIVE_HREF} className="pulse__door" prefetch={false} data-journey="Open the live tape">
+          <Link href={pulseLiveHref(pick)} className="pulse__door" prefetch={false} data-journey="Open the live tape">
             <span className="pulse__door-long">Open the live tape</span>
             <span className="pulse__door-short">Live tape</span> <span aria-hidden>→</span>
           </Link>
         </header>
 
+        <div className="pulse__markets" role="group" aria-label="Markets on the pulse">
+          <button type="button" className={`pulse__m${pick === null ? ' is-on' : ''}`} aria-pressed={pick === null} onClick={() => choose(null)}>
+            All <span className="mono pulse__mcount">{markets.length}</span>
+          </button>
+          {markets.map((m) => {
+            const tm = tapeMarket(m)
+            return (
+              <button key={m} type="button" className={`pulse__m${pick === m ? ' is-on' : ''}`} aria-pressed={pick === m} data-kind={tm.kind} onClick={() => choose(pick === m ? null : m)}>
+                <MarketName m={tm} />
+              </button>
+            )
+          })}
+        </div>
+
         <div className="pulse__body">
           <div className="pulse__chart">
             <div className="pulse__cap mono">
-              <span>USD notional per second · {PULSE_WINDOW_SEC}s ago → now</span>
+              <span>USD notional per second{pick ? ` · ${tapeMarket(pick).ticker}` : ''} · {PULSE_WINDOW_SEC}s ago → now</span>
               <span className="pulse__cap-r">
                 <i className="pulse__swatch pulse__swatch--up" aria-hidden /> buys <i className="pulse__swatch pulse__swatch--down" aria-hidden /> sells
               </span>
