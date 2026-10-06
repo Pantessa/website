@@ -6212,7 +6212,8 @@
 .wl__fired { padding: 8px 10px; border-bottom: 1px solid var(--line); background: color-mix(in oklch, var(--accent) 8%, transparent); }
 .wl__firedRow { display: flex; align-items: flex-start; gap: 8px; padding: 4px 0; }
 .wl__firedIcon { width: 14px; height: 14px; margin-top: 2px; color: var(--accent); flex-shrink: 0; }
-.wl__firedTitle { font-size: 12px; font-weight: 600; color: var(--fg); margin-bottom: 4px; }
+.wl__firedTitle { font-size: 12px; font-weight: 600; color: var(--fg); }
+.wl__firedMeta { font-size: 11px; color: var(--muted); margin: 2px 0 4px; }
 .wl__addWrap { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
 .wl__add { position: relative; flex: 1; min-width: 0; }
 .wl__addIcon { position: absolute; left: 9px; top: 50%; width: 13px; height: 13px; transform: translateY(-50%); color: var(--muted-2); pointer-events: none; }

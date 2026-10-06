@@ -93,7 +93,7 @@ export async function runAlertSweep(opts: SweepOptions = {}): Promise<SweepSumma
         data: { status: 'fired', firedAt: now, firedPrice: price, lastChecked: now, lastPrice: price },
       })
       if (flipped.count === 0) continue // a concurrent pass got it
-      const title = `${alertLabel(rule)} — now $${fmtQuotePrice(price)}`
+      const title = `${alertLabel(rule)} — hit $${fmtQuotePrice(price)}`
       const body = a.actionAsk
         ? `Your alert fired at $${fmtQuotePrice(price)}. The action you set up is ready to send — it moves nothing until you sign.`
         : `Your alert fired at $${fmtQuotePrice(price)}.`

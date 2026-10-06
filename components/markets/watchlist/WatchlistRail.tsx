@@ -31,7 +31,7 @@ import { PantessaMark } from '@/components/Logo'
 import { chartPairFor } from '@/lib/charts'
 import { venuesFor } from '@/lib/symbol-venues'
 import { useToast } from '@/lib/toast'
-import { DEFAULT_LIST_NAME, RAIL_BREW_COPY, fmtQuotePrice, heldAutofillNote, heldPosition, heldTitle, quoteCellState, railBrewPhase, sectionedRows, symbolName, type Quote, type WatchlistShape } from '@/lib/watchlists'
+import { DEFAULT_LIST_NAME, RAIL_BREW_COPY, firedAlertLines, fmtQuotePrice, heldAutofillNote, heldPosition, heldTitle, quoteCellState, railBrewPhase, sectionedRows, symbolName, type Quote, type WatchlistShape } from '@/lib/watchlists'
 import AddTicker from './AddTicker'
 import AlertForm from './AlertForm'
 import FundWallet from './FundWallet'
@@ -427,11 +427,14 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
       {/* ── Needs you: fired alerts hand you their chip ───────────── */}
       {alerts.notifications.length > 0 && (
         <div className="wl__fired" role="status">
-          {alerts.notifications.slice(0, 3).map((n) => (
+          {alerts.notifications.slice(0, 3).map((n) => {
+            const line = firedAlertLines(n, quotes[n.symbol]?.last)
+            return (
             <div key={n.id} className="wl__firedRow">
               <BellRing className="wl__firedIcon" aria-hidden />
               <div className="min-w-0 flex-1">
-                <div className="wl__firedTitle">{n.title}</div>
+                <div className="wl__firedTitle">{line.headline}</div>
+                <div className="wl__firedMeta mono">{line.meta}</div>
                 {n.actionAsk && (
                   <button type="button" className="wl__chip wl__chip--accent" onClick={() => send(n.actionAsk!, false)} title={sendLabelFor(false)}>
                     {n.actionAsk}
@@ -442,7 +445,8 @@ export default function WatchlistRail({ symbol, onAsk, redirectTo, className, on
                 <Check className="h-3.5 w-3.5" />
               </button>
             </div>
-          ))}
+            )
+          })}
           {alerts.notifications.length > 3 && (
             <button type="button" className="wl__link mono" onClick={() => alerts.dismiss('all')}>
               +{alerts.notifications.length - 3} more · clear all
