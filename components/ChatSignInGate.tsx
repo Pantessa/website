@@ -11,6 +11,7 @@ import { useSoftKeyboard } from '@/components/mobile/useSoftKeyboard'
 import { usePhonePosture } from '@/components/chat/usePhonePosture'
 import KeepItBar from '@/components/guide/KeepItBar'
 import { getSignedReceipt, subscribeSignedReceipt } from '@/lib/first-run'
+import { useYeetfulStore } from '@/lib/store'
 
 /**
  * The chat's sign-in surface. It used to be a full-screen scrim that demanded
@@ -49,6 +50,12 @@ export default function ChatSignInGate() {
   // leave (MARKETS, WALLET and the rest stay one tap away). At lg+ nothing
   // changes: the banner floats over the thread as before.
   const phone = usePhonePosture()
+  // The LINKS studio/board owns the desktop main screen (ChatInterface's
+  // linksMode): the floating banner sat over its "Mint this link" row, and a
+  // covered button is a dead button. Its words are about THIS chat anyway, so
+  // it steps aside while the links view shows and returns with the chat
+  // (pre-gtm FINISH). The studio carries its own sign-in door.
+  const linksView = useYeetfulStore((s) => s.mainView === 'links' && s.railTab === 'links')
   const [seats, setSeats] = useState<{ banner: HTMLElement | null; root: HTMLElement | null }>({ banner: null, root: null })
   useEffect(() => {
     if (!phone) {
@@ -126,6 +133,7 @@ export default function ChatSignInGate() {
 
   // ── Non-blocking banner: guests keep the whole chat interactive ──────────
   if (keyboard.open) return null
+  if (linksView && !(phone && seats.banner)) return null
   // A phone: one compact row in the conversation's own seat above the
   // composer — never over the newest card, no bar arithmetic. The words are
   // the short form of the desktop banner's promise.

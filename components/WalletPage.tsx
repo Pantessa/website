@@ -18,7 +18,7 @@
 import { useEffect, useState } from 'react'
 import { useAccount } from 'wagmi'
 import { useAccountModal } from '@rainbow-me/rainbowkit'
-import { ArrowRight, Settings2, Wallet } from 'lucide-react'
+import { ArrowRight, Loader2, Settings2, Wallet } from 'lucide-react'
 import { WalletDetails, walletKind } from '@/components/WalletPanel'
 import GuideSeat from '@/components/guide/GuideSeat'
 import { useAnnouncedWalletName } from '@/lib/use-wallet-name'
@@ -154,17 +154,20 @@ export default function WalletPage() {
               <AskDoorTrigger variant="rail" />
             </span>
             {showDetails && (
+              // While it waits it says so ("Connecting…", a spinner, aria-busy)
+              // instead of looking dead (pre-gtm FINISH).
               <button
                 type="button"
                 onClick={openAccountModal}
                 disabled={!openAccountModal}
-                title="Switch wallet or disconnect"
-                aria-label="Switch wallet or disconnect"
-                data-wallet-switch
-                className="flex-shrink-0 inline-flex items-center justify-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-3 py-1.5 max-lg:min-h-11 max-lg:min-w-11 text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)] disabled:opacity-50 disabled:pointer-events-none transition-colors"
+                title={openAccountModal ? 'Switch wallet or disconnect' : 'Connecting your wallet…'}
+                aria-label={openAccountModal ? 'Switch wallet or disconnect' : 'Connecting your wallet…'}
+                aria-busy={!openAccountModal || undefined}
+                data-wallet-switch={openAccountModal ? 'ready' : 'connecting'}
+                className="flex-shrink-0 inline-flex items-center justify-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] px-3 py-1.5 max-lg:min-h-11 max-lg:min-w-11 text-[12px] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)] disabled:cursor-progress transition-colors"
               >
-                <Settings2 className="w-3.5 h-3.5" />
-                <span className="max-sm:hidden">Switch or disconnect</span>
+                {openAccountModal ? <Settings2 className="w-3.5 h-3.5" /> : <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span className="max-sm:hidden">{openAccountModal ? 'Switch or disconnect' : 'Connecting…'}</span>
               </button>
             )}
           </div>

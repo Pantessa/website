@@ -11,6 +11,7 @@ import { moneyShaped } from '../lib/ask-failure-shape'
 import { chartSymbolByName, isMoneyAssetWord } from '../lib/charts'
 import { simulateLadder } from './ask-ladder'
 import { SEND_HOLD_MS, sendHoldFor } from '../lib/wallet-reconnect'
+import { isTransferShaped } from '../lib/intent-links'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -104,6 +105,13 @@ check('send hold: the held ask is shown while it waits', /Connecting your wallet
 for (const [ask, want] of [['pay nate.eth 5 usdc', 'clarify'], ['tip vitalik.eth 1 usdc on base', 'action'], ['pay 5 usdc to nate.eth on base', 'action'], ['send 5 usdc to nate.eth on base', 'action']] as const) {
   const o = simulateLadder(ask); check(`pay/tip: "${ask}" → transfer ${want}`, o.gate === 'transfer' && o.kind === want, `${o.gate}/${o.kind} ${o.note ?? ''}`)
 }
+
+// ── FINISH: the /i belt knows every verb the grammar builds a transfer from ─
+// A link never auto-sends a transfer-shaped ask (IntentRuntime prefills it).
+for (const ask of ['tip vitalik.eth 1 usdc on base', 'tip 0x1234567890abcdef1234567890abcdef12345678 50 USDC', 'donate 5 usdc to nate.eth', 'enviar 50 USDC a 0x1234567890abcdef1234567890abcdef12345678', 'envoyer 10 USDC à nate.eth', 'senden 10 USDC an nate.eth', '转账 10 USDC 给 nate.eth', 'pay nate.eth 5 usdc', 'send 5 usdc to nate.eth on base'])
+  check(`transfer belt: "${ask}" holds (prefill only)`, isTransferShaped(ask))
+for (const ask of ['Buy $25 of AAPL', 'comprar $20 de ETH', 'Swap 10 USDC for ETH on base', 'tip: buy the dip $10 of ETH'])
+  check(`transfer belt: "${ask}" runs (not a transfer)`, !isTransferShaped(ask))
 
 console.log(`\npins:deadends — ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

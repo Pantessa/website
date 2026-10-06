@@ -380,3 +380,15 @@
   .keep--compact .keep__cta, .keep--compact .keep__later { min-height: 44px; } /* the compact row's 40px beat line 357's floor */
   .keep__later { min-width: 44px; }
 }
+
+/* FINISH (pre-gtm): at phone width the compact keep-it row squeezed its facts into a ~110px column beside the two
+   buttons — one word per line, a 340px-tall row. Under 640px the row reads as a line or two: mark + title + facts as a
+   sentence across the full width, the two actions on their own row below (44px targets kept). */
+@media (max-width: 640px) {
+  .keep--compact { grid-template-columns: 24px minmax(0, 1fr); row-gap: 8px; align-items: start; }
+  .keep--compact .keep__mark { margin-top: 1px; }
+  .keep--compact .keep__facts { line-height: 1.45; }
+  .keep--compact .keep__acts { grid-column: 1 / -1; justify-content: flex-end; gap: 6px; }
+  .keep--compact .keep__cta { flex: 1; min-height: 44px; }
+  .keep--compact .keep__later { min-height: 44px; min-width: 44px; padding: 0 10px; }
+}

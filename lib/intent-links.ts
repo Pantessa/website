@@ -4,6 +4,8 @@
 // the connected wallet is the only signer. Everything here treats the ask as
 // untrusted input.
 
+import { englishAsk } from './ask-lingua'
+
 export const ASK_MAX = 400
 
 /** Untrusted-input hygiene — same contract as the /sign page. */
@@ -182,8 +184,11 @@ export function sanitizeVariants(raw: unknown, baseAsk: string): string[] {
  *  they NEVER auto-build from a link. The runtime falls back to prefill-only
  *  so a human types nothing but must deliberately press send. */
 export function isTransferShaped(ask: string): boolean {
-  const a = ask.toLowerCase()
-  return /\b(send|transfer|pay|give)\b/.test(a) && (/0x[0-9a-fA-F]{6,}/.test(ask) || /\b[a-z0-9-]+\.eth\b/.test(a) || /\bto\s+(him|her|them|me|this address|wallet)\b/.test(a))
+  // The foreign send verbs (lib/ask-lingua: enviar, envoyer, senden, 转账 …)
+  // read into English first, so the belt knows every verb the grammar builds
+  // a transfer from — `tip` and `donate` included (pre-gtm FINISH).
+  const a = englishAsk(ask).toLowerCase()
+  return /\b(send|transfer|pay|give|tip|donate)\b/.test(a) && (/0x[0-9a-fA-F]{6,}/.test(ask) || /\b[a-z0-9-]+\.eth\b/.test(a) || /\bto\s+(him|her|them|me|this address|wallet)\b/.test(a))
 }
 
 /** Mint-time redirect validation: https only, no credentials, no localhost.
