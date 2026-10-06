@@ -2,6 +2,8 @@
 // words (lib/chart-share) and a stamped call (lib/chart-calls). Pure: no
 // server, no chain, no DB. Called from scripts/test-api.ts, and runnable alone:
 //   npx tsx scripts/chart-calls-pins.ts
+import { cleanUsd, composeTicket, defaultLimitPrice, ticketShape } from '../lib/call-ticket'
+import { chartPairFor } from '../lib/charts'
 import type { Candle } from '../lib/charts'
 import { parseChartState, type ChartLine, type ChartState } from '../lib/chart-state'
 import { dragLine, emptyUndo, nearestOhlc, recordUndo, redo, trendReadout, undo, zoneReadout, type DrawSpace } from '../lib/chart-draw'
@@ -86,6 +88,22 @@ export function chartCallsPins(check: Check): void {
   const auto = new URL(callTweetHref({ id: 'abc123def4', symbol: 'UNI', title: 'UNI 1D: yeet line' })).searchParams.get('text')!
   check('call: the post on X opens with the cashtag exactly once (a title that already leads with the ticker is not given it twice), and never with a mention', auto.startsWith('$UNI 1D: yeet line') && (auto.match(/\$UNI/g) ?? []).length === 1 && !/^@/.test(auto) && new URL(chartTweetHref('ETH', '1D')).searchParams.get('text')!.startsWith('$ETH '))
   check('call: a long claim is cut to fit the post, never the link', new URL(callTweetHref({ id: 'abc123def4', symbol: 'AAPL', title: 'x'.repeat(400) })).searchParams.get('text')!.length < 280)
+
+  // The order ticket composes only sentences the venue map already offers.
+  const uni = chartPairFor('UNI')!
+  const aapl = chartPairFor('AAPL')!
+  const hype = chartPairFor('HYPE')!
+  const mkt = composeTicket({ symbol: 'UNI', pair: uni, side: 'buy', mode: 'market', usd: 25, price: null, last: 8.9 })
+  const sell = composeTicket({ symbol: 'UNI', pair: uni, side: 'sell', mode: 'market', usd: 25, price: null, last: 8.9 })
+  const lim = composeTicket({ symbol: 'UNI', pair: uni, side: 'buy', mode: 'limit', usd: 25, price: 3.27, last: 8.9 })
+  const wrongSide = composeTicket({ symbol: 'UNI', pair: uni, side: 'buy', mode: 'limit', usd: 25, price: 12, last: 8.9 })
+  const stock = composeTicket({ symbol: 'AAPL', pair: aapl, side: 'buy', mode: 'market', usd: 12, price: null, last: 336 })
+  const perp = composeTicket({ symbol: 'HYPE', pair: hype, side: 'sell', mode: 'market', usd: 20, price: null, last: 40 })
+  check('ticket: market buy / sell and a stock buy are the venue map\'s own sentences', mkt.ok && mkt.ask === 'Buy $25 of UNI on Ethereum' && sell.ok && sell.ask === 'Sell $25 of UNI on Ethereum' && stock.ok && stock.ask === 'Buy $12 of AAPL')
+  check('ticket: a limit under the market is a resting CoW buy at that price, and a buy limit over the market is refused by name', lim.ok && /^limit order: buy [\d.]+ UNI for at most [\d.]+ USDC on Ethereum$/.test(lim.ask) && !wrongSide.ok && /UNDER the market/.test(wrongSide.reason))
+  check('ticket: a perp-only symbol reads Long/Short and a sell opens a short', ticketShape('HYPE', hype, 40).sides.sell === 'Short' && ticketShape('UNI', uni, 8.9).sides.buy === 'Buy' && perp.ok && /short/i.test(perp.ask))
+  check('ticket: a stock has no resting limit; a size outside $1–$100,000 is refused; cents only under $10', !ticketShape('AAPL', aapl, 336).limit && ticketShape('UNI', uni, 8.9).limit && !composeTicket({ symbol: 'UNI', pair: uni, side: 'buy', mode: 'market', usd: 0.5, price: null, last: 8.9 }).ok && cleanUsd(5.555) === 5.56 && cleanUsd(25.6) === 26 && cleanUsd(1e9) === null)
+  check('ticket: the limit price opens on the call\'s nearest level under the market for a buy, over it for a sell, else 1% off', defaultLimitPrice([{ id: 'a', kind: 'h', price: 3.27 }, { id: 'b', kind: 'zone', p1: 10, p2: 12 }, { id: 'c', kind: 'h', price: 7 }], 'buy', 8.9) === 7 && defaultLimitPrice([{ id: 'b', kind: 'zone', p1: 10, p2: 12 }], 'sell', 8.9) === 10 && defaultLimitPrice([], 'buy', 100) === 99 && defaultLimitPrice([], 'buy', null) === null)
 
   const daily: Candle[] = Array.from({ length: 80 }, (_, i) => ({ t: i * 86400, o: 100 + i, h: 103 + i, l: 98 + i, c: 101 + i, v: 1 }))
   const svg = callCardSvg(daily, stateOf([{ id: 'a', kind: 'h', price: 170 }, { id: 'far', kind: 'h', price: 5000 }, zone]), 70 * 86400, { width: 1072, height: 232, up: '#0f0', down: '#f00', grid: '#111', ink: '#fff', accent: '#0f0', sell: '#f00' })

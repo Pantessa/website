@@ -6,6 +6,7 @@ import Footer from '@/components/Footer'
 import CallChart from '@/components/markets/call/CallChart'
 import CallShareRow from '@/components/markets/call/CallShareRow'
 import CallComments from '@/components/markets/call/CallComments'
+import CallTicket from '@/components/markets/call/CallTicket'
 import { readCall } from '@/lib/chart-calls-read'
 import { STAMP_FRAMES, callTweetHref, callUrl, fillTiming, fillWords, fmtCallPrice, fmtCallTime, fmtMove, fmtSpan } from '@/lib/chart-calls'
 import { symbolName } from '@/lib/markets-seo'
@@ -56,7 +57,7 @@ export default async function CallPage({ params }: Params) {
   const { id } = await params
   const call = await readCall(id)
   if (!call) notFound()
-  const { post, stamp, last, move, fills, heldAtCall } = call
+  const { post, stamp, last, move, fills, heldAtCall, pair, authorLinks } = call
   const frame = stamp ? STAMP_FRAMES.find((f) => f.tf === stamp.tf)!.label : null
   const stood = fmtSpan(Math.floor(Date.now() / 1000) - post.createdAt)
   const before = fills.filter((f) => f.t <= post.createdAt)
@@ -108,6 +109,29 @@ export default async function CallPage({ params }: Params) {
         <CallChart symbol={post.symbol} state={post.chartState} fills={fills} callT={post.createdAt} callLabel={`The call · ${fmtCallTime(post.createdAt)}${stamp ? ` · $${fmtCallPrice(stamp.price)}` : ''}`} />
 
         {post.body && <p className="callpg__body">{post.body}</p>}
+
+        {/* trade it from here: size it, send the sentence, sign */}
+        {pair && (
+          <div className="callpg__trade">
+            <CallTicket symbol={post.symbol} pair={pair} last={last} lines={post.chartState?.lines ?? []} />
+            {authorLinks.length > 0 && (
+              <section className="callpg__links" aria-label={`More from ${post.authorLabel}`}>
+                <h2 className="mono">More from {post.authorLabel}</h2>
+                <ul>
+                  {authorLinks.map((l) => (
+                    <li key={l.slug}>
+                      <Link href={`/i/${l.slug}`} title="Opens the guarded runtime — only your wallet signs">
+                        <span className="callpg__linkask">{l.ask}</span>
+                        <span className="mono callpg__linkgo">open →</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+                <p className="callpg__muted">Each one is a link they minted: open it and the ask is already written, your wallet signs.</p>
+              </section>
+            )}
+          </div>
+        )}
 
         {/* the proof */}
         <section className="callpg__proof" aria-label="Verified trades">

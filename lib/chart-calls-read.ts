@@ -4,7 +4,9 @@
 // Every read is its own failure domain — a tape that is down leaves a page
 // that says "no price read", never a 500 and never a guessed number.
 
+import prisma from '@/lib/db'
 import { getPost, type PublicComment, type PublicPost } from '@/lib/chart-posts'
+import { chartPairFor, type ChartPair } from '@/lib/charts'
 import { loadCandleSeries, loadCandlesBefore } from '@/lib/candles-server'
 import type { Candle, ChartFeed } from '@/lib/charts'
 import { readVerifiedFills } from '@/lib/viz/fills'
@@ -28,6 +30,35 @@ export interface CallView {
   fills: FillMarker[]
   /** At least one verified fill at or before the stamp. */
   heldAtCall: boolean
+  /** The chart pair (source, label) the ticket composes against. */
+  pair: ChartPair | null
+  /** The author's other live links: what else they are asking people to sign. */
+  authorLinks: AuthorLink[]
+}
+
+export interface AuthorLink {
+  slug: string
+  ask: string
+  createdAt: number
+}
+
+/** The author's live, public links, newest first, this post's own excluded.
+ *  Public rows only (#699 class: never internal), never revoked or expired. */
+async function readAuthorLinks(author: string, exceptSlug: string | null, take = 6): Promise<AuthorLink[]> {
+  try {
+    const rows = await prisma.intentLink.findMany({
+      where: { creator: author.toLowerCase(), revoked: false, isInternal: false, recipient: null, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+      orderBy: { createdAt: 'desc' },
+      take: take + 1,
+      select: { id: true, ask: true, createdAt: true },
+    })
+    return rows
+      .filter((r) => r.id !== exceptSlug)
+      .slice(0, take)
+      .map((r) => ({ slug: r.id, ask: r.ask, createdAt: Math.floor(r.createdAt.getTime() / 1000) }))
+  } catch {
+    return []
+  }
 }
 
 /** Finest frame first: the first one whose bars reach the call wins. */
@@ -49,11 +80,12 @@ export async function readCall(id: string): Promise<CallView | null> {
   const post = await getPost(id).catch(() => null)
   if (!post || post.kind !== 'idea') return null
   const tf = post.chartState?.tf ?? '1d'
-  const [stamp, live, framed, fillsRead] = await Promise.all([
+  const [stamp, live, framed, fillsRead, authorLinks] = await Promise.all([
     readStamp(post.symbol, post.createdAt),
     loadCandleSeries(post.symbol, '1d').catch(() => null),
     tf === '1d' ? Promise.resolve(null) : loadCandleSeries(post.symbol, tf).catch(() => null),
     readVerifiedFills(post.symbol, post.author).catch(() => [] as FillMarker[]),
+    post.isInternal ? Promise.resolve([] as AuthorLink[]) : readAuthorLinks(post.author, post.linkSlug),
   ])
   const daily = live?.series.candles ?? []
   const last = daily.length ? daily[daily.length - 1].c : null
@@ -70,5 +102,7 @@ export async function readCall(id: string): Promise<CallView | null> {
     move: stamp && last !== null ? movePct(stamp.price, last) : null,
     fills,
     heldAtCall: fills.some((f) => f.side === 'buy' && f.t <= post.createdAt),
+    pair: chartPairFor(post.symbol),
+    authorLinks,
   }
 }
