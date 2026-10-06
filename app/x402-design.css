@@ -5787,7 +5787,7 @@
 .mkt-chart__canvas { position: relative; width: 100%; min-width: 0; overflow: hidden; border-radius: 10px; }
 .mkt-chart__canvas.is-drawing { cursor: crosshair; }
 .mkt-chart__engine { position: absolute; inset: 0; touch-action: pan-y; } /* the page scrolls vertically; pan + pinch are the chart's (MarketChart: vertTouchDrag off) */
-.mkt-chart__empty { position: absolute; inset: 0; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 10px; pointer-events: none; }
+.mkt-chart__empty { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 10px; pointer-events: none; } /* z-index: the chart canvas painted over the "feed unavailable" line (pre-gtm POLISH r3) */
 /* Loading: ghost bars with the plot's shape, lit left to right (MarketChart SKELETON_BARS). */
 .mkt-chart__empty.is-loading { place-items: stretch; }
 .mkt-skel { position: relative; display: block; margin: 8% 64px 22% 12px; }

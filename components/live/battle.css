@@ -169,3 +169,23 @@ html[data-theme="light"] .battle {
   /* A phone shows the first six suggestions; a picked army always shows. */
   .battle__chips > .battle__pick:nth-child(n + 7):not(.is-on) { display: none; }
 }
+
+/* MOBILE (squad pre-gtm, 2026-10-07): the battle views' controls were 24–30px under a thumb (27 sub-44 targets at
+   every phone width: the window, Hold, Fullscreen, the two pickers, each army, the add field, every recruit chip).
+   On a coarse pointer each one is a 44px target; the recruit chips keep their pill drawn by ::before inside a 44px
+   box (a table cell clips outside hit areas). Desktop untouched. */
+@media (hover: none) {
+  .battle__btn, .battle__since button, .battle__modes button, .battle__add input, .battle__addbtn { height: 44px; }
+  /* The armies wrap to three rows on a phone: 36px pills with a 44px hit area (rows 8px apart, so the hit areas
+     meet and never overlap) keep the chart ~24px higher than 44px pills would. */
+  .battle__pick { height: 36px; position: relative; }
+  .battle__pick::after { content: ''; position: absolute; inset: -4px 0; }
+  .battle__chips { row-gap: 8px; }
+  .battle__since button { min-width: 44px; }
+  .battle__chip { min-height: 44px; }
+  .battle__table .battle__chip { height: 44px; min-width: 44px; border-color: transparent; background: transparent; position: relative; isolation: isolate; }
+  .battle__table .battle__chip::before { content: ''; position: absolute; inset: 9px 0; z-index: -1; border-radius: 999px; border: 1px solid transparent; }
+  .battle__table .battle__chip--buy::before { background: color-mix(in srgb, var(--battle-up) 18%, var(--surf-1)); border-color: color-mix(in srgb, var(--battle-up) 55%, transparent); }
+  .battle__table .battle__chip--sell::before { background: color-mix(in srgb, var(--battle-down) 16%, var(--surf-1)); border-color: color-mix(in srgb, var(--battle-down) 55%, transparent); }
+  .battle__recruit { gap: 0; }
+}

@@ -7,6 +7,7 @@
 // ranked list, venue colors stable via seriesVar.
 
 import { useEffect, useState } from 'react'
+import FetchFailed from '@/components/FetchFailed'
 import type { ChartPair } from '@/lib/charts'
 import { fmtCompact, seriesVar, TAPE_FOOTNOTE } from '@/lib/markets-look'
 import Ribbon from './Ribbon'
@@ -51,6 +52,7 @@ function gapWords(gap: string | null | undefined): string {
 export default function FlowPanel({ symbol, pair, className = '' }: FlowPanelProps) {
   const [data, setData] = useState<FlowResponse | null>(null)
   const [state, setState] = useState<'loading' | 'ok' | 'down'>('loading')
+  const [nonce, setNonce] = useState(0)
   useEffect(() => {
     let alive = true
     setState('loading')
@@ -68,7 +70,7 @@ export default function FlowPanel({ symbol, pair, className = '' }: FlowPanelPro
     return () => {
       alive = false
     }
-  }, [symbol])
+  }, [symbol, nonce])
 
   const sources = data?.sources ?? []
   const live = sources.filter((s) => s.usd != null && s.usd > 0)
@@ -84,7 +86,8 @@ export default function FlowPanel({ symbol, pair, className = '' }: FlowPanelPro
       {state === 'loading' ? (
         <div className="mk-num" style={{ color: 'var(--muted-2)', fontSize: 12 }}>Reading venues…</div>
       ) : state === 'down' ? (
-        <div className="mk-num" style={{ color: 'var(--muted-2)', fontSize: 12 }}>Venue reads unavailable — retrying next open.</div>
+        // pre-gtm POLISH r3: said "retrying next open", which nothing did.
+        <FetchFailed what="the venues" onRetry={() => setNonce((n) => n + 1)} />
       ) : (
         <>
           <div className="mk-receipt">

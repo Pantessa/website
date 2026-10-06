@@ -96,6 +96,15 @@ export default function SymbolPage({
   const sym = pair?.symbol ?? symbol
   const name = symbolName(sym)
   const [stats, setStats] = useState<ChartStats | null>(null)
+  // The header's "loading … candles" never ended when the feed failed (pre-gtm
+  // POLISH r3): after 12s with no stats it says the feed didn't answer.
+  const [statsLate, setStatsLate] = useState(false)
+  useEffect(() => {
+    setStatsLate(false)
+    if (stats) return
+    const t = setTimeout(() => setStatsLate(true), 12_000)
+    return () => clearTimeout(t)
+  }, [sym, stats])
   const [expanded, setExpanded] = useState(false)
   const shellRef = useRef<HTMLDivElement | null>(null)
 
@@ -344,7 +353,7 @@ export default function SymbolPage({
                 <span className="sym__feed mono">{feedLabel}</span>
               </>
             ) : pair ? (
-              <span className="sym__feed mono">loading {feedLabel} candles…</span>
+              <span className="sym__feed mono">{statsLate ? `${feedLabel} didn’t answer · retrying` : `loading ${feedLabel} candles…`}</span>
             ) : unknown ? null : (
               // An unknown ticker already wears "Not listed" in the title row;
               // a second copy in the quote slot read as a stutter (POLISH, pre-gtm r1).

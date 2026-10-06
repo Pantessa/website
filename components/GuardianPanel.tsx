@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useChainId, useSignTypedData } from 'wagmi'
 import { ShieldCheck, ShieldOff, Pause, Play, Trash2 } from 'lucide-react'
+import { friendlyError } from '@/lib/friendly-error'
 
 interface Delegation {
   id: string
@@ -183,7 +184,7 @@ export default function GuardianPanel() {
       setNotice(`Armed: ${kind.replace('_', '-')} on ${coin}.`)
       await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not arm the policy.')
+      setError(friendlyError(e, 'Could not arm the policy.'))
     } finally {
       setBusy(false)
     }

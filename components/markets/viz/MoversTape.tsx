@@ -49,7 +49,7 @@ export default function MoversTape({ onOpen, count = 8, className = '' }: Movers
   if (!items.length) {
     return (
       <div className={`mk-tape ${className}`.trim()}>
-        <div className="mk-tape__empty">{live ? 'No movers yet.' : failed ? 'The quote feed didn’t answer · trying again every 20s' : 'Reading the tape…'}</div>
+        <div className="mk-tape__empty" data-fetch-failed={!live && failed ? '' : undefined}>{live ? 'No movers yet.' : failed ? 'The quote feed didn’t answer · trying again every 20s' : 'Reading the tape…'}</div>
       </div>
     )
   }
