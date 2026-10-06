@@ -21,6 +21,7 @@ import { useConnectToAct } from '@/lib/use-connect-to-act'
 import {
   ARMY_SLOTS,
   DEFAULT_PICK,
+  addOwnMarkets,
   FALLBACK_ARMIES,
   FRONT_WINDOWS,
   LIVE_VIEWS,
@@ -35,6 +36,7 @@ import {
   oiUsd,
   parseFrontTokens,
   parseFrontWindow,
+  resolveMarket,
   parsePickMode,
   pickList,
   pushSample,
@@ -79,6 +81,7 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
   const [ctxTick, setCtxTick] = useState(0)
   const [log, setLog] = useState<WarEvent[]>([])
   const [draft, setDraft] = useState('')
+  const [addNote, setAddNote] = useState<{ text: string; tone: 'warn' | 'dim' } | null>(null)
 
   const openedAtRef = useRef(Date.now())
   const samplesRef = useRef<Map<string, PricePoint[]>>(new Map())
@@ -149,7 +152,16 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
     const ac = new AbortController()
     readTapeUniverse(ac.signal).then(({ main, xyz }) => {
       if (ac.signal.aborted) return
-      setUniverse([...main, ...xyz].filter((r) => !r.delisted).sort((a, b) => b.volumeUsd - a.volumeUsd).map((r) => r.name))
+      const names = [...main, ...xyz].filter((r) => !r.delisted).sort((a, b) => b.volumeUsd - a.volumeUsd).map((r) => r.name)
+      setUniverse(names)
+      // The URL spells a market in caps; the venue spells kPEPE with its k.
+      // Once the list is here, every army takes the venue's spelling.
+      if (names.length) {
+        setArmies((prev) => {
+          const fixed = prev.map((m) => resolveMarket(m, names) ?? m)
+          return fixed.some((m, i) => m !== prev[i]) ? fixed : prev
+        })
+      }
     })
     return () => ac.abort()
   }, [])
@@ -356,12 +368,24 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
       return [...prev, m]
     })
   }, [])
-  const addDraft = useCallback(() => {
-    const [m] = parseFrontTokens(draft)
-    if (!m) return
-    setArmies((prev) => (prev.includes(m) || prev.length >= MAX_ARMIES ? prev : [...prev, m]))
-    setDraft('')
-  }, [draft])
+  // Your own armies: several at once (commas or spaces), each resolved to
+  // the venue's spelling; a name the venue lists no market for is said so.
+  const addOwn = useCallback(
+    (raw: string) => {
+      const r = addOwnMarkets(raw, universe, armies)
+      if (r.added.length) setArmies((prev) => [...prev, ...r.added.filter((m) => !prev.includes(m))].slice(0, MAX_ARMIES))
+      if (r.unknown.length) setAddNote({ text: `Hyperliquid lists no market called ${r.unknown.map((u) => u.toUpperCase()).join(', ')}`, tone: 'warn' })
+      else if (r.full.length) setAddNote({ text: `the field is full — drop an army to add ${r.full.map(armyLabel).join(', ')}`, tone: 'dim' })
+      else setAddNote(null)
+      setDraft(r.unknown.join(', '))
+    },
+    [armies, universe],
+  )
+  useEffect(() => {
+    if (!addNote) return
+    const id = setTimeout(() => setAddNote(null), 6000)
+    return () => clearTimeout(id)
+  }, [addNote])
   const pickTop = useCallback((mode: PickMode) => {
     setPickMode(mode)
     const top = pickList(ctxRef.current, mode).slice(0, DEFAULT_PICK).map((r) => r.market)
@@ -455,15 +479,40 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
               className="battle__add"
               onSubmit={(e) => {
                 e.preventDefault()
-                addDraft()
+                if (draft.trim()) addOwn(draft)
               }}
             >
-              <input id="battle-add" list="battle-universe" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={armies.length >= MAX_ARMIES ? 'field is full' : '+ your own (BTC, xyz:NVDA…)'} aria-label="Add a token" autoComplete="off" disabled={armies.length >= MAX_ARMIES} />
+              <input
+                id="battle-add"
+                list="battle-universe"
+                value={draft}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setDraft(v)
+                  // A pick from the suggestion list lands at once; typing waits for Add.
+                  const picked = (e.nativeEvent as InputEvent).inputType === 'insertReplacementText'
+                  if (picked && resolveMarket(v, universe)) addOwn(v)
+                }}
+                placeholder={armies.length >= MAX_ARMIES ? 'field is full' : '+ your own · near, pepe, nvda'}
+                aria-label="Add your own tokens, several with commas"
+                autoComplete="off"
+                disabled={armies.length >= MAX_ARMIES}
+              />
               <datalist id="battle-universe">
                 {universe.slice(0, 400).map((m) => (
                   <option key={m} value={m} />
                 ))}
               </datalist>
+              <button type="submit" className="battle__addbtn" disabled={armies.length >= MAX_ARMIES || !draft.trim()}>
+                Add
+              </button>
+              {addNote ? (
+                <span className={`battle__addnote mono battle__addnote--${addNote.tone}`} role="status">
+                  {addNote.text}
+                </span>
+              ) : (
+                <span className="battle__addnote mono battle__addnote--dim">commas add several</span>
+              )}
             </form>
           </div>
         </div>

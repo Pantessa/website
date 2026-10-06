@@ -17,6 +17,7 @@ import {
   MIN_HALF_RANGE_PCT,
   PICK_MIN_OI_USD,
   SIEGE_INNER,
+  addOwnMarkets,
   anchorFor,
   armyLabel,
   burstsOf,
@@ -42,6 +43,7 @@ import {
   pickList,
   pushSample,
   rankArmies,
+  resolveMarket,
   siegeAngle,
   siegeRadius,
   siegeSectors,
@@ -97,6 +99,15 @@ export function battlePins(check: Check): void {
   const biggest = pickList(ctxs, 'biggest')
   check('battle: the pick list is the venue\'s own rows — gainers by day change, the biggest by open interest — with a floor on open interest so a thin perp\'s wild day never leads, and the dex index never listed',
     gainers.map((r) => r.market).join(',') === 'HYPE,BTC,xyz:NVDA,ETH' && biggest.map((r) => r.market).join(',') === 'BTC,ETH,HYPE,xyz:NVDA' && near(gainers[0].dayPct!, (93 / 90 - 1) * 100) && biggest[0].oiUsd === 4.3e9 && PICK_MIN_OI_USD === 2_000_000 && pickList(ctxs, 'gainers', 2).length === 2 && DEFAULT_PICK === 3 && parsePickMode('biggest') === 'biggest' && parsePickMode('x') === 'gainers', `${gainers.map((r) => r.market)} / ${biggest.map((r) => r.market)}`)
+
+  // ── Your own armies ───────────────────────────────────────────────────
+  const uni = ['BTC', 'ETH', 'NEAR', 'kPEPE', 'xyz:NVDA', 'xyz:AAPL', 'HYPE']
+  check('battle: a typed name resolves to the venue\'s spelling — near → NEAR, pepe → kPEPE, nvda → xyz:NVDA, XYZ:aapl → xyz:AAPL; a name the venue lists nothing for is null; an unknown universe accepts the typed shape',
+    resolveMarket('near', uni) === 'NEAR' && resolveMarket('pepe', uni) === 'kPEPE' && resolveMarket('KPEPE', uni) === 'kPEPE' && resolveMarket('nvda', uni) === 'xyz:NVDA' && resolveMarket('XYZ:aapl', uni) === 'xyz:AAPL' && resolveMarket('doge', uni) === null && resolveMarket('0x12', uni) === null && resolveMarket('doge', []) === 'DOGE')
+  const own = addOwnMarkets('near, pepe sol,nvda,btc, eth', uni, ['BTC', 'HYPE'])
+  const fullAdd = addOwnMarkets('near pepe nvda', uni, ['BTC', 'ETH', 'HYPE', 'xyz:AAPL'])
+  check('battle: several of your own at once — commas or spaces, each resolved, the already-picked skipped, the unknown named, the ones past the cap named as not fitting',
+    own.added.join(',') === 'NEAR,kPEPE,xyz:NVDA' && own.unknown.join(',') === 'sol' && own.full.join(',') === 'ETH' && fullAdd.added.join(',') === 'NEAR' && fullAdd.full.join(',') === 'kPEPE,xyz:NVDA' && addOwnMarkets('', uni, []).added.length === 0, JSON.stringify([own, fullAdd]))
 
   // ── Samples ───────────────────────────────────────────────────────────
   const cs = candleSamples([{ t: T0, T: T0 + 59_999, o: '100', c: '101' }, { t: T0 + MIN, T: T0 + 2 * MIN - 1, o: '101', c: 'nope' }])
@@ -191,7 +202,7 @@ export function battlePins(check: Check): void {
       const surface = readFileSync('components/live/LiveSurface.tsx', 'utf8')
       return /useConnectToAct\(\{ run, redirectFor: promptHref \}\)/.test(src) && /openDoor\(ask, \{ send: true, mcps: askAppSlugs\(ask\) \}\)/.test(src) && /canTradeAsk\(f\.ask, tradable\)/.test(src) && /getPropertyValue\(name\)/.test(src) && /prefers-reduced-motion: reduce/.test(src) && !/fetch\(['"`]\/api\/chat/.test(src) &&
         /if \(view === 'front'\) drawFront/.test(src) && /else if \(view === 'map'\) drawMap/.test(src) && /else drawSiege/.test(src) && /if \(d\.reduced \|\| d\.paused\) return/.test(draw) &&
-        /--army-5/.test(css) && /html\[data-theme="light"\] \.battle/.test(css) && /isBattleView\(view\)/.test(surface)
+        /--army-5/.test(css) && /html\[data-theme="light"\] \.battle/.test(css) && /isBattleView\(view\)/.test(surface) && /addOwnMarkets\(raw, universe, armies\)/.test(src) && /insertReplacementText/.test(src) && /battle__addbtn/.test(src)
     })())
   check('battle: the venue reads are the browser\'s — candles, contexts and mids from the info API and the allMids socket; no server holds a socket and nothing is stored',
     (() => {
