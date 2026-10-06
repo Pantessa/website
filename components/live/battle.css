@@ -1,0 +1,153 @@
+/* The battle views on /live (2026-10-06) — the live tape as a war for
+   ground. Rides the markets frame (.mkt-frame) and its look tokens; site
+   tokens only so light mode comes free. The five army inks are this page's
+   own (set in both themes); up/down ink is the markets' own. The canvas
+   reads every colour it draws from these variables (Battle.tsx readInks),
+   so a colour-mix() never reaches it. */
+
+.battle {
+  --army-1: #e6b84a;  /* gold */
+  --army-2: #5ad1e6;  /* cyan */
+  --army-3: #f06aa8;  /* magenta */
+  --army-4: #a6e35a;  /* lime */
+  --army-5: #b39cff;  /* violet */
+  --battle-up: var(--mk-up, var(--accent));
+  --battle-down: var(--mk-down, var(--sell));
+  --battle-grid: var(--mk-grid, rgb(255 255 255 / 0.07));
+  --battle-horizon: var(--mk-rule, rgb(255 255 255 / 0.18));
+  --battle-ground-gain: rgb(62 207 142 / 0.10);
+  --battle-ground-loss: rgb(255 93 100 / 0.10);
+  container-type: inline-size; container-name: battle;
+}
+html[data-theme="light"] .battle {
+  --army-1: #a9780a;
+  --army-2: #0f8fb3;
+  --army-3: #c2407c;
+  --army-4: #5f8a00;
+  --army-5: #6b58cf;
+  --battle-grid: rgb(16 21 18 / 0.08);
+  --battle-horizon: rgb(16 21 18 / 0.28);
+  --battle-ground-gain: rgb(14 143 98 / 0.08);
+  --battle-ground-loss: rgb(199 62 67 / 0.08);
+}
+
+/* ── Bar ───────────────────────────────────────────────────────────────── */
+.battle__bar { justify-content: space-between; }
+.battle__title { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.battle__h { font-family: var(--mk-font-display); font-weight: 600; font-size: 20px; letter-spacing: -0.01em; color: var(--fg); white-space: nowrap; }
+.battle__sub { font-size: 10.5px; letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.battle[data-status="live"] .battle__pulse { animation: battle-pulse 1.6s ease-in-out infinite; }
+@keyframes battle-pulse { 0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--battle-up) 22%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--battle-up) 8%, transparent); } }
+.battle__controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.battle__btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surf-1); color: var(--fg); font-size: 12px; font-weight: 500; cursor: pointer; }
+.battle__btn:hover { border-color: var(--muted-2); }
+.battle__btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.battle__since, .battle__modes { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surf-1); }
+.battle__since button, .battle__modes button { height: 30px; padding: 0 10px; border: 0; background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.battle__since button + button, .battle__modes button + button { border-left: 1px solid var(--line); }
+.battle__since button.is-on, .battle__modes button.is-on { color: var(--fg); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+/* ── The picker ───────────────────────────────────────────────────────── */
+.battle__picker { padding: 12px 0 0; }
+.battle__pickhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.battle__count { font-size: 10.5px; color: var(--muted-2); }
+.battle__chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.battle__pick { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer; transition: color .12s ease, border-color .12s ease, background .12s ease; }
+.battle__pick:hover:not(:disabled) { color: var(--fg); border-color: var(--muted-2); }
+.battle__pick:disabled { opacity: .45; cursor: not-allowed; }
+.battle__pick.is-on { color: var(--fg); border-color: var(--army-ink); background: color-mix(in srgb, var(--army-ink) 16%, transparent); font-weight: 600; }
+.battle__pick-n { white-space: nowrap; }
+.battle__pick-v { font-size: 10.5px; color: var(--muted-2); }
+.battle__pick-v.up { color: var(--battle-up); }
+.battle__pick-v.down { color: var(--battle-down); }
+.battle__pick.is-on .battle__pick-v { color: var(--muted); }
+.battle__army-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--army-ink); flex: 0 0 auto; }
+.battle__add { display: inline-flex; }
+.battle__add input { height: 30px; width: 190px; padding: 0 12px; border: 1px dashed var(--line); border-radius: 999px; background: transparent; color: var(--fg); font-size: 12px; }
+.battle__add input:focus { outline: none; border-color: var(--accent); border-style: solid; }
+.battle__add input::placeholder { color: var(--muted-2); }
+.battle__add input:disabled { opacity: .5; }
+
+/* ── The field ─────────────────────────────────────────────────────────── */
+.battle__stage { position: relative; margin-top: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); overflow: hidden; height: clamp(420px, calc(100dvh - 400px), 760px); }
+.battle[data-view="siege"] .battle__stage { height: clamp(460px, calc(100dvh - 400px), 820px); }
+.battle__canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+.battle__empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted-2); font-size: 12px; pointer-events: none; }
+.battle__legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 8px 2px 0; font-size: 10.5px; color: var(--muted-2); }
+.battle__legend b { color: var(--muted); font-weight: 500; }
+.battle__legend .up { color: var(--battle-up); }
+.battle__legend .down { color: var(--battle-down); }
+
+/* Fullscreen: the main column IS the screen. */
+.battle:fullscreen { background: var(--bg); padding: 0 20px 12px; overflow: auto; }
+.battle:fullscreen .battle__stage { height: calc(100dvh - 330px); }
+
+/* ── Scoreboard ───────────────────────────────────────────────────────── */
+.battle__board { margin-top: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); overflow: hidden; }
+.battle__table { width: 100%; border-collapse: collapse; font-size: 12.5px; table-layout: fixed; }
+.battle__table th { padding: 9px 12px; text-align: left; font-size: 10.5px; font-weight: 500; letter-spacing: 0.04em; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.battle__table td { padding: 9px 12px; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); font-variant-numeric: tabular-nums; vertical-align: middle; }
+.battle__table tr:last-child td { border-bottom: 0; }
+.battle__table th.num, .battle__table td.num { text-align: right; }
+.battle__table th:nth-child(1) { width: 6%; }
+.battle__table th:nth-child(2) { width: 16%; }
+.battle__table th:nth-child(3) { width: 11%; }
+.battle__table th:nth-child(4) { width: 11%; }
+.battle__table th:nth-child(5) { width: 20%; }
+.battle__table th:nth-child(6) { width: 10%; }
+.battle__table th:nth-child(7) { width: 11%; }
+.battle__table th:nth-child(8) { width: 15%; }
+.battle__rank { font-family: var(--mk-font-display); font-size: 18px; font-weight: 600; color: var(--muted); }
+.battle__name { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.battle__name .battle__army-dot { width: 10px; height: 10px; }
+.battle__pct { font-weight: 700; font-size: 15px; }
+.battle__pct.up { color: var(--battle-up); }
+.battle__pct.down { color: var(--battle-down); }
+.battle__partial { font-size: 9.5px; color: var(--muted-2); margin-left: 6px; }
+.battle__flow { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
+.battle__flowbar { position: relative; height: 6px; border-radius: 3px; background: var(--battle-down); overflow: hidden; }
+.battle__flowbar span { position: absolute; inset: 0 auto 0 0; background: var(--battle-up); transition: width .4s var(--mk-ease, ease); }
+.battle__flow .up { color: var(--battle-up); font-size: 11px; }
+.battle__flow .down { color: var(--battle-down); font-size: 11px; }
+.battle__dim { color: var(--muted-2); }
+.battle__chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border: 1px solid transparent; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; cursor: pointer; font-family: var(--mk-font-ui); transition: transform .12s ease, filter .12s ease; }
+.battle__chip:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.battle__chip--buy { background: color-mix(in srgb, var(--battle-up) 18%, var(--surf-1)); border-color: color-mix(in srgb, var(--battle-up) 55%, transparent); color: var(--battle-up); }
+.battle__chip--sell { background: color-mix(in srgb, var(--battle-down) 16%, var(--surf-1)); border-color: color-mix(in srgb, var(--battle-down) 55%, transparent); color: var(--battle-down); }
+.battle__recruit { display: flex; gap: 6px; }
+
+/* ── Rail: the war log ────────────────────────────────────────────────── */
+.battle__rail { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+.battle__rh { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 12px 14px 8px; }
+.battle__rk { font-size: 13px; font-weight: 600; color: var(--fg); }
+.battle__rv { font-size: 9.5px; letter-spacing: 0.08em; color: var(--muted-2); }
+.battle__note { margin: 0 14px 8px; font-size: 10.5px; line-height: 1.45; color: var(--muted-2); }
+.battle__log { margin: 0; padding: 2px 10px 12px; list-style: none; display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto; min-height: 120px; overflow-y: auto; }
+.battle__ev { padding: 8px 10px; border: 1px solid var(--line); border-left: 3px solid var(--ev-ink, var(--line)); border-radius: 10px; background: var(--surf-1); animation: battle-ev-in .4s ease-out; }
+@keyframes battle-ev-in { from { transform: translateY(-6px); } }
+.battle__ev--empty { color: var(--muted-2); font-size: 11px; animation: none; border-left-width: 1px; }
+.battle__evh { display: flex; justify-content: space-between; gap: 8px; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.battle__evt { margin: 3px 0 0; font-size: 12px; line-height: 1.4; color: var(--fg); }
+
+@media (prefers-reduced-motion: reduce) { .battle[data-status="live"] .battle__pulse { animation: none; } .battle__ev { animation: none; } }
+
+/* ── Narrow ────────────────────────────────────────────────────────────── */
+@container battle (max-width: 760px) {
+  .battle__stage { height: clamp(320px, 60dvh, 520px); }
+  .battle__table th:nth-child(6), .battle__table td:nth-child(6), .battle__table th:nth-child(7), .battle__table td:nth-child(7) { display: none; }
+  .battle__table th:nth-child(2) { width: 22%; }
+  .battle__table th:nth-child(5) { width: 26%; }
+  .battle__table th:nth-child(8) { width: 24%; }
+}
+@container battle (max-width: 520px) {
+  .battle__h { font-size: 17px; }
+  .battle__sub { display: none; }
+  .battle__table th:nth-child(4), .battle__table td:nth-child(4) { display: none; }
+  .battle__table th:nth-child(1) { width: 9%; }
+  .battle__table th:nth-child(2) { width: 26%; }
+  .battle__table th:nth-child(3) { width: 20%; }
+  .battle__table th:nth-child(5) { width: 24%; }
+  .battle__table th:nth-child(8) { width: 21%; }
+  .battle__chip-usd { display: none; }
+  .battle__add input { width: 150px; }
+}
