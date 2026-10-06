@@ -192,3 +192,20 @@
   .guide { animation: none; }
   .guide__cta:hover { transform: none; }
 }
+
+/* MOBILE */
+/* Measured on the integrated tree (feat/front-door @ 60702500, coarse
+   pointer — MOBILE lane, squad front-door 2026-10-06):
+   - the full card's "Got it" was 42×44 → 44 wide;
+   - under 375 the compact home row cut EVERY home lesson's title mid-sentence
+     (the title column is 86–111px beside the chip and the ×; each title needs
+     3–4 lines and the row allows 2): the "n/N ·" counter steps aside there
+     (the full card's eyebrow still carries it) and the title may take a third
+     line — the row grows to ≈71px only when a title needs it. */
+@media (max-width: 640px) {
+  .guide__got { min-width: 44px; justify-content: center; }
+}
+@media (max-width: 374px) {
+  .guide--compact .guide__num { display: none; }
+  .guide--compact .guide__title { -webkit-line-clamp: 3; }
+}

@@ -129,3 +129,33 @@
   .pulse__chip-usd { display: none; }
   .pulse__foot { display: none; }
 }
+
+/* MOBILE */
+/* The band on a phone, measured on the integrated splash (feat/front-door @
+   60702500, coarse pointer, real mobile viewport — MOBILE lane, squad
+   front-door 2026-10-06). Before → after:
+   - the band sat 24px under the board tabs: SPLASH's seat margin (12px) and
+     the band's own 12px both applied → the seat's alone (−12px of the first
+     screen);
+   - the door ("Live tape →") was an 18px-tall link → a 35px hit area (up
+     into the band's padding and the seat's gap, down to the plot's edge: the
+     plot is drawn after the head and takes anything that reaches into it), the
+     head keeps its 18px line;
+   - "needs a position" / "no route here" in a chip's place took 96px of a
+     158px tile at 375 and cut the number beside it to 38px ("$93.5…") → two
+     short right-aligned lines, the number keeps its width;
+   - the tile keys were 8.5px mono → 9.5px. */
+@media (max-width: 640px) {
+  .mk-lead-seat .pulse { margin-top: 0; }
+  .pulse__door { position: relative; }
+  .pulse__door::after { content: ''; position: absolute; inset: -13px -8px -4px; }
+  .pulse__noact { max-width: 9ch; white-space: normal; line-height: 12px; text-align: right; }
+  .pulse__tk { font-size: 9.5px; }
+}
+/* Under 375 two tiles side by side leave the number ~13px beside its chip
+   ("HYPE" cut at the chip's edge, "$37.9…", both keys ellipsized at 320):
+   the two tiles stack, each a full row (the band grows ≈53px there; at
+   320×568 no board row was on the first screen anyway). */
+@media (max-width: 374px) {
+  .pulse__tiles { grid-template-columns: minmax(0, 1fr); }
+}
