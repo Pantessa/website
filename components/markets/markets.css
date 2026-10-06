@@ -568,6 +568,15 @@ button.mk-held:hover { border-color: var(--accent); }
    leaves no 12px hole. */
 .mk-lead-seat:not(:empty) { margin-top: 12px; }
 .mk-guide-seat:not(:empty) { margin-top: 12px; }
+/* ONE gap above the band, every width: THE SEAT OWNS IT, the band none while
+   seated. The band's own `margin: 12px 0 0` (pulse.css) is for a band standing
+   alone; here it sat inside `.pulse-seat`, a size container (container-type:
+   inline-size), which is an independent formatting context — the two 12px
+   margins never collapsed, and the band drew 24px under the tool strip at
+   every width (measured 1440 and 375, 2026-10-06). MOBILE zeroed it under
+   640px in pulse.css's MOBILE block; this is the same rule, unscoped. (No
+   comment marker inside this comment: a stray close would swallow the rule.) */
+.mk-lead-seat .pulse { margin-top: 0; }
 
 /* MOBILE */
 /* A board's head on a phone (MOBILE lane, squad front-door 2026-10-06,
