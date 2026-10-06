@@ -19625,6 +19625,22 @@ async function main() {
         /WALLET_CHAINS/.test(wagmiSrc) && /walletTransports\(\)/.test(wagmiSrc) && !/chains:\s*\[\s*base/.test(wagmiSrc),
       registryMissing.length ? `registry chains no wallet lane can switch to: ${registryMissing.join(', ')}` : '',
     )
+    // The embedded wallet's Coinbase product analytics stay off (2026-10-06).
+    // With them on, @coinbase/cdp-core POSTs to cca-lite.coinbase.com on every
+    // page load — initialize → eth_accounts → four fire-and-forget
+    // "action_call" events — and `await fetch(...)` there has no catch. The
+    // host is on EasyPrivacy (`||cca-lite.coinbase.com/amp`), so every uBlock
+    // / AdGuard / Brave visitor's page logged an unhandled "NetworkError when
+    // attempting to fetch resource." within the first second, and the User
+    // flows page stamped the stranger SAW AN ERROR. Reproduced on prod
+    // 2026-10-06 (block that one host → 4 unhandled rejections; block it
+    // with analytics off → 0). Sign-in / OAuth / signing use
+    // api.cdp.coinbase.com and are untouched.
+    check(
+      'embedded wallet: CDP analytics are disabled in cdpConfig (no cca-lite.coinbase.com beacons, no unhandled rejection for ad-block visitors)',
+      /disableAnalytics:\s*true/.test(cdpSrc) &&
+        /export const cdpConfig: CdpConfig = \{[\s\S]*?disableAnalytics:\s*true[\s\S]*?\n\}/.test(cdpSrc),
+    )
     // …and when the embedded wallet's switch DOES fail, the copy never says
     // "switch the wallet": there is nothing for the account-holder to switch.
     check(
