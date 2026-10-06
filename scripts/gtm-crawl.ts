@@ -49,7 +49,7 @@ export const ROUTES: string[] = [
 /** Fetched, not rendered. */
 export const RAW: string[] = [
   '/sitemap.xml', '/robots.txt', '/opengraph-image', '/twitter-image',
-  '/story/opengraph-image', '/markets/opengraph-image', '/t/AAPL/opengraph-image', '/t/ETH/opengraph-image',
+  '/story/opengraph-image', '/markets/opengraph-image', '/live/opengraph-image', '/t/AAPL/opengraph-image', '/t/ETH/opengraph-image',
   '/links/opengraph-image', '/chat/opengraph-image', '/agents/opengraph-image',
   '/roster/opengraph-image', '/t/ZZQQXX/opengraph-image',
 ]
