@@ -370,6 +370,7 @@ import { actionGateLivePins, actionGatePins } from './action-gate-pins'
 import { chartCallsPins } from './chart-calls-pins'
 import { battlefieldPins } from './battlefield-pins'
 import { tapePins } from './tape-pins'
+import { battlePins } from './battle-pins'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
   VIA_RE,
@@ -34569,6 +34570,8 @@ async function main() {
   battlefieldPins(check)
   // The live tape (2026-10-06): the venue row parse, flow classes, buckets, tiles, follow asks, triggers, the page's door.
   tapePins(check)
+  // The battle views on /live (2026-10-06): windows and anchors, the percent track, the range, units, bursts, rank, the picker, the projections.
+  battlePins(check)
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)

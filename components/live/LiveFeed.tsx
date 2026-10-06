@@ -16,7 +16,7 @@
 // block — those two columns say so instead of guessing); the Dune adapter
 // slot beside it, named on the page, live the moment its URL is set.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import Link from 'next/link'
 import { Pause, Play } from 'lucide-react'
 import MarketsSide from '@/components/markets/shell/MarketsSide'
@@ -66,7 +66,7 @@ const BIG_PRINT_CHOICES = [10_000, 50_000, 250_000, 1_000_000] as const
 const TAPE_ROWS = 80
 const EVENT_ROWS = 40
 
-export default function LiveFeed({ tradable }: { tradable: TradabilityMap }) {
+export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap; tabs?: ReactNode }) {
   const [source, setSource] = useState<TapeSource>('hyperliquid')
   const feed = feedFor(source)
   const [markets, setMarkets] = useState<string[] | null>(null)
@@ -192,6 +192,7 @@ export default function LiveFeed({ tradable }: { tradable: TradabilityMap }) {
               {feed.label} · {statusWords(status, statusDetail)}
             </span>
           </div>
+          {tabs}
           <div className="live__controls">
             <button type="button" className="live__pause" onClick={togglePause} aria-pressed={paused} title={paused ? 'Resume the tape' : 'Pause the tape'}>
               {paused ? <Play size={13} strokeWidth={2.2} /> : <Pause size={13} strokeWidth={2.2} />}
