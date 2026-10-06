@@ -23737,6 +23737,13 @@ async function main() {
           /signedOut: isSignedOut\(\{\s*sessionStatus: status,\s*sessionAddress: address,\s*walletStatus,\s*walletAddress: walletAddress \?\? null,\s*walletRemembered: remembered,\s*\}\)/.test(sessS) &&
           /setRemembered\(walletRemembered\(\(key\) => window\.localStorage\.getItem\(key\)\)\)/.test(sessS),
       )
+      // 2026-10-06, Nate: a stranger on /t/<sym> clicked the logo to go home
+      // and got the sign-in door — the brand seat pointed at /chat. Signed out,
+      // the logo goes to the public home; signed in, it still opens a chat.
+      check(
+        'spine: the brand seat (logo) sends a signed-out visitor home to the public `/`, never into the sign-in door; signed in it opens a fresh /chat',
+        /href=\{signedOut \? '\/' : '\/chat'\}/.test(spineSrc) && (await import('../lib/app-entry')).isPublicAppPath('/'),
+      )
       check(
         "SpineLink: a plain click by a settled signed-out visitor opens the sign-in door aimed at the link's own target; modified clicks, everyone else, and every link to a public app page (the markets surface) get the plain link",
         /if \(e\.defaultPrevented \|\| !signedOut \|\| isPublicAppPath\(href\)\) return/.test(spineLinkS) &&
