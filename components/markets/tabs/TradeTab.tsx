@@ -4,12 +4,16 @@
 //
 // The panel composes ONE sentence an existing parser accepts (buy/sell →
 // the swap layer with 4663 inference for stocks; protect → the Spot
-// Guardian on Base or the HL Guardian for perps) and SENDS it: the
-// frame's act door hands it to the app, which runs it on arrival with the
-// dapps it needs (lib/arrival-intent; 2026-09-16 — the build used to land in
-// a panel at the foot of this tab, where nobody saw it). Connect to act,
-// sign in to keep (rule 6). The wallet signature is the only gate; the panel
-// itself never touches funds.
+// Guardian on Base or the HL Guardian for perps) and SENDS it. Since
+// 2026-10-06 the order card IS the order ticket (components/markets/trade/
+// OrderTicket, the same form the header's act chips open): side tabs,
+// Market / Limit, the size in dollars or units with a slider over what the
+// wallet holds, leverage and a stop for a perp, the sentence printed. Its
+// button builds on this page through `onBuild` (Ask the chart's ticket under
+// the chart); the venue map, the composer and the position panel keep the
+// act door (`onAskText`), which runs their asks in the app on arrival
+// (lib/arrival-intent). Connect to act, sign in to keep (rule 6). The wallet
+// signature is the only gate; the panel itself never touches funds.
 //
 // The Sell side shows only while the connected wallet holds the symbol
 // (lib/sell-gate, 2026-09-16): nothing to sell, no Sell. A perp's Short is
@@ -21,13 +25,15 @@ import { symbolName } from '@/lib/markets'
 import RouteTable from '@/components/markets/slots/RouteTable'
 import CompoundComposer from '@/components/markets/slots/CompoundComposer'
 import PositionPanel from '@/components/markets/slots/PositionPanel'
+import OrderTicket from '@/components/markets/trade/OrderTicket'
 import { useSession } from '@/lib/session'
-import { AMOUNTS, SIDE_LABEL, STOPS, composeAsk, sideOf, sidesFor, type TradeAsk, type TradeSide } from '@/lib/trade-asks'
+import { execAsks, sideOf, type TradeAsk } from '@/lib/trade-asks'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
 import { canFill, noVenueNote } from '@/lib/tradability'
 import { useTradable } from '@/lib/use-tradable'
+import { fallbackSide, type TicketSide } from '@/lib/order-ticket'
 
 // The grammar (sides a pair can offer, the sentence per side, the default
 // chip row) lives in lib/trade-asks — pure, shared with the header strip,
@@ -40,6 +46,7 @@ export default function TradeTab({
   pair,
   onAsk,
   onAskText,
+  onBuild,
   last,
 }: {
   symbol: string
@@ -47,36 +54,26 @@ export default function TradeTab({
   onAsk?: (ask: TradeAsk) => void
   /** The act door for a bare ask string (the slots' onAsk). */
   onAskText?: (ask: string) => void
+  /** The page's build door: the order ticket's sentence builds on this page. */
+  onBuild?: (ask: string) => void
   /** The chart's last close (the header's stats) — EXEC sizes unit rows from it. */
   last?: number | null
 }) {
   const askText = onAskText ?? ((a: string) => onAsk?.({ side: sideOf(a), label: a, ask: a }))
   const { walletAddress } = useSession()
-  const allSides = useMemo(() => sidesFor(pair), [pair])
   const held = useHeld()
   const tradable = useTradable()
-  const sides = useMemo(
-    () => allSides.filter((s) => canSellAsk(composeAsk(pair, s), held) && canTradeAsk(composeAsk(pair, s), tradable)),
-    [allSides, pair, held, tradable],
-  )
-  // The picked side is kept while Sell is hidden: the panel shows (and sends)
-  // the first side the moment the wallet stops holding the token, and Sell
-  // comes back picked if a wallet that holds it returns.
-  const [pickedSide, setSide] = useState<TradeSide>(allSides[0])
-  const side = sides.includes(pickedSide) ? pickedSide : sides[0]
-  const [usd, setUsd] = useState<number>(10)
-  const [custom, setCustom] = useState<string>('')
-  const [pct, setPct] = useState<number>(5)
-
-  const amount = custom.trim() ? Math.max(1, Math.floor(Number(custom) || 0)) : usd
-  const ask = composeAsk(pair, side, { usd: amount, pct })
-
-  const send = () => {
-    onAsk?.({ side, label: SIDE_LABEL[side](pair), ask })
-  }
+  // The ticket's sides are the header strip's honest set, through the same
+  // two gates: nothing to sell → no Sell; a shut venue → no Buy.
+  const all = useMemo(() => execAsks(pair, { usd: 50, last: last ?? undefined }), [pair, last])
+  const sides = useMemo(() => all.filter((a) => canSellAsk(a.ask, held) && canTradeAsk(a.ask, tradable)).map((a) => a.side as TicketSide), [all, held, tradable])
+  // The picked side is kept while it is hidden: the card shows the first
+  // side the moment the wallet stops holding the token, and Sell comes back
+  // picked if a wallet that holds it returns.
+  const [pickedSide, setSide] = useState<TicketSide>(all[0]?.side ?? 'buy')
+  const side = fallbackSide(pickedSide, sides)
 
   const name = symbolName(symbol)
-  const isPerp = pair.source === 'hyperliquid'
   // Nothing a venue can fill: the order form and the "Chain it" composer
   // would both compose an ask that only refuses — and the composer's first
   // leg would move money onto a chain that can't complete the buy. The panel
@@ -91,7 +88,7 @@ export default function TradeTab({
       <div className="mk-trade__routes">
         <RouteTable symbol={symbol} pair={pair} onAsk={askText} last={last ?? null} />
       </div>
-      {noOrder ? (
+      {noOrder || !side ? (
         <section className="mkt-card mkt-order" aria-label={`Trade ${symbol}`} data-shut={shutSides.join('+') || 'held'}>
           <header className="mkt-card__head">
             <h2 className="mkt-card__title">Trade {name}</h2>
@@ -100,91 +97,13 @@ export default function TradeTab({
           <p className="mkt-card__note">{shutSides.length > 0 ? noVenueNote(pair.symbol, [...shutSides]) : `Nothing to sell yet — this panel comes back when the wallet holds ${pair.symbol}.`}</p>
         </section>
       ) : (
-      <section className="mkt-card mkt-order" aria-label={`Trade ${symbol}`}>
-        <header className="mkt-card__head">
-          <h2 className="mkt-card__title">Trade {name}</h2>
-          <span className="mkt-card__eyebrow mono">ONE SENTENCE · GUARDED BUILD · YOU SIGN</span>
-        </header>
-
-        {/* Side */}
-        <div className="mkt-order__sides" role="tablist" aria-label="Order type">
-          {sides.map((s) => (
-            <button
-              key={s}
-              type="button"
-              role="tab"
-              aria-selected={side === s}
-              className={`mkt-order__side ${side === s ? 'is-on' : ''} ${s === 'sell' ? 'mkt-order__side--sell' : ''}`}
-              onClick={() => setSide(s)}
-            >
-              {s === 'buy' ? (isPerp ? 'Long' : 'Buy') : s === 'sell' ? (isPerp ? 'Short' : 'Sell') : 'Protect'}
-            </button>
-          ))}
-        </div>
-
-        {/* Amount / stop */}
-        {side !== 'protect' ? (
-          <div className="mkt-order__row">
-            <span className="mkt-order__k mono">AMOUNT</span>
-            <div className="mkt-order__presets">
-              {AMOUNTS.map((a) => (
-                <button
-                  key={a}
-                  type="button"
-                  className={`mkt-order__preset ${!custom.trim() && usd === a ? 'is-on' : ''}`}
-                  onClick={() => {
-                    setCustom('')
-                    setUsd(a)
-                  }}
-                >
-                  ${a}
-                </button>
-              ))}
-              <label className="mkt-order__custom">
-                <span className="mono">$</span>
-                <input
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  placeholder="custom"
-                  value={custom}
-                  onChange={(e) => setCustom(e.target.value.replace(/[^0-9]/g, ''))}
-                  aria-label="Custom amount in dollars"
-                />
-              </label>
-            </div>
-          </div>
-        ) : (
-          <div className="mkt-order__row">
-            <span className="mkt-order__k mono">STOP</span>
-            <div className="mkt-order__presets">
-              {STOPS.map((p) => (
-                <button key={p} type="button" className={`mkt-order__preset ${pct === p ? 'is-on' : ''}`} onClick={() => setPct(p)}>
-                  −{p}%
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* The sentence + send */}
-        <div className="mkt-order__ask">
-          <p className="mkt-order__sentence" data-ask={ask}>
-            &ldquo;{ask}&rdquo;
-          </p>
-          <button type="button" className={`mkt-order__send ${side === 'sell' ? 'mkt-order__send--sell' : ''}`} onClick={send}>
-            {side === 'protect' ? 'Arm it' : 'Send it'}
-          </button>
-        </div>
-        <p className="mkt-card__note">
-          {side === 'protect'
-            ? isPerp
-              ? 'The Guardian watches the venue every minute and closes the position at your stop — delegated, never custodial.'
-              : 'A one-shot Spend Permission on Base: the Guardian sells only if your line breaks. Signed once.'
-            : pair.source === 'robinhood'
-              ? 'Settles on Robinhood Chain in USDG. An empty wallet gets a funding path, not a wall.'
-              : 'Quote → deterministic build → guardrails → your signature → receipt. The sentence is the whole order form.'}
-        </p>
-      </section>
+        <section className="mkt-card mkt-order" aria-label={`Trade ${symbol}`}>
+          <header className="mkt-card__head">
+            <h2 className="mkt-card__title">Trade {name}</h2>
+            <span className="mkt-card__eyebrow mono">SET THE SIZE · GUARDED BUILD · YOU SIGN</span>
+          </header>
+          <OrderTicket key={pair.symbol} symbol={symbol} pair={pair} sides={sides} side={side} onSide={setSide} last={last ?? null} onSend={onBuild ?? askText} seat="card" />
+        </section>
       )}
       {/* Buy → stake → protect as ONE signed job (EXEC) */}
       {!shutSides.includes('buy') && (
@@ -196,7 +115,6 @@ export default function TradeTab({
       <div className="mk-trade__position">
         <PositionPanel symbol={symbol} pair={pair} address={walletAddress ?? undefined} onAsk={askText} />
       </div>
-
     </div>
   )
 }
