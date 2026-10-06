@@ -215,6 +215,7 @@ export default function MarketsIndex({
   tradable,
   lead,
   guide,
+  claim,
 }: {
   trending?: TrendingRow[]
   /** The measured venue verdicts, read server-side so the index's chips are right on the FIRST paint (lib/tradability-store). */
@@ -225,6 +226,11 @@ export default function MarketsIndex({
    *  index never decides what fills them. */
   lead?: ReactNode
   guide?: ReactNode
+  /** The splash's claim block (SPLASH lane, components/home/SplashClaim):
+   *  renders FIRST in the main column, above the sticky tool strip, and
+   *  carries the page's visible h1 — so when it is given, the index's own
+   *  sr-only "Markets" h1 steps aside (one h1 per page). */
+  claim?: ReactNode
 }) {
   // Idempotent, and deliberately during render: QuickAct reads the shared
   // store synchronously, so seeding in an effect would flash a chip the
@@ -268,7 +274,7 @@ export default function MarketsIndex({
   return (
     <>
       <main className="mkt-frame__main" data-view={view} data-map-fallback={view === 'map' && phone ? 'list' : undefined}>
-        <h1 className="sr-only">Markets</h1>
+        {claim ?? <h1 className="sr-only">Markets</h1>}
 
         {/* ── Tool strip: search + view toggle + board tabs, sticky at the top ── */}
         <div className="mkt-frame__bar">
