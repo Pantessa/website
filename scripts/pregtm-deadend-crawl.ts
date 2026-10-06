@@ -117,6 +117,7 @@ function mockWalletScript(address: string): string {
 /** Instrumentation, injected before any page script. */
 const PROBE = `(() => {
   const W = window; W.__qa = { muts: [], clip: 0, opens: 0 };
+  W.__qaLabel = (el) => ((el.tagName === 'INPUT' && el.closest('label') ? el.closest('label').innerText : '') || el.getAttribute('aria-label') || el.innerText || el.getAttribute('title') || el.value || el.getAttribute('alt') || (el.querySelector('img,svg title')?.getAttribute?.('alt')) || '').replace(/\\s+/g, ' ').trim().slice(0, 90);
   try { const c = navigator.clipboard; if (c) { const w = c.writeText?.bind(c); c.writeText = async (t) => { W.__qa.clip++; try { return await w(t) } catch {} };
     const wr = c.write?.bind(c); if (wr) c.write = async (d) => { W.__qa.clip++; try { return await wr(d) } catch {} }; } } catch {}
   const oo = W.open; W.open = function (...a) { W.__qa.opens++; return oo.apply(W, a) };
@@ -136,7 +137,7 @@ const ENUM = `(() => {
   const vis = (el) => { const r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false;
     const s = getComputedStyle(el); if (s.visibility === 'hidden' || s.display === 'none' || Number(s.opacity) === 0) return false;
     if (el.closest('[aria-hidden=true],[inert]')) return false; return true; };
-  const label = (el) => (el.getAttribute('aria-label') || el.innerText || el.getAttribute('title') || el.value || el.getAttribute('alt') || (el.querySelector('img,svg title')?.getAttribute?.('alt')) || '').replace(/\\s+/g, ' ').trim().slice(0, 90);
+  const label = (el) => window.__qaLabel(el);
   const css = (el) => { const parts = []; let e = el; for (let i = 0; e && e.nodeType === 1 && i < 4; i++, e = e.parentElement) {
       let p = e.tagName.toLowerCase(); if (e.id) { p += '#' + e.id; parts.unshift(p); break; }
       const cls = [...e.classList].filter(c => !/^(hover|focus|active|md|lg|sm|xl|dark|light|group|peer):|^(p|m|px|py|mx|my|pt|pb|pl|pr|mt|mb|ml|mr|w|h|min|max|text|bg|border|rounded|flex|grid|gap|items|justify|font|leading|tracking|shadow|transition|duration|opacity|z|top|left|right|bottom|inset|overflow|truncate|block|inline|hidden|absolute|relative|fixed|sticky)-?/.test(c)).slice(0, 2);
@@ -148,6 +149,7 @@ const ENUM = `(() => {
   let i = 0;
   for (const el of document.querySelectorAll(SEL)) {
     if (!vis(el)) continue;
+    const shut = el.closest('details:not([open])'); if (shut && !(el.tagName === 'SUMMARY' && el.parentElement === shut)) continue; // a closed <details> renders nothing but its summary
     if (el.closest('a[href],button,[role=button]') !== el && el.closest('a[href],button,[role=button]')) continue; // nested inside another control
     const disabled = el.disabled || el.getAttribute('aria-disabled') === 'true';
     const tag = el.tagName.toLowerCase();
@@ -170,7 +172,8 @@ const SNAP = `(() => {
   const fields = [...document.querySelectorAll('textarea,input:not([type=hidden]):not([type=checkbox]):not([type=radio]),[contenteditable=true]')]
     .map(e => (e.value ?? e.innerText ?? '').slice(0, 200)).join('\\u0001');
   const ae = document.activeElement; const focusField = !!ae && (ae.tagName === 'TEXTAREA' || (ae.tagName === 'INPUT' && !/checkbox|radio|button|submit/.test(ae.type)) || ae.isContentEditable);
-  return { url: location.href, doors, fields, focusField, scroll: Math.round(scrollY) + ':' + Math.round(document.scrollingElement?.scrollTop || 0), clip: window.__qa?.clip || 0, opens: window.__qa?.opens || 0 };
+  const checks = [...document.querySelectorAll('input[type=checkbox],input[type=radio]')].map(e => e.checked ? 1 : 0).join('');
+  return { url: location.href, doors, fields, checks, focusField, scroll: Math.round(scrollY) + ':' + Math.round(document.scrollingElement?.scrollTop || 0), clip: window.__qa?.clip || 0, opens: window.__qa?.opens || 0 };
 })()`
 
 /** In-page: meaningful mutations since t0, excluding elements noisy before t0. */
@@ -268,6 +271,7 @@ async function crawlCell(browser: any, route: string, persona: Persona, width: n
     const plan = ctls.filter((c) => { const k = c.fam; const n = seen.get(k) || 0; seen.set(k, n + 1); return n < MAX_PER_FAMILY }).slice(0, MAX)
     cell.sampled = plan.length
     let dirty = false
+    let cur: Ctl[] = ctls
     for (const c of plan) {
       if (dirty) {
         // A fresh page state: storage + cookies cleared (a dismissed guide card or a
@@ -278,7 +282,7 @@ async function crawlCell(browser: any, route: string, persona: Persona, width: n
         try { await page.close() } catch {}
         page = await ctx.newPage(); wire(page)
         try { await load(page, url) } catch { /* recorded below as GONE */ }
-        await page.evaluate(ENUM).catch(() => null)
+        cur = (await page.evaluate(ENUM).catch(() => [])) as Ctl[]
         dirty = false
       }
       const rec: Click = { route, persona, width, i: c.i, tag: c.tag, label: c.label || '(no label)', href: c.href, sel: c.sel, journey: c.journey, outcome: 'DEAD', detail: '' }
@@ -287,17 +291,32 @@ async function crawlCell(browser: any, route: string, persona: Persona, width: n
       // Re-find by index, verify the label (live content shifts indices).
       let h = await page.$(`[data-qa-i="${c.i}"]`)
       if (h) {
-        const lbl = await h.evaluate((el: any) => (el.getAttribute('aria-label') || el.innerText || el.getAttribute('title') || el.value || '').replace(/\s+/g, ' ').trim().slice(0, 90)).catch(() => '')
+        const lbl = await h.evaluate((el: any) => (window as any).__qaLabel(el)).catch(() => '')
         if (norm(lbl) !== norm(c.label) && c.label) h = null
       }
       if (!h && c.label) {
         const all = await page.$$(c.tag === 'a' ? 'a[href]' : c.tag)
         for (const x of all) {
-          const l = await x.evaluate((el: any) => (el.getAttribute('aria-label') || el.innerText || el.getAttribute('title') || '').replace(/\s+/g, ' ').trim().slice(0, 90)).catch(() => '')
+          const l = await x.evaluate((el: any) => (window as any).__qaLabel(el)).catch(() => '')
           if (norm(l) === norm(c.label) && (await x.isVisible().catch(() => false))) { h = x; break }
         }
       }
+      if (!h) {
+        // Live content (pulse chips, tape rows, movers) renames itself between loads:
+        // click a sibling of the same family whose verb matches ("Long …", "Buy …").
+        const verb = (c.label.split(' ')[0] || '').toLowerCase()
+        const sub = cur.find((x) => x.fam === c.fam && x.tag === c.tag && (x.label.split(' ')[0] || '').toLowerCase() === verb && !x.disabled)
+        if (sub) { h = await page.$(`[data-qa-i="${sub.i}"]`); if (h) { rec.detail = `substitute: ${sub.label.slice(0, 40)}`; rec.label = c.label } }
+      }
       if (!h) { rec.outcome = 'GONE'; rec.detail = 'not found after reset (live content)'; cell.clicks.push(rec); continue }
+      if (c.tag === 'select') {
+        // A native <select> opens an OS popup the DOM never sees: pick another option instead.
+        const pick = await h.evaluate((el: any) => { const o = [...el.options].find((x: any) => !x.selected && !x.disabled); return o ? { v: o.value, t: o.textContent } : null }).catch(() => null)
+        let changed = ''
+        if (pick) { try { await h.selectOption(pick.v, { timeout: 1500 }); changed = pick.t } catch { /* detached */ } }
+        rec.outcome = changed ? 'STATE' : 'GONE'; rec.detail = changed ? `select → ${String(changed).trim().slice(0, 40)}` : 'select not found / single option'
+        cell.clicks.push(rec); dirty = true; continue
+      }
       try { await h.scrollIntoViewIfNeeded({ timeout: 1500 }) } catch {}
       try { await h.hover({ timeout: 1000, force: true }) } catch {}
       const tb = await page.evaluate('performance.now()')
@@ -332,12 +351,15 @@ async function crawlCell(browser: any, route: string, persona: Persona, width: n
       try { after = await page.evaluate(SNAP) } catch { after = { ...after, url: page.url() } }
       try { meaningful = await page.evaluate(`${MEANINGFUL}(${t0}, ${tb})`) } catch { meaningful = 0 }
       const pathOf = (u: string) => { try { const x = new URL(u); return x.pathname + x.search + x.hash } catch { return u } }
+      const subNote = rec.detail.startsWith('substitute') ? rec.detail : ''
+      rec.detail = ''
       if (state.sends.length > s0) { rec.outcome = 'SEND'; rec.detail = state.sends.slice(s0).join(',') }
       else if (state.external.length > x0) { rec.outcome = 'NAV'; rec.detail = 'external ' + state.external[state.external.length - 1].slice(0, 100) }
       else if (popups.length > p0 || after.opens > before.opens) { rec.outcome = 'NAV'; rec.detail = 'new tab ' + (popups[popups.length - 1] || '').slice(0, 100) }
       else if (after.url !== before.url) { rec.outcome = 'NAV'; rec.detail = pathOf(before.url) + ' → ' + pathOf(after.url) }
       else if (after.doors > before.doors) { rec.outcome = 'DOOR'; rec.detail = `${before.doors}→${after.doors} dialogs/menus` }
       else if (after.fields !== before.fields) { rec.outcome = 'PREFILL'; rec.detail = after.fields.split('\u0001').filter(Boolean).join(' | ').slice(0, 100) }
+      else if (after.checks !== before.checks) { rec.outcome = 'STATE'; rec.detail = 'toggled' }
       else if (after.clip > before.clip) { rec.outcome = 'COPY' }
       else if (meaningful >= 2) { rec.outcome = 'STATE'; rec.detail = `mutation score ${meaningful}` }
       else if (after.doors < before.doors) { rec.outcome = 'STATE'; rec.detail = 'closed a dialog/menu' }
@@ -352,6 +374,7 @@ async function crawlCell(browser: any, route: string, persona: Persona, width: n
         if (rec.outcome === 'DEAD') { rec.outcome = 'ERROR'; rec.detail = errs }
         else rec.detail = (rec.detail ? rec.detail + ' · ' : '') + 'ERR ' + errs
       }
+      if (subNote && !rec.detail.startsWith('substitute')) rec.detail = subNote + (rec.detail ? ' · ' + rec.detail : '')
       if (rec.outcome !== 'DEAD' && rec.outcome !== 'FOCUS' && rec.outcome !== 'COPY') dirty = true
       if (rec.outcome === 'STATE' && /weak/.test(rec.detail)) dirty = true
       cell.clicks.push(rec)
