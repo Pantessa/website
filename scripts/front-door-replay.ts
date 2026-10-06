@@ -63,19 +63,23 @@ type Spec = { id: string; why: string; name?: RegExp; text?: RegExp }
  *  text of the statement + its dependencies. */
 const LISTED: Spec[] = [
   { id: 'roster-home', why: '`/` carries HERO_LINE and no roster marker', name: /^roster homepage:/ },
-  { id: 'msg-landing', why: 'markets/msg reads the landing (brochure → /story)', name: /^markets\/msg: the landing/ },
+  // re-pinned names read "the brochure (/story)" — the spec keys on both shapes
+  { id: 'msg-landing', why: 'markets/msg reads the landing (brochure → /story)', name: /^markets\/msg: the (landing|brochure)/ },
   { id: 'msg-sitemap', why: 'the sitemap lists /markets', name: /^markets\/msg: sitemap lists/ },
   { id: 'is-markets-path', why: "isMarketsPath('/') is true now", name: /isMarketsPath is exactly/ },
   { id: 'sign-in-landing', why: 'SIGN_IN_LANDING is `/`; signInLandingFor', name: /^(app entry: signed out|sign-in lands)/ },
   { id: 'mk2-landing', why: 'the mk2 landing block reads `/` (now /story)', name: /^mk2\/landing:/ },
   { id: 'mobile-cta', why: 'MobileCtaBar lives on /story; its CTA → `/`', text: /MobileCtaBar|\bmctaS(rc)?\b/ },
-  { id: 'og-alt', why: 'the root card alt `Pantessa — ${HERO_LINE}`', text: /alt = `Pantessa — \\\$\\\{HERO_LINE\\\}`/ },
+  // by NAME: the re-pin changed the alt's shape (the board card), so a text key on the old alt went MISSING
+  { id: 'og-alt', why: 'the root card alt `Pantessa — ${HERO_LINE}`', name: /^onboarding: the root social card/ },
   { id: 'arrival-sources', why: 'ARRIVAL_SOURCES gains `/`', text: /\bARRIVAL_SOURCES\b|arrivalSourceAllowed\(/ },
   { id: 'nav-markets', why: "the nav's Markets tab href", text: /components\/Navigation\.tsx[\s\S]*\/markets|href="\\?\/markets"[\s\S]*nav__tab|nav__tab[\s\S]*href="\\?\/markets"/ },
-  { id: 'venue-first-paint', why: 'reads app/markets/page.tsx (deleted by the flip)', text: /app\/markets\/page\.tsx/ },
+  // by NAME: the re-pin reads app/page.tsx now, so a text key on the deleted path went MISSING
+  { id: 'venue-first-paint', why: 'read app/markets/page.tsx (deleted by the flip); now the index page', name: /^venue gate \(first paint\)/ },
 ]
 const SWEEP: { id: string; re: RegExp }[] = [
-  { id: 'reads / or /markets', re: /\$\{BASE\}\/(?:markets)?(?:[`?#])/ },
+  // /story: the brochure moved there, and the re-pins read it
+  { id: 'reads /, /markets or /story', re: /\$\{BASE\}\/(?:markets|story)?(?:[`?#])/ },
   { id: 'reads the sitemap', re: /sitemap\.xml/ },
   { id: 'reads a flip-changed file', re: /app\/page\.tsx|app\/story\/|app\/markets\/page|AppSpine\.tsx|MarketsIndex\.tsx|arrival-fence|phone-nav|next\.config|components\/home\/|components\/guide\/|lib\/guide\b/ },
   { id: 'uses a flip-changed rule', re: /\bisMarketsPath\(|\bisPublicAppPath\(|\bSIGN_IN_LANDING\b|\bsignInLandingFor\b|\bARRIVAL_SOURCES\b|arrivalSourceAllowed\(|\bphoneTap\(|\bHERO_LINE\b|\bMARKETS_HREF\b/ },
