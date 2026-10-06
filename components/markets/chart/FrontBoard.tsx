@@ -37,10 +37,8 @@ import {
   fuelWithin,
   fundingLine,
   heatCells,
-  heatMedian,
-  heatSummary,
-  heatTone,
-  liqBuckets,
+    heatSummary,
+    liqBuckets,
   liquidationMap,
   oiAtBars,
   parsePlayer,
@@ -49,7 +47,6 @@ import {
   unitUsd,
   unitsFor,
   type BookBody,
-  DAY_SEC,
   type DerivsBody,
   type HeatCell,
   type Player,
@@ -60,6 +57,7 @@ import { hasPerpCold } from '@/lib/symbol-venues'
 import type { PerpPosition } from '@/lib/symbol-position'
 import { fmtPrice } from '@/components/CandleChart'
 import type { BoardMode } from '@/lib/markets'
+import { HeatGrid } from './PositionHeat'
 import type { Tokens } from './chart-tokens'
 import './battlefield.css'
 
@@ -898,62 +896,3 @@ export default function FrontBoard({ symbol, pair, tf, bars, tokens, onAsk, canA
   )
 }
 
-/** The year as a contribution graph: columns are weeks (Sunday first),
- *  rows the days, each cell inked by that day's long/short share. */
-function HeatGrid({ cells, source, onHover }: { cells: HeatCell[]; source: string | null; onHover: (h: { cell: HeatCell; x: number; y: number } | null) => void }) {
-  const center = heatMedian(cells) ?? 0.5
-  const weeks: HeatCell[][] = []
-  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7))
-  const months: { col: number; label: string }[] = []
-  weeks.forEach((w, col) => {
-    const first = w.find((c) => new Date(c.day * 1000).getUTCDate() <= 7)
-    if (first && (months.length === 0 || months[months.length - 1].label !== fieldDate(first.day, '1d').month)) months.push({ col, label: fieldDate(first.day, '1d').month })
-  })
-  const ink = (c: HeatCell) => {
-    const tone = heatTone(c.long, center)
-    if (tone === null) return 'var(--surf-1)'
-    const side = tone >= 0 ? 'var(--mk-up, var(--accent))' : 'var(--mk-down, var(--sell))'
-    return `color-mix(in oklch, ${side} ${Math.round(12 + 88 * Math.abs(tone))}%, var(--surf-1))`
-  }
-  const today = Math.floor(Date.now() / 1000 / DAY_SEC) * DAY_SEC
-  return (
-    <div className="bf__heat" onPointerLeave={() => onHover(null)}>
-      {!cells.length ? (
-        <p className="bf__empty mono">{source === null ? 'Reading the year…' : 'No daily positioning for this coin'}</p>
-      ) : (
-        <div className="bf__heat-scroll">
-          <div className="bf__heat-months mono" style={{ gridTemplateColumns: `repeat(${weeks.length}, var(--hc))` }}>
-            {months.map((m) => (
-              <span key={`${m.col}-${m.label}`} style={{ gridColumnStart: m.col + 1 }}>
-                {m.label}
-              </span>
-            ))}
-          </div>
-          <div className="bf__heat-body">
-            <div className="bf__heat-days mono">
-              <span style={{ gridRowStart: 2 }}>Mon</span>
-              <span style={{ gridRowStart: 4 }}>Wed</span>
-              <span style={{ gridRowStart: 6 }}>Fri</span>
-            </div>
-            <div className="bf__heat-grid" style={{ gridTemplateColumns: `repeat(${weeks.length}, var(--hc))` }} role="img" aria-label="A year of daily long/short share, one cell a day">
-              {weeks.map((w, col) =>
-                w.map((c, row) => (
-                  <i
-                    key={c.day}
-                    className={`bf__cell${c.day > today ? ' is-future' : ''}`}
-                    style={{ gridColumnStart: col + 1, gridRowStart: row + 1, background: c.day > today ? 'transparent' : ink(c) }}
-                    onPointerEnter={(e) => {
-                      const host = (e.currentTarget as HTMLElement).closest('.bf') as HTMLElement | null
-                      const r = host?.getBoundingClientRect()
-                      onHover(r ? { cell: c, x: e.clientX - r.left, y: e.clientY - r.top } : null)
-                    }}
-                  />
-                )),
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}

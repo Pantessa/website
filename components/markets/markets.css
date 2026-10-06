@@ -454,4 +454,6 @@ button.mk-held:hover { border-color: var(--accent); }
    chart card grows to hold them (the candles keep their own height). */
 @media (min-width: 641px) {
   .sym .tchart:not(.tchart--expanded):has(.mkt-chart__canvas.is-field) { height: clamp(600px, 74dvh, 780px); }
+  /* The positioning strip under the candles needs its own rows. */
+  .sym .tchart:not(.tchart--expanded):has(.poshet.is-open) { height: clamp(560px, 76dvh, 820px); }
 }

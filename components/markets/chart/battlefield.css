@@ -138,3 +138,22 @@ button.bf__chip:hover { border-color: var(--line-2, var(--fg)); }
 @media (max-width: 640px) {
   .bf__heat { inset: 76px 8px 60px; --hc: 11px; justify-content: flex-start; }
 }
+
+/* The strip under the candles: a year of positioning. */
+.poshet { position: relative; display: grid; gap: 6px; }
+.poshet__head { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; padding: 4px 2px; text-align: left; }
+.poshet__k { font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
+.poshet__v { font-family: 'Fraunces', Georgia, serif; font-size: 14px; font-weight: 600; color: var(--fg); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.poshet__v.is-up { color: var(--mk-up, var(--accent)); }
+.poshet__v.is-down { color: var(--mk-down, var(--sell)); }
+.poshet__key { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
+.poshet__key i { width: 9px; height: 9px; border-radius: 2px; margin: 0 1px; }
+.poshet__chev { color: var(--muted-2); transition: transform .15s; flex: 0 0 auto; }
+.poshet__chev.is-open { transform: rotate(180deg); }
+.poshet__body { position: relative; }
+.poshet .bf__heat { position: static; inset: auto; --hc: 11px; justify-content: flex-start; }
+.poshet .bf__tip { position: absolute; }
+@media (max-width: 640px) {
+  .poshet__key, .poshet__k { display: none; }
+  .poshet .bf__heat { --hc: 10px; }
+}
