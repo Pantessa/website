@@ -238,11 +238,12 @@ export default function LiveFeed({ tradable }: { tradable: TradabilityMap }) {
             k="Hot market · 60s"
             v={stats.hotMarket ? <span className="mono">{stats.hotMarket.market}</span> : <span className="mono live__dim">—</span>}
             sub={stats.hotMarket ? `${fmtUsd(stats.hotMarket.usd)} traded` : 'waiting for the first fill'}
-            chip={stats.hotMarket ? chipFor({ market: stats.hotMarket.market, side: stats.takerFlow.buyPct !== null && stats.takerFlow.buyPct >= 50 ? 'buy' : 'sell' }) : null}
+            chip={stats.hotMarket ? chipFor({ market: stats.hotMarket.market, side: stats.hotMarket.side }) : null}
             onAct={act}
           />
           <Tile
             k="Taker flow · 60s"
+            split
             v={
               stats.takerFlow.buyPct === null ? (
                 <span className="mono live__dim">—</span>
@@ -300,8 +301,9 @@ export default function LiveFeed({ tradable }: { tradable: TradabilityMap }) {
 
       <MarketsSide label="Triggers">
         <div data-slot="triggers" className="live__rail">
-          <TriggersPanel armed={armed} setArmed={setArmed} thresholds={thresholds} setThresholds={setThresholds} events={events} onAct={act} chipOk={(f) => canTradeAsk(f.ask, tradable)} />
-          <FeedsCard source={source} setSource={setSource} status={status} detail={statusDetail} />
+          <TriggersPanel armed={armed} setArmed={setArmed} thresholds={thresholds} setThresholds={setThresholds} events={events} onAct={act} chipOk={(f) => canTradeAsk(f.ask, tradable)}>
+            <FeedsCard source={source} setSource={setSource} status={status} detail={statusDetail} />
+          </TriggersPanel>
         </div>
       </MarketsSide>
       {door}
@@ -343,11 +345,11 @@ function FieldTag() {
 
 // ── Tiles ────────────────────────────────────────────────────────────────────
 
-function Tile({ k, v, sub, chip, onAct, bar }: { k: string; v: React.ReactNode; sub?: string; chip?: FollowAsk | null; onAct?: (ask: string) => void; bar?: number | null }) {
+function Tile({ k, v, sub, chip, onAct, bar, split }: { k: string; v: React.ReactNode; sub?: string; chip?: FollowAsk | null; onAct?: (ask: string) => void; bar?: number | null; split?: boolean }) {
   return (
     <div className="live__tile">
       <div className="live__tk">{k}</div>
-      <div className="live__tv">{v}</div>
+      <div className={`live__tv${split ? ' live__tv--split' : ''}`}>{v}</div>
       {sub && <div className="live__ts mono">{sub}</div>}
       {bar !== undefined && (
         <div className="live__flowbar" aria-hidden>
@@ -356,7 +358,7 @@ function Tile({ k, v, sub, chip, onAct, bar }: { k: string; v: React.ReactNode; 
       )}
       {chip && onAct && (
         <button type="button" className={`live__chip live__chip--${chip.tone}`} onClick={() => onAct(chip.ask)} title={chip.ask}>
-          {chip.label} ${FOLLOW_USD}
+          {chip.label} <span className="live__chip-usd">${FOLLOW_USD}</span>
         </button>
       )}
     </div>
@@ -389,19 +391,32 @@ function TapeRow({ fill, chip, onAct }: { fill: TapeFill; chip: FollowAsk | null
       <td className="mono num">{fmtPrice(fill.price)}</td>
       <td className="mono num live__usd">{fmtUsd(fill.usd)}</td>
       <td className="mono live__effect">{fill.effect ?? <span className="live__dim">—</span>}</td>
-      <td className="mono live__time">{fmtClock(fill.at)}</td>
+      <td className="mono live__time">
+        <TapeClock ms={fill.at} />
+      </td>
       <td className="mono live__col-wide live__taker">{fill.taker ? fmtAddr(fill.taker) : <span className="live__dim">—</span>}</td>
       <td className="mono live__col-wide num">{fill.block != null ? fill.block.toLocaleString('en-US') : <span className="live__dim">—</span>}</td>
       <td className="live__col-act">
         {chip ? (
           <button type="button" className={`live__chip live__chip--${chip.tone}`} onClick={() => onAct(chip.ask)} title={chip.ask}>
-            {chip.label} ${FOLLOW_USD}
+            {chip.label} <span className="live__chip-usd">${FOLLOW_USD}</span>
           </button>
         ) : (
           <span className="live__dim mono live__noact">{m.kind === 'stock' && fill.side === 'sell' ? 'needs a position' : 'no route here'}</span>
         )}
       </td>
     </tr>
+  )
+}
+
+/** `14:35:28.411` with the milliseconds in their own span (phones drop them). */
+function TapeClock({ ms }: { ms: number }) {
+  const full = fmtClock(ms)
+  return (
+    <>
+      {full.slice(0, 8)}
+      <span className="live__ms">{full.slice(8)}</span>
+    </>
   )
 }
 
@@ -437,6 +452,8 @@ function FlowChart({ buckets, effectAware }: { buckets: FlowBucket[]; effectAwar
   const barW = Math.max(1, colW - 1.5)
   const y = (usd: number) => PAD.t + plotH - (usd / max) * plotH
   const ticks = [0.25, 0.5, 0.75, 1].map((f) => f * max)
+  // A time label every 15s when a label's 64px fits in 15 columns, else every 30s / 60s.
+  const labelStep = colW * 15 >= 64 ? 15 : colW * 30 >= 64 ? 30 : 60
   const onMove = (e: React.MouseEvent) => {
     const rect = ref.current?.getBoundingClientRect()
     if (!rect || !colW) return
@@ -474,7 +491,7 @@ function FlowChart({ buckets, effectAware }: { buckets: FlowBucket[]; effectAwar
               </g>
             )
           })}
-          {buckets.map((b, i) => (b.sec % 15 === 0 ? (
+          {buckets.map((b, i) => (b.sec % labelStep === 0 ? (
             <text key={`t${b.sec}`} x={PAD.l + i * colW + colW / 2} y={CHART_H - 6} className="live__axis mono" textAnchor="middle">
               {fmtAxisClock(b.sec)}
             </text>
@@ -516,6 +533,7 @@ function TriggersPanel({
   events,
   onAct,
   chipOk,
+  children,
 }: {
   armed: Set<TriggerRule>
   setArmed: (next: Set<TriggerRule>) => void
@@ -524,6 +542,8 @@ function TriggersPanel({
   events: TriggerEvent[]
   onAct: (ask: string) => void
   chipOk: (f: FollowAsk) => boolean
+  /** The feeds card, seated between the rules and the fired events. */
+  children?: React.ReactNode
 }) {
   const shown = events.filter((e) => armed.has(e.rule))
   return (
@@ -562,6 +582,11 @@ function TriggersPanel({
         ))}
       </ul>
       <p className="live__note mono">A trigger arms the ask. Your wallet signs it — nothing fires on its own.</p>
+      {children}
+      <header className="live__rh live__rh--fired">
+        <span className="live__rk">Fired</span>
+        <span className="live__rv mono">{shown.length ? `${shown.length} in the last minutes` : 'newest first'}</span>
+      </header>
       <ol className="live__events" aria-live="polite">
         {shown.length === 0 && <li className="live__event live__event--empty mono">Nothing has tripped yet.</li>}
         {shown.map((e) => {
@@ -575,7 +600,7 @@ function TriggersPanel({
               <p className="live__etext">{e.text}</p>
               {ok && (
                 <button type="button" className={`live__chip live__chip--${ok.tone}`} onClick={() => onAct(ok.ask)} title={ok.ask}>
-                  {ok.label} ${FOLLOW_USD}
+                  {ok.label} <span className="live__chip-usd">${FOLLOW_USD}</span>
                 </button>
               )}
             </li>

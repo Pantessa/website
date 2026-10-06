@@ -102,7 +102,7 @@ export function tapePins(check: Check): void {
   // ── Tiles ─────────────────────────────────────────────────────────────
   const st = tapeStats(fills, sec * 1000 + 950)
   check('tape: the tiles read the last minute — notional, the largest print, the hot market by dollars, the taker split by dollars — and trades/s over the last ten seconds; the fill 200s back is out',
-    st.notionalPerMin === 520 && st.largestPrint?.id === '1' && st.hotMarket?.market === 'HYPE' && st.hotMarket.usd === 470 && st.takerFlow.buyUsd === 370 && st.takerFlow.sellUsd === 150 && st.takerFlow.buyPct === 71 && st.tradesPerSec === 0, JSON.stringify(st))
+    st.notionalPerMin === 520 && st.largestPrint?.id === '1' && st.hotMarket?.market === 'HYPE' && st.hotMarket.usd === 470 && st.hotMarket.side === 'buy' && st.takerFlow.buyUsd === 370 && st.takerFlow.sellUsd === 150 && st.takerFlow.buyPct === 71 && st.tradesPerSec === 0, JSON.stringify(st))
   check('tape: an empty tape prints no numbers it does not have', tapeStats([], T0).largestPrint === null && tapeStats([], T0).hotMarket === null && tapeStats([], T0).takerFlow.buyPct === null && tapeStats([], T0).notionalPerMin === 0)
 
   // ── Follow asks: the button on every row, in the pages' own grammar ──
@@ -149,8 +149,9 @@ export function tapePins(check: Check): void {
     [{ name: 'xyz:XYZ100', volumeUsd: 999 }, { name: 'xyz:TSLA', volumeUsd: 50 }, { name: 'xyz:INTC', volumeUsd: 70 }],
     { main: 1, xyz: 1 },
   )
-  check('tape: the subscription is the busiest books by the venue\'s own 24h volume, main then xyz; delisted, zero-volume and the dex index never make it; the fallback list stands on its own',
-    picked.join(',') === 'ETH,xyz:INTC' && pickTapeMarkets([], []).length === 0 && FALLBACK_MARKETS.includes('HYPE') && FALLBACK_MARKETS.some((m) => m.startsWith('xyz:')), picked.join(','))
+  const pickedXyz = pickTapeMarkets([], [{ name: 'xyz:SPCX', volumeUsd: 900 }, { name: 'xyz:GOLD', volumeUsd: 800 }, { name: 'xyz:JPY', volumeUsd: 700 }, { name: 'xyz:TSLA', volumeUsd: 50 }, { name: 'xyz:INTC', volumeUsd: 70 }, { name: 'xyz:XYZ100', volumeUsd: 999 }], { main: 0, xyz: 4 })
+  check('tape: the subscription is the busiest books by the venue\'s own 24h volume, main then xyz; delisted, zero-volume and the dex index never make it; among xyz the two hottest lead, then the stocks the house lists (their rows carry a button) before gold and FX; the fallback list stands on its own',
+    picked.join(',') === 'ETH,xyz:INTC' && pickedXyz.join(',') === 'xyz:SPCX,xyz:GOLD,xyz:INTC,xyz:TSLA' && pickTapeMarkets([], []).length === 0 && FALLBACK_MARKETS.includes('HYPE') && FALLBACK_MARKETS.some((m) => m.startsWith('xyz:')), `${picked.join(',')} / ${pickedXyz.join(',')}`)
 
   // ── Formats ───────────────────────────────────────────────────────────
   check('tape: dollars print like a tape ($898.53 · $1.53K · $83.85K · $1.20M), the axis in short units, a price at its own precision, a size without trailing zeros, an address as 0x98da_f13b',

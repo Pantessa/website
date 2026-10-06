@@ -149,13 +149,24 @@ export const DEFAULT_PICK: MarketPick = { main: 14, xyz: 8 }
 /**
  * Which markets the tape subscribes to: the busiest main-book perps and the
  * busiest xyz (stock) perps by the venue's own 24h volume. Delisted rows and
- * the dex's index product (`xyz:XYZ100`) never make the list. A feed that
- * fails to answer leaves the caller on FALLBACK_MARKETS.
+ * the dex's index product (`xyz:XYZ100`) never make the list. Among the xyz
+ * markets, the stocks the house lists on Robinhood Chain come first (their
+ * rows carry a button; gold, FX and an unlisted ticker cannot follow), then
+ * the two busiest of the rest so the hottest market is never hidden. A feed
+ * that fails to answer leaves the caller on FALLBACK_MARKETS.
  */
 export function pickTapeMarkets(main: readonly UniverseRow[], xyz: readonly UniverseRow[], pick: MarketPick = DEFAULT_PICK): string[] {
-  const live = (rows: readonly UniverseRow[]) => rows.filter((r) => !r.delisted && Number.isFinite(r.volumeUsd) && r.volumeUsd > 0 && !/:XYZ100$/.test(r.name))
-  const top = (rows: readonly UniverseRow[], n: number) => [...live(rows)].sort((a, b) => b.volumeUsd - a.volumeUsd).slice(0, n).map((r) => r.name)
-  return [...top(main, pick.main), ...top(xyz, pick.xyz)]
+  const live = (rows: readonly UniverseRow[]) => [...rows.filter((r) => !r.delisted && Number.isFinite(r.volumeUsd) && r.volumeUsd > 0 && !/:XYZ100$/.test(r.name))].sort((a, b) => b.volumeUsd - a.volumeUsd)
+  const mainPick = live(main).slice(0, pick.main).map((r) => r.name)
+  const xyzLive = live(xyz)
+  const hottest = xyzLive.slice(0, Math.min(2, pick.xyz)).map((r) => r.name)
+  const listed = xyzLive.filter((r) => tapeMarket(r.name).kind === 'stock').map((r) => r.name)
+  const xyzPick: string[] = []
+  for (const name of [...hottest, ...listed, ...xyzLive.map((r) => r.name)]) {
+    if (xyzPick.length >= pick.xyz) break
+    if (!xyzPick.includes(name)) xyzPick.push(name)
+  }
+  return [...mainPick, ...xyzPick]
 }
 
 /** What the page runs on when the universe read fails (the venue's biggest
@@ -330,7 +341,8 @@ export interface TapeStats {
   /** Dollars over the last sixty seconds. */
   notionalPerMin: number
   largestPrint: TapeFill | null
-  hotMarket: { market: string; usd: number } | null
+  /** The market with the most dollars in the window, and which side carried them. */
+  hotMarket: { market: string; usd: number; side: TapeSide } | null
   takerFlow: { buyUsd: number; sellUsd: number; buyPct: number | null }
 }
 
@@ -342,7 +354,7 @@ export function tapeStats(fills: readonly TapeFill[], nowMs: number, market: str
   let largest: TapeFill | null = null
   let buyUsd = 0
   let sellUsd = 0
-  const byMarket = new Map<string, number>()
+  const byMarket = new Map<string, { usd: number; buy: number }>()
   for (const f of fills) {
     if (market && f.market !== market) continue
     if (f.at < minAgo) continue
@@ -351,10 +363,13 @@ export function tapeStats(fills: readonly TapeFill[], nowMs: number, market: str
     if (!largest || f.usd > largest.usd) largest = f
     if (f.side === 'buy') buyUsd += f.usd
     else sellUsd += f.usd
-    byMarket.set(f.market, (byMarket.get(f.market) ?? 0) + f.usd)
+    const r = byMarket.get(f.market) ?? { usd: 0, buy: 0 }
+    r.usd += f.usd
+    if (f.side === 'buy') r.buy += f.usd
+    byMarket.set(f.market, r)
   }
-  let hot: { market: string; usd: number } | null = null
-  for (const [m, usd] of byMarket) if (!hot || usd > hot.usd) hot = { market: m, usd }
+  let hot: { market: string; usd: number; side: TapeSide } | null = null
+  for (const [m, r] of byMarket) if (!hot || r.usd > hot.usd) hot = { market: m, usd: r.usd, side: r.buy * 2 >= r.usd ? 'buy' : 'sell' }
   const flow = buyUsd + sellUsd
   return {
     tradesPerSec: Math.round(ten / 10),
@@ -495,7 +510,8 @@ export function detectTriggers(fills: readonly TapeFill[], nowMs: number, seen: 
     const buys = g.filter((f) => f.side === 'buy').reduce((s, f) => s + f.usd, 0)
     const side: TapeSide = buys * 2 >= usd ? 'buy' : 'sell'
     const newest = g[0]
-    const bucket = Math.floor(newest.at / t.whaleWindowMs)
+    // Once a minute per taker and market: a taker that keeps filling is one event, not six.
+    const bucket = Math.floor(newest.at / 60_000)
     push({ id: `whale:${k}:${bucket}`, rule: 'whale-repeat', at: newest.at, market: newest.market, usd, side, follow: followAsk({ market: newest.market, side }), text: `${fmtAddr(newest.taker!)} ${side === 'buy' ? 'bought' : 'sold'} ${fmtUsd(usd)} of ${newest.market} across ${g.length} fills in ${Math.round(t.whaleWindowMs / 1000)}s.` })
   }
   // Flow skew: per market over the last minute.
