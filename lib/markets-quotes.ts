@@ -45,11 +45,14 @@ async function fetchQuotes(symbols: string[]): Promise<QuoteMap | null> {
 
 /** Live quotes for a symbol list; `{}` until the first read lands, and a
  *  symbol stays undefined (→ dashes) when no feed answers. */
-export function useQuotes(symbols: readonly string[]): { quotes: QuoteMap; live: boolean } {
+export function useQuotes(symbols: readonly string[]): { quotes: QuoteMap; live: boolean; failed: boolean } {
   const key = symbols.join(',')
   const list = useMemo(() => key.split(',').filter(Boolean), [key])
   const [quotes, setQuotes] = useState<QuoteMap>({})
   const [live, setLive] = useState(false)
+  // The last read failed (route down / offline) — a caller can say so instead
+  // of waiting on "Reading…" forever. Cleared by the next good read.
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     if (list.length === 0) return
@@ -60,7 +63,8 @@ export function useQuotes(symbols: readonly string[]): { quotes: QuoteMap; live:
       if (fromRoute) {
         setQuotes((prev) => ({ ...prev, ...fromRoute }))
         setLive(true)
-      }
+        setFailed(false)
+      } else setFailed(true)
     }
     void tick()
     const id = setInterval(() => void tick(), REFRESH_MS)
@@ -70,7 +74,7 @@ export function useQuotes(symbols: readonly string[]): { quotes: QuoteMap; live:
     }
   }, [list])
 
-  return { quotes, live }
+  return { quotes, live, failed }
 }
 
 /** Price + change formatting shared by rows, headers and tiles. */

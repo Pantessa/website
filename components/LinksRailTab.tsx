@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Check, Copy, ExternalLink, Plus, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import FetchFailed from '@/components/FetchFailed'
 import { formatEarnedUsd } from '@/lib/fees'
 import { useYeetfulStore } from '@/lib/store'
 import { useSession } from '@/lib/session'
@@ -140,7 +141,7 @@ function SignedInLinks({ activeSlugs, flat, onMint, onPage, onStudio, journey = 
   const openMint = onMint ?? (() => setMintOpen(true))
   const openPage = onPage ?? (() => setPageOpen(true))
   const toStudio = onStudio ?? openLinksStudio
-  const { links, earnings, reload, updatedAt } = useIntentLinks()
+  const { links, earnings, loadError, reload, updatedAt } = useIntentLinks()
   const { status, refresh: refreshStatus } = useOnboardingStatus()
   const [journeyDismissed, setJourneyDismissed] = useState(true)
   const [mintOpen, setMintOpen] = useState(false)
@@ -204,8 +205,18 @@ function SignedInLinks({ activeSlugs, flat, onMint, onPage, onStudio, journey = 
       )}
 
       <div className={cn('px-2 pb-3 space-y-1', !flat && 'flex-1 overflow-y-auto')}>
-        {links === null && (
+        {links === null && !loadError && (
           <p className="px-2 py-4 text-[11px] text-[color:var(--muted-2)]">Loading your links…</p>
+        )}
+        {links === null && loadError && (
+          // pre-gtm POLISH r2: "Loading your links…" never ended on a failed read.
+          <div className="px-2 py-4">
+            {/^Sign in/.test(loadError) ? (
+              <p className="text-[11px] text-[color:var(--muted-2)]">{loadError}</p>
+            ) : (
+              <FetchFailed what="your links" onRetry={reload} />
+            )}
+          </div>
         )}
         {links !== null && live.length === 0 && (
           <p className="px-3 py-4 text-xs text-[color:var(--muted-2)]">
