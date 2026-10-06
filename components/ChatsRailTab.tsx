@@ -10,6 +10,10 @@ import { Globe, Loader2, MessageSquare, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useYeetfulStore } from '@/lib/store'
 import { useSession } from '@/lib/session'
+import { cdpEnabled } from '@/lib/cdp-embedded'
+import CreateAccountButton from '@/components/CreateAccountButton'
+import EmptyDoor from '@/components/guide/EmptyDoor'
+import { CHATS_DOOR } from '@/lib/first-run'
 
 export default function ChatsRailTab({
   /** The parent scrolls (the phone screen): lay the list out flat and keep
@@ -59,19 +63,29 @@ export default function ChatsRailTab({
         )}
 
         {!chatsLoading && chats.length === 0 && (
-          <div className="text-center py-6 px-3 space-y-3">
-            <p className={cn('text-[color:var(--muted-2)]', flat ? 'text-[13px]' : 'text-xs')}>
-              {address ? 'No chats yet. Add MCPs, then start one here.' : 'Your chats are saved when you sign in with your wallet.'}
-            </p>
-            {needsSignIn && (
-              <button
-                onClick={() => signIn()}
-                disabled={signingIn}
-                className={cn('font-semibold text-white underline underline-offset-2 hover:text-zinc-300 disabled:opacity-60', flat ? 'text-[13px] min-h-[44px] px-3' : 'text-xs')}
-              >
-                {signingIn ? 'Signing in…' : 'Sign in to save chats'}
-              </button>
-            )}
+          // THE EMPTY DOOR (squad pre-gtm): a guest used to meet one muted
+          // sentence here and a stranger's first tap on CHATS was a wall.
+          // The lesson (connect to act, sign in to KEEP) and ONE action that
+          // works right now: the wallet's own sign-in when it is connected,
+          // the unified door when nothing is (rule 6 — no redirectTo on a
+          // working page), and a signed-in wallet's first chat.
+          <div className="px-1 pt-1">
+            <EmptyDoor
+              id="chats"
+              compact
+              eyebrow={address ? 'Chats · none yet' : CHATS_DOOR.eyebrow}
+              title={CHATS_DOOR.title}
+              body={address && !needsSignIn ? CHATS_DOOR.bodySignedIn : CHATS_DOOR.body}
+              lines={CHATS_DOOR.lines}
+              primary={
+                needsSignIn
+                  ? { kind: 'button', label: signingIn ? 'Signing in…' : 'Sign in to keep them', onClick: () => void signIn(), disabled: signingIn }
+                  : !address && cdpEnabled
+                    ? { kind: 'node', node: <CreateAccountButton className="door__cta" label="Sign in to keep them" /> }
+                    : { kind: 'button', label: 'Start a chat', onClick: () => go('/chat') }
+              }
+              secondary={!address || needsSignIn ? { kind: 'button', label: 'Start a chat first', onClick: () => go('/chat') } : undefined}
+            />
           </div>
         )}
 

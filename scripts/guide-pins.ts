@@ -46,6 +46,7 @@ import { LINKS_STUDIO_HREF } from '../lib/links-href'
 import { WALLET_PAGE_HREF } from '../lib/wallet-page'
 import { isPublicAppPath } from '../lib/app-entry'
 import { simulateLadder } from './ask-ladder'
+import { CHATS_DOOR, FIRST_RUN_ASKS, I_STEPS, JOBS_DOOR, LINKS_DOOR, WALLET_DOOR } from '../lib/first-run'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -487,6 +488,64 @@ export function guidePins(check: Check): void {
     'guide: the dot renders nothing before hydration, reads dotFor, and notices a drawer visit from the store AppSpine already writes (desktop drawer open on the tab, or the phone screen) — never from a click',
     /useHydrated\(\)/.test(dot) && /dotFor\(tab, state\)/.test(dot) && /railTab === tab && railOpen/.test(dot) && /phoneScreen === tab/.test(dot) && !/onClick|addEventListener\('click'/.test(dot) && /title=\{TITLE\[tab\]\}/.test(dot),
   )
+  // ── THE EMPTY DOORS (squad pre-gtm, FIRSTRUN) ─────────────────────────
+  const doorAsks = FIRST_RUN_ASKS.map((a) => [a, simulateLadder(a)] as const)
+  check(
+    'first-run: every ask an empty door offers as its first action lands on a native gate as an ACTION through the ladder replica (a door never teaches a dead end)',
+    doorAsks.length >= 2 && doorAsks.every(([, o]) => o.kind === 'action'),
+    doorAsks.map(([a, o]) => `${o.kind}:${o.gate} ← ${a}`).join(' | '),
+  )
+  check(
+    'first-run: the jobs door\'s ask is a JOB (the "then" sentence lands on the jobs gate), and its copy names "then"',
+    doorAsks[0][1].gate === 'jobs' && /then/i.test(JOBS_DOOR.title) && JOBS_DOOR.lines.length === 3,
+  )
+  check(
+    'first-run: the links door derives its fee words from lib/fees (creator split + link fee), never typed',
+    LINKS_DOOR.body.includes(LINK_FEE_PCT) && LINKS_DOOR.body.includes(CREATOR_FEE_SPLIT === 0.5 ? 'half' : `${Math.round(CREATOR_FEE_SPLIT * 100)}%`) && !/0\.[0-9]+%/.test(LINKS_DOOR.body.replace(LINK_FEE_PCT, '')),
+  )
+  check(
+    'first-run: the chats door teaches the account contract in rule 6\'s words (connect to act, sign in to keep) and never promises a saved thread to a wallet that has not signed in',
+    /Connect to act\. Sign in to keep\./.test(CHATS_DOOR.title) && /sign-in/.test(CHATS_DOOR.body) && WALLET_DOOR.lines.some((l) => /no signature/.test(l)),
+  )
+  const door = src('components/guide/EmptyDoor.tsx')
+  check(
+    'first-run: EmptyDoor is a note (role="note"), sends an ask only through the connect-to-act door, carries the Emerald Cut, and links into the app through SpineLink — no modal, no portal, no raw connect modal',
+    /role="note"/.test(door) && /useConnectToAct\(/.test(door) && /PantessaMark/.test(door) && /<SpineLink /.test(door) && !/openConnectModal|createPortal|role="dialog"/.test(door),
+  )
+  const sites: Array<[string, RegExp]> = [
+    ['components/JobsRailTab.tsx', /<EmptyDoor[\s\S]*?id="jobs"[\s\S]*?kind: 'ask'/],
+    ['components/ChatsRailTab.tsx', /<EmptyDoor[\s\S]*?id="chats"/],
+    ['components/LinksStudioView.tsx', /<EmptyDoor[\s\S]*?id="links"/],
+    ['components/WalletPage.tsx', /<EmptyDoor[\s\S]*?id="wallet"[\s\S]*?walletConnectOnly/],
+  ]
+  const siteRows = sites.map(([f, re]) => `${f}:${re.test(src(f)) ? 'door' : 'MISSING'}`)
+  check(
+    'first-run: the four spine empty states (JOBS · CHATS · LINKS studio · WALLET page) render the empty door — the jobs door\'s action is a chip that SENDS, the wallet door keeps the connect-only lane (rule 6)',
+    siteRows.every((r) => r.endsWith(':door')),
+    siteRows.join(' '),
+  )
+  const jobsSrc = src('components/JobsRailTab.tsx')
+  check(
+    'first-run: the jobs rail no longer answers a stranger with "Sign in with your wallet to see…" and nothing else — both empty branches carry the door, and the chip sends into the chat beside it (setComposerSend), never a prefill',
+    !/Sign in with your wallet to see the jobs/.test(jobsSrc) && !/Nothing running yet\. Protections/.test(jobsSrc) && count(jobsSrc, '<EmptyDoor') === 2 && /setComposerSend\(\{ text, mcps: askAppSlugs\(text\) \}\)/.test(jobsSrc),
+  )
+  const chatsSrc = src('components/ChatsRailTab.tsx')
+  check(
+    'first-run: the chats door offers the wallet\'s own sign-in when connected, the unified door (CreateAccountButton, no redirectTo) when nothing is connected, and "Start a chat" to a signed-in wallet',
+    /needsSignIn\s*\?\s*\{ kind: 'button'/.test(chatsSrc) && /<CreateAccountButton className="door__cta" label="Sign in to keep them" \/>/.test(chatsSrc) && /label: 'Start a chat'/.test(chatsSrc) && !/Your chats are saved when you sign in/.test(chatsSrc),
+  )
+  const doorCss = src('components/guide/guide.css')
+  check(
+    'first-run: the door\'s CSS is tokens only (no hex, no rgb literal beyond the light hairline shadow), respects reduced motion, and gives a thumb 44px controls',
+    /\.door \{/.test(doorCss) && /prefers-reduced-motion: reduce\)[\s\S]*\.door \{ animation: none; \}/.test(doorCss) && /\(hover: none\)[\s\S]*\.door__cta, \.door__link \{ min-height: 44px; \}/.test(doorCss) && !/\.door[^{]*\{[^}]*#[0-9a-f]{3,6}/i.test(doorCss),
+  )
+
+  const iSrc = src('components/IntentRuntime.tsx')
+  check(
+    'first-run: the /i splash tells a stranger what happens next in three steps (connect → see the plan, nothing signed by looking → sign or close), rendered from lib/first-run only while nothing is connected, never a fourth control',
+    I_STEPS.length === 3 && /Nothing is signed by looking/.test(I_STEPS[1].body) && /only thing that can move money/.test(I_STEPS[2].body) && /data-i-steps/.test(iSrc) && /!isConnected && \(\s*<ol[^>]*data-i-steps/.test(iSrc) && !/data-i-steps[\s\S]{0,900}<(button|a) /.test(iSrc),
+  )
+
 }
 
 if (process.argv[1]?.endsWith('guide-pins.ts')) {
