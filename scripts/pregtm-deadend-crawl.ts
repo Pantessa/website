@@ -156,7 +156,7 @@ const ENUM = `(() => {
     const disabled = el.disabled || el.getAttribute('aria-disabled') === 'true';
     const tag = el.tagName.toLowerCase();
     const href = el.getAttribute('href') || '';
-    const zone = el.closest('nav,aside,footer,header,[data-spine],[role=navigation],[role=contentinfo]') ? 'chrome' : 'main';
+    const zone = el.closest('nav,aside,footer,header,[role=navigation],[role=contentinfo]') ? 'chrome' : 'main';
     const fam = tag + '|' + (el.getAttribute('role') || '') + '|' + [...el.classList].sort().join('.') + '|' + (el.closest('[class]')?.parentElement?.className || '').toString().slice(0, 40);
     el.setAttribute('data-qa-i', String(i));
     out.push({ i, zone, tag, role: el.getAttribute('role') || '', label: label(el), href, target: el.getAttribute('target') || '', disabled, fam, sel: css(el),
@@ -244,8 +244,11 @@ async function load(page: any, url: string, walletAddr = ''): Promise<number | n
   await sleep(700) // hydration + wagmi reconnect
   if (walletAddr) {
     // The connected persona: wait (≤10s) until the app shows the wallet — wagmi's restore is slow headless.
-    const head = walletAddr.slice(0, 4).toLowerCase(), tail = walletAddr.slice(-4).toLowerCase()
-    try { await page.waitForFunction(([h, t]: string[]) => { const x = (document.body?.innerText || '').toLowerCase(); return x.includes(h) && x.includes(t) }, [head, tail], { timeout: 10000 }) } catch {}
+    // wagmi persists the live connection to localStorage('wagmi.store') the moment it restores — a signal
+    // every page has (the account pill is not on every page at 375).
+    const a = walletAddr.toLowerCase()
+    try { await page.waitForFunction((x: string) => { try { return (localStorage.getItem('wagmi.store') || '').toLowerCase().includes(x) } catch { return false } }, a, { timeout: 10000, polling: 200 }) } catch {}
+    await sleep(300)
   }
   return res ? res.status() : null
 }
