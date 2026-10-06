@@ -142,3 +142,10 @@ a, button, [role='button'], [role='tab'], [role='menuitem'], input, select, text
 @media (hover: none) {
   [data-spine-bar] > a:active, [data-spine-bar] > button:active, [data-spine-bar] > div > button:active { opacity: 0.6; transition: opacity 0s; }
 }
+/* The footer's link rows are 44px tall below lg (x402-design.css, brochure
+   targets) but only as wide as their word: "Blog" 31, "Docs" 35, "Terms" 41
+   under a coarse pointer (front-door baseline, 2026-10-06). The row takes a
+   44px floor; the word keeps its place at the left, so nothing moves. */
+@media (hover: none) {
+  .footer__grouplinks a { min-width: 44px; }
+}
