@@ -30,6 +30,17 @@ export const cdpEnabled = cdpProjectId.length > 0
 export const cdpConfig: CdpConfig = {
   projectId: cdpProjectId,
   ethereum: { createOnLogin: 'eoa' },
+  // Coinbase's own product analytics stay OFF. With them on, the SDK POSTs
+  // to cca-lite.coinbase.com on every page load (initialize → eth_accounts →
+  // four "action_call" events before anything is clicked) and never catches
+  // the promise. That host is on EasyPrivacy, so every uBlock Origin / AdGuard
+  // / Brave visitor's browser refuses it and the page logs an unhandled
+  // "TypeError: NetworkError when attempting to fetch resource." (Firefox) /
+  // "Failed to fetch" (Chrome) — which /dashboard/admin/flows then stamps on
+  // the visitor as SAW AN ERROR. Seen live 2026-10-05 on a stranger from X.
+  // Nothing of ours reads those events; sign-in, OAuth and signing are
+  // untouched (they talk to api.cdp.coinbase.com, a different host).
+  disableAnalytics: true,
 }
 
 /**
