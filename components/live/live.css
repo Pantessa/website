@@ -188,7 +188,8 @@
   .live__view { height: 36px; position: relative; }
   .live__view::after { content: ''; position: absolute; inset: -4px 0; }
   .live__pause { height: 44px; }
-  .live__m { height: 44px; }
+  .live__m { height: 44px; min-width: 44px; justify-content: center; }
+  .live__rule-l { min-height: 44px; }
   .live__rule-s { min-height: 44px; }
   .live__feed-b { min-height: 44px; }
   .live__tile .live__chip { min-height: 44px; }
@@ -214,4 +215,10 @@
   .live__table th:nth-child(5) { width: 20%; }
   .live__table th:nth-child(7) { width: 19%; }
   .live__table th:nth-child(10) { width: 24%; }
+}
+/* On a phone Pause wrapped onto a row of its own under the four views (290 + 77px > a 343px bar): it becomes its
+   icon (the word stays for readers), so views + Pause share one 44px row. */
+@container live (max-width: 640px) {
+  .live__pause { width: 44px; padding: 0; gap: 0; font-size: 0; justify-content: center; }
+  .live__view { padding: 0 10px; }
 }

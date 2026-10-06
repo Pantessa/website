@@ -179,8 +179,3 @@
   .mk-fund__ranges { justify-content: flex-end; }
   .mk-fund__chart { height: 240px; }
 }
-
-/* MOBILE (squad pre-gtm, 2026-10-07): the range picker (3M · 1Y · 2Y · All) was 40 wide under a thumb. */
-@media (hover: none) {
-  .mk-fund__ranges button { min-width: 44px; min-height: 44px; }
-}

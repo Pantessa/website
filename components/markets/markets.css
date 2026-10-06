@@ -279,7 +279,7 @@ button.mk-held:hover { border-color: var(--accent); }
      invisible 44px hit area. */
   .mkt-compound__leg, .mkp__sortbtn, .mkc__ghost, .mkc__cta, .mkn__pin, .mk-fund__chip { min-height: 44px; }
   .mkp__sortbtn { padding-inline: 14px; }
-  .mk-fund__ranges button { min-height: 44px; min-width: 40px; }
+  .mk-fund__ranges button { min-height: 44px; min-width: 44px; } /* pre-gtm: 40 → 44 (the ranges have their own row on a phone) */
   .mkt-route__toggle, .mkt-routes__why, .wl__link, .mk-ai__ghost { position: relative; }
   .mkt-route__toggle::after, .mkt-routes__why::after, .wl__link::after { content: ''; position: absolute; inset: -15px -6px; }
   .mk-ai__ghost::after { content: ''; position: absolute; inset: -8px; }
