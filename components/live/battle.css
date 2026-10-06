@@ -151,6 +151,7 @@ html[data-theme="light"] .battle {
   .battle__table th:nth-child(5) { width: 20%; }
   .battle__table th:nth-child(8) { width: 26%; }
   .battle__rank { font-size: 15px; }
+  .battle__th-sub { display: none; }
   .battle__pct { font-size: 13px; }
   /* Backers on a phone: the bar alone; the dollars are in the chips' tooltips and on the desk. */
   .battle__flow { grid-template-columns: 1fr; }

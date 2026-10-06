@@ -488,7 +488,9 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
                 <th>Army</th>
                 <th className="num">Ground</th>
                 <th className="num">Price</th>
-                <th>Backers · 60s</th>
+                <th>
+                  Backers<span className="battle__th-sub"> · 60s</span>
+                </th>
                 <th className="num">Open interest</th>
                 <th className="num">Funding</th>
                 <th>Recruit</th>
