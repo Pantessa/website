@@ -285,6 +285,11 @@ export default function MarketsIndex({ trending = [], tradable }: { trending?: T
               Earn
               <span className="mkt-frame__tabcount mono">3</span>
             </a>
+            {/* The live tape (2026-10-06): a page, not a board — the venue's fills as they land, every row a button. */}
+            <Link href="/live" className="mkt-frame__tab mkt-frame__tab--live" data-tab="live" prefetch={false}>
+              <span className="mk-dot mk-dot--open" aria-hidden />
+              Live
+            </Link>
           </nav>
         </div>
 

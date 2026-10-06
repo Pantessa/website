@@ -1,0 +1,175 @@
+/* /live — the live tape (2026-10-06). Rides the markets frame (.mkt-frame,
+   app/x402-design.css) and its look tokens (--mk-*, components/markets/
+   look.css): the main column is the chart + tiles + tape, the rail is the
+   triggers + feeds. Site tokens only, so light mode comes free. Every
+   colour here means one thing: up-ink buys, down-ink sells, the strong
+   shade opens a position, the soft shade closes one (Dune's four). */
+
+.live { --live-up: var(--mk-up, var(--accent)); --live-down: var(--mk-down, var(--sell)); }
+
+/* ── Bar ───────────────────────────────────────────────────────────────── */
+.live__bar { justify-content: space-between; }
+.live__title { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.live__h { font-family: var(--mk-font-display); font-weight: 600; font-size: 20px; letter-spacing: -0.01em; color: var(--fg); }
+.live__sub { font-size: 10.5px; letter-spacing: 0.06em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.live[data-status="live"] .live__pulse { animation: live-pulse 1.6s ease-in-out infinite; }
+@keyframes live-pulse { 0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--live-up) 22%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--live-up) 8%, transparent); } }
+.live__controls { display: flex; align-items: center; gap: 8px; }
+.live__pause { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surf-1); color: var(--fg); font-size: 12px; font-weight: 500; cursor: pointer; }
+.live__pause:hover { border-color: var(--muted-2); }
+.live[data-paused] .live__pause { border-color: var(--accent); color: var(--accent); }
+
+/* ── Markets strip ─────────────────────────────────────────────────────── */
+.live__markets { display: flex; gap: 6px; padding: 12px 0 0; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
+.live__markets::-webkit-scrollbar { display: none; }
+.live__m { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: color .12s ease, border-color .12s ease, background .12s ease; }
+.live__m:hover { color: var(--fg); border-color: var(--muted-2); }
+.live__m.is-on { color: var(--fg); background: var(--surf-1); border-color: var(--fg); }
+.live__m[data-kind="stock"] .live__dex { color: var(--mk-series-4, var(--accent)); }
+.live__mcount { font-size: 9.5px; color: var(--muted-2); }
+.live__dex { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+.live__dex::after { content: ':'; }
+
+/* ── Panels ───────────────────────────────────────────────────────────── */
+.live__panel { margin-top: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); overflow: hidden; }
+.live__ph { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 16px 4px; }
+.live__pk { font-size: 13px; font-weight: 500; color: var(--fg); }
+.live__pv { font-size: 10.5px; letter-spacing: 0.06em; color: var(--muted); }
+
+/* ── The flow chart ────────────────────────────────────────────────────── */
+.live__chart { position: relative; padding: 4px 8px 8px; }
+.live__svg { display: block; width: 100%; }
+.live__grid { stroke: var(--mk-grid, rgb(255 255 255 / 0.07)); stroke-width: 1; }
+.live__base { stroke: var(--mk-rule, var(--line)); stroke-width: 1; }
+.live__axis { fill: var(--muted-2); font-size: 10px; }
+.live__bar { shape-rendering: crispEdges; }
+.live__bar--buy, .live__bar--long-open { fill: var(--live-up); }
+.live__bar--short-cover { fill: color-mix(in srgb, var(--live-up) 42%, var(--surf-1)); }
+.live__bar--sell, .live__bar--short-open { fill: var(--live-down); }
+.live__bar--long-close { fill: color-mix(in srgb, var(--live-down) 42%, var(--surf-1)); }
+.live__hoverband { fill: color-mix(in srgb, var(--fg) 8%, transparent); pointer-events: none; }
+.live__legend { position: absolute; top: 6px; right: 14px; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; margin: 0; padding: 0; list-style: none; font-size: 10px; color: var(--muted); }
+.live__legend li { display: inline-flex; align-items: center; gap: 6px; }
+.live__swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.live__readout { position: absolute; left: 56px; top: 8px; display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--mk-glass, var(--bg)); backdrop-filter: blur(6px); font-size: 10.5px; color: var(--fg); pointer-events: none; max-width: calc(100% - 180px); }
+.live__ro--buy, .live__ro--long-open, .live__ro--short-cover { color: var(--live-up); }
+.live__ro--sell, .live__ro--short-open, .live__ro--long-close { color: var(--live-down); }
+
+/* ── Tiles ─────────────────────────────────────────────────────────────── */
+.live__tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.live__tile { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surf-1); }
+.live__tk { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.live__tv { font-size: var(--mk-text-stat, 20px); font-weight: 600; color: var(--fg); line-height: 1.15; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.live__tv--split { font-size: 15px; white-space: normal; }
+.live__ts { font-size: 10.5px; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.live__up { color: var(--live-up); }
+.live__down { color: var(--live-down); }
+.live__dim { color: var(--muted-2); }
+.live__flowbar { position: relative; height: 5px; margin-top: 6px; border-radius: 3px; background: var(--live-down); overflow: hidden; }
+.live__flowbar-buy { position: absolute; inset: 0 auto 0 0; background: var(--live-up); transition: width .4s var(--mk-ease, ease); }
+
+/* ── Chips: the button on every row ────────────────────────────────────── */
+.live__chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; margin-top: 4px; border: 1px solid transparent; border-radius: 999px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; cursor: pointer; transition: transform .12s ease, filter .12s ease; font-family: var(--mk-font-ui); }
+.live__chip:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.live__chip:active { transform: translateY(0); }
+.live__chip--buy { background: color-mix(in srgb, var(--live-up) 18%, var(--surf-1)); border-color: color-mix(in srgb, var(--live-up) 55%, transparent); color: var(--live-up); }
+.live__chip--sell { background: color-mix(in srgb, var(--live-down) 16%, var(--surf-1)); border-color: color-mix(in srgb, var(--live-down) 55%, transparent); color: var(--live-down); }
+.live__table .live__chip { margin-top: 0; height: 24px; }
+
+/* ── The tape ─────────────────────────────────────────────────────────── */
+.live__tape { padding: 0; }
+.live__table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+.live__table th { position: sticky; top: 0; z-index: 2; padding: 10px 10px; text-align: left; font-size: 10.5px; font-weight: 500; letter-spacing: 0.04em; color: var(--muted); background: var(--surf-1); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.live__table th.num, .live__table td.num { text-align: right; }
+.live__table td { padding: 7px 10px; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); font-variant-numeric: tabular-nums; }
+.live__table th:nth-child(1) { width: 11%; }
+.live__table th:nth-child(2) { width: 6%; }
+.live__table th:nth-child(3), .live__table th:nth-child(4) { width: 10%; }
+.live__table th:nth-child(5) { width: 11%; }
+.live__table th:nth-child(6) { width: 9%; }
+.live__table th:nth-child(7) { width: 12%; }
+.live__table th:nth-child(8) { width: 10%; }
+.live__table th:nth-child(9) { width: 8%; }
+.live__table th:nth-child(10) { width: 13%; }
+.live__table td.live__col-act { text-overflow: clip; }
+.live__fieldtag { display: inline-block; margin-left: 6px; padding: 1px 5px; border: 1px dashed var(--muted-2); border-radius: 4px; font-size: 8.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); vertical-align: middle; }
+.live__mlink { display: inline-flex; align-items: center; gap: 4px; color: var(--fg); text-decoration: none; font-weight: 600; }
+.live__mlink:hover { color: var(--accent); }
+.live__side--buy { color: var(--live-up); }
+.live__side--sell { color: var(--live-down); }
+.live__usd { font-weight: 600; }
+.live__effect, .live__taker, .live__time { color: var(--muted); }
+.live__empty { padding: 28px 12px !important; text-align: center; color: var(--muted-2); }
+.live__noact { font-size: 10px; }
+.live__foot { margin: 10px 2px 0; font-size: 10.5px; line-height: 1.5; color: var(--muted-2); }
+
+/* A new row flashes in its own ink, then settles to a faint tint. */
+.live-row--up { background: color-mix(in srgb, var(--live-up) 5%, transparent); animation: live-in-up .9s ease-out; }
+.live-row--down { background: color-mix(in srgb, var(--live-down) 5%, transparent); animation: live-in-down .9s ease-out; }
+.live-row--up.is-strong { background: color-mix(in srgb, var(--live-up) 9%, transparent); }
+.live-row--down.is-strong { background: color-mix(in srgb, var(--live-down) 9%, transparent); }
+@keyframes live-in-up { from { background: color-mix(in srgb, var(--live-up) 34%, transparent); } }
+@keyframes live-in-down { from { background: color-mix(in srgb, var(--live-down) 34%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .live-row--up, .live-row--down { animation: none; } .live[data-status="live"] .live__pulse { animation: none; } }
+
+/* ── The rail: triggers + feeds ─────────────────────────────────────── */
+.live__rail { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+.live__triggers { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+.live__rh--fired { padding-top: 12px; border-top: 1px solid var(--line); }
+.live__rh { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 12px 14px 8px; }
+.live__rk { font-size: 13px; font-weight: 600; color: var(--fg); }
+.live__rv { font-size: 9.5px; letter-spacing: 0.08em; color: var(--muted-2); }
+.live__rules { margin: 0; padding: 0 14px; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.live__rule { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; }
+.live__rule-l { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; color: var(--fg); cursor: pointer; }
+.live__rule-l input { accent-color: var(--accent); }
+.live__rule-d { grid-column: 1 / -1; font-size: 10px; line-height: 1.4; color: var(--muted-2); }
+.live__rule-s { grid-column: 2; grid-row: 1; height: 22px; padding: 0 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font-size: 10px; }
+.live__note { margin: 10px 14px 0; font-size: 10px; line-height: 1.45; color: var(--muted-2); }
+.live__events { margin: 0; padding: 2px 10px 12px; list-style: none; display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto; min-height: 120px; overflow-y: auto; }
+.live__event { padding: 9px 10px; border: 1px solid var(--line); border-left-width: 3px; border-radius: 10px; background: var(--surf-1); animation: live-event-in .4s ease-out; }
+.live__event--buy { border-left-color: var(--live-up); }
+.live__event--sell { border-left-color: var(--live-down); }
+.live__event--empty { border-left-width: 1px; color: var(--muted-2); font-size: 11px; animation: none; }
+@keyframes live-event-in { from { transform: translateY(-6px); } }
+.live__eh { display: flex; justify-content: space-between; gap: 8px; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.live__etext { margin: 4px 0 2px; font-size: 12px; line-height: 1.4; color: var(--fg); }
+.live__feeds { border-top: 1px solid var(--line); margin-top: 10px; padding-bottom: 10px; flex: 0 0 auto; }
+.live__feedlist { margin: 0; padding: 0 10px; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.live__feed { border: 1px solid var(--line); border-radius: 10px; background: var(--surf-1); }
+.live__feed.is-on { border-color: var(--accent); }
+.live__feed-b { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; padding: 9px 10px 4px; border: 0; background: transparent; color: var(--fg); text-align: left; cursor: pointer; }
+.live__feed-n { font-size: 12px; font-weight: 600; }
+.live__feed-s { font-size: 10px; color: var(--muted); }
+.live__feed.is-on .live__feed-s { color: var(--accent); }
+.live__feed-f { margin: 0; padding: 0 10px 8px; font-size: 9.5px; color: var(--muted-2); }
+
+/* ── Narrow ────────────────────────────────────────────────────────────── */
+.live { container-type: inline-size; container-name: live; }
+@container live (max-width: 980px) {
+  .live__tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .live__col-wide { display: none; }
+  .live__table th:nth-child(1) { width: 16%; }
+  .live__table th:nth-child(7) { width: 15%; }
+  .live__table th:nth-child(10) { width: 17%; }
+}
+@container live (max-width: 640px) {
+  .live__tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .live__h { font-size: 17px; }
+  .live__sub { display: none; }
+  .live__legend { position: static; flex-direction: row; flex-wrap: wrap; justify-content: flex-end; padding: 0 6px; }
+  .live__readout { display: none; }
+  .live__table { font-size: 11px; }
+  .live__table th, .live__table td { padding-left: 5px; padding-right: 5px; }
+  .live__table th:nth-child(3), .live__table td:nth-child(3), .live__table th:nth-child(6), .live__table td:nth-child(6) { display: none; }
+  .live__table th:nth-child(1) { width: 15%; }
+  .live__table th:nth-child(2) { width: 12%; }
+  .live__table th:nth-child(4) { width: 16%; }
+  .live__table th:nth-child(5) { width: 17%; }
+  .live__table th:nth-child(7) { width: 19%; }
+  .live__table th:nth-child(10) { width: 21%; }
+  .live__ms, .live__chip-usd, .live__noact { display: none; }
+  .live__table .live__chip { padding: 0 7px; font-size: 10.5px; }
+  .live__table td.live__col-act { padding-left: 2px; }
+  .live__dex { display: none; }
+}

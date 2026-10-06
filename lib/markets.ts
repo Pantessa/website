@@ -398,7 +398,7 @@ export function parseMarketsNavAsk(message: string): { symbol: string; href: str
  * NavAccount (stay here after sign-in / sign-out) and the shell.
  */
 export function isMarketsPath(pathname: string): boolean {
-  return pathname === '/markets' || pathname.startsWith('/markets/') || pathname.startsWith('/t/')
+  return pathname === '/markets' || pathname.startsWith('/markets/') || pathname.startsWith('/t/') || pathname === '/live'
 }
 
 // ── MK2 (2026-09-15): compare mode, the range bar, the terminal table, trending ──
