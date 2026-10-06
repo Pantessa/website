@@ -39,8 +39,6 @@ function walk(dir: string, out: string[] = []): string[] {
 
 /** The ways a file can point at the index by hand (JSX, object, router, URL helper, manifest). */
 const HAND_MARKETS_HREF = /href="\/markets[?"]|href=\{['"`]\/markets|href: ['"]\/markets['"]|(?:push|replace|connectAndSignIn|absoluteUrl)\(['"`]\/markets|start_url: ['"]\/markets/
-/** Files allowed to keep a literal while another lane owns them (noted in SPLASH.md § For GUIDE). */
-const HAND_HREF_ALLOWED = new Set(['components/markets/shell/SymbolPage.tsx'])
 
 /** The mk2 fence, verbatim: a bare <Link> into the signed-in shell. */
 const BARE_SHELL_LINK = /<Link\s(?:[^>]*?\s)?href=(?:"\/(?:chat|markets)[?"/]|"\/t\/|\{`\/(?:chat|markets|t\/)|\{(?:chatPrefill|promptHref)\()/
@@ -80,9 +78,9 @@ export async function frontDoorPins(check: Check): Promise<void> {
 
   // ── No hand-typed /markets link anywhere in the product ────────────────
   const files = [...walk('app'), ...walk('components'), ...walk('lib')]
-  const typed = files.filter((p) => !HAND_HREF_ALLOWED.has(p) && HAND_MARKETS_HREF.test(code(p)))
+  const typed = files.filter((p) => HAND_MARKETS_HREF.test(code(p)))
   check(
-    'front door: no file under app/, components/ or lib/ links to /markets by hand — every door to the index reads MARKETS_HREF (the one allow-listed file is another lane\'s, noted in SPLASH.md)',
+    'front door: no file under app/, components/ or lib/ links to /markets by hand — every door to the index reads MARKETS_HREF (SymbolPage\'s "Search markets" chip included, R2)',
     typed.length === 0,
     `typed=${typed.join(',') || '-'}`,
   )
@@ -135,11 +133,12 @@ export async function frontDoorPins(check: Check): Promise<void> {
       index.indexOf('{claim ?? ') < index.indexOf('className="mkt-frame__bar"') && index.indexOf('className="mkt-frame__bar"') < index.indexOf('className="mk-lead-seat"'),
   )
   check(
-    'front door: the claim is the visible h1 (HERO_LINE as one text node — the roster pin reads it), one sentence, and a plain un-prefetched link to /story; the compact (one-line) version is a post-hydration decision, never the server\'s',
+    'front door: the claim is the visible h1 (HERO_LINE as one text node — the roster pin reads it), one sentence, and a plain un-prefetched link to /story; the compact (one-line) version is a post-hydration decision off the GUIDE\'s record (`visited.home`, read ONCE at mount — never a subscription that would flip a first visit mid-page, never a key of its own)',
     /<h1 className="mk-claim__h1">\{SPLASH\.h1\}<\/h1>/.test(claim) && /<p className="mk-claim__sub">\{SPLASH\.sub\}<\/p>/.test(claim) &&
       /<Link href=\{STORY_HREF\} className="mk-claim__door mono" prefetch=\{false\} data-splash-door>/.test(claim) &&
-      /useEffect\(\(\) => \{[\s\S]*?localStorage\.getItem\(SPLASH_SEEN_KEY\)/.test(claim) && /data-compact=\{compact \|\| undefined\}/.test(claim) &&
-      !/useLayoutEffect|window\.location/.test(claim),
+      /import \{ getGuideState \} from '@\/lib\/guide'/.test(claim) && /useEffect\(\(\) => \{\s*setSeen\(!!getGuideState\(\)\.visited\.home\)\s*\}, \[\]\)/.test(claim) &&
+      /const compact = seen \|\| status === 'authed' \|\| !!address/.test(claim) && /data-compact=\{compact \|\| undefined\}/.test(claim) &&
+      !/SPLASH_SEEN_KEY|localStorage|useGuideState|useLayoutEffect|window\.location/.test(claim),
   )
   const homeFiles = readdirSync('components/home').filter((f) => f.endsWith('.tsx')).map((f) => `components/home/${f}`)
   const bare = homeFiles.filter((p) => BARE_SHELL_LINK.test(src(p)))
@@ -186,6 +185,7 @@ export async function frontDoorPins(check: Check): Promise<void> {
   )
   const rootOg = src('app/opengraph-image.tsx')
   const storyOg = src('app/story/opengraph-image.tsx')
+  const liveOg = src('app/live/opengraph-image.tsx')
   const mirror = (p: string) => /export \{ default, alt, size, contentType \} from '\.\/opengraph-image'/.test(src(p)) && /export const runtime = 'nodejs'/.test(src(p)) && /export const dynamic = 'force-dynamic'/.test(src(p))
   check(
     'front door: the root social card is THE BOARD (self-fetched /api/quotes with a timeout, the dashed board on a miss, the claim beside it, pantessa.com — no /markets), /story\'s card is the brochure\'s rehearsal (live tape + HUD + stamp), both twitter mirrors declare their own runtime + dynamic, both draw the house mark, and nothing is left under app/markets but the trending reader',
@@ -194,6 +194,12 @@ export async function frontDoorPins(check: Check): Promise<void> {
       /REEL_STAMP/.test(storyOg) && /candleSvg\(/.test(storyOg) && /loadSeries\(beat\.symbol\)/.test(storyOg) && /venueLabel\(pair\)/.test(storyOg) && /gemMarkSvg\(/.test(storyOg) &&
       mirror('app/twitter-image.tsx') && mirror('app/story/twitter-image.tsx') &&
       !existsSync('app/markets/opengraph-image.tsx') && !existsSync('app/markets/twitter-image.tsx') && !existsSync('app/markets/page.tsx') && readdirSync('app/markets').join(',') === 'trending.ts',
+  )
+  check(
+    'front door (R2): /live has its own card — the 24h leaders from the venue\'s own info endpoint (one POST, a timeout, dashes + "feed warming up" on a miss, never a fake fill; the tape itself streams in the browser), the page\'s line "every print is a button", the house mark, pantessa.com/live — and a twitter mirror with its own runtime + dynamic',
+    /metaAndAssetCtxs/.test(liveOg) && /AbortSignal\.timeout\(/.test(liveOg) && /FEED WARMING UP/.test(liveOg) && /pickTapeMarkets\(/.test(liveOg) && /gemMarkSvg\(/.test(liveOg) &&
+      /is a button\./.test(liveOg) && /pantessa\.com\/live/.test(liveOg) && !/wss:/.test(liveOg) && /alt = `Pantessa Live — every print is a button\./.test(liveOg) &&
+      mirror('app/live/twitter-image.tsx'),
   )
   const crawl = src('scripts/gtm-crawl.ts')
   check(
@@ -272,6 +278,14 @@ export async function frontDoorHttpPins(check: Check, base: string): Promise<voi
     [rootCard, rootTw].every((c) => c.status === 200 && /image\/png/.test(c.type) && c.isPng && c.bytes >= 60_000) &&
       [storyCard, storyTw].every((c) => c.status === 200 && /image\/png/.test(c.type) && c.isPng && c.bytes > 20_000),
     JSON.stringify({ root: rootCard.bytes, rootTw: rootTw.bytes, story: storyCard.bytes, storyTw: storyTw.bytes }),
+  )
+  const live = flat(await text('/live'))
+  const [liveCard, liveTw] = await Promise.all([png('/live/opengraph-image'), png('/live/twitter-image')])
+  check(
+    'front door (served, R2): /live carries its own og:image + twitter:image (…/live/opengraph-image, …/live/twitter-image) and both render (200 PNG, a drawn tape ≥ 40KB)',
+    /<meta property="og:image" content="[^"]*\/live\/opengraph-image/.test(live) && /<meta name="twitter:image" content="[^"]*\/live\/twitter-image/.test(live) &&
+      [liveCard, liveTw].every((c) => c.status === 200 && /image\/png/.test(c.type) && c.isPng && c.bytes >= 40_000),
+    JSON.stringify({ live: liveCard.bytes, liveTw: liveTw.bytes }),
   )
   const smap = await text('/sitemap.xml')
   check(

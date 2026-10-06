@@ -11,33 +11,29 @@
 // crawler and a JS-off visitor still read it).
 //
 // Returning visitors, and anyone with a wallet or a session, get the
-// one-line version: the claim is for the stranger. "Been here before" is a
-// flag this browser writes on its first visit (SPLASH_SEEN_KEY) — until
-// lib/guide exposes `visited.home` (GUIDE lane), when this reads that
-// instead. The server renders the full block (no hydration guess); the
+// one-line version: the claim is for the stranger. "Been here before" is the
+// guide's own record (lib/guide `visited.home`, written by the home seat the
+// first time it mounts) — read ONCE, at mount, straight from the store:
+// GuideSeat notes this visit a render later, and a live subscription
+// (useGuideState) would turn a stranger's first visit into a return visit
+// mid-page. The server renders the full block (no hydration guess); the
 // collapse is a post-hydration decision, like the boot hold.
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useAccount } from 'wagmi'
 import { useSession } from '@/lib/session'
+import { getGuideState } from '@/lib/guide'
 import { STORY_HREF } from '@/lib/markets'
 import { SPLASH } from '@/lib/markets-copy'
-
-/** Written once this browser has seen the splash; read on the next visit. */
-export const SPLASH_SEEN_KEY = 'pantessa.splash.seen'
 
 export default function SplashClaim() {
   const { status } = useSession()
   const { address } = useAccount()
   const [seen, setSeen] = useState(false)
   useEffect(() => {
-    try {
-      setSeen(window.localStorage.getItem(SPLASH_SEEN_KEY) === '1')
-      window.localStorage.setItem(SPLASH_SEEN_KEY, '1')
-    } catch {
-      // storage blocked: every visit is a first visit
-    }
+    // Once, before the home seat's own `visited:home` lands on the record.
+    setSeen(!!getGuideState().visited.home)
   }, [])
   const compact = seen || status === 'authed' || !!address
   return (

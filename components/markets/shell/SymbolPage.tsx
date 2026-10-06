@@ -24,6 +24,7 @@ import { CHART_FEED_LABELS, chartPairFor, type ChartFeed, type ChartTf } from '@
 import {
   DEFAULT_MARKET_TAB,
   MARKET_TABS,
+  MARKETS_HREF,
   parseMarketTab,
   parseVsParam,
   rangePosition,
@@ -383,7 +384,7 @@ export default function SymbolPage({
                     the markets page.
                   </p>
                   <div className="mkt-chips mt-3 justify-center">
-                    <Link href="/markets" className="mkt-chip mkt-chip--buy">
+                    <Link href={MARKETS_HREF} className="mkt-chip mkt-chip--buy">
                       Search markets
                     </Link>
                     {UNKNOWN_SYMBOL_PICKS.map((s) => (
