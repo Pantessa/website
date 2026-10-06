@@ -9,6 +9,12 @@
 // something to read when you get to it, not an announcement. Reduced motion
 // drops the entrance (guide.css). Dark + light from the site tokens.
 //
+// `compact` (the HOME seat; MOBILE's phone budget on `/`): under 640px the
+// same markup lays out as ONE ROW ≤64px — mark · n/N + title (two lines at
+// most) · the CTA chip wearing its short label · an × that is "Got it". The
+// body line, the text "Got it" and the ⋯ step aside there; wider than 640px
+// the compact card is the full card. Only CSS tells them apart.
+//
 // The card decides nothing. lib/guide picked the hint; the seat (GuideSeat)
 // owns the record and the journey events and hands the card its handlers.
 // GUIDE lane owns this file.
@@ -29,11 +35,13 @@ export type GuideCardProps = {
   /** Sends an ask-shaped CTA through the connect-to-act door (the seat owns
    *  the door). Only `kind: 'ask'` CTAs need it. */
   onAsk?: (ask: string) => void
+  /** One row ≤64px under 640px (the home seat on a phone). */
+  compact?: boolean
 }
 
 const OFF_LABEL = 'Don’t show tips'
 
-export default function GuideCard({ hint, ctx, onCta, onDismiss, onOff, onAsk }: GuideCardProps) {
+export default function GuideCard({ hint, ctx, onCta, onDismiss, onOff, onAsk, compact = false }: GuideCardProps) {
   const cta = guideCta(hint, ctx)
   const n = guideIndexOf(hint.id)
   const titleId = `guide-${hint.id}-title`
@@ -45,6 +53,18 @@ export default function GuideCard({ hint, ctx, onCta, onDismiss, onOff, onAsk }:
     el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
   }
 
+  // The chip's words: the full label, and the short one the compact row
+  // swaps in (CSS picks; both are in the DOM only when they differ).
+  const words =
+    cta && cta.short && cta.short !== cta.label ? (
+      <>
+        <span className="guide__cta-full">{cta.label}</span>
+        <span className="guide__cta-short">{cta.short}</span>
+      </>
+    ) : (
+      cta?.label
+    )
+
   const action = (() => {
     if (!cta) return null
     const common = { className: 'guide__cta', 'data-guide-cta': cta.kind } as const
@@ -52,13 +72,13 @@ export default function GuideCard({ hint, ctx, onCta, onDismiss, onOff, onAsk }:
       case 'href':
         return (
           <a {...common} href={cta.value} onClick={() => onCta(cta)}>
-            {cta.label}
+            {words}
           </a>
         )
       case 'spine':
         return (
           <SpineLink {...common} href={cta.value} prefetch={false} onClick={() => onCta(cta)}>
-            {cta.label}
+            {words}
           </SpineLink>
         )
       case 'door':
@@ -73,7 +93,7 @@ export default function GuideCard({ hint, ctx, onCta, onDismiss, onOff, onAsk }:
               useAskDoor.getState().openDoor(cta.value)
             }}
           >
-            {cta.label}
+            {words}
           </button>
         )
       case 'ask':
@@ -86,7 +106,7 @@ export default function GuideCard({ hint, ctx, onCta, onDismiss, onOff, onAsk }:
               onAsk?.(cta.value)
             }}
           >
-            {cta.label}
+            {words}
           </button>
         )
       case 'scroll':
@@ -99,14 +119,14 @@ export default function GuideCard({ hint, ctx, onCta, onDismiss, onOff, onAsk }:
               scrollTo(cta.value)
             }}
           >
-            {cta.label}
+            {words}
           </button>
         )
     }
   })()
 
   return (
-    <aside className="guide" role="note" aria-labelledby={titleId} data-guide={hint.id}>
+    <aside className={compact ? 'guide guide--compact' : 'guide'} role="note" aria-labelledby={titleId} data-guide={hint.id}>
       <span className="guide__mark" aria-hidden>
         <PantessaMark size={20} />
       </span>
@@ -115,23 +135,33 @@ export default function GuideCard({ hint, ctx, onCta, onDismiss, onOff, onAsk }:
           GUIDE · {n}/{GUIDE_TOTAL}
         </div>
         <p id={titleId} className="guide__title">
+          <span className="guide__num" aria-hidden>
+            {n}/{GUIDE_TOTAL} ·{' '}
+          </span>
           {renderGuideText(hint.title, ctx)}
         </p>
         <p className="guide__text">{renderGuideText(hint.body, ctx)}</p>
-        <div className="guide__acts">
-          {action}
-          <button type="button" className="guide__got" onClick={onDismiss}>
-            Got it
+      </div>
+      <div className="guide__acts">
+        {action}
+        <button type="button" className="guide__got" onClick={onDismiss}>
+          Got it
+        </button>
+        <details className="guide__more">
+          <summary className="guide__dots" aria-label="More options" title="More options">
+            <span aria-hidden>···</span>
+          </summary>
+          <button type="button" className="guide__off" onClick={onOff}>
+            {OFF_LABEL}
           </button>
-          <details className="guide__more">
-            <summary className="guide__dots" aria-label="More options" title="More options">
-              <span aria-hidden>···</span>
-            </summary>
-            <button type="button" className="guide__off" onClick={onOff}>
-              {OFF_LABEL}
-            </button>
-          </details>
-        </div>
+        </details>
+        {compact && (
+          <button type="button" className="guide__x" aria-label="Got it" title="Got it" onClick={onDismiss}>
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
+              <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            </svg>
+          </button>
+        )}
       </div>
     </aside>
   )

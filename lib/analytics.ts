@@ -102,9 +102,10 @@ export const analytics = {
 
   /** THE GUIDE (components/guide, squad front-door): a hint was shown, its
    *  action used (`kind` = which kind of action), dismissed, or the tips
-   *  turned off. The hint's id and the outcome only — never the wallet,
-   *  never the words — so /dashboard/admin/flows can say which lessons a
-   *  stranger met on the way to their first signature. */
+   *  turned off. The label is `guide_<id>_<state>` and nothing else rides it
+   *  but the action's kind — never the wallet, never the words — so
+   *  /dashboard/admin/flows can say which lessons a stranger met on the way
+   *  to their first signature (QA's rule for every lane, R2). */
   guide: (id: string, state: GuideOutcome, kind?: string) =>
-    send('guide_hint', { id, state, ...(kind ? { kind } : {}) }),
+    send(`guide_${id}_${state}`, kind ? { kind } : undefined),
 }

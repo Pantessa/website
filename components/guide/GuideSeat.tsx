@@ -118,7 +118,8 @@ export default function GuideSeat({ surface, posture, symbol = null, ask = null 
 
   return (
     <div className="guide-seat" data-guide-seat={surface}>
-      <GuideCard hint={hint} ctx={ctx} onCta={onCta} onDismiss={onDismiss} onOff={onOff} onAsk={act} />
+      {/* The home seat is the one row on a phone (MOBILE's budget on `/`). */}
+      <GuideCard hint={hint} ctx={ctx} onCta={onCta} onDismiss={onDismiss} onOff={onOff} onAsk={act} compact={surface === 'home'} />
       {door}
     </div>
   )

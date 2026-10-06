@@ -15,6 +15,7 @@ import {
   GUIDE_HINTS,
   GUIDE_MAX_SHOWS,
   GUIDE_QUIET_MS,
+  GUIDE_RECORD_MAX_BYTES,
   GUIDE_STORAGE_KEY,
   GUIDE_SURFACES,
   GUIDE_TOTAL,
@@ -147,7 +148,7 @@ export function guidePins(check: Check): void {
   const linksWallet = guideCta(hint('links'), { connected: true })
   check(
     'guide: pulse → /live (public, plain link); links → the public board for a stranger and the studio through the door (SpineLink) for a connected wallet; jobs → /chat?tab=jobs through the door; wallet → /wallet through the door; alerts and triggers scroll to a real selector',
-    deepEq(guideCta(hint('pulse'), {}), { label: 'Open the live tape →', kind: 'href', value: '/live' }) &&
+    deepEq(guideCta(hint('pulse'), {}), { label: 'Open the live tape →', short: 'Live tape →', kind: 'href', value: '/live' }) &&
       isPublicAppPath('/live') &&
       linksStranger?.kind === 'href' &&
       linksStranger.value === '/links' &&
@@ -321,6 +322,20 @@ export function guidePins(check: Check): void {
       simulateLadder(renderGuideText('{ASK}', {})).kind === 'action',
   )
 
+  // ── The compact row (the home seat on a phone) ────────────────────────
+  const homeCtas = GUIDE_HINTS.filter((h) => h.surfaces.includes('home')).flatMap((h) => [false, true].map((connected) => guideCta(h, { connected, symbol: 'ETH' })))
+  check(
+    'guide: every hint that can sit on the splash carries a SHORT CTA label for the compact row (≤ 12 characters, an arrow, never empty), and a short label is never longer than the full one',
+    homeCtas.length > 0 && homeCtas.every((c) => !!c && !!(c.short ?? c.label) && (c.short ?? c.label).length <= 12 && /→$/.test(c.short ?? c.label) && (c.short ?? c.label).length <= c.label.length),
+    homeCtas.map((c) => c?.short ?? c?.label).join(' | '),
+  )
+  const padded = JSON.stringify({ ...busyState(), pad: 'x'.repeat(20_000) })
+  check(
+    `guide: an OVERSIZED record (${padded.length} bytes of otherwise valid JSON) reads as fresh — the cap is ${GUIDE_RECORD_MAX_BYTES} bytes, and a busy record is well under it`,
+    deepEq(readGuideState(padded), fresh) && GUIDE_RECORD_MAX_BYTES === 8_192 && serializeGuideState(busyState()).length < 1_024,
+    `busy=${serializeGuideState(busyState()).length}B`,
+  )
+
   // ── The card, the seats, the dots in the files that mount them ────────
   const uncommented = (code: string) => code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
   const card = uncommented(src('components/guide/GuideCard.tsx'))
@@ -338,6 +353,16 @@ export function guidePins(check: Check): void {
       /Got it/.test(card) &&
       /<details className="guide__more">/.test(card) &&
       /Don’t show tips/.test(card),
+  )
+  check(
+    'guide: the compact row is the HOME seat only (GuideSeat passes compact for home), one row under 640px — the title clamps to two lines, the chip swaps in its short label, the × is "Got it" (44×44), the body / text Got it / ⋯ step aside; the full card keeps the ⋯ and its <details>',
+    /compact=\{surface === 'home'\}/.test(seat) &&
+      /className=\{compact \? 'guide guide--compact' : 'guide'\}/.test(card) &&
+      /className="guide__x" aria-label="Got it"/.test(card) &&
+      /className="guide__cta-short"/.test(card) &&
+      /@media \(max-width: 640px\) \{[\s\S]*\.guide--compact \{[\s\S]*grid-template-areas: "mark body acts";[\s\S]*-webkit-line-clamp: 2;[\s\S]*\.guide--compact \.guide__cta-short \{ display: inline; \}[\s\S]*\.guide--compact \.guide__x \{ display: inline-grid;[^}]*width: 44px; height: 44px;/.test(css) &&
+      /\.guide--compact \.guide__eyebrow, \.guide--compact \.guide__text, \.guide--compact \.guide__got, \.guide--compact \.guide__more \{ display: none; \}/.test(css) &&
+      /^\.guide__x \{ display: none; \}/m.test(css),
   )
   check(
     'guide: the look is tokens only (surface, line, fg, muted, accent, ink; the markets facet corner), reduced motion drops the entrance, and a thumb gets ≥44px controls',
@@ -365,8 +390,8 @@ export function guidePins(check: Check): void {
   )
   const analytics = src('lib/analytics.ts')
   check(
-    'guide: analytics.guide sends guide_hint with {id, state[, kind]} and nothing else, and the chat send notes the guide\'s `asked`',
-    /guide: \(id: string, state: GuideOutcome, kind\?: string\) =>\s*send\('guide_hint', \{ id, state, \.\.\.\(kind \? \{ kind \} : \{\}\) \}\)/.test(analytics) && /noteGuideEvent\('asked'\)/.test(analytics),
+    'guide: analytics.guide sends the label guide_<id>_<state> with nothing but the action kind beside it (QA\'s rule: never a wallet, never the hint body), and the chat send notes the guide\'s `asked`',
+    /guide: \(id: string, state: GuideOutcome, kind\?: string\) =>\s*send\(`guide_\$\{id\}_\$\{state\}`, kind \? \{ kind \} : undefined\)/.test(analytics) && /noteGuideEvent\('asked'\)/.test(analytics),
   )
   check(
     'guide: lib/guide is pure at import — no React, no analytics, no DOM read outside a function',
@@ -403,6 +428,11 @@ export function guidePins(check: Check): void {
       count(spine, '<SpineGuideDot tab="wallet" />') === 2 &&
       count(spine, '<SpineGuideDot ') === 4 &&
       count(spine, "import SpineGuideDot from '@/components/guide/SpineGuideDot'") === 1 &&
+      // Anchored to the ICON: every dot sits inside the icon's own `relative`
+      // wrapper (the bar's overflow can never clip it; no posture moves it).
+      count(spine, `<span className="relative"><Icon className="w-[18px] h-[18px]" />{(tab === 'jobs' || tab === 'links') && <SpineGuideDot tab={tab} />}</span>`) === 1 &&
+      count(spine, `<span className="relative"><Wallet className="w-[18px] h-[18px]" /><SpineGuideDot tab="wallet" /></span>`) === 2 &&
+      spine.split('<SpineGuideDot ').slice(1).every((_, i) => /className="relative"[^]{0,160}$/.test(spine.split('<SpineGuideDot ').slice(0, i + 1).join('<SpineGuideDot ').slice(-220))) &&
       !/SpineGuideDot tab="(mcps|chats|team|docs|markets)"/.test(spine),
   )
   const dot = src('components/guide/SpineGuideDot.tsx')

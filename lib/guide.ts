@@ -51,6 +51,10 @@ export const GUIDE_QUIET_MS = 10 * 60_000
 /** How often one hint may be shown before it retires on its own. */
 export const GUIDE_MAX_SHOWS = 2
 
+/** A record larger than this is not ours (a busy one is under 1 KB): it reads
+ *  as fresh, like any other garbage, before JSON.parse ever sees it. */
+export const GUIDE_RECORD_MAX_BYTES = 8_192
+
 export type GuideHintId = 'pulse' | 'chart' | 'triggers' | 'links' | 'jobs' | 'wallet' | 'alerts'
 
 /** What the seat knows that the record does not: where it is, which symbol
@@ -78,6 +82,9 @@ export interface GuideCta {
   label: string
   kind: GuideCtaKind
   value: string
+  /** The compact row's label (the home seat on a phone, where the card is
+   *  one row ≤64px): a word or two. Absent = the label itself. */
+  short?: string
 }
 
 export interface GuideHint {
@@ -128,7 +135,7 @@ export const GUIDE_HINTS: readonly GuideHint[] = [
     surfaces: ['home'],
     title: 'Every print is a button.',
     body: 'The live tape is Hyperliquid’s own fills, keyless. Each print carries the sentence that does the same thing — and only your wallet signs it.',
-    cta: { label: 'Open the live tape →', kind: 'href', value: '/live' },
+    cta: { label: 'Open the live tape →', short: 'Live tape →', kind: 'href', value: '/live' },
   },
   {
     id: 'chart',
@@ -152,7 +159,7 @@ export const GUIDE_HINTS: readonly GuideHint[] = [
     // A stranger reads the public board; a connected wallet goes to the
     // studio (through the door — SpineLink — when there is no session).
     cta: (ctx) =>
-      ctx.connected ? { label: 'Mint one →', kind: 'spine', value: LINKS_STUDIO_HREF } : { label: 'See how links pay →', kind: 'href', value: '/links' },
+      ctx.connected ? { label: 'Mint one →', short: 'Mint one →', kind: 'spine', value: LINKS_STUDIO_HREF } : { label: 'See how links pay →', short: 'Links →', kind: 'href', value: '/links' },
     // On the chart and the splash, only after a chip was tapped (or a chart
     // was visited before): the lesson lands once an ask has a face. In the
     // chat and the wallet, any time.
@@ -163,7 +170,7 @@ export const GUIDE_HINTS: readonly GuideHint[] = [
     surfaces: ['chat', 'home', 'symbol', 'wallet'],
     title: 'An ask with “then” is a job.',
     body: 'Fund, wait, buy, protect — one signature per step, and it waits out the bridge for you.',
-    cta: { label: 'See your jobs →', kind: 'spine', value: '/chat?tab=jobs' },
+    cta: { label: 'See your jobs →', short: 'Jobs →', kind: 'spine', value: '/chat?tab=jobs' },
     // The chat's seat is the empty state, so "after the first turn" means
     // a browser that has asked before; on the splash and the chart, after a
     // chip; on the wallet page (a connected wallet by definition), any time.
@@ -174,7 +181,7 @@ export const GUIDE_HINTS: readonly GuideHint[] = [
     surfaces: ['home', 'symbol', 'live', 'chat'],
     title: 'One window for every chain.',
     body: 'Balances, gas and what’s stuck, on every chain you hold — each flag with its fix beside it.',
-    cta: { label: 'Open your wallet →', kind: 'spine', value: WALLET_PAGE_HREF },
+    cta: { label: 'Open your wallet →', short: 'Wallet →', kind: 'spine', value: WALLET_PAGE_HREF },
     requires: (s) => !!s.acted.connected,
   },
   {
@@ -182,7 +189,7 @@ export const GUIDE_HINTS: readonly GuideHint[] = [
     surfaces: ['home', 'symbol'],
     title: 'An alert here can act.',
     body: 'Set a level. When it hits, the alert hands you the chip that does the trade — you sign it, nothing else does.',
-    cta: { label: 'Open the watchlist →', kind: 'scroll', value: '.mkt-frame__rail' },
+    cta: { label: 'Open the watchlist →', short: 'Watchlist →', kind: 'scroll', value: '.mkt-frame__rail' },
     // The second visit: the seat reads the record BEFORE it writes its own
     // visit, so a visit on file means an earlier page load.
     requires: (s, ctx) => !!s.visited[ctx.surface],
@@ -241,7 +248,7 @@ const HINT_IDS = new Set<string>(GUIDE_HINTS.map((h) => h.id))
  *  forgets. Unknown hint ids and places are dropped, not fatal (a retired
  *  hint must not reset everyone). */
 export function readGuideState(raw: string | null | undefined): GuideState {
-  if (!raw) return freshGuideState()
+  if (!raw || raw.length > GUIDE_RECORD_MAX_BYTES) return freshGuideState()
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
