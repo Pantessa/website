@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { SITE } from '@/lib/docs'
+import { MARKETS_HREF } from '@/lib/markets'
 import { EXPLAINER_VIDEO, explainerEmbedUrl, explainerPosterUrl, explainerWatchUrl, isoDuration } from '@/lib/explainer-video'
 import RosterHome from '@/components/RosterHome'
 import LinksHero from '@/components/LinksHero'
@@ -16,7 +18,7 @@ import TrustStrip from '@/components/TrustStrip'
 import StayUpToDate from '@/components/StayUpToDate'
 import MobileCtaBar from '@/components/MobileCtaBar'
 import Footer from '@/components/Footer'
-import { HOME_DESCRIPTION, HOME_TITLE } from '@/lib/markets-copy'
+import { SPLASH } from '@/lib/markets-copy'
 
 /** /story — THE BROCHURE (squad front-door, 2026-10-06). Until today this was
  * `/`; now `/` is the app's own splash (the markets index with the live pulse
@@ -45,12 +47,14 @@ import { HOME_DESCRIPTION, HOME_TITLE } from '@/lib/markets-copy'
  * Server component so it can export metadata + JSON-LD; the moving parts are
  * client children. */
 
-/** MARKETS re-message (2026-09-11): the hero line + <title> live in
- *  lib/markets-copy so the hero, the root social card, and the harness pin
- *  can never disagree. The links-first story (2026-07-22) stays on the page
- *  as the distribution channel; the chart is now the front door. */
-const TITLE = 'Pantessa — the story'
-const DESCRIPTION = HOME_DESCRIPTION
+/** The page's own words live in lib/markets-copy's SPLASH block beside the
+ *  splash's claim, so the door ("What is this?"), this title and the line
+ *  back to the app can never disagree. The hero line itself is HERO_LINE,
+ *  which the hero below still carries (MARKETS re-message, 2026-09-11). The
+ *  links-first story (2026-07-22) stays on the page as the distribution
+ *  channel; the chart is the front door — and the front door is `/`. */
+const TITLE = SPLASH.storyTitle
+const DESCRIPTION = SPLASH.storyDescription
 const CANONICAL = `${SITE}/story`
 
 /** The Roster homepage tripwire (ROSTER-MEMO: flip when a stranger signs
@@ -113,6 +117,15 @@ export default function StoryPage() {
           decorative parallax, and the one-time section reveals */}
       <LandingMotion />
       <main className="x-main x-main--fluid">
+        {/* THE WAY BACK (squad front-door, 2026-10-06): this is the story; the
+            app is one tap away at `/`. Slim, mono, above the movers tape. */}
+        <p className="mono px-4 py-1.5 text-center text-[10.5px] uppercase leading-4 tracking-[0.12em] text-[color:var(--muted)]" data-story-top>
+          <span>{SPLASH.storyTopline}.</span>{' '}
+          <Link href={MARKETS_HREF} className="whitespace-nowrap text-[color:var(--accent)] underline-offset-4 hover:text-[color:var(--fg)] hover:underline">
+            {SPLASH.storyToplineCta} →
+          </Link>
+        </p>
+
         {/* mk2 LANDING (2026-09-15) — the chart-first front door, in order:
             the movers tape · the executing chart (hero) · every dapp, one
             chart · the whole index · receipt-grade numbers · their meters
