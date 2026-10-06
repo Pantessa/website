@@ -39,6 +39,7 @@
  *     npx tsx scripts/pregtm-deadend-crawl.ts [--out dir] [--only /a,/b] \
  *     [--personas out,empty] [--widths 1440,375] [--jobs 8] [--max 30]
  *
+ * `--report <deadend.json> [--diff old.json] --out dir` re-renders a report without crawling.
  * Writes <out>/deadend.json (every click) and <out>/deadend.md (the DEAD +
  * ERROR + BLOCKED tables). `--diff <old deadend.json>` adds a regressions /
  * improvements section keyed by route|persona|width|label.
@@ -64,6 +65,7 @@ const JOBS = Number(opt('--jobs', '8'))
 const MAX = Number(opt('--max', '30'))
 const DIFF = opt('--diff')
 const MAX_PER_FAMILY = 2
+const MAX_CHROME = Number(opt('--max-chrome', '12'))
 const SETTLE_MS = 2500
 const BASELINE_MS = 450
 
@@ -154,9 +156,10 @@ const ENUM = `(() => {
     const disabled = el.disabled || el.getAttribute('aria-disabled') === 'true';
     const tag = el.tagName.toLowerCase();
     const href = el.getAttribute('href') || '';
+    const zone = el.closest('nav,aside,footer,header,[data-spine],[role=navigation],[role=contentinfo]') ? 'chrome' : 'main';
     const fam = tag + '|' + (el.getAttribute('role') || '') + '|' + [...el.classList].sort().join('.') + '|' + (el.closest('[class]')?.parentElement?.className || '').toString().slice(0, 40);
     el.setAttribute('data-qa-i', String(i));
-    out.push({ i, tag, role: el.getAttribute('role') || '', label: label(el), href, target: el.getAttribute('target') || '', disabled, fam, sel: css(el),
+    out.push({ i, zone, tag, role: el.getAttribute('role') || '', label: label(el), href, target: el.getAttribute('target') || '', disabled, fam, sel: css(el),
       journey: el.getAttribute('data-journey') || '',
       active: el.getAttribute('aria-pressed') === 'true' || el.getAttribute('aria-selected') === 'true' || el.getAttribute('aria-checked') === 'true' || !!el.getAttribute('aria-current') || el.classList.contains('is-on') || el.classList.contains('is-active') || el.getAttribute('data-state') === 'active' || el.getAttribute('data-active') === 'true' });
     i++;
@@ -192,7 +195,7 @@ const MEANINGFUL = `((t0, tb) => {
   return n;
 })`
 
-type Ctl = { i: number; tag: string; role: string; label: string; href: string; target: string; disabled: boolean; fam: string; sel: string; journey: string; active: boolean }
+type Ctl = { i: number; zone: 'main' | 'chrome'; tag: string; role: string; label: string; href: string; target: string; disabled: boolean; fam: string; sel: string; journey: string; active: boolean }
 type Click = { route: string; persona: Persona; width: number; i: number; tag: string; label: string; href: string; sel: string; journey: string; outcome: Outcome; detail: string }
 type Cell = { route: string; persona: Persona; width: number; status: number | null; controls: number; sampled: number; clicks: Click[]; loadError?: string; redirectedTo?: string }
 
@@ -224,6 +227,9 @@ async function newCtx(browser: any, persona: Persona, width: number) {
       if (req.headers()['rsc'] === '1' || u.searchParams.has('_rsc') || (req.isNavigationRequest() && req.resourceType() === 'document')) state.rsc++
       return r.continue({ headers: { ...req.headers(), 'x-yf-internal-run': '1' } })
     }
+    // Connected persona: the local CDP project is a placeholder whose config fetch fails slowly and holds
+    // up wagmi's restore (measured 6–10s → 3–6s when refused at once). Refuse it at once.
+    if (persona === 'empty' && /cdp\.coinbase|walletconnect|web3modal|reown/.test(u.host + u.pathname)) return r.abort()
     // An external DOCUMENT navigation is a NAV: record it, never follow it.
     if (req.isNavigationRequest() && req.resourceType() === 'document') { state.external.push(u.href); return r.abort() }
     return r.continue()
@@ -231,11 +237,16 @@ async function newCtx(browser: any, persona: Persona, width: number) {
   return { ctx, state }
 }
 
-async function load(page: any, url: string): Promise<number | null> {
+async function load(page: any, url: string, walletAddr = ''): Promise<number | null> {
   const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 })
   try { await page.waitForLoadState('load', { timeout: 10_000 }) } catch {}
   try { await page.waitForLoadState('networkidle', { timeout: 1_200 }) } catch { /* live pages never idle */ }
   await sleep(700) // hydration + wagmi reconnect
+  if (walletAddr) {
+    // The connected persona: wait (≤10s) until the app shows the wallet — wagmi's restore is slow headless.
+    const head = walletAddr.slice(0, 4).toLowerCase(), tail = walletAddr.slice(-4).toLowerCase()
+    try { await page.waitForFunction(([h, t]: string[]) => { const x = (document.body?.innerText || '').toLowerCase(); return x.includes(h) && x.includes(t) }, [head, tail], { timeout: 10000 }) } catch {}
+  }
   return res ? res.status() : null
 }
 
@@ -254,7 +265,7 @@ async function crawlCell(browser: any, route: string, persona: Persona, width: n
   wire(page)
   const url = BASE + route
   try {
-    cell.status = await load(page, url)
+    cell.status = await load(page, url, persona === 'empty' ? EMPTY_WALLET : '')
     const landed = new URL(page.url())
     const want = new URL(url)
     if (landed.pathname !== want.pathname) {
@@ -268,7 +279,10 @@ async function crawlCell(browser: any, route: string, persona: Persona, width: n
     cell.controls = ctls.length
     // Sample families; keep document order.
     const seen = new Map<string, number>()
-    const plan = ctls.filter((c) => { const k = c.fam; const n = seen.get(k) || 0; seen.set(k, n + 1); return n < MAX_PER_FAMILY }).slice(0, MAX)
+    // The page's own content first (MAX), then its chrome — spine, rail, nav, footer (MAX_CHROME):
+    // the shell is the same on every route and must not eat the budget meant for the page.
+    const fams = ctls.filter((c) => { const k = c.fam; const n = seen.get(k) || 0; seen.set(k, n + 1); return n < MAX_PER_FAMILY })
+    const plan = [...fams.filter((c) => c.zone === 'main').slice(0, MAX), ...fams.filter((c) => c.zone === 'chrome').slice(0, MAX_CHROME)]
     cell.sampled = plan.length
     let dirty = false
     let cur: Ctl[] = ctls
@@ -281,7 +295,7 @@ async function crawlCell(browser: any, route: string, persona: Persona, width: n
         try { await ctx.clearCookies() } catch {}
         try { await page.close() } catch {}
         page = await ctx.newPage(); wire(page)
-        try { await load(page, url) } catch { /* recorded below as GONE */ }
+        try { await load(page, url, persona === 'empty' ? EMPTY_WALLET : '') } catch { /* recorded below as GONE */ }
         cur = (await page.evaluate(ENUM).catch(() => [])) as Ctl[]
         dirty = false
       }
@@ -442,6 +456,12 @@ function md(cells: Cell[], old?: Cell[]): string {
 }
 
 async function main() {
+  const REPORT = opt('--report')
+  if (REPORT) {
+    const cur = JSON.parse(readFileSync(REPORT, 'utf8')).cells as Cell[]
+    const old = DIFF && existsSync(DIFF) ? (JSON.parse(readFileSync(DIFF, 'utf8')).cells as Cell[]) : undefined
+    mkdirSync(OUT, { recursive: true }); writeFileSync(join(OUT, 'deadend.md'), md(cur, old)); console.log('report → ' + join(OUT, 'deadend.md')); return
+  }
   const pw = require_(process.env.PLAYWRIGHT_CORE || 'playwright-core')
   const browser = await pw.chromium.launch({ executablePath: CHROME, headless: true })
   const list = ONLY || routes()
