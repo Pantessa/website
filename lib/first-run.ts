@@ -54,6 +54,17 @@ export const WALLET_DOOR = {
   lines: ['Balances and gas on each chain, priced.', 'Every flag with its fix beside it — a card door, a receive address, a top-up.', 'Looking takes no signature. Moving money takes yours.'],
 } as const
 
+/** The WALLET window (page or popup) for a connected wallet that holds
+ *  nothing on any chain it read. */
+export const WALLET_EMPTY_DOOR = {
+  eyebrow: 'Wallet · empty on every chain',
+  title: 'Nothing here yet — two ways in.',
+  body: 'This window prices what you hold on every chain, flags what’s stuck, and offers the fix. Money gets in by card, or by sending to this address.',
+  lines: ['A card lands ETH here through Stripe — gas and value in one delivery.', 'Or send from another wallet to the address above.', 'The moment it lands, this window says so, and the chat can act on it.'],
+  card: 'Add funds with a card',
+  receive: 'Show my address',
+} as const
+
 /** The chat’s empty surface. */
 export const CHAT_EMPTY = {
   title: 'Say what should happen.',
