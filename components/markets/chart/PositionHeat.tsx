@@ -48,7 +48,7 @@ export function useHeatYear(symbol: string, enabled: boolean) {
   }, [symbol, enabled])
   const cells = useMemo(() => (derivs ? heatCells(derivs.ratio, derivs.oi, bars, Date.now() / 1000) : []), [derivs, bars])
   const summary = useMemo(() => (cells.length ? heatSummary(cells) : null), [cells])
-  return { derivs, cells, summary }
+  return { derivs, cells, summary, bars }
 }
 
 export interface PositionHeatProps {

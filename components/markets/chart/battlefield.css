@@ -157,3 +157,28 @@ button.bf__chip:hover { border-color: var(--line-2, var(--fg)); }
   .poshet__key, .poshet__k { display: none; }
   .poshet .bf__heat { --hc: 10px; }
 }
+
+/* The rivers: two flows under the candles. */
+.rivers { position: relative; display: grid; gap: 4px; }
+.rivers__body { position: relative; width: 100%; min-width: 0; cursor: crosshair; }
+.rivers__svg { display: block; width: 100%; }
+.rivers__mid { stroke: color-mix(in oklch, var(--fg) 14%, transparent); stroke-width: 1; stroke-dasharray: 2 4; }
+.rivers__ribbon { stroke: none; }
+.rivers__ribbon--long { fill: color-mix(in oklch, var(--mk-up, var(--accent)) 62%, transparent); }
+.rivers__ribbon--short { fill: color-mix(in oklch, var(--mk-down, var(--sell)) 62%, transparent); }
+.rivers__eddy circle { fill: none; stroke: var(--bg); stroke-width: 1.2; }
+.rivers__eddy circle:first-child { stroke: var(--fg); stroke-opacity: 0.85; }
+.rivers__eddy circle:last-child { stroke: var(--fg); stroke-opacity: 0.5; }
+.rivers__channel { stroke-width: 2; stroke-dasharray: 3 4; opacity: 0.7; }
+.rivers__channel--long { stroke: var(--mk-up, var(--accent)); }
+.rivers__channel--short { stroke: var(--mk-down, var(--sell)); }
+.rivers__today { stroke: color-mix(in oklch, var(--fg) 35%, transparent); stroke-width: 1; }
+.rivers__label { font-size: 8.5px; letter-spacing: 0.08em; fill: var(--muted-2); }
+.rivers__rapid path { fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.rivers__rapid--long path { stroke: var(--mk-up, var(--accent)); }
+.rivers__rapid--short path { stroke: var(--mk-down, var(--sell)); }
+.rivers__rapid:hover path { stroke: var(--fg); }
+.rivers__guide { stroke: color-mix(in oklch, var(--fg) 40%, transparent); stroke-width: 1; }
+.rivers__empty { position: static; padding: 24px 0; }
+.rivers .bf__tip { position: absolute; }
+@media (max-width: 640px) { .rivers .poshet__key { display: none; } }

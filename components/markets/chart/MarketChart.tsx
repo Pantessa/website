@@ -65,6 +65,8 @@ import ChartLegend from './ChartLegend'
 import { awayFromLive, chartKey, markPlusHintSeen, plusHintSeen, tidyPrice, zoomedFrom } from '@/lib/chart-legend'
 import FrontBoard from './FrontBoard'
 import PositionHeat from './PositionHeat'
+import PositionRivers from './PositionRivers'
+import StrataOverlay, { STRATA_MARGIN_BARS } from './StrataOverlay'
 import { parseBoardParam, parseViewParam, syncViewParam, type BoardMode } from '@/lib/markets'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
@@ -269,6 +271,14 @@ export default function MarketChart({
   // The board the Battlefield shows; null = its own default. `?view=battlefield&board=spot`
   // opens straight onto it (a shared link), and the switch mirrors into the URL.
   const [board, setBoard] = useState<BoardMode | null>(null)
+  // The strata on the right margin need room: while they draw, the chart
+  // keeps STRATA_MARGIN_BARS right of the last candle instead of RIGHT_OFFSET.
+  const [strataOn, setStrataOn] = useState(false)
+  const marginRef = useRef(RIGHT_OFFSET)
+  marginRef.current = strataOn ? STRATA_MARGIN_BARS : RIGHT_OFFSET
+  useEffect(() => {
+    chartRef.current?.applyOptions({ timeScale: { rightOffset: marginRef.current } })
+  }, [strataOn])
   const viewMirroredRef = useRef(false)
   useEffect(() => {
     if (!battlefield) return
@@ -417,7 +427,7 @@ export default function MarketChart({
       const ts = chart.timeScale()
       const view = ts.getVisibleLogicalRange()
       if (!view) return
-      const clamped = clampToFirstBar(view, drawn, RIGHT_OFFSET)
+      const clamped = clampToFirstBar(view, drawn, marginRef.current)
       if (clamped) ts.setVisibleLogicalRange({ from: clamped.from as Logical, to: clamped.to as Logical })
       if (wantsOlderBars(clamped ?? view, drawn)) void loadOlderRef.current()
       emitViewport(clamped ?? view)
@@ -804,7 +814,7 @@ export default function MarketChart({
     const key = `${symbol}:${tf}`
     if (fitOnceRef.current !== key) {
       const older = bars.length - candles.length
-      if (older > 0) chart.timeScale().setVisibleLogicalRange({ from: older as Logical, to: (bars.length - 1 + RIGHT_OFFSET) as Logical })
+      if (older > 0) chart.timeScale().setVisibleLogicalRange({ from: older as Logical, to: (bars.length - 1 + marginRef.current) as Logical })
       else chart.timeScale().fitContent()
       fitOnceRef.current = key
     }
@@ -1348,6 +1358,7 @@ export default function MarketChart({
           </div>
         )}
         {fieldOn && tokens && <FrontBoard symbol={pair.symbol} pair={pair} tf={tf} bars={candles} tokens={tokens} onAsk={onAsk} canAsk={(ask) => canTradeAsk(ask, tradable)} board={board} onBoard={setBoard} />}
+        {battlefield && !fieldOn && tokens && <StrataOverlay geom={geom} bars={bars} symbol={pair.symbol} pair={pair} tf={tf} tokens={tokens} last={last} onActive={setStrataOn} />}
         {!fieldOn && <DrawingLayer
           geom={geom}
           lines={lines}
@@ -1394,6 +1405,7 @@ export default function MarketChart({
       </div>
 
       {/* A year of positioning under the candles (the symbol page; coins and perps). */}
+      {battlefield && !fieldOn && <PositionRivers symbol={pair.symbol} pair={pair} mark={last} />}
       {battlefield && !fieldOn && <PositionHeat symbol={pair.symbol} pair={pair} mark={last} />}
 
       {/* Your fills — the glyphs on the bars; the receipt words + explorer link live here. */}

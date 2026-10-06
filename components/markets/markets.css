@@ -456,4 +456,5 @@ button.mk-held:hover { border-color: var(--accent); }
   .sym .tchart:not(.tchart--expanded):has(.mkt-chart__canvas.is-field) { height: clamp(600px, 74dvh, 780px); }
   /* The positioning strip under the candles needs its own rows. */
   .sym .tchart:not(.tchart--expanded):has(.poshet.is-open) { height: clamp(560px, 76dvh, 820px); }
+  .sym .tchart:not(.tchart--expanded):has(.poshet.is-open):has(.rivers.is-open) { height: clamp(700px, 90dvh, 980px); }
 }

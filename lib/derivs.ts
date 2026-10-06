@@ -515,3 +515,98 @@ export function heatSummary(cells: HeatCell[]): HeatSummary {
             : `A year near its usual: ${longDays} days longer, ${shortDays} shorter`
   return { read, median, longDays, shortDays, streak, headline }
 }
+
+// ── The Rivers: positioning as two flows under the candles ────────────────
+
+export interface RiverDay {
+  day: number
+  /** 0..1 across the strip's history zone. */
+  x: number
+  /** Share of accounts long (carried from the last read day when a day is unread). */
+  long: number
+  /** Open interest in dollars, null when unread. */
+  oiUsd: number | null
+  /** Open interest as a share of the window's biggest day, 0..1 (0.35 floor so a thin river still shows). */
+  flow: number
+  /** The day's liquidation cascades, dollars per side (ESTIMATED), from the daily map. */
+  wipedLong: number
+  wipedShort: number
+}
+
+export interface RiverSeries {
+  days: RiverDay[]
+  median: number
+  oiMax: number
+}
+
+/** The last `window` days as river samples: each day's long share, its open
+ *  interest in dollars (coins × that day's close), and what the day's range
+ *  set off on each side (the daily liquidation map's hits). */
+export function riverSeries(cells: HeatCell[], bars: Candle[], oiUnit: 'coin' | 'usd', window = 180): RiverSeries {
+  const median = heatMedian(cells) ?? 0.5
+  const closeByDay = new Map<number, number>()
+  for (const b of bars) closeByDay.set(Math.floor(b.t / DAY_SEC) * DAY_SEC, b.c)
+  // The daily map over the daily bars: hits are the days' cascades.
+  const oiPts: OiPoint[] = cells.filter((c) => c.oi !== null).map((c) => ({ t: c.day, oi: c.oi as number }))
+  const daily = [...bars].filter((b) => b.t >= (cells[0]?.day ?? 0)).sort((a, b) => a.t - b.t)
+  const map = oiPts.length > 1 && daily.length > 1 ? liquidationMap(daily, oiPts, oiUnit) : { alive: [], hits: [] }
+  const wiped = new Map<number, { long: number; short: number }>()
+  for (const h of map.hits) {
+    const d = Math.floor(daily[h.at].t / DAY_SEC) * DAY_SEC
+    const w = wiped.get(d) ?? { long: 0, short: 0 }
+    w[h.side] += h.usd
+    wiped.set(d, w)
+  }
+  const today = Math.floor(Date.now() / 1000 / DAY_SEC) * DAY_SEC
+  const recent = cells.filter((c) => c.day <= today).slice(-window)
+  let lastLong = median
+  let oiMax = 0
+  const rows = recent.map((c) => {
+    if (c.long !== null) lastLong = c.long
+    const close = closeByDay.get(c.day)
+    const oiUsd = c.oi === null ? null : oiUnit === 'coin' ? (close ? c.oi * close : null) : c.oi
+    if (oiUsd !== null && oiUsd > oiMax) oiMax = oiUsd
+    const w = wiped.get(c.day)
+    return { day: c.day, long: lastLong, oiUsd, wipedLong: w?.long ?? 0, wipedShort: w?.short ?? 0 }
+  })
+  const n = Math.max(1, rows.length - 1)
+  return {
+    median,
+    oiMax,
+    days: rows.map((r, i) => ({ ...r, x: i / n, flow: oiMax > 0 && r.oiUsd !== null ? 0.35 + 0.65 * (r.oiUsd / oiMax) : 0.35 })),
+  }
+}
+
+/** Where each river runs on a day, in strip units (0 = top, 1 = bottom):
+ *  the long river rides ABOVE the centre when the crowd is longer than its
+ *  usual, the short river below, and they cross on the days it flips. Each
+ *  river's width is its side's share of the day's open interest. */
+export function riverLanes(d: RiverDay, median: number, maxWidth = 0.42): { long: { y: number; w: number }; short: { y: number; w: number } } {
+  const tone = Math.max(-1, Math.min(1, (d.long - median) / 0.08))
+  const wLong = maxWidth * d.flow * d.long
+  const wShort = maxWidth * d.flow * (1 - d.long)
+  // 0.18 of the strip between the two centres at full tone; the rivers meet (and swap) at tone 0.
+  const spread = 0.18 * tone
+  return { long: { y: 0.5 - spread, w: wLong }, short: { y: 0.5 + spread, w: wShort } }
+}
+
+// ── Strata: the liquidation clusters drawn on the candle chart's right margin ──
+
+export interface Stratum {
+  side: 'long' | 'short'
+  price: number
+  usd: number
+  /** 0..1 of the biggest stratum. */
+  weight: number
+}
+
+/** The clusters within `pct` of the price as strata, biggest first, at most `max`. */
+export function strataFor(buckets: { side: 'long' | 'short'; price: number; usd: number }[], mark: number, pct = 25, max = 12): Stratum[] {
+  if (!(mark > 0)) return []
+  const near = buckets.filter((b) => Math.abs(b.price / mark - 1) <= pct / 100 && (b.side === 'short' ? b.price > mark : b.price < mark))
+  const top = near.reduce((m, b) => Math.max(m, b.usd), 0)
+  return near
+    .sort((a, b) => b.usd - a.usd)
+    .slice(0, max)
+    .map((b) => ({ side: b.side, price: b.price, usd: b.usd, weight: top > 0 ? b.usd / top : 0 }))
+}
