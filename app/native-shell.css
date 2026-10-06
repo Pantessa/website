@@ -156,3 +156,43 @@ a, button, [role='button'], [role='tab'], [role='menuitem'], input, select, text
   [data-story-top] a { position: relative; }
   [data-story-top] a::after { content: ''; position: absolute; inset: -15px -6px; }
 }
+
+/* ── pre-gtm MOBILE lane (2026-10-07) ─────────────────────────────────────
+   Cross-surface phone rules measured by squad-pregtm-2026-10-06/shots/mobile-audit.mjs.
+   Every rule is fenced to a phone or a coarse pointer; 1440 renders as before. */
+/* RainbowKit's "Connect a Wallet" sheet: its × is a 30×30 button (the only sub-44 control in the sheet at
+   320–430). A 44px hit area around the same glyph. */
+@media (hover: none) {
+  [data-rk] button[aria-label='Close'] { position: relative; }
+  [data-rk] button[aria-label='Close']::after { content: ''; position: absolute; inset: -7px; border-radius: 999px; }
+}
+/* The mint stage's ask (LINKS tab and /links): a one-line serif textarea, 26px tall under a thumb. It takes a
+   44px floor; the box is a one-cell grid, so the mirror and the field stay aligned. */
+@media (hover: none) {
+  .mintstage__input { min-height: 44px; }
+}
+/* /i's "No wallet on this phone? Make one with email or Google" is the door for a stranger without a wallet — a
+   169×18 underlined phrase inside a sentence. A 44px-tall hit area, same look (the line has air above and below). */
+@media (hover: none) {
+  [data-no-wallet-lane] button { position: relative; }
+  [data-no-wallet-lane] button::after { content: ''; position: absolute; inset: -13px -4px; }
+}
+/* Docs: the section copy-link buttons (26×26, ×8 on a page) and the breadcrumb's DOCS link (29×18). */
+@media (hover: none) {
+  .docs__anchor { position: relative; }
+  .docs__anchor::after { content: ''; position: absolute; inset: -9px; }
+  .docs__crumbs a { position: relative; }
+  .docs__crumbs a::after { content: ''; position: absolute; inset: -13px -8px; }
+}
+/* /story's hero chart (the brochure, POLISH's page): its timeframes, Share, the act chip and "Open Markets" were
+   34–39px under a thumb. 44px floors; widths and words unchanged. */
+@media (hover: none) {
+  [data-landing-hero] .tok__tfbtn, [data-landing-hero] .mkt-sharebtn, [data-landing-hero] .sym__act-chip, [data-landing-hero] .btn--sm { min-height: 44px; }
+  [data-landing-hero] .tok__tfbtn { min-width: 44px; }
+}
+/* The ask door's sheet with the soft keyboard up: at 320×568 the visible viewport is ~268px and the sheet's
+   two-line tagline foot ("ONE SENTENCE · GUARDED BUILD · …") took ~60px of it, leaving the example chips a 110px
+   window. The tagline steps aside while typing (it returns with the keyboard down). */
+@media (max-width: 1023px) {
+  html[data-keyboard] .askdoor__sheetfoot { display: none; }
+}

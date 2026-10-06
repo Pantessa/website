@@ -226,3 +226,8 @@
    (lib/trade-venue-gate, 2026-09-22) — quiet, so the ledger still reads as a
    ledger, and titled so the reason is one hover away. */
 .mkt-quick__none { font-size: 9px; letter-spacing: 0.12em; color: var(--muted-2); border: 1px dashed var(--line); border-radius: 999px; padding: 2px 7px; white-space: nowrap; cursor: default; }
+
+/* MOBILE (squad pre-gtm, 2026-10-07): "Chain it"'s Send was the Trade tab's one sub-44 control under a thumb (83×38). */
+@media (hover: none) {
+  .mkt-compound__send { min-height: 44px; }
+}
