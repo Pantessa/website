@@ -329,6 +329,78 @@ button.mk-held:hover { border-color: var(--accent); }
   /* A board tab lands its section under the strip + the stuck tabs. */
   .mkt-sec { scroll-margin-top: calc(var(--mkt-top-h, 52px) + 60px); }
 }
+
+/* ── THE FRONT DOOR ON A PHONE (squad front-door, 2026-10-06; MOBILE lane) ──
+   `/` is the app now: the live pulse and the guide take seats above the
+   boards, so the chrome above them gives back what it can. Measured at
+   375×812 on bec14057 before any seat filled: search 66–110, Map · List on a
+   row of its own 120–172 (a 148px control on a 343px row), the board tabs
+   182–235, the session clocks 247–320 (three lines, the TOKENS line cut
+   mid-sentence at every phone width), the first board's first row at 532.
+   With a ≤180px pulse, a one-line claim and a slim guide card that row would
+   land ≈850px down, under the tab bar. */
+
+/* Map · List rides BESIDE the search (−62px): the two share one 44px line,
+   the board tabs keep sticking under the top strip (the strip's box stays
+   dissolved, so their sticky range is still the whole data column). The
+   control gets a fixed width so the search can take exactly the rest; the
+   results menu still spans the whole row. Under 375 the two buttons show
+   their icons only (the words stay in the DOM for readers and drives, the
+   way the chart's Share does under 375). */
+@media (max-width: 640px), (max-width: 1023px) and (max-height: 500px) {
+  .mkt-frame__main { --mk-view-w: 148px; }
+  .mkt-frame__bar > .mkt-search { display: inline-block; vertical-align: top; width: calc(100% - var(--mk-view-w) - 8px); }
+  .mkt-frame__bar > .mkt-search .mkt-search__menu { right: calc(-1 * (var(--mk-view-w) + 8px)); }
+  .mkt-frame__bar > .mk-view { display: inline-flex; vertical-align: top; width: var(--mk-view-w); height: 44px; margin: 14px 0 0 8px; padding: 2px; }
+  .mkt-frame__bar > .mk-view > .mk-view__btn { position: relative; flex: 1 1 0; min-width: 0; justify-content: center; height: 38px; padding-inline: 0; }
+  /* 38px pills in a 44px control: each pill hit-tests to the control's edge. */
+  .mkt-frame__bar > .mk-view > .mk-view__btn::after { content: ''; position: absolute; inset: -3px; }
+}
+/* An Enter-key hint means nothing under a thumb (the phone keyboard has its
+   own Go key): on a touch phone the field keeps those 38px for its words. */
+@media (hover: none) and (max-width: 640px), (hover: none) and (max-width: 1023px) and (max-height: 500px) {
+  .mkt-frame__bar > .mkt-search .mkt-search__kbd { display: none; }
+}
+@media (max-width: 374px) {
+  .mkt-frame__main { --mk-view-w: 92px; }
+  .mkt-frame__bar > .mk-view > .mk-view__btn { gap: 0; font-size: 0; }
+}
+
+/* The session clocks on ONE line that scrolls sideways (−42px, and nothing
+   ellipsized): three lines of 15px mono cost 73px of the first screen and
+   still cut the TOKENS line mid-sentence. The NYSE bell — the clock a stock
+   ask depends on — leads and is always whole; the rest is a swipe away, and
+   the right edge fades so "more this way" reads (the /t act-strip idiom). */
+@media (max-width: 640px) {
+  .mk-session {
+    flex-wrap: nowrap; gap: 0 14px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+  .mk-session::-webkit-scrollbar { display: none; }
+  .mk-session::after { content: ''; flex: 0 0 14px; }
+  .mk-session__item { flex: 0 0 auto; }
+  .mk-session__v { overflow: visible; text-overflow: clip; }
+}
+
+/* The targets the front-door baseline measured under a coarse pointer
+   (before → after): the rail's add field 40 → 44 tall; the chart's
+   Candles | Battlefield switch 38×36 → a 44×44 hit area on a 38px pill (the
+   pill grows 2px, the chart bar's 44px first row does not move); the
+   positioning strip's toggle (coins) 29 → 44 tall; the brief's "Try again"
+   52×19 → a 44px hit area on the same underlined words. */
+@media (hover: none) {
+  .wl__addInput { min-height: 44px; }
+  .sym .mkt-view__btn { position: relative; height: 38px; }
+  .sym .mkt-view__btn::after { content: ''; position: absolute; inset: -3px; }
+  .sym .poshet__head { min-height: 44px; }
+  .mk-ai__retry { position: relative; }
+  .mk-ai__retry::after { content: ''; position: absolute; inset: -13px -6px; }
+  /* The Trade tab once its routes load: the "All" filter 39 wide, the
+     leverage slider's track 17px tall (a range input hit-tests its own box). */
+  .mkt-routes__filter { min-width: 44px; }
+  .mkt-routes__slider input[type='range'] { height: 44px; }
+}
 @media (max-width: 640px) {
   /* The /t header leads with the price and the chart (round 2, F9: the chart
      started at 48–56% of a 375×629 screen; a long venue chip and session line
