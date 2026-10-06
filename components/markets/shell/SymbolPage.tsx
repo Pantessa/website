@@ -205,6 +205,18 @@ export default function SymbolPage({
   // (lib/use-connect-to-act).
   const { act, door } = useConnectToAct({ run: runAsk, redirectFor: promptHref })
   const onAsk = useCallback((a: TradeAsk) => act(a.ask), [act])
+  // The order ticket's send (2026-10-06): a SIZED sentence builds on this
+  // page, in Ask the chart's order ticket under the chart (the page's door is
+  // docked there, lib/ask-door) — the chart stays, and the signed fill paints
+  // on it. With no dock (no chart) it runs in the app like any chip.
+  const buildHere = useCallback(
+    (ask: string) => {
+      const dock = useAskDoor.getState().dock
+      if (dock) dock(ask, { send: true })
+      else act(ask)
+    },
+    [act],
+  )
   // A chip is a real link (the /chat prefill: no-JS, a new tab); a plain
   // click sends through the act door instead.
   const sendOnClick = (ask: string) => (e: ReactMouseEvent<HTMLAnchorElement>) => {
@@ -362,7 +374,7 @@ export default function SymbolPage({
               what the harness pins; the slot's body is theirs). */}
           {pair && (
             <div className="sym__exec" data-seat="ExecStrip">
-              <ExecStrip symbol={sym} pair={pair} onAsk={act} last={stats?.last ?? null} />
+              <ExecStrip symbol={sym} pair={pair} onAsk={act} onBuild={buildHere} last={stats?.last ?? null} />
             </div>
           )}
         </header>
@@ -483,7 +495,7 @@ export default function SymbolPage({
               ) : tab === 'technicals' ? (
                 <TechnicalsTab symbol={sym} pair={pair} initialTf={initialTf} onAsk={onChartAsk} />
               ) : (
-                <TradeTab symbol={sym} pair={pair} onAsk={onAsk} onAskText={act} last={stats?.last ?? null} />
+                <TradeTab symbol={sym} pair={pair} onAsk={onAsk} onAskText={act} onBuild={buildHere} last={stats?.last ?? null} />
               )
             ) : unknown ? null : (
               <section className="mkt-card">
