@@ -345,3 +345,58 @@ export function bookWalls(book: Pick<BookBody, 'bids' | 'asks' | 'mid'>, pct = 2
   for (const l of book.asks) if (l.px <= mid * (1 + pct / 100)) askUsd += l.usd
   return { bidUsd, askUsd }
 }
+
+// ── Spot: the resting book as rows ────────────────────────────────────────
+
+export interface BookRow {
+  side: 'long' | 'short'
+  /** The rung's dollar-weighted price. */
+  price: number
+  usd: number
+  /** The rung's bounds. */
+  lo: number
+  hi: number
+}
+
+/** Resting orders gathered into price rungs `stepPct` wide (of the mid)
+ *  within `rangePct` of it: bids under the mid as the buyers' rows, asks
+ *  over it as the sellers'. MEASURED, not modelled. */
+export function bookRows(book: Pick<BookBody, 'bids' | 'asks' | 'mid'>, rangePct: number, stepPct: number): BookRow[] {
+  const mid = book.mid
+  if (!mid || !(mid > 0)) return []
+  const step = (mid * stepPct) / 100
+  const by = new Map<string, BookRow & { wsum: number }>()
+  const add = (side: 'long' | 'short', l: BookLevel) => {
+    if (Math.abs(l.px / mid - 1) > rangePct / 100 || !(l.usd > 0)) return
+    const k = Math.floor(l.px / step)
+    const key = `${side}:${k}`
+    const cur = by.get(key)
+    if (cur) {
+      cur.usd += l.usd
+      cur.wsum += l.px * l.usd
+    } else by.set(key, { side, price: l.px, usd: l.usd, lo: k * step, hi: (k + 1) * step, wsum: l.px * l.usd })
+  }
+  for (const l of book.bids) if (l.px < mid) add('long', l)
+  for (const l of book.asks) if (l.px > mid) add('short', l)
+  return [...by.values()].map(({ wsum, ...r }) => ({ ...r, price: wsum / r.usd })).sort((a, b) => a.price - b.price)
+}
+
+export interface SpotRead {
+  lean: 'up' | 'down' | 'even'
+  headline: string
+  /** Share of resting dollars within the fence that are bids, 0..1. */
+  bidShare: number
+  spreadPct: number | null
+}
+
+/** The spot book in one line: which side has the deeper book near the price. */
+export function spotRead(book: Pick<BookBody, 'bids' | 'asks' | 'mid'>, pct = 5): SpotRead {
+  const { bidUsd, askUsd } = bookWalls(book, pct)
+  const all = bidUsd + askUsd
+  const bidShare = all > 0 ? bidUsd / all : 0.5
+  const spreadPct = book.mid && book.bids[0] && book.asks[0] ? ((book.asks[0].px - book.bids[0].px) / book.mid) * 100 : null
+  if (all <= 0) return { lean: 'even', headline: 'No resting orders read', bidShare, spreadPct }
+  if (bidShare >= 0.6) return { lean: 'up', headline: 'Buyers hold the deeper book', bidShare, spreadPct }
+  if (bidShare <= 0.4) return { lean: 'down', headline: 'Sellers hold the deeper book', bidShare, spreadPct }
+  return { lean: 'even', headline: 'The book is evenly matched', bidShare, spreadPct }
+}

@@ -365,7 +365,7 @@ button.mk-held:hover { border-color: var(--accent); }
   .sym .tchart:not(.tchart--expanded) { height: auto; }
   .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas { flex: 0 0 auto; height: 260px; }
   /* The battlefield carries a sky and a two-row strip: it needs the height. */
-  .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas.is-field { height: 380px; }
+  .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas.is-field { height: 460px; }
   /* Its controls in two rows, not four (44px each at a thumb's size): the
      timeframes with the live badge + full screen on the right, then the
      overlays (their own sideways scroller) beside the drawing tools. A stock's
