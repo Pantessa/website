@@ -18,7 +18,7 @@
 
 import { chartPairFor, normalizeChartSymbol, type Candle, type ChartPair } from '@/lib/charts'
 import { ROBINHOOD_TICKER_NAMES } from '@/lib/robinhood-tickers'
-import { FEATURED, marketSections, symbolStanding, type MarketSectionId } from '@/lib/markets'
+import { FEATURED, MARKETS_HREF, marketSections, symbolStanding, type MarketSectionId } from '@/lib/markets'
 import { SITE_URL } from '@/lib/site-url'
 import { TAPE_FOOTNOTE } from '@/lib/markets-copy'
 
@@ -32,6 +32,11 @@ const COIN_NAMES: Record<string, string> = {
   ENA: 'Ethena', PEPE: 'Pepe', SHIB: 'Shiba Inu', WLD: 'Worldcoin', JTO: 'Jito', JUP: 'Jupiter',
   AERO: 'Aerodrome', EIGEN: 'EigenLayer', HYPE: 'Hyperliquid', SYRUP: 'Maple', FARTCOIN: 'Fartcoin',
 }
+
+/** The index's absolute URL for the breadcrumb trail — `/` since the front
+ *  door flipped (lib/markets MARKETS_HREF), trailing slash trimmed so it reads
+ *  as the same URL the WebSite JSON-LD and the canonical name. */
+const MARKETS_URL = new URL(MARKETS_HREF, SITE_URL).href.replace(/\/$/, '')
 
 /** Human name for a charted symbol: the issuer's company name for stocks,
  *  the coin's name for crypto, the symbol itself when we have no name. */
@@ -89,7 +94,7 @@ export function symbolPageSeo(symbolRaw: string): SymbolSeo {
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',
     itemListElement: [
-      { '@type': 'ListItem', position: 1, name: 'Markets', item: `${SITE_URL}/markets` },
+      { '@type': 'ListItem', position: 1, name: 'Markets', item: MARKETS_URL },
       { '@type': 'ListItem', position: 2, name: symbol, item: canonical },
     ],
   }
@@ -170,7 +175,7 @@ export function listPageSeo(input: ListSeoInput): ListSeo {
       '@context': 'https://schema.org',
       '@type': 'BreadcrumbList',
       itemListElement: [
-        { '@type': 'ListItem', position: 1, name: 'Markets', item: `${SITE_URL}/markets` },
+        { '@type': 'ListItem', position: 1, name: 'Markets', item: MARKETS_URL },
         { '@type': 'ListItem', position: 2, name: input.name, item: canonical },
       ],
     },
@@ -237,11 +242,13 @@ export function fmtOgPrice(n: number): string {
   return n.toPrecision(3)
 }
 
-// ── /markets — the index's own social card ────────────────────────────────
-//    The card shows the board the page shows: every market family with its
-//    household names and the family's honest size (how many symbols the
-//    resolver charts there). Pure: the picture reads quotes at render time,
-//    the shape is decided here so the harness can pin it against the index.
+// ── The site card is THE BOARD (app/opengraph-image.tsx) ──────────────────
+//    Drawn for /markets since 2026-09-17; re-homed to `/` with the page when
+//    the front door flipped (squad front-door, 2026-10-06). The card shows the
+//    board the page shows: every market family with its household names and
+//    the family's honest size (how many symbols the resolver charts there).
+//    Pure: the picture reads quotes at render time, the shape is decided here
+//    so the harness can pin it against the index.
 
 export interface MarketsOgGroup {
   id: MarketSectionId

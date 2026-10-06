@@ -529,3 +529,42 @@ button.mk-held:hover { border-color: var(--accent); }
   /* The positioning strip under the candles needs its own rows. */
   .sym .tchart:not(.tchart--expanded):has(.poshet.is-open) { height: clamp(560px, 76dvh, 820px); }
 }
+
+/* ── THE SPLASH CLAIM (squad front-door, 2026-10-06; SPLASH lane) ──────────
+   `/` is the app: the markets index opens on a claim block ABOVE the sticky
+   tool strip — HERO_LINE as the visible h1, one sentence, the door to /story
+   (components/home/SplashClaim; the block is `mk-claim` — `.splash__*` is an
+   older family in x402-design.css and would restyle it). Budget ≤72px tall on desktop so the live
+   pulse stays above the fold at 1440×900: two rows on the left (h1 ≈27px +
+   sentence ≈17px) with the door on the right, 12px over, 8px under = 68px.
+   A returning visitor ([data-compact]) gets the one-line version; so does a
+   phone (≤640px): the sentence hides (it stays in the HTML for a crawler),
+   the h1 and the door share a line and wrap only when 320px forces it. */
+.mk-claim { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "h1 door" "sub door"; align-items: baseline; column-gap: 18px; row-gap: 3px; padding: 12px 0 8px; }
+.mk-claim__h1 { grid-area: h1; margin: 0; font-family: var(--mk-font-display); font-weight: 500; font-size: clamp(21px, 1.9vw, 27px); line-height: 1.02; letter-spacing: -0.025em; color: var(--fg); text-wrap: balance; }
+.mk-claim__sub { grid-area: sub; margin: 0; max-width: 72ch; font-size: 12.5px; line-height: 1.4; color: var(--muted); text-wrap: pretty; }
+.mk-claim__door { grid-area: door; align-self: center; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); white-space: nowrap; text-decoration: none; transition: color .12s ease, border-color .12s ease; }
+.mk-claim__door:hover, .mk-claim__door:focus-visible { color: var(--fg); border-color: var(--accent); outline: none; }
+.mk-claim__door span { color: var(--accent); }
+.mk-claim[data-compact] { grid-template-areas: "h1 door"; row-gap: 0; padding: 10px 0 4px; }
+.mk-claim[data-compact] .mk-claim__h1 { font-size: clamp(17px, 1.3vw, 20px); }
+.mk-claim[data-compact] .mk-claim__sub { display: none; }
+@media (pointer: coarse) { .mk-claim__door { min-height: 44px; } }
+@media (max-width: 640px) {
+  /* MOBILE's numbers (MOBILE.md § For SPLASH): the whole block ≤48px at 375 —
+     the h1 at 20px (Fraunces, ≤230px) + 12px + the door as a 13px link (91px)
+     = 333 of the 343px column, one line; at 320 the door takes its own line.
+     The 44px door sets the row; 4px over it, nothing under. */
+  .mk-claim, .mk-claim[data-compact] { display: flex; flex-wrap: wrap; align-items: center; gap: 0 12px; padding: 4px 0 0; }
+  .mk-claim__h1, .mk-claim[data-compact] .mk-claim__h1 { font-size: 20px; line-height: 1.1; flex: 1 1 auto; min-width: 0; }
+  .mk-claim__sub { display: none; }
+  /* a plain 13px link, not the mono pill: the pill's case, tracking, border
+     and padding were the 30px that pushed the door under the h1 at 375 */
+  .mk-claim__door { min-height: 44px; padding: 0; border: 0; font-family: inherit; font-size: 13px; letter-spacing: 0; text-transform: none; color: var(--fg); }
+}
+/* The two seats under it (contract: margins only here — the pulse band and
+   the guide card own their own boxes). MOBILE's rhythm: 12px, like the session
+   strip's; and an EMPTY seat (GuideSeat renders null when no hint applies)
+   leaves no 12px hole. */
+.mk-lead-seat:not(:empty) { margin-top: 12px; }
+.mk-guide-seat:not(:empty) { margin-top: 12px; }

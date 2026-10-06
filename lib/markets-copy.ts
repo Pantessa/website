@@ -26,6 +26,31 @@ export const HOME_TITLE = `Pantessa — ${HERO_LINE}`
 export const HOME_DESCRIPTION =
   'Live charts for tokenized stocks (24/7 on Robinhood Chain), crypto spot and Hyperliquid perps — and every chart is the order form. Buy, sell or protect from a chip; Pantessa builds the guarded transaction, your own wallet signs. Unlimited watchlists and alerts, free.'
 
+// ── THE SPLASH (squad front-door, 2026-10-06) — `/` is the app ────────────
+// Nate: "the landing page falls a bit flat … put the user directly on the
+// app right away". The markets index renders at `/` in the app shell, with
+// the live pulse on top; the brochure moved to /story. A visitor landing
+// cold still has to know in one glance what this is, so the splash opens on
+// a claim block: HERO_LINE as the page's visible h1, ONE sentence under it
+// (every phrase below is HERO_SUB's or HOME_DESCRIPTION's — no new slogan),
+// and the door to the story. The words live here so the harness, the
+// social card and the page can never disagree.
+export const SPLASH = {
+  /** The claim — the page's h1, visible (the roster pin reads it on `/`). */
+  h1: HERO_LINE,
+  /** One sentence, from HERO_SUB + HOME_DESCRIPTION. Hidden on a phone
+   *  (one line + the door there); still in the server HTML for a crawler. */
+  sub: 'Stocks 24/7, perps, spot and yield in one wallet — every chart is the order form, and you keep the pen.',
+  /** The door to the long-form story. */
+  door: 'What is this?',
+  /** /story's own <title> + description + the line back to the app. */
+  storyTitle: 'Pantessa — the story behind the chart that executes',
+  storyDescription:
+    'Why a chart should execute: the rehearsing chart, every dapp around one symbol, receipt-grade numbers, their meters against ours, and the links economy — the long-form story behind Pantessa.',
+  storyTopline: 'You are reading the story. The app is one tap away',
+  storyToplineCta: 'Open Pantessa',
+} as const
+
 /** The value line against a metered charting subscription. Never add a cap. */
 export const UNLIMITED_LINE = 'Unlimited watchlists · unlimited tickers · unlimited alerts · free'
 

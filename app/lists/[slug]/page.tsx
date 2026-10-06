@@ -11,6 +11,7 @@ import { publicWatchlistBySlug } from '@/lib/watchlists-store'
 import ShareActions from '@/components/ShareActions'
 import { listPost } from '@/lib/share-posts'
 import { absoluteUrl } from '@/lib/site-url'
+import { MARKETS_HREF } from '@/lib/markets'
 
 // /lists/<slug> — a shared watchlist as a social object (BUSINESS-MODEL
 // §4: shareable, followable, forkable, free). Server-rendered with live
@@ -96,7 +97,7 @@ export default async function PublicListPage({ params }: Params) {
           <p className="lists__foot">
             Follow copies these symbols into your own lists — unlimited lists, tickers and alerts, free at every tier.
             Every row opens its live chart; a Buy chip prefills one sentence in chat, and nothing moves until your wallet signs.{' '}
-            <SpineLink href="/markets" className="wl__link">
+            <SpineLink href={MARKETS_HREF} className="wl__link">
               Markets →
             </SpineLink>
           </p>

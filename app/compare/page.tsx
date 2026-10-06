@@ -17,6 +17,7 @@ import {
   UNLIMITED_LINE,
 } from '@/lib/markets-copy'
 import { SWAP_FEE_PCT } from '@/lib/fees'
+import { MARKETS_HREF } from '@/lib/markets'
 
 /** /compare — their meters vs ours, said plainly. TradingView is NAMED here
  * (comparative, factual, their public pricing page on a stated date) and
@@ -162,13 +163,13 @@ export default function ComparePage() {
 
           {/* ── the doors ── */}
           <div className="cmp__ctas">
-            <SpineLink className="btn btn--solid" href="/markets">
+            <SpineLink className="btn btn--solid" href={MARKETS_HREF}>
               Open Markets
             </SpineLink>
             <SpineLink className="btn btn--ghost" href="/t/AAPL">
               See the AAPL chart
             </SpineLink>
-            <SpineLink className="btn btn--ghost" href="/markets?import=1">
+            <SpineLink className="btn btn--ghost" href={`${MARKETS_HREF}?import=1`}>
               {TV_IMPORT.cta}
             </SpineLink>
           </div>

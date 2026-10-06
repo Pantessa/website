@@ -18,10 +18,13 @@ export const revalidate = 3600
 // blog — and nothing links-first was indexed (squad gtm, L-1).
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const entries: MetadataRoute.Sitemap = [
-    { url: SITE, changeFrequency: 'weekly', priority: 1 },
-    // MARKETS (2026-09-11): the chart is the front door — the index, the
-    // comparison page, and one /t/<sym> per CHARTABLE symbol below.
-    { url: `${SITE}/markets`, changeFrequency: 'hourly', priority: 0.9 },
+    // THE FRONT DOOR (squad front-door, 2026-10-06): `/` IS the markets index
+    // now (hourly — the boards move), /story is the brochure behind it, and
+    // /markets is a redirect: a crawler is never handed a 308 to follow.
+    { url: SITE, changeFrequency: 'hourly', priority: 1 },
+    { url: `${SITE}/story`, changeFrequency: 'weekly', priority: 0.8 },
+    // MARKETS (2026-09-11): the chart is the front door — the comparison
+    // page, and one /t/<sym> per CHARTABLE symbol below.
     { url: `${SITE}/compare`, changeFrequency: 'monthly', priority: 0.7 },
     { url: `${SITE}/links`, changeFrequency: 'daily', priority: 0.9 },
     { url: `${SITE}/links/embed`, changeFrequency: 'monthly', priority: 0.7 },

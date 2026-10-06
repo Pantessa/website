@@ -18,6 +18,7 @@
 
 import { X_MENTION } from '@/lib/social'
 import { SITE_URL, absoluteUrl } from '@/lib/site-url'
+import { MARKETS_HREF } from '@/lib/markets'
 
 /** ?via= values the door accepts (mirrors lib/share-receipts VIA_RE). */
 export const SHARE_VIA_RE = /^[a-z0-9]{4,16}$/
@@ -97,7 +98,7 @@ export function symbolPost(symbol: string, opts?: { name?: string; changePct?: n
 /** The markets index. */
 export function marketsPost(): SharePost {
   return {
-    url: absoluteUrl('/markets'),
+    url: absoluteUrl(MARKETS_HREF),
     title: 'Pantessa Markets',
     text: `Stocks 24/7, crypto and perps on one board, and every row is an order form. Watchlists and alerts are free. Via ${X_MENTION}:`,
   }

@@ -34,9 +34,6 @@ export default function NotFound() {
           <Link href="/" className={`${chip} border-[var(--accent)]`}>
             Home
           </Link>
-          <Link href="/markets" className={chip}>
-            Markets
-          </Link>
           <SpineLink href="/chat" className={chip}>
             Open the app
           </SpineLink>

@@ -405,6 +405,18 @@ export function isMarketsPath(pathname: string): boolean {
   return pathname === '/' || pathname === '/markets' || pathname.startsWith('/markets/') || pathname.startsWith('/t/') || pathname === '/live'
 }
 
+/** Where "Markets" lives: the splash at `/` (squad front-door, 2026-10-06).
+ *  Every link to the index in the product reads this — the nav tab, the
+ *  footer, the phone CTA bar, the brochure's "Open Markets" doors, the 404
+ *  chips, the share post, the breadcrumbs, the manifest's start_url — so
+ *  the index can move once more without a grep. `/markets` itself keeps
+ *  redirecting here (next.config): it is the URL already in the world. */
+export const MARKETS_HREF = '/'
+
+/** The brochure that used to be `/` — the long-form story behind the
+ *  splash, reached from the claim's "What is this?" door and the footer. */
+export const STORY_HREF = '/story'
+
 // ── MK2 (2026-09-15): compare mode, the range bar, the terminal table, trending ──
 
 /** `?vs=<symbol>` — the second symbol overlaid on the chart (MARKETS URL

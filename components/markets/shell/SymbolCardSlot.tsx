@@ -8,7 +8,7 @@
 import Link from 'next/link'
 import type { ChartPair } from '@/lib/charts'
 import { CHART_FEED_LABELS, type ChartFeed } from '@/lib/charts'
-import { sessionState, symbolName, venueLabel } from '@/lib/markets'
+import { sessionState, symbolName, venueLabel, MARKETS_HREF } from '@/lib/markets'
 
 export default function SymbolCardSlot({
   symbol,
@@ -47,7 +47,7 @@ export default function SymbolCardSlot({
       </dl>
       <p className="mkt-card__note">
         Headlines pinned to bars and performance tiles land here this round.{' '}
-        <Link href="/markets" className="mkt-link">
+        <Link href={MARKETS_HREF} className="mkt-link">
           All markets →
         </Link>
       </p>

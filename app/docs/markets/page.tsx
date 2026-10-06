@@ -15,6 +15,7 @@ import {
 } from '@/lib/markets-copy'
 import { SWAP_FEE_PCT } from '@/lib/fees'
 import { SITE_CARD } from '@/lib/og-defaults'
+import { MARKETS_HREF } from '@/lib/markets'
 
 // Markets — what the chart can do, said for a user. Every ask on this page is
 // a prefill (?prompt= never auto-sends — the #493 doctrine); in the app the
@@ -44,7 +45,7 @@ export default function MarketsDocsPage() {
       </p>
       <h1 className="docs__h1">Markets: the chart that executes</h1>
       <p className="docs__lead">
-        <SpineLink href="/markets">Markets</SpineLink> is a chart surface where the chart is the order form. Open{' '}
+        <SpineLink href={MARKETS_HREF}>Markets</SpineLink> is a chart surface where the chart is the order form. Open{' '}
         <SpineLink href="/t/AAPL">/t/AAPL</SpineLink> and you get the live tape; press a chip and Pantessa builds the guarded
         transaction behind it — your own wallet signs, or declines. Tokenized stocks trade 24/7 on Robinhood Chain
         next to crypto spot and Hyperliquid perps, in one wallet. <strong>{UNLIMITED_LINE}.</strong>

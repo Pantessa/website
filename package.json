@@ -56,6 +56,7 @@
     "pins:battle": "tsx scripts/battle-pins.ts",
     "pins:guide": "tsx scripts/guide-pins.ts",
     "pins:pulse": "tsx scripts/pulse-pins.ts",
+    "pins:front-door": "tsx scripts/front-door-pins.ts",
     "drive:mobile-ux": "tsx scripts/drive-mobile-ux.ts",
     "drive:mobile-connect": "tsx scripts/drive-mobile-connect.ts",
     "drive:mobile-sign": "tsx scripts/drive-mobile-sign.ts",

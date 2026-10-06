@@ -24,7 +24,7 @@ import { getProtocolMark } from '@/components/protocol-marks'
 import { fmtPrice } from '@/components/CandleChart'
 import { chartPairFor } from '@/lib/charts'
 import { HERO_LINE, HERO_REEL, LANDING_EYEBROW, LANDING_LEDE, REEL_STAMP, type ReelBeat } from '@/lib/markets-copy'
-import { symbolName, venueLabel } from '@/lib/markets'
+import { symbolName, venueLabel, MARKETS_HREF } from '@/lib/markets'
 import { useAskDoor } from '@/lib/ask-door'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
 
@@ -140,7 +140,7 @@ export default function LandingHero() {
           <h1 className="lh__h1">{heroLead ? `${heroLead} ` : ''}{heroLead && <br />}<em>{heroTail}</em></h1>
           <p className="lh__lede">{LANDING_LEDE}</p>
           <div className="lh__ctas">
-            <SpineLink className="btn btn--solid" href="/markets">
+            <SpineLink className="btn btn--solid" href={MARKETS_HREF}>
               Open Markets
             </SpineLink>
             <SpineLink className="btn btn--ghost" href={`/t/${symbol}`}>
