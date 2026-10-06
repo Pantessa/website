@@ -158,7 +158,7 @@ export function prependHistory(older: Candle[], history: Candle[], cap: number):
   return { bars: add.length ? add.concat(history) : history, added: add.length, full: history.length + add.length >= cap }
 }
 
-export type OverlayKey = 'sma20' | 'sma50' | 'sma200' | 'ema20' | 'bb' | 'vwap' | 'vp'
+export type OverlayKey = 'sma20' | 'sma50' | 'sma200' | 'ema20' | 'bb' | 'vwap' | 'vp' | 'wall'
 
 /** The overlay bar, in order. `swatch` is the toggle's legend color: the same
  *  token the canvas paints that line with (MarketChart readTokens), so the
@@ -171,8 +171,11 @@ export const OVERLAYS: { key: OverlayKey; label: string; title: string; swatch: 
   { key: 'bb', label: 'BB', title: 'Bollinger bands (20, 2σ)', swatch: 'var(--muted-2)' },
   { key: 'vwap', label: 'VWAP', title: 'Volume-weighted average price over the loaded bars', swatch: 'var(--sell)' },
   { key: 'vp', label: 'VP', title: 'Volume profile — the bars on screen binned by price, drawn at the right edge; the brightest row is where most volume traded', swatch: 'var(--mk-flat)' },
+  // The symbol page only (MarketChart offers it with the Battlefield). While it
+  // draws it absorbs the volume profile as a grey underlay on each rung.
+  { key: 'wall', label: 'WALL', title: 'The Wall — every dollar standing at each price, on the right margin: resting orders on Coinbase and Hyperliquid (solid, live), estimated liquidation clusters (hatched), and what the bars on screen traded there (grey)', swatch: 'var(--mk-up, var(--accent))' },
 ]
 
 /** The symbol page opens on the trend pair: the 50 (blue) and the 200
  *  (yellow). The chat's chart overlay keeps a clean tape. */
-export const DEFAULT_SYMBOL_OVERLAYS: OverlayKey[] = ['sma50', 'sma200', 'vp']
+export const DEFAULT_SYMBOL_OVERLAYS: OverlayKey[] = ['sma50', 'sma200', 'vp', 'wall']

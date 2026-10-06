@@ -157,3 +157,16 @@ button.bf__chip:hover { border-color: var(--line-2, var(--fg)); }
   .poshet__key, .poshet__k { display: none; }
   .poshet .bf__heat { --hc: 10px; }
 }
+
+/* The Wall (TheWall.tsx): the ladder on the right margin, and its key under the plot. */
+.wall { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.wall__canvas { position: absolute; inset: 0; display: block; }
+.wall__tip { width: 264px; }
+.wall-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 14px; margin: 4px 0 0; padding: 0 2px; font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted-2); }
+.wall-legend b { font-weight: 600; letter-spacing: 0.14em; color: var(--fg); }
+.wall-legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.wall-legend i { display: inline-block; width: 14px; height: 7px; border-radius: 1px; }
+.wall-legend__solid { background: linear-gradient(90deg, var(--mk-up, var(--accent)) 50%, var(--mk-down, var(--sell)) 50%); }
+.wall-legend__hatch { background: repeating-linear-gradient(45deg, color-mix(in oklch, var(--mk-up, var(--accent)) 80%, transparent) 0 2px, transparent 2px 4px); border: 1px solid color-mix(in oklch, var(--fg) 25%, transparent); }
+.wall-legend__traded { background: color-mix(in oklch, var(--muted-2) 40%, transparent); }
+@media (max-width: 640px) { .wall-legend span:last-child { display: none; } }
