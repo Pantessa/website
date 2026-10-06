@@ -151,12 +151,14 @@ export async function frontDoorPins(check: Check): Promise<void> {
   const rule = (sel: string) => (css.match(new RegExp(`^${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`, 'm')) ?? ['', ''])[1]
   const marginsOnly = (body: string) => body.trim().length > 0 && body.split(';').map((d) => d.trim()).filter(Boolean).every((d) => /^margin(-top|-bottom)?:/.test(d))
   check(
-    'front door: markets.css carries the claim block (≤72px by construction: 12px + 27px h1 + 3px + 17px sentence + 8px), hides the sentence on a phone and in the compact version, and the two seat classes carry MARGINS ONLY and only when filled (`:not(:empty)` — an empty guide seat leaves no hole; the pulse band and the guide card own their boxes)',
+    'front door: markets.css carries the claim block (≤72px by construction: 12px + 27px h1 + 3px + 17px sentence + 8px), hides the sentence on a phone and in the compact version, the two seat classes carry MARGINS ONLY and only when filled (`:not(:empty)` — an empty guide seat leaves no hole), and the gap above the seated pulse band is the seat\'s alone at every width (`.mk-lead-seat .pulse { margin-top: 0 }` — the band\'s own margin never collapsed through its size-container wrapper: 24px, R3)',
     /padding: 12px 0 8px/.test(rule('.mk-claim')) && /font-size: clamp\(21px, 1\.9vw, 27px\)/.test(rule('.mk-claim__h1')) && /line-height: 1\.02/.test(rule('.mk-claim__h1')) &&
       /font-size: 12\.5px; line-height: 1\.4/.test(rule('.mk-claim__sub')) &&
       /\.mk-claim\[data-compact\] \.mk-claim__sub \{ display: none; \}/.test(css) &&
       /@media \(max-width: 640px\) \{[^}]*\n(?:[^}]*\}\s*)*?\s*\.mk-claim__sub \{ display: none; \}/.test(css) &&
-      marginsOnly(rule('.mk-lead-seat:not(:empty)')) && marginsOnly(rule('.mk-guide-seat:not(:empty)')) && !/^\.mk-(?:lead|guide)-seat \{/m.test(css),
+      marginsOnly(rule('.mk-lead-seat:not(:empty)')) && marginsOnly(rule('.mk-guide-seat:not(:empty)')) && !/^\.mk-(?:lead|guide)-seat \{/m.test(css) &&
+      // R3: one gap above the band at EVERY width — the seat owns it; the seated band's own margin is zeroed at top level (unindented = outside any media query)
+      /^\.mk-lead-seat \.pulse \{ margin-top: 0; \}$/m.test(css),
   )
 
   // ── The arrival fence admits the splash ───────────────────────────────
@@ -278,6 +280,17 @@ export async function frontDoorHttpPins(check: Check, base: string): Promise<voi
     [rootCard, rootTw].every((c) => c.status === 200 && /image\/png/.test(c.type) && c.isPng && c.bytes >= 60_000) &&
       [storyCard, storyTw].every((c) => c.status === 200 && /image\/png/.test(c.type) && c.isPng && c.bytes > 20_000),
     JSON.stringify({ root: rootCard.bytes, rootTw: rootTw.bytes, story: storyCard.bytes, storyTw: storyTw.bytes }),
+  )
+  // The served CSS carries the seat-owns-the-gap rule (a comment slip or a media
+  // nest would hide it from the page while the source pin stayed green).
+  const sheets = [...home.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map((m) => m[1])
+  const servedCss = (await Promise.all(sheets.map((h) => get(h.startsWith('http') ? h.replace(/^https?:\/\/[^/]+/, '') : h).then((r) => r.text()).catch(() => '')))).join('\n')
+  check(
+    'front door (served, R3): the page\'s stylesheets carry `.mk-lead-seat .pulse{margin-top:0}` at top level — the seat owns the one 12px gap above the band at every width',
+    // top level = not the first rule inside a `{`-opened media block (MOBILE's 640px copy); the minifier merges the two
+    // seat rules into one selector list, so the seat margin is read as `.mk-lead-seat:not(:empty)[,…]{margin-top:12px}`
+    sheets.length > 0 && /(?<![{,])\.mk-lead-seat \.pulse\{margin-top:0\}/.test(servedCss) && /\.mk-lead-seat:not\(:empty\)(?:,[^{}]*)?\{margin-top:12px\}/.test(servedCss),
+    `sheets=${sheets.length} rule=${/(?<![{,])\.mk-lead-seat \.pulse\{margin-top:0\}/.test(servedCss)} seat=${/\.mk-lead-seat:not\(:empty\)(?:,[^{}]*)?\{margin-top:12px\}/.test(servedCss)}`,
   )
   const live = flat(await text('/live'))
   const [liveCard, liveTw] = await Promise.all([png('/live/opengraph-image'), png('/live/twitter-image')])
