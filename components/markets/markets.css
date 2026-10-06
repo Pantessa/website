@@ -364,6 +364,8 @@ button.mk-held:hover { border-color: var(--accent); }
   .sym .mkt-perf:not(.mkt-perf--compact) .mkt-perf__note { grid-column: 1 / -1; }
   .sym .tchart:not(.tchart--expanded) { height: auto; }
   .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas { flex: 0 0 auto; height: 260px; }
+  /* The battlefield carries a sky and a two-row strip: it needs the height. */
+  .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas.is-field { height: 380px; }
   /* Its controls in two rows, not four (44px each at a thumb's size): the
      timeframes with the live badge + full screen on the right, then the
      overlays (their own sideways scroller) beside the drawing tools. A stock's
@@ -447,3 +449,9 @@ button.mk-held:hover { border-color: var(--accent); }
 .wl__sheetTitle { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .wl__sheetTitleText { display: flex; flex-direction: column; min-width: 0; }
 .wl__sheetTitleText > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The battlefield is a field, a sky over it and a two-row strip under it: the
+   chart card grows to hold them (the candles keep their own height). */
+@media (min-width: 641px) {
+  .sym .tchart:not(.tchart--expanded):has(.mkt-chart__canvas.is-field) { height: clamp(600px, 74dvh, 780px); }
+}

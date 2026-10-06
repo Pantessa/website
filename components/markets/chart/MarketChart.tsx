@@ -1271,7 +1271,7 @@ export default function MarketChart({
 
       {/* Canvas: the engine owns the bars; the SVG layer owns the drawings. */}
       <div
-        className={`mkt-chart__canvas${tool !== 'none' ? ' is-drawing' : ''}${fill ? ' min-h-0 flex-1' : ''}`}
+        className={`mkt-chart__canvas${tool !== 'none' ? ' is-drawing' : ''}${fieldOn ? ' is-field' : ''}${fill ? ' min-h-0 flex-1' : ''}`}
         style={fill ? undefined : { height: heightProp }}
         onPointerEnter={() => {
           overRef.current = true
@@ -1352,7 +1352,7 @@ export default function MarketChart({
             )}
           </div>
         )}
-        {fieldOn && tokens && <BattleField symbol={pair.symbol} tf={tf} bars={fieldBars} tokens={tokens} lines={lines} fills={fills} sma50={fieldSma.s50} sma200={fieldSma.s200} />}
+        {fieldOn && tokens && <BattleField symbol={pair.symbol} pair={pair} onAsk={onAsk} canAsk={(ask) => canTradeAsk(ask, tradable)} tf={tf} bars={fieldBars} tokens={tokens} lines={lines} fills={fills} sma50={fieldSma.s50} sma200={fieldSma.s200} />}
         {!fieldOn && <DrawingLayer
           geom={geom}
           lines={lines}
