@@ -29,6 +29,8 @@ import { useHydrated } from '@/lib/use-hydrated'
 import { bootHoldingFor, initialHoldElapsed } from '@/lib/wallet-reconnect'
 import { APP_CHAINS } from '@/lib/chains'
 import { WALLET_PAGE_HREF } from '@/lib/wallet-page'
+import EmptyDoor from '@/components/guide/EmptyDoor'
+import { WALLET_DOOR } from '@/lib/first-run'
 import { AskDoorTrigger } from '@/components/AskDoor'
 import './wallet-phone.css'
 
@@ -67,35 +69,37 @@ function Skeleton() {
   )
 }
 
-/** Nothing connected: the unified door's connect-only lane (rule 6). */
+/** Nothing connected: the unified door's connect-only lane (rule 6), on the
+ *  empty door every spine tab shares (squad pre-gtm): the mark, what this
+ *  window shows once a wallet is here, and the one action. */
 function ConnectDoor() {
-  const cta = 'btn btn--solid inline-flex items-center justify-center gap-2 h-[46px] px-6 rounded-full text-[14px]'
+  const cta = 'door__cta'
   return (
-    <div data-wallet-door className="mx-auto mt-4 sm:mt-10 max-w-[560px] rounded-2xl border border-[var(--line-2)] bg-[var(--surf-1)] px-6 py-9 text-center">
-      <span className="mx-auto w-12 h-12 grid place-items-center rounded-xl bg-black/40 border border-[var(--line)] text-[color:var(--accent)]">
-        <Wallet className="w-6 h-6" strokeWidth={2.25} />
-      </span>
-      <h2 className="mt-4 text-[22px] font-semibold tracking-tight text-[color:var(--fg)]">Your wallet, on every chain</h2>
-      <p className="mt-2 text-[13.5px] leading-relaxed text-[color:var(--muted)]">
-        Connect a wallet, or create one with Google or email. This page shows what it holds on {CHAIN_WORDS}: priced, with the gas on each chain, recent transfers, and the ways to add, send and receive.
-      </p>
-      <p className="mt-2 text-[12px] text-[color:var(--muted-2)]">Looking takes no signature. Moving money takes yours.</p>
-      <div className="mt-6 flex justify-center">
-        {cdpEnabled ? (
-          <CreateAccountButton
-            walletConnectOnly
-            redirectTo={WALLET_PAGE_HREF}
-            className={cta}
-            label={
-              <>
-                Connect a wallet <ArrowRight className="w-4 h-4" />
-              </>
-            }
-          />
-        ) : (
-          <AuthButton redirectTo={WALLET_PAGE_HREF} />
-        )}
-      </div>
+    <div data-wallet-door className="mx-auto mt-4 sm:mt-10 max-w-[560px]">
+      <EmptyDoor
+        id="wallet"
+        eyebrow={WALLET_DOOR.eyebrow}
+        title={WALLET_DOOR.title}
+        body={<>Connect a wallet, or make one with Google or email. This page shows what it holds on {CHAIN_WORDS}.</>}
+        lines={WALLET_DOOR.lines}
+        primary={{
+          kind: 'node',
+          node: cdpEnabled ? (
+            <CreateAccountButton
+              walletConnectOnly
+              redirectTo={WALLET_PAGE_HREF}
+              className={cta}
+              label={
+                <>
+                  Connect a wallet <ArrowRight className="w-4 h-4" />
+                </>
+              }
+            />
+          ) : (
+            <AuthButton redirectTo={WALLET_PAGE_HREF} />
+          ),
+        }}
+      />
     </div>
   )
 }
