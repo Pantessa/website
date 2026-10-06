@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from 'next/server'
+import { asksAboutOwnWallet, OWN_WALLET_SIGN_IN_REPLY } from '@/lib/own-wallet-read'
 import { fenceToolOutput, toolOutputNonce, toolOutputRule } from '@/lib/tool-output-fence'
 import { contentOriginOf, hardenReportForOrigin, isThirdPartyOrigin, outboundToThirdParty, rawAddressTokenRefusal, type ContentOrigin } from '@/lib/content-origin'
 import { attachFundsSnapshot, classifyTurn, moneyShaped, recordAskFailure } from '@/lib/ask-failure'
@@ -2437,6 +2438,20 @@ async function handleChatTurn(req: NextRequest) {
           buildPath: 'native-intent-net',
         })
       }
+    }
+
+    // ── Own-wallet reads with no wallet ── "what's in my wallet?" has nothing
+    //    to read until an address lands: the planner skipped the wallet call
+    //    ($USER_ADDRESS unset) and the house model promised a fetch that never
+    //    came. Answer with the sign-in door; the ask re-runs on connect.
+    if (!walletAddress && asksAboutOwnWallet(message)) {
+      nativeTrace({ type: 'note', level: 'info', label: 'own-wallet read with no wallet connected — offering sign-in, ask held' })
+      return NextResponse.json({
+        reply: OWN_WALLET_SIGN_IN_REPLY,
+        connectWallet: true,
+        connectAsk: message,
+        connectLabel: 'Sign in to see your wallet',
+      })
     }
 
     // Need an inference provider to phrase an answer. With none selected, fall

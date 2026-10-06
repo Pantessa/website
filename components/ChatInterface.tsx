@@ -1369,6 +1369,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           meta: {
             ...buildMeta(data.receipts, data.payer, data.voteRequest, data.voteCandidates, undefined, undefined, data.voteProposal, data.orderRequest, data.guardrails, data.txRequest, data.workingContext, data.txChain, data.clarify, data.connectWallet, userMsg, data.portfolio, data.buildPath, data.jobId, data.guardianPolicyId, data.jobToken, data.nfts, data.nftMarket, data.dcaArm, data.spotGuardArm, data.guardWarnings, data.builtBy, data.signInGate, userMsg),
             ...(echoed.length ? { addedApps: echoed } : {}),
+            // The connect door's own words when the route names them ("Sign
+            // in to see your wallet" on an own-wallet read).
+            ...(data.connectWallet === true && typeof data.connectLabel === 'string' && data.connectLabel ? { connectLabel: data.connectLabel.slice(0, 60) } : {}),
           },
         })
         // A reply that only said "connect your wallet" answered nothing —
@@ -2658,12 +2661,13 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                       !effectiveAddress && (
                         (() => {
                           const connectAsk = (msg.meta as { connectAsk?: string } | undefined)?.connectAsk ?? ''
+                          const connectLabel = (msg.meta as { connectLabel?: string } | undefined)?.connectLabel
                           const cls =
                             'mt-2 inline-flex items-center gap-2 px-4 h-10 rounded-full bg-[color:var(--accent)] text-black text-[13.5px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-60'
                           const label = (
                             <>
                               <Zap className="w-3.5 h-3.5" />
-                              {pendingConnectAsk !== null ? 'Connecting…' : connectMissed ? 'Try connecting again' : 'Connect wallet to continue'}
+                              {pendingConnectAsk !== null ? 'Connecting…' : connectMissed ? 'Try connecting again' : connectLabel || 'Connect wallet to continue'}
                             </>
                           )
                           // Only the newest connect gate carries the miss line —

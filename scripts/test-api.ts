@@ -548,6 +548,7 @@ import { rescueIntent } from '../lib/intent-rescue'
 import { missingSlotChips } from '../lib/cross-chain-swap'
 import { crossChainAskSentence } from '../lib/cross-chain-swap'
 import { PRIVATE_LANE_CLOSED_NOTE, privateLaneClosedTurn, privateLaneOpen, privateRefundCheck, refundDisclosureLine } from '../lib/private-lane'
+import { asksAboutOwnWallet } from '../lib/own-wallet-read'
 import { guardNearValueLeg, nearHoodFundingEnabled, NEAR_ORIGIN_WORD, NEAR_STEP_MAX_TTL_SEC, type NearValueLegExpectations } from '../lib/near-fund-leg'
 import {
   claimsSettled,
@@ -34588,6 +34589,19 @@ async function main() {
   tapePins(check)
   // The battle views on /live (2026-10-06): windows and anchors, the percent track, the range, units, bursts, rank, the picker, the projections.
   battlePins(check)
+  // Own-wallet reads with no wallet (2026-10-06, the /live ask door): the
+  // sign-in door, never a planner promise to "fetch your tokens".
+  {
+    const own = ["What's in my wallet?", 'whats in my portfolio', 'show my holdings', 'what do I hold', 'how much ETH do I have', 'my NFTs', 'What’s my balance on base']
+    const notOwn = ["what's in 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045's wallet", 'what does vitalik.eth hold', 'price of ETH', 'Buy $25 of ETH', 'what is a wallet']
+    check('own wallet: the asker\'s own-wallet reads are read as such', own.every(asksAboutOwnWallet), own.filter((q) => !asksAboutOwnWallet(q)).join(' · '))
+    check('own wallet: someone else\'s address, a price, a buy and a definition are not', notOwn.every((q) => !asksAboutOwnWallet(q)), notOwn.filter(asksAboutOwnWallet).join(' · '))
+    const r = await fetch(`${BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-yf-internal-run': '1', 'x-yf-no-ask-log': '1' }, body: JSON.stringify({ message: "What's in my wallet?", history: [], activeServers: [] }) })
+    const j = (await r.json().catch(() => ({}))) as { reply?: string; connectWallet?: boolean; connectAsk?: string; connectLabel?: string }
+    check('own wallet (route): no wallet → the sign-in door with the ask held, no planner turn',
+      j.connectWallet === true && j.connectAsk === "What's in my wallet?" && j.connectLabel === 'Sign in to see your wallet' && /Sign in/.test(j.reply ?? ''),
+      JSON.stringify(j).slice(0, 200))
+  }
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)
