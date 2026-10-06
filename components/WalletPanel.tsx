@@ -78,6 +78,7 @@ import { useAnnouncedWalletName } from '@/lib/use-wallet-name'
 import TokenIcon from '@/components/TokenIcon'
 import Sheet from '@/components/mobile/Sheet'
 import { isPhoneViewport } from '@/lib/phone-shell'
+import { friendlyError } from '@/lib/friendly-error'
 import { cn } from '@/lib/utils'
 import './wallet-phone.css'
 
@@ -442,7 +443,7 @@ export function WalletDetails({
         }
         setView(data)
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Could not read the wallet.')
+        setError(friendlyError(e, 'Could not read the wallet.'))
       } finally {
         setLoading(false)
       }

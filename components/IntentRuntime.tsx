@@ -52,6 +52,7 @@ import { beaconsAlreadyPosted, readLinkRun, reconcileWithSignOutcome, returnCopy
 import { readSignOutcome, signOutcomeKey } from '@/lib/sign-round-trip'
 import { txChainOf, txRequestOf } from '@/lib/transaction-layer'
 import { chainById } from '@/lib/chains'
+import { friendlyError } from '@/lib/friendly-error'
 
 const STATIC_SERVERS: McpServer[] = [...FREE_FLEET_FALLBACK, ...CATALOG]
 
@@ -165,7 +166,7 @@ export default function IntentRuntime({
       await declineCard(slug, address, signMessageAsync)
       setDeclined(true)
     } catch (e) {
-      setDeclineError((e as Error).message)
+      setDeclineError(friendlyError(e, 'Could not decline it. Try again.'))
     } finally {
       setDeclining(false)
     }
