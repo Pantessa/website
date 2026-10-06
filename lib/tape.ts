@@ -169,6 +169,19 @@ export function pickTapeMarkets(main: readonly UniverseRow[], xyz: readonly Univ
   return [...mainPick, ...xyzPick]
 }
 
+/** Re-aiming a live subscription: what to subscribe and what to drop to go
+ *  from one market list to another, in the venue's own names. Order kept,
+ *  duplicates ignored. The splash's pulse (lib/pulse) opens on its fallback
+ *  list and re-aims the SAME socket when the venue's pick answers. */
+export function subscriptionDelta(prev: readonly string[], next: readonly string[]): { add: string[]; drop: string[] } {
+  const was = new Set(prev)
+  const want = new Set(next)
+  return {
+    add: [...want].filter((m) => !was.has(m)),
+    drop: [...was].filter((m) => !want.has(m)),
+  }
+}
+
 /** What the page runs on when the universe read fails (the venue's biggest
  *  books, 2026-10-06, and the xyz stocks Dune's own clip showed). */
 export const FALLBACK_MARKETS: readonly string[] = ['BTC', 'ETH', 'HYPE', 'SOL', 'XRP', 'DOGE', 'UNI', 'AAVE', 'NEAR', 'SUI', 'xyz:TSLA', 'xyz:NVDA', 'xyz:INTC', 'xyz:SNDK', 'xyz:AAPL', 'xyz:HOOD']
@@ -280,6 +293,17 @@ export const TAPE_MAX_FILLS = 4_000
  * (a client clock behind the venue's) is kept — the venue's clock rules.
  */
 export function mergeFills(buffer: readonly TapeFill[], incoming: readonly TapeFill[], nowMs: number): TapeFill[] {
+  return mergeFillsWithin(buffer, incoming, nowMs, TAPE_KEEP_MS, TAPE_MAX_FILLS)
+}
+
+/**
+ * The same merge with the caller's own keep window and cap. The splash's
+ * pulse band (lib/pulse, 2026-10-06) draws a 90s chart from a 12-market
+ * pick that measured 47 fills/s — the tape's 4,000-fill cap covers ~85s of
+ * that, so it keeps a shorter window with a deeper cap. /live keeps calling
+ * mergeFills; this is additive.
+ */
+export function mergeFillsWithin(buffer: readonly TapeFill[], incoming: readonly TapeFill[], nowMs: number, keepMs: number, maxFills: number): TapeFill[] {
   const seen = new Set(buffer.map((f) => f.id))
   const fresh: TapeFill[] = []
   for (const f of incoming) {
@@ -287,10 +311,10 @@ export function mergeFills(buffer: readonly TapeFill[], incoming: readonly TapeF
     seen.add(f.id) // a batch with its own duplicates is deduped too
     fresh.push(f)
   }
-  const floor = nowMs - TAPE_KEEP_MS
+  const floor = nowMs - keepMs
   const out = [...fresh, ...buffer].filter((f) => f.at >= floor)
   out.sort((a, b) => b.at - a.at || (a.id < b.id ? 1 : -1))
-  return out.length > TAPE_MAX_FILLS ? out.slice(0, TAPE_MAX_FILLS) : out
+  return out.length > maxFills ? out.slice(0, maxFills) : out
 }
 
 // ── Per-second flow ──────────────────────────────────────────────────────────
