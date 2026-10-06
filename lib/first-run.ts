@@ -81,5 +81,41 @@ export const I_STEPS: readonly { n: string; title: string; body: string }[] = [
   { n: '3', title: 'Sign it, or close the tab', body: 'your wallet is the only thing that can move money.' },
 ]
 
+/** The keep-it moment after the first signed receipt (components/guide/KeepItBar). */
+export const KEEP_IT = {
+  aria: 'Signed — keep this?',
+  title: 'Signed.',
+  receipt: 'receipt on-chain →',
+  body: 'That was the whole thing — your wallet signed, nothing else could. One more signature keeps this thread and your record on this wallet, on every device. Nothing moves.',
+  cta: 'Keep this — sign in',
+  busy: 'Waiting for your wallet…',
+  later: 'Not now',
+} as const
+
+/** The last signed receipt this browser produced in the chat (ChatInterface
+ *  reports it; ChatSignInGate reads it to turn its connected banner into the
+ *  keep-it moment). A tiny module store — no React at import time. */
+export interface SignedReceipt {
+  artifact: string
+  valueUsd?: number
+  txUrl?: string
+  at: number
+}
+let lastReceipt: SignedReceipt | null = null
+const receiptListeners = new Set<() => void>()
+export function noteSignedReceipt(r: Omit<SignedReceipt, 'at'>, now = Date.now()): void {
+  lastReceipt = { ...r, at: now }
+  for (const fn of receiptListeners) fn()
+}
+export function getSignedReceipt(): SignedReceipt | null {
+  return lastReceipt
+}
+export function subscribeSignedReceipt(fn: () => void): () => void {
+  receiptListeners.add(fn)
+  return () => {
+    receiptListeners.delete(fn)
+  }
+}
+
 /** Every ask a door offers — pinned through the ladder replica. */
 export const FIRST_RUN_ASKS: readonly string[] = [JOBS_DOOR.ask, LINKS_DOOR.exampleAsk]
