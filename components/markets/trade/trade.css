@@ -44,7 +44,7 @@
 .mkt-routes__groups { display: flex; flex-direction: column; gap: 26px; }
 .mkt-routes__group { display: flex; flex-direction: column; }
 .mkt-routes__kind { display: flex; align-items: baseline; gap: 10px; font-size: 10px; letter-spacing: 0.14em; color: var(--muted-2); padding: 0 0 10px; }
-.mkt-routes__kind-sub { letter-spacing: 0.02em; text-transform: none; color: var(--muted-2); opacity: 0.8; }
+.mkt-routes__kind-sub { letter-spacing: 0.02em; text-transform: none; color: var(--muted-2); } /* opacity .8 put it at 3.7:1 (pre-gtm POLISH r2) */
 .mkt-routes__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-top: 1px solid var(--line); }
 .mkt-route {
   display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; column-gap: 12px; row-gap: 6px; align-items: center;

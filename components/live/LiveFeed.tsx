@@ -233,14 +233,14 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
           <Tile
             k="Largest print · 60s"
             v={stats.largestPrint ? <span className="mono">{fmtUsd(stats.largestPrint.usd)}</span> : <span className="mono live__dim">—</span>}
-            sub={stats.largestPrint ? `${stats.largestPrint.market} · ${stats.largestPrint.side === 'buy' ? 'bought' : 'sold'} at ${fmtPrice(stats.largestPrint.price)}` : 'waiting for the first fill'}
+            sub={stats.largestPrint ? `${stats.largestPrint.market} · ${stats.largestPrint.side === 'buy' ? 'bought' : 'sold'} at ${fmtPrice(stats.largestPrint.price)}` : 'no fill yet'}
             chip={stats.largestPrint ? chipFor(stats.largestPrint) : null}
             onAct={act}
           />
           <Tile
             k="Hot market · 60s"
             v={stats.hotMarket ? <span className="mono">{stats.hotMarket.market}</span> : <span className="mono live__dim">—</span>}
-            sub={stats.hotMarket ? `${fmtUsd(stats.hotMarket.usd)} traded` : 'waiting for the first fill'}
+            sub={stats.hotMarket ? `${fmtUsd(stats.hotMarket.usd)} traded` : 'no fill yet'}
             chip={stats.hotMarket ? chipFor({ market: stats.hotMarket.market, side: stats.hotMarket.side }) : null}
             onAct={act}
           />
@@ -455,7 +455,10 @@ function FlowChart({ buckets, effectAware }: { buckets: FlowBucket[]; effectAwar
   const colW = n ? plotW / n : 0
   const barW = Math.max(1, colW - 1.5)
   const y = (usd: number) => PAD.t + plotH - (usd / max) * plotH
-  const ticks = [0.25, 0.5, 0.75, 1].map((f) => f * max)
+  // No fill in the window yet: no axis numbers (niceCeil(0) printed "1 1 1 0"),
+  // one quiet line instead (pre-gtm POLISH r2).
+  const empty = !buckets.some((b) => b.total > 0)
+  const ticks = empty ? [] : [0.25, 0.5, 0.75, 1].map((f) => f * max)
   // A time label every 15s when a label's 64px fits in 15 columns, else every 30s / 60s.
   const labelStep = colW * 15 >= 64 ? 15 : colW * 30 >= 64 ? 30 : 60
   const onMove = (e: React.MouseEvent) => {
@@ -478,6 +481,11 @@ function FlowChart({ buckets, effectAware }: { buckets: FlowBucket[]; effectAwar
             </g>
           ))}
           <line x1={PAD.l} x2={w - PAD.r} y1={y(0)} y2={y(0)} className="live__base" />
+          {empty && (
+            <text x={PAD.l + plotW / 2} y={PAD.t + plotH / 2} className="live__axis mono" textAnchor="middle">
+              waiting for the first fill
+            </text>
+          )}
           {buckets.map((b, i) => {
             if (!b.total) return null
             let acc = 0
