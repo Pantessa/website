@@ -607,7 +607,7 @@ export async function buildLifiSwap(params: LifiSwapParams): Promise<LifiBuilt> 
     ok: true,
     note:
       feeAtoms > BigInt(0)
-        ? `Pantessa fee: ${formatAtoms(feeAtoms.toString(), sellDec)} ${sellLabel} (${SWAP_FEE_BPS / 100}% of the input, below Uniswap's 0.25% interface fee) — its own visible transfer step to the Pantessa treasury.`
+        ? `Pantessa fee: ${formatAtoms(feeAtoms.toString(), sellDec)} ${sellLabel} (${SWAP_FEE_BPS / 100}% of the input) — its own visible transfer step to the Pantessa treasury.`
         : 'No Pantessa fee on this swap (amount below fee resolution).',
   }
   const allowanceCheck: GuardrailCheck = {
