@@ -65,6 +65,7 @@ import ChartLegend from './ChartLegend'
 import { awayFromLive, chartKey, markPlusHintSeen, plusHintSeen, tidyPrice, zoomedFrom } from '@/lib/chart-legend'
 import FrontBoard from './FrontBoard'
 import PositionHeat from './PositionHeat'
+import TheWall, { marginBarsFor, type WallStatus } from './TheWall'
 import { parseBoardParam, parseViewParam, syncViewParam, type BoardMode } from '@/lib/markets'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
@@ -269,6 +270,28 @@ export default function MarketChart({
   // The board the Battlefield shows; null = its own default. `?view=battlefield&board=spot`
   // opens straight onto it (a shared link), and the switch mirrors into the URL.
   const [board, setBoard] = useState<BoardMode | null>(null)
+  // The Wall on the right margin needs room: while it draws, the chart keeps
+  // enough bars right of the last candle for its pixels (lib/wall
+  // marginBarsFor) instead of RIGHT_OFFSET. The margin is a bar count in the
+  // engine, so every range change re-asks at the current bar spacing.
+  const [wallStatus, setWallStatus] = useState<WallStatus | null>(null)
+  const wallOn = battlefield && view === 'candles' && overlays.has('wall')
+  const wallPxRef = useRef(0)
+  wallPxRef.current = wallOn && wallStatus?.active ? wallStatus.px : 0
+  const marginRef = useRef(RIGHT_OFFSET)
+  const syncMargin = useCallback(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    const want = marginBarsFor(wallPxRef.current, chart.timeScale().options().barSpacing, RIGHT_OFFSET)
+    if (want === marginRef.current) return
+    marginRef.current = want
+    chart.applyOptions({ timeScale: { rightOffset: want } })
+  }, [])
+  const syncMarginRef = useRef(syncMargin)
+  syncMarginRef.current = syncMargin
+  useEffect(() => {
+    syncMargin()
+  }, [wallOn, wallStatus, syncMargin])
   const viewMirroredRef = useRef(false)
   useEffect(() => {
     if (!battlefield) return
@@ -417,7 +440,7 @@ export default function MarketChart({
       const ts = chart.timeScale()
       const view = ts.getVisibleLogicalRange()
       if (!view) return
-      const clamped = clampToFirstBar(view, drawn, RIGHT_OFFSET)
+      const clamped = clampToFirstBar(view, drawn, marginRef.current)
       if (clamped) ts.setVisibleLogicalRange({ from: clamped.from as Logical, to: clamped.to as Logical })
       if (wantsOlderBars(clamped ?? view, drawn)) void loadOlderRef.current()
       emitViewport(clamped ?? view)
@@ -655,6 +678,7 @@ export default function MarketChart({
     const hidePlus = () => plusRef.current?.classList.remove('is-on')
     const onRange = () => {
       bump()
+      syncMarginRef.current()
       requestGuard()
       const view = chart.timeScale().getVisibleLogicalRange()
       setAway(awayFromLive(view ? (view.to as number) : null, drawnRef.current))
@@ -799,17 +823,18 @@ export default function MarketChart({
     }))
     vs.setData(bars.map((c, i) => ({ time: c.t as UTCTimestamp, value: c.v, color: alpha(c.c >= c.o ? tokens.up : tokens.down, quiet(i) ? 0.14 : 0.28) })))
     bandsRef.current?.update(sessions ? extendedRuns(sessions) : [], tokens.session)
-    vpRef.current?.update(overlays.has('vp') && hasVolume(bars) ? bars : [], alpha(tokens.muted2, 0.28), alpha(tokens.up, 0.55))
+    // The Wall absorbs the profile while it draws (a grey underlay per rung).
+    vpRef.current?.update(overlays.has('vp') && !wallOn && hasVolume(bars) ? bars : [], alpha(tokens.muted2, 0.28), alpha(tokens.up, 0.55))
     drawnRef.current = bars.length
     const key = `${symbol}:${tf}`
     if (fitOnceRef.current !== key) {
       const older = bars.length - candles.length
-      if (older > 0) chart.timeScale().setVisibleLogicalRange({ from: older as Logical, to: (bars.length - 1 + RIGHT_OFFSET) as Logical })
+      if (older > 0) chart.timeScale().setVisibleLogicalRange({ from: older as Logical, to: (bars.length - 1 + marginRef.current) as Logical })
       else chart.timeScale().fitContent()
       fitOnceRef.current = key
     }
     setGeomTick((n) => n + 1)
-  }, [bars, sessions, candles.length, data?.tf, data?.symbol, pair?.symbol, symbol, tf, tokens, overlays])
+  }, [bars, sessions, candles.length, data?.tf, data?.symbol, pair?.symbol, symbol, tf, tokens, overlays, wallOn])
 
   // Compare: a second symbol's candles at the chart's frame, drawn as a line
   // on the LEFT scale in percentage mode (indexed to the first bar on screen).
@@ -1208,7 +1233,7 @@ export default function MarketChart({
           </div>
         )}
         {!fieldOn && <div className="mkt-chart__ind" role="group" aria-label="Overlays">
-          {OVERLAYS.filter((o) => o.key !== 'vwap' || hasVolume(candles)).map((o) => (
+          {OVERLAYS.filter((o) => (o.key !== 'vwap' || hasVolume(candles)) && (o.key !== 'wall' || battlefield) && (o.key !== 'vp' || !wallOn)).map((o) => (
             <button
               key={o.key}
               type="button"
@@ -1348,6 +1373,7 @@ export default function MarketChart({
           </div>
         )}
         {fieldOn && tokens && <FrontBoard symbol={pair.symbol} pair={pair} tf={tf} bars={candles} tokens={tokens} onAsk={onAsk} canAsk={(ask) => canTradeAsk(ask, tradable)} board={board} onBoard={setBoard} />}
+        {wallOn && tokens && <TheWall geom={geom} bars={bars} symbol={pair.symbol} pair={pair} tf={tf} tokens={tokens} last={last} hostRef={wrapRef} onStatus={setWallStatus} />}
         {!fieldOn && <DrawingLayer
           geom={geom}
           lines={lines}
@@ -1393,6 +1419,25 @@ export default function MarketChart({
         )}
       </div>
 
+      {/* The Wall's key, under the plot, only while it draws. */}
+      {wallOn && wallStatus?.active && (
+        <p className="wall-legend mono">
+          <b>THE WALL</b>
+          <span>
+            <i className="wall-legend__solid" />
+            resting orders · {[wallStatus.sources.spot && 'Coinbase', wallStatus.sources.perp && 'Hyperliquid'].filter(Boolean).join(' · ') || 'no book read'} · live
+          </span>
+          <span>
+            <i className="wall-legend__hatch" />
+            liquidation clusters · estimated
+          </span>
+          <span>
+            <i className="wall-legend__traded" />
+            traded at that price · the bars on screen
+          </span>
+          <span>bursts on the bars = clusters a bar&rsquo;s range reached · est.</span>
+        </p>
+      )}
       {/* A year of positioning under the candles (the symbol page; coins and perps). */}
       {battlefield && !fieldOn && <PositionHeat symbol={pair.symbol} pair={pair} mark={last} />}
 

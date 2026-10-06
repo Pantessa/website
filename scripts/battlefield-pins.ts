@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import type { Candle } from '../lib/charts'
 import { crowdRead, fuelBeforePlayer, fuelWithin, fundingLine, liqBuckets, liquidationMap, oiAtBars, parsePlayer, playerLiqPrice, playerState, bookRows, bookWalls, heatCells, heatMedian, heatSummary, heatTone, spotRead, unitUsd, unitsFor, DAY_SEC, HEAT_WEEKS, type OiPoint } from '../lib/derivs'
 import { fieldAhead } from '../lib/battlefield'
+import { marginBarsFor, wallHits, wallRungAt, wallRungs, wallSummary, wallWidthPx } from '../lib/wall'
 import { composeExecAsk } from '../lib/trade-asks'
 import { chartPairFor } from '../lib/charts'
 import { parseBoardParam, parseViewParam, viewUrl } from '../lib/markets'
@@ -185,6 +186,38 @@ export function battlefieldPins(check: Check): void {
   const page = readFileSync('components/markets/shell/SymbolPage.tsx', 'utf8')
   check('battlefield: MarketChart opens on candles (the view is never remembered), offers the switch only when asked, and hides the drawing tools on the field',
     /useState<'candles' \| 'field'>\('candles'\)/.test(chart) && /battlefield = false/.test(chart) && /\{battlefield && \(\s*<div className="mkt-view"/.test(chart) && /tools && !fieldOn &&/.test(chart) && !/localStorage/.test(chart) && /<ChartMount[^>]*\bbattlefield\b/.test(page))
+
+  // ── The Wall (lib/wall): every dollar at its price, kinds kept apart ────
+  const wallBars = [bar(1, 100, 101, 99, 100.5, 10), bar(2, 100.5, 102, 100, 101.2, 20), bar(3, 101.2, 103, 98, 99.4, 5)]
+  const w1 = wallRungs({
+    last: 100,
+    spot: { bids: [{ px: 99.2, usd: 1000 }, { px: 97.9, usd: 500 }, { px: 70, usd: 9999 }], asks: [{ px: 100, usd: 300 }, { px: 101.6, usd: 200 }] },
+    perp: { bids: [{ px: 99.9, usd: 400 }], asks: [{ px: 101.2, usd: 100 }] },
+    levels: [{ price: 99.5, usd: 2000 }, { price: 103.1, usd: 700 }, { price: 130, usd: 5 }],
+    bars: wallBars,
+    from: 0,
+    to: 1,
+  })
+  const rBelow = w1.rungs.find((r) => r.k === -1)!
+  const rAbove = w1.rungs.find((r) => r.k === 0)!
+  check('wall: the grid is anchored on the price (k −1 just under it, 0 just over), a Coinbase bid, a Hyperliquid bid and an estimated cluster in one band share a rung but never a field, and the standing total is the three summed',
+    near(w1.step, 1.5) && w1.perSide === 8 && w1.rungs.length === 16 && near(rBelow.lo, 98.5) && near(rBelow.hi, 100) && rBelow.side === 'below' && rBelow.spotUsd === 1000 && rBelow.perpUsd === 400 && rBelow.liqUsd === 2000 && rBelow.usd === 3400 && rAbove.side === 'above' && near(rAbove.lo, 100) && rAbove.spotUsd === 300 && rAbove.perpUsd === 100 && rAbove.usd === 400, JSON.stringify([rBelow, rAbove]))
+  check('wall: anything beyond the fence is left out, so a far bid or a far cluster never scales the ladder; an empty read is sixteen empty rungs, no price is no ladder',
+    w1.max === 3400 && !w1.rungs.some((r) => r.spotUsd === 9999 || r.liqUsd === 5) && wallRungs({ last: 100 }).rungs.length === 16 && wallRungs({ last: 100 }).max === 0 && wallRungs({ last: 0 }).rungs.length === 0)
+  check('wall: traded-here is the bars on screen (close × volume into their band), on its own scale, never part of the standing total; a bar off screen is not counted',
+    near(rAbove.tradedUsd, 3029) && near(w1.tradedMax, 3029) && rAbove.usd === 400 && rBelow.tradedUsd === 0 && near(wallRungs({ last: 100, bars: wallBars, from: 0, to: 2 }).rungs.find((r) => r.k === -1)!.tradedUsd, 497))
+  check('wall: a price finds its rung, and nothing off the ladder', wallRungAt(w1, 100, 99.9)?.k === -1 && wallRungAt(w1, 100, 100)?.k === 0 && wallRungAt(w1, 100, 50) === null)
+  const wsum = wallSummary(w1, 100, 5)
+  check('wall: within 5% the summary keeps measured resting dollars and estimated fuel apart, each side', wsum.belowUsd === 1900 && wsum.belowEst === 2000 && wsum.aboveUsd === 600 && wsum.aboveEst === 700, JSON.stringify(wsum))
+  const wh = wallHits([{ side: 'long', price: 98, usd: 300, from: 0, at: 5 }, { side: 'long', price: 96, usd: 100, from: 1, at: 5 }, { side: 'short', price: 104, usd: 50, from: 0, at: 5 }, { side: 'long', price: 90, usd: 1000, from: 2, at: 7 }])
+  check('wall: hits gather per bar and side (a dollar-weighted price, a count), biggest first', wh.max === 1000 && wh.hits.length === 3 && wh.hits[0].at === 7 && wh.hits[1].at === 5 && wh.hits[1].side === 'long' && wh.hits[1].usd === 400 && near(wh.hits[1].price, 97.5) && wh.hits[1].count === 2 && wh.hits[2].side === 'short')
+  check('wall: the margin is the bars worth the ladder\'s pixels at the current spacing, never under the chart\'s own offset, and the chart\'s own offset when nothing draws; a narrow plot gets the narrow ladder',
+    marginBarsFor(220, 5, 4) === 45 && marginBarsFor(220, 20, 4) === 12 && marginBarsFor(0, 5, 4) === 4 && marginBarsFor(10, 20, 4) === 4 && marginBarsFor(220, 0, 4) === 221 && wallWidthPx(1000, true) === 220 && wallWidthPx(500, true) === 64 && wallWidthPx(1000, false) === 0)
+  const wallSrc = readFileSync('components/markets/chart/TheWall.tsx', 'utf8')
+  check('wall: the ladder is drawn from lib/wall\'s rungs on the chart\'s own geometry, the estimate hatched and named est., the hover read off the plot (the canvas stays pointer-transparent), and the Rivers and the old strata are gone',
+    /wallRungs\(\{/.test(wallSrc) && /hatch\(tokens\.up\)/.test(wallSrc) && /· est\./.test(wallSrc) && /addEventListener\('pointermove'/.test(wallSrc) && /pointer-events: none/.test(readFileSync('components/markets/chart/battlefield.css', 'utf8')) && !existsSync('components/markets/chart/PositionRivers.tsx') && !existsSync('components/markets/chart/StrataOverlay.tsx'))
+  check('wall: the chart re-asks its right margin on every range change, absorbs the volume profile while the Wall draws, offers the WALL toggle only with the Battlefield, and the symbol page opens with it lit',
+    /syncMarginRef\.current\(\)/.test(chart) && /marginBarsFor\(wallPxRef\.current/.test(chart) && /overlays\.has\('vp'\) && !wallOn/.test(chart) && /o\.key !== 'wall' \|\| battlefield/.test(chart) && /DEFAULT_SYMBOL_OVERLAYS: OverlayKey\[\] = \['sma50', 'sma200', 'vp', 'wall'\]/.test(readFileSync('lib/chart-indicators.ts', 'utf8')))
 }
 
 if (process.argv[1]?.endsWith('battlefield-pins.ts')) {
