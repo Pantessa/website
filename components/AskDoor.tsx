@@ -144,7 +144,7 @@ function AskDoorPill() {
     }
     const composerInView = () => {
       const vh = window.innerHeight
-      for (const el of document.querySelectorAll<HTMLElement>('textarea, [data-ask-door-yield]')) {
+      for (const el of document.querySelectorAll<HTMLElement>('textarea, .mk-ai--ask input, [data-ask-door-yield]')) {
         if (el.closest('[data-ask-door]')) continue
         const r = el.getBoundingClientRect()
         if (r.width < 2 || r.height < 2) continue

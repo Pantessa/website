@@ -560,8 +560,8 @@ export function guidePins(check: Check): void {
   const askDoorSrc = src('components/AskDoor.tsx')
   const designCss = src('app/x402-design.css')
   check(
-    'first-run: the floating Ask pill yields while a composer (a visible textarea / data-ask-door-yield) is on screen, and the app frame\'s scroller keeps the pill\'s height clear under its last row (DEADENDS F5)',
-    /composerInView/.test(askDoorSrc) && /\|\| yielding\) return null/.test(askDoorSrc) && /body:has\(\[data-app-frame\]\):has\(\.askdoor-pill:not\(\[data-away\]\)\) \[data-app-scroll\] \{ padding-bottom: calc\(72px \+ env\(safe-area-inset-bottom\)\)/.test(designCss),
+    'first-run: the floating Ask pill yields while a composer (a visible textarea, Ask the chart’s input, or data-ask-door-yield) is on screen, and the app frame\'s scroller keeps the pill\'s height clear under its last row (DEADENDS F5)',
+    /composerInView/.test(askDoorSrc) && /\.mk-ai--ask input/.test(askDoorSrc) && /\|\| yielding\) return null/.test(askDoorSrc) && /body:has\(\[data-app-frame\]\):has\(\.askdoor-pill:not\(\[data-away\]\)\) \[data-app-scroll\] \{ padding-bottom: calc\(72px \+ env\(safe-area-inset-bottom\)\)/.test(designCss),
   )
 
 }
