@@ -189,6 +189,7 @@ a, button, [role='button'], [role='tab'], [role='menuitem'], input, select, text
 @media (hover: none) {
   [data-landing-hero] .tok__tfbtn, [data-landing-hero] .mkt-sharebtn, [data-landing-hero] .sym__act-chip, [data-landing-hero] .btn--sm { min-height: 44px; }
   [data-landing-hero] .tok__tfbtn { min-width: 44px; }
+  main:has([data-landing-hero]) .btn--sm { min-height: 44px; }
 }
 /* The ask door's sheet with the soft keyboard up: at 320×568 the visible viewport is ~268px and the sheet's
    two-line tagline foot ("ONE SENTENCE · GUARDED BUILD · …") took ~60px of it, leaving the example chips a 110px
@@ -196,3 +197,9 @@ a, button, [role='button'], [role='tab'], [role='menuitem'], input, select, text
 @media (max-width: 1023px) {
   html[data-keyboard] .askdoor__sheetfoot { display: none; }
 }
+/* r2 regression fix: the sign-in door's bloom (r3) made `.ca__crest` a positioned, isolated box, and it paints over
+   the absolutely placed ✕ — on a touch screen the ✕ (44px, top 6px) had its centre on the crest: a tap on Dismiss hit
+   the crest and did nothing (measured at 320 and 375, both themes). The ✕ rides above it. */
+.ca__close { z-index: 2; }
+/* r2 contrast: /story's market-band ticker marks ("AAPL", 9.5px accent on a 12% accent tint) read 4.44:1 on paper. */
+:root[data-theme='light'] .mkt__mark { color: color-mix(in oklch, var(--accent) 80%, #000); }
