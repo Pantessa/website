@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
 
@@ -107,7 +108,7 @@ export default function TransactionsDocsPage() {
           <li>
             <strong>Receipt everything.</strong>{' '}Built, signed, refused — each with its priced
             value (<code>valueUsd</code>) and the layer that built it, on your{' '}
-            <Link href="/dashboard">dashboard</Link>.
+            <SpineLink href="/dashboard">dashboard</SpineLink>.
           </li>
         </ol>
 

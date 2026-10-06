@@ -17,6 +17,8 @@
 // table across both. Narrow: one column — page, mint, money, table.
 
 import Link from 'next/link'
+import EmptyDoor from '@/components/guide/EmptyDoor'
+import { LINKS_DOOR } from '@/lib/first-run'
 import { CreatorPagePanel } from '@/components/CreatorPagePanel'
 import { LinkEarningsPanel } from '@/components/LinkEarningsPanel'
 import { LinkFunnelTable } from '@/components/LinkFunnelTable'
@@ -111,10 +113,35 @@ export default function LinksStudioView({
         </div>
       )}
       {links && links.length === 0 && !loadError && (
-        <p className="mt-8 text-[13px] text-[color:var(--muted-2)]">
-          No links yet — mint the first one above. The ask you&apos;d paste in chat is exactly the
-          ask that belongs here.
-        </p>
+        // THE EMPTY DOOR (squad pre-gtm): the studio's first visit teaches
+        // what a link is for and hands the form an example ask — the
+        // hero's own buy — then focuses it. Nothing mints until the button.
+        <div className="mt-8">
+          <EmptyDoor
+            id="links"
+            eyebrow={LINKS_DOOR.eyebrow}
+            title={LINKS_DOOR.title}
+            body={LINKS_DOOR.body}
+            lines={LINKS_DOOR.lines}
+            primary={{
+              kind: 'button',
+              label: LINKS_DOOR.ctaLabel,
+              onClick: () => {
+                const ta = document.querySelector<HTMLTextAreaElement>('.linkstudio__mint textarea')
+                if (!ta) return
+                if (!ta.value.trim()) {
+                  const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+                  set?.call(ta, LINKS_DOOR.exampleAsk)
+                  ta.dispatchEvent(new Event('input', { bubbles: true }))
+                }
+                const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+                ta.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' })
+                ta.focus({ preventScroll: true })
+              },
+            }}
+            secondary={{ kind: 'href', label: 'How links pay', href: '/docs/creator-earnings' }}
+          />
+        </div>
       )}
     </section>
   )

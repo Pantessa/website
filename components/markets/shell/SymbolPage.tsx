@@ -345,8 +345,10 @@ export default function SymbolPage({
               </>
             ) : pair ? (
               <span className="sym__feed mono">loading {feedLabel} candles…</span>
-            ) : (
-              <span className="sym__feed mono">{unknown ? 'Not listed' : 'No live chart yet'}</span>
+            ) : unknown ? null : (
+              // An unknown ticker already wears "Not listed" in the title row;
+              // a second copy in the quote slot read as a stutter (POLISH, pre-gtm r1).
+              <span className="sym__feed mono">No live chart yet</span>
             )}
             {pair && day && rangeAt !== null && (
               <div className="mk-range" data-range-at={rangeAt.toFixed(3)} title={`24h range: $${fmtQuotePrice(day.low)} – $${fmtQuotePrice(day.high)}`}>

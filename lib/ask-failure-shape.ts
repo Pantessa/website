@@ -13,6 +13,8 @@
 // harness need the rule with no database and no RPC. lib/ask-failure.ts
 // re-exports it, so there is still exactly ONE definition.
 
+import { isMoneyAssetWord } from '@/lib/charts'
+
 // Verb + evidence-of-money: both required, so "what is a swap?" (no digits,
 // no address) and "tell me a joke" never log. The evidence side accepts
 // amounts, $, addresses/ENS, marketplace URLs, all-sends, and NFT words —
@@ -53,8 +55,32 @@ const PROTECT_SHAPE_RE =
 // fence handles the rest.
 const GAS_SHAPE_RE = /\b(?:fix|top\s*up|need|no|out\s+of|more)\b[^.?!]*\bgas\b|\bgas\b[^.?!]*\b(?:on|for)\b|\bcan'?t\s+(?:sign|send|transact)\b/i
 
+// A named ASSET is evidence too (pre-gtm 2026-10-06): "buy apple", "buy
+// bitcoin", "short btc", "buy tesla" carried a verb and nothing the rule
+// above counted, so the first thing a stranger types on a chart site fell to
+// the planner (prose, or `error` when the model is down) while "buy eth"
+// reached the intent net. The word has to be an asset we chart: a coin, a
+// household name, or a four-plus-letter stock ticker that is not also an
+// English word (lib/charts isMoneyAssetWord — "buy now", "run it" stay prose).
+const QUESTION_START_RE = /^(?:what|whats|what's|how|why|when|which|who|where|should|is|are|does|do|did|will|would|explain|tell\s+me|show|list|compare)\b/i
+
+function namesAnAsset(message: string): boolean {
+  for (const w of message.match(/\$?[a-zA-Z][a-zA-Z0-9.]{1,11}/g) ?? []) if (isMoneyAssetWord(w.replace(/^\$/, ''))) return true
+  return false
+}
+
+// A yield ask that names nothing ("earn yield", "earn interest", "put my
+// money to work") and a bare money verb on its own ("buy", "invest", "stake
+// something") — the first words a stranger types into a composer. Neither
+// carries evidence under the rules above, so both fell to the planner
+// (pre-gtm 2026-10-06). A question stays a read.
+const YIELD_SHAPE_RE = /^(?!(?:what|whats|what's|how|why|is|are|does|do|which|where|when|explain|tell)\b)[^?]*\b(?:earn|yield|interest|apy|apr)\b[^?]*$/i
+const BARE_VERB_RE = /^(?:please\s+|i\s+want\s+to\s+|i\s+wanna\s+|lets\s+|let's\s+)?(?:buy|invest|trade|stake|earn|long|short)(?:\s+(?:something|some|crypto|stocks?|a\s+stock|a\s+coin|here|it))*[.!]?$/i
+
 /** Pure: does this message look like it wanted money to move? */
 export function moneyShaped(message: string): boolean {
-  if (MONEY_VERB_RE.test(message) && MONEY_EVIDENCE_RE.test(message)) return true
-  return BARE_AMOUNT_OF_RE.test(message) || PROTECT_SHAPE_RE.test(message) || GAS_SHAPE_RE.test(message)
+  // An asset name is evidence for an IMPERATIVE; a question that names one
+  // ("what is the apy on aave?") stays a read and never files as a failure.
+  if (MONEY_VERB_RE.test(message) && (MONEY_EVIDENCE_RE.test(message) || (!QUESTION_START_RE.test(message.trim()) && namesAnAsset(message)))) return true
+  return BARE_AMOUNT_OF_RE.test(message) || PROTECT_SHAPE_RE.test(message) || GAS_SHAPE_RE.test(message) || YIELD_SHAPE_RE.test(message.trim()) || BARE_VERB_RE.test(message.trim())
 }

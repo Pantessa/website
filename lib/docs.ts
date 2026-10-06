@@ -4,6 +4,7 @@
 // until their iteration ships them (no dead links mid-run).
 
 import { SITE_URL } from './site-url'
+import { LINK_FEE_PCT } from './fees'
 
 /** Re-exported: docs pages have imported `SITE` from here since before
  *  lib/site-url existed. */
@@ -62,7 +63,8 @@ export const DOCS_PAGES: DocsPage[] = [
     title: 'Creator earnings',
     seoTitle: 'Creator earnings — half the fee on your conversions',
     description:
-      'Creators earn half of Pantessa’s 0.20% fee on the fee-bearing conversions their links produce — server-truth accounting, sales and transfers never charged, claims paid as USDC on Base from $10.',
+      // RE-WORDED 2026-10-07 (pre-gtm): said "half of Pantessa’s 0.20% fee" — the chat rate; link conversions price at LINK_FEE_PCT.
+      `Creators earn half of the ${LINK_FEE_PCT} fee on the swaps their links produce — server-truth accounting, sales and transfers never charged; earnings not paid inside the swap are claimable as USDC on Base from $10.`,
     ready: true,
     door: 'creator',
   },

@@ -52,7 +52,7 @@ export default function JobsDocsPage() {
   }'`}</pre>
         <p>
           Mint the <code>yf_</code> key at{' '}
-          <Link href="/dashboard/keys">/dashboard/keys</Link>{' '}— or skip the key entirely and run
+          <SpineLink href="/dashboard/keys">/dashboard/keys</SpineLink>{' '}— or skip the key entirely and run
           the repo&rsquo;s demo script, which can also authenticate as your wallet via SIWE:
         </p>
         <pre>{`npx tsx scripts/jobs-api-demo.ts            # dryRun against prod
@@ -233,7 +233,7 @@ dca $25 into ETH daily on base`}</pre>
           the <Link href="/docs/embed">embed on your site</Link>, and this API. A user typing the
           ask above gets a JobCard with a sign button per step; your agent POSTing it gets the
           same steps as JSON. Signed value lands in your{' '}
-          <Link href="/dashboard">dashboard</Link> either way — the receipt is the product.
+          <SpineLink href="/dashboard">dashboard</SpineLink> either way — the receipt is the product.
         </p>
       </div>
     </>

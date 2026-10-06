@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
-import { CHART_TFS, normalizeChartSymbol, type ChartTf } from '@/lib/charts'
+import { redirect } from 'next/navigation'
+import { CHART_TFS, chartPairFor, chartSymbolByName, normalizeChartSymbol, type ChartTf } from '@/lib/charts'
 import { parseMarketTab, parseVsParam } from '@/lib/markets'
 import { symbolPageSeo } from '@/lib/markets-seo'
 import Footer from '@/components/Footer'
@@ -42,6 +43,19 @@ export default async function TokenPage({ params, searchParams }: Params) {
   const { symbol } = await params
   const sp = await searchParams
   const norm = normalizeChartSymbol(symbol)
+  // /t/apple, /t/bitcoin, /t/tesla — a name typed or shared where the
+  // ticker goes. The chart module knows these names (speech says "apple");
+  // the page used to say "APPLE is not listed" anyway (pre-gtm 2026-10-06).
+  // Redirect onto the ticker's page, query kept, so the shared URL lands.
+  if (!chartPairFor(norm)) {
+    const named = chartSymbolByName(norm)
+    if (named) {
+      const q = new URLSearchParams()
+      for (const [k, v] of Object.entries(sp)) if (typeof v === 'string') q.set(k, v)
+      const qs = q.toString()
+      redirect(`/t/${named}${qs ? `?${qs}` : ''}`)
+    }
+  }
   const seo = symbolPageSeo(norm)
   // ?tab= and ?tf= are deep links (every gauge is a link target): the server
   // renders the addressed tab so the HTML matches the URL — the client then

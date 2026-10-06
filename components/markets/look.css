@@ -56,8 +56,9 @@
 }
 
 :root[data-theme='light'] {
-  --mk-up: #0e8f62;
-  --mk-down: #c73e43;
+  /* Text-grade inks (RE-INKED 2026-10-07 pre-gtm, = --accent / --sell light). */
+  --mk-up: #0a7350;
+  --mk-down: #b0323a;
   --mk-flat: oklch(0.5 0.01 155);
   --mk-up-soft: rgb(14 143 98 / 0.12);
   --mk-down-soft: rgb(199 62 67 / 0.12);

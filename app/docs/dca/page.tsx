@@ -3,6 +3,7 @@ import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
+import { SWAP_FEE_PCT } from '@/lib/fees'
 
 // Recurring buys — the two-tier story, told honestly by WALLET TYPE. The
 // page's whole job is the EOA vs smart-wallet distinction: confirm-mode is
@@ -151,7 +152,7 @@ export default function DcaDocsPage() {
           </li>
         </ol>
         <p>
-          Buys route through the same venues and carry the same visible 0.20% fee as any
+          Buys route through the same venues and carry the same visible {SWAP_FEE_PCT} fee as any
           Pantessa swap. If you buy a period manually, autopilot notices and stands down — no
           double buys across tiers either. The <Link href="/docs/spend-policy">kill switch</Link>{' '}
           pauses pulls instantly, and{' '}

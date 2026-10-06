@@ -200,6 +200,104 @@
   .guide__cta:hover { transform: none; }
 }
 
+
+/* ── THE EMPTY DOOR (components/guide/EmptyDoor, squad pre-gtm): every empty
+   state of the spine is this card — mark · eyebrow · lesson · what lands
+   here · ONE action. Same tokens, same contract as the guide card. ── */
+.door {
+  position: relative;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  column-gap: 14px;
+  align-items: start;
+  width: 100%;
+  padding: 18px 18px 16px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--fg);
+  text-align: left;
+  font-family: var(--mk-font-ui, var(--font-chat-body, system-ui, sans-serif));
+  background:
+    radial-gradient(120% 90% at 0% 0%, color-mix(in oklch, var(--accent) 9%, transparent), transparent 60%),
+    var(--mk-surface, var(--surf-1));
+  animation: guide-in var(--mk-dur-base, .22s) var(--mk-ease, ease) both;
+}
+.door__mark { display: grid; place-items: center; width: 32px; height: 32px; margin-top: 2px; }
+.door__body { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.door__eyebrow { font-family: var(--mk-font-mono, var(--font-mono)); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); line-height: 1.4; }
+.door__title {
+  margin: 0;
+  font-family: var(--font-chat-display, var(--mk-font-display, Georgia, serif));
+  font-weight: 500;
+  font-size: 19px;
+  line-height: 1.2;
+  letter-spacing: -0.014em;
+  color: var(--fg);
+  text-wrap: balance;
+}
+.door__text { margin: 2px 0 0; max-width: 56ch; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.door__lines { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.door__lines li { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 8px; align-items: baseline; font-size: 12.5px; line-height: 1.4; color: var(--muted); }
+.door__n { font-family: var(--mk-font-mono, var(--font-mono)); font-size: 10px; letter-spacing: .06em; color: var(--accent); }
+.door__acts { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin-top: 14px; min-width: 0; }
+.door__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .01em;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter var(--mk-dur-fast, .12s) ease, transform var(--mk-dur-fast, .12s) ease;
+}
+.door__cta:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.door__cta:active { transform: none; }
+.door__cta:disabled { opacity: .6; cursor: default; transform: none; filter: none; }
+.door__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--muted) 45%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.door__link:hover { color: var(--fg); }
+.door__cta:focus-visible, .door__link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The rail's column (≈300px): the mark sits above the words, type a step down. */
+.door--compact { grid-template-columns: minmax(0, 1fr); row-gap: 10px; padding: 16px 14px 14px; border-radius: 12px; }
+.door--compact .door__mark { width: 22px; height: 22px; margin: 0; }
+.door--compact .door__title { font-size: 16.5px; }
+.door--compact .door__text { font-size: 12.5px; }
+.door--compact .door__lines li { font-size: 12px; }
+.door--compact .door__cta { min-height: 34px; font-size: 12.5px; padding: 0 14px; white-space: normal; text-align: left; line-height: 1.25; padding-block: 8px; }
+:root[data-theme='light'] .door { box-shadow: 0 1px 0 rgb(16 21 18 / 0.04); }
+@media (hover: none) {
+  .door__cta, .door__link { min-height: 44px; }
+  .door--compact .door__cta { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .door { animation: none; }
+  .door__cta:hover { transform: none; }
+}
+
 /* MOBILE */
 /* Measured on the integrated tree (feat/front-door @ 60702500, coarse
    pointer — MOBILE lane, squad front-door 2026-10-06):

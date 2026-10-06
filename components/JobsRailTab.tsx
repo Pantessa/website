@@ -29,6 +29,9 @@ import ShareReceiptButton from '@/components/ShareReceiptButton'
 import { ChartHoverButton } from '@/components/TokenChartButton'
 import { LIVE_JOB_STATUS, useRunningWork, type InboxIntent, type RunningGuard, type RunningJob, type RunningSchedule } from '@/lib/use-running-work'
 import { jobStatusWord } from '@/lib/step-status'
+import EmptyDoor from '@/components/guide/EmptyDoor'
+import { askAppSlugs } from '@/lib/ask-apps'
+import { JOBS_DOOR } from '@/lib/first-run'
 
 function IconBtn({ label, danger, onClick, children }: { label: string; danger?: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -94,7 +97,14 @@ export default function JobsRailTab({
 }) {
   const onAct = onNavigate
   const router = useRouter()
-  const { setComposerPrefill, setJobDetail } = useYeetfulStore()
+  const { setComposerPrefill, setJobDetail, setComposerSend } = useYeetfulStore()
+  // The empty door's chip SENDS into the chat beside this rail (the
+  // chip-send contract); a stranger meets the connect door first and the held
+  // ask runs when a wallet lands (lib/use-connect-to-act, inside EmptyDoor).
+  const runInChat = (text: string) => {
+    setComposerSend({ text, mcps: askAppSlugs(text) })
+    onAct?.()
+  }
   const { jobs, schedules, guards, inbox, signedOut, loaded, refresh } = useRunningWork(true)
   const { address } = useAccount()
   const { signMessageAsync } = useSignMessage()
@@ -205,20 +215,36 @@ export default function JobsRailTab({
     return (
       <div className={cn('px-2 pb-3', !flat && 'flex-1 overflow-y-auto')}>
         <InboxSection />
-        <p className="px-3 py-6 text-center text-xs text-[color:var(--muted-2)]">
-          Sign in with your wallet to see the jobs and recurring buys armed on it.
-        </p>
+        <div className="px-1 pt-1">
+          <EmptyDoor
+            id="jobs"
+            compact
+            eyebrow={JOBS_DOOR.eyebrow}
+            title={JOBS_DOOR.title}
+            body={JOBS_DOOR.body}
+            lines={JOBS_DOOR.lines}
+            primary={{ kind: 'ask', label: JOBS_DOOR.ctaLabel, ask: JOBS_DOOR.ask }}
+            run={runInChat}
+          />
+        </div>
       </div>
     )
   }
 
   if (jobs.length === 0 && schedules.length === 0 && guards.length === 0 && inbox.length === 0) {
     return (
-      <p className="px-3 py-6 text-xs leading-relaxed text-[color:var(--muted-2)]">
-        Nothing running yet. Protections (“protect my SYRUP long with a 10%
-        stop loss”) and multi-step jobs land here the moment you arm one —
-        with every state visible, and nothing signed without you.
-      </p>
+      <div className={cn('px-3 pt-1 pb-3', !flat && 'flex-1 overflow-y-auto')}>
+        <EmptyDoor
+          id="jobs"
+          compact
+          eyebrow="Jobs · nothing running yet"
+          title={JOBS_DOOR.title}
+          body={JOBS_DOOR.body}
+          lines={JOBS_DOOR.lines}
+          primary={{ kind: 'ask', label: JOBS_DOOR.ctaLabel, ask: JOBS_DOOR.ask }}
+          run={runInChat}
+        />
+      </div>
     )
   }
 
