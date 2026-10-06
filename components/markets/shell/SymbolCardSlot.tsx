@@ -46,7 +46,8 @@ export default function SymbolCardSlot({
         </div>
       </dl>
       <p className="mkt-card__note">
-        Headlines pinned to bars and performance tiles land here this round.{' '}
+        {/* pre-gtm POLISH: was "…land here this round." — a squad's build note shown to every visitor. */}
+        News, technicals and community are a tab away on this page.{' '}
         <Link href={MARKETS_HREF} className="mkt-link">
           All markets →
         </Link>

@@ -7,8 +7,10 @@
     --fg: #ffffff;
     --muted: oklch(0.68 0 0);
     /* Tertiary text/icons. Lifted 0.5 → 0.56 so faint captions clear WCAG AA
-       on the black/surface backgrounds while staying clearly below --muted. */
-    --muted-2: oklch(0.56 0 0);
+       on the black/surface backgrounds while staying clearly below --muted.
+       0.56 → 0.61 (pre-gtm POLISH, 2026-10-07): measured 4.2:1 on the #0c0c0c
+       ground in headless Chrome — 0.61 is ≈4.9:1 there and 4.5:1 on --surf-2. */
+    --muted-2: oklch(0.61 0 0);
     --accent: #3ECF8E;
     --maxw: 1280px;
     /* Aliases the launchpad token UI (TokenPanel/TradeToken/StakeToken) was
@@ -4758,17 +4760,22 @@
     --line-2: oklch(0.775 0.005 150);
     --fg: #101512;
     --muted: oklch(0.44 0.01 155);
-    --muted-2: oklch(0.55 0.008 155);
-    /* Darker emerald: the brand green reads on white (text + fills keep
-       contrast with a --bg ink); the dark stages below keep the bright one. */
-    --accent: #0e8f62;
-    --sell: #c73e43;
-    --gold: #a3720c;
+    /* RE-INKED 2026-10-07 (pre-gtm POLISH): measured in headless Chrome, the
+       old light inks failed WCAG AA as text on the site's own grounds —
+       muted-2 oklch(.55) 4.2:1 on --surf-1, accent #0e8f62 3.7:1 on --surf-1
+       and 3.0:1 on its own 15–20% chip tints, sell #c73e43 3.6:1 on its chip.
+       Same hues, one step deeper: accent #0a7350 5.3:1 on --surf-1 / 4.5:1 on
+       a 15% tint; sell #b0323a; gold #8a600a; muted-2 .49 ≈ 4.8:1. The mark
+       (--gem-*) keeps its own ramp. Dark mode is untouched. */
+    --muted-2: oklch(0.49 0.008 155);
+    --accent: #0a7350;
+    --sell: #b0323a;
+    --gold: #8a600a;
     --chart-ma-50: #2563eb;
     --chart-ma-200: #b58900;
     --chart-session: rgb(16 21 18 / 0.045);
     --done: #0b7a53;
-    --fail: #c73e43;
+    --fail: #b0323a;
     --gem-1: #084A33;
     --gem-2: #0A5C40;
     --gem-3: #0C7A52;
@@ -4788,7 +4795,7 @@
     --line-2: oklch(0.446 0 0);
     --fg: #ffffff;
     --muted: oklch(0.68 0 0);
-    --muted-2: oklch(0.56 0 0);
+    --muted-2: oklch(0.61 0 0);
     --accent: #3ECF8E;
     --sell: #E5484D;
     color-scheme: dark;
@@ -5143,8 +5150,8 @@
     display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
     margin-top: 16px; cursor: default;
   }
-  .mintstage__runslabel { font-size: 10.5px; letter-spacing: 0.22em; color: rgba(242, 251, 247, 0.42); margin-right: 2px; }
-  .mintstage__runshint { font-size: 12px; font-style: italic; color: rgba(242, 251, 247, 0.38); }
+  .mintstage__runslabel { font-size: 10.5px; letter-spacing: 0.22em; color: rgba(242, 251, 247, 0.6); margin-right: 2px; } /* .42 → .6 (pre-gtm POLISH: 3.9:1 → AA) */
+  .mintstage__runshint { font-size: 12px; font-style: italic; color: rgba(242, 251, 247, 0.58); } /* .38 → .58 (pre-gtm POLISH: 3.3:1 → AA) */
   .mintstage__pill {
     display: inline-flex; align-items: center; gap: 6px;
     padding: 4px 10px; border-radius: 999px;

@@ -30,6 +30,15 @@ type Phase = 'idle' | 'streaming' | 'done' | 'error'
 
 export const BRIEF_BYLINE = 'Written by a model from our own tape'
 
+/** The byline names the model the way a reader would ("Claude Haiku"), not by
+ *  its API id (pre-gtm POLISH, GTM WRAP decision 1); the raw id stays in the
+ *  title attribute for anyone who wants it. */
+export function modelLabel(id: string): string {
+  const fam = /opus|sonnet|haiku|fable/i.exec(id)?.[0]
+  if (/claude/i.test(id) && fam) return `Claude ${fam[0].toUpperCase()}${fam.slice(1).toLowerCase()}`
+  return id
+}
+
 export default function AiBrief({ symbol, pair, tf = '1h', onAsk }: AiBriefProps) {
   const { walletAddress } = useSession()
   const [phase, setPhase] = useState<Phase>('idle')
@@ -217,7 +226,7 @@ export default function AiBrief({ symbol, pair, tf = '1h', onAsk }: AiBriefProps
         {meta?.model ? (
           <>
             <span>·</span>
-            <span>{meta.model}</span>
+            <span title={meta.model}>{modelLabel(meta.model)}</span>
           </>
         ) : null}
       </footer>
