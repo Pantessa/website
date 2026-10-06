@@ -35,6 +35,7 @@ import { parseCrossChainSwap } from '../lib/cross-chain-swap'
 import { parseStockListAsk } from '../lib/stock-list'
 import { tokenHome } from '../lib/token-home'
 import { rescueIntent } from '../lib/intent-rescue'
+import { starterDoor } from '../lib/starter-door'
 import { moneyShaped } from '../lib/ask-failure-shape'
 
 export type Kind = 'action' | 'clarify' | 'planner'
@@ -75,6 +76,9 @@ export function simulateLadder(message: string, opts: LadderOptions = {}): Outco
   // ~2360). The replica skipped that gate until 2026-09-21, so the audit
   // reported CHIPS for asks production answers with planner prose — "put $10
   // into AAPL" was the tell ("put" is in no verb list). Model the real door.
+  // The starter door sits just above the net in the route (lib/starter-door).
+  const starter = out.kind === 'planner' ? starterDoor(message) : null
+  if (starter) return { gate: 'starter', kind: 'clarify', chips: true, note: starter.clarify.options.map((c) => c.resume).join(' | ') }
   if (out.kind === 'planner' && moneyShaped(message)) {
     const rescue = rescueIntent(message, buildsNatively)
     if (rescue) out = { gate: 'intent-net', kind: 'clarify', chips: true, note: rescue.chips.map((c) => c.resume).join(' | ') }
