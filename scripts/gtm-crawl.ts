@@ -34,7 +34,8 @@ const DOCS = [
 
 /** The route list is data; keep it in sync with app/. */
 export const ROUTES: string[] = [
-  '/', '/markets',
+  // `/` is the markets splash; /story the brochure; /markets follows its 308 to `/` (squad front-door, 2026-10-06).
+  '/', '/story', '/markets',
   ...SYMBOLS.map((s) => `/t/${s}`),
   ...TABS.map((t) => `/t/AAPL?tab=${t}`),
   ...TABS.map((t) => `/t/ETH?tab=${t}`),
@@ -48,7 +49,7 @@ export const ROUTES: string[] = [
 /** Fetched, not rendered. */
 export const RAW: string[] = [
   '/sitemap.xml', '/robots.txt', '/opengraph-image', '/twitter-image',
-  '/markets/opengraph-image', '/t/AAPL/opengraph-image', '/t/ETH/opengraph-image',
+  '/story/opengraph-image', '/markets/opengraph-image', '/t/AAPL/opengraph-image', '/t/ETH/opengraph-image',
   '/links/opengraph-image', '/chat/opengraph-image', '/agents/opengraph-image',
   '/roster/opengraph-image', '/t/ZZQQXX/opengraph-image',
 ]

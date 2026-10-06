@@ -118,11 +118,12 @@ check('polls: only an authed session reads jobs/schedules/protections', sessionR
   const page = code('app/error.tsx')
   const global = code('app/global-error.tsx')
   check('error page: both boundaries exist and are client components', /^'use client'/.test(src('app/error.tsx')) && /^'use client'/.test(src('app/global-error.tsx')))
-  check('error page: retry plus a public way on', /reset\(\)/.test(page) && /href="\/markets"/.test(page) && /reset\(\)/.test(global) && /href="\/"/.test(global))
+  // RE-PINNED 2026-10-06 (front-door): the public way on is `/` — the markets splash IS home now, so the separate Markets chip is gone.
+  check('error page: retry plus a public way on (`/`, the markets splash)', /reset\(\)/.test(page) && /href="\/"/.test(page) && /reset\(\)/.test(global) && /href="\/"/.test(global))
   check('error page: never prints the exception', !/error\.message|error\.stack/.test(page) && !/error\.message|error\.stack/.test(global))
   const words = Object.values(PAGE_ERROR_COPY).join(' ')
   check('error page: the copy says nothing ran and names no plumbing', /Nothing ran and nothing was signed/.test(words) && !leaksPlumbing(words) && !/yeetful/i.test(words))
-  check('404: the not-found page offers the public markets', /href="\/markets"/.test(code('app/not-found.tsx')))
+  check('404: the not-found page offers the public markets (`/`, the splash — RE-PINNED 2026-10-06 (front-door))', /href="\/"/.test(code('app/not-found.tsx')) && !/href="\/markets"/.test(code('app/not-found.tsx')))
 }
 
 // ── An empty wallet's refusal always has something to press ─────────────────
@@ -144,7 +145,8 @@ check('polls: only an authed session reads jobs/schedules/protections', sessionR
   check('sent home: a stale record says nothing', sentHomeNotice(readSignInReturn(signInReturnRecord('/chat', now), now + 31 * 60_000)) === null)
   const long = viaGate(`/chat?prompt=${encodeURIComponent('x'.repeat(300))}`)
   check('sent home: a long ask is cut, on one line', (long?.ask?.length ?? 999) <= 120)
-  check('sent home: the landing mounts the notice', /<SentHomeNotice \/>/.test(code('app/page.tsx')))
+  // RE-PINNED 2026-10-06 (front-door): the notice rides the splash's lead seat (components/home/HomeSurface).
+  check('sent home: the splash mounts the notice (the lead seat, components/home/HomeSurface)', /<SentHomeNotice \/>/.test(code('components/home/HomeSurface.tsx')))
   check('sent home: the door passes no destination of its own', !/redirectTo/.test(code('components/SentHomeNotice.tsx')))
 }
 

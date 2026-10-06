@@ -150,13 +150,14 @@ export const SURFACES: Surface[] = [
   { path: '/chat?tab=jobs', kind: 'app', auth: 'wallet', name: 'chat·jobs' },
   { path: '/chat?tab=links', kind: 'app', auth: 'wallet', name: 'chat·links' },
   { path: '/chat?tab=chats', kind: 'app', auth: 'wallet', name: 'chat·chats' },
-  { path: '/markets', kind: 'app', auth: 'wallet', name: 'markets' },
+  // The markets index is `/` since the front door flipped (squad front-door, 2026-10-06); /markets 308s to it.
+  { path: '/', kind: 'app', auth: 'wallet', name: 'markets' },
   { path: '/t/AAPL', kind: 'app', auth: 'wallet', name: 't·AAPL' },
   { path: '/t/ETH', kind: 'app', auth: 'wallet', name: 't·ETH' },
   { path: '/wallet', kind: 'app', auth: 'wallet', name: 'wallet' },
   { path: '/dashboard', kind: 'app', auth: 'siwe', name: 'dashboard' },
   { path: `/i/${HOUSE_SLUG}`, kind: 'app', auth: 'wallet', name: 'i·link' },
-  { path: '/', kind: 'brochure', auth: 'none', name: 'landing' },
+  { path: '/story', kind: 'brochure', auth: 'none', name: 'landing' },
   { path: '/pricing', kind: 'brochure', auth: 'none', name: 'pricing' },
   { path: '/docs', kind: 'brochure', auth: 'none', name: 'docs' },
 ]
@@ -1008,7 +1009,7 @@ async function layoutJob(run: Run, s: Surface, theme: Theme, session: { address:
  *  [data-phone-screen] value on /chat (null = not a /chat screen). */
 type Expect = { path: string; tab: string | null; screen: string | string[] | null; lit: string; sheet?: boolean }
 export const D2_FROM_CHAT: Record<string, Expect> = {
-  MARKETS: { path: '/markets', tab: null, screen: null, lit: 'MARKETS' },
+  MARKETS: { path: '/', tab: null, screen: null, lit: 'MARKETS' },
   APPS: { path: '/chat', tab: 'mcps', screen: 'apps', lit: 'APPS' },
   JOBS: { path: '/chat', tab: 'jobs', screen: 'jobs', lit: 'JOBS' },
   LINKS: { path: '/chat', tab: 'links', screen: 'links', lit: 'LINKS' },
@@ -1018,14 +1019,14 @@ export const D2_FROM_CHAT: Record<string, Expect> = {
   More: { path: '/chat', tab: null, screen: null, lit: '', sheet: true },
 }
 export const D2_FROM_MARKETS: Record<string, Expect> = {
-  MARKETS: { path: '/markets', tab: null, screen: null, lit: 'MARKETS' },
+  MARKETS: { path: '/', tab: null, screen: null, lit: 'MARKETS' },
   APPS: { path: '/chat', tab: 'mcps', screen: 'apps', lit: 'APPS' },
   JOBS: { path: '/chat', tab: 'jobs', screen: 'jobs', lit: 'JOBS' },
   LINKS: { path: '/chat', tab: 'links', screen: 'links', lit: 'LINKS' },
   WALLET: { path: '/wallet', tab: null, screen: null, lit: 'WALLET' },
   CHATS: { path: '/chat', tab: 'chats', screen: 'history', lit: 'CHATS' },
   TEAM: { path: '/chat', tab: 'team', screen: 'team', lit: 'TEAM' },
-  More: { path: '/markets', tab: null, screen: null, lit: '', sheet: true },
+  More: { path: '/', tab: null, screen: null, lit: '', sheet: true },
 }
 /** Stateful sequences (D2): the tab keeps its stack; the lit tab pops to root. */
 export const D2_SEQUENCES: { name: string; taps: string[]; expect: Expect }[] = [
@@ -1054,7 +1055,8 @@ const SEAT_LABEL: Record<string, string> = Object.fromEntries(Object.entries(SEA
 export type NavState = { surface: NavSurface; screen: string; pathname: string }
 function surfaceOfPath(path: string): NavSurface | null {
   if (path === '/chat' || path.startsWith('/chat/')) return 'chat'
-  if (path === '/markets' || path.startsWith('/t/')) return 'markets'
+  // `/` is the markets splash since the front door flipped (squad front-door, 2026-10-06); /markets 308s to it.
+  if (path === '/' || path === '/markets' || path.startsWith('/t/')) return 'markets'
   if (path === '/wallet') return 'wallet'
   if (path.startsWith('/dashboard')) return 'dashboard'
   return null
@@ -1274,7 +1276,7 @@ async function tapFirst(page: Pw, selectors: string[]): Promise<boolean> {
 }
 
 const S_CHAT = SURFACES.find((s) => s.path === '/chat')!
-const S_MARKETS = SURFACES.find((s) => s.path === '/markets')!
+const S_MARKETS = SURFACES.find((s) => s.path === '/')!
 const S_LANDING = SURFACES.find((s) => s.path === '/')!
 const S_DASH = SURFACES.find((s) => s.path === '/dashboard')!
 const S_LINKS = SURFACES.find((s) => s.path === '/chat?tab=links')!
@@ -1696,7 +1698,7 @@ type Rects = Record<string, { x: number; y: number; w: number; h: number } | nul
 const DESKTOP_SURFACES: { path: string; auth: Auth; name: string; parts: Record<string, string>; heightMatters: string[] }[] = [
   { path: '/chat', auth: 'wallet', name: 'chat', parts: { spine: 'aside[aria-label="Workspace"]', bar: '[data-spine-bar]', drawer: 'main aside:not([aria-label="Workspace"]), aside:not([aria-label="Workspace"])', composer: 'textarea' }, heightMatters: ['spine', 'drawer'] },
   { path: '/chat?tab=links', auth: 'wallet', name: 'chat·links', parts: { spine: 'aside[aria-label="Workspace"]', drawer: 'aside:not([aria-label="Workspace"])' }, heightMatters: ['spine', 'drawer'] },
-  { path: '/markets', auth: 'wallet', name: 'markets', parts: { spine: 'aside[aria-label="Workspace"]', bar: '[data-spine-bar]', frame: '.mkt-frame', rail: '.mkt-frame__rail', side: '.mkt-frame__side', top: '.mkt-top, [class*="mkt-top"]' }, heightMatters: ['spine', 'rail'] },
+  { path: '/', auth: 'wallet', name: 'markets', parts: { spine: 'aside[aria-label="Workspace"]', bar: '[data-spine-bar]', frame: '.mkt-frame', rail: '.mkt-frame__rail', side: '.mkt-frame__side', top: '.mkt-top, [class*="mkt-top"]' }, heightMatters: ['spine', 'rail'] },
   { path: '/t/AAPL', auth: 'wallet', name: 't·AAPL', parts: { spine: 'aside[aria-label="Workspace"]', frame: '.mkt-frame', rail: '.mkt-frame__rail', sym: '.sym' }, heightMatters: ['spine', 'rail'] },
   { path: '/wallet', auth: 'wallet', name: 'wallet', parts: { spine: 'aside[aria-label="Workspace"]', bar: '[data-spine-bar]', main: 'main' }, heightMatters: ['spine'] },
   { path: '/dashboard', auth: 'siwe', name: 'dashboard', parts: { spine: 'aside[aria-label="Workspace"]', rail: '.dash__rail', main: '.dash__main' }, heightMatters: ['spine', 'rail'] },
@@ -2021,7 +2023,7 @@ async function main() {
       // chats · MARKETS ask/wl-alert/wl-import · PAGES account/wallet/door/nav/
       // dashnav · CHAT mint/chart/job/addmcp/creator. The known ones have their
       // own trigger above; the rest are found by their data-sheet-open.
-      for (const path of ['/chat', '/chat?tab=mcps', '/chat?tab=links', '/chat?tab=jobs', '/markets', '/t/AAPL', '/wallet', `/i/${HOUSE_SLUG}`, '/dashboard']) {
+      for (const path of ['/chat', '/chat?tab=mcps', '/chat?tab=links', '/chat?tab=jobs', '/', '/t/AAPL', '/wallet', `/i/${HOUSE_SLUG}`, '/dashboard']) {
         const s = SURFACES.find((x) => x.path === path)!
         add('sheets', `sheets discovered ${run.profile} ${s.path}`, async () => {
           const session = s.auth === 'siwe' ? await siwe() : null
