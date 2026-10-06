@@ -99,6 +99,29 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
   const mainRef = useRef<HTMLElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  // The second hand reads these without re-arming on every render.
+  const stateRef = useRef({ view, armies, since })
+  stateRef.current = { view, armies, since }
+
+  const inputFor = useCallback(
+    (now: number) => ({
+      view: stateRef.current.view,
+      armies: stateRef.current.armies,
+      since: stateRef.current.since,
+      now,
+      openedAt: openedAtRef.current,
+      samples: samplesRef.current,
+      fills: fillsRef.current,
+      contexts: ctxRef.current,
+      particles: particlesRef.current,
+      range: rangeRef.current,
+      hover: hoverRef.current,
+      inks: inksRef.current!,
+      reduced: reducedRef.current,
+      paused: pausedAtRef.current !== null,
+    }),
+    [],
+  )
 
   // ── The act door ──────────────────────────────────────────────────────
   const openDoor = useAskDoor((s) => s.openDoor)
@@ -246,6 +269,13 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
       }
       if (fillsRef.current.length && fillsRef.current[fillsRef.current.length - 1].at < now - 180_000) fillsRef.current = mergeFills(fillsRef.current, [], now)
       if (mainRef.current) inksRef.current = readInks(mainRef.current)
+      // A hidden tab has no frames: the scene is still built once a second
+      // so the scoreboard and the war log keep moving behind the tab.
+      if (document.hidden && inksRef.current) {
+        const scene = buildScene(inputFor(pausedAtRef.current ?? now))
+        unitRef.current = scene.unit
+        framesRef.current = scene.frames
+      }
       const fresh: WarEvent[] = []
       const frames = framesRef.current
       for (const a of frames) {
@@ -266,7 +296,7 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
       setTick((t) => t + 1)
     }, 1000)
     return () => clearInterval(id)
-  }, [chipFor])
+  }, [chipFor, inputFor])
 
   // ── The canvas ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -294,22 +324,7 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
     const loop = () => {
       raf = requestAnimationFrame(loop)
       if (document.hidden || !inksRef.current) return
-      const input = {
-        view,
-        armies,
-        since,
-        now: pausedAtRef.current ?? Date.now(),
-        openedAt: openedAtRef.current,
-        samples: samplesRef.current,
-        fills: fillsRef.current,
-        contexts: ctxRef.current,
-        particles: particlesRef.current,
-        range: rangeRef.current,
-        hover: hoverRef.current,
-        inks: inksRef.current,
-        reduced: reducedRef.current,
-        paused: pausedAtRef.current !== null,
-      }
+      const input = inputFor(pausedAtRef.current ?? Date.now())
       const scene = buildScene(input)
       unitRef.current = scene.unit
       framesRef.current = scene.frames
@@ -322,7 +337,7 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
       cancelAnimationFrame(raf)
       ro.disconnect()
     }
-  }, [view, armies, since])
+  }, [view, armies, since, inputFor])
 
   const onMove = useCallback((e: React.MouseEvent) => {
     const r = stageRef.current?.getBoundingClientRect()

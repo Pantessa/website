@@ -151,4 +151,6 @@ html[data-theme="light"] .battle {
   .battle__table th:nth-child(8) { width: 21%; }
   .battle__chip-usd { display: none; }
   .battle__add input { width: 150px; }
+  /* A phone shows the first six suggestions; a picked army always shows. */
+  .battle__chips > .battle__pick:nth-child(n + 7):not(.is-on) { display: none; }
 }

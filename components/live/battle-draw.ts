@@ -147,7 +147,9 @@ const PAD = { l: 56, r: 168, t: 26, b: 30 }
 
 export function drawFront(ctx: CanvasRenderingContext2D, w: number, h: number, d: DrawInput, s: Scene): void {
   const { inks } = d
-  const plotW = Math.max(10, w - PAD.l - PAD.r)
+  // A phone keeps a narrower flag column so the field is not half flags.
+  const padR = w < 640 ? 112 : PAD.r
+  const plotW = Math.max(10, w - PAD.l - padR)
   const plotH = Math.max(10, h - PAD.t - PAD.b)
   const x = (t: number) => PAD.l + ((t - s.from) / Math.max(1, s.to - s.from)) * plotW
   const y = (pct: number) => PAD.t + ((s.range.hi - pct) / (s.range.hi - s.range.lo)) * plotH
@@ -175,7 +177,7 @@ export function drawFront(ctx: CanvasRenderingContext2D, w: number, h: number, d
   }
   // Flags at the right edge, spread so close fronts never print over each other.
   const flagYs = spreadFlags(drawn.map((f) => f.fy), 30, PAD.t + 13, PAD.t + plotH - 13)
-  drawn.forEach((f, i) => drawFlag(ctx, inks, f.ink, f.a, PAD.l + plotW + 8, flagYs[i], PAD.r - 12, PAD.t, PAD.t + plotH, f.fx, f.fy))
+  drawn.forEach((f, i) => drawFlag(ctx, inks, f.ink, f.a, PAD.l + plotW + 8, flagYs[i], padR - 12, PAD.t, PAD.t + plotH, f.fx, f.fy))
   drawTracers(ctx, d, fronts)
   if (d.hover && d.hover.x >= PAD.l && d.hover.x <= PAD.l + plotW) {
     const t = s.from + ((d.hover.x - PAD.l) / plotW) * (s.to - s.from)
