@@ -49,13 +49,14 @@ import NewsTab from '@/components/markets/tabs/NewsTab'
 import CommunityTab from '@/components/markets/tabs/CommunityTab'
 import TechnicalsTab from '@/components/markets/tabs/TechnicalsTab'
 import TradeTab from '@/components/markets/tabs/TradeTab'
-import { sideOf, type TradeAsk } from '@/lib/trade-asks'
+import { composeAsk, sideOf, type TradeAsk } from '@/lib/trade-asks'
 import { ARRIVAL_APP_HREF, writeArrivalIntent } from '@/lib/arrival-intent'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
 import { useSession } from '@/lib/session'
 import { useSymbolFills, type FillMarker } from '@/lib/chart-fills'
 import { fillFromSigned, mergeFills, type SignedEvent } from '@/lib/ask-chart-thread'
 import { useAskDoor } from '@/lib/ask-door'
+import GuideSeat from '@/components/guide/GuideSeat'
 import { appScrollTop, scrollAppTo } from '@/lib/app-scroller'
 import type { AskChartIncoming } from '@/components/markets/ai/AskChart'
 import { canSellAsk } from '@/lib/sell-gate'
@@ -365,6 +366,7 @@ export default function SymbolPage({
               <ExecStrip symbol={sym} pair={pair} onAsk={act} last={stats?.last ?? null} />
             </div>
           )}
+          {pair && <GuideSeat surface="symbol" symbol={sym} ask={composeAsk(pair, 'buy', { usd: 25 })} />}
         </header>
 
         {/* ── Chart (always mounted; the tabs never unmount it) ── */}

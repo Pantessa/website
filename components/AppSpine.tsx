@@ -63,6 +63,7 @@ import { rosterEnabledClient } from '@/lib/roster-client'
 import { WALLET_PAGE_HREF } from '@/lib/wallet-page'
 import { YeetfulMark } from '@/components/Logo'
 import SpineLink from '@/components/SpineLink'
+import SpineGuideDot from '@/components/guide/SpineGuideDot'
 import { CreateAccountModal } from '@/components/CreateAccountButton'
 
 type SpineTab = { tab: RailTab; label: string; title: string; Icon: typeof Boxes }
@@ -404,7 +405,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         {selected && (
           <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
         )}
-        <Icon className="w-[18px] h-[18px]" />
+        <span className="relative"><Icon className="w-[18px] h-[18px]" />{(tab === 'jobs' || tab === 'links') && <SpineGuideDot tab={tab} />}</span>
         <span className="mono text-[9px] font-medium tracking-wide">{label}</span>
         {tab === 'jobs' && jobsBadge}
       </button>
@@ -439,6 +440,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         <span className="relative">
           <Icon className="w-[18px] h-[18px]" />
           {tab === 'jobs' && jobsBadge}
+          {(tab === 'jobs' || tab === 'links') && <SpineGuideDot tab={tab} />}
         </span>
         <span className="mono text-[10px] font-medium tracking-wide">{label}</span>
       </button>
@@ -520,7 +522,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             {onWallet && (
               <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
             )}
-            <Wallet className="w-[18px] h-[18px]" />
+            <span className="relative"><Wallet className="w-[18px] h-[18px]" /><SpineGuideDot tab="wallet" /></span>
             <span className="mono text-[9px] font-medium tracking-wide">WALLET</span>
           </SpineLink>
 
@@ -598,7 +600,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           {onWallet && (
             <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
           )}
-          <Wallet className="w-[18px] h-[18px]" />
+          <span className="relative"><Wallet className="w-[18px] h-[18px]" /><SpineGuideDot tab="wallet" /></span>
           <span className="mono text-[10px] font-medium tracking-wide">WALLET</span>
         </SpineLink>
         {TABS_BELOW_WALLET.map(mobileTab)}
