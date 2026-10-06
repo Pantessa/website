@@ -133,8 +133,8 @@ export default function WalletPage() {
             </span>
             <div className="min-w-0">
               <div className="mono text-[10.5px] uppercase tracking-[0.16em] text-[color:var(--muted-2)]">Wallet</div>
-              <h1 className="text-[19px] font-semibold leading-tight text-[color:var(--fg)] truncate">{showDetails ? kind.label : 'Your wallet'}</h1>
-              {showDetails && <div className="mono text-[11px] text-[color:var(--muted-2)] truncate">{kind.sub}</div>}
+              <h1 className="text-[19px] font-semibold leading-tight text-[color:var(--fg)] truncate max-sm:whitespace-normal max-sm:line-clamp-2">{showDetails ? kind.label : 'Your wallet'}</h1>
+              {showDetails && <div className="mono text-[11px] leading-snug text-[color:var(--muted-2)] sm:truncate">{kind.sub}</div>}
             </div>
           </div>
           {/* Switch or disconnect: RainbowKit's account modal, the right

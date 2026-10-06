@@ -373,3 +373,10 @@
   .guide--compact .guide__num { display: none; }
   .guide--compact .guide__title { -webkit-line-clamp: 3; }
 }
+
+/* MOBILE (pre-gtm r2): the keep-it bar's two buttons were 40px under a thumb (measured at 320–430 on /chat after a
+   receipt — the phone seat is the compact row). 44px floors; words and widths unchanged. */
+@media (hover: none) {
+  .keep--compact .keep__cta, .keep--compact .keep__later { min-height: 44px; } /* the compact row's 40px beat line 357's floor */
+  .keep__later { min-width: 44px; }
+}
