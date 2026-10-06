@@ -62,6 +62,8 @@ const GAS_SHAPE_RE = /\b(?:fix|top\s*up|need|no|out\s+of|more)\b[^.?!]*\bgas\b|\
 // reached the intent net. The word has to be an asset we chart: a coin, a
 // household name, or a four-plus-letter stock ticker that is not also an
 // English word (lib/charts isMoneyAssetWord — "buy now", "run it" stay prose).
+const QUESTION_START_RE = /^(?:what|whats|what's|how|why|when|which|who|where|should|is|are|does|do|did|will|would|explain|tell\s+me|show|list|compare)\b/i
+
 function namesAnAsset(message: string): boolean {
   for (const w of message.match(/\$?[a-zA-Z][a-zA-Z0-9.]{1,11}/g) ?? []) if (isMoneyAssetWord(w.replace(/^\$/, ''))) return true
   return false
@@ -73,10 +75,12 @@ function namesAnAsset(message: string): boolean {
 // carries evidence under the rules above, so both fell to the planner
 // (pre-gtm 2026-10-06). A question stays a read.
 const YIELD_SHAPE_RE = /^(?!(?:what|whats|what's|how|why|is|are|does|do|which|where|when|explain|tell)\b)[^?]*\b(?:earn|yield|interest|apy|apr)\b[^?]*$/i
-const BARE_VERB_RE = /^(?:please\s+|i\s+want\s+to\s+|i\s+wanna\s+|lets\s+|let's\s+)?(?:buy|invest|trade|stake|earn|long|short)(?:\s+(?:something|some|crypto|stocks?|a\s+stock|a\s+coin|now|here|it))*[.!]?$/i
+const BARE_VERB_RE = /^(?:please\s+|i\s+want\s+to\s+|i\s+wanna\s+|lets\s+|let's\s+)?(?:buy|invest|trade|stake|earn|long|short)(?:\s+(?:something|some|crypto|stocks?|a\s+stock|a\s+coin|here|it))*[.!]?$/i
 
 /** Pure: does this message look like it wanted money to move? */
 export function moneyShaped(message: string): boolean {
-  if (MONEY_VERB_RE.test(message) && (MONEY_EVIDENCE_RE.test(message) || namesAnAsset(message))) return true
+  // An asset name is evidence for an IMPERATIVE; a question that names one
+  // ("what is the apy on aave?") stays a read and never files as a failure.
+  if (MONEY_VERB_RE.test(message) && (MONEY_EVIDENCE_RE.test(message) || (!QUESTION_START_RE.test(message.trim()) && namesAnAsset(message)))) return true
   return BARE_AMOUNT_OF_RE.test(message) || PROTECT_SHAPE_RE.test(message) || GAS_SHAPE_RE.test(message) || YIELD_SHAPE_RE.test(message.trim()) || BARE_VERB_RE.test(message.trim())
 }
