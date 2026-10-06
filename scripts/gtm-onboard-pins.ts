@@ -102,7 +102,8 @@ check('polls: only an authed session reads jobs/schedules/protections', sessionR
   check('standing: an unknown symbol never promises a trade in its title or description', /not listed/i.test(seo.title) && !/still trade|tradable/i.test(seo.description), `${seo.title} | ${seo.description}`)
   const page = code('components/markets/shell/SymbolPage.tsx')
   const card = page.slice(page.indexOf('data-standing="unknown"'), page.indexOf('data-standing="unknown"') + 1200)
-  check('standing: the unknown card links to search and offers no Buy chip', /href="\/markets"/.test(card) && !/Buy \{sym\}/.test(card.slice(0, card.indexOf(') : ('))))
+  // RE-PINNED 2026-10-06 (front-door): the search is the splash — the chip reads lib/markets MARKETS_HREF (`/`).
+  check('standing: the unknown card links to search (MARKETS_HREF) and offers no Buy chip', /href=\{MARKETS_HREF\}/.test(card) && !/Buy \{sym\}/.test(card.slice(0, card.indexOf(') : ('))))
 }
 
 // ── Chips name no chain id ──────────────────────────────────────────────────

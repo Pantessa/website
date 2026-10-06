@@ -15835,11 +15835,12 @@ async function main() {
     'app/p/[slug]/opengraph-image.tsx',
     'app/r/[slug]/opengraph-image.tsx',
     'app/agents/[handle]/opengraph-image.tsx',
-    // RE-PINNED 2026-10-06 (front-door): the brochure's rehearsal card moved to /story.
+    // RE-PINNED 2026-10-06 (front-door): the brochure's rehearsal card moved to /story; /live got its own (R2).
     'app/story/opengraph-image.tsx',
+    'app/live/opengraph-image.tsx',
   ].map((f) => ({ f, src: ogFs.readFileSync(f, 'utf8') }))
   check(
-    'og cards: all eight draw the house mark from lib/og-marks, none inline one',
+    'og cards: all nine draw the house mark from lib/og-marks, none inline one',
     ogCards.every((c) => c.src.includes('gemMarkSvg')) &&
       ogCards.every((c) => !c.src.includes('mask id="hub"')),
   )

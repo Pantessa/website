@@ -13,12 +13,16 @@
 // same markup lays out as ONE ROW ≤64px — mark · n/N + title (two lines at
 // most) · the CTA chip wearing its short label · an × that is "Got it". The
 // body line, the text "Got it" and the ⋯ step aside there; wider than 640px
-// the compact card is the full card. Only CSS tells them apart.
+// the compact card is the full card. CSS lays the row out; the chip's words
+// are picked here (one text node per posture, from the same media query),
+// because the journey tracker logs a click by the control's text — two
+// labels in the DOM, one hidden, read as one doubled label (QA's nit, R2).
 //
 // The card decides nothing. lib/guide picked the hint; the seat (GuideSeat)
 // owns the record and the journey events and hands the card its handlers.
 // GUIDE lane owns this file.
 
+import { useEffect, useState } from 'react'
 import { useAskDoor } from '@/lib/ask-door'
 import { guideCta, guideIndexOf, GUIDE_TOTAL, renderGuideText, type GuideCta, type GuideCtx, type GuideHint } from '@/lib/guide'
 import { PantessaMark } from '@/components/Logo'
@@ -41,10 +45,30 @@ export type GuideCardProps = {
 
 const OFF_LABEL = 'Don’t show tips'
 
+/** The compact row's breakpoint — the same query guide.css lays the row out
+ *  under, so the words and the layout can never disagree. */
+export const GUIDE_COMPACT_MQ = '(max-width: 640px)'
+
+/** True while a compact card is laid out as the one row (viewport under the
+ *  breakpoint); false otherwise, and before the first client read. */
+function useCompactRow(compact: boolean): boolean {
+  const [row, setRow] = useState(false)
+  useEffect(() => {
+    if (!compact) return
+    const mq = window.matchMedia(GUIDE_COMPACT_MQ)
+    const read = () => setRow(mq.matches)
+    read()
+    mq.addEventListener('change', read)
+    return () => mq.removeEventListener('change', read)
+  }, [compact])
+  return compact && row
+}
+
 export default function GuideCard({ hint, ctx, onCta, onDismiss, onOff, onAsk, compact = false }: GuideCardProps) {
   const cta = guideCta(hint, ctx)
   const n = guideIndexOf(hint.id)
   const titleId = `guide-${hint.id}-title`
+  const row = useCompactRow(compact)
 
   const scrollTo = (selector: string) => {
     const el = document.querySelector<HTMLElement>(selector)
@@ -53,17 +77,10 @@ export default function GuideCard({ hint, ctx, onCta, onDismiss, onOff, onAsk, c
     el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
   }
 
-  // The chip's words: the full label, and the short one the compact row
-  // swaps in (CSS picks; both are in the DOM only when they differ).
-  const words =
-    cta && cta.short && cta.short !== cta.label ? (
-      <>
-        <span className="guide__cta-full">{cta.label}</span>
-        <span className="guide__cta-short">{cta.short}</span>
-      </>
-    ) : (
-      cta?.label
-    )
+  // The chip's words: ONE text node — the short label while the compact row
+  // is laid out, the full label otherwise. What is on screen is what the
+  // journey tracker logs (lib/journey labelOfClick reads the control's text).
+  const words = cta ? (row && cta.short ? cta.short : cta.label) : null
 
   const action = (() => {
     if (!cta) return null

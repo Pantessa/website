@@ -19,6 +19,7 @@ import {
   GUIDE_STORAGE_KEY,
   GUIDE_SURFACES,
   GUIDE_TOTAL,
+  GUIDE_VISITS,
   dotFor,
   freshGuideState,
   guideCta,
@@ -355,14 +356,33 @@ export function guidePins(check: Check): void {
       /Don’t show tips/.test(card),
   )
   check(
-    'guide: the compact row is the HOME seat only (GuideSeat passes compact for home), one row under 640px — the title clamps to two lines, the chip swaps in its short label, the × is "Got it" (44×44), the body / text Got it / ⋯ step aside; the full card keeps the ⋯ and its <details>',
+    'guide: the compact row is the HOME seat only (GuideSeat passes compact for home), one row under 640px — the title clamps to two lines, the × is "Got it" (44×44), the body / text Got it / ⋯ step aside; the full card keeps the ⋯ and its <details>',
     /compact=\{surface === 'home'\}/.test(seat) &&
       /className=\{compact \? 'guide guide--compact' : 'guide'\}/.test(card) &&
       /className="guide__x" aria-label="Got it"/.test(card) &&
-      /className="guide__cta-short"/.test(card) &&
-      /@media \(max-width: 640px\) \{[\s\S]*\.guide--compact \{[\s\S]*grid-template-areas: "mark body acts";[\s\S]*-webkit-line-clamp: 2;[\s\S]*\.guide--compact \.guide__cta-short \{ display: inline; \}[\s\S]*\.guide--compact \.guide__x \{ display: inline-grid;[^}]*width: 44px; height: 44px;/.test(css) &&
+      /@media \(max-width: 640px\) \{[\s\S]*\.guide--compact \{[\s\S]*grid-template-areas: "mark body acts";[\s\S]*-webkit-line-clamp: 2;[\s\S]*\.guide--compact \.guide__x \{ display: inline-grid;[^}]*width: 44px; height: 44px;/.test(css) &&
       /\.guide--compact \.guide__eyebrow, \.guide--compact \.guide__text, \.guide--compact \.guide__got, \.guide--compact \.guide__more \{ display: none; \}/.test(css) &&
       /^\.guide__x \{ display: none; \}/m.test(css),
+  )
+  check(
+    'guide: the CTA carries ONE label on screen and in the DOM — the short one only while the compact row is laid out (the same 640px query the CSS uses, read in the card), never two spans with one hidden — so the journey tracker\'s click label (the control\'s text) is the visible label, not a doubled one (QA R2); the CSS swaps no label',
+    /export const GUIDE_COMPACT_MQ = '\(max-width: 640px\)'/.test(card) &&
+      /window\.matchMedia\(GUIDE_COMPACT_MQ\)/.test(card) &&
+      /const words = cta \? \(row && cta\.short \? cta\.short : cta\.label\) : null/.test(card) &&
+      !/guide__cta-short|guide__cta-full/.test(card) &&
+      !/guide__cta-short|guide__cta-full/.test(css) &&
+      /@media \(max-width: 640px\)/.test(css) &&
+      (card.match(/\{words\}/g) ?? []).length === 5 &&
+      !/aria-label=\{cta/.test(card),
+  )
+  check(
+    'guide: the record\'s `visited.home` is a contract — SPLASH\'s claim reads it once at mount through getGuideState() (components/home/SplashClaim.tsx) — so the key stays, round-trips, and is written by the home seat after its pick',
+    (GUIDE_VISITS as readonly string[]).includes('home') &&
+      readGuideState(serializeGuideState(noteEvent(freshGuideState(), 'visited:home', NOW))).visited.home === NOW &&
+      (() => {
+        const claim = src('components/home/SplashClaim.tsx')
+        return /import \{ getGuideState \} from '@\/lib\/guide'/.test(claim) && /getGuideState\(\)\.visited\.home/.test(claim)
+      })(),
   )
   check(
     'guide: the look is tokens only (surface, line, fg, muted, accent, ink; the markets facet corner), reduced motion drops the entrance, and a thumb gets ≥44px controls',

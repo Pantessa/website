@@ -73,7 +73,6 @@
 }
 .guide__cta:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .guide__cta:active { transform: none; }
-.guide__cta-short { display: none; }
 .guide__got, .guide__off {
   display: inline-flex;
   align-items: center;
@@ -173,8 +172,8 @@
   .guide--compact .guide__num { display: inline; font-family: var(--mk-font-mono, var(--font-mono)); font-size: 10px; letter-spacing: .1em; color: var(--muted-2); vertical-align: 1px; }
   .guide--compact .guide__acts { flex-wrap: nowrap; gap: 4px; }
   .guide--compact .guide__cta { min-height: 44px; padding: 0 12px; }
-  .guide--compact .guide__cta-full { display: none; }
-  .guide--compact .guide__cta-short { display: inline; }
+  /* The chip's SHORT label is picked in GuideCard from this same query (one
+     text node on screen = one label in the journey log), not swapped here. */
   .guide--compact .guide__x { display: inline-grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 10px; background: transparent; color: var(--muted-2); cursor: pointer; }
   .guide--compact .guide__x:hover { color: var(--fg); }
 }
