@@ -152,7 +152,16 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
     const ac = new AbortController()
     readTapeUniverse(ac.signal).then(({ main, xyz }) => {
       if (ac.signal.aborted) return
-      setUniverse([...main, ...xyz].filter((r) => !r.delisted).sort((a, b) => b.volumeUsd - a.volumeUsd).map((r) => r.name))
+      const names = [...main, ...xyz].filter((r) => !r.delisted).sort((a, b) => b.volumeUsd - a.volumeUsd).map((r) => r.name)
+      setUniverse(names)
+      // The URL spells a market in caps; the venue spells kPEPE with its k.
+      // Once the list is here, every army takes the venue's spelling.
+      if (names.length) {
+        setArmies((prev) => {
+          const fixed = prev.map((m) => resolveMarket(m, names) ?? m)
+          return fixed.some((m, i) => m !== prev[i]) ? fixed : prev
+        })
+      }
     })
     return () => ac.abort()
   }, [])
