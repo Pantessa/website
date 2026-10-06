@@ -400,3 +400,118 @@ export function spotRead(book: Pick<BookBody, 'bids' | 'asks' | 'mid'>, pct = 5)
   if (bidShare <= 0.4) return { lean: 'down', headline: 'Sellers hold the deeper book', bidShare, spreadPct }
   return { lean: 'even', headline: 'The book is evenly matched', bidShare, spreadPct }
 }
+
+// ── The heatmap: positioning by day, the contribution-graph way ───────────
+
+export interface HeatCell {
+  /** Unix seconds at the UTC day's start. */
+  day: number
+  /** Share of accounts long that day, null when no reading landed. */
+  long: number | null
+  /** Open interest that day (the unit the source uses), null when unread. */
+  oi: number | null
+  /** The day's close over its open, percent; null without a daily bar. */
+  pricePct: number | null
+}
+
+export const DAY_SEC = 86_400
+export const HEAT_WEEKS = 53
+
+/** One cell per UTC day for the last HEAT_WEEKS weeks ending on the week of
+ *  `now`, the newest reading of each day winning. Columns are weeks
+ *  (Sunday first, the GitHub layout), so the first cell is the Sunday
+ *  HEAT_WEEKS − 1 weeks before this week's Sunday. */
+export function heatCells(ratio: RatioPoint[], oi: OiPoint[], bars: Candle[], now: number, weeks = HEAT_WEEKS): HeatCell[] {
+  const today = Math.floor(now / DAY_SEC) * DAY_SEC
+  const sunday = today - new Date(today * 1000).getUTCDay() * DAY_SEC
+  const start = sunday - (weeks - 1) * 7 * DAY_SEC
+  const end = sunday + 6 * DAY_SEC
+  const byDay = new Map<number, HeatCell>()
+  for (let d = start; d <= end; d += DAY_SEC) byDay.set(d, { day: d, long: null, oi: null, pricePct: null })
+  const dayOf = (t: number) => Math.floor(t / DAY_SEC) * DAY_SEC
+  for (const r of ratio) {
+    const c = byDay.get(dayOf(r.t))
+    if (c) c.long = r.long
+  }
+  for (const p of oi) {
+    const c = byDay.get(dayOf(p.t))
+    if (c) c.oi = p.oi
+  }
+  for (const b of bars) {
+    const c = byDay.get(dayOf(b.t))
+    if (c && b.o > 0) c.pricePct = (b.c / b.o - 1) * 100
+  }
+  return [...byDay.values()]
+}
+
+/** The year's typical day: the median long share of the days read. A coin's
+ *  crowd is structurally one-sided (UNI's accounts run ~65% long every day),
+ *  so the cells ink the day AGAINST its own year, not against 50/50. */
+export function heatMedian(cells: { long: number | null }[]): number | null {
+  const xs = cells.map((c) => c.long).filter((x): x is number => x !== null).sort((a, b) => a - b)
+  if (!xs.length) return null
+  const mid = xs.length >> 1
+  return xs.length % 2 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2
+}
+
+/** How far a day sits from the typical day before it counts as one side's. */
+export const HEAT_EDGE = 0.04
+
+/** The day's ink, −1 (far more short than usual) … +1 (far more long than
+ *  usual): the share's distance from `center`, full strength at 8 points. */
+export function heatTone(long: number | null, center = 0.5): number | null {
+  if (long === null) return null
+  return Math.max(-1, Math.min(1, (long - center) / 0.08))
+}
+
+export interface HeatSummary {
+  /** Days with a reading. */
+  read: number
+  /** The typical day's long share. */
+  median: number | null
+  /** Days each side ran past the typical day by HEAT_EDGE. */
+  longDays: number
+  shortDays: number
+  /** The run ending today: how many days in a row the same side has run above usual, and which. */
+  streak: { side: 'long' | 'short'; days: number } | null
+  headline: string
+}
+
+export function heatSummary(cells: HeatCell[]): HeatSummary {
+  const median = heatMedian(cells)
+  const center = median ?? 0.5
+  let read = 0
+  let longDays = 0
+  let shortDays = 0
+  for (const c of cells) {
+    if (c.long === null) continue
+    read++
+    if (c.long >= center + HEAT_EDGE) longDays++
+    else if (c.long <= center - HEAT_EDGE) shortDays++
+  }
+  let runSide: 'long' | 'short' | null = null
+  let runDays = 0
+  for (let i = cells.length - 1; i >= 0; i--) {
+    const c = cells[i]
+    if (c.long === null) {
+      if (runDays) break
+      continue
+    }
+    const side: 'long' | 'short' | null = c.long >= center + HEAT_EDGE ? 'long' : c.long <= center - HEAT_EDGE ? 'short' : null
+    if (!side || (runSide && runSide !== side)) break
+    runSide = side
+    runDays++
+  }
+  const streak: HeatSummary['streak'] = runSide ? { side: runSide, days: runDays } : null
+  const headline =
+    read === 0
+      ? 'No daily positioning read yet'
+      : streak && streak.days >= 3
+        ? `More ${streak.side} than usual ${streak.days} days running`
+        : longDays > shortDays * 2 && longDays > 0
+          ? `More long than usual on ${longDays} of ${read} days`
+          : shortDays > longDays * 2 && shortDays > 0
+            ? `More short than usual on ${shortDays} of ${read} days`
+            : `A year near its usual: ${longDays} days longer, ${shortDays} shorter`
+  return { read, median, longDays, shortDays, streak, headline }
+}
