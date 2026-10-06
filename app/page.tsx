@@ -76,10 +76,14 @@ const JSON_LD = JSON.stringify([
   },
 ])
 
-// The "Trending on Pantessa" strip reads embed_turns (fenced, fail-soft),
-// so the page renders per request; everything else on it is live data the
-// browser reads itself.
-export const dynamic = 'force-dynamic'
+// ISR, not force-dynamic (QA's prod control, 2026-10-06): today's `/` is served
+// from Vercel's edge cache (first byte 0.12–0.63s) while the same index at
+// /markets rendered on every request (2.4–2.9s) — a front door must not wait
+// two seconds for its first byte. The two server reads here are fail-soft and
+// coarse ("Trending on Pantessa" is a 7-day window; the tradability verdicts
+// refresh every 10 min), so a 60s edge copy is as fresh as a visitor can tell;
+// everything live on the page (quotes, the pulse, the guide) is the browser's.
+export const revalidate = 60
 
 export default async function HomePage() {
   // Dark until the tripwire: the Roster front door renders ONLY on the flag.
