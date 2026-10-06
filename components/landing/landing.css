@@ -25,7 +25,10 @@
 .lh__typed { font-family: var(--font-serif); font-size: clamp(17px, 1.4vw, 21px); letter-spacing: -.01em; }
 .lh__caret { display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -.15em; background: var(--accent); animation: lh-blink 1s steps(2) infinite; }
 @keyframes lh-blink { 50% { opacity: 0; } }
-.lh__quiet { margin-top: 26px; display: flex; gap: 14px 22px; flex-wrap: wrap; font-size: 11px; letter-spacing: .08em; color: var(--muted-2); }
+/* Three promises as a short list (pre-gtm POLISH r3): as a wrapping row they broke 2 + 1 with ragged gaps. */
+.lh__quiet { margin-top: 26px; display: flex; flex-direction: column; gap: 8px; font-size: 11px; letter-spacing: .08em; color: var(--muted-2); }
+.lh__quiet span { display: inline-flex; align-items: center; gap: 10px; }
+.lh__quiet span::before { content: ''; width: 5px; height: 5px; border-radius: 1px; background: var(--accent); flex-shrink: 0; }
 .lh__quiet b { color: var(--muted); font-weight: 500; }
 
 /* the stage: a real chart with a HUD on it */
@@ -123,7 +126,7 @@
 .lvb__vmark svg { width: 16px; height: 16px; }
 .lvb__vname { font-size: 13px; font-weight: 600; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lvb__vkind { margin-left: auto; font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); }
-.lvb__vstat { font-size: 18px; color: var(--fg); font-variant-numeric: tabular-nums; letter-spacing: -.01em; min-height: 1.2em; }
+.lvb__vstat { font-size: 15px; line-height: 1.35; color: var(--fg); font-variant-numeric: tabular-nums; letter-spacing: -.01em; min-height: 1.35em; text-wrap: balance; } /* 18px wrapped every quote to 2–3 heavy lines (pre-gtm POLISH r3) */
 .lvb__vstat.is-word { font-size: 12px; color: var(--muted-2); letter-spacing: .06em; text-transform: uppercase; }
 .lvb__vchain { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2); }
 .lvb__vask { margin-top: 6px; display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; font-size: 12px; padding: 6px 11px; border-radius: 999px; border: 1px solid var(--line-2, var(--line)); color: var(--fg); }

@@ -11,6 +11,7 @@ import CreateAccountButton from '@/components/CreateAccountButton'
 import { useSession } from '@/lib/session'
 import type { PublicComment } from '@/lib/chart-posts'
 import { ageLabel } from '@/lib/news-shared'
+import { friendlyError } from '@/lib/friendly-error'
 
 export default function CallComments({ postId, initial }: { postId: string; initial: PublicComment[] }) {
   const session = useSession()
@@ -29,7 +30,7 @@ export default function CallComments({ postId, initial }: { postId: string; init
       setComments((cur) => [...cur, d.comment!])
       setReply('')
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not reply.')
+      setErr(friendlyError(e, 'Could not reply.'))
     } finally {
       setBusy(false)
     }
