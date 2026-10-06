@@ -467,11 +467,14 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         )}
         aria-label="Workspace"
       >
-        {/* Brand seat — the product's home is the chat. */}
+        {/* Brand seat — signed in, it opens a fresh chat. Signed out, the
+            logo goes home: `/` is public (the markets splash), and a logo
+            must never be a sign-in wall (2026-10-06, Nate: "only ask them
+            to sign in if a transaction is needed or deeper bits"). */}
         <SpineLink
-          href="/chat"
-          title="Pantessa — chat"
-          aria-label="Pantessa chat"
+          href={signedOut ? '/' : '/chat'}
+          title={signedOut ? 'Pantessa — home' : 'Pantessa — chat'}
+          aria-label={signedOut ? 'Pantessa home' : 'Pantessa chat'}
           className="grid place-items-center w-full h-14 flex-shrink-0 border-b border-[var(--line)] text-white hover:bg-[var(--surf-2)] transition-colors"
         >
           <YeetfulMark size={25} />
