@@ -178,6 +178,8 @@ export default function PulseSlot() {
   const hidden = vis !== null && !vis.visible
   const live = status === 'live'
   const words = pulseStatusWords(status, detail, { markets: markets.length, hidden })
+  // The phone's head has ~110px for the status: the venue and the state, no count.
+  const shortWords = pulseStatusWords(status, detail, { hidden })
   const hb = hover !== null ? bars[hover] : null
 
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -195,7 +197,8 @@ export default function PulseSlot() {
           <span className="pulse__title">Live pulse</span>
           <span className="pulse__status mono" role="status">
             <span className="pulse__venue">Hyperliquid · </span>
-            {words}
+            <span className="pulse__status-long">{words}</span>
+            <span className="pulse__status-short">{shortWords}</span>
           </span>
           <nav className="pulse__views mono" aria-label="Live views">
             {PULSE_VIEW_LINKS.map((v) => (
@@ -205,7 +208,8 @@ export default function PulseSlot() {
             ))}
           </nav>
           <Link href={PULSE_LIVE_HREF} className="pulse__door" prefetch={false}>
-            Open the live tape <span aria-hidden>→</span>
+            <span className="pulse__door-long">Open the live tape</span>
+            <span className="pulse__door-short">Live tape</span> <span aria-hidden>→</span>
           </Link>
         </header>
 
@@ -271,7 +275,7 @@ export default function PulseSlot() {
               onAct={act}
             />
             <Tile
-              k={<>Largest print<span className="pulse__tk-win"> · {PULSE_TILE_WINDOW_SEC}s</span></>}
+              k={<><span className="pulse__tk-long">Largest print</span><span className="pulse__tk-short">Largest</span><span className="pulse__tk-win"> · {PULSE_TILE_WINDOW_SEC}s</span></>}
               v={tiles.largest ? fmtUsd(tiles.largest.fill.usd) : <span className="pulse__dim">—</span>}
               sub={tiles.largest ? `${tiles.largest.market.ticker} · ${tiles.largest.fill.side === 'buy' ? 'bought' : 'sold'} at ${fmtPrice(tiles.largest.fill.price)}` : PULSE_WAITING}
               chip={tiles.largest?.chip ?? null}
