@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowRight } from 'lucide-react'
 import SpineLink from '@/components/SpineLink'
 import MarketMap from '@/components/markets/viz/MarketMap'
-import { marketSections } from '@/lib/markets'
+import { marketSections, MARKETS_HREF } from '@/lib/markets'
 import { MAP_TEASER, TAPE_FOOTNOTE, UNLIMITED_LINE } from '@/lib/markets-copy'
 
 export default function MarketMapTeaser() {
@@ -37,7 +37,7 @@ export default function MarketMapTeaser() {
       </div>
       <div className="lmap__foot">
         <span className="mono">{UNLIMITED_LINE} · {TAPE_FOOTNOTE}</span>
-        <SpineLink href="/markets" className="btn btn--sm">
+        <SpineLink href={MARKETS_HREF} className="btn btn--sm">
           {MAP_TEASER.cta} <ArrowRight className="w-3 h-3" />
         </SpineLink>
       </div>

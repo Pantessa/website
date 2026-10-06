@@ -25,6 +25,7 @@ import { askAppSlugs } from '@/lib/ask-apps'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
 import type { TradabilityMap } from '@/lib/tradability'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
+import GuideSeat from '@/components/guide/GuideSeat'
 import {
   DEFAULT_THRESHOLDS,
   FALLBACK_MARKETS,
@@ -217,6 +218,7 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
           })}
         </div>
 
+        <GuideSeat surface="live" posture="phone" />
         <section className="live__panel" aria-label="USD notional per second">
           <header className="live__ph">
             <span className="live__pk">USD notional per second, by taker flow{filter ? ` · ${filter}` : ''}</span>
@@ -302,6 +304,7 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
 
       <MarketsSide label="Triggers">
         <div data-slot="triggers" className="live__rail">
+          <GuideSeat surface="live" posture="desktop" />
           <TriggersPanel armed={armed} setArmed={setArmed} thresholds={thresholds} setThresholds={setThresholds} events={events} onAct={act} chipOk={(f) => canTradeAsk(f.ask, tradable)}>
             <FeedsCard source={source} setSource={setSource} status={status} detail={statusDetail} />
           </TriggersPanel>

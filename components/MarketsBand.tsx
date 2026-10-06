@@ -15,6 +15,7 @@ import {
   sessionLine,
 } from '@/lib/markets-copy'
 import type { Candle } from '@/lib/charts'
+import { MARKETS_HREF } from '@/lib/markets'
 
 // THE COMPARE BAND (mk2 LANDING, 2026-09-15 — was the Markets band). Their
 // meters, our answer: every line a charting subscription caps, shown as
@@ -179,7 +180,7 @@ export default function MarketsBand() {
       </ol>
 
       <div className="mkt__ctas">
-        <SpineLink className="btn btn--solid" href="/markets">
+        <SpineLink className="btn btn--solid" href={MARKETS_HREF}>
           Open Markets
         </SpineLink>
         <SpineLink className="btn btn--ghost" href="/t/AAPL">

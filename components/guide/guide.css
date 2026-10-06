@@ -1,0 +1,218 @@
+/* ── THE GUIDE (components/guide) ──────────────────────────────────────────
+   One card that teaches as you go, and the spine's unseen-dot. A NOTE in the
+   markets look: the page surface with rounded corners (the facet clip-path
+   sliced the border off two corners), site tokens only (--surf /
+   --line / --fg / --muted / --accent / --ink), so the light theme comes free
+   and the embed never sees it. No scrim, no portal, nothing positioned
+   outside the card: the ⋯ overflow is a <details> whose content flows inline
+   in the actions row (a clip-path would cut a dropdown). Reduced motion
+   drops the entrance. Squad front-door (2026-10-06), GUIDE lane.
+   MOBILE may append @media (max-width: 640px) rules at the END of this file. */
+
+.guide-seat { min-width: 0; }
+
+/* The full card: a grid of mark · body, with the actions under the body. */
+.guide {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  grid-template-areas: "mark body" ". acts";
+  align-items: start;
+  column-gap: 12px;
+  row-gap: 8px;
+  width: 100%;
+  padding: 12px 14px 12px 13px;
+  border: 1px solid var(--line);
+  background: var(--mk-surface, var(--surf-1));
+  border-radius: 12px;
+  color: var(--fg);
+  font-family: var(--mk-font-ui, var(--font-chat-body, system-ui, sans-serif));
+  animation: guide-in var(--mk-dur-base, .22s) var(--mk-ease, ease) both;
+}
+
+/* The stone: a 20px icon cut, lifted a hair to sit on the eyebrow's line. */
+.guide__mark { grid-area: mark; display: grid; place-items: center; width: 24px; height: 24px; margin-top: 1px; }
+
+.guide__body { grid-area: body; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.guide__eyebrow { font-family: var(--mk-font-mono, var(--font-mono)); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); line-height: 1.4; }
+.guide__title {
+  margin: 0;
+  font-family: var(--font-chat-display, var(--mk-font-display, Georgia, serif));
+  font-weight: 500;
+  font-size: 16.5px;
+  line-height: 1.25;
+  letter-spacing: -0.012em;
+  color: var(--fg);
+}
+/* The compact row's "n/N ·" prefix; the eyebrow carries it everywhere else. */
+.guide__num { display: none; }
+.guide__text { margin: 1px 0 0; max-width: 62ch; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+
+/* The actions: the one accent chip, Got it as text, the ⋯ with its one
+   option flowing in after it when open. */
+.guide__acts { grid-area: acts; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; }
+.guide__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .01em;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter var(--mk-dur-fast, .12s) ease, transform var(--mk-dur-fast, .12s) ease;
+}
+.guide__cta:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.guide__cta:active { transform: none; }
+.guide__got, .guide__off {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--mk-dur-fast, .12s) ease, background var(--mk-dur-fast, .12s) ease;
+}
+.guide__got:hover, .guide__off:hover { color: var(--fg); background: var(--surf-2, transparent); }
+.guide__off { color: var(--muted-2); font-weight: 400; text-decoration: underline; text-underline-offset: 2px; }
+.guide__more { display: inline-flex; align-items: center; gap: 4px; }
+.guide__dots {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--muted-2);
+  font-size: 13px;
+  letter-spacing: .08em;
+  line-height: 1;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+.guide__dots::-webkit-details-marker { display: none; }
+.guide__dots::marker { content: ''; }
+.guide__dots:hover { color: var(--fg); background: var(--surf-2, transparent); }
+/* The compact row's × ("Got it"); not in the full card. */
+.guide__x { display: none; }
+.guide__cta:focus-visible, .guide__got:focus-visible, .guide__off:focus-visible, .guide__dots:focus-visible, .guide__x:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Where the seats sit. The symbol header is a wrapping flex row (the act
+   strip is order 3, full width); the seat follows it. The chat's empty state
+   centres a column; the card keeps its left-aligned reading. */
+.sym__head--mk2 > .guide-seat { order: 4; flex-basis: 100%; margin-top: 10px; }
+[data-empty-state] > .guide-seat { width: 100%; max-width: 28rem; margin-top: 22px; text-align: left; }
+.live__rail > .guide-seat { margin-bottom: 12px; }
+/* The phone posture: under the markets strip, before the flow chart (which
+   brings its own 14px above). */
+.live > .guide-seat { margin: 14px 0 0; }
+.guide-seat[data-guide-seat='wallet'] { margin-bottom: 18px; }
+
+/* ── The spine's unseen-dot: 6px of accent at the ICON's top-right (the dot
+   lives inside the icon's own `relative` wrapper in every seat, so the bar's
+   overflow can never clip it and no seat posture moves it), ringed in the
+   seat's surface so it reads on the lit seat too. ── */
+.guide-dot {
+  position: absolute;
+  top: -3px;
+  right: -4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surf-1);
+  pointer-events: auto;
+}
+
+@keyframes guide-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+/* Light ground: the panel surface is white there; the card gains the hairline
+   shadow the markets panels wear. Every colour above is a token. */
+:root[data-theme='light'] .guide { box-shadow: 0 1px 0 rgb(16 21 18 / 0.04); }
+
+/* ── The compact row (the home seat on a phone; MOBILE's budget on `/`): one
+   row ≤64px — mark · "n/N · title" (two lines at most) · the chip with its
+   short label · the × that is Got it. The body line, the text Got it and the
+   ⋯ step aside. 8px + 44px controls + 8px = 60px. ── */
+@media (max-width: 640px) {
+  .guide--compact {
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    grid-template-areas: "mark body acts";
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 0;
+    padding: 8px 8px 8px 12px;
+  }
+  .guide--compact .guide__mark { width: 20px; height: 20px; margin-top: 0; }
+  .guide--compact .guide__eyebrow, .guide--compact .guide__text, .guide--compact .guide__got, .guide--compact .guide__more { display: none; }
+  .guide--compact .guide__body { gap: 0; }
+  .guide--compact .guide__title {
+    font-size: 14px;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .guide--compact .guide__num { display: inline; font-family: var(--mk-font-mono, var(--font-mono)); font-size: 10px; letter-spacing: .1em; color: var(--muted-2); vertical-align: 1px; }
+  .guide--compact .guide__acts { flex-wrap: nowrap; gap: 4px; }
+  .guide--compact .guide__cta { min-height: 44px; padding: 0 12px; }
+  /* The chip's SHORT label is picked in GuideCard from this same query (one
+     text node on screen = one label in the journey log), not swapped here. */
+  .guide--compact .guide__x { display: inline-grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 10px; background: transparent; color: var(--muted-2); cursor: pointer; }
+  .guide--compact .guide__x:hover { color: var(--fg); }
+  /* The symbol header on a phone (R3): the row sits under the act strip and
+     the chart follows — the chart stays primary, so the seat spends as little
+     of the first screen as a 44px row allows (the header's own row gap is the
+     air above it; a hair below it before the chart card). */
+  .sym__head--mk2 > .guide-seat { margin-top: 0; margin-bottom: 2px; }
+}
+
+/* A thumb: every control ≥44px, the chip keeps its look and grows its box.
+   `.guide__got` is also ≥44 WIDE here (MOBILE § For GUIDE 4: touch tablets at
+   641–1023 fall outside MOBILE's 640px fence; this block covers them). */
+@media (hover: none) {
+  .guide__cta, .guide__got, .guide__dots { min-height: 44px; }
+  .guide__cta { padding-inline: 16px; }
+  .guide__got { min-width: 44px; justify-content: center; }
+  .guide__dots { width: 44px; }
+  .guide__off { min-height: 44px; }
+}
+
+/* Reduced motion: no entrance, no lift. */
+@media (prefers-reduced-motion: reduce) {
+  .guide { animation: none; }
+  .guide__cta:hover { transform: none; }
+}
+
+/* MOBILE */
+/* Measured on the integrated tree (feat/front-door @ 60702500, coarse
+   pointer — MOBILE lane, squad front-door 2026-10-06):
+   - the full card's "Got it" was 42×44 → 44 wide;
+   - under 375 the compact home row cut EVERY home lesson's title mid-sentence
+     (the title column is 86–111px beside the chip and the ×; each title needs
+     3–4 lines and the row allows 2): the "n/N ·" counter steps aside there
+     (the full card's eyebrow still carries it) and the title may take a third
+     line — the row grows to ≈71px only when a title needs it. */
+@media (max-width: 640px) {
+  .guide__got { min-width: 44px; justify-content: center; }
+}
+@media (max-width: 374px) {
+  .guide--compact .guide__num { display: none; }
+  .guide--compact .guide__title { -webkit-line-clamp: 3; }
+}

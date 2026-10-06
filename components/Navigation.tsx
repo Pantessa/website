@@ -12,7 +12,7 @@ import CreateAccountButton, { CreateAccountModal } from '@/components/CreateAcco
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { YeetfulMark } from '@/components/Logo'
 import { AskDoorTrigger } from '@/components/AskDoor'
-import { isMarketsPath } from '@/lib/markets'
+import { isMarketsPath, MARKETS_HREF } from '@/lib/markets'
 import SiteAccount, { signInLabel, signInPill } from '@/components/SiteAccount'
 import SpineLink from '@/components/SpineLink'
 import Sheet from '@/components/mobile/Sheet'
@@ -149,10 +149,10 @@ export default function Navigation() {
   // /t/<symbol> pages light the same tab.
   // Activity left the tabs (2026-09-11, Nate) pending a rework — the page
   // stays routable from the footer and the in-content links.
-  const onMarkets = pathname.startsWith('/markets') || pathname.startsWith('/t/')
+  const onMarkets = isMarketsPath(pathname)
   const desktopTabs = (
     <>
-      <SpineLink href="/markets" className={`nav__tab ${onMarkets ? 'is-on' : ''}`}>
+      <SpineLink href={MARKETS_HREF} className={`nav__tab ${onMarkets ? 'is-on' : ''}`}>
         Markets
       </SpineLink>
       <Link href="/links" className={`nav__tab ${pathname.startsWith('/links') ? 'is-on' : ''}`}>
@@ -177,7 +177,7 @@ export default function Navigation() {
   const drawerTabs = (
     <>
       <AskDoorTrigger variant="drawer" />
-      <SpineLink href="/markets" className={`nav__tab ${onMarkets ? 'is-on' : ''}`}>
+      <SpineLink href={MARKETS_HREF} className={`nav__tab ${onMarkets ? 'is-on' : ''}`}>
         Markets
       </SpineLink>
       <Link href="/links" className={`nav__tab ${pathname.startsWith('/links') ? 'is-on' : ''}`}>

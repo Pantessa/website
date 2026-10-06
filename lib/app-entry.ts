@@ -25,8 +25,10 @@
 
 import { isMarketsPath } from '@/lib/markets'
 
-/** Where a fresh login from the landing page goes (signInLandingFor). */
-export const SIGN_IN_LANDING = '/markets'
+/** Where a fresh login with no page to come back to goes (signInLandingFor).
+ *  The splash IS the markets page now (squad front-door, 2026-10-06), so a
+ *  sign-in there stays there. */
+export const SIGN_IN_LANDING = '/'
 
 // ── Where a sign-in lands ────────────────────────────────────────────────
 // 2026-09-16, Nate: "If the user is in a chat or anywhere else doing

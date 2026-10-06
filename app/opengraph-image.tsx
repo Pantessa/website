@@ -3,26 +3,32 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { headers } from 'next/headers'
 import { gemMarkSvg } from '@/lib/og-marks'
-import { candleSvg, fmtOgPrice } from '@/lib/markets-seo'
-import { CHART_FEED_LABELS, chartPairFor, type Candle, type ChartFeed } from '@/lib/charts'
-import { venueLabel } from '@/lib/markets'
-import { HERO_LINE, HERO_REEL, REEL_STAMP } from '@/lib/markets-copy'
+import { fmtCountdown, sessionStripFor } from '@/lib/markets'
+import { HERO_LINE } from '@/lib/markets-copy'
+import { fmtOgPrice, marketsOgBoard, marketsOgSymbols, symbolName } from '@/lib/markets-seo'
+import type { Quote } from '@/lib/watchlists'
 
 // Social card for the site (og:image + twitter:image via app/twitter-image.tsx).
-// mk2 LANDING (2026-09-15): the card IS the hero — the claim in the serif with
-// the gradient-italic payoff, and beside it the executing chart: a live tape
-// of the first reel beat's symbol (AAPL on Robinhood Chain since 2026-09-16;
-// self-fetched from /api/charts/candles on this host, the /t card's idiom; a
-// feed miss draws the grid, never a fake series) with the rehearsal HUD on it
-// (the first reel beat: the ask, the venue leg, the receipt line) and its
-// honesty stamp. The venue, the feed and the 24h move come from the pair and
-// the route, never typed: a stock tape prints 16 hourly bars a trading day,
-// so "24 bars back" is not a day. Deliberately no body copy — share previews
-// render too small to read it. Fonts from assets/og-fonts.
+// THE FRONT DOOR (squad front-door, 2026-10-06): `/` is the markets splash —
+// the index in the app shell with the live pulse on top — so the site card is
+// the page in miniature: the claim in the hero's serif on the left, and on
+// the right THE BOARD, the card /markets wore since #817 (2026-09-17), now
+// re-homed here with the page (the /markets URL redirects to `/`, and so do
+// its card URLs). The brochure's rehearsal card — a live tape with the HUD —
+// moved with the brochure to app/story/opengraph-image.tsx.
+//
+// The board: the three market families the index lists (digital equities on
+// Robinhood Chain, crypto spot, Hyperliquid perps), each with its household
+// names, live last + 24h move from our own batched /api/quotes on this host,
+// and the family's honest size. The NYSE session and its next bell come from
+// the same clock the page's session strip reads. A quotes miss draws the
+// board with dashes and says the feed is warming up; it never fakes a number
+// and never 500s. Fonts from assets/og-fonts (the families every other
+// Pantessa card uses).
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const alt = `Pantessa — ${HERO_LINE}`
+export const alt = `Pantessa — ${HERO_LINE} Stocks 24/7, crypto spot and perps on one board; every row is an order form your wallet signs.`
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -31,62 +37,78 @@ const INK = '#FAFAF7'
 const MUTED = '#8a9186'
 const ACCENT = '#34e3a0'
 const DOWN = '#ff5d5d'
+const LINE = 'rgba(255,255,255,0.10)'
+
+// The eyebrow, word for word the splash's family line: "one wallet" is the
+// one word the 520px column can't hold beside the board.
+const EYEBROW = ['STOCKS 24/7', 'PERPS', 'SPOT', 'YIELD']
 
 const toDataUri = (svg: string) => `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
 
 // The house mark comes from lib/og-marks — ONE source across every OG card.
 const MARK = gemMarkSvg(ACCENT)
 
-interface Series { candles: Candle[]; last: number | null; feed: ChartFeed | null; changePct24h: number | null }
+interface Quotes {
+  quotes: Record<string, Quote>
+  asOf: number | null
+}
 
-const EMPTY: Series = { candles: [], last: null, feed: null, changePct24h: null }
+const NO_QUOTES: Quotes = { quotes: {}, asOf: null }
 
-/** Self-fetch the cached candle proxy on this deployment's own host. */
-async function loadSeries(symbol: string): Promise<Series> {
+/** Self-fetch the batched quotes reader on this deployment's own host — the
+ *  /t card's idiom; the reader caches per symbol, so the card costs the same
+ *  as one rail refresh. */
+async function loadQuotes(symbols: string[]): Promise<Quotes> {
   try {
     const h = await headers()
     const host = h.get('x-forwarded-host') ?? h.get('host')
-    if (!host) return EMPTY
+    if (!host) return NO_QUOTES
     const proto = h.get('x-forwarded-proto') ?? (/^(localhost|127\.0\.0\.1)/.test(host) ? 'http' : 'https')
-    const res = await fetch(`${proto}://${host}/api/charts/candles?symbol=${encodeURIComponent(symbol)}&tf=1h`, {
+    const res = await fetch(`${proto}://${host}/api/quotes?symbols=${encodeURIComponent(symbols.join(','))}`, {
       cache: 'no-store',
       signal: AbortSignal.timeout(9_000),
     })
-    const body = (await res.json()) as Partial<Series> & { error?: string }
-    if (body.error || !Array.isArray(body.candles)) return EMPTY
-    return {
-      candles: body.candles,
-      last: body.last ?? null,
-      feed: body.feed && Object.prototype.hasOwnProperty.call(CHART_FEED_LABELS, body.feed) ? body.feed : null,
-      changePct24h: typeof body.changePct24h === 'number' ? body.changePct24h : null,
-    }
+    const body = (await res.json()) as Partial<Quotes>
+    if (!body.quotes || typeof body.quotes !== 'object') return NO_QUOTES
+    return { quotes: body.quotes, asOf: typeof body.asOf === 'number' ? body.asOf : null }
   } catch {
-    return EMPTY
+    return NO_QUOTES
   }
 }
 
+/** A company name that fits the row; the symbol carries the identity. */
+function shortName(symbol: string): string {
+  const name = symbolName(symbol)
+  if (name.toUpperCase() === symbol) return ''
+  return name.length > 16 ? `${name.slice(0, 15)}…` : name
+}
+
+function fmtUtc(ms: number): string {
+  const d = new Date(ms)
+  const hh = String(d.getUTCHours()).padStart(2, '0')
+  const mm = String(d.getUTCMinutes()).padStart(2, '0')
+  return `${hh}:${mm} UTC`
+}
+
 export default async function Image() {
-  const beat = HERO_REEL[0]
-  const pair = chartPairFor(beat.symbol)
+  const board = marketsOgBoard()
   const fonts = join(process.cwd(), 'assets', 'og-fonts')
-  const [serif, serifItalic, sans, sansSemi, series] = await Promise.all([
+  const [serif, serifItalic, sans, sansSemi, live] = await Promise.all([
     readFile(join(fonts, 'newsreader-500.ttf')),
     readFile(join(fonts, 'newsreader-500-italic.ttf')),
     readFile(join(fonts, 'geist-500.ttf')),
     readFile(join(fonts, 'geist-600.ttf')),
-    loadSeries(beat.symbol),
+    loadQuotes(marketsOgSymbols()),
   ])
-  const n = series.candles.length
-  const chg = n >= 2 ? series.changePct24h : null
-  // The tape that actually drew (Yahoo Finance when Robinhood's is down).
-  const feed = series.feed ?? pair?.source ?? null
-  const chart = candleSvg(series.candles, { width: 600, height: 300, up: ACCENT, down: DOWN, grid: 'rgba(255,255,255,0.07)', count: 72 })
+  const quoted = Object.keys(live.quotes).length
+  const strip = sessionStripFor()
+  const bell = `${strip.nyse.label} · ${strip.nyse.bell} in ${fmtCountdown(strip.nyse.minsToBell)}`
 
   return new ImageResponse(
     (
       <div style={{ width: '100%', height: '100%', display: 'flex', position: 'relative', background: BG, fontFamily: 'Geist' }}>
-        {/* ambient glow behind the stage */}
-        <div style={{ position: 'absolute', right: -120, top: 60, width: 720, height: 520, borderRadius: 360, background: 'radial-gradient(circle, rgba(52,227,160,0.16) 0%, rgba(52,227,160,0) 70%)', display: 'flex' }} />
+        {/* ambient glow behind the board */}
+        <div style={{ position: 'absolute', right: -140, top: 40, width: 760, height: 560, borderRadius: 380, background: 'radial-gradient(circle, rgba(52,227,160,0.15) 0%, rgba(52,227,160,0) 70%)', display: 'flex' }} />
 
         {/* left: lockup + the claim */}
         <div style={{ position: 'absolute', left: 64, top: 56, display: 'flex', flexDirection: 'column', width: 520 }}>
@@ -95,16 +117,15 @@ export default async function Image() {
             <img src={toDataUri(MARK)} width={58} height={58} alt="" />
             <span style={{ color: INK, fontSize: 44, fontWeight: 600, letterSpacing: -1.8 }}>pantessa</span>
           </div>
-          <div style={{ display: 'flex', marginTop: 22, fontSize: 17, letterSpacing: 4.5, color: MUTED }}>
-            <span>STOCKS 24/7</span>
-            <span style={{ color: ACCENT, margin: '0 12px' }}>·</span>
-            <span>PERPS</span>
-            <span style={{ color: ACCENT, margin: '0 12px' }}>·</span>
-            <span>SPOT</span>
-            <span style={{ color: ACCENT, margin: '0 12px' }}>·</span>
-            <span>YIELD</span>
+          <div style={{ display: 'flex', marginTop: 24, fontSize: 17, letterSpacing: 4.5, color: MUTED, whiteSpace: 'nowrap' }}>
+            {EYEBROW.map((w, i) => (
+              <span key={w} style={{ display: 'flex' }}>
+                {i > 0 && <span style={{ color: ACCENT, margin: '0 12px' }}>·</span>}
+                <span>{w}</span>
+              </span>
+            ))}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', marginTop: 46, fontFamily: 'Newsreader', fontWeight: 500, fontSize: 92, lineHeight: 0.98, letterSpacing: -3 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', marginTop: 44, fontFamily: 'Newsreader', fontWeight: 500, fontSize: 92, lineHeight: 0.98, letterSpacing: -3 }}>
             <span style={{ color: INK }}>The chart</span>
             <span
               style={{
@@ -120,47 +141,71 @@ export default async function Image() {
               that executes.
             </span>
           </div>
-          <div style={{ display: 'flex', marginTop: 34, fontSize: 19, letterSpacing: 5, color: MUTED }}>
-            <span>YOUR WALLET SIGNS</span>
+          <div style={{ display: 'flex', flexDirection: 'column', marginTop: 30, gap: 12, fontSize: 17, letterSpacing: 4, color: MUTED }}>
+            <span>UNLIMITED WATCHLISTS · ALERTS · FREE</span>
+            <span style={{ color: '#b8bfb5' }}>YOUR WALLET SIGNS</span>
           </div>
         </div>
 
-        {/* right: the stage — a live tape with the rehearsal HUD on it */}
-        <div style={{ position: 'absolute', left: 620, top: 64, width: 520, height: 502, display: 'flex', flexDirection: 'column', borderRadius: 22, border: '1.5px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.03)', overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 22px', borderBottom: '1.5px solid rgba(255,255,255,0.10)' }}>
-            {/* The venue sits UNDER the symbol: "ROBINHOOD CHAIN · 24/7" beside
-                it pushed the price and the 24h move off the card. */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <span style={{ color: INK, fontSize: 24, fontWeight: 600, letterSpacing: -0.5 }}>{pair?.label ?? `${beat.symbol} / USD`}</span>
-              <span style={{ color: MUTED, fontSize: 12, letterSpacing: 2.5 }}>{venueLabel(pair).toUpperCase()}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-              {series.last != null && <span style={{ color: INK, fontSize: 24, fontWeight: 600 }}>${fmtOgPrice(series.last)}</span>}
-              {chg != null && <span style={{ color: chg >= 0 ? ACCENT : DOWN, fontSize: 15, fontWeight: 600 }}>{chg >= 0 ? '▲' : '▼'} {Math.abs(chg).toFixed(2)}%</span>}
-              <span style={{ color: ACCENT, fontSize: 12, letterSpacing: 2.5 }}>LIVE</span>
+        {/* left-bottom: the session strip the page shows */}
+        <div style={{ position: 'absolute', left: 64, bottom: 44, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderRadius: 999, border: `1.5px solid ${LINE}`, color: MUTED, fontSize: 14, letterSpacing: 2, whiteSpace: 'nowrap' }}>
+            <div style={{ display: 'flex', width: 8, height: 8, borderRadius: 4, background: strip.nyse.open ? ACCENT : '#ffd25e' }} />
+            <span>{bell.toUpperCase()}</span>
+          </div>
+          <div style={{ display: 'flex', padding: '8px 16px', borderRadius: 999, border: `1.5px solid ${LINE}`, color: MUTED, fontSize: 14, letterSpacing: 2, whiteSpace: 'nowrap' }}>
+            <span>{strip.tokens.toUpperCase()}</span>
+          </div>
+        </div>
+
+        {/* right: THE BOARD — the three families the index lists */}
+        <div style={{ position: 'absolute', left: 618, top: 56, width: 518, height: 518, display: 'flex', flexDirection: 'column', borderRadius: 22, border: '1.5px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.03)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 22px', borderBottom: `1.5px solid ${LINE}` }}>
+            <span style={{ color: INK, fontSize: 14, fontWeight: 600, letterSpacing: 3 }}>THE BOARD</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, letterSpacing: 2.5, color: quoted ? ACCENT : MUTED }}>
+              <div style={{ display: 'flex', width: 7, height: 7, borderRadius: 4, background: quoted ? ACCENT : MUTED }} />
+              <span>{quoted && live.asOf != null ? `LIVE · ${fmtUtc(live.asOf)}` : 'LIVE · FEED WARMING UP'}</span>
             </div>
           </div>
-          <div style={{ display: 'flex', position: 'relative', width: 520, height: 300, marginTop: 8, marginLeft: -40 }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={toDataUri(chart)} width={600} height={300} alt="" />
-          </div>
-          {/* the receipt strip: the first beat, complete — bottom-left over the volume pane */}
-          <div style={{ position: 'absolute', left: 16, bottom: 44, maxWidth: 420, display: 'flex', flexDirection: 'column', padding: '12px 14px 10px', borderRadius: 12, border: '1.5px solid rgba(255,255,255,0.14)', background: 'rgba(16,16,18,0.84)' }}>
-            <span style={{ display: 'flex', color: INK, fontSize: 19, fontWeight: 600, letterSpacing: -0.3 }}>
-              <span style={{ color: ACCENT, marginRight: 8 }}>›</span>
-              <span>{beat.ask}</span>
-            </span>
-            {beat.legs.map((l) => (
-              <span key={l.venue} style={{ display: 'flex', marginTop: 6, fontSize: 14, color: '#b8bfb5' }}>{l.line}</span>
+          <div style={{ display: 'flex', flexDirection: 'column', padding: '10px 22px 0' }}>
+            {board.map((g, gi) => (
+              <div key={g.id} style={{ display: 'flex', flexDirection: 'column', marginTop: gi === 0 ? 0 : 9 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', paddingBottom: 4, borderBottom: `1px solid ${LINE}` }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, whiteSpace: 'nowrap' }}>
+                    <span style={{ color: INK, fontSize: 12, fontWeight: 600, letterSpacing: 2.5 }}>{g.label.toUpperCase()}</span>
+                    <span style={{ color: MUTED, fontSize: 11, letterSpacing: 1.5 }}>{g.venue.toUpperCase()}</span>
+                  </div>
+                  <span style={{ color: MUTED, fontSize: 11, letterSpacing: 2, whiteSpace: 'nowrap' }}>{g.total} LISTED</span>
+                </div>
+                {g.symbols.map((s) => {
+                  const q = live.quotes[s]
+                  const name = shortName(s)
+                  const up = q ? q.chgPct >= 0 : null
+                  return (
+                    <div key={s} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 31 }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, whiteSpace: 'nowrap' }}>
+                        <span style={{ color: INK, fontSize: 19, fontWeight: 600, letterSpacing: -0.3 }}>{s}</span>
+                        {name && <span style={{ color: MUTED, fontSize: 13 }}>{name}</span>}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, whiteSpace: 'nowrap' }}>
+                        {q ? (
+                          <span style={{ color: up ? ACCENT : DOWN, fontSize: 13, fontWeight: 600, width: 84, justifyContent: 'flex-end', display: 'flex' }}>
+                            {up ? '▲' : '▼'} {Math.abs(q.chgPct).toFixed(2)}%
+                          </span>
+                        ) : (
+                          <span style={{ color: MUTED, fontSize: 13, width: 84, justifyContent: 'flex-end', display: 'flex' }}>—</span>
+                        )}
+                        <span style={{ color: q ? INK : MUTED, fontSize: 18, fontWeight: 600, width: 104, justifyContent: 'flex-end', display: 'flex' }}>{q ? `$${fmtOgPrice(q.last)}` : '—'}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             ))}
-            <span style={{ display: 'flex', marginTop: 8, fontSize: 13, letterSpacing: 1.2, color: ACCENT }}>
-              <div style={{ display: 'flex', width: 7, height: 7, borderRadius: 4, background: ACCENT, marginRight: 8, marginTop: 4 }} />
-              <span>{beat.ending.line.toUpperCase()}</span>
-            </span>
-            <span style={{ marginTop: 6, fontSize: 10, letterSpacing: 1.5, color: MUTED }}>{REEL_STAMP}</span>
           </div>
-          <div style={{ position: 'absolute', left: 22, bottom: 14, display: 'flex', fontSize: 11, letterSpacing: 2, color: MUTED }}>
-            <span>{n >= 2 && feed ? `LIVE TAPE · ${CHART_FEED_LABELS[feed].toUpperCase()}` : 'LIVE CHART · FEED WARMING UP'}</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', padding: '0 22px 14px', fontSize: 11, letterSpacing: 2, whiteSpace: 'nowrap' }}>
+            <span style={{ color: MUTED }}>EVERY ROW IS AN ORDER FORM</span>
+            <span style={{ color: ACCENT }}>pantessa.com</span>
           </div>
         </div>
       </div>

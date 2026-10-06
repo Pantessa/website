@@ -63,6 +63,7 @@ import { rosterEnabledClient } from '@/lib/roster-client'
 import { WALLET_PAGE_HREF } from '@/lib/wallet-page'
 import { YeetfulMark } from '@/components/Logo'
 import SpineLink from '@/components/SpineLink'
+import SpineGuideDot from '@/components/guide/SpineGuideDot'
 import { CreateAccountModal } from '@/components/CreateAccountButton'
 
 type SpineTab = { tab: RailTab; label: string; title: string; Icon: typeof Boxes }
@@ -404,7 +405,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         {selected && (
           <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
         )}
-        <Icon className="w-[18px] h-[18px]" />
+        <span className="relative"><Icon className="w-[18px] h-[18px]" />{(tab === 'jobs' || tab === 'links') && <SpineGuideDot tab={tab} />}</span>
         <span className="mono text-[9px] font-medium tracking-wide">{label}</span>
         {tab === 'jobs' && jobsBadge}
       </button>
@@ -439,6 +440,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         <span className="relative">
           <Icon className="w-[18px] h-[18px]" />
           {tab === 'jobs' && jobsBadge}
+          {(tab === 'jobs' || tab === 'links') && <SpineGuideDot tab={tab} />}
         </span>
         <span className="mono text-[10px] font-medium tracking-wide">{label}</span>
       </button>
@@ -465,11 +467,14 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         )}
         aria-label="Workspace"
       >
-        {/* Brand seat — the product's home is the chat. */}
+        {/* Brand seat — signed in, it opens a fresh chat. Signed out, the
+            logo goes home: `/` is public (the markets splash), and a logo
+            must never be a sign-in wall (2026-10-06, Nate: "only ask them
+            to sign in if a transaction is needed or deeper bits"). */}
         <SpineLink
-          href="/chat"
-          title="Pantessa — chat"
-          aria-label="Pantessa chat"
+          href={signedOut ? '/' : '/chat'}
+          title={signedOut ? 'Pantessa — home' : 'Pantessa — chat'}
+          aria-label={signedOut ? 'Pantessa home' : 'Pantessa chat'}
           className="grid place-items-center w-full h-14 flex-shrink-0 border-b border-[var(--line)] text-white hover:bg-[var(--surf-2)] transition-colors"
         >
           <YeetfulMark size={25} />
@@ -480,7 +485,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
               drawer tab — it sits first among the seats because the chart
               that executes is the front door (2026-09-11). */}
           <Link
-            href="/markets"
+            href="/"
             title="Markets — stocks 24/7, spot, perps; the chart that executes"
             aria-label="MARKETS"
             aria-current={onMarkets ? 'page' : undefined}
@@ -520,7 +525,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             {onWallet && (
               <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-[var(--accent)]" />
             )}
-            <Wallet className="w-[18px] h-[18px]" />
+            <span className="relative"><Wallet className="w-[18px] h-[18px]" /><SpineGuideDot tab="wallet" /></span>
             <span className="mono text-[9px] font-medium tracking-wide">WALLET</span>
           </SpineLink>
 
@@ -573,7 +578,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         aria-label="Workspace"
       >
         <Link
-          href="/markets"
+          href="/"
           title="Markets — stocks 24/7, spot, perps; the chart that executes"
           aria-label="MARKETS"
           aria-current={onMarkets ? 'page' : undefined}
@@ -598,7 +603,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           {onWallet && (
             <span aria-hidden className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-[var(--accent)]" />
           )}
-          <Wallet className="w-[18px] h-[18px]" />
+          <span className="relative"><Wallet className="w-[18px] h-[18px]" /><SpineGuideDot tab="wallet" /></span>
           <span className="mono text-[10px] font-medium tracking-wide">WALLET</span>
         </SpineLink>
         {TABS_BELOW_WALLET.map(mobileTab)}

@@ -39,7 +39,7 @@ export type ArrivalRefusal = 'malformed' | 'version' | 'stale' | 'future' | 'sou
 export type ArrivalVerdict = { ok: true } | { ok: false; reason: ArrivalRefusal }
 
 /** Public front doors allowed to hand an intent to the app (pathname prefixes). */
-export const ARRIVAL_SOURCES: readonly string[] = ['/markets', '/t']
+export const ARRIVAL_SOURCES: readonly string[] = ['/', '/markets', '/t']
 
 /** Longest ask a handoff may carry. */
 export const ARRIVAL_MAX_TEXT = 280
@@ -74,7 +74,9 @@ const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
 /** A source and paths UNDER it (`/markets/…`, `/t/AMAT`) count; `/marketsX`,
  *  `/tx`, a query or a hash do not — `from` is a pathname, and a pathname carries neither. */
 export function arrivalSourceAllowed(from: string): boolean {
-  return ARRIVAL_SOURCES.some((src) => from === src || from.startsWith(`${src}/`))
+  // `/` (the splash, squad front-door 2026-10-06) matches EXACTLY: as a prefix
+  // it would read `${src}/` as `//`, and `//evil.example` would pass (QA S1).
+  return ARRIVAL_SOURCES.some((src) => (src === '/' ? from === '/' : from === src || from.startsWith(`${src}/`)))
 }
 
 /** Why a text may not run on arrival, or null when it may. Exported so a

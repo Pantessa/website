@@ -20,6 +20,7 @@ import { useAccount } from 'wagmi'
 import { useAccountModal } from '@rainbow-me/rainbowkit'
 import { ArrowRight, Settings2, Wallet } from 'lucide-react'
 import { WalletDetails, walletKind } from '@/components/WalletPanel'
+import GuideSeat from '@/components/guide/GuideSeat'
 import { useAnnouncedWalletName } from '@/lib/use-wallet-name'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import AuthButton from '@/components/AuthButton'
@@ -164,6 +165,7 @@ export default function WalletPage() {
             )}
           </div>
         </header>
+        <GuideSeat surface="wallet" />
 
         {showDetails && address ? (
           // Keyed by address: an account switch is a fresh look.
