@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
 import { LINK_FEE_PCT, SWAP_FEE_PCT } from '@/lib/fees'
@@ -86,7 +87,7 @@ export default function TrustDocsPage() {
         <h2>Priced, receipted, public</h2>
         <p>
           Every artifact carries its USD value, and every decision — built, signed, or refused —
-          lands as a receipt on your <Link href="/dashboard">dashboard</Link>, with build
+          lands as a receipt on your <SpineLink href="/dashboard">dashboard</SpineLink>, with build
           decisions traced live on <Link href="/activity">/activity</Link>. When Pantessa charges
           a fee ({SWAP_FEE_PCT} on swaps you ask for in chat, {LINK_FEE_PCT} on swaps that come
           through a shared intent link), it is named on the card before you sign and carried in
@@ -106,7 +107,7 @@ export default function TrustDocsPage() {
 
         <h2>The kill switch outranks everything</h2>
         <p>
-          Freeze your account from the <Link href="/dashboard">dashboard</Link> and every payment
+          Freeze your account from the <SpineLink href="/dashboard">dashboard</SpineLink> and every payment
           and build is refused — agent-initiated or not, inflow or outflow, policy on or off.
           Pause a single agent to stop just that key. Both are reversible; nothing is deleted.
         </p>

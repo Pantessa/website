@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
 
@@ -84,7 +85,7 @@ export default function SpendPolicyPage() {
         <h2>Curate down, not up</h2>
         <p>
           The first agent you toggle <strong>off</strong> in{' '}
-          <Link href="/dashboard/approvals">Approvals</Link> starts curation: the open wildcard is
+          <SpineLink href="/dashboard/approvals">Approvals</SpineLink> starts curation: the open wildcard is
           replaced by a concrete list — every service you have <em>not</em> disabled. Two things
           always stay allowed on a curated list, because cutting them off breaks the product
           rather than protecting you:
@@ -118,7 +119,7 @@ export default function SpendPolicyPage() {
 
         <h2>The master switch</h2>
         <p>
-          One switch on your <Link href="/dashboard">dashboard Overview</Link> arms the whole
+          One switch on your <SpineLink href="/dashboard">dashboard Overview</SpineLink> arms the whole
           policy. On (the default), the allowlist and caps are enforced and every refusal is
           ledgered. Off, agent spend is unrestricted — still metered and receipted, just not
           refused. Toggling it never touches your per-agent approvals: flip it off for an
@@ -132,11 +133,11 @@ export default function SpendPolicyPage() {
         </p>
         <ul>
           <li>
-            <strong>Pause an agent</strong> (<Link href="/dashboard/agents">Agents tab</Link>) —
+            <strong>Pause an agent</strong> (<SpineLink href="/dashboard/agents">Agents tab</SpineLink>) —
             freezes one key; everything else keeps working.
           </li>
           <li>
-            <strong>Freeze the account</strong> (<Link href="/dashboard">Overview</Link>) —
+            <strong>Freeze the account</strong> (<SpineLink href="/dashboard">Overview</SpineLink>) —
             refuses every payment and build under your account until you unfreeze.
           </li>
         </ul>

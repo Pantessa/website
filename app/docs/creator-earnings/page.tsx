@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
+import { UNPROVEN_ACTIVE_LINKS } from '@/lib/intent-links'
 import {
   CREATOR_FEE_SPLIT,
   CROSS_CHAIN_FEE_BPS,
@@ -297,16 +298,18 @@ export default function CreatorEarningsDocsPage() {
 
         <h2>Claims</h2>
         <p>
-          Your dashboard shows <strong>earned · claimed · claimable</strong>. Claims open at{' '}
-          <strong>$10</strong> and pay out as <strong>USDC on Base</strong>. The claim is a
+          Whatever wasn&apos;t paid inside the swap waits in the ledger. Your dashboard shows{' '}
+          <strong>earned · claimed · claimable</strong>; claims open at <strong>$10</strong>{' '}and pay
+          out as <strong>USDC on Base</strong>. The claim is a
           server-derived sweep of what you&apos;re owed — you never type an amount.
         </p>
 
         <h2>Capacity</h2>
         <p>
-          Active links mirror the plan tiers: <strong>3</strong> on Builder ($0),{' '}
-          <strong>25</strong> on Growth, <strong>unlimited</strong> on Scale — see{' '}
-          <Link href="/pricing">pricing</Link>. The cap only gates <em>new</em>{' '}mints: links
+          A wallet that hasn&apos;t traded yet keeps <strong>{UNPROVEN_ACTIVE_LINKS}</strong>{' '}links live at
+          once; sign any trade through Pantessa (or hold a paid plan — see{' '}
+          <Link href="/pricing">pricing</Link>) and the limit is gone for good. The cap only gates{' '}
+          <em>new</em>{' '}mints: links
           you&apos;ve shared keep working forever, and revoking one frees a slot instantly.
           Revoking takes the link down everywhere — it 404s, and the row leaves your table and
           the public board — but what it already earned stays in your balance.

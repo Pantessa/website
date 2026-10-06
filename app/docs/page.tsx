@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import { ArrowUpRight } from 'lucide-react'
 import EmbedDemo from '@/components/EmbedDemo'
 import EmbedInstall from '@/components/EmbedInstall'
@@ -130,7 +131,7 @@ const STEPS = [
       <>
         Nothing is custodial: the layer produces artifacts, <strong>only your signature moves
         money</strong>. Built, signed, or refused — every decision lands with its priced value
-        on your <Link href="/dashboard">dashboard</Link> and traces live on{' '}
+        on your <SpineLink href="/dashboard">dashboard</SpineLink> and traces live on{' '}
         <Link href="/activity">/activity</Link>. Autonomy you can audit beats autonomy you have
         to trust.
       </>
@@ -228,7 +229,7 @@ export default function DocsIndexPage() {
             <code>dryRun</code> compiles a compound intent and builds step 1 against{' '}
             <strong>live venues</strong>{' '}— real quote, real guard report — without creating or
             costing anything. Mint a <code>yf_</code> key at{' '}
-            <Link href="/dashboard/keys">/dashboard/keys</Link> and paste. The{' '}
+            <SpineLink href="/dashboard/keys">/dashboard/keys</SpineLink> and paste. The{' '}
             <Link href="/docs/jobs">Jobs page</Link> shows the real response.
           </p>
         </div>
@@ -252,7 +253,7 @@ export default function DocsIndexPage() {
           <EmbedInstall />
           <div className="splash__more">
             <Link href="/docs/embed">The full embed docs <ArrowUpRight width={13} height={13} /></Link>
-            <Link href="/dashboard/keys">Mint an embed key <ArrowUpRight width={13} height={13} /></Link>
+            <SpineLink href="/dashboard/keys">Mint an embed key <ArrowUpRight width={13} height={13} /></SpineLink>
           </div>
         </div>
         <EmbedDemo />

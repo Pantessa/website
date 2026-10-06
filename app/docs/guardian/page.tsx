@@ -86,7 +86,7 @@ take profit on my eth long at $2100`}</pre>
         <h2>Receipts, like everything else</h2>
         <p>
           Every armed policy, every trigger evaluation that fires, every close: a receipt on{' '}
-          <Link href="/dashboard/guardian">/dashboard/guardian</Link> with the position, the
+          <SpineLink href="/dashboard/guardian">/dashboard/guardian</SpineLink> with the position, the
           trigger, the fill, and the guarded value. Autonomy you can audit beats autonomy you
           have to trust.
         </p>
