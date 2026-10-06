@@ -600,7 +600,7 @@ export function fmtCountdown(mins: number): string {
 // ── Battlefield (2026-10-06): `?view=battlefield&board=spot|perps` ──────────
 
 export type ChartView = 'candles' | 'field'
-export type BoardMode = 'perps' | 'spot'
+export type BoardMode = 'perps' | 'spot' | 'heat'
 
 /** `?view=battlefield` opens the chart on the Battlefield; anything else is
  *  the candles (the view a chart opens on, never remembered). Pure — pinned. */
@@ -608,10 +608,10 @@ export function parseViewParam(search: string): ChartView {
   return new URLSearchParams(search).get('view') === 'battlefield' ? 'field' : 'candles'
 }
 
-/** `?board=spot|perps` picks the Battlefield's board; anything else is none named. */
+/** `?board=perps|spot|heat` picks the Battlefield's board; anything else is none named. */
 export function parseBoardParam(search: string): BoardMode | null {
   const raw = new URLSearchParams(search).get('board')
-  return raw === 'spot' || raw === 'perps' ? raw : null
+  return raw === 'spot' || raw === 'perps' || raw === 'heat' ? raw : null
 }
 
 /** The URL with the view and board set or cleared, every other param preserved. */

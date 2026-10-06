@@ -15,6 +15,8 @@
 //   SPOT    tank = a round dollar amount of orders RESTING on Coinbase's
 //           book (MEASURED), standing at their price; banners = which side
 //           has the deeper book within 5%
+//   HEAT    the contribution-graph: one cell per UTC day for a year, inked
+//           by which side was crowded and how much (MEASURED daily share)
 //
 // A canvas draws the table; the words over it (the date, the read, the
 // toggle, the player row, a row's report) are DOM so they theme with the
@@ -34,7 +36,9 @@ import {
   fuelBeforePlayer,
   fuelWithin,
   fundingLine,
-  liqBuckets,
+  heatCells,
+    heatSummary,
+    liqBuckets,
   liquidationMap,
   oiAtBars,
   parsePlayer,
@@ -44,6 +48,7 @@ import {
   unitsFor,
   type BookBody,
   type DerivsBody,
+  type HeatCell,
   type Player,
   type PlayerState,
 } from '@/lib/derivs'
@@ -52,6 +57,7 @@ import { hasPerpCold } from '@/lib/symbol-venues'
 import type { PerpPosition } from '@/lib/symbol-position'
 import { fmtPrice } from '@/components/CandleChart'
 import type { BoardMode } from '@/lib/markets'
+import { HeatGrid } from './PositionHeat'
 import type { Tokens } from './chart-tokens'
 import './battlefield.css'
 
@@ -75,7 +81,7 @@ const TILT_MS = 900
 /** The strip under the table (the toggle + legend, then the player). */
 const CTL_STRIP = 76
 /** Half the price range the table shows, per mode. */
-const RANGE_PCT: Record<Mode, number> = { perps: 25, spot: 10 }
+const RANGE_PCT: Record<Mode, number> = { perps: 25, spot: 10, heat: 25 }
 /** A spot row is this wide (of the mid). */
 const SPOT_STEP_PCT = 1
 const PLAYER_KEY = 'pantessa.bf.player.v1'
@@ -126,7 +132,7 @@ export default function FrontBoard({ symbol, pair, tf, bars, tokens, onAsk, canA
     }
     try {
       const m = localStorage.getItem(MODE_KEY)
-      if (m === 'spot' || m === 'perps') setMode(m)
+      if (m === 'spot' || m === 'perps' || m === 'heat') setMode(m)
     } catch {
       /* default */
     }
@@ -182,6 +188,28 @@ export default function FrontBoard({ symbol, pair, tf, bars, tokens, onAsk, canA
   useEffect(() => poll<BookBody>(noMarket ? null : `/api/markets/book?symbol=${encodeURIComponent(symbol)}`, 10_000, (b) => Array.isArray(b.bids), setHlBook), [symbol, noMarket])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => poll<BookBody>(noMarket ? null : `/api/markets/spot-book?symbol=${encodeURIComponent(symbol)}`, 15_000, (b) => Array.isArray(b.bids), setSpotBook), [symbol, noMarket])
+
+  // The heatmap's daily series: the chart's own read when it is on 1D, else its own.
+  const [dailyDerivs, setDailyDerivs] = useState<DerivsBody | null>(null)
+  const [dailyBars, setDailyBars] = useState<Candle[]>([])
+  const wantDaily = mode === 'heat' && !noMarket
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => poll<DerivsBody>(wantDaily && tf !== '1d' ? `/api/markets/derivs?symbol=${encodeURIComponent(symbol)}&tf=1d` : null, 120_000, (b) => Array.isArray(b.oi), setDailyDerivs), [symbol, wantDaily, tf])
+  useEffect(() => {
+    setDailyBars([])
+    if (!wantDaily) return
+    let alive = true
+    fetch(`/api/charts/candles?symbol=${encodeURIComponent(symbol)}&tf=1d&warmup=1`, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d: { candles?: Candle[]; warmup?: Candle[] }) => {
+        if (alive && Array.isArray(d.candles)) setDailyBars([...(d.warmup ?? []), ...d.candles])
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [symbol, wantDaily])
+  const [heatHover, setHeatHover] = useState<{ cell: HeatCell; x: number; y: number } | null>(null)
 
   // The player (perps): a what-if kept per symbol in this browser, or the wallet's real position.
   const { address } = useAccount()
@@ -242,6 +270,9 @@ export default function FrontBoard({ symbol, pair, tf, bars, tokens, onAsk, canA
   const unit = useMemo(() => unitUsd(rows.reduce((m, r) => Math.max(m, r.usd), 0)), [rows])
   const walls = useMemo(() => (hlBook && hlBook.mid ? bookWalls(hlBook) : null), [hlBook])
   const spot = useMemo(() => (spotBook && spotBook.mid ? spotRead(spotBook) : null), [spotBook])
+  const heatSrc = tf === '1d' ? derivs : dailyDerivs
+  const cells = useMemo(() => (mode === 'heat' && heatSrc ? heatCells(heatSrc.ratio, heatSrc.oi, dailyBars, Date.now() / 1000) : []), [mode, heatSrc, dailyBars])
+  const heat = useMemo(() => (cells.length ? heatSummary(cells) : null), [cells])
 
   // The perps read at the price now (lib/derivs crowdRead).
   const intel = useMemo(() => {
@@ -649,7 +680,7 @@ export default function FrontBoard({ symbol, pair, tf, bars, tokens, onAsk, canA
   // ── HUD ──────────────────────────────────────────────────────────────────
   const now = fieldDate(Math.floor(Date.now() / 1000), '1h')
   const crowd = mode === 'perps' && intel && intel.longShare !== null ? intel : null
-  const lean = mode === 'perps' ? crowd?.read.lean ?? null : spot?.lean ?? null
+  const lean = mode === 'perps' ? crowd?.read.lean ?? null : mode === 'spot' ? spot?.lean ?? null : heat?.streak && heat.streak.days >= 3 ? (heat.streak.side === 'long' ? 'up' : 'down') : null
   const perpOk = pair.source === 'hyperliquid' || hasPerpCold(pair.symbol)
   const openAsk = (() => {
     if (!onAsk || !stored || livePos || stored.entry !== null || !perpOk || stored.leverage > maxLev || mode !== 'perps') return null
@@ -675,7 +706,7 @@ export default function FrontBoard({ symbol, pair, tf, bars, tokens, onAsk, canA
       ref={wrapRef}
       className={`bf bf--board has-front${placing ? ' is-placing' : ''}`}
       onPointerMove={(e) => {
-        if ((e.target as HTMLElement).closest('.bf__strip')) return setHover(null)
+        if ((e.target as HTMLElement).closest('.bf__strip') || mode === 'heat') return setHover(null)
         const hit = rowAt(e.clientX, e.clientY)
         setHover(hit?.row ? { row: hit.row, x: hit.x, y: hit.y } : null)
       }}
@@ -689,12 +720,13 @@ export default function FrontBoard({ symbol, pair, tf, bars, tokens, onAsk, canA
         }
       }}
     >
-      <canvas
+      {mode === 'heat' && <HeatGrid cells={cells} source={heatSrc?.source ?? null} onHover={setHeatHover} />}
+      {mode !== 'heat' && <canvas
         ref={canvasRef}
         className="bf__canvas"
         role="img"
         aria-label={`${symbol} battlefield, ${mode}: ${mode === 'perps' ? crowd?.read.headline ?? 'positioning loading' : spot?.headline ?? 'book loading'}. The front at ${fmtPrice(mark)} dollars.`}
-      />
+      />}
 
       <div className="bf__date">
         <div className="bf__cal">
@@ -704,11 +736,17 @@ export default function FrontBoard({ symbol, pair, tf, bars, tokens, onAsk, canA
         </div>
         <div className="bf__day mono">
           <span>The front, live</span>
-          <span className="bf__day-sub">{mode === 'perps' ? `${derivs?.source ?? 'perps'} · Hyperliquid` : spotSource ?? 'spot'}</span>
+          <span className="bf__day-sub">{mode === 'perps' ? `${derivs?.source ?? 'perps'} · Hyperliquid` : mode === 'spot' ? spotSource ?? 'spot' : `${heatSrc?.source ?? 'perps'} · daily`}</span>
         </div>
       </div>
 
-      {mode === 'perps' ? (
+      {mode === 'heat' ? (
+        <div className={`bf__press bf__press--${lean === 'up' ? 'bulls' : lean === 'down' ? 'bears' : 'stalemate'}`}>
+          <span className="bf__press-k mono">Positioning by day · {heatSrc?.source ?? 'perps'} accounts</span>
+          <span className="bf__press-v">{heat ? heat.headline : heatSrc ? 'No daily read for this coin' : 'Reading the year…'}</span>
+          {heat ? <span className="bf__press-l mono">{heat.read} days read · the typical day is {heat.median !== null ? `${Math.round(heat.median * 100)}% long` : 'unread'} · green = more long than usual, red = more short</span> : null}
+        </div>
+      ) : mode === 'perps' ? (
         crowd ? (
           <div className={`bf__press bf__press--${lean === 'up' ? 'bulls' : lean === 'down' ? 'bears' : 'stalemate'}`}>
             <span className="bf__press-k mono">Longs vs shorts · {derivs?.source} accounts</span>
@@ -753,7 +791,15 @@ export default function FrontBoard({ symbol, pair, tf, bars, tokens, onAsk, canA
         </div>
       )}
 
-      {hover && (
+      {heatHover && (
+        <div className={`bf__tip bf__tip--${(heatHover.cell.long ?? 0.5) >= 0.5 ? 'bulls' : 'bears'}`} style={{ left: Math.max(8, Math.min(size.w - 268, heatHover.x + 16)), top: Math.max(8, Math.min(size.h - 120, heatHover.y - 20)) }} role="status">
+          <span className="bf__tip-k mono">{fieldDate(heatHover.cell.day, '1d').month} {fieldDate(heatHover.cell.day, '1d').day}, {fieldDate(heatHover.cell.day, '1d').year}</span>
+          <strong>{heatHover.cell.long === null ? 'No reading that day' : `${Math.round(heatHover.cell.long * 100)}% long · ${100 - Math.round(heatHover.cell.long * 100)}% short${heat?.median != null ? ` · ${heatHover.cell.long - heat.median >= 0 ? '+' : '\u2212'}${Math.abs((heatHover.cell.long - heat.median) * 100).toFixed(0)} pts vs usual` : ''}`}</strong>
+          {heatHover.cell.pricePct !== null ? <span>price {heatHover.cell.pricePct >= 0 ? '+' : '\u2212'}{Math.abs(heatHover.cell.pricePct).toFixed(1)}% that day</span> : null}
+          {heatHover.cell.oi !== null && heatSrc ? <span>open interest {fmtUsdShort(heatSrc.oiUnit === 'coin' ? heatHover.cell.oi * mark : heatHover.cell.oi)}</span> : null}
+        </div>
+      )}
+      {hover && mode !== 'heat' && (
         <div className={`bf__tip bf__tip--${hover.row.side === 'long' ? 'bulls' : 'bears'}`} style={{ left: Math.max(8, Math.min(size.w - 268, hover.x + 16)), top: Math.max(8, Math.min(size.h - 120, hover.y - 20)) }} role="status">
           <span className="bf__tip-k mono">{mode === 'perps' ? 'Estimated · lib/derivs' : 'Resting orders · Coinbase'}</span>
           <strong>
@@ -777,9 +823,16 @@ export default function FrontBoard({ symbol, pair, tf, bars, tokens, onAsk, canA
             <button type="button" className={`mkt-view__btn mono${mode === 'spot' ? ' is-active' : ''}`} aria-pressed={mode === 'spot'} onClick={() => pickMode('spot')} title="Buyers vs sellers: the orders resting on Coinbase's book">
               <span>Spot</span>
             </button>
+            <button type="button" className={`mkt-view__btn mono${mode === 'heat' ? ' is-active' : ''}`} aria-pressed={mode === 'heat'} onClick={() => pickMode('heat')} title="A year of positioning, one cell a day: which side was crowded, and how much">
+              <span>Heatmap</span>
+            </button>
           </div>
           <p className="bf__legend mono">
-            {rows.length ? (
+            {mode === 'heat' ? (
+              <span className="bf__heatkey">
+                short <i style={{ background: 'color-mix(in oklch, var(--mk-down, var(--sell)) 100%, var(--surf-1))' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-down, var(--sell)) 55%, var(--surf-1))' }} /><i style={{ background: 'var(--surf-1)' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-up, var(--accent)) 55%, var(--surf-1))' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-up, var(--accent)) 100%, var(--surf-1))' }} /> long · against the year's typical day · full ink 8 points off it
+              </span>
+            ) : rows.length ? (
               <span title={mode === 'perps' ? 'Estimated from open interest that appeared on each bar, across 5x to 50x leverage: where the positions probably break, not where price will go.' : 'Orders resting on Coinbase Exchange’s book, read every 15 seconds.'}>
                 <i className="bf__sw bf__sw--up" />
                 <i className="bf__sw bf__sw--down" />
@@ -789,7 +842,7 @@ export default function FrontBoard({ symbol, pair, tf, bars, tokens, onAsk, canA
               <span>{mode === 'perps' ? (derivs ? 'no liquidation rows within 25%' : 'reading open interest…') : spotBook?.missing ? 'no spot book' : 'reading the book…'}</span>
             )}
             {mode === 'perps' && walls ? <span>ramparts = resting orders within 2%</span> : null}
-            {(mode === 'perps' ? crowd : spot) ? <span>banners = {mode === 'perps' ? 'share of accounts' : 'share of the book within 5%'}</span> : null}
+            {mode !== 'heat' && (mode === 'perps' ? crowd : spot) ? <span>banners = {mode === 'perps' ? 'share of accounts' : 'share of the book within 5%'}</span> : null}
           </p>
         </div>
 
@@ -842,3 +895,4 @@ export default function FrontBoard({ symbol, pair, tf, bars, tokens, onAsk, canA
     </div>
   )
 }
+

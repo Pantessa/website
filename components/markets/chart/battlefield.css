@@ -29,8 +29,6 @@
 .bf__meter i { position: absolute; inset: 0 auto 0 0; width: var(--bf-share, 50%); background: var(--mk-up, var(--accent)); border-right: 2px solid var(--bg); transition: width 0.3s; }
 .bf__press-l { font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted); }
 .bf__press-l2 { color: var(--muted-2); }
-/* With the front's panel standing on the right, the headline keeps to the table's middle. */
-.bf.has-front .bf__press { left: 40%; max-width: 40%; }
 /* On a phone the panel takes the right half, so the headline sits under the calendar on the left. */
 @media (max-width: 640px) {
   .bf.has-front .bf__press { left: 72px; right: 10px; top: 10px; transform: none; justify-items: start; text-align: left; max-width: none; }
@@ -122,4 +120,40 @@ button.bf__chip:hover { border-color: var(--line-2, var(--fg)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .bf__cal, .bf__live.is-live i { animation: none; }
+}
+
+/* The heatmap board: a year of days, the contribution-graph way. */
+.bf__heat { position: absolute; inset: 118px 12px 86px; display: flex; align-items: center; justify-content: center; --hc: 13px; }
+.bf__heat-scroll { max-width: 100%; overflow-x: auto; padding: 4px 2px 6px; }
+.bf__heat-months { display: grid; gap: 3px; margin-left: 34px; margin-bottom: 4px; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); }
+.bf__heat-months span { grid-column-end: span 3; white-space: nowrap; }
+.bf__heat-body { display: flex; gap: 6px; }
+.bf__heat-days { display: grid; grid-template-rows: repeat(7, var(--hc)); gap: 3px; width: 28px; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); align-items: center; }
+.bf__heat-grid { display: grid; grid-template-rows: repeat(7, var(--hc)); gap: 3px; }
+.bf__cell { display: block; width: var(--hc); height: var(--hc); border-radius: 3px; outline: 1px solid color-mix(in oklch, var(--fg) 6%, transparent); outline-offset: -1px; transition: transform .1s; }
+.bf__cell:hover { transform: scale(1.25); outline-color: var(--fg); z-index: 1; }
+.bf__cell.is-future { outline: none; }
+.bf__heatkey { display: inline-flex; align-items: center; gap: 3px; }
+.bf__heatkey i { width: 10px; height: 10px; border-radius: 2px; margin: 0 1px; }
+@media (max-width: 640px) {
+  .bf__heat { inset: 76px 8px 60px; --hc: 11px; justify-content: flex-start; }
+}
+
+/* The strip under the candles: a year of positioning. */
+.poshet { position: relative; display: grid; gap: 6px; }
+.poshet__head { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; padding: 4px 2px; text-align: left; }
+.poshet__k { font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
+.poshet__v { font-family: 'Fraunces', Georgia, serif; font-size: 14px; font-weight: 600; color: var(--fg); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.poshet__v.is-up { color: var(--mk-up, var(--accent)); }
+.poshet__v.is-down { color: var(--mk-down, var(--sell)); }
+.poshet__key { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
+.poshet__key i { width: 9px; height: 9px; border-radius: 2px; margin: 0 1px; }
+.poshet__chev { color: var(--muted-2); transition: transform .15s; flex: 0 0 auto; }
+.poshet__chev.is-open { transform: rotate(180deg); }
+.poshet__body { position: relative; }
+.poshet .bf__heat { position: static; inset: auto; --hc: 11px; justify-content: flex-start; }
+.poshet .bf__tip { position: absolute; }
+@media (max-width: 640px) {
+  .poshet__key, .poshet__k { display: none; }
+  .poshet .bf__heat { --hc: 10px; }
 }

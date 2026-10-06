@@ -64,6 +64,7 @@ import { VolumeProfile } from './volume-profile'
 import ChartLegend from './ChartLegend'
 import { awayFromLive, chartKey, markPlusHintSeen, plusHintSeen, tidyPrice, zoomedFrom } from '@/lib/chart-legend'
 import FrontBoard from './FrontBoard'
+import PositionHeat from './PositionHeat'
 import { parseBoardParam, parseViewParam, syncViewParam, type BoardMode } from '@/lib/markets'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
@@ -1391,6 +1392,9 @@ export default function MarketChart({
           </form>
         )}
       </div>
+
+      {/* A year of positioning under the candles (the symbol page; coins and perps). */}
+      {battlefield && !fieldOn && <PositionHeat symbol={pair.symbol} pair={pair} mark={last} />}
 
       {/* Your fills — the glyphs on the bars; the receipt words + explorer link live here. */}
       {fills && fills.length > 0 && pair && (

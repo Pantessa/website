@@ -4,7 +4,7 @@
 //   npx tsx scripts/battlefield-pins.ts
 import { existsSync, readFileSync } from 'node:fs'
 import type { Candle } from '../lib/charts'
-import { crowdRead, fuelBeforePlayer, fuelWithin, fundingLine, liqBuckets, liquidationMap, oiAtBars, parsePlayer, playerLiqPrice, playerState, bookRows, bookWalls, spotRead, unitUsd, unitsFor, type OiPoint } from '../lib/derivs'
+import { crowdRead, fuelBeforePlayer, fuelWithin, fundingLine, liqBuckets, liquidationMap, oiAtBars, parsePlayer, playerLiqPrice, playerState, bookRows, bookWalls, heatCells, heatMedian, heatSummary, heatTone, spotRead, unitUsd, unitsFor, DAY_SEC, HEAT_WEEKS, type OiPoint } from '../lib/derivs'
 import { fieldAhead } from '../lib/battlefield'
 import { composeExecAsk } from '../lib/trade-asks'
 import { chartPairFor } from '../lib/charts'
@@ -167,6 +167,18 @@ export function battlefieldPins(check: Check): void {
   check('battlefield: ?view=battlefield opens the Battlefield (with ?board= picking its board), anything else the candles, and the mirror keeps every other param',
     parseViewParam('?view=battlefield') === 'field' && parseViewParam('?view=candles') === 'candles' && parseViewParam('') === 'candles' && parseBoardParam('?board=spot') === 'spot' && parseBoardParam('?board=x') === null && viewUrl('field', 'spot', '/t/UNI', '?tf=1h') === '/t/UNI?tf=1h&view=battlefield&board=spot' && viewUrl('candles', 'spot', '/t/UNI', '?view=battlefield&board=spot&vs=ETH') === '/t/UNI?vs=ETH' && viewUrl('field', null, '/t/UNI', '') === '/t/UNI?view=battlefield')
   check('battlefield: a share taken from the Battlefield links back to it', /viewUrl\(view \?\? 'candles', board \?\? null, `\/t\/\$\{symbol\}`/.test(readFileSync('components/markets/chart/ChartShare.tsx', 'utf8')) && /parseViewParam\(window\.location\.search\)/.test(readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')))
+
+  // ── The heatmap ─────────────────────────────────────────────────────────
+  const nowT = at(2026, 10, 6, 10) // a Tuesday
+  const hc = heatCells([{ t: at(2026, 10, 5, 8), long: 0.62 }, { t: at(2026, 10, 5, 20), long: 0.7 }, { t: at(2026, 10, 6), long: 0.3 }], [{ t: at(2026, 10, 5), oi: 1000 }], [bar(at(2026, 10, 5), 10, 11, 9, 10.5)], nowT)
+  const sun = at(2026, 10, 4)
+  check('battlefield: the heatmap is one cell per UTC day for 53 weeks ending this week (Sunday first), the day\'s newest reading winning, with the day\'s open interest and price move beside it',
+    hc.length === HEAT_WEEKS * 7 && hc[hc.length - 1].day === sun + 6 * DAY_SEC && hc[0].day === sun - 52 * 7 * DAY_SEC && new Date(hc[0].day * 1000).getUTCDay() === 0 && hc.find((c) => c.day === at(2026, 10, 5))?.long === 0.7 && hc.find((c) => c.day === at(2026, 10, 5))?.oi === 1000 && near(hc.find((c) => c.day === at(2026, 10, 5))?.pricePct ?? 0, 5) && hc.find((c) => c.day === at(2026, 10, 6))?.long === 0.3 && hc.find((c) => c.day === at(2026, 10, 3))?.long === null)
+  check('battlefield: a cell\'s ink is the share\'s distance from the year\'s typical day (the median), full at 8 points, nothing without a reading', heatTone(0.5) === 0 && near(heatTone(0.58)!, 1) && near(heatTone(0.42)!, -1) && heatTone(0.95) === 1 && heatTone(null) === null && near(heatTone(0.68, 0.64)!, 0.5) && heatMedian([{ long: 0.7 }, { long: null }, { long: 0.6 }, { long: 0.65 }]) === 0.65 && heatMedian([]) === null)
+  const runCells = heatCells(Array.from({ length: 10 }, (_, i) => ({ t: at(2026, 9, 27) + i * DAY_SEC, long: i < 4 ? 0.6 : 0.66 })), [], [], nowT)
+  const hsum = heatSummary(runCells)
+  check('battlefield: the year\'s headline reads against the typical day: the run ending today, else each side\'s unusual days', hsum.read === 10 && hsum.median === 0.66 && hsum.longDays === 0 && hsum.shortDays === 4 && hsum.streak === null && hsum.headline === 'More short than usual on 4 of 10 days' && heatSummary(heatCells(Array.from({ length: 10 }, (_, i) => ({ t: at(2026, 9, 27) + i * DAY_SEC, long: i < 7 ? 0.6 : 0.7 })), [], [], nowT)).headline === 'More long than usual 3 days running' && heatSummary(heatCells([], [], [], nowT)).headline === 'No daily positioning read yet')
+  check('battlefield: ?board=heat opens the heatmap', parseBoardParam('?board=heat') === 'heat' && viewUrl('field', 'heat', '/t/UNI', '') === '/t/UNI?view=battlefield&board=heat')
 
   // Wiring: the candles are the view a chart opens on, and only the symbol page offers the switch.
   const chart = readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')
