@@ -370,6 +370,7 @@ import { actionGateLivePins, actionGatePins } from './action-gate-pins'
 import { chartCallsPins } from './chart-calls-pins'
 import { battlefieldPins } from './battlefield-pins'
 import { tapePins } from './tape-pins'
+import { spotHomePins } from './spot-home-pins'
 import { battlePins } from './battle-pins'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
@@ -33303,11 +33304,22 @@ async function main() {
         })
       ).json()) as { reply?: string; buildPath?: string; txChain?: unknown; txRequest?: unknown; order?: unknown; clarify?: unknown; spendRetarget?: { fromChainId: number; toChainId: number; lane: string; token: string; resume: string; built: boolean } }
     const free = await swapChat({})
+    // RE-PINNED 2026-10-06 (home-chain inference): the ask now builds on
+    // Ethereum FIRST — UNI's home chain (lib/token-home) — so the artifact is
+    // on chain 1 either way. From there the wallet pays with its mainnet ETH:
+    // a same-chain retarget (USDC short on Ethereum → the ETH lane, 🧭) or a
+    // straight build when its USDC covers it (🏠). Never Base.
+    const freeChainIds = [
+      ...(((free.txChain as { steps?: { tx?: { chainId?: number } }[] } | undefined)?.steps ?? []).map((st) => st.tx?.chainId)),
+      (free.txRequest as { chainId?: number } | undefined)?.chainId,
+      (free.order as { chainId?: number } | undefined)?.chainId,
+    ].filter((id): id is number => typeof id === 'number')
     check(
-      'spend retarget (route, live): "I want to buy $10 worth of uni" with no chain named and no picker, from a wallet short on Base but rich on Ethereum → rebuilt on Ethereum in the same turn (a real artifact, unsigned), the reply opening with the retarget note',
-      !!free.spendRetarget && free.spendRetarget.fromChainId === 8453 && free.spendRetarget.toChainId === 1 && free.spendRetarget.built === true &&
-        !!(free.txChain || free.txRequest || free.order) && /^🧭 You asked for \$10 of UNI and named no chain/.test(String(free.reply)),
-      JSON.stringify({ spendRetarget: free.spendRetarget, buildPath: free.buildPath, reply: String(free.reply).slice(0, 200) }),
+      'home chain (route, live): "I want to buy $10 worth of uni" with no chain named and no picker, from a wallet rich on Ethereum → built on ETHEREUM (UNI\'s home) in the same turn, a real artifact, unsigned; the reply opens with the 🏠 home line or the 🧭 retarget line, and a retarget never leaves Ethereum',
+      !!(free.txChain || free.txRequest || free.order) && freeChainIds.length > 0 && freeChainIds.every((id) => id === 1) &&
+        (free.spendRetarget ? free.spendRetarget.fromChainId === 1 && free.spendRetarget.toChainId === 1 && free.spendRetarget.built === true : true) &&
+        (free.spendRetarget ? /^🧭 You asked for \$10 of UNI and named no chain/.test(String(free.reply)) : /^🏠 UNI's market is on Ethereum, so this builds there/.test(String(free.reply))),
+      JSON.stringify({ spendRetarget: free.spendRetarget, buildPath: free.buildPath, chainIds: freeChainIds, reply: String(free.reply).slice(0, 200) }),
     )
     const pinned = await swapChat({ selectedChainId: 8453 })
     check(
@@ -34656,6 +34668,9 @@ async function main() {
   tapePins(check)
   // The battle views on /live (2026-10-06): windows and anchors, the percent track, the range, units, bursts, rank, the picker, the projections.
   battlePins(check)
+  // Where a chainless swap builds (2026-10-06): the home-chain table and
+  // rule, the chain card's come-back plan, the wallet view's kept rows.
+  spotHomePins(check)
   // Own-wallet reads with no wallet (2026-10-06, the /live ask door): the
   // sign-in door, never a planner promise to "fetch your tokens".
   {

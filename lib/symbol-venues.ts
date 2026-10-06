@@ -43,7 +43,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { ChartPair } from '@/lib/charts'
-import { tokenHome } from '@/lib/token-home'
+import { spotChainsFor, tokenHome } from '@/lib/token-home'
 import { fmtAskPrice, fmtAskUnits } from '@/lib/chart-actions'
 import { ONRAMP_DEFAULT_NETWORK } from '@/lib/onramp'
 
@@ -123,20 +123,13 @@ export const VENUE_CHAIN_LABELS: Record<number, string> = {
 }
 export const venueChainLabel = (id: number): string => VENUE_CHAIN_LABELS[id] ?? `chain ${id}`
 
-/** Where a coin has Uniswap v3 depth worth a chip (cold table; the routes
- *  API quotes each chain live and a dead pair shows "—"). Absent = the
- *  Ethereum + Base pair the token list resolves for most majors. */
-const SPOT_CHAIN_HINTS: Record<string, number[]> = {
-  ETH: [8453, 1, 42161, 10],
-  BTC: [8453, 1, 42161],
-  ARB: [42161, 1],
-  OP: [10, 1],
-  AERO: [8453],
-  LINK: [1, 8453, 42161],
-  UNI: [1, 8453, 42161],
-  AAVE: [1, 8453],
-  MORPHO: [8453, 1],
-}
+/** Where a coin has Uniswap v3 depth worth a chip: lib/token-home's
+ *  EVM_SPOT_CHAINS (home first), the ONE table the chat route's home-chain
+ *  inference reads too, so "Buy $50 of UNI" builds where this map says it
+ *  trades (the routes API still quotes each chain live and a dead pair shows
+ *  "—"). Absent = the Ethereum + Base pair the token list resolves for most
+ *  majors. */
+const spotChainsOf = (sym: string): readonly number[] => spotChainsFor(sym) ?? DEFAULT_SPOT_CHAINS
 const DEFAULT_SPOT_CHAINS = [1, 8453]
 
 /** Tokens whose "Supply on Aave" chip runs as composed — MEASURED against
@@ -173,7 +166,7 @@ const usdWord = (usd: number) => (Number.isInteger(usd) ? `$${usd}` : `$${usd.to
 
 /** The chain a coin's funding lands on and its card buy settles on: its first
  *  spot chain (Base for ETH, Ethereum for most majors). */
-export const fundDestChainFor = (symbol: string): number => (SPOT_CHAIN_HINTS[symbol.toUpperCase()] ?? DEFAULT_SPOT_CHAINS)[0]
+export const fundDestChainFor = (symbol: string): number => spotChainsOf(symbol.toUpperCase())[0]
 
 /** Where the card on-ramp delivers (lib/onramp's default lane). */
 export const CARD_LANE_CHAIN_ID = ONRAMP_DEFAULT_NETWORK === 'base' ? 8453 : 1
@@ -262,7 +255,7 @@ export function venuesFor(symbol: string, pair: ChartPair, opts: VenuesOptions =
 
   // ── Spot (Uniswap v3 per chain) + limit (CoW where a book exists) ──
   if (!home && !isPerpChart) {
-    const chains = SPOT_CHAIN_HINTS[sym] ?? DEFAULT_SPOT_CHAINS
+    const chains = spotChainsOf(sym)
     for (const id of chains) {
       const c = SPOT_CHAINS.find((x) => x.id === id)
       if (!c) continue
@@ -567,7 +560,7 @@ export interface CompoundPlan {
   expectedSteps: number
 }
 
-const SPOT_CHAIN_OF = (sym: string): number => (SPOT_CHAIN_HINTS[sym] ?? DEFAULT_SPOT_CHAINS)[0]
+const SPOT_CHAIN_OF = (sym: string): number => spotChainsOf(sym)[0]
 
 /** Which leg kinds a pair can chain, in the order they may appear. */
 export function compoundLegKindsFor(symbol: string, pair: ChartPair): CompoundLegKind[] {

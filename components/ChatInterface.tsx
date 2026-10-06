@@ -2526,6 +2526,11 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                           <SendTxChain
                             chain={chain}
                             manualSteps={!!externalChain}
+                            // The message's durable signed record: a card
+                            // re-rendered after a reload paints a finished
+                            // chain finished and never re-offers it
+                            // (lib/sign-round-trip chainResumePlan).
+                            completed={signedTxsOf(msg.meta)}
                             // The chain's money moves when its FINAL step (the
                             // swap, not the approve) confirms — that's the
                             // signed event for the money-flow metric.

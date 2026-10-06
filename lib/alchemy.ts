@@ -112,6 +112,9 @@ async function postJson(url: string, body: unknown, timeoutMs = 12_000): Promise
 
 // ── Portfolio (balances priced to USD, multichain) ───────────────────────────
 
+/** Pages followed per read (Alchemy's by-address index pages its rows). */
+export const PORTFOLIO_MAX_PAGES = 6
+
 interface AlchemyToken {
   address?: string
   network?: string
@@ -151,15 +154,26 @@ export async function getMultichainPortfolio(address: string, onlyNet?: string):
   const live = (await enabledChains()).map((c) => c.net)
   const networks = onlyNet && NETWORKS.includes(onlyNet) ? [onlyNet] : live
   const url = `https://api.g.alchemy.com/data/v1/${apiKey()}/assets/tokens/by-address`
-  const json = (await postJson(url, {
-    addresses: [{ address, networks }],
-    withMetadata: true,
-    withPrices: true,
-    includeNativeTokens: true,
-    includeErc20Tokens: true,
-  })) as { data?: { tokens?: AlchemyToken[] } }
-
-  const tokens = Array.isArray(json.data?.tokens) ? json.data!.tokens! : []
+  // The index pages: a wallet with more rows than one page used to keep
+  // only the first (2026-10-06: USDT, DAI, DEGEN, AERO, WCT and a just-bought
+  // UNI on Base all missing from a 40-token wallet while MetaMask listed
+  // them). Follow `pageKey` until the index is exhausted, bounded.
+  const tokens: AlchemyToken[] = []
+  let pageKey: string | undefined
+  for (let page = 0; page < PORTFOLIO_MAX_PAGES; page++) {
+    const json = (await postJson(url, {
+      addresses: [{ address, networks }],
+      withMetadata: true,
+      withPrices: true,
+      includeNativeTokens: true,
+      includeErc20Tokens: true,
+      ...(pageKey ? { pageKey } : {}),
+    })) as { data?: { tokens?: AlchemyToken[]; pageKey?: string | null } }
+    if (Array.isArray(json.data?.tokens)) tokens.push(...json.data!.tokens!)
+    const next = json.data?.pageKey
+    if (typeof next !== 'string' || !next || next === pageKey) break
+    pageKey = next
+  }
   const seenChains = new Set<string>()
   const holdings: HoldingRow[] = []
 

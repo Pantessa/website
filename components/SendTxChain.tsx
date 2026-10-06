@@ -21,7 +21,7 @@ import SendTxButton from '@/components/SendTxButton'
 import { reportWalletRefusal, WITHHELD_KIND } from '@/lib/wallet-refusal'
 import type { TxChainRequest, TxChainStep } from '@/lib/transaction-layer'
 import { chainById } from '@/lib/chains'
-import { autoFireAllowed, continueCopy, oneMethodPerTap, readSignOutcome, signOutcomeKey, writeSignOutcome } from '@/lib/sign-round-trip'
+import { autoFireAllowed, CHAIN_RESUMED_LINE, CHAIN_SETTLED_LINE, chainResumePlan, continueCopy, oneMethodPerTap, readSignOutcome, signOutcomeKey, writeSignOutcome } from '@/lib/sign-round-trip'
 import { usePlatform } from '@/lib/use-sign-round-trip'
 
 // Explorer links come from the app chain registry (lib/chains); this local
@@ -36,8 +36,17 @@ export default function SendTxChain({
   chain,
   onCompleted,
   manualSteps = false,
+  completed = null,
 }: {
   chain: TxChainRequest
+  /** The message's durable signed record (every confirmed step's hash, in
+   *  order — lib/store recordSignedTxs). A card mounted over a chain that
+   *  already finished paints it finished and signs nothing; a settled
+   *  prefix (the approve mined, the page went away) resumes after it.
+   *  2026-10-06: without this a reloaded card re-offered a settled
+   *  approve and auto-fired the swap behind it — the same $2 of UNI bought
+   *  twice. */
+  completed?: readonly { hash: string; chainId?: number; title?: string }[] | null
   /** §E3: a chain built by an external tool (buildPath 'planner') never
    *  auto-fires step 2+ — every popup follows the user's own tap. */
   manualSteps?: boolean
@@ -56,6 +65,40 @@ export default function SendTxChain({
   const [phase, setPhase] = useState<Phase>('sign')
   const [hashes, setHashes] = useState<Record<number, string>>({})
   const [note, setNote] = useState('')
+  // What an EARLIER visit did with this chain as a whole (chainResumePlan):
+  // 'done' paints it finished, a resumed step index is offered and never
+  // auto-fired (a mount-time wallet popup after a reload is the #102 bug).
+  const [cameBack, setCameBack] = useState<'done' | number | null>(null)
+  const reconciled = useRef(false)
+  const completedKey = (completed ?? []).map((t) => t.hash).join(',')
+  useEffect(() => {
+    if (reconciled.current) return
+    if (phase !== 'sign' || current !== 0 || Object.keys(hashes).length > 0) return
+    const store = typeof window === 'undefined' ? null : window.localStorage
+    const steps_ = chain.steps.map((s) => {
+      if (!address) return { settledHash: null }
+      const key = signOutcomeKey({ wallet: address, chainId: s.tx.chainId ?? 8453, to: s.tx.to, data: s.tx.data })
+      const o = readSignOutcome(store, key, Date.now())
+      return { settledHash: o?.state === 'settled' ? (o.hash ?? '') : null }
+    })
+    const plan = chainResumePlan({ steps: steps_, completed })
+    if (plan.kind === 'fresh') {
+      // Without an address the store can't be read yet — look again when it lands.
+      if (address) reconciled.current = true
+      return
+    }
+    reconciled.current = true
+    setHashes(plan.hashes)
+    if (plan.kind === 'done') {
+      setPhase('done')
+      setCameBack('done')
+      return
+    }
+    setCurrent(plan.current)
+    setCameBack(plan.current)
+    void refreshStep(plan.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, completedKey, chain])
 
   // Re-quote one step server-side (fresh quote + guardrails + revert dry-run).
   // Returns false when the step was withheld (blocked) — callers stop there.
@@ -316,11 +359,12 @@ export default function SendTxChain({
                       no button hunt. On a phone every step is its own tap (the visitor came
                       back from the wallet app; a mount-time request has no tap behind it and
                       the browser drops the app launch) — the button says which step it is. */}
+                  {cameBack === i && <div className="text-[11px] text-[color:var(--muted)] mb-1" data-chain-resumed="">{CHAIN_RESUMED_LINE}</div>}
                   <SendTxButton
                     key={i}
                     tx={step.tx}
                     summary={step.title}
-                    autoFire={autoFireAllowed({ platform, stepIndex: i, manualSteps, connectorId: connector?.id, connectorName: connector?.name })}
+                    autoFire={cameBack !== i && autoFireAllowed({ platform, stepIndex: i, manualSteps, connectorId: connector?.id, connectorName: connector?.name })}
                     ctaLabel={oneMethodPerTap(platform) ? continueCopy({ stepIndex: i, total: steps.length, title: step.title, app: connector?.name }).label : undefined}
                     onConfirmed={(hash) => void advance(i, hash)}
                     refusalArtifact="tx-chain"
@@ -342,6 +386,11 @@ export default function SendTxChain({
           )
         })}
       </ol>
+      {phase === 'done' && cameBack === 'done' && (
+        <div className="text-[11px] text-[color:var(--muted)]" data-chain-settled="">
+          {CHAIN_SETTLED_LINE}
+        </div>
+      )}
 
       {phase === 'done' && (
         <div className="text-[12px]">
