@@ -223,3 +223,17 @@
   .live__pause { width: 44px; padding: 0; gap: 0; font-size: 0; justify-content: center; }
   .live__view { padding: 0 10px; }
 }
+/* r2: at 375–390 sub-cent prices ("0.006266") still ellipsized in the Price column; a half-size step on the numbers. */
+@container live (max-width: 420px) {
+  .live__table td.num { font-size: 10.5px; letter-spacing: -0.01em; }
+}
+/* r2 contrast (shots/mobile-contrast.mjs): the follow chips' words measured 4.09:1 (light, "Long BTC $25" on its 18%
+   tint) and 4.25:1 (dark, "Short NEAR $25" at 10.5px) — under AA. A step deeper on paper, a step lighter on black. */
+:root[data-theme="light"] .live__chip--buy { color: color-mix(in oklch, var(--live-up) 78%, #000); }
+:root[data-theme="light"] .live__chip--sell { color: color-mix(in oklch, var(--live-down) 82%, #000); }
+:root:not([data-theme="light"]) .live__chip--sell { color: color-mix(in oklch, var(--live-down) 82%, #fff); }
+:root:not([data-theme="light"]) .live__chip--buy { color: color-mix(in oklch, var(--live-up) 88%, #fff); }
+@container live (min-width: 341px) and (max-width: 420px) {
+  .live__table th:nth-child(1) { width: 13%; }
+  .live__table th:nth-child(4) { width: 18%; }
+}
