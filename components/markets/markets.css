@@ -551,14 +551,20 @@ button.mk-held:hover { border-color: var(--accent); }
 .mk-claim[data-compact] .mk-claim__sub { display: none; }
 @media (pointer: coarse) { .mk-claim__door { min-height: 44px; } }
 @media (max-width: 640px) {
-  .mk-claim, .mk-claim[data-compact] { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 0 2px; }
-  .mk-claim__h1, .mk-claim[data-compact] .mk-claim__h1 { font-size: 18px; flex: 1 1 auto; min-width: 0; }
+  /* MOBILE's numbers (MOBILE.md § For SPLASH): the whole block ≤48px at 375 —
+     the h1 at 20px (Fraunces, ≤230px) + 12px + the door as a 13px link (91px)
+     = 333 of the 343px column, one line; at 320 the door takes its own line.
+     The 44px door sets the row; 4px over it, nothing under. */
+  .mk-claim, .mk-claim[data-compact] { display: flex; flex-wrap: wrap; align-items: center; gap: 0 12px; padding: 4px 0 0; }
+  .mk-claim__h1, .mk-claim[data-compact] .mk-claim__h1 { font-size: 20px; line-height: 1.1; flex: 1 1 auto; min-width: 0; }
   .mk-claim__sub { display: none; }
-  /* text + arrow on a phone: the pill's border and padding were the 20px that
-     pushed the door under the h1 at 375 */
-  .mk-claim__door { min-height: 44px; padding: 0; border: 0; }
+  /* a plain 13px link, not the mono pill: the pill's case, tracking, border
+     and padding were the 30px that pushed the door under the h1 at 375 */
+  .mk-claim__door { min-height: 44px; padding: 0; border: 0; font-family: inherit; font-size: 13px; letter-spacing: 0; text-transform: none; color: var(--fg); }
 }
 /* The two seats under it (contract: margins only here — the pulse band and
-   the guide card own their own boxes). */
-.mk-lead-seat { margin-top: 14px; }
-.mk-guide-seat { margin-top: 16px; }
+   the guide card own their own boxes). MOBILE's rhythm: 12px, like the session
+   strip's; and an EMPTY seat (GuideSeat renders null when no hint applies)
+   leaves no 12px hole. */
+.mk-lead-seat:not(:empty) { margin-top: 12px; }
+.mk-guide-seat:not(:empty) { margin-top: 12px; }

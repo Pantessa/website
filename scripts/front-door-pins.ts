@@ -152,12 +152,12 @@ export async function frontDoorPins(check: Check): Promise<void> {
   const rule = (sel: string) => (css.match(new RegExp(`^${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`, 'm')) ?? ['', ''])[1]
   const marginsOnly = (body: string) => body.trim().length > 0 && body.split(';').map((d) => d.trim()).filter(Boolean).every((d) => /^margin(-top|-bottom)?:/.test(d))
   check(
-    'front door: markets.css carries the claim block (≤72px by construction: 12px + 27px h1 + 3px + 17px sentence + 8px), hides the sentence on a phone and in the compact version, and the two seat classes carry MARGINS ONLY (the pulse band and the guide card own their boxes)',
+    'front door: markets.css carries the claim block (≤72px by construction: 12px + 27px h1 + 3px + 17px sentence + 8px), hides the sentence on a phone and in the compact version, and the two seat classes carry MARGINS ONLY and only when filled (`:not(:empty)` — an empty guide seat leaves no hole; the pulse band and the guide card own their boxes)',
     /padding: 12px 0 8px/.test(rule('.mk-claim')) && /font-size: clamp\(21px, 1\.9vw, 27px\)/.test(rule('.mk-claim__h1')) && /line-height: 1\.02/.test(rule('.mk-claim__h1')) &&
       /font-size: 12\.5px; line-height: 1\.4/.test(rule('.mk-claim__sub')) &&
       /\.mk-claim\[data-compact\] \.mk-claim__sub \{ display: none; \}/.test(css) &&
       /@media \(max-width: 640px\) \{[^}]*\n(?:[^}]*\}\s*)*?\s*\.mk-claim__sub \{ display: none; \}/.test(css) &&
-      marginsOnly(rule('.mk-lead-seat')) && marginsOnly(rule('.mk-guide-seat')),
+      marginsOnly(rule('.mk-lead-seat:not(:empty)')) && marginsOnly(rule('.mk-guide-seat:not(:empty)')) && !/^\.mk-(?:lead|guide)-seat \{/m.test(css),
   )
 
   // ── The arrival fence admits the splash ───────────────────────────────
