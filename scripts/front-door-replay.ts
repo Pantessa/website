@@ -375,7 +375,9 @@ for (const s of selected) {
       const detail = [r.extra, !r.ok && depErrs.length ? `dependency failed — ${depErrs.join(' | ')}` : ''].filter(Boolean).join(' · ')
       rows.push({ tier: s.tier, spec, status: r.ok ? 'PASS' : 'FAIL', name: r.name, detail, line: c.line })
     } else {
-      const why = ownErr ? `L${ownErr.line}: ${ownErr.error}` : depErrs.length ? `dependency failed — ${depErrs.join(' | ')}` : 'did not run (the statement exited before this check)'
+      const why =
+        [ownErr ? `L${ownErr.line}: ${ownErr.error}` : '', depErrs.length ? `dependency failed — ${depErrs.join(' | ')}` : ''].filter(Boolean).join(' · ') ||
+        'did not run (the statement exited before this check)'
       rows.push({ tier: s.tier, spec, status: 'ERROR', name: c.name, detail: why, line: c.line })
     }
   }
