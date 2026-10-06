@@ -32,11 +32,15 @@ import { autoCallTitle, callTweetHref, callUrl, chartTweetHref, fmtCallTime } fr
 import { useShareVia } from '@/components/ShareActions'
 import { withVia } from '@/lib/share-posts'
 import { absoluteUrl } from '@/lib/site-url'
+import { viewUrl, type BoardMode, type ChartView } from '@/lib/markets'
 
 export interface ChartShareProps {
   symbol: string
   tf: ChartTf
   lines: ChartLine[]
+  /** The view the share is taken from: a Battlefield share links back to the Battlefield. */
+  view?: ChartView
+  board?: BoardMode | null
   /** Compose the picture from the chart as it stands (null = not ready). */
   capture: () => Promise<HTMLCanvasElement | null>
   onClose: () => void
@@ -50,7 +54,7 @@ function XMark() {
   )
 }
 
-export default function ChartShare({ symbol, tf, lines, capture, onClose }: ChartShareProps) {
+export default function ChartShare({ symbol, tf, lines, view, board, capture, onClose }: ChartShareProps) {
   const session = useSession()
   const tfLabel = CHART_TFS.find((t) => t.key === tf)?.label ?? tf
   const [blob, setBlob] = useState<Blob | null>(null)
@@ -123,7 +127,8 @@ export default function ChartShare({ symbol, tf, lines, capture, onClose }: Char
   // The plain chart's own address: the frame rides along, and the sharer's id
   // when a wallet is connected (a one-way hash, never the address).
   const via = useShareVia()
-  const chartUrl = withVia(absoluteUrl(`/t/${symbol}${tf === '1d' ? '' : `?tf=${tf}`}`), via)
+  // A share from the Battlefield links to the Battlefield (and its board).
+  const chartUrl = withVia(absoluteUrl(viewUrl(view ?? 'candles', board ?? null, `/t/${symbol}`, tf === '1d' ? '' : `?tf=${tf}`)), via)
   // A browser with a share sheet that cannot take a file (desktop Safari,
   // Firefox on Android) still shares the link.
   const [canShareLink, setCanShareLink] = useState(false)

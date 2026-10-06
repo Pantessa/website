@@ -596,3 +596,40 @@ export function fmtCountdown(mins: number): string {
   const rh = h % 24
   return rh ? `${d}d ${rh}h` : `${d}d`
 }
+
+// ── Battlefield (2026-10-06): `?view=battlefield&board=spot|perps` ──────────
+
+export type ChartView = 'candles' | 'field'
+export type BoardMode = 'perps' | 'spot'
+
+/** `?view=battlefield` opens the chart on the Battlefield; anything else is
+ *  the candles (the view a chart opens on, never remembered). Pure — pinned. */
+export function parseViewParam(search: string): ChartView {
+  return new URLSearchParams(search).get('view') === 'battlefield' ? 'field' : 'candles'
+}
+
+/** `?board=spot|perps` picks the Battlefield's board; anything else is none named. */
+export function parseBoardParam(search: string): BoardMode | null {
+  const raw = new URLSearchParams(search).get('board')
+  return raw === 'spot' || raw === 'perps' ? raw : null
+}
+
+/** The URL with the view and board set or cleared, every other param preserved. */
+export function viewUrl(view: ChartView, board: BoardMode | null, pathname: string, search: string): string {
+  const params = new URLSearchParams(search)
+  if (view === 'field') params.set('view', 'battlefield')
+  else params.delete('view')
+  if (view === 'field' && board) params.set('board', board)
+  else params.delete('board')
+  const q = params.toString()
+  return q ? `${pathname}?${q}` : pathname
+}
+
+/** replaceState mirror of the view and board (the ?tab= idiom). */
+export function syncViewParam(view: ChartView, board: BoardMode | null): void {
+  if (typeof window === 'undefined') return
+  const { pathname, search } = window.location
+  const next = viewUrl(view, board, pathname, search)
+  if (next === `${pathname}${search}`) return
+  window.history.replaceState(null, '', next)
+}

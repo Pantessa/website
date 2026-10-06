@@ -2,12 +2,13 @@
 // calendar, who is winning, and a bar's battle report. Pure: no server, no
 // chain, no DB. Called from scripts/test-api.ts, and runnable alone:
 //   npx tsx scripts/battlefield-pins.ts
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import type { Candle } from '../lib/charts'
-import { crowdRead, fuelBeforePlayer, fuelWithin, fundingLine, liqBuckets, liquidationMap, oiAtBars, parsePlayer, playerLiqPrice, playerState, type OiPoint } from '../lib/derivs'
+import { crowdRead, fuelBeforePlayer, fuelWithin, fundingLine, liqBuckets, liquidationMap, oiAtBars, parsePlayer, playerLiqPrice, playerState, bookRows, bookWalls, spotRead, unitUsd, unitsFor, type OiPoint } from '../lib/derivs'
 import { fieldAhead } from '../lib/battlefield'
 import { composeExecAsk } from '../lib/trade-asks'
 import { chartPairFor } from '../lib/charts'
+import { parseBoardParam, parseViewParam, viewUrl } from '../lib/markets'
 import { ROAD_V, battleReport, fieldDate, fieldHash, fieldProjector, fieldRecords, fieldScale, fieldTicks, pressureAt, pressureLine, seasonOf, timeBands, troopCounts } from '../lib/battlefield'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
@@ -101,8 +102,8 @@ export function battlefieldPins(check: Check): void {
   check('battlefield: the scenery hash is stable and spread (the forest stands in the same place every frame)', hs.every((h) => h >= 0 && h < 1) && fieldHash(7, 1) === fieldHash(7, 1) && fieldHash(7, 1) !== fieldHash(7, 2) && new Set(hs.map((h) => Math.floor(h * 10))).size === 10)
 
   // ── Positioning (lib/derivs) ────────────────────────────────────────────
-  check('battlefield: the scale stretches to hold a cluster or a player line off the tape, and the ground ahead is a tenth of the bars (six at least)',
-    fieldScale(bars, [40]).hi > 40 && fieldScale(bars, [1, NaN, -3]).lo < 1 && fieldAhead(180) === 18 && fieldAhead(20) === 6)
+  check('battlefield: the scale stretches to hold a cluster or a player line off the tape, and the ground ahead is a fifth of the bars (eight at least)',
+    fieldScale(bars, [40]).hi > 40 && fieldScale(bars, [1, NaN, -3]).lo < 1 && fieldAhead(180) === 40 && fieldAhead(20) === 8)
   // Four flat bars at $100; open interest steps 1000 → 1500 on bar 1, then falls to 750 on bar 2.
   const flatBars: Candle[] = [bar(0, 100, 101, 99, 100), bar(DAY, 100, 101, 99, 100), bar(2 * DAY, 100, 101, 99, 100), bar(3 * DAY, 100, 101, 99, 100)]
   const oi: OiPoint[] = [{ t: 0, oi: 1000 }, { t: DAY, oi: 1000 }, { t: 2 * DAY, oi: 1500 }, { t: 3 * DAY, oi: 750 }]
@@ -141,10 +142,31 @@ export function battlefieldPins(check: Check): void {
     parsePlayer(long3)?.usd === 300 && parsePlayer({ ...long3, side: 'up' }) === null && parsePlayer({ ...long3, entry: NaN }) === null && parsePlayer({ ...long3, leverage: 500 }) === null && parsePlayer(null) === null)
   const uni = chartPairFor('UNI')!
   check('battlefield: the player\'s Open button sends the leveraged-perp sentence the Hyperliquid layer reads', composeExecAsk(uni, 'long', { usd: 25, leverage: 3 }) === '3x Long $25 of UNI on Hyperliquid' && composeExecAsk(uni, 'short', { usd: 10, leverage: 5 }) === '5x Short $10 of UNI on Hyperliquid')
-  const field = readFileSync('components/markets/chart/BattleField.tsx', 'utf8')
+  const field = readFileSync('components/markets/chart/FrontBoard.tsx', 'utf8')
   const route = readFileSync('app/api/markets/derivs/route.ts', 'utf8')
-  check('battlefield: the Open button exists only for an at-market what-if on a listed perp within the venue\'s leverage and the chart\'s venue gate; a tokenized stock reads no positioning',
-    /stored\.entry !== null \|\| !perpOk \|\| stored\.leverage > maxLev/.test(field) && /canAsk \? canAsk\(ask\) : true/.test(field) && /pair\.source === 'robinhood'\) return/.test(field) && /pair\.source === 'robinhood'/.test(route) && /canAsk=\{\(ask\) => canTradeAsk\(ask, tradable\)\}/.test(readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')))
+  check('battlefield: the Open button exists only for an at-market what-if on a listed perp within the venue\'s leverage and the chart\'s venue gate, on the perps board; a tokenized stock reads no positioning',
+    /stored\.entry !== null \|\| !perpOk \|\| stored\.leverage > maxLev \|\| mode !== 'perps'/.test(field) && /canAsk \? canAsk\(ask\) : true/.test(field) && /noMarket = pair\.source === 'robinhood'/.test(field) && /pair\.source === 'robinhood'/.test(route) && /canAsk=\{\(ask\) => canTradeAsk\(ask, tradable\)\}/.test(readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')))
+
+  // ── The front ───────────────────────────────────────────────────────────
+  check('battlefield: a tank is the smallest round dollar step that keeps the biggest cluster to 14 tanks; a cluster under half a tank stands no one, anything from there at least one',
+    unitUsd(1_100_000) === 100_000 && unitUsd(14_000_000) === 1_000_000 && unitUsd(14_000_001) === 2_500_000 && unitsFor(40_000, 100_000) === 0 && unitsFor(60_000, 100_000) === 1 && unitsFor(1_100_000, 100_000) === 11)
+  const bookShape = { mid: 100, bids: [{ px: 99.9, usd: 5 }, { px: 98.5, usd: 7 }, { px: 97, usd: 100 }], asks: [{ px: 100.1, usd: 3 }, { px: 101.9, usd: 4 }, { px: 103, usd: 100 }] }
+  const w = bookWalls(bookShape)
+  check('battlefield: the ramparts count orders resting within 2% of the mid on each side, and nothing without a mid', w.bidUsd === 12 && w.askUsd === 7 && bookWalls({ ...bookShape, mid: null }).bidUsd === 0)
+  const fieldSrc = readFileSync('components/markets/chart/FrontBoard.tsx', 'utf8')
+  check('battlefield: the board carries no candles and no decoration: every tank is a row\'s dollars over the unit (unitsFor), the walls are the book (bookWalls), spot rows are the resting book (bookRows), and the old candle field is gone',
+    !/fieldHash/.test(fieldSrc) && !/troopCounts/.test(fieldSrc) && !/CandlestickSeries|timeBands|battleReport/.test(fieldSrc) && /unitsFor\(b\.usd, unit\)/.test(fieldSrc) && /bookWalls\(hlBook\)/.test(fieldSrc) && /bookRows\(spotBook, RANGE_PCT\.spot, SPOT_STEP_PCT\)/.test(fieldSrc) && !existsSync('components/markets/chart/BattleField.tsx'))
+  const spotBook = { mid: 100, bids: [{ px: 99.9, usd: 50 }, { px: 99.2, usd: 20 }, { px: 97.5, usd: 30 }, { px: 85, usd: 999 }], asks: [{ px: 100.2, usd: 10 }, { px: 101.5, usd: 40 }, { px: 115, usd: 999 }] }
+  const sr = bookRows(spotBook, 10, 1)
+  check('battlefield: spot rows gather the resting book into 1% rungs within the range (bids are the buyers\' rows, asks the sellers\', the far tail left out), ascending by price',
+    sr.length === 4 && sr.every((r, i) => i === 0 || r.price >= sr[i - 1].price) && sr.filter((r) => r.side === 'long').reduce((a, r) => a + r.usd, 0) === 100 && sr.filter((r) => r.side === 'short').reduce((a, r) => a + r.usd, 0) === 50 && sr.find((r) => r.side === 'long' && r.usd === 70)?.lo === 99, JSON.stringify(sr))
+  const read = spotRead(spotBook)
+  check('battlefield: the spot read says which side holds the deeper book within 5% and the spread', read.lean === 'up' && read.headline === 'Buyers hold the deeper book' && near(read.bidShare, 100 / 150) && near(read.spreadPct!, 0.3) && spotRead({ ...spotBook, bids: [] }).lean === 'down')
+
+  // ── The shared link ─────────────────────────────────────────────────────
+  check('battlefield: ?view=battlefield opens the Battlefield (with ?board= picking its board), anything else the candles, and the mirror keeps every other param',
+    parseViewParam('?view=battlefield') === 'field' && parseViewParam('?view=candles') === 'candles' && parseViewParam('') === 'candles' && parseBoardParam('?board=spot') === 'spot' && parseBoardParam('?board=x') === null && viewUrl('field', 'spot', '/t/UNI', '?tf=1h') === '/t/UNI?tf=1h&view=battlefield&board=spot' && viewUrl('candles', 'spot', '/t/UNI', '?view=battlefield&board=spot&vs=ETH') === '/t/UNI?vs=ETH' && viewUrl('field', null, '/t/UNI', '') === '/t/UNI?view=battlefield')
+  check('battlefield: a share taken from the Battlefield links back to it', /viewUrl\(view \?\? 'candles', board \?\? null, `\/t\/\$\{symbol\}`/.test(readFileSync('components/markets/chart/ChartShare.tsx', 'utf8')) && /parseViewParam\(window\.location\.search\)/.test(readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')))
 
   // Wiring: the candles are the view a chart opens on, and only the symbol page offers the switch.
   const chart = readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')

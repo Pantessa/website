@@ -63,8 +63,8 @@ import { seriesVar } from '@/lib/markets-look'
 import { VolumeProfile } from './volume-profile'
 import ChartLegend from './ChartLegend'
 import { awayFromLive, chartKey, markPlusHintSeen, plusHintSeen, tidyPrice, zoomedFrom } from '@/lib/chart-legend'
-import BattleField from './BattleField'
-import { FIELD_MAX_BARS } from '@/lib/battlefield'
+import FrontBoard from './FrontBoard'
+import { parseBoardParam, parseViewParam, syncViewParam, type BoardMode } from '@/lib/markets'
 import { canSellAsk } from '@/lib/sell-gate'
 import { useHeld } from '@/lib/use-held'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
@@ -262,11 +262,28 @@ export default function MarketChart({
   const [geomTick, setGeomTick] = useState(0)
   const [pool, setPool] = useState<PoolPrice | null>(null)
   const [noteDraft, setNoteDraft] = useState<{ t: number; price: number; text: string } | null>(null)
-  // The second view (BattleField): the same bars as a tabletop field. Never
-  // remembered: every chart opens on its candles.
+  // The second view (FrontBoard): the market's two sides on a tilted table.
+  // Never remembered: every chart opens on its candles.
   const [view, setView] = useState<'candles' | 'field'>('candles')
-  // The first bar the field shows: the left edge of the candles' view at the switch.
-  const [fieldFrom, setFieldFrom] = useState<number | null>(null)
+  // The board the Battlefield shows; null = its own default. `?view=battlefield&board=spot`
+  // opens straight onto it (a shared link), and the switch mirrors into the URL.
+  const [board, setBoard] = useState<BoardMode | null>(null)
+  const viewMirroredRef = useRef(false)
+  useEffect(() => {
+    if (!battlefield) return
+    const v = parseViewParam(window.location.search)
+    const b = parseBoardParam(window.location.search)
+    if (v === 'field') setView('field')
+    if (b) setBoard(b)
+  }, [battlefield])
+  useEffect(() => {
+    if (!battlefield) return
+    if (!viewMirroredRef.current) {
+      viewMirroredRef.current = true
+      return
+    }
+    syncViewParam(view, view === 'field' ? board : null)
+  }, [battlefield, view, board])
 
   // The newest bar has left the view: the plot offers a way back ("Live").
   const [away, setAway] = useState(false)
@@ -735,33 +752,11 @@ export default function MarketChart({
 
   useEffect(() => {
     chartRef.current?.applyOptions({ timeScale: { timeVisible: tf !== '1d' } })
-    // Another frame's bars sit at other times: the field opens on its live window.
-    setFieldFrom(null)
   }, [tf])
 
-  // The battlefield's bars: what the candles showed at the switch, through the
-  // newest bar (so the live front keeps moving), capped at FIELD_MAX_BARS.
   const fieldOn = battlefield && view === 'field'
-  const fieldBars = useMemo<Candle[]>(() => {
-    if (!fieldOn || !bars.length || data?.tf !== tf || data.symbol !== pair?.symbol) return []
-    const from = fieldFrom ?? candles[0]?.t ?? bars[0].t
-    const shown = bars.filter((b) => b.t >= from)
-    return (shown.length >= 12 ? shown : bars.slice(-Math.min(bars.length, 180))).slice(-FIELD_MAX_BARS)
-  }, [fieldOn, bars, candles, fieldFrom, data?.tf, data?.symbol, pair?.symbol, tf])
-  const fieldSma = useMemo(() => {
-    const onField = (period: number, on: boolean): (number | null)[] | null => {
-      if (!on || !fieldBars.length) return null
-      const at = new Map(sma(lineSrc, period).map((p) => [p.t, p.v]))
-      return fieldBars.map((b) => at.get(b.t) ?? null)
-    }
-    return { s50: onField(50, overlays.has('sma50')), s200: onField(200, overlays.has('sma200')) }
-  }, [fieldBars, lineSrc, overlays])
   const switchView = useCallback((next: 'candles' | 'field') => {
     if (next === 'field') {
-      const range = chartRef.current?.timeScale().getVisibleLogicalRange()
-      const held = barsRef.current
-      const first = range && held.length ? held[Math.max(0, Math.min(held.length - 1, Math.floor(range.from as number)))] : null
-      setFieldFrom(first?.t ?? null)
       setTool('none')
       setNoteDraft(null)
       setSelectedId(null)
@@ -1211,9 +1206,8 @@ export default function MarketChart({
             </button>
           </div>
         )}
-        <div className="mkt-chart__ind" role="group" aria-label="Overlays">
-          {/* On the field only the two slow averages draw (the river and the road). */}
-          {OVERLAYS.filter((o) => (fieldOn ? o.key === 'sma50' || o.key === 'sma200' : o.key !== 'vwap' || hasVolume(candles))).map((o) => (
+        {!fieldOn && <div className="mkt-chart__ind" role="group" aria-label="Overlays">
+          {OVERLAYS.filter((o) => o.key !== 'vwap' || hasVolume(candles)).map((o) => (
             <button
               key={o.key}
               type="button"
@@ -1234,7 +1228,7 @@ export default function MarketChart({
               {o.label}
             </button>
           ))}
-        </div>
+        </div>}
         {tools && !fieldOn && (
           <div className="mkt-chart__tools" role="group" aria-label="Drawing tools">
             {toolBtn('none', MousePointer2, 'Select')}
@@ -1352,7 +1346,7 @@ export default function MarketChart({
             )}
           </div>
         )}
-        {fieldOn && tokens && <BattleField symbol={pair.symbol} pair={pair} onAsk={onAsk} canAsk={(ask) => canTradeAsk(ask, tradable)} tf={tf} bars={fieldBars} tokens={tokens} lines={lines} fills={fills} sma50={fieldSma.s50} sma200={fieldSma.s200} />}
+        {fieldOn && tokens && <FrontBoard symbol={pair.symbol} pair={pair} tf={tf} bars={candles} tokens={tokens} onAsk={onAsk} canAsk={(ask) => canTradeAsk(ask, tradable)} board={board} onBoard={setBoard} />}
         {!fieldOn && <DrawingLayer
           geom={geom}
           lines={lines}
@@ -1440,6 +1434,8 @@ export default function MarketChart({
         <ChartShare
           symbol={pair.symbol}
           tf={tf}
+          view={fieldOn ? 'field' : 'candles'}
+          board={fieldOn ? board : null}
           lines={lines}
           onClose={() => setShareOpen(false)}
           capture={async () => {
