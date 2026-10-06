@@ -129,15 +129,43 @@ function AskDoorPill() {
   const openDoor = useAskDoor((s) => s.openDoor)
   const opener = useDoorSheetOpener()
   const [fab, setFab] = useState<CtaBarState>({ shown: true, anchorY: 0 })
+  // THE PILL YIELDS (squad pre-gtm, FIRSTRUN — DEADENDS F5): a floating pill
+  // covers whatever scrolls under it, and on /t that was Ask the chart's own
+  // suggestion chips — the chip the guide card tells a stranger to press. A
+  // composer on screen (any visible textarea, or anything marked
+  // data-ask-door-yield) already IS the door, so the pill steps aside while
+  // one is in view and comes back when it leaves. Read on every app scroll
+  // and on a slow tick (content mounts without a scroll).
+  const [yielding, setYielding] = useState(false)
   useEffect(() => {
     const maxY = () => {
       const sc = getAppScroller()
       return sc instanceof HTMLElement ? sc.scrollHeight - sc.clientHeight : (document.scrollingElement?.scrollHeight ?? 0) - window.innerHeight
     }
+    const composerInView = () => {
+      const vh = window.innerHeight
+      for (const el of document.querySelectorAll<HTMLElement>('textarea, .mk-ai--ask input, [data-ask-door-yield]')) {
+        if (el.closest('[data-ask-door]')) continue
+        const r = el.getBoundingClientRect()
+        if (r.width < 2 || r.height < 2) continue
+        if (r.bottom > 0 && r.top < vh) return true
+      }
+      return false
+    }
+    const read = () => setYielding(composerInView())
     setFab(askPillInitial(appScrollTop(), maxY()))
-    return onAppScroll(() => setFab((prev) => askPillStep(prev, appScrollTop(), maxY())))
+    read()
+    const tick = window.setInterval(read, 1000)
+    const off = onAppScroll(() => {
+      setFab((prev) => askPillStep(prev, appScrollTop(), maxY()))
+      read()
+    })
+    return () => {
+      window.clearInterval(tick)
+      off()
+    }
   }, [pathname])
-  if (askDoorPillHidden(pathname) || open) return null
+  if (askDoorPillHidden(pathname) || open || yielding) return null
   return (
     <button
       type="button"

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import SpineLink from '@/components/SpineLink'
 import EmbedInstall from '@/components/EmbedInstall'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { ROBINHOOD_DESK } from '@/lib/live-examples'
@@ -45,13 +46,13 @@ export default function EmbedDocsPage() {
         <ul>
           <li>
             <strong><code>key</code></strong> — a <em>publishable</em> embed key (<code>yfe_…</code>),
-            minted on the <Link href="/dashboard">dashboard</Link>. It&apos;s safe in page source
+            minted on the <SpineLink href="/dashboard">dashboard</SpineLink>. It&apos;s safe in page source
             (it can read nothing and spend nothing that isn&apos;t already yours): it attributes
             the embed to your account and lists the site under <em>Your embeds</em>. Each visitor
             gets a few free house-model answers a day; past those, answers draw on{' '}
             <strong>your account&apos;s pool</strong>, which refills from the trades your visitors
             sign. Opt in under{' '}
-            <Link href="/dashboard/plan#ai-key">Your AI key</Link>{' '}to run them on your own API key
+            <SpineLink href="/dashboard/plan#ai-key">Your AI key</SpineLink>{' '}to run them on your own API key
             instead. Keyless embeds still work — tracked anonymously by origin, metered per visitor.
           </li>
           <li>
@@ -198,7 +199,7 @@ mountPantessaChat({
         <h2>What your dashboard sees</h2>
         <p>
           Every embed session reports turn telemetry, and{' '}
-          <Link href="/dashboard/embeds">/dashboard/embeds</Link> turns it into the numbers a
+          <SpineLink href="/dashboard/embeds">/dashboard/embeds</SpineLink> turns it into the numbers a
           host actually wants:
         </p>
         <ul>
@@ -238,7 +239,7 @@ mountPantessaChat({
           The fastest path: copy the Claude Code prompt below and paste it inside your app&apos;s
           repo. It installs the SDK, mounts the chat, patches your CSP if needed, and tells you
           how to verify. One paste, live chat. Sign in and the{' '}
-          <Link href="/dashboard/keys">API Keys page</Link>{' '}generates the same prompt with your
+          <SpineLink href="/dashboard/keys">API Keys page</SpineLink>{' '}generates the same prompt with your
           embed key baked in, so usage attributes to your account.
         </p>
         <EmbedInstall />

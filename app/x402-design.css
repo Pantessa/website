@@ -7,8 +7,10 @@
     --fg: #ffffff;
     --muted: oklch(0.68 0 0);
     /* Tertiary text/icons. Lifted 0.5 → 0.56 so faint captions clear WCAG AA
-       on the black/surface backgrounds while staying clearly below --muted. */
-    --muted-2: oklch(0.56 0 0);
+       on the black/surface backgrounds while staying clearly below --muted.
+       0.56 → 0.61 (pre-gtm POLISH, 2026-10-07): measured 4.2:1 on the #0c0c0c
+       ground in headless Chrome — 0.61 is ≈4.9:1 there and 4.5:1 on --surf-2. */
+    --muted-2: oklch(0.61 0 0);
     --accent: #3ECF8E;
     --maxw: 1280px;
     /* Aliases the launchpad token UI (TokenPanel/TradeToken/StakeToken) was
@@ -2493,7 +2495,11 @@
   @media (hover: none) { .ca__close { width: 44px; height: 44px; top: 6px; right: 6px; } }
 
   /* Header — the stone, the name, the promise. */
-  .ca__crest { display: grid; place-items: center; margin-bottom: 15px; }
+  .ca__crest { display: grid; place-items: center; margin-bottom: 15px; position: relative; isolation: isolate; }
+  /* The first impression (squad pre-gtm r3): a soft accent bloom behind the
+     stone, so the door opens on the mark lit from within — no new element,
+     no motion beyond the breathe the OTP step already has. */
+  .ca__crest::before { content: ''; position: absolute; left: 50%; top: 50%; width: 150px; height: 150px; transform: translate(-50%, -50%); border-radius: 50%; z-index: -1; pointer-events: none; background: radial-gradient(circle, color-mix(in oklch, var(--accent) 20%, transparent), transparent 68%); }
   .ca__gem { filter: drop-shadow(0 3px 12px color-mix(in oklch, var(--accent) 42%, transparent)); }
   .ca__title { font-size: 21px; font-weight: 600; letter-spacing: -.015em; text-align: center; line-height: 1.2; }
   /* The one line that answers "is this safe?" before anything is clicked —
@@ -4758,17 +4764,22 @@
     --line-2: oklch(0.775 0.005 150);
     --fg: #101512;
     --muted: oklch(0.44 0.01 155);
-    --muted-2: oklch(0.55 0.008 155);
-    /* Darker emerald: the brand green reads on white (text + fills keep
-       contrast with a --bg ink); the dark stages below keep the bright one. */
-    --accent: #0e8f62;
-    --sell: #c73e43;
-    --gold: #a3720c;
+    /* RE-INKED 2026-10-07 (pre-gtm POLISH): measured in headless Chrome, the
+       old light inks failed WCAG AA as text on the site's own grounds —
+       muted-2 oklch(.55) 4.2:1 on --surf-1, accent #0e8f62 3.7:1 on --surf-1
+       and 3.0:1 on its own 15–20% chip tints, sell #c73e43 3.6:1 on its chip.
+       Same hues, one step deeper: accent #0a7350 5.3:1 on --surf-1 / 4.5:1 on
+       a 15% tint; sell #b0323a; gold #8a600a; muted-2 .49 ≈ 4.8:1. The mark
+       (--gem-*) keeps its own ramp. Dark mode is untouched. */
+    --muted-2: oklch(0.49 0.008 155);
+    --accent: #0a7350;
+    --sell: #b0323a;
+    --gold: #8a600a;
     --chart-ma-50: #2563eb;
     --chart-ma-200: #b58900;
     --chart-session: rgb(16 21 18 / 0.045);
     --done: #0b7a53;
-    --fail: #c73e43;
+    --fail: #b0323a;
     --gem-1: #084A33;
     --gem-2: #0A5C40;
     --gem-3: #0C7A52;
@@ -4788,7 +4799,7 @@
     --line-2: oklch(0.446 0 0);
     --fg: #ffffff;
     --muted: oklch(0.68 0 0);
-    --muted-2: oklch(0.56 0 0);
+    --muted-2: oklch(0.61 0 0);
     --accent: #3ECF8E;
     --sell: #E5484D;
     color-scheme: dark;
@@ -5143,8 +5154,8 @@
     display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
     margin-top: 16px; cursor: default;
   }
-  .mintstage__runslabel { font-size: 10.5px; letter-spacing: 0.22em; color: rgba(242, 251, 247, 0.42); margin-right: 2px; }
-  .mintstage__runshint { font-size: 12px; font-style: italic; color: rgba(242, 251, 247, 0.38); }
+  .mintstage__runslabel { font-size: 10.5px; letter-spacing: 0.22em; color: rgba(242, 251, 247, 0.6); margin-right: 2px; } /* .42 → .6 (pre-gtm POLISH: 3.9:1 → AA) */
+  .mintstage__runshint { font-size: 12px; font-style: italic; color: rgba(242, 251, 247, 0.58); } /* .38 → .58 (pre-gtm POLISH: 3.3:1 → AA) */
   .mintstage__pill {
     display: inline-flex; align-items: center; gap: 6px;
     padding: 4px 10px; border-radius: 999px;
@@ -6039,7 +6050,9 @@
 .mkt-perf__val { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted); }
 .mkt-perf__tile.is-up .mkt-perf__val { color: var(--accent); }
 .mkt-perf__tile.is-down .mkt-perf__val { color: var(--sell); }
-.mkt-perf__tile.is-na { opacity: .6; }
+/* A window the feed can't reach: the dash goes quiet, the label stays legible (pre-gtm POLISH r2 — .6 opacity on the
+   whole tile put the key at 2.5:1). */
+.mkt-perf__tile.is-na .mkt-perf__val { color: var(--muted-2); }
 .mkt-perf__note { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); }
 .tchart__perf { display: flex; align-items: center; min-width: 0; }
 @media (max-width: 720px) { .tchart__perf { width: 100%; overflow-x: auto; } }
@@ -6486,6 +6499,11 @@
    measured a 46px overlap), so it steps aside, and its reserve with it. */
 :root[data-mcta="show"] .askdoor-pill { display: none; }
 :root:not([data-mcta="show"]) body:not(:has([data-app-frame], [data-ask-door="rail"])):has(.askdoor-pill) { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+/* Inside the app frame the document never scrolls — its ONE scroller
+   ([data-app-scroll]) does, and it had no reserve at all: the pill sat over the
+   last board row / map tile at 1440 (DEADENDS F5, squad pre-gtm). The scroller
+   keeps the pill's height clear under its last line while the pill is up. */
+:root:not([data-mcta="show"]) body:has([data-app-frame]):has(.askdoor-pill:not([data-away])) [data-app-scroll] { padding-bottom: calc(72px + env(safe-area-inset-bottom)) !important; }
 @media (max-width: 640px) {
   .askdoor-pill { left: auto; right: 16px; transform: none; width: auto; height: 46px; padding: 0 16px 0 8px; gap: 8px; }
   .askdoor-pill:hover { transform: translateY(-1px); }
@@ -6585,3 +6603,8 @@
    and the thread (ChatInterface simple) scrolls itself. */
 .askdoor-sheet--live .sheet__body { display: flex; flex-direction: column; overflow: hidden; }
 .askdoor-sheet--live .askdoor__sheetbody { flex: 1 1 auto; }
+
+/* Accent ink on its own 12–20% chip tint (pre-gtm POLISH r2): 4.05–4.1:1 on paper at 10.5px; pulled toward --fg. */
+:root[data-theme='light'] .edemo__live { color: color-mix(in oklch, var(--accent) 78%, var(--fg)); }
+:root[data-theme='light'] .pulse__chip--buy { color: color-mix(in oklch, var(--pulse-up) 78%, var(--fg)); }
+:root[data-theme='light'] .pulse__chip--sell { color: color-mix(in oklch, var(--pulse-down) 82%, var(--fg)); }

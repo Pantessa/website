@@ -42,6 +42,8 @@ export default function ShareReceiptButton({
 }) {
   const { address, walletAddress, signIn, signingIn } = useSession()
   const [busy, setBusy] = useState(false)
+  // A mint that failed says so on the button (pre-gtm POLISH r2); the next press retries.
+  const [failed, setFailed] = useState(false)
   const [shared, setShared] = useState<ShareInfo | null>(null)
   const [copied, setCopied] = useState(false)
 
@@ -77,13 +79,17 @@ export default function ShareReceiptButton({
     e.stopPropagation()
     if (busy) return
     setBusy(true)
+    setFailed(false)
     try {
       const res = await fetch('/api/share/receipts', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ kind, refId, chatId, messageId }),
       })
-      if (!res.ok) return
+      if (!res.ok) {
+        setFailed(true)
+        return
+      }
       const data = (await res.json()) as ShareInfo
       setShared(data)
       try {
@@ -94,7 +100,7 @@ export default function ShareReceiptButton({
         /* clipboard blocked — the X link still works */
       }
     } catch {
-      /* network miss — the button stays tappable */
+      setFailed(true) // network miss — the button stays tappable and says so
     } finally {
       setBusy(false)
     }
@@ -126,10 +132,11 @@ export default function ShareReceiptButton({
         'inline-flex items-center gap-1 text-[10.5px] mono text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors disabled:opacity-60 [@media(hover:none)]:min-h-9',
         className,
       )}
-      title="Mint a public receipt link — numbers only, your address truncated, revocable"
+      title={failed ? 'The receipt link could not be made — press to try again' : 'Mint a public receipt link — numbers only, your address truncated, revocable'}
+      data-fetch-failed={failed || undefined}
     >
       {busy ? <Loader2 className="w-3 h-3 animate-spin" aria-hidden /> : <Share2 className="w-3 h-3" aria-hidden />}
-      share
+      {failed ? 'couldn’t make the link · try again' : 'share'}
     </button>
   )
 }

@@ -17,6 +17,7 @@
 // table across both. Narrow: one column — page, mint, money, table.
 
 import Link from 'next/link'
+import { useState } from 'react'
 import EmptyDoor from '@/components/guide/EmptyDoor'
 import { LINKS_DOOR } from '@/lib/first-run'
 import { CreatorPagePanel } from '@/components/CreatorPagePanel'
@@ -39,6 +40,8 @@ export default function LinksStudioView({
   inApp?: boolean
 }) {
   const { links, earnings, loadError, reload, updatedAt } = useIntentLinks()
+  // The empty door's example ask, handed to the form (MintLinkForm `prefill`).
+  const [prefill, setPrefill] = useState<{ ask: string; at: number } | null>(null)
 
   return (
     <section className={`linkstudio${inApp ? ' px-4 sm:px-6 py-6' : ''}`}>
@@ -66,6 +69,7 @@ export default function LinksStudioView({
           readQueryPrefill={readQueryPrefill}
           externalError={loadError}
           onMinted={reload}
+          prefill={prefill}
           className="linkstudio__mint"
         />
       </div>
@@ -126,18 +130,7 @@ export default function LinksStudioView({
             primary={{
               kind: 'button',
               label: LINKS_DOOR.ctaLabel,
-              onClick: () => {
-                const ta = document.querySelector<HTMLTextAreaElement>('.linkstudio__mint textarea')
-                if (!ta) return
-                if (!ta.value.trim()) {
-                  const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
-                  set?.call(ta, LINKS_DOOR.exampleAsk)
-                  ta.dispatchEvent(new Event('input', { bubbles: true }))
-                }
-                const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-                ta.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' })
-                ta.focus({ preventScroll: true })
-              },
+              onClick: () => setPrefill({ ask: LINKS_DOOR.exampleAsk, at: Date.now() }),
             }}
             secondary={{ kind: 'href', label: 'How links pay', href: '/docs/creator-earnings' }}
           />

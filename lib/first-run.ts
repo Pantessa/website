@@ -54,6 +54,17 @@ export const WALLET_DOOR = {
   lines: ['Balances and gas on each chain, priced.', 'Every flag with its fix beside it — a card door, a receive address, a top-up.', 'Looking takes no signature. Moving money takes yours.'],
 } as const
 
+/** The WALLET window (page or popup) for a connected wallet that holds
+ *  nothing on any chain it read. */
+export const WALLET_EMPTY_DOOR = {
+  eyebrow: 'Wallet · empty on every chain',
+  title: 'Nothing here yet — two ways in.',
+  body: 'This window prices what you hold on every chain, flags what’s stuck, and offers the fix. Money gets in by card, or by sending to this address.',
+  lines: ['A card lands ETH here through Stripe — gas and value in one delivery.', 'Or send from another wallet to the address above.', 'The moment it lands, this window says so, and the chat can act on it.'],
+  card: 'Add funds with a card',
+  receive: 'Show my address',
+} as const
+
 /** The chat’s empty surface. */
 export const CHAT_EMPTY = {
   title: 'Say what should happen.',
@@ -69,6 +80,42 @@ export const I_STEPS: readonly { n: string; title: string; body: string }[] = [
   { n: '2', title: 'See the plan first', body: 'we read your balances and build every step. Nothing is signed by looking.' },
   { n: '3', title: 'Sign it, or close the tab', body: 'your wallet is the only thing that can move money.' },
 ]
+
+/** The keep-it moment after the first signed receipt (components/guide/KeepItBar). */
+export const KEEP_IT = {
+  aria: 'Signed — keep this?',
+  title: 'Signed.',
+  receipt: 'receipt on-chain →',
+  body: 'That was the whole thing — your wallet signed, nothing else could. One more signature keeps this thread and your record on this wallet, on every device. Nothing moves.',
+  cta: 'Keep this — sign in',
+  busy: 'Waiting for your wallet…',
+  later: 'Not now',
+} as const
+
+/** The last signed receipt this browser produced in the chat (ChatInterface
+ *  reports it; ChatSignInGate reads it to turn its connected banner into the
+ *  keep-it moment). A tiny module store — no React at import time. */
+export interface SignedReceipt {
+  artifact: string
+  valueUsd?: number
+  txUrl?: string
+  at: number
+}
+let lastReceipt: SignedReceipt | null = null
+const receiptListeners = new Set<() => void>()
+export function noteSignedReceipt(r: Omit<SignedReceipt, 'at'>, now = Date.now()): void {
+  lastReceipt = { ...r, at: now }
+  for (const fn of receiptListeners) fn()
+}
+export function getSignedReceipt(): SignedReceipt | null {
+  return lastReceipt
+}
+export function subscribeSignedReceipt(fn: () => void): () => void {
+  receiptListeners.add(fn)
+  return () => {
+    receiptListeners.delete(fn)
+  }
+}
 
 /** Every ask a door offers — pinned through the ladder replica. */
 export const FIRST_RUN_ASKS: readonly string[] = [JOBS_DOOR.ask, LINKS_DOOR.exampleAsk]

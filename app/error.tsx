@@ -21,7 +21,7 @@ export default function PageError({ error, reset }: { error: Error & { digest?: 
     console.error('[page error]', error)
   }, [error])
   const chip =
-    'inline-flex items-center gap-2 px-4 min-h-[44px] rounded-full border border-solid border-[var(--line)] bg-[var(--surf-1)] text-[13px] font-medium text-[color:var(--fg)] hover:border-[var(--accent)] transition-colors'
+    'inline-flex items-center gap-2 px-4 min-h-[44px] rounded-full border border-solid bg-[var(--surf-1)] text-[13px] font-medium text-[color:var(--fg)] hover:border-[var(--accent)] transition-colors'
   return (
     <main className="x-main">
       <div className="max-w-xl mx-auto px-4 max-sm:px-0 py-24 max-sm:py-14">
@@ -42,13 +42,13 @@ export default function PageError({ error, reset }: { error: Error & { digest?: 
           </p>
         ) : null}
         <div className="mt-8 flex flex-wrap gap-2">
-          <button type="button" onClick={() => reset()} className={`${chip} border-[var(--accent)]`}>
+          <button type="button" onClick={() => reset()} className={`${chip} border-[var(--accent)] tint-bg-accent-10`}>
             {PAGE_ERROR_COPY.retry}
           </button>
-          <Link href="/" className={chip}>
+          <Link href="/" className={`${chip} border-[var(--line)]`}>
             Home
           </Link>
-          <Link href="/docs" className={chip}>
+          <Link href="/docs" className={`${chip} border-[var(--line)]`}>
             Docs
           </Link>
         </div>

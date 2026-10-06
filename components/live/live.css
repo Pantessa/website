@@ -32,6 +32,7 @@
 .live__m:hover { color: var(--fg); border-color: var(--muted-2); }
 .live__m.is-on { color: var(--fg); background: var(--surf-1); border-color: var(--fg); }
 .live__m[data-kind="stock"] .live__dex { color: var(--mk-series-4, var(--accent)); }
+:root[data-theme="light"] .live__m[data-kind="stock"] .live__dex { color: var(--gold); } /* series-4 is 3.6:1 as 9px text on paper (pre-gtm POLISH) */
 .live__mcount { font-size: 9.5px; color: var(--muted-2); }
 .live__dex { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
 .live__dex::after { content: ':'; }
@@ -66,7 +67,7 @@
 .live__tile { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surf-1); }
 .live__tk { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .live__tv { font-size: var(--mk-text-stat, 20px); font-weight: 600; color: var(--fg); line-height: 1.15; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.live__tv--split { font-size: 15px; white-space: normal; }
+.live__tv--split { font-size: 14px; white-space: normal; text-wrap: balance; } /* 15px orphaned "sells" at 1440 (pre-gtm POLISH r2) */
 .live__ts { font-size: 10.5px; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .live__up { color: var(--live-up); }
 .live__down { color: var(--live-down); }
@@ -94,8 +95,8 @@
 .live__table th:nth-child(5) { width: 11%; }
 .live__table th:nth-child(6) { width: 9%; }
 .live__table th:nth-child(7) { width: 12%; }
-.live__table th:nth-child(8) { width: 10%; }
-.live__table th:nth-child(9) { width: 8%; }
+.live__table th:nth-child(8) { width: 8%; }
+.live__table th:nth-child(9) { width: 10%; } /* 8% clipped "Block" + its STREAM tag (pre-gtm POLISH r2) */
 .live__table th:nth-child(10) { width: 13%; }
 .live__table td.live__col-act { text-overflow: clip; }
 .live__fieldtag { display: inline-block; margin-left: 6px; padding: 1px 5px; border: 1px dashed var(--muted-2); border-radius: 4px; font-size: 8.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); vertical-align: middle; }

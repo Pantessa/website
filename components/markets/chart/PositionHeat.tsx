@@ -21,11 +21,16 @@ const OPEN_KEY = 'pantessa.heat.open.v1'
 export function useHeatYear(symbol: string, enabled: boolean) {
   const [derivs, setDerivs] = useState<DerivsBody | null>(null)
   const [bars, setBars] = useState<Candle[]>([])
+  // A failed read is named and retried in 30s, not left on "Reading the year…"
+  // until the 5-minute lap (pre-gtm POLISH r2).
+  const [failed, setFailed] = useState(false)
   useEffect(() => {
     setDerivs(null)
     setBars([])
+    setFailed(false)
     if (!enabled) return
     let alive = true
+    let retry: ReturnType<typeof setTimeout> | undefined
     const load = async () => {
       try {
         const [d, c] = await Promise.all([
@@ -35,8 +40,12 @@ export function useHeatYear(symbol: string, enabled: boolean) {
         if (!alive) return
         if (Array.isArray(d.oi)) setDerivs(d)
         if (Array.isArray(c.candles)) setBars([...(c.warmup ?? []), ...c.candles])
+        setFailed(false)
       } catch {
-        /* the strip says it is still reading */
+        if (!alive) return
+        setFailed(true)
+        clearTimeout(retry)
+        retry = setTimeout(() => void load(), 30_000)
       }
     }
     void load()
@@ -44,11 +53,12 @@ export function useHeatYear(symbol: string, enabled: boolean) {
     return () => {
       alive = false
       clearInterval(timer)
+      clearTimeout(retry)
     }
   }, [symbol, enabled])
   const cells = useMemo(() => (derivs ? heatCells(derivs.ratio, derivs.oi, bars, Date.now() / 1000) : []), [derivs, bars])
   const summary = useMemo(() => (cells.length ? heatSummary(cells) : null), [cells])
-  return { derivs, cells, summary }
+  return { derivs, cells, summary, failed }
 }
 
 export interface PositionHeatProps {
@@ -80,7 +90,7 @@ export default function PositionHeat({ symbol, pair, mark }: PositionHeatProps) 
     })
   }
   const noMarket = pair.source === 'robinhood'
-  const { derivs, cells, summary } = useHeatYear(symbol, open && !noMarket)
+  const { derivs, cells, summary, failed } = useHeatYear(symbol, open && !noMarket)
   const [hover, setHover] = useState<{ cell: HeatCell; x: number; y: number } | null>(null)
   if (noMarket) return null
   const lean = summary?.streak && summary.streak.days >= 3 ? summary.streak.side : null
@@ -88,7 +98,7 @@ export default function PositionHeat({ symbol, pair, mark }: PositionHeatProps) 
     <section className={`poshet${open ? ' is-open' : ''}`} aria-label="Positioning by day">
       <button type="button" className="poshet__head" onClick={toggle} aria-expanded={open}>
         <span className="poshet__k mono">Positioning by day{derivs?.source ? ` · ${derivs.source} accounts` : ''}</span>
-        <span className={`poshet__v${lean === 'long' ? ' is-up' : lean === 'short' ? ' is-down' : ''}`}>{summary ? summary.headline : open ? (derivs ? 'No daily read for this coin' : 'Reading the year…') : 'A year of longs vs shorts, one cell a day'}</span>
+        <span className={`poshet__v${lean === 'long' ? ' is-up' : lean === 'short' ? ' is-down' : ''}`}>{summary ? summary.headline : open ? (derivs ? 'No daily read for this coin' : failed ? 'Couldn’t read the year · retrying' : 'Reading the year…') : 'A year of longs vs shorts, one cell a day'}</span>
         <span className="poshet__key mono">
           short <i style={{ background: 'color-mix(in oklch, var(--mk-down, var(--sell)) 100%, var(--surf-1))' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-down, var(--sell)) 55%, var(--surf-1))' }} /><i style={{ background: 'var(--surf-1)' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-up, var(--accent)) 55%, var(--surf-1))' }} /><i style={{ background: 'color-mix(in oklch, var(--mk-up, var(--accent)) 100%, var(--surf-1))' }} /> long
           {summary?.median != null ? ` · usual ${Math.round(summary.median * 100)}% long` : ''}
