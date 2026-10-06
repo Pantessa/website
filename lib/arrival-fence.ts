@@ -39,7 +39,7 @@ export type ArrivalRefusal = 'malformed' | 'version' | 'stale' | 'future' | 'sou
 export type ArrivalVerdict = { ok: true } | { ok: false; reason: ArrivalRefusal }
 
 /** Public front doors allowed to hand an intent to the app (pathname prefixes). */
-export const ARRIVAL_SOURCES: readonly string[] = ['/markets', '/t']
+export const ARRIVAL_SOURCES: readonly string[] = ['/', '/markets', '/t']
 
 /** Longest ask a handoff may carry. */
 export const ARRIVAL_MAX_TEXT = 280

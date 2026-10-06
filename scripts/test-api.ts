@@ -23562,7 +23562,9 @@ async function main() {
           ae.walletRemembered(store({ 'wagmi.recentConnectorId': '"cdp-embedded-wallet"' })) &&
           !ae.walletRemembered(store({ 'wagmi.recentConnectorId': '"io.metamask"', 'wagmi.io.metamask.disconnected': 'true' })) &&
           !ae.walletRemembered(store({})) && !ae.walletRemembered(store({ 'wagmi.recentConnectorId': 'not json' })) &&
-          ae.SIGN_IN_LANDING === '/markets',
+          // RE-PINNED 2026-10-06 (front-door): the splash IS the markets page,
+          // so a fresh login lands on `/`.
+          ae.SIGN_IN_LANDING === '/',
       )
       const src = (p: string) => readFile(new URL(`../${p}`, import.meta.url), 'utf8')
       const [doorS, authS, oauthS, acctS, navS, sessS, mctaS, spineLinkS, dashLayoutS] = await Promise.all(
@@ -23581,15 +23583,19 @@ async function main() {
       // was sent home from), every other page stays put.
       const landingFor = ae.signInLandingFor
       check(
-        'sign-in lands: only the landing page goes on to Markets; a chat, an intent link, a symbol page, the docs, a link board and a checkout keep their page and query',
-        landingFor('/') === '/markets' && landingFor('/?utm_source=x') === '/markets' &&
+        // RE-PINNED 2026-10-06 (front-door): `/` is the markets splash now, so
+        // a sign-in there stays there (the rule "every other page stays put"
+        // now covers the landing too); /markets redirects to `/` and is no
+        // longer a page anyone stands on.
+        'sign-in lands: the splash and every other page keep their page and query (a chat, an intent link, a symbol page, the docs, a link board, a checkout)',
+        landingFor('/') === '/' && landingFor('/?utm_source=x') === '/' &&
           landingFor('/chat') === '/chat' &&
           landingFor('/chat/cm123?mcps=uniswap-free&prompt=Buy%20%2410') === '/chat/cm123?mcps=uniswap-free&prompt=Buy%20%2410' &&
           landingFor('/i/buy-aapl') === '/i/buy-aapl' &&
           landingFor('/t/AAPL?tab=trade') === '/t/AAPL?tab=trade' && landingFor('/markets') === '/markets' &&
           landingFor('/docs/desk#install') === '/docs/desk' && landingFor('/links') === '/links' &&
           landingFor('/l/nate') === '/l/nate' && landingFor('/pricing?checkout=growth') === '/pricing?checkout=growth' &&
-          ae.SIGN_IN_LANDING === '/markets',
+          ae.SIGN_IN_LANDING === '/',
       )
       // The way back rides a sessionStorage record, not ?next= on the landing
       // URL: Next 16.2's router caches a route under its pathname with the URL

@@ -141,8 +141,9 @@ export function phoneTap(input: { surface: PhoneSurface; screen: PhoneScreen; se
     case 'more':
       return { kind: 'sheet', sheet: 'more' }
     case 'markets':
-      if (surface === 'markets' && pathname === '/markets') return { kind: 'top' }
-      return { kind: 'navigate', href: '/markets', screen: null }
+      // The splash IS the markets page (squad front-door, 2026-10-06).
+      if (surface === 'markets' && (pathname === '/' || pathname === '/markets')) return { kind: 'top' }
+      return { kind: 'navigate', href: '/', screen: null }
     case 'wallet':
       if (surface === 'wallet') return { kind: 'top' }
       return { kind: 'navigate', href: '/wallet', screen: null }

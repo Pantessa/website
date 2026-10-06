@@ -398,7 +398,11 @@ export function parseMarketsNavAsk(message: string): { symbol: string; href: str
  * NavAccount (stay here after sign-in / sign-out) and the shell.
  */
 export function isMarketsPath(pathname: string): boolean {
-  return pathname === '/markets' || pathname.startsWith('/markets/') || pathname.startsWith('/t/') || pathname === '/live'
+  // THE FRONT DOOR (squad front-door, 2026-10-06, Nate: "skip the brochure
+  // side and put the user directly on the app"): `/` IS the markets splash
+  // — the index with the live pulse on top, in the app shell. /markets
+  // redirects there (next.config). The brochure moved to /story.
+  return pathname === '/' || pathname === '/markets' || pathname.startsWith('/markets/') || pathname.startsWith('/t/') || pathname === '/live'
 }
 
 // ── MK2 (2026-09-15): compare mode, the range bar, the terminal table, trending ──

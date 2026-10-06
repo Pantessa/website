@@ -480,7 +480,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
               drawer tab — it sits first among the seats because the chart
               that executes is the front door (2026-09-11). */}
           <Link
-            href="/markets"
+            href="/"
             title="Markets — stocks 24/7, spot, perps; the chart that executes"
             aria-label="MARKETS"
             aria-current={onMarkets ? 'page' : undefined}
@@ -573,7 +573,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         aria-label="Workspace"
       >
         <Link
-          href="/markets"
+          href="/"
           title="Markets — stocks 24/7, spot, perps; the chart that executes"
           aria-label="MARKETS"
           aria-current={onMarkets ? 'page' : undefined}

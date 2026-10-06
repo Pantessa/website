@@ -15,7 +15,7 @@
 // symbol page; numbers come from the quotes hook and read as dashes until a
 // feed answers. Long boards fold behind "show all".
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { LayoutGrid, Rows3 } from 'lucide-react'
@@ -210,7 +210,22 @@ function useRowKeys() {
   }, [])
 }
 
-export default function MarketsIndex({ trending = [], tradable }: { trending?: TrendingRow[]; /** The measured venue verdicts, read server-side so the index's chips are right on the FIRST paint (lib/tradability-store). */ tradable?: TradabilityMap }) {
+export default function MarketsIndex({
+  trending = [],
+  tradable,
+  lead,
+  guide,
+}: {
+  trending?: TrendingRow[]
+  /** The measured venue verdicts, read server-side so the index's chips are right on the FIRST paint (lib/tradability-store). */
+  tradable?: TradabilityMap
+  /** THE FRONT DOOR's seats (squad front-door, 2026-10-06): `lead` renders
+   *  under the tool strip, above the session clocks (the live pulse on the
+   *  splash); `guide` renders under the movers tape (the guide card). The
+   *  index never decides what fills them. */
+  lead?: ReactNode
+  guide?: ReactNode
+}) {
   // Idempotent, and deliberately during render: QuickAct reads the shared
   // store synchronously, so seeding in an effect would flash a chip the
   // server already knew nothing can fill.
@@ -293,6 +308,13 @@ export default function MarketsIndex({ trending = [], tradable }: { trending?: T
           </nav>
         </div>
 
+        {/* ── The lead seat: the live pulse on the splash (components/home) ── */}
+        {lead && (
+          <div className="mk-lead-seat" data-seat="Lead">
+            {lead}
+          </div>
+        )}
+
         {/* ── The clocks: NYSE bell countdown · tokens 24/7 · HL funding tick ── */}
         <SessionStrip />
 
@@ -300,6 +322,13 @@ export default function MarketsIndex({ trending = [], tradable }: { trending?: T
         <div className="mk-tape-seat" data-seat="MoversTape">
           <MoversTape onOpen={open} />
         </div>
+
+        {/* ── The guide seat: one card that teaches as you go (components/guide) ── */}
+        {guide && (
+          <div className="mk-guide-seat" data-seat="Guide">
+            {guide}
+          </div>
+        )}
 
         {/* ── The market data ── */}
         <div className="mkt-frame__data">
