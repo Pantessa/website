@@ -46,7 +46,7 @@ import { LINKS_STUDIO_HREF } from '../lib/links-href'
 import { WALLET_PAGE_HREF } from '../lib/wallet-page'
 import { isPublicAppPath } from '../lib/app-entry'
 import { simulateLadder } from './ask-ladder'
-import { CHATS_DOOR, FIRST_RUN_ASKS, JOBS_DOOR, LINKS_DOOR, WALLET_DOOR } from '../lib/first-run'
+import { CHATS_DOOR, FIRST_RUN_ASKS, I_STEPS, JOBS_DOOR, LINKS_DOOR, WALLET_DOOR } from '../lib/first-run'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -538,6 +538,12 @@ export function guidePins(check: Check): void {
   check(
     'first-run: the door\'s CSS is tokens only (no hex, no rgb literal beyond the light hairline shadow), respects reduced motion, and gives a thumb 44px controls',
     /\.door \{/.test(doorCss) && /prefers-reduced-motion: reduce\)[\s\S]*\.door \{ animation: none; \}/.test(doorCss) && /\(hover: none\)[\s\S]*\.door__cta, \.door__link \{ min-height: 44px; \}/.test(doorCss) && !/\.door[^{]*\{[^}]*#[0-9a-f]{3,6}/i.test(doorCss),
+  )
+
+  const iSrc = src('components/IntentRuntime.tsx')
+  check(
+    'first-run: the /i splash tells a stranger what happens next in three steps (connect → see the plan, nothing signed by looking → sign or close), rendered from lib/first-run only while nothing is connected, never a fourth control',
+    I_STEPS.length === 3 && /Nothing is signed by looking/.test(I_STEPS[1].body) && /only thing that can move money/.test(I_STEPS[2].body) && /data-i-steps/.test(iSrc) && /!isConnected && \(\s*<ol[^>]*data-i-steps/.test(iSrc) && !/data-i-steps[\s\S]{0,900}<(button|a) /.test(iSrc),
   )
 
 }

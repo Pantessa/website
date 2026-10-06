@@ -60,5 +60,15 @@ export const CHAT_EMPTY = {
   tap: 'Run one — a tap sends it',
 } as const
 
+/** The /i splash: what happens after the tap, in order — a stranger from a
+ *  tweet reads a quoted sentence and one button; this is the missing line
+ *  between them. Step 2 is the promise that matters: nothing is signed by
+ *  looking. */
+export const I_STEPS: readonly { n: string; title: string; body: string }[] = [
+  { n: '1', title: 'Connect a wallet', body: 'or make one with email or Google — no app to install.' },
+  { n: '2', title: 'See the plan first', body: 'we read your balances and build every step. Nothing is signed by looking.' },
+  { n: '3', title: 'Sign it, or close the tab', body: 'your wallet is the only thing that can move money.' },
+]
+
 /** Every ask a door offers — pinned through the ladder replica. */
 export const FIRST_RUN_ASKS: readonly string[] = [JOBS_DOOR.ask, LINKS_DOOR.exampleAsk]
