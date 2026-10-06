@@ -194,8 +194,18 @@ export function pulsePins(check: Check): void {
   check(`pulse: the SSR frame is the final frame — pulse.css min-heights equal lib/pulse PULSE_BAND_MIN_H, the phone under the ${PULSE_PHONE_BUDGET_PX}px budget (MOBILE's baseline: the first board row stays above the bar), the plot heights the lib constants, and the component starts in "connecting"`,
     new RegExp(`\\.pulse \\{[^}]*min-height: ${PULSE_BAND_MIN_H.desktop}px`).test(css) && new RegExp(`\\.pulse \\{ --pulse-plot-h: ${PULSE_CHART_H_PHONE}px; min-height: ${PULSE_BAND_MIN_H.phone}px`).test(css) &&
       new RegExp(`--pulse-plot-h: ${PULSE_CHART_H}px;`).test(css) && PULSE_BAND_MIN_H.phone <= PULSE_PHONE_BUDGET_PX && PULSE_PHONE_BUDGET_PX === 160 && /useState<FeedStatus>\('connecting'\)/.test(slot) && /PULSE_WAITING/.test(slot))
-  check('pulse: MOBILE\'s checklist — a 44px chip under a coarse pointer (min-height under hover: none, the tile rows making room), tabular numerals on every number line, axis labels at 10px mono, nothing sticky and no z-index in the band',
-    /@media \(hover: none\) \{ \.pulse__chip \{ min-height: 44px; \}/.test(css) && /\.pulse__tv \{[^}]*tabular-nums/.test(css) && /\.pulse__ts \{[^}]*tabular-nums/.test(css) && /\.pulse__splitk \{[^}]*tabular-nums/.test(css) && /\.pulse__ax \{[^}]*font-size: 10px/.test(css) && !/sticky/.test(css) && !/z-index/.test(css))
+  // The contract (coordinator, R2): nothing in the band at z-index 20 or above — the stuck board
+  // tabs sit at 20 and the top strip at 32 — and nothing sticky. A layer of 1 is fine.
+  const cssRules = css.replace(/\/\*[^]*?\*\//g, '') // the rules, not the comments that explain them
+  const zIndexes = [...cssRules.matchAll(/z-index:\s*(-?\d+)/g)].map((m) => Number(m[1]))
+  check('pulse: MOBILE\'s checklist — a 44px chip under a coarse pointer (min-height under hover: none, the tile rows making room), tabular numerals on every number line, axis labels at 10px mono, nothing sticky and no layer in the band at z-index 20 or above',
+    /@media \(hover: none\) \{ \.pulse__chip \{ min-height: 44px; \}/.test(css) && /\.pulse__tv \{[^}]*tabular-nums/.test(css) && /\.pulse__ts \{[^}]*tabular-nums/.test(css) && /\.pulse__splitk \{[^}]*tabular-nums/.test(css) && /\.pulse__ax \{[^}]*font-size: 10px/.test(css) && !/position:\s*sticky/.test(cssRules) && zIndexes.every((z) => z < 20), `z-index values: ${zIndexes.join(',') || 'none'}`)
+  // The door's 44px hit area on a phone (MOBILE round 2): an 18px line, 13px of reach above and
+  // below through a ::after the door lifts one layer for — the plot is drawn after the head and
+  // would take anything reaching into it otherwise.
+  const doorRule = css.match(/@media \(max-width: 640px\) \{[^]*?\.pulse__door \{ position: relative; z-index: 1; \}[^]*?\.pulse__door::after \{ content: ''; position: absolute; inset: -(\d+)px -\d+px; \}/)
+  check('pulse: at ≤640px the door ("Live tape →", an 18px line) reaches 44px — `position: relative; z-index: 1` and a ::after with 13px of inset above and below',
+    !!doorRule && Number(doorRule[1]) * 2 + 18 >= 44 && Number(doorRule[1]) <= 13, doorRule ? `inset ${doorRule[1]}px` : 'no door rule')
   const feedSrc = readFileSync('lib/tape-feed.ts', 'utf8')
   check('pulse: the stream opens on the fallback list the moment the band mounts and the venue\'s pick re-aims the SAME socket (connectHlTape setMarkets: unsubscribe the drops, subscribe the adds) — never a reconnect drawn as a quiet second; /live\'s hlTapeFeed.connect still stands',
     /useState<readonly string\[\]>\(PULSE_FALLBACK_MARKETS\)/.test(slot) && /connectHlTape\(marketsRef\.current/.test(slot) && /handleRef\.current\?\.setMarkets\(markets\)/.test(slot) && /\}, \[streamOn\]\)/.test(slot) && !/feedFor\(/.test(slot) &&

@@ -137,18 +137,20 @@
    - the band sat 24px under the board tabs: SPLASH's seat margin (12px) and
      the band's own 12px both applied → the seat's alone (−12px of the first
      screen);
-   - the door ("Live tape →") was an 18px-tall link → a 35px hit area (up
-     into the band's padding and the seat's gap, down to the plot's edge: the
-     plot is drawn after the head and takes anything that reaches into it), the
-     head keeps its 18px line;
+   - the door ("Live tape →") was an 18px-tall link → a 44px hit area (13px
+     up into the band's padding and the seat's gap, 13px down over the plot's
+     edge — the plot is drawn after the head, so the door lifts one layer,
+     `z-index: 1`, far under the stuck board tabs at 20; PULSE r2 relaxed its
+     pin to the contract: nothing in the band at 20 or above, nothing sticky),
+     the head keeps its 18px line;
    - "needs a position" / "no route here" in a chip's place took 96px of a
      158px tile at 375 and cut the number beside it to 38px ("$93.5…") → two
      short right-aligned lines, the number keeps its width;
    - the tile keys were 8.5px mono → 9.5px. */
 @media (max-width: 640px) {
   .mk-lead-seat .pulse { margin-top: 0; }
-  .pulse__door { position: relative; }
-  .pulse__door::after { content: ''; position: absolute; inset: -13px -8px -4px; }
+  .pulse__door { position: relative; z-index: 1; }
+  .pulse__door::after { content: ''; position: absolute; inset: -13px -8px; }
   .pulse__noact { max-width: 9ch; white-space: normal; line-height: 12px; text-align: right; }
   .pulse__tk { font-size: 9.5px; }
 }
