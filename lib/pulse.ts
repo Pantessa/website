@@ -300,6 +300,9 @@ export const PULSE_CHART_H = 96
 export const PULSE_CHART_H_PHONE = 52
 
 /** The band's minimum heights, pinned equal to components/home/pulse.css:
- *  the SSR frame IS the final frame. The phone fits under 180px (THE DESIGN
- *  §4: "the chart + two numbers + one chip" at 375). */
-export const PULSE_BAND_MIN_H = { desktop: 224, phone: 174 } as const
+ *  the SSR frame IS the final frame. The phone fits under 160px — the
+ *  coordinator's budget off MOBILE's baseline (the lead seat starts at
+ *  y≈173 at 375 and the first board row must stay above the bar): the
+ *  chart + one row of two 44px chip tiles, the foot sentence stepping out. */
+export const PULSE_BAND_MIN_H = { desktop: 224, phone: 160 } as const
+export const PULSE_PHONE_BUDGET_PX = 160

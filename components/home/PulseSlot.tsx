@@ -194,6 +194,7 @@ export default function PulseSlot() {
           <span className={`mk-dot ${live ? 'mk-dot--open' : 'mk-dot--closed'} pulse__dot`} aria-hidden />
           <span className="pulse__title">Live pulse</span>
           <span className="pulse__status mono" role="status">
+            <span className="pulse__venue">Hyperliquid · </span>
             {words}
           </span>
           <nav className="pulse__views mono" aria-label="Live views">

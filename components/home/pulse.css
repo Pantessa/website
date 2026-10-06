@@ -24,6 +24,7 @@
 @keyframes pulse-beat { 0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--pulse-up) 22%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--pulse-up) 8%, transparent); } }
 .pulse__title { font-family: var(--mk-font-display); font-weight: 600; font-size: 15px; letter-spacing: -0.01em; color: var(--fg); white-space: nowrap; }
 .pulse__status { flex: 1 1 auto; min-width: 0; font-size: 10.5px; letter-spacing: 0.06em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pulse__venue { color: var(--muted-2); }
 .pulse__views { display: inline-flex; gap: 12px; margin-left: auto; padding-right: 6px; font-size: 10.5px; letter-spacing: 0.04em; white-space: nowrap; }
 .pulse__view { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--mk-rule, var(--line)); }
 .pulse__view:hover { color: var(--fg); border-bottom-color: var(--fg); }
@@ -44,13 +45,13 @@
 .pulse__bar--up { fill: var(--pulse-up); }
 .pulse__bar--down { fill: var(--pulse-down); }
 .pulse__hoverband { fill: color-mix(in srgb, var(--fg) 8%, transparent); pointer-events: none; }
-.pulse__ax { position: absolute; font-size: 9.5px; line-height: 1; color: var(--muted-2); pointer-events: none; }
+.pulse__ax { position: absolute; font-size: 10px; line-height: 1; color: var(--muted-2); font-variant-numeric: tabular-nums; pointer-events: none; }
 .pulse__ax--max { left: 0; top: 0; }
 .pulse__split { position: relative; height: 5px; margin-top: 8px; border-radius: 3px; background: var(--pulse-down); overflow: hidden; }
 .pulse__split[data-empty] { background: var(--mk-grid, var(--line)); }
 .pulse__split[data-empty] .pulse__split-buy { display: none; }
 .pulse__split-buy { position: absolute; inset: 0 auto 0 0; background: var(--pulse-up); transition: width .4s var(--mk-ease, ease); }
-.pulse__splitk { margin-top: 5px; font-size: 10.5px; line-height: 14px; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pulse__splitk { margin-top: 5px; font-size: 10.5px; line-height: 14px; color: var(--muted-2); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pulse__splitk b { font-weight: 600; }
 .pulse__up { color: var(--pulse-up); }
 .pulse__down { color: var(--pulse-down); }
@@ -61,7 +62,7 @@
 .pulse__tile { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 11px 17px 12px; align-items: center; column-gap: 10px; min-width: 0; padding: 2px 10px; border: 1px solid var(--line); border-radius: 10px; }
 .pulse__tk { grid-column: 1; grid-row: 1; font-family: var(--mk-font-mono); font-size: 9.5px; line-height: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pulse__tv { grid-column: 1; grid-row: 2; display: flex; align-items: baseline; gap: 6px; font-size: 15px; line-height: 17px; font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pulse__ts { grid-column: 1; grid-row: 3; font-size: 10px; line-height: 12px; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pulse__ts { grid-column: 1; grid-row: 3; font-size: 10px; line-height: 12px; color: var(--muted-2); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pulse__dex { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mk-series-4, var(--accent)); }
 .pulse__dex::after { content: ':'; }
 .pulse__noact { grid-column: 2; grid-row: 1 / -1; align-self: center; font-size: 10px; color: var(--muted-2); white-space: nowrap; }
@@ -73,8 +74,8 @@
 .pulse__chip:active { transform: translateY(0); }
 .pulse__chip--buy { background: color-mix(in srgb, var(--pulse-up) 18%, var(--surf-1)); border-color: color-mix(in srgb, var(--pulse-up) 55%, transparent); color: var(--pulse-up); }
 .pulse__chip--sell { background: color-mix(in srgb, var(--pulse-down) 16%, var(--surf-1)); border-color: color-mix(in srgb, var(--pulse-down) 55%, transparent); color: var(--pulse-down); }
-/* A thumb gets 44px of height on a 26px chip; the layout keeps its rows. */
-@media (hover: none) { .pulse__chip { position: relative; } .pulse__chip::after { content: ''; position: absolute; inset: -10px -4px; } }
+/* A thumb gets a 44px chip (MOBILE's checklist: min-height under a coarse pointer); the tile rows make room for it. */
+@media (hover: none) { .pulse__chip { min-height: 44px; } .pulse__tiles { grid-template-rows: repeat(3, 50px); } .pulse__tile { padding-top: 2px; padding-bottom: 2px; } }
 
 /* ── Foot: what it is and why it is different, one mono line ───────────── */
 .pulse__foot { margin-top: 8px; font-size: 10.5px; line-height: 15px; color: var(--muted-2); }
@@ -93,30 +94,33 @@
   .pulse__views { display: none; }
   .pulse__body { grid-template-columns: minmax(0, 1fr); }
   .pulse__tiles { grid-template-rows: none; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: 44px; }
+  @media (hover: none) { .pulse__tiles { grid-auto-rows: 50px; } }
 }
 
-/* ── Phone: the chart + the two chip tiles, ≤180px at 375 ──────────────── */
+/* ── Phone: the chart + ONE row of two chip tiles, ≤160px at 375 (the coordinator's
+   budget off MOBILE's baseline: the lead seat starts at y≈173 and the first board
+   row must stay above the bar). The foot sentence steps out; the head names the
+   venue. ──────────────────────────────────────────────────────────────────── */
 @container pulse (max-width: 560px) {
-  .pulse { --pulse-plot-h: 52px; min-height: 174px; padding: 7px 10px 7px; }
+  .pulse { --pulse-plot-h: 52px; min-height: 160px; padding: 6px 10px 6px; }
   .pulse__head { min-height: 18px; gap: 8px; }
   .pulse__title { font-size: 13px; line-height: 18px; }
   .pulse__status { line-height: 18px; }
   .pulse__door { font-size: 11px; line-height: 18px; }
-  .pulse__body { margin-top: 5px; gap: 5px; }
+  .pulse__body { margin-top: 4px; gap: 4px; }
   .pulse__cap { display: none; }
   .pulse__plot { margin-top: 0; }
   .pulse__split { height: 3px; margin-top: 3px; }
-  .pulse__splitk { margin-top: 3px; font-size: 10px; line-height: 12px; }
-  .pulse__tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 40px; gap: 5px; }
-  .pulse__tile { grid-template-rows: 11px 16px; padding: 6px 8px; column-gap: 6px; }
+  .pulse__splitk { margin-top: 2px; font-size: 10px; line-height: 12px; }
+  .pulse__tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 48px; gap: 5px; }
+  /* 48px tile, 1px padding: the 44px chip sits inside with its own border 1px off the tile's. */
+  .pulse__tile { grid-template-rows: 11px 16px; align-content: center; padding: 1px 8px; column-gap: 6px; }
   .pulse__tile--rate { display: none; }
-  .pulse__tk { font-size: 8.5px; line-height: 11px; }
+  .pulse__tk { font-size: 9px; line-height: 11px; }
   .pulse__tk-win { display: none; }
   .pulse__tv { font-size: 13px; line-height: 16px; }
   .pulse__ts { display: none; }
-  .pulse__chip { height: 24px; padding: 0 8px; font-size: 10.5px; }
+  .pulse__chip { height: auto; min-height: 44px; padding: 0 9px; font-size: 10.5px; }
   .pulse__chip-usd { display: none; }
-  .pulse__foot { margin-top: 5px; font-size: 9.5px; line-height: 12px; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pulse__why-long { display: none; }
-  .pulse__why-phone { display: inline; }
+  .pulse__foot { display: none; }
 }

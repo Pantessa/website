@@ -17,6 +17,7 @@ import {
   PULSE_KEEP_MS,
   PULSE_LIVE_HREF,
   PULSE_MAX_FILLS,
+  PULSE_PHONE_BUDGET_PX,
   PULSE_PICK,
   PULSE_TILE_WINDOW_SEC,
   PULSE_VIEW_LINKS,
@@ -190,9 +191,11 @@ export function pulsePins(check: Check): void {
   const css = readFileSync('components/home/pulse.css', 'utf8')
   const slot = readFileSync('components/home/PulseSlot.tsx', 'utf8')
   const home = readFileSync('components/home/HomeSurface.tsx', 'utf8')
-  check('pulse: the SSR frame is the final frame — pulse.css min-heights equal lib/pulse PULSE_BAND_MIN_H, the phone under 180px, the plot heights the lib constants, and the component starts in "connecting"',
+  check(`pulse: the SSR frame is the final frame — pulse.css min-heights equal lib/pulse PULSE_BAND_MIN_H, the phone under the ${PULSE_PHONE_BUDGET_PX}px budget (MOBILE's baseline: the first board row stays above the bar), the plot heights the lib constants, and the component starts in "connecting"`,
     new RegExp(`\\.pulse \\{[^}]*min-height: ${PULSE_BAND_MIN_H.desktop}px`).test(css) && new RegExp(`\\.pulse \\{ --pulse-plot-h: ${PULSE_CHART_H_PHONE}px; min-height: ${PULSE_BAND_MIN_H.phone}px`).test(css) &&
-      new RegExp(`--pulse-plot-h: ${PULSE_CHART_H}px;`).test(css) && PULSE_BAND_MIN_H.phone <= 180 && /useState<FeedStatus>\('connecting'\)/.test(slot) && /PULSE_WAITING/.test(slot))
+      new RegExp(`--pulse-plot-h: ${PULSE_CHART_H}px;`).test(css) && PULSE_BAND_MIN_H.phone <= PULSE_PHONE_BUDGET_PX && PULSE_PHONE_BUDGET_PX === 160 && /useState<FeedStatus>\('connecting'\)/.test(slot) && /PULSE_WAITING/.test(slot))
+  check('pulse: MOBILE\'s checklist — a 44px chip under a coarse pointer (min-height under hover: none, the tile rows making room), tabular numerals on every number line, axis labels at 10px mono, nothing sticky and no z-index in the band',
+    /@media \(hover: none\) \{ \.pulse__chip \{ min-height: 44px; \}/.test(css) && /\.pulse__tv \{[^}]*tabular-nums/.test(css) && /\.pulse__ts \{[^}]*tabular-nums/.test(css) && /\.pulse__splitk \{[^}]*tabular-nums/.test(css) && /\.pulse__ax \{[^}]*font-size: 10px/.test(css) && !/sticky/.test(css) && !/z-index/.test(css))
   const feedSrc = readFileSync('lib/tape-feed.ts', 'utf8')
   check('pulse: the stream opens on the fallback list the moment the band mounts and the venue\'s pick re-aims the SAME socket (connectHlTape setMarkets: unsubscribe the drops, subscribe the adds) — never a reconnect drawn as a quiet second; /live\'s hlTapeFeed.connect still stands',
     /useState<readonly string\[\]>\(PULSE_FALLBACK_MARKETS\)/.test(slot) && /connectHlTape\(marketsRef\.current/.test(slot) && /handleRef\.current\?\.setMarkets\(markets\)/.test(slot) && /\}, \[streamOn\]\)/.test(slot) && !/feedFor\(/.test(slot) &&
