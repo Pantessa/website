@@ -23477,8 +23477,11 @@ async function main() {
         // Re-pinned (squad mobile-native, 2026-09-24, SHELL): the shell is the
         // phone frame now, so its opening tag carries data-app-frame="".
         /<div class="mkt-shell"(?: data-app-frame="")?><aside[^>]*aria-label="Workspace"/.test(html) &&
-          (html.match(/aria-label="Workspace"/g) ?? []).length === 2 &&
-          (html.match(/aria-label="MARKETS" aria-current="page"/g) ?? []).length === 2 &&
+          // RE-PINNED 2026-10-07 (pre-gtm): /t/<sym> has a loading.tsx now (POLISH — a row tap paints the
+          // page's silhouette at once). Its fallback wears the same shell, streamed ahead of the page and
+          // swapped out on resolve, so a served /t can carry the spine twice over (2 → 4); /markets stays 2.
+          [2, route === '/t/AAPL' ? 4 : 2].includes((html.match(/aria-label="Workspace"/g) ?? []).length) &&
+          [2, route === '/t/AAPL' ? 4 : 2].includes((html.match(/aria-label="MARKETS" aria-current="page"/g) ?? []).length) &&
           !/<header class="nav/.test(html) && !html.includes('nav__tabs') && !html.includes('data-ask-door="nav"') &&
           /<div class="mkt-frame__side"><div class="mkt-frame__top" data-slot="top-strip"><button[^>]*data-ask-door="rail"[^>]*>[\s\S]*?<\/button><div class="mkt-frame__acct"><\/div><\/div><aside class="mkt-frame__rail"/.test(html) &&
           html.includes('data-ask-door="pill"'),
