@@ -126,11 +126,10 @@ export default async function Image() {
               that executes.
             </span>
           </div>
-          {/* pre-gtm POLISH r3: one line that says what the card is for (the
-              three promises the page makes) + where it lives, not a lone
-              slogan fragment. */}
-          <div style={{ display: 'flex', marginTop: 34, fontSize: 17, letterSpacing: 3.5, color: MUTED }}>
-            <span>NO CUSTODY · NO SIGN-UP TO LOOK · YOUR WALLET SIGNS</span>
+          {/* pre-gtm POLISH r3: the promise in one line + where it lives,
+              not a lone slogan fragment. */}
+          <div style={{ display: 'flex', marginTop: 34, fontSize: 19, letterSpacing: 4, color: MUTED }}>
+            <span>NO CUSTODY · YOUR WALLET SIGNS</span>
           </div>
           <div style={{ display: 'flex', marginTop: 14, fontSize: 19, letterSpacing: 1, color: ACCENT }}>
             <span>pantessa.com</span>
