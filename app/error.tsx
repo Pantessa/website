@@ -45,9 +45,6 @@ export default function PageError({ error, reset }: { error: Error & { digest?: 
           <button type="button" onClick={() => reset()} className={`${chip} border-[var(--accent)]`}>
             {PAGE_ERROR_COPY.retry}
           </button>
-          <Link href="/markets" className={chip}>
-            Markets
-          </Link>
           <Link href="/" className={chip}>
             Home
           </Link>

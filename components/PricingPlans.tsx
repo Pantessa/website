@@ -16,6 +16,7 @@ import CreateAccountButton from '@/components/CreateAccountButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { ANSWER_PACK, LISTED_PLANS, planChargeUsd, type BillingInterval, type PlanId } from '@/lib/plans'
 import { AI_KEY_HREF, EARN_PER_100_USD } from '@/lib/answer-gate-copy'
+import { MARKETS_HREF } from '@/lib/markets'
 
 type Purchase = { kind: 'plan'; plan: PlanId; interval: BillingInterval } | { kind: 'pack' }
 
@@ -128,7 +129,7 @@ export default function PricingPlans({ currentPlan }: { currentPlan?: PlanId }) 
                   Your current plan
                 </Link>
               ) : !paid ? (
-                <button className="btn btn--ghost pricing__cta" onClick={() => (isConnected ? router.push('/markets') : connectAndSignIn('/markets'))}>
+                <button className="btn btn--ghost pricing__cta" onClick={() => (isConnected ? router.push(MARKETS_HREF) : connectAndSignIn(MARKETS_HREF))}>
                   Start free
                 </button>
               ) : (
@@ -147,7 +148,7 @@ export default function PricingPlans({ currentPlan }: { currentPlan?: PlanId }) 
           <p className="pricing__waybody">
             Every swap you sign banks answers from the fee it paid — {EARN_PER_100_USD} for every $100. They never expire.
           </p>
-          <Link href="/markets" className="btn btn--ghost pricing__cta">
+          <Link href={MARKETS_HREF} className="btn btn--ghost pricing__cta">
             Open Markets
           </Link>
         </article>
