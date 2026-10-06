@@ -18,7 +18,7 @@
 // 100-fill second is one React update, not a hundred. A feed reconnects
 // with backoff on its own; the status it reports is what the page prints.
 
-import { fillFromDune, fillFromHl, pickTapeMarkets, type HlWsTrade, type TapeFields, type TapeFill, type TapeSource, type UniverseRow } from '@/lib/tape'
+import { fillFromDune, fillFromHl, pickTapeMarkets, subscriptionDelta, type HlWsTrade, type TapeFields, type TapeFill, type TapeSource, type UniverseRow } from '@/lib/tape'
 
 export type FeedStatus = 'idle' | 'connecting' | 'live' | 'reconnecting' | 'unconfigured' | 'closed'
 
@@ -68,72 +68,108 @@ function batcher(onFills: (fills: TapeFill[]) => void): { push: (f: TapeFill) =>
   }
 }
 
-export const hlTapeFeed: TapeFeed = {
-  source: 'hyperliquid',
-  label: 'Hyperliquid · trades WebSocket',
-  fields: { effect: false, block: false },
-  connect(markets, handlers) {
-    let ws: WebSocket | null = null
-    let closed = false
-    let attempt = 0
-    let retry: ReturnType<typeof setTimeout> | null = null
-    let ping: ReturnType<typeof setInterval> | null = null
-    const batch = batcher(handlers.onFills)
+/** A live Hyperliquid stream that can be re-aimed without a reconnect. */
+export interface HlTapeHandle {
+  close: () => void
+  /** Subscribe to the markets `next` adds and drop the ones it leaves out,
+   *  on the open socket (lib/tape subscriptionDelta); a socket still
+   *  connecting, or reconnecting later, subscribes to `next` when it opens. */
+  setMarkets: (next: readonly string[]) => void
+}
 
-    const open = () => {
-      if (closed) return
-      handlers.onStatus(attempt === 0 ? 'connecting' : 'reconnecting', attempt === 0 ? undefined : `attempt ${attempt + 1}`)
+const hlSub = (coin: string, method: 'subscribe' | 'unsubscribe') => JSON.stringify({ method, subscription: { type: 'trades', coin } })
+
+function openHlTape(initial: readonly string[], handlers: FeedHandlers): HlTapeHandle {
+  let markets = [...initial]
+  let ws: WebSocket | null = null
+  let closed = false
+  let attempt = 0
+  let retry: ReturnType<typeof setTimeout> | null = null
+  let ping: ReturnType<typeof setInterval> | null = null
+  const batch = batcher(handlers.onFills)
+
+  const open = () => {
+    if (closed) return
+    handlers.onStatus(attempt === 0 ? 'connecting' : 'reconnecting', attempt === 0 ? undefined : `attempt ${attempt + 1}`)
+    try {
+      ws = new WebSocket(HL_WS_URL)
+    } catch (err) {
+      handlers.onStatus('closed', err instanceof Error ? err.message : 'socket refused')
+      return
+    }
+    const sock = ws
+    sock.onopen = () => {
+      attempt = 0
+      for (const coin of markets) sock.send(hlSub(coin, 'subscribe'))
+      handlers.onStatus('live', `${markets.length} markets`)
+      // The venue drops a quiet socket; a ping a minute keeps a thin market's subscription alive.
+      ping = setInterval(() => {
+        if (sock.readyState === WebSocket.OPEN) sock.send(JSON.stringify({ method: 'ping' }))
+      }, 50_000)
+    }
+    sock.onmessage = (ev) => {
+      let msg: { channel?: string; data?: unknown }
       try {
-        ws = new WebSocket(HL_WS_URL)
-      } catch (err) {
-        handlers.onStatus('closed', err instanceof Error ? err.message : 'socket refused')
+        msg = JSON.parse(String(ev.data))
+      } catch {
         return
       }
-      const sock = ws
-      sock.onopen = () => {
-        attempt = 0
-        for (const coin of markets) sock.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'trades', coin } }))
-        handlers.onStatus('live', `${markets.length} markets`)
-        // The venue drops a quiet socket; a ping a minute keeps a thin market's subscription alive.
-        ping = setInterval(() => {
-          if (sock.readyState === WebSocket.OPEN) sock.send(JSON.stringify({ method: 'ping' }))
-        }, 50_000)
-      }
-      sock.onmessage = (ev) => {
-        let msg: { channel?: string; data?: unknown }
-        try {
-          msg = JSON.parse(String(ev.data))
-        } catch {
-          return
-        }
-        if (msg.channel !== 'trades' || !Array.isArray(msg.data)) return
-        for (const row of msg.data as HlWsTrade[]) {
-          const f = fillFromHl(row)
-          if (f) batch.push(f)
-        }
-      }
-      sock.onerror = () => {
-        // onclose follows; the reconnect lives there.
-      }
-      sock.onclose = () => {
-        if (ping) clearInterval(ping)
-        ping = null
-        if (closed) return
-        attempt++
-        const wait = Math.min(15_000, 500 * 2 ** Math.min(attempt, 5))
-        handlers.onStatus('reconnecting', `in ${Math.round(wait / 1000)}s`)
-        retry = setTimeout(open, wait)
+      if (msg.channel !== 'trades' || !Array.isArray(msg.data)) return
+      for (const row of msg.data as HlWsTrade[]) {
+        const f = fillFromHl(row)
+        if (f) batch.push(f)
       }
     }
-    open()
-    return () => {
+    sock.onerror = () => {
+      // onclose follows; the reconnect lives there.
+    }
+    sock.onclose = () => {
+      if (ping) clearInterval(ping)
+      ping = null
+      if (closed) return
+      attempt++
+      const wait = Math.min(15_000, 500 * 2 ** Math.min(attempt, 5))
+      handlers.onStatus('reconnecting', `in ${Math.round(wait / 1000)}s`)
+      retry = setTimeout(open, wait)
+    }
+  }
+  open()
+  return {
+    close() {
       closed = true
       batch.stop()
       if (retry) clearTimeout(retry)
       if (ping) clearInterval(ping)
       if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) ws.close()
       handlers.onStatus('closed')
-    }
+    },
+    setMarkets(next) {
+      if (closed) return
+      const { add, drop } = subscriptionDelta(markets, next)
+      markets = [...next]
+      if (!ws || ws.readyState !== WebSocket.OPEN) return // it subscribes to `markets` when it opens
+      if (add.length === 0 && drop.length === 0) return
+      for (const coin of drop) ws.send(hlSub(coin, 'unsubscribe'))
+      for (const coin of add) ws.send(hlSub(coin, 'subscribe'))
+      handlers.onStatus('live', `${markets.length} markets`)
+    },
+  }
+}
+
+/** The splash's pulse opens the stream on its fallback list the moment it
+ *  mounts and re-aims it when the venue's universe answers (lib/pulse) — on
+ *  the same socket, so a chart never shows a reconnect as a quiet second.
+ *  Additive beside hlTapeFeed.connect, which /live keeps calling. */
+export function connectHlTape(markets: readonly string[], handlers: FeedHandlers): HlTapeHandle {
+  return openHlTape(markets, handlers)
+}
+
+export const hlTapeFeed: TapeFeed = {
+  source: 'hyperliquid',
+  label: 'Hyperliquid · trades WebSocket',
+  fields: { effect: false, block: false },
+  connect(markets, handlers) {
+    return openHlTape(markets, handlers).close
   },
 }
 
