@@ -29,6 +29,10 @@
 .bf__meter i { position: absolute; inset: 0 auto 0 0; width: var(--bf-share, 50%); background: var(--mk-up, var(--accent)); border-right: 2px solid var(--bg); transition: width 0.3s; }
 .bf__press-l { font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted); }
 .bf__press-l2 { color: var(--muted-2); }
+/* With the front's panel standing on the right, the headline keeps to the table's middle. */
+.bf.has-front .bf__press { left: 40%; max-width: 40%; }
+/* On a phone the panel takes the right half, so the headline sits under the calendar on the left. */
+@media (max-width: 640px) { .bf.has-front .bf__press { left: 12px; right: auto; top: 72px; transform: none; justify-items: start; text-align: left; max-width: 46%; } .bf.has-front .bf__press-v { font-size: 13px; } .bf.has-front .bf__press-k, .bf.has-front .bf__press-l, .bf.has-front .bf__meter { display: none; } }
 
 /* A bar's battle report. */
 .bf__tip {

@@ -304,3 +304,44 @@ export function parsePlayer(x: unknown): Player | null {
   if (!num(p.entry, 1e-9, 1e9) || !num(p.leverage, 1, 50) || !num(p.usd, 1, 1e6)) return null
   return { side: p.side, entry: p.entry as number, leverage: p.leverage as number, usd: p.usd as number }
 }
+
+// ── The front: units in formation and the resting book ────────────────────
+
+/** Dollar sizes a unit can stand for. The board picks the smallest one that
+ *  keeps the biggest cluster under `maxUnits` tanks. */
+export const UNIT_STEPS = [1e4, 2.5e4, 5e4, 1e5, 2.5e5, 5e5, 1e6, 2.5e6, 5e6, 1e7, 2.5e7, 5e7, 1e8, 2.5e8]
+
+export function unitUsd(maxUsd: number, maxUnits = 14): number {
+  return UNIT_STEPS.find((s) => maxUsd / s <= maxUnits) ?? UNIT_STEPS[UNIT_STEPS.length - 1]
+}
+
+/** Tanks for a cluster: none under half a unit, at least one from there. */
+export function unitsFor(usd: number, unit: number): number {
+  return usd < unit / 2 ? 0 : Math.max(1, Math.round(usd / unit))
+}
+
+export interface BookLevel {
+  px: number
+  usd: number
+}
+export interface BookBody {
+  symbol: string
+  /** Resting orders, best first, in dollars at each price. */
+  bids: BookLevel[]
+  asks: BookLevel[]
+  mid: number | null
+  /** Unix ms the book was read. */
+  at: number
+  missing?: string
+}
+
+/** Dollars resting within `pct` of the mid on each side: the ramparts at the front. */
+export function bookWalls(book: Pick<BookBody, 'bids' | 'asks' | 'mid'>, pct = 2): { bidUsd: number; askUsd: number } {
+  const mid = book.mid
+  if (!mid || !(mid > 0)) return { bidUsd: 0, askUsd: 0 }
+  let bidUsd = 0
+  let askUsd = 0
+  for (const l of book.bids) if (l.px >= mid * (1 - pct / 100)) bidUsd += l.usd
+  for (const l of book.asks) if (l.px <= mid * (1 + pct / 100)) askUsd += l.usd
+  return { bidUsd, askUsd }
+}

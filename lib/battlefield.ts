@@ -315,4 +315,4 @@ export const FIELD_MAX_BARS = 400
 
 /** Empty slots past the newest bar: the ground ahead, where the liquidation
  *  clusters and a player's lines are drawn before price gets there. */
-export const fieldAhead = (bars: number): number => Math.max(6, Math.round(bars * 0.1))
+export const fieldAhead = (bars: number): number => Math.max(8, Math.round(bars * 0.22))

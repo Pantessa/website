@@ -4,7 +4,7 @@
 //   npx tsx scripts/battlefield-pins.ts
 import { readFileSync } from 'node:fs'
 import type { Candle } from '../lib/charts'
-import { crowdRead, fuelBeforePlayer, fuelWithin, fundingLine, liqBuckets, liquidationMap, oiAtBars, parsePlayer, playerLiqPrice, playerState, type OiPoint } from '../lib/derivs'
+import { crowdRead, fuelBeforePlayer, fuelWithin, fundingLine, liqBuckets, liquidationMap, oiAtBars, parsePlayer, playerLiqPrice, playerState, bookWalls, unitUsd, unitsFor, type OiPoint } from '../lib/derivs'
 import { fieldAhead } from '../lib/battlefield'
 import { composeExecAsk } from '../lib/trade-asks'
 import { chartPairFor } from '../lib/charts'
@@ -101,8 +101,8 @@ export function battlefieldPins(check: Check): void {
   check('battlefield: the scenery hash is stable and spread (the forest stands in the same place every frame)', hs.every((h) => h >= 0 && h < 1) && fieldHash(7, 1) === fieldHash(7, 1) && fieldHash(7, 1) !== fieldHash(7, 2) && new Set(hs.map((h) => Math.floor(h * 10))).size === 10)
 
   // ── Positioning (lib/derivs) ────────────────────────────────────────────
-  check('battlefield: the scale stretches to hold a cluster or a player line off the tape, and the ground ahead is a tenth of the bars (six at least)',
-    fieldScale(bars, [40]).hi > 40 && fieldScale(bars, [1, NaN, -3]).lo < 1 && fieldAhead(180) === 18 && fieldAhead(20) === 6)
+  check('battlefield: the scale stretches to hold a cluster or a player line off the tape, and the ground ahead is a fifth of the bars (eight at least)',
+    fieldScale(bars, [40]).hi > 40 && fieldScale(bars, [1, NaN, -3]).lo < 1 && fieldAhead(180) === 40 && fieldAhead(20) === 8)
   // Four flat bars at $100; open interest steps 1000 → 1500 on bar 1, then falls to 750 on bar 2.
   const flatBars: Candle[] = [bar(0, 100, 101, 99, 100), bar(DAY, 100, 101, 99, 100), bar(2 * DAY, 100, 101, 99, 100), bar(3 * DAY, 100, 101, 99, 100)]
   const oi: OiPoint[] = [{ t: 0, oi: 1000 }, { t: DAY, oi: 1000 }, { t: 2 * DAY, oi: 1500 }, { t: 3 * DAY, oi: 750 }]
@@ -145,6 +145,16 @@ export function battlefieldPins(check: Check): void {
   const route = readFileSync('app/api/markets/derivs/route.ts', 'utf8')
   check('battlefield: the Open button exists only for an at-market what-if on a listed perp within the venue\'s leverage and the chart\'s venue gate; a tokenized stock reads no positioning',
     /stored\.entry !== null \|\| !perpOk \|\| stored\.leverage > maxLev/.test(field) && /canAsk \? canAsk\(ask\) : true/.test(field) && /pair\.source === 'robinhood'\) return/.test(field) && /pair\.source === 'robinhood'/.test(route) && /canAsk=\{\(ask\) => canTradeAsk\(ask, tradable\)\}/.test(readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')))
+
+  // ── The front ───────────────────────────────────────────────────────────
+  check('battlefield: a tank is the smallest round dollar step that keeps the biggest cluster to 14 tanks; a cluster under half a tank stands no one, anything from there at least one',
+    unitUsd(1_100_000) === 100_000 && unitUsd(14_000_000) === 1_000_000 && unitUsd(14_000_001) === 2_500_000 && unitsFor(40_000, 100_000) === 0 && unitsFor(60_000, 100_000) === 1 && unitsFor(1_100_000, 100_000) === 11)
+  const bookShape = { mid: 100, bids: [{ px: 99.9, usd: 5 }, { px: 98.5, usd: 7 }, { px: 97, usd: 100 }], asks: [{ px: 100.1, usd: 3 }, { px: 101.9, usd: 4 }, { px: 103, usd: 100 }] }
+  const w = bookWalls(bookShape)
+  check('battlefield: the ramparts count orders resting within 2% of the mid on each side, and nothing without a mid', w.bidUsd === 12 && w.askUsd === 7 && bookWalls({ ...bookShape, mid: null }).bidUsd === 0)
+  const fieldSrc = readFileSync('components/markets/chart/BattleField.tsx', 'utf8')
+  check('battlefield: nothing on the board is decoration: no scattered units, no forest; every tank is drawn from a cluster\'s dollars (unitsFor) and the walls from the book (bookWalls)',
+    !/fieldHash/.test(fieldSrc) && !/troopCounts/.test(fieldSrc) && !/trees/.test(fieldSrc) && /unitsFor\(b\.usd, bd\.unit\)/.test(fieldSrc) && /bookWalls\(book\)/.test(fieldSrc) && /tipI === count - 1 && \(walls\.bidUsd > 0/.test(fieldSrc))
 
   // Wiring: the candles are the view a chart opens on, and only the symbol page offers the switch.
   const chart = readFileSync('components/markets/chart/MarketChart.tsx', 'utf8')

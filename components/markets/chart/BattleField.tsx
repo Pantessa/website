@@ -29,7 +29,6 @@ import {
   ROAD_V,
   battleReport,
   fieldDate,
-  fieldHash,
   fieldProjector,
   fieldRecords,
   fieldScale,
@@ -37,7 +36,6 @@ import {
   pressureAt,
   pressureLine,
   timeBands,
-  troopCounts,
   fieldAhead,
   type FieldBox,
   type Season,
@@ -55,6 +53,10 @@ import {
   oiAtBars,
   parsePlayer,
   playerState,
+  bookWalls,
+  unitUsd,
+  unitsFor,
+  type BookBody,
   type DerivsBody,
   type LiqBucket,
   type LiqHit,
@@ -94,6 +96,8 @@ const REPLAY_MS = 11_000
 const CTL_STRIP = 76
 /** Liquidation fuel on the board: one ink for both sides, its place says whose. */
 const FUEL = '#ffb648'
+/** Clusters within this much of the price stand in formation. */
+const FRONT_PCT = 25
 const PLAYER_KEY = 'pantessa.bf.player.v1'
 
 /** A what-if position. `entry` null = at market: it rides the front until moved. */
@@ -121,14 +125,6 @@ const mix = (a: string, b: string, t: number): string => {
 const rgba = (hex: string, a: number): string => `rgba(${rgb(hex).join(',')},${a})`
 const ease = (t: number) => 1 - (1 - t) ** 3
 
-interface Tree {
-  u: number
-  v: number
-  size: number
-  idx: number
-  bull: boolean
-  season: Season
-}
 
 export default function BattleField({ symbol, pair, onAsk, canAsk, tf, bars, tokens, lines, fills, sma50, sma200 }: BattleFieldProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null)
@@ -249,7 +245,32 @@ export default function BattleField({ symbol, pair, onAsk, canAsk, tf, bars, tok
   const liveMap = useMemo(() => (derivs && derivs.oi.length > 1 && n > 1 ? liquidationMap(bars, derivs.oi, derivs.oiUnit) : null), [bars, derivs, n])
   const tipMap = useMemo(() => (!liveMap || !derivs ? null : tipAt >= n - 1 ? liveMap : liquidationMap(bars, derivs.oi, derivs.oiUnit, tipAt)), [liveMap, derivs, bars, tipAt, n])
   const buckets = useMemo<LiqBucket[]>(() => (tipMap && tipClose > 0 ? liqBuckets(tipMap.alive, tipClose) : []), [tipMap, tipClose])
-  const hits = useMemo<LiqHit[]>(() => (tipMap ? [...tipMap.hits].sort((a, b) => b.usd - a.usd).slice(0, 12) : []), [tipMap])
+  // Each tank stands for this many dollars: the smallest step that keeps the biggest cluster to 14.
+  const unit = useMemo(() => unitUsd(buckets.filter((b) => Math.abs(b.price / tipClose - 1) <= 0.25).reduce((m, b) => Math.max(m, b.usd), 0)), [buckets, tipClose])
+  // The resting book (ramparts), every 10s while the field is open.
+  const [book, setBook] = useState<BookBody | null>(null)
+  useEffect(() => {
+    setBook(null)
+    if (pair.source === 'robinhood') return
+    let alive = true
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/markets/book?symbol=${encodeURIComponent(symbol)}`, { cache: 'no-store' })
+        const body = (await res.json()) as BookBody
+        if (alive && res.ok && Array.isArray(body.bids)) setBook(body)
+      } catch {
+        /* no walls this read */
+      }
+    }
+    void load()
+    const timer = setInterval(() => void load(), 10_000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [symbol, pair.source])
+  const walls = useMemo(() => (book && book.mid ? bookWalls(book) : null), [book])
+  const hits = useMemo<LiqHit[]>(() => (tipMap ? [...tipMap.hits].sort((a, b) => b.usd - a.usd).slice(0, 6) : []), [tipMap])
 
   const player = useMemo<BoardPlayer | null>(() => {
     if (livePos) return { side: livePos.side, entry: livePos.entryPx, leverage: Math.max(1, livePos.leverage), usd: Math.abs(livePos.valueUsd), live: true, atMarket: false }
@@ -308,23 +329,10 @@ export default function BattleField({ symbol, pair, onAsk, canAsk, tf, bars, tok
     for (const b of bars) if (b.v > volMax) volMax = b.v
     // Far blocks first: a near block's tower may cover a far one, never the reverse.
     const order = bars.map((_, i) => i).sort((a, b) => Math.max(bars[b].o, bars[b].c) - Math.max(bars[a].o, bars[a].c))
-    const trees: Tree[] = []
-    const want = Math.max(50, Math.min(150, Math.round(n * 0.6)))
-    for (let i = 0; i < want * 2 && trees.length < want; i++) {
-      const u = (fieldHash(i, 1) * n) / slots
-      const v = 0.03 + fieldHash(i, 2) * 0.94
-      const idx = Math.min(n - 1, Math.floor(u * slots))
-      const b = bars[idx]
-      // The fighting clears the ground: nothing grows inside a bar's range.
-      if (v > scale.vOf(b.l) - 0.03 && v < scale.vOf(b.h) + 0.03) continue
-      const band = bands.find((x) => idx >= x.from && idx <= x.to)
-      trees.push({ u, v, size: 0.7 + fieldHash(i, 3) * 0.7, idx, bull: v < scale.vOf(b.c), season: band?.season ?? 'summer' })
-    }
-    trees.sort((a, b) => b.v - a.v)
-    return { scale, bands, volMax, order, trees, slots, byMonth: tf === '1d' || tf === '4h' }
+    return { scale, bands, volMax, order, slots, byMonth: tf === '1d' || tf === '4h' }
   }, [bars, n, tf, include])
 
-  const board = { buckets, hits, player, pstate, firstToBreak, longShare: intel?.longShare ?? null, placing }
+  const board = { buckets, hits, player, pstate, firstToBreak, longShare: intel?.longShare ?? null, placing, unit, walls, funding8h: derivs?.funding8h ?? null }
   const sceneRef = useRef({ scene, bars, tokens, lines, fills, sma50, sma200, size, tf, symbol, board })
   sceneRef.current = { scene, bars, tokens, lines, fills, sma50, sma200, size, tf, symbol, board }
 
@@ -453,24 +461,6 @@ export default function BattleField({ symbol, pair, onAsk, canAsk, tf, bars, tok
         ctx.lineWidth = 1
         ctx.stroke()
       }
-      // Liquidation fuel (estimated, lib/derivs): where leveraged longs (under
-      // the price) and shorts (over it) get closed out. A faint trail back to
-      // the bars the positions opened on, the fuel itself on the ground ahead.
-      let fuelMax = 0
-      for (const b of bd.buckets) if (b.usd > fuelMax) fuelMax = b.usd
-      const fuelHalf = ((bs[tipI].c * 0.015) / (sc.scale.hi - sc.scale.lo)) * 0.42
-      for (const b of bd.buckets) {
-        const v = vOf(b.price)
-        const k = fuelMax > 0 ? b.usd / fuelMax : 0
-        if (v <= 0.005 || v >= 0.995 || k < 0.05) continue
-        const uFrom = Math.min(uEnd, (b.from + 0.5) / slots)
-        poly([P(uFrom, v - fuelHalf), P(uEnd, v - fuelHalf), P(uEnd, v + fuelHalf), P(uFrom, v + fuelHalf)])
-        ctx.fillStyle = rgba(FUEL, 0.03 + 0.1 * k)
-        ctx.fill()
-        poly([P(uEnd, v - fuelHalf), P(1, v - fuelHalf), P(1, v + fuelHalf), P(uEnd, v + fuelHalf)])
-        ctx.fillStyle = rgba(FUEL, 0.1 + 0.45 * k)
-        ctx.fill()
-      }
       // Drawn zones and trend lines lie on the ground.
       const barSec = FRAME_SEC[frame]
       const uOfT = (time: number) => ((time - bs[0].t) / barSec + 0.5) / slots
@@ -559,92 +549,21 @@ export default function BattleField({ symbol, pair, onAsk, canAsk, tf, bars, tok
       }
       ctx.restore()
 
-      // The forest: green where buyers hold, charred where sellers do, in the month's colors.
-      const lift = Math.max(0, tilt)
-      for (const tr of sc.trees) {
-        if (tr.idx > tipI) continue
-        const p = P(tr.u, tr.v)
-        const hgt = 8 * tr.size * p.s * (0.25 + 0.75 * lift)
-        const wid = 2.6 * tr.size * p.s
-        ctx.globalAlpha = 0.7
-        ctx.fillStyle = rgba(tk.fg, 0.35)
-        ctx.fillRect(p.x - 0.5, p.y - 1, 1, 2.5)
-        ctx.beginPath()
-        ctx.moveTo(p.x - wid, p.y - 1)
-        ctx.lineTo(p.x + wid, p.y - 1)
-        ctx.lineTo(p.x, p.y - 1 - hgt)
-        ctx.closePath()
-        ctx.fillStyle = tr.bull ? mix(SEASON_INK[tr.season].tree, tk.bg, 0.3) : mix(mix(tk.down, SEASON_INK[tr.season].tree, tr.season === 'winter' ? 0.45 : 0.12), tk.bg, 0.55)
-        ctx.fill()
-        ctx.globalAlpha = 1
-      }
-
-      // Units mass where the front is (lib/battlefield: the trailing stretch's force share).
       const press = pressureAt(bs, tipI)
-      const troops = troopCounts(bd.longShare ?? press?.bullShare ?? 0.5, Math.max(10, Math.min(44, count * 0.2)))
-      const reach = Math.max(6, Math.round(count * 0.12))
-      const unit = (j: number, bull: boolean) => {
-        const salt = bull ? 11 : 23
-        const r1 = fieldHash(j, salt)
-        const r2 = fieldHash(j, salt + 1)
-        const r3 = fieldHash(j, salt + 2)
-        const idx = Math.max(0, tipI - Math.floor(r1 * r1 * reach))
-        const frontV = vOf(bs[idx].c)
-        const dir = bull ? 1 : -1
-        const v = Math.max(0.01, Math.min(0.99, frontV - dir * (0.035 + r2 * 0.11) + Math.sin(t / 900 + r3 * 6.28) * 0.004))
-        const u = (idx + 0.15 + 0.7 * r3) / slots
-        const p = P(u, v)
-        const k = Math.max(0.55, p.s) * (sz.w < 520 ? 0.8 : 1)
-        const ink = bull ? tk.up : tk.down
-        const dark = mix(ink, tk.bg, 0.55)
-        if (j % 3 === 2) {
-          // Infantry: three in a row.
-          for (let q = -1; q <= 1; q++) {
-            ctx.beginPath()
-            ctx.arc(p.x + q * 4 * k, p.y - 1.6 * k, 1.7 * k, 0, Math.PI * 2)
-            ctx.fillStyle = ink
-            ctx.fill()
-          }
-        } else {
-          ctx.fillStyle = dark
-          ctx.fillRect(p.x - 5.5 * k, p.y - 3 * k, 11 * k, 4 * k)
-          ctx.fillStyle = ink
-          ctx.fillRect(p.x - 4.5 * k, p.y - 5.5 * k, 9 * k, 3.5 * k)
-          ctx.fillRect(p.x - 2 * k, p.y - 8 * k, 4 * k, 3 * k)
-          ctx.beginPath()
-          ctx.moveTo(p.x, p.y - 6.5 * k)
-          ctx.lineTo(p.x + (r3 - 0.5) * 4 * k, p.y - 6.5 * k - dir * 6 * k)
-          ctx.strokeStyle = ink
-          ctx.lineWidth = 1.4 * k
-          ctx.stroke()
-        }
-        if (reduced) return
-        // Fire across the line: a tracer out, a flash where it lands.
-        const period = 2200 + r2 * 3800
-        const f = (t / period + r3) % 1
-        if (f < 0.22) {
-          const prog = f / 0.22
-          const target = P(u + (r1 - 0.5) * 0.03, Math.max(0.01, Math.min(0.99, frontV + dir * (0.03 + r3 * 0.08))))
-          const from = { x: p.x, y: p.y - 6.5 * k }
-          const at = (q: number) => ({ x: from.x + (target.x - from.x) * q, y: from.y + (target.y - from.y) * q - Math.sin(q * Math.PI) * 10 * k * tilt })
-          const a = at(Math.max(0, prog - 0.22))
-          const b = at(Math.min(1, prog))
-          ctx.beginPath()
-          ctx.moveTo(a.x, a.y)
-          ctx.lineTo(b.x, b.y)
-          ctx.strokeStyle = rgba(ink, 0.95)
-          ctx.lineWidth = 1.5
-          ctx.stroke()
-          if (prog > 0.82) {
-            const q = (prog - 0.82) / 0.18
-            ctx.beginPath()
-            ctx.arc(target.x, target.y, (2 + q * 6) * k, 0, Math.PI * 2)
-            ctx.fillStyle = `rgba(255, 206, 120, ${0.85 * (1 - q)})`
-            ctx.fill()
-          }
-        }
+      // One tank. `k` is its scale, `dir` which way its gun points (1 = up the field).
+      const tank = (p: { x: number; y: number }, ink: string, k: number, dir: number) => {
+        ctx.fillStyle = mix(ink, tk.bg, 0.55)
+        ctx.fillRect(p.x - 5.5 * k, p.y - 3 * k, 11 * k, 4 * k)
+        ctx.fillStyle = ink
+        ctx.fillRect(p.x - 4.5 * k, p.y - 5.5 * k, 9 * k, 3.5 * k)
+        ctx.fillRect(p.x - 2 * k, p.y - 8 * k, 4 * k, 3 * k)
+        ctx.beginPath()
+        ctx.moveTo(p.x, p.y - 6.5 * k)
+        ctx.lineTo(p.x, p.y - 6.5 * k - dir * 6 * k)
+        ctx.strokeStyle = ink
+        ctx.lineWidth = 1.4 * k
+        ctx.stroke()
       }
-      for (let j = 0; j < troops.bears; j++) unit(j, false)
 
       // The bars: each block lies where its body lies and stands as tall as its volume.
       const hovered = hoverRef.current
@@ -684,8 +603,6 @@ export default function BattleField({ symbol, pair, onAsk, canAsk, tf, bars, tok
         ctx.fill()
       }
 
-      for (let j = 0; j < troops.bulls; j++) unit(j, true)
-
       // Where a cluster already went off: the bar whose range reached it.
       const hitMax = bd.hits.reduce((m, h) => Math.max(m, h.usd), 0)
       for (const h of bd.hits) {
@@ -693,7 +610,7 @@ export default function BattleField({ symbol, pair, onAsk, canAsk, tf, bars, tok
         const v = vOf(h.price)
         if (v <= 0 || v >= 1) continue
         const p = P(uc(h.at), v)
-        const r = (3 + 7 * Math.sqrt(h.usd / hitMax)) * Math.max(0.6, p.s)
+        const r = (2.5 + 5 * Math.sqrt(h.usd / hitMax)) * Math.max(0.6, p.s)
         ctx.strokeStyle = rgba(FUEL, 0.9)
         ctx.lineWidth = 1.2
         for (let a = 0; a < 8; a++) {
@@ -704,35 +621,7 @@ export default function BattleField({ symbol, pair, onAsk, canAsk, tf, bars, tok
           ctx.stroke()
         }
       }
-      // Powder kegs on the ground ahead: more barrels, more dollars waiting there.
       const ahead0 = uEnd
-      const loudest: Partial<Record<'long' | 'short', LiqBucket>> = {}
-      const kegged = new Set([...bd.buckets].sort((a, b) => b.usd - a.usd).slice(0, 6))
-      for (const b of bd.buckets) {
-        const v = vOf(b.price)
-        const k = fuelMax > 0 ? b.usd / fuelMax : 0
-        if (v <= 0.01 || v >= 0.99 || !kegged.has(b)) continue
-        const inPlay = b.side === 'short' ? b.price > bs[tipI].c : b.price < bs[tipI].c
-        if (inPlay && (!loudest[b.side] || b.usd > loudest[b.side]!.usd)) loudest[b.side] = b
-        const kegs = 1 + Math.round(k * 3)
-        for (let q = 0; q < kegs; q++) {
-          const p = P(ahead0 + ((q + 1) * (1 - ahead0)) / (kegs + 1), v)
-          const w = 3.2 * Math.max(0.6, p.s)
-          const hgt = 8 * Math.max(0.6, p.s) * (0.35 + 0.65 * tilt)
-          ctx.fillStyle = mix(FUEL, tk.bg, 0.45)
-          ctx.fillRect(p.x - w, p.y - hgt, w * 2, hgt)
-          ctx.fillStyle = FUEL
-          ctx.fillRect(p.x - w, p.y - hgt, w * 2, 1.6)
-          ctx.fillRect(p.x - w, p.y - hgt * 0.5, w * 2, 1)
-        }
-      }
-      for (const side of ['short', 'long'] as const) {
-        const b = loudest[side]
-        if (!b) continue
-        const e = P(1, vOf(b.price))
-        text(`${side === 'short' ? 'SHORTS' : 'LONGS'} BREAK · ~${fmtUsdShort(b.usd)} · ${fmtPrice(b.price)}`, e.x - 8, e.y - 11, FUEL, { size: 9, align: 'right', plate: true })
-      }
-
       // The player: one position, its entry and the line where it breaks.
       const pl = bd.player
       const ps = bd.pstate
@@ -828,7 +717,7 @@ export default function BattleField({ symbol, pair, onAsk, canAsk, tf, bars, tok
         ctx.closePath()
         ctx.fillStyle = ink
         ctx.fill()
-        const right = p.x > sz.w - 170
+        const right = p.x > sz.w * 0.62
         // On a phone the calendar and the pressure meter own the sky: a flag's words stay under them.
         text(label, p.x + (right ? -6 : 15), Math.max(p.y - pole + 3, sz.w < 520 ? 74 : 0), tk.fg, { size: 9, align: right ? 'right' : 'left', plate: true })
       }
@@ -858,18 +747,203 @@ export default function BattleField({ symbol, pair, onAsk, canAsk, tf, bars, tok
       ctx.fillStyle = tk.fg
       ctx.fill()
 
+      // ── The front ──────────────────────────────────────────────────────
+      // Everything that moves stands here, on an upright war-table panel at
+      // the tip: ±FRONT_PCT around the price with real vertical room, which
+      // the tilted table can't give a slice that thin on a long tape.
+      const frontV = vOf(bs[tipI].c)
+      const mark = bs[tipI].c
+      const tipPt = P(uc(tipI), frontV)
+      // On a phone the panel takes the right half of the table: the front is the point.
+      const panel = { x0: sz.w < 640 ? Math.min(sz.w * 0.5, tipPt.x + 14) : Math.max(tipPt.x + 14, P(ahead0, 1).x + 6), x1: sz.w - 8, y0: 10, y1: P(0.5, 0).y - 6 }
+      const panelW = panel.x1 - panel.x0
+      const vp = (price: number) => panel.y1 - (panel.y1 - panel.y0) * ((price / mark - 1 + FRONT_PCT / 100) / (2 * FRONT_PCT / 100))
+      const showFront = panelW >= 120 && panel.y1 - panel.y0 >= 140 && (bd.buckets.length > 0 || bd.longShare !== null || (bd.walls !== null && tipI === count - 1))
+      if (showFront) {
+        // The table: a plate over the ground ahead, tied to the tip of the front.
+        ctx.fillStyle = tk.bg
+        ctx.fillRect(panel.x0, panel.y0, panelW, panel.y1 - panel.y0)
+        ctx.strokeStyle = rgba(tk.fg, 0.18)
+        ctx.lineWidth = 1
+        ctx.strokeRect(panel.x0 + 0.5, panel.y0 + 0.5, panelW - 1, panel.y1 - panel.y0 - 1)
+        text(`THE FRONT · ±${FRONT_PCT}%`, panel.x0 + 8, panel.y0 + 10, tk.muted2, { size: 8.5, bold: true })
+        // Territory inside the panel: longs' ground under the price, shorts' over it.
+        const yMark = vp(mark)
+        ctx.fillStyle = rgba(tk.down, 0.07)
+        ctx.fillRect(panel.x0 + 1, panel.y0 + 1, panelW - 2, yMark - panel.y0 - 1)
+        ctx.fillStyle = rgba(tk.up, 0.08)
+        ctx.fillRect(panel.x0 + 1, yMark, panelW - 2, panel.y1 - yMark - 1)
+        // Price rungs down the left edge.
+        for (const pct of [-20, -10, 10, 20]) {
+          const y = vp(mark * (1 + pct / 100))
+          ctx.beginPath()
+          ctx.moveTo(panel.x0 + 1, y)
+          ctx.lineTo(panel.x1 - 1, y)
+          ctx.strokeStyle = rgba(tk.fg, 0.07)
+          ctx.stroke()
+          text(`${pct > 0 ? '+' : ''}${pct}%`, panel.x0 + 6, y - 6, tk.muted2, { size: 8 })
+        }
+        // The line itself, tied to the tip.
+        ctx.beginPath()
+        ctx.moveTo(tipPt.x, tipPt.y)
+        ctx.lineTo(panel.x0, yMark)
+        ctx.setLineDash([3, 3])
+        ctx.strokeStyle = rgba(tk.fg, 0.45)
+        ctx.stroke()
+        ctx.setLineDash([])
+        ctx.beginPath()
+        ctx.moveTo(panel.x0 + 1, yMark)
+        ctx.lineTo(panel.x1 - 1, yMark)
+        ctx.strokeStyle = rgba(tk.fg, 0.85)
+        ctx.lineWidth = 1.5
+        ctx.shadowColor = rgba(tk.fg, 0.5)
+        ctx.shadowBlur = 6
+        ctx.stroke()
+        ctx.shadowBlur = 0
+        text(fmtPrice(mark), panel.x1 - 6, yMark - 8, tk.fg, { size: 9, align: 'right', bold: true, plate: true })
+
+        const kTank = sz.w < 520 ? 0.75 : 0.95
+        // Formation rows (ESTIMATED): each tank is `bd.unit` dollars of leveraged
+        // positions, standing at the price where they get liquidated. Longs
+        // under the line, shorts over it; a thick row close to the line is a
+        // weak flank. Price reaching a row wipes it (the burst marks on the table).
+        const perRank = 8
+        const near = bd.buckets.filter((b) => Math.abs(b.price / mark - 1) < FRONT_PCT / 100 && (b.side === 'short' ? b.price > mark : b.price < mark))
+        // Rows closer than a tank's height merge into one (dollars summed, price dollar-weighted), then the eight biggest a side stand.
+        const merged: LiqBucket[] = []
+        for (const b of [...near].sort((a, b) => a.price - b.price)) {
+          const last = merged[merged.length - 1]
+          if (last && last.side === b.side && Math.abs(vp(last.price) - vp(b.price)) < 18) {
+            const usd = last.usd + b.usd
+            merged[merged.length - 1] = { ...last, price: (last.price * last.usd + b.price * b.usd) / usd, usd, from: Math.min(last.from, b.from) }
+          } else merged.push({ ...b })
+        }
+        const rowsASide = sz.w < 640 ? 4 : 8
+        const formed = (['long', 'short'] as const).flatMap((side) => merged.filter((b) => b.side === side).sort((a, b) => b.usd - a.usd).slice(0, rowsASide))
+        const rowX0 = panel.x0 + 44
+        const rowX1 = panel.x1 - 10
+        for (const b of formed) {
+          const units = unitsFor(b.usd, bd.unit)
+          if (units === 0) continue
+          const y = vp(b.price)
+          const dir = b.side === 'long' ? 1 : -1
+          const ink = b.side === 'long' ? tk.up : tk.down
+          ctx.beginPath()
+          ctx.moveTo(rowX0 - 6, y + 1)
+          ctx.lineTo(rowX1, y + 1)
+          ctx.strokeStyle = rgba(ink, 0.3)
+          ctx.lineWidth = 1
+          ctx.stroke()
+          const inRank = Math.min(perRank, units)
+          const step = Math.min(14 * kTank, (rowX1 - rowX0 - 70) / Math.max(inRank, 1))
+          for (let q = 0; q < units; q++) {
+            const rank = Math.floor(q / perRank)
+            const col = q - rank * perRank
+            // A second rank stands a step behind the first, a little further from the line.
+            tank({ x: rowX0 + col * step + rank * step * 0.5, y: y + dir * rank * 7 }, ink, kTank, dir)
+          }
+          text(`~${fmtUsdShort(b.usd)} · ${fmtPrice(b.price)}`, rowX1, y - 7, ink, { size: 8.5, align: 'right', plate: true })
+        }
+
+        // Ramparts (MEASURED, live only): orders resting within 2% of the price
+        // on Hyperliquid's book. Bids are the longs' wall just under the line,
+        // asks the shorts' just over it; the longer wall holds more money.
+        const walls = bd.walls
+        if (walls && tipI === count - 1 && (walls.bidUsd > 0 || walls.askUsd > 0)) {
+          const wallMax = Math.max(walls.bidUsd, walls.askUsd)
+          for (const side of ['long', 'short'] as const) {
+            const usd = side === 'long' ? walls.bidUsd : walls.askUsd
+            if (usd <= 0) continue
+            const ink = side === 'long' ? tk.up : tk.down
+            const len = 24 + (rowX1 - rowX0 - 90) * (usd / wallMax)
+            const y = side === 'long' ? yMark + 4 : yMark - 11
+            ctx.fillStyle = mix(ink, tk.bg, 0.3)
+            ctx.fillRect(rowX0, y, len, 7)
+            ctx.fillStyle = ink
+            for (let x = rowX0; x < rowX0 + len; x += 8) ctx.fillRect(x, side === 'long' ? y - 2 : y + 7, 4, 2)
+            text(`${fmtUsdShort(usd)} ${side === 'long' ? 'bids' : 'asks'}`, rowX0 + len + 6, y + 3.5, ink, { size: 8.5, bold: true, plate: true })
+          }
+        }
+
+        // Banners (MEASURED): the share of accounts on each side is the width
+        // of its flag. Funding rides a wagon from the side that pays.
+        if (bd.longShare !== null) {
+          const share = bd.longShare
+          const flag = (side: 'long' | 'short', at: { x: number; y: number }, w: number, label: string) => {
+            const ink = side === 'long' ? tk.up : tk.down
+            ctx.beginPath()
+            ctx.moveTo(at.x, at.y + 10)
+            ctx.lineTo(at.x, at.y - 10)
+            ctx.strokeStyle = rgba(tk.fg, 0.8)
+            ctx.lineWidth = 1.2
+            ctx.stroke()
+            const wave = reduced ? 0 : Math.sin(t / 420 + (side === 'long' ? 0 : 2)) * 1.5
+            ctx.beginPath()
+            ctx.moveTo(at.x, at.y - 10)
+            ctx.lineTo(at.x + w, at.y - 6 + wave)
+            ctx.lineTo(at.x, at.y - 1)
+            ctx.closePath()
+            ctx.fillStyle = ink
+            ctx.fill()
+            text(label, at.x + w + 5, at.y - 5, ink, { size: 9, bold: true, plate: true })
+          }
+          const longAt = { x: panel.x0 + 10, y: Math.min(panel.y1 - 14, yMark + 34) }
+          const shortAt = { x: panel.x0 + 10, y: Math.max(panel.y0 + 30, yMark - 26) }
+          flag('long', longAt, 10 + 44 * share, `${Math.round(share * 100)}% LONG`)
+          flag('short', shortAt, 10 + 44 * (1 - share), `${Math.round((1 - share) * 100)}% SHORT`)
+          const f8 = bd.funding8h
+          if (f8 !== null && f8 !== 0 && tipI === count - 1) {
+            const from = f8 > 0 ? longAt : shortAt
+            const to = f8 > 0 ? shortAt : longAt
+            const prog = reduced ? 0.5 : (t / 3200) % 1
+            const w = { x: from.x + 4, y: from.y + (to.y - from.y) * prog }
+            ctx.fillStyle = tk.accent
+            ctx.fillRect(w.x - 5, w.y - 5, 7, 5)
+            ctx.fillRect(w.x + 2, w.y - 3, 3.5, 3)
+            ctx.fillStyle = tk.fg
+            ctx.beginPath()
+            ctx.arc(w.x - 3, w.y + 1, 1.4, 0, Math.PI * 2)
+            ctx.arc(w.x + 3, w.y + 1, 1.4, 0, Math.PI * 2)
+            ctx.fill()
+            text(`FUNDING ${f8 > 0 ? '+' : '\u2212'}${Math.abs(f8 * 100).toFixed(4)}% · ${f8 > 0 ? 'LONGS PAY' : 'SHORTS PAY'}`, panel.x0 + 10, longAt.y + 14, tk.muted2, { size: 8, plate: true })
+          }
+        }
+
+        // The player on the table: its entry and the line where it breaks.
+        if (bd.player && bd.pstate) {
+          const pl = bd.player
+          const ps = bd.pstate
+          for (const [price, ink, dash, label] of [[pl.entry, tk.accent, [5, 4], `YOUR ENTRY ${fmtPrice(pl.entry)}`], [ps.liq, tk.down, [], `YOU BREAK ~${fmtPrice(ps.liq)}`]] as const) {
+            if (Math.abs(price / mark - 1) >= FRONT_PCT / 100) continue
+            const y = vp(price)
+            ctx.beginPath()
+            ctx.moveTo(panel.x0 + 1, y)
+            ctx.lineTo(panel.x1 - 1, y)
+            ctx.setLineDash([...dash])
+            ctx.strokeStyle = rgba(ink, 0.9)
+            ctx.lineWidth = 1.2
+            ctx.stroke()
+            ctx.setLineDash([])
+            text(label, panel.x0 + 44, y + (price === pl.entry ? 8 : -8), ink, { size: 8.5, bold: true, plate: true })
+          }
+        }
+      }
+
       // The price scale, down the right edge of the table.
       for (const p of ticks) {
-        const e = P(1, vOf(p))
-        text(fmtPrice(p), e.x + 8, e.y, tk.muted2, { size: 10 })
+        const e = showFront ? P(0, vOf(p)) : P(1, vOf(p))
+        text(fmtPrice(p), showFront ? e.x - 8 : e.x + 8, e.y, tk.muted2, { size: 10, align: showFront ? 'right' : 'left' })
       }
-      const tag = P(1, vOf(bs[tipI].c))
+      // The price tag rides the axis: the right edge, or the left while the front's panel stands on the right.
+      const tag = showFront ? P(0, vOf(bs[tipI].c)) : P(1, vOf(bs[tipI].c))
       const tagText = fmtPrice(bs[tipI].c)
       ctx.font = `600 10px ${FONT}`
       const tagW = ctx.measureText(tagText).width + 10
       ctx.fillStyle = bs[tipI].c >= bs[tipI].o ? tk.up : tk.down
-      ctx.fillRect(tag.x + 4, tag.y - 8, tagW, 16)
-      text(tagText, tag.x + 9, tag.y + 0.5, tk.bg, { size: 10, bold: true })
+      // A phone's panel takes half the table: the tag sits against it instead of the far axis.
+      const tagX = showFront ? (sz.w < 640 ? panel.x0 - 4 - tagW : tag.x - 4 - tagW) : tag.x + 4
+      ctx.fillRect(tagX, tag.y - 8, tagW, 16)
+      text(tagText, tagX + 5, tag.y + 0.5, tk.bg, { size: 10, bold: true })
 
       // The road: the calendar you march along.
       poly([P(0, ROAD_V), P(1, ROAD_V), P(1, -0.012), P(0, -0.012)])
@@ -1045,7 +1119,7 @@ export default function BattleField({ symbol, pair, onAsk, canAsk, tf, bars, tok
   return (
     <div
       ref={wrapRef}
-      className={`bf${playing ? ' is-playing' : ''}${placing ? ' is-placing' : ''}`}
+      className={`bf${playing ? ' is-playing' : ''}${placing ? ' is-placing' : ''}${derivs && (buckets.length || crowd) ? ' has-front' : ''}`}
       onPointerMove={(e) => {
         if ((e.target as HTMLElement).closest('.bf__strip')) return setHover(null)
         setHover(barAt(e.clientX, e.clientY))
@@ -1159,10 +1233,17 @@ export default function BattleField({ symbol, pair, onAsk, canAsk, tf, bars, tok
             </button>
           </div>
           <p className="bf__legend mono">
-            <span><i className="bf__sw bf__sw--up" />{crowd ? 'longs' : 'buyers'}</span>
-            <span><i className="bf__sw bf__sw--down" />{crowd ? 'shorts' : 'sellers'}</span>
-            {buckets.length && intel ? <span title="Estimated from open interest that appeared on each bar, across 5x to 50x. Where the fuel probably is, not where price will go."><i className="bf__sw bf__sw--fuel" />est. liquidations within 10%: {fmtUsdShort(intel.fuel.above)} shorts above · {fmtUsdShort(intel.fuel.below)} longs below</span> : null}
-            {buckets.length ? null : <span>block height = volume</span>}
+            {buckets.length ? (
+              <span title="Estimated from open interest that appeared on each bar, across 5x to 50x leverage: where the positions probably break, not where price will go."><i className="bf__sw bf__sw--up" /><i className="bf__sw bf__sw--down" />tank = {fmtUsdShort(unit)} of est. positions, standing where it breaks</span>
+            ) : (
+              <>
+                <span><i className="bf__sw bf__sw--up" />buyers</span>
+                <span><i className="bf__sw bf__sw--down" />sellers</span>
+                <span>block height = volume</span>
+              </>
+            )}
+            {walls && atLive ? <span title="Orders resting on Hyperliquid's book within 2% of the price, read every 10 seconds.">ramparts = resting orders within 2%: {fmtUsdShort(walls.bidUsd)} bids · {fmtUsdShort(walls.askUsd)} asks</span> : null}
+            {crowd ? <span>banners = share of accounts</span> : null}
             {sma50 ? <span><i className="bf__sw bf__sw--50" />SMA 50</span> : null}
             {sma200 ? <span><i className="bf__sw bf__sw--200" />SMA 200</span> : null}
           </p>
