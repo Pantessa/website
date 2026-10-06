@@ -298,6 +298,65 @@
   .door__cta:hover { transform: none; }
 }
 
+
+/* ── THE KEEP-IT MOMENT (components/guide/KeepItBar): after the first signed
+   receipt — the mark, "Signed." + the sentence, the facts line, one warm
+   invitation and "Not now". Never a modal; tokens only. ── */
+.keep {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  column-gap: 12px;
+  align-items: center;
+  width: 100%;
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 12px 14px 12px 14px;
+  border: 1px solid color-mix(in oklch, var(--accent) 35%, var(--line));
+  border-radius: 14px;
+  color: var(--fg);
+  text-align: left;
+  font-family: var(--mk-font-ui, var(--font-chat-body, system-ui, sans-serif));
+  background:
+    radial-gradient(120% 120% at 0% 50%, color-mix(in oklch, var(--accent) 12%, transparent), transparent 55%),
+    var(--mk-surface, var(--surf-1));
+  animation: guide-in var(--mk-dur-base, .22s) var(--mk-ease, ease) both;
+}
+.keep__mark { display: grid; place-items: center; width: 30px; height: 30px; }
+.keep__body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.keep__title { margin: 0; font-family: var(--font-chat-display, var(--mk-font-display, Georgia, serif)); font-weight: 500; font-size: 17px; line-height: 1.25; letter-spacing: -0.012em; color: var(--fg); }
+.keep__ask { color: var(--muted); font-weight: 400; }
+.keep__facts { margin: 0; font-family: var(--mk-font-mono, var(--font-mono)); font-size: 11px; letter-spacing: .04em; color: var(--muted-2); }
+.keep__receipt { color: var(--accent); text-decoration: none; }
+.keep__receipt:hover { text-decoration: underline; text-underline-offset: 2px; }
+.keep__text { margin: 4px 0 0; max-width: 60ch; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+.keep__acts { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+.keep__cta {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 38px; padding: 0 16px; border: 1px solid transparent; border-radius: 999px;
+  background: var(--accent); color: var(--ink); font-family: inherit; font-size: 13px; font-weight: 600; letter-spacing: .01em; line-height: 1; white-space: nowrap; cursor: pointer;
+  transition: filter var(--mk-dur-fast, .12s) ease, transform var(--mk-dur-fast, .12s) ease;
+}
+.keep__cta:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.keep__cta:disabled { opacity: .7; cursor: default; transform: none; filter: none; }
+.keep__later { min-height: 28px; padding: 0 6px; border: 0; background: transparent; color: var(--muted-2); font-family: inherit; font-size: 12px; cursor: pointer; }
+.keep__later:hover { color: var(--fg); }
+.keep__cta:focus-visible, .keep__later:focus-visible, .keep__receipt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.keep--compact { grid-template-columns: 24px minmax(0, 1fr) auto; padding: 8px 8px 8px 12px; border-radius: 12px; column-gap: 10px; }
+.keep--compact .keep__mark { width: 24px; height: 24px; }
+.keep--compact .keep__title { font-size: 14.5px; }
+.keep--compact .keep__ask { display: none; }
+.keep--compact .keep__acts { flex-direction: row; align-items: center; gap: 2px; }
+.keep--compact .keep__cta { min-height: 40px; padding: 0 12px; font-size: 12.5px; }
+.keep--compact .keep__later { min-height: 40px; }
+@media (max-width: 640px) {
+  .keep:not(.keep--compact) { grid-template-columns: 26px minmax(0, 1fr); row-gap: 10px; }
+  .keep:not(.keep--compact) .keep__acts { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 10px; }
+  .keep:not(.keep--compact) .keep__cta { flex: 1; min-height: 44px; }
+  .keep:not(.keep--compact) .keep__later { min-height: 44px; min-width: 44px; }
+}
+@media (hover: none) { .keep__cta, .keep__later { min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) { .keep { animation: none; } .keep__cta:hover { transform: none; } }
+
 /* MOBILE */
 /* Measured on the integrated tree (feat/front-door @ 60702500, coarse
    pointer — MOBILE lane, squad front-door 2026-10-06):

@@ -182,7 +182,15 @@ export function parseTransferSegment(
 ): TransferSegment | { problem: string; chips?: { label: string; resume: string }[] } | null {
   // NFT-shaped sends ("send my Pudgy #2489 to 0x…") belong to the NFT layer.
   if (mentionsNft(segment)) return null
-  const normalized = normalizeChainWords(segment)
+  // "pay nate.eth 5 USDC", "tip vitalik.eth 1 usdc on base", "pay 5 usdc to
+  // nate.eth" (pre-gtm 2026-10-06, wave 2): the same transfer, recipient
+  // first. Re-ordered onto the send grammar here; the guard below reads the
+  // same tuple, so nothing downstream changes.
+  const normalized = normalizeChainWords(
+    segment
+      .replace(/\b(?:pay|tip)\s+(0x[0-9a-fA-F]{40}|[a-z0-9-]+\.eth)\s+(\$?\d+(?:\.\d+)?)\s+(\$?[A-Za-z]{2,12})\b/i, 'send $2 $3 to $1')
+      .replace(/\b(?:pay|tip)\s+(\$?\d+(?:\.\d+)?\s+\$?[A-Za-z]{2,12}\s+to\s+)/i, 'send $1'),
+  )
   const handle = normalized.match(HANDLE_SEND_RE)
   if (handle) {
     return {

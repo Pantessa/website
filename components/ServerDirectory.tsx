@@ -8,6 +8,7 @@
 // the static catalog, so it can drop into any shell.
 
 import { useEffect, useState } from 'react'
+import FetchFailed from '@/components/FetchFailed'
 import { useYeetfulStore, McpServer } from '@/lib/store'
 import { CATALOG } from '@/lib/mcp-data'
 import { FREE_FLEET_FALLBACK, fleetRank } from '@/lib/free-fleet'
@@ -28,12 +29,25 @@ export default function ServerDirectory({ initialCategory = ALL }: { initialCate
   // paid catalog (that's where the category breadth lives), so it opens there.
   const [freeOnly, setFreeOnly] = useState(initialCategory === ALL)
 
+  // The live directory didn't answer → the built-in list stands in, and the
+  // page says so (pre-gtm POLISH r2: it used to swap silently).
+  const [offline, setOffline] = useState(false)
+  const [nonce, setNonce] = useState(0)
   useEffect(() => {
     fetch('/api/servers')
-      .then((r) => r.json())
-      .then((data: McpServer[]) => setServers(data.length > 0 ? data : STATIC_SERVERS))
-      .catch(() => setServers(STATIC_SERVERS))
-  }, [setServers])
+      .then((r) => {
+        if (!r.ok) throw new Error(`servers ${r.status}`)
+        return r.json()
+      })
+      .then((data: McpServer[]) => {
+        setServers(Array.isArray(data) && data.length > 0 ? data : STATIC_SERVERS)
+        setOffline(false)
+      })
+      .catch(() => {
+        setServers(STATIC_SERVERS)
+        setOffline(true)
+      })
+  }, [setServers, nonce])
 
   const displayServers = servers.length > 0 ? servers : STATIC_SERVERS
 
@@ -76,6 +90,7 @@ export default function ServerDirectory({ initialCategory = ALL }: { initialCate
         </div>
         <NetworkPulse />
       </div>
+      {offline && <FetchFailed what="the live directory — showing the built-in list" onRetry={() => setNonce((n) => n + 1)} />}
 
       <div className="dir__controls">
         <div className="search">

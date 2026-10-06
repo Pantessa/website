@@ -46,7 +46,7 @@ import { LINKS_STUDIO_HREF } from '../lib/links-href'
 import { WALLET_PAGE_HREF } from '../lib/wallet-page'
 import { isPublicAppPath } from '../lib/app-entry'
 import { simulateLadder } from './ask-ladder'
-import { CHATS_DOOR, FIRST_RUN_ASKS, I_STEPS, JOBS_DOOR, LINKS_DOOR, WALLET_DOOR } from '../lib/first-run'
+import { CHATS_DOOR, FIRST_RUN_ASKS, I_STEPS, JOBS_DOOR, KEEP_IT, LINKS_DOOR, WALLET_DOOR, WALLET_EMPTY_DOOR } from '../lib/first-run'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -544,6 +544,42 @@ export function guidePins(check: Check): void {
   check(
     'first-run: the /i splash tells a stranger what happens next in three steps (connect → see the plan, nothing signed by looking → sign or close), rendered from lib/first-run only while nothing is connected, never a fourth control',
     I_STEPS.length === 3 && /Nothing is signed by looking/.test(I_STEPS[1].body) && /only thing that can move money/.test(I_STEPS[2].body) && /data-i-steps/.test(iSrc) && /!isConnected && \(\s*<ol[^>]*data-i-steps/.test(iSrc) && !/data-i-steps[\s\S]{0,900}<(button|a) /.test(iSrc),
+  )
+
+  const panelSrc = src('components/WalletPanel.tsx')
+  check(
+    'first-run: the wallet window at $0 (every chain read, nothing held) wears the empty door with the card buy as its action and the receive address second — on the page and in the popup',
+    /walletEmpty = !!view && funded\.length === 0 && emptyChains\.length > 0/.test(panelSrc) && /<EmptyDoor[\s\S]*?id="wallet-empty"[\s\S]*?onClick: \(\) => void buy\(\)/.test(panelSrc) && /setReceive\(true\)/.test(panelSrc) && WALLET_EMPTY_DOOR.lines.length === 3,
+  )
+  const mintSrc = src('components/MintLinkForm.tsx')
+  const studioSrc = src('components/LinksStudioView.tsx')
+  check(
+    'first-run: the links door hands its example ask to MintLinkForm through the `prefill` prop (fills only an empty ask, scrolls + focuses) — no native value setter anywhere',
+    /prefill\?: \{ ask: string; at: number \} \| null/.test(mintSrc) && /setAsk\(\(cur\) => \(cur\.trim\(\) \? cur : prefill\.ask/.test(mintSrc) && /prefill=\{prefill\}/.test(studioSrc) && !/getOwnPropertyDescriptor/.test(studioSrc),
+  )
+  const askDoorSrc = src('components/AskDoor.tsx')
+  const designCss = src('app/x402-design.css')
+  check(
+    'first-run: the floating Ask pill yields while a composer (a visible textarea, Ask the chart’s input, or data-ask-door-yield) is on screen, and the app frame\'s scroller keeps the pill\'s height clear under its last row (DEADENDS F5)',
+    /composerInView/.test(askDoorSrc) && /\.mk-ai--ask input/.test(askDoorSrc) && /\|\| yielding\) return null/.test(askDoorSrc) && /body:has\(\[data-app-frame\]\):has\(\.askdoor-pill:not\(\[data-away\]\)\) \[data-app-scroll\] \{ padding-bottom: calc\(72px \+ env\(safe-area-inset-bottom\)\)/.test(designCss),
+  )
+
+  const keepSrc = src('components/guide/KeepItBar.tsx')
+  const iRt = src('components/IntentRuntime.tsx')
+  const gateSrc = src('components/ChatSignInGate.tsx')
+  check(
+    'first-run: the keep-it moment — after a signed receipt, /i and /chat show what happened and ONE invitation to sign in and keep it ("Nothing moves."), with "Not now" and no modal; the chat banner turns into it only once a receipt exists, and the receipt is reported from the one place every signed turn passes (reportEmbedSigned)',
+    /role="note"/.test(keepSrc) && !/role="dialog"|createPortal/.test(keepSrc) && /Nothing moves\./.test(KEEP_IT.body) && KEEP_IT.later === 'Not now' &&
+      /signed && needsSignIn && \([\s\S]{0,400}<KeepItBar id=\{`i:\$\{slug\}`\}/.test(iRt) && !/Sign in & save/.test(iRt) &&
+      /if \(awaitingSignature && receipt\) \{/.test(gateSrc) && /noteSignedReceipt\(\{ artifact: info\.artifact/.test(src('components/ChatInterface.tsx')),
+  )
+  check(
+    'first-run: the public board with no rows is a door into the studio (SpineLink — a stranger meets the unified door), fee words from lib/fees',
+    /<EmptyDoor[\s\S]*?id="board"[\s\S]*?kind: 'spine', label: 'Mint the first one →', href: LINKS_STUDIO_HREF/.test(src('components/LinksBoardView.tsx')) && /\{LINK_FEE_PCT\} fee/.test(src('components/LinksBoardView.tsx')),
+  )
+  check(
+    'first-run: the sign-in door\'s crest bloom is CSS only — the door\'s lanes and rule-6 behaviour are untouched (wallet lead, connect-only lane, Google + email)',
+    /\.ca__crest::before \{[^}]*radial-gradient/.test(src('app/x402-design.css')) && /ca__wallet ca__wallet--lead/.test(src('components/CreateAccountButton.tsx')) && /if \(walletConnectOnly\) openConnectModal\?\.\(\)/.test(src('components/CreateAccountButton.tsx')),
   )
 
 }

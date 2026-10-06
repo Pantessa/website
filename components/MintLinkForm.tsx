@@ -67,6 +67,7 @@ export function MintLinkForm({
   readQueryPrefill,
   initialAsk,
   initialMcps,
+  prefill,
   externalError,
   onMinted,
   guestDoor,
@@ -78,6 +79,11 @@ export function MintLinkForm({
   /** Direct prefill for non-URL surfaces (the rail's mint modal). */
   initialAsk?: string
   initialMcps?: string[]
+  /** A later prefill from the page around the form (the links studio's empty
+   *  door): fills the ask only while it is empty, then scrolls the field into
+   *  view and focuses it. `at` makes a repeat press land again. Nothing
+   *  mints until the button. */
+  prefill?: { ask: string; at: number } | null
   /** A load-level error (the 401 sign-in line) shown in the mint card's
    *  error slot when the form itself hasn't errored. */
   externalError?: string | null
@@ -119,6 +125,16 @@ export function MintLinkForm({
   const [pickerOpen, setPickerOpen] = useState(false)
   const askRef = useRef<HTMLTextAreaElement>(null)
   const { status, connectAndSignIn } = useSession()
+
+  useEffect(() => {
+    if (!prefill) return
+    setAsk((cur) => (cur.trim() ? cur : prefill.ask.slice(0, 400)))
+    const ta = askRef.current
+    if (!ta) return
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    ta.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' })
+    ta.focus({ preventScroll: true })
+  }, [prefill])
 
   // Prefill from the chat's "create intent link" handoff — read once.
   useEffect(() => {
