@@ -10,6 +10,9 @@ import { buildFailedTurn, HOUSE_DOWN_CHIPS, leaksBuildPlumbing, swapAskSentence 
 import { moneyShaped } from '../lib/ask-failure-shape'
 import { chartSymbolByName, isMoneyAssetWord } from '../lib/charts'
 import { simulateLadder } from './ask-ladder'
+import { SEND_HOLD_MS, sendHoldFor } from '../lib/wallet-reconnect'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 let pass = 0
 let fail = 0
@@ -83,6 +86,24 @@ const wave2: [string, RegExp][] = [
 ]
 for (const [ask, re] of wave2) { const o = simulateLadder(ask); check(`wave2: "${ask}"`, o.kind !== 'planner' && re.test(o.note ?? ''), `${o.kind}/${o.gate} ${o.note ?? ''}`) }
 for (const bad of ['sell everything', 'buy the dip']) { const o = simulateLadder(bad); check(`no invented ticker: "${bad}"`, !/EVERYTHING|of DIP/.test(o.note ?? ''), o.note ?? '') }
+
+// ── r3: the SEND hold ──────────────────────────────────────────────────────
+const H = (o: Partial<Parameters<typeof sendHoldFor>[0]>) => sendHoldFor({ walletStatus: 'reconnecting', hasAddress: false, stored: true, heldAt: null, now: 1_000_000, ...o })
+check('send hold: stored wallet still restoring → hold', H({}) === 'hold' && H({ walletStatus: 'connecting' }) === 'hold')
+check('send hold: the address landed → send', H({ hasAddress: true }) === 'send' && H({ walletStatus: 'connected' }) === 'send')
+check('send hold: a settled disconnect → send', H({ walletStatus: 'disconnected' }) === 'send')
+check('send hold: nothing stored (a stranger) → send at once', H({ stored: false }) === 'send')
+check('send hold: the cap releases without the wallet', H({ heldAt: 1_000_000 - SEND_HOLD_MS }) === 'send' && H({ heldAt: 1_000_000 - SEND_HOLD_MS + 1 }) === 'hold')
+check('send hold: cap is 10s', SEND_HOLD_MS === 10_000)
+const ci = readFileSync(join(__dirname, '../components/ChatInterface.tsx'), 'utf8')
+const hs = ci.slice(ci.indexOf('const handleSend = async'), ci.indexOf('const handleSend = async') + 1600)
+check('send hold: handleSend asks sendHoldFor before anything else', /sendHoldFor\(\{ walletStatus, hasAddress: !!effectiveAddress, stored: hasStoredWalletConnection/.test(hs) && hs.indexOf('sendHoldFor') < hs.indexOf('parseChartAsk(raw)'))
+check('send hold: a released send never re-holds', /if \(!released && sendHoldFor/.test(hs) && /handleSendRef\.current\(heldSend\.text, true\)/.test(ci))
+check('send hold: the held ask is shown while it waits', /Connecting your wallet… “\$\{heldSend\.text/.test(ci))
+// ── r3: pay / tip ─────────────────────────────────────────────────────────
+for (const [ask, want] of [['pay nate.eth 5 usdc', 'clarify'], ['tip vitalik.eth 1 usdc on base', 'action'], ['pay 5 usdc to nate.eth on base', 'action'], ['send 5 usdc to nate.eth on base', 'action']] as const) {
+  const o = simulateLadder(ask); check(`pay/tip: "${ask}" → transfer ${want}`, o.gate === 'transfer' && o.kind === want, `${o.gate}/${o.kind} ${o.note ?? ''}`)
+}
 
 console.log(`\npins:deadends — ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

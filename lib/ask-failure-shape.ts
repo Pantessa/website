@@ -28,7 +28,7 @@ import { englishAsk } from '@/lib/ask-lingua'
 // audit:asks reported them green, because the replica skipped this gate.
 // scripts/audit-asks.ts now pins one probe sentence per family.
 const MONEY_VERB_RE =
-  /\b(?:send|transfer|swap|sell|buy|bridge|stake|unstake|deposit|withdraw|convert|fund|move|need|want|get\s+me|long|short|list|repay|borrow|supply|protect|mint|pay|(?:re)?tile|perps?|perpetuals?|leverage|leveraged|margin|futures|gimme|get)\b|\b(?:earn|yield|apy|apr|interest|lend|lending|save|savings)\b|\b(?:ape|yeet|grab|acquire|purchase|invest|pick\s+up|dump|offload|exit|unlend|trade|exchange)\b|\bcash\s+out\b|\b(?:pull|take)\s+out\b|\btop\s+up\b|\bstop[\s-]?loss\b|\btake[\s-]?profit\b|\d+(?:\.\d+)?\s*%\s*(?:stop|drop)\b|\bput\b.*\b(?:into|in\s+to)\b|\bget\b.*\b(?:over\s+to|onto|to)\b/i
+  /\b(?:send|transfer|swap|sell|buy|bridge|stake|unstake|deposit|withdraw|convert|fund|move|need|want|get\s+me|long|short|list|repay|borrow|supply|protect|mint|pay|(?:re)?tile|perps?|perpetuals?|leverage|leveraged|margin|futures|gimme|get|tip)\b|\b(?:earn|yield|apy|apr|interest|lend|lending|save|savings)\b|\b(?:ape|yeet|grab|acquire|purchase|invest|pick\s+up|dump|offload|exit|unlend|trade|exchange)\b|\bcash\s+out\b|\b(?:pull|take)\s+out\b|\btop\s+up\b|\bstop[\s-]?loss\b|\btake[\s-]?profit\b|\d+(?:\.\d+)?\s*%\s*(?:stop|drop)\b|\bput\b.*\b(?:into|in\s+to)\b|\bget\b.*\b(?:over\s+to|onto|to)\b/i
 // `stock`/`share(s)` count as evidence (2026-09-24): "I want to buy some
 // apple shares" is a money ask with no digit, no $ and no ticker — it fell
 // to the planner while "buy $10 of apple stock" built. With the word in,

@@ -9,6 +9,8 @@ import { cdpEnabled } from '@/lib/cdp-embedded'
 import { GUEST_TRIAL_LIMIT, guestTurnsUsed, subscribeGuestTrial } from '@/lib/guest-trial'
 import { useSoftKeyboard } from '@/components/mobile/useSoftKeyboard'
 import { usePhonePosture } from '@/components/chat/usePhonePosture'
+import KeepItBar from '@/components/guide/KeepItBar'
+import { getSignedReceipt, subscribeSignedReceipt } from '@/lib/first-run'
 
 /**
  * The chat's sign-in surface. It used to be a full-screen scrim that demanded
@@ -33,6 +35,9 @@ import { usePhonePosture } from '@/components/chat/usePhonePosture'
 export default function ChatSignInGate() {
   const { status, signingIn, needsSignIn, signIn, connectAndSignIn } = useSession()
   const turnsUsed = useSyncExternalStore(subscribeGuestTrial, guestTurnsUsed, () => 0)
+  // The first signed receipt of this visit (ChatInterface reports it): the
+  // connected banner turns into the keep-it moment (squad pre-gtm r3).
+  const receipt = useSyncExternalStore(subscribeSignedReceipt, getSignedReceipt, () => null)
   // While the soft keyboard is up (a phone), the banner steps aside with the
   // tab bar: the person is typing, and the composer rides the keyboard over
   // the space the banner would float in (squad mobile-native, CHAT row 3).
@@ -124,6 +129,24 @@ export default function ChatSignInGate() {
   // A phone: one compact row in the conversation's own seat above the
   // composer — never over the newest card, no bar arithmetic. The words are
   // the short form of the desktop banner's promise.
+  if (awaitingSignature && receipt) {
+    const bar = (
+      <KeepItBar
+        id="chat"
+        valueUsd={receipt.valueUsd ?? null}
+        txUrl={receipt.txUrl ?? null}
+        onKeep={() => signIn(signInLandingHere())}
+        busy={signingIn}
+        compact={!!(phone && seats.banner)}
+      />
+    )
+    if (phone && seats.banner) return createPortal(<div className="mx-3 mb-1" data-gate-banner="phone">{bar}</div>, seats.banner)
+    return (
+      <div className="pointer-events-none absolute bottom-28 max-lg:bottom-[calc(7.25rem+48px+env(safe-area-inset-bottom))] inset-x-0 z-40 flex justify-center px-4">
+        <div className="pointer-events-auto w-full max-w-2xl shadow-[0_8px_32px_rgba(0,0,0,0.35)] rounded-[14px]">{bar}</div>
+      </div>
+    )
+  }
   if (phone && seats.banner) {
     const rowBtn =
       'flex-shrink-0 inline-flex items-center justify-center gap-1.5 min-h-11 px-4 rounded-full bg-[var(--accent)] text-black text-[13px] font-semibold disabled:opacity-60'

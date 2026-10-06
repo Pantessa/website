@@ -2495,7 +2495,11 @@
   @media (hover: none) { .ca__close { width: 44px; height: 44px; top: 6px; right: 6px; } }
 
   /* Header — the stone, the name, the promise. */
-  .ca__crest { display: grid; place-items: center; margin-bottom: 15px; }
+  .ca__crest { display: grid; place-items: center; margin-bottom: 15px; position: relative; isolation: isolate; }
+  /* The first impression (squad pre-gtm r3): a soft accent bloom behind the
+     stone, so the door opens on the mark lit from within — no new element,
+     no motion beyond the breathe the OTP step already has. */
+  .ca__crest::before { content: ''; position: absolute; left: 50%; top: 50%; width: 150px; height: 150px; transform: translate(-50%, -50%); border-radius: 50%; z-index: -1; pointer-events: none; background: radial-gradient(circle, color-mix(in oklch, var(--accent) 20%, transparent), transparent 68%); }
   .ca__gem { filter: drop-shadow(0 3px 12px color-mix(in oklch, var(--accent) 42%, transparent)); }
   .ca__title { font-size: 21px; font-weight: 600; letter-spacing: -.015em; text-align: center; line-height: 1.2; }
   /* The one line that answers "is this safe?" before anything is clicked —

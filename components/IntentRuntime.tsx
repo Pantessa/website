@@ -33,6 +33,7 @@ import { SignatureWaitModal, useSignatureWait } from '@/components/SignatureWait
 import { useBackToClose } from '@/components/mobile/useBackToClose'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { I_STEPS } from '@/lib/first-run'
+import KeepItBar from '@/components/guide/KeepItBar'
 import NavAccount from '@/components/NavAccount'
 import ShareButton from '@/components/ShareButton'
 import SignInFlowLink from '@/components/SignInFlowLink'
@@ -153,6 +154,8 @@ export default function IntentRuntime({
   const [started, setStarted] = useState(false)
   const [built, setBuilt] = useState(false)
   const [signed, setSigned] = useState(false)
+  // What the receipt said (the keep-it bar quotes it): the dollars and the explorer link.
+  const [receipt, setReceipt] = useState<{ txUrl?: string; valueUsd?: number } | null>(null)
   // The Decline verb (doors run) — addressed cards only, recipient only.
   const { signMessageAsync } = useSignMessage()
   const [declined, setDeclined] = useState(false)
@@ -443,6 +446,7 @@ export default function IntentRuntime({
       postEvent('signed', { valueUsd, txHash, chainId })
       setBuilt(true)
       setSigned(true)
+      setReceipt((r) => r ?? { ...(typeof data.txUrl === 'string' ? { txUrl: data.txUrl } : {}), ...(valueUsd !== undefined ? { valueUsd } : {}) })
       rememberRun('signed', { ...(typeof data.txUrl === 'string' ? { txUrl: data.txUrl } : {}), ...(valueUsd !== undefined ? { valueUsd } : {}) })
     }
     if (data.outcome === 'settled') {
@@ -1058,23 +1062,10 @@ export default function IntentRuntime({
           live in a local chat; signing in adopts it into the DB
           (session.tsx → adoptLocalChat). */}
       {signed && needsSignIn && (
+        // THE KEEP-IT MOMENT (squad pre-gtm r3): what just happened, and one
+        // warm invitation to keep it. Non-blocking; "Not now" quiets it.
         <div data-runtime-bar="" className="yenter relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-3 max-sm:flex-col max-sm:items-stretch">
-            <span className="text-[13px] text-[color:var(--muted)]">
-              <strong className="text-[color:var(--fg)] font-medium">Optional — </strong>
-              you&apos;re done here; the money moved. Sign in only if you want this chat and
-              receipt kept on your dashboard{' '}
-              (one wallet signature, nothing moves).
-            </span>
-            <button
-              type="button"
-              onClick={() => void signIn()}
-              disabled={signingIn}
-              className="btn btn--solid inline-flex items-center gap-1.5 text-[13px] disabled:opacity-60 max-sm:w-full max-sm:justify-center max-sm:min-h-12"
-            >
-              <Fingerprint className="w-3.5 h-3.5" /> {signingIn ? 'Waiting…' : 'Sign in & save'}
-            </button>
-          </div>
+          <KeepItBar id={`i:${slug}`} ask={ask} valueUsd={receipt?.valueUsd ?? null} txUrl={receipt?.txUrl ?? null} onKeep={() => void signIn()} busy={signingIn} />
         </div>
       )}
       {signed && returnHref && redirectHost && (
