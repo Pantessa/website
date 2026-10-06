@@ -1,6 +1,7 @@
 'use client'
 
 import { turnFailedReply } from '@/lib/fetch-words'
+import { noteSignedReceipt } from '@/lib/first-run'
 import { fillSymbolsOf } from '@/lib/fill-symbols'
 import { guardWarnLines } from '@/lib/content-origin'
 import ExternalBuildNotice from '@/components/ExternalBuildNotice'
@@ -1544,6 +1545,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     // before the fills read catches up. The embed's host contract is unchanged.
     onEmbedEvent?.('turn', { outcome: 'signed', artifact: info.artifact, valueUsd: info.valueUsd, txUrl: info.txUrl, chainId: info.chainId, ...(embedded ? {} : { buildPath: info.buildPath, symbols: info.symbols }) })
     postEmbedTelemetry({ outcome: 'signed', ...info })
+    // The keep-it moment reads this (lib/first-run → ChatSignInGate).
+    noteSignedReceipt({ artifact: info.artifact, valueUsd: info.valueUsd, txUrl: info.txUrl })
   }
 
   // ── Connect-wallet-to-continue (transactional ask, no wallet) ───────────

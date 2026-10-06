@@ -8,6 +8,8 @@ import { MintLinkForm } from '@/components/MintLinkForm'
 import type { CreatorPageRow, LinksBoard } from '@/lib/links-board'
 import type { HouseLink } from '@/lib/house-links'
 import { LINK_FEE_PCT } from '@/lib/fees'
+import EmptyDoor from '@/components/guide/EmptyDoor'
+import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 
 // The /links page body — ONE markup source for the public route and the
 // chat surface's LINKS view (LinksWorkspace), so the two can never drift.
@@ -60,9 +62,15 @@ export default function LinksBoardView({
             The board
           </h2>
           {board.byClaims.length === 0 && board.byRecent.length === 0 ? (
-            <p className="text-[13px] text-[color:var(--muted-2)]">
-              The board is empty — the first link to move a dollar tops it. Mint yours and be first.
-            </p>
+            <EmptyDoor
+              id="board"
+              eyebrow="The board · nothing moved yet"
+              title="The first link to move a dollar tops it."
+              body={<>Mint yours and be first: paste the sentence you&rsquo;d type in chat, share the link, and every signed swap it produces pays you half of the {LINK_FEE_PCT} fee.</>}
+              lines={['Whoever opens it connects a wallet; the path builds for them.', 'Only their wallet can sign it.', 'Opens, builds and signatures show on your studio, live.']}
+              primary={{ kind: 'spine', label: 'Mint the first one →', href: LINKS_STUDIO_HREF }}
+              secondary={{ kind: 'href', label: 'How links pay', href: '/docs/creator-earnings' }}
+            />
           ) : (
             <IntentLinksBoard board={board} />
           )}
