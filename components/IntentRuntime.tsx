@@ -32,6 +32,7 @@ import ChatLoader from '@/components/ChatLoader'
 import { SignatureWaitModal, useSignatureWait } from '@/components/SignatureWaitTakeover'
 import { useBackToClose } from '@/components/mobile/useBackToClose'
 import CreateAccountButton from '@/components/CreateAccountButton'
+import { I_STEPS } from '@/lib/first-run'
 import NavAccount from '@/components/NavAccount'
 import ShareButton from '@/components/ShareButton'
 import SignInFlowLink from '@/components/SignInFlowLink'
@@ -650,6 +651,25 @@ export default function IntentRuntime({
               </button>
             )}
           </div>
+          {/* WHAT HAPPENS NEXT (squad pre-gtm, FIRSTRUN): the line a stranger
+              from a tweet was missing between the quoted sentence and the
+              button — three steps, the second being the promise (nothing is
+              signed by looking). Reads left-aligned like the empty doors;
+              rides the phone's CTA-first order right under the button. */}
+          {!autoStarting && !walletResolving && !isConnected && (
+            <ol className="mt-5 w-full max-w-md text-left grid gap-2 max-sm:order-2" data-i-steps aria-label="What happens next">
+              {I_STEPS.map((st) => (
+                <li key={st.n} className="grid grid-cols-[18px_minmax(0,1fr)] gap-x-2 items-baseline">
+                  <span className="mono text-[10px] tracking-[.06em]" style={{ color: 'var(--accent)' }} aria-hidden>
+                    {st.n}
+                  </span>
+                  <span className="text-[12.5px] leading-snug text-[color:var(--muted)]">
+                    <span className="font-semibold text-[color:var(--fg)]">{st.title}</span> — {st.body}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
           {!autoStarting && !walletResolving && (
             <p className="text-[12px] text-[color:var(--muted-2)] mt-4 max-w-md max-sm:order-2">
               Connecting runs the scan and the build for your wallet — signing stays yours
@@ -675,7 +695,7 @@ export default function IntentRuntime({
               No wallet on this phone?{' '}
               <CreateAccountButton
                 walletConnectOnly
-                className="underline decoration-dotted underline-offset-2 text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors"
+                className="hit-44 underline decoration-dotted underline-offset-2 text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors"
                 label="Make one with email or Google"
               />
               {' '}— nothing to install, and it signs right here.
