@@ -57,7 +57,7 @@ import CreateAccountButton from '@/components/CreateAccountButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
 import { signInDoorFor, signInElsewhereHref, signInGateLifted, signInGateOf, shouldRerunSignInAsk } from '@/lib/sign-in-gate'
 import { SITE_URL } from '@/lib/site-url'
-import { CONNECT_ASK_RELEASE_GRACE_MS, bootHoldingFor, connectAskReleased, hasStoredWalletConnection, initialHoldElapsed, shouldRerunConnectAsk } from '@/lib/wallet-reconnect'
+import { CONNECT_ASK_RELEASE_GRACE_MS, SEND_HOLD_MS, bootHoldingFor, connectAskReleased, hasStoredWalletConnection, initialHoldElapsed, sendHoldFor, shouldRerunConnectAsk } from '@/lib/wallet-reconnect'
 import { useHydrated } from '@/lib/use-hydrated'
 import { SLOW_TURN_CAPTION, SLOW_TURN_MS } from '@/lib/turn-status'
 import { SplashDashboard } from '@/components/SplashDashboard'
@@ -577,6 +577,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // Effective wallet context for /api/chat: an embed-provided address wins,
   // else the connected account. Context alone never signs anything.
   const effectiveAddress = contextAddress ?? (isConnected ? address : undefined)
+  // The SEND hold (lib/wallet-reconnect sendHoldFor): an ask typed while a
+  // remembered wallet is still restoring waits for the address, ≤10s, instead
+  // of posting wallet-less and answering "Connect your wallet" to a connected
+  // wallet (pre-gtm 2026-10-06). Released by the effect below handleSend.
+  const [heldSend, setHeldSend] = useState<{ text: string; at: number } | null>(null)
+  const [heldTick, setHeldTick] = useState(0)
 
   const currentChat = chats.find((c) => c.id === currentChatId)
   const activeServers = servers.filter((s) => activeServerIds.includes(s.id))
@@ -1171,11 +1177,32 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleSend = async (textOverride?: string) => {
+  const handleSendRef = useRef<(text?: string, released?: boolean) => Promise<void>>(async () => {})
+  useEffect(() => {
+    if (!heldSend) return
+    const verdict = sendHoldFor({ walletStatus, hasAddress: !!effectiveAddress, stored: true, heldAt: heldSend.at, now: Date.now() })
+    if (verdict === 'send') {
+      setHeldSend(null)
+      void handleSendRef.current(heldSend.text, true)
+      return
+    }
+    const t = setTimeout(() => setHeldTick((n) => n + 1), Math.max(50, SEND_HOLD_MS - (Date.now() - heldSend.at)))
+    return () => clearTimeout(t)
+  }, [heldSend, heldTick, walletStatus, effectiveAddress])
+
+  const handleSend = async (textOverride?: string, released = false) => {
     // textOverride lets UI affordances (e.g. a vote-candidate chip) submit a
     // composed message without going through the input box.
     const raw = typeof textOverride === 'string' ? textOverride : input
     if (!raw.trim()) return
+    // Hold the send — not the splash — while a stored wallet connection is
+    // restoring (released below with the landed address, or without it at the
+    // cap). A released send passes `released` and never re-holds.
+    if (!released && sendHoldFor({ walletStatus, hasAddress: !!effectiveAddress, stored: hasStoredWalletConnection(typeof window === 'undefined' ? null : window.localStorage), heldAt: null, now: Date.now() }) === 'hold') {
+      setHeldSend({ text: raw.trim(), at: Date.now() })
+      if (typeof textOverride !== 'string') setInput('')
+      return
+    }
     // Chart asks are a READ the client already owns: "show me the ETH chart"
     // (typed or spoken) opens ChartOverlay right here — no turn burned, no
     // round trip, and it works mid-turn. The route carries the same parser
@@ -1917,6 +1944,8 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
       sendComposer()
     }
   }
+
+  handleSendRef.current = handleSend
 
   return (
     <div ref={rootRef} className={cn('relative flex flex-col h-full', firstParty && 'yf-chat')} {...(firstParty ? { 'data-chat-gate-root': '' } : {})}>
@@ -2980,7 +3009,9 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
           )}
           aria-live="polite"
         >
-          {voiceState === 'listening'
+          {heldSend
+            ? `Connecting your wallet… “${heldSend.text.slice(0, 48)}${heldSend.text.length > 48 ? '…' : ''}” sends the moment it lands`
+            : voiceState === 'listening'
             ? 'Listening… tap the mic to send · Esc to cancel'
             : voiceState === 'denied'
               ? embedded

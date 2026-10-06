@@ -147,3 +147,33 @@ export function bootHoldingFor(input: {
 export function initialHoldElapsed(storage: StorageLike | null | undefined): boolean {
   return !hasStoredWalletConnection(storage)
 }
+
+// ── The SEND hold (pre-gtm 2026-10-06, DEADENDS r3) ───────────────────────
+// wagmi's store holds a remembered wallet ~2s after load, but `status` stays
+// 'connecting'/'reconnecting' until every connector finished its probe (the
+// CDP + WalletConnect init: seconds on a phone, ~9s headless). The boot hold
+// above releases the composer at 4s, so a typed ask in between posted
+// WALLET-LESS and answered "Connect your wallet" to a wallet that was
+// connected — then the connect re-run answered again. The send itself is
+// held instead (the AskChart #879 rule): at most SEND_HOLD_MS, released the
+// moment the wallet lands, or without it at the cap.
+export const SEND_HOLD_MS = 10_000
+
+/** 'hold' while a stored connection is still restoring and the cap has not
+ *  passed; 'send' otherwise (a landed address, a settled disconnect, nothing
+ *  stored to wait for, or the cap). */
+export function sendHoldFor(input: {
+  walletStatus: 'connected' | 'connecting' | 'reconnecting' | 'disconnected'
+  /** The address the turn would carry (effectiveAddress). */
+  hasAddress: boolean
+  /** wagmi has something to restore (hasStoredWalletConnection). */
+  stored: boolean
+  /** When the hold began, or null when the send is being decided fresh. */
+  heldAt: number | null
+  now: number
+}): 'hold' | 'send' {
+  const { walletStatus, hasAddress, stored, heldAt, now } = input
+  if (hasAddress || walletStatus === 'connected' || walletStatus === 'disconnected' || !stored) return 'send'
+  if (heldAt !== null && now - heldAt >= SEND_HOLD_MS) return 'send'
+  return 'hold'
+}

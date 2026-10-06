@@ -12,7 +12,7 @@ export const metadata = { title: 'Page not found · Pantessa', robots: { index: 
 
 export default function NotFound() {
   const chip =
-    'inline-flex items-center gap-2 px-4 min-h-[44px] rounded-full border border-[var(--line)] bg-[var(--surf-1)] text-[13px] font-medium text-[color:var(--fg)] hover:border-[var(--accent)] transition-colors'
+    'inline-flex items-center gap-2 px-4 min-h-[44px] rounded-full border bg-[var(--surf-1)] text-[13px] font-medium text-[color:var(--fg)] hover:border-[var(--accent)] transition-colors'
   return (
     <main className="x-main">
       <div className="max-w-xl mx-auto px-4 max-sm:px-0 py-24 max-sm:py-14">
@@ -31,16 +31,16 @@ export default function NotFound() {
           signed by opening it.
         </p>
         <div className="mt-8 flex flex-wrap gap-2">
-          <Link href="/" className={`${chip} border-[var(--accent)]`}>
+          <Link href="/" className={`${chip} border-[var(--accent)] tint-bg-accent-10`}>
             Home
           </Link>
-          <SpineLink href="/chat" className={chip}>
+          <SpineLink href="/chat" className={`${chip} border-[var(--line)]`}>
             Open the app
           </SpineLink>
-          <Link href="/links" className={chip}>
+          <Link href="/links" className={`${chip} border-[var(--line)]`}>
             Intent links
           </Link>
-          <Link href="/docs" className={chip}>
+          <Link href="/docs" className={`${chip} border-[var(--line)]`}>
             Docs
           </Link>
         </div>
