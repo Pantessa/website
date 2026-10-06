@@ -110,7 +110,9 @@
 .sym__head--mk2 > .guide-seat { order: 4; flex-basis: 100%; margin-top: 10px; }
 [data-empty-state] > .guide-seat { width: 100%; max-width: 28rem; margin-top: 22px; text-align: left; }
 .live__rail > .guide-seat { margin-bottom: 12px; }
-.live > .guide-seat { margin: 0 0 10px; }
+/* The phone posture: under the markets strip, before the flow chart (which
+   brings its own 14px above). */
+.live > .guide-seat { margin: 14px 0 0; }
 .wallet-guide-seat > .guide-seat, .guide-seat[data-guide-seat='wallet'] { margin-bottom: 18px; }
 
 /* ── The spine's unseen-dot: 6px of accent at the icon's top-right, ringed

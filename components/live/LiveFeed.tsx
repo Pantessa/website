@@ -184,7 +184,6 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
     <>
       <main className="mkt-frame__main live" data-status={status} data-paused={paused || undefined}>
         <h1 className="sr-only">Live feed</h1>
-        <GuideSeat surface="live" posture="phone" />
 
         <div className="mkt-frame__bar live__bar">
           <div className="live__title">
@@ -219,6 +218,7 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
           })}
         </div>
 
+        <GuideSeat surface="live" posture="phone" />
         <section className="live__panel" aria-label="USD notional per second">
           <header className="live__ph">
             <span className="live__pk">USD notional per second, by taker flow{filter ? ` · ${filter}` : ''}</span>
