@@ -176,12 +176,20 @@
      text node on screen = one label in the journey log), not swapped here. */
   .guide--compact .guide__x { display: inline-grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 10px; background: transparent; color: var(--muted-2); cursor: pointer; }
   .guide--compact .guide__x:hover { color: var(--fg); }
+  /* The symbol header on a phone (R3): the row sits under the act strip and
+     the chart follows — the chart stays primary, so the seat spends as little
+     of the first screen as a 44px row allows (the header's own row gap is the
+     air above it; a hair below it before the chart card). */
+  .sym__head--mk2 > .guide-seat { margin-top: 0; margin-bottom: 2px; }
 }
 
-/* A thumb: every control ≥44px, the chip keeps its look and grows its box. */
+/* A thumb: every control ≥44px, the chip keeps its look and grows its box.
+   `.guide__got` is also ≥44 WIDE here (MOBILE § For GUIDE 4: touch tablets at
+   641–1023 fall outside MOBILE's 640px fence; this block covers them). */
 @media (hover: none) {
   .guide__cta, .guide__got, .guide__dots { min-height: 44px; }
   .guide__cta { padding-inline: 16px; }
+  .guide__got { min-width: 44px; justify-content: center; }
   .guide__dots { width: 44px; }
   .guide__off { min-height: 44px; }
 }

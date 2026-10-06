@@ -11,6 +11,7 @@
 import { readFileSync } from 'node:fs'
 import {
   CREATOR_SPLIT_WORD,
+  GUIDE_COMPACT_SURFACES,
   GUIDE_FRESH,
   GUIDE_HINTS,
   GUIDE_MAX_SHOWS,
@@ -20,6 +21,7 @@ import {
   GUIDE_SURFACES,
   GUIDE_TOTAL,
   GUIDE_VISITS,
+  compactOnPhone,
   dotFor,
   freshGuideState,
   guideCta,
@@ -356,8 +358,32 @@ export function guidePins(check: Check): void {
       /Don’t show tips/.test(card),
   )
   check(
-    'guide: the compact row is the HOME seat only (GuideSeat passes compact for home), one row under 640px — the title clamps to two lines, the × is "Got it" (44×44), the body / text Got it / ⋯ step aside; the full card keeps the ⋯ and its <details>',
-    /compact=\{surface === 'home'\}/.test(seat) &&
+    'guide: the compact row is for the SPLASH and the SYMBOL page (GUIDE_COMPACT_SURFACES = home + symbol; GuideSeat passes compactOnPhone(surface)); /live, /chat and /wallet keep the full card on a phone — nothing there competes for the first screen',
+    GUIDE_COMPACT_SURFACES.join(',') === 'home,symbol' &&
+      compactOnPhone('home') &&
+      compactOnPhone('symbol') &&
+      !compactOnPhone('live') &&
+      !compactOnPhone('chat') &&
+      !compactOnPhone('wallet') &&
+      /compact=\{compactOnPhone\(surface\)\}/.test(seat) &&
+      !/surface === 'home'/.test(seat),
+  )
+  const compactCtas = GUIDE_HINTS.filter((h) => h.surfaces.some((s) => compactOnPhone(s))).flatMap((h) => [false, true].map((connected) => guideCta(h, { connected, symbol: 'ETH' })))
+  check(
+    'guide: every hint that can sit on a compacting surface carries a SHORT CTA label (≤12 characters, an arrow) — the chart hint\'s is "Ask it →" ("Why is AAPL moving?" is ~152px and would leave ~40px for the title at 320); the full label stands wider than 640px',
+    compactCtas.length > 0 &&
+      compactCtas.every((c) => !!c && !!c.short && c.short.length <= 12 && /→$/.test(c.short) && c.short.length <= c.label.length) &&
+      guideCta(hint('chart'), { symbol: 'AAPL' })?.short === 'Ask it →' &&
+      guideCta(hint('chart'), { symbol: 'AAPL' })?.label === 'Why is AAPL moving?',
+    compactCtas.map((c) => c?.short ?? '∅').join(' | '),
+  )
+  check(
+    'guide: on a phone the symbol seat spends no margin above its row (the header\'s own gap is the air) and a hair below — the chart stays primary',
+    /@media \(max-width: 640px\) \{[\s\S]*\.sym__head--mk2 > \.guide-seat \{ margin-top: 0; margin-bottom: 2px; \}/.test(css),
+  )
+  check(
+    'guide: the compact row — one row under 640px, the title clamps to two lines, the × is "Got it" (44×44), the body / text Got it / ⋯ step aside; the full card keeps the ⋯ and its <details>',
+    /compact=\{compactOnPhone\(surface\)\}/.test(seat) &&
       /className=\{compact \? 'guide guide--compact' : 'guide'\}/.test(card) &&
       /className="guide__x" aria-label="Got it"/.test(card) &&
       /@media \(max-width: 640px\) \{[\s\S]*\.guide--compact \{[\s\S]*grid-template-areas: "mark body acts";[\s\S]*-webkit-line-clamp: 2;[\s\S]*\.guide--compact \.guide__x \{ display: inline-grid;[^}]*width: 44px; height: 44px;/.test(css) &&
