@@ -459,7 +459,7 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
         </div>
         <p className="battle__legend mono">
           <span><b>ground</b> = % move {minutes === null ? 'since the page opened' : `since ${minutes >= 60 ? `${minutes / 60}h` : `${minutes}m`} ago`} · horizon = 0%</span>
-          {view === 'map' ? <span><b>land</b> = open interest share</span> : <span><b>territory</b> = ground gained or lost</span>}
+          {view === 'map' ? <span><b>land</b> = open interest share</span> : view === 'siege' ? <span><b>sector</b> = one army · time sweeps it from the camp to now · <b>nearer the hill</b> = more ground</span> : <span><b>territory</b> = ground gained or lost</span>}
           <span><b className="up">▲</b> = {fmtUsd(unit)} bought in 60s · <b className="down">▼</b> = {fmtUsd(unit)} sold</span>
           <span><b>burst</b> = a fill ≥ {fmtUsd(unit * 4)}, where it hit</span>
           <span><b>tracers</b> = every fill as it lands</span>
@@ -494,7 +494,7 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
                         <span className="battle__army-dot" aria-hidden />
                         {armyLabel(army.market)}
                       </span>
-                      {day !== null && <span className="battle__partial mono">24h {fmtPct(day)}</span>}
+                      {day !== null && <span className="battle__day mono">24h {fmtPct(day)}</span>}
                     </td>
                     <td className={`num mono battle__pct ${pct === null ? '' : pct >= 0 ? 'up' : 'down'}`}>
                       {fmtPct(pct)}

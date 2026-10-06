@@ -45,6 +45,7 @@ import {
   siegeAngle,
   siegeRadius,
   siegeSectors,
+  spreadFlags,
   strengthOf,
   trackOf,
   windowMinutes,
@@ -156,6 +157,12 @@ export function battlePins(check: Check): void {
     two.length === 2 && near(two[0].start, -Math.PI / 2) && near(two[0].end, Math.PI / 2) && near(two[1].end, (3 * Math.PI) / 2) && one.length === 1 && near(one[0].end - one[0].start, Math.PI * 2) &&
       near(siegeRadius(3, range, 100), 100 * SIEGE_INNER) && near(siegeRadius(-1, range, 100), 100) && near(siegeRadius(1, range, 100), 100 * (SIEGE_INNER + (1 - SIEGE_INNER) * 0.5)) && siegeRadius(9, range, 100) === 100 * SIEGE_INNER &&
       near(siegeAngle(T0 - 60_000, T0 - 60_000, T0, two[0]), -Math.PI / 2 + Math.PI * 0.05) && near(siegeAngle(T0, T0 - 60_000, T0, two[0]), Math.PI / 2 - Math.PI * 0.05) && near(siegeAngle(T0 + 999, T0 - 60_000, T0, two[0]), Math.PI / 2 - Math.PI * 0.05))
+
+  // ── Flags ─────────────────────────────────────────────────────────────
+  const spread = spreadFlags([100, 104, 300, 102], 30, 20, 400)
+  const pinned = spreadFlags([395, 398], 30, 20, 400)
+  check('battle: flags keep their fronts\' order and at least the gap between them, inside the field; a crowd at the bottom edge is pushed up, not off',
+    spread[0] === 100 && spread[3] === 130 && spread[1] === 160 && spread[2] === 300 && pinned[1] === 400 && pinned[0] === 370 && spreadFlags([], 30, 0, 10).length === 0, JSON.stringify([spread, pinned]))
 
   // ── The Map ───────────────────────────────────────────────────────────
   const bands = mapBands([4.3e9, 2.7e9, 1.1e9], 1000)

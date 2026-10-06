@@ -106,7 +106,7 @@ export const FALLBACK_ARMIES: readonly string[] = ['BTC', 'ETH', 'HYPE']
 /** How many of the pick list the field opens with. */
 export const DEFAULT_PICK = 3
 
-const MARKET_RE = /^(?:xyz:)?[A-Za-z][A-Za-z0-9]{0,11}$/
+const MARKET_RE = /^(?:xyz:)?[A-Za-z][A-Za-z0-9]{0,11}$/i
 
 /** The venue spells a main-book coin in caps and a HIP-3 market as
  *  `xyz:TICKER`; the URL may arrive in any case. Unknown shapes are dropped,
@@ -444,7 +444,32 @@ export function siegeAngle(t: number, from: number, to: number, sector: Sector, 
   return sector.start + width * (margin + k * (1 - 2 * margin))
 }
 
+// ── Flags that never overlap ─────────────────────────────────────────────────
+
+/**
+ * Flag rows want to sit at their front's height; two fronts a few pixels
+ * apart would print on top of each other. Keep each flag at least `gap`
+ * from the next, in the fronts' own order, inside [top, bottom]. Returns
+ * the adjusted ys in the input's order.
+ */
+export function spreadFlags(ys: readonly number[], gap: number, top: number, bottom: number): number[] {
+  const idx = ys.map((y, i) => ({ y: Math.min(Math.max(y, top), bottom), i })).sort((a, b) => a.y - b.y)
+  for (let k = 1; k < idx.length; k++) idx[k].y = Math.max(idx[k].y, idx[k - 1].y + gap)
+  if (idx.length) {
+    idx[idx.length - 1].y = Math.min(idx[idx.length - 1].y, bottom)
+    for (let k = idx.length - 2; k >= 0; k--) idx[k].y = Math.min(idx[k].y, idx[k + 1].y - gap)
+    for (let k = 0; k < idx.length; k++) idx[k].y = Math.max(idx[k].y, top + k * gap)
+  }
+  const out = new Array<number>(ys.length)
+  for (const { y, i } of idx) out[i] = y
+  return out
+}
+
 // ── The Map: territory bands ─────────────────────────────────────────────────
+
+/** No band narrower than this share of the field, so a small army's
+ *  profile can still be read; the deed on the band prints the real share. */
+export const MAP_MIN_BAND_SHARE = 0.14
 
 export interface Band {
   x: number
@@ -524,11 +549,11 @@ export function dayChangePct(c: ArmyContext): number | null {
 
 // ── Formats ──────────────────────────────────────────────────────────────────
 
-/** `+2.31%` · `−0.06%` · `+0.004%` (three places under a tenth). */
+/** `+2.31%` · `−0.06%` · `+0.004%` (three places under a hundredth) · `+12.3%`. */
 export function fmtPct(pct: number | null): string {
   if (pct === null || !Number.isFinite(pct)) return '—'
   const abs = Math.abs(pct)
-  const places = abs >= 10 ? 1 : abs < 0.1 ? 3 : 2
+  const places = abs >= 10 ? 1 : abs > 0 && abs < 0.01 ? 3 : 2
   const sign = pct > 0 ? '+' : pct < 0 ? '−' : ''
   return `${sign}${abs.toFixed(places)}%`
 }

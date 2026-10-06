@@ -21,6 +21,8 @@ import {
   fmtPct,
   glyphsFor,
   mapBands,
+  MAP_MIN_BAND_SHARE,
+  spreadFlags,
   oiUsd,
   pctTicks,
   siegeAngle,
@@ -155,6 +157,7 @@ export function drawFront(ctx: CanvasRenderingContext2D, w: number, h: number, d
   drawTimeTicks(ctx, inks, s.from, s.to, PAD.l, plotW, h - 10)
   const order = [...s.frames].sort((a, b) => (a.pct ?? -Infinity) - (b.pct ?? -Infinity))
   const fronts = new Map<string, Front>()
+  const drawn: { a: ArmyFrame; ink: string; fx: number; fy: number }[] = []
   for (const a of order) {
     if (!a.anchor || a.track.length === 0) continue
     const ink = inks.army[a.slot] ?? inks.army[0]
@@ -167,9 +170,12 @@ export function drawFront(ctx: CanvasRenderingContext2D, w: number, h: number, d
     const fy = y(lastPt.pct)
     drawRanks(ctx, inks, ink, a, s.unit, fx - 10, fy, { x: 0, y: -1 })
     dot(ctx, ink, fx, fy, 3.5)
-    drawFlag(ctx, inks, ink, a, PAD.l + plotW + 8, fy, PAD.r - 12, PAD.t, PAD.t + plotH, fx, fy)
+    drawn.push({ a, ink, fx, fy })
     fronts.set(a.market, { x: PAD.l + plotW, y: fy, nx: 0, ny: -1, tx: 1, ty: 0 })
   }
+  // Flags at the right edge, spread so close fronts never print over each other.
+  const flagYs = spreadFlags(drawn.map((f) => f.fy), 30, PAD.t + 13, PAD.t + plotH - 13)
+  drawn.forEach((f, i) => drawFlag(ctx, inks, f.ink, f.a, PAD.l + plotW + 8, flagYs[i], PAD.r - 12, PAD.t, PAD.t + plotH, f.fx, f.fy))
   drawTracers(ctx, d, fronts)
   if (d.hover && d.hover.x >= PAD.l && d.hover.x <= PAD.l + plotW) {
     const t = s.from + ((d.hover.x - PAD.l) / plotW) * (s.to - s.from)
@@ -186,7 +192,7 @@ export function drawMap(ctx: CanvasRenderingContext2D, w: number, h: number, d: 
   const plotW = Math.max(10, w - MAP_PAD.l - MAP_PAD.r)
   const plotH = Math.max(10, h - MAP_PAD.t - MAP_PAD.b)
   const y = (pct: number) => MAP_PAD.t + ((s.range.hi - pct) / (s.range.hi - s.range.lo)) * plotH
-  const bands = mapBands(s.frames.map((a) => a.oiUsd), plotW)
+  const bands = mapBands(s.frames.map((a) => a.oiUsd), plotW, 10, Math.max(72, plotW * MAP_MIN_BAND_SHARE))
   ctx.clearRect(0, 0, w, h)
   drawGround(ctx, inks, MAP_PAD.l, MAP_PAD.t, plotW, plotH, y)
   drawGrid(ctx, inks, s.range, MAP_PAD.l, plotW, y, MAP_PAD.l - 8)
@@ -212,7 +218,7 @@ export function drawMap(ctx: CanvasRenderingContext2D, w: number, h: number, d: 
     ctx.fillText(armyLabel(a.market), bx + 8, MAP_PAD.t - 24)
     ctx.font = `10px ${inks.mono}`
     ctx.fillStyle = inks.muted
-    const deed = a.oiUsd !== null ? `${fmtUsd(a.oiUsd)} open interest · ${Math.round(band.share * 100)}% of the field` : 'open interest unread'
+    const deed = a.oiUsd === null ? 'open interest unread' : band.w >= 260 ? `${fmtUsd(a.oiUsd)} open interest · ${Math.round(band.share * 100)}% of the field` : `${fmtUsd(a.oiUsd)} OI · ${Math.round(band.share * 100)}%`
     ctx.fillText(fitText(ctx, deed, band.w - 16), bx + 8, MAP_PAD.t - 10)
     if (!a.anchor || a.track.length === 0) return
     const xb = (t: number) => bx + 6 + ((t - s.from) / Math.max(1, s.to - s.from)) * (band.w - 12)
@@ -286,10 +292,12 @@ export function drawSiege(ctx: CanvasRenderingContext2D, w: number, h: number, d
   ctx.arc(cx, cy, R, 0, Math.PI * 2)
   ctx.arc(cx, cy, r0, 0, Math.PI * 2, true)
   ctx.fill()
-  // Rings: the percent ticks.
+  // Rings: the percent ticks, labelled up the twelve o'clock spoke, a
+  // label skipped when it would sit on the last one.
   ctx.font = `10px ${inks.mono}`
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
+  let lastLabelRad = -Infinity
   for (const t of pctTicks(s.range)) {
     const rad = rr(t)
     if (rad > R + 0.5) continue
@@ -300,8 +308,10 @@ export function drawSiege(ctx: CanvasRenderingContext2D, w: number, h: number, d
     ctx.arc(cx, cy, rad, 0, Math.PI * 2)
     ctx.stroke()
     ctx.setLineDash([])
+    if (Math.abs(rad - lastLabelRad) < 14) continue
+    lastLabelRad = rad
     ctx.fillStyle = inks.muted
-    ctx.fillText(t === 0 ? '0' : fmtPct(t), cx + rad + 4, cy - 1)
+    ctx.fillText(t === 0 ? '0' : fmtPct(t), cx + 5, cy - rad)
   }
   // Sector spokes.
   if (sectors.length > 1) {
@@ -316,14 +326,15 @@ export function drawSiege(ctx: CanvasRenderingContext2D, w: number, h: number, d
   const fronts = new Map<string, Front>()
   const order = [...s.frames].sort((a, b) => (a.pct ?? -Infinity) - (b.pct ?? -Infinity))
   for (const a of order) {
-    const sec = sectors[a.slot < sectors.length ? s.frames.indexOf(a) : 0]
+    const sec = sectors[s.frames.indexOf(a)] ?? sectors[0]
     const ink = inks.army[a.slot] ?? inks.army[0]
-    // The camp: the army's name at the edge of its sector.
+    // The camp: the army's name at the edge of its sector, kept on the canvas.
     const mid = (sec.start + sec.end) / 2
-    const campX = cx + Math.cos(mid) * (R + 18)
-    const campY = cy + Math.sin(mid) * (R + 18)
     ctx.font = `600 12px ${inks.ui}`
-    ctx.textAlign = Math.cos(mid) > 0.3 ? 'left' : Math.cos(mid) < -0.3 ? 'right' : 'center'
+    const nameW = ctx.measureText(armyLabel(a.market)).width
+    const campX = Math.min(Math.max(cx + Math.cos(mid) * (R + 16), 6 + nameW / 2), w - 6 - nameW / 2)
+    const campY = Math.min(Math.max(cy + Math.sin(mid) * (R + 16), 12), h - 12)
+    ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillStyle = ink
     ctx.fillText(armyLabel(a.market), campX, campY)
@@ -371,20 +382,29 @@ export function drawSiege(ctx: CanvasRenderingContext2D, w: number, h: number, d
     ctx.fillText(sign, flx + sw / 2, fly + 9)
     fronts.set(a.market, { x: fx, y: fy, nx, ny, tx: -ny, ty: nx })
   }
-  // The hill: who holds it.
+  // The hill: who holds it, on a pill at the centre.
   const leader = [...s.frames].filter((a) => a.pct !== null).sort((a, b) => b.pct! - a.pct!)[0]
-  ctx.fillStyle = leader ? inks.army[leader.slot] ?? inks.army[0] : inks.muted
+  const hillInk = leader ? inks.army[leader.slot] ?? inks.army[0] : inks.muted
+  ctx.fillStyle = hillInk
   ctx.beginPath()
   ctx.arc(cx, cy, 6, 0, Math.PI * 2)
   ctx.fill()
+  const hillText = leader ? `${armyLabel(leader.market)} holds the hill` : 'the hill'
   ctx.font = `600 11px ${inks.ui}`
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'alphabetic'
+  const hw = ctx.measureText(hillText).width + 16
+  ctx.fillStyle = inks.surface
+  ctx.globalAlpha = 0.9
+  roundRect(ctx, cx - hw / 2, cy + 10, hw, 20, 6)
+  ctx.fill()
+  ctx.globalAlpha = 1
+  ctx.strokeStyle = hillInk
+  ctx.lineWidth = 1
+  roundRect(ctx, cx - hw / 2, cy + 10, hw, 20, 6)
+  ctx.stroke()
   ctx.fillStyle = inks.fg
-  ctx.fillText(leader ? `${armyLabel(leader.market)} holds the hill` : 'the hill', cx, cy - 12)
-  ctx.font = `10px ${inks.mono}`
-  ctx.fillStyle = inks.muted
-  ctx.fillText(`time sweeps each sector from its camp (${clockOf(s.from)}) to now · nearer the hill = more ground`, cx, h - 10)
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(hillText, cx, cy + 20)
   drawTracers(ctx, d, fronts)
   if (d.hover) {
     const dx = d.hover.x - cx
