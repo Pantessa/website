@@ -369,6 +369,7 @@ import { creatorSplitPins } from './creator-split-pins'
 import { actionGateLivePins, actionGatePins } from './action-gate-pins'
 import { chartCallsPins } from './chart-calls-pins'
 import { battlefieldPins } from './battlefield-pins'
+import { tapePins } from './tape-pins'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
   VIA_RE,
@@ -23441,9 +23442,10 @@ async function main() {
     }
     const brochureHtml = flat(await (await fetch(`${BASE}/pricing`)).text())
     check(
-      'markets shell: /pricing keeps the brochure nav + its Ask trigger (the shell is a markets-surface thing), and isMarketsPath is exactly /markets + /t/*',
+      'markets shell: /pricing keeps the brochure nav + its Ask trigger (the shell is a markets-surface thing), and isMarketsPath is exactly /markets + /t/* + /live (RE-PINNED 2026-10-06: the live tape rides the markets shell)',
       /<header class="nav/.test(brochureHtml) && brochureHtml.includes('nav__tabs') && brochureHtml.includes('data-ask-door="nav"') &&
         isMarketsPath('/markets') && isMarketsPath('/markets/') && isMarketsPath('/t/AAPL') && isMarketsPath('/t/ETH?tab=trade') &&
+        isMarketsPath('/live') && !isMarketsPath('/livex') && !isMarketsPath('/live/') &&
         !isMarketsPath('/marketsx') && !isMarketsPath('/t') && !isMarketsPath('/tools') && !isMarketsPath('/') && !isMarketsPath('/chat'),
     )
     check(
@@ -34565,6 +34567,8 @@ async function main() {
   // Drawing gestures, the share picture's words, a stamped call (pure).
   chartCallsPins(check)
   battlefieldPins(check)
+  // The live tape (2026-10-06): the venue row parse, flow classes, buckets, tiles, follow asks, triggers, the page's door.
+  tapePins(check)
 
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exit(fail ? 1 : 0)

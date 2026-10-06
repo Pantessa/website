@@ -52,6 +52,7 @@
     "probe:venue-floors": "tsx scripts/probe-venue-floors.ts",
     "probe:creator-split": "tsx scripts/probe-creator-split.ts",
     "probe:listings": "tsx scripts/action-gate-pins.ts --live",
+    "pins:tape": "tsx scripts/tape-pins.ts",
     "drive:mobile-ux": "tsx scripts/drive-mobile-ux.ts",
     "drive:mobile-connect": "tsx scripts/drive-mobile-connect.ts",
     "drive:mobile-sign": "tsx scripts/drive-mobile-sign.ts",
