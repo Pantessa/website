@@ -176,6 +176,7 @@ html[data-theme="light"] .battle {
    box (a table cell clips outside hit areas). Desktop untouched. */
 @media (hover: none) {
   .battle__btn, .battle__since button, .battle__modes button, .battle__pick, .battle__add input, .battle__addbtn { height: 44px; }
+  .battle__since button { min-width: 44px; }
   .battle__chip { min-height: 44px; }
   .battle__table .battle__chip { height: 44px; min-width: 44px; border-color: transparent; background: transparent; position: relative; isolation: isolate; }
   .battle__table .battle__chip::before { content: ''; position: absolute; inset: 9px 0; z-index: -1; border-radius: 999px; border: 1px solid transparent; }
