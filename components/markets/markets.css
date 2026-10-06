@@ -329,6 +329,78 @@ button.mk-held:hover { border-color: var(--accent); }
   /* A board tab lands its section under the strip + the stuck tabs. */
   .mkt-sec { scroll-margin-top: calc(var(--mkt-top-h, 52px) + 60px); }
 }
+
+/* ── THE FRONT DOOR ON A PHONE (squad front-door, 2026-10-06; MOBILE lane) ──
+   `/` is the app now: the live pulse and the guide take seats above the
+   boards, so the chrome above them gives back what it can. Measured at
+   375×812 on bec14057 before any seat filled: search 66–110, Map · List on a
+   row of its own 120–172 (a 148px control on a 343px row), the board tabs
+   182–235, the session clocks 247–320 (three lines, the TOKENS line cut
+   mid-sentence at every phone width), the first board's first row at 532.
+   With a ≤180px pulse, a one-line claim and a slim guide card that row would
+   land ≈850px down, under the tab bar. */
+
+/* Map · List rides BESIDE the search (−62px): the two share one 44px line,
+   the board tabs keep sticking under the top strip (the strip's box stays
+   dissolved, so their sticky range is still the whole data column). The
+   control gets a fixed width so the search can take exactly the rest; the
+   results menu still spans the whole row. Under 375 the two buttons show
+   their icons only (the words stay in the DOM for readers and drives, the
+   way the chart's Share does under 375). */
+@media (max-width: 640px), (max-width: 1023px) and (max-height: 500px) {
+  .mkt-frame__main { --mk-view-w: 148px; }
+  .mkt-frame__bar > .mkt-search { display: inline-block; vertical-align: top; width: calc(100% - var(--mk-view-w) - 8px); }
+  .mkt-frame__bar > .mkt-search .mkt-search__menu { right: calc(-1 * (var(--mk-view-w) + 8px)); }
+  .mkt-frame__bar > .mk-view { display: inline-flex; vertical-align: top; width: var(--mk-view-w); height: 44px; margin: 14px 0 0 8px; padding: 2px; }
+  .mkt-frame__bar > .mk-view > .mk-view__btn { position: relative; flex: 1 1 0; min-width: 0; justify-content: center; height: 38px; padding-inline: 0; }
+  /* 38px pills in a 44px control: each pill hit-tests to the control's edge. */
+  .mkt-frame__bar > .mk-view > .mk-view__btn::after { content: ''; position: absolute; inset: -3px; }
+}
+/* An Enter-key hint means nothing under a thumb (the phone keyboard has its
+   own Go key): on a touch phone the field keeps those 38px for its words. */
+@media (hover: none) and (max-width: 640px), (hover: none) and (max-width: 1023px) and (max-height: 500px) {
+  .mkt-frame__bar > .mkt-search .mkt-search__kbd { display: none; }
+}
+@media (max-width: 374px) {
+  .mkt-frame__main { --mk-view-w: 92px; }
+  .mkt-frame__bar > .mk-view > .mk-view__btn { gap: 0; font-size: 0; }
+}
+
+/* The session clocks on ONE line that scrolls sideways (−42px, and nothing
+   ellipsized): three lines of 15px mono cost 73px of the first screen and
+   still cut the TOKENS line mid-sentence. The NYSE bell — the clock a stock
+   ask depends on — leads and is always whole; the rest is a swipe away, and
+   the right edge fades so "more this way" reads (the /t act-strip idiom). */
+@media (max-width: 640px) {
+  .mk-session {
+    flex-wrap: nowrap; gap: 0 14px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+  .mk-session::-webkit-scrollbar { display: none; }
+  .mk-session::after { content: ''; flex: 0 0 14px; }
+  .mk-session__item { flex: 0 0 auto; }
+  .mk-session__v { overflow: visible; text-overflow: clip; }
+}
+
+/* The targets the front-door baseline measured under a coarse pointer
+   (before → after): the rail's add field 40 → 44 tall; the chart's
+   Candles | Battlefield switch 38×36 → a 44×44 hit area on a 38px pill (the
+   pill grows 2px, the chart bar's 44px first row does not move); the
+   positioning strip's toggle (coins) 29 → 44 tall; the brief's "Try again"
+   52×19 → a 44px hit area on the same underlined words. */
+@media (hover: none) {
+  .wl__addInput { min-height: 44px; }
+  .sym .mkt-view__btn { position: relative; height: 38px; }
+  .sym .mkt-view__btn::after { content: ''; position: absolute; inset: -3px; }
+  .sym .poshet__head { min-height: 44px; }
+  .mk-ai__retry { position: relative; }
+  .mk-ai__retry::after { content: ''; position: absolute; inset: -13px -6px; }
+  /* The Trade tab once its routes load: the "All" filter 39 wide, the
+     leverage slider's track 17px tall (a range input hit-tests its own box). */
+  .mkt-routes__filter { min-width: 44px; }
+  .mkt-routes__slider input[type='range'] { height: 44px; }
+}
 @media (max-width: 640px) {
   /* The /t header leads with the price and the chart (round 2, F9: the chart
      started at 48–56% of a 375×629 screen; a long venue chip and session line
@@ -456,4 +528,69 @@ button.mk-held:hover { border-color: var(--accent); }
   .sym .tchart:not(.tchart--expanded):has(.mkt-chart__canvas.is-field) { height: clamp(600px, 74dvh, 780px); }
   /* The positioning strip under the candles needs its own rows. */
   .sym .tchart:not(.tchart--expanded):has(.poshet.is-open) { height: clamp(560px, 76dvh, 820px); }
+}
+
+/* ── THE SPLASH CLAIM (squad front-door, 2026-10-06; SPLASH lane) ──────────
+   `/` is the app: the markets index opens on a claim block ABOVE the sticky
+   tool strip — HERO_LINE as the visible h1, one sentence, the door to /story
+   (components/home/SplashClaim; the block is `mk-claim` — `.splash__*` is an
+   older family in x402-design.css and would restyle it). Budget ≤72px tall on desktop so the live
+   pulse stays above the fold at 1440×900: two rows on the left (h1 ≈27px +
+   sentence ≈17px) with the door on the right, 12px over, 8px under = 68px.
+   A returning visitor ([data-compact]) gets the one-line version; so does a
+   phone (≤640px): the sentence hides (it stays in the HTML for a crawler),
+   the h1 and the door share a line and wrap only when 320px forces it. */
+.mk-claim { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "h1 door" "sub door"; align-items: baseline; column-gap: 18px; row-gap: 3px; padding: 12px 0 8px; }
+.mk-claim__h1 { grid-area: h1; margin: 0; font-family: var(--mk-font-display); font-weight: 500; font-size: clamp(21px, 1.9vw, 27px); line-height: 1.02; letter-spacing: -0.025em; color: var(--fg); text-wrap: balance; }
+.mk-claim__sub { grid-area: sub; margin: 0; max-width: 72ch; font-size: 12.5px; line-height: 1.4; color: var(--muted); text-wrap: pretty; }
+.mk-claim__door { grid-area: door; align-self: center; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); white-space: nowrap; text-decoration: none; transition: color .12s ease, border-color .12s ease; }
+.mk-claim__door:hover, .mk-claim__door:focus-visible { color: var(--fg); border-color: var(--accent); outline: none; }
+.mk-claim__door span { color: var(--accent); }
+.mk-claim[data-compact] { grid-template-areas: "h1 door"; row-gap: 0; padding: 10px 0 4px; }
+.mk-claim[data-compact] .mk-claim__h1 { font-size: clamp(17px, 1.3vw, 20px); }
+.mk-claim[data-compact] .mk-claim__sub { display: none; }
+@media (pointer: coarse) { .mk-claim__door { min-height: 44px; } }
+@media (max-width: 640px) {
+  /* MOBILE's numbers (MOBILE.md § For SPLASH): the whole block ≤48px at 375 —
+     the h1 at 20px (Fraunces, ≤230px) + 12px + the door as a 13px link (91px)
+     = 333 of the 343px column, one line; at 320 the door takes its own line.
+     The 44px door sets the row; 4px over it, nothing under. */
+  .mk-claim, .mk-claim[data-compact] { display: flex; flex-wrap: wrap; align-items: center; gap: 0 12px; padding: 4px 0 0; }
+  .mk-claim__h1, .mk-claim[data-compact] .mk-claim__h1 { font-size: 20px; line-height: 1.1; flex: 1 1 auto; min-width: 0; }
+  .mk-claim__sub { display: none; }
+  /* a plain 13px link, not the mono pill: the pill's case, tracking, border
+     and padding were the 30px that pushed the door under the h1 at 375 */
+  .mk-claim__door { min-height: 44px; padding: 0; border: 0; font-family: inherit; font-size: 13px; letter-spacing: 0; text-transform: none; color: var(--fg); }
+}
+/* The two seats under it (contract: margins only here — the pulse band and
+   the guide card own their own boxes). MOBILE's rhythm: 12px, like the session
+   strip's; and an EMPTY seat (GuideSeat renders null when no hint applies)
+   leaves no 12px hole. */
+.mk-lead-seat:not(:empty) { margin-top: 12px; }
+.mk-guide-seat:not(:empty) { margin-top: 12px; }
+/* ONE gap above the band, every width: THE SEAT OWNS IT, the band none while
+   seated. The band's own `margin: 12px 0 0` (pulse.css) is for a band standing
+   alone; here it sat inside `.pulse-seat`, a size container (container-type:
+   inline-size), which is an independent formatting context — the two 12px
+   margins never collapsed, and the band drew 24px under the tool strip at
+   every width (measured 1440 and 375, 2026-10-06). MOBILE zeroed it under
+   640px in pulse.css's MOBILE block; this is the same rule, unscoped. (No
+   comment marker inside this comment: a stray close would swallow the rule.) */
+.mk-lead-seat .pulse { margin-top: 0; }
+
+/* MOBILE */
+/* A board's head on a phone (MOBILE lane, squad front-door 2026-10-06,
+   measured on the integrated splash): the count rides the title's line, so the
+   blurb gets the whole column. Beside the count ("199 LISTED", 74px) the blurb
+   had 253px of the 343px column and wrapped to three lines; with the pulse, the
+   claim and the guide row in, the first board row on `/` sat at y 736 of an
+   812px screen, under the tab bar. Now the blurb is two lines and the row is
+   at ≈704 (one row above the bar at 375×812, two at 390×844). The words do not
+   change. The base rule's `gap: 16px` would become a row gap in a grid: 0. */
+@media (max-width: 640px) {
+  .mkt-sec__head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 12px; align-items: baseline; }
+  .mkt-sec__head > div { display: contents; }
+  .mkt-sec__title { grid-column: 1; grid-row: 1; }
+  .mkt-sec__count { grid-column: 2; grid-row: 1; }
+  .mkt-sec__blurb { grid-column: 1 / -1; grid-row: 2; }
 }

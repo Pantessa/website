@@ -142,3 +142,17 @@ a, button, [role='button'], [role='tab'], [role='menuitem'], input, select, text
 @media (hover: none) {
   [data-spine-bar] > a:active, [data-spine-bar] > button:active, [data-spine-bar] > div > button:active { opacity: 0.6; transition: opacity 0s; }
 }
+/* The footer's link rows are 44px tall below lg (x402-design.css, brochure
+   targets) but only as wide as their word: "Blog" 31, "Docs" 35, "Terms" 41
+   under a coarse pointer (front-door baseline, 2026-10-06). The row takes a
+   44px floor; the word keeps its place at the left, so nothing moves. */
+@media (hover: none) {
+  .footer__grouplinks a { min-width: 44px; }
+}
+/* /story's way back to the app (squad front-door, 2026-10-06): "Open
+   Pantessa →" rides a 10.5px mono line, a 14px-tall link at 375. Under a
+   thumb it hit-tests 44px tall; the line keeps its look. */
+@media (hover: none) {
+  [data-story-top] a { position: relative; }
+  [data-story-top] a::after { content: ''; position: absolute; inset: -15px -6px; }
+}

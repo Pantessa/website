@@ -2104,9 +2104,11 @@ async function main() {
   // our own domain — rule 7) must be reachable from the landing's host
   // section AND from /docs/embed, server-rendered, with its source a click
   // away; lib/live-examples.ts is the one record so the URL can't drift.
+  // RE-PINNED 2026-10-06 (front-door): the host section rides the brochure, which is /story now.
+  const storyHostHtml = await (await fetch(`${BASE}/story`)).text()
   check(
-    'live example: the landing links the deployed desk + its source, no JS required',
-    footerHomeHtml.includes(`href="${ROBINHOOD_DESK.url}"`) && footerHomeHtml.includes(`href="${ROBINHOOD_DESK.source}"`),
+    'live example: the brochure (/story) links the deployed desk + its source, no JS required',
+    storyHostHtml.includes(`href="${ROBINHOOD_DESK.url}"`) && storyHostHtml.includes(`href="${ROBINHOOD_DESK.source}"`),
   )
   const embedDocsHtml = await (await fetch(`${BASE}/docs/embed`)).text()
   check(
@@ -2151,6 +2153,8 @@ async function main() {
       '/docs/privacy', '/docs/terms', '/docs/dca', '/docs/guardian', '/docs/snapshot',
       // MARKETS/MSG (2026-09-11)
       '/compare', '/docs/markets',
+      // FRONT DOOR (RE-PINNED 2026-10-06 (front-door)): the brochure's prose moved to /story; `/` (the splash) stays in the list
+      '/story',
     ]
     for (const path of PROSE_PATHS) {
       const body = await (await fetch(`${BASE}${path}`)).text()
@@ -2748,9 +2752,12 @@ async function main() {
   // Re-pinned 2026-09-15 (mk2 LANDING): the hero's reel is HERO_REEL
   // (lib/markets-copy) — the rehearsal types its first beat's ask, SSR'd in
   // full, so the crawler and the first frame both read a real sentence.
+  // RE-PINNED 2026-10-06 (front-door): the hero with the reel is the brochure's — /story now; the
+  // splash (`/`) carries HERO_LINE as its claim block's h1.
+  const storyHeroHtml = flat(await (await fetch(`${BASE}/story`)).text())
   check(
-    "home: hero claims the Markets line and types the reel (first beat's ask SSR'd under the lede)",
-    homeHtml.includes(HERO_REEL[0].ask) && /The chart that executes\./.test(homeHtml),
+    "home: the brochure's hero (/story) claims the Markets line and types the reel (first beat's ask SSR'd under the lede); the splash carries the line as its claim",
+    storyHeroHtml.includes(HERO_REEL[0].ask) && /The chart that executes\./.test(storyHeroHtml) && /<h1 class="mk-claim__h1">The chart that executes\.<\/h1>/.test(homeHtml),
   )
   const sitemapXml = await (await fetch(`${BASE}/sitemap.xml`)).text()
   check('sitemap: site root is listed', /<loc>https?:\/\/[^</]+\/?<\/loc>/.test(sitemapXml))
@@ -4502,9 +4509,10 @@ async function main() {
       'house links: no house link offers a recurring buy (/i/dca-eth unsurfaced)',
       !boardHtml.includes('/i/dca-eth') && !HOUSE_LINKS.some((h) => h.slug === 'dca-eth' || /\bdca\b|every week|weekly/i.test(h.ask)),
     )
-    const homeHtml = flat(await (await fetch(`${BASE}/`)).text())
+    // RE-PINNED 2026-10-06 (front-door): the link lane, the explainer and its VideoObject ride the brochure — /story now.
+    const homeHtml = flat(await (await fetch(`${BASE}/story`)).text())
     check(
-      'house links: the landing link lane renders with tappable house links',
+      'house links: the brochure (/story) link lane renders with tappable house links',
       homeHtml.includes('A link that moves money.') && homeHtml.includes('/i/buy-aapl'),
     )
     // The explainer under the spread is a FACADE (components/ExplainerVideo):
@@ -4513,7 +4521,7 @@ async function main() {
     // visitors won't start. The VideoObject JSON-LD rides the same record
     // (lib/explainer-video), so the page and search results can't disagree.
     check(
-      'explainer: the landing spread carries the video facade, not a YouTube iframe',
+      'explainer: the brochure (/story) spread carries the video facade, not a YouTube iframe',
       homeHtml.includes(`data-video="${EXPLAINER_VIDEO.id}"`) &&
         homeHtml.includes('EXPLAINER · 6:47') &&
         homeHtml.includes(EXPLAINER_VIDEO.headline) &&
@@ -4521,7 +4529,7 @@ async function main() {
         !/<iframe[^>]+youtube/i.test(homeHtml),
     )
     check(
-      'explainer: the home page declares a VideoObject for the same upload',
+      'explainer: /story declares a VideoObject for the same upload',
       homeHtml.includes('"@type":"VideoObject"') &&
         homeHtml.includes(`"duration":"${isoDuration(EXPLAINER_VIDEO.seconds)}"`) &&
         homeHtml.includes(`"uploadDate":"${EXPLAINER_VIDEO.uploadDate}"`),
@@ -4559,7 +4567,7 @@ async function main() {
       }),
     )
     check(
-      'house links: the landing lane chips render the mark stacks (title carries the apps)',
+      'house links: the brochure lane chips render the mark stacks (title carries the apps)',
       homeHtml.includes('via Robinhood + NEAR Intents'),
     )
     // The composed MCP set must survive plurals — "Show my NFTs" once
@@ -6347,7 +6355,10 @@ async function main() {
     )
     check(
       'onboarding: the root social card tells the Markets story ("The chart that executes." via lib/markets-copy + YOUR WALLET SIGNS), never the pre-07-22 "Mega dapps are here" pitch',
-      /alt = `Pantessa — \$\{HERO_LINE\}`/.test(og) &&
+      // RE-PINNED 2026-10-06 (front-door): the root card is THE BOARD now (the hero's
+      // rehearsal card moved to /story with the brochure); its alt says what
+      // the card shows after the claim.
+      /alt = `Pantessa — \$\{HERO_LINE\} /.test(og) &&
         /The chart<\/span>/.test(og) && /that executes\./.test(og) && /YOUR WALLET SIGNS/.test(og) &&
         !/Mega dapps/.test(og) && !/EVERY DAPP/.test(og) && !/You have an intent\.<\/span>/.test(og),
     )
@@ -6359,9 +6370,11 @@ async function main() {
     )
   }
   {
-    const html = await (await fetch(`${BASE}/`)).text()
+    // RE-PINNED 2026-10-06 (front-door): the install band rides the brochure, which is
+    // /story now (`/` is the markets splash).
+    const html = await (await fetch(`${BASE}/story`)).text()
     check(
-      'onboarding: the landing install band names the shipped SDK line (v1.0), never the pre-rename v0.9',
+      'onboarding: the brochure (/story) install band names the shipped SDK line (v1.0), never the pre-rename v0.9',
       !/v0\.9/.test(html) && /asm__ver[^<]*<\/span>|v1\.0/.test(html) && /v1\.0/.test(html),
     )
   }
@@ -15823,9 +15836,12 @@ async function main() {
     'app/p/[slug]/opengraph-image.tsx',
     'app/r/[slug]/opengraph-image.tsx',
     'app/agents/[handle]/opengraph-image.tsx',
+    // RE-PINNED 2026-10-06 (front-door): the brochure's rehearsal card moved to /story; /live got its own (R2).
+    'app/story/opengraph-image.tsx',
+    'app/live/opengraph-image.tsx',
   ].map((f) => ({ f, src: ogFs.readFileSync(f, 'utf8') }))
   check(
-    'og cards: all seven draw the house mark from lib/og-marks, none inline one',
+    'og cards: all nine draw the house mark from lib/og-marks, none inline one',
     ogCards.every((c) => c.src.includes('gemMarkSvg')) &&
       ogCards.every((c) => !c.src.includes('mask id="hub"')),
   )
@@ -23179,12 +23195,14 @@ async function main() {
     )
 
     // The hero + the Markets band — one message source.
-    const home = await (await fetch(`${BASE}/`)).text()
+    // RE-PINNED 2026-10-06 (front-door): the brochure is /story now (`/` is the markets
+    // splash), and its "Open Markets" doors point at `/` (lib/markets MARKETS_HREF).
+    const home = await (await fetch(`${BASE}/story`)).text()
     check(
-      'markets/msg: the landing carries the Markets band under the hero (chip pressed → sign card, six lines, CTA → /markets)',
+      'markets/msg: the brochure (/story) carries the Markets band under the hero (chip pressed → sign card, six lines, CTA → `/`)',
       home.includes('data-markets-band') &&
         /Buy \$10 of AAPL/.test(home) && /SIGN &amp; SEND/.test(home) &&
-        /href="\/markets"/.test(home) && /href="\/compare"/.test(home) &&
+        /href="\/"[^>]*>Open Markets</.test(home) && /href="\/compare"/.test(home) &&
         home.includes(HERO_LINE),
     )
     // Re-pinned 2026-09-15 (mk2 LANDING): the compare band names the
@@ -23193,7 +23211,7 @@ async function main() {
     // on the page now that the hero mounts it. The fence is the rule-7 shape:
     // never a heading, never an image, never an alt.
     check(
-      'markets/msg: the landing names the competitor in body text only — never a heading, an image or an alt (rule 7)',
+      'markets/msg: the brochure (/story) names the competitor in body text only — never a heading, an image or an alt (rule 7)',
       !/<h[1-6][^>]*>[^<]*TradingView/.test(home) && !/<img[^>]*TradingView/.test(home) && !/alt="[^"]*TradingView/.test(home),
     )
 
@@ -23201,8 +23219,9 @@ async function main() {
     const smap = await (await fetch(`${BASE}/sitemap.xml`)).text()
     const syms = chartableSymbols()
     check(
-      'markets/msg: sitemap lists /markets, /compare, /docs/markets and /t/AAPL + /t/ETH + /t/HYPE',
-      /\/markets<\/loc>/.test(smap) && /\/compare<\/loc>/.test(smap) && /\/docs\/markets<\/loc>/.test(smap) &&
+      // RE-PINNED 2026-10-06 (front-door): /markets is a 308 now; the index is `/` and the brochure /story.
+      'markets/msg: sitemap lists `/`, /story, /compare, /docs/markets and /t/AAPL + /t/ETH + /t/HYPE — and never /markets (a redirect is not a page)',
+      /\/story<\/loc>/.test(smap) && !/<loc>https?:\/\/[^/<]+\/markets<\/loc>/.test(smap) && /\/compare<\/loc>/.test(smap) && /\/docs\/markets<\/loc>/.test(smap) &&
         /\/t\/AAPL<\/loc>/.test(smap) && /\/t\/ETH<\/loc>/.test(smap) && /\/t\/HYPE<\/loc>/.test(smap),
     )
     check(
@@ -23391,9 +23410,12 @@ async function main() {
     // h1 + lede + chip row) must be gone and the page opens on the tool strip.
     // (The footer still says "The chart that executes." — not a hero.)
     check(
-      '/markets: 200 full-screen frame — no hero, search + board tabs, the three boards, the watchlist slot docked in the rail, the footer under the data',
+      // RE-PINNED 2026-10-06 (front-door): /markets 308s to `/`, the splash, which opens on
+      // the claim block — HERO_LINE as the visible h1 above the tool strip — so
+      // the index's sr-only "Markets" h1 steps aside. Still no brochure hero.
+      '/markets → `/`: 200 full-screen frame — the claim (h1 = HERO_LINE) above the tool strip, no brochure hero, search + board tabs, the three boards, the watchlist slot docked in the rail, the footer under the data',
       !/class="mkt__hero"/.test(mkHtml) && !mkHtml.includes('MARKETS · STOCKS 24/7 · SPOT · PERPS') &&
-        /<h1 class="sr-only">Markets<\/h1>/.test(mkHtml) &&
+        /<h1 class="mk-claim__h1">The chart that executes\.<\/h1>/.test(mkHtml) && !/<h1 class="sr-only">Markets<\/h1>/.test(mkHtml) &&
         /class="mkt-frame__rail"[^>]*>[\s\S]*?data-slot="watchlist"/.test(mkHtml) &&
         /class="mkt-frame__foot"><footer class="footer"/.test(mkHtml) &&
         /aria-label="Search markets"/.test(mkHtml) &&
@@ -23419,8 +23441,12 @@ async function main() {
         !/\.mkt__hero\b|\.mkt__grid\b/.test(shellCss),
     )
     const homeHtml = flat(await (await fetch(`${BASE}/`)).text())
-    const marketsLinks = (homeHtml.match(/href="\/markets"/g) ?? []).length
-    check('nav: the landing carries a Markets link in the top nav AND the footer', marketsLinks >= 2 && /href="\/markets"[^>]*>Markets</.test(homeHtml), `links=${marketsLinks}`)
+    // RE-PINNED 2026-10-06 (front-door): the brochure nav + footer live on /story (`/` is
+    // the splash, which wears the spine instead), and the Markets link is `/`
+    // (lib/markets MARKETS_HREF). The splash links to /markets nowhere.
+    const storyHtml = flat(await (await fetch(`${BASE}/story`)).text())
+    const marketsLinks = (storyHtml.match(/href="\/"[^>]*>Markets</g) ?? []).length
+    check('nav: the brochure (/story) carries a Markets link to `/` in the top nav AND the footer; neither page links to /markets', marketsLinks >= 2 && !/href="\/markets"/.test(homeHtml) && !/href="\/markets"/.test(storyHtml), `links=${marketsLinks}`)
     const chatHtml = flat(await (await fetch(`${BASE}/chat`)).text())
     check('spine: /chat carries the MARKETS seat (both postures render the link)', (chatHtml.match(/aria-label="MARKETS"/g) ?? []).length >= 2)
     const tAapl = flat(await (await fetch(`${BASE}/t/AAPL`)).text())
@@ -23460,11 +23486,11 @@ async function main() {
     }
     const brochureHtml = flat(await (await fetch(`${BASE}/pricing`)).text())
     check(
-      'markets shell: /pricing keeps the brochure nav + its Ask trigger (the shell is a markets-surface thing), and isMarketsPath is exactly /markets + /t/* + /live (RE-PINNED 2026-10-06: the live tape rides the markets shell)',
+      'markets shell: /pricing keeps the brochure nav + its Ask trigger (the shell is a markets-surface thing), and isMarketsPath is exactly `/` + /markets + /t/* + /live (RE-PINNED 2026-10-06 (front-door): `/` IS the markets splash; the live tape rides the shell too)',
       /<header class="nav/.test(brochureHtml) && brochureHtml.includes('nav__tabs') && brochureHtml.includes('data-ask-door="nav"') &&
         isMarketsPath('/markets') && isMarketsPath('/markets/') && isMarketsPath('/t/AAPL') && isMarketsPath('/t/ETH?tab=trade') &&
         isMarketsPath('/live') && !isMarketsPath('/livex') && !isMarketsPath('/live/') &&
-        !isMarketsPath('/marketsx') && !isMarketsPath('/t') && !isMarketsPath('/tools') && !isMarketsPath('/') && !isMarketsPath('/chat'),
+        isMarketsPath('/') && !isMarketsPath('/marketsx') && !isMarketsPath('/t') && !isMarketsPath('/tools') && !isMarketsPath('/story') && !isMarketsPath('/chat'),
     )
     check(
       // Re-pinned (squad mobile-native, 2026-09-24, SHELL): the shell no
@@ -23546,7 +23572,7 @@ async function main() {
       ) => ae.isSignedOut({ sessionStatus, sessionAddress, walletStatus, walletAddress, walletRemembered: remembered })
       const store = (m: Record<string, string>) => (k: string) => m[k] ?? null
       check(
-        "app entry: signed out = the session answered with no one, no wallet on hand, and no wallet coming back — a stranger is decided without waiting out wagmi's connector probe, a browser that connected a wallet before waits for it, a connected wallet is in (connect to act); a fresh login lands on /markets",
+        "app entry: signed out = the session answered with no one, no wallet on hand, and no wallet coming back — a stranger is decided without waiting out wagmi's connector probe, a browser that connected a wallet before waits for it, a connected wallet is in (connect to act); a fresh login lands on the splash (`/`)",
         so('guest', 'disconnected') && so('guest', 'connecting') && so('guest', 'reconnecting') &&
           // the first beat: wagmi reads 'disconnected' before its mount effect runs
           !so('loading', 'disconnected') && !so('loading', 'connecting') &&
@@ -23563,7 +23589,9 @@ async function main() {
           ae.walletRemembered(store({ 'wagmi.recentConnectorId': '"cdp-embedded-wallet"' })) &&
           !ae.walletRemembered(store({ 'wagmi.recentConnectorId': '"io.metamask"', 'wagmi.io.metamask.disconnected': 'true' })) &&
           !ae.walletRemembered(store({})) && !ae.walletRemembered(store({ 'wagmi.recentConnectorId': 'not json' })) &&
-          ae.SIGN_IN_LANDING === '/markets',
+          // RE-PINNED 2026-10-06 (front-door): the splash IS the markets page,
+          // so a fresh login lands on `/`.
+          ae.SIGN_IN_LANDING === '/',
       )
       const src = (p: string) => readFile(new URL(`../${p}`, import.meta.url), 'utf8')
       const [doorS, authS, oauthS, acctS, navS, sessS, mctaS, spineLinkS, dashLayoutS] = await Promise.all(
@@ -23582,15 +23610,19 @@ async function main() {
       // was sent home from), every other page stays put.
       const landingFor = ae.signInLandingFor
       check(
-        'sign-in lands: only the landing page goes on to Markets; a chat, an intent link, a symbol page, the docs, a link board and a checkout keep their page and query',
-        landingFor('/') === '/markets' && landingFor('/?utm_source=x') === '/markets' &&
+        // RE-PINNED 2026-10-06 (front-door): `/` is the markets splash now, so
+        // a sign-in there stays there (the rule "every other page stays put"
+        // now covers the landing too); /markets redirects to `/` and is no
+        // longer a page anyone stands on.
+        'sign-in lands: the splash and every other page keep their page and query (a chat, an intent link, a symbol page, the docs, a link board, a checkout)',
+        landingFor('/') === '/' && landingFor('/?utm_source=x') === '/' &&
           landingFor('/chat') === '/chat' &&
           landingFor('/chat/cm123?mcps=uniswap-free&prompt=Buy%20%2410') === '/chat/cm123?mcps=uniswap-free&prompt=Buy%20%2410' &&
           landingFor('/i/buy-aapl') === '/i/buy-aapl' &&
           landingFor('/t/AAPL?tab=trade') === '/t/AAPL?tab=trade' && landingFor('/markets') === '/markets' &&
           landingFor('/docs/desk#install') === '/docs/desk' && landingFor('/links') === '/links' &&
           landingFor('/l/nate') === '/l/nate' && landingFor('/pricing?checkout=growth') === '/pricing?checkout=growth' &&
-          ae.SIGN_IN_LANDING === '/markets',
+          ae.SIGN_IN_LANDING === '/',
       )
       // The way back rides a sessionStorage record, not ?next= on the landing
       // URL: Next 16.2's router caches a route under its pathname with the URL
@@ -23614,10 +23646,11 @@ async function main() {
           rec('/markets') === null && rec('/t/AAPL') === null && rec('/docs') === null && rec('/chatty') === null &&
           rec(`/chat?prompt=${'x'.repeat(3000)}`) === null &&
           // a way back never leaves the signed-in app pages, or the site
-          landingFor('/', 'https://evil.example/chat') === '/markets' && landingFor('/', '//evil.example/chat') === '/markets' &&
-          landingFor('/', '/\\evil.example/chat') === '/markets' && landingFor('/', 'javascript:alert(1)') === '/markets' &&
-          landingFor('/', '/api/auth/logout') === '/markets' && landingFor('/', '/chat/../api/auth/logout') === '/markets' &&
-          landingFor('/', '/markets') === '/markets' &&
+          // (RE-PINNED 2026-10-06 (front-door): a refused way back falls to SIGN_IN_LANDING, the splash `/`)
+          landingFor('/', 'https://evil.example/chat') === '/' && landingFor('/', '//evil.example/chat') === '/' &&
+          landingFor('/', '/\\evil.example/chat') === '/' && landingFor('/', 'javascript:alert(1)') === '/' &&
+          landingFor('/', '/api/auth/logout') === '/' && landingFor('/', '/chat/../api/auth/logout') === '/' &&
+          landingFor('/', '/markets') === '/' &&
           ae.homeReturnHref('/dashboard?tab=keys') === '/dashboard?tab=keys' && ae.homeReturnHref(null) === null,
       )
       check(
@@ -23645,7 +23678,8 @@ async function main() {
           /homeReturn = readSignInReturn\(window\.sessionStorage\.getItem\(SIGN_IN_RETURN_KEY\), Date\.now\(\)\)/.test(sessS) &&
           /if \(sameAppHref\(redirectTo, currentAppHref\(\)\)\) router\.refresh\(\)\s*else router\.push\(redirectTo\)/.test(sessS) &&
           (sessS.match(/router\.push\(/g) ?? []).length === 1 && (sessS.match(/\bland\(redirectTo\)/g) ?? []).length === 3 &&
-          /<SpineLink href="\/markets"/.test(mctaS) &&
+          // RE-PINNED 2026-10-06 (front-door): the phone CTA bar's door reads MARKETS_HREF (`/`).
+          /<SpineLink href=\{MARKETS_HREF\}/.test(mctaS) &&
           ![doorS, authS, oauthS, acctS, navS, mctaS].some((s) => /redirectTo = '\/dashboard'|\|\| '\/dashboard'|: '\/dashboard'|connectAndSignIn\('\/dashboard'\)/.test(s)),
       )
       // A door on a page the visitor works in never reads that page while
@@ -23724,11 +23758,15 @@ async function main() {
       ]
       const bareShellLink = /<Link\s(?:[^>]*?\s)?href=(?:"\/(?:chat|markets)[?"/]|"\/t\/|\{`\/(?:chat|markets|t\/)|\{(?:ask|chipHref)\(|\{(?:tryHref|chatHref|appHref)\})/
       const bare = outside.filter((p) => bareShellLink.test(fsMod.readFileSync(p, 'utf8')))
+      // RE-PINNED 2026-10-06 (front-door): the nav's two Markets tabs read MARKETS_HREF (`/`)
+      // and the brochure with its "Open Markets" doors is /story.
+      const storyDoorsHtml = flat(await (await fetch(`${BASE}/story`)).text())
       check(
         'shell doors: no page or component outside the app shell links into it with a bare <Link> — the nav tabs, hero, footer, docs asks, share pages and public lists are SpineLinks (server HTML keeps the real hrefs)',
         bare.length === 0 &&
-          (navS.match(/<SpineLink href="\/(?:markets|chat)" className=\{`nav__tab/g) ?? []).length === 4 &&
-          /href="\/chat"[^>]*>App</.test(homeHtml) && /href="\/markets"[^>]*>Open Markets</.test(homeHtml),
+          (navS.match(/<SpineLink href=\{MARKETS_HREF\} className=\{`nav__tab/g) ?? []).length === 2 &&
+          (navS.match(/<SpineLink href="\/chat" className=\{`nav__tab/g) ?? []).length === 2 &&
+          /href="\/chat"[^>]*>App</.test(storyDoorsHtml) && /href="\/"[^>]*>Open Markets</.test(storyDoorsHtml),
         `bare=${bare.join(',')}`,
       )
     }
@@ -23746,9 +23784,10 @@ async function main() {
       const ae = await import('../lib/app-entry')
       const ag = await import('../lib/act-gate')
       check(
-        'public app pages: /markets and every /t/<symbol> (query and hash ignored) are open to a signed-out visitor; /chat and its deep links, /wallet, the dashboard and the home page are not',
-        ['/markets', '/markets?q=apple', '/markets#crypto', '/t/AAPL', '/t/ETH?tab=trade'].every((p) => ae.isPublicAppPath(p)) &&
-          !['/chat', `/chat?prompt=${encodeURIComponent('Buy $10 of AAPL')}`, '/chat/abc', '/wallet', '/dashboard', '/', '/marketsx', '/t', '/pricing'].some((p) => ae.isPublicAppPath(p)),
+        // RE-PINNED 2026-10-06 (front-door): `/` IS the markets splash — public.
+        'public app pages: `/`, /markets and every /t/<symbol> (query and hash ignored) are open to a signed-out visitor; /chat and its deep links, /wallet, the dashboard and /story (a brochure page, not the shell) are not',
+        ['/', '/?utm_source=x', '/markets', '/markets?q=apple', '/markets#crypto', '/t/AAPL', '/t/ETH?tab=trade'].every((p) => ae.isPublicAppPath(p)) &&
+          !['/chat', `/chat?prompt=${encodeURIComponent('Buy $10 of AAPL')}`, '/chat/abc', '/wallet', '/dashboard', '/story', '/marketsx', '/t', '/pricing'].some((p) => ae.isPublicAppPath(p)),
       )
       check(
         'act gate: a connected wallet runs the action (no session needed); nobody here gets the door; a wallet that may still come back waits without one',
@@ -26650,7 +26689,9 @@ async function main() {
   {
     const fsMod = await import('node:fs')
     const mc = await import('../lib/markets-copy')
-    const home = flat(await (await fetch(`${BASE}/`)).text())
+    // RE-PINNED 2026-10-06 (front-door): the chart-first brochure is /story now; `/` is the
+    // markets splash (its own pins: scripts/front-door-pins.ts).
+    const home = flat(await (await fetch(`${BASE}/story`)).text())
     check(
       'mk2/landing: the page is the chart-first door in order — movers strip, hero stage, venue band, map teaser, honesty strip, compare band, share band, and the links spread + embed still below the fold',
       ['data-movers-strip', 'data-landing-hero', 'data-landing-stage', 'data-venue-band', 'data-map-teaser', 'data-honesty-strip', 'data-compare-band', 'data-share-band', 'A link that moves money.'].every((k) => home.includes(k)) &&
@@ -26708,14 +26749,17 @@ async function main() {
         /useConnectToAct\(\{/.test(fsMod.readFileSync('components/landing/LandingHero.tsx', 'utf8')) &&
         /openDoor\(ask, \{ send: true \}\)/.test(fsMod.readFileSync('components/landing/LandingHero.tsx', 'utf8')),
     )
-    const ld = [...home.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map((m) => m[1])
-    let ldOk = false
-    try {
-      const parsed = ld.flatMap((j) => JSON.parse(j) as { '@type': string }[])
-      const types = new Set(parsed.map((x) => x['@type']))
-      ldOk = types.has('WebSite') && types.has('SoftwareApplication') && types.has('VideoObject')
-    } catch { ldOk = false }
-    check('mk2/landing: the JSON-LD still parses — WebSite + SoftwareApplication + VideoObject', ldOk)
+    // RE-PINNED 2026-10-06 (front-door): the JSON-LD split with the pages — WebSite +
+    // SoftwareApplication ride `/` (the splash), the VideoObject rides /story
+    // with the explainer it describes.
+    const ldTypes = (h: string) => {
+      try {
+        return new Set([...h.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].flatMap((m) => JSON.parse(m[1]) as { '@type': string }[]).map((x) => x['@type']))
+      } catch { return new Set<string>() }
+    }
+    const ldSplash = ldTypes(flat(await (await fetch(`${BASE}/`)).text()))
+    const ldStory = ldTypes(home)
+    check('mk2/landing: the JSON-LD still parses and split with the pages — WebSite + SoftwareApplication on `/`, the VideoObject on /story', ldSplash.has('WebSite') && ldSplash.has('SoftwareApplication') && !ldSplash.has('VideoObject') && ldStory.has('VideoObject') && !ldStory.has('WebSite'), `splash=${[...ldSplash].join('+')} story=${[...ldStory].join('+')}`)
     const counts = (home.match(/data-index-counts="true">([\s\S]*?)<\/div>/) ?? [])[1] ?? ''
     const nums = [...counts.matchAll(/<b>(\d+)<\/b>/g)].map((m) => Number(m[1]))
     check(
@@ -26726,11 +26770,13 @@ async function main() {
       'mk2/landing: IntentMachine + NightShift are off the page (trimmed, not deleted — the files stay for later)',
       !/class="mach\b/.test(home) && !/class="night\b/.test(home) && fsMod.existsSync('components/IntentMachine.tsx') && fsMod.existsSync('components/NightShift.tsx'),
     )
-    const ogr = await fetch(`${BASE}/opengraph-image`)
+    // RE-PINNED 2026-10-06 (front-door): the rehearsal card moved to /story with the brochure;
+    // the root card is THE BOARD (pinned in the markets-card block + front-door-pins).
+    const ogr = await fetch(`${BASE}/story/opengraph-image`)
     const ogBuf = new Uint8Array(await ogr.arrayBuffer())
-    const ogSrc = fsMod.readFileSync('app/opengraph-image.tsx', 'utf8')
+    const ogSrc = fsMod.readFileSync('app/story/opengraph-image.tsx', 'utf8')
     check(
-      'mk2/landing: the root social card is the hero — a live tape + the rehearsal HUD + the stamp; 200 image/png, real PNG',
+      'mk2/landing: the brochure\'s social card (/story) is the hero — a live tape + the rehearsal HUD + the stamp; 200 image/png, real PNG',
       ogr.status === 200 && /image\/png/.test(ogr.headers.get('content-type') ?? '') && ogBuf[0] === 0x89 && ogBuf[1] === 0x50 && ogBuf.length > 20_000 &&
         /REEL_STAMP/.test(ogSrc) && /candleSvg\(/.test(ogSrc) && /gemMarkSvg\(/.test(ogSrc),
     )
@@ -27430,11 +27476,13 @@ async function main() {
     // an intent to the app. '/', '/i', '/embed' and a bare prefix must never
     // be in the list (an /i page's own runtime carries its ask in the link).
     check(
-      'arrival/qa: lib/arrival-fence ARRIVAL_SOURCES lists only public markets doors — never "/", "/i", "/embed", "/chat" or an empty prefix — and ARRIVAL_MAX_TEXT ≤ 280',
+      // RE-PINNED 2026-10-06 (front-door): `/` IS a public markets door now (the splash), so it
+      // joins the list — exactly `/`, never `/i`, `/embed`, `/chat` or an empty prefix.
+      'arrival/qa: lib/arrival-fence ARRIVAL_SOURCES lists only public markets doors — `/` (the splash), /markets, /t — never "/i", "/embed", "/chat" or an empty prefix — and ARRIVAL_MAX_TEXT ≤ 280',
       ARRIVAL_SOURCES.length > 0 &&
-        ARRIVAL_SOURCES.every((s) => typeof s === 'string' && s.startsWith('/') && s.length > 1) &&
-        ARRIVAL_SOURCES.every((s) => ['/markets', '/t'].some((allowed) => s === allowed || s.startsWith(allowed + '/'))) &&
-        !ARRIVAL_SOURCES.some((s) => /^\/(i|embed|chat)\b/.test(s)) &&
+        ARRIVAL_SOURCES.every((s) => typeof s === 'string' && s.startsWith('/')) &&
+        ARRIVAL_SOURCES.every((s) => s === '/' || ['/markets', '/t'].some((allowed) => s === allowed || s.startsWith(allowed + '/'))) &&
+        !ARRIVAL_SOURCES.some((s) => s === '' || /^\/(i|embed|chat)\b/.test(s)) &&
         ARRIVAL_MAX_TEXT <= 280,
       ARRIVAL_SOURCES.join(' '),
     )
@@ -27577,8 +27625,9 @@ async function main() {
     const fenceSrc = await readFile('lib/arrival-fence.ts', 'utf8')
     const marketsAiSrc = await readFile('lib/markets-ai.ts', 'utf8')
     check('arrival fence: lib/markets-ai.ts fenceAsk reads ASK_ADDRESS_RE / ASK_ENS_RE / ASK_URL_RE from lib/arrival-fence (no local copy)', marketsAiSrc.includes("import { ASK_ADDRESS_RE as ADDRESS_RE, ASK_ENS_RE as ENS_RE, ASK_URL_RE as URL_RE } from './arrival-fence'") && !/^const (ADDRESS|ENS|URL)_RE = /m.test(marketsAiSrc) && aiFenceAsk('Buy $25 of 0xbeef', 'AAPL').ok === false && aiFenceAsk('Buy $25 of AAPL for vitalik.eth', 'AAPL').ok === false && aiFenceAsk('Buy $25 of AAPL www.x.y', 'AAPL').ok === false)
-    check('arrival fence: the module is pure — imports only lib/intent-links (isTransferShaped) + the TTL constant, touches no window / document / storage / fetch, and reads the TTL from CORE\'s module so the two cannot disagree', /^import \{ isTransferShaped \} from '\.\/intent-links'$/m.test(fenceSrc) && /^import \{ ARRIVAL_TTL_MS \} from '\.\/arrival-intent'$/m.test(fenceSrc) && (fenceSrc.match(/^import /gm) ?? []).length === 2 && !/\b(window|document|sessionStorage|localStorage|fetch|navigator)\b/.test(fenceSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, '')) && ARRIVAL_SOURCES.length === 2 && ARRIVAL_SOURCES[0] === '/markets' && ARRIVAL_SOURCES[1] === '/t' && ARRIVAL_MAX_TEXT === 280 && ARRIVAL_MAX_MCPS === 6 && ARRIVAL_FUTURE_SKEW_MS === 5_000)
-    check('arrival fence: arrivalSourceAllowed — /markets, /markets/<sub> and /t/<SYM> pass; /marketsx, /markets?q, /markets#h, /tx, /, /chat, /i/x, /embed do not', arrivalSourceAllowed('/markets') && arrivalSourceAllowed('/markets/') && arrivalSourceAllowed('/markets/earn') && arrivalSourceAllowed('/t/ETH') && arrivalSourceAllowed('/t/AMAT') && !arrivalSourceAllowed('/marketsx') && !arrivalSourceAllowed('/markets?q=1') && !arrivalSourceAllowed('/markets#h') && !arrivalSourceAllowed('/tx') && !arrivalSourceAllowed('/t?x=1') && !arrivalSourceAllowed('/') && !arrivalSourceAllowed('/chat') && !arrivalSourceAllowed('/i/x') && !arrivalSourceAllowed('/embed') && !arrivalSourceAllowed(''))
+    // RE-PINNED 2026-10-06 (front-door): ARRIVAL_SOURCES gained `/` (the splash is a public markets door).
+    check('arrival fence: the module is pure — imports only lib/intent-links (isTransferShaped) + the TTL constant, touches no window / document / storage / fetch, and reads the TTL from CORE\'s module so the two cannot disagree', /^import \{ isTransferShaped \} from '\.\/intent-links'$/m.test(fenceSrc) && /^import \{ ARRIVAL_TTL_MS \} from '\.\/arrival-intent'$/m.test(fenceSrc) && (fenceSrc.match(/^import /gm) ?? []).length === 2 && !/\b(window|document|sessionStorage|localStorage|fetch|navigator)\b/.test(fenceSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, '')) && ARRIVAL_SOURCES.length === 3 && ARRIVAL_SOURCES[0] === '/' && ARRIVAL_SOURCES[1] === '/markets' && ARRIVAL_SOURCES[2] === '/t' && ARRIVAL_MAX_TEXT === 280 && ARRIVAL_MAX_MCPS === 6 && ARRIVAL_FUTURE_SKEW_MS === 5_000)
+    check('arrival fence: arrivalSourceAllowed — `/` (the splash; RE-PINNED 2026-10-06 (front-door)), /markets, /markets/<sub> and /t/<SYM> pass; /marketsx, /markets?q, /markets#h, /tx, /story, /chat, /i/x, /embed do not', arrivalSourceAllowed('/markets') && arrivalSourceAllowed('/markets/') && arrivalSourceAllowed('/markets/earn') && arrivalSourceAllowed('/t/ETH') && arrivalSourceAllowed('/t/AMAT') && !arrivalSourceAllowed('/marketsx') && !arrivalSourceAllowed('/markets?q=1') && !arrivalSourceAllowed('/markets#h') && !arrivalSourceAllowed('/tx') && !arrivalSourceAllowed('/t?x=1') && arrivalSourceAllowed('/') && !arrivalSourceAllowed('//evil.example') && !arrivalSourceAllowed('//') && !arrivalSourceAllowed('/story') && !arrivalSourceAllowed('/chat') && !arrivalSourceAllowed('/i/x') && !arrivalSourceAllowed('/embed') && !arrivalSourceAllowed(''))
 
     // ── The ladder proof ── every sentence a /markets sender can COMPOSE lands
     // on a native gate (kind:'action') or an honest deterministic clarify —
@@ -28142,10 +28191,12 @@ async function main() {
         if (!code.includes('canTradeAsk(') || !code.includes('useTradable()')) vgUngated.push(f)
       }
       check('venue gate (wiring): the index row chips, the header strip, the route table, the Trade panel, chart levels, verdict chips, the AI brief, the morning tape, the ⌘K door, the watchlist row menu, community posts, the chat chart overlay and the chartless fallback each filter through canTradeAsk with useTradable()', vgUngated.length === 0, vgUngated.join(', '))
-      const vgMarketsPage = await readFile('app/markets/page.tsx', 'utf8')
+      // RE-PINNED 2026-10-06 (front-door): the index page is app/page.tsx (app/markets/page.tsx is
+      // gone; /markets 308s to `/`). An unguarded read of the old path crashed the whole run here.
+      const vgMarketsPage = await readFile('app/page.tsx', 'utf8')
       const vgSymPage = await readFile('app/t/[symbol]/page.tsx', 'utf8')
       check(
-        'venue gate (first paint): /markets and /t read the verdicts server-side and seed the shared store, so the chips are right on the first paint instead of appearing and then vanishing',
+        'venue gate (first paint): `/` (the markets index) and /t read the verdicts server-side and seed the shared store, so the chips are right on the first paint instead of appearing and then vanishing',
         vgMarketsPage.includes('readTradability()') && vgSymPage.includes('readTradability()') &&
           (await readFile('components/markets/shell/MarketsIndex.tsx', 'utf8')).includes('seedTradable(') &&
           (await readFile('components/markets/shell/SymbolPage.tsx', 'utf8')).includes('seedTradable('),
@@ -29153,25 +29204,28 @@ async function main() {
     )
   }
 
-  // ── /markets social card (2026-09-17) ──────────────────────────────────
+  // ── The site card is THE BOARD (2026-09-17 for /markets; the ROOT since
+  //    the front door flipped — RE-PINNED 2026-10-06 (front-door)) ─────────────────────
   // The index shared a text-only preview: its metadata set a title and a
-  // description and no picture. app/markets/opengraph-image.tsx draws THE
-  // BOARD — the index's three families, their household names, live quotes
-  // from our own /api/quotes, the family's honest size — beside the claim.
+  // description and no picture. app/opengraph-image.tsx draws THE BOARD —
+  // the index's three families, their household names, live quotes from our
+  // own /api/quotes, the family's honest size — beside the claim. `/` IS the
+  // index now, so the board is the site card; /markets 308s to `/` and its
+  // old card URLs 308 to the root card.
   {
     const { marketsOgBoard, marketsOgSymbols, MARKETS_OG_ROWS } = await import('../lib/markets-seo')
     const { FEATURED: ogFeatured } = await import('../lib/markets')
-    const mkHtml = await (await fetch(`${BASE}/markets`)).text()
+    const mkHtml = await (await fetch(`${BASE}/`)).text()
     const ogTag = mkHtml.match(/<meta property="og:image" content="([^"]+)"/)?.[1] ?? ''
     const twTag = mkHtml.match(/<meta name="twitter:image" content="([^"]+)"/)?.[1] ?? ''
     check(
-      'markets card: /markets carries its OWN og:image + twitter:image (…/markets/opengraph-image, …/markets/twitter-image), 1200×630 PNG with an alt that says what the card shows',
-      /\/markets\/opengraph-image/.test(ogTag) && /\/markets\/twitter-image/.test(twTag) &&
+      'markets card: `/` (the splash) carries THE BOARD as og:image + twitter:image (…/opengraph-image, …/twitter-image — the root card, not /story\'s), 1200×630 PNG with an alt that says what the card shows after the claim',
+      /\/opengraph-image/.test(ogTag) && !/\/story\//.test(ogTag) && /\/twitter-image/.test(twTag) && !/\/story\//.test(twTag) &&
         /<meta property="og:image:width" content="1200"/.test(mkHtml) && /<meta property="og:image:height" content="630"/.test(mkHtml) &&
-        /<meta property="og:image:alt" content="Pantessa Markets — The chart that executes\./.test(mkHtml) && /<meta name="twitter:image:alt" content="Pantessa Markets/.test(mkHtml),
+        /<meta property="og:image:alt" content="Pantessa — The chart that executes\. Stocks 24\/7/.test(mkHtml) && /<meta name="twitter:image:alt" content="Pantessa — The chart that executes\./.test(mkHtml),
       JSON.stringify({ ogTag, twTag }),
     )
-    const [mkCard, mkTw] = await Promise.all([fetch(`${BASE}/markets/opengraph-image`), fetch(`${BASE}/markets/twitter-image`)])
+    const [mkCard, mkTw] = await Promise.all([fetch(`${BASE}/opengraph-image`), fetch(`${BASE}/twitter-image`)])
     const [mkCardBytes, mkTwBytes] = await Promise.all([mkCard.arrayBuffer(), mkTw.arrayBuffer()])
     check(
       'markets card: the card and its twitter mirror render (200 PNG, a drawn board — not a blank, ≥ 60KB)',
@@ -29189,7 +29243,7 @@ async function main() {
         rowsFit === 11 && marketsOgSymbols().join(',') === ogBoard.flatMap((g) => g.symbols).join(','),
       JSON.stringify(ogBoard.map((g) => [g.id, g.total, g.symbols])),
     )
-    const [mkOgSrc, mkTwSrc] = await Promise.all([readFile('app/markets/opengraph-image.tsx', 'utf8'), readFile('app/markets/twitter-image.tsx', 'utf8')])
+    const [mkOgSrc, mkTwSrc] = await Promise.all([readFile('app/opengraph-image.tsx', 'utf8'), readFile('app/twitter-image.tsx', 'utf8')])
     check(
       'markets card (source): the card self-fetches /api/quotes on its own host with a timeout and falls to the dashed board on a miss (never a 500, never a fake number), and the twitter mirror re-exports the card while declaring its own runtime + dynamic (route-segment config can\'t be re-exported)',
       /\/api\/quotes\?symbols=/.test(mkOgSrc) && /AbortSignal\.timeout\(/.test(mkOgSrc) && /return NO_QUOTES/.test(mkOgSrc) && /FEED WARMING UP/.test(mkOgSrc) &&
@@ -33332,13 +33386,14 @@ async function main() {
     )
     // D2 (README): a tab is a PLACE. The drive's expectations are the
     // contract NAV builds against — pinned so neither side drifts silently.
+    // RE-PINNED 2026-10-06 (front-door): the MARKETS seat routes to `/` (the splash); the drive's tables say so too.
     const chatT = nq.D2_FROM_CHAT
     check(
       'native qa: D2 as the drive reads it — APPS/JOBS/LINKS/TEAM name themselves in ?tab= (mcps/jobs/links/team) with their screen, CHATS in a conversation opens the list (history), MORE is a Sheet, MARKETS/WALLET are routes',
       chatT.APPS.tab === 'mcps' && chatT.APPS.screen === 'apps' &&
         chatT.JOBS.tab === 'jobs' && chatT.LINKS.tab === 'links' && chatT.TEAM.screen === 'team' &&
         chatT.CHATS.screen === 'history' && chatT.CHATS.lit === 'CHATS' &&
-        chatT.More.sheet === true && chatT.MARKETS.path === '/markets' && chatT.WALLET.path === '/wallet' &&
+        chatT.More.sheet === true && chatT.MARKETS.path === '/' && chatT.WALLET.path === '/wallet' &&
         nq.D2_SEQUENCES.some((q) => q.taps.join(',') === 'APPS,CHATS' && q.expect.screen === 'chat' && q.expect.tab === '') &&
         nq.TOP_BAR_DOORS.some((d) => d.door === 'history' && d.expect.screen === 'history') &&
         nq.TOP_BAR_DOORS.some((d) => d.door === 'apps' && d.expect.tab === 'mcps'),
@@ -33351,7 +33406,8 @@ async function main() {
       const agree = (a: { path: string; tab: string | null; screen: unknown; lit: string; sheet?: boolean }, b: typeof a) =>
         a.path === b.path && (a.tab ?? null) === (b.tab ?? null) && JSON.stringify(a.screen) === JSON.stringify(b.screen) && a.lit === b.lit && !!a.sheet === !!b.sheet
       const off: string[] = []
-      for (const [origin, table] of [['/chat', nq.D2_FROM_CHAT], ['/markets', nq.D2_FROM_MARKETS]] as const) {
+      // RE-PINNED 2026-10-06 (front-door): the markets origin is `/` (the splash).
+      for (const [origin, table] of [['/chat', nq.D2_FROM_CHAT], ['/', nq.D2_FROM_MARKETS]] as const) {
         const from = { surface: origin === '/chat' ? 'chat' : 'markets', screen: 'chat', pathname: origin } as const
         for (const [seat, want] of Object.entries(table)) {
           const got = nq.expectFromPhoneTap(pn as never, from, seat).expect
@@ -33372,10 +33428,11 @@ async function main() {
     }
     const app = nq.SURFACES.filter((x) => x.kind === 'app').map((x) => x.path)
     check(
-      'native qa: every framed surface of README invariant 1 is driven (/chat, its four tabs, /markets, /t/AAPL, /t/ETH, /wallet, /dashboard, /i/<slug>) plus the brochure pages',
-      ['/chat', '/chat?tab=mcps', '/chat?tab=jobs', '/chat?tab=links', '/chat?tab=chats', '/markets', '/t/AAPL', '/t/ETH', '/wallet', '/dashboard'].every((p) => app.includes(p)) &&
+      // RE-PINNED 2026-10-06 (front-door): the markets index is `/` and the brochure is /story.
+      'native qa: every framed surface of README invariant 1 is driven (/chat, its four tabs, `/` (markets), /t/AAPL, /t/ETH, /wallet, /dashboard, /i/<slug>) plus the brochure pages (/story, /pricing, /docs)',
+      ['/chat', '/chat?tab=mcps', '/chat?tab=jobs', '/chat?tab=links', '/chat?tab=chats', '/', '/t/AAPL', '/t/ETH', '/wallet', '/dashboard'].every((p) => app.includes(p)) &&
         app.some((p) => p.startsWith('/i/')) &&
-        ['/', '/pricing', '/docs'].every((p) => nq.SURFACES.some((x) => x.path === p && x.kind === 'brochure')),
+        ['/story', '/pricing', '/docs'].every((p) => nq.SURFACES.some((x) => x.path === p && x.kind === 'brochure')),
       app.join(' '),
     )
     const pkg = JSON.parse(readNq('package.json', 'utf8')) as { scripts: Record<string, string> }
@@ -33651,12 +33708,13 @@ async function main() {
       CTA.CTA_BAR_MAX_PX === 640 && CTA.CTA_BAR_MQ === '(max-width: 640px)' &&
         CTA.ctaBarOnScreen(true, true) === true && CTA.ctaBarOnScreen(true, false) === false && CTA.ctaBarOnScreen(false, true) === false && CTA.ctaBarOnScreen(false, false) === false,
     )
+    // RE-PINNED 2026-10-06 (front-door): the bar's door reads MARKETS_HREF (`/`).
     const mctaSrc = npCode('components/MobileCtaBar.tsx')
     check(
       'native pages: MobileCtaBar reads scroll through lib/app-scroller and decides with lib/cta-bar (never window.scrollY), and carries Ask beside Open Markets',
       /onAppScroll\(/.test(mctaSrc) && /ctaBarStep\(prev, appScrollTop\(\), window\.innerHeight\)/.test(mctaSrc) && !/window\.scrollY/.test(mctaSrc) &&
         /window\.matchMedia\(CTA_BAR_MQ\)/.test(mctaSrc) && /mq\.addEventListener\('change', read\)/.test(mctaSrc) && /const show = ctaBarOnScreen\(state\.shown, fits\)/.test(mctaSrc) &&
-        /<SpineLink href="\/markets"/.test(mctaSrc) && /openDoor\(\)/.test(mctaSrc) && /root\.dataset\.mcta = 'show'/.test(mctaSrc),
+        /<SpineLink href=\{MARKETS_HREF\}/.test(mctaSrc) && /openDoor\(\)/.test(mctaSrc) && /root\.dataset\.mcta = 'show'/.test(mctaSrc),
     )
 
     // 2. Every phone overlay PAGES owns is the ONE Sheet (tap outside, swipe,
@@ -33858,10 +33916,11 @@ async function main() {
       ),
     )
     check(
-      'native nav: the page seats — MARKETS/WALLET/DOCS/SETTINGS navigate from elsewhere, scroll to the top on their own root page, and pop to the root from deeper (/t/AAPL → /markets, /dashboard/keys → /dashboard); MORE is the sheet',
-      tap('chat', 'chat', 'markets').kind === 'navigate' && (tap('chat', 'chat', 'markets') as { href: string }).href === '/markets' &&
-        tap('markets', 'chat', 'markets', '/markets').kind === 'top' && tap('markets', 'chat', 'markets', '/markets/').kind === 'top' &&
-        tap('markets', 'chat', 'markets', '/t/AAPL').kind === 'navigate' && (tap('markets', 'chat', 'markets', '/t/AAPL') as { href: string }).href === '/markets' &&
+      // RE-PINNED 2026-10-06 (front-door): the markets root is `/` (phoneTap treats `/` and the old /markets as the same top).
+      'native nav: the page seats — MARKETS/WALLET/DOCS/SETTINGS navigate from elsewhere, scroll to the top on their own root page, and pop to the root from deeper (/t/AAPL → /, /dashboard/keys → /dashboard); MORE is the sheet',
+      tap('chat', 'chat', 'markets').kind === 'navigate' && (tap('chat', 'chat', 'markets') as { href: string }).href === '/' &&
+        tap('markets', 'chat', 'markets', '/').kind === 'top' && tap('markets', 'chat', 'markets', '/markets').kind === 'top' && tap('markets', 'chat', 'markets', '/markets/').kind === 'top' &&
+        tap('markets', 'chat', 'markets', '/t/AAPL').kind === 'navigate' && (tap('markets', 'chat', 'markets', '/t/AAPL') as { href: string }).href === '/' &&
         tap('wallet', 'chat', 'wallet', '/wallet').kind === 'top' && (tap('chat', 'apps', 'wallet') as { href: string }).href === '/wallet' &&
         (tap('chat', 'chat', 'docs') as { href: string }).href === '/docs' &&
         tap('dashboard', 'chat', 'settings', '/dashboard').kind === 'top' && (tap('dashboard', 'chat', 'settings', '/dashboard/keys') as { href: string }).href === '/dashboard' &&
@@ -33876,7 +33935,8 @@ async function main() {
             const a = tap(surface, screen, seat)
             if (!['screen', 'top', 'navigate', 'sheet'].includes(a.kind)) return false
             if (a.kind === 'screen' && surface !== 'chat') return false
-            if (a.kind === 'navigate' && !/^\/(chat(\?tab=[a-z]+)?|markets|wallet|docs|dashboard)$/.test(a.href)) return false
+            // (`/` is the markets root — RE-PINNED 2026-10-06 (front-door))
+            if (a.kind === 'navigate' && !/^\/(chat(\?tab=[a-z]+)?|wallet|docs|dashboard)?$/.test(a.href)) return false
             return true
           }),
         ),
@@ -34436,7 +34496,7 @@ async function main() {
     // theme-color that follows the site theme.
     const mf = await fetch(`${BASE}/manifest.webmanifest`)
     const mfJson = mf.ok ? ((await mf.json()) as { display?: string; start_url?: string; icons?: { src: string; sizes: string; purpose?: string }[]; theme_color?: string; background_color?: string; name?: string }) : null
-    check('native shell: /manifest.webmanifest serves display standalone, start_url /markets, the Emerald Cut 192 + 512 (any) + 512 maskable icons, and the dark theme/background colors', mf.ok && !!mfJson && mfJson.display === 'standalone' && mfJson.start_url === '/markets' && mfJson.name === 'Pantessa' && mfJson.theme_color === '#000000' && mfJson.background_color === '#000000' &&
+    check('native shell: /manifest.webmanifest serves display standalone, start_url `/` (the splash; RE-PINNED 2026-10-06 (front-door)), the Emerald Cut 192 + 512 (any) + 512 maskable icons, and the dark theme/background colors', mf.ok && !!mfJson && mfJson.display === 'standalone' && mfJson.start_url === '/' && mfJson.name === 'Pantessa' && mfJson.theme_color === '#000000' && mfJson.background_color === '#000000' &&
       (mfJson.icons ?? []).some((i) => i.sizes === '192x192' && i.purpose === 'any') && (mfJson.icons ?? []).some((i) => i.sizes === '512x512' && i.purpose === 'any') && (mfJson.icons ?? []).some((i) => i.sizes === '512x512' && i.purpose === 'maskable'), `${mf.status}`)
     const iconChecks = await Promise.all((mfJson?.icons ?? []).map(async (i) => { const r = await fetch(`${BASE}${i.src}`); return r.ok && (r.headers.get('content-type') ?? '').includes('image/png') }))
     check('native shell: every manifest icon serves as image/png', iconChecks.length === 3 && iconChecks.every(Boolean))

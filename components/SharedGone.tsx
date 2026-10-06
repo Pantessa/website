@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
 import { PantessaMark } from '@/components/Logo'
+import { MARKETS_HREF } from '@/lib/markets'
 
 // Where a shared link lands when the thing it named is gone: a watchlist
 // made private again, a call or a receipt that never existed, a chat whose
@@ -33,7 +34,7 @@ export default function SharedGone({ what, why }: SharedGoneProps) {
           {why} Nothing ran and nothing was signed by opening the link. The live board is one tap away.
         </p>
         <div className="mt-8 flex flex-wrap gap-2">
-          <SpineLink href="/markets" className={`${chip} border-[var(--accent)]`}>
+          <SpineLink href={MARKETS_HREF} className={`${chip} border-[var(--accent)]`}>
             Open Markets
           </SpineLink>
           <SpineLink href="/t/AAPL" className={chip}>

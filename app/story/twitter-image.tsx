@@ -1,4 +1,4 @@
-// Twitter card = the same markets board as og:image. Without this file,
+// Twitter card = the same rehearsal card as og:image. Without this file,
 // clients that honor only twitter:image would miss the card (the page's
 // metadata pins no static image).
 export { default, alt, size, contentType } from './opengraph-image'

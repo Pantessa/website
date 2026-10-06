@@ -12,8 +12,10 @@
 // and it steps away on the way down, the way a native app's bottom bar does.
 //
 // It says what the hero's primary CTA says, Open Markets, and goes where a
-// fresh login lands (2026-09-11). Markets are public, so a stranger walks
-// straight in (SpineLink links a public page plainly). Beside it, Ask: the
+// fresh login lands: the splash at `/` (lib/markets MARKETS_HREF — squad
+// front-door, 2026-10-06; this bar rides the brochure, which is /story now).
+// Markets are public, so a stranger walks straight in (SpineLink links a
+// public page plainly). Beside it, Ask: the
 // bar covers the floating Ask pill's corner of the screen while it's up, so
 // it carries the pill's job itself (`data-mcta` on <html> says it's up).
 
@@ -23,6 +25,7 @@ import { PantessaMark } from '@/components/Logo'
 import { appScrollTop, onAppScroll } from '@/lib/app-scroller'
 import { CTA_BAR_MQ, ctaBarInitial, ctaBarOnScreen, ctaBarStep, type CtaBarState } from '@/lib/cta-bar'
 import { useAskDoor } from '@/lib/ask-door'
+import { MARKETS_HREF } from '@/lib/markets'
 
 export default function MobileCtaBar() {
   const [state, setState] = useState<CtaBarState>(() => ctaBarInitial(0))
@@ -59,7 +62,7 @@ export default function MobileCtaBar() {
 
   return (
     <div className={`mcta${show ? ' is-show' : ''}`} aria-hidden={!show} data-mcta-bar>
-      <SpineLink href="/markets" className="btn btn--solid mcta__go" tabIndex={show ? 0 : -1}>
+      <SpineLink href={MARKETS_HREF} className="btn btn--solid mcta__go" tabIndex={show ? 0 : -1}>
         Open Markets
       </SpineLink>
       <button

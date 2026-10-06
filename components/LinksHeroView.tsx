@@ -21,6 +21,7 @@ import SignInFlowLink from '@/components/SignInFlowLink'
 import SpineLink from '@/components/SpineLink'
 import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import { LINK_FEE_PCT } from '@/lib/fees'
+import { MARKETS_HREF } from '@/lib/markets'
 
 export interface LinkHeroStats {
   links: string
@@ -480,7 +481,7 @@ export default function LinksHeroView({ stats }: { stats: LinkHeroStats | null }
           </span>
         </p>
         <div className="fhero__ctas">
-          <SpineLink className="btn btn--solid" href="/markets">
+          <SpineLink className="btn btn--solid" href={MARKETS_HREF}>
             Open Markets
           </SpineLink>
           <SpineLink className="btn btn--ghost" href="/t/AAPL">

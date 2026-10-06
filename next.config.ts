@@ -27,6 +27,13 @@ const nextConfig: NextConfig = {
       // nothing until the wallet gate settles, so a server redirect() in that
       // slot never reaches the browser — verified, it 200s.
       { source: '/dashboard/links', destination: '/chat?tab=links', permanent: false },
+      // THE FRONT DOOR (squad front-door, 2026-10-06): the markets splash lives
+      // at `/` now; every /markets link already in the world lands there.
+      { source: '/markets', destination: '/', permanent: true },
+      // …and its social card went with it: the board that was
+      // /markets/opengraph-image is the root card now, so a client that
+      // cached the old image URL still gets a picture.
+      { source: '/markets/:card(opengraph-image|twitter-image)', destination: '/:card', permanent: true },
     ]
   },
   // Design system lives as static files in public/design-system/. Next doesn't

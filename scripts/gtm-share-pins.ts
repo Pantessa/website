@@ -149,7 +149,8 @@ export async function gtmSharePins(check: Check): Promise<void> {
   // ── a dead shared link lands on the product, not on the site 404 ──────────
   const gone = ['lists/[slug]', 'c/[id]', 'r/[slug]', 'p/[slug]'].filter((d) => !existsSync(join(app, d, 'not-found.tsx')) || !/SharedGone/.test(readFileSync(join(app, d, 'not-found.tsx'), 'utf8')))
   const goneSrc = readFileSync(join(ROOT, 'components/SharedGone.tsx'), 'utf8')
-  check('gone: /lists /c /r /p answer a missing object with their own page, and it leads with Markets', gone.length === 0 && /href="\/markets"[^>]*border-\[var\(--accent\)\]/.test(goneSrc), gone.join(' '))
+  // RE-PINNED 2026-10-06 (front-door): Markets is `/` now — the door reads lib/markets MARKETS_HREF.
+  check('gone: /lists /c /r /p answer a missing object with their own page, and it leads with Markets (MARKETS_HREF)', gone.length === 0 && /href=\{MARKETS_HREF\}[^>]*border-\[var\(--accent\)\]/.test(goneSrc), gone.join(' '))
 
   // ── the chart dialog and the signed moment ────────────────────────────────
   const chartShare = readFileSync(join(ROOT, 'components/markets/chart/ChartShare.tsx'), 'utf8')

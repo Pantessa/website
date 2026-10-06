@@ -3,6 +3,7 @@ import { YeetfulMark } from '@/components/Logo'
 import ThemeToggle from '@/components/ThemeToggle'
 import SpineLink from '@/components/SpineLink'
 import { X_PROFILE_URL } from '@/lib/social'
+import { MARKETS_HREF } from '@/lib/markets'
 
 /** `app`: the link lands inside the app shell, which sends a signed-out
  *  visitor home — so it renders as a SpineLink (the sign-in door for them). */
@@ -22,7 +23,7 @@ const GROUPS: { title: string; links: FooterLink[] }[] = [
   {
     title: 'Company',
     links: [
-      { label: 'Markets', href: '/markets', app: true },
+      { label: 'Markets', href: MARKETS_HREF, app: true },
       { label: 'Intent Links', href: '/links' },
       { label: 'Mosaic', href: '/mosaic' },
       { label: 'Site Buttons', href: '/links/embed' },

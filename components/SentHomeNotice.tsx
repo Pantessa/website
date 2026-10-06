@@ -1,11 +1,16 @@
 'use client'
 
-// The landing's one line for a visitor the app just sent here (lib/app-entry
+// The splash's one line for a visitor the app just sent here (lib/app-entry
 // sentHomeNotice). They opened /chat, /wallet or the dashboard without a
 // wallet; the signed-out gate brought them home and remembered the way back.
 // This says so and offers the door. A sign-in from the landing already lands
 // on the remembered page (lib/session signInLandingHere), so the button
 // passes no destination of its own.
+//
+// It rides the splash's lead seat now (squad front-door, 2026-10-06 —
+// `/` is the markets index in the app shell, components/home/HomeSurface):
+// a left-aligned row the full width of the data column, not the centered
+// island it was on the brochure.
 
 import { useEffect, useState } from 'react'
 import CreateAccountButton from '@/components/CreateAccountButton'
@@ -37,9 +42,9 @@ export default function SentHomeNotice() {
     <div
       role="status"
       data-sent-home
-      className="mx-auto mt-3 flex max-w-3xl flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-2xl border border-[var(--line)] bg-[var(--surf-1)] px-4 py-3 text-center text-[13px] text-[color:var(--muted)]"
+      className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-[var(--line)] bg-[var(--surf-1)] px-3.5 py-2.5 text-[13px] leading-snug text-[color:var(--muted)]"
     >
-      <span>
+      <span className="min-w-[16rem] flex-1">
         {notice.ask ? (
           <>
             <b className="text-[color:var(--fg)]">&ldquo;{notice.ask}&rdquo;</b> needs a wallet to run. Sign in and it is waiting for you; nothing
