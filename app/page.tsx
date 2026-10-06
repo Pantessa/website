@@ -3,6 +3,7 @@ import { SITE } from '@/lib/docs'
 import { EXPLAINER_VIDEO, explainerEmbedUrl, explainerPosterUrl, explainerWatchUrl, isoDuration } from '@/lib/explainer-video'
 import RosterHome from '@/components/RosterHome'
 import LinksHero from '@/components/LinksHero'
+import SentHomeNotice from '@/components/SentHomeNotice'
 import MarketsBand from '@/components/MarketsBand'
 import LandingMotion from '@/components/LandingMotion'
 import MoversStrip from '@/components/landing/MoversStrip'
@@ -124,6 +125,8 @@ export default function HomePage() {
             the movers tape · the executing chart (hero) · every dapp, one
             chart · the whole index · receipt-grade numbers · their meters
             vs ours · then the distribution story (links + embed) trimmed. */}
+        {/* A visitor the app just sent home: say why, offer the door. */}
+        <SentHomeNotice />
         <MoversStrip />
 
         {/* The claim, and the chart that performs it */}

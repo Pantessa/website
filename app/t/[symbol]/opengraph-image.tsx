@@ -121,13 +121,20 @@ export default async function Image({ params }: Params) {
         {/* footer: feed + the footnote / the promise */}
         <div style={{ position: 'absolute', bottom: 40, left: 64, right: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', gap: 12 }}>
+            {/* What the link does, said first and in the accent: the card is a
+                chart in a feed full of charts, and this one takes the order. */}
+            {seo.pair && (
+              <div style={{ display: 'flex', padding: '8px 16px', borderRadius: 999, border: `1.5px solid ${UP}`, color: UP, fontSize: 16, letterSpacing: 1.5, whiteSpace: 'nowrap' }}>
+                <span>Trade from this chart</span>
+              </div>
+            )}
             {[feedLabel ? `Feed · ${feedLabel}` : 'Guarded build', 'Your wallet signs'].map((label) => (
-              <div key={label} style={{ display: 'flex', padding: '8px 16px', borderRadius: 999, border: '1.5px solid rgba(255,255,255,0.12)', color: pal.muted, fontSize: 16, letterSpacing: 1.5 }}>
+              <div key={label} style={{ display: 'flex', padding: '8px 16px', borderRadius: 999, border: '1.5px solid rgba(255,255,255,0.12)', color: pal.muted, fontSize: 16, letterSpacing: 1.5, whiteSpace: 'nowrap' }}>
                 <span>{label}</span>
               </div>
             ))}
           </div>
-          <span style={{ color: pal.muted, fontSize: 15, letterSpacing: 2, whiteSpace: 'nowrap', flexShrink: 0 }}>{TAPE_FOOTNOTE.toUpperCase()}</span>
+          <span style={{ color: pal.muted, fontSize: 14, letterSpacing: 1.2, whiteSpace: 'nowrap', flexShrink: 0 }}>{TAPE_FOOTNOTE.toUpperCase()}</span>
         </div>
       </div>
     ),

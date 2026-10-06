@@ -11,6 +11,7 @@
 // Every string here renders as a text node: titles and summaries were
 // HTML-stripped server-side and are never re-interpreted as markup.
 
+import { notAnswering, shownError } from '@/lib/fetch-words'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { Pin, PinOff, ExternalLink, RefreshCw } from 'lucide-react'
@@ -42,11 +43,11 @@ export default function NewsTab({ symbol, pair }: { symbol: string; pair: ChartP
     setErr(null)
     try {
       const r = await fetch(`/api/news?symbol=${encodeURIComponent(sym)}&limit=30`, { cache: 'no-store' })
-      const d = (await r.json()) as NewsResponse & { error?: string }
-      if (!r.ok) throw new Error(d.error ?? `news ${r.status}`)
+      const d = (await r.json().catch(() => ({}))) as NewsResponse & { error?: string }
+      if (!r.ok) throw new Error(d.error ?? notAnswering('The news feed'))
       setNews(d)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'News is unavailable right now.')
+      setErr(shownError(e, 'The news feed'))
     } finally {
       setLoading(false)
     }
@@ -157,14 +158,14 @@ function PinnedLinks({ symbol }: { symbol: string }) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ symbol, kind: 'link', linkUrl: url.trim(), title: title.trim() }),
       })
-      const d = (await r.json()) as { error?: string }
-      if (!r.ok) throw new Error(d.error ?? `pin ${r.status}`)
+      const d = (await r.json().catch(() => ({}))) as { error?: string }
+      if (!r.ok) throw new Error(d.error ?? notAnswering('The board'))
       setUrl('')
       setTitle('')
       setMsg('Pinned.')
       await load()
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : 'Could not pin that link.')
+      setMsg(shownError(e, 'The board'))
     } finally {
       setBusy(false)
     }

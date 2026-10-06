@@ -34,6 +34,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 import { SITE_URL as SITE } from '@/lib/site-url'
+import { SITE_CARD } from '@/lib/og-defaults'
 
 type Params = { params: Promise<{ slug: string }> }
 
@@ -71,6 +72,8 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
     description: post.description,
     alternates: { canonical: url },
     openGraph: {
+      // The site card unless the post has a cover (spread below wins).
+      images: SITE_CARD,
       type: 'article',
       title: post.title,
       description: post.description,
@@ -82,7 +85,10 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       ...(post.coverImageUrl ? { images: [{ url: post.coverImageUrl, alt: post.coverImageAlt ?? post.title }] } : {}),
     },
     twitter: {
-      card: post.coverImageUrl ? 'summary_large_image' : 'summary',
+      // A post without a cover wears the site card (it used to unfurl as a
+      // bare `summary` with no picture at all).
+      images: post.coverImageUrl ? [{ url: post.coverImageUrl, alt: post.coverImageAlt ?? post.title }] : SITE_CARD,
+      card: 'summary_large_image',
       title: post.title,
       description: post.description,
     },

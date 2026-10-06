@@ -259,7 +259,7 @@ export default function TechnicalsTab({
               role="tab"
               aria-selected={tf === t.key}
               onClick={() => setTf(t.key)}
-              className={`mono rounded-md px-2.5 py-1 text-[11px] uppercase tracking-wider transition-colors ${
+              className={`mono rounded-md px-2.5 py-1 text-[11px] uppercase tracking-wider transition-colors max-lg:min-h-11 max-lg:min-w-11 ${
                 tf === t.key ? 'bg-[var(--surf-2)] text-[color:var(--fg)]' : 'text-[color:var(--muted)] hover:text-[color:var(--fg)]'
               }`}
             >
@@ -276,7 +276,7 @@ export default function TechnicalsTab({
         <div className="mt-6 rounded-xl border border-[var(--line)] px-4 py-6 text-center" data-technicals-refusal={refusal.error}>
           <p className="text-[13px] text-[color:var(--fg)]">{refusal.reason}</p>
           {refusal.error !== 'no chart source' && (
-            <button type="button" onClick={() => setTick((t) => t + 1)} className="mt-3 rounded-lg border border-[var(--line-2)] px-3 py-1.5 text-[12px] text-[color:var(--fg)]">
+            <button type="button" onClick={() => setTick((t) => t + 1)} className="mt-3 rounded-lg border border-solid border-[var(--line-2)] px-3 py-1.5 text-[12px] text-[color:var(--fg)]">
               Try again
             </button>
           )}

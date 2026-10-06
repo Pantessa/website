@@ -1,5 +1,6 @@
 'use client'
 
+import { turnFailedReply } from '@/lib/fetch-words'
 import { fillSymbolsOf } from '@/lib/fill-symbols'
 import { guardWarnLines } from '@/lib/content-origin'
 import ExternalBuildNotice from '@/components/ExternalBuildNotice'
@@ -50,7 +51,7 @@ import { CATALOG } from '@/lib/mcp-data'
 import { useSession } from '@/lib/session'
 import { latestWorkingContext, type WorkingContext } from '@/lib/working-context'
 import { EXAMPLE_PROMPTS, TRY_PROMPTS } from '@/lib/examples'
-import { GUEST_TRIAL_LIMIT, bumpGuestTurns, guestTurnsUsed, refundGuestTurn } from '@/lib/guest-trial'
+import { GUEST_TRIAL_LIMIT, GUEST_WALL_COPY, bumpGuestTurns, guestTurnsUsed, refundGuestTurn } from '@/lib/guest-trial'
 import EmptyState from '@/components/chat/EmptyState'
 import CreateAccountButton from '@/components/CreateAccountButton'
 import { cdpEnabled } from '@/lib/cdp-embedded'
@@ -1204,7 +1205,19 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
     // the same counter and swaps its banner for the scrim at zero.
     const guestTrialTurn = !embedded && sessionStatus === 'guest' && !effectiveAddress
     if (guestTrialTurn) {
-      if (guestTurnsUsed() >= GUEST_TRIAL_LIMIT) return // scrim is up — belt & suspenders
+      if (guestTurnsUsed() >= GUEST_TRIAL_LIMIT) {
+        // On /chat the sign-in gate's scrim is already up. The simple
+        // runtimes (the ask door's sheet, /i) mount no gate, so this used
+        // to be a send button that did nothing. Say why, and offer the door;
+        // the typed ask stays in the composer.
+        if (simple) {
+          setGuestWall(true)
+          // An ask handed in (the ask door's own composer, a chip) never
+          // touched this composer: put it there so it isn't lost.
+          if (typeof textOverride === 'string' && !input.trim()) setInput(raw)
+        }
+        return
+      }
       bumpGuestTurns()
     }
     analytics.chatMessage(activeServers.length, isConnected)
@@ -1380,7 +1393,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         role: 'assistant',
         content: /rejected|denied|User rejected/i.test(msg)
           ? '🚫 Payment signature rejected — nothing was charged.'
-          : '⚠️ Failed to complete the request. ' + (msg || 'Try again.'),
+          : turnFailedReply(msg),
       })
       reportEmbedTurn(userMsg, null, msg || 'request failed')
     } finally {
@@ -1558,6 +1571,12 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
   // nothing is still trying; a short grace covers door→list handoff.
   const [connectDoorOpen, setConnectDoorOpen] = useState(false)
   const [connectMissed, setConnectMissed] = useState(false)
+  // A walletless guest out of free asks pressed send on a surface with no
+  // sign-in gate (see the guest trial lane in handleSend).
+  const [guestWall, setGuestWall] = useState(false)
+  useEffect(() => {
+    if (guestWall && (effectiveAddress || sessionStatus === 'authed')) setGuestWall(false)
+  }, [guestWall, effectiveAddress, sessionStatus])
   const [handshakeInFlight, setHandshakeInFlight] = useState(false)
   useEffect(() => {
     const released = connectAskReleased({
@@ -1850,7 +1869,7 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
         role: 'assistant',
         content: /rejected|denied|User rejected/i.test(msg)
           ? '🚫 Payment signature rejected — nothing was charged.'
-          : '⚠️ Failed to complete the request. ' + (msg || 'Try again.'),
+          : turnFailedReply(msg),
       })
     } finally {
       setLoading(false)
@@ -2536,6 +2555,20 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
                         the deposit's own confirmation proved a transfer, not
                         a swap. A refund renders its own line above instead,
                         and never offers a receipt that says money moved. */}
+                    {/* A connect-only wallet's thread has no row yet, so there
+                        is no receipt to mint: offer the one signature that
+                        keeps the chat, after which this row becomes the real
+                        share (GTM share lane; "sign in to keep"). */}
+                    {msg.role === 'assistant' &&
+                      signedTxsOf(msg.meta).length > 0 &&
+                      claimsSettled(msg.meta) &&
+                      !msg.dbId &&
+                      !embedded && (
+                        <div className="mt-2 pt-1.5 border-t border-[var(--line)] flex items-center gap-2" data-signed-share="sign-in">
+                          <span className="text-[10.5px] mono text-[color:var(--muted-2)]">✍️ signed &amp; settled</span>
+                          <ShareReceiptButton kind="tx" signInFirst />
+                        </div>
+                      )}
                     {msg.role === 'assistant' &&
                       signedTxsOf(msg.meta).length > 0 &&
                       claimsSettled(msg.meta) &&
@@ -2919,6 +2952,18 @@ export default function ChatInterface({ embedded = false, contextAddress, onEmbe
             )}
           </button>
         </div>
+        {guestWall && (
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-center text-[12.5px] text-[color:var(--muted)]" role="status" data-guest-wall>
+            <span>{GUEST_WALL_COPY}</span>
+            {cdpEnabled ? (
+              <CreateAccountButton className="btn btn--solid" label="Connect a wallet" walletConnectOnly />
+            ) : (
+              <button type="button" className="btn btn--solid" onClick={() => connectAndSignIn()}>
+                Connect a wallet
+              </button>
+            )}
+          </div>
+        )}
         <p
           className={cn(
             'text-[11px] text-[color:var(--muted-2)] mt-2 text-center mono',

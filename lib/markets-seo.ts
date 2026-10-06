@@ -18,7 +18,7 @@
 
 import { chartPairFor, normalizeChartSymbol, type Candle, type ChartPair } from '@/lib/charts'
 import { ROBINHOOD_TICKER_NAMES } from '@/lib/robinhood-tickers'
-import { FEATURED, marketSections, type MarketSectionId } from '@/lib/markets'
+import { FEATURED, marketSections, symbolStanding, type MarketSectionId } from '@/lib/markets'
 import { SITE_URL } from '@/lib/site-url'
 import { TAPE_FOOTNOTE } from '@/lib/markets-copy'
 
@@ -68,7 +68,10 @@ export function symbolPageSeo(symbolRaw: string): SymbolSeo {
 
   let title: string
   let description: string
-  if (!pair) {
+  if (!pair && symbolStanding(symbol) === 'unknown') {
+    title = `${symbol || 'Symbol'} is not listed | Pantessa Markets`
+    description = `Nothing on Pantessa Markets trades as ${symbol || 'that ticker'}. Search stocks, coins and perps by ticker or name.`
+  } else if (!pair) {
     title = `${symbol || 'Token'} — Pantessa Markets`
     description = `No live chart for ${symbol || 'this token'} yet. You can still trade it from one sentence in chat — guarded, signed only by your wallet.`
   } else if (pair.source === 'robinhood') {

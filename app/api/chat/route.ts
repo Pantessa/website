@@ -65,10 +65,13 @@ import { fenceGuardianCoin } from '@/lib/hl-guardian-fence'
 
 import { hlPerpUniverse } from '@/lib/hl-universe'
 import { rescueIntent } from '@/lib/intent-rescue'
+import { HOUSE_UNAVAILABLE_REPLY } from '@/lib/fetch-words'
 import { buildsNatively } from '@/scripts/ask-ladder'
 import { noPoolChips, nothingToSellChips, unpriceableSellChips } from '@/lib/wall-chips'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
-import { compileJobAsk, stampSwapFeeTier } from '@/lib/jobs'
+import { compileJobAsk, stampSwapFeeTier, type CompiledJob } from '@/lib/jobs'
+import { planEthSupply } from '@/lib/aave-exec'
+import { wrapGasReserveWei } from '@/lib/weth-wrap'
 import { advanceJob, createJob, type JobBirth } from '@/lib/jobs-runner'
 import { signJobToken } from '@/lib/job-token'
 import { runDcaTurn } from '@/lib/dca-exec'
@@ -1055,7 +1058,7 @@ async function handleChatTurn(req: NextRequest) {
         const aaveRead = aaveAgentOf(activeServers)
         if (aaveRead.agent && aaveRead.usable) {
           nativeTrace({ type: 'status', label: `native aave layer: amending the pending supply to ${fu.params.amount} ${fu.params.token.toUpperCase()}` })
-          return await buildAaveSupplyTurn(aaveRead.agent, fu.params, walletAddress, workingContext, message, nativeTrace)
+          return await buildAaveSupplyTurn(aaveRead.agent, fu.params, walletAddress, workingContext, message, nativeTrace, { internal: internalRun, birth: { surface: contentOrigin } })
         }
       }
     }
@@ -1321,7 +1324,7 @@ async function handleChatTurn(req: NextRequest) {
           })
         }
         nativeTrace({ type: 'status', label: `native aave layer claimed the turn: supply ${aaveAsk.amount} ${aaveAsk.token.toUpperCase()}${aaveAsk.explicitAave ? '' : ' (set-hint: Aave selected)'} — planner bypassed` })
-        return await buildAaveSupplyTurn(aaveRead.agent, aaveAsk, walletAddress, workingContext, message, nativeTrace)
+        return await buildAaveSupplyTurn(aaveRead.agent, aaveAsk, walletAddress, workingContext, message, nativeTrace, { internal: internalRun, birth: jobBirth })
       } else {
         // Pool-ish/bare ask with no Aave agent and Aave not named → normal routing.
         nativeTrace({ type: 'note', level: 'info', label: 'native aave layer passed: supply-shaped ask but no Aave agent in the set — normal routing' })
@@ -3442,8 +3445,10 @@ async function buildAaveSupplyTurn(
   ctx?: WorkingContext,
   originalMessage?: string,
   trace: (event: unknown) => void = () => {},
+  /** Stamps a job this turn may compile (the ETH wrap-then-supply). */
+  jobOpts: { internal?: boolean; birth?: JobBirth } = {},
 ) {
-  const token = params.token.toUpperCase()
+  let token = params.token.toUpperCase()
   if (!walletAddress) {
     trace({ type: 'note', level: 'info', label: 'no wallet connected — asking to connect before building' })
     return NextResponse.json({
@@ -3451,6 +3456,62 @@ async function buildAaveSupplyTurn(
       connectWallet: true,
       ...(originalMessage ? { connectAsk: originalMessage } : {}),
     })
+  }
+
+  // ── ETH: Aave v4 lists WETH, so native ETH wraps first ──────────────────
+  // People hold ETH; the reserve takes WETH and build_supply checks the WETH
+  // balance at build time. A wallet that already holds the WETH supplies it
+  // directly (below, as a WETH supply); otherwise the turn compiles a two-step
+  // job — a guarded WETH.deposit{value} of the shortfall, then the ordinary
+  // approve + supply, built once the wrap confirms (lib/aave-exec).
+  if (token === 'ETH') {
+    let planned: Awaited<ReturnType<typeof planEthSupply>>
+    try {
+      planned = await planEthSupply(walletAddress, params)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'the read failed'
+      trace({ type: 'note', level: 'warn', label: `native aave layer: ETH supply plan failed — ${msg.slice(0, 160)}` })
+      return NextResponse.json({ reply: `🏦 Couldn't read Aave's WETH reserve or your ETH balance: ${msg}` })
+    }
+    if ('problem' in planned) return NextResponse.json({ reply: `🏦 ${planned.problem}` })
+    if (planned.plan.kind === 'short') {
+      trace({ type: 'note', level: 'warn', label: 'native aave layer: ETH + WETH short of the supply after the gas reserve — no build' })
+      return NextResponse.json({ reply: `🏦 ${planned.plan.problem}` })
+    }
+    if (planned.plan.kind === 'covered') {
+      trace({ type: 'status', label: `native aave layer: the wallet already holds ${planned.amount} WETH — supplying WETH, no wrap` })
+      token = 'WETH'
+      params = { ...params, token: 'WETH', amount: planned.amount, amountIsUsd: undefined }
+    } else {
+      const wrapEth = formatUnits(planned.plan.wrapWei, 18)
+      const apy = planned.picked.supplyApyPct !== null ? `${planned.picked.supplyApyPct.toFixed(2)}% APY` : "the pool's live APY"
+      const usd = planned.picked.priceUsd !== null ? ` (≈$${(Number(planned.amount) * planned.picked.priceUsd).toFixed(2)})` : ''
+      const compiled: CompiledJob = {
+        title: `Supply ${planned.amount} ETH${usd} to Aave v4 ${planned.picked.spokeName}`,
+        steps: [
+          { kind: 'sign', builder: 'native-weth-wrap', title: `Wrap ${wrapEth} ETH into WETH`, params: { wrapWei: planned.plan.wrapWei.toString() } },
+          {
+            kind: 'sign',
+            builder: 'native-aave-supply',
+            title: `Supply ${planned.amount} WETH to Aave v4 ${planned.picked.spokeName}`,
+            params: { token: 'ETH', amount: planned.amount, ...(params.bestRate ? { bestRate: true } : {}) },
+          },
+        ],
+      }
+      const job = await createJob(walletAddress, compiled, 'chat', { internal: jobOpts.internal === true, ...(jobOpts.birth ?? {}) })
+      await advanceJob(job).catch(() => {})
+      trace({ type: 'status', label: `native aave layer: ETH supply compiled as wrap ${wrapEth} ETH → supply ${planned.amount} WETH (${planned.picked.spokeName})` })
+      const held = planned.wethWei > BigInt(0) ? ` You already hold ${formatUnits(planned.wethWei, 18)} WETH, so only the difference is wrapped.` : ''
+      return NextResponse.json({
+        reply:
+          `🔏 Supply ${planned.amount} ETH${usd} to Aave v4 ${planned.picked.spokeName} on Ethereum, earning ${apy}.\n` +
+          `— Aave takes WETH, not ETH, so this is two signatures: wrap ${wrapEth} ETH into WETH (\`${planned.picked.currency}\`), then approve and supply it once the wrap confirms.${held}\n` +
+          `— About ${formatUnits(wrapGasReserveWei(1), 18)} ETH stays in the wallet for gas. The deposit credits ${walletAddress}; withdraw any time.`,
+        jobId: job.id,
+        jobToken: signJobToken(job.id, walletAddress),
+        buildPath: 'native-job',
+      })
+    }
   }
 
   // 1) Resolve the reserve from the agent's own reserves list — address,
@@ -5188,7 +5249,20 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
                   options: [rhFundChip, { label: 'Not now', resume: 'Never mind — leave my funds where they are.' }],
                 },
               }
-            : {}),
+            : {
+                // No card door (closed, or the plan is past one checkout):
+                // the reply used to end on homework with nothing to press.
+                // "check again" is the pending funding's own recheck verb
+                // (lib/lifi-bridge parseRhFundingFollowUp), so the chip
+                // re-runs the scan and picks the buy up where it stopped.
+                clarify: {
+                  question: 'Topped up?',
+                  options: [
+                    { label: 'I added funds: check again', resume: 'check again' },
+                    { label: 'Not now', resume: 'Never mind — leave my funds where they are.' },
+                  ],
+                },
+              }),
           workingContext: pendingFunding,
         })
       } else if (acquiring && !convertingFrom) {
@@ -7206,7 +7280,10 @@ function houseUnavailableReason(): string {
       ? 'your own API key is rate-limited right now (429) — try again in a minute, or remove the key in Settings to use your included answers'
       : `your own API key was refused (${failed.status}) — check it in Settings → Your AI key`
   }
-  return 'house synthesis unavailable (ANTHROPIC_API_KEY missing or the API call failed)'
+  // This sentence IS the reply a visitor reads (the thrown message becomes
+  // the turn), so it names no env var. The log line keeps the diagnosis.
+  console.warn('[chat] house synthesis unavailable (ANTHROPIC_API_KEY missing or the API call failed)')
+  return HOUSE_UNAVAILABLE_REPLY
 }
 
 /**

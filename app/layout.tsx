@@ -17,14 +17,16 @@ import { Analytics } from "@vercel/analytics/next"
 
 // Matches the SITE convention used by robots.ts / sitemap.ts / blog.
 import { SITE_URL as SITE } from '@/lib/site-url'
+import { HOME_DESCRIPTION, HOME_TITLE } from '@/lib/markets-copy'
 
-const TITLE = 'Pantessa — Every dapp. One chat.'
-// Meta description (Google truncates ~150–160 chars).
-const DESCRIPTION =
-  'Compose free MCPs — Uniswap, Snapshot, CoW, Hyperliquid — or your own into one agent that swaps, votes, and answers. Your wallet signs. Every call receipted.'
+// The fallback for any page that names no title or card text of its own: the
+// same line the homepage and the site card carry (lib/markets-copy). It was
+// the pre-pivot "Every dapp. One chat." line, so a page that only set its
+// openGraph block (every docs page) unfurled on X under the old pitch.
+const TITLE = HOME_TITLE
+const DESCRIPTION = HOME_DESCRIPTION
 // Shorter copy for social cards (previews truncate ~125 chars, esp. on mobile).
-const SOCIAL_DESCRIPTION =
-  'Free first-party MCPs + your own, composed into one agent. Swaps, votes, answers — your wallet signs, every call receipted.'
+const SOCIAL_DESCRIPTION = 'Live charts for tokenized stocks, crypto and perps, and every chart is the order form. Your own wallet signs.'
 
 export const metadata: Metadata = {
   // Required for OG/Twitter image URLs to resolve to absolute URLs.

@@ -17,6 +17,7 @@ import { Card } from '@/lib/dashboard-ui'
 import { formatEarnedUsd } from '@/lib/fees'
 import { absoluteUrl } from '@/lib/site-url'
 import { LINK_FEE_PCT } from '@/lib/fees'
+import { creatorPageXHref, intentLinkXHref } from '@/lib/share-posts'
 
 interface LinksApi {
   links: {
@@ -46,7 +47,7 @@ interface HandleApi {
 
 /** Per-link share intent — the ask IS the tweet (dynamic OG wears the brand). */
 const tweetLinkHref = (ask: string, url: string) =>
-  `https://twitter.com/intent/tweet?text=${encodeURIComponent(`“${ask}” — tap it, connect your wallet, done.`)}&url=${encodeURIComponent(absoluteUrl(url))}`
+  intentLinkXHref(ask, url)
 
 const usd = (n: number) => (n >= 1000 ? `$${Math.round(n).toLocaleString('en-US')}` : `$${n.toFixed(2)}`)
 
@@ -174,7 +175,7 @@ export default function LinksSummaryCard() {
                 {copiedPage ? <Check className="w-3.5 h-3.5 text-[color:var(--accent)]" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
               <a
-                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Links that move money — @${me.handle}`)}&url=${encodeURIComponent(absoluteUrl(`/l/${me.handle}`))}`}
+                href={creatorPageXHref(me.handle)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mono text-[11px] px-2 py-1 rounded-md border border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)] transition-colors"

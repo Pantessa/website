@@ -7,6 +7,7 @@
 // (BUSINESS-MODEL-chart-first §5.2). The parse is /api/watchlists/import
 // (pure, no auth) so a guest previews before keeping anything.
 
+import { notAnswering, shownError } from '@/lib/fetch-words'
 import { useState } from 'react'
 import { ClipboardPaste } from 'lucide-react'
 import TokenIcon from '@/components/TokenIcon'
@@ -49,11 +50,11 @@ export default function ImportModal({
     setError(null)
     try {
       const res = await fetch('/api/watchlists/import', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) })
-      const j = (await res.json()) as Parsed & { error?: string }
-      if (!res.ok) throw new Error(j.error ?? `HTTP ${res.status}`)
+      const j = (await res.json().catch(() => ({}))) as Parsed & { error?: string }
+      if (!res.ok) throw new Error(j.error ?? notAnswering('The import'))
       setParsed(j)
     } catch (e) {
-      setError((e as Error).message)
+      setError(shownError(e, 'The import'))
     } finally {
       setBusy(false)
     }

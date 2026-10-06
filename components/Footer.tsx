@@ -44,7 +44,6 @@ const GROUPS: { title: string; links: FooterLink[] }[] = [
       { label: 'MCP Servers', href: '/servers' },
       { label: 'Benchmarks', href: '/benchmarks' },
       { label: 'Router Tools', href: '/tools' },
-      { label: 'Status', href: '/incidents' },
     ],
   },
   {

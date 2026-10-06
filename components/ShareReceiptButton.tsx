@@ -11,18 +11,14 @@ import { useState } from 'react'
 import { Check, Loader2, Share2 } from 'lucide-react'
 import { useSession } from '@/lib/session'
 import { cn } from '@/lib/utils'
+import ShareActions from '@/components/ShareActions'
 
 interface ShareInfo {
   url: string
   tweetHref: string
-}
-
-function XMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" aria-hidden className={className}>
-      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24h-6.66l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-    </svg>
-  )
+  headline?: string
+  /** The pre-written post, link excluded (older servers omit it). */
+  text?: string
 }
 
 export default function ShareReceiptButton({
@@ -31,21 +27,51 @@ export default function ShareReceiptButton({
   chatId,
   messageId,
   className,
+  signInFirst = false,
 }: {
   kind: 'tx' | 'job' | 'dca' | 'guardian' | 'spot-guard'
   refId?: string
   chatId?: string
   messageId?: string
   className?: string
+  /** A connected wallet that has not signed in yet (the default on /markets,
+   *  /t and /i: connect to act, sign in to keep) is offered the sign-in that
+   *  makes the receipt mintable, instead of nothing. The caller re-renders
+   *  with the real ids once the thread is kept. */
+  signInFirst?: boolean
 }) {
-  const { address } = useSession()
+  const { address, walletAddress, signIn, signingIn } = useSession()
   const [busy, setBusy] = useState(false)
   const [shared, setShared] = useState<ShareInfo | null>(null)
   const [copied, setCopied] = useState(false)
 
   // No session (embed visitors, signed-out readers) → no share surface;
   // the POST would 401 and the receipt wouldn't be theirs to mint anyway.
-  if (!address) return null
+  if (!address) {
+    if (!signInFirst || !walletAddress) return null
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          void signIn()
+        }}
+        disabled={signingIn}
+        data-share-lane="sign-in"
+        className={cn(
+          'inline-flex items-center gap-1 text-[10.5px] mono text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors disabled:opacity-60 [@media(hover:none)]:min-h-9',
+          className,
+        )}
+        title="One wallet signature (nothing moves) keeps this chat, and makes its receipt shareable"
+      >
+        {signingIn ? <Loader2 className="w-3 h-3 animate-spin" aria-hidden /> : <Share2 className="w-3 h-3" aria-hidden />}
+        {signingIn ? 'waiting for your wallet' : 'sign in to share'}
+      </button>
+    )
+  }
+
+  // Signed in, but the turn's row is still being written: nothing to mint yet.
+  if (kind === 'tx' && (!chatId || !messageId)) return null
 
   const share = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -75,22 +101,19 @@ export default function ShareReceiptButton({
   }
 
   if (shared) {
+    // The receipt exists: the phone's share sheet, copy, or the pre-written
+    // post, all one tap from here (the link is already on the clipboard).
     return (
-      <span className={cn('inline-flex items-center gap-2', className)} onClick={(e) => e.stopPropagation()}>
+      <span className={cn('inline-flex flex-wrap items-center gap-2', className)} onClick={(e) => e.stopPropagation()} data-receipt-shared>
         <span className="inline-flex items-center gap-1 text-[10.5px] mono text-emerald-400">
           <Check className="w-3 h-3" aria-hidden />
-          {copied ? 'link copied' : 'link ready'}
+          {copied ? 'link copied' : 'receipt ready'}
         </span>
-        <a
-          href={shared.tweetHref}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-[10.5px] mono text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors"
-          title="Post it — the receipt link and copy are pre-written"
-        >
-          <XMark />
-          post
-        </a>
+        <ShareActions
+          post={{ url: shared.url, title: shared.headline ?? 'A Pantessa receipt', text: shared.text ?? new URL(shared.tweetHref).searchParams.get('text') ?? '' }}
+          viaFixed
+          surface={`receipt-${kind}`}
+        />
       </span>
     )
   }
@@ -100,7 +123,7 @@ export default function ShareReceiptButton({
       onClick={(e) => void share(e)}
       disabled={busy}
       className={cn(
-        'inline-flex items-center gap-1 text-[10.5px] mono text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors disabled:opacity-60',
+        'inline-flex items-center gap-1 text-[10.5px] mono text-[color:var(--muted-2)] hover:text-[color:var(--fg)] transition-colors disabled:opacity-60 [@media(hover:none)]:min-h-9',
         className,
       )}
       title="Mint a public receipt link — numbers only, your address truncated, revocable"

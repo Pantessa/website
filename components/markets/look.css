@@ -151,6 +151,9 @@
 .mk-map__tabs { display: inline-flex; gap: 4px; }
 .mk-map__tab { font-family: var(--mk-font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
 .mk-map__tab[aria-pressed='true'] { color: var(--fg); border-color: var(--fg); }
+/* A thumb gets 44px of height on a 25px pill (the pill keeps its look: a
+   44px one filled the map card's head on the landing). */
+@media (hover: none) { .mk-map__tab { position: relative; padding-inline: 12px; } .mk-map__tab::after { content: ''; position: absolute; inset: -10px -2px; } }
 .mk-map__scale { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mk-font-mono); font-size: 10px; color: var(--muted-2); }
 .mk-map__scale i { display: block; width: 14px; height: 8px; border-radius: 2px; }
 .mk-map__svg { display: block; width: 100%; height: auto; max-width: 100%; }

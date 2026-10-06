@@ -366,6 +366,7 @@ import {
 import { buildAutoBuy } from '../lib/dca-auto-exec'
 import { ADDRESS_THIS, NoV3PoolError, SWAP_ROUTER_02_ABI, guardUniswapV3Build, type V3GuardExpectations } from '../lib/uniswap-venue'
 import { creatorSplitPins } from './creator-split-pins'
+import { actionGateLivePins, actionGatePins } from './action-gate-pins'
 import { chartCallsPins } from './chart-calls-pins'
 import { battlefieldPins } from './battlefield-pins'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
@@ -25328,11 +25329,11 @@ async function main() {
     // funding rows — those are per wallet (lib/fund-routes, pinned below) —
     // and exactly one card row when the on-ramp door is open.
     check(
-      'MK2/EXEC venue map: ETH lists spot on Base/Ethereum/Arbitrum/Optimism, CoW limits only where a book exists (never Optimism or 4663), a leveraged perp + Guardian stop, Aave supply + a USDC borrow, Lido stake, the Spot Guardian on Base — NO per-chain funding row (funding is per wallet) and no DCA row (2026-09-16)',
+      'MK2/EXEC venue map: ETH lists spot on Base/Ethereum/Arbitrum/Optimism, CoW limits only where a book exists (never Optimism or 4663), a leveraged perp + Guardian stop, Lido stake, the Spot Guardian on Base — NO per-chain funding row (funding is per wallet), no DCA row (2026-09-16), and the Aave supply + USDC borrow rows again: the reserve takes WETH and the layer now wraps the ETH first (RE-PINNED 2026-10-05, twice — off in #903, back with the wrap); LINK, which Aave lists as named, carries the same two rows',
       new Set(eth.filter((r) => r.kind === 'spot').map((r) => r.chainId)).size === 4 &&
         eth.filter((r) => r.kind === 'limit').every((r) => [8453, 1, 42161].includes(r.chainId)) && eth.some((r) => r.kind === 'limit') &&
         eth.some((r) => r.kind === 'perp' && r.ask.startsWith('2x Long')) && eth.some((r) => r.kind === 'protect' && r.venue === 'hyperliquid' && r.needs === 'position') &&
-        eth.some((r) => r.kind === 'lend' && r.ask === 'Supply $50 of ETH to Aave') && eth.some((r) => r.kind === 'lend' && r.ask === 'Borrow 50 USDC from Aave') &&
+        eth.some((r) => r.kind === 'lend' && /^Supply \$\d+ of ETH to Aave$/.test(r.ask)) && eth.some((r) => r.kind === 'lend' && /^Borrow \d+ USDC from Aave$/.test(r.ask)) && link.some((r) => r.kind === 'lend' && /^Supply \$\d+ of LINK to Aave$/.test(r.ask)) && link.some((r) => r.kind === 'lend' && /^Borrow \d+ USDC from Aave$/.test(r.ask)) &&
         eth.some((r) => r.kind === 'stake' && r.ask === 'Stake 0.02 ETH on Lido' && r.chainId === 1) && !eth.some((r) => /\bdca\b|weekly/i.test(`${r.id} ${r.label} ${r.ask}`)) &&
         eth.some((r) => r.kind === 'protect' && r.venue === 'pantessa' && r.chainId === 8453) && eth.filter((r) => r.kind === 'fund').length === 0,
       `${eth.length} rows: ${[...kinds(eth)].join(',')}`,
@@ -25388,8 +25389,8 @@ async function main() {
     // exports MARKETS + the ask door import.
     const ethExec = mk2ExecAsks(ethPair, { usd: 50, last: 2500 })
     check(
-      'MK2/EXEC ExecStrip: ETH offers Buy · Sell · Long · Short · Stake · Supply · Protect, a stock Buy · Sell, an HL chart Long · Short · Protect, SOL Long · Short (no DCA chip, 2026-09-16) — and every chip lands native',
-      mk2ExecSidesFor(ethPair).join() === ['buy', 'sell', 'long', 'short', 'stake', 'supply', 'protect'].join() &&
+      'MK2/EXEC ExecStrip: ETH offers Buy · Sell · Long · Short · Stake · Supply · Protect (Supply wraps the ETH into Aave\'s WETH reserve, RE-PINNED 2026-10-05), LINK adds Supply, a stock Buy · Sell, an HL chart Long · Short · Protect, SOL Long · Short (no DCA chip, 2026-09-16) — and every chip lands native',
+      mk2ExecSidesFor(ethPair).join() === ['buy', 'sell', 'long', 'short', 'stake', 'supply', 'protect'].join() && mk2ExecSidesFor(linkPair).join() === ['buy', 'sell', 'long', 'short', 'supply', 'protect'].join() &&
         mk2ExecSidesFor(aaplPair).join() === ['buy', 'sell'].join() && mk2ExecSidesFor(hypePair).join() === ['long', 'short', 'protect'].join() &&
         mk2ExecSidesFor(solPair).join() === ['long', 'short'].join() &&
         [...ethExec, ...mk2ExecAsks(aaplPair), ...mk2ExecAsks(hypePair), ...mk2ExecAsks(solPair)].every((a) => simulateLadder(a.ask).kind === 'action'),
@@ -25450,7 +25451,7 @@ async function main() {
     check(
       'MK2/EXEC QuickAct: ETH = Buy $25 · Long 2x; a stock = Buy $25 on 4663 (never a perp); SOL = Long 2x · Short 2x (never a spot buy of a squat); no DCA chip (2026-09-16); every chip lands native; QuickAct.tsx stops the row link and sends through onAsk',
       qaEth.map((a) => a.label).join() === 'Buy $25,Long 2x' && qaEth[1].ask === '2x Long $25 of ETH on Hyperliquid' &&
-        qaAapl.map((a) => a.label).join() === 'Buy $25 on 4663' && qaAapl[0].ask === 'Buy $25 of AAPL' &&
+        qaAapl.map((a) => a.label).join() === 'Buy $25' && qaAapl[0].ask === 'Buy $25 of AAPL' &&
         qaSol.map((a) => a.label).join() === 'Long 2x,Short 2x' &&
         [...qaEth, ...qaAapl, ...qaSol, ...mk2QuickActs('HYPE', hypePair), ...mk2QuickActs('LINK', linkPair)].every((a) => simulateLadder(a.ask).kind === 'action') &&
         (await readFile('components/markets/trade/QuickAct.tsx', 'utf8')).includes('e.stopPropagation()') && (await readFile('components/markets/trade/QuickAct.tsx', 'utf8')).includes('onAsk(ask)'),
@@ -25767,9 +25768,9 @@ async function main() {
     const coinLeg = (sym: string, usd: number, dest: number, buy: boolean, origin: number, scan = legScanCoin) =>
       coinFundLegs({ sym, usd, destChainId: dest, buy, scan }).legs.find((l) => l.chainId === origin) ?? null
     const cases: [string, Mk2LegKind[], Parameters<typeof mk2ComposeCompound>[3]][] = [
-      ['ETH', ['buy', 'stake'], {}], ['ETH', ['fund', 'buy', 'stake'], { chainId: 8453, fund: coinLeg('ETH', 50, 8453, true, 10) }], ['ETH', ['buy', 'supply'], {}],
-      ['ETH', ['deposit', 'long', 'protect'], { leverage: 2 }], ['ETH', ['short', 'protect'], { leverage: 3 }], ['ETH', ['fund', 'buy', 'supply'], { usd: 100, fund: coinLeg('ETH', 100, 1, true, 10) }],
-      ['LINK', ['buy', 'supply'], {}], ['LINK', ['fund', 'buy'], { chainId: 8453, fund: coinLeg('LINK', 50, 8453, true, 42161) }], ['LINK', ['fund', 'buy'], { chainId: 42161, fund: coinLeg('LINK', 50, 42161, true, 10) }],
+      ['ETH', ['buy', 'stake'], {}], ['ETH', ['fund', 'buy', 'stake'], { chainId: 8453, fund: coinLeg('ETH', 50, 8453, true, 10) }],
+      ['ETH', ['deposit', 'long', 'protect'], { leverage: 2 }], ['ETH', ['short', 'protect'], { leverage: 3 }], ['ETH', ['fund', 'buy', 'stake'], { usd: 100, fund: coinLeg('ETH', 100, 1, true, 10) }],
+      ['LINK', ['buy', 'supply'], {}], ['ETH', ['buy', 'supply'], {}], ['LINK', ['fund', 'buy'], { chainId: 8453, fund: coinLeg('LINK', 50, 8453, true, 42161) }], ['LINK', ['fund', 'buy'], { chainId: 42161, fund: coinLeg('LINK', 50, 42161, true, 10) }],
       ['LINK', ['fund', 'supply'], { fund: coinLeg('LINK', 50, 1, false, 10) }], ['LINK', ['fund', 'buy'], { chainId: 8453, fund: coinLeg('LINK', 50, 8453, true, 10, legScanGasOnly) }],
       ['BTC', ['deposit', 'short'], {}], ['SOL', ['deposit', 'long', 'protect'], { leverage: 5 }], ['HYPE', ['long', 'protect'], {}],
       ['AAPL', ['fund', 'buy'], { fund: stockLeg(50, 8453) }], ['AAPL', ['fund', 'buy'], { usd: 100, fund: stockLeg(100, 42161) }], ['AAPL', ['fund', 'buy'], { usd: 25, fund: stockLeg(25, 8453, true) }],
@@ -26881,7 +26882,7 @@ async function main() {
     const aaplWords = aiVenueWordsFor(aaplPair, 300)
     check('ai venues: the prompts\' "ways this wallet can act" come from EXEC\'s venuesFor (spot chains, CoW limits, Aave, Lido, the perp) plus missingVenueNotes as "not here:" lines', ethWords.some((w) => /^spot on Uniswap \(Base/.test(w)) && ethWords.some((w) => /CoW limit/.test(w)) && ethWords.some((w) => /Aave/.test(w)) && ethWords.some((w) => /Lido/.test(w)) && ethWords.some((w) => /Hyperliquid perp/.test(w)) && aaplWords.some((w) => /Robinhood Chain/.test(w)) && aaplWords.some((w) => w.startsWith('not here:')), `${ethWords.length}/${aaplWords.length} words`)
     const ethMenu = aiChipMenu({ pair: ethPair, last: 2500, tech: null })
-    check('ai menu: EXEC\'s venue rows join the brief\'s chip menu (one per kind+side, ladder-filtered downstream) and funding legs never do', ethMenu.some((c) => c.ask === 'Supply $50 of ETH to Aave') && ethMenu.some((c) => /^Stake [\d.]+ ETH on Lido$/.test(c.ask)) && ethMenu.some((c) => /^Long \$50 of ETH on Hyperliquid$/.test(c.ask)) && !ethMenu.some((c) => /^(Swap|Fund) /.test(c.ask)) && new Set(ethMenu.map((c) => c.ask)).size === ethMenu.length, `${ethMenu.length} chips`)
+    check('ai menu: EXEC\'s venue rows join the brief\'s chip menu (one per kind+side, ladder-filtered downstream) and funding legs never do', !ethMenu.some((c) => /\bto Aave\b/.test(c.ask)) && ethMenu.some((c) => /^Stake [\d.]+ ETH on Lido$/.test(c.ask)) && ethMenu.some((c) => /^Long \$50 of ETH on Hyperliquid$/.test(c.ask)) && !ethMenu.some((c) => /^(Swap|Fund) /.test(c.ask)) && new Set(ethMenu.map((c) => c.ask)).size === ethMenu.length, `${ethMenu.length} chips`)
     check('ai tape: the morning tape\'s cache key is the sorted, deduped symbol set only — never a list id, a name, or a wallet', aiTapeCacheKey(['eth', 'AAPL', 'ETH', 'btc']) === 'tape:AAPL,BTC,ETH' && aiTapeSymbols(['0x1111111111111111111111111111111111111111', 'ETH']).join(',') === 'ETH')
     if (ethLast != null) {
       const t1 = await readBrief({ part: 'tape', symbols: ['eth', 'AAPL', 'ETH'] })
@@ -27695,7 +27696,7 @@ async function main() {
     const usdc = aave.find((r) => r.asset === 'USDC')!
     const eth = aave.find((r) => r.asset === 'ETH')!
     check(
-      'earn: Aave rows group spokes per asset — USDC shows the best spoke rate (11.38, Ethena) with the summed supplied USD parsed from dollar strings, its ask says "at the best rate" only when >1 spoke lists it, WETH is shown and asked as ETH, and unsupplyable/inactive reserves never become rows',
+      'earn: Aave rows group spokes per asset — USDC shows the best spoke rate (11.38, Ethena) with the summed supplied USD parsed from dollar strings, its ask says "at the best rate" only when >1 spoke lists it, WETH is shown as ETH with its rate and a chip in ETH, what people hold (the layer wraps it first; RE-PINNED 2026-10-05, twice), and unsupplyable/inactive reserves never become rows',
       aave.length === 2 && usdc.apyPct === 11.38 && usdc.tvlUsd === 1_500_000.5 && usdc.askFor(25) === 'Supply $25 of USDC to Aave at the best rate' && /Ethena/.test(usdc.detail) &&
         eth.apyPct === 2.13 && eth.askFor(100) === 'Supply $100 of ETH to Aave' && eth.tvlUsd === 89_106_473.29,
       JSON.stringify(aave.map((r) => [r.asset, r.apyPct, r.tvlUsd, r.askFor(25)])),
@@ -27825,12 +27826,12 @@ async function main() {
       misread.map(([a]) => `${a} → ${JSON.stringify(sellTarget(a))}`).join(' | ') || `${shapes.length} shapes`,
     )
     const notSells = [
-      'Short $50 of ETH on Hyperliquid', '2x Short $50 of HYPE on Hyperliquid', 'Take profit on my ETH long at $4000', 'Protect my spot ETH with a 5% stop',
-      'Protect my ETH in my wallet with a 5% stop', 'Borrow 50 USDC from Aave', 'Close my ETH long on Hyperliquid', 'Withdraw all my ETH from Aave',
+      'Short $50 of ETH on Hyperliquid', '2x Short $50 of HYPE on Hyperliquid', 'Take profit on my ETH long at $4000', 'Protect my ETH long with a 5% stop',
+      'Borrow 50 USDC from Aave', 'Close my ETH long on Hyperliquid', 'Withdraw all my ETH from Aave',
       'Buy $50 of ETH', 'DCA $10 into ETH weekly', 'limit order: buy 0.02 ETH for at most 50 USDC on Base',
     ]
     check(
-      'sell gate: a perp Short, a take-profit, a stop, a borrow, a close, a withdraw, a buy, a DCA and a limit BUY are not sells of a held token — the rule never touches them',
+      'sell gate: a perp Short, a take-profit, a stop on a PERP (a spot stop has its own rule since 2026-10-05 — action-gate pins), a borrow, a close, a withdraw, a buy, a DCA and a limit BUY are not sells of a held token — the rule never touches them',
       notSells.every((a) => !isSellAsk(a) && sellTarget(a) === null && canSellAsk(a, null)),
       notSells.filter((a) => isSellAsk(a) || !canSellAsk(a, null)).join(' | '),
     )
@@ -34536,6 +34537,8 @@ async function main() {
   // The creator share paid inside a swap (2026-10-01): pure pins over the
   // v3 + v4 guards and the on-chain payout record.
   creatorSplitPins(check)
+  actionGatePins(check)
+  await actionGateLivePins(check)
   // Drawing gestures, the share picture's words, a stamped call (pure).
   chartCallsPins(check)
   battlefieldPins(check)

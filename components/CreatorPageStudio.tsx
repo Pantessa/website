@@ -18,8 +18,8 @@ import Link from 'next/link'
 import { LINKS_STUDIO_HREF } from '@/lib/links-href'
 import { BRAND_PRESETS, presetFor } from '@/lib/brand-presets'
 import { useCreatorPage } from '@/lib/creator-page'
-import { absoluteUrl } from '@/lib/site-url'
 import { BrandColorField } from '@/components/BrandColorField'
+import { creatorPageXHref } from '@/lib/share-posts'
 
 function Section({ n, title, blurb, children }: { n: number; title: string; blurb: string; children: React.ReactNode }) {
   return (
@@ -115,7 +115,7 @@ export default function CreatorPageStudio() {
             /l/{myHandle}
           </a>
           <a
-            href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Links that move money — @${myHandle}`)}&url=${encodeURIComponent(absoluteUrl(`/l/${myHandle}`))}`}
+            href={creatorPageXHref(myHandle)}
             target="_blank"
             rel="noopener noreferrer"
             className="mono text-[12px] text-[color:var(--muted)] underline hover:text-[color:var(--fg)]"

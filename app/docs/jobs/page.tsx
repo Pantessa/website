@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import SpineLink from '@/components/SpineLink'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
+import { SITE_CARD } from '@/lib/og-defaults'
 
 // Jobs API — the external-agent door to the transaction layer. Every snippet
 // on this page is runnable as pasted (dryRun costs $0 and creates nothing);
@@ -14,7 +15,8 @@ export const metadata: Metadata = {
   title: PAGE.seoTitle,
   description: PAGE.description,
   alternates: { canonical: docsUrl(PAGE.slug) },
-  openGraph: { title: PAGE.seoTitle, description: PAGE.description, url: docsUrl(PAGE.slug), type: 'article' },
+  openGraph: { images: SITE_CARD, title: PAGE.seoTitle, description: PAGE.description, url: docsUrl(PAGE.slug), type: 'article' },
+  twitter: { card: 'summary_large_image', title: PAGE.seoTitle, description: PAGE.description, images: SITE_CARD },
 }
 
 export default function JobsDocsPage() {

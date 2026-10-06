@@ -271,6 +271,18 @@ button.mk-held:hover { border-color: var(--accent); }
      uses inside the open sheet, 44px (their desktop modal was 26–32px). */
   [data-sheet^="wl-"] :is(.wl__btn, .wl__segBtn, .wl__input) { min-height: 44px; }
   [data-sheet^="wl-"] :is(.wl__btn, .wl__segBtn) { padding-inline: 16px; }
+  /* The stragglers the 2026-10-05 audit measured under a coarse pointer
+     (before -> after): compound legs 32, community sort 27, post / pin
+     buttons 29-32, fundamentals chips 30 and ranges 24 -> 44 (the map's size tabs, 25, are in look.css: the landing
+     draws the map without this sheet). The text-sized ones (what you'll sign 15, why 15, the rail's
+     import link 14, the brief's refresh 28) keep their look and gain the
+     invisible 44px hit area. */
+  .mkt-compound__leg, .mkp__sortbtn, .mkc__ghost, .mkc__cta, .mkn__pin, .mk-fund__chip { min-height: 44px; }
+  .mkp__sortbtn { padding-inline: 14px; }
+  .mk-fund__ranges button { min-height: 44px; min-width: 40px; }
+  .mkt-route__toggle, .mkt-routes__why, .wl__link, .mk-ai__ghost { position: relative; }
+  .mkt-route__toggle::after, .mkt-routes__why::after, .wl__link::after { content: ''; position: absolute; inset: -15px -6px; }
+  .mk-ai__ghost::after { content: ''; position: absolute; inset: -8px; }
   .mk-table__row:active, .mk-trend__row:active, .wl__row:active { background: color-mix(in srgb, var(--fg) 9%, transparent); }
   .mkt-frame__tab:active, .mk-table__sort:active, .mkt-sec__more:active, .mk-view__btn:active, .mk-earn__chip:active,
   .sym__tab:active, .sym__act-chip:active, .mkt-chip:active, .sym .tok__tfbtn:active, .sym .mkt-ind:active, .sym .mkt-tool:active {
@@ -324,10 +336,16 @@ button.mk-held:hover { border-color: var(--accent); }
      (the session ellipsizes, the pills keep their seats), no "24H RANGE"
      caption, tighter rhythm. */
   .mkt-frame--sym .sym__head { padding: 10px 0 8px; row-gap: 8px; }
-  .sym__head--mk2 .sym__titlerow { flex-wrap: nowrap; }
-  .sym__head--mk2 .sym__name { flex: 0 1 auto; min-width: 0; }
+  /* The title row WRAPS (GTM squad, 2026-10-05). One nowrap line cut the
+     symbol's own name: "Hyperliq…" beside "HYPERLIQUID PE…" at 375, and
+     every name at 320 ("Appl…"). The name and ticker never clip now; a venue
+     chip that does not fit beside them takes the next line (one 22px line,
+     paid for by the chart bar's two rows below). Only a chip wider than the
+     whole column still ellipsizes. */
+  .sym__head--mk2 .sym__titlerow { flex-wrap: wrap; row-gap: 6px; }
+  .sym__head--mk2 .sym__name { flex: 0 1 auto; min-width: 0; white-space: normal; overflow: visible; overflow-wrap: anywhere; }
   .sym__head--mk2 .sym__sym { flex: 0 0 auto; }
-  .sym__head--mk2 .sym__venue { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .sym__head--mk2 .sym__venue { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   /* The meta line WRAPS (round 4): nowrap pushed COMPARE past the screen edge
      when a holding wallet adds YOU HOLD (QA: /t/AAPL +8px, /t/ETH +9px at 375,
      +23/+24 at 360). The session line's 7rem basis keeps the common case one
@@ -340,6 +358,10 @@ button.mk-held:hover { border-color: var(--accent); }
   .sym__head--mk2 .sym__meta > :not(.sym__session) { flex: 0 0 auto; }
   .sym__head--mk2 .mk-range { margin-top: 4px; }
   .sym__head--mk2 .mk-range__k { display: none; }
+  /* Performance: six tiles wrapped 5 + 1 with the note squeezed beside the
+     orphan; three columns, two rows, the note on its own line. */
+  .sym .mkt-perf:not(.mkt-perf--compact) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sym .mkt-perf:not(.mkt-perf--compact) .mkt-perf__note { grid-column: 1 / -1; }
   .sym .tchart:not(.tchart--expanded) { height: auto; }
   .sym .tchart:not(.tchart--expanded) .mkt-chart__canvas { flex: 0 0 auto; height: 260px; }
   /* The battlefield carries a sky and a two-row strip: it needs the height. */
@@ -350,8 +372,41 @@ button.mk-held:hover { border-color: var(--accent); }
      pool pill makes the right cluster wide enough to take its own row. */
   .sym .mkt-chart__bar { gap: 8px; }
   .sym .mkt-chart__bar > .tok__tf { order: 1; }
+  /* The right cluster dissolves into the bar (GTM squad, 2026-10-05). Share
+     joined it after the two-row layout was measured, and LIVE + Share + full
+     screen (180px) no longer fit beside the timeframes (190px) in a 329px
+     bar: a coin's controls took three rows with the overlays stranded beside
+     the cluster, a stock's took four, and the chart began at 421 / 452px of
+     an 812px screen. Now row 1 is timeframes + Share + full screen, a
+     forced break, then the status line (pool pill + live, 21px), then
+     overlays + tools: the chart begins at 392 / 398px. */
+  .sym .mkt-chart__bar > .mkt-chart__right { display: contents; }
+  .sym .mkt-chart__bar > .mkt-chart__right > .mkt-sharebtn { order: 2; margin-left: auto; height: 44px; }
+  .sym .mkt-chart__bar > .mkt-chart__right > .tchart__fs { order: 2; }
+  /* The break is the gap: a zero-height line would still collect a row-gap
+     on each side, so the bar's row-gap is 0 here and the rows space
+     themselves (8px break, 8px above the overlays + tools row). */
+  .sym .mkt-chart__bar { row-gap: 0; }
+  .sym .mkt-chart__bar::before { content: ''; order: 3; flex: 0 0 100%; height: 8px; }
+  .sym .mkt-chart__bar > .mkt-chart__ind, .sym .mkt-chart__bar > .mkt-chart__tools { margin-top: 8px; }
+  .sym .mkt-chart__bar > .mkt-chart__right > :not(.mkt-sharebtn):not(.tchart__fs) { order: 4; }
+  /* The live badge takes the rest of the status line, so the overlays never
+     squeeze in beside it and strand the tools on a row of their own. */
+  .sym .mkt-chart__bar > .mkt-chart__right > :not(.mkt-sharebtn):not(.tchart__fs):not(.mkt-pool) { flex: 1 1 0; min-width: 0; }
+  .sym .mkt-chart__bar > .mkt-chart__right:not(:has(.mkt-pool)) > :not(.mkt-sharebtn):not(.tchart__fs) { flex-basis: 100%; }
+  .sym .mkt-chart__bar > .mkt-chart__ind { order: 5; }
+  .sym .mkt-chart__bar > .mkt-chart__tools { order: 6; }
   .sym .mkt-chart__bar > .mkt-view { order: 1; }
-  .sym .mkt-chart__bar > .mkt-chart__right { order: 2; }
+  /* With the view switch on row 1 (timeframes + switch + full screen), Share
+     no longer fits there: it rides the status line's right end instead of
+     wrapping the row and pushing the chart down another 44px. */
+  .sym .mkt-chart__bar:has(> .mkt-view) > .mkt-chart__right > .tchart__fs { margin-left: auto; }
+  .sym .mkt-chart__bar:has(> .mkt-view) > .mkt-chart__right > .mkt-sharebtn { order: 4; margin-left: 8px; }
+  .sym .mkt-chart__bar:has(> .mkt-view) > .mkt-chart__right:not(:has(.mkt-pool)) > :not(.mkt-sharebtn):not(.tchart__fs) { flex-basis: calc(100% - 94px); }
+  /* The timeframes give up the few pixels the switch needs (four 44px buttons
+     + the switch + full screen is 5px wider than a 329px bar). */
+  .sym .mkt-chart__bar:has(> .mkt-view) > .tok__tf { flex: 1 1 0; min-width: 0; }
+  .sym .mkt-chart__bar:has(> .mkt-view) > .tok__tf > .tok__tfbtn { flex: 1 1 0; min-width: 36px; padding-inline: 0; }
   /* basis = the row minus the tools group and a gap: too wide for row 1's
      leftovers (it squeezed into ~50px there), so it wraps to row 2 and sits
      beside the tools. Four tools, not five: the Select arrow is the "stop
@@ -359,8 +414,17 @@ button.mk-held:hover { border-color: var(--accent); }
      that (MarketChart toggles it), so it goes; 4 × 44 + the group's frame is
      188px and the overlays keep ~133px at 375 to scroll in. */
   .sym .mkt-chart__tools > .mkt-tool:first-child { display: none; }
-  .sym .mkt-chart__bar > .mkt-chart__ind { order: 3; flex: 1 1 calc(100% - 200px); }
-  .sym .mkt-chart__bar > .mkt-chart__tools { order: 4; }
+  .sym .mkt-chart__bar > .mkt-chart__ind { flex: 1 1 calc(100% - 200px); }
+}
+@media (max-width: 374px) {
+  /* Under 375 the labelled Share (78px) leaves the four timeframes 30px
+     each; it becomes its icon (the label stays in the DOM for readers) and
+     the timeframes split what is left (39px each at 320). */
+  .sym .mkt-chart__bar > .mkt-chart__right > .mkt-sharebtn { width: 44px; padding: 0; gap: 0; font-size: 0; justify-content: center; }
+  .sym .mkt-chart__bar > .tok__tf { flex: 1 1 0; min-width: 0; }
+  .sym .mkt-chart__bar > .tok__tf > .tok__tfbtn { flex: 1 1 0; min-width: 36px; padding-inline: 0; }
+}
+@media (max-width: 640px) {
   /* The act strip is ONE row that scrolls sideways (the overlays idiom): six
      chips wrapped to three rows and pushed the chart half a screen down. The
      row bleeds to the screen edges; its right edge fades so "more this way"

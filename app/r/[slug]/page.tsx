@@ -5,9 +5,10 @@ import { notFound } from 'next/navigation'
 import { ExternalLink, Link2, ShieldCheck } from 'lucide-react'
 import { YeetfulMark } from '@/components/Logo'
 import Footer from '@/components/Footer'
+import ShareActions from '@/components/ShareActions'
 import prisma from '@/lib/db'
 import { chainById } from '@/lib/chains'
-import { factsOf, maskAddressTokens, receiptTryHref, receiptTweetHref, shortWallet, txLinesOf } from '@/lib/share-receipts'
+import { factsOf, maskAddressTokens, receiptTryHref, receiptPost, shortWallet, txLinesOf } from '@/lib/share-receipts'
 
 // /r/<id> — a receipt permalink: ONE receipt-shaped thing (a settled turn, a
 // done job, a DCA schedule, a guardian protection), public because its owner
@@ -56,14 +57,6 @@ export async function generateMetadata({ params }: Params) {
   }
 }
 
-function XMark() {
-  return (
-    <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden>
-      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24h-6.66l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-    </svg>
-  )
-}
-
 export default async function ReceiptPage({ params }: Params) {
   const { slug } = await params
   const receipt = await getReceipt(slug)
@@ -72,7 +65,7 @@ export default async function ReceiptPage({ params }: Params) {
   const facts = factsOf(receipt.facts)
   const txs = txLinesOf(receipt.txs)
   const tryHref = receiptTryHref(receipt)
-  const tweetHref = receiptTweetHref(receipt)
+  const sharePost = receiptPost(receipt)
   const when = receipt.createdAt.toISOString().slice(0, 10)
 
   return (
@@ -165,16 +158,8 @@ export default async function ReceiptPage({ params }: Params) {
               Opens the chat with this exact ask prefilled. Nothing sends, nothing signs, until you say so.
             </p>
           )}
-          <div className="flex items-center gap-2">
-            <a
-              href={tweetHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--line)] bg-[var(--surf-1)] text-[color:var(--fg)] text-xs font-semibold hover:bg-[var(--surf-2)] transition-colors"
-            >
-              <XMark />
-              <span>Share</span>
-            </a>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <ShareActions post={sharePost} viaFixed surface="r" />
             {/* Receipt → link: the viewer mints their OWN copy of this ask as
                 an intent link (the studio's ?ask= prefill — sign-in gated there,
                 minted under the viewer's wallet, never the sharer's). */}

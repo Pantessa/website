@@ -35,7 +35,7 @@ export default function LinksBoardView({
     // In-app it takes the LINKS tab's wide frame (.linkstudio, x402-design.css):
     // the board and the mint composer side by side once the tab is wide
     // enough. The public /links page keeps its single reading column.
-    <section className={inApp ? 'linkstudio px-4 sm:px-6 py-6' : 'w-full max-w-2xl mx-auto px-4 py-16'}>
+    <section className={inApp ? 'linkstudio px-4 sm:px-6 py-6' : 'w-full max-w-2xl mx-auto px-4 max-sm:px-0 py-16 max-sm:py-10'}>
       <div className="flex items-center gap-2 mb-6">
         <YeetfulMark size={15} />
         <span className="mono text-[11px] uppercase tracking-widest text-[color:var(--muted-2)]">
