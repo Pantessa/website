@@ -24172,6 +24172,7 @@ async function main() {
       COIN_NAMES,
       alertActionChips,
       alertFires,
+      firedAlertLines,
       groupAlertsBySymbol,
       moveToSection: wlMoveToSection,
       normalizeWatchSymbol,
@@ -24213,6 +24214,14 @@ async function main() {
 
     // Alert rules + the per-symbol grouping the cron's dedup rides on.
     check('watch: alertFires — below/above/pct_move evaluate; pct_move needs a base', alertFires({ symbol: 'X', condition: 'below', value: 10 }, 9.99) && !alertFires({ symbol: 'X', condition: 'below', value: 10 }, 10.01) && alertFires({ symbol: 'X', condition: 'above', value: 10 }, 10) && alertFires({ symbol: 'X', condition: 'pct_move', value: 5, basePrice: 100 }, 94.9) && !alertFires({ symbol: 'X', condition: 'pct_move', value: 5, basePrice: 100 }, 96) && !alertFires({ symbol: 'X', condition: 'pct_move', value: 5 }, 50))
+    {
+      // A fired alert is a snapshot: the banner restates the fired price as past and
+      // shows the rail's live quote beside it (the "now $9.45" while UNI sat at $9.15 bug).
+      const t0 = Date.parse('2026-10-05T12:00:00Z')
+      const old = firedAlertLines({ title: 'UNI moves 5% from $8.99 — now $9.45', price: 9.45, createdAt: '2026-10-05T10:00:00Z' }, 9.15, t0)
+      const fresh = firedAlertLines({ title: 'UNI moves 5% from $8.99 — hit $9.45', price: 9.45, createdAt: '2026-10-05T11:55:00Z' }, null, t0)
+      check('watch: fired alert banner — never a frozen "now"; hit price + age + live quote', old.headline === 'UNI moves 5% from $8.99' && old.meta === 'hit $9.45 2h ago · now $9.15' && fresh.headline === 'UNI moves 5% from $8.99' && fresh.meta === 'hit $9.45 5m ago', JSON.stringify({ old, fresh }))
+    }
     const grouped = groupAlertsBySymbol([{ symbol: 'AAPL' }, { symbol: 'aapl' }, { symbol: 'WETH' }, { symbol: 'ETH' }, { symbol: 'HYPE' }])
     check('watch: groupAlertsBySymbol — five alerts on three symbols = three reads (aliases collapse)', grouped.size === 3 && grouped.get('AAPL')?.length === 2 && grouped.get('ETH')?.length === 2)
     check('watch: usEquitySession answers open|closed from the New York clock (Saturday noon UTC = closed; Wednesday 15:00 UTC = open)', usEquitySession(new Date('2026-09-12T12:00:00Z')) === 'closed' && usEquitySession(new Date('2026-09-09T15:00:00Z')) === 'open' && usEquitySession(new Date('2026-09-09T22:00:00Z')) === 'closed')

@@ -1078,3 +1078,20 @@ export function alertActionChips(rule: AlertRule, pair: ChartPair | null, sizeUs
   }
   return chips
 }
+
+/** A fired alert's banner, built from the price it fired at and when — never
+ *  a frozen "now". Rows written before this read "<rule> — now $X"; that
+ *  suffix is dropped and the fired price is restated as past. `live` is the
+ *  rail's own quote, shown beside it so a stale fire can't read as current. */
+export function firedAlertLines(
+  n: { title: string; price: number; createdAt: string },
+  live: number | null | undefined,
+  nowMs: number = Date.now(),
+): { headline: string; meta: string } {
+  const headline = n.title.replace(/\s+—\s+(?:now|hit)\s+\$[\d,.]+$/, '')
+  const ageMin = Math.max(0, Math.round((nowMs - Date.parse(n.createdAt)) / 60_000))
+  const ago = !Number.isFinite(ageMin) ? '' : ageMin < 1 ? 'just now' : ageMin < 60 ? `${ageMin}m ago` : ageMin < 48 * 60 ? `${Math.round(ageMin / 60)}h ago` : `${Math.round(ageMin / 1440)}d ago`
+  const parts = [`hit $${fmtQuotePrice(n.price)}${ago ? ` ${ago}` : ''}`]
+  if (live != null && live > 0) parts.push(`now $${fmtQuotePrice(live)}`)
+  return { headline, meta: parts.join(' · ') }
+}
