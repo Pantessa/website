@@ -25,6 +25,7 @@ import { askAppSlugs } from '@/lib/ask-apps'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
 import type { TradabilityMap } from '@/lib/tradability'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
+import GuideSeat from '@/components/guide/GuideSeat'
 import {
   DEFAULT_THRESHOLDS,
   FALLBACK_MARKETS,
@@ -183,6 +184,7 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
     <>
       <main className="mkt-frame__main live" data-status={status} data-paused={paused || undefined}>
         <h1 className="sr-only">Live feed</h1>
+        <GuideSeat surface="live" posture="phone" />
 
         <div className="mkt-frame__bar live__bar">
           <div className="live__title">
@@ -302,6 +304,7 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
 
       <MarketsSide label="Triggers">
         <div data-slot="triggers" className="live__rail">
+          <GuideSeat surface="live" posture="desktop" />
           <TriggersPanel armed={armed} setArmed={setArmed} thresholds={thresholds} setThresholds={setThresholds} events={events} onAct={act} chipOk={(f) => canTradeAsk(f.ask, tradable)}>
             <FeedsCard source={source} setSource={setSource} status={status} detail={statusDetail} />
           </TriggersPanel>

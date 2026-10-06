@@ -24,6 +24,7 @@ import { useAccount } from 'wagmi'
 import { CreateAccountModal } from '@/components/CreateAccountButton'
 import { ACT_RESUME_EVENT, ACT_RESUME_KEY, actStep, takeActResume } from '@/lib/act-gate'
 import { cdpEnabled } from '@/lib/cdp-embedded'
+import { noteGuideEvent } from '@/lib/guide'
 import { useSession } from '@/lib/session'
 import { CONNECT_ASK_RELEASE_GRACE_MS, connectAskReleased, hasStoredWalletConnection } from '@/lib/wallet-reconnect'
 
@@ -75,6 +76,8 @@ export function useConnectToAct({
 
   const act = useCallback(
     (ask: string) => {
+      // THE GUIDE's `chip` signal: every markets chip passes through here.
+      noteGuideEvent('chip')
       const step = actStep({ walletAddress, signedOut })
       if (step === 'run') {
         setHeld(null)

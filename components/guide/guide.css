@@ -1,0 +1,149 @@
+/* ── THE GUIDE (components/guide) ──────────────────────────────────────────
+   One card that teaches as you go, and the spine's unseen-dot. A NOTE in the
+   markets look: the page surface with the Emerald Cut's facet corner
+   (--mk-facet, components/markets/look.css), site tokens only (--surf /
+   --line / --fg / --muted / --accent / --ink), so the light theme comes free
+   and the embed never sees it. No scrim, no portal, nothing positioned
+   outside the card: the ⋯ overflow is a <details> whose content flows inline
+   in the actions row (a clip-path would cut a dropdown). Reduced motion
+   drops the entrance. Squad front-door (2026-10-06), GUIDE lane.
+   MOBILE may append @media (max-width: 640px) rules at the END of this file. */
+
+.guide-seat { min-width: 0; }
+
+.guide {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px 12px 13px;
+  border: 1px solid var(--line);
+  background: var(--mk-surface, var(--surf-1));
+  clip-path: var(--mk-facet, none);
+  color: var(--fg);
+  font-family: var(--mk-font-ui, var(--font-chat-body, system-ui, sans-serif));
+  animation: guide-in var(--mk-dur-base, .22s) var(--mk-ease, ease) both;
+}
+
+/* The stone: a 20px icon cut, lifted a hair to sit on the eyebrow's line. */
+.guide__mark { display: grid; place-items: center; flex-shrink: 0; width: 24px; height: 24px; margin-top: 1px; }
+
+.guide__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.guide__eyebrow { font-family: var(--mk-font-mono, var(--font-mono)); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); line-height: 1.4; }
+.guide__title {
+  margin: 0;
+  font-family: var(--font-chat-display, var(--mk-font-display, Georgia, serif));
+  font-weight: 500;
+  font-size: 16.5px;
+  line-height: 1.25;
+  letter-spacing: -0.012em;
+  color: var(--fg);
+}
+.guide__text { margin: 1px 0 0; max-width: 62ch; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+
+/* The actions: the one accent chip, Got it as text, the ⋯ with its one
+   option flowing in after it when open. */
+.guide__acts { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-top: 8px; }
+.guide__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .01em;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter var(--mk-dur-fast, .12s) ease, transform var(--mk-dur-fast, .12s) ease;
+}
+.guide__cta:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.guide__cta:active { transform: none; }
+.guide__got, .guide__off {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--mk-dur-fast, .12s) ease, background var(--mk-dur-fast, .12s) ease;
+}
+.guide__got:hover, .guide__off:hover { color: var(--fg); background: var(--surf-2, transparent); }
+.guide__off { color: var(--muted-2); font-weight: 400; text-decoration: underline; text-underline-offset: 2px; }
+.guide__more { display: inline-flex; align-items: center; gap: 4px; }
+.guide__dots {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--muted-2);
+  font-size: 13px;
+  letter-spacing: .08em;
+  line-height: 1;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+.guide__dots::-webkit-details-marker { display: none; }
+.guide__dots::marker { content: ''; }
+.guide__dots:hover { color: var(--fg); background: var(--surf-2, transparent); }
+.guide__cta:focus-visible, .guide__got:focus-visible, .guide__off:focus-visible, .guide__dots:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Where the seats sit. The symbol header is a wrapping flex row (the act
+   strip is order 3, full width); the seat follows it. The chat's empty state
+   centres a column; the card keeps its left-aligned reading. */
+.sym__head--mk2 > .guide-seat { order: 4; flex-basis: 100%; margin-top: 10px; }
+[data-empty-state] > .guide-seat { width: 100%; max-width: 28rem; margin-top: 22px; text-align: left; }
+.live__rail > .guide-seat { margin-bottom: 12px; }
+.live > .guide-seat { margin: 0 0 10px; }
+.wallet-guide-seat > .guide-seat, .guide-seat[data-guide-seat='wallet'] { margin-bottom: 18px; }
+
+/* ── The spine's unseen-dot: 6px of accent at the icon's top-right, ringed
+   in the seat's own surface so it reads on the lit seat too. The icon is
+   centred in every seat (both postures), so one offset serves. ── */
+.guide-dot {
+  position: absolute;
+  top: 5px;
+  left: calc(50% + 7px);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surf-1);
+  pointer-events: auto;
+}
+
+@keyframes guide-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+/* Light ground: the panel surface is white there; the card gains the hairline
+   shadow the markets panels wear. Every colour above is a token. */
+:root[data-theme='light'] .guide { box-shadow: 0 1px 0 rgb(16 21 18 / 0.04); }
+
+/* A thumb: every control ≥44px, the chip keeps its look and grows its box. */
+@media (hover: none) {
+  .guide__cta, .guide__got, .guide__dots { min-height: 44px; }
+  .guide__cta { padding-inline: 16px; }
+  .guide__dots { width: 44px; }
+  .guide__off { min-height: 44px; }
+}
+
+/* Reduced motion: no entrance, no lift. */
+@media (prefers-reduced-motion: reduce) {
+  .guide { animation: none; }
+  .guide__cta:hover { transform: none; }
+}

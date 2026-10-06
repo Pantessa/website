@@ -9,6 +9,7 @@
 import { Link2, Send, Sparkles } from 'lucide-react'
 import { EXAMPLE_PROMPTS } from '@/lib/examples'
 import SampleCallDemo from '@/components/SampleCallDemo'
+import GuideSeat from '@/components/guide/GuideSeat'
 
 // One-tap example asks: a click SENDS the turn (the caller passes runExample).
 // Asking is free — anything transactional still ends at the wallet signature —
@@ -81,6 +82,7 @@ export default function EmptyState({
             : `Your ${activeCount} MCP${activeCount > 1 ? 's' : ''} answer questions free; anything that moves money is compiled into a guarded transaction only your wallet can sign.`}
       </p>
       <ExampleGallery onPick={onPick} />
+      <GuideSeat surface="chat" />
       {showLinksHint && (
         <p className="mt-6 text-[11px] text-[color:var(--muted-2)] max-w-sm">
           Any ask here can become a shareable intent link — every sent message carries the{' '}

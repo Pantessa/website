@@ -7,6 +7,7 @@
 
 import { track } from '@vercel/analytics'
 import { trackJourney } from '@/lib/journey'
+import { noteGuideEvent, type GuideOutcome } from '@/lib/guide'
 
 function send(name: string, props?: Record<string, string | number | boolean>) {
   try {
@@ -49,8 +50,11 @@ export const analytics = {
 
   /** A chat message sent — agents in play + whether the sender is authed.
    *  authed:false turns are the guest-trial lane (first-ask wall work). */
-  chatMessage: (agents: number, authed: boolean) =>
-    send('chat_message_sent', { agents, authed }),
+  chatMessage: (agents: number, authed: boolean) => {
+    // The guide's `asked` signal (lib/guide): this browser has sent a turn.
+    noteGuideEvent('asked')
+    send('chat_message_sent', { agents, authed })
+  },
 
   /** An example chip tapped (empty state / splash). sent=true means the tap
    *  ran the turn itself; false means it prefilled (MCP toggle needed). */
@@ -95,4 +99,12 @@ export const analytics = {
 
   /** The docs funnel metric: the Claude Code prompt copied. */
   promptCopied: (label: string) => send('docs_prompt_copied', { label }),
+
+  /** THE GUIDE (components/guide, squad front-door): a hint was shown, its
+   *  action used (`kind` = which kind of action), dismissed, or the tips
+   *  turned off. The hint's id and the outcome only — never the wallet,
+   *  never the words — so /dashboard/admin/flows can say which lessons a
+   *  stranger met on the way to their first signature. */
+  guide: (id: string, state: GuideOutcome, kind?: string) =>
+    send('guide_hint', { id, state, ...(kind ? { kind } : {}) }),
 }

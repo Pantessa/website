@@ -63,6 +63,7 @@ import { rosterEnabledClient } from '@/lib/roster-client'
 import { WALLET_PAGE_HREF } from '@/lib/wallet-page'
 import { YeetfulMark } from '@/components/Logo'
 import SpineLink from '@/components/SpineLink'
+import SpineGuideDot from '@/components/guide/SpineGuideDot'
 import { CreateAccountModal } from '@/components/CreateAccountButton'
 
 type SpineTab = { tab: RailTab; label: string; title: string; Icon: typeof Boxes }
@@ -407,6 +408,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
         <Icon className="w-[18px] h-[18px]" />
         <span className="mono text-[9px] font-medium tracking-wide">{label}</span>
         {tab === 'jobs' && jobsBadge}
+        {(tab === 'jobs' || tab === 'links') && <SpineGuideDot tab={tab} />}
       </button>
     )
   }
@@ -440,6 +442,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           <Icon className="w-[18px] h-[18px]" />
           {tab === 'jobs' && jobsBadge}
         </span>
+        {(tab === 'jobs' || tab === 'links') && <SpineGuideDot tab={tab} />}
         <span className="mono text-[10px] font-medium tracking-wide">{label}</span>
       </button>
     )
@@ -522,6 +525,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
             )}
             <Wallet className="w-[18px] h-[18px]" />
             <span className="mono text-[9px] font-medium tracking-wide">WALLET</span>
+            <SpineGuideDot tab="wallet" />
           </SpineLink>
 
           {TABS_BELOW_WALLET.map(desktopTab)}
@@ -600,6 +604,7 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           )}
           <Wallet className="w-[18px] h-[18px]" />
           <span className="mono text-[10px] font-medium tracking-wide">WALLET</span>
+          <SpineGuideDot tab="wallet" />
         </SpineLink>
         {TABS_BELOW_WALLET.map(mobileTab)}
         <Link
