@@ -26,6 +26,8 @@ import { useSession } from '@/lib/session'
 import { getGuideState } from '@/lib/guide'
 import { STORY_HREF } from '@/lib/markets'
 import { SPLASH } from '@/lib/markets-copy'
+import { marketsPost } from '@/lib/share-posts'
+import ShareActions from '@/components/ShareActions'
 
 export default function SplashClaim() {
   const { status } = useSession()
@@ -42,9 +44,15 @@ export default function SplashClaim() {
       <p className="mk-claim__sub">{SPLASH.sub}</p>
       {/* A brochure page, not the shell: a plain link is right here. No
           prefetch — every visitor would otherwise pull the story's payload. */}
-      <Link href={STORY_HREF} className="mk-claim__door mono" prefetch={false} data-splash-door>
-        {SPLASH.door} <span aria-hidden>→</span>
-      </Link>
+      <div className="mk-claim__acts">
+        {/* The board's own share (pre-gtm POLISH; GTM WRAP "Still open": the
+            index had no share entry). Desktop; a phone's claim line has no
+            room for it (MOBILE's 333-of-343px budget) and hides it. */}
+        <ShareActions post={marketsPost()} variant="pill" label="Share" surface="splash" className="mk-claim__share" />
+        <Link href={STORY_HREF} className="mk-claim__door mono" prefetch={false} data-splash-door>
+          {SPLASH.door} <span aria-hidden>→</span>
+        </Link>
+      </div>
     </header>
   )
 }

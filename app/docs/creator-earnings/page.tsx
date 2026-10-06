@@ -2,6 +2,41 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
+import {
+  CREATOR_FEE_SPLIT,
+  CROSS_CHAIN_FEE_BPS,
+  CROSS_CHAIN_NET_FEE_BPS,
+  HL_BUILDER_FEE_TENTH_BPS,
+  LINK_FEE_PCT,
+  LINK_SWAP_FEE_BPS,
+  SWAP_FEE_BPS,
+  SWAP_FEE_PCT,
+  feePctLabel,
+} from '@/lib/fees'
+
+// Every rate on this page is read from lib/fees.ts (pre-gtm 2026-10-07): the
+// table used to be literals, and a fee env flip would have left it lying.
+const HL_BUILDER_BPS = HL_BUILDER_FEE_TENTH_BPS / 10
+const creatorBps = (keptBps: number) => keptBps * CREATOR_FEE_SPLIT
+const per100 = (keptBps: number) => `$${(creatorBps(keptBps) / 100).toFixed(2)}`
+const LINK_CREATOR_PCT = feePctLabel(creatorBps(LINK_SWAP_FEE_BPS))
+const usd = (n: number) => `$${n.toFixed(n > 0 && n < 0.1 && Math.round(n * 1000) % 10 !== 0 ? 3 : 2)}`
+/** One $100 conversion: what the visitor pays, the venue's cut, your half of what's left. */
+function worked(ask: string, paidBps: number, keptBps: number, venueNote?: (venueUsd: string) => string) {
+  const paid = paidBps, venue = paidBps - keptBps, you = creatorBps(keptBps)
+  return {
+    ask,
+    paid: venue > 0 && venueNote ? `${usd(paid / 100)} ${venueNote(usd(venue / 100))}` : usd(paid / 100),
+    you: usd(you / 100),
+    kept: usd((keptBps - you) / 100),
+  }
+}
+const WORKED = [
+  worked('Buy $100 of AAPL (Uniswap v3 on Robinhood Chain)', LINK_SWAP_FEE_BPS, LINK_SWAP_FEE_BPS),
+  worked('Swap $100 USDC → ETH on Base (Uniswap or CoW)', LINK_SWAP_FEE_BPS, LINK_SWAP_FEE_BPS),
+  worked('Move $100 USDC from Base to Arbitrum (NEAR Intents)', CROSS_CHAIN_FEE_BPS, CROSS_CHAIN_NET_FEE_BPS, (v) => `(1Click keeps ${v})`),
+  worked('Open a $100 long on HYPE (Hyperliquid)', HL_BUILDER_BPS, HL_BUILDER_BPS),
+]
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'creator-earnings')!
 
@@ -24,8 +59,9 @@ export default function CreatorEarningsDocsPage() {
       <p className="docs__lead">
         When someone signs a conversion through your <Link href="/docs/links">intent link</Link>,
         you earn <strong>half of Pantessa&apos;s fee</strong> on it. Swaps that come through a link
-        carry a 0.50% rate, so a $100 stock buy through your link earns you <strong>$0.25</strong>;
-        an audience that moves $100k through your links has earned $250. No token, no points: a cut
+        carry a {LINK_FEE_PCT} rate, so a $100 stock buy through your link earns you{' '}
+        <strong>{per100(LINK_SWAP_FEE_BPS)}</strong>; an audience that moves $100k through your links has
+        earned ${(creatorBps(LINK_SWAP_FEE_BPS) * 10).toLocaleString('en-US')}. No token, no points: a cut
         of real fees on real conversions — and only where a fee exists, which is the table below.
       </p>
 
@@ -52,34 +88,34 @@ export default function CreatorEarningsDocsPage() {
             <tr>
               <td><strong>Uniswap</strong></td>
               <td>Swaps on Base, Ethereum, Arbitrum, Optimism, Arc, Robinhood Chain (v3, v4 fallback) — including every run of a recurring buy</td>
-              <td>0.50%</td>
-              <td>0.50%</td>
-              <td>0.25%</td>
-              <td><strong>$0.25</strong></td>
+              <td>{LINK_FEE_PCT}</td>
+              <td>{LINK_FEE_PCT}</td>
+              <td>{LINK_CREATOR_PCT}</td>
+              <td><strong>{per100(LINK_SWAP_FEE_BPS)}</strong></td>
             </tr>
             <tr>
               <td><strong>CoW Protocol</strong></td>
               <td>Swaps and limit orders on Base, Ethereum, Arbitrum (the fee rides the signed order&apos;s appData)</td>
-              <td>0.50%</td>
-              <td>0.50%</td>
-              <td>0.25%</td>
-              <td><strong>$0.25</strong></td>
+              <td>{LINK_FEE_PCT}</td>
+              <td>{LINK_FEE_PCT}</td>
+              <td>{LINK_CREATOR_PCT}</td>
+              <td><strong>{per100(LINK_SWAP_FEE_BPS)}</strong></td>
             </tr>
             <tr>
               <td><strong>Robinhood Chain</strong></td>
               <td>Tokenized-stock buys and sells (AAPL, TSLA, NVDA…) filled on Uniswap v3/v4 on chain 4663</td>
-              <td>0.50%</td>
-              <td>0.50%</td>
-              <td>0.25%</td>
-              <td><strong>$0.25</strong></td>
+              <td>{LINK_FEE_PCT}</td>
+              <td>{LINK_FEE_PCT}</td>
+              <td>{LINK_CREATOR_PCT}</td>
+              <td><strong>{per100(LINK_SWAP_FEE_BPS)}</strong></td>
             </tr>
             <tr>
               <td></td>
               <td>…when a gated stock pool falls back to the LiFi settlement venue</td>
-              <td>0.20%</td>
-              <td>0.20%</td>
-              <td>0.10%</td>
-              <td><strong>$0.10</strong></td>
+              <td>{SWAP_FEE_PCT}</td>
+              <td>{SWAP_FEE_PCT}</td>
+              <td>{feePctLabel(creatorBps(SWAP_FEE_BPS))}</td>
+              <td><strong>{per100(SWAP_FEE_BPS)}</strong></td>
             </tr>
             <tr>
               <td></td>
@@ -92,18 +128,18 @@ export default function CreatorEarningsDocsPage() {
             <tr>
               <td><strong>NEAR Intents</strong></td>
               <td>Cross-chain swaps (Base ⇄ Ethereum ⇄ Arbitrum). The 1Click venue keeps half of every app fee, so Pantessa nets half of what the visitor pays</td>
-              <td>0.20%</td>
-              <td>0.10%</td>
-              <td>0.05%</td>
-              <td><strong>$0.05</strong></td>
+              <td>{feePctLabel(CROSS_CHAIN_FEE_BPS)}</td>
+              <td>{feePctLabel(CROSS_CHAIN_NET_FEE_BPS)}</td>
+              <td>{feePctLabel(creatorBps(CROSS_CHAIN_NET_FEE_BPS))}</td>
+              <td><strong>{per100(CROSS_CHAIN_NET_FEE_BPS)}</strong></td>
             </tr>
             <tr>
               <td><strong>Hyperliquid</strong></td>
-              <td>Perp orders (long / short / close). The venue&apos;s builder fee is 0.10% of notional, approved once by the trader, paid from the fill</td>
-              <td>0.10% of notional</td>
-              <td>0.10%</td>
-              <td>0.05%</td>
-              <td><strong>$0.05</strong></td>
+              <td>Perp orders (long / short / close). The venue&apos;s builder fee is {feePctLabel(HL_BUILDER_BPS)} of notional, approved once by the trader, paid from the fill</td>
+              <td>{feePctLabel(HL_BUILDER_BPS)} of notional</td>
+              <td>{feePctLabel(HL_BUILDER_BPS)}</td>
+              <td>{feePctLabel(creatorBps(HL_BUILDER_BPS))}</td>
+              <td><strong>{per100(HL_BUILDER_BPS)}</strong></td>
             </tr>
             <tr>
               <td></td>
@@ -185,54 +221,32 @@ export default function CreatorEarningsDocsPage() {
             <tr>
               <th>What the visitor signs through your link</th>
               <th>Fee paid</th>
-              <th>Pantessa keeps</th>
               <th>You earn</th>
+              <th>Pantessa keeps (after your half)</th>
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td>Buy $100 of AAPL (Uniswap v3 on Robinhood Chain)</td>
-              <td>$0.50</td>
-              <td>$0.25</td>
-              <td><strong>$0.25</strong></td>
-            </tr>
-            <tr>
-              <td>Swap $100 USDC → ETH on Base (Uniswap or CoW)</td>
-              <td>$0.50</td>
-              <td>$0.25</td>
-              <td><strong>$0.25</strong></td>
-            </tr>
-            <tr>
-              <td>Move $100 USDC from Base to Arbitrum (NEAR Intents)</td>
-              <td>$0.20 (1Click keeps $0.10)</td>
-              <td>$0.05</td>
-              <td><strong>$0.05</strong></td>
-            </tr>
-            <tr>
-              <td>Open a $100 long on HYPE (Hyperliquid)</td>
-              <td>$0.10</td>
-              <td>$0.05</td>
-              <td><strong>$0.05</strong></td>
-            </tr>
-            <tr>
-              <td>Bridge $14 to Robinhood Chain, then buy $10 of AAPL</td>
-              <td>$0.05 (the buy only)</td>
-              <td>$0.025</td>
-              <td><strong>$0.025</strong></td>
-            </tr>
+            {WORKED.map((w) => (
+              <tr key={w.ask}>
+                <td>{w.ask}</td>
+                <td>{w.paid}</td>
+                <td><strong>{w.you}</strong></td>
+                <td>{w.kept}</td>
+              </tr>
+            ))}
             <tr>
               <td>Stake $100 of ETH with Lido · supply $100 USDC to Aave · sell an NFT · vote</td>
               <td>$0</td>
-              <td>$0</td>
               <td>$0.00</td>
+              <td>$0</td>
             </tr>
           </tbody>
         </table>
         <p>
           <strong>And it keeps earning.</strong>{' '}Attribution is lifetime, first touch: a wallet
           your link brought in earns you half of Pantessa&apos;s fee on its <em>later</em>{' '}
-          conversions too, at whatever tier those turns carry — organic chat swaps price at 0.20%,
-          so a returning wallet&apos;s $100 swap earns you $0.10.
+          conversions too, at whatever tier those turns carry — organic chat swaps price at{' '}
+          {SWAP_FEE_PCT}, so a returning wallet&apos;s $100 swap earns you {per100(SWAP_FEE_BPS)}.
         </p>
 
         <h2>What earns — and what never does</h2>

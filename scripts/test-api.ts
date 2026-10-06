@@ -4437,7 +4437,8 @@ async function main() {
       // touch desktop; below lg it is the sheet's full-width 48px button.
       check('mobile: the request-MCP submit is 40px on touch, a full-width 48px button below lg', /'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors \[@media\(hover:none\)\]:min-h-10 max-lg:w-full max-lg:!min-h-12 max-lg:justify-center max-lg:text-\[14px\]'/.test(addMcp))
       check('mobile: the sign-in gate CTAs are ≥40px below lg (all three)', (gate.match(/px-3 py-1\.5 max-lg:min-h-10 max-lg:px-4 rounded-full bg-\[var\(--accent\)\]/g) ?? []).length === 3)
-      check('mobile: Share is icon-only below sm with an aria-label and a 40px target', /aria-label=\{isPublic \? 'Shared publicly' : 'Share this chat'\}/.test(shareBtn) && /max-lg:min-h-10 max-lg:px-3 rounded-lg border text-\[11px\]/.test(shareBtn) && /whitespace-nowrap max-sm:hidden">\{isPublic \? 'Shared' : 'Share'\}/.test(shareBtn))
+      // RE-PINNED 2026-10-07 (pre-gtm): POLISH added border-solid (the `button { border: none }` reset drew nothing).
+      check('mobile: Share is icon-only below sm with an aria-label and a 40px target', /aria-label=\{isPublic \? 'Shared publicly' : 'Share this chat'\}/.test(shareBtn) && /max-lg:min-h-10 max-lg:px-3 rounded-lg border border-solid text-\[11px\]/.test(shareBtn) && /whitespace-nowrap max-sm:hidden">\{isPublic \? 'Shared' : 'Share'\}/.test(shareBtn))
       const splashDash = await readFile(new URL('../components/SplashDashboard.tsx', import.meta.url), 'utf8')
       check('mobile: briefing tile rows wrap below lg, never ellipsize the amount (splash + app mode)', /truncate max-lg:whitespace-normal font-medium text-white">\{r\.label\}/.test(appMode) && /truncate max-lg:whitespace-normal font-medium text-white">\{r\.label\}/.test(splashDash))
       // Re-pinned 2026-09-24 (squad mobile-native, CHAT): a phone names the

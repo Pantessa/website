@@ -543,7 +543,8 @@ button.mk-held:hover { border-color: var(--accent); }
 .mk-claim { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "h1 door" "sub door"; align-items: baseline; column-gap: 18px; row-gap: 3px; padding: 12px 0 8px; }
 .mk-claim__h1 { grid-area: h1; margin: 0; font-family: var(--mk-font-display); font-weight: 500; font-size: clamp(21px, 1.9vw, 27px); line-height: 1.02; letter-spacing: -0.025em; color: var(--fg); text-wrap: balance; }
 .mk-claim__sub { grid-area: sub; margin: 0; max-width: 72ch; font-size: 12.5px; line-height: 1.4; color: var(--muted); text-wrap: pretty; }
-.mk-claim__door { grid-area: door; align-self: center; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); white-space: nowrap; text-decoration: none; transition: color .12s ease, border-color .12s ease; }
+.mk-claim__acts { grid-area: door; align-self: center; display: inline-flex; align-items: center; gap: 8px; }
+.mk-claim__door { align-self: center; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); white-space: nowrap; text-decoration: none; transition: color .12s ease, border-color .12s ease; }
 .mk-claim__door:hover, .mk-claim__door:focus-visible { color: var(--fg); border-color: var(--accent); outline: none; }
 .mk-claim__door span { color: var(--accent); }
 .mk-claim[data-compact] { grid-template-areas: "h1 door"; row-gap: 0; padding: 10px 0 4px; }
@@ -558,6 +559,7 @@ button.mk-held:hover { border-color: var(--accent); }
   .mk-claim, .mk-claim[data-compact] { display: flex; flex-wrap: wrap; align-items: center; gap: 0 12px; padding: 4px 0 0; }
   .mk-claim__h1, .mk-claim[data-compact] .mk-claim__h1 { font-size: 20px; line-height: 1.1; flex: 1 1 auto; min-width: 0; }
   .mk-claim__sub { display: none; }
+  .mk-claim__share { display: none; } /* pre-gtm POLISH: no room on the phone line */
   /* a plain 13px link, not the mono pill: the pill's case, tracking, border
      and padding were the 30px that pushed the door under the h1 at 375 */
   .mk-claim__door { min-height: 44px; padding: 0; border: 0; font-family: inherit; font-size: 13px; letter-spacing: 0; text-transform: none; color: var(--fg); }

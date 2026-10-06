@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { DOCS_PAGES, docsJsonLd, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
+import { LINK_FEE_PCT, SWAP_FEE_PCT } from '@/lib/fees'
 
 // The user door's lead page: why a signature on a Pantessa artifact is safe
 // to give. Trust-critical — plain statements, no jokes, every claim checked
@@ -87,9 +88,10 @@ export default function TrustDocsPage() {
           Every artifact carries its USD value, and every decision — built, signed, or refused —
           lands as a receipt on your <Link href="/dashboard">dashboard</Link>, with build
           decisions traced live on <Link href="/activity">/activity</Link>. When Pantessa charges
-          a fee (0.20% on fee-bearing swap venues, below Uniswap&apos;s 0.25% interface fee), it
-          appears in the artifact as its own labeled transfer step — never hidden inside
-          slippage.
+          a fee ({SWAP_FEE_PCT} on swaps you ask for in chat, {LINK_FEE_PCT} on swaps that come
+          through a shared intent link), it is named on the card before you sign and carried in
+          the signed transaction itself — never hidden inside slippage. Bridges, transfers,
+          stakes and votes carry no Pantessa fee.
         </p>
 
         <h2>Caps protect the autonomous part</h2>
