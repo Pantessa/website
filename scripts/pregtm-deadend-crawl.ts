@@ -37,7 +37,7 @@
  *
  *   BASE=http://localhost:3994 PLAYWRIGHT_CORE=/path/to/playwright-core \
  *     npx tsx scripts/pregtm-deadend-crawl.ts [--out dir] [--only /a,/b] \
- *     [--personas out,empty] [--widths 1440,375] [--jobs 4] [--max 45]
+ *     [--personas out,empty] [--widths 1440,375] [--jobs 8] [--max 30]
  *
  * Writes <out>/deadend.json (every click) and <out>/deadend.md (the DEAD +
  * ERROR + BLOCKED tables). `--diff <old deadend.json>` adds a regressions /
@@ -60,8 +60,8 @@ const OUT = opt('--out', 'deadend-out')
 const ONLY = opt('--only') ? opt('--only').split(',') : null
 const PERSONAS = opt('--personas', 'out,empty').split(',') as Persona[]
 const WIDTHS = opt('--widths', '1440,375').split(',').map(Number)
-const JOBS = Number(opt('--jobs', '4'))
-const MAX = Number(opt('--max', '45'))
+const JOBS = Number(opt('--jobs', '8'))
+const MAX = Number(opt('--max', '30'))
 const DIFF = opt('--diff')
 const MAX_PER_FAMILY = 2
 const SETTLE_MS = 2500
@@ -231,8 +231,8 @@ async function newCtx(browser: any, persona: Persona, width: number) {
 async function load(page: any, url: string): Promise<number | null> {
   const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 })
   try { await page.waitForLoadState('load', { timeout: 10_000 }) } catch {}
-  try { await page.waitForLoadState('networkidle', { timeout: 2_500 }) } catch { /* live pages never idle */ }
-  await sleep(900) // hydration + wagmi reconnect
+  try { await page.waitForLoadState('networkidle', { timeout: 1_200 }) } catch { /* live pages never idle */ }
+  await sleep(700) // hydration + wagmi reconnect
   return res ? res.status() : null
 }
 
