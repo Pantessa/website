@@ -329,6 +329,15 @@ async function crawlCell(browser: any, route: string, persona: Persona, width: n
         try { await h.click({ timeout: 2000, noWaitAfter: true }) } catch (e1: any) {
           // A marquee / animated tape never reads as "stable": click it where it is.
           if (/Timeout/.test(String(e1?.message)) && !/intercepts pointer/.test(String(e1?.message))) { forced = true; await h.click({ timeout: 1500, noWaitAfter: true, force: true }) }
+          else if (/not attached/.test(String(e1?.message))) {
+            // A tape row recycled between find and click: take the row now in that seat.
+            const again = (await page.evaluate(ENUM).catch(() => [])) as Ctl[]
+            const verb = (c.label.split(' ')[0] || '').toLowerCase()
+            const sub = again.find((x) => x.fam === c.fam && x.tag === c.tag && (x.label.split(' ')[0] || '').toLowerCase() === verb && !x.disabled)
+            const h2 = sub ? await page.$(`[data-qa-i="${sub.i}"]`) : null
+            if (!h2) throw e1
+            await h2.click({ timeout: 1500, noWaitAfter: true, force: true })
+          }
           else throw e1
         }
       } catch (err: any) {
