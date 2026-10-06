@@ -568,3 +568,20 @@ button.mk-held:hover { border-color: var(--accent); }
    leaves no 12px hole. */
 .mk-lead-seat:not(:empty) { margin-top: 12px; }
 .mk-guide-seat:not(:empty) { margin-top: 12px; }
+
+/* MOBILE */
+/* A board's head on a phone (MOBILE lane, squad front-door 2026-10-06,
+   measured on the integrated splash): the count rides the title's line, so the
+   blurb gets the whole column. Beside the count ("199 LISTED", 74px) the blurb
+   had 253px of the 343px column and wrapped to three lines; with the pulse, the
+   claim and the guide row in, the first board row on `/` sat at y 736 of an
+   812px screen, under the tab bar. Now the blurb is two lines and the row is
+   at ≈704 (one row above the bar at 375×812, two at 390×844). The words do not
+   change. The base rule's `gap: 16px` would become a row gap in a grid: 0. */
+@media (max-width: 640px) {
+  .mkt-sec__head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 12px; align-items: baseline; }
+  .mkt-sec__head > div { display: contents; }
+  .mkt-sec__title { grid-column: 1; grid-row: 1; }
+  .mkt-sec__count { grid-column: 2; grid-row: 1; }
+  .mkt-sec__blurb { grid-column: 1 / -1; grid-row: 2; }
+}
