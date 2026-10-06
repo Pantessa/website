@@ -159,8 +159,11 @@ export default function FrontBoard({ symbol, pair, tf, bars, tokens, onAsk, canA
   }, [])
 
   // ── Data ─────────────────────────────────────────────────────────────────
-  const poll = <T,>(url: string | null, ms: number, ok: (b: T) => boolean, set: (b: T | null) => void) => {
+  // `fail` (pre-gtm POLISH r2): a read that FAILED is named on the board
+  // instead of "Reading…" forever; one that came back empty stays data.
+  const poll = <T,>(url: string | null, ms: number, ok: (b: T) => boolean, set: (b: T | null) => void, fail?: (f: boolean) => void) => {
     set(null)
+    fail?.(false)
     if (!url) return
     let alive = true
     const load = async () => {
@@ -168,8 +171,9 @@ export default function FrontBoard({ symbol, pair, tf, bars, tokens, onAsk, canA
         const res = await fetch(url, { cache: 'no-store' })
         const body = (await res.json()) as T
         if (alive && res.ok && ok(body)) set(body)
+        if (alive) fail?.(!res.ok)
       } catch {
-        /* the table draws without it */
+        if (alive) fail?.(true)
       }
     }
     void load()
@@ -182,12 +186,14 @@ export default function FrontBoard({ symbol, pair, tf, bars, tokens, onAsk, canA
   const [derivs, setDerivs] = useState<DerivsBody | null>(null)
   const [hlBook, setHlBook] = useState<BookBody | null>(null)
   const [spotBook, setSpotBook] = useState<BookBody | null>(null)
+  const [derivsFailed, setDerivsFailed] = useState(false)
+  const [spotFailed, setSpotFailed] = useState(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => poll<DerivsBody>(noMarket ? null : `/api/markets/derivs?symbol=${encodeURIComponent(symbol)}&tf=${tf}`, 60_000, (b) => Array.isArray(b.oi), setDerivs), [symbol, tf, noMarket])
+  useEffect(() => poll<DerivsBody>(noMarket ? null : `/api/markets/derivs?symbol=${encodeURIComponent(symbol)}&tf=${tf}`, 60_000, (b) => Array.isArray(b.oi), setDerivs, setDerivsFailed), [symbol, tf, noMarket])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => poll<BookBody>(noMarket ? null : `/api/markets/book?symbol=${encodeURIComponent(symbol)}`, 10_000, (b) => Array.isArray(b.bids), setHlBook), [symbol, noMarket])
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => poll<BookBody>(noMarket ? null : `/api/markets/spot-book?symbol=${encodeURIComponent(symbol)}`, 15_000, (b) => Array.isArray(b.bids), setSpotBook), [symbol, noMarket])
+  useEffect(() => poll<BookBody>(noMarket ? null : `/api/markets/spot-book?symbol=${encodeURIComponent(symbol)}`, 15_000, (b) => Array.isArray(b.bids), setSpotBook, setSpotFailed), [symbol, noMarket])
 
   // The heatmap's daily series: the chart's own read when it is on 1D, else its own.
   const [dailyDerivs, setDailyDerivs] = useState<DerivsBody | null>(null)
@@ -769,14 +775,14 @@ export default function FrontBoard({ symbol, pair, tf, bars, tokens, onAsk, canA
         ) : (
           <div className="bf__press bf__press--stalemate">
             <span className="bf__press-k mono">Longs vs shorts</span>
-            <span className="bf__press-v">{derivs ? 'No positioning read for this coin' : 'Reading positioning…'}</span>
+            <span className="bf__press-v">{derivs ? 'No positioning read for this coin' : derivsFailed ? 'Couldn’t read positioning · retrying' : 'Reading positioning…'}</span>
             {derivs?.missing.length ? <span className="bf__press-l mono">did not answer: {derivs.missing.join(', ')}</span> : null}
           </div>
         )
       ) : (
         <div className={`bf__press bf__press--${lean === 'up' ? 'bulls' : lean === 'down' ? 'bears' : 'stalemate'}`}>
           <span className="bf__press-k mono">Buyers vs sellers · {spotSource ?? 'spot'} book</span>
-          <span className="bf__press-v">{spot?.headline ?? (spotBook?.missing ? 'No spot book for this coin' : 'Reading the book…')}</span>
+          <span className="bf__press-v">{spot?.headline ?? (spotBook?.missing ? 'No spot book for this coin' : spotFailed ? 'Couldn’t read the book · retrying' : 'Reading the book…')}</span>
           {spot ? (
             <>
               <span className="bf__meter" style={{ '--bf-share': `${Math.round(spot.bidShare * 100)}%` } as CSSProperties}>
@@ -839,7 +845,7 @@ export default function FrontBoard({ symbol, pair, tf, bars, tokens, onAsk, canA
                 tank = {fmtUsdShort(unit)} of {mode === 'perps' ? 'est. positions, standing where it breaks' : 'resting orders, standing at their price'}
               </span>
             ) : (
-              <span>{mode === 'perps' ? (derivs ? 'no liquidation rows within 25%' : 'reading open interest…') : spotBook?.missing ? 'no spot book' : 'reading the book…'}</span>
+              <span>{mode === 'perps' ? (derivs ? 'no liquidation rows within 25%' : derivsFailed ? 'open interest didn’t answer' : 'reading open interest…') : spotBook?.missing ? 'no spot book' : spotFailed ? 'the book didn’t answer' : 'reading the book…'}</span>
             )}
             {mode === 'perps' && walls ? <span>ramparts = resting orders within 2%</span> : null}
             {mode !== 'heat' && (mode === 'perps' ? crowd : spot) ? <span>banners = {mode === 'perps' ? 'share of accounts' : 'share of the book within 5%'}</span> : null}

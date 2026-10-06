@@ -6050,7 +6050,9 @@
 .mkt-perf__val { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted); }
 .mkt-perf__tile.is-up .mkt-perf__val { color: var(--accent); }
 .mkt-perf__tile.is-down .mkt-perf__val { color: var(--sell); }
-.mkt-perf__tile.is-na { opacity: .6; }
+/* A window the feed can't reach: the dash goes quiet, the label stays legible (pre-gtm POLISH r2 — .6 opacity on the
+   whole tile put the key at 2.5:1). */
+.mkt-perf__tile.is-na .mkt-perf__val { color: var(--muted-2); }
 .mkt-perf__note { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-2); }
 .tchart__perf { display: flex; align-items: center; min-width: 0; }
 @media (max-width: 720px) { .tchart__perf { width: 100%; overflow-x: auto; } }
@@ -6601,3 +6603,8 @@
    and the thread (ChatInterface simple) scrolls itself. */
 .askdoor-sheet--live .sheet__body { display: flex; flex-direction: column; overflow: hidden; }
 .askdoor-sheet--live .askdoor__sheetbody { flex: 1 1 auto; }
+
+/* Accent ink on its own 12–20% chip tint (pre-gtm POLISH r2): 4.05–4.1:1 on paper at 10.5px; pulled toward --fg. */
+:root[data-theme='light'] .edemo__live { color: color-mix(in oklch, var(--accent) 78%, var(--fg)); }
+:root[data-theme='light'] .pulse__chip--buy { color: color-mix(in oklch, var(--pulse-up) 78%, var(--fg)); }
+:root[data-theme='light'] .pulse__chip--sell { color: color-mix(in oklch, var(--pulse-down) 82%, var(--fg)); }

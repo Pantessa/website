@@ -25,6 +25,7 @@
  */
 import { normalizeWorth } from '@/lib/chain-lexicon'
 import { chartSymbolByName } from '@/lib/charts'
+import { englishAsk } from '@/lib/ask-lingua'
 
 export interface RescueChip {
   label: string
@@ -52,6 +53,10 @@ interface Slots {
   fromChain?: string
   toChain?: string
   onChain?: string
+  /** A question mark or a question word anywhere — a read, never a verbless ask. */
+  question?: boolean
+  /** "0.01 eth to usdc" — the token after `to`/`for` when it is not a chain. */
+  toToken?: string
   venues: Set<string>
   verbs: Set<string>
 }
@@ -80,7 +85,7 @@ const VERB_FAMILIES: [string, RegExp][] = [
   ['earn', /\b(?:earn|yield|apy|apr|interest|lend|lending|supply|deposit|save|savings)\b|\bput\b.*\bto\s+work\b/],
   ['bridge', /\b(?:bridge|move|send|transfer|get)\b.*\b(?:to|onto|over\s+to)\b/],
   ['sell', /\b(?:sell|dump|offload|cash\s+out|exit)\b/],
-  ['buy', /\b(?:buy|purchase|get|grab|acquire|ape|yeet|pick\s+up|invest|want|need)\b/],
+  ['buy', /\b(?:buy|purchase|get|gimme|grab|acquire|ape|yeet|pick\s+up|invest|want|need)\b/],
   ['swap', /\b(?:swap|convert|trade|exchange|turn)\b/],
 ]
 const STOP = new Set([
@@ -96,6 +101,10 @@ const STOP = new Set([
   // sweep fall: "2x long hype $12, 5% stop" had `hype` AND `stop` unexplained).
   'protect', 'stop', 'loss', 'profit', 'take', 'tp', 'sl', 'set', 'guard', 'guardian', 'watch', 'alert', 'trigger', 'drop', 'drops', 'gas', 'fee', 'fees', 'sign', 'cover',
   'ethereum', 'mainnet', 'arbitrum', 'arb', 'optimism', 'arc', 'futures', 'dump', 'offload', 'cash', 'exit', 'ape', 'some', 'little', 'bit', 'there', 'here', 'just',
+  // Wave 2 (pre-gtm 2026-10-06): "sell everything" composed "Sell all my EVERYTHING"; "buy the dip" would have
+  // bought a token called DIP. Quantity words, slang objects and foreign prepositions are never tickers.
+  'everything', 'anything', 'nothing', 'dip', 'dips', 'top', 'bottom', 'bag', 'bags', 'moon', 'rip', 'pls', 'plz', 'thanks', 'thx', 'asap', 'today', 'tomorrow',
+  'de', 'di', 'von', 'para', 'por', 'pour', 'fur', 'für', 'el', 'la', 'le', 'les', 'der', 'die', 'das', 'un', 'una', 'une', 'eine', 'ein', 'y', 'et', 'und',
 ])
 
 function readSlots(raw: string): Slots {
@@ -104,7 +113,7 @@ function readSlots(raw: string): Slots {
   // Normalised before anything reads a chain slot, so the bridge family and
   // the `to`/`from` matchers below see an ordinary sentence.
   const m = normalizeWorth(raw).toLowerCase().replace(/\s*(?:->|-->|=>|→|»)\s*/g, ' to ').replace(/\s+/g, ' ').trim()
-  const s: Slots = { venues: new Set(), verbs: new Set() }
+  const s: Slots = { venues: new Set(), verbs: new Set(), question: /\?|\b(?:which|what|how|why|quote|price|best)\b/.test(m) }
   for (const [name, re] of VERB_FAMILIES) if (re.test(m)) s.verbs.add(name)
   for (const v of ['hyperliquid', 'aave', 'morpho', 'lido', 'uniswap', 'robinhood']) if (new RegExp(String.raw`\b${v}\b`).test(m)) s.venues.add(v)
   if (/\bhl\b/.test(m)) s.venues.add('hyperliquid')
@@ -129,18 +138,20 @@ function readSlots(raw: string): Slots {
     s.protect = { pct: Number(pct), kind: /^(?:take|tp)/.test(word) ? 'take profit' : 'stop' }
   }
 
+  const ok = (w?: string): w is string => !!w && /^[a-z][a-z0-9.]{1,11}$/.test(w) && !STOP.has(w)
   const from = m.match(/\bfrom\s+(?:my\s+)?([a-z]+)\b/)
   const to = m.match(/\b(?:to|onto)\s+([a-z]+)\b(?!\s+work)/)
   const on = m.match(/\bon\s+([a-z]+)\b/)
   if (from && CHAIN_WORDS[from[1]]) s.fromChain = CHAIN_WORDS[from[1]]
   if (to && CHAIN_WORDS[to[1]] && to[1] !== 'eth') s.toChain = CHAIN_WORDS[to[1]]
+  const toTok = m.match(/\b(?:to|for|into)\s+\$?([a-z][a-z0-9.]{1,11})\b/)
+  if (toTok && (!CHAIN_WORDS[toTok[1]] || toTok[1] === 'eth') && ok(toTok[1])) s.toToken = toTok[1]
   if (on && CHAIN_WORDS[on[1]] && on[1] !== 'eth') s.onChain = CHAIN_WORDS[on[1]]
   // "my optimism usdc" — a chain worn as an adjective is the origin.
   const adj = m.match(/\bmy\s+(base|arbitrum|optimism|ethereum|mainnet)\s+[a-z]{2,6}\b/)
   if (adj && !s.fromChain) s.fromChain = CHAIN_WORDS[adj[1]]
 
   // Token: "of X" first, then "<n> X", then the one word nothing else explains.
-  const ok = (w?: string): w is string => !!w && /^[a-z][a-z0-9.]{1,11}$/.test(w) && !STOP.has(w)
   const ofTok = m.match(/\b(?:of|worth)\s+\$?([a-z][a-z0-9.]{1,11})\b/)
   const usdTok = m.match(/\$\s?\d[\d,]*(?:\.\d+)?\s+(?:worth\s+)?(?:of\s+)?([a-z][a-z0-9.]{1,11})\b/)
   if (!ok(ofTok?.[1]) && ok(usdTok?.[1])) s.token = usdTok![1]
@@ -195,6 +206,13 @@ function compose(s: Slots): RescueChip[] {
       return out
     }
     add('hyperliquid', `${lev}${s.side} ${size} on hyperliquid`, `${lev}${Side} ${size} on Hyperliquid`)
+  }
+  // A perp word with a coin and no side ("perp hype", "leverage eth", "hype
+  // futures"): the two sides as chips — the HL layer asks the size next.
+  if (s.verbs.has('perp') && !s.side && tok && !stable && !s.protect) {
+    const lev = s.leverage ? `${s.leverage}x ` : ''
+    add('hyperliquid', `${lev}long ${up(tok)} on hyperliquid`, `${lev}Long ${up(tok)} on Hyperliquid`)
+    add('hyperliquid', `${lev}short ${up(tok)} on hyperliquid`, `${lev}Short ${up(tok)} on Hyperliquid`)
   }
   // Staking — Lido is the fleet's one ETH staking venue.
   const lidoNamed = s.venues.has('lido')
@@ -280,6 +298,14 @@ function compose(s: Slots): RescueChip[] {
     // swap layer's whole-holding sell; `verify` keeps it only if it builds.
     else if (s.verbs.has('sell') && s.usd === undefined && s.units === undefined && !stable) add('swap', `Sell all my ${up(tok)}${chain}`)
   }
+  // A verbless or swap-worded pair with a size: "0.01 eth to usdc",
+  // "swap 5 usdc into eth" (wave 2). The swap layer reads the chain.
+  // A verbless pair is an ask only when nothing about it asks a question
+  // ("Quote 100 USDC to WETH on Base — which fee tier is best?" is a read).
+  if (tok && s.toToken && s.toToken !== tok && !s.side && !s.question && (s.verbs.size === 0 || s.verbs.has('swap') || s.verbs.has('sell') || s.verbs.has('buy'))) {
+    const a = s.units !== undefined ? `${s.units} ${up(tok)}` : s.usd !== undefined ? `$${s.usd} of ${up(tok)}` : null
+    if (a) add('swap', `Swap ${a} for ${up(s.toToken)}${s.onChain ? ` on ${s.onChain}` : ''}`)
+  }
   // A bare verb ("buy", "invest", "i want to trade") names no asset at all.
   // The three doors a stranger most often means, each the hero's own $10
   // sentence — a tap says which, never a guess (pre-gtm 2026-10-06; it fell
@@ -331,10 +357,10 @@ export function rescueIntent(message: string, verify: (ask: string) => boolean, 
   if (/0x[0-9a-f]{8,}|\.eth\b|https?:\/\//i.test(text)) return null // addresses + links: never re-worded
   const stripped = text.replace(POLITE_RE, '')
   if (QUESTION_RE.test(stripped)) return null
-  const slots = readSlots(stripped)
+  const slots = readSlots(englishAsk(stripped))
   // No verb at all is still an ask when a price names the thing it buys
   // ("$10 of AAPL please"); compose() reads that shape as a buy.
-  if (slots.verbs.size === 0 && !(slots.usd !== undefined && slots.token)) return null
+  if (slots.verbs.size === 0 && !(slots.usd !== undefined && slots.token) && !(slots.units !== undefined && slots.token && slots.toToken)) return null
   const seen = new Set<string>()
   const chips: RescueChip[] = []
   for (const c of compose(slots)) {

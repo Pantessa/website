@@ -57,13 +57,32 @@ for (const [ask, re] of net) {
   const o = simulateLadder(ask)
   check(`net: "${ask}" → chips`, o.kind === 'clarify' && o.gate === 'intent-net' && !!o.chips && re.test(o.note ?? ''), `${o.kind}/${o.gate} ${o.note ?? ''}`)
 }
-for (const q of ['what should I buy', 'what is a stop loss', 'how does this work', 'buy now', 'run it back', 'tell me a joke'])
+for (const q of ['what should I buy', 'what is a stop loss', 'is aapl a buy', 'why is eth moving', 'buy now', 'run it back', 'tell me a joke', 'what is the apy on aave?'])
   check(`still prose: "${q}"`, simulateLadder(q).kind === 'planner', JSON.stringify(simulateLadder(q)))
 check('moneyShaped: asset name is evidence', moneyShaped('buy apple') && moneyShaped('short btc') && moneyShaped('buy bitcoin'))
 check('moneyShaped: English-word tickers are prose', !moneyShaped('buy now') && !moneyShaped('run it') && !moneyShaped('snap out of it'))
 check('moneyShaped: yield shape, not a yield question', moneyShaped('earn yield') && !moneyShaped('what is the apy on aave?'))
 check('asset words', isMoneyAssetWord('btc') && isMoneyAssetWord('apple') && isMoneyAssetWord('AAPL') && !isMoneyAssetWord('now') && !isMoneyAssetWord('on') && !isMoneyAssetWord('path'))
 check('name → ticker', chartSymbolByName('apple') === 'AAPL' && chartSymbolByName('bitcoin') === 'BTC' && chartSymbolByName('JUNKXYZ') === null && chartSymbolByName('AAPL') === null)
+
+// ── wave 2: the starter door, other languages, verbless shapes ───────────
+const starter: [string, RegExp][] = [
+  ['help', /Buy \$10 of ETH \| Show me the ETH chart \| Buy \$10 of AAPL/],
+  ['what can you do', /Buy \$10 of ETH/], ['how do I start?', /Buy \$10 of ETH/], ['how does this work', /Buy \$10 of ETH/], ['hi', /Buy \$10 of ETH/], ['gm', /Buy \$10 of ETH/],
+  ['eth', /Show me the ETH chart \| Buy \$10 of ETH/], ['AAPL', /Show me the AAPL chart/], ['aapl', /Show me the AAPL chart/], ['apple stock', /Show me the AAPL chart/], ['tesla', /Show me the TSLA chart/], ['eth price', /Show me the ETH chart/],
+]
+for (const [ask, re] of starter) { const o = simulateLadder(ask); check(`starter: "${ask}"`, o.gate === 'starter' && o.kind === 'clarify' && re.test(o.note ?? ''), `${o.kind}/${o.gate} ${o.note ?? ''}`) }
+for (const q of ['now', 'run', 'path', 'on', 'buy the dip', 'what is 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'])
+  check(`starter stays out of: "${q}"`, simulateLadder(q).gate !== 'starter', JSON.stringify(simulateLadder(q)))
+const wave2: [string, RegExp][] = [
+  ['comprar bitcoin', /Buy \$10 of BTC/], ['compra $10 de ETH', /Buy \$10 of ETH/], ['kaufe ETH für 10$', /Buy \$10 of ETH/], ['买10美元的ETH', /Buy \$10 of ETH/],
+  ['купить eth', /Buy \$10 of ETH/], ['vender eth', /Sell all my ETH/], ['bitcoin kaufen', /Buy \$10 of BTC/], ['stake eth por favor', /stake ETH on Lido/],
+  ['$10 eth', /Buy \$10 of ETH/], ['0.01 eth to usdc', /Swap 0.01 ETH for USDC/], ['5 usdc -> eth', /Swap 5 USDC for ETH/],
+  ['perp hype', /long HYPE on hyperliquid \| short HYPE on hyperliquid/], ['leverage eth', /long ETH on hyperliquid/], ['get eth', /Buy \$10 of ETH/], ['gimme eth', /Buy \$10 of ETH/],
+  ['🚀 buy eth', /Buy \$10 of ETH/], ['buy eth!!', /Buy \$10 of ETH/], ['i want eth', /Buy \$10 of ETH/],
+]
+for (const [ask, re] of wave2) { const o = simulateLadder(ask); check(`wave2: "${ask}"`, o.kind !== 'planner' && re.test(o.note ?? ''), `${o.kind}/${o.gate} ${o.note ?? ''}`) }
+for (const bad of ['sell everything', 'buy the dip']) { const o = simulateLadder(bad); check(`no invented ticker: "${bad}"`, !/EVERYTHING|of DIP/.test(o.note ?? ''), o.note ?? '') }
 
 console.log(`\npins:deadends — ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

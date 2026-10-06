@@ -66,6 +66,7 @@ import { fenceGuardianCoin } from '@/lib/hl-guardian-fence'
 
 import { hlPerpUniverse } from '@/lib/hl-universe'
 import { rescueIntent } from '@/lib/intent-rescue'
+import { starterDoor } from '@/lib/starter-door'
 import { HOUSE_UNAVAILABLE_REPLY } from '@/lib/fetch-words'
 import { buildFailedTurn, HOUSE_DOWN_CHIPS, leaksBuildPlumbing, swapAskSentence } from '@/lib/build-failure'
 import { buildsNatively } from '@/scripts/ask-ladder'
@@ -2426,6 +2427,17 @@ async function handleChatTurn(req: NextRequest) {
     //    end. The tap re-enters the ladder, where that layer's own funding
     //    plan (bridge legs, gas legs, the card door) does the rest. Reads and
     //    questions return null and stay the planner's.
+    // ── The starter door — "help", "hi", "what can you do", a bare "eth" or
+    //    "aapl". Not an ask and not a real question: three chips the ladder
+    //    builds and the two public surfaces, with no model in the loop
+    //    (lib/starter-door; pre-gtm 2026-10-06). Real questions fall through.
+    {
+      const starter = starterDoor(message)
+      if (starter) {
+        nativeTrace({ type: 'status', label: `starter door (${starter.kind}): answered without the model` })
+        return NextResponse.json({ reply: starter.reply, clarify: starter.clarify, buildPath: starter.buildPath })
+      }
+    }
     if (moneyShaped(message)) {
       const rescue = rescueIntent(message, buildsNatively)
       if (rescue) {
