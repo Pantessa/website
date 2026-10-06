@@ -1419,6 +1419,13 @@ export default function MarketChart({
         )}
       </div>
 
+      {/* The Wall asked for and every read failed: say so (pre-gtm POLISH r2). */}
+      {wallOn && !wallStatus?.active && wallStatus?.failed && (
+        <p className="wall-legend mono" data-fetch-failed>
+          <b>THE WALL</b>
+          <span>couldn&rsquo;t read the order books or positioning · retrying on its own</span>
+        </p>
+      )}
       {/* The Wall's key, under the plot, only while it draws. */}
       {wallOn && wallStatus?.active && (
         <p className="wall-legend mono">

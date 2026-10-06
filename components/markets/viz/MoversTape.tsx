@@ -24,7 +24,7 @@ export interface MoversTapeProps {
 export default function MoversTape({ onOpen, count = 8, className = '' }: MoversTapeProps) {
   const sections = useMemo(() => marketSections(), [])
   const symbols = useMemo(() => sections.flatMap((s) => s.rows.map((r) => r.symbol)), [sections])
-  const { quotes, live } = useQuotes(symbols)
+  const { quotes, live, failed } = useQuotes(symbols)
   const rows = useMemo(() => symbols.map((s) => ({ symbol: s, last: quotes[s]?.last ?? null, chgPct: quotes[s]?.chgPct ?? null })), [symbols, quotes])
   const { gainers, losers } = useMemo(() => rankMovers(rows, count), [rows, count])
   const items = useMemo(() => [...gainers, ...losers], [gainers, losers])
@@ -49,7 +49,7 @@ export default function MoversTape({ onOpen, count = 8, className = '' }: Movers
   if (!items.length) {
     return (
       <div className={`mk-tape ${className}`.trim()}>
-        <div className="mk-tape__empty">{live ? 'No movers yet.' : 'Reading the tape…'}</div>
+        <div className="mk-tape__empty">{live ? 'No movers yet.' : failed ? 'The quote feed didn’t answer · trying again every 20s' : 'Reading the tape…'}</div>
       </div>
     )
   }

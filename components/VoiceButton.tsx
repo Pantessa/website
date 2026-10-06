@@ -156,6 +156,16 @@ export default function VoiceButton({
     return () => window.removeEventListener('keydown', onKey)
   }, [state, stop])
   useEffect(() => () => stop(true), [stop])
+  // The refusal in WORDS, for a few seconds after it lands (pre-gtm POLISH r2,
+  // DEADENDS F9): the MicOff glyph + a title was all a refused mic got, so the
+  // press read as dead.
+  const [deniedNote, setDeniedNote] = useState(false)
+  useEffect(() => {
+    if (state !== 'denied') return
+    setDeniedNote(true)
+    const t = setTimeout(() => setDeniedNote(false), 5000)
+    return () => clearTimeout(t)
+  }, [state])
 
   if (state === null || state === 'unsupported') return null
 
@@ -183,6 +193,15 @@ export default function VoiceButton({
       )}
     >
       {denied ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+      {denied && deniedNote && (
+        <span
+          role="status"
+          className="pointer-events-none absolute bottom-full right-0 mb-2 w-max max-w-[240px] rounded-lg border border-solid border-[var(--line)] bg-[var(--surf-1)] px-2.5 py-1.5 text-left text-[11.5px] leading-snug text-[color:var(--fg)] shadow-lg"
+          data-voice-denied
+        >
+          The microphone is blocked. Allow it for this site in your browser, or type the ask.
+        </span>
+      )}
     </button>
   )
 }

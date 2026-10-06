@@ -8,9 +8,14 @@
 import { useEffect, useState } from 'react'
 import { chartPairFor, type Candle } from '@/lib/charts'
 import { fmtPct, performanceTiles, type PerformanceTiles as Tiles } from '@/lib/performance'
+import FetchFailed from '@/components/FetchFailed'
 
 export default function PerformanceTiles({ symbol, compact = false }: { symbol: string; compact?: boolean }) {
   const [tiles, setTiles] = useState<Tiles | null>(null)
+  // A failed read is named (pre-gtm POLISH r2); before, the tiles stayed "—"
+  // and their title blamed the feed's reach.
+  const [failed, setFailed] = useState(false)
+  const [nonce, setNonce] = useState(0)
   const pair = chartPairFor(symbol)
   // chartPairFor() returns a FRESH object every render: keyed on it, this
   // effect re-ran (and re-fetched) on every render — ~500 tf=1d requests a
@@ -25,9 +30,11 @@ export default function PerformanceTiles({ symbol, compact = false }: { symbol: 
       try {
         const res = await fetch(`/api/charts/candles?symbol=${encodeURIComponent(pairSymbol)}&tf=1d`, { cache: 'no-store' })
         const body = (await res.json()) as { candles?: Candle[] }
-        if (alive && body.candles?.length) setTiles(performanceTiles(body.candles))
+        if (!alive) return
+        if (body.candles?.length) setTiles(performanceTiles(body.candles))
+        setFailed(!res.ok)
       } catch {
-        /* the tiles simply stay empty */
+        if (alive) setFailed(true)
       }
     }
     void run()
@@ -36,18 +43,19 @@ export default function PerformanceTiles({ symbol, compact = false }: { symbol: 
       alive = false
       clearInterval(timer)
     }
-  }, [pairSymbol])
+  }, [pairSymbol, nonce])
 
   if (!pair) return null
   const list = tiles?.tiles ?? []
   return (
     <div className={`mkt-perf${compact ? ' mkt-perf--compact' : ''}`} aria-label="Performance">
       {(list.length ? list : (['1W', '1M', '3M', '6M', 'YTD', '1Y'] as const).map((key) => ({ key, pct: null as number | null }))).map((t) => (
-        <div key={t.key} className={`mkt-perf__tile${t.pct === null ? ' is-na' : t.pct > 0 ? ' is-up' : t.pct < 0 ? ' is-down' : ''}`} title={t.pct === null ? `${t.key}: the daily feed does not reach back that far` : `${t.key} change`}>
+        <div key={t.key} className={`mkt-perf__tile${t.pct === null ? ' is-na' : t.pct > 0 ? ' is-up' : t.pct < 0 ? ' is-down' : ''}`} title={t.pct === null ? (tiles ? `${t.key}: the daily feed does not reach back that far` : `${t.key}: loading`) : `${t.key} change`}>
           <span className="mono mkt-perf__key">{t.key}</span>
           <span className="mono mkt-perf__val">{fmtPct(t.pct)}</span>
         </div>
       ))}
+      {failed && !tiles && <FetchFailed what="the daily series" onRetry={() => setNonce((n) => n + 1)} />}
       {tiles && tiles.unavailable.length > 0 && !compact && (
         <span className="mono mkt-perf__note">{tiles.unavailable.join(' · ')} beyond the feed’s reach</span>
       )}
