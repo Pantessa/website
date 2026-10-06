@@ -106,8 +106,9 @@
 .mk-down { color: var(--mk-down); }
 .mk-flat { color: var(--mk-flat); }
 
-/* A panel: the page surface with the facet-cut corner. */
-.mk-panel { background: var(--mk-surface); border: 1px solid var(--line); clip-path: var(--mk-facet); padding: 14px 16px; position: relative; }
+/* A panel: the page surface with rounded corners (the facet clip-path cut
+   the 1px border off two corners). */
+.mk-panel { background: var(--mk-surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; position: relative; }
 .mk-panel--glass { background: var(--mk-glass); border-color: var(--mk-glass-line); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
 .mk-panel__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .mk-panel__title { font-family: var(--mk-font-display); font-weight: 600; font-size: 15px; letter-spacing: -0.01em; color: var(--fg); }
@@ -164,7 +165,7 @@
 .mk-map__cell:focus-visible rect { stroke: var(--fg); stroke-width: 2; }
 .mk-map__sym { font-family: var(--mk-font-mono); font-weight: 600; pointer-events: none; }
 .mk-map__pct { font-family: var(--mk-font-mono); pointer-events: none; }
-.mk-map__hover { position: absolute; pointer-events: none; z-index: 2; min-width: 150px; padding: 8px 10px; background: var(--mk-glass); border: 1px solid var(--mk-glass-line); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); clip-path: var(--mk-facet); font-size: 12px; color: var(--fg); }
+.mk-map__hover { position: absolute; pointer-events: none; z-index: 2; min-width: 150px; padding: 8px 10px; background: var(--mk-glass); border: 1px solid var(--mk-glass-line); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 8px; font-size: 12px; color: var(--fg); }
 .mk-map__hover .mk-label { margin-bottom: 2px; }
 .mk-map__hover strong { font-family: var(--mk-font-display); font-weight: 600; font-size: 14px; }
 .mk-map__empty { padding: 24px; text-align: center; font-size: 12px; color: var(--muted-2); border: 1px dashed var(--line); }

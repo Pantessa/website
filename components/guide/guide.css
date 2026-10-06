@@ -1,7 +1,7 @@
 /* ── THE GUIDE (components/guide) ──────────────────────────────────────────
    One card that teaches as you go, and the spine's unseen-dot. A NOTE in the
-   markets look: the page surface with the Emerald Cut's facet corner
-   (--mk-facet, components/markets/look.css), site tokens only (--surf /
+   markets look: the page surface with rounded corners (the facet clip-path
+   sliced the border off two corners), site tokens only (--surf /
    --line / --fg / --muted / --accent / --ink), so the light theme comes free
    and the embed never sees it. No scrim, no portal, nothing positioned
    outside the card: the ⋯ overflow is a <details> whose content flows inline
@@ -24,7 +24,7 @@
   padding: 12px 14px 12px 13px;
   border: 1px solid var(--line);
   background: var(--mk-surface, var(--surf-1));
-  clip-path: var(--mk-facet, none);
+  border-radius: 12px;
   color: var(--fg);
   font-family: var(--mk-font-ui, var(--font-chat-body, system-ui, sans-serif));
   animation: guide-in var(--mk-dur-base, .22s) var(--mk-ease, ease) both;
