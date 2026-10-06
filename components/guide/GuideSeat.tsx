@@ -24,6 +24,7 @@ import { analytics } from '@/lib/analytics'
 import { useAskDoor } from '@/lib/ask-door'
 import { askAppSlugs } from '@/lib/ask-apps'
 import {
+  compactOnPhone,
   dismissGuideHint,
   noteGuideEvent,
   pickHintForLoad,
@@ -118,8 +119,10 @@ export default function GuideSeat({ surface, posture, symbol = null, ask = null 
 
   return (
     <div className="guide-seat" data-guide-seat={surface}>
-      {/* The home seat is the one row on a phone (MOBILE's budget on `/`). */}
-      <GuideCard hint={hint} ctx={ctx} onCta={onCta} onDismiss={onDismiss} onOff={onOff} onAsk={act} compact={surface === 'home'} />
+      {/* The splash and the symbol page are the one row on a phone (lib/guide
+          GUIDE_COMPACT_SURFACES): the first screen there belongs to the
+          boards and the chart. */}
+      <GuideCard hint={hint} ctx={ctx} onCta={onCta} onDismiss={onDismiss} onOff={onOff} onAsk={act} compact={compactOnPhone(surface)} />
       {door}
     </div>
   )

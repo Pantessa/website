@@ -55,6 +55,17 @@ export const GUIDE_MAX_SHOWS = 2
  *  as fresh, like any other garbage, before JSON.parse ever sees it. */
 export const GUIDE_RECORD_MAX_BYTES = 8_192
 
+/** The seats whose card is the COMPACT ROW on a phone (≤640px, GuideCard
+ *  GUIDE_COMPACT_MQ): the splash (MOBILE's budget on `/`, R1) and the symbol
+ *  page (the full 174px card under the act strip pushed the chart's plot top
+ *  421 → 613 at 375×812 — the chart stays primary, R3). /live, /chat and
+ *  /wallet keep the full card: nothing there competes for the first screen. */
+export const GUIDE_COMPACT_SURFACES: readonly GuideSurface[] = ['home', 'symbol']
+
+export function compactOnPhone(surface: GuideSurface): boolean {
+  return GUIDE_COMPACT_SURFACES.includes(surface)
+}
+
 export type GuideHintId = 'pulse' | 'chart' | 'triggers' | 'links' | 'jobs' | 'wallet' | 'alerts'
 
 /** What the seat knows that the record does not: where it is, which symbol
@@ -142,7 +153,9 @@ export const GUIDE_HINTS: readonly GuideHint[] = [
     surfaces: ['symbol'],
     title: 'Ask the chart.',
     body: 'Type “{ASK}” or “why is it moving?” — the answer builds the order right here, in a ticket beside the chart.',
-    cta: { label: 'Why is {SYM} moving?', kind: 'door', value: 'Why is {SYM} moving?' },
+    // The compact row's label: "Why is AAPL moving?" is ~152px and would
+    // leave ~40px for the title at 320 (MOBILE's measurement).
+    cta: { label: 'Why is {SYM} moving?', short: 'Ask it →', kind: 'door', value: 'Why is {SYM} moving?' },
   },
   {
     id: 'triggers',
