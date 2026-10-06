@@ -411,11 +411,12 @@ export function guidePins(check: Check): void {
       })(),
   )
   check(
-    'guide: the look is tokens only (surface, line, fg, muted, accent, ink; the markets facet corner), reduced motion drops the entrance, and a thumb gets ≥44px controls',
+    'guide: the look is tokens only (surface, line, fg, muted, accent, ink; rounded corners, never the facet clip that cuts the border), reduced motion drops the entrance, and a thumb gets ≥44px controls',
     /var\(--accent\)/.test(css) &&
       /var\(--ink\)/.test(css) &&
       /var\(--line\)/.test(css) &&
-      /var\(--mk-facet/.test(css) &&
+      /\.guide \{[^}]*border-radius: 12px;/.test(css) &&
+      !/clip-path: var\(--mk-facet/.test(css) &&
       !/#[0-9a-fA-F]{3,8}\b/.test(css.replace(/\/\*[\s\S]*?\*\//g, '')) &&
       /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.guide \{ animation: none; \}/.test(css) &&
       /@media \(hover: none\)[\s\S]*min-height: 44px/.test(css) &&
