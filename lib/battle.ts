@@ -124,6 +124,63 @@ export function parseFrontTokens(raw: string | null | undefined): string[] {
   return out
 }
 
+/**
+ * Your own army, in the venue's spelling (2026-10-06, Nate: "if they do not
+ * appear, I can add 3 or more of my own"). A typed name resolves against
+ * the venue's market list: `near` is NEAR, `pepe` is kPEPE (the 1000× coin
+ * is what the venue lists), `nvda` is xyz:NVDA (the stock perp). No such
+ * market → null, and the page says so in the venue's words. An unknown
+ * universe (the read failed) accepts the typed shape as-is, so the box
+ * never goes dead.
+ */
+export function resolveMarket(raw: string, universe: readonly string[]): string | null {
+  const [norm] = parseFrontTokens(raw)
+  if (!norm) return null
+  if (universe.length === 0) return norm
+  const byLower = new Map(universe.map((m) => [m.toLowerCase(), m] as const))
+  const key = norm.toLowerCase()
+  const direct = byLower.get(key)
+  if (direct) return direct
+  if (!key.startsWith('xyz:')) {
+    const kilo = byLower.get(`k${key}`)
+    if (kilo) return kilo
+    const stock = byLower.get(`xyz:${key}`)
+    if (stock) return stock
+  }
+  return null
+}
+
+export interface OwnAdd {
+  /** Resolved, new, and inside the cap — in typed order. */
+  added: string[]
+  /** Typed names the venue lists no market for. */
+  unknown: string[]
+  /** Resolved markets that did not fit the field. */
+  full: string[]
+}
+
+/** Several at once: commas or spaces separate (`near sol, doge`). Already
+ *  picked markets are skipped silently. */
+export function addOwnMarkets(raw: string, universe: readonly string[], current: readonly string[], max = MAX_ARMIES): OwnAdd {
+  const out: OwnAdd = { added: [], unknown: [], full: [] }
+  for (const part of raw.split(/[,\s]+/)) {
+    const s = part.trim()
+    if (!s) continue
+    const m = resolveMarket(s, universe)
+    if (!m) {
+      out.unknown.push(s)
+      continue
+    }
+    if (current.includes(m) || out.added.includes(m)) continue
+    if (current.length + out.added.length >= max) {
+      out.full.push(m)
+      continue
+    }
+    out.added.push(m)
+  }
+  return out
+}
+
 /** The flag's words: `HYPE`, or `NVDA·xyz` for a stock perp. */
 export function armyLabel(market: string): string {
   const m = tapeMarket(market)

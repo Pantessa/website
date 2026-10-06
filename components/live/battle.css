@@ -62,11 +62,17 @@ html[data-theme="light"] .battle {
 .battle__pick-v.down { color: var(--battle-down); }
 .battle__pick.is-on .battle__pick-v { color: var(--muted); }
 .battle__army-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--army-ink); flex: 0 0 auto; }
-.battle__add { display: inline-flex; }
+.battle__add { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .battle__add input { height: 30px; width: 230px; padding: 0 12px; border: 1px dashed var(--line); border-radius: 999px; background: transparent; color: var(--fg); font-size: 12px; }
 .battle__add input:focus { outline: none; border-color: var(--accent); border-style: solid; }
 .battle__add input::placeholder { color: var(--muted-2); }
 .battle__add input:disabled { opacity: .5; }
+.battle__addbtn { height: 30px; padding: 0 13px; border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 12px; font-weight: 600; cursor: pointer; }
+.battle__addbtn:hover:not(:disabled) { filter: brightness(1.1); }
+.battle__addbtn:disabled { opacity: .45; cursor: not-allowed; }
+.battle__addnote { font-size: 10.5px; }
+.battle__addnote--dim { color: var(--muted-2); }
+.battle__addnote--warn { color: var(--battle-down); }
 
 /* ── The field ─────────────────────────────────────────────────────────── */
 .battle__stage { position: relative; margin-top: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); overflow: hidden; height: clamp(420px, calc(100dvh - 400px), 760px); }
