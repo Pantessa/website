@@ -626,6 +626,12 @@ const AMEND_RE = new RegExp(
   'i',
 )
 
+const AMEND_USD_RE = new RegExp(
+  String.raw`^(?:ok(?:ay)?[,.]?\s*)?(?:actually[,.]?\s*)?(?:(make\s+(?:it|that)|change\s+(?:it|that)(?:\s+to)?|let'?s\s+(?:do|go\s+with)|how\s+about|do|just)\s+)?${USD_AMOUNT}(?:\s+worth)?(?:\s+(?:of|in)\s+(?:it|that|([a-zA-Z]{2,10})))?(?:\s+instead)?[.!?\s]*$`,
+  'i',
+)
+const DOLLAR_STABLES = new Set(['USDC', 'USDT', 'DAI', 'USDG', 'USDC.E', 'USDBC'])
+
 /**
  * Deterministic follow-up resolution against a pending swap/order artifact.
  * Conservative: anything not clearly a cancel or an amount amendment returns
@@ -643,6 +649,25 @@ export function parseSwapFollowUp(
   // Amending a LIMIT order's sell amount silently changes its price — too
   // surprising to do deterministically. Only market swaps amend.
   if (mode === 'limit') return null
+  // Dollar amends: "let's do $2 worth" / "make it $5" / "$2 of UNI instead".
+  // A stable sell side takes the dollars 1:1; any other sell side is sized
+  // in USD at build (sellAmountUsd). A named token may be either side —
+  // "$2 of UNI" against a USDC→UNI swap means spend $2 (2026-10-06,
+  // /p/7BPrsP8P9wgA fell to the planner on exactly this).
+  const d = text.match(AMEND_USD_RE)
+  if (d) {
+    const [, verb, usdA, usdB, token] = d
+    const usd = usdA ?? usdB
+    if (!verb && !token && !/worth/i.test(text)) return null
+    if (token && ![sellToken, buyToken].some((t) => t.toUpperCase() === token.toUpperCase())) return null
+    const stableSell = DOLLAR_STABLES.has(sellToken.toUpperCase())
+    return {
+      kind: 'amend',
+      intent: stableSell
+        ? { isSwap: true, mode: 'swap', sellAmountHuman: usd, sellToken, buyToken }
+        : { isSwap: true, mode: 'swap', sellAmountUsd: usd, sellToken, buyToken },
+    }
+  }
   const m = text.match(AMEND_RE)
   if (!m) return null
   const [, verb, amount, token] = m

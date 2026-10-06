@@ -10799,6 +10799,20 @@ async function main() {
           /Arc.*public bridge/.test(pv('swap 5 USDC from base to arc privately')?.problem ?? '') &&
           !/doesn't reach/.test(pv('swap 5 USDC from base to robinhood privately')?.problem ?? ''),
       )
+      {
+        // 2026-10-06 /p/7BPrsP8P9wgA: "lets do $2 worth" against a pending USDC→UNI
+        // swap fell to the planner (AMEND_RE took no "$" / "worth") — it must rebuild.
+        const { parseSwapFollowUp } = await import('../lib/swap-intent')
+        const sp = (t: string) => ({ kind: 'swap', summary: 's', data: { sellToken: t, buyToken: 'UNI', amount: '50', venue: 'uniswap', mode: 'swap' } })
+        const am = (m: string, t = 'USDC') => parseSwapFollowUp(m, sp(t)) as { kind: string; intent?: { sellAmountHuman?: string; sellAmountUsd?: string } } | null
+        check(
+          'swap dollar amends: "$N worth" / "make it $N" / "$N of UNI" rebuild the pending swap; non-stable sell sizes in USD; a lone "$2" or a foreign token stays out',
+          am('lets do $2 worth')?.intent?.sellAmountHuman === '2' && am("let's do $2 worth")?.intent?.sellAmountHuman === '2' &&
+            am('make it $5')?.intent?.sellAmountHuman === '5' && am('$2 of UNI instead')?.intent?.sellAmountHuman === '2' &&
+            am('lets do $2 worth', 'ETH')?.intent?.sellAmountUsd === '2' && !am('lets do $2 worth', 'ETH')?.intent?.sellAmountHuman &&
+            am('$2') === null && am('$2 of ETH') === null && am('make it 2')?.intent?.sellAmountHuman === '2',
+        )
+      }
       const pubPending = crossChainPending({ amount: '5', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'arbitrum' }, DEPOSIT, 's')
       const privPending = crossChainPending({ amount: '5', originToken: 'USDC', originChain: 'base', destinationToken: 'USDC', destinationChain: 'arbitrum', confidential: true, recipient: OTHER }, DEPOSIT, 's')
       const fu = (m: string, pend: typeof pubPending) => parseCrossChainFollowUp(m, pend) as { kind: string; params?: { confidential?: boolean; recipient?: string; amount?: string }; problem?: string } | null
