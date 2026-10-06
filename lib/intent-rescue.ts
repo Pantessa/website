@@ -24,6 +24,7 @@
  * PURE: no I/O, no env. The harness pins it without a server.
  */
 import { normalizeWorth } from '@/lib/chain-lexicon'
+import { chartSymbolByName } from '@/lib/charts'
 
 export interface RescueChip {
   label: string
@@ -167,7 +168,10 @@ function readSlots(raw: string): Slots {
   return s
 }
 
-const up = (t: string) => t.toUpperCase()
+// The ticker a word means. "apple" → AAPL, "bitcoin" → BTC (lib/charts' own
+// name tables), so a chip reads the way the swap layer will spell the
+// artifact; any other word is its own upper-case ticker.
+const up = (t: string) => chartSymbolByName(t) ?? t.toUpperCase()
 const amt = (s: Slots, tok: string) => (s.usd !== undefined ? `$${s.usd} of ${up(tok)}` : s.units !== undefined ? `${s.units} ${up(tok)}` : null)
 
 /** Every canonical sentence the slots could mean, best reading first. */
@@ -219,6 +223,15 @@ function compose(s: Slots): RescueChip[] {
     // lending pool, so the lending chips above compose nothing for it.
     if (s.verbs.has('earn') && ethLike) add('lido', 'Help me stake ETH on Lido', 'Stake ETH on Lido — size it from my balance')
   }
+  // "earn yield", "put my money to work", "earn interest" — a yield ask that
+  // names nothing (pre-gtm 2026-10-06: it fell to the planner while "earn on
+  // my usdc" got chips). The fleet's two yield doors, one chip each; the
+  // layer behind the tap sizes and refuses by name if the wallet holds none.
+  if (!tok && s.verbs.has('earn') && !s.verbs.has('perp') && !s.verbs.has('stake') && !lidoNamed && !s.venues.has('hyperliquid')) {
+    if (!s.venues.has('morpho')) add('aave', 'Supply $25 of USDC to Aave', 'Supply $25 of USDC to Aave (pick any size)')
+    if (s.venues.has('morpho')) add('morpho', 'Lend $25 of USDC on Morpho', 'Lend $25 of USDC on Morpho (pick any size)')
+    if (!s.venues.has('aave') && !s.venues.has('morpho')) add('lido', 'Help me stake ETH on Lido', 'Stake ETH on Lido — size it from my balance')
+  }
   // Moves between chains — NEAR Intents' grammar.
   if (tok && s.toChain && (s.verbs.has('bridge') || s.fromChain) && s.toChain !== 'robinhood chain') {
     const a = s.units !== undefined ? `${s.units} ${up(tok)}` : s.usd !== undefined && stable ? `${s.usd} ${up(tok)}` : null
@@ -266,6 +279,13 @@ function compose(s: Slots): RescueChip[] {
     // An unsized sell of something held ("sell my apple shares") is the
     // swap layer's whole-holding sell; `verify` keeps it only if it builds.
     else if (s.verbs.has('sell') && s.usd === undefined && s.units === undefined && !stable) add('swap', `Sell all my ${up(tok)}${chain}`)
+  }
+  // A bare verb ("buy", "invest", "i want to trade") names no asset at all.
+  // The three doors a stranger most often means, each the hero's own $10
+  // sentence — a tap says which, never a guess (pre-gtm 2026-10-06; it fell
+  // to the planner).
+  if (!tok && s.usd === undefined && s.units === undefined && !s.side && (s.verbs.has('buy') || s.verbs.has('swap')) && !s.verbs.has('sell') && !s.verbs.has('earn') && !s.verbs.has('stake') && !s.verbs.has('bridge') && !s.verbs.has('perp') && !s.verbs.has('protect') && !s.verbs.has('gas')) {
+    for (const sym of ['ETH', 'AAPL', 'BTC']) add('swap', `Buy $${UNSIZED_BUY_USD[0]} of ${sym}`)
   }
   return out
 }
