@@ -179,3 +179,39 @@
   .live__table td.live__col-act { padding-left: 2px; }
   .live__dex { display: none; }
 }
+
+/* MOBILE (squad pre-gtm, 2026-10-07). /live under a thumb was the site's least touchable page — 175 sub-44 targets
+   at 320 (views 26, Pause 30, market chips 28, every tape row's chip 24 and market link 17) and 123 ellipsized
+   number cells. Measured by squad-pregtm-2026-10-06/shots/mobile-audit.mjs; every rule is fenced to a coarse
+   pointer or the narrow container, so the desktop tape is untouched. */
+@media (hover: none) {
+  .live__view { height: 36px; position: relative; }
+  .live__view::after { content: ''; position: absolute; inset: -4px 0; }
+  .live__pause { height: 44px; }
+  .live__m { height: 44px; }
+  .live__rule-s { min-height: 44px; }
+  .live__feed-b { min-height: 44px; }
+  .live__tile .live__chip { min-height: 44px; }
+  /* A tape row is one 44px band: the chip keeps its 24px pill look, drawn by ::before inside a 44px box (a table
+     cell clips anything outside it, so the hit area has to be the box itself). */
+  .live__table td { padding-top: 0; padding-bottom: 0; height: 44px; }
+  .live__table .live__chip { height: 44px; min-width: 44px; border: 0; background: transparent; position: relative; isolation: isolate; }
+  .live__table .live__chip::before { content: ''; position: absolute; inset: 10px 0; z-index: -1; border-radius: 999px; border: 1px solid transparent; }
+  .live__table .live__chip--buy::before { background: color-mix(in srgb, var(--live-up) 18%, var(--surf-1)); border-color: color-mix(in srgb, var(--live-up) 55%, transparent); }
+  .live__table .live__chip--sell::before { background: color-mix(in srgb, var(--live-down) 16%, var(--surf-1)); border-color: color-mix(in srgb, var(--live-down) 55%, transparent); }
+  .live__table .live__mlink { min-height: 44px; min-width: 44px; }
+}
+/* Five tiles in two columns left "Taker flow" alone with a hole beside it: the odd last tile takes the row. */
+@container live (max-width: 640px) {
+  .live__tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+/* At 320 (a 288px column) Price and Notional ellipsized on most rows ("85571…"): Side goes — the row's ink and its
+   chip (Long / Short / Buy) already say it — and its width goes to the numbers. */
+@container live (max-width: 340px) {
+  .live__table th:nth-child(2), .live__table td:nth-child(2) { display: none; }
+  .live__table th:nth-child(1) { width: 17%; }
+  .live__table th:nth-child(4) { width: 20%; }
+  .live__table th:nth-child(5) { width: 20%; }
+  .live__table th:nth-child(7) { width: 19%; }
+  .live__table th:nth-child(10) { width: 24%; }
+}

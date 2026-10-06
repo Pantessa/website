@@ -116,7 +116,7 @@ export default function AppsRailTab({
         title={`About ${server.name}`}
         className={cn(
           'flex-shrink-0 grid place-items-center rounded-md text-[color:var(--muted-2)] hover:text-white hover:bg-white/5 transition-all',
-          flat ? 'w-10 h-10 opacity-70' : 'w-6 h-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+          flat ? 'w-11 h-11 opacity-70' : 'w-6 h-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
         )}
       >
         <Info className="w-3.5 h-3.5" />
@@ -131,7 +131,7 @@ export default function AppsRailTab({
           title="In your set — click to remove"
           className={cn(
             'flex-shrink-0 grid place-items-center rounded-md border border-transparent text-[color:var(--accent)] hover:border-[var(--line-2)] hover:text-red-400 transition-colors',
-            flat ? 'w-10 h-10' : 'w-6 h-6',
+            flat ? 'w-11 h-11' : 'w-6 h-6',
           )}
         >
           <Check className="w-3.5 h-3.5" strokeWidth={3} />
@@ -155,7 +155,7 @@ export default function AppsRailTab({
             onClick={() => setFreeView(true)}
             className={cn(
               'flex-1 rounded-[10px] px-2 py-1.5 text-[11px] font-medium transition-colors',
-              flat && 'min-h-[40px] text-[13px]',
+              flat && 'min-h-[44px] text-[13px]',
               freeView ? 'bg-[var(--surf-2)] text-white' : 'text-[color:var(--muted)] hover:text-white',
             )}
           >
@@ -167,7 +167,7 @@ export default function AppsRailTab({
             onClick={() => setFreeView(false)}
             className={cn(
               'flex-1 rounded-[10px] px-2 py-1.5 text-[11px] font-medium transition-colors',
-              flat && 'min-h-[40px] text-[13px]',
+              flat && 'min-h-[44px] text-[13px]',
               !freeView ? 'bg-[var(--surf-2)] text-white' : 'text-[color:var(--muted)] hover:text-white',
             )}
           >

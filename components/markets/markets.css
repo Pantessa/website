@@ -594,3 +594,19 @@ button.mk-held:hover { border-color: var(--accent); }
   .mkt-sec__count { grid-column: 2; grid-row: 1; }
   .mkt-sec__blurb { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* MOBILE (squad pre-gtm, 2026-10-07): the chart's first-visit hint ("TAP A PRICE, THEN + TO PUT AN ORDER THERE")
+   wraps to two lines at 375 and its first line ran to ~5px from the live "pool" tag on the price axis. Tighter
+   tracking on a phone gives it a clear gap; the words, size and place are unchanged. */
+@media (max-width: 640px) {
+  .mkt-legend__hint { letter-spacing: 0.03em; }
+}
+/* Technicals' verdict chips ("Buy $25 of AAPL") were 40px tall under a thumb (min-h-10); and at 375 the four
+   timeframes were 43px wide — the group's 4px inner gap gives back 2px, so 375+ reaches 44 (320/360 stay the
+   GTM squad's split, see its MOBILE.md). */
+@media (hover: none) {
+  [data-verdict-chips] button { min-height: 44px; }
+}
+@media (max-width: 640px) {
+  .sym .mkt-chart__bar:has(> .mkt-view) > .tok__tf { gap: 2px; }
+}
