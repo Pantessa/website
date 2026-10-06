@@ -207,7 +207,7 @@ export default function PulseSlot() {
               </Link>
             ))}
           </nav>
-          <Link href={PULSE_LIVE_HREF} className="pulse__door" prefetch={false}>
+          <Link href={PULSE_LIVE_HREF} className="pulse__door" prefetch={false} data-journey="Open the live tape">
             <span className="pulse__door-long">Open the live tape</span>
             <span className="pulse__door-short">Live tape</span> <span aria-hidden>→</span>
           </Link>
