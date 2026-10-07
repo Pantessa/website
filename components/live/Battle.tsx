@@ -218,7 +218,13 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
       clearTimeout(b)
     }
   }, [])
-  const waitingForWallet = source === null && !signedOut && !heldWaited && heldPick === null
+  // The stage's waiting words are decided after mount: the server knows no
+  // URL, no memory and no wallet, and React leaves a mismatched single text
+  // child as the server wrote it, so a word computed during hydration would
+  // sit stale until the overlay unmounts (found 2026-10-07, hidden pane).
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  const waitingForWallet = mounted && source === null && !signedOut && !heldWaited && heldPick === null
   useEffect(() => {
     if (handRef.current || source === 'url' || source === 'memory' || source === 'held') return
     const venue = pickList(ctxRef.current, pickMode).slice(0, DEFAULT_PICK).map((r) => r.market)
@@ -582,7 +588,7 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
 
         <div className="battle__stage" ref={stageRef} onMouseMove={onMove} onMouseLeave={onLeave}>
           <canvas ref={canvasRef} className="battle__canvas" role="img" aria-label={`${viewDef.label}: ${viewDef.blurb}`} />
-          {frames.every((a) => a.track.length === 0) && <div className="battle__empty mono">{armies.length === 0 ? (waitingForWallet ? 'reading your wallet…' : 'picking the armies…') : status === 'live' ? 'first prices landing…' : 'reaching the venue…'}</div>}
+          {frames.every((a) => a.track.length === 0) && <div className="battle__empty mono">{!mounted || armies.length === 0 ? (waitingForWallet ? 'reading your wallet…' : 'picking the armies…') : status === 'live' ? 'first prices landing…' : 'reaching the venue…'}</div>}
         </div>
         <p className="battle__legend mono">
           <span><b>ground</b> = % move {minutes === null ? 'since the page opened' : `since ${minutes >= 60 ? `${minutes / 60}h` : `${minutes}m`} ago`} · horizon = 0%</span>
