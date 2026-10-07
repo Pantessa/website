@@ -21,6 +21,8 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
   const [copied, setCopied] = useState<string | null>(null)
   /** Just-revoked slugs, hidden until the reload lands (optimistic). */
   const [gone, setGone] = useState<string[]>([])
+  // A revoke the server refused puts the row back AND says so (pre-gtm POLISH r2).
+  const [revokeFailed, setRevokeFailed] = useState<string | null>(null)
   const rows = links.filter((l) => !gone.includes(l.slug))
 
   const copy = (slug: string) => {
@@ -163,16 +165,22 @@ export function LinkFunnelTable({ links, onChanged }: { links: LinkRow[]; onChan
                     // the next poll is exactly what this button looked broken
                     // for.
                     setGone((g) => [...g, l.slug])
+                    setRevokeFailed(null)
+                    const undo = () => {
+                      setGone((g) => g.filter((s) => s !== l.slug))
+                      setRevokeFailed(l.slug)
+                    }
                     void fetch(`/api/intent-links/${l.slug}`, { method: 'DELETE' })
-                      .then(() => {
+                      .then((res) => {
+                        if (!res.ok) return undo()
                         notifyLinksChanged()
                         onChanged?.()
                       })
-                      .catch(() => setGone((g) => g.filter((s) => s !== l.slug)))
+                      .catch(undo)
                   }}
                   className="text-[11px] mono text-[color:var(--muted-2)] hover:text-red-400 transition-colors"
                 >
-                  revoke
+                  {revokeFailed === l.slug ? 'revoke failed · retry' : 'revoke'}
                 </button>
               </td>
             </tr>

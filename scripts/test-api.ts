@@ -372,6 +372,7 @@ import { battlefieldPins } from './battlefield-pins'
 import { tapePins } from './tape-pins'
 import { spotHomePins } from './spot-home-pins'
 import { battlePins } from './battle-pins'
+import { orderTicketPins } from './order-ticket-pins'
 import { firstUserPromptOf, shareTweetHrefOf } from '../lib/shared-chat'
 import {
   VIA_RE,
@@ -4438,7 +4439,8 @@ async function main() {
       // touch desktop; below lg it is the sheet's full-width 48px button.
       check('mobile: the request-MCP submit is 40px on touch, a full-width 48px button below lg', /'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors \[@media\(hover:none\)\]:min-h-10 max-lg:w-full max-lg:!min-h-12 max-lg:justify-center max-lg:text-\[14px\]'/.test(addMcp))
       check('mobile: the sign-in gate CTAs are ≥40px below lg (all three)', (gate.match(/px-3 py-1\.5 max-lg:min-h-10 max-lg:px-4 rounded-full bg-\[var\(--accent\)\]/g) ?? []).length === 3)
-      check('mobile: Share is icon-only below sm with an aria-label and a 40px target', /aria-label=\{isPublic \? 'Shared publicly' : 'Share this chat'\}/.test(shareBtn) && /max-lg:min-h-10 max-lg:px-3 rounded-lg border text-\[11px\]/.test(shareBtn) && /whitespace-nowrap max-sm:hidden">\{isPublic \? 'Shared' : 'Share'\}/.test(shareBtn))
+      // RE-PINNED 2026-10-07 (pre-gtm): POLISH added border-solid (the `button { border: none }` reset drew nothing).
+      check('mobile: Share is icon-only below sm with an aria-label and a 40px target', /aria-label=\{isPublic \? 'Shared publicly' : 'Share this chat'\}/.test(shareBtn) && /max-lg:min-h-10 max-lg:px-3 rounded-lg border border-solid text-\[11px\]/.test(shareBtn) && /whitespace-nowrap max-sm:hidden">\{isPublic \? 'Shared' : 'Share'\}/.test(shareBtn))
       const splashDash = await readFile(new URL('../components/SplashDashboard.tsx', import.meta.url), 'utf8')
       check('mobile: briefing tile rows wrap below lg, never ellipsize the amount (splash + app mode)', /truncate max-lg:whitespace-normal font-medium text-white">\{r\.label\}/.test(appMode) && /truncate max-lg:whitespace-normal font-medium text-white">\{r\.label\}/.test(splashDash))
       // Re-pinned 2026-09-24 (squad mobile-native, CHAT): a phone names the
@@ -21190,13 +21192,15 @@ async function main() {
     const actAt = tEth.indexOf('class="sym__act"')
     const chartAt = tEth.indexOf('class="tchart sym__chart"')
     check(
-      '/t/ETH: the act strip sits in the header ABOVE the chart — Buy leads (filled), Protect follows, NO Sell for a visitor who holds none (the server render has no wallet) and no DCA chip (both 2026-09-16); the eyebrow names the contract; no Overview act card',
+      '/t/ETH: the act strip sits in the header ABOVE the chart — Buy leads (filled), Long · Short follow, NO Sell and NO Protect for a visitor who holds none (the server render has no wallet: a spot stop needs a guardable holding, #903 — RE-PINNED 2026-10-06 by the order-ticket SSR replay) and no DCA chip (2026-09-16); the eyebrow names the contract; no Overview act card; the ticket itself is closed on the server',
       actAt > 0 && chartAt > actAt &&
         tEth.includes('ACT ON ETH · SENDS THE ASK · YOUR WALLET SIGNS') &&
         /class="sym__act-chip sym__act-chip--buy"[^>]*>Buy ETH</.test(tEth) &&
+        /sym__act-chip--buy"[^>]*>Long ETH</.test(tEth) && /sym__act-chip--sell"[^>]*>Short ETH</.test(tEth) &&
         !/>Sell ETH</.test(tEth) &&
         !/sym__act-chip--dca|>DCA weekly</.test(tEth) &&
-        /sym__act-chip--protect"[^>]*>Protect with a stop</.test(tEth) &&
+        !/sym__act-chip--protect/.test(tEth) &&
+        !/mkt-ticket--strip/.test(tEth) &&
         !/mkt-card__title">Act on/.test(tEth),
       `act@${actAt} chart@${chartAt}`,
     )
@@ -23477,8 +23481,11 @@ async function main() {
         // Re-pinned (squad mobile-native, 2026-09-24, SHELL): the shell is the
         // phone frame now, so its opening tag carries data-app-frame="".
         /<div class="mkt-shell"(?: data-app-frame="")?><aside[^>]*aria-label="Workspace"/.test(html) &&
-          (html.match(/aria-label="Workspace"/g) ?? []).length === 2 &&
-          (html.match(/aria-label="MARKETS" aria-current="page"/g) ?? []).length === 2 &&
+          // RE-PINNED 2026-10-07 (pre-gtm): /t/<sym> has a loading.tsx now (POLISH — a row tap paints the
+          // page's silhouette at once). Its fallback wears the same shell, streamed ahead of the page and
+          // swapped out on resolve, so a served /t can carry the spine twice over (2 → 4); /markets stays 2.
+          [2, route === '/t/AAPL' ? 4 : 2].includes((html.match(/aria-label="Workspace"/g) ?? []).length) &&
+          [2, route === '/t/AAPL' ? 4 : 2].includes((html.match(/aria-label="MARKETS" aria-current="page"/g) ?? []).length) &&
           !/<header class="nav/.test(html) && !html.includes('nav__tabs') && !html.includes('data-ask-door="nav"') &&
           /<div class="mkt-frame__side"><div class="mkt-frame__top" data-slot="top-strip"><button[^>]*data-ask-door="rail"[^>]*>[\s\S]*?<\/button><div class="mkt-frame__acct"><\/div><\/div><aside class="mkt-frame__rail"/.test(html) &&
           html.includes('data-ask-door="pill"'),
@@ -23843,7 +23850,8 @@ async function main() {
           // MK2 (2026-09-15): the header chips live in the ExecStrip slot now — SymbolPage keeps
           // the two no-chart chips and hands the strip `act` itself; the stub's chips call onAsk.
           (symS.match(/onClick=\{sendOnClick\(/g) ?? []).length === 2 && /\{door\}/.test(symS) &&
-          /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} last=\{stats\?\.last \?\? null\} \/>/.test(symS) &&
+          // RE-PINNED 2026-10-06 (order ticket): the strip also takes the page's BUILD door — the ticket's sentence docks in Ask the chart.
+          /<ExecStrip symbol=\{sym\} pair=\{pair\} onAsk=\{act\} onBuild=\{buildHere\} last=\{stats\?\.last \?\? null\} \/>/.test(symS) &&
           /else prefillAct\(ask\)/.test(railS) && /\{prefillDoor\}/.test(railS) && !/else router\.push\(promptHref\(ask\)\)/.test(railS) &&
           // Re-pinned by the mobile-native squad (2026-09-24, NAV): the phone
           // posture executes lib/phone-nav (pickPhone), so the door call is
@@ -26051,7 +26059,7 @@ async function main() {
       `${lvlBuy?.ask} | ${lvlSell?.ask}`,
     )
     check(
-      'MK2/EXEC surfaces: RouteTable/ExecStrip/PositionPanel/CompoundComposer each take { symbol, pair, onAsk } (PositionPanel + address?), every chip carries data-ask and SENDS through onAsk on click (never a /chat prefill link), PositionPanel re-exports positionSummary',
+      'MK2/EXEC surfaces: RouteTable/ExecStrip/PositionPanel/CompoundComposer each take { symbol, pair, onAsk } (PositionPanel + address?), every chip carries data-ask and SENDS through onAsk on click (never a /chat prefill link), PositionPanel re-exports positionSummary (RE-PINNED 2026-10-06: a strip chip opens the order ticket on its side; the ticket\'s button sends — scripts/order-ticket-pins)',
       [rtSrc, esSrc, ppSrc, ccSrc].every((src) => src.includes('onAsk: (ask: string) => void') && src.includes('data-ask=')) &&
         [rtSrc, ppSrc, ccSrc].every((src) => !src.includes('/chat?prompt=')) &&
         // The strip keeps the act-strip wire: legacy classes + the /chat prefill href as the no-JS fallback, a click SENDS.
@@ -34671,6 +34679,8 @@ async function main() {
   // Where a chainless swap builds (2026-10-06): the home-chain table and
   // rule, the chain card's come-back plan, the wallet view's kept rows.
   spotHomePins(check)
+  // The order ticket (2026-10-06): every shape the form composes lands native, the honesty rules, the sizing, the Available line, the wiring.
+  orderTicketPins(check)
   // Own-wallet reads with no wallet (2026-10-06, the /live ask door): the
   // sign-in door, never a planner promise to "fetch your tokens".
   {

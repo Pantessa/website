@@ -1,0 +1,51 @@
+/* Route skeletons (squad pre-gtm POLISH, 2026-10-07) — the loading.tsx
+   vocabulary. A skeleton is the page's own silhouette in --fg tints, so a
+   soft navigation answers the tap at once (Next prefetches the loading
+   boundary of a dynamic route) and the real page lands in the same place.
+   Invisible for the first 160ms: a fast load never flashes grey. One shimmer,
+   stilled under reduced motion. Theme-agnostic (fg-relative mixes). */
+.skel { animation: skel-in .2s ease-out .16s both; }
+@keyframes skel-in { from { opacity: 0 } to { opacity: 1 } }
+
+.skel__bar {
+  display: block; border-radius: 6px; height: 12px;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--fg) 6%, transparent) 0%,
+    color-mix(in srgb, var(--fg) 11%, transparent) 45%,
+    color-mix(in srgb, var(--fg) 6%, transparent) 90%);
+  background-size: 220% 100%;
+  animation: skel-shine 1.5s ease-in-out infinite;
+}
+.skel__bar--title { height: 30px; border-radius: 8px; }
+.skel__bar--chip { height: 34px; border-radius: 999px; }
+.skel__bar--block { border-radius: 12px; }
+@keyframes skel-shine { from { background-position: 120% 0 } to { background-position: -100% 0 } }
+
+.skel__row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.skel__stack { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.skel__said {
+  font-family: var(--mk-font-mono, 'Geist Mono', ui-monospace, monospace);
+  font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+}
+
+/* /t/<symbol> — header, act chips, tabs, the chart card. */
+.skel--sym { padding-top: 22px; display: flex; flex-direction: column; gap: 18px; }
+.skel--sym .skel__head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.skel--sym .skel__tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+.skel--sym .skel__chart { height: clamp(320px, 58dvh, 640px); }
+
+/* The docked side column on the markets frame: the strip + the watchlist. */
+.skel__side { grid-area: rail; align-self: stretch; min-width: 0; border-left: 1px solid var(--line); }
+.skel__side-top { height: var(--mkt-top-h, 52px); border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
+.skel__side-rows { padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; }
+
+/* /live — the tab strip, the chart band, the tape rows. */
+.skel--board { padding-top: 22px; display: flex; flex-direction: column; gap: 16px; }
+.skel--board .skel__band { height: clamp(180px, 28dvh, 280px); }
+
+@media (max-width: 1023px) {
+  .skel__side { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel, .skel__bar { animation: none; }
+}

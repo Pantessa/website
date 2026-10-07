@@ -13,6 +13,9 @@
 // harness need the rule with no database and no RPC. lib/ask-failure.ts
 // re-exports it, so there is still exactly ONE definition.
 
+import { isMoneyAssetWord } from '@/lib/charts'
+import { englishAsk } from '@/lib/ask-lingua'
+
 // Verb + evidence-of-money: both required, so "what is a swap?" (no digits,
 // no address) and "tell me a joke" never log. The evidence side accepts
 // amounts, $, addresses/ENS, marketplace URLs, all-sends, and NFT words —
@@ -25,7 +28,7 @@
 // audit:asks reported them green, because the replica skipped this gate.
 // scripts/audit-asks.ts now pins one probe sentence per family.
 const MONEY_VERB_RE =
-  /\b(?:send|transfer|swap|sell|buy|bridge|stake|unstake|deposit|withdraw|convert|fund|move|need|want|get\s+me|long|short|list|repay|borrow|supply|protect|mint|pay|(?:re)?tile)\b|\b(?:earn|yield|apy|apr|interest|lend|lending|save|savings)\b|\b(?:ape|yeet|grab|acquire|purchase|invest|pick\s+up|dump|offload|exit|unlend|trade|exchange)\b|\bcash\s+out\b|\b(?:pull|take)\s+out\b|\btop\s+up\b|\bstop[\s-]?loss\b|\btake[\s-]?profit\b|\d+(?:\.\d+)?\s*%\s*(?:stop|drop)\b|\bput\b.*\b(?:into|in\s+to)\b|\bget\b.*\b(?:over\s+to|onto|to)\b/i
+  /\b(?:send|transfer|swap|sell|buy|bridge|stake|unstake|deposit|withdraw|convert|fund|move|need|want|get\s+me|long|short|list|repay|borrow|supply|protect|mint|pay|(?:re)?tile|perps?|perpetuals?|leverage|leveraged|margin|futures|gimme|get|tip)\b|\b(?:earn|yield|apy|apr|interest|lend|lending|save|savings)\b|\b(?:ape|yeet|grab|acquire|purchase|invest|pick\s+up|dump|offload|exit|unlend|trade|exchange)\b|\bcash\s+out\b|\b(?:pull|take)\s+out\b|\btop\s+up\b|\bstop[\s-]?loss\b|\btake[\s-]?profit\b|\d+(?:\.\d+)?\s*%\s*(?:stop|drop)\b|\bput\b.*\b(?:into|in\s+to)\b|\bget\b.*\b(?:over\s+to|onto|to)\b/i
 // `stock`/`share(s)` count as evidence (2026-09-24): "I want to buy some
 // apple shares" is a money ask with no digit, no $ and no ticker — it fell
 // to the planner while "buy $10 of apple stock" built. With the word in,
@@ -53,8 +56,44 @@ const PROTECT_SHAPE_RE =
 // fence handles the rest.
 const GAS_SHAPE_RE = /\b(?:fix|top\s*up|need|no|out\s+of|more)\b[^.?!]*\bgas\b|\bgas\b[^.?!]*\b(?:on|for)\b|\bcan'?t\s+(?:sign|send|transact)\b/i
 
+// A named ASSET is evidence too (pre-gtm 2026-10-06): "buy apple", "buy
+// bitcoin", "short btc", "buy tesla" carried a verb and nothing the rule
+// above counted, so the first thing a stranger types on a chart site fell to
+// the planner (prose, or `error` when the model is down) while "buy eth"
+// reached the intent net. The word has to be an asset we chart: a coin, a
+// household name, or a four-plus-letter stock ticker that is not also an
+// English word (lib/charts isMoneyAssetWord — "buy now", "run it" stay prose).
+const QUESTION_START_RE = /^(?:what|whats|what's|how|why|when|which|who|where|should|is|are|does|do|did|will|would|explain|tell\s+me|show|list|compare)\b/i
+
+function namesAnAsset(message: string): boolean {
+  for (const w of message.match(/\$?[a-zA-Z][a-zA-Z0-9.]{1,11}/g) ?? []) if (isMoneyAssetWord(w.replace(/^\$/, ''))) return true
+  return false
+}
+
+// A yield ask that names nothing ("earn yield", "earn interest", "put my
+// money to work") and a bare money verb on its own ("buy", "invest", "stake
+// something") — the first words a stranger types into a composer. Neither
+// carries evidence under the rules above, so both fell to the planner
+// (pre-gtm 2026-10-06). A question stays a read.
+const YIELD_SHAPE_RE = /^(?!(?:what|whats|what's|how|why|is|are|does|do|which|where|when|explain|tell)\b)[^?]*\b(?:earn|yield|interest|apy|apr)\b[^?]*$/i
+const BARE_VERB_RE = /^(?:please\s+|i\s+want\s+to\s+|i\s+wanna\s+|lets\s+|let's\s+)?(?:buy|invest|trade|stake|earn|long|short)(?:\s+(?:something|some|crypto|stocks?|a\s+stock|a\s+coin|here|it))*[.!]?$/i
+
+// "$10 eth", "$25 AAPL", "20 bucks eth" — an amount beside an asset with no
+// verb and no "of" (wave 2). BARE_AMOUNT_OF_RE wanted the "of".
+// "0.01 eth to usdc", "5 usdc for eth", "10 USDC -> ETH" — a verbless swap.
+const BARE_SWAP_RE = /(?:^|\s)\$?\d[\d,]*(?:\.\d+)?\s+\$?([a-zA-Z][a-zA-Z0-9.]{1,11})\s*(?:to|for|into|->|-->|=>|→|»)\s*\$?([a-zA-Z][a-zA-Z0-9.]{1,11})\b/
+const BARE_AMOUNT_ASSET_RE = /(?:^|\s)(?:\$\d[\d,]*(?:\.\d+)?|\d[\d,]*(?:\.\d+)?\s*(?:dollars?|usd|bucks))\s+(?:of\s+|worth\s+of\s+|in\s+)?\$?([a-zA-Z][a-zA-Z0-9.]{1,11})\b/
+
 /** Pure: does this message look like it wanted money to move? */
-export function moneyShaped(message: string): boolean {
-  if (MONEY_VERB_RE.test(message) && MONEY_EVIDENCE_RE.test(message)) return true
-  return BARE_AMOUNT_OF_RE.test(message) || PROTECT_SHAPE_RE.test(message) || GAS_SHAPE_RE.test(message)
+export function moneyShaped(raw: string): boolean {
+  // Another language's money verb is the same shape (lib/ask-lingua).
+  const message = englishAsk(raw)
+  const bareAsset = message.match(BARE_AMOUNT_ASSET_RE)
+  if (bareAsset && isMoneyAssetWord(bareAsset[1])) return true
+  const bareSwap = message.match(BARE_SWAP_RE)
+  if (bareSwap && (isMoneyAssetWord(bareSwap[1]) || isMoneyAssetWord(bareSwap[2]) || /^usd[ctg]?$|^dai$/i.test(bareSwap[1]) || /^usd[ctg]?$|^dai$/i.test(bareSwap[2]))) return true
+  // An asset name is evidence for an IMPERATIVE; a question that names one
+  // ("what is the apy on aave?") stays a read and never files as a failure.
+  if (MONEY_VERB_RE.test(message) && (MONEY_EVIDENCE_RE.test(message) || (!QUESTION_START_RE.test(message.trim()) && namesAnAsset(message)))) return true
+  return BARE_AMOUNT_OF_RE.test(message) || PROTECT_SHAPE_RE.test(message) || GAS_SHAPE_RE.test(message) || YIELD_SHAPE_RE.test(message.trim()) || BARE_VERB_RE.test(message.trim())
 }

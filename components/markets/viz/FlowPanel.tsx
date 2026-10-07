@@ -7,6 +7,7 @@
 // ranked list, venue colors stable via seriesVar.
 
 import { useEffect, useState } from 'react'
+import FetchFailed from '@/components/FetchFailed'
 import type { ChartPair } from '@/lib/charts'
 import { fmtCompact, seriesVar, TAPE_FOOTNOTE } from '@/lib/markets-look'
 import Ribbon from './Ribbon'
@@ -38,9 +39,20 @@ export interface FlowPanelProps {
   className?: string
 }
 
+/** A venue's gap in words a stranger reads (pre-gtm POLISH r2): the route's
+ *  gap carried the raw error ("unread — The operation was aborted due to
+ *  timeout"), which also squeezed the venue's name out of its row. */
+function gapWords(gap: string | null | undefined): string {
+  if (!gap) return 'no read'
+  if (/timed? ?out|timeout|abort/i.test(gap)) return 'unread · slow to answer'
+  if (/fetch failed|network|ECONN|ENOTFOUND|socket|5\d\d/i.test(gap)) return 'unread · didn’t answer'
+  return gap.length > 28 ? 'unread' : gap
+}
+
 export default function FlowPanel({ symbol, pair, className = '' }: FlowPanelProps) {
   const [data, setData] = useState<FlowResponse | null>(null)
   const [state, setState] = useState<'loading' | 'ok' | 'down'>('loading')
+  const [nonce, setNonce] = useState(0)
   useEffect(() => {
     let alive = true
     setState('loading')
@@ -58,7 +70,7 @@ export default function FlowPanel({ symbol, pair, className = '' }: FlowPanelPro
     return () => {
       alive = false
     }
-  }, [symbol])
+  }, [symbol, nonce])
 
   const sources = data?.sources ?? []
   const live = sources.filter((s) => s.usd != null && s.usd > 0)
@@ -74,7 +86,8 @@ export default function FlowPanel({ symbol, pair, className = '' }: FlowPanelPro
       {state === 'loading' ? (
         <div className="mk-num" style={{ color: 'var(--muted-2)', fontSize: 12 }}>Reading venues…</div>
       ) : state === 'down' ? (
-        <div className="mk-num" style={{ color: 'var(--muted-2)', fontSize: 12 }}>Venue reads unavailable — retrying next open.</div>
+        // pre-gtm POLISH r3: said "retrying next open", which nothing did.
+        <FetchFailed what="the venues" onRetry={() => setNonce((n) => n + 1)} />
       ) : (
         <>
           <div className="mk-receipt">
@@ -94,7 +107,7 @@ export default function FlowPanel({ symbol, pair, className = '' }: FlowPanelPro
                     {s.detail ? ` · ${s.detail}` : ''}
                   </small>
                 </span>
-                <span className={`mk-flow__amt ${s.usd == null ? 'mk-flow__amt--gap' : ''}`}>{s.usd == null ? (s.gap ?? 'no read') : fmtCompact(s.usd, { usd: true })}</span>
+                <span className={`mk-flow__amt ${s.usd == null ? 'mk-flow__amt--gap' : ''}`}>{s.usd == null ? gapWords(s.gap) : fmtCompact(s.usd, { usd: true })}</span>
               </div>
             ))}
             {sources.length === 0 ? <div className="mk-flow__gaps">No venue reads this symbol yet.</div> : null}

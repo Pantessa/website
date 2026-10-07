@@ -27,7 +27,9 @@ import {
   mergePulseFills,
   pickPulseMarkets,
   pulseBars,
+  pulseLiveHref,
   pulseMarketsFrom,
+  pulsePick,
   pulseNoChipWords,
   pulseStatusWords,
   pulseStreamWanted,
@@ -217,7 +219,23 @@ export function pulsePins(check: Check): void {
   check('pulse: the band mounts in the splash\'s lead seat (HomeSurface) as a default export with no props, and `/` is a public markets path (looking needs no wallet)',
     /<PulseSlot \/>/.test(home) && /export default function PulseSlot\(\)/.test(slot) && isMarketsPath('/') && isPublicAppPath('/'))
   check('pulse: the door and the views are links in the band\'s head (a URL never fires a turn): /live with prefetch off, and the three views from PULSE_VIEW_LINKS',
-    /href=\{PULSE_LIVE_HREF\}/.test(slot) && /PULSE_VIEW_LINKS\.map/.test(slot) && !/openDoor\([^)]*PULSE_LIVE_HREF/.test(slot) && slot.indexOf('PULSE_VIEW_LINKS.map') < slot.indexOf('</header>') && /data-markets=\{markets\.length\}/.test(slot))
+    /href=\{pulseLiveHref\(pick\)\}/.test(slot) && pulseLiveHref(null) === PULSE_LIVE_HREF && /PULSE_VIEW_LINKS\.map/.test(slot) && !/openDoor\([^)]*PULSE_LIVE_HREF/.test(slot) && slot.indexOf('PULSE_VIEW_LINKS.map') < slot.indexOf('</header>') && /data-markets=\{markets\.length\}/.test(slot))
+
+  // ── The token pick (2026-10-06: "add the token options to track") ─────
+  const ethBars = pulseBars(FIXTURE, NOW, undefined, 'ETH')
+  const allBars = pulseBars(FIXTURE, NOW)
+  const ethTiles = pulseTiles(FIXTURE, NOW, () => true, 'ETH')
+  check('pulse pick: a token narrows the bars and every tile to that book — the hot market IS the pick, the largest print is its own, and its dollars are never more than All\'s',
+    ethBars.length === allBars.length && ethBars.every((b, i) => b.total <= allBars[i].total) && ethBars.reduce((n, b) => n + b.total, 0) > 0 &&
+      ethTiles.hot?.market.ticker === 'ETH' && ethTiles.largest?.fill.market === 'ETH' && ethTiles.notionalPerMin === 1000,
+    `hot=${ethTiles.hot?.market.ticker} largest=${ethTiles.largest?.fill.market} perMin=${ethTiles.notionalPerMin}`)
+  check('pulse pick: a pick the stream no longer carries falls back to All, never a band reading zero; the door carries the pick to /live as ?m=',
+    pulsePick('ETH', ['BTC', 'ETH']) === 'ETH' && pulsePick('DOGE', ['BTC', 'ETH']) === null && pulsePick(null, ['ETH']) === null &&
+      pulseLiveHref('xyz:SNDK') === '/live?m=xyz%3ASNDK' && pulseLiveHref(null) === '/live')
+  check('pulse pick: the chip row renders All + one button per streamed market, the pick reaches pulseBars and pulseTiles, the remembered pick is read after mount (try/catch), and the row is fixed-height and leaves the phone (the 160px budget holds)',
+    /className="pulse__markets"/.test(slot) && /markets\.map\(\(m\)/.test(slot) && /pulseBars\(fills, now, undefined, pick\)/.test(slot) && /pulseTiles\(fills, now, chipOk, pick\)/.test(slot) &&
+      /matchMedia\('\(min-width: 641px\)'\)\.matches\) return\s*try \{\s*const m = window\.localStorage\.getItem\(PULSE_PICK_KEY\)/.test(slot) &&
+      /\.pulse__markets \{[^}]*height: 28px/.test(css) && /@container pulse \(max-width: 560px\) \{[^]*?\.pulse__markets \{ display: none; \}/.test(css))
 }
 
 if (process.argv[1]?.endsWith('pulse-pins.ts')) {

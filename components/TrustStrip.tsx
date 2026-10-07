@@ -32,7 +32,8 @@ const HOSTS: Row[] = [
     g: 'chart',
     t: 'You see the asks you couldn’t answer',
     d: 'Every turn on your site lands in your dashboard — funnels, dead ends, money moved, and which tool would have closed each gap.',
-    href: '/dashboard',
+    // pre-gtm POLISH: a stranger's /dashboard sends them home — link the docs that show it.
+    href: '/docs/embed',
   },
   {
     g: 'pause',
@@ -44,7 +45,7 @@ const HOSTS: Row[] = [
     g: 'rise',
     t: 'Built on routes that earned it',
     d: 'MCPs score on reliability, liveness, speed and settled history — so the set behind your chat isn’t a guess.',
-    href: '/leaderboard',
+    href: '/benchmarks',
   },
 ]
 
@@ -53,7 +54,7 @@ const USERS: Row[] = [
     g: 'pen',
     t: 'Nothing moves without your signature',
     d: 'Pantessa holds no keys and never has. The wallet that pops is yours, and the transaction it shows is the one that gets sent.',
-    href: '/docs',
+    href: '/docs/trust',
   },
   {
     g: 'gate',
@@ -71,7 +72,7 @@ const USERS: Row[] = [
     g: 'revoke',
     t: 'Standing work stays revocable',
     d: 'A schedule, a Spend Permission, a Guardian key — each scoped to one job, each cancellable from the chat or the dashboard.',
-    href: '/dashboard/guardian',
+    href: '/docs/guardian',
   },
 ]
 

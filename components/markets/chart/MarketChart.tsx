@@ -1360,9 +1360,11 @@ export default function MarketChart({
           </p>
         )}
         {candles.length === 0 && (
-          <div className={`mkt-chart__empty${data?.error ? '' : ' is-loading'}`} role="status" aria-label={data?.error ? undefined : 'Loading candles'}>
-            {data?.error ? (
-              <span className="text-[12px] text-[color:var(--muted-2)]">Chart feed unavailable — retrying.</span>
+          <div className={`mkt-chart__empty${data?.error || stale ? '' : ' is-loading'}`} role="status" aria-label={data?.error || stale ? undefined : 'Loading candles'} data-fetch-failed={data?.error || stale ? '' : undefined}>
+            {/* stale with no bars = the read failed outright (a 5xx answers no
+                `candles` at all): say so instead of a skeleton forever (pre-gtm POLISH r3). */}
+            {data?.error || stale ? (
+              <span className="text-[12px] text-[color:var(--muted-2)]">Couldn’t read the candles — retrying on its own.</span>
             ) : (
               <span className="mkt-skel" aria-hidden="true">
                 {SKELETON_BARS.map((b, i) => (
@@ -1419,6 +1421,13 @@ export default function MarketChart({
         )}
       </div>
 
+      {/* The Wall asked for and every read failed: say so (pre-gtm POLISH r2). */}
+      {wallOn && !wallStatus?.active && wallStatus?.failed && (
+        <p className="wall-legend mono" data-fetch-failed>
+          <b>THE WALL</b>
+          <span>couldn&rsquo;t read the order books or positioning · retrying on its own</span>
+        </p>
+      )}
       {/* The Wall's key, under the plot, only while it draws. */}
       {wallOn && wallStatus?.active && (
         <p className="wall-legend mono">

@@ -86,10 +86,14 @@ export function useIntentLinks() {
           setLoadError('Sign in with your wallet to mint and track intent links.')
           return null
         }
+        // A 5xx used to parse its error body as the list → links undefined →
+        // "No links yet" (pre-gtm POLISH r2). Fail it into loadError instead.
+        if (!r.ok) throw new Error(`links ${r.status}`)
         return r.json()
       })
       .then((d: { links: LinkRow[]; earnings?: Earnings } | null) => {
-        if (d) {
+        if (d && Array.isArray(d.links)) {
+          setLoadError(null)
           setLinks(d.links)
           setEarnings(d.earnings ?? null)
         }

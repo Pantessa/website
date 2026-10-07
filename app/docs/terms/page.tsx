@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { DOCS_PAGES, docsUrl } from '@/lib/docs'
 import { SITE_CARD } from '@/lib/og-defaults'
+import { LINK_FEE_PCT, SWAP_FEE_PCT } from '@/lib/fees'
 
 const PAGE = DOCS_PAGES.find((p) => p.slug === 'terms')!
 const UPDATED = 'September 3, 2026'
@@ -144,10 +145,10 @@ export default function TermsPage() {
 
         <h2>5. Our fees</h2>
         <p>
-          Pantessa charges a <strong>transaction fee of 0.20%</strong> on swaps it routes. The fee
+          Pantessa charges a <strong>transaction fee of {SWAP_FEE_PCT}</strong> on swaps it routes. The fee
           is shown to you before you sign and is included as a visible leg of the transaction you
           sign; it is paid on-chain to our treasury address. Transactions that originate from a
-          shared intent link carry a <strong>0.50%</strong> rate instead, of which half is paid to
+          shared intent link carry a <strong>{LINK_FEE_PCT}</strong> rate instead, of which half is paid to
           the person who created that link. Fee rates may change; the rate that applies is the one
           quoted to you at the time you sign.
         </p>

@@ -96,6 +96,15 @@ export default function SymbolPage({
   const sym = pair?.symbol ?? symbol
   const name = symbolName(sym)
   const [stats, setStats] = useState<ChartStats | null>(null)
+  // The header's "loading … candles" never ended when the feed failed (pre-gtm
+  // POLISH r3): after 12s with no stats it says the feed didn't answer.
+  const [statsLate, setStatsLate] = useState(false)
+  useEffect(() => {
+    setStatsLate(false)
+    if (stats) return
+    const t = setTimeout(() => setStatsLate(true), 12_000)
+    return () => clearTimeout(t)
+  }, [sym, stats])
   const [expanded, setExpanded] = useState(false)
   const shellRef = useRef<HTMLDivElement | null>(null)
 
@@ -207,6 +216,18 @@ export default function SymbolPage({
   // (lib/use-connect-to-act).
   const { act, door } = useConnectToAct({ run: runAsk, redirectFor: promptHref })
   const onAsk = useCallback((a: TradeAsk) => act(a.ask), [act])
+  // The order ticket's send (2026-10-06): a SIZED sentence builds on this
+  // page, in Ask the chart's order ticket under the chart (the page's door is
+  // docked there, lib/ask-door) — the chart stays, and the signed fill paints
+  // on it. With no dock (no chart) it runs in the app like any chip.
+  const buildHere = useCallback(
+    (ask: string) => {
+      const dock = useAskDoor.getState().dock
+      if (dock) dock(ask, { send: true })
+      else act(ask)
+    },
+    [act],
+  )
   // A chip is a real link (the /chat prefill: no-JS, a new tab); a plain
   // click sends through the act door instead.
   const sendOnClick = (ask: string) => (e: ReactMouseEvent<HTMLAnchorElement>) => {
@@ -344,9 +365,11 @@ export default function SymbolPage({
                 <span className="sym__feed mono">{feedLabel}</span>
               </>
             ) : pair ? (
-              <span className="sym__feed mono">loading {feedLabel} candles…</span>
-            ) : (
-              <span className="sym__feed mono">{unknown ? 'Not listed' : 'No live chart yet'}</span>
+              <span className="sym__feed mono">{statsLate ? `${feedLabel} didn’t answer · retrying` : `loading ${feedLabel} candles…`}</span>
+            ) : unknown ? null : (
+              // An unknown ticker already wears "Not listed" in the title row;
+              // a second copy in the quote slot read as a stutter (POLISH, pre-gtm r1).
+              <span className="sym__feed mono">No live chart yet</span>
             )}
             {pair && day && rangeAt !== null && (
               <div className="mk-range" data-range-at={rangeAt.toFixed(3)} title={`24h range: $${fmtQuotePrice(day.low)} – $${fmtQuotePrice(day.high)}`}>
@@ -364,7 +387,7 @@ export default function SymbolPage({
               what the harness pins; the slot's body is theirs). */}
           {pair && (
             <div className="sym__exec" data-seat="ExecStrip">
-              <ExecStrip symbol={sym} pair={pair} onAsk={act} last={stats?.last ?? null} />
+              <ExecStrip symbol={sym} pair={pair} onAsk={act} onBuild={buildHere} last={stats?.last ?? null} />
             </div>
           )}
           {pair && <GuideSeat surface="symbol" symbol={sym} ask={composeAsk(pair, 'buy', { usd: 25 })} />}
@@ -486,7 +509,7 @@ export default function SymbolPage({
               ) : tab === 'technicals' ? (
                 <TechnicalsTab symbol={sym} pair={pair} initialTf={initialTf} onAsk={onChartAsk} />
               ) : (
-                <TradeTab symbol={sym} pair={pair} onAsk={onAsk} onAskText={act} last={stats?.last ?? null} />
+                <TradeTab symbol={sym} pair={pair} onAsk={onAsk} onAskText={act} onBuild={buildHere} last={stats?.last ?? null} />
               )
             ) : unknown ? null : (
               <section className="mkt-card">

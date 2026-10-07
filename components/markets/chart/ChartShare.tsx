@@ -33,6 +33,7 @@ import { useShareVia } from '@/components/ShareActions'
 import { withVia } from '@/lib/share-posts'
 import { absoluteUrl } from '@/lib/site-url'
 import { viewUrl, type BoardMode, type ChartView } from '@/lib/markets'
+import { friendlyError } from '@/lib/friendly-error'
 
 export interface ChartShareProps {
   symbol: string
@@ -174,7 +175,7 @@ export default function ChartShare({ symbol, tf, lines, view, board, capture, on
       setCall(made)
       return made
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not publish.')
+      setErr(friendlyError(e, 'Could not publish.'))
       return null
     } finally {
       setBusy(false)

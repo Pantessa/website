@@ -133,4 +133,6 @@ export function fmtPct(n: number | null | undefined, opts: { digits?: number; si
 }
 
 /** The honest footnote every live-number block carries. */
-export const TAPE_FOOTNOTE = 'Live feeds, no license to resell: Coinbase spot, Hyperliquid, Robinhood 24/7 tape. Numbers are what the feed said, when it said it.'
+// RE-WORDED 2026-10-07 (pre-gtm POLISH; GTM WRAP decision 1): "no license to resell" read as a legal admission on
+// every Overview. The credit names the feeds and keeps the honesty clause.
+export const TAPE_FOOTNOTE = 'Live from Coinbase spot, Hyperliquid and the Robinhood 24/7 tape. Numbers are what the feed said, when it said it.'

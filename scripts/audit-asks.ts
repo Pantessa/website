@@ -39,6 +39,17 @@ const CORPUS: Entry[] = [
   // The live dead-end that started this audit
   { ask: 'swap 1 USDC from base to Etheruem', source: 'live 2026-07-22', expect: 'action' },
 
+  // The order ticket (2026-10-06): the sized shapes the header's form composes
+  // (lib/order-ticket; the full matrix is pinned in scripts/order-ticket-pins.ts).
+  { ask: 'Buy $12.50 of UNI', source: 'order ticket (dollar box)', expect: 'action' },
+  { ask: 'Sell 2.5 UNI', source: 'order ticket (unit box)', expect: 'action' },
+  { ask: 'Sell all my UNI', source: 'order ticket (All)', expect: 'action' },
+  { ask: 'limit order: buy 2.7778 UNI for at most 25 USDC on Ethereum', source: 'order ticket (limit buy)', expect: 'action' },
+  { ask: 'limit order: sell 2.5 UNI for at least 27.5 USDC on Base', source: 'order ticket (limit sell)', expect: 'action' },
+  { ask: '2x Long $25 of UNI on Hyperliquid, then protect my UNI long with a 10% stop', source: 'order ticket (perp + stop)', expect: 'action' },
+  { ask: 'Short $25 of HYPE on Hyperliquid, then protect my HYPE short with a 5% stop', source: 'order ticket (short + stop)', expect: 'action' },
+  { ask: 'Stake 0.01 ETH on Lido', source: 'order ticket (stake sized in dollars at the chart price)', expect: 'action' },
+
   // Live asks 2026-07-23 — multi-clause sends + stable acquisition
   {
     ask: 'I want to send all my USDC on arbitrum and an additional 5 USDC on base to 0x2055Fa9E99565181A8509B81cBD0aa3D73be8d56',

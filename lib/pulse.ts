@@ -148,8 +148,8 @@ export interface PulseBar {
 /** The chart's bars: the last `windowSec` seconds ending on the current
  *  second, every second present (a quiet one is a zero bar), the six flow
  *  classes folded to the two inks the band draws. */
-export function pulseBars(fills: readonly TapeFill[], nowMs: number, windowSec = PULSE_WINDOW_SEC): PulseBar[] {
-  return flowBuckets(fills, nowMs, windowSec).map((b) => {
+export function pulseBars(fills: readonly TapeFill[], nowMs: number, windowSec = PULSE_WINDOW_SEC, market: string | null = null): PulseBar[] {
+  return flowBuckets(fills, nowMs, windowSec, market).map((b) => {
     let up = 0
     let down = 0
     for (const c of FLOW_CLASSES) {
@@ -185,8 +185,8 @@ export interface PulseTiles {
  * no chip, never a dead button. An empty buffer answers nulls; the band
  * prints "waiting for the first fill", not a dash it invented.
  */
-export function pulseTiles(fills: readonly TapeFill[], nowMs: number, chipOk: (ask: string) => boolean = () => true): PulseTiles {
-  const st = tapeStats(fills, nowMs)
+export function pulseTiles(fills: readonly TapeFill[], nowMs: number, chipOk: (ask: string) => boolean = () => true, market: string | null = null): PulseTiles {
+  const st = tapeStats(fills, nowMs, market)
   const gate = (f: FollowAsk | null): PulseTileChip | null => (f && chipOk(f.ask) ? f : null)
   let hot: PulseTiles['hot'] = null
   if (st.hotMarket) {
@@ -213,6 +213,36 @@ export function pulseTiles(fills: readonly TapeFill[], nowMs: number, chipOk: (a
 /** Why a tile has no chip, in /live's words — said in place of the button. */
 export function pulseNoChipWords(m: TapeMarket, side: TapeSide): string {
   return m.kind === 'stock' && side === 'sell' ? 'needs a position' : 'no route here'
+}
+
+// ── The token pick ───────────────────────────────────────────────────────────
+
+/**
+ * Which book the band is reading (Nate, 2026-10-06: "add the token options
+ * to track on the new home stream bit"): /live's market chips, on the band.
+ * `null` = every book the socket carries. The pick only narrows what the
+ * band DRAWS — the socket keeps every market, so switching is instant and
+ * the chart never empties on a click. A pick the stream no longer carries
+ * (the universe re-aimed away from it) falls back to All, never a band
+ * quietly reading zero.
+ */
+export function pulsePick(pick: string | null, markets: readonly string[]): string | null {
+  return pick && markets.includes(pick) ? pick : null
+}
+
+/** A remembered or linked pick must look like a venue market name. */
+export const PULSE_PICK_RE = /^[A-Za-z0-9:]{1,24}$/
+
+/** Per-viewer convenience: the last pick, in this browser only. */
+export const PULSE_PICK_KEY = 'pantessa.pulse.pick.v1'
+
+/** The door carries the pick: /live opens filtered to the same book. */
+export function pulseLiveHref(pick: string | null, base = PULSE_LIVE_HREF): string {
+  if (!pick) return base
+  const [path, query] = base.split('?')
+  const q = new URLSearchParams(query ?? '')
+  q.set('m', pick)
+  return `${path}?${q.toString()}`
 }
 
 // ── The hidden-tab policy ────────────────────────────────────────────────────
@@ -303,6 +333,8 @@ export const PULSE_CHART_H_PHONE = 52
  *  the SSR frame IS the final frame. The phone fits under 160px — the
  *  coordinator's budget off MOBILE's baseline (the lead seat starts at
  *  y≈173 at 375 and the first board row must stay above the bar): the
- *  chart + one row of two 44px chip tiles, the foot sentence stepping out. */
-export const PULSE_BAND_MIN_H = { desktop: 224, phone: 160 } as const
+ *  chart + one row of two 44px chip tiles, the foot sentence stepping out.
+ *  Desktop grew 224 → 260 for the token chip row (28px + 8px air); the phone
+ *  keeps 160 by leaving the chip row to wider screens. */
+export const PULSE_BAND_MIN_H = { desktop: 260, phone: 160 } as const
 export const PULSE_PHONE_BUDGET_PX = 160

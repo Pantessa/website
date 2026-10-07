@@ -82,8 +82,8 @@ export default function ShareButton({ signInLane = false }: { signInLane?: boole
           aria-label="Sign in to share this chat"
           data-share-lane="sign-in"
           className={cn(
-            'flex items-center gap-1.5 px-2.5 py-1 max-lg:min-h-10 max-lg:px-3 rounded-lg border text-[11px] transition-colors disabled:opacity-60',
-            'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)]',
+            'flex items-center gap-1.5 px-2.5 py-1 max-lg:min-h-10 max-lg:px-3 rounded-lg border border-solid text-[11px] transition-colors disabled:opacity-60',
+            'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)]',
           )}
         >
           {signingIn ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />}
@@ -117,6 +117,7 @@ export default function ShareButton({ signInLane = false }: { signInLane?: boole
   return (
     <div className="relative flex-shrink-0" ref={popRef}>
       <button
+        type="button"
         ref={pillRef}
         onClick={openPopover}
         title={isPublic ? 'Shared publicly' : 'Share this chat'}
@@ -125,10 +126,10 @@ export default function ShareButton({ signInLane = false }: { signInLane?: boole
         className={cn(
           // Phones: icon-only below sm (the word cost the toolbar's working-set
           // door its last 45px at 375) and a 40px target below lg.
-          'flex items-center gap-1.5 px-2.5 py-1 max-lg:min-h-10 max-lg:px-3 rounded-lg border text-[11px] transition-colors',
+          'flex items-center gap-1.5 px-2.5 py-1 max-lg:min-h-10 max-lg:px-3 rounded-lg border border-solid text-[11px] transition-colors',
           isPublic
             ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/15'
-            : 'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-white hover:border-[var(--line-2)]'
+            : 'bg-[var(--surf-1)] border-[var(--line)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:border-[var(--line-2)]'
         )}
       >
         {isPublic ? <Globe className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
@@ -163,7 +164,7 @@ export default function ShareButton({ signInLane = false }: { signInLane?: boole
             {isPublic && shareUrl ? (
               <div className="mt-2 flex items-center gap-2 border-t border-[var(--line)] pt-3">
                 <span className="min-w-0 flex-1 truncate mono text-[12.5px] text-[color:var(--muted)]">{shareUrl.replace(/^https?:\/\//, '')}</span>
-                <button type="button" onClick={copy} aria-label="Copy share link" className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-[var(--line-2)] px-4 text-[13px] font-medium text-[color:var(--fg)]">
+                <button type="button" onClick={copy} aria-label="Copy share link" className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-solid border-[var(--line-2)] px-4 text-[13px] font-medium text-[color:var(--fg)]">
                   {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
                   {copied ? 'Copied' : 'Copy'}
                 </button>
@@ -183,7 +184,7 @@ export default function ShareButton({ signInLane = false }: { signInLane?: boole
         >
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold text-white">
+              <p className="text-xs font-semibold text-[color:var(--fg)]">
                 {isPublic ? 'Public link' : 'Private chat'}
               </p>
               <p className="text-[11px] text-[color:var(--muted-2)] mt-0.5 leading-snug">
@@ -193,13 +194,15 @@ export default function ShareButton({ signInLane = false }: { signInLane?: boole
               </p>
             </div>
             <button
+              type="button"
               onClick={toggle}
               disabled={busy}
               role="switch"
               aria-checked={isPublic}
+              aria-label={isPublic ? 'Turn off the public link' : 'Turn on a public link'}
               className={cn(
                 'mt-0.5 flex-shrink-0 w-9 h-5 rounded-full relative transition-colors disabled:opacity-60',
-                isPublic ? 'bg-emerald-500' : 'bg-[var(--surf-2)] border border-[var(--line)]'
+                isPublic ? 'bg-emerald-500' : 'bg-[var(--surf-2)] border border-solid border-[var(--line-2)]'
               )}
             >
               <span
@@ -218,14 +221,15 @@ export default function ShareButton({ signInLane = false }: { signInLane?: boole
           )}
 
           {isPublic && shareUrl && (
-            <div className="flex items-center gap-2 rounded-lg border border-[var(--line)] bg-black/40 px-2 py-1.5">
+            <div className="flex items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--bg)] py-1 pl-2 pr-1">
               <Globe className="w-3.5 h-3.5 text-[color:var(--muted-2)] flex-shrink-0" />
               <span className="flex-1 text-[11px] text-[color:var(--muted)] truncate mono">
                 {shareUrl.replace(/^https?:\/\//, '')}
               </span>
               <button
+                type="button"
                 onClick={copy}
-                className="flex-shrink-0 text-[color:var(--muted)] hover:text-white transition-colors"
+                className="inline-flex flex-shrink-0 items-center gap-1 rounded-md border border-solid border-[var(--line-2)] px-2 py-1 text-[11px] font-medium text-[color:var(--fg)] transition-colors hover:bg-[var(--surf-2)]"
                 aria-label="Copy share link"
               >
                 {copied ? (
@@ -233,6 +237,7 @@ export default function ShareButton({ signInLane = false }: { signInLane?: boole
                 ) : (
                   <Copy className="w-3.5 h-3.5" />
                 )}
+                {copied ? 'Copied' : 'Copy'}
               </button>
             </div>
           )}

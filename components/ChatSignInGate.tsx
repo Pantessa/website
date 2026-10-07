@@ -9,6 +9,9 @@ import { cdpEnabled } from '@/lib/cdp-embedded'
 import { GUEST_TRIAL_LIMIT, guestTurnsUsed, subscribeGuestTrial } from '@/lib/guest-trial'
 import { useSoftKeyboard } from '@/components/mobile/useSoftKeyboard'
 import { usePhonePosture } from '@/components/chat/usePhonePosture'
+import KeepItBar from '@/components/guide/KeepItBar'
+import { getSignedReceipt, subscribeSignedReceipt } from '@/lib/first-run'
+import { useYeetfulStore } from '@/lib/store'
 
 /**
  * The chat's sign-in surface. It used to be a full-screen scrim that demanded
@@ -33,6 +36,9 @@ import { usePhonePosture } from '@/components/chat/usePhonePosture'
 export default function ChatSignInGate() {
   const { status, signingIn, needsSignIn, signIn, connectAndSignIn } = useSession()
   const turnsUsed = useSyncExternalStore(subscribeGuestTrial, guestTurnsUsed, () => 0)
+  // The first signed receipt of this visit (ChatInterface reports it): the
+  // connected banner turns into the keep-it moment (squad pre-gtm r3).
+  const receipt = useSyncExternalStore(subscribeSignedReceipt, getSignedReceipt, () => null)
   // While the soft keyboard is up (a phone), the banner steps aside with the
   // tab bar: the person is typing, and the composer rides the keyboard over
   // the space the banner would float in (squad mobile-native, CHAT row 3).
@@ -44,6 +50,12 @@ export default function ChatSignInGate() {
   // leave (MARKETS, WALLET and the rest stay one tap away). At lg+ nothing
   // changes: the banner floats over the thread as before.
   const phone = usePhonePosture()
+  // The LINKS studio/board owns the desktop main screen (ChatInterface's
+  // linksMode): the floating banner sat over its "Mint this link" row, and a
+  // covered button is a dead button. Its words are about THIS chat anyway, so
+  // it steps aside while the links view shows and returns with the chat
+  // (pre-gtm FINISH). The studio carries its own sign-in door.
+  const linksView = useYeetfulStore((s) => s.mainView === 'links' && s.railTab === 'links')
   const [seats, setSeats] = useState<{ banner: HTMLElement | null; root: HTMLElement | null }>({ banner: null, root: null })
   useEffect(() => {
     if (!phone) {
@@ -121,9 +133,28 @@ export default function ChatSignInGate() {
 
   // ── Non-blocking banner: guests keep the whole chat interactive ──────────
   if (keyboard.open) return null
+  if (linksView && !(phone && seats.banner)) return null
   // A phone: one compact row in the conversation's own seat above the
   // composer — never over the newest card, no bar arithmetic. The words are
   // the short form of the desktop banner's promise.
+  if (awaitingSignature && receipt) {
+    const bar = (
+      <KeepItBar
+        id="chat"
+        valueUsd={receipt.valueUsd ?? null}
+        txUrl={receipt.txUrl ?? null}
+        onKeep={() => signIn(signInLandingHere())}
+        busy={signingIn}
+        compact={!!(phone && seats.banner)}
+      />
+    )
+    if (phone && seats.banner) return createPortal(<div className="mx-3 mb-1" data-gate-banner="phone">{bar}</div>, seats.banner)
+    return (
+      <div className="pointer-events-none absolute bottom-28 max-lg:bottom-[calc(7.25rem+48px+env(safe-area-inset-bottom))] inset-x-0 z-40 flex justify-center px-4">
+        <div className="pointer-events-auto w-full max-w-2xl shadow-[0_8px_32px_rgba(0,0,0,0.35)] rounded-[14px]">{bar}</div>
+      </div>
+    )
+  }
   if (phone && seats.banner) {
     const rowBtn =
       'flex-shrink-0 inline-flex items-center justify-center gap-1.5 min-h-11 px-4 rounded-full bg-[var(--accent)] text-black text-[13px] font-semibold disabled:opacity-60'

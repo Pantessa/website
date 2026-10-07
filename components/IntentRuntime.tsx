@@ -32,6 +32,8 @@ import ChatLoader from '@/components/ChatLoader'
 import { SignatureWaitModal, useSignatureWait } from '@/components/SignatureWaitTakeover'
 import { useBackToClose } from '@/components/mobile/useBackToClose'
 import CreateAccountButton from '@/components/CreateAccountButton'
+import { I_STEPS } from '@/lib/first-run'
+import KeepItBar from '@/components/guide/KeepItBar'
 import NavAccount from '@/components/NavAccount'
 import ShareButton from '@/components/ShareButton'
 import SignInFlowLink from '@/components/SignInFlowLink'
@@ -51,6 +53,7 @@ import { beaconsAlreadyPosted, readLinkRun, reconcileWithSignOutcome, returnCopy
 import { readSignOutcome, signOutcomeKey } from '@/lib/sign-round-trip'
 import { txChainOf, txRequestOf } from '@/lib/transaction-layer'
 import { chainById } from '@/lib/chains'
+import { friendlyError } from '@/lib/friendly-error'
 
 const STATIC_SERVERS: McpServer[] = [...FREE_FLEET_FALLBACK, ...CATALOG]
 
@@ -151,6 +154,8 @@ export default function IntentRuntime({
   const [started, setStarted] = useState(false)
   const [built, setBuilt] = useState(false)
   const [signed, setSigned] = useState(false)
+  // What the receipt said (the keep-it bar quotes it): the dollars and the explorer link.
+  const [receipt, setReceipt] = useState<{ txUrl?: string; valueUsd?: number } | null>(null)
   // The Decline verb (doors run) — addressed cards only, recipient only.
   const { signMessageAsync } = useSignMessage()
   const [declined, setDeclined] = useState(false)
@@ -164,7 +169,7 @@ export default function IntentRuntime({
       await declineCard(slug, address, signMessageAsync)
       setDeclined(true)
     } catch (e) {
-      setDeclineError((e as Error).message)
+      setDeclineError(friendlyError(e, 'Could not decline it. Try again.'))
     } finally {
       setDeclining(false)
     }
@@ -441,6 +446,7 @@ export default function IntentRuntime({
       postEvent('signed', { valueUsd, txHash, chainId })
       setBuilt(true)
       setSigned(true)
+      setReceipt((r) => r ?? { ...(typeof data.txUrl === 'string' ? { txUrl: data.txUrl } : {}), ...(valueUsd !== undefined ? { valueUsd } : {}) })
       rememberRun('signed', { ...(typeof data.txUrl === 'string' ? { txUrl: data.txUrl } : {}), ...(valueUsd !== undefined ? { valueUsd } : {}) })
     }
     if (data.outcome === 'settled') {
@@ -650,6 +656,25 @@ export default function IntentRuntime({
               </button>
             )}
           </div>
+          {/* WHAT HAPPENS NEXT (squad pre-gtm, FIRSTRUN): the line a stranger
+              from a tweet was missing between the quoted sentence and the
+              button — three steps, the second being the promise (nothing is
+              signed by looking). Reads left-aligned like the empty doors;
+              rides the phone's CTA-first order right under the button. */}
+          {!autoStarting && !walletResolving && !isConnected && (
+            <ol className="mt-5 w-full max-w-md text-left grid gap-2 max-sm:order-2" data-i-steps aria-label="What happens next">
+              {I_STEPS.map((st) => (
+                <li key={st.n} className="grid grid-cols-[18px_minmax(0,1fr)] gap-x-2 items-baseline">
+                  <span className="mono text-[10px] tracking-[.06em]" style={{ color: 'var(--accent)' }} aria-hidden>
+                    {st.n}
+                  </span>
+                  <span className="text-[12.5px] leading-snug text-[color:var(--muted)]">
+                    <span className="font-semibold text-[color:var(--fg)]">{st.title}</span> — {st.body}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
           {!autoStarting && !walletResolving && (
             <p className="text-[12px] text-[color:var(--muted-2)] mt-4 max-w-md max-sm:order-2">
               Connecting runs the scan and the build for your wallet — signing stays yours
@@ -675,7 +700,7 @@ export default function IntentRuntime({
               No wallet on this phone?{' '}
               <CreateAccountButton
                 walletConnectOnly
-                className="underline decoration-dotted underline-offset-2 text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors"
+                className="hit-44 underline decoration-dotted underline-offset-2 text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors"
                 label="Make one with email or Google"
               />
               {' '}— nothing to install, and it signs right here.
@@ -1037,23 +1062,10 @@ export default function IntentRuntime({
           live in a local chat; signing in adopts it into the DB
           (session.tsx → adoptLocalChat). */}
       {signed && needsSignIn && (
+        // THE KEEP-IT MOMENT (squad pre-gtm r3): what just happened, and one
+        // warm invitation to keep it. Non-blocking; "Not now" quiets it.
         <div data-runtime-bar="" className="yenter relative flex-shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--bg)_92%,transparent)] backdrop-blur px-4 py-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-3 max-sm:flex-col max-sm:items-stretch">
-            <span className="text-[13px] text-[color:var(--muted)]">
-              <strong className="text-[color:var(--fg)] font-medium">Optional — </strong>
-              you&apos;re done here; the money moved. Sign in only if you want this chat and
-              receipt kept on your dashboard{' '}
-              (one wallet signature, nothing moves).
-            </span>
-            <button
-              type="button"
-              onClick={() => void signIn()}
-              disabled={signingIn}
-              className="btn btn--solid inline-flex items-center gap-1.5 text-[13px] disabled:opacity-60 max-sm:w-full max-sm:justify-center max-sm:min-h-12"
-            >
-              <Fingerprint className="w-3.5 h-3.5" /> {signingIn ? 'Waiting…' : 'Sign in & save'}
-            </button>
-          </div>
+          <KeepItBar id={`i:${slug}`} ask={ask} valueUsd={receipt?.valueUsd ?? null} txUrl={receipt?.txUrl ?? null} onKeep={() => void signIn()} busy={signingIn} />
         </div>
       )}
       {signed && returnHref && redirectHost && (

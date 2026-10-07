@@ -56,6 +56,9 @@ export interface WallStatus {
   /** The margin the panel wants, in pixels (0 when nothing draws). */
   px: number
   sources: { spot: boolean; perp: boolean; est: boolean }
+  /** Every read failed last lap (route down / offline) — the chart names it
+   *  instead of the Wall chip appearing to do nothing (pre-gtm POLISH r2). */
+  failed?: boolean
 }
 
 export interface TheWallProps {
@@ -127,6 +130,8 @@ export default function TheWall({ geom, bars, symbol, pair, tf, tokens, last, ho
   const [perp, setPerp] = useState<BookBody | null>(null)
   const [spot, setSpot] = useState<BookBody | null>(null)
   const [hover, setHover] = useState<Hover | null>(null)
+  // Which reads failed on their last lap (not "came back empty" — that is data).
+  const [fail, setFail] = useState({ derivs: false, perp: false, spot: false })
   const noMarket = pair.source === 'robinhood'
 
   // ── Reads: positioning on the chart's frame, the two books ──
@@ -139,8 +144,9 @@ export default function TheWall({ geom, bars, symbol, pair, tf, tokens, last, ho
         const res = await fetch(`/api/markets/derivs?symbol=${encodeURIComponent(symbol)}&tf=${tf}`, { cache: 'no-store' })
         const body = (await res.json()) as DerivsBody
         if (alive && res.ok && Array.isArray(body.oi)) setDerivs(body)
+        if (alive) setFail((f) => (f.derivs === !res.ok ? f : { ...f, derivs: !res.ok }))
       } catch {
-        /* no clusters this read */
+        if (alive) setFail((f) => (f.derivs ? f : { ...f, derivs: true }))
       }
     }
     void load()
@@ -156,12 +162,14 @@ export default function TheWall({ geom, bars, symbol, pair, tf, tokens, last, ho
     if (noMarket) return
     let alive = true
     const read = async (path: string, set: (b: BookBody | null) => void) => {
+      const key = path.endsWith('spot-book') ? 'spot' : 'perp'
       try {
         const res = await fetch(`${path}?symbol=${encodeURIComponent(symbol)}`, { cache: 'no-store' })
         const body = (await res.json()) as BookBody
         if (alive && res.ok && Array.isArray(body.bids)) set(body)
+        if (alive) setFail((f) => (f[key] === !res.ok ? f : { ...f, [key]: !res.ok }))
       } catch {
-        /* that book is missing this read */
+        if (alive) setFail((f) => (f[key] ? f : { ...f, [key]: true }))
       }
     }
     void read('/api/markets/book', setPerp)
@@ -216,7 +224,8 @@ export default function TheWall({ geom, bars, symbol, pair, tf, tokens, last, ho
   )
   const active = !noMarket && (wall.max > 0 || shownHits.length > 0)
   const px = wallWidthPx(geom?.plotRight ?? 0, active)
-  useEffect(() => onStatus?.({ active, px, sources }), [active, px, sources, onStatus])
+  const failed = !noMarket && !active && fail.derivs && fail.perp && fail.spot
+  useEffect(() => onStatus?.({ active, px, sources, failed }), [active, px, sources, failed, onStatus])
 
   // ── Layout: the panel docked to the price, right of the last candle ──
   const lay = useMemo<Layout | null>(() => {

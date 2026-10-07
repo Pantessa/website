@@ -14,7 +14,7 @@
   --pulse-down: var(--mk-down, var(--sell));
   --pulse-plot-h: 96px;
   position: relative; display: flex; flex-direction: column;
-  min-height: 224px; margin: 12px 0 0; padding: 12px 16px 10px;
+  min-height: 260px; margin: 12px 0 0; padding: 12px 16px 10px;
   border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1);
 }
 
@@ -31,6 +31,18 @@
 .pulse__view:hover { color: var(--fg); border-bottom-color: var(--fg); }
 .pulse__door { flex: 0 0 auto; font-size: 12px; font-weight: 600; color: var(--fg); text-decoration: none; white-space: nowrap; }
 .pulse__door:hover { color: var(--accent); }
+
+/* ── Markets: the token chips (the /live idiom, components/live/live.css
+   .live__m). One nowrap scrolling row at a fixed 28px, so the SSR frame's
+   height holds whether the venue answers 12 markets or the fallback's. ─── */
+.pulse__markets { display: flex; gap: 6px; height: 28px; margin-top: 8px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
+.pulse__markets::-webkit-scrollbar { display: none; }
+.pulse__m { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: color .12s ease, border-color .12s ease, background .12s ease; }
+.pulse__m:hover { color: var(--fg); border-color: var(--muted-2); }
+.pulse__m.is-on { color: var(--fg); background: var(--surf-2, var(--surf-1)); border-color: var(--fg); }
+.pulse__m:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pulse__mcount { font-size: 9.5px; color: var(--muted-2); }
+.pulse__m:not([data-kind="stock"]) .pulse__dex { color: var(--muted-2); }
 
 /* ── Body: the chart left, the three numbers right ─────────────────────── */
 .pulse__body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(250px, 31%); gap: 8px 18px; margin-top: 8px; align-items: stretch; }
@@ -88,6 +100,7 @@
   .pulse__split-buy { transition: none; }
   .pulse__chip { transition: none; }
   .pulse__chip:hover { transform: none; }
+  .pulse__m { transition: none; }
 }
 
 /* ── Narrow: the tiles drop under the chart ────────────────────────────── */
@@ -128,6 +141,8 @@
   .pulse__chip { height: auto; min-height: 44px; padding: 0 9px; font-size: 10.5px; }
   .pulse__chip-usd { display: none; }
   .pulse__foot { display: none; }
+  /* The chip row is a wider screen's: the phone holds its 160px budget. */
+  .pulse__markets { display: none; }
 }
 
 /* MOBILE */
