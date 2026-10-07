@@ -17,9 +17,12 @@ import {
   MIN_HALF_RANGE_PCT,
   PICK_MIN_OI_USD,
   SIEGE_INNER,
+  ARMY_MEMORY_KEY,
+  HELD_ARMY_MIN_USD,
   addOwnMarkets,
   anchorFor,
   armyLabel,
+  armySourceWord,
   burstsOf,
   candleSamples,
   contextFrom,
@@ -29,11 +32,14 @@ import {
   fmtFunding,
   fmtPct,
   glyphsFor,
+  heldArmies,
   isBattleView,
   liveUrl,
   mapBands,
   mergeSamples,
   oiUsd,
+  openingArmies,
+  parseArmyMemory,
   parseFrontTokens,
   parseFrontWindow,
   parseLiveView,
@@ -44,6 +50,7 @@ import {
   pushSample,
   rankArmies,
   resolveMarket,
+  serializeArmyMemory,
   siegeAngle,
   siegeRadius,
   siegeSectors,
@@ -189,6 +196,68 @@ export function battlePins(check: Check): void {
   // ── Context ───────────────────────────────────────────────────────────
   const c = contextFrom({ markPx: '92.5', openInterest: '1000000', funding: '0.0000125', prevDayPx: '90', dayNtlVlm: '474000000' })
   check('battle: the venue\'s context row reads mark, OI in dollars, funding per hour and the day change; a row with no mark is nothing', !!c && oiUsd(c) === 92_500_000 && near(dayChangePct(c)!, (92.5 / 90 - 1) * 100) && fmtFunding(c.funding) === '+0.0013%/h' && contextFrom({ markPx: 'x', openInterest: '1', funding: '0', prevDayPx: '1', dayNtlVlm: '1' }) === null)
+
+
+  // ── Memory and holdings (2026-10-07) ─────────────────────────────────
+  check('battle memory: a hand-set field round-trips through localStorage in the venue\'s spelling with its pick mode; any defect — not JSON, wrong version, no usable army — reads as nothing remembered, and unknown shapes drop',
+    (() => {
+      const m = { armies: ['xyz:NVDA', 'kPEPE', 'ETH'], pick: 'biggest' as const, at: T0 }
+      const back = parseArmyMemory(serializeArmyMemory(m))
+      const raw = serializeArmyMemory({ armies: ['HYPE', 'bad token!', 'SOL'], pick: 'gainers', at: T0 })
+      return ARMY_MEMORY_KEY === 'pantessa.live.armies.v1' && JSON.stringify(back) === JSON.stringify(m) &&
+        parseArmyMemory(null) === null && parseArmyMemory('') === null && parseArmyMemory('{nope') === null && parseArmyMemory('[]') === null &&
+        parseArmyMemory(JSON.stringify({ v: 2, armies: ['ETH'] })) === null && parseArmyMemory(JSON.stringify({ v: 1, armies: [] })) === null &&
+        parseArmyMemory(JSON.stringify({ v: 1, armies: 'ETH' })) === null && parseArmyMemory(JSON.stringify({ v: 1, armies: ['!!', 7] })) === null &&
+        JSON.stringify(parseArmyMemory(raw)?.armies) === '["HYPE","SOL"]' && JSON.stringify(parseArmyMemory(JSON.stringify({ v: 1, armies: ['kPEPE', 'XYZ:nvda', 'kPEPE'] }))?.armies) === '["kPEPE","xyz:nvda"]' && parseArmyMemory(JSON.stringify({ v: 1, armies: ['eth'], pick: 'odd', at: 'x' }))?.pick === 'gainers' &&
+        parseArmyMemory(JSON.stringify({ v: 1, armies: ['eth'] }))?.at === 0 &&
+        parseArmyMemory(JSON.stringify({ v: 1, armies: ['A', 'B', 'C', 'D', 'E', 'F', 'G'] }))!.armies.length === MAX_ARMIES
+    })())
+  check('battle held: a wallet\'s holdings raise armies biggest first in the venue\'s spelling — a Robinhood-Chain stock is its xyz perp, cbBTC and WBTC are one BTC army, WETH is ETH — never a stable, never dust, never an unpriced row, never a coin the venue lists no market for, capped at the field, and nothing while the venue\'s list is unknown',
+    (() => {
+      const uni = ['BTC', 'ETH', 'HYPE', 'SOL', 'kPEPE', 'xyz:AAPL', 'xyz:NVDA', 'UNI', 'LINK', 'DOGE']
+      const held = [
+        { symbol: 'USDC', valueUsd: 5000 },
+        { symbol: 'ETH', valueUsd: 120 },
+        { symbol: 'cbBTC', valueUsd: 900 },
+        { symbol: 'WBTC', valueUsd: 50 },
+        { symbol: 'AAPL', valueUsd: 40 },
+        { symbol: 'WETH', valueUsd: 300 },
+        { symbol: 'PEPE', valueUsd: 30 },
+        { symbol: 'FARTCOIN', valueUsd: 25 },
+        { symbol: 'UNI', valueUsd: 0.4 },
+        { symbol: 'LINK', valueUsd: null },
+        { symbol: 'DOGE', valueUsd: 2 },
+        { symbol: 'SOL', valueUsd: 3 },
+      ]
+      const got = heldArmies(held, uni)
+      return JSON.stringify(got) === '["BTC","ETH","xyz:AAPL","kPEPE","SOL"]' && got.length === MAX_ARMIES &&
+        JSON.stringify(heldArmies(held, uni, 2)) === '["BTC","ETH"]' &&
+        heldArmies(held, []).length === 0 && heldArmies([], uni).length === 0 &&
+        heldArmies([{ symbol: 'USDT', valueUsd: 1e6 }, { symbol: 'DAI', valueUsd: 10 }, { symbol: 'USDG', valueUsd: 10 }], uni).length === 0 &&
+        heldArmies([{ symbol: 'ETH', valueUsd: HELD_ARMY_MIN_USD }], uni).length === 1 && heldArmies([{ symbol: 'ETH', valueUsd: HELD_ARMY_MIN_USD - 0.01 }], uni).length === 0
+    })())
+  check('battle opening: the URL\'s armies lead, then this browser\'s hand-set memory, then the wallet\'s holdings, then the venue\'s pick, then the fallback; the venue\'s pick waits while a wallet may still answer and never while nobody will',
+    (() => {
+      const memory = { armies: ['UNI'], pick: 'gainers' as const, at: T0 }
+      const venue = ['AAOI', 'ZRO', 'GRIFFAIN']
+      const o = (over: Partial<Parameters<typeof openingArmies>[0]>) => openingArmies({ url: [], memory: null, held: null, venue, waitForHeld: false, ...over })
+      return o({ url: ['HYPE'], memory, held: ['ETH'] })?.source === 'url' && o({ memory, held: ['ETH'] })?.source === 'memory' &&
+        JSON.stringify(o({ held: ['BTC', 'ETH'] })) === JSON.stringify({ armies: ['BTC', 'ETH'], source: 'held' }) &&
+        o({ held: null, waitForHeld: true }) === null && o({ held: [], waitForHeld: true })?.source === 'venue' &&
+        o({ held: null, waitForHeld: false })?.source === 'venue' && o({ held: ['ETH'], waitForHeld: true })?.source === 'held' &&
+        JSON.stringify(o({ venue: [] })?.armies) === JSON.stringify(FALLBACK_ARMIES) && o({ venue: [] })?.source === 'fallback' &&
+        o({ venue: [], held: null, waitForHeld: true }) === null &&
+        armySourceWord('held') === 'from your wallet' && armySourceWord('memory') === 'as you left them' && armySourceWord('url') === null && armySourceWord('venue') === null && armySourceWord('hand') === null
+    })())
+  check('battle memory: the page reads the wallet\'s holdings through the shared read, decides the opening pick with the rule, writes the memory only after a hand touched the picker (the three hand actions mark it), and holds the opening while a wallet may still answer',
+    (() => {
+      const src = readFileSync('components/live/Battle.tsx', 'utf8')
+      const hands = (src.match(/byHand\(\)/g) ?? []).length
+      return /useHeld\(\)/.test(src) && /heldArmies\(held, universe\)/.test(src) && /openingArmies\(\{/.test(src) &&
+        /if \(!handRef\.current \|\| !armies\.length\) return\n\s*writeArmyMemory\(/.test(src) && hands === 3 &&
+        /waitForHeld: !signedOut && !heldWaited/.test(src) && /localStorage\.getItem\(ARMY_MEMORY_KEY\)/.test(src) && /localStorage\.setItem\(ARMY_MEMORY_KEY/.test(src) &&
+        /armySourceWord\(source\)/.test(src) && !/FALLBACK_ARMIES/.test(src)
+    })())
 
   // ── Formats ───────────────────────────────────────────────────────────
   check('battle: percent prints with its sign and the places the size deserves', fmtPct(2.312) === '+2.31%' && fmtPct(-0.06) === '−0.06%' && fmtPct(0.004) === '+0.004%' && fmtPct(12.34) === '+12.3%' && fmtPct(0) === '0.00%' && fmtPct(null) === '—')

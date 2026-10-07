@@ -621,3 +621,135 @@ export function fmtFunding(perHour: number): string {
   const sign = pct > 0 ? '+' : pct < 0 ? '−' : ''
   return `${sign}${Math.abs(pct).toFixed(4)}%/h`
 }
+
+// ── Memory: the armies you set, and the armies you hold ──────────────────────
+//
+// 2026-10-07, Nate: "if the user sets a coin can we remember what they were
+// so the user does not need to reset it each time they refresh … if the user
+// is holding tokens and has not selected any can we set the suggested tokens
+// to their holdings … this goes for all the maps." The three views share one
+// picker, so one rule covers them. What the field opens with, in order:
+//
+//   1. the URL's own armies (`?t=` — a shared link shows what it names)
+//   2. the armies this browser set by hand last time (localStorage)
+//   3. the connected wallet's holdings, the biggest first, in the venue's
+//      spelling (never a stable, never dust, never a coin the venue lists no
+//      market for)
+//   4. the venue's own pick list (top gainers / biggest)
+//   5. the fallback trio
+//
+// Only a hand on the picker writes the memory: a default pick of any kind is
+// never remembered as "yours", so holdings can still answer on the next
+// visit. A default stays fluid until the hand touches it: holdings that land
+// after the venue's pick painted replace it.
+
+export const ARMY_MEMORY_KEY = 'pantessa.live.armies.v1'
+
+export interface ArmyMemory {
+  armies: string[]
+  pick: PickMode
+  /** When it was set (ms). */
+  at: number
+}
+
+/** Parse what localStorage holds. Any defect — not JSON, wrong version, no
+ *  usable army — reads as nothing remembered; unknown market shapes drop. */
+export function parseArmyMemory(raw: string | null | undefined): ArmyMemory | null {
+  if (!raw) return null
+  let v: unknown
+  try {
+    v = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (!v || typeof v !== 'object' || (v as { v?: unknown }).v !== 1) return null
+  const o = v as { armies?: unknown; pick?: unknown; at?: unknown }
+  // The memory holds the venue's own spelling (kPEPE, xyz:NVDA), written
+  // after the universe fixed it — keep it, never re-case it.
+  const armies: string[] = []
+  for (const x of Array.isArray(o.armies) ? o.armies : []) {
+    if (typeof x !== 'string' || !MARKET_RE.test(x.trim())) continue
+    const m = x.trim()
+    const norm = m.toLowerCase().startsWith('xyz:') ? `xyz:${m.slice(4)}` : m
+    if (!armies.includes(norm)) armies.push(norm)
+    if (armies.length >= MAX_ARMIES) break
+  }
+  if (!armies.length) return null
+  const at = typeof o.at === 'number' && Number.isFinite(o.at) ? o.at : 0
+  return { armies, pick: parsePickMode(typeof o.pick === 'string' ? o.pick : null), at }
+}
+
+export function serializeArmyMemory(m: ArmyMemory): string {
+  return JSON.stringify({ v: 1, armies: m.armies.slice(0, MAX_ARMIES), pick: m.pick, at: m.at })
+}
+
+/** A wrapped or staked form of a coin is that coin's army. */
+const HELD_ALIASES: Readonly<Record<string, string>> = {
+  WETH: 'ETH', STETH: 'ETH', WSTETH: 'ETH', CBETH: 'ETH', RETH: 'ETH', WEETH: 'ETH',
+  WBTC: 'BTC', CBBTC: 'BTC', TBTC: 'BTC',
+  WSOL: 'SOL',
+}
+/** Money is not an army. */
+const NOT_AN_ARMY: ReadonlySet<string> = new Set(['USDC', 'USDC.E', 'USDT', 'DAI', 'USDG', 'USDE', 'USDS', 'PYUSD', 'EURC', 'FRAX', 'GHO', 'USD1', 'USDB'])
+/** Under this much a holding is dust and raises no army. */
+export const HELD_ARMY_MIN_USD = 1
+
+/**
+ * The connected wallet's holdings as armies: the biggest first, resolved
+ * against the venue's market list (`AAPL` on Robinhood Chain is the
+ * `xyz:AAPL` perp; `cbBTC` is BTC's army). An unknown universe (the read
+ * has not answered) raises nothing — a holding must never become an army
+ * the venue lists no market for, so this never guesses. Unpriced holdings
+ * and dust are skipped; one coin held in several forms is one army.
+ */
+export function heldArmies(held: readonly { symbol: string; valueUsd: number | null }[], universe: readonly string[], max = MAX_ARMIES, minUsd = HELD_ARMY_MIN_USD): string[] {
+  if (!universe.length) return []
+  const rows = held
+    .filter((h) => h.valueUsd !== null && h.valueUsd >= minUsd && !NOT_AN_ARMY.has(h.symbol.toUpperCase()))
+    .sort((a, b) => (b.valueUsd ?? 0) - (a.valueUsd ?? 0))
+  const out: string[] = []
+  for (const h of rows) {
+    const sym = h.symbol.toUpperCase()
+    const m = resolveMarket(HELD_ALIASES[sym] ?? sym, universe)
+    if (!m || out.includes(m)) continue
+    out.push(m)
+    if (out.length >= max) break
+  }
+  return out
+}
+
+export type ArmySource = 'url' | 'memory' | 'held' | 'venue' | 'fallback' | 'hand'
+
+export interface OpeningInput {
+  /** `?t=` from the URL. */
+  url: readonly string[]
+  /** This browser's last hand-set armies. */
+  memory: ArmyMemory | null
+  /** `heldArmies` of the wallet: null = no answer yet (a wallet may still be
+   *  restoring, or its holdings still reading); [] = answered, nothing raises
+   *  an army. */
+  held: readonly string[] | null
+  /** The venue's pick list, already sliced to the opening count. */
+  venue: readonly string[]
+  /** Hold the venue's pick while a wallet may still answer with holdings. */
+  waitForHeld: boolean
+}
+
+/** The opening decision from what is known so far; null = keep waiting
+ *  (nothing explicit, and a wallet may still answer). */
+export function openingArmies(s: OpeningInput): { armies: string[]; source: ArmySource } | null {
+  if (s.url.length) return { armies: [...s.url], source: 'url' }
+  if (s.memory) return { armies: [...s.memory.armies], source: 'memory' }
+  if (s.held && s.held.length) return { armies: [...s.held], source: 'held' }
+  if (s.held === null && s.waitForHeld) return null
+  if (s.venue.length) return { armies: [...s.venue], source: 'venue' }
+  return { armies: [...FALLBACK_ARMIES], source: 'fallback' }
+}
+
+/** The picker's word for where the field came from; nothing for a link
+ *  (its armies are in the address bar), the venue's pick, or a hand. */
+export function armySourceWord(source: ArmySource): string | null {
+  if (source === 'held') return 'from your wallet'
+  if (source === 'memory') return 'as you left them'
+  return null
+}
