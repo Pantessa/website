@@ -304,6 +304,19 @@
   .mkt-ticket__send { flex: 1 1 100%; }
   .mkt-ticket__avail { margin-left: 0; flex-basis: 100%; white-space: normal; }
   .mkt-ticket__in { font-size: 18px; }
+  /* The available line takes its own line here, so the × keeps the corner. */
+  .mkt-ticket__x { margin-left: auto; }
+}
+/* A column seat (the header's right column from 2026-10-07, the Trade tab's
+   order card beside the composer): the box and the presets share a line,
+   the estimate under them, the slider under that; the button still takes
+   the row, the way a Coinbase ticket reads. Grid `order` places them — no
+   named areas, so an empty estimate leaves no empty row behind. */
+@container mkt-ticket (min-width: 420px) and (max-width: 639.98px) {
+  .mkt-ticket__size { grid-template-columns: minmax(0, 1fr) auto; }
+  .mkt-ticket__size > .mkt-ticket__presets { order: 1; justify-content: flex-end; }
+  .mkt-ticket__eq { order: 2; grid-column: 1 / -1; }
+  .mkt-ticket__range { order: 3; }
 }
 /* The header's act seat drops its gap under 900px (x402-design.css): the
    ticket keeps its own air above. */

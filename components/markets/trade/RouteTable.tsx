@@ -20,8 +20,9 @@
 // row (when the on-ramp is open) needs no wallet and closes the group. A
 // visitor with no wallet sees the card and what connecting would show.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { CreditCard } from 'lucide-react'
+import { followOrderSize, orderSizeOf, ROUTE_USD_PRESETS, routeSizeView, useOrderSize } from '@/lib/order-size'
 import { getProtocolMark } from '@/components/protocol-marks'
 import { PantessaMark } from '@/components/Logo'
 import type { ChartPair } from '@/lib/charts'
@@ -52,7 +53,8 @@ import './trade.css'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
 import { useTradable } from '@/lib/use-tradable'
 
-export const ROUTE_AMOUNTS = [10, 25, 50, 100, 250] as const
+/** The size presets — lib/order-size's, so the ticket's size lands on a lit preset here. */
+export const ROUTE_AMOUNTS = ROUTE_USD_PRESETS
 export const ROUTE_LEVERAGES = [1, 2, 3, 5] as const
 export const LEVERAGE_MAX = 10
 const DRAW_POLL_MS = 2_000
@@ -101,9 +103,34 @@ export default function RouteTable({
   last?: number | null
   amount?: number
 }) {
-  const [amount, setAmount] = useState<number>(amountProp ?? DEFAULT_ROUTE_USD)
-  const [custom, setCustom] = useState('')
-  const [leverage, setLeverage] = useState<number>(1)
+  // ── One size for the page (lib/order-size, 2026-10-07) ──
+  // The order ticket's dollars are this table's size: a size already set on
+  // this symbol seeds the first read (a tab switch mounts a fresh table), a
+  // later one lands on a lit preset or in the custom box, and a perp
+  // ticket's leverage moves the slider. The table's own presets and box
+  // publish back, so the ticket shows the same dollar. The server render
+  // carries the default (the store is empty there).
+  const sizeId = useId()
+  const setSize = useOrderSize((s) => s.setSize)
+  const sharedSize = useOrderSize((s) => s.size)
+  const followed = followOrderSize(sharedSize, pair.symbol, sizeId)
+  const [amount, setAmount] = useState<number>(() => (followed ? (routeSizeView(followed.usd).preset ?? amountProp ?? DEFAULT_ROUTE_USD) : (amountProp ?? DEFAULT_ROUTE_USD)))
+  const [custom, setCustom] = useState(() => (followed ? routeSizeView(followed.usd).custom : ''))
+  const [leverage, setLeverage] = useState<number>(() => (followed?.leverage != null ? Math.min(LEVERAGE_MAX, Math.max(1, followed.leverage)) : 1))
+  useEffect(() => {
+    if (!followed) return
+    // The store, live: the snapshot this render captured can predate a
+    // publish made in the same commit (a ticket mounting beside this table).
+    const live = followOrderSize(useOrderSize.getState().size, pair.symbol, sizeId) ?? followed
+    const view = routeSizeView(live.usd)
+    setCustom(view.custom)
+    if (view.preset != null) setAmount(view.preset)
+    if (live.leverage != null) setLeverage(Math.min(LEVERAGE_MAX, Math.max(1, live.leverage)))
+  }, [followed, pair.symbol, sizeId])
+  const publishSize = (usd: number) => {
+    const next = orderSizeOf(pair.symbol, usd, null, sizeId)
+    if (next) setSize(next)
+  }
   const [data, setData] = useState<RoutesResponse | null>(null)
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [filter, setFilter] = useState<VenueKind | 'all'>('all')
@@ -267,6 +294,7 @@ export default function RouteTable({
                 onClick={() => {
                   setCustom('')
                   setAmount(a)
+                  publishSize(a)
                 }}
               >
                 ${a}
@@ -279,7 +307,11 @@ export default function RouteTable({
                 pattern="[0-9]*"
                 placeholder="custom"
                 value={custom}
-                onChange={(e) => setCustom(e.target.value.replace(/[^0-9]/g, ''))}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/[^0-9]/g, '')
+                  setCustom(v)
+                  if (v) publishSize(Math.floor(Number(v)))
+                }}
                 aria-label="Custom order size in dollars"
               />
             </label>

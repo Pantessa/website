@@ -32,6 +32,7 @@ import {
 import { canSellAsk } from '../lib/sell-gate'
 import { canTradeAsk } from '../lib/trade-venue-gate'
 import type { HeldSymbol } from '../lib/watchlists'
+import { followOrderSize, orderSizeOf, ROUTE_USD_PRESETS, routeSizeView, routeUsdOf, sameOrderSize, useOrderSize } from '../lib/order-size'
 
 type Check = (name: string, ok: boolean, extra?: string) => void
 
@@ -163,6 +164,65 @@ export function orderTicketPins(check: Check): void {
   check('order ticket (wired): the form\'s box is a decimal keyboard, its button sends the composed sentence and nothing else, the live quote is the venue map\'s own read (never a build), and the CSS is one size container with 44px targets on touch',
     ot.includes('inputMode="decimal"') && ot.includes('onSend(out.ask)') && ot.includes("fetch(`/api/markets/routes?") && !ot.includes('/api/chat') && ot.includes('disabled={!out.ok || !allowed}') &&
       css.includes('.mkt-ticket { container: mkt-ticket / inline-size;') && css.includes('@container mkt-ticket (min-width: 640px)') && /@media \(hover: none\) \{\s*\.mkt-ticket__tab, \.mkt-ticket__preset, \.mkt-ticket__unit, \.mkt-ticket__px \{ min-height: 44px; \}/.test(css))
+
+  // ── 7. One size for the page (lib/order-size, 2026-10-07) ────────────────
+  // Nate: "when I enter my own amount can you update the amounts here" — the
+  // venue map quoted $50 a row beside a $25 ticket. The pure rules first.
+  check('order size (pure): a size is a dollar of at least $1 on a symbol, to the cent; leverage rides only above 1; nothing, NaN, $0.99 and an empty symbol publish nothing',
+    orderSizeOf('UNI', 25.555, null, 'a')?.usd === 25.56 && orderSizeOf('UNI', 25, 1, 'a')?.leverage === null && orderSizeOf('HYPE', 25, 2.4, 'a')?.leverage === 2 &&
+      orderSizeOf('UNI', 0.99, null, 'a') === null && orderSizeOf('UNI', null, null, 'a') === null && orderSizeOf('UNI', Number.NaN, null, 'a') === null && orderSizeOf('', 25, null, 'a') === null)
+  check('order size (pure): two sizes agree on symbol, dollar and leverage, never on who wrote them; a follower takes a size set on ITS symbol by SOMEONE ELSE only',
+    sameOrderSize({ symbol: 'UNI', usd: 25, leverage: null }, { symbol: 'UNI', usd: 25.004, leverage: null }) && !sameOrderSize({ symbol: 'UNI', usd: 25, leverage: null }, { symbol: 'UNI', usd: 25.01, leverage: null }) &&
+      !sameOrderSize({ symbol: 'UNI', usd: 25, leverage: null }, { symbol: 'ETH', usd: 25, leverage: null }) && !sameOrderSize({ symbol: 'HYPE', usd: 25, leverage: 2 }, { symbol: 'HYPE', usd: 25, leverage: null }) && !sameOrderSize(null, { symbol: 'UNI', usd: 25, leverage: null }) &&
+      followOrderSize({ symbol: 'UNI', usd: 25, leverage: null, by: 'ticket' }, 'UNI', 'table')?.usd === 25 && followOrderSize({ symbol: 'UNI', usd: 25, leverage: null, by: 'ticket' }, 'UNI', 'ticket') === null &&
+      followOrderSize({ symbol: 'UNI', usd: 25, leverage: null, by: 'ticket' }, 'ETH', 'table') === null && followOrderSize(null, 'UNI', 'table') === null)
+  check('order size (pure): the route table shows a followed dollar on its lit preset when it IS one, else in the custom box as a whole dollar (never under $1); the presets are the table\'s own five',
+    routeSizeView(25).preset === 25 && routeSizeView(25).custom === '' && routeSizeView(25.5).preset === null && routeSizeView(25.5).custom === '26' && routeSizeView(25.4).custom === '25' &&
+      routeSizeView(250).preset === 250 && routeSizeView(0.2).custom === '1' && routeUsdOf(49.5) === 50 && ROUTE_USD_PRESETS.join(',') === '10,25,50,100,250')
+  {
+    // The store returns the SAME state for an unchanged size whoever wrote it
+    // (a follower re-publishing what it followed moves nothing), and a new
+    // dollar or leverage is a new state.
+    const store = useOrderSize
+    store.getState().clear()
+    store.getState().setSize({ symbol: 'UNI', usd: 25, leverage: null, by: 'ticket' })
+    const first = store.getState().size
+    store.getState().setSize({ symbol: 'UNI', usd: 25, leverage: null, by: 'table' })
+    const sameAgain = store.getState().size === first && first?.by === 'ticket'
+    store.getState().setSize({ symbol: 'UNI', usd: 30, leverage: null, by: 'table' })
+    const moved = store.getState().size?.usd === 30 && store.getState().size?.by === 'table'
+    store.getState().setSize({ symbol: 'UNI', usd: 30, leverage: 2, by: 'ticket' })
+    const lev = store.getState().size?.leverage === 2 && store.getState().size?.by === 'ticket'
+    store.getState().clear()
+    check('order size (store): an unchanged size is a no-op (the first writer stays — no two surfaces can chase each other), a new dollar or a leverage is a new state, clear empties it',
+      sameAgain && moved && lev && store.getState().size === null)
+  }
+  check('order size (wired): the ticket SEEDS a fresh mount from a size already set on its symbol (the remembered default applies to a cold page only), publishes its dollars from an effect keyed on the AMOUNT and the UNIT (never the price, which ticks) with a perp\'s leverage, never re-publishes a change it FOLLOWED (two tickets chased each other 25 ↔ 100 until React gave up), reads the store LIVE when it follows (the render\'s snapshot can predate a publish in the same commit), and a protect ticket (no amount) neither publishes nor follows',
+    ot.includes("import { followOrderSize, orderSizeOf, useOrderSize } from '@/lib/order-size'") && ot.includes('}, [st.amount, st.unit, st.leverage, amountKind, isPerp, sym, sizeId, setSize])') &&
+      ot.includes('const seed = followOrderSize(useOrderSize.getState().size, pair.symbol, sizeId)') && ot.includes('usd: seed?.usd ?? TICKET_DEFAULT_USD') && ot.includes('if (seededRef.current) return') && ot.includes('const followingRef = useRef(seededRef.current)') && ot.includes("return seed?.leverage != null && isPerpSide(side) ? { ...fresh, leverage: seed.leverage } : fresh") &&
+      ot.indexOf('const sizeId = useId()') < ot.indexOf('const [st, setSt] = useState<TicketState>') &&
+      ot.includes('const next = orderSizeOf(sym, usd, isPerp ? st.leverage : null, sizeId)') && ot.includes("setSt((s) => ({ ...s, unit: 'usd', amount: live.usd, sellAll: false, ...(lev != null ? { leverage: lev } : {}) }))") &&
+      /if \(followingRef\.current\) \{\s*followingRef\.current = false\s*return\s*\}/.test(ot) && ot.indexOf('followingRef.current = true') < ot.indexOf("setSt((s) => ({ ...s, unit: 'usd', amount: live.usd") &&
+      ot.includes('const live = followOrderSize(useOrderSize.getState().size, sym, sizeId)') && ot.includes('const lev = isPerp && live.leverage != null && live.leverage !== stRef.current.leverage ? live.leverage : null') && ot.includes('if (sameUsd && lev == null) return') &&
+      ot.includes("if (!followed || amountKind === 'none') return") && ot.includes("if (amountKind === 'none') return") && !ot.includes('}, [st.amount, st.unit, st.leverage, amountKind, isPerp, sym, sizeId, setSize, last])'))
+  const rt = rf('components/markets/trade/RouteTable.tsx')
+  check('order size (wired): the route table seeds a fresh mount from a size already set on its symbol (one read, not two), follows a later one onto a lit preset or the custom box plus the slider, and its own presets and box publish back under its own id; the presets are lib/order-size\'s',
+    rt.includes("import { followOrderSize, orderSizeOf, ROUTE_USD_PRESETS, routeSizeView, useOrderSize } from '@/lib/order-size'") && rt.includes('export const ROUTE_AMOUNTS = ROUTE_USD_PRESETS') &&
+      rt.includes('const followed = followOrderSize(sharedSize, pair.symbol, sizeId)') && rt.includes('useState<number>(() => (followed ? (routeSizeView(followed.usd).preset ?? amountProp ?? DEFAULT_ROUTE_USD) : (amountProp ?? DEFAULT_ROUTE_USD)))') &&
+      rt.includes('if (view.preset != null) setAmount(view.preset)') && rt.includes('if (live.leverage != null) setLeverage(Math.min(LEVERAGE_MAX, Math.max(1, live.leverage)))') && rt.includes('const live = followOrderSize(useOrderSize.getState().size, pair.symbol, sizeId) ?? followed') &&
+      rt.includes('const next = orderSizeOf(pair.symbol, usd, null, sizeId)') && (rt.match(/publishSize\(/g) ?? []).length === 2 && rt.includes('const publishSize = (usd: number) => {'))
+  // The header: the quote under the logo, the act seat on the right (CSS
+  // only — the DOM order the harness pins is untouched).
+  const mk = rf('components/markets/markets.css')
+  const headBlock = mk.split('@container sym-head (min-width: 760px) {')[1]?.split('\n}')[0] ?? ''
+  check('order ticket (header): the symbol header sits in a seat that is the size container (the chart stays outside it) and, from 760px of column width, a two-column grid — identity over the quote on the left, the act seat (chips + ticket) spanning both rows on the right, the guide seat a full row under; the quote left-aligns there and its rows are auto + 1fr so the quote hugs the title',
+    mk.includes('.sym__headseat { container: sym-head / inline-size; min-width: 0; }') && sp.includes('<div className="sym__headseat">') && sp.indexOf('<div className="sym__headseat">') < sp.indexOf('<header className="sym__head sym__head--mk2">') && !sp.includes('className="sym__headseat">\n        <div ref={shellRef}') && headBlock.includes('grid-template-areas: "id exec" "quote exec";') && headBlock.includes('grid-template-rows: auto 1fr;') &&
+      headBlock.includes('.sym__head--mk2 > .sym__quote { grid-area: quote; justify-content: start; align-self: start; }') && headBlock.includes('.sym__head--mk2 > .sym__exec { grid-area: exec; }') &&
+      headBlock.includes('.sym__head--mk2 > .guide-seat { grid-column: 1 / -1; grid-row: 3; margin-top: 0; }') && !sp.includes('sym__quote" style'),
+    `block=${headBlock.length}`)
+  check('order ticket (column seat): between 420 and 640px of ticket width the size row is box + presets on one line, the estimate and the slider under (grid order, no named areas), the button keeps the row, and the × keeps the corner while the available line takes its own',
+    css.includes('@container mkt-ticket (min-width: 420px) and (max-width: 639.98px) {') && css.includes('.mkt-ticket__size > .mkt-ticket__presets { order: 1; justify-content: flex-end; }') &&
+      css.includes('.mkt-ticket__eq { order: 2; grid-column: 1 / -1; }') && (css.split('@container mkt-ticket (max-width: 639.98px) {')[1]?.split('\n}')[0] ?? '').includes('.mkt-ticket__x { margin-left: auto; }'))
 }
 
 // Runnable alone (the harness imports this file, so the run is argv-gated).

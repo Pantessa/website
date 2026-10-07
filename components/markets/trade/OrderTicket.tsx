@@ -21,12 +21,13 @@
 // live routes quote (the same read the Trade tab's venue map makes) prints
 // the estimate under the sentence; the guarded card re-quotes at signature.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import { X } from 'lucide-react'
 import type { ChartPair } from '@/lib/charts'
 import { fmtPrice } from '@/components/CandleChart'
 import { useHeld } from '@/lib/use-held'
 import { useStableBalances } from '@/lib/use-stable-balances'
+import { followOrderSize, orderSizeOf, useOrderSize } from '@/lib/order-size'
 import { useTradable } from '@/lib/use-tradable'
 import { canSellAsk } from '@/lib/sell-gate'
 import { canTradeAsk, tradeRefusal } from '@/lib/trade-venue-gate'
@@ -114,9 +115,26 @@ export default function OrderTicket({ symbol, pair, sides, side, onSide, last, o
   const held = useHeld()
   const stables = useStableBalances()
   const tradable = useTradable()
-  // Starts on the default size (the server renders the card seat); the
-  // remembered size lands in an effect so the hydration matches.
-  const [st, setSt] = useState<TicketState>(() => freshTicket(pair, side, { usd: TICKET_DEFAULT_USD, last }))
+  // ── One size for the page (lib/order-size, 2026-10-07) ──
+  // The venue map and the other seat follow this ticket's dollars, and this
+  // ticket follows theirs. A size already set on this symbol SEEDS a fresh
+  // mount (the Trade tab's card opens on the header's number, never on a
+  // default that would overwrite it); the server renders the default (the
+  // store is empty there), and so does the hydration.
+  const sizeId = useId()
+  const setSize = useOrderSize((s) => s.setSize)
+  const sharedSize = useOrderSize((s) => s.size)
+  const seededRef = useRef<boolean>(false)
+  // Starts on the page's size, else the default (the server renders the
+  // card seat); the remembered size lands in an effect so the hydration
+  // matches.
+  const [st, setSt] = useState<TicketState>(() => {
+    const seed = followOrderSize(useOrderSize.getState().size, pair.symbol, sizeId)
+    seededRef.current = seed != null
+    const fresh = freshTicket(pair, side, { usd: seed?.usd ?? TICKET_DEFAULT_USD, last })
+    // A perp seat opens on the page's leverage too (the header's 3x is the card's 3x).
+    return seed?.leverage != null && isPerpSide(side) ? { ...fresh, leverage: seed.leverage } : fresh
+  })
   const [text, setText] = useState<string>(() => (st.amount != null ? String(st.amount) : ''))
   const [pxText, setPxText] = useState<string>(() => (st.limitPrice != null ? fmtAskPrice(st.limitPrice) : ''))
   const [sent, setSent] = useState<number | null>(null)
@@ -142,6 +160,7 @@ export default function OrderTicket({ symbol, pair, sides, side, onSide, last, o
   )
   useEffect(() => {
     usdRef.current = recallUsd()
+    if (seededRef.current) return
     if (usdRef.current !== TICKET_DEFAULT_USD) {
       setSt((s) => (s.unit === 'usd' && s.amount === TICKET_DEFAULT_USD ? { ...s, amount: usdRef.current } : s))
       setText((t) => (t === String(TICKET_DEFAULT_USD) ? String(usdRef.current) : t))
@@ -161,6 +180,46 @@ export default function OrderTicket({ symbol, pair, sides, side, onSide, last, o
   const tone = sideTone(side)
   const isPerp = isPerpSide(side)
   const isSell = side === 'sell'
+
+  // Published when the AMOUNT or the UNIT changes by a hand here (a units
+  // sell converts at the price it was typed at — never on a price tick,
+  // which would re-quote the table every second); a perp's leverage rides
+  // along. A change that came from FOLLOWING is never published back: two
+  // tickets that each re-published what they followed chased each other
+  // 25 ↔ 100 until React gave up (the first drive of this). And a follow
+  // reads the store LIVE, not the snapshot this render captured — in the
+  // commit that mounts a second ticket, that snapshot predates the publish
+  // the same commit just made. A SEEDED mount skips its first publish the
+  // same way: what it would publish is what it was seeded from, minus a
+  // leverage the seed may carry and this side may not — a fresh card seat
+  // once wrote leverage null over the header's 3x before it could follow it.
+  const followingRef = useRef(seededRef.current)
+  useEffect(() => {
+    if (amountKind === 'none') return
+    if (followingRef.current) {
+      followingRef.current = false
+      return
+    }
+    const { usd } = ticketSizes({ unit: st.unit, amount: st.amount }, lastRef.current)
+    const next = orderSizeOf(sym, usd, isPerp ? st.leverage : null, sizeId)
+    if (next) setSize(next)
+  }, [st.amount, st.unit, st.leverage, amountKind, isPerp, sym, sizeId, setSize])
+  const followed = followOrderSize(sharedSize, sym, sizeId)
+  useEffect(() => {
+    if (!followed || amountKind === 'none') return
+    const live = followOrderSize(useOrderSize.getState().size, sym, sizeId)
+    if (!live) return
+    const { usd } = ticketSizes({ unit: stRef.current.unit, amount: stRef.current.amount }, lastRef.current)
+    const sameUsd = usd != null && Math.abs(usd - live.usd) < 0.005
+    // A perp ticket takes the other perp ticket's leverage too (the header's
+    // 3x is the card's 3x); a size that states none leaves it alone.
+    const lev = isPerp && live.leverage != null && live.leverage !== stRef.current.leverage ? live.leverage : null
+    if (sameUsd && lev == null) return
+    followingRef.current = true
+    setSt((s) => ({ ...s, unit: 'usd', amount: live.usd, sellAll: false, ...(lev != null ? { leverage: lev } : {}) }))
+    setText(String(live.usd))
+    usdRef.current = live.usd
+  }, [followed, amountKind, isPerp, sym, sizeId])
 
   // What the order can draw on: the holding (a sell, a stake) or the stable
   // the wallet holds where the buy settles.
