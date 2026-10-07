@@ -326,10 +326,41 @@ export async function priceUnpricedStockRows(chains: WalletChainView[]): Promise
       if (actions.length) h.actions = actions
     }),
   )
-  rh.holdings.sort((a, b) => (a.native ? -1 : b.native ? 1 : (b.valueUsd ?? -1) - (a.valueUsd ?? -1)))
-  const tokenUsd = rh.holdings.filter((h) => !h.native).reduce((s, h) => s + (h.valueUsd ?? 0), 0)
-  rh.totalUsd = round2(tokenUsd + (rh.nativeUsd ?? 0))
-  rh.gas = gasStateFor(rh.id, rh.gasUnits, tokenUsd)
+  retotal(rh)
+}
+
+/** Re-sort a chain row richest-first (native leading) and re-derive its
+ *  total and gas verdict after rows were priced in place. */
+function retotal(row: WalletChainView): void {
+  row.holdings.sort((a, b) => (a.native ? -1 : b.native ? 1 : (b.valueUsd ?? -1) - (a.valueUsd ?? -1)))
+  const tokenUsd = row.holdings.filter((h) => !h.native).reduce((s, h) => s + (h.valueUsd ?? 0), 0)
+  row.totalUsd = round2(tokenUsd + (row.nativeUsd ?? 0))
+  row.gas = gasStateFor(row.id, row.gasUnits, tokenUsd)
+}
+
+/** Price the coin rows the index couldn't, on every chain but the stock
+ *  chain, from the chain's own pools (lib/usd-probe usdPerToken — depth
+ *  fenced, so a thin pool prices nothing rather than something wrong). A row
+ *  that still won't price stays LISTED, unpriced: a holding the wallet can
+ *  see is never hidden for want of a number. Bounded per chain. */
+export async function priceUnpricedCoinRows(chains: WalletChainView[]): Promise<void> {
+  await Promise.all(
+    chains
+      .filter((c) => c.id !== STOCK_CHAIN_ID)
+      .map(async (c) => {
+        const targets = c.holdings.filter((h) => !h.native && h.priceUsd == null).slice(0, 8)
+        if (targets.length === 0) return
+        await Promise.all(
+          targets.map(async (h) => {
+            const probe = await usdPerToken(c.id, h.address).catch(() => null)
+            if (!probe) return
+            h.priceUsd = probe.usd
+            h.valueUsd = round2(Number(h.balance) * probe.usd)
+          }),
+        )
+        retotal(c)
+      }),
+  )
 }
 
 // ── The shared read cache ───────────────────────────────────────────────────
@@ -373,9 +404,13 @@ export async function getWalletViewCached(address: `0x${string}`, opts: { fresh?
 /** The whole view. Never throws for a single failed source. */
 export async function composeWalletView(address: `0x${string}`): Promise<WalletView> {
   const withAlchemy = alchemyEnabled()
-  // Warm the stock list first: the Robinhood read AND the index's
-  // unpriced-but-curated keep (lib/alchemy) both consult it.
-  await ensureTokenList(STOCK_CHAIN_ID).catch(() => {})
+  // Warm EVERY chain's list first: the Robinhood read AND the index's
+  // unpriced-but-curated keep (lib/alchemy) both consult it. The stock list
+  // alone used to be warmed, so on any other chain a listed token the index
+  // doesn't price was dropped as spam — 0.455 UNI bought on Base
+  // (2026-10-06) never showed while MetaMask listed it. Cached 24h, so this
+  // costs a read once per process per chain.
+  await Promise.all(APP_CHAINS.map((c) => ensureTokenList(c.id).catch(() => {})))
   const [ethProbe, rpcReads, portfolio, activity] = await Promise.all([
     usdPerToken(8453, 'ETH').catch(() => null),
     Promise.all(APP_CHAINS.map((c) => readChainBalances(c.id, address))),
@@ -394,6 +429,7 @@ export async function composeWalletView(address: `0x${string}`): Promise<WalletV
   const ethUsd = ethProbe?.usd ?? null
   const chains = mergeChains(APP_CHAINS, rpc, portfolio?.holdings ?? [], ethUsd)
   await priceUnpricedStockRows(chains).catch(() => {})
+  await priceUnpricedCoinRows(chains).catch(() => {})
   const sources: WalletView['sources'] = portfolio ? ['rpc', 'alchemy'] : ['rpc']
   return {
     address,

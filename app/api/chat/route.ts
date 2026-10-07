@@ -168,7 +168,8 @@ import { cardBuyTurn, type CardBuyAsk } from '@/lib/card-buy'
 import { layerCardDoorCopy, layerFundChip, layerShortfallTurn, type LayerShortfallAsk, type LayerShortfallTurn } from '@/lib/layer-shortfall'
 import { fundingOriginWords } from '@/lib/funding-origins'
 import { FEATURED_STOCKS, parseStockListAsk, robinhoodStocks } from '@/lib/stock-list'
-import { tokenHome } from '@/lib/token-home'
+import { spotChainLine, spotHomeChainId, tokenHome } from '@/lib/token-home'
+import { inferSpotChainLive, spotInferenceToken } from '@/lib/spot-chain-infer'
 import { NEVER_MIND_RESUME_RE } from '@/lib/funding-path'
 import { cleanServerName } from '@/lib/utils'
 import { buysOrigin, fundingSourceSymbols, GAS_TOPUP_ETH, lifiDestination, minLegNote, offChainStableSource, valueLegUsd, parseRhFundingFollowUp, planDownsizedRobinhoodBuy, planRobinhoodFundingAdvice, readFundingShortfall, rhFundingPending, robinhoodBuyNeedUsd, ROBINHOOD_CHAIN_ID } from '@/lib/lifi-bridge'
@@ -2302,7 +2303,13 @@ async function handleChatTurn(req: NextRequest) {
           // pull generic buys to the stock chain, and a user who wants the
           // same-named target-chain token names the chain (namedNative wins).
           const exactStock = isExactRobinhoodStock(swapIntent.buyToken)
-          const pairing = !exactStock && !resolveToken(swapIntent.buyToken, targetChain.id) ? pairStockToken(swapIntent.buyToken, ROBINHOOD_CHAIN_ID) : null
+          // A coin the home table KNOWS is never a stock near-miss: "buy $5
+          // of MANA" isn't on Base's list, and the pairing ladder read it as
+          // a misspelled ticker ("I don't see MANA on Robinhood Chain's
+          // stock list") before the home-chain inference below could send
+          // it to Ethereum (2026-10-06). An EXACT stock ticker still wins.
+          const knownCoin = spotHomeChainId(swapIntent.buyToken) !== null
+          const pairing = !exactStock && !knownCoin && !resolveToken(swapIntent.buyToken, targetChain.id) ? pairStockToken(swapIntent.buyToken, ROBINHOOD_CHAIN_ID) : null
           // 'ok' with a null resolve = the list never warmed (pairing fails
           // open) — that must NOT retarget arbitrary unknown tokens to 4663.
           const isStock = exactStock || (pairing !== null && (!!resolveToken(swapIntent.buyToken, ROBINHOOD_CHAIN_ID) || pairing.kind === 'paired' || pairing.kind === 'suggest'))
@@ -2351,6 +2358,33 @@ async function handleChatTurn(req: NextRequest) {
             nativeTrace({ type: 'status', label: `stock-chain inference: selling “${swapIntent.sellToken.toUpperCase()}”, an exact Robinhood Chain stock ticker — building there, not on ${targetChain.name}` })
           }
         }
+        // ── Home-chain inference ── "Buy $50 of UNI" (the /t/UNI chip) and
+        // "let's buy $2 worth of uni" name no chain and the picker says ALL
+        // CHAINS, so the build used to land on the registry default: Base's
+        // 1% pool on a bridged copy of UNI, twice, with $619 of USDC sitting
+        // on Ethereum where UNI's market is (2026-10-06, prod). With nothing
+        // named, nothing picked and no stock in play, the token's own chain
+        // builds it (lib/token-home EVM_SPOT_CHAINS — the venue map's table;
+        // an unlisted coin is measured, lib/spot-chain-infer), and a SELL
+        // goes where the wallet holds the token. A chain in the message or
+        // the picker still wins (this never runs then), and the spend
+        // retarget below still follows the money afterwards: nothing was
+        // pinned. The flagship pins (ETH/WETH/USDC) never move.
+        let inferredSpot: { note: string; line: string } | null = null
+        if (!namedNative && !pickerChain && buildChain.id === targetChain.id && swapIntent.mode !== 'limit' && !swapIntent.problem) {
+          const want = spotInferenceToken(swapIntent)
+          if (want) {
+            const verdict = await inferSpotChainLive({ symbol: want.symbol, side: want.side, targetChainId: targetChain.id, wallet: walletAddress })
+            const home = verdict.chainId !== targetChain.id ? chainById(verdict.chainId) : null
+            if (home) {
+              buildChain = home
+              inferredSpot = { note: `${verdict.reason}: ${verdict.note}`, line: spotChainLine(verdict, want.symbol) }
+              nativeTrace({ type: 'status', label: `home-chain inference: ${verdict.note} — building on ${home.name}, not ${targetChain.name} (nothing named, nothing picked)` })
+            } else {
+              nativeTrace({ type: 'note', level: 'info', label: `home-chain inference: ${verdict.note}` })
+            }
+          }
+        }
         const uniActive = activeServers.some((s) => s.slug === 'uniswap' || /uniswap/i.test(s.name))
         const cowActive = activeServers.some((s) => s.slug === 'cow-swap' || /cow[\s·-]?swap/i.test(s.name))
         // The venue must exist on the target chain (CoW has no order book on
@@ -2365,12 +2399,14 @@ async function handleChatTurn(req: NextRequest) {
         const pair = swapIntent.sellToken && swapIntent.buyToken
           ? `${swapIntent.mode === 'limit' ? 'limit ' : ''}${swapIntent.sellAmountHuman ?? '?'} ${swapIntent.sellToken.toUpperCase()} → ${swapIntent.buyToken.toUpperCase()}`
           : 'swap ask (pair not fully parsed yet)'
-        const chainVia = buildChain.id !== targetChain.id ? 'stock list, inferred' : namedNative ? 'named in the message' : pickerChain ? 'from the chain picker' : 'default'
+        const chainVia = buildChain.id !== targetChain.id ? (inferredSpot ? `home chain, inferred (${inferredSpot.note})` : 'stock list, inferred') : namedNative ? 'named in the message' : pickerChain ? 'from the chain picker' : 'default'
         nativeTrace({ type: 'status', label: `native swap layer claimed the turn: ${pair} on ${venue === 'uniswap' ? 'Uniswap' : 'CoW'} (${buildChain.name}, ${chainVia}) — planner bypassed` })
         // A spend the wallet can't cover may follow the money ONLY when the
         // ask pinned no chain: nothing named, nothing picked, nothing inferred.
-        const allowRetarget = !namedNative && !pickerChain && buildChain.id === targetChain.id && swapIntent.mode !== 'limit'
-        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, buildChain.id, swapFeeBps, contentOrigin, { allowRetarget })
+        // An inferred home chain pinned nothing either: the money may still
+        // be somewhere else, and the retarget says so in its own line.
+        const allowRetarget = !namedNative && !pickerChain && (buildChain.id === targetChain.id || !!inferredSpot) && swapIntent.mode !== 'limit'
+        return await prepareSwapTurn(swapIntent, walletAddress, venue, workingContext, nativeTrace, buildChain.id, swapFeeBps, contentOrigin, { allowRetarget, chainNote: inferredSpot?.line })
       }
       // crossChain + a usable cross-chain agent → build it NATIVELY (deterministic
       // build_swap + guardrails + Sign button), never via the planner/house
@@ -4599,7 +4635,14 @@ function isExactRobinhoodStock(symbol: string): boolean {
  *  the picker), so a spend the wallet can't cover on the default chain may be
  *  re-aimed at where the wallet can pay (lib/swap-spend-retarget). Default
  *  false: reruns, follow-ups and named chains never wander. */
-type SwapTurnOpts = { allowRetarget?: boolean }
+type SwapTurnOpts = {
+  allowRetarget?: boolean
+  /** The chain was INFERRED from the token's home (lib/spot-chain-infer):
+   *  a built artifact opens with this line so the visitor sees where and
+   *  why before signing. Dropped when the spend retarget re-aimed the build
+   *  (its own line explains the move then). */
+  chainNote?: string
+}
 
 async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undefined, venue: 'uniswap' | 'cow' = 'cow', ctx?: WorkingContext, trace: (event: unknown) => void = () => {}, chainId: number = DEFAULT_CHAIN_ID, feeBps?: number, origin: ContentOrigin = 'first-party', opts: SwapTurnOpts = {}) {
   // Content-origin fence (SECURITY-AUDIT §C3/E5): a swap whose token slot is
@@ -4612,14 +4655,23 @@ async function prepareSwapTurn(intent: SwapIntent, walletAddress: string | undef
   }
   const sized: { note: string | null } = { note: null }
   const res = await prepareSwapTurnCore(intent, walletAddress, venue, ctx, trace, chainId, feeBps, sized, opts)
-  if (!sized.note) return res
+  if (!sized.note && !opts.chainNote) return res
   const body = (await res.json().catch(() => null)) as Record<string, unknown> | null
   if (!body) return res
-  const guardrails = body.guardrails as { checks?: unknown[] } | undefined
-  if (guardrails && Array.isArray(guardrails.checks)) {
-    guardrails.checks = [...guardrails.checks, { id: 'sell-all', level: 'warn', ok: true, note: sized.note }]
+  const built = !!(body.txChain || body.order || body.txRequest)
+  if (sized.note) {
+    const guardrails = body.guardrails as { checks?: unknown[] } | undefined
+    if (guardrails && Array.isArray(guardrails.checks)) {
+      guardrails.checks = [...guardrails.checks, { id: 'sell-all', level: 'warn', ok: true, note: sized.note }]
+    }
+    if (typeof body.reply === 'string' && built) body.reply = `${body.reply}\n📏 ${sized.note}`
   }
-  if (typeof body.reply === 'string' && (body.txChain || body.order || body.txRequest)) body.reply = `${body.reply}\n📏 ${sized.note}`
+  // The inferred chain, said once, above the artifact — unless the spend
+  // retarget moved the build again (its 🧭 line already names the chain).
+  if (opts.chainNote && built && !body.spendRetarget && typeof body.reply === 'string') {
+    body.reply = `🏠 ${opts.chainNote}\n\n${body.reply}`
+    body.spotChain = { chainId, note: opts.chainNote }
+  }
   return NextResponse.json(body, { status: res.status })
 }
 

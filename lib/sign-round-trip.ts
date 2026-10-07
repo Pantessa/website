@@ -304,3 +304,84 @@ export function resumeCopy(v: 'signed' | 'maybe-broadcast' | 'unknown'): { line:
       return { line: 'This was sent to your wallet earlier and never answered here. Check the wallet before signing again.', cta: 'Sign again anyway' }
   }
 }
+
+// ── A multi-step card coming back ──────────────────────────────────────────
+//
+// 2026-10-06, prod: a two-step USDC → UNI card was signed through (approve,
+// swap, settled), the page was reloaded, and the card came back at STEP 1
+// with "You signed this earlier — Sign again anyway" on the approve. The
+// visitor had not seen the UNI land, pressed it, the approve signed again,
+// the swap auto-fired behind it, and the same $2 bought the same token a
+// second time 92 seconds after the first. The per-step hold was right about
+// the approve and blind to the CHAIN: nobody asked whether the card as a
+// whole had already finished. This is that question, answered before the
+// card offers anything.
+
+export interface ChainStepOutcome {
+  /** The hash an earlier visit settled this exact step with ('' when the
+   *  record is settled but carries no hash); null = no settled record. */
+  settledHash: string | null
+}
+
+export type ChainResumePlan =
+  /** Nothing settled: offer step 1 as built. */
+  | { kind: 'fresh' }
+  /** Every step is on-chain: paint the card finished, sign nothing. */
+  | { kind: 'done'; hashes: Record<number, string> }
+  /** The first `current` steps settled earlier (an approve that mined before
+   *  the page went away): skip them, offer `current`, never on its own. */
+  | { kind: 'resume'; current: number; hashes: Record<number, string> }
+
+/**
+ * What a multi-step card does on MOUNT. `completed` is the message's durable
+ * signed record (every confirmed step's hash, in order — the share page's
+ * log); `steps` is what the sign store remembers per built transaction.
+ * The record wins: a chain whose record holds a hash per step is done, even
+ * in a browser whose store never saw it (another device, a cleared store).
+ * Then the store: the LAST step settled = done; a settled prefix = resume
+ * after it. A settled step in the MIDDLE of unsettled ones is read as a
+ * prefix too (steps only ever sign in order).
+ */
+export function chainResumePlan(i: { steps: readonly ChainStepOutcome[]; completed: readonly { hash: string }[] | null | undefined }): ChainResumePlan {
+  const n = i.steps.length
+  if (n === 0) return { kind: 'fresh' }
+  const hashes: Record<number, string> = {}
+  const record = (i.completed ?? []).filter((t) => typeof t.hash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(t.hash))
+  if (record.length >= n) {
+    // The first full run: a record longer than the chain is the chain run
+    // more than once (the bug above) — the card still shows one finished run.
+    for (let k = 0; k < n; k++) hashes[k] = record[k].hash
+    return { kind: 'done', hashes }
+  }
+  let settled = 0
+  for (let k = 0; k < n; k++) {
+    const fromRecord = record[k]?.hash ?? null
+    const fromStore = i.steps[k]?.settledHash ?? null
+    const h = fromRecord ?? fromStore
+    if (h === null) break
+    if (h) hashes[k] = h
+    settled = k + 1
+  }
+  if (settled === 0) {
+    // No prefix — but a settled LAST step means the chain finished (the card
+    // writes the chain's completion under its original last step's key).
+    const last = i.steps[n - 1]?.settledHash ?? null
+    if (last !== null) {
+      if (last) hashes[n - 1] = last
+      return { kind: 'done', hashes }
+    }
+    return { kind: 'fresh' }
+  }
+  if (settled >= n) return { kind: 'done', hashes }
+  const last = i.steps[n - 1]?.settledHash ?? null
+  if (last !== null) {
+    if (last) hashes[n - 1] = last
+    return { kind: 'done', hashes }
+  }
+  return { kind: 'resume', current: settled, hashes }
+}
+
+/** The line a finished card shows instead of a button. */
+export const CHAIN_SETTLED_LINE = 'This already settled on-chain — the card won’t sign it again. Ask again if you want more.'
+/** The line a resumed card shows above the step it offers. */
+export const CHAIN_RESUMED_LINE = 'Your earlier steps are on-chain; this one is what’s left. It waits for your tap.'

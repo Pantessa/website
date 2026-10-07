@@ -260,3 +260,70 @@ export async function swapValueUsd(
   }
   return null
 }
+
+// ── The depth probe (which chain is DEEPER for a sized buy) ─────────────────
+
+/** The size every chain is measured at — big enough that a thin bridged
+ *  copy's pool shows its decay, small enough to quote on every real pool. */
+export const SPOT_DEPTH_PROBE_USD = 500
+
+export interface SpotDepth {
+  chainId: number
+  /** Whole tokens out per dollar at the probe size, best tier, fee included. */
+  outPerUsd: number
+  decayBps: number | null
+  trusted: boolean
+  via: string
+}
+
+/**
+ * How well a chain fills a `usd`-sized BUY of `token` (stable in, token out)
+ * on Uniswap v3: the best fee tier's fill at the full size, and whether the
+ * per-dollar fill decays within the depth fence between half the size and
+ * the full size (lib/token-home inferSpotChain ranks these across chains).
+ * Null when nothing quotes here — no pool, a stock chain, an unknown token.
+ * Single-hop against the chain's primary stable, like usdPerToken.
+ */
+export async function spotDepthProbe(chainId: number, token: string, usd: number = SPOT_DEPTH_PROBE_USD): Promise<SpotDepth | null> {
+  const chain = chainById(chainId)
+  if (!chain || !chain.uniswap || chainId === STOCK_TAPE_CHAIN_ID) return null
+  const addr = resolveToken(token, chainId)
+  if (!addr) return null
+  const stable = primaryStable(chainId)
+  if (!stable || stable.address.toLowerCase() === addr.toLowerCase() || chain.stables[addr.toLowerCase()] !== undefined) return null
+  const client = publicClientFor(chainId)
+  if (!client) return null
+  const dec = tokenDecimals(token, chainId) ?? 18
+  const amountIn = BigInt(Math.round(usd * 10 ** stable.decimals))
+  if (amountIn <= BigInt(0)) return null
+  const quote = async (amount: bigint, fee: number): Promise<bigint | null> => {
+    try {
+      const { result } = await client.simulateContract({
+        address: chain.uniswap!.quoterV2,
+        abi: QUOTER_V2_ABI,
+        functionName: 'quoteExactInputSingle',
+        args: [{ tokenIn: stable.address, tokenOut: addr as `0x${string}`, amountIn: amount, fee, sqrtPriceLimitX96: BigInt(0) }],
+      })
+      return result[0]
+    } catch {
+      return null
+    }
+  }
+  const tiers = await Promise.all(
+    FEE_TIERS.map(async (fee) => {
+      const [full, half] = await Promise.all([quote(amountIn, fee), quote(amountIn / BigInt(2), fee)])
+      return { fee, full, verdict: judgePoolDepth(full, half) }
+    }),
+  )
+  const live = tiers.filter((t) => t.full !== null && t.full > BigInt(0))
+  if (live.length === 0) return null
+  const trusted = live.filter((t) => t.verdict.trusted)
+  // A trusted tier with the most out wins; with none trusted, the least drained.
+  const best =
+    trusted.length > 0
+      ? trusted.reduce((a, b) => (b.full! > a.full! ? b : a))
+      : live.reduce((a, b) => ((b.verdict.decayBps ?? Infinity) < (a.verdict.decayBps ?? Infinity) ? b : a))
+  const outPerUsd = Number(best.full!) / 10 ** dec / usd
+  if (!Number.isFinite(outPerUsd) || outPerUsd <= 0) return null
+  return { chainId, outPerUsd, decayBps: best.verdict.decayBps, trusted: best.verdict.trusted, via: `Uniswap v3 ${tokenLabel(token, chainId)}/${stable.symbol} ${best.fee / 10_000}%` }
+}
