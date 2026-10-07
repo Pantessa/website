@@ -31,6 +31,8 @@
 // can see itself.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import EmptyDoor from '@/components/guide/EmptyDoor'
+import { WALLET_EMPTY_DOOR } from '@/lib/first-run'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useYeetfulStore } from '@/lib/store'
@@ -76,6 +78,7 @@ import { useAnnouncedWalletName } from '@/lib/use-wallet-name'
 import TokenIcon from '@/components/TokenIcon'
 import Sheet from '@/components/mobile/Sheet'
 import { isPhoneViewport } from '@/lib/phone-shell'
+import { friendlyError } from '@/lib/friendly-error'
 import { cn } from '@/lib/utils'
 import './wallet-phone.css'
 
@@ -440,7 +443,7 @@ export function WalletDetails({
         }
         setView(data)
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Could not read the wallet.')
+        setError(friendlyError(e, 'Could not read the wallet.'))
       } finally {
         setLoading(false)
       }
@@ -595,8 +598,37 @@ export function WalletDetails({
       </div>
     ) : null
 
+  // THE $0 DOOR (squad pre-gtm, FIRSTRUN): a wallet every chain answered
+  // for and nothing on any of them used to read as six rows of "Nothing on…"
+  // under a $0.00 — a stranger's fresh account, the common first case. The
+  // same door the wallet page wears when nothing is connected: what this
+  // window will show, and the two ways money gets in (a card, a receive
+  // address). The chain rows stay under it (they are the proof it looked).
+  const walletEmpty = !!view && funded.length === 0 && emptyChains.length > 0
+  const emptyDoor = walletEmpty ? (
+    <EmptyDoor
+      id="wallet-empty"
+      compact={!page}
+      eyebrow={WALLET_EMPTY_DOOR.eyebrow}
+      title={WALLET_EMPTY_DOOR.title}
+      body={WALLET_EMPTY_DOOR.body}
+      lines={WALLET_EMPTY_DOOR.lines}
+      primary={{ kind: 'button', label: buying ? 'Opening Stripe…' : WALLET_EMPTY_DOOR.card, onClick: () => void buy(), disabled: buying }}
+      secondary={{
+        kind: 'button',
+        label: WALLET_EMPTY_DOOR.receive,
+        onClick: () => {
+          setReceive(true)
+          setSending(false)
+          setRebalancing(false)
+        },
+      }}
+    />
+  ) : null
+
   const chainsList = (
     <div className="space-y-1.5">
+      {emptyDoor}
       {view ? (
         <>
           {funded.map((c) => (

@@ -200,6 +200,163 @@
   .guide__cta:hover { transform: none; }
 }
 
+
+/* ── THE EMPTY DOOR (components/guide/EmptyDoor, squad pre-gtm): every empty
+   state of the spine is this card — mark · eyebrow · lesson · what lands
+   here · ONE action. Same tokens, same contract as the guide card. ── */
+.door {
+  position: relative;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  column-gap: 14px;
+  align-items: start;
+  width: 100%;
+  padding: 18px 18px 16px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--fg);
+  text-align: left;
+  font-family: var(--mk-font-ui, var(--font-chat-body, system-ui, sans-serif));
+  background:
+    radial-gradient(120% 90% at 0% 0%, color-mix(in oklch, var(--accent) 9%, transparent), transparent 60%),
+    var(--mk-surface, var(--surf-1));
+  animation: guide-in var(--mk-dur-base, .22s) var(--mk-ease, ease) both;
+}
+.door__mark { display: grid; place-items: center; width: 32px; height: 32px; margin-top: 2px; }
+.door__body { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.door__eyebrow { font-family: var(--mk-font-mono, var(--font-mono)); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); line-height: 1.4; }
+.door__title {
+  margin: 0;
+  font-family: var(--font-chat-display, var(--mk-font-display, Georgia, serif));
+  font-weight: 500;
+  font-size: 19px;
+  line-height: 1.2;
+  letter-spacing: -0.014em;
+  color: var(--fg);
+  text-wrap: balance;
+}
+.door__text { margin: 2px 0 0; max-width: 56ch; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.door__lines { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.door__lines li { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 8px; align-items: baseline; font-size: 12.5px; line-height: 1.4; color: var(--muted); }
+.door__n { font-family: var(--mk-font-mono, var(--font-mono)); font-size: 10px; letter-spacing: .06em; color: var(--accent); }
+.door__acts { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin-top: 14px; min-width: 0; }
+.door__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .01em;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter var(--mk-dur-fast, .12s) ease, transform var(--mk-dur-fast, .12s) ease;
+}
+.door__cta:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.door__cta:active { transform: none; }
+.door__cta:disabled { opacity: .6; cursor: default; transform: none; filter: none; }
+.door__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--muted) 45%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.door__link:hover { color: var(--fg); }
+.door__cta:focus-visible, .door__link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The rail's column (≈300px): the mark sits above the words, type a step down. */
+.door--compact { grid-template-columns: minmax(0, 1fr); row-gap: 10px; padding: 16px 14px 14px; border-radius: 12px; }
+.door--compact .door__mark { width: 22px; height: 22px; margin: 0; }
+.door--compact .door__title { font-size: 16.5px; }
+.door--compact .door__text { font-size: 12.5px; }
+.door--compact .door__lines li { font-size: 12px; }
+.door--compact .door__cta { min-height: 34px; font-size: 12.5px; padding: 0 14px; white-space: normal; text-align: left; line-height: 1.25; padding-block: 8px; }
+:root[data-theme='light'] .door { box-shadow: 0 1px 0 rgb(16 21 18 / 0.04); }
+@media (hover: none) {
+  .door__cta, .door__link { min-height: 44px; }
+  .door--compact .door__cta { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .door { animation: none; }
+  .door__cta:hover { transform: none; }
+}
+
+
+/* ── THE KEEP-IT MOMENT (components/guide/KeepItBar): after the first signed
+   receipt — the mark, "Signed." + the sentence, the facts line, one warm
+   invitation and "Not now". Never a modal; tokens only. ── */
+.keep {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  column-gap: 12px;
+  align-items: center;
+  width: 100%;
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 12px 14px 12px 14px;
+  border: 1px solid color-mix(in oklch, var(--accent) 35%, var(--line));
+  border-radius: 14px;
+  color: var(--fg);
+  text-align: left;
+  font-family: var(--mk-font-ui, var(--font-chat-body, system-ui, sans-serif));
+  background:
+    radial-gradient(120% 120% at 0% 50%, color-mix(in oklch, var(--accent) 12%, transparent), transparent 55%),
+    var(--mk-surface, var(--surf-1));
+  animation: guide-in var(--mk-dur-base, .22s) var(--mk-ease, ease) both;
+}
+.keep__mark { display: grid; place-items: center; width: 30px; height: 30px; }
+.keep__body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.keep__title { margin: 0; font-family: var(--font-chat-display, var(--mk-font-display, Georgia, serif)); font-weight: 500; font-size: 17px; line-height: 1.25; letter-spacing: -0.012em; color: var(--fg); }
+.keep__ask { color: var(--muted); font-weight: 400; }
+.keep__facts { margin: 0; font-family: var(--mk-font-mono, var(--font-mono)); font-size: 11px; letter-spacing: .04em; color: var(--muted-2); }
+.keep__receipt { color: var(--accent); text-decoration: none; }
+.keep__receipt:hover { text-decoration: underline; text-underline-offset: 2px; }
+.keep__text { margin: 4px 0 0; max-width: 60ch; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+.keep__acts { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+.keep__cta {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 38px; padding: 0 16px; border: 1px solid transparent; border-radius: 999px;
+  background: var(--accent); color: var(--ink); font-family: inherit; font-size: 13px; font-weight: 600; letter-spacing: .01em; line-height: 1; white-space: nowrap; cursor: pointer;
+  transition: filter var(--mk-dur-fast, .12s) ease, transform var(--mk-dur-fast, .12s) ease;
+}
+.keep__cta:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.keep__cta:disabled { opacity: .7; cursor: default; transform: none; filter: none; }
+.keep__later { min-height: 28px; padding: 0 6px; border: 0; background: transparent; color: var(--muted-2); font-family: inherit; font-size: 12px; cursor: pointer; }
+.keep__later:hover { color: var(--fg); }
+.keep__cta:focus-visible, .keep__later:focus-visible, .keep__receipt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.keep--compact { grid-template-columns: 24px minmax(0, 1fr) auto; padding: 8px 8px 8px 12px; border-radius: 12px; column-gap: 10px; }
+.keep--compact .keep__mark { width: 24px; height: 24px; }
+.keep--compact .keep__title { font-size: 14.5px; }
+.keep--compact .keep__ask { display: none; }
+.keep--compact .keep__acts { flex-direction: row; align-items: center; gap: 2px; }
+.keep--compact .keep__cta { min-height: 40px; padding: 0 12px; font-size: 12.5px; }
+.keep--compact .keep__later { min-height: 40px; }
+@media (max-width: 640px) {
+  .keep:not(.keep--compact) { grid-template-columns: 26px minmax(0, 1fr); row-gap: 10px; }
+  .keep:not(.keep--compact) .keep__acts { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 10px; }
+  .keep:not(.keep--compact) .keep__cta { flex: 1; min-height: 44px; }
+  .keep:not(.keep--compact) .keep__later { min-height: 44px; min-width: 44px; }
+}
+@media (hover: none) { .keep__cta, .keep__later { min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) { .keep { animation: none; } .keep__cta:hover { transform: none; } }
+
 /* MOBILE */
 /* Measured on the integrated tree (feat/front-door @ 60702500, coarse
    pointer — MOBILE lane, squad front-door 2026-10-06):
@@ -215,4 +372,23 @@
 @media (max-width: 374px) {
   .guide--compact .guide__num { display: none; }
   .guide--compact .guide__title { -webkit-line-clamp: 3; }
+}
+
+/* MOBILE (pre-gtm r2): the keep-it bar's two buttons were 40px under a thumb (measured at 320–430 on /chat after a
+   receipt — the phone seat is the compact row). 44px floors; words and widths unchanged. */
+@media (hover: none) {
+  .keep--compact .keep__cta, .keep--compact .keep__later { min-height: 44px; } /* the compact row's 40px beat line 357's floor */
+  .keep__later { min-width: 44px; }
+}
+
+/* FINISH (pre-gtm): at phone width the compact keep-it row squeezed its facts into a ~110px column beside the two
+   buttons — one word per line, a 340px-tall row. Under 640px the row reads as a line or two: mark + title + facts as a
+   sentence across the full width, the two actions on their own row below (44px targets kept). */
+@media (max-width: 640px) {
+  .keep--compact { grid-template-columns: 24px minmax(0, 1fr); row-gap: 8px; align-items: start; }
+  .keep--compact .keep__mark { margin-top: 1px; }
+  .keep--compact .keep__facts { line-height: 1.45; }
+  .keep--compact .keep__acts { grid-column: 1 / -1; justify-content: flex-end; gap: 6px; }
+  .keep--compact .keep__cta { flex: 1; min-height: 44px; }
+  .keep--compact .keep__later { min-height: 44px; min-width: 44px; padding: 0 10px; }
 }

@@ -20,7 +20,7 @@
   [data-wallet-window] [data-wallet-field] :is(button, a[href])::after {
     content: '';
     position: absolute;
-    inset: -12px -6px;
+    inset: -13px -6px; /* pre-gtm: -12 measured a 43px hit on a 19px chip */
   }
 }
 

@@ -134,3 +134,18 @@ body {
     background-color: color-mix(in oklch, var(--surf-2) 90%, transparent);
   }
 }
+
+/* The named failure line (components/FetchFailed, pre-gtm POLISH r2). A read
+   that failed says so in one quiet line; "—" stays for genuinely empty data. */
+.fetchfail {
+  display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
+  margin: 0; font-size: 11px; line-height: 1.4; letter-spacing: 0.02em; color: var(--muted);
+}
+.fetchfail__retry {
+  font: inherit; color: var(--accent); background: none; border: 0; padding: 2px 0;
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+}
+.fetchfail__retry:hover { color: var(--fg); }
+.fetchfail__retry:disabled { color: var(--muted-2); cursor: default; text-decoration: none; }
+@media (pointer: coarse) { .fetchfail__retry { min-height: 44px; } }
+.mkt-perf .fetchfail { grid-column: 1 / -1; }

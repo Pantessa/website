@@ -104,3 +104,16 @@
   .mkn__row { grid-template-columns: minmax(0, 1fr); }
   .mkn__pin { align-self: start; }
 }
+
+/* MOBILE (squad pre-gtm, 2026-10-07): under a thumb a headline is a 20px link (one line) or 39px (two) — every
+   /t News row measured short at 320–430. The link takes a 44px floor; the padding is given back as negative margin,
+   so the row's layout and the text's place never move. The Pin chip gets the same floor. */
+@media (hover: none) {
+  .mkn__title { min-height: 44px; margin: -6px 0 -12px; padding: 9px 0 12px; }
+  .mkn__pin { min-height: 44px; }
+}
+/* The feed's "Try again" (a load error) is underlined words in a sentence, 52×19: a 44px hit area, same look. */
+@media (hover: none) {
+  .mkc__err button { position: relative; }
+  .mkc__err button::after { content: ''; position: absolute; inset: -13px -6px; }
+}

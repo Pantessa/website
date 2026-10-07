@@ -66,7 +66,9 @@ import { fenceGuardianCoin } from '@/lib/hl-guardian-fence'
 
 import { hlPerpUniverse } from '@/lib/hl-universe'
 import { rescueIntent } from '@/lib/intent-rescue'
+import { starterDoor } from '@/lib/starter-door'
 import { HOUSE_UNAVAILABLE_REPLY } from '@/lib/fetch-words'
+import { buildFailedTurn, HOUSE_DOWN_CHIPS, leaksBuildPlumbing, swapAskSentence } from '@/lib/build-failure'
 import { buildsNatively } from '@/scripts/ask-ladder'
 import { noPoolChips, nothingToSellChips, unpriceableSellChips } from '@/lib/wall-chips'
 import { armGuardianPolicy } from '@/lib/hl-guardian-store'
@@ -1793,7 +1795,7 @@ async function handleChatTurn(req: NextRequest) {
         })
       } catch (e) {
         nativeTrace({ type: 'note', level: 'warn', label: `bridge build failed: ${(e as Error).message.slice(0, 160)}` })
-        return NextResponse.json({ reply: `🌉 Couldn't build the bridge transfer: ${(e as Error).message}` })
+        return NextResponse.json(buildFailedTurn('bridge transfer', e, message, '🌉 '))
       }
     }
 
@@ -2126,7 +2128,7 @@ async function handleChatTurn(req: NextRequest) {
         })
       } catch (e) {
         nativeTrace({ type: 'note', level: 'warn', label: `nft build failed: ${(e as Error).message.slice(0, 160)}` })
-        return NextResponse.json({ reply: `🖼️ Couldn't build that NFT action: ${(e as Error).message}` })
+        return NextResponse.json(buildFailedTurn('NFT action', e, message, '🖼️ '))
       }
     }
 
@@ -2181,7 +2183,7 @@ async function handleChatTurn(req: NextRequest) {
         })
       } catch (e) {
         nativeTrace({ type: 'note', level: 'warn', label: `transfer build failed: ${(e as Error).message.slice(0, 160)}` })
-        return NextResponse.json({ reply: `💸 Couldn't build the transfer: ${(e as Error).message}` })
+        return NextResponse.json(buildFailedTurn('transfer', e, message, '💸 '))
       }
     }
 
@@ -2425,6 +2427,17 @@ async function handleChatTurn(req: NextRequest) {
     //    end. The tap re-enters the ladder, where that layer's own funding
     //    plan (bridge legs, gas legs, the card door) does the rest. Reads and
     //    questions return null and stay the planner's.
+    // ── The starter door — "help", "hi", "what can you do", a bare "eth" or
+    //    "aapl". Not an ask and not a real question: three chips the ladder
+    //    builds and the two public surfaces, with no model in the loop
+    //    (lib/starter-door; pre-gtm 2026-10-06). Real questions fall through.
+    {
+      const starter = starterDoor(message)
+      if (starter) {
+        nativeTrace({ type: 'status', label: `starter door (${starter.kind}): answered without the model` })
+        return NextResponse.json({ reply: starter.reply, clarify: starter.clarify, buildPath: starter.buildPath })
+      }
+    }
     if (moneyShaped(message)) {
       const rescue = rescueIntent(message, buildsNatively)
       if (rescue) {
@@ -2541,6 +2554,15 @@ async function handleChatTurn(req: NextRequest) {
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Chat request failed'
     console.error('Chat error:', error)
+    // A stranger never reads plumbing, and never ends on a line with no next
+    // step (pre-gtm 2026-10-06): the house model's outage and any thrown
+    // plumbing become ONE honest reply with the chips that don't need the
+    // model (the native builders answer them). `error` stays on the body for
+    // telemetry (outcome 'error'); the status is 200 so the thread shows it
+    // as a turn, not a transport failure.
+    if (msg === HOUSE_UNAVAILABLE_REPLY || leaksBuildPlumbing(msg)) {
+      return NextResponse.json({ reply: HOUSE_UNAVAILABLE_REPLY, error: msg, clarify: { question: 'Try one of these', options: HOUSE_DOWN_CHIPS } })
+    }
     return NextResponse.json({ error: msg }, { status: 502 })
   }
 }
@@ -3624,7 +3646,7 @@ async function buildAaveSupplyTurn(
     // the wallet holds 0.000000…") instead of a model's guess.
     const msg = err instanceof Error ? err.message : 'the build failed'
     trace({ type: 'receipt', receipt: { name: agent.name, endpoint: 'build_supply', priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
-    return NextResponse.json({ reply: `🏦 Couldn't build the supply: ${msg}` })
+    return NextResponse.json(buildFailedTurn('supply', err, originalMessage ?? '', '🏦 '))
   }
 
   // 3) Guard — nothing is offered unless every step verifies.
@@ -3885,7 +3907,7 @@ async function buildAaveOpTurn(
     // surface its reason verbatim, never a model's guess.
     const msg = err instanceof Error ? err.message : 'the build failed'
     trace({ type: 'receipt', receipt: { name: agent.name, endpoint: `build_${op}`, priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
-    return NextResponse.json({ reply: `🏦 Couldn't build the ${op}: ${msg}` })
+    return NextResponse.json(buildFailedTurn(op, err, originalMessage ?? '', '🏦 '))
   }
 
   // 5) Guard — nothing is offered unless every step verifies.
@@ -4132,7 +4154,7 @@ async function buildMorphoLendTurn(
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'the build failed'
     trace({ type: 'receipt', receipt: { name: agent.name, endpoint: 'build_lend', priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
-    return NextResponse.json({ reply: `🏦 Couldn't build the lend: ${msg}` })
+    return NextResponse.json(buildFailedTurn('lend', err, originalMessage ?? '', '🏦 '))
   }
 
   // 4) Guard — nothing is offered unless every step verifies.
@@ -4371,7 +4393,7 @@ async function buildMorphoOpTurn(
     // server-side — surface its reason verbatim, never a model's guess.
     const msg = err instanceof Error ? err.message : 'the build failed'
     trace({ type: 'receipt', receipt: { name: agent.name, endpoint: MORPHO_OP_TOOL[op].tool, priceUsd: 0, ok: false, note: msg.slice(0, 200) } })
-    return NextResponse.json({ reply: `🏦 Couldn't build the ${opWords}: ${msg}` })
+    return NextResponse.json(buildFailedTurn(opWords, err, originalMessage ?? '', '🏦 '))
   }
 
   // 4) Guard — the amount rule per op. Max repay/withdraw ride the
@@ -5628,7 +5650,7 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
       }
       const msg = err instanceof Error ? err.message : 'quote failed'
       trace({ type: 'note', level: 'warn', label: `Uniswap build failed: ${msg.slice(0, 200)}` })
-      return NextResponse.json({ reply: `🔄 Couldn't build the Uniswap swap: ${msg}` })
+      return NextResponse.json(buildFailedTurn('Uniswap swap', err, swapAskSentence(intent, FUNDING_CHAIN_WORD[chainId]) ?? '', '🔄 '))
     }
   }
 
@@ -5684,7 +5706,7 @@ async function prepareSwapTurnCore(intent: SwapIntent, walletAddress: string | u
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'quote failed'
     trace({ type: 'note', level: 'warn', label: `CoW order build failed: ${msg.slice(0, 200)}` })
-    return NextResponse.json({ reply: `🔄 Couldn't build the swap: ${msg}` })
+    return NextResponse.json(buildFailedTurn('swap', err, swapAskSentence(intent, FUNDING_CHAIN_WORD[chainId]) ?? '', '🔄 '))
   }
 }
 
@@ -5809,7 +5831,7 @@ async function prepareUniswapV4Turn(
     }
     const msg = err instanceof Error ? err.message : 'quote failed'
     trace({ type: 'note', level: 'warn', label: `Uniswap v4 build failed: ${msg.slice(0, 200)}` })
-    return NextResponse.json({ reply: `🔄 Couldn't build the Uniswap swap: ${msg}` })
+    return NextResponse.json(buildFailedTurn('Uniswap swap', err, swapAskSentence(intent, FUNDING_CHAIN_WORD[chainId]) ?? '', '🔄 '))
   }
 }
 
@@ -5892,7 +5914,7 @@ async function prepareLifiTurn(
     }
     const msg = err instanceof Error ? err.message : 'quote failed'
     trace({ type: 'note', level: 'warn', label: `LiFi build failed: ${msg.slice(0, 200)}` })
-    return NextResponse.json({ reply: `🔄 Couldn't build the venue-settled swap: ${msg}` })
+    return NextResponse.json(buildFailedTurn('venue-settled swap', err, swapAskSentence(intent, FUNDING_CHAIN_WORD[chainId]) ?? '', '🔄 '))
   }
 }
 

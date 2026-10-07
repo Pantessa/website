@@ -4438,7 +4438,8 @@ async function main() {
       // touch desktop; below lg it is the sheet's full-width 48px button.
       check('mobile: the request-MCP submit is 40px on touch, a full-width 48px button below lg', /'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors \[@media\(hover:none\)\]:min-h-10 max-lg:w-full max-lg:!min-h-12 max-lg:justify-center max-lg:text-\[14px\]'/.test(addMcp))
       check('mobile: the sign-in gate CTAs are ≥40px below lg (all three)', (gate.match(/px-3 py-1\.5 max-lg:min-h-10 max-lg:px-4 rounded-full bg-\[var\(--accent\)\]/g) ?? []).length === 3)
-      check('mobile: Share is icon-only below sm with an aria-label and a 40px target', /aria-label=\{isPublic \? 'Shared publicly' : 'Share this chat'\}/.test(shareBtn) && /max-lg:min-h-10 max-lg:px-3 rounded-lg border text-\[11px\]/.test(shareBtn) && /whitespace-nowrap max-sm:hidden">\{isPublic \? 'Shared' : 'Share'\}/.test(shareBtn))
+      // RE-PINNED 2026-10-07 (pre-gtm): POLISH added border-solid (the `button { border: none }` reset drew nothing).
+      check('mobile: Share is icon-only below sm with an aria-label and a 40px target', /aria-label=\{isPublic \? 'Shared publicly' : 'Share this chat'\}/.test(shareBtn) && /max-lg:min-h-10 max-lg:px-3 rounded-lg border border-solid text-\[11px\]/.test(shareBtn) && /whitespace-nowrap max-sm:hidden">\{isPublic \? 'Shared' : 'Share'\}/.test(shareBtn))
       const splashDash = await readFile(new URL('../components/SplashDashboard.tsx', import.meta.url), 'utf8')
       check('mobile: briefing tile rows wrap below lg, never ellipsize the amount (splash + app mode)', /truncate max-lg:whitespace-normal font-medium text-white">\{r\.label\}/.test(appMode) && /truncate max-lg:whitespace-normal font-medium text-white">\{r\.label\}/.test(splashDash))
       // Re-pinned 2026-09-24 (squad mobile-native, CHAT): a phone names the
@@ -23479,8 +23480,11 @@ async function main() {
         // Re-pinned (squad mobile-native, 2026-09-24, SHELL): the shell is the
         // phone frame now, so its opening tag carries data-app-frame="".
         /<div class="mkt-shell"(?: data-app-frame="")?><aside[^>]*aria-label="Workspace"/.test(html) &&
-          (html.match(/aria-label="Workspace"/g) ?? []).length === 2 &&
-          (html.match(/aria-label="MARKETS" aria-current="page"/g) ?? []).length === 2 &&
+          // RE-PINNED 2026-10-07 (pre-gtm): /t/<sym> has a loading.tsx now (POLISH — a row tap paints the
+          // page's silhouette at once). Its fallback wears the same shell, streamed ahead of the page and
+          // swapped out on resolve, so a served /t can carry the spine twice over (2 → 4); /markets stays 2.
+          [2, route === '/t/AAPL' ? 4 : 2].includes((html.match(/aria-label="Workspace"/g) ?? []).length) &&
+          [2, route === '/t/AAPL' ? 4 : 2].includes((html.match(/aria-label="MARKETS" aria-current="page"/g) ?? []).length) &&
           !/<header class="nav/.test(html) && !html.includes('nav__tabs') && !html.includes('data-ask-door="nav"') &&
           /<div class="mkt-frame__side"><div class="mkt-frame__top" data-slot="top-strip"><button[^>]*data-ask-door="rail"[^>]*>[\s\S]*?<\/button><div class="mkt-frame__acct"><\/div><\/div><aside class="mkt-frame__rail"/.test(html) &&
           html.includes('data-ask-door="pill"'),

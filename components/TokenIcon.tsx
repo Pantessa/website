@@ -79,7 +79,9 @@ export default function TokenIcon({
         width: size,
         fontSize: Math.max(8, Math.round(size * 0.34)),
         background: `hsl(${hue} 45% 52% / 0.16)`,
-        color: `hsl(${hue} 42% 58%)`,
+        // Ink pulled toward --fg (pre-gtm POLISH r2): the bare hue read 1.7–2.3:1 on its own tint on paper;
+        // the mix darkens it in light and brightens it in dark.
+        color: `color-mix(in oklch, hsl(${hue} 42% 58%) 50%, var(--fg))`,
       }}
     >
       {symbol.slice(0, 3).toUpperCase()}

@@ -6,7 +6,9 @@
 // a min-h-full flex column, so percentage heights don't resolve; growing
 // into the free space is what keeps the vertical centering.
 
-import { Link2, Send, Sparkles } from 'lucide-react'
+import { Link2, Send } from 'lucide-react'
+import { PantessaMark } from '@/components/Logo'
+import { CHAT_EMPTY } from '@/lib/first-run'
 import { EXAMPLE_PROMPTS } from '@/lib/examples'
 import SampleCallDemo from '@/components/SampleCallDemo'
 import GuideSeat from '@/components/guide/GuideSeat'
@@ -18,7 +20,7 @@ function ExampleGallery({ onPick }: { onPick: (prompt: string, slug?: string) =>
   return (
     <div className="mt-7 w-full max-w-md">
       <p className="mono text-[11px] uppercase tracking-wider text-[color:var(--muted-2)] mb-2">
-        Run one — a tap sends it
+        {CHAT_EMPTY.tap}
       </p>
       <div className="flex flex-wrap justify-center gap-2">
         {EXAMPLE_PROMPTS.map((ex) => (
@@ -63,8 +65,10 @@ export default function EmptyState({
     // banner sits IN FLOW above the composer there, so nothing floats over
     // the empty state; at lg+ the scroller's own pb-32 reserves it.
     <div data-empty-state="" className="flex flex-col items-center justify-center flex-1 text-center py-20">
-      <div className="w-16 h-16 rounded-2xl tint-bg-accent-15 border tint-border-accent-50 flex items-center justify-center mb-6">
-        <Sparkles className="w-8 h-8" style={{ color: 'var(--accent)' }} />
+      {/* The Emerald Cut, not a sparkle: the first screen of the chat wears
+          the mark every other door wears (squad pre-gtm). */}
+      <div className="w-16 h-16 rounded-2xl tint-bg-accent-15 border tint-border-accent-50 flex items-center justify-center mb-6" aria-hidden>
+        <PantessaMark size={36} />
       </div>
       {/* The chat voice face (Fraunces) — not the site serif; the thread and
           the invitation should speak in the same type. */}
@@ -72,7 +76,7 @@ export default function EmptyState({
         className="text-white font-semibold mb-2"
         style={{ fontFamily: 'var(--font-chat-display)', fontSize: '1.75rem', letterSpacing: '-0.01em' }}
       >
-        Say what should happen.
+        {CHAT_EMPTY.title}
       </h3>
       <p className="text-[color:var(--muted)] text-sm max-w-sm">
         {autoRouter

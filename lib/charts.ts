@@ -213,6 +213,33 @@ const CHART_STOCK_NAMES: Record<string, string> = {
   NUBANK: 'NU', RIGETTI: 'RGTI', CEREBRAS: 'CBRS', CARNIVAL: 'CCL', DELL: 'DELL', IBM: 'IBM',
 }
 
+/** A household name → the ticker it charts ("apple" → AAPL, "bitcoin" →
+ *  BTC), or null. The /t/<symbol> page redirects a named URL onto the
+ *  ticker's page (pre-gtm 2026-10-06: /t/apple rendered "APPLE is not
+ *  listed" beside a chart module that knew the name), and the money-shape
+ *  gate counts a name as evidence of an asset. */
+export function chartSymbolByName(raw: string): string | null {
+  const norm = normalizeChartSymbol(raw)
+  if (!norm) return null
+  const sym = CHART_NAMES[norm] ?? CHART_STOCK_NAMES[norm]
+  return sym && chartPairFor(sym) ? sym : null
+}
+
+/** Does this one word name an asset a stranger could mean money by? A coin
+ *  we chart (BTC, SOL, DOGE, HYPE…), a household name (apple, bitcoin), or a
+ *  stock ticker of four+ letters that is not also an English word. Short or
+ *  word-shaped stock tickers ("on", "run", "now", "snap") are prose until a
+ *  sentence sizes them — the English-word fence below is the same one the
+ *  chart-ask parser uses. Pure; lib/ask-failure-shape reads it. */
+export function isMoneyAssetWord(word: string): boolean {
+  const norm = normalizeChartSymbol(word)
+  if (!norm || norm.length < 3 || norm.length > 12) return false
+  if (CHART_NAMES[norm] || CHART_STOCK_NAMES[norm]) return true
+  const sym = COINBASE_ALIASES[norm] ?? norm
+  if (COINBASE_USD.has(sym) || HYPERLIQUID_PERPS.has(sym)) return true
+  return norm.length >= 4 && !ENGLISH_WORD_TICKERS.has(norm) && isChartedStock(norm)
+}
+
 /** Stock tickers that are also ordinary English words. Typed in lowercase
  *  inside a sentence they are prose ("show me the cost chart" is not a
  *  Costco ask); they chart only as "$COST", "COST", or by company name.

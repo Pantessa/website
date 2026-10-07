@@ -96,6 +96,15 @@ export default function SymbolPage({
   const sym = pair?.symbol ?? symbol
   const name = symbolName(sym)
   const [stats, setStats] = useState<ChartStats | null>(null)
+  // The header's "loading … candles" never ended when the feed failed (pre-gtm
+  // POLISH r3): after 12s with no stats it says the feed didn't answer.
+  const [statsLate, setStatsLate] = useState(false)
+  useEffect(() => {
+    setStatsLate(false)
+    if (stats) return
+    const t = setTimeout(() => setStatsLate(true), 12_000)
+    return () => clearTimeout(t)
+  }, [sym, stats])
   const [expanded, setExpanded] = useState(false)
   const shellRef = useRef<HTMLDivElement | null>(null)
 
@@ -356,9 +365,11 @@ export default function SymbolPage({
                 <span className="sym__feed mono">{feedLabel}</span>
               </>
             ) : pair ? (
-              <span className="sym__feed mono">loading {feedLabel} candles…</span>
-            ) : (
-              <span className="sym__feed mono">{unknown ? 'Not listed' : 'No live chart yet'}</span>
+              <span className="sym__feed mono">{statsLate ? `${feedLabel} didn’t answer · retrying` : `loading ${feedLabel} candles…`}</span>
+            ) : unknown ? null : (
+              // An unknown ticker already wears "Not listed" in the title row;
+              // a second copy in the quote slot read as a stutter (POLISH, pre-gtm r1).
+              <span className="sym__feed mono">No live chart yet</span>
             )}
             {pair && day && rangeAt !== null && (
               <div className="mk-range" data-range-at={rangeAt.toFixed(3)} title={`24h range: $${fmtQuotePrice(day.low)} – $${fmtQuotePrice(day.high)}`}>

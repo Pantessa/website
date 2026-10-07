@@ -17,6 +17,9 @@
 // table across both. Narrow: one column — page, mint, money, table.
 
 import Link from 'next/link'
+import { useState } from 'react'
+import EmptyDoor from '@/components/guide/EmptyDoor'
+import { LINKS_DOOR } from '@/lib/first-run'
 import { CreatorPagePanel } from '@/components/CreatorPagePanel'
 import { LinkEarningsPanel } from '@/components/LinkEarningsPanel'
 import { LinkFunnelTable } from '@/components/LinkFunnelTable'
@@ -37,6 +40,8 @@ export default function LinksStudioView({
   inApp?: boolean
 }) {
   const { links, earnings, loadError, reload, updatedAt } = useIntentLinks()
+  // The empty door's example ask, handed to the form (MintLinkForm `prefill`).
+  const [prefill, setPrefill] = useState<{ ask: string; at: number } | null>(null)
 
   return (
     <section className={`linkstudio${inApp ? ' px-4 sm:px-6 py-6' : ''}`}>
@@ -64,6 +69,7 @@ export default function LinksStudioView({
           readQueryPrefill={readQueryPrefill}
           externalError={loadError}
           onMinted={reload}
+          prefill={prefill}
           className="linkstudio__mint"
         />
       </div>
@@ -111,10 +117,24 @@ export default function LinksStudioView({
         </div>
       )}
       {links && links.length === 0 && !loadError && (
-        <p className="mt-8 text-[13px] text-[color:var(--muted-2)]">
-          No links yet — mint the first one above. The ask you&apos;d paste in chat is exactly the
-          ask that belongs here.
-        </p>
+        // THE EMPTY DOOR (squad pre-gtm): the studio's first visit teaches
+        // what a link is for and hands the form an example ask — the
+        // hero's own buy — then focuses it. Nothing mints until the button.
+        <div className="mt-8">
+          <EmptyDoor
+            id="links"
+            eyebrow={LINKS_DOOR.eyebrow}
+            title={LINKS_DOOR.title}
+            body={LINKS_DOOR.body}
+            lines={LINKS_DOOR.lines}
+            primary={{
+              kind: 'button',
+              label: LINKS_DOOR.ctaLabel,
+              onClick: () => setPrefill({ ask: LINKS_DOOR.exampleAsk, at: Date.now() }),
+            }}
+            secondary={{ kind: 'href', label: 'How links pay', href: '/docs/creator-earnings' }}
+          />
+        </div>
       )}
     </section>
   )

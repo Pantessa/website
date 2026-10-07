@@ -80,8 +80,13 @@ export default function ShareActions({ post, variant = 'row', label = 'Share', l
   const [open, setOpen] = useState(false)
   const wrap = useRef<HTMLDivElement>(null)
 
+  // The device sheet only where it is the native gesture: a coarse pointer (a
+  // phone or tablet). A desktop browser's sheet is odd (or, headless/kiosk,
+  // never appears), so a fine pointer gets Copy link + Post on X instead
+  // (pre-gtm FINISH).
   useEffect(() => {
-    setNative(typeof navigator !== 'undefined' && typeof navigator.share === 'function')
+    const coarse = typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches
+    setNative(coarse && typeof navigator !== 'undefined' && typeof navigator.share === 'function')
   }, [])
 
   useEffect(() => {
@@ -110,12 +115,25 @@ export default function ShareActions({ post, variant = 'row', label = 'Share', l
     }
   }
 
+  // A sheet that throws, or never answers within 2s (a browser that exposes
+  // the API but shows nothing), falls back to the copy — exactly once.
   const share = async () => {
+    let done = false
+    const fallback = () => {
+      if (done) return
+      done = true
+      void copy()
+    }
+    const timer = setTimeout(fallback, 2000)
     try {
       await navigator.share({ title: post.title, text: post.text, url })
+      done = true
     } catch (e) {
       // Dismissed is not a failure; anything else falls back to the copy.
-      if ((e as { name?: string })?.name !== 'AbortError') void copy()
+      if ((e as { name?: string })?.name === 'AbortError') done = true
+      else fallback()
+    } finally {
+      clearTimeout(timer)
     }
   }
 

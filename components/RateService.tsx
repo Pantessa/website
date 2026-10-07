@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Star } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/lib/session'
+import { friendlyError } from '@/lib/friendly-error'
 
 /**
  * Star-rating widget — the human input to a service's reputation. SIWE-gated:
@@ -45,7 +46,7 @@ export default function RateService({
       setYourRating(d.yourRating)
     } catch (e) {
       setYourRating(prev)
-      setErr(e instanceof Error ? e.message : 'Could not save your rating.')
+      setErr(friendlyError(e, 'Could not save your rating.'))
     } finally {
       setSaving(false)
     }

@@ -67,7 +67,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'How do creator kickbacks work?',
-    a: `A swap that comes through an intent link pays ${LINK_FEE_PCT}, and half of it is the link creator’s — for life on every wallet that link brought. Claims open at $10 and pay out in USDC on Base. Every account earns the same split.`,
+    a: `A swap that comes through an intent link pays ${LINK_FEE_PCT}, and half of it is the link creator’s — for life on every wallet that link brought. On a Uniswap swap with a stablecoin side, that half is paid to the creator inside the same transaction; everything else accrues, and claims open at $10 in USDC on Base. Every account earns the same split.`,
   },
 ]
 

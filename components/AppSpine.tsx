@@ -475,6 +475,16 @@ export default function AppSpine({ surface = 'chat' }: { surface?: 'chat' | 'das
           href={signedOut ? '/' : '/chat'}
           title={signedOut ? 'Pantessa — home' : 'Pantessa — chat'}
           aria-label={signedOut ? 'Pantessa home' : 'Pantessa chat'}
+          // Inside the chat the URL is already /chat, so the link alone did
+          // nothing on /chat?tab=links|jobs|… (the mirror wrote the tab
+          // straight back). The home mark means "back to the chat": drop the
+          // destination and hand the main screen to the conversation, then
+          // let the link navigate as before (pre-gtm FINISH).
+          onClick={signedOut || offChat ? undefined : (e: MouseEvent<HTMLAnchorElement>) => {
+            if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+            setRailTab(DEFAULT_TAB)
+            setMainView('chat')
+          }}
           className="grid place-items-center w-full h-14 flex-shrink-0 border-b border-[var(--line)] text-white hover:bg-[var(--surf-2)] transition-colors"
         >
           <YeetfulMark size={25} />
