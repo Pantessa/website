@@ -125,6 +125,30 @@
 .mk-range__fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: linear-gradient(90deg, color-mix(in srgb, var(--mk-down, var(--sell)) 70%, transparent), var(--mk-up, var(--accent))); }
 .mk-range__tick { position: absolute; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--fg); box-shadow: 0 0 0 2px var(--bg); }
 .mk-range__k { grid-area: k; justify-self: center; font-size: 8.5px; letter-spacing: 0.16em; color: var(--muted-2); }
+/* ── Two columns (2026-10-07, Nate: "move the buy bar to the right and put
+   the $8.16 and bar below the uniswap logo"). The header's SEAT (a wrapper
+   div — an element can't query itself, and .sym must stay a plain block for
+   the full-screen chart) is the size container; nothing in it is fixed-
+   positioned, so the layout containment costs nothing. From 760px of column
+   width —
+   the rail-docked column from ~1170px viewports, a tablet without the rail
+   from ~800px — the identity block and the quote stack on the LEFT, under
+   the logo, and the act seat (the chips with the order ticket under them)
+   takes the RIGHT column for both rows; the guide seat gets a full row
+   under. `auto 1fr` rows: the ticket's height lands in the quote's row, so
+   the quote sits right under the title and the air falls below it. The DOM
+   order is untouched (the harness pins id → meta → quote → seat). Under
+   760px the wrapping flex rows above stand: a phone leads with the price,
+   then the chips, then the chart. */
+.sym__headseat { container: sym-head / inline-size; min-width: 0; }
+@container sym-head (min-width: 760px) {
+  .sym__head--mk2 { display: grid; grid-template-columns: minmax(300px, 5fr) minmax(0, 7fr); grid-template-rows: auto 1fr; grid-template-areas: "id exec" "quote exec"; align-items: start; column-gap: 28px; row-gap: 14px; }
+  .sym__head--mk2 > .sym__id { grid-area: id; }
+  .sym__head--mk2 > .sym__quote { grid-area: quote; justify-content: start; align-self: start; }
+  .sym__head--mk2 > .sym__exec { grid-area: exec; }
+  .sym__head--mk2 > .guide-seat { grid-column: 1 / -1; grid-row: 3; margin-top: 0; }
+  .sym__head--mk2 .mk-range { grid-template-columns: auto minmax(180px, 300px) auto; }
+}
 /* What you hold — one pill. */
 .mk-held { display: inline-flex; align-items: baseline; gap: 7px; height: 26px; padding: 0 10px; border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line)); border-radius: 999px; background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--fg); font: inherit; cursor: default; }
 button.mk-held { cursor: pointer; }

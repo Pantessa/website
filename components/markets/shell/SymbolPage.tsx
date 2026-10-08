@@ -337,7 +337,10 @@ export default function SymbolPage({
   return (
     <>
       <main className="sym" data-symbol={sym} data-vs={vs ?? undefined}>
-        {/* ── Header ── */}
+        {/* ── Header ── (its seat is the size container the two-column
+            layout reads, markets.css: an element can't query itself, and
+            .sym must stay a plain block for the full-screen chart) */}
+        <div className="sym__headseat">
         <header className="sym__head sym__head--mk2">
           <div className="sym__id">
             <TokenIcon symbol={sym} size={40} {...markWhere} />
@@ -392,6 +395,7 @@ export default function SymbolPage({
           )}
           {pair && <GuideSeat surface="symbol" symbol={sym} ask={composeAsk(pair, 'buy', { usd: 25 })} />}
         </header>
+        </div>
 
         {/* ── Chart (always mounted; the tabs never unmount it) ── */}
         <div ref={shellRef} className={expanded ? 'tchart sym__chart tchart--expanded' : 'tchart sym__chart'}>
