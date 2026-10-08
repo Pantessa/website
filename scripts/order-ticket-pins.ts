@@ -215,10 +215,16 @@ export function orderTicketPins(check: Check): void {
   // only — the DOM order the harness pins is untouched).
   const mk = rf('components/markets/markets.css')
   const headBlock = mk.split('@container sym-head (min-width: 760px) {')[1]?.split('\n}')[0] ?? ''
-  check('order ticket (header): the symbol header sits in a seat that is the size container (the chart stays outside it) and, from 760px of column width, a two-column grid — identity over the quote on the left, the act seat (chips + ticket) spanning both rows on the right, the guide seat a full row under; the quote left-aligns there and its rows are auto + 1fr so the quote hugs the title',
-    mk.includes('.sym__headseat { container: sym-head / inline-size; min-width: 0; }') && sp.includes('<div className="sym__headseat">') && sp.indexOf('<div className="sym__headseat">') < sp.indexOf('<header className="sym__head sym__head--mk2">') && !sp.includes('className="sym__headseat">\n        <div ref={shellRef}') && headBlock.includes('grid-template-areas: "id exec" "quote exec";') && headBlock.includes('grid-template-rows: auto 1fr;') &&
-      headBlock.includes('.sym__head--mk2 > .sym__quote { grid-area: quote; justify-content: start; align-self: start; }') && headBlock.includes('.sym__head--mk2 > .sym__exec { grid-area: exec; }') &&
-      headBlock.includes('.sym__head--mk2 > .guide-seat { grid-column: 1 / -1; grid-row: 3; margin-top: 0; }') && !sp.includes('sym__quote" style'),
+  check('order ticket (header): the symbol header sits in a seat that is the size container (the chart stays outside it) and, from 760px of column width, ONE grid whose rows run across both columns (re-pinned 2026-10-08) — the logo in its own gutter, title / quote / meta down the left, eyebrow / chips / ticket down the right on the same rows, the guide seat a full row under; the quote left-aligns there',
+    mk.includes('.sym__headseat { container: sym-head / inline-size; min-width: 0; }') && sp.includes('<div className="sym__headseat">') && sp.indexOf('<div className="sym__headseat">') < sp.indexOf('<header className="sym__head sym__head--mk2">') && !sp.includes('className="sym__headseat">\n        <div ref={shellRef}') && headBlock.includes('grid-template-areas: "logo . title . acta" "logo . quote . actb" ". . meta . actc";') && headBlock.includes('grid-template-rows: auto auto auto;') &&
+      // RE-PINNED 2026-10-08 (header grid): the rows run ACROSS both columns —
+      // the act seat's wrappers are `display: contents` and its eyebrow / chips /
+      // ticket are placed by area (acta / actb / actc), the logo hangs in its own
+      // gutter, the guide seat is row 4.
+      headBlock.includes('.sym__head--mk2 > .sym__quote { grid-area: quote; justify-content: start; align-self: start; }') &&
+      headBlock.includes('.sym__head--mk2 > .sym__id, .sym__head--mk2 > .sym__id > .sym__idtext, .sym__head--mk2 > .sym__exec, .sym__head--mk2 > .sym__exec > .sym__act { display: contents; }') &&
+      headBlock.includes('.sym__head--mk2 .sym__act > .mkt-ticket--strip { grid-area: actc; margin-top: 0; }') && sp.includes('<div className="sym__idtext min-w-0">') &&
+      headBlock.includes('.sym__head--mk2 > .guide-seat { grid-column: 1 / -1; grid-row: 4; margin-top: 0; }') && !sp.includes('sym__quote" style'),
     `block=${headBlock.length}`)
   check('order ticket (column seat): between 420 and 640px of ticket width the size row is box + presets on one line, the estimate and the slider under (grid order, no named areas), the button keeps the row, and the × keeps the corner while the available line takes its own',
     css.includes('@container mkt-ticket (min-width: 420px) and (max-width: 639.98px) {') && css.includes('.mkt-ticket__size > .mkt-ticket__presets { order: 1; justify-content: flex-end; }') &&

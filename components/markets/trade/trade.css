@@ -237,9 +237,18 @@
    tab's order card). Its own size container: one line for the size row from
    640px up; stacked under that (a 375px column). Tokens only — both themes
    come free. */
-.sym__act-chip[aria-pressed='true'] { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--fg); }
-.sym__act-chip--buy[aria-pressed='true'] { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
-.sym__act-chip--sell[aria-pressed='true'] { background: var(--sell); color: #fff; border-color: var(--sell); box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--sell); }
+/* The picked side stays lit and the others step back (2026-10-08). It used
+   to wear a ring (`box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent)`),
+   and on a 2x screen Chrome painted the ringed Buy chip's accent FILL dark
+   with accent text — Nate's screenshot, and headless Chrome at DPR 2: the
+   same chip painted filled at DPR 4, filled the moment the ring was removed,
+   and hollow again under an outline, a 3px outline, a zero-offset outline
+   and a pseudo-element ring. Every ring construction tripped it, so no ring:
+   while a ticket is open the unpicked chips dim, the picked one keeps its
+   full colour, and a picked sell chip fills (its unpicked look is hollow). */
+.sym__act[data-ticket] .sym__act-chip:not([aria-pressed='true']) { opacity: 0.55; }
+.sym__act[data-ticket] .sym__act-chip:not([aria-pressed='true']):hover { opacity: 1; }
+.sym__act-chip--sell[aria-pressed='true'] { background: var(--sell); color: #fff; border-color: var(--sell); }
 .mkt-ticket { container: mkt-ticket / inline-size; width: 100%; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--line-2, var(--line)); border-radius: 14px; background: var(--surf-1); text-align: left; min-width: 0; }
 .mkt-ticket--strip { margin-top: 2px; }
 .mkt-ticket--card { padding: 0; border: 0; background: transparent; border-radius: 0; }
