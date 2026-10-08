@@ -21,6 +21,7 @@
 //  Pure + client-safe. Pinned by scripts/chart-calls-pins.ts.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { fibLevels } from './chart-draw'
 import type { Candle } from './charts'
 import type { ChartLine, ChartState } from './chart-state'
 import { X_MENTION } from './social'
@@ -202,7 +203,7 @@ export function callCardSvg(candles: Candle[], state: ChartState | null, callT: 
   const inReach = (p: number) => p >= cLo - reach && p <= cHi + reach
   const lines = state?.lines ?? []
   for (const l of lines) {
-    const ps = l.kind === 'h' || l.kind === 'note' ? [l.price] : [l.p1, l.p2]
+    const ps = l.kind === 'h' || l.kind === 'note' ? [l.price] : l.kind === 'vline' ? [] : [l.p1, l.p2]
     for (const p of ps) {
       if (!inReach(p)) continue
       if (p < lo) lo = p
@@ -240,6 +241,16 @@ export function callCardSvg(candles: Candle[], state: ChartState | null, callT: 
       parts.push(`<line x1="0" x2="${w}" y1="${yy}" y2="${yy}" stroke="${sellish(l) ? o.sell : l.action ? o.accent : o.ink}" stroke-width="2"${l.action ? '' : ' stroke-dasharray="8 6"'} opacity="0.95"/>`)
     } else if (l.kind === 'trend') {
       parts.push(`<line x1="${x(l.t1).toFixed(1)}" y1="${y(l.p1).toFixed(1)}" x2="${x(l.t2).toFixed(1)}" y2="${y(l.p2).toFixed(1)}" stroke="${o.ink}" stroke-width="2.5" stroke-linecap="round"/>`)
+    } else if (l.kind === 'fib') {
+      const left = Math.max(0, Math.min(x(l.t1), x(l.t2)))
+      for (const lv of fibLevels(l.p1, l.p2)) {
+        if (!onScale(lv.price)) continue
+        const yy = y(lv.price).toFixed(1)
+        parts.push(`<line x1="${left.toFixed(1)}" x2="${w}" y1="${yy}" y2="${yy}" stroke="${lv.ratio === 0 || lv.ratio === 1 ? o.ink : o.accent}" stroke-width="1.5"${lv.ratio > 1 ? ' stroke-dasharray="4 4"' : ''} opacity="0.7"/>`)
+      }
+    } else if (l.kind === 'vline') {
+      const xx = x(l.t).toFixed(1)
+      parts.push(`<line x1="${xx}" x2="${xx}" y1="0" y2="${h}" stroke="${o.ink}" stroke-width="1.5" stroke-dasharray="6 5" opacity="0.6"/>`)
     } else if (l.kind === 'note' && onScale(l.price)) {
       parts.push(`<circle cx="${x(l.t).toFixed(1)}" cy="${y(l.price).toFixed(1)}" r="6" fill="${o.accent}"/>`)
     }

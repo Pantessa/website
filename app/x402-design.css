@@ -5885,6 +5885,47 @@
 .mkt-draw__label--read { fill: var(--fg); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
 @media (hover: none) { .mkt-draw__hit { stroke-width: 26 !important; } }
 .mkt-tool:disabled { opacity: .35; pointer-events: none; }
+/* The tools that place nothing (measure, zoom) sit past a rule; the magnet is a switch, not a tool. */
+.mkt-tools__sep { width: 1px; align-self: stretch; margin: 4px 2px; background: var(--line); }
+.mkt-tool--magnet.is-on { color: var(--accent); }
+.mkt-tool--magnet.is-on:hover { background: color-mix(in oklch, var(--accent) 14%, transparent); }
+/* vertical lines: a time, dashed, with its date on a pill at the foot */
+.mkt-draw__hit--ew { cursor: ew-resize; }
+.mkt-draw__v line { stroke: var(--muted); stroke-width: 1.25; stroke-dasharray: 4 3; }
+.mkt-draw__v.is-selected line { stroke: var(--fg); stroke-width: 1.5; }
+/* a trend line's extension: lighter than the segment the hand drew */
+.mkt-draw__trend .mkt-draw__ext { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 5 4; opacity: .75; }
+.mkt-draw__trend.is-selected .mkt-draw__ext { stroke: var(--fg); }
+/* fibonacci: a faint band over the swing, a level per ratio, the swing itself dotted */
+.mkt-draw__fibband { fill: var(--accent); opacity: .05; }
+.mkt-draw__fib.is-selected .mkt-draw__fibband { opacity: .1; }
+.mkt-draw__fibswing { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 4; }
+.mkt-draw__fib.is-selected .mkt-draw__fibswing { stroke: var(--fg); }
+.mkt-draw__fiblvl line { stroke: var(--accent); stroke-width: 1; opacity: .6; }
+.mkt-draw__fiblvl.is-end line { stroke: var(--fg); opacity: .5; }
+.mkt-draw__fiblvl.is-ext line { stroke: var(--muted); stroke-dasharray: 3 3; }
+.mkt-draw__fiblvl text { font-size: 9.5px; }
+/* the zoom box: dashed while it grows, in the accent once it is big enough to be a view */
+.mkt-draw__capture.is-zoom { cursor: zoom-in; }
+.mkt-draw__zoombox rect { fill: var(--fg); fill-opacity: .06; stroke: var(--fg); stroke-width: 1; stroke-dasharray: 4 3; }
+.mkt-draw__zoombox.is-ready rect { stroke: var(--accent); fill: var(--accent); }
+/* the measurement: a tinted box in the move's color, the two points joined, the readout on a pill */
+.mkt-draw__measure rect { fill: var(--accent); fill-opacity: .1; stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; }
+.mkt-draw__measure.is-down rect { fill: var(--sell); stroke: var(--sell); }
+.mkt-draw__measure line { stroke: var(--fg); stroke-width: 1; }
+.mkt-draw__measure circle { fill: var(--fg); }
+.mkt-draw__pill--read { pointer-events: none; }
+/* the readout's pill keeps its own ink: the box's tint and dashes never reach it */
+.mkt-draw__measure .mkt-draw__pill rect { fill: var(--surf-1); fill-opacity: 1; stroke: var(--line-2); stroke-dasharray: none; }
+.mkt-draw__measure .mkt-draw__pill text { fill: var(--accent); }
+.mkt-draw__measure.is-down .mkt-draw__pill text { fill: var(--sell); }
+/* The price axis scaled by hand: one press fits it again. On the axis column, above the time axis. */
+.mkt-scale {
+  position: absolute; z-index: 4; right: 6px; bottom: 34px; display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; border-radius: 999px;
+  font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg); background: var(--surf-1); border: 1px solid var(--line-2); cursor: pointer;
+}
+.mkt-scale:hover { border-color: var(--accent); color: var(--accent); }
+@media (hover: none) { .mkt-scale { min-height: 32px; padding-inline: 10px; } }
 
 /* Share: the button on the chart bar, the dialog, the picture */
 .mkt-sharebtn {
@@ -6038,6 +6079,21 @@
 .mkt-pop__del { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; font-size: 11px; color: var(--muted-2); }
 .mkt-pop__del:hover { color: var(--sell); }
 .mkt-pop--note { width: min(280px, calc(100% - 24px)); }
+/* a trend line's reach: segment · ray · both */
+.mkt-pop__seg { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; }
+.mkt-pop__segbtn { flex: 1; padding: 4px 6px; border-radius: 6px; font-size: 10px; letter-spacing: .04em; color: var(--muted); }
+.mkt-pop__segbtn:hover { color: var(--fg); background: var(--surf-2); }
+.mkt-pop__segbtn.is-active { color: var(--ink); background: var(--accent); }
+/* a fib's levels, each one a press from being a level of its own */
+.mkt-pop__levels { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 11px; }
+.mkt-pop__levels li { display: flex; align-items: center; gap: 8px; padding: 3px 4px; border-radius: 6px; }
+.mkt-pop__levels li:hover { background: var(--surf-2); }
+.mkt-pop__levels li.is-ext { color: var(--muted-2); }
+.mkt-pop__ratio { width: 38px; color: var(--muted); }
+.mkt-pop__mini { margin-left: auto; font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-2); padding: 2px 6px; border-radius: 5px; border: 1px solid var(--line); }
+.mkt-pop__mini:hover { color: var(--accent); border-color: var(--accent); }
+.mkt-pop__row { display: flex; gap: 12px; align-items: center; }
+.mkt-pop__focus:hover { color: var(--accent); }
 
 /* performance tiles (lib/performance) */
 .mkt-perf { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }

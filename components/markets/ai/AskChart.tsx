@@ -146,7 +146,7 @@ export default function AskChart({ symbol, pair, chartState, visible, onChartSta
   // carries a TIME (a note, a trend line's end) names the bar the user was
   // looking at; else the window's last bar.
   const markedT = useMemo(() => {
-    const times = (chartState?.lines ?? []).map((l) => (l.kind === 'note' ? l.t : l.kind === 'trend' ? l.t2 : null)).filter((t): t is number => typeof t === 'number' && t > 0)
+    const times = (chartState?.lines ?? []).map((l) => (l.kind === 'note' || l.kind === 'vline' ? l.t : l.kind === 'trend' || l.kind === 'fib' ? l.t2 : null)).filter((t): t is number => typeof t === 'number' && t > 0)
     return times.length ? times[times.length - 1] : null
   }, [chartState])
   const [lastBar, setLastBar] = useState<{ bar: HoverBar; marked: boolean } | null>(null)

@@ -41,7 +41,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
-import { ChartCandlestick, ChevronsRight, Eraser, Minus, MousePointer2, Plus, RectangleHorizontal, Redo2, Share2, StickyNote, Swords, TrendingUp, Undo2 } from 'lucide-react'
+import { ChartCandlestick, ChevronsRight, Eraser, Magnet, Minus, MousePointer2, Plus, RectangleHorizontal, Redo2, Rows3, Ruler, Scaling, SeparatorVertical, Share2, StickyNote, SquareDashedMousePointer, Swords, TrendingUp, Undo2 } from 'lucide-react'
 import { CHART_TFS, DEFAULT_CHART_TF, chartPairFor, type Candle, type ChartTf } from '@/lib/charts'
 import { newLineId, serializeChartState, type ChartLine, type ChartState } from '@/lib/chart-state'
 import { composeLineActions, composeZoneActions, missingActionNote, type LineActionOffer } from '@/lib/chart-actions'
@@ -52,9 +52,10 @@ import { poolPremiumPct, type PoolPrice } from '@/lib/pool-price-shape'
 import { fmtPrice, type ChartStats } from '@/components/CandleChart'
 import '@/components/markets/look.css'
 import { readTokens, type Tokens } from './chart-tokens'
-import DrawingLayer, { type ChartGeom, type DrawTool } from './DrawingLayer'
+import DrawingLayer, { type ChartGeom } from './DrawingLayer'
 import ChartShare from './ChartShare'
-import { emptyUndo, nearestOhlc, recordUndo, redo as redoLines, undo as undoLines, type UndoStacks } from '@/lib/chart-draw'
+import { emptyUndo, nearestOhlc, recordUndo, redo as redoLines, toolForKey, undo as undoLines, type DrawTool, type UndoStacks } from '@/lib/chart-draw'
+import { wheelScale, type FocusView } from '@/lib/chart-focus'
 import { composeShareImage } from '@/lib/chart-share'
 import { SessionBands } from './session-bands'
 import { fillLabel, type FillMarker } from '@/lib/chart-fills'
@@ -258,6 +259,20 @@ export default function MarketChart({
   const [lines, setLines] = useState<ChartLine[]>(state?.lines ?? [])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [tool, setTool] = useState<DrawTool>('none')
+  // The magnet: trend / fib ends and notes take the bar's O/H/L/C (default on).
+  const [magnet, setMagnet] = useState(true)
+  // The price axis is scaled by hand (a focus, a wheel over the axis, an axis
+  // drag) rather than fitted to the bars on screen. The engine owns the mode
+  // (priceScale autoScale); this mirrors it for the "auto" pill and Esc.
+  const [scaleManual, setScaleManual] = useState(false)
+  const syncScale = useCallback(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    const manual = chart.priceScale('right').options().autoScale === false
+    setScaleManual((cur) => (cur === manual ? cur : manual))
+  }, [])
+  const syncScaleRef = useRef(syncScale)
+  syncScaleRef.current = syncScale
   // Undo: every finished edit records the lines it replaced; a drag records once.
   const [undoStacks, setUndoStacks] = useState<UndoStacks>(emptyUndo)
   const [shareOpen, setShareOpen] = useState(false)
@@ -356,6 +371,25 @@ export default function MarketChart({
     setUndoStacks(r.stacks)
     setLines(r.lines)
     setSelectedId(null)
+  }, [])
+  // Aim the chart at a box (both axes) or at a drawing (the price axis).
+  // The price axis enters the engine's MANUAL mode at that range, so every
+  // gesture the engine already has keeps working on it: a vertical drag
+  // pans, an axis drag scales, a double-click on the axis fits again.
+  const focusView = useCallback((view: FocusView | { price: FocusView['price'] }) => {
+    const chart = chartRef.current
+    if (!chart) return
+    if ('logical' in view) chart.timeScale().setVisibleLogicalRange({ from: view.logical.from as Logical, to: view.logical.to as Logical })
+    chart.priceScale('right').setVisibleRange({ from: view.price.from, to: view.price.to })
+    setScaleManual(true)
+    setGeomTick((n) => n + 1)
+  }, [])
+  const resetScale = useCallback(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    chart.priceScale('right').setAutoScale(true)
+    setScaleManual(false)
+    setGeomTick((n) => n + 1)
   }, [])
   const lastEmittedRef = useRef<string | null>(null)
   const lastAppliedRef = useRef<string | null>(state ? serializeChartState(state) : null)
@@ -679,6 +713,7 @@ export default function MarketChart({
     const onRange = () => {
       bump()
       syncMarginRef.current()
+      syncScaleRef.current()
       requestGuard()
       const view = chart.timeScale().getVisibleLogicalRange()
       setAway(awayFromLive(view ? (view.to as number) : null, drawnRef.current))
@@ -686,6 +721,29 @@ export default function MarketChart({
     chart.timeScale().subscribeVisibleLogicalRangeChange(onRange)
     const ro = new ResizeObserver(bump)
     ro.observe(el)
+    // A wheel over the PRICE AXIS scales the price range about the price
+    // under the pointer (TradingView's gesture); Alt + wheel does the same
+    // anywhere on the plot. The engine's own wheel zooms time, so this runs
+    // in the capture phase on the wrapper, ahead of the engine's listener,
+    // and swallows the event. Native, not React: React's wheel is passive.
+    const onWheel = (e: WheelEvent) => {
+      const rect = el.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const overAxis = x > chart.timeScale().width()
+      if (!overAxis && !e.altKey) return
+      e.preventDefault()
+      e.stopPropagation()
+      const ps = chart.priceScale('right')
+      const range = ps.getVisibleRange()
+      if (!range) return
+      const at = candleSeries.coordinateToPrice(e.clientY - rect.top)
+      const next = wheelScale(range, at === null ? null : Number(at), e.deltaY)
+      if (!next) return
+      ps.setVisibleRange(next)
+      syncScaleRef.current()
+      bump()
+    }
+    el.addEventListener('wheel', onWheel, { capture: true, passive: false })
 
     // The bar under the crosshair is shared with the AI lane's ask box
     // ("Explain the 14:00 bar" follows the cursor): one store write per bar
@@ -741,6 +799,7 @@ export default function MarketChart({
 
     return () => {
       ro.disconnect()
+      el.removeEventListener('wheel', onWheel, { capture: true })
       chart.unsubscribeCrosshairMove(onMove)
       reportHoverBar(null)
       chart.unsubscribeClick(onClick)
@@ -1029,6 +1088,7 @@ export default function MarketChart({
         else if (shareOpen) setShareOpen(false)
         else if (tool !== 'none') setTool('none')
         else if (selectedId) setSelectedId(null)
+        else if (scaleManual && overRef.current) resetScale()
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId && tools) {
         edit(linesRef.current.filter((l) => l.id !== selectedId))
@@ -1041,7 +1101,40 @@ export default function MarketChart({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [noteDraft, shareOpen, tool, selectedId, tools, edit, stepUndo])
+  }, [noteDraft, shareOpen, tool, selectedId, tools, edit, stepUndo, scaleManual, resetScale])
+
+  // One letter arms one tool while the pointer is over the chart (lib/chart-draw
+  // TOOL_KEYS: H level · R zone · T trend · N note · F fib · V vertical · Z zoom
+  // · M measure); A fits the price axis again; S flips the magnet. Never while
+  // typing, never with a modifier, never on a read-only chart or the Battlefield.
+  useEffect(() => {
+    if (!tools) return
+    const onKey = (e: KeyboardEvent) => {
+      if (!overRef.current || e.defaultPrevented || fieldOn) return
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
+      const key = e.key.toLowerCase()
+      if (key === 'a') {
+        e.preventDefault()
+        resetScale()
+        return
+      }
+      if (key === 's') {
+        e.preventDefault()
+        setMagnet((m) => !m)
+        return
+      }
+      const next = toolForKey(e)
+      if (!next) return
+      e.preventDefault()
+      setNoteDraft(null)
+      setSelectedId(null)
+      setTool((cur) => (cur === next ? 'none' : next))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [tools, fieldOn, resetScale])
 
   const goLive = useCallback(() => chartRef.current?.timeScale().scrollToRealTime(), [])
 
@@ -1106,6 +1199,11 @@ export default function MarketChart({
         return y === null ? null : Number(y)
       },
       barSec: FRAME_SEC[tf],
+      tf,
+      xToLogical: (x) => {
+        const l = chart.timeScale().coordinateToLogical(x)
+        return l === null ? null : Number(l)
+      },
       yToPrice: (y) => {
         const p = cs.coordinateToPrice(y)
         return p === null ? null : Number(p)
@@ -1257,11 +1355,26 @@ export default function MarketChart({
         </div>}
         {tools && !fieldOn && (
           <div className="mkt-chart__tools" role="group" aria-label="Drawing tools">
-            {toolBtn('none', MousePointer2, 'Select')}
-            {toolBtn('h', Minus, 'Horizontal level — click a price')}
-            {toolBtn('zone', RectangleHorizontal, 'Zone — drag across a price range')}
-            {toolBtn('trend', TrendingUp, 'Trend line — drag from one point to another')}
-            {toolBtn('note', StickyNote, 'Note — click where you noticed it')}
+            {toolBtn('none', MousePointer2, 'Select (Esc)')}
+            {toolBtn('h', Minus, 'Horizontal level — click a price (H)')}
+            {toolBtn('zone', RectangleHorizontal, 'Zone — drag across a price range (R)')}
+            {toolBtn('trend', TrendingUp, 'Trend line — drag from one point to another (T)')}
+            {toolBtn('fib', Rows3, 'Fibonacci retracement — drag the swing, low to high or high to low (F)')}
+            {toolBtn('vline', SeparatorVertical, 'Vertical line — click a time (V)')}
+            {toolBtn('note', StickyNote, 'Note — click where you noticed it (N)')}
+            <span className="mkt-tools__sep" aria-hidden="true" />
+            {toolBtn('measure', Ruler, 'Measure — drag a box: percent, dollars, bars, time (M)')}
+            {toolBtn('zoom', SquareDashedMousePointer, 'Zoom to a box — drag around what you want to see; both axes follow (Z)')}
+            <button
+              type="button"
+              className={`mkt-tool mkt-tool--magnet${magnet ? ' is-on' : ''}`}
+              aria-pressed={magnet}
+              title={magnet ? 'Magnet on — ends and notes snap to the bar’s open, high, low, close (S)' : 'Magnet off — ends and notes land exactly where you put them (S)'}
+              aria-label="Magnet"
+              onClick={() => setMagnet((m) => !m)}
+            >
+              <Magnet className="h-3.5 w-3.5" />
+            </button>
           </div>
         )}
         <span className="mkt-chart__right">
@@ -1305,6 +1418,8 @@ export default function MarketChart({
         onPointerDown={() => {
           overRef.current = true
         }}
+        onPointerUp={syncScale}
+        onDoubleClick={syncScale}
       >
         <div ref={wrapRef} className="mkt-chart__engine" />
         {candles.length > 0 && tool === 'none' && !noteDraft && !fieldOn && <ChartLegend symbol={pair.symbol} tf={tf} bars={bars} lines={legendLines} hint={tools && !selectedId ? plusHint : null} />}
@@ -1349,13 +1464,24 @@ export default function MarketChart({
             Live <ChevronsRight className="h-3 w-3" />
           </button>
         )}
+        {/* The price axis is yours (a focus, a wheel over the axis, an axis
+            drag): one press fits it to the bars again. Sits on the axis itself. */}
+        {scaleManual && candles.length > 0 && !fieldOn && (
+          <button type="button" className="mkt-scale mono" data-scale-manual title="Price axis scaled by hand — fit it to the bars again (A, Esc, or double-click the axis)" onClick={resetScale}>
+            <Scaling className="h-3 w-3" /> auto
+          </button>
+        )}
         {/* Over the plot, never above it: a hint that pushed the canvas down moved the bars under the cursor. */}
         {tool !== 'none' && !fieldOn && (
           <p className="mkt-chart__hint mono">
             {tool === 'h' && 'click a price to place a level — it can carry an order'}
             {tool === 'zone' && 'drag across the range — or click its two edges'}
-            {tool === 'trend' && 'drag from the first point to the second — or click both · ends snap to the bar'}
+            {tool === 'trend' && `drag from the first point to the second — or click both${magnet ? ' · ends snap to the bar' : ''}`}
+            {tool === 'fib' && `drag the swing, from where it started to where it ended${magnet ? ' · ends snap to the bar' : ''}`}
+            {tool === 'vline' && 'click a time to mark it'}
             {tool === 'note' && 'click where you noticed it'}
+            {tool === 'measure' && 'drag a box to measure it · the readout stays until the next press'}
+            {tool === 'zoom' && 'drag a box around what you want to see · A or double-click the axis fits it back'}
             {' · esc cancels'}
           </p>
         )}
@@ -1387,6 +1513,8 @@ export default function MarketChart({
           tool={tools ? tool : 'none'}
           onToolDone={() => setTool('none')}
           onNote={(at) => setNoteDraft({ ...at, text: '' })}
+          onFocus={focusView}
+          magnet={magnet}
           offersFor={offersFor}
           missingNote={missingActionNote(pair.symbol, pair.source)}
           onAct={onAsk}

@@ -510,6 +510,11 @@ button.mk-held:hover { border-color: var(--accent); }
      that (MarketChart toggles it), so it goes; 4 × 44 + the group's frame is
      188px and the overlays keep ~133px at 375 to scroll in. */
   .sym .mkt-chart__tools > .mkt-tool:first-child { display: none; }
+  /* Ten tools no longer fit beside the overlays: the group keeps its 188px
+     seat and SCROLLS sideways inside it, the way the overlays do. */
+  .sym .mkt-chart__tools { flex: 0 1 188px; min-width: 150px; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .sym .mkt-chart__tools::-webkit-scrollbar { display: none; }
+  .sym .mkt-chart__tools > .mkt-tool, .sym .mkt-chart__tools > .mkt-tools__sep { flex-shrink: 0; }
   .sym .mkt-chart__bar > .mkt-chart__ind { flex: 1 1 calc(100% - 200px); }
 }
 @media (max-width: 374px) {
