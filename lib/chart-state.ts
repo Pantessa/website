@@ -11,6 +11,11 @@
 //  flows through here before it reaches a canvas, so every string field is
 //  length-capped and control-character-fenced.
 //
+//  Kinds: h (a level), zone, trend (optionally extended into a ray), note,
+//  fib (a retracement swing; its levels are derived, never stored) and vline
+//  (a time marker). Added 2026-10-08 (chart-draw-focus); a client older than
+//  that refuses a state carrying them, which is the strict parse working.
+//
 //  Times are unix SECONDS. Prices are the chart's quote currency (USD).
 //  `tf` is the candles endpoint's own timeframe union (lib/charts ChartTf:
 //  15m · 1h · 4h · 1d). The squad README drafted the contract with '5m'
@@ -34,11 +39,21 @@ export interface ChartAction {
   ask: string
 }
 
+/** How far a trend line reaches past its two points: nowhere (the segment),
+ *  rightwards (a ray into the future), or both ways. */
+export type TrendExtend = 'right' | 'both'
+
 export type ChartLine =
   | { id: string; kind: 'h'; price: number; label?: string; action?: ChartAction }
-  | { id: string; kind: 'trend'; t1: number; p1: number; t2: number; p2: number; label?: string }
+  | { id: string; kind: 'trend'; t1: number; p1: number; t2: number; p2: number; label?: string; extend?: TrendExtend }
   | { id: string; kind: 'zone'; p1: number; p2: number; label?: string; action?: ChartAction }
   | { id: string; kind: 'note'; t: number; price: number; text: string }
+  /** A Fibonacci retracement: the swing from (t1, p1) to (t2, p2); its levels
+   *  are derived (lib/chart-draw fibLevels), never stored. A level becomes an
+   *  order by becoming an `h` line (the popover's "level here"). */
+  | { id: string; kind: 'fib'; t1: number; p1: number; t2: number; p2: number; label?: string }
+  /** A vertical line at one bar's time: an event, an earnings date, "here". */
+  | { id: string; kind: 'vline'; t: number; label?: string }
 
 export interface ChartState {
   v: 1
@@ -58,6 +73,7 @@ const ID_RE = /^[A-Za-z0-9_-]{1,64}$/
 const SYMBOL_RE = /^[A-Z0-9]{1,12}$/
 const ACTION_KINDS = new Set<ChartActionKind>(['buy', 'sell', 'stop', 'limit', 'dca', 'protect'])
 const TF_SET = new Set<string>(CHART_TFS.map((t) => t.key))
+const EXTENDS = new Set<TrendExtend>(['right', 'both'])
 /** No control characters (a label is rendered as TEXT, but a newline in a
  *  chip or a NUL in an ask is never a drawing). */
 const CONTROL_RE = /[\x00-\x1f\x7f]/
@@ -99,7 +115,17 @@ function parseLine(x: unknown): ChartLine | null {
     case 'trend': {
       if (!unixSec(x.t1) || !unixSec(x.t2) || !finitePos(x.p1) || !finitePos(x.p2) || !optText(x.label, CHART_LABEL_MAX)) return null
       if (x.t1 === x.t2 && x.p1 === x.p2) return null // a point is not a line
-      return { id, kind: 'trend', t1: x.t1, p1: x.p1, t2: x.t2, p2: x.p2, ...(x.label !== undefined ? { label: x.label as string } : {}) }
+      if (x.extend !== undefined && (typeof x.extend !== 'string' || !EXTENDS.has(x.extend as TrendExtend))) return null
+      return { id, kind: 'trend', t1: x.t1, p1: x.p1, t2: x.t2, p2: x.p2, ...(x.label !== undefined ? { label: x.label as string } : {}), ...(x.extend !== undefined ? { extend: x.extend as TrendExtend } : {}) }
+    }
+    case 'fib': {
+      if (!unixSec(x.t1) || !unixSec(x.t2) || !finitePos(x.p1) || !finitePos(x.p2) || !optText(x.label, CHART_LABEL_MAX)) return null
+      if (x.p1 === x.p2) return null // a retracement needs a swing
+      return { id, kind: 'fib', t1: x.t1, p1: x.p1, t2: x.t2, p2: x.p2, ...(x.label !== undefined ? { label: x.label as string } : {}) }
+    }
+    case 'vline': {
+      if (!unixSec(x.t) || !optText(x.label, CHART_LABEL_MAX)) return null
+      return { id, kind: 'vline', t: x.t, ...(x.label !== undefined ? { label: x.label as string } : {}) }
     }
     case 'zone': {
       if (!finitePos(x.p1) || !finitePos(x.p2) || !optText(x.label, CHART_LABEL_MAX)) return null
@@ -178,7 +204,11 @@ export function serializeChartState(s: ChartState): string {
         case 'h':
           return { id: l.id, kind: 'h', price: l.price, ...(l.label !== undefined ? { label: l.label } : {}), ...(l.action ? { action: { kind: l.action.kind, ask: l.action.ask } } : {}) }
         case 'trend':
-          return { id: l.id, kind: 'trend', t1: l.t1, p1: l.p1, t2: l.t2, p2: l.p2, ...(l.label !== undefined ? { label: l.label } : {}) }
+          return { id: l.id, kind: 'trend', t1: l.t1, p1: l.p1, t2: l.t2, p2: l.p2, ...(l.label !== undefined ? { label: l.label } : {}), ...(l.extend !== undefined ? { extend: l.extend } : {}) }
+        case 'fib':
+          return { id: l.id, kind: 'fib', t1: l.t1, p1: l.p1, t2: l.t2, p2: l.p2, ...(l.label !== undefined ? { label: l.label } : {}) }
+        case 'vline':
+          return { id: l.id, kind: 'vline', t: l.t, ...(l.label !== undefined ? { label: l.label } : {}) }
         case 'zone':
           return { id: l.id, kind: 'zone', p1: l.p1, p2: l.p2, ...(l.label !== undefined ? { label: l.label } : {}), ...(l.action ? { action: { kind: l.action.kind, ask: l.action.ask } } : {}) }
         case 'note':

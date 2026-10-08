@@ -805,7 +805,11 @@ export function describeDrawings(state: ChartState | null | undefined): string[]
       case 'zone':
         return `zone ${Math.min(l.p1, l.p2)}–${Math.max(l.p1, l.p2)}${l.label ? ` (${cleanLine(l.label, 40)})` : ''}`
       case 'trend':
-        return `trend line from ${l.p1} to ${l.p2}`
+        return `trend line from ${l.p1} to ${l.p2}${l.extend ? ` (extended ${l.extend === 'both' ? 'both ways' : 'to the right'})` : ''}`
+      case 'fib':
+        return `fibonacci retracement of the swing from ${l.p1} to ${l.p2}${l.label ? ` (${cleanLine(l.label, 40)})` : ''}`
+      case 'vline':
+        return `vertical line at ${new Date(l.t * 1000).toISOString().slice(0, 16).replace('T', ' ')} UTC${l.label ? ` (${cleanLine(l.label, 40)})` : ''}`
       case 'note':
         return `note at ${l.price}: ${cleanLine(l.text, 60)}`
     }

@@ -14,7 +14,7 @@
 
 import type { ChartLine } from './chart-state'
 import type { DrawSpace } from './chart-draw'
-import { trendReadout } from './chart-draw'
+import { trendReadout, fibLevels } from './chart-draw'
 import { gemMarkSvg } from './og-marks'
 
 export interface ShareTokens {
@@ -140,12 +140,80 @@ function drawLines(ctx: CanvasRenderingContext2D, input: ShareImageInput) {
       ctx.stroke()
       ctx.setLineDash([])
       pill(ctx, 8, clampY(y - 9), `${l.label ?? (l.action ? l.action.kind : 'level')} · ${sharePrice(l.price)}`, t, ink)
+    } else if (l.kind === 'vline') {
+      const x = geom.timeToX(l.t)
+      if (x === null || x < 0 || x > plotW) continue
+      ctx.strokeStyle = t.muted
+      ctx.lineWidth = 1
+      ctx.setLineDash([4, 3])
+      ctx.beginPath()
+      ctx.moveTo(x, 0)
+      ctx.lineTo(x, cssHeight)
+      ctx.stroke()
+      ctx.setLineDash([])
+      if (l.label) {
+        ctx.font = `500 10px ${MONO}`
+        ctx.fillStyle = t.muted
+        ctx.textBaseline = 'alphabetic'
+        ctx.fillText(l.label, Math.min(x + 6, plotW - 8 - ctx.measureText(l.label).width), 14)
+      }
+    } else if (l.kind === 'fib') {
+      const x1 = geom.timeToX(l.t1)
+      const x2 = geom.timeToX(l.t2)
+      const y1 = geom.priceToY(l.p1)
+      const y2 = geom.priceToY(l.p2)
+      if (x1 === null || x2 === null || y1 === null || y2 === null) continue
+      const left = Math.max(0, Math.min(x1, x2))
+      ctx.font = `500 9.5px ${MONO}`
+      ctx.textBaseline = 'alphabetic'
+      for (const lv of fibLevels(l.p1, l.p2)) {
+        const y = geom.priceToY(lv.price)
+        if (y === null || y < 0 || y > cssHeight) continue
+        const end = lv.ratio === 0 || lv.ratio === 1
+        ctx.strokeStyle = lv.ratio > 1 ? t.muted : end ? t.fg : t.accent
+        ctx.globalAlpha = end ? 0.5 : 0.65
+        ctx.lineWidth = 1
+        ctx.setLineDash(lv.ratio > 1 ? [3, 3] : [])
+        ctx.beginPath()
+        ctx.moveTo(left, y)
+        ctx.lineTo(plotW, y)
+        ctx.stroke()
+        ctx.setLineDash([])
+        ctx.globalAlpha = 1
+        const words = `${lv.label} · ${sharePrice(lv.price)}`
+        ctx.fillStyle = t.muted
+        ctx.fillText(words, plotW - 6 - ctx.measureText(words).width, Math.max(10, y - 3))
+      }
+      ctx.strokeStyle = t.muted
+      ctx.setLineDash([2, 4])
+      ctx.beginPath()
+      ctx.moveTo(x1, y1)
+      ctx.lineTo(x2, y2)
+      ctx.stroke()
+      ctx.setLineDash([])
     } else if (l.kind === 'trend') {
       const x1 = geom.timeToX(l.t1)
       const x2 = geom.timeToX(l.t2)
       const y1 = geom.priceToY(l.p1)
       const y2 = geom.priceToY(l.p2)
       if (x1 === null || x2 === null || y1 === null || y2 === null) continue
+      // The extension (a ray, or the whole line) draws lighter, under the segment.
+      if (l.extend && x1 !== x2) {
+        const slope = (y2 - y1) / (x2 - x1)
+        const at = (x: number) => y1 + (x - x1) * slope
+        const right = x2 >= x1
+        const far = right ? plotW : 0
+        const near = right ? 0 : plotW
+        ctx.strokeStyle = t.muted
+        ctx.lineWidth = 1
+        ctx.setLineDash([5, 4])
+        ctx.beginPath()
+        if (l.extend === 'both') ctx.moveTo(near, at(near))
+        else ctx.moveTo(x2, y2)
+        ctx.lineTo(far, at(far))
+        ctx.stroke()
+        ctx.setLineDash([])
+      }
       ctx.strokeStyle = t.fg
       ctx.lineWidth = 1.5
       ctx.beginPath()

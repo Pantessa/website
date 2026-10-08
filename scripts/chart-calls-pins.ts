@@ -6,7 +6,8 @@ import { cleanUsd, composeTicket, defaultLimitPrice, ticketShape } from '../lib/
 import { chartPairFor } from '../lib/charts'
 import type { Candle } from '../lib/charts'
 import { parseChartState, type ChartLine, type ChartState } from '../lib/chart-state'
-import { dragLine, emptyUndo, nearestOhlc, recordUndo, redo, trendReadout, undo, zoneReadout, type DrawSpace } from '../lib/chart-draw'
+import { dragLine, emptyUndo, fibLevels, measureReadout, nearestOhlc, recordUndo, redo, spanWords, toolForKey, trendReadout, undo, zoneReadout, type DrawSpace } from '../lib/chart-draw'
+import { boxFocus, FOCUS_MIN_BARS, FOCUS_MIN_PX, lineFocus, padRange, wheelScale } from '../lib/chart-focus'
 import { shareFileName, shotTimeLabel, watermarkUrl } from '../lib/chart-share'
 import { autoCallTitle, callCardSvg, callTweetHref, chartTweetHref, fillTiming, fillWords, fmtCallTime, fmtMove, fmtSpan, movePct, stampFromBars } from '../lib/chart-calls'
 
@@ -50,6 +51,66 @@ export function chartCallsPins(check: Check): void {
   const py = (p: number) => 200 - p
   check('draw: the magnet picks the nearest of open/high/low/close within reach and nothing beyond it', nearestOhlc(bar, py(109), py) === 110 && nearestOhlc(bar, py(104), py) === 105 && nearestOhlc(bar, py(97.5), py, 8) === 100 && nearestOhlc(bar, py(130), py) === null)
   check('draw: a trend line reads its move and its length; a zone reads its width', trendReadout(100, 104.21, 0, 43200, 3600) === '+4.21% · 12 bars' && trendReadout(100, 95, 0, 3600, 3600) === '−5.00% · 1 bar' && trendReadout(0, 5, 0, 1, 1) === '' && zoneReadout(103.1, 100) === '3.10% wide')
+
+  // ── the drawing tools of 2026-10-08 (chart-draw-focus): fib, vertical, trend reach, magnet, measure, zoom ──
+  const fib: ChartLine = { id: 'f1', kind: 'fib', t1: 3600, p1: 100, t2: 36000, p2: 200 }
+  const vline: ChartLine = { id: 'v1', kind: 'vline', t: 7200, label: 'earnings' }
+  const ray: ChartLine = { ...trend, id: 't2', extend: 'right' }
+  check('chart-state: fib, vertical lines and an extended trend line round-trip the strict parse byte-equal, and a fib with no swing / a bad reach / a vline with a bad time refuse',
+    parseChartState(stateOf([fib, vline, ray, { ...trend, id: 't3', extend: 'both' }])) !== null &&
+      JSON.stringify(parseChartState(stateOf([fib, vline, ray]))?.lines) === JSON.stringify([fib, vline, ray]) &&
+      parseChartState(stateOf([{ ...fib, p2: 100 }])) === null &&
+      parseChartState(stateOf([{ ...trend, extend: 'left' } as unknown as ChartLine])) === null &&
+      parseChartState(stateOf([{ id: 'v', kind: 'vline', t: 1.5 } as unknown as ChartLine])) === null &&
+      parseChartState(stateOf([{ id: 'v', kind: 'vline', t: 7200, label: 'a\nb' } as unknown as ChartLine])) === null)
+  const lv = fibLevels(100, 200)
+  const down = fibLevels(200, 100)
+  check('fib: nine levels — 0 at the swing\'s end, 1 at its start, 0.618 three-fifths of the way back, the two extensions past the end; a down-swing mirrors; a flat swing has none',
+    lv.length === 9 && lv[0].ratio === 0 && lv[0].price === 200 && lv[6].ratio === 1 && lv[6].price === 100 && Math.abs(lv[4].price - 138.2) < 1e-9 && lv[4].label === '0.618' && lv[0].label === '0' &&
+      Math.abs(lv[8].price - (200 - 161.8)) < 1e-9 && down[4].price > 100 && Math.abs(down[4].price - 161.8) < 1e-9 && fibLevels(5, 5).length === 0 && fibLevels(0, 5).length === 0)
+  check('fib: a level past zero is dropped (an extension under a small base) instead of drawing a negative price', fibLevels(2, 10).every((l) => l.price > 0) && fibLevels(2, 10).length < 9 && fibLevels(10, 2).length === 9)
+  const fBody = dragLine(fib, 'body', 20, 10, space)
+  const fEnd = dragLine(fib, 'b', 0, 20, space)
+  const vMove = dragLine(vline, 'body', 25, 40, space)
+  check('draw: a fib drags like a trend line (whole by the body, one end alone), a vertical line only sideways, and a magnet-off drag ignores the snap',
+    !!fBody && fBody.kind === 'fib' && fBody.t2 - fBody.t1 === fib.t2 - fib.t1 && fBody.p1 === 90 && fBody.p2 === 190 &&
+      !!fEnd && fEnd.kind === 'fib' && fEnd.p1 === 100 && fEnd.p2 === 180 &&
+      !!vMove && vMove.kind === 'vline' && vMove.t === 7200 + 3 * 3600 && vMove.label === 'earnings' &&
+      dragLine(trend, 'a', 3, 3, snapSpace, false)?.kind === 'trend' && (dragLine(trend, 'a', 3, 3, snapSpace, false) as Extract<ChartLine, { kind: 'trend' }>).p1 === 297 &&
+      dragLine(fib, 'a', 0, -100, space) === null /* the ends meet in price: no swing */)
+  check('draw: a dragged fib / vline still parses as a v1 state', [fBody, fEnd, vMove].every((l) => !!l && parseChartState(stateOf([l])) !== null))
+  check('keys: one letter arms one tool — H R T N F V Z M, either case — and a modifier, a word key or a digit arms nothing',
+    toolForKey({ key: 'z' }) === 'zoom' && toolForKey({ key: 'Z' }) === 'zoom' && toolForKey({ key: 'm' }) === 'measure' && toolForKey({ key: 'f' }) === 'fib' && toolForKey({ key: 'v' }) === 'vline' &&
+      toolForKey({ key: 'r' }) === 'zone' && toolForKey({ key: 'h' }) === 'h' && toolForKey({ key: 't' }) === 'trend' && toolForKey({ key: 'n' }) === 'note' &&
+      toolForKey({ key: 'z', metaKey: true }) === null && toolForKey({ key: 'z', shiftKey: true }) === null && toolForKey({ key: 'Escape' }) === null && toolForKey({ key: '1' }) === null && toolForKey({ key: 'l' }) === null)
+  const fmt = (p: number) => p.toFixed(2)
+  const m1 = measureReadout(100, 104.21, 0, 43200, 3600, fmt)
+  const m2 = measureReadout(100, 95, 3600, 0, 3600, fmt)
+  check('measure: a box reads percent, dollars, bars and time, signed by the move\'s direction; a span reads in a trader\'s words',
+    !!m1 && m1.words === '+4.21% · +$4.21 · 12 bars · 12h' && m1.bars === 12 && !!m2 && m2.words === '−5.00% · −$5.00 · 1 bar · 1h' && m2.pct === -5 &&
+      measureReadout(0, 5, 0, 1, 1, fmt) === null && spanWords(45) === '45s' && spanWords(90 * 60) === '1h 30m' && spanWords(3 * 86400 + 4 * 3600) === '3d 4h' && spanWords(15 * 86400) === '2w 1d' && spanWords(86400 * 14) === '2w')
+  const pr = padRange(2150, 2790)
+  check('focus: a price range breathes 6% of its height on each side, in either order, and a flat range still opens on something',
+    !!pr && Math.abs(pr.from - (2150 - 38.4)) < 1e-9 && Math.abs(pr.to - (2790 + 38.4)) < 1e-9 && JSON.stringify(padRange(2790, 2150)) === JSON.stringify(pr) && !!padRange(10, 10) && padRange(10, 10)!.to > padRange(10, 10)!.from && padRange(-5, 5) === null)
+  const xToL = (x: number) => x / 10
+  const yToP = (y: number) => 1000 - y
+  const box = boxFocus({ x: 100, y: 100 }, { x: 300, y: 400 }, xToL, yToP)
+  check('focus: a dragged box becomes a view — its bars as the logical range, its prices padded as the price range, corners in any order; a click (under 8px either way) is no view',
+    !!box && box.logical.from === 10 && box.logical.to === 30 && box.price.from === 600 - 18 && box.price.to === 900 + 18 &&
+      JSON.stringify(boxFocus({ x: 300, y: 400 }, { x: 100, y: 100 }, xToL, yToP)) === JSON.stringify(box) &&
+      boxFocus({ x: 100, y: 100 }, { x: 100 + FOCUS_MIN_PX - 1, y: 400 }, xToL, yToP) === null && boxFocus({ x: 100, y: 100 }, { x: 300, y: 104 }, xToL, yToP) === null)
+  const thin = boxFocus({ x: 100, y: 100 }, { x: 110, y: 300 }, xToL, yToP)
+  check('focus: a box narrower than three bars opens on three bars about its middle (never a view with no candles in it)', !!thin && thin.logical.to - thin.logical.from === FOCUS_MIN_BARS && Math.abs((thin.logical.from + thin.logical.to) / 2 - 10.5) < 1e-9)
+  check('focus: a drawing\'s Focus aims at its own prices — a zone\'s edges, a fib\'s swing, a ±3% window around a level or a note, nothing for a vertical line',
+    JSON.stringify(lineFocus(zone)) === JSON.stringify(padRange(400, 450)) && JSON.stringify(lineFocus(fib)) === JSON.stringify(padRange(100, 200)) &&
+      Math.abs(lineFocus(h)!.from - 485) < 1e-9 && Math.abs(lineFocus(h)!.to - 515) < 1e-9 && lineFocus(vline) === null && !!lineFocus(note))
+  const w1 = wheelScale({ from: 100, to: 200 }, 150, -100)
+  const w2 = wheelScale({ from: 100, to: 200 }, 150, 100)
+  const w3 = wheelScale({ from: 100, to: 200 }, 125, 100)
+  check('focus: a wheel over the axis scales the range about the price under the pointer — tighter rolling up, wider rolling down, the pivot staying put; off the range it scales about the middle',
+    !!w1 && w1.to - w1.from < 100 && Math.abs((150 - w1.from) / (w1.to - w1.from) - 0.5) < 1e-9 && !!w2 && w2.to - w2.from > 100 && Math.abs((150 - w2.from) / (w2.to - w2.from) - 0.5) < 1e-9 &&
+      !!w3 && Math.abs((125 - w3.from) / (w3.to - w3.from) - 0.25) < 1e-9 && JSON.stringify(wheelScale({ from: 100, to: 200 }, 900, 100)) === JSON.stringify(wheelScale({ from: 100, to: 200 }, null, 100)) &&
+      wheelScale({ from: 100, to: 200 }, 150, 0) === null && wheelScale({ from: 200, to: 100 }, 150, 1) === null)
 
   const a = [h]
   const b = [h, zone]

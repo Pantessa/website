@@ -9,6 +9,7 @@
 // SVG text nodes — never markup.
 
 import type { ChartLine, ChartState } from '@/lib/chart-state'
+import { fibLevels } from '@/lib/chart-draw'
 
 const W = 220
 const H = 132
@@ -31,6 +32,10 @@ function pricesOf(l: ChartLine): number[] {
       return [l.p1, l.p2]
     case 'note':
       return [l.price]
+    case 'fib':
+      return [l.p1, l.p2]
+    case 'vline':
+      return []
   }
 }
 
@@ -59,7 +64,7 @@ export default function ChartSketch({ state, caption }: { state: ChartState; cap
     hi += pad
   }
   const y = (p: number) => PAD_Y + ((hi - p) / (hi - lo)) * (H - PAD_Y * 2)
-  const times = state.lines.flatMap((l) => (l.kind === 'trend' ? [l.t1, l.t2] : l.kind === 'note' ? [l.t] : []))
+  const times = state.lines.flatMap((l) => (l.kind === 'trend' || l.kind === 'fib' ? [l.t1, l.t2] : l.kind === 'note' || l.kind === 'vline' ? [l.t] : []))
   const t0 = times.length ? Math.min(...times) : 0
   const t1 = times.length ? Math.max(...times) : 1
   const x = (t: number) => (t1 === t0 ? (W - PAD_R) / 2 : 8 + ((t - t0) / (t1 - t0)) * (W - PAD_R - 16))
@@ -106,6 +111,35 @@ export default function ChartSketch({ state, caption }: { state: ChartState; cap
                   <text x={4} y={yy - 3} fontSize="8.5" fill={color} fontFamily="ui-monospace, monospace">
                     {(l.label ?? l.action?.kind ?? '').slice(0, 22)}
                   </text>
+                )}
+              </g>
+            )
+          }
+          if (l.kind === 'vline') {
+            return (
+              <g key={l.id}>
+                <line x1={x(l.t)} x2={x(l.t)} y1={PAD_Y} y2={H - PAD_Y} stroke="var(--muted)" strokeWidth="1" strokeDasharray="3 3" />
+                {l.label && (
+                  <text x={x(l.t) + 3} y={PAD_Y + 8} fontSize="8.5" fill="var(--muted)" fontFamily="ui-monospace, monospace">
+                    {l.label.slice(0, 18)}
+                  </text>
+                )}
+              </g>
+            )
+          }
+          if (l.kind === 'fib') {
+            const left = Math.min(x(l.t1), x(l.t2))
+            return (
+              <g key={l.id}>
+                {fibLevels(l.p1, l.p2).map((lv) =>
+                  lv.price < lo || lv.price > hi ? null : (
+                    <g key={lv.ratio}>
+                      <line x1={left} x2={W - PAD_R} y1={y(lv.price)} y2={y(lv.price)} stroke={lv.ratio === 0 || lv.ratio === 1 ? 'var(--fg)' : 'var(--accent)'} strokeWidth="0.8" strokeDasharray={lv.ratio > 1 ? '2 2' : undefined} opacity="0.7" />
+                      <text x={W - PAD_R + 4} y={y(lv.price) + 3} fontSize="7.5" fill="var(--muted)" fontFamily="ui-monospace, monospace">
+                        {lv.label}
+                      </text>
+                    </g>
+                  ),
                 )}
               </g>
             )
