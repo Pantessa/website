@@ -18,22 +18,28 @@ import { askAppSlugs } from '@/lib/ask-apps'
 import { canTradeAsk } from '@/lib/trade-venue-gate'
 import type { TradabilityMap } from '@/lib/tradability'
 import { useConnectToAct } from '@/lib/use-connect-to-act'
+import { useHeld } from '@/lib/use-held'
+import { useSession } from '@/lib/session'
 import {
+  ARMY_MEMORY_KEY,
   ARMY_SLOTS,
   DEFAULT_PICK,
   addOwnMarkets,
-  FALLBACK_ARMIES,
   FRONT_WINDOWS,
   LIVE_VIEWS,
   MAX_ARMIES,
   PICK_MODES,
   armyLabel,
+  armySourceWord,
   dayChangePct,
+  heldArmies,
   fmtFunding,
   fmtPct,
   liveUrl,
   mergeSamples,
   oiUsd,
+  openingArmies,
+  parseArmyMemory,
   parseFrontTokens,
   parseFrontWindow,
   resolveMarket,
@@ -41,8 +47,11 @@ import {
   pickList,
   pushSample,
   rankArmies,
+  serializeArmyMemory,
   windowMinutes,
   type ArmyContext,
+  type ArmyMemory,
+  type ArmySource,
   type BattleView,
   type FrontWindow,
   type PctRange,
@@ -57,6 +66,10 @@ import { buildScene, drawFront, drawMap, drawSiege, type ArmyFrame, type Inks, t
 const MAX_PARTICLES = 400
 const LOG_ROWS = 40
 const KEEP_MS = 25 * 3600_000
+/** How long the opening pick holds for a wallet's holdings before the venue's pick paints. */
+const HELD_WAIT_MS = 4000
+/** How long the venue gets to answer before the fallback trio paints. */
+const VENUE_WAIT_MS = 6000
 
 interface WarEvent {
   id: string
@@ -70,9 +83,15 @@ interface WarEvent {
 
 export default function Battle({ view, tradable, tabs }: { view: BattleView; tradable: TradabilityMap; tabs?: ReactNode }) {
   const urlArmies = useMemo(() => initialArmies(), [])
-  const [armies, setArmies] = useState<string[]>(urlArmies)
+  const memory = useMemo(() => readArmyMemory(), [])
+  // The URL's own armies lead; else what this browser set by hand last time.
+  // Anything else (holdings, the venue) is decided once the reads answer.
+  const [armies, setArmies] = useState<string[]>(() => (urlArmies.length ? urlArmies : memory?.armies ?? []))
+  const [source, setSource] = useState<ArmySource | null>(() => (urlArmies.length ? 'url' : memory ? 'memory' : null))
   const [since, setSince] = useState<FrontWindow>(() => initialWindow())
-  const [pickMode, setPickMode] = useState<PickMode>(() => initialPick())
+  const [pickMode, setPickMode] = useState<PickMode>(() => initialPick(memory))
+  const [heldWaited, setHeldWaited] = useState(false)
+  const [venueWaited, setVenueWaited] = useState(false)
   const [status, setStatus] = useState<FeedStatus>('idle')
   const [universe, setUniverse] = useState<string[]>([])
   const [paused, setPaused] = useState(false)
@@ -97,7 +116,8 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
   const leaderRef = useRef<string | null>(null)
   const framesRef = useRef<ArmyFrame[]>([])
   const reducedRef = useRef(false)
-  const pickedRef = useRef(urlArmies.length > 0)
+  /** A hand touched the picker: defaults stop moving and the memory writes. */
+  const handRef = useRef(false)
 
   const mainRef = useRef<HTMLElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -173,26 +193,56 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
       if (ac.signal.aborted || !m.size) return
       ctxRef.current = m
       setCtxTick((t) => t + 1)
-      if (!pickedRef.current) {
-        pickedRef.current = true
-        const top = pickList(m, parsePickMode(new URLSearchParams(window.location.search).get('pick'))).slice(0, DEFAULT_PICK).map((r) => r.market)
-        setArmies(top.length ? top : [...FALLBACK_ARMIES])
-      }
     })
     read()
     const id = setInterval(read, 30_000)
-    const fallback = setTimeout(() => {
-      if (!pickedRef.current) {
-        pickedRef.current = true
-        setArmies([...FALLBACK_ARMIES])
-      }
-    }, 6000)
     return () => {
       ac.abort()
       clearInterval(id)
-      clearTimeout(fallback)
     }
   }, [])
+
+  // ── The opening pick: holdings, else the venue, else the fallback ─────
+  // (lib/battle openingArmies has the order). A wallet that may still
+  // answer — connected, restoring, or remembered by this browser — holds
+  // the venue's pick for a few seconds; holdings that land later still
+  // replace a default while no hand has touched the picker.
+  const { signedOut } = useSession()
+  const held = useHeld()
+  const heldPick = useMemo(() => (held && universe.length ? heldArmies(held, universe) : null), [held, universe])
+  useEffect(() => {
+    const a = setTimeout(() => setHeldWaited(true), HELD_WAIT_MS)
+    const b = setTimeout(() => setVenueWaited(true), VENUE_WAIT_MS)
+    return () => {
+      clearTimeout(a)
+      clearTimeout(b)
+    }
+  }, [])
+  // The stage's waiting words are decided after mount: the server knows no
+  // URL, no memory and no wallet, and React leaves a mismatched single text
+  // child as the server wrote it, so a word computed during hydration would
+  // sit stale until the overlay unmounts (found 2026-10-07, hidden pane).
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  const waitingForWallet = mounted && source === null && !signedOut && !heldWaited && heldPick === null
+  useEffect(() => {
+    if (handRef.current || source === 'url' || source === 'memory' || source === 'held') return
+    const venue = pickList(ctxRef.current, pickMode).slice(0, DEFAULT_PICK).map((r) => r.market)
+    const d = openingArmies({ url: [], memory: null, held: heldPick, venue, waitForHeld: !signedOut && !heldWaited })
+    if (!d) return
+    // A default already painted stays until holdings or a hand replace it;
+    // the fallback waits for the venue's turn.
+    if (d.source !== 'held' && source !== null) return
+    if (d.source === 'fallback' && !venueWaited) return
+    setArmies(d.armies)
+    setSource(d.source)
+  }, [ctxTick, heldPick, heldWaited, venueWaited, signedOut, pickMode, source])
+
+  // ── Memory: only a hand-set field is remembered ───────────────────────
+  useEffect(() => {
+    if (!handRef.current || !armies.length) return
+    writeArmyMemory({ armies, pick: pickMode, at: Date.now() })
+  }, [armies, pickMode])
 
   // ── Candles: the ground before the page opened ────────────────────────
   useEffect(() => {
@@ -361,36 +411,54 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
   }, [])
 
   // ── Armies: pick, add, remove ─────────────────────────────────────────
-  const toggleArmy = useCallback((m: string) => {
-    setArmies((prev) => {
-      if (prev.includes(m)) return prev.length > 1 ? prev.filter((x) => x !== m) : prev
-      if (prev.length >= MAX_ARMIES) return prev
-      return [...prev, m]
-    })
+  const byHand = useCallback(() => {
+    handRef.current = true
+    setSource('hand')
   }, [])
+  const toggleArmy = useCallback(
+    (m: string) => {
+      const cur = stateRef.current.armies
+      const changes = cur.includes(m) ? cur.length > 1 : cur.length < MAX_ARMIES
+      if (!changes) return
+      byHand()
+      setArmies((prev) => {
+        if (prev.includes(m)) return prev.length > 1 ? prev.filter((x) => x !== m) : prev
+        if (prev.length >= MAX_ARMIES) return prev
+        return [...prev, m]
+      })
+    },
+    [byHand],
+  )
   // Your own armies: several at once (commas or spaces), each resolved to
   // the venue's spelling; a name the venue lists no market for is said so.
   const addOwn = useCallback(
     (raw: string) => {
       const r = addOwnMarkets(raw, universe, armies)
-      if (r.added.length) setArmies((prev) => [...prev, ...r.added.filter((m) => !prev.includes(m))].slice(0, MAX_ARMIES))
+      if (r.added.length) {
+        byHand()
+        setArmies((prev) => [...prev, ...r.added.filter((m) => !prev.includes(m))].slice(0, MAX_ARMIES))
+      }
       if (r.unknown.length) setAddNote({ text: `Hyperliquid lists no market called ${r.unknown.map((u) => u.toUpperCase()).join(', ')}`, tone: 'warn' })
       else if (r.full.length) setAddNote({ text: `the field is full — drop an army to add ${r.full.map(armyLabel).join(', ')}`, tone: 'dim' })
       else setAddNote(null)
       setDraft(r.unknown.join(', '))
     },
-    [armies, universe],
+    [armies, universe, byHand],
   )
   useEffect(() => {
     if (!addNote) return
     const id = setTimeout(() => setAddNote(null), 6000)
     return () => clearTimeout(id)
   }, [addNote])
-  const pickTop = useCallback((mode: PickMode) => {
-    setPickMode(mode)
-    const top = pickList(ctxRef.current, mode).slice(0, DEFAULT_PICK).map((r) => r.market)
-    if (top.length) setArmies(top)
-  }, [])
+  const pickTop = useCallback(
+    (mode: PickMode) => {
+      byHand()
+      setPickMode(mode)
+      const top = pickList(ctxRef.current, mode).slice(0, DEFAULT_PICK).map((r) => r.market)
+      if (top.length) setArmies(top)
+    },
+    [byHand],
+  )
 
   // ── The scoreboard reads the last frame ───────────────────────────────
   const frames = framesRef.current
@@ -401,6 +469,7 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
   const viewDef = LIVE_VIEWS.find((v) => v.id === view)!
   const custom = armies.filter((m) => !picks.some((p) => p.market === m))
   const slotOf = (m: string) => ARMY_SLOTS[armies.indexOf(m)] ?? 1
+  const sourceWord = source ? armySourceWord(source) : null
 
   return (
     <>
@@ -444,7 +513,7 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
               ))}
             </div>
             <span className="battle__count mono">
-              {armies.length} of {MAX_ARMIES} armies · click to add or drop
+              {armies.length} of {MAX_ARMIES} armies{sourceWord ? ` · ${sourceWord}` : ''} · click to add or drop
             </span>
           </div>
           <div className="battle__chips">
@@ -519,7 +588,7 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
 
         <div className="battle__stage" ref={stageRef} onMouseMove={onMove} onMouseLeave={onLeave}>
           <canvas ref={canvasRef} className="battle__canvas" role="img" aria-label={`${viewDef.label}: ${viewDef.blurb}`} />
-          {frames.every((a) => a.track.length === 0) && <div className="battle__empty mono">{armies.length === 0 ? 'picking the armies…' : status === 'live' ? 'first prices landing…' : 'reaching the venue…'}</div>}
+          {frames.every((a) => a.track.length === 0) && <div className="battle__empty mono">{!mounted || armies.length === 0 ? (waitingForWallet ? 'reading your wallet…' : 'picking the armies…') : status === 'live' ? 'first prices landing…' : 'reaching the venue…'}</div>}
         </div>
         <p className="battle__legend mono">
           <span><b>ground</b> = % move {minutes === null ? 'since the page opened' : `since ${minutes >= 60 ? `${minutes / 60}h` : `${minutes}m`} ago`} · horizon = 0%</span>
@@ -654,9 +723,29 @@ function initialWindow(): FrontWindow {
   return parseFrontWindow(new URLSearchParams(window.location.search).get('since'))
 }
 
-function initialPick(): PickMode {
+function initialPick(memory: ArmyMemory | null): PickMode {
   if (typeof window === 'undefined') return 'gainers'
-  return parsePickMode(new URLSearchParams(window.location.search).get('pick'))
+  const raw = new URLSearchParams(window.location.search).get('pick')
+  return raw ? parsePickMode(raw) : (memory?.pick ?? 'gainers')
+}
+
+// ── The browser's memory of a hand-set field (lib/battle has the shape) ─────
+
+function readArmyMemory(): ArmyMemory | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return parseArmyMemory(window.localStorage.getItem(ARMY_MEMORY_KEY))
+  } catch {
+    return null
+  }
+}
+
+function writeArmyMemory(m: ArmyMemory): void {
+  try {
+    window.localStorage.setItem(ARMY_MEMORY_KEY, serializeArmyMemory(m))
+  } catch {
+    // storage blocked — the field just isn't remembered
+  }
 }
 
 // ── Inks from the page's tokens ──────────────────────────────────────────────
