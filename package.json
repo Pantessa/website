@@ -61,6 +61,7 @@
     "pins:deadends": "tsx scripts/deadends-pins.ts",
     "pins:depth": "tsx scripts/depth-pins.ts",
     "pins:deck": "tsx scripts/deck-pins.ts",
+    "pins:pick": "tsx scripts/pick-pins.ts",
     "pins:home-apps": "tsx scripts/home-apps-pins.ts",
     "drive:mobile-ux": "tsx scripts/drive-mobile-ux.ts",
     "drive:mobile-connect": "tsx scripts/drive-mobile-connect.ts",
