@@ -274,6 +274,8 @@ export function tapePins(check: Check): void {
       return /^'use client'/.test(feed) && /wss:\/\/api\.hyperliquid\.xyz\/ws/.test(feed) && /fields: \{ effect: false, block: false \}/.test(feed) && /fields: \{ effect: true, block: true \}/.test(feed) && /new EventSource\(url\)/.test(feed) && /\?probe=1/.test(feed) && /res\.status === 503/.test(feed) && /onStatus\('unconfigured'/.test(feed) && /addEventListener\('bye'/.test(feed) && /export function connectTape/.test(feed) && /requestAnimationFrame/.test(feed) &&
         !/'use client'/.test(server) && /'X-Dune-Api-Key': key/.test(server) && /resumeUrl\(venue\.url, u\.cursor\)/.test(server) && /ev\.code === 1008/.test(server) && /IDLE_CLOSE_MS/.test(server) &&
         /text\/event-stream/.test(route) && new RegExp(`export const maxDuration = ${LIVE_STREAM_MAX_DURATION_S}\\b`).test(route) && /status: 503/.test(route) && /type: 'bye'/.test(route) && /LIVE_STREAM_PER_IP/.test(route) &&
+        // The prod leak (2026-10-13): a gone client leaves only backpressure on Vercel — a writer releases itself after two stalled heartbeats, and the cap counts only writers younger than the hold.
+        /c\.desiredSize !== null && c\.desiredSize <= 0/.test(route) && /stalled >= DEAD_BEATS/.test(route) && /const STALE_MS = LIVE_STREAM_HOLD_MS \+/.test(route) && /liveWriters\(ip, now\)/.test(route) && !/__liveStreamsTotal/.test(route) &&
         !/X-Dune-Api-Key|DUNE_BETA_API_KEY|process\.env\.DUNE/.test(clientFiles.replace(/\/\/[^\n]*|\/\*[^]*?\*\//g, '').replace(/DUNE_FEED_KEY_ENV = 'DUNE_BETA_API_KEY'/, '')) && !/NEXT_PUBLIC_DUNE/.test(clientFiles + feed + server + route)
     })())
 }

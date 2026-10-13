@@ -315,25 +315,6 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
             All
             <span className="mono live__mcount">{marketCount ?? marketList.length}</span>
           </button>
-          {entries.map(({ market: m, own: isOwn }) => {
-            const tm = tapeMarket(m)
-            const chip = (
-              <button type="button" className={`live__m${filter === m ? ' is-on' : ''}`} onClick={() => pickFilter(filter === m ? null : m)} data-kind={tm.kind} data-own={isOwn || undefined}>
-                {tm.dex && <span className="live__dex mono">{tm.dex}</span>}
-                {tm.ticker}
-              </button>
-            )
-            return isOwn ? (
-              <span key={m} className="live__mown">
-                {chip}
-                <button type="button" className="live__mx" onClick={() => removeOwn(m)} aria-label={`Remove ${m} from your markets`} title="Remove">
-                  ×
-                </button>
-              </span>
-            ) : (
-              <span key={m} className="live__mseat">{chip}</span>
-            )
-          })}
           <form
             className="live__add"
             onSubmit={(e) => {
@@ -370,11 +351,28 @@ export default function LiveFeed({ tradable, tabs }: { tradable: TradabilityMap;
                 {addNote.text}
               </span>
             ) : ownSource === 'watchlist' && own.length ? (
-              <span className="live__addnote mono live__addnote--dim">{OWN_SOURCE_NOTE.watchlist} · remembered once you touch it</span>
-            ) : (
-              <span className="live__addnote mono live__addnote--dim">commas add several · remembered here</span>
-            )}
+              <span className="live__addnote mono live__addnote--dim" title="Remembered in this browser once you add or remove one">{OWN_SOURCE_NOTE.watchlist}</span>
+            ) : null}
           </form>
+          {entries.map(({ market: m, own: isOwn }) => {
+            const tm = tapeMarket(m)
+            const chip = (
+              <button type="button" className={`live__m${filter === m ? ' is-on' : ''}`} onClick={() => pickFilter(filter === m ? null : m)} data-kind={tm.kind} data-own={isOwn || undefined}>
+                {tm.dex && <span className="live__dex mono">{tm.dex}</span>}
+                {tm.ticker}
+              </button>
+            )
+            return isOwn ? (
+              <span key={m} className="live__mown">
+                {chip}
+                <button type="button" className="live__mx" onClick={() => removeOwn(m)} aria-label={`Remove ${m} from your markets`} title="Remove">
+                  ×
+                </button>
+              </span>
+            ) : (
+              <span key={m} className="live__mseat">{chip}</span>
+            )
+          })}
         </div>
 
         <GuideSeat surface="live" posture="phone" />

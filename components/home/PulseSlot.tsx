@@ -315,24 +315,6 @@ export default function PulseSlot() {
           <button type="button" className={`pulse__m${pick === null ? ' is-on' : ''}`} aria-pressed={pick === null} onClick={() => choose(null)}>
             All <span className="mono pulse__mcount">{aim.length}</span>
           </button>
-          {chipRow(own, markets, null, markets.length).map(({ market: m, own: isOwn }) => {
-            const tm = tapeMarket(m)
-            const chip = (
-              <button type="button" className={`pulse__m${pick === m ? ' is-on' : ''}`} aria-pressed={pick === m} data-kind={tm.kind} data-own={isOwn || undefined} onClick={() => choose(pick === m ? null : m)}>
-                <MarketName m={tm} />
-              </button>
-            )
-            return isOwn ? (
-              <span key={m} className="pulse__mown">
-                {chip}
-                <button type="button" className="pulse__mx" onClick={() => removeOwn(m)} aria-label={`Remove ${m} from your markets`} title="Remove">
-                  ×
-                </button>
-              </span>
-            ) : (
-              <span key={m} className="pulse__mseat">{chip}</span>
-            )
-          })}
           <form
             className="pulse__add"
             onSubmit={(e) => {
@@ -367,6 +349,24 @@ export default function PulseSlot() {
               </span>
             )}
           </form>
+          {chipRow(own, markets, null, markets.length).map(({ market: m, own: isOwn }) => {
+            const tm = tapeMarket(m)
+            const chip = (
+              <button type="button" className={`pulse__m${pick === m ? ' is-on' : ''}`} aria-pressed={pick === m} data-kind={tm.kind} data-own={isOwn || undefined} onClick={() => choose(pick === m ? null : m)}>
+                <MarketName m={tm} />
+              </button>
+            )
+            return isOwn ? (
+              <span key={m} className="pulse__mown">
+                {chip}
+                <button type="button" className="pulse__mx" onClick={() => removeOwn(m)} aria-label={`Remove ${m} from your markets`} title="Remove">
+                  ×
+                </button>
+              </span>
+            ) : (
+              <span key={m} className="pulse__mseat">{chip}</span>
+            )
+          })}
         </div>
 
         <div className="pulse__body">
