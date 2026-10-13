@@ -501,8 +501,10 @@ export async function createAlert(
   // mark, the same feed the sweep prices with (lib/alerts-exec → readQuotes).
   // A caller that names a base (AlertForm sends the rail's last) keeps it;
   // a caller that names none never chooses the level it is measured from.
-  if (symbol && rule.condition === 'pct_move' && rule.basePrice == null) {
-    const live = Number.isFinite(rule.value) && rule.value > 0 && rule.value < 100 ? (await readQuotes([symbol])).quotes[symbol]?.last : null
+  // Only a percent the rule would accept earns a quote read; anything else
+  // falls through to alertRuleProblem's own 400 without touching a feed.
+  if (symbol && rule.condition === 'pct_move' && rule.basePrice == null && Number.isFinite(rule.value) && rule.value > 0 && rule.value < 100) {
+    const live = (await readQuotes([symbol])).quotes[symbol]?.last
     if (!(live != null && live > 0)) return { problem: `No live price for ${symbol} right now — try again in a moment.`, status: 409 }
     rule.basePrice = live
   }
