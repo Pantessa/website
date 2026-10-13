@@ -126,7 +126,7 @@ const PROBE = String.raw`(() => {
   const text = document.body?.innerText ?? ''
   // the OLD name on purpose (CLAUDE.md IDENTITY): wire/host ids (yeetful-embed, yeetful-tool-*, *.yeetful.com, @yeetful/,
   // YEETFUL_*, npm yeetful), the legal entity "Yeetful, Inc.", "formerly Yeetful" — stripped before the test
-  const WIRE = /formerly yeetful|yeetful,? inc\.?|@yeetful\/[\w-]+|yeetful[-_.@/][\w.-]*|[\w-]+\.yeetful\.com|YEETFUL_\w+|['"`]yeetful['"`]|npm (?:i(?:nstall)? )?yeetful/gi
+  const WIRE = /formerly yeetful|yeetful,? inc\.?|@yeetful\/[\w-]+|yeetful[-_.@/][\w.-]*|[\w-]+\.yeetful\.com|YEETFUL_\w+|['"\x60]yeetful['"\x60]|npm (?:i(?:nstall)? )?yeetful/gi
   const yeetful = text.split('\n').filter((l) => /yeetful/i.test(l.replace(WIRE, ''))).map((l) => l.trim().slice(0, 120)).slice(0, 5)
   const badImages = [...document.images].filter((i) => i.complete && i.naturalWidth === 0 && i.src && !i.src.startsWith('data:')).map((i) => i.src.slice(0, 120))
   const hrefs = [...document.querySelectorAll('a[href]')].map((a) => a.getAttribute('href') || '').filter((h) => h.startsWith('/') && !h.startsWith('//'))
