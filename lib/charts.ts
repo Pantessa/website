@@ -32,14 +32,22 @@ export const CHART_FEED_LABELS: Record<ChartFeed, string> = {
 
 import { ROBINHOOD_TICKER_SET } from '@/lib/robinhood-tickers'
 
-export type ChartTf = '15m' | '1h' | '4h' | '1d'
+export type ChartTf = '1m' | '15m' | '1h' | '4h' | '1d'
 
 export const CHART_TFS: { key: ChartTf; label: string }[] = [
+  { key: '1m', label: '1m' },
   { key: '15m', label: '15m' },
   { key: '1h', label: '1H' },
   { key: '4h', label: '4H' },
   { key: '1d', label: '1D' },
 ]
+
+/** The frames a source can draw: a tokenized stock's tape (Robinhood's
+ *  5-minute historicals, Yahoo behind it) has no minute bar, so the 1m
+ *  frame is a coin's and a perp's (2026-10-13, the live tail). */
+export function tfsForSource(source: ChartSource | null | undefined): { key: ChartTf; label: string }[] {
+  return source === 'robinhood' ? CHART_TFS.filter((t) => t.key !== '1m') : CHART_TFS
+}
 
 /** The frame a token chart opens on: the day (Nate, 2026-09-16). The chart
  *  engine and the Technicals tab both read it, so the candles and the gauge
