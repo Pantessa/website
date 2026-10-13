@@ -129,6 +129,7 @@ async function main() {
   pin('the bell is on /live: both views render MarketsSide, whose strip mounts RailAlerts', /<MarketsSide label="War log">/.test(battle) && /<MarketsSide label="Triggers">/.test(feed) && /<RailAlerts \/>/.test(strip))
   const css = src('components/live/arm-alert.css')
   pin('44px under a coarse pointer, tokens only', /@media \(pointer: coarse\)[\s\S]*min-height: 44px/.test(css) && !/#[0-9a-f]{6}\b(?![^;]*\))/i.test(css.replace(/var\([^)]*\)/g, '')))
+  pin('the strip\'s bell is 44px under a thumb too (PHONE\'s finding) — min-*, so the strip\'s own 40px never wins', /\.mkt-frame__alerts \.mkt-frame__bell \{[^}]*min-width: 44px;[^}]*min-height: 44px;/.test(css))
 
   console.log(`\npick alert pins: ${pass} passed / ${fail} failed`)
   if (fail) process.exit(1)

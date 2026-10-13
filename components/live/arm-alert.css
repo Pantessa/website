@@ -104,3 +104,15 @@
     padding: 0 12px;
   }
 }
+
+/* The strip's bell (shell/RailAlerts in MarketsSide's top strip) under a
+   thumb — PHONE's finding (2026-10-13): 34px on a desktop, 40px at ≤1023px,
+   both under the 44px rule. This file rides /live and / through Battle and
+   Deck, which is where the pick's alerts land; min-* wins over the strip's
+   own width/height whatever the stylesheet order. */
+@media (pointer: coarse) {
+  .mkt-frame__alerts .mkt-frame__bell {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
