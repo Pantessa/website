@@ -69,7 +69,8 @@ check(
 check(
   'the last small targets (375, coarse, measured on main): the timeframe row is its own row with ≥44px buttons, the bell 44, the brief\'s chip 44, the attribution link a 44px hit area, the movers tape items 44',
   css.includes('.sym .mkt-chart__bar:has(> .mkt-view) > .tok__tf, .sym .mkt-chart__bar > .tok__tf { flex: 0 0 100%; gap: 4px; }') && css.includes('.sym .mkt-chart__bar:has(> .mkt-view) > .tok__tf > .tok__tfbtn, .sym .mkt-chart__bar > .tok__tf > .tok__tfbtn { flex: 1 1 0; min-width: 44px; }') &&
-    rf('components/markets/chart/depth.css').includes('.dp__chip { height: 44px; padding: 0 12px; border-radius: 10px; }') && rf('components/markets/technicals/fundamentals.css').includes(".mk-fund__head a::after, .mk-fund__foot a::after { content: ''; position: absolute; inset: -15px -6px; }") &&
+    rf('components/markets/chart/depth.css').includes('.dp__chip { height: 44px; padding: 0 12px; border-radius: 10px; }') && rf('components/markets/chart/depth.css').includes('.dp__chip { min-width: 44px; justify-content: center; }') && css.includes(".mkt-frame .mkt-link::after { content: ''; position: absolute; inset: -14px -4px; }") &&
+    rf('components/markets/trade/trade.css').includes('.mkt-ticket__preset { min-width: 44px; }') && rf('components/markets/trade/trade.css').includes(".mkt-ticket input[type='range'] { height: 44px; }") && rf('components/markets/technicals/fundamentals.css').includes(".mk-fund__head a::after, .mk-fund__foot a::after { content: ''; position: absolute; inset: -15px -6px; }") &&
     css.includes('.mkt-frame__top .mkt-frame__bell { width: 44px; height: 44px; }') && css.includes('.mk-ai__chip { min-height: 44px; }') &&
     css.includes(".sym .mkt-attrib::after { content: ''; position: absolute; inset: -7px 0; }") && css.includes('.mk-tape__item { min-height: 44px; padding-block: 0; }'),
 )

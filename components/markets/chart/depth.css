@@ -53,3 +53,10 @@
   .dp__chip { height: 44px; padding: 0 12px; border-radius: 10px; }
   .dp__chips { border-radius: 12px; }
 }
+/* At 320 the narrow chips ("1%", "$") measured 31–38 wide: every chip is at least 44 wide and the group scrolls
+   sideways instead of squeezing (9 × 44 is wider than a 288px bar). */
+@media (hover: none) {
+  .dp__chip { min-width: 44px; justify-content: center; }
+  .dp__chips { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .dp__chips::-webkit-scrollbar { display: none; }
+}

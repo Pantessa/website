@@ -767,3 +767,9 @@ button.mk-held:hover { border-color: var(--accent); }
   .sym .mkt-attrib::after { content: ''; position: absolute; inset: -7px 0; }
   .mk-tape__item { min-height: 44px; padding-block: 0; }
 }
+/* The claim's "How it works →" (an inline link, 16px tall at 430, 34 at 375 where it wraps) and any inline
+   `.mkt-link` on a markets surface keep their look and gain the 44px hit area under a thumb. */
+@media (hover: none) {
+  .mkt-frame .mkt-link { position: relative; }
+  .mkt-frame .mkt-link::after { content: ''; position: absolute; inset: -14px -4px; }
+}
