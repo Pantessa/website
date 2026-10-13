@@ -59,6 +59,7 @@
     "pins:pulse": "tsx scripts/pulse-pins.ts",
     "pins:front-door": "tsx scripts/front-door-pins.ts",
     "pins:deadends": "tsx scripts/deadends-pins.ts",
+    "inventory:deadends": "tsx scripts/deadend-inventory.ts",
     "pins:depth": "tsx scripts/depth-pins.ts",
     "pins:deck": "tsx scripts/deck-pins.ts",
     "pins:pick": "tsx scripts/pick-pins.ts",

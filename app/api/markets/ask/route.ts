@@ -33,6 +33,7 @@ import { modelAvailable, modelLabel, modelMocked, modelText } from '@/lib/market
 import { admitMarketsAi } from '@/lib/markets-ai-fence'
 import { readPosition, readTape, techSummary } from '@/lib/markets-ai-context'
 import { validateProposedAsk } from '@/lib/markets-ai-ladder'
+import { marketReadAsk, marketReadWords } from '@/lib/market-read'
 import { parseChartState } from '@/lib/chart-state'
 import { alertRuleProblem, type AlertRule } from '@/lib/watchlists'
 import { symbolName } from '@/lib/markets'
@@ -171,16 +172,28 @@ export async function POST(req: NextRequest) {
   // "the first one") goes to the ticket without a model call.
   if (orderLive && relayShortcut(question, order)) return answer({ kind: 'relay' }, { deterministic: true, model: 'none' })
 
+  // A READ of this market ("what's the trend on screen?", "why is it
+  // moving?") always has an answer from our own tape — the model adds the
+  // judgement when it is there; when it isn't (down, or the fence's wall),
+  // the read still answers instead of a sentence about the model
+  // (POLISH/DEADENDS 2026-10-13: the AI bar's own question chip read "The
+  // model is not available right now").
+  const read = marketReadAsk(question, symbol)
+  const readAnswer = (model: string) =>
+    answer({ kind: 'answer', text: marketReadWords({ pair, kind: read!.kind === 'move' ? 'trend' : read!.kind, last, change24hPct: tape.change24hPct, tech, tf, news: null }) }, { deterministic: true, model })
+
   // ── The model ────────────────────────────────────────────────────────────
   // With an order live, a message the page can't read still reaches the
   // ticket (the app has its own planner); without one, say what still works.
   if (!modelAvailable()) {
     if (orderLive) return answer({ kind: 'relay' }, { deterministic: true, model: 'none' })
+    if (read) return readAnswer('none')
     return answer({ kind: 'answer', text: 'The model is not available right now. Drawings ("draw a line at 180"), alerts ("tell me when it crosses 4k") and complete asks ("buy $25 of ' + symbol + '") still work.' }, { deterministic: true, model: 'none' })
   }
   const adm = await admitMarketsAi(req.headers, body, 'markets-ask')
   if (adm.wall) {
     if (orderLive) return answer({ kind: 'relay' }, { deterministic: true, model: 'wall' })
+    if (read) return readAnswer('wall')
     return answer({ kind: 'answer', text: adm.wall }, { deterministic: true, model: 'wall' })
   }
 
@@ -207,7 +220,7 @@ export async function POST(req: NextRequest) {
     order,
   }
   const text = await modelText({ system: ASK_SYSTEM, user: askUserPrompt(ctx), maxTokens: ASK_MAX_TOKENS, surface: 'markets-ask', apiKey: adm.apiKey, owner: adm.owner, mock: { scenario } })
-  if (!text) return answer({ kind: 'answer', text: 'The model did not answer — try again in a moment.' }, { deterministic: true, model })
+  if (!text) return read ? readAnswer(model) : answer({ kind: 'answer', text: 'The model did not answer — try again in a moment.' }, { deterministic: true, model })
   const m = parseModelAnswer(text)
   // Unparsed: the model's prose, or the words it meant — never its JSON.
   if (!m) {
@@ -224,7 +237,7 @@ export async function POST(req: NextRequest) {
       const v = validateProposedAsk(m.ask, symbol)
       if (!v.ok) {
         console.warn('[markets/ask] model act dropped by the fence', { why: v.why })
-        return answer({ kind: 'answer', text: `${m.say ? `${cleanProse(m.say, 300)} ` : ''}I can't turn that into a chip here (${v.why}). Try the buy or protect chips above, or say the amount and the ticker.` }, { deterministic: false, model })
+        return answer({ kind: 'answer', text: `${m.say ? `${cleanProse(m.say, 300)} ` : ''}That one doesn't build as an order on this page (${v.why}). The chips above do, or say the amount and the ticker ("buy $25 of ${symbol}").` }, { deterministic: false, model })
       }
       return answer({ kind: 'act', say: cleanProse(m.say || 'Building it in your order ticket — your wallet signs.', 300), chip: { label: v.ask, ask: v.ask } }, { deterministic: false, model })
     }
