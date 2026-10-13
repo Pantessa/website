@@ -262,3 +262,23 @@
   .live__table th:nth-child(1) { width: 13%; }
   .live__table th:nth-child(4) { width: 18%; }
 }
+
+/* PHONE (squad gtm-3h, 2026-10-13 — measured by squad-gtm3h-2026-10-13/shots/phone.mjs; numbers in PHONE.md).
+   Before → after on /live at 320–430 under a coarse pointer:
+   - the trigger events' follow chips were 26px (the MOBILE rule covered tiles + the tape only) → 44px;
+   - the "+ your own" field 140×28 and Add 49×28 → 44px;
+   - the six venue toggles in the Feeds card were 22px → 36px pills with a 44px hit area (rows 8px apart);
+   - the strip on a phone is `display: contents` (markets.css), so Pause sat on a row of its own under the
+     views (title 26 + views 42 + Pause 44) → Pause rides the title row's right edge (−26px of chrome). */
+@media (max-width: 640px) {
+  .live { position: relative; } /* container-type no longer makes a containing block */
+  .live__title { min-height: 44px; align-items: center; padding-right: 52px; }
+  .live__controls { position: absolute; top: 0; right: var(--mkt-pad-r, 16px); }
+  @media (hover: none) {
+    .live__events .live__chip, .live__event .live__chip { min-height: 44px; }
+    .live__add input, .live__addbtn { height: 44px; }
+    .live__venues { row-gap: 8px; }
+    .live__venue-t { min-height: 36px; position: relative; }
+    .live__venue-t::after { content: ''; position: absolute; inset: -4px 0; }
+  }
+}
