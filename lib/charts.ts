@@ -114,9 +114,11 @@ const HYPERLIQUID_PERPS = new Set(['HYPE', 'SYRUP', 'FARTCOIN', 'BRETT', 'AIXBT'
 
 /** Listed on Robinhood Chain but with NO quote on Robinhood's market-data
  *  feed (probed 2026-09-10 across all 201 listings: a batch historicals call
- *  returns an empty instrument for exactly these two). They stay chartless
- *  BY NAME rather than growing a button over an empty chart. */
-const ROBINHOOD_FEEDLESS = new Set(['CASHCAT', 'SATS'])
+ *  returns an empty instrument for exactly these two; PONS joined the list
+ *  by 2026-10-13 — `missing_instruments` on Robinhood, "No data found" on
+ *  Yahoo, a CoinGecko-imaged token, not an equity). They stay chartless BY
+ *  NAME rather than growing a button over an empty chart. */
+const ROBINHOOD_FEEDLESS = new Set(['CASHCAT', 'SATS', 'PONS'])
 
 /** A tokenized equity we hold a candle feed for. Coins are checked FIRST in
  *  chartPairFor (nothing lists AAPL as a coin, and a ticker that collides
