@@ -179,7 +179,10 @@ else
       # Known environment flakes on the shared TEST DB (named, never silently dropped):
       # taste (HTTP) draws 1 of 250 fake IPs and TASTE_GUEST_DAILY=1 spends each for the UTC day.
       elif printf '%s' "$l" | grep -qE '^taste \(HTTP\): a wallet-less stranger.*served=0'; then lab="$lab
-  ENV: $(printf '%s' "$l" | cut -c1-170) [the guest's daily taste on a reused fake IP]"; else lab="$lab
+  ENV: $(printf '%s' "$l" | cut -c1-170) [the guest's daily taste on a reused fake IP]"
+      # the harness names its own live-read misses; a venue's 429 is the venue's rate limit
+      elif printf '%s' "$l" | grep -qE 'the live scan or venue read did not complete|429 Too Many Requests|Rate limit exceeded|over rate limit'; then lab="$lab
+  ENV: $(printf '%s' "$l" | cut -c1-170) [a live RPC/venue read did not complete — rerun]"; else lab="$lab
   **OURS**: $(printf '%s' "$l" | cut -c1-170)"; fi
     done < "$D/testapi-reds.txt"
   fi
@@ -201,7 +204,7 @@ else
 const fs = require('fs')
 let j; try { j = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')) } catch (e) { console.log(`| crawl | **FAIL** — no output: ${String(e).slice(0, 120)} |`); process.exit(0) }
 const rows = j.rows
-const key = (r) => `${r.persona[0]}/${r.width}${r.route}`
+const key = (r) => `${r.persona.slice(0, 3)}/${r.width}${r.route}`
 const RES = /^Failed to load resource/
 const phone = (r) => r.width < 768
 // expected non-200: the not-found route is a 404 by design; a dashboard sends a stranger home (recorded as a landing, not a failure)
@@ -259,7 +262,7 @@ else
   PWNM=$(dirname "$PW")
   WB=''; [ -f "$NAT/desktop-baseline.json" ] || WB='--write-baseline'
   t0=$(date +%s)
-  NODE_PATH=$PWNM PLAYWRIGHT_CORE=$PW BASE=$B npx tsx scripts/drive-native.ts --out="$NAT" --tag="$LABEL" $WB > "$D/drive-native.log" 2>&1; ec=$?
+  NODE_PATH=$PWNM PLAYWRIGHT_CORE=$PW MARKETS_SHOT_DIR=$NAT/shots/markets NAV_SHOT_DIR=$NAT/shots/nav BASE=$B npx tsx scripts/drive-native.ts --out="$NAT" --tag="$LABEL" $WB > "$D/drive-native.log" 2>&1; ec=$?
   tot=$(grep -m1 -oE 'PASS [0-9]+ · FAIL [0-9]+\*\* · DECISION [0-9]+ · SKIP [0-9]+ · N/A [0-9]+' "$NAT/$LABEL.md" 2>/dev/null)
   # the per-check rows whose FAIL column is non-zero: "| n | check | P | F | D | S | first red |"
   reds=$(awk -F'|' '/^\| [0-9]+ \| /{ gsub(/ /,"",$5); if ($5+0>0) printf "%s FAIL×%s: %s · ", $3, $5, substr($8,1,110) }' "$NAT/$LABEL.md" 2>/dev/null)

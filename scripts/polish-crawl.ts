@@ -45,7 +45,7 @@ const WIDTHS = opt('--widths', '375,390,430,1440').split(',').map(Number)
 const JOBS = Number(opt('--jobs', '6'))
 const FIXTURE_I = opt('--i', 'buy-aapl')
 const FIXTURE_L = opt('--l', 'mobilelinks')
-const FIXTURE_P = opt('--p', '5pszWt7-tmSu')
+const FIXTURE_P = opt('--p', 'OjtYCfDRvxJl')
 
 type Persona = 'stranger' | 'connected' | 'signed'
 
@@ -124,7 +124,10 @@ const PROBE = String.raw`(() => {
   const scrollerOver = Math.max(0, ...scrollers.map((s) => s.scrollWidth - s.clientWidth))
   const uniq = (a) => { const m = new Map(); for (const x of a) m.set(x, (m.get(x) || 0) + 1); return [...m].map(([k, n]) => n > 1 ? k + ' ×' + n : k) }
   const text = document.body?.innerText ?? ''
-  const yeetful = text.split('\n').filter((l) => /yeetful/i.test(l) && !/formerly yeetful/i.test(l)).map((l) => l.trim().slice(0, 120)).slice(0, 5)
+  // the OLD name on purpose (CLAUDE.md IDENTITY): wire/host ids (yeetful-embed, yeetful-tool-*, *.yeetful.com, @yeetful/,
+  // YEETFUL_*, npm yeetful), the legal entity "Yeetful, Inc.", "formerly Yeetful" — stripped before the test
+  const WIRE = /formerly yeetful|yeetful,? inc\.?|@yeetful\/[\w-]+|yeetful[-_.@/][\w.-]*|[\w-]+\.yeetful\.com|YEETFUL_\w+|['"`]yeetful['"`]|npm (?:i(?:nstall)? )?yeetful/gi
+  const yeetful = text.split('\n').filter((l) => /yeetful/i.test(l.replace(WIRE, ''))).map((l) => l.trim().slice(0, 120)).slice(0, 5)
   const badImages = [...document.images].filter((i) => i.complete && i.naturalWidth === 0 && i.src && !i.src.startsWith('data:')).map((i) => i.src.slice(0, 120))
   const hrefs = [...document.querySelectorAll('a[href]')].map((a) => a.getAttribute('href') || '').filter((h) => h.startsWith('/') && !h.startsWith('//'))
   return { vw, vh, docOverflow: de.scrollWidth - de.clientWidth, docScrollH: de.scrollHeight - innerHeight, scrollers: scrollers.length, scrollerOver,
