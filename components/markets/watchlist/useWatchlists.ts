@@ -26,6 +26,7 @@
 
 import { notAnswering, shownError } from '@/lib/fetch-words'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ALERTS_CHANGED_EVENT } from '@/lib/pick-alerts'
 import { useSession } from '@/lib/session'
 import {
   DEFAULT_LIST_NAME,
@@ -723,7 +724,16 @@ export function useAlerts(enabled: boolean, intervalMs = 30_000): AlertsApi {
     const t = setInterval(() => {
       if (typeof document === 'undefined' || !document.hidden) void refresh()
     }, intervalMs)
-    return () => clearInterval(t)
+    // ALERTS ON YOUR PICK (GTM squad 2026-10-13, additive): a control that
+    // armed outside this instance's provider (the deck on `/` sits beside the
+    // index's side column, not inside it) says so on `window`, and the bell
+    // re-reads now instead of at its next poll.
+    const onChanged = () => void refresh()
+    window.addEventListener(ALERTS_CHANGED_EVENT, onChanged)
+    return () => {
+      clearInterval(t)
+      window.removeEventListener(ALERTS_CHANGED_EVENT, onChanged)
+    }
   }, [refresh, enabled, intervalMs])
 
   const create = useCallback<AlertsApi['create']>(

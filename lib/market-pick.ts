@@ -221,3 +221,29 @@ export function pickSourceWord(source: PickSource): string | null {
   if (source === 'hand') return 'as you left them'
   return null
 }
+
+// ── Which default may replace which (the browser store's guard) ──────────────
+
+/** How explicit a source is: a link and a hand are choices; the rest are defaults. */
+export const PICK_RANK: Readonly<Record<PickSource, number>> = { url: 6, hand: 5, watchlist: 4, held: 3, venue: 2, fallback: 1 }
+
+export function samePick(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((m, i) => m === b[i])
+}
+
+/**
+ * The store decides the opening more than once as reads land (memory first,
+ * then the universe, the watchlist, the wallet, the venue). A later decision
+ * replaces what is shown only when it is more explicit than a DEFAULT: a
+ * watchlist that lands after the venue's pick painted takes the row; holdings
+ * never replace a watchlist; nothing replaces a hand or a link except a link
+ * the page itself carries (`?t=`, read on the page seat). Nothing shown yet →
+ * the decision paints.
+ */
+export function replacesPick(current: { markets: readonly string[]; source: PickSource } | null, next: { markets: readonly string[]; source: PickSource }): boolean {
+  if (!current) return true
+  if (next.source === 'url') return !(current.source === 'url' && samePick(current.markets, next.markets))
+  if (current.source === 'url' || current.source === 'hand') return false
+  if (next.source === 'hand') return true
+  return PICK_RANK[next.source] > PICK_RANK[current.source]
+}
