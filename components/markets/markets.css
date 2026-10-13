@@ -215,6 +215,11 @@ button.mk-held:hover { border-color: var(--accent); }
   .mkt-frame__top .mkt-frame__askword { display: none; }
   .mkt-frame__top .mkt-frame__askhint { display: block; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-size: 14px; font-weight: 400; color: var(--muted); }
   .mkt-frame__top .mkt-frame__acct { flex: 0 0 auto; }
+  /* The bell beside the ask field (RailAlerts): a 40px target in the 52px bar;
+     its popover spans the screen under the bar instead of hanging off a
+     button that sits a thumb from the right edge. */
+  .mkt-frame__top .mkt-frame__bell { width: 40px; height: 40px; }
+  .mkt-frame__top .mkt-alertpop { position: fixed; top: calc(var(--mkt-top-h, 52px) + 6px); left: 10px; right: 10px; width: auto; max-height: min(70dvh, 520px); }
   /* The section tabs stick under the top strip while the tab's body scrolls
      (the native tab strip); scroll-margin lands a tab switch under the strip. */
   .sym__tabs { position: sticky; top: var(--mkt-top-h, 52px); z-index: 19; background: var(--bg); scroll-margin-top: var(--mkt-top-h, 52px); }

@@ -85,7 +85,8 @@ export async function frontDoorPins(check: Check): Promise<void> {
     `typed=${typed.join(',') || '-'}`,
   )
   check(
-    'front door: the nav\'s two Markets tabs, the footer, the phone CTA bar, the brochure\'s "Open Markets" doors (hero, markets band, map teaser, links hero), /compare, the public list page and the symbol card all read MARKETS_HREF',
+    // RE-PINNED 2026-10-13 (rail-declutter): the /t About card (SymbolCardSlot, "All markets →") is gone — the spine's MARKETS seat is the way back.
+    'front door: the nav\'s two Markets tabs, the footer, the phone CTA bar, the brochure\'s "Open Markets" doors (hero, markets band, map teaser, links hero), /compare and the public list page all read MARKETS_HREF (the symbol page has no About card any more)',
     (code('components/Navigation.tsx').match(/<SpineLink href=\{MARKETS_HREF\} className=\{`nav__tab/g) ?? []).length === 2 &&
       /const onMarkets = isMarketsPath\(pathname\)/.test(code('components/Navigation.tsx')) &&
       /href: MARKETS_HREF, app: true/.test(code('components/Footer.tsx')) &&
@@ -93,7 +94,6 @@ export async function frontDoorPins(check: Check): Promise<void> {
       ['components/landing/LandingHero.tsx', 'components/MarketsBand.tsx', 'components/landing/MarketMapTeaser.tsx', 'components/LinksHeroView.tsx', 'app/compare/page.tsx', 'app/lists/[slug]/page.tsx', 'components/SharedGone.tsx', 'app/docs/markets/page.tsx']
         .every((p) => /<SpineLink[^>]*href=\{MARKETS_HREF\}/.test(code(p))) &&
       /href=\{`\$\{MARKETS_HREF\}\?import=1`\}/.test(code('app/compare/page.tsx')) &&
-      /<Link href=\{MARKETS_HREF\} className="mkt-link">/.test(code('components/markets/shell/SymbolCardSlot.tsx')) &&
       /router\.push\(MARKETS_HREF\) : connectAndSignIn\(MARKETS_HREF\)/.test(code('components/PricingPlans.tsx')),
   )
   check(

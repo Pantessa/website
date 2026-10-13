@@ -5505,6 +5505,32 @@
   border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--bg);
 }
 .mkt-frame__ask { flex: 0 0 auto; height: 34px; }
+/* THE BELL beside Ask (RailAlerts, 2026-10-13): fired + armed alerts behind one
+   34px icon — the rail no longer spends two bands on them. It wears the fired
+   count; the popover hangs from the STRIP (the sticky strip is the containing
+   block), right-aligned to it, so it drops over the rail's top, not the chart. */
+.mkt-frame__alerts { flex: 0 0 auto; display: flex; align-items: center; margin-right: auto; } /* auto margin: the bell hugs Ask, the account seat keeps the right edge */
+.mkt-frame__bell { position: relative; display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--line-2); border-radius: 999px; background: color-mix(in srgb, var(--surf-1) 80%, transparent); color: var(--muted); transition: color .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.mkt-frame__bell:hover, .mkt-frame__bell[aria-expanded="true"] { color: var(--fg); border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent); }
+.mkt-frame__bell[data-fired] { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2)); }
+.mkt-frame__bellCount { position: absolute; top: -5px; right: -6px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: var(--ink); font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
+.mkt-alertpop { position: absolute; top: calc(100% + 6px); right: 10px; z-index: 40; width: min(340px, calc(100vw - 20px)); max-height: min(70vh, 520px); overflow-y: auto; border: 1px solid var(--line-2); border-radius: 12px; background: var(--bg); box-shadow: 0 16px 40px rgba(0,0,0,.35); }
+.mkt-alertpop__head { display: flex; align-items: center; gap: 8px; padding: 9px 8px 8px 14px; border-bottom: 1px solid var(--line); }
+.mkt-alertpop__title { font-size: 13px; font-weight: 600; color: var(--fg); }
+.mkt-alertpop__meta { margin-left: auto; font-size: 10px; color: var(--muted-2); white-space: nowrap; }
+.mkt-alertpop__sec + .mkt-alertpop__sec { border-top: 1px solid var(--line); }
+.mkt-alertpop__sec--fired { background: color-mix(in oklch, var(--accent) 8%, transparent); }
+.mkt-alertpop__label { margin: 0; padding: 8px 14px 3px; font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); }
+.mkt-alertpop__fired { display: flex; align-items: flex-start; gap: 8px; padding: 5px 10px 8px 14px; }
+.mkt-alertpop__firedIcon { width: 14px; height: 14px; margin-top: 2px; color: var(--accent); flex-shrink: 0; }
+.mkt-alertpop__firedTitle { font-size: 12.5px; font-weight: 600; color: var(--fg); }
+.mkt-alertpop__firedMeta { font-size: 11px; color: var(--muted); margin: 2px 0 5px; }
+.mkt-alertpop__more { padding: 0 14px 8px; }
+.mkt-alertpop__row { display: flex; align-items: center; gap: 6px; padding: 5px 10px 5px 14px; font-size: 12px; color: var(--fg); }
+.mkt-alertpop__row:last-child { padding-bottom: 8px; }
+.mkt-alertpop__rowLabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mkt-alertpop__empty { margin: 0; padding: 12px 14px 14px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.mkt-alertpop__err { margin: 0; padding: 4px 14px 10px; font-size: 12px; color: var(--sell); }
 .mkt-frame__acct { display: flex; align-items: center; justify-content: flex-end; min-width: 0; }
 .mkt-frame__acct .navacct__pill { max-width: 100%; }
 .mkt-frame__acct .navacct__addr { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -5522,12 +5548,11 @@
 /* /t/<symbol> rides the same frame (2026-09-11, Nate: "keep the watch list
    and sidebar top right fixed same as in the normal markets page"): .sym is
    the main column and keeps its own gutters; the rail docks right from the
-   nav down, the watchlist filling it and the symbol card pinned under it.
-   The doubled class outranks the ≤640px pad, so a stacked rail lines up with
-   .sym's edge. */
+   nav down, the watchlist filling it (the About card that sat under it is
+   gone, 2026-10-13). The doubled class outranks the ≤640px pad, so a stacked
+   rail lines up with .sym's edge. */
 .mkt-frame.mkt-frame--sym { --sym-gutter: clamp(14px, 2.4vw, 32px); --mkt-pad-l: var(--sym-gutter); }
 .mkt-frame--sym > .sym { grid-area: main; min-width: 0; }
-.mkt-frame__rail > [data-slot="symbol-card"] { flex: 0 0 auto; margin: 0 12px 12px; }
 /* With the rail docked, the column is narrower than a one-row header needs
    (title + act chips + price ≈ 1,390px), so the header goes two rows. Title
    and price share the first row: the title yields width, so the price keeps
@@ -6300,11 +6325,6 @@
 .wl__chip:hover { color: var(--fg); border-color: var(--line-2); }
 .wl__chip--accent { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .wl__chip--accent:hover { background: var(--accent); color: var(--ink); }
-.wl__fired { padding: 8px 10px; border-bottom: 1px solid var(--line); background: color-mix(in oklch, var(--accent) 8%, transparent); }
-.wl__firedRow { display: flex; align-items: flex-start; gap: 8px; padding: 4px 0; }
-.wl__firedIcon { width: 14px; height: 14px; margin-top: 2px; color: var(--accent); flex-shrink: 0; }
-.wl__firedTitle { font-size: 12px; font-weight: 600; color: var(--fg); }
-.wl__firedMeta { font-size: 11px; color: var(--muted); margin: 2px 0 4px; }
 .wl__addWrap { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
 .wl__add { position: relative; flex: 1; min-width: 0; }
 .wl__addIcon { position: absolute; left: 9px; top: 50%; width: 13px; height: 13px; transform: translateY(-50%); color: var(--muted-2); pointer-events: none; }
@@ -6419,9 +6439,6 @@
   .wl__icon { width: 40px; height: 40px; }
   .wl__popChips { gap: 8px; }
 }
-.wl__alerts { border-top: 1px solid var(--line); padding: 2px 0; }
-.wl__alertRow { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 12px; font-size: 12px; }
-.wl__alertLabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wl__foot { padding: 7px 10px; border-top: 1px solid var(--line); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2); line-height: 1.5; }
 .wl__link { color: var(--accent); background: none; border: 0; padding: 0; font: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; }
 .wl__link:hover { text-decoration: underline; }

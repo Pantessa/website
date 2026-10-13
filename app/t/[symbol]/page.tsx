@@ -11,7 +11,7 @@ import MarketsShell from '@/components/markets/shell/MarketsShell'
 // /t/<symbol> — THE symbol page (Markets, 2026-09-11; the cockpit, 2026-10-13):
 // the one-line header strip, the tab strip (Overview · Chart · News ·
 // Community · Technicals · Trade) right under it, the live chart on Overview
-// and Chart, and the right column (order ticket · watchlist · About). The
+// and Chart, and the right column (order ticket · watchlist). The
 // chart engine sits behind
 // components/markets/chart/ChartMount. Symbols without a candle source
 // still get an honest page — the token can be tradable in chat without

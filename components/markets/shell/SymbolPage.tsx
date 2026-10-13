@@ -57,7 +57,6 @@ import CompareControl from '@/components/markets/shell/CompareControl'
 import ExecStrip from '@/components/markets/slots/ExecStrip'
 import AskChart from '@/components/markets/slots/AskChart'
 import WatchlistSlot from '@/components/markets/shell/WatchlistSlot'
-import SymbolCardSlot from '@/components/markets/shell/SymbolCardSlot'
 import MarketsSide from '@/components/markets/shell/MarketsSide'
 import RailTicket from '@/components/markets/trade/RailTicket'
 import OverviewTab from '@/components/markets/tabs/OverviewTab'
@@ -628,11 +627,11 @@ export default function SymbolPage({
         </div>
       </main>
 
-      {/* ── The right column: the ticket leads, the watchlist follows, the symbol card pinned under it ── */}
-      <MarketsSide label="Order ticket, watchlist and symbol details">
+      {/* ── The right column: the ticket leads, the watchlist follows. The About card that used to sit under
+          the watchlist is gone (2026-10-13, Nate: "takes up too much room"); alerts live behind the strip's bell. ── */}
+      <MarketsSide label="Order ticket and watchlist">
         {pair && !unknown && <RailTicket symbol={sym} pair={pair} last={stats?.last ?? null} side={railSide} onSide={setRailSide} onBuild={buildHere} onSay={sayHere} />}
         <WatchlistSlot current={unknown ? undefined : sym} onAsk={onChartAsk} />
-        {unknown ? null : <SymbolCardSlot symbol={sym} pair={pair} feed={feed} />}
       </MarketsSide>
       {door}
     </>
