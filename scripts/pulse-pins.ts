@@ -230,7 +230,7 @@ export function pulsePins(check: Check): void {
   check('pulse: the band mounts in the splash\'s lead seat through the deck (HomeSurface → Deck → PulseSlot seat="stage"); alone it is the framed band (the seat defaults to band, no props needed), and `/` is a public markets path (looking needs no wallet)',
     /<Deck \/>/.test(home) && /<PulseSlot seat="stage"/.test(deck) && /export default function PulseSlot\(\{ seat = 'band'/.test(slot) && /\}: PulseSlotProps = \{\}\)/.test(slot) && isMarketsPath('/') && isPublicAppPath('/'))
   check('pulse: the door and the views are links in the band\'s head (a URL never fires a turn): /live with prefetch off, and the three views from PULSE_VIEW_LINKS — drawn in the band seat; the deck carries the doors on its own bar and foot in the stage seat (RE-PINNED 2026-10-13 (deck))',
-    /href=\{pulseLiveHref\(pick\)\}/.test(slot) && pulseLiveHref(null) === PULSE_LIVE_HREF && /PULSE_VIEW_LINKS\.map/.test(slot) && !/openDoor\([^)]*PULSE_LIVE_HREF/.test(slot) && slot.indexOf('PULSE_VIEW_LINKS.map') < slot.indexOf('</header>') && /data-markets=\{aim\.length\}/.test(slot) &&
+    /href=\{pulseLiveHref\(lens\)\}/.test(slot) /* RE-PINNED 2026-10-13 (gtm3h): the door carries the pick's lens, never a peek */ && pulseLiveHref(null) === PULSE_LIVE_HREF && /PULSE_VIEW_LINKS\.map/.test(slot) && !/openDoor\([^)]*PULSE_LIVE_HREF/.test(slot) && slot.indexOf('PULSE_VIEW_LINKS.map') < slot.indexOf('</header>') && /data-markets=\{aim\.length\}/.test(slot) &&
       (slot.match(/\{seat === 'band' && \(/g) ?? []).length === 2 && slot.indexOf("{seat === 'band' && (") < slot.indexOf('<header className="pulse__head">'))
 
   // ── The token pick (2026-10-06: "add the token options to track") ─────
@@ -244,9 +244,12 @@ export function pulsePins(check: Check): void {
   check('pulse pick: a pick the stream no longer carries falls back to All, never a band reading zero; the door carries the pick to /live as ?m=',
     pulsePick('ETH', ['BTC', 'ETH']) === 'ETH' && pulsePick('DOGE', ['BTC', 'ETH']) === null && pulsePick(null, ['ETH']) === null &&
       pulseLiveHref('xyz:SNDK') === '/live?m=xyz%3ASNDK' && pulseLiveHref(null) === '/live')
-  check('pulse pick: the chip row renders All + one button per streamed market, the pick reaches pulseBars and pulseTiles, the remembered pick is read after mount (try/catch), and the row is fixed-height and leaves the phone (the 160px budget holds)',
+  // RE-PINNED 2026-10-13 (gtm3h): the band's token is the ONE pick's lens (a chip of yours, shared with the
+  // deck's tape) or a peek at one of the venue's busiest (the band's own); the pulse's own lens memory
+  // (PULSE_PICK_KEY) is retired — a lens is a look, the pick is what a hand keeps.
+  check('pulse pick: the chip row renders All + one button per streamed market, the token reaches pulseBars and pulseTiles, it is the pick\'s lens or a peek (never remembered — no PULSE_PICK_KEY read or write), and the row is fixed-height and leaves the phone (the 160px budget holds)',
     /className="pulse__markets"/.test(slot) && /chipRow\(own, markets, null, markets\.length\)\.map\(\(\{ market: m, own: isOwn \}\)/.test(slot) && /pulseBars\(fills, now, undefined, pick\)/.test(slot) && /pulseTiles\(fills, now, chipOk, pick\)/.test(slot) &&
-      /matchMedia\('\(min-width: 641px\)'\)\.matches\) return\s*try \{\s*const m = window\.localStorage\.getItem\(PULSE_PICK_KEY\)/.test(slot) &&
+      /const pick = pulsePick\(peek \?\? picked\.lens, aim\)/.test(slot) && !/PULSE_PICK_KEY|localStorage/.test(slot) &&
       /\.pulse__markets \{[^}]*height: 28px/.test(css) && /@container pulse \(max-width: 560px\) \{[^]*?\.pulse__markets \{ display: none; \}/.test(css))
 }
 
