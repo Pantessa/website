@@ -336,3 +336,13 @@
   .mkt-ticket__tab, .mkt-ticket__preset, .mkt-ticket__unit, .mkt-ticket__px { min-height: 44px; }
   .mkt-ticket__x { width: 44px; height: 44px; }
 }
+/* POLISH (MARKETS-MOBILE, 2026-10-13): inside the phone's ticket sheet a perp's leverage presets ("2x · 3x · 5x")
+   measured 39 wide and the leverage slider's range input 18 tall (320/375, coarse) → 44 each (a range input
+   hit-tests its own box; the track keeps its look). */
+@media (hover: none) {
+  .mkt-ticket__preset { min-width: 44px; }
+  .mkt-ticket input[type='range'] { height: 44px; }
+  /* The "protect it with a stop" row: a 15px checkbox in an 18px label (the label is the target) → a 44px row, a 20px box. */
+  .mkt-ticket__check { min-height: 44px; }
+  .mkt-ticket__check input { width: 20px; height: 20px; }
+}
