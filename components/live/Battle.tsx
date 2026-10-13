@@ -10,7 +10,7 @@
 // through the connect-to-act door into the ask door's sheet, so the field
 // keeps running behind the ticket.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Maximize2, Minimize2, Pause, Play } from 'lucide-react'
 import MarketsSide from '@/components/markets/shell/MarketsSide'
 import { useAskDoor } from '@/lib/ask-door'
@@ -59,7 +59,7 @@ import {
   type PricePoint,
 } from '@/lib/battle'
 import { midsFeed, readArmyContexts, readFrontCandles } from '@/lib/battle-feed'
-import { FOLLOW_USD, fmtClock, fmtPrice, fmtUsd, followAsk, mergeFills, type FollowAsk, type TapeFill, type TapeSide } from '@/lib/tape'
+import { FOLLOW_USD, fmtClock, fmtPrice, fmtUsd, followAsk, mergeFills, type FollowAsk, type TapeFill, type TapeSide, type TapeSource } from '@/lib/tape'
 import { connectTape, readTapeUniverse, type FeedStatus } from '@/lib/tape-feed'
 import { PERP_VENUES } from '@/lib/dune'
 import { buildScene, drawFront, drawMap, drawSiege, type ArmyFrame, type Inks, type Particle } from './battle-draw'
@@ -82,15 +82,42 @@ interface WarEvent {
   follow: FollowAsk | null
 }
 
-export default function Battle({ view, tradable, tabs }: { view: BattleView; tradable: TradabilityMap; tabs?: ReactNode }) {
-  const urlArmies = useMemo(() => initialArmies(), [])
+export interface BattleProps {
+  view: BattleView
+  tradable: TradabilityMap
+  tabs?: ReactNode
+  /** Where the field sits: its own page on /live (the default — the URL carries
+   *  the armies and the window, the war log rides the rail) or THE DECK's
+   *  stage on `/` (components/home/Deck, 2026-10-13: no title, no URL, no
+   *  rail, a shorter field; the deck hears the feed's state, the buffer and
+   *  the leader). The hand-set memory is shared: the deck is another map. */
+  seat?: 'page' | 'stage'
+  onReport?: (r: { status: FeedStatus; detail?: string; source: TapeSource; markets: number; hidden: boolean }) => void
+  /** The merged buffer after every batch (newest first) — the deck's ladder lands the prints. */
+  onFills?: (buffer: readonly TapeFill[]) => void
+  /** The army holding the most ground, as it changes. */
+  onLeader?: (market: string | null) => void
+}
+
+export default function Battle({ view, tradable, tabs, seat = 'page', onReport, onFills, onLeader }: BattleProps) {
+  const onPage = seat === 'page'
+  // The URL is the page's: the deck's stage reads none of it (`/?t=` is nobody's).
+  const urlArmies = useMemo(() => (onPage ? initialArmies() : []), [onPage])
   const memory = useMemo(() => readArmyMemory(), [])
   // The URL's own armies lead; else what this browser set by hand last time.
   // Anything else (holdings, the venue) is decided once the reads answer.
   const [armies, setArmies] = useState<string[]>(() => (urlArmies.length ? urlArmies : memory?.armies ?? []))
   const [source, setSource] = useState<ArmySource | null>(() => (urlArmies.length ? 'url' : memory ? 'memory' : null))
-  const [since, setSince] = useState<FrontWindow>(() => initialWindow())
-  const [pickMode, setPickMode] = useState<PickMode>(() => initialPick(memory))
+  const [since, setSince] = useState<FrontWindow>(() => (onPage ? initialWindow() : parseFrontWindow(null)))
+  const [pickMode, setPickMode] = useState<PickMode>(() => (onPage ? initialPick(memory) : (memory?.pick ?? 'gainers')))
+  const onReportRef = useRef(onReport)
+  onReportRef.current = onReport
+  const onFillsRef = useRef(onFills)
+  onFillsRef.current = onFills
+  const onLeaderRef = useRef(onLeader)
+  onLeaderRef.current = onLeader
+  const tapeSourceRef = useRef<TapeSource>('dune')
+  const reportedLeaderRef = useRef<string | null>(null)
   const [heldWaited, setHeldWaited] = useState(false)
   const [venueWaited, setVenueWaited] = useState(false)
   const [status, setStatus] = useState<FeedStatus>('idle')
@@ -160,13 +187,13 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
     [tradable],
   )
 
-  // ── URL ───────────────────────────────────────────────────────────────
+  // ── URL (the page's alone — the deck's stage never rewrites `/`) ─────
   useEffect(() => {
-    if (typeof window === 'undefined') return
+    if (!onPage || typeof window === 'undefined') return
     const url = new URL(liveUrl(view, armies, since, window.location.pathname), window.location.origin)
     if (pickMode !== 'gainers') url.searchParams.set('pick', pickMode)
     window.history.replaceState(window.history.state, '', url.pathname + url.search)
-  }, [view, armies, since, pickMode])
+  }, [onPage, view, armies, since, pickMode])
 
   // ── The universe (for the add box) ────────────────────────────────────
   useEffect(() => {
@@ -265,12 +292,16 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
   useEffect(() => {
     if (!armies.length) return
     const handle = connectTape(armies, {
+      onSource: (s) => {
+        tapeSourceRef.current = s
+      },
       onRetract: (venue, block) => {
         fillsRef.current = fillsRef.current.filter((f) => !(f.venue === venue && f.block === block))
       },
       onFills: (batch) => {
         const now = Date.now()
         fillsRef.current = mergeFills(fillsRef.current, batch, now)
+        onFillsRef.current?.(fillsRef.current)
         const reduced = reducedRef.current
         for (const f of batch) {
           const arr = samplesRef.current.get(f.market) ?? []
@@ -281,7 +312,10 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
         }
         if (particlesRef.current.length > MAX_PARTICLES) particlesRef.current.splice(0, particlesRef.current.length - MAX_PARTICLES)
       },
-      onStatus: (s) => setStatus(s),
+      onStatus: (s, d) => {
+        setStatus(s)
+        onReportRef.current?.({ status: s, detail: d, source: tapeSourceRef.current, markets: stateRef.current.armies.length, hidden: false })
+      },
     }, { venues: PERP_VENUES, filter: true })
     return handle.close
   }, [armies])
@@ -360,6 +394,10 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
         fresh.push({ id: `lead:${leader}:${Math.floor(now / 1000)}`, at: now, market: leader, kind: 'lead', side: 'buy', follow: chipFor(leader, 'buy'), text: `${armyLabel(leader)} takes the lead at ${fmtPct(ranked[0].pct)}${second && second.pct !== null ? `, ahead of ${armyLabel(second.army.market)} at ${fmtPct(second.pct)}` : ''}.` })
       }
       if (leader) leaderRef.current = leader
+      if (leader !== reportedLeaderRef.current) {
+        reportedLeaderRef.current = leader
+        onLeaderRef.current?.(leader)
+      }
       if (fresh.length) setLog((prev) => [...fresh.sort((x, y) => y.at - x.at), ...prev].slice(0, LOG_ROWS))
       setTick((t) => t + 1)
     }, 1000)
@@ -477,9 +515,29 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
   const slotOf = (m: string) => ARMY_SLOTS[armies.indexOf(m)] ?? 1
   const sourceWord = source ? armySourceWord(source) : null
 
-  return (
+  const sinceEl = (
+    <div className="battle__since" role="group" aria-label="Ground is measured since">
+      {FRONT_WINDOWS.map((w) => (
+        <button key={w.id} type="button" className={since === w.id ? 'is-on' : undefined} aria-pressed={since === w.id} onClick={() => setSince(w.id)}>
+          {w.label}
+        </button>
+      ))}
+    </div>
+  )
+  const holdEl = (
+    <button type="button" className="battle__btn" onClick={togglePause} aria-pressed={paused} title={paused ? 'Resume the field' : 'Hold the field'}>
+      {paused ? <Play size={13} strokeWidth={2.2} /> : <Pause size={13} strokeWidth={2.2} />}
+      <span>{paused ? 'Resume' : 'Hold'}</span>
+    </button>
+  )
+
+  // The field's body, the same on the page and on the deck's stage; the
+  // page adds its title bar, its legends and the war log, the stage a
+  // one-line bar of the window and the hold.
+  const body = (
     <>
-      <main ref={mainRef} className="mkt-frame__main battle" data-view={view} data-status={status} data-paused={paused || undefined}>
+        {onPage ? (
+          <>
         <h1 className="sr-only">{viewDef.label}</h1>
 
         <div className="mkt-frame__bar battle__bar">
@@ -490,23 +548,24 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
           </div>
           {tabs}
           <div className="battle__controls">
-            <div className="battle__since" role="group" aria-label="Ground is measured since">
-              {FRONT_WINDOWS.map((w) => (
-                <button key={w.id} type="button" className={since === w.id ? 'is-on' : undefined} aria-pressed={since === w.id} onClick={() => setSince(w.id)}>
-                  {w.label}
-                </button>
-              ))}
-            </div>
-            <button type="button" className="battle__btn" onClick={togglePause} aria-pressed={paused} title={paused ? 'Resume the field' : 'Hold the field'}>
-              {paused ? <Play size={13} strokeWidth={2.2} /> : <Pause size={13} strokeWidth={2.2} />}
-              <span>{paused ? 'Resume' : 'Hold'}</span>
-            </button>
+            {sinceEl}
+            {holdEl}
             <button type="button" className="battle__btn" onClick={toggleFull} title={full ? 'Leave fullscreen' : 'Fullscreen'}>
               {full ? <Minimize2 size={13} strokeWidth={2.2} /> : <Maximize2 size={13} strokeWidth={2.2} />}
               <span>{full ? 'Exit' : 'Fullscreen'}</span>
             </button>
           </div>
         </div>
+          </>
+        ) : (
+          <div className="battle__stagebar">
+            <span className="battle__sub mono">{viewDef.blurb}</span>
+            <div className="battle__controls">
+              {sinceEl}
+              {holdEl}
+            </div>
+          </div>
+        )}
 
         {/* ── The picker: one to five armies ── */}
         <div className="battle__picker" role="group" aria-label="Armies">
@@ -596,6 +655,7 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
           <canvas ref={canvasRef} className="battle__canvas" role="img" aria-label={`${viewDef.label}: ${viewDef.blurb}`} />
           {frames.every((a) => a.track.length === 0) && <div className="battle__empty mono">{!mounted || armies.length === 0 ? (waitingForWallet ? 'reading your wallet…' : 'picking the armies…') : status === 'live' ? 'first prices landing…' : 'reaching the venue…'}</div>}
         </div>
+        {onPage && (
         <p className="battle__legend mono">
           <span><b>ground</b> = % move {minutes === null ? 'since the page opened' : `since ${minutes >= 60 ? `${minutes / 60}h` : `${minutes}m`} ago`} · horizon = 0%</span>
           {view === 'map' ? <span><b>land</b> = open interest share</span> : view === 'siege' ? <span><b>sector</b> = one army · time sweeps it from the camp to now · <b>nearer the hill</b> = more ground</span> : <span><b>territory</b> = ground gained or lost</span>}
@@ -603,6 +663,7 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
           <span><b>burst</b> = a fill ≥ {fmtUsd(unit * 4)}, where it hit</span>
           <span><b>tracers</b> = every fill as it lands</span>
         </p>
+        )}
 
         <section className="battle__board" aria-label="Scoreboard">
           <table className="battle__table">
@@ -681,11 +742,27 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
             </tbody>
           </table>
         </section>
+        {onPage && (
         <p className="battle__legend mono" style={{ marginTop: 10 }}>
           Percent price move is percent market-cap move over a window this short. Every glyph is a measured fill; nothing on this field is estimated. A recruit chip is the sentence that joins the army at ${FOLLOW_USD}; your wallet signs it.
         </p>
-      </main>
+        )}
+    </>
+  )
 
+  return (
+    <>
+      {onPage ? (
+        <main ref={mainRef} className="mkt-frame__main battle" data-view={view} data-status={status} data-paused={paused || undefined} data-seat="page">
+          {body}
+        </main>
+      ) : (
+        <div ref={mainRef as RefObject<HTMLDivElement>} className="battle battle--stage" data-view={view} data-status={status} data-paused={paused || undefined} data-seat="stage">
+          {body}
+        </div>
+      )}
+
+      {onPage && (
       <MarketsSide label="War log">
         <div data-slot="war-log" className="battle__rail">
           <header className="battle__rh">
@@ -712,6 +789,7 @@ export default function Battle({ view, tradable, tabs }: { view: BattleView; tra
           </ol>
         </div>
       </MarketsSide>
+      )}
       {door}
     </>
   )

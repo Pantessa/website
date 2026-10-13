@@ -65,7 +65,23 @@ import './pulse.css'
 /** The bars' share of the plot; the rest is air under the max label. */
 const PLOT_TOP = 8
 
-export default function PulseSlot() {
+export interface PulseSlotProps {
+  /** Where the band sits: its own framed band (the default — the pins' SSR
+   *  frame, head and foot included) or THE DECK's stage (components/home/Deck,
+   *  2026-10-13): the deck draws the head and the foot, the band keeps its
+   *  chips, the chart and the tiles. */
+  seat?: 'band' | 'stage'
+  /** The feed's state, for the deck's bar and foot. */
+  onReport?: (r: { status: FeedStatus; detail?: string; source: TapeSource; markets: number; hidden: boolean }) => void
+  /** The merged buffer after every flush (newest first) — the deck's ladder lands the prints. */
+  onFills?: (buffer: readonly TapeFill[]) => void
+  /** The market the band would put under a book: the pick, else the hot market. */
+  onBookMarket?: (market: string | null) => void
+  /** The picked chip, for the deck's doors (/live's `?m=`). */
+  onPick?: (pick: string | null) => void
+}
+
+export default function PulseSlot({ seat = 'band', onReport, onFills, onBookMarket, onPick }: PulseSlotProps = {}) {
   const tradable = useTradable()
   // The fallback list first; the venue's own pick re-aims the open socket.
   const [markets, setMarkets] = useState<readonly string[]>(PULSE_FALLBACK_MARKETS)
@@ -105,6 +121,15 @@ export default function PulseSlot() {
   const bufRef = useRef<TapeFill[]>([])
   const flushRef = useRef<number | null>(null)
   const handleRef = useRef<TapeHandle | null>(null)
+  // The deck's ears, read through refs so the stream effect never re-arms.
+  const onReportRef = useRef(onReport)
+  onReportRef.current = onReport
+  const onFillsRef = useRef(onFills)
+  onFillsRef.current = onFills
+  const onBookMarketRef = useRef(onBookMarket)
+  onBookMarketRef.current = onBookMarket
+  const onPickRef = useRef(onPick)
+  onPickRef.current = onPick
   // Your own markets (lib/live-markets — /live's rule, on the band): a
   // hand's list leads the row and rides the relay's filter; remembered in
   // this browser; the watchlist stands in until a hand touches it.
@@ -207,6 +232,7 @@ export default function PulseSlot() {
     const flush = () => {
       flushRef.current = null
       setFills(bufRef.current)
+      onFillsRef.current?.(bufRef.current)
     }
     const handle = connectTape(marketsRef.current, {
       onSource: setSource,
@@ -255,6 +281,7 @@ export default function PulseSlot() {
       if (buf.length && buf[buf.length - 1].at < t - PULSE_KEEP_MS) {
         bufRef.current = mergePulseFills(buf, [], t)
         setFills(bufRef.current)
+        onFillsRef.current?.(bufRef.current)
       }
     }, 1000)
     return () => window.clearInterval(id)
@@ -280,6 +307,19 @@ export default function PulseSlot() {
   const shortWords = pulseStatusWords(status, detail, { hidden })
   const hb = hover !== null ? bars[hover] : null
 
+  // The deck hears the band (components/home/Deck): the feed's state for its
+  // bar and foot, the pick for its doors, the market its ladder follows.
+  useEffect(() => {
+    onReportRef.current?.({ status, detail, source, markets: aim.length, hidden })
+  }, [status, detail, source, aim.length, hidden])
+  useEffect(() => {
+    onPickRef.current?.(pick)
+  }, [pick])
+  const hotName = tiles.hot?.market.name ?? null
+  useEffect(() => {
+    onBookMarketRef.current?.(pick ?? hotName)
+  }, [pick, hotName])
+
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
     if (!rect.width) return
@@ -289,7 +329,8 @@ export default function PulseSlot() {
 
   return (
     <section className="pulse-seat" aria-label="Live pulse">
-      <div className="pulse" data-status={status} data-source={source} data-hidden={hidden || undefined} data-fills={have ? 'yes' : 'no'} data-markets={aim.length}>
+      <div className="pulse" data-seat={seat} data-status={status} data-source={source} data-hidden={hidden || undefined} data-fills={have ? 'yes' : 'no'} data-markets={aim.length}>
+        {seat === 'band' && (
         <header className="pulse__head">
           <span className={`mk-dot ${live ? 'mk-dot--open' : 'mk-dot--closed'} pulse__dot`} aria-hidden />
           <span className="pulse__title">Live pulse</span>
@@ -310,6 +351,7 @@ export default function PulseSlot() {
             <span className="pulse__door-short">Live tape</span> <span aria-hidden>→</span>
           </Link>
         </header>
+        )}
 
         <div className="pulse__markets" role="group" aria-label="Markets on the pulse">
           <button type="button" className={`pulse__m${pick === null ? ' is-on' : ''}`} aria-pressed={pick === null} onClick={() => choose(null)}>
@@ -442,12 +484,14 @@ export default function PulseSlot() {
           </div>
         </div>
 
+        {seat === 'band' && (
         <footer className="pulse__foot mono">
           <span className="pulse__why-long">
             {PULSE_WHY_BY_SOURCE[source].what} {PULSE_WHY_BY_SOURCE[source].why}
           </span>
           <span className="pulse__why-phone">{PULSE_WHY_BY_SOURCE[source].phone}</span>
         </footer>
+        )}
         {door}
       </div>
     </section>

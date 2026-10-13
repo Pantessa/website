@@ -325,7 +325,7 @@ export function tapePins(check: Check): void {
       const feed = readFileSync('lib/tape-feed.ts', 'utf8')
       const server = readFileSync('lib/dune-feed-server.ts', 'utf8')
       const route = readFileSync('app/api/live/stream/route.ts', 'utf8')
-      const clientFiles = ['lib/tape-feed.ts', 'lib/tape.ts', 'lib/pulse.ts', 'lib/dune.ts', 'components/live/LiveFeed.tsx', 'components/home/PulseSlot.tsx', 'components/live/Battle.tsx'].map((f) => readFileSync(f, 'utf8')).join('\n')
+      const clientFiles = ['lib/tape-feed.ts', 'lib/tape.ts', 'lib/pulse.ts', 'lib/dune.ts', 'lib/deck.ts', 'components/live/LiveFeed.tsx', 'components/home/PulseSlot.tsx', 'components/home/Deck.tsx', 'components/home/TapeStage.tsx', 'components/home/BookLadder.tsx', 'components/live/Battle.tsx'].map((f) => readFileSync(f, 'utf8')).join('\n')
       return /^'use client'/.test(feed) && /wss:\/\/api\.hyperliquid\.xyz\/ws/.test(feed) && /fields: \{ effect: false, block: false \}/.test(feed) && /fields: \{ effect: true, block: true \}/.test(feed) && /new EventSource\(url\)/.test(feed) && /\?probe=1/.test(feed) && /res\.status === 503/.test(feed) && /onStatus\('unconfigured'/.test(feed) && /addEventListener\('bye'/.test(feed) && /export function connectTape/.test(feed) && /requestAnimationFrame/.test(feed) &&
         !/'use client'/.test(server) && /'X-Dune-Api-Key': key/.test(server) && /resumeUrl\(venue\.url, u\.cursor\)/.test(server) && /ev\.code === 1008/.test(server) && /IDLE_CLOSE_MS/.test(server) &&
         /text\/event-stream/.test(route) && new RegExp(`export const maxDuration = ${LIVE_STREAM_MAX_DURATION_S}\\b`).test(route) && /status: 503/.test(route) && /type: 'bye'/.test(route) && /LIVE_STREAM_PER_IP/.test(route) &&

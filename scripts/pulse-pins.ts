@@ -224,10 +224,14 @@ export function pulsePins(check: Check): void {
     !/<table/.test(slot) && !/live-row|TapeRow/.test(slot) && /prefers-reduced-motion: reduce/.test(css) && /animation: none/.test(css) && /transition: none/.test(css) && /visibilitychange/.test(slot) && /pulseStreamWanted\(vis, now\)/.test(slot) && /pulseVisibilityStep\(prev, document\.hidden/.test(slot))
   check('pulse: every chip goes through the connect-to-act door into the ask door\'s sheet with the ask\'s own apps, gated by canTradeAsk with the measured verdicts (useTradable) — the /live pattern verbatim; the band never calls the chat route itself',
     /useConnectToAct\(\{ run, redirectFor: promptHref \}\)/.test(slot) && /openDoor\(ask, \{ send: true, mcps: askAppSlugs\(ask\) \}\)/.test(slot) && /canTradeAsk\(ask, tradable\)/.test(slot) && /useTradable\(\)/.test(slot) && !/fetch\(['"`]\/api\/chat/.test(slot) && /\{door\}/.test(slot))
-  check('pulse: the band mounts in the splash\'s lead seat (HomeSurface) as a default export with no props, and `/` is a public markets path (looking needs no wallet)',
-    /<PulseSlot \/>/.test(home) && /export default function PulseSlot\(\)/.test(slot) && isMarketsPath('/') && isPublicAppPath('/'))
-  check('pulse: the door and the views are links in the band\'s head (a URL never fires a turn): /live with prefetch off, and the three views from PULSE_VIEW_LINKS',
-    /href=\{pulseLiveHref\(pick\)\}/.test(slot) && pulseLiveHref(null) === PULSE_LIVE_HREF && /PULSE_VIEW_LINKS\.map/.test(slot) && !/openDoor\([^)]*PULSE_LIVE_HREF/.test(slot) && slot.indexOf('PULSE_VIEW_LINKS.map') < slot.indexOf('</header>') && /data-markets=\{aim\.length\}/.test(slot))
+  // RE-PINNED 2026-10-13 (deck): the band mounts in THE DECK (components/home/Deck, the splash's
+  // lead seat) in its stage seat; alone it is still the framed band, no props needed.
+  const deck = readFileSync('components/home/Deck.tsx', 'utf8')
+  check('pulse: the band mounts in the splash\'s lead seat through the deck (HomeSurface → Deck → PulseSlot seat="stage"); alone it is the framed band (the seat defaults to band, no props needed), and `/` is a public markets path (looking needs no wallet)',
+    /<Deck \/>/.test(home) && /<PulseSlot seat="stage"/.test(deck) && /export default function PulseSlot\(\{ seat = 'band'/.test(slot) && /\}: PulseSlotProps = \{\}\)/.test(slot) && isMarketsPath('/') && isPublicAppPath('/'))
+  check('pulse: the door and the views are links in the band\'s head (a URL never fires a turn): /live with prefetch off, and the three views from PULSE_VIEW_LINKS — drawn in the band seat; the deck carries the doors on its own bar and foot in the stage seat (RE-PINNED 2026-10-13 (deck))',
+    /href=\{pulseLiveHref\(pick\)\}/.test(slot) && pulseLiveHref(null) === PULSE_LIVE_HREF && /PULSE_VIEW_LINKS\.map/.test(slot) && !/openDoor\([^)]*PULSE_LIVE_HREF/.test(slot) && slot.indexOf('PULSE_VIEW_LINKS.map') < slot.indexOf('</header>') && /data-markets=\{aim\.length\}/.test(slot) &&
+      (slot.match(/\{seat === 'band' && \(/g) ?? []).length === 2 && slot.indexOf("{seat === 'band' && (") < slot.indexOf('<header className="pulse__head">'))
 
   // ── The token pick (2026-10-06: "add the token options to track") ─────
   const ethBars = pulseBars(FIXTURE, NOW, undefined, 'ETH')

@@ -1,0 +1,210 @@
+/* THE DECK — the band at the top of `/` (2026-10-13, lib/deck): a bar of four
+   channels (Pulse · Tape · The Front · The Siege), the stage that plays the
+   picked one, the streaming-order-book switch at the bar's right end that
+   splits the stage with a ladder, and one foot (the source line, why it is
+   different, the door). Rides the markets look (--mk-*) and the site tokens,
+   so light mode comes free. The SSR frame is the final frame: the stage's
+   min-heights equal lib/deck DECK_STAGE_MIN_H (pinned). Nothing sticky and no
+   layer at z-index 20 or above (the board tabs sit at 20). */
+
+.deck { position: relative; display: flex; flex-direction: column; margin: 12px 0 0; border: 1px solid var(--line); border-radius: 14px; background: var(--surf-1); overflow: hidden; container-type: inline-size; container-name: deck; }
+.mk-lead-seat .deck { margin-top: 0; }
+
+/* ── The bar ───────────────────────────────────────────────────────────── */
+.deck__bar { display: flex; align-items: stretch; min-height: 54px; border-bottom: 1px solid var(--line); background: var(--surf-2, var(--surf-1)); }
+.deck__tabs { display: flex; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.deck__tabs::-webkit-scrollbar { display: none; }
+.deck__ch { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; min-width: 148px; padding: 8px 16px; border-right: 1px solid var(--line); color: var(--muted); text-decoration: none; position: relative; outline: none; }
+.deck__ch:hover .deck__chname, .deck__ch:focus-visible .deck__chname { color: var(--fg); }
+.deck__ch:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.deck__ch.is-on { background: var(--surf-1); }
+.deck__ch.is-on .deck__chname { color: var(--fg); }
+.deck__ch.is-on .deck__chblurb { color: var(--accent); }
+.deck__ch.is-on::after { content: ''; position: absolute; left: 16px; right: 16px; bottom: -1px; height: 2px; background: var(--accent); }
+.deck__chname { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mk-font-display); font-weight: 600; font-size: 16px; line-height: 20px; letter-spacing: -0.01em; color: var(--muted); white-space: nowrap; }
+.deck__chblurb { font-size: 9.5px; line-height: 12px; letter-spacing: 0.04em; color: var(--muted-2); white-space: nowrap; }
+/* The phone's door chip; a wider screen has the foot's door. */
+.deck__ch--door { display: none; }
+.deck__ch--door .deck__chname span { color: var(--accent); }
+.deck__dot { flex: 0 0 auto; }
+.deck[data-status="live"] .deck__dot { animation: deck-beat 1.6s ease-in-out infinite; }
+@keyframes deck-beat { 0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--mk-up, var(--accent)) 22%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--mk-up, var(--accent)) 8%, transparent); } }
+
+/* The switch: a real button with role="switch"; the track and the knob are paint. */
+.deck__flick { margin-left: auto; flex: 0 0 auto; display: inline-flex; align-items: center; gap: 12px; padding: 0 16px; border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--muted); font-family: var(--mk-font-ui); cursor: pointer; outline: none; }
+.deck__flick:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.deck__flicklab { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
+.deck__flicklab b { font-size: 12.5px; line-height: 15px; font-weight: 600; color: var(--fg); white-space: nowrap; }
+.deck__flicklab small { font-size: 9.5px; line-height: 12px; letter-spacing: 0.04em; color: var(--muted-2); white-space: nowrap; }
+.deck__flick-short { display: none; }
+.deck__sw { position: relative; flex: 0 0 auto; width: 44px; height: 24px; border-radius: 999px; background: var(--surf-2, var(--surf-1)); border: 1px solid var(--line); transition: background .18s ease, border-color .18s ease; }
+.deck__sw::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); transition: transform .18s ease, background .18s ease; }
+.deck__flick.is-on .deck__sw { background: color-mix(in srgb, var(--accent) 25%, transparent); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.deck__flick.is-on .deck__sw::after { transform: translateX(20px); background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
+.deck__flick.is-on .deck__flicklab small { color: var(--accent); }
+
+/* ── The stage ─────────────────────────────────────────────────────────── */
+.deck__stage { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 200px; }
+.deck[data-book="on"] .deck__stage { grid-template-columns: minmax(0, 1fr) 360px; }
+.deck__chan { min-width: 0; padding: 10px 16px 8px; }
+.deck__book { min-width: 0; display: flex; flex-direction: column; padding: 10px 14px 8px; border-left: 1px solid var(--line); background: color-mix(in srgb, var(--surf-1) 70%, var(--bg)); }
+
+/* The pulse in its stage seat: the deck is its frame, so the band drops its own.
+   On a split stage the ladder sets the height, so the chart grows to meet it. */
+.pulse[data-seat="stage"] { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; min-height: 0; }
+.pulse[data-seat="stage"] .pulse__markets { margin-top: 0; }
+.mk-lead-seat .pulse[data-seat="stage"] { margin-top: 0; }
+.deck[data-book="on"] .pulse[data-seat="stage"] { --pulse-plot-h: 200px; }
+
+/* The battle in its stage seat: a shorter field, one row of armies (the
+   suggestions beyond six and the add box wait on /live, a tap away), the
+   pick-mode toggle too. */
+.deck__chan .battle--stage .battle__stagebar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.deck__chan .battle--stage .battle__picker { padding-top: 8px; }
+.deck__chan .battle--stage .battle__pickhead, .deck__chan .battle--stage .battle__add { display: none; }
+.deck__chan .battle--stage .battle__chips { margin-top: 0; }
+.deck__chan .battle--stage .battle__chips > .battle__pick:nth-child(n + 7):not(.is-on) { display: none; }
+.deck__chan .battle--stage .battle__stage { height: 240px; margin-top: 8px; }
+.deck__chan .battle--stage .battle__board { margin-top: 8px; }
+.deck__chan .battle--stage .battle__table { font-size: 12px; }
+
+/* ── The tape stage ────────────────────────────────────────────────────── */
+.deck__tape { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+.deck__tape th { padding: 4px 8px; text-align: left; font-size: 10px; font-weight: 500; letter-spacing: 0.04em; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.deck__tape th.num, .deck__tape td.num { text-align: right; }
+.deck__tape td { padding: 6px 8px; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); font-variant-numeric: tabular-nums; }
+.deck__tape th:nth-child(1) { width: 15%; }
+.deck__tape th:nth-child(2) { width: 8%; }
+.deck__tape th:nth-child(3) { width: 10%; }
+.deck__tape th:nth-child(4) { width: 11%; }
+.deck__tape th:nth-child(5) { width: 12%; }
+.deck__tape th:nth-child(6) { width: 12%; }
+.deck__tape th:nth-child(7) { width: 13%; }
+.deck__tape th:nth-child(8) { width: 19%; }
+.deck__tape td.deck__act { text-overflow: clip; }
+.deck__mlink { display: inline-flex; align-items: center; gap: 4px; color: var(--fg); text-decoration: none; font-weight: 600; }
+.deck__mlink:hover { color: var(--accent); }
+.deck__mlink--plain { font-weight: 600; }
+.deck__dex { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mk-series-4, var(--accent)); }
+.deck__dex::after { content: ':'; }
+.deck__venue { font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-2); margin-left: 5px; }
+.deck__side--buy { color: var(--mk-up, var(--accent)); }
+.deck__side--sell { color: var(--mk-down, var(--sell)); }
+.deck__usd { font-weight: 600; }
+.deck__effect, .deck__taker { color: var(--muted); }
+.deck__noact { font-size: 10px; color: var(--muted-2); }
+.deck-row--up { background: color-mix(in srgb, var(--mk-up, var(--accent)) 5%, transparent); }
+.deck-row--down { background: color-mix(in srgb, var(--mk-down, var(--sell)) 5%, transparent); }
+.deck-row--up.is-strong { background: color-mix(in srgb, var(--mk-up, var(--accent)) 9%, transparent); }
+.deck-row--down.is-strong { background: color-mix(in srgb, var(--mk-down, var(--sell)) 9%, transparent); }
+.deck__tapefoot { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; font-size: 10px; letter-spacing: 0.04em; color: var(--muted-2); white-space: nowrap; overflow: hidden; }
+.deck__tapefoot span { overflow: hidden; text-overflow: ellipsis; }
+.deck__tapeempty { padding: 28px 0; text-align: center; font-size: 11px; color: var(--muted-2); }
+
+/* The chips: the /live idiom (live.css only loads on /live). */
+.deck__chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 10px; border: 1px solid transparent; border-radius: 999px; font-family: var(--mk-font-ui); font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; cursor: pointer; transition: transform .12s ease, filter .12s ease; }
+.deck__chip:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.deck__chip:active { transform: translateY(0); }
+.deck__chip--buy { background: color-mix(in srgb, var(--mk-up, var(--accent)) 18%, var(--surf-1)); border-color: color-mix(in srgb, var(--mk-up, var(--accent)) 55%, transparent); color: var(--mk-up, var(--accent)); }
+.deck__chip--sell { background: color-mix(in srgb, var(--mk-down, var(--sell)) 16%, var(--surf-1)); border-color: color-mix(in srgb, var(--mk-down, var(--sell)) 55%, transparent); color: var(--mk-down, var(--sell)); }
+.deck__chip-usd { font-family: var(--mk-font-mono); font-size: 10px; opacity: .85; }
+@media (hover: none) { .deck__chip { min-height: 44px; } .deck__tape td { padding-top: 2px; padding-bottom: 2px; } }
+
+/* ── The ladder ────────────────────────────────────────────────────────── */
+.ladder { display: flex; flex-direction: column; min-height: 0; font-family: var(--mk-font-mono); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.ladder__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.ladder__title { font-family: var(--mk-font-display); font-weight: 600; font-size: 14px; letter-spacing: -0.01em; color: var(--fg); white-space: nowrap; }
+.ladder__title .deck__dex { font-size: 8.5px; margin-right: 1px; }
+.ladder__status { min-width: 0; font-size: 9.5px; letter-spacing: 0.04em; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ladder[data-status="live"] .ladder__status { color: var(--mk-up, var(--accent)); }
+.ladder__rows { display: grid; grid-template-columns: 60px minmax(0, 1fr) 58px; gap: 0 8px; align-items: center; line-height: 17px; }
+.ladder__px { color: var(--fg); }
+.ladder__px--ask { color: var(--mk-down, var(--sell)); }
+.ladder__px--bid { color: var(--mk-up, var(--accent)); }
+.ladder__seat { position: relative; height: 12px; }
+.ladder__bar { position: absolute; inset: 0 auto 0 0; min-width: 1px; border-radius: 2px; background: color-mix(in srgb, var(--mk-down, var(--sell)) 35%, transparent); transition: width .25s var(--mk-ease, ease); }
+.ladder__bar--bid { background: color-mix(in srgb, var(--mk-up, var(--accent)) 35%, transparent); }
+.ladder__hit { position: absolute; top: 1px; right: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--mk-up, var(--accent)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--mk-up, var(--accent)) 25%, transparent); pointer-events: none; }
+.ladder__hit--sell { background: var(--mk-down, var(--sell)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--mk-down, var(--sell)) 25%, transparent); }
+.ladder__usd { text-align: right; color: var(--muted); }
+.ladder__mid { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 5px 0; padding: 4px 0; border-top: 1px dashed var(--mk-crosshair, var(--line)); border-bottom: 1px dashed var(--mk-crosshair, var(--line)); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.ladder__mid b { color: var(--fg); font-weight: 600; }
+.ladder__prints { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--line); font-size: 10px; line-height: 14px; }
+.ladder__print { display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; }
+.ladder__print--buy { color: var(--mk-up, var(--accent)); }
+.ladder__print--sell { color: var(--mk-down, var(--sell)); }
+.ladder__print time { color: var(--muted-2); }
+.ladder__foot { margin-top: auto; padding-top: 6px; font-size: 9.5px; line-height: 1.5; color: var(--muted-2); }
+.ladder__door { display: inline-block; margin-top: 4px; font-family: var(--mk-font-ui); font-size: 12px; font-weight: 600; color: var(--fg); text-decoration: none; white-space: nowrap; }
+.ladder__door:hover { color: var(--accent); }
+.ladder__door span { color: var(--accent); }
+.ladder__empty { flex: 1 1 auto; display: grid; place-items: center; padding: 24px 8px; text-align: center; font-size: 11px; line-height: 1.5; color: var(--muted-2); }
+
+/* ── The foot ──────────────────────────────────────────────────────────── */
+.deck__foot { display: flex; align-items: center; gap: 14px; padding: 7px 16px; border-top: 1px solid var(--line); font-size: 10.5px; line-height: 15px; color: var(--muted-2); }
+.deck__src { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+.deck__why { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.deck__door { margin-left: auto; flex: 0 0 auto; font-family: var(--mk-font-ui); font-size: 12.5px; font-weight: 600; color: var(--fg); text-decoration: none; white-space: nowrap; }
+.deck__door:hover { color: var(--accent); }
+.deck__door span { color: var(--accent); }
+
+/* ── Reduced motion: nothing animates ──────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .deck[data-status="live"] .deck__dot { animation: none; }
+  .deck__sw, .deck__sw::after, .ladder__bar, .deck__chip { transition: none; }
+  .deck__chip:hover { transform: none; }
+}
+
+/* ── Narrow: the book takes the whole stage ────────────────────────────── */
+@container deck (max-width: 860px) {
+  .deck[data-book="on"] .deck__stage { grid-template-columns: minmax(0, 1fr); }
+  .deck[data-book="on"] .deck__chan { display: none; }
+  .deck__book { border-left: 0; }
+  .deck__tape th:nth-child(3), .deck__tape td:nth-child(3), .deck__tape th:nth-child(6), .deck__tape td:nth-child(6), .deck__tape th:nth-child(7), .deck__tape td:nth-child(7) { display: none; }
+  .deck__tape th:nth-child(1) { width: 26%; }
+  .deck__tape th:nth-child(4), .deck__tape th:nth-child(5) { width: 18%; }
+  .deck__tape th:nth-child(8) { width: 30%; }
+}
+
+/* ── Phone: the channels as a chip row, the switch a chip, the stage at the
+   phone band's budget (MOBILE's rhythm: 44px targets under a thumb) ─────── */
+@media (max-width: 640px) {
+  .mk-lead-seat .deck { margin-top: 0; }
+  /* One scrolling row: the chip run never shrinks under the switch (the first
+     cut let the tabs shrink and the Book chip painted over The Siege). */
+  .deck__bar { gap: 6px; min-height: 0; padding: 4px 10px; overflow-x: auto; scrollbar-width: none; }
+  .deck__bar::-webkit-scrollbar { display: none; }
+  .deck__tabs { flex: 0 0 auto; gap: 6px; overflow: visible; }
+  .deck__ch { flex-direction: row; align-items: center; min-width: 0; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; }
+  .deck__ch--door { display: flex; }
+  .deck__ch--door .deck__chname { color: var(--fg); font-family: var(--mk-font-ui); font-size: 12.5px; }
+  .deck__ch.is-on { background: var(--fg); border-color: var(--fg); }
+  .deck__ch.is-on .deck__chname { color: var(--bg); }
+  .deck__ch.is-on::after { display: none; }
+  .deck__chname { font-size: 14px; }
+  .deck__chblurb { display: none; }
+  /* The switch leads the row on a phone (the row scrolls; a chip past the edge
+     is a cue, the switch must never be the thing past it). */
+  .deck__flick { order: -1; margin-left: 0; flex: 0 0 auto; height: 36px; padding: 0 10px; gap: 8px; border: 1px solid var(--line); border-radius: 999px; }
+  .deck__flicklab b { font-size: 12px; }
+  .deck__flicklab small { display: none; }
+  .deck__flick-long { display: none; }
+  .deck__flick-short { display: inline; }
+  .deck__sw { width: 30px; height: 18px; }
+  .deck__sw::after { width: 12px; height: 12px; top: 2px; left: 2px; }
+  .deck__flick.is-on .deck__sw::after { transform: translateX(12px); }
+  .deck__stage { min-height: 136px; }
+  .deck[data-book="on"] .deck__stage { grid-template-columns: minmax(0, 1fr); }
+  .deck[data-book="on"] .deck__chan { display: none; }
+  .deck__chan { padding: 6px 10px 6px; }
+  .deck__book { padding: 8px 10px 6px; border-left: 0; }
+  .deck__chan .battle--stage .battle__stage { height: 200px; }
+  /* The foot steps out: the active chip wears the dot, the door chip the door. */
+  .deck__foot { display: none; }
+  /* A thumb: 36px pills with a 44px hit area (the battle picker's idiom — rows
+     8px apart so the hit areas meet and never overlap). */
+  @media (hover: none) {
+    .deck__ch, .deck__flick { position: relative; }
+    .deck__ch::after, .deck__flick::after { content: ''; position: absolute; inset: -4px 0; }
+  }
+}
