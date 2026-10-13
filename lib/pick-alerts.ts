@@ -216,28 +216,42 @@ export function armGate(status: 'loading' | 'authed' | 'guest', address: string 
 }
 
 export interface HeldArm {
+  /** One market (the scoreboard / deck seats), or '' for a held "Watch these". */
   market: string
+  /** The strip seat's list — "Watch these" held across the door (QA-A2);
+   *  re-derived through watchPlan on resume, never armed blind. */
+  markets?: string[]
   pct: number
   /** The page the tap happened on; the arm runs only back on it. */
   path: string
   at: number
 }
 
-/** The record a guest's tap leaves while the door is open. */
-export function heldArmRecord(market: string, pct: number, path: string, at = Date.now()): string {
-  return JSON.stringify({ v: 1, market: String(market).trim(), pct: cleanPct(pct), path, at } satisfies HeldArm & { v: 1 })
+/** The record a guest's tap leaves while the door is open. A strip tap
+ *  passes its list as `markets` (market ''); a row tap passes the market. */
+export function heldArmRecord(market: string, pct: number, path: string, at = Date.now(), markets?: readonly string[]): string {
+  const list = markets ? markets.map((m) => String(m).trim()).filter(Boolean).slice(0, WATCH_CAP) : undefined
+  return JSON.stringify({ v: 1, market: String(market).trim(), ...(list ? { markets: list } : {}), pct: cleanPct(pct), path, at } satisfies HeldArm & { v: 1 })
 }
 
-/** The held arm, if it is ours, fresh, and for this page — else null. */
+/** The held arm, if it is ours, fresh, for this page, and for something the
+ *  sweep can price — else null. A list is honored when at least one of its
+ *  markets is priceable (the rest are named by watchPlan on resume). */
 export function readHeldArm(raw: string | null | undefined, path: string, now = Date.now()): HeldArm | null {
   if (!raw) return null
   try {
     const o = JSON.parse(raw) as Partial<HeldArm & { v: number }>
-    if (o?.v !== 1 || typeof o.market !== 'string' || !o.market.trim() || typeof o.at !== 'number' || typeof o.path !== 'string') return null
+    if (o?.v !== 1 || typeof o.market !== 'string' || typeof o.at !== 'number' || typeof o.path !== 'string') return null
     if (o.path !== path) return null
     if (!(now - o.at >= 0 && now - o.at <= HELD_ARM_TTL_MS)) return null
-    if (!alertSymbolFor(o.market)) return null
-    return { market: o.market.trim(), pct: cleanPct(o.pct), path: o.path, at: o.at }
+    const market = o.market.trim()
+    if (market) {
+      if (!alertSymbolFor(market)) return null
+      return { market, pct: cleanPct(o.pct), path: o.path, at: o.at }
+    }
+    const markets = Array.isArray(o.markets) ? o.markets.filter((m): m is string => typeof m === 'string' && !!m.trim()).map((m) => m.trim()).slice(0, WATCH_CAP) : []
+    if (!markets.some((m) => alertSymbolFor(m))) return null
+    return { market: '', markets, pct: cleanPct(o.pct), path: o.path, at: o.at }
   } catch {
     return null
   }
