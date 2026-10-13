@@ -256,13 +256,16 @@ export function tapePins(check: Check): void {
   // RE-PINNED 2026-10-13 (gtm3h): the rows read THE ONE PICK (lib/use-market-pick) — the store reads the
   // memory once, writes it only from a hand (add / remove / a fill-from), reads the watchlist as a second
   // instance; the rows write no storage of their own and the old live-row key is never written.
-  check('own markets: both rows read the one pick, write it ONLY from a hand (add / remove — a watchlist default is never remembered as yours), the store reads the watchlist as a second instance (`holdings: false`, never the rail\'s reconcile claim), and the venue socket\'s subscription carries your own markets',
+  // RE-PINNED 2026-10-13 (pick-reads): the watchlist reaches the store through the page's ONE subscriber
+  // (components/live/PickReads, `holdings: false`) — the store calls no hook; one GET /api/watchlists a page.
+  check('own markets: both rows read the one pick, write it ONLY from a hand (add / remove — a watchlist default is never remembered as yours), the store takes the watchlist from the page\'s one subscriber (`holdings: false`, never the rail\'s reconcile claim), and the venue socket\'s subscription carries your own markets',
     (() => {
       const live = readFileSync('components/live/LiveFeed.tsx', 'utf8')
       const slot = readFileSync('components/home/PulseSlot.tsx', 'utf8')
       const store = readFileSync('lib/use-market-pick.ts', 'utf8')
+      const reads = readFileSync('components/live/PickReads.tsx', 'utf8')
       const hand = (src: string) => /useMarketPick\(\{ seat: '(page|stage)' \}\)/.test(src) && /\.set\(\[\.\.\.(pick|picked)\.markets, \.\.\.r\.added\], 'hand'\)/.test(src) && /\.remove\(m\)/.test(src) && !/localStorage\.setItem|writeLiveMarketMemory\(|writeMarketPick\(/.test(src) && /insertReplacementText/.test(src)
-      const storeOk = /useWatchlists\(\{ holdings: false \}\)/.test(store) && /show: \(markets, source, write = source === 'hand'\) => \{\s*const next = cleanPick\(markets\)\s*if \(write\) writeMarketPick\(next\)/.test(store) && /readMarketPick\(\)/.test(store) && !/writeLiveMarketMemory|ARMY_MEMORY_KEY/.test(store)
+      const storeOk = /useWatchlists\(\{ holdings: false \}\)/.test(reads) && !/useWatchlists\(/.test(store) && /show: \(markets, source, write = source === 'hand'\) => \{\s*const next = cleanPick\(markets\)\s*if \(write\) writeMarketPick\(next\)/.test(store) && /readMarketPick\(\)/.test(store) && !/writeLiveMarketMemory|ARMY_MEMORY_KEY/.test(store)
       return hand(live) && hand(slot) && storeOk && /feed\.connect\(\[\.\.\.new Set\(\[\.\.\.markets, \.\.\.own\]\)\], handlers\)/.test(live) && /chipRow\(own, busiest \?\? markets \?\? \[\.\.\.FALLBACK_MARKETS\], filter, CHIP_MARKETS\)/.test(live) && /const aim = useMemo\(\(\) => \[\.\.\.new Set\(\[\.\.\.own, \.\.\.markets\]\)\], \[own, markets\]\)/.test(slot) && /chipRow\(own, markets, null, markets\.length\)/.test(slot)
     })())
 

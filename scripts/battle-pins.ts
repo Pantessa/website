@@ -251,11 +251,14 @@ export function battlePins(check: Check): void {
     })())
   // RE-PINNED 2026-10-13 (gtm3h): the opening and the memory moved into THE ONE PICK's store (lib/use-market-pick):
   // the field marches its first five; the page's three hand actions (a chip, the add box, a fill-from) write it.
-  check('battle memory: the store reads the wallet\'s holdings through the shared read, decides the opening pick with the rule (watchlist added), writes the memory only from a hand (the field\'s three hand actions call set / add / remove), and holds the opening while a wallet may still answer; the field writes no storage of its own',
+  // RE-PINNED 2026-10-13 (pick-reads): the wallet's holdings reach the store through the page's ONE subscriber
+  // (components/live/PickReads runs useHeld(); the store resolves and decides) — the store calls no hook itself.
+  check('battle memory: the store takes the wallet\'s holdings from the page\'s one subscriber (the shared read), decides the opening pick with the rule (watchlist added), writes the memory only from a hand (the field\'s three hand actions call set / add / remove), and holds the opening while a wallet may still answer; the field writes no storage of its own',
     (() => {
       const src = readFileSync('components/live/Battle.tsx', 'utf8')
       const store = readFileSync('lib/use-market-pick.ts', 'utf8')
-      return /useHeld\(\)/.test(store) && /heldPick\(held, universe\)/.test(store) && /openingPick\(\{/.test(store) && /waitForHeld: !signedOut && !heldWaited/.test(store) && /readMarketPick\(\)/.test(store) &&
+      const reads = readFileSync('components/live/PickReads.tsx', 'utf8')
+      return /useHeld\(\)/.test(reads) && !/useHeld\(/.test(store) && /heldPick\(held, universe\)/.test(store) && /openingPick\(\{/.test(store) && /waitForHeld: !signedOut && !heldWaited/.test(store) && /readMarketPick\(\)/.test(store) &&
         /armiesOf\(pick\.markets\)/.test(src) && /pick\.set\(\[\.\.\.cur, m\], 'hand'\)/.test(src) && /pick\.add\(raw\)/.test(src) && /if \(top\.length\) pick\.set\(top, 'hand'\)/.test(src) &&
         !/localStorage/.test(src) && /pickSourceWord\(pick\.source\)/.test(src) && !/FALLBACK_ARMIES/.test(src)
     })())
